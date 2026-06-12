@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::Arc;
 
 use tarmac_protocol::{self as proto, Msg, PROTOCOL_VERSION, frame};
@@ -101,19 +102,10 @@ async fn app_session(daemon: Arc<Daemon>, stream: UnixStream) -> anyhow::Result<
         }
     });
 
-    // Restore frame immediately after hello_ok, per docs/protocol.md.
-    let entries: Vec<proto::DocEntry> = daemon
-        .docs
-        .lock()
-        .await
-        .iter()
-        .map(|(path, info)| proto::DocEntry {
-            path: path.to_string_lossy().into_owned(),
-            via: info.via.clone(),
-            last_changed_ms: info.last_changed_ms,
-        })
-        .collect();
-    let _ = tx.send(Msg::Restore { docs: entries }).await;
+    // Restore frame immediately after hello_ok, per docs/protocol.md:
+    // docs in dock order plus the persisted tile order.
+    let restore = daemon.registry.lock().await.restore_msg();
+    let _ = tx.send(restore).await;
 
     loop {
         let payload = tokio::select! {
@@ -169,6 +161,25 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, msg: Msg) {
             if let Err(e) = docs::handle_open(daemon, &path, "user").await {
                 daemon.push(Msg::Err { msg: e }).await;
             }
+        }
+        Msg::DocRead { path } => {
+            // Fire-and-forget, idempotent; an unknown path is not an error.
+            let known = match daemon.registry.lock().await.docs.get_mut(Path::new(&path)) {
+                Some(info) => {
+                    info.read = true;
+                    true
+                }
+                None => false,
+            };
+            if known {
+                daemon.mark_dirty();
+            } else {
+                debug!("doc_read for unknown path {path}");
+            }
+        }
+        Msg::Layout { dock, tiles } => {
+            daemon.registry.lock().await.apply_layout(dock, tiles);
+            daemon.mark_dirty();
         }
         Msg::Unknown => debug!("ignoring unknown message type from app"),
         other => debug!("ignoring unexpected app message: {other:?}"),

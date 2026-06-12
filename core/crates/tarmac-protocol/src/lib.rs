@@ -1,5 +1,5 @@
 //! Wire types, codec, and framing for the tarmac unix-socket protocol.
-//! Authoritative contract: docs/protocol.md (v1, M0 subset).
+//! Authoritative contract: docs/protocol.md (v1, M0 + M1 subsets).
 
 use serde::{Deserialize, Serialize};
 
@@ -23,8 +23,17 @@ pub enum Msg {
     Open {
         path: String,
     },
+    DocRead {
+        path: String,
+    },
+    Layout {
+        dock: Vec<String>,
+        tiles: Vec<Tile>,
+    },
     Restore {
         docs: Vec<DocEntry>,
+        #[serde(default)]
+        tiles: Vec<Tile>,
     },
     SpawnTerm {
         term_id: String,
@@ -52,10 +61,7 @@ pub enum Msg {
         term_id: String,
         code: Option<i64>,
     },
-    DocOpened {
-        path: String,
-        via: String,
-    },
+    DocOpened(DocEntry),
     FileEvent {
         path: String,
         mtime_ms: u64,
@@ -69,7 +75,37 @@ pub enum Msg {
 pub struct DocEntry {
     pub path: String,
     pub via: String,
+    pub repo: Option<String>,
+    pub repo_root: Option<String>,
+    pub repo_color: Option<u8>,
+    // Wire default is true: an entry without the key (M0 sender) never renders
+    // an unread dot.
+    #[serde(default = "read_default")]
+    pub read: bool,
     pub last_changed_ms: Option<u64>,
+    pub last_opened_ms: Option<u64>,
+}
+
+fn read_default() -> bool {
+    true
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Tile {
+    pub kind: String,
+    pub path: Option<String>,
+}
+
+/// FNV-1a 64-bit over the repo name, mod 4 → palette index 0..=3.
+/// Must stay byte-for-byte identical to the app's Theme.repoColor(for:):
+/// M0 peek-header colors must not change when the daemon takes over hashing.
+pub fn repo_color_index(repo: &str) -> u8 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in repo.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100_0000_01b3);
+    }
+    (hash % 4) as u8
 }
 
 // to_vec_named is load-bearing: plain to_vec emits structs as msgpack arrays,
@@ -152,6 +188,19 @@ mod tests {
         digits.chunks(2).map(|p| (p[0] << 4) | p[1]).collect()
     }
 
+    fn m0_entry(path: &str, via: &str, last_changed_ms: Option<u64>) -> DocEntry {
+        DocEntry {
+            path: path.into(),
+            via: via.into(),
+            repo: None,
+            repo_root: None,
+            repo_color: None,
+            read: true,
+            last_changed_ms,
+            last_opened_ms: None,
+        }
+    }
+
     fn roundtrip(m: &Msg) -> Msg {
         decode(&encode(m).unwrap()).unwrap()
     }
@@ -191,6 +240,88 @@ mod tests {
              a4 63 6f 6c 73 78 a4 72 6f 77 73 28",
             Msg::Resize { term_id: "t1".into(), cols: 120, rows: 40 },
         );
+    }
+
+    #[test]
+    fn conformance_vector_5_doc_read() {
+        assert_vector(
+            "82 a1 74 a8 64 6f 63 5f 72 65 61 64 a4 70 61 74 68 a5 2f 61 2e 6d 64",
+            Msg::DocRead { path: "/a.md".into() },
+        );
+    }
+
+    #[test]
+    fn conformance_vector_6_layout() {
+        assert_vector(
+            "83 a1 74 a6 6c 61 79 6f 75 74 \
+             a4 64 6f 63 6b 91 a5 2f 61 2e 6d 64 \
+             a5 74 69 6c 65 73 92 \
+             81 a4 6b 69 6e 64 a4 74 65 72 6d \
+             82 a4 6b 69 6e 64 a3 64 6f 63 a4 70 61 74 68 a5 2f 61 2e 6d 64",
+            Msg::Layout {
+                dock: vec!["/a.md".into()],
+                tiles: vec![
+                    Tile { kind: "term".into(), path: None },
+                    Tile { kind: "doc".into(), path: Some("/a.md".into()) },
+                ],
+            },
+        );
+    }
+
+    #[test]
+    fn conformance_vector_7_doc_opened_extended() {
+        assert_vector(
+            "87 a1 74 aa 64 6f 63 5f 6f 70 65 6e 65 64 \
+             a4 70 61 74 68 a5 2f 61 2e 6d 64 \
+             a3 76 69 61 a3 63 6c 69 \
+             a4 72 65 70 6f a3 61 70 69 \
+             aa 72 65 70 6f 5f 63 6f 6c 6f 72 03 \
+             a4 72 65 61 64 c2 \
+             ae 6c 61 73 74 5f 6f 70 65 6e 65 64 5f 6d 73 cf 00 00 01 90 00 c7 9c 00",
+            Msg::DocOpened(DocEntry {
+                path: "/a.md".into(),
+                via: "cli".into(),
+                repo: Some("api".into()),
+                repo_root: None,
+                repo_color: Some(3),
+                read: false,
+                last_changed_ms: None,
+                last_opened_ms: Some(1_718_000_000_000),
+            }),
+        );
+    }
+
+    #[test]
+    fn m0_shaped_doc_opened_decodes_with_defaults() {
+        // {t:"doc_opened", path:"/a.md", via:"cli"} — exactly what an M0 daemon sends
+        let bytes = unhex(
+            "83 a1 74 aa 64 6f 63 5f 6f 70 65 6e 65 64 \
+             a4 70 61 74 68 a5 2f 61 2e 6d 64 a3 76 69 61 a3 63 6c 69",
+        );
+        assert_eq!(decode(&bytes).unwrap(), Msg::DocOpened(m0_entry("/a.md", "cli", None)));
+    }
+
+    #[test]
+    fn m0_shaped_restore_decodes_with_defaults() {
+        // {t:"restore", docs:[{path:"/a.md", via:"cli", last_changed_ms:nil}]} — no tiles key
+        let bytes = unhex(
+            "82 a1 74 a7 72 65 73 74 6f 72 65 a4 64 6f 63 73 91 \
+             83 a4 70 61 74 68 a5 2f 61 2e 6d 64 a3 76 69 61 a3 63 6c 69 \
+             af 6c 61 73 74 5f 63 68 61 6e 67 65 64 5f 6d 73 c0",
+        );
+        assert_eq!(
+            decode(&bytes).unwrap(),
+            Msg::Restore { docs: vec![m0_entry("/a.md", "cli", None)], tiles: vec![] }
+        );
+    }
+
+    #[test]
+    fn repo_color_index_matches_theme_hash() {
+        // Reference values from docs/m1/crib-state.md §1.2 (app's Theme.swift FNV-1a).
+        assert_eq!(repo_color_index("payments-api"), 3);
+        assert_eq!(repo_color_index("search-svc"), 2);
+        assert_eq!(repo_color_index("infra"), 1);
+        assert_eq!(repo_color_index("api"), 3);
     }
 
     #[test]
@@ -278,15 +409,30 @@ mod tests {
             Msg::Ack,
             Msg::Err { msg: "boom".into() },
             Msg::Open { path: "/tmp/a.md".into() },
+            Msg::DocRead { path: "/tmp/a.md".into() },
+            Msg::Layout {
+                dock: vec!["/a.md".into(), "/b.md".into()],
+                tiles: vec![
+                    Tile { kind: "term".into(), path: None },
+                    Tile { kind: "doc".into(), path: Some("/b.md".into()) },
+                ],
+            },
+            Msg::Layout { dock: vec![], tiles: vec![] },
             Msg::Restore {
                 docs: vec![
-                    DocEntry { path: "/a.md".into(), via: "cli".into(), last_changed_ms: None },
+                    m0_entry("/a.md", "cli", None),
                     DocEntry {
                         path: "/b.md".into(),
                         via: "user".into(),
+                        repo: Some("payments-api".into()),
+                        repo_root: Some("/Users/x/payments-api".into()),
+                        repo_color: Some(repo_color_index("payments-api")),
+                        read: false,
                         last_changed_ms: Some(1_765_432_100_123),
+                        last_opened_ms: Some(1_765_432_100_456),
                     },
                 ],
+                tiles: vec![Tile { kind: "term".into(), path: None }],
             },
             Msg::SpawnTerm {
                 term_id: "t1".into(),
@@ -301,7 +447,16 @@ mod tests {
             Msg::Resize { term_id: "t1".into(), cols: 80, rows: 24 },
             Msg::Exit { term_id: "t1".into(), code: Some(0) },
             Msg::Exit { term_id: "t1".into(), code: None },
-            Msg::DocOpened { path: "/a.md".into(), via: "user".into() },
+            Msg::DocOpened(DocEntry {
+                path: "/a.md".into(),
+                via: "user".into(),
+                repo: Some("infra".into()),
+                repo_root: Some("/Users/x/infra".into()),
+                repo_color: Some(repo_color_index("infra")),
+                read: true,
+                last_changed_ms: None,
+                last_opened_ms: Some(1_765_432_100_123),
+            }),
             Msg::FileEvent { path: "/a.md".into(), mtime_ms: 1_765_432_100_123 },
         ];
         for m in msgs {

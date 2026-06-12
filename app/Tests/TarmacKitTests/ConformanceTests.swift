@@ -14,7 +14,7 @@ func hexData(_ hex: String) -> Data {
     return out
 }
 
-/// The four mandatory conformance vectors from docs/protocol.md.
+/// The mandatory conformance vectors from docs/protocol.md.
 final class ConformanceTests: XCTestCase {
     private func assertRoundTrips(_ value: MsgPackValue, file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertEqual(try MsgPack.decode(MsgPack.encode(value)), value, file: file, line: line)
@@ -85,6 +85,80 @@ final class ConformanceTests: XCTestCase {
         assertRoundTrips(Message.resize(termID: "t1", cols: 120, rows: 40))
         XCTAssertEqual(try MsgPack.decode(Message.resize(termID: "t1", cols: 120, rows: 40).encodedPayload()), expected)
     }
+
+    func testVector5DocRead() throws {
+        let payload = hexData("82 a1 74 a8 64 6f 63 5f 72 65 61 64 a4 70 61 74 68 a5 2f 61 2e 6d 64")
+        let expected = MsgPackValue.map(["t": .string("doc_read"), "path": .string("/a.md")])
+
+        XCTAssertEqual(try MsgPack.decode(payload), expected)
+        XCTAssertEqual(try Message.decode(payload: payload), .docRead(path: "/a.md"))
+        assertRoundTrips(expected)
+        assertRoundTrips(Message.docRead(path: "/a.md"))
+        XCTAssertEqual(try MsgPack.decode(Message.docRead(path: "/a.md").encodedPayload()), expected)
+    }
+
+    func testVector6Layout() throws {
+        let payload = hexData("""
+            83 a1 74 a6 6c 61 79 6f 75 74
+            a4 64 6f 63 6b 91 a5 2f 61 2e 6d 64
+            a5 74 69 6c 65 73 92
+            81 a4 6b 69 6e 64 a4 74 65 72 6d
+            82 a4 6b 69 6e 64 a3 64 6f 63 a4 70 61 74 68 a5 2f 61 2e 6d 64
+            """)
+        let expected = MsgPackValue.map([
+            "t": .string("layout"),
+            "dock": .array([.string("/a.md")]),
+            "tiles": .array([
+                .map(["kind": .string("term")]),
+                .map(["kind": .string("doc"), "path": .string("/a.md")]),
+            ]),
+        ])
+        let message = Message.layout(
+            dock: ["/a.md"],
+            tiles: [LayoutTile(kind: "term"), LayoutTile(kind: "doc", path: "/a.md")]
+        )
+
+        XCTAssertEqual(try MsgPack.decode(payload), expected)
+        XCTAssertEqual(try Message.decode(payload: payload), message)
+        assertRoundTrips(expected)
+        assertRoundTrips(message)
+        XCTAssertEqual(try MsgPack.decode(message.encodedPayload()), expected)
+    }
+
+    func testVector7DocOpenedExtended() throws {
+        let payload = hexData("""
+            87 a1 74 aa 64 6f 63 5f 6f 70 65 6e 65 64
+            a4 70 61 74 68 a5 2f 61 2e 6d 64
+            a3 76 69 61 a3 63 6c 69
+            a4 72 65 70 6f a3 61 70 69
+            aa 72 65 70 6f 5f 63 6f 6c 6f 72 03
+            a4 72 65 61 64 c2
+            ae 6c 61 73 74 5f 6f 70 65 6e 65 64 5f 6d 73 cf 00 00 01 90 00 c7 9c 00
+            """)
+        let expected = MsgPackValue.map([
+            "t": .string("doc_opened"),
+            "path": .string("/a.md"),
+            "via": .string("cli"),
+            "repo": .string("api"),
+            "repo_color": .int(3),
+            "read": .bool(false),
+            "last_opened_ms": .int(1_718_000_000_000),
+        ])
+        let message = Message.docOpened(doc: RestoreDoc(
+            path: "/a.md",
+            via: "cli",
+            repo: "api",
+            repoColor: 3,
+            read: false,
+            lastOpenedMs: 1_718_000_000_000
+        ))
+
+        XCTAssertEqual(try MsgPack.decode(payload), expected)
+        XCTAssertEqual(try Message.decode(payload: payload), message)
+        assertRoundTrips(expected)
+        assertRoundTrips(message)
+        XCTAssertEqual(try MsgPack.decode(message.encodedPayload()), expected)
+    }
 }
 
 final class MessageDecodingRulesTests: XCTestCase {
@@ -152,11 +226,46 @@ final class MessageDecodingRulesTests: XCTestCase {
     }
 
     func testRestoreRoundTrip() throws {
-        let message = Message.restore(docs: [
-            RestoreDoc(path: "/tmp/a.md", via: "cli", lastChangedMs: 1_765_432_100_123),
-            RestoreDoc(path: "/tmp/b.md", via: "user", lastChangedMs: nil),
-        ])
+        let message = Message.restore(
+            docs: [
+                RestoreDoc(path: "/tmp/a.md", via: "cli", lastChangedMs: 1_765_432_100_123),
+                RestoreDoc(
+                    path: "/tmp/b.md",
+                    via: "user",
+                    repo: "payments-api",
+                    repoRoot: "/Users/x/payments-api",
+                    repoColor: 3,
+                    read: false,
+                    lastChangedMs: nil,
+                    lastOpenedMs: 1_765_432_100_456
+                ),
+            ],
+            tiles: [LayoutTile(kind: "term"), LayoutTile(kind: "doc", path: "/tmp/b.md")]
+        )
         XCTAssertEqual(try Message.decode(payload: message.encodedPayload()), message)
+    }
+
+    func testM0ShapedDocEntryDecodesWithDefaults() throws {
+        // {t:"doc_opened", path:"/a.md", via:"cli"} — exactly what an M0 daemon sends.
+        let docOpened = hexData("""
+            83 a1 74 aa 64 6f 63 5f 6f 70 65 6e 65 64
+            a4 70 61 74 68 a5 2f 61 2e 6d 64 a3 76 69 61 a3 63 6c 69
+            """)
+        XCTAssertEqual(
+            try Message.decode(payload: docOpened),
+            .docOpened(doc: RestoreDoc(path: "/a.md", via: "cli"))
+        )
+
+        // {t:"restore", docs:[{path:"/a.md", via:"cli", last_changed_ms:nil}]} — no tiles key.
+        let restore = hexData("""
+            82 a1 74 a7 72 65 73 74 6f 72 65 a4 64 6f 63 73 91
+            83 a4 70 61 74 68 a5 2f 61 2e 6d 64 a3 76 69 61 a3 63 6c 69
+            af 6c 61 73 74 5f 63 68 61 6e 67 65 64 5f 6d 73 c0
+            """)
+        XCTAssertEqual(
+            try Message.decode(payload: restore),
+            .restore(docs: [RestoreDoc(path: "/a.md", via: "cli")], tiles: [])
+        )
     }
 
     func testAllMessagesRoundTrip() throws {
@@ -166,14 +275,28 @@ final class MessageDecodingRulesTests: XCTestCase {
             .ack,
             .err(msg: "nope"),
             .open(path: "/abs/x.md"),
-            .restore(docs: []),
+            .docRead(path: "/abs/x.md"),
+            .layout(dock: [], tiles: []),
+            .layout(
+                dock: ["/abs/x.md", "/abs/y.md"],
+                tiles: [LayoutTile(kind: "term"), LayoutTile(kind: "doc", path: "/abs/y.md")]
+            ),
+            .restore(docs: [], tiles: []),
             .spawnTerm(termID: "u-1", cols: 191, rows: 49, cwd: "/Users/x", cmd: ["/bin/echo", "hi"]),
             .input(termID: "u-1", bytes: Data([0x03])),
             .resize(termID: "u-1", cols: 80, rows: 24),
             .output(termID: "u-1", bytes: Data(repeating: 0xab, count: 70_000)),
             .exit(termID: "u-1", code: -1),
             .exit(termID: "u-1", code: nil),
-            .docOpened(path: "/abs/x.md", via: "user"),
+            .docOpened(doc: RestoreDoc(
+                path: "/abs/x.md",
+                via: "user",
+                repo: "infra",
+                repoRoot: "/Users/x/infra",
+                repoColor: 1,
+                read: true,
+                lastOpenedMs: 1_765_432_100_123
+            )),
             .fileEvent(path: "/abs/x.md", mtimeMs: 1_765_432_100_123),
         ]
         for message in messages {

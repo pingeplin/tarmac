@@ -6,13 +6,104 @@ use std::time::Duration;
 
 use notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache, new_debouncer};
-use tarmac_protocol::Msg;
-use tokio::sync::{Mutex, mpsc};
+use tarmac_protocol::{DocEntry, Msg, Tile};
+use tokio::sync::{Mutex, Notify, mpsc};
 use tokio_util::sync::CancellationToken;
 
 pub struct DocInfo {
     pub via: String,
+    pub read: bool,
+    pub repo: Option<String>,
+    pub repo_root: Option<String>,
+    pub repo_color: Option<u8>,
     pub last_changed_ms: Option<u64>,
+    pub last_opened_ms: u64,
+}
+
+pub fn term_tile() -> Tile {
+    Tile { kind: "term".into(), path: None }
+}
+
+pub struct Registry {
+    pub docs: HashMap<PathBuf, DocInfo>,
+    // Dock order is insertion order; re-opens never move a doc and the dock
+    // never shrinks in M1 (crib §5.1).
+    pub dock: Vec<PathBuf>,
+    pub tiles: Vec<Tile>,
+}
+
+impl Registry {
+    pub fn empty() -> Self {
+        Registry { docs: HashMap::new(), dock: Vec::new(), tiles: vec![term_tile()] }
+    }
+
+    pub fn entry(&self, path: &Path) -> Option<DocEntry> {
+        let info = self.docs.get(path)?;
+        Some(DocEntry {
+            path: path.to_string_lossy().into_owned(),
+            via: info.via.clone(),
+            repo: info.repo.clone(),
+            repo_root: info.repo_root.clone(),
+            repo_color: info.repo_color,
+            read: info.read,
+            last_changed_ms: info.last_changed_ms,
+            last_opened_ms: Some(info.last_opened_ms),
+        })
+    }
+
+    pub fn restore_msg(&self) -> Msg {
+        Msg::Restore {
+            docs: self.dock.iter().filter_map(|p| self.entry(p)).collect(),
+            tiles: self.tiles.clone(),
+        }
+    }
+
+    // Merge per docs/protocol.md "layout": paths not in the registry are
+    // dropped; registered docs missing from the snapshot keep their previous
+    // relative order, appended at the end.
+    pub fn apply_layout(&mut self, dock: Vec<String>, tiles: Vec<Tile>) {
+        let mut seen: HashSet<PathBuf> = HashSet::new();
+        let mut order: Vec<PathBuf> = Vec::new();
+        for p in dock {
+            let p = PathBuf::from(p);
+            if self.docs.contains_key(&p) && seen.insert(p.clone()) {
+                order.push(p);
+            }
+        }
+        for p in std::mem::take(&mut self.dock) {
+            if seen.insert(p.clone()) {
+                order.push(p);
+            }
+        }
+        self.dock = order;
+        self.set_tiles(tiles);
+    }
+
+    pub fn set_tiles(&mut self, tiles: Vec<Tile>) {
+        let mut kept: Vec<Tile> = Vec::new();
+        let mut have_term = false;
+        for t in tiles {
+            match t.kind.as_str() {
+                "term" if !have_term => {
+                    have_term = true;
+                    kept.push(t);
+                }
+                "doc" => {
+                    if t.path.as_deref().is_some_and(|p| self.docs.contains_key(Path::new(p))) {
+                        kept.push(t);
+                    }
+                }
+                // Duplicate "term" or a kind from a newer protocol: skip the
+                // tile, keep the rest (protocol rule).
+                _ => {}
+            }
+        }
+        // M1 restores always carry exactly one term tile.
+        if !have_term {
+            kept.insert(0, term_tile());
+        }
+        self.tiles = kept;
+    }
 }
 
 pub struct AppSlot {
@@ -28,30 +119,48 @@ pub struct WatcherState {
 
 pub struct Daemon {
     pub app: Mutex<Option<AppSlot>>,
-    pub docs: Mutex<HashMap<PathBuf, DocInfo>>,
+    pub registry: Mutex<Registry>,
     pub terms: Mutex<HashMap<String, Arc<crate::term::TermHandle>>>,
     watcher: std::sync::Mutex<WatcherState>,
     next_generation: AtomicU64,
+    dirty: Notify,
+    state_path: PathBuf,
 }
 
 impl Daemon {
-    pub fn new() -> anyhow::Result<Arc<Self>> {
+    pub fn new(state_path: PathBuf) -> anyhow::Result<Arc<Self>> {
         let (tx, rx) = mpsc::unbounded_channel::<DebounceEventResult>();
         // 100 ms debounce per docs/protocol.md file-watching semantics.
         let debouncer = new_debouncer(Duration::from_millis(100), None, move |res| {
             let _ = tx.send(res);
         })?;
+        let registry = crate::persist::load(&state_path);
+        let watch_dirs: HashSet<PathBuf> = registry
+            .dock
+            .iter()
+            .filter_map(|p| p.parent().map(Path::to_path_buf))
+            .collect();
         let daemon = Arc::new(Daemon {
             app: Mutex::new(None),
-            docs: Mutex::new(HashMap::new()),
+            registry: Mutex::new(registry),
             terms: Mutex::new(HashMap::new()),
             watcher: std::sync::Mutex::new(WatcherState {
                 debouncer,
                 watched_dirs: HashSet::new(),
             }),
             next_generation: AtomicU64::new(1),
+            dirty: Notify::new(),
+            state_path,
         });
+        // Watches restart eagerly at load; a vanished parent dir only loses
+        // file events — the doc keeps its dock slot (no doc_removed in M1).
+        for dir in watch_dirs {
+            if let Err(e) = daemon.ensure_watched(&dir) {
+                tracing::warn!("cannot rewatch {}: {e}", dir.display());
+            }
+        }
         tokio::spawn(crate::docs::watch_loop(daemon.clone(), rx));
+        tokio::spawn(crate::persist::save_loop(daemon.clone()));
         Ok(daemon)
     }
 
@@ -63,6 +172,18 @@ impl Daemon {
         w.debouncer.watch(dir, RecursiveMode::NonRecursive)?;
         w.watched_dirs.insert(dir.to_owned());
         Ok(())
+    }
+
+    pub fn mark_dirty(&self) {
+        self.dirty.notify_one();
+    }
+
+    pub async fn dirty_notified(&self) {
+        self.dirty.notified().await;
+    }
+
+    pub fn state_path(&self) -> &Path {
+        &self.state_path
     }
 
     pub async fn install_app(&self, tx: mpsc::Sender<Msg>) -> (u64, CancellationToken) {

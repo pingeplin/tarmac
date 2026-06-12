@@ -1,12 +1,18 @@
 import AppKit
-import WebKit
 import QuartzCore
+import TarmacKit
 
 /// kbd chip per crib: mono 500 10px muted, bg2, 1px line border with a 2px
-/// bottom edge, radius 4, padding 1px 5px.
+/// bottom edge, radius 4, padding 1px 5px. With an onClick it is a button
+/// (hover bg3 + text color); without one it is display-only, as in M0.
 final class KbdChipView: NSView {
+    var onClick: (() -> Void)?
+
     private let label: NSTextField
     private let size: NSSize
+    private var trackingArea: NSTrackingArea?
+
+    override var acceptsFirstResponder: Bool { false }
 
     init(_ text: String) {
         label = NSTextField(labelWithString: text)
@@ -34,28 +40,70 @@ final class KbdChipView: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override var intrinsicContentSize: NSSize { size }
+
+    // Display-only chips stay click-through; buttons capture clicks on children too.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard onClick != nil else { return nil }
+        return super.hitTest(point) == nil ? nil : self
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onClick?()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        guard onClick != nil else { return }
+        layer?.backgroundColor = Theme.bg3.cgColor
+        label.textColor = Theme.text
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        guard onClick != nil else { return }
+        layer?.backgroundColor = Theme.bg2.cgColor
+        label.textColor = Theme.muted
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea { removeTrackingArea(trackingArea) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            owner: self
+        )
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func resetCursorRects() {
+        if onClick != nil {
+            addCursorRect(bounds, cursor: .pointingHand)
+        }
+    }
 }
 
 @MainActor
-final class PeekPanel: NSView, WKNavigationDelegate {
+final class PeekPanel: NSView {
+    var onPin: (() -> Void)?
+    var onClose: (() -> Void)?
+
     private let header = NSView()
     private let repoDot = NSView()
     private let pathLabel = NSTextField(labelWithString: "")
+    // Honest meta per crib-state §3.1: agent cyan @0.85, header font, M1 = time part only.
+    private let meta = RecentMetaLabel(font: Theme.mono(11), color: Theme.agent.withAlphaComponent(0.85))
+    private let pinChip = KbdChipView("⌘⏎ pin")
     private let escChip = KbdChipView("esc")
     private let leftBorder = NSView()
     private let headerHairline = NSView()
-    private let webView: WKWebView
+    private let docView = DocWebView()
 
-    private var pageLoaded = false
-    private var pendingMarkdown: String?
     private(set) var currentPath: String?
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
 
     init() {
-        let config = WKWebViewConfiguration()
-        webView = WKWebView(frame: .zero, configuration: config)
         super.init(frame: .zero)
 
         wantsLayer = true
@@ -88,14 +136,15 @@ final class PeekPanel: NSView, WKNavigationDelegate {
         pathLabel.lineBreakMode = .byTruncatingHead
         header.addSubview(pathLabel)
 
+        meta.onUpdate = { [weak self] in self?.needsLayout = true }
+        header.addSubview(meta)
+
+        pinChip.onClick = { [weak self] in self?.onPin?() }
+        header.addSubview(pinChip)
+        escChip.onClick = { [weak self] in self?.onClose?() }
         header.addSubview(escChip)
 
-        webView.navigationDelegate = self
-        webView.underPageBackgroundColor = Theme.bg1
-        webView.setValue(false, forKey: "drawsBackground")
-        addSubview(webView)
-
-        loadTemplate()
+        addSubview(docView)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -104,78 +153,58 @@ final class PeekPanel: NSView, WKNavigationDelegate {
         super.layout()
         leftBorder.frame = NSRect(x: 0, y: 0, width: 1, height: bounds.height)
         header.frame = NSRect(x: 1, y: 0, width: bounds.width - 1, height: 36)
-        webView.frame = NSRect(x: 1, y: 36, width: bounds.width - 1, height: max(0, bounds.height - 36))
+        docView.frame = NSRect(x: 1, y: 36, width: bounds.width - 1, height: max(0, bounds.height - 36))
 
         let hh = header.bounds.height
         headerHairline.frame = NSRect(x: 0, y: 0, width: header.bounds.width, height: 1)
         repoDot.frame = NSRect(x: 12, y: (hh - 7) / 2, width: 7, height: 7)
-        let chipSize = escChip.intrinsicContentSize
+        let escSize = escChip.intrinsicContentSize
         escChip.frame = NSRect(
-            x: header.bounds.width - 12 - chipSize.width,
-            y: (hh - chipSize.height) / 2,
-            width: chipSize.width,
-            height: chipSize.height
+            x: header.bounds.width - 12 - escSize.width,
+            y: (hh - escSize.height) / 2,
+            width: escSize.width,
+            height: escSize.height
+        )
+        let pinSize = pinChip.intrinsicContentSize
+        pinChip.frame = NSRect(
+            x: escChip.frame.minX - 6 - pinSize.width,
+            y: (hh - pinSize.height) / 2,
+            width: pinSize.width,
+            height: pinSize.height
         )
         let labelHeight = pathLabel.intrinsicContentSize.height
         let labelX: CGFloat = 12 + 7 + 8
+        var labelMax = pinChip.frame.minX - 8
+        if !meta.isHidden {
+            labelMax -= meta.frame.width + 8
+        }
         pathLabel.frame = NSRect(
             x: labelX,
             y: (hh - labelHeight) / 2,
-            width: max(0, escChip.frame.minX - 8 - labelX),
+            width: max(0, min(pathLabel.fittedSize.width, labelMax - labelX)),
             height: labelHeight
         )
+        if !meta.isHidden {
+            meta.setFrameOrigin(NSPoint(x: pathLabel.frame.maxX + 8, y: ((hh - meta.frame.height) / 2).rounded()))
+        }
     }
 
-    func present(path: String, markdown: String) {
+    func present(path: String, doc: RestoreDoc?, markdown: String) {
         currentPath = path
-        let home = NSHomeDirectory()
-        pathLabel.stringValue = path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
-        let repoKey = (path as NSString).deletingLastPathComponent
-        repoDot.layer?.backgroundColor = Theme.repoColor(for: (repoKey as NSString).lastPathComponent).cgColor
-        render(markdown: markdown)
-    }
-
-    func render(markdown: String) {
-        guard pageLoaded else {
-            pendingMarkdown = markdown
-            return
-        }
-        guard
-            let json = try? JSONSerialization.data(withJSONObject: markdown, options: [.fragmentsAllowed]),
-            let literal = String(data: json, encoding: .utf8)
-        else { return }
-        webView.evaluateJavaScript("window.tarmacRender(\(literal));", completionHandler: nil)
-    }
-
-    private func loadTemplate() {
-        if let url = Bundle.module.url(forResource: "DocTemplate", withExtension: "html") {
-            webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        if let doc {
+            pathLabel.stringValue = doc.displayPath
+            repoDot.layer?.backgroundColor =
+                Theme.repoColor(index: doc.repoColor, fallbackName: doc.displayRepoName).cgColor
+            meta.setChanged(doc.lastChangedMs)
         } else {
-            // Fallback if the bundled template is missing: plain-text rendering only.
-            webView.loadHTMLString(Self.fallbackHTML, baseURL: nil)
+            // M0 fallback for paths the registry does not know.
+            let home = NSHomeDirectory()
+            pathLabel.stringValue = path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
+            let repoKey = (path as NSString).deletingLastPathComponent
+            repoDot.layer?.backgroundColor = Theme.repoColor(for: (repoKey as NSString).lastPathComponent).cgColor
+            meta.setChanged(nil)
         }
+        needsLayout = true
+        docView.render(markdown: markdown)
     }
-
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        pageLoaded = true
-        if let pending = pendingMarkdown {
-            pendingMarkdown = nil
-            render(markdown: pending)
-        }
-    }
-
-    private static let fallbackHTML = """
-        <!doctype html><html><head><meta charset="utf-8"><style>
-        body { background:#12151a; color:#b9bec8; margin:0; }
-        #doc { max-width:720px; margin:0 auto; padding:26px 36px 72px;
-               font:400 12px/1.7 ui-monospace, Menlo, monospace; white-space:pre-wrap; }
-        </style></head><body><div id="doc"></div><script>
-        window.tarmacRender = function (md) {
-          var s = document.scrollingElement || document.documentElement;
-          var y = s.scrollTop;
-          document.getElementById("doc").textContent = md == null ? "" : String(md);
-          s.scrollTop = y;
-        };
-        </script></body></html>
-        """
 }

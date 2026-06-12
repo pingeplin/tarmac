@@ -58,9 +58,10 @@ final class AppController {
     private var lastSpawnAt: Date?
     private var rapidExitCount = 0
 
-    /// Recency order for ⌘P; last element is the most recent (latest of restore
-    /// list order, doc_opened, file_event).
-    private var recentDocs: [String] = []
+    private let store = DocStore()
+    /// Set just before a doc_opened upsert so the 0→1 transition (and only it)
+    /// plays the dock birth slide; restore populates without animation.
+    private var dockBirthPending = false
     private var escMonitor: Any?
 
     init(window: NSWindow, rootView: RootView) {
@@ -77,6 +78,17 @@ final class AppController {
         termDelegate.controller = self
         terminalView.terminalDelegate = termDelegate
         rootView.attachTerminal(terminalView)
+
+        store.onChange = { [weak self] in self?.docsChanged() }
+        store.onFileChange = { [weak self] path in self?.rootView.dock.pulse(path) }
+        rootView.dock.onPeek = { [weak self] path in self?.openPeek(path) }
+        rootView.dock.onToggleIndex = { [weak self] in self?.toggleIndex() }
+        rootView.index.onPeek = { [weak self] path in self?.openPeek(path) }
+        rootView.index.onToggleIndex = { [weak self] in self?.toggleIndex() }
+        rootView.peek.onPin = { [weak self] in self?.togglePinPeeked() }
+        rootView.peek.onClose = { [weak self] in self?.hidePeek() }
+        rootView.desk.docContent = { [weak self] path in self?.readMarkdown(path) ?? "" }
+        rootView.desk.onOrderChanged = { [weak self] in self?.deskOrderChanged() }
     }
 
     func start() {
@@ -91,6 +103,11 @@ final class AppController {
             let isEsc = event.keyCode == 53
             let swallowed = MainActor.assumeIsolated { () -> Bool in
                 guard let self, isEsc else { return false }
+                // An active drag swallows esc ahead of peek/toast dismissal
+                // (crib-desk-tiles §5 DECISION).
+                if self.rootView.desk.cancelDrag() {
+                    return true
+                }
                 if self.rootView.peekVisible {
                     self.hidePeek()
                     return true
@@ -132,22 +149,42 @@ final class AppController {
         case .helloOK:
             connected = true
             maybeSpawn()
-        case .restore(let docs):
-            var seen = Set<String>()
-            recentDocs = docs.map(\.path).filter { seen.insert($0).inserted }
+        case .restore(let docs, let tiles):
+            store.applyRestore(docs)
+            rootView.desk.setTiles(order: tileOrder(from: tiles))
+            refreshStrips()
         case .output(let termID, let bytes):
             guard termID == currentTermID else { return }
             terminalView.feed(byteArray: [UInt8](bytes)[...])
         case .exit(let termID, let code):
             handleExit(termID: termID, code: code)
-        case .docOpened(let path, _):
-            bumpRecent(path)
-            rootView.toasts.show(title: "doc · \((path as NSString).lastPathComponent)", body: "⌘P to peek")
-            if rootView.peekVisible && peekPath == path {
-                refreshPeek(path)
+        case .docOpened(let doc):
+            let firstDoc = store.isEmpty
+            dockBirthPending = firstDoc
+            store.applyDocOpened(doc)
+            if doc.via == "cli" {
+                let peekAction: () -> Void = { [weak self, path = doc.path] in self?.openPeek(path) }
+                let peekChip = (firstDoc ? "⌘P peek" : "⏎ peek", peekAction)
+                rootView.toasts.show(
+                    icon: "✚",
+                    title: firstDoc ? "first doc · \(doc.displayPath)" : "tarmac open \(doc.displayPath)",
+                    body: firstDoc ? "opened via tarmac open" : nil,
+                    chips: [peekChip, ("esc", nil)]
+                )
             }
-        case .fileEvent(let path, _):
-            bumpRecent(path)
+            if (rootView.peekVisible && peekPath == doc.path) || rootView.desk.isPinned(doc.path) {
+                // The doc is on screen: mark read immediately (crib-state §2.1).
+                store.markRead(doc.path)
+                client.docRead(path: doc.path)
+                if rootView.peekVisible && peekPath == doc.path {
+                    refreshPeek(doc.path)
+                }
+            }
+        case .fileEvent(let path, let mtimeMs):
+            store.applyFileEvent(path: path, mtimeMs: mtimeMs)
+            if rootView.desk.isPinned(path) {
+                rootView.desk.renderDoc(path: path, markdown: readMarkdown(path))
+            }
             if rootView.peekVisible && peekPath == path {
                 refreshPeek(path)
             }
@@ -200,6 +237,11 @@ final class AppController {
         lastSentRows = rows
         lastSpawnAt = Date()
         client.spawnTerm(termID: termID, cols: cols, rows: rows, cwd: NSHomeDirectory(), cmd: nil)
+        // cmd nil ⇒ the daemon spawns $SHELL (else /bin/zsh); mirror that
+        // resolution for the tile label — a fact known at spawn time
+        // (crib-desk-tiles §2 DECISION).
+        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        rootView.desk.setTermLabel((shell as NSString).lastPathComponent)
     }
 
     private func handleExit(termID: String, code: Int?) {
@@ -232,38 +274,121 @@ final class AppController {
     // MARK: - Docs / peek
 
     private var peekPath: String? { rootView.peek.currentPath }
+    private var activeDocPath: String? { rootView.peekVisible ? rootView.peek.currentPath : nil }
 
-    private func bumpRecent(_ path: String) {
-        recentDocs.removeAll { $0 == path }
-        recentDocs.append(path)
+    private func docsChanged() {
+        let birth = dockBirthPending
+        dockBirthPending = false
+        if store.isEmpty {
+            rootView.setLeftStrip(.none)
+        } else if rootView.leftStrip == .none {
+            rootView.setLeftStrip(.dock, birth: birth)
+        }
+        refreshStrips()
     }
 
-    func togglePeek() {
-        if rootView.peekVisible {
-            hidePeek()
-        } else {
-            guard let path = recentDocs.last else {
-                NSSound.beep()
-                return
-            }
-            openPeek(path)
+    private func refreshStrips() {
+        var dockActive = Set(rootView.desk.pinnedPaths)
+        if let peeked = activeDocPath {
+            dockActive.insert(peeked)
         }
+        rootView.dock.update(docs: store.docs, activePaths: dockActive)
+        rootView.index.update(docs: store.docs, activePath: activeDocPath)
+        rootView.desk.update(docs: store.docs)
+    }
+
+    /// ⌘P: peek (or re-target) the most-recent doc — never closes an open peek
+    /// (crib-state §6 supersedes M0's toggle).
+    func peekRecent() {
+        guard let path = store.mostRecentPath else {
+            NSSound.beep()
+            return
+        }
+        openPeek(path)
+    }
+
+    /// ⌘E: dock 46px ↔ index 224px; no-op before the first doc exists.
+    func toggleIndex() {
+        switch rootView.leftStrip {
+        case .none:
+            return
+        case .dock:
+            rootView.setLeftStrip(.index)
+        case .index:
+            rootView.setLeftStrip(.dock)
+        }
+        // Focus rule: clicks on the strip never move focus off the terminal.
+        window?.makeFirstResponder(terminalView)
     }
 
     func openPeek(_ path: String) {
-        rootView.peek.present(path: path, markdown: readMarkdown(path))
+        rootView.peek.present(path: path, doc: store.doc(for: path), markdown: readMarkdown(path))
         rootView.setPeekVisible(true)
+        // Presentation marks read; doc_read is idempotent and sent every time.
+        store.markRead(path)
+        client.docRead(path: path)
+        refreshStrips()
         // Focus rule: opening a peek never moves keyboard focus off the terminal.
         window?.makeFirstResponder(terminalView)
     }
 
     func hidePeek() {
         rootView.setPeekVisible(false)
+        refreshStrips()
         window?.makeFirstResponder(terminalView)
     }
 
+    /// ⌘⏎ (key or peek-header chip): toggle pin of the peeked doc, closing the
+    /// peek either way (crib-desk-tiles §4, README toggle conflict resolution);
+    /// no-op without a peek. A full desk rejects the pin and keeps the peek.
+    func togglePinPeeked() {
+        guard rootView.peekVisible, let path = peekPath else { return }
+        if rootView.desk.isPinned(path) {
+            rootView.desk.unpin(path)
+        } else {
+            guard !rootView.desk.isFull else {
+                rootView.toasts.show(title: "desk full", body: "✕ on a tile unpins it")
+                return
+            }
+            rootView.desk.pin(path)
+        }
+        hidePeek()
+    }
+
+    /// Every committed pin/unpin/swap reports the full layout snapshot
+    /// (docs/protocol.md `layout`; last-writer-wins).
+    private func deskOrderChanged() {
+        client.layout(
+            dock: store.docs.map(\.path),
+            tiles: rootView.desk.order.map { key in
+                switch key {
+                case .term: return LayoutTile(kind: "term")
+                case .doc(let path): return LayoutTile(kind: "doc", path: path)
+                }
+            }
+        )
+        refreshStrips()
+        window?.makeFirstResponder(terminalView)
+    }
+
+    /// `restore.tiles[]` → desk order: unknown kinds and unregistered paths
+    /// are skipped per the protocol receiver rules.
+    private func tileOrder(from tiles: [LayoutTile]) -> [TileKey] {
+        tiles.compactMap { tile in
+            switch tile.kind {
+            case "term":
+                return .term
+            case "doc":
+                guard let path = tile.path, store.doc(for: path) != nil else { return nil }
+                return .doc(path)
+            default:
+                return nil
+            }
+        }
+    }
+
     private func refreshPeek(_ path: String) {
-        rootView.peek.render(markdown: readMarkdown(path))
+        rootView.peek.present(path: path, doc: store.doc(for: path), markdown: readMarkdown(path))
     }
 
     private func readMarkdown(_ path: String) -> String {

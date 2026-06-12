@@ -11,6 +11,9 @@ SMOKE="$ROOT/app/.build/debug/tarmac-smoke"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tarmac-e2e.XXXXXX")"
 export TARMAC_SOCKET="$WORK/tarmacd.sock"
+# M1 daemons persist dock state; without this the e2e daemon would read and
+# write the user's real state.json.
+export TARMAC_STATE="$WORK/state.json"
 DAEMON_LOG="$WORK/tarmacd.log"
 DAEMON_PID=""
 
@@ -69,6 +72,13 @@ CLI_OUT="$("$TARMAC_CLI" open "$DOC" 2>&1)"
 CLI_RC=$?
 echo "$CLI_OUT" | sed 's/^/    /'
 [ $CLI_RC -eq 0 ] || fail "tarmac open exited $CLI_RC"
+
+echo "==> waiting for state.json to record the doc"
+for _ in $(seq 1 40); do
+  grep -qs "e2e-doc.md" "$TARMAC_STATE" && break
+  sleep 0.1
+done
+grep -qs "e2e-doc.md" "$TARMAC_STATE" || fail "state.json did not record the opened doc within 4 s"
 
 echo "==> stopping daemon"
 kill "$DAEMON_PID" 2>/dev/null

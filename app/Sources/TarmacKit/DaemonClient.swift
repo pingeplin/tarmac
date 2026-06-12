@@ -123,6 +123,14 @@ public final class DaemonClient: @unchecked Sendable {
         send(.open(path: path))
     }
 
+    public func docRead(path: String) {
+        send(.docRead(path: path))
+    }
+
+    public func layout(dock: [String], tiles: [LayoutTile]) {
+        send(.layout(dock: dock, tiles: tiles))
+    }
+
     // MARK: - Internals
 
     private func connectOnce() throws {

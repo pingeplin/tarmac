@@ -131,7 +131,7 @@ final class Smoke {
 
         client.open(path: canonical)
         let openedVia: String? = waitFor(5) {
-            if case .docOpened(let path, let via) = $0, path == canonical { return via } else { return nil }
+            if case .docOpened(let doc) = $0, doc.path == canonical { return doc.via } else { return nil }
         }
         check("doc_opened received", openedVia != nil, "no doc_opened for \(canonical) within 5 s")
         if let openedVia {

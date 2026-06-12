@@ -14,6 +14,9 @@ enum Theme {
     static let muted = srgb(0x8c93a0)
     static let faint = srgb(0x5a616d)
     static let agent = srgb(0x4eccd3)
+    static let agentDim = srgb(0x4eccd3, alpha: 0.16)
+    // Drag-lift border (crib-desk-tiles §5; authored hex, not a theme.css token).
+    static let liftBorder = srgb(0x39414e)
     static let amber = srgb(0xe1ad63)
     static let ok = srgb(0x7fc08c)
 
@@ -32,6 +35,15 @@ enum Theme {
             hash = hash &* 0x100000001b3
         }
         return repoColors[Int(hash % UInt64(repoColors.count))]
+    }
+
+    /// Daemon-assigned index wins; the local hash is the repo==nil fallback
+    /// (same algorithm, per docs/protocol.md "repo_color").
+    static func repoColor(index: Int?, fallbackName: String) -> NSColor {
+        if let index, repoColors.indices.contains(index) {
+            return repoColors[index]
+        }
+        return repoColor(for: fallbackName)
     }
 
     /// IBM Plex Mono else SF Mono (else Menlo, unreachable: monospacedSystemFont

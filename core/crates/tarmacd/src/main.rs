@@ -1,5 +1,6 @@
 mod conn;
 mod docs;
+mod persist;
 mod state;
 mod term;
 
@@ -13,6 +14,14 @@ fn socket_path() -> PathBuf {
     }
     let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"));
     home.join("Library/Application Support/tarmac/tarmacd.sock")
+}
+
+fn state_path() -> PathBuf {
+    if let Some(p) = std::env::var_os("TARMAC_STATE") {
+        return PathBuf::from(p);
+    }
+    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"));
+    home.join("Library/Application Support/tarmac/state.json")
 }
 
 // Per docs/protocol.md: if the socket file exists, try connecting — success
@@ -51,7 +60,7 @@ async fn main() -> anyhow::Result<()> {
     let listener = UnixListener::bind(&sock)?;
     info!("tarmacd listening on {}", sock.display());
 
-    let daemon = state::Daemon::new()?;
+    let daemon = state::Daemon::new(state_path())?;
 
     let sock_for_signal = sock.clone();
     tokio::spawn(async move {

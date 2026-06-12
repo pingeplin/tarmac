@@ -2,16 +2,23 @@ import AppKit
 import QuartzCore
 import SwiftTerm
 
-/// Content view: bg0 desk with a 12px padding, the terminal tile filling it,
-/// the peek slide-over above, and the toast overlay on top.
+/// Content view: optional left strip (dock 46px / index 224px), the desk grid
+/// (terminal + pinned doc tiles) filling the rest, the peek slide-over above,
+/// and the toast overlay on top.
 @MainActor
 final class RootView: NSView {
-    let terminalTile = NSView()
+    enum LeftStrip {
+        case none, dock, index
+    }
+
+    let desk = DeskGridView()
+    let dock = DockView()
+    let index = IndexView()
     let peek = PeekPanel()
     let toasts = ToastStackView()
 
-    private(set) weak var terminalView: TerminalView?
     private(set) var peekVisible = false
+    private(set) var leftStrip: LeftStrip = .none
     private var peekAnimating = false
 
     override var isFlipped: Bool { true }
@@ -21,12 +28,12 @@ final class RootView: NSView {
         wantsLayer = true
         layer?.backgroundColor = Theme.bg0.cgColor
 
-        terminalTile.wantsLayer = true
-        terminalTile.layer?.backgroundColor = Theme.termBg.cgColor
-        terminalTile.layer?.cornerRadius = 9
-        terminalTile.layer?.borderColor = Theme.line.cgColor
-        terminalTile.layer?.borderWidth = 1
-        addSubview(terminalTile)
+        addSubview(desk)
+
+        dock.isHidden = true
+        addSubview(dock)
+        index.isHidden = true
+        addSubview(index)
 
         peek.isHidden = true
         addSubview(peek)
@@ -36,19 +43,47 @@ final class RootView: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     func attachTerminal(_ terminal: TerminalView) {
-        terminalView = terminal
-        terminalTile.addSubview(terminal)
+        desk.attachTerminal(terminal)
+    }
+
+    /// Dock 46 ↔ index 224 swaps are instant (one terminal reflow per crib
+    /// §2.1); only the 0→dock birth slides, and the desk reflow itself is
+    /// never animated.
+    func setLeftStrip(_ strip: LeftStrip, birth: Bool = false) {
+        guard strip != leftStrip else { return }
+        leftStrip = strip
+        dock.isHidden = strip != .dock
+        index.isHidden = strip != .index
+        needsLayout = true
+        layoutSubtreeIfNeeded()
+
+        if birth, strip == .dock, !Theme.reduceMotion {
+            let slide = CABasicAnimation(keyPath: "transform.translation.x")
+            slide.fromValue = -46
+            slide.toValue = 0
+            slide.duration = 0.22
+            slide.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.8, 0.2, 1.0)
+            dock.layer?.add(slide, forKey: "dockBirth")
+        }
+    }
+
+    private var leftStripWidth: CGFloat {
+        switch leftStrip {
+        case .none: return 0
+        case .dock: return 46
+        case .index: return 224
+        }
     }
 
     override func layout() {
         super.layout()
-        terminalTile.frame = bounds.insetBy(dx: 12, dy: 12)
-        // Terminal body padding per crib: 12px vertical, 16px horizontal.
-        terminalView?.frame = NSRect(
-            x: 16,
-            y: 12,
-            width: max(0, terminalTile.bounds.width - 32),
-            height: max(0, terminalTile.bounds.height - 24)
+        dock.frame = NSRect(x: 0, y: 0, width: 46, height: bounds.height)
+        index.frame = NSRect(x: 0, y: 0, width: 224, height: bounds.height)
+        desk.frame = NSRect(
+            x: leftStripWidth,
+            y: 0,
+            width: max(0, bounds.width - leftStripWidth),
+            height: bounds.height
         )
         if !peekAnimating {
             peek.frame = peekFrame(visible: peekVisible)

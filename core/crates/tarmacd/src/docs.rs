@@ -10,6 +10,38 @@ use tracing::{debug, warn};
 
 use crate::state::{Daemon, DocInfo};
 
+pub struct RepoInfo {
+    pub name: String,
+    pub root: String,
+    pub color: u8,
+}
+
+// Walk parents toward / looking for a .git entry; a plain file counts too
+// (worktrees and submodules use a gitfile). None ⇒ not in a repo; the wire
+// carries nil and the app falls back to the parent-dir basename as in M0.
+pub fn derive_repo(doc: &Path) -> Option<RepoInfo> {
+    let mut dir = doc.parent();
+    while let Some(d) = dir {
+        if d.join(".git").exists() {
+            let name = d.file_name()?.to_string_lossy().into_owned();
+            return Some(RepoInfo {
+                color: tarmac_protocol::repo_color_index(&name),
+                root: d.to_string_lossy().into_owned(),
+                name,
+            });
+        }
+        dir = d.parent();
+    }
+    None
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 // Single code path for CLI ("cli") and app ("user") opens.
 pub async fn handle_open(daemon: &Arc<Daemon>, raw_path: &str, via: &str) -> Result<(), String> {
     let p = Path::new(raw_path);
@@ -32,17 +64,42 @@ pub async fn handle_open(daemon: &Arc<Daemon>, raw_path: &str, via: &str) -> Res
         .ensure_watched(parent)
         .map_err(|e| format!("cannot watch {}: {e}", parent.display()))?;
 
-    daemon.docs.lock().await.insert(
-        canon.clone(),
-        DocInfo { via: via.to_owned(), last_changed_ms: None },
-    );
+    // Upsert before pushing so the doc_opened entry reflects the post-open
+    // state (docs/protocol.md "doc_opened").
+    let entry = {
+        let mut reg = daemon.registry.lock().await;
+        match reg.docs.get_mut(&canon) {
+            Some(info) => {
+                info.via = via.to_owned();
+                info.last_opened_ms = now_ms();
+                // Only cli opens may clear read; a user re-open leaves it
+                // (crib §2.1). The dock slot never moves on re-open.
+                if via == "cli" {
+                    info.read = false;
+                }
+            }
+            None => {
+                let repo = derive_repo(&canon);
+                reg.docs.insert(
+                    canon.clone(),
+                    DocInfo {
+                        via: via.to_owned(),
+                        read: via != "cli",
+                        repo: repo.as_ref().map(|r| r.name.clone()),
+                        repo_root: repo.as_ref().map(|r| r.root.clone()),
+                        repo_color: repo.as_ref().map(|r| r.color),
+                        last_changed_ms: None,
+                        last_opened_ms: now_ms(),
+                    },
+                );
+                reg.dock.push(canon.clone());
+            }
+        }
+        reg.entry(&canon).expect("doc just upserted")
+    };
+    daemon.mark_dirty();
     debug!("doc opened via {via}: {}", canon.display());
-    daemon
-        .push(Msg::DocOpened {
-            path: canon.to_string_lossy().into_owned(),
-            via: via.to_owned(),
-        })
-        .await;
+    daemon.push(Msg::DocOpened(entry)).await;
     Ok(())
 }
 
@@ -59,10 +116,10 @@ pub async fn watch_loop(daemon: Arc<Daemon>, mut rx: UnboundedReceiver<DebounceE
         // as Create/Rename and must still count.
         let mut hits: HashSet<PathBuf> = HashSet::new();
         {
-            let docs = daemon.docs.lock().await;
+            let reg = daemon.registry.lock().await;
             for ev in &events {
                 for p in &ev.paths {
-                    if docs.contains_key(p.as_path()) {
+                    if reg.docs.contains_key(p.as_path()) {
                         hits.insert(p.clone());
                     }
                 }
@@ -76,9 +133,12 @@ pub async fn watch_loop(daemon: Arc<Daemon>, mut rx: UnboundedReceiver<DebounceE
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0);
-            if let Some(info) = daemon.docs.lock().await.get_mut(&path) {
+            // Registry update lands before the push so a crash between the
+            // two never loses the fact (crib §8 req 6).
+            if let Some(info) = daemon.registry.lock().await.docs.get_mut(&path) {
                 info.last_changed_ms = Some(mtime_ms);
             }
+            daemon.mark_dirty();
             daemon
                 .push(Msg::FileEvent { path: path.to_string_lossy().into_owned(), mtime_ms })
                 .await;

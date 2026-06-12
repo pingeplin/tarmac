@@ -1,12 +1,89 @@
 import AppKit
 import QuartzCore
 
+/// Clickable toast kbd chip per the M0 crib chip spec (mono 500 10px muted,
+/// bg2, 1px line border with a 2px bottom edge, radius 4, padding 1px 5px;
+/// hover bg3 + text color). Lives here, not in PeekPanel: the peek's chip is
+/// display-only.
+@MainActor
+final class ToastChipView: NSView {
+    var onClick: (() -> Void)?
+
+    private let label: NSTextField
+    private let size: NSSize
+    private var trackingArea: NSTrackingArea?
+
+    override var acceptsFirstResponder: Bool { false }
+
+    init(_ text: String) {
+        label = NSTextField(labelWithString: text)
+        label.font = Theme.mono(10, weight: .medium)
+        label.textColor = Theme.muted
+        let textSize = label.intrinsicContentSize
+        size = NSSize(width: textSize.width + 10, height: textSize.height + 3)
+        super.init(frame: NSRect(origin: .zero, size: size))
+        wantsLayer = true
+        layer?.backgroundColor = Theme.bg2.cgColor
+        layer?.borderColor = Theme.line.cgColor
+        layer?.borderWidth = 1
+        layer?.cornerRadius = 4
+
+        let bottomEdge = NSView(frame: NSRect(x: 1, y: 0, width: size.width - 2, height: 1))
+        bottomEdge.wantsLayer = true
+        bottomEdge.layer?.backgroundColor = Theme.line.cgColor
+        bottomEdge.autoresizingMask = [.width]
+        addSubview(bottomEdge)
+
+        label.frame = NSRect(x: 5, y: 2, width: textSize.width, height: textSize.height)
+        addSubview(label)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override var intrinsicContentSize: NSSize { size }
+
+    // Labels swallow mouseDown; capture clicks on children too.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        super.hitTest(point) == nil ? nil : self
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onClick?()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        layer?.backgroundColor = Theme.bg3.cgColor
+        label.textColor = Theme.text
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        layer?.backgroundColor = Theme.bg2.cgColor
+        label.textColor = Theme.muted
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea { removeTrackingArea(trackingArea) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            owner: self
+        )
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+}
+
 @MainActor
 final class ToastView: NSView {
     private let measuredSize: NSSize
 
-    init(title: String, body: String?) {
-        let icon = NSTextField(labelWithString: "¶")
+    init(icon iconGlyph: String, title: String, body: String?, chips: [ToastChipView]) {
+        let icon = NSTextField(labelWithString: iconGlyph)
         icon.font = Theme.mono(13)
         icon.textColor = Theme.agent
 
@@ -29,8 +106,17 @@ final class ToastView: NSView {
             height: titleLabel.intrinsicContentSize.height
         )
         let bodySize = bodyLabel.map(\.intrinsicContentSize) ?? .zero
-        let contentWidth = max(iconSize.width + 7 + titleSize.width, iconSize.width + 7 + min(bodySize.width, maxContentWidth))
-        let contentHeight = max(iconSize.height, titleSize.height) + (bodyLabel == nil ? 0 : 2 + bodySize.height)
+        // Chips: gap 5px within the group, 6px left margin (theme.css .tm-toast .keys).
+        let chipSizes = chips.map(\.intrinsicContentSize)
+        let chipsWidth = chipSizes.isEmpty
+            ? 0
+            : chipSizes.map(\.width).reduce(0, +) + CGFloat(chipSizes.count - 1) * 5 + 6
+        let chipsHeight = chipSizes.map(\.height).max() ?? 0
+        let contentWidth = max(iconSize.width + 7 + titleSize.width, iconSize.width + 7 + min(bodySize.width, maxContentWidth)) + chipsWidth
+        let contentHeight = max(
+            max(iconSize.height, titleSize.height) + (bodyLabel == nil ? 0 : 2 + bodySize.height),
+            chipsHeight
+        )
         measuredSize = NSSize(width: contentWidth + 24, height: contentHeight + 18)
 
         super.init(frame: NSRect(origin: .zero, size: measuredSize))
@@ -60,6 +146,17 @@ final class ToastView: NSView {
             )
             addSubview(bodyLabel)
         }
+        var chipX = measuredSize.width - 12 - chipsWidth + 6
+        for (chip, size) in zip(chips, chipSizes) {
+            chip.frame = NSRect(
+                x: chipX,
+                y: ((measuredSize.height - size.height) / 2).rounded(),
+                width: size.width,
+                height: size.height
+            )
+            addSubview(chip)
+            chipX += size.width + 5
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -82,13 +179,29 @@ final class ToastStackView: NSView {
     var hasToasts: Bool { !entries.isEmpty }
 
     override var isFlipped: Bool { true }
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    func show(title: String, body: String?) {
+    // Click-through everywhere except the kbd chips (focus rule: nothing here
+    // may take clicks the terminal needs).
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        return hit is ToastChipView ? hit : nil
+    }
+
+    /// Chips per docs/m1/crib-dock-index.md §1.2: each runs its action (nil =
+    /// dismiss only), then dismisses its own toast — never the whole stack.
+    func show(icon: String = "¶", title: String, body: String?, chips: [(label: String, action: (() -> Void)?)] = []) {
         if entries.count >= 3, let oldest = entries.last {
             removeEntry(oldest.view, animated: false)
         }
-        let toast = ToastView(title: title, body: body)
+        let chipViews = chips.map { ToastChipView($0.label) }
+        let toast = ToastView(icon: icon, title: title, body: body, chips: chipViews)
+        for (view, chip) in zip(chipViews, chips) {
+            view.onClick = { [weak self, weak toast] in
+                chip.action?()
+                guard let self, let toast else { return }
+                self.removeEntry(toast, animated: true)
+            }
+        }
         addSubview(toast)
 
         let work = DispatchWorkItem { [weak self, weak toast] in
