@@ -1,0 +1,13 @@
+[package]
+name = "tarmac-protocol"
+version.workspace = true
+edition.workspace = true
+
+[features]
+async = ["dep:tokio"]
+
+[dependencies]
+serde.workspace = true
+rmp-serde.workspace = true
+serde_bytes.workspace = true
+tokio = { workspace = true, features = ["io-util"], optional = true }

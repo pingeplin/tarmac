@@ -1,0 +1,277 @@
+import Foundation
+
+public enum DaemonClientError: Error, CustomStringConvertible, Sendable {
+    case socketPathTooLong(String)
+    case connectFailed(path: String, detail: String)
+
+    public var description: String {
+        switch self {
+        case .socketPathTooLong(let p):
+            return "socket path too long for sockaddr_un (max 104 bytes): \(p)"
+        case .connectFailed(let path, let detail):
+            return "could not connect to tarmacd at \(path): \(detail)"
+        }
+    }
+}
+
+/// Long-lived app connection to tarmacd: connects, sends `hello` (role "app"),
+/// then a background read loop decodes frames and delivers `Message`s on
+/// `deliveryQueue` (main by default).
+public final class DaemonClient: @unchecked Sendable {
+    public let socketPath: String
+
+    public var onMessage: (@Sendable (Message) -> Void)?
+    public var onDisconnect: (@Sendable (String) -> Void)?
+
+    private let deliveryQueue: DispatchQueue
+    private let readQueue = DispatchQueue(label: "tarmac.daemon.read")
+    private let writeQueue = DispatchQueue(label: "tarmac.daemon.write")
+    private let stateLock = NSLock()
+    private var fd: Int32 = -1
+    private var closed = false
+    private var spawnedDaemon: Process?
+
+    public init(socketPath: String? = nil, deliveryQueue: DispatchQueue = .main) {
+        self.socketPath = socketPath ?? Self.resolveSocketPath()
+        self.deliveryQueue = deliveryQueue
+    }
+
+    /// `TARMAC_SOCKET` env override, else the protocol default.
+    public static func resolveSocketPath() -> String {
+        if let p = ProcessInfo.processInfo.environment["TARMAC_SOCKET"], !p.isEmpty { return p }
+        return (NSHomeDirectory() as NSString)
+            .appendingPathComponent("Library/Application Support/tarmac/tarmacd.sock")
+    }
+
+    /// Blocking. Connects (auto-spawning `$TARMAC_DAEMON` with ~3 s of retries if
+    /// the first attempt fails), sends hello, and starts the read loop.
+    public func connect() throws {
+        func detail(of error: Error) -> String {
+            if case DaemonClientError.connectFailed(_, let d) = error { return d }
+            return "\(error)"
+        }
+        do {
+            try connectOnce()
+        } catch {
+            guard let daemonBin = ProcessInfo.processInfo.environment["TARMAC_DAEMON"], !daemonBin.isEmpty else {
+                throw DaemonClientError.connectFailed(
+                    path: socketPath,
+                    detail: "\(detail(of: error)) — is tarmacd running? (set TARMAC_SOCKET to point elsewhere, or TARMAC_DAEMON to auto-spawn it)"
+                )
+            }
+            try spawnDaemon(at: daemonBin)
+            let deadline = Date().addingTimeInterval(3.0)
+            var lastError = error
+            var connected = false
+            while Date() < deadline {
+                Thread.sleep(forTimeInterval: 0.1)
+                do {
+                    try connectOnce()
+                    connected = true
+                    break
+                } catch {
+                    lastError = error
+                }
+            }
+            guard connected else {
+                throw DaemonClientError.connectFailed(
+                    path: socketPath,
+                    detail: "spawned \(daemonBin) but the socket did not accept a connection within 3 s (last error: \(detail(of: lastError)))"
+                )
+            }
+        }
+        try sendBlocking(.hello(role: "app", v: 1))
+        startReadLoop()
+    }
+
+    public func close() {
+        stateLock.lock()
+        closed = true
+        let oldFD = fd
+        fd = -1
+        stateLock.unlock()
+        if oldFD >= 0 {
+            shutdown(oldFD, SHUT_RDWR)
+            Darwin.close(oldFD)
+        }
+    }
+
+    // MARK: - Send
+
+    public func send(_ message: Message) {
+        guard let framed = try? Framing.frame(message.encodedPayload()) else { return }
+        writeQueue.async { [self] in
+            if !writeAll(framed) {
+                disconnect(reason: "write failed: \(String(cString: strerror(errno)))")
+            }
+        }
+    }
+
+    public func spawnTerm(termID: String, cols: Int, rows: Int, cwd: String?, cmd: [String]?) {
+        send(.spawnTerm(termID: termID, cols: cols, rows: rows, cwd: cwd, cmd: cmd))
+    }
+
+    public func input(termID: String, bytes: Data) {
+        send(.input(termID: termID, bytes: bytes))
+    }
+
+    public func resize(termID: String, cols: Int, rows: Int) {
+        send(.resize(termID: termID, cols: cols, rows: rows))
+    }
+
+    public func open(path: String) {
+        send(.open(path: path))
+    }
+
+    // MARK: - Internals
+
+    private func connectOnce() throws {
+        let sock = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard sock >= 0 else {
+            throw DaemonClientError.connectFailed(path: socketPath, detail: "socket(): \(String(cString: strerror(errno)))")
+        }
+        var yes: Int32 = 1
+        setsockopt(sock, SOL_SOCKET, SO_NOSIGPIPE, &yes, socklen_t(MemoryLayout<Int32>.size))
+
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        let ok: Bool = socketPath.withCString { src in
+            withUnsafeMutableBytes(of: &addr.sun_path) { dst in
+                let len = strlen(src)
+                guard len < dst.count else { return false }
+                memcpy(dst.baseAddress!, src, len + 1)
+                return true
+            }
+        }
+        guard ok else {
+            Darwin.close(sock)
+            throw DaemonClientError.socketPathTooLong(socketPath)
+        }
+
+        let result = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.connect(sock, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        guard result == 0 else {
+            let detail = String(cString: strerror(errno))
+            Darwin.close(sock)
+            throw DaemonClientError.connectFailed(path: socketPath, detail: detail)
+        }
+
+        stateLock.lock()
+        fd = sock
+        closed = false
+        stateLock.unlock()
+    }
+
+    private func spawnDaemon(at binPath: String) throws {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: binPath)
+        proc.standardInput = FileHandle.nullDevice
+        do {
+            try proc.run()
+        } catch {
+            throw DaemonClientError.connectFailed(
+                path: socketPath,
+                detail: "failed to launch TARMAC_DAEMON (\(binPath)): \(error)"
+            )
+        }
+        stateLock.lock()
+        spawnedDaemon = proc
+        stateLock.unlock()
+    }
+
+    private func sendBlocking(_ message: Message) throws {
+        let framed = try Framing.frame(message.encodedPayload())
+        guard writeAll(framed) else {
+            throw DaemonClientError.connectFailed(
+                path: socketPath,
+                detail: "handshake write failed: \(String(cString: strerror(errno)))"
+            )
+        }
+    }
+
+    private func startReadLoop() {
+        let sock = currentFD()
+        readQueue.async { [self] in
+            var reason = "connection closed by daemon"
+            while true {
+                guard let header = readExact(4, from: sock) else { break }
+                let n = (UInt32(header[0]) << 24) | (UInt32(header[1]) << 16) | (UInt32(header[2]) << 8) | UInt32(header[3])
+                guard Int(n) <= Framing.maxFrameLength else {
+                    reason = "protocol error: \(n)-byte frame exceeds the 16 MiB cap"
+                    break
+                }
+                guard let payload = readExact(Int(n), from: sock) else { break }
+                do {
+                    let message = try Message.decode(payload: Data(payload))
+                    deliveryQueue.async { [self] in onMessage?(message) }
+                } catch {
+                    // Malformed frame: log and continue (only over-cap frames are fatal).
+                    FileHandle.standardError.write(Data("tarmac: dropping undecodable frame: \(error)\n".utf8))
+                }
+            }
+            disconnect(reason: reason)
+        }
+    }
+
+    private func readExact(_ n: Int, from sock: Int32) -> [UInt8]? {
+        if n == 0 { return [] }
+        var buf = [UInt8](repeating: 0, count: n)
+        var got = 0
+        while got < n {
+            let r = buf.withUnsafeMutableBytes { p in
+                read(sock, p.baseAddress!.advanced(by: got), n - got)
+            }
+            if r == 0 { return nil }
+            if r < 0 {
+                if errno == EINTR { continue }
+                return nil
+            }
+            got += r
+        }
+        return buf
+    }
+
+    private func writeAll(_ data: Data) -> Bool {
+        let sock = currentFD()
+        guard sock >= 0 else { return false }
+        return data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            var offset = 0
+            while offset < raw.count {
+                let r = write(sock, raw.baseAddress!.advanced(by: offset), raw.count - offset)
+                if r < 0 {
+                    if errno == EINTR { continue }
+                    return false
+                }
+                if r == 0 { return false }
+                offset += r
+            }
+            return true
+        }
+    }
+
+    private func currentFD() -> Int32 {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return fd
+    }
+
+    private func disconnect(reason: String) {
+        stateLock.lock()
+        if closed {
+            stateLock.unlock()
+            return
+        }
+        closed = true
+        let oldFD = fd
+        fd = -1
+        stateLock.unlock()
+        if oldFD >= 0 {
+            shutdown(oldFD, SHUT_RDWR)
+            Darwin.close(oldFD)
+        }
+        deliveryQueue.async { [self] in onDisconnect?(reason) }
+    }
+}

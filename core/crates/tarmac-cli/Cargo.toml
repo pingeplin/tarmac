@@ -1,0 +1,12 @@
+[package]
+name = "tarmac-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "tarmac"
+path = "src/main.rs"
+
+# std-only on purpose: `tarmac open` is called by agents/hooks and must start fast.
+[dependencies]
+tarmac-protocol.workspace = true

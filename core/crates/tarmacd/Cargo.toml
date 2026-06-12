@@ -1,0 +1,27 @@
+[package]
+name = "tarmacd"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "tarmacd"
+path = "src/main.rs"
+
+[dependencies]
+tarmac-protocol = { workspace = true, features = ["async"] }
+tokio = { workspace = true, features = [
+    "rt-multi-thread",
+    "macros",
+    "net",
+    "sync",
+    "io-util",
+    "time",
+    "signal",
+] }
+tokio-util.workspace = true
+portable-pty.workspace = true
+notify.workspace = true
+notify-debouncer-full.workspace = true
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+anyhow.workspace = true
