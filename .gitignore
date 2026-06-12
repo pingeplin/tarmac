@@ -1,0 +1,4 @@
+.DS_Store
+/core/target/
+/app/.build/
+*.sock
