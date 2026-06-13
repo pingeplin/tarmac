@@ -29,6 +29,9 @@ final class CardView: NSView {
     let header: TileHeaderView
     private(set) var docView: DocWebView?
     private(set) var termBody: TerminalBodyView?
+    /// The semantic-zoom locard (crib §7): a compact two-row name+status view,
+    /// shown in place of the chrome below the zoom threshold. Lazily built.
+    private var locard: LocardView?
 
     /// World-space placement (crib §5). Set by `BoardView` on add / drag / resize;
     /// the on-screen `frame` is derived from this by the board's world→view map.
@@ -204,6 +207,20 @@ final class CardView: NSView {
     /// Whether the amber bell signal is currently shown on this card.
     private(set) var bellActive = false
 
+    /// Whether the card is "live" — an agent process is active on a terminal
+    /// card. Drives the cyan accents on the locard / minimap / offscreen hint
+    /// (Phase 4 wayfinding). Display state only (no animation).
+    private(set) var liveActive = false
+
+    /// The card's current signal, for the wayfinding chrome (crib §6–7). Bell
+    /// (amber) outranks live (cyan) when both are set, matching the design's
+    /// "the bell is the louder signal" intent.
+    var signal: CardSignal {
+        if bellActive { return .bell }
+        if liveActive { return .live }
+        return .none
+    }
+
     /// Amber bell signal in the header (a `●` dot + amber kind-glyph accent),
     /// shown on a seen BEL and cleared on the next keystroke / focus. Display
     /// state only — no animation (stays under Reduce Motion).
@@ -211,6 +228,94 @@ final class CardView: NSView {
         guard on != bellActive else { return }
         bellActive = on
         header.setBell(on)
+        refreshSignalVariant()
+    }
+
+    /// Live (agent-active) signal: a foreground process is running on a terminal
+    /// card. Feeds the locard / minimap / offscreen-hint cyan variant.
+    func setLive(_ on: Bool) {
+        guard on != liveActive else { return }
+        liveActive = on
+        refreshSignalVariant()
+    }
+
+    // MARK: - Semantic-zoom locard (crib §7)
+
+    private(set) var isLocard = false
+
+    /// Toggles the locard rendering (crib §7): below the semantic-zoom threshold
+    /// the body chrome is hidden and a compact name+status view is shown on the
+    /// same world frame. The board calls this when the zoom crosses the
+    /// threshold. `nameText` / `statusText` are the two rows; `kindGlyph` is the
+    /// faint leading glyph; `repoColor` draws the optional repo dot (nil hides it).
+    func setLocard(_ on: Bool) {
+        guard on != isLocard else { return }
+        isLocard = on
+        if on {
+            let lo = locard ?? makeLocard()
+            locard = lo
+            lo.isHidden = false
+            clip.isHidden = true
+            lo.frame = bounds
+            applyLocardContent()
+            refreshSignalVariant()
+        } else {
+            locard?.isHidden = true
+            clip.isHidden = false
+            // Restore the normal-card border for the current state.
+            layer?.borderColor = currentBorderColor.cgColor
+        }
+        needsLayout = true
+    }
+
+    private func makeLocard() -> LocardView {
+        let glyph: String
+        switch id {
+        case .term: glyph = "›_"
+        case .doc: glyph = "¶"
+        }
+        let lo = LocardView(kindGlyph: glyph, showsRepoDot: { if case .doc = id { return true }; return false }())
+        lo.isHidden = true
+        // At semantic zoom the whole locard is the drag handle (the header chrome
+        // is hidden), so a press anywhere on it moves/selects the card.
+        lo.onMouseDown = { [weak self] event in self?.beginMove(event: event) }
+        lo.onMouseDragged = { [weak self] event in self?.updateGesture(event) }
+        lo.onMouseUp = { [weak self] _ in self?.endGesture(commit: true) }
+        // The locard sits inside the rounded clip-equivalent: put it directly on
+        // self (above the hidden chrome clip) but below the resize handles.
+        addSubview(lo, positioned: .below, relativeTo: clip)
+        return lo
+    }
+
+    /// The two-row content for the locard. Terminal cards show the foreground
+    /// process name + duration as the status; doc cards show basename + recency.
+    /// The board feeds the strings via `setLocardContent`.
+    private var locardName = ""
+    private var locardStatus = ""
+    private var locardRepoColor: NSColor?
+
+    func setLocardContent(name: String, status: String, repoColor: NSColor?) {
+        locardName = name
+        locardStatus = status
+        locardRepoColor = repoColor
+        if isLocard { applyLocardContent() }
+    }
+
+    private func applyLocardContent() {
+        locard?.setContent(name: locardName, status: locardStatus, repoColor: locardRepoColor)
+    }
+
+    /// Applies the signal variant border/ring to the active rendering. On a
+    /// locard the bell/live borders + ring come from crib §7; on a normal card
+    /// the variant is carried by the header (bell) / fresh ring.
+    private func refreshSignalVariant() {
+        guard isLocard, let lo = locard else { return }
+        lo.applySignal(signal)
+        switch signal {
+        case .bell: layer?.borderColor = Theme.amber.withAlphaComponent(0.55).cgColor
+        case .live: layer?.borderColor = Theme.agent.withAlphaComponent(0.45).cgColor
+        case .none: layer?.borderColor = (selected || fresh ? Theme.agent : Theme.line).cgColor
+        }
     }
 
     // MARK: - Layout
@@ -218,6 +323,7 @@ final class CardView: NSView {
     override func layout() {
         super.layout()
         clip.frame = bounds
+        locard?.frame = bounds
         header.frame = NSRect(x: 0, y: 0, width: bounds.width, height: Self.headerHeight)
         body.frame = NSRect(
             x: 0,
@@ -420,5 +526,132 @@ final class ResizeHandleView: NSView {
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: corner.cursor)
+    }
+}
+
+/// A card's wayfinding signal (crib §6–7), shared by the locard / minimap /
+/// offscreen hints. `bell` (amber) outranks `live` (cyan) when both are set.
+enum CardSignal: Equatable {
+    case none
+    case live
+    case bell
+}
+
+/// Semantic-zoom locard (crib §7): "content gone, name + signal remain". A
+/// compact two-row card on bg1 (radius 8) — a name row (kind glyph faint +
+/// optional repo dot + name, 12px mono weight 500) and a status row (one signal
+/// line, 9.5px mono faint). Lives inside `CardView` and is shown below the
+/// semantic-zoom threshold in place of the chrome.
+@MainActor
+final class LocardView: NSView {
+    private let kindGlyph: NSTextField
+    private let repoDot: NSView?
+    private let nameLabel = NSTextField(labelWithString: "")
+    private let statusLabel = NSTextField(labelWithString: "")
+    /// Bell ring (crib §7: `0 0 0 3px amber-dim`); built on demand.
+    private let ringLayer = CALayer()
+    private static let ringWidth: CGFloat = 3
+    private var ringOn = false
+
+    // The whole locard is the drag handle at semantic zoom (crib §7); the parent
+    // CardView wires these to its move gesture.
+    var onMouseDown: ((NSEvent) -> Void)?
+    var onMouseDragged: ((NSEvent) -> Void)?
+    var onMouseUp: ((NSEvent) -> Void)?
+
+    override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { false }
+    // Capture the whole locard area (labels would otherwise swallow mouseDown).
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        super.hitTest(point) == nil ? nil : self
+    }
+
+    override func mouseDown(with event: NSEvent) { onMouseDown?(event) }
+    override func mouseDragged(with event: NSEvent) { onMouseDragged?(event) }
+    override func mouseUp(with event: NSEvent) { onMouseUp?(event) }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .openHand)
+    }
+
+    init(kindGlyph glyph: String, showsRepoDot: Bool) {
+        kindGlyph = NSTextField(labelWithString: glyph)
+        repoDot = showsRepoDot ? NSView() : nil
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.backgroundColor = Theme.bg1.cgColor
+        layer?.cornerRadius = 8
+        layer?.masksToBounds = false
+
+        kindGlyph.font = Theme.mono(12)
+        kindGlyph.textColor = Theme.faint
+        addSubview(kindGlyph)
+
+        if let repoDot {
+            repoDot.wantsLayer = true
+            repoDot.layer?.cornerRadius = 3.5
+            addSubview(repoDot)
+        }
+
+        nameLabel.font = Theme.mono(12, weight: .medium)
+        nameLabel.textColor = Theme.text
+        nameLabel.lineBreakMode = .byTruncatingTail
+        addSubview(nameLabel)
+
+        statusLabel.font = Theme.mono(9.5)
+        statusLabel.textColor = Theme.faint
+        statusLabel.lineBreakMode = .byTruncatingTail
+        addSubview(statusLabel)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    func setContent(name: String, status: String, repoColor: NSColor?) {
+        nameLabel.stringValue = name
+        statusLabel.stringValue = status
+        if let repoColor { repoDot?.layer?.backgroundColor = repoColor.cgColor }
+        needsLayout = true
+    }
+
+    /// Applies the locard signal variant (crib §7): bell = amber-dim ring; live
+    /// has only a border (set by the parent CardView). `none` clears the ring.
+    func applySignal(_ signal: CardSignal) {
+        let bell = signal == .bell
+        guard bell != ringOn, let layer else { return }
+        ringOn = bell
+        if bell {
+            ringLayer.backgroundColor = Theme.amberDim.cgColor
+            ringLayer.cornerRadius = 8 + Self.ringWidth
+            layer.insertSublayer(ringLayer, at: 0)
+        } else {
+            ringLayer.removeFromSuperlayer()
+        }
+        needsLayout = true
+    }
+
+    override func layout() {
+        super.layout()
+        if ringOn {
+            let w = Self.ringWidth
+            ringLayer.frame = bounds.insetBy(dx: -w, dy: -w)
+        }
+        // Two centered rows (crib §7: justify-content center, gap 5, padding 0 14).
+        let padX: CGFloat = 14
+        let gap: CGFloat = 5
+        let nameH = nameLabel.fittedSize.height
+        let statusH = statusLabel.fittedSize.height
+        let totalH = nameH + gap + statusH
+        let topY = ((bounds.height - totalH) / 2).rounded()
+
+        var x = padX
+        let glyphSize = kindGlyph.fittedSize
+        kindGlyph.frame = NSRect(x: x, y: topY + ((nameH - glyphSize.height) / 2).rounded(), width: glyphSize.width, height: glyphSize.height)
+        x = kindGlyph.frame.maxX + 7
+        if let repoDot {
+            repoDot.frame = NSRect(x: x, y: topY + ((nameH - 7) / 2).rounded(), width: 7, height: 7)
+            x += 7 + 7
+        }
+        nameLabel.frame = NSRect(x: x, y: topY, width: max(0, bounds.width - padX - x), height: nameH)
+        statusLabel.frame = NSRect(x: padX, y: topY + nameH + gap, width: max(0, bounds.width - padX * 2), height: statusH)
     }
 }

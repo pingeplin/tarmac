@@ -33,6 +33,17 @@ final class BoardView: NSView {
     /// reflows the just-resized terminal.
     var onLayoutChanged: ((Viewport) -> Void)?
 
+    /// Fires on EVERY viewport change (pan / zoom / restore / fit / fly), not
+    /// just commits — the wayfinding chrome (zoom readout, minimap, offscreen
+    /// hints) refreshes off this so it tracks the live viewport. Cheap; no
+    /// persistence here (that's `onLayoutChanged`).
+    var onViewportChanged: ((Viewport) -> Void)?
+
+    /// Fires whenever the card set or any card's world frame / signal changes,
+    /// so the wayfinding chrome rebuilds its card-derived state (minimap rects,
+    /// offscreen hints). The board calls this after add / remove / reproject.
+    var onCardsChanged: (() -> Void)?
+
     /// Current viewport (zoom + world center). Read for persistence; set by 2c
     /// from `restore.board` to reproduce the saved viewport.
     private(set) var viewport: Viewport = .default
@@ -55,7 +66,10 @@ final class BoardView: NSView {
         cards[id] = card
         cardLayer.addSubview(card)
         restack()
+        // A card added while zoomed out renders as a locard immediately.
+        card.setLocard(viewport.isSemanticZoom)
         reproject(card)
+        onCardsChanged?()
         return card
     }
 
@@ -64,6 +78,14 @@ final class BoardView: NSView {
         if selectedID == id { selectedID = nil }
         card.removeFromSuperview()
         recomputeEdges()
+        onCardsChanged?()
+    }
+
+    /// The board's signals changed on a card (Phase 3.5 bell / Phase 4 live);
+    /// callers route signal updates through here so the wayfinding chrome
+    /// refreshes (minimap colors, offscreen hints). Cheap.
+    func signalsChanged() {
+        onCardsChanged?()
     }
 
     func card(_ id: CardID) -> CardView? { cards[id] }
@@ -118,8 +140,94 @@ final class BoardView: NSView {
         viewport = clampZoom(vp)
         reprojectAll()
         updateGridDensity()
+        updateLocards()
         needsDisplay = true
+        onViewportChanged?(viewport)
         if commit { onLayoutChanged?(viewport) }
+    }
+
+    /// Animates the viewport to `vp` (crib §6: ⏎ flies to a card near 100%, esc
+    /// flies back). Instant under Reduce Motion. Always commits at the end so
+    /// the flown-to viewport persists.
+    func flyTo(_ vp: Viewport) {
+        let target = clampZoom(vp)
+        if Theme.reduceMotion {
+            setViewport(target, commit: true)
+            return
+        }
+        animateViewport(to: target) { [weak self] in
+            self?.onLayoutChanged?(target)
+        }
+    }
+
+    /// Fly the viewport to center `cardID` near 100% (crib §6 Return flight).
+    func fly(to cardID: CardID) {
+        guard let card = cards[cardID] else { return }
+        let f = card.worldFrame
+        let zoom = min(Viewport.maxZoom, max(Viewport.minZoom, 1.0))
+        flyTo(Viewport(zoom: zoom, cx: f.x + f.w / 2, cy: f.y + f.h / 2))
+    }
+
+    /// Fit all card world frames into view with margin (crib §6 ⊡ fit), then
+    /// commit. No-op when there are no cards.
+    func fitToCards(commit: Bool = true) {
+        let rects = cards.values.map(\.worldFrame.rect)
+        guard let fit = BoardWayfinding.fit(
+            cards: rects,
+            viewportSize: bounds.size,
+            margin: 0.1,
+            minZoom: Viewport.minZoom,
+            maxZoom: Viewport.maxZoom
+        ) else { return }
+        setViewport(Viewport(zoom: fit.zoom, cx: fit.center.x, cy: fit.center.y), commit: commit)
+    }
+
+    /// The currently-visible region in WORLD coordinates (the inverse-projected
+    /// view bounds) — fed to the minimap (viewport rect) and offscreen hints.
+    var viewportWorldRect: CGRect {
+        let topLeft = viewToWorld(CGPoint(x: bounds.minX, y: bounds.minY))
+        let bottomRight = viewToWorld(CGPoint(x: bounds.maxX, y: bounds.maxY))
+        return CGRect(
+            x: topLeft.x,
+            y: topLeft.y,
+            width: bottomRight.x - topLeft.x,
+            height: bottomRight.y - topLeft.y
+        )
+    }
+
+    /// All cards' world frames + signals, for the minimap.
+    var minimapItems: [Minimap.Item] {
+        cards.values.map { Minimap.Item(worldRect: $0.worldFrame.rect, signal: $0.signal) }
+    }
+
+    private func animateViewport(to target: Viewport, completion: @escaping () -> Void) {
+        let start = viewport
+        let steps = 18
+        var frame = 0
+        let ease = { (t: CGFloat) -> CGFloat in t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2 }
+        func tick() {
+            frame += 1
+            let t = ease(CGFloat(frame) / CGFloat(steps))
+            let vp = Viewport(
+                zoom: start.zoom + (target.zoom - start.zoom) * t,
+                cx: start.cx + (target.cx - start.cx) * t,
+                cy: start.cy + (target.cy - start.cy) * t
+            )
+            viewport = clampZoom(vp)
+            reprojectAll()
+            updateGridDensity()
+            updateLocards()
+            needsDisplay = true
+            onViewportChanged?(viewport)
+            if frame < steps {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 60.0) {
+                    MainActor.assumeIsolated { tick() }
+                }
+            } else {
+                completion()
+            }
+        }
+        tick()
     }
 
     /// Zoom by a multiplicative factor, anchored so the world point under
@@ -140,7 +248,9 @@ final class BoardView: NSView {
         viewport.cy = worldAnchor.y - (anchor.y - c.y) / newZoom
         reprojectAll()
         updateGridDensity()
+        updateLocards()
         needsDisplay = true
+        onViewportChanged?(viewport)
         if commit { onLayoutChanged?(viewport) }
     }
 
@@ -309,6 +419,7 @@ final class BoardView: NSView {
     private func reprojectAll() {
         for card in cards.values { card.frame = worldToView(card.worldFrame.rect) }
         recomputeEdges()
+        onCardsChanged?()
     }
 
     private func reproject(_ card: CardView) {
@@ -319,6 +430,7 @@ final class BoardView: NSView {
         // and the embedded SwiftTerm view reflows on commit, so no extra layer
         // transform is needed here for the common case.
         recomputeEdges()
+        onCardsChanged?()
     }
 
     /// Rebuilds the provenance edge set in view space (crib §8): one edge per
@@ -351,6 +463,7 @@ final class BoardView: NSView {
         viewport.cy -= dyView / viewport.zoom
         reprojectAll()
         needsDisplay = true
+        onViewportChanged?(viewport)
         onLayoutChanged?(viewport)
     }
 
@@ -371,6 +484,14 @@ final class BoardView: NSView {
     private func updateGridDensity() {
         let lo = viewport.isSemanticZoom
         if lo != loZoom { loZoom = lo; needsDisplay = true }
+    }
+
+    /// Toggles every card's locard rendering when the zoom crosses the semantic
+    /// threshold (crib §7). The board owns the threshold; cards just swap their
+    /// rendering. Idempotent (CardView.setLocard early-returns when unchanged).
+    func updateLocards() {
+        let lo = viewport.isSemanticZoom
+        for card in cards.values { card.setLocard(lo) }
     }
 
     override func layout() {

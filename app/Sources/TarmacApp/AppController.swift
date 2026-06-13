@@ -60,6 +60,9 @@ final class AppController {
 
     private let store = DocStore()
     private var escMonitor: Any?
+    /// The viewport to fly back to when esc follows a Return flight (crib §6).
+    /// Set by the Return flight; consumed (and cleared) by the next esc.
+    private var preFlightViewport: Viewport?
 
     // MARK: - Shelf / gravity state (Phase 3)
     //
@@ -75,6 +78,13 @@ final class AppController {
     private var docOwner: [String: String] = [:]
     /// The current terminal card label (for the owner chip `← <termname>`).
     private var termLabel: String = ""
+    /// The shell basename resolved at spawn — the foreground process name equals
+    /// this when the shell is idle (no agent running). Used to decide the term
+    /// card's "live" (agent-active) signal for the wayfinding chrome.
+    private var shellName: String = ""
+    /// When the current non-shell foreground process started, for the locard's
+    /// `<proc> · Ns` duration line (Phase 4 semantic zoom).
+    private var liveProcSince: Date?
 
     // MARK: - Board placement rule (crib §4/§5)
     //
@@ -124,6 +134,9 @@ final class AppController {
         // TODO(perf): pan fires onLayoutChanged per scroll event — cheap LWW for
         // now; debounce/coalesce the layout send if pan persistence gets chatty.
         rootView.board.onLayoutChanged = { [weak self] _ in self?.persistLayout() }
+        // Phase 4 wayfinding: supply the per-card offscreen-hint models (label +
+        // priority) the board can't derive on its own (doc metadata / recency).
+        rootView.offscreenHintProvider = { [weak self] in self?.offscreenHints() ?? [] }
     }
 
     func start() {
@@ -136,11 +149,27 @@ final class AppController {
 
         escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let isEsc = event.keyCode == 53
+            let isReturn = event.keyCode == 36
             let swallowed = MainActor.assumeIsolated { () -> Bool in
-                guard let self, isEsc else { return false }
+                guard let self else { return false }
+                // Return (when the board, not the terminal, holds focus) flies the
+                // viewport to the most-recent offscreen signal (crib §6). Gated on
+                // board focus so the shell's Enter key is never hijacked.
+                if isReturn, self.boardHasFocus(), let target = self.rootView.offscreenFlyTarget {
+                    self.preFlightViewport = self.rootView.board.viewport
+                    self.rootView.board.fly(to: target)
+                    return true
+                }
+                guard isEsc else { return false }
                 // An active board drag/resize swallows esc ahead of peek/toast
                 // dismissal (crib §5 DECISION; was desk.cancelDrag()).
                 if self.rootView.board.cancelDrag() {
+                    return true
+                }
+                // esc after a Return flight flies the viewport back (crib §6).
+                if let prev = self.preFlightViewport {
+                    self.preFlightViewport = nil
+                    self.rootView.board.flyTo(prev)
                     return true
                 }
                 // esc on a freshly-landed card sends it to the shelf (crib §5).
@@ -292,7 +321,11 @@ final class AppController {
         // resolution for the card label — a fact known at spawn time.
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         termLabel = (shell as NSString).lastPathComponent
+        shellName = termLabel
+        liveProcSince = nil
         rootView.board.card(.term)?.setTermLabel(termLabel)
+        rootView.board.card(.term)?.setLive(false)
+        refreshTermLocard()
         // Cards restored before the term spawned get their gravity owner +
         // chip resolved now (the term_id only becomes known at spawn).
         rebindOwners()
@@ -341,11 +374,91 @@ final class AppController {
         guard termID == currentTermID else { return }
         termLabel = name
         rootView.board.card(.term)?.setTermLabel(name)
+        // "Live" (agent-active) when the foreground process is no longer the bare
+        // shell (crib §6: cyan = agent-active). The honest signal we have at this
+        // phase is the foreground process name; treat shell == idle.
+        let live = !name.isEmpty && name != shellName
+        let card = rootView.board.card(.term)
+        let wasLive = card?.liveActive ?? false
+        if live, !wasLive { liveProcSince = Date() }
+        if !live { liveProcSince = nil }
+        card?.setLive(live)
+        rootView.board.signalsChanged()
+        refreshTermLocard()
         // Re-render any attached doc card's owner chip with the new term name.
         for path in boardDocPaths {
             guard let card = rootView.board.card(.doc(path)) else { continue }
             card.setOwnerChip(ownerChipLabel(for: card))
         }
+    }
+
+    // MARK: - Phase 4 wayfinding (locard content, offscreen hints)
+
+    /// Feeds the terminal card's locard content (crib §7): the foreground process
+    /// name + a duration (`<proc> · Ns`) when live, else the shell name idle.
+    private func refreshTermLocard() {
+        guard let card = rootView.board.card(.term) else { return }
+        let status: String
+        if card.liveActive, let since = liveProcSince {
+            let secs = max(1, Int(Date().timeIntervalSince(since).rounded()))
+            status = "running · \(secs)s"
+        } else {
+            status = "idle"
+        }
+        card.setLocardContent(name: termLabel.isEmpty ? "shell" : termLabel, status: status, repoColor: nil)
+    }
+
+    /// Feeds a doc card's locard content (crib §7): basename + recency line.
+    private func refreshDocLocard(_ path: String) {
+        guard let card = rootView.board.card(.doc(path)), let doc = store.doc(for: path) else { return }
+        let status = doc.read ? doc.displayPath : "unread · \(doc.displayPath)"
+        let color = Theme.repoColor(index: doc.repoColor, fallbackName: doc.displayRepoName)
+        card.setLocardContent(name: doc.fileName, status: status, repoColor: color)
+    }
+
+    /// Builds the offscreen-hint models (crib §6) for every signalling card:
+    /// bell → `basename · HH:MM`; live → the process name. The board decides
+    /// which are actually offscreen and where they pin. Priority orders the
+    /// Return target (bell outranks live; among same, most-recent wins by z).
+    private func offscreenHints() -> [OffscreenHints.Hint] {
+        var hints: [OffscreenHints.Hint] = []
+        for (id, card) in rootView.board.cards {
+            let signal = card.signal
+            guard signal != .none else { continue }
+            let viewCenter = CGPoint(x: card.frame.midX, y: card.frame.midY)
+            let label: String
+            switch id {
+            case .term:
+                label = signal == .bell ? "\(termLabel) · \(nowHHMM())" : termLabel
+            case .doc(let path):
+                let base = store.doc(for: path)?.fileName ?? (path as NSString).lastPathComponent
+                label = signal == .bell ? "\(base) · \(nowHHMM())" : base
+            }
+            // Bell (amber) outranks live (cyan); break ties by z (most-recent on top).
+            let priority = (signal == .bell ? 1000 : 0) + card.worldFrame.z
+            hints.append(OffscreenHints.Hint(cardID: id, centerView: viewCenter, signal: signal, label: label, priority: priority))
+        }
+        return hints
+    }
+
+    /// True when keyboard focus is on the board rather than the terminal — so a
+    /// bare Return triggers the offscreen flight instead of the shell's Enter
+    /// (crib §6 focus model). The terminal is the default first responder; the
+    /// board takes focus only when the user clicks its background.
+    private func boardHasFocus() -> Bool {
+        guard let responder = window?.firstResponder else { return false }
+        if responder === terminalView { return false }
+        if let view = responder as? NSView, view.isDescendant(of: terminalView) { return false }
+        // The board view itself (or a non-terminal board descendant) is focused.
+        if let view = responder as? NSView, view.isDescendant(of: rootView.board) { return true }
+        return responder === rootView.board
+    }
+
+    private func nowHHMM() -> String {
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        fmt.dateFormat = "HH:mm"
+        return fmt.string(from: Date())
     }
 
     /// `.bell`: a BEL was seen on the terminal — give its card the amber bell
@@ -354,11 +467,13 @@ final class AppController {
     private func handleBell(termID: String) {
         guard termID == currentTermID else { return }
         rootView.board.card(.term)?.setBell(true)
+        rootView.board.signalsChanged()
     }
 
     /// Clears the amber bell signal on the term card (next keystroke / focus).
     private func clearBell() {
         rootView.board.card(.term)?.setBell(false)
+        rootView.board.signalsChanged()
     }
 
     // MARK: - Board layout (restore + persistence)
@@ -442,6 +557,7 @@ final class AppController {
         if fresh { card.setFresh(true) }
         card.setOwnerChip(ownerChipLabel(for: card))
         card.renderDoc(markdown: readMarkdown(path))
+        refreshDocLocard(path)
         rootView.board.recomputeEdges()
         return card
     }
@@ -635,6 +751,7 @@ final class AppController {
             guard let card = rootView.board.card(.doc(path)) else { continue }
             if let doc = store.doc(for: path) { card.apply(doc: doc) }
             card.setOwnerChip(ownerChipLabel(for: card))
+            refreshDocLocard(path)
         }
         rootView.statusBar.setCounts(board: boardDocPaths.count, shelf: shelfPaths.count)
         rootView.coldStartHint.isHidden = !store.isEmpty

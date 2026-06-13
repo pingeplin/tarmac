@@ -20,6 +20,9 @@ enum Theme {
     // Drag-lift border (crib §4 prime/lift; authored hex, not a :root token).
     static let liftBorder = srgb(0x5a626a)
     static let amber = srgb(0xfdbc4b)
+    // Amber tint (crib §1/§7): locard bell ring, conflict banner. New Breeze
+    // token Theme.swift lacked; mirrors agentDim's construction.
+    static let amberDim = srgb(0xfdbc4b, alpha: 0.16)
     static let ok = srgb(0x1cdc9a)
 
     static let repoColors: [NSColor] = [
