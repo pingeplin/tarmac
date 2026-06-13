@@ -232,6 +232,10 @@ final class AppController {
             if rootView.peekVisible && peekPath == path {
                 refreshPeek(path)
             }
+        case .termProc(let termID, let name, _):
+            handleTermProc(termID: termID, name: name)
+        case .bell(let termID):
+            handleBell(termID: termID)
         case .err(let msg):
             FileHandle.standardError.write(Data("tarmacd err: \(msg)\n".utf8))
         case .unknown(let type):
@@ -267,6 +271,8 @@ final class AppController {
 
     func terminalDidSend(_ bytes: Data) {
         guard let termID = currentTermID else { return }
+        // A keystroke to the terminal clears its amber bell signal (M2).
+        clearBell()
         client.input(termID: termID, bytes: bytes)
     }
 
@@ -295,8 +301,14 @@ final class AppController {
     private func handleExit(termID: String, code: Int?) {
         guard termID == currentTermID else { return }
         currentTermID = nil
+        // A dead terminal can't ring: clear any lingering bell signal.
+        clearBell()
         let label = code.map { "exit \($0)" } ?? "killed by signal"
         feedNotice("shell exited (\(label)) — restarting…")
+        // Exit toast (M2 honest signals): title "shell exited · <code>" (or
+        // "killed by signal" when code is nil).
+        let toastTitle = code.map { "shell exited · \($0)" } ?? "killed by signal"
+        rootView.toasts.show(icon: "›_", title: toastTitle, body: nil)
 
         if let spawnedAt = lastSpawnAt, Date().timeIntervalSince(spawnedAt) < 1.0 {
             rapidExitCount += 1
@@ -317,6 +329,36 @@ final class AppController {
 
     private func feedNotice(_ text: String) {
         terminalView.feed(text: "\r\n\u{1b}[2m· \(text)\u{1b}[0m\r\n")
+    }
+
+    // MARK: - M2 honest signals (Phase 3.5)
+
+    /// `.termProc`: the honest "card title = process name" — set the term card's
+    /// header label to the foreground process name, replacing the shell basename
+    /// set at spawn. The owner chips (`← <termname>`) follow the same label so
+    /// they stay honest too.
+    private func handleTermProc(termID: String, name: String) {
+        guard termID == currentTermID else { return }
+        termLabel = name
+        rootView.board.card(.term)?.setTermLabel(name)
+        // Re-render any attached doc card's owner chip with the new term name.
+        for path in boardDocPaths {
+            guard let card = rootView.board.card(.doc(path)) else { continue }
+            card.setOwnerChip(ownerChipLabel(for: card))
+        }
+    }
+
+    /// `.bell`: a BEL was seen on the terminal — give its card the amber bell
+    /// signal. Cleared on the next keystroke to that terminal or on focus
+    /// (see `terminalDidSend` / `clearBell`).
+    private func handleBell(termID: String) {
+        guard termID == currentTermID else { return }
+        rootView.board.card(.term)?.setBell(true)
+    }
+
+    /// Clears the amber bell signal on the term card (next keystroke / focus).
+    private func clearBell() {
+        rootView.board.card(.term)?.setBell(false)
     }
 
     // MARK: - Board layout (restore + persistence)
@@ -650,6 +692,8 @@ final class AppController {
         rootView.setPeekVisible(false)
         refreshStrips()
         window?.makeFirstResponder(terminalView)
+        // Focus returns to the terminal: clear any amber bell signal (M2).
+        clearBell()
     }
 
     /// ⌘⏎ (key or peek-header chip): land the peeked doc as a card at the gravity

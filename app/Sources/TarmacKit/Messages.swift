@@ -115,6 +115,10 @@ public enum Message: Equatable, Sendable {
     case exit(termID: String, code: Int?)
     case docOpened(doc: RestoreDoc)
     case fileEvent(path: String, mtimeMs: UInt64)
+    /// M2 honest signals (daemon → app; additive types). `termProc` is the
+    /// foreground process name on a terminal; `bell` is a seen BEL (0x07).
+    case termProc(termID: String, name: String, pid: Int?)
+    case bell(termID: String)
     /// Unknown message types are ignored per the protocol (log and continue).
     case unknown(type: String)
 }
@@ -204,6 +208,14 @@ public extension Message {
             return .docOpened(doc: try Self.docEntry(from: map))
         case "file_event":
             return .fileEvent(path: try req("path", \.stringValue), mtimeMs: try req("mtime_ms", \.uint64Value))
+        case "term_proc":
+            return .termProc(
+                termID: try req("term_id", \.stringValue),
+                name: try req("name", \.stringValue),
+                pid: try opt("pid", \.intValue)
+            )
+        case "bell":
+            return .bell(termID: try req("term_id", \.stringValue))
         default:
             return .unknown(type: t)
         }
@@ -344,6 +356,16 @@ public extension Message {
                 "path": .string(path),
                 "mtime_ms": Self.uintValue(mtimeMs),
             ])
+        case .termProc(let termID, let name, let pid):
+            var map: [String: MsgPackValue] = [
+                "t": .string("term_proc"),
+                "term_id": .string(termID),
+                "name": .string(name),
+            ]
+            if let pid { map["pid"] = .int(Int64(pid)) }
+            return .map(map)
+        case .bell(let termID):
+            return .map(["t": .string("bell"), "term_id": .string(termID)])
         case .unknown(let type):
             return .map(["t": .string(type)])
         }

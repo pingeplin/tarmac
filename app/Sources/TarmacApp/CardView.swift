@@ -199,6 +199,20 @@ final class CardView: NSView {
         header.setOwnerChip(termName)
     }
 
+    // MARK: - Bell signal bridge (Phase 3.5 / M2 honest signals)
+
+    /// Whether the amber bell signal is currently shown on this card.
+    private(set) var bellActive = false
+
+    /// Amber bell signal in the header (a `●` dot + amber kind-glyph accent),
+    /// shown on a seen BEL and cleared on the next keystroke / focus. Display
+    /// state only — no animation (stays under Reduce Motion).
+    func setBell(_ on: Bool) {
+        guard on != bellActive else { return }
+        bellActive = on
+        header.setBell(on)
+    }
+
     // MARK: - Layout
 
     override func layout() {

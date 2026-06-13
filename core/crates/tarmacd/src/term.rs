@@ -1,6 +1,6 @@
 use std::io::{Read, Write};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use tarmac_protocol::Msg;
@@ -10,6 +10,11 @@ use tracing::{debug, warn};
 use crate::state::Daemon;
 
 const OUTPUT_CHUNK: usize = 64 * 1024; // protocol: output chunks <= 64 KiB
+// M2 honest signals: poll the foreground process group ~every 750 ms; debounce
+// bells to at most one per ~250 ms (docs/protocol.md "M2 honest signals").
+const PROC_POLL_INTERVAL: Duration = Duration::from_millis(750);
+const BELL_DEBOUNCE: Duration = Duration::from_millis(250);
+const BEL: u8 = 0x07;
 
 pub struct TermHandle {
     pub input_tx: mpsc::Sender<Vec<u8>>,
@@ -78,10 +83,13 @@ pub async fn spawn(
         .map_err(|e| format!("pty writer unavailable: {e}"))?;
 
     let (input_tx, mut input_rx) = mpsc::channel::<Vec<u8>>(256);
-    daemon.terms.lock().await.insert(
-        term_id.clone(),
-        Arc::new(TermHandle { input_tx, master: std::sync::Mutex::new(pty.master) }),
-    );
+    let handle = Arc::new(TermHandle { input_tx, master: std::sync::Mutex::new(pty.master) });
+    daemon.terms.lock().await.insert(term_id.clone(), handle.clone());
+
+    // M2 honest signals: poll the foreground process-group leader and push a
+    // term_proc whenever the name changes (the honest "card title = process
+    // name"). The loop stops when the term leaves daemon.terms (after exit).
+    tokio::spawn(proc_name_loop(daemon.clone(), term_id.clone(), handle));
 
     let (out_tx, out_rx) = mpsc::channel::<Vec<u8>>(256);
     tokio::task::spawn_blocking(move || {
@@ -131,13 +139,29 @@ pub async fn spawn(
 }
 
 // Forwards output to the app, then sends exit after output is drained so the
-// app always sees output frames before the exit frame.
+// app always sees output frames before the exit frame. This task holds the
+// daemon handle, so it is also where BEL (0x07) detection lives (the blocking
+// reader thread has no daemon handle and must not scan).
 async fn pump(
     daemon: Arc<Daemon>,
     term_id: String,
     mut out_rx: mpsc::Receiver<Vec<u8>>,
     mut exit_rx: oneshot::Receiver<Option<i64>>,
 ) {
+    // M2 honest signals: push at most one bell per BELL_DEBOUNCE window.
+    let mut last_bell: Option<Instant> = None;
+    let mut maybe_bell = |chunk: &[u8]| -> bool {
+        if !chunk.contains(&BEL) {
+            return false;
+        }
+        let now = Instant::now();
+        if last_bell.is_none_or(|t| now.duration_since(t) >= BELL_DEBOUNCE) {
+            last_bell = Some(now);
+            return true;
+        }
+        false
+    };
+
     let mut exit_code: Option<Option<i64>> = None;
     loop {
         if exit_code.is_some() {
@@ -145,9 +169,13 @@ async fn pump(
             // in case a grandchild still holds the pty open.
             match tokio::time::timeout(Duration::from_secs(2), out_rx.recv()).await {
                 Ok(Some(chunk)) => {
+                    let ring = maybe_bell(&chunk);
                     daemon
                         .push(Msg::Output { term_id: term_id.clone(), bytes: chunk })
                         .await;
+                    if ring {
+                        daemon.push(Msg::Bell { term_id: term_id.clone() }).await;
+                    }
                 }
                 _ => break,
             }
@@ -155,9 +183,13 @@ async fn pump(
             tokio::select! {
                 maybe = out_rx.recv() => match maybe {
                     Some(chunk) => {
+                        let ring = maybe_bell(&chunk);
                         daemon
                             .push(Msg::Output { term_id: term_id.clone(), bytes: chunk })
                             .await;
+                        if ring {
+                            daemon.push(Msg::Bell { term_id: term_id.clone() }).await;
+                        }
                     }
                     None => {
                         exit_code = Some((&mut exit_rx).await.unwrap_or(None));
@@ -176,4 +208,63 @@ async fn pump(
         warn!("term {term_id} missing from registry at exit");
     }
     daemon.push(Msg::Exit { term_id, code }).await;
+}
+
+// M2 honest signals: poll the foreground process-group leader of the pty every
+// PROC_POLL_INTERVAL and push a `term_proc` whenever the name changes (pushing
+// once on the first resolve). Stops when the term_id leaves daemon.terms (after
+// exit). Any FFI/lock failure just skips the tick — this loop never panics.
+async fn proc_name_loop(daemon: Arc<Daemon>, term_id: String, handle: Arc<TermHandle>) {
+    let mut last_name: Option<String> = None;
+    let mut ticker = tokio::time::interval(PROC_POLL_INTERVAL);
+    loop {
+        ticker.tick().await;
+        // Stop once the term has exited (pump removes it from the registry).
+        if !daemon.terms.lock().await.contains_key(&term_id) {
+            break;
+        }
+
+        // Lock the master only long enough to read the pgrp leader pid; the
+        // FFI path resolution happens after the lock is released.
+        let pid = {
+            let Ok(master) = handle.master.lock() else { continue };
+            master.process_group_leader()
+        };
+        let Some(pid) = pid else { continue };
+        let Some(name) = process_name(pid) else { continue };
+
+        if last_name.as_deref() != Some(name.as_str()) {
+            last_name = Some(name.clone());
+            daemon
+                .push(Msg::TermProc { term_id: term_id.clone(), name, pid: Some(pid as i64) })
+                .await;
+        }
+    }
+}
+
+// Resolve a pid's executable path via proc_pidpath (macOS) and return the file
+// basename. All unsafe FFI is guarded; any failure returns None (skip the tick).
+#[cfg(target_os = "macos")]
+fn process_name(pid: libc::pid_t) -> Option<String> {
+    let mut buf = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
+    // SAFETY: buf is a valid, sized allocation; proc_pidpath writes at most
+    // `buffersize` bytes and returns the number written (<= buffersize) or <= 0
+    // on error. We never read past `len`.
+    let len = unsafe {
+        libc::proc_pidpath(pid, buf.as_mut_ptr() as *mut libc::c_void, buf.len() as u32)
+    };
+    if len <= 0 {
+        return None;
+    }
+    buf.truncate(len as usize);
+    let path = String::from_utf8_lossy(&buf);
+    let base = std::path::Path::new(path.as_ref()).file_name()?.to_string_lossy().into_owned();
+    if base.is_empty() { None } else { Some(base) }
+}
+
+// Non-macOS fallback (the daemon ships on macOS; keep the crate buildable
+// elsewhere): no process-name resolution, so no term_proc is pushed.
+#[cfg(not(target_os = "macos"))]
+fn process_name(_pid: libc::pid_t) -> Option<String> {
+    None
 }

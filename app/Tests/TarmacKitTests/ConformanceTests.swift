@@ -277,6 +277,37 @@ final class ConformanceTests: XCTestCase {
         }
         XCTAssertNil(doc.termID)
     }
+
+    /// M2 honest signals (additive daemon → app types): term_proc (with/without
+    /// pid) and bell decode from the wire and survive an encode→decode trip.
+    func testM2TermProcAndBell() throws {
+        // {t:"term_proc", term_id:"t1", name:"vim"} — a pid-less wire shape.
+        let procBytes = hexData("""
+            83 a1 74 a9 74 65 72 6d 5f 70 72 6f 63
+            a7 74 65 72 6d 5f 69 64 a2 74 31
+            a4 6e 61 6d 65 a3 76 69 6d
+            """)
+        XCTAssertEqual(
+            try Message.decode(payload: procBytes),
+            .termProc(termID: "t1", name: "vim", pid: nil)
+        )
+
+        let withPid = Message.termProc(termID: "t1", name: "claude", pid: 99)
+        XCTAssertEqual(try Message.decode(payload: withPid.encodedPayload()), withPid)
+        let noPid = Message.termProc(termID: "t1", name: "claude", pid: nil)
+        XCTAssertEqual(try Message.decode(payload: noPid.encodedPayload()), noPid)
+        // The pid key is emitted only when present (missing ⇒ nil).
+        let noPidMap = try MsgPack.decode(noPid.encodedPayload())
+        XCTAssertNil(noPidMap["pid"])
+        let withPidMap = try MsgPack.decode(withPid.encodedPayload())
+        XCTAssertEqual(withPidMap["pid"], .int(99))
+
+        // {t:"bell", term_id:"t1"} from the wire.
+        let bellBytes = hexData("82 a1 74 a4 62 65 6c 6c a7 74 65 72 6d 5f 69 64 a2 74 31")
+        XCTAssertEqual(try Message.decode(payload: bellBytes), .bell(termID: "t1"))
+        let bell = Message.bell(termID: "t1")
+        XCTAssertEqual(try Message.decode(payload: bell.encodedPayload()), bell)
+    }
 }
 
 final class MessageDecodingRulesTests: XCTestCase {
@@ -433,6 +464,9 @@ final class MessageDecodingRulesTests: XCTestCase {
                 lastOpenedMs: 1_765_432_100_123
             )),
             .fileEvent(path: "/abs/x.md", mtimeMs: 1_765_432_100_123),
+            .termProc(termID: "u-1", name: "zsh", pid: 4242),
+            .termProc(termID: "u-1", name: "vim", pid: nil),
+            .bell(termID: "u-1"),
         ]
         for message in messages {
             XCTAssertEqual(try Message.decode(payload: message.encodedPayload()), message)

@@ -79,6 +79,17 @@ pub enum Msg {
         path: String,
         mtime_ms: u64,
     },
+    // M2 honest signals (daemon -> app; additive message types). A receiver
+    // that does not know them ignores them (Unknown), so they are safe.
+    TermProc {
+        term_id: String,
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pid: Option<i64>,
+    },
+    Bell {
+        term_id: String,
+    },
     // Unknown message types are ignored, not fatal (protocol rule).
     #[serde(other)]
     Unknown,
@@ -728,10 +739,43 @@ mod tests {
                 term_id: None,
             }),
             Msg::FileEvent { path: "/a.md".into(), mtime_ms: 1_765_432_100_123 },
+            // M2 honest signals (additive daemon -> app types).
+            Msg::TermProc { term_id: "t1".into(), name: "zsh".into(), pid: Some(4242) },
+            Msg::TermProc { term_id: "t1".into(), name: "vim".into(), pid: None },
+            Msg::Bell { term_id: "t1".into() },
         ];
         for m in msgs {
             assert_eq!(roundtrip(&m), m, "roundtrip failed for {m:?}");
         }
+    }
+
+    // M2 honest signals (additive): term_proc round-trips with and without
+    // pid, and a pid-less wire shape decodes to None; bell round-trips.
+    #[test]
+    fn m2_term_proc_and_bell_roundtrip() {
+        let with_pid = Msg::TermProc { term_id: "t1".into(), name: "claude".into(), pid: Some(99) };
+        assert_eq!(roundtrip(&with_pid), with_pid);
+        let no_pid = Msg::TermProc { term_id: "t1".into(), name: "claude".into(), pid: None };
+        assert_eq!(roundtrip(&no_pid), no_pid);
+
+        // {t:"term_proc", term_id:"t1", name:"vim"} — a pid-less wire shape.
+        let bytes = unhex(
+            "83 a1 74 a9 74 65 72 6d 5f 70 72 6f 63 \
+             a7 74 65 72 6d 5f 69 64 a2 74 31 \
+             a4 6e 61 6d 65 a3 76 69 6d",
+        );
+        assert_eq!(
+            decode(&bytes).unwrap(),
+            Msg::TermProc { term_id: "t1".into(), name: "vim".into(), pid: None }
+        );
+
+        let bell = Msg::Bell { term_id: "t1".into() };
+        assert_eq!(roundtrip(&bell), bell);
+        // {t:"bell", term_id:"t1"} from the wire.
+        let bell_bytes = unhex(
+            "82 a1 74 a4 62 65 6c 6c a7 74 65 72 6d 5f 69 64 a2 74 31",
+        );
+        assert_eq!(decode(&bell_bytes).unwrap(), Msg::Bell { term_id: "t1".into() });
     }
 
     #[test]

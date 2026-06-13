@@ -27,3 +27,6 @@ notify-debouncer-full.workspace = true
 tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 anyhow.workspace = true
+# M2 honest signals: proc_pidpath (foreground process name on macOS). Already
+# present transitively via portable-pty; declared directly for the FFI calls.
+libc = "0.2"

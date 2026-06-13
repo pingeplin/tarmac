@@ -280,6 +280,42 @@ provenance owner — it rides on both `restore.docs[]` and `doc_opened`. The she
 membership and `loose` flag ride on the persisted **tiles**, not the doc entry,
 so there is no extra persist change for them beyond the tile keys.
 
+## M2 honest signals
+
+Phase 3.5 (docs/v4/migration-plan.md Phase 3.5) surfaces the real terminal
+signals the wayfinding chrome is built around — foreground process name, the
+terminal bell, and exit. These are **new additive daemon→app message TYPES**, not
+new keys on existing messages: a receiver that does not recognize them ignores
+them under the unknown-type rule, so all 8 conformance vectors and every M1/v4
+frame decode unchanged. They carry no state through persist — they are live
+notifications about a running pty.
+
+    {t:"term_proc", term_id, name, pid:<int>|nil}   — daemon → app
+
+The current foreground process name on a terminal (the file basename of the
+process-group leader's executable). The daemon polls the pty's controlling
+process group (`tcgetpgrp` via `MasterPty::process_group_leader`) and resolves
+the executable path (`proc_pidpath` on macOS); it pushes a `term_proc` only when
+the name **changes** (deduped; pushed once on the first resolve). The app sets
+the term card's header label to `name` (the honest "card title = process name").
+
+| key | type | missing ⇒ | semantics |
+|---|---|---|---|
+| `term_id` | string (required) | — | the terminal whose foreground process this is |
+| `name` | string (required) | — | foreground process name (executable basename) |
+| `pid` | int \| nil | nil | the process-group leader pid, when resolvable (diagnostic) |
+
+    {t:"bell", term_id}                              — daemon → app
+
+A BEL byte (`0x07`) was seen in the terminal's output stream. The daemon scans
+forwarded output chunks for `0x07` and pushes `bell` debounced to at most one per
+~250 ms. The app gives the term card an amber (`#fdbc4b`) signal that clears on
+the next keystroke to that terminal or when it regains focus.
+
+| key | type | missing ⇒ | semantics |
+|---|---|---|---|
+| `term_id` | string (required) | — | the terminal that rang the bell |
+
 ## Conformance vectors
 
 Hex of the msgpack payload only (length prefix excluded). Decoding each vector MUST

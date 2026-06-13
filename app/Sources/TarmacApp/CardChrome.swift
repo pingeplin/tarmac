@@ -212,6 +212,9 @@ final class TileHeaderView: NSView {
     // a `← <termname>` owner chip (faint, line-soft border) for an attached doc.
     private let freshMeta = NSTextField(labelWithString: "✚ now")
     private let ownerChip = OwnerChipView()
+    // Phase 3.5 (M2 honest signals): an amber `●` bell dot in the right cluster,
+    // shown when a BEL was seen, cleared on the next keystroke / focus.
+    private let bellDot = NSTextField(labelWithString: "●")
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
@@ -254,6 +257,16 @@ final class TileHeaderView: NSView {
         ownerChip.isHidden = true
         addSubview(ownerChip)
 
+        bellDot.font = Theme.mono(9)
+        bellDot.textColor = Theme.amber
+        bellDot.isEditable = false
+        bellDot.isSelectable = false
+        bellDot.isBezeled = false
+        bellDot.drawsBackground = false
+        bellDot.toolTip = "bell"
+        bellDot.isHidden = true
+        addSubview(bellDot)
+
         if let unpinButton { addSubview(unpinButton) }
     }
 
@@ -293,6 +306,17 @@ final class TileHeaderView: NSView {
         needsLayout = true
     }
 
+    /// Phase 3.5 (M2 honest signals): an amber bell signal — a `●` dot in the
+    /// right cluster plus an amber accent on the kind glyph — shown when a BEL
+    /// was seen, cleared on the next keystroke to / focus on the terminal. This
+    /// is a state display (no animation; stays under Reduce Motion).
+    func setBell(_ on: Bool) {
+        guard on != !bellDot.isHidden else { return }
+        bellDot.isHidden = !on
+        kindGlyph.textColor = on ? Theme.amber : Theme.faint
+        needsLayout = true
+    }
+
     override func layout() {
         super.layout()
         let h = bounds.height
@@ -313,8 +337,18 @@ final class TileHeaderView: NSView {
         }
 
         // Right edge per crib §4/§5: right-to-left cluster
-        // [ownerChip][freshMeta][meta][✕], gap 7 (mr cluster gap 8 ≈ 7).
+        // [ownerChip][freshMeta][meta][✕][bell], gap 7 (mr cluster gap 8 ≈ 7).
         var rightX = bounds.width - 11
+        if !bellDot.isHidden {
+            let size = bellDot.fittedSize
+            bellDot.frame = NSRect(
+                x: rightX - size.width,
+                y: ((h - size.height) / 2).rounded(),
+                width: size.width,
+                height: size.height
+            )
+            rightX = bellDot.frame.minX - 7
+        }
         if let unpinButton {
             let size = unpinButton.intrinsicContentSize
             unpinButton.frame = NSRect(
