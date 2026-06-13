@@ -1,30 +1,32 @@
 import AppKit
 
-// Tokens from docs/m0/visual-crib.md (sRGB; oklch values pre-converted there).
+// Tokens from docs/v4/visual-crib.md §2 (Ghostty Breeze; authored sRGB hex).
 @MainActor
 enum Theme {
-    static let bg0 = srgb(0x0c0e12)
-    static let bg1 = srgb(0x12151a)
-    static let bg2 = srgb(0x191d24)
-    static let bg3 = srgb(0x20252e)
-    static let termBg = srgb(0x0a0c10)
-    static let line = srgb(0x262c36)
-    static let lineSoft = srgb(0x1d222b)
-    static let text = srgb(0xd8dbe2)
-    static let muted = srgb(0x8c93a0)
-    static let faint = srgb(0x5a616d)
-    static let agent = srgb(0x4eccd3)
-    static let agentDim = srgb(0x4eccd3, alpha: 0.16)
-    // Drag-lift border (crib-desk-tiles §5; authored hex, not a theme.css token).
-    static let liftBorder = srgb(0x39414e)
-    static let amber = srgb(0xe1ad63)
-    static let ok = srgb(0x7fc08c)
+    static let bg0 = srgb(0x24282c)
+    static let bg1 = srgb(0x2b3036)
+    static let bg2 = srgb(0x353b41)
+    static let bg3 = srgb(0x3e444b)
+    static let termBg = srgb(0x31363b)
+    // Terminal-interior default fg (crib §3; scoped Breeze muted, NOT chrome muted).
+    static let termFg = srgb(0xced2d6)
+    static let line = srgb(0x474e55)
+    static let lineSoft = srgb(0x3d434a)
+    static let text = srgb(0xeff0f1)
+    static let muted = srgb(0xb9bfc4)
+    static let faint = srgb(0x7f8c8d)
+    static let agent = srgb(0x1abc9c)
+    static let agentDim = srgb(0x1abc9c, alpha: 0.16)
+    // Drag-lift border (crib §4 prime/lift; authored hex, not a :root token).
+    static let liftBorder = srgb(0x5a626a)
+    static let amber = srgb(0xfdbc4b)
+    static let ok = srgb(0x1cdc9a)
 
     static let repoColors: [NSColor] = [
-        srgb(0xd78e88), // repo-a
-        srgb(0x81b482), // repo-b
-        srgb(0x89a4de), // repo-c
-        srgb(0xbe92c8), // repo-d
+        srgb(0xf67400), // repo-a — orange
+        srgb(0x11d116), // repo-b — green
+        srgb(0x1d99f3), // repo-c — blue
+        srgb(0x9b59b6), // repo-d — purple
     ]
 
     static func repoColor(for name: String) -> NSColor {

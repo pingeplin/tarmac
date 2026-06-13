@@ -70,7 +70,7 @@ final class DocWebView: NSView, WKNavigationDelegate {
 
     private static let fallbackHTML = """
         <!doctype html><html><head><meta charset="utf-8"><style>
-        body { background:#12151a; color:#b9bec8; margin:0; }
+        body { background:#2b3036; color:#ced3d7; margin:0; }
         #doc { max-width:720px; margin:0 auto; padding:26px 36px 72px;
                font:400 12px/1.7 ui-monospace, Menlo, monospace; white-space:pre-wrap; }
         </style></head><body><div id="doc"></div><script>
