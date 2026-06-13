@@ -8,12 +8,21 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use common::{Conn, LONG, TestDaemon};
-use tarmac_protocol::{Msg, Tile, repo_color_index};
+use tarmac_protocol::{BoardViewport, Msg, Tile, repo_color_index};
 
 fn write_doc(path: &Path, content: &str) -> String {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, content).unwrap();
     std::fs::canonicalize(path).unwrap().to_string_lossy().into_owned()
+}
+
+// Geometry-less tiles (M1 shape): the v4 x/y/w/h/z keys default to None.
+fn term_tile() -> Tile {
+    Tile { kind: "term".into(), path: None, x: None, y: None, w: None, h: None, z: None }
+}
+
+fn doc_tile(path: &str) -> Tile {
+    Tile { kind: "doc".into(), path: Some(path.into()), ..term_tile() }
 }
 
 fn cli_open(sock: &Path, path: &str) {
@@ -31,7 +40,7 @@ fn recv_doc_opened(app: &mut Conn) -> tarmac_protocol::DocEntry {
 
 fn recv_restore(app: &mut Conn) -> (Vec<tarmac_protocol::DocEntry>, Vec<Tile>) {
     let msg = app.recv_until("restore", |m| matches!(m, Msg::Restore { .. }));
-    let Msg::Restore { docs, tiles } = msg else { unreachable!() };
+    let Msg::Restore { docs, tiles, .. } = msg else { unreachable!() };
     (docs, tiles)
 }
 
@@ -130,7 +139,7 @@ fn doc_read_flips_flag_and_shows_in_fresh_restore() {
     assert_eq!(docs[0].path, a);
     assert!(docs[0].read, "doc_read must persist into restore");
     assert_eq!(docs[1].path, b);
-    assert_eq!(tiles, vec![Tile { kind: "term".into(), path: None }]);
+    assert_eq!(tiles, vec![term_tile()]);
 
     // cli re-open re-marks unread and never moves the dock slot.
     cli_open(&daemon.sock, &a);
@@ -165,11 +174,12 @@ fn layout_and_state_survive_daemon_restart() {
     app.send(&Msg::Layout {
         dock: vec![b.clone(), "/not/registered.md".into()],
         tiles: vec![
-            Tile { kind: "term".into(), path: None },
-            Tile { kind: "doc".into(), path: Some(b.clone()) },
-            Tile { kind: "split".into(), path: None },
-            Tile { kind: "doc".into(), path: Some("/not/registered.md".into()) },
+            term_tile(),
+            doc_tile(&b),
+            Tile { kind: "split".into(), ..term_tile() },
+            doc_tile("/not/registered.md"),
         ],
+        board: None,
     });
 
     // A file change before the restart: last_changed_ms must survive too.
@@ -212,13 +222,7 @@ fn layout_and_state_survive_daemon_restart() {
     assert!(docs[1].last_opened_ms.is_some());
     assert_eq!(docs[1].repo.as_deref(), Some("search-svc"));
     assert_eq!(docs[1].repo_color, Some(repo_color_index("search-svc")));
-    assert_eq!(
-        tiles,
-        vec![
-            Tile { kind: "term".into(), path: None },
-            Tile { kind: "doc".into(), path: Some(b.clone()) },
-        ]
-    );
+    assert_eq!(tiles, vec![term_tile(), doc_tile(&b)]);
 
     // Watches were re-established at load: a change to a restored doc emits.
     std::thread::sleep(Duration::from_millis(300)); // let the watch settle
@@ -229,4 +233,51 @@ fn layout_and_state_survive_daemon_restart() {
     app3.recv_until("file_event after restart", |m| {
         matches!(m, Msg::FileEvent { path, .. } if *path == b)
     });
+}
+
+// v4 Phase 2 (additive): the board viewport + per-tile world frame round-trip
+// through a layout snapshot, persist to disk, and reproduce after a restart.
+#[test]
+fn board_geometry_and_viewport_survive_daemon_restart() {
+    let mut daemon = TestDaemon::start();
+    let mut app = Conn::hello(&daemon.sock, "app");
+    recv_restore(&mut app);
+
+    let repo_dir = daemon.dir.join("board");
+    std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
+    let a = write_doc(&repo_dir.join("a.md"), "a\n");
+    cli_open(&daemon.sock, &a);
+    recv_doc_opened(&mut app);
+
+    let board = BoardViewport { zoom: 0.82, cx: 640.0, cy: 360.0 };
+    let term = Tile { kind: "term".into(), x: Some(92.0), y: Some(108.0), w: Some(470.0), h: Some(330.0), z: Some(0), path: None };
+    let doc = Tile { kind: "doc".into(), path: Some(a.clone()), x: Some(648.0), y: Some(140.0), w: Some(392.0), h: Some(310.0), z: Some(1) };
+    app.send(&Msg::Layout {
+        dock: vec![a.clone()],
+        tiles: vec![term.clone(), doc.clone()],
+        board: Some(board.clone()),
+    });
+
+    wait_for_state(&daemon.state_file(), "board + tile geometry", |v| {
+        let tiles = v["tiles"].as_array();
+        let geom_ok = tiles.is_some_and(|t| {
+            t.len() == 2
+                && t[1]["x"].as_f64() == Some(648.0)
+                && t[1]["w"].as_f64() == Some(392.0)
+                && t[1]["z"].as_i64() == Some(1)
+        });
+        let board_ok = v["board"]["zoom"].as_f64() == Some(0.82)
+            && v["board"]["cx"].as_f64() == Some(640.0);
+        geom_ok && board_ok
+    });
+
+    drop(app);
+
+    daemon.restart();
+
+    let mut app2 = Conn::hello(&daemon.sock, "app");
+    let restore = app2.recv_until("restore", |m| matches!(m, Msg::Restore { .. }));
+    let Msg::Restore { tiles, board: restored_board, .. } = restore else { unreachable!() };
+    assert_eq!(tiles, vec![term, doc], "tile world frames must reproduce after restart");
+    assert_eq!(restored_board, Some(board), "board viewport must reproduce after restart");
 }

@@ -2,16 +2,16 @@ import AppKit
 import QuartzCore
 import SwiftTerm
 
-/// Content view: optional left strip (dock 46px / index 224px), the desk grid
-/// (terminal + pinned doc tiles) filling the rest, the peek slide-over above,
-/// and the toast overlay on top.
+/// Content view: the infinite whiteboard (`BoardView`) fills the window, with the
+/// dock/index left rails, the peek slide-over, and the toast overlay layered on
+/// top (their removal is Phase 3 — kept as-is here per the Phase 2c scope).
 @MainActor
 final class RootView: NSView {
     enum LeftStrip {
         case none, dock, index
     }
 
-    let desk = DeskGridView()
+    let board = BoardView()
     let dock = DockView()
     let index = IndexView()
     let peek = PeekPanel()
@@ -28,7 +28,7 @@ final class RootView: NSView {
         wantsLayer = true
         layer?.backgroundColor = Theme.bg0.cgColor
 
-        addSubview(desk)
+        addSubview(board)
 
         dock.isHidden = true
         addSubview(dock)
@@ -42,13 +42,13 @@ final class RootView: NSView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    func attachTerminal(_ terminal: TerminalView) {
-        desk.attachTerminal(terminal)
+    func attachTerminal(_ terminal: TerminalView, worldFrame: CardFrame) {
+        board.setTerminal(terminal, worldFrame: worldFrame)
     }
 
-    /// Dock 46 ↔ index 224 swaps are instant (one terminal reflow per crib
-    /// §2.1); only the 0→dock birth slides, and the desk reflow itself is
-    /// never animated.
+    /// Dock 46 ↔ index 224 swaps are instant; only the 0→dock birth slides.
+    /// (Dock/index are Phase 3 removals; the board fills the full width — the
+    /// rails float above its left edge rather than insetting it.)
     func setLeftStrip(_ strip: LeftStrip, birth: Bool = false) {
         guard strip != leftStrip else { return }
         leftStrip = strip
@@ -67,24 +67,13 @@ final class RootView: NSView {
         }
     }
 
-    private var leftStripWidth: CGFloat {
-        switch leftStrip {
-        case .none: return 0
-        case .dock: return 46
-        case .index: return 224
-        }
-    }
-
     override func layout() {
         super.layout()
+        // The board is the infinite canvas — it fills the window. Dock/index are
+        // overlay rails on the left (Phase 3 retires them entirely).
+        board.frame = bounds
         dock.frame = NSRect(x: 0, y: 0, width: 46, height: bounds.height)
         index.frame = NSRect(x: 0, y: 0, width: 224, height: bounds.height)
-        desk.frame = NSRect(
-            x: leftStripWidth,
-            y: 0,
-            width: max(0, bounds.width - leftStripWidth),
-            height: bounds.height
-        )
         if !peekAnimating {
             peek.frame = peekFrame(visible: peekVisible)
         }

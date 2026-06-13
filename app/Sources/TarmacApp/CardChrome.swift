@@ -2,6 +2,12 @@ import AppKit
 import QuartzCore
 import TarmacKit
 
+// Shared card/tile chrome (was TileView.swift). The v4 `CardView` (board cards)
+// reuses these components; the desk-grid `TileView`/`DashedBorderView` were
+// removed with `DeskGridView` in Phase 2c. `UnpinButton` is retained as the
+// `TileHeaderView.init(unpinButton:)` type (CardView passes nil; Phase 3 may
+// reintroduce a per-card affordance).
+
 /// `✎ Ns` honest meta (crib-desk-tiles §3): visible while the 30s recency
 /// window is open, ticking at 1Hz (display granularity is 1s). The tick is a
 /// state display, not motion — it stays under Reduce Motion (crib-state §3.2).
@@ -124,7 +130,7 @@ final class UnpinButton: NSView {
     }
 }
 
-/// 28px tile header (crib §2): bg2, line-soft bottom hairline, padding 0 10px,
+/// 30px card header (crib §4): bg2, line-soft bottom hairline, padding 0 11px,
 /// gap 7px, mono 400 10.5px muted. The header is the drag handle; the unpin ✕
 /// is the one child that keeps its own mouse handling.
 @MainActor
@@ -196,7 +202,7 @@ final class TileHeaderView: NSView {
         let h = bounds.height
         hairline.frame = NSRect(x: 0, y: h - 1, width: bounds.width, height: 1)
 
-        var x: CGFloat = 10
+        var x: CGFloat = 11
         let glyphSize = kindGlyph.fittedSize
         kindGlyph.frame = NSRect(
             x: x,
@@ -210,8 +216,8 @@ final class TileHeaderView: NSView {
             x += 7 + 7
         }
 
-        // Right edge per crib §2 (README wins): [meta][gap 7][✕].
-        var rightX = bounds.width - 10
+        // Right edge per crib §4 (README wins): [meta][gap 7][✕].
+        var rightX = bounds.width - 11
         if let unpinButton {
             let size = unpinButton.intrinsicContentSize
             unpinButton.frame = NSRect(
@@ -265,7 +271,7 @@ final class TileHeaderView: NSView {
     }
 }
 
-/// Terminal tile body: term-bg with the M0 12px/16px body padding.
+/// Terminal card body: term-bg with the crib §4 card body padding (14px h / 10px v).
 @MainActor
 final class TerminalBodyView: NSView {
     private(set) weak var terminal: NSView?
@@ -290,193 +296,11 @@ final class TerminalBodyView: NSView {
     override func layout() {
         super.layout()
         terminal?.frame = NSRect(
-            x: 16,
-            y: 12,
-            width: max(0, bounds.width - 32),
-            height: max(0, bounds.height - 24)
+            x: 14,
+            y: 10,
+            width: max(0, bounds.width - 28),
+            height: max(0, bounds.height - 20)
         )
     }
 }
 
-/// Drop-target border (crib §5): 1.5px dashed agent replacing the solid line.
-/// Stroke is centered 0.75px inside; dash segments ≈3× line width (CSS
-/// `dashed` has no authored segment length — this matches UA rendering).
-@MainActor
-final class DashedBorderView: NSView {
-    override var acceptsFirstResponder: Bool { false }
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let path = NSBezierPath(
-            roundedRect: bounds.insetBy(dx: 0.75, dy: 0.75),
-            xRadius: 8.25,
-            yRadius: 8.25
-        )
-        path.lineWidth = 1.5
-        var pattern: [CGFloat] = [4.5, 4.5]
-        path.setLineDash(&pattern, count: 2, phase: 0)
-        Theme.agent.setStroke()
-        path.stroke()
-    }
-}
-
-/// Tile chrome per crib §2: bg1, 1px line border, 9px radius, 28px header,
-/// body below. The outer layer carries border + drag shadow; content lives in
-/// an inner rounded clip so the lift shadow is not masked away.
-@MainActor
-final class TileView: NSView {
-    let key: TileKey
-    let header: TileHeaderView
-    private(set) var docView: DocWebView?
-    private(set) var termBody: TerminalBodyView?
-
-    private let clip = FlippedColumnView()
-    private let body: NSView
-    private let dropBorder = DashedBorderView()
-    private var lifted = false
-    private var dropTarget = false
-    private var liftCleanup: DispatchWorkItem?
-
-    override var isFlipped: Bool { true }
-    override var acceptsFirstResponder: Bool { false }
-
-    init(key: TileKey) {
-        self.key = key
-        switch key {
-        case .term:
-            header = TileHeaderView(kindGlyph: "›_", showsRepoDot: false, unpinButton: nil)
-            let term = TerminalBodyView()
-            termBody = term
-            body = term
-        case .doc:
-            header = TileHeaderView(kindGlyph: "¶", showsRepoDot: true, unpinButton: UnpinButton())
-            let doc = DocWebView()
-            docView = doc
-            body = doc
-        }
-        super.init(frame: .zero)
-        wantsLayer = true
-        layer?.cornerRadius = 9
-        layer?.borderWidth = 1
-        layer?.borderColor = Theme.line.cgColor
-
-        clip.wantsLayer = true
-        clip.layer?.backgroundColor = Theme.bg1.cgColor
-        clip.layer?.cornerRadius = 9
-        clip.layer?.masksToBounds = true
-        addSubview(clip)
-        clip.addSubview(header)
-        clip.addSubview(body)
-
-        dropBorder.isHidden = true
-        addSubview(dropBorder)
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    override func layout() {
-        super.layout()
-        clip.frame = bounds
-        dropBorder.frame = bounds
-        header.frame = NSRect(x: 0, y: 0, width: bounds.width, height: 28)
-        body.frame = NSRect(x: 0, y: 28, width: bounds.width, height: max(0, bounds.height - 28))
-    }
-
-    // MARK: - Drag styling (crib §5)
-
-    /// Lift pops on instantly (`transition: none` while dragging); release
-    /// fades shadow/border back over the base 150ms ease — kept under Reduce
-    /// Motion per crib §5 (the prototype gates peek/toast/pulse only).
-    func setLifted(_ on: Bool) {
-        guard on != lifted, let layer else { return }
-        lifted = on
-        liftCleanup?.cancel()
-        liftCleanup = nil
-        if on {
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            layer.borderColor = Theme.liftBorder.cgColor
-            layer.zPosition = 1
-            CATransaction.commit()
-            // 0 18px 44px black @60% (blur halved per the M0 shadow convention).
-            let shadow = NSShadow()
-            shadow.shadowColor = NSColor.black.withAlphaComponent(0.6)
-            shadow.shadowOffset = NSSize(width: 0, height: -18)
-            shadow.shadowBlurRadius = 22
-            self.shadow = shadow
-        } else {
-            let ease = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1.0)
-            let border = CABasicAnimation(keyPath: "borderColor")
-            border.fromValue = Theme.liftBorder.cgColor
-            border.toValue = Theme.line.cgColor
-            border.duration = 0.15
-            border.timingFunction = ease
-            layer.borderColor = Theme.line.cgColor
-            layer.add(border, forKey: "liftBorderOff")
-            let fade = CABasicAnimation(keyPath: "shadowOpacity")
-            fade.fromValue = layer.shadowOpacity
-            fade.toValue = 0
-            fade.duration = 0.15
-            fade.timingFunction = ease
-            layer.shadowOpacity = 0
-            layer.add(fade, forKey: "liftShadowOff")
-            let work = DispatchWorkItem { [weak self] in
-                MainActor.assumeIsolated {
-                    guard let self, !self.lifted else { return }
-                    self.shadow = nil
-                    self.layer?.zPosition = 0
-                }
-            }
-            liftCleanup = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.16, execute: work)
-        }
-    }
-
-    /// Pointer-follow is 1:1 with no smoothing; rotation −0.5° about the center.
-    func setDragTransform(dx: CGFloat, dy: CGFloat) {
-        guard let layer else { return }
-        let center = CGPoint(x: bounds.midX, y: bounds.midY)
-        var transform = CGAffineTransform(translationX: dx + center.x, y: dy + center.y)
-        transform = transform.rotated(by: -0.5 * .pi / 180)
-        transform = transform.translatedBy(x: -center.x, y: -center.y)
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        layer.setAffineTransform(transform)
-        CATransaction.commit()
-    }
-
-    /// Snap back/into the slot is instant — transform is not in the transition list.
-    func clearDragTransform() {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        layer?.setAffineTransform(.identity)
-        CATransaction.commit()
-    }
-
-    /// CSS only transitions border-color: the dashed style flips instantly and
-    /// the cyan fades in/out over 150ms ease (kept under Reduce Motion, crib §5).
-    func setDropTarget(_ on: Bool) {
-        guard on != dropTarget, let layer else { return }
-        dropTarget = on
-        if on {
-            layer.borderWidth = 0
-            dropBorder.alphaValue = 0
-            dropBorder.isHidden = false
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.15
-                context.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1.0)
-                dropBorder.animator().alphaValue = 1
-            }
-        } else {
-            dropBorder.isHidden = true
-            dropBorder.alphaValue = 1
-            layer.borderWidth = 1
-            let fade = CABasicAnimation(keyPath: "borderColor")
-            fade.fromValue = Theme.agent.cgColor
-            fade.toValue = Theme.line.cgColor
-            fade.duration = 0.15
-            fade.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1.0)
-            layer.add(fade, forKey: "dropBorderOff")
-        }
-    }
-}

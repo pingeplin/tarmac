@@ -188,6 +188,57 @@ not in the registry are ignored; registered docs missing from `dock` keep their
 previous relative order, appended at the end (so an open racing a snapshot converges
 on insertion order).
 
+## v4 board additive keys
+
+The v4 "whiteboard" model (docs/v4/migration-plan.md Phase 2; docs/v4/visual-crib.md
+§9) makes each strip an infinite canvas: cards carry a world-space frame and the
+viewport (pan + zoom) is persisted. These are **additive** under the M0 encoding
+rules — new OPTIONAL keys, missing ⇒ nil, unknown keys still ignored — so all 7
+vectors above and every M1 frame decode unchanged (a tile with no geometry and a
+`layout`/`restore` with no `board` are exactly the M1 shapes).
+
+### Tile (extended)
+
+The tile gains an optional world-space card frame and stacking order. `kind` stays
+required; `path` and the new keys are all optional (missing ⇒ nil). Receivers still
+skip unknown `kind`s and ignore unknown keys.
+
+| key | type | missing ⇒ | semantics |
+|---|---|---|---|
+| `kind` | string (required) | — | `"term"` \| `"doc"` (unrecognized ⇒ skip the tile) |
+| `path` | string \| nil | nil | registry path (doc tiles) |
+| `x` | float \| nil | nil | world-space left |
+| `y` | float \| nil | nil | world-space top |
+| `w` | float \| nil | nil | world-space width |
+| `h` | float \| nil | nil | world-space height |
+| `z` | int \| nil | nil | stacking order (z-index) |
+
+A tile without `x/y/w/h/z` behaves exactly as an M1 tile (the app falls back to grid
+placement).
+
+### `board` viewport
+
+`restore` and `layout` gain an optional `board` map — the persisted viewport for the
+strip. The whole map is optional (missing ⇒ nil ⇒ the app uses a default viewport):
+
+    {t:"restore", docs:[...], tiles:[...], board:{zoom, cx, cy}}
+    {t:"layout",  dock:[...], tiles:[...], board:{zoom, cx, cy}}
+
+| key | type | missing ⇒ | semantics |
+|---|---|---|---|
+| `board.zoom` | float | — (required if `board` present) | viewport zoom factor |
+| `board.cx` | float | — (required if `board` present) | viewport center x (world) |
+| `board.cy` | float | — (required if `board` present) | viewport center y (world) |
+
+Daemon behavior: the registry stores the per-strip viewport alongside the tiles;
+`persist.rs` round-trips `x,y,w,h,z` (carried on the persisted tiles) and `board`
+(`PersistedState` gains an optional `board`; `PersistedDoc` is unchanged). On a
+`layout`, `board` is last-writer-wins: a snapshot carrying one replaces the stored
+viewport, a snapshot omitting it leaves the stored viewport untouched. A daemon
+restart followed by an app connect MUST reproduce the same frames + viewport in
+`restore` (the existing restart-indistinguishability invariant, extended to the new
+keys).
+
 ## Conformance vectors
 
 Hex of the msgpack payload only (length prefix excluded). Decoding each vector MUST
@@ -235,3 +286,23 @@ round-trip. Byte-exact encoder output is NOT required (key order may legally dif
        aa 72 65 70 6f 5f 63 6f 6c 6f 72 03
        a4 72 65 61 64 c2
        ae 6c 61 73 74 5f 6f 70 65 6e 65 64 5f 6d 73 cf 00 00 01 90 00 c7 9c 00
+
+8. (v4 board additive keys) `{t:"layout", dock:["/a.md"], tiles:[{kind:"doc",
+   path:"/a.md", x:120.0, y:80.0, w:470.0, h:330.0, z:2}], board:{zoom:0.82,
+   cx:640.0, cy:360.0}}` — geometry floats are msgpack float64 (`cb`); `z` is an
+   int. Decodes identically when the geometry keys / `board` are omitted (M1 shape,
+   vector 6). All floats here round-trip bit-exact (IEEE-754 double on both sides).
+
+       84 a1 74 a6 6c 61 79 6f 75 74
+       a4 64 6f 63 6b 91 a5 2f 61 2e 6d 64
+       a5 74 69 6c 65 73 91
+       87 a4 6b 69 6e 64 a3 64 6f 63 a4 70 61 74 68 a5 2f 61 2e 6d 64
+       a1 78 cb 40 5e 00 00 00 00 00 00
+       a1 79 cb 40 54 00 00 00 00 00 00
+       a1 77 cb 40 7d 60 00 00 00 00 00
+       a1 68 cb 40 74 a0 00 00 00 00 00
+       a1 7a 02
+       a5 62 6f 61 72 64 83
+       a4 7a 6f 6f 6d cb 3f ea 3d 70 a3 d7 0a 3d
+       a2 63 78 cb 40 84 00 00 00 00 00 00
+       a2 63 79 cb 40 76 80 00 00 00 00 00

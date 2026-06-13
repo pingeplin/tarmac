@@ -127,8 +127,8 @@ public final class DaemonClient: @unchecked Sendable {
         send(.docRead(path: path))
     }
 
-    public func layout(dock: [String], tiles: [LayoutTile]) {
-        send(.layout(dock: dock, tiles: tiles))
+    public func layout(dock: [String], tiles: [LayoutTile], board: BoardViewport? = nil) {
+        send(.layout(dock: dock, tiles: tiles, board: board))
     }
 
     // MARK: - Internals

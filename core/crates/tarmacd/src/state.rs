@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache, new_debouncer};
-use tarmac_protocol::{DocEntry, Msg, Tile};
+use tarmac_protocol::{BoardViewport, DocEntry, Msg, Tile};
 use tokio::sync::{Mutex, Notify, mpsc};
 use tokio_util::sync::CancellationToken;
 
@@ -21,7 +21,7 @@ pub struct DocInfo {
 }
 
 pub fn term_tile() -> Tile {
-    Tile { kind: "term".into(), path: None }
+    Tile { kind: "term".into(), path: None, x: None, y: None, w: None, h: None, z: None }
 }
 
 pub struct Registry {
@@ -30,11 +30,14 @@ pub struct Registry {
     // never shrinks in M1 (crib §5.1).
     pub dock: Vec<PathBuf>,
     pub tiles: Vec<Tile>,
+    // v4 board viewport for this (single) strip; None until the app sends one
+    // via a layout snapshot. Round-tripped through persist (crib §9).
+    pub board: Option<BoardViewport>,
 }
 
 impl Registry {
     pub fn empty() -> Self {
-        Registry { docs: HashMap::new(), dock: Vec::new(), tiles: vec![term_tile()] }
+        Registry { docs: HashMap::new(), dock: Vec::new(), tiles: vec![term_tile()], board: None }
     }
 
     pub fn entry(&self, path: &Path) -> Option<DocEntry> {
@@ -55,13 +58,16 @@ impl Registry {
         Msg::Restore {
             docs: self.dock.iter().filter_map(|p| self.entry(p)).collect(),
             tiles: self.tiles.clone(),
+            board: self.board.clone(),
         }
     }
 
     // Merge per docs/protocol.md "layout": paths not in the registry are
     // dropped; registered docs missing from the snapshot keep their previous
-    // relative order, appended at the end.
-    pub fn apply_layout(&mut self, dock: Vec<String>, tiles: Vec<Tile>) {
+    // relative order, appended at the end. The optional v4 board viewport is
+    // last-writer-wins: a snapshot carrying one replaces the stored viewport,
+    // a snapshot omitting it leaves the stored viewport untouched.
+    pub fn apply_layout(&mut self, dock: Vec<String>, tiles: Vec<Tile>, board: Option<BoardViewport>) {
         let mut seen: HashSet<PathBuf> = HashSet::new();
         let mut order: Vec<PathBuf> = Vec::new();
         for p in dock {
@@ -77,6 +83,9 @@ impl Registry {
         }
         self.dock = order;
         self.set_tiles(tiles);
+        if board.is_some() {
+            self.board = board;
+        }
     }
 
     pub fn set_tiles(&mut self, tiles: Vec<Tile>) {

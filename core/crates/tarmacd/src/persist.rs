@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tarmac_protocol::Tile;
+use tarmac_protocol::{BoardViewport, Tile};
 use tracing::warn;
 
 use crate::state::{Daemon, DocInfo, Registry};
@@ -30,13 +30,17 @@ struct PersistedDoc {
     repo_color: Option<u8>,
 }
 
-// docs[] is in dock order.
+// docs[] is in dock order. The Tile entries carry the v4 board geometry
+// (x,y,w,h,z) for free — those serde-optional fields persist as JSON keys.
 #[derive(Serialize, Deserialize, Default)]
 struct PersistedState {
     #[serde(default)]
     docs: Vec<PersistedDoc>,
     #[serde(default)]
     tiles: Vec<Tile>,
+    // v4 board viewport, additive (serde default => None for pre-v4 state files).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    board: Option<BoardViewport>,
 }
 
 // Missing or unreadable/corrupt state is never fatal: log and start empty.
@@ -77,6 +81,7 @@ pub fn load(path: &Path) -> Registry {
         reg.dock.push(path);
     }
     reg.set_tiles(state.tiles);
+    reg.board = state.board;
     reg
 }
 
@@ -100,6 +105,7 @@ fn snapshot(reg: &Registry) -> PersistedState {
             })
             .collect(),
         tiles: reg.tiles.clone(),
+        board: reg.board.clone(),
     }
 }
 

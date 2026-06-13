@@ -177,8 +177,8 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, msg: Msg) {
                 debug!("doc_read for unknown path {path}");
             }
         }
-        Msg::Layout { dock, tiles } => {
-            daemon.registry.lock().await.apply_layout(dock, tiles);
+        Msg::Layout { dock, tiles, board } => {
+            daemon.registry.lock().await.apply_layout(dock, tiles, board);
             daemon.mark_dirty();
         }
         Msg::Unknown => debug!("ignoring unknown message type from app"),

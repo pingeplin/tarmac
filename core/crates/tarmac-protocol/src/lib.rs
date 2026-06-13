@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const MAX_FRAME_LEN: u32 = 16 * 1024 * 1024;
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+// Eq is dropped from Msg/Tile/BoardViewport because the v4 board geometry
+// fields are f64 (no Eq); PartialEq still backs the conformance assert_eq!s.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(tag = "t", rename_all = "snake_case")]
 pub enum Msg {
     Hello {
@@ -29,11 +31,17 @@ pub enum Msg {
     Layout {
         dock: Vec<String>,
         tiles: Vec<Tile>,
+        // v4 board additive key (optional; missing => nil): persisted viewport.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        board: Option<BoardViewport>,
     },
     Restore {
         docs: Vec<DocEntry>,
         #[serde(default)]
         tiles: Vec<Tile>,
+        // v4 board additive key (optional; missing => nil): persisted viewport.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        board: Option<BoardViewport>,
     },
     SpawnTerm {
         term_id: String,
@@ -90,10 +98,33 @@ fn read_default() -> bool {
     true
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Tile {
     pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    // v4 board additive keys (optional; missing => nil): the world-space card
+    // frame and stacking order. A tile without these behaves as an M1 tile
+    // (the app falls back to grid placement), so M1 frames decode identically.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub x: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub y: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub w: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub h: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub z: Option<i64>,
+}
+
+/// The persisted board viewport for a strip: zoom factor + world-space center.
+/// v4 additive (`restore.board` / `layout.board`); whole map missing => nil.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct BoardViewport {
+    pub zoom: f64,
+    pub cx: f64,
+    pub cy: f64,
 }
 
 /// FNV-1a 64-bit over the repo name, mod 4 → palette index 0..=3.
@@ -201,6 +232,16 @@ mod tests {
         }
     }
 
+    // Geometry-less tiles (M1 shape): v4 x/y/w/h/z default to None, so these
+    // encode/decode exactly as M1 frames did.
+    fn term_tile() -> Tile {
+        Tile { kind: "term".into(), path: None, x: None, y: None, w: None, h: None, z: None }
+    }
+
+    fn doc_tile(path: &str) -> Tile {
+        Tile { kind: "doc".into(), path: Some(path.into()), ..term_tile() }
+    }
+
     fn roundtrip(m: &Msg) -> Msg {
         decode(&encode(m).unwrap()).unwrap()
     }
@@ -260,10 +301,8 @@ mod tests {
              82 a4 6b 69 6e 64 a3 64 6f 63 a4 70 61 74 68 a5 2f 61 2e 6d 64",
             Msg::Layout {
                 dock: vec!["/a.md".into()],
-                tiles: vec![
-                    Tile { kind: "term".into(), path: None },
-                    Tile { kind: "doc".into(), path: Some("/a.md".into()) },
-                ],
+                tiles: vec![term_tile(), doc_tile("/a.md")],
+                board: None,
             },
         );
     }
@@ -292,6 +331,40 @@ mod tests {
     }
 
     #[test]
+    fn conformance_vector_8_v4_board_keys() {
+        // docs/protocol.md vector 8: a layout whose doc tile carries x,y,w,h,z
+        // and whose top level carries a board {zoom,cx,cy}. float64 (cb) values.
+        assert_vector(
+            "84 a1 74 a6 6c 61 79 6f 75 74 \
+             a4 64 6f 63 6b 91 a5 2f 61 2e 6d 64 \
+             a5 74 69 6c 65 73 91 \
+             87 a4 6b 69 6e 64 a3 64 6f 63 a4 70 61 74 68 a5 2f 61 2e 6d 64 \
+             a1 78 cb 40 5e 00 00 00 00 00 00 \
+             a1 79 cb 40 54 00 00 00 00 00 00 \
+             a1 77 cb 40 7d 60 00 00 00 00 00 \
+             a1 68 cb 40 74 a0 00 00 00 00 00 \
+             a1 7a 02 \
+             a5 62 6f 61 72 64 83 \
+             a4 7a 6f 6f 6d cb 3f ea 3d 70 a3 d7 0a 3d \
+             a2 63 78 cb 40 84 00 00 00 00 00 00 \
+             a2 63 79 cb 40 76 80 00 00 00 00 00",
+            Msg::Layout {
+                dock: vec!["/a.md".into()],
+                tiles: vec![Tile {
+                    kind: "doc".into(),
+                    path: Some("/a.md".into()),
+                    x: Some(120.0),
+                    y: Some(80.0),
+                    w: Some(470.0),
+                    h: Some(330.0),
+                    z: Some(2),
+                }],
+                board: Some(BoardViewport { zoom: 0.82, cx: 640.0, cy: 360.0 }),
+            },
+        );
+    }
+
+    #[test]
     fn m0_shaped_doc_opened_decodes_with_defaults() {
         // {t:"doc_opened", path:"/a.md", via:"cli"} — exactly what an M0 daemon sends
         let bytes = unhex(
@@ -311,8 +384,50 @@ mod tests {
         );
         assert_eq!(
             decode(&bytes).unwrap(),
-            Msg::Restore { docs: vec![m0_entry("/a.md", "cli", None)], tiles: vec![] }
+            Msg::Restore { docs: vec![m0_entry("/a.md", "cli", None)], tiles: vec![], board: None }
         );
+    }
+
+    #[test]
+    fn m1_shaped_layout_decodes_with_nil_board_and_tile_geometry() {
+        // Conformance vector 6 verbatim — an M1 layout with no `board` key and
+        // geometry-less tiles. Decoding it under v4 must still produce all-None
+        // geometry + board None (additive guarantee).
+        let bytes = unhex(
+            "83 a1 74 a6 6c 61 79 6f 75 74 \
+             a4 64 6f 63 6b 91 a5 2f 61 2e 6d 64 \
+             a5 74 69 6c 65 73 92 \
+             81 a4 6b 69 6e 64 a4 74 65 72 6d \
+             82 a4 6b 69 6e 64 a3 64 6f 63 a4 70 61 74 68 a5 2f 61 2e 6d 64",
+        );
+        assert_eq!(
+            decode(&bytes).unwrap(),
+            Msg::Layout {
+                dock: vec!["/a.md".into()],
+                tiles: vec![term_tile(), doc_tile("/a.md")],
+                board: None,
+            }
+        );
+    }
+
+    #[test]
+    fn v4_board_keys_decode_from_wire() {
+        // {t:"layout", dock:[], tiles:[{kind:"doc", path:"/a.md", x:1.0, y:2.0,
+        //  w:3.0, h:4.0, z:5}], board:{zoom:0.5, cx:10.0, cy:20.0}}
+        let msg = Msg::Layout {
+            dock: vec![],
+            tiles: vec![Tile {
+                kind: "doc".into(),
+                path: Some("/a.md".into()),
+                x: Some(1.0),
+                y: Some(2.0),
+                w: Some(3.0),
+                h: Some(4.0),
+                z: Some(5),
+            }],
+            board: Some(BoardViewport { zoom: 0.5, cx: 10.0, cy: 20.0 }),
+        };
+        assert_eq!(roundtrip(&msg), msg);
     }
 
     #[test]
@@ -412,12 +527,35 @@ mod tests {
             Msg::DocRead { path: "/tmp/a.md".into() },
             Msg::Layout {
                 dock: vec!["/a.md".into(), "/b.md".into()],
-                tiles: vec![
-                    Tile { kind: "term".into(), path: None },
-                    Tile { kind: "doc".into(), path: Some("/b.md".into()) },
-                ],
+                tiles: vec![term_tile(), doc_tile("/b.md")],
+                board: None,
             },
-            Msg::Layout { dock: vec![], tiles: vec![] },
+            Msg::Layout { dock: vec![], tiles: vec![], board: None },
+            // v4 layout carrying world-frame tiles + a board viewport.
+            Msg::Layout {
+                dock: vec!["/b.md".into()],
+                tiles: vec![
+                    Tile {
+                        kind: "term".into(),
+                        path: None,
+                        x: Some(92.0),
+                        y: Some(108.0),
+                        w: Some(470.0),
+                        h: Some(330.0),
+                        z: Some(0),
+                    },
+                    Tile {
+                        kind: "doc".into(),
+                        path: Some("/b.md".into()),
+                        x: Some(648.0),
+                        y: Some(140.0),
+                        w: Some(392.0),
+                        h: Some(310.0),
+                        z: Some(1),
+                    },
+                ],
+                board: Some(BoardViewport { zoom: 0.82, cx: 640.0, cy: 360.0 }),
+            },
             Msg::Restore {
                 docs: vec![
                     m0_entry("/a.md", "cli", None),
@@ -432,7 +570,8 @@ mod tests {
                         last_opened_ms: Some(1_765_432_100_456),
                     },
                 ],
-                tiles: vec![Tile { kind: "term".into(), path: None }],
+                tiles: vec![term_tile()],
+                board: Some(BoardViewport { zoom: 1.0, cx: 0.0, cy: 0.0 }),
             },
             Msg::SpawnTerm {
                 term_id: "t1".into(),

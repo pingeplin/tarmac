@@ -36,13 +36,50 @@ public struct RestoreDoc: Equatable, Sendable {
 /// One slot in the desk tile order (`restore.tiles[]` / `layout.tiles[]`):
 /// kind "term" (no path) or "doc" (registry path). Unknown kinds pass through
 /// the codec; receivers skip them per the protocol.
+///
+/// v4 (Phase 2) adds the optional world-space card frame `x,y,w,h` and stacking
+/// order `z` — all additive (missing ⇒ nil). The init params default to nil so
+/// existing `LayoutTile(kind:)` / `LayoutTile(kind:path:)` calls are unchanged,
+/// and an M1 tile (no geometry) decodes with all-nil geometry.
 public struct LayoutTile: Equatable, Sendable {
     public var kind: String
     public var path: String?
+    public var x: Double?
+    public var y: Double?
+    public var w: Double?
+    public var h: Double?
+    public var z: Int?
 
-    public init(kind: String, path: String? = nil) {
+    public init(
+        kind: String,
+        path: String? = nil,
+        x: Double? = nil,
+        y: Double? = nil,
+        w: Double? = nil,
+        h: Double? = nil,
+        z: Int? = nil
+    ) {
         self.kind = kind
         self.path = path
+        self.x = x
+        self.y = y
+        self.w = w
+        self.h = h
+        self.z = z
+    }
+}
+
+/// The persisted board viewport for a strip: zoom factor + world-space center.
+/// v4 additive (`restore.board` / `layout.board`); whole map missing ⇒ nil.
+public struct BoardViewport: Equatable, Sendable {
+    public var zoom: Double
+    public var cx: Double
+    public var cy: Double
+
+    public init(zoom: Double, cx: Double, cy: Double) {
+        self.zoom = zoom
+        self.cx = cx
+        self.cy = cy
     }
 }
 
@@ -54,8 +91,8 @@ public enum Message: Equatable, Sendable {
     case err(msg: String)
     case open(path: String)
     case docRead(path: String)
-    case layout(dock: [String], tiles: [LayoutTile])
-    case restore(docs: [RestoreDoc], tiles: [LayoutTile])
+    case layout(dock: [String], tiles: [LayoutTile], board: BoardViewport?)
+    case restore(docs: [RestoreDoc], tiles: [LayoutTile], board: BoardViewport?)
     case spawnTerm(termID: String, cols: Int, rows: Int, cwd: String?, cmd: [String]?)
     case input(termID: String, bytes: Data)
     case resize(termID: String, cols: Int, rows: Int)
@@ -117,7 +154,8 @@ public extension Message {
         case "layout":
             return .layout(
                 dock: try req("dock", Self.stringArray),
-                tiles: try req("tiles", \.arrayValue).map(Self.layoutTile(from:))
+                tiles: try req("tiles", \.arrayValue).map(Self.layoutTile(from:)),
+                board: try Self.board(from: opt("board", \.mapValue))
             )
         case "restore":
             let docs = try req("docs", \.arrayValue).map { entry -> RestoreDoc in
@@ -125,7 +163,8 @@ public extension Message {
                 return try Self.docEntry(from: m)
             }
             let tiles = try (opt("tiles", \.arrayValue) ?? []).map(Self.layoutTile(from:))
-            return .restore(docs: docs, tiles: tiles)
+            let board = try Self.board(from: opt("board", \.mapValue))
+            return .restore(docs: docs, tiles: tiles, board: board)
         case "spawn_term":
             return .spawnTerm(
                 termID: try req("term_id", \.stringValue),
@@ -182,14 +221,32 @@ public extension Message {
         guard let m = value.mapValue else { throw MessageError.badField("tiles") }
         guard let kindRaw = m["kind"], !kindRaw.isNil else { throw MessageError.missingField("tiles.kind") }
         guard let kind = kindRaw.stringValue else { throw MessageError.badField("tiles.kind") }
-        let path: String?
-        if let raw = m["path"], !raw.isNil {
-            guard let s = raw.stringValue else { throw MessageError.badField("tiles.path") }
-            path = s
-        } else {
-            path = nil
+        func opt<T>(_ key: String, _ extract: (MsgPackValue) -> T?) throws -> T? {
+            guard let raw = m[key], !raw.isNil else { return nil }
+            guard let v = extract(raw) else { throw MessageError.badField("tiles.\(key)") }
+            return v
         }
-        return LayoutTile(kind: kind, path: path)
+        return LayoutTile(
+            kind: kind,
+            path: try opt("path", \.stringValue),
+            x: try opt("x", \.doubleValue),
+            y: try opt("y", \.doubleValue),
+            w: try opt("w", \.doubleValue),
+            h: try opt("h", \.doubleValue),
+            z: try opt("z", \.intValue)
+        )
+    }
+
+    /// Decode the optional v4 `board` viewport map. Whole map missing ⇒ nil;
+    /// when present, `zoom/cx/cy` are required floats.
+    private static func board(from map: [String: MsgPackValue]?) throws -> BoardViewport? {
+        guard let m = map else { return nil }
+        func req(_ key: String) throws -> Double {
+            guard let raw = m[key], !raw.isNil else { throw MessageError.missingField("board.\(key)") }
+            guard let v = raw.doubleValue else { throw MessageError.badField("board.\(key)") }
+            return v
+        }
+        return BoardViewport(zoom: try req("zoom"), cx: try req("cx"), cy: try req("cy"))
     }
 
     private static func stringArray(_ value: MsgPackValue) -> [String]? {
@@ -216,18 +273,22 @@ public extension Message {
             return .map(["t": .string("open"), "path": .string(path)])
         case .docRead(let path):
             return .map(["t": .string("doc_read"), "path": .string(path)])
-        case .layout(let dock, let tiles):
-            return .map([
+        case .layout(let dock, let tiles, let board):
+            var map: [String: MsgPackValue] = [
                 "t": .string("layout"),
                 "dock": .array(dock.map { .string($0) }),
                 "tiles": .array(tiles.map(Self.layoutTileValue)),
-            ])
-        case .restore(let docs, let tiles):
-            return .map([
+            ]
+            if let board { map["board"] = Self.boardValue(board) }
+            return .map(map)
+        case .restore(let docs, let tiles, let board):
+            var map: [String: MsgPackValue] = [
                 "t": .string("restore"),
                 "docs": .array(docs.map { .map(Self.docEntryFields($0)) }),
                 "tiles": .array(tiles.map(Self.layoutTileValue)),
-            ])
+            ]
+            if let board { map["board"] = Self.boardValue(board) }
+            return .map(map)
         case .spawnTerm(let termID, let cols, let rows, let cwd, let cmd):
             var map: [String: MsgPackValue] = [
                 "t": .string("spawn_term"),
@@ -289,7 +350,21 @@ public extension Message {
     private static func layoutTileValue(_ tile: LayoutTile) -> MsgPackValue {
         var m: [String: MsgPackValue] = ["kind": .string(tile.kind)]
         if let path = tile.path { m["path"] = .string(path) }
+        // v4 world frame: emit each key only when present (missing ⇒ nil).
+        if let x = tile.x { m["x"] = .double(x) }
+        if let y = tile.y { m["y"] = .double(y) }
+        if let w = tile.w { m["w"] = .double(w) }
+        if let h = tile.h { m["h"] = .double(h) }
+        if let z = tile.z { m["z"] = .int(Int64(z)) }
         return .map(m)
+    }
+
+    private static func boardValue(_ board: BoardViewport) -> MsgPackValue {
+        .map([
+            "zoom": .double(board.zoom),
+            "cx": .double(board.cx),
+            "cy": .double(board.cy),
+        ])
     }
 
     private static func uintValue(_ n: UInt64) -> MsgPackValue {
