@@ -95,7 +95,10 @@ fn open(raw_path: &str) -> Result<String, String> {
         other => return Err(format!("unexpected handshake reply: {other:?}")),
     }
 
-    send(&mut stream, &Msg::Open { path: canon.to_string_lossy().into_owned() })?;
+    // v4 Phase 3 provenance: if this CLI is running inside a tarmac pty, the
+    // daemon set TARMAC_TERM_ID in its env — attribute the open to that term.
+    let term_id = std::env::var("TARMAC_TERM_ID").ok().filter(|s| !s.is_empty());
+    send(&mut stream, &Msg::Open { path: canon.to_string_lossy().into_owned(), term_id })?;
     loop {
         match recv(&mut stream)? {
             Msg::Ack => return Ok(format!("opened {}", canon.display())),

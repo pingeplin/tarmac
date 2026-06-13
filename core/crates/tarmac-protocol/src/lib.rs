@@ -24,6 +24,11 @@ pub enum Msg {
     },
     Open {
         path: String,
+        // v4 Phase 3 additive key (optional; missing => nil): the term_id that
+        // ran `tarmac open` (provenance + gravity owner). The CLI reads it from
+        // TARMAC_TERM_ID in its pty env; the app open arm passes None for now.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        term_id: Option<String>,
     },
     DocRead {
         path: String,
@@ -92,6 +97,10 @@ pub struct DocEntry {
     pub read: bool,
     pub last_changed_ms: Option<u64>,
     pub last_opened_ms: Option<u64>,
+    // v4 Phase 3 additive key (optional; missing => nil): the term that opened
+    // the doc (provenance + gravity owner). Carried through restore/doc_opened.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub term_id: Option<String>,
 }
 
 fn read_default() -> bool {
@@ -116,6 +125,14 @@ pub struct Tile {
     pub h: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub z: Option<i64>,
+    // v4 Phase 3 additive keys (optional; missing => nil): `loose` is the
+    // gravity-detached flag (missing => attached); `shelf` true => the doc is
+    // parked on the shelf rather than placed on the board (a shelf doc tile has
+    // kind "doc", shelf:true, and no x/y/w/h).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loose: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shelf: Option<bool>,
 }
 
 /// The persisted board viewport for a strip: zoom factor + world-space center.
@@ -229,13 +246,24 @@ mod tests {
             read: true,
             last_changed_ms,
             last_opened_ms: None,
+            term_id: None,
         }
     }
 
-    // Geometry-less tiles (M1 shape): v4 x/y/w/h/z default to None, so these
-    // encode/decode exactly as M1 frames did.
+    // Geometry-less tiles (M1 shape): v4 x/y/w/h/z (and Phase 3 loose/shelf)
+    // default to None, so these encode/decode exactly as M1 frames did.
     fn term_tile() -> Tile {
-        Tile { kind: "term".into(), path: None, x: None, y: None, w: None, h: None, z: None }
+        Tile {
+            kind: "term".into(),
+            path: None,
+            x: None,
+            y: None,
+            w: None,
+            h: None,
+            z: None,
+            loose: None,
+            shelf: None,
+        }
     }
 
     fn doc_tile(path: &str) -> Tile {
@@ -326,6 +354,7 @@ mod tests {
                 read: false,
                 last_changed_ms: None,
                 last_opened_ms: Some(1_718_000_000_000),
+                term_id: None,
             }),
         );
     }
@@ -358,6 +387,8 @@ mod tests {
                     w: Some(470.0),
                     h: Some(330.0),
                     z: Some(2),
+                    loose: None,
+                    shelf: None,
                 }],
                 board: Some(BoardViewport { zoom: 0.82, cx: 640.0, cy: 360.0 }),
             },
@@ -424,10 +455,91 @@ mod tests {
                 w: Some(3.0),
                 h: Some(4.0),
                 z: Some(5),
+                loose: None,
+                shelf: None,
             }],
             board: Some(BoardViewport { zoom: 0.5, cx: 10.0, cy: 20.0 }),
         };
         assert_eq!(roundtrip(&msg), msg);
+    }
+
+    // v4 Phase 3 (additive): a tile carrying loose + shelf round-trips; an
+    // entry carrying term_id round-trips; an open carrying term_id round-trips.
+    #[test]
+    fn phase3_loose_shelf_and_term_id_roundtrip() {
+        // A shelf-parked, gravity-detached doc tile (no geometry).
+        let shelf_tile = Tile {
+            kind: "doc".into(),
+            path: Some("/a.md".into()),
+            x: None,
+            y: None,
+            w: None,
+            h: None,
+            z: None,
+            loose: Some(true),
+            shelf: Some(true),
+        };
+        assert_eq!(
+            roundtrip(&Msg::Layout {
+                dock: vec!["/a.md".into()],
+                tiles: vec![shelf_tile.clone()],
+                board: None,
+            }),
+            Msg::Layout { dock: vec!["/a.md".into()], tiles: vec![shelf_tile], board: None }
+        );
+
+        // A doc entry carrying its opener term_id.
+        let entry = DocEntry {
+            path: "/a.md".into(),
+            via: "cli".into(),
+            repo: None,
+            repo_root: None,
+            repo_color: None,
+            read: false,
+            last_changed_ms: None,
+            last_opened_ms: Some(1),
+            term_id: Some("term-42".into()),
+        };
+        assert_eq!(roundtrip(&Msg::DocOpened(entry.clone())), Msg::DocOpened(entry));
+
+        // An open carrying the calling term_id.
+        let open = Msg::Open { path: "/a.md".into(), term_id: Some("term-42".into()) };
+        assert_eq!(roundtrip(&open), open);
+    }
+
+    // Key-less M1 shapes still decode to None for the Phase 3 fields (additive
+    // guarantee): a tile with no loose/shelf, an entry with no term_id, an open
+    // with no term_id.
+    #[test]
+    fn phase3_keyless_shapes_decode_to_none() {
+        // {t:"open", path:"/a.md"} — an M0/M1 open with no term_id key.
+        let open_bytes = unhex("82 a1 74 a4 6f 70 65 6e a4 70 61 74 68 a5 2f 61 2e 6d 64");
+        assert_eq!(
+            decode(&open_bytes).unwrap(),
+            Msg::Open { path: "/a.md".into(), term_id: None }
+        );
+
+        // {t:"doc_opened", path:"/a.md", via:"cli"} — no term_id key.
+        let opened_bytes = unhex(
+            "83 a1 74 aa 64 6f 63 5f 6f 70 65 6e 65 64 \
+             a4 70 61 74 68 a5 2f 61 2e 6d 64 a3 76 69 61 a3 63 6c 69",
+        );
+        let Msg::DocOpened(entry) = decode(&opened_bytes).unwrap() else { panic!("not doc_opened") };
+        assert_eq!(entry.term_id, None);
+
+        // Conformance vector 6 (M1 layout) decodes with loose/shelf == None.
+        let layout_bytes = unhex(
+            "83 a1 74 a6 6c 61 79 6f 75 74 \
+             a4 64 6f 63 6b 91 a5 2f 61 2e 6d 64 \
+             a5 74 69 6c 65 73 92 \
+             81 a4 6b 69 6e 64 a4 74 65 72 6d \
+             82 a4 6b 69 6e 64 a3 64 6f 63 a4 70 61 74 68 a5 2f 61 2e 6d 64",
+        );
+        let Msg::Layout { tiles, .. } = decode(&layout_bytes).unwrap() else { panic!("not layout") };
+        assert_eq!(tiles[0].loose, None);
+        assert_eq!(tiles[0].shelf, None);
+        assert_eq!(tiles[1].loose, None);
+        assert_eq!(tiles[1].shelf, None);
     }
 
     #[test]
@@ -523,7 +635,8 @@ mod tests {
             Msg::HelloOk { v: 1 },
             Msg::Ack,
             Msg::Err { msg: "boom".into() },
-            Msg::Open { path: "/tmp/a.md".into() },
+            Msg::Open { path: "/tmp/a.md".into(), term_id: None },
+            Msg::Open { path: "/tmp/a.md".into(), term_id: Some("t1".into()) },
             Msg::DocRead { path: "/tmp/a.md".into() },
             Msg::Layout {
                 dock: vec!["/a.md".into(), "/b.md".into()],
@@ -543,6 +656,8 @@ mod tests {
                         w: Some(470.0),
                         h: Some(330.0),
                         z: Some(0),
+                        loose: None,
+                        shelf: None,
                     },
                     Tile {
                         kind: "doc".into(),
@@ -552,6 +667,20 @@ mod tests {
                         w: Some(392.0),
                         h: Some(310.0),
                         z: Some(1),
+                        loose: Some(true),
+                        shelf: None,
+                    },
+                    // A shelf doc tile: kind "doc", shelf:true, no geometry.
+                    Tile {
+                        kind: "doc".into(),
+                        path: Some("/c.md".into()),
+                        x: None,
+                        y: None,
+                        w: None,
+                        h: None,
+                        z: None,
+                        loose: Some(true),
+                        shelf: Some(true),
                     },
                 ],
                 board: Some(BoardViewport { zoom: 0.82, cx: 640.0, cy: 360.0 }),
@@ -568,6 +697,7 @@ mod tests {
                         read: false,
                         last_changed_ms: Some(1_765_432_100_123),
                         last_opened_ms: Some(1_765_432_100_456),
+                        term_id: Some("t1".into()),
                     },
                 ],
                 tiles: vec![term_tile()],
@@ -595,6 +725,7 @@ mod tests {
                 read: true,
                 last_changed_ms: None,
                 last_opened_ms: Some(1_765_432_100_123),
+                term_id: None,
             }),
             Msg::FileEvent { path: "/a.md".into(), mtime_ms: 1_765_432_100_123 },
         ];

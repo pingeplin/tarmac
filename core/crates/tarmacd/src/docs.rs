@@ -42,8 +42,14 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-// Single code path for CLI ("cli") and app ("user") opens.
-pub async fn handle_open(daemon: &Arc<Daemon>, raw_path: &str, via: &str) -> Result<(), String> {
+// Single code path for CLI ("cli") and app ("user") opens. `term_id` is the
+// calling terminal card (v4 Phase 3 provenance); None when unknown.
+pub async fn handle_open(
+    daemon: &Arc<Daemon>,
+    raw_path: &str,
+    via: &str,
+    term_id: Option<String>,
+) -> Result<(), String> {
     let p = Path::new(raw_path);
     if !p.is_absolute() {
         return Err(format!("path is not absolute: {raw_path}"));
@@ -73,9 +79,14 @@ pub async fn handle_open(daemon: &Arc<Daemon>, raw_path: &str, via: &str) -> Res
                 info.via = via.to_owned();
                 info.last_opened_ms = now_ms();
                 // Only cli opens may clear read; a user re-open leaves it
-                // (crib §2.1). The dock slot never moves on re-open.
+                // (crib §2.1). The dock slot never moves on re-open. A re-open
+                // that carries a term_id updates the provenance owner; one
+                // without leaves the prior owner untouched.
                 if via == "cli" {
                     info.read = false;
+                }
+                if term_id.is_some() {
+                    info.term_id = term_id.clone();
                 }
             }
             None => {
@@ -90,6 +101,7 @@ pub async fn handle_open(daemon: &Arc<Daemon>, raw_path: &str, via: &str) -> Res
                         repo_color: repo.as_ref().map(|r| r.color),
                         last_changed_ms: None,
                         last_opened_ms: now_ms(),
+                        term_id: term_id.clone(),
                     },
                 );
                 reg.dock.push(canon.clone());

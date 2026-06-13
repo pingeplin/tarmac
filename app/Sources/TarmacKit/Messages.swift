@@ -11,6 +11,9 @@ public struct RestoreDoc: Equatable, Sendable {
     public var read: Bool
     public var lastChangedMs: UInt64?
     public var lastOpenedMs: UInt64?
+    /// v4 Phase 3 additive (missing ⇒ nil): the term that opened the doc
+    /// (provenance + gravity owner).
+    public var termID: String?
 
     public init(
         path: String,
@@ -20,7 +23,8 @@ public struct RestoreDoc: Equatable, Sendable {
         repoColor: Int? = nil,
         read: Bool = true,
         lastChangedMs: UInt64? = nil,
-        lastOpenedMs: UInt64? = nil
+        lastOpenedMs: UInt64? = nil,
+        termID: String? = nil
     ) {
         self.path = path
         self.via = via
@@ -30,6 +34,7 @@ public struct RestoreDoc: Equatable, Sendable {
         self.read = read
         self.lastChangedMs = lastChangedMs
         self.lastOpenedMs = lastOpenedMs
+        self.termID = termID
     }
 }
 
@@ -49,6 +54,12 @@ public struct LayoutTile: Equatable, Sendable {
     public var w: Double?
     public var h: Double?
     public var z: Int?
+    /// v4 Phase 3 additive (missing ⇒ nil): gravity-detached flag (missing ⇒
+    /// attached).
+    public var loose: Bool?
+    /// v4 Phase 3 additive (missing ⇒ nil): true ⇒ the doc is parked on the
+    /// shelf rather than placed on the board (shelf tiles carry no geometry).
+    public var shelf: Bool?
 
     public init(
         kind: String,
@@ -57,7 +68,9 @@ public struct LayoutTile: Equatable, Sendable {
         y: Double? = nil,
         w: Double? = nil,
         h: Double? = nil,
-        z: Int? = nil
+        z: Int? = nil,
+        loose: Bool? = nil,
+        shelf: Bool? = nil
     ) {
         self.kind = kind
         self.path = path
@@ -66,6 +79,8 @@ public struct LayoutTile: Equatable, Sendable {
         self.w = w
         self.h = h
         self.z = z
+        self.loose = loose
+        self.shelf = shelf
     }
 }
 
@@ -89,7 +104,7 @@ public enum Message: Equatable, Sendable {
     case helloOK(v: Int)
     case ack
     case err(msg: String)
-    case open(path: String)
+    case open(path: String, termID: String?)
     case docRead(path: String)
     case layout(dock: [String], tiles: [LayoutTile], board: BoardViewport?)
     case restore(docs: [RestoreDoc], tiles: [LayoutTile], board: BoardViewport?)
@@ -148,7 +163,7 @@ public extension Message {
         case "err":
             return .err(msg: try req("msg", \.stringValue))
         case "open":
-            return .open(path: try req("path", \.stringValue))
+            return .open(path: try req("path", \.stringValue), termID: try opt("term_id", \.stringValue))
         case "doc_read":
             return .docRead(path: try req("path", \.stringValue))
         case "layout":
@@ -213,7 +228,8 @@ public extension Message {
             repoColor: try opt("repo_color", \.intValue),
             read: try opt("read", \.boolValue) ?? true,
             lastChangedMs: try opt("last_changed_ms", \.uint64Value),
-            lastOpenedMs: try opt("last_opened_ms", \.uint64Value)
+            lastOpenedMs: try opt("last_opened_ms", \.uint64Value),
+            termID: try opt("term_id", \.stringValue)
         )
     }
 
@@ -233,7 +249,9 @@ public extension Message {
             y: try opt("y", \.doubleValue),
             w: try opt("w", \.doubleValue),
             h: try opt("h", \.doubleValue),
-            z: try opt("z", \.intValue)
+            z: try opt("z", \.intValue),
+            loose: try opt("loose", \.boolValue),
+            shelf: try opt("shelf", \.boolValue)
         )
     }
 
@@ -269,8 +287,10 @@ public extension Message {
             return .map(["t": .string("ack")])
         case .err(let msg):
             return .map(["t": .string("err"), "msg": .string(msg)])
-        case .open(let path):
-            return .map(["t": .string("open"), "path": .string(path)])
+        case .open(let path, let termID):
+            var map: [String: MsgPackValue] = ["t": .string("open"), "path": .string(path)]
+            if let termID { map["term_id"] = .string(termID) }
+            return .map(map)
         case .docRead(let path):
             return .map(["t": .string("doc_read"), "path": .string(path)])
         case .layout(let dock, let tiles, let board):
@@ -344,6 +364,7 @@ public extension Message {
         if let color = doc.repoColor { entry["repo_color"] = .int(Int64(color)) }
         if let ms = doc.lastChangedMs { entry["last_changed_ms"] = uintValue(ms) }
         if let ms = doc.lastOpenedMs { entry["last_opened_ms"] = uintValue(ms) }
+        if let termID = doc.termID { entry["term_id"] = .string(termID) }
         return entry
     }
 
@@ -356,6 +377,9 @@ public extension Message {
         if let w = tile.w { m["w"] = .double(w) }
         if let h = tile.h { m["h"] = .double(h) }
         if let z = tile.z { m["z"] = .int(Int64(z)) }
+        // v4 Phase 3: emit each flag only when present (missing ⇒ nil).
+        if let loose = tile.loose { m["loose"] = .bool(loose) }
+        if let shelf = tile.shelf { m["shelf"] = .bool(shelf) }
         return .map(m)
     }
 

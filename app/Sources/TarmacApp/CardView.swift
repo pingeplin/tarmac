@@ -40,11 +40,23 @@ final class CardView: NSView {
     /// Header mouse-down requesting selection/raise before a move begins.
     var onSelectRequested: ((CardView) -> Void)?
 
+    // MARK: - Gravity / provenance (crib §4, §8)
+
+    /// The term card this doc card is a satellite of (provenance + gravity
+    /// owner). nil for the term card itself and for ownerless docs. The board
+    /// reads it to translate satellites on term-card moves and to draw edges.
+    var ownerTermID: CardID?
+
+    /// While attached (true) the card follows its owner term card; a USER move
+    /// detaches it (loose = !attached). Persisted as the tile `loose` flag.
+    var attached = true
+
     private let clip = FlippedColumnView()
     private let body: NSView
     private let handles: [HandleCorner: ResizeHandleView]
 
     private(set) var selected = false
+    private(set) var fresh = false
     private var lifted = false
 
     // Active move/resize gesture state (window-space anchors).
@@ -53,6 +65,10 @@ final class CardView: NSView {
         case resize(corner: HandleCorner, startWindow: NSPoint, startFrame: CardFrame)
     }
     private var gesture: Gesture?
+    /// The kind of the gesture that most recently committed — the board reads
+    /// it at `onFrameCommitted` to drive gravity (a term-card MOVE translates
+    /// satellites; a doc-card MOVE detaches it). Resize never touches gravity.
+    private(set) var lastCommittedGestureWasMove = false
     /// World units per view point — the board's current zoom; set before a drag
     /// so pointer deltas convert to world deltas. Defaults to 1.
     var worldPerView: CGFloat = 1
@@ -131,10 +147,56 @@ final class CardView: NSView {
     // MARK: - Selection
 
     func setSelected(_ on: Bool) {
+        // Selecting a fresh card clears the fresh ring (crib §5).
+        if on && fresh { setFresh(false) }
         guard on != selected else { return }
         selected = on
-        layer?.borderColor = (on ? Theme.agent : Theme.line).cgColor
+        layer?.borderColor = currentBorderColor.cgColor
         for h in handles.values { h.isHidden = !on }
+    }
+
+    /// The base border color for the current state: agent when selected or
+    /// fresh, else line (the lift state overrides this transiently).
+    private var currentBorderColor: NSColor {
+        (selected || fresh) ? Theme.agent : Theme.line
+    }
+
+    // MARK: - Fresh state (crib §4/§5): agent border + 3px agent-dim ring.
+
+    /// Cyan-dim halo just outside the border (`box-shadow 0 0 0 3px agent-dim`).
+    /// Sits behind the card's own (clipped) content on the non-clipped outer
+    /// layer; cleared when the card is selected or its doc is marked read.
+    private let ringLayer = CALayer()
+    private static let ringWidth: CGFloat = 3
+
+    func setFresh(_ on: Bool) {
+        guard on != fresh, let layer else { return }
+        fresh = on
+        if on {
+            ringLayer.backgroundColor = Theme.agentDim.cgColor
+            ringLayer.cornerRadius = Self.cornerRadius + Self.ringWidth
+            layer.insertSublayer(ringLayer, at: 0)
+        } else {
+            ringLayer.removeFromSuperlayer()
+        }
+        layer.borderColor = currentBorderColor.cgColor
+        header.setFreshMeta(on)
+        layoutRing()
+    }
+
+    private func layoutRing() {
+        guard fresh else { return }
+        let w = Self.ringWidth
+        ringLayer.frame = bounds.insetBy(dx: -w, dy: -w)
+    }
+
+    // MARK: - Owner chip bridge
+
+    /// `← <termname>` chip in the header right cluster while attached; nil hides
+    /// it (a detached/loose card shows none). The board feeds the owner term's
+    /// current label.
+    func setOwnerChip(_ termName: String?) {
+        header.setOwnerChip(termName)
     }
 
     // MARK: - Layout
@@ -150,6 +212,7 @@ final class CardView: NSView {
             height: max(0, bounds.height - Self.headerHeight)
         )
         layoutHandles()
+        layoutRing()
     }
 
     private func layoutHandles() {
@@ -211,8 +274,9 @@ final class CardView: NSView {
     var onWorldFrameChangedDuringGesture: ((CardView) -> Void)?
 
     private func endGesture(commit: Bool) {
-        guard gesture != nil else { return }
-        gesture = nil
+        guard let gesture else { return }
+        if case .move = gesture { lastCommittedGestureWasMove = true } else { lastCommittedGestureWasMove = false }
+        self.gesture = nil
         setLifted(false)
         if commit { onFrameCommitted?(self) }
     }
@@ -289,10 +353,10 @@ final class CardView: NSView {
             let ease = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1.0)
             let border = CABasicAnimation(keyPath: "borderColor")
             border.fromValue = Theme.liftBorder.cgColor
-            border.toValue = (selected ? Theme.agent : Theme.line).cgColor
+            border.toValue = currentBorderColor.cgColor
             border.duration = 0.15
             border.timingFunction = ease
-            layer.borderColor = (selected ? Theme.agent : Theme.line).cgColor
+            layer.borderColor = currentBorderColor.cgColor
             layer.add(border, forKey: "liftBorderOff")
         }
     }

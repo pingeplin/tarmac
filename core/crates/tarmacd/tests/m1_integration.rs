@@ -16,9 +16,20 @@ fn write_doc(path: &Path, content: &str) -> String {
     std::fs::canonicalize(path).unwrap().to_string_lossy().into_owned()
 }
 
-// Geometry-less tiles (M1 shape): the v4 x/y/w/h/z keys default to None.
+// Geometry-less tiles (M1 shape): the v4 x/y/w/h/z (+ Phase 3 loose/shelf)
+// keys default to None.
 fn term_tile() -> Tile {
-    Tile { kind: "term".into(), path: None, x: None, y: None, w: None, h: None, z: None }
+    Tile {
+        kind: "term".into(),
+        path: None,
+        x: None,
+        y: None,
+        w: None,
+        h: None,
+        z: None,
+        loose: None,
+        shelf: None,
+    }
 }
 
 fn doc_tile(path: &str) -> Tile {
@@ -27,7 +38,7 @@ fn doc_tile(path: &str) -> Tile {
 
 fn cli_open(sock: &Path, path: &str) {
     let mut cli = Conn::hello(sock, "cli");
-    cli.send(&Msg::Open { path: path.into() });
+    cli.send(&Msg::Open { path: path.into(), term_id: None });
     let reply = cli.recv(Instant::now() + LONG, "ack");
     assert!(matches!(reply, Msg::Ack), "expected ack, got {reply:?}");
 }
@@ -105,7 +116,7 @@ fn open_carries_repo_read_and_recency() {
 
     // --- user open of a new doc never marks it unread ---
     let user_doc = write_doc(&daemon.dir.join("plain/mine.md"), "me\n");
-    app.send(&Msg::Open { path: user_doc.clone() });
+    app.send(&Msg::Open { path: user_doc.clone(), term_id: None });
     let entry = recv_doc_opened(&mut app);
     assert_eq!(entry.via, "user");
     assert!(entry.read, "user opens never clear read");
@@ -128,7 +139,7 @@ fn doc_read_flips_flag_and_shows_in_fresh_restore() {
     app.send(&Msg::DocRead { path: a.clone() });
     app.send(&Msg::DocRead { path: a.clone() });
     let b = write_doc(&daemon.dir.join("b.md"), "b\n");
-    app.send(&Msg::Open { path: b.clone() });
+    app.send(&Msg::Open { path: b.clone(), term_id: None });
     let entry = recv_doc_opened(&mut app);
     assert_eq!(entry.path, b);
 
@@ -250,8 +261,8 @@ fn board_geometry_and_viewport_survive_daemon_restart() {
     recv_doc_opened(&mut app);
 
     let board = BoardViewport { zoom: 0.82, cx: 640.0, cy: 360.0 };
-    let term = Tile { kind: "term".into(), x: Some(92.0), y: Some(108.0), w: Some(470.0), h: Some(330.0), z: Some(0), path: None };
-    let doc = Tile { kind: "doc".into(), path: Some(a.clone()), x: Some(648.0), y: Some(140.0), w: Some(392.0), h: Some(310.0), z: Some(1) };
+    let term = Tile { kind: "term".into(), x: Some(92.0), y: Some(108.0), w: Some(470.0), h: Some(330.0), z: Some(0), path: None, loose: None, shelf: None };
+    let doc = Tile { kind: "doc".into(), path: Some(a.clone()), x: Some(648.0), y: Some(140.0), w: Some(392.0), h: Some(310.0), z: Some(1), loose: None, shelf: None };
     app.send(&Msg::Layout {
         dock: vec![a.clone()],
         tiles: vec![term.clone(), doc.clone()],
@@ -280,4 +291,73 @@ fn board_geometry_and_viewport_survive_daemon_restart() {
     let Msg::Restore { tiles, board: restored_board, .. } = restore else { unreachable!() };
     assert_eq!(tiles, vec![term, doc], "tile world frames must reproduce after restart");
     assert_eq!(restored_board, Some(board), "board viewport must reproduce after restart");
+}
+
+// v4 Phase 3 (additive): a shelf-parked, gravity-detached doc tile survives a
+// restart (sent via layout, reappears in restore); a doc's provenance term_id
+// is preserved through the restart.
+#[test]
+fn shelf_loose_and_term_id_survive_daemon_restart() {
+    let mut daemon = TestDaemon::start();
+    let mut app = Conn::hello(&daemon.sock, "app");
+    recv_restore(&mut app);
+
+    let repo_dir = daemon.dir.join("shelf");
+    std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
+    let a = write_doc(&repo_dir.join("a.md"), "a\n");
+
+    // Open the doc with a calling term_id (provenance owner).
+    app.send(&Msg::Open { path: a.clone(), term_id: Some("term-7".into()) });
+    let opened = recv_doc_opened(&mut app);
+    assert_eq!(opened.term_id.as_deref(), Some("term-7"), "open must carry the term_id");
+
+    // Park the doc on the shelf: kind "doc", shelf:true, loose:true, no geometry.
+    let shelf_tile = Tile {
+        kind: "doc".into(),
+        path: Some(a.clone()),
+        x: None,
+        y: None,
+        w: None,
+        h: None,
+        z: None,
+        loose: Some(true),
+        shelf: Some(true),
+    };
+    app.send(&Msg::Layout {
+        dock: vec![a.clone()],
+        tiles: vec![term_tile(), shelf_tile.clone()],
+        board: None,
+    });
+
+    wait_for_state(&daemon.state_file(), "shelf tile + term_id", |v| {
+        let tile_ok = v["tiles"].as_array().is_some_and(|t| {
+            t.iter().any(|tile| {
+                tile["kind"] == serde_json::json!("doc")
+                    && tile["shelf"] == serde_json::json!(true)
+                    && tile["loose"] == serde_json::json!(true)
+                    && tile["x"].is_null()
+            })
+        });
+        let term_ok = v["docs"]
+            .as_array()
+            .is_some_and(|d| d.iter().any(|doc| doc["term_id"] == serde_json::json!("term-7")));
+        tile_ok && term_ok
+    });
+
+    drop(app);
+    daemon.restart();
+
+    let mut app2 = Conn::hello(&daemon.sock, "app");
+    let restore = app2.recv_until("restore", |m| matches!(m, Msg::Restore { .. }));
+    let Msg::Restore { docs, tiles, .. } = restore else { unreachable!() };
+
+    assert!(
+        tiles.contains(&shelf_tile),
+        "shelf doc tile (shelf:true, loose:true, no geometry) must reproduce after restart"
+    );
+    assert_eq!(
+        docs.iter().find(|d| d.path == a).and_then(|d| d.term_id.as_deref()),
+        Some("term-7"),
+        "doc provenance term_id must survive a restart"
+    );
 }

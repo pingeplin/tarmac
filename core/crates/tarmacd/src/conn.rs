@@ -68,8 +68,8 @@ async fn cli_session(daemon: Arc<Daemon>, mut stream: UnixStream) -> anyhow::Res
             Err(_) => return Ok(()), // client closed (normal) or protocol error: drop
         };
         match proto::decode(&payload) {
-            Ok(Msg::Open { path }) => {
-                let reply = match docs::handle_open(&daemon, &path, "cli").await {
+            Ok(Msg::Open { path, term_id }) => {
+                let reply = match docs::handle_open(&daemon, &path, "cli", term_id).await {
                     Ok(()) => Msg::Ack,
                     Err(msg) => Msg::Err { msg },
                 };
@@ -156,9 +156,9 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, msg: Msg) {
                 None => debug!("resize for unknown term {term_id}"),
             }
         }
-        Msg::Open { path } => {
+        Msg::Open { path, term_id } => {
             // App open: via "user", no reply frame; doc_opened still pushed.
-            if let Err(e) = docs::handle_open(daemon, &path, "user").await {
+            if let Err(e) = docs::handle_open(daemon, &path, "user", term_id).await {
                 daemon.push(Msg::Err { msg: e }).await;
             }
         }

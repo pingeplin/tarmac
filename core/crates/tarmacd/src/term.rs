@@ -57,6 +57,9 @@ pub async fn spawn(
     builder.args(&argv[1..]);
     builder.cwd(cwd);
     builder.env("TERM", "xterm-256color"); // rest of env inherited
+    // v4 Phase 3 provenance: a `tarmac open` run inside this pty reads
+    // TARMAC_TERM_ID to attribute the open to its calling terminal card.
+    builder.env("TARMAC_TERM_ID", &term_id);
 
     let child = pty
         .slave

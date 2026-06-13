@@ -18,10 +18,23 @@ pub struct DocInfo {
     pub repo_color: Option<u8>,
     pub last_changed_ms: Option<u64>,
     pub last_opened_ms: u64,
+    // v4 Phase 3: the term that opened this doc (provenance + gravity owner);
+    // None when opened without a TARMAC_TERM_ID (e.g. a bare CLI run).
+    pub term_id: Option<String>,
 }
 
 pub fn term_tile() -> Tile {
-    Tile { kind: "term".into(), path: None, x: None, y: None, w: None, h: None, z: None }
+    Tile {
+        kind: "term".into(),
+        path: None,
+        x: None,
+        y: None,
+        w: None,
+        h: None,
+        z: None,
+        loose: None,
+        shelf: None,
+    }
 }
 
 pub struct Registry {
@@ -51,6 +64,7 @@ impl Registry {
             read: info.read,
             last_changed_ms: info.last_changed_ms,
             last_opened_ms: Some(info.last_opened_ms),
+            term_id: info.term_id.clone(),
         })
     }
 

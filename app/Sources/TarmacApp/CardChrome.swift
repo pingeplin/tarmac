@@ -2,6 +2,29 @@ import AppKit
 import QuartzCore
 import TarmacKit
 
+/// A top-down (flipped) container view. Was defined in the now-removed
+/// DockView.swift; relocated here as it backs `CardView.clip`, `BoardView`'s
+/// card layer, the shelf, and the edge layer.
+@MainActor
+final class FlippedColumnView: NSView {
+    override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { false }
+}
+
+/// NSTextField's intrinsicContentSize under-reports its drawn width (cell
+/// insets), which triggers spurious truncation at exact-fit frames; measure
+/// via sizeToFit instead. (Was defined in the now-removed DockView.swift.)
+@MainActor
+extension NSTextField {
+    var fittedSize: NSSize {
+        let saved = frame
+        sizeToFit()
+        let size = frame.size
+        frame = saved
+        return size
+    }
+}
+
 // Shared card/tile chrome (was TileView.swift). The v4 `CardView` (board cards)
 // reuses these components; the desk-grid `TileView`/`DashedBorderView` were
 // removed with `DeskGridView` in Phase 2c. `UnpinButton` is retained as the
@@ -130,6 +153,46 @@ final class UnpinButton: NSView {
     }
 }
 
+/// `← <termname>` owner chip (crib §4): an attached doc card's header shows its
+/// owner term. Faint 9px mono, 1px line-soft border, radius 4, padding 1px 6px.
+/// Display-only (click-through).
+@MainActor
+final class OwnerChipView: NSView {
+    private let label = NSTextField(labelWithString: "")
+    private var size: NSSize = .zero
+
+    override var acceptsFirstResponder: Bool { false }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = 4
+        layer?.borderWidth = 1
+        layer?.borderColor = Theme.lineSoft.cgColor
+        label.font = Theme.mono(9)
+        label.textColor = Theme.faint
+        label.isEditable = false
+        label.isSelectable = false
+        label.isBezeled = false
+        label.drawsBackground = false
+        addSubview(label)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    func setLabel(_ text: String) {
+        label.stringValue = text
+        let textSize = label.intrinsicContentSize
+        // padding 1px 6px.
+        size = NSSize(width: textSize.width + 12, height: textSize.height + 2)
+        label.frame = NSRect(x: 6, y: 1, width: textSize.width, height: textSize.height)
+        invalidateIntrinsicContentSize()
+    }
+
+    override var intrinsicContentSize: NSSize { size }
+}
+
 /// 30px card header (crib §4): bg2, line-soft bottom hairline, padding 0 11px,
 /// gap 7px, mono 400 10.5px muted. The header is the drag handle; the unpin ✕
 /// is the one child that keeps its own mouse handling.
@@ -145,6 +208,10 @@ final class TileHeaderView: NSView {
     private let kindGlyph: NSTextField
     private let repoDot: NSView?
     private let pathLabel = NSTextField(labelWithString: "")
+    // Phase 3 header right-cluster extras: `✚ now` fresh badge (agent cyan) and
+    // a `← <termname>` owner chip (faint, line-soft border) for an attached doc.
+    private let freshMeta = NSTextField(labelWithString: "✚ now")
+    private let ownerChip = OwnerChipView()
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
@@ -179,6 +246,14 @@ final class TileHeaderView: NSView {
         meta.onUpdate = { [weak self] in self?.needsLayout = true }
         addSubview(meta)
 
+        freshMeta.font = Theme.mono(9.5)
+        freshMeta.textColor = Theme.agent
+        freshMeta.isHidden = true
+        addSubview(freshMeta)
+
+        ownerChip.isHidden = true
+        addSubview(ownerChip)
+
         if let unpinButton { addSubview(unpinButton) }
     }
 
@@ -194,6 +269,27 @@ final class TileHeaderView: NSView {
 
     func setLabel(_ text: String) {
         pathLabel.stringValue = text
+        needsLayout = true
+    }
+
+    /// `✚ now` fresh badge (crib §5): a freshly-landed CLI doc card shows it in
+    /// agent cyan until selected / marked read.
+    func setFreshMeta(_ on: Bool) {
+        guard on != !freshMeta.isHidden else { return }
+        freshMeta.isHidden = !on
+        if on { freshMeta.sizeToFit() }
+        needsLayout = true
+    }
+
+    /// `← <termname>` owner chip (crib §4): an attached doc card shows its
+    /// owner term's current label; a detached (loose) card passes nil.
+    func setOwnerChip(_ termName: String?) {
+        if let termName {
+            ownerChip.setLabel("← \(termName)")
+            ownerChip.isHidden = false
+        } else {
+            ownerChip.isHidden = true
+        }
         needsLayout = true
     }
 
@@ -216,7 +312,8 @@ final class TileHeaderView: NSView {
             x += 7 + 7
         }
 
-        // Right edge per crib §4 (README wins): [meta][gap 7][✕].
+        // Right edge per crib §4/§5: right-to-left cluster
+        // [ownerChip][freshMeta][meta][✕], gap 7 (mr cluster gap 8 ≈ 7).
         var rightX = bounds.width - 11
         if let unpinButton {
             let size = unpinButton.intrinsicContentSize
@@ -237,6 +334,26 @@ final class TileHeaderView: NSView {
                 height: size.height
             )
             rightX = meta.frame.minX - 7
+        }
+        if !freshMeta.isHidden {
+            let size = freshMeta.fittedSize
+            freshMeta.frame = NSRect(
+                x: rightX - size.width,
+                y: ((h - size.height) / 2).rounded(),
+                width: size.width,
+                height: size.height
+            )
+            rightX = freshMeta.frame.minX - 7
+        }
+        if !ownerChip.isHidden {
+            let size = ownerChip.intrinsicContentSize
+            ownerChip.frame = NSRect(
+                x: rightX - size.width,
+                y: ((h - size.height) / 2).rounded(),
+                width: size.width,
+                height: size.height
+            )
+            rightX = ownerChip.frame.minX - 7
         }
         let labelHeight = pathLabel.intrinsicContentSize.height
         pathLabel.frame = NSRect(

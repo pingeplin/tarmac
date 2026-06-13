@@ -119,8 +119,8 @@ public final class DaemonClient: @unchecked Sendable {
         send(.resize(termID: termID, cols: cols, rows: rows))
     }
 
-    public func open(path: String) {
-        send(.open(path: path))
+    public func open(path: String, termID: String? = nil) {
+        send(.open(path: path, termID: termID))
     }
 
     public func docRead(path: String) {

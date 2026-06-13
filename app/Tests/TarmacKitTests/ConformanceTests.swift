@@ -217,6 +217,65 @@ final class ConformanceTests: XCTestCase {
         XCTAssertNil(board)
         XCTAssertNil(tiles[0].x)
         XCTAssertNil(tiles[1].z)
+        // Phase 3 fields default to nil on an M1 tile (additive guarantee).
+        XCTAssertNil(tiles[0].loose)
+        XCTAssertNil(tiles[1].shelf)
+    }
+
+    /// v4 Phase 3 (additive): a Tile with loose+shelf, a DocEntry with term_id,
+    /// and an Open with term_id each survive an encode→decode round-trip; and
+    /// the key-less M1 shapes still decode to nil.
+    func testPhase3LooseShelfAndTermIDRoundTrip() throws {
+        // A shelf-parked, gravity-detached doc tile (no geometry).
+        let shelfLayout = Message.layout(
+            dock: ["/a.md"],
+            tiles: [LayoutTile(kind: "doc", path: "/a.md", loose: true, shelf: true)],
+            board: nil
+        )
+        XCTAssertEqual(try Message.decode(payload: shelfLayout.encodedPayload()), shelfLayout)
+
+        // A doc entry carrying its opener term_id.
+        let opened = Message.docOpened(doc: RestoreDoc(
+            path: "/a.md",
+            via: "cli",
+            read: false,
+            lastOpenedMs: 1,
+            termID: "term-42"
+        ))
+        XCTAssertEqual(try Message.decode(payload: opened.encodedPayload()), opened)
+
+        // An open carrying the calling term_id.
+        let open = Message.open(path: "/a.md", termID: "term-42")
+        XCTAssertEqual(try Message.decode(payload: open.encodedPayload()), open)
+
+        // Encoders must emit the keys with the documented wire names.
+        let tileMap = try MsgPack.decode(shelfLayout.encodedPayload())
+        guard case .array(let tiles)? = tileMap["tiles"], case .map(let t0)? = tiles.first else {
+            return XCTFail("layout tiles did not encode as an array of maps")
+        }
+        XCTAssertEqual(t0["loose"], .bool(true))
+        XCTAssertEqual(t0["shelf"], .bool(true))
+        let entryMap = try MsgPack.decode(opened.encodedPayload())
+        XCTAssertEqual(entryMap["term_id"], .string("term-42"))
+        let openMap = try MsgPack.decode(open.encodedPayload())
+        XCTAssertEqual(openMap["term_id"], .string("term-42"))
+    }
+
+    /// Key-less M1/M0 shapes decode to nil for the Phase 3 fields.
+    func testPhase3KeylessShapesDecodeToNil() throws {
+        // {t:"open", path:"/a.md"} — an M0/M1 open with no term_id key.
+        let openBytes = hexData("82 a1 74 a4 6f 70 65 6e a4 70 61 74 68 a5 2f 61 2e 6d 64")
+        XCTAssertEqual(try Message.decode(payload: openBytes), .open(path: "/a.md", termID: nil))
+
+        // {t:"doc_opened", path:"/a.md", via:"cli"} — no term_id key.
+        let openedBytes = hexData("""
+            83 a1 74 aa 64 6f 63 5f 6f 70 65 6e 65 64
+            a4 70 61 74 68 a5 2f 61 2e 6d 64 a3 76 69 61 a3 63 6c 69
+            """)
+        guard case .docOpened(let doc) = try Message.decode(payload: openedBytes) else {
+            return XCTFail("not doc_opened")
+        }
+        XCTAssertNil(doc.termID)
     }
 }
 
@@ -334,7 +393,8 @@ final class MessageDecodingRulesTests: XCTestCase {
             .helloOK(v: 1),
             .ack,
             .err(msg: "nope"),
-            .open(path: "/abs/x.md"),
+            .open(path: "/abs/x.md", termID: nil),
+            .open(path: "/abs/x.md", termID: "t1"),
             .docRead(path: "/abs/x.md"),
             .layout(dock: [], tiles: [], board: nil),
             .layout(

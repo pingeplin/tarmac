@@ -2,23 +2,20 @@ import AppKit
 import QuartzCore
 import SwiftTerm
 
-/// Content view: the infinite whiteboard (`BoardView`) fills the window, with the
-/// dock/index left rails, the peek slide-over, and the toast overlay layered on
-/// top (their removal is Phase 3 — kept as-is here per the Phase 2c scope).
+/// Content view: the infinite whiteboard (`BoardView`) fills the window above a
+/// 27px status bar, with the shelf overlay (top-left), the cold-start hint, the
+/// peek slide-over, and the toast overlay layered on top. The dock/index rails
+/// were retired in Phase 3 (the shelf replaces the dock).
 @MainActor
 final class RootView: NSView {
-    enum LeftStrip {
-        case none, dock, index
-    }
-
     let board = BoardView()
-    let dock = DockView()
-    let index = IndexView()
+    let shelf = ShelfView()
+    let statusBar = StatusBar()
+    let coldStartHint = ColdStartHintView()
     let peek = PeekPanel()
     let toasts = ToastStackView()
 
     private(set) var peekVisible = false
-    private(set) var leftStrip: LeftStrip = .none
     private var peekAnimating = false
 
     override var isFlipped: Bool { true }
@@ -29,11 +26,11 @@ final class RootView: NSView {
         layer?.backgroundColor = Theme.bg0.cgColor
 
         addSubview(board)
-
-        dock.isHidden = true
-        addSubview(dock)
-        index.isHidden = true
-        addSubview(index)
+        addSubview(statusBar)
+        coldStartHint.isHidden = true
+        addSubview(coldStartHint)
+        // Shelf floats over the board's top-left; hidden until non-empty.
+        addSubview(shelf)
 
         peek.isHidden = true
         addSubview(peek)
@@ -46,34 +43,16 @@ final class RootView: NSView {
         board.setTerminal(terminal, worldFrame: worldFrame)
     }
 
-    /// Dock 46 ↔ index 224 swaps are instant; only the 0→dock birth slides.
-    /// (Dock/index are Phase 3 removals; the board fills the full width — the
-    /// rails float above its left edge rather than insetting it.)
-    func setLeftStrip(_ strip: LeftStrip, birth: Bool = false) {
-        guard strip != leftStrip else { return }
-        leftStrip = strip
-        dock.isHidden = strip != .dock
-        index.isHidden = strip != .index
-        needsLayout = true
-        layoutSubtreeIfNeeded()
-
-        if birth, strip == .dock, !Theme.reduceMotion {
-            let slide = CABasicAnimation(keyPath: "transform.translation.x")
-            slide.fromValue = -46
-            slide.toValue = 0
-            slide.duration = 0.22
-            slide.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.8, 0.2, 1.0)
-            dock.layer?.add(slide, forKey: "dockBirth")
-        }
-    }
+    /// Board height = window minus the 27px status bar (migration-plan Phase 3).
+    private var boardHeight: CGFloat { max(0, bounds.height - StatusBar.height) }
 
     override func layout() {
         super.layout()
-        // The board is the infinite canvas — it fills the window. Dock/index are
-        // overlay rails on the left (Phase 3 retires them entirely).
-        board.frame = bounds
-        dock.frame = NSRect(x: 0, y: 0, width: 46, height: bounds.height)
-        index.frame = NSRect(x: 0, y: 0, width: 224, height: bounds.height)
+        board.frame = NSRect(x: 0, y: 0, width: bounds.width, height: boardHeight)
+        statusBar.frame = NSRect(x: 0, y: boardHeight, width: bounds.width, height: StatusBar.height)
+        // Cold-start hint: one line just above the status bar, full width.
+        coldStartHint.frame = NSRect(x: 0, y: boardHeight - 28, width: bounds.width, height: 20)
+        // The shelf sizes itself (top-left at 12,12); nothing to lay out here.
         if !peekAnimating {
             peek.frame = peekFrame(visible: peekVisible)
         }

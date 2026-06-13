@@ -37,10 +37,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller?.peekRecent()
     }
 
-    @objc func toggleIndex(_ sender: Any?) {
-        controller?.toggleIndex()
-    }
-
     @objc func pinPeekedDoc(_ sender: Any?) {
         controller?.togglePinPeeked()
     }
@@ -69,7 +65,6 @@ func buildMainMenu() -> NSMenu {
     let viewItem = NSMenuItem()
     let viewMenu = NSMenu(title: "View")
     viewMenu.addItem(withTitle: "Peek Recent Doc", action: #selector(AppDelegate.peekRecentDoc(_:)), keyEquivalent: "p")
-    viewMenu.addItem(withTitle: "Toggle Index", action: #selector(AppDelegate.toggleIndex(_:)), keyEquivalent: "e")
     viewMenu.addItem(withTitle: "Pin Peeked Doc", action: #selector(AppDelegate.pinPeekedDoc(_:)), keyEquivalent: "\r")
     viewItem.submenu = viewMenu
     main.addItem(viewItem)

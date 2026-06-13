@@ -54,6 +54,8 @@ Daemon replies `{t:"hello_ok", v:1}`. Unsupported version or role:
     ← {t:"ack"}  |  {t:"err", msg}
 
 - `path` MUST be absolute and canonicalized by the CLI before sending.
+- v4 Phase 3 adds an OPTIONAL `term_id` to `open` (see *v4 Phase 3 additive
+  keys*); the CLI sets it from `TARMAC_TERM_ID` when run inside a tarmac pty.
 - The file must exist; otherwise `err`.
 - Daemon effects: upsert doc-registry entry `{path, via:"cli", last_changed_ms:nil}`;
   start watching the file (see *File watching*); push `doc_opened` to the connected
@@ -84,6 +86,7 @@ app → daemon:
     {t:"resize", term_id, cols, rows}
     {t:"open", path}    — same effects as CLI open but via:"user"; no reply frame;
                           doc_opened is still pushed (single code path)
+                          (v4 Phase 3 adds an optional `term_id`; see below)
 
 daemon → app:
 
@@ -123,6 +126,7 @@ decoders apply the defaults below, so every M0 frame still decodes.
 | `read` | bool | true | false ⇔ unread (a cli open clears it; `doc_read` sets it). Not an optional: M1 encoders always write true/false, never nil; a missing key means true so entries from M0-era daemons never render an unread dot |
 | `last_changed_ms` | uint \| nil | nil | unchanged from M0: mtime_ms of the last observed file change |
 | `last_opened_ms` | uint \| nil | nil | wall-clock ms-epoch of the most recent open (cli or user); M1 daemons always send it (registration is an open) |
+| `term_id` | string \| nil | nil | **v4 Phase 3, additive**: the term that opened the doc (provenance + gravity owner). The daemon sets it from the `open` message's `term_id` (the CLI reads `TARMAC_TERM_ID` from its pty env); a re-open carrying a `term_id` updates the owner, one without leaves it. Persisted; carried in both `restore.docs[]` and `doc_opened` |
 
 #### `repo_color` algorithm
 
@@ -238,6 +242,43 @@ viewport, a snapshot omitting it leaves the stored viewport untouched. A daemon
 restart followed by an app connect MUST reproduce the same frames + viewport in
 `restore` (the existing restart-indistinguishability invariant, extended to the new
 keys).
+
+## v4 Phase 3 additive keys
+
+Phase 3 (docs/v4/migration-plan.md Phase 3; docs/v4/visual-crib.md §5/§6/§8)
+adds placement semantics — gravity, the shelf, and provenance edges. As with
+the board keys, these are **additive** under the M0 encoding rules: new OPTIONAL
+keys, missing ⇒ nil, unknown keys still ignored. All 8 conformance vectors and
+every M1 frame decode unchanged.
+
+### Tile (extended again)
+
+The tile gains two optional flags. A tile without them behaves exactly as a
+Phase-2 tile (attached, on the board).
+
+| key | type | missing ⇒ | semantics |
+|---|---|---|---|
+| `loose` | bool \| nil | nil (⇒ attached) | gravity-detached flag: `true` ⇒ the user has moved this doc card, so it no longer follows its owner term card |
+| `shelf` | bool \| nil | nil (⇒ on board) | `true` ⇒ the doc is parked on the shelf rather than placed on the board. A shelf doc tile is `{kind:"doc", path, shelf:true}` with **no** `x/y/w/h` (and typically `loose:true`); `set_tiles` keeps it because it is a known-path doc tile, geometry or not |
+
+### `open` (extended)
+
+    {t:"open", path, term_id}
+
+`term_id` (string \| nil; missing ⇒ nil) is the term that ran the open. The CLI
+reads it from the `TARMAC_TERM_ID` env var, which the daemon sets in every pty
+it spawns (`builder.env("TARMAC_TERM_ID", &term_id)`), so a `tarmac open` run
+inside a tarmac terminal attributes itself to that terminal card. The app's own
+`open` arm passes `term_id` (or nil). The daemon stores it on the doc registry
+entry and surfaces it via the doc entry's `term_id` (above) in `doc_opened` and
+`restore`. `persist.rs` round-trips it (`PersistedDoc.term_id`, serde default).
+
+### Doc entry (extended)
+
+The doc entry's `term_id` (documented in the *Doc entry* table above) is the
+provenance owner — it rides on both `restore.docs[]` and `doc_opened`. The shelf
+membership and `loose` flag ride on the persisted **tiles**, not the doc entry,
+so there is no extra persist change for them beyond the tile keys.
 
 ## Conformance vectors
 

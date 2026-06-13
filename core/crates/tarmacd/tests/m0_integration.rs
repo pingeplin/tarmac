@@ -56,7 +56,7 @@ fn m0_end_to_end() {
     let canon_str = canon.to_string_lossy().into_owned();
 
     let mut cli = Conn::hello(&daemon.sock, "cli");
-    cli.send(&Msg::Open { path: canon_str.clone() });
+    cli.send(&Msg::Open { path: canon_str.clone(), term_id: None });
     let reply = cli.recv(Instant::now() + LONG, "ack");
     assert!(matches!(reply, Msg::Ack), "expected ack, got {reply:?}");
     drop(cli);
@@ -137,11 +137,11 @@ fn open_errors_for_missing_or_relative_paths() {
     let daemon = TestDaemon::start();
     let mut cli = Conn::hello(&daemon.sock, "cli");
 
-    cli.send(&Msg::Open { path: daemon.dir.join("nope.md").to_string_lossy().into_owned() });
+    cli.send(&Msg::Open { path: daemon.dir.join("nope.md").to_string_lossy().into_owned(), term_id: None });
     let reply = cli.recv(Instant::now() + LONG, "err for missing file");
     assert!(matches!(reply, Msg::Err { .. }), "expected err, got {reply:?}");
 
-    cli.send(&Msg::Open { path: "relative.md".into() });
+    cli.send(&Msg::Open { path: "relative.md".into(), term_id: None });
     let reply = cli.recv(Instant::now() + LONG, "err for relative path");
     assert!(matches!(reply, Msg::Err { .. }), "expected err, got {reply:?}");
 }

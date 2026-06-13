@@ -28,6 +28,10 @@ struct PersistedDoc {
     repo: Option<String>,
     repo_root: Option<String>,
     repo_color: Option<u8>,
+    // v4 Phase 3: the term that opened the doc (provenance + gravity owner).
+    // serde default => None for pre-Phase-3 state files.
+    #[serde(default)]
+    term_id: Option<String>,
 }
 
 // docs[] is in dock order. The Tile entries carry the v4 board geometry
@@ -76,6 +80,7 @@ pub fn load(path: &Path) -> Registry {
                 repo_color: repo.as_ref().map(|r| r.color),
                 last_changed_ms: d.last_changed_ms,
                 last_opened_ms: d.last_opened_ms,
+                term_id: d.term_id,
             },
         );
         reg.dock.push(path);
@@ -101,6 +106,7 @@ fn snapshot(reg: &Registry) -> PersistedState {
                     repo: info.repo.clone(),
                     repo_root: info.repo_root.clone(),
                     repo_color: info.repo_color,
+                    term_id: info.term_id.clone(),
                 })
             })
             .collect(),

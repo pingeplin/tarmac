@@ -40,6 +40,11 @@ final class BoardView: NSView {
     /// All cards by id, in no particular order (z drives stacking).
     private(set) var cards: [CardID: CardView] = [:]
 
+    /// Per-doc-card provenance edge label (crib §8: `tarmac open · HH:MM`).
+    /// AppController supplies it (HH:MM from the doc's lastOpenedMs, local) since
+    /// the board has no doc registry. Returning nil draws the edge without a chip.
+    var edgeLabelProvider: ((CardID) -> String?)?
+
     /// Adds a card at its world frame. If a card with the same id exists it is
     /// replaced. Returns the live view so the caller can attach content.
     @discardableResult
@@ -58,6 +63,7 @@ final class BoardView: NSView {
         guard let card = cards.removeValue(forKey: id) else { return }
         if selectedID == id { selectedID = nil }
         card.removeFromSuperview()
+        recomputeEdges()
     }
 
     func card(_ id: CardID) -> CardView? { cards[id] }
@@ -160,6 +166,13 @@ final class BoardView: NSView {
         guard let id = gesturingID, let card = cards[id] else { return false }
         let restored = card.cancelGesture(restoringTo: preGestureFrame)
         if restored {
+            // Restore any satellites that were dragged along by gravity.
+            for (satID, anchor) in satelliteAnchors {
+                guard let sat = cards[satID] else { continue }
+                sat.worldFrame = anchor
+                sat.frame = worldToView(sat.worldFrame.rect)
+            }
+            satelliteAnchors = [:]
             reproject(card)
             gesturingID = nil
             preGestureFrame = nil
@@ -170,6 +183,7 @@ final class BoardView: NSView {
     // MARK: - Internals
 
     private let cardLayer = FlippedColumnView()
+    private let edgeLayer = EdgeLayerView()
     private var gesturingID: CardID?
     private var preGestureFrame: CardFrame?
 
@@ -193,6 +207,10 @@ final class BoardView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = Theme.bg0.cgColor
+        // Edge layer is backmost (crib §8: beneath the cards, z 0).
+        edgeLayer.frame = bounds
+        edgeLayer.autoresizingMask = [.width, .height]
+        addSubview(edgeLayer)
         cardLayer.frame = bounds
         cardLayer.autoresizingMask = [.width, .height]
         addSubview(cardLayer)
@@ -209,13 +227,18 @@ final class BoardView: NSView {
         }
         card.onWorldFrameChangedDuringGesture = { [weak self] c in
             // Live reproject; terminal reflow waits for commit (crib §4: reflow
-            // terminal once on resize end).
-            self?.reproject(c)
+            // terminal once on resize end). A term-card move drags its attached
+            // satellites along (gravity, crib §5).
+            guard let self else { return }
+            self.translateSatellitesDuringGesture(of: c)
+            self.reproject(c)
         }
         card.onFrameCommitted = { [weak self] c in
             guard let self else { return }
+            self.commitGravity(for: c)
             self.gesturingID = nil
             self.preGestureFrame = nil
+            self.satelliteAnchors = [:]
             self.reproject(c)
             self.onLayoutChanged?(self.viewport)
         }
@@ -225,6 +248,43 @@ final class BoardView: NSView {
         card.worldPerView = 1 / viewport.zoom
         gesturingID = card.id
         preGestureFrame = card.worldFrame
+        // Snapshot the attached satellites of a term card so a move can
+        // translate them by the same world delta (gravity, crib §5).
+        satelliteAnchors = [:]
+        if case .term = card.id {
+            for (id, c) in cards where c.ownerTermID == card.id && c.attached {
+                satelliteAnchors[id] = c.worldFrame
+            }
+        }
+    }
+
+    /// Pre-gesture world frames of the gesturing term card's attached satellites.
+    private var satelliteAnchors: [CardID: CardFrame] = [:]
+
+    /// Translates the gesturing term card's attached satellites by the same
+    /// world delta as the term card has moved so far (gravity; crib §5).
+    private func translateSatellitesDuringGesture(of card: CardView) {
+        guard case .term = card.id, let start = preGestureFrame, !satelliteAnchors.isEmpty else { return }
+        let dx = card.worldFrame.x - start.x
+        let dy = card.worldFrame.y - start.y
+        guard dx != 0 || dy != 0 else { return }
+        for (id, anchor) in satelliteAnchors {
+            guard let sat = cards[id] else { continue }
+            sat.worldFrame.x = anchor.x + dx
+            sat.worldFrame.y = anchor.y + dy
+            sat.frame = worldToView(sat.worldFrame.rect)
+        }
+    }
+
+    /// Gravity bookkeeping at commit (crib §5): a USER move of a doc card
+    /// detaches it (loose); a term-card move's translated satellites are already
+    /// in place. Resizes never touch gravity.
+    private func commitGravity(for card: CardView) {
+        guard card.lastCommittedGestureWasMove else { return }
+        if case .doc = card.id, card.attached {
+            card.attached = false
+            card.setOwnerChip(nil)
+        }
     }
 
     // MARK: Stacking
@@ -247,7 +307,8 @@ final class BoardView: NSView {
     // MARK: Projection
 
     private func reprojectAll() {
-        for card in cards.values { reproject(card) }
+        for card in cards.values { card.frame = worldToView(card.worldFrame.rect) }
+        recomputeEdges()
     }
 
     private func reproject(_ card: CardView) {
@@ -257,6 +318,23 @@ final class BoardView: NSView {
         // acceptable per the plan). The card frame already carries the scale,
         // and the embedded SwiftTerm view reflows on commit, so no extra layer
         // transform is needed here for the common case.
+        recomputeEdges()
+    }
+
+    /// Rebuilds the provenance edge set in view space (crib §8): one edge per
+    /// doc card whose owning term card is present. Called on every reproject so
+    /// edges survive pan / zoom / drag.
+    func recomputeEdges() {
+        var built: [EdgeLayerView.Edge] = []
+        for (id, card) in cards {
+            guard case .doc = id, let owner = card.ownerTermID, let ownerCard = cards[owner] else { continue }
+            built.append(EdgeLayerView.Edge(
+                callerRect: ownerCard.frame,
+                docRect: card.frame,
+                label: edgeLabelProvider?(id)
+            ))
+        }
+        edgeLayer.setEdges(built)
     }
 
     // MARK: - Pan / zoom gestures (crib §5)
