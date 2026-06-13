@@ -76,11 +76,10 @@ final class AppController {
     // truth for the shelf overlay + persistence. Provenance owner per doc is
     // seeded from DocEntry.term_id and reapplied to landed cards.
     private var shelfPaths: [String] = []
-    /// term_id → the term card it maps to. Single terminal this phase, so every
-    /// known term_id resolves to `.term`; kept as a map so Phase 5 multi-term
-    /// attribution slots in without touching the gravity code.
-    private var ownerTermID: String?
-    /// Provenance: doc path → the term_id that opened it (from DocEntry).
+    /// Provenance: doc path → the term_id that opened it (from DocEntry). The
+    /// owner term_id is persisted; a restart re-mints `currentTermID`, so this
+    /// is resolved to the live term card by identity-of-the-single-terminal
+    /// (see `ownerCardID`), not by value-equality with `currentTermID`.
     private var docOwner: [String: String] = [:]
     /// The current terminal card label (for the owner chip `← <termname>`).
     private var termLabel: String = ""
@@ -341,7 +340,6 @@ final class AppController {
         let rows = max(2, term.rows)
         let termID = UUID().uuidString
         currentTermID = termID
-        ownerTermID = termID
         lastSentCols = cols
         lastSentRows = rows
         lastSpawnAt = Date()
@@ -696,10 +694,15 @@ final class AppController {
         return card
     }
 
-    /// The board CardID of a doc's provenance owner term card, when resolvable
-    /// (single terminal this phase: any known owner term_id resolves to .term).
+    /// The board CardID of a doc's provenance owner term card, when resolvable.
+    /// Single terminal this phase: any doc with a known provenance owner maps to
+    /// the one `.term` card, regardless of which run minted the term_id — a
+    /// daemon+app restart re-mints `currentTermID`, but the persisted owner is the
+    /// prior run's, so value-equality would wrongly drop the tie (losing the edge,
+    /// gravity, and `← term` chip after restart). Phase 5b resolves `docOwner[path]`
+    /// against the real per-card term_id set instead.
     private func ownerCardID(for path: String) -> CardID? {
-        guard let owner = docOwner[path], owner == ownerTermID else { return nil }
+        guard docOwner[path] != nil, rootView.board.card(.term) != nil else { return nil }
         return .term
     }
 
@@ -709,15 +712,17 @@ final class AppController {
         return termLabel.isEmpty ? nil : termLabel
     }
 
-    /// Re-resolves doc-card owners + chips once the term_id becomes known (the
-    /// term spawns after restore). Called from maybeSpawn.
+    /// Re-resolves any still-unbound doc-card owners and refreshes the owner chips
+    /// with the now-known term label. `landDocCard` already resolves owners at
+    /// restore (the term card exists from init, so `ownerCardID` resolves), making
+    /// this mostly a chip refresh; it also covers the ordering where a card was
+    /// restored attached before its owner was resolvable. A detached card stays
+    /// detached. Called from maybeSpawn.
     private func rebindOwners() {
         for path in boardDocPaths {
             guard let card = rootView.board.card(.doc(path)) else { continue }
-            // Only (re)bind cards that were restored attached; a detached card
-            // stays detached.
-            if card.ownerTermID == nil, card.attached, docOwner[path] == ownerTermID {
-                card.ownerTermID = .term
+            if card.ownerTermID == nil, card.attached {
+                card.ownerTermID = ownerCardID(for: path)
             }
             card.setOwnerChip(ownerChipLabel(for: card))
         }
