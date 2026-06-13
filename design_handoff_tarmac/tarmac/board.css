@@ -1,0 +1,221 @@
+/* Tarmac v4 — infinite whiteboard (strip = board, term/doc = card)
+   additive to theme.css + converged.css */
+
+/* ── the board itself ── */
+.tm-board {
+  position: relative; flex: 1; min-height: 0; min-width: 0; overflow: hidden;
+  background: var(--tm-bg0);
+  background-image: radial-gradient(#1d222b 1px, transparent 1.3px);
+  background-size: 24px 24px; background-position: -7px -9px;
+}
+.tm-board.lo { background-size: 11px 11px; }
+
+/* user-typed zone labels (plain text on the board, like any canvas tool) */
+.tm-zonelab {
+  position: absolute; font: 600 10px var(--tm-mono);
+  letter-spacing: 0.18em; color: var(--tm-faint); opacity: 0.75;
+  pointer-events: none;
+}
+.tm-board.lo .tm-zonelab { font-size: 13px; }
+
+/* ── cards ── */
+.tm-bcard {
+  position: absolute; z-index: 1;
+  background: var(--tm-bg1); border: 1px solid var(--tm-line);
+  border-radius: 10px; overflow: hidden;
+  display: flex; flex-direction: column;
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.5);
+}
+.tm-bcard .bhd {
+  display: flex; align-items: center; gap: 7px; flex: none;
+  height: 30px; padding: 0 11px;
+  background: var(--tm-bg2); border-bottom: 1px solid var(--tm-line-soft);
+  font: 400 10.5px var(--tm-mono); color: var(--tm-muted);
+}
+.tm-bcard .bhd .kind { color: var(--tm-faint); }
+.tm-bcard .bhd .mr { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.tm-bcard.sel { border-color: var(--tm-agent); }
+.tm-bcard.fresh {
+  border-color: var(--tm-agent);
+  box-shadow: 0 0 0 3px var(--tm-agent-dim), 0 16px 38px rgba(0, 0, 0, 0.5);
+}
+.tm-bcard.dim { opacity: 0.55; }
+.tm-bcard .hndl {
+  position: absolute; width: 7px; height: 7px; z-index: 3;
+  background: var(--tm-bg0); border: 1.5px solid var(--tm-agent); border-radius: 2px;
+}
+
+/* low-zoom (semantic zoom) card — content gone, name + signal remain */
+.tm-locard {
+  position: absolute; z-index: 1;
+  background: var(--tm-bg1); border: 1px solid var(--tm-line); border-radius: 8px;
+  display: flex; flex-direction: column; justify-content: center; gap: 5px;
+  padding: 0 14px;
+  font-family: var(--tm-mono);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+}
+.tm-locard .nm { display: flex; align-items: center; gap: 7px; font: 500 12px var(--tm-mono); color: var(--tm-text); white-space: nowrap; }
+.tm-locard .nm .kind { color: var(--tm-faint); font-weight: 400; }
+.tm-locard .st { font: 400 9.5px var(--tm-mono); color: var(--tm-faint); }
+.tm-locard.bell {
+  border-color: oklch(0.78 0.11 75 / 0.55);
+  box-shadow: 0 0 0 3px var(--tm-amber-dim), 0 10px 24px rgba(0, 0, 0, 0.4);
+}
+.tm-locard.live { border-color: oklch(0.78 0.11 200 / 0.4); }
+
+/* ── provenance edges (drawn from observable facts only) ── */
+.tm-edges { position: absolute; inset: 0; z-index: 0; pointer-events: none; width: 100%; height: 100%; }
+.tm-edgelab {
+  position: absolute; z-index: 0; pointer-events: none;
+  font: 400 9px var(--tm-mono); color: var(--tm-faint);
+  background: var(--tm-bg0); padding: 1px 6px; border-radius: 4px;
+}
+
+/* ── board chrome ── */
+.tm-zoomctl {
+  position: absolute; left: 12px; bottom: 12px; z-index: 5;
+  display: flex; align-items: stretch;
+  background: var(--tm-bg2); border: 1px solid var(--tm-line); border-radius: 8px;
+  font: 400 10.5px var(--tm-mono); color: var(--tm-faint); overflow: hidden;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+}
+.tm-zoomctl span { padding: 6px 9px; display: flex; align-items: center; }
+.tm-zoomctl .pct { color: var(--tm-text); border-left: 1px solid var(--tm-line-soft); border-right: 1px solid var(--tm-line-soft); padding: 6px 10px; }
+
+.tm-minimap {
+  position: absolute; right: 12px; bottom: 12px; z-index: 5;
+  width: 132px; height: 88px; overflow: hidden;
+  background: rgba(12, 14, 18, 0.92); border: 1px solid var(--tm-line); border-radius: 8px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+}
+.tm-minimap .mr { position: absolute; background: var(--tm-bg3); border-radius: 1.5px; }
+.tm-minimap .mr.cy { background: oklch(0.78 0.11 200 / 0.75); }
+.tm-minimap .mr.am { background: oklch(0.78 0.11 75 / 0.85); }
+.tm-minimap .vp { position: absolute; border: 1px solid var(--tm-agent); border-radius: 2px; background: var(--tm-agent-dim); }
+
+/* shelf — open-but-not-placed docs (replaces the dock) */
+.tm-shelf {
+  position: absolute; left: 12px; top: 12px; z-index: 5;
+  display: flex; align-items: center; gap: 6px;
+  background: var(--tm-bg2); border: 1px solid var(--tm-line); border-radius: 9px;
+  padding: 5px 9px; font: 400 9.5px var(--tm-mono); color: var(--tm-faint);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+}
+.tm-shelf .chip {
+  display: flex; align-items: center; gap: 6px;
+  font: 400 10px var(--tm-mono); color: var(--tm-muted);
+  background: var(--tm-bg1); border: 1px solid var(--tm-line-soft);
+  border-radius: 6px; padding: 3px 8px; white-space: nowrap;
+}
+
+/* offscreen-signal hints, pinned to viewport edges */
+.tm-offhint {
+  position: absolute; z-index: 6;
+  display: flex; align-items: center; gap: 7px;
+  background: var(--tm-bg2); border: 1px solid var(--tm-line); border-radius: 999px;
+  padding: 6px 11px; font: 400 10.5px var(--tm-mono); color: var(--tm-muted);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+}
+.tm-offhint .arr { color: var(--tm-faint); }
+.tm-offhint.bell { border-color: oklch(0.78 0.11 75 / 0.5); color: var(--tm-text); }
+.tm-offhint.bell .arr { color: var(--tm-amber); }
+.tm-offhint.live { border-color: oklch(0.78 0.11 200 / 0.35); }
+
+/* ── boards switcher (⌘K) ── */
+.tm-boards {
+  position: absolute; z-index: 6; left: 50%; top: 72px; transform: translateX(-50%);
+  width: 540px; background: var(--tm-bg2); border: 1px solid var(--tm-line);
+  border-radius: 12px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  overflow: hidden; font-family: var(--tm-mono); text-align: left;
+}
+.tm-boards .bhead {
+  display: flex; align-items: center; gap: 9px; padding: 12px 16px;
+  border-bottom: 1px solid var(--tm-line-soft);
+  font: 400 12px var(--tm-mono); color: var(--tm-faint);
+}
+.tm-boards .bhead .q { color: var(--tm-text); }
+.tm-brow { display: flex; align-items: center; gap: 13px; padding: 11px 16px; }
+.tm-brow.on { background: var(--tm-bg3); }
+.tm-brow .nm { font: 500 12px var(--tm-mono); color: var(--tm-muted); display: flex; align-items: center; gap: 8px; }
+.tm-brow.on .nm { color: var(--tm-text); }
+.tm-brow .nm .glyph { color: var(--tm-agent); }
+.tm-brow .meta { margin-left: auto; font: 400 10px var(--tm-mono); color: var(--tm-faint); display: flex; gap: 10px; align-items: center; }
+.tm-boards .bfoot {
+  padding: 9px 16px; border-top: 1px solid var(--tm-line-soft);
+  font: 400 10px var(--tm-mono); color: var(--tm-faint); display: flex; gap: 14px;
+}
+.tm-bthumb {
+  width: 86px; height: 54px; flex: none; position: relative;
+  background: var(--tm-bg0); border: 1px solid var(--tm-line); border-radius: 6px;
+  background-image: radial-gradient(#1d222b 0.8px, transparent 1px); background-size: 9px 9px;
+  overflow: hidden;
+}
+.tm-bthumb i { position: absolute; background: var(--tm-bg3); border: 0.5px solid var(--tm-line); border-radius: 1.5px; }
+.tm-bthumb i.cy { background: oklch(0.78 0.11 200 / 0.55); border-color: transparent; }
+.tm-bthumb i.am { background: oklch(0.78 0.11 75 / 0.7); border-color: transparent; }
+
+/* ── v4b · terminal primacy ── */
+.tm-bcard.prime { border-color: #39414e; box-shadow: 0 22px 50px rgba(0, 0, 0, 0.6); }
+.tm-bcard.prime .bhd { color: var(--tm-text); background: #1c2129; }
+.tm-bcard.quiet { opacity: 0.8; }
+.tm-bcard .owner {
+  font: 400 9px var(--tm-mono); color: var(--tm-faint);
+  border: 1px solid var(--tm-line-soft); border-radius: 4px; padding: 1px 6px; white-space: nowrap;
+}
+
+/* docked terminal — fixed to the viewport, board pans behind */
+.tm-dockpane {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 7;
+  display: flex; flex-direction: column;
+  background: var(--tm-term-bg); border-top: 1px solid #39414e;
+  box-shadow: 0 -24px 60px rgba(0, 0, 0, 0.6);
+}
+.tm-dockpane .dhd {
+  display: flex; align-items: center; gap: 8px; flex: none;
+  height: 34px; padding: 0 14px;
+  background: var(--tm-bg2); border-bottom: 1px solid var(--tm-line-soft);
+  font: 400 11px var(--tm-mono); color: var(--tm-text);
+}
+.tm-dockpane .dhd .kind { color: var(--tm-faint); }
+.tm-dockpane .dhd .mr { margin-left: auto; display: flex; align-items: center; gap: 8px; color: var(--tm-faint); font-size: 10px; }
+
+/* terminal-only cycle HUD (⌥tab) */
+.tm-cyclehud {
+  position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 6;
+  display: flex; gap: 4px; padding: 4px;
+  background: var(--tm-bg2); border: 1px solid var(--tm-line); border-radius: 10px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+  font: 400 10.5px var(--tm-mono); color: var(--tm-muted);
+}
+.tm-cyclehud .c { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 7px; }
+.tm-cyclehud .c.on { background: var(--tm-bg3); color: var(--tm-text); box-shadow: inset 0 0 0 1px var(--tm-line); }
+
+/* dashed ghost where a docked card came from */
+.tm-slotghost {
+  position: absolute; z-index: 0;
+  border: 1.5px dashed var(--tm-line); border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font: 400 10px var(--tm-mono); color: var(--tm-faint);
+}
+
+/* ── v4c · editable docs: focus is borrowed, home is the terminal ── */
+.tm-bcard.edit { border-color: var(--tm-agent); box-shadow: 0 0 0 2px var(--tm-agent-dim), 0 16px 38px rgba(0, 0, 0, 0.5); }
+.tm-bcard.edit .bhd { color: var(--tm-text); }
+.tm-caret {
+  display: inline-block; width: 1.5px; height: 14px; vertical-align: -2px;
+  background: var(--tm-text); margin-left: 1px;
+  animation: tmBlink 1s steps(1) infinite alternate;
+}
+.tm-homechip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font: 400 9.5px var(--tm-mono); color: var(--tm-faint);
+  border: 1px dashed var(--tm-line); border-radius: 5px; padding: 1px 6px; white-space: nowrap;
+}
+.tm-conflict {
+  display: flex; align-items: center; gap: 8px; flex: none;
+  padding: 7px 12px; background: var(--tm-amber-dim);
+  border-bottom: 1px solid var(--tm-line-soft);
+  font: 400 10px var(--tm-mono); color: var(--tm-text);
+}
+.tm-conflict .ic { color: var(--tm-amber); }
+.tm-conflict .keys { margin-left: auto; display: flex; gap: 5px; }
