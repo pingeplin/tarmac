@@ -61,6 +61,11 @@ final class CardView: NSView {
     private(set) var selected = false
     private(set) var fresh = false
     private var lifted = false
+    /// Prime = the focused terminal card (crib §4): border `#5a626a`, header
+    /// `#3a4046` + text label, deeper shadow `0 22px 50px rgba(0,0,0,0.6)`.
+    private(set) var prime = false
+    /// Quiet = a non-prime card while a terminal is prime (crib §4): opacity 0.8.
+    private(set) var quiet = false
 
     // Active move/resize gesture state (window-space anchors).
     private enum Gesture {
@@ -159,9 +164,12 @@ final class CardView: NSView {
     }
 
     /// The base border color for the current state: agent when selected or
-    /// fresh, else line (the lift state overrides this transiently).
+    /// fresh, prime's `#5a626a` for the focused terminal, else line (the lift
+    /// state overrides this transiently).
     private var currentBorderColor: NSColor {
-        (selected || fresh) ? Theme.agent : Theme.line
+        if selected || fresh { return Theme.agent }
+        if prime { return Theme.liftBorder }
+        return Theme.line
     }
 
     // MARK: - Fresh state (crib §4/§5): agent border + 3px agent-dim ring.
@@ -191,6 +199,34 @@ final class CardView: NSView {
         guard fresh else { return }
         let w = Self.ringWidth
         ringLayer.frame = bounds.insetBy(dx: -w, dy: -w)
+    }
+
+    // MARK: - Prime / quiet states (crib §4: terminal primacy)
+
+    /// Prime = the focused terminal card (crib §4): border `#5a626a`, header
+    /// `#3a4046` + `text` label, deeper resting shadow `0 22px 50px
+    /// rgba(0,0,0,0.6)`. A non-prime card is `quiet` (opacity 0.8). Set by the
+    /// controller from the focus model; with one terminal the term card is prime
+    /// while the terminal/board is focused.
+    func setPrime(_ on: Bool) {
+        guard on != prime else { return }
+        prime = on
+        // A prime card is never simultaneously quiet.
+        if on { setQuiet(false) }
+        header.setPrime(on)
+        // Border + shadow follow the new state when not transiently lifted.
+        if !lifted {
+            layer?.borderColor = currentBorderColor.cgColor
+            applyRestingShadow()
+        }
+    }
+
+    /// Quiet = a non-prime card while a terminal holds prime focus (crib §4):
+    /// opacity 0.8. Cleared when nothing is prime (every card back to full).
+    func setQuiet(_ on: Bool) {
+        guard on != quiet else { return }
+        quiet = on
+        alphaValue = on ? 0.8 : 1.0
     }
 
     // MARK: - Owner chip bridge
@@ -314,7 +350,7 @@ final class CardView: NSView {
         switch signal {
         case .bell: layer?.borderColor = Theme.amber.withAlphaComponent(0.55).cgColor
         case .live: layer?.borderColor = Theme.agent.withAlphaComponent(0.45).cgColor
-        case .none: layer?.borderColor = (selected || fresh ? Theme.agent : Theme.line).cgColor
+        case .none: layer?.borderColor = currentBorderColor.cgColor
         }
     }
 
@@ -443,12 +479,19 @@ final class CardView: NSView {
 
     /// Resting card shadow (crib §4): base `0 16px 38px rgba(0,0,0,0.5)` present
     /// on every card at rest, so the board reads as floating cards over the dot
-    /// grid rather than flat panes. The lift deepens it; un-lift returns here.
+    /// grid rather than flat panes. A prime card rests deeper (`0 22px 50px
+    /// rgba(0,0,0,0.6)`); the lift deepens it further, and un-lift returns here.
     private func applyRestingShadow() {
         let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.5)
-        shadow.shadowOffset = NSSize(width: 0, height: -16)
-        shadow.shadowBlurRadius = 19
+        if prime {
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.6)
+            shadow.shadowOffset = NSSize(width: 0, height: -22)
+            shadow.shadowBlurRadius = 25
+        } else {
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.5)
+            shadow.shadowOffset = NSSize(width: 0, height: -16)
+            shadow.shadowBlurRadius = 19
+        }
         self.shadow = shadow
     }
 

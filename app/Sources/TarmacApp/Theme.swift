@@ -18,7 +18,11 @@ enum Theme {
     static let agent = srgb(0x1abc9c)
     static let agentDim = srgb(0x1abc9c, alpha: 0.16)
     // Drag-lift border (crib §4 prime/lift; authored hex, not a :root token).
+    // Reused as the prime-card border and the cockpit dock-pane top border.
     static let liftBorder = srgb(0x5a626a)
+    // Prime-card header bg (crib §1/§2/§4: `.tm-bcard.prime .bhd` background
+    // `#3a4046` — near bg2 but distinct). New Breeze token Theme.swift lacked.
+    static let primeHeaderBg = srgb(0x3a4046)
     static let amber = srgb(0xfdbc4b)
     // Amber tint (crib §1/§7): locard bell ring, conflict banner. New Breeze
     // token Theme.swift lacked; mirrors agentDim's construction.

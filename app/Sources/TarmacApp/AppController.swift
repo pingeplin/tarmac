@@ -64,6 +64,12 @@ final class AppController {
     /// Set by the Return flight; consumed (and cleared) by the next esc.
     private var preFlightViewport: Viewport?
 
+    // MARK: - Cockpit dock / terminal primacy (Phase 5a)
+    //
+    // Whether the focused terminal is currently docked into the viewport-fixed
+    // bottom pane (crib §4). Toggled by Return (board-focused) / esc.
+    private var docked = false
+
     // MARK: - Shelf / gravity state (Phase 3)
     //
     // Shelf membership in chip order (open-but-unplaced docs); the source of
@@ -148,22 +154,45 @@ final class AppController {
         }
 
         escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             let isEsc = event.keyCode == 53
-            let isReturn = event.keyCode == 36
+            // Bare Return (no modifiers) toggles the dock / flies; ⌘⏎ is the
+            // peek-pin menu key equivalent and is consumed before this monitor.
+            let isReturn = event.keyCode == 36 && mods.isEmpty
+            // ⌥tab (tab = keyCode 48 with the Option modifier, ignoring caps lock)
+            // cycles the focused terminal among terminal cards + shows the HUD
+            // (crib §6). With one terminal this is a no-op cycle (single HUD item).
+            let isOptTab = event.keyCode == 48 && mods == .option
             let swallowed = MainActor.assumeIsolated { () -> Bool in
                 guard let self else { return false }
-                // Return (when the board, not the terminal, holds focus) flies the
-                // viewport to the most-recent offscreen signal (crib §6). Gated on
-                // board focus so the shell's Enter key is never hijacked.
-                if isReturn, self.boardHasFocus(), let target = self.rootView.offscreenFlyTarget {
-                    self.preFlightViewport = self.rootView.board.viewport
-                    self.rootView.board.fly(to: target)
+                if isOptTab {
+                    self.cycleTerminals()
+                    return true
+                }
+                // Return, when the board (not the terminal) holds focus and no
+                // card gesture / peek / toast is up (crib §4/§6): if an offscreen
+                // signal is waiting, fly the viewport to it (Phase 4); otherwise
+                // toggle the cockpit dock (Phase 5a). Gated on board focus so the
+                // shell's Enter key is never hijacked while typing.
+                if isReturn, self.boardHasFocus() {
+                    if !self.docked, let target = self.rootView.offscreenFlyTarget {
+                        self.preFlightViewport = self.rootView.board.viewport
+                        self.rootView.board.fly(to: target)
+                        return true
+                    }
+                    self.toggleDock()
                     return true
                 }
                 guard isEsc else { return false }
-                // An active board drag/resize swallows esc ahead of peek/toast
-                // dismissal (crib §5 DECISION; was desk.cancelDrag()).
+                // An active board drag/resize swallows esc ahead of everything
+                // (crib §5 DECISION; was desk.cancelDrag()).
                 if self.rootView.board.cancelDrag() {
+                    return true
+                }
+                // esc returns a docked terminal to its board card (crib §4),
+                // ahead of the flight/fresh/peek/toast order.
+                if self.docked {
+                    self.undock()
                     return true
                 }
                 // esc after a Return flight flies the viewport back (crib §6).
@@ -329,6 +358,8 @@ final class AppController {
         // Cards restored before the term spawned get their gravity owner +
         // chip resolved now (the term_id only becomes known at spawn).
         rebindOwners()
+        // The term card is now prime (focused terminal); doc cards go quiet.
+        updatePrimacy()
     }
 
     private func handleExit(termID: String, code: Int?) {
@@ -336,6 +367,8 @@ final class AppController {
         currentTermID = nil
         // A dead terminal can't ring: clear any lingering bell signal.
         clearBell()
+        // No live terminal ⇒ nothing is prime; drop prime/quiet styling.
+        updatePrimacy()
         let label = code.map { "exit \($0)" } ?? "killed by signal"
         feedNotice("shell exited (\(label)) — restarting…")
         // Exit toast (M2 honest signals): title "shell exited · <code>" (or
@@ -374,6 +407,8 @@ final class AppController {
         guard termID == currentTermID else { return }
         termLabel = name
         rootView.board.card(.term)?.setTermLabel(name)
+        // Keep the dock header label honest while docked (crib §4 .dhd label).
+        if docked { rootView.dockPane.setTermLabel(name.isEmpty ? "shell" : name) }
         // "Live" (agent-active) when the foreground process is no longer the bare
         // shell (crib §6: cyan = agent-active). The honest signal we have at this
         // phase is the foreground process name; treat shell == idle.
@@ -452,6 +487,103 @@ final class AppController {
         // The board view itself (or a non-terminal board descendant) is focused.
         if let view = responder as? NSView, view.isDescendant(of: rootView.board) { return true }
         return responder === rootView.board
+    }
+
+    // MARK: - Terminal primacy: prime / quiet focus model (Phase 5a, crib §4)
+
+    /// Applies the prime/quiet card states (crib §4). With a single terminal the
+    /// term card is the prime card (focused terminal: `#5a626a` border, `#3a4046`
+    /// header, deeper shadow) and every other (doc) card is quiet (opacity 0.8).
+    /// Called whenever the card set / focus changes. Phase 5b will make "which
+    /// terminal is prime" follow the cycle; here it is always the one term card.
+    private func updatePrimacy() {
+        let primeID: CardID? = currentTermID == nil ? nil : .term
+        for (id, card) in rootView.board.cards {
+            let isPrime = (id == primeID)
+            card.setPrime(isPrime)
+            // A card is quiet only while some terminal is prime and it isn't it.
+            card.setQuiet(primeID != nil && !isPrime)
+        }
+    }
+
+    // MARK: - Cockpit dock (Phase 5a, crib §4)
+
+    /// Return (board-focused) toggles the dock; esc always undocks.
+    private func toggleDock() {
+        if docked { undock() } else { dock() }
+    }
+
+    /// Docks the focused terminal into the viewport-fixed bottom pane (crib §4):
+    /// REPARENT the SwiftTerm view from its board card body into the dock pane,
+    /// hide the board card + show its dashed slot ghost, then reflow + restore
+    /// first responder so the terminal keeps typing.
+    private func dock() {
+        guard !docked, currentTermID != nil else { return }
+        docked = true
+        // Reparent the live SwiftTerm view: card body → dock pane body.
+        terminalView.removeFromSuperview()
+        rootView.dockPane.body.addSubview(terminalView)
+        rootView.dockPane.setTermLabel(termLabel.isEmpty ? "shell" : termLabel)
+        rootView.setDockVisible(true)
+        rootView.board.setDocked(.term)
+        // Reflow into the dock body's geometry, then restore first responder so
+        // keystrokes still land in the terminal (the delegate is unchanged).
+        // Lay out RootView first so the dock pane has its (just-shown) frame,
+        // then the pane subtree positions the reparented terminal.
+        rootView.layoutSubtreeIfNeeded()
+        window?.makeFirstResponder(terminalView)
+        forceTerminalReflow()
+        updatePrimacy()
+    }
+
+    /// Returns the docked terminal to its board card (crib §4): REPARENT the
+    /// SwiftTerm view dock pane body → card body, hide the dock pane + slot ghost,
+    /// reflow + restore first responder.
+    private func undock() {
+        guard docked else { return }
+        docked = false
+        terminalView.removeFromSuperview()
+        rootView.board.card(.term)?.attachTerminal(terminalView)
+        rootView.setDockVisible(false)
+        rootView.board.setDocked(nil)
+        // Reflow into the card body's geometry, then restore first responder.
+        rootView.layoutSubtreeIfNeeded()
+        window?.makeFirstResponder(terminalView)
+        forceTerminalReflow()
+        updatePrimacy()
+    }
+
+    /// Nudges the terminal to re-measure its cols/rows after a reparent so the
+    /// daemon pty resizes to the new geometry. SwiftTerm reflows on a frame
+    /// change; `terminalSizeChanged` then forwards the resize to the daemon.
+    private func forceTerminalReflow() {
+        // A layout pass already ran; re-assert the current size to the daemon in
+        // case the cols/rows are unchanged but the view was reparented.
+        let term = terminalView.getTerminal()
+        terminalSizeChanged(cols: term.cols, rows: term.rows)
+    }
+
+    // MARK: - ⌥tab terminal cycle + HUD (Phase 5a scaffold, crib §6)
+
+    /// ⌥tab cycles the focused terminal among terminal cards and flashes the
+    /// cycle HUD (crib §6). With one terminal this is a visual no-op (a single
+    /// HUD item); kept real so Phase 5b can populate the cycle without rewiring.
+    private func cycleTerminals() {
+        let labels = terminalCycleLabels()
+        guard !labels.isEmpty else { return }
+        // Single terminal ⇒ the active item is always index 0. Phase 5b advances
+        // this index across the real terminal-card set.
+        rootView.cycleHUD.show(labels: labels, activeIndex: 0)
+        // Typing always goes to the prime terminal regardless of pointer (crib
+        // §6 focus model): re-assert first responder on the focused terminal.
+        if !docked { window?.makeFirstResponder(terminalView) }
+    }
+
+    /// The terminal-card names for the cycle HUD (crib §6). One entry this phase
+    /// (the single term card's current label).
+    private func terminalCycleLabels() -> [String] {
+        guard currentTermID != nil else { return [] }
+        return [termLabel.isEmpty ? "shell" : termLabel]
     }
 
     private func nowHHMM() -> String {
@@ -559,6 +691,8 @@ final class AppController {
         card.renderDoc(markdown: readMarkdown(path))
         refreshDocLocard(path)
         rootView.board.recomputeEdges()
+        // A doc card is quiet while a terminal is prime (crib §4).
+        if currentTermID != nil { card.setQuiet(true) }
         return card
     }
 

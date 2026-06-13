@@ -19,6 +19,14 @@ final class RootView: NSView {
     let zoomControl = ZoomControl()
     let minimap = Minimap()
     let offHints = OffscreenHints()
+    // Phase 5a terminal primacy: the cockpit dock pane (fixed to the board's
+    // bottom; hidden until a terminal docks) and the ⌥tab cycle HUD (top-center).
+    let dockPane = DockPaneView()
+    let cycleHUD = CycleHUD()
+
+    /// Whether the cockpit dock is currently showing a docked terminal. The
+    /// controller drives the reparent; RootView only owns the layout.
+    private(set) var dockVisible = false
 
     private(set) var peekVisible = false
     private var peekAnimating = false
@@ -46,6 +54,14 @@ final class RootView: NSView {
         addSubview(offHints)
         addSubview(zoomControl)
         addSubview(minimap)
+
+        // Cockpit dock pane sits above the board chrome (it covers the board's
+        // bottom while docked) but below peek/toasts; hidden until a dock.
+        dockPane.isHidden = true
+        addSubview(dockPane)
+        // Cycle HUD floats above the dock, top-center; hidden until ⌥tab.
+        cycleHUD.isHidden = true
+        addSubview(cycleHUD)
 
         peek.isHidden = true
         addSubview(peek)
@@ -96,6 +112,16 @@ final class RootView: NSView {
         board.setTerminal(terminal, worldFrame: worldFrame)
     }
 
+    /// Shows / hides the cockpit dock pane. The controller does the SwiftTerm
+    /// reparent + board slot-ghost separately; this only flips visibility and
+    /// re-lays-out so the pane occupies the board's bottom 40%.
+    func setDockVisible(_ visible: Bool) {
+        guard visible != dockVisible else { return }
+        dockVisible = visible
+        dockPane.isHidden = !visible
+        needsLayout = true
+    }
+
     /// Board height = window minus the 27px status bar (migration-plan Phase 3).
     private var boardHeight: CGFloat { max(0, bounds.height - StatusBar.height) }
 
@@ -120,6 +146,25 @@ final class RootView: NSView {
             width: Minimap.mapWidth,
             height: Minimap.mapHeight
         )
+
+        // Cockpit dock pane: fixed to the bottom of the board area (left 0,
+        // right 0, bottom at boardHeight — above the status bar), height = 40%
+        // of the board height (crib §4).
+        let dockH = (boardHeight * DockPaneView.heightFraction).rounded()
+        dockPane.frame = NSRect(x: 0, y: boardHeight - dockH, width: bounds.width, height: dockH)
+
+        // Cycle HUD: centered horizontally, top 12 in the board's coordinate
+        // space (the board fills from y=0 to boardHeight).
+        if !cycleHUD.isHidden {
+            cycleHUD.sizeToContents()
+            let size = cycleHUD.frame.size
+            cycleHUD.frame = NSRect(
+                x: ((bounds.width - size.width) / 2).rounded(),
+                y: CycleHUD.topInset,
+                width: size.width,
+                height: size.height
+            )
+        }
 
         if !peekAnimating {
             peek.frame = peekFrame(visible: peekVisible)

@@ -290,6 +290,38 @@ final class BoardView: NSView {
         return restored
     }
 
+    // MARK: - Cockpit dock (crib §4): slot ghost at the docked term card's spot
+
+    /// While a card is docked into the cockpit pane its board card is hidden and
+    /// a dashed slot ghost (crib §4 `.tm-slotghost`) sits at its world frame so
+    /// the board still shows where it belongs; the ghost pans/zooms with the
+    /// board. nil when nothing is docked.
+    private var dockedID: CardID?
+    private let slotGhost = SlotGhostView()
+
+    /// Marks `id`'s card as docked: hide its board card and show the slot ghost
+    /// at its world frame (crib §4). The card stays in `cards` (its world frame
+    /// is preserved for undock + persistence) but is not displayed. Pass nil to
+    /// clear the dock (un-dock): the card reappears, the ghost is removed.
+    func setDocked(_ id: CardID?) {
+        // Restore any previously-docked card.
+        if let prev = dockedID, let card = cards[prev] {
+            card.isHidden = false
+        }
+        slotGhost.removeFromSuperview()
+        dockedID = id
+        guard let id, let card = cards[id] else { return }
+        card.isHidden = true
+        slotGhost.frame = worldToView(card.worldFrame.rect)
+        cardLayer.addSubview(slotGhost, positioned: .below, relativeTo: nil)
+    }
+
+    /// Keeps the slot ghost on the docked card's reprojected frame (pan/zoom).
+    private func reprojectSlotGhost() {
+        guard let id = dockedID, let card = cards[id] else { return }
+        slotGhost.frame = worldToView(card.worldFrame.rect)
+    }
+
     // MARK: - Internals
 
     private let cardLayer = FlippedColumnView()
@@ -418,12 +450,14 @@ final class BoardView: NSView {
 
     private func reprojectAll() {
         for card in cards.values { card.frame = worldToView(card.worldFrame.rect) }
+        reprojectSlotGhost()
         recomputeEdges()
         onCardsChanged?()
     }
 
     private func reproject(_ card: CardView) {
         card.frame = worldToView(card.worldFrame.rect)
+        reprojectSlotGhost()
         // Terminal cards render at the card's view size; when zoom ≠ ~100% the
         // body is scaled via the layer transform (interactive only near 100% —
         // acceptable per the plan). The card frame already carries the scale,

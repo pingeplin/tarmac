@@ -317,6 +317,14 @@ final class TileHeaderView: NSView {
         needsLayout = true
     }
 
+    /// Prime-header styling (crib §4 `.tm-bcard.prime .bhd`): bg `#3a4046`, label
+    /// text `text`. The focused terminal card uses it; off restores the resting
+    /// bg2 + muted label. Display-only.
+    func setPrime(_ on: Bool) {
+        layer?.backgroundColor = (on ? Theme.primeHeaderBg : Theme.bg2).cgColor
+        pathLabel.textColor = on ? Theme.text : Theme.muted
+    }
+
     override func layout() {
         super.layout()
         let h = bounds.height
