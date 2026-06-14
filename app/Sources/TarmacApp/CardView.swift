@@ -66,6 +66,10 @@ final class CardView: NSView {
     private(set) var prime = false
     /// Quiet = a non-prime card while a terminal is prime (crib §4): opacity 0.8.
     private(set) var quiet = false
+    /// Dead = a terminal card whose pty exited (Phase 5b decision 1): the card
+    /// stays on the board dimmed, labelled `exit N · ↵ respawn`, and never reads
+    /// as prime/quiet. Set via `setDead`.
+    private(set) var dead = false
 
     // Active move/resize gesture state (window-space anchors).
     private enum Gesture {
@@ -167,6 +171,8 @@ final class CardView: NSView {
     /// fresh, prime's `#5a626a` for the focused terminal, else line (the lift
     /// state overrides this transiently).
     private var currentBorderColor: NSColor {
+        // A dead terminal card reads muted, below selection/prime accents.
+        if dead { return Theme.line.withAlphaComponent(0.6) }
         if selected || fresh { return Theme.agent }
         if prime { return Theme.liftBorder }
         return Theme.line
@@ -209,7 +215,7 @@ final class CardView: NSView {
     /// controller from the focus model; with one terminal the term card is prime
     /// while the terminal/board is focused.
     func setPrime(_ on: Bool) {
-        guard on != prime else { return }
+        guard !dead, on != prime else { return }
         prime = on
         // A prime card is never simultaneously quiet.
         if on { setQuiet(false) }
@@ -222,11 +228,31 @@ final class CardView: NSView {
     }
 
     /// Quiet = a non-prime card while a terminal holds prime focus (crib §4):
-    /// opacity 0.8. Cleared when nothing is prime (every card back to full).
+    /// opacity 0.8. Cleared when nothing is prime (every card back to full). A
+    /// dead terminal card keeps its own dim and ignores quiet.
     func setQuiet(_ on: Bool) {
-        guard on != quiet else { return }
+        guard !dead, on != quiet else { return }
         quiet = on
         alphaValue = on ? 0.8 : 1.0
+    }
+
+    // MARK: - Dead state (Phase 5b decision 1: terminal exited, no auto-respawn)
+
+    /// Marks a terminal card dead: dim it, mute the border, drop any prime
+    /// styling, and label the header `exit N · ↵ respawn` (or `killed · ↵
+    /// respawn` when the exit code is nil). The card stays on the board at its
+    /// world frame; the user revives it explicitly (respawn UI is post-5b).
+    func setDead(_ code: Int?) {
+        guard !dead else { return }
+        dead = true
+        prime = false
+        quiet = false
+        header.setPrime(false)
+        alphaValue = 0.55
+        layer?.borderColor = currentBorderColor.cgColor
+        applyRestingShadow()
+        let label = code.map { "exit \($0) · ↵ respawn" } ?? "killed · ↵ respawn"
+        header.setLabel(label)
     }
 
     // MARK: - Owner chip bridge

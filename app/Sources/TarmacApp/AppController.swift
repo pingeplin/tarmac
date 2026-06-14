@@ -487,33 +487,53 @@ final class AppController {
     private func handleExit(termID: String, code: Int?) {
         guard let s = sessions[termID], s.live else { return }
         s.live = false
-        // A dead terminal can't ring: clear any lingering bell on its card.
-        rootView.board.card(.term(termID))?.setBell(false)
+        let card = rootView.board.card(.term(termID))
+        // A dead terminal can't ring: clear any lingering bell, then put the card
+        // into its dead `exit N · respawn` state (decision 1: no auto-respawn —
+        // the card stays on the board at its frame; respawn-in-place is post-5b).
+        card?.setBell(false)
+        card?.setDead(code)
         rootView.board.signalsChanged()
-        // No live terminal ⇒ nothing is prime; drop prime/quiet styling.
-        updatePrimacy()
+        // If the dying terminal was docked, return its (now-dead) view to its
+        // card and hide the dock before prime advances, so the dock never holds
+        // a view that is no longer prime (risk: off-screen input routing).
+        if docked, primeTermID == termID {
+            undock()
+        }
+        // If the prime terminal died, advance prime to the next live terminal
+        // (or none); otherwise just refresh styling.
+        if primeTermID == termID {
+            advancePrimeAfterExit(of: termID)
+        } else {
+            updatePrimacy()
+        }
         let label = code.map { "exit \($0)" } ?? "killed by signal"
-        feedNotice("shell exited (\(label)) — restarting…", to: s)
+        feedNotice("shell exited (\(label))", to: s)
         // Exit toast (M2 honest signals): title "shell exited · <code>" (or
         // "killed by signal" when code is nil).
         let toastTitle = code.map { "shell exited · \($0)" } ?? "killed by signal"
         rootView.toasts.show(icon: "›_", title: toastTitle, body: nil)
+        // Persist so the card's position survives a restart (it respawns fresh
+        // into that slot per decision 2).
+        persistLayout()
+    }
 
-        if let spawnedAt = s.lastSpawnAt, Date().timeIntervalSince(spawnedAt) < 1.0 {
-            s.rapidExitCount += 1
-        } else {
-            s.rapidExitCount = 0
-        }
-        guard s.rapidExitCount < 3 else {
-            feedNotice("shell keeps exiting immediately — auto-respawn stopped", to: s)
-            return
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            MainActor.assumeIsolated { [weak self] in
-                guard let self, self.connected, let s2 = self.sessions[termID], !s2.live else { return }
-                self.spawn(session: s2)
+    /// After the prime terminal `deadID` exits, move prime to the next LIVE
+    /// terminal in spawn order (wrapping), or nil when none remain live.
+    private func advancePrimeAfterExit(of deadID: String) {
+        let n = sessionOrder.count
+        if n > 0, let deadIdx = sessionOrder.firstIndex(of: deadID) {
+            for offset in 1...n {
+                let id = sessionOrder[(deadIdx + offset) % n]
+                if sessions[id]?.live == true {
+                    setPrime(id)
+                    return
+                }
             }
         }
+        // No live terminal remains: nothing is prime.
+        primeTermID = nil
+        updatePrimacy()
     }
 
     /// Feeds a dim notice line into a terminal's scrollback — the given session,
