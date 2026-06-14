@@ -280,8 +280,8 @@ final class AppController {
                 // shell's Enter key is never hijacked while typing.
                 if isReturn, self.boardHasFocus() {
                     if !self.docked, let target = self.rootView.offscreenFlyTarget {
-                        self.preFlightViewport = self.rootView.board.viewport
-                        self.rootView.board.fly(to: target)
+                        self.preFlightViewport = self.activeBoard.view.viewport
+                        self.activeBoard.view.fly(to: target)
                         return true
                     }
                     self.toggleDock()
@@ -290,7 +290,7 @@ final class AppController {
                 guard isEsc else { return false }
                 // An active board drag/resize swallows esc ahead of everything
                 // (crib §5 DECISION; was desk.cancelDrag()).
-                if self.rootView.board.cancelDrag() {
+                if self.activeBoard.view.cancelDrag() {
                     return true
                 }
                 // esc returns a docked terminal to its board card (crib §4),
@@ -302,7 +302,7 @@ final class AppController {
                 // esc after a Return flight flies the viewport back (crib §6).
                 if let prev = self.preFlightViewport {
                     self.preFlightViewport = nil
-                    self.rootView.board.flyTo(prev)
+                    self.activeBoard.view.flyTo(prev)
                     return true
                 }
                 // esc on a freshly-landed card sends it to the shelf (crib §5).
@@ -403,7 +403,7 @@ final class AppController {
         case .fileEvent(let path, let mtimeMs):
             store.applyFileEvent(path: path, mtimeMs: mtimeMs)
             if isOnBoard(path) {
-                rootView.board.card(.doc(path))?.renderDoc(markdown: readMarkdown(path))
+                activeBoard.view.card(.doc(path))?.renderDoc(markdown: readMarkdown(path))
             }
             if rootView.peekVisible && peekPath == path {
                 refreshPeek(path)
@@ -495,8 +495,8 @@ final class AppController {
     func terminalDidSend(termID: String, _ bytes: Data) {
         guard let s = sessions[termID], s.live else { return }
         // A keystroke clears this terminal's amber bell signal (M2).
-        rootView.board.card(.term(termID))?.setBell(false)
-        rootView.board.signalsChanged()
+        activeBoard.view.card(.term(termID))?.setBell(false)
+        activeBoard.view.signalsChanged()
         client.input(termID: termID, bytes: bytes)
     }
 
@@ -523,8 +523,8 @@ final class AppController {
         s.label = (shell as NSString).lastPathComponent
         s.shellName = s.label
         s.liveProcSince = nil
-        rootView.board.card(.term(s.termID))?.setTermLabel(s.label)
-        rootView.board.card(.term(s.termID))?.setLive(false)
+        activeBoard.view.card(.term(s.termID))?.setTermLabel(s.label)
+        activeBoard.view.card(.term(s.termID))?.setLive(false)
         refreshTermLocard(s.termID)
         // Cards restored before the term spawned get their gravity owner +
         // chip resolved now.
@@ -544,14 +544,14 @@ final class AppController {
         let session = makeSession(termID: id)
         sessions[id] = session
         sessionOrder.append(id)
-        rootView.board.setTerminal(termID: id, session.view, worldFrame: cascadeFrame())
+        activeBoard.view.setTerminal(termID: id, session.view, worldFrame: cascadeFrame())
         // Lay out so the terminal view has its card-sized geometry before spawn,
         // so the pty starts at the right cols/rows (not the 800×600 default).
         rootView.layoutSubtreeIfNeeded()
         // The new terminal becomes prime + first responder (typing follows it).
         primeTermID = id
         spawn(session: session)
-        rootView.board.select(.term(id))
+        activeBoard.view.select(.term(id))
         if !docked { window?.makeFirstResponder(session.view) }
         // Persist so the new terminal card survives a restart.
         persistLayout()
@@ -561,27 +561,27 @@ final class AppController {
     /// prime card, nudged off existing cards so repeated ⌘T stair-steps.
     private func cascadeFrame() -> CardFrame {
         let base = primeTermCard?.worldFrame ?? Place.termFrame
-        let existing = rootView.board.cards.values.map { CGPoint(x: $0.worldFrame.x, y: $0.worldFrame.y) }
+        let existing = activeBoard.view.cards.values.map { CGPoint(x: $0.worldFrame.x, y: $0.worldFrame.y) }
         let origin = BoardWayfinding.cascadeOrigin(
             base: CGPoint(x: base.x, y: base.y),
             existing: existing,
             dx: Place.cascadeDX,
             dy: Place.cascadeDY
         )
-        let topZ = (rootView.board.cards.values.map(\.worldFrame.z).max() ?? 0) + 1
+        let topZ = (activeBoard.view.cards.values.map(\.worldFrame.z).max() ?? 0) + 1
         return CardFrame(x: origin.x, y: origin.y, w: base.w, h: base.h, z: topZ)
     }
 
     private func handleExit(termID: String, code: Int?) {
         guard let s = sessions[termID], s.live else { return }
         s.live = false
-        let card = rootView.board.card(.term(termID))
+        let card = activeBoard.view.card(.term(termID))
         // A dead terminal can't ring: clear any lingering bell, then put the card
         // into its dead `exit N · respawn` state (decision 1: no auto-respawn —
         // the card stays on the board at its frame; respawn-in-place is post-5b).
         card?.setBell(false)
         card?.setDead(code)
-        rootView.board.signalsChanged()
+        activeBoard.view.signalsChanged()
         // If the dying terminal was docked, return its (now-dead) view to its
         // card and hide the dock before prime advances, so the dock never holds
         // a view that is no longer prime (risk: off-screen input routing).
@@ -644,7 +644,7 @@ final class AppController {
         // can't re-label or re-light its dead card (matches the other handlers).
         guard let s = sessions[termID], s.live else { return }
         s.label = name
-        rootView.board.card(.term(termID))?.setTermLabel(name)
+        activeBoard.view.card(.term(termID))?.setTermLabel(name)
         // Keep the dock header label honest while docked, but only for the
         // docked (prime) terminal (crib §4 .dhd label).
         if docked, termID == primeTermID {
@@ -654,16 +654,16 @@ final class AppController {
         // shell (crib §6: cyan = agent-active). The honest signal we have at this
         // phase is the foreground process name; treat shell == idle.
         let live = !name.isEmpty && name != s.shellName
-        let card = rootView.board.card(.term(termID))
+        let card = activeBoard.view.card(.term(termID))
         let wasLive = card?.liveActive ?? false
         if live, !wasLive { s.liveProcSince = Date() }
         if !live { s.liveProcSince = nil }
         card?.setLive(live)
-        rootView.board.signalsChanged()
+        activeBoard.view.signalsChanged()
         refreshTermLocard(termID)
         // Re-render any attached doc card's owner chip with the new term name.
         for path in boardDocPaths {
-            guard let card = rootView.board.card(.doc(path)) else { continue }
+            guard let card = activeBoard.view.card(.doc(path)) else { continue }
             card.setOwnerChip(ownerChipLabel(for: card))
         }
     }
@@ -673,7 +673,7 @@ final class AppController {
     /// Feeds a terminal card's locard content (crib §7): the foreground process
     /// name + a duration (`<proc> · Ns`) when live, else the shell name idle.
     private func refreshTermLocard(_ termID: String) {
-        guard let s = sessions[termID], let card = rootView.board.card(.term(termID)) else { return }
+        guard let s = sessions[termID], let card = activeBoard.view.card(.term(termID)) else { return }
         let status: String
         if card.liveActive, let since = s.liveProcSince {
             let secs = max(1, Int(Date().timeIntervalSince(since).rounded()))
@@ -686,7 +686,7 @@ final class AppController {
 
     /// Feeds a doc card's locard content (crib §7): basename + recency line.
     private func refreshDocLocard(_ path: String) {
-        guard let card = rootView.board.card(.doc(path)), let doc = store.doc(for: path) else { return }
+        guard let card = activeBoard.view.card(.doc(path)), let doc = store.doc(for: path) else { return }
         let status = doc.read ? doc.displayPath : "unread · \(doc.displayPath)"
         let color = Theme.repoColor(index: doc.repoColor, fallbackName: doc.displayRepoName)
         card.setLocardContent(name: doc.fileName, status: status, repoColor: color)
@@ -698,7 +698,7 @@ final class AppController {
     /// Return target (bell outranks live; among same, most-recent wins by z).
     private func offscreenHints() -> [OffscreenHints.Hint] {
         var hints: [OffscreenHints.Hint] = []
-        for (id, card) in rootView.board.cards {
+        for (id, card) in activeBoard.view.cards {
             let signal = card.signal
             guard signal != .none else { continue }
             let viewCenter = CGPoint(x: card.frame.midX, y: card.frame.midY)
@@ -745,7 +745,7 @@ final class AppController {
     /// when no terminal is live.
     private func updatePrimacy() {
         let primeID: CardID? = hasLivePrime ? primeTermID.map(CardID.term) : nil
-        for (id, card) in rootView.board.cards {
+        for (id, card) in activeBoard.view.cards {
             let isPrime = (id == primeID)
             card.setPrime(isPrime)
             // A card is quiet only while some terminal is prime and it isn't it.
@@ -784,7 +784,7 @@ final class AppController {
         let label = primeSession?.label ?? ""
         rootView.dockPane.setTermLabel(label.isEmpty ? "shell" : label)
         rootView.setDockVisible(true)
-        rootView.board.setDocked(.term(id))
+        activeBoard.view.setDocked(.term(id))
         // Reflow into the dock body's geometry, then restore first responder so
         // keystrokes still land in the terminal (the delegate is unchanged).
         // Lay out RootView first so the dock pane has its (just-shown) frame,
@@ -806,7 +806,7 @@ final class AppController {
             primeTermCard?.attachTerminal(view)
         }
         rootView.setDockVisible(false)
-        rootView.board.setDocked(nil)
+        activeBoard.view.setDocked(nil)
         // Reflow into the card body's geometry, then restore first responder.
         rootView.layoutSubtreeIfNeeded()
         if let view = primeTerminalView { window?.makeFirstResponder(view) }
@@ -859,14 +859,14 @@ final class AppController {
     /// (see `terminalDidSend` / `clearBell`).
     private func handleBell(termID: String) {
         guard sessions[termID]?.live == true else { return }
-        rootView.board.card(.term(termID))?.setBell(true)
-        rootView.board.signalsChanged()
+        activeBoard.view.card(.term(termID))?.setBell(true)
+        activeBoard.view.signalsChanged()
     }
 
     /// Clears the amber bell signal on the term card (next keystroke / focus).
     private func clearBell() {
         primeTermCard?.setBell(false)
-        rootView.board.signalsChanged()
+        activeBoard.view.signalsChanged()
     }
 
     // MARK: - Board layout (restore + persistence)
@@ -882,8 +882,8 @@ final class AppController {
         // Tear down any doc cards from a prior restore; the term card is kept and
         // re-placed (its embedded SwiftTerm view stays attached). Snapshot the ids
         // first — removeCard mutates the board's `cards` dictionary.
-        for id in Array(rootView.board.cards.keys) {
-            if case .doc = id { rootView.board.removeCard(id: id) }
+        for id in Array(activeBoard.view.cards.keys) {
+            if case .doc = id { activeBoard.view.removeCard(id: id) }
         }
         shelfPaths = []
 
@@ -922,7 +922,7 @@ final class AppController {
             FileHandle.standardError.write(Data(log.utf8))
         }
 
-        rootView.board.setViewport(board.map(Viewport.init) ?? .default)
+        activeBoard.view.setViewport(board.map(Viewport.init) ?? .default)
     }
 
     /// Restores terminal cards from `termTiles` (decision 2: positions persist,
@@ -941,7 +941,7 @@ final class AppController {
                 // Reuse the boot session/card (created at init, kept prime).
                 newID = bootID
                 if let view = primeTerminalView {
-                    rootView.board.setTerminal(termID: bootID, view, worldFrame: frame)
+                    activeBoard.view.setTerminal(termID: bootID, view, worldFrame: frame)
                 }
             } else {
                 // A fresh session + card + pty for each additional terminal.
@@ -949,7 +949,7 @@ final class AppController {
                 let session = makeSession(termID: newID)
                 sessions[newID] = session
                 sessionOrder.append(newID)
-                rootView.board.setTerminal(termID: newID, session.view, worldFrame: frame)
+                activeBoard.view.setTerminal(termID: newID, session.view, worldFrame: frame)
                 // Lay out before spawn so the pty starts at the restored card
                 // size, not the 800×600 view default.
                 rootView.layoutSubtreeIfNeeded()
@@ -988,7 +988,7 @@ final class AppController {
     /// shown while attached). `fresh` gives the just-spawned ring + `✚ now`.
     @discardableResult
     private func landDocCard(path: String, frame: CardFrame, attached: Bool, fresh: Bool) -> CardView {
-        let card = rootView.board.addCard(id: .doc(path), worldFrame: frame)
+        let card = activeBoard.view.addCard(id: .doc(path), worldFrame: frame)
         if let doc = store.doc(for: path) { card.apply(doc: doc) }
         card.ownerTermID = ownerCardID(for: path)
         card.attached = attached && card.ownerTermID != nil
@@ -996,7 +996,7 @@ final class AppController {
         card.setOwnerChip(ownerChipLabel(for: card))
         card.renderDoc(markdown: readMarkdown(path))
         refreshDocLocard(path)
-        rootView.board.recomputeEdges()
+        activeBoard.view.recomputeEdges()
         // A doc card is quiet while a terminal is prime (crib §4).
         if hasLivePrime { card.setQuiet(true) }
         return card
@@ -1008,7 +1008,7 @@ final class AppController {
     /// longer exists (e.g. a genuinely-orphaned owner after a restart remap).
     private func ownerCardID(for path: String) -> CardID? {
         guard let tid = docOwner[path], sessions[tid] != nil,
-              rootView.board.card(.term(tid)) != nil else {
+              activeBoard.view.card(.term(tid)) != nil else {
             return nil
         }
         return .term(tid)
@@ -1030,13 +1030,13 @@ final class AppController {
     /// detached. Called from maybeSpawn.
     private func rebindOwners() {
         for path in boardDocPaths {
-            guard let card = rootView.board.card(.doc(path)) else { continue }
+            guard let card = activeBoard.view.card(.doc(path)) else { continue }
             if card.ownerTermID == nil, card.attached {
                 card.ownerTermID = ownerCardID(for: path)
             }
             card.setOwnerChip(ownerChipLabel(for: card))
         }
-        rootView.board.recomputeEdges()
+        activeBoard.view.recomputeEdges()
     }
 
     // MARK: - Fresh card landing (crib §5)
@@ -1048,7 +1048,7 @@ final class AppController {
     /// that ran `tarmac open`, not necessarily the prime one) via a first-free-
     /// slot search; gives it the fresh ring + `✚ now` meta.
     private func landFreshCard(path: String) {
-        let caller = ownerCardID(for: path).flatMap { rootView.board.card($0) }
+        let caller = ownerCardID(for: path).flatMap { activeBoard.view.card($0) }
         let frame = firstFreeSlot(near: caller)
         landDocCard(path: path, frame: frame, attached: true, fresh: true)
         freshCardPath = path
@@ -1064,8 +1064,8 @@ final class AppController {
         let startY = term.y
         let stepX = Place.docW + Place.gapX
         let stepY = Place.docH + Place.gapY
-        let existing = rootView.board.cards.values.map(\.worldFrame.rect)
-        let topZ = (rootView.board.cards.values.map(\.worldFrame.z).max() ?? 0) + 1
+        let existing = activeBoard.view.cards.values.map(\.worldFrame.rect)
+        let topZ = (activeBoard.view.cards.values.map(\.worldFrame.z).max() ?? 0) + 1
         for row in 0..<64 {
             for col in 0..<64 {
                 let candidate = CGRect(
@@ -1086,7 +1086,7 @@ final class AppController {
 
     /// Marking a doc read clears its fresh ring (crib §5).
     private func clearFreshIfRead(_ path: String) {
-        guard let card = rootView.board.card(.doc(path)), card.fresh else { return }
+        guard let card = activeBoard.view.card(.doc(path)), card.fresh else { return }
         card.setFresh(false)
         if freshCardPath == path { freshCardPath = nil }
     }
@@ -1096,7 +1096,7 @@ final class AppController {
     /// no fresh card so esc falls through to peek/toast dismissal.
     @discardableResult
     private func sendFreshCardToShelf() -> Bool {
-        guard let path = freshCardPath, let card = rootView.board.card(.doc(path)), card.fresh else {
+        guard let path = freshCardPath, let card = activeBoard.view.card(.doc(path)), card.fresh else {
             freshCardPath = nil
             return false
         }
@@ -1107,7 +1107,7 @@ final class AppController {
 
     /// Moves a doc from the board to the shelf, persists, refreshes.
     private func moveToShelf(_ path: String) {
-        rootView.board.removeCard(id: .doc(path))
+        activeBoard.view.removeCard(id: .doc(path))
         if !shelfPaths.contains(path) { shelfPaths.append(path) }
         persistLayout()
         refreshStrips()
@@ -1118,9 +1118,9 @@ final class AppController {
     private func landShelfDrop(path: String, windowPoint: NSPoint) {
         guard store.doc(for: path) != nil else { return }
         shelfPaths.removeAll { $0 == path }
-        let viewPoint = rootView.board.convert(windowPoint, from: nil)
-        let world = rootView.board.viewToWorld(viewPoint)
-        let topZ = (rootView.board.cards.values.map(\.worldFrame.z).max() ?? 0) + 1
+        let viewPoint = activeBoard.view.convert(windowPoint, from: nil)
+        let world = activeBoard.view.viewToWorld(viewPoint)
+        let topZ = (activeBoard.view.cards.values.map(\.worldFrame.z).max() ?? 0) + 1
         // Drop point is the card's top-left.
         let frame = CardFrame(x: world.x, y: world.y, w: Place.docW, h: Place.docH, z: topZ)
         // A shelf doc lands detached (it had no board placement / gravity tie).
@@ -1131,7 +1131,7 @@ final class AppController {
 
 
     private func isOnBoard(_ path: String) -> Bool {
-        rootView.board.card(.doc(path)) != nil
+        activeBoard.view.card(.doc(path)) != nil
     }
 
     /// Reports the full layout snapshot (docs/protocol.md `layout`;
@@ -1157,11 +1157,11 @@ final class AppController {
         // Every terminal card (in spawn order, live and dead) with its term_id —
         // the daemon dedups by term_id and keeps all distinct positions.
         for tid in sessionOrder {
-            guard let card = rootView.board.card(.term(tid)) else { continue }
+            guard let card = activeBoard.view.card(.term(tid)) else { continue }
             tiles.append(boardTile(kind: "term", path: nil, termID: tid, card: card))
         }
         for path in boardDocPaths.sorted() {
-            guard let card = rootView.board.card(.doc(path)) else { continue }
+            guard let card = activeBoard.view.card(.doc(path)) else { continue }
             tiles.append(boardTile(kind: "doc", path: path, card: card))
         }
         // Shelf docs: kind "doc", shelf:true, loose:true, no geometry (crib §6).
@@ -1171,7 +1171,7 @@ final class AppController {
         client.layout(
             dock: store.docs.map(\.path),
             tiles: tiles,
-            board: rootView.board.viewport.wire,
+            board: activeBoard.view.viewport.wire,
             boardID: renderedBoardID
         )
     }
@@ -1211,7 +1211,7 @@ final class AppController {
     private func refreshStrips() {
         rootView.shelf.update(items: shelfPaths.compactMap(shelfItem(for:)))
         for path in boardDocPaths {
-            guard let card = rootView.board.card(.doc(path)) else { continue }
+            guard let card = activeBoard.view.card(.doc(path)) else { continue }
             if let doc = store.doc(for: path) { card.apply(doc: doc) }
             card.setOwnerChip(ownerChipLabel(for: card))
             refreshDocLocard(path)
@@ -1286,14 +1286,14 @@ final class AppController {
     func togglePinPeeked() {
         guard rootView.peekVisible, let path = peekPath else { return }
         if isOnBoard(path) {
-            rootView.board.removeCard(id: .doc(path))
+            activeBoard.view.removeCard(id: .doc(path))
         } else {
             shelfPaths.removeAll { $0 == path }
             // Land at the gravity position beside the doc's owner terminal (the
             // caller), falling back to the prime terminal; attach when the doc
             // has a resolvable owner so it follows that card + shows the chip.
             let owner = ownerCardID(for: path)
-            let ownerCard = owner.flatMap { rootView.board.card($0) }
+            let ownerCard = owner.flatMap { activeBoard.view.card($0) }
             landDocCard(path: path, frame: firstFreeSlot(near: ownerCard), attached: owner != nil, fresh: false)
         }
         persistLayout()
