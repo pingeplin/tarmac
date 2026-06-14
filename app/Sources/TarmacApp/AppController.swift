@@ -131,14 +131,6 @@ final class AppController {
     /// backgrounded board) target that board's store explicitly.
     private var store: DocStore { activeBoard.store }
 
-    /// M3 P3 switch tracing (temporary): set TARMAC_DEBUG_SWITCH to log the
-    /// board-switch lifecycle to stderr. Removed once the switch is verified.
-    private static let switchDebug = ProcessInfo.processInfo.environment["TARMAC_DEBUG_SWITCH"] != nil
-    private func dbg(_ s: @autoclosure () -> String) {
-        guard Self.switchDebug else { return }
-        FileHandle.standardError.write(Data("tarmac[switch]: \(s())\n".utf8))
-    }
-
     private var sessions: [String: TerminalSession] {
         get { activeBoard.sessions }
         set { activeBoard.sessions = newValue }
@@ -189,6 +181,10 @@ final class AppController {
     // persistence across the transient (undock / unmount / re-mount / rebuild)
     // and tells the restore handler to mount the arriving board (crit B4).
     private var switching = false
+
+    // M3 P4: the titlebar session chip (`▞ <board>`), hosted in a leading
+    // titlebar accessory; shows the active board + dims with the ⌘K switcher.
+    private let titleChip = TitleBarChip()
 
     // MARK: - Board placement rule (crib §4/§5)
     //
@@ -249,6 +245,35 @@ final class AppController {
         // Mount board-0 and bind its per-board callbacks (edge labels + layout
         // persistence). The same `mount(_:)` runs on every switch-arrive.
         mount(board0)
+
+        // M3 P4: host the session chip in the titlebar (hides the redundant
+        // native title) and seed it with board-0's name.
+        setupTitlebar()
+    }
+
+    /// Installs the titlebar session chip as a leading accessory and hides the
+    /// native window title (the chip carries the board identity instead).
+    private func setupTitlebar() {
+        window?.titleVisibility = .hidden
+        let accessory = NSTitlebarAccessoryViewController()
+        accessory.layoutAttribute = .leading
+        accessory.view = titleChip
+        window?.addTitlebarAccessoryViewController(accessory)
+        updateTitleChip()
+    }
+
+    /// Refreshes the titlebar chip with the active board's display name.
+    private func updateTitleChip() {
+        titleChip.setName(activeBoard.name ?? activeBoardID)
+    }
+
+    /// Dims the titlebar chip + the traffic lights while the ⌘K switcher is open
+    /// (B5 `dim` titlebar), restoring them on close.
+    private func setTitlebarDim(_ dim: Bool) {
+        titleChip.alphaValue = dim ? 0.4 : 1
+        for button: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
+            window?.standardWindowButton(button)?.alphaValue = dim ? 0.4 : 1
+        }
     }
 
     /// Mounts `board`'s view in RootView and (re)binds the controller-owned
@@ -407,7 +432,6 @@ final class AppController {
             maybeSpawn()
         case .boardList(let metas, let active):
             boardMetas = metas
-            dbg("board_list active=\(active) appActive=\(activeBoardID) switching=\(switching) boards=\(metas.count)")
             // The daemon changed the active board out from under us (board_create
             // auto-activates the new board): follow it — leave the current board
             // so the restore that follows mounts the new one. An app-initiated
@@ -530,6 +554,7 @@ final class AppController {
         switcherSelected = switcherRows.firstIndex { $0.row.isActive } ?? 0
         renderSwitcher()
         rootView.setSwitcherVisible(true)
+        setTitlebarDim(true)
     }
 
     /// Closes the switcher. `restoreFocus` puts first responder back on the active
@@ -539,6 +564,7 @@ final class AppController {
         guard switcherOpen else { return }
         switcherOpen = false
         rootView.setSwitcherVisible(false)
+        setTitlebarDim(false)
         if restoreFocus { focusPrimeTerminal() }
     }
 
@@ -682,11 +708,7 @@ final class AppController {
     /// `targetID` active + minted, ready for its restore to mount it. Does NOT
     /// send `board_switch` (the caller does, or the daemon already switched).
     private func beginArrivingSwitch(to targetID: String) {
-        guard let meta = boardMetas.first(where: { $0.boardID == targetID }) else {
-            dbg("beginArrivingSwitch DROPPED — \(targetID) not in boardMetas")
-            return
-        }
-        dbg("beginArrivingSwitch → \(targetID) (minted=\(boards[targetID] != nil))")
+        guard let meta = boardMetas.first(where: { $0.boardID == targetID }) else { return }
         switching = true
         // Keep prime synced to the terminal the user last typed in, then pull
         // first responder OFF the leaving board's views before the view is
@@ -761,7 +783,6 @@ final class AppController {
         }
         updatePrimacy()
         switching = false
-        dbg("finishArrive done board=\(board.boardID) prime=\(board.primeTermID ?? "nil") mounted=\(rootView.board === board.view)")
     }
 
     // MARK: - Terminal session
@@ -1223,11 +1244,7 @@ final class AppController {
     /// existing view instead (Step 9). `board_id` absent ⇒ board-0 (legacy).
     private func applyRestore(docs: [RestoreDoc], tiles: [LayoutTile], viewport: BoardViewport?, boardID: String?) {
         let targetID = boardID ?? Board.defaultID
-        guard targetID == activeBoardID, let board = boards[targetID] else {
-            dbg("restore DROPPED — target=\(boardID ?? "nil→board-0") appActive=\(activeBoardID) minted=\(boards[boardID ?? Board.defaultID] != nil) switching=\(switching)")
-            return
-        }
-        dbg("restore apply target=\(targetID) switching=\(switching) firstRestore=\(!board.didInitialRestore) tiles=\(tiles.count)")
+        guard targetID == activeBoardID, let board = boards[targetID] else { return }
         // On a switch-arrive, mount the target's view (boot already mounted
         // board-0). A re-visit still mounts + refocuses below — only the rebuild
         // is gated on the first restore.
@@ -1635,6 +1652,7 @@ final class AppController {
         // invisible until P4's titlebar chip / ⌘K switcher).
         let count = max(boardMetas.count, boards.count)
         rootView.statusBar.setBoard(activeBoard.name ?? activeBoardID, count: count)
+        updateTitleChip()
         rootView.coldStartHint.isHidden = !store.isEmpty
     }
 
