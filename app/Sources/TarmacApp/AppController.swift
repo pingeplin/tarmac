@@ -89,74 +89,74 @@ final class AppController {
 
     private var connected = false
     private var viewReady = false
-    /// The prime (focused) terminal card's id (Phase 5b: one of N), or nil when
-    /// no terminal is live. The boot terminal's id is minted at init; ⌘T and
-    /// restore mint the rest; prime moves across them via ⌥tab / ⌘T / clicking.
-    private var primeTermID: String?
-    /// Every terminal card's live state, keyed by `term_id` (the SwiftTerm view +
-    /// its delegate bridge + per-terminal process/signal bookkeeping). Replaces
-    /// the single `terminalView` + the controller-global term metadata.
-    private var sessions: [String: TerminalSession] = [:]
-    /// Terminal ids in spawn order — the stable order ⌥tab cycles through.
-    private var sessionOrder: [String] = []
-
-    /// The prime terminal's session, or nil when no prime id is set.
-    private var primeSession: TerminalSession? {
-        guard let id = primeTermID else { return nil }
-        return sessions[id]
-    }
-
-    /// The prime terminal's SwiftTerm view (the one that receives keyboard input).
-    private var primeTerminalView: TerminalView? { primeSession?.view }
-
-    /// The prime terminal's board card (the focused terminal), or nil.
-    private var primeTermCard: CardView? {
-        guard let id = primeTermID else { return nil }
-        return rootView.board.card(.term(id))
-    }
-
-    /// Whether the prime terminal is backed by a live pty — drives doc-card
-    /// quieting and the dock/cycle guards (was `currentTermID != nil`).
-    private var hasLivePrime: Bool { primeSession?.live == true }
 
     private let store = DocStore()
     private var escMonitor: Any?
-    /// The viewport to fly back to when esc follows a Return flight (crib §6).
-    /// Set by the Return flight; consumed (and cleared) by the next esc.
-    private var preFlightViewport: Viewport?
 
-    // MARK: - Cockpit dock / terminal primacy (Phase 5a)
+    // MARK: - Boards (M3 P3)
     //
-    // Whether the focused terminal is currently docked into the viewport-fixed
-    // bottom pane (crib §4). Toggled by Return (board-focused) / esc.
-    private var docked = false
+    // The app holds N boards keyed by `board_id`; `activeBoard` is the one the
+    // user is looking at (its `view` is the mounted BoardView). board-0 wraps
+    // today's single board losslessly. The board-scoped state — sessions, prime,
+    // dock, shelf, provenance, fresh card, restore latch — lives on `Board`; the
+    // shims below keep AppController's existing call sites compiling while that
+    // state delegates to whichever board is active, so once the real switch
+    // lands every read/write automatically targets the right board.
+    private var boards: [String: Board] = [:]
+    private var activeBoardID = Board.defaultID
+    /// The active board. Force-unwrapped: `boards` always contains
+    /// `activeBoardID` (the invariant the boot path + the switch path maintain).
+    private var activeBoard: Board { boards[activeBoardID]! }
 
-    // MARK: - Shelf / gravity state (Phase 3)
-    //
-    // Shelf membership in chip order (open-but-unplaced docs); the source of
-    // truth for the shelf overlay + persistence. Provenance owner per doc is
-    // seeded from DocEntry.term_id and reapplied to landed cards.
-    private var shelfPaths: [String] = []
-    /// Provenance: doc path → the `term_id` that opened it (from DocEntry). The
-    /// owner term_id is persisted; across a restart it is re-anchored to the
-    /// reborn terminal by `remapDocOwners`, then resolved to a board card by
-    /// `ownerCardID` (a doc binds to *its* terminal, Phase 5b).
-    private var docOwner: [String: String] = [:]
-    // Per-terminal labels / shell name / live-since now live on TerminalSession
-    // (Phase 5b); see `sessions`.
+    private var sessions: [String: TerminalSession] {
+        get { activeBoard.sessions }
+        set { activeBoard.sessions = newValue }
+    }
+    private var sessionOrder: [String] {
+        get { activeBoard.sessionOrder }
+        set { activeBoard.sessionOrder = newValue }
+    }
+    private var primeTermID: String? {
+        get { activeBoard.primeTermID }
+        set { activeBoard.primeTermID = newValue }
+    }
+    private var docked: Bool {
+        get { activeBoard.docked }
+        set { activeBoard.docked = newValue }
+    }
+    private var shelfPaths: [String] {
+        get { activeBoard.shelfPaths }
+        set { activeBoard.shelfPaths = newValue }
+    }
+    private var docOwner: [String: String] {
+        get { activeBoard.docOwner }
+        set { activeBoard.docOwner = newValue }
+    }
+    private var freshCardPath: String? {
+        get { activeBoard.freshCardPath }
+        set { activeBoard.freshCardPath = newValue }
+    }
+    private var preFlightViewport: Viewport? {
+        get { activeBoard.preFlightViewport }
+        set { activeBoard.preFlightViewport = newValue }
+    }
+    private var didInitialRestore: Bool {
+        get { activeBoard.didInitialRestore }
+        set { activeBoard.didInitialRestore = newValue }
+    }
+    // Read-only computed accessors (pure functions of the active board's state).
+    private var primeSession: TerminalSession? { activeBoard.primeSession }
+    private var primeTerminalView: TerminalView? { activeBoard.primeTerminalView }
+    private var primeTermCard: CardView? { activeBoard.primeTermCard }
+    private var hasLivePrime: Bool { activeBoard.hasLivePrime }
+    private var boardDocPaths: [String] { activeBoard.boardDocPaths }
 
-    // M3 P2 (crude multi-board, no chrome): the app knows the board list + the
-    // active board from `board_list`, and drives the daemon via throwaway
-    // hotkeys, but still renders a single board. The real per-board switch (a
-    // mounted BoardView + per-board sessions) lands in P3; until then a post-boot
-    // restore is acknowledged with a notice rather than a broken re-render.
+    // M3: the app tracks the board list + the active board from `board_list`
+    // (P4 renders the ⌘K switcher from it).
     private var boardMetas: [BoardMeta] = []
-    private var activeBoardID: String?
-    // The board the single BoardView actually shows (set at the boot restore).
-    // persistLayout targets this board; it diverges from `activeBoardID` after a
-    // crude P2 switch, which suppresses persistence until they re-converge.
+    // The board the mounted BoardView actually shows (set at restore); partners
+    // `activeBoardID` for the persistence guard until the real switch lands.
     private var renderedBoardID: String?
-    private var didInitialRestore = false
 
     // MARK: - Board placement rule (crib §4/§5)
     //
@@ -180,15 +180,21 @@ final class AppController {
         self.rootView = rootView
         self.client = DaemonClient()
 
+        // M3: board-0 wraps the single BoardView that exists today; until the
+        // P3 switch lands it is the only board and is always active + mounted.
+        let board0 = Board(boardID: Board.defaultID, view: rootView.board)
+        self.boards = [board0.boardID: board0]
+        self.activeBoardID = board0.boardID
+
         // Mint the boot terminal's id up front so its board card and its pty
         // share an id from creation (Phase 5b keys cards by term_id). The
         // terminal is a board card like any other (crib §4), reflowed on
         // resize-commit.
         let bootTermID = UUID().uuidString
         let boot = makeSession(termID: bootTermID)
-        sessions[bootTermID] = boot
-        sessionOrder = [bootTermID]
-        primeTermID = bootTermID
+        board0.sessions[bootTermID] = boot
+        board0.sessionOrder = [bootTermID]
+        board0.primeTermID = bootTermID
         rootView.attachTerminal(boot.view, termID: bootTermID, worldFrame: Place.termFrame)
 
         store.onChange = { [weak self] in self?.docsChanged() }
@@ -354,8 +360,7 @@ final class AppController {
             // BoardView. A later restore (from a board switch/create) is
             // acknowledged with a notice — the real per-board re-render is P3.
             if didInitialRestore {
-                let board = activeBoardID ?? "?"
-                feedNotice("→ board \(board): \(docs.count) docs · \(tiles.count) tiles (full switch lands in P3)")
+                feedNotice("→ board \(activeBoardID): \(docs.count) docs · \(tiles.count) tiles (full switch lands in P3)")
                 return
             }
             didInitialRestore = true
@@ -1035,10 +1040,9 @@ final class AppController {
     }
 
     // MARK: - Fresh card landing (crib §5)
-
-    /// The path of the most-recent fresh (just-landed CLI) card, if its card is
-    /// still fresh; esc targets it for the shelf.
-    private var freshCardPath: String?
+    //
+    // `freshCardPath` (the most-recent fresh card; esc → shelf) is board-scoped
+    // and lives on `Board`, reached here via the active-board shim.
 
     /// Lands a fresh doc card to the right of its CALLER term card (the terminal
     /// that ran `tarmac open`, not necessarily the prime one) via a first-free-
@@ -1125,13 +1129,6 @@ final class AppController {
         refreshStrips()
     }
 
-    /// Doc paths currently on the board.
-    private var boardDocPaths: [String] {
-        rootView.board.cards.keys.compactMap {
-            if case .doc(let path) = $0 { return path }
-            return nil
-        }
-    }
 
     private func isOnBoard(_ path: String) -> Bool {
         rootView.board.card(.doc(path)) != nil
@@ -1153,7 +1150,7 @@ final class AppController {
         // (a crude P2 switch leaves the daemon's active diverged from the
         // on-screen board, and the app does not yet re-render); once stamping +
         // real switching are in, the guard is removed.
-        if let rendered = renderedBoardID, let active = activeBoardID, rendered != active {
+        if let rendered = renderedBoardID, rendered != activeBoardID {
             return
         }
         var tiles: [LayoutTile] = []
