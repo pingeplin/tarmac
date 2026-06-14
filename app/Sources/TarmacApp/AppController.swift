@@ -131,6 +131,14 @@ final class AppController {
     /// backgrounded board) target that board's store explicitly.
     private var store: DocStore { activeBoard.store }
 
+    /// M3 P3 switch tracing (temporary): set TARMAC_DEBUG_SWITCH to log the
+    /// board-switch lifecycle to stderr. Removed once the switch is verified.
+    private static let switchDebug = ProcessInfo.processInfo.environment["TARMAC_DEBUG_SWITCH"] != nil
+    private func dbg(_ s: @autoclosure () -> String) {
+        guard Self.switchDebug else { return }
+        FileHandle.standardError.write(Data("tarmac[switch]: \(s())\n".utf8))
+    }
+
     private var sessions: [String: TerminalSession] {
         get { activeBoard.sessions }
         set { activeBoard.sessions = newValue }
@@ -389,6 +397,7 @@ final class AppController {
             maybeSpawn()
         case .boardList(let metas, let active):
             boardMetas = metas
+            dbg("board_list active=\(active) appActive=\(activeBoardID) switching=\(switching) boards=\(metas.count)")
             // The daemon changed the active board out from under us (board_create
             // auto-activates the new board): follow it — leave the current board
             // so the restore that follows mounts the new one. An app-initiated
@@ -511,7 +520,11 @@ final class AppController {
     /// `targetID` active + minted, ready for its restore to mount it. Does NOT
     /// send `board_switch` (the caller does, or the daemon already switched).
     private func beginArrivingSwitch(to targetID: String) {
-        guard let meta = boardMetas.first(where: { $0.boardID == targetID }) else { return }
+        guard let meta = boardMetas.first(where: { $0.boardID == targetID }) else {
+            dbg("beginArrivingSwitch DROPPED — \(targetID) not in boardMetas")
+            return
+        }
+        dbg("beginArrivingSwitch → \(targetID) (minted=\(boards[targetID] != nil))")
         switching = true
         // Keep prime synced to the terminal the user last typed in, then pull
         // first responder OFF the leaving board's views before the view is
@@ -586,6 +599,7 @@ final class AppController {
         }
         updatePrimacy()
         switching = false
+        dbg("finishArrive done board=\(board.boardID) prime=\(board.primeTermID ?? "nil") mounted=\(rootView.board === board.view)")
     }
 
     // MARK: - Terminal session
@@ -1047,7 +1061,11 @@ final class AppController {
     /// existing view instead (Step 9). `board_id` absent ⇒ board-0 (legacy).
     private func applyRestore(docs: [RestoreDoc], tiles: [LayoutTile], viewport: BoardViewport?, boardID: String?) {
         let targetID = boardID ?? Board.defaultID
-        guard targetID == activeBoardID, let board = boards[targetID] else { return }
+        guard targetID == activeBoardID, let board = boards[targetID] else {
+            dbg("restore DROPPED — target=\(boardID ?? "nil→board-0") appActive=\(activeBoardID) minted=\(boards[boardID ?? Board.defaultID] != nil) switching=\(switching)")
+            return
+        }
+        dbg("restore apply target=\(targetID) switching=\(switching) firstRestore=\(!board.didInitialRestore) tiles=\(tiles.count)")
         // On a switch-arrive, mount the target's view (boot already mounted
         // board-0). A re-visit still mounts + refocuses below — only the rebuild
         // is gated on the first restore.
@@ -1451,6 +1469,10 @@ final class AppController {
             refreshDocLocard(path)
         }
         rootView.statusBar.setCounts(board: boardDocPaths.count, shelf: shelfPaths.count)
+        // M3: show which board is active + how many exist (a switch is otherwise
+        // invisible until P4's titlebar chip / ⌘K switcher).
+        let count = max(boardMetas.count, boards.count)
+        rootView.statusBar.setBoard(activeBoard.name ?? activeBoardID, count: count)
         rootView.coldStartHint.isHidden = !store.isEmpty
     }
 

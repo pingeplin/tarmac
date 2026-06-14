@@ -46,6 +46,15 @@ final class StatusBar: NSView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
+    /// M3: the active board's display name + the board count (`▞ board-3 · 4
+    /// boards`). The count is dropped when there is only one board (`▞ board-0`).
+    /// A minimal stand-in for P4's full titlebar chip / ⌘K switcher so a switch
+    /// is visible.
+    func setBoard(_ name: String, count: Int) {
+        leftLabel.stringValue = count > 1 ? " \(name) · \(count) boards" : " \(name)"
+        needsLayout = true
+    }
+
     func setCounts(board: Int, shelf: Int) {
         let cards = board == 1 ? "1 card on board" : "\(board) cards on board"
         rightLabel.stringValue = "\(cards) · \(shelf) in shelf"
