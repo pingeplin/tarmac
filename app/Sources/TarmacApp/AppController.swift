@@ -566,15 +566,23 @@ final class AppController {
     /// AFTER its card tree is laid out (crit B3 / S1), and end the transient.
     private func finishArrive(on board: Board) {
         rootView.layoutSubtreeIfNeeded()
-        if board.docked {
+        // Re-dock only when there is a LIVE prime to dock; dock() itself guards on
+        // hasLivePrime, so gating here keeps the focus fallback reachable. Drop a
+        // stale dock intent for a board whose docked terminal died while
+        // backgrounded (its undock was isActive-gated, so docked stayed true) —
+        // otherwise focus, cleared to nil on leave, is never re-established.
+        if board.docked, board.hasLivePrime {
             // Re-dock: reparent the prime terminal into the shared pane (dock()
             // guards on !docked, reflows, and makes the view first responder).
             board.docked = false
             dock()
-        } else if let view = board.primeTerminalView {
-            window?.makeFirstResponder(view)
         } else {
-            window?.makeFirstResponder(rootView.board)
+            board.docked = false
+            if let view = board.primeTerminalView {
+                window?.makeFirstResponder(view)
+            } else {
+                window?.makeFirstResponder(rootView.board)
+            }
         }
         updatePrimacy()
         switching = false
