@@ -143,6 +143,8 @@ final class CardView: NSView {
     }
 
     func setTermLabel(_ label: String) {
+        // A dead card keeps its `exit N · ↵ respawn` label.
+        guard !dead else { return }
         header.setLabel(label)
     }
 
@@ -210,8 +212,8 @@ final class CardView: NSView {
     /// Prime = the focused terminal card (crib §4): border `#5a626a`, header
     /// `#3a4046` + `text` label, deeper resting shadow `0 22px 50px
     /// rgba(0,0,0,0.6)`. A non-prime card is `quiet` (opacity 0.8). Set by the
-    /// controller from the focus model; with one terminal the term card is prime
-    /// while the terminal/board is focused.
+    /// controller from the focus model; exactly one live terminal is prime
+    /// (Phase 5b: the one ⌥tab / ⌘T / a click last focused).
     func setPrime(_ on: Bool) {
         guard !dead, on != prime else { return }
         prime = on
@@ -242,6 +244,10 @@ final class CardView: NSView {
     /// world frame; the user revives it explicitly (respawn UI is post-5b).
     func setDead(_ code: Int?) {
         guard !dead else { return }
+        // Clear any live/bell signal first (while still !dead so the guarded
+        // setters apply) — a dead card must not advertise a cyan/amber signal.
+        setBell(false)
+        setLive(false)
         dead = true
         prime = false
         quiet = false
@@ -285,7 +291,7 @@ final class CardView: NSView {
     /// shown on a seen BEL and cleared on the next keystroke / focus. Display
     /// state only — no animation (stays under Reduce Motion).
     func setBell(_ on: Bool) {
-        guard on != bellActive else { return }
+        guard !dead, on != bellActive else { return }
         bellActive = on
         header.setBell(on)
         refreshSignalVariant()
@@ -294,7 +300,7 @@ final class CardView: NSView {
     /// Live (agent-active) signal: a foreground process is running on a terminal
     /// card. Feeds the locard / minimap / offscreen-hint cyan variant.
     func setLive(_ on: Bool) {
-        guard on != liveActive else { return }
+        guard !dead, on != liveActive else { return }
         liveActive = on
         refreshSignalVariant()
     }

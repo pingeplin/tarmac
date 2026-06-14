@@ -8,9 +8,8 @@ import QuartzCore
 /// `5px 10px`, radius 7, 10.5px mono; the active item gets bg3 + `text` color +
 /// an inset 1px line border, inactive items are `muted`.
 ///
-/// With one terminal this shows a single item (the term name) and ⌥tab is a
-/// no-op cycle — kept minimal but real so Phase 5b can populate it with the full
-/// terminal-card set without rewiring.
+/// ⌥tab shows every live terminal with the prime highlighted and advances prime
+/// across them (Phase 5b); with one terminal it is a single highlighted item.
 @MainActor
 final class CycleHUD: NSView {
     /// Top offset from the board top edge (crib §6: `top 12`).

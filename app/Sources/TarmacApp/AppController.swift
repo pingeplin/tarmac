@@ -55,8 +55,8 @@ final class TermDelegateBridge: NSObject, TerminalViewDelegate {
 /// One terminal card's live state (Phase 5b: the board holds N of these). Owns
 /// the SwiftTerm view + its delegate bridge and the per-terminal signal/process
 /// bookkeeping that used to be controller-global. `live` is whether the pty is
-/// running (false before first spawn and after exit); `dead`/`exitCode` (Step 6)
-/// record a terminal that exited and was not respawned.
+/// running (false before first spawn and after exit). The exited/dead visual
+/// state lives on the board card (`CardView.dead`), not here.
 @MainActor
 final class TerminalSession {
     let termID: String
@@ -89,9 +89,9 @@ final class AppController {
 
     private var connected = false
     private var viewReady = false
-    /// The prime terminal card's id (Phase 5b: the focused terminal among N).
-    /// All term-card lookups key off this; the card exists for the app's life
-    /// (minted at init, reused across respawn). Step 5 lets ⌥tab/⌘T move it.
+    /// The prime (focused) terminal card's id (Phase 5b: one of N), or nil when
+    /// no terminal is live. The boot terminal's id is minted at init; ⌘T and
+    /// restore mint the rest; prime moves across them via ⌥tab / ⌘T / clicking.
     private var primeTermID: String?
     /// Every terminal card's live state, keyed by `term_id` (the SwiftTerm view +
     /// its delegate bridge + per-terminal process/signal bookkeeping). Replaces
@@ -168,9 +168,9 @@ final class AppController {
         self.client = DaemonClient()
 
         // Mint the boot terminal's id up front so its board card and its pty
-        // share an id from creation; Phase 5b keys cards by term_id (the id is
-        // reused across respawn — the daemon frees it on exit). The terminal is
-        // a board card like any other (crib §4), reflowed on resize-commit.
+        // share an id from creation (Phase 5b keys cards by term_id). The
+        // terminal is a board card like any other (crib §4), reflowed on
+        // resize-commit.
         let bootTermID = UUID().uuidString
         let boot = makeSession(termID: bootTermID)
         sessions[bootTermID] = boot
@@ -228,6 +228,11 @@ final class AppController {
             let isCmdT = event.keyCode == 17 && mods == .command
             let swallowed = MainActor.assumeIsolated { () -> Bool in
                 guard let self else { return false }
+                // Every keystroke passes through here before its view handles it,
+                // so keep prime in sync with the terminal the user is typing in
+                // (clicking a non-prime terminal made it first responder without
+                // updating primeTermID). Cheap: only re-styles on an actual change.
+                self.reconcilePrimeToFocus()
                 if isCmdT {
                     self.spawnNewTerminal()
                     return true
@@ -399,6 +404,25 @@ final class AppController {
         return TerminalSession(termID: termID, view: view, bridge: bridge)
     }
 
+    /// Reconciles `primeTermID` to whichever LIVE terminal currently holds the
+    /// window's keyboard focus — e.g. the user clicked a non-prime terminal,
+    /// which AppKit made first responder (typing already routes there via its
+    /// bridge). Called before any action that re-asserts focus to the prime
+    /// terminal (peek / dock / cycle), so focus is never yanked back to a stale
+    /// prime. No-op when the focused responder isn't a live terminal view.
+    private func reconcilePrimeToFocus() {
+        guard let responder = window?.firstResponder as? NSView else { return }
+        for (id, s) in sessions where s.live {
+            if responder === s.view || responder.isDescendant(of: s.view) {
+                if id != primeTermID {
+                    primeTermID = id
+                    updatePrimacy()
+                }
+                return
+            }
+        }
+    }
+
     func terminalSizeChanged(termID: String, cols: Int, rows: Int) {
         viewReady = true
         maybeSpawn()
@@ -418,7 +442,8 @@ final class AppController {
     }
 
     /// Ensures the prime terminal is spawned (the boot terminal on a cold start).
-    /// Step 5 adds ⌘T for further terminals; Step 7 spawns restored ones.
+    /// Further terminals are spawned by ⌘T (`spawnNewTerminal`) and by restore
+    /// (`restoreTerminals`).
     private func maybeSpawn() {
         guard connected, viewReady, let s = primeSession, !s.live else { return }
         spawn(session: s)
@@ -461,12 +486,15 @@ final class AppController {
         sessions[id] = session
         sessionOrder.append(id)
         rootView.board.setTerminal(termID: id, session.view, worldFrame: cascadeFrame())
+        // Lay out so the terminal view has its card-sized geometry before spawn,
+        // so the pty starts at the right cols/rows (not the 800×600 default).
+        rootView.layoutSubtreeIfNeeded()
         // The new terminal becomes prime + first responder (typing follows it).
         primeTermID = id
         spawn(session: session)
         rootView.board.select(.term(id))
         if !docked { window?.makeFirstResponder(session.view) }
-        // Persist so the new terminal card survives a restart (Step 7 restores it).
+        // Persist so the new terminal card survives a restart.
         persistLayout()
     }
 
@@ -532,8 +560,11 @@ final class AppController {
                 }
             }
         }
-        // No live terminal remains: nothing is prime.
+        // No live terminal remains: nothing is prime. Move first responder off
+        // the dead terminal view to the board, so Return/dock/fly stay reachable
+        // (boardHasFocus would otherwise never be true again until a board click).
         primeTermID = nil
+        window?.makeFirstResponder(rootView.board)
         updatePrimacy()
     }
 
@@ -550,7 +581,9 @@ final class AppController {
     /// set at spawn. The owner chips (`← <termname>`) follow the same label so
     /// they stay honest too.
     private func handleTermProc(termID: String, name: String) {
-        guard let s = sessions[termID] else { return }
+        // Drop a late/racing proc signal for a non-live (dead) terminal so it
+        // can't re-label or re-light its dead card (matches the other handlers).
+        guard let s = sessions[termID], s.live else { return }
         s.label = name
         rootView.board.card(.term(termID))?.setTermLabel(name)
         // Keep the dock header label honest while docked, but only for the
@@ -858,6 +891,9 @@ final class AppController {
                 sessions[newID] = session
                 sessionOrder.append(newID)
                 rootView.board.setTerminal(termID: newID, session.view, worldFrame: frame)
+                // Lay out before spawn so the pty starts at the restored card
+                // size, not the 800×600 view default.
+                rootView.layoutSubtreeIfNeeded()
                 spawn(session: session)
             }
             if let old = tile.termID { oldToNew[old] = newID }
@@ -950,19 +986,22 @@ final class AppController {
     /// still fresh; esc targets it for the shelf.
     private var freshCardPath: String?
 
-    /// Lands a fresh doc card to the right of its caller term card via a
-    /// first-free-slot search; gives it the fresh ring + `✚ now` meta.
+    /// Lands a fresh doc card to the right of its CALLER term card (the terminal
+    /// that ran `tarmac open`, not necessarily the prime one) via a first-free-
+    /// slot search; gives it the fresh ring + `✚ now` meta.
     private func landFreshCard(path: String) {
-        let frame = firstFreeSlot()
+        let caller = ownerCardID(for: path).flatMap { rootView.board.card($0) }
+        let frame = firstFreeSlot(near: caller)
         landDocCard(path: path, frame: frame, attached: true, fresh: true)
         freshCardPath = path
     }
 
-    /// First-free-slot search (crib §5): start at the caller term card's right
-    /// edge + ~gapX, find a docW×docH world rect not overlapping existing cards,
-    /// scanning right then down.
-    private func firstFreeSlot() -> CardFrame {
-        let term = primeTermCard?.worldFrame ?? Place.termFrame
+    /// First-free-slot search (crib §5): start at the anchor term card's right
+    /// edge + ~gapX (the caller terminal, or the prime terminal when no anchor),
+    /// find a docW×docH world rect not overlapping existing cards, scanning right
+    /// then down.
+    private func firstFreeSlot(near anchorCard: CardView? = nil) -> CardFrame {
+        let term = (anchorCard ?? primeTermCard)?.worldFrame ?? Place.termFrame
         let startX = term.x + term.w + Place.gapX
         let startY = term.y
         let stepX = Place.docW + Place.gapX
@@ -1155,6 +1194,9 @@ final class AppController {
     }
 
     func openPeek(_ path: String) {
+        // A peek (⌘P / shelf click) keeps focus on the terminal it was opened
+        // over — reconcile so that's the focused terminal, not a stale prime.
+        reconcilePrimeToFocus()
         rootView.peek.present(path: path, doc: store.doc(for: path), markdown: readMarkdown(path))
         rootView.setPeekVisible(true)
         // Presentation marks read; doc_read is idempotent and sent every time.
@@ -1184,10 +1226,12 @@ final class AppController {
             rootView.board.removeCard(id: .doc(path))
         } else {
             shelfPaths.removeAll { $0 == path }
-            // Land at the gravity position; attach when the doc has a resolvable
-            // owner, so it follows the term card and shows the owner chip.
-            let attached = ownerCardID(for: path) != nil
-            landDocCard(path: path, frame: firstFreeSlot(), attached: attached, fresh: false)
+            // Land at the gravity position beside the doc's owner terminal (the
+            // caller), falling back to the prime terminal; attach when the doc
+            // has a resolvable owner so it follows that card + shows the chip.
+            let owner = ownerCardID(for: path)
+            let ownerCard = owner.flatMap { rootView.board.card($0) }
+            landDocCard(path: path, frame: firstFreeSlot(near: ownerCard), attached: owner != nil, fresh: false)
         }
         persistLayout()
         refreshStrips()
