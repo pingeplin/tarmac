@@ -30,6 +30,12 @@ final class Board {
     var name: String?
     /// This board's whiteboard. One `BoardView` per board.
     let view: BoardView
+    /// This board's doc registry (dock order, per-doc read/recency state). A
+    /// board is a workspace with its OWN docs — the daemon keeps a Registry per
+    /// board and sends each board's docs in its own restore, so the store is
+    /// per-board (a switch swaps which store drives the chrome). The file watcher
+    /// stays global daemon-side; per-board is only the app-side mirror.
+    let store = DocStore()
 
     /// Every terminal card's live state, keyed by `term_id` (Phase 5b: the board
     /// holds N of these).

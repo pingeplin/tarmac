@@ -90,7 +90,6 @@ final class AppController {
     private var connected = false
     private var viewReady = false
 
-    private let store = DocStore()
     private var escMonitor: Any?
 
     // MARK: - Boards (M3 P3)
@@ -116,15 +115,21 @@ final class AppController {
 
     /// The board that owns `termID` (via the term→board index), or nil if the
     /// term is unknown / already exited.
-    private func board(ofTerm termID: String) -> Board? {
+    private func ownerBoard(ofTerm termID: String) -> Board? {
         guard let bid = termIndex.board(of: termID) else { return nil }
         return boards[bid]
     }
 
     /// The session backing `termID` on its owning board, across all boards.
     private func session(ofTerm termID: String) -> TerminalSession? {
-        board(ofTerm: termID)?.sessions[termID]
+        ownerBoard(ofTerm: termID)?.sessions[termID]
     }
+
+    /// The active board's doc registry (each board owns its own). The bulk of the
+    /// chrome (shelf, peek, locards, ⌘P, counts) reads the active board's docs;
+    /// the few cross-board mutations (a `tarmac open` / file event for a doc on a
+    /// backgrounded board) target that board's store explicitly.
+    private var store: DocStore { activeBoard.store }
 
     private var sessions: [String: TerminalSession] {
         get { activeBoard.sessions }
@@ -213,7 +218,7 @@ final class AppController {
         termIndex.assign(termID: bootTermID, to: board0.boardID)
         rootView.attachTerminal(boot.view, termID: bootTermID, worldFrame: Place.termFrame)
 
-        store.onChange = { [weak self] in self?.docsChanged() }
+        wireStore(board0)
         rootView.peek.onPin = { [weak self] in self?.togglePinPeeked() }
         rootView.peek.onClose = { [weak self] in self?.hidePeek() }
         // Shelf chips: click → peek; drag onto the board → land a doc card at
@@ -395,30 +400,14 @@ final class AppController {
         case .exit(let termID, let code):
             handleExit(termID: termID, code: code)
         case .docOpened(let doc):
-            let wasOnBoard = isOnBoard(doc.path)
-            store.applyDocOpened(doc)
-            if let termID = doc.termID { docOwner[doc.path] = termID }
-            // crib §5 / migration-plan Phase 3: a doc arriving via `tarmac open`
-            // lands a FRESH card right of its caller term card (first free slot),
-            // replacing the M1 toast. A user open keeps prior behavior (no card).
-            if doc.via == "cli", !wasOnBoard, !shelfPaths.contains(doc.path) {
-                landFreshCard(path: doc.path)
-                // Persist the new board card so it survives a restart.
-                persistLayout()
-            }
-            // A doc already on screen (peeked, or already a board card before this
-            // open) is read immediately (crib-state §2.1). A brand-new fresh card
-            // keeps its unread/fresh ring until the user touches it.
-            if (rootView.peekVisible && peekPath == doc.path) || wasOnBoard {
-                store.markRead(doc.path)
-                client.docRead(path: doc.path)
-                clearFreshIfRead(doc.path)
-                if rootView.peekVisible && peekPath == doc.path {
-                    refreshPeek(doc.path)
-                }
-            }
+            handleDocOpened(doc)
         case .fileEvent(let path, let mtimeMs):
-            store.applyFileEvent(path: path, mtimeMs: mtimeMs)
+            // The watcher is global; route the event to every board whose store
+            // knows the path (a doc can live on a backgrounded board). Only the
+            // active board's card / peek re-renders.
+            for board in boards.values where board.store.doc(for: path) != nil {
+                board.store.applyFileEvent(path: path, mtimeMs: mtimeMs)
+            }
             if isOnBoard(path) {
                 activeBoard.view.card(.doc(path))?.renderDoc(markdown: readMarkdown(path))
             }
@@ -438,9 +427,44 @@ final class AppController {
         }
     }
 
+    /// `.doc_opened`: route the doc to the board owning its caller term (the
+    /// `tarmac open` that produced it ran with that term's `TARMAC_TERM_ID`),
+    /// falling back to the active board for a user open / unknown term. The doc's
+    /// state lands in THAT board's store and a `tarmac open` lands a fresh card on
+    /// THAT board — so an open from a backgrounded board's shell never lands a
+    /// card on the active board (crit S4); read-on-open only applies to the
+    /// active board (peek + visible cards are the active board's).
+    private func handleDocOpened(_ doc: RestoreDoc) {
+        let board = doc.termID.flatMap { ownerBoard(ofTerm: $0) } ?? activeBoard
+        let wasOnBoard = board.view.card(.doc(doc.path)) != nil
+        board.store.applyDocOpened(doc)
+        if let termID = doc.termID { board.docOwner[doc.path] = termID }
+        // crib §5 / migration-plan Phase 3: a doc arriving via `tarmac open` lands
+        // a FRESH card right of its caller term card (first free slot). A user
+        // open keeps prior behavior (no card).
+        if doc.via == "cli", !wasOnBoard, !board.shelfPaths.contains(doc.path) {
+            landFreshCard(path: doc.path, on: board)
+            persistLayout(for: board)
+        }
+        // Read-on-open applies only when the doc is on / peeked over the ACTIVE
+        // board (a brand-new fresh card keeps its unread/fresh ring until touched).
+        guard board === activeBoard else { return }
+        if (rootView.peekVisible && peekPath == doc.path) || wasOnBoard {
+            board.store.markRead(doc.path)
+            client.docRead(path: doc.path)
+            clearFreshIfRead(doc.path)
+            if rootView.peekVisible && peekPath == doc.path {
+                refreshPeek(doc.path)
+            }
+        }
+    }
+
     private func handleDisconnect(_ reason: String) {
         connected = false
-        for s in sessions.values { s.live = false }
+        // The connection dropped for every board's ptys, not just the active one.
+        for board in boards.values {
+            for s in board.sessions.values { s.live = false }
+        }
         feedNotice("lost connection to tarmacd — \(reason)")
         rootView.toasts.show(title: "tarmacd connection lost", body: reason)
     }
@@ -591,7 +615,7 @@ final class AppController {
     private func handleExit(termID: String, code: Int?) {
         // Resolve the OWNING board (the exit may be on a backgrounded board):
         // the dead card / prime advance happen on that board, not the active one.
-        guard let board = board(ofTerm: termID), let s = board.sessions[termID], s.live else { return }
+        guard let board = ownerBoard(ofTerm: termID), let s = board.sessions[termID], s.live else { return }
         s.live = false
         termIndex.remove(termID: termID)
         let isActive = board === activeBoard
@@ -675,7 +699,7 @@ final class AppController {
         // Resolve the owning board (the proc may be on a backgrounded board); its
         // detached card state must stay honest because a re-visit re-mounts the
         // view rather than rebuilding it.
-        guard let board = board(ofTerm: termID), let s = board.sessions[termID], s.live else { return }
+        guard let board = ownerBoard(ofTerm: termID), let s = board.sessions[termID], s.live else { return }
         let isActive = board === activeBoard
         s.label = name
         board.view.card(.term(termID))?.setTermLabel(name)
@@ -720,8 +744,9 @@ final class AppController {
     }
 
     /// Feeds a doc card's locard content (crib §7): basename + recency line.
-    private func refreshDocLocard(_ path: String) {
-        guard let card = activeBoard.view.card(.doc(path)), let doc = store.doc(for: path) else { return }
+    private func refreshDocLocard(_ path: String, on board: Board? = nil) {
+        let b = board ?? activeBoard
+        guard let card = b.view.card(.doc(path)), let doc = b.store.doc(for: path) else { return }
         let status = doc.read ? doc.displayPath : "unread · \(doc.displayPath)"
         let color = Theme.repoColor(index: doc.repoColor, fallbackName: doc.displayRepoName)
         card.setLocardContent(name: doc.fileName, status: status, repoColor: color)
@@ -896,7 +921,7 @@ final class AppController {
     private func handleBell(termID: String) {
         // Route to the owning board (a backgrounded board can ring); its detached
         // card lights amber and shows the signal on switch-back.
-        guard let board = board(ofTerm: termID), board.sessions[termID]?.live == true else { return }
+        guard let board = ownerBoard(ofTerm: termID), board.sessions[termID]?.live == true else { return }
         board.view.card(.term(termID))?.setBell(true)
         board.view.signalsChanged()
     }
@@ -1048,18 +1073,19 @@ final class AppController {
     /// ownerTermID from the doc's provenance + the attached flag (owner chip
     /// shown while attached). `fresh` gives the just-spawned ring + `✚ now`.
     @discardableResult
-    private func landDocCard(path: String, frame: CardFrame, attached: Bool, fresh: Bool) -> CardView {
-        let card = activeBoard.view.addCard(id: .doc(path), worldFrame: frame)
-        if let doc = store.doc(for: path) { card.apply(doc: doc) }
-        card.ownerTermID = ownerCardID(for: path)
+    private func landDocCard(path: String, frame: CardFrame, attached: Bool, fresh: Bool, on board: Board? = nil) -> CardView {
+        let b = board ?? activeBoard
+        let card = b.view.addCard(id: .doc(path), worldFrame: frame)
+        if let doc = b.store.doc(for: path) { card.apply(doc: doc) }
+        card.ownerTermID = ownerCardID(for: path, on: b)
         card.attached = attached && card.ownerTermID != nil
         if fresh { card.setFresh(true) }
-        card.setOwnerChip(ownerChipLabel(for: card))
+        card.setOwnerChip(ownerChipLabel(for: card, on: b))
         card.renderDoc(markdown: readMarkdown(path))
-        refreshDocLocard(path)
-        activeBoard.view.recomputeEdges()
+        refreshDocLocard(path, on: b)
+        b.view.recomputeEdges()
         // A doc card is quiet while a terminal is prime (crib §4).
-        if hasLivePrime { card.setQuiet(true) }
+        if b.hasLivePrime { card.setQuiet(true) }
         return card
     }
 
@@ -1116,25 +1142,27 @@ final class AppController {
     /// Lands a fresh doc card to the right of its CALLER term card (the terminal
     /// that ran `tarmac open`, not necessarily the prime one) via a first-free-
     /// slot search; gives it the fresh ring + `✚ now` meta.
-    private func landFreshCard(path: String) {
-        let caller = ownerCardID(for: path).flatMap { activeBoard.view.card($0) }
-        let frame = firstFreeSlot(near: caller)
-        landDocCard(path: path, frame: frame, attached: true, fresh: true)
-        freshCardPath = path
+    private func landFreshCard(path: String, on board: Board? = nil) {
+        let b = board ?? activeBoard
+        let caller = ownerCardID(for: path, on: b).flatMap { b.view.card($0) }
+        let frame = firstFreeSlot(near: caller, on: b)
+        landDocCard(path: path, frame: frame, attached: true, fresh: true, on: b)
+        b.freshCardPath = path
     }
 
     /// First-free-slot search (crib §5): start at the anchor term card's right
     /// edge + ~gapX (the caller terminal, or the prime terminal when no anchor),
     /// find a docW×docH world rect not overlapping existing cards, scanning right
     /// then down.
-    private func firstFreeSlot(near anchorCard: CardView? = nil) -> CardFrame {
-        let term = (anchorCard ?? primeTermCard)?.worldFrame ?? Place.termFrame
+    private func firstFreeSlot(near anchorCard: CardView? = nil, on board: Board? = nil) -> CardFrame {
+        let b = board ?? activeBoard
+        let term = (anchorCard ?? b.primeTermCard)?.worldFrame ?? Place.termFrame
         let startX = term.x + term.w + Place.gapX
         let startY = term.y
         let stepX = Place.docW + Place.gapX
         let stepY = Place.docH + Place.gapY
-        let existing = activeBoard.view.cards.values.map(\.worldFrame.rect)
-        let topZ = (activeBoard.view.cards.values.map(\.worldFrame.z).max() ?? 0) + 1
+        let existing = b.view.cards.values.map(\.worldFrame.rect)
+        let topZ = (b.view.cards.values.map(\.worldFrame.z).max() ?? 0) + 1
         for row in 0..<64 {
             for col in 0..<64 {
                 let candidate = CGRect(
@@ -1277,10 +1305,19 @@ final class AppController {
 
     private var peekPath: String? { rootView.peek.currentPath }
 
-    private func docsChanged() {
-        // Drop shelf entries for docs the registry no longer knows (defensive).
-        shelfPaths.removeAll { store.doc(for: $0) == nil }
-        refreshStrips()
+    /// Wires a board's doc store to refresh the chrome on change — but only while
+    /// that board is active (a backgrounded board's store can mutate via a
+    /// cross-board file event, which must not refresh the active chrome).
+    private func wireStore(_ board: Board) {
+        let bid = board.boardID
+        board.store.onChange = { [weak self] in self?.storeChanged(onBoardID: bid) }
+    }
+
+    private func storeChanged(onBoardID bid: String) {
+        guard let board = boards[bid] else { return }
+        // Drop shelf entries for docs the board's registry no longer knows.
+        board.shelfPaths.removeAll { board.store.doc(for: $0) == nil }
+        if bid == activeBoardID { refreshStrips() }
     }
 
     /// Rebuilds the shelf chips, syncs on-board card headers (incl. owner chips)
