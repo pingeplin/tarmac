@@ -126,8 +126,13 @@ public enum Message: Equatable, Sendable {
     case err(msg: String)
     case open(path: String, termID: String?)
     case docRead(path: String)
-    case layout(dock: [String], tiles: [LayoutTile], board: BoardViewport?)
-    case restore(docs: [RestoreDoc], tiles: [LayoutTile], board: BoardViewport?)
+    /// M3 additive (missing ⇒ nil): the board this layout/restore belongs to.
+    /// App→daemon `layout` stamps the active board so the daemon persists to the
+    /// right board (not just its active one); daemon→app `restore` is stamped
+    /// with the restored board's id so the app binds it to the correct board
+    /// (and can reject a stale restore that arrives after a later switch).
+    case layout(dock: [String], tiles: [LayoutTile], board: BoardViewport?, boardID: String?)
+    case restore(docs: [RestoreDoc], tiles: [LayoutTile], board: BoardViewport?, boardID: String?)
     case spawnTerm(termID: String, cols: Int, rows: Int, cwd: String?, cmd: [String]?)
     case input(termID: String, bytes: Data)
     case resize(termID: String, cols: Int, rows: Int)
@@ -200,7 +205,8 @@ public extension Message {
             return .layout(
                 dock: try req("dock", Self.stringArray),
                 tiles: try req("tiles", \.arrayValue).map(Self.layoutTile(from:)),
-                board: try Self.board(from: opt("board", \.mapValue))
+                board: try Self.board(from: opt("board", \.mapValue)),
+                boardID: try opt("board_id", \.stringValue)
             )
         case "restore":
             let docs = try req("docs", \.arrayValue).map { entry -> RestoreDoc in
@@ -209,7 +215,7 @@ public extension Message {
             }
             let tiles = try (opt("tiles", \.arrayValue) ?? []).map(Self.layoutTile(from:))
             let board = try Self.board(from: opt("board", \.mapValue))
-            return .restore(docs: docs, tiles: tiles, board: board)
+            return .restore(docs: docs, tiles: tiles, board: board, boardID: try opt("board_id", \.stringValue))
         case "spawn_term":
             return .spawnTerm(
                 termID: try req("term_id", \.stringValue),
@@ -346,21 +352,23 @@ public extension Message {
             return .map(map)
         case .docRead(let path):
             return .map(["t": .string("doc_read"), "path": .string(path)])
-        case .layout(let dock, let tiles, let board):
+        case .layout(let dock, let tiles, let board, let boardID):
             var map: [String: MsgPackValue] = [
                 "t": .string("layout"),
                 "dock": .array(dock.map { .string($0) }),
                 "tiles": .array(tiles.map(Self.layoutTileValue)),
             ]
             if let board { map["board"] = Self.boardValue(board) }
+            if let boardID { map["board_id"] = .string(boardID) }
             return .map(map)
-        case .restore(let docs, let tiles, let board):
+        case .restore(let docs, let tiles, let board, let boardID):
             var map: [String: MsgPackValue] = [
                 "t": .string("restore"),
                 "docs": .array(docs.map { .map(Self.docEntryFields($0)) }),
                 "tiles": .array(tiles.map(Self.layoutTileValue)),
             ]
             if let board { map["board"] = Self.boardValue(board) }
+            if let boardID { map["board_id"] = .string(boardID) }
             return .map(map)
         case .spawnTerm(let termID, let cols, let rows, let cwd, let cmd):
             var map: [String: MsgPackValue] = [

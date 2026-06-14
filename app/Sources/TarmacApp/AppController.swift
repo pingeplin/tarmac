@@ -349,7 +349,7 @@ final class AppController {
             boardMetas = boards
             activeBoardID = active
             refreshStrips()
-        case .restore(let docs, let tiles, let board):
+        case .restore(let docs, let tiles, let board, _):
             // P2 crude multi-board: only the boot restore drives the single
             // BoardView. A later restore (from a board switch/create) is
             // acknowledged with a notice — the real per-board re-render is P3.
@@ -1145,12 +1145,14 @@ final class AppController {
     /// cy}`. Fired on every committed board move/resize/zoom/pan, and on
     /// shelf/gravity changes.
     private func persistLayout() {
-        // M3 P2: the app renders a single board and sends layout without a
-        // board_id, so the daemon routes it to its active board. After a crude
-        // switch the daemon's active diverges from the board still on screen —
-        // persisting then would write the visible board's frames into the wrong
-        // board. Suppress until they re-converge (a real per-board layout, with
-        // an explicit board_id, lands in P3).
+        // M3 P3.0: stamp the layout with the board actually on screen
+        // (`renderedBoardID`) so the daemon persists to *that* board, not just
+        // whatever it considers active — this is what makes per-board layout
+        // correct across a switch (the daemon routes `layout` by `board_id`).
+        // The P2 suppression guard stays until the real per-board switch lands
+        // (a crude P2 switch leaves the daemon's active diverged from the
+        // on-screen board, and the app does not yet re-render); once stamping +
+        // real switching are in, the guard is removed.
         if let rendered = renderedBoardID, let active = activeBoardID, rendered != active {
             return
         }
@@ -1172,7 +1174,8 @@ final class AppController {
         client.layout(
             dock: store.docs.map(\.path),
             tiles: tiles,
-            board: rootView.board.viewport.wire
+            board: rootView.board.viewport.wire,
+            boardID: renderedBoardID
         )
     }
 

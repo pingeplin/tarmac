@@ -20,12 +20,13 @@ final class BoardPersistenceTests: XCTestCase {
                 LayoutTile(kind: "doc", path: "/repo/plan.md", x: 648, y: 80, w: 392, h: 310, z: 1),
                 LayoutTile(kind: "doc", path: "/repo/notes.md", x: 1126.5, y: 80, w: 392, h: 310, z: 2),
             ],
-            board: BoardViewport(zoom: 0.82, cx: 640.25, cy: 360)
+            board: BoardViewport(zoom: 0.82, cx: 640.25, cy: 360),
+            boardID: nil
         )
         let decoded = try Message.decode(payload: message.encodedPayload())
         XCTAssertEqual(decoded, message)
 
-        guard case .layout(let dock, let tiles, let board) = decoded else {
+        guard case .layout(let dock, let tiles, let board, _) = decoded else {
             return XCTFail("not a layout")
         }
         XCTAssertEqual(dock.count, 2)
@@ -47,7 +48,8 @@ final class BoardPersistenceTests: XCTestCase {
                 LayoutTile(kind: "term", x: 80, y: 80, w: 470, h: 330, z: 0),
                 LayoutTile(kind: "doc", path: "/repo/plan.md", x: 648, y: 140, w: 392, h: 310, z: 1),
             ],
-            board: BoardViewport(zoom: 1.0, cx: 0, cy: 0)
+            board: BoardViewport(zoom: 1.0, cx: 0, cy: 0),
+            boardID: nil
         )
         XCTAssertEqual(try Message.decode(payload: message.encodedPayload()), message)
     }
@@ -59,9 +61,10 @@ final class BoardPersistenceTests: XCTestCase {
         let m1 = Message.layout(
             dock: ["/a.md"],
             tiles: [LayoutTile(kind: "term"), LayoutTile(kind: "doc", path: "/a.md")],
-            board: nil
+            board: nil,
+            boardID: nil
         )
-        guard case .layout(_, let tiles, let board) = try Message.decode(payload: m1.encodedPayload()) else {
+        guard case .layout(_, let tiles, let board, _) = try Message.decode(payload: m1.encodedPayload()) else {
             return XCTFail("not a layout")
         }
         XCTAssertNil(board)
@@ -91,12 +94,13 @@ final class BoardPersistenceTests: XCTestCase {
                 LayoutTile(kind: "term", x: 600, y: 80, w: 470, h: 330, z: 1, termID: "t2"),
                 LayoutTile(kind: "doc", path: "/repo/plan.md", x: 1126, y: 80, w: 392, h: 310, z: 2),
             ],
-            board: BoardViewport(zoom: 1.0, cx: 0, cy: 0)
+            board: BoardViewport(zoom: 1.0, cx: 0, cy: 0),
+            boardID: nil
         )
         let decoded = try Message.decode(payload: message.encodedPayload())
         XCTAssertEqual(decoded, message)
 
-        guard case .layout(_, let tiles, _) = decoded else { return XCTFail("not a layout") }
+        guard case .layout(_, let tiles, _, _) = decoded else { return XCTFail("not a layout") }
         XCTAssertEqual(tiles.count, 3)
         XCTAssertEqual(tiles[0].termID, "t1")
         XCTAssertEqual(tiles[1].termID, "t2")

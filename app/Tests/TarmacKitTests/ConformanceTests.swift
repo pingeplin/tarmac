@@ -116,7 +116,8 @@ final class ConformanceTests: XCTestCase {
         let message = Message.layout(
             dock: ["/a.md"],
             tiles: [LayoutTile(kind: "term"), LayoutTile(kind: "doc", path: "/a.md")],
-            board: nil
+            board: nil,
+            boardID: nil
         )
 
         XCTAssertEqual(try MsgPack.decode(payload), expected)
@@ -183,7 +184,8 @@ final class ConformanceTests: XCTestCase {
         let message = Message.layout(
             dock: ["/a.md"],
             tiles: [LayoutTile(kind: "doc", path: "/a.md", x: 120, y: 80, w: 470, h: 330, z: 2)],
-            board: BoardViewport(zoom: 0.82, cx: 640, cy: 360)
+            board: BoardViewport(zoom: 0.82, cx: 640, cy: 360),
+            boardID: nil
         )
 
         XCTAssertEqual(try Message.decode(payload: payload), message)
@@ -209,11 +211,12 @@ final class ConformanceTests: XCTestCase {
             .layout(
                 dock: ["/a.md"],
                 tiles: [LayoutTile(kind: "term"), LayoutTile(kind: "doc", path: "/a.md")],
-                board: nil
+                board: nil,
+                boardID: nil
             )
         )
         // The decoded tiles must report nil geometry.
-        guard case .layout(_, let tiles, let board) = decoded else { return XCTFail("not a layout") }
+        guard case .layout(_, let tiles, let board, _) = decoded else { return XCTFail("not a layout") }
         XCTAssertNil(board)
         XCTAssertNil(tiles[0].x)
         XCTAssertNil(tiles[1].z)
@@ -230,7 +233,8 @@ final class ConformanceTests: XCTestCase {
         let shelfLayout = Message.layout(
             dock: ["/a.md"],
             tiles: [LayoutTile(kind: "doc", path: "/a.md", loose: true, shelf: true)],
-            board: nil
+            board: nil,
+            boardID: nil
         )
         XCTAssertEqual(try Message.decode(payload: shelfLayout.encodedPayload()), shelfLayout)
 
@@ -427,7 +431,8 @@ final class MessageDecodingRulesTests: XCTestCase {
                 ),
             ],
             tiles: [LayoutTile(kind: "term"), LayoutTile(kind: "doc", path: "/tmp/b.md")],
-            board: nil
+            board: nil,
+            boardID: nil
         )
         XCTAssertEqual(try Message.decode(payload: message.encodedPayload()), message)
     }
@@ -451,7 +456,7 @@ final class MessageDecodingRulesTests: XCTestCase {
             """)
         XCTAssertEqual(
             try Message.decode(payload: restore),
-            .restore(docs: [RestoreDoc(path: "/a.md", via: "cli")], tiles: [], board: nil)
+            .restore(docs: [RestoreDoc(path: "/a.md", via: "cli")], tiles: [], board: nil, boardID: nil)
         )
     }
 
@@ -464,11 +469,12 @@ final class MessageDecodingRulesTests: XCTestCase {
             .open(path: "/abs/x.md", termID: nil),
             .open(path: "/abs/x.md", termID: "t1"),
             .docRead(path: "/abs/x.md"),
-            .layout(dock: [], tiles: [], board: nil),
+            .layout(dock: [], tiles: [], board: nil, boardID: nil),
             .layout(
                 dock: ["/abs/x.md", "/abs/y.md"],
                 tiles: [LayoutTile(kind: "term"), LayoutTile(kind: "doc", path: "/abs/y.md")],
-                board: nil
+                board: nil,
+                boardID: nil
             ),
             // v4 layout carrying world-frame tiles + a board viewport.
             .layout(
@@ -477,13 +483,28 @@ final class MessageDecodingRulesTests: XCTestCase {
                     LayoutTile(kind: "term", x: 92, y: 108, w: 470, h: 330, z: 0),
                     LayoutTile(kind: "doc", path: "/abs/y.md", x: 648, y: 140, w: 392, h: 310, z: 1),
                 ],
-                board: BoardViewport(zoom: 0.82, cx: 640, cy: 360)
+                board: BoardViewport(zoom: 0.82, cx: 640, cy: 360),
+                boardID: nil
             ),
-            .restore(docs: [], tiles: [], board: nil),
+            // M3 additive: a layout/restore stamped with a board_id round-trips.
+            .layout(
+                dock: ["/abs/y.md"],
+                tiles: [LayoutTile(kind: "term", x: 1, y: 2, w: 3, h: 4, z: 0, termID: "t1")],
+                board: BoardViewport(zoom: 1.0, cx: 0, cy: 0),
+                boardID: "board-1"
+            ),
+            .restore(docs: [], tiles: [], board: nil, boardID: nil),
             .restore(
                 docs: [RestoreDoc(path: "/abs/y.md", via: "user")],
                 tiles: [LayoutTile(kind: "doc", path: "/abs/y.md", x: 12.5, y: 24, w: 300, h: 200, z: 2)],
-                board: BoardViewport(zoom: 1.0, cx: 0, cy: 0)
+                board: BoardViewport(zoom: 1.0, cx: 0, cy: 0),
+                boardID: nil
+            ),
+            .restore(
+                docs: [RestoreDoc(path: "/abs/y.md", via: "user", termID: "t1")],
+                tiles: [LayoutTile(kind: "term", x: 0, y: 0, w: 1, h: 1, z: 0, termID: "t1")],
+                board: BoardViewport(zoom: 1.0, cx: 0, cy: 0),
+                boardID: "board-2"
             ),
             .spawnTerm(termID: "u-1", cols: 191, rows: 49, cwd: "/Users/x", cmd: ["/bin/echo", "hi"]),
             .input(termID: "u-1", bytes: Data([0x03])),

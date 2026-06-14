@@ -127,8 +127,8 @@ public final class DaemonClient: @unchecked Sendable {
         send(.docRead(path: path))
     }
 
-    public func layout(dock: [String], tiles: [LayoutTile], board: BoardViewport? = nil) {
-        send(.layout(dock: dock, tiles: tiles, board: board))
+    public func layout(dock: [String], tiles: [LayoutTile], board: BoardViewport? = nil, boardID: String? = nil) {
+        send(.layout(dock: dock, tiles: tiles, board: board, boardID: boardID))
     }
 
     /// M3: make `boardID` the active board (the daemon replies with board_list +
