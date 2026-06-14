@@ -172,9 +172,6 @@ final class AppController {
     // M3: the app tracks the board list + the active board from `board_list`
     // (P4 renders the ⌘K switcher from it).
     private var boardMetas: [BoardMeta] = []
-    // The board the mounted BoardView actually shows (set at restore); partners
-    // `activeBoardID` for the persistence guard until the real switch lands.
-    private var renderedBoardID: String?
 
     // MARK: - Board placement rule (crib §4/§5)
     //
@@ -225,17 +222,29 @@ final class AppController {
         rootView.shelf.onChipDropped = { [weak self] path, windowPoint in
             self?.landShelfDrop(path: path, windowPoint: windowPoint)
         }
-        // Provenance edge label (crib §8): `tarmac open · HH:MM`, HH:MM from the
-        // doc's lastOpenedMs in local time.
-        rootView.board.edgeLabelProvider = { [weak self] id in self?.edgeLabel(for: id) }
-        // A committed move/resize/zoom/pan on the board persists the full layout
-        // snapshot (card world frames + board viewport); last-writer-wins.
-        // TODO(perf): pan fires onLayoutChanged per scroll event — cheap LWW for
-        // now; debounce/coalesce the layout send if pan persistence gets chatty.
-        rootView.board.onLayoutChanged = { [weak self] _ in self?.persistLayout() }
         // Phase 4 wayfinding: supply the per-card offscreen-hint models (label +
         // priority) the board can't derive on its own (doc metadata / recency).
+        // Reads `activeBoard` dynamically, so it tracks the mounted board.
         rootView.offscreenHintProvider = { [weak self] in self?.offscreenHints() ?? [] }
+        // Mount board-0 and bind its per-board callbacks (edge labels + layout
+        // persistence). The same `mount(_:)` runs on every switch-arrive.
+        mount(board0)
+    }
+
+    /// Mounts `board`'s view in RootView and (re)binds the controller-owned
+    /// per-board callbacks to it: the provenance edge label (crib §8) and the
+    /// committed-layout persist. The persist closure captures the board's id (by
+    /// value, no retain cycle), so a committed move/resize/zoom/pan persists THAT
+    /// board — stamped with its `board_id` — even if a stray callback fires after
+    /// it stops being active (it's then dropped by the active-board guard). Called
+    /// at boot and on every switch-arrive.
+    private func mount(_ board: Board) {
+        rootView.mountBoard(board.view)
+        board.view.edgeLabelProvider = { [weak self] id in self?.edgeLabel(for: id) }
+        let bid = board.boardID
+        // TODO(perf): pan fires onLayoutChanged per scroll event — cheap LWW for
+        // now; debounce/coalesce the layout send if pan persistence gets chatty.
+        board.view.onLayoutChanged = { [weak self] _ in self?.persistLayout(forBoardID: bid) }
     }
 
     /// Makes the prime terminal the window's first responder (initial focus): the
@@ -913,7 +922,6 @@ final class AppController {
         guard targetID == activeBoardID, let board = boards[targetID] else { return }
         guard !board.didInitialRestore else { return }
         board.didInitialRestore = true
-        renderedBoardID = targetID
         store.applyRestore(docs)
         // Seed provenance from the restored doc entries (term_id owner).
         for doc in docs {
@@ -1203,37 +1211,45 @@ final class AppController {
     /// cy}`. Fired on every committed board move/resize/zoom/pan, and on
     /// shelf/gravity changes.
     private func persistLayout() {
-        // M3 P3.0: stamp the layout with the board actually on screen
-        // (`renderedBoardID`) so the daemon persists to *that* board, not just
-        // whatever it considers active — this is what makes per-board layout
-        // correct across a switch (the daemon routes `layout` by `board_id`).
-        // The P2 suppression guard stays until the real per-board switch lands
-        // (a crude P2 switch leaves the daemon's active diverged from the
-        // on-screen board, and the app does not yet re-render); once stamping +
-        // real switching are in, the guard is removed.
-        if let rendered = renderedBoardID, rendered != activeBoardID {
-            return
-        }
+        persistLayout(for: activeBoard)
+    }
+
+    /// Persists `boardID`'s layout (the form `onLayoutChanged` calls, since its
+    /// closure captures the board's id by value).
+    private func persistLayout(forBoardID boardID: String) {
+        guard let board = boards[boardID] else { return }
+        persistLayout(for: board)
+    }
+
+    /// Builds the full layout snapshot for `board` and sends it stamped with its
+    /// `board_id`, so the daemon persists it to the right board regardless of
+    /// what it considers active. Only the active board is persisted: a committed
+    /// layout change can only originate from the mounted board (input + gestures
+    /// reach no detached view), so a callback from a non-active board is a
+    /// teardown transient and is dropped (the per-board correctness guard that
+    /// replaces the P2 renderedBoardID suppression).
+    private func persistLayout(for board: Board) {
+        guard board === activeBoard else { return }
         var tiles: [LayoutTile] = []
         // Every terminal card (in spawn order, live and dead) with its term_id —
         // the daemon dedups by term_id and keeps all distinct positions.
-        for tid in sessionOrder {
-            guard let card = activeBoard.view.card(.term(tid)) else { continue }
+        for tid in board.sessionOrder {
+            guard let card = board.view.card(.term(tid)) else { continue }
             tiles.append(boardTile(kind: "term", path: nil, termID: tid, card: card))
         }
-        for path in boardDocPaths.sorted() {
-            guard let card = activeBoard.view.card(.doc(path)) else { continue }
+        for path in board.boardDocPaths.sorted() {
+            guard let card = board.view.card(.doc(path)) else { continue }
             tiles.append(boardTile(kind: "doc", path: path, card: card))
         }
         // Shelf docs: kind "doc", shelf:true, loose:true, no geometry (crib §6).
-        for path in shelfPaths {
+        for path in board.shelfPaths {
             tiles.append(LayoutTile(kind: "doc", path: path, loose: true, shelf: true))
         }
         client.layout(
             dock: store.docs.map(\.path),
             tiles: tiles,
-            board: activeBoard.view.viewport.wire,
-            boardID: renderedBoardID
+            board: board.view.viewport.wire,
+            boardID: board.boardID
         )
     }
 

@@ -8,7 +8,10 @@ import SwiftTerm
 /// were retired in Phase 3 (the shelf replaces the dock).
 @MainActor
 final class RootView: NSView {
-    let board = BoardView()
+    /// The mounted whiteboard. M3: one `BoardView` per board; `mountBoard(_:)`
+    /// swaps which one is shown on a board switch. RootView owns only *which*
+    /// view is displayed — the controller owns each board's cards + viewport.
+    private(set) var board = BoardView()
     let shelf = ShelfView()
     let statusBar = StatusBar()
     let coldStartHint = ColdStartHintView()
@@ -85,12 +88,46 @@ final class RootView: NSView {
             self.board.setViewport(vp, commit: true)
         }
         // Refresh the chrome off the live viewport / card set.
-        board.onViewportChanged = { [weak self] vp in self?.refreshWayfinding(vp) }
-        board.onCardsChanged = { [weak self] in self?.refreshWayfinding(self?.board.viewport) }
+        wireBoardCallbacks(board)
         zoomControl.setZoom(board.viewport.zoom)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// Wires a board view's wayfinding callbacks to this RootView — called for
+    /// the initial board in `init` and for each board mounted by `mountBoard`.
+    /// (`edgeLabelProvider` / `onLayoutChanged` are owned by AppController and
+    /// re-bound there on mount; the zoom/minimap actions read `self.board`
+    /// dynamically so they always target the mounted board.)
+    private func wireBoardCallbacks(_ bv: BoardView) {
+        bv.onViewportChanged = { [weak self] vp in self?.refreshWayfinding(vp) }
+        bv.onCardsChanged = { [weak self] in self?.refreshWayfinding(self?.board.viewport) }
+    }
+
+    /// Mounts `bv` as the shown whiteboard: detaches the current board view and
+    /// inserts `bv` as the bottom-most subview (below the status bar and the
+    /// click-through hint overlay), re-wiring its wayfinding callbacks. Used by
+    /// the controller on every board switch-arrive (and to re-mount the same view
+    /// after `unmountBoard`). The detached board's cards + live SwiftTerm views
+    /// stay parented to it off-window, so background ptys keep running.
+    func mountBoard(_ bv: BoardView) {
+        guard board !== bv || bv.superview == nil else { return }
+        if board !== bv { board.removeFromSuperview() }
+        bv.removeFromSuperview()
+        board = bv
+        addSubview(bv, positioned: .below, relativeTo: statusBar)
+        wireBoardCallbacks(bv)
+        needsLayout = true
+    }
+
+    /// Detaches the mounted board view (switch-away) without yet mounting another.
+    /// Its callbacks are cleared so the off-window view never drives the active
+    /// chrome; its cards + live SwiftTerm views stay parented to it (ptys live).
+    func unmountBoard() {
+        board.onViewportChanged = nil
+        board.onCardsChanged = nil
+        board.removeFromSuperview()
+    }
 
     /// Rebuilds the wayfinding chrome from the current viewport + card set: the
     /// zoom readout, the minimap rects + viewport box, and the offscreen-hint
