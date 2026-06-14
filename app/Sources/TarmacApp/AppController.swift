@@ -455,6 +455,9 @@ final class AppController {
     /// §6 decision 3), makes it prime + first responder, and persists it.
     private func spawnNewTerminal() {
         guard connected, viewReady else { return }
+        // Land the new terminal on the board, not behind the dock pane: undock
+        // the current terminal first so focus + the dock stay coherent.
+        if docked { undock() }
         let id = UUID().uuidString
         let session = makeSession(termID: id)
         sessions[id] = session
@@ -738,6 +741,9 @@ final class AppController {
     /// terminal's label, the new prime highlighted (crib §6). Dead terminals are
     /// skipped. With one terminal this re-asserts focus (a single-item HUD).
     private func cycleTerminals() {
+        // Cycling while docked would desync the dock (which holds one terminal's
+        // view) from prime; esc to undock first.
+        guard !docked else { return }
         let liveIDs = sessionOrder.filter { sessions[$0]?.live == true }
         guard !liveIDs.isEmpty else { return }
         let currentIdx = primeTermID.flatMap { liveIDs.firstIndex(of: $0) } ?? -1
@@ -790,33 +796,30 @@ final class AppController {
         }
         shelfPaths = []
 
+        let termTiles = tiles.filter { $0.kind == "term" }
+        let docTiles = tiles.filter { $0.kind == "doc" }
+        var migratedAny = termTiles.contains { CardFrame(tile: $0) == nil }
+
+        // Restore N terminal cards (decision 2: positions persist, fresh shells
+        // respawn) and re-anchor doc provenance across the restart (best-effort).
+        let oldToNew = restoreTerminals(termTiles)
+        remapDocOwners(oldToNew, restoredTerminalCount: termTiles.count)
+
         var docSlot = 0
-        var migratedAny = false
-        for tile in tiles {
-            switch tile.kind {
-            case "term":
-                let stored = CardFrame(tile: tile)
-                if stored == nil { migratedAny = true }
-                if let id = primeTermID, let view = primeTerminalView {
-                    rootView.board.setTerminal(termID: id, view, worldFrame: stored ?? Place.termFrame)
-                }
-            case "doc":
-                guard let path = tile.path, store.doc(for: path) != nil else { continue }
-                if tile.shelf == true {
-                    if !shelfPaths.contains(path) { shelfPaths.append(path) }
-                    continue
-                }
-                if let stored = CardFrame(tile: tile) {
-                    landDocCard(path: path, frame: stored, attached: tile.loose != true, fresh: false)
-                } else {
-                    // Geometry-less, non-shelf doc tile: M1 migration → scatter.
-                    migratedAny = true
-                    landDocCard(path: path, frame: scatterFrame(docSlot: docSlot), attached: tile.loose != true, fresh: false)
-                }
-                docSlot += 1
-            default:
-                continue // unknown kind: skip (protocol receiver rule)
+        for tile in docTiles {
+            guard let path = tile.path, store.doc(for: path) != nil else { continue }
+            if tile.shelf == true {
+                if !shelfPaths.contains(path) { shelfPaths.append(path) }
+                continue
             }
+            if let stored = CardFrame(tile: tile) {
+                landDocCard(path: path, frame: stored, attached: tile.loose != true, fresh: false)
+            } else {
+                // Geometry-less, non-shelf doc tile: M1 migration → scatter.
+                migratedAny = true
+                landDocCard(path: path, frame: scatterFrame(docSlot: docSlot), attached: tile.loose != true, fresh: false)
+            }
+            docSlot += 1
         }
 
         if migratedAny {
@@ -829,6 +832,49 @@ final class AppController {
         }
 
         rootView.board.setViewport(board.map(Viewport.init) ?? .default)
+    }
+
+    /// Restores terminal cards from `termTiles` (decision 2: positions persist,
+    /// fresh shells respawn — live-session restore is M3). The boot session/card
+    /// is reused for the first tile (its fresh shell is spawned by `maybeSpawn`);
+    /// each additional tile gets a fresh session + card + pty. Returns the
+    /// persisted→reborn `term_id` remap so doc provenance can re-anchor.
+    @discardableResult
+    private func restoreTerminals(_ termTiles: [LayoutTile]) -> [String: String] {
+        var oldToNew: [String: String] = [:]
+        guard let bootID = primeTermID else { return oldToNew }
+        for (i, tile) in termTiles.enumerated() {
+            let frame = CardFrame(tile: tile) ?? Place.termFrame
+            let newID: String
+            if i == 0 {
+                // Reuse the boot session/card (created at init, kept prime).
+                newID = bootID
+                if let view = primeTerminalView {
+                    rootView.board.setTerminal(termID: bootID, view, worldFrame: frame)
+                }
+            } else {
+                // A fresh session + card + pty for each additional terminal.
+                newID = UUID().uuidString
+                let session = makeSession(termID: newID)
+                sessions[newID] = session
+                sessionOrder.append(newID)
+                rootView.board.setTerminal(termID: newID, session.view, worldFrame: frame)
+                spawn(session: session)
+            }
+            if let old = tile.termID { oldToNew[old] = newID }
+        }
+        return oldToNew
+    }
+
+    /// Re-anchors persisted doc provenance across a restart (decision 2,
+    /// best-effort): rewrites each owner `term_id` to the reborn session via
+    /// `oldToNew`. When exactly one terminal restored (the common single-terminal
+    /// case), re-anchors every owner-bearing doc to it losslessly; otherwise a
+    /// doc whose owning terminal genuinely vanished keeps its stale id and
+    /// restores loose (`ownerCardID` won't resolve it).
+    private func remapDocOwners(_ oldToNew: [String: String], restoredTerminalCount: Int) {
+        let soleTerminal = restoredTerminalCount == 1 ? primeTermID : nil
+        docOwner = Provenance.remappedOwners(docOwner, oldToNew: oldToNew, soleTerminal: soleTerminal)
     }
 
     /// Default scatter for a geometry-less (M1) doc tile at `docSlot` (0-based):
@@ -862,15 +908,16 @@ final class AppController {
         return card
     }
 
-    /// The board CardID of a doc's provenance owner term card, when resolvable.
-    /// This phase still collapses any doc with a known provenance owner to the
-    /// prime term card (one live terminal); Step 7 resolves `docOwner[path]`
-    /// against the real per-card term_id set so a doc binds to *its* terminal.
+    /// The board CardID of a doc's provenance owner term card, when resolvable
+    /// (Phase 5b): the doc binds to *its* terminal — the `term_id` that opened it
+    /// — not "the" terminal. Returns nil (doc stays loose) when that terminal no
+    /// longer exists (e.g. a genuinely-orphaned owner after a restart remap).
     private func ownerCardID(for path: String) -> CardID? {
-        guard docOwner[path] != nil, let id = primeTermID, rootView.board.card(.term(id)) != nil else {
+        guard let tid = docOwner[path], sessions[tid] != nil,
+              rootView.board.card(.term(tid)) != nil else {
             return nil
         }
-        return .term(id)
+        return .term(tid)
     }
 
     /// `← <termname>` chip text for an attached doc card, else nil — the label of
@@ -999,14 +1046,19 @@ final class AppController {
     }
 
     /// Reports the full layout snapshot (docs/protocol.md `layout`;
-    /// last-writer-wins): the terminal card frame, each board doc card's frame
-    /// with its `loose` flag (shelf:false), and each shelf doc as a geometry-less
-    /// `shelf:true` tile. Plus the board viewport `{zoom,cx,cy}`. Fired on every
-    /// committed board move/resize/zoom/pan, and on shelf/gravity changes.
+    /// last-writer-wins): each terminal card's frame + its `term_id` (Phase 5b:
+    /// N terminal cards, live AND dead, persist distinct positions), each board
+    /// doc card's frame with its `loose` flag (shelf:false), and each shelf doc
+    /// as a geometry-less `shelf:true` tile. Plus the board viewport `{zoom,cx,
+    /// cy}`. Fired on every committed board move/resize/zoom/pan, and on
+    /// shelf/gravity changes.
     private func persistLayout() {
         var tiles: [LayoutTile] = []
-        if let term = primeTermCard {
-            tiles.append(boardTile(kind: "term", path: nil, card: term))
+        // Every terminal card (in spawn order, live and dead) with its term_id —
+        // the daemon dedups by term_id and keeps all distinct positions.
+        for tid in sessionOrder {
+            guard let card = rootView.board.card(.term(tid)) else { continue }
+            tiles.append(boardTile(kind: "term", path: nil, termID: tid, card: card))
         }
         for path in boardDocPaths.sorted() {
             guard let card = rootView.board.card(.doc(path)) else { continue }
@@ -1023,8 +1075,9 @@ final class AppController {
         )
     }
 
-    /// A board card → tile: its world frame, `loose` = !attached, shelf:false.
-    private func boardTile(kind: String, path: String?, card: CardView) -> LayoutTile {
+    /// A board card → tile: its world frame, `loose` = !attached (doc tiles), and
+    /// the owning `term_id` (terminal tiles, Phase 5b).
+    private func boardTile(kind: String, path: String?, termID: String? = nil, card: CardView) -> LayoutTile {
         let f = card.worldFrame
         return LayoutTile(
             kind: kind,
@@ -1037,7 +1090,8 @@ final class AppController {
             // The term card has no gravity tie; doc cards carry their attached
             // state as the loose flag.
             loose: kind == "doc" ? !card.attached : nil,
-            shelf: kind == "doc" ? false : nil
+            shelf: kind == "doc" ? false : nil,
+            termID: termID
         )
     }
 
