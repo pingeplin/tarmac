@@ -70,10 +70,9 @@ final class TerminalSession {
     var shellName = ""
     /// When the current non-shell foreground process started (locard duration).
     var liveProcSince: Date?
+    /// Last cols/rows sent to the daemon — debounces duplicate resizes.
     var lastSentCols = 0
     var lastSentRows = 0
-    var lastSpawnAt: Date?
-    var rapidExitCount = 0
 
     init(termID: String, view: TerminalView, bridge: TermDelegateBridge) {
         self.termID = termID
@@ -138,10 +137,10 @@ final class AppController {
     // truth for the shelf overlay + persistence. Provenance owner per doc is
     // seeded from DocEntry.term_id and reapplied to landed cards.
     private var shelfPaths: [String] = []
-    /// Provenance: doc path → the term_id that opened it (from DocEntry). The
-    /// owner term_id is persisted; a restart re-mints `currentTermID`, so this
-    /// is resolved to the live term card by identity-of-the-single-terminal
-    /// (see `ownerCardID`), not by value-equality with `currentTermID`.
+    /// Provenance: doc path → the `term_id` that opened it (from DocEntry). The
+    /// owner term_id is persisted; across a restart it is re-anchored to the
+    /// reborn terminal by `remapDocOwners`, then resolved to a board card by
+    /// `ownerCardID` (a doc binds to *its* terminal, Phase 5b).
     private var docOwner: [String: String] = [:]
     // Per-terminal labels / shell name / live-since now live on TerminalSession
     // (Phase 5b); see `sessions`.
@@ -433,7 +432,6 @@ final class AppController {
         s.live = true
         s.lastSentCols = cols
         s.lastSentRows = rows
-        s.lastSpawnAt = Date()
         client.spawnTerm(termID: s.termID, cols: cols, rows: rows, cwd: NSHomeDirectory(), cmd: nil)
         // cmd nil ⇒ the daemon spawns $SHELL (else /bin/zsh); mirror that
         // resolution for the card label — a fact known at spawn time.
@@ -647,11 +645,12 @@ final class AppController {
 
     // MARK: - Terminal primacy: prime / quiet focus model (Phase 5a, crib §4)
 
-    /// Applies the prime/quiet card states (crib §4). With a single terminal the
-    /// term card is the prime card (focused terminal: `#5a626a` border, `#3a4046`
-    /// header, deeper shadow) and every other (doc) card is quiet (opacity 0.8).
-    /// Called whenever the card set / focus changes. Phase 5b will make "which
-    /// terminal is prime" follow the cycle; here it is always the one term card.
+    /// Applies the prime/quiet card states (crib §4): the prime terminal card
+    /// (focused terminal: `#5a626a` border, `#3a4046` header, deeper shadow) is
+    /// raised and every other card — docs and non-prime terminals — is quiet
+    /// (opacity 0.8). Prime follows the ⌥tab cycle / ⌘T (Phase 5b); a dead
+    /// terminal card keeps its own dim and never reads as prime. Nothing is prime
+    /// when no terminal is live.
     private func updatePrimacy() {
         let primeID: CardID? = hasLivePrime ? primeTermID.map(CardID.term) : nil
         for (id, card) in rootView.board.cards {

@@ -216,9 +216,20 @@ skip unknown `kind`s and ignore unknown keys.
 | `w` | float \| nil | nil | world-space width |
 | `h` | float \| nil | nil | world-space height |
 | `z` | int \| nil | nil | stacking order (z-index) |
+| `term_id` | string \| nil | nil | **v4 Phase 5b, additive**: the terminal tile this card belongs to. The board holds N terminal cards (one per pty), each persisting its own position; the daemon keys them by `term_id`. Absent on doc tiles and on legacy single-terminal layouts |
 
 A tile without `x/y/w/h/z` behaves exactly as an M1 tile (the app falls back to grid
 placement).
+
+**v4 Phase 5b — multiple terminal tiles.** A `layout`/`restore` may carry more than
+one `{kind:"term"}` tile, each with a distinct `term_id` (e.g. `{kind:"term", x, y,
+w, h, z, term_id}`). `Registry::set_tiles` keeps every terminal tile with a distinct
+`term_id`; a `term_id`-less term tile is the legacy single-terminal slot, kept once;
+a duplicate `term_id` is dropped. An empty / term-less layout still gets one default
+`{kind:"term"}` tile, so the board is never term-less. The wire is byte-identical to
+pre-5b when no `term_id` is present (additive guarantee). On restart the daemon's ptys
+are gone, so the app respawns fresh shells into the persisted positions (live-session
+restore is a later milestone); doc provenance re-anchors best-effort.
 
 ### `board` viewport
 

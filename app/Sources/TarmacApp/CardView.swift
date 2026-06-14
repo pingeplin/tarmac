@@ -10,10 +10,8 @@ import TarmacKit
 ///
 /// Metrics differ from `TileView` per crib §4: header **30px**, radius **10**.
 /// `.tm-bcard` is `overflow:hidden`, so the selection handles live on the
-/// non-clipped outer view (`self`), above the inner rounded clip.
-///
-/// 2c hosts these inside `BoardView`; this phase the type is unused so the app
-/// stays green.
+/// non-clipped outer view (`self`), above the inner rounded clip. Hosted inside
+/// `BoardView`.
 @MainActor
 final class CardView: NSView {
     static let headerHeight: CGFloat = 30

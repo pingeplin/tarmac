@@ -12,10 +12,8 @@ import TarmacKit
 ///
 /// Background dot grid is drawn in board space (radial dots, 24px world spacing,
 /// denser 11px below the semantic-zoom threshold). The card layer is reprojected
-/// on every pan / zoom / layout.
-///
-/// 2c hosts this in `RootView` in place of `DeskGridView`; this phase the type is
-/// unused so the app stays green.
+/// on every pan / zoom / layout. Hosted by `RootView` in place of the retired
+/// `DeskGridView`.
 @MainActor
 final class BoardView: NSView {
     // Dot grid (crib §5): color #32383e, ~2px dot, 24px world spacing (11px lo-zoom).
