@@ -177,6 +177,10 @@ final class AppController {
     // M3: the app tracks the board list + the active board from `board_list`
     // (P4 renders the ⌘K switcher from it).
     private var boardMetas: [BoardMeta] = []
+    // True from a switch's leave until its arrive completes. Suppresses layout
+    // persistence across the transient (undock / unmount / re-mount / rebuild)
+    // and tells the restore handler to mount the arriving board (crit B4).
+    private var switching = false
 
     // MARK: - Board placement rule (crib §4/§5)
     //
@@ -383,10 +387,15 @@ final class AppController {
         case .helloOK:
             connected = true
             maybeSpawn()
-        case .boardList(let boards, let active):
-            // P2: track the boards + active. P4 renders the ⌘K switcher from this.
-            boardMetas = boards
-            activeBoardID = active
+        case .boardList(let metas, let active):
+            boardMetas = metas
+            // The daemon changed the active board out from under us (board_create
+            // auto-activates the new board): follow it — leave the current board
+            // so the restore that follows mounts the new one. An app-initiated
+            // switch already set activeBoardID = active, so this is a no-op then.
+            if active != activeBoardID, !switching {
+                beginArrivingSwitch(to: active)
+            }
             refreshStrips()
         case .restore(let docs, let tiles, let board, let restoredBoardID):
             applyRestore(docs: docs, tiles: tiles, viewport: board, boardID: restoredBoardID)
@@ -474,15 +483,101 @@ final class AppController {
         rootView.toasts.show(title: "cannot reach tarmacd", body: "see terminal for details")
     }
 
-    // M3 P2 (throwaway): switch to the next board in display order (wrapping).
-    // The daemon replies with board_list + that board's restore. Replaced by the
-    // ⌘K switcher in P4.
+    // M3 (throwaway ⌃⌘→ until the P4 ⌘K switcher): switch to the next board in
+    // display order (wrapping).
     private func switchToNextBoard() {
         guard let next = BoardRegistry.nextBoardID(after: activeBoardID, in: boardMetas) else {
             feedNotice("only one board — ⌃⌘N creates another")
             return
         }
-        client.boardSwitch(boardID: next)
+        performSwitch(to: next)
+    }
+
+    // MARK: - Board switching (M3 P3)
+
+    /// App-initiated switch to `targetID`: detach the current board and tell the
+    /// daemon, which replies with `board_list` + the target's `restore`; the
+    /// arrive path (`applyRestore`) mounts + (first visit) builds it. No-op if
+    /// already there or the target is unknown. (P4's ⌘K routes here too.)
+    private func performSwitch(to targetID: String) {
+        guard targetID != activeBoardID, boardMetas.contains(where: { $0.boardID == targetID }) else { return }
+        beginArrivingSwitch(to: targetID)
+        client.boardSwitch(boardID: targetID)
+    }
+
+    /// The LEAVE half of a switch, shared by an app-initiated switch and the
+    /// daemon-initiated one (`board_create` auto-activates the new board, so the
+    /// app follows on `board_list`). Detaches the current board and makes
+    /// `targetID` active + minted, ready for its restore to mount it. Does NOT
+    /// send `board_switch` (the caller does, or the daemon already switched).
+    private func beginArrivingSwitch(to targetID: String) {
+        guard let meta = boardMetas.first(where: { $0.boardID == targetID }) else { return }
+        switching = true
+        // Keep prime synced to the terminal the user last typed in, then pull
+        // first responder OFF the leaving board's views before the view is
+        // swapped — a stale responder would leave the arrived board unfocused
+        // (boardHasFocus false until a click). Target nil, not rootView.board,
+        // which is about to be swapped (crit B3).
+        reconcilePrimeToFocus()
+        if activeBoard.docked { undockForLeave() }
+        window?.makeFirstResponder(nil)
+        rootView.unmountBoard()
+        // The target must exist before it becomes active (`activeBoard` force-
+        // unwraps); a first visit mints its BoardView + boot session here.
+        if boards[targetID] == nil { _ = mintBoard(id: targetID, name: meta.name) }
+        activeBoardID = targetID
+    }
+
+    /// Lazily creates a board the daemon told us about, on first activation: its
+    /// own BoardView + a boot session (kept prime, registered in the term index,
+    /// store wired), mirroring board-0's boot. The view is mounted by the
+    /// arrive path, and the boot pty is spawned there (`maybeSpawn`).
+    @discardableResult
+    private func mintBoard(id: String, name: String?) -> Board {
+        let board = Board(boardID: id, name: name, view: BoardView())
+        let bootTermID = BootTerminal.mint()
+        let boot = makeSession(termID: bootTermID)
+        board.sessions[bootTermID] = boot
+        board.sessionOrder = [bootTermID]
+        board.primeTermID = bootTermID
+        termIndex.assign(termID: bootTermID, to: id)
+        board.view.setTerminal(termID: bootTermID, boot.view, worldFrame: Place.termFrame)
+        wireStore(board)
+        boards[id] = board
+        return board
+    }
+
+    /// Undocks the leaving board's terminal on switch-away: reparent the docked
+    /// SwiftTerm view back into its card and hide the shared pane, WITHOUT
+    /// fly-back and WITHOUT a reflow/resize — the card is about to be detached,
+    /// so reflowing now would resize the pty to a doomed geometry (crit B2). The
+    /// board's `docked` intent is kept so switch-back re-docks.
+    private func undockForLeave() {
+        guard activeBoard.docked, let view = activeBoard.primeTerminalView else { return }
+        view.removeFromSuperview()
+        activeBoard.primeTermCard?.attachTerminal(view)
+        rootView.setDockVisible(false)
+        activeBoard.view.setDocked(nil)
+        // NB: activeBoard.docked stays true (intent); finishArrive re-docks.
+    }
+
+    /// The ARRIVE half: the target's view is mounted and (on a first visit) its
+    /// cards/terminals built; now re-establish focus + dock on the arrived board,
+    /// AFTER its card tree is laid out (crit B3 / S1), and end the transient.
+    private func finishArrive(on board: Board) {
+        rootView.layoutSubtreeIfNeeded()
+        if board.docked {
+            // Re-dock: reparent the prime terminal into the shared pane (dock()
+            // guards on !docked, reflows, and makes the view first responder).
+            board.docked = false
+            dock()
+        } else if let view = board.primeTerminalView {
+            window?.makeFirstResponder(view)
+        } else {
+            window?.makeFirstResponder(rootView.board)
+        }
+        updatePrimacy()
+        switching = false
     }
 
     // MARK: - Terminal session
@@ -945,15 +1040,29 @@ final class AppController {
     private func applyRestore(docs: [RestoreDoc], tiles: [LayoutTile], viewport: BoardViewport?, boardID: String?) {
         let targetID = boardID ?? Board.defaultID
         guard targetID == activeBoardID, let board = boards[targetID] else { return }
-        guard !board.didInitialRestore else { return }
-        board.didInitialRestore = true
-        store.applyRestore(docs)
-        // Seed provenance from the restored doc entries (term_id owner).
-        for doc in docs {
-            if let termID = doc.termID { board.docOwner[doc.path] = termID }
+        // On a switch-arrive, mount the target's view (boot already mounted
+        // board-0). A re-visit still mounts + refocuses below — only the rebuild
+        // is gated on the first restore.
+        if switching { mount(board) }
+        // Build the board's cards/terminals on its FIRST restore only; a re-visit
+        // keeps its live view as-is (a rebuild would respawn its terminals).
+        if !board.didInitialRestore {
+            board.didInitialRestore = true
+            board.store.applyRestore(docs)
+            // Seed provenance from the restored doc entries (term_id owner).
+            for doc in docs {
+                if let termID = doc.termID { board.docOwner[doc.path] = termID }
+            }
+            applyRestoredLayout(tiles: tiles, board: viewport)
+            // Boot-spawn triggers (helloOK / initial viewReady) fire once per
+            // launch; a switch-arrival must drive the arriving board's prime
+            // spawn itself (crit S1). Lay the just-mounted view out first so the
+            // boot pty starts at the card size, not the 800×600 view default.
+            rootView.layoutSubtreeIfNeeded()
+            maybeSpawn()
         }
-        applyRestoredLayout(tiles: tiles, board: viewport)
         refreshStrips()
+        if switching { finishArrive(on: board) }
     }
 
     /// `restore.tiles[]` → board cards + shelf chips (crib §6). A `shelf:true`
@@ -1257,7 +1366,10 @@ final class AppController {
     /// teardown transient and is dropped (the per-board correctness guard that
     /// replaces the P2 renderedBoardID suppression).
     private func persistLayout(for board: Board) {
-        guard board === activeBoard else { return }
+        // Drop everything during a switch transient (undock / unmount / re-mount /
+        // rebuild fire layout passes whose geometry is mid-flight) and any
+        // callback from a non-active board (input/gestures reach no detached view).
+        guard !switching, board === activeBoard else { return }
         var tiles: [LayoutTile] = []
         // Every terminal card (in spawn order, live and dead) with its term_id —
         // the daemon dedups by term_id and keeps all distinct positions.
