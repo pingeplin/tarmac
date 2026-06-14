@@ -34,6 +34,7 @@ pub fn term_tile() -> Tile {
         z: None,
         loose: None,
         shelf: None,
+        term_id: None,
     }
 }
 
@@ -104,25 +105,31 @@ impl Registry {
 
     pub fn set_tiles(&mut self, tiles: Vec<Tile>) {
         let mut kept: Vec<Tile> = Vec::new();
-        let mut have_term = false;
+        // v4 Phase 5b: keep each terminal tile with a *distinct* term_id, so N
+        // terminal cards persist distinct positions. A `None` term_id is the
+        // legacy single-terminal slot, kept once. Duplicate ids are dropped.
+        let mut seen_terms: HashSet<Option<String>> = HashSet::new();
         for t in tiles {
             match t.kind.as_str() {
-                "term" if !have_term => {
-                    have_term = true;
-                    kept.push(t);
+                "term" => {
+                    if seen_terms.insert(t.term_id.clone()) {
+                        kept.push(t);
+                    }
                 }
                 "doc" => {
                     if t.path.as_deref().is_some_and(|p| self.docs.contains_key(Path::new(p))) {
                         kept.push(t);
                     }
                 }
-                // Duplicate "term" or a kind from a newer protocol: skip the
-                // tile, keep the rest (protocol rule).
+                // A kind from a newer protocol: skip the tile, keep the rest
+                // (protocol rule).
                 _ => {}
             }
         }
-        // M1 restores always carry exactly one term tile.
-        if !have_term {
+        // M1 restores always carry exactly one term tile; an empty / term-less
+        // layout gets the default single terminal so the board is never
+        // term-less.
+        if seen_terms.is_empty() {
             kept.insert(0, term_tile());
         }
         self.tiles = kept;
@@ -237,5 +244,53 @@ impl Daemon {
         if let Some(tx) = tx {
             let _ = tx.send(msg).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn term(id: Option<&str>) -> Tile {
+        Tile { kind: "term".into(), term_id: id.map(str::to_string), ..term_tile() }
+    }
+
+    fn terms_kept(r: &Registry) -> Vec<Option<String>> {
+        r.tiles.iter().filter(|t| t.kind == "term").map(|t| t.term_id.clone()).collect()
+    }
+
+    // v4 Phase 5b: distinct term_ids each keep their own tile (N terminal cards
+    // persist distinct positions), in order.
+    #[test]
+    fn set_tiles_keeps_distinct_term_ids() {
+        let mut r = Registry::empty();
+        r.set_tiles(vec![term(Some("t1")), term(Some("t2"))]);
+        assert_eq!(terms_kept(&r), vec![Some("t1".into()), Some("t2".into())]);
+    }
+
+    // A duplicate term_id (the app must never send these) is deduped to one.
+    #[test]
+    fn set_tiles_drops_duplicate_term_id() {
+        let mut r = Registry::empty();
+        r.set_tiles(vec![term(Some("t1")), term(Some("t1"))]);
+        assert_eq!(terms_kept(&r), vec![Some("t1".into())]);
+    }
+
+    // A legacy single-terminal layout (term tile, no term_id) keeps exactly one
+    // None-keyed slot — the Phase 5a / M1 shape is preserved.
+    #[test]
+    fn set_tiles_keeps_one_legacy_none_term() {
+        let mut r = Registry::empty();
+        r.set_tiles(vec![term(None), term(None)]);
+        assert_eq!(terms_kept(&r), vec![None]);
+    }
+
+    // An empty / term-less layout still gets the default single terminal so the
+    // board is never term-less (matches the pre-5b fallback).
+    #[test]
+    fn set_tiles_empty_inserts_default_terminal() {
+        let mut r = Registry::empty();
+        r.set_tiles(vec![]);
+        assert_eq!(r.tiles, vec![term_tile()]);
     }
 }

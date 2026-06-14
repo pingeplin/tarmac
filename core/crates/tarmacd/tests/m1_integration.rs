@@ -29,6 +29,7 @@ fn term_tile() -> Tile {
         z: None,
         loose: None,
         shelf: None,
+        term_id: None,
     }
 }
 
@@ -261,8 +262,8 @@ fn board_geometry_and_viewport_survive_daemon_restart() {
     recv_doc_opened(&mut app);
 
     let board = BoardViewport { zoom: 0.82, cx: 640.0, cy: 360.0 };
-    let term = Tile { kind: "term".into(), x: Some(92.0), y: Some(108.0), w: Some(470.0), h: Some(330.0), z: Some(0), path: None, loose: None, shelf: None };
-    let doc = Tile { kind: "doc".into(), path: Some(a.clone()), x: Some(648.0), y: Some(140.0), w: Some(392.0), h: Some(310.0), z: Some(1), loose: None, shelf: None };
+    let term = Tile { kind: "term".into(), x: Some(92.0), y: Some(108.0), w: Some(470.0), h: Some(330.0), z: Some(0), path: None, loose: None, shelf: None, term_id: None };
+    let doc = Tile { kind: "doc".into(), path: Some(a.clone()), x: Some(648.0), y: Some(140.0), w: Some(392.0), h: Some(310.0), z: Some(1), loose: None, shelf: None, term_id: None };
     app.send(&Msg::Layout {
         dock: vec![a.clone()],
         tiles: vec![term.clone(), doc.clone()],
@@ -322,6 +323,7 @@ fn shelf_loose_and_term_id_survive_daemon_restart() {
         z: None,
         loose: Some(true),
         shelf: Some(true),
+        term_id: None,
     };
     app.send(&Msg::Layout {
         dock: vec![a.clone()],

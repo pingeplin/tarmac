@@ -60,6 +60,11 @@ public struct LayoutTile: Equatable, Sendable {
     /// v4 Phase 3 additive (missing ⇒ nil): true ⇒ the doc is parked on the
     /// shelf rather than placed on the board (shelf tiles carry no geometry).
     public var shelf: Bool?
+    /// v4 Phase 5b additive (missing ⇒ nil): the `term_id` a terminal tile
+    /// belongs to, so N terminal cards persist distinct positions. nil on doc
+    /// tiles and on legacy single-terminal layouts. Last init param so every
+    /// existing `LayoutTile(kind:…)` call compiles unchanged.
+    public var termID: String?
 
     public init(
         kind: String,
@@ -70,7 +75,8 @@ public struct LayoutTile: Equatable, Sendable {
         h: Double? = nil,
         z: Int? = nil,
         loose: Bool? = nil,
-        shelf: Bool? = nil
+        shelf: Bool? = nil,
+        termID: String? = nil
     ) {
         self.kind = kind
         self.path = path
@@ -81,6 +87,7 @@ public struct LayoutTile: Equatable, Sendable {
         self.z = z
         self.loose = loose
         self.shelf = shelf
+        self.termID = termID
     }
 }
 
@@ -263,7 +270,8 @@ public extension Message {
             h: try opt("h", \.doubleValue),
             z: try opt("z", \.intValue),
             loose: try opt("loose", \.boolValue),
-            shelf: try opt("shelf", \.boolValue)
+            shelf: try opt("shelf", \.boolValue),
+            termID: try opt("term_id", \.stringValue)
         )
     }
 
@@ -402,6 +410,8 @@ public extension Message {
         // v4 Phase 3: emit each flag only when present (missing ⇒ nil).
         if let loose = tile.loose { m["loose"] = .bool(loose) }
         if let shelf = tile.shelf { m["shelf"] = .bool(shelf) }
+        // v4 Phase 5b: emit the terminal tile's term_id only when present.
+        if let termID = tile.termID { m["term_id"] = .string(termID) }
         return .map(m)
     }
 

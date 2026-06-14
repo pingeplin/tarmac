@@ -144,6 +144,12 @@ pub struct Tile {
     pub loose: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shelf: Option<bool>,
+    // v4 Phase 5b additive key (optional; missing => nil): the `term_id` a
+    // terminal tile belongs to, so N terminal cards persist distinct positions.
+    // Absent on doc tiles and on legacy single-terminal layouts (the daemon
+    // keeps exactly one `None`-keyed term tile; see `Registry::set_tiles`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub term_id: Option<String>,
 }
 
 /// The persisted board viewport for a strip: zoom factor + world-space center.
@@ -274,6 +280,7 @@ mod tests {
             z: None,
             loose: None,
             shelf: None,
+            term_id: None,
         }
     }
 
@@ -400,6 +407,7 @@ mod tests {
                     z: Some(2),
                     loose: None,
                     shelf: None,
+                    term_id: None,
                 }],
                 board: Some(BoardViewport { zoom: 0.82, cx: 640.0, cy: 360.0 }),
             },
@@ -468,6 +476,7 @@ mod tests {
                 z: Some(5),
                 loose: None,
                 shelf: None,
+                term_id: None,
             }],
             board: Some(BoardViewport { zoom: 0.5, cx: 10.0, cy: 20.0 }),
         };
@@ -489,6 +498,7 @@ mod tests {
             z: None,
             loose: Some(true),
             shelf: Some(true),
+            term_id: None,
         };
         assert_eq!(
             roundtrip(&Msg::Layout {
@@ -516,6 +526,55 @@ mod tests {
         // An open carrying the calling term_id.
         let open = Msg::Open { path: "/a.md".into(), term_id: Some("term-42".into()) };
         assert_eq!(roundtrip(&open), open);
+    }
+
+    // v4 Phase 5b (additive): a terminal tile carrying its `term_id` round-trips,
+    // and a multi-terminal layout preserves two distinct term tile ids + order.
+    #[test]
+    fn phase5b_term_tile_term_id_roundtrip() {
+        let t1 = Tile { kind: "term".into(), term_id: Some("t1".into()), ..term_tile() };
+        let t2 = Tile {
+            kind: "term".into(),
+            term_id: Some("t2".into()),
+            x: Some(600.0),
+            y: Some(80.0),
+            ..term_tile()
+        };
+        let layout = Msg::Layout {
+            dock: vec!["/a.md".into()],
+            tiles: vec![t1.clone(), t2.clone(), doc_tile("/a.md")],
+            board: None,
+        };
+        let rt = roundtrip(&layout);
+        assert_eq!(rt, layout);
+        // Both term ids survive, distinct, in order.
+        if let Msg::Layout { tiles, .. } = rt {
+            assert_eq!(tiles[0].term_id.as_deref(), Some("t1"));
+            assert_eq!(tiles[1].term_id.as_deref(), Some("t2"));
+            assert_eq!(tiles[2].term_id, None); // a doc tile carries no term_id
+        } else {
+            panic!("expected layout");
+        }
+    }
+
+    // A keyless term tile (legacy single-terminal layout) decodes term_id == None
+    // and is byte-identical to the pre-5b encoding (additive guarantee).
+    #[test]
+    fn phase5b_keyless_term_tile_decodes_to_none() {
+        let rt = roundtrip(&Msg::Layout {
+            dock: vec![],
+            tiles: vec![term_tile()],
+            board: None,
+        });
+        if let Msg::Layout { tiles, .. } = rt {
+            assert_eq!(tiles[0].term_id, None);
+        } else {
+            panic!("expected layout");
+        }
+        // A bare term tile (all-None) still serializes to the same 11 bytes it
+        // did pre-5b — `skip_serializing_if` omits term_id, so {kind:"term"}.
+        let bytes = unhex("81 a4 6b 69 6e 64 a4 74 65 72 6d");
+        assert_eq!(rmp_serde::to_vec_named(&term_tile()).unwrap(), bytes);
     }
 
     // Key-less M1 shapes still decode to None for the Phase 3 fields (additive
@@ -669,6 +728,7 @@ mod tests {
                         z: Some(0),
                         loose: None,
                         shelf: None,
+                        term_id: None,
                     },
                     Tile {
                         kind: "doc".into(),
@@ -680,6 +740,7 @@ mod tests {
                         z: Some(1),
                         loose: Some(true),
                         shelf: None,
+                        term_id: None,
                     },
                     // A shelf doc tile: kind "doc", shelf:true, no geometry.
                     Tile {
@@ -692,6 +753,7 @@ mod tests {
                         z: None,
                         loose: Some(true),
                         shelf: Some(true),
+                        term_id: None,
                     },
                 ],
                 board: Some(BoardViewport { zoom: 0.82, cx: 640.0, cy: 360.0 }),

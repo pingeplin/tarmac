@@ -71,7 +71,37 @@ final class BoardPersistenceTests: XCTestCase {
             XCTAssertNil(tile.w)
             XCTAssertNil(tile.h)
             XCTAssertNil(tile.z)
+            // v4 Phase 5b: a legacy term/doc tile carries no term_id.
+            XCTAssertNil(tile.termID)
         }
+    }
+
+    // MARK: - v4 Phase 5b: multiple terminal cards persist distinct positions
+
+    /// A layout carrying two terminal tiles with distinct `term_id`s (plus a doc)
+    /// survives encode → decode with both ids preserved, distinct, and in order —
+    /// the persistence half of "multiple terminal cards" (the wire half of the
+    /// daemon `set_tiles` dedup-by-term_id). The `term_id` key is emitted only on
+    /// term tiles; the doc tile carries none.
+    func testMultipleTerminalTilesRoundTripWithDistinctTermIDs() throws {
+        let message = Message.layout(
+            dock: ["/repo/plan.md"],
+            tiles: [
+                LayoutTile(kind: "term", x: 80, y: 80, w: 470, h: 330, z: 0, termID: "t1"),
+                LayoutTile(kind: "term", x: 600, y: 80, w: 470, h: 330, z: 1, termID: "t2"),
+                LayoutTile(kind: "doc", path: "/repo/plan.md", x: 1126, y: 80, w: 392, h: 310, z: 2),
+            ],
+            board: BoardViewport(zoom: 1.0, cx: 0, cy: 0)
+        )
+        let decoded = try Message.decode(payload: message.encodedPayload())
+        XCTAssertEqual(decoded, message)
+
+        guard case .layout(_, let tiles, _) = decoded else { return XCTFail("not a layout") }
+        XCTAssertEqual(tiles.count, 3)
+        XCTAssertEqual(tiles[0].termID, "t1")
+        XCTAssertEqual(tiles[1].termID, "t2")
+        XCTAssertNotEqual(tiles[0].termID, tiles[1].termID)
+        XCTAssertNil(tiles[2].termID, "a doc tile carries no term_id")
     }
 
     // MARK: - World↔view transform (crib §5)
