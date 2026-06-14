@@ -279,7 +279,13 @@ final class AppController {
         }
 
         escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            // Only the four "intent" modifiers. macOS sets .function + .numericPad
+            // on arrow keys, so masking with the full .deviceIndependentFlagsMask
+            // made `mods == [.control, .command]` impossible for ⌃⌘→ (its raw mods
+            // are [.control, .command, .function, .numericPad]) — the cycle key
+            // silently never fired. Masking to these four also drops .capsLock,
+            // so the no-modifier / single-modifier checks below work with caps on.
+            let mods = event.modifierFlags.intersection([.control, .command, .option, .shift])
             let isEsc = event.keyCode == 53
             // Bare Return (no modifiers) toggles the dock / flies; ⌘⏎ is the
             // peek-pin menu key equivalent and is consumed before this monitor.
