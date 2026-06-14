@@ -374,23 +374,8 @@ final class AppController {
             boardMetas = boards
             activeBoardID = active
             refreshStrips()
-        case .restore(let docs, let tiles, let board, _):
-            // P2 crude multi-board: only the boot restore drives the single
-            // BoardView. A later restore (from a board switch/create) is
-            // acknowledged with a notice — the real per-board re-render is P3.
-            if didInitialRestore {
-                feedNotice("→ board \(activeBoardID): \(docs.count) docs · \(tiles.count) tiles (full switch lands in P3)")
-                return
-            }
-            didInitialRestore = true
-            renderedBoardID = activeBoardID
-            store.applyRestore(docs)
-            // Seed provenance from the restored doc entries (term_id owner).
-            for doc in docs {
-                if let termID = doc.termID { docOwner[doc.path] = termID }
-            }
-            applyRestoredLayout(tiles: tiles, board: board)
-            refreshStrips()
+        case .restore(let docs, let tiles, let board, let restoredBoardID):
+            applyRestore(docs: docs, tiles: tiles, viewport: board, boardID: restoredBoardID)
         case .output(let termID, let bytes):
             // Route to the owning board's session (which may be backgrounded):
             // feeding a detached SwiftTerm view still advances its buffer, so a
@@ -914,6 +899,29 @@ final class AppController {
     }
 
     // MARK: - Board layout (restore + persistence)
+
+    /// Applies a daemon `restore` to the board it is stamped for. The daemon
+    /// sends a restore only for its active board, and the `board_list` that sets
+    /// `activeBoardID` always precedes it, so the restore's `board_id` matches
+    /// the active board; a restore for any other board is stale (it arrived after
+    /// a later switch) and is dropped (restore-ordering guard). A board that has
+    /// already taken its first restore is not rebuilt — that would tear down its
+    /// doc cards and respawn its live terminals; the switch path re-mounts the
+    /// existing view instead (Step 9). `board_id` absent ⇒ board-0 (legacy).
+    private func applyRestore(docs: [RestoreDoc], tiles: [LayoutTile], viewport: BoardViewport?, boardID: String?) {
+        let targetID = boardID ?? Board.defaultID
+        guard targetID == activeBoardID, let board = boards[targetID] else { return }
+        guard !board.didInitialRestore else { return }
+        board.didInitialRestore = true
+        renderedBoardID = targetID
+        store.applyRestore(docs)
+        // Seed provenance from the restored doc entries (term_id owner).
+        for doc in docs {
+            if let termID = doc.termID { board.docOwner[doc.path] = termID }
+        }
+        applyRestoredLayout(tiles: tiles, board: viewport)
+        refreshStrips()
+    }
 
     /// `restore.tiles[]` → board cards + shelf chips (crib §6). A `shelf:true`
     /// doc tile becomes a shelf chip; a geometry-bearing doc tile becomes a
