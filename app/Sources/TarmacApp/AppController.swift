@@ -145,6 +145,19 @@ final class AppController {
     // Per-terminal labels / shell name / live-since now live on TerminalSession
     // (Phase 5b); see `sessions`.
 
+    // M3 P2 (crude multi-board, no chrome): the app knows the board list + the
+    // active board from `board_list`, and drives the daemon via throwaway
+    // hotkeys, but still renders a single board. The real per-board switch (a
+    // mounted BoardView + per-board sessions) lands in P3; until then a post-boot
+    // restore is acknowledged with a notice rather than a broken re-render.
+    private var boardMetas: [BoardMeta] = []
+    private var activeBoardID: String?
+    // The board the single BoardView actually shows (set at the boot restore).
+    // persistLayout targets this board; it diverges from `activeBoardID` after a
+    // crude P2 switch, which suppresses persistence until they re-converge.
+    private var renderedBoardID: String?
+    private var didInitialRestore = false
+
     // MARK: - Board placement rule (crib §4/§5)
     //
     // World-frame defaults for fresh placement and the M1→v4 restore scatter.
@@ -226,6 +239,11 @@ final class AppController {
             let isOptTab = event.keyCode == 48 && mods == .option
             // ⌘T (T = keyCode 17) spawns a new terminal card (Phase 5b).
             let isCmdT = event.keyCode == 17 && mods == .command
+            // M3 P2 throwaway hotkeys (replaced by the ⌘K switcher in P4):
+            // ⌃⌘N (N = 45) creates a board; ⌃⌘→ (Right = 124) switches to the
+            // next board. Chosen to not collide with shell or existing bindings.
+            let isCtrlCmdN = event.keyCode == 45 && mods == [.control, .command]
+            let isCtrlCmdRight = event.keyCode == 124 && mods == [.control, .command]
             let swallowed = MainActor.assumeIsolated { () -> Bool in
                 guard let self else { return false }
                 // Every keystroke passes through here before its view handles it,
@@ -235,6 +253,14 @@ final class AppController {
                 self.reconcilePrimeToFocus()
                 if isCmdT {
                     self.spawnNewTerminal()
+                    return true
+                }
+                if isCtrlCmdN {
+                    self.client.boardCreate()
+                    return true
+                }
+                if isCtrlCmdRight {
+                    self.switchToNextBoard()
                     return true
                 }
                 if isOptTab {
@@ -318,7 +344,22 @@ final class AppController {
         case .helloOK:
             connected = true
             maybeSpawn()
+        case .boardList(let boards, let active):
+            // P2: track the boards + active. P4 renders the ⌘K switcher from this.
+            boardMetas = boards
+            activeBoardID = active
+            refreshStrips()
         case .restore(let docs, let tiles, let board):
+            // P2 crude multi-board: only the boot restore drives the single
+            // BoardView. A later restore (from a board switch/create) is
+            // acknowledged with a notice — the real per-board re-render is P3.
+            if didInitialRestore {
+                let board = activeBoardID ?? "?"
+                feedNotice("→ board \(board): \(docs.count) docs · \(tiles.count) tiles (full switch lands in P3)")
+                return
+            }
+            didInitialRestore = true
+            renderedBoardID = activeBoardID
             store.applyRestore(docs)
             // Seed provenance from the restored doc entries (term_id owner).
             for doc in docs {
@@ -385,6 +426,19 @@ final class AppController {
     private func showConnectFailure(_ detail: String) {
         feedNotice(detail)
         rootView.toasts.show(title: "cannot reach tarmacd", body: "see terminal for details")
+    }
+
+    // M3 P2 (throwaway): switch to the next board in display order (wrapping).
+    // The daemon replies with board_list + that board's restore. Replaced by the
+    // ⌘K switcher in P4.
+    private func switchToNextBoard() {
+        guard boardMetas.count > 1 else {
+            feedNotice("only one board — ⌃⌘N creates another")
+            return
+        }
+        let idx = boardMetas.firstIndex { $0.boardID == activeBoardID } ?? 0
+        let next = boardMetas[(idx + 1) % boardMetas.count]
+        client.boardSwitch(boardID: next.boardID)
     }
 
     // MARK: - Terminal session
@@ -1091,6 +1145,15 @@ final class AppController {
     /// cy}`. Fired on every committed board move/resize/zoom/pan, and on
     /// shelf/gravity changes.
     private func persistLayout() {
+        // M3 P2: the app renders a single board and sends layout without a
+        // board_id, so the daemon routes it to its active board. After a crude
+        // switch the daemon's active diverges from the board still on screen —
+        // persisting then would write the visible board's frames into the wrong
+        // board. Suppress until they re-converge (a real per-board layout, with
+        // an explicit board_id, lands in P3).
+        if let rendered = renderedBoardID, let active = activeBoardID, rendered != active {
+            return
+        }
         var tiles: [LayoutTile] = []
         // Every terminal card (in spawn order, live and dead) with its term_id —
         // the daemon dedups by term_id and keeps all distinct positions.

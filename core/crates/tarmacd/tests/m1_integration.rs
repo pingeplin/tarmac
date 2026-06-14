@@ -39,7 +39,7 @@ fn doc_tile(path: &str) -> Tile {
 
 fn cli_open(sock: &Path, path: &str) {
     let mut cli = Conn::hello(sock, "cli");
-    cli.send(&Msg::Open { path: path.into(), term_id: None });
+    cli.send(&Msg::Open { path: path.into(), term_id: None, board_id: None });
     let reply = cli.recv(Instant::now() + LONG, "ack");
     assert!(matches!(reply, Msg::Ack), "expected ack, got {reply:?}");
 }
@@ -117,7 +117,7 @@ fn open_carries_repo_read_and_recency() {
 
     // --- user open of a new doc never marks it unread ---
     let user_doc = write_doc(&daemon.dir.join("plain/mine.md"), "me\n");
-    app.send(&Msg::Open { path: user_doc.clone(), term_id: None });
+    app.send(&Msg::Open { path: user_doc.clone(), term_id: None, board_id: None });
     let entry = recv_doc_opened(&mut app);
     assert_eq!(entry.via, "user");
     assert!(entry.read, "user opens never clear read");
@@ -140,7 +140,7 @@ fn doc_read_flips_flag_and_shows_in_fresh_restore() {
     app.send(&Msg::DocRead { path: a.clone() });
     app.send(&Msg::DocRead { path: a.clone() });
     let b = write_doc(&daemon.dir.join("b.md"), "b\n");
-    app.send(&Msg::Open { path: b.clone(), term_id: None });
+    app.send(&Msg::Open { path: b.clone(), term_id: None, board_id: None });
     let entry = recv_doc_opened(&mut app);
     assert_eq!(entry.path, b);
 
@@ -310,7 +310,7 @@ fn shelf_loose_and_term_id_survive_daemon_restart() {
     let a = write_doc(&repo_dir.join("a.md"), "a\n");
 
     // Open the doc with a calling term_id (provenance owner).
-    app.send(&Msg::Open { path: a.clone(), term_id: Some("term-7".into()) });
+    app.send(&Msg::Open { path: a.clone(), term_id: Some("term-7".into()), board_id: None });
     let opened = recv_doc_opened(&mut app);
     assert_eq!(opened.term_id.as_deref(), Some("term-7"), "open must carry the term_id");
 

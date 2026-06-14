@@ -131,6 +131,17 @@ public final class DaemonClient: @unchecked Sendable {
         send(.layout(dock: dock, tiles: tiles, board: board))
     }
 
+    /// M3: make `boardID` the active board (the daemon replies with board_list +
+    /// that board's restore).
+    public func boardSwitch(boardID: String) {
+        send(.boardSwitch(boardID: boardID))
+    }
+
+    /// M3: mint a fresh board (the daemon assigns the slug id and makes it active).
+    public func boardCreate() {
+        send(.boardCreate)
+    }
+
     // MARK: - Internals
 
     private func connectOnce() throws {

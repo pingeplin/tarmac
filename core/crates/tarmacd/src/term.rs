@@ -207,6 +207,9 @@ async fn pump(
     if daemon.terms.lock().await.remove(&term_id).is_none() {
         warn!("term {term_id} missing from registry at exit");
     }
+    // M3: drop the term -> board ownership entry (board-scoped provenance ends
+    // with the term). The app turns the exit into a dead card per its own state.
+    daemon.term_boards.lock().await.remove(&term_id);
     daemon.push(Msg::Exit { term_id, code }).await;
 }
 

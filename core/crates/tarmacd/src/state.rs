@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache, new_debouncer};
-use tarmac_protocol::{BoardViewport, DocEntry, Msg, Tile};
+use tarmac_protocol::{BoardMeta, BoardViewport, DocEntry, Msg, Tile};
 use tokio::sync::{Mutex, Notify, mpsc};
 use tokio_util::sync::CancellationToken;
 
@@ -228,6 +228,65 @@ impl Boards {
     pub fn iter(&self) -> impl Iterator<Item = &Board> {
         self.boards.iter()
     }
+
+    pub fn contains(&self, id: &str) -> bool {
+        self.boards.iter().any(|b| b.id == id)
+    }
+
+    // M3 board_list: every board's identity in display order + the active id.
+    pub fn board_list_msg(&self) -> Msg {
+        Msg::BoardList {
+            boards: self
+                .boards
+                .iter()
+                .map(|b| BoardMeta { board_id: b.id.clone(), name: b.name.clone() })
+                .collect(),
+            active: self.active.clone(),
+        }
+    }
+
+    // Restore for the active board (stamped with its id so the app binds it
+    // unambiguously even across rapid switches).
+    pub fn active_restore_msg(&self) -> Msg {
+        self.restore_msg_for(&self.active.clone()).expect("active board present")
+    }
+
+    // Restore for a specific board, stamped with its id; None if no such board.
+    pub fn restore_msg_for(&self, id: &str) -> Option<Msg> {
+        let b = self.boards.iter().find(|b| b.id == id)?;
+        match b.registry.restore_msg() {
+            Msg::Restore { docs, tiles, board, .. } => {
+                Some(Msg::Restore { docs, tiles, board, board_id: Some(b.id.clone()) })
+            }
+            _ => unreachable!("restore_msg always yields Restore"),
+        }
+    }
+
+    // Make `id` active; false (no-op) if no such board.
+    pub fn set_active(&mut self, id: &str) -> bool {
+        if self.contains(id) {
+            self.active = id.to_string();
+            true
+        } else {
+            false
+        }
+    }
+
+    // Mint a fresh board (slug `board-N`, N one past the max existing index) and
+    // make it active. Returns the new board's id.
+    pub fn create(&mut self) -> BoardId {
+        let next = self
+            .boards
+            .iter()
+            .filter_map(|b| b.id.strip_prefix("board-").and_then(|s| s.parse::<usize>().ok()))
+            .max()
+            .map(|m| m + 1)
+            .unwrap_or(self.boards.len());
+        let id = format!("board-{next}");
+        self.boards.push(Board::new(id.clone(), Registry::empty()));
+        self.active = id.clone();
+        id
+    }
 }
 
 pub struct AppSlot {
@@ -247,6 +306,10 @@ pub struct Daemon {
     // global, keyed by their globally-unique term_id (board-agnostic).
     pub boards: Mutex<Boards>,
     pub terms: Mutex<HashMap<String, Arc<crate::term::TermHandle>>>,
+    // M3: which board each terminal belongs to (set at spawn). Lets `tarmac
+    // open` from a backgrounded board's term land its doc on the right board,
+    // and (P5) scopes per-board teardown/restore. Keyed by the global term_id.
+    pub term_boards: Mutex<HashMap<String, BoardId>>,
     watcher: std::sync::Mutex<WatcherState>,
     next_generation: AtomicU64,
     dirty: Notify,
@@ -272,6 +335,7 @@ impl Daemon {
             app: Mutex::new(None),
             boards: Mutex::new(boards),
             terms: Mutex::new(HashMap::new()),
+            term_boards: Mutex::new(HashMap::new()),
             watcher: std::sync::Mutex::new(WatcherState {
                 debouncer,
                 watched_dirs: HashSet::new(),

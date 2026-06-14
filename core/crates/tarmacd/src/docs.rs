@@ -43,12 +43,15 @@ fn now_ms() -> u64 {
 }
 
 // Single code path for CLI ("cli") and app ("user") opens. `term_id` is the
-// calling terminal card (v4 Phase 3 provenance); None when unknown.
+// calling terminal card (v4 Phase 3 provenance); None when unknown. `board_id`
+// (M3) targets a specific board; absent ⇒ the board owning the calling term,
+// else the active board.
 pub async fn handle_open(
     daemon: &Arc<Daemon>,
     raw_path: &str,
     via: &str,
     term_id: Option<String>,
+    board_id: Option<String>,
 ) -> Result<(), String> {
     let p = Path::new(raw_path);
     if !p.is_absolute() {
@@ -70,13 +73,27 @@ pub async fn handle_open(
         .ensure_watched(parent)
         .map_err(|e| format!("cannot watch {}: {e}", parent.display()))?;
 
+    // Resolve the board the doc lands on: an explicit board_id wins, else the
+    // board owning the calling term, else the active board.
+    let target = match board_id {
+        Some(id) => id,
+        None => {
+            let by_term = match &term_id {
+                Some(t) => daemon.term_boards.lock().await.get(t).cloned(),
+                None => None,
+            };
+            match by_term {
+                Some(b) => b,
+                None => daemon.boards.lock().await.active_id().to_string(),
+            }
+        }
+    };
+
     // Upsert before pushing so the doc_opened entry reflects the post-open
     // state (docs/protocol.md "doc_opened").
     let entry = {
-        // P1: the active board owns opened docs; P2 routes by the caller's
-        // term_id → board so a `tarmac open` lands on the calling board.
         let mut boards = daemon.boards.lock().await;
-        let reg = boards.active_registry_mut();
+        let reg = boards.registry_for_mut(&target);
         match reg.docs.get_mut(&canon) {
             Some(info) => {
                 info.via = via.to_owned();

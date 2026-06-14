@@ -308,6 +308,43 @@ final class ConformanceTests: XCTestCase {
         let bell = Message.bell(termID: "t1")
         XCTAssertEqual(try Message.decode(payload: bell.encodedPayload()), bell)
     }
+
+    // M3 ("strips = boards"): the same board_list wire vector the Rust
+    // conformance test pins (cross-language agreement); a name-less board omits
+    // the key and decodes nil; board_switch / board_create round-trip.
+    func testM3BoardMessages() throws {
+        let listBytes = hexData("""
+            83 a1 74 aa 62 6f 61 72 64 5f 6c 69 73 74
+            a6 62 6f 61 72 64 73 92
+            81 a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 30
+            82 a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 31
+            a4 6e 61 6d 65 a5 69 6e 66 72 61
+            a6 61 63 74 69 76 65 a7 62 6f 61 72 64 2d 31
+            """)
+        XCTAssertEqual(
+            try Message.decode(payload: listBytes),
+            .boardList(
+                boards: [
+                    BoardMeta(boardID: "board-0", name: nil),
+                    BoardMeta(boardID: "board-1", name: "infra"),
+                ],
+                active: "board-1"
+            )
+        )
+
+        let sw = Message.boardSwitch(boardID: "board-2")
+        XCTAssertEqual(try Message.decode(payload: sw.encodedPayload()), sw)
+        XCTAssertEqual(try Message.decode(payload: Message.boardCreate.encodedPayload()), .boardCreate)
+        // A name-less board emits no `name` key.
+        let listOut = try MsgPack.decode(
+            Message.boardList(boards: [BoardMeta(boardID: "board-0")], active: "board-0").encodedPayload()
+        )
+        if case .array(let arr)? = listOut["boards"], case .map(let m0)? = arr.first {
+            XCTAssertNil(m0["name"], "a name-less board omits the name key")
+        } else {
+            XCTFail("board_list did not encode a boards array")
+        }
+    }
 }
 
 final class MessageDecodingRulesTests: XCTestCase {

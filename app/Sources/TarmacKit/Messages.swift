@@ -105,6 +105,19 @@ public struct BoardViewport: Equatable, Sendable {
     }
 }
 
+/// M3: one board's identity for the boards switcher (`board_list`). `name` is
+/// the user-given display name (nil until named — manual naming only); the
+/// switcher falls back to the slug `boardID`. Display order is the array order.
+public struct BoardMeta: Equatable, Sendable {
+    public var boardID: String
+    public var name: String?
+
+    public init(boardID: String, name: String? = nil) {
+        self.boardID = boardID
+        self.name = name
+    }
+}
+
 /// Every message in docs/protocol.md (v1, M0 + M1 subsets).
 public enum Message: Equatable, Sendable {
     case hello(role: String, v: Int)
@@ -126,6 +139,12 @@ public enum Message: Equatable, Sendable {
     /// foreground process name on a terminal; `bell` is a seen BEL (0x07).
     case termProc(termID: String, name: String, pid: Int?)
     case bell(termID: String)
+    /// M3 ("strips = boards"; additive types). `boardList` (daemon → app) is the
+    /// full set of boards + the active one; `boardSwitch` / `boardCreate`
+    /// (app → daemon) drive the switcher.
+    case boardList(boards: [BoardMeta], active: String)
+    case boardSwitch(boardID: String)
+    case boardCreate
     /// Unknown message types are ignored per the protocol (log and continue).
     case unknown(type: String)
 }
@@ -223,6 +242,20 @@ public extension Message {
             )
         case "bell":
             return .bell(termID: try req("term_id", \.stringValue))
+        case "board_list":
+            let boards = try req("boards", \.arrayValue).map { entry -> BoardMeta in
+                guard let m = entry.mapValue else { throw MessageError.badField("boards") }
+                guard let id = m["board_id"], !id.isNil, let boardID = id.stringValue else {
+                    throw MessageError.missingField("boards.board_id")
+                }
+                let name = m["name"].flatMap { $0.isNil ? nil : $0.stringValue }
+                return BoardMeta(boardID: boardID, name: name)
+            }
+            return .boardList(boards: boards, active: try req("active", \.stringValue))
+        case "board_switch":
+            return .boardSwitch(boardID: try req("board_id", \.stringValue))
+        case "board_create":
+            return .boardCreate
         default:
             return .unknown(type: t)
         }
@@ -374,6 +407,20 @@ public extension Message {
             return .map(map)
         case .bell(let termID):
             return .map(["t": .string("bell"), "term_id": .string(termID)])
+        case .boardList(let boards, let active):
+            return .map([
+                "t": .string("board_list"),
+                "boards": .array(boards.map { meta in
+                    var m: [String: MsgPackValue] = ["board_id": .string(meta.boardID)]
+                    if let name = meta.name { m["name"] = .string(name) }
+                    return .map(m)
+                }),
+                "active": .string(active),
+            ])
+        case .boardSwitch(let boardID):
+            return .map(["t": .string("board_switch"), "board_id": .string(boardID)])
+        case .boardCreate:
+            return .map(["t": .string("board_create")])
         case .unknown(let type):
             return .map(["t": .string(type)])
         }

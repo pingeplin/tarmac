@@ -29,6 +29,11 @@ pub enum Msg {
         // TARMAC_TERM_ID in its pty env; the app open arm passes None for now.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         term_id: Option<String>,
+        // M3 additive key (optional; missing => the caller term's board, else
+        // active): the board the opened doc should land on. Usually derived from
+        // term_id daemon-side, but allowed on the wire for an explicit target.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        board_id: Option<String>,
     },
     DocRead {
         path: String,
@@ -64,6 +69,12 @@ pub enum Msg {
         rows: u16,
         cwd: Option<String>,
         cmd: Option<Vec<String>>,
+        // M3 additive key (optional; missing => board-0 / active): the board the
+        // new terminal card belongs to. The daemon records term_id -> board_id
+        // at spawn so restore, teardown and `tarmac open` provenance scope per
+        // board even when the target board is not the active one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        board_id: Option<String>,
     },
     Input {
         term_id: String,
@@ -100,9 +111,36 @@ pub enum Msg {
     Bell {
         term_id: String,
     },
+    // M3 ("strips = boards"; additive message types). A receiver that does not
+    // know them ignores them (Unknown), so they are safe on the wire.
+    //
+    // BoardList (daemon -> app): the full set of boards in display order plus
+    // the active one. Pushed right after hello_ok and on every board change.
+    BoardList {
+        boards: Vec<BoardMeta>,
+        active: String,
+    },
+    // BoardSwitch (app -> daemon): make `board_id` active; the daemon replies
+    // with that board's restore.
+    BoardSwitch {
+        board_id: String,
+    },
+    // BoardCreate (app -> daemon): mint a fresh board (the daemon assigns the
+    // slug id) and re-emit board_list. P5 adds rename/delete.
+    BoardCreate,
     // Unknown message types are ignored, not fatal (protocol rule).
     #[serde(other)]
     Unknown,
+}
+
+/// M3: one board's identity for the boards switcher (`board_list`). `name` is
+/// the user-given display name (absent until named — manual naming only); the
+/// switcher falls back to the slug `board_id`. Display order is the vec order.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct BoardMeta {
+    pub board_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -539,7 +577,7 @@ mod tests {
         assert_eq!(roundtrip(&Msg::DocOpened(entry.clone())), Msg::DocOpened(entry));
 
         // An open carrying the calling term_id.
-        let open = Msg::Open { path: "/a.md".into(), term_id: Some("term-42".into()) };
+        let open = Msg::Open { path: "/a.md".into(), term_id: Some("term-42".into()), board_id: None };
         assert_eq!(roundtrip(&open), open);
     }
 
@@ -646,6 +684,57 @@ mod tests {
         assert_eq!(encode(&none_keyed).unwrap(), bytes);
     }
 
+    // M3 P2: a board_list decodes from the wire (a board with no name omits the
+    // key and decodes None); board_switch / board_create round-trip.
+    #[test]
+    fn m3_board_list_decodes_from_wire() {
+        // {t:"board_list", boards:[{board_id:"board-0"},{board_id:"board-1",
+        //  name:"infra"}], active:"board-1"}
+        let bytes = unhex(
+            "83 a1 74 aa 62 6f 61 72 64 5f 6c 69 73 74 \
+             a6 62 6f 61 72 64 73 92 \
+             81 a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 30 \
+             82 a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 31 \
+             a4 6e 61 6d 65 a5 69 6e 66 72 61 \
+             a6 61 63 74 69 76 65 a7 62 6f 61 72 64 2d 31",
+        );
+        assert_eq!(
+            decode(&bytes).unwrap(),
+            Msg::BoardList {
+                boards: vec![
+                    BoardMeta { board_id: "board-0".into(), name: None },
+                    BoardMeta { board_id: "board-1".into(), name: Some("infra".into()) },
+                ],
+                active: "board-1".into(),
+            }
+        );
+
+        let sw = Msg::BoardSwitch { board_id: "board-2".into() };
+        assert_eq!(roundtrip(&sw), sw);
+        assert_eq!(roundtrip(&Msg::BoardCreate), Msg::BoardCreate);
+    }
+
+    // M3 P2: a keyless spawn_term / open (pre-M3 sender) decodes board_id None.
+    #[test]
+    fn m3_keyless_spawn_and_open_decode_board_id_none() {
+        // {t:"spawn_term", term_id:"t1", cols:80, rows:24} — no board_id key.
+        let spawn = unhex(
+            "84 a1 74 aa 73 70 61 77 6e 5f 74 65 72 6d \
+             a7 74 65 72 6d 5f 69 64 a2 74 31 a4 63 6f 6c 73 50 a4 72 6f 77 73 18",
+        );
+        assert_eq!(
+            decode(&spawn).unwrap(),
+            Msg::SpawnTerm { term_id: "t1".into(), cols: 80, rows: 24, cwd: None, cmd: None, board_id: None }
+        );
+
+        // {t:"open", path:"/a.md"} — no term_id / board_id keys.
+        let open = unhex("82 a1 74 a4 6f 70 65 6e a4 70 61 74 68 a5 2f 61 2e 6d 64");
+        assert_eq!(
+            decode(&open).unwrap(),
+            Msg::Open { path: "/a.md".into(), term_id: None, board_id: None }
+        );
+    }
+
     // Key-less M1 shapes still decode to None for the Phase 3 fields (additive
     // guarantee): a tile with no loose/shelf, an entry with no term_id, an open
     // with no term_id.
@@ -655,7 +744,7 @@ mod tests {
         let open_bytes = unhex("82 a1 74 a4 6f 70 65 6e a4 70 61 74 68 a5 2f 61 2e 6d 64");
         assert_eq!(
             decode(&open_bytes).unwrap(),
-            Msg::Open { path: "/a.md".into(), term_id: None }
+            Msg::Open { path: "/a.md".into(), term_id: None, board_id: None }
         );
 
         // {t:"doc_opened", path:"/a.md", via:"cli"} — no term_id key.
@@ -726,7 +815,7 @@ mod tests {
         );
         assert_eq!(
             decode(&bytes).unwrap(),
-            Msg::SpawnTerm { term_id: "t1".into(), cols: 80, rows: 24, cwd: None, cmd: None }
+            Msg::SpawnTerm { term_id: "t1".into(), cols: 80, rows: 24, cwd: None, cmd: None, board_id: None }
         );
     }
 
@@ -740,7 +829,7 @@ mod tests {
         );
         assert_eq!(
             decode(&bytes).unwrap(),
-            Msg::SpawnTerm { term_id: "t1".into(), cols: 80, rows: 24, cwd: None, cmd: None }
+            Msg::SpawnTerm { term_id: "t1".into(), cols: 80, rows: 24, cwd: None, cmd: None, board_id: None }
         );
     }
 
@@ -774,8 +863,8 @@ mod tests {
             Msg::HelloOk { v: 1 },
             Msg::Ack,
             Msg::Err { msg: "boom".into() },
-            Msg::Open { path: "/tmp/a.md".into(), term_id: None },
-            Msg::Open { path: "/tmp/a.md".into(), term_id: Some("t1".into()) },
+            Msg::Open { path: "/tmp/a.md".into(), term_id: None, board_id: None },
+            Msg::Open { path: "/tmp/a.md".into(), term_id: Some("t1".into()), board_id: None },
             Msg::DocRead { path: "/tmp/a.md".into() },
             Msg::Layout {
                 dock: vec!["/a.md".into(), "/b.md".into()],
@@ -854,8 +943,9 @@ mod tests {
                 rows: 40,
                 cwd: Some("/tmp".into()),
                 cmd: Some(vec!["/bin/echo".into(), "hi".into()]),
+                board_id: None,
             },
-            Msg::SpawnTerm { term_id: "t2".into(), cols: 80, rows: 24, cwd: None, cmd: None },
+            Msg::SpawnTerm { term_id: "t2".into(), cols: 80, rows: 24, cwd: None, cmd: None, board_id: None },
             Msg::Input { term_id: "t1".into(), bytes: vec![0u8; 64 * 1024] },
             Msg::Output { term_id: "t1".into(), bytes: b"hello\r\n".to_vec() },
             Msg::Resize { term_id: "t1".into(), cols: 80, rows: 24 },
@@ -877,6 +967,26 @@ mod tests {
             Msg::TermProc { term_id: "t1".into(), name: "zsh".into(), pid: Some(4242) },
             Msg::TermProc { term_id: "t1".into(), name: "vim".into(), pid: None },
             Msg::Bell { term_id: "t1".into() },
+            // M3 board CRUD/list types.
+            Msg::BoardList {
+                boards: vec![
+                    BoardMeta { board_id: "board-0".into(), name: None },
+                    BoardMeta { board_id: "board-1".into(), name: Some("infra".into()) },
+                ],
+                active: "board-1".into(),
+            },
+            Msg::BoardSwitch { board_id: "board-1".into() },
+            Msg::BoardCreate,
+            // M3 board_id on spawn/open.
+            Msg::SpawnTerm {
+                term_id: "t9".into(),
+                cols: 80,
+                rows: 24,
+                cwd: None,
+                cmd: None,
+                board_id: Some("board-1".into()),
+            },
+            Msg::Open { path: "/a.md".into(), term_id: Some("t9".into()), board_id: Some("board-1".into()) },
         ];
         for m in msgs {
             assert_eq!(roundtrip(&m), m, "roundtrip failed for {m:?}");

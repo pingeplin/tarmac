@@ -26,6 +26,7 @@ fn m0_end_to_end() {
         rows: 24,
         cwd: None,
         cmd: Some(vec!["/bin/echo".into(), "tarmac-test-ok".into()]),
+        board_id: None,
     });
     let mut collected = Vec::new();
     let deadline = Instant::now() + LONG;
@@ -56,7 +57,7 @@ fn m0_end_to_end() {
     let canon_str = canon.to_string_lossy().into_owned();
 
     let mut cli = Conn::hello(&daemon.sock, "cli");
-    cli.send(&Msg::Open { path: canon_str.clone(), term_id: None });
+    cli.send(&Msg::Open { path: canon_str.clone(), term_id: None, board_id: None });
     let reply = cli.recv(Instant::now() + LONG, "ack");
     assert!(matches!(reply, Msg::Ack), "expected ack, got {reply:?}");
     drop(cli);
@@ -104,6 +105,7 @@ fn term_input_pty_size_and_exit_code() {
             "-c".into(),
             "stty size; read line; echo got-$line; exit 7".into(),
         ]),
+        board_id: None,
     });
 
     let mut collected = Vec::new();
@@ -137,11 +139,11 @@ fn open_errors_for_missing_or_relative_paths() {
     let daemon = TestDaemon::start();
     let mut cli = Conn::hello(&daemon.sock, "cli");
 
-    cli.send(&Msg::Open { path: daemon.dir.join("nope.md").to_string_lossy().into_owned(), term_id: None });
+    cli.send(&Msg::Open { path: daemon.dir.join("nope.md").to_string_lossy().into_owned(), term_id: None, board_id: None });
     let reply = cli.recv(Instant::now() + LONG, "err for missing file");
     assert!(matches!(reply, Msg::Err { .. }), "expected err, got {reply:?}");
 
-    cli.send(&Msg::Open { path: "relative.md".into(), term_id: None });
+    cli.send(&Msg::Open { path: "relative.md".into(), term_id: None, board_id: None });
     let reply = cli.recv(Instant::now() + LONG, "err for relative path");
     assert!(matches!(reply, Msg::Err { .. }), "expected err, got {reply:?}");
 }
