@@ -47,7 +47,11 @@ final class BoardSwitcherView: NSView {
     private var selected = 0
 
     override var isFlipped: Bool { true }
-    override var acceptsFirstResponder: Bool { false }
+    // The controller makes the open switcher first responder so the veiled board
+    // is inert to first-responder-routed menu keys (⌘C/⌘V/⌘A). Keys are still
+    // handled by the global monitor; this view implements none, so those menu
+    // selectors no-op instead of reaching the hidden terminal.
+    override var acceptsFirstResponder: Bool { true }
 
     init() {
         super.init(frame: .zero)
@@ -92,7 +96,7 @@ final class BoardSwitcherView: NSView {
         footerLabel.textColor = Theme.faint
         footerLabel.drawsBackground = false
         footerLabel.isBezeled = false
-        footerLabel.stringValue = "⏎ open board      ⌘1-9 jump      n new board"
+        footerLabel.stringValue = "⏎ open board      ⌘1-9 jump      ⌘N new board"
         panel.addSubview(footerLabel)
 
         isHidden = true
@@ -217,7 +221,11 @@ final class BoardSwitcherRow: NSView {
         let metaFont = Theme.mono(10)
         let m = NSMutableAttributedString()
         if vm.row.running > 0 {
+            // Cyan ⠧ spinner — a board with a live agent.
             m.append(NSAttributedString(string: "⠧ ", attributes: [.font: metaFont, .foregroundColor: Theme.agent]))
+        } else if vm.row.bell > 0 {
+            // Amber ● — a board that rang a bell but has no running agent (B5).
+            m.append(NSAttributedString(string: "● ", attributes: [.font: metaFont, .foregroundColor: Theme.amber]))
         }
         m.append(NSAttributedString(string: vm.row.meta, attributes: [.font: metaFont, .foregroundColor: Theme.faint]))
         metaLabel.attributedStringValue = m
@@ -295,6 +303,7 @@ final class BoardThumbView: NSView {
         let mapping = BoardWayfinding.minimapMapping(worldBox: box, minimapSize: bounds.size, pad: Self.pad)
         for item in items {
             let r = mapping.toMinimap(item.worldRect)
+            let path = NSBezierPath(roundedRect: r, xRadius: 1.5, yRadius: 1.5)
             let color: NSColor
             switch item.signal {
             case .live: color = Theme.agent.withAlphaComponent(0.55)
@@ -302,7 +311,14 @@ final class BoardThumbView: NSView {
             case .none: color = Theme.bg3
             }
             color.setFill()
-            NSBezierPath(roundedRect: r, xRadius: 1.5, yRadius: 1.5).fill()
+            path.fill()
+            // Neutral (doc / non-live) tiles get a 0.5px hairline so stacked docs
+            // stay discrete (board.css `.tm-bthumb i`; live/bell are borderless).
+            if case .none = item.signal {
+                Theme.line.setStroke()
+                path.lineWidth = 0.5
+                path.stroke()
+            }
         }
     }
 }

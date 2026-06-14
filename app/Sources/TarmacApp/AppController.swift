@@ -524,6 +524,8 @@ final class AppController {
         }
         feedNotice("lost connection to tarmacd — \(reason)")
         rootView.toasts.show(title: "tarmacd connection lost", body: reason)
+        // Every board's glyph goes faint (no live pty); refresh an open switcher.
+        refreshSwitcherIfOpen()
     }
 
     private func showConnectFailure(_ detail: String) {
@@ -545,16 +547,32 @@ final class AppController {
     private var switcherRows: [SwitcherRowVM] = []
 
     /// Opens the switcher: reset the filter, build the rows, default-select the
-    /// active board's row, render, and veil the board.
+    /// active board's row, veil the board, and render. Takes first responder so
+    /// the board behind is inert to first-responder-routed menu keys (⌘C/⌘V/⌘A),
+    /// which are dispatched ahead of the global key monitor.
     private func openSwitcher() {
         guard !switcherOpen else { return }
         switcherOpen = true
         switcherFilter = ""
         rebuildSwitcherRows()
         switcherSelected = switcherRows.firstIndex { $0.row.isActive } ?? 0
-        renderSwitcher()
+        // Make the overlay visible and lay it out BEFORE rendering, so the row's
+        // scroll-selected-into-view runs against the real panel bounds (with 16
+        // boards the active row can be far down the scrolled list).
         rootView.setSwitcherVisible(true)
+        rootView.layoutSubtreeIfNeeded()
+        renderSwitcher()
+        window?.makeFirstResponder(rootView.boardSwitcher)
         setTitlebarDim(true)
+    }
+
+    /// Re-renders an open switcher after a live signal change (bell / agent
+    /// start-stop / exit / disconnect) so its counts, thumbnail colors, and live
+    /// glyph track reality while the panel is up. No-op when closed.
+    private func refreshSwitcherIfOpen() {
+        guard switcherOpen else { return }
+        rebuildSwitcherRows()
+        renderSwitcher()
     }
 
     /// Closes the switcher. `restoreFocus` puts first responder back on the active
@@ -586,25 +604,33 @@ final class AppController {
     /// signals (accurate for the active + any visited board — their cards + live
     /// SwiftTerm views stay alive while backgrounded). A never-visited board has
     /// no app-side view yet, so it reports 0 cards / not-live until first restore.
+    /// If `board_list` has not arrived yet (the connect window), the active board
+    /// — always minted + mounted locally — is synthesized so the switcher never
+    /// opens onto an empty list.
     private func boardSummaries() -> [BoardSwitcher.BoardSummary] {
-        boardMetas.map { meta in
-            var running = 0, bell = 0, cards = 0, live = false
-            if let board = boards[meta.boardID] {
-                for card in board.view.cards.values {
-                    cards += 1
-                    switch card.signal {
-                    case .live: running += 1
-                    case .bell: bell += 1
-                    case .none: break
-                    }
-                }
-                live = board.sessions.values.contains { $0.live }
-            }
-            return BoardSwitcher.BoardSummary(
-                boardID: meta.boardID, name: meta.name,
-                running: running, bell: bell, cards: cards, isLive: live
-            )
+        var summaries = boardMetas.map { boardSummary(forBoardID: $0.boardID, name: $0.name) }
+        if !summaries.contains(where: { $0.boardID == activeBoardID }) {
+            summaries.insert(boardSummary(forBoardID: activeBoardID, name: activeBoard.name), at: 0)
         }
+        return summaries
+    }
+
+    private func boardSummary(forBoardID id: String, name: String?) -> BoardSwitcher.BoardSummary {
+        var running = 0, bell = 0, cards = 0, live = false
+        if let board = boards[id] {
+            for card in board.view.cards.values {
+                cards += 1
+                switch card.signal {
+                case .live: running += 1
+                case .bell: bell += 1
+                case .none: break
+                }
+            }
+            live = board.sessions.values.contains { $0.live }
+        }
+        return BoardSwitcher.BoardSummary(
+            boardID: id, name: name, running: running, bell: bell, cards: cards, isLive: live
+        )
     }
 
     // Key handling while the switcher is open (called from the global monitor).
@@ -621,18 +647,17 @@ final class AppController {
             switcherJump(ordinal: n)
             return true
         }
-        // ⌘N always creates a board.
+        // ⌘N creates a board. (Bare "n" would shadow the prefix filter for every
+        // board whose name starts with "n", so create is ⌘N only; the footer says
+        // so. All printable keys — including "n" — flow to the filter below.)
         if mods == .command, event.charactersIgnoringModifiers?.lowercased() == "n" {
             switcherCreate()
             return true
         }
-        // Printable typing → filter. 'n' on an empty query creates a board (B5
-        // footer "n new board"); once a query is being typed, every letter
-        // (including n) filters.
+        // Printable typing → prefix filter.
         if mods.subtracting(.shift).isEmpty,
            let chars = event.characters, chars.count == 1,
            let scalar = chars.unicodeScalars.first, scalar.value >= 0x20, scalar.value != 0x7f {
-            if chars == "n", switcherFilter.isEmpty { switcherCreate(); return true }
             switcherType(chars)
             return true
         }
@@ -783,6 +808,10 @@ final class AppController {
         }
         updatePrimacy()
         switching = false
+        // Defensive: if an arrive ever lands while the ⌘K switcher is open, keep
+        // the switcher as first responder so the veiled board can't steal the
+        // keyboard (the dock/reflow above still runs; only focus is re-asserted).
+        if switcherOpen { window?.makeFirstResponder(rootView.boardSwitcher) }
     }
 
     // MARK: - Terminal session
@@ -948,6 +977,7 @@ final class AppController {
         // unchanged by the exit (already persisted), so only the active board
         // re-persists here; the switch path persists per board.
         if isActive { persistLayout() }
+        refreshSwitcherIfOpen()
     }
 
     /// Moves `board`'s prime past the just-dead `deadID`: if it was that board's
@@ -1024,6 +1054,7 @@ final class AppController {
             guard let docCard = board.view.card(.doc(path)) else { continue }
             docCard.setOwnerChip(ownerChipLabel(for: docCard, on: board))
         }
+        refreshSwitcherIfOpen()
     }
 
     // MARK: - Phase 4 wayfinding (locard content, offscreen hints)
@@ -1224,12 +1255,14 @@ final class AppController {
         guard let board = ownerBoard(ofTerm: termID), board.sessions[termID]?.live == true else { return }
         board.view.card(.term(termID))?.setBell(true)
         board.view.signalsChanged()
+        refreshSwitcherIfOpen()
     }
 
     /// Clears the amber bell signal on the term card (next keystroke / focus).
     private func clearBell() {
         primeTermCard?.setBell(false)
         activeBoard.view.signalsChanged()
+        refreshSwitcherIfOpen()
     }
 
     // MARK: - Board layout (restore + persistence)
@@ -1685,6 +1718,10 @@ final class AppController {
     /// ⌘P: peek (or re-target) the most-recent doc — never closes an open peek
     /// (crib-state §6 supersedes M0's toggle).
     func peekRecent() {
+        // ⌘P is a menu key-equivalent dispatched ahead of the global key monitor,
+        // so it would fire under the ⌘K veil; block it while the switcher owns
+        // the screen.
+        guard !switcherOpen else { return }
         guard let path = store.mostRecentPath else {
             NSSound.beep()
             return
@@ -1720,6 +1757,7 @@ final class AppController {
     /// already placed, closing the peek either way. No 4-tile cap (the cap was a
     /// grid-template constraint — removed per Phase 2).
     func togglePinPeeked() {
+        guard !switcherOpen else { return }
         guard rootView.peekVisible, let path = peekPath else { return }
         if isOnBoard(path) {
             activeBoard.view.removeCard(id: .doc(path))
