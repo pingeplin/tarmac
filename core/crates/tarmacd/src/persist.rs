@@ -185,6 +185,21 @@ fn write_atomic(path: &Path, state: &PersistedState) -> anyhow::Result<()> {
     Ok(())
 }
 
+// Dirty-flag + short sleep coalesces mutation bursts into one write.
+pub async fn save_loop(daemon: Arc<Daemon>) {
+    loop {
+        daemon.dirty_notified().await;
+        tokio::time::sleep(SAVE_DEBOUNCE).await;
+        let state = {
+            let boards = daemon.boards.lock().await;
+            snapshot(&boards)
+        };
+        if let Err(e) = write_atomic(daemon.state_path(), &state) {
+            warn!("state save failed: {e}");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -327,20 +342,5 @@ mod tests {
         let boards = load(&corrupt);
         assert_eq!(boards.iter().count(), 1);
         assert_eq!(boards.active_id(), DEFAULT_BOARD_ID);
-    }
-}
-
-// Dirty-flag + short sleep coalesces mutation bursts into one write.
-pub async fn save_loop(daemon: Arc<Daemon>) {
-    loop {
-        daemon.dirty_notified().await;
-        tokio::time::sleep(SAVE_DEBOUNCE).await;
-        let state = {
-            let boards = daemon.boards.lock().await;
-            snapshot(&boards)
-        };
-        if let Err(e) = write_atomic(daemon.state_path(), &state) {
-            warn!("state save failed: {e}");
-        }
     }
 }

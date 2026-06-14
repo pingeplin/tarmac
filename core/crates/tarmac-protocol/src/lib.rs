@@ -58,8 +58,9 @@ pub enum Msg {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         board: Option<BoardViewport>,
         // M3 additive key (optional; missing => board-0): which board is being
-        // restored. The daemon leaves it absent for the legacy single board, so
-        // the restore frame stays byte-identical until a second board exists.
+        // restored. The daemon stamps the restored board's id (incl. board-0) so
+        // the app binds the restore unambiguously across rapid switches; restore
+        // is not one of the byte-pinned conformance vectors, so additivity holds.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         board_id: Option<String>,
     },
