@@ -90,20 +90,20 @@ final class BoardView: NSView {
 
     func card(_ id: CardID) -> CardView? { cards[id] }
 
-    /// Convenience for the (single, this phase) terminal card: ensures a `.term`
-    /// card exists at `worldFrame` and attaches the SwiftTerm view into its body.
-    /// On restore the `.term` card already exists (created at init), so its world
-    /// frame must be *re-applied* here — otherwise persisted move/resize geometry
-    /// is silently dropped and the terminal snaps back to its init frame.
-    func setTerminal(_ view: NSView, worldFrame: CardFrame) {
+    /// Ensures a terminal card for `termID` exists at `worldFrame` and attaches
+    /// the SwiftTerm view into its body (Phase 5b: one card per `term_id`). On
+    /// restore the card may already exist, so its world frame is *re-applied*
+    /// here — otherwise persisted move/resize geometry is silently dropped and
+    /// the terminal snaps back to its init frame.
+    func setTerminal(termID: String, _ view: NSView, worldFrame: CardFrame) {
         let card: CardView
-        if let existing = cards[.term] {
+        if let existing = cards[.term(termID)] {
             existing.worldFrame = worldFrame
             reproject(existing)
             restack()
             card = existing
         } else {
-            card = addCard(id: .term, worldFrame: worldFrame)
+            card = addCard(id: .term(termID), worldFrame: worldFrame)
         }
         card.attachTerminal(view)
     }

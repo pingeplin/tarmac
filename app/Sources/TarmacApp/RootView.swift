@@ -108,8 +108,8 @@ final class RootView: NSView {
     /// or nil. The controller reads this for the ⏎ key.
     var offscreenFlyTarget: CardID? { offHints.targetCardID }
 
-    func attachTerminal(_ terminal: TerminalView, worldFrame: CardFrame) {
-        board.setTerminal(terminal, worldFrame: worldFrame)
+    func attachTerminal(_ terminal: TerminalView, termID: String, worldFrame: CardFrame) {
+        board.setTerminal(termID: termID, terminal, worldFrame: worldFrame)
     }
 
     /// Shows / hides the cockpit dock pane. The controller does the SwiftTerm

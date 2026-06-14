@@ -5,10 +5,11 @@ import TarmacKit
 /// Identity of a card on the board — the v4 successor to `TileKey`
 /// (DeskGridView.swift), kept as a separate type so Phase 2c can migrate the
 /// app off the desk grid without colliding with the still-live `TileKey`.
-/// `term` is the (single, this phase) terminal card; `doc(path)` is a doc card
-/// keyed by registry path.
+/// `term(term_id)` is a terminal card keyed by its daemon `term_id` (Phase 5b:
+/// the board holds N terminal cards, one per live/dead pty); `doc(path)` is a
+/// doc card keyed by registry path.
 enum CardID: Hashable {
-    case term
+    case term(String)
     case doc(String)
 }
 
