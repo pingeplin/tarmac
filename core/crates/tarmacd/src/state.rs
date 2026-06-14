@@ -74,6 +74,10 @@ impl Registry {
             docs: self.dock.iter().filter_map(|p| self.entry(p)).collect(),
             tiles: self.tiles.clone(),
             board: self.board.clone(),
+            // M3 (additive): the legacy single board leaves board_id absent, so
+            // the restore frame stays byte-identical until a second board exists.
+            // P2 stamps the real id when restoring a switched/non-default board.
+            board_id: None,
         }
     }
 
@@ -136,6 +140,96 @@ impl Registry {
     }
 }
 
+// v4 M3 ("strips = boards"): a board is the unit that becomes N — today's
+// single implicit board is just board-0. `BoardId` keys it; `name` is the
+// user-given display name (None until named — manual naming only, decision
+// 2026-06-13), the switcher falling back to the slug id.
+pub type BoardId = String;
+pub const DEFAULT_BOARD_ID: &str = "board-0";
+
+pub struct Board {
+    pub id: BoardId,
+    pub name: Option<String>,
+    pub registry: Registry,
+}
+
+impl Board {
+    pub fn new(id: impl Into<BoardId>, registry: Registry) -> Self {
+        Board { id: id.into(), name: None, registry }
+    }
+}
+
+// The set of boards the daemon holds, in display order, with the active one.
+// One coarse lock (matches the pre-M3 single-Registry mutex; N is single-digit).
+// A `Vec` preserves ⌘1..9 order without a new dependency.
+pub struct Boards {
+    boards: Vec<Board>,
+    active: BoardId,
+}
+
+impl Boards {
+    // A fresh single board-0 (no persisted state) — the pre-M3 default.
+    pub fn single() -> Self {
+        Boards { boards: vec![Board::new(DEFAULT_BOARD_ID, Registry::empty())], active: DEFAULT_BOARD_ID.into() }
+    }
+
+    // Build from loaded boards, never board-less; an `active` that names no
+    // board falls back to the first board.
+    pub fn from_boards(boards: Vec<Board>, active: BoardId) -> Self {
+        if boards.is_empty() {
+            return Boards::single();
+        }
+        let active = if boards.iter().any(|b| b.id == active) {
+            active
+        } else {
+            boards[0].id.clone()
+        };
+        Boards { boards, active }
+    }
+
+    pub fn active_id(&self) -> &str {
+        &self.active
+    }
+
+    fn active_board(&self) -> &Board {
+        self.boards.iter().find(|b| b.id == self.active).expect("active board present")
+    }
+
+    pub fn active_registry(&self) -> &Registry {
+        &self.active_board().registry
+    }
+
+    pub fn active_registry_mut(&mut self) -> &mut Registry {
+        let active = self.active.clone();
+        self.registry_for_mut(&active)
+    }
+
+    // Registry for a board by id; an unknown id falls back to the active board.
+    // P1 holds a single board, so callers always reach board-0; P2's board CRUD
+    // makes the id authoritative.
+    pub fn registry_for_mut(&mut self, id: &str) -> &mut Registry {
+        let idx = self
+            .boards
+            .iter()
+            .position(|b| b.id == id)
+            .or_else(|| self.boards.iter().position(|b| b.id == self.active))
+            .unwrap_or(0);
+        &mut self.boards[idx].registry
+    }
+
+    // Registry for an optional wire board_id (None ⇒ active board).
+    pub fn registry_for_opt_mut(&mut self, id: Option<&str>) -> &mut Registry {
+        match id {
+            Some(id) => self.registry_for_mut(id),
+            None => self.active_registry_mut(),
+        }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Board> {
+        self.boards.iter()
+    }
+}
+
 pub struct AppSlot {
     pub generation: u64,
     pub tx: mpsc::Sender<Msg>,
@@ -149,7 +243,9 @@ pub struct WatcherState {
 
 pub struct Daemon {
     pub app: Mutex<Option<AppSlot>>,
-    pub registry: Mutex<Registry>,
+    // M3: N boards behind one coarse lock (was a single `Registry`); terms stay
+    // global, keyed by their globally-unique term_id (board-agnostic).
+    pub boards: Mutex<Boards>,
     pub terms: Mutex<HashMap<String, Arc<crate::term::TermHandle>>>,
     watcher: std::sync::Mutex<WatcherState>,
     next_generation: AtomicU64,
@@ -164,15 +260,17 @@ impl Daemon {
         let debouncer = new_debouncer(Duration::from_millis(100), None, move |res| {
             let _ = tx.send(res);
         })?;
-        let registry = crate::persist::load(&state_path);
-        let watch_dirs: HashSet<PathBuf> = registry
-            .dock
+        let boards = crate::persist::load(&state_path);
+        // Watch every board's dock dirs (the union), so a backgrounded board's
+        // docs still report file events.
+        let watch_dirs: HashSet<PathBuf> = boards
             .iter()
+            .flat_map(|b| b.registry.dock.iter())
             .filter_map(|p| p.parent().map(Path::to_path_buf))
             .collect();
         let daemon = Arc::new(Daemon {
             app: Mutex::new(None),
-            registry: Mutex::new(registry),
+            boards: Mutex::new(boards),
             terms: Mutex::new(HashMap::new()),
             watcher: std::sync::Mutex::new(WatcherState {
                 debouncer,

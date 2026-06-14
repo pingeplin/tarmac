@@ -73,7 +73,10 @@ pub async fn handle_open(
     // Upsert before pushing so the doc_opened entry reflects the post-open
     // state (docs/protocol.md "doc_opened").
     let entry = {
-        let mut reg = daemon.registry.lock().await;
+        // P1: the active board owns opened docs; P2 routes by the caller's
+        // term_id → board so a `tarmac open` lands on the calling board.
+        let mut boards = daemon.boards.lock().await;
+        let reg = boards.active_registry_mut();
         match reg.docs.get_mut(&canon) {
             Some(info) => {
                 info.via = via.to_owned();
@@ -128,7 +131,9 @@ pub async fn watch_loop(daemon: Arc<Daemon>, mut rx: UnboundedReceiver<DebounceE
         // as Create/Rename and must still count.
         let mut hits: HashSet<PathBuf> = HashSet::new();
         {
-            let reg = daemon.registry.lock().await;
+            // P1: the active board owns every doc; P2 unions across boards.
+            let boards = daemon.boards.lock().await;
+            let reg = boards.active_registry();
             for ev in &events {
                 for p in &ev.paths {
                     if reg.docs.contains_key(p.as_path()) {
@@ -147,7 +152,7 @@ pub async fn watch_loop(daemon: Arc<Daemon>, mut rx: UnboundedReceiver<DebounceE
                 .unwrap_or(0);
             // Registry update lands before the push so a crash between the
             // two never loses the fact (crib §8 req 6).
-            if let Some(info) = daemon.registry.lock().await.docs.get_mut(&path) {
+            if let Some(info) = daemon.boards.lock().await.active_registry_mut().docs.get_mut(&path) {
                 info.last_changed_ms = Some(mtime_ms);
             }
             daemon.mark_dirty();

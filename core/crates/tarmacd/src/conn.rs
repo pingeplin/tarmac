@@ -103,8 +103,9 @@ async fn app_session(daemon: Arc<Daemon>, stream: UnixStream) -> anyhow::Result<
     });
 
     // Restore frame immediately after hello_ok, per docs/protocol.md:
-    // docs in dock order plus the persisted tile order.
-    let restore = daemon.registry.lock().await.restore_msg();
+    // docs in dock order plus the persisted tile order. P1: the active board
+    // (board-0). P2 will precede this with a board_list and restore the active.
+    let restore = daemon.boards.lock().await.active_registry().restore_msg();
     let _ = tx.send(restore).await;
 
     loop {
@@ -164,7 +165,8 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, msg: Msg) {
         }
         Msg::DocRead { path } => {
             // Fire-and-forget, idempotent; an unknown path is not an error.
-            let known = match daemon.registry.lock().await.docs.get_mut(Path::new(&path)) {
+            // P1: the active board owns every doc; P2 routes by the owning board.
+            let known = match daemon.boards.lock().await.active_registry_mut().docs.get_mut(Path::new(&path)) {
                 Some(info) => {
                     info.read = true;
                     true
@@ -177,8 +179,15 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, msg: Msg) {
                 debug!("doc_read for unknown path {path}");
             }
         }
-        Msg::Layout { dock, tiles, board } => {
-            daemon.registry.lock().await.apply_layout(dock, tiles, board);
+        Msg::Layout { dock, tiles, board, board_id } => {
+            // P1: board_id is absent (single board) ⇒ the active board (board-0).
+            // P2's app stamps the active id; the daemon routes by it here.
+            daemon
+                .boards
+                .lock()
+                .await
+                .registry_for_opt_mut(board_id.as_deref())
+                .apply_layout(dock, tiles, board);
             daemon.mark_dirty();
         }
         Msg::Unknown => debug!("ignoring unknown message type from app"),

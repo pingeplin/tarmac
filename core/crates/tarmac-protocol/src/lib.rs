@@ -39,6 +39,11 @@ pub enum Msg {
         // v4 board additive key (optional; missing => nil): persisted viewport.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         board: Option<BoardViewport>,
+        // M3 additive key (optional; missing => board-0): which board this layout
+        // belongs to. The daemon applies an absent id to the active board, so a
+        // single-board sender that never sets it keeps the byte-identical wire.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        board_id: Option<String>,
     },
     Restore {
         docs: Vec<DocEntry>,
@@ -47,6 +52,11 @@ pub enum Msg {
         // v4 board additive key (optional; missing => nil): persisted viewport.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         board: Option<BoardViewport>,
+        // M3 additive key (optional; missing => board-0): which board is being
+        // restored. The daemon leaves it absent for the legacy single board, so
+        // the restore frame stays byte-identical until a second board exists.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        board_id: Option<String>,
     },
     SpawnTerm {
         term_id: String,
@@ -349,6 +359,7 @@ mod tests {
                 dock: vec!["/a.md".into()],
                 tiles: vec![term_tile(), doc_tile("/a.md")],
                 board: None,
+                board_id: None,
             },
         );
     }
@@ -410,6 +421,7 @@ mod tests {
                     term_id: None,
                 }],
                 board: Some(BoardViewport { zoom: 0.82, cx: 640.0, cy: 360.0 }),
+                board_id: None,
             },
         );
     }
@@ -434,7 +446,7 @@ mod tests {
         );
         assert_eq!(
             decode(&bytes).unwrap(),
-            Msg::Restore { docs: vec![m0_entry("/a.md", "cli", None)], tiles: vec![], board: None }
+            Msg::Restore { docs: vec![m0_entry("/a.md", "cli", None)], tiles: vec![], board: None, board_id: None }
         );
     }
 
@@ -456,6 +468,7 @@ mod tests {
                 dock: vec!["/a.md".into()],
                 tiles: vec![term_tile(), doc_tile("/a.md")],
                 board: None,
+                board_id: None,
             }
         );
     }
@@ -479,6 +492,7 @@ mod tests {
                 term_id: None,
             }],
             board: Some(BoardViewport { zoom: 0.5, cx: 10.0, cy: 20.0 }),
+            board_id: None,
         };
         assert_eq!(roundtrip(&msg), msg);
     }
@@ -505,8 +519,9 @@ mod tests {
                 dock: vec!["/a.md".into()],
                 tiles: vec![shelf_tile.clone()],
                 board: None,
+                board_id: None,
             }),
-            Msg::Layout { dock: vec!["/a.md".into()], tiles: vec![shelf_tile], board: None }
+            Msg::Layout { dock: vec!["/a.md".into()], tiles: vec![shelf_tile], board: None, board_id: None }
         );
 
         // A doc entry carrying its opener term_id.
@@ -544,6 +559,7 @@ mod tests {
             dock: vec!["/a.md".into()],
             tiles: vec![t1.clone(), t2.clone(), doc_tile("/a.md")],
             board: None,
+            board_id: None,
         };
         let rt = roundtrip(&layout);
         assert_eq!(rt, layout);
@@ -565,6 +581,7 @@ mod tests {
             dock: vec![],
             tiles: vec![term_tile()],
             board: None,
+            board_id: None,
         });
         if let Msg::Layout { tiles, .. } = rt {
             assert_eq!(tiles[0].term_id, None);
@@ -575,6 +592,58 @@ mod tests {
         // did pre-5b — `skip_serializing_if` omits term_id, so {kind:"term"}.
         let bytes = unhex("81 a4 6b 69 6e 64 a4 74 65 72 6d");
         assert_eq!(rmp_serde::to_vec_named(&term_tile()).unwrap(), bytes);
+    }
+
+    // M3 (additive): a layout / restore carrying a `board_id` round-trips, and a
+    // distinct id survives — the wire half of "strips = boards".
+    #[test]
+    fn m3_board_id_roundtrip() {
+        let layout = Msg::Layout {
+            dock: vec!["/a.md".into()],
+            tiles: vec![term_tile()],
+            board: None,
+            board_id: Some("board-1".into()),
+        };
+        let rt = roundtrip(&layout);
+        assert_eq!(rt, layout);
+        if let Msg::Layout { board_id, .. } = rt {
+            assert_eq!(board_id.as_deref(), Some("board-1"));
+        } else {
+            panic!("expected layout");
+        }
+
+        let restore = Msg::Restore {
+            docs: vec![m0_entry("/a.md", "cli", None)],
+            tiles: vec![term_tile()],
+            board: Some(BoardViewport { zoom: 1.0, cx: 0.0, cy: 0.0 }),
+            board_id: Some("board-2".into()),
+        };
+        assert_eq!(roundtrip(&restore), restore);
+    }
+
+    // A board_id-less layout (conformance vector 6 verbatim) decodes board_id ==
+    // None, and a None-keyed layout re-encodes without a `board_id` key — so a
+    // single-board sender's wire is byte-identical to the pre-M3 frame.
+    #[test]
+    fn m3_keyless_layout_decodes_board_id_none() {
+        let bytes = unhex(
+            "83 a1 74 a6 6c 61 79 6f 75 74 \
+             a4 64 6f 63 6b 91 a5 2f 61 2e 6d 64 \
+             a5 74 69 6c 65 73 92 \
+             81 a4 6b 69 6e 64 a4 74 65 72 6d \
+             82 a4 6b 69 6e 64 a3 64 6f 63 a4 70 61 74 68 a5 2f 61 2e 6d 64",
+        );
+        let Msg::Layout { board_id, .. } = decode(&bytes).unwrap() else { panic!("not layout") };
+        assert_eq!(board_id, None);
+
+        // The re-encoded frame is byte-identical to the input (no board_id key).
+        let none_keyed = Msg::Layout {
+            dock: vec!["/a.md".into()],
+            tiles: vec![term_tile(), doc_tile("/a.md")],
+            board: None,
+            board_id: None,
+        };
+        assert_eq!(encode(&none_keyed).unwrap(), bytes);
     }
 
     // Key-less M1 shapes still decode to None for the Phase 3 fields (additive
@@ -712,8 +781,9 @@ mod tests {
                 dock: vec!["/a.md".into(), "/b.md".into()],
                 tiles: vec![term_tile(), doc_tile("/b.md")],
                 board: None,
+                board_id: None,
             },
-            Msg::Layout { dock: vec![], tiles: vec![], board: None },
+            Msg::Layout { dock: vec![], tiles: vec![], board: None, board_id: None },
             // v4 layout carrying world-frame tiles + a board viewport.
             Msg::Layout {
                 dock: vec!["/b.md".into()],
@@ -757,6 +827,7 @@ mod tests {
                     },
                 ],
                 board: Some(BoardViewport { zoom: 0.82, cx: 640.0, cy: 360.0 }),
+                board_id: None,
             },
             Msg::Restore {
                 docs: vec![
@@ -775,6 +846,7 @@ mod tests {
                 ],
                 tiles: vec![term_tile()],
                 board: Some(BoardViewport { zoom: 1.0, cx: 0.0, cy: 0.0 }),
+                board_id: None,
             },
             Msg::SpawnTerm {
                 term_id: "t1".into(),

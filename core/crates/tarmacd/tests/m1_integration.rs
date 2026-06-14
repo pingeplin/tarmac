@@ -192,6 +192,7 @@ fn layout_and_state_survive_daemon_restart() {
             doc_tile("/not/registered.md"),
         ],
         board: None,
+        board_id: None,
     });
 
     // A file change before the restart: last_changed_ms must survive too.
@@ -203,14 +204,14 @@ fn layout_and_state_survive_daemon_restart() {
     app.recv_until("file_event", |m| matches!(m, Msg::FileEvent { path, .. } if *path == a));
 
     wait_for_state(&daemon.state_file(), "merged layout + read + change", |v| {
-        let docs = v["docs"].as_array();
+        let docs = v["boards"][0]["docs"].as_array();
         docs.is_some_and(|d| {
             d.len() == 2
                 && d[0]["path"] == serde_json::json!(b)
                 && d[1]["path"] == serde_json::json!(a)
                 && d[1]["read"] == serde_json::json!(true)
                 && d[1]["last_changed_ms"].is_u64()
-        }) && v["tiles"].as_array().is_some_and(|t| t.len() == 2)
+        }) && v["boards"][0]["tiles"].as_array().is_some_and(|t| t.len() == 2)
     });
 
     let mut app2 = Conn::hello(&daemon.sock, "app");
@@ -268,18 +269,19 @@ fn board_geometry_and_viewport_survive_daemon_restart() {
         dock: vec![a.clone()],
         tiles: vec![term.clone(), doc.clone()],
         board: Some(board.clone()),
+        board_id: None,
     });
 
     wait_for_state(&daemon.state_file(), "board + tile geometry", |v| {
-        let tiles = v["tiles"].as_array();
+        let tiles = v["boards"][0]["tiles"].as_array();
         let geom_ok = tiles.is_some_and(|t| {
             t.len() == 2
                 && t[1]["x"].as_f64() == Some(648.0)
                 && t[1]["w"].as_f64() == Some(392.0)
                 && t[1]["z"].as_i64() == Some(1)
         });
-        let board_ok = v["board"]["zoom"].as_f64() == Some(0.82)
-            && v["board"]["cx"].as_f64() == Some(640.0);
+        let board_ok = v["boards"][0]["board"]["zoom"].as_f64() == Some(0.82)
+            && v["boards"][0]["board"]["cx"].as_f64() == Some(640.0);
         geom_ok && board_ok
     });
 
@@ -329,10 +331,11 @@ fn shelf_loose_and_term_id_survive_daemon_restart() {
         dock: vec![a.clone()],
         tiles: vec![term_tile(), shelf_tile.clone()],
         board: None,
+        board_id: None,
     });
 
     wait_for_state(&daemon.state_file(), "shelf tile + term_id", |v| {
-        let tile_ok = v["tiles"].as_array().is_some_and(|t| {
+        let tile_ok = v["boards"][0]["tiles"].as_array().is_some_and(|t| {
             t.iter().any(|tile| {
                 tile["kind"] == serde_json::json!("doc")
                     && tile["shelf"] == serde_json::json!(true)
@@ -340,7 +343,7 @@ fn shelf_loose_and_term_id_survive_daemon_restart() {
                     && tile["x"].is_null()
             })
         });
-        let term_ok = v["docs"]
+        let term_ok = v["boards"][0]["docs"]
             .as_array()
             .is_some_and(|d| d.iter().any(|doc| doc["term_id"] == serde_json::json!("term-7")));
         tile_ok && term_ok
