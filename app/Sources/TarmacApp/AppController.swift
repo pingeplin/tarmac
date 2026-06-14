@@ -158,6 +158,9 @@ final class AppController {
         static let gapX: CGFloat = 86
         static let gapY: CGFloat = 40
         static let docColumns = 2
+        // ⌘T new-terminal cascade offset (down-right from the prime card).
+        static let cascadeDX: CGFloat = 43
+        static let cascadeDY: CGFloat = 40
     }
 
     init(window: NSWindow, rootView: RootView) {
@@ -222,8 +225,14 @@ final class AppController {
             // cycles the focused terminal among terminal cards + shows the HUD
             // (crib §6). With one terminal this is a no-op cycle (single HUD item).
             let isOptTab = event.keyCode == 48 && mods == .option
+            // ⌘T (T = keyCode 17) spawns a new terminal card (Phase 5b).
+            let isCmdT = event.keyCode == 17 && mods == .command
             let swallowed = MainActor.assumeIsolated { () -> Bool in
                 guard let self else { return false }
+                if isCmdT {
+                    self.spawnNewTerminal()
+                    return true
+                }
                 if isOptTab {
                     self.cycleTerminals()
                     return true
@@ -442,6 +451,39 @@ final class AppController {
         updatePrimacy()
     }
 
+    /// ⌘T: spawns a new terminal card cascade-offset from the prime card (crib
+    /// §6 decision 3), makes it prime + first responder, and persists it.
+    private func spawnNewTerminal() {
+        guard connected, viewReady else { return }
+        let id = UUID().uuidString
+        let session = makeSession(termID: id)
+        sessions[id] = session
+        sessionOrder.append(id)
+        rootView.board.setTerminal(termID: id, session.view, worldFrame: cascadeFrame())
+        // The new terminal becomes prime + first responder (typing follows it).
+        primeTermID = id
+        spawn(session: session)
+        rootView.board.select(.term(id))
+        if !docked { window?.makeFirstResponder(session.view) }
+        // Persist so the new terminal card survives a restart (Step 7 restores it).
+        persistLayout()
+    }
+
+    /// World frame for a new terminal card: cascade-offset down-right from the
+    /// prime card, nudged off existing cards so repeated ⌘T stair-steps.
+    private func cascadeFrame() -> CardFrame {
+        let base = primeTermCard?.worldFrame ?? Place.termFrame
+        let existing = rootView.board.cards.values.map { CGPoint(x: $0.worldFrame.x, y: $0.worldFrame.y) }
+        let origin = BoardWayfinding.cascadeOrigin(
+            base: CGPoint(x: base.x, y: base.y),
+            existing: existing,
+            dx: Place.cascadeDX,
+            dy: Place.cascadeDY
+        )
+        let topZ = (rootView.board.cards.values.map(\.worldFrame.z).max() ?? 0) + 1
+        return CardFrame(x: origin.x, y: origin.y, w: base.w, h: base.h, z: topZ)
+    }
+
     private func handleExit(termID: String, code: Int?) {
         guard let s = sessions[termID], s.live else { return }
         s.live = false
@@ -597,6 +639,17 @@ final class AppController {
         }
     }
 
+    /// Makes `termID` the prime (focused) terminal: re-applies primacy styling
+    /// and moves keyboard first responder to its view (unless docked). Typing
+    /// always follows the prime terminal regardless of pointer (crib §6). Used by
+    /// ⌥tab and ⌘T.
+    private func setPrime(_ termID: String) {
+        guard let s = sessions[termID] else { return }
+        primeTermID = termID
+        updatePrimacy()
+        if !docked { window?.makeFirstResponder(s.view) }
+    }
+
     // MARK: - Cockpit dock (Phase 5a, crib §4)
 
     /// Return (board-focused) toggles the dock; esc always undocks.
@@ -660,25 +713,21 @@ final class AppController {
 
     // MARK: - ⌥tab terminal cycle + HUD (Phase 5a scaffold, crib §6)
 
-    /// ⌥tab cycles the focused terminal among terminal cards and flashes the
-    /// cycle HUD (crib §6). With one terminal this is a visual no-op (a single
-    /// HUD item); kept real so Phase 5b can populate the cycle without rewiring.
+    /// ⌥tab advances the prime (focused) terminal to the next LIVE terminal card
+    /// in spawn order (wrapping) and flashes the cycle HUD with every live
+    /// terminal's label, the new prime highlighted (crib §6). Dead terminals are
+    /// skipped. With one terminal this re-asserts focus (a single-item HUD).
     private func cycleTerminals() {
-        let labels = terminalCycleLabels()
-        guard !labels.isEmpty else { return }
-        // Single terminal ⇒ the active item is always index 0. Phase 5b advances
-        // this index across the real terminal-card set.
-        rootView.cycleHUD.show(labels: labels, activeIndex: 0)
-        // Typing always goes to the prime terminal regardless of pointer (crib
-        // §6 focus model): re-assert first responder on the focused terminal.
-        if !docked, let view = primeTerminalView { window?.makeFirstResponder(view) }
-    }
-
-    /// The terminal-card names for the cycle HUD (crib §6). One entry this phase
-    /// (the prime term card's current label).
-    private func terminalCycleLabels() -> [String] {
-        guard hasLivePrime, let s = primeSession else { return [] }
-        return [s.label.isEmpty ? "shell" : s.label]
+        let liveIDs = sessionOrder.filter { sessions[$0]?.live == true }
+        guard !liveIDs.isEmpty else { return }
+        let currentIdx = primeTermID.flatMap { liveIDs.firstIndex(of: $0) } ?? -1
+        let nextIdx = (currentIdx + 1) % liveIDs.count
+        setPrime(liveIDs[nextIdx])
+        let labels = liveIDs.map { id -> String in
+            let label = sessions[id]?.label ?? ""
+            return label.isEmpty ? "shell" : label
+        }
+        rootView.cycleHUD.show(labels: labels, activeIndex: nextIdx)
     }
 
     private func nowHHMM() -> String {

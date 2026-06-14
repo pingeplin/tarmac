@@ -213,6 +213,32 @@ public enum BoardWayfinding {
         }
     }
 
+    // MARK: - Cascade placement (Phase 5b: ⌘T new terminal card)
+
+    /// The top-left of a new card cascade-offset down-right from `base`, nudged
+    /// by `(dx, dy)` until it does not (near-)coincide with any existing card's
+    /// top-left (within `epsilon`) — so repeated ⌘T spawns stair-step instead of
+    /// stacking on one spot. `existing` are the existing cards' top-left world
+    /// points. The nudge is bounded so a pathological set can never loop forever.
+    public static func cascadeOrigin(
+        base: CGPoint,
+        existing: [CGPoint],
+        dx: CGFloat,
+        dy: CGFloat,
+        epsilon: CGFloat = 8
+    ) -> CGPoint {
+        var x = base.x + dx
+        var y = base.y + dy
+        var steps = 0
+        while existing.contains(where: { abs($0.x - x) < epsilon && abs($0.y - y) < epsilon }) {
+            x += dx
+            y += dy
+            steps += 1
+            if steps > 1024 { break }
+        }
+        return CGPoint(x: x, y: y)
+    }
+
     // MARK: -
 
     static func clamp(_ v: CGFloat, _ lo: CGFloat, _ hi: CGFloat) -> CGFloat {

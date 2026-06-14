@@ -229,4 +229,42 @@ final class BoardWayfindingTests: XCTestCase {
         XCTAssertFalse(BoardWayfinding.isOffscreen(cardCenterWorld: CGPoint(x: 400, y: 300), viewportWorldRect: vp))
         XCTAssertTrue(BoardWayfinding.isOffscreen(cardCenterWorld: CGPoint(x: 900, y: 300), viewportWorldRect: vp))
     }
+
+    // MARK: - Cascade placement (Phase 5b ⌘T)
+
+    /// With no collision, the cascade lands exactly one (dx, dy) down-right.
+    func testCascadeOriginOffsetsFromBase() {
+        let o = BoardWayfinding.cascadeOrigin(
+            base: CGPoint(x: 80, y: 80), existing: [], dx: 43, dy: 40
+        )
+        XCTAssertEqual(o, CGPoint(x: 123, y: 120))
+    }
+
+    /// A card already sitting at the first cascade slot nudges the new card one
+    /// more step, so repeated ⌘T stair-steps instead of stacking.
+    func testCascadeOriginNudgesOffExistingCard() {
+        let base = CGPoint(x: 80, y: 80)
+        // The prime card itself + a card already at the first cascade slot.
+        let existing = [base, CGPoint(x: 123, y: 120)]
+        let o = BoardWayfinding.cascadeOrigin(base: base, existing: existing, dx: 43, dy: 40)
+        XCTAssertEqual(o, CGPoint(x: 166, y: 160))
+    }
+
+    /// Three successive spawns (feeding each result back in) stair-step with no
+    /// two top-lefts coinciding.
+    func testCascadeOriginThreeSpawnsAreDistinct() {
+        let base = CGPoint(x: 80, y: 80)
+        var existing = [base]
+        var origins: [CGPoint] = []
+        for _ in 0..<3 {
+            let o = BoardWayfinding.cascadeOrigin(base: base, existing: existing, dx: 43, dy: 40)
+            origins.append(o)
+            existing.append(o)
+        }
+        XCTAssertEqual(origins, [
+            CGPoint(x: 123, y: 120),
+            CGPoint(x: 166, y: 160),
+            CGPoint(x: 209, y: 200),
+        ])
+    }
 }
