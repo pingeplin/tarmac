@@ -243,6 +243,9 @@ final class AppController {
         // priority) the board can't derive on its own (doc metadata / recency).
         // Reads `activeBoard` dynamically, so it tracks the mounted board.
         rootView.offscreenHintProvider = { [weak self] in self?.offscreenHints() ?? [] }
+        // ⌘K switcher (P4): a row click opens that board; a veil click dismisses.
+        rootView.boardSwitcher.onPickRow = { [weak self] index in self?.switcherPickRow(index) }
+        rootView.boardSwitcher.onDismiss = { [weak self] in self?.closeSwitcher() }
         // Mount board-0 and bind its per-board callbacks (edge labels + layout
         // persistence). The same `mount(_:)` runs on every switch-arrive.
         mount(board0)
@@ -296,28 +299,29 @@ final class AppController {
             let isOptTab = event.keyCode == 48 && mods == .option
             // ⌘T (T = keyCode 17) spawns a new terminal card (Phase 5b).
             let isCmdT = event.keyCode == 17 && mods == .command
-            // M3 P2 throwaway hotkeys (replaced by the ⌘K switcher in P4):
-            // ⌃⌘N (N = 45) creates a board; ⌃⌘→ (Right = 124) switches to the
-            // next board. Chosen to not collide with shell or existing bindings.
-            let isCtrlCmdN = event.keyCode == 45 && mods == [.control, .command]
-            let isCtrlCmdRight = event.keyCode == 124 && mods == [.control, .command]
+            // M3 P4: ⌘K (K = keyCode 40) opens the boards switcher. While the
+            // switcher is open every keystroke routes through it (handled first
+            // below), so the board behind stays inert.
+            let isCmdK = event.keyCode == 40 && mods == .command
             let swallowed = MainActor.assumeIsolated { () -> Bool in
                 guard let self else { return false }
+                // While the ⌘K switcher is open it owns the keyboard: route every
+                // key to it (filter / move / open / create) before anything else,
+                // so the board behind stays inert.
+                if self.switcherOpen {
+                    return self.handleSwitcherKey(event, mods: mods)
+                }
                 // Every keystroke passes through here before its view handles it,
                 // so keep prime in sync with the terminal the user is typing in
                 // (clicking a non-prime terminal made it first responder without
                 // updating primeTermID). Cheap: only re-styles on an actual change.
                 self.reconcilePrimeToFocus()
+                if isCmdK {
+                    self.openSwitcher()
+                    return true
+                }
                 if isCmdT {
                     self.spawnNewTerminal()
-                    return true
-                }
-                if isCtrlCmdN {
-                    self.client.boardCreate()
-                    return true
-                }
-                if isCtrlCmdRight {
-                    self.switchToNextBoard()
                     return true
                 }
                 if isOptTab {
@@ -412,6 +416,11 @@ final class AppController {
                 beginArrivingSwitch(to: active)
             }
             refreshStrips()
+            // Keep an open switcher in sync with board adds/removes/active-change.
+            if switcherOpen {
+                rebuildSwitcherRows()
+                renderSwitcher()
+            }
         case .restore(let docs, let tiles, let board, let restoredBoardID):
             applyRestore(docs: docs, tiles: tiles, viewport: board, boardID: restoredBoardID)
         case .output(let termID, let bytes):
@@ -498,14 +507,161 @@ final class AppController {
         rootView.toasts.show(title: "cannot reach tarmacd", body: "see terminal for details")
     }
 
-    // M3 (throwaway ⌃⌘→ until the P4 ⌘K switcher): switch to the next board in
-    // display order (wrapping).
-    private func switchToNextBoard() {
-        guard let next = BoardRegistry.nextBoardID(after: activeBoardID, in: boardMetas) else {
-            feedNotice("only one board — ⌃⌘N creates another")
-            return
+    // MARK: - ⌘K boards switcher (M3 P4)
+
+    /// True while the ⌘K overlay is up; gates the key monitor (it owns the
+    /// keyboard) and tells `board_list` updates to re-render the panel live.
+    private var switcherOpen = false
+    /// The type-to-filter query (prefix match on each board's display label).
+    private var switcherFilter = ""
+    /// The keyboard-highlighted row among the *visible* (filtered) rows.
+    private var switcherSelected = 0
+    /// The rendered rows (pure view-model row + the board's thumbnail items),
+    /// rebuilt on open / filter change / `board_list`.
+    private var switcherRows: [SwitcherRowVM] = []
+
+    /// Opens the switcher: reset the filter, build the rows, default-select the
+    /// active board's row, render, and veil the board.
+    private func openSwitcher() {
+        guard !switcherOpen else { return }
+        switcherOpen = true
+        switcherFilter = ""
+        rebuildSwitcherRows()
+        switcherSelected = switcherRows.firstIndex { $0.row.isActive } ?? 0
+        renderSwitcher()
+        rootView.setSwitcherVisible(true)
+    }
+
+    /// Closes the switcher. `restoreFocus` puts first responder back on the active
+    /// board's prime terminal — skipped when a switch/create is about to run
+    /// (that path re-establishes focus on arrive).
+    private func closeSwitcher(restoreFocus: Bool = true) {
+        guard switcherOpen else { return }
+        switcherOpen = false
+        rootView.setSwitcherVisible(false)
+        if restoreFocus { focusPrimeTerminal() }
+    }
+
+    /// Rebuilds the visible rows from the live board facts + the current filter,
+    /// re-clamping the selection.
+    private func rebuildSwitcherRows() {
+        let rows = BoardSwitcher.rows(summaries: boardSummaries(), active: activeBoardID, filter: switcherFilter)
+        switcherRows = rows.map { row in
+            SwitcherRowVM(row: row, thumb: boards[row.boardID]?.view.minimapItems ?? [])
         }
-        performSwitch(to: next)
+        switcherSelected = BoardSwitcher.clampSelection(switcherSelected, count: switcherRows.count)
+    }
+
+    private func renderSwitcher() {
+        rootView.boardSwitcher.render(rows: switcherRows, selected: switcherSelected, query: switcherFilter)
+    }
+
+    /// Per-board facts for the switcher. Counts derive from each board's own card
+    /// signals (accurate for the active + any visited board — their cards + live
+    /// SwiftTerm views stay alive while backgrounded). A never-visited board has
+    /// no app-side view yet, so it reports 0 cards / not-live until first restore.
+    private func boardSummaries() -> [BoardSwitcher.BoardSummary] {
+        boardMetas.map { meta in
+            var running = 0, bell = 0, cards = 0, live = false
+            if let board = boards[meta.boardID] {
+                for card in board.view.cards.values {
+                    cards += 1
+                    switch card.signal {
+                    case .live: running += 1
+                    case .bell: bell += 1
+                    case .none: break
+                    }
+                }
+                live = board.sessions.values.contains { $0.live }
+            }
+            return BoardSwitcher.BoardSummary(
+                boardID: meta.boardID, name: meta.name,
+                running: running, bell: bell, cards: cards, isLive: live
+            )
+        }
+    }
+
+    // Key handling while the switcher is open (called from the global monitor).
+    private func handleSwitcherKey(_ event: NSEvent, mods: NSEvent.ModifierFlags) -> Bool {
+        let kc = event.keyCode
+        if kc == 53 { closeSwitcher(); return true }                       // esc
+        if kc == 40, mods == .command { closeSwitcher(); return true }     // ⌘K toggles closed
+        if kc == 36 { switcherCommitSelected(); return true }              // ⏎
+        if kc == 126 { switcherMove(by: -1); return true }                 // ↑
+        if kc == 125 { switcherMove(by: 1); return true }                  // ↓
+        if kc == 51 { switcherBackspace(); return true }                   // ⌫
+        // ⌘1..9 jump to the visible row at that ordinal.
+        if mods == .command, let s = event.charactersIgnoringModifiers, let n = Int(s), (1...9).contains(n) {
+            switcherJump(ordinal: n)
+            return true
+        }
+        // ⌘N always creates a board.
+        if mods == .command, event.charactersIgnoringModifiers?.lowercased() == "n" {
+            switcherCreate()
+            return true
+        }
+        // Printable typing → filter. 'n' on an empty query creates a board (B5
+        // footer "n new board"); once a query is being typed, every letter
+        // (including n) filters.
+        if mods.subtracting(.shift).isEmpty,
+           let chars = event.characters, chars.count == 1,
+           let scalar = chars.unicodeScalars.first, scalar.value >= 0x20, scalar.value != 0x7f {
+            if chars == "n", switcherFilter.isEmpty { switcherCreate(); return true }
+            switcherType(chars)
+            return true
+        }
+        // Let other ⌘-shortcuts (⌘Q / ⌘W / …) reach the menu; swallow the rest so
+        // the board stays inert.
+        return !mods.contains(.command)
+    }
+
+    private func switcherMove(by delta: Int) {
+        switcherSelected = BoardSwitcher.clampSelection(switcherSelected + delta, count: switcherRows.count)
+        renderSwitcher()
+    }
+
+    private func switcherType(_ s: String) {
+        switcherFilter += s
+        rebuildSwitcherRows()
+        renderSwitcher()
+    }
+
+    private func switcherBackspace() {
+        guard !switcherFilter.isEmpty else { return }
+        switcherFilter.removeLast()
+        rebuildSwitcherRows()
+        renderSwitcher()
+    }
+
+    private func switcherCommitSelected() {
+        guard switcherRows.indices.contains(switcherSelected) else { closeSwitcher(); return }
+        switchOrClose(to: switcherRows[switcherSelected].row.boardID)
+    }
+
+    private func switcherJump(ordinal n: Int) {
+        guard let id = BoardSwitcher.boardID(forOrdinal: n, in: switcherRows.map(\.row)) else { return }
+        switchOrClose(to: id)
+    }
+
+    /// A row was clicked.
+    private func switcherPickRow(_ index: Int) {
+        guard switcherRows.indices.contains(index) else { return }
+        switchOrClose(to: switcherRows[index].row.boardID)
+    }
+
+    private func switcherCreate() {
+        closeSwitcher(restoreFocus: false)
+        // The daemon mints `board-N`, auto-activates it, and pushes board_list +
+        // restore; the daemon-initiated-switch path (handle(.boardList)) follows.
+        client.boardCreate()
+    }
+
+    /// Opening the selected/clicked/ordinal board: a no-op target (already active)
+    /// just closes; otherwise close (without stealing focus) and switch.
+    private func switchOrClose(to id: String) {
+        if id == activeBoardID { closeSwitcher(); return }
+        closeSwitcher(restoreFocus: false)
+        performSwitch(to: id)
     }
 
     // MARK: - Board switching (M3 P3)

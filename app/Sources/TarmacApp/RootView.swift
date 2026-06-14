@@ -26,6 +26,9 @@ final class RootView: NSView {
     // bottom; hidden until a terminal docks) and the ⌥tab cycle HUD (top-center).
     let dockPane = DockPaneView()
     let cycleHUD = CycleHUD()
+    // M3 P4: the ⌘K boards switcher overlay (veil + centered panel), topmost and
+    // modal; hidden until ⌘K. The controller drives its contents + key handling.
+    let boardSwitcher = BoardSwitcherView()
 
     /// Whether the cockpit dock is currently showing a docked terminal. The
     /// controller drives the reparent; RootView only owns the layout.
@@ -69,6 +72,9 @@ final class RootView: NSView {
         peek.isHidden = true
         addSubview(peek)
         addSubview(toasts)
+        // The ⌘K switcher is the topmost overlay (modal veil over everything).
+        boardSwitcher.isHidden = true
+        addSubview(boardSwitcher)
 
         // Zoom control actions (crib §6): −/+ anchored at the viewport center;
         // fit = bounding box of all cards.
@@ -159,6 +165,14 @@ final class RootView: NSView {
         needsLayout = true
     }
 
+    /// Shows / hides the ⌘K boards switcher overlay (the controller renders its
+    /// rows + handles keys; this only flips visibility and re-lays-out).
+    func setSwitcherVisible(_ visible: Bool) {
+        guard visible != !boardSwitcher.isHidden else { return }
+        boardSwitcher.isHidden = !visible
+        needsLayout = true
+    }
+
     /// Board height = window minus the 27px status bar (migration-plan Phase 3).
     private var boardHeight: CGFloat { max(0, bounds.height - StatusBar.height) }
 
@@ -207,6 +221,11 @@ final class RootView: NSView {
             peek.frame = peekFrame(visible: peekVisible)
         }
         toasts.frame = bounds
+        // ⌘K switcher: covers the board area (the status bar stays legible below,
+        // showing the board count); the panel centers itself within.
+        if !boardSwitcher.isHidden {
+            boardSwitcher.frame = NSRect(x: 0, y: 0, width: bounds.width, height: boardHeight)
+        }
         refreshWayfinding(board.viewport)
     }
 
