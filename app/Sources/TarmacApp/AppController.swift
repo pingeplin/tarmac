@@ -108,6 +108,24 @@ final class AppController {
     /// `activeBoardID` (the invariant the boot path + the switch path maintain).
     private var activeBoard: Board { boards[activeBoardID]! }
 
+    /// term_id → board_id ownership index (set at spawn, cleared at exit). Routes
+    /// the daemon's term-keyed frames (output / exit / signals) to the OWNING
+    /// board — so a backgrounded board's output feeds its detached view and its
+    /// card signals update the right board, never the active one.
+    private var termIndex = TermBoardIndex()
+
+    /// The board that owns `termID` (via the term→board index), or nil if the
+    /// term is unknown / already exited.
+    private func board(ofTerm termID: String) -> Board? {
+        guard let bid = termIndex.board(of: termID) else { return nil }
+        return boards[bid]
+    }
+
+    /// The session backing `termID` on its owning board, across all boards.
+    private func session(ofTerm termID: String) -> TerminalSession? {
+        board(ofTerm: termID)?.sessions[termID]
+    }
+
     private var sessions: [String: TerminalSession] {
         get { activeBoard.sessions }
         set { activeBoard.sessions = newValue }
@@ -190,11 +208,12 @@ final class AppController {
         // share an id from creation (Phase 5b keys cards by term_id). The
         // terminal is a board card like any other (crib §4), reflowed on
         // resize-commit.
-        let bootTermID = UUID().uuidString
+        let bootTermID = BootTerminal.mint()
         let boot = makeSession(termID: bootTermID)
         board0.sessions[bootTermID] = boot
         board0.sessionOrder = [bootTermID]
         board0.primeTermID = bootTermID
+        termIndex.assign(termID: bootTermID, to: board0.boardID)
         rootView.attachTerminal(boot.view, termID: bootTermID, worldFrame: Place.termFrame)
 
         store.onChange = { [weak self] in self?.docsChanged() }
@@ -373,7 +392,11 @@ final class AppController {
             applyRestoredLayout(tiles: tiles, board: board)
             refreshStrips()
         case .output(let termID, let bytes):
-            guard let s = sessions[termID], s.live else { return }
+            // Route to the owning board's session (which may be backgrounded):
+            // feeding a detached SwiftTerm view still advances its buffer, so a
+            // background board's shell keeps progressing and shows fresh output
+            // on switch-back. Never touches the active view unless it owns the term.
+            guard let s = session(ofTerm: termID), s.live else { return }
             s.view.feed(byteArray: [UInt8](bytes)[...])
         case .exit(let termID, let code):
             handleExit(termID: termID, code: code)
@@ -437,13 +460,11 @@ final class AppController {
     // The daemon replies with board_list + that board's restore. Replaced by the
     // ⌘K switcher in P4.
     private func switchToNextBoard() {
-        guard boardMetas.count > 1 else {
+        guard let next = BoardRegistry.nextBoardID(after: activeBoardID, in: boardMetas) else {
             feedNotice("only one board — ⌃⌘N creates another")
             return
         }
-        let idx = boardMetas.firstIndex { $0.boardID == activeBoardID } ?? 0
-        let next = boardMetas[(idx + 1) % boardMetas.count]
-        client.boardSwitch(boardID: next.boardID)
+        client.boardSwitch(boardID: next)
     }
 
     // MARK: - Terminal session
@@ -540,10 +561,11 @@ final class AppController {
         // Land the new terminal on the board, not behind the dock pane: undock
         // the current terminal first so focus + the dock stay coherent.
         if docked { undock() }
-        let id = UUID().uuidString
+        let id = BootTerminal.mint()
         let session = makeSession(termID: id)
         sessions[id] = session
         sessionOrder.append(id)
+        termIndex.assign(termID: id, to: activeBoardID)
         activeBoard.view.setTerminal(termID: id, session.view, worldFrame: cascadeFrame())
         // Lay out so the terminal view has its card-sized geometry before spawn,
         // so the pty starts at the right cols/rows (not the 800×600 default).
@@ -573,28 +595,30 @@ final class AppController {
     }
 
     private func handleExit(termID: String, code: Int?) {
-        guard let s = sessions[termID], s.live else { return }
+        // Resolve the OWNING board (the exit may be on a backgrounded board):
+        // the dead card / prime advance happen on that board, not the active one.
+        guard let board = board(ofTerm: termID), let s = board.sessions[termID], s.live else { return }
         s.live = false
-        let card = activeBoard.view.card(.term(termID))
+        termIndex.remove(termID: termID)
+        let isActive = board === activeBoard
+        let card = board.view.card(.term(termID))
         // A dead terminal can't ring: clear any lingering bell, then put the card
         // into its dead `exit N · respawn` state (decision 1: no auto-respawn —
         // the card stays on the board at its frame; respawn-in-place is post-5b).
         card?.setBell(false)
         card?.setDead(code)
-        activeBoard.view.signalsChanged()
-        // If the dying terminal was docked, return its (now-dead) view to its
-        // card and hide the dock before prime advances, so the dock never holds
-        // a view that is no longer prime (risk: off-screen input routing).
-        if docked, primeTermID == termID {
+        board.view.signalsChanged()
+        // If the dying terminal was docked on the ACTIVE board, return its
+        // (now-dead) view to its card and hide the dock before prime advances, so
+        // the dock never holds a view that is no longer prime (risk: off-screen
+        // input routing). The dock pane is the active board's; a backgrounded
+        // board is never docked-into-the-pane (it was undocked on switch-away).
+        if isActive, board.docked, board.primeTermID == termID {
             undock()
         }
-        // If the prime terminal died, advance prime to the next live terminal
-        // (or none); otherwise just refresh styling.
-        if primeTermID == termID {
-            advancePrimeAfterExit(of: termID)
-        } else {
-            updatePrimacy()
-        }
+        // Advance THIS board's prime past the dead terminal (refocus only when
+        // it is the active board the user is looking at).
+        advancePrime(on: board, after: termID)
         let label = code.map { "exit \($0)" } ?? "killed by signal"
         feedNotice("shell exited (\(label))", to: s)
         // Exit toast (M2 honest signals): title "shell exited · <code>" (or
@@ -602,29 +626,43 @@ final class AppController {
         let toastTitle = code.map { "shell exited · \($0)" } ?? "killed by signal"
         rootView.toasts.show(icon: "›_", title: toastTitle, body: nil)
         // Persist so the card's position survives a restart (it respawns fresh
-        // into that slot per decision 2).
-        persistLayout()
+        // into that slot per decision 2). A backgrounded board's frame is
+        // unchanged by the exit (already persisted), so only the active board
+        // re-persists here; the switch path persists per board.
+        if isActive { persistLayout() }
     }
 
-    /// After the prime terminal `deadID` exits, move prime to the next LIVE
-    /// terminal in spawn order (wrapping), or nil when none remain live.
-    private func advancePrimeAfterExit(of deadID: String) {
-        let n = sessionOrder.count
-        if n > 0, let deadIdx = sessionOrder.firstIndex(of: deadID) {
+    /// Moves `board`'s prime past the just-dead `deadID`: if it was that board's
+    /// prime, advance to the next LIVE terminal in spawn order (wrapping), else
+    /// just refresh styling. First responder is only moved when `board` is the
+    /// active (mounted) one — a backgrounded board's prime change must not steal
+    /// keyboard focus from the board the user is looking at.
+    private func advancePrime(on board: Board, after deadID: String) {
+        let isActive = board === activeBoard
+        guard board.primeTermID == deadID else {
+            updatePrimacy(on: board)
+            return
+        }
+        let order = board.sessionOrder
+        let n = order.count
+        if n > 0, let deadIdx = order.firstIndex(of: deadID) {
             for offset in 1...n {
-                let id = sessionOrder[(deadIdx + offset) % n]
-                if sessions[id]?.live == true {
-                    setPrime(id)
+                let id = order[(deadIdx + offset) % n]
+                if board.sessions[id]?.live == true {
+                    board.primeTermID = id
+                    updatePrimacy(on: board)
+                    if isActive, !board.docked { window?.makeFirstResponder(board.sessions[id]?.view) }
                     return
                 }
             }
         }
-        // No live terminal remains: nothing is prime. Move first responder off
-        // the dead terminal view to the board, so Return/dock/fly stay reachable
-        // (boardHasFocus would otherwise never be true again until a board click).
-        primeTermID = nil
-        window?.makeFirstResponder(rootView.board)
-        updatePrimacy()
+        // No live terminal remains on this board: nothing is prime. On the active
+        // board, move first responder off the dead terminal view to the board so
+        // Return/dock/fly stay reachable (boardHasFocus would otherwise never be
+        // true again until a board click).
+        board.primeTermID = nil
+        if isActive { window?.makeFirstResponder(rootView.board) }
+        updatePrimacy(on: board)
     }
 
     /// Feeds a dim notice line into a terminal's scrollback — the given session,
@@ -640,31 +678,33 @@ final class AppController {
     /// set at spawn. The owner chips (`← <termname>`) follow the same label so
     /// they stay honest too.
     private func handleTermProc(termID: String, name: String) {
-        // Drop a late/racing proc signal for a non-live (dead) terminal so it
-        // can't re-label or re-light its dead card (matches the other handlers).
-        guard let s = sessions[termID], s.live else { return }
+        // Resolve the owning board (the proc may be on a backgrounded board); its
+        // detached card state must stay honest because a re-visit re-mounts the
+        // view rather than rebuilding it.
+        guard let board = board(ofTerm: termID), let s = board.sessions[termID], s.live else { return }
+        let isActive = board === activeBoard
         s.label = name
-        activeBoard.view.card(.term(termID))?.setTermLabel(name)
-        // Keep the dock header label honest while docked, but only for the
-        // docked (prime) terminal (crib §4 .dhd label).
-        if docked, termID == primeTermID {
+        board.view.card(.term(termID))?.setTermLabel(name)
+        // Keep the dock header label honest while docked, but only for the docked
+        // (prime) terminal on the ACTIVE board (the dock pane is the active board's).
+        if isActive, board.docked, termID == board.primeTermID {
             rootView.dockPane.setTermLabel(name.isEmpty ? "shell" : name)
         }
         // "Live" (agent-active) when the foreground process is no longer the bare
         // shell (crib §6: cyan = agent-active). The honest signal we have at this
         // phase is the foreground process name; treat shell == idle.
         let live = !name.isEmpty && name != s.shellName
-        let card = activeBoard.view.card(.term(termID))
+        let card = board.view.card(.term(termID))
         let wasLive = card?.liveActive ?? false
         if live, !wasLive { s.liveProcSince = Date() }
         if !live { s.liveProcSince = nil }
         card?.setLive(live)
-        activeBoard.view.signalsChanged()
-        refreshTermLocard(termID)
-        // Re-render any attached doc card's owner chip with the new term name.
-        for path in boardDocPaths {
-            guard let card = activeBoard.view.card(.doc(path)) else { continue }
-            card.setOwnerChip(ownerChipLabel(for: card))
+        board.view.signalsChanged()
+        refreshTermLocard(termID, on: board)
+        // Re-render this board's attached doc cards' owner chips with the new name.
+        for path in board.boardDocPaths {
+            guard let docCard = board.view.card(.doc(path)) else { continue }
+            docCard.setOwnerChip(ownerChipLabel(for: docCard, on: board))
         }
     }
 
@@ -672,8 +712,9 @@ final class AppController {
 
     /// Feeds a terminal card's locard content (crib §7): the foreground process
     /// name + a duration (`<proc> · Ns`) when live, else the shell name idle.
-    private func refreshTermLocard(_ termID: String) {
-        guard let s = sessions[termID], let card = activeBoard.view.card(.term(termID)) else { return }
+    private func refreshTermLocard(_ termID: String, on board: Board? = nil) {
+        let b = board ?? activeBoard
+        guard let s = b.sessions[termID], let card = b.view.card(.term(termID)) else { return }
         let status: String
         if card.liveActive, let since = s.liveProcSince {
             let secs = max(1, Int(Date().timeIntervalSince(since).rounded()))
@@ -743,9 +784,10 @@ final class AppController {
     /// (opacity 0.8). Prime follows the ⌥tab cycle / ⌘T (Phase 5b); a dead
     /// terminal card keeps its own dim and never reads as prime. Nothing is prime
     /// when no terminal is live.
-    private func updatePrimacy() {
-        let primeID: CardID? = hasLivePrime ? primeTermID.map(CardID.term) : nil
-        for (id, card) in activeBoard.view.cards {
+    private func updatePrimacy(on board: Board? = nil) {
+        let b = board ?? activeBoard
+        let primeID: CardID? = b.hasLivePrime ? b.primeTermID.map(CardID.term) : nil
+        for (id, card) in b.view.cards {
             let isPrime = (id == primeID)
             card.setPrime(isPrime)
             // A card is quiet only while some terminal is prime and it isn't it.
@@ -858,9 +900,11 @@ final class AppController {
     /// signal. Cleared on the next keystroke to that terminal or on focus
     /// (see `terminalDidSend` / `clearBell`).
     private func handleBell(termID: String) {
-        guard sessions[termID]?.live == true else { return }
-        activeBoard.view.card(.term(termID))?.setBell(true)
-        activeBoard.view.signalsChanged()
+        // Route to the owning board (a backgrounded board can ring); its detached
+        // card lights amber and shows the signal on switch-back.
+        guard let board = board(ofTerm: termID), board.sessions[termID]?.live == true else { return }
+        board.view.card(.term(termID))?.setBell(true)
+        board.view.signalsChanged()
     }
 
     /// Clears the amber bell signal on the term card (next keystroke / focus).
@@ -945,10 +989,11 @@ final class AppController {
                 }
             } else {
                 // A fresh session + card + pty for each additional terminal.
-                newID = UUID().uuidString
+                newID = BootTerminal.mint()
                 let session = makeSession(termID: newID)
                 sessions[newID] = session
                 sessionOrder.append(newID)
+                termIndex.assign(termID: newID, to: activeBoardID)
                 activeBoard.view.setTerminal(termID: newID, session.view, worldFrame: frame)
                 // Lay out before spawn so the pty starts at the restored card
                 // size, not the 800×600 view default.
@@ -1006,9 +1051,16 @@ final class AppController {
     /// (Phase 5b): the doc binds to *its* terminal — the `term_id` that opened it
     /// — not "the" terminal. Returns nil (doc stays loose) when that terminal no
     /// longer exists (e.g. a genuinely-orphaned owner after a restart remap).
-    private func ownerCardID(for path: String) -> CardID? {
-        guard let tid = docOwner[path], sessions[tid] != nil,
-              activeBoard.view.card(.term(tid)) != nil else {
+    private func ownerCardID(for path: String, on board: Board? = nil) -> CardID? {
+        let b = board ?? activeBoard
+        // The pure resolution (owner recorded + still one of this board's live
+        // terminals) lives in TarmacKit; map it to a card after confirming the
+        // term card exists on the board.
+        guard let tid = DocRouting.resolveOwner(
+            path: path,
+            owners: b.docOwner,
+            liveTermIDs: Set(b.sessions.keys)
+        ), b.view.card(.term(tid)) != nil else {
             return nil
         }
         return .term(tid)
@@ -1016,9 +1068,10 @@ final class AppController {
 
     /// `← <termname>` chip text for an attached doc card, else nil — the label of
     /// the doc's owner terminal (Phase 5b: its own terminal, not "the" terminal).
-    private func ownerChipLabel(for card: CardView) -> String? {
+    private func ownerChipLabel(for card: CardView, on board: Board? = nil) -> String? {
+        let b = board ?? activeBoard
         guard card.attached, case .term(let ownerID)? = card.ownerTermID else { return nil }
-        let label = sessions[ownerID]?.label ?? ""
+        let label = b.sessions[ownerID]?.label ?? ""
         return label.isEmpty ? nil : label
     }
 
