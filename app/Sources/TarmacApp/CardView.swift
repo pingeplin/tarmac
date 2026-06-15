@@ -16,9 +16,14 @@ import TarmacKit
 final class CardView: NSView {
     static let headerHeight: CGFloat = 30
     static let cornerRadius: CGFloat = 10
-    /// Handle is 7×7 offset −4 outside the edge (crib §4): spans −4..+3.
+    /// The visible handle stays 7×7, but its hit/cursor target is a larger
+    /// transparent box (`handleHitSize`) centered on the corner — so resizing
+    /// isn't a needle-thin 7px sliver (which shrinks further when zoomed out).
     static let handleSize: CGFloat = 7
-    static let handleOffset: CGFloat = 4
+    static let handleHitSize: CGFloat = 20
+    /// Inward nudge of the corner point so the square lands on the rounded
+    /// visual corner instead of floating off the sharp geometric corner.
+    static let handleCornerInset: CGFloat = 3
     /// Below this card size a resize can't go (header + a sliver of body).
     static let minWidth: CGFloat = 160
     static let minHeight: CGFloat = 90
@@ -479,17 +484,20 @@ final class CardView: NSView {
     }
 
     private func layoutHandles() {
-        let s = Self.handleSize
-        let o = Self.handleOffset
+        let hit = Self.handleHitSize
+        let inset = Self.handleCornerInset
         for (corner, h) in handles {
-            let origin: NSPoint
+            // Corner point nudged inward toward the card center (flipped view:
+            // top corners at y≈0), then the hit box is centered on that point.
+            let cx: CGFloat
+            let cy: CGFloat
             switch corner {
-            case .topLeft: origin = NSPoint(x: -o, y: -o)
-            case .topRight: origin = NSPoint(x: bounds.width - s + o, y: -o)
-            case .bottomLeft: origin = NSPoint(x: -o, y: bounds.height - s + o)
-            case .bottomRight: origin = NSPoint(x: bounds.width - s + o, y: bounds.height - s + o)
+            case .topLeft: cx = inset; cy = inset
+            case .topRight: cx = bounds.width - inset; cy = inset
+            case .bottomLeft: cx = inset; cy = bounds.height - inset
+            case .bottomRight: cx = bounds.width - inset; cy = bounds.height - inset
             }
-            h.frame = NSRect(origin: origin, size: CGSize(width: s, height: s))
+            h.frame = NSRect(x: cx - hit / 2, y: cy - hit / 2, width: hit, height: hit)
         }
     }
 
@@ -646,7 +654,9 @@ enum HandleCorner: CaseIterable {
     }
 }
 
-/// 7×7 selection resize handle (crib §4): fill bg0, 1.5px agent border, radius 2.
+/// Selection resize handle (crib §4). The view itself is a larger transparent
+/// hit/cursor target (`CardView.handleHitSize`); the visible 7×7 square — fill
+/// bg0, 1.5px agent border, radius 2 — is drawn by `chip`, centered inside it.
 /// Owns its own mouse so a press on a handle resizes rather than moves the card.
 @MainActor
 final class ResizeHandleView: NSView {
@@ -655,6 +665,7 @@ final class ResizeHandleView: NSView {
     var onMouseUp: ((NSEvent) -> Void)?
 
     private let corner: HandleCorner
+    private let chip = CALayer()
 
     override var acceptsFirstResponder: Bool { false }
 
@@ -662,13 +673,30 @@ final class ResizeHandleView: NSView {
         self.corner = corner
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = Theme.bg0.cgColor
-        layer?.borderColor = Theme.agent.cgColor
-        layer?.borderWidth = 1.5
-        layer?.cornerRadius = 2
+        chip.backgroundColor = Theme.bg0.cgColor
+        chip.borderColor = Theme.agent.cgColor
+        chip.borderWidth = 1.5
+        chip.cornerRadius = 2
+        layer?.addSublayer(chip)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func layout() {
+        super.layout()
+        let s = CardView.handleSize
+        // Center the visible square in the larger transparent hit box; no
+        // implicit animation so it doesn't lag the card during a resize drag.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        chip.frame = NSRect(
+            x: (bounds.width - s) / 2,
+            y: (bounds.height - s) / 2,
+            width: s,
+            height: s
+        )
+        CATransaction.commit()
+    }
 
     override func mouseDown(with event: NSEvent) { onMouseDown?(event) }
     override func mouseDragged(with event: NSEvent) { onMouseDragged?(event) }
