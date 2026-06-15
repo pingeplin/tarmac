@@ -64,9 +64,13 @@ final class BoardView: NSView {
         cards[id] = card
         cardLayer.addSubview(card)
         restack()
-        // A card added while zoomed out renders as a locard immediately.
-        card.setLocard(viewport.isSemanticZoom)
+        // Locards (semantic-zoom summaries) are off: in the infinite-canvas model
+        // a zoomed-out card shows its real content scaled down (the reference
+        // behavior), not a fixed-size name+status swap. `setLocard` stays wired so
+        // the feature can return as an explicit, counter-scaled overview later.
+        card.setLocard(false)
         reproject(card)
+        card.applyContentScale(contentScale)
         onCardsChanged?()
         return card
     }
@@ -266,6 +270,19 @@ final class BoardView: NSView {
 
     var selectedID: CardID?
 
+    /// True while a card move/resize is in flight — the controller suppresses
+    /// board zoom during a gesture so the cached `worldPerView` (pointer→world
+    /// scale, snapshot at gesture start) can't go stale mid-drag.
+    var isGesturing: Bool { gesturingID != nil }
+
+    /// Raises `id` to the front WITHOUT selecting it (no resize handles). Used by
+    /// click-to-focus (point 3): a clicked card comes forward, but the handles
+    /// stay reserved for an explicit move/resize grab on the header.
+    func bringToFront(_ id: CardID) {
+        guard let card = cards[id] else { return }
+        raiseToFront(card)
+    }
+
     /// esc drag-cancel priority (crib §5): cancels an in-flight move/resize and
     /// restores the pre-gesture world frame. Returns false when no card is
     /// dragging so esc falls through to peek/toast dismissal.
@@ -447,22 +464,51 @@ final class BoardView: NSView {
     // MARK: Projection
 
     private func reprojectAll() {
-        for card in cards.values { card.frame = worldToView(card.worldFrame.rect) }
+        for card in cards.values { project(card) }
+        updateContentScaleIfNeeded()
         reprojectSlotGhost()
         recomputeEdges()
         onCardsChanged?()
     }
 
+    /// The card layer is scaled as a bitmap by the `frame≠bounds` transform, so
+    /// zooming IN past 100% would upscale a backing store rendered at the normal
+    /// screen resolution → blur. Counter it by rendering each card's content at
+    /// `backingScale × zoom` resolution (capped) when zoomed in, so the upscale
+    /// has real pixels. Zoom-out keeps the default scale (downscaling is already
+    /// crisp). Re-applied only when the zoom actually changes (not on every pan).
+    private var lastContentScaleZoom: CGFloat = 0
+    private var contentScale: CGFloat {
+        (window?.backingScaleFactor ?? 2) * max(1, min(viewport.zoom, Self.maxContentScaleZoom))
+    }
+    private static let maxContentScaleZoom: CGFloat = 3
+
+    private func updateContentScaleIfNeeded() {
+        guard window != nil, abs(viewport.zoom - lastContentScaleZoom) > 0.0001 else { return }
+        lastContentScaleZoom = viewport.zoom
+        let scale = contentScale
+        for card in cards.values { card.applyContentScale(scale) }
+    }
+
     private func reproject(_ card: CardView) {
-        card.frame = worldToView(card.worldFrame.rect)
+        project(card)
         reprojectSlotGhost()
-        // Terminal cards render at the card's view size; when zoom ≠ ~100% the
-        // body is scaled via the layer transform (interactive only near 100% —
-        // acceptable per the plan). The card frame already carries the scale,
-        // and the embedded SwiftTerm view reflows on commit, so no extra layer
-        // transform is needed here for the common case.
         recomputeEdges()
         onCardsChanged?()
+    }
+
+    /// Places a card on screen (infinite-canvas model). The card's on-screen
+    /// FRAME carries the world→view position *and* the zoom scale, but its
+    /// internal BOUNDS stay the card's intrinsic *world* size. AppKit realizes
+    /// the frame≠bounds size difference as a uniform scale on the card's layer
+    /// tree — so the card and everything it hosts (the SwiftTerm grid, the doc
+    /// webview, chrome) scale as a single unit and the content layout never
+    /// re-flows from a zoom. Only a card RESIZE changes the world size (`bounds`),
+    /// which is the one time the terminal re-measures its cols/rows. Zoom is thus
+    /// a pure view transform, matching the Heptabase/Figma canvas feel.
+    private func project(_ card: CardView) {
+        card.frame = worldToView(card.worldFrame.rect)
+        card.setBoundsSize(CGSize(width: card.worldFrame.w, height: card.worldFrame.h))
     }
 
     /// Rebuilds the provenance edge set in view space (crib §8): one edge per
@@ -518,18 +564,26 @@ final class BoardView: NSView {
         if lo != loZoom { loZoom = lo; needsDisplay = true }
     }
 
-    /// Toggles every card's locard rendering when the zoom crosses the semantic
-    /// threshold (crib §7). The board owns the threshold; cards just swap their
-    /// rendering. Idempotent (CardView.setLocard early-returns when unchanged).
+    /// No-op in the infinite-canvas model — cards always render their real
+    /// (zoom-scaled) content rather than swapping to a fixed-size locard at the
+    /// semantic-zoom threshold. See `addCard`. Kept (and still called on zoom
+    /// crossings) so the feature can return as an explicit counter-scaled overview.
     func updateLocards() {
-        let lo = viewport.isSemanticZoom
-        for card in cards.values { card.setLocard(lo) }
+        for card in cards.values { card.setLocard(false) }
     }
 
     override func layout() {
         super.layout()
         reprojectAll()
         needsDisplay = true
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        // The real backing scale is only known once attached to a window; force
+        // the content-scale to re-apply (the zoom-guard would otherwise skip it).
+        lastContentScaleZoom = 0
+        updateContentScaleIfNeeded()
     }
 
     /// Dot grid drawn in board space: a world lattice at `spacing` (phased by

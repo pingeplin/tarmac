@@ -29,6 +29,10 @@ enum Theme {
     static let amberDim = srgb(0xfdbc4b, alpha: 0.16)
     static let ok = srgb(0x1cdc9a)
 
+    /// Terminal interior font size in world points (crib §3). The board zoom
+    /// scales each card as a single unit, so this is the on-screen size at 100%.
+    static let termFontSize: CGFloat = 16
+
     static let repoColors: [NSColor] = [
         srgb(0xf67400), // repo-a — orange
         srgb(0x11d116), // repo-b — green

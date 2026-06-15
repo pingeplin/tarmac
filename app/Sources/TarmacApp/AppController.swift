@@ -115,6 +115,18 @@ final class AppController {
     private var boardsAwaitingRevive: Set<String> = []
 
     private var escMonitor: Any?
+    /// Single-click-to-focus (point 3) + gesture routing (point 2) live in three
+    /// local event monitors armed in `start()` and torn down in `shutdown()`.
+    private var clickFocusMonitor: Any?
+    private var scrollRouteMonitor: Any?
+    private var magnifyRouteMonitor: Any?
+
+    /// The card the user last clicked into. nil ⇒ board-navigation mode: pan,
+    /// pinch-zoom, and scroll drive the whiteboard even when the pointer is over a
+    /// card (point 2). A click on a card sets it (a live terminal also becomes
+    /// prime); a click on the empty board clears it. While set, scroll over *that*
+    /// card routes to its own content (terminal scrollback / doc scroll) instead.
+    private var focusedCardID: CardID?
 
     // MARK: - Boards (M3 P3)
     //
@@ -451,6 +463,29 @@ final class AppController {
             return swallowed ? nil : event
         }
 
+        // Point 3 — a single click anywhere on a card focuses it. Deferred to the
+        // next runloop tick so the click first dispatches normally (so a header
+        // drag / terminal text-selection / first-responder change all happen as
+        // usual), then focus styling + prime are applied.
+        clickFocusMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            let point = event.locationInWindow
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.handleClickFocus(at: point) } }
+            return event
+        }
+        // Point 2 — pan/scroll routes to the whiteboard unless the pointer is
+        // inside the focused card (then its own content scrolls). The router
+        // returns a `Bool` (Sendable) and the event swap stays outside the
+        // isolated block (NSEvent isn't Sendable), mirroring `escMonitor`.
+        scrollRouteMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            let routed = MainActor.assumeIsolated { self?.routeScroll(event) ?? false }
+            return routed ? nil : event
+        }
+        // Point 2 — pinch always zooms the whiteboard (a terminal can't pinch).
+        magnifyRouteMonitor = NSEvent.addLocalMonitorForEvents(matching: .magnify) { [weak self] event in
+            let routed = MainActor.assumeIsolated { self?.routeMagnify(event) ?? false }
+            return routed ? nil : event
+        }
+
         let client = self.client
         DispatchQueue.global(qos: .userInitiated).async {
             do {
@@ -677,10 +712,13 @@ final class AppController {
     /// monitor, and closes the client (so its disconnect path won't re-fire).
     func shutdown() {
         quitting = true
-        if let monitor = escMonitor {
-            NSEvent.removeMonitor(monitor)
-            escMonitor = nil
+        for monitor in [escMonitor, clickFocusMonitor, scrollRouteMonitor, magnifyRouteMonitor] {
+            if let monitor { NSEvent.removeMonitor(monitor) }
         }
+        escMonitor = nil
+        clickFocusMonitor = nil
+        scrollRouteMonitor = nil
+        magnifyRouteMonitor = nil
         client.close()
     }
 
@@ -1015,6 +1053,11 @@ final class AppController {
         reconcilePrimeToFocus()
         if activeBoard.docked { undockForLeave() }
         window?.makeFirstResponder(nil)
+        // Clear card focus so the arrived board starts in board-navigation mode
+        // (point 2). Otherwise a stale focusedCardID could collide with a same-id
+        // card on the target board (doc cards key on path, shared across boards)
+        // and wrongly capture its scroll.
+        focusedCardID = nil
         rootView.unmountBoard()
         // P5.5: suspend the leaving board's doc web views (free their web content
         // processes) AFTER it is unmounted (so a still-visible view never flashes
@@ -1098,14 +1141,131 @@ final class AppController {
 
     // MARK: - Terminal session
 
+    // MARK: - Click-to-focus + gesture routing (points 2 & 3)
+
+    /// The deepest view under a window-space point, or nil. `window.contentView`
+    /// is the RootView (`main.swift`), and `locationInWindow` is already in the
+    /// window's base coordinate system (= the content view's superview coords),
+    /// so this is the standard hit test for a monitored event.
+    private func hitView(at point: NSPoint) -> NSView? {
+        window?.contentView?.hitTest(point)
+    }
+
+    /// Walks up from a hit view to the `CardView` that contains it (header, clip,
+    /// terminal/doc body, locard, or a resize handle all live inside one), or nil
+    /// if the point is on the bare board / an overlay.
+    private func enclosingCard(_ view: NSView?) -> CardView? {
+        var v = view
+        while let cur = v {
+            if let card = cur as? CardView { return card }
+            v = cur.superview
+        }
+        return nil
+    }
+
+    /// Point 3: a single click on a card focuses it. A click on the empty board
+    /// background defocuses (board-navigation mode resumes). Clicks landing on the
+    /// overlays (peek / switcher / shelf / minimap / dock / status bar) are left
+    /// alone. Runs one tick after the click has dispatched.
+    private func handleClickFocus(at point: NSPoint) {
+        guard !switcherOpen, window?.isKeyWindow == true else { return }
+        guard let hit = hitView(at: point), hit.isDescendant(of: rootView.board) else { return }
+        if let card = enclosingCard(hit) {
+            focus(card.id)
+        } else {
+            defocus()
+        }
+    }
+
+    /// Makes `id` the focused card: brings it to the front and, for a live
+    /// terminal, makes it prime (keyboard + accent border + darker header — the
+    /// focus indicator). It does NOT show resize handles: a plain focus click
+    /// shouldn't arm a resize; handles stay reserved for an explicit header grab.
+    private func focus(_ id: CardID) {
+        guard activeBoard.view.card(id) != nil else { return }
+        focusedCardID = id
+        activeBoard.view.bringToFront(id)
+        if case let .term(termID) = id, sessions[termID]?.live == true, !docked {
+            setPrime(termID)
+        }
+    }
+
+    /// Clears card focus so pan / pinch / scroll drive the board (point 2). Does
+    /// not touch the prime terminal — typing still follows it (terminal primacy).
+    private func defocus() {
+        guard focusedCardID != nil || activeBoard.view.selectedID != nil else { return }
+        focusedCardID = nil
+        activeBoard.view.select(nil)
+    }
+
+    /// Point 2: a scroll/pan routes to the whiteboard — pans the board and returns
+    /// `true` to swallow the event — UNLESS the pointer is inside the focused card,
+    /// in which case it returns `false` so the event passes through to that card's
+    /// own content (terminal scrollback / doc scroll). Events over the overlays or
+    /// outside the board return `false` (left untouched).
+    private func routeScroll(_ event: NSEvent) -> Bool {
+        guard !switcherOpen else { return false }
+        guard let hit = hitView(at: event.locationInWindow), hit.isDescendant(of: rootView.board) else { return false }
+        if let fid = focusedCardID, activeBoard.view.card(fid) != nil,
+           enclosingCard(hit)?.id == fid {
+            return false
+        }
+        rootView.board.scrollWheel(with: event)
+        return true
+    }
+
+    /// Point 2: pinch always zooms the whiteboard (anchored at the pointer) and
+    /// swallows the event, even over a focused terminal — a terminal has no pinch
+    /// behavior of its own. Over an overlay / outside the board it passes through.
+    private func routeMagnify(_ event: NSEvent) -> Bool {
+        guard !switcherOpen else { return false }
+        guard let hit = hitView(at: event.locationInWindow), hit.isDescendant(of: rootView.board) else { return false }
+        // Suppress board zoom while a card move/resize is in flight — changing the
+        // zoom mid-gesture would invalidate the card's snapshot pointer→world
+        // scale. Swallow it (do nothing) rather than let it fall through to a zoom.
+        if rootView.board.isGesturing { return true }
+        rootView.board.magnify(with: event)
+        return true
+    }
+
+    /// Ghostty / KDE "Breeze" 16-color ANSI palette (crib §3) installed into every
+    /// terminal so the interior matches the Breeze chrome. SwiftTerm's `Color` is
+    /// 16-bit per channel; the authored 8-bit values are widened ×257 (0xff→0xffff).
+    private static let breezeAnsiColors: [SwiftTerm.Color] = {
+        let hex: [(UInt8, UInt8, UInt8)] = [
+            (0x23, 0x26, 0x27), // 0  black
+            (0xed, 0x15, 0x15), // 1  red
+            (0x11, 0xd1, 0x16), // 2  green
+            (0xf6, 0x74, 0x00), // 3  yellow
+            (0x1d, 0x99, 0xf3), // 4  blue
+            (0x9b, 0x59, 0xb6), // 5  magenta
+            (0x1a, 0xbc, 0x9c), // 6  cyan
+            (0xfc, 0xfc, 0xfc), // 7  white
+            (0x7f, 0x8c, 0x8d), // 8  bright black
+            (0xc0, 0x39, 0x2b), // 9  bright red
+            (0x1c, 0xdc, 0x9a), // 10 bright green
+            (0xfd, 0xbc, 0x4b), // 11 bright yellow
+            (0x3d, 0xae, 0xe9), // 12 bright blue
+            (0x8e, 0x44, 0xad), // 13 bright magenta
+            (0x16, 0xa0, 0x85), // 14 bright cyan
+            (0xff, 0xff, 0xff), // 15 bright white
+        ]
+        return hex.map { SwiftTerm.Color(red: UInt16($0.0) * 257, green: UInt16($0.1) * 257, blue: UInt16($0.2) * 257) }
+    }()
+
     /// Builds a configured terminal session (SwiftTerm view + a delegate bridge
     /// carrying its `term_id`). The view is not yet on the board or spawned.
     private func makeSession(termID: String) -> TerminalSession {
         let view = TerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
-        view.font = Theme.mono(12)
+        view.font = Theme.mono(Theme.termFontSize)
         view.nativeBackgroundColor = Theme.termBg
         view.nativeForegroundColor = Theme.termFg
         view.caretColor = Theme.text
+        view.selectedTextBackgroundColor = Theme.agent.withAlphaComponent(0.3)
+        // The terminal interior wears the same Breeze scheme as the chrome (crib
+        // §3): the 16 ANSI colors come from Ghostty/KDE Breeze, not SwiftTerm's
+        // defaults. bg/fg/caret above are the Breeze term-bg / output / cursor.
+        view.installColors(Self.breezeAnsiColors)
         view.optionAsMetaKey = true
         let bridge = TermDelegateBridge(termID: termID)
         bridge.controller = self

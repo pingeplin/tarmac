@@ -145,6 +145,28 @@ final class CardView: NSView {
 
     func attachTerminal(_ terminal: NSView) {
         termBody?.attach(terminal)
+        applyContentScale(pendingContentScale)
+    }
+
+    /// The board scales each card as a bitmap (its `frame≠bounds` transform), so
+    /// zooming in past 100% upscales the rasterized content → blur. Rendering the
+    /// card's whole layer tree at `backingScale × zoom` resolution gives the
+    /// upscale real pixels. The board pushes the target scale here on zoom change;
+    /// we remember it so content swapped in later (e.g. a revived terminal)
+    /// inherits the same sharpness. NOTE: this only sharpens IN-PROCESS layers
+    /// (the SwiftTerm grid, chrome); it no-ops on a WKWebView's out-of-process tiles.
+    private var pendingContentScale: CGFloat = 2
+    func applyContentScale(_ scale: CGFloat) {
+        pendingContentScale = scale
+        func walk(_ layer: CALayer) {
+            layer.contentsScale = scale
+            layer.sublayers?.forEach(walk)
+        }
+        func walkViews(_ view: NSView) {
+            if let layer = view.layer { walk(layer) }
+            view.subviews.forEach(walkViews)
+        }
+        walkViews(self)
     }
 
     func setTermLabel(_ label: String) {
