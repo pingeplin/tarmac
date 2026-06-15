@@ -68,6 +68,11 @@ final class CardView: NSView {
     /// stays on the board dimmed, labelled `exit N · ↵ respawn`, and never reads
     /// as prime/quiet. Set via `setDead`.
     private(set) var dead = false
+    /// Detached = a terminal card whose daemon connection dropped (P5.3): faint
+    /// (alpha 0.5), distinct from dead (exit). The shell may still be alive on the
+    /// daemon, awaiting reconnect+rebind — so it is REVERSIBLE: the card keeps its
+    /// label + frame and is cleared (`setDetached(false)`) when the term re-binds.
+    private(set) var detached = false
 
     // Active move/resize gesture state (window-space anchors).
     private enum Gesture {
@@ -156,6 +161,12 @@ final class CardView: NSView {
         docView?.render(markdown: markdown)
     }
 
+    /// P5.5: suspend / resume the doc card's web view (no-op on a term card).
+    /// Driven by the board switch lifecycle to free inactive boards' web content
+    /// processes; the cached markdown re-renders + scroll restores on resume.
+    func suspendDoc() { docView?.suspend() }
+    func resumeDoc() { docView?.resume() }
+
     // MARK: - Selection
 
     func setSelected(_ on: Bool) {
@@ -171,8 +182,9 @@ final class CardView: NSView {
     /// fresh, prime's `#5a626a` for the focused terminal, else line (the lift
     /// state overrides this transiently).
     private var currentBorderColor: NSColor {
-        // A dead terminal card reads muted, below selection/prime accents.
-        if dead { return Theme.line.withAlphaComponent(0.6) }
+        // A dead OR detached terminal card reads muted, below selection/prime
+        // accents (detached is reversible; dead is not).
+        if dead || detached { return Theme.line.withAlphaComponent(0.6) }
         if selected || fresh { return Theme.agent }
         if prime { return Theme.liftBorder }
         return Theme.line
@@ -257,6 +269,18 @@ final class CardView: NSView {
         applyRestingShadow()
         let label = code.map { "exit \($0) · ↵ respawn" } ?? "killed · ↵ respawn"
         header.setLabel(label)
+    }
+
+    /// P5.3: marks a terminal card detached (the daemon connection dropped) — dim
+    /// it (alpha 0.5) and mute its border, WITHOUT relabelling or going dead: the
+    /// shell may still be alive on the daemon and the card re-binds on reconnect.
+    /// A dead card ignores detach (its exit is terminal). Clearing it (`false`)
+    /// restores the resting alpha (quiet-aware) + the state border.
+    func setDetached(_ on: Bool) {
+        guard !dead, on != detached else { return }
+        detached = on
+        alphaValue = on ? 0.5 : (quiet ? 0.8 : 1.0)
+        layer?.borderColor = currentBorderColor.cgColor
     }
 
     // MARK: - Owner chip bridge

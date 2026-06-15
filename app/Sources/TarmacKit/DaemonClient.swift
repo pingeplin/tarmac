@@ -142,6 +142,19 @@ public final class DaemonClient: @unchecked Sendable {
         send(.boardCreate)
     }
 
+    /// P5.4: rename `boardID` (an empty `name` clears it back to the slug). The
+    /// daemon re-pushes board_list with the new name.
+    public func boardRename(boardID: String, name: String) {
+        send(.boardRename(boardID: boardID, name: name))
+    }
+
+    /// P5.4: delete `boardID`. The daemon refuses the last board and, when the
+    /// deleted board was active, fixes the active board and re-pushes board_list +
+    /// the new active board's restore.
+    public func boardDelete(boardID: String) {
+        send(.boardDelete(boardID: boardID))
+    }
+
     // MARK: - Internals
 
     private func connectOnce() throws {

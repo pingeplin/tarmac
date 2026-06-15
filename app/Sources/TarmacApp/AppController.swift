@@ -64,6 +64,11 @@ final class TerminalSession {
     let bridge: TermDelegateBridge
     /// Whether the pty backing this card is currently running.
     var live = false
+    /// P5.3: the daemon connection dropped while this shell was live — the pty may
+    /// still be alive daemon-side, awaiting reconnect + rebind. Distinct from dead
+    /// (exit): `live` is false (routing/spawn guards treat it as not-running) but
+    /// the shell is presumed revivable. Set on disconnect, cleared on revive.
+    var detached = false
     /// Header label: the foreground process name, or the shell basename idle.
     var label = ""
     /// The shell basename resolved at spawn — idle ⇔ foreground == shellName.
@@ -89,6 +94,25 @@ final class AppController {
 
     private var connected = false
     private var viewReady = false
+
+    // MARK: - P5.3 bounded auto-reconnect
+    //
+    // On a dropped daemon connection the app marks its live sessions detached,
+    // flips the chip/status faint, and retries `connect()` on the bounded
+    // `Reconnect` backoff. A successful reconnect's `board_list` + `restore`
+    // revive the still-live shells (and cold-spawn the gone ones) via the boards
+    // queued in `boardsAwaitingRevive`.
+    /// Attempts made since the link last dropped (reset to 0 on `hello_ok`).
+    private var reconnectAttempt = 0
+    /// A `connect()` is in flight on the background queue — guards double-connect.
+    private var reconnecting = false
+    /// App teardown began — gates the scheduler so a pending backoff is a no-op.
+    private var quitting = false
+    /// Boards whose detached terminals await revive on the next restore for them.
+    /// Populated on disconnect (every board that had a live session); a board is
+    /// removed when its revive runs. Also gates `maybeSpawn` so a detached prime
+    /// is never cold-spawned over its surviving shell during the reconnect window.
+    private var boardsAwaitingRevive: Set<String> = []
 
     private var escMonitor: Any?
 
@@ -118,6 +142,22 @@ final class AppController {
     private func ownerBoard(ofTerm termID: String) -> Board? {
         guard let bid = termIndex.board(of: termID) else { return nil }
         return boards[bid]
+    }
+
+    /// P5.4: drop a deleted board locally — its `Board` (cards + detached/live
+    /// sessions + view) and every term→board routing entry. Never the active
+    /// board (which must always exist; the daemon fixes active before a delete's
+    /// board_list arrives). Its ptys were already killed daemon-side; any in-flight
+    /// `exit` for them is then ignored (their owner no longer resolves), and the
+    /// board's backgrounded view (never mounted) deallocates with the `Board`.
+    private func removeBoard(_ id: String) {
+        guard id != activeBoardID, boards[id] != nil else { return }
+        termIndex.removeBoard(id)
+        // Clear any pending-revive entry: a board deleted while queued never gets
+        // its own restore, so a stale entry would keep `isReconnect` permanently
+        // true (suppressing a needed cold prime spawn on a later reconnect).
+        boardsAwaitingRevive.remove(id)
+        boards[id] = nil
     }
 
     /// The session backing `termID` on its owning board, across all boards.
@@ -265,6 +305,15 @@ final class AppController {
     /// Refreshes the titlebar chip with the active board's display name.
     private func updateTitleChip() {
         titleChip.setName(activeBoard.name ?? activeBoardID)
+    }
+
+    /// P5 (two honest signals): the app-local attached/detached signal. The chip
+    /// + status-bar word reflect whether we currently hold a live daemon
+    /// connection (the daemon cannot tell a gone app that it detached, so this is
+    /// driven locally by `connected`). Reconnect (P5.3) flips it back to attached.
+    private func updateSessionLiveness() {
+        titleChip.setAttached(connected)
+        rootView.statusBar.setSession(attached: connected)
     }
 
     /// Dims the titlebar chip + the traffic lights while the ⌘K switcher is open
@@ -428,10 +477,23 @@ final class AppController {
     private func handle(_ message: Message) {
         switch message {
         case .helloOK:
+            // A reconnect is in flight iff boards are queued for revive (only
+            // disconnect populates that). On a cold first connect the set is
+            // empty, so the normal boot spawn runs; on a reconnect the imminent
+            // board_list + restore drive the revive (and would orphan a surviving
+            // shell if we cold-spawned the detached prime here), so skip maybeSpawn.
+            let isReconnect = !boardsAwaitingRevive.isEmpty
             connected = true
-            maybeSpawn()
+            reconnecting = false
+            reconnectAttempt = 0
+            updateSessionLiveness()
+            if !isReconnect { maybeSpawn() }
         case .boardList(let metas, let active):
             boardMetas = metas
+            // P5.4: sync each visited board's local display name from the daemon's
+            // authoritative list, so a rename reflects in the titlebar chip +
+            // status bar (which read `activeBoard.name`), not just the switcher rows.
+            for meta in metas { boards[meta.boardID]?.name = meta.name }
             // The daemon changed the active board out from under us (board_create
             // auto-activates the new board): follow it — leave the current board
             // so the restore that follows mounts the new one. An app-initiated
@@ -439,14 +501,22 @@ final class AppController {
             if active != activeBoardID, !switching {
                 beginArrivingSwitch(to: active)
             }
+            // P5.4: a board the daemon's list no longer carries (deleted here or by
+            // another app) is dropped locally — its detached cards/sessions go and
+            // routing to it stops. Never the active board: the daemon fixes active
+            // before sending this, so `activeBoardID` always names a live board.
+            let liveBoardIDs = Set(metas.map(\.boardID))
+            for id in Array(boards.keys) where id != activeBoardID && !liveBoardIDs.contains(id) {
+                removeBoard(id)
+            }
             refreshStrips()
             // Keep an open switcher in sync with board adds/removes/active-change.
             if switcherOpen {
                 rebuildSwitcherRows()
                 renderSwitcher()
             }
-        case .restore(let docs, let tiles, let board, let restoredBoardID):
-            applyRestore(docs: docs, tiles: tiles, viewport: board, boardID: restoredBoardID)
+        case .restore(let docs, let tiles, let board, let restoredBoardID, let liveTerms):
+            applyRestore(docs: docs, tiles: tiles, viewport: board, boardID: restoredBoardID, liveTerms: liveTerms)
         case .output(let termID, let bytes):
             // Route to the owning board's session (which may be backgrounded):
             // feeding a detached SwiftTerm view still advances its buffer, so a
@@ -518,19 +588,100 @@ final class AppController {
 
     private func handleDisconnect(_ reason: String) {
         connected = false
+        // The connect() attempt this drop corresponds to is over — clear the latch
+        // so scheduleReconnect can re-arm. Without this, a drop in the handshake
+        // window (connect() returned, but the link died before hello_ok cleared
+        // `reconnecting`) would wedge the loop forever (scheduleReconnect's
+        // !reconnecting guard would never pass again). Idempotent on the normal
+        // path (hello_ok already cleared it before any later real drop).
+        reconnecting = false
         // The connection dropped for every board's ptys, not just the active one.
+        // P5.3: DETACH (not kill) each live session — the shell may still be alive
+        // daemon-side, to be re-bound on reconnect. Queue every board that had a
+        // live session for revive (so its next restore re-binds survivors / cold-
+        // spawns the gone ones, and `maybeSpawn` stays gated off its detached prime).
         for board in boards.values {
-            for s in board.sessions.values { s.live = false }
+            var hadLive = false
+            for (tid, s) in board.sessions where s.live {
+                s.live = false
+                s.detached = true
+                board.view.card(.term(tid))?.setDetached(true)
+                hadLive = true
+            }
+            if hadLive { boardsAwaitingRevive.insert(board.boardID) }
         }
+        activeBoard.view.signalsChanged()
         feedNotice("lost connection to tarmacd — \(reason)")
         rootView.toasts.show(title: "tarmacd connection lost", body: reason)
+        // P5: the chip + status word flip to detached (faint) immediately.
+        updateSessionLiveness()
         // Every board's glyph goes faint (no live pty); refresh an open switcher.
         refreshSwitcherIfOpen()
+        // P5.3: schedule a bounded auto-reconnect. The same DaemonClient instance
+        // reconnects (connectOnce re-sets closed=false); on success hello_ok + the
+        // daemon's board_list/restore revive the still-live terms.
+        scheduleReconnect()
     }
 
     private func showConnectFailure(_ detail: String) {
         feedNotice(detail)
         rootView.toasts.show(title: "cannot reach tarmacd", body: "see terminal for details")
+    }
+
+    /// P5.3: schedule the next bounded reconnect attempt. No-op when quitting,
+    /// already connected (a race where hello_ok beat us), or a connect is already
+    /// in flight. The per-attempt delay + the give-up bound come from `Reconnect`;
+    /// exhausting the budget surfaces a terminal notice and stops.
+    private func scheduleReconnect() {
+        guard !quitting, !connected, !reconnecting else { return }
+        reconnectAttempt += 1
+        guard let delay = Reconnect.delay(forAttempt: reconnectAttempt) else {
+            feedNotice("could not reconnect to tarmacd — relaunch to retry")
+            rootView.toasts.show(title: "tarmacd unreachable", body: "reconnect attempts exhausted")
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.attemptReconnect()
+        }
+    }
+
+    /// P5.3: run one reconnect attempt on a background queue (mirrors `start`'s
+    /// connect block). On failure, re-arm the next bounded attempt; on success the
+    /// `reconnecting` latch is cleared in `hello_ok` (the real attached signal),
+    /// and the daemon's board_list + restore drive the revive. `connect()` is
+    /// blocking (incl. up to ~3 s of TARMAC_DAEMON spawn retries), so the
+    /// `reconnecting` guard prevents a backoff timer from launching a second one.
+    private func attemptReconnect() {
+        guard !quitting, !connected, !reconnecting else { return }
+        reconnecting = true
+        let client = self.client
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try client.connect()
+                // Success: hello_ok (delivered via onMessage) clears `reconnecting`
+                // + reconnectAttempt and drives the revive.
+            } catch {
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated { [weak self] in
+                        guard let self else { return }
+                        self.reconnecting = false
+                        self.scheduleReconnect()
+                    }
+                }
+            }
+        }
+    }
+
+    /// P5.3: cancel the reconnect loop and close the socket on app teardown. Sets
+    /// `quitting` first so any in-flight backoff timer is a no-op, removes the key
+    /// monitor, and closes the client (so its disconnect path won't re-fire).
+    func shutdown() {
+        quitting = true
+        if let monitor = escMonitor {
+            NSEvent.removeMonitor(monitor)
+            escMonitor = nil
+        }
+        client.close()
     }
 
     // MARK: - ⌘K boards switcher (M3 P4)
@@ -545,6 +696,13 @@ final class AppController {
     /// The rendered rows (pure view-model row + the board's thumbnail items),
     /// rebuilt on open / filter change / `board_list`.
     private var switcherRows: [SwitcherRowVM] = []
+    /// P5.4: inline rename mode — the header becomes an edit prompt over
+    /// `switcherEditBuffer` (seeded from the selected row). ⏎ commits, esc cancels.
+    private var switcherEditing = false
+    private var switcherEditBuffer = ""
+    /// P5.4: the one-key delete-confirm latch — armed by ⌘⌫, confirmed by a second
+    /// ⌘⌫, disarmed by any other key.
+    private var switcherConfirmingDelete = false
 
     /// Opens the switcher: reset the filter, build the rows, default-select the
     /// active board's row, veil the board, and render. Takes first responder so
@@ -581,6 +739,9 @@ final class AppController {
     private func closeSwitcher(restoreFocus: Bool = true) {
         guard switcherOpen else { return }
         switcherOpen = false
+        // P5.4: drop any transient rename/confirm state so a re-open starts clean.
+        switcherEditing = false
+        switcherConfirmingDelete = false
         rootView.setSwitcherVisible(false)
         setTitlebarDim(false)
         if restoreFocus { focusPrimeTerminal() }
@@ -597,7 +758,13 @@ final class AppController {
     }
 
     private func renderSwitcher() {
-        rootView.boardSwitcher.render(rows: switcherRows, selected: switcherSelected, query: switcherFilter)
+        let deleteTarget = switcherConfirmingDelete && switcherRows.indices.contains(switcherSelected)
+            ? switcherRows[switcherSelected].row.display : nil
+        rootView.boardSwitcher.render(
+            rows: switcherRows, selected: switcherSelected, query: switcherFilter,
+            editing: switcherEditing, editBuffer: switcherEditBuffer,
+            confirmingDelete: switcherConfirmingDelete, deleteTarget: deleteTarget
+        )
     }
 
     /// Per-board facts for the switcher. Counts derive from each board's own card
@@ -608,26 +775,42 @@ final class AppController {
     /// — always minted + mounted locally — is synthesized so the switcher never
     /// opens onto an empty list.
     private func boardSummaries() -> [BoardSwitcher.BoardSummary] {
-        var summaries = boardMetas.map { boardSummary(forBoardID: $0.boardID, name: $0.name) }
+        var summaries = boardMetas.map {
+            boardSummary(forBoardID: $0.boardID, name: $0.name, daemonRunning: $0.running)
+        }
         if !summaries.contains(where: { $0.boardID == activeBoardID }) {
-            summaries.insert(boardSummary(forBoardID: activeBoardID, name: activeBoard.name), at: 0)
+            // The active board is always minted + mounted locally (visited), so
+            // its daemon running count is unused — pass nil.
+            summaries.insert(
+                boardSummary(forBoardID: activeBoardID, name: activeBoard.name, daemonRunning: nil),
+                at: 0
+            )
         }
         return summaries
     }
 
-    private func boardSummary(forBoardID id: String, name: String?) -> BoardSwitcher.BoardSummary {
-        var running = 0, bell = 0, cards = 0, live = false
+    private func boardSummary(
+        forBoardID id: String, name: String?, daemonRunning: Int?
+    ) -> BoardSwitcher.BoardSummary {
+        var localRunning = 0, bell = 0, cards = 0, localLive = false
+        let visited = boards[id] != nil
         if let board = boards[id] {
             for card in board.view.cards.values {
                 cards += 1
                 switch card.signal {
-                case .live: running += 1
+                case .live: localRunning += 1
                 case .bell: bell += 1
                 case .none: break
                 }
             }
-            live = board.sessions.values.contains { $0.live }
+            localLive = board.sessions.values.contains { $0.live }
         }
+        // P5: for a never-visited board the daemon's live-pty count is the only
+        // honest liveness; for a visited board the local signals win (no flicker).
+        let (running, live) = BoardSwitcher.liveness(
+            visited: visited, localRunning: localRunning, localIsLive: localLive,
+            daemonRunning: daemonRunning
+        )
         return BoardSwitcher.BoardSummary(
             boardID: id, name: name, running: running, bell: bell, cards: cards, isLive: live
         )
@@ -636,8 +819,44 @@ final class AppController {
     // Key handling while the switcher is open (called from the global monitor).
     private func handleSwitcherKey(_ event: NSEvent, mods: NSEvent.ModifierFlags) -> Bool {
         let kc = event.keyCode
+        // P5.4: inline rename mode owns the keyboard — ⏎ commit, esc cancel, ⌫
+        // edit, printable types into the buffer. Every key is consumed so none
+        // leaks to the filter/jump/create logic below.
+        if switcherEditing {
+            if kc == 36 { switcherCommitRename(); return true }            // ⏎
+            if kc == 53 { switcherCancelRename(); return true }            // esc
+            if kc == 51 {                                                  // ⌫
+                if !switcherEditBuffer.isEmpty { switcherEditBuffer.removeLast(); renderSwitcher() }
+                return true
+            }
+            if mods.subtracting(.shift).isEmpty,
+               let chars = event.characters, chars.count == 1,
+               let scalar = chars.unicodeScalars.first, BoardSwitcher.isTypable(scalar: scalar.value) {
+                switcherEditBuffer += chars
+                renderSwitcher()
+                return true
+            }
+            // Swallow other un-modified keys; let ⌘-shortcuts (⌘Q) reach the menu.
+            return !mods.contains(.command)
+        }
+        // P5.4: while a delete confirm is armed, esc cancels it (only); any key
+        // other than the confirming ⌘⌫ disarms it and then acts normally.
+        if switcherConfirmingDelete {
+            if kc == 53 {
+                switcherConfirmingDelete = false
+                renderSwitcher()
+                return true
+            }
+            if !(kc == 51 && mods == .command) {
+                switcherConfirmingDelete = false
+                renderSwitcher()
+                // fall through: the key still performs its normal action
+            }
+        }
         if kc == 53 { closeSwitcher(); return true }                       // esc
         if kc == 40, mods == .command { closeSwitcher(); return true }     // ⌘K toggles closed
+        if kc == 14, mods == .command { switcherBeginRename(); return true }      // ⌘E rename
+        if kc == 51, mods == .command { switcherDeleteOrConfirm(); return true }  // ⌘⌫ delete
         if kc == 36 { switcherCommitSelected(); return true }              // ⏎
         if kc == 126 { switcherMove(by: -1); return true }                 // ↑
         if kc == 125 { switcherMove(by: 1); return true }                  // ↓
@@ -657,7 +876,7 @@ final class AppController {
         // Printable typing → prefix filter.
         if mods.subtracting(.shift).isEmpty,
            let chars = event.characters, chars.count == 1,
-           let scalar = chars.unicodeScalars.first, scalar.value >= 0x20, scalar.value != 0x7f {
+           let scalar = chars.unicodeScalars.first, BoardSwitcher.isTypable(scalar: scalar.value) {
             switcherType(chars)
             return true
         }
@@ -707,6 +926,59 @@ final class AppController {
         client.boardCreate()
     }
 
+    /// P5.4: enter inline rename mode for the selected board, seeding the edit
+    /// buffer from its current display label.
+    private func switcherBeginRename() {
+        guard switcherRows.indices.contains(switcherSelected) else { return }
+        switcherConfirmingDelete = false
+        switcherEditing = true
+        switcherEditBuffer = switcherRows[switcherSelected].row.display
+        renderSwitcher()
+    }
+
+    /// P5.4: commit the rename (empty ⇒ clear to the slug) and leave edit mode.
+    /// The daemon re-pushes board_list with the new name; the boardList handler
+    /// rebuilds the rows.
+    private func switcherCommitRename() {
+        switcherEditing = false
+        if switcherRows.indices.contains(switcherSelected) {
+            let id = switcherRows[switcherSelected].row.boardID
+            client.boardRename(boardID: id, name: BoardSwitcher.sanitizedName(switcherEditBuffer))
+        }
+        renderSwitcher()
+    }
+
+    /// P5.4: leave rename mode without committing.
+    private func switcherCancelRename() {
+        switcherEditing = false
+        renderSwitcher()
+    }
+
+    /// P5.4: ⌘⌫ — arm the one-key delete confirm, or (when already armed) perform
+    /// the delete. Refused for the last board (the daemon is authoritative; this
+    /// mirror keeps the confirm banner from ever appearing). The daemon kills the
+    /// board's ptys, fixes the active board if needed, and re-pushes board_list +
+    /// restore; the boardList handler reconciles local boards + rebuilds the rows.
+    private func switcherDeleteOrConfirm() {
+        guard switcherRows.indices.contains(switcherSelected),
+              BoardSwitcher.canDelete(boardCount: max(boardMetas.count, boards.count)) else {
+            NSSound.beep()
+            return
+        }
+        if !switcherConfirmingDelete {
+            switcherConfirmingDelete = true
+            renderSwitcher()
+            return
+        }
+        switcherConfirmingDelete = false
+        let id = switcherRows[switcherSelected].row.boardID
+        client.boardDelete(boardID: id)
+        // Close the switcher so a delete-of-active board's arriving switch isn't
+        // fighting the open overlay; keep focus only for a non-active delete (an
+        // active delete's arrive re-establishes focus on the new board).
+        closeSwitcher(restoreFocus: id != activeBoardID)
+    }
+
     /// Opening the selected/clicked/ordinal board: a no-op target (already active)
     /// just closes; otherwise close (without stealing focus) and switch.
     private func switchOrClose(to id: String) {
@@ -744,6 +1016,11 @@ final class AppController {
         if activeBoard.docked { undockForLeave() }
         window?.makeFirstResponder(nil)
         rootView.unmountBoard()
+        // P5.5: suspend the leaving board's doc web views (free their web content
+        // processes) AFTER it is unmounted (so a still-visible view never flashes
+        // about:blank) and while it is still the active board. Terminals are
+        // untouched — they keep being fed live in the background (P5.2).
+        boards[activeBoardID]?.view.cards.values.forEach { $0.suspendDoc() }
         // The target must exist before it becomes active (`activeBoard` force-
         // unwraps); a first visit mints its BoardView + boot session here.
         if boards[targetID] == nil { _ = mintBoard(id: targetID, name: meta.name) }
@@ -788,6 +1065,11 @@ final class AppController {
     /// AFTER its card tree is laid out (crit B3 / S1), and end the transient.
     private func finishArrive(on board: Board) {
         rootView.layoutSubtreeIfNeeded()
+        // P5.5: resume the arriving board's doc web views AFTER layout (so the
+        // reloaded template lays out at card size, not 0×0). No-op for a board
+        // whose docs were never suspended (e.g. its first arrive), since
+        // DocWebView.resume guards on `suspended`.
+        board.view.cards.values.forEach { $0.resumeDoc() }
         // Re-dock only when there is a LIVE prime to dock; dock() itself guards on
         // hasLivePrime, so gating here keeps the focus fallback reachable. Drop a
         // stale dock intent for a board whose docked terminal died while
@@ -872,7 +1154,19 @@ final class AppController {
     /// Further terminals are spawned by ⌘T (`spawnNewTerminal`) and by restore
     /// (`restoreTerminals`).
     private func maybeSpawn() {
-        guard connected, viewReady, let s = primeSession, !s.live else { return }
+        // P5: gate on the active board's first restore. `helloOK` and the initial
+        // `viewReady` async both race ahead of the restore; spawning the boot pty
+        // before the restore decides re-bind-vs-cold would orphan a surviving
+        // shell (the app would cold-spawn a second pty over it). The first restore
+        // sets `didInitialRestore` then calls `maybeSpawn` itself, so a genuinely
+        // cold prime still spawns — just after the re-bind decision, not before.
+        // P5.3: while the active board awaits its reconnect revive, suppress the
+        // spawn — its prime is detached (!live) but its shell may still be alive
+        // daemon-side; cold-spawning now would orphan it. The revive (which sets
+        // the prime live or respawns it) removes the board from the set first.
+        guard connected, viewReady, activeBoard.didInitialRestore,
+              !boardsAwaitingRevive.contains(activeBoardID),
+              let s = primeSession, !s.live else { return }
         spawn(session: s)
     }
 
@@ -1275,13 +1569,22 @@ final class AppController {
     /// already taken its first restore is not rebuilt — that would tear down its
     /// doc cards and respawn its live terminals; the switch path re-mounts the
     /// existing view instead (Step 9). `board_id` absent ⇒ board-0 (legacy).
-    private func applyRestore(docs: [RestoreDoc], tiles: [LayoutTile], viewport: BoardViewport?, boardID: String?) {
+    private func applyRestore(docs: [RestoreDoc], tiles: [LayoutTile], viewport: BoardViewport?, boardID: String?, liveTerms: [String]) {
         let targetID = boardID ?? Board.defaultID
         guard targetID == activeBoardID, let board = boards[targetID] else { return }
         // On a switch-arrive, mount the target's view (boot already mounted
         // board-0). A re-visit still mounts + refocuses below — only the rebuild
         // is gated on the first restore.
         if switching { mount(board) }
+        // P5.3: a reconnect restore for an already-restored board re-binds its
+        // detached terminals — survivors (term_id ∈ liveTerms) rebind in place +
+        // consume the replayed scrollback; the gone ones cold-spawn (daemon
+        // restarted / shell exited while detached). Runs before the first-restore
+        // block, which it does not reach (didInitialRestore is already true here).
+        if board.didInitialRestore, boardsAwaitingRevive.contains(targetID) {
+            boardsAwaitingRevive.remove(targetID)
+            reviveTerminals(on: board, liveTerms: Set(liveTerms))
+        }
         // Build the board's cards/terminals on its FIRST restore only; a re-visit
         // keeps its live view as-is (a rebuild would respawn its terminals).
         if !board.didInitialRestore {
@@ -1291,11 +1594,14 @@ final class AppController {
             for doc in docs {
                 if let termID = doc.termID { board.docOwner[doc.path] = termID }
             }
-            applyRestoredLayout(tiles: tiles, board: viewport)
+            applyRestoredLayout(tiles: tiles, board: viewport, liveTerms: Set(liveTerms))
             // Boot-spawn triggers (helloOK / initial viewReady) fire once per
             // launch; a switch-arrival must drive the arriving board's prime
             // spawn itself (crit S1). Lay the just-mounted view out first so the
             // boot pty starts at the card size, not the 800×600 view default.
+            // P5: `maybeSpawn` is now gated on `didInitialRestore` (just set), so
+            // a cold prime spawns HERE — never before the restore decided whether
+            // to re-bind it to a surviving shell instead.
             rootView.layoutSubtreeIfNeeded()
             maybeSpawn()
         }
@@ -1310,7 +1616,7 @@ final class AppController {
     /// migration. The terminal card always survives. Unknown kinds and
     /// unregistered doc paths are skipped (protocol receiver rules). The board
     /// viewport is applied when present, else the default.
-    private func applyRestoredLayout(tiles: [LayoutTile], board: BoardViewport?) {
+    private func applyRestoredLayout(tiles: [LayoutTile], board: BoardViewport?, liveTerms: Set<String>) {
         // Tear down any doc cards from a prior restore; the term card is kept and
         // re-placed (its embedded SwiftTerm view stays attached). Snapshot the ids
         // first — removeCard mutates the board's `cards` dictionary.
@@ -1323,9 +1629,10 @@ final class AppController {
         let docTiles = tiles.filter { $0.kind == "doc" }
         var migratedAny = termTiles.contains { CardFrame(tile: $0) == nil }
 
-        // Restore N terminal cards (decision 2: positions persist, fresh shells
-        // respawn) and re-anchor doc provenance across the restart (best-effort).
-        let oldToNew = restoreTerminals(termTiles)
+        // Restore N terminal cards: re-bind a card to its surviving daemon pty
+        // (P5) when the daemon reports it live, else cold-spawn (positions persist,
+        // fresh shell). Re-anchor doc provenance across the restart (best-effort).
+        let oldToNew = restoreTerminals(termTiles, liveTerms: liveTerms)
         remapDocOwners(oldToNew, restoredTerminalCount: termTiles.count)
 
         var docSlot = 0
@@ -1357,26 +1664,42 @@ final class AppController {
         activeBoard.view.setViewport(board.map(Viewport.init) ?? .default)
     }
 
-    /// Restores terminal cards from `termTiles` (decision 2: positions persist,
-    /// fresh shells respawn — live-session restore is M3). The boot session/card
-    /// is reused for the first tile (its fresh shell is spawned by `maybeSpawn`);
-    /// each additional tile gets a fresh session + card + pty. Returns the
-    /// persisted→reborn `term_id` remap so doc provenance can re-anchor.
+    /// Restores terminal cards from `termTiles`. P5: a tile whose persisted
+    /// `term_id` is among the daemon's `liveTerms` RE-BINDS to that still-running
+    /// pty (no spawn — the replayed scrollback that follows the restore repaints
+    /// it); every other tile cold-spawns a fresh shell at the persisted position
+    /// (a shell that exited while detached, or a daemon that restarted). The first
+    /// tile is the prime/boot terminal. Returns the persisted→reborn `term_id`
+    /// remap (identity for a re-bound term) so doc provenance can re-anchor.
     @discardableResult
-    private func restoreTerminals(_ termTiles: [LayoutTile]) -> [String: String] {
+    private func restoreTerminals(_ termTiles: [LayoutTile], liveTerms: Set<String>) -> [String: String] {
         var oldToNew: [String: String] = [:]
         guard let bootID = primeTermID else { return oldToNew }
+        let plans = TermRestore.plan(tileTermIDs: termTiles.map(\.termID), liveTerms: liveTerms)
         for (i, tile) in termTiles.enumerated() {
             let frame = CardFrame(tile: tile) ?? Place.termFrame
             let newID: String
-            if i == 0 {
-                // Reuse the boot session/card (created at init, kept prime).
+            switch (i, plans[i]) {
+            case (_, .rebind(let liveID)) where i == 0:
+                // Re-bind the prime to a surviving shell: discard the empty,
+                // never-spawned boot session and bind a live one under the
+                // daemon's id (maybeSpawn is gated until now, so the boot pty was
+                // never spawned — nothing to orphan).
+                adoptPrimeForRebind(liveID: liveID, frame: frame)
+                newID = liveID
+            case (_, .rebind(let liveID)):
+                // Re-bind an additional terminal: a live, no-spawn session.
+                bindLiveTerminal(termID: liveID, frame: frame)
+                newID = liveID
+            case (0, .coldSpawn):
+                // Cold prime: reuse the pre-minted boot session/card; its fresh
+                // shell is spawned by the post-restore `maybeSpawn`.
                 newID = bootID
                 if let view = primeTerminalView {
                     activeBoard.view.setTerminal(termID: bootID, view, worldFrame: frame)
                 }
-            } else {
-                // A fresh session + card + pty for each additional terminal.
+            case (_, .coldSpawn):
+                // Cold extra terminal: a fresh session + card + pty.
                 newID = BootTerminal.mint()
                 let session = makeSession(termID: newID)
                 sessions[newID] = session
@@ -1391,6 +1714,93 @@ final class AppController {
             if let old = tile.termID { oldToNew[old] = newID }
         }
         return oldToNew
+    }
+
+    /// P5: bind a card to a daemon-owned LIVE pty without spawning — the shell is
+    /// already running; the replayed scrollback (delivered right after the
+    /// restore) repaints it. The session is created `live` BEFORE replay arrives
+    /// so the `.output` guard does not drop it. The honest foreground name will
+    /// follow on the next `term_proc`; until then the card shows the shell name.
+    private func bindLiveTerminal(termID: String, frame: CardFrame) {
+        let session = makeSession(termID: termID)
+        session.live = true
+        let shellPath = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        let shell = (shellPath as NSString).lastPathComponent
+        session.label = shell
+        session.shellName = shell
+        sessions[termID] = session
+        sessionOrder.append(termID)
+        termIndex.assign(termID: termID, to: activeBoardID)
+        activeBoard.view.setTerminal(termID: termID, session.view, worldFrame: frame)
+        let card = activeBoard.view.card(.term(termID))
+        card?.setTermLabel(shell)
+        // The cyan foreground-busy signal is unknown until the next term_proc —
+        // default idle (matches spawn); session.live (pty-alive) drives routing.
+        card?.setLive(false)
+    }
+
+    /// P5: replace the pre-minted (empty, unspawned) boot session with a live one
+    /// bound to the daemon's surviving prime shell `liveID`, then make it prime.
+    /// Safe because `maybeSpawn` is gated on `didInitialRestore`, so the boot pty
+    /// was never spawned — there is nothing to orphan.
+    private func adoptPrimeForRebind(liveID: String, frame: CardFrame) {
+        if let boot = primeTermID, boot != liveID {
+            sessions[boot] = nil
+            sessionOrder.removeAll { $0 == boot }
+            termIndex.remove(termID: boot)
+            activeBoard.view.removeCard(id: .term(boot))
+        }
+        bindLiveTerminal(termID: liveID, frame: frame)
+        primeTermID = liveID
+    }
+
+    /// P5.3: re-bind a board's detached terminals after a reconnect, in place —
+    /// keeping each card + its `term_id`, so doc cards and gravity are untouched
+    /// (no full rebuild). Each detached (non-dead) session gets a FRESH empty
+    /// SwiftTerm view swapped into its existing card (so the daemon's replayed
+    /// scrollback repaints cleanly, never duplicating the pre-disconnect buffer);
+    /// then it either revives (its shell survived — `term_id ∈ liveTerms`, no
+    /// spawn) or cold-spawns a fresh shell under the same id (the shell is gone:
+    /// the daemon restarted, or it exited while we were detached). Dead cards stay
+    /// dead. The prime pointer is preserved across the swap.
+    private func reviveTerminals(on board: Board, liveTerms: Set<String>) {
+        let isActive = board === activeBoard
+        for tid in board.sessionOrder {
+            guard let card = board.view.card(.term(tid)), !card.dead else { continue }
+            let frame = card.worldFrame
+            // Swap in a fresh, empty session/view bound to the same id + card.
+            let fresh = makeSession(termID: tid)
+            board.sessions[tid] = fresh
+            board.view.setTerminal(termID: tid, fresh.view, worldFrame: frame)
+            card.setDetached(false)
+            // term_id → board ownership survived the disconnect (only exit clears
+            // it), so routing is already correct for both branches.
+            if liveTerms.contains(tid) {
+                // Survivor: rebind, NO spawn — the replayed scrollback repaints the
+                // fresh view; the honest foreground name follows on the next
+                // term_proc, until then the card shows the shell basename.
+                fresh.live = true
+                let shellPath = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+                let shell = (shellPath as NSString).lastPathComponent
+                fresh.label = shell
+                fresh.shellName = shell
+                card.setTermLabel(shell)
+                card.setLive(false)
+            } else {
+                // Gone: cold-spawn a fresh shell into the same card under the same
+                // id (layout-only restore). Lay out first so the pty starts at the
+                // card size, not the 800×600 view default.
+                if isActive { rootView.layoutSubtreeIfNeeded() }
+                spawn(session: fresh)
+            }
+        }
+        updatePrimacy(on: board)
+        board.view.signalsChanged()
+        // Re-establish focus on the (now-live) prime when this is the board the
+        // user is looking at and it is not docked.
+        if isActive, !board.docked, let view = board.primeTerminalView {
+            window?.makeFirstResponder(view)
+        }
     }
 
     /// Re-anchors persisted doc provenance across a restart (decision 2,
@@ -1686,6 +2096,7 @@ final class AppController {
         let count = max(boardMetas.count, boards.count)
         rootView.statusBar.setBoard(activeBoard.name ?? activeBoardID, count: count)
         updateTitleChip()
+        updateSessionLiveness()
         rootView.coldStartHint.isHidden = !store.isEmpty
     }
 

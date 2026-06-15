@@ -111,10 +111,16 @@ public struct BoardViewport: Equatable, Sendable {
 public struct BoardMeta: Equatable, Sendable {
     public var boardID: String
     public var name: String?
+    /// P5 additive (missing ⇒ nil): the daemon's count of *live* ptys on this
+    /// board. The honest per-board liveness the app cannot derive for a board it
+    /// has never visited this session (no cards yet); the daemon re-pushes
+    /// board_list when a term spawns/exits. A pre-P5 sender omits the key (nil).
+    public var running: Int?
 
-    public init(boardID: String, name: String? = nil) {
+    public init(boardID: String, name: String? = nil, running: Int? = nil) {
         self.boardID = boardID
         self.name = name
+        self.running = running
     }
 }
 
@@ -132,7 +138,11 @@ public enum Message: Equatable, Sendable {
     /// with the restored board's id so the app binds it to the correct board
     /// (and can reject a stale restore that arrives after a later switch).
     case layout(dock: [String], tiles: [LayoutTile], board: BoardViewport?, boardID: String?)
-    case restore(docs: [RestoreDoc], tiles: [LayoutTile], board: BoardViewport?, boardID: String?)
+    /// P5 additive `liveTerms` (default empty): the term_ids the daemon owns a
+    /// live pty for on this board. The app re-binds these cards to the running
+    /// shells (consuming the replayed scrollback that follows) instead of cold-
+    /// spawning; empty ⇒ cold-spawn (pre-P5 / daemon-restart, shells gone).
+    case restore(docs: [RestoreDoc], tiles: [LayoutTile], board: BoardViewport?, boardID: String?, liveTerms: [String])
     case spawnTerm(termID: String, cols: Int, rows: Int, cwd: String?, cmd: [String]?)
     case input(termID: String, bytes: Data)
     case resize(termID: String, cols: Int, rows: Int)
@@ -150,6 +160,11 @@ public enum Message: Equatable, Sendable {
     case boardList(boards: [BoardMeta], active: String)
     case boardSwitch(boardID: String)
     case boardCreate
+    /// P5.4 (app → daemon): rename a board (`name` empty ⇒ clear to the slug) /
+    /// delete a board (the daemon refuses the last board and fixes the active one
+    /// if the deleted board was active). Drive the ⌘K switcher's ⌘E / ⌘⌫.
+    case boardRename(boardID: String, name: String)
+    case boardDelete(boardID: String)
     /// Unknown message types are ignored per the protocol (log and continue).
     case unknown(type: String)
 }
@@ -215,7 +230,11 @@ public extension Message {
             }
             let tiles = try (opt("tiles", \.arrayValue) ?? []).map(Self.layoutTile(from:))
             let board = try Self.board(from: opt("board", \.mapValue))
-            return .restore(docs: docs, tiles: tiles, board: board, boardID: try opt("board_id", \.stringValue))
+            return .restore(
+                docs: docs, tiles: tiles, board: board,
+                boardID: try opt("board_id", \.stringValue),
+                liveTerms: try opt("live_terms", Self.stringArray) ?? []
+            )
         case "spawn_term":
             return .spawnTerm(
                 termID: try req("term_id", \.stringValue),
@@ -255,13 +274,18 @@ public extension Message {
                     throw MessageError.missingField("boards.board_id")
                 }
                 let name = m["name"].flatMap { $0.isNil ? nil : $0.stringValue }
-                return BoardMeta(boardID: boardID, name: name)
+                let running = m["running"].flatMap { $0.isNil ? nil : $0.intValue }
+                return BoardMeta(boardID: boardID, name: name, running: running)
             }
             return .boardList(boards: boards, active: try req("active", \.stringValue))
         case "board_switch":
             return .boardSwitch(boardID: try req("board_id", \.stringValue))
         case "board_create":
             return .boardCreate
+        case "board_rename":
+            return .boardRename(boardID: try req("board_id", \.stringValue), name: try req("name", \.stringValue))
+        case "board_delete":
+            return .boardDelete(boardID: try req("board_id", \.stringValue))
         default:
             return .unknown(type: t)
         }
@@ -361,7 +385,7 @@ public extension Message {
             if let board { map["board"] = Self.boardValue(board) }
             if let boardID { map["board_id"] = .string(boardID) }
             return .map(map)
-        case .restore(let docs, let tiles, let board, let boardID):
+        case .restore(let docs, let tiles, let board, let boardID, let liveTerms):
             var map: [String: MsgPackValue] = [
                 "t": .string("restore"),
                 "docs": .array(docs.map { .map(Self.docEntryFields($0)) }),
@@ -369,6 +393,7 @@ public extension Message {
             ]
             if let board { map["board"] = Self.boardValue(board) }
             if let boardID { map["board_id"] = .string(boardID) }
+            if !liveTerms.isEmpty { map["live_terms"] = .array(liveTerms.map { .string($0) }) }
             return .map(map)
         case .spawnTerm(let termID, let cols, let rows, let cwd, let cmd):
             var map: [String: MsgPackValue] = [
@@ -421,6 +446,7 @@ public extension Message {
                 "boards": .array(boards.map { meta in
                     var m: [String: MsgPackValue] = ["board_id": .string(meta.boardID)]
                     if let name = meta.name { m["name"] = .string(name) }
+                    if let running = meta.running { m["running"] = .int(Int64(running)) }
                     return .map(m)
                 }),
                 "active": .string(active),
@@ -429,6 +455,10 @@ public extension Message {
             return .map(["t": .string("board_switch"), "board_id": .string(boardID)])
         case .boardCreate:
             return .map(["t": .string("board_create")])
+        case .boardRename(let boardID, let name):
+            return .map(["t": .string("board_rename"), "board_id": .string(boardID), "name": .string(name)])
+        case .boardDelete(let boardID):
+            return .map(["t": .string("board_delete"), "board_id": .string(boardID)])
         case .unknown(let type):
             return .map(["t": .string(type)])
         }

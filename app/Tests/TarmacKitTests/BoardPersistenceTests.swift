@@ -49,7 +49,8 @@ final class BoardPersistenceTests: XCTestCase {
                 LayoutTile(kind: "doc", path: "/repo/plan.md", x: 648, y: 140, w: 392, h: 310, z: 1),
             ],
             board: BoardViewport(zoom: 1.0, cx: 0, cy: 0),
-            boardID: nil
+            boardID: nil,
+            liveTerms: []
         )
         XCTAssertEqual(try Message.decode(payload: message.encodedPayload()), message)
     }

@@ -14,6 +14,43 @@ final class BoardSwitcherTests: XCTestCase {
         BoardSwitcher.BoardSummary(boardID: "board-2", name: nil, running: 0, bell: 0, cards: 0, isLive: false),
     ]
 
+    // MARK: - liveness() (P5: honest per-board liveness)
+
+    func testVisitedBoardUsesLocalSignalsNotDaemonCount() {
+        // A board the app has visited: local card signals are authoritative, so
+        // the daemon's count is ignored (no flicker against the local view).
+        let r = BoardSwitcher.liveness(visited: true, localRunning: 2, localIsLive: true, daemonRunning: 0)
+        XCTAssertEqual(r.running, 2)
+        XCTAssertTrue(r.isLive)
+    }
+
+    func testVisitedBoardWithNoLocalLiveIsNotLive() {
+        let r = BoardSwitcher.liveness(visited: true, localRunning: 0, localIsLive: false, daemonRunning: 5)
+        XCTAssertEqual(r.running, 0)
+        XCTAssertFalse(r.isLive, "a visited board's own (dead) sessions win over a stale daemon count")
+    }
+
+    func testNeverVisitedBoardUsesDaemonRunningForLiveness() {
+        // The relaunch case: shells survived, the app hasn't visited the board, so
+        // the daemon's live-pty count is the only honest source.
+        let r = BoardSwitcher.liveness(visited: false, localRunning: 0, localIsLive: false, daemonRunning: 3)
+        XCTAssertEqual(r.running, 3)
+        XCTAssertTrue(r.isLive)
+    }
+
+    func testNeverVisitedBoardWithZeroDaemonRunningIsFaint() {
+        let r = BoardSwitcher.liveness(visited: false, localRunning: 0, localIsLive: false, daemonRunning: 0)
+        XCTAssertEqual(r.running, 0)
+        XCTAssertFalse(r.isLive)
+    }
+
+    func testNeverVisitedBoardWithNilDaemonRunningIsFaint() {
+        // A pre-P5 daemon (or no report) → nil → treated as zero live.
+        let r = BoardSwitcher.liveness(visited: false, localRunning: 0, localIsLive: false, daemonRunning: nil)
+        XCTAssertEqual(r.running, 0)
+        XCTAssertFalse(r.isLive)
+    }
+
     // MARK: - rows()
 
     func testEmptyFilterKeepsAllInOrder() {
@@ -105,5 +142,32 @@ final class BoardSwitcherTests: XCTestCase {
 
     func testMetaCardsAlwaysShownEvenAtZero() {
         XCTAssertEqual(BoardSwitcher.meta(running: 0, bell: 0, cards: 0), "0 cards")
+    }
+
+    // MARK: - P5.4 rename / delete validation
+
+    func testCanDeleteOnlyWhenMoreThanOne() {
+        XCTAssertTrue(BoardSwitcher.canDelete(boardCount: 2))
+        XCTAssertFalse(BoardSwitcher.canDelete(boardCount: 1), "the last board can't be deleted")
+        XCTAssertFalse(BoardSwitcher.canDelete(boardCount: 0))
+    }
+
+    func testSanitizedNameTrimsAndBlanksToEmpty() {
+        XCTAssertEqual(BoardSwitcher.sanitizedName("  infra  "), "infra")
+        XCTAssertEqual(BoardSwitcher.sanitizedName("infra"), "infra")
+        XCTAssertEqual(BoardSwitcher.sanitizedName("   "), "", "whitespace-only clears the name")
+        XCTAssertEqual(BoardSwitcher.sanitizedName(""), "")
+    }
+
+    func testIsTypableAcceptsPrintablesRejectsControlAndFunctionKeys() {
+        XCTAssertTrue(BoardSwitcher.isTypable(scalar: UInt32(("a" as Unicode.Scalar).value)))
+        XCTAssertTrue(BoardSwitcher.isTypable(scalar: 0x20), "space is typable")
+        XCTAssertTrue(BoardSwitcher.isTypable(scalar: UInt32(("é" as Unicode.Scalar).value)))
+        XCTAssertFalse(BoardSwitcher.isTypable(scalar: 0x1f), "control char")
+        XCTAssertFalse(BoardSwitcher.isTypable(scalar: 0x7f), "DEL")
+        // AppKit function/arrow/nav keys (private-use 0xF700–0xF8FF) are rejected.
+        XCTAssertFalse(BoardSwitcher.isTypable(scalar: 0xF700), "NSUpArrowFunctionKey")
+        XCTAssertFalse(BoardSwitcher.isTypable(scalar: 0xF729), "NSHomeFunctionKey")
+        XCTAssertFalse(BoardSwitcher.isTypable(scalar: 0xF8FF), "private-use top")
     }
 }

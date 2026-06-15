@@ -33,6 +33,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         true
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        // P5.3: cancel the bounded reconnect loop + close the socket deterministically.
+        controller?.shutdown()
+    }
+
     @objc func peekRecentDoc(_ sender: Any?) {
         controller?.peekRecent()
     }

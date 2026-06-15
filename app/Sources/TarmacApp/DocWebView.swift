@@ -1,4 +1,5 @@
 import AppKit
+import TarmacKit
 import WebKit
 
 /// Focus rule (crib-state §9): the terminal is "the body" — a click in a doc
@@ -17,7 +18,18 @@ private final class NonFocusableWebView: WKWebView {
 final class DocWebView: NSView, WKNavigationDelegate {
     private let webView: WKWebView
     private var pageLoaded = false
-    private var pendingMarkdown: String?
+    /// The last markdown handed to `render` — the source of truth re-applied on
+    /// every honored `didFinish` (so a pre-load render, an initial load, and a
+    /// post-suspend resume all repaint from one place, idempotently). P5.5.
+    private var lastMarkdown: String?
+    /// P5.5: true while parked on about:blank (the board is inactive). Gates the
+    /// `didFinish` callback so the about:blank load never marks the doc page loaded.
+    private var suspended = false
+    /// P5.5: the reading position captured at suspend, re-applied after the
+    /// resume re-render (a fresh template load resets scrollTop to 0).
+    private var savedScrollY: CGFloat = 0
+    /// P5.5: set on resume so the next honored `didFinish` restores `savedScrollY`.
+    private var restoreScrollOnLoad = false
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
@@ -40,10 +52,10 @@ final class DocWebView: NSView, WKNavigationDelegate {
     }
 
     func render(markdown: String) {
-        guard pageLoaded else {
-            pendingMarkdown = markdown
-            return
-        }
+        // Cache unconditionally (even mid-load / while suspended) so the next
+        // honored didFinish repaints the latest content.
+        lastMarkdown = markdown
+        guard pageLoaded else { return }
         guard
             let json = try? JSONSerialization.data(withJSONObject: markdown, options: [.fragmentsAllowed]),
             let literal = String(data: json, encoding: .utf8)
@@ -51,7 +63,45 @@ final class DocWebView: NSView, WKNavigationDelegate {
         webView.evaluateJavaScript("window.tarmacRender(\(literal));", completionHandler: nil)
     }
 
+    /// P5.5: suspend the view — cache stays, park on about:blank to free the web
+    /// content process. Captures the scroll offset first (async) so resume can
+    /// restore the reading position. No-op if already suspended.
+    func suspend() {
+        guard !suspended else { return }
+        suspended = true
+        // Guarded on `suspended` so a resume() that races ahead of the async scroll
+        // capture (a rapid switch-back) is not clobbered by a late about:blank load.
+        let parkOnBlank: () -> Void = { [weak self] in
+            guard let self, self.suspended else { return }
+            self.pageLoaded = false
+            self.webView.load(URLRequest(url: URL(string: "about:blank")!))
+        }
+        if pageLoaded {
+            webView.evaluateJavaScript("(document.scrollingElement||document.documentElement).scrollTop") { [weak self] result, _ in
+                if let n = result as? NSNumber { self?.savedScrollY = CGFloat(n.doubleValue) }
+                parkOnBlank()
+            }
+        } else {
+            // Mid-load (e.g. a re-suspend before a resume's template finished):
+            // keep the last captured position rather than zeroing it, so a rapid
+            // leave→arrive→leave doesn't lose the reading position. It defaults to
+            // 0 before any successful render, which is the correct first value.
+            parkOnBlank()
+        }
+    }
+
+    /// P5.5: resume a suspended view — reload the template; the honored didFinish
+    /// re-renders the cached markdown and restores the saved scroll. No-op if the
+    /// view was never suspended (e.g. a board on its first arrive).
+    func resume() {
+        guard suspended else { return }
+        suspended = false
+        restoreScrollOnLoad = true
+        loadTemplate()
+    }
+
     private func loadTemplate() {
+        pageLoaded = false
         if let url = Bundle.module.url(forResource: "DocTemplate", withExtension: "html") {
             webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         } else {
@@ -61,10 +111,15 @@ final class DocWebView: NSView, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // P5.5: ignore the about:blank load's didFinish (it fires while suspended);
+        // only the real doc template marks the page loaded.
+        guard DocSuspend.shouldHonorDidFinish(suspended: suspended) else { return }
         pageLoaded = true
-        if let pending = pendingMarkdown {
-            pendingMarkdown = nil
-            render(markdown: pending)
+        // Repaint from the cache (idempotent — safe against a raced callback).
+        if let md = lastMarkdown { render(markdown: md) }
+        if restoreScrollOnLoad {
+            restoreScrollOnLoad = false
+            webView.evaluateJavaScript(DocSuspend.scrollRestoreJS(scrollTop: savedScrollY), completionHandler: nil)
         }
     }
 

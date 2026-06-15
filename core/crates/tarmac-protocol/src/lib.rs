@@ -63,6 +63,13 @@ pub enum Msg {
         // is not one of the byte-pinned conformance vectors, so additivity holds.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         board_id: Option<String>,
+        // P5 additive key (missing => empty): the term_ids the daemon currently
+        // owns a *live* pty for on this board. The app re-binds these cards to the
+        // running shells (and consumes their replayed scrollback that follows the
+        // restore) instead of cold-spawning fresh ones. Empty => cold-spawn — the
+        // pre-P5 behaviour, and the daemon-restart case where the shells are gone.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        live_terms: Vec<String>,
     },
     SpawnTerm {
         term_id: String,
@@ -129,6 +136,19 @@ pub enum Msg {
     // BoardCreate (app -> daemon): mint a fresh board (the daemon assigns the
     // slug id) and re-emit board_list. P5 adds rename/delete.
     BoardCreate,
+    // BoardRename (app -> daemon, P5.4): set `board_id`'s display name. An empty
+    // `name` clears it back to the slug fallback. The daemon re-emits board_list.
+    BoardRename {
+        board_id: String,
+        name: String,
+    },
+    // BoardDelete (app -> daemon, P5.4): remove `board_id`, kill its ptys, and
+    // re-emit board_list (+ the now-active board's restore when the deleted board
+    // was active). Refused (no-op) when it is the last board; the daemon fixes the
+    // active board if the deleted one was active.
+    BoardDelete {
+        board_id: String,
+    },
     // Unknown message types are ignored, not fatal (protocol rule).
     #[serde(other)]
     Unknown,
@@ -142,6 +162,15 @@ pub struct BoardMeta {
     pub board_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    // P5 additive key (optional; missing => unknown): the count of *live* ptys
+    // the daemon owns for this board (term_boards ∩ terms). This is the honest
+    // per-board liveness the app cannot derive for a never-visited board (it has
+    // no cards yet); the daemon re-pushes board_list when this crosses on spawn
+    // /exit. A board with zero live terms still emits Some(0); only a pre-P5
+    // sender omits the key, so existing board_list vectors decode None and
+    // re-encode byte-identically.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub running: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -485,7 +514,7 @@ mod tests {
         );
         assert_eq!(
             decode(&bytes).unwrap(),
-            Msg::Restore { docs: vec![m0_entry("/a.md", "cli", None)], tiles: vec![], board: None, board_id: None }
+            Msg::Restore { docs: vec![m0_entry("/a.md", "cli", None)], tiles: vec![], board: None, board_id: None, live_terms: vec![] }
         );
     }
 
@@ -656,6 +685,7 @@ mod tests {
             tiles: vec![term_tile()],
             board: Some(BoardViewport { zoom: 1.0, cx: 0.0, cy: 0.0 }),
             board_id: Some("board-2".into()),
+            live_terms: vec![],
         };
         assert_eq!(roundtrip(&restore), restore);
     }
@@ -703,8 +733,8 @@ mod tests {
             decode(&bytes).unwrap(),
             Msg::BoardList {
                 boards: vec![
-                    BoardMeta { board_id: "board-0".into(), name: None },
-                    BoardMeta { board_id: "board-1".into(), name: Some("infra".into()) },
+                    BoardMeta { board_id: "board-0".into(), name: None, running: None },
+                    BoardMeta { board_id: "board-1".into(), name: Some("infra".into()), running: None },
                 ],
                 active: "board-1".into(),
             }
@@ -713,6 +743,89 @@ mod tests {
         let sw = Msg::BoardSwitch { board_id: "board-2".into() };
         assert_eq!(roundtrip(&sw), sw);
         assert_eq!(roundtrip(&Msg::BoardCreate), Msg::BoardCreate);
+    }
+
+    // P5 (additive): BoardMeta.running carries the daemon's live-pty count per
+    // board. A board_list with running set round-trips; running:None (a pre-P5
+    // sender) omits the key on the wire, distinct from an explicit running:0.
+    #[test]
+    fn p5_board_meta_running_roundtrips() {
+        let list = Msg::BoardList {
+            boards: vec![
+                BoardMeta { board_id: "board-0".into(), name: None, running: Some(2) },
+                BoardMeta { board_id: "board-1".into(), name: Some("infra".into()), running: Some(0) },
+            ],
+            active: "board-0".into(),
+        };
+        assert_eq!(roundtrip(&list), list);
+
+        // running:None omits the key (byte-identical to the pre-P5 wire); an
+        // explicit running:0 is a real key — the two encodings differ.
+        let none_keyed = Msg::BoardList {
+            boards: vec![BoardMeta { board_id: "board-0".into(), name: None, running: None }],
+            active: "board-0".into(),
+        };
+        let zero_keyed = Msg::BoardList {
+            boards: vec![BoardMeta { board_id: "board-0".into(), name: None, running: Some(0) }],
+            active: "board-0".into(),
+        };
+        assert_ne!(encode(&none_keyed).unwrap(), encode(&zero_keyed).unwrap());
+    }
+
+    // P5 (additive; the plan's "V11" session-bearing restore): a restore carrying
+    // `live_terms` round-trips, and a live_terms-less restore (the pre-P5 wire)
+    // omits the key entirely — so every earlier restore decodes an empty list and
+    // re-encodes byte-identically.
+    #[test]
+    fn p5_restore_live_terms_roundtrips() {
+        let restore = Msg::Restore {
+            docs: vec![m0_entry("/a.md", "cli", None)],
+            tiles: vec![term_tile()],
+            board: None,
+            board_id: Some("board-1".into()),
+            live_terms: vec!["t1".into(), "t2".into()],
+        };
+        assert_eq!(roundtrip(&restore), restore);
+
+        // An empty live_terms omits the key (byte-identical to the pre-P5 wire);
+        // a non-empty list is a real key, so the encodings differ.
+        let empty = Msg::Restore {
+            docs: vec![], tiles: vec![], board: None, board_id: None, live_terms: vec![],
+        };
+        let one = Msg::Restore {
+            docs: vec![], tiles: vec![], board: None, board_id: None, live_terms: vec!["t1".into()],
+        };
+        let empty_bytes = encode(&empty).unwrap();
+        let Msg::Restore { live_terms, .. } = decode(&empty_bytes).unwrap() else { panic!("not restore") };
+        assert!(live_terms.is_empty(), "absent live_terms decodes empty");
+        assert_ne!(encode(&one).unwrap(), empty_bytes);
+    }
+
+    // P5.4 (additive app -> daemon types): board_rename / board_delete round-trip
+    // (named + empty-name rename), and a hand-built wire frame decodes by tag.
+    #[test]
+    fn p5_board_rename_and_delete_roundtrip() {
+        let rename = Msg::BoardRename { board_id: "board-1".into(), name: "infra".into() };
+        assert_eq!(roundtrip(&rename), rename);
+        // An empty name (clear-to-slug) round-trips too.
+        let clear = Msg::BoardRename { board_id: "board-1".into(), name: String::new() };
+        assert_eq!(roundtrip(&clear), clear);
+        let delete = Msg::BoardDelete { board_id: "board-1".into() };
+        assert_eq!(roundtrip(&delete), delete);
+
+        // {t:"board_rename", board_id:"board-1", name:"infra"} from the wire.
+        let bytes = unhex(
+            "83 a1 74 ac 62 6f 61 72 64 5f 72 65 6e 61 6d 65 \
+             a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 31 \
+             a4 6e 61 6d 65 a5 69 6e 66 72 61",
+        );
+        assert_eq!(decode(&bytes).unwrap(), rename);
+        // {t:"board_delete", board_id:"board-1"} from the wire.
+        let del_bytes = unhex(
+            "82 a1 74 ac 62 6f 61 72 64 5f 64 65 6c 65 74 65 \
+             a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 31",
+        );
+        assert_eq!(decode(&del_bytes).unwrap(), delete);
     }
 
     // M3 P2: a keyless spawn_term / open (pre-M3 sender) decodes board_id None.
@@ -937,6 +1050,8 @@ mod tests {
                 tiles: vec![term_tile()],
                 board: Some(BoardViewport { zoom: 1.0, cx: 0.0, cy: 0.0 }),
                 board_id: None,
+                // P5: exercise live_terms in the catch-all roundtrip.
+                live_terms: vec!["t1".into()],
             },
             Msg::SpawnTerm {
                 term_id: "t1".into(),
@@ -971,13 +1086,17 @@ mod tests {
             // M3 board CRUD/list types.
             Msg::BoardList {
                 boards: vec![
-                    BoardMeta { board_id: "board-0".into(), name: None },
-                    BoardMeta { board_id: "board-1".into(), name: Some("infra".into()) },
+                    BoardMeta { board_id: "board-0".into(), name: None, running: None },
+                    BoardMeta { board_id: "board-1".into(), name: Some("infra".into()), running: None },
                 ],
                 active: "board-1".into(),
             },
             Msg::BoardSwitch { board_id: "board-1".into() },
             Msg::BoardCreate,
+            // P5.4 board rename (named + cleared) / delete.
+            Msg::BoardRename { board_id: "board-1".into(), name: "infra".into() },
+            Msg::BoardRename { board_id: "board-1".into(), name: String::new() },
+            Msg::BoardDelete { board_id: "board-1".into() },
             // M3 board_id on spawn/open.
             Msg::SpawnTerm {
                 term_id: "t9".into(),

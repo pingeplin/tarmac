@@ -12,6 +12,14 @@ final class TitleBarChip: NSView {
     private let glyph = NSTextField(labelWithString: "▞")
     private let label = NSTextField(labelWithString: "")
 
+    /// P5 (two honest signals): whether the app currently holds a live daemon
+    /// connection bound to this board. Attached → `▞` agent cyan + name in `ok`
+    /// green; detached → the whole chip faint (the link is down and the board is
+    /// showing stale layout). Drives only color, composing with the ⌘K alpha dim.
+    private var attached = false
+    private var glyphColor: NSColor { attached ? Theme.agent : Theme.faint }
+    private var labelColor: NSColor { attached ? Theme.ok : Theme.faint }
+
     /// Inset from the traffic lights before the pill starts.
     private static let leading: CGFloat = 8
     private static let padX: CGFloat = 8
@@ -34,19 +42,28 @@ final class TitleBarChip: NSView {
         addSubview(pill)
 
         glyph.font = Theme.mono(11, weight: .semibold)
-        glyph.textColor = Theme.agent
+        glyph.textColor = glyphColor
         glyph.drawsBackground = false
         glyph.isBezeled = false
         pill.addSubview(glyph)
 
         label.font = Theme.mono(11, weight: .medium)
-        label.textColor = Theme.muted
+        label.textColor = labelColor
         label.drawsBackground = false
         label.isBezeled = false
         pill.addSubview(label)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// P5: flip the attached/detached color state (app-local daemon-connection
+    /// liveness). Text/size are unchanged — only the glyph + name color move.
+    func setAttached(_ value: Bool) {
+        guard value != attached else { return }
+        attached = value
+        glyph.textColor = glyphColor
+        label.textColor = labelColor
+    }
 
     /// Sets the active board's display name and resizes to fit (so the leading
     /// titlebar accessory claims exactly the chip's width).

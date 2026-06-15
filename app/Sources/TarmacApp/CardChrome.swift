@@ -447,6 +447,10 @@ final class TerminalBodyView: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     func attach(_ terminal: NSView) {
+        // P5.3 revive swaps a fresh view into an already-attached card. `terminal`
+        // is weak, so reassigning it does NOT release the prior view — it stays
+        // retained (and drawing) as a subview unless removed. Drop it first.
+        if let old = self.terminal, old !== terminal { old.removeFromSuperview() }
         self.terminal = terminal
         addSubview(terminal)
         needsLayout = true

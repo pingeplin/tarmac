@@ -78,6 +78,9 @@ impl Registry {
             // the restore frame stays byte-identical until a second board exists.
             // P2 stamps the real id when restoring a switched/non-default board.
             board_id: None,
+            // P5: the Registry has no access to live ptys (those are global on
+            // Daemon). The conn layer stamps the real live_terms before sending.
+            live_terms: vec![],
         }
     }
 
@@ -234,12 +237,21 @@ impl Boards {
     }
 
     // M3 board_list: every board's identity in display order + the active id.
-    pub fn board_list_msg(&self) -> Msg {
+    // P5: each meta carries the daemon's live-pty count for that board (from
+    // `running`, default 0), so the switcher shows honest liveness even for a
+    // board the app has never visited this session (e.g. a board whose shells
+    // survived an app relaunch). Counts are passed in by the caller because the
+    // terms live on `Daemon`, not `Boards` (see `Daemon::running_counts`).
+    pub fn board_list_msg(&self, running: &HashMap<BoardId, u32>) -> Msg {
         Msg::BoardList {
             boards: self
                 .boards
                 .iter()
-                .map(|b| BoardMeta { board_id: b.id.clone(), name: b.name.clone() })
+                .map(|b| BoardMeta {
+                    board_id: b.id.clone(),
+                    name: b.name.clone(),
+                    running: Some(running.get(&b.id).copied().unwrap_or(0)),
+                })
                 .collect(),
             active: self.active.clone(),
         }
@@ -255,8 +267,8 @@ impl Boards {
     pub fn restore_msg_for(&self, id: &str) -> Option<Msg> {
         let b = self.boards.iter().find(|b| b.id == id)?;
         match b.registry.restore_msg() {
-            Msg::Restore { docs, tiles, board, .. } => {
-                Some(Msg::Restore { docs, tiles, board, board_id: Some(b.id.clone()) })
+            Msg::Restore { docs, tiles, board, live_terms, .. } => {
+                Some(Msg::Restore { docs, tiles, board, board_id: Some(b.id.clone()), live_terms })
             }
             _ => unreachable!("restore_msg always yields Restore"),
         }
@@ -286,6 +298,38 @@ impl Boards {
         self.boards.push(Board::new(id.clone(), Registry::empty()));
         self.active = id.clone();
         id
+    }
+
+    // P5.4: set a board's display name (`None`/empty clears it to the slug
+    // fallback — the caller maps "" → None). false (no-op) if no such board.
+    pub fn rename(&mut self, id: &str, name: Option<String>) -> bool {
+        match self.boards.iter_mut().find(|b| b.id == id) {
+            Some(b) => {
+                b.name = name;
+                true
+            }
+            None => false,
+        }
+    }
+
+    // P5.4: remove a board. REFUSED (false) when it is the last board (a board
+    // set is never empty) or the id is unknown. When the deleted board was active,
+    // `active` is fixed to the board now occupying its index (clamped to the new
+    // last), so `active` always names a live board. Returns true on a real delete.
+    pub fn delete(&mut self, id: &str) -> bool {
+        if self.boards.len() <= 1 {
+            return false;
+        }
+        let Some(idx) = self.boards.iter().position(|b| b.id == id) else {
+            return false;
+        };
+        let was_active = self.active == id;
+        self.boards.remove(idx);
+        if was_active {
+            let new_idx = idx.min(self.boards.len() - 1);
+            self.active = self.boards[new_idx].id.clone();
+        }
+        true
     }
 }
 
@@ -400,6 +444,48 @@ impl Daemon {
         }
     }
 
+    // P5: live-pty count per board (term_boards ∩ terms — a term_boards entry is
+    // only authoritative if the term is still in `terms`). Locks `terms` then
+    // `term_boards` sequentially (each released before the next), so it never
+    // holds two term locks at once and can't deadlock against the pump's
+    // terms→term_boards exit cleanup (term.rs).
+    pub async fn running_counts(&self) -> HashMap<BoardId, u32> {
+        let live: HashSet<String> = self.terms.lock().await.keys().cloned().collect();
+        let term_boards = self.term_boards.lock().await;
+        let mut counts: HashMap<BoardId, u32> = HashMap::new();
+        for (term_id, board_id) in term_boards.iter() {
+            if live.contains(term_id) {
+                *counts.entry(board_id.clone()).or_insert(0) += 1;
+            }
+        }
+        counts
+    }
+
+    // P5: a board_list carrying honest per-board live-pty counts, for the
+    // spawn/exit re-push sites that aren't already holding the boards lock to
+    // build a paired restore. Computes counts first (terms/term_boards), then
+    // takes the boards lock — all sequential, no nested term+board hold.
+    pub async fn board_list_msg(&self) -> Msg {
+        let running = self.running_counts().await;
+        self.boards.lock().await.board_list_msg(&running)
+    }
+
+    // P5: the live term_ids the daemon owns per board (term_boards ∩ terms). The
+    // connect/switch restore path uses this to both stamp Restore.live_terms (so
+    // the app re-binds to running shells) and derive board_list running counts —
+    // one lock pass instead of two. Same sequential discipline as running_counts.
+    pub async fn live_terms_by_board(&self) -> HashMap<BoardId, Vec<String>> {
+        let live: HashSet<String> = self.terms.lock().await.keys().cloned().collect();
+        let term_boards = self.term_boards.lock().await;
+        let mut by_board: HashMap<BoardId, Vec<String>> = HashMap::new();
+        for (term_id, board_id) in term_boards.iter() {
+            if live.contains(term_id) {
+                by_board.entry(board_id.clone()).or_default().push(term_id.clone());
+            }
+        }
+        by_board
+    }
+
     // Push to the connected app, if any; otherwise drop silently.
     pub async fn push(&self, msg: Msg) {
         let tx = self.app.lock().await.as_ref().map(|s| s.tx.clone());
@@ -454,5 +540,65 @@ mod tests {
         let mut r = Registry::empty();
         r.set_tiles(vec![]);
         assert_eq!(r.tiles, vec![term_tile()]);
+    }
+
+    // P5.4: helper to find a board's name across the boards set.
+    fn name_of<'a>(boards: &'a Boards, id: &str) -> Option<&'a str> {
+        boards.iter().find(|b| b.id == id).and_then(|b| b.name.as_deref())
+    }
+
+    // P5.4 rename: sets a name, clears it (None), and is a no-op for an unknown id.
+    #[test]
+    fn rename_sets_and_clears_name() {
+        let mut boards = Boards::single();
+        assert!(boards.rename("board-0", Some("infra".into())));
+        assert_eq!(name_of(&boards, "board-0"), Some("infra"));
+        // Clearing (None) drops back to the slug fallback (no name).
+        assert!(boards.rename("board-0", None));
+        assert_eq!(name_of(&boards, "board-0"), None);
+        // Unknown id → false, no-op.
+        assert!(!boards.rename("board-404", Some("x".into())));
+    }
+
+    // P5.4 delete: the last board is refused so a board set is never empty.
+    #[test]
+    fn delete_refuses_last_board() {
+        let mut boards = Boards::single();
+        assert!(!boards.delete("board-0"), "the last board can't be deleted");
+        assert_eq!(boards.iter().count(), 1, "board-0 is still present");
+        assert_eq!(boards.active_id(), "board-0");
+    }
+
+    // P5.4 delete: removing a NON-active board leaves the active board unchanged.
+    #[test]
+    fn delete_non_active_keeps_active() {
+        let mut boards = Boards::single();
+        boards.create(); // board-1, now active
+        boards.set_active("board-0");
+        assert!(boards.delete("board-1"));
+        let ids: Vec<&str> = boards.iter().map(|b| b.id.as_str()).collect();
+        assert_eq!(ids, vec!["board-0"]);
+        assert_eq!(boards.active_id(), "board-0", "active is untouched by a non-active delete");
+    }
+
+    // P5.4 delete: removing the ACTIVE board fixes `active` to a surviving board.
+    #[test]
+    fn delete_active_board_fixes_active() {
+        let mut boards = Boards::single();
+        boards.create(); // board-1, active
+        assert_eq!(boards.active_id(), "board-1");
+        assert!(boards.delete("board-1"));
+        // active falls back to the board now at the deleted index (board-0).
+        assert_eq!(boards.active_id(), "board-0");
+        assert_eq!(boards.iter().count(), 1);
+    }
+
+    // P5.4 delete: an unknown id is a no-op (false), boards unchanged.
+    #[test]
+    fn delete_unknown_id_is_noop() {
+        let mut boards = Boards::single();
+        boards.create(); // board-1
+        assert!(!boards.delete("board-404"));
+        assert_eq!(boards.iter().count(), 2);
     }
 }

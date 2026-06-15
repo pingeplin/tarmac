@@ -64,7 +64,7 @@ fn recv_board_list(app: &mut Conn) -> (Vec<BoardMeta>, String) {
 #[allow(clippy::type_complexity)]
 fn recv_restore(app: &mut Conn) -> (Option<String>, Vec<DocEntry>, Vec<Tile>, Option<BoardViewport>) {
     let msg = app.recv_until("restore", |m| matches!(m, Msg::Restore { .. }));
-    let Msg::Restore { board_id, docs, tiles, board } = msg else { unreachable!() };
+    let Msg::Restore { board_id, docs, tiles, board, .. } = msg else { unreachable!() };
     (board_id, docs, tiles, board)
 }
 
@@ -241,4 +241,212 @@ fn board_switch_to_unknown_is_noop() {
     let (boards, active) = recv_board_list(&mut app);
     assert_eq!(board_ids(&boards), vec!["board-0", "board-1"]);
     assert_eq!(active, "board-1");
+}
+
+// P5.4: deleting the active board kills its ptys (the killed term's pump pushes
+// Exit) and re-pushes board_list (the deleted board gone, active fixed to a
+// survivor) + the new active board's restore. Deleting the last board is refused.
+#[test]
+fn board_delete_kills_terms_fixes_active_and_refuses_last() {
+    let daemon = TestDaemon::start();
+    let mut app = Conn::hello(&daemon.sock, "app");
+    recv_board_list(&mut app);
+    recv_restore(&mut app);
+
+    // Refusing the last board is a no-op: a following create still works (proving
+    // the daemon stayed responsive AND board-0 was never removed).
+    app.send(&Msg::BoardDelete { board_id: "board-0".into() });
+    app.send(&Msg::BoardCreate);
+    let (boards, active) = recv_board_list(&mut app);
+    assert_eq!(board_ids(&boards), vec!["board-0", "board-1"], "last-board delete was refused");
+    assert_eq!(active, "board-1");
+    recv_restore(&mut app);
+
+    // Spawn a long-lived shell on the active board-1 and confirm it is alive.
+    app.send(&Msg::SpawnTerm {
+        term_id: "tdel".into(),
+        cols: 80,
+        rows: 24,
+        cwd: None,
+        cmd: Some(vec!["/bin/cat".into()]),
+        board_id: Some("board-1".into()),
+    });
+    app.send(&Msg::Input { term_id: "tdel".into(), bytes: b"alive\n".to_vec() });
+    app.recv_until("live output", |m| {
+        matches!(m, Msg::Output { term_id, bytes }
+            if term_id.as_str() == "tdel" && common::contains(bytes, b"alive"))
+    });
+
+    // Delete the ACTIVE board-1: the daemon kills tdel and fixes active → board-0.
+    app.send(&Msg::BoardDelete { board_id: "board-1".into() });
+
+    // Both an Exit for the killed term AND a board_list listing only board-0
+    // (active board-0) must arrive; their relative order is unspecified (the
+    // killed pump's exit push races the delete arm's board_list over one tx).
+    let mut saw_exit = false;
+    let mut saw_final_list = false;
+    let deadline = Instant::now() + LONG;
+    while !(saw_exit && saw_final_list) {
+        match app.recv(deadline, "post-delete frames") {
+            Msg::Exit { term_id, .. } if term_id == "tdel" => saw_exit = true,
+            Msg::BoardList { boards, active }
+                if board_ids(&boards) == vec!["board-0"] && active == "board-0" =>
+            {
+                saw_final_list = true
+            }
+            _ => {}
+        }
+    }
+    assert!(saw_exit, "the killed term's pump pushed Exit");
+    assert!(saw_final_list, "board_list dropped board-1 and fixed active to board-0");
+}
+
+// P5.4: rename sets a board's display name, an empty name clears it back to the
+// slug, and an unknown id is a silent no-op (no board_list pushed).
+#[test]
+fn board_rename_sets_clears_and_ignores_unknown() {
+    let daemon = TestDaemon::start();
+    let mut app = Conn::hello(&daemon.sock, "app");
+    recv_board_list(&mut app);
+    recv_restore(&mut app);
+
+    // Rename board-0 → "infra": the re-pushed board_list carries the new name.
+    app.send(&Msg::BoardRename { board_id: "board-0".into(), name: "infra".into() });
+    let (boards, _) = recv_board_list(&mut app);
+    assert_eq!(
+        boards.iter().find(|b| b.board_id == "board-0").and_then(|b| b.name.as_deref()),
+        Some("infra")
+    );
+
+    // An empty name clears it back to None (the slug fallback).
+    app.send(&Msg::BoardRename { board_id: "board-0".into(), name: String::new() });
+    let (boards, _) = recv_board_list(&mut app);
+    assert_eq!(boards.iter().find(|b| b.board_id == "board-0").and_then(|b| b.name.clone()), None);
+
+    // An unknown id pushes NOTHING; a following create still replies (daemon is
+    // responsive, and the create's board_list is what we read — not a stray one).
+    app.send(&Msg::BoardRename { board_id: "board-404".into(), name: "x".into() });
+    app.send(&Msg::BoardCreate);
+    let (boards, active) = recv_board_list(&mut app);
+    assert_eq!(board_ids(&boards), vec!["board-0", "board-1"]);
+    assert_eq!(active, "board-1");
+}
+
+// P5.4: deleting a NON-active board leaves the active board untouched, drops the
+// board from board_list, and still re-sends the (unchanged) active board's restore.
+#[test]
+fn board_delete_non_active_keeps_active() {
+    let daemon = TestDaemon::start();
+    let mut app = Conn::hello(&daemon.sock, "app");
+    recv_board_list(&mut app);
+    recv_restore(&mut app);
+
+    // Create board-1 (active), then switch back so board-0 is active again.
+    app.send(&Msg::BoardCreate);
+    assert_eq!(recv_board_list(&mut app).1, "board-1");
+    recv_restore(&mut app);
+    app.send(&Msg::BoardSwitch { board_id: "board-0".into() });
+    assert_eq!(recv_board_list(&mut app).1, "board-0");
+    recv_restore(&mut app);
+
+    // Delete the NON-active board-1.
+    app.send(&Msg::BoardDelete { board_id: "board-1".into() });
+    let (boards, active) = recv_board_list(&mut app);
+    assert_eq!(board_ids(&boards), vec!["board-0"]);
+    assert_eq!(active, "board-0", "a non-active delete doesn't switch the active board");
+    // The arm still re-sends the (unchanged) active board's restore.
+    assert_eq!(recv_restore(&mut app).0.as_deref(), Some("board-0"));
+}
+
+// P5.1/P5: a normal term exit re-pushes board_list with that board's running
+// count recomputed (the load-bearing path behind the switcher's honest liveness).
+#[test]
+fn term_exit_recomputes_board_running_count() {
+    let daemon = TestDaemon::start();
+    let mut app = Conn::hello(&daemon.sock, "app");
+    recv_board_list(&mut app);
+    recv_restore(&mut app);
+
+    // A long-lived shell keeps board-0's count at >=1 across the short-lived exit.
+    app.send(&Msg::SpawnTerm {
+        term_id: "tlong".into(),
+        cols: 80,
+        rows: 24,
+        cwd: None,
+        cmd: Some(vec!["/bin/cat".into()]),
+        board_id: None,
+    });
+    // A short-lived shell that exits on its own.
+    app.send(&Msg::SpawnTerm {
+        term_id: "techo".into(),
+        cols: 80,
+        rows: 24,
+        cwd: None,
+        cmd: Some(vec!["/bin/echo".into(), "hi".into()]),
+        board_id: None,
+    });
+
+    // When techo exits, the next (re-pushed) board_list reports board-0 running
+    // Some(1) — the surviving tlong, with the exited techo correctly excluded.
+    app.recv_until("techo exit", |m| {
+        matches!(m, Msg::Exit { term_id, .. } if term_id.as_str() == "techo")
+    });
+    let list = app.recv_until("board_list after exit", |m| matches!(m, Msg::BoardList { .. }));
+    let Msg::BoardList { boards, .. } = list else { unreachable!() };
+    assert_eq!(
+        boards.iter().find(|b| b.board_id == "board-0").and_then(|b| b.running),
+        Some(1),
+        "the exit re-push recomputes the running count (1 surviving shell, not 0 or 2)"
+    );
+}
+
+// P5: an app disconnect leaves the board's shells running; a reconnecting app's
+// restore advertises the board's live term_ids and replays their scrollback, so
+// the app re-binds to the running shell instead of cold-spawning a fresh one.
+#[test]
+fn reconnect_rebinds_live_terms_and_replays_scrollback() {
+    let daemon = TestDaemon::start();
+    let mut app = Conn::hello(&daemon.sock, "app");
+    recv_board_list(&mut app);
+    recv_restore(&mut app);
+
+    // Spawn a long-lived shell on board-0 (cat echoes its stdin) and drive a
+    // marker into it; the daemon dispatches SpawnTerm fully (registering the pty)
+    // before the following Input, so there is no spawn/input race.
+    app.send(&Msg::SpawnTerm {
+        term_id: "t0".into(),
+        cols: 80,
+        rows: 24,
+        cwd: None,
+        cmd: Some(vec!["/bin/cat".into()]),
+        board_id: None,
+    });
+    app.send(&Msg::Input { term_id: "t0".into(), bytes: b"scrollmark\n".to_vec() });
+    app.recv_until("live output with marker", |m| {
+        matches!(m, Msg::Output { term_id, bytes }
+            if term_id.as_str() == "t0" && common::contains(bytes, b"scrollmark"))
+    });
+
+    // Disconnect; the shell must keep running daemon-side (no respawn on reconnect).
+    drop(app);
+
+    // Reconnect: the active board's restore lists t0 as live and its scrollback
+    // replays, so the app re-binds rather than respawns.
+    let mut app2 = Conn::hello(&daemon.sock, "app");
+    let (boards, _) = recv_board_list(&mut app2);
+    assert_eq!(
+        boards.iter().find(|b| b.board_id == "board-0").and_then(|b| b.running),
+        Some(1),
+        "board_list reports the surviving shell as running"
+    );
+    let restore = app2.recv_until("restore", |m| matches!(m, Msg::Restore { .. }));
+    let Msg::Restore { live_terms, .. } = restore else { unreachable!() };
+    assert!(
+        live_terms.contains(&"t0".to_string()),
+        "reconnect restore lists the live term, got {live_terms:?}"
+    );
+    app2.recv_until("replayed scrollback", |m| {
+        matches!(m, Msg::Output { term_id, bytes }
+            if term_id.as_str() == "t0" && common::contains(bytes, b"scrollmark"))
+    });
 }

@@ -345,9 +345,59 @@ final class ConformanceTests: XCTestCase {
         )
         if case .array(let arr)? = listOut["boards"], case .map(let m0)? = arr.first {
             XCTAssertNil(m0["name"], "a name-less board omits the name key")
+            XCTAssertNil(m0["running"], "a running-less board omits the running key")
         } else {
             XCTFail("board_list did not encode a boards array")
         }
+    }
+
+    // P5 (additive): BoardMeta.running round-trips through the Swift codec, and a
+    // running-less meta (the pinned M3 vector above) decodes nil.
+    func testP5BoardMetaRunning() throws {
+        let list = Message.boardList(
+            boards: [
+                BoardMeta(boardID: "board-0", name: nil, running: 2),
+                BoardMeta(boardID: "board-1", name: "infra", running: 0),
+            ],
+            active: "board-0"
+        )
+        XCTAssertEqual(try Message.decode(payload: list.encodedPayload()), list)
+
+        // running:nil omits the key (byte-shape unchanged from pre-P5).
+        let listOut = try MsgPack.decode(
+            Message.boardList(boards: [BoardMeta(boardID: "board-0")], active: "board-0").encodedPayload()
+        )
+        if case .array(let arr)? = listOut["boards"], case .map(let m0)? = arr.first {
+            XCTAssertNil(m0["running"], "running:nil omits the key")
+        } else {
+            XCTFail("board_list did not encode a boards array")
+        }
+    }
+
+    // P5.4 (additive app → daemon types): board_rename (named + cleared) /
+    // board_delete round-trip through the Swift codec, and a hand-built wire frame
+    // decodes by tag.
+    func testP5BoardRenameAndDelete() throws {
+        let rename = Message.boardRename(boardID: "board-1", name: "infra")
+        XCTAssertEqual(try Message.decode(payload: rename.encodedPayload()), rename)
+        let clear = Message.boardRename(boardID: "board-1", name: "")
+        XCTAssertEqual(try Message.decode(payload: clear.encodedPayload()), clear)
+        let delete = Message.boardDelete(boardID: "board-1")
+        XCTAssertEqual(try Message.decode(payload: delete.encodedPayload()), delete)
+
+        // {t:"board_rename", board_id:"board-1", name:"infra"} from the wire.
+        let renameBytes = hexData("""
+            83 a1 74 ac 62 6f 61 72 64 5f 72 65 6e 61 6d 65
+            a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 31
+            a4 6e 61 6d 65 a5 69 6e 66 72 61
+            """)
+        XCTAssertEqual(try Message.decode(payload: renameBytes), rename)
+        // {t:"board_delete", board_id:"board-1"} from the wire.
+        let deleteBytes = hexData("""
+            82 a1 74 ac 62 6f 61 72 64 5f 64 65 6c 65 74 65
+            a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 31
+            """)
+        XCTAssertEqual(try Message.decode(payload: deleteBytes), delete)
     }
 }
 
@@ -432,7 +482,8 @@ final class MessageDecodingRulesTests: XCTestCase {
             ],
             tiles: [LayoutTile(kind: "term"), LayoutTile(kind: "doc", path: "/tmp/b.md")],
             board: nil,
-            boardID: nil
+            boardID: nil,
+            liveTerms: []
         )
         XCTAssertEqual(try Message.decode(payload: message.encodedPayload()), message)
     }
@@ -456,7 +507,7 @@ final class MessageDecodingRulesTests: XCTestCase {
             """)
         XCTAssertEqual(
             try Message.decode(payload: restore),
-            .restore(docs: [RestoreDoc(path: "/a.md", via: "cli")], tiles: [], board: nil, boardID: nil)
+            .restore(docs: [RestoreDoc(path: "/a.md", via: "cli")], tiles: [], board: nil, boardID: nil, liveTerms: [])
         )
     }
 
@@ -493,18 +544,20 @@ final class MessageDecodingRulesTests: XCTestCase {
                 board: BoardViewport(zoom: 1.0, cx: 0, cy: 0),
                 boardID: "board-1"
             ),
-            .restore(docs: [], tiles: [], board: nil, boardID: nil),
+            .restore(docs: [], tiles: [], board: nil, boardID: nil, liveTerms: []),
             .restore(
                 docs: [RestoreDoc(path: "/abs/y.md", via: "user")],
                 tiles: [LayoutTile(kind: "doc", path: "/abs/y.md", x: 12.5, y: 24, w: 300, h: 200, z: 2)],
                 board: BoardViewport(zoom: 1.0, cx: 0, cy: 0),
-                boardID: nil
+                boardID: nil,
+                liveTerms: []
             ),
             .restore(
                 docs: [RestoreDoc(path: "/abs/y.md", via: "user", termID: "t1")],
                 tiles: [LayoutTile(kind: "term", x: 0, y: 0, w: 1, h: 1, z: 0, termID: "t1")],
                 board: BoardViewport(zoom: 1.0, cx: 0, cy: 0),
-                boardID: "board-2"
+                boardID: "board-2",
+                liveTerms: ["t1"]
             ),
             .spawnTerm(termID: "u-1", cols: 191, rows: 49, cwd: "/Users/x", cmd: ["/bin/echo", "hi"]),
             .input(termID: "u-1", bytes: Data([0x03])),

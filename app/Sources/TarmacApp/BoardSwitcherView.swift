@@ -107,10 +107,26 @@ final class BoardSwitcherView: NSView {
     func setVisible(_ on: Bool) { isHidden = !on }
 
     /// Rebuilds the panel from the visible rows, the keyboard selection, and the
-    /// current filter query, then scrolls the selection into view.
-    func render(rows: [SwitcherRowVM], selected: Int, query: String) {
+    /// current filter query, then scrolls the selection into view. P5.4: when
+    /// `editing` the header becomes a rename prompt over `editBuffer`; when
+    /// `confirmingDelete` the footer becomes an amber confirm banner for
+    /// `deleteTarget`. The view holds no logic — `AppController` passes the flags.
+    func render(
+        rows: [SwitcherRowVM],
+        selected: Int,
+        query: String,
+        editing: Bool = false,
+        editBuffer: String = "",
+        confirmingDelete: Bool = false,
+        deleteTarget: String? = nil
+    ) {
         self.selected = selected
-        headerLabel.attributedStringValue = headerAttr(query: query)
+        headerLabel.attributedStringValue = editing
+            ? renameHeaderAttr(buffer: editBuffer)
+            : headerAttr(query: query)
+        footerLabel.attributedStringValue = footerAttr(
+            editing: editing, confirmingDelete: confirmingDelete, deleteTarget: deleteTarget
+        )
 
         for v in rowViews { v.removeFromSuperview() }
         rowViews = rows.enumerated().map { idx, vm in
@@ -172,6 +188,44 @@ final class BoardSwitcherView: NSView {
             s.append(NSAttributedString(string: "  · \(query)", attributes: textc))
         }
         return s
+    }
+
+    /// P5.4 rename prompt header: `▞ rename · <buffer>▏` (a caret), buffer in
+    /// `text`; an empty buffer reads `(clears name)` faint (the daemon maps "" to
+    /// clearing the name back to the slug).
+    private func renameHeaderAttr(buffer: String) -> NSAttributedString {
+        let faint: [NSAttributedString.Key: Any] = [.font: Theme.mono(12), .foregroundColor: Theme.faint]
+        let textc: [NSAttributedString.Key: Any] = [.font: Theme.mono(12), .foregroundColor: Theme.text]
+        let s = NSMutableAttributedString()
+        s.append(NSAttributedString(string: "▞ ", attributes: faint))
+        s.append(NSAttributedString(string: "rename", attributes: textc))
+        s.append(NSAttributedString(string: "  · ", attributes: faint))
+        s.append(NSAttributedString(
+            string: buffer.isEmpty ? "(clears name)" : buffer,
+            attributes: buffer.isEmpty ? faint : textc
+        ))
+        s.append(NSAttributedString(string: "▏", attributes: textc))
+        return s
+    }
+
+    /// P5.4 footer: the key hints (faint), the rename edit hints, or — armed — the
+    /// amber one-key delete confirm banner for `deleteTarget`.
+    private func footerAttr(editing: Bool, confirmingDelete: Bool, deleteTarget: String?) -> NSAttributedString {
+        let faint: [NSAttributedString.Key: Any] = [.font: Theme.mono(10), .foregroundColor: Theme.faint]
+        if confirmingDelete {
+            let amber: [NSAttributedString.Key: Any] = [.font: Theme.mono(10), .foregroundColor: Theme.amber]
+            return NSAttributedString(
+                string: "⌘⌫ again to delete \"\(deleteTarget ?? "board")\"      esc cancel",
+                attributes: amber
+            )
+        }
+        if editing {
+            return NSAttributedString(string: "⏎ commit      esc cancel", attributes: faint)
+        }
+        return NSAttributedString(
+            string: "⏎ open   ⌘1-9 jump   ⌘N new   ⌘E rename   ⌘⌫ delete",
+            attributes: faint
+        )
     }
 }
 

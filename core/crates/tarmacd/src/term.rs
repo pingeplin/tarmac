@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -9,16 +10,58 @@ use tracing::{debug, warn};
 
 use crate::state::Daemon;
 
-const OUTPUT_CHUNK: usize = 64 * 1024; // protocol: output chunks <= 64 KiB
+pub const OUTPUT_CHUNK: usize = 64 * 1024; // protocol: output chunks <= 64 KiB
 // M2 honest signals: poll the foreground process group ~every 750 ms; debounce
 // bells to at most one per ~250 ms (docs/protocol.md "M2 honest signals").
 const PROC_POLL_INTERVAL: Duration = Duration::from_millis(750);
 const BELL_DEBOUNCE: Duration = Duration::from_millis(250);
 const BEL: u8 = 0x07;
+// P5: per-term scrollback ring cap. A (re)connecting app replays this so it can
+// re-bind to a live shell instead of cold-spawning. Bounded so N boards × M
+// terms stay cheap; ~one screenful of history at typical widths.
+const SCROLLBACK_CAP: usize = 256 * 1024;
+
+// A fixed-byte-cap ring of a term's recent pty output. Append-only with
+// front-eviction; `snapshot` copies the current contents for replay.
+struct ScrollbackRing {
+    buf: VecDeque<u8>,
+}
+
+impl ScrollbackRing {
+    fn new() -> Self {
+        ScrollbackRing { buf: VecDeque::new() }
+    }
+
+    fn push(&mut self, bytes: &[u8]) {
+        if bytes.len() >= SCROLLBACK_CAP {
+            // A single oversize chunk: keep only its trailing cap bytes.
+            self.buf.clear();
+            self.buf.extend(&bytes[bytes.len() - SCROLLBACK_CAP..]);
+            return;
+        }
+        self.buf.extend(bytes);
+        if self.buf.len() > SCROLLBACK_CAP {
+            let overflow = self.buf.len() - SCROLLBACK_CAP;
+            self.buf.drain(..overflow);
+        }
+    }
+
+    fn snapshot(&self) -> Vec<u8> {
+        self.buf.iter().copied().collect()
+    }
+}
 
 pub struct TermHandle {
     pub input_tx: mpsc::Sender<Vec<u8>>,
     master: std::sync::Mutex<Box<dyn MasterPty + Send>>,
+    // P5: recent pty output, replayed to a (re)connecting app so it re-binds to
+    // this live shell instead of cold-spawning. A std::sync::Mutex (not tokio):
+    // it is only ever locked for a synchronous push/snapshot, never across .await.
+    scrollback: std::sync::Mutex<ScrollbackRing>,
+    // P5.4: the child's pid, captured at spawn BEFORE the wait thread consumes
+    // `child` (process_id() is only valid while we own it). The child is its own
+    // process-group leader, so `kill(-pid, …)` (board delete) signals the group.
+    pid: Option<libc::pid_t>,
 }
 
 impl TermHandle {
@@ -28,6 +71,28 @@ impl TermHandle {
             .expect("master lock")
             .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
             .map_err(|e| format!("resize failed: {e}"))
+    }
+
+    // P5: a copy of the term's recent output for replay on (re)connect. Locked
+    // only for the copy — never held across an await.
+    pub fn scrollback_snapshot(&self) -> Vec<u8> {
+        self.scrollback.lock().expect("scrollback lock").snapshot()
+    }
+
+    // P5.4: kill the term's process group (the child is its group leader) on
+    // board delete. SIGHUP lets a shell exit cleanly (as on a terminal close);
+    // the existing wait thread + pump then run the NORMAL exit cleanup (remove
+    // from terms/term_boards, push Exit + board_list) — kill never touches those
+    // maps itself. A no-op when the pid is unknown; an already-dead group returns
+    // ESRCH, which we ignore.
+    pub fn kill(&self) {
+        if let Some(pid) = self.pid {
+            // SAFETY: kill(2) with a negative pid signals the process group; the
+            // only failures (ESRCH for a dead group, EPERM) are benign here.
+            unsafe {
+                libc::kill(-pid, libc::SIGHUP);
+            }
+        }
     }
 }
 
@@ -70,6 +135,10 @@ pub async fn spawn(
         .slave
         .spawn_command(builder)
         .map_err(|e| format!("spawn failed: {e}"))?;
+    // P5.4: capture the child's pid now, while we still own `child` — the wait
+    // thread below consumes it (`let mut child = child`), after which
+    // process_id() is unavailable. Used by TermHandle::kill on board delete.
+    let child_pid = child.process_id().map(|p| p as libc::pid_t);
     // Drop the slave or the master reader never sees EOF.
     drop(pty.slave);
 
@@ -83,13 +152,18 @@ pub async fn spawn(
         .map_err(|e| format!("pty writer unavailable: {e}"))?;
 
     let (input_tx, mut input_rx) = mpsc::channel::<Vec<u8>>(256);
-    let handle = Arc::new(TermHandle { input_tx, master: std::sync::Mutex::new(pty.master) });
+    let handle = Arc::new(TermHandle {
+        input_tx,
+        master: std::sync::Mutex::new(pty.master),
+        scrollback: std::sync::Mutex::new(ScrollbackRing::new()),
+        pid: child_pid,
+    });
     daemon.terms.lock().await.insert(term_id.clone(), handle.clone());
 
     // M2 honest signals: poll the foreground process-group leader and push a
     // term_proc whenever the name changes (the honest "card title = process
     // name"). The loop stops when the term leaves daemon.terms (after exit).
-    tokio::spawn(proc_name_loop(daemon.clone(), term_id.clone(), handle));
+    tokio::spawn(proc_name_loop(daemon.clone(), term_id.clone(), handle.clone()));
 
     let (out_tx, out_rx) = mpsc::channel::<Vec<u8>>(256);
     tokio::task::spawn_blocking(move || {
@@ -134,19 +208,22 @@ pub async fn spawn(
         let _ = exit_tx.send(code);
     });
 
-    tokio::spawn(pump(daemon, term_id, out_rx, exit_rx));
+    tokio::spawn(pump(daemon, term_id, out_rx, exit_rx, handle));
     Ok(())
 }
 
 // Forwards output to the app, then sends exit after output is drained so the
 // app always sees output frames before the exit frame. This task holds the
 // daemon handle, so it is also where BEL (0x07) detection lives (the blocking
-// reader thread has no daemon handle and must not scan).
+// reader thread has no daemon handle and must not scan). P5: it also appends
+// every chunk to the term's scrollback ring (via `handle`) — unconditionally,
+// even while no app is connected — so a (re)connecting app can replay it.
 async fn pump(
     daemon: Arc<Daemon>,
     term_id: String,
     mut out_rx: mpsc::Receiver<Vec<u8>>,
     mut exit_rx: oneshot::Receiver<Option<i64>>,
+    handle: Arc<TermHandle>,
 ) {
     // M2 honest signals: push at most one bell per BELL_DEBOUNCE window.
     let mut last_bell: Option<Instant> = None;
@@ -169,11 +246,14 @@ async fn pump(
             // in case a grandchild still holds the pty open.
             match tokio::time::timeout(Duration::from_secs(2), out_rx.recv()).await {
                 Ok(Some(chunk)) => {
-                    let ring = maybe_bell(&chunk);
+                    let bell = maybe_bell(&chunk);
+                    // P5: retain in the scrollback ring before the bytes move into
+                    // the push (lock dropped at the `;`, never held across .await).
+                    handle.scrollback.lock().expect("scrollback lock").push(&chunk);
                     daemon
                         .push(Msg::Output { term_id: term_id.clone(), bytes: chunk })
                         .await;
-                    if ring {
+                    if bell {
                         daemon.push(Msg::Bell { term_id: term_id.clone() }).await;
                     }
                 }
@@ -183,11 +263,14 @@ async fn pump(
             tokio::select! {
                 maybe = out_rx.recv() => match maybe {
                     Some(chunk) => {
-                        let ring = maybe_bell(&chunk);
+                        let bell = maybe_bell(&chunk);
+                        // P5: retain in the scrollback ring before the bytes move
+                        // into the push (lock dropped at the `;`, never across .await).
+                        handle.scrollback.lock().expect("scrollback lock").push(&chunk);
                         daemon
                             .push(Msg::Output { term_id: term_id.clone(), bytes: chunk })
                             .await;
-                        if ring {
+                        if bell {
                             daemon.push(Msg::Bell { term_id: term_id.clone() }).await;
                         }
                     }
@@ -211,6 +294,9 @@ async fn pump(
     // with the term). The app turns the exit into a dead card per its own state.
     daemon.term_boards.lock().await.remove(&term_id);
     daemon.push(Msg::Exit { term_id, code }).await;
+    // P5: the exited pty lowered this board's running count — re-push board_list
+    // so a switcher row (even for a board the app has not rebuilt) drops it.
+    daemon.push(daemon.board_list_msg().await).await;
 }
 
 // M2 honest signals: poll the foreground process-group leader of the pty every

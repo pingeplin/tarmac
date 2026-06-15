@@ -1,3 +1,5 @@
+import Foundation
+
 /// Pure view-model for the ⌘K boards switcher (M3 P4, design ref board-v4.jsx
 /// B5). Kept in TarmacKit so the prefix filter, the ⌘1..9 / ⏎ ordinal map, the
 /// selection clamp, and the meta-line formatting are unit-tested away from
@@ -100,6 +102,46 @@ public enum BoardSwitcher {
     public static func clampSelection(_ index: Int, count: Int) -> Int {
         guard count > 0 else { return 0 }
         return min(max(0, index), count - 1)
+    }
+
+    // MARK: - P5.4 rename / delete validation (mirrors the daemon's authority)
+
+    /// Whether a board may be deleted: only when more than one exists (a board set
+    /// is never empty). Mirrors the daemon's last-board refusal so the switcher
+    /// never even arms the delete confirm for the last board.
+    public static func canDelete(boardCount: Int) -> Bool {
+        boardCount > 1
+    }
+
+    /// Normalizes a typed rename: trims surrounding whitespace; a blank/whitespace-
+    /// only name collapses to "" — which the daemon maps to "clear the name back to
+    /// the slug" rather than setting a blank visible name.
+    public static func sanitizedName(_ raw: String) -> String {
+        raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Whether a typed scalar should feed the switcher filter / rename buffer — a
+    /// real printable character. Excludes control chars (< 0x20), DEL (0x7f), and
+    /// the AppKit function/arrow/navigation keys, which `NSEvent.characters`
+    /// delivers as private-use scalars in 0xF700–0xF8FF (e.g. NSUpArrowFunctionKey
+    /// = 0xF700): without this they would otherwise be appended as garbage glyphs.
+    public static func isTypable(scalar value: UInt32) -> Bool {
+        value >= 0x20 && value != 0x7f && !(0xF700...0xF8FF).contains(value)
+    }
+
+    /// Resolve a board's switcher liveness from the app's local card signals and
+    /// the daemon's reported live-pty count (`BoardMeta.running`, P5). For a board
+    /// the app has **visited** this session the local signals are authoritative —
+    /// its cards + live SwiftTerm views stay alive while backgrounded, so they do
+    /// not flicker against the daemon's count. For a **never-visited** board (no
+    /// local view yet — e.g. a board whose shells survived an app relaunch) the
+    /// daemon's `running` count is the only honest source of liveness.
+    public static func liveness(
+        visited: Bool, localRunning: Int, localIsLive: Bool, daemonRunning: Int?
+    ) -> (running: Int, isLive: Bool) {
+        if visited { return (localRunning, localIsLive) }
+        let r = max(0, daemonRunning ?? 0)
+        return (r, r > 0)
     }
 
     /// The row meta line: `"N running · M bell · K cards"`, dropping the running

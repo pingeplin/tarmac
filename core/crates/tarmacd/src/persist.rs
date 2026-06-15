@@ -266,7 +266,7 @@ mod tests {
 
         // The active board's restore frame stays the legacy shape: board_id None.
         match reg.restore_msg() {
-            tarmac_protocol::Msg::Restore { board_id, docs, tiles, board } => {
+            tarmac_protocol::Msg::Restore { board_id, docs, tiles, board, .. } => {
                 assert_eq!(board_id, None);
                 assert_eq!(docs.len(), 2);
                 assert_eq!(tiles.len(), 2);

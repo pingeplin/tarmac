@@ -14,7 +14,14 @@ final class StatusBar: NSView {
     // rest stays faint.
     private let leftGlyph = NSTextField(labelWithString: "▞")
     private let leftLabel = NSTextField(labelWithString: " board")
+    // P5 (two honest signals): the daemon-session word (B1–B4 mocks), a second
+    // left-cluster span — `attached` in `ok` green when the app holds a live
+    // daemon connection, `detached` faint when the link is down. (No tmux — the
+    // mock's literal "tmux" word is dropped; daemon-native sessions only.)
+    private let sessionLabel = NSTextField(labelWithString: "")
     private let rightLabel = NSTextField(labelWithString: "")
+    /// Gap before the session word (CSS `.tm-status` gap:14px).
+    private static let sessionGap: CGFloat = 14
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
@@ -35,6 +42,10 @@ final class StatusBar: NSView {
         leftLabel.font = Theme.mono(10.5)
         leftLabel.textColor = Theme.faint
         addSubview(leftLabel)
+
+        sessionLabel.font = Theme.mono(10.5)
+        sessionLabel.textColor = Theme.faint
+        addSubview(sessionLabel)
 
         rightLabel.font = Theme.mono(10.5)
         rightLabel.textColor = Theme.faint
@@ -61,6 +72,15 @@ final class StatusBar: NSView {
         needsLayout = true
     }
 
+    /// P5: the daemon-session word. `attached` (green) when the app holds a live
+    /// daemon connection bound to the active board; `detached` (faint) when the
+    /// link is down. App-local — the daemon cannot tell a gone app it detached.
+    func setSession(attached: Bool) {
+        sessionLabel.stringValue = attached ? "attached" : "detached"
+        sessionLabel.textColor = attached ? Theme.ok : Theme.faint
+        needsLayout = true
+    }
+
     override func layout() {
         super.layout()
         topBorder.frame = NSRect(x: 0, y: 0, width: bounds.width, height: 1)
@@ -79,6 +99,14 @@ final class StatusBar: NSView {
             y: ((h - labelSize.height) / 2).rounded(),
             width: labelSize.width,
             height: labelSize.height
+        )
+
+        let sessionSize = sessionLabel.fittedSize
+        sessionLabel.frame = NSRect(
+            x: leftLabel.frame.maxX + Self.sessionGap,
+            y: ((h - sessionSize.height) / 2).rounded(),
+            width: sessionSize.width,
+            height: sessionSize.height
         )
 
         let rightSize = rightLabel.fittedSize
