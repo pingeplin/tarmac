@@ -21,4 +21,16 @@ public enum DocRouting {
         guard let owner = owners[path], liveTermIDs.contains(owner) else { return nil }
         return owner
     }
+
+    /// The inverse of `resolveOwner` for one terminal: every doc path that
+    /// records `termID` as its owner. Order is unspecified (`owners` is a
+    /// dictionary); callers that need a single winner rank the result — ⌘P picks
+    /// the most recent. Liveness is not checked here: the caller (⌘P) inverts the
+    /// *focused* terminal, which is by definition live.
+    public static func docsOwnedBy(
+        termID: String,
+        owners: [String: String]
+    ) -> [String] {
+        owners.compactMap { $0.value == termID ? $0.key : nil }
+    }
 }

@@ -27,9 +27,8 @@ extension NSTextField {
 
 // Shared card/tile chrome (was TileView.swift). The v4 `CardView` (board cards)
 // reuses these components; the desk-grid `TileView`/`DashedBorderView` were
-// removed with `DeskGridView` in Phase 2c. `UnpinButton` is retained as the
-// `TileHeaderView.init(unpinButton:)` type (CardView passes nil; Phase 3 may
-// reintroduce a per-card affordance).
+// removed with `DeskGridView` in Phase 2c. `CloseButton` is the doc card's
+// header ✕ (close-to-shelf) affordance; term cards pass nil.
 
 /// `✎ Ns` honest meta (crib-desk-tiles §3): visible while the 30s recency
 /// window is open, ticking at 1Hz (display granularity is 1s). The tick is a
@@ -87,28 +86,41 @@ final class RecentMetaLabel: NSTextField {
     }
 }
 
-/// Unpin ✕ per crib §2: label `⌘⏎ ✕`, mono 10px faint, padding 2px 5px,
+/// Doc-card close ✕ (crib §2): label `✕`, mono 10px faint, padding 2px 5px,
 /// radius 4; hover bg3 + text. Owns its mouse-down so a press here never
 /// reaches the header (and never starts a drag).
 @MainActor
-final class UnpinButton: NSView {
+final class CloseButton: NSView {
     var onClick: (() -> Void)?
 
-    private let label = NSTextField(labelWithString: "⌘⏎ ✕")
+    /// Resting (non-hover) background. `.clear` for the in-header ✕ — the header
+    /// is its backdrop. The viewport-floating twin (see `BoardView.floatingClose`)
+    /// sets a visible chip, since it sits over arbitrary doc content with no
+    /// header behind it.
+    var restingBackground: NSColor = .clear {
+        didSet { layer?.backgroundColor = restingBackground.cgColor }
+    }
+
+    private let label = NSTextField(labelWithString: "✕")
     private let size: NSSize
     private var trackingArea: NSTrackingArea?
 
     override var acceptsFirstResponder: Bool { false }
 
     init() {
-        label.font = Theme.mono(10)
-        label.textColor = Theme.faint
-        let textSize = label.intrinsicContentSize
+        label.font = Theme.mono(11)
+        label.textColor = Theme.muted
+        // `fittedSize`, not `intrinsicContentSize`: the latter under-reports a
+        // label's drawn width (see the NSTextField note atop this file), so an
+        // exact-fit `label.frame` clips the glyph's right edge — visible as the ✕
+        // losing its right arm, magnified under zoom. The other header labels
+        // already measure via `fittedSize`; this is the one that was missed.
+        let textSize = label.fittedSize
         size = NSSize(width: textSize.width + 10, height: textSize.height + 4)
         super.init(frame: NSRect(origin: .zero, size: size))
         wantsLayer = true
         layer?.cornerRadius = 4
-        toolTip = "unpin (back to dock)"
+        toolTip = "close (to shelf)"
         label.frame = NSRect(x: 5, y: 2, width: textSize.width, height: textSize.height)
         addSubview(label)
     }
@@ -132,8 +144,8 @@ final class UnpinButton: NSView {
     }
 
     override func mouseExited(with event: NSEvent) {
-        layer?.backgroundColor = NSColor.clear.cgColor
-        label.textColor = Theme.faint
+        layer?.backgroundColor = restingBackground.cgColor
+        label.textColor = Theme.muted
     }
 
     override func updateTrackingAreas() {
@@ -194,7 +206,7 @@ final class OwnerChipView: NSView {
 }
 
 /// 30px card header (crib §4): bg2, line-soft bottom hairline, padding 0 11px,
-/// gap 7px, mono 400 10.5px muted. The header is the drag handle; the unpin ✕
+/// gap 7px, mono 400 10.5px muted. The header is the drag handle; the close ✕
 /// is the one child that keeps its own mouse handling.
 @MainActor
 final class TileHeaderView: NSView {
@@ -203,7 +215,7 @@ final class TileHeaderView: NSView {
     var onMouseUp: ((NSEvent) -> Void)?
 
     let meta = RecentMetaLabel(font: Theme.mono(9.5), color: Theme.agent)
-    let unpinButton: UnpinButton?
+    let closeButton: CloseButton?
     private let hairline = NSView()
     private let kindGlyph: NSTextField
     private let repoDot: NSView?
@@ -219,10 +231,10 @@ final class TileHeaderView: NSView {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
 
-    init(kindGlyph glyph: String, showsRepoDot: Bool, unpinButton: UnpinButton?) {
+    init(kindGlyph glyph: String, showsRepoDot: Bool, closeButton: CloseButton?) {
         kindGlyph = NSTextField(labelWithString: glyph)
         repoDot = showsRepoDot ? NSView() : nil
-        self.unpinButton = unpinButton
+        self.closeButton = closeButton
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = Theme.bg2.cgColor
@@ -267,7 +279,7 @@ final class TileHeaderView: NSView {
         bellDot.isHidden = true
         addSubview(bellDot)
 
-        if let unpinButton { addSubview(unpinButton) }
+        if let closeButton { addSubview(closeButton) }
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -346,7 +358,9 @@ final class TileHeaderView: NSView {
 
         // Right edge per crib §4/§5: right-to-left cluster
         // [ownerChip][freshMeta][meta][✕][bell], gap 7 (mr cluster gap 8 ≈ 7).
-        var rightX = bounds.width - 11
+        // Inset 13 (vs the leading 11) clears the radius-10 corner and the
+        // corner-seated resize handle, so the ✕ never reads as clipped.
+        var rightX = bounds.width - 13
         if !bellDot.isHidden {
             let size = bellDot.fittedSize
             bellDot.frame = NSRect(
@@ -357,15 +371,18 @@ final class TileHeaderView: NSView {
             )
             rightX = bellDot.frame.minX - 7
         }
-        if let unpinButton {
-            let size = unpinButton.intrinsicContentSize
-            unpinButton.frame = NSRect(
+        // Laid out unconditionally (not gated on isHidden like its siblings) so its
+        // slot is reserved and it stays correctly positioned when focus toggles it
+        // visible — focus changes don't trigger a header relayout.
+        if let closeButton {
+            let size = closeButton.intrinsicContentSize
+            closeButton.frame = NSRect(
                 x: rightX - size.width,
                 y: ((h - size.height) / 2).rounded(),
                 width: size.width,
                 height: size.height
             )
-            rightX = unpinButton.frame.minX - 7
+            rightX = closeButton.frame.minX - 7
         }
         if !meta.isHidden {
             let size = meta.frame.size
@@ -409,7 +426,7 @@ final class TileHeaderView: NSView {
     // The whole header is the drag handle except the ✕ (crib §5 initiation).
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let hit = super.hitTest(point) else { return nil }
-        if let unpinButton, hit === unpinButton { return hit }
+        if let closeButton, hit === closeButton { return hit }
         return self
     }
 

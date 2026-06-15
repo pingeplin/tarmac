@@ -42,4 +42,20 @@ final class DocRoutingTests: XCTestCase {
         XCTAssertEqual(onBoardA, "t1")
         XCTAssertNil(onBoardB)
     }
+
+    // MARK: - docsOwnedBy (the inverse: a terminal's docs, for ⌘P focus targeting)
+
+    func testDocsOwnedByReturnsEveryPathForThatTerminal() {
+        let owned = DocRouting.docsOwnedBy(
+            termID: "t1",
+            owners: ["/a.md": "t1", "/b.md": "t2", "/c.md": "t1"]
+        )
+        // Order is unspecified (dictionary); membership is the contract.
+        XCTAssertEqual(Set(owned), ["/a.md", "/c.md"])
+    }
+
+    func testDocsOwnedByIsEmptyWhenTerminalOwnsNothing() {
+        XCTAssertTrue(DocRouting.docsOwnedBy(termID: "t9", owners: ["/a.md": "t1"]).isEmpty)
+        XCTAssertTrue(DocRouting.docsOwnedBy(termID: "t1", owners: [:]).isEmpty)
+    }
 }

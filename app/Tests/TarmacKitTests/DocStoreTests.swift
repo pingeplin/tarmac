@@ -88,6 +88,34 @@ final class DocStoreTests: XCTestCase {
         XCTAssertEqual(store.mostRecentPath, "/r/c.md")
     }
 
+    func testMostRecentAmongRestrictsToCandidateSet() {
+        let store = DocStore()
+        store.applyRestore([
+            doc("/r/a.md", lastOpenedMs: 100),
+            doc("/r/b.md", lastOpenedMs: 900), // global winner
+            doc("/r/c.md", lastOpenedMs: 200),
+        ])
+        // b is the global most-recent, but it is not a candidate: among {a, c}, c wins.
+        XCTAssertEqual(store.mostRecentPath(among: ["/r/a.md", "/r/c.md"]), "/r/c.md")
+        // The global winner still wins when it is in the set.
+        XCTAssertEqual(store.mostRecentPath(among: ["/r/a.md", "/r/b.md"]), "/r/b.md")
+    }
+
+    func testMostRecentAmongFollowsLiveBumps() {
+        let store = DocStore()
+        store.applyRestore([doc("/r/a.md", lastOpenedMs: 100), doc("/r/c.md", lastOpenedMs: 200)])
+        XCTAssertEqual(store.mostRecentPath(among: ["/r/a.md", "/r/c.md"]), "/r/c.md")
+        store.applyDocOpened(doc("/r/a.md", lastOpenedMs: 300)) // live bump tops a
+        XCTAssertEqual(store.mostRecentPath(among: ["/r/a.md", "/r/c.md"]), "/r/a.md")
+    }
+
+    func testMostRecentAmongIsNilForEmptyOrUnregistered() {
+        let store = DocStore()
+        store.applyRestore([doc("/r/a.md")])
+        XCTAssertNil(store.mostRecentPath(among: []))
+        XCTAssertNil(store.mostRecentPath(among: ["/r/ghost.md"]))
+    }
+
     // MARK: - Read transitions
 
     func testMarkReadFlipsOnceAndNotifiesOnce() {

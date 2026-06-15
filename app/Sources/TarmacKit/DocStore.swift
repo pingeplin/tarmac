@@ -84,6 +84,23 @@ public final class DocStore {
         return best?.path
     }
 
+    /// ⌘P focus-ladder helper: the most-recent doc among `candidates` (highest
+    /// recency tick), or nil if none are registered. Restricts `mostRecentPath`'s
+    /// argmax to a candidate set — the docs owned by the focused terminal — and
+    /// walks `docs` (dock order) so an unregistered/stale owner path is skipped
+    /// and the tie-break matches `mostRecentPath`.
+    public func mostRecentPath(among candidates: [String]) -> String? {
+        let set = Set(candidates)
+        var best: (path: String, tick: UInt64)?
+        for doc in docs where set.contains(doc.path) {
+            let tick = recencyTicks[doc.path] ?? 0
+            if best == nil || tick >= best!.tick {
+                best = (doc.path, tick)
+            }
+        }
+        return best?.path
+    }
+
     /// `docs[]` order is the dock order (protocol: normative in M1).
     public func applyRestore(_ entries: [RestoreDoc]) {
         var seen = Set<String>()

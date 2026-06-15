@@ -351,6 +351,10 @@ final class AppController {
         // TODO(perf): pan fires onLayoutChanged per scroll event — cheap LWW for
         // now; debounce/coalesce the layout send if pan persistence gets chatty.
         board.view.onLayoutChanged = { [weak self] _ in self?.persistLayout(forBoardID: bid) }
+        board.view.onCardClose = { [weak self] id in
+            guard case .doc(let path) = id else { return }
+            self?.moveToShelf(path)
+        }
     }
 
     /// Makes the prime terminal the window's first responder (initial focus): the
@@ -456,6 +460,14 @@ final class AppController {
                 }
                 if self.rootView.toasts.hasToasts {
                     self.rootView.toasts.clearAll()
+                    return true
+                }
+                // With every transient overlay dismissed (peek, toasts), esc closes
+                // the focused doc card to the shelf — the keyboard twin of the ✕.
+                // Last so it never pre-empts dismissing peek/toasts/fresh.
+                if case .doc(let path)? = self.focusedCardID,
+                   self.activeBoard.view.card(.doc(path)) != nil {
+                    self.moveToShelf(path)
                     return true
                 }
                 return false
@@ -1170,6 +1182,10 @@ final class AppController {
     private func handleClickFocus(at point: NSPoint) {
         guard !switcherOpen, window?.isKeyWindow == true else { return }
         guard let hit = hitView(at: point), hit.isDescendant(of: rootView.board) else { return }
+        // The viewport-pinned close ✕ is a board subview but belongs to no card; a
+        // click on it already routed to close-the-doc via its own handler, so don't
+        // mistake it for a bare-board click and defocus the (possibly other) card.
+        if hit.isDescendant(of: rootView.board.floatingClose) { return }
         if let card = enclosingCard(hit) {
             focus(card.id)
         } else {
@@ -1212,6 +1228,10 @@ final class AppController {
     private func routeScroll(_ event: NSEvent) -> Bool {
         guard !switcherOpen else { return false }
         guard let hit = hitView(at: event.locationInWindow), hit.isDescendant(of: rootView.board) else { return false }
+        // The viewport-pinned close ✕ floats over the doc it closes; a scroll there
+        // must not pan the board out from under the doc being read. Swallow it (the
+        // ✕ is a small corner control — scrolling it is a no-op, not a board pan).
+        if hit.isDescendant(of: activeBoard.view.floatingClose) { return true }
         if let fid = focusedCardID, activeBoard.view.card(fid) != nil,
            enclosingCard(hit)?.id == fid {
             return false
@@ -1612,6 +1632,9 @@ final class AppController {
             card.setQuiet(primeID != nil && !isPrime)
             card.setFocused(id == focusID)
         }
+        // Focus drives whether a doc's in-card ✕ is shown, and a focus change does
+        // not reproject — so re-evaluate the viewport-pinned twin here too.
+        b.view.refreshFloatingClose()
     }
 
     /// Makes `termID` the prime (focused) terminal: re-applies primacy styling
@@ -2135,7 +2158,13 @@ final class AppController {
     }
 
     /// Moves a doc from the board to the shelf, persists, refreshes.
+    /// Parks a doc card on the shelf — the canonical "closed but kept" home (the
+    /// doc never leaves DocStore). The single teardown choke point for the header
+    /// ✕, Esc on a focused doc, unpin-from-peek, and esc-on-fresh; clearing focus
+    /// here is what keeps `focusedCardID` from ever pointing at a shelved card
+    /// (a stale focus would mis-target the next ⌘P and desync scroll routing).
     private func moveToShelf(_ path: String) {
+        if focusedCardID == .doc(path) { defocus() }
         activeBoard.view.removeCard(id: .doc(path))
         if !shelfPaths.contains(path) { shelfPaths.append(path) }
         persistLayout()
@@ -2301,18 +2330,37 @@ final class AppController {
         return "tarmac open · \(fmt.string(from: date))"
     }
 
-    /// ⌘P: peek (or re-target) the most-recent doc — never closes an open peek
-    /// (crib-state §6 supersedes M0's toggle).
+    /// ⌘P: open the right-side panel (Quick Look) for the doc you mean — a
+    /// deterministic focus ladder, never a toggle and never "just the last opened".
     func peekRecent() {
         // ⌘P is a menu key-equivalent dispatched ahead of the global key monitor,
         // so it would fire under the ⌘K veil; block it while the switcher owns
         // the screen.
         guard !switcherOpen else { return }
-        guard let path = store.mostRecentPath else {
+        guard let path = peekTarget() else {
             NSSound.beep()
             return
         }
         openPeek(path)
+    }
+
+    /// The doc ⌘P targets: the focused doc card → the most-recent doc produced by
+    /// the focused terminal → the global most-recent doc. A focused terminal that
+    /// has produced no doc falls through to the global winner. nil only when the
+    /// registry is empty. "Most recent" is a recency tick (bumped by open AND
+    /// on-disk change), not strictly last-opened.
+    private func peekTarget() -> String? {
+        // Guard the focused-doc branch on the card still existing: focus is cleared
+        // when a doc is shelved (see moveToShelf), but a restore/relayout can drop a
+        // focused card without routing through there — never target a gone card.
+        if case .doc(let path)? = focusedCardID, activeBoard.view.card(.doc(path)) != nil {
+            return path
+        }
+        if case .term(let termID)? = focusedCardID {
+            let owned = DocRouting.docsOwnedBy(termID: termID, owners: activeBoard.docOwner)
+            if let recent = store.mostRecentPath(among: owned) { return recent }
+        }
+        return store.mostRecentPath
     }
 
     func openPeek(_ path: String) {
@@ -2346,7 +2394,10 @@ final class AppController {
         guard !switcherOpen else { return }
         guard rootView.peekVisible, let path = peekPath else { return }
         if isOnBoard(path) {
-            activeBoard.view.removeCard(id: .doc(path))
+            // Unpin parks the doc on the shelf (same as the card's ✕ close), so a
+            // closed doc always leaves a chip rather than vanishing to recency-only.
+            // moveToShelf persists + refreshes itself.
+            moveToShelf(path)
         } else {
             shelfPaths.removeAll { $0 == path }
             // Land at the gravity position beside the doc's owner terminal (the
@@ -2355,9 +2406,9 @@ final class AppController {
             let owner = ownerCardID(for: path)
             let ownerCard = owner.flatMap { activeBoard.view.card($0) }
             landDocCard(path: path, frame: firstFreeSlot(near: ownerCard), attached: owner != nil, fresh: false)
+            persistLayout()
+            refreshStrips()
         }
-        persistLayout()
-        refreshStrips()
         hidePeek()
     }
 

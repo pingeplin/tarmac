@@ -45,6 +45,9 @@ final class CardView: NSView {
     var onFrameCommitted: ((CardView) -> Void)?
     /// Header mouse-down requesting selection/raise before a move begins.
     var onSelectRequested: ((CardView) -> Void)?
+    /// The header ✕ (doc cards only) was clicked — the board routes it to the
+    /// controller, which parks the doc on the shelf.
+    var onClose: ((CardView) -> Void)?
 
     // MARK: - Gravity / provenance (crib §4, §8)
 
@@ -106,12 +109,12 @@ final class CardView: NSView {
         self.worldFrame = worldFrame
         switch id {
         case .term:
-            header = TileHeaderView(kindGlyph: "›_", showsRepoDot: false, unpinButton: nil)
+            header = TileHeaderView(kindGlyph: "›_", showsRepoDot: false, closeButton: nil)
             let term = TerminalBodyView()
             termBody = term
             body = term
         case .doc:
-            header = TileHeaderView(kindGlyph: "¶", showsRepoDot: true, unpinButton: nil)
+            header = TileHeaderView(kindGlyph: "¶", showsRepoDot: true, closeButton: CloseButton())
             let doc = DocWebView()
             docView = doc
             body = doc
@@ -147,6 +150,15 @@ final class CardView: NSView {
         header.onMouseDown = { [weak self] event in self?.beginMove(event: event) }
         header.onMouseDragged = { [weak self] event in self?.updateGesture(event) }
         header.onMouseUp = { [weak self] _ in self?.endGesture(commit: true) }
+
+        // The doc-card ✕ (no-op on a term card, whose header has none). It rides
+        // the same focused/selected visibility as the resize handles, so it stays
+        // hidden until the card is the user's active target.
+        header.closeButton?.onClick = { [weak self] in
+            guard let self else { return }
+            self.onClose?(self)
+        }
+        header.closeButton?.isHidden = true
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -228,7 +240,13 @@ final class CardView: NSView {
     /// resized via a header grab.
     private func updateHandleVisibility() {
         let show = focused || selected
-        for h in handles.values { h.isHidden = !show }
+        for (corner, h) in handles {
+            // The doc card's ✕ owns the top-right corner; suppress that one resize
+            // handle so the button and handle never collide. Resize stays available
+            // from the other three corners.
+            h.isHidden = !show || (corner == .topRight && header.closeButton != nil)
+        }
+        header.closeButton?.isHidden = !show
     }
 
     /// The base border color for the current state, highest priority first:
