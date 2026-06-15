@@ -6,7 +6,7 @@ import TarmacKit
 /// chrome family (reuses `TileHeaderView` / `RecentMetaLabel` / `TerminalBodyView`
 /// / `DocWebView`), but a card carries a *world frame* instead of a grid slot,
 /// drags to MOVE (no slot swap, no −0.5° rotation — keeps the lift shadow), and
-/// shows 7px corner resize handles when selected.
+/// shows corner resize handles once focused (or selected via a header/handle grab).
 ///
 /// Metrics differ from `TileView` per crib §4: header **30px**, radius **10**.
 /// `.tm-bcard` is `overflow:hidden`, so the selection handles live on the
@@ -218,7 +218,17 @@ final class CardView: NSView {
         guard on != selected else { return }
         selected = on
         layer?.borderColor = currentBorderColor.cgColor
-        for h in handles.values { h.isHidden = !on }
+        updateHandleVisibility()
+    }
+
+    /// Resize handles surface whenever the card is the user's active target —
+    /// `focused` (a single click) OR `selected` (an explicit header/handle grab).
+    /// A plain focus now arms resizing, so the handles follow focus; keeping
+    /// `selected` in the condition still lets a dead card (never focusable) be
+    /// resized via a header grab.
+    private func updateHandleVisibility() {
+        let show = focused || selected
+        for h in handles.values { h.isHidden = !show }
     }
 
     /// The base border color for the current state, highest priority first:
@@ -304,6 +314,7 @@ final class CardView: NSView {
         guard !dead, on != focused else { return }
         focused = on
         if !lifted { layer?.borderColor = currentBorderColor.cgColor }
+        updateHandleVisibility()
     }
 
     // MARK: - Dead state (Phase 5b decision 1: terminal exited, no auto-respawn)

@@ -1177,12 +1177,15 @@ final class AppController {
         }
     }
 
-    /// Makes `id` the focused card: brings it to the front and, for a live
-    /// terminal, makes it prime (keyboard + accent border + darker header — the
-    /// focus indicator). It does NOT show resize handles: a plain focus click
-    /// shouldn't arm a resize; handles stay reserved for an explicit header grab.
+    /// Makes `id` the focused card: brings it to the front, arms its resize
+    /// handles (a plain focus now shows handles — the card's own `focused` state
+    /// drives them), and for a live terminal makes it prime (keyboard + accent
+    /// border + darker header — the focus indicator). Clears any stale selection
+    /// left on a *different* card by an earlier header grab, so only the focused
+    /// card wears handles.
     private func focus(_ id: CardID) {
         guard activeBoard.view.card(id) != nil else { return }
+        if activeBoard.view.selectedID != id { activeBoard.view.select(nil) }
         focusedCardID = id
         activeBoard.view.bringToFront(id)
         if case let .term(termID) = id, sessions[termID]?.live == true, !docked {
