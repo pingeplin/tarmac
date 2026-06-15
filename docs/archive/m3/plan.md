@@ -9,7 +9,7 @@ boards") with a ⌘K switcher, per-board layout/viewport/terminal restore, a
 titlebar session chip, and an honest attached/detached session signal. Design
 reference: `design_handoff_tarmac/tarmac/board-v4.jsx` mock **B5** (boards
 switcher), the **TitleBar** session chip and **StatusBar** board state, and the
-deferral notes in `docs/v4/migration-plan.md` (lines 28–33, 152–208).
+deferral notes in `docs/archive/v4/migration-plan.md` (lines 28–33, 152–208).
 
 This plan was produced by a scout→design→synthesis pass (5 scouts over the
 design refs + current daemon/app/protocol; 3 independent design lenses;
@@ -18,8 +18,8 @@ synthesis) on 2026-06-14.
 ## Status — M3 COMPLETE (2026-06-15, branch `feat/m3-strips`)
 
 All five phases shipped; full TarmacKit + Rust + conformance suite green (Swift
-146, Rust 35 protocol / 13 daemon-lib / 7 integration); app-layer behaviors
-GUI-verified. Not yet merged to `main`.
+146, Rust 35 protocol / 13 daemon-lib / 7 m3-integration); app-layer behaviors
+GUI-verified. Merged to `main` (fast-forward; final commit `e182f9f`).
 
 - **P1** ✅ board-keyed record + nested persist + lossless board-0 migration.
 - **P2** ✅ board CRUD/list on the wire + two real boards (BoardList/Switch/Create).
@@ -390,7 +390,7 @@ for the app-layer behaviors the suite cannot cover.
   (decision 2).
 - **Auto board-naming heuristic** — manual naming ships first (decision 3).
 - **Editable docs (v4c)** — the milestone *after* M3 (needs the write-signal
-  honesty model); driving notes in `docs/v4/migration-plan.md` lines 154–190.
+  honesty model); driving notes in `docs/archive/v4/migration-plan.md` lines 154–190.
 - **Zone labels** (user-typed board text) — nice-to-have after wayfinding.
 
 ## 8 · Definition of done

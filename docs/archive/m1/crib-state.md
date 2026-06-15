@@ -10,7 +10,7 @@ designer) never interpret the design themselves. Sources: `design_handoff_tarmac
 Precedence used throughout: **README > prototype > inference**. Conflicts are called out
 inline. Where both sources are silent, the minimal behavior consistent with the no-harness
 philosophy is proposed and marked `DECISION:` on its own line. Visual values (colors, px)
-reuse `docs/m0/visual-crib.md` — its oklch→sRGB conversions are verified; never recompute.
+reuse `docs/archive/m0/visual-crib.md` — its oklch→sRGB conversions are verified; never recompute.
 
 M1 scope: dock + index (⌘E), pin tiles, drag-swap, provenance dots + pulses. **No** process
 correlation exists in M1 (that is M2): every "during &lt;process&gt;" meta in the design
@@ -84,7 +84,7 @@ over the UTF-8 bytes of the name:
 
 The daemon must implement this byte-for-byte (continuity: colors users saw in M0 peek
 headers must not change). The app keeps `Theme.repoColors` only as the index→NSColor map
-(values in `docs/m0/visual-crib.md`: repo-a `#d78e88`, repo-b `#81b482`, repo-c `#89a4de`,
+(values in `docs/archive/m0/visual-crib.md`: repo-a `#d78e88`, repo-b `#81b482`, repo-c `#89a4de`,
 repo-d `#be92c8`) and consumes the daemon's `color_index` instead of hashing locally.
 
 Note: the prototype's fixture letters are hand-assigned and do **not** match the hash
@@ -155,7 +155,7 @@ does **not** pulse (prototype openDoc never sets `changedAt`).
 - Dock-icon halo: `@keyframes dockPulse { 0% { box-shadow: 0 0 0 0 var(--tm-agent-dim); }
   60% { box-shadow: 0 0 0 6px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }`,
   applied as `animation: dockPulse 2.4s ease-out 3` (`proto.css` `.tm-dock .doc.pulse`).
-  `--tm-agent-dim` = `#4eccd3` @ 16% (verified table, `docs/m0/visual-crib.md`).
+  `--tm-agent-dim` = `#4eccd3` @ 16% (verified table, `docs/archive/m0/visual-crib.md`).
 - Halo runs 2.4 s × 3 = **7.2 s of animation**; the *recent window* is
   **30 000 ms exactly** — `st.changedAt && Date.now() - st.changedAt < 30000` (`panels.jsx`
   `PDock`/`PIndex`/`PPeek`, `desk.jsx` `DocTile`). README's "~30s of being noticeable"
@@ -454,7 +454,7 @@ implements the first):
   idle-≥3min banner are out of M1 scope; `focus` frames, if received, are ignored as
   unknown types per protocol rules).
 - Never move the user's scroll position: peek live-reload keeps the reading position (M0's
-  `tarmacRender` already records/restores `scrollTop` — `docs/m0/visual-crib.md`).
+  `tarmacRender` already records/restores `scrollTop` — `docs/archive/m0/visual-crib.md`).
 
 DECISION: after any mouse interaction on dock, index, toast chips, or tile headers, the
 app returns first responder to the terminal view (generalizing M0's peek focus rule —

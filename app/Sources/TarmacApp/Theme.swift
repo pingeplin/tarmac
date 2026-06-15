@@ -1,6 +1,6 @@
 import AppKit
 
-// Tokens from docs/v4/visual-crib.md §2 (Ghostty Breeze; authored sRGB hex).
+// Tokens from docs/archive/v4/visual-crib.md §2 (Ghostty Breeze; authored sRGB hex).
 @MainActor
 enum Theme {
     static let bg0 = srgb(0x24282c)

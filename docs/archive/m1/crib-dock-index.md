@@ -11,7 +11,7 @@ Precedence used throughout: README > interactive prototype (`tarmac-proto/`) > s
 (`tarmac/*.jsx`). Conflicts are flagged `CONFLICT`. Where every source is silent, the minimal
 no-harness-consistent behavior is proposed and flagged `DECISION:` on its own line.
 
-All oklch→sRGB conversions are **reused verbatim from `docs/m0/visual-crib.md`** (already
+All oklch→sRGB conversions are **reused verbatim from `docs/archive/m0/visual-crib.md`** (already
 pixel-verified) — never recompute.
 
 ## Colors used by these surfaces

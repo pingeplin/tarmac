@@ -1,6 +1,6 @@
 import Foundation
 
-/// Display/grouping derivations per docs/m1/crib-state.md §1.1 / §4.1: when the
+/// Display/grouping derivations per docs/archive/m1/crib-state.md §1.1 / §4.1: when the
 /// daemon sent no repo, fall back to the parent directory exactly as M0 did so
 /// existing colors and paths do not shift.
 public extension RestoreDoc {

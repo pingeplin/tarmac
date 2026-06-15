@@ -11,7 +11,7 @@ separated from the parts the v4 migration deliberately replaced. Verified agains
 the code on 2026-06-15 (file references are where the feature *would* live / where
 its absence was confirmed).
 
-Two larger pending milestones live in `docs/v4/migration-plan.md` §Deferred, not
+Two larger pending milestones live in `docs/archive/v4/migration-plan.md` §Deferred, not
 duplicated here:
 - **Editable docs / conflict banner (v4c)** — the next milestone; needs a design
   round first (no implementation spec exists).

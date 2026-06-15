@@ -187,7 +187,7 @@ final class ToastStackView: NSView {
         return hit is ToastChipView ? hit : nil
     }
 
-    /// Chips per docs/m1/crib-dock-index.md §1.2: each runs its action (nil =
+    /// Chips per docs/archive/m1/crib-dock-index.md §1.2: each runs its action (nil =
     /// dismiss only), then dismisses its own toast — never the whole stack.
     func show(icon: String = "¶", title: String, body: String?, chips: [(label: String, action: (() -> Void)?)] = []) {
         if entries.count >= 3, let oldest = entries.last {

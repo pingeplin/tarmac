@@ -3,7 +3,7 @@
 Exact values + behaviors for the Swift/AppKit implementer. Sources: README §5 "Desk + pinned
 tiles" + "State Management"; `tarmac-proto/desk.jsx` (primary behavioral spec), `app.jsx`
 (pin/unpin/swap state), `proto.css`; `tarmac/theme.css` (tokens, `.tm-tile`), `converged.css`.
-Color hex values are the **verified** oklch→sRGB conversions from `docs/m0/visual-crib.md` —
+Color hex values are the **verified** oklch→sRGB conversions from `docs/archive/m0/visual-crib.md` —
 reuse them, never recompute. Where README and prototype disagree, README wins (conflicts are
 called out). Lines starting with `DECISION:` are choices made where both sources are silent.
 

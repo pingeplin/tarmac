@@ -44,7 +44,7 @@ chrome in dependency order.
 
 ### Phase 0 — Crib + bundle refresh (docs only)
 - v4 design files added to `design_handoff_tarmac/` (done — this commit).
-- Write `docs/v4/visual-crib.md` in the style of `docs/m0/visual-crib.md`:
+- Write `docs/archive/v4/visual-crib.md` in the style of `docs/archive/m0/visual-crib.md`:
   Breeze token table (hex, no oklch conversion needed), card metrics
   (header 30px / radius 10 / pad 0 11px / shadow), dot grid (24px spacing,
   dot `#32383e`, offset −7,−9; 11px in lo-zoom), shelf/zoomctl/minimap/offhint

@@ -106,7 +106,7 @@ UI sans = system SF Pro stack (`NSFont.systemFont`). Doc headings use SF weight 
   - right-aligned group (gap 6px, mono 10px faint): kbd chips `⌘⏎ pin` and `esc`
 - kbd chip: mono 500 10px, color muted, bg2, 1px line border with **2px bottom edge**,
   radius 4, padding 1px 5px; hover bg3 + text color, clickable.
-- Body: WKWebView hosting `docs/m0/DocTemplate.html`, bg1.
+- Body: WKWebView hosting `docs/archive/m0/DocTemplate.html`, bg1.
 - **Focus rule: opening a peek never moves keyboard focus out of the terminal.** `esc` dismisses.
 
 ## Toasts

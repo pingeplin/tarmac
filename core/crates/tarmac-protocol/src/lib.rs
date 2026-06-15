@@ -886,7 +886,7 @@ mod tests {
 
     #[test]
     fn repo_color_index_matches_theme_hash() {
-        // Reference values from docs/m1/crib-state.md §1.2 (app's Theme.swift FNV-1a).
+        // Reference values from docs/archive/m1/crib-state.md §1.2 (app's Theme.swift FNV-1a).
         assert_eq!(repo_color_index("payments-api"), 3);
         assert_eq!(repo_color_index("search-svc"), 2);
         assert_eq!(repo_color_index("infra"), 1);

@@ -194,7 +194,7 @@ on insertion order).
 
 ## v4 board additive keys
 
-The v4 "whiteboard" model (docs/v4/migration-plan.md Phase 2; docs/v4/visual-crib.md
+The v4 "whiteboard" model (docs/archive/v4/migration-plan.md Phase 2; docs/archive/v4/visual-crib.md
 §9) makes each strip an infinite canvas: cards carry a world-space frame and the
 viewport (pan + zoom) is persisted. These are **additive** under the M0 encoding
 rules — new OPTIONAL keys, missing ⇒ nil, unknown keys still ignored — so all 7
@@ -256,7 +256,7 @@ keys).
 
 ## v4 Phase 3 additive keys
 
-Phase 3 (docs/v4/migration-plan.md Phase 3; docs/v4/visual-crib.md §5/§6/§8)
+Phase 3 (docs/archive/v4/migration-plan.md Phase 3; docs/archive/v4/visual-crib.md §5/§6/§8)
 adds placement semantics — gravity, the shelf, and provenance edges. As with
 the board keys, these are **additive** under the M0 encoding rules: new OPTIONAL
 keys, missing ⇒ nil, unknown keys still ignored. All 8 conformance vectors and
@@ -293,7 +293,7 @@ so there is no extra persist change for them beyond the tile keys.
 
 ## M2 honest signals
 
-Phase 3.5 (docs/v4/migration-plan.md Phase 3.5) surfaces the real terminal
+Phase 3.5 (docs/archive/v4/migration-plan.md Phase 3.5) surfaces the real terminal
 signals the wayfinding chrome is built around — foreground process name, the
 terminal bell, and exit. These are **new additive daemon→app message TYPES**, not
 new keys on existing messages: a receiver that does not recognize them ignores
