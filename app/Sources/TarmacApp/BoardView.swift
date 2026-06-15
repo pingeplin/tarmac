@@ -397,6 +397,10 @@ final class BoardView: NSView {
             self.gesturingID = nil
             self.preGestureFrame = nil
             self.satelliteAnchors = [:]
+            // Replay the z reorder deferred during the gesture (raiseToFront only
+            // bumped the z value; the subview order is still pre-gesture). Now that
+            // the mouse-tracking session is over, restructuring is safe again.
+            self.restack()
             self.reproject(c)
             self.onLayoutChanged?(self.viewport)
         }
@@ -450,6 +454,14 @@ final class BoardView: NSView {
     private func raiseToFront(_ card: CardView) {
         let maxZ = cards.values.map(\.worldFrame.z).max() ?? 0
         if card.worldFrame.z <= maxZ { card.worldFrame.z = maxZ + 1 }
+        // Never tear down the view hierarchy while a move/resize is tracking the
+        // mouse: `restack()` does removeFromSuperview + re-add on every card, and
+        // doing that mid-drag breaks AppKit's mouse-tracking session so the
+        // terminating mouseUp is lost (the gesture then never ends — see the
+        // click-to-focus path that fires one runloop tick after every mouseDown).
+        // The grabbed card already floats on top via its lift zPosition during
+        // the drag; the z reorder is replayed once at gesture commit.
+        guard !isGesturing else { return }
         restack()
     }
 
