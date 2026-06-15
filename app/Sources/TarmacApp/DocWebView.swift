@@ -30,6 +30,12 @@ final class DocWebView: NSView, WKNavigationDelegate {
     private var savedScrollY: CGFloat = 0
     /// P5.5: set on resume so the next honored `didFinish` restores `savedScrollY`.
     private var restoreScrollOnLoad = false
+    /// The last device-scale factor the board pushed (always ≥2 — see
+    /// `BoardView.docDeviceScaleOverride`). Re-asserted on every honored
+    /// `didFinish` so a resumed/reloaded web process re-rasterizes its tiles at
+    /// that density rather than the window backing scale. `0` is the initial
+    /// "never pushed yet" sentinel.
+    private var lastDeviceScaleFactor: CGFloat = 0
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
@@ -100,6 +106,47 @@ final class DocWebView: NSView, WKNavigationDelegate {
         loadTemplate()
     }
 
+    /// Crisp-zoom hook (the board pushes this on every zoom / display change).
+    /// Sets the web content process's deviceScaleFactor to the board-computed
+    /// effective scale (≥2, oversampled — see `BoardView.docDeviceScaleOverride`)
+    /// so WebKit re-rasterizes its tiles at that pixel density — countering the
+    /// card's `frame≠bounds` CATransform upscale and oversampling on a low-DPI
+    /// screen — WITHOUT changing the CSS viewport, so text never re-wraps. This is
+    /// the doc-card analogue of `CardView.applyContentScale` for native layers,
+    /// but routes through the only knob WebKit's out-of-process tiles obey.
+    func applyZoomScale(_ effectiveScale: CGFloat) {
+        // Re-raster is an async paint round-trip — skip non-finite / negative
+        // values and no-op when the scale hasn't actually changed (every pan
+        // reprojects, but only a zoom / display change should re-raster).
+        guard effectiveScale.isFinite, effectiveScale >= 0,
+              abs(effectiveScale - lastDeviceScaleFactor) > 0.0001 else { return }
+        lastDeviceScaleFactor = effectiveScale
+        applyDeviceScaleFactor(effectiveScale)
+    }
+
+    /// Pushes WebKit's private `_setOverrideDeviceScaleFactor:` SPI
+    /// (`WKWebViewPrivate.h`, macOS 10.11+) — the web content process's device
+    /// scale factor, i.e. `window.devicePixelRatio`. WebKit re-rasterizes its
+    /// tiles at this density with NO CSS-layout change, so doc text never
+    /// re-wraps. It's the one knob that reaches WebKit's out-of-process tiles,
+    /// which ignore an externally-poked `CALayer.contentsScale`. `0` resets to
+    /// the window backing scale.
+    ///
+    /// Invoked via an IMP cast, not a typed `@objc`-protocol cast: that latter
+    /// resolves through `-conformsToProtocol:`, which a class that merely
+    /// *responds* to the selector (without declaring conformance) fails — so the
+    /// cast would silently return nil. `perform(_:with:)` is also wrong here: it
+    /// boxes the `CGFloat` argument to `id` and mangles it. The IMP cast passes
+    /// the `CGFloat` in a register with the correct C ABI. Guarded on
+    /// `responds(to:)` so a future OS dropping the selector no-ops, never crashes.
+    private func applyDeviceScaleFactor(_ factor: CGFloat) {
+        let sel = NSSelectorFromString("_setOverrideDeviceScaleFactor:")
+        guard webView.responds(to: sel) else { return }
+        typealias Fn = @convention(c) (AnyObject, Selector, CGFloat) -> Void
+        let imp = webView.method(for: sel)
+        unsafeBitCast(imp, to: Fn.self)(webView, sel, factor)
+    }
+
     private func loadTemplate() {
         pageLoaded = false
         if let url = Bundle.module.url(forResource: "DocTemplate", withExtension: "html") {
@@ -117,6 +164,11 @@ final class DocWebView: NSView, WKNavigationDelegate {
         pageLoaded = true
         // Repaint from the cache (idempotent — safe against a raced callback).
         if let md = lastMarkdown { render(markdown: md) }
+        // Re-assert the render density: a fresh template load (initial or post-
+        // resume) starts the web process at the window backing scale, so the last
+        // board-pushed factor must be re-sent or the doc reads blurry until the
+        // next zoom / display change. Skipped only before the board's first push.
+        if lastDeviceScaleFactor > 0 { applyDeviceScaleFactor(lastDeviceScaleFactor) }
         if restoreScrollOnLoad {
             restoreScrollOnLoad = false
             webView.evaluateJavaScript(DocSuspend.scrollRestoreJS(scrollTop: savedScrollY), completionHandler: nil)
@@ -127,7 +179,7 @@ final class DocWebView: NSView, WKNavigationDelegate {
         <!doctype html><html><head><meta charset="utf-8"><style>
         body { background:#2b3036; color:#ced3d7; margin:0; }
         #doc { max-width:720px; margin:0 auto; padding:26px 36px 72px;
-               font:400 12px/1.7 ui-monospace, Menlo, monospace; white-space:pre-wrap; }
+               font:400 16px/1.7 ui-monospace, Menlo, monospace; white-space:pre-wrap; }
         </style></head><body><div id="doc"></div><script>
         window.tarmacRender = function (md) {
           var s = document.scrollingElement || document.documentElement;

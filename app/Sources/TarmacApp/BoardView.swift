@@ -70,7 +70,8 @@ final class BoardView: NSView {
         // the feature can return as an explicit, counter-scaled overview later.
         card.setLocard(false)
         reproject(card)
-        card.applyContentScale(contentScale)
+        card.applyContentScale(contentScale)       // in-process layers
+        card.applyDocZoomScale(docDeviceScaleOverride)  // a fresh doc card starts at the right density
         onCardsChanged?()
         return card
     }
@@ -483,11 +484,41 @@ final class BoardView: NSView {
     }
     private static let maxContentScaleZoom: CGFloat = 3
 
+    /// The device-scale override pushed to doc cards' WKWebViews. We *always*
+    /// render the doc at ≥2× density. On a 1× external display, rendering at the
+    /// display's native 1× makes WebKit's grayscale sans text look thin and
+    /// feathered ("毛邊"); oversampling (render at 2×, the compositor downsamples
+    /// to the 1× panel) gives smoother edges than native 1× can. On a 2× Retina
+    /// display the floor is a no-op. Above 100% it tracks `backingScale × zoom`
+    /// (capped) so the frame≠bounds upscale stays crisp. Always non-zero, so
+    /// WebKit's own auto-tracking stays off — `viewDidChangeBackingProperties`
+    /// re-asserts the value when the window crosses to a different-density screen.
+    private var docDeviceScaleOverride: CGFloat {
+        let backing = window?.backingScaleFactor ?? 2
+        let zoomFactor = min(max(viewport.zoom, 1), Self.maxContentScaleZoom)
+        return max(2, backing * zoomFactor)
+    }
+
     private func updateContentScaleIfNeeded() {
         guard window != nil, abs(viewport.zoom - lastContentScaleZoom) > 0.0001 else { return }
         lastContentScaleZoom = viewport.zoom
         let scale = contentScale
-        for card in cards.values { card.applyContentScale(scale) }
+        let docOverride = docDeviceScaleOverride
+        for card in cards.values {
+            card.applyContentScale(scale)          // in-process layers: terminal grid, chrome
+            card.applyDocZoomScale(docOverride)     // out-of-process WebKit tiles (doc cards)
+        }
+    }
+
+    /// A display move (or DSR change) fires this; the window's backing scale may
+    /// have flipped while zoom stayed constant, so force `updateContentScaleIfNeeded`
+    /// past its zoom-change guard to re-assert content scale and the doc override
+    /// against the new backing scale — e.g. recomputing the doc's oversample floor
+    /// when crossing between a 2× Retina and a 1× external screen.
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        lastContentScaleZoom = 0
+        updateContentScaleIfNeeded()
     }
 
     private func reproject(_ card: CardView) {

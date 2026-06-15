@@ -154,7 +154,8 @@ final class CardView: NSView {
     /// upscale real pixels. The board pushes the target scale here on zoom change;
     /// we remember it so content swapped in later (e.g. a revived terminal)
     /// inherits the same sharpness. NOTE: this only sharpens IN-PROCESS layers
-    /// (the SwiftTerm grid, chrome); it no-ops on a WKWebView's out-of-process tiles.
+    /// (the SwiftTerm grid, chrome) — it no-ops on a WKWebView's out-of-process
+    /// tiles, which the doc card sharpens separately via `applyDocZoomScale`.
     private var pendingContentScale: CGFloat = 2
     func applyContentScale(_ scale: CGFloat) {
         pendingContentScale = scale
@@ -188,6 +189,16 @@ final class CardView: NSView {
     /// processes; the cached markdown re-renders + scroll restores on resume.
     func suspendDoc() { docView?.suspend() }
     func resumeDoc() { docView?.resume() }
+
+    /// Routes the board's zoom-derived scale to the doc card's web view so
+    /// WebKit re-rasterizes its out-of-process tiles at the on-screen pixel
+    /// density (no-op on a term card). This is deliberately separate from
+    /// `applyContentScale`: that layer-tree walk sharpens in-process layers
+    /// (the SwiftTerm grid, chrome) but NO-OPS on WKWebView's proxy tile
+    /// layers, which only obey the device-scale factor pushed here.
+    func applyDocZoomScale(_ effectiveScale: CGFloat) {
+        docView?.applyZoomScale(effectiveScale)
+    }
 
     // MARK: - Selection
 
