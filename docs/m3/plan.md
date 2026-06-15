@@ -15,6 +15,23 @@ This plan was produced by a scout→design→synthesis pass (5 scouts over the
 design refs + current daemon/app/protocol; 3 independent design lenses;
 synthesis) on 2026-06-14.
 
+## Status — M3 COMPLETE (2026-06-15, branch `feat/m3-strips`)
+
+All five phases shipped; full TarmacKit + Rust + conformance suite green (Swift
+146, Rust 35 protocol / 13 daemon-lib / 7 integration); app-layer behaviors
+GUI-verified. Not yet merged to `main`.
+
+- **P1** ✅ board-keyed record + nested persist + lossless board-0 migration.
+- **P2** ✅ board CRUD/list on the wire + two real boards (BoardList/Switch/Create).
+- **P3** ✅ app multi-board ownership refactor (`Board` model + thin coordinator).
+- **P4** ✅ ⌘K switcher (B5) + titlebar session chip + status-bar board state.
+- **P5** ✅ session liveness + reconnect re-bind + rename/delete + webview suspension
+  (final commit `e182f9f`).
+
+**P5 shipped a simpler session model than written below** — see the
+implementation note under §P5. The optional daemon-restart PTY re-parenting
+stayed deferred (cold layout-only restore ships), as decision 2 allowed.
+
 ## 1 · The shape of M3 — two orthogonal axes
 
 M3 is two generalizations that share a milestone name. Keeping them separate is
@@ -136,7 +153,7 @@ until the P3 refactor.
 
 ## 4 · Phases (each ships a working app; tests stay green)
 
-### P1 — Board-keyed record + nested persist + board-0 migration *(invisible)*
+### P1 ✅ — Board-keyed record + nested persist + board-0 migration *(invisible)*
 Introduce board identity end-to-end as a no-op. The daemon holds a board map
 keyed by `board_id`; the old flat `state.json` migrates losslessly to
 `board-0`; `Layout`/`Restore` carry an optional `board_id` (absent ⇒ `board-0`).
@@ -164,7 +181,7 @@ The app still drives one board — nothing changes visually.
   every user's desk). Mitigate with a **golden-file byte-identity test** against
   a real fixture, and exactly one board at runtime.
 
-### P2 — Board CRUD/list on the wire + two real boards *(crude switch, no chrome)*
+### P2 ✅ — Board CRUD/list on the wire + two real boards *(crude switch, no chrome)*
 Make N>1 boards real end-to-end behind a deliberately ugly **throwaway keybind**
 before the real ⌘K panel. Lands the **entire wire** before the app refactor, so
 P3 is a pure refactor against a stable N-board daemon.
@@ -195,7 +212,7 @@ P3 is a pure refactor against a stable N-board daemon.
   ownership must be recorded **at spawn**, not derived later. Both daemon-side,
   integration-tested.
 
-### P3 — App multi-board ownership refactor *(the big lift, pure refactor)*
+### P3 ✅ — App multi-board ownership refactor *(the big lift, pure refactor)*
 Lift the ~12 board-scoped properties off the 1252-line `AppController` into a
 per-board `Board` model; `AppController` becomes a thin coordinator. Largest,
 riskiest, least-testable phase — deliberately **after** the daemon + wire are
@@ -226,7 +243,7 @@ N-board-capable, so it is a pure refactor against a stable substrate.
   verify skill (switch while docked; switch mid-output; ⌘T into a non-active
   board).
 
-### P4 — ⌘K boards switcher (B5) + titlebar session chip + status-bar board state
+### P4 ✅ — ⌘K boards switcher (B5) + titlebar session chip + status-bar board state
 Replace the throwaway hotkey with the real B5 ⌘K palette and surface board /
 session identity in the chrome. Pure presentation over a model that already
 round-trips.
@@ -260,12 +277,33 @@ round-trips.
   not a data risk. Thumbnails must use persisted/in-memory frames, not live
   views.
 
-### P5 — Session liveness + reconnect re-bind + rename/delete + multi-board perf
+### P5 ✅ — Session liveness + reconnect re-bind + rename/delete + multi-board perf
 Make the chip and switcher honest about session liveness (attached/detached)
 from a daemon-native session abstraction (**no tmux**), make reconnect
 **re-bind** to live shells instead of respawning, and finish board-lifecycle
 CRUD + memory hardening. Last, because session survival is orthogonal to board
 identity and must never block the multiple-boards promise.
+
+> **Implementation note (shipped 2026-06-15, commit `e182f9f`).** The
+> session-liveness model was simplified to **"two honest signals"**, dropping the
+> `BoardSession`/`BoardSessionState`/`PersistedSession` types and the V11
+> session-bearing restore the bullets below describe:
+> - The attached/detached **chip + status word are app-LOCAL** — driven by the
+>   `DaemonClient` connection state, not a wire `BoardSession.attached` (the daemon
+>   can't tell a gone app it detached; reconnect flips it back).
+> - **Switcher liveness rides an additive `BoardMeta.running`** (the daemon's live
+>   pty count per board, re-pushed on term exit) — honest even for a never-visited
+>   board — and cross-launch identity rides an additive **`Restore.live_terms`**
+>   (the live `term_id`s the app re-binds to + replays scrollback for). No new
+>   session struct; both are additive keys, so no V11 vector was needed.
+> - P5.3 added a **bounded app auto-reconnect** (detached→attached recovery with a
+>   capped backoff) — beyond the written plan but in its spirit.
+> - **Deferred as planned:** daemon-restart PTY re-parenting — cold layout-only
+>   restore ships (decision 2).
+>
+> Everything else below shipped as written. The bullets are kept as the original
+> design intent; the shipped wire is `BoardMeta.running` + `Restore.live_terms` +
+> `BoardRename`/`BoardDelete`.
 - **Daemon:** per-board session state `{ name, tmux: nil, attached }` the daemon
   owns; `attached` reflects whether the app is connected with that board active.
   On reconnect, after `Restore`, replay each live term's scrollback ring (the P1
