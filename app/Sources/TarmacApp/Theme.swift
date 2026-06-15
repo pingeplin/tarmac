@@ -20,6 +20,13 @@ enum Theme {
     // Drag-lift border (crib §4 prime/lift; authored hex, not a :root token).
     // Reused as the prime-card border and the cockpit dock-pane top border.
     static let liftBorder = srgb(0x5a626a)
+    // Scroll-focus border: the quiet sibling of `liftBorder`. A focused card (the
+    // pointer/scroll-active card — `focusedCardID`, incl. doc cards) wears this
+    // soft teal edge so scroll-capture is legible. Deliberately a different hue
+    // family from prime's neutral gray: when keyboard-active (prime, gray border +
+    // dark header) and scroll-active (focus, teal edge) are two different cards,
+    // the colors tell them apart at a glance. Sits below prime in the border stack.
+    static let focusBorder = srgb(0x1abc9c, alpha: 0.5)
     // Prime-card header bg (crib §1/§2/§4: `.tm-bcard.prime .bhd` background
     // `#3a4046` — near bg2 but distinct). New Breeze token Theme.swift lacked.
     static let primeHeaderBg = srgb(0x3a4046)

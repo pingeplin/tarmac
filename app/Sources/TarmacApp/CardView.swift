@@ -64,6 +64,11 @@ final class CardView: NSView {
     private(set) var prime = false
     /// Quiet = a non-prime card while a terminal is prime (crib §4): opacity 0.8.
     private(set) var quiet = false
+    /// Focused = the pointer/scroll-active card (`AppController.focusedCardID`):
+    /// scrolling over it scrolls its own content. Border-only (a soft teal edge),
+    /// independent of prime — a doc can be focused (scroll target) while a terminal
+    /// stays prime (keyboard target). Set via `setFocused` from the focus model.
+    private(set) var focused = false
     /// Dead = a terminal card whose pty exited (Phase 5b decision 1): the card
     /// stays on the board dimmed, labelled `exit N · ↵ respawn`, and never reads
     /// as prime/quiet. Set via `setDead`.
@@ -211,15 +216,20 @@ final class CardView: NSView {
         for h in handles.values { h.isHidden = !on }
     }
 
-    /// The base border color for the current state: agent when selected or
-    /// fresh, prime's `#5a626a` for the focused terminal, else line (the lift
-    /// state overrides this transiently).
+    /// The base border color for the current state, highest priority first:
+    /// muted line for dead/detached, agent when selected or fresh, prime's
+    /// `#5a626a` for the keyboard-prime terminal, the soft teal `focusBorder` for
+    /// the scroll-focused card (incl. docs), else line. The lift state overrides
+    /// this transiently. `focused` sits below `prime` on purpose: when one card is
+    /// both (a click on a live terminal) the louder prime border wins, so it never
+    /// double-draws; the teal edge only surfaces on a focused-but-not-prime card.
     private var currentBorderColor: NSColor {
         // A dead OR detached terminal card reads muted, below selection/prime
         // accents (detached is reversible; dead is not).
         if dead || detached { return Theme.line.withAlphaComponent(0.6) }
         if selected || fresh { return Theme.agent }
         if prime { return Theme.liftBorder }
+        if focused { return Theme.focusBorder }
         return Theme.line
     }
 
@@ -279,6 +289,16 @@ final class CardView: NSView {
         guard !dead, on != quiet else { return }
         quiet = on
         alphaValue = on ? 0.8 : 1.0
+    }
+
+    /// Focused = the scroll-active card (`AppController.focusedCardID`): a soft teal
+    /// border only — no header / shadow / alpha change — so it composes with `quiet`
+    /// (a focused doc beside a prime terminal is dimmed to 0.8 AND shows the teal
+    /// edge) and stays subordinate to `prime`. A dead card is never a focus target.
+    func setFocused(_ on: Bool) {
+        guard !dead, on != focused else { return }
+        focused = on
+        if !lifted { layer?.borderColor = currentBorderColor.cgColor }
     }
 
     // MARK: - Dead state (Phase 5b decision 1: terminal exited, no auto-respawn)

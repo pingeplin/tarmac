@@ -1186,7 +1186,9 @@ final class AppController {
         focusedCardID = id
         activeBoard.view.bringToFront(id)
         if case let .term(termID) = id, sessions[termID]?.live == true, !docked {
-            setPrime(termID)
+            setPrime(termID)   // re-primes AND recomputes the focus edge via updatePrimacy
+        } else {
+            updatePrimacy()    // doc / dead / docked: no re-prime, but paint the focus edge
         }
     }
 
@@ -1196,6 +1198,7 @@ final class AppController {
         guard focusedCardID != nil || activeBoard.view.selectedID != nil else { return }
         focusedCardID = nil
         activeBoard.view.select(nil)
+        updatePrimacy()   // clear the focus edge off the previously-focused card
     }
 
     /// Point 2: a scroll/pan routes to the whiteboard — pans the board and returns
@@ -1371,8 +1374,11 @@ final class AppController {
         // Lay out so the terminal view has its card-sized geometry before spawn,
         // so the pty starts at the right cols/rows (not the 800×600 default).
         rootView.layoutSubtreeIfNeeded()
-        // The new terminal becomes prime + first responder (typing follows it).
+        // The new terminal becomes prime + first responder (typing follows it) AND
+        // scroll-focused — so scrolling the freshly-spawned card scrolls its own
+        // scrollback rather than panning the board. `spawn` recomputes both visuals.
         primeTermID = id
+        focusedCardID = .term(id)
         spawn(session: session)
         activeBoard.view.select(.term(id))
         if !docked { window?.makeFirstResponder(session.view) }
@@ -1591,11 +1597,17 @@ final class AppController {
     private func updatePrimacy(on board: Board? = nil) {
         let b = board ?? activeBoard
         let primeID: CardID? = b.hasLivePrime ? b.primeTermID.map(CardID.term) : nil
+        // Focus (the scroll-active card) is an active-board-only concept — a
+        // background board never shows the focus edge, mirroring the board-switch
+        // clear at beginArrivingSwitch. This is the single loop where all three
+        // attention visuals (prime, quiet, focused) recompute per card.
+        let focusID: CardID? = (b === activeBoard) ? focusedCardID : nil
         for (id, card) in b.view.cards {
             let isPrime = (id == primeID)
             card.setPrime(isPrime)
             // A card is quiet only while some terminal is prime and it isn't it.
             card.setQuiet(primeID != nil && !isPrime)
+            card.setFocused(id == focusID)
         }
     }
 
