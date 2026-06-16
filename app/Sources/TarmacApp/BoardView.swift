@@ -693,7 +693,8 @@ final class BoardView: NSView {
     /// `iterations` steps at each and forcing a synchronous dot-grid redraw, so
     /// PerfTrace captures a per-level baseline with no GUI interaction (synthetic
     /// trackpad/pinch events get dropped without an Accessibility grant). Drives
-    /// `reprojectAll()` directly, never `onLayoutChanged`, so nothing persists.
+    /// `reprojectAll()` directly, never `onLayoutChanged`, so the sweep persists
+    /// nothing (the persist-coalescing check lives in AppController, fix #2).
     /// Removable with PerfTrace — see docs/perf-whiteboard-zoom.md.
     func runBenchmark(iterations: Int, levels: [CGFloat]) {
         populateBenchmarkCards()

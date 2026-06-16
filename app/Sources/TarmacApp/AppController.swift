@@ -378,6 +378,17 @@ final class AppController {
             guard let self else { return }
             FileHandle.standardError.write(Data("⟦perf⟧ benchmark start (iters=\(iters))\n".utf8))
             self.activeBoard.view.runBenchmark(iterations: iters, levels: [1.0, 0.51, 0.49, 0.28])
+
+            // Fix #2 check: a burst of onLayoutChanged-equivalent schedulePersist
+            // calls (each = one scroll delta) must collapse to ONE pending persist;
+            // flushing it then runs persistLayout exactly once. Tests the coalescing
+            // invariant directly (no dependence on the debounce timer firing under a
+            // headless run loop). With the old per-event persist this would be 30.
+            let burst = 30
+            for _ in 0..<burst { self.schedulePersist(boardID: self.activeBoardID) }
+            self.flushPendingPersist()
+            PerfTrace.flush("persist-coalesce: \(burst) schedulePersist ->")
+
             FileHandle.standardError.write(Data("⟦perf⟧ benchmark done\n".utf8))
             NSApp.terminate(nil)
         }
