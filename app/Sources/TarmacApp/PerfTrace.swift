@@ -56,11 +56,15 @@ enum PerfTrace {
         return result
     }
 
-    /// Records a point value (a count / size, not a duration) — emits a signpost
-    /// event and, when enabled, an aggregator gauge under `name`.
-    static func gauge(_ name: StaticString, _ value: Int) {
-        os_signpost(.event, log: log, name: name, "%{public}ld", value)
-        if consoleEnabled { Aggregator.shared.record(key: String(describing: name), value: Double(value)) }
+    /// Records a point value (a count / size, not a duration) under `name`. The
+    /// value is `@autoclosure`d and only evaluated when the console channel is on,
+    /// so a gauge whose argument is a per-frame reduce over all cards costs nothing
+    /// when profiling is off.
+    static func gauge(_ name: StaticString, _ value: @autoclosure () -> Int) {
+        guard consoleEnabled else { return }
+        let v = value()
+        os_signpost(.event, log: log, name: name, "%{public}ld", v)
+        Aggregator.shared.record(key: String(describing: name), value: Double(v))
     }
 
     /// Synchronously prints the aggregator's current accumulation under `label`

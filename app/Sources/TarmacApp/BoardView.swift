@@ -519,6 +519,7 @@ final class BoardView: NSView {
             // single-card drag reproject. Fix #3: was a redundant 2nd refresh/frame.
         }
         PerfTrace.gauge("visibleCards", visibleCardCount)
+        PerfTrace.gauge("liveCards", cards.values.reduce(into: 0) { if !$1.isHidden { $0 += 1 } })
         PerfTrace.gauge("totalCards", cards.count)
     }
 
@@ -635,6 +636,23 @@ final class BoardView: NSView {
     private func project(_ card: CardView) {
         card.frame = worldToView(card.worldFrame.rect)
         card.setBoundsSize(CGSize(width: card.worldFrame.w, height: card.worldFrame.h))
+        cull(card)
+    }
+
+    /// Fix #5 — viewport culling. Keep every card ALIVE in the hierarchy (never
+    /// removeFromSuperview: that would reset a doc card's WKWebView scroll and
+    /// detach the SwiftTerm pty) but hide cards more than a viewport off-screen so
+    /// the window server stops compositing / tiling them each frame. The live
+    /// region is the viewport grown by one viewport on every side, so a card is
+    /// already un-hidden a full screen before it scrolls into view — no pop-in or
+    /// WKWebView repaint flash. The docked card's hidden state is owned by
+    /// `setDocked`, so it's never touched here. Skipped while bounds is empty
+    /// (pre-layout) so a transient never hides everything.
+    private func cull(_ card: CardView) {
+        guard card.id != dockedID, bounds.width > 0, bounds.height > 0 else { return }
+        let live = bounds.insetBy(dx: -bounds.width, dy: -bounds.height)
+        let shouldHide = !card.frame.intersects(live)
+        if card.isHidden != shouldHide { card.isHidden = shouldHide }
     }
 
     /// Rebuilds the provenance edge set in view space (crib §8): one edge per
