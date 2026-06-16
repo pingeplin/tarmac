@@ -1,6 +1,6 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: core app test e2e run
+.PHONY: core app test e2e run bundle release
 
 core:
 	cd $(ROOT)/core && cargo build
@@ -22,3 +22,12 @@ run: core app
 	TARMAC_DAEMON="$(ROOT)/core/target/debug/tarmacd" \
 	PATH="$(ROOT)/core/target/debug:$$PATH" \
 	"$(ROOT)/app/.build/debug/TarmacApp"
+
+# Assemble an unsigned dist/Tarmac.app (arm64). No Apple cert needed; launches
+# locally so you can validate bundle-relative daemon/CLI/resource resolution.
+bundle:
+	$(ROOT)/scripts/bundle.sh
+
+# Sign + .dmg + notarize + staple. Needs DEVID_IDENTITY + NOTARY_PROFILE.
+release:
+	$(ROOT)/scripts/release.sh
