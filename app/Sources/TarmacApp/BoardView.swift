@@ -67,6 +67,7 @@ final class BoardView: NSView {
         let card = CardView(id: id, worldFrame: worldFrame)
         wire(card)
         cards[id] = card
+        if case .doc = id { docCardCount += 1 }
         cardLayer.addSubview(card)
         restack()
         // Locards (semantic-zoom summaries) are off: in the infinite-canvas model
@@ -83,6 +84,7 @@ final class BoardView: NSView {
 
     func removeCard(id: CardID) {
         guard let card = cards.removeValue(forKey: id) else { return }
+        if case .doc = id { docCardCount -= 1 }
         if selectedID == id { selectedID = nil }
         card.removeFromSuperview()
         recomputeEdges()
@@ -149,7 +151,6 @@ final class BoardView: NSView {
         viewport = clampZoom(vp)
         reprojectAll()
         updateGridDensity()
-        updateLocards()
         needsDisplay = true
         onViewportChanged?(viewport)
         if commit { onLayoutChanged?(viewport) }
@@ -225,7 +226,6 @@ final class BoardView: NSView {
             viewport = clampZoom(vp)
             reprojectAll()
             updateGridDensity()
-            updateLocards()
             needsDisplay = true
             onViewportChanged?(viewport)
             if frame < steps {
@@ -257,7 +257,6 @@ final class BoardView: NSView {
         viewport.cy = worldAnchor.y - (anchor.y - c.y) / newZoom
         reprojectAll()
         updateGridDensity()
-        updateLocards()
         needsDisplay = true
         onViewportChanged?(viewport)
         if commit { onLayoutChanged?(viewport) }
@@ -359,6 +358,11 @@ final class BoardView: NSView {
     /// pure-transform model for the card itself. Routes to the same `onCardClose`.
     let floatingClose = CloseButton()
     private var floatingCloseTarget: CardID?
+
+    /// Live count of doc cards (the only kind the floating ✕ tracks), kept in sync
+    /// by add/removeCard so `refreshFloatingClose` can skip its per-reproject scan
+    /// on terminal-only boards (#7).
+    private var docCardCount = 0
 
     private var viewportCenter: CGPoint { CGPoint(x: bounds.midX, y: bounds.midY) }
 
@@ -539,6 +543,12 @@ final class BoardView: NSView {
     /// coordinate convert + containment test — so it rides every reproject as well
     /// as focus changes (`focusChromeChanged`).
     func refreshFloatingClose() {
+        // #7: the floating ✕ only ever tracks a doc card, so on a terminal-only
+        // board (no doc cards) skip the per-reproject scan entirely.
+        guard docCardCount > 0 else {
+            if floatingCloseTarget != nil { floatingClose.isHidden = true; floatingCloseTarget = nil }
+            return
+        }
         // Mirror exactly where an in-card ✕ is meant to be shown (`!isHidden` ==
         // focused || selected), then check whether it actually landed on screen.
         let target = cards.values.first { card in
@@ -635,7 +645,11 @@ final class BoardView: NSView {
     /// a pure view transform, matching the Heptabase/Figma canvas feel.
     private func project(_ card: CardView) {
         card.frame = worldToView(card.worldFrame.rect)
-        card.setBoundsSize(CGSize(width: card.worldFrame.w, height: card.worldFrame.h))
+        // #9: a card's intrinsic world size changes only on a RESIZE, not on
+        // pan/zoom. setBoundsSize re-establishes the frame≠bounds zoom scale and
+        // triggers a layout pass, so skip it when the world size is unchanged.
+        let worldSize = CGSize(width: card.worldFrame.w, height: card.worldFrame.h)
+        if card.bounds.size != worldSize { card.setBoundsSize(worldSize) }
         cull(card)
     }
 
@@ -784,8 +798,10 @@ final class BoardView: NSView {
 
     /// No-op in the infinite-canvas model — cards always render their real
     /// (zoom-scaled) content rather than swapping to a fixed-size locard at the
-    /// semantic-zoom threshold. See `addCard`. Kept (and still called on zoom
-    /// crossings) so the feature can return as an explicit counter-scaled overview.
+    /// semantic-zoom threshold. See `addCard`. Fix #8 removed its per-frame calls
+    /// (setViewport / zoom / animateViewport) — it was looping every card to set a
+    /// flag the model never reads. Retained (uncalled) so the feature can return
+    /// as an explicit counter-scaled overview, gated to actual threshold crossings.
     func updateLocards() {
         for card in cards.values { card.setLocard(false) }
     }
