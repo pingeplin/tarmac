@@ -474,5 +474,7 @@ first.
   grid→whiteboard migration.
 - [`backlog.md`](backlog.md) — designed-but-unbuilt features and by-decision
   deferrals.
-- `../design_handoff_tarmac/` — the original v3 design source (README + mocks);
-  historical provenance, much of it superseded by v4.
+- [`v4c/visual-crib.md`](v4c/visual-crib.md) — captured spec for the next
+  milestone (editable docs). The original v3/v4 design handoff (README + mocks +
+  chat transcripts) is preserved in git history; its still-relevant details were
+  absorbed into the cribs and `backlog.md`.

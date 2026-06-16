@@ -156,7 +156,6 @@ the doc to the calling terminal card via `TARMAC_TERM_ID`.
 | `core/` | Rust cargo workspace (edition 2024): `tarmac-protocol` (wire types + codec + conformance vectors), `tarmacd` (the daemon), `tarmac-cli` (the `tarmac` CLI). |
 | `app/` | SwiftPM package (macOS 14, Swift 6.2): `TarmacKit` (pure, unit-tested logic), `TarmacApp` (the AppKit GUI), `tarmac-smoke` (cross-language e2e client). |
 | `docs/` | Engineering docs — see the [docs map](#docs) below. |
-| `design_handoff_tarmac/` | The original design source-of-truth: the v3 README, the v4 mocks (`.jsx` / `.css`), and design-chat transcripts. Historical; the shipped model is v4. |
 | `scripts/` | `e2e.sh`, the end-to-end harness. |
 | `Makefile` | The build / test / run entrypoint. |
 
@@ -191,10 +190,12 @@ kept for provenance and superseded by the docs above:
 - `docs/archive/m0/`, `docs/archive/m1/` — visual cribs from the earliest
   milestones.
 
-The `design_handoff_tarmac/` v3 README and mocks are the design provenance; many
-surfaces they describe (dock/index rails, grid desk, tabs/splits) were
-intentionally replaced by the v4 whiteboard and are recorded as such in
-`docs/backlog.md`.
+The original v3 design handoff (README + mocks + design-chat transcripts) is
+preserved in git history; the surfaces it described (dock/index rails, grid desk,
+tabs/splits) were intentionally replaced by the v4 whiteboard and are recorded as
+such in [`docs/backlog.md`](docs/backlog.md). Its still-relevant unbuilt details
+were absorbed into `docs/` (e.g. the next milestone's
+[`docs/v4c/visual-crib.md`](docs/v4c/visual-crib.md)).
 
 ## License
 

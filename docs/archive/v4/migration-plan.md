@@ -152,11 +152,12 @@ rail is built.
 ### Deferred (tracked, not in this migration)
 - **Boards switcher ⌘K + per-strip boards** → M3 (strips/tmux); design B5 ready.
 - **Editable docs / conflict banner (v4c)** → milestone after M3 (needs the
-  write-signal honesty model). No implementation spec exists yet — when that
-  milestone starts, write one from: `design_handoff_tarmac/tarmac/board-v4c.jsx`
-  (rules board + E1/E2 mocks), `board.css` final section (`.edit`, `.tm-caret`,
-  `.tm-homechip`, `.tm-conflict`), and the design rationale in
-  `design_handoff_tarmac/chats/chat2.md`. Core invariants decided in design:
+  write-signal honesty model). The captured design spec is
+  [`docs/v4c/visual-crib.md`](../../v4c/visual-crib.md) — transcribed from the
+  v4c handoff mocks (`board-v4c.jsx` rules board + E1/E2 mocks, `board.css` §v4c
+  `.edit`/`.tm-caret`/`.tm-homechip`/`.tm-conflict`) and `chat2.md` before the
+  `design_handoff_tarmac/` bundle was removed (originals in git history). Core
+  invariants decided in design:
   *focus's home is the terminal* (editing = borrowed focus, esc always goes
   home, ⌥tab still cycles terminals only), gravity unchanged by editing, your
   save is just another file event (`✎ you · editing` vs `✎ Ns · during
@@ -172,10 +173,10 @@ rail is built.
      conflict banner assumes an "unsaved changes" state exists), and whether
      peek/shelf docs are editable. Continue the claude.ai/design project,
      re-export.
-  2. **Fetch + diff the new bundle** against `design_handoff_tarmac/`
-     (additive copy, as done for v4).
-  3. **Write `docs/v4c/visual-crib.md`** (m0/m1 crib convention) from the
-     refreshed `board-v4c.jsx` + `board.css` + chat transcript.
+  2. **Fetch + diff the new bundle** against the v4c mocks preserved in git
+     history (removed with `design_handoff_tarmac/` once captured).
+  3. **Update [`docs/v4c/visual-crib.md`](../../v4c/visual-crib.md)** — already
+     captured from the original mocks — with whatever the refreshed export changes.
   4. **Implement in three layers**: (a) edit-state chrome + borrowed-focus
      mechanics (cheap — card ring, caret, `⌂ esc` chip, esc-home routing);
      (b) the editor surface itself — the big tech decision: `DocWebView` is

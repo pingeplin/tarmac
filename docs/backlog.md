@@ -5,17 +5,23 @@ core experience (terminal-first cockpit, `tarmac open` docs, peek, honest signal
 infinite board with gravity/shelf/provenance, wayfinding, terminal primacy,
 multiple boards with ⌘K) is shipped.
 
-This file tracks what the **original v3 design handoff**
-(`design_handoff_tarmac/README.md`) specified that is **not yet built** —
-separated from the parts the v4 migration deliberately replaced. Verified against
-the code on 2026-06-15 (file references are where the feature *would* live / where
-its absence was confirmed).
+This file tracks what the **original v3 design handoff** (the v3 README — now in
+git history; the `design_handoff_tarmac/` bundle was removed once its content was
+absorbed into `docs/`) specified that is **not yet built** — separated from the
+parts the v4 migration deliberately replaced. Verified against the code on
+2026-06-15 (file references are where the feature *would* live / where its absence
+was confirmed). "README §…" below cites a section of that v3 handoff README.
 
-Two larger pending milestones live in `docs/archive/v4/migration-plan.md` §Deferred, not
+Two larger pending milestones are tracked in more detail elsewhere, not fully
 duplicated here:
 - **Editable docs / conflict banner (v4c)** — the next milestone; needs a design
-  round first (no implementation spec exists).
-- **Zone labels** (user-typed board text) — nice-to-have after wayfinding.
+  round first (open questions remain). Captured spec:
+  [`docs/v4c/visual-crib.md`](v4c/visual-crib.md); driving loop:
+  `docs/archive/v4/migration-plan.md` §Deferred.
+- **Zone labels** (user-typed text on the board, like any canvas tool) —
+  nice-to-have after wayfinding (`docs/archive/v4/migration-plan.md` §Deferred).
+  Geometry: `.tm-zonelab` = `font 600 10px mono`, `letter-spacing 0.18em`,
+  `color --tm-faint`, `opacity 0.75`, `pointer-events: none`; `13px` in low-zoom.
 
 ---
 
@@ -43,6 +49,11 @@ are confirmed absent in the code. Roughly ordered by value.
   card listing restore facts (`✓ 6 docs · 3 repos`, history-intact line, "agent was
   waiting since …"), "any key to continue". Detached strip shows a `$ tarmac attach
   <name>` empty state instead.
+- **Chrome (README §Screens 8, exact):** centered card — `bg2` background, `12px`
+  radius, `22×26px` padding — over the desk dimmed to **35%** under a veil. The
+  three fact lines verbatim: `✓ 6 docs · 3 repos` · `✓ tmux attached · 2 windows,
+  history intact` · `→ agent was waiting on you · since 13:47`; footer "any key to
+  continue".
 - **Source:** README §Screens 8 "Session restore".
 - **State:** the app restores layout/viewport **silently** — no restore overlay
   exists (grep: no `restore card` / "any key to continue" in `app/Sources/`).
