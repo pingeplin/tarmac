@@ -28,7 +28,11 @@ final class TermDelegateBridge: NSObject, TerminalViewDelegate {
         MainActor.assumeIsolated { controller.terminalDidSend(termID: id, bytes) }
     }
 
-    func setTerminalTitle(source: TerminalView, title: String) {}
+    func setTerminalTitle(source: TerminalView, title: String) {
+        guard let controller else { return }
+        let id = termID
+        MainActor.assumeIsolated { controller.handleTermTitle(termID: id, title: title) }
+    }
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
     func scrolled(source: TerminalView, position: Double) {}
     func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
@@ -69,10 +73,20 @@ final class TerminalSession {
     /// (exit): `live` is false (routing/spawn guards treat it as not-running) but
     /// the shell is presumed revivable. Set on disconnect, cleared on revive.
     var detached = false
-    /// Header label: the foreground process name, or the shell basename idle.
+    /// Header label: the displayed title — an OSC title if one is set, else the
+    /// foreground process name, else the shell basename. Recomputed from the
+    /// sources below via `TermTitle.displayLabel`; never written directly.
     var label = ""
     /// The shell basename resolved at spawn — idle ⇔ foreground == shellName.
     var shellName = ""
+    /// Latest foreground process name pushed by the daemon (`term_proc`). Tracked
+    /// independently of `label` so the title can revert here when an OSC title is
+    /// cleared. nil/"" before the first `term_proc`.
+    var procName: String?
+    /// Latest non-empty OSC title (OSC 0/1/2) the running program emitted, parsed
+    /// by SwiftTerm. Takes precedence over `procName`. Cleared to nil when the
+    /// program emits an empty OSC title (`ESC ] 2 ; ST`).
+    var oscTitle: String?
     /// When the current non-shell foreground process started (locard duration).
     var liveProcSince: Date?
     /// Last cols/rows sent to the daemon — debounces duplicate resizes.
@@ -1634,18 +1648,44 @@ final class AppController {
         // detached card state must stay honest because a re-visit re-mounts the
         // view rather than rebuilding it.
         guard let board = ownerBoard(ofTerm: termID), let s = board.sessions[termID], s.live else { return }
+        // Track the foreground process name regardless of the displayed label —
+        // an active OSC title hides it here but the card must revert to it when
+        // that OSC title is later cleared.
+        s.procName = name
+        applyTermTitle(termID: termID, on: board)
+    }
+
+    /// `setTerminalTitle`: a running program emitted an OSC 0/1/2 title (parsed by
+    /// SwiftTerm — like Ghostty). A non-empty title becomes the displayed label and
+    /// takes precedence over the foreground process name; an empty title (programs
+    /// clear with `ESC ] 2 ; ST`) clears the override and reverts to the
+    /// process/shell fallback.
+    func handleTermTitle(termID: String, title: String) {
+        guard let board = ownerBoard(ofTerm: termID), let s = board.sessions[termID], s.live else { return }
+        s.oscTitle = title.isEmpty ? nil : title
+        applyTermTitle(termID: termID, on: board)
+    }
+
+    /// Shared UI plumbing for both title sources (OSC + `term_proc`): recompute the
+    /// displayed label and the "live"/cyan status from `oscTitle` / `procName` /
+    /// `shellName` via the pure `TermTitle` rules, then push them everywhere the
+    /// honest label renders (card header, dock label, locard, owner chips,
+    /// switcher).
+    private func applyTermTitle(termID: String, on board: Board) {
+        guard let s = board.sessions[termID] else { return }
         let isActive = board === activeBoard
-        s.label = name
-        board.view.card(.term(termID))?.setTermLabel(name)
+        let label = TermTitle.displayLabel(oscTitle: s.oscTitle, procName: s.procName, shellName: s.shellName)
+        s.label = label
+        board.view.card(.term(termID))?.setTermLabel(label)
         // Keep the dock header label honest while docked, but only for the docked
         // (prime) terminal on the ACTIVE board (the dock pane is the active board's).
         if isActive, board.docked, termID == board.primeTermID {
-            rootView.dockPane.setTermLabel(name.isEmpty ? "shell" : name)
+            rootView.dockPane.setTermLabel(label.isEmpty ? "shell" : label)
         }
-        // "Live" (agent-active) when the foreground process is no longer the bare
-        // shell (crib §6: cyan = agent-active). The honest signal we have at this
-        // phase is the foreground process name; treat shell == idle.
-        let live = !name.isEmpty && name != s.shellName
+        // "Live" (agent-active) when a program set its own OSC title, or — absent
+        // that — when the foreground process is no longer the bare shell (crib §6:
+        // cyan = agent-active).
+        let live = TermTitle.isLive(oscTitle: s.oscTitle, procName: s.procName, shellName: s.shellName)
         let card = board.view.card(.term(termID))
         let wasLive = card?.liveActive ?? false
         if live, !wasLive { s.liveProcSince = Date() }
@@ -1653,7 +1693,7 @@ final class AppController {
         card?.setLive(live)
         board.view.signalsChanged()
         refreshTermLocard(termID, on: board)
-        // Re-render this board's attached doc cards' owner chips with the new name.
+        // Re-render this board's attached doc cards' owner chips with the new label.
         for path in board.boardDocPaths {
             guard let docCard = board.view.card(.doc(path)) else { continue }
             docCard.setOwnerChip(ownerChipLabel(for: docCard, on: board))
