@@ -1841,11 +1841,19 @@ final class AppController {
         rootView.cycleHUD.show(labels: labels, activeIndex: nextIdx)
     }
 
+    /// Shared HH:mm formatter (en_US_POSIX). DateFormatter construction is
+    /// expensive (ICU / locale load), and `edgeLabel` runs per doc-edge per
+    /// reproject — i.e. per pan/zoom frame — so a fresh alloc each call was real
+    /// per-frame cost. One cached instance, reused (fix #4). MainActor-confined.
+    private static let hhmmFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+
     private func nowHHMM() -> String {
-        let fmt = DateFormatter()
-        fmt.locale = Locale(identifier: "en_US_POSIX")
-        fmt.dateFormat = "HH:mm"
-        return fmt.string(from: Date())
+        Self.hhmmFormatter.string(from: Date())
     }
 
     /// `.bell`: a BEL was seen on the terminal — give its card the amber bell
@@ -2485,10 +2493,7 @@ final class AppController {
             return nil
         }
         let date = Date(timeIntervalSince1970: Double(ms) / 1000)
-        let fmt = DateFormatter()
-        fmt.locale = Locale(identifier: "en_US_POSIX")
-        fmt.dateFormat = "HH:mm"
-        return "tarmac open · \(fmt.string(from: date))"
+        return "tarmac open · \(Self.hhmmFormatter.string(from: date))"
     }
 
     /// ⌘P: open the right-side panel (Quick Look) for the doc you mean — a
