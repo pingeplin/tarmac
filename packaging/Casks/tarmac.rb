@@ -28,7 +28,7 @@ cask "tarmac" do
   end
 
   depends_on arch: :arm64
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "Tarmac.app"
   # The standalone universal CLI shipped at the .dmg root (NOT a path inside the
