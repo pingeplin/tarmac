@@ -96,6 +96,32 @@ impl TermHandle {
     }
 }
 
+/// Whether to inject `LC_CTYPE=en_US.UTF-8` into a spawned shell, read from the
+/// daemon's own environment. Thin wrapper over [`force_utf8_ctype_decision`].
+fn should_force_utf8_ctype() -> bool {
+    force_utf8_ctype_decision(|k| std::env::var_os(k).map(|v| v.to_string_lossy().into_owned()))
+}
+
+/// Pure decision for forcing a UTF-8 character locale on a spawned shell.
+/// Follows POSIX precedence (`LC_ALL` > `LC_CTYPE` > `LANG`): the first variable
+/// that is set and non-empty decides the effective character locale. Returns
+/// `false` when that value already selects UTF-8 (leave the user's choice
+/// alone), and `true` when it is non-UTF-8 (e.g. `C`) or nothing is set at all
+/// (the launchd case that breaks CJK input). `lookup` mirrors `var_os`: `None`
+/// means unset.
+fn force_utf8_ctype_decision(lookup: impl Fn(&str) -> Option<String>) -> bool {
+    for key in ["LC_ALL", "LC_CTYPE", "LANG"] {
+        if let Some(v) = lookup(key) {
+            if v.is_empty() {
+                continue; // POSIX ignores an empty value; fall through.
+            }
+            let v = v.to_ascii_uppercase();
+            return !(v.contains("UTF-8") || v.contains("UTF8"));
+        }
+    }
+    true
+}
+
 pub async fn spawn(
     daemon: Arc<Daemon>,
     term_id: String,
@@ -130,6 +156,16 @@ pub async fn spawn(
     // v4 Phase 3 provenance: a `tarmac open` run inside this pty reads
     // TARMAC_TERM_ID to attribute the open to its calling terminal card.
     builder.env("TARMAC_TERM_ID", &term_id);
+    // CJK/IME: the shell's line editor decodes keyboard input via mbrtowc
+    // against its locale. A Finder/launchd-launched daemon inherits no
+    // LANG/LC_*, so zsh lands in the C/POSIX locale and mbrtowc returns WEOF
+    // (printed as `<ffffffff>`) for the valid UTF-8 bytes SwiftTerm sends on a
+    // candidate commit, then renders every following multibyte char as `??`.
+    // Force a UTF-8 character locale only when none is already in effect, so an
+    // explicit UTF-8 LANG/LC_CTYPE/LC_ALL from the environment is preserved.
+    if should_force_utf8_ctype() {
+        builder.env("LC_CTYPE", "en_US.UTF-8");
+    }
 
     let child = pty
         .slave
@@ -356,4 +392,51 @@ fn process_name(pid: libc::pid_t) -> Option<String> {
 #[cfg(not(target_os = "macos"))]
 fn process_name(_pid: libc::pid_t) -> Option<String> {
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::force_utf8_ctype_decision;
+    use std::collections::HashMap;
+
+    fn decide(pairs: &[(&str, &str)]) -> bool {
+        let env: HashMap<&str, &str> = pairs.iter().copied().collect();
+        force_utf8_ctype_decision(|k| env.get(k).map(|v| v.to_string()))
+    }
+
+    #[test]
+    fn forces_utf8_when_nothing_is_set() {
+        // The launchd-launched daemon case: no locale vars at all → force, so
+        // the shell can decode the UTF-8 bytes SwiftTerm sends on a CJK commit.
+        assert!(decide(&[]));
+    }
+
+    #[test]
+    fn forces_utf8_when_effective_locale_is_non_utf8() {
+        assert!(decide(&[("LANG", "C")]));
+        assert!(decide(&[("LC_ALL", "POSIX")]));
+        assert!(decide(&[("LC_CTYPE", "en_US.ISO8859-1")]));
+    }
+
+    #[test]
+    fn leaves_an_existing_utf8_locale_alone() {
+        assert!(!decide(&[("LANG", "en_US.UTF-8")]));
+        assert!(!decide(&[("LC_CTYPE", "zh_TW.UTF-8")]));
+        assert!(!decide(&[("LC_ALL", "en_US.utf8")])); // case/dash-insensitive
+    }
+
+    #[test]
+    fn respects_posix_precedence_lc_all_over_lang() {
+        // LC_ALL wins: a UTF-8 LC_ALL keeps us out even with a C LANG…
+        assert!(!decide(&[("LC_ALL", "en_US.UTF-8"), ("LANG", "C")]));
+        // …and a non-UTF-8 LC_ALL forces, even with a UTF-8 LANG.
+        assert!(decide(&[("LC_ALL", "C"), ("LANG", "en_US.UTF-8")]));
+    }
+
+    #[test]
+    fn empty_value_falls_through_to_next_key() {
+        // An empty higher-precedence var is ignored; the next decides.
+        assert!(!decide(&[("LC_ALL", ""), ("LANG", "en_US.UTF-8")]));
+        assert!(decide(&[("LC_CTYPE", ""), ("LANG", "C")]));
+    }
 }
