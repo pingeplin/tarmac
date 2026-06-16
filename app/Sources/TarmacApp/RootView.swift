@@ -139,12 +139,14 @@ final class RootView: NSView {
     /// zoom readout, the minimap rects + viewport box, and the offscreen-hint
     /// pills. Cheap; called on every viewport / card change.
     func refreshWayfinding(_ viewport: Viewport?) {
-        let vp = viewport ?? board.viewport
-        zoomControl.setZoom(vp.zoom)
-        minimap.update(items: board.minimapItems, viewportWorldRect: board.viewportWorldRect)
-        let hints = offscreenHintProvider?() ?? []
-        // The hint overlay shares the board's coordinate space (same frame).
-        offHints.update(hints: hints, viewRect: board.bounds)
+        PerfTrace.measure("wayfind") {
+            let vp = viewport ?? board.viewport
+            zoomControl.setZoom(vp.zoom)
+            minimap.update(items: board.minimapItems, viewportWorldRect: board.viewportWorldRect)
+            let hints = offscreenHintProvider?() ?? []
+            // The hint overlay shares the board's coordinate space (same frame).
+            offHints.update(hints: hints, viewRect: board.bounds)
+        }
     }
 
     /// The card the Return flight should fly to (most-recent offscreen signal),

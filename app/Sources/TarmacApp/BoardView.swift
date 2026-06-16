@@ -512,7 +512,11 @@ final class BoardView: NSView {
             reprojectSlotGhost()
             recomputeEdges()
             refreshFloatingClose()
-            onCardsChanged?()
+            // NB: no onCardsChanged?() here. reprojectAll runs on every pan/zoom,
+            // where the card SET is unchanged and its callers already fire
+            // onViewportChanged (→ one wayfinding refresh/frame). onCardsChanged
+            // stays on the real set-mutation paths (add/remove/signals) and the
+            // single-card drag reproject. Fix #3: was a redundant 2nd refresh/frame.
         }
         PerfTrace.gauge("visibleCards", visibleCardCount)
         PerfTrace.gauge("totalCards", cards.count)
@@ -674,7 +678,11 @@ final class BoardView: NSView {
             for _ in 0..<iterations {
                 viewport.cx += 7
                 viewport.cy += 3
+                // Mirror a real pan frame (scrollWheel): reproject, fire the
+                // viewport-changed wayfinding refresh, then redraw. onLayoutChanged
+                // (persist) is intentionally skipped so the sweep writes no layouts.
                 reprojectAll()
+                onViewportChanged?(viewport)
                 display()               // forces draw(_:) — the dot grid — synchronously
             }
             PerfTrace.flush(String(format: "zoom=%.2f", z))
@@ -768,6 +776,9 @@ final class BoardView: NSView {
         super.layout()
         reprojectAll()
         needsDisplay = true
+        // A board-size change moves the visible region; refresh wayfinding via the
+        // viewport channel (fix #3 removed reprojectAll's own onCardsChanged).
+        onViewportChanged?(viewport)
     }
 
     override func viewDidMoveToWindow() {
