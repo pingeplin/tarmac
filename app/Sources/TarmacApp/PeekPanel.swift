@@ -189,6 +189,13 @@ final class PeekPanel: NSView {
         }
     }
 
+    /// Copies the peek body's current text selection to the pasteboard. Like the
+    /// on-board doc card, the peek's web view is non-focusable, so the standard
+    /// `copy:` never reaches it; the controller routes ⌘C here while peek is open.
+    func copySelectionToPasteboard() {
+        docView.copySelectionToPasteboard()
+    }
+
     func present(path: String, doc: RestoreDoc?, markdown: String) {
         currentPath = path
         if let doc {

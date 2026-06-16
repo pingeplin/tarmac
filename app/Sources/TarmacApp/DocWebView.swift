@@ -57,6 +57,21 @@ final class DocWebView: NSView, WKNavigationDelegate {
         webView.frame = bounds
     }
 
+    /// Copies the web view's current text selection to the general pasteboard.
+    /// The doc body is intentionally non-focusable (a doc click must not pull
+    /// keyboard focus off the prime terminal — crib §9), which also means the
+    /// standard `copy:` action never reaches it through the responder chain. The
+    /// controller routes ⌘C here for the focused doc card instead. Plain text by
+    /// design (the doc is a reading surface, not a rich-text source).
+    func copySelectionToPasteboard() {
+        webView.evaluateJavaScript("window.getSelection().toString()") { result, _ in
+            guard let text = result as? String, !text.isEmpty else { return }
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(text, forType: .string)
+        }
+    }
+
     func render(markdown: String) {
         // Cache unconditionally (even mid-load / while suspended) so the next
         // honored didFinish repaints the latest content.

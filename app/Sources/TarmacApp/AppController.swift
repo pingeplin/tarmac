@@ -115,11 +115,14 @@ final class AppController {
     private var boardsAwaitingRevive: Set<String> = []
 
     private var escMonitor: Any?
-    /// Single-click-to-focus (point 3) + gesture routing (point 2) live in three
+    /// Single-click-to-focus (point 3) + gesture routing (point 2) live in
     /// local event monitors armed in `start()` and torn down in `shutdown()`.
     private var clickFocusMonitor: Any?
     private var scrollRouteMonitor: Any?
     private var magnifyRouteMonitor: Any?
+    /// Flushes a click-focus restack that was deferred while the button was held,
+    /// so a terminal selection drag isn't severed mid-track (see `raiseToFront`).
+    private var mouseUpRestackMonitor: Any?
 
     /// The card the user last clicked into. nil ⇒ board-navigation mode: pan,
     /// pinch-zoom, and scroll drive the whiteboard even when the pointer is over a
@@ -424,6 +427,10 @@ final class AppController {
             // switcher is open every keystroke routes through it (handled first
             // below), so the board behind stays inert.
             let isCmdK = event.keyCode == 40 && mods == .command
+            // ⌘C (C = keyCode 8): copy. Handled specially only when a doc card is
+            // focused (below); otherwise it falls through to the responder chain so
+            // the prime terminal's own copy still works.
+            let isCmdC = event.keyCode == 8 && mods == .command
             let swallowed = MainActor.assumeIsolated { () -> Bool in
                 guard let self else { return false }
                 // While the ⌘K switcher is open it owns the keyboard: route every
@@ -437,6 +444,25 @@ final class AppController {
                 // (clicking a non-prime terminal made it first responder without
                 // updating primeTermID). Cheap: only re-styles on an actual change.
                 self.reconcilePrimeToFocus()
+                // ⌘C for a doc reading surface: both the peek body and the on-board
+                // doc card host a non-focusable WKWebView (crib §9 — a doc click must
+                // not pull keyboard focus off the prime terminal), so the standard
+                // copy: never reaches them via the responder chain and ⌘C silently
+                // does nothing. Route it explicitly — the peek body when it's open
+                // (the topmost reading surface), else the focused doc card. When
+                // neither applies this is skipped, so ⌘C still reaches the prime
+                // terminal / responder chain unchanged.
+                if isCmdC {
+                    if self.rootView.peekVisible {
+                        self.rootView.peek.copySelectionToPasteboard()
+                        return true
+                    }
+                    if case .doc(let path)? = self.focusedCardID,
+                       let docView = self.activeBoard.view.card(.doc(path))?.docView {
+                        docView.copySelectionToPasteboard()
+                        return true
+                    }
+                }
                 if isCmdK {
                     self.openSwitcher()
                     return true
@@ -527,6 +553,22 @@ final class AppController {
         magnifyRouteMonitor = NSEvent.addLocalMonitorForEvents(matching: .magnify) { [weak self] event in
             let routed = MainActor.assumeIsolated { self?.routeMagnify(event) ?? false }
             return routed ? nil : event
+        }
+        // Point 3 cleanup — replay any click-focus restack that was deferred while
+        // the button was held (so it couldn't sever an in-flight terminal selection
+        // drag). Never swallows: the selection's own mouseUp must reach the content.
+        //
+        // Deferred to the NEXT runloop tick (not run inline): a local monitor fires
+        // BEFORE the event is dispatched, so a synchronous restack here would
+        // removeFromSuperview the content view before it receives this very mouseUp.
+        // SwiftTerm tolerates that, but a doc card's WKWebView never ends its
+        // selection drag without the mouseUp — the highlight runs away to the end of
+        // the doc. Replaying one tick later lets the mouseUp land on the content
+        // first, then reorders z (the gesture's mouse-tracking is fully over by then,
+        // mirroring how onFrameCommitted restacks post-gesture). Imperceptible.
+        mouseUpRestackMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.rootView.board.flushPendingRestack() } }
+            return event
         }
 
         let client = self.client
@@ -755,13 +797,14 @@ final class AppController {
     /// monitor, and closes the client (so its disconnect path won't re-fire).
     func shutdown() {
         quitting = true
-        for monitor in [escMonitor, clickFocusMonitor, scrollRouteMonitor, magnifyRouteMonitor] {
+        for monitor in [escMonitor, clickFocusMonitor, scrollRouteMonitor, magnifyRouteMonitor, mouseUpRestackMonitor] {
             if let monitor { NSEvent.removeMonitor(monitor) }
         }
         escMonitor = nil
         clickFocusMonitor = nil
         scrollRouteMonitor = nil
         magnifyRouteMonitor = nil
+        mouseUpRestackMonitor = nil
         client.close()
     }
 
