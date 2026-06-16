@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/images/logo.png" width="160" alt="Tarmac logo">
+</p>
+
 # Tarmac
 
 **A terminal-first cockpit for working alongside CLI coding agents.**
