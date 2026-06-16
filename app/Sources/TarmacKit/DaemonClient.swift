@@ -53,7 +53,14 @@ public final class DaemonClient: @unchecked Sendable {
         do {
             try connectOnce()
         } catch {
-            guard let daemonBin = ProcessInfo.processInfo.environment["TARMAC_DAEMON"], !daemonBin.isEmpty else {
+            let bundleURL = Bundle.main.bundleURL
+            let bundledDaemon = bundleURL.appendingPathComponent("Contents/MacOS/tarmacd").path
+            let daemon = DaemonLaunch.resolveDaemonPath(
+                env: ProcessInfo.processInfo.environment,
+                bundleURL: bundleURL,
+                bundledBinaryExists: FileManager.default.fileExists(atPath: bundledDaemon)
+            )
+            guard let daemonBin = daemon else {
                 throw DaemonClientError.connectFailed(
                     path: socketPath,
                     detail: "\(detail(of: error)) — is tarmacd running? (set TARMAC_SOCKET to point elsewhere, or TARMAC_DAEMON to auto-spawn it)"
@@ -201,6 +208,14 @@ public final class DaemonClient: @unchecked Sendable {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: binPath)
         proc.standardInput = FileHandle.nullDevice
+        // Hand the daemon (and the PTYs it spawns) a PATH that resolves the
+        // bundled `tarmac` CLI, so `tarmac open` works inside the app's own
+        // terminals even under a Finder launch (minimal launchd PATH). No-op for
+        // `make run`, which already injects the debug build dir.
+        let cliDir = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS").path
+        var environment = ProcessInfo.processInfo.environment
+        environment["PATH"] = DaemonLaunch.injectCLIPath(base: environment["PATH"], cliDir: cliDir)
+        proc.environment = environment
         do {
             try proc.run()
         } catch {
