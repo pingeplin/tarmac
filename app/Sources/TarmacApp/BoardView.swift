@@ -67,6 +67,7 @@ final class BoardView: NSView {
         let card = CardView(id: id, worldFrame: worldFrame)
         wire(card)
         cards[id] = card
+        if case .doc = id { docCardCount += 1 }
         cardLayer.addSubview(card)
         restack()
         // Locards (semantic-zoom summaries) are off: in the infinite-canvas model
@@ -83,6 +84,7 @@ final class BoardView: NSView {
 
     func removeCard(id: CardID) {
         guard let card = cards.removeValue(forKey: id) else { return }
+        if case .doc = id { docCardCount -= 1 }
         if selectedID == id { selectedID = nil }
         card.removeFromSuperview()
         recomputeEdges()
@@ -149,7 +151,6 @@ final class BoardView: NSView {
         viewport = clampZoom(vp)
         reprojectAll()
         updateGridDensity()
-        updateLocards()
         needsDisplay = true
         onViewportChanged?(viewport)
         if commit { onLayoutChanged?(viewport) }
@@ -225,7 +226,6 @@ final class BoardView: NSView {
             viewport = clampZoom(vp)
             reprojectAll()
             updateGridDensity()
-            updateLocards()
             needsDisplay = true
             onViewportChanged?(viewport)
             if frame < steps {
@@ -257,7 +257,6 @@ final class BoardView: NSView {
         viewport.cy = worldAnchor.y - (anchor.y - c.y) / newZoom
         reprojectAll()
         updateGridDensity()
-        updateLocards()
         needsDisplay = true
         onViewportChanged?(viewport)
         if commit { onLayoutChanged?(viewport) }
@@ -359,6 +358,11 @@ final class BoardView: NSView {
     /// pure-transform model for the card itself. Routes to the same `onCardClose`.
     let floatingClose = CloseButton()
     private var floatingCloseTarget: CardID?
+
+    /// Live count of doc cards (the only kind the floating ✕ tracks), kept in sync
+    /// by add/removeCard so `refreshFloatingClose` can skip its per-reproject scan
+    /// on terminal-only boards (#7).
+    private var docCardCount = 0
 
     private var viewportCenter: CGPoint { CGPoint(x: bounds.midX, y: bounds.midY) }
 
@@ -506,12 +510,31 @@ final class BoardView: NSView {
     // MARK: Projection
 
     private func reprojectAll() {
-        for card in cards.values { project(card) }
-        updateContentScaleIfNeeded()
-        reprojectSlotGhost()
-        recomputeEdges()
-        refreshFloatingClose()
-        onCardsChanged?()
+        PerfTrace.measure("reproject") {
+            for card in cards.values { project(card) }
+            updateContentScaleIfNeeded()
+            reprojectSlotGhost()
+            recomputeEdges()
+            refreshFloatingClose()
+            // NB: no onCardsChanged?() here. reprojectAll runs on every pan/zoom,
+            // where the card SET is unchanged and its callers already fire
+            // onViewportChanged (→ one wayfinding refresh/frame). onCardsChanged
+            // stays on the real set-mutation paths (add/remove/signals) and the
+            // single-card drag reproject. Fix #3: was a redundant 2nd refresh/frame.
+        }
+        PerfTrace.gauge("visibleCards", visibleCardCount)
+        PerfTrace.gauge("liveCards", cards.values.reduce(into: 0) { if !$1.isHidden { $0 += 1 } })
+        PerfTrace.gauge("totalCards", cards.count)
+    }
+
+    /// Cards whose projected view frame intersects the board bounds (and that are
+    /// actually shown). Instrumentation-only for now, but it doubles as the
+    /// baseline metric — and a prototype of the predicate — for fix #5 (viewport
+    /// culling): how many live subviews the compositor touches per frame.
+    private var visibleCardCount: Int {
+        cards.values.reduce(into: 0) { n, card in
+            if !card.isHidden, card.frame.intersects(bounds) { n += 1 }
+        }
     }
 
     /// Shows the viewport-pinned ✕ only when the focused/selected doc card's
@@ -520,6 +543,12 @@ final class BoardView: NSView {
     /// coordinate convert + containment test — so it rides every reproject as well
     /// as focus changes (`focusChromeChanged`).
     func refreshFloatingClose() {
+        // #7: the floating ✕ only ever tracks a doc card, so on a terminal-only
+        // board (no doc cards) skip the per-reproject scan entirely.
+        guard docCardCount > 0 else {
+            if floatingCloseTarget != nil { floatingClose.isHidden = true; floatingCloseTarget = nil }
+            return
+        }
         // Mirror exactly where an in-card ✕ is meant to be shown (`!isHidden` ==
         // focused || selected), then check whether it actually landed on screen.
         let target = cards.values.first { card in
@@ -616,23 +645,119 @@ final class BoardView: NSView {
     /// a pure view transform, matching the Heptabase/Figma canvas feel.
     private func project(_ card: CardView) {
         card.frame = worldToView(card.worldFrame.rect)
-        card.setBoundsSize(CGSize(width: card.worldFrame.w, height: card.worldFrame.h))
+        // #9: a card's intrinsic world size changes only on a RESIZE, not on
+        // pan/zoom. setBoundsSize re-establishes the frame≠bounds zoom scale and
+        // triggers a layout pass, so skip it when the world size is unchanged.
+        let worldSize = CGSize(width: card.worldFrame.w, height: card.worldFrame.h)
+        if card.bounds.size != worldSize { card.setBoundsSize(worldSize) }
+        cull(card)
+    }
+
+    /// Fix #5 — viewport culling. Keep every card ALIVE in the hierarchy (never
+    /// removeFromSuperview: that would reset a doc card's WKWebView scroll and
+    /// detach the SwiftTerm pty) but hide cards more than a viewport off-screen so
+    /// the window server stops compositing / tiling them each frame. The live
+    /// region is the viewport grown by one viewport on every side, so a card is
+    /// already un-hidden a full screen before it scrolls into view — no pop-in or
+    /// WKWebView repaint flash. The docked card's hidden state is owned by
+    /// `setDocked`, so it's never touched here. Skipped while bounds is empty
+    /// (pre-layout) so a transient never hides everything.
+    private func cull(_ card: CardView) {
+        guard card.id != dockedID, bounds.width > 0, bounds.height > 0 else { return }
+        let live = bounds.insetBy(dx: -bounds.width, dy: -bounds.height)
+        let shouldHide = !card.frame.intersects(live)
+        if card.isHidden != shouldHide { card.isHidden = shouldHide }
     }
 
     /// Rebuilds the provenance edge set in view space (crib §8): one edge per
     /// doc card whose owning term card is present. Called on every reproject so
     /// edges survive pan / zoom / drag.
     func recomputeEdges() {
-        var built: [EdgeLayerView.Edge] = []
-        for (id, card) in cards {
-            guard case .doc = id, let owner = card.ownerTermID, let ownerCard = cards[owner] else { continue }
-            built.append(EdgeLayerView.Edge(
-                callerRect: ownerCard.frame,
-                docRect: card.frame,
-                label: edgeLabelProvider?(id)
-            ))
+        PerfTrace.measure("edges") {
+            var built: [EdgeLayerView.Edge] = []
+            for (id, card) in cards {
+                guard case .doc = id, let owner = card.ownerTermID, let ownerCard = cards[owner] else { continue }
+                built.append(EdgeLayerView.Edge(
+                    callerRect: ownerCard.frame,
+                    docRect: card.frame,
+                    label: edgeLabelProvider?(id)
+                ))
+            }
+            edgeLayer.setEdges(built)
         }
-        edgeLayer.setEdges(built)
+    }
+
+    // MARK: - Perf benchmark (perf/whiteboard-profiling; removable)
+
+    /// Deterministically sweeps the board through `levels` zoom factors, panning
+    /// `iterations` steps at each and forcing a synchronous dot-grid redraw, so
+    /// PerfTrace captures a per-level baseline with no GUI interaction (synthetic
+    /// trackpad/pinch events get dropped without an Accessibility grant). Drives
+    /// `reprojectAll()` directly, never `onLayoutChanged`, so the sweep persists
+    /// nothing (the persist-coalescing check lives in AppController, fix #2).
+    /// Removable with PerfTrace — see docs/perf-whiteboard-zoom.md.
+    func runBenchmark(iterations: Int, levels: [CGFloat]) {
+        populateBenchmarkCards()
+        // Warm up: the first draws allocate the layer backing store and the
+        // NSBezierPath machinery — discard those so they don't skew level 1.
+        viewport = Viewport(zoom: 1.0, cx: 0, cy: 0)
+        updateGridDensity()
+        for _ in 0..<12 { viewport.cx += 7; reprojectAll(); display() }
+        PerfTrace.flush("warmup(discard)")
+
+        for z in levels {
+            viewport = Viewport(zoom: z, cx: 0, cy: 0)
+            updateGridDensity()         // flip the 24↔11px grid at the 0.5 threshold
+            for _ in 0..<iterations {
+                viewport.cx += 7
+                viewport.cy += 3
+                // Mirror a real pan frame (scrollWheel): reproject, fire the
+                // viewport-changed wayfinding refresh, then redraw. onLayoutChanged
+                // (persist) is intentionally skipped so the sweep writes no layouts.
+                reprojectAll()
+                onViewportChanged?(viewport)
+                display()               // forces draw(_:) — the dot grid — synchronously
+            }
+            PerfTrace.flush(String(format: "zoom=%.2f", z))
+            captureBenchmarkSnapshot(zoom: z)
+        }
+    }
+
+    /// Writes the rendered board (grid + cards) to `/tmp/tarmac-grid-z<zz>.png`
+    /// so a rendering change (e.g. fix #1) can be visually regression-checked
+    /// against the prior run, not just trusted to be faster.
+    private func captureBenchmarkSnapshot(zoom: CGFloat) {
+        viewport = Viewport(zoom: zoom, cx: 0, cy: 0)
+        reprojectAll()
+        guard let rep = bitmapImageRepForCachingDisplay(in: bounds) else { return }
+        cacheDisplay(in: bounds, to: rep)
+        guard let data = rep.representation(using: .png, properties: [:]) else { return }
+        try? data.write(to: URL(fileURLWithPath: String(format: "/tmp/tarmac-grid-z%.2f.png", zoom)))
+    }
+
+    /// Bare synthetic cards spread across world space (some on-screen, most off)
+    /// so the benchmark's reproject / edge / visible-card costs are non-trivial
+    /// and reproducible. No content is attached (no terminal/WKWebView), so the
+    /// cards stay light; every other doc links to the term card so `recomputeEdges`
+    /// rebuilds real edge geometry each frame. No-op if the board already has cards.
+    private func populateBenchmarkCards() {
+        let termID = "perf-bench-term"
+        // Keyed on our own marker (not `cards.isEmpty`) — a daemon-less launch
+        // still mounts one prime-terminal card, which would otherwise suppress
+        // the whole synthetic set and leave totalCards == 1.
+        guard cards[.term(termID)] == nil else { return }
+        addCard(id: .term(termID), worldFrame: CardFrame(x: -400, y: -300, w: 360, h: 240, z: 0))
+        var i = 0
+        for ry in 0..<5 {
+            for rx in 0..<8 {
+                let card = addCard(
+                    id: .doc("perf-bench-\(i)"),
+                    worldFrame: CardFrame(x: CGFloat(rx) * 520 - 1400, y: CGFloat(ry) * 360 - 900, w: 360, h: 260, z: i + 1)
+                )
+                if i.isMultiple(of: 2) { card.ownerTermID = .term(termID) }
+                i += 1
+            }
+        }
     }
 
     // MARK: - Pan / zoom gestures (crib §5)
@@ -674,8 +799,10 @@ final class BoardView: NSView {
 
     /// No-op in the infinite-canvas model — cards always render their real
     /// (zoom-scaled) content rather than swapping to a fixed-size locard at the
-    /// semantic-zoom threshold. See `addCard`. Kept (and still called on zoom
-    /// crossings) so the feature can return as an explicit counter-scaled overview.
+    /// semantic-zoom threshold. See `addCard`. Fix #8 removed its per-frame calls
+    /// (setViewport / zoom / animateViewport) — it was looping every card to set a
+    /// flag the model never reads. Retained (uncalled) so the feature can return
+    /// as an explicit counter-scaled overview, gated to actual threshold crossings.
     func updateLocards() {
         for card in cards.values { card.setLocard(false) }
     }
@@ -684,6 +811,9 @@ final class BoardView: NSView {
         super.layout()
         reprojectAll()
         needsDisplay = true
+        // A board-size change moves the visible region; refresh wayfinding via the
+        // viewport channel (fix #3 removed reprojectAll's own onCardsChanged).
+        onViewportChanged?(viewport)
     }
 
     override func viewDidMoveToWindow() {
@@ -698,6 +828,15 @@ final class BoardView: NSView {
     /// `gridPhase`), each lattice point a `~2px` dot, projected to view. Spacing
     /// is the world step → view step is `spacing·zoom`. Below the semantic-zoom
     /// threshold the world spacing tightens to 11px (denser grid).
+    ///
+    /// Fix #1 (perf): the lattice is painted as ONE tiled blit of a cached
+    /// single-dot tile — `CGContext.draw(_:in:byTiling:)` — rather than a fresh
+    /// `NSBezierPath(ovalIn:).fill()` per dot. The old loop was O(dots) and at the
+    /// 11px density (zoom < 0.5) rasterized 26k–79k anti-aliased circles per frame
+    /// (~40–130ms on the main thread — the "50% cliff"). The tile's *period* is the
+    /// exact (fractional) `viewSpacing` and its centered dot is anchored on a real
+    /// lattice point, so every replica lands where the per-dot loop drew — visually
+    /// identical, but the grid is now a single CoreGraphics tile fill.
     override func draw(_ dirtyRect: NSRect) {
         Theme.bg0.setFill()
         dirtyRect.fill()
@@ -705,32 +844,62 @@ final class BoardView: NSView {
         let worldSpacing = loZoom ? Self.gridSpacingLo : Self.gridSpacing
         let viewSpacing = worldSpacing * viewport.zoom
         // Skip when dots would be denser than ~3px on screen (unreadable / slow).
-        guard viewSpacing >= 3 else { return }
+        guard viewSpacing >= 3, let ctx = NSGraphicsContext.current?.cgContext else { return }
 
-        // First lattice point ≥ the visible top-left, in world space.
+        // The lattice point at or before the visible top-left — the phase anchor.
+        // CoreGraphics replicates the tile in BOTH directions from `tileRect`, so
+        // seating one tile's centered dot on this point lands every replica on a
+        // lattice point (the tiling period equals `viewSpacing`).
         let topLeftWorld = viewToWorld(CGPoint(x: bounds.minX, y: bounds.minY))
         let bottomRightWorld = viewToWorld(CGPoint(x: bounds.maxX, y: bounds.maxY))
         let startKX = floor((topLeftWorld.x - Self.gridPhase.x) / worldSpacing)
         let startKY = floor((topLeftWorld.y - Self.gridPhase.y) / worldSpacing)
         let endKX = ceil((bottomRightWorld.x - Self.gridPhase.x) / worldSpacing)
         let endKY = ceil((bottomRightWorld.y - Self.gridPhase.y) / worldSpacing)
+        // Lattice size the grid covers — the count the old loop drew, kept as the
+        // `gridDots` gauge so before/after baselines stay comparable.
+        PerfTrace.gauge("gridDots", max(0, Int(endKX - startKX) + 1) * max(0, Int(endKY - startKY) + 1))
 
-        Self.dotColor.setFill()
-        let r = Self.dotRadius
-        var ky = startKY
-        while ky <= endKY {
-            let worldY = Self.gridPhase.y + ky * worldSpacing
-            var kx = startKX
-            while kx <= endKX {
-                let worldX = Self.gridPhase.x + kx * worldSpacing
-                let v = worldToView(CGPoint(x: worldX, y: worldY))
-                let dot = NSRect(x: v.x - r, y: v.y - r, width: r * 2, height: r * 2)
-                if dirtyRect.intersects(dot) {
-                    NSBezierPath(ovalIn: dot).fill()
-                }
-                kx += 1
-            }
-            ky += 1
+        let anchor = worldToView(CGPoint(x: Self.gridPhase.x + startKX * worldSpacing,
+                                         y: Self.gridPhase.y + startKY * worldSpacing))
+        let scale = window?.backingScaleFactor ?? 2
+        let tile = gridTile(viewSpacing: viewSpacing, scale: scale)
+        let tileRect = CGRect(x: anchor.x - viewSpacing / 2, y: anchor.y - viewSpacing / 2,
+                              width: viewSpacing, height: viewSpacing)
+        PerfTrace.measure("draw") {
+            ctx.saveGState()
+            ctx.clip(to: dirtyRect)
+            ctx.draw(tile, in: tileRect, byTiling: true)
+            ctx.restoreGState()
         }
+    }
+
+    /// Cached one-cell grid tile: a single centered dot on transparency, sized to
+    /// `viewSpacing` at the backing `scale`. Keyed by pixel size, so it's rebuilt
+    /// only when zoom or display density changes — never per pan frame. The image's
+    /// pixel size affects only dot sharpness; the lattice period is the exact
+    /// fractional `tileRect`, so rounding here never drifts the grid phase.
+    private var gridTileCache: (pixelSize: Int, image: CGImage)?
+
+    private func gridTile(viewSpacing: CGFloat, scale: CGFloat) -> CGImage {
+        let px = max(1, Int((viewSpacing * scale).rounded()))
+        if let cached = gridTileCache, cached.pixelSize == px { return cached.image }
+        let image = Self.makeGridTile(pixelSize: px, dotRadiusPx: Self.dotRadius * scale, color: Self.dotColor)
+        gridTileCache = (px, image)
+        return image
+    }
+
+    private static func makeGridTile(pixelSize: Int, dotRadiusPx: CGFloat, color: NSColor) -> CGImage {
+        let ctx = CGContext(
+            data: nil, width: pixelSize, height: pixelSize, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!
+        if let rgb = color.usingColorSpace(.deviceRGB) {
+            ctx.setFillColor(red: rgb.redComponent, green: rgb.greenComponent,
+                             blue: rgb.blueComponent, alpha: rgb.alphaComponent)
+        }
+        let c = CGFloat(pixelSize) / 2
+        ctx.fillEllipse(in: CGRect(x: c - dotRadiusPx, y: c - dotRadiusPx, width: dotRadiusPx * 2, height: dotRadiusPx * 2))
+        return ctx.makeImage()!
     }
 }

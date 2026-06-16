@@ -169,7 +169,8 @@ final class CardView: NSView {
 
     func attachTerminal(_ terminal: NSView) {
         termBody?.attach(terminal)
-        applyContentScale(pendingContentScale)
+        // Force: the subtree just grew a terminal at the current scale (#6).
+        applyContentScale(pendingContentScale, force: true)
     }
 
     /// The board scales each card as a bitmap (its `frame≠bounds` transform), so
@@ -180,8 +181,19 @@ final class CardView: NSView {
     /// inherits the same sharpness. NOTE: this only sharpens IN-PROCESS layers
     /// (the SwiftTerm grid, chrome) — it no-ops on a WKWebView's out-of-process
     /// tiles, which the doc card sharpens separately via `applyDocZoomScale`.
-    private var pendingContentScale: CGFloat = 2
-    func applyContentScale(_ scale: CGFloat) {
+    /// Last scale walked onto the layer tree. `0` = "never applied" sentinel, so
+    /// the first real apply always runs (a fresh CALayer defaults to contentsScale
+    /// 1, not the backing scale).
+    private var pendingContentScale: CGFloat = 0
+
+    /// Walks the whole view+layer subtree setting `contentsScale`. Fix #6: skip the
+    /// walk when `scale` is unchanged — at zoom < 1 the board's computed content
+    /// scale is constant (= backing scale), so without this every zoom step
+    /// re-walked every card's subtree to set the value it already had. Pass
+    /// `force: true` when the SUBTREE changed at an unchanged scale (a newly
+    /// attached terminal), so the new layers still get the current scale.
+    func applyContentScale(_ scale: CGFloat, force: Bool = false) {
+        guard force || scale != pendingContentScale else { return }
         pendingContentScale = scale
         func walk(_ layer: CALayer) {
             layer.contentsScale = scale

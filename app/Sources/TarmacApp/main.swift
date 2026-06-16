@@ -27,13 +27,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.focusPrimeTerminal()
 
         controller.start()
+        controller.runPerfBenchmarkIfRequested()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
     }
 
+    func applicationWillResignActive(_ notification: Notification) {
+        // Fix #2: a settling pan's persist is debounced; flush it when the app
+        // loses focus so the last position survives a background/quit-from-Dock.
+        controller?.flushPendingPersist()
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
+        // Fix #2: flush any pending debounced layout persist before tearing down.
+        controller?.flushPendingPersist()
         // P5.3: cancel the bounded reconnect loop + close the socket deterministically.
         controller?.shutdown()
     }

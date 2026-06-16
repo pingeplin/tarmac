@@ -348,9 +348,11 @@ final class AppController {
         rootView.mountBoard(board.view)
         board.view.edgeLabelProvider = { [weak self] id in self?.edgeLabel(for: id) }
         let bid = board.boardID
-        // TODO(perf): pan fires onLayoutChanged per scroll event — cheap LWW for
-        // now; debounce/coalesce the layout send if pan persistence gets chatty.
-        board.view.onLayoutChanged = { [weak self] _ in self?.persistLayout(forBoardID: bid) }
+        // Pan fires onLayoutChanged per scroll event; coalesce the persist on a
+        // short trailing timer (fix #2) so a continuous pan does one snapshot+IPC
+        // when it settles, not one per delta. Flushed eagerly on switch-away /
+        // resign-active / terminate so the last position is never dropped.
+        board.view.onLayoutChanged = { [weak self] _ in self?.schedulePersist(boardID: bid) }
         board.view.onCardClose = { [weak self] id in
             guard case .doc(let path) = id else { return }
             self?.moveToShelf(path)
@@ -361,6 +363,35 @@ final class AppController {
     /// terminal is the default first responder so typing lands in the shell.
     func focusPrimeTerminal() {
         if let view = primeTerminalView { window?.makeFirstResponder(view) }
+    }
+
+    /// perf/whiteboard-profiling: when `TARMAC_PERF_BENCH=1`, run the scripted
+    /// zoom-sweep on the mounted board once the window has presented, print the
+    /// per-level baseline to stderr, then quit. The sweep drives `reprojectAll`
+    /// directly (never `onLayoutChanged`), and `shutdown()` doesn't persist, so
+    /// the real on-disk layout is never touched. Removable with PerfTrace.
+    func runPerfBenchmarkIfRequested() {
+        guard PerfTrace.benchmarkRequested else { return }
+        let iters = ProcessInfo.processInfo.environment["TARMAC_PERF_BENCH_ITERS"].flatMap { Int($0) } ?? 80
+        // Defer one beat so the window has presented + drawn before we force redraws.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            guard let self else { return }
+            FileHandle.standardError.write(Data("⟦perf⟧ benchmark start (iters=\(iters))\n".utf8))
+            self.activeBoard.view.runBenchmark(iterations: iters, levels: [1.0, 0.51, 0.49, 0.28])
+
+            // Fix #2 check: a burst of onLayoutChanged-equivalent schedulePersist
+            // calls (each = one scroll delta) must collapse to ONE pending persist;
+            // flushing it then runs persistLayout exactly once. Tests the coalescing
+            // invariant directly (no dependence on the debounce timer firing under a
+            // headless run loop). With the old per-event persist this would be 30.
+            let burst = 30
+            for _ in 0..<burst { self.schedulePersist(boardID: self.activeBoardID) }
+            self.flushPendingPersist()
+            PerfTrace.flush("persist-coalesce: \(burst) schedulePersist ->")
+
+            FileHandle.standardError.write(Data("⟦perf⟧ benchmark done\n".utf8))
+            NSApp.terminate(nil)
+        }
     }
 
     func start() {
@@ -1056,6 +1087,10 @@ final class AppController {
     /// send `board_switch` (the caller does, or the daemon already switched).
     private func beginArrivingSwitch(to targetID: String) {
         guard let meta = boardMetas.first(where: { $0.boardID == targetID }) else { return }
+        // Flush a settling pan's debounced persist while the leaving board is still
+        // active (`switching` false, still `activeBoard`), or its guard would drop
+        // it once we switch (fix #2).
+        flushPendingPersist()
         switching = true
         // Keep prime synced to the terminal the user last typed in, then pull
         // first responder OFF the leaving board's views before the view is
@@ -1817,11 +1852,19 @@ final class AppController {
         rootView.cycleHUD.show(labels: labels, activeIndex: nextIdx)
     }
 
+    /// Shared HH:mm formatter (en_US_POSIX). DateFormatter construction is
+    /// expensive (ICU / locale load), and `edgeLabel` runs per doc-edge per
+    /// reproject — i.e. per pan/zoom frame — so a fresh alloc each call was real
+    /// per-frame cost. One cached instance, reused (fix #4). MainActor-confined.
+    private static let hhmmFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+
     private func nowHHMM() -> String {
-        let fmt = DateFormatter()
-        fmt.locale = Locale(identifier: "en_US_POSIX")
-        fmt.dateFormat = "HH:mm"
-        return fmt.string(from: Date())
+        Self.hhmmFormatter.string(from: Date())
     }
 
     /// `.bell`: a BEL was seen on the terminal — give its card the amber bell
@@ -2289,6 +2332,42 @@ final class AppController {
         persistLayout(for: activeBoard)
     }
 
+    // MARK: Debounced pan/zoom persistence (fix #2)
+
+    /// The board whose layout a settling pan still owes to disk, and the trailing
+    /// timer that will flush it. Only the continuous `onLayoutChanged` path is
+    /// debounced; discrete `persistLayout()` calls (spawn / close / dock / …) stay
+    /// immediate.
+    private var pendingPersistBoardID: String?
+    private var persistDebounce: DispatchWorkItem?
+    private static let persistDebounceInterval: TimeInterval = 0.2
+
+    /// Coalesces an `onLayoutChanged` persist: remember the board, (re)arm a
+    /// trailing timer. A burst of scroll events collapses to one snapshot+IPC once
+    /// panning stops for `persistDebounceInterval`.
+    private func schedulePersist(boardID: String) {
+        pendingPersistBoardID = boardID
+        persistDebounce?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.persistDebounce = nil
+            self.flushPendingPersist()
+        }
+        persistDebounce = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.persistDebounceInterval, execute: work)
+    }
+
+    /// Flushes any pending debounced persist immediately — called on switch-away
+    /// (while the leaving board is still active, so its guard passes), resign-active,
+    /// and terminate, so a settling pan's last position is never lost.
+    func flushPendingPersist() {
+        persistDebounce?.cancel()
+        persistDebounce = nil
+        guard let bid = pendingPersistBoardID else { return }
+        pendingPersistBoardID = nil
+        persistLayout(forBoardID: bid)
+    }
+
     /// Persists `boardID`'s layout (the form `onLayoutChanged` calls, since its
     /// closure captures the board's id by value).
     private func persistLayout(forBoardID boardID: String) {
@@ -2308,36 +2387,42 @@ final class AppController {
         // rebuild fire layout passes whose geometry is mid-flight) and any
         // callback from a non-active board (input/gestures reach no detached view).
         guard !switching, board === activeBoard else { return }
-        var tiles: [LayoutTile] = []
-        // Terminal cards in spawn order, EXCLUDING exited ones (hold-open
-        // placeholders, whose card is `dead`) so they never reappear on relaunch
-        // (2606.0001). A detached survivor (card not `dead`, but session !live)
-        // is kept and re-binds on reconnect — so the partition keys off `dead`
-        // (exited), NOT `session.live`. Routed through the unit-tested
-        // `TermExit.persistedTermIDs`.
-        let survivingTermIDs = TermExit.persistedTermIDs(
-            board.sessionOrder.compactMap { tid in
-                board.view.card(.term(tid)).map { (termID: tid, exited: $0.dead) }
+        // perf/whiteboard-profiling: this whole snapshot + msgpack + IPC currently
+        // runs on every scroll delta (TODO(perf) at the onLayoutChanged wiring).
+        // `persist n=…` in the ⟦perf⟧ line is the per-window call count — the tax
+        // fix #2 (debounce-on-commit) is meant to collapse. See PerfTrace.swift.
+        PerfTrace.measure("persist") {
+            var tiles: [LayoutTile] = []
+            // Terminal cards in spawn order, EXCLUDING exited ones (hold-open
+            // placeholders, whose card is `dead`) so they never reappear on relaunch
+            // (2606.0001). A detached survivor (card not `dead`, but session !live)
+            // is kept and re-binds on reconnect — so the partition keys off `dead`
+            // (exited), NOT `session.live`. Routed through the unit-tested
+            // `TermExit.persistedTermIDs`.
+            let survivingTermIDs = TermExit.persistedTermIDs(
+                board.sessionOrder.compactMap { tid in
+                    board.view.card(.term(tid)).map { (termID: tid, exited: $0.dead) }
+                }
+            )
+            for tid in survivingTermIDs {
+                guard let card = board.view.card(.term(tid)) else { continue }
+                tiles.append(boardTile(kind: "term", path: nil, termID: tid, card: card))
             }
-        )
-        for tid in survivingTermIDs {
-            guard let card = board.view.card(.term(tid)) else { continue }
-            tiles.append(boardTile(kind: "term", path: nil, termID: tid, card: card))
+            for path in board.boardDocPaths.sorted() {
+                guard let card = board.view.card(.doc(path)) else { continue }
+                tiles.append(boardTile(kind: "doc", path: path, card: card))
+            }
+            // Shelf docs: kind "doc", shelf:true, loose:true, no geometry (crib §6).
+            for path in board.shelfPaths {
+                tiles.append(LayoutTile(kind: "doc", path: path, loose: true, shelf: true))
+            }
+            client.layout(
+                dock: store.docs.map(\.path),
+                tiles: tiles,
+                board: board.view.viewport.wire,
+                boardID: board.boardID
+            )
         }
-        for path in board.boardDocPaths.sorted() {
-            guard let card = board.view.card(.doc(path)) else { continue }
-            tiles.append(boardTile(kind: "doc", path: path, card: card))
-        }
-        // Shelf docs: kind "doc", shelf:true, loose:true, no geometry (crib §6).
-        for path in board.shelfPaths {
-            tiles.append(LayoutTile(kind: "doc", path: path, loose: true, shelf: true))
-        }
-        client.layout(
-            dock: store.docs.map(\.path),
-            tiles: tiles,
-            board: board.view.viewport.wire,
-            boardID: board.boardID
-        )
     }
 
     /// A board card → tile: its world frame, `loose` = !attached (doc tiles), and
@@ -2419,10 +2504,7 @@ final class AppController {
             return nil
         }
         let date = Date(timeIntervalSince1970: Double(ms) / 1000)
-        let fmt = DateFormatter()
-        fmt.locale = Locale(identifier: "en_US_POSIX")
-        fmt.dateFormat = "HH:mm"
-        return "tarmac open · \(fmt.string(from: date))"
+        return "tarmac open · \(Self.hhmmFormatter.string(from: date))"
     }
 
     /// ⌘P: open the right-side panel (Quick Look) for the doc you mean — a
