@@ -171,14 +171,14 @@ These fire on **every scroll event** regardless of zoom (flat w.r.t. zoom):
 | # | Fix | Kind | Confidence | Notes / risk |
 |---|-----|------|-----------|--------------|
 | 1 | ✅ **Done** — grid is one cached-tile blit (`CGContext.draw(_:in:byTiling:)`) instead of N path fills | refactor (visual-preserving) | high | **Killed the cliff: `draw` 40ms→0.03ms @0.49, 124ms→0.02ms @0.28.** Pixel-faithful (AA-only diff, verified by snapshot). 24→11px flip kept — tiling made it free, so no UX change needed. |
-| 2 | Debounce `persistLayout` on pan (commit on `.ended`/trailing timer) | behavior change | high | Flush on resignActive/terminate/board-switch so last position isn't dropped. |
-| 3 | Coalesce wayfinding to one refresh/frame; stop firing `onCardsChanged` on pure pan; diff offscreen pills | refactor | high | Pure cleanup; no UX change. |
-| 4 | Edges: cache shared `DateFormatter`; recompute labels on card-set change only; geometry-only on pan | refactor | high | |
-| 5 | Viewport culling — `isHidden` offscreen cards (keep views alive) | behavior change (perf) | medium | Keep WKWebView scroll + SwiftTerm PTY alive; cull by `isHidden`, never remove. |
-| 6 | Content-scale: per-card early-return when scale unchanged | refactor | high | Zoom-only path. No crispness regression (unchanged value). |
-| 7 | `refreshFloatingClose`: recompute on focus change, not every reproject | refactor | medium | |
-| 8 | Remove `updateLocards` from per-frame path (dead loop) | cleanup | high | Locards off in this model. |
-| 9 | Guard `setBoundsSize` on size change | refactor | high | Micro; cheap insurance. |
+| 2 | ✅ **Done** — `persistLayout` debounced on a 200ms trailing timer | behavior change | high | A pan burst now does 1 snapshot+IPC, not 1/event. Flushed on switch-away / resignActive / terminate so the last position is never dropped. Not benchmark-measurable (sweep drives reprojectAll directly). |
+| 3 | ✅ **Done** — dropped reprojectAll's redundant `onCardsChanged` | refactor | high | One wayfinding refresh/frame, not two (`wayfind n` 100→50 / 50 frames). `onCardsChanged` kept on real set-mutation; `layout()` refreshes via `onViewportChanged`. Pill-diff deemed unneeded (no signal pills in steady state). |
+| 4 | ✅ **Done** — cached the shared HH:mm `DateFormatter` | refactor | high | Was a fresh DateFormatter per doc-edge per frame (ICU/locale load). Residual per-edge work negligible after, so the "memoize labels" step was skipped deliberately. |
+| 5 | ✅ **Done** — cull offscreen cards via `isHidden` | behavior change (perf) | medium | Views stay alive (WKWebView scroll + pty intact); hidden >1 viewport off-screen. `liveCards` 35/42 @1.0 in the clustered sweep. Compositing win, not reproject CPU. **Manual check worth doing:** pan a large multi-card board for pop-in. |
+| 6 | ✅ **Done** — content-scale walk early-returns when scale unchanged | refactor | high | `force` flag for attachTerminal's grown subtree. Render-identical (snapshot diff). |
+| 7 | ✅ **Done** — skip `refreshFloatingClose` scan on terminal-only boards | refactor | medium | Via a doc-card count. Full focus-gating deferred (would need focus state the board doesn't track; risk > the µs gain). |
+| 8 | ✅ **Done** — removed `updateLocards` per-frame calls | cleanup | high | Dead loop in this model; function retained, uncalled. |
+| 9 | ✅ **Done** — `setBoundsSize` guarded on size change | refactor | high | Skips a layout pass per card per frame; world size changes only on resize. Render-identical (snapshot diff). |
 
 **Testability.** The app layer is not unit-tested (only TarmacKit is). Extract
 the pure decision logic into TarmacKit and unit-test it there: the
