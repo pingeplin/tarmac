@@ -2308,36 +2308,42 @@ final class AppController {
         // rebuild fire layout passes whose geometry is mid-flight) and any
         // callback from a non-active board (input/gestures reach no detached view).
         guard !switching, board === activeBoard else { return }
-        var tiles: [LayoutTile] = []
-        // Terminal cards in spawn order, EXCLUDING exited ones (hold-open
-        // placeholders, whose card is `dead`) so they never reappear on relaunch
-        // (2606.0001). A detached survivor (card not `dead`, but session !live)
-        // is kept and re-binds on reconnect — so the partition keys off `dead`
-        // (exited), NOT `session.live`. Routed through the unit-tested
-        // `TermExit.persistedTermIDs`.
-        let survivingTermIDs = TermExit.persistedTermIDs(
-            board.sessionOrder.compactMap { tid in
-                board.view.card(.term(tid)).map { (termID: tid, exited: $0.dead) }
+        // perf/whiteboard-profiling: this whole snapshot + msgpack + IPC currently
+        // runs on every scroll delta (TODO(perf) at the onLayoutChanged wiring).
+        // `persist n=…` in the ⟦perf⟧ line is the per-window call count — the tax
+        // fix #2 (debounce-on-commit) is meant to collapse. See PerfTrace.swift.
+        PerfTrace.measure("persist") {
+            var tiles: [LayoutTile] = []
+            // Terminal cards in spawn order, EXCLUDING exited ones (hold-open
+            // placeholders, whose card is `dead`) so they never reappear on relaunch
+            // (2606.0001). A detached survivor (card not `dead`, but session !live)
+            // is kept and re-binds on reconnect — so the partition keys off `dead`
+            // (exited), NOT `session.live`. Routed through the unit-tested
+            // `TermExit.persistedTermIDs`.
+            let survivingTermIDs = TermExit.persistedTermIDs(
+                board.sessionOrder.compactMap { tid in
+                    board.view.card(.term(tid)).map { (termID: tid, exited: $0.dead) }
+                }
+            )
+            for tid in survivingTermIDs {
+                guard let card = board.view.card(.term(tid)) else { continue }
+                tiles.append(boardTile(kind: "term", path: nil, termID: tid, card: card))
             }
-        )
-        for tid in survivingTermIDs {
-            guard let card = board.view.card(.term(tid)) else { continue }
-            tiles.append(boardTile(kind: "term", path: nil, termID: tid, card: card))
+            for path in board.boardDocPaths.sorted() {
+                guard let card = board.view.card(.doc(path)) else { continue }
+                tiles.append(boardTile(kind: "doc", path: path, card: card))
+            }
+            // Shelf docs: kind "doc", shelf:true, loose:true, no geometry (crib §6).
+            for path in board.shelfPaths {
+                tiles.append(LayoutTile(kind: "doc", path: path, loose: true, shelf: true))
+            }
+            client.layout(
+                dock: store.docs.map(\.path),
+                tiles: tiles,
+                board: board.view.viewport.wire,
+                boardID: board.boardID
+            )
         }
-        for path in board.boardDocPaths.sorted() {
-            guard let card = board.view.card(.doc(path)) else { continue }
-            tiles.append(boardTile(kind: "doc", path: path, card: card))
-        }
-        // Shelf docs: kind "doc", shelf:true, loose:true, no geometry (crib §6).
-        for path in board.shelfPaths {
-            tiles.append(LayoutTile(kind: "doc", path: path, loose: true, shelf: true))
-        }
-        client.layout(
-            dock: store.docs.map(\.path),
-            tiles: tiles,
-            board: board.view.viewport.wire,
-            boardID: board.boardID
-        )
     }
 
     /// A board card → tile: its world frame, `loose` = !attached (doc tiles), and

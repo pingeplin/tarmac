@@ -506,12 +506,26 @@ final class BoardView: NSView {
     // MARK: Projection
 
     private func reprojectAll() {
-        for card in cards.values { project(card) }
-        updateContentScaleIfNeeded()
-        reprojectSlotGhost()
-        recomputeEdges()
-        refreshFloatingClose()
-        onCardsChanged?()
+        PerfTrace.measure("reproject") {
+            for card in cards.values { project(card) }
+            updateContentScaleIfNeeded()
+            reprojectSlotGhost()
+            recomputeEdges()
+            refreshFloatingClose()
+            onCardsChanged?()
+        }
+        PerfTrace.gauge("visibleCards", visibleCardCount)
+        PerfTrace.gauge("totalCards", cards.count)
+    }
+
+    /// Cards whose projected view frame intersects the board bounds (and that are
+    /// actually shown). Instrumentation-only for now, but it doubles as the
+    /// baseline metric — and a prototype of the predicate — for fix #5 (viewport
+    /// culling): how many live subviews the compositor touches per frame.
+    private var visibleCardCount: Int {
+        cards.values.reduce(into: 0) { n, card in
+            if !card.isHidden, card.frame.intersects(bounds) { n += 1 }
+        }
     }
 
     /// Shows the viewport-pinned ✕ only when the focused/selected doc card's
@@ -623,16 +637,18 @@ final class BoardView: NSView {
     /// doc card whose owning term card is present. Called on every reproject so
     /// edges survive pan / zoom / drag.
     func recomputeEdges() {
-        var built: [EdgeLayerView.Edge] = []
-        for (id, card) in cards {
-            guard case .doc = id, let owner = card.ownerTermID, let ownerCard = cards[owner] else { continue }
-            built.append(EdgeLayerView.Edge(
-                callerRect: ownerCard.frame,
-                docRect: card.frame,
-                label: edgeLabelProvider?(id)
-            ))
+        PerfTrace.measure("edges") {
+            var built: [EdgeLayerView.Edge] = []
+            for (id, card) in cards {
+                guard case .doc = id, let owner = card.ownerTermID, let ownerCard = cards[owner] else { continue }
+                built.append(EdgeLayerView.Edge(
+                    callerRect: ownerCard.frame,
+                    docRect: card.frame,
+                    label: edgeLabelProvider?(id)
+                ))
+            }
+            edgeLayer.setEdges(built)
         }
-        edgeLayer.setEdges(built)
     }
 
     // MARK: - Pan / zoom gestures (crib §5)
@@ -717,20 +733,26 @@ final class BoardView: NSView {
 
         Self.dotColor.setFill()
         let r = Self.dotRadius
-        var ky = startKY
-        while ky <= endKY {
-            let worldY = Self.gridPhase.y + ky * worldSpacing
-            var kx = startKX
-            while kx <= endKX {
-                let worldX = Self.gridPhase.x + kx * worldSpacing
-                let v = worldToView(CGPoint(x: worldX, y: worldY))
-                let dot = NSRect(x: v.x - r, y: v.y - r, width: r * 2, height: r * 2)
-                if dirtyRect.intersects(dot) {
-                    NSBezierPath(ovalIn: dot).fill()
+        // Candidate lattice size — what the loop iterates. On a full redraw
+        // (needsDisplay = true ⇒ dirtyRect == bounds) every candidate is filled,
+        // so this is also the fill count (the docs table's "dots/frame").
+        PerfTrace.gauge("gridDots", max(0, Int(endKX - startKX) + 1) * max(0, Int(endKY - startKY) + 1))
+        PerfTrace.measure("draw") {
+            var ky = startKY
+            while ky <= endKY {
+                let worldY = Self.gridPhase.y + ky * worldSpacing
+                var kx = startKX
+                while kx <= endKX {
+                    let worldX = Self.gridPhase.x + kx * worldSpacing
+                    let v = worldToView(CGPoint(x: worldX, y: worldY))
+                    let dot = NSRect(x: v.x - r, y: v.y - r, width: r * 2, height: r * 2)
+                    if dirtyRect.intersects(dot) {
+                        NSBezierPath(ovalIn: dot).fill()
+                    }
+                    kx += 1
                 }
-                kx += 1
+                ky += 1
             }
-            ky += 1
         }
     }
 }
