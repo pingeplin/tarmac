@@ -170,7 +170,7 @@ These fire on **every scroll event** regardless of zoom (flat w.r.t. zoom):
 
 | # | Fix | Kind | Confidence | Notes / risk |
 |---|-----|------|-----------|--------------|
-| 1 | Grid → GPU tiled/pattern layer (interim: single batched fill + drop `intersects`); revisit 24→11px flip | refactor (visual-preserving) + tuning | high | Primary. Kills the 50% cliff. Verify crispness at all zooms. |
+| 1 | ✅ **Done** — grid is one cached-tile blit (`CGContext.draw(_:in:byTiling:)`) instead of N path fills | refactor (visual-preserving) | high | **Killed the cliff: `draw` 40ms→0.03ms @0.49, 124ms→0.02ms @0.28.** Pixel-faithful (AA-only diff, verified by snapshot). 24→11px flip kept — tiling made it free, so no UX change needed. |
 | 2 | Debounce `persistLayout` on pan (commit on `.ended`/trailing timer) | behavior change | high | Flush on resignActive/terminate/board-switch so last position isn't dropped. |
 | 3 | Coalesce wayfinding to one refresh/frame; stop firing `onCardsChanged` on pure pan; diff offscreen pills | refactor | high | Pure cleanup; no UX change. |
 | 4 | Edges: cache shared `DateFormatter`; recompute labels on card-set change only; geometry-only on pan | refactor | high | |
@@ -232,6 +232,27 @@ What the numbers settle:
   writing junk layouts); capture it from a real `TARMAC_PERF=1 make run` session.
 
 Re-run this same benchmark after each fix for an apples-to-apples before/after.
+
+### After fix #1 — tiled grid (same benchmark, 50 frames/level)
+
+| zoom | `gridDots` | `draw` before | `draw` after | speedup |
+|------|-----------|--------------|-------------|---------|
+| 1.00 | 1,440  | 1.99ms   | **0.01ms** | ~200×  |
+| 0.51 | 5,150  | 7.64ms   | **0.03ms** | ~250×  |
+| 0.49 | 25,725 | 39.92ms  | **0.03ms** | ~1,300× |
+| 0.28 | 78,149 | 124.48ms | **0.02ms** | ~6,000× |
+
+The grid is now constant-time (one tiled blit) regardless of dot count — the
+0.50 cliff is gone, and `draw` is no longer the frame's dominant cost at any
+zoom. `gridDots` is unchanged (same lattice math), and the render is
+pixel-faithful: a before/after snapshot diff shows only dot anti-aliasing
+(`max_px_delta` pinned at the faint dot-vs-background contrast; cards/edges
+identical), confirmed visually at 0.49 and 0.28. The 24→11px density flip is
+retained — tiling made it free, so the prescribed "revisit the flip" UX change
+isn't needed. The tile rebuilds only when zoom or backing scale changes (a tiny
+≤~150px image); during a pure pan it's a cache hit. With the grid removed as the
+bottleneck, the next dominant per-frame cost is `reproject` (0.7–1.8ms, scaling
+with visible card count → fix #5) and, in real use, the `persist` IPC (#2).
 
 ---
 
