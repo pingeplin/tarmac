@@ -195,3 +195,9 @@ The `design_handoff_tarmac/` v3 README and mocks are the design provenance; many
 surfaces they describe (dock/index rails, grid desk, tabs/splits) were
 intentionally replaced by the v4 whiteboard and are recorded as such in
 `docs/backlog.md`.
+
+## License
+
+Tarmac is licensed under the [Apache License 2.0](LICENSE). Contributions are
+welcome under the project's [contribution guidelines](CONTRIBUTING.md), which
+require a Developer Certificate of Origin (DCO) sign-off.
