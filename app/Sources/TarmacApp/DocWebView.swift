@@ -149,7 +149,18 @@ final class DocWebView: NSView, WKNavigationDelegate {
 
     private func loadTemplate() {
         pageLoaded = false
-        if let url = Bundle.module.url(forResource: "DocTemplate", withExtension: "html") {
+        // Prefer Contents/Resources via Bundle.main. In a code-signed .app the
+        // SwiftPM `Bundle.module` accessor looks for the resource bundle at the
+        // .app ROOT (Bundle.main.bundleURL/<Pkg>_<Target>.bundle), which cannot be
+        // code-signed there ("unsealed contents present in the bundle root") — so
+        // bundle.sh copies DocTemplate.html flat into Contents/Resources and we
+        // resolve it through Bundle.main. Bundle.module stays as the fallback for
+        // `make run` / tests, where the template lives in the sibling .bundle next
+        // to the executable; there Bundle.main misses, the `??` forces
+        // Bundle.module, and its mainPath resolves without fatal-erroring.
+        let url = Bundle.main.url(forResource: "DocTemplate", withExtension: "html")
+            ?? Bundle.module.url(forResource: "DocTemplate", withExtension: "html")
+        if let url {
             webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         } else {
             // Fallback if the bundled template is missing: plain-text rendering only.
