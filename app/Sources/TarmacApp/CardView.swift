@@ -77,9 +77,11 @@ final class CardView: NSView {
     /// independent of prime — a doc can be focused (scroll target) while a terminal
     /// stays prime (keyboard target). Set via `setFocused` from the focus model.
     private(set) var focused = false
-    /// Dead = a terminal card whose pty exited (Phase 5b decision 1): the card
-    /// stays on the board dimmed, labelled `exit N · ↵ respawn`, and never reads
-    /// as prime/quiet. Set via `setDead`.
+    /// Dead = a terminal card whose shell exited with an error/signal and is held
+    /// open (2606.0001): the card stays on the board dimmed, labelled `exit N` /
+    /// `killed`, read-only, and never reads as prime/quiet. Set via `setExited`.
+    /// (A clean exit removes the card outright, so it never becomes `dead`.) This
+    /// flag is also the "exited" signal `persistLayout` uses to exclude the card.
     private(set) var dead = false
     /// Detached = a terminal card whose daemon connection dropped (P5.3): faint
     /// (alpha 0.5), distinct from dead (exit). The shell may still be alive on the
@@ -193,7 +195,7 @@ final class CardView: NSView {
     }
 
     func setTermLabel(_ label: String) {
-        // A dead card keeps its `exit N · ↵ respawn` label.
+        // An exited (held-open) card keeps its `exit N` / `killed` label.
         guard !dead else { return }
         header.setLabel(label)
     }
@@ -335,16 +337,20 @@ final class CardView: NSView {
         updateHandleVisibility()
     }
 
-    // MARK: - Dead state (Phase 5b decision 1: terminal exited, no auto-respawn)
+    // MARK: - Exited state (2606.0001: shell exited with an error/signal — held open)
 
-    /// Marks a terminal card dead: dim it, mute the border, drop any prime
-    /// styling, and label the header `exit N · ↵ respawn` (or `killed · ↵
-    /// respawn` when the exit code is nil). The card stays on the board at its
-    /// world frame; the user revives it explicitly (respawn UI is post-5b).
-    func setDead(_ code: Int?) {
+    /// Marks a terminal card a read-only hold-open placeholder after its shell
+    /// exited with an error or was killed by a signal: dim it, mute the border,
+    /// drop any prime styling, and label the header `exit N` (or `killed` when
+    /// the exit code is nil). The card stays on the board at its world frame so
+    /// the failure stays visible; a clean (code 0) exit removes the card instead
+    /// and never reaches here. No close affordance yet (spec 2606.0001 — the
+    /// placeholder is session-local and clears on relaunch, since it is excluded
+    /// from the persisted layout by this `dead` state).
+    func setExited(_ code: Int?) {
         guard !dead else { return }
         // Clear any live/bell signal first (while still !dead so the guarded
-        // setters apply) — a dead card must not advertise a cyan/amber signal.
+        // setters apply) — an exited card must not advertise a cyan/amber signal.
         setBell(false)
         setLive(false)
         dead = true
@@ -354,7 +360,7 @@ final class CardView: NSView {
         alphaValue = 0.55
         layer?.borderColor = currentBorderColor.cgColor
         applyRestingShadow()
-        let label = code.map { "exit \($0) · ↵ respawn" } ?? "killed · ↵ respawn"
+        let label = code.map { "exit \($0)" } ?? "killed"
         header.setLabel(label)
     }
 
