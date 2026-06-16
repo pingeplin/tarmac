@@ -348,9 +348,11 @@ final class AppController {
         rootView.mountBoard(board.view)
         board.view.edgeLabelProvider = { [weak self] id in self?.edgeLabel(for: id) }
         let bid = board.boardID
-        // TODO(perf): pan fires onLayoutChanged per scroll event — cheap LWW for
-        // now; debounce/coalesce the layout send if pan persistence gets chatty.
-        board.view.onLayoutChanged = { [weak self] _ in self?.persistLayout(forBoardID: bid) }
+        // Pan fires onLayoutChanged per scroll event; coalesce the persist on a
+        // short trailing timer (fix #2) so a continuous pan does one snapshot+IPC
+        // when it settles, not one per delta. Flushed eagerly on switch-away /
+        // resign-active / terminate so the last position is never dropped.
+        board.view.onLayoutChanged = { [weak self] _ in self?.schedulePersist(boardID: bid) }
         board.view.onCardClose = { [weak self] id in
             guard case .doc(let path) = id else { return }
             self?.moveToShelf(path)
@@ -1074,6 +1076,10 @@ final class AppController {
     /// send `board_switch` (the caller does, or the daemon already switched).
     private func beginArrivingSwitch(to targetID: String) {
         guard let meta = boardMetas.first(where: { $0.boardID == targetID }) else { return }
+        // Flush a settling pan's debounced persist while the leaving board is still
+        // active (`switching` false, still `activeBoard`), or its guard would drop
+        // it once we switch (fix #2).
+        flushPendingPersist()
         switching = true
         // Keep prime synced to the terminal the user last typed in, then pull
         // first responder OFF the leaving board's views before the view is
@@ -2305,6 +2311,42 @@ final class AppController {
     /// shelf/gravity changes.
     private func persistLayout() {
         persistLayout(for: activeBoard)
+    }
+
+    // MARK: Debounced pan/zoom persistence (fix #2)
+
+    /// The board whose layout a settling pan still owes to disk, and the trailing
+    /// timer that will flush it. Only the continuous `onLayoutChanged` path is
+    /// debounced; discrete `persistLayout()` calls (spawn / close / dock / …) stay
+    /// immediate.
+    private var pendingPersistBoardID: String?
+    private var persistDebounce: DispatchWorkItem?
+    private static let persistDebounceInterval: TimeInterval = 0.2
+
+    /// Coalesces an `onLayoutChanged` persist: remember the board, (re)arm a
+    /// trailing timer. A burst of scroll events collapses to one snapshot+IPC once
+    /// panning stops for `persistDebounceInterval`.
+    private func schedulePersist(boardID: String) {
+        pendingPersistBoardID = boardID
+        persistDebounce?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.persistDebounce = nil
+            self.flushPendingPersist()
+        }
+        persistDebounce = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.persistDebounceInterval, execute: work)
+    }
+
+    /// Flushes any pending debounced persist immediately — called on switch-away
+    /// (while the leaving board is still active, so its guard passes), resign-active,
+    /// and terminate, so a settling pan's last position is never lost.
+    func flushPendingPersist() {
+        persistDebounce?.cancel()
+        persistDebounce = nil
+        guard let bid = pendingPersistBoardID else { return }
+        pendingPersistBoardID = nil
+        persistLayout(forBoardID: bid)
     }
 
     /// Persists `boardID`'s layout (the form `onLayoutChanged` calls, since its
