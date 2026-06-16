@@ -24,7 +24,14 @@ import os
 enum PerfTrace {
     /// Console-aggregator gate. Signposts stay live regardless (they cost almost
     /// nothing when no tool is recording); only the stderr summary keys off this.
-    static let consoleEnabled = ProcessInfo.processInfo.environment["TARMAC_PERF"] == "1"
+    /// The benchmark (`TARMAC_PERF_BENCH=1`) implies the console channel.
+    static let consoleEnabled =
+        ProcessInfo.processInfo.environment["TARMAC_PERF"] == "1"
+        || ProcessInfo.processInfo.environment["TARMAC_PERF_BENCH"] == "1"
+
+    /// When set, AppController runs the scripted zoom-sweep benchmark after
+    /// launch instead of waiting for live pan/zoom (see `runPerfBenchmarkIfRequested`).
+    static let benchmarkRequested = ProcessInfo.processInfo.environment["TARMAC_PERF_BENCH"] == "1"
 
     private static let log = OSLog(subsystem: "dev.tarmac.perf", category: "whiteboard")
 
@@ -55,6 +62,14 @@ enum PerfTrace {
         os_signpost(.event, log: log, name: name, "%{public}ld", value)
         if consoleEnabled { Aggregator.shared.record(key: String(describing: name), value: Double(value)) }
     }
+
+    /// Synchronously prints the aggregator's current accumulation under `label`
+    /// and clears it, bypassing the timed-flush cadence — the benchmark uses this
+    /// to emit one clean line per zoom level. No-op when the console channel is off.
+    static func flush(_ label: String) {
+        guard consoleEnabled else { return }
+        Aggregator.shared.drain(label: label)
+    }
 }
 
 /// Rolling accumulator behind `TARMAC_PERF=1`. Single-threaded by construction
@@ -79,15 +94,27 @@ private final class Aggregator {
     }
 
     private func maybeFlush() {
+        // During the scripted benchmark only the per-level `drain` prints, so a
+        // slow level (40–130ms/frame) isn't split into unlabeled timed flushes.
+        guard !PerfTrace.benchmarkRequested else { return }
         let now = CACurrentMediaTime()
         guard now - lastFlush >= flushInterval else { return }
         lastFlush = now
-        flush()
+        flush(label: nil)
         durations.removeAll(keepingCapacity: true)
         gauges.removeAll(keepingCapacity: true)
     }
 
-    private func flush() {
+    /// Prints the current accumulation under `label`, clears it, and resets the
+    /// flush clock — the synchronous entry point used by `PerfTrace.flush`.
+    func drain(label: String) {
+        flush(label: label)
+        durations.removeAll(keepingCapacity: true)
+        gauges.removeAll(keepingCapacity: true)
+        lastFlush = CACurrentMediaTime()
+    }
+
+    private func flush(label: String?) {
         var parts: [String] = []
         for key in durations.keys.sorted() {
             let s = Self.stats(durations[key]!)
@@ -98,7 +125,8 @@ private final class Aggregator {
             parts.append("\(key) mean=\(Int(s.mean.rounded())) max=\(Int(s.max.rounded()))")
         }
         guard !parts.isEmpty else { return }
-        FileHandle.standardError.write(Data(("⟦perf⟧ " + parts.joined(separator: "  ·  ") + "\n").utf8))
+        let prefix = label.map { "⟦perf⟧ \($0)  " } ?? "⟦perf⟧ "
+        FileHandle.standardError.write(Data((prefix + parts.joined(separator: "  ·  ") + "\n").utf8))
     }
 
     private static func stats(_ xs: [Double]) -> (n: Int, mean: Double, p95: Double, max: Double) {

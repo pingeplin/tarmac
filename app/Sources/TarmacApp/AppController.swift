@@ -363,6 +363,24 @@ final class AppController {
         if let view = primeTerminalView { window?.makeFirstResponder(view) }
     }
 
+    /// perf/whiteboard-profiling: when `TARMAC_PERF_BENCH=1`, run the scripted
+    /// zoom-sweep on the mounted board once the window has presented, print the
+    /// per-level baseline to stderr, then quit. The sweep drives `reprojectAll`
+    /// directly (never `onLayoutChanged`), and `shutdown()` doesn't persist, so
+    /// the real on-disk layout is never touched. Removable with PerfTrace.
+    func runPerfBenchmarkIfRequested() {
+        guard PerfTrace.benchmarkRequested else { return }
+        let iters = ProcessInfo.processInfo.environment["TARMAC_PERF_BENCH_ITERS"].flatMap { Int($0) } ?? 80
+        // Defer one beat so the window has presented + drawn before we force redraws.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            guard let self else { return }
+            FileHandle.standardError.write(Data("⟦perf⟧ benchmark start (iters=\(iters))\n".utf8))
+            self.activeBoard.view.runBenchmark(iterations: iters, levels: [1.0, 0.51, 0.49, 0.28])
+            FileHandle.standardError.write(Data("⟦perf⟧ benchmark done\n".utf8))
+            NSApp.terminate(nil)
+        }
+    }
+
     func start() {
         client.onMessage = { [weak self] message in
             MainActor.assumeIsolated { self?.handle(message) }

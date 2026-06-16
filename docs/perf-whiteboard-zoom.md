@@ -186,20 +186,52 @@ visible-card/culling predicate (#5), the dot-lattice visible-range computation
 (#1), and the pan-commit gating (#2). The rest is verified by instrumentation +
 manual run, not unit tests.
 
-## Instrumentation plan (do this first)
+## Instrumentation — done (`PerfTrace.swift`)
 
 The branch is named for profiling — measure before/after so each fix is
-justified by numbers, not assertion. Add lightweight, removable timing:
+justified by numbers, not assertion. Implemented as a removable two-channel
+profiler (`app/Sources/TarmacApp/PerfTrace.swift`):
 
-- `os_signpost` / `CACurrentMediaTime()` intervals around `draw(_:)` (with the
-  dot count), `reprojectAll`, `recomputeEdges`, and `persistLayout`.
-- A counter for **on-screen card count** vs total (to confirm the 1/zoom² curve).
-- Capture three operating points — **zoom 1.0, 0.49, 0.28** — while panning, and
-  log per-frame ms + dot count + on-screen cards.
+- **os_signpost** intervals/events (always live, near-free) around `draw(_:)`
+  (with the dot count `gridDots`), `reprojectAll`, `recomputeEdges`, and
+  `persistLayout` — record against subsystem `dev.tarmac.perf` in Instruments.
+- A **stderr aggregator** behind `TARMAC_PERF=1` that prints rolling
+  n/mean/p95/max per key, plus `visibleCards`/`totalCards` gauges (the 1/zoom²
+  curve and the culling headroom for #5).
+- A scripted **benchmark** behind `TARMAC_PERF_BENCH=1`: populates ~42 synthetic
+  cards, sweeps zoom 1.0 / 0.51 / 0.49 / 0.28 forcing a synchronous grid redraw
+  per pan step, and prints one labelled line per level — no GUI interaction
+  needed (synthetic trackpad events get dropped without an Accessibility grant).
+  Drives `reprojectAll` directly, never persists. `TARMAC_PERF_BENCH=1 make run`,
+  or run the binary directly for an isolated, daemon-less capture.
 
-Expected confirmation: `draw(_:)` time jumps ~5× across the 0.50→0.49 boundary
-and dominates the frame; `persistLayout` shows a steady per-scroll-event cost
-independent of zoom.
+### Measured baseline (2026-06-16, `TARMAC_PERF_BENCH`, 80 panned frames/level, 42 cards)
+
+| zoom | grid | `gridDots` | `draw` mean (p95 / max) | `reproject` mean | `edges` mean | visible / total |
+|------|------|-----------|-------------------------|------------------|--------------|-----------------|
+| 1.00 | 24px | 1,440  | **1.97ms** (2.2 / 2.3)   | 0.76ms | 0.02ms | 8 / 42  |
+| 0.51 | 24px | 5,225  | **7.80ms** (8.3 / 13.7)  | 0.93ms | 0.03ms | 22 / 42 |
+| 0.49 | 11px | 26,137 | **40.51ms** (43 / 47)    | 0.93ms | 0.03ms | 23 / 42 |
+| 0.28 | 11px | 79,183 | **128.85ms** (159 / 263) | 1.81ms | 0.03ms | 40 / 42 |
+
+What the numbers settle:
+
+- **The grid IS the bottleneck.** `draw` dwarfs `reproject` by 20–70×. The
+  0.50 threshold flip (24→11px) makes 0.51→0.49 jump `draw` **7.8ms → 40.5ms
+  (5.2×)** for a **5× dot-count jump** — this is the "broken at 50%" cliff,
+  measured. By 0.28 the grid alone is ~129ms/frame (~8fps).
+- **Culling (#5) is real but secondary.** Only 8/42 cards are on-screen at 100%
+  (81% cullable), yet `reproject` stays sub-2ms even at 40 visible — so #5 is a
+  smaller win than the grid, and helps least when zoomed out (where everything's
+  on-screen and the grid dominates anyway). NB: these are *bare* cards; real
+  WKWebView/terminal reprojection is heavier than measured here.
+- **`edges` geometry is negligible** (~0.03ms) — but the synthetic docs carry no
+  label, so this does *not* exercise the per-edge `DateFormatter` alloc (#4);
+  that cost only appears with real labelled doc cards.
+- **`persist` isn't in the sweep** (it drives `reprojectAll` directly to avoid
+  writing junk layouts); capture it from a real `TARMAC_PERF=1 make run` session.
+
+Re-run this same benchmark after each fix for an apples-to-apples before/after.
 
 ---
 

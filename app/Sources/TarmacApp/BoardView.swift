@@ -651,6 +651,61 @@ final class BoardView: NSView {
         }
     }
 
+    // MARK: - Perf benchmark (perf/whiteboard-profiling; removable)
+
+    /// Deterministically sweeps the board through `levels` zoom factors, panning
+    /// `iterations` steps at each and forcing a synchronous dot-grid redraw, so
+    /// PerfTrace captures a per-level baseline with no GUI interaction (synthetic
+    /// trackpad/pinch events get dropped without an Accessibility grant). Drives
+    /// `reprojectAll()` directly, never `onLayoutChanged`, so nothing persists.
+    /// Removable with PerfTrace — see docs/perf-whiteboard-zoom.md.
+    func runBenchmark(iterations: Int, levels: [CGFloat]) {
+        populateBenchmarkCards()
+        // Warm up: the first draws allocate the layer backing store and the
+        // NSBezierPath machinery — discard those so they don't skew level 1.
+        viewport = Viewport(zoom: 1.0, cx: 0, cy: 0)
+        updateGridDensity()
+        for _ in 0..<12 { viewport.cx += 7; reprojectAll(); display() }
+        PerfTrace.flush("warmup(discard)")
+
+        for z in levels {
+            viewport = Viewport(zoom: z, cx: 0, cy: 0)
+            updateGridDensity()         // flip the 24↔11px grid at the 0.5 threshold
+            for _ in 0..<iterations {
+                viewport.cx += 7
+                viewport.cy += 3
+                reprojectAll()
+                display()               // forces draw(_:) — the dot grid — synchronously
+            }
+            PerfTrace.flush(String(format: "zoom=%.2f", z))
+        }
+    }
+
+    /// Bare synthetic cards spread across world space (some on-screen, most off)
+    /// so the benchmark's reproject / edge / visible-card costs are non-trivial
+    /// and reproducible. No content is attached (no terminal/WKWebView), so the
+    /// cards stay light; every other doc links to the term card so `recomputeEdges`
+    /// rebuilds real edge geometry each frame. No-op if the board already has cards.
+    private func populateBenchmarkCards() {
+        let termID = "perf-bench-term"
+        // Keyed on our own marker (not `cards.isEmpty`) — a daemon-less launch
+        // still mounts one prime-terminal card, which would otherwise suppress
+        // the whole synthetic set and leave totalCards == 1.
+        guard cards[.term(termID)] == nil else { return }
+        addCard(id: .term(termID), worldFrame: CardFrame(x: -400, y: -300, w: 360, h: 240, z: 0))
+        var i = 0
+        for ry in 0..<5 {
+            for rx in 0..<8 {
+                let card = addCard(
+                    id: .doc("perf-bench-\(i)"),
+                    worldFrame: CardFrame(x: CGFloat(rx) * 520 - 1400, y: CGFloat(ry) * 360 - 900, w: 360, h: 260, z: i + 1)
+                )
+                if i.isMultiple(of: 2) { card.ownerTermID = .term(termID) }
+                i += 1
+            }
+        }
+    }
+
     // MARK: - Pan / zoom gestures (crib §5)
 
     /// Pan via scrollWheel / two-finger trackpad. Precise-delta (trackpad)

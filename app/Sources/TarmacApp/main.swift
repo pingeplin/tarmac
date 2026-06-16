@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.focusPrimeTerminal()
 
         controller.start()
+        controller.runPerfBenchmarkIfRequested()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
