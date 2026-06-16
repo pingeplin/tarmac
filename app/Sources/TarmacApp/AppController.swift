@@ -533,9 +533,18 @@ final class AppController {
         }
         // Point 3 cleanup — replay any click-focus restack that was deferred while
         // the button was held (so it couldn't sever an in-flight terminal selection
-        // drag). Never swallows: the selection's own mouseUp must reach SwiftTerm.
+        // drag). Never swallows: the selection's own mouseUp must reach the content.
+        //
+        // Deferred to the NEXT runloop tick (not run inline): a local monitor fires
+        // BEFORE the event is dispatched, so a synchronous restack here would
+        // removeFromSuperview the content view before it receives this very mouseUp.
+        // SwiftTerm tolerates that, but a doc card's WKWebView never ends its
+        // selection drag without the mouseUp — the highlight runs away to the end of
+        // the doc. Replaying one tick later lets the mouseUp land on the content
+        // first, then reorders z (the gesture's mouse-tracking is fully over by then,
+        // mirroring how onFrameCommitted restacks post-gesture). Imperceptible.
         mouseUpRestackMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
-            MainActor.assumeIsolated { self?.rootView.board.flushPendingRestack() }
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.rootView.board.flushPendingRestack() } }
             return event
         }
 
