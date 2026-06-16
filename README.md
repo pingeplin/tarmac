@@ -1,6 +1,12 @@
+<p align="center">
+  <img src="docs/images/logo.png" width="160" alt="Tarmac logo">
+</p>
+
 # Tarmac
 
 **A terminal-first cockpit for working alongside CLI coding agents.**
+
+![A Tarmac board: a Claude Code agent (left) ran `tarmac open` on several project docs, which surface as live cards on the right — each tied back to the terminal that opened it by a dashed provenance edge.](docs/images/board.png)
 
 You run `claude` (or any agent) in a real terminal inside Tarmac. When that
 agent — or you, or a Makefile, a git hook, CI — runs `tarmac open <path>`, the
