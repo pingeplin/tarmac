@@ -516,7 +516,18 @@ final class BoardView: NSView {
     func flushPendingRestack() {
         guard pendingRestack else { return }
         pendingRestack = false
+        // `restack()` removeFromSuperviews every card. By now `focus()` has already
+        // made the selected terminal the first responder (it ran on the press, one
+        // tick before this mouseUp), so tearing its card out of the hierarchy would
+        // resign that first responder — stranding keyboard input and ⌘C copy on the
+        // text just selected. Preserve it across the churn. (The synchronous focus
+        // path doesn't need this: there `restack()` runs *before* setPrime re-asserts
+        // the responder, so makeFirstResponder is already the last word.)
+        let priorResponder = window?.firstResponder as? NSView
         restack()
+        if let priorResponder, priorResponder.window === window {
+            window?.makeFirstResponder(priorResponder)
+        }
     }
 
     /// Orders subviews by world z (low → high = back → front).
