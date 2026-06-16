@@ -115,11 +115,14 @@ final class AppController {
     private var boardsAwaitingRevive: Set<String> = []
 
     private var escMonitor: Any?
-    /// Single-click-to-focus (point 3) + gesture routing (point 2) live in three
+    /// Single-click-to-focus (point 3) + gesture routing (point 2) live in
     /// local event monitors armed in `start()` and torn down in `shutdown()`.
     private var clickFocusMonitor: Any?
     private var scrollRouteMonitor: Any?
     private var magnifyRouteMonitor: Any?
+    /// Flushes a click-focus restack that was deferred while the button was held,
+    /// so a terminal selection drag isn't severed mid-track (see `raiseToFront`).
+    private var mouseUpRestackMonitor: Any?
 
     /// The card the user last clicked into. nil ⇒ board-navigation mode: pan,
     /// pinch-zoom, and scroll drive the whiteboard even when the pointer is over a
@@ -528,6 +531,13 @@ final class AppController {
             let routed = MainActor.assumeIsolated { self?.routeMagnify(event) ?? false }
             return routed ? nil : event
         }
+        // Point 3 cleanup — replay any click-focus restack that was deferred while
+        // the button was held (so it couldn't sever an in-flight terminal selection
+        // drag). Never swallows: the selection's own mouseUp must reach SwiftTerm.
+        mouseUpRestackMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
+            MainActor.assumeIsolated { self?.rootView.board.flushPendingRestack() }
+            return event
+        }
 
         let client = self.client
         DispatchQueue.global(qos: .userInitiated).async {
@@ -755,13 +765,14 @@ final class AppController {
     /// monitor, and closes the client (so its disconnect path won't re-fire).
     func shutdown() {
         quitting = true
-        for monitor in [escMonitor, clickFocusMonitor, scrollRouteMonitor, magnifyRouteMonitor] {
+        for monitor in [escMonitor, clickFocusMonitor, scrollRouteMonitor, magnifyRouteMonitor, mouseUpRestackMonitor] {
             if let monitor { NSEvent.removeMonitor(monitor) }
         }
         escMonitor = nil
         clickFocusMonitor = nil
         scrollRouteMonitor = nil
         magnifyRouteMonitor = nil
+        mouseUpRestackMonitor = nil
         client.close()
     }
 

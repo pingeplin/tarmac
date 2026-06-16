@@ -495,6 +495,27 @@ final class BoardView: NSView {
         // The grabbed card already floats on top via its lift zPosition during
         // the drag; the z reorder is replayed once at gesture commit.
         guard !isGesturing else { return }
+        // A terminal text-selection drag is tracked entirely inside SwiftTerm and
+        // never sets `gesturingID`, so `isGesturing` misses it. But the hazard is
+        // identical: click-to-focus calls this one runloop tick after the press,
+        // i.e. as the drag begins, and `restack()` would removeFromSuperview the
+        // very view SwiftTerm is tracking — severing the selection. Whenever a
+        // button is still down, defer the reorder to mouseUp. `z` is already
+        // bumped, so the order is logically correct and just needs replaying.
+        guard NSEvent.pressedMouseButtons == 0 else { pendingRestack = true; return }
+        restack()
+    }
+
+    /// True when a `raiseToFront` was suppressed because the mouse button was
+    /// down (a possible terminal selection drag). Flushed on mouseUp.
+    private var pendingRestack = false
+
+    /// Replays a restack deferred while the mouse button was held (so a terminal
+    /// selection drag wasn't severed). Called from the controller's mouseUp
+    /// monitor; a no-op when nothing was deferred.
+    func flushPendingRestack() {
+        guard pendingRestack else { return }
+        pendingRestack = false
         restack()
     }
 
