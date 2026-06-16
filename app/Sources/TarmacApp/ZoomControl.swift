@@ -146,7 +146,11 @@ final class ZoomSegmentButton: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        bounds.contains(point) ? self : nil
+        // `point` arrives in the superview's (ZoomControl's) coordinates; it must
+        // be converted to our own bounds before testing. Comparing the raw point
+        // against local `bounds` only works for a segment at frame origin (0,0) —
+        // every other segment mis-hits, so `−`/`+`/`⊡ fit` clicks were dropped.
+        bounds.contains(convert(point, from: superview)) ? self : nil
     }
 
     override func mouseDown(with event: NSEvent) {}
