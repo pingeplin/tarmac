@@ -15,8 +15,9 @@ USAGE:
 hook) can run it to surface a doc in the cockpit. The path is canonicalized
 and must point to an existing file.
 
-The daemon socket is ~/Library/Application Support/tarmac/tarmacd.sock;
-override with TARMAC_SOCKET.
+The daemon socket defaults to ~/Library/Application Support/tarmac/tarmacd.sock
+(release builds) or ~/Library/Application Support/tarmac/dev/tarmacd.sock (dev
+builds); override with TARMAC_SOCKET.
 
 EXIT STATUS:
     0  the daemon acknowledged the open
@@ -24,12 +25,21 @@ EXIT STATUS:
     2  usage error
 ";
 
-fn socket_path() -> PathBuf {
-    if let Some(p) = std::env::var_os("TARMAC_SOCKET") {
-        return PathBuf::from(p);
+/// The ONE audited build-config → Channel mapping for the CLI (spec 2606.0003):
+/// a debug build is the `dev` channel, a release build `release`. The shipped
+/// cask CLI is a release build; a contributor's `cargo build` CLI is `dev`.
+fn current_channel() -> proto::Channel {
+    if cfg!(debug_assertions) {
+        proto::Channel::Dev
+    } else {
+        proto::Channel::Release
     }
-    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"));
-    home.join("Library/Application Support/tarmac/tarmacd.sock")
+}
+
+fn socket_path() -> PathBuf {
+    let over = std::env::var_os("TARMAC_SOCKET").filter(|v| !v.is_empty());
+    let home = std::env::var_os("HOME").unwrap_or_else(|| std::ffi::OsString::from("/"));
+    proto::resolve_socket_path(over, &home, current_channel())
 }
 
 fn main() {
@@ -83,8 +93,13 @@ fn open(raw_path: &str) -> Result<String, String> {
     }
 
     let sock = socket_path();
-    let mut stream = UnixStream::connect(&sock)
-        .map_err(|_| format!("no tarmac daemon running (socket: {})", sock.display()))?;
+    let mut stream = UnixStream::connect(&sock).map_err(|_| {
+        format!(
+            "no tarmac daemon running ({} channel, socket: {})",
+            proto::channel_label(current_channel()),
+            sock.display()
+        )
+    })?;
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
 

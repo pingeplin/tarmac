@@ -11,10 +11,16 @@ remain correct under the mandatory ignore-unknown rules.
 
 ## Transport
 
-Unix stream socket.
+Unix stream socket, resolved identically by daemon, CLI, and app **per build
+channel** (the channel is each binary's own build configuration).
 
-- Default path: `~/Library/Application Support/tarmac/tarmacd.sock`
-- Env override: `TARMAC_SOCKET=<path>` — honored by daemon, CLI, and app (tests/dev).
+- Default path, release build: `~/Library/Application Support/tarmac/tarmacd.sock`
+  (unchanged — existing users are never migrated).
+- Default path, debug build: `~/Library/Application Support/tarmac/dev/tarmacd.sock`
+  — keeps a `make run` dev build isolated from the installed release app. `state.json`
+  sits beside the socket under the same per-channel dir.
+- Env override: `TARMAC_SOCKET=<path>` — honored by daemon, CLI, and app (tests/dev);
+  wins verbatim in **both** channels.
 - Daemon startup: create the parent directory; if the socket file already exists, try
   connecting to it — success means another daemon is alive (log and exit 1); failure
   means it is stale (unlink and bind).

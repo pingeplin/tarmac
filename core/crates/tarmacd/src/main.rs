@@ -4,24 +4,37 @@ mod persist;
 mod state;
 mod term;
 
+use std::ffi::OsString;
 use std::path::PathBuf;
+use tarmac_protocol::{Channel, channel_label, resolve_socket_path, resolve_state_path};
 use tokio::net::UnixListener;
 use tracing::{error, info, warn};
 
-fn socket_path() -> PathBuf {
-    if let Some(p) = std::env::var_os("TARMAC_SOCKET") {
-        return PathBuf::from(p);
+/// The ONE audited build-config → Channel mapping for this binary (spec
+/// 2606.0003): a debug build is the `dev` channel, a release build `release`.
+/// Centralised so `cfg!(debug_assertions)` is never sprinkled through the path
+/// code — see the `core/Cargo.toml` note forbidding `debug-assertions` profile
+/// overrides, which would silently flip this without touching path code.
+fn current_channel() -> Channel {
+    if cfg!(debug_assertions) {
+        Channel::Dev
+    } else {
+        Channel::Release
     }
-    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"));
-    home.join("Library/Application Support/tarmac/tarmacd.sock")
+}
+
+fn home_dir() -> OsString {
+    std::env::var_os("HOME").unwrap_or_else(|| OsString::from("/"))
+}
+
+fn socket_path() -> PathBuf {
+    let over = std::env::var_os("TARMAC_SOCKET").filter(|v| !v.is_empty());
+    resolve_socket_path(over, &home_dir(), current_channel())
 }
 
 fn state_path() -> PathBuf {
-    if let Some(p) = std::env::var_os("TARMAC_STATE") {
-        return PathBuf::from(p);
-    }
-    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"));
-    home.join("Library/Application Support/tarmac/state.json")
+    let over = std::env::var_os("TARMAC_STATE").filter(|v| !v.is_empty());
+    resolve_state_path(over, &home_dir(), current_channel())
 }
 
 // Per docs/protocol.md: if the socket file exists, try connecting — success
@@ -58,7 +71,7 @@ async fn main() -> anyhow::Result<()> {
     let sock = socket_path();
     claim_socket(&sock)?;
     let listener = UnixListener::bind(&sock)?;
-    info!("tarmacd listening on {}", sock.display());
+    info!("tarmacd ({}) listening on {}", channel_label(current_channel()), sock.display());
 
     let daemon = state::Daemon::new(state_path())?;
 
