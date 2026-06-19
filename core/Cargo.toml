@@ -10,6 +10,13 @@ members = [
 version = "0.1.0"
 edition = "2024"
 
+# DO NOT add a `[profile.*]` override of `debug-assertions` (e.g. a build-speed
+# `[profile.dev] debug-assertions = false`). Per spec 2606.0003 the daemon/CLI
+# channel is keyed on `cfg!(debug_assertions)`; flipping it here would silently
+# move a debug build onto the RELEASE socket/state path — reintroducing the
+# cross-channel collision and risking release `state.json` corruption — without
+# touching any path code.
+
 [workspace.dependencies]
 tarmac-protocol = { path = "crates/tarmac-protocol" }
 # serde stack pinned: the rmp-serde tagged-enum + serde_bytes interaction is

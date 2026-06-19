@@ -251,6 +251,75 @@ pub fn repo_color_index(repo: &str) -> u8 {
     (hash % 4) as u8
 }
 
+// ---------------------------------------------------------------------------
+// 2606.0003: per-channel daemon socket + state path derivation.
+//
+// The daemon and CLI both depend on this crate, so the path logic — and the
+// `dev` literal — live here ONCE, shared by construction. Each binary keeps
+// only a thin shell that maps its own build configuration to a `Channel` and
+// joins the filename it needs. The Swift app mirrors this in `ChannelPaths`
+// across the language boundary (the only place the literal is duplicated).
+// ---------------------------------------------------------------------------
+
+use std::ffi::{OsStr, OsString};
+use std::path::{Path, PathBuf};
+
+/// Build channel. `Release` == the shipped, signed bundle
+/// (`cfg!(debug_assertions) == false`); `Dev` == any debug build
+/// (`cfg!(debug_assertions) == true`). The channel is each binary's own
+/// immutable build configuration, mapped to this enum at exactly one audited
+/// line per binary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Channel {
+    Release,
+    Dev,
+}
+
+/// PURE per-channel directory. Both path resolvers SHARE this for their
+/// default branch, so the `dev` literal exists once and the socket and state
+/// files always carry the SAME channel segment (spec S7). Takes NO override —
+/// it only produces the directory.
+/// Default = `home`/Library/Application Support/tarmac` + [`Dev` => `/dev`].
+pub fn channel_dir(home: &Path, channel: Channel) -> PathBuf {
+    let base = home.join("Library/Application Support/tarmac");
+    match channel {
+        Channel::Release => base,
+        Channel::Dev => base.join("dev"),
+    }
+}
+
+/// PURE socket resolver. `over` is the `TARMAC_SOCKET` value read by the shell;
+/// a present **and non-empty** value wins VERBATIM (empty is treated as unset —
+/// unified with Swift, spec S9). Otherwise the default is
+/// `channel_dir(home, channel)/tarmacd.sock`; `Release` is byte-for-byte
+/// today's flat path, so existing users are never migrated (spec S1).
+pub fn resolve_socket_path(over: Option<OsString>, home: &OsStr, channel: Channel) -> PathBuf {
+    if let Some(p) = over.filter(|v| !v.is_empty()) {
+        return PathBuf::from(p);
+    }
+    channel_dir(Path::new(home), channel).join("tarmacd.sock")
+}
+
+/// PURE state resolver (used by `tarmacd` only — the CLI and app hold no state).
+/// Same shape as `resolve_socket_path` with `state.json`, so dev state lands
+/// beside the dev socket under one per-channel dir (spec S6/S7).
+pub fn resolve_state_path(over: Option<OsString>, home: &OsStr, channel: Channel) -> PathBuf {
+    if let Some(p) = over.filter(|v| !v.is_empty()) {
+        return PathBuf::from(p);
+    }
+    channel_dir(Path::new(home), channel).join("state.json")
+}
+
+/// Human channel label for diagnostics: `Release` => `"release"`,
+/// `Dev` => `"dev"`. Mirrors Swift `ChannelPaths.channelLabel`; the impure
+/// "no daemon" / startup messages format it in (spec S10).
+pub fn channel_label(channel: Channel) -> &'static str {
+    match channel {
+        Channel::Release => "release",
+        Channel::Dev => "dev",
+    }
+}
+
 // to_vec_named is load-bearing: plain to_vec emits structs as msgpack arrays,
 // violating the "map with string keys" rule.
 pub fn encode(msg: &Msg) -> Result<Vec<u8>, rmp_serde::encode::Error> {
@@ -1167,5 +1236,154 @@ mod tests {
         let mut cursor = std::io::Cursor::new(oversize);
         let err = frame::read_sync(&mut cursor).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    // -- 2606.0003: per-channel socket/state path derivation ----------------
+    //
+    // The resolvers both binaries call live here, so they are unit-tested ONCE.
+    // Behavioral (assert returned path strings), deterministic (pure fns, no
+    // env), table-driven, S-numbers in comments.
+
+    fn os(s: &str) -> OsString {
+        OsString::from(s)
+    }
+
+    // S1/S2/S3/S4/S9 for the socket resolver.
+    #[test]
+    fn resolve_socket_path_cases() {
+        let cases: &[(Option<&str>, &str, Channel, &str)] = &[
+            // S1: release == legacy flat path, byte-for-byte (backward compat).
+            (None, "/Users/eplin", Channel::Release,
+             "/Users/eplin/Library/Application Support/tarmac/tarmacd.sock"),
+            // S2: dev inserts exactly the `dev/` segment.
+            (None, "/Users/eplin", Channel::Dev,
+             "/Users/eplin/Library/Application Support/tarmac/dev/tarmacd.sock"),
+            // S3: an explicit override wins verbatim in the release channel.
+            (Some("/tmp/x.sock"), "/Users/eplin", Channel::Release, "/tmp/x.sock"),
+            // S4: the override wins verbatim EVEN in dev — the load-bearing
+            // guard: the integration harness injects TARMAC_SOCKET into debug
+            // builds and must bypass the `dev/` insertion.
+            (Some("/tmp/x.sock"), "/Users/eplin", Channel::Dev, "/tmp/x.sock"),
+            // S9: an empty override is treated as unset → falls to the default.
+            (Some(""), "/Users/eplin", Channel::Dev,
+             "/Users/eplin/Library/Application Support/tarmac/dev/tarmacd.sock"),
+        ];
+        for (over, home, channel, expected) in cases {
+            assert_eq!(
+                resolve_socket_path(over.map(os), OsStr::new(home), *channel),
+                PathBuf::from(expected),
+                "resolve_socket_path(over={over:?}, home={home:?}, {channel:?})"
+            );
+        }
+    }
+
+    // S5: dev differs from release only by the inserted `/dev` segment — nothing
+    // else moves. Pins the token name and that release is otherwise unchanged.
+    #[test]
+    fn dev_differs_from_release_only_by_segment() {
+        let home = OsStr::new("/Users/eplin");
+        let release = resolve_socket_path(None, home, Channel::Release);
+        let dev = resolve_socket_path(None, home, Channel::Dev);
+        let expected = release
+            .to_str()
+            .unwrap()
+            .replace("/tarmacd.sock", "/dev/tarmacd.sock");
+        assert_eq!(dev.to_str().unwrap(), expected);
+    }
+
+    // S6/S7/S9 for the state resolver.
+    #[test]
+    fn resolve_state_path_cases() {
+        let cases: &[(Option<&str>, &str, Channel, &str)] = &[
+            // S6: state, release == legacy flat path.
+            (None, "/Users/eplin", Channel::Release,
+             "/Users/eplin/Library/Application Support/tarmac/state.json"),
+            // S7: state, dev carries the SAME `dev/` segment as the socket.
+            (None, "/Users/eplin", Channel::Dev,
+             "/Users/eplin/Library/Application Support/tarmac/dev/state.json"),
+            // override wins verbatim for state too (parity with socket S3/S4).
+            (Some("/tmp/s.json"), "/Users/eplin", Channel::Dev, "/tmp/s.json"),
+            // empty override → dev default (S9 for state).
+            (Some(""), "/Users/eplin", Channel::Dev,
+             "/Users/eplin/Library/Application Support/tarmac/dev/state.json"),
+        ];
+        for (over, home, channel, expected) in cases {
+            assert_eq!(
+                resolve_state_path(over.map(os), OsStr::new(home), *channel),
+                PathBuf::from(expected),
+                "resolve_state_path(over={over:?}, home={home:?}, {channel:?})"
+            );
+        }
+    }
+
+    // S7 by construction: socket and state share the per-channel directory, so a
+    // dev daemon can never bind a dev socket while reading release state.
+    #[test]
+    fn state_and_socket_share_channel_dir() {
+        let home = OsStr::new("/Users/eplin");
+        for channel in [Channel::Release, Channel::Dev] {
+            let sock = resolve_socket_path(None, home, channel);
+            let state = resolve_state_path(None, home, channel);
+            assert_eq!(
+                sock.parent(),
+                state.parent(),
+                "socket and state must share the per-channel dir ({channel:?})"
+            );
+        }
+    }
+
+    // S8: the dev default appends a fixed 52-byte suffix to `home`
+    // (/Library/Application Support/tarmac/dev/tarmacd.sock). So a 51-byte home
+    // is 103 bytes (accepted at the `len < 104` cap) and a 52-byte home is 104
+    // (rejected). The pure resolver only emits the string, so the Rust test
+    // asserts the exact byte counts (the cap itself is enforced at `bind`).
+    #[test]
+    fn dev_socket_byte_boundary() {
+        let home51 = format!("/{}", "a".repeat(50)); // 51 bytes
+        assert_eq!(home51.len(), 51);
+        assert_eq!(
+            resolve_socket_path(None, OsStr::new(&home51), Channel::Dev).as_os_str().len(),
+            103,
+        );
+
+        let home52 = format!("/{}", "a".repeat(51)); // 52 bytes
+        assert_eq!(home52.len(), 52);
+        assert_eq!(
+            resolve_socket_path(None, OsStr::new(&home52), Channel::Dev).as_os_str().len(),
+            104,
+        );
+    }
+
+    // S8b: `make run` sets TARMAC_SOCKET verbatim to a per-worktree path that
+    // inserts `dev/wt-XXXXXXXX/` (16 bytes) for plain `dev/` (4) — a fixed
+    // 64-byte suffix after `home`. Because it rides the verbatim override, the
+    // resolver returns it UNCHANGED (it does not derive it); we pin the
+    // constructed string's byte counts so a drift in the `wt-` prefix or the
+    // 8-hex width is caught (103 at a 39-byte home, 104 at 40).
+    #[test]
+    fn per_worktree_dev_socket_byte_boundary() {
+        fn per_worktree(home: &str) -> String {
+            format!("{home}/Library/Application Support/tarmac/dev/wt-0123abcd/tarmacd.sock")
+        }
+        let home39 = format!("/{}", "a".repeat(38)); // 39 bytes
+        assert_eq!(home39.len(), 39);
+        let p39 = per_worktree(&home39);
+        assert_eq!(p39.len(), 103);
+        // Override wins verbatim (S3/S4): the resolver returns it as-is.
+        assert_eq!(
+            resolve_socket_path(Some(os(&p39)), OsStr::new("/ignored/home"), Channel::Dev),
+            PathBuf::from(&p39),
+        );
+
+        let home40 = format!("/{}", "a".repeat(39)); // 40 bytes
+        assert_eq!(home40.len(), 40);
+        assert_eq!(per_worktree(&home40).len(), 104);
+    }
+
+    // S10: the channel label maps both arms (a swapped or constant label fails).
+    #[test]
+    fn channel_label_maps_both() {
+        assert_eq!(channel_label(Channel::Release), "release");
+        assert_eq!(channel_label(Channel::Dev), "dev");
     }
 }

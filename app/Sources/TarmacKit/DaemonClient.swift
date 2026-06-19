@@ -36,11 +36,42 @@ public final class DaemonClient: @unchecked Sendable {
         self.deliveryQueue = deliveryQueue
     }
 
-    /// `TARMAC_SOCKET` env override, else the protocol default.
+    /// The app's build channel — the ONE audited `#if DEBUG` → `Channel`
+    /// mapping (spec 2606.0003). Used by both socket resolution and the
+    /// connect-failure diagnostic, so the mapping lives in exactly one place
+    /// (never sprinkled through the path code).
+    static var channel: ChannelPaths.Channel {
+        #if DEBUG
+        return .dev
+        #else
+        return .release
+        #endif
+    }
+
+    /// `TARMAC_SOCKET` override (non-empty wins verbatim), else the per-channel
+    /// default. The build configuration is the channel: a DEBUG build resolves
+    /// under `dev/`, a release build keeps the flat legacy path byte-for-byte
+    /// (spec 2606.0003). Pure derivation lives in `ChannelPaths`.
     public static func resolveSocketPath() -> String {
-        if let p = ProcessInfo.processInfo.environment["TARMAC_SOCKET"], !p.isEmpty { return p }
-        return (NSHomeDirectory() as NSString)
-            .appendingPathComponent("Library/Application Support/tarmac/tarmacd.sock")
+        ChannelPaths.socketPath(
+            override: ProcessInfo.processInfo.environment["TARMAC_SOCKET"],
+            home: NSHomeDirectory(),
+            channel: channel
+        )
+    }
+
+    /// The macOS `sockaddr_un.sun_path` capacity in bytes (incl. the NUL
+    /// terminator). `connect` accepts a path iff its byte length is strictly
+    /// less than this — leaving room for the NUL.
+    public static let sunPathCapacity = 104
+
+    /// PURE: does `path` fit a `sockaddr_un`? (byte length `< sunPathCapacity`).
+    /// This is the exact predicate `connectOnce` enforces before binding the
+    /// address (it throws `socketPathTooLong` when false), extracted so the
+    /// `sockaddr_un` byte budget (spec S8/S8b) is unit-testable without a live
+    /// socket.
+    public static func fitsUnixSocketPath(_ path: String) -> Bool {
+        path.utf8.count < sunPathCapacity
     }
 
     /// Blocking. Connects (auto-spawning `$TARMAC_DAEMON` with ~3 s of retries if
@@ -63,7 +94,7 @@ public final class DaemonClient: @unchecked Sendable {
             guard let daemonBin = daemon else {
                 throw DaemonClientError.connectFailed(
                     path: socketPath,
-                    detail: "\(detail(of: error)) — is tarmacd running? (set TARMAC_SOCKET to point elsewhere, or TARMAC_DAEMON to auto-spawn it)"
+                    detail: "\(detail(of: error)) — is tarmacd (\(ChannelPaths.channelLabel(Self.channel)) channel) running? (set TARMAC_SOCKET to point elsewhere, or TARMAC_DAEMON to auto-spawn it)"
                 )
             }
             try spawnDaemon(at: daemonBin)
@@ -83,7 +114,7 @@ public final class DaemonClient: @unchecked Sendable {
             guard connected else {
                 throw DaemonClientError.connectFailed(
                     path: socketPath,
-                    detail: "spawned \(daemonBin) but the socket did not accept a connection within 3 s (last error: \(detail(of: lastError)))"
+                    detail: "spawned \(daemonBin) (\(ChannelPaths.channelLabel(Self.channel)) channel) but the socket did not accept a connection within 3 s (last error: \(detail(of: lastError)))"
                 )
             }
         }
@@ -172,19 +203,17 @@ public final class DaemonClient: @unchecked Sendable {
         var yes: Int32 = 1
         setsockopt(sock, SOL_SOCKET, SO_NOSIGPIPE, &yes, socklen_t(MemoryLayout<Int32>.size))
 
-        var addr = sockaddr_un()
-        addr.sun_family = sa_family_t(AF_UNIX)
-        let ok: Bool = socketPath.withCString { src in
-            withUnsafeMutableBytes(of: &addr.sun_path) { dst in
-                let len = strlen(src)
-                guard len < dst.count else { return false }
-                memcpy(dst.baseAddress!, src, len + 1)
-                return true
-            }
-        }
-        guard ok else {
+        guard Self.fitsUnixSocketPath(socketPath) else {
             Darwin.close(sock)
             throw DaemonClientError.socketPathTooLong(socketPath)
+        }
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        socketPath.withCString { src in
+            withUnsafeMutableBytes(of: &addr.sun_path) { dst in
+                // Safe: fitsUnixSocketPath guaranteed strlen(src) < dst.count.
+                memcpy(dst.baseAddress!, src, strlen(src) + 1)
+            }
         }
 
         let result = withUnsafePointer(to: &addr) {

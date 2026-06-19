@@ -78,9 +78,12 @@ them. They survived intact from the v3 design into the shipped v4 build.
 The full contract — with byte-exact conformance vectors — is
 [`protocol.md`](protocol.md). The essentials:
 
-**Transport.** One Unix stream socket at
-`~/Library/Application Support/tarmac/tarmacd.sock` (override `TARMAC_SOCKET`),
-resolved identically by daemon, CLI, and app. On startup the daemon tries to
+**Transport.** One Unix stream socket, resolved identically by daemon, CLI, and
+app **per build channel** (override `TARMAC_SOCKET`). A *release* build uses
+`~/Library/Application Support/tarmac/tarmacd.sock` (unchanged); a *debug* build
+uses `~/Library/Application Support/tarmac/dev/tarmacd.sock`, so a `make run` dev
+build and the installed release app never collide. State (`state.json`) sits
+beside the socket under the same per-channel dir. On startup the daemon tries to
 connect to an existing socket file: success means a live daemon already owns it
 (log and exit 1); failure means it is stale (unlink and rebind).
 
