@@ -266,14 +266,13 @@ final class CardView: NSView {
     /// The resting border colour, derived from the pure `CardChrome.borderRole`
     /// rule (unit-tested in TarmacKit): muted line for dead/detached, the soft
     /// teal `focusBorder` for an active card (focused OR selected — docs and
-    /// terminals alike), the agent halo while fresh, else line. `prime`
-    /// deliberately draws NO border — the keyboard target is signalled by header
-    /// tint + shadow. The lift state overrides this border transiently while a
-    /// move/resize gesture is held.
+    /// terminals alike), else line. `prime` and `fresh` deliberately draw NO
+    /// border — the keyboard target is signalled by header tint + shadow, a fresh
+    /// card by its halo + `✚ now` meta. The lift state overrides this border
+    /// transiently while a move/resize gesture is held.
     private var currentBorderColor: NSColor {
         switch CardChrome.borderRole(chromeState) {
         case .muted: return Theme.line.withAlphaComponent(0.6)
-        case .agent: return Theme.agent
         case .focus: return Theme.focusBorder
         case .plain: return Theme.line
         }
@@ -286,11 +285,13 @@ final class CardView: NSView {
                          prime: prime, focused: focused, selected: selected)
     }
 
-    // MARK: - Fresh state (crib §4/§5): agent border + 3px agent-dim ring.
+    // MARK: - Fresh state (crib §4/§5): 3px agent-dim halo + `✚ now` meta, no border.
 
     /// Cyan-dim halo just outside the border (`box-shadow 0 0 0 3px agent-dim`).
     /// Sits behind the card's own (clipped) content on the non-clipped outer
-    /// layer; cleared when the card is selected or its doc is marked read.
+    /// layer; cleared when the card is selected or its doc is marked read. `fresh`
+    /// drives only this halo + the `✚ now` meta — never the border, which stays
+    /// on the `CardChrome.borderRole` axis so a non-active fresh card reads plain.
     private let ringLayer = CALayer()
     private static let ringWidth: CGFloat = 3
 
@@ -304,7 +305,6 @@ final class CardView: NSView {
         } else {
             ringLayer.removeFromSuperlayer()
         }
-        layer.borderColor = currentBorderColor.cgColor
         header.setFreshMeta(on)
         layoutRing()
     }

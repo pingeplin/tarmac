@@ -1,72 +1,45 @@
 import XCTest
 @testable import TarmacKit
 
-/// 2606.0005: the unified active-card chrome rule — one teal ring + handles for
-/// an active card (focused OR selected), `prime` inert on the border, dead/
-/// detached the only divergence (muted border yet handles for resize).
+/// 2606.0006: the active-card chrome rule with `fresh` dropped from the border.
+/// The teal ring + handles still mark an active card (focused OR selected); both
+/// `prime` and `fresh` are now border-inert (signalled outside the border —
+/// header tint/shadow for prime, halo + `✚ now` meta for fresh), and dead/
+/// detached stay the one divergence (muted border yet handles for resize).
+///
+/// Scenario IDs below are 2606.0006's (they supersede 2606.0005's S1–S10 labels
+/// on this file); the extra tests past S5 are retained regression guards.
 final class CardChromeTests: XCTestCase {
     // MARK: - Happy path
 
-    /// S1: a single-clicked card (focused) shows the teal ring AND handles.
+    /// S1 (the behaviour change): a fresh-but-not-active card draws the plain
+    /// line — NOT the old agent edge — and shows no handles. It signals freshness
+    /// only via its halo + `✚ now` meta, applied outside CardChrome.
+    func testFreshNotActiveIsPlainNoHandles() {
+        let s = CardChrome.State(fresh: true)
+        XCTAssertEqual(CardChrome.borderRole(s), .plain)
+        XCTAssertFalse(CardChrome.showsHandles(s))
+    }
+
+    /// S2 (2606.0005 regression guard): a single-clicked card (focused) shows the
+    /// teal ring AND handles.
     func testFocusedIsActiveRingWithHandles() {
         let s = CardChrome.State(focused: true)
         XCTAssertEqual(CardChrome.borderRole(s), .focus)
         XCTAssertTrue(CardChrome.showsHandles(s))
     }
 
-    /// S2: a header-grab (selected, not focused) looks identical to a click —
-    /// the unified ring, NOT the old agent colour.
-    func testSelectedLooksLikeFocusedNotAgent() {
-        let s = CardChrome.State(selected: true)
-        XCTAssertEqual(CardChrome.borderRole(s), .focus)
-        XCTAssertNotEqual(CardChrome.borderRole(s), .agent)
-        XCTAssertTrue(CardChrome.showsHandles(s))
-    }
-
-    /// S3: a clicked live terminal (prime AND focused) draws the teal ring —
-    /// prime no longer overrides it with the lift border.
-    func testPrimeAndFocusedIsFocusNotPrimeBorder() {
-        let s = CardChrome.State(prime: true, focused: true)
-        XCTAssertEqual(CardChrome.borderRole(s), .focus)
-        XCTAssertTrue(CardChrome.showsHandles(s))
-    }
-
     // MARK: - Edge cases
 
-    /// S4: a prime-but-not-active terminal (after click-away / board-switch)
-    /// shows no ring and no handles — only header tint + shadow, applied
-    /// outside CardChrome.
-    func testPrimeButNotActiveHasNoRingNoHandles() {
-        let s = CardChrome.State(prime: true, focused: false, selected: false)
-        XCTAssertEqual(CardChrome.borderRole(s), .plain)
-        XCTAssertFalse(CardChrome.showsHandles(s))
-    }
-
-    /// S5: a fresh-but-not-active card shows the agent halo and no handles.
-    func testFreshNotActiveIsAgentHaloNoHandles() {
-        let s = CardChrome.State(fresh: true)
-        XCTAssertEqual(CardChrome.borderRole(s), .agent)
-        XCTAssertFalse(CardChrome.showsHandles(s))
-    }
-
-    /// S6: an active card outranks the fresh halo (the app also clears `fresh`
-    /// on focus, so this state is transient — this pins the priority).
+    /// S3: an active card outranks fresh — fresh is inert on the border, so
+    /// `fresh + focused` is the plain active ring, not anything fresh-tinted.
     func testActiveOutranksFresh() {
         let s = CardChrome.State(fresh: true, focused: true)
         XCTAssertEqual(CardChrome.borderRole(s), .focus)
         XCTAssertTrue(CardChrome.showsHandles(s))
     }
 
-    /// S7: an idle card (nothing set) is the plain line with no handles.
-    func testIdleCardIsPlainNoHandles() {
-        let s = CardChrome.State()
-        XCTAssertEqual(CardChrome.borderRole(s), .plain)
-        XCTAssertFalse(CardChrome.showsHandles(s))
-    }
-
-    // MARK: - The dead/detached exception
-
-    /// S8: a dead card resized via a header grab — muted border yet handles
+    /// S4: a dead card resized via a header grab — muted border yet handles
     /// present (the one allowed divergence from the ring⟺handles invariant).
     func testDeadSelectedIsMutedButShowsHandles() {
         let s = CardChrome.State(dead: true, selected: true)
@@ -74,21 +47,17 @@ final class CardChromeTests: XCTestCase {
         XCTAssertTrue(CardChrome.showsHandles(s))
     }
 
-    /// S9: detached is an exception alongside dead.
-    func testDetachedSelectedIsMutedButShowsHandles() {
-        let s = CardChrome.State(detached: true, selected: true)
-        XCTAssertEqual(CardChrome.borderRole(s), .muted)
-        XCTAssertTrue(CardChrome.showsHandles(s))
-    }
+    // MARK: - S5: the invariant, exhaustive over all 64 states
 
-    // MARK: - S10: the invariant, exhaustive over all 64 states
-
-    /// For every one of the 2^6 input combinations, the teal ring shows exactly
-    /// for an active card that is neither dead nor detached. The expected side is
-    /// computed independently of `borderRole`'s priority chain (so the test can't
-    /// pass by mirroring the implementation), and flipping only `prime` must
-    /// never change the outcome — proving prime is inert on the chrome.
-    func testFocusRingCoincidesWithHandlesAcrossAll64States() {
+    /// S5: for every one of the 2^6 input combinations, the resting role equals
+    /// the role computed independently from the inputs. The expected side is
+    /// derived from the booleans (never read back from `borderRole`), so the test
+    /// cannot pass by mirroring the implementation. This one positive equality
+    /// locks three things: (a) the teal ring shows exactly for an active,
+    /// non-dead/detached card; (b) every state lands in `.muted`/`.focus`/`.plain`
+    /// — none takes a removed or fresh-driven role; (c) `prime` and `fresh` are
+    /// both border-inert, so toggling either changes neither role nor handles.
+    func testInvariantExhaustiveOverAll64States() {
         for mask in 0..<64 {
             let s = CardChrome.State(
                 dead:     mask & 0b000001 != 0,
@@ -99,22 +68,86 @@ final class CardChromeTests: XCTestCase {
                 selected: mask & 0b100000 != 0
             )
 
+            // (a) the focus ring coincides with an active, non-dead/detached card.
             let expectFocusRing = (s.focused || s.selected) && !s.dead && !s.detached
             XCTAssertEqual(
                 CardChrome.borderRole(s) == .focus, expectFocusRing,
                 "state \(s): the focus ring must coincide with an active, non-dead/detached card"
             )
 
-            var withoutPrime = s
-            withoutPrime.prime = false
+            // (b) role-coverage — expected computed from inputs, so no state can
+            // take a removed (e.g. the old fresh-driven) role.
+            let expectedRole: CardChrome.BorderRole =
+                (s.dead || s.detached) ? .muted
+                : (s.focused || s.selected) ? .focus
+                : .plain
             XCTAssertEqual(
-                CardChrome.borderRole(s), CardChrome.borderRole(withoutPrime),
-                "state \(s): prime must not affect borderRole"
+                CardChrome.borderRole(s), expectedRole,
+                "state \(s): borderRole must equal the role computed from the inputs"
             )
-            XCTAssertEqual(
-                CardChrome.showsHandles(s), CardChrome.showsHandles(withoutPrime),
-                "state \(s): prime must not affect handle visibility"
-            )
+
+            // (c) prime and fresh are border-inert: forcing each off vs on (with
+            // every other input held fixed) changes neither role nor handles.
+            assertInert(s, "prime", \.prime)
+            assertInert(s, "fresh", \.fresh)
         }
+    }
+
+    /// Asserts a single boolean input has zero effect on chrome: with all other
+    /// inputs held at `s`, the field being `false` vs `true` yields the same
+    /// `borderRole` and `showsHandles`.
+    private func assertInert(
+        _ s: CardChrome.State, _ name: String, _ field: WritableKeyPath<CardChrome.State, Bool>
+    ) {
+        var off = s; off[keyPath: field] = false
+        var on = s;  on[keyPath: field] = true
+        XCTAssertEqual(
+            CardChrome.borderRole(off), CardChrome.borderRole(on),
+            "state \(s): \(name) must not affect borderRole"
+        )
+        XCTAssertEqual(
+            CardChrome.showsHandles(off), CardChrome.showsHandles(on),
+            "state \(s): \(name) must not affect handle visibility"
+        )
+    }
+
+    // MARK: - Retained regression guards (2606.0005 coverage, still load-bearing)
+
+    /// A header-grab (selected, not focused) looks identical to a click — the
+    /// unified ring + handles.
+    func testSelectedLooksLikeFocused() {
+        let s = CardChrome.State(selected: true)
+        XCTAssertEqual(CardChrome.borderRole(s), .focus)
+        XCTAssertTrue(CardChrome.showsHandles(s))
+    }
+
+    /// A clicked live terminal (prime AND focused) draws the teal ring — prime
+    /// never overrides it.
+    func testPrimeAndFocusedIsFocus() {
+        let s = CardChrome.State(prime: true, focused: true)
+        XCTAssertEqual(CardChrome.borderRole(s), .focus)
+        XCTAssertTrue(CardChrome.showsHandles(s))
+    }
+
+    /// A prime-but-not-active terminal (after click-away / board-switch) shows no
+    /// ring and no handles — only header tint + shadow, applied outside CardChrome.
+    func testPrimeButNotActiveIsPlainNoHandles() {
+        let s = CardChrome.State(prime: true, focused: false, selected: false)
+        XCTAssertEqual(CardChrome.borderRole(s), .plain)
+        XCTAssertFalse(CardChrome.showsHandles(s))
+    }
+
+    /// An idle card (nothing set) is the plain line with no handles.
+    func testIdleCardIsPlainNoHandles() {
+        let s = CardChrome.State()
+        XCTAssertEqual(CardChrome.borderRole(s), .plain)
+        XCTAssertFalse(CardChrome.showsHandles(s))
+    }
+
+    /// Detached is an exception alongside dead — muted border yet handles.
+    func testDetachedSelectedIsMutedButShowsHandles() {
+        let s = CardChrome.State(detached: true, selected: true)
+        XCTAssertEqual(CardChrome.borderRole(s), .muted)
+        XCTAssertTrue(CardChrome.showsHandles(s))
     }
 }
