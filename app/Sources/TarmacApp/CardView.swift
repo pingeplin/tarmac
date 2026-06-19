@@ -253,7 +253,7 @@ final class CardView: NSView {
     /// `selected` in the condition still lets a dead card (never focusable) be
     /// resized via a header grab.
     private func updateHandleVisibility() {
-        let show = focused || selected
+        let show = CardChrome.showsHandles(chromeState)
         for (corner, h) in handles {
             // The doc card's ✕ owns the top-right corner; suppress that one resize
             // handle so the button and handle never collide. Resize stays available
@@ -263,21 +263,27 @@ final class CardView: NSView {
         header.closeButton?.isHidden = !show
     }
 
-    /// The base border color for the current state, highest priority first:
-    /// muted line for dead/detached, agent when selected or fresh, prime's
-    /// `#5a626a` for the keyboard-prime terminal, the soft teal `focusBorder` for
-    /// the scroll-focused card (incl. docs), else line. The lift state overrides
-    /// this transiently. `focused` sits below `prime` on purpose: when one card is
-    /// both (a click on a live terminal) the louder prime border wins, so it never
-    /// double-draws; the teal edge only surfaces on a focused-but-not-prime card.
+    /// The resting border colour, derived from the pure `CardChrome.borderRole`
+    /// rule (unit-tested in TarmacKit): muted line for dead/detached, the soft
+    /// teal `focusBorder` for an active card (focused OR selected — docs and
+    /// terminals alike), the agent halo while fresh, else line. `prime`
+    /// deliberately draws NO border — the keyboard target is signalled by header
+    /// tint + shadow. The lift state overrides this border transiently while a
+    /// move/resize gesture is held.
     private var currentBorderColor: NSColor {
-        // A dead OR detached terminal card reads muted, below selection/prime
-        // accents (detached is reversible; dead is not).
-        if dead || detached { return Theme.line.withAlphaComponent(0.6) }
-        if selected || fresh { return Theme.agent }
-        if prime { return Theme.liftBorder }
-        if focused { return Theme.focusBorder }
-        return Theme.line
+        switch CardChrome.borderRole(chromeState) {
+        case .muted: return Theme.line.withAlphaComponent(0.6)
+        case .agent: return Theme.agent
+        case .focus: return Theme.focusBorder
+        case .plain: return Theme.line
+        }
+    }
+
+    /// The card's visual-state inputs, snapshot for the pure chrome rule so the
+    /// border and the resize handles derive from one source and cannot desync.
+    private var chromeState: CardChrome.State {
+        CardChrome.State(dead: dead, detached: detached, fresh: fresh,
+                         prime: prime, focused: focused, selected: selected)
     }
 
     // MARK: - Fresh state (crib §4/§5): agent border + 3px agent-dim ring.
@@ -311,22 +317,21 @@ final class CardView: NSView {
 
     // MARK: - Prime / quiet states (crib §4: terminal primacy)
 
-    /// Prime = the focused terminal card (crib §4): border `#5a626a`, header
-    /// `#3a4046` + `text` label, deeper resting shadow `0 22px 50px
-    /// rgba(0,0,0,0.6)`. A non-prime card is `quiet` (opacity 0.8). Set by the
-    /// controller from the focus model; exactly one live terminal is prime
-    /// (Phase 5b: the one ⌥tab / ⌘T / a click last focused).
+    /// Prime = the keyboard-target terminal (crib §4): header `#3a4046` + `text`
+    /// label and a deeper resting shadow `0 22px 50px rgba(0,0,0,0.6)`; every
+    /// non-prime card is `quiet` (opacity 0.8). Prime deliberately draws NO
+    /// border — the active ring belongs to focus/selection alone (`CardChrome`).
+    /// Set by the controller from the focus model; exactly one live terminal is
+    /// prime (the one ⌥tab / ⌘T / a click last focused).
     func setPrime(_ on: Bool) {
         guard !dead, on != prime else { return }
         prime = on
         // A prime card is never simultaneously quiet.
         if on { setQuiet(false) }
         header.setPrime(on)
-        // Border + shadow follow the new state when not transiently lifted.
-        if !lifted {
-            layer?.borderColor = currentBorderColor.cgColor
-            applyRestingShadow()
-        }
+        // Only the resting shadow follows prime; the border does not (prime is
+        // not a border input). Skip while transiently lifted by a gesture.
+        if !lifted { applyRestingShadow() }
     }
 
     /// Quiet = a non-prime card while a terminal holds prime focus (crib §4):
@@ -338,11 +343,15 @@ final class CardView: NSView {
         alphaValue = on ? 0.8 : 1.0
     }
 
-    /// Focused = the scroll-active card (`AppController.focusedCardID`): a soft teal
-    /// border only — no header / shadow / alpha change — so it composes with `quiet`
-    /// (a focused doc beside a prime terminal is dimmed to 0.8 AND shows the teal
-    /// edge) and stays subordinate to `prime`. A dead card is never a focus target.
+    /// Focused = the active card (`AppController.focusedCardID`): draws the unified
+    /// teal active ring (`CardChrome` `.focus`) and arms the resize handles.
+    /// Clears the `fresh` halo on activation, mirroring `setSelected`, so clicking
+    /// an agent-opened card dismisses its halo. Composes with `quiet` (a focused
+    /// doc beside a prime terminal is dimmed to 0.8 yet still rings teal). A dead
+    /// card is never a focus target.
     func setFocused(_ on: Bool) {
+        // Activating a fresh card clears its agent halo (parity with setSelected).
+        if on && fresh { setFresh(false) }
         guard !dead, on != focused else { return }
         focused = on
         if !lifted { layer?.borderColor = currentBorderColor.cgColor }

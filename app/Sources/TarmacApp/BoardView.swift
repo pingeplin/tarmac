@@ -281,9 +281,10 @@ final class BoardView: NSView {
     /// scale, snapshot at gesture start) can't go stale mid-drag.
     var isGesturing: Bool { gesturingID != nil }
 
-    /// Raises `id` to the front WITHOUT selecting it (no resize handles). Used by
-    /// click-to-focus (point 3): a clicked card comes forward, but the handles
-    /// stay reserved for an explicit move/resize grab on the header.
+    /// Raises `id` to the front without setting the board's `selectedID`. Used by
+    /// click-to-focus (point 3): a clicked card comes forward; its handles are
+    /// armed by the card's own `focused` state (via `CardChrome`), not by board
+    /// selection.
     func bringToFront(_ id: CardID) {
         guard let card = cards[id] else { return }
         raiseToFront(card)
