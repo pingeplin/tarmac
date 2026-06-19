@@ -193,6 +193,12 @@ public final class DaemonClient: @unchecked Sendable {
         send(.boardDelete(boardID: boardID))
     }
 
+    /// issue #15: terminate one terminal's pty (the daemon SIGHUPs its process
+    /// group). Used by ⌘W to close a single terminal card.
+    public func termClose(termID: String) {
+        send(.termClose(termID: termID))
+    }
+
     // MARK: - Internals
 
     private func connectOnce() throws {

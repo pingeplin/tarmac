@@ -259,6 +259,18 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
                 None => debug!("resize for unknown term {term_id}"),
             }
         }
+        Msg::TermClose { term_id } => {
+            // issue #15: kill one terminal's process group (SIGHUP) so ⌘W can
+            // close a single card. Clone the handle and drop the terms lock
+            // before kill() (board-delete's lock discipline); the pump's wait
+            // thread then runs the normal exit cleanup (terms/term_boards removal,
+            // Exit + board_list). An unknown term_id is a no-op.
+            let handle = daemon.terms.lock().await.get(&term_id).cloned();
+            match handle {
+                Some(h) => h.kill(),
+                None => debug!("term_close for unknown term {term_id}"),
+            }
+        }
         Msg::Open { path, term_id, board_id } => {
             // App open: via "user", no reply frame; doc_opened still pushed.
             if let Err(e) = docs::handle_open(daemon, &path, "user", term_id, board_id).await {

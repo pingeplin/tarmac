@@ -445,6 +445,9 @@ final class AppController {
             // focused (below); otherwise it falls through to the responder chain so
             // the prime terminal's own copy still works.
             let isCmdC = event.keyCode == 8 && mods == .command
+            // ⌘W (W = keyCode 13, issue #15) closes the focused card. Always
+            // swallowed so it never reaches the window-close menu.
+            let isCmdW = event.keyCode == 13 && mods == .command
             let swallowed = MainActor.assumeIsolated { () -> Bool in
                 guard let self else { return false }
                 // While the ⌘K switcher is open it owns the keyboard: route every
@@ -483,6 +486,12 @@ final class AppController {
                 }
                 if isCmdT {
                     self.spawnNewTerminal()
+                    return true
+                }
+                // ⌘W closes the focused card (issue #15). Always swallowed — even
+                // with nothing focused (a no-op) — so it never closes the window.
+                if isCmdW {
+                    self.closeFocusedCard()
                     return true
                 }
                 if isOptTab {
@@ -533,12 +542,15 @@ final class AppController {
                     self.rootView.toasts.clearAll()
                     return true
                 }
-                // With every transient overlay dismissed (peek, toasts), esc closes
-                // the focused doc card to the shelf — the keyboard twin of the ✕.
-                // Last so it never pre-empts dismissing peek/toasts/fresh.
-                if case .doc(let path)? = self.focusedCardID,
-                   self.activeBoard.view.card(.doc(path)) != nil {
-                    self.moveToShelf(path)
+                // With every transient overlay dismissed (peek, toasts), esc on a
+                // focused DOC card drops focus — the doc stays on the board; removal
+                // is the ✕ / ⌘W (issue #15). A focused TERMINAL is left for the
+                // responder chain so esc still reaches the program (agent-interrupt
+                // / vim). Routed through EscFocusAction so the rule is unit-tested.
+                let focusedIsDoc: Bool
+                if case .doc = self.focusedCardID { focusedIsDoc = true } else { focusedIsDoc = false }
+                if EscFocusAction.forFocusedDoc(focusedIsDoc) == .defocus {
+                    self.defocus()
                     return true
                 }
                 return false
@@ -1639,6 +1651,56 @@ final class AppController {
                 }
             })
         ])
+    }
+
+    /// ⌘W closes the focused card (issue #15), routed through `FocusedClose`: a doc
+    /// goes to the shelf (recoverable); a terminal is terminated; nothing focused
+    /// is a no-op. The keyboard twin of the header ✕, scoped to the one card the
+    /// user is looking at.
+    private func closeFocusedCard() {
+        let kind: FocusedClose.Kind
+        var otherLive = 0
+        switch focusedCardID {
+        case .doc:
+            kind = .doc
+        case .term(let termID):
+            kind = .term
+            otherLive = activeBoard.sessions.filter { $0.key != termID && $0.value.live }.count
+        case nil:
+            kind = .none
+        }
+        switch FocusedClose.decide(kind: kind, otherLiveTerminals: otherLive) {
+        case .noop:
+            break
+        case .shelfDoc:
+            if case .doc(let path)? = focusedCardID { moveToShelf(path) }
+        case .closeTerminal(let replace):
+            if case .term(let termID)? = focusedCardID { closeTerminal(termID, replace: replace) }
+        }
+    }
+
+    /// Terminates a focused terminal on the active board: kills its pty (the daemon
+    /// SIGHUPs the group), then runs the clean-close teardown PROACTIVELY — not via
+    /// the natural exit, since a SIGHUP exit reports as a signal and would hold the
+    /// card open. Replaces it with a fresh shell when it was the last live terminal
+    /// (≥1-terminal invariant), else offers undo. Mirrors `handleExit`'s clean arms;
+    /// the late `Exit` is a no-op (the session is already gone).
+    private func closeTerminal(_ termID: String, replace: Bool) {
+        let board = activeBoard
+        guard let card = board.view.card(.term(termID)) else { return }
+        let frame = card.worldFrame
+        if board.docked, board.primeTermID == termID { undock() }
+        client.termClose(termID: termID)
+        board.sessions[termID]?.live = false
+        termIndex.remove(termID: termID)
+        advancePrime(on: board, after: termID)
+        removeTerminalCard(termID: termID, on: board)
+        if replace {
+            spawnTerminal(on: board, at: frame)
+        } else {
+            showUndoToast(on: board, at: frame)
+        }
+        persistLayout()
     }
 
     /// Moves `board`'s prime past the just-dead `deadID`: if it was that board's
