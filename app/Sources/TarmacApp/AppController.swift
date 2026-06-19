@@ -1375,7 +1375,7 @@ final class AppController {
     /// carrying its `term_id`). The view is not yet on the board or spawned.
     private func makeSession(termID: String) -> TerminalSession {
         let view = TerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
-        view.font = Theme.mono(Theme.termFontSize)
+        view.font = Theme.termFont(Theme.termFontSize)
         view.nativeBackgroundColor = Theme.termBg
         view.nativeForegroundColor = Theme.termFg
         view.caretColor = Theme.text
