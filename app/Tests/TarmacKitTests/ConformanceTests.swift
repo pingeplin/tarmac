@@ -194,6 +194,24 @@ final class ConformanceTests: XCTestCase {
         XCTAssertEqual(try Message.decode(payload: message.encodedPayload()), message)
     }
 
+    /// issue #15 (additive app → daemon): the `term_close` wire vector (the same
+    /// one the Rust conformance test pins — cross-language agreement); decodes by
+    /// tag and round-trips through our codec.
+    func testVector9TermClose() throws {
+        let payload = hexData("""
+            82 a1 74 aa 74 65 72 6d 5f 63 6c 6f 73 65
+            a7 74 65 72 6d 5f 69 64 a2 74 31
+            """)
+        let expected = MsgPackValue.map(["t": .string("term_close"), "term_id": .string("t1")])
+
+        XCTAssertEqual(try MsgPack.decode(payload), expected)
+        XCTAssertEqual(try Message.decode(payload: payload), .termClose(termID: "t1"))
+        assertRoundTrips(expected)
+        assertRoundTrips(Message.termClose(termID: "t1"))
+        // Our encoding decodes to the same structure as the vector (key order may differ).
+        XCTAssertEqual(try MsgPack.decode(Message.termClose(termID: "t1").encodedPayload()), expected)
+    }
+
     /// An M1 layout (geometry-less tiles, no `board` key) must still decode
     /// under v4 with all-nil tile geometry and a nil board (additive guarantee).
     func testM1LayoutDecodesWithNilBoardAndGeometry() throws {
@@ -578,6 +596,7 @@ final class MessageDecodingRulesTests: XCTestCase {
             .termProc(termID: "u-1", name: "zsh", pid: 4242),
             .termProc(termID: "u-1", name: "vim", pid: nil),
             .bell(termID: "u-1"),
+            .termClose(termID: "u-1"),
         ]
         for message in messages {
             XCTAssertEqual(try Message.decode(payload: message.encodedPayload()), message)

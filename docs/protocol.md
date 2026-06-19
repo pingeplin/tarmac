@@ -333,6 +333,21 @@ the next keystroke to that terminal or when it regains focus.
 |---|---|---|---|
 | `term_id` | string (required) | — | the terminal that rang the bell |
 
+## Closing a single terminal (issue #15)
+
+    {t:"term_close", term_id}                       — app → daemon
+
+Terminate one terminal's pty so ⌘W can close a single terminal card. The daemon
+SIGHUPs the term's process group (reusing the board-delete kill path); the pump's
+wait thread then runs the normal teardown and pushes the usual `exit`. A
+`term_close` for an unknown `term_id` is a no-op. New **additive app→daemon
+type**: a receiver that does not know it ignores it under the unknown-type rule,
+so all existing vectors decode unchanged.
+
+| key | type | missing ⇒ | semantics |
+|---|---|---|---|
+| `term_id` | string (required) | — | the terminal whose pty to terminate |
+
 ## Conformance vectors
 
 Hex of the msgpack payload only (length prefix excluded). Decoding each vector MUST
@@ -400,3 +415,9 @@ round-trip. Byte-exact encoder output is NOT required (key order may legally dif
        a4 7a 6f 6f 6d cb 3f ea 3d 70 a3 d7 0a 3d
        a2 63 78 cb 40 84 00 00 00 00 00 00
        a2 63 79 cb 40 76 80 00 00 00 00 00
+
+9. (issue #15) `{t:"term_close", term_id:"t1"}` — new additive app→daemon type;
+   decodes by tag and round-trips; existing vectors are unaffected.
+
+       82 a1 74 aa 74 65 72 6d 5f 63 6c 6f 73 65
+       a7 74 65 72 6d 5f 69 64 a2 74 31

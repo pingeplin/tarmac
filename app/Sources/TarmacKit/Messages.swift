@@ -165,6 +165,10 @@ public enum Message: Equatable, Sendable {
     /// if the deleted board was active). Drive the ⌘K switcher's ⌘E / ⌘⌫.
     case boardRename(boardID: String, name: String)
     case boardDelete(boardID: String)
+    /// issue #15 (app → daemon): terminate one terminal's pty so ⌘W can close a
+    /// single terminal card. The daemon SIGHUPs its process group; the usual
+    /// `exit` follows. An unknown term ⇒ no-op.
+    case termClose(termID: String)
     /// Unknown message types are ignored per the protocol (log and continue).
     case unknown(type: String)
 }
@@ -286,6 +290,8 @@ public extension Message {
             return .boardRename(boardID: try req("board_id", \.stringValue), name: try req("name", \.stringValue))
         case "board_delete":
             return .boardDelete(boardID: try req("board_id", \.stringValue))
+        case "term_close":
+            return .termClose(termID: try req("term_id", \.stringValue))
         default:
             return .unknown(type: t)
         }
@@ -459,6 +465,8 @@ public extension Message {
             return .map(["t": .string("board_rename"), "board_id": .string(boardID), "name": .string(name)])
         case .boardDelete(let boardID):
             return .map(["t": .string("board_delete"), "board_id": .string(boardID)])
+        case .termClose(let termID):
+            return .map(["t": .string("term_close"), "term_id": .string(termID)])
         case .unknown(let type):
             return .map(["t": .string(type)])
         }

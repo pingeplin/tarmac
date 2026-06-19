@@ -149,6 +149,13 @@ pub enum Msg {
     BoardDelete {
         board_id: String,
     },
+    // TermClose (app -> daemon, issue #15): kill one terminal's pty (SIGHUP to its
+    // process group, reusing TermHandle::kill) so ⌘W can close a single terminal
+    // card. The pump's wait thread then runs the normal exit cleanup (terms/
+    // term_boards removal, Exit + board_list). An unknown term_id is a no-op.
+    TermClose {
+        term_id: String,
+    },
     // Unknown message types are ignored, not fatal (protocol rule).
     #[serde(other)]
     Unknown,
@@ -560,6 +567,17 @@ mod tests {
                 board: Some(BoardViewport { zoom: 0.82, cx: 640.0, cy: 360.0 }),
                 board_id: None,
             },
+        );
+    }
+
+    #[test]
+    fn conformance_vector_9_term_close() {
+        // issue #15: a new additive app -> daemon type. Decodes by tag and
+        // round-trips; existing vectors are unaffected (unknown-type rule).
+        assert_vector(
+            "82 a1 74 aa 74 65 72 6d 5f 63 6c 6f 73 65 \
+             a7 74 65 72 6d 5f 69 64 a2 74 31",
+            Msg::TermClose { term_id: "t1".into() },
         );
     }
 
@@ -1166,6 +1184,8 @@ mod tests {
             Msg::BoardRename { board_id: "board-1".into(), name: "infra".into() },
             Msg::BoardRename { board_id: "board-1".into(), name: String::new() },
             Msg::BoardDelete { board_id: "board-1".into() },
+            // issue #15: close one terminal.
+            Msg::TermClose { term_id: "t1".into() },
             // M3 board_id on spawn/open.
             Msg::SpawnTerm {
                 term_id: "t9".into(),
