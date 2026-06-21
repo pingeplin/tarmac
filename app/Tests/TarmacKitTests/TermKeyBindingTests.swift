@@ -106,9 +106,14 @@ final class TermKeyBindingTests: XCTestCase {
 
     // MARK: No-regression — keys that must stay SwiftTerm's (S11–S14)
 
-    func testOptLeftRightWordMoveDefers() {     // S11 — ⌥←/⌥→ word move
+    /// No-regression for arrows under a non-command modifier: ⌥←/→ (word move,
+    /// already correct) and ⌃←/→ (claimed by macOS Mission Control — we must not
+    /// steal them either). Both defer.
+    func testNonCommandArrowModifiersDefer() {  // S11 — ⌥←/→ and ⌃←/→
         XCTAssertNil(decide(left, option | arrow))
         XCTAssertNil(decide(right, option | arrow))
+        XCTAssertNil(decide(left, control | arrow))
+        XCTAssertNil(decide(right, control | arrow))
     }
     func testOptDeleteWordDeleteDefers() {      // S12 — ⌥⌫ word delete (⌫ not an arrow)
         XCTAssertNil(decide(delete, option))
