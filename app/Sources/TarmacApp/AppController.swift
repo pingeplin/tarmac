@@ -461,6 +461,23 @@ final class AppController {
                 // (clicking a non-prime terminal made it first responder without
                 // updating primeTermID). Cheap: only re-styles on an actual change.
                 self.reconcilePrimeToFocus()
+                // issue #21: Ghostty-parity macOS line-editing keys (⌘⌫/⌘←/⌘→,
+                // ⌥↑/⌥↓) for the focused terminal. SwiftTerm seals its keyDown
+                // (public, not open), so the app injects these here — the one
+                // place every keyDown already passes. The decision is the pure,
+                // unit-tested `TermKeyBinding`; a nil result defers to SwiftTerm's
+                // own handling (kitty encoding, IME marked text, ⌥←/→ word move,
+                // ⌥⌫, plain keys), so nothing existing regresses. Gated on a
+                // focused terminal, so board / doc focus is unaffected.
+                if let tv = self.focusedTerminalView(),
+                   let bytes = TermKeyBinding.bytes(
+                       keyCode: event.keyCode,
+                       modifierFlags: event.modifierFlags.rawValue,
+                       composing: tv.hasMarkedText(),
+                       kittyActive: !tv.getTerminal().keyboardEnhancementFlags.isEmpty) {
+                    tv.send(bytes)
+                    return true
+                }
                 // ⌘C for a doc reading surface: both the peek body and the on-board
                 // doc card host a non-focusable WKWebView (crib §9 — a doc click must
                 // not pull keyboard focus off the prime terminal), so the standard
@@ -1410,17 +1427,27 @@ final class AppController {
     /// terminal (peek / dock / cycle), so focus is never yanked back to a stale
     /// prime. No-op when the focused responder isn't a live terminal view.
     private func reconcilePrimeToFocus() {
-        guard let responder = window?.firstResponder as? NSView else { return }
-        for (id, s) in sessions where s.live {
-            if responder === s.view || responder.isDescendant(of: s.view) {
-                if id != primeTermID {
-                    primeTermID = id
-                    updatePrimacy()
-                }
-                return
-            }
-        }
+        guard let s = focusedLiveSession(), s.termID != primeTermID else { return }
+        primeTermID = s.termID
+        updatePrimacy()
     }
+
+    /// The live terminal session on the active board whose view currently holds
+    /// keyboard focus (the first responder, or an ancestor of it), or nil — the one
+    /// firstResponder walk shared by `reconcilePrimeToFocus` and the escMonitor's
+    /// Ghostty-parity key routing (issue #21), so the focus predicate lives in one
+    /// place.
+    private func focusedLiveSession() -> TerminalSession? {
+        guard let responder = window?.firstResponder as? NSView else { return nil }
+        for s in sessions.values where s.live {
+            if responder === s.view || responder.isDescendant(of: s.view) { return s }
+        }
+        return nil
+    }
+
+    /// The focused live terminal's view, or nil. Thin projection of
+    /// `focusedLiveSession()`, used by the escMonitor key routing.
+    private func focusedTerminalView() -> TerminalView? { focusedLiveSession()?.view }
 
     func terminalSizeChanged(termID: String, cols: Int, rows: Int) {
         viewReady = true
