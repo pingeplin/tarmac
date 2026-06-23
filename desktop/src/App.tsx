@@ -2,14 +2,23 @@
 // card set, runs the multi-terminal lifecycle (boot/⌘T/exit/prime), lands
 // `tarmac open` docs with gravity placement + a provenance edge, parks docs on a
 // shelf, and round-trips the whole layout (tiles + viewport) to the daemon so a
-// board survives a restart. This is AppController.swift's whiteboard core minus
-// the multi-board switcher + overlay chrome (Phases 4–5).
+// board survives a restart. Phase 4 adds the wayfinding + feedback chrome:
+// zoom control, minimap, offscreen-signal hints (+ ⏎ fly / Esc fly-back), the ⌘P
+// peek slide-over, transient toasts, the session chip, and full card-chrome
+// states (selection ring, resize handles, quiet/detached). This is
+// AppController.swift's whiteboard core minus the multi-board switcher (Phase 5).
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Board } from "./board/Board";
 import { StatusBar } from "./ui/StatusBar";
 import { ShelfOverlay } from "./ui/ShelfOverlay";
-import type { BoardEngine } from "./board/BoardEngine";
+import { ZoomControl } from "./ui/ZoomControl";
+import { MinimapOverlay, type MinimapItem, type MinimapSignal } from "./ui/MinimapOverlay";
+import { OffscreenHints } from "./ui/OffscreenHints";
+import { PeekOverlay } from "./ui/PeekOverlay";
+import { ToastOverlay } from "./ui/ToastOverlay";
+import { TitleBarChip } from "./ui/TitleBarChip";
+import type { BoardEngine, Viewport } from "./board/BoardEngine";
 import {
   cardId,
   topZ,
@@ -22,9 +31,28 @@ import { mint } from "./kit/bootTerminal";
 import { displayLabel } from "./kit/termTitle";
 import { decide } from "./kit/termExit";
 import { plan } from "./kit/termRestore";
-import { cascadeOrigin } from "./kit/boardWayfinding";
+import { cascadeOrigin, isOffscreen } from "./kit/boardWayfinding";
+import {
+  pillLabel,
+  selectFlyTarget,
+  stackPills,
+  type OffscreenHint,
+  type PlacedPill,
+  type Signal,
+} from "./kit/offscreenHints";
+import {
+  addToast,
+  clearAllToasts,
+  dismissToast,
+  emptyToasts,
+  pruneExpired,
+  type Toast,
+  type ToastState,
+} from "./kit/toasts";
+import { boardChipLabel } from "./kit/chromeText";
 import { Place, firstFreeSlot, scatterFrame } from "./kit/placement";
 import { buildTiles, parseTiles, type LayoutTile } from "./kit/layoutTiles";
+import type { Size } from "./kit/geom";
 import {
   frontendReady,
   onDaemonMsg,
@@ -38,6 +66,13 @@ import type { DaemonMsg, DaemonStatus } from "./ipc/protocol";
 
 const BOOT_FRAME: WorldFrame = { ...Place.termFrame };
 const PERSIST_DEBOUNCE_MS = 200;
+const ZOOM_STEP = 1.2; // ZoomControl.zoomStep — ± multiply/divide by this
+const TOAST_PRUNE_MS = 250;
+
+// Offscreen-hint layout constants (OffscreenHints.swift).
+const HINT_EDGE_INSET = 18;
+const HINT_EDGE_MARGIN = 10;
+const HINT_STACK_GAP = 8;
 
 /** Per-doc metadata kept off the card (so a shelved doc keeps its color/owner). */
 interface DocMeta {
@@ -51,11 +86,43 @@ type Gesture =
   | { kind: "term"; termId: string; startFrame: WorldFrame; sats: Map<string, WorldFrame> }
   | { kind: "doc"; path: string };
 
+const basename = (p: string): string => {
+  const i = p.lastIndexOf("/");
+  return i >= 0 ? p.slice(i + 1) : p;
+};
+
+/** A card's wayfinding signal (bell outranks live); docs carry none yet. */
+const cardSignal = (c: CardModel): Signal | null => {
+  if (c.kind === "term") {
+    if (c.bell) return "bell";
+    if (c.live && !c.dead) return "live";
+  }
+  return null;
+};
+
+/** HH:MM for a bell pill (view-layer clock; the kit takes the formatted string). */
+const formatClock = (ms: number): string => {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+/** Approximate pill size from mono metrics (IBM Plex Mono ~6.3px/char at 10.5px)
+ * + arrow + horizontal padding — feeds the pure stacking layout. */
+const measurePill = (h: OffscreenHint): Size => ({ w: 22 + 8 + 7 + h.label.length * 6.3, h: 26 });
+
 export default function App() {
   const [cards, setCards] = useState<CardModel[]>([]);
   const [docContents, setDocContents] = useState<Map<string, string>>(new Map());
   const [shelfPaths, setShelfPaths] = useState<string[]>([]);
   const [status, setStatus] = useState<DaemonStatus>({ connected: false, reason: "connecting…" });
+
+  // Phase 4 chrome state.
+  const [viewport, setViewportState] = useState<Viewport>({ zoom: 1, cx: 0, cy: 0 });
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [toastState, setToastState] = useState<ToastState>(emptyToasts);
+  const [peekVisible, setPeekVisible] = useState(false);
+  const [peekPath, setPeekPath] = useState<string | null>(null);
 
   const engineRef = useRef<BoardEngine | null>(null);
   const cardsRef = useRef<CardModel[]>([]);
@@ -69,6 +136,24 @@ export default function App() {
   const docMetaRef = useRef<Map<string, DocMeta>>(new Map());
   const gestureRef = useRef<Gesture | null>(null);
   const persistTimer = useRef<number | null>(null);
+
+  // Recency + bell timestamps (view-layer clock; drive the peek target + bell pill).
+  const lastChangedRef = useRef<Map<string, number>>(new Map());
+  const bellTimeRef = useRef<Map<string, number>>(new Map());
+  // Mirrors for the once-registered keydown handler's closure.
+  const peekVisibleRef = useRef(false);
+  peekVisibleRef.current = peekVisible;
+  const peekPathRef = useRef<string | null>(null);
+  peekPathRef.current = peekPath;
+  const toastsRef = useRef<Toast[]>([]);
+  toastsRef.current = toastState.toasts;
+  const flyTargetRef = useRef<string | null>(null);
+  const preFlightRef = useRef<Viewport | null>(null);
+  const prevConnectedRef = useRef(false);
+  // rAF-coalesce the viewport state update so a pan/zoom burst re-renders the
+  // chrome at most once per frame (keeps the cards off the 60fps hot path).
+  const vpRafRef = useRef<number | null>(null);
+  const pendingVpRef = useRef<Viewport | null>(null);
 
   // --- card factories ------------------------------------------------------
 
@@ -142,6 +227,35 @@ export default function App() {
   // Persist on any committed card-set / frame / shelf change (debounced). The
   // viewport persists via onViewport below; both share the same trailing timer.
   useEffect(schedulePersist, [cards, shelfPaths]);
+
+  /** Committed pan/zoom: persist (debounced) immediately, and coalesce the chrome
+   * viewport state update onto one rAF so a wheel/pinch burst re-renders the chrome
+   * at most once per frame rather than per event. */
+  const onViewport = (vp: Viewport) => {
+    schedulePersist();
+    pendingVpRef.current = vp;
+    if (vpRafRef.current != null) return;
+    vpRafRef.current = requestAnimationFrame(() => {
+      vpRafRef.current = null;
+      if (pendingVpRef.current) setViewportState(pendingVpRef.current);
+    });
+  };
+
+  // --- toasts --------------------------------------------------------------
+
+  const pushToast = (t: Omit<Toast, "expiresAtMs" | "id">) =>
+    setToastState((s) => addToast(s, { ...t, id: mint() }, Date.now()));
+
+  const onToastChip = (toastId: string, _chipIndex: number) =>
+    // No chip actions wired yet (the undo chip lands with ⌘W close in P5); dismiss.
+    setToastState((s) => dismissToast(s, toastId));
+
+  // Auto-expire toasts off a single interval while the stack is non-empty.
+  useEffect(() => {
+    if (toastState.toasts.length === 0) return;
+    const id = window.setInterval(() => setToastState((s) => pruneExpired(s, Date.now())), TOAST_PRUNE_MS);
+    return () => window.clearInterval(id);
+  }, [toastState.toasts.length]);
 
   // --- doc content ---------------------------------------------------------
 
@@ -248,6 +362,43 @@ export default function App() {
     void fetchDoc(path);
   };
 
+  // --- peek (⌘P quick-look of the most-recent doc) -------------------------
+
+  /** The doc to peek: most-recently-changed, else the most-recently-opened. */
+  const peekTarget = (): string | null => {
+    let best: string | null = null;
+    let bestT = -Infinity;
+    for (const [p, t] of lastChangedRef.current) {
+      if (t > bestT) {
+        bestT = t;
+        best = p;
+      }
+    }
+    if (best) return best;
+    const order = dockOrderRef.current;
+    return order.length ? order[order.length - 1]! : null;
+  };
+
+  const openPeek = () => {
+    const target = peekTarget();
+    if (!target) return; // nothing to peek (empty registry)
+    void fetchDoc(target);
+    setPeekPath(target);
+    setPeekVisible(true);
+    // Presenting the doc marks it read — clear its fresh state.
+    setCards((cs) => cs.map((c) => (c.kind === "doc" && c.path === target ? { ...c, fresh: false } : c)));
+  };
+
+  /** ⌘⏎ / pin chip: if the peeked doc is on the board, unpin it to the shelf; else
+   * land it at a free slot. Either way the peek closes. */
+  const togglePinPeeked = () => {
+    const p = peekPathRef.current;
+    if (!p) return;
+    if (cardsRef.current.some((c) => c.kind === "doc" && c.path === p)) moveToShelf(p);
+    else restoreFromShelf(p);
+    setPeekVisible(false);
+  };
+
   // --- terminal lifecycle --------------------------------------------------
 
   const spawnNewTerminal = () => {
@@ -274,6 +425,15 @@ export default function App() {
       | TermCardModel
       | undefined;
     if (!term) return;
+    // Surface a non-clean exit as a toast (clean code 0 stays silent).
+    if (code !== 0) {
+      pushToast({
+        icon: "›_",
+        title: code == null ? "killed by signal" : `shell exited · ${code}`,
+        body: null,
+        chips: [],
+      });
+    }
     const others = cardsRef.current.filter(
       (c) => c.kind === "term" && c.termId !== termId && c.live && !c.dead,
     ).length;
@@ -325,6 +485,16 @@ export default function App() {
           : c,
       ),
     );
+
+  /** A keystroke into a terminal clears its bell (Swift parity). TerminalCard only
+   * calls this when a bell is lit, and we bail to the same ref otherwise, so normal
+   * typing never re-renders. */
+  const onTermActivity = (termId: string) =>
+    setCards((cs) => {
+      if (!cs.some((c) => c.kind === "term" && c.termId === termId && c.bell)) return cs;
+      bellTimeRef.current.delete(termId);
+      return cs.map((c) => (c.kind === "term" && c.termId === termId ? { ...c, bell: false } : c));
+    });
 
   // --- restore (cold start: tiles + live_terms → cards) --------------------
 
@@ -420,9 +590,11 @@ export default function App() {
         applyRestore(msg);
         break;
       case "doc_opened":
+        lastChangedRef.current.set(msg.path, Date.now());
         landDoc(msg.path, msg.via, msg.term_id ?? undefined, msg.repo_color ?? undefined);
         break;
       case "file_event":
+        lastChangedRef.current.set(msg.path, Date.now());
         refreshDoc(msg.path);
         break;
       case "exit":
@@ -432,6 +604,7 @@ export default function App() {
         applyTermProc(msg.term_id, msg.name);
         break;
       case "bell":
+        bellTimeRef.current.set(msg.term_id, Date.now());
         setCards((cs) =>
           cs.map((c) => (c.kind === "term" && c.termId === msg.term_id ? { ...c, bell: true } : c)),
         );
@@ -441,17 +614,76 @@ export default function App() {
     }
   };
 
+  /** Connection status, raising a toast on a connected→lost transition. */
+  const handleStatus = (s: DaemonStatus) => {
+    setStatus(s);
+    if (prevConnectedRef.current && !s.connected) {
+      pushToast({ icon: "¶", title: "tarmacd connection lost", body: s.reason ?? null, chips: [] });
+    }
+    prevConnectedRef.current = s.connected;
+  };
+
   useEffect(() => {
-    const subs = [onDaemonStatus(setStatus), onDaemonMsg(handle)];
+    const subs = [onDaemonStatus(handleStatus), onDaemonMsg(handle)];
     void Promise.all(subs).then(frontendReady);
 
     const onKeyDown = (e: KeyboardEvent) => {
+      // ⌘T — new terminal (cascade-spawn).
       if (e.metaKey && !e.altKey && !e.ctrlKey && e.key.toLowerCase() === "t") {
         e.preventDefault();
         spawnNewTerminal();
         return;
       }
+      // ⌘P — peek the most-recent doc.
+      if (e.metaKey && !e.altKey && !e.ctrlKey && e.key.toLowerCase() === "p") {
+        e.preventDefault();
+        openPeek();
+        return;
+      }
+      // ⌘⏎ — pin / unpin the peeked doc (only while peeking).
+      if (e.metaKey && e.key === "Enter") {
+        if (peekVisibleRef.current) {
+          e.preventDefault();
+          togglePinPeeked();
+        }
+        return;
+      }
+      // ⏎ — fly to the highest-priority offscreen signal, unless a terminal is
+      // typing (it owns Return) or there is no target.
+      if (e.key === "Enter" && !e.metaKey && !e.altKey && !e.ctrlKey) {
+        const active = document.activeElement as HTMLElement | null;
+        // The terminal owns Return; never hijack it from a focused control/field
+        // either (defense-in-depth — chrome buttons also keep focus off themselves).
+        if (active?.closest?.(".term-host, button, input, textarea, [contenteditable]")) return;
+        const target = flyTargetRef.current;
+        if (target && engineRef.current) {
+          const card = cardsRef.current.find((c) => cardId(c) === target);
+          if (card) {
+            preFlightRef.current = engineRef.current.viewport;
+            engineRef.current.flyToCard(card.frame);
+            e.preventDefault();
+          }
+        }
+        return;
+      }
+      // ESC ladder: peek → toasts → fly-back → fresh-doc-to-shelf (Swift order).
       if (e.key === "Escape") {
+        if (peekVisibleRef.current) {
+          e.preventDefault();
+          setPeekVisible(false);
+          return;
+        }
+        if (toastsRef.current.length > 0) {
+          e.preventDefault();
+          setToastState((s) => clearAllToasts(s));
+          return;
+        }
+        if (preFlightRef.current && engineRef.current) {
+          e.preventDefault();
+          engineRef.current.flyTo(preFlightRef.current);
+          preFlightRef.current = null;
+          return;
+        }
         // A fresh (just-landed) doc card dismisses to the shelf; otherwise ESC
         // passes through to the prime terminal's program (agent-interrupt / vim).
         const fresh = cardsRef.current.find((c) => c.kind === "doc" && c.fresh) as
@@ -472,6 +704,7 @@ export default function App() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("blur", flushPersist);
       window.removeEventListener("beforeunload", flushPersist);
+      if (vpRafRef.current != null) cancelAnimationFrame(vpRafRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -528,7 +761,16 @@ export default function App() {
     // The [cards] effect persists the committed positions (debounced).
   };
 
+  /** Resize commits a frame-only change (no gravity / satellites). */
+  const onCardResize = (id: string, frame: WorldFrame) =>
+    setCards((cs) => cs.map((c) => (cardId(c) === id ? ({ ...c, frame } as CardModel) : c)));
+
+  const onCardResizeEnd = (_id: string) => {
+    // The [cards] effect persists the committed size (debounced).
+  };
+
   const onCardGrab = (id: string) => {
+    setSelectedId(id); // the grabbed card becomes the active (ring + handles) card
     setCards((cs) => {
       const target = cs.find((c) => cardId(c) === id);
       if (!target) return cs;
@@ -547,32 +789,108 @@ export default function App() {
     });
   };
 
+  const onMinimapJump = (world: { x: number; y: number }) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    const vp = engine.viewport;
+    engine.setViewport({ zoom: vp.zoom, cx: world.x, cy: world.y }); // re-center, keep zoom
+  };
+
+  // --- offscreen hints + minimap (recompute on card/viewport change) -------
+
+  const hhmmFor = (c: CardModel): string =>
+    c.kind === "term" ? formatClock(bellTimeRef.current.get(c.termId) ?? Date.now()) : formatClock(Date.now());
+
+  const offscreen = useMemo<{ pills: PlacedPill[]; flyTarget: string | null }>(() => {
+    const engine = engineRef.current;
+    if (!engine) return { pills: [], flyTarget: null };
+    const wr = engine.viewportWorldRect;
+    const size = engine.viewportSize;
+    const hints: OffscreenHint[] = [];
+    for (const c of cards) {
+      const sig = cardSignal(c);
+      if (!sig) continue;
+      const cx = c.frame.x + c.frame.w / 2;
+      const cy = c.frame.y + c.frame.h / 2;
+      if (!isOffscreen({ x: cx, y: cy }, wr)) continue;
+      hints.push({
+        cardId: cardId(c),
+        centerView: engine.worldToLocal(cx, cy),
+        signal: sig,
+        label: pillLabel(sig, c.kind === "term" ? c.label : basename(c.path), hhmmFor(c)),
+        z: c.z,
+      });
+    }
+    const pills = stackPills(hints, { x: 0, y: 0, w: size.w, h: size.h }, {
+      edgeInset: HINT_EDGE_INSET,
+      edgeMargin: HINT_EDGE_MARGIN,
+      stackGap: HINT_STACK_GAP,
+      pillSize: measurePill,
+    });
+    return { pills, flyTarget: selectFlyTarget(hints) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cards, viewport]);
+  flyTargetRef.current = offscreen.flyTarget;
+
+  const engine = engineRef.current;
+  const minimapItems: MinimapItem[] = cards.map((c) => ({
+    worldRect: c.frame,
+    signal: (cardSignal(c) ?? "none") as MinimapSignal,
+  }));
+  const viewportWorldRect = engine ? engine.viewportWorldRect : { x: 0, y: 0, w: 0, h: 0 };
+
   return (
     <div className="app">
-      <Board
-        cards={cards}
-        docContents={docContents}
-        engineRef={engineRef}
-        onViewport={schedulePersist}
-        onCardMove={onCardMove}
-        onCardMoveStart={onCardMoveStart}
-        onCardMoveEnd={onCardMoveEnd}
-        onCardGrab={onCardGrab}
-        onTermSpawn={onTermSpawn}
-        onTermTitle={(termId, title) =>
-          title.trim()
-            ? setCards((cs) =>
-                cs.map((c) => (c.kind === "term" && c.termId === termId ? { ...c, label: title } : c)),
-              )
-            : undefined
-        }
-        onDocClose={moveToShelf}
-      />
-      <ShelfOverlay
-        paths={shelfPaths}
-        repoColorFor={(p) => docMetaRef.current.get(p)?.repoColor}
-        onRestore={restoreFromShelf}
-      />
+      <div className="board-stack">
+        <Board
+          cards={cards}
+          docContents={docContents}
+          engineRef={engineRef}
+          onViewport={onViewport}
+          onCardMove={onCardMove}
+          onCardMoveStart={onCardMoveStart}
+          onCardMoveEnd={onCardMoveEnd}
+          onCardResize={onCardResize}
+          onCardResizeEnd={onCardResizeEnd}
+          onCardGrab={onCardGrab}
+          onTermSpawn={onTermSpawn}
+          onTermTitle={(termId, title) =>
+            title.trim()
+              ? setCards((cs) =>
+                  cs.map((c) => (c.kind === "term" && c.termId === termId ? { ...c, label: title } : c)),
+                )
+              : undefined
+          }
+          onTermActivity={onTermActivity}
+          onDocClose={moveToShelf}
+          selectedId={selectedId}
+          onBackgroundPointerDown={() => setSelectedId(null)}
+        />
+        <TitleBarChip name={boardChipLabel(null, "tarmac")} attached={status.connected} />
+        <ShelfOverlay
+          paths={shelfPaths}
+          repoColorFor={(p) => docMetaRef.current.get(p)?.repoColor}
+          onRestore={restoreFromShelf}
+        />
+        <ZoomControl
+          zoom={viewport.zoom}
+          onZoomIn={() => engineRef.current?.zoomByCentered(ZOOM_STEP)}
+          onZoomOut={() => engineRef.current?.zoomByCentered(1 / ZOOM_STEP)}
+          onFit={() => engineRef.current?.fitToCards()}
+        />
+        <MinimapOverlay items={minimapItems} viewportWorldRect={viewportWorldRect} onJump={onMinimapJump} />
+        <OffscreenHints pills={offscreen.pills} />
+        <PeekOverlay
+          visible={peekVisible}
+          path={peekPath}
+          markdown={peekPath ? docContents.get(peekPath) ?? "" : ""}
+          repoColor={peekPath ? docMetaRef.current.get(peekPath)?.repoColor : undefined}
+          lastChangedMs={peekPath ? lastChangedRef.current.get(peekPath) : undefined}
+          onPin={togglePinPeeked}
+          onClose={() => setPeekVisible(false)}
+        />
+        <ToastOverlay toasts={toastState.toasts} onChipClick={onToastChip} />
+      </div>
       <StatusBar connected={status.connected} reason={status.reason} cards={cards.length} />
     </div>
   );

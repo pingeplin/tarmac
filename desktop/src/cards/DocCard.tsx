@@ -17,11 +17,15 @@ const basename = (p: string): string => {
 interface DocCardProps {
   model: DocCardModel;
   markdown: string;
+  selected?: boolean;
+  detached?: boolean;
   getZoom: () => number;
   rootRef?: (el: HTMLDivElement | null) => void;
   onMove: (frame: WorldFrame) => void;
   onMoveStart?: () => void;
   onMoveEnd?: () => void;
+  onResize?: (frame: WorldFrame) => void;
+  onResizeEnd?: () => void;
   onGrab: () => void;
   onClose: () => void;
 }
@@ -51,11 +55,16 @@ export function DocCard(props: DocCardProps) {
       frame={model.frame}
       z={model.z}
       fresh={model.fresh}
+      selected={props.selected}
+      detached={props.detached}
+      hasClose
       getZoom={props.getZoom}
       rootRef={props.rootRef}
       onMove={props.onMove}
       onMoveStart={props.onMoveStart}
       onMoveEnd={props.onMoveEnd}
+      onResize={props.onResize}
+      onResizeEnd={props.onResizeEnd}
       onGrab={props.onGrab}
       header={
         <>

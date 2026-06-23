@@ -10,7 +10,8 @@
 // center, so Tx = W/2 - cx*zoom, Ty = H/2 - cy*zoom.
 
 import { isCardVisible } from "../kit/cull";
-import type { Rect } from "../kit/geom";
+import { fit } from "../kit/boardWayfinding";
+import type { Rect, Size } from "../kit/geom";
 
 export interface Viewport {
   zoom: number;
@@ -25,8 +26,20 @@ export interface Cullable {
   frame: Rect;
 }
 
+// Zoom bounds match Swift Viewport (BoardModel.swift): a single 0.1..3.0 cap on
+// EVERY path — pinch, ± buttons, setViewport (restore), fly, and fit — via the
+// shared clamp, so the readout never exceeds 300%.
 const MIN_ZOOM = 0.1;
-const MAX_ZOOM = 4;
+const MAX_ZOOM = 3.0;
+
+// Fit-to-cards: 10% margin each side; zoom shares the engine's 0.1..3.0 clamp.
+const FIT_MARGIN = 0.1;
+const FIT_MIN_ZOOM = MIN_ZOOM;
+const FIT_MAX_ZOOM = MAX_ZOOM;
+
+// Fly-to viewport tween (Swift BoardView.animateViewport): ~300ms, easeInOutQuad.
+const FLY_DURATION_MS = 300;
+const easeInOutQuad = (t: number): number => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
 
 /** Below this zoom the dot grid densifies 24px → 11px (Swift semanticZoom flip)
  * and cards bitmap-scale down. Matches Viewport.semanticZoomThreshold = 0.5. */
@@ -47,6 +60,9 @@ export class BoardEngine {
   private cullables: Cullable[] = [];
   private cullVisible = new Map<string, boolean>();
 
+  // The in-flight viewport tween's rAF handle (flyTo); null when not animating.
+  private flightRaf: number | null = null;
+
   /** Fires after every committed pan/zoom (for chrome: zoom readout, minimap). */
   onViewportChange?: (vp: Viewport) => void;
 
@@ -63,13 +79,90 @@ export class BoardEngine {
   }
 
   setViewport(vp: Viewport): void {
+    this.cancelFlight(); // a programmatic jump (minimap, restore) interrupts a fly
     this.vp = { zoom: clamp(vp.zoom, MIN_ZOOM, MAX_ZOOM), cx: vp.cx, cy: vp.cy };
     this.apply();
     this.onViewportChange?.(this.viewport);
   }
 
+  /** The visible region in WORLD coords (inverse-projected viewport bounds).
+   * Drives the minimap viewport box + offscreen-hint isOffscreen test. */
+  get viewportWorldRect(): Rect {
+    const rect = this.viewportEl.getBoundingClientRect();
+    const tl = this.viewToWorld(rect.left, rect.top);
+    const br = this.viewToWorld(rect.left + rect.width, rect.top + rect.height);
+    return { x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y };
+  }
+
+  /** The board's current pixel size (the offscreen-hint/stacking viewRect). */
+  get viewportSize(): Size {
+    const rect = this.viewportEl.getBoundingClientRect();
+    return { w: rect.width, h: rect.height };
+  }
+
+  /** Fit all cards into view with a 10% margin (zoom-control ⊡), clamped to Swift's
+   * 0.1..3.0; no-op with no cards. Reads fresh viewport pixel size at call time. */
+  fitToCards(): void {
+    if (this.cullables.length === 0) return;
+    const frames = this.cullables.map((c) => c.frame);
+    const f = fit(frames, this.viewportSize, FIT_MARGIN, FIT_MIN_ZOOM, FIT_MAX_ZOOM);
+    if (!f) return;
+    this.setViewport({ zoom: f.zoom, cx: f.center.x, cy: f.center.y });
+  }
+
+  /** Multiply zoom by `factor`, anchored at the VIEWPORT CENTER (the zoom-control
+   * ± path; Swift anchors ± at the board center, not the pointer). */
+  zoomByCentered(factor: number): void {
+    const rect = this.viewportEl.getBoundingClientRect();
+    this.zoomAt(factor, rect.left + rect.width / 2, rect.top + rect.height / 2);
+  }
+
+  /** Animate the viewport to `target` over ~300ms (easeInOutQuad), or jump instantly
+   * under reduce-motion. Interrupted by any user gesture or programmatic setViewport.
+   * The fly writes vp directly (not via setViewport) so it doesn't cancel itself. */
+  flyTo(target: Viewport): void {
+    this.cancelFlight();
+    const dest: Viewport = { zoom: clamp(target.zoom, MIN_ZOOM, MAX_ZOOM), cx: target.cx, cy: target.cy };
+    const reduce =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+    if (reduce) {
+      this.setViewport(dest);
+      return;
+    }
+    const from = { ...this.vp };
+    let startTs: number | null = null;
+    const step = (ts: number) => {
+      if (startTs === null) startTs = ts;
+      const t = Math.min(1, (ts - startTs) / FLY_DURATION_MS);
+      const k = easeInOutQuad(t);
+      this.vp = {
+        zoom: from.zoom + (dest.zoom - from.zoom) * k,
+        cx: from.cx + (dest.cx - from.cx) * k,
+        cy: from.cy + (dest.cy - from.cy) * k,
+      };
+      this.apply();
+      this.onViewportChange?.(this.viewport);
+      this.flightRaf = t < 1 ? requestAnimationFrame(step) : null;
+    };
+    this.flightRaf = requestAnimationFrame(step);
+  }
+
+  /** Fly the viewport to center `frame` at zoom 1.0 (offscreen-hint ⏎ target). */
+  flyToCard(frame: Rect): void {
+    this.flyTo({ zoom: 1.0, cx: frame.x + frame.w / 2, cy: frame.y + frame.h / 2 });
+  }
+
+  private cancelFlight(): void {
+    if (this.flightRaf !== null) {
+      cancelAnimationFrame(this.flightRaf);
+      this.flightRaf = null;
+    }
+  }
+
   /** Pan by a screen-pixel delta (two-finger scroll). */
   pan(dxScreen: number, dyScreen: number): void {
+    this.cancelFlight();
     this.vp.cx -= dxScreen / this.vp.zoom;
     this.vp.cy -= dyScreen / this.vp.zoom;
     this.apply();
@@ -79,6 +172,7 @@ export class BoardEngine {
   /** Multiply zoom by `factor`, keeping the world point under (anchorX,anchorY)
    * fixed on screen (pinch / ⌘-scroll anchored at the pointer). */
   zoomAt(factor: number, anchorXScreen: number, anchorYScreen: number): void {
+    this.cancelFlight();
     const rect = this.viewportEl.getBoundingClientRect();
     const ax = anchorXScreen - rect.left;
     const ay = anchorYScreen - rect.top;
@@ -114,6 +208,17 @@ export class BoardEngine {
     };
   }
 
+  /** World coords → board-LOCAL coords (relative to the viewport element's
+   * top-left, no client offset). The offscreen-hint overlay is inset:0 over the
+   * board, so this is exactly its coordinate space. */
+  worldToLocal(wx: number, wy: number): { x: number; y: number } {
+    const rect = this.viewportEl.getBoundingClientRect();
+    return {
+      x: (wx - this.vp.cx) * this.vp.zoom + rect.width / 2,
+      y: (wy - this.vp.cy) * this.vp.zoom + rect.height / 2,
+    };
+  }
+
   /** Register the cards to cull (their nodes + current world frames). Called by
    * the Board on every committed card-set/frame change — NOT per pan frame. */
   setCullables(cullables: Cullable[]): void {
@@ -127,6 +232,7 @@ export class BoardEngine {
   }
 
   destroy(): void {
+    this.cancelFlight();
     for (const off of this.detachers) off();
     this.detachers = [];
   }
@@ -182,7 +288,12 @@ export class BoardEngine {
     // grid offset, and the cull bounds — none of which the pan/zoom path sees. Re-
     // apply on resize so the grid stays aligned and culling uses fresh dimensions
     // (matching the Swift board reprojecting on layout), not just on the next pan.
-    const ro = new ResizeObserver(() => this.apply());
+    const ro = new ResizeObserver(() => {
+      this.apply();
+      // A resize moves the world rect / grid origin without a pan/zoom — notify
+      // chrome (minimap, offscreen hints, zoom readout) so it re-derives.
+      this.onViewportChange?.(this.viewport);
+    });
     ro.observe(this.viewportEl);
     this.detachers.push(() => ro.disconnect());
   }

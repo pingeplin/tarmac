@@ -24,6 +24,23 @@
   --amber: #fdbc4b;
   --ok: #1cdc9a;
   --dot: #32383e; /* Swift BoardView.dotColor (srgb 50,56,62) — match exactly */
+  --amber-dim: rgba(253, 188, 75, 0.16); /* Theme.amberDim */
+
+  /* P4 alpha-derived chrome colors (mirror theme.ts palette; CSS can't
+     alpha-multiply a hex var without color-mix, so they're explicit rgba). */
+  --line-muted: rgba(71, 78, 85, 0.6); /* line @ 0.6 — muted/dead/detached border role */
+  --minimap-bg: rgba(36, 40, 44, 0.92); /* bg0 @ 0.92 */
+  --hint-border-bell: rgba(253, 188, 75, 0.5); /* amber @ 0.5 */
+  --hint-border-live: rgba(26, 188, 156, 0.4); /* agent @ 0.4 */
+  --peek-meta: rgba(26, 188, 156, 0.85); /* agent @ 0.85 */
+
+  /* Drop shadows (mirror theme.ts shadows; ported from CardView/overlay NSShadow). */
+  --shadow-card-rest: 0 16px 38px rgba(0, 0, 0, 0.5);
+  --shadow-card-prime: 0 22px 50px rgba(0, 0, 0, 0.6);
+  --shadow-card-lift: 0 18px 44px rgba(0, 0, 0, 0.6);
+  --shadow-hint: 0 8px 22px rgba(0, 0, 0, 0.5);
+  --shadow-peek: -26px 0 30px rgba(0, 0, 0, 0.55);
+  --shadow-toast: 0 10px 14px rgba(0, 0, 0, 0.5);
 
   --chrome-font: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
 
@@ -59,6 +76,16 @@ body,
   flex-direction: column;
 }
 
+/* The board area above the status bar; the positioned ancestor for all wayfinding
+   + feedback overlays so their insets are measured from the board, not the window. */
+.board-stack {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
 /* --- board / infinite canvas --- */
 
 .board {
@@ -91,23 +118,46 @@ body,
   border: 1px solid var(--line);
   border-radius: 10px;
   overflow: hidden;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-card-rest);
+  /* Lift→rest border ease (CardView setLifted false branch, 0.15s). */
+  transition: border-color 0.15s cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
 .card.border-focus {
   border-color: var(--focus-border);
 }
+/* Swift muted role = line @ 0.6 (dead / detached / quiet cards keep handles). */
 .card.border-muted {
-  border-color: var(--line-soft);
+  border-color: var(--line-muted);
 }
+/* Prime is signalled by header tint + a deeper resting shadow only — NOT a border
+   (cardChrome.borderRole excludes prime), matching Swift. */
 .card.prime {
-  border-color: var(--lift-border);
+  box-shadow: var(--shadow-card-prime);
 }
 .card.fresh {
-  box-shadow: 0 0 0 3px var(--agent-dim), 0 6px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 0 0 3px var(--agent-dim), var(--shadow-card-rest);
 }
 .card.dead {
   opacity: 0.55;
+}
+/* A non-prime card while another terminal is prime (Swift setQuiet 0.8). */
+.card.quiet {
+  opacity: 0.8;
+}
+/* A doc severed from its owner (Swift setDetached 0.5) — takes precedence. */
+.card.detached {
+  opacity: 0.5;
+}
+/* Held during a drag/resize: lift border + deeper shadow + raise (Swift setLifted). */
+.card.lifting {
+  border-color: var(--lift-border);
+  box-shadow: var(--shadow-card-lift);
+}
+/* Keep the agent-dim fresh ring composed under the lift shadow while a fresh card
+   is being dragged (box-shadow is one property, so the ring must be re-stated). */
+.card.fresh.lifting {
+  box-shadow: 0 0 0 3px var(--agent-dim), var(--shadow-card-lift);
 }
 
 .card-header {
@@ -128,8 +178,13 @@ body,
   background: var(--prime-header-bg);
   color: var(--text);
 }
+/* The leading kind glyph is faint at rest, amber when the card's bell is ringing
+   (Swift CardView kind-glyph color). */
 .card-header .glyph {
-  color: var(--agent);
+  color: var(--faint);
+}
+.card-header .glyph.bell {
+  color: var(--amber);
 }
 .card-header .label {
   overflow: hidden;
@@ -139,7 +194,9 @@ body,
 .card-header .spacer {
   flex: 1 1 auto;
 }
-.card-header .repo-dot {
+/* Shared repo dot — used in the card header, the shelf chips, and the peek header
+   (NOT scoped to .card-header, or the shelf/peek dots collapse to 0×0). */
+.repo-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -151,16 +208,64 @@ body,
 .card-header .close {
   cursor: pointer;
   color: var(--faint);
-  padding: 0 2px;
+  padding: 1px 5px;
+  border-radius: 4px;
 }
 .card-header .close:hover {
   color: var(--text);
+  background: var(--bg3);
 }
 
 .card-body {
   flex: 1 1 auto;
   position: relative;
   overflow: hidden;
+}
+
+/* --- resize handles (shown only on the active card; cardChrome.showsHandles) --- */
+
+.card-handle {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  z-index: 2;
+  display: none;
+}
+.card[data-handles="true"] .card-handle {
+  display: block;
+}
+/* The visible 7x7 chip centered in the 20x20 hit box (bg0 fill, 1.5px agent). */
+.card-handle::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  background: var(--bg0);
+  border: 1.5px solid var(--agent);
+  border-radius: 2px;
+}
+.card-handle.tl {
+  left: 0;
+  top: 0;
+  cursor: nwse-resize;
+}
+.card-handle.tr {
+  right: 0;
+  top: 0;
+  cursor: nesw-resize;
+}
+.card-handle.bl {
+  left: 0;
+  bottom: 0;
+  cursor: nesw-resize;
+}
+.card-handle.br {
+  right: 0;
+  bottom: 0;
+  cursor: nwse-resize;
 }
 
 /* --- terminal host --- */
@@ -314,4 +419,321 @@ body,
 }
 .status-bar .spacer {
   flex: 1 1 auto;
+}
+
+/* --- zoom control (bottom-left; ZoomControl.swift) --- */
+
+.zoom-control {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 50;
+  display: inline-flex;
+  align-items: stretch;
+  height: 26px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  font-family: var(--chrome-font);
+  font-size: 10.5px;
+  user-select: none;
+}
+.zoom-seg {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--faint);
+  font: inherit;
+  padding: 0 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.zoom-sep {
+  flex: 0 0 1px;
+  width: 1px;
+  background: var(--line-soft);
+}
+.zoom-pct {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  min-width: 50px; /* 30px content floor + 10px each side — no jitter */
+  color: var(--text);
+}
+
+/* --- minimap (bottom-right; Minimap.swift) --- */
+
+.minimap {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 50;
+  width: 132px;
+  height: 88px;
+  background: var(--minimap-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+}
+.minimap svg {
+  display: block;
+}
+
+/* --- offscreen-signal hint pills (click-through; OffscreenHints.swift) --- */
+
+.offscreen-hints {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  overflow: hidden;
+  pointer-events: none;
+}
+.offscreen-hint {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 11px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: var(--shadow-hint);
+  font-family: var(--chrome-font);
+  font-size: 10.5px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.offscreen-hint.bell {
+  border-color: var(--hint-border-bell);
+}
+.offscreen-hint.bell .label {
+  color: var(--text);
+}
+.offscreen-hint.bell .arrow {
+  color: var(--amber);
+}
+.offscreen-hint.live {
+  border-color: var(--hint-border-live);
+}
+.offscreen-hint.live .label {
+  color: var(--muted);
+}
+.offscreen-hint.live .arrow {
+  color: var(--faint);
+}
+
+/* --- peek slide-over (right edge; PeekPanel.swift) --- */
+
+.peek {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 47%;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg1);
+  border-left: 1px solid var(--line);
+  box-shadow: var(--shadow-peek);
+  transform: translateX(0);
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.peek.hidden {
+  transform: translateX(102%);
+  pointer-events: none;
+}
+.peek-header {
+  flex: 0 0 36px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--line-soft);
+}
+.peek-path {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--chrome-font);
+  font-size: 11px;
+  color: var(--muted);
+}
+.peek-meta {
+  flex: 0 0 auto;
+  font-family: var(--chrome-font);
+  font-size: 11px;
+  color: var(--peek-meta);
+}
+.peek-header .spacer {
+  flex: 1 1 auto;
+}
+.peek-body {
+  flex: 1 1 auto;
+  position: relative;
+  overflow: hidden;
+}
+.kbd-chip {
+  appearance: none;
+  flex: 0 0 auto;
+  font-family: var(--chrome-font);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--muted);
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 1px 5px;
+  cursor: pointer;
+}
+.kbd-chip:hover {
+  background: var(--bg3);
+  color: var(--text);
+}
+
+/* --- toast stack (bottom-right, click-through except chips; Toasts.swift) --- */
+
+.toast-stack {
+  position: absolute;
+  right: 14px;
+  bottom: 38px;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+  pointer-events: none;
+}
+.tm-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  max-width: 320px;
+  padding: 9px 12px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  box-shadow: var(--shadow-toast);
+  font-family: var(--chrome-font);
+  pointer-events: none;
+  animation: tm-toast-in 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes tm-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.tm-toast-icon {
+  flex: 0 0 auto;
+  color: var(--agent);
+  font-size: 13px;
+  line-height: 1.2;
+}
+.tm-toast-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.tm-toast-title {
+  max-width: 280px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--text);
+}
+.tm-toast-body {
+  max-width: 280px;
+  margin-top: 2px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 10px;
+  color: var(--faint);
+}
+.tm-toast-keys {
+  display: flex;
+  gap: 5px;
+  margin-left: 6px;
+  align-self: center;
+}
+.tm-toast-key {
+  pointer-events: auto;
+  appearance: none;
+  font-family: var(--chrome-font);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--muted);
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 2px 5px;
+  cursor: pointer;
+}
+.tm-toast-key:hover {
+  background: var(--bg3);
+  color: var(--text);
+}
+
+/* --- titlebar session chip (top-center; TitleBarChip.swift) --- */
+
+.title-chip {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  background: var(--bg2);
+  border: 1px solid var(--line-soft);
+  border-radius: 5px;
+  font-family: var(--chrome-font);
+  user-select: none;
+  pointer-events: none;
+}
+.title-chip .glyph {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--agent);
+}
+.title-chip .label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ok);
+}
+.title-chip.detached .glyph,
+.title-chip.detached .label {
+  color: var(--faint);
+}
+.title-chip.dim {
+  opacity: 0.4;
+}
+
+/* Honor the OS reduce-motion setting for the transient chrome animations. */
+@media (prefers-reduced-motion: reduce) {
+  .peek {
+    transition: none;
+  }
+  .tm-toast {
+    animation: none;
+  }
 }

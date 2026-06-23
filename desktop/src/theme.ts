@@ -22,6 +22,28 @@ export const palette = {
   amber: "#fdbc4b",
   amberDim: "rgba(253,188,75,0.16)",
   ok: "#1cdc9a",
+  // P4 alpha-derived chrome colors (CSS can't alpha-multiply a hex var without
+  // color-mix, so these are explicit rgba literals; mirrored as --vars in
+  // theme.css). The minimap is SVG-drawn and reads these TS constants directly.
+  minimapBg: "rgba(36,40,44,0.92)", // bg0 @ 0.92
+  minimapCardLive: "rgba(26,188,156,0.8)", // agent @ 0.8
+  minimapCardBell: "rgba(253,188,75,0.85)", // amber @ 0.85
+  hintBorderBell: "rgba(253,188,75,0.5)", // amber @ 0.5
+  hintBorderLive: "rgba(26,188,156,0.4)", // agent @ 0.4
+  peekMeta: "rgba(26,188,156,0.85)", // agent @ 0.85
+  lineMuted: "rgba(71,78,85,0.6)", // line @ 0.6 (muted/dead/detached border role)
+} as const;
+
+// Card + overlay drop shadows, ported from the NSShadow values in CardView.swift /
+// the overlay sources (AppKit flipped-Y offsets become positive CSS y; blur is the
+// crib-tuned web value). Centralised so components don't hardcode rgba strings.
+export const shadows = {
+  cardRest: "0 16px 38px rgba(0,0,0,0.5)",
+  cardPrime: "0 22px 50px rgba(0,0,0,0.6)",
+  cardLift: "0 18px 44px rgba(0,0,0,0.6)",
+  hint: "0 8px 22px rgba(0,0,0,0.5)",
+  peek: "-26px 0 30px rgba(0,0,0,0.55)",
+  toast: "0 10px 14px rgba(0,0,0,0.5)",
 } as const;
 
 // repo dot colors (FNV-1a index 0..3); matches Theme.repoColors and the daemon's

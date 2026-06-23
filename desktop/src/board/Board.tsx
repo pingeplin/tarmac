@@ -23,7 +23,14 @@ interface BoardProps {
   onCardGrab: (id: string) => void;
   onTermSpawn: (termId: string, cols: number, rows: number) => void;
   onTermTitle: (termId: string, title: string) => void;
+  onTermActivity: (termId: string) => void;
   onDocClose: (path: string) => void;
+  /** The active card (shows the focus ring + resize handles), or null. */
+  selectedId: string | null;
+  /** A press on empty board space clears the selection. */
+  onBackgroundPointerDown: () => void;
+  onCardResize: (id: string, frame: WorldFrame) => void;
+  onCardResizeEnd: (id: string) => void;
 }
 
 export function Board(props: BoardProps) {
@@ -37,6 +44,9 @@ export function Board(props: BoardProps) {
     const engine = new BoardEngine(viewportRef.current, worldRef.current);
     engine.onViewportChange = props.onViewport;
     engineRef.current = engine;
+    // Seed the chrome (zoom readout, minimap, offscreen hints) with the initial
+    // viewport so the overlays populate before the first pan/zoom.
+    props.onViewport?.(engine.viewport);
     return () => {
       engine.destroy();
       engineRef.current = null;
@@ -64,35 +74,57 @@ export function Board(props: BoardProps) {
     else cardEls.current.delete(id);
   };
 
+  // A non-prime terminal dims (quiet) while another terminal holds prime.
+  const anyTermPrime = cards.some((c) => c.kind === "term" && c.prime);
+
   return (
-    <div className="board" ref={viewportRef}>
+    <div
+      className="board"
+      ref={viewportRef}
+      onPointerDown={(e) => {
+        // A press on empty board space (not a card) clears the selection.
+        if (e.target === viewportRef.current || e.target === worldRef.current) {
+          props.onBackgroundPointerDown();
+        }
+      }}
+    >
       <div className="world" ref={worldRef}>
         <EdgeLayer cards={cards} />
         {cards.map((c) => {
           const id = cardId(c);
+          const selected = id === props.selectedId;
           return c.kind === "term" ? (
             <TerminalCard
               key={id}
               model={c}
+              selected={selected}
+              quiet={anyTermPrime && !c.prime && !c.dead}
               getZoom={getZoom}
               rootRef={setEl(id)}
               onMove={(frame) => props.onCardMove(id, frame)}
               onMoveStart={() => props.onCardMoveStart(id)}
               onMoveEnd={() => props.onCardMoveEnd(id)}
+              onResize={(frame) => props.onCardResize(id, frame)}
+              onResizeEnd={() => props.onCardResizeEnd(id)}
               onGrab={() => props.onCardGrab(id)}
               onSpawn={(cols, rows) => props.onTermSpawn(c.termId, cols, rows)}
               onTitle={(title) => props.onTermTitle(c.termId, title)}
+              onActivity={() => props.onTermActivity(c.termId)}
             />
           ) : (
             <DocCard
               key={id}
               model={c}
               markdown={props.docContents.get(c.path) ?? ""}
+              selected={selected}
+              detached={c.ownerTermId != null && !c.attached}
               getZoom={getZoom}
               rootRef={setEl(id)}
               onMove={(frame) => props.onCardMove(id, frame)}
               onMoveStart={() => props.onCardMoveStart(id)}
               onMoveEnd={() => props.onCardMoveEnd(id)}
+              onResize={(frame) => props.onCardResize(id, frame)}
+              onResizeEnd={() => props.onCardResizeEnd(id)}
               onGrab={() => props.onCardGrab(id)}
               onClose={() => props.onDocClose(c.path)}
             />

@@ -16,21 +16,32 @@ import type { TermCardModel, WorldFrame } from "../board/model";
 
 interface TerminalCardProps {
   model: TermCardModel;
+  selected?: boolean;
+  quiet?: boolean;
   getZoom: () => number;
   rootRef?: (el: HTMLDivElement | null) => void;
   onMove: (frame: WorldFrame) => void;
   onMoveStart?: () => void;
   onMoveEnd?: () => void;
+  onResize?: (frame: WorldFrame) => void;
+  onResizeEnd?: () => void;
   onGrab: () => void;
   /** Cold-spawn the PTY once the terminal has measured its cols/rows. */
   onSpawn: (cols: number, rows: number) => void;
   onTitle: (title: string) => void;
+  /** A keystroke into this terminal — used to clear a lit bell (Swift parity). */
+  onActivity?: () => void;
 }
 
 export function TerminalCard(props: TerminalCardProps) {
   const { model, onSpawn, onTitle } = props;
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
+  // Read inside the (termId-scoped) onData closure so it sees the live bell state.
+  const bellRef = useRef(model.bell);
+  bellRef.current = model.bell;
+  const onActivityRef = useRef(props.onActivity);
+  onActivityRef.current = props.onActivity;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -62,7 +73,12 @@ export function TerminalCard(props: TerminalCardProps) {
       if (!disposed) onSpawn(cols, rows);
     });
 
-    const offData = term.onData((data) => termInput(model.termId, data));
+    const offData = term.onData((data) => {
+      termInput(model.termId, data);
+      // A keystroke clears this terminal's bell (only notify when one is lit, so
+      // normal typing never churns React state).
+      if (bellRef.current) onActivityRef.current?.();
+    });
     const offResize = term.onResize(({ cols, rows }) => termResize(model.termId, cols, rows));
     const offTitle = term.onTitleChange((title) => onTitle(title));
 
@@ -90,15 +106,19 @@ export function TerminalCard(props: TerminalCardProps) {
       z={model.z}
       dead={model.dead}
       prime={model.prime}
+      quiet={props.quiet}
+      selected={props.selected}
       getZoom={props.getZoom}
       rootRef={props.rootRef}
       onMove={props.onMove}
       onMoveStart={props.onMoveStart}
       onMoveEnd={props.onMoveEnd}
+      onResize={props.onResize}
+      onResizeEnd={props.onResizeEnd}
       onGrab={props.onGrab}
       header={
         <>
-          <span className="glyph">{repoGlyph}</span>
+          <span className={`glyph${model.bell ? " bell" : ""}`}>{repoGlyph}</span>
           <span className="label">{model.label}</span>
           <span className="spacer" />
           {model.bell && <span className="bell">●</span>}
