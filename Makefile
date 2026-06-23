@@ -11,12 +11,12 @@ app:
 # Install the desktop (Tauri 2 + Vite + React) JS deps. Separate so build/test
 # targets stay fast once node_modules exists.
 desktop-deps:
-	npm --prefix $(ROOT)/desktop install
+	cd $(ROOT)/desktop && npm install
 
 # Build the desktop UI: frontend bundle + the Rust backend (which path-deps the
 # untouched tarmac-protocol crate). Does NOT touch core/ or app/.
 desktop: desktop-deps
-	npm --prefix $(ROOT)/desktop run build
+	cd $(ROOT)/desktop && npm run build
 	cargo build --manifest-path $(ROOT)/desktop/src-tauri/Cargo.toml
 
 # Coexistence: run BOTH UIs' test suites alongside core's. The Swift app stays
@@ -24,7 +24,7 @@ desktop: desktop-deps
 test:
 	cd $(ROOT)/core && cargo test
 	cd $(ROOT)/app && swift test
-	npm --prefix $(ROOT)/desktop test
+	cd $(ROOT)/desktop && npm test
 	cargo test --manifest-path $(ROOT)/desktop/src-tauri/Cargo.toml
 
 e2e:
@@ -50,12 +50,13 @@ run: core app
 # TARMAC_SOCKET/TARMAC_STATE pin the same per-worktree dev path the Swift app uses
 # (the Tauri backend reuses tarmac-protocol's resolver, so it honors the override).
 run-desktop: core desktop-deps
+	cd $(ROOT)/desktop && \
 	wt="$$HOME/Library/Application Support/tarmac/dev/wt-$$(echo -n "$(ROOT)" | shasum | head -c8)"; \
 	TARMAC_SOCKET="$$wt/tarmacd.sock" \
 	TARMAC_STATE="$$wt/state.json" \
 	TARMAC_DAEMON="$(ROOT)/core/target/debug/tarmacd" \
 	PATH="$(ROOT)/core/target/debug:$$PATH" \
-	npm --prefix $(ROOT)/desktop run tauri dev
+	npm run tauri dev
 
 # Assemble an unsigned dist/Tarmac.app (arm64). No Apple cert needed; launches
 # locally so you can validate bundle-relative daemon/CLI/resource resolution.
