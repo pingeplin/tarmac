@@ -1,6 +1,6 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: core app test e2e run bundle release
+.PHONY: core app desktop desktop-deps test e2e run run-desktop bundle release
 
 core:
 	cd $(ROOT)/core && cargo build
@@ -8,9 +8,24 @@ core:
 app:
 	cd $(ROOT)/app && swift build
 
+# Install the desktop (Tauri 2 + Vite + React) JS deps. Separate so build/test
+# targets stay fast once node_modules exists.
+desktop-deps:
+	npm --prefix $(ROOT)/desktop install
+
+# Build the desktop UI: frontend bundle + the Rust backend (which path-deps the
+# untouched tarmac-protocol crate). Does NOT touch core/ or app/.
+desktop: desktop-deps
+	npm --prefix $(ROOT)/desktop run build
+	cargo build --manifest-path $(ROOT)/desktop/src-tauri/Cargo.toml
+
+# Coexistence: run BOTH UIs' test suites alongside core's. The Swift app stays
+# green until the Tauri app reaches parity (cutover deletes `swift test`).
 test:
 	cd $(ROOT)/core && cargo test
 	cd $(ROOT)/app && swift test
+	npm --prefix $(ROOT)/desktop test
+	cargo test --manifest-path $(ROOT)/desktop/src-tauri/Cargo.toml
 
 e2e:
 	$(ROOT)/scripts/e2e.sh
@@ -28,6 +43,19 @@ run: core app
 	TARMAC_DAEMON="$(ROOT)/core/target/debug/tarmacd" \
 	PATH="$(ROOT)/core/target/debug:$$PATH" \
 	"$(ROOT)/app/.build/debug/TarmacApp"
+
+# Run the new Tauri UI in dev (vite HMR + the Rust backend). Same env wiring as
+# `run`: the app auto-spawns the debug daemon (TARMAC_DAEMON), the PATH prefix
+# flows through it so `tarmac open` resolves inside the app's xterm terminals, and
+# TARMAC_SOCKET/TARMAC_STATE pin the same per-worktree dev path the Swift app uses
+# (the Tauri backend reuses tarmac-protocol's resolver, so it honors the override).
+run-desktop: core desktop-deps
+	wt="$$HOME/Library/Application Support/tarmac/dev/wt-$$(echo -n "$(ROOT)" | shasum | head -c8)"; \
+	TARMAC_SOCKET="$$wt/tarmacd.sock" \
+	TARMAC_STATE="$$wt/state.json" \
+	TARMAC_DAEMON="$(ROOT)/core/target/debug/tarmacd" \
+	PATH="$(ROOT)/core/target/debug:$$PATH" \
+	npm --prefix $(ROOT)/desktop run tauri dev
 
 # Assemble an unsigned dist/Tarmac.app (arm64). No Apple cert needed; launches
 # locally so you can validate bundle-relative daemon/CLI/resource resolution.
