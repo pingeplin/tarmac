@@ -5,7 +5,7 @@
 
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { DaemonMsg, DaemonStatus } from "./protocol";
+import type { DaemonMsg, DaemonStatus, WireBoardViewport, WireTile } from "./protocol";
 
 // --- daemon → frontend -----------------------------------------------------
 
@@ -84,6 +84,22 @@ export function readDoc(path: string): Promise<string> {
  * status/board_list/restore emitted before the webview mounted (startup race). */
 export function frontendReady(): void {
   void invoke("frontend_ready").catch(() => {});
+}
+
+/**
+ * Persist the full board layout (tiles + viewport) to the daemon — the v4
+ * whiteboard `layout` message. Fire-and-forget; the daemon stores it and replays
+ * it as `restore`. `tiles` carry snake_case wire keys (`term_id`) and integer `z`
+ * so they deserialize straight into the Rust `Tile` struct. Continuous pan/zoom
+ * is debounced by the caller; discrete gestures flush immediately.
+ */
+export function persistLayout(
+  dock: string[],
+  tiles: WireTile[],
+  board: WireBoardViewport | null,
+  boardId: string | null,
+): Promise<void> {
+  return invoke("persist_layout", { dock, tiles, board, boardId });
 }
 
 export function boardSwitch(boardId: string): Promise<void> {

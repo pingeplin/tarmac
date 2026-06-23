@@ -17,7 +17,10 @@ import type { TermCardModel, WorldFrame } from "../board/model";
 interface TerminalCardProps {
   model: TermCardModel;
   getZoom: () => number;
+  rootRef?: (el: HTMLDivElement | null) => void;
   onMove: (frame: WorldFrame) => void;
+  onMoveStart?: () => void;
+  onMoveEnd?: () => void;
   onGrab: () => void;
   /** Cold-spawn the PTY once the terminal has measured its cols/rows. */
   onSpawn: (cols: number, rows: number) => void;
@@ -84,10 +87,14 @@ export function TerminalCard(props: TerminalCardProps) {
   return (
     <CardShell
       frame={model.frame}
+      z={model.z}
       dead={model.dead}
       prime={model.prime}
       getZoom={props.getZoom}
+      rootRef={props.rootRef}
       onMove={props.onMove}
+      onMoveStart={props.onMoveStart}
+      onMoveEnd={props.onMoveEnd}
       onGrab={props.onGrab}
       header={
         <>

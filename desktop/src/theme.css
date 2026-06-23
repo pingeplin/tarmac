@@ -23,12 +23,13 @@
   --prime-header-bg: #3a4046;
   --amber: #fdbc4b;
   --ok: #1cdc9a;
-  --dot: #3a4147;
+  --dot: #32383e; /* Swift BoardView.dotColor (srgb 50,56,62) — match exactly */
 
   --chrome-font: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
 
   /* set by BoardEngine */
   --zoom: 1;
+  --grid-size: 24px;
   --grid-x: 0px;
   --grid-y: 0px;
 }
@@ -66,7 +67,7 @@ body,
   overflow: hidden;
   background-color: var(--bg0);
   background-image: radial-gradient(circle, var(--dot) 1px, transparent 1.2px);
-  background-size: calc(24px * var(--zoom)) calc(24px * var(--zoom));
+  background-size: var(--grid-size) var(--grid-size);
   background-position: var(--grid-x) var(--grid-y);
   cursor: default;
 }
@@ -241,6 +242,51 @@ body,
   stroke-dasharray: 5 5;
   fill: none;
   opacity: 0.7;
+}
+
+/* --- shelf overlay (fixed top-left, over the board) --- */
+
+.shelf {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  user-select: none;
+}
+.shelf-label {
+  color: var(--faint);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+}
+.shelf-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  background: var(--bg1);
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: grab;
+}
+.shelf-chip:hover {
+  color: var(--text);
+  border-color: var(--lift-border);
+}
+.shelf-chip-name {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* --- status bar --- */

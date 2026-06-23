@@ -18,7 +18,10 @@ interface DocCardProps {
   model: DocCardModel;
   markdown: string;
   getZoom: () => number;
+  rootRef?: (el: HTMLDivElement | null) => void;
   onMove: (frame: WorldFrame) => void;
+  onMoveStart?: () => void;
+  onMoveEnd?: () => void;
   onGrab: () => void;
   onClose: () => void;
 }
@@ -46,9 +49,13 @@ export function DocCard(props: DocCardProps) {
     <CardShell
       className="doc-card"
       frame={model.frame}
+      z={model.z}
       fresh={model.fresh}
       getZoom={props.getZoom}
+      rootRef={props.rootRef}
       onMove={props.onMove}
+      onMoveStart={props.onMoveStart}
+      onMoveEnd={props.onMoveEnd}
       onGrab={props.onGrab}
       header={
         <>

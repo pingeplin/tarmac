@@ -9,14 +9,30 @@
 // at (wx*zoom + Tx, wy*zoom + Ty); we want world center (cx,cy) at the viewport
 // center, so Tx = W/2 - cx*zoom, Ty = H/2 - cy*zoom.
 
+import { isCardVisible } from "../kit/cull";
+import type { Rect } from "../kit/geom";
+
 export interface Viewport {
   zoom: number;
   cx: number;
   cy: number;
 }
 
+/** A card the engine culls: its DOM node + current world frame. */
+export interface Cullable {
+  id: string;
+  el: HTMLElement;
+  frame: Rect;
+}
+
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 4;
+
+/** Below this zoom the dot grid densifies 24px → 11px (Swift semanticZoom flip)
+ * and cards bitmap-scale down. Matches Viewport.semanticZoomThreshold = 0.5. */
+export const SEMANTIC_ZOOM_THRESHOLD = 0.5;
+const GRID_SPACING = 24;
+const GRID_SPACING_LO = 11;
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
@@ -25,6 +41,11 @@ export class BoardEngine {
   private readonly viewportEl: HTMLElement;
   private readonly worldEl: HTMLElement;
   private detachers: Array<() => void> = [];
+
+  // Viewport culling (perf #5): the card nodes + frames, plus a per-card cache of
+  // the last applied visibility so we only touch the DOM when it actually flips.
+  private cullables: Cullable[] = [];
+  private cullVisible = new Map<string, boolean>();
 
   /** Fires after every committed pan/zoom (for chrome: zoom readout, minimap). */
   onViewportChange?: (vp: Viewport) => void;
@@ -93,6 +114,18 @@ export class BoardEngine {
     };
   }
 
+  /** Register the cards to cull (their nodes + current world frames). Called by
+   * the Board on every committed card-set/frame change — NOT per pan frame. */
+  setCullables(cullables: Cullable[]): void {
+    this.cullables = cullables;
+    // Drop cache entries for cards that went away so the map can't leak.
+    const live = new Set(cullables.map((c) => c.id));
+    for (const id of this.cullVisible.keys()) {
+      if (!live.has(id)) this.cullVisible.delete(id);
+    }
+    this.applyCull();
+  }
+
   destroy(): void {
     for (const off of this.detachers) off();
     this.detachers = [];
@@ -103,13 +136,31 @@ export class BoardEngine {
     const tx = rect.width / 2 - this.vp.cx * this.vp.zoom;
     const ty = rect.height / 2 - this.vp.cy * this.vp.zoom;
     this.worldEl.style.transform = `translate(${tx}px, ${ty}px) scale(${this.vp.zoom})`;
-    // Expose zoom so terminal cards can counter-scale / swap to a locard below the
-    // semantic-zoom threshold (Phase 3). The infinite dot lattice reads the world
-    // origin (tx,ty) + zoom so it pans/zooms WITH the content (one tiled CSS
-    // background, not N nodes — carrying the perf-whiteboard-zoom lesson).
+    // The infinite dot lattice reads the world origin (tx,ty) + spacing so it
+    // pans/zooms WITH the content (one tiled CSS background, not N nodes —
+    // carrying the perf-whiteboard-zoom lesson; the grid is constant-time). Below
+    // the semantic-zoom threshold the world spacing densifies 24→11px to match
+    // the Swift board's look (free here — just a background-size change).
+    const worldSpacing = this.vp.zoom < SEMANTIC_ZOOM_THRESHOLD ? GRID_SPACING_LO : GRID_SPACING;
     this.viewportEl.style.setProperty("--zoom", String(this.vp.zoom));
+    this.viewportEl.style.setProperty("--grid-size", `${worldSpacing * this.vp.zoom}px`);
     this.viewportEl.style.setProperty("--grid-x", `${tx}px`);
     this.viewportEl.style.setProperty("--grid-y", `${ty}px`);
+    this.applyCull(rect);
+  }
+
+  /** Hide cards more than one viewport off-screen (visibility:hidden keeps the
+   * node ALIVE — xterm keeps consuming PTY output, doc keeps scroll). Runs on the
+   * pan/zoom hot path but only writes the DOM when a card's visibility flips. */
+  private applyCull(rect?: DOMRect): void {
+    if (this.cullables.length === 0) return;
+    const r = rect ?? this.viewportEl.getBoundingClientRect();
+    for (const c of this.cullables) {
+      const visible = isCardVisible(c.frame, this.vp, r.width, r.height);
+      if (this.cullVisible.get(c.id) === visible) continue;
+      this.cullVisible.set(c.id, visible);
+      c.el.style.visibility = visible ? "" : "hidden";
+    }
   }
 
   private bindGestures(): void {
@@ -126,5 +177,13 @@ export class BoardEngine {
     };
     this.viewportEl.addEventListener("wheel", onWheel, { passive: false });
     this.detachers.push(() => this.viewportEl.removeEventListener("wheel", onWheel));
+
+    // A window/viewport resize changes the world transform origin (W/2,H/2), the
+    // grid offset, and the cull bounds — none of which the pan/zoom path sees. Re-
+    // apply on resize so the grid stays aligned and culling uses fresh dimensions
+    // (matching the Swift board reprojecting on layout), not just on the next pan.
+    const ro = new ResizeObserver(() => this.apply());
+    ro.observe(this.viewportEl);
+    this.detachers.push(() => ro.disconnect());
   }
 }

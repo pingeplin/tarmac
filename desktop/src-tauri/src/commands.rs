@@ -3,7 +3,7 @@
 //! request ids). `term_attach` is the exception: it registers a per-terminal
 //! binary output Channel and sends nothing to the daemon.
 
-use tarmac_protocol::Msg;
+use tarmac_protocol::{BoardViewport, Msg, Tile};
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, State};
 
@@ -96,6 +96,28 @@ pub fn doc_read(state: State<Bridge>, path: String) {
 #[tauri::command]
 pub fn read_doc(path: String) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))
+}
+
+/// Persist the board layout (tiles + viewport) to the daemon — fire-and-forget,
+/// the v4 whiteboard `layout` message. The frontend builds the full snapshot
+/// (terminal + doc tiles with world geometry/z/loose/shelf/term_id, plus the
+/// viewport) and coalesces continuous pan/zoom onto a 200ms debounce; discrete
+/// gestures send immediately. `tiles`/`board` deserialize straight into the
+/// path-dep'd `tarmac_protocol` wire structs, so the encoding stays conformant.
+#[tauri::command]
+pub fn persist_layout(
+    state: State<Bridge>,
+    dock: Vec<String>,
+    tiles: Vec<Tile>,
+    board: Option<BoardViewport>,
+    board_id: Option<String>,
+) {
+    state.send(Msg::Layout {
+        dock,
+        tiles,
+        board,
+        board_id,
+    });
 }
 
 #[tauri::command]

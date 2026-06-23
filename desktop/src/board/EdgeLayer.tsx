@@ -16,7 +16,9 @@ export function EdgeLayer({ cards }: { cards: CardModel[] }) {
 
   const edges: Array<{ key: string; d: string }> = [];
   for (const c of cards) {
-    if (c.kind !== "doc" || !c.ownerTermId) continue;
+    // One provenance edge per ATTACHED doc → its owner terminal; a detached
+    // (loose) doc severed the gravity tie, so its edge is dropped (Swift parity).
+    if (c.kind !== "doc" || !c.ownerTermId || !c.attached) continue;
     const owner = terms.get(c.ownerTermId);
     if (!owner) continue;
     const a = center(owner.frame);

@@ -10,6 +10,8 @@ import type { WorldFrame } from "../board/model";
 
 interface CardShellProps {
   frame: WorldFrame;
+  /** Stacking order (world z) → CSS z-index. */
+  z?: number;
   className?: string;
   dead?: boolean;
   detached?: boolean;
@@ -21,15 +23,25 @@ interface CardShellProps {
   children: ReactNode;
   /** Screen→world scale for drag (1/zoom). */
   getZoom: () => number;
+  /** The card's root element, for the engine's viewport culling (visibility). */
+  rootRef?: (el: HTMLDivElement | null) => void;
   /** Called with the new frame as the header is dragged. */
   onMove?: (frame: WorldFrame) => void;
+  /** Called as the header drag begins (frame at grab time), for gravity snapshot. */
+  onMoveStart?: () => void;
+  /** Called when the header drag ends (commit), for detach/persist. */
+  onMoveEnd?: () => void;
   /** Called when the user grabs the header (raise to front / focus). */
   onGrab?: () => void;
 }
 
+/** Pointer travel (px) past which a header press is treated as a move, not a click. */
+const DRAG_THRESHOLD = 3;
+
 export function CardShell(props: CardShellProps) {
   const { frame, getZoom, onMove, onGrab } = props;
   const dragStart = useRef<{ px: number; py: number; fx: number; fy: number } | null>(null);
+  const moved = useRef(false);
 
   const chrome = cardChromeState({
     dead: props.dead,
@@ -54,10 +66,15 @@ export function CardShell(props: CardShellProps) {
     if (!onMove) return;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     dragStart.current = { px: e.clientX, py: e.clientY, fx: frame.x, fy: frame.y };
+    moved.current = false;
+    props.onMoveStart?.();
   };
   const onHeaderPointerMove = (e: ReactPointerEvent) => {
     const s = dragStart.current;
     if (!s || !onMove) return;
+    if (Math.abs(e.clientX - s.px) > DRAG_THRESHOLD || Math.abs(e.clientY - s.py) > DRAG_THRESHOLD) {
+      moved.current = true;
+    }
     const zoom = getZoom();
     onMove({
       ...frame,
@@ -66,8 +83,21 @@ export function CardShell(props: CardShellProps) {
     });
   };
   const onHeaderPointerUp = (e: ReactPointerEvent) => {
-    if (dragStart.current) (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    const wasDragging = dragStart.current !== null;
+    if (wasDragging) (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
     dragStart.current = null;
+    // Only a real move commits (detach/persist); a click-without-move is just a grab.
+    if (wasDragging && moved.current) props.onMoveEnd?.();
+    moved.current = false;
+  };
+  // A cancelled gesture (capture lost, another gesture pre-empts, the card is
+  // about to unmount mid-drag) must still settle: commit a real move so the
+  // engine clears its gesture state rather than leaving a half-finished drag.
+  const onHeaderPointerCancel = () => {
+    const wasDragging = dragStart.current !== null;
+    dragStart.current = null;
+    if (wasDragging && moved.current) props.onMoveEnd?.();
+    moved.current = false;
   };
 
   // Scroll over a card scrolls the card (terminal scrollback / doc), never pans
@@ -78,8 +108,9 @@ export function CardShell(props: CardShellProps) {
 
   return (
     <div
+      ref={props.rootRef}
       className={classes.join(" ")}
-      style={{ left: frame.x, top: frame.y, width: frame.w, height: frame.h }}
+      style={{ left: frame.x, top: frame.y, width: frame.w, height: frame.h, zIndex: props.z }}
       data-handles={showsHandles(chrome)}
     >
       <div
@@ -87,6 +118,7 @@ export function CardShell(props: CardShellProps) {
         onPointerDown={onHeaderPointerDown}
         onPointerMove={onHeaderPointerMove}
         onPointerUp={onHeaderPointerUp}
+        onPointerCancel={onHeaderPointerCancel}
       >
         {props.header}
       </div>
