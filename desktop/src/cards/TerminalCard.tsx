@@ -83,6 +83,12 @@ export function TerminalCard(props: TerminalCardProps) {
     term.loadAddon(fit);
     const unicode = new Unicode11Addon();
     term.loadAddon(unicode);
+    // unicode11 reports width=1 for PUA glyphs (U+E000–F8FF) — do NOT add a
+    // blanket PUA→2 override.  This is correct because we ship the NFM (Mono)
+    // variant of JetBrainsMono Nerd Font, which forces every icon glyph into a
+    // single cell.  A PUA→2 override would misalign single-width powerline
+    // separators (U+E0B0…).  If you ever swap to the NFP (Proportional) variant
+    // you will need to revisit this.  SwiftTerm uses NFM for the same reason.
     term.unicode.activeVersion = "11";
     term.open(host);
     termRef.current = term;
