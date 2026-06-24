@@ -99,9 +99,16 @@ export function Board(props: BoardProps) {
       // (P5 warm-board model). ResizeObserver fires on show → auto-refit.
       style={props.hidden ? { display: "none" } : undefined}
       onPointerDown={(e) => {
-        // A press on empty board space (not a card) clears the selection.
+        // A press on empty board space (not a card) clears the selection AND moves
+        // keyboard focus OFF the prime terminal — the React analog of Swift's
+        // makeFirstResponder(board) on a background click. This makes the "board has
+        // focus" state reachable, so a bare Return docks the prime terminal (the App
+        // keydown guard bails while a .term-host owns focus). Focus returns when the
+        // user clicks into a terminal, or via dock/cycle/board-switch.
         if (e.target === viewportRef.current || e.target === worldRef.current) {
           props.onBackgroundPointerDown();
+          const ae = document.activeElement as HTMLElement | null;
+          if (ae?.closest?.(".term-host")) ae.blur();
         }
       }}
     >

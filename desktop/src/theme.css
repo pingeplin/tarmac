@@ -918,3 +918,139 @@ body,
   font-weight: 600;
   color: var(--amber);
 }
+
+/* --- terminal host slot (Wave 2 reparent model) --- */
+
+/* The empty React-owned slot that the imperative host fills when undocked. */
+.term-host-slot {
+  width: 100%;
+  height: 100%;
+}
+
+/* Docked card: dims and dashes to signal the terminal has moved to the pane. */
+.card.docked {
+  opacity: 0.5;
+  border-style: dashed;
+  border-color: var(--line-muted);
+}
+
+/* "⏎ docked · esc ↩ to return" hint centered inside the emptied card body. */
+.term-dock-ghost {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--chrome-font);
+  font-size: 10.5px;
+  color: var(--faint);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* --- dock pane (Wave 2; fixed bottom of .board-stack) --- */
+
+.dock-pane {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 40%;
+  display: flex;
+  flex-direction: column;
+  background: var(--term-bg);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -24px 60px rgba(0, 0, 0, 0.6);
+  /* above board/minimap (50) but below switcher (80); matches peek at 60. */
+  z-index: 65;
+}
+
+.dock-pane.hidden {
+  display: none;
+}
+
+.dock-header {
+  flex: 0 0 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-family: var(--chrome-font);
+  font-size: 10.5px;
+  user-select: none;
+}
+
+.dock-header .glyph {
+  color: var(--agent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.dock-header .label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dock-header .spacer {
+  flex: 1 1 auto;
+}
+
+.dock-header .hint {
+  color: var(--faint);
+  font-size: 10px;
+}
+
+.dock-body {
+  flex: 1 1 auto;
+  position: relative;
+  padding: 8px 12px;
+  overflow: hidden;
+}
+
+/* The reparented .term-host fills the dock body. */
+.dock-body .term-host {
+  position: absolute;
+  inset: 8px 12px;
+  padding: 8px 10px;
+  background: var(--term-bg);
+}
+
+/* --- cycle HUD (Wave 2; top-center transient readout) --- */
+
+.cycle-hud {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: rgba(62, 68, 75, 0.92); /* bg3 translucent */
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.cycle-hud-item {
+  font-family: var(--chrome-font);
+  font-size: 10.5px;
+  color: var(--faint);
+  padding: 2px 7px;
+  border-radius: 5px;
+}
+
+.cycle-hud-item.active {
+  background: var(--bg3);
+  border: 1px solid var(--line);
+  color: var(--text);
+}

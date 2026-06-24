@@ -27,6 +27,10 @@ export interface BoardState {
   viewport: Viewport;
   /** True after the first restore for this board (first-visit latch). */
   didRestore: boolean;
+  /** Runtime-only: the prime terminal id docked into the shared bottom pane on this
+   *  board, or null. Latched intent — survives board switch (undock-on-leave /
+   *  re-dock-on-arrive) but is NEVER persisted (Swift dock is client-only). */
+  dockedTermId: string | null;
 }
 
 /** A fresh, empty board state. Seeded as the synthetic local board before the
@@ -39,6 +43,7 @@ export function emptyBoardState(): BoardState {
     docMeta: new Map(),
     viewport: { zoom: 1, cx: 0, cy: 0 },
     didRestore: false,
+    dockedTermId: null,
   };
 }
 
