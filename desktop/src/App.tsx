@@ -91,6 +91,7 @@ import {
   type BoardRow,
 } from "./kit/boardSwitcher";
 import { TermBoardIndex } from "./kit/termBoardIndex";
+import { isComposingKey } from "./kit/imeGuard";
 
 const BOOT_FRAME: WorldFrame = { ...Place.termFrame };
 const PERSIST_DEBOUNCE_MS = 200;
@@ -1210,6 +1211,7 @@ export default function App() {
     void Promise.all(subs).then(frontendReady);
 
     const onKeyDown = (e: KeyboardEvent) => {
+      if (isComposingKey(e)) return;
       // ⌘K — toggle the board switcher (highest priority).
       if (e.metaKey && !e.altKey && !e.ctrlKey && e.key.toLowerCase() === "k") {
         e.preventDefault();
