@@ -93,9 +93,6 @@ body,
   flex: 1 1 auto;
   overflow: hidden;
   background-color: var(--bg0);
-  background-image: radial-gradient(circle, var(--dot) 1px, transparent 1.2px);
-  background-size: var(--grid-size) var(--grid-size);
-  background-position: var(--grid-x) var(--grid-y);
   cursor: default;
 }
 
