@@ -369,14 +369,40 @@ fn socket_path() -> PathBuf {
     resolve_socket_path(over, home.as_os_str(), channel)
 }
 
+/// Pure, testable resolver — mirror of Swift `DaemonLaunch.resolveDaemonPath`:
+/// a non-empty `env_override` wins verbatim; else the `tarmacd` sibling of
+/// `exe_dir` is returned iff `exists` reports it present; else `None`.
+fn resolve_daemon_path_pure(
+    env_override: Option<&str>,
+    exe_dir: &Path,
+    exists: impl Fn(&Path) -> bool,
+) -> Option<PathBuf> {
+    if let Some(v) = env_override {
+        if !v.is_empty() {
+            return Some(PathBuf::from(v));
+        }
+    }
+    let candidate = exe_dir.join("tarmacd");
+    if exists(&candidate) {
+        Some(candidate)
+    } else {
+        None
+    }
+}
+
 /// Which daemon binary to spawn (port of `DaemonLaunch.resolveDaemonPath`): a
 /// non-empty `TARMAC_DAEMON` wins verbatim (preserves `make run-desktop`).
-/// Bundled-binary resolution under Tauri's `.app` layout is a Phase-6 concern.
+/// In a packaged `.app`, `current_exe()` resolves to `Contents/MacOS/Tarmac`,
+/// so its parent is `Contents/MacOS` — the same dir P7 will place `tarmacd` into.
 fn resolve_daemon_path() -> Option<String> {
-    match std::env::var("TARMAC_DAEMON") {
-        Ok(v) if !v.is_empty() => Some(v),
-        _ => None,
-    }
+    let exe_dir = std::env::current_exe().ok()?;
+    let exe_dir = exe_dir.parent()?;
+    let path = resolve_daemon_path_pure(
+        std::env::var("TARMAC_DAEMON").ok().as_deref(),
+        exe_dir,
+        |p| p.exists(),
+    )?;
+    path.into_os_string().into_string().ok()
 }
 
 /// Launch the daemon detached, prepending its own dir onto the child `PATH` so
@@ -576,5 +602,40 @@ mod tests {
         let _ = take_buffered(&mut map, "t1");
         let second = take_buffered(&mut map, "t1");
         assert!(second.is_empty());
+    }
+
+    // ── resolve_daemon_path_pure tests ────────────────────────────────────────
+
+    /// Non-empty env override wins even when sibling exists.
+    #[test]
+    fn resolve_daemon_env_wins() {
+        let dir = Path::new("/some/dir");
+        let result = resolve_daemon_path_pure(Some("/custom/tarmacd"), dir, |_| true);
+        assert_eq!(result, Some(PathBuf::from("/custom/tarmacd")));
+    }
+
+    /// No env, sibling exists → returns the sibling path.
+    #[test]
+    fn resolve_daemon_sibling_exists() {
+        let dir = Path::new("/app/Contents/MacOS");
+        let result = resolve_daemon_path_pure(None, dir, |p| p == Path::new("/app/Contents/MacOS/tarmacd"));
+        assert_eq!(result, Some(PathBuf::from("/app/Contents/MacOS/tarmacd")));
+    }
+
+    /// No env, sibling missing → None.
+    #[test]
+    fn resolve_daemon_sibling_missing_returns_none() {
+        let dir = Path::new("/app/Contents/MacOS");
+        let result = resolve_daemon_path_pure(None, dir, |_| false);
+        assert_eq!(result, None);
+    }
+
+    /// Empty env string falls through to the sibling branch.
+    #[test]
+    fn resolve_daemon_empty_env_falls_through_to_sibling() {
+        let dir = Path::new("/app/Contents/MacOS");
+        // Empty string must not count as an override.
+        let result = resolve_daemon_path_pure(Some(""), dir, |p| p == Path::new("/app/Contents/MacOS/tarmacd"));
+        assert_eq!(result, Some(PathBuf::from("/app/Contents/MacOS/tarmacd")));
     }
 }
