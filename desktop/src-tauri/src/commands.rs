@@ -25,6 +25,14 @@ pub fn term_attach(state: State<Bridge>, term_id: String, on_output: Channel<Inv
     state.attach_output(term_id, on_output);
 }
 
+/// Release a terminal's output sink + any pending scrollback buffer. Called when a
+/// TerminalCard unmounts (exit-removal or board prune) so the bridge doesn't leak
+/// the IpcChannel. Does NOT send anything to the daemon (the pty is already gone).
+#[tauri::command]
+pub fn term_detach(state: State<Bridge>, term_id: String) {
+    state.forget_term(&term_id);
+}
+
 #[tauri::command]
 pub fn spawn_term(
     state: State<Bridge>,

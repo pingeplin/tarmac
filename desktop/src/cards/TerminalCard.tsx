@@ -10,7 +10,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { CardShell } from "./CardShell";
-import { attachTermOutput, termInput, termResize } from "../ipc/daemon";
+import { attachTermOutput, detachTermOutput, termInput, termResize } from "../ipc/daemon";
 import { termFontFamily, termFontSize, xtermTheme } from "../theme";
 import type { TermCardModel, WorldFrame } from "../board/model";
 
@@ -83,12 +83,24 @@ export function TerminalCard(props: TerminalCardProps) {
     const offTitle = term.onTitleChange((title) => onTitle(title));
 
     // Re-fit only on REAL layout size changes (card resize) — ResizeObserver does
-    // not fire on CSS transforms, so zoom never triggers a re-measure.
-    const ro = new ResizeObserver(() => fit.fit());
+    // not fire on CSS transforms, so zoom never triggers a re-measure. Guard the
+    // 0×0 box: when this card's board is backgrounded (display:none, P5 warm-board
+    // model) the observer fires with an empty contentRect, and FitAddon would
+    // wrongly propose 2×1 for an already-measured terminal (cell metrics stay
+    // cached > 0) — shrinking the running program's PTY. Skip until reveal (size>0).
+    const ro = new ResizeObserver((entries) => {
+      const r = entries[0]?.contentRect;
+      if (r && (r.width > 0 || r.height > 0)) fit.fit();
+    });
     ro.observe(host);
 
     return () => {
       disposed = true;
+      // Drop the bridge's output channel + any pending scrollback buffer for this
+      // term so a removed/pruned card doesn't leak an IpcChannel holding the
+      // disposed xterm. This does NOT close the pty (the daemon already saw its
+      // exit, or a board delete killed it) — it only releases the output sink.
+      void detachTermOutput(model.termId);
       ro.disconnect();
       offData.dispose();
       offResize.dispose();

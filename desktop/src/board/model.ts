@@ -1,6 +1,46 @@
 // Board card models. World-space frames (the board transform scales them); the
 // BoardEngine never reprojects these per frame — they only change on committed
 // events (spawn/open/drag-end/exit), which is when React re-renders.
+//
+// BoardState: per-board slice of the App state (P5 multi-board).
+
+import type { Viewport } from "./BoardEngine";
+
+/** Per-doc metadata kept off the card (so a shelved doc keeps its color/owner).
+ * Moved here from App so the per-board BoardState can own it. */
+export interface DocMeta {
+  repoColor?: number;
+  ownerTermId?: string;
+}
+
+/** The mutable whiteboard state owned by one board. Backed by the warm-board
+ * "render-all, hide-inactive" model: every board's cards stay mounted even
+ * when backgrounded so their xterm terminals keep streaming output. */
+export interface BoardState {
+  cards: CardModel[];
+  shelfPaths: string[];
+  /** doc-open order — peek-target fallback (most-recently-opened last). */
+  dockOrder: string[];
+  /** Per-doc metadata (color + provenance) for all docs this board has ever seen. */
+  docMeta: Map<string, DocMeta>;
+  /** Last-committed viewport; seeded from restore. */
+  viewport: Viewport;
+  /** True after the first restore for this board (first-visit latch). */
+  didRestore: boolean;
+}
+
+/** A fresh, empty board state. Seeded as the synthetic local board before the
+ * first real restore arrives from the daemon. */
+export function emptyBoardState(): BoardState {
+  return {
+    cards: [],
+    shelfPaths: [],
+    dockOrder: [],
+    docMeta: new Map(),
+    viewport: { zoom: 1, cx: 0, cy: 0 },
+    didRestore: false,
+  };
+}
 
 export interface WorldFrame {
   x: number;

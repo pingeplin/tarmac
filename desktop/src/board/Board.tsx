@@ -4,6 +4,11 @@
 // the card SET or a card's committed frame changes. Each card's root node is
 // registered with the engine so it can cull off-screen cards (visibility:hidden,
 // node kept alive) on the pan/zoom hot path without a React re-render.
+//
+// P5 multi-board: App renders ONE Board per board simultaneously; inactive boards
+// are display:none (hidden=true) so their xterm terminals stay WARM — output
+// Channels stay attached and scrollback survives switch-back. FitAddon.fit() is a
+// safe no-op at 0 size; the ResizeObserver fires on show → auto-refit on reveal.
 
 import { useEffect, useRef, type MutableRefObject } from "react";
 import { BoardEngine, type Cullable, type Viewport } from "./BoardEngine";
@@ -13,6 +18,13 @@ import { DocCard } from "../cards/DocCard";
 import { cardId, type CardModel, type WorldFrame } from "./model";
 
 interface BoardProps {
+  /** Stable board id — used by App to key engines in enginesRef. */
+  boardId: string;
+  /** When true the board's root is display:none; terminals stay mounted + warm. */
+  hidden: boolean;
+  /** Called with the engine after mount, and with null on destroy. App populates
+   * enginesRef so the active board's chrome (zoom/minimap/fly) can read it. */
+  onEngineReady: (boardId: string, engine: BoardEngine | null) => void;
   cards: CardModel[];
   docContents: Map<string, string>;
   engineRef: MutableRefObject<BoardEngine | null>;
@@ -37,19 +49,21 @@ export function Board(props: BoardProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const worldRef = useRef<HTMLDivElement>(null);
   const cardEls = useRef<Map<string, HTMLElement>>(new Map());
-  const { engineRef, cards } = props;
+  const { engineRef, cards, boardId } = props;
 
   useEffect(() => {
     if (!viewportRef.current || !worldRef.current) return;
     const engine = new BoardEngine(viewportRef.current, worldRef.current);
     engine.onViewportChange = props.onViewport;
     engineRef.current = engine;
+    props.onEngineReady(boardId, engine);
     // Seed the chrome (zoom readout, minimap, offscreen hints) with the initial
     // viewport so the overlays populate before the first pan/zoom.
     props.onViewport?.(engine.viewport);
     return () => {
       engine.destroy();
       engineRef.current = null;
+      props.onEngineReady(boardId, null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -81,6 +95,9 @@ export function Board(props: BoardProps) {
     <div
       className="board"
       ref={viewportRef}
+      // display:none hides the board without unmounting — terminals stay warm
+      // (P5 warm-board model). ResizeObserver fires on show → auto-refit.
+      style={props.hidden ? { display: "none" } : undefined}
       onPointerDown={(e) => {
         // A press on empty board space (not a card) clears the selection.
         if (e.target === viewportRef.current || e.target === worldRef.current) {

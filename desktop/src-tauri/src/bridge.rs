@@ -10,7 +10,7 @@
 //! The wire codec, framing, conformance, and channel-path derivation all come
 //! from `core/`'s `tarmac-protocol` (path dep) — reused, never re-ported.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -25,6 +25,10 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::net::UnixStream;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
+/// Per-terminal scrollback byte cap: 256 KiB, matching ~5000 lines of output.
+/// Oldest chunks are evicted when a term's buffer would exceed this.
+const BUFFER_CAP_BYTES: usize = 256 * 1024;
+
 /// Shared bridge state, managed by Tauri (`app.manage`). Commands look it up via
 /// `State<Bridge>`; the connection task looks it up via `app.state::<Bridge>()`.
 pub struct Bridge {
@@ -34,6 +38,11 @@ pub struct Bridge {
     tx: UnboundedSender<Msg>,
     /// Per-terminal binary output sinks the frontend registers via `term_attach`.
     outputs: Mutex<HashMap<String, IpcChannel<InvokeResponseBody>>>,
+    /// Scrollback buffer: bytes that arrived before `term_attach` was called.
+    /// Bounded per-term at `BUFFER_CAP_BYTES`; oldest chunks evicted on overflow.
+    /// NOT cleared on `detach_output` — a transient detach+reattach still delivers.
+    /// Cleared on `attach_output` after draining (delivery guarantees order).
+    buffers: Mutex<HashMap<String, VecDeque<Vec<u8>>>>,
     // The Rust setup hook connects to the daemon BEFORE the webview's JS mounts,
     // so the connection's first status/board_list/restore are emitted with no
     // listener yet. We remember the latest of each (the daemon's authoritative
@@ -41,7 +50,11 @@ pub struct Bridge {
     // also makes a dev HMR reload re-sync cleanly.
     last_status: Mutex<Option<serde_json::Value>>,
     last_board_list: Mutex<Option<serde_json::Value>>,
-    last_restore: Mutex<Option<serde_json::Value>>,
+    // The latest `restore` per board_id. The daemon sends a restore for the active
+    // board on connect and for each board as it's visited; remembering ALL of them
+    // (not just the last) lets a webview reload / HMR replay rehydrate every board
+    // that was visited this session, not only the most-recent one.
+    last_restores: Mutex<HashMap<String, serde_json::Value>>,
 }
 
 impl Bridge {
@@ -49,9 +62,10 @@ impl Bridge {
         Self {
             tx,
             outputs: Mutex::new(HashMap::new()),
+            buffers: Mutex::new(HashMap::new()),
             last_status: Mutex::new(None),
             last_board_list: Mutex::new(None),
-            last_restore: Mutex::new(None),
+            last_restores: Mutex::new(HashMap::new()),
         }
     }
 
@@ -61,8 +75,31 @@ impl Bridge {
 
     fn remember_msg(&self, tag: &str, value: &serde_json::Value) {
         match tag {
-            "board_list" => *self.last_board_list.lock().unwrap() = Some(value.clone()),
-            "restore" => *self.last_restore.lock().unwrap() = Some(value.clone()),
+            "board_list" => {
+                // Drop remembered restores for boards no longer in the list so a
+                // deleted board can't resurrect on a later replay.
+                if let Some(boards) = value.get("boards").and_then(|b| b.as_array()) {
+                    let ids: HashSet<&str> = boards
+                        .iter()
+                        .filter_map(|b| b.get("board_id").and_then(|v| v.as_str()))
+                        .collect();
+                    self.last_restores
+                        .lock()
+                        .unwrap()
+                        .retain(|k, _| ids.contains(k.as_str()));
+                }
+                *self.last_board_list.lock().unwrap() = Some(value.clone());
+            }
+            "restore" => {
+                // Key by board_id (empty string for a board_id-less single-board
+                // daemon) so each board's latest restore is remembered separately.
+                let bid = value
+                    .get("board_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                self.last_restores.lock().unwrap().insert(bid, value.clone());
+            }
             _ => {}
         }
     }
@@ -76,8 +113,10 @@ impl Bridge {
         if let Some(b) = self.last_board_list.lock().unwrap().clone() {
             let _ = app.emit("daemon", b);
         }
-        if let Some(r) = self.last_restore.lock().unwrap().clone() {
-            let _ = app.emit("daemon", r);
+        // Replay every remembered board's restore (board_list emitted first above,
+        // so the frontend has the board set before the per-board cards arrive).
+        for r in self.last_restores.lock().unwrap().values() {
+            let _ = app.emit("daemon", r.clone());
         }
     }
 
@@ -88,12 +127,86 @@ impl Bridge {
     }
 
     pub fn attach_output(&self, term_id: String, channel: IpcChannel<InvokeResponseBody>) {
-        self.outputs.lock().unwrap().insert(term_id, channel);
+        // Hold `outputs` across insert + buffer-drain + send so the
+        // channel-presence decision is atomic against `dispatch` (which also
+        // locks `outputs` before touching `buffers`). Otherwise a live byte
+        // arriving between the insert and the drain could be sent ahead of the
+        // replayed scrollback — out-of-order delivery, the very race this buffer
+        // exists to prevent. Lock order is always outputs → buffers.
+        let mut outputs = self.outputs.lock().unwrap();
+        outputs.insert(term_id.clone(), channel);
+        // Drain under the buffers lock (released at the `;`), then send while
+        // still holding `outputs` so no later dispatch can interleave ahead.
+        let pending = take_buffered(&mut self.buffers.lock().unwrap(), &term_id);
+        if let Some(ch) = outputs.get(&term_id) {
+            for chunk in pending {
+                let _ = ch.send(InvokeResponseBody::Raw(chunk));
+            }
+        }
     }
 
     pub fn detach_output(&self, term_id: &str) {
         self.outputs.lock().unwrap().remove(term_id);
+        // NOTE: buffer is intentionally NOT cleared here. A transient
+        // detach+reattach should still deliver the pending bytes on the next
+        // attach_output call. The bounded cap prevents unbounded growth.
     }
+
+    /// Forget a terminal entirely: drop its output channel AND its scrollback
+    /// buffer. Called on `term_detach` (a card unmounted for good — exit-removal
+    /// or board prune), so neither the channel nor a never-to-be-drained buffer
+    /// lingers. Lock order outputs → buffers (consistent with dispatch/attach).
+    pub fn forget_term(&self, term_id: &str) {
+        self.outputs.lock().unwrap().remove(term_id);
+        self.buffers.lock().unwrap().remove(term_id);
+    }
+}
+
+// ── Pure buffer helpers (unit-testable without Tauri types) ──────────────────
+
+/// Push `bytes` into the per-term output buffer, evicting oldest chunks when the
+/// total byte count for that term would exceed `cap`. An empty `bytes` slice is a
+/// no-op. The eviction strategy is FIFO (oldest-first), matching scrollback
+/// semantics: we keep the most-recent output.
+fn push_buffered(
+    map: &mut HashMap<String, VecDeque<Vec<u8>>>,
+    term_id: &str,
+    bytes: Vec<u8>,
+    cap: usize,
+) {
+    if bytes.is_empty() {
+        return;
+    }
+    let deque = map.entry(term_id.to_string()).or_default();
+
+    // If this single chunk is larger than the cap, just keep the tail of it.
+    let bytes = if bytes.len() > cap {
+        bytes[bytes.len() - cap..].to_vec()
+    } else {
+        bytes
+    };
+
+    // Evict oldest chunks until there is room for the new one.
+    let mut total: usize = deque.iter().map(|c| c.len()).sum();
+    while total + bytes.len() > cap {
+        if let Some(evicted) = deque.pop_front() {
+            total -= evicted.len();
+        } else {
+            break;
+        }
+    }
+    deque.push_back(bytes);
+}
+
+/// Remove and return all buffered chunks for `term_id` in order (oldest first).
+/// Returns an empty Vec if there is no buffer entry for that term.
+fn take_buffered(
+    map: &mut HashMap<String, VecDeque<Vec<u8>>>,
+    term_id: &str,
+) -> Vec<Vec<u8>> {
+    map.remove(term_id)
+        .map(|d| d.into_iter().collect())
+        .unwrap_or_default()
 }
 
 /// Spawn the long-lived connection task onto Tauri's async (tokio) runtime.
@@ -177,9 +290,23 @@ fn dispatch(app: &AppHandle, msg: Msg) {
     let bridge = app.state::<Bridge>();
     match msg {
         Msg::Output { term_id, bytes } => {
+            // Hold `outputs` across the whole arm so the channel-present decision
+            // and the buffer push are atomic against `attach_output` (same lock
+            // order, outputs → buffers). Without this, an attach racing in could
+            // drain the buffer and then this byte would be buffered forever.
             let outputs = bridge.outputs.lock().unwrap();
             if let Some(channel) = outputs.get(&term_id) {
+                // Fast path: channel is attached — send directly.
                 let _ = channel.send(InvokeResponseBody::Raw(bytes));
+            } else {
+                // No channel yet (daemon replayed scrollback before `term_attach`).
+                // Buffer the bytes; drained in order when attach_output is called.
+                push_buffered(
+                    &mut bridge.buffers.lock().unwrap(),
+                    &term_id,
+                    bytes,
+                    BUFFER_CAP_BYTES,
+                );
             }
         }
         other => {
@@ -361,5 +488,93 @@ mod tests {
         assert_eq!(inject_cli_path(Some(""), "/x/bin"), "/x/bin");
         assert_eq!(inject_cli_path(Some("/usr/bin"), ""), "/usr/bin");
         assert_eq!(inject_cli_path(None, ""), "");
+    }
+
+    // ── Scrollback buffer helper tests ────────────────────────────────────────
+
+    /// Bytes buffered before attach are returned in order (oldest first) by
+    /// take_buffered, and the entry is removed from the map.
+    #[test]
+    fn buffer_push_then_take_delivers_in_order() {
+        let mut map = HashMap::new();
+        push_buffered(&mut map, "t1", b"hello ".to_vec(), BUFFER_CAP_BYTES);
+        push_buffered(&mut map, "t1", b"world".to_vec(), BUFFER_CAP_BYTES);
+
+        let chunks = take_buffered(&mut map, "t1");
+        assert_eq!(chunks, vec![b"hello ".to_vec(), b"world".to_vec()]);
+
+        // Entry must be removed after take.
+        assert!(!map.contains_key("t1"));
+    }
+
+    /// take_buffered on an unknown term returns an empty Vec (no panic).
+    #[test]
+    fn buffer_take_unknown_term_returns_empty() {
+        let mut map: HashMap<String, VecDeque<Vec<u8>>> = HashMap::new();
+        let chunks = take_buffered(&mut map, "unknown");
+        assert!(chunks.is_empty());
+    }
+
+    /// Buffers for different term_ids are independent.
+    #[test]
+    fn buffer_independent_per_term() {
+        let mut map = HashMap::new();
+        push_buffered(&mut map, "t1", b"for t1".to_vec(), BUFFER_CAP_BYTES);
+        push_buffered(&mut map, "t2", b"for t2".to_vec(), BUFFER_CAP_BYTES);
+
+        let t1 = take_buffered(&mut map, "t1");
+        assert_eq!(t1, vec![b"for t1".to_vec()]);
+
+        let t2 = take_buffered(&mut map, "t2");
+        assert_eq!(t2, vec![b"for t2".to_vec()]);
+    }
+
+    /// When the cap is exceeded, oldest chunks are evicted to stay within the cap.
+    #[test]
+    fn buffer_cap_evicts_oldest() {
+        let cap = 10;
+        let mut map = HashMap::new();
+
+        // Push three 5-byte chunks; only the last two fit under cap=10.
+        push_buffered(&mut map, "t1", b"AAAAA".to_vec(), cap); // total 5, fits
+        push_buffered(&mut map, "t1", b"BBBBB".to_vec(), cap); // total 10, fits
+        push_buffered(&mut map, "t1", b"CCCCC".to_vec(), cap); // would be 15, so AAAAA evicted
+
+        let chunks = take_buffered(&mut map, "t1");
+        let combined: Vec<u8> = chunks.into_iter().flatten().collect();
+        // Only B and C survive; A was evicted.
+        assert_eq!(combined, b"BBBBBCCCCC".to_vec());
+    }
+
+    /// A single chunk larger than the cap is itself tail-trimmed to the cap.
+    #[test]
+    fn buffer_oversized_single_chunk_is_trimmed() {
+        let cap = 4;
+        let mut map = HashMap::new();
+        push_buffered(&mut map, "t1", b"ABCDEFGH".to_vec(), cap);
+
+        let chunks = take_buffered(&mut map, "t1");
+        let combined: Vec<u8> = chunks.into_iter().flatten().collect();
+        // Only the last `cap` bytes survive.
+        assert_eq!(combined, b"EFGH".to_vec());
+    }
+
+    /// Empty bytes slice is a no-op (does not create a map entry).
+    #[test]
+    fn buffer_empty_bytes_is_noop() {
+        let mut map = HashMap::new();
+        push_buffered(&mut map, "t1", vec![], BUFFER_CAP_BYTES);
+        assert!(!map.contains_key("t1"));
+    }
+
+    /// After take_buffered, a second take for the same term is empty (idempotent drain).
+    #[test]
+    fn buffer_double_take_is_empty() {
+        let mut map = HashMap::new();
+        push_buffered(&mut map, "t1", b"data".to_vec(), BUFFER_CAP_BYTES);
+
+        let _ = take_buffered(&mut map, "t1");
+        let second = take_buffered(&mut map, "t1");
+        assert!(second.is_empty());
     }
 }

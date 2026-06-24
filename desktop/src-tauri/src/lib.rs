@@ -28,6 +28,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::frontend_ready,
             commands::term_attach,
+            commands::term_detach,
             commands::spawn_term,
             commands::term_input,
             commands::term_resize,

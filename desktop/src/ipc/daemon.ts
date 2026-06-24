@@ -67,6 +67,12 @@ export function termClose(termId: string): Promise<void> {
   return invoke("term_close", { termId });
 }
 
+/** Release a terminal's output channel + pending buffer in the bridge (no daemon
+ * message). Called when a TerminalCard unmounts so the IpcChannel doesn't leak. */
+export function detachTermOutput(termId: string): Promise<void> {
+  return invoke("term_detach", { termId });
+}
+
 export function docOpen(path: string, termId?: string, boardId?: string): Promise<void> {
   return invoke("doc_open", { path, termId: termId ?? null, boardId: boardId ?? null });
 }

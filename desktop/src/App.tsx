@@ -1,12 +1,15 @@
-// The cockpit orchestrator: subscribes to the daemon stream, owns the board's
-// card set, runs the multi-terminal lifecycle (boot/⌘T/exit/prime), lands
+// The cockpit orchestrator: subscribes to the daemon stream, owns per-board state
+// (P5 multi-board), runs the multi-terminal lifecycle (boot/⌘T/exit/prime), lands
 // `tarmac open` docs with gravity placement + a provenance edge, parks docs on a
-// shelf, and round-trips the whole layout (tiles + viewport) to the daemon so a
-// board survives a restart. Phase 4 adds the wayfinding + feedback chrome:
-// zoom control, minimap, offscreen-signal hints (+ ⏎ fly / Esc fly-back), the ⌘P
-// peek slide-over, transient toasts, the session chip, and full card-chrome
-// states (selection ring, resize handles, quiet/detached). This is
-// AppController.swift's whiteboard core minus the multi-board switcher (Phase 5).
+// shelf, and round-trips the layout (tiles + viewport) to the daemon. Phase 4 adds
+// the wayfinding + feedback chrome: zoom control, minimap, offscreen-signal hints
+// (+ ⏎ fly / Esc fly-back), the ⌘P peek slide-over, transient toasts, the session
+// chip, and full card-chrome states (selection ring, resize handles, quiet/detached).
+// Phase 5 adds the multi-board model + ⌘K switcher.
+//
+// WARM-BOARD MODEL: App renders ONE <Board> per board simultaneously; inactive
+// boards are display:none (hidden=true) so their xterm terminals stay mounted and
+// streaming. Board switch is instant — no re-mount, no scrollback loss.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Board } from "./board/Board";
@@ -17,13 +20,17 @@ import { MinimapOverlay, type MinimapItem, type MinimapSignal } from "./ui/Minim
 import { OffscreenHints } from "./ui/OffscreenHints";
 import { PeekOverlay } from "./ui/PeekOverlay";
 import { ToastOverlay } from "./ui/ToastOverlay";
+import { BoardSwitcher } from "./ui/BoardSwitcher";
 import { TitleBarChip } from "./ui/TitleBarChip";
 import type { BoardEngine, Viewport } from "./board/BoardEngine";
 import {
   cardId,
+  emptyBoardState,
   topZ,
+  type BoardState,
   type CardModel,
   type DocCardModel,
+  type DocMeta,
   type TermCardModel,
   type WorldFrame,
 } from "./board/model";
@@ -61,8 +68,24 @@ import {
   readDoc,
   spawnTerm,
   termResize,
+  boardSwitch,
+  boardCreate,
+  boardRename,
+  boardDelete,
 } from "./ipc/daemon";
-import type { DaemonMsg, DaemonStatus } from "./ipc/protocol";
+import type { DaemonMsg, DaemonStatus, WireBoardMeta } from "./ipc/protocol";
+import {
+  rows as switcherRows,
+  boardIdForOrdinal,
+  clampSelection,
+  canDelete,
+  sanitizedName,
+  isTypable,
+  liveness,
+  type BoardSummary,
+  type BoardRow,
+} from "./kit/boardSwitcher";
+import { TermBoardIndex } from "./kit/termBoardIndex";
 
 const BOOT_FRAME: WorldFrame = { ...Place.termFrame };
 const PERSIST_DEBOUNCE_MS = 200;
@@ -73,12 +96,6 @@ const TOAST_PRUNE_MS = 250;
 const HINT_EDGE_INSET = 18;
 const HINT_EDGE_MARGIN = 10;
 const HINT_STACK_GAP = 8;
-
-/** Per-doc metadata kept off the card (so a shelved doc keeps its color/owner). */
-interface DocMeta {
-  repoColor?: number;
-  ownerTermId?: string;
-}
 
 /** The in-flight header drag: a term carries its attached doc satellites so they
  * translate with it (gravity); a doc carries only its path (drag detaches it). */
@@ -111,36 +128,78 @@ const formatClock = (ms: number): string => {
  * + arrow + horizontal padding — feeds the pure stacking layout. */
 const measurePill = (h: OffscreenHint): Size => ({ w: 22 + 8 + 7 + h.label.length * 6.3, h: 26 });
 
-export default function App() {
-  const [cards, setCards] = useState<CardModel[]>([]);
-  const [docContents, setDocContents] = useState<Map<string, string>>(new Map());
-  const [shelfPaths, setShelfPaths] = useState<string[]>([]);
-  const [status, setStatus] = useState<DaemonStatus>({ connected: false, reason: "connecting…" });
+// --- Synthetic board id used before the first real restore arrives -------------
+// We seed a single synthetic board so the UI renders before the daemon responds.
+const SYNTHETIC_ID = "";
 
-  // Phase 4 chrome state.
+export default function App() {
+  // --- per-board state (P5 multi-board) ----------------------------------------
+  // A Map<boardId, BoardState>: one entry per board that has been visited this
+  // session. Never-visited boards have no local state until their first restore.
+  const [boards, setBoards] = useState<Map<string, BoardState>>(
+    () => new Map([[SYNTHETIC_ID, emptyBoardState()]]),
+  );
+  const [activeBoardId, setActiveBoardId] = useState<string>(SYNTHETIC_ID);
+  const [boardMetas, setBoardMetas] = useState<WireBoardMeta[]>([]);
+
+  // Ref mirrors of the above for use inside stale closure callbacks (daemon handler,
+  // keydown handler, persist timer).
+  const boardsRef = useRef<Map<string, BoardState>>(boards);
+  boardsRef.current = boards;
+  const activeIdRef = useRef<string>(activeBoardId);
+  activeIdRef.current = activeBoardId;
+  // Mirror of boardMetas for the once-registered keydown closure (which calls
+  // buildSummaries → must see the LATEST metas, not the first-render []).
+  const boardMetasRef = useRef<WireBoardMeta[]>([]);
+  boardMetasRef.current = boardMetas;
+
+  // --- per-board engines (populated via onEngineReady callbacks) ---------------
+  // The active board's engine drives the chrome (zoom/minimap/hints/fit/fly).
+  // Each board's <Board> calls onEngineReady(boardId, engine) on mount/destroy.
+  const enginesRef = useRef<Map<string, BoardEngine>>(new Map());
+  // Stable ref to the ACTIVE board's engine (kept in sync by onEngineReady and
+  // beginSwitchTo so chrome reads are always current).
+  const engineRef = useRef<BoardEngine | null>(null);
+
+  // --- TermBoardIndex: term_id → board_id routing for JSON frames --------------
+  const termBoardIndexRef = useRef(new TermBoardIndex());
+
+  // --- Phase 4 chrome state (active-board scoped) ------------------------------
+  const [status, setStatus] = useState<DaemonStatus>({ connected: false, reason: "connecting…" });
   const [viewport, setViewportState] = useState<Viewport>({ zoom: 1, cx: 0, cy: 0 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [toastState, setToastState] = useState<ToastState>(emptyToasts);
   const [peekVisible, setPeekVisible] = useState(false);
   const [peekPath, setPeekPath] = useState<string | null>(null);
+  const [docContents, setDocContents] = useState<Map<string, string>>(new Map());
 
-  const engineRef = useRef<BoardEngine | null>(null);
-  const cardsRef = useRef<CardModel[]>([]);
-  cardsRef.current = cards;
-  const shelfRef = useRef<string[]>([]);
-  shelfRef.current = shelfPaths;
+  // --- ⌘K switcher state (owned here; BoardSwitcher is a pure render component) -
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [switcherFilter, setSwitcherFilter] = useState("");
+  const [switcherSelected, setSwitcherSelected] = useState(0);
+  const [switcherEditing, setSwitcherEditing] = useState(false);
+  const [switcherEditBuffer, setSwitcherEditBuffer] = useState("");
+  const [switcherConfirming, setSwitcherConfirming] = useState(false);
 
-  const didRestoreRef = useRef(false);
-  const boardIdRef = useRef<string | null>(null);
-  const dockOrderRef = useRef<string[]>([]);
-  const docMetaRef = useRef<Map<string, DocMeta>>(new Map());
+  // Switcher ref mirrors for the stale keydown closure.
+  const switcherOpenRef = useRef(false);
+  switcherOpenRef.current = switcherOpen;
+  const switcherFilterRef = useRef("");
+  switcherFilterRef.current = switcherFilter;
+  const switcherSelectedRef = useRef(0);
+  switcherSelectedRef.current = switcherSelected;
+  const switcherEditingRef = useRef(false);
+  switcherEditingRef.current = switcherEditing;
+  const switcherEditBufferRef = useRef("");
+  switcherEditBufferRef.current = switcherEditBuffer;
+  const switcherConfirmingRef = useRef(false);
+  switcherConfirmingRef.current = switcherConfirming;
+
+  // --- misc refs ---------------------------------------------------------------
   const gestureRef = useRef<Gesture | null>(null);
-  const persistTimer = useRef<number | null>(null);
-
-  // Recency + bell timestamps (view-layer clock; drive the peek target + bell pill).
+  const persistTimers = useRef<Map<string, number>>(new Map());
   const lastChangedRef = useRef<Map<string, number>>(new Map());
   const bellTimeRef = useRef<Map<string, number>>(new Map());
-  // Mirrors for the once-registered keydown handler's closure.
   const peekVisibleRef = useRef(false);
   peekVisibleRef.current = peekVisible;
   const peekPathRef = useRef<string | null>(null);
@@ -150,12 +209,40 @@ export default function App() {
   const flyTargetRef = useRef<string | null>(null);
   const preFlightRef = useRef<Viewport | null>(null);
   const prevConnectedRef = useRef(false);
-  // rAF-coalesce the viewport state update so a pan/zoom burst re-renders the
-  // chrome at most once per frame (keeps the cards off the 60fps hot path).
+  // Gates the "daemon restarted" toast to once per reconnect cycle (a full restart
+  // re-sends a restore per board, which would otherwise toast N times).
+  const daemonRestartToastedRef = useRef(false);
   const vpRafRef = useRef<number | null>(null);
   const pendingVpRef = useRef<Viewport | null>(null);
 
-  // --- card factories ------------------------------------------------------
+  // --- active-board accessors --------------------------------------------------
+
+  const activeBoard = (): BoardState | undefined =>
+    boardsRef.current.get(activeIdRef.current);
+
+  /** Immutably update a specific board's state. */
+  const setBoardState = (boardId: string, fn: (b: BoardState) => BoardState) =>
+    setBoards((bs) => {
+      const b = bs.get(boardId);
+      if (!b) return bs;
+      const n = new Map(bs);
+      n.set(boardId, fn(b));
+      return n;
+    });
+
+  /** Immutably update the ACTIVE board's state. */
+  const setActiveBoard = (fn: (b: BoardState) => BoardState) =>
+    setBoardState(activeIdRef.current, fn);
+
+  /** Update just the cards of the active board (the most common mutation). */
+  const setActiveCards = (fn: (cs: CardModel[]) => CardModel[]) =>
+    setActiveBoard((b) => ({ ...b, cards: fn(b.cards) }));
+
+  /** Update cards for a SPECIFIC board (background-routed frames). */
+  const setBoardCards = (boardId: string, fn: (cs: CardModel[]) => CardModel[]) =>
+    setBoardState(boardId, (b) => ({ ...b, cards: fn(b.cards) }));
+
+  // --- card factories ----------------------------------------------------------
 
   const makeTerm = (
     termId: string,
@@ -187,52 +274,81 @@ export default function App() {
     );
   };
 
-  // --- persistence (layout + viewport) -------------------------------------
+  // --- engine handoff ----------------------------------------------------------
 
-  const buildAndSend = () => {
-    if (!didRestoreRef.current) return; // never overwrite the saved layout pre-restore
+  const onEngineReady = (boardId: string, engine: BoardEngine | null) => {
+    if (engine) {
+      enginesRef.current.set(boardId, engine);
+      // If this is the active board, update the shortcut ref too.
+      if (boardId === activeIdRef.current) engineRef.current = engine;
+      // Seed the engine with the board's saved viewport if its restore already
+      // arrived before the <Board> mounted (HMR replay, board_create auto-activate)
+      // — applyRestore's setViewport was a no-op while this engine was still null.
+      const b = boardsRef.current.get(boardId);
+      if (b?.didRestore) engine.setViewport(b.viewport);
+    } else {
+      enginesRef.current.delete(boardId);
+      if (boardId === activeIdRef.current) engineRef.current = null;
+    }
+  };
+
+  // --- persistence (per-board, debounced) --------------------------------------
+
+  const buildAndSendBoard = (boardId: string) => {
+    const b = boardsRef.current.get(boardId);
+    if (!b || !b.didRestore) return; // never overwrite saved layout pre-restore
     const terms = [];
     const docs = [];
-    for (const c of cardsRef.current) {
+    for (const c of b.cards) {
       if (c.kind === "term") terms.push({ termId: c.termId, frame: c.frame, z: c.z, dead: c.dead });
       else docs.push({ path: c.path, frame: c.frame, z: c.z, attached: c.attached });
     }
-    const tiles = buildTiles(terms, docs, shelfRef.current);
-    const vp = engineRef.current?.viewport ?? { zoom: 1, cx: 0, cy: 0 };
-    void persistLayout(
-      dockOrderRef.current,
-      tiles,
-      { zoom: vp.zoom, cx: vp.cx, cy: vp.cy },
-      boardIdRef.current,
+    const tiles = buildTiles(terms, docs, b.shelfPaths);
+    const eng = enginesRef.current.get(boardId);
+    const vp = eng?.viewport ?? b.viewport;
+    void persistLayout(b.dockOrder, tiles, { zoom: vp.zoom, cx: vp.cx, cy: vp.cy }, boardId || null);
+  };
+
+  const schedulePersist = (boardId: string) => {
+    const timers = persistTimers.current;
+    const existing = timers.get(boardId);
+    if (existing != null) clearTimeout(existing);
+    timers.set(
+      boardId,
+      window.setTimeout(() => {
+        timers.delete(boardId);
+        buildAndSendBoard(boardId);
+      }, PERSIST_DEBOUNCE_MS),
     );
   };
 
-  /** Coalesce a burst (pan/zoom, multi-card change) onto a 200ms trailing send. */
-  const schedulePersist = () => {
-    if (persistTimer.current != null) clearTimeout(persistTimer.current);
-    persistTimer.current = window.setTimeout(() => {
-      persistTimer.current = null;
-      buildAndSend();
-    }, PERSIST_DEBOUNCE_MS);
+  const flushPersist = (boardId?: string) => {
+    if (boardId !== undefined) {
+      const timers = persistTimers.current;
+      const existing = timers.get(boardId);
+      if (existing == null) return;
+      clearTimeout(existing);
+      timers.delete(boardId);
+      buildAndSendBoard(boardId);
+    } else {
+      // Flush all boards (blur / beforeunload).
+      for (const [id] of persistTimers.current) flushPersist(id);
+    }
   };
 
-  /** Flush any pending snapshot now (board blur / window close) so it's not lost. */
-  const flushPersist = () => {
-    if (persistTimer.current == null) return;
-    clearTimeout(persistTimer.current);
-    persistTimer.current = null;
-    buildAndSend();
-  };
+  // Persist whenever ANY board's card set or shelf changes (debounced). Each
+  // mutation site calls schedulePersist(boardId) explicitly for targeted boards.
+  // This effect catches the active board's React-batched mutations.
+  useEffect(() => {
+    schedulePersist(activeIdRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boards]);
 
-  // Persist on any committed card-set / frame / shelf change (debounced). The
-  // viewport persists via onViewport below; both share the same trailing timer.
-  useEffect(schedulePersist, [cards, shelfPaths]);
-
-  /** Committed pan/zoom: persist (debounced) immediately, and coalesce the chrome
-   * viewport state update onto one rAF so a wheel/pinch burst re-renders the chrome
-   * at most once per frame rather than per event. */
-  const onViewport = (vp: Viewport) => {
-    schedulePersist();
+  /** Active-board viewport committed — persist (debounced) and coalesce the chrome
+   * redraw onto one rAF so a wheel/pinch burst renders at most once per frame. */
+  const onViewport = (boardId: string, vp: Viewport) => {
+    if (boardId !== activeIdRef.current) return; // stale board callback — ignore
+    schedulePersist(boardId);
     pendingVpRef.current = vp;
     if (vpRafRef.current != null) return;
     vpRafRef.current = requestAnimationFrame(() => {
@@ -241,23 +357,21 @@ export default function App() {
     });
   };
 
-  // --- toasts --------------------------------------------------------------
+  // --- toasts ------------------------------------------------------------------
 
   const pushToast = (t: Omit<Toast, "expiresAtMs" | "id">) =>
     setToastState((s) => addToast(s, { ...t, id: mint() }, Date.now()));
 
   const onToastChip = (toastId: string, _chipIndex: number) =>
-    // No chip actions wired yet (the undo chip lands with ⌘W close in P5); dismiss.
     setToastState((s) => dismissToast(s, toastId));
 
-  // Auto-expire toasts off a single interval while the stack is non-empty.
   useEffect(() => {
     if (toastState.toasts.length === 0) return;
     const id = window.setInterval(() => setToastState((s) => pruneExpired(s, Date.now())), TOAST_PRUNE_MS);
     return () => window.clearInterval(id);
   }, [toastState.toasts.length]);
 
-  // --- doc content ---------------------------------------------------------
+  // --- doc content -------------------------------------------------------------
 
   const fetchDoc = async (path: string) => {
     try {
@@ -271,27 +385,43 @@ export default function App() {
   };
 
   const refreshDoc = (path: string) => {
-    if (!cardsRef.current.some((c) => c.kind === "doc" && c.path === path)) return;
-    void fetchDoc(path);
+    // Refresh if any board has this doc open (file_event is path-only).
+    for (const b of boardsRef.current.values()) {
+      if (b.cards.some((c) => c.kind === "doc" && c.path === path)) {
+        void fetchDoc(path);
+        return;
+      }
+    }
   };
 
-  // --- doc landing (gravity placement) + shelf -----------------------------
+  // --- doc landing (gravity placement) + shelf ---------------------------------
 
-  const landDoc = (path: string, via: string, ownerTermId?: string, repoColor?: number) => {
-    const prev = docMetaRef.current.get(path);
-    docMetaRef.current.set(path, {
-      repoColor: repoColor ?? prev?.repoColor,
-      ownerTermId: ownerTermId ?? prev?.ownerTermId,
-    });
-    if (!dockOrderRef.current.includes(path)) dockOrderRef.current = [...dockOrderRef.current, path];
-    void fetchDoc(path);
-    setShelfPaths((sp) => (sp.includes(path) ? sp.filter((p) => p !== path) : sp));
+  const landDoc = (
+    boardId: string,
+    path: string,
+    via: string,
+    ownerTermId?: string,
+    repoColor?: number,
+  ) => {
+    // Update per-board docMeta.
+    setBoardState(boardId, (b) => {
+      const prev = b.docMeta.get(path);
+      const newMeta: DocMeta = {
+        repoColor: repoColor ?? prev?.repoColor,
+        ownerTermId: ownerTermId ?? prev?.ownerTermId,
+      };
+      const newDocMeta = new Map(b.docMeta).set(path, newMeta);
+      const newDockOrder = b.dockOrder.includes(path)
+        ? b.dockOrder
+        : [...b.dockOrder, path];
+      // Remove from shelf if present.
+      const newShelf = b.shelfPaths.filter((p) => p !== path);
 
-    setCards((cs) => {
-      const onBoard = cs.find((c) => c.kind === "doc" && c.path === path);
+      const onBoard = b.cards.find((c) => c.kind === "doc" && c.path === path);
+      let newCards: CardModel[];
       if (onBoard) {
-        // Re-open: refresh owner/color/fresh in place, never move (Swift parity).
-        return cs.map((c) =>
+        // Re-open: refresh owner/color/fresh in place, never move.
+        newCards = b.cards.map((c) =>
           c.kind === "doc" && c.path === path
             ? {
                 ...c,
@@ -301,108 +431,115 @@ export default function App() {
               }
             : c,
         );
+      } else {
+        const owner = ownerTermId
+          ? (b.cards.find((c) => c.kind === "term" && c.termId === ownerTermId) as TermCardModel | undefined)
+          : undefined;
+        const prime = b.cards.find((c) => c.kind === "term" && c.prime) as TermCardModel | undefined;
+        const anchor = owner?.frame ?? prime?.frame ?? BOOT_FRAME;
+        const frame = firstFreeSlot(anchor, b.cards.map((c) => c.frame));
+        const doc: DocCardModel = {
+          kind: "doc",
+          path,
+          frame,
+          z: topZ(b.cards) + 1,
+          ownerTermId,
+          repoColor,
+          fresh: via === "cli",
+          attached: ownerTermId != null,
+        };
+        newCards = [...b.cards, doc];
       }
-      const owner = ownerTermId
-        ? (cs.find((c) => c.kind === "term" && c.termId === ownerTermId) as TermCardModel | undefined)
-        : undefined;
-      const prime = cs.find((c) => c.kind === "term" && c.prime) as TermCardModel | undefined;
-      const anchor = owner?.frame ?? prime?.frame ?? BOOT_FRAME;
-      const frame = firstFreeSlot(anchor, cs.map((c) => c.frame));
-      const doc: DocCardModel = {
-        kind: "doc",
-        path,
-        frame,
-        z: topZ(cs) + 1,
-        ownerTermId,
-        repoColor,
-        fresh: via === "cli",
-        attached: ownerTermId != null,
-      };
-      return [...cs, doc];
+      return { ...b, docMeta: newDocMeta, dockOrder: newDockOrder, shelfPaths: newShelf, cards: newCards };
     });
+    // Persist THIS board (it may be a backgrounded board the [boards] effect's
+    // active-board schedule would miss — e.g. `tarmac open` from a background term).
+    schedulePersist(boardId);
+    void fetchDoc(path);
   };
 
   const moveToShelf = (path: string) => {
-    setCards((cs) => cs.filter((c) => !(c.kind === "doc" && c.path === path)));
-    setShelfPaths((sp) => (sp.includes(path) ? sp : [...sp, path]));
+    setActiveBoard((b) => ({
+      ...b,
+      cards: b.cards.filter((c) => !(c.kind === "doc" && c.path === path)),
+      shelfPaths: b.shelfPaths.includes(path) ? b.shelfPaths : [...b.shelfPaths, path],
+    }));
   };
 
-  /** Bring a shelved doc back to the board — at the drop point (drag) or the next
-   * free slot near the prime terminal (click). Restored docs land loose. */
+  /** Bring a shelved doc back to the board at the drop point or next free slot. */
   const restoreFromShelf = (path: string, drop?: { clientX: number; clientY: number }) => {
-    const meta = docMetaRef.current.get(path);
+    const b = activeBoard();
+    const meta = b?.docMeta.get(path);
     let frame: WorldFrame;
     if (drop && engineRef.current) {
       const w = engineRef.current.viewToWorld(drop.clientX, drop.clientY);
       frame = { x: w.x - Place.docW / 2, y: w.y - 15, w: Place.docW, h: Place.docH };
     } else {
-      const prime = cardsRef.current.find((c) => c.kind === "term" && c.prime) as
-        | TermCardModel
-        | undefined;
-      frame = firstFreeSlot(prime?.frame ?? BOOT_FRAME, cardsRef.current.map((c) => c.frame));
+      const prime = b?.cards.find((c) => c.kind === "term" && c.prime) as TermCardModel | undefined;
+      frame = firstFreeSlot(prime?.frame ?? BOOT_FRAME, b?.cards.map((c) => c.frame) ?? []);
     }
-    setShelfPaths((sp) => sp.filter((p) => p !== path));
-    setCards((cs) =>
-      cs.some((c) => c.kind === "doc" && c.path === path)
-        ? cs
+    setActiveBoard((board) => ({
+      ...board,
+      shelfPaths: board.shelfPaths.filter((p) => p !== path),
+      cards: board.cards.some((c) => c.kind === "doc" && c.path === path)
+        ? board.cards
         : [
-            ...cs,
+            ...board.cards,
             {
               kind: "doc",
               path,
               frame,
-              z: topZ(cs) + 1,
+              z: topZ(board.cards) + 1,
               ownerTermId: meta?.ownerTermId,
               repoColor: meta?.repoColor,
               fresh: false,
               attached: false,
             } as DocCardModel,
           ],
-    );
+    }));
     void fetchDoc(path);
   };
 
-  // --- peek (⌘P quick-look of the most-recent doc) -------------------------
+  // --- peek (⌘P quick-look of the most-recent doc) ----------------------------
 
-  /** The doc to peek: most-recently-changed, else the most-recently-opened. */
   const peekTarget = (): string | null => {
+    const b = activeBoard();
     let best: string | null = null;
     let bestT = -Infinity;
     for (const [p, t] of lastChangedRef.current) {
-      if (t > bestT) {
-        bestT = t;
-        best = p;
-      }
+      if (t > bestT) { bestT = t; best = p; }
     }
     if (best) return best;
-    const order = dockOrderRef.current;
+    const order = b?.dockOrder ?? [];
     return order.length ? order[order.length - 1]! : null;
   };
 
   const openPeek = () => {
     const target = peekTarget();
-    if (!target) return; // nothing to peek (empty registry)
+    if (!target) return;
     void fetchDoc(target);
     setPeekPath(target);
     setPeekVisible(true);
-    // Presenting the doc marks it read — clear its fresh state.
-    setCards((cs) => cs.map((c) => (c.kind === "doc" && c.path === target ? { ...c, fresh: false } : c)));
+    setActiveCards((cs) =>
+      cs.map((c) => (c.kind === "doc" && c.path === target ? { ...c, fresh: false } : c)),
+    );
   };
 
-  /** ⌘⏎ / pin chip: if the peeked doc is on the board, unpin it to the shelf; else
-   * land it at a free slot. Either way the peek closes. */
   const togglePinPeeked = () => {
     const p = peekPathRef.current;
     if (!p) return;
-    if (cardsRef.current.some((c) => c.kind === "doc" && c.path === p)) moveToShelf(p);
+    const b = activeBoard();
+    if (b?.cards.some((c) => c.kind === "doc" && c.path === p)) moveToShelf(p);
     else restoreFromShelf(p);
     setPeekVisible(false);
   };
 
-  // --- terminal lifecycle --------------------------------------------------
+  // --- terminal lifecycle ------------------------------------------------------
 
-  const spawnNewTerminal = () => {
-    const existing = cardsRef.current;
+  const spawnNewTerminal = (boardId?: string) => {
+    const bid = boardId ?? activeIdRef.current;
+    const b = boardsRef.current.get(bid);
+    const existing = b?.cards ?? [];
     const prime = existing.find((c) => c.kind === "term" && c.prime) as TermCardModel | undefined;
     const base = prime?.frame ?? BOOT_FRAME;
     const origin = cascadeOrigin(
@@ -417,15 +554,15 @@ export default function App() {
       topZ(existing) + 1,
       { needsSpawn: true, prime: true },
     );
-    setCards((cs) => [...cs.map(unprime), term]);
+    termBoardIndexRef.current.assign(term.termId, bid);
+    setBoardCards(bid, (cs) => [...cs.map(unprime), term]);
   };
 
-  const handleExit = (termId: string, code: number | null) => {
-    const term = cardsRef.current.find((c) => c.kind === "term" && c.termId === termId) as
-      | TermCardModel
-      | undefined;
+  const handleExit = (boardId: string, termId: string, code: number | null) => {
+    const b = boardsRef.current.get(boardId);
+    const term = b?.cards.find((c) => c.kind === "term" && c.termId === termId) as
+      | TermCardModel | undefined;
     if (!term) return;
-    // Surface a non-clean exit as a toast (clean code 0 stays silent).
     if (code !== 0) {
       pushToast({
         icon: "›_",
@@ -434,12 +571,12 @@ export default function App() {
         chips: [],
       });
     }
-    const others = cardsRef.current.filter(
+    const others = (b?.cards ?? []).filter(
       (c) => c.kind === "term" && c.termId !== termId && c.live && !c.dead,
     ).length;
     const action = decide(code, others);
     if (action === "holdOpen") {
-      setCards((cs) =>
+      setBoardCards(boardId, (cs) =>
         reassignPrime(
           cs.map((c) =>
             c.kind === "term" && c.termId === termId
@@ -449,36 +586,42 @@ export default function App() {
         ),
       );
     } else if (action === "remove") {
-      setCards((cs) => reassignPrime(cs.filter((c) => !(c.kind === "term" && c.termId === termId))));
+      setBoardCards(boardId, (cs) =>
+        reassignPrime(cs.filter((c) => !(c.kind === "term" && c.termId === termId))),
+      );
     } else {
       // removeAndReplace: keep ≥1 live terminal by spawning a fresh one in place.
       const { frame, z } = term;
       const fresh = makeTerm(mint(), frame, z, { needsSpawn: true, prime: true });
-      setCards((cs) => [
+      termBoardIndexRef.current.assign(fresh.termId, boardId);
+      setBoardCards(boardId, (cs) => [
         ...cs.filter((c) => !(c.kind === "term" && c.termId === termId)).map(unprime),
         fresh,
       ]);
     }
+    // Remove from the index after handling.
+    termBoardIndexRef.current.remove(termId);
+    // Persist this board's new card set (it may be backgrounded).
+    schedulePersist(boardId);
   };
 
-  const onTermSpawn = (termId: string, cols: number, rows: number) => {
-    const term = cardsRef.current.find((c) => c.kind === "term" && c.termId === termId) as
-      | TermCardModel
-      | undefined;
+  const onTermSpawn = (boardId: string, termId: string, cols: number, rows: number) => {
+    const b = boardsRef.current.get(boardId);
+    const term = b?.cards.find((c) => c.kind === "term" && c.termId === termId) as
+      | TermCardModel | undefined;
     if (!term) return;
     if (term.needsSpawn) {
-      void spawnTerm({ termId, cols, rows, boardId: boardIdRef.current ?? undefined });
-      setCards((cs) =>
+      void spawnTerm({ termId, cols, rows, boardId: boardId || undefined });
+      setBoardCards(boardId, (cs) =>
         cs.map((c) => (c.kind === "term" && c.termId === termId ? { ...c, needsSpawn: false } : c)),
       );
     } else {
-      // Re-bound to a daemon-live pty: don't spawn (duplicate shell); sync its size.
       void termResize(termId, cols, rows);
     }
   };
 
-  const applyTermProc = (termId: string, name: string) =>
-    setCards((cs) =>
+  const applyTermProc = (boardId: string, termId: string, name: string) =>
+    setBoardCards(boardId, (cs) =>
       cs.map((c) =>
         c.kind === "term" && c.termId === termId
           ? { ...c, label: displayLabel(undefined, name, "shell") }
@@ -486,27 +629,89 @@ export default function App() {
       ),
     );
 
-  /** A keystroke into a terminal clears its bell (Swift parity). TerminalCard only
-   * calls this when a bell is lit, and we bail to the same ref otherwise, so normal
-   * typing never re-renders. */
-  const onTermActivity = (termId: string) =>
-    setCards((cs) => {
+  const onTermActivity = (termId: string) => {
+    const boardId = termBoardIndexRef.current.board(termId) ?? activeIdRef.current;
+    setBoardCards(boardId, (cs) => {
       if (!cs.some((c) => c.kind === "term" && c.termId === termId && c.bell)) return cs;
       bellTimeRef.current.delete(termId);
       return cs.map((c) => (c.kind === "term" && c.termId === termId ? { ...c, bell: false } : c));
     });
+  };
 
-  // --- restore (cold start: tiles + live_terms → cards) --------------------
+  // --- restore (first visit: tiles + live_terms → cards; reconnect: reconcile) -
 
   const applyRestore = (msg: Extract<DaemonMsg, { t: "restore" }>) => {
-    if (didRestoreRef.current) return; // reconnect revive is Phase 5; apply once
-    didRestoreRef.current = true;
-    boardIdRef.current = msg.board_id ?? null;
+    // Determine which board this restore targets.
+    const boardId = msg.board_id ?? activeIdRef.current;
 
+    // Ensure a slot exists for this board (daemon-pushed restore for an unvisited
+    // board before we locally switch to it).
+    setBoards((bs) => {
+      if (bs.has(boardId)) return bs;
+      const n = new Map(bs);
+      n.set(boardId, emptyBoardState());
+      return n;
+    });
+
+    const b = boardsRef.current.get(boardId);
+    const isFirstVisit = !b?.didRestore;
+
+    if (!isFirstVisit) {
+      // RECONNECT REVIVE: the daemon restarted or we reconnected. Reconcile live
+      // terms — mark any term the daemon no longer owns as dead.
+      const live = new Set(msg.live_terms ?? []);
+      const hadLive = b?.cards.some((c) => c.kind === "term" && c.live && !c.dead) ?? false;
+      // Empty live_terms for a board that HAD live terms ⇒ a full daemon restart
+      // (every pty across every board is gone). A transient socket blip where the
+      // daemon survived re-sends the live_terms, so we keep those warm.
+      const restart = live.size === 0 && hadLive;
+      if (restart && !daemonRestartToastedRef.current) {
+        daemonRestartToastedRef.current = true;
+        pushToast({
+          icon: "¶",
+          title: "daemon restarted — terminals lost",
+          body: "open new terminals with ⌘T",
+          chips: [],
+        });
+      }
+      // This board: keep daemon-owned terms warm, mark the rest dead.
+      setBoardState(boardId, (board) => ({
+        ...board,
+        cards: reassignPrime(
+          board.cards.map((c) =>
+            c.kind === "term" && !live.has(c.termId)
+              ? { ...c, live: false, dead: true, prime: false }
+              : c,
+          ),
+        ),
+      }));
+      // A full restart kills EVERY board's ptys, but the daemon only re-sends a
+      // restore for the active board — so sweep every OTHER visited board's live
+      // terminals to dead here (their warm cards would otherwise show zombie-live).
+      if (restart) {
+        for (const id of boardsRef.current.keys()) {
+          if (id === boardId) continue;
+          setBoardState(id, (board) => ({
+            ...board,
+            cards: reassignPrime(
+              board.cards.map((c) =>
+                c.kind === "term" && c.live && !c.dead
+                  ? { ...c, live: false, dead: true, prime: false }
+                  : c,
+              ),
+            ),
+          }));
+        }
+      }
+      return;
+    }
+
+    // FIRST VISIT: build cards from restore payload.
     const docs = msg.docs ?? [];
-    dockOrderRef.current = docs.map((d) => d.path);
+    const newDocMeta = new Map<string, DocMeta>();
+    const newDockOrder: string[] = docs.map((d) => d.path);
     for (const d of docs) {
-      docMetaRef.current.set(d.path, {
+      newDocMeta.set(d.path, {
         repoColor: d.repo_color ?? undefined,
         ownerTermId: d.term_id ?? undefined,
       });
@@ -517,12 +722,11 @@ export default function App() {
     );
     const liveTerms = new Set(msg.live_terms ?? []);
 
-    // Terminals: TermRestore.plan partitions each tile into rebind vs cold-spawn.
     const plans = plan(
       termTiles.map((t) => t.termId),
       liveTerms,
     );
-    const oldToNew = new Map<string, string>(); // persisted id → reborn id (cold-spawn mints fresh)
+    const oldToNew = new Map<string, string>();
     const newTerms: TermCardModel[] = termTiles.map((t, i) => {
       const frame =
         t.frame ?? {
@@ -534,31 +738,34 @@ export default function App() {
       const p = plans[i]!;
       if (p.kind === "rebind") {
         if (t.termId) oldToNew.set(t.termId, p.termId);
+        // Register in index at rebind.
+        termBoardIndexRef.current.assign(p.termId, boardId);
         return makeTerm(p.termId, frame, t.z, { needsSpawn: false });
       }
       const id = mint();
       if (t.termId) oldToNew.set(t.termId, id);
+      // Register NOW (not in onTermSpawn, which is an async attach round-trip away)
+      // so an exit/bell/term_proc frame arriving in the gap routes to THIS board,
+      // not the active-board fallback (which would silently drop it).
+      termBoardIndexRef.current.assign(id, boardId);
       return makeTerm(id, frame, t.z, { needsSpawn: true });
     });
-    // Guarantee ≥1 terminal (M1 / empty layout → one cold-spawn boot terminal).
+    // Guarantee ≥1 terminal.
     if (newTerms.length === 0) {
-      newTerms.push(makeTerm(mint(), BOOT_FRAME, 0, { needsSpawn: true }));
+      const id = mint();
+      termBoardIndexRef.current.assign(id, boardId);
+      newTerms.push(makeTerm(id, BOOT_FRAME, 0, { needsSpawn: true }));
     }
     newTerms[0]!.prime = true;
 
-    // Docs: place geometry-bearing tiles; M1 (geometry-less) scatter; shelf → chips.
     let scatterSlot = 0;
     const newDocs: DocCardModel[] = [];
     for (const dt of docTiles) {
-      if (!docMetaRef.current.has(dt.path)) {
-        // Receiver rule: a tile for a doc the registry doesn't know is dropped.
+      if (!newDocMeta.has(dt.path)) {
         console.warn(`restore: doc tile ${dt.path} absent from the registry — dropping`);
         continue;
       }
-      const meta = docMetaRef.current.get(dt.path)!;
-      // Re-anchor the owner to its reborn id. If the owner terminal did NOT come
-      // back (it had exited, so it has no tile/plan and no oldToNew entry), the
-      // doc detaches rather than dangle to a ghost term that no edge/gravity matches.
+      const meta = newDocMeta.get(dt.path)!;
       const owner = meta.ownerTermId ? oldToNew.get(meta.ownerTermId) : undefined;
       newDocs.push({
         kind: "doc",
@@ -573,62 +780,420 @@ export default function App() {
       void fetchDoc(dt.path);
     }
 
-    setCards([...newTerms, ...newDocs]);
-    setShelfPaths(restoredShelf.filter((p) => docMetaRef.current.has(p)));
-
     const vp = msg.board
       ? { zoom: msg.board.zoom, cx: msg.board.cx, cy: msg.board.cy }
       : { zoom: 1, cx: 0, cy: 0 };
-    engineRef.current?.setViewport(vp);
+
+    setBoardState(boardId, (_) => ({
+      cards: [...newTerms, ...newDocs],
+      shelfPaths: restoredShelf.filter((p) => newDocMeta.has(p)),
+      dockOrder: newDockOrder,
+      docMeta: newDocMeta,
+      viewport: vp,
+      didRestore: true,
+    }));
+
+    // Defensive: if a REAL board's restore arrives while we're still on the
+    // synthetic seed (restore-before-board_list ordering), adopt it as active so
+    // its boot terminal isn't stranded on a hidden board, and retire the seed.
+    if (activeIdRef.current === SYNTHETIC_ID && boardId !== SYNTHETIC_ID) {
+      const syn = boardsRef.current.get(SYNTHETIC_ID);
+      activeIdRef.current = boardId;
+      setActiveBoardId(boardId);
+      engineRef.current = enginesRef.current.get(boardId) ?? null;
+      if (syn && !syn.didRestore && syn.cards.length === 0) {
+        setBoards((bs) => {
+          const n = new Map(bs);
+          n.delete(SYNTHETIC_ID);
+          return n;
+        });
+      }
+    }
+
+    // Apply viewport to the engine if this is the active board.
+    if (boardId === activeIdRef.current) {
+      const eng = enginesRef.current.get(boardId);
+      eng?.setViewport(vp);
+    }
   };
 
-  // --- daemon stream -------------------------------------------------------
+  // --- board switch machine ----------------------------------------------------
+
+  const closeSwitcher = () => {
+    setSwitcherOpen(false);
+    setSwitcherFilter("");
+    setSwitcherSelected(0);
+    setSwitcherEditing(false);
+    setSwitcherEditBuffer("");
+    setSwitcherConfirming(false);
+  };
+
+  const beginSwitchTo = (targetId: string, fromDaemon: boolean) => {
+    const currentId = activeIdRef.current;
+    if (targetId === currentId) {
+      closeSwitcher();
+      return;
+    }
+    // Flush the current board's pending persist.
+    flushPersist(currentId);
+
+    // Ensure a slot exists for the target, and retire the synthetic pre-restore
+    // board once we leave it for a real one (it never received content, so it has
+    // no didRestore and no cards — it must not linger as an empty hidden board).
+    setBoards((bs) => {
+      const n = new Map(bs);
+      if (!n.has(targetId)) n.set(targetId, emptyBoardState());
+      const syn = n.get(SYNTHETIC_ID);
+      if (
+        currentId === SYNTHETIC_ID &&
+        targetId !== SYNTHETIC_ID &&
+        syn &&
+        !syn.didRestore &&
+        syn.cards.length === 0
+      ) {
+        n.delete(SYNTHETIC_ID);
+      }
+      return n;
+    });
+
+    // Update active board id + ref synchronously.
+    activeIdRef.current = targetId;
+    setActiveBoardId(targetId);
+
+    // Update the active engine ref.
+    engineRef.current = enginesRef.current.get(targetId) ?? null;
+
+    // If the switch was initiated locally (user pressed ⏎ or ⌘N etc.), tell the
+    // daemon. The daemon will reply with board_list + restore for the target board.
+    if (!fromDaemon) {
+      void boardSwitch(targetId);
+    }
+
+    // The target board's engine keeps its LIVE viewport across display:none (warm
+    // hosting) — do NOT reset it to the frozen restore snapshot (that would discard
+    // pans/zooms made earlier this session). Just sync the chrome readout to the
+    // engine's current viewport. (A never-mounted engine is seeded in onEngineReady.)
+    const eng = enginesRef.current.get(targetId);
+    if (eng) setViewportState(eng.viewport);
+
+    closeSwitcher();
+    setSelectedId(null);
+  };
+
+  // --- ⌘K switcher: build rows -------------------------------------------------
+
+  /** Per-board summaries from local card state + daemon metas. */
+  const buildSummaries = (): BoardSummary[] => {
+    const bs = boardsRef.current;
+    const metas = boardMetasRef.current;
+
+    // If we have metas from board_list, use those as the canonical order.
+    // Otherwise synthesize from local boards.
+    const ids: string[] =
+      metas.length > 0
+        ? metas.map((m) => m.board_id)
+        : Array.from(bs.keys());
+
+    return ids.map((id) => {
+      const meta = metas.find((m) => m.board_id === id);
+      const board = bs.get(id);
+      const visited = board?.didRestore ?? false;
+      const localRunning = board?.cards.filter(
+        (c) => c.kind === "term" && c.live && !c.dead,
+      ).length ?? 0;
+      const localBell = board?.cards.filter(
+        (c) => c.kind === "term" && c.bell,
+      ).length ?? 0;
+      const localIsLive = localRunning > 0;
+      const { running, isLive } = liveness(
+        visited,
+        localRunning,
+        localIsLive,
+        meta?.running ?? null,
+      );
+      return {
+        boardID: id,
+        name: meta?.name ?? null,
+        running,
+        bell: localBell,
+        cards: board?.cards.length ?? 0,
+        isLive,
+      };
+    });
+  };
+
+  // Build the visible rows for the current filter — used both for render and for
+  // key-handler ordinal lookups (must be the same list).
+  const currentSwitcherRows = (): BoardRow[] =>
+    switcherRows(buildSummaries(), activeIdRef.current, switcherFilterRef.current);
+
+  // --- daemon-frame routing helpers --------------------------------------------
+
+  const routeBoardId = (termId: string): string =>
+    termBoardIndexRef.current.board(termId) ?? activeIdRef.current;
+
+  // --- daemon stream -----------------------------------------------------------
 
   const handle = (msg: DaemonMsg) => {
     switch (msg.t) {
       case "restore":
         applyRestore(msg);
         break;
-      case "doc_opened":
-        lastChangedRef.current.set(msg.path, Date.now());
-        landDoc(msg.path, msg.via, msg.term_id ?? undefined, msg.repo_color ?? undefined);
+
+      case "board_list": {
+        setBoardMetas(msg.boards);
+        // If the daemon reports a different active board (e.g. after board_create
+        // auto-activates), adopt it as a daemon-initiated switch FIRST so activeId
+        // is current before the prune below.
+        if (msg.active && msg.active !== activeIdRef.current) {
+          beginSwitchTo(msg.active, /*fromDaemon*/ true);
+        }
+        // Prune local state for boards the daemon no longer has (deleted elsewhere
+        // or via ⌘⌫): drop the BoardState (unmounts its <Board> → engine.destroy),
+        // its term-index entries, and any pending persist timer. Never prune the
+        // synthetic seed or the active board.
+        const ids = new Set(msg.boards.map((m) => m.board_id));
+        setBoards((bs) => {
+          let changed = false;
+          const n = new Map(bs);
+          for (const id of bs.keys()) {
+            if (id === SYNTHETIC_ID || id === activeIdRef.current || ids.has(id)) continue;
+            n.delete(id);
+            termBoardIndexRef.current.removeBoard(id);
+            const t = persistTimers.current.get(id);
+            if (t != null) {
+              clearTimeout(t);
+              persistTimers.current.delete(id);
+            }
+            changed = true;
+          }
+          return changed ? n : bs;
+        });
         break;
+      }
+
+      case "doc_opened": {
+        // A doc with no owner term (user-opened) lands on the ACTIVE board; with an
+        // owner, route to that term's board. Never index-lookup the empty string
+        // (it could resolve to a stale synthetic-board entry).
+        const boardId = msg.term_id ? routeBoardId(msg.term_id) : activeIdRef.current;
+        lastChangedRef.current.set(msg.path, Date.now());
+        landDoc(boardId, msg.path, msg.via, msg.term_id ?? undefined, msg.repo_color ?? undefined);
+        break;
+      }
+
       case "file_event":
         lastChangedRef.current.set(msg.path, Date.now());
         refreshDoc(msg.path);
         break;
-      case "exit":
-        handleExit(msg.term_id, msg.code ?? null);
+
+      case "exit": {
+        const boardId = routeBoardId(msg.term_id);
+        handleExit(boardId, msg.term_id, msg.code ?? null);
         break;
-      case "term_proc":
-        applyTermProc(msg.term_id, msg.name);
+      }
+
+      case "term_proc": {
+        const boardId = routeBoardId(msg.term_id);
+        applyTermProc(boardId, msg.term_id, msg.name);
         break;
-      case "bell":
+      }
+
+      case "bell": {
+        const boardId = routeBoardId(msg.term_id);
         bellTimeRef.current.set(msg.term_id, Date.now());
-        setCards((cs) =>
+        setBoardCards(boardId, (cs) =>
           cs.map((c) => (c.kind === "term" && c.termId === msg.term_id ? { ...c, bell: true } : c)),
         );
         break;
+      }
+
       default:
-        break; // hello_ok / board_list / err / unknown — ignored in this slice
+        break; // hello_ok / err / unknown — ignored
     }
   };
 
-  /** Connection status, raising a toast on a connected→lost transition. */
   const handleStatus = (s: DaemonStatus) => {
     setStatus(s);
     if (prevConnectedRef.current && !s.connected) {
+      // New disconnect → re-arm the restart toast for the next reconnect cycle.
+      daemonRestartToastedRef.current = false;
       pushToast({ icon: "¶", title: "tarmacd connection lost", body: s.reason ?? null, chips: [] });
     }
     prevConnectedRef.current = s.connected;
   };
+
+  // --- global key handler ------------------------------------------------------
 
   useEffect(() => {
     const subs = [onDaemonStatus(handleStatus), onDaemonMsg(handle)];
     void Promise.all(subs).then(frontendReady);
 
     const onKeyDown = (e: KeyboardEvent) => {
-      // ⌘T — new terminal (cascade-spawn).
+      // ⌘K — toggle the board switcher (highest priority).
+      if (e.metaKey && !e.altKey && !e.ctrlKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (switcherOpenRef.current) {
+          closeSwitcher();
+        } else {
+          setSwitcherOpen(true);
+          setSwitcherSelected(
+            Math.max(0, currentSwitcherRows().findIndex((r) => r.isActive)),
+          );
+        }
+        return;
+      }
+
+      // --- switcher-owned key handling -----------------------------------------
+      if (switcherOpenRef.current) {
+        // The switcher owns the keyboard while open. This handler runs in CAPTURE
+        // phase (below), so stopping propagation here keeps the focused terminal's
+        // xterm from also receiving the keystroke (it would otherwise type filter
+        // chars into the prime PTY). Only ⌘Q / ⌘W fall through to the menus.
+        const passThrough = e.metaKey && (e.key.toLowerCase() === "q" || e.key.toLowerCase() === "w");
+        if (!passThrough) e.stopPropagation();
+        const rows = currentSwitcherRows();
+        const sel = switcherSelectedRef.current;
+        const editing = switcherEditingRef.current;
+        const confirming = switcherConfirmingRef.current;
+
+        // Escape: cancel rename → disarm confirm → close.
+        if (e.key === "Escape") {
+          e.preventDefault();
+          if (editing) { setSwitcherEditing(false); setSwitcherEditBuffer(""); return; }
+          if (confirming) { setSwitcherConfirming(false); return; }
+          closeSwitcher();
+          return;
+        }
+
+        // ⌘E — begin inline rename (seed buffer from selected row display name).
+        if (e.metaKey && !e.altKey && !e.ctrlKey && e.key.toLowerCase() === "e") {
+          e.preventDefault();
+          const row = rows[sel];
+          if (row) {
+            setSwitcherEditing(true);
+            setSwitcherEditBuffer(row.display);
+            setSwitcherConfirming(false);
+          }
+          return;
+        }
+
+        // ⌘Backspace — delete (arm confirm / second press executes).
+        if (e.metaKey && e.key === "Backspace") {
+          e.preventDefault();
+          if (editing) return; // don't delete while renaming
+          const row = rows[sel];
+          // canDelete is about TOTAL boards (the daemon refuses the last one), not
+          // the filtered row count — a 1-row filter must not block delete.
+          if (!row || !canDelete(Math.max(boardMetasRef.current.length, boardsRef.current.size))) return;
+          if (confirming) {
+            // Second ⌘⌫ — execute delete.
+            void boardDelete(row.boardID);
+            setSwitcherConfirming(false);
+            closeSwitcher();
+          } else {
+            setSwitcherConfirming(true);
+          }
+          return;
+        }
+
+        // Enter — commit rename OR switch to selected.
+        if (e.key === "Enter" && !e.metaKey) {
+          e.preventDefault();
+          if (editing) {
+            const row = rows[sel];
+            if (row) {
+              const name = sanitizedName(switcherEditBufferRef.current);
+              void boardRename(row.boardID, name);
+            }
+            setSwitcherEditing(false);
+            setSwitcherEditBuffer("");
+          } else {
+            const row = rows[sel];
+            if (row) beginSwitchTo(row.boardID, /*fromDaemon*/ false);
+          }
+          return;
+        }
+
+        // ArrowUp / ArrowDown — move selection (no wrap; clamp). Any non-⌘⌫ key
+        // disarms a pending delete-confirm (Swift parity) so the second ⌘⌫ can't
+        // land on a different row than the one the user confirmed.
+        if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+          e.preventDefault();
+          if (confirming) setSwitcherConfirming(false);
+          const next = sel + (e.key === "ArrowUp" ? -1 : 1);
+          setSwitcherSelected(clampSelection(next, rows.length));
+          return;
+        }
+
+        // Backspace (no meta) — trim editBuffer if editing, else trim filter.
+        if (e.key === "Backspace" && !e.metaKey && !e.altKey && !e.ctrlKey) {
+          e.preventDefault();
+          if (confirming) setSwitcherConfirming(false);
+          if (editing) {
+            setSwitcherEditBuffer((b) => b.slice(0, -1));
+          } else {
+            setSwitcherFilter((f) => {
+              const next = f.slice(0, -1);
+              switcherFilterRef.current = next;
+              const nr = switcherRows(buildSummaries(), activeIdRef.current, next);
+              setSwitcherSelected(clampSelection(switcherSelectedRef.current, nr.length));
+              return next;
+            });
+          }
+          return;
+        }
+
+        // ⌘1–9 — ordinal switch.
+        if (e.metaKey && !e.altKey && !e.ctrlKey && e.key >= "1" && e.key <= "9") {
+          e.preventDefault();
+          const n = parseInt(e.key, 10);
+          const id = boardIdForOrdinal(n, rows);
+          if (id) beginSwitchTo(id, /*fromDaemon*/ false);
+          return;
+        }
+
+        // ⌘N — create a new board (daemon mints + auto-activates via board_list).
+        if (e.metaKey && !e.altKey && !e.ctrlKey && e.key.toLowerCase() === "n") {
+          e.preventDefault();
+          void boardCreate();
+          closeSwitcher();
+          return;
+        }
+
+        // Printable character — append to editBuffer (rename) or filter.
+        if (
+          e.key.length === 1 &&
+          !e.metaKey && !e.ctrlKey && !e.altKey &&
+          isTypable(e.key.codePointAt(0) ?? 0)
+        ) {
+          e.preventDefault();
+          if (confirming) setSwitcherConfirming(false);
+          if (editing) {
+            setSwitcherEditBuffer((b) => b + e.key);
+          } else {
+            setSwitcherFilter((f) => {
+              const next = f + e.key;
+              switcherFilterRef.current = next;
+              const nr = switcherRows(buildSummaries(), activeIdRef.current, next);
+              setSwitcherSelected(clampSelection(0, nr.length));
+              return next;
+            });
+          }
+          return;
+        }
+
+        // Swallow everything else while the switcher is open (except ⌘Q / ⌘W).
+        if (!(e.metaKey && (e.key === "q" || e.key === "Q" || e.key === "w" || e.key === "W"))) {
+          e.preventDefault();
+        }
+        return;
+      }
+
+      // --- board-level shortcuts (switcher closed) ------------------------------
+
+      // ⌘T — new terminal on the active board.
       if (e.metaKey && !e.altKey && !e.ctrlKey && e.key.toLowerCase() === "t") {
         e.preventDefault();
         spawnNewTerminal();
@@ -640,7 +1205,7 @@ export default function App() {
         openPeek();
         return;
       }
-      // ⌘⏎ — pin / unpin the peeked doc (only while peeking).
+      // ⌘⏎ — pin / unpin the peeked doc.
       if (e.metaKey && e.key === "Enter") {
         if (peekVisibleRef.current) {
           e.preventDefault();
@@ -648,16 +1213,13 @@ export default function App() {
         }
         return;
       }
-      // ⏎ — fly to the highest-priority offscreen signal, unless a terminal is
-      // typing (it owns Return) or there is no target.
+      // ⏎ — fly to the highest-priority offscreen signal.
       if (e.key === "Enter" && !e.metaKey && !e.altKey && !e.ctrlKey) {
         const active = document.activeElement as HTMLElement | null;
-        // The terminal owns Return; never hijack it from a focused control/field
-        // either (defense-in-depth — chrome buttons also keep focus off themselves).
         if (active?.closest?.(".term-host, button, input, textarea, [contenteditable]")) return;
         const target = flyTargetRef.current;
         if (target && engineRef.current) {
-          const card = cardsRef.current.find((c) => cardId(c) === target);
+          const card = activeBoard()?.cards.find((c) => cardId(c) === target);
           if (card) {
             preFlightRef.current = engineRef.current.viewport;
             engineRef.current.flyToCard(card.frame);
@@ -666,57 +1228,67 @@ export default function App() {
         }
         return;
       }
-      // ESC ladder: peek → toasts → fly-back → fresh-doc-to-shelf (Swift order).
+      // ESC ladder: peek → toasts → fly-back → fresh-doc-to-shelf. Each consuming
+      // branch stopPropagation()s so the ESC does NOT also reach the focused xterm
+      // (capture phase runs before it) — closing a peek must not interrupt the
+      // agent. Only the final fall-through (no overlay) lets ESC reach the terminal.
       if (e.key === "Escape") {
         if (peekVisibleRef.current) {
           e.preventDefault();
+          e.stopPropagation();
           setPeekVisible(false);
           return;
         }
         if (toastsRef.current.length > 0) {
           e.preventDefault();
+          e.stopPropagation();
           setToastState((s) => clearAllToasts(s));
           return;
         }
         if (preFlightRef.current && engineRef.current) {
           e.preventDefault();
+          e.stopPropagation();
           engineRef.current.flyTo(preFlightRef.current);
           preFlightRef.current = null;
           return;
         }
-        // A fresh (just-landed) doc card dismisses to the shelf; otherwise ESC
-        // passes through to the prime terminal's program (agent-interrupt / vim).
-        const fresh = cardsRef.current.find((c) => c.kind === "doc" && c.fresh) as
-          | DocCardModel
-          | undefined;
+        const b = activeBoard();
+        const fresh = b?.cards.find((c) => c.kind === "doc" && c.fresh) as DocCardModel | undefined;
         if (fresh) {
           e.preventDefault();
+          e.stopPropagation();
           moveToShelf(fresh.path);
         }
       }
     };
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("blur", flushPersist);
-    window.addEventListener("beforeunload", flushPersist);
+
+    // Capture phase: the window handler must run BEFORE the focused xterm so the
+    // switcher (and the board shortcuts) can intercept keys. Closed-switcher paths
+    // never stopPropagation, so ESC/⏎ still reach the terminal exactly as before.
+    const onFlush = () => flushPersist();
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("blur", onFlush);
+    window.addEventListener("beforeunload", onFlush);
 
     return () => {
       subs.forEach((p) => void p.then((off) => off()));
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("blur", flushPersist);
-      window.removeEventListener("beforeunload", flushPersist);
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("blur", onFlush);
+      window.removeEventListener("beforeunload", onFlush);
       if (vpRafRef.current != null) cancelAnimationFrame(vpRafRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // --- card gestures (move + gravity + grab/select-to-front) ---------------
+  // --- card gestures -----------------------------------------------------------
 
   const onCardMoveStart = (id: string) => {
-    const card = cardsRef.current.find((c) => cardId(c) === id);
+    const b = activeBoard();
+    const card = b?.cards.find((c) => cardId(c) === id);
     if (!card) return;
     if (card.kind === "term") {
       const sats = new Map<string, WorldFrame>();
-      for (const c of cardsRef.current) {
+      for (const c of b?.cards ?? []) {
         if (c.kind === "doc" && c.attached && c.ownerTermId === card.termId) {
           sats.set(c.path, { ...c.frame });
         }
@@ -732,7 +1304,7 @@ export default function App() {
     if (g && g.kind === "term" && `term:${g.termId}` === id) {
       const dx = frame.x - g.startFrame.x;
       const dy = frame.y - g.startFrame.y;
-      setCards((cs) =>
+      setActiveCards((cs) =>
         cs.map((c) => {
           if (c.kind === "term" && c.termId === g.termId) return { ...c, frame };
           if (c.kind === "doc" && g.sats.has(c.path)) {
@@ -743,7 +1315,7 @@ export default function App() {
         }),
       );
     } else {
-      setCards((cs) => cs.map((c) => (cardId(c) === id ? ({ ...c, frame } as CardModel) : c)));
+      setActiveCards((cs) => cs.map((c) => (cardId(c) === id ? ({ ...c, frame } as CardModel) : c)));
     }
   };
 
@@ -751,32 +1323,25 @@ export default function App() {
     const g = gestureRef.current;
     gestureRef.current = null;
     if (g && g.kind === "doc" && `doc:${g.path}` === id) {
-      // A manual move severs gravity: the doc no longer follows its owner.
-      setCards((cs) =>
+      setActiveCards((cs) =>
         cs.map((c) =>
           c.kind === "doc" && c.path === g.path ? { ...c, attached: false, fresh: false } : c,
         ),
       );
     }
-    // The [cards] effect persists the committed positions (debounced).
   };
 
-  /** Resize commits a frame-only change (no gravity / satellites). */
   const onCardResize = (id: string, frame: WorldFrame) =>
-    setCards((cs) => cs.map((c) => (cardId(c) === id ? ({ ...c, frame } as CardModel) : c)));
+    setActiveCards((cs) => cs.map((c) => (cardId(c) === id ? ({ ...c, frame } as CardModel) : c)));
 
-  const onCardResizeEnd = (_id: string) => {
-    // The [cards] effect persists the committed size (debounced).
-  };
+  const onCardResizeEnd = (_id: string) => {};
 
   const onCardGrab = (id: string) => {
-    setSelectedId(id); // the grabbed card becomes the active (ring + handles) card
-    setCards((cs) => {
+    setSelectedId(id);
+    setActiveCards((cs) => {
       const target = cs.find((c) => cardId(c) === id);
       if (!target) return cs;
       const top = topZ(cs) + 1;
-      // Only a LIVE terminal takes prime; grabbing a dead placeholder or a doc
-      // just raises it to front (a dead card must never become the typing target).
       const makesPrime = target.kind === "term" && target.live && !target.dead;
       return cs.map((c) => {
         let nc: CardModel = cardId(c) === id ? { ...c, z: top } : c;
@@ -793,13 +1358,22 @@ export default function App() {
     const engine = engineRef.current;
     if (!engine) return;
     const vp = engine.viewport;
-    engine.setViewport({ zoom: vp.zoom, cx: world.x, cy: world.y }); // re-center, keep zoom
+    engine.setViewport({ zoom: vp.zoom, cx: world.x, cy: world.y });
   };
 
-  // --- offscreen hints + minimap (recompute on card/viewport change) -------
+  // --- TermBoardIndex: register new needsSpawn terms on first render -----------
+  // When applyRestore creates cards with needsSpawn:true, onTermSpawn fires later
+  // when the terminal measures itself. We register them in the index then. For
+  // rebind cards (needsSpawn:false) we register in applyRestore directly.
+  // Cold-spawn cards are registered in onTermSpawn (below in the closure we pass
+  // to Board).
+
+  // --- offscreen hints + minimap -----------------------------------------------
 
   const hhmmFor = (c: CardModel): string =>
     c.kind === "term" ? formatClock(bellTimeRef.current.get(c.termId) ?? Date.now()) : formatClock(Date.now());
+
+  const activeCards = activeBoard()?.cards ?? [];
 
   const offscreen = useMemo<{ pills: PlacedPill[]; flyTarget: string | null }>(() => {
     const engine = engineRef.current;
@@ -807,7 +1381,7 @@ export default function App() {
     const wr = engine.viewportWorldRect;
     const size = engine.viewportSize;
     const hints: OffscreenHint[] = [];
-    for (const c of cards) {
+    for (const c of activeCards) {
       const sig = cardSignal(c);
       if (!sig) continue;
       const cx = c.frame.x + c.frame.w / 2;
@@ -829,47 +1403,92 @@ export default function App() {
     });
     return { pills, flyTarget: selectFlyTarget(hints) };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cards, viewport]);
+  }, [activeCards, viewport]);
   flyTargetRef.current = offscreen.flyTarget;
 
   const engine = engineRef.current;
-  const minimapItems: MinimapItem[] = cards.map((c) => ({
+  const minimapItems: MinimapItem[] = activeCards.map((c) => ({
     worldRect: c.frame,
     signal: (cardSignal(c) ?? "none") as MinimapSignal,
   }));
   const viewportWorldRect = engine ? engine.viewportWorldRect : { x: 0, y: 0, w: 0, h: 0 };
 
+  // Active board's shelf + meta (for chrome).
+  const activeShelf = activeBoard()?.shelfPaths ?? [];
+  const activeDocMeta = activeBoard()?.docMeta ?? new Map<string, DocMeta>();
+  const activePeekColor = peekPath ? activeDocMeta.get(peekPath)?.repoColor : undefined;
+
+  // Switcher rows (computed fresh each render; also used in keydown via
+  // currentSwitcherRows() which re-derives from the same buildSummaries).
+  const renderedSwitcherRows: BoardRow[] = switcherOpen
+    ? switcherRows(buildSummaries(), activeBoardId, switcherFilter)
+    : [];
+  const switcherDeleteTarget =
+    switcherConfirming && switcherSelected < renderedSwitcherRows.length
+      ? renderedSwitcherRows[switcherSelected]?.display ?? null
+      : null;
+
+  // The active board's per-board engine ref: App maps over boards and binds
+  // boardId into each callback. We need a stable enginesRef per board for the
+  // per-board <Board> engineRef prop (Board writes to it on mount).
+  // We use a per-board MutableRefObject stored in a ref-of-map.
+  const boardEngineRefsRef = useRef<Map<string, React.MutableRefObject<BoardEngine | null>>>(new Map());
+  const getBoardEngineRef = (boardId: string): React.MutableRefObject<BoardEngine | null> => {
+    if (!boardEngineRefsRef.current.has(boardId)) {
+      boardEngineRefsRef.current.set(boardId, { current: null });
+    }
+    return boardEngineRefsRef.current.get(boardId)!;
+  };
+
+  // The boards to render: every board we have local state for. We iterate the
+  // boards Map (insertion order = visit order).
+  const boardEntries = Array.from(boards.entries());
+
   return (
     <div className="app">
       <div className="board-stack">
-        <Board
-          cards={cards}
-          docContents={docContents}
-          engineRef={engineRef}
-          onViewport={onViewport}
-          onCardMove={onCardMove}
-          onCardMoveStart={onCardMoveStart}
-          onCardMoveEnd={onCardMoveEnd}
-          onCardResize={onCardResize}
-          onCardResizeEnd={onCardResizeEnd}
-          onCardGrab={onCardGrab}
-          onTermSpawn={onTermSpawn}
-          onTermTitle={(termId, title) =>
-            title.trim()
-              ? setCards((cs) =>
-                  cs.map((c) => (c.kind === "term" && c.termId === termId ? { ...c, label: title } : c)),
-                )
-              : undefined
-          }
-          onTermActivity={onTermActivity}
-          onDocClose={moveToShelf}
-          selectedId={selectedId}
-          onBackgroundPointerDown={() => setSelectedId(null)}
-        />
+        {boardEntries.map(([bid, boardState]) => {
+          const hidden = bid !== activeBoardId;
+          const perBoardEngineRef = getBoardEngineRef(bid);
+          return (
+            <Board
+              key={bid}
+              boardId={bid}
+              hidden={hidden}
+              onEngineReady={onEngineReady}
+              cards={boardState.cards}
+              docContents={docContents}
+              engineRef={perBoardEngineRef}
+              onViewport={(vp) => onViewport(bid, vp)}
+              onCardMove={onCardMove}
+              onCardMoveStart={onCardMoveStart}
+              onCardMoveEnd={onCardMoveEnd}
+              onCardResize={onCardResize}
+              onCardResizeEnd={onCardResizeEnd}
+              onCardGrab={onCardGrab}
+              onTermSpawn={(termId, cols, rows) => {
+                // Register term in index on spawn (covers cold-spawn cards).
+                termBoardIndexRef.current.assign(termId, bid);
+                onTermSpawn(bid, termId, cols, rows);
+              }}
+              onTermTitle={(termId, title) =>
+                title.trim()
+                  ? setBoardCards(bid, (cs) =>
+                      cs.map((c) => (c.kind === "term" && c.termId === termId ? { ...c, label: title } : c)),
+                    )
+                  : undefined
+              }
+              onTermActivity={onTermActivity}
+              onDocClose={moveToShelf}
+              selectedId={hidden ? null : selectedId}
+              onBackgroundPointerDown={() => { if (!hidden) setSelectedId(null); }}
+            />
+          );
+        })}
         <TitleBarChip name={boardChipLabel(null, "tarmac")} attached={status.connected} />
         <ShelfOverlay
-          paths={shelfPaths}
-          repoColorFor={(p) => docMetaRef.current.get(p)?.repoColor}
+          paths={activeShelf}
+          repoColorFor={(p) => activeDocMeta.get(p)?.repoColor}
           onRestore={restoreFromShelf}
         />
         <ZoomControl
@@ -884,14 +1503,31 @@ export default function App() {
           visible={peekVisible}
           path={peekPath}
           markdown={peekPath ? docContents.get(peekPath) ?? "" : ""}
-          repoColor={peekPath ? docMetaRef.current.get(peekPath)?.repoColor : undefined}
+          repoColor={activePeekColor}
           lastChangedMs={peekPath ? lastChangedRef.current.get(peekPath) : undefined}
           onPin={togglePinPeeked}
           onClose={() => setPeekVisible(false)}
         />
         <ToastOverlay toasts={toastState.toasts} onChipClick={onToastChip} />
+        {/* ⌘K board switcher — rendered only when open (the veil + panel are portaled
+            inside the board-stack so the z-index ordering is local to it). */}
+        <BoardSwitcher
+          visible={switcherOpen}
+          rows={renderedSwitcherRows}
+          selected={switcherSelected}
+          query={switcherFilter}
+          editing={switcherEditing}
+          editBuffer={switcherEditBuffer}
+          confirmingDelete={switcherConfirming}
+          deleteTarget={switcherDeleteTarget}
+          onDismiss={closeSwitcher}
+          onPickRow={(i) => {
+            const row = renderedSwitcherRows[i];
+            if (row) beginSwitchTo(row.boardID, /*fromDaemon*/ false);
+          }}
+        />
       </div>
-      <StatusBar connected={status.connected} reason={status.reason} cards={cards.length} />
+      <StatusBar connected={status.connected} reason={status.reason} cards={activeCards.length} />
     </div>
   );
 }
