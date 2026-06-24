@@ -76,6 +76,8 @@ export function TerminalCard(props: TerminalCardProps) {
       cursorBlink: true,
       scrollback: 5000,
       allowProposedApi: true,
+      macOptionIsMeta: true,
+      vtExtensions: { kittyKeyboard: true },
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
