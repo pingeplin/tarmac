@@ -12,6 +12,7 @@
 // streaming. Board switch is instant — no re-mount, no scrollback loss.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Board } from "./board/Board";
 import { StatusBar } from "./ui/StatusBar";
 import { ShelfOverlay } from "./ui/ShelfOverlay";
@@ -21,7 +22,6 @@ import { OffscreenHints } from "./ui/OffscreenHints";
 import { PeekOverlay } from "./ui/PeekOverlay";
 import { ToastOverlay } from "./ui/ToastOverlay";
 import { BoardSwitcher } from "./ui/BoardSwitcher";
-import { TitleBarChip } from "./ui/TitleBarChip";
 import { DockPane } from "./ui/DockPane";
 import { CycleHud } from "./ui/CycleHud";
 import { DockContext, type DockContextValue } from "./cards/DockContext";
@@ -60,7 +60,6 @@ import {
   type Toast,
   type ToastState,
 } from "./kit/toasts";
-import { boardChipLabel } from "./kit/chromeText";
 import { docDisplayPath } from "./kit/docStore";
 import { Place, firstFreeSlot, scatterFrame } from "./kit/placement";
 import { buildTiles, parseTiles, type LayoutTile } from "./kit/layoutTiles";
@@ -158,6 +157,13 @@ export default function App() {
   // buildSummaries → must see the LATEST metas, not the first-render []).
   const boardMetasRef = useRef<WireBoardMeta[]>([]);
   boardMetasRef.current = boardMetas;
+
+  // Sync window title to the active board name so Dock/Exposé/window list show it.
+  useEffect(() => {
+    const meta = boardMetas.find((m) => m.board_id === activeBoardId);
+    const name = meta?.name?.trim() || activeBoardId || "tarmac";
+    getCurrentWindow().setTitle(` ▞ ${name} `);
+  }, [activeBoardId, boardMetas]);
 
   // --- per-board engines (populated via onEngineReady callbacks) ---------------
   // The active board's engine drives the chrome (zoom/minimap/hints/fit/fly).
@@ -1729,7 +1735,6 @@ export default function App() {
             />
           );
         })}
-        <TitleBarChip name={boardChipLabel(null, "tarmac")} attached={status.connected} />
         <ShelfOverlay
           paths={activeShelf}
           repoColorFor={(p) => activeDocMeta.get(p)?.repoColor}

@@ -368,11 +368,11 @@ body,
   opacity: 0.7;
 }
 
-/* --- shelf overlay (fixed top-left, over the board) --- */
+/* --- shelf (absolute overlay, top-left of board-stack) --- */
 
 .shelf {
   position: absolute;
-  top: 12px;
+  top: 8px;
   left: 12px;
   z-index: 50;
   display: flex;
@@ -709,44 +709,6 @@ body,
 .tm-toast-key:hover {
   background: var(--bg3);
   color: var(--text);
-}
-
-/* --- titlebar session chip (top-center; TitleBarChip.swift) --- */
-
-.title-chip {
-  position: absolute;
-  top: 8px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 50;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 20px;
-  padding: 0 8px;
-  background: var(--bg2);
-  border: 1px solid var(--line-soft);
-  border-radius: 5px;
-  font-family: var(--chrome-font);
-  user-select: none;
-  pointer-events: none;
-}
-.title-chip .glyph {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--agent);
-}
-.title-chip .label {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--ok);
-}
-.title-chip.detached .glyph,
-.title-chip.detached .label {
-  color: var(--faint);
-}
-.title-chip.dim {
-  opacity: 0.4;
 }
 
 /* --- JetBrainsMono Nerd Font Mono (NFM) — bundled font faces ---
