@@ -10,14 +10,10 @@ import { marked } from "marked";
 import { repoColors } from "../theme";
 import { recencyLabel } from "../kit/chromeText";
 
-const basename = (p: string): string => {
-  const i = p.lastIndexOf("/");
-  return i >= 0 ? p.slice(i + 1) : p;
-};
-
 interface PeekOverlayProps {
   visible: boolean;
   path: string | null;
+  displayPath: string;   // NEW — repo-qualified path, head-truncated by CSS
   markdown: string;
   repoColor?: number;
   lastChangedMs?: number;
@@ -26,11 +22,11 @@ interface PeekOverlayProps {
 }
 
 export function PeekOverlay(props: PeekOverlayProps) {
-  const { visible, path, markdown } = props;
+  const { visible, path, displayPath, markdown } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
   const proseRef = useRef<HTMLDivElement>(null);
   const savedScroll = useRef(0);
-  const [, setTick] = useState(0);
+  const [tick, setTick] = useState(0);
 
   // Re-render markdown on content / path change, preserving scroll (like DocCard).
   useLayoutEffect(() => {
@@ -42,12 +38,17 @@ export function PeekOverlay(props: PeekOverlayProps) {
     scroll.scrollTop = prev;
   }, [markdown, path]);
 
-  // The recency meta self-ticks every 1s while the panel is visible.
+  // The recency meta self-ticks every 1s, but only while the panel is visible AND the
+  // doc is inside the 30s recency window. Self-terminating: each tick re-runs this effect
+  // (via `tick` in deps), which stops scheduling once recencyLabel lapses to null — the
+  // same setTimeout-chain pattern as DocCard / Swift RecentMetaLabel. A fresh file_event
+  // changes lastChangedMs and re-arms the tick.
   useEffect(() => {
     if (!visible) return;
-    const id = window.setInterval(() => setTick((n) => n + 1), 1000);
-    return () => window.clearInterval(id);
-  }, [visible]);
+    if (recencyLabel(props.lastChangedMs, Date.now()) === null) return;
+    const id = window.setTimeout(() => setTick((n) => n + 1), 1000);
+    return () => window.clearTimeout(id);
+  }, [visible, props.lastChangedMs, tick]);
 
   const dotColor = props.repoColor != null ? repoColors[props.repoColor % repoColors.length] : undefined;
   const meta = visible ? recencyLabel(props.lastChangedMs, Date.now()) : null;
@@ -56,7 +57,7 @@ export function PeekOverlay(props: PeekOverlayProps) {
     <div className={`peek${visible ? "" : " hidden"}`} aria-hidden={!visible}>
       <div className="peek-header">
         {dotColor && <span className="repo-dot" style={{ background: dotColor }} />}
-        <span className="peek-path">{path ? basename(path) : ""}</span>
+        <span className="peek-path" title={displayPath}>{displayPath}</span>
         {meta && <span className="peek-meta">{meta}</span>}
         <span className="spacer" />
         {/* preventDefault on mousedown keeps focus on the prime terminal (the peek

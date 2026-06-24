@@ -215,6 +215,25 @@ body,
   color: var(--text);
   background: var(--bg3);
 }
+.owner-chip {
+  flex: 0 0 auto;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9px;
+  color: var(--faint);
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+  padding: 1px 6px;
+  line-height: 1.4;
+}
+.recency-meta {
+  flex: 0 0 auto;
+  font-size: 9.5px;
+  color: var(--agent);
+  white-space: nowrap;
+}
 
 .card-body {
   flex: 1 1 auto;
@@ -563,6 +582,8 @@ body,
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  direction: rtl;       /* clip the HEAD: ellipsis renders at the start, tail kept */
+  text-align: left;
   font-family: var(--chrome-font);
   font-size: 11px;
   color: var(--muted);

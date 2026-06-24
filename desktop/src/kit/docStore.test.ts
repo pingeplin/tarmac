@@ -7,6 +7,7 @@ import {
   displayRepoName,
   repoRelativePath,
   displayPath,
+  docDisplayPath,
   groupKey,
   type RestoreDoc,
 } from "./docStore";
@@ -230,5 +231,23 @@ describe("DocStore", () => {
       doc("/w/api/readme.md", { repo: "api", repoRoot: "/w/api" }),
     ])[0];
     expect(itemLabels(group)).toEqual(["docs/plan.md", "archive/plan.md", "readme.md"]);
+  });
+});
+
+describe("docDisplayPath", () => {
+  it("repo + matching repoRoot prefix → repo/<relative>", () => {
+    expect(docDisplayPath("/a/b/c.md", "myrepo", "/a/b")).toBe("myrepo/c.md");
+  });
+
+  it("repo set, repoRoot undefined → repo/<basename>", () => {
+    expect(docDisplayPath("/a/b/c.md", "myrepo", undefined)).toBe("myrepo/c.md");
+  });
+
+  it("both undefined → <parentdir>/<basename>", () => {
+    expect(docDisplayPath("/a/b/c.md")).toBe("b/c.md");
+  });
+
+  it("repoRoot set but path NOT under it → falls back to basename", () => {
+    expect(docDisplayPath("/x/y/c.md", "myrepo", "/a/b")).toBe("myrepo/c.md");
   });
 });

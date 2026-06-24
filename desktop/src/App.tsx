@@ -61,6 +61,7 @@ import {
   type ToastState,
 } from "./kit/toasts";
 import { boardChipLabel } from "./kit/chromeText";
+import { docDisplayPath } from "./kit/docStore";
 import { Place, firstFreeSlot, scatterFrame } from "./kit/placement";
 import { buildTiles, parseTiles, type LayoutTile } from "./kit/layoutTiles";
 import type { Size } from "./kit/geom";
@@ -445,6 +446,19 @@ export default function App() {
     }
   };
 
+  /** Record a REAL file-change time (mtime) on every board that knows this doc, so the
+   *  on-card + peek "✎ Ns" recency meta reflects the actual edit. Path-only, like file_event. */
+  const stampDocChange = (path: string, mtimeMs: number) => {
+    for (const [bid, b] of boardsRef.current) {
+      if (!b.docMeta.has(path)) continue;
+      setBoardState(bid, (bs) => {
+        const prev = bs.docMeta.get(path);
+        if (!prev) return bs;
+        return { ...bs, docMeta: new Map(bs.docMeta).set(path, { ...prev, lastChangedMs: mtimeMs }) };
+      });
+    }
+  };
+
   // --- doc landing (gravity placement) + shelf ---------------------------------
 
   const landDoc = (
@@ -453,6 +467,9 @@ export default function App() {
     via: string,
     ownerTermId?: string,
     repoColor?: number,
+    repo?: string,
+    repoRoot?: string,
+    lastChangedMs?: number,
   ) => {
     // Update per-board docMeta.
     setBoardState(boardId, (b) => {
@@ -460,6 +477,9 @@ export default function App() {
       const newMeta: DocMeta = {
         repoColor: repoColor ?? prev?.repoColor,
         ownerTermId: ownerTermId ?? prev?.ownerTermId,
+        repo: repo ?? prev?.repo,
+        repoRoot: repoRoot ?? prev?.repoRoot,
+        lastChangedMs: lastChangedMs ?? prev?.lastChangedMs,
       };
       const newDocMeta = new Map(b.docMeta).set(path, newMeta);
       const newDockOrder = b.dockOrder.includes(path)
@@ -555,18 +575,22 @@ export default function App() {
 
   const peekTarget = (): string | null => {
     const b = activeBoard();
+    const meta = b?.docMeta;
     let best: string | null = null;
     let bestT = -Infinity;
+    // Active-board scoped (Swift peeks the active board's store): only consider docs THIS
+    // board knows, so the peeked path always resolves in its docMeta and ⌘⏎ never
+    // fabricates a card from a cross-board path the active board has no meta for.
     for (const [p, t] of lastChangedRef.current) {
-      if (t > bestT) { bestT = t; best = p; }
+      if (meta?.has(p) && t > bestT) { bestT = t; best = p; }
     }
     if (best) return best;
     const order = b?.dockOrder ?? [];
     return order.length ? order[order.length - 1]! : null;
   };
 
-  const openPeek = () => {
-    const target = peekTarget();
+  const openPeek = (explicitPath?: string) => {
+    const target = explicitPath ?? peekTarget();
     if (!target) return;
     void fetchDoc(target);
     setPeekPath(target);
@@ -581,7 +605,9 @@ export default function App() {
     if (!p) return;
     const b = activeBoard();
     if (b?.cards.some((c) => c.kind === "doc" && c.path === p)) moveToShelf(p);
-    else restoreFromShelf(p);
+    else if (b?.docMeta.has(p)) restoreFromShelf(p);
+    // else: the peeked doc belongs to another board (a peek left open across a board
+    // switch) — just dismiss; never fabricate a phantom meta-less card on this board.
     setPeekVisible(false);
   };
 
@@ -833,6 +859,9 @@ export default function App() {
       newDocMeta.set(d.path, {
         repoColor: d.repo_color ?? undefined,
         ownerTermId: d.term_id ?? undefined,
+        repo: d.repo ?? undefined,
+        repoRoot: d.repo_root ?? undefined,
+        lastChangedMs: d.last_changed_ms ?? undefined,
       });
     }
 
@@ -1120,13 +1149,21 @@ export default function App() {
         // owner, route to that term's board. Never index-lookup the empty string
         // (it could resolve to a stale synthetic-board entry).
         const boardId = msg.term_id ? routeBoardId(msg.term_id) : activeIdRef.current;
-        lastChangedRef.current.set(msg.path, Date.now());
-        landDoc(boardId, msg.path, msg.via, msg.term_id ?? undefined, msg.repo_color ?? undefined);
+        lastChangedRef.current.set(msg.path, Date.now()); // (unchanged — feeds peekTarget order)
+        landDoc(
+          boardId, msg.path, msg.via,
+          msg.term_id ?? undefined,
+          msg.repo_color ?? undefined,
+          msg.repo ?? undefined,
+          msg.repo_root ?? undefined,
+          msg.last_changed_ms ?? undefined,
+        );
         break;
       }
 
       case "file_event":
-        lastChangedRef.current.set(msg.path, Date.now());
+        lastChangedRef.current.set(msg.path, Date.now()); // (unchanged — peekTarget order)
+        stampDocChange(msg.path, msg.mtime_ms);           // NEW — real edit time for recency
         refreshDoc(msg.path);
         break;
 
@@ -1580,7 +1617,23 @@ export default function App() {
   // Active board's shelf + meta (for chrome).
   const activeShelf = activeBoard()?.shelfPaths ?? [];
   const activeDocMeta = activeBoard()?.docMeta ?? new Map<string, DocMeta>();
-  const activePeekColor = peekPath ? activeDocMeta.get(peekPath)?.repoColor : undefined;
+  // Peek chrome resolves from the board that OWNS the doc (active first, then any board)
+  // so an open peek keeps its header (repo-path / dot / recency) stable across a board
+  // switch instead of blanking against the new active board's docMeta.
+  const docMetaFor = (path: string): DocMeta | undefined => {
+    const active = activeDocMeta.get(path);
+    if (active) return active;
+    for (const bs of boards.values()) {
+      const m = bs.docMeta.get(path);
+      if (m) return m;
+    }
+    return undefined;
+  };
+  const peekMeta = peekPath ? docMetaFor(peekPath) : undefined;
+  const activePeekColor = peekMeta?.repoColor;
+  const peekDisplayPath = peekPath
+    ? docDisplayPath(peekPath, peekMeta?.repo, peekMeta?.repoRoot)
+    : "";
 
   // --- dock pane derived state (Wave 2) ----------------------------------------
   const activeDockedTermId = activeBoard()?.dockedTermId ?? null;
@@ -1646,6 +1699,7 @@ export default function App() {
               onEngineReady={onEngineReady}
               cards={boardState.cards}
               docContents={docContents}
+              docMeta={boardState.docMeta}
               engineRef={perBoardEngineRef}
               onViewport={(vp) => onViewport(bid, vp)}
               onCardMove={onCardMove}
@@ -1677,6 +1731,7 @@ export default function App() {
         <ShelfOverlay
           paths={activeShelf}
           repoColorFor={(p) => activeDocMeta.get(p)?.repoColor}
+          onPeek={(p) => openPeek(p)}
           onRestore={restoreFromShelf}
         />
         <ZoomControl
@@ -1690,9 +1745,10 @@ export default function App() {
         <PeekOverlay
           visible={peekVisible}
           path={peekPath}
+          displayPath={peekDisplayPath}
           markdown={peekPath ? docContents.get(peekPath) ?? "" : ""}
           repoColor={activePeekColor}
-          lastChangedMs={peekPath ? lastChangedRef.current.get(peekPath) : undefined}
+          lastChangedMs={peekMeta?.lastChangedMs}
           onPin={togglePinPeeked}
           onClose={() => setPeekVisible(false)}
         />

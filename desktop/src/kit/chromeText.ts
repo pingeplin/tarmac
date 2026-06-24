@@ -20,13 +20,14 @@ export function boardChipLabel(name: string | null | undefined, boardId: string)
 /** The 30s recency window (matches DocStore.RECENT_WINDOW_MS / isRecent). */
 export const RECENT_WINDOW_MS = 30_000;
 
-/** Peek-header recency meta `✎ Ns`, or null when the doc has no change time or the
- * last change is at/older than the 30s window (gate matches DocStore.isRecent).
- * Seconds = round((now - last)/1000), floored at 1. */
+/** On-card / peek recency meta `✎ Ns`, or null when the doc has no change time or the
+ * last change is at/older than the 30s window. The gate mirrors DocStore.isRecent
+ * exactly — a future-dated change time (mtime/clock skew) counts as recent, matching
+ * Swift's RecentMetaLabel, which clamps elapsed to 0 and still renders `✎ 1s`.
+ * Seconds = round(max(0, now - last)/1000), floored at 1. */
 export function recencyLabel(lastChangedMs: number | undefined, nowMs: number): string | null {
   if (lastChangedMs === undefined) return null;
-  const age = nowMs - lastChangedMs;
-  if (age < 0 || age >= RECENT_WINDOW_MS) return null;
-  const secs = Math.max(1, Math.round(age / 1000));
+  if (!(nowMs < lastChangedMs || nowMs - lastChangedMs < RECENT_WINDOW_MS)) return null;
+  const secs = Math.max(1, Math.round(Math.max(0, nowMs - lastChangedMs) / 1000));
   return `✎ ${secs}s`;
 }

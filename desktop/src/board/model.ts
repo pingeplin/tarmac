@@ -11,6 +11,12 @@ import type { Viewport } from "./BoardEngine";
 export interface DocMeta {
   repoColor?: number;
   ownerTermId?: string;
+  /** Repo identity for the peek's repo-qualified displayPath (head-truncated). */
+  repo?: string;
+  repoRoot?: string;
+  /** REAL last file-change time (wire last_changed_ms / file_event mtime_ms), NOT
+   *  doc-open time — drives the on-card + peek "✎ Ns" recency meta. undefined ⇒ no meta. */
+  lastChangedMs?: number;
 }
 
 /** The mutable whiteboard state owned by one board. Backed by the warm-board

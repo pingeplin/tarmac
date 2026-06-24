@@ -3,10 +3,11 @@
 // about:blank suspend/restore hack. The scroll area is plain (no tabindex), so a
 // click here never pulls keyboard focus off the prime terminal.
 
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { marked } from "marked";
 import { CardShell } from "./CardShell";
 import { repoColors } from "../theme";
+import { recencyLabel } from "../kit/chromeText";
 import type { DocCardModel, WorldFrame } from "../board/model";
 
 const basename = (p: string): string => {
@@ -17,6 +18,8 @@ const basename = (p: string): string => {
 interface DocCardProps {
   model: DocCardModel;
   markdown: string;
+  ownerName?: string | null;     // NEW — owner-chip label (without "← "), or null/undefined => hidden
+  lastChangedMs?: number;        // NEW — real edit time for "✎ Ns"
   selected?: boolean;
   detached?: boolean;
   getZoom: () => number;
@@ -47,6 +50,19 @@ export function DocCard(props: DocCardProps) {
     scroll.scrollTop = prev;
   }, [markdown]);
 
+  // 1Hz tick, only while inside the 30s window. When recencyLabel goes null we early-
+  // return (schedule nothing) so a stale doc stops re-rendering; a fresh file_event
+  // changes lastChangedMs, re-running this effect and restarting the tick.
+  const [recencyTick, setRecencyTick] = useState(0);
+  useEffect(() => {
+    if (props.lastChangedMs === undefined) return;
+    if (recencyLabel(props.lastChangedMs, Date.now()) === null) return;
+    const id = window.setTimeout(() => setRecencyTick((n) => n + 1), 1000);
+    return () => window.clearTimeout(id);
+  }, [props.lastChangedMs, recencyTick]);
+  const recency =
+    props.lastChangedMs !== undefined ? recencyLabel(props.lastChangedMs, Date.now()) : null;
+
   const dotColor = model.repoColor != null ? repoColors[model.repoColor % repoColors.length] : undefined;
 
   return (
@@ -72,7 +88,9 @@ export function DocCard(props: DocCardProps) {
           {dotColor && <span className="repo-dot" style={{ background: dotColor }} />}
           <span className="label">{basename(model.path)}</span>
           <span className="spacer" />
+          {props.ownerName && <span className="owner-chip">{"← "}{props.ownerName}</span>}
           {model.fresh && <span style={{ color: "var(--agent)" }}>✚ now</span>}
+          {recency && <span className="recency-meta">{recency}</span>}
           <span className="close" onClick={props.onClose} title="Close">
             ✕
           </span>

@@ -37,4 +37,7 @@ describe("recencyLabel", () => {
   it("is null at / after the 30s boundary", () => {
     expect(recencyLabel(1000, 1000 + RECENT_WINDOW_MS)).toBeNull();
   });
+  it("treats a future change time as recent (clamps to ✎ 1s, matches isRecent / Swift)", () => {
+    expect(recencyLabel(2000, 1000)).toBe("✎ 1s");
+  });
 });

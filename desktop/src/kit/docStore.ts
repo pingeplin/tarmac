@@ -83,8 +83,20 @@ export function repoRelativePath(doc: RestoreDoc): string {
   return fileName(doc);
 }
 
+/// displayPath computed from raw fields (repo-qualified path: repo-name + "/" +
+/// repo-relative path), so callers that only have {path, repo, repoRoot} (the peek
+/// overlay) don't need a full RestoreDoc. `displayPath(doc)` delegates here.
+export function docDisplayPath(path: string, repo?: string, repoRoot?: string): string {
+  const repoName = repo ?? basename(dirname(path));
+  const rel =
+    repoRoot !== undefined && path.startsWith(repoRoot + "/")
+      ? path.slice(repoRoot.length + 1)
+      : basename(path);
+  return repoName + "/" + rel;
+}
+
 export function displayPath(doc: RestoreDoc): string {
-  return displayRepoName(doc) + "/" + repoRelativePath(doc);
+  return docDisplayPath(doc.path, doc.repo, doc.repoRoot);
 }
 
 /// Grouping identity (crib §1.1): repo_root when present, else the parent

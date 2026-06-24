@@ -15,7 +15,8 @@ import { BoardEngine, type Cullable, type Viewport } from "./BoardEngine";
 import { EdgeLayer } from "./EdgeLayer";
 import { TerminalCard } from "../cards/TerminalCard";
 import { DocCard } from "../cards/DocCard";
-import { cardId, type CardModel, type WorldFrame } from "./model";
+import { ownerChipName } from "../kit/ownerChip";
+import { cardId, type CardModel, type WorldFrame, type DocMeta } from "./model";
 
 interface BoardProps {
   /** Stable board id — used by App to key engines in enginesRef. */
@@ -37,6 +38,7 @@ interface BoardProps {
   onTermTitle: (termId: string, title: string) => void;
   onTermActivity: (termId: string) => void;
   onDocClose: (path: string) => void;
+  docMeta: Map<string, DocMeta>;
   /** The active card (shows the focus ring + resize handles), or null. */
   selectedId: string | null;
   /** A press on empty board space clears the selection. */
@@ -91,6 +93,15 @@ export function Board(props: BoardProps) {
   // A non-prime terminal dims (quiet) while another terminal holds prime.
   const anyTermPrime = cards.some((c) => c.kind === "term" && c.prime);
 
+  // Owner-chip needs the owner terminal's CURRENT label; it lives on the sibling term
+  // card. Gate on a LIVE owner (Swift resolveOwner filters to live term ids) so a doc
+  // whose owner terminal has EXITED — a held-open dead card lingers with its label —
+  // drops the chip instead of showing a stale owner.
+  const termLabel = (termId: string): string | undefined =>
+    (cards.find((c) => c.kind === "term" && c.termId === termId && c.live && !c.dead) as
+      | { label: string }
+      | undefined)?.label;
+
   return (
     <div
       className="board"
@@ -140,6 +151,8 @@ export function Board(props: BoardProps) {
               key={id}
               model={c}
               markdown={props.docContents.get(c.path) ?? ""}
+              ownerName={ownerChipName(c.attached, c.ownerTermId, termLabel)}
+              lastChangedMs={props.docMeta.get(c.path)?.lastChangedMs}
               selected={selected}
               detached={c.ownerTermId != null && !c.attached}
               getZoom={getZoom}
