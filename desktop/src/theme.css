@@ -32,14 +32,12 @@
   --minimap-bg: rgba(36, 40, 44, 0.92); /* bg0 @ 0.92 */
   --hint-border-bell: rgba(253, 188, 75, 0.5); /* amber @ 0.5 */
   --hint-border-live: rgba(26, 188, 156, 0.4); /* agent @ 0.4 */
-  --peek-meta: rgba(26, 188, 156, 0.85); /* agent @ 0.85 */
 
   /* Drop shadows (mirror theme.ts shadows; ported from CardView/overlay NSShadow). */
   --shadow-card-rest: 0 16px 38px rgba(0, 0, 0, 0.5);
   --shadow-card-prime: 0 22px 50px rgba(0, 0, 0, 0.6);
   --shadow-card-lift: 0 18px 44px rgba(0, 0, 0, 0.6);
   --shadow-hint: 0 8px 22px rgba(0, 0, 0, 0.5);
-  --shadow-peek: -26px 0 30px rgba(0, 0, 0, 0.55);
   --shadow-toast: 0 10px 14px rgba(0, 0, 0, 0.5);
 
   --chrome-font: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
@@ -191,8 +189,8 @@ body,
 .card-header .spacer {
   flex: 1 1 auto;
 }
-/* Shared repo dot — used in the card header, the shelf chips, and the peek header
-   (NOT scoped to .card-header, or the shelf/peek dots collapse to 0×0). */
+/* Shared repo dot — used in the card header.
+   (NOT scoped to .card-header, so it can be reused in overlays without collapsing to 0×0). */
 .repo-dot {
   width: 7px;
   height: 7px;
@@ -365,51 +363,6 @@ body,
   opacity: 0.7;
 }
 
-/* --- shelf (absolute overlay, top-left of board-stack) --- */
-
-.shelf {
-  position: absolute;
-  top: 8px;
-  left: 12px;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 9px;
-  background: var(--bg2);
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-  user-select: none;
-}
-.shelf-label {
-  color: var(--faint);
-  font-size: 9.5px;
-  letter-spacing: 0.12em;
-}
-.shelf-chip {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 8px;
-  background: var(--bg1);
-  border: 1px solid var(--line-soft);
-  border-radius: 6px;
-  color: var(--muted);
-  font-size: 11px;
-  cursor: grab;
-}
-.shelf-chip:hover {
-  color: var(--text);
-  border-color: var(--lift-border);
-}
-.shelf-chip-name {
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* --- status bar --- */
 
 .status-bar {
@@ -543,81 +496,6 @@ body,
   color: var(--faint);
 }
 
-/* --- peek slide-over (right edge; PeekPanel.swift) --- */
-
-.peek {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 47%;
-  z-index: 60;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg1);
-  border-left: 1px solid var(--line);
-  box-shadow: var(--shadow-peek);
-  transform: translateX(0);
-  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.peek.hidden {
-  transform: translateX(102%);
-  pointer-events: none;
-}
-.peek-header {
-  flex: 0 0 36px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  background: var(--bg2);
-  border-bottom: 1px solid var(--line-soft);
-}
-.peek-path {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  direction: rtl;       /* clip the HEAD: ellipsis renders at the start, tail kept */
-  text-align: left;
-  font-family: var(--chrome-font);
-  font-size: 11px;
-  color: var(--muted);
-}
-.peek-meta {
-  flex: 0 0 auto;
-  font-family: var(--chrome-font);
-  font-size: 11px;
-  color: var(--peek-meta);
-}
-.peek-header .spacer {
-  flex: 1 1 auto;
-}
-.peek-body {
-  flex: 1 1 auto;
-  position: relative;
-  overflow: hidden;
-}
-.kbd-chip {
-  appearance: none;
-  flex: 0 0 auto;
-  font-family: var(--chrome-font);
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--muted);
-  background: var(--bg2);
-  border: 1px solid var(--line);
-  border-bottom-width: 2px;
-  border-radius: 4px;
-  padding: 1px 5px;
-  cursor: pointer;
-}
-.kbd-chip:hover {
-  background: var(--bg3);
-  color: var(--text);
-}
-
 /* --- toast stack (bottom-right, click-through except chips; Toasts.swift) --- */
 
 .toast-stack {
@@ -730,9 +608,6 @@ body,
 
 /* Honor the OS reduce-motion setting for the transient chrome animations. */
 @media (prefers-reduced-motion: reduce) {
-  .peek {
-    transition: none;
-  }
   .tm-toast {
     animation: none;
   }
@@ -748,7 +623,7 @@ body,
   background: rgba(0, 0, 0, 0.45);
 }
 
-/* Centered card panel. Same shadow/radius aesthetic as PeekOverlay. */
+/* Centered card panel. */
 .switcher-panel {
   position: absolute;
   top: 50%;
@@ -762,7 +637,7 @@ body,
   background: var(--bg2);
   border: 1px solid var(--line);
   border-radius: 12px;
-  box-shadow: var(--shadow-peek);
+  box-shadow: var(--shadow-card-rest);
   overflow: hidden;
   font-family: var(--chrome-font);
   font-size: 11px;

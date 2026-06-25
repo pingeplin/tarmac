@@ -30,7 +30,6 @@ export const palette = {
   minimapCardBell: "rgba(253,188,75,0.85)", // amber @ 0.85
   hintBorderBell: "rgba(253,188,75,0.5)", // amber @ 0.5
   hintBorderLive: "rgba(26,188,156,0.4)", // agent @ 0.4
-  peekMeta: "rgba(26,188,156,0.85)", // agent @ 0.85
   lineMuted: "rgba(71,78,85,0.6)", // line @ 0.6 (muted/dead/detached border role)
 } as const;
 
@@ -42,7 +41,6 @@ export const shadows = {
   cardPrime: "0 22px 50px rgba(0,0,0,0.6)",
   cardLift: "0 18px 44px rgba(0,0,0,0.6)",
   hint: "0 8px 22px rgba(0,0,0,0.5)",
-  peek: "-26px 0 30px rgba(0,0,0,0.55)",
   toast: "0 10px 14px rgba(0,0,0,0.5)",
 } as const;
 

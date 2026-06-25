@@ -6,16 +6,16 @@
 
 import type { Viewport } from "./BoardEngine";
 
-/** Per-doc metadata kept off the card (so a shelved doc keeps its color/owner).
+/** Per-doc metadata kept off the card.
  * Moved here from App so the per-board BoardState can own it. */
 export interface DocMeta {
   repoColor?: number;
   ownerTermId?: string;
-  /** Repo identity for the peek's repo-qualified displayPath (head-truncated). */
+  /** Repo identity for the repo-qualified displayPath (head-truncated). */
   repo?: string;
   repoRoot?: string;
   /** REAL last file-change time (wire last_changed_ms / file_event mtime_ms), NOT
-   *  doc-open time — drives the on-card + peek "✎ Ns" recency meta. undefined ⇒ no meta. */
+   *  doc-open time — drives the on-card "✎ Ns" recency meta. undefined ⇒ no meta. */
   lastChangedMs?: number;
 }
 
@@ -24,8 +24,7 @@ export interface DocMeta {
  * when backgrounded so their xterm terminals keep streaming output. */
 export interface BoardState {
   cards: CardModel[];
-  shelfPaths: string[];
-  /** doc-open order — peek-target fallback (most-recently-opened last). */
+  /** doc-open order (most-recently-opened last). */
   dockOrder: string[];
   /** Per-doc metadata (color + provenance) for all docs this board has ever seen. */
   docMeta: Map<string, DocMeta>;
@@ -44,7 +43,6 @@ export interface BoardState {
 export function emptyBoardState(): BoardState {
   return {
     cards: [],
-    shelfPaths: [],
     dockOrder: [],
     docMeta: new Map(),
     viewport: { zoom: 1, cx: 0, cy: 0 },

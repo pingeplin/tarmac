@@ -1,14 +1,14 @@
 // The board ↔ layout-tile codec (ported from AppController.boardTile +
 // applyRestoredLayout): turns the live card set into the wire `tiles[]` the
 // `layout` message persists, and parses a restored `tiles[]` back into the term /
-// doc / shelf placements the board rebuilds from. Kept pure (no React, no DOM, no
+// doc placements the board rebuilds from. Kept pure (no React, no DOM, no
 // IPC types) so it is unit-tested and the round-trip is verifiable in isolation.
 //
 // Wire shape (tarmac_protocol::Tile) — every key snake_case, `z` an integer:
 //   { kind: "term"|"doc", path?, x?, y?, w?, h?, z?, loose?, shelf?, term_id? }
 // A term tile carries term_id + geometry; a board doc tile carries path +
-// geometry + loose(=!attached); a shelf doc tile carries path + shelf:true +
-// loose:true and NO geometry. Tiles with all-nil geometry are M1 (grid-scatter).
+// geometry + loose(=!attached). Tiles with all-nil geometry are M1 (grid-scatter).
+// Incoming shelf:true tiles (from a Swift-era save) are silently dropped.
 
 import type { Rect } from "./geom";
 
@@ -22,6 +22,7 @@ export interface LayoutTile {
   h?: number;
   z?: number;
   loose?: boolean;
+  /** Legacy field from Swift app — incoming shelf tiles are dropped; never emitted. */
   shelf?: boolean;
   term_id?: string;
 }
@@ -52,8 +53,7 @@ export interface ParsedTermTile {
   z: number;
 }
 
-/** A board doc placement parsed from a restored tile (shelf docs are split out
- * into `shelfPaths`). `frame` undefined ⇒ M1 scatter. */
+/** A board doc placement parsed from a restored tile. `frame` undefined ⇒ M1 scatter. */
 export interface ParsedDocTile {
   path: string;
   frame?: Rect;
@@ -64,7 +64,6 @@ export interface ParsedDocTile {
 export interface ParsedTiles {
   termTiles: ParsedTermTile[];
   docTiles: ParsedDocTile[];
-  shelfPaths: string[];
 }
 
 /** Stacking order is a small index, but clamp to a safe integer range before it
@@ -78,13 +77,12 @@ function intZ(z: number): number {
 /**
  * Build the persisted `tiles[]` from the live board: surviving terminal tiles
  * first (dead excluded), then board doc tiles sorted by path (deterministic
- * order, matching Swift), then shelf doc tiles (no geometry). `z` is rounded to
- * an integer so it deserializes into the wire's `i64`.
+ * order, matching Swift). `z` is rounded to an integer so it deserializes into
+ * the wire's `i64`.
  */
 export function buildTiles(
   terms: TermTileInput[],
   docs: DocTileInput[],
-  shelfPaths: string[],
 ): LayoutTile[] {
   const tiles: LayoutTile[] = [];
 
@@ -115,10 +113,6 @@ export function buildTiles(
     });
   }
 
-  for (const path of shelfPaths) {
-    tiles.push({ kind: "doc", path, shelf: true, loose: true });
-  }
-
   return tiles;
 }
 
@@ -134,34 +128,29 @@ function frameOf(t: LayoutTile): Rect | undefined {
 }
 
 /**
- * Parse a restored `tiles[]` into term / board-doc / shelf placements. Unknown
- * `kind`s are skipped (receiver rule). A doc tile with `shelf:true` goes to
- * `shelfPaths` (chip, never a card); otherwise it's a board doc with
- * `attached = !loose`. `z` defaults to 0.
+ * Parse a restored `tiles[]` into term / board-doc placements. Unknown `kind`s
+ * are skipped (receiver rule). Doc tiles with `shelf:true` (Swift-era saves) are
+ * dropped. A board doc tile has `attached = !loose`. `z` defaults to 0.
  */
 export function parseTiles(tiles: LayoutTile[]): ParsedTiles {
   const termTiles: ParsedTermTile[] = [];
   const docTiles: ParsedDocTile[] = [];
-  const shelfPaths: string[] = [];
 
   for (const t of tiles) {
     if (t.kind === "term") {
       termTiles.push({ termId: t.term_id ?? null, frame: frameOf(t), z: t.z ?? 0 });
     } else if (t.kind === "doc") {
       if (t.path === undefined) continue; // a doc tile without a path is unplaceable
-      if (t.shelf === true) {
-        shelfPaths.push(t.path);
-      } else {
-        docTiles.push({
-          path: t.path,
-          frame: frameOf(t),
-          z: t.z ?? 0,
-          attached: t.loose !== true,
-        });
-      }
+      if (t.shelf === true) continue;     // legacy Swift shelf tile — drop silently
+      docTiles.push({
+        path: t.path,
+        frame: frameOf(t),
+        z: t.z ?? 0,
+        attached: t.loose !== true,
+      });
     }
     // unknown kinds: skipped
   }
 
-  return { termTiles, docTiles, shelfPaths };
+  return { termTiles, docTiles };
 }

@@ -1,10 +1,10 @@
 // The cockpit orchestrator: subscribes to the daemon stream, owns per-board state
 // (P5 multi-board), runs the multi-terminal lifecycle (boot/⌘T/exit/prime), lands
-// `tarmac open` docs with gravity placement + a provenance edge, parks docs on a
-// shelf, and round-trips the layout (tiles + viewport) to the daemon. Phase 4 adds
-// the wayfinding + feedback chrome: zoom control, minimap, offscreen-signal hints
-// (+ ⏎ fly / Esc fly-back), the ⌘P peek slide-over, transient toasts, the session
-// chip, and full card-chrome states (selection ring, resize handles, quiet/detached).
+// `tarmac open` docs with gravity placement + a provenance edge, and round-trips
+// the layout (tiles + viewport) to the daemon. Phase 4 adds the wayfinding +
+// feedback chrome: zoom control, minimap, offscreen-signal hints (+ ⏎ fly / Esc
+// fly-back), transient toasts, the session chip, and full card-chrome states
+// (selection ring, resize handles, quiet/detached).
 // Phase 5 adds the multi-board model + ⌘K switcher.
 //
 // WARM-BOARD MODEL: App renders ONE <Board> per board simultaneously; inactive
@@ -15,11 +15,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Board } from "./board/Board";
 import { StatusBar } from "./ui/StatusBar";
-import { ShelfOverlay } from "./ui/ShelfOverlay";
 import { ZoomControl } from "./ui/ZoomControl";
 import { MinimapOverlay, type MinimapItem, type MinimapSignal } from "./ui/MinimapOverlay";
 import { OffscreenHints } from "./ui/OffscreenHints";
-import { PeekOverlay } from "./ui/PeekOverlay";
 import { ToastOverlay } from "./ui/ToastOverlay";
 import { BoardSwitcher } from "./ui/BoardSwitcher";
 import { DockPane } from "./ui/DockPane";
@@ -60,7 +58,6 @@ import {
   type Toast,
   type ToastState,
 } from "./kit/toasts";
-import { docDisplayPath } from "./kit/docStore";
 import { Place, firstFreeSlot, scatterFrame } from "./kit/placement";
 import { buildTiles, parseTiles, type LayoutTile } from "./kit/layoutTiles";
 import type { Size } from "./kit/geom";
@@ -181,8 +178,6 @@ export default function App() {
   const [viewport, setViewportState] = useState<Viewport>({ zoom: 1, cx: 0, cy: 0 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [toastState, setToastState] = useState<ToastState>(emptyToasts);
-  const [peekVisible, setPeekVisible] = useState(false);
-  const [peekPath, setPeekPath] = useState<string | null>(null);
   const [docContents, setDocContents] = useState<Map<string, string>>(new Map());
 
   // --- ⌘K switcher state (owned here; BoardSwitcher is a pure render component) -
@@ -215,12 +210,7 @@ export default function App() {
   // --- misc refs ---------------------------------------------------------------
   const gestureRef = useRef<Gesture | null>(null);
   const persistTimers = useRef<Map<string, number>>(new Map());
-  const lastChangedRef = useRef<Map<string, number>>(new Map());
   const bellTimeRef = useRef<Map<string, number>>(new Map());
-  const peekVisibleRef = useRef(false);
-  peekVisibleRef.current = peekVisible;
-  const peekPathRef = useRef<string | null>(null);
-  peekPathRef.current = peekPath;
   const toastsRef = useRef<Toast[]>([]);
   toastsRef.current = toastState.toasts;
   const flyTargetRef = useRef<string | null>(null);
@@ -362,7 +352,7 @@ export default function App() {
       if (c.kind === "term") terms.push({ termId: c.termId, frame: c.frame, z: c.z, dead: c.dead });
       else docs.push({ path: c.path, frame: c.frame, z: c.z, attached: c.attached });
     }
-    const tiles = buildTiles(terms, docs, b.shelfPaths);
+    const tiles = buildTiles(terms, docs);
     const eng = enginesRef.current.get(boardId);
     const vp = eng?.viewport ?? b.viewport;
     void persistLayout(b.dockOrder, tiles, { zoom: vp.zoom, cx: vp.cx, cy: vp.cy }, boardId || null);
@@ -395,9 +385,9 @@ export default function App() {
     }
   };
 
-  // Persist whenever ANY board's card set or shelf changes (debounced). Each
-  // mutation site calls schedulePersist(boardId) explicitly for targeted boards.
-  // This effect catches the active board's React-batched mutations.
+  // Persist whenever ANY board's card set changes (debounced). Each mutation site
+  // calls schedulePersist(boardId) explicitly for targeted boards. This effect
+  // catches the active board's React-batched mutations.
   useEffect(() => {
     schedulePersist(activeIdRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -454,7 +444,7 @@ export default function App() {
   };
 
   /** Record a REAL file-change time (mtime) on every board that knows this doc, so the
-   *  on-card + peek "✎ Ns" recency meta reflects the actual edit. Path-only, like file_event. */
+   *  on-card "✎ Ns" recency meta reflects the actual edit. Path-only, like file_event. */
   const stampDocChange = (path: string, mtimeMs: number) => {
     for (const [bid, b] of boardsRef.current) {
       if (!b.docMeta.has(path)) continue;
@@ -466,7 +456,7 @@ export default function App() {
     }
   };
 
-  // --- doc landing (gravity placement) + shelf ---------------------------------
+  // --- doc landing (gravity placement) ----------------------------------------
 
   const landDoc = (
     boardId: string,
@@ -492,8 +482,6 @@ export default function App() {
       const newDockOrder = b.dockOrder.includes(path)
         ? b.dockOrder
         : [...b.dockOrder, path];
-      // Remove from shelf if present.
-      const newShelf = b.shelfPaths.filter((p) => p !== path);
 
       const onBoard = b.cards.find((c) => c.kind === "doc" && c.path === path);
       let newCards: CardModel[];
@@ -528,7 +516,7 @@ export default function App() {
         };
         newCards = [...b.cards, doc];
       }
-      return { ...b, docMeta: newDocMeta, dockOrder: newDockOrder, shelfPaths: newShelf, cards: newCards };
+      return { ...b, docMeta: newDocMeta, dockOrder: newDockOrder, cards: newCards };
     });
     // Persist THIS board (it may be a backgrounded board the [boards] effect's
     // active-board schedule would miss — e.g. `tarmac open` from a background term).
@@ -536,86 +524,12 @@ export default function App() {
     void fetchDoc(path);
   };
 
-  const moveToShelf = (path: string) => {
+  const removeDoc = (path: string) => {
     setActiveBoard((b) => ({
       ...b,
       cards: b.cards.filter((c) => !(c.kind === "doc" && c.path === path)),
-      shelfPaths: b.shelfPaths.includes(path) ? b.shelfPaths : [...b.shelfPaths, path],
+      dockOrder: b.dockOrder.filter((p) => p !== path),
     }));
-  };
-
-  /** Bring a shelved doc back to the board at the drop point or next free slot. */
-  const restoreFromShelf = (path: string, drop?: { clientX: number; clientY: number }) => {
-    const b = activeBoard();
-    const meta = b?.docMeta.get(path);
-    let frame: WorldFrame;
-    if (drop && engineRef.current) {
-      const w = engineRef.current.viewToWorld(drop.clientX, drop.clientY);
-      frame = { x: w.x - Place.docW / 2, y: w.y - 15, w: Place.docW, h: Place.docH };
-    } else {
-      const prime = b?.cards.find((c) => c.kind === "term" && c.prime) as TermCardModel | undefined;
-      frame = firstFreeSlot(prime?.frame ?? BOOT_FRAME, b?.cards.map((c) => c.frame) ?? []);
-    }
-    setActiveBoard((board) => ({
-      ...board,
-      shelfPaths: board.shelfPaths.filter((p) => p !== path),
-      cards: board.cards.some((c) => c.kind === "doc" && c.path === path)
-        ? board.cards
-        : [
-            ...board.cards,
-            {
-              kind: "doc",
-              path,
-              frame,
-              z: topZ(board.cards) + 1,
-              ownerTermId: meta?.ownerTermId,
-              repoColor: meta?.repoColor,
-              fresh: false,
-              attached: false,
-            } as DocCardModel,
-          ],
-    }));
-    void fetchDoc(path);
-  };
-
-  // --- peek (⌘P quick-look of the most-recent doc) ----------------------------
-
-  const peekTarget = (): string | null => {
-    const b = activeBoard();
-    const meta = b?.docMeta;
-    let best: string | null = null;
-    let bestT = -Infinity;
-    // Active-board scoped (Swift peeks the active board's store): only consider docs THIS
-    // board knows, so the peeked path always resolves in its docMeta and ⌘⏎ never
-    // fabricates a card from a cross-board path the active board has no meta for.
-    for (const [p, t] of lastChangedRef.current) {
-      if (meta?.has(p) && t > bestT) { bestT = t; best = p; }
-    }
-    if (best) return best;
-    const order = b?.dockOrder ?? [];
-    return order.length ? order[order.length - 1]! : null;
-  };
-
-  const openPeek = (explicitPath?: string) => {
-    const target = explicitPath ?? peekTarget();
-    if (!target) return;
-    void fetchDoc(target);
-    setPeekPath(target);
-    setPeekVisible(true);
-    setActiveCards((cs) =>
-      cs.map((c) => (c.kind === "doc" && c.path === target ? { ...c, fresh: false } : c)),
-    );
-  };
-
-  const togglePinPeeked = () => {
-    const p = peekPathRef.current;
-    if (!p) return;
-    const b = activeBoard();
-    if (b?.cards.some((c) => c.kind === "doc" && c.path === p)) moveToShelf(p);
-    else if (b?.docMeta.has(p)) restoreFromShelf(p);
-    // else: the peeked doc belongs to another board (a peek left open across a board
-    // switch) — just dismiss; never fabricate a phantom meta-less card on this board.
-    setPeekVisible(false);
   };
 
   // --- terminal lifecycle ------------------------------------------------------
@@ -872,7 +786,7 @@ export default function App() {
       });
     }
 
-    const { termTiles, docTiles, shelfPaths: restoredShelf } = parseTiles(
+    const { termTiles, docTiles } = parseTiles(
       (msg.tiles ?? []) as unknown as LayoutTile[],
     );
     const liveTerms = new Set(msg.live_terms ?? []);
@@ -941,7 +855,6 @@ export default function App() {
 
     setBoardState(boardId, (_) => ({
       cards: [...newTerms, ...newDocs],
-      shelfPaths: restoredShelf.filter((p) => newDocMeta.has(p)),
       dockOrder: newDockOrder,
       docMeta: newDocMeta,
       viewport: vp,
@@ -1156,7 +1069,6 @@ export default function App() {
         // owner, route to that term's board. Never index-lookup the empty string
         // (it could resolve to a stale synthetic-board entry).
         const boardId = msg.term_id ? routeBoardId(msg.term_id) : activeIdRef.current;
-        lastChangedRef.current.set(msg.path, Date.now()); // (unchanged — feeds peekTarget order)
         landDoc(
           boardId, msg.path, msg.via,
           msg.term_id ?? undefined,
@@ -1169,8 +1081,7 @@ export default function App() {
       }
 
       case "file_event":
-        lastChangedRef.current.set(msg.path, Date.now()); // (unchanged — peekTarget order)
-        stampDocChange(msg.path, msg.mtime_ms);           // NEW — real edit time for recency
+        stampDocChange(msg.path, msg.mtime_ms);
         refreshDoc(msg.path);
         break;
 
@@ -1396,20 +1307,6 @@ export default function App() {
         spawnNewTerminal();
         return;
       }
-      // ⌘P — peek the most-recent doc.
-      if (e.metaKey && !e.altKey && !e.ctrlKey && e.key.toLowerCase() === "p") {
-        e.preventDefault();
-        openPeek();
-        return;
-      }
-      // ⌘⏎ — pin / unpin the peeked doc.
-      if (e.metaKey && e.key === "Enter") {
-        if (peekVisibleRef.current) {
-          e.preventDefault();
-          togglePinPeeked();
-        }
-        return;
-      }
       // ⏎ — fly to the highest-priority offscreen signal; fall through to dock toggle
       // when no offscreen signal is pending (Swift parity: fly-to-signal wins over dock).
       if (e.key === "Enter" && !e.metaKey && !e.altKey && !e.ctrlKey) {
@@ -1430,22 +1327,16 @@ export default function App() {
         toggleDock();
         return;
       }
-      // ESC ladder: undock → peek → toasts → fly-back → fresh-doc-to-shelf. Each
-      // consuming branch stopPropagation()s so the ESC does NOT also reach the
-      // focused xterm (capture phase runs before it). Only the final fall-through
-      // (no overlay) lets ESC reach the terminal.
+      // ESC ladder: undock → toasts → fly-back → dismiss fresh doc. Each consuming
+      // branch stopPropagation()s so the ESC does NOT also reach the focused xterm
+      // (capture phase runs before it). Only the final fall-through (no overlay)
+      // lets ESC reach the terminal.
       if (e.key === "Escape") {
         // Undock first (Wave 2) — consume so the docked terminal doesn't receive Esc.
         if (activeBoard()?.dockedTermId != null) {
           e.preventDefault();
           e.stopPropagation();
           undockActive();
-          return;
-        }
-        if (peekVisibleRef.current) {
-          e.preventDefault();
-          e.stopPropagation();
-          setPeekVisible(false);
           return;
         }
         if (toastsRef.current.length > 0) {
@@ -1466,7 +1357,7 @@ export default function App() {
         if (fresh) {
           e.preventDefault();
           e.stopPropagation();
-          moveToShelf(fresh.path);
+          removeDoc(fresh.path);
         }
       }
     };
@@ -1622,26 +1513,6 @@ export default function App() {
   }));
   const viewportWorldRect = engine ? engine.viewportWorldRect : { x: 0, y: 0, w: 0, h: 0 };
 
-  // Active board's shelf + meta (for chrome).
-  const activeShelf = activeBoard()?.shelfPaths ?? [];
-  const activeDocMeta = activeBoard()?.docMeta ?? new Map<string, DocMeta>();
-  // Peek chrome resolves from the board that OWNS the doc (active first, then any board)
-  // so an open peek keeps its header (repo-path / dot / recency) stable across a board
-  // switch instead of blanking against the new active board's docMeta.
-  const docMetaFor = (path: string): DocMeta | undefined => {
-    const active = activeDocMeta.get(path);
-    if (active) return active;
-    for (const bs of boards.values()) {
-      const m = bs.docMeta.get(path);
-      if (m) return m;
-    }
-    return undefined;
-  };
-  const peekMeta = peekPath ? docMetaFor(peekPath) : undefined;
-  const activePeekColor = peekMeta?.repoColor;
-  const peekDisplayPath = peekPath
-    ? docDisplayPath(peekPath, peekMeta?.repo, peekMeta?.repoRoot)
-    : "";
 
   // --- dock pane derived state (Wave 2) ----------------------------------------
   const activeDockedTermId = activeBoard()?.dockedTermId ?? null;
@@ -1729,18 +1600,12 @@ export default function App() {
                   : undefined
               }
               onTermActivity={onTermActivity}
-              onDocClose={moveToShelf}
+              onDocClose={removeDoc}
               selectedId={hidden ? null : selectedId}
               onBackgroundPointerDown={() => { if (!hidden) setSelectedId(null); }}
             />
           );
         })}
-        <ShelfOverlay
-          paths={activeShelf}
-          repoColorFor={(p) => activeDocMeta.get(p)?.repoColor}
-          onPeek={(p) => openPeek(p)}
-          onRestore={restoreFromShelf}
-        />
         <ZoomControl
           zoom={viewport.zoom}
           onZoomIn={() => engineRef.current?.zoomByCentered(ZOOM_STEP)}
@@ -1749,16 +1614,6 @@ export default function App() {
         />
         <MinimapOverlay items={minimapItems} viewportWorldRect={viewportWorldRect} onJump={onMinimapJump} />
         <OffscreenHints pills={offscreen.pills} />
-        <PeekOverlay
-          visible={peekVisible}
-          path={peekPath}
-          displayPath={peekDisplayPath}
-          markdown={peekPath ? docContents.get(peekPath) ?? "" : ""}
-          repoColor={activePeekColor}
-          lastChangedMs={peekMeta?.lastChangedMs}
-          onPin={togglePinPeeked}
-          onClose={() => setPeekVisible(false)}
-        />
         <ToastOverlay toasts={toastState.toasts} onChipClick={onToastChip} />
         {/* ⌘K board switcher — rendered only when open (the veil + panel are portaled
             inside the board-stack so the z-index ordering is local to it). */}
