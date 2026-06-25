@@ -2,8 +2,8 @@
 // binary Channel, sends keystrokes/resizes out via invoke. The board's CSS zoom
 // transform scales the whole card as a bitmap (matching the Swift bitmap-scale of
 // SwiftTerm layers); xterm is only ever re-measured by `fit()` on a real layout
-// resize — driven by a ResizeObserver, which does NOT fire on CSS transforms — so
-// the xterm-under-transform measurement bug never triggers.
+// resize — driven by a ResizeObserver, which does NOT fire on CSS transforms.
+// Selection coord correction is via a getBoundingClientRect() override on host.
 //
 // The xterm host node is created ONCE imperatively (useState lazy init) and
 // reparented via appendChild — React never owns it as a child — so the PTY and
@@ -59,6 +59,8 @@ export function TerminalCard(props: TerminalCardProps) {
   bellRef.current = model.bell;
   const onActivityRef = useRef(props.onActivity);
   onActivityRef.current = props.onActivity;
+  const getZoomRef = useRef(props.getZoom);
+  getZoomRef.current = props.getZoom;
 
   const dock = useContext(DockContext);
   const docked = dock.dockedTermId === model.termId;
@@ -92,6 +94,37 @@ export function TerminalCard(props: TerminalCardProps) {
     term.unicode.activeVersion = "11";
     term.open(host);
     termRef.current = term;
+
+    // xterm calls getBoundingClientRect() on term.element (.xterm) and
+    // term.screenElement (.xterm-screen) to translate mouse coords to cells
+    // (getCoordsRelativeToElement in xterm module 5251). Under the board's
+    // CSS scale(zoom) transform those rects are in screen pixels while
+    // cellWidth/cellHeight are layout pixels — at zoom ≠ 1 selections land
+    // in the wrong cell. Fix: patch BCR on the two elements xterm actually
+    // queries, converting screen-px offsets back to layout-px offsets.
+    // lastMouseX/Y are updated at capture phase (before any element handler).
+    let lastMouseX = 0;
+    let lastMouseY = 0;
+    const trackMouse = (e: MouseEvent) => {
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+    };
+    document.addEventListener("mousedown", trackMouse, { capture: true });
+    document.addEventListener("mousemove", trackMouse, { capture: true });
+    const fakeBCR = (orig: () => DOMRect) => (): DOMRect => {
+      const r = orig();
+      const zoom = getZoomRef.current();
+      if (zoom === 1) return r;
+      const fakeLeft = lastMouseX - (lastMouseX - r.left) / zoom;
+      const fakeTop = lastMouseY - (lastMouseY - r.top) / zoom;
+      return new DOMRect(fakeLeft, fakeTop, r.width / zoom, r.height / zoom);
+    };
+    const xtermEl = term.element!;
+    const xtermScreen = term.screenElement!;
+    const origElBCR = xtermEl.getBoundingClientRect.bind(xtermEl);
+    const origScreenBCR = xtermScreen.getBoundingClientRect.bind(xtermScreen);
+    xtermEl.getBoundingClientRect = fakeBCR(origElBCR);
+    xtermScreen.getBoundingClientRect = fakeBCR(origScreenBCR);
 
     // Register focus handle so App can focus this terminal on dock / cycle.
     dock.registerTerm(model.termId, term);
@@ -137,6 +170,10 @@ export function TerminalCard(props: TerminalCardProps) {
       // exit, or a board delete killed it) — it only releases the output sink.
       void detachTermOutput(model.termId);
       ro.disconnect();
+      document.removeEventListener("mousedown", trackMouse, { capture: true });
+      document.removeEventListener("mousemove", trackMouse, { capture: true });
+      xtermEl.getBoundingClientRect = origElBCR;
+      xtermScreen.getBoundingClientRect = origScreenBCR;
       offData.dispose();
       offResize.dispose();
       offTitle.dispose();
