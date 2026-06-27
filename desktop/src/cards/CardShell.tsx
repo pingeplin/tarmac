@@ -119,7 +119,9 @@ export function CardShell(props: CardShellProps) {
   // --- resize (edges + corners) ---
   const onHandlePointerDown = (e: ReactPointerEvent, handle: Handle) => {
     if (e.button !== 0 || !props.onResize) return;
+    e.preventDefault();            // suppress native text selection (反白) at the source
     e.stopPropagation();
+    window.getSelection()?.removeAllRanges(); // flush any selection already in progress
     onGrab?.();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     resizeStart.current = { px: e.clientX, py: e.clientY, frame, handle };

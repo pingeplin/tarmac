@@ -235,6 +235,14 @@ body,
   position: relative;
   overflow: hidden;
 }
+/* During a move/resize drag (.lifting), shield the body from native text
+   selection (the blue "反白" bands) and stray pointer events. Scoped to the
+   active gesture, so terminal/doc copy-select is untouched at rest. */
+.card.lifting .card-body {
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
+}
 
 /* --- resize handles (always-live hit areas; grip chip hover-revealed) --- */
 
@@ -244,6 +252,8 @@ body,
   width: 20px;
   height: 20px;
   z-index: 2;
+  user-select: none;
+  -webkit-user-select: none;
 }
 /* Corner handles */
 .card-handle.tl {
