@@ -1,12 +1,13 @@
 // The shared card frame: world-space positioning, the 30px header (drag-to-move),
-// corner resize handles (shown only on the active card), and the resting + active
-// chrome classes derived from the ported CardChrome rule. Doc and terminal cards
-// supply their own header content + body. Deliberately NOT focusable — clicking a
-// card must never steal keyboard focus from the prime terminal (design principle #2).
+// 8 resize handles (4 edges + 4 corners, always-live hit areas, hover-revealed chips),
+// and the resting + active chrome classes derived from the ported CardChrome rule.
+// Doc and terminal cards supply their own header content + body. Deliberately NOT
+// focusable — clicking a card must never steal keyboard focus from the prime terminal
+// (design principle #2).
 
 import { useRef, useState, type ReactNode, type PointerEvent as ReactPointerEvent } from "react";
-import { borderRole, cardChromeState, showsHandles } from "../kit/cardChrome";
-import { resizeFrame, type Corner } from "../kit/resize";
+import { borderRole, cardChromeState, cardHandles } from "../kit/cardChrome";
+import { resizeFrame, type Handle } from "../kit/resize";
 import type { WorldFrame } from "../board/model";
 
 interface CardShellProps {
@@ -47,13 +48,12 @@ interface CardShellProps {
 
 /** Pointer travel (px) past which a header press is treated as a move, not a click. */
 const DRAG_THRESHOLD = 3;
-const CORNERS: Corner[] = ["tl", "tr", "bl", "br"];
 
 export function CardShell(props: CardShellProps) {
   const { frame, getZoom, onMove, onGrab } = props;
   const dragStart = useRef<{ px: number; py: number; fx: number; fy: number } | null>(null);
   const moved = useRef(false);
-  const resizeStart = useRef<{ px: number; py: number; frame: WorldFrame; corner: Corner } | null>(null);
+  const resizeStart = useRef<{ px: number; py: number; frame: WorldFrame; handle: Handle } | null>(null);
   const [lifting, setLifting] = useState(false);
 
   const chrome = cardChromeState({
@@ -73,6 +73,7 @@ export function CardShell(props: CardShellProps) {
   if (props.dead) classes.push("dead");
   if (props.quiet) classes.push("quiet");
   if (props.detached) classes.push("detached");
+  if (props.hasClose) classes.push("has-close");
   if (lifting) classes.push("lifting");
   if (props.className) classes.push(props.className);
 
@@ -115,13 +116,13 @@ export function CardShell(props: CardShellProps) {
     moved.current = false;
   };
 
-  // --- corner resize ---
-  const onHandlePointerDown = (e: ReactPointerEvent, corner: Corner) => {
+  // --- resize (edges + corners) ---
+  const onHandlePointerDown = (e: ReactPointerEvent, handle: Handle) => {
     if (e.button !== 0 || !props.onResize) return;
-    e.stopPropagation(); // never start a header move from a handle
+    e.stopPropagation();
     onGrab?.();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    resizeStart.current = { px: e.clientX, py: e.clientY, frame, corner };
+    resizeStart.current = { px: e.clientX, py: e.clientY, frame, handle };
     setLifting(true);
   };
   const onHandlePointerMove = (e: ReactPointerEvent) => {
@@ -130,7 +131,7 @@ export function CardShell(props: CardShellProps) {
     const zoom = getZoom();
     const dx = (e.clientX - s.px) / zoom;
     const dy = (e.clientY - s.py) / zoom;
-    props.onResize(resizeFrame(s.frame, s.corner, dx, dy));
+    props.onResize(resizeFrame(s.frame, s.handle, dx, dy));
   };
   const onHandlePointerUp = (e: ReactPointerEvent) => {
     const wasResizing = resizeStart.current !== null;
@@ -157,7 +158,6 @@ export function CardShell(props: CardShellProps) {
       ref={props.rootRef}
       className={classes.join(" ")}
       style={{ left: frame.x, top: frame.y, width: frame.w, height: frame.h, zIndex: props.z }}
-      data-handles={showsHandles(chrome)}
     >
       <div
         className="card-header"
@@ -172,11 +172,11 @@ export function CardShell(props: CardShellProps) {
         {props.children}
       </div>
       {props.onResize &&
-        (props.hasClose ? CORNERS.filter((c) => c !== "tr") : CORNERS).map((corner) => (
+        cardHandles(props.hasClose ?? false).map((handle) => (
           <div
-            key={corner}
-            className={`card-handle ${corner}`}
-            onPointerDown={(e) => onHandlePointerDown(e, corner)}
+            key={handle}
+            className={`card-handle ${handle}`}
+            onPointerDown={(e) => onHandlePointerDown(e, handle)}
             onPointerMove={onHandlePointerMove}
             onPointerUp={onHandlePointerUp}
             onPointerCancel={onHandlePointerCancel}

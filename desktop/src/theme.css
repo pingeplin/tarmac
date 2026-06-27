@@ -236,31 +236,16 @@ body,
   overflow: hidden;
 }
 
-/* --- resize handles (shown only on the active card; cardChrome.showsHandles) --- */
+/* --- resize handles (always-live hit areas; grip chip hover-revealed) --- */
 
+/* Always a live hit area; no visible chip — the resize cursor is the affordance. */
 .card-handle {
   position: absolute;
   width: 20px;
   height: 20px;
   z-index: 2;
-  display: none;
 }
-.card[data-handles="true"] .card-handle {
-  display: block;
-}
-/* The visible 7x7 chip centered in the 20x20 hit box (bg0 fill, 1.5px agent). */
-.card-handle::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 7px;
-  height: 7px;
-  margin: -3.5px 0 0 -3.5px;
-  background: var(--bg0);
-  border: 1.5px solid var(--agent);
-  border-radius: 2px;
-}
+/* Corner handles */
 .card-handle.tl {
   left: 0;
   top: 0;
@@ -280,6 +265,41 @@ body,
   right: 0;
   bottom: 0;
   cursor: nwse-resize;
+}
+/* Edge handles: 6px strips; insets clear the 20px corner hit areas; below corners. */
+.card-handle.t,
+.card-handle.b {
+  width: auto;
+  height: 6px;
+  left: 20px;
+  right: 20px;
+  z-index: 1;
+  cursor: ns-resize;
+}
+.card-handle.t {
+  top: 0;
+}
+.card-handle.b {
+  bottom: 0;
+}
+.card-handle.l,
+.card-handle.r {
+  width: 6px;
+  height: auto;
+  top: 20px;
+  bottom: 20px;
+  z-index: 1;
+  cursor: ew-resize;
+}
+.card-handle.l {
+  left: 0;
+}
+.card-handle.r {
+  right: 0;
+}
+/* Trim the top edge strip when the close button occupies the top-right corner. */
+.card.has-close .card-handle.t {
+  right: 32px;
 }
 
 /* --- terminal host --- */

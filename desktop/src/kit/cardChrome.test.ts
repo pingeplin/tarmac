@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { borderRole, showsHandles, cardChromeState, type BorderRole } from "./cardChrome";
+import { borderRole, showsHandles, cardChromeState, cardHandles, type BorderRole } from "./cardChrome";
 
 // Port of CardChromeTests.swift (2606.0006): the active-card chrome rule with
 // `fresh` dropped from the border. The teal ring + handles mark an active card
@@ -96,5 +96,42 @@ describe("CardChrome", () => {
     const s = cardChromeState({ detached: true, selected: true });
     expect(borderRole(s)).toBe("muted");
     expect(showsHandles(s)).toBe(true);
+  });
+});
+
+// S10 (ring half): idle card never gets the focus ring.
+describe("borderRole — idle card", () => {
+  it("idle card (focused=false, selected=false) gets plain role, not focus", () => {
+    expect(borderRole(cardChromeState())).toBe("plain");
+  });
+});
+
+// S11 / S14: cardHandles returns the correct ordered set of 8 (or 7) handle ids.
+describe("cardHandles", () => {
+  it("without close: returns all 8 handles including tr", () => {
+    const handles = cardHandles(false);
+    expect(handles).toHaveLength(8);
+    expect(handles).toContain("tl");
+    expect(handles).toContain("t");
+    expect(handles).toContain("tr");
+    expect(handles).toContain("r");
+    expect(handles).toContain("br");
+    expect(handles).toContain("b");
+    expect(handles).toContain("bl");
+    expect(handles).toContain("l");
+  });
+
+  it("with close: returns 7 handles, tr omitted", () => {
+    const handles = cardHandles(true);
+    expect(handles).toHaveLength(7);
+    expect(handles).not.toContain("tr");
+    // all others present
+    expect(handles).toContain("tl");
+    expect(handles).toContain("t");
+    expect(handles).toContain("r");
+    expect(handles).toContain("br");
+    expect(handles).toContain("b");
+    expect(handles).toContain("bl");
+    expect(handles).toContain("l");
   });
 });
