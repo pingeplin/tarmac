@@ -92,6 +92,10 @@ body,
   overflow: hidden;
   background-color: var(--bg0);
   cursor: default;
+  /* Board chrome is not selectable text — a drag on empty space must never start
+     a native selection (反白). Card bodies opt back in below. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .world {
@@ -234,6 +238,10 @@ body,
   flex: 1 1 auto;
   position: relative;
   overflow: hidden;
+  /* Re-enable selection inside cards (doc text copy-select; terminal uses xterm's
+     own canvas selection regardless), opting back out of the board-wide none. */
+  user-select: text;
+  -webkit-user-select: text;
 }
 /* During a move/resize drag (.lifting), shield the body from native text
    selection (the blue "反白" bands) and stray pointer events. Scoped to the
