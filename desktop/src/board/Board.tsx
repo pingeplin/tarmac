@@ -10,7 +10,7 @@
 // Channels stay attached and scrollback survives switch-back. FitAddon.fit() is a
 // safe no-op at 0 size; the ResizeObserver fires on show → auto-refit on reveal.
 
-import { useEffect, useRef, type MutableRefObject } from "react";
+import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { BoardEngine, type Cullable, type Viewport } from "./BoardEngine";
 import { EdgeLayer } from "./EdgeLayer";
 import { TerminalCard } from "../cards/TerminalCard";
@@ -53,10 +53,16 @@ export function Board(props: BoardProps) {
   const cardEls = useRef<Map<string, HTMLElement>>(new Map());
   const { engineRef, cards, boardId } = props;
 
+  // rasterScale: 1 at rest, increases with zoom after settle. Cards subscribe to
+  // the settled value so they only re-raster after the gesture is idle (~150ms).
+  // They never re-derive zoom — this is the single source of truth per the spec.
+  const [rasterScale, setRasterScale] = useState(1);
+
   useEffect(() => {
     if (!viewportRef.current || !worldRef.current) return;
     const engine = new BoardEngine(viewportRef.current, worldRef.current);
     engine.onViewportChange = props.onViewport;
+    engine.onRasterScaleSettle = setRasterScale;
     engineRef.current = engine;
     props.onEngineReady(boardId, engine);
     // Seed the chrome (zoom readout, minimap, offscreen hints) with the initial
@@ -135,6 +141,7 @@ export function Board(props: BoardProps) {
               selected={selected}
               quiet={anyTermPrime && !c.prime && !c.dead}
               getZoom={getZoom}
+              rasterScale={rasterScale}
               rootRef={setEl(id)}
               onMove={(frame) => props.onCardMove(id, frame)}
               onMoveStart={() => props.onCardMoveStart(id)}
@@ -156,6 +163,7 @@ export function Board(props: BoardProps) {
               selected={selected}
               detached={c.ownerTermId != null && !c.attached}
               getZoom={getZoom}
+              rasterScale={rasterScale}
               rootRef={setEl(id)}
               onMove={(frame) => props.onCardMove(id, frame)}
               onMoveStart={() => props.onCardMoveStart(id)}

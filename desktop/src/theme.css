@@ -299,10 +299,22 @@ body,
 .doc-card .card-body {
   background: var(--bg1);
 }
-.doc-scroll {
+/* Clips the over-sized doc-scroll when rasterScale > 1. At rasterScale=1 this
+   is just a transparent pass-through (same bounds as card-body). */
+.doc-raster-clip {
   position: absolute;
   inset: 0;
+  overflow: hidden;
+}
+/* doc-scroll is the actual scroll container. Its width/height/padding are set
+   via inline styles by DocCard so they scale uniformly with rasterScale. The
+   CSS here sets only the properties that never change. */
+.doc-scroll {
+  position: absolute;
+  top: 0;
+  left: 0;
   overflow: auto;
+  /* default padding (rasterScale=1); overridden by inline style when rs>1 */
   padding: 18px 22px;
 }
 .doc-prose {
@@ -323,17 +335,33 @@ body,
   text-decoration: none;
   border-bottom: 1px dashed var(--agent);
 }
+/* Pin UA-default absolute-px box metrics (lists 40px indent, blockquote 40px
+   inline margin) in em so they scale with the root font dial; 2.857×14 = 40px,
+   pixel-identical at rs=1. Nested lists compound em — correct, since every
+   ancestor font-size scales by the same rs. */
+.doc-prose ul,
+.doc-prose ol {
+  padding-inline-start: 2.857em;
+}
+.doc-prose blockquote {
+  margin-inline: 2.857em;
+}
+/* All layout-affecting dims in em so the single root font dial (14×rs, set inline
+   by DocCard) scales the whole subtree by exactly rs — no relative shrink / reflow
+   of code under zoom. em values chosen to be pixel-identical at rs=1:
+   code font-size 12.5px → 12.5/14; code padding/radius relative to its own 12.5px;
+   pre padding/radius relative to inherited 14px. */
 .doc-prose code {
   background: var(--bg2);
-  padding: 1px 5px;
-  border-radius: 4px;
+  padding: 0.08em 0.4em;
+  border-radius: 0.32em;
   font-family: var(--chrome-font);
-  font-size: 12.5px;
+  font-size: 0.8929em;
 }
 .doc-prose pre {
   background: var(--term-bg);
-  padding: 12px 14px;
-  border-radius: 8px;
+  padding: 0.8571em 1em;
+  border-radius: 0.5714em;
   overflow: auto;
 }
 .doc-prose pre code {
@@ -796,6 +824,19 @@ body,
 
 /* --- terminal host slot (Wave 2 reparent model) --- */
 
+/* Clips the over-sized raster wrapper when rasterScale > 1. At rasterScale=1
+   this is a transparent pass-through (same bounds as card-body). */
+.term-raster-clip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+/* Raster wrapper: inline styles set width/height/transform when rs > 1.
+   At rs=1 no inline styles are applied and it falls through as a 100% block. */
+.term-raster-wrapper {
+  width: 100%;
+  height: 100%;
+}
 /* The empty React-owned slot that the imperative host fills when undocked. */
 .term-host-slot {
   width: 100%;

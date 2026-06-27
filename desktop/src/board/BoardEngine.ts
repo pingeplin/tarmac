@@ -11,6 +11,7 @@
 
 import { isCardVisible } from "../kit/cull";
 import { fit } from "../kit/boardWayfinding";
+import { deriveRasterScale, RASTER_SCALE_SETTLE_MS } from "../kit/rasterScale";
 import type { Rect, Size } from "../kit/geom";
 
 export interface Viewport {
@@ -63,8 +64,17 @@ export class BoardEngine {
   // The in-flight viewport tween's rAF handle (flyTo); null when not animating.
   private flightRaf: number | null = null;
 
+  // rasterScale settle: hold the last settled value and a debounce timer so
+  // cards re-raster only after the zoom gesture finishes, not every frame.
+  private _settledRasterScale = 1;
+  private _rasterSettleTimer: ReturnType<typeof setTimeout> | null = null;
+
   /** Fires after every committed pan/zoom (for chrome: zoom readout, minimap). */
   onViewportChange?: (vp: Viewport) => void;
+
+  /** Fires ~150ms after zoom settles with the derived rasterScale. Cards use this
+   *  to re-raster at device resolution; they never re-derive zoom themselves. */
+  onRasterScaleSettle?: (scale: number) => void;
 
   constructor(viewportEl: HTMLElement, worldEl: HTMLElement) {
     this.viewportEl = viewportEl;
@@ -233,6 +243,10 @@ export class BoardEngine {
 
   destroy(): void {
     this.cancelFlight();
+    if (this._rasterSettleTimer !== null) {
+      clearTimeout(this._rasterSettleTimer);
+      this._rasterSettleTimer = null;
+    }
     for (const off of this.detachers) off();
     this.detachers = [];
   }
@@ -252,7 +266,23 @@ export class BoardEngine {
     this.viewportEl.style.setProperty("--grid-size", `${worldSpacing * this.vp.zoom}px`);
     this.viewportEl.style.setProperty("--grid-x", `${tx}px`);
     this.viewportEl.style.setProperty("--grid-y", `${ty}px`);
+    this.scheduleRasterSettle();
     this.applyCull(rect);
+  }
+
+  /** Debounce rasterScale settle: cheap GPU transform during the gesture, cards
+   *  re-raster only after zoom is idle for RASTER_SCALE_SETTLE_MS. Idempotent —
+   *  fires the callback only when the derived scale actually changes. */
+  private scheduleRasterSettle(): void {
+    if (this._rasterSettleTimer !== null) clearTimeout(this._rasterSettleTimer);
+    const next = deriveRasterScale(this.vp.zoom);
+    this._rasterSettleTimer = setTimeout(() => {
+      this._rasterSettleTimer = null;
+      if (next !== this._settledRasterScale) {
+        this._settledRasterScale = next;
+        this.onRasterScaleSettle?.(next);
+      }
+    }, RASTER_SCALE_SETTLE_MS);
   }
 
   /** Hide cards more than one viewport off-screen (visibility:hidden keeps the
