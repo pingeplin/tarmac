@@ -163,7 +163,6 @@ export function Board(props: BoardProps) {
               selected={selected}
               detached={c.ownerTermId != null && !c.attached}
               getZoom={getZoom}
-              rasterScale={rasterScale}
               rootRef={setEl(id)}
               onMove={(frame) => props.onCardMove(id, frame)}
               onMoveStart={() => props.onCardMoveStart(id)}

@@ -337,23 +337,19 @@ body,
 .doc-card .card-body {
   background: var(--bg1);
 }
-/* Clips the over-sized doc-scroll when rasterScale > 1. At rasterScale=1 this
-   is just a transparent pass-through (same bounds as card-body). */
-.doc-raster-clip {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-}
-/* doc-scroll is the actual scroll container. Its width/height/padding are set
-   via inline styles by DocCard so they scale uniformly with rasterScale. The
-   CSS here sets only the properties that never change. */
+/* doc-scroll: card-sized scroll container filling the card body. */
 .doc-scroll {
   position: absolute;
-  top: 0;
-  left: 0;
+  inset: 0;
   overflow: auto;
-  /* default padding (rasterScale=1); overridden by inline style when rs>1 */
   padding: 18px 22px;
+}
+/* doc-prose-scaler: static compositing-layer hint so WebKit re-rasterizes the
+   prose layer crisply when the ancestor .world scale (= board zoom) changes.
+   Never will-change — that pins the raster at 1× resolution (permanent blur). */
+.doc-prose-scaler {
+  transform: translateZ(0);
+  transform-origin: 0 0;
 }
 .doc-prose {
   max-width: 720px;
@@ -374,9 +370,8 @@ body,
   border-bottom: 1px dashed var(--agent);
 }
 /* Pin UA-default absolute-px box metrics (lists 40px indent, blockquote 40px
-   inline margin) in em so they scale with the root font dial; 2.857×14 = 40px,
-   pixel-identical at rs=1. Nested lists compound em — correct, since every
-   ancestor font-size scales by the same rs. */
+   inline margin) in em so they scale with the root font size; 2.857×14 = 40px,
+   pixel-identical at base size. Nested lists compound em correctly. */
 .doc-prose ul,
 .doc-prose ol {
   padding-inline-start: 2.857em;
@@ -384,11 +379,10 @@ body,
 .doc-prose blockquote {
   margin-inline: 2.857em;
 }
-/* All layout-affecting dims in em so the single root font dial (14×rs, set inline
-   by DocCard) scales the whole subtree by exactly rs — no relative shrink / reflow
-   of code under zoom. em values chosen to be pixel-identical at rs=1:
-   code font-size 12.5px → 12.5/14; code padding/radius relative to its own 12.5px;
-   pre padding/radius relative to inherited 14px. */
+/* All layout-affecting dims in em so they resolve relative to the fixed 14px
+   root font size. Values chosen to be pixel-identical: code font-size 12.5px →
+   12.5/14; code padding/radius relative to its own 12.5px; pre padding/radius
+   relative to inherited 14px. */
 .doc-prose code {
   background: var(--bg2);
   padding: 0.08em 0.4em;

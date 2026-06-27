@@ -3,18 +3,18 @@
 // about:blank suspend/restore hack. The scroll area is plain (no tabindex), so a
 // click here never pulls keyboard focus off the prime terminal.
 //
-// rasterScale counter-scale: when rasterScale > 1, doc-scroll is rendered at
-// rasterScale× its card size and counter-scaled back with transform:scale(1/rs).
-// The doc-prose inside also has fontSize and maxWidth scaled by the same factor,
-// so wrap points are provably identical before and after — no reflow. The visual
-// scroll speed tracks at (deltaY / rs) × zoom screen pixels; since rs ≈ zoom at
-// settle time, scroll speed in screen pixels remains essentially unchanged.
+// Prose is laid out once at fixed base constants. The ancestor .world already
+// applies transform:scale(zoom) (BoardEngine), so doc card content is visually
+// scaled by zoom without any per-card scale. A static translateZ(0) on the
+// .doc-prose-scaler wrapper promotes the layer so WebKit re-rasterizes crisply
+// after the gesture settles. Wrap points never change → no reflow.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { marked } from "marked";
 import { CardShell } from "./CardShell";
 import { repoColors } from "../theme";
 import { recencyLabel } from "../kit/chromeText";
+import { docScalerStyle } from "../kit/docZoom";
 import type { DocCardModel, WorldFrame } from "../board/model";
 
 const basename = (p: string): string => {
@@ -22,23 +22,14 @@ const basename = (p: string): string => {
   return i >= 0 ? p.slice(i + 1) : p;
 };
 
-// Base prose style constants (must match .doc-prose in theme.css).
-const PROSE_FONT_SIZE_PX = 14;
-const PROSE_MAX_WIDTH_PX = 720;
-// doc-scroll padding (theme.css: padding: 18px 22px).
-const SCROLL_PADDING_V_PX = 18;
-const SCROLL_PADDING_H_PX = 22;
-
 interface DocCardProps {
   model: DocCardModel;
   markdown: string;
-  ownerName?: string | null;     // NEW — owner-chip label (without "← "), or null/undefined => hidden
-  lastChangedMs?: number;        // NEW — real edit time for "✎ Ns"
+  ownerName?: string | null;
+  lastChangedMs?: number;
   selected?: boolean;
   detached?: boolean;
   getZoom: () => number;
-  /** Settled rasterScale from BoardEngine; 1 at rest, > 1 after zoom settles. */
-  rasterScale: number;
   rootRef?: (el: HTMLDivElement | null) => void;
   onMove: (frame: WorldFrame) => void;
   onMoveStart?: () => void;
@@ -53,9 +44,8 @@ export function DocCard(props: DocCardProps) {
   const { model, markdown } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
   const proseRef = useRef<HTMLDivElement>(null);
-  // Store scroll position as a VISUAL fraction (scrollTop / scrollHeight) so that
-  // when rasterScale changes (scaling the scroll container), the visual position is
-  // preserved. A raw layout scrollTop would drift by rasterScale on each settle.
+  // Store scroll position as a fraction (scrollTop / scrollHeight) so it can be
+  // restored after content changes (live file_event re-renders).
   const savedScrollFrac = useRef(0);
 
   // Re-render markdown on content change, preserving scroll position (mirrors the
@@ -64,23 +54,12 @@ export function DocCard(props: DocCardProps) {
     const prose = proseRef.current;
     const scroll = scrollRef.current;
     if (!prose || !scroll) return;
-    // Restore visual fraction → layout scrollTop = frac × scrollHeight.
     const prev = savedScrollFrac.current;
     prose.innerHTML = marked.parse(markdown, { async: false }) as string;
     if (scroll.scrollHeight > scroll.clientHeight) {
       scroll.scrollTop = prev * scroll.scrollHeight;
     }
   }, [markdown]);
-
-  // When rasterScale changes, re-apply the saved visual scroll fraction so the
-  // prose doesn't jump (layout scrollTop must scale with the container).
-  useLayoutEffect(() => {
-    const scroll = scrollRef.current;
-    if (!scroll) return;
-    if (scroll.scrollHeight > scroll.clientHeight) {
-      scroll.scrollTop = savedScrollFrac.current * scroll.scrollHeight;
-    }
-  }, [props.rasterScale]);
 
   // 1Hz tick, only while inside the 30s window. When recencyLabel goes null we early-
   // return (schedule nothing) so a stale doc stops re-rendering; a fresh file_event
@@ -96,7 +75,6 @@ export function DocCard(props: DocCardProps) {
     props.lastChangedMs !== undefined ? recencyLabel(props.lastChangedMs, Date.now()) : null;
 
   const dotColor = model.repoColor != null ? repoColors[model.repoColor % repoColors.length] : undefined;
-  const rs = props.rasterScale;
 
   return (
     <CardShell
@@ -130,41 +108,23 @@ export function DocCard(props: DocCardProps) {
         </>
       }
     >
-      {/* doc-raster-clip: clips the over-sized scroll container when rs > 1.
-          doc-scroll: the actual scroll container, rendered at rs× its card size
-          then counter-scaled back to the original visual footprint via
-          transform:scale(1/rs). Every dimension scales by the same factor so
-          wrap points are provably identical → no reflow. At rs=1 the inline
-          styles are all identity values and no transform is applied. */}
-      <div className="doc-raster-clip">
-        <div
-          className="doc-scroll"
-          ref={scrollRef}
-          style={{
-            width: `${rs * 100}%`,
-            height: `${rs * 100}%`,
-            padding: `${SCROLL_PADDING_V_PX * rs}px ${SCROLL_PADDING_H_PX * rs}px`,
-            transform: rs !== 1 ? `scale(${1 / rs})` : undefined,
-            transformOrigin: rs !== 1 ? "0 0" : undefined,
-          }}
-          onScroll={(e) => {
-            const el = e.currentTarget as HTMLDivElement;
-            // Save as visual fraction so restoring across rasterScale changes
-            // keeps the same visual position in the document.
-            savedScrollFrac.current =
-              el.scrollHeight > el.clientHeight
-                ? el.scrollTop / el.scrollHeight
-                : 0;
-          }}
-        >
-          <div
-            className="doc-prose"
-            ref={proseRef}
-            style={{
-              fontSize: `${PROSE_FONT_SIZE_PX * rs}px`,
-              maxWidth: `${PROSE_MAX_WIDTH_PX * rs}px`,
-            }}
-          />
+      {/* doc-scroll: card-sized scroll container (fills card-body via CSS).
+          doc-prose-scaler: static layer-promotion wrapper (translateZ(0)) so
+          WebKit re-rasterizes this layer crisply after the board gesture settles.
+          doc-prose: fixed metrics from theme.css; never zoom-scaled inline. */}
+      <div
+        className="doc-scroll"
+        ref={scrollRef}
+        onScroll={(e) => {
+          const el = e.currentTarget as HTMLDivElement;
+          savedScrollFrac.current =
+            el.scrollHeight > el.clientHeight
+              ? el.scrollTop / el.scrollHeight
+              : 0;
+        }}
+      >
+        <div className="doc-prose-scaler" style={docScalerStyle()}>
+          <div className="doc-prose" ref={proseRef} />
         </div>
       </div>
     </CardShell>
