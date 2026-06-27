@@ -30,6 +30,10 @@ interface CardShellProps {
   children: ReactNode;
   /** Screen→world scale for drag/resize (1/zoom). */
   getZoom: () => number;
+  /** When true, the wrapper div in .doc-layer owns position via CSS-var transform;
+   *  CardShell renders at 0,0 and omits its own left/top. Drag/resize math still
+   *  reads the real frame + getZoom() so committed frames stay world-coord. */
+  inWrapper?: boolean;
   /** The card's root element, for the engine's viewport culling (visibility). */
   rootRef?: (el: HTMLDivElement | null) => void;
   /** Called with the new frame as the header is dragged. */
@@ -159,7 +163,12 @@ export function CardShell(props: CardShellProps) {
     <div
       ref={props.rootRef}
       className={classes.join(" ")}
-      style={{ left: frame.x, top: frame.y, width: frame.w, height: frame.h, zIndex: props.z }}
+      style={{
+        ...(props.inWrapper
+          ? { inset: 0 }                                              // fill the real-px wrapper; drag math uses getZoom(), not element size
+          : { left: frame.x, top: frame.y, width: frame.w, height: frame.h }),
+        zIndex: props.z,
+      }}
     >
       <div
         className="card-header"

@@ -3,18 +3,19 @@
 // about:blank suspend/restore hack. The scroll area is plain (no tabindex), so a
 // click here never pulls keyboard focus off the prime terminal.
 //
-// Prose is laid out once at fixed base constants. The ancestor .world already
-// applies transform:scale(zoom) (BoardEngine), so doc card content is visually
-// scaled by zoom without any per-card scale. A static translateZ(0) on the
-// .doc-prose-scaler wrapper promotes the layer so WebKit re-rasterizes crisply
-// after the gesture settles. Wrap points never change → no reflow.
+// The card renders in .doc-layer via a real-px-sized wrapper (Panel H): the
+// wrapper is sized at card{w,h}×zoom with NO transform scale, so its
+// border/clip/shadow rasterize crisply at real pixel size. The prose is laid out
+// ONCE at the K× reference (frozen, zoom-free — see .doc-prose in theme.css) and
+// the bare innermost .doc-prose-scaler carries scale(zoom/K), a pure DOWN-scale
+// (≤1) → WebKit downsamples a high-detail layer, crisp at every zoom, no reflow.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { marked } from "marked";
 import { CardShell } from "./CardShell";
+import { docProseScaler } from "../kit/docZoom";
 import { repoColors } from "../theme";
 import { recencyLabel } from "../kit/chromeText";
-import { docScalerStyle } from "../kit/docZoom";
 import type { DocCardModel, WorldFrame } from "../board/model";
 
 const basename = (p: string): string => {
@@ -81,6 +82,7 @@ export function DocCard(props: DocCardProps) {
       className="doc-card"
       frame={model.frame}
       z={model.z}
+      inWrapper
       fresh={model.fresh}
       selected={props.selected}
       detached={props.detached}
@@ -108,10 +110,10 @@ export function DocCard(props: DocCardProps) {
         </>
       }
     >
-      {/* doc-scroll: card-sized scroll container (fills card-body via CSS).
-          doc-prose-scaler: static layer-promotion wrapper (translateZ(0)) so
-          WebKit re-rasterizes this layer crisply after the board gesture settles.
-          doc-prose: fixed metrics from theme.css; never zoom-scaled inline. */}
+      {/* doc-scroll: fills card body, no transform, no padding (padding lives on
+          .doc-prose at calc(base * --oversample-k)). doc-prose-scaler: the sole
+          scale layer — carries scale(zoom/K), a down-scale of the frozen K× prose
+          → crisp, reflow-free. */}
       <div
         className="doc-scroll"
         ref={scrollRef}
@@ -123,7 +125,7 @@ export function DocCard(props: DocCardProps) {
               : 0;
         }}
       >
-        <div className="doc-prose-scaler" style={docScalerStyle()}>
+        <div className="doc-prose-scaler" style={docProseScaler()}>
           <div className="doc-prose" ref={proseRef} />
         </div>
       </div>

@@ -10,12 +10,13 @@
 // Channels stay attached and scrollback survives switch-back. FitAddon.fit() is a
 // safe no-op at 0 size; the ResizeObserver fires on show → auto-refit on reveal.
 
-import { useEffect, useRef, useState, type MutableRefObject } from "react";
+import React, { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { BoardEngine, type Cullable, type Viewport } from "./BoardEngine";
 import { EdgeLayer } from "./EdgeLayer";
 import { TerminalCard } from "../cards/TerminalCard";
 import { DocCard } from "../cards/DocCard";
 import { ownerChipName } from "../kit/ownerChip";
+import { docWrapperBox, docCardVars } from "../kit/docZoom";
 import { cardId, type CardModel, type WorldFrame, type DocMeta } from "./model";
 
 interface BoardProps {
@@ -131,14 +132,13 @@ export function Board(props: BoardProps) {
     >
       <div className="world" ref={worldRef}>
         <EdgeLayer cards={cards} />
-        {cards.map((c) => {
+        {cards.filter((c) => c.kind === "term").map((c) => {
           const id = cardId(c);
-          const selected = id === props.selectedId;
-          return c.kind === "term" ? (
+          return (
             <TerminalCard
               key={id}
               model={c}
-              selected={selected}
+              selected={id === props.selectedId}
               quiet={anyTermPrime && !c.prime && !c.dead}
               getZoom={getZoom}
               rasterScale={rasterScale}
@@ -153,25 +153,47 @@ export function Board(props: BoardProps) {
               onTitle={(title) => props.onTermTitle(c.termId, title)}
               onActivity={() => props.onTermActivity(c.termId)}
             />
-          ) : (
-            <DocCard
+          );
+        })}
+      </div>
+      {/* Screen-space layer for doc cards: no transform on the layer itself.
+          Each wrapper is sized in real px (card{w,h}×zoom) via calc() off the
+          global --zoom var; the prose is frozen at the K× reference and the bare
+          inner scaler down-scales it by zoom/K. Panel H: box crisp at real size,
+          text crisp via a pure down-scale (never an upsample). */}
+      <div className="doc-layer">
+        {cards.filter((c) => c.kind === "doc").map((c) => {
+          const id = cardId(c);
+          return (
+            <div
               key={id}
-              model={c}
-              markdown={props.docContents.get(c.path) ?? ""}
-              ownerName={ownerChipName(c.attached, c.ownerTermId, termLabel)}
-              lastChangedMs={props.docMeta.get(c.path)?.lastChangedMs}
-              selected={selected}
-              detached={c.ownerTermId != null && !c.attached}
-              getZoom={getZoom}
-              rootRef={setEl(id)}
-              onMove={(frame) => props.onCardMove(id, frame)}
-              onMoveStart={() => props.onCardMoveStart(id)}
-              onMoveEnd={() => props.onCardMoveEnd(id)}
-              onResize={(frame) => props.onCardResize(id, frame)}
-              onResizeEnd={() => props.onCardResizeEnd(id)}
-              onGrab={() => props.onCardGrab(id)}
-              onClose={() => props.onDocClose(c.path)}
-            />
+              ref={setEl(id)}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                ...docWrapperBox(),
+                ...(docCardVars(c.frame) as React.CSSProperties),
+                zIndex: c.z,
+              }}
+            >
+              <DocCard
+                model={c}
+                markdown={props.docContents.get(c.path) ?? ""}
+                ownerName={ownerChipName(c.attached, c.ownerTermId, termLabel)}
+                lastChangedMs={props.docMeta.get(c.path)?.lastChangedMs}
+                selected={id === props.selectedId}
+                detached={c.ownerTermId != null && !c.attached}
+                getZoom={getZoom}
+                onMove={(frame) => props.onCardMove(id, frame)}
+                onMoveStart={() => props.onCardMoveStart(id)}
+                onMoveEnd={() => props.onCardMoveEnd(id)}
+                onResize={(frame) => props.onCardResize(id, frame)}
+                onResizeEnd={() => props.onCardResizeEnd(id)}
+                onGrab={() => props.onCardGrab(id)}
+                onClose={() => props.onDocClose(c.path)}
+              />
+            </div>
           );
         })}
       </div>

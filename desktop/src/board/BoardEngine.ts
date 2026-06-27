@@ -31,7 +31,7 @@ export interface Cullable {
 // EVERY path — pinch, ± buttons, setViewport (restore), fly, and fit — via the
 // shared clamp, so the readout never exceeds 300%.
 const MIN_ZOOM = 0.1;
-const MAX_ZOOM = 3.0;
+export const MAX_ZOOM = 3.0;
 
 // Fit-to-cards: 10% margin each side; zoom shares the engine's 0.1..3.0 clamp.
 const FIT_MARGIN = 0.1;
@@ -263,6 +263,8 @@ export class BoardEngine {
     // the Swift board's look (free here — just a background-size change).
     const worldSpacing = this.vp.zoom < SEMANTIC_ZOOM_THRESHOLD ? GRID_SPACING_LO : GRID_SPACING;
     this.viewportEl.style.setProperty("--zoom", String(this.vp.zoom));
+    this.viewportEl.style.setProperty("--world-tx", `${tx}px`);
+    this.viewportEl.style.setProperty("--world-ty", `${ty}px`);
     this.viewportEl.style.setProperty("--grid-size", `${worldSpacing * this.vp.zoom}px`);
     this.viewportEl.style.setProperty("--grid-x", `${tx}px`);
     this.viewportEl.style.setProperty("--grid-y", `${ty}px`);
