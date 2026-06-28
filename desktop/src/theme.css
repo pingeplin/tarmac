@@ -382,6 +382,16 @@ body,
   font-size: calc(10.5px * var(--zoom));
   border-bottom-width: calc(1px * var(--zoom));
 }
+/* Prose-sizer: NON-transformed clip box. JS relayout() sets its height to the
+   visual prose height (proseNatH·zoom/K) and overflow:hidden contains the K×
+   scaler so .doc-scroll.scrollHeight is the visible height (no trailing
+   whitespace). The clip lives here, NOT on the transformed scaler: clipping a
+   transformed element happens in its own pre-scale (K×) space, which would crop
+   the prose width to the zoom/K fraction. In this real-px box the visual prose
+   fits exactly, so only the vertical K× overhang is clipped. */
+.doc-prose-sizer {
+  overflow: hidden;
+}
 /* Prose-scaler: BARE — only the inline scale(zoom/K) docProseScaler() sets +
    its origin. No size of its own; the K× layout lives on .doc-prose below. */
 .doc-prose-scaler {

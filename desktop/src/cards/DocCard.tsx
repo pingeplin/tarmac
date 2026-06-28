@@ -13,7 +13,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { marked } from "marked";
 import { CardShell } from "./CardShell";
-import { docProseScaler } from "../kit/docZoom";
+import { docProseScaler, DOC_OVERSAMPLE_K } from "../kit/docZoom";
 import { repoColors } from "../theme";
 import { recencyLabel } from "../kit/chromeText";
 import type { DocCardModel, WorldFrame } from "../board/model";
@@ -45,9 +45,36 @@ export function DocCard(props: DocCardProps) {
   const { model, markdown } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
   const proseRef = useRef<HTMLDivElement>(null);
+  const sizerRef = useRef<HTMLDivElement>(null);
   // Store scroll position as a fraction (scrollTop / scrollHeight) so it can be
   // restored after content changes (live file_event re-renders).
   const savedScrollFrac = useRef(0);
+  // K× natural prose height — captured after innerHTML set, before any scale.
+  const proseNatH = useRef(0);
+  // Last observed zoom — used by MutationObserver to skip pan-only board frames.
+  const lastZoom = useRef(props.getZoom());
+  // Stable accessor ref so the mount-only effect always calls the latest getZoom.
+  const getZoomRef = useRef(props.getZoom);
+  getZoomRef.current = props.getZoom;
+
+  // Size the NON-transformed sizer to the visual height so .doc-scroll.scrollHeight
+  // reflects visible content rather than the un-scaled K× layout (fixes BUG A).
+  // The sizer (not the transformed scaler) carries the clip, so width is never
+  // cropped to the zoom/K fraction. Re-apply saved scroll fraction so position
+  // survives zoom changes (fixes BUG B).
+  function relayout() {
+    const sizer = sizerRef.current;
+    const scroll = scrollRef.current;
+    if (!sizer || !scroll) return;
+    const zoom = getZoomRef.current();
+    sizer.style.height = Math.ceil(proseNatH.current * zoom / DOC_OVERSAMPLE_K) + "px";
+    if (scroll.scrollHeight > scroll.clientHeight) {
+      scroll.scrollTop = savedScrollFrac.current * scroll.scrollHeight;
+    }
+  }
+  // Keep a stable ref so the mount-only effect closure always calls the latest body.
+  const relayoutRef = useRef(relayout);
+  relayoutRef.current = relayout;
 
   // Re-render markdown on content change, preserving scroll position (mirrors the
   // Swift doc card's scroll persistence across live file_event re-renders).
@@ -55,12 +82,44 @@ export function DocCard(props: DocCardProps) {
     const prose = proseRef.current;
     const scroll = scrollRef.current;
     if (!prose || !scroll) return;
-    const prev = savedScrollFrac.current;
     prose.innerHTML = marked.parse(markdown, { async: false }) as string;
-    if (scroll.scrollHeight > scroll.clientHeight) {
-      scroll.scrollTop = prev * scroll.scrollHeight;
-    }
+    proseNatH.current = prose.offsetHeight;
+    relayout();
   }, [markdown]);
+
+  // Mount-only: MutationObserver on .board style fires on every pan/zoom frame;
+  // we guard with lastZoom so only actual zoom changes trigger relayout. The
+  // ResizeObserver re-measures proseNatH when the card is resized (re-wrap).
+  useEffect(() => {
+    const scroll = scrollRef.current;
+    const prose = proseRef.current;
+    if (!scroll || !prose) return;
+
+    const board = scroll.closest(".board") as HTMLElement | null;
+    const mo = board
+      ? new MutationObserver(() => {
+          const zoom = getZoomRef.current();
+          if (zoom === lastZoom.current) return;
+          lastZoom.current = zoom;
+          relayoutRef.current();
+        })
+      : null;
+    if (board && mo) {
+      mo.observe(board, { attributes: true, attributeFilter: ["style"] });
+    }
+
+    const ro = new ResizeObserver(() => {
+      if (!proseRef.current) return;
+      proseNatH.current = proseRef.current.offsetHeight;
+      relayoutRef.current();
+    });
+    ro.observe(prose);
+
+    return () => {
+      mo?.disconnect();
+      ro.disconnect();
+    };
+  }, []);
 
   // 1Hz tick, only while inside the 30s window. When recencyLabel goes null we early-
   // return (schedule nothing) so a stale doc stops re-rendering; a fresh file_event
@@ -111,9 +170,11 @@ export function DocCard(props: DocCardProps) {
       }
     >
       {/* doc-scroll: fills card body, no transform, no padding (padding lives on
-          .doc-prose at calc(base * --oversample-k)). doc-prose-scaler: the sole
-          scale layer — carries scale(zoom/K), a down-scale of the frozen K× prose
-          → crisp, reflow-free. */}
+          .doc-prose at calc(base * --oversample-k)). doc-prose-sizer: NON-transformed
+          clip box whose height relayout() sets to the visual height (proseNatH ×
+          zoom/K) so scrollHeight tracks visible content and the K× overhang is
+          clipped in real-px space. doc-prose-scaler: the sole scale layer — carries
+          scale(zoom/K), a down-scale of the frozen K× prose → crisp, reflow-free. */}
       <div
         className="doc-scroll"
         ref={scrollRef}
@@ -125,8 +186,10 @@ export function DocCard(props: DocCardProps) {
               : 0;
         }}
       >
-        <div className="doc-prose-scaler" style={docProseScaler()}>
-          <div className="doc-prose" ref={proseRef} />
+        <div className="doc-prose-sizer" ref={sizerRef}>
+          <div className="doc-prose-scaler" style={docProseScaler()}>
+            <div className="doc-prose" ref={proseRef} />
+          </div>
         </div>
       </div>
     </CardShell>
