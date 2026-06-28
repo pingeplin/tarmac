@@ -68,6 +68,7 @@ import {
   persistLayout,
   readDoc,
   spawnTerm,
+  termClose,
   termResize,
   boardSwitch,
   boardCreate,
@@ -88,6 +89,7 @@ import {
 } from "./kit/boardSwitcher";
 import { TermBoardIndex } from "./kit/termBoardIndex";
 import { isComposingKey } from "./kit/imeGuard";
+import { decide as focusedCloseDecide } from "./kit/focusedClose";
 
 const BOOT_FRAME: WorldFrame = { ...Place.termFrame };
 const PERSIST_DEBOUNCE_MS = 200;
@@ -177,6 +179,8 @@ export default function App() {
   const [status, setStatus] = useState<DaemonStatus>({ connected: false, reason: "connecting…" });
   const [viewport, setViewportState] = useState<Viewport>({ zoom: 1, cx: 0, cy: 0 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedIdRef = useRef<string | null>(null);
+  selectedIdRef.current = selectedId;
   const [toastState, setToastState] = useState<ToastState>(emptyToasts);
   const [docContents, setDocContents] = useState<Map<string, string>>(new Map());
 
@@ -1144,13 +1148,66 @@ export default function App() {
         return;
       }
 
+      // ⌘W — close the focused card. Must be handled here (before the switcher
+      // block and before any passThrough) so Tauri's native "Close Window" menu
+      // item never sees this keystroke. Desktop parity note: the Swift app parks
+      // docs on the shelf (recoverable); we removed the shelf, so we just remove
+      // the doc card. Nothing focused → noop, but still swallow the key.
+      if (e.metaKey && !e.altKey && !e.ctrlKey && e.key.toLowerCase() === "w") {
+        e.preventDefault();
+        e.stopPropagation();
+        // If the switcher is open, close it before acting on the card.
+        if (switcherOpenRef.current) closeSwitcher();
+        const b = activeBoard();
+        const sid = selectedIdRef.current;
+        const card = b && sid ? b.cards.find((c) => cardId(c) === sid) : undefined;
+        if (!card) return; // nothing selected — noop (key already swallowed)
+        if (card.kind === "doc") {
+          removeDoc(card.path);
+          setSelectedId(null);
+          return;
+        }
+        // Terminal card: route through focusedClose.decide() for Swift parity.
+        const termId = card.termId;
+        const bid = activeIdRef.current;
+        const otherLive = (b?.cards ?? []).filter(
+          (c) => c.kind === "term" && c.termId !== termId && c.live && !c.dead,
+        ).length;
+        const action = focusedCloseDecide("term", otherLive);
+        if (action === "noop" || action === "shelfDoc") return;
+        // Proactively remove the card so the late SIGHUP exit (code null) is a
+        // no-op in handleExit (its `if (!term) return` guard fires). Mirror of
+        // Swift's closeTerminal() which tears down state before calling termClose.
+        void termClose(termId);
+        if (action.replace) {
+          // Last live terminal: replace with a fresh shell at the same frame.
+          const { frame, z } = card;
+          const fresh = makeTerm(mint(), frame, z, { needsSpawn: true, prime: true });
+          termBoardIndexRef.current.assign(fresh.termId, bid);
+          setBoardCards(bid, (cs) => [
+            ...cs.filter((c) => !(c.kind === "term" && c.termId === termId)).map(unprime),
+            fresh,
+          ]);
+        } else {
+          // Other live terminals exist: just remove this one and reassign prime.
+          setBoardCards(bid, (cs) =>
+            reassignPrime(cs.filter((c) => !(c.kind === "term" && c.termId === termId))),
+          );
+        }
+        termBoardIndexRef.current.remove(termId);
+        setSelectedId(null);
+        schedulePersist(bid);
+        return;
+      }
+
       // --- switcher-owned key handling -----------------------------------------
       if (switcherOpenRef.current) {
         // The switcher owns the keyboard while open. This handler runs in CAPTURE
         // phase (below), so stopping propagation here keeps the focused terminal's
         // xterm from also receiving the keystroke (it would otherwise type filter
         // chars into the prime PTY). Only ⌘Q / ⌘W fall through to the menus.
-        const passThrough = e.metaKey && (e.key.toLowerCase() === "q" || e.key.toLowerCase() === "w");
+        // ⌘W is handled above (before this block) so it never reaches here.
+        const passThrough = e.metaKey && e.key.toLowerCase() === "q";
         if (!passThrough) e.stopPropagation();
         const rows = currentSwitcherRows();
         const sel = switcherSelectedRef.current;
@@ -1283,8 +1340,9 @@ export default function App() {
           return;
         }
 
-        // Swallow everything else while the switcher is open (except ⌘Q / ⌘W).
-        if (!(e.metaKey && (e.key === "q" || e.key === "Q" || e.key === "w" || e.key === "W"))) {
+        // Swallow everything else while the switcher is open (except ⌘Q).
+        // ⌘W is handled above (before this block) and never reaches here.
+        if (!(e.metaKey && (e.key === "q" || e.key === "Q"))) {
           e.preventDefault();
         }
         return;
