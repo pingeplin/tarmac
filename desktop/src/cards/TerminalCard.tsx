@@ -186,7 +186,39 @@ export function TerminalCard(props: TerminalCardProps) {
       if (!disposed) onSpawn(cols, rows);
     });
 
+    // Echo dedupe state — set by onData (xterm's own keydown-path send), read by
+    // the beforeinput interceptor to drop the duplicate insertText for real-keyCode
+    // keys (space, punctuation) that xterm already delivered.
+    let echoData = "";
+    let echoAt = -1;
+    const ta = term.textarea;
+    const offIme: Array<() => void> = [];
+    if (ta) {
+      // macOS CJK IMEs in alphanumeric mode deliver every ASCII key as a committed
+      // `insertText` whose char is authoritative in `e.data`, but fire `input`
+      // BEFORE `keydown(229)` — inverting the order xterm's textarea-diff assumes,
+      // so fast bursts drop characters. Intercept the committed text directly and
+      // preventDefault so xterm's diff path never mutates/echoes. Real-keyCode keys
+      // (space, punctuation) come through xterm's own keydown path AND emit an
+      // insertText; the echo dedupe drops our duplicate. Real compositions
+      // (isComposing) and non-insert edits are left to xterm.
+      const onBeforeInput = (e: InputEvent) => {
+        if (e.isComposing || e.inputType !== "insertText" || e.data == null) return;
+        e.preventDefault();
+        if (e.data === echoData && performance.now() - echoAt < 16) {
+          echoAt = -1;
+          return;
+        }
+        termInput(model.termId, e.data);
+        if (bellRef.current) onActivityRef.current?.();
+      };
+      ta.addEventListener("beforeinput", onBeforeInput, true);
+      offIme.push(() => ta.removeEventListener("beforeinput", onBeforeInput, true));
+    }
+
     const offData = term.onData((data) => {
+      echoData = data;
+      echoAt = performance.now();
       termInput(model.termId, data);
       // A keystroke clears this terminal's bell (only notify when one is lit, so
       // normal typing never churns React state).
@@ -222,6 +254,7 @@ export function TerminalCard(props: TerminalCardProps) {
       document.removeEventListener("mousemove", trackMouse, { capture: true });
       xtermEl.getBoundingClientRect = origElBCR;
       xtermScreen.getBoundingClientRect = origScreenBCR;
+      offIme.forEach((off) => off());
       offData.dispose();
       offResize.dispose();
       offTitle.dispose();
