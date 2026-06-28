@@ -159,6 +159,13 @@ export function CardShell(props: CardShellProps) {
     if (!e.ctrlKey) e.stopPropagation();
   };
 
+  // A press anywhere on the body selects/raises the card (visual only — never
+  // captures the pointer or preventDefaults, so xterm focus / doc text-select / scroll survive).
+  const onBodyPointerDown = (e: ReactPointerEvent) => {
+    if (e.button !== 0) return;
+    onGrab?.();
+  };
+
   return (
     <div
       ref={props.rootRef}
@@ -178,7 +185,7 @@ export function CardShell(props: CardShellProps) {
       >
         {props.header}
       </div>
-      <div className="card-body" onWheel={onBodyWheel}>
+      <div className="card-body" onWheel={onBodyWheel} onPointerDown={onBodyPointerDown}>
         {props.children}
       </div>
       {props.onResize &&
