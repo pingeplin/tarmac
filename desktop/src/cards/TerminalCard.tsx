@@ -186,29 +186,67 @@ export function TerminalCard(props: TerminalCardProps) {
       if (!disposed) onSpawn(cols, rows);
     });
 
-    // Echo dedupe state — set by onData (xterm's own keydown-path send), read by
-    // the beforeinput interceptor to drop the duplicate insertText for real-keyCode
-    // keys (space, punctuation) that xterm already delivered.
+    // ── Input routing: unify printable keys on the `beforeinput` path ──────────
+    //
+    // Tier 2: a custom key-event handler suppresses xterm's OWN keydown emission for
+    // plain printable single chars, so letters AND space AND punctuation all reach
+    // the PTY uniformly via the `beforeinput` interceptor below — no diff race, no
+    // per-key dedupe needed. attachCustomKeyEventHandler returns `false` to tell
+    // xterm "do not process this key": verified in the installed source
+    // (node_modules/@xterm/xterm/lib/xterm.js `_keyDown`) that the early
+    //   `if(this._customKeyEventHandler&&false===this._customKeyEventHandler(e))return false`
+    // returns WITHOUT preventDefault/stopPropagation, so the default action proceeds
+    // and `beforeinput`/`input` still fire. We return `true` (let xterm handle it)
+    // for anything that must keep xterm's key evaluation:
+    //   - modifiers (ctrl/meta/alt): chords + macOptionIsMeta (⌥O must emit ESC o,
+    //     not ø) need xterm's keydown path.
+    //   - kitty keyboard active: don't break progressive-enhancement sequences for
+    //     plain keys (kittyActive reads the same per-terminal runtime flag App.tsx
+    //     uses: term._core._coreService.kittyKeyboard.flags).
+    //   - composition (isComposing) or multi-char keys (Enter/Esc/Tab/arrows/F-keys,
+    //     e.key.length !== 1): owned by xterm / its CompositionHelper.
+    const kittyActive = (): boolean =>
+      !!((term as any)?._core?._coreService?.kittyKeyboard?.flags);
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.type !== "keydown") return true;
+      if (e.isComposing) return true;
+      if (e.ctrlKey || e.metaKey || e.altKey) return true;
+      if (kittyActive()) return true;
+      if (e.key.length !== 1) return true;
+      return false; // plain printable single char → handled by `beforeinput`.
+    });
+
+    // Echo dedupe state — set by onData, read by the beforeinput interceptor. With the
+    // Tier 2 custom handler above, onData and beforeinput are now MUTUALLY EXCLUSIVE
+    // per key: plain printables go only through beforeinput, and any key xterm does
+    // emit from keydown (e.g. ⌥-as-meta) is followed by xterm's own preventDefault()
+    // (verified in `_keyDown`: after triggerDataEvent it always calls
+    // preventDefault/stopPropagation since screenReaderMode is off), which suppresses
+    // beforeinput. So this dedupe is now defensive insurance, not load-bearing. The
+    // flag is reset at the START of every keydown (capture phase, before xterm's
+    // handler) so its lifetime is exactly one physical key: keydown(reset) →
+    // onData(set) → beforeinput(read). It must NOT be cleared by a microtask — the
+    // browser drains microtasks when the keydown dispatch's JS stack empties, BEFORE
+    // the default action dispatches beforeinput, which would clear it too early. The
+    // keydown reset also clears a stale flag left by keys that emit onData but no
+    // beforeinput (Enter, arrows).
     let echoData = "";
-    let echoAt = -1;
+    let xtermSent = false;
     const ta = term.textarea;
     const offIme: Array<() => void> = [];
     if (ta) {
+      const onKeyDownReset = () => { xtermSent = false; };
+      ta.addEventListener("keydown", onKeyDownReset, true);
+      offIme.push(() => ta.removeEventListener("keydown", onKeyDownReset, true));
       // macOS CJK IMEs in alphanumeric mode deliver every ASCII key as a committed
-      // `insertText` whose char is authoritative in `e.data`, but fire `input`
-      // BEFORE `keydown(229)` — inverting the order xterm's textarea-diff assumes,
-      // so fast bursts drop characters. Intercept the committed text directly and
-      // preventDefault so xterm's diff path never mutates/echoes. Real-keyCode keys
-      // (space, punctuation) come through xterm's own keydown path AND emit an
-      // insertText; the echo dedupe drops our duplicate. Real compositions
+      // `insertText` whose char is authoritative in `e.data`. We intercept the
+      // committed text directly and preventDefault so the textarea never mutates
+      // (xterm's diff path is a no-op and cannot echo). Real compositions
       // (isComposing) and non-insert edits are left to xterm.
       const onBeforeInput = (e: InputEvent) => {
         if (e.isComposing || e.inputType !== "insertText" || e.data == null) return;
         e.preventDefault();
-        if (e.data === echoData && performance.now() - echoAt < 16) {
-          echoAt = -1;
-          return;
-        }
+        if (xtermSent && e.data === echoData) return;
         termInput(model.termId, e.data);
         if (bellRef.current) onActivityRef.current?.();
       };
@@ -217,8 +255,8 @@ export function TerminalCard(props: TerminalCardProps) {
     }
 
     const offData = term.onData((data) => {
+      xtermSent = true;
       echoData = data;
-      echoAt = performance.now();
       termInput(model.termId, data);
       // A keystroke clears this terminal's bell (only notify when one is lit, so
       // normal typing never churns React state).
