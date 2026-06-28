@@ -266,8 +266,6 @@ export class BoardEngine {
     this.viewportEl.style.setProperty("--world-tx", `${tx}px`);
     this.viewportEl.style.setProperty("--world-ty", `${ty}px`);
     this.viewportEl.style.setProperty("--grid-size", `${worldSpacing * this.vp.zoom}px`);
-    this.viewportEl.style.setProperty("--grid-x", `${tx}px`);
-    this.viewportEl.style.setProperty("--grid-y", `${ty}px`);
     this.scheduleRasterSettle();
     this.applyCull(rect);
   }

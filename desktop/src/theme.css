@@ -2,7 +2,7 @@
    The board is an infinite canvas: a clipping viewport hosts a transform-origin-0
    world layer (BoardEngine writes its transform); cards are absolutely positioned
    at world coordinates inside it. The dot grid is one tiled CSS background on the
-   viewport, panned/zoomed via the --grid-x/--grid-y/--zoom vars the engine sets. */
+   viewport, panned/zoomed via the --zoom/--world-tx/--world-ty vars the engine sets. */
 
 :root {
   --bg0: #24282c;
@@ -51,8 +51,6 @@
      and in sync with DOC_OVERSAMPLE_K in kit/docZoom.ts. */
   --oversample-k: 3;
   --grid-size: 24px;
-  --grid-x: 0px;
-  --grid-y: 0px;
 }
 
 * {
