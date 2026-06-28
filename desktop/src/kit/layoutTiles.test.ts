@@ -127,4 +127,18 @@ describe("round-trip buildTiles → parseTiles", () => {
     expect(b.attached).toBe(false);
     expect(a.frame).toEqual(docs[0]!.frame);
   });
+
+  // S11: term tile z survives buildTiles → parseTiles
+  it("S11: preserves z for a term tile", () => {
+    const input: TermTileInput = { termId: "t1", frame: { x: 0, y: 0, w: 470, h: 330 }, z: 7, dead: false };
+    const parsed = parseTiles(buildTiles([input], []));
+    expect(parsed.termTiles[0]!.z).toBe(7);
+  });
+
+  // S12: doc tile z survives buildTiles → parseTiles
+  it("S12: preserves z for a doc tile", () => {
+    const input: DocTileInput = { path: "/c.md", frame: { x: 0, y: 0, w: 392, h: 310 }, z: 5, attached: true };
+    const parsed = parseTiles(buildTiles([], [input]));
+    expect(parsed.docTiles[0]!.z).toBe(5);
+  });
 });

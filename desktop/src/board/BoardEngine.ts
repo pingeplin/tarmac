@@ -13,6 +13,16 @@ import { isCardVisible } from "../kit/cull";
 import { fit } from "../kit/boardWayfinding";
 import { deriveRasterScale, RASTER_SCALE_SETTLE_MS } from "../kit/rasterScale";
 import type { Rect, Size } from "../kit/geom";
+import type { CardModel } from "./model";
+
+/** Imperative handle exposed by EdgeLayer for hot-path edge reprojection. */
+export interface EdgeLayerHandle {
+  updateEdges(
+    cards: CardModel[],
+    vp: { zoom: number; cx: number; cy: number },
+    vpRect: DOMRect,
+  ): void;
+}
 
 export interface Viewport {
   zoom: number;
@@ -53,8 +63,12 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 export class BoardEngine {
   private vp: Viewport = { zoom: 1, cx: 0, cy: 0 };
   private readonly viewportEl: HTMLElement;
-  private readonly worldEl: HTMLElement;
   private detachers: Array<() => void> = [];
+
+  /** Set by Board after mount; engine calls updateEdges on the hot-path apply(). */
+  edgesRef: { current: EdgeLayerHandle | null } | null = null;
+  /** Full card list kept in sync by Board.setCards(); consumed by edge reprojection. */
+  private _cards: CardModel[] = [];
 
   // Viewport culling (perf #5): the card nodes + frames, plus a per-card cache of
   // the last applied visibility so we only touch the DOM when it actually flips.
@@ -76,10 +90,8 @@ export class BoardEngine {
    *  to re-raster at device resolution; they never re-derive zoom themselves. */
   onRasterScaleSettle?: (scale: number) => void;
 
-  constructor(viewportEl: HTMLElement, worldEl: HTMLElement) {
+  constructor(viewportEl: HTMLElement) {
     this.viewportEl = viewportEl;
-    this.worldEl = worldEl;
-    this.worldEl.style.transformOrigin = "0 0";
     this.bindGestures();
     this.apply();
   }
@@ -229,6 +241,14 @@ export class BoardEngine {
     };
   }
 
+  /** Keep the full card list in sync for edge reprojection. Call alongside
+   * setCullables on every committed card-set/frame change. */
+  setCards(cards: CardModel[]): void {
+    this._cards = cards;
+    const rect = this.viewportEl.getBoundingClientRect();
+    this.edgesRef?.current?.updateEdges(this._cards, this.vp, rect);
+  }
+
   /** Register the cards to cull (their nodes + current world frames). Called by
    * the Board on every committed card-set/frame change — NOT per pan frame. */
   setCullables(cullables: Cullable[]): void {
@@ -255,7 +275,6 @@ export class BoardEngine {
     const rect = this.viewportEl.getBoundingClientRect();
     const tx = rect.width / 2 - this.vp.cx * this.vp.zoom;
     const ty = rect.height / 2 - this.vp.cy * this.vp.zoom;
-    this.worldEl.style.transform = `translate(${tx}px, ${ty}px) scale(${this.vp.zoom})`;
     // The infinite dot lattice reads the world origin (tx,ty) + spacing so it
     // pans/zooms WITH the content (one tiled CSS background, not N nodes —
     // carrying the perf-whiteboard-zoom lesson; the grid is constant-time). Below
@@ -268,6 +287,7 @@ export class BoardEngine {
     this.viewportEl.style.setProperty("--grid-size", `${worldSpacing * this.vp.zoom}px`);
     this.scheduleRasterSettle();
     this.applyCull(rect);
+    this.edgesRef?.current?.updateEdges(this._cards, this.vp, rect);
   }
 
   /** Debounce rasterScale settle: cheap GPU transform during the gesture, cards

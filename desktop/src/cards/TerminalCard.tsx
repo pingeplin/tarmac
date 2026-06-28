@@ -43,6 +43,8 @@ interface TerminalCardProps {
   /** Settled rasterScale from BoardEngine; 1 at rest, > 1 after zoom settles. */
   rasterScale: number;
   rootRef?: (el: HTMLDivElement | null) => void;
+  /** When true, the outer wrapper in Board.tsx owns position+z; CardShell uses inset:0. */
+  inWrapper?: boolean;
   onMove: (frame: WorldFrame) => void;
   onMoveStart?: () => void;
   onMoveEnd?: () => void;
@@ -84,13 +86,19 @@ export function TerminalCard(props: TerminalCardProps) {
   const dock = useContext(DockContext);
   const docked = dock.dockedTermId === model.termId;
 
-  // The xterm element sits under TWO transforms when oversampling: the world's
+  // The xterm element sits under TWO transforms when oversampling: the inner
   // scale(zoom) AND this card's counter-scale(1/rs). Its effective layout→screen
   // scale is therefore zoom/rs (and its internal cell width is c0·rs). The BCR
   // selection-coord override must divide by that combined scale, not zoom alone.
   // Pinned to 1 while docked (the host is reparented out of the board transform).
   const rsRef = useRef(1);
   rsRef.current = docked ? 1 : props.rasterScale;
+  // dockedRef: mirrors rsRef pattern — set every render so the mount-time
+  // fakeBCR closure always sees the live docked state. When docked, the host
+  // is outside the board transform and BCR is already in screen space → skip
+  // the override entirely (return the untouched rect).
+  const dockedRef = useRef(false);
+  dockedRef.current = docked;
 
   useEffect(() => {
     // Append the host into the in-card slot on initial mount.
@@ -146,6 +154,7 @@ export function TerminalCard(props: TerminalCardProps) {
     document.addEventListener("mousedown", trackMouse, { capture: true });
     document.addEventListener("mousemove", trackMouse, { capture: true });
     const fakeBCR = (orig: () => DOMRect) => (): DOMRect => {
+      if (dockedRef.current) return orig();
       const r = orig();
       const s = getZoomRef.current() / rsRef.current;
       if (s === 1) return r;
@@ -259,6 +268,7 @@ export function TerminalCard(props: TerminalCardProps) {
     <CardShell
       frame={model.frame}
       z={model.z}
+      inWrapper={props.inWrapper}
       dead={model.dead}
       prime={model.prime}
       quiet={props.quiet}

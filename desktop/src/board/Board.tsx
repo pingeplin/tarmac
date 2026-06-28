@@ -1,9 +1,8 @@
-// The infinite-canvas host: a clipping viewport + a transform-origin world layer
-// driven by BoardEngine. Cards (DOM nodes at world coords) live inside the world;
-// the engine writes the world transform on pan/zoom. React only re-renders when
-// the card SET or a card's committed frame changes. Each card's root node is
-// registered with the engine so it can cull off-screen cards (visibility:hidden,
-// node kept alive) on the pan/zoom hot path without a React re-render.
+// The infinite-canvas host: a clipping viewport driven by BoardEngine. Cards
+// live in a screen-space .card-layer; each card gets a translate-only outer
+// wrapper (sized card{w,h}×zoom via calc()) carrying zIndex:c.z. Terminals add
+// a second inner div (zoom-free var(--card-w/h)) with scale(var(--zoom)) so
+// the host box is never zoom-reactive → no fit()/PTY-resize on zoom.
 //
 // P5 multi-board: App renders ONE Board per board simultaneously; inactive boards
 // are display:none (hidden=true) so their xterm terminals stay WARM — output
@@ -13,10 +12,12 @@
 import React, { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { BoardEngine, type Cullable, type Viewport } from "./BoardEngine";
 import { EdgeLayer } from "./EdgeLayer";
+import type { EdgeLayerHandle } from "./BoardEngine";
 import { TerminalCard } from "../cards/TerminalCard";
 import { DocCard } from "../cards/DocCard";
 import { ownerChipName } from "../kit/ownerChip";
 import { docWrapperBox, docCardVars } from "../kit/docZoom";
+import { termWrapperBox, termCardVars, termInnerBox } from "../kit/termZoom";
 import { cardId, type CardModel, type WorldFrame, type DocMeta } from "./model";
 
 interface BoardProps {
@@ -50,7 +51,8 @@ interface BoardProps {
 
 export function Board(props: BoardProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
-  const worldRef = useRef<HTMLDivElement>(null);
+  const cardLayerRef = useRef<HTMLDivElement>(null);
+  const edgeLayerRef = useRef<EdgeLayerHandle | null>(null);
   const cardEls = useRef<Map<string, HTMLElement>>(new Map());
   const { engineRef, cards, boardId } = props;
 
@@ -60,8 +62,9 @@ export function Board(props: BoardProps) {
   const [rasterScale, setRasterScale] = useState(1);
 
   useEffect(() => {
-    if (!viewportRef.current || !worldRef.current) return;
-    const engine = new BoardEngine(viewportRef.current, worldRef.current);
+    if (!viewportRef.current) return;
+    const engine = new BoardEngine(viewportRef.current);
+    engine.edgesRef = edgeLayerRef;
     engine.onViewportChange = props.onViewport;
     engine.onRasterScaleSettle = setRasterScale;
     engineRef.current = engine;
@@ -88,6 +91,7 @@ export function Board(props: BoardProps) {
       if (el) cullables.push({ id: cardId(c), el, frame: c.frame });
     }
     engine.setCullables(cullables);
+    engine.setCards(cards);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cards]);
 
@@ -123,45 +127,64 @@ export function Board(props: BoardProps) {
         // focus" state reachable, so a bare Return docks the prime terminal (the App
         // keydown guard bails while a .term-host owns focus). Focus returns when the
         // user clicks into a terminal, or via dock/cycle/board-switch.
-        if (e.target === viewportRef.current || e.target === worldRef.current) {
+        if (e.target === viewportRef.current || e.target === cardLayerRef.current) {
           props.onBackgroundPointerDown();
           const ae = document.activeElement as HTMLElement | null;
           if (ae?.closest?.(".term-host")) ae.blur();
         }
       }}
     >
-      <div className="world" ref={worldRef}>
-        <EdgeLayer cards={cards} />
+      {/* Provenance edges: painted behind cards, pointer-events:none */}
+      <EdgeLayer ref={edgeLayerRef} cards={cards} />
+      {/* Screen-space card layer: no transform on the layer; each card wrapper
+          is translated to screen position via calc() off --zoom/--world-tx/ty.
+          zIndex:c.z on each outer wrapper → single stacking context, cross-type
+          focus-on-top works. */}
+      <div className="card-layer" ref={cardLayerRef}>
         {cards.filter((c) => c.kind === "term").map((c) => {
           const id = cardId(c);
           return (
-            <TerminalCard
+            // Outer wrapper: termWrapperBox() translate-only (no scale) + real-px
+            // size calc(--card-w*--zoom). Cullable element (setEl); zIndex here only.
+            <div
               key={id}
-              model={c}
-              selected={id === props.selectedId}
-              quiet={anyTermPrime && !c.prime && !c.dead}
-              getZoom={getZoom}
-              rasterScale={rasterScale}
-              rootRef={setEl(id)}
-              onMove={(frame) => props.onCardMove(id, frame)}
-              onMoveStart={() => props.onCardMoveStart(id)}
-              onMoveEnd={() => props.onCardMoveEnd(id)}
-              onResize={(frame) => props.onCardResize(id, frame)}
-              onResizeEnd={() => props.onCardResizeEnd(id)}
-              onGrab={() => props.onCardGrab(id)}
-              onSpawn={(cols, rows) => props.onTermSpawn(c.termId, cols, rows)}
-              onTitle={(title) => props.onTermTitle(c.termId, title)}
-              onActivity={() => props.onTermActivity(c.termId)}
-            />
+              ref={setEl(id)}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                ...termWrapperBox(),
+                ...(termCardVars(c.frame) as React.CSSProperties),
+                zIndex: c.z,
+              }}
+            >
+              {/* Inner wrapper: zoom-free var(--card-w/h) + scale(var(--zoom)).
+                  Host box never changes size on zoom → no fit()/PTY-resize. */}
+              <div style={termInnerBox() as React.CSSProperties}>
+                <TerminalCard
+                  model={c}
+                  selected={id === props.selectedId}
+                  quiet={anyTermPrime && !c.prime && !c.dead}
+                  getZoom={getZoom}
+                  rasterScale={rasterScale}
+                  inWrapper
+                  onMove={(frame) => props.onCardMove(id, frame)}
+                  onMoveStart={() => props.onCardMoveStart(id)}
+                  onMoveEnd={() => props.onCardMoveEnd(id)}
+                  onResize={(frame) => props.onCardResize(id, frame)}
+                  onResizeEnd={() => props.onCardResizeEnd(id)}
+                  onGrab={() => props.onCardGrab(id)}
+                  onSpawn={(cols, rows) => props.onTermSpawn(c.termId, cols, rows)}
+                  onTitle={(title) => props.onTermTitle(c.termId, title)}
+                  onActivity={() => props.onTermActivity(c.termId)}
+                />
+              </div>
+            </div>
           );
         })}
-      </div>
-      {/* Screen-space layer for doc cards: no transform on the layer itself.
-          Each wrapper is sized in real px (card{w,h}×zoom) via calc() off the
-          global --zoom var; the prose is frozen at the K× reference and the bare
-          inner scaler down-scales it by zoom/K. Panel H: box crisp at real size,
-          text crisp via a pure down-scale (never an upsample). */}
-      <div className="doc-layer">
+        {/* Doc cards: outer wrapper (docWrapperBox+docCardVars+zIndex) → DocCard.
+            DocCard's CardShell uses inWrapper=true (inset:0) so it fills the wrapper.
+            The prose oversample→downscale subtree is unchanged. */}
         {cards.filter((c) => c.kind === "doc").map((c) => {
           const id = cardId(c);
           return (
