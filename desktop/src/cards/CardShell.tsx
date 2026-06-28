@@ -5,7 +5,7 @@
 // focusable — clicking a card must never steal keyboard focus from the prime terminal
 // (design principle #2).
 
-import { useRef, useState, type ReactNode, type PointerEvent as ReactPointerEvent } from "react";
+import { useRef, useState, useEffect, type ReactNode, type PointerEvent as ReactPointerEvent } from "react";
 import { borderRole, cardChromeState, cardHandles } from "../kit/cardChrome";
 import { resizeFrame, type Handle } from "../kit/resize";
 import type { WorldFrame } from "../board/model";
@@ -155,9 +155,18 @@ export function CardShell(props: CardShellProps) {
 
   // Scroll over a card scrolls the card (terminal scrollback / doc), never pans
   // the board; pinch (ctrl+wheel) still bubbles to the board to zoom.
-  const onBodyWheel = (e: React.WheelEvent) => {
-    if (!e.ctrlKey) e.stopPropagation();
-  };
+  // Must be a NATIVE listener so it fires before the board's native preventDefault
+  // listener (React synthetic handlers delegate to #root and arrive too late).
+  const bodyRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      if (!e.ctrlKey) e.stopPropagation();
+    };
+    el.addEventListener("wheel", handler, { passive: true });
+    return () => el.removeEventListener("wheel", handler);
+  }, []);
 
   // A press anywhere on the body selects/raises the card (visual only — never
   // captures the pointer or preventDefaults, so xterm focus / doc text-select / scroll survive).
@@ -185,7 +194,7 @@ export function CardShell(props: CardShellProps) {
       >
         {props.header}
       </div>
-      <div className="card-body" onWheel={onBodyWheel} onPointerDown={onBodyPointerDown}>
+      <div ref={bodyRef} className="card-body" onPointerDown={onBodyPointerDown}>
         {props.children}
       </div>
       {props.onResize &&
