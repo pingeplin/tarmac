@@ -130,6 +130,11 @@ export function TerminalCard(props: TerminalCardProps) {
     term.unicode.activeVersion = "11";
     term.open(host);
     termRef.current = term;
+    // Expose the xterm instance on the host DOM element so App-level keydown
+    // handlers can query kitty keyboard flags (issue #21 terminal key bindings)
+    // without requiring a ref-callback threading. Cleaned up in the dispose
+    // closure below when termRef is also cleared.
+    (host as any).__xtermTerm = term;
 
     // xterm calls getBoundingClientRect() on term.element (.xterm) and
     // term.screenElement (.xterm-screen) to translate mouse coords to cells
@@ -223,6 +228,7 @@ export function TerminalCard(props: TerminalCardProps) {
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
+      delete (host as any).__xtermTerm;
       // Detach from whatever parent — slot or dock pane.
       host.remove();
     };
