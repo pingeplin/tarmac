@@ -25,6 +25,14 @@ import { useEffect, useLayoutEffect, useRef, useState, useContext } from "react"
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
+import { WebglAddon } from "@xterm/addon-webgl";
+import {
+  INITIAL_RENDERER_STATE,
+  shouldAttemptWebgl,
+  onWebglLoaded,
+  onContextLoss,
+  onWebglUnavailable,
+} from "../kit/termRenderer";
 import { CardShell } from "./CardShell";
 import { DockContext } from "./DockContext";
 import { attachTermOutput, detachTermOutput, termInput, termResize } from "../ipc/daemon";
@@ -75,6 +83,7 @@ export function TerminalCard(props: TerminalCardProps) {
 
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const webglRef = useRef<WebglAddon | null>(null);
   // Read inside the (termId-scoped) onData closure so it sees the live bell state.
   const bellRef = useRef(model.bell);
   bellRef.current = model.bell;
@@ -130,6 +139,33 @@ export function TerminalCard(props: TerminalCardProps) {
     term.unicode.activeVersion = "11";
     term.open(host);
     termRef.current = term;
+
+    // Attempt WebGL renderer; fall back to canvas on failure or context loss.
+    let rstate = INITIAL_RENDERER_STATE;
+    const probeWebgl = (): boolean => {
+      try {
+        const canvas = document.createElement("canvas");
+        const gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
+        gl?.getExtension("WEBGL_lose_context")?.loseContext();
+        return !!gl;
+      } catch { return false; }
+    };
+    if (shouldAttemptWebgl(rstate, probeWebgl())) {
+      try {
+        const gl = new WebglAddon();
+        gl.onContextLoss(() => {
+          gl.dispose();
+          rstate = onContextLoss(rstate);
+          webglRef.current = null;
+        });
+        term.loadAddon(gl);
+        rstate = onWebglLoaded(rstate);
+        webglRef.current = gl;
+      } catch {
+        rstate = onWebglUnavailable(rstate);
+      }
+    }
+
     // Expose the xterm instance on the host DOM element so App-level keydown
     // handlers can query kitty keyboard flags (issue #21 terminal key bindings)
     // without requiring a ref-callback threading. Cleaned up in the dispose
@@ -296,6 +332,8 @@ export function TerminalCard(props: TerminalCardProps) {
       offData.dispose();
       offResize.dispose();
       offTitle.dispose();
+      webglRef.current?.dispose();
+      webglRef.current = null;
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
