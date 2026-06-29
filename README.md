@@ -24,7 +24,9 @@ workspace grows out of facts, not configuration: there is no welcome screen, no
 import step, no setup. Surfaces appear the moment a real event produces them.
 
 > Status: **working prototype.** Milestones M0–M3 and the v4 whiteboard
-> migration are complete on `main` (2026-06-15). See [Status](#status).
+> migration are complete on `main`, and the UI has since been rebuilt on
+> Tauri 2 + React + xterm.js (replacing the original Swift/AppKit app).
+> See [Status](#status).
 
 ---
 
@@ -51,7 +53,7 @@ import step, no setup. Surfaces appear the moment a real event produces them.
   claude` — never causal. Tarmac reports; it does not arbitrate.
 
 - **The terminal keeps focus.** Typing always goes to the focused ("prime")
-  terminal regardless of where the pointer is. Peeking a doc, opening the
+  terminal regardless of where the pointer is. Selecting a card, opening the
   switcher, an agent firing an event — none of them steal your keystrokes.
 
 ## What it feels like
@@ -72,8 +74,8 @@ import step, no setup. Surfaces appear the moment a real event produces them.
 Run an agent. It writes a plan and calls `tarmac open plan.md`. The doc lands
 beside it with a provenance edge. The agent edits the file; the card halos cyan.
 You drag the terminal somewhere quieter and the plan follows it (gravity). You
-press `⌘T` for a second shell, `⌘K` to flip to another board, `⌘P` to peek a
-doc without leaving the keyboard.
+press `⌘T` for a second shell and `⌘K` to flip to another board, all without
+leaving the keyboard.
 
 ## Status
 
@@ -81,13 +83,11 @@ Built and shipped on `main`:
 
 - **Infinite board** with Breeze theme, world-space card frames, pan/zoom, and
   per-board persisted layout + viewport.
-- **`tarmac open` → cards** with gravity (docs follow their terminal), a
-  **shelf** for unplaced docs, **peek** (`⌘P` / `⌘`-click), and dashed
+- **`tarmac open` → cards** with gravity (docs follow their terminal) and dashed
   **provenance edges**.
 - **Honest signals**: foreground process name, file-change pulse, terminal bell,
   exit codes — each from a real OS fact.
-- **Wayfinding**: minimap, zoom control, offscreen signal pills, semantic
-  (far-out) zoom.
+- **Wayfinding**: minimap, zoom control, and offscreen signal pills.
 - **Terminal primacy**: a prime card, multiple terminal cards (`⌘T`), `⌥`-tab
   cycling, dead cards on exit (no auto-respawn).
 - **Multiple boards**: a `⌘K` switcher with live thumbnails, `⌘1`–`9` jump,
@@ -109,12 +109,12 @@ Two processes over one Unix socket, length-prefixed MessagePack:
 
 ```
    +--------------------------+       +------------------------------+
-   |TarmacApp (Swift/AppKit)  |       |tarmacd (Rust/Tokio)          |
+   |TarmacApp (Tauri 2 +React)|       |tarmacd (Rust/Tokio)          |
    |the cockpit glass         | <---> |the observatory + PTY owner   |
    | - boards / cards         | unix  | - boards, docs, terminals    |
-   | - SwiftTerm surfaces     |socket | - fswatch, process polling   |
-   | - WKWebView doc cards    |msgpack| - persistence (state.json)   |
-   | - DaemonClient           |frames |                              |
+   | - xterm.js surfaces      |socket | - fswatch, process polling   |
+   | - DOM doc cards (marked) |msgpack| - persistence (state.json)   |
+   | - Rust bridge (socket)   |frames |                              |
    +--------------------------+       +------------------------------+
                                                   |
                                                   |  spawns ptys
@@ -133,15 +133,14 @@ Full design: **[`docs/architecture.md`](docs/architecture.md)**. Wire contract:
 
 ## Build & run
 
-Requires macOS 14+, a Rust toolchain with edition 2024, and the Swift 6.2
-toolchain. Everything goes through the `Makefile`:
+Requires macOS 14+, a Rust toolchain with edition 2024, and Node.js (for the
+Tauri 2 + Vite + React frontend). Everything goes through the `Makefile`:
 
 ```sh
 make core    # cargo build the daemon, CLI, and protocol crate
-make app     # swift build the app, TarmacKit, and the smoke client
-make test    # cargo test && swift test
-make e2e     # scripts/e2e.sh — real daemon + smoke client on an isolated socket
-make run     # build both, then launch the app
+make app     # npm build the frontend + cargo build the Tauri Rust backend
+make test    # cargo test (core) + npm test (frontend) + cargo test (Tauri backend)
+make run     # launch the Tauri dev app (Vite HMR + the Rust backend)
 ```
 
 `make run` sets `TARMAC_DAEMON` (so the app auto-spawns the freshly built
@@ -160,20 +159,23 @@ the doc to the calling terminal card via `TARMAC_TERM_ID`.
 | Path | What it is |
 | --- | --- |
 | `core/` | Rust cargo workspace (edition 2024): `tarmac-protocol` (wire types + codec + conformance vectors), `tarmacd` (the daemon), `tarmac-cli` (the `tarmac` CLI). |
-| `app/` | SwiftPM package (macOS 14, Swift 6.2): `TarmacKit` (pure, unit-tested logic), `TarmacApp` (the AppKit GUI), `tarmac-smoke` (cross-language e2e client). |
+| `desktop/` | Tauri 2 app (macOS 14+): `src/` (the React + xterm.js frontend, with pure unit-tested logic in `src/kit/`), `src-tauri/` (the Rust backend, which path-deps the `tarmac-protocol` crate). |
 | `docs/` | Engineering docs — see the [docs map](#docs) below. |
-| `scripts/` | `e2e.sh`, the end-to-end harness. |
+| `scripts/` | `bundle.sh` (unsigned `.app`) and `release.sh` (sign + notarized `.dmg`). |
 | `Makefile` | The build / test / run entrypoint. |
 
 ## Tests
 
-**72 Rust tests** (35 protocol roundtrip + conformance, 13 daemon-lib, 19
-daemon integration over real sockets, 5 CLI) and **146 Swift TarmacKit
-tests**. The `TarmacApp` GUI layer is not unit-tested by design — pure logic is
-extracted into `TarmacKit` and tested there; the AppKit behaviors are
-GUI-verified. The conformance vectors are mandatory in **both** codebases: the
-same hex msgpack must decode identically in Rust and Swift, pinning the
-cross-language wire contract.
+Three suites, all run by `make test`: **Rust** in `core/` (protocol roundtrip +
+frozen conformance vectors, daemon-lib, daemon integration over real sockets,
+CLI), **Vitest** over the frontend's pure logic in `desktop/src/kit/`, and a
+**Rust** suite in the Tauri backend (`desktop/src-tauri/`). The React/Tauri GUI
+layer is not unit-tested by design — pure logic is extracted into
+`desktop/src/kit/` and tested there; the UI behaviors are GUI-verified. The
+conformance vectors live in `tarmac-protocol` and are exercised by both the
+`core/` daemon and the Tauri backend (which path-deps the crate), pinning the
+wire contract. The frontend consumes already-decoded data over Tauri IPC, so
+there is no second-language codec to keep in lockstep.
 
 ## Docs
 
