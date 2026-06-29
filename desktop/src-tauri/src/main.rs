@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    tarmac_desktop_lib::run()
+    tarmac_app_lib::run()
 }

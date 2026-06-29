@@ -356,7 +356,7 @@ async fn connect(spawned: &mut bool) -> std::io::Result<UnixStream> {
 
 /// The daemon socket path, reusing core's per-channel resolver. Debug builds use
 /// the `dev/` channel (matching `tarmacd`'s own `cfg!(debug_assertions)`), and a
-/// non-empty `TARMAC_SOCKET` overrides verbatim — so `make run-desktop` pins a
+/// non-empty `TARMAC_SOCKET` overrides verbatim — so `make run` pins a
 /// per-worktree path exactly like `make run` does for the Swift app.
 fn socket_path() -> PathBuf {
     let over: Option<OsString> = std::env::var_os("TARMAC_SOCKET");
@@ -391,9 +391,11 @@ fn resolve_daemon_path_pure(
 }
 
 /// Which daemon binary to spawn (port of `DaemonLaunch.resolveDaemonPath`): a
-/// non-empty `TARMAC_DAEMON` wins verbatim (preserves `make run-desktop`).
-/// In a packaged `.app`, `current_exe()` resolves to `Contents/MacOS/Tarmac`,
-/// so its parent is `Contents/MacOS` — the same dir P7 will place `tarmacd` into.
+/// non-empty `TARMAC_DAEMON` wins verbatim (preserves `make run`).
+/// In a packaged `.app`, `current_exe()` resolves to `Contents/MacOS/tarmac-app`
+/// (the GUI exe — distinct from the `tarmac` CLI sidecar, which would otherwise
+/// collide case-insensitively), so its parent is `Contents/MacOS` — the dir the
+/// bundle also places `tarmacd` and `tarmac` into.
 fn resolve_daemon_path() -> Option<String> {
     let exe_dir = std::env::current_exe().ok()?;
     let exe_dir = exe_dir.parent()?;

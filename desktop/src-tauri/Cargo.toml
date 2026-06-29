@@ -1,7 +1,7 @@
 [package]
-name = "tarmac-desktop"
+name = "tarmac-app"
 version = "0.1.0"
-description = "Tarmac cockpit — Tauri 2 + xterm.js UI (replaces the Swift/SwiftTerm app)"
+description = "Tarmac cockpit — Tauri 2 + xterm.js UI"
 authors = ["Tarmac"]
 edition = "2021"
 
@@ -16,7 +16,7 @@ edition = "2021"
 [lib]
 # The `_lib` suffix keeps the lib name unique vs the bin name (Windows quirk,
 # see rust-lang/cargo#8519).
-name = "tarmac_desktop_lib"
+name = "tarmac_app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
