@@ -1413,34 +1413,30 @@ mod tests {
         );
     }
 
-    // S3: check_socket_path_len accepts a 103-byte path (boundary: len < 104).
-    // S4: check_socket_path_len rejects a 104-byte path.
-    // S6: the Err message names "104" and "TARMAC_SOCKET".
+    // 103 bytes is the last accepted length; 104 (the sun_path cap) is rejected
+    // with a message naming the cap and the TARMAC_SOCKET remedy.
     #[test]
     fn check_socket_path_len_boundary() {
-        // S3: 103 bytes → Ok(())
         let path103 = PathBuf::from(format!("/{}", "a".repeat(102))); // "/" + 102 = 103
         assert_eq!(path103.as_os_str().len(), 103);
         assert!(
             check_socket_path_len(&path103).is_ok(),
-            "S3: 103-byte path must be accepted"
+            "103-byte path must be accepted"
         );
 
-        // S4: 104 bytes → Err(_)
         let path104 = PathBuf::from(format!("/{}", "a".repeat(103))); // "/" + 103 = 104
         assert_eq!(path104.as_os_str().len(), 104);
         let err = check_socket_path_len(&path104);
-        assert!(err.is_err(), "S4: 104-byte path must be rejected");
+        assert!(err.is_err(), "104-byte path must be rejected");
 
-        // S6: Err message contains "104" and "TARMAC_SOCKET"
         let msg = err.unwrap_err();
         assert!(
             msg.contains("104"),
-            "S6: error message must contain \"104\", got: {msg}"
+            "error message must contain \"104\", got: {msg}"
         );
         assert!(
             msg.contains("TARMAC_SOCKET"),
-            "S6: error message must contain \"TARMAC_SOCKET\", got: {msg}"
+            "error message must contain \"TARMAC_SOCKET\", got: {msg}"
         );
 
         // over-cap: 150-byte path — cap literal "104" must still appear independently
