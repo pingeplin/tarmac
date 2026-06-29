@@ -163,7 +163,12 @@ export function DocCard(props: DocCardProps) {
           {props.ownerName && <span className="owner-chip">{"← "}{props.ownerName}</span>}
           {model.fresh && <span style={{ color: "var(--agent)" }}>✚ now</span>}
           {recency && <span className="recency-meta">{recency}</span>}
-          <span className="close" onClick={props.onClose} title="Close">
+          <span
+            className="close"
+            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+            onClick={props.onClose}
+            title="Close"
+          >
             ✕
           </span>
         </>

@@ -35,6 +35,7 @@ pub fn run() {
             commands::term_close,
             commands::doc_open,
             commands::doc_read,
+            commands::doc_close,
             commands::read_doc,
             commands::persist_layout,
             commands::board_switch,

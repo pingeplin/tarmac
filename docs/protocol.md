@@ -421,3 +421,9 @@ round-trip. Byte-exact encoder output is NOT required (key order may legally dif
 
        82 a1 74 aa 74 65 72 6d 5f 63 6c 6f 73 65
        a7 74 65 72 6d 5f 69 64 a2 74 31
+
+10. (issue #34) `{t:"doc_close", path:"/a.md"}` — new additive app→daemon type;
+    decodes by tag and round-trips; existing vectors V1–V9 are unaffected.
+
+        82 a1 74 a9 64 6f 63 5f 63 6c 6f 73 65
+        a4 70 61 74 68 a5 2f 61 2e 6d 64

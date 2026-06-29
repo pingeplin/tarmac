@@ -110,6 +110,20 @@ impl Registry {
         }
     }
 
+    // Remove a doc from docs + dock. Returns (existed, should_unwatch), where
+    // should_unwatch is true iff no sibling doc in the same parent dir remains.
+    // The DocClose arm relies on this to decide whether to drop the notify watch.
+    pub fn close_doc(&mut self, path: &Path) -> (bool, bool) {
+        if self.docs.remove(path).is_some() {
+            self.dock.retain(|p| p != path);
+            let has_sibling =
+                path.parent().map(|par| self.docs.keys().any(|k| k.parent() == Some(par))).unwrap_or(false);
+            (true, !has_sibling)
+        } else {
+            (false, false)
+        }
+    }
+
     pub fn set_tiles(&mut self, tiles: Vec<Tile>) {
         let mut kept: Vec<Tile> = Vec::new();
         // v4 Phase 5b: keep each terminal tile with a *distinct* term_id, so N
@@ -410,6 +424,20 @@ impl Daemon {
         Ok(())
     }
 
+    // Remove the notify watch for `dir`. Symmetric with `ensure_watched`; only
+    // called when no remaining registered doc shares the directory. The watcher
+    // Mutex is a std::sync::Mutex and must never be held across an `.await`.
+    pub fn unwatch(&self, dir: &Path) {
+        let mut w = self.watcher.lock().expect("watcher lock");
+        if !w.watched_dirs.contains(dir) {
+            return;
+        }
+        if let Err(e) = w.debouncer.unwatch(dir) {
+            tracing::warn!("unwatch {}: {e}", dir.display());
+        }
+        w.watched_dirs.remove(dir);
+    }
+
     pub fn mark_dirty(&self) {
         self.dirty.notify_one();
     }
@@ -498,6 +526,17 @@ impl Daemon {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    // Per-test unique temp dir (process id + counter avoids collisions across
+    // parallel test threads or reused PIDs).
+    fn tmp_dir(tag: &str) -> std::path::PathBuf {
+        static N: AtomicU32 = AtomicU32::new(0);
+        let n = N.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!("tarmac-state-{}-{}-{n}", std::process::id(), tag));
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
 
     fn term(id: Option<&str>) -> Tile {
         Tile { kind: "term".into(), term_id: id.map(str::to_string), ..term_tile() }
@@ -600,5 +639,73 @@ mod tests {
         boards.create(); // board-1
         assert!(!boards.delete("board-404"));
         assert_eq!(boards.iter().count(), 2);
+    }
+
+    fn doc_info() -> DocInfo {
+        DocInfo { via: "t".into(), read: false, repo: None, repo_root: None, repo_color: None, last_changed_ms: None, last_opened_ms: 0, term_id: None }
+    }
+
+    // close_doc removes the closed path from Registry.dock and reports it existed.
+    #[test]
+    fn doc_close_prunes_closed_path_from_dock() {
+        let mut reg = Registry::empty();
+        let doc = PathBuf::from("/tmp/s6/a.md");
+        reg.docs.insert(doc.clone(), doc_info());
+        reg.dock.push(doc.clone());
+        assert!(reg.dock.contains(&doc));
+        let (existed, _) = reg.close_doc(&doc);
+        assert!(existed);
+        assert!(!reg.dock.contains(&doc));
+    }
+
+    // unwatch() removes the dir from watched_dirs when the sole doc is closed.
+    #[tokio::test]
+    async fn unwatch_removes_dir_when_sole_occupant_closed() {
+        let tmp = tmp_dir("s8a");
+        let doc_dir = tmp.join("d");
+        std::fs::create_dir_all(&doc_dir).unwrap();
+        let daemon = Daemon::new(tmp.join("state.json")).unwrap();
+
+        daemon.ensure_watched(&doc_dir).unwrap();
+        assert!(daemon.watcher.lock().unwrap().watched_dirs.contains(&doc_dir));
+
+        daemon.unwatch(&doc_dir);
+        assert!(!daemon.watcher.lock().unwrap().watched_dirs.contains(&doc_dir));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // When a sibling doc shares the dir, unwatch is skipped and watched_dirs retains it.
+    #[tokio::test]
+    async fn watched_dir_kept_when_sibling_doc_remains() {
+        let tmp = tmp_dir("s8b");
+        let doc_dir = tmp.join("d");
+        std::fs::create_dir_all(&doc_dir).unwrap();
+        let daemon = Daemon::new(tmp.join("state.json")).unwrap();
+
+        let doc_a = doc_dir.join("a.md");
+        let doc_b = doc_dir.join("b.md");
+        {
+            let mut boards = daemon.boards.lock().await;
+            let reg = boards.active_registry_mut();
+            for d in [&doc_a, &doc_b] {
+                reg.docs.insert(d.clone(), doc_info());
+                reg.dock.push(d.clone());
+            }
+        }
+        daemon.ensure_watched(&doc_dir).unwrap();
+
+        let (_, should_unwatch) = {
+            let mut boards = daemon.boards.lock().await;
+            boards.active_registry_mut().close_doc(&doc_a)
+        };
+        assert!(!should_unwatch, "must not unwatch when sibling doc remains");
+        // Mirror production: only unwatch when no sibling remains.
+        if should_unwatch {
+            daemon.unwatch(&doc_dir);
+        }
+        assert!(daemon.watcher.lock().unwrap().watched_dirs.contains(&doc_dir));
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }
