@@ -96,6 +96,8 @@ body,
   overflow: hidden;
   background-color: var(--bg0);
   cursor: default;
+  /* Own stacking context so card z-indices stay contained beneath .dock-pane. */
+  isolation: isolate;
   /* Board chrome is not selectable text — a drag on empty space must never start
      a native selection (反白). Card bodies opt back in below. */
   user-select: none;
