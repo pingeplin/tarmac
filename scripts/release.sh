@@ -30,6 +30,14 @@ APP="$DIST/Tarmac.app"
 ENT="$ROOT/packaging/Tarmac.entitlements"
 DMG="$DIST/Tarmac-$VERSION.dmg"
 
+# 0. Stamp the Cargo versions so CARGO_PKG_VERSION tracks the shipped version.
+#    tauri.conf.json is the human-edited source of truth; these two files are
+#    aligned to it here so the daemon-restart version check works across upgrades.
+#    Matches only `^version = "..."` — dependency pins like `serde = { version = ...}`
+#    start with the crate name and are never touched.
+sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" "$ROOT/core/Cargo.toml"
+sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" "$ROOT/desktop/src-tauri/Cargo.toml"
+
 # 1. (re)assemble the unsigned bundle
 VERSION="$VERSION" "$ROOT/scripts/bundle.sh"
 
