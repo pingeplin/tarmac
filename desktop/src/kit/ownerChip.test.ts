@@ -7,28 +7,32 @@ describe("OwnerChip", () => {
     return (id: string) => map.get(id);
   };
 
-  it("attached + owner present + non-empty label → returns that label", () => {
+  it("owner present + non-empty label → returns that label", () => {
     const labelOf = makeLabels([["term-1", "claude"]]);
-    expect(ownerChipName(true, "term-1", labelOf)).toBe("claude");
+    expect(ownerChipName("term-1", labelOf)).toBe("claude");
   });
 
-  it("detached (attached=false) + owner present + label → null", () => {
+  // S6: a dragged (loose, attached=false) doc whose owner term exists with a
+  // non-empty label still shows the chip. This test would fail if the old
+  // `if (!attached) return null` gate were reintroduced.
+  it("S6: loose (dragged) doc with owner term present + non-empty label → returns label", () => {
     const labelOf = makeLabels([["term-1", "claude"]]);
-    expect(ownerChipName(false, "term-1", labelOf)).toBeNull();
+    // `attached` is no longer a parameter — chip shows based only on ownerTermId + label
+    expect(ownerChipName("term-1", labelOf)).toBe("claude");
   });
 
-  it("attached + ownerTermId === undefined → null", () => {
+  it("ownerTermId === undefined → null", () => {
     const labelOf = makeLabels([]);
-    expect(ownerChipName(true, undefined, labelOf)).toBeNull();
+    expect(ownerChipName(undefined, labelOf)).toBeNull();
   });
 
-  it("attached + owner present but labelOf returns undefined (owner term gone) → null", () => {
+  it("owner present but labelOf returns undefined (owner term gone) → null", () => {
     const labelOf = makeLabels([]); // term-1 not in map → undefined
-    expect(ownerChipName(true, "term-1", labelOf)).toBeNull();
+    expect(ownerChipName("term-1", labelOf)).toBeNull();
   });
 
-  it("attached + owner present but labelOf returns empty label → null", () => {
+  it("owner present but labelOf returns empty label → null", () => {
     const labelOf = makeLabels([["term-1", ""]]);
-    expect(ownerChipName(true, "term-1", labelOf)).toBeNull();
+    expect(ownerChipName("term-1", labelOf)).toBeNull();
   });
 });

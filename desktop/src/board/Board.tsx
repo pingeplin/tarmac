@@ -16,6 +16,7 @@ import type { EdgeLayerHandle } from "./BoardEngine";
 import { TerminalCard } from "../cards/TerminalCard";
 import { DocCard } from "../cards/DocCard";
 import { ownerChipName } from "../kit/ownerChip";
+import { docDimmed } from "../kit/provenance";
 import { docWrapperBox, docCardVars } from "../kit/docZoom";
 import { termWrapperBox, termCardVars, termInnerBox } from "../kit/termZoom";
 import { cardId, type CardModel, type WorldFrame, type DocMeta } from "./model";
@@ -203,10 +204,10 @@ export function Board(props: BoardProps) {
               <DocCard
                 model={c}
                 markdown={props.docContents.get(c.path) ?? ""}
-                ownerName={ownerChipName(c.attached, c.ownerTermId, termLabel)}
+                ownerName={ownerChipName(c.ownerTermId, termLabel)}
                 lastChangedMs={props.docMeta.get(c.path)?.lastChangedMs}
                 selected={id === props.selectedId}
-                detached={c.ownerTermId != null && !c.attached}
+                detached={docDimmed(c.ownerTermId)}
                 getZoom={getZoom}
                 onMove={(frame) => props.onCardMove(id, frame)}
                 onMoveStart={() => props.onCardMoveStart(id)}
