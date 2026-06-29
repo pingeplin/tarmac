@@ -51,7 +51,7 @@ fn touch(path: &str) {
     f.sync_all().unwrap();
 }
 
-// S6+S7: DocClose removes path from Registry.docs + dock; state.json no longer
+// DocClose removes path from Registry.docs + dock; state.json no longer
 // carries the path; after a daemon restart the doc does not reappear in Restore.
 #[test]
 fn doc_close_removes_from_registry_and_persists() {
@@ -65,13 +65,13 @@ fn doc_close_removes_from_registry_and_persists() {
 
     app.send(&Msg::DocClose { path: a.clone() });
 
-    // S7: state.json must not contain the closed path.
+    // state.json must not contain the closed path.
     wait_for_state(&daemon.state_file(), "path absent", |v| {
         let docs = v["boards"][0]["docs"].as_array();
         docs.map(|d| d.iter().all(|e| e["path"] != serde_json::json!(a))).unwrap_or(true)
     });
 
-    // S7: after a restart the doc must not reappear in Restore.
+    // After a restart the doc must not reappear in Restore.
     drop(app);
     daemon.restart();
     let mut app2 = Conn::hello(&daemon.sock, "app");
@@ -83,7 +83,7 @@ fn doc_close_removes_from_registry_and_persists() {
     );
 }
 
-// S8: When a doc is the only entry in its parent dir, DocClose unwatches the dir
+// When a doc is the only entry in its parent dir, DocClose unwatches the dir
 // and no further FileEvent is emitted for it. The live baseline (a FileEvent
 // observed before the close) makes the post-close absence a genuine transition.
 #[test]
@@ -124,7 +124,7 @@ fn doc_close_unwatches_dir_when_sole_occupant() {
     );
 }
 
-// S9: When two docs share a parent dir, closing one keeps the dir watched for the
+// When two docs share a parent dir, closing one keeps the dir watched for the
 // survivor. Touching the survivor emits a FileEvent; touching the closed path does
 // not (the path is gone from the registry so watch_loop skips it).
 #[test]
@@ -168,7 +168,7 @@ fn doc_close_keeps_dir_watched_when_sibling_remains() {
     );
 }
 
-// S10: DocClose for an unknown path is a no-op. An unrelated open doc still
+// DocClose for an unknown path is a no-op. An unrelated open doc still
 // appears in Registry/dock and its dir stays watched (the observable post-condition
 // that rules out "the unknown close silently tore something else down").
 #[test]
@@ -203,7 +203,7 @@ fn doc_close_unknown_path_is_noop() {
     });
 }
 
-// S11: A second DocClose for the same path (double-click / stale frontend) is a
+// A second DocClose for the same path (double-click / stale frontend) is a
 // no-op — no panic, no second persist, no effect on other docs.
 #[test]
 fn doc_close_idempotent_on_repeat() {

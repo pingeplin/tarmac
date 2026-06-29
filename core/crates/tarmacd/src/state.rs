@@ -645,7 +645,7 @@ mod tests {
         DocInfo { via: "t".into(), read: false, repo: None, repo_root: None, repo_color: None, last_changed_ms: None, last_opened_ms: 0, term_id: None }
     }
 
-    // S6: close_doc removes the closed path from Registry.dock and reports it existed.
+    // close_doc removes the closed path from Registry.dock and reports it existed.
     #[test]
     fn doc_close_prunes_closed_path_from_dock() {
         let mut reg = Registry::empty();
@@ -658,7 +658,7 @@ mod tests {
         assert!(!reg.dock.contains(&doc));
     }
 
-    // S8: unwatch() removes the dir from watched_dirs when the sole doc is closed.
+    // unwatch() removes the dir from watched_dirs when the sole doc is closed.
     #[tokio::test]
     async fn unwatch_removes_dir_when_sole_occupant_closed() {
         let tmp = tmp_dir("s8a");
@@ -675,7 +675,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
-    // S8: when a sibling doc shares the dir, unwatch is skipped and watched_dirs retains it.
+    // When a sibling doc shares the dir, unwatch is skipped and watched_dirs retains it.
     #[tokio::test]
     async fn watched_dir_kept_when_sibling_doc_remains() {
         let tmp = tmp_dir("s8b");
