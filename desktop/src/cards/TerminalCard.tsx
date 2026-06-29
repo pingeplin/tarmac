@@ -38,10 +38,7 @@ import { DockContext } from "./DockContext";
 import { attachTermOutput, detachTermOutput, termInput, termResize } from "../ipc/daemon";
 import { termFontFamily, termFontSize, xtermTheme } from "../theme";
 import type { TermCardModel, WorldFrame } from "../board/model";
-
-// host padding constants (must match .term-host in theme.css: padding: 8px 10px).
-const HOST_PADDING_V_PX = 8;
-const HOST_PADDING_H_PX = 10;
+import { termHostPadding } from "../kit/termHostPadding";
 
 interface TerminalCardProps {
   model: TermCardModel;
@@ -371,7 +368,7 @@ export function TerminalCard(props: TerminalCardProps) {
     // When docked the host lives in the dock pane (no board zoom); reset to 1.
     const rs = docked ? 1 : props.rasterScale;
     term.options.fontSize = termFontSize * rs;
-    host.style.padding = `${HOST_PADDING_V_PX * rs}px ${HOST_PADDING_H_PX * rs}px`;
+    host.style.padding = termHostPadding(rs);
     // fit() re-measures the (now rs×) host with the (now rs×) cell size and
     // arrives at the same cols×rows; the canvas is sized at rs×DPR resolution.
     fit.fit();
