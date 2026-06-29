@@ -19,6 +19,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VERSION="${VERSION:-0.1.0}"
+TAURI_VERSION=$(grep '"version"' "$ROOT/desktop/src-tauri/tauri.conf.json" | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+[ "$VERSION" = "$TAURI_VERSION" ] || \
+  echo "WARNING: VERSION=$VERSION but tauri.conf.json version=$TAURI_VERSION — DMG name differs from embedded bundle version" >&2
 : "${DEVID_IDENTITY:?set DEVID_IDENTITY to 'Developer ID Application: NAME (TEAMID)'}"
 : "${NOTARY_PROFILE:?set NOTARY_PROFILE to your notarytool keychain profile name}"
 
