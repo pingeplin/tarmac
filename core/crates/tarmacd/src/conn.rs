@@ -26,6 +26,16 @@ async fn write_msg(
     Ok(())
 }
 
+/// The daemon's handshake reply, stamping this build's version and OS pid so the
+/// app can detect a post-upgrade mismatch and SIGTERM the running daemon by pid.
+fn hello_ok() -> Msg {
+    Msg::HelloOk {
+        v: PROTOCOL_VERSION,
+        daemon_version: Some(env!("CARGO_PKG_VERSION").into()),
+        daemon_pid: Some(std::process::id()),
+    }
+}
+
 async fn handshake(daemon: Arc<Daemon>, mut stream: UnixStream) -> anyhow::Result<()> {
     let first = frame::read_async(&mut stream).await?;
     let (role, v) = match proto::decode(&first) {
@@ -47,11 +57,11 @@ async fn handshake(daemon: Arc<Daemon>, mut stream: UnixStream) -> anyhow::Resul
     }
     match role.as_str() {
         "cli" => {
-            write_msg(&mut stream, &Msg::HelloOk { v: PROTOCOL_VERSION }).await?;
+            write_msg(&mut stream, &hello_ok()).await?;
             cli_session(daemon, stream).await
         }
         "app" => {
-            write_msg(&mut stream, &Msg::HelloOk { v: PROTOCOL_VERSION }).await?;
+            write_msg(&mut stream, &hello_ok()).await?;
             app_session(daemon, stream).await
         }
         other => {

@@ -17,6 +17,10 @@ pub enum Msg {
     },
     HelloOk {
         v: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        daemon_version: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        daemon_pid: Option<u32>,
     },
     Ack,
     Err {
@@ -1098,7 +1102,7 @@ mod tests {
     fn all_message_types_roundtrip() {
         let msgs = vec![
             Msg::Hello { role: "cli".into(), v: 1 },
-            Msg::HelloOk { v: 1 },
+            Msg::HelloOk { v: 1, daemon_version: None, daemon_pid: None },
             Msg::Ack,
             Msg::Err { msg: "boom".into() },
             Msg::Open { path: "/tmp/a.md".into(), term_id: None, board_id: None },
@@ -1461,5 +1465,33 @@ mod tests {
     fn channel_label_maps_both() {
         assert_eq!(channel_label(Channel::Release), "release");
         assert_eq!(channel_label(Channel::Dev), "dev");
+    }
+
+    // HelloOk.daemon_version / daemon_pid are additive: None omits the key on the
+    // wire; a key-less HelloOk decodes both as None; Some values round-trip.
+    #[test]
+    fn hello_ok_daemon_version_additive() {
+        let none_keyed = Msg::HelloOk { v: 1, daemon_version: None, daemon_pid: None };
+        let bytes = encode(&none_keyed).unwrap();
+        // The encoded bytes must not contain either optional key string.
+        assert!(
+            !bytes.windows(14).any(|w| w == b"daemon_version"),
+            "None must omit the daemon_version key on the wire"
+        );
+        assert!(
+            !bytes.windows(10).any(|w| w == b"daemon_pid"),
+            "None must omit the daemon_pid key on the wire"
+        );
+        // Round-trip None → None.
+        assert_eq!(roundtrip(&none_keyed), none_keyed);
+        // A key-less wire frame decodes both as None.
+        let Msg::HelloOk { daemon_version, daemon_pid, .. } = decode(&bytes).unwrap() else {
+            panic!("expected hello_ok")
+        };
+        assert_eq!(daemon_version, None);
+        assert_eq!(daemon_pid, None);
+        // Some values round-trip.
+        let with_vals = Msg::HelloOk { v: 1, daemon_version: Some("0.1.0".into()), daemon_pid: Some(4242) };
+        assert_eq!(roundtrip(&with_vals), with_vals);
     }
 }

@@ -51,8 +51,15 @@ First frame from any client:
 
     {t:"hello", role:"cli"|"app", v:1}
 
-Daemon replies `{t:"hello_ok", v:1}`. Unsupported version or role:
-`{t:"err", msg:"..."}` then close.
+Daemon replies `{t:"hello_ok", v:1, daemon_version:"<semver>"}`. The
+`daemon_version` key is OPTIONAL (skip_serializing_if = None); a receiver that
+does not know it decodes `None` and treats the daemon as version-unverified.
+Unsupported version or role: `{t:"err", msg:"..."}` then close.
+
+The app compares `daemon_version` against its own `CARGO_PKG_VERSION` on every
+connect. On mismatch (or absent key) the app SIGTERMs the stale daemon, waits
+for the socket file to disappear, spawns the newly-installed binary, and
+reconnects; a restart-once guard prevents thrashing on persistent mismatch.
 
 ## CLI session (short-lived)
 

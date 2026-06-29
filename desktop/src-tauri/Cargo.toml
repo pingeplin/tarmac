@@ -27,6 +27,10 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# SIGTERM by pid: std has no `kill`. libc is already in our transitive tree
+# (tokio/tauri); declaring it directly lets the bridge signal a daemon it did
+# not spawn (the brew-upgrade case).
+libc = "0.2"
 
 # Reused read-only from core/ — gives us the Msg enum, encode/decode,
 # frame::read_async/write_async (feature = "async"), repo_color_index, and the
