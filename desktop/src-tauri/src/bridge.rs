@@ -18,7 +18,8 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use tarmac_protocol::{
-    decode, encode, frame, resolve_socket_path, Channel as WireChannel, Msg, PROTOCOL_VERSION,
+    check_socket_path_len, decode, encode, frame, resolve_socket_path, Channel as WireChannel,
+    Msg, PROTOCOL_VERSION,
 };
 use tauri::ipc::{Channel as IpcChannel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter, Manager};
@@ -330,6 +331,9 @@ fn emit_status(app: &AppHandle, connected: bool, reason: Option<&str>) {
 /// only launch one daemon across reconnects.
 async fn connect(spawned: &mut bool) -> std::io::Result<UnixStream> {
     let path = socket_path();
+    if let Err(msg) = check_socket_path_len(&path) {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, msg));
+    }
     if let Ok(stream) = UnixStream::connect(&path).await {
         return Ok(stream);
     }
