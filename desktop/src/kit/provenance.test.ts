@@ -42,45 +42,45 @@ describe('remappedOwners', () => {
   });
 });
 
-// S1, S2, S4, S5: provenance predicates are independent of the `attached` flag.
+// provenance predicates are independent of the `attached` flag.
 describe('docDimmed', () => {
-  // S1: an owner-linked doc that has been dragged (attached=false in the app
+  // an owner-linked doc that has been dragged (attached=false in the app
   // layer) must not be dimmed. docDimmed ignores attached entirely.
-  it('S1: owner-linked doc is never dimmed, regardless of whether it was dragged', () => {
+  it('owner-linked doc is never dimmed, regardless of whether it was dragged', () => {
     // This test would fail if the old `c.ownerTermId != null && !c.attached`
     // logic were still in play — a dragged card with an owner would return true.
     expect(docDimmed('term-1')).toBe(false);
   });
 
-  // S4: an owner-less doc is also never dimmed.
-  it('S4: owner-less doc (null) is never dimmed', () => {
+  // an owner-less doc is also never dimmed.
+  it('owner-less doc (null) is never dimmed', () => {
     expect(docDimmed(null)).toBe(false);
   });
 
-  it('S4 (undefined): owner-less doc (undefined) is never dimmed', () => {
+  it('owner-less doc (undefined) is never dimmed', () => {
     expect(docDimmed(undefined)).toBe(false);
   });
 });
 
 describe('provenanceEdgeShown', () => {
-  // S2: edge is shown for an owner-linked doc whose owner card is present,
+  // edge is shown for an owner-linked doc whose owner card is present,
   // regardless of `attached`. This fails if the old `attached === true` gate
   // were reintroduced (a dragged card would hide the edge).
-  it('S2: owner-linked doc with owner present → edge shown (attached-independent)', () => {
+  it('owner-linked doc with owner present → edge shown (attached-independent)', () => {
     expect(provenanceEdgeShown('term-1', true)).toBe(true);
   });
 
-  // S4: no edge for an owner-less doc.
-  it('S4: owner-less doc (null) with no owner present → no edge', () => {
+  // no edge for an owner-less doc.
+  it('owner-less doc (null) with no owner present → no edge', () => {
     expect(provenanceEdgeShown(null, false)).toBe(false);
   });
 
-  it('S4 (null + true): owner-less doc yields no edge even if ownerCardPresent were somehow true', () => {
+  it('owner-less doc yields no edge even if ownerCardPresent were somehow true', () => {
     expect(provenanceEdgeShown(null, true)).toBe(false);
   });
 
-  // S5: no dangling edge when the owner terminal has been closed.
-  it('S5: owner-linked doc whose owner card is absent → no edge', () => {
+  // no dangling edge when the owner terminal has been closed.
+  it('owner-linked doc whose owner card is absent → no edge', () => {
     expect(provenanceEdgeShown('term-1', false)).toBe(false);
   });
 });

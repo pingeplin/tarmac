@@ -12,10 +12,10 @@ describe("OwnerChip", () => {
     expect(ownerChipName("term-1", labelOf)).toBe("claude");
   });
 
-  // S6: a dragged (loose, attached=false) doc whose owner term exists with a
+  // a dragged (loose, attached=false) doc whose owner term exists with a
   // non-empty label still shows the chip. This test would fail if the old
   // `if (!attached) return null` gate were reintroduced.
-  it("S6: loose (dragged) doc with owner term present + non-empty label → returns label", () => {
+  it("loose (dragged) doc with owner term present + non-empty label → returns label", () => {
     const labelOf = makeLabels([["term-1", "claude"]]);
     // `attached` is no longer a parameter — chip shows based only on ownerTermId + label
     expect(ownerChipName("term-1", labelOf)).toBe("claude");
