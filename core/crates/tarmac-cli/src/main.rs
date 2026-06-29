@@ -93,6 +93,7 @@ fn open(raw_path: &str) -> Result<String, String> {
     }
 
     let sock = socket_path();
+    proto::check_socket_path_len(&sock)?;
     let mut stream = UnixStream::connect(&sock).map_err(|_| {
         format!(
             "no tarmac daemon running ({} channel, socket: {})",

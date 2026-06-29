@@ -323,6 +323,26 @@ pub fn resolve_state_path(over: Option<OsString>, home: &OsStr, channel: Channel
     channel_dir(Path::new(home), channel).join("state.json")
 }
 
+/// PURE length guard for a Unix-domain socket path. macOS caps
+/// sockaddr_un.sun_path at 104 bytes; bind/connect fail opaquely past it.
+/// Ok(())  iff path.as_os_str().len() < 104  (103 = OK).
+/// Err(msg) iff len >= 104 (104 = rejected); msg names the byte length,
+/// the 104-byte cap, AND the remedy (set TARMAC_SOCKET shorter, e.g. /tmp).
+/// SEPARATE from resolve_socket_path: resolution vs validation (SRP).
+pub fn check_socket_path_len(path: &std::path::Path) -> Result<(), String> {
+    let len = path.as_os_str().len();
+    if len < 104 {
+        Ok(())
+    } else {
+        Err(format!(
+            "socket path is {} bytes, over the 104-byte macOS sockaddr_un.sun_path cap: {}; \
+             set TARMAC_SOCKET to a shorter path, e.g. under /tmp",
+            len,
+            path.display()
+        ))
+    }
+}
+
 /// Human channel label for diagnostics: `Release` => `"release"`,
 /// `Dev` => `"dev"`. Mirrors Swift `ChannelPaths.channelLabel`; the impure
 /// "no daemon" / startup messages format it in (spec S10).
@@ -1393,30 +1413,47 @@ mod tests {
         );
     }
 
-    // S8b: `make run` sets TARMAC_SOCKET verbatim to a per-worktree path that
-    // inserts `dev/wt-XXXXXXXX/` (16 bytes) for plain `dev/` (4) — a fixed
-    // 64-byte suffix after `home`. Because it rides the verbatim override, the
-    // resolver returns it UNCHANGED (it does not derive it); we pin the
-    // constructed string's byte counts so a drift in the `wt-` prefix or the
-    // 8-hex width is caught (103 at a 39-byte home, 104 at 40).
+    // 103 bytes is the last accepted length; 104 (the sun_path cap) is rejected
+    // with a message naming the cap and the TARMAC_SOCKET remedy.
     #[test]
-    fn per_worktree_dev_socket_byte_boundary() {
-        fn per_worktree(home: &str) -> String {
-            format!("{home}/Library/Application Support/tarmac/dev/wt-0123abcd/tarmacd.sock")
-        }
-        let home39 = format!("/{}", "a".repeat(38)); // 39 bytes
-        assert_eq!(home39.len(), 39);
-        let p39 = per_worktree(&home39);
-        assert_eq!(p39.len(), 103);
-        // Override wins verbatim (S3/S4): the resolver returns it as-is.
-        assert_eq!(
-            resolve_socket_path(Some(os(&p39)), OsStr::new("/ignored/home"), Channel::Dev),
-            PathBuf::from(&p39),
+    fn check_socket_path_len_boundary() {
+        let path103 = PathBuf::from(format!("/{}", "a".repeat(102))); // "/" + 102 = 103
+        assert_eq!(path103.as_os_str().len(), 103);
+        assert!(
+            check_socket_path_len(&path103).is_ok(),
+            "103-byte path must be accepted"
         );
 
-        let home40 = format!("/{}", "a".repeat(39)); // 40 bytes
-        assert_eq!(home40.len(), 40);
-        assert_eq!(per_worktree(&home40).len(), 104);
+        let path104 = PathBuf::from(format!("/{}", "a".repeat(103))); // "/" + 103 = 104
+        assert_eq!(path104.as_os_str().len(), 104);
+        let err = check_socket_path_len(&path104);
+        assert!(err.is_err(), "104-byte path must be rejected");
+
+        let msg = err.unwrap_err();
+        assert!(
+            msg.contains("104"),
+            "error message must contain \"104\", got: {msg}"
+        );
+        assert!(
+            msg.contains("TARMAC_SOCKET"),
+            "error message must contain \"TARMAC_SOCKET\", got: {msg}"
+        );
+
+        // over-cap: 150-byte path — cap literal "104" must still appear independently
+        // of the interpolated length ("150").
+        let path150 = PathBuf::from(format!("/{}", "a".repeat(149))); // "/" + 149 = 150
+        assert_eq!(path150.as_os_str().len(), 150);
+        let err150 = check_socket_path_len(&path150);
+        assert!(err150.is_err(), "150-byte path must be rejected");
+        let msg150 = err150.unwrap_err();
+        assert!(
+            msg150.contains("104"),
+            "error message for 150-byte path must still contain \"104\", got: {msg150}"
+        );
+        assert!(
+            msg150.contains("TARMAC_SOCKET"),
+            "error message for 150-byte path must contain \"TARMAC_SOCKET\", got: {msg150}"
+        );
     }
 
     // S10: the channel label maps both arms (a swapped or constant label fails).

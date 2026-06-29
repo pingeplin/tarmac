@@ -6,7 +6,7 @@ mod term;
 
 use std::ffi::OsString;
 use std::path::PathBuf;
-use tarmac_protocol::{Channel, channel_label, resolve_socket_path, resolve_state_path};
+use tarmac_protocol::{Channel, channel_label, check_socket_path_len, resolve_socket_path, resolve_state_path};
 use tokio::net::UnixListener;
 use tracing::{error, info, warn};
 
@@ -69,6 +69,9 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let sock = socket_path();
+    if let Err(msg) = check_socket_path_len(&sock) {
+        return Err(anyhow::anyhow!("{msg}"));
+    }
     claim_socket(&sock)?;
     let listener = UnixListener::bind(&sock)?;
     info!("tarmacd ({}) listening on {}", channel_label(current_channel()), sock.display());

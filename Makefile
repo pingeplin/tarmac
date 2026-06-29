@@ -39,17 +39,16 @@ test:
 # `make run`s from different worktrees don't share a socket or state file.
 run: core app-deps sidecars
 	cd $(ROOT)/desktop && \
-	wt="$$HOME/Library/Application Support/tarmac/dev/wt-$$(echo -n "$(ROOT)" | shasum | head -c8)"; \
-	TARMAC_SOCKET="$$wt/tarmacd.sock" \
-	TARMAC_STATE="$$wt/state.json" \
+	TARMAC_SOCKET="$(ROOT)/.dev/tarmacd.sock" \
+	TARMAC_STATE="$(ROOT)/.dev/state.json" \
 	TARMAC_DAEMON="$(ROOT)/core/target/debug/tarmacd" \
 	PATH="$(ROOT)/core/target/debug:$$PATH" \
 	npm run tauri dev
 
 # Kill the dev tarmacd for this worktree (same socket path as `make run`).
-# Sends SIGTERM so the daemon can clean up; exits 0 whether or not it was running.
+# Sends SIGKILL (kill -9); exits 0 whether or not it was running.
 kill-daemon:
-	sock="$$HOME/Library/Application Support/tarmac/dev/wt-$$(echo -n "$(ROOT)" | shasum | head -c8)/tarmacd.sock"; \
+	sock="$(ROOT)/.dev/tarmacd.sock"; \
 	pid=$$(lsof -t "$$sock" 2>/dev/null); \
 	if [ -n "$$pid" ]; then \
 		echo "killing tarmacd pid $$pid on $$sock"; \
