@@ -5,6 +5,27 @@
 // exported function.
 
 /**
+ * Whether a doc card should be dimmed. Owner-linked docs are never dimmed;
+ * owner-less docs were never dimmed either. Always returns false — provenance
+ * (dim) is independent of the `attached` gravity flag.
+ */
+export function docDimmed(_ownerTermId: string | null | undefined): boolean {
+  return false;
+}
+
+/**
+ * Whether the provenance edge from the owner terminal to this doc should be
+ * shown. True only when the doc has an owner terminal and that terminal's card
+ * is present on the board. Never gated on `attached`.
+ */
+export function provenanceEdgeShown(
+  ownerTermId: string | null | undefined,
+  ownerCardPresent: boolean,
+): boolean {
+  return ownerTermId != null && ownerCardPresent;
+}
+
+/**
  * Re-anchors persisted doc→terminal owners across a restart (decision 2,
  * best-effort). `owners` maps doc path → its persisted owner `term_id` (from the
  * prior run). `oldToNew` maps each restored terminal's persisted id to its
