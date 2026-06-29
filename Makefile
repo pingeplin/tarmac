@@ -1,9 +1,20 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: core app app-deps test run kill-daemon bundle release
+.PHONY: core app app-deps sidecars test run kill-daemon bundle release
 
 core:
 	cd $(ROOT)/core && cargo build
+
+# Stage the debug daemon + CLI as Tauri externalBin sidecars. tauri.conf.json
+# declares binaries/{tarmacd,tarmac}, which Tauri resolves to the arch-suffixed
+# binaries/<name>-<triple> even in `tauri dev` — so they must exist before `run`,
+# not just at bundle time (scripts/bundle.sh stages the *release* builds).
+sidecars: core
+	triple=$$(rustc -vV | sed -n 's/host: //p'); \
+	dir="$(ROOT)/desktop/src-tauri/binaries"; \
+	mkdir -p "$$dir"; \
+	cp "$(ROOT)/core/target/debug/tarmacd" "$$dir/tarmacd-$$triple"; \
+	cp "$(ROOT)/core/target/debug/tarmac"  "$$dir/tarmac-$$triple"
 
 # Install the app (Tauri 2 + Vite + React) JS deps. Separate so build/test
 # targets stay fast once node_modules exists.
@@ -26,7 +37,7 @@ test:
 # into spawned ptys so `tarmac open <file>` works inside xterm terminals.
 # TARMAC_SOCKET/TARMAC_STATE pin a stable per-worktree dev path so simultaneous
 # `make run`s from different worktrees don't share a socket or state file.
-run: core app-deps
+run: core app-deps sidecars
 	cd $(ROOT)/desktop && \
 	wt="$$HOME/Library/Application Support/tarmac/dev/wt-$$(echo -n "$(ROOT)" | shasum | head -c8)"; \
 	TARMAC_SOCKET="$$wt/tarmacd.sock" \
