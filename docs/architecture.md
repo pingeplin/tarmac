@@ -11,22 +11,22 @@ Unix socket:
   owner*: it spawns and owns every terminal, watches every opened doc, observes
   OS facts (process names, file changes, bells, exits), holds all the boards,
   and persists everything to disk.
-- **`TarmacApp`** — a Swift/AppKit application. The *cockpit glass*: it renders
-  the boards and cards, hosts the terminal surfaces and doc webviews, and turns
-  human input into requests to the daemon.
+- **`TarmacApp`** — a Tauri 2 + React + xterm.js application (`desktop/`). The
+  *cockpit glass*: it renders the boards and cards, hosts terminal surfaces and
+  doc cards, and turns human input into requests to the daemon.
 
 A third tiny binary, the **`tarmac` CLI**, is the universal doorbell: `tarmac
 open <path>` connects to the daemon, names a doc, and exits.
 
 ```
    +----------------------------+         +----------------------------------+
-   |TarmacApp (Swift / AppKit)  |         |tarmacd (Rust / Tokio)            |
+   |TarmacApp (Tauri 2 / React) |         |tarmacd (Rust / Tokio)            |
    |the cockpit glass           |         |Daemon (Arc, shared):             |
-   |AppController (the spine)   |  unix   |  boards: Mutex<Boards>           |
+   |desktop/ (Vite + React)     |  unix   |  boards: Mutex<Boards>           |
    | - boards / cards           | socket  |  terms:  Mutex<HashMap>          |
-   | - SwiftTerm surfaces       |<------->|  term_boards: Mutex<...>         |
-   | - WKWebView doc cards      | msgpack |  watcher (notify / fswatch)      |
-   | - DaemonClient             | frames  |  persistence (state.json)        |
+   | - xterm.js terminals       |<------->|  term_boards: Mutex<...>         |
+   | - doc cards                | msgpack |  watcher (notify / fswatch)      |
+   | - Tauri backend (Rust)     | frames  |  persistence (state.json)        |
    +----------------------------+         +----------------------------------+
                                                        |
                                                        |  spawns ptys (sets TARMAC_TERM_ID)
@@ -89,8 +89,8 @@ connect to an existing socket file: success means a live daemon already owns it
 
 **Framing.** Every message is a 4-byte big-endian `u32` length prefix followed
 by that many MessagePack bytes. Max frame is 16 MiB; anything larger is a
-protocol error that closes the connection. (`tarmac-protocol::frame`; mirrored
-in Swift `Framing`.)
+protocol error that closes the connection. (`tarmac-protocol::frame`, reused by
+the desktop backend over the same path-dep.)
 
 **Encoding.** Each message is a MessagePack **map with string keys** — Rust
 encodes with `rmp_serde::to_vec_named` (plain `to_vec` would emit arrays and
@@ -257,150 +257,44 @@ shape — lossless and one-way.
 
 ---
 
-## 4 · The macOS app (`TarmacApp`)
+## 4 · The desktop app (`TarmacApp`)
 
-### Two-target split
+The cockpit glass is a Tauri 2 application in `desktop/`. The React frontend
+(Vite, TypeScript) renders the infinite board, card chrome, and wayfinding
+overlays. xterm.js backs each terminal card; doc cards render markdown in a
+sandboxed webview. The Tauri Rust backend (`desktop/src-tauri/`) owns the
+daemon connection, mirroring the wire framing from `tarmac-protocol` (path dep).
 
-`app/Package.swift` declares **`TarmacKit`** (a pure, AppKit-free library — only
-Foundation/CoreGraphics) and **`TarmacApp`** (the AppKit executable), plus
-`tarmac-smoke` (a cross-language e2e client that drives a real daemon).
+**DaemonClient** is the long-lived socket connection. On connect it sends
+`Hello`, then starts a read loop delivering messages to the frontend via Tauri
+events. If `TARMAC_DAEMON` is set it spawns the daemon binary and retries ~3 s.
 
-Everything deterministic lives in TarmacKit and is unit-tested there: the
-transport codec (`Framing`, `MsgPack`, `Messages`), board math
-(`BoardTransform` world↔view affine, `BoardWayfinding` fit/minimap/offscreen/
-cascade), the rules and view-models (`BoardSwitcher`, `DocStore`, `DocRouting`,
-`Provenance`, `Reconnect`, `TermRestore`, `DocSuspend`, `TermBoardIndex`,
-`BootTerminal`). `DaemonClient` also lives in TarmacKit but, being the live
-socket client, is exercised by the `tarmac-smoke` integration target rather than
-unit-tested. The AppKit views deliberately delegate their math to
-TarmacKit (e.g. `BoardView` calls `BoardTransform`; `Minimap` calls
-`BoardWayfinding`) so the views stay thin.
+Connection state is **app-local**: on disconnect, cards are marked detached
+(not dead — the pty may still be alive daemon-side) and a bounded auto-reconnect
+ramps 0.5→1→2→4→8 s capped at 15 s, up to 10 attempts. When `Restore` arrives
+with `live_terms`, surviving terminal cards are rebound to live ptys (replayed
+scrollback repaints cleanly); gone shells are cold-spawned under the same
+`term_id`.
 
-`TarmacApp` holds the untestable AppKit half: `AppController` (the coordinator
-spine), `Board` (per-board state container), `BoardModel` (view-layer frame
-structs), the whiteboard/card/chrome views, `DocWebView`, and the wayfinding
-overlays. **The GUI layer is not unit-tested by design** — pure logic is pushed
-into TarmacKit; the reparent/focus behaviors are GUI-verified. (See the project
-memory note on this.)
+**Board & card model.** A `Viewport {zoom, cx, cy}` drives a world↔view
+transform; pan / pinch-zoom / `fitToCards` reproject the card layer. Each card
+carries a world-space `CardFrame {x,y,w,h,z}`. Card chrome states —
+`prime/quiet/dead/detached/fresh/selected` — are mostly orthogonal flags.
+**Gravity**: moving a terminal card drags its attached doc satellites; a user
+move of a doc card detaches it. Below zoom 0.5 cards collapse to locards.
 
-### DaemonClient, reconnect, and revive
+**Terminal cards** embed an xterm.js instance keyed by `term_id`. Input/resize
+forward to the daemon; output routes to the owning board's buffer even when
+backgrounded so the shell keeps progressing.
 
-`DaemonClient` is the long-lived socket connection, mirroring the Rust framing
-and codec exactly. `connect()` is blocking: it tries once, and (if
-`TARMAC_DAEMON` is set) spawns the daemon and retries for ~3 s; on success it
-sends `hello` and starts a background read loop that hops to the main queue
-before delivering `onMessage` / `onDisconnect`.
+**Doc cards** render markdown (DocTemplate pattern). Inactive boards' doc views
+are suspended on switch-away and resumed on switch-back. Peek (`⌘P`) marks a
+doc read without moving focus. The shelf holds unplaced docs as chips. Provenance
+edges (dashed cyan bézier) connect a doc card to its caller terminal.
 
-Connection state is **app-local**: the daemon can't tell a gone app that it
-detached, so the attached/detached chip is driven by `DaemonClient`'s own state.
-On disconnect, sessions are marked **detached** (faint, *not* dead — the pty may
-still be alive daemon-side), each affected board is queued for revive, and a
-**bounded auto-reconnect** is armed: `Reconnect.delay(forAttempt:)` ramps
-0.5→1→2→4→8 s capped at 15 s, up to 10 attempts; `quitting`/`reconnecting`
-latches keep it single-flighted and stoppable.
-
-When the reconnect's `Restore` arrives carrying `live_terms`, `reviveTerminals`
-swaps a *fresh empty SwiftTerm view* into each surviving card under the same
-`term_id` (so the daemon's replayed scrollback repaints cleanly without
-duplicating the old buffer), then re-binds without spawning (term is live) or
-cold-spawns under the same id (shell gone). `maybeSpawn` is gated on the
-awaiting-revive set so a detached prime is never cold-spawned over a surviving
-shell. The pure rebind-vs-cold decision is `TermRestore.plan`.
-
-### Board & card view model
-
-`BoardView` is the infinite whiteboard. A `Viewport {zoom, cx, cy}` drives the
-transform `view = (world − center)·zoom + viewportCenter` (delegated to
-`BoardTransform`), the flipped view draws a world-space dot grid, and pan
-(`scrollWheel`) / anchored pinch zoom (`magnify`) / animated `flyTo` /
-`fitToCards` reproject the card layer.
-
-`CardView` is a free card carrying a world-space `CardFrame {x,y,w,h,z}`; it
-embeds a `TerminalBodyView` (`.term`) or a `DocWebView` (`.doc`). Card chrome
-states are explicit, mostly-orthogonal flags with guarded setters:
-
-- **`prime`** — the focused terminal (accent border, darker header, deeper
-  shadow).
-- **`quiet`** — any non-prime card while some terminal is prime (alpha 0.8).
-- **`dead`** — the pty exited (alpha 0.55, header relabelled `exit N · ↵
-  respawn`; absorbs/ignores other states to stay dead).
-- **`detached`** — daemon link dropped (alpha 0.5, reversible).
-- **`fresh`** — a just-landed CLI card (agent ring + `✚ now`, cleared on
-  select/read).
-- **`selected`** — agent border + 7px corner resize handles.
-
-Free move + corner resize convert pointer deltas to world deltas via
-`worldPerView` (= 1/zoom). **Gravity**: moving a terminal card drags its
-attached doc satellites by the same world delta; a user move of a doc card
-detaches it. esc cancels an in-flight gesture. `worldFrame.z` drives stacking;
-selecting raises to front. Below the semantic-zoom threshold (0.5) every card
-swaps its chrome for a compact locard (name + status + signal).
-
-### Terminal cards
-
-Each terminal card is backed by a `TerminalSession` owning a SwiftTerm
-`TerminalView` and a per-terminal `TermDelegateBridge` — the **TerminalSurface
-seam**. The bridge carries the card's `term_id` and routes SwiftTerm's delegate
-callbacks onto the controller, so each surface self-identifies its pty with no
-global "current terminal." Everything is keyed by `term_id`: input forwards via
-`client.input(termID:)`, resize debounces via `client.resize`, and output routes
-through the `TermBoardIndex` to the owning board's buffer — **even when that
-board is backgrounded**, so its shell keeps progressing. `⌘T` mints a fresh
-term_id and places a card cascade-offset from the prime; `⌥`-tab cycles prime to
-the next live terminal with a HUD.
-
-### Doc cards
-
-A doc card's body is `DocWebView`, a `WKWebView` (subclassed non-focusable so a
-click never steals focus from the terminal). It loads the bundled
-`DocTemplate.html` and renders markdown by calling `window.tarmacRender(...)`,
-which preserves the reading position across re-renders. For multi-board memory,
-inactive boards' doc webviews are **suspended** (parked on `about:blank` to free
-their web-content process) on switch-away and **resumed** on switch-back; the
-guard logic is the pure `DocSuspend`. Terminals are *not* suspended.
-
-**Peek** (`PeekPanel`, a slide-over) opens via `⌘P` or a shelf-chip click and
-marks the doc read without moving focus. The **shelf** (`ShelfView`) holds
-open-but-unplaced docs as chips; dragging one onto the board lands a card.
-**Provenance**: each doc records the `term_id` that opened it; `DocRouting`
-resolves the owner only when it's one of that board's live terminals, and an
-attached doc card shows a `← <termname>` chip connected to its caller by a
-dashed cyan bézier in `EdgeLayerView`.
-
-### Wayfinding chrome
-
-Four overlays, refreshed from real signals on every viewport/card change:
-**minimap** (card rects colored by signal + the viewport rect, click-to-jump),
-**zoom control** (`− % + ⊡ fit`), **offscreen hints** (a pill pinned to the
-viewport edge toward each off-screen signalling card; bell outranks live; Return
-flies to the top one), and the **status bar** (`▞ <board> · N boards`, the
-attached/detached word, and `N cards on board · M in shelf`).
-
-### Multiple boards
-
-`AppController` holds `boards: [board_id: Board]` with one `activeBoardID`. A
-`Board` owns its `BoardView`, `DocStore`, sessions, dock/shelf state, and
-provenance map; `AppController` reaches the active board through computed shims,
-so a switch automatically re-targets every read/write. Only the active board's
-view is mounted; backgrounded boards keep their cards and live SwiftTerm views
-detached so their ptys stay live.
-
-The **`⌘K` switcher** (`BoardSwitcherView` is render-only) computes its rows from
-the pure `BoardSwitcher` view-model: per-board running/bell/card counts (local
-for visited boards, daemon `BoardMeta.running` for never-visited ones),
-prefix-filtered rows, 86×54 thumbnails reusing the wayfinding projection. Keys:
-type-to-filter, `↑/↓` + `⏎`/`⌘1`–`9` to open, `⌘N` to create, **`⌘E`** inline
-rename (empty clears to slug), **`⌘⌫`** one-key-confirm delete (refused for the
-last board, mirroring the daemon's authority).
-
-### Focus model
-
-The SwiftTerm view is the window's default first responder; the board takes
-focus only when its background is clicked. Every keystroke passes through a
-global key monitor that calls `reconcilePrimeToFocus` so prime tracks whatever
-live terminal the user clicked into. Peek / dock / cycle all
-reconcile-then-refocus the prime terminal, so focus is never moved off it.
-Exactly one live terminal is prime; nothing is prime when no terminal is live.
+**Multiple boards.** A `⌘K` switcher shows per-board running/bell/card counts,
+supports type-to-filter, `⌘N` create, `⌘E` rename, `⌘⌫` delete. `⌘1`–`9` jump
+directly. Switching suspends the leaving board's doc views and mounts the target.
 
 ---
 

@@ -1,0 +1,45 @@
+[package]
+name = "tarmac-app"
+version = "0.1.0"
+description = "Tarmac cockpit — Tauri 2 + xterm.js UI"
+authors = ["Tarmac"]
+edition = "2021"
+
+# This crate is a STANDALONE Cargo package — deliberately NOT a member of the
+# `core/` workspace. It path-depends on `tarmac-protocol` (a member of that
+# workspace) read-only: Cargo resolves that crate's `*.workspace = true` keys
+# against core/Cargo.toml (found by walking up from its own location), so the
+# wire codec + 9 conformance vectors are REUSED, never re-ported. Do not add
+# this package to core/Cargo.toml `members` — that would be editing core and
+# would pull Tauri's heavy dep tree into the daemon build.
+
+[lib]
+# The `_lib` suffix keeps the lib name unique vs the bin name (Windows quirk,
+# see rust-lang/cargo#8519).
+name = "tarmac_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Reused read-only from core/ — gives us the Msg enum, encode/decode,
+# frame::read_async/write_async (feature = "async"), repo_color_index, and the
+# channel-path resolvers. Its cargo tests already cover conformance V1–V9.
+tarmac-protocol = { path = "../../core/crates/tarmac-protocol", features = ["async"] }
+
+# The socket bridge (Phase 1) runs the daemon read/write loops on Tokio, mirroring
+# tarmacd's own async IO so frame::read_async/write_async apply directly.
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "net",
+    "sync",
+    "io-util",
+    "time",
+] }
