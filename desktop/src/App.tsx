@@ -62,6 +62,7 @@ import { Place, firstFreeSlot, scatterFrame } from "./kit/placement";
 import { buildTiles, parseTiles, type LayoutTile } from "./kit/layoutTiles";
 import type { Size } from "./kit/geom";
 import {
+  docClose,
   frontendReady,
   onDaemonMsg,
   onDaemonStatus,
@@ -549,11 +550,22 @@ export default function App() {
   };
 
   const removeDoc = (path: string) => {
-    setActiveBoard((b) => ({
-      ...b,
-      cards: b.cards.filter((c) => !(c.kind === "doc" && c.path === path)),
-      dockOrder: b.dockOrder.filter((p) => p !== path),
-    }));
+    setActiveBoard((b) => {
+      const docMeta = new Map(b.docMeta);
+      docMeta.delete(path);
+      return {
+        ...b,
+        cards: b.cards.filter((c) => !(c.kind === "doc" && c.path === path)),
+        dockOrder: b.dockOrder.filter((p) => p !== path),
+        docMeta,
+      };
+    });
+    setDocContents((m) => {
+      const next = new Map(m);
+      next.delete(path);
+      return next;
+    });
+    void docClose(path);
   };
 
   // --- terminal lifecycle ------------------------------------------------------

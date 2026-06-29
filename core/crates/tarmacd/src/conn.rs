@@ -415,6 +415,26 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
                 debug!("board_delete refused for {board_id} (last board or unknown)");
             }
         }
+        Msg::DocClose { path } => {
+            let path_buf = std::path::PathBuf::from(&path);
+            let parent = path_buf.parent().map(std::path::Path::to_path_buf);
+            // Lock boards, prune docs + dock, compute whether a sibling doc in
+            // the same dir remains; drop the lock before any unwatch/await.
+            let (removed, should_unwatch) = {
+                let mut boards = daemon.boards.lock().await;
+                boards.active_registry_mut().close_doc(&path_buf)
+            };
+            if removed {
+                daemon.mark_dirty();
+                if should_unwatch {
+                    if let Some(dir) = parent {
+                        daemon.unwatch(&dir);
+                    }
+                }
+            } else {
+                debug!("doc_close for unknown path {path}");
+            }
+        }
         Msg::Unknown => debug!("ignoring unknown message type from app"),
         other => debug!("ignoring unexpected app message: {other:?}"),
     }

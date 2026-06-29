@@ -81,6 +81,10 @@ export function docRead(path: string): Promise<void> {
   return invoke("doc_read", { path });
 }
 
+export function docClose(path: string): Promise<void> {
+  return invoke("doc_close", { path });
+}
+
 /** Read a doc's markdown content for rendering (the UI reads files itself). */
 export function readDoc(path: string): Promise<string> {
   return invoke("read_doc", { path });

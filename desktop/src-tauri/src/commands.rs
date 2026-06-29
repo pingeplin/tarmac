@@ -98,6 +98,11 @@ pub fn doc_read(state: State<Bridge>, path: String) {
     state.send(Msg::DocRead { path });
 }
 
+#[tauri::command]
+pub fn doc_close(state: State<Bridge>, path: String) {
+    state.send(Msg::DocClose { path });
+}
+
 /// Read a doc's markdown content for rendering. The daemon sends only the path
 /// (+ mtime via file_event); the UI reads the file itself, exactly as the Swift
 /// app did (readMarkdown). Returns the file text, or an error string.

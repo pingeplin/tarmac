@@ -156,6 +156,12 @@ pub enum Msg {
     TermClose {
         term_id: String,
     },
+    // DocClose (app -> daemon, issue #34): forget a doc — prune Registry.docs +
+    // dock, persist state.json, unwatch the parent dir iff no remaining doc in
+    // the registry shares it. Idempotent: an unknown path is a silent no-op.
+    DocClose {
+        path: String,
+    },
     // Unknown message types are ignored, not fatal (protocol rule).
     #[serde(other)]
     Unknown,
@@ -578,6 +584,17 @@ mod tests {
             "82 a1 74 aa 74 65 72 6d 5f 63 6c 6f 73 65 \
              a7 74 65 72 6d 5f 69 64 a2 74 31",
             Msg::TermClose { term_id: "t1".into() },
+        );
+    }
+
+    #[test]
+    fn conformance_vector_10_doc_close() {
+        // issue #34: a new additive app -> daemon type. Decodes by tag and
+        // round-trips; existing vectors V1-V9 are unaffected (unknown-type rule).
+        assert_vector(
+            "82 a1 74 a9 64 6f 63 5f 63 6c 6f 73 65 \
+             a4 70 61 74 68 a5 2f 61 2e 6d 64",
+            Msg::DocClose { path: "/a.md".into() },
         );
     }
 
@@ -1196,6 +1213,8 @@ mod tests {
                 board_id: Some("board-1".into()),
             },
             Msg::Open { path: "/a.md".into(), term_id: Some("t9".into()), board_id: Some("board-1".into()) },
+            // issue #34: close a doc card (app -> daemon).
+            Msg::DocClose { path: "/tmp/a.md".into() },
         ];
         for m in msgs {
             assert_eq!(roundtrip(&m), m, "roundtrip failed for {m:?}");

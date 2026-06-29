@@ -132,3 +132,31 @@ impl Conn {
 pub fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack.windows(needle.len()).any(|w| w == needle)
 }
+
+// Drain all messages arriving within `timeout`, returning true if none of them
+// match `pred`. Used to assert the absence of a message (e.g. no FileEvent for a
+// closed doc's path after it has been unwatched). Sets the stream's read timeout
+// around the window and restores the LONG timeout afterwards.
+pub fn none_within(conn: &mut Conn, timeout: Duration, mut pred: impl FnMut(&Msg) -> bool) -> bool {
+    let deadline = Instant::now() + timeout;
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        conn.0.set_read_timeout(Some(remaining)).unwrap();
+        match frame::read_sync(&mut conn.0) {
+            Ok(payload) => {
+                if let Ok(msg) = proto::decode(&payload) {
+                    if pred(&msg) {
+                        conn.0.set_read_timeout(Some(LONG)).unwrap();
+                        return false;
+                    }
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    conn.0.set_read_timeout(Some(LONG)).unwrap();
+    true
+}
