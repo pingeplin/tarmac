@@ -495,14 +495,14 @@ dependencies = [
 
 [[package]]
 name = "tarmac-cli"
-version = "0.1.0"
+version = "0.7.0"
 dependencies = [
  "tarmac-protocol",
 ]
 
 [[package]]
 name = "tarmac-protocol"
-version = "0.1.0"
+version = "0.7.0"
 dependencies = [
  "rmp-serde",
  "serde",
@@ -512,7 +512,7 @@ dependencies = [
 
 [[package]]
 name = "tarmacd"
-version = "0.1.0"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "libc",
