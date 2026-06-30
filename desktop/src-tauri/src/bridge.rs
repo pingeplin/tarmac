@@ -56,6 +56,8 @@ pub struct Bridge {
     // (not just the last) lets a webview reload / HMR replay rehydrate every board
     // that was visited this session, not only the most-recent one.
     last_restores: Mutex<HashMap<String, serde_json::Value>>,
+    /// The spawned daemon child. Retained so we can SIGTERM it on version mismatch.
+    daemon_child: Mutex<Option<std::process::Child>>,
 }
 
 impl Bridge {
@@ -67,6 +69,7 @@ impl Bridge {
             last_status: Mutex::new(None),
             last_board_list: Mutex::new(None),
             last_restores: Mutex::new(HashMap::new()),
+            daemon_child: Mutex::new(None),
         }
     }
 
@@ -163,6 +166,17 @@ impl Bridge {
     }
 }
 
+// ── Version check ────────────────────────────────────────────────────────────
+
+/// True iff the daemon's reported version differs from the expected version (or
+/// is absent) AND we have not already triggered a restart for this mismatch.
+/// The `already_restarted` latch prevents a second restart when the newly-spawned
+/// daemon still reports a wrong version (bad PATH, stale install, etc.); in that
+/// case the persistent mismatch surfaces via the daemon-status event instead.
+fn should_restart(expected: &str, reported: Option<&str>, already_restarted: bool) -> bool {
+    reported != Some(expected) && !already_restarted
+}
+
 // ── Pure buffer helpers (unit-testable without Tauri types) ──────────────────
 
 /// Push `bytes` into the per-term output buffer, evicting oldest chunks when the
@@ -220,13 +234,18 @@ pub fn start(app: AppHandle, rx: UnboundedReceiver<Msg>) {
 /// `Reconnect` schedule until the bounded budget is spent.
 async fn connection_loop(app: AppHandle, mut rx: UnboundedReceiver<Msg>) {
     let mut spawned = false;
+    let mut already_restarted = false;
     let mut attempt: u32 = 0;
     loop {
-        match connect(&mut spawned).await {
+        match connect(&app, &mut spawned).await {
             Ok(stream) => {
                 attempt = 0;
                 emit_status(&app, true, None);
-                run_connection(&app, &mut rx, stream).await;
+                if run_connection(&app, &mut rx, stream, already_restarted).await {
+                    spawned = false;
+                    already_restarted = true;
+                    continue;
+                }
                 emit_status(&app, false, Some("daemon connection closed"));
             }
             Err(e) => emit_status(&app, false, Some(&format!("connect failed: {e}"))),
@@ -242,20 +261,62 @@ async fn connection_loop(app: AppHandle, mut rx: UnboundedReceiver<Msg>) {
     }
 }
 
-/// One connection: handshake (`hello`), then `select!` between reading daemon
-/// frames (→ dispatch) and draining the outbound queue (→ frame onto socket).
-/// Returns when the socket EOFs/errors or a write fails.
-async fn run_connection(app: &AppHandle, rx: &mut UnboundedReceiver<Msg>, stream: UnixStream) {
+/// One connection: handshake (`hello`), version-check the `HelloOk`, then
+/// `select!` between reading daemon frames (→ dispatch) and draining the outbound
+/// queue (→ frame onto socket). Returns `true` if a version-mismatch restart was
+/// triggered (caller must reset `spawned` and reconnect); `false` on normal exit.
+async fn run_connection(
+    app: &AppHandle,
+    rx: &mut UnboundedReceiver<Msg>,
+    stream: UnixStream,
+    already_restarted: bool,
+) -> bool {
     let (mut read_half, mut write_half) = stream.into_split();
 
-    let hello = encode(&Msg::Hello {
-        role: "app".into(),
-        v: PROTOCOL_VERSION,
-    })
-    .expect("hello encodes");
+    let hello = encode(&Msg::Hello { role: "app".into(), v: PROTOCOL_VERSION }).expect("hello encodes");
     if frame::write_async(&mut write_half, &hello).await.is_err() {
-        return;
+        return false;
     }
+
+    // First inbound frame is always HelloOk; check daemon version before the loop.
+    let first_payload = match frame::read_async(&mut read_half).await {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    let first_msg = match decode(&first_payload) {
+        Ok(m) => m,
+        Err(_) => return false,
+    };
+    let (reported_version, reported_pid) = match &first_msg {
+        Msg::HelloOk { daemon_version, daemon_pid, .. } => (daemon_version.clone(), *daemon_pid),
+        _ => (None, None),
+    };
+
+    if should_restart(env!("CARGO_PKG_VERSION"), reported_version.as_deref(), already_restarted) {
+        emit_status(app, false, Some("version mismatch / restarting"));
+        // SIGTERM the daemon the handshake came from, by its reported pid — this
+        // is the brew-upgrade case where the app did NOT spawn the stale daemon
+        // (so daemon_child is None). The tracked child is a secondary fallback.
+        let pid = reported_pid.or_else(|| {
+            let bridge = app.state::<Bridge>();
+            let guard = bridge.daemon_child.lock().unwrap();
+            guard.as_ref().map(|c| c.id())
+        });
+        if let Some(pid) = pid {
+            unsafe { libc::kill(pid as i32, libc::SIGTERM); }
+        }
+        // Wait for the dying daemon to remove its socket before spawning the new
+        // binary, so the new daemon's claim_socket() does not see a live daemon
+        // and exit(1). Bounded so a wedged daemon still lets us proceed.
+        let sock = socket_path();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while sock.exists() && Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        return true;
+    }
+
+    dispatch(app, first_msg);
 
     loop {
         tokio::select! {
@@ -282,6 +343,7 @@ async fn run_connection(app: &AppHandle, rx: &mut UnboundedReceiver<Msg>, stream
             }
         }
     }
+    false
 }
 
 /// Route one daemon message to the frontend. `Output` streams over the owning
@@ -329,7 +391,7 @@ fn emit_status(app: &AppHandle, connected: bool, reason: Option<&str>) {
 /// Connect to the daemon socket, auto-spawning `tarmacd` on the first miss and
 /// retrying for ~3s (mirrors `DaemonClient.connect`). `spawned` latches so we
 /// only launch one daemon across reconnects.
-async fn connect(spawned: &mut bool) -> std::io::Result<UnixStream> {
+async fn connect(app: &AppHandle, spawned: &mut bool) -> std::io::Result<UnixStream> {
     let path = socket_path();
     if let Err(msg) = check_socket_path_len(&path) {
         return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, msg));
@@ -339,7 +401,7 @@ async fn connect(spawned: &mut bool) -> std::io::Result<UnixStream> {
     }
     if !*spawned {
         if let Some(daemon) = resolve_daemon_path() {
-            spawn_daemon(&daemon);
+            spawn_daemon(app, &daemon);
             *spawned = true;
         }
     }
@@ -413,16 +475,21 @@ fn resolve_daemon_path() -> Option<String> {
 
 /// Launch the daemon detached, prepending its own dir onto the child `PATH` so
 /// the PTYs it spawns resolve the `tarmac` CLI (port of `DaemonLaunch`).
-fn spawn_daemon(daemon: &str) {
+/// The `Child` handle is retained on `Bridge` so a version-mismatch restart
+/// can SIGTERM the stale process.
+fn spawn_daemon(app: &AppHandle, daemon: &str) {
     let cli_dir = Path::new(daemon)
         .parent()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default();
     let base = std::env::var("PATH").ok();
-    let _ = Command::new(daemon)
+    if let Ok(child) = Command::new(daemon)
         .stdin(Stdio::null())
         .env("PATH", inject_cli_path(base.as_deref(), &cli_dir))
-        .spawn();
+        .spawn()
+    {
+        *app.state::<Bridge>().daemon_child.lock().unwrap() = Some(child);
+    }
 }
 
 /// Pure backoff schedule — exact port of `Reconnect.delay(forAttempt:)`: ramp
@@ -644,4 +711,28 @@ mod tests {
         let result = resolve_daemon_path_pure(Some(""), dir, |p| p == Path::new("/app/Contents/MacOS/tarmacd"));
         assert_eq!(result, Some(PathBuf::from("/app/Contents/MacOS/tarmacd")));
     }
+
+    // ── should_restart tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn should_restart_equal_versions_is_false() {
+        assert!(!should_restart("0.1.0", Some("0.1.0"), false));
+    }
+
+    #[test]
+    fn should_restart_differing_versions_is_true() {
+        assert!(should_restart("0.2.0", Some("0.1.0"), false));
+    }
+
+    #[test]
+    fn should_restart_none_version_is_true() {
+        assert!(should_restart("0.1.0", None, false));
+    }
+
+    #[test]
+    fn should_restart_already_restarted_is_false() {
+        assert!(!should_restart("0.2.0", Some("0.1.0"), true));
+        assert!(!should_restart("0.1.0", None, true));
+    }
+
 }

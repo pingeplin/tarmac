@@ -100,12 +100,17 @@ arrays of ints. Decoders accept keys in any order, accept any integer width, and
 treat a missing optional key as nil.
 
 **Handshake & the single-app slot.** The first frame is
-`Hello { role: "cli" | "app", v }`; the daemon replies `HelloOk { v }` (version
+`Hello { role: "cli" | "app", v }`; the daemon replies `HelloOk { v, daemon_version? }` (version
 1) or `Err` and drops. The daemon serves a **single app at a time**: a newly
 connecting app evicts the previous one (its cancellation token is fired). Every
 daemon→app frame funnels through one bounded mpsc channel drained FIFO by one
 writer task; with no app attached, `Daemon::push` drops the frame silently — so
 the PTY pump keeps running and filling scrollback even with the UI gone.
+`HelloOk.daemon_version` carries `env!("CARGO_PKG_VERSION")` — stamped into both
+`core/Cargo.toml` and `desktop/src-tauri/Cargo.toml` by `scripts/release.sh` before
+the build — so the app can detect a stale daemon after a brew upgrade and restart
+it. (`make release` is the only path that stamps this version; ad-hoc builds stay
+at the committed dev value.)
 
 **The message set** (one tagged `Msg` enum; unknown tags decode to `Unknown`):
 
@@ -329,6 +334,7 @@ viewport.
 | **App reconnect** (daemon stays up) | **Survive** — re-bound to live ptys, scrollback replayed | Restored from daemon memory |
 | **App relaunch** (daemon stays up) | **Survive** — re-bound on connect | Restored |
 | **Daemon restart** | Re-spawned fresh (cold) — live shells died with the daemon | Restored exactly from `state.json` |
+| **Version-mismatch restart** (brew upgrade) | Cold-spawned on the new daemon (same as above) | Restored from `state.json` via `Msg::Restore` on reconnect |
 
 Daemon-restart PTY re-parenting (true live-shell survival across a daemon
 restart) is designed but deliberately unbuilt; cold layout-only restore + the

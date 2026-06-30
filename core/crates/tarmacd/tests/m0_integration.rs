@@ -89,6 +89,23 @@ fn m0_end_to_end() {
     assert!(docs[0].last_changed_ms.is_some());
 }
 
+// The handshake reply carries the daemon's build version and OS pid, so the app
+// can detect a post-upgrade mismatch and SIGTERM the running daemon by pid.
+// A daemon that sent None for either field would fail this.
+#[test]
+fn hello_ok_reports_daemon_version_and_pid() {
+    let daemon = TestDaemon::start();
+    let mut app = Conn::connect(&daemon.sock);
+    app.send(&Msg::Hello { role: "app".into(), v: tarmac_protocol::PROTOCOL_VERSION });
+    let reply = app.recv(Instant::now() + LONG, "hello_ok");
+    let Msg::HelloOk { v, daemon_version, daemon_pid } = reply else {
+        panic!("expected hello_ok, got {reply:?}");
+    };
+    assert_eq!(v, tarmac_protocol::PROTOCOL_VERSION);
+    assert_eq!(daemon_version.as_deref(), Some(env!("CARGO_PKG_VERSION")));
+    assert_eq!(daemon_pid, Some(daemon.child.id()));
+}
+
 #[test]
 fn term_input_pty_size_and_exit_code() {
     let daemon = TestDaemon::start();

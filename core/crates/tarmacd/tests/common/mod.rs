@@ -100,7 +100,7 @@ impl Conn {
         let mut conn = Conn::connect(sock);
         conn.send(&Msg::Hello { role: role.into(), v: proto::PROTOCOL_VERSION });
         let reply = conn.recv(Instant::now() + LONG, "hello_ok");
-        assert!(matches!(reply, Msg::HelloOk { v: 1 }), "expected hello_ok, got {reply:?}");
+        assert!(matches!(reply, Msg::HelloOk { v: 1, .. }), "expected hello_ok, got {reply:?}");
         conn
     }
 
