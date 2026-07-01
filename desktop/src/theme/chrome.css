@@ -1,0 +1,509 @@
+/* --- status bar --- */
+
+.status-bar {
+  flex: 0 0 27px;
+  height: 27px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: var(--bg1);
+  border-top: 1px solid var(--line-soft);
+  color: var(--faint);
+  font-size: 10.5px;
+}
+.status-bar .agent {
+  color: var(--agent);
+}
+.status-bar .connected {
+  color: var(--ok);
+}
+.status-bar .detached {
+  color: var(--amber);
+}
+.status-bar .spacer {
+  flex: 1 1 auto;
+}
+
+/* --- zoom control (bottom-left; ZoomControl.swift) --- */
+
+.zoom-control {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 50;
+  display: inline-flex;
+  align-items: stretch;
+  height: 26px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  font-family: var(--chrome-font);
+  font-size: 10.5px;
+  user-select: none;
+}
+.zoom-seg {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--faint);
+  font: inherit;
+  padding: 0 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.zoom-sep {
+  flex: 0 0 1px;
+  width: 1px;
+  background: var(--line-soft);
+}
+.zoom-pct {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  min-width: 50px; /* 30px content floor + 10px each side — no jitter */
+  color: var(--text);
+}
+
+/* --- minimap (bottom-right; Minimap.swift) --- */
+
+.minimap {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 50;
+  width: 132px;
+  height: 88px;
+  background: var(--minimap-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+}
+.minimap svg {
+  display: block;
+}
+
+/* --- offscreen-signal hint pills (click-through; OffscreenHints.swift) --- */
+
+.offscreen-hints {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  overflow: hidden;
+  pointer-events: none;
+}
+.offscreen-hint {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 11px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: var(--shadow-hint);
+  font-family: var(--chrome-font);
+  font-size: 10.5px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.offscreen-hint.bell {
+  border-color: var(--hint-border-bell);
+}
+.offscreen-hint.bell .label {
+  color: var(--text);
+}
+.offscreen-hint.bell .arrow {
+  color: var(--amber);
+}
+.offscreen-hint.live {
+  border-color: var(--hint-border-live);
+}
+.offscreen-hint.live .label {
+  color: var(--muted);
+}
+.offscreen-hint.live .arrow {
+  color: var(--faint);
+}
+
+/* --- toast stack (bottom-right, click-through except chips; Toasts.swift) --- */
+
+.toast-stack {
+  position: absolute;
+  right: 14px;
+  bottom: 38px;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+  pointer-events: none;
+}
+.tm-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  max-width: 320px;
+  padding: 9px 12px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  box-shadow: var(--shadow-toast);
+  font-family: var(--chrome-font);
+  pointer-events: none;
+  animation: tm-toast-in 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes tm-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.tm-toast-icon {
+  flex: 0 0 auto;
+  color: var(--agent);
+  font-size: 13px;
+  line-height: 1.2;
+}
+.tm-toast-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.tm-toast-title {
+  max-width: 280px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--text);
+}
+.tm-toast-body {
+  max-width: 280px;
+  margin-top: 2px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 10px;
+  color: var(--faint);
+}
+.tm-toast-keys {
+  display: flex;
+  gap: 5px;
+  margin-left: 6px;
+  align-self: center;
+}
+.tm-toast-key {
+  pointer-events: auto;
+  appearance: none;
+  font-family: var(--chrome-font);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--muted);
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 2px 5px;
+  cursor: pointer;
+}
+.tm-toast-key:hover {
+  background: var(--bg3);
+  color: var(--text);
+}
+
+/* Honor the OS reduce-motion setting for the transient chrome animations. */
+@media (prefers-reduced-motion: reduce) {
+  .tm-toast {
+    animation: none;
+  }
+}
+
+/* --- ⌘K board switcher overlay (BoardSwitcherView.swift parity) --- */
+
+/* Full-area dim veil; click-through except the mouse event we intercept. */
+.switcher-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 79; /* below the panel */
+  background: rgba(0, 0, 0, 0.45);
+}
+
+/* Centered card panel. */
+.switcher-panel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 80;
+  width: 380px;
+  max-height: 480px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow-card-rest);
+  overflow: hidden;
+  font-family: var(--chrome-font);
+  font-size: 11px;
+}
+
+/* Query / rename bar — shows typed filter or rename buffer + blinking caret. */
+.switcher-query {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--bg1);
+}
+
+.switcher-query-label {
+  flex: 0 0 auto;
+  color: var(--faint);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.switcher-query-text {
+  flex: 1 1 auto;
+  color: var(--text);
+  font-size: 12px;
+  min-width: 0;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: clip;
+}
+
+.switcher-query-placeholder {
+  color: var(--faint);
+  font-style: italic;
+}
+
+/* Blinking caret (no real <input>; rendered as a text character). */
+.switcher-caret {
+  color: var(--agent);
+  animation: switcher-caret-blink 1s step-start infinite;
+}
+
+@keyframes switcher-caret-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Scrollable board list. */
+.switcher-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.switcher-empty {
+  padding: 16px 14px;
+  color: var(--faint);
+  font-size: 10.5px;
+  text-align: center;
+}
+
+/* Each board row. */
+.switcher-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  cursor: pointer;
+  border-radius: 0;
+  user-select: none;
+}
+
+.switcher-row:hover {
+  background: var(--bg3);
+}
+
+/* The keyboard-selected row (not to be confused with the ACTIVE board marker). */
+.switcher-row.selected {
+  background: var(--bg3);
+}
+
+/* The currently-active board has a slightly brighter name. */
+.switcher-row.active .switcher-name {
+  color: var(--agent);
+}
+
+/* Live spinner glyph — cyan when live, faint when not. */
+.switcher-spinner {
+  flex: 0 0 12px;
+  font-size: 11px;
+  color: var(--faint);
+  line-height: 1;
+}
+
+.switcher-spinner.live {
+  color: var(--agent);
+}
+
+/* Board display name. */
+.switcher-name {
+  flex: 1 1 auto;
+  color: var(--text);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.switcher-active-mark {
+  color: var(--agent);
+  font-size: 8px;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+
+/* Meta line (N running · M bell · K cards). */
+.switcher-meta {
+  flex: 0 0 auto;
+  color: var(--faint);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+/* ⌘1–9 ordinal shortcut hint, right-aligned. */
+.switcher-ordinal {
+  flex: 0 0 auto;
+  color: var(--line); /* very faint: purely decorative */
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+
+/* Footer hint / delete-confirm row. */
+.switcher-footer {
+  flex: 0 0 auto;
+  padding: 8px 14px;
+  border-top: 1px solid var(--line-soft);
+  background: var(--bg1);
+}
+
+.switcher-footer-hint {
+  color: var(--faint);
+  font-size: 10px;
+}
+
+.switcher-footer-confirm {
+  color: var(--amber);
+  font-size: 10px;
+}
+
+.switcher-footer-confirm strong {
+  font-weight: 600;
+  color: var(--amber);
+}
+
+/* --- dock pane (Wave 2; fixed bottom of .board-stack) --- */
+
+.dock-pane {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 40%;
+  display: flex;
+  flex-direction: column;
+  background: var(--term-bg);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -24px 60px rgba(0, 0, 0, 0.6);
+  /* above board/minimap (50) but below switcher (80); matches peek at 60. */
+  z-index: 65;
+}
+
+.dock-pane.hidden {
+  display: none;
+}
+
+.dock-header {
+  flex: 0 0 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-family: var(--chrome-font);
+  font-size: 10.5px;
+  user-select: none;
+}
+
+.dock-header .glyph {
+  color: var(--agent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.dock-header .label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dock-header .spacer {
+  flex: 1 1 auto;
+}
+
+.dock-header .hint {
+  color: var(--faint);
+  font-size: 10px;
+}
+
+.dock-body {
+  flex: 1 1 auto;
+  position: relative;
+  padding: 8px 12px;
+  overflow: hidden;
+}
+
+/* --- cycle HUD (Wave 2; top-center transient readout) --- */
+
+.cycle-hud {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: rgba(62, 68, 75, 0.92); /* bg3 translucent */
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.cycle-hud-item {
+  font-family: var(--chrome-font);
+  font-size: 10.5px;
+  color: var(--faint);
+  padding: 2px 7px;
+  border-radius: 5px;
+}
+
+.cycle-hud-item.active {
+  background: var(--bg3);
+  border: 1px solid var(--line);
+  color: var(--text);
+}

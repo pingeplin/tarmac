@@ -1,0 +1,11 @@
+/* Standalone kit stylesheet entry point (decision (b)/(e) of
+   2607.0001_tarmac_ui_kit_design_sync_export). The compiled @import closure of
+   this file is tokens + card + chrome + preview-defaults ONLY — no app-only.css
+   (board-engine/world-layer/terminal rules), so no board-engine, world-layer, or
+   terminal selector reaches dist-kit/tarmac-kit.css. Bundled by
+   desktop/scripts/build-kit.mjs via esbuild's native CSS @import support. */
+
+@import './tokens.css';
+@import './card.css';
+@import './chrome.css';
+@import './preview-defaults.css';

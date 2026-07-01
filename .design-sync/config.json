@@ -1,0 +1,38 @@
+{
+  "projectId": "d20c20dc-83d9-449e-b19d-46054e8c594d",
+  "shape": "package",
+  "readmeHeader": ".design-sync/conventions.md",
+  "pkg": "tarmac-app",
+  "globalName": "TarmacKit",
+  "entry": "./src/kit-entry.ts",
+  "buildCmd": "npm run build:kit",
+  "cssEntry": "dist-kit/tarmac-kit.css",
+  "tokensGlob": "src/theme/tokens.css",
+  "extraFonts": [
+    "public/fonts/ibm-plex-mono-regular.woff2",
+    "public/fonts/ibm-plex-mono-bold.woff2"
+  ],
+  "componentSrcMap": {
+    "CardShell": "src/cards/CardShell.tsx",
+    "DocCard": "src/cards/DocCard.tsx",
+    "BoardSwitcher": "src/ui/BoardSwitcher.tsx",
+    "CycleHud": "src/ui/CycleHud.tsx",
+    "DockPane": "src/ui/DockPane.tsx",
+    "MinimapOverlay": "src/ui/MinimapOverlay.tsx",
+    "OffscreenHints": "src/ui/OffscreenHints.tsx",
+    "StatusBar": "src/ui/StatusBar.tsx",
+    "ToastOverlay": "src/ui/ToastOverlay.tsx",
+    "ZoomControl": "src/ui/ZoomControl.tsx"
+  },
+  "overrides": {
+    "CardShell": { "cardMode": "column" },
+    "DocCard": { "cardMode": "column" },
+    "BoardSwitcher": { "cardMode": "column" },
+    "CycleHud": { "cardMode": "column" },
+    "DockPane": { "cardMode": "column" },
+    "MinimapOverlay": { "cardMode": "column" },
+    "OffscreenHints": { "cardMode": "column" },
+    "StatusBar": { "cardMode": "column" },
+    "ToastOverlay": { "cardMode": "column" }
+  }
+}
