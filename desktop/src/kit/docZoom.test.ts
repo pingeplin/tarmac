@@ -142,19 +142,21 @@ describe("S3 — prose is the sole scale (Panel H down-scale)", () => {
 });
 
 describe("S12 — prose layout is zoom-INDEPENDENT (reflow regression)", () => {
-  // The frozen K× layout lives on the .doc-prose theme.css rule; it must depend
-  // only on --oversample-k / --card-w, never on --zoom — otherwise wrap points
-  // move with zoom and the prose re-wraps. The bare scaler is the SOLE carrier
-  // of --zoom.
+  // The frozen K× layout lives on the .doc-prose rule in theme/card.css (moved
+  // out of theme.css by the theme/*.css partial split — see
+  // docs/designs/2607.0001_tarmac_ui_kit_design_sync_export.md); it must
+  // depend only on --oversample-k / --card-w, never on --zoom — otherwise wrap
+  // points move with zoom and the prose re-wraps. The bare scaler is the SOLE
+  // carrier of --zoom.
   const themeCss = readFileSync(
-    fileURLToPath(new URL("../theme.css", import.meta.url)),
+    fileURLToPath(new URL("../theme/card.css", import.meta.url)),
     "utf8",
   );
 
   /** Extract the body of a top-level CSS rule by exact selector. */
   function ruleBody(selector: string): string {
     const i = themeCss.indexOf(selector + " {");
-    expect(i, `selector ${selector} not found in theme.css`).toBeGreaterThanOrEqual(0);
+    expect(i, `selector ${selector} not found in theme/card.css`).toBeGreaterThanOrEqual(0);
     const open = themeCss.indexOf("{", i);
     const close = themeCss.indexOf("}", open);
     return themeCss.slice(open + 1, close);

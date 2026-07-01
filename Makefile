@@ -1,6 +1,6 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: core app app-deps sidecars test run kill-daemon bundle release
+.PHONY: core app app-deps sidecars test run kill-daemon bundle release kit
 
 core:
 	cd $(ROOT)/core && cargo build
@@ -26,6 +26,12 @@ app-deps:
 app: app-deps
 	cd $(ROOT)/desktop && npm run build
 	cargo build --manifest-path $(ROOT)/desktop/src-tauri/Cargo.toml
+
+# Builds the standalone design-sync kit (desktop/dist-kit/) via esbuild. NOT a
+# dependency of `app`/`core` — invoke directly when refreshing the kit for
+# /design-sync. See docs/designs/2607.0001_tarmac_ui_kit_design_sync_export.md.
+kit: app-deps
+	cd $(ROOT)/desktop && npm run build:kit
 
 test:
 	cd $(ROOT)/core && cargo test

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:kit": "node scripts/build-kit.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
@@ -23,11 +24,13 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@fontsource/ibm-plex-mono": "^5.2.7",
     "@tauri-apps/cli": "^2",
     "@types/node": "^26.0.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "esbuild": "0.27.7",
     "typescript": "~5.8.3",
     "vite": "^7.0.4",
     "vitest": "^4.1.9"

@@ -1,0 +1,26 @@
+/* Kit-only preview neutralizations (decision (d) of 2607.0001). Without a live
+   docCardVars() writer, --card-w/--card-h have no :root fallback and
+   .doc-prose-sizer collapses to auto/0. Imported by kit.css ONLY — never by the
+   app's theme.css, so the shipping app's :root is unaffected and per-card inline
+   vars still win where they exist. */
+:root {
+  --card-w: 360px;
+  --card-h: 520px;
+  --card-x: 0px;
+  --card-y: 0px;
+}
+
+/* The `html, body, #root` rule that sets --chrome-font/--bg0/--text lives in
+   app-only.css (page-shell scaffolding, not a kit-exported component) and is
+   therefore unreachable from a bare preview page — without this, chrome text
+   that relies on inheritance (e.g. StatusBar, CardShell's header label) falls
+   back to the browser's serif default rather than the bundled IBM Plex Mono.
+   Restating just the inherited font/color/background here (not the app's
+   layout properties) closes that gap for previews only. */
+body {
+  background: var(--bg0);
+  color: var(--text);
+  font-family: var(--chrome-font);
+  font-size: 12px;
+  -webkit-font-smoothing: antialiased;
+}

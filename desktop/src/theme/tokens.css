@@ -1,0 +1,76 @@
+/* Breeze design tokens — the shared foundation partial. Imported by both the
+   app's theme.css (full closure) and the standalone kit stylesheet (subset),
+   so it must never assume the board, cards, or terminal exist. */
+
+:root {
+  --bg0: #24282c;
+  --bg1: #2b3036;
+  --bg2: #353b41;
+  --bg3: #3e444b;
+  --term-bg: #31363b;
+  --term-fg: #ced2d6;
+  --line: #474e55;
+  --line-soft: #3d434a;
+  --text: #eff0f1;
+  --muted: #b9bfc4;
+  --faint: #7f8c8d;
+  --agent: #1abc9c;
+  --agent-dim: rgba(26, 188, 156, 0.16);
+  --lift-border: #5a626a;
+  --focus-border: rgba(26, 188, 156, 0.5);
+  --prime-header-bg: #3a4046;
+  --amber: #fdbc4b;
+  --ok: #1cdc9a;
+  --dot: #32383e; /* Swift BoardView.dotColor (srgb 50,56,62) — match exactly */
+  --amber-dim: rgba(253, 188, 75, 0.16); /* Theme.amberDim */
+
+  /* P4 alpha-derived chrome colors (mirror theme.ts palette; CSS can't
+     alpha-multiply a hex var without color-mix, so they're explicit rgba). */
+  --line-muted: rgba(71, 78, 85, 0.6); /* line @ 0.6 — muted/dead/detached border role */
+  --minimap-bg: rgba(36, 40, 44, 0.92); /* bg0 @ 0.92 */
+  --hint-border-bell: rgba(253, 188, 75, 0.5); /* amber @ 0.5 */
+  --hint-border-live: rgba(26, 188, 156, 0.4); /* agent @ 0.4 */
+
+  /* Drop shadows (mirror theme.ts shadows; ported from CardView/overlay NSShadow). */
+  --shadow-card-rest: 0 16px 38px rgba(0, 0, 0, 0.5);
+  --shadow-card-prime: 0 22px 50px rgba(0, 0, 0, 0.6);
+  --shadow-card-lift: 0 18px 44px rgba(0, 0, 0, 0.6);
+  --shadow-hint: 0 8px 22px rgba(0, 0, 0, 0.5);
+  --shadow-toast: 0 10px 14px rgba(0, 0, 0, 0.5);
+
+  --chrome-font: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* set by BoardEngine */
+  --zoom: 1;
+  --world-tx: 0px;
+  --world-ty: 0px;
+  /* Doc-card oversample factor (Panel H): prose is laid out at K× and the scaler
+     down-scales by zoom/K so it never upsamples. MUST stay ≥ BoardEngine MAX_ZOOM
+     and in sync with DOC_OVERSAMPLE_K in kit/docZoom.ts. */
+  --oversample-k: 3;
+  --grid-size: 24px;
+}
+
+/* Global box-model reset. Every bucket below (cards, chrome, board) sizes
+   elements with padding/border included, so this rides in the shared token
+   partial rather than an app-only file. */
+* {
+  box-sizing: border-box;
+}
+
+/* IBM Plex Mono (chrome font) — vendored OFL .woff2, shared by the app and
+   the standalone kit (both import tokens.css). Closes the latent bug where
+   --chrome-font silently fell back to SFMono on machines without Plex
+   system-installed. */
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/ibm-plex-mono-regular.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/ibm-plex-mono-bold.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+}
