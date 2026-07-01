@@ -13,6 +13,16 @@ dist-ssr
 dist-kit
 *.local
 
+# design-sync package-shape converter (staged scripts + build output)
+.ds-sync/
+ds-bundle/
+# Symlink to the repo-root .design-sync/ (the durable config/previews/NOTES.md
+# home) — package-build.mjs/package-capture.mjs resolve `.design-sync/*`
+# relative to cwd, and cwd must be desktop/ for componentSrcMap's
+# desktop-relative paths to resolve, so this symlink bridges the two.
+# Recreate per clone: `ln -s ../.design-sync .design-sync` (run from desktop/).
+.design-sync
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
