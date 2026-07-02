@@ -150,8 +150,9 @@ export function CardShell(props: CardShellProps) {
     if (wasResizing) props.onResizeEnd?.();
   };
 
-  // Scroll over a card scrolls the card (terminal scrollback / doc), never pans
-  // the board; pinch (ctrl+wheel) still bubbles to the board to zoom.
+  // Scroll over the selected card scrolls the card (terminal scrollback / doc),
+  // never pans the board; over any other card the wheel event bubbles to pan.
+  // Pinch (ctrl+wheel) always bubbles to the board to zoom.
   // Must be a NATIVE listener so it fires before the board's native preventDefault
   // listener (React synthetic handlers delegate to #root and arrive too late).
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -159,11 +160,11 @@ export function CardShell(props: CardShellProps) {
     const el = bodyRef.current;
     if (!el) return;
     const handler = (e: WheelEvent) => {
-      if (!e.ctrlKey) e.stopPropagation();
+      if (!e.ctrlKey && props.selected) e.stopPropagation();
     };
     el.addEventListener("wheel", handler, { passive: true });
     return () => el.removeEventListener("wheel", handler);
-  }, []);
+  }, [props.selected]);
 
   // A press anywhere on the body selects/raises the card (visual only — never
   // captures the pointer or preventDefaults, so xterm focus / doc text-select / scroll survive).
