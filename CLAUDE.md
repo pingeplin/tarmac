@@ -43,6 +43,7 @@ Build outputs (gitignored): Rust → `core/target/{debug,release}/`, Tauri → `
 - **Where tests live.** Rust: inline `#[test]`/`#[tokio::test]` in `src/` + milestone-named integration suites under each crate's `tests/`. Desktop: Vitest unit tests in `desktop/` (`npm test`). `desktop/src-tauri/` has its own `cargo test`.
 - **Formatting is convention-by-imitation.** No `rustfmt.toml`/`.swiftformat`/`.editorconfig`, no CI, no formatter command. Match surrounding code. `make` must pass before opening a PR.
 - Note: `CONTRIBUTING.md` mandates a DCO `Signed-off-by` line, but the actual history uses `Co-Authored-By` trailers instead — follow the repo's de-facto pattern, not the literal CONTRIBUTING text.
+- **Coding style: SOLID, ultra-concise, no line-noise comments.** Keep modules/functions single-responsibility and depend on narrow interfaces (protocol types, trait boundaries) rather than reaching across layers. Prefer the smallest correct diff over a more "thorough" one. Don't add comments that restate what the code already says line-by-line; a comment earns its place only by explaining a non-obvious *why* (a hidden constraint, a workaround, an invariant) — see the Gotchas below for the kind of thing that's worth a comment.
 
 ## Gotchas
 
