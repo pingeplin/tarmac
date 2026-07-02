@@ -4,7 +4,7 @@
 // the layout (tiles + viewport) to the daemon. Phase 4 adds the wayfinding +
 // feedback chrome: zoom control, minimap, offscreen-signal hints (+ ⏎ fly / Esc
 // fly-back), transient toasts, the session chip, and full card-chrome states
-// (selection ring, resize handles, quiet/detached).
+// (selection ring, resize handles, quiet).
 // Phase 5 adds the multi-board model + ⌘K switcher.
 //
 // WARM-BOARD MODEL: App renders ONE <Board> per board simultaneously; inactive

@@ -3,7 +3,7 @@ import { borderRole, showsHandles, cardChromeState, cardHandles, type BorderRole
 
 // Port of CardChromeTests.swift (2606.0006): the active-card chrome rule with
 // `fresh` dropped from the border. The teal ring + handles mark an active card
-// (focused OR selected); `prime` and `fresh` are border-inert; dead/detached is
+// (focused OR selected); `prime` and `fresh` are border-inert; dead is
 // the one divergence (muted border yet handles for resize).
 describe("CardChrome", () => {
   // S1: a fresh-but-not-active card draws the plain line and shows no handles.
@@ -34,27 +34,26 @@ describe("CardChrome", () => {
     expect(showsHandles(s)).toBe(true);
   });
 
-  // S5: exhaustive over all 64 states. Expected sides are derived independently
+  // S5: exhaustive over all 32 states. Expected sides are derived independently
   // from the inputs (never read back from borderRole), so the test cannot pass
   // by mirroring the implementation.
-  it("invariant exhaustive over all 64 states", () => {
-    for (let mask = 0; mask < 64; mask++) {
+  it("invariant exhaustive over all 32 states", () => {
+    for (let mask = 0; mask < 32; mask++) {
       const s = cardChromeState({
-        dead: (mask & 0b000001) !== 0,
-        detached: (mask & 0b000010) !== 0,
-        fresh: (mask & 0b000100) !== 0,
-        prime: (mask & 0b001000) !== 0,
-        focused: (mask & 0b010000) !== 0,
-        selected: (mask & 0b100000) !== 0,
+        dead: (mask & 0b00001) !== 0,
+        fresh: (mask & 0b00010) !== 0,
+        prime: (mask & 0b00100) !== 0,
+        focused: (mask & 0b01000) !== 0,
+        selected: (mask & 0b10000) !== 0,
       });
 
-      // (a) the focus ring coincides with an active, non-dead/detached card.
-      const expectFocusRing = (s.focused || s.selected) && !s.dead && !s.detached;
+      // (a) the focus ring coincides with an active, non-dead card.
+      const expectFocusRing = (s.focused || s.selected) && !s.dead;
       expect(borderRole(s) === "focus").toBe(expectFocusRing);
 
       // (b) role coverage — expected computed from inputs.
       const expectedRole: BorderRole =
-        s.dead || s.detached ? "muted" : s.focused || s.selected ? "focus" : "plain";
+        s.dead ? "muted" : s.focused || s.selected ? "focus" : "plain";
       expect(borderRole(s)).toBe(expectedRole);
 
       // (c) prime and fresh are border-inert: off vs on changes neither output.
@@ -90,12 +89,6 @@ describe("CardChrome", () => {
     const s = cardChromeState();
     expect(borderRole(s)).toBe("plain");
     expect(showsHandles(s)).toBe(false);
-  });
-
-  it("detached + selected is muted but shows handles", () => {
-    const s = cardChromeState({ detached: true, selected: true });
-    expect(borderRole(s)).toBe("muted");
-    expect(showsHandles(s)).toBe(true);
   });
 });
 

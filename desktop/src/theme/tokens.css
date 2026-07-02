@@ -26,7 +26,7 @@
 
   /* P4 alpha-derived chrome colors (mirror theme.ts palette; CSS can't
      alpha-multiply a hex var without color-mix, so they're explicit rgba). */
-  --line-muted: rgba(71, 78, 85, 0.6); /* line @ 0.6 — muted/dead/detached border role */
+  --line-muted: rgba(71, 78, 85, 0.6); /* line @ 0.6 — muted/dead border role */
   --minimap-bg: rgba(36, 40, 44, 0.92); /* bg0 @ 0.92 */
   --hint-border-bell: rgba(253, 188, 75, 0.5); /* amber @ 0.5 */
   --hint-border-live: rgba(26, 188, 156, 0.4); /* agent @ 0.4 */

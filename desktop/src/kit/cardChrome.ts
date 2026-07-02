@@ -11,7 +11,6 @@ import type { Handle } from "./resize";
 
 export interface CardChromeState {
   dead: boolean;
-  detached: boolean;
   /** Agent-opened and unread — signalled by halo + "✚ now" meta, NOT a border input. */
   fresh: boolean;
   /** The keyboard target — NOT a border input. */
@@ -25,7 +24,6 @@ export type BorderRole = "muted" | "focus" | "plain";
 
 export const cardChromeState = (s: Partial<CardChromeState> = {}): CardChromeState => ({
   dead: false,
-  detached: false,
   fresh: false,
   prime: false,
   focused: false,
@@ -54,13 +52,13 @@ export function cardHandles(hasClose: boolean): Handle[] {
 
 /**
  * The resting border role, highest priority first:
- *   dead || detached   -> "muted"  (handles may still show — resize)
+ *   dead                -> "muted"  (handles may still show — resize)
  *   active (focus/sel.) -> "focus"  (the unified ring)
  *   else               -> "plain"
  * Neither `prime` nor `fresh` appears — both are signalled outside the border.
  */
 export function borderRole(s: CardChromeState): BorderRole {
-  if (s.dead || s.detached) return "muted";
+  if (s.dead) return "muted";
   if (showsHandles(s)) return "focus";
   return "plain";
 }

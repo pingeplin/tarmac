@@ -29,7 +29,6 @@ interface DocCardProps {
   ownerName?: string | null;
   lastChangedMs?: number;
   selected?: boolean;
-  detached?: boolean;
   getZoom: () => number;
   rootRef?: (el: HTMLDivElement | null) => void;
   onMove: (frame: WorldFrame) => void;
@@ -144,7 +143,6 @@ export function DocCard(props: DocCardProps) {
       inWrapper
       fresh={model.fresh}
       selected={props.selected}
-      detached={props.detached}
       hasClose
       getZoom={props.getZoom}
       rootRef={props.rootRef}

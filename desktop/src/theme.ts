@@ -30,7 +30,7 @@ export const palette = {
   minimapCardBell: "rgba(253,188,75,0.85)", // amber @ 0.85
   hintBorderBell: "rgba(253,188,75,0.5)", // amber @ 0.5
   hintBorderLive: "rgba(26,188,156,0.4)", // agent @ 0.4
-  lineMuted: "rgba(71,78,85,0.6)", // line @ 0.6 (muted/dead/detached border role)
+  lineMuted: "rgba(71,78,85,0.6)", // line @ 0.6 (muted/dead border role)
 } as const;
 
 // Card + overlay drop shadows, ported from the NSShadow values in CardView.swift /
