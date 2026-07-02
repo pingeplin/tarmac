@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { remappedOwners, docDimmed, provenanceEdgeShown } from './provenance';
+import { remappedOwners, provenanceEdgeShown } from './provenance';
 
 // Phase 5b: the best-effort doc→terminal provenance re-anchoring across a restart
 // (decision 2). Terminal ptys are gone on restart, so persisted owner ids never
@@ -39,26 +39,6 @@ describe('remappedOwners', () => {
   it('empty owners stays empty', () => {
     const out = remappedOwners(new Map(), new Map([['old1', 'new1']]), 'new1');
     expect(out.size).toBe(0);
-  });
-});
-
-// provenance predicates are independent of the `attached` flag.
-describe('docDimmed', () => {
-  // an owner-linked doc that has been dragged (attached=false in the app
-  // layer) must not be dimmed. docDimmed ignores attached entirely.
-  it('owner-linked doc is never dimmed, regardless of whether it was dragged', () => {
-    // This test would fail if the old `c.ownerTermId != null && !c.attached`
-    // logic were still in play — a dragged card with an owner would return true.
-    expect(docDimmed('term-1')).toBe(false);
-  });
-
-  // an owner-less doc is also never dimmed.
-  it('owner-less doc (null) is never dimmed', () => {
-    expect(docDimmed(null)).toBe(false);
-  });
-
-  it('owner-less doc (undefined) is never dimmed', () => {
-    expect(docDimmed(undefined)).toBe(false);
   });
 });
 

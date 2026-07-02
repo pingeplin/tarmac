@@ -51,15 +51,6 @@ const changelogMarkdown =
   "3. Board card gravity bugs fixed\n\n" +
   "Run `tarmac open docs/CHANGELOG.md` to see this card live.\n";
 
-// A spec-style excerpt with a blockquote and inline code, for the detached story.
-const specMarkdown =
-  "# Provenance edges\n\n" +
-  "A dashed edge ties a doc card to the terminal that opened it via `tarmac open`.\n\n" +
-  "> Detaching a card (manual drag) severs the edge — the daemon persists " +
-  "`loose = true` and stops re-parenting the card to its owner.\n\n" +
-  "- `attached: false` on the model\n" +
-  "- no owner chip in the header\n";
-
 /** Selected + attached, with a live owner chip and a recent-change badge — the
  * common steady-state look for a doc a terminal just opened. */
 export function Selected() {
@@ -109,34 +100,6 @@ export function Fresh() {
         ownerName="claude"
         lastChangedMs={Date.now() - 200}
         selected={false}
-        getZoom={() => 1}
-        onMove={noop}
-        onGrab={noop}
-        onClose={noop}
-      />
-    </div>
-  );
-}
-
-/** A manually-dragged-away doc (`detached: true`, `attached: false` on the model) —
- * no owner chip (ownerName omitted), no recency meta, dimmed via CardShell's
- * `.card.detached` rule. */
-export function Detached() {
-  return (
-    <div className="board" style={{ position: "relative", width: 360, height: 520 }}>
-      <DocCard
-        model={{
-          kind: "doc",
-          path: "/Users/dev/tarmac/docs/protocol.md",
-          frame: { x: 0, y: 0, w: 360, h: 520 },
-          z: 1,
-          repoColor: 3,
-          fresh: false,
-          attached: false,
-        }}
-        markdown={specMarkdown}
-        selected={false}
-        detached
         getZoom={() => 1}
         onMove={noop}
         onGrab={noop}
