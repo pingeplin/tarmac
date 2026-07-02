@@ -241,6 +241,14 @@ export class BoardEngine {
     };
   }
 
+  /** World-space rect → board-LOCAL rect, via worldToLocal on both corners.
+   * Exact because board zoom is a uniform scale with no rotation. */
+  worldRectToLocal(r: Rect): Rect {
+    const tl = this.worldToLocal(r.x, r.y);
+    const br = this.worldToLocal(r.x + r.w, r.y + r.h);
+    return { x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y };
+  }
+
   /** Keep the full card list in sync for edge reprojection. Call alongside
    * setCullables on every committed card-set/frame change. */
   setCards(cards: CardModel[]): void {
