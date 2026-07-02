@@ -30,6 +30,8 @@ const ctrlA = [0x01];
 const ctrlE = [0x05];
 const optUp = [0x1b, 0x5b, 0x31, 0x3b, 0x33, 0x41]; // ESC[1;3A
 const optDown = [0x1b, 0x5b, 0x31, 0x3b, 0x33, 0x42]; // ESC[1;3B
+const optLeft = [0x1b, 0x62]; // ESC b (backward-word)
+const optRight = [0x1b, 0x66]; // ESC f (forward-word)
 
 describe("TermKeyBinding", () => {
   // Happy path — Ghostty byte parity (S1–S5)
@@ -52,6 +54,14 @@ describe("TermKeyBinding", () => {
   it("⌥↓ sends ESC[1;3B", () => {
     // S5
     expect(decide({ code: "ArrowDown", alt: true })).toEqual(optDown);
+  });
+  it("⌥← sends ESC b (backward-word)", () => {
+    // S15
+    expect(decide({ code: "ArrowLeft", alt: true })).toEqual(optLeft);
+  });
+  it("⌥→ sends ESC f (forward-word)", () => {
+    // S16
+    expect(decide({ code: "ArrowRight", alt: true })).toEqual(optRight);
   });
 
   // CapsLock invariance — all five rows (S6). In the DOM shape CapsLock is not an
@@ -81,6 +91,11 @@ describe("TermKeyBinding", () => {
     expect(decide({ code: "ArrowUp", alt: true, shift: true })).toBeNull();
     expect(decide({ code: "ArrowDown", alt: true, shift: true })).toBeNull();
   });
+  it("⌥←/⌥→ rows defer when shift is also held", () => {
+    // S17 — ⇧⌥← / ⇧⌥→
+    expect(decide({ code: "ArrowLeft", alt: true, shift: true })).toBeNull();
+    expect(decide({ code: "ArrowRight", alt: true, shift: true })).toBeNull();
+  });
 
   // IME & kitty gates (S9–S10) — paired bytes-off / null-on on identical input.
   it("composing defers (across a ⌘ and a ⌥ row)", () => {
@@ -97,12 +112,18 @@ describe("TermKeyBinding", () => {
     expect(decide({ code: "ArrowUp", alt: true, kittyActive: false })).toEqual(optUp);
     expect(decide({ code: "ArrowUp", alt: true, kittyActive: true })).toBeNull();
   });
+  it("composing/kittyActive defer the ⌥←/⌥→ rows too", () => {
+    // S18
+    expect(decide({ code: "ArrowLeft", alt: true, composing: false })).toEqual(optLeft);
+    expect(decide({ code: "ArrowLeft", alt: true, composing: true })).toBeNull();
+    expect(decide({ code: "ArrowRight", alt: true, kittyActive: false })).toEqual(optRight);
+    expect(decide({ code: "ArrowRight", alt: true, kittyActive: true })).toBeNull();
+  });
 
   // No-regression — keys that must stay xterm.js's (S11–S14)
-  it("⌥←/→ and ⌃←/→ defer (word move + Mission Control)", () => {
-    // S11
-    expect(decide({ code: "ArrowLeft", alt: true })).toBeNull();
-    expect(decide({ code: "ArrowRight", alt: true })).toBeNull();
+  it("⌃←/→ defer (claimed by macOS Mission Control)", () => {
+    // S19 (was S11 — the ⌥←/⌥→ half of this scenario is superseded by S15/S16:
+    // xterm.js's own handling for those turned out not to word-jump, see issue #61)
     expect(decide({ code: "ArrowLeft", ctrl: true })).toBeNull();
     expect(decide({ code: "ArrowRight", ctrl: true })).toBeNull();
   });
