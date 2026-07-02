@@ -60,7 +60,7 @@ import {
 } from "./kit/toasts";
 import { Place, firstFreeSlot, scatterFrame } from "./kit/placement";
 import { buildTiles, parseTiles, type LayoutTile } from "./kit/layoutTiles";
-import type { Size } from "./kit/geom";
+import type { Rect, Size } from "./kit/geom";
 import {
   docClose,
   frontendReady,
@@ -1618,11 +1618,13 @@ export default function App() {
         z: c.z,
       });
     }
+    const obstacles: Rect[] = activeCards.map((c) => engine.worldRectToLocal(c.frame));
     const pills = stackPills(hints, { x: 0, y: 0, w: size.w, h: size.h }, {
       edgeInset: HINT_EDGE_INSET,
       edgeMargin: HINT_EDGE_MARGIN,
       stackGap: HINT_STACK_GAP,
       pillSize: measurePill,
+      obstacles,
     });
     return { pills, flyTarget: selectFlyTarget(hints) };
     // eslint-disable-next-line react-hooks/exhaustive-deps
