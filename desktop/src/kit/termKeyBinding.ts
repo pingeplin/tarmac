@@ -1,8 +1,16 @@
 // Port of TarmacKit/TermKeyBinding.swift (issue #21) — the pure decision for the
 // Ghostty-parity macOS line-editing keys in a terminal card: ⌘⌫ / ⌘← / ⌘→ and
-// ⌥↑ / ⌥↓. Given a key event it returns the bytes to emit to the PTY, or `null`
-// to defer to xterm.js's own handling (the DOM analogue of deferring to
-// SwiftTerm's `keyDown`).
+// ⌥↑ / ⌥↓ / ⌥← / ⌥→. Given a key event it returns the bytes to emit to the PTY,
+// or `null` to defer to xterm.js's own handling (the DOM analogue of deferring
+// to SwiftTerm's `keyDown`).
+//
+// ⌥←/⌥→ (issue #61): xterm.js's own arrow-key handling ignores
+// `macOptionIsMeta` (it derives the CSI modifier purely from raw DOM bits, so
+// Option+Left emits `ESC[1;3D`, plain "Alt"), and macOS's default zsh/readline
+// don't bind that form to word motion anyway — only the Meta-letter forms
+// `ESC b` / `ESC f` are bound out of the box, which is also what Terminal.app
+// and iTerm2 send for Option+Left/Right by default. So, like ⌥↑/⌥↓, these are
+// decided here rather than left to xterm.js.
 //
 // REWRITE for the DOM, not a 1:1 port. The Swift side matched physical Carbon
 // keyCodes (51 ⌫, 123 ← , 124 →, 125 ↓, 126 ↑) and masked raw NSEvent modifier
@@ -38,6 +46,8 @@ export interface TermKeyInput {
  *   ⌘⌫  → [0x15]                          Ctrl-U  (delete to line start)
  *   ⌘←  → [0x01]                          Ctrl-A  (jump to line start)
  *   ⌘→  → [0x05]                          Ctrl-E  (jump to line end)
+ *   ⌥←  → [0x1b,0x62]                     ESC b   (backward-word)
+ *   ⌥→  → [0x1b,0x66]                     ESC f   (forward-word)
  *   ⌥↑  → [0x1b,0x5b,0x31,0x3b,0x33,0x41] ESC[1;3A
  *   ⌥↓  → [0x1b,0x5b,0x31,0x3b,0x33,0x42] ESC[1;3B
  *
@@ -55,9 +65,9 @@ export function bytes(input: TermKeyInput): number[] | null {
     case "Backspace":
       return metaOnly ? [0x15] : null;
     case "ArrowLeft":
-      return metaOnly ? [0x01] : null;
+      return metaOnly ? [0x01] : altOnly ? [0x1b, 0x62] : null;
     case "ArrowRight":
-      return metaOnly ? [0x05] : null;
+      return metaOnly ? [0x05] : altOnly ? [0x1b, 0x66] : null;
     case "ArrowUp":
       return altOnly ? [0x1b, 0x5b, 0x31, 0x3b, 0x33, 0x41] : null;
     case "ArrowDown":
