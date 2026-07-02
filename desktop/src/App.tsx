@@ -93,6 +93,7 @@ import { TermBoardIndex } from "./kit/termBoardIndex";
 import { isComposingKey } from "./kit/imeGuard";
 import { decide as focusedCloseDecide } from "./kit/focusedClose";
 import { bytes as termKeyBytes } from "./kit/termKeyBinding";
+import { clearFreshDoc } from "./kit/clearFreshDoc";
 
 const BOOT_FRAME: WorldFrame = { ...Place.termFrame };
 const PERSIST_DEBOUNCE_MS = 200;
@@ -1450,7 +1451,7 @@ export default function App() {
         toggleDock();
         return;
       }
-      // ESC ladder: undock → toasts → fly-back → dismiss fresh doc. Each consuming
+      // ESC ladder: undock → toasts → fly-back → clear fresh-doc highlight. Each consuming
       // branch stopPropagation()s so the ESC does NOT also reach the focused xterm
       // (capture phase runs before it). Only the final fall-through (no overlay)
       // lets ESC reach the terminal.
@@ -1480,7 +1481,7 @@ export default function App() {
         if (fresh) {
           e.preventDefault();
           e.stopPropagation();
-          removeDoc(fresh.path);
+          setActiveCards(clearFreshDoc);
         }
       }
     };
