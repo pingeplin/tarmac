@@ -16,7 +16,7 @@
 .card.border-focus {
   border-color: var(--focus-border);
 }
-/* Swift muted role = line @ 0.6 (dead / detached / quiet cards keep handles). */
+/* Swift muted role = line @ 0.6 (dead / quiet cards keep handles). */
 .card.border-muted {
   border-color: var(--line-muted);
 }
@@ -34,10 +34,6 @@
 /* A non-prime card while another terminal is prime (Swift setQuiet 0.8). */
 .card.quiet {
   opacity: 0.8;
-}
-/* A doc severed from its owner (Swift setDetached 0.5) — takes precedence. */
-.card.detached {
-  opacity: 0.5;
 }
 /* Held during a drag/resize: lift border + deeper shadow + raise (Swift setLifted). */
 .card.lifting {

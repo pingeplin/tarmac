@@ -16,7 +16,6 @@ interface CardShellProps {
   z?: number;
   className?: string;
   dead?: boolean;
-  detached?: boolean;
   /** A non-prime card while another terminal is prime (Swift setQuiet, 0.8). */
   quiet?: boolean;
   fresh?: boolean;
@@ -62,7 +61,6 @@ export function CardShell(props: CardShellProps) {
 
   const chrome = cardChromeState({
     dead: props.dead,
-    detached: props.detached,
     fresh: props.fresh,
     prime: props.prime,
     focused: props.focused,
@@ -76,7 +74,6 @@ export function CardShell(props: CardShellProps) {
   if (props.fresh) classes.push("fresh");
   if (props.dead) classes.push("dead");
   if (props.quiet) classes.push("quiet");
-  if (props.detached) classes.push("detached");
   if (props.hasClose) classes.push("has-close");
   if (lifting) classes.push("lifting");
   if (props.className) classes.push(props.className);
