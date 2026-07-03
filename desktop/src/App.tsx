@@ -1162,12 +1162,13 @@ export default function App() {
         const otherLive = (b?.cards ?? []).filter(
           (c) => c.kind === "term" && c.termId !== termId && c.live && !c.dead,
         ).length;
-        const action = focusedCloseDecide("term", otherLive);
+        const action = focusedCloseDecide("term", otherLive, card.dead);
         if (action === "noop" || action === "shelfDoc") return;
         // Proactively remove the card so the late SIGHUP exit (code null) is a
         // no-op in handleExit (its `if (!term) return` guard fires). Mirror of
         // Swift's closeTerminal() which tears down state before calling termClose.
-        void termClose(termId);
+        // A dead card has no live pty to signal, so skip the IPC round-trip.
+        if (action.signalClose) void termClose(termId);
         if (action.replace) {
           // Last live terminal: replace with a fresh shell at the same frame.
           const { frame, z } = card;

@@ -16,20 +16,26 @@ export type Kind = "doc" | "term" | "none";
  *   - "shelfDoc":      focused doc — park it on the shelf (recoverable).
  *   - closeTerminal:   focused terminal — terminate it; `replace` ⇒ it was the
  *                      board's last live terminal, so spawn a fresh shell in its
- *                      place (else offer undo).
+ *                      place (else offer undo). `signalClose` ⇒ the pty was
+ *                      still live, so the daemon needs to be told to close it.
  */
 export type Action =
   | "noop"
   | "shelfDoc"
-  | { kind: "closeTerminal"; replace: boolean };
+  | { kind: "closeTerminal"; replace: boolean; signalClose: boolean };
 
 /**
  * `otherLiveTerminals` is the count of OTHER live terminals on the board; it only
  * affects the `"term"` case (decides replace-vs-undo). The terminal branch routes
  * through `termExit.decide(0, …)`: a deliberate close is a clean exit, so replace
  * exactly when that decision is "removeAndReplace" (otherLiveTerminals === 0).
+ *
+ * `dead` (term case only): true when the focused terminal's pty has already
+ * exited. When dead, `signalClose` is false — there is nothing live to tell the
+ * daemon to close, so the caller must not depend on `TermClose` being a safe
+ * no-op for an already-gone term_id. `replace` is unaffected by `dead`.
  */
-export function decide(kind: Kind, otherLiveTerminals: number): Action {
+export function decide(kind: Kind, otherLiveTerminals: number, dead = false): Action {
   switch (kind) {
     case "none":
       return "noop";
@@ -37,7 +43,7 @@ export function decide(kind: Kind, otherLiveTerminals: number): Action {
       return "shelfDoc";
     case "term": {
       const replace = termExitDecide(0, otherLiveTerminals) === "removeAndReplace";
-      return { kind: "closeTerminal", replace };
+      return { kind: "closeTerminal", replace, signalClose: !dead };
     }
   }
 }
