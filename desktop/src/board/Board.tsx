@@ -39,6 +39,9 @@ interface BoardProps {
   onTermSpawn: (termId: string, cols: number, rows: number) => void;
   onTermTitle: (termId: string, title: string) => void;
   onTermActivity: (termId: string) => void;
+  /** Register/unregister a terminal's focus handle (⌥Tab cycle, restore focus). */
+  onTermRegister?: (termId: string, handle: { focus(): void }) => void;
+  onTermUnregister?: (termId: string) => void;
   onDocClose: (path: string) => void;
   docMeta: Map<string, DocMeta>;
   /** The active card (shows the focus ring + resize handles), or null. */
@@ -123,10 +126,8 @@ export function Board(props: BoardProps) {
       onPointerDown={(e) => {
         // A press on empty board space (not a card) clears the selection AND moves
         // keyboard focus OFF the prime terminal — the React analog of Swift's
-        // makeFirstResponder(board) on a background click. This makes the "board has
-        // focus" state reachable, so a bare Return docks the prime terminal (the App
-        // keydown guard bails while a .term-host owns focus). Focus returns when the
-        // user clicks into a terminal, or via dock/cycle/board-switch.
+        // makeFirstResponder(board) on a background click. Focus returns when the
+        // user clicks into a terminal, or via cycle/board-switch.
         if (e.target === viewportRef.current || e.target === cardLayerRef.current) {
           props.onBackgroundPointerDown();
           const ae = document.activeElement as HTMLElement | null;
@@ -177,6 +178,8 @@ export function Board(props: BoardProps) {
                   onSpawn={(cols, rows) => props.onTermSpawn(c.termId, cols, rows)}
                   onTitle={(title) => props.onTermTitle(c.termId, title)}
                   onActivity={() => props.onTermActivity(c.termId)}
+                  onRegister={props.onTermRegister}
+                  onUnregister={props.onTermUnregister}
                 />
               </div>
             </div>

@@ -50,10 +50,3 @@ export function termInnerBox(): {
     transformOrigin: "0 0",
   };
 }
-
-/** Effective layout→screen scale at the xterm element.
- *  Docked terminals live outside the board transform — their host BCR is already
- *  in screen space, so the override must be skipped (return 1). */
-export function termBcrScale(zoom: number, rs: number, docked: boolean): number {
-  return docked ? 1 : zoom / rs;
-}

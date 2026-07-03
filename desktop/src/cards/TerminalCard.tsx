@@ -6,12 +6,12 @@
 // Selection coord correction is via a getBoundingClientRect() override on host.
 //
 // The xterm host node is created ONCE imperatively (useState lazy init) and
-// reparented via appendChild — React never owns it as a child — so the PTY and
-// scrollback survive the dock/undock reparent without a remount.
+// appended via appendChild — React never owns it as a child — so the PTY and
+// scrollback survive re-renders without a remount.
 //
-// rasterScale oversampling: when rasterScale > 1 (and not docked), the React-
-// rendered raster wrapper expands the slot to rasterScale× the card size and
-// applies a counter-scale CSS transform to bring it back to visual card size.
+// rasterScale oversampling: when rasterScale > 1, the React-rendered raster
+// wrapper expands the slot to rasterScale× the card size and applies a
+// counter-scale CSS transform to bring it back to visual card size.
 // The term-host fills the slot (so it too is rasterScale× bigger in layout).
 // host.style.padding and term.options.fontSize are scaled by the same factor so
 // FitAddon.fit() recomputes the SAME cols×rows — only pixel density changes.
@@ -19,9 +19,8 @@
 // The existing BCR override for selection coords remains correct: because padding
 // and font scale together, the BCR of .xterm and the cols×rows ratio are
 // identical to the unscaled case (proven in tauri-card-crispness-fix.md math).
-// When docked the effective scale is forced to 1 (dock pane has no board zoom).
 
-import { useEffect, useLayoutEffect, useRef, useState, useContext } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
@@ -34,7 +33,6 @@ import {
   onWebglUnavailable,
 } from "../kit/termRenderer";
 import { CardShell } from "./CardShell";
-import { DockContext } from "./DockContext";
 import { attachTermOutput, detachTermOutput, termInput, termResize } from "../ipc/daemon";
 import { termFontFamily, termFontSize, xtermTheme } from "../theme";
 import type { TermCardModel, WorldFrame } from "../board/model";
@@ -61,13 +59,17 @@ interface TerminalCardProps {
   onTitle: (title: string) => void;
   /** A keystroke into this terminal — used to clear a lit bell (Swift parity). */
   onActivity?: () => void;
+  /** Register/unregister a focus handle so App can focus this terminal (⌥Tab cycle,
+   *  board-switch/restore focus). */
+  onRegister?: (termId: string, handle: { focus(): void }) => void;
+  onUnregister?: (termId: string) => void;
 }
 
 export function TerminalCard(props: TerminalCardProps) {
-  const { model, onSpawn, onTitle } = props;
+  const { model, onSpawn, onTitle, onRegister, onUnregister } = props;
 
-  // The host node is created ONCE (stable across dock/undock reparents). React
-  // never renders it as a child — only the empty slot and dock-body are React-owned.
+  // The host node is created ONCE (stable across re-renders). React never
+  // renders it as a child — only the empty slot is React-owned.
   const [host] = useState(() => {
     const d = document.createElement("div");
     d.className = "term-host";
@@ -89,22 +91,12 @@ export function TerminalCard(props: TerminalCardProps) {
   const getZoomRef = useRef(props.getZoom);
   getZoomRef.current = props.getZoom;
 
-  const dock = useContext(DockContext);
-  const docked = dock.dockedTermId === model.termId;
-
   // The xterm element sits under TWO transforms when oversampling: the inner
   // scale(zoom) AND this card's counter-scale(1/rs). Its effective layout→screen
   // scale is therefore zoom/rs (and its internal cell width is c0·rs). The BCR
   // selection-coord override must divide by that combined scale, not zoom alone.
-  // Pinned to 1 while docked (the host is reparented out of the board transform).
   const rsRef = useRef(1);
-  rsRef.current = docked ? 1 : props.rasterScale;
-  // dockedRef: mirrors rsRef pattern — set every render so the mount-time
-  // fakeBCR closure always sees the live docked state. When docked, the host
-  // is outside the board transform and BCR is already in screen space → skip
-  // the override entirely (return the untouched rect).
-  const dockedRef = useRef(false);
-  dockedRef.current = docked;
+  rsRef.current = props.rasterScale;
 
   useEffect(() => {
     // Append the host into the in-card slot on initial mount.
@@ -182,7 +174,7 @@ export function TerminalCard(props: TerminalCardProps) {
     // xterm element's effective layout→screen scale is the product zoom·(1/rs) =
     // zoom/rs, and its layout cell width is c0·rs — so we must divide by zoom/rs,
     // not zoom. At zoom=rs (e.g. 1.5/1.5) the combined scale is 1 and BCR is
-    // untouched; at zoom=2/rs=2 it is also 1. Docked pins rs=1 → s=zoom (legacy).
+    // untouched; at zoom=2/rs=2 it is also 1.
     let lastMouseX = 0;
     let lastMouseY = 0;
     const trackMouse = (e: MouseEvent) => {
@@ -192,7 +184,6 @@ export function TerminalCard(props: TerminalCardProps) {
     document.addEventListener("mousedown", trackMouse, { capture: true });
     document.addEventListener("mousemove", trackMouse, { capture: true });
     const fakeBCR = (orig: () => DOMRect) => (): DOMRect => {
-      if (dockedRef.current) return orig();
       const r = orig();
       const s = getZoomRef.current() / rsRef.current;
       if (s === 1) return r;
@@ -207,8 +198,8 @@ export function TerminalCard(props: TerminalCardProps) {
     xtermEl.getBoundingClientRect = fakeBCR(origElBCR);
     xtermScreen.getBoundingClientRect = fakeBCR(origScreenBCR);
 
-    // Register focus handle so App can focus this terminal on dock / cycle.
-    dock.registerTerm(model.termId, term);
+    // Register focus handle so App can focus this terminal (⌥Tab cycle, restore).
+    onRegister?.(model.termId, term);
 
     fit.fit();
     const cols = Math.max(2, term.cols);
@@ -304,8 +295,6 @@ export function TerminalCard(props: TerminalCardProps) {
     // model) the observer fires with an empty contentRect, and FitAddon would
     // wrongly propose 2×1 for an already-measured terminal (cell metrics stay
     // cached > 0) — shrinking the running program's PTY. Skip until reveal (size>0).
-    // The observer is placed on the host node (which travels with reparents), so
-    // both dock and undock trigger a fit via the ResizeObserver.
     const ro = new ResizeObserver((entries) => {
       const r = entries[0]?.contentRect;
       if (r && (r.width > 0 || r.height > 0)) fit.fit();
@@ -314,7 +303,7 @@ export function TerminalCard(props: TerminalCardProps) {
 
     return () => {
       disposed = true;
-      dock.unregisterTerm(model.termId);
+      onUnregister?.(model.termId);
       // Drop the bridge's output channel + any pending scrollback buffer for this
       // term so a removed/pruned card doesn't leak an IpcChannel holding the
       // disposed xterm. This does NOT close the pty (the daemon already saw its
@@ -335,24 +324,14 @@ export function TerminalCard(props: TerminalCardProps) {
       termRef.current = null;
       fitRef.current = null;
       delete (host as any).__xtermTerm;
-      // Detach from whatever parent — slot or dock pane.
       host.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model.termId]);
 
-  // Reparent the host between the in-card slot and the dock pane when the docked
-  // state changes. The move changes the host's box → ResizeObserver fires → fit()
-  // → termResize. Correct.
-  useEffect(() => {
-    const target = docked ? dock.dockSlot : slotRef.current;
-    if (target && host.parentNode !== target) target.appendChild(host);
-  }, [docked, dock.dockSlot, host]);
-
   // rasterScale oversampling: on settle, scale the host's fontSize and padding by
   // the effective scale so the xterm canvas backing is rasterScale×DPR pixels and
   // the terminal remains cols×rows-identical (see comment block at top of file).
-  // Dock pane is outside board zoom — always use scale=1 there.
   //
   // MUST be useLayoutEffect: the same rasterScale commit also resizes the wrapper
   // (rs×100% width), which the host's ResizeObserver observes. Setting fontSize +
@@ -365,15 +344,14 @@ export function TerminalCard(props: TerminalCardProps) {
     const term = termRef.current;
     const fit = fitRef.current;
     if (!term || !fit) return;
-    // When docked the host lives in the dock pane (no board zoom); reset to 1.
-    const rs = docked ? 1 : props.rasterScale;
+    const rs = props.rasterScale;
     term.options.fontSize = termFontSize * rs;
     host.style.padding = termHostPadding(rs);
     // fit() re-measures the (now rs×) host with the (now rs×) cell size and
     // arrives at the same cols×rows; the canvas is sized at rs×DPR resolution.
     fit.fit();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.rasterScale, docked]);
+  }, [props.rasterScale]);
 
   const repoGlyph = "›_";
   return (
@@ -385,7 +363,6 @@ export function TerminalCard(props: TerminalCardProps) {
       prime={model.prime}
       quiet={props.quiet}
       selected={props.selected}
-      className={docked ? "docked" : undefined}
       getZoom={props.getZoom}
       rootRef={props.rootRef}
       onMove={props.onMove}
@@ -407,13 +384,11 @@ export function TerminalCard(props: TerminalCardProps) {
           term-raster-wrapper expands to rs× card-body size; the counter-scale
           brings it back to the original visual footprint. term-host-slot fills
           the (now larger) wrapper, so the imperative host and its xterm canvas
-          are rs× bigger in layout → canvas backing is rs×DPR pixels. When
-          docked the host is reparented to dock.dockSlot and the wrapper is empty;
-          rasterScale is also forced to 1 in the settle effect. */}
+          are rs× bigger in layout → canvas backing is rs×DPR pixels. */}
       <div className="term-raster-clip">
         <div
           className="term-raster-wrapper"
-          style={props.rasterScale !== 1 && !docked ? {
+          style={props.rasterScale !== 1 ? {
             width: `${props.rasterScale * 100}%`,
             height: `${props.rasterScale * 100}%`,
             transform: `scale(${1 / props.rasterScale})`,
@@ -423,7 +398,6 @@ export function TerminalCard(props: TerminalCardProps) {
           <div className="term-host-slot" ref={slotRef} />
         </div>
       </div>
-      {docked && <div className="term-dock-ghost">⏎ docked · esc ↩ to return</div>}
     </CardShell>
   );
 }

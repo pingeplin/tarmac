@@ -20,9 +20,7 @@ import { MinimapOverlay, type MinimapItem, type MinimapSignal } from "./ui/Minim
 import { OffscreenHints } from "./ui/OffscreenHints";
 import { ToastOverlay } from "./ui/ToastOverlay";
 import { BoardSwitcher } from "./ui/BoardSwitcher";
-import { DockPane } from "./ui/DockPane";
 import { CycleHud } from "./ui/CycleHud";
-import { DockContext, type DockContextValue } from "./cards/DockContext";
 import { cycleOrder, step } from "./kit/termCycle";
 import type { BoardEngine, Viewport } from "./board/BoardEngine";
 import {
@@ -196,8 +194,7 @@ export default function App() {
   const [switcherEditBuffer, setSwitcherEditBuffer] = useState("");
   const [switcherConfirming, setSwitcherConfirming] = useState(false);
 
-  // --- dock pane + cycle HUD state (Wave 2) -------------------------------------
-  const [dockSlot, setDockSlot] = useState<HTMLElement | null>(null);
+  // --- cycle HUD state (Wave 2) --------------------------------------------------
   const [cycleHud, setCycleHud] = useState<{ labels: string[]; activeIndex: number } | null>(null);
   const cycleHudTimer = useRef<number | null>(null);
 
@@ -257,7 +254,7 @@ export default function App() {
   const setBoardCards = (boardId: string, fn: (cs: CardModel[]) => CardModel[]) =>
     setBoardState(boardId, (b) => ({ ...b, cards: fn(b.cards) }));
 
-  // --- focus registry (Wave 2 dock + cycle) ------------------------------------
+  // --- focus registry (Wave 2 cycle) -------------------------------------------
 
   const termHandlesRef = useRef<Map<string, { focus(): void }>>(new Map());
 
@@ -598,8 +595,6 @@ export default function App() {
     const term = b?.cards.find((c) => c.kind === "term" && c.termId === termId) as
       | TermCardModel | undefined;
     if (!term) return;
-    // Clear dock if the exiting term was docked (avoid a phantom docked-but-dead pane).
-    if (b?.dockedTermId === termId) setBoardState(boardId, (s) => ({ ...s, dockedTermId: null }));
     if (code !== 0) {
       pushToast({
         icon: "›_",
@@ -675,8 +670,6 @@ export default function App() {
     });
   };
 
-  // --- dock pane helpers (Wave 2) ----------------------------------------------
-
   /** Promote a specific term to prime on the active board and clear its bell. */
   const setPrimeTerm = (termId: string) =>
     setActiveCards((cs) =>
@@ -687,25 +680,6 @@ export default function App() {
       ),
     );
 
-  const dockPrime = () => {
-    const prime = activeBoard()?.cards.find(
-      (c) => c.kind === "term" && c.prime && c.live && !c.dead,
-    ) as TermCardModel | undefined;
-    if (!prime) return;
-    setBoardState(activeIdRef.current, (b) => ({ ...b, dockedTermId: prime.termId }));
-    focusTerm(prime.termId);
-  };
-
-  const undockActive = () => {
-    const id = activeBoard()?.dockedTermId;
-    setBoardState(activeIdRef.current, (b) => ({ ...b, dockedTermId: null }));
-    if (id) focusTerm(id); // return focus to the now-in-card terminal
-  };
-
-  const toggleDock = () => {
-    activeBoard()?.dockedTermId != null ? undockActive() : dockPrime();
-  };
-
   // --- cycle HUD + ⌥Tab handler (Wave 2) --------------------------------------
 
   const showCycleHud = (labels: string[], activeIndex: number) => {
@@ -715,7 +689,6 @@ export default function App() {
   };
 
   const cycleTerminals = () => {
-    if (activeBoard()?.dockedTermId != null) return; // parity: disabled while docked
     const cards = activeBoard()?.cards ?? [];
     const terms = cards.filter((c) => c.kind === "term") as TermCardModel[];
     const order = cycleOrder(
@@ -770,14 +743,9 @@ export default function App() {
           chips: [],
         });
       }
-      // This board: keep daemon-owned terms warm, mark the rest dead. Drop a stale
-      // dock latch if the docked term died (the daemon-restart path bypasses
-      // handleExit, which is the other place dockedTermId is cleared) — else the raw
-      // `dockedTermId != null` gates (⌥Tab/Esc/Return) misfire on an invisible latch.
+      // This board: keep daemon-owned terms warm, mark the rest dead.
       setBoardState(boardId, (board) => ({
         ...board,
-        dockedTermId:
-          board.dockedTermId != null && !live.has(board.dockedTermId) ? null : board.dockedTermId,
         cards: reassignPrime(
           board.cards.map((c) =>
             c.kind === "term" && !live.has(c.termId)
@@ -794,8 +762,6 @@ export default function App() {
           if (id === boardId) continue;
           setBoardState(id, (board) => ({
             ...board,
-            // A full restart kills every pty on every board → any dock latch is stale.
-            dockedTermId: null,
             cards: reassignPrime(
               board.cards.map((c) =>
                 c.kind === "term" && c.live && !c.dead
@@ -896,7 +862,6 @@ export default function App() {
       docMeta: newDocMeta,
       viewport: vp,
       didRestore: true,
-      dockedTermId: null,
     }));
 
     // Defensive: if a REAL board's restore arrives while we're still on the
@@ -990,20 +955,11 @@ export default function App() {
     // Re-establish keyboard focus on the arrived board (Swift parity: finishArrive).
     // The previously-focused terminal was blurred when its board went display:none,
     // so without this, post-switch keystrokes go nowhere until the user clicks.
-    // Prefer a live re-docked terminal, else the arrived board's live prime.
     const arrived = boardsRef.current.get(targetId);
-    const dockedLiveId =
-      arrived?.dockedTermId &&
-      arrived.cards.some(
-        (c) => c.kind === "term" && c.termId === arrived.dockedTermId && c.live && !c.dead,
-      )
-        ? arrived.dockedTermId
-        : undefined;
     const arrivedPrime = (arrived?.cards.find(
       (c) => c.kind === "term" && c.prime && c.live && !c.dead,
     ) as TermCardModel | undefined)?.termId;
-    const focusId = dockedLiveId ?? arrivedPrime;
-    if (focusId) focusTerm(focusId);
+    if (arrivedPrime) focusTerm(arrivedPrime);
 
     closeSwitcher();
     setSelectedId(null);
@@ -1388,7 +1344,7 @@ export default function App() {
       if (e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.code === "Tab") {
         e.preventDefault();
         e.stopPropagation();
-        cycleTerminals(); // itself a no-op while docked
+        cycleTerminals();
         return;
       }
 
@@ -1431,8 +1387,7 @@ export default function App() {
         }
       }
 
-      // ⏎ — fly to the highest-priority offscreen signal; fall through to dock toggle
-      // when no offscreen signal is pending (Swift parity: fly-to-signal wins over dock).
+      // ⏎ — fly to the highest-priority offscreen signal.
       if (e.key === "Enter" && !e.metaKey && !e.altKey && !e.ctrlKey) {
         const active = document.activeElement as HTMLElement | null;
         if (active?.closest?.(".term-host, button, input, textarea, [contenteditable]")) return;
@@ -1446,23 +1401,12 @@ export default function App() {
           }
           return;
         }
-        // No offscreen signal pending → bare Return toggles the dock (Wave 2).
-        e.preventDefault();
-        toggleDock();
-        return;
       }
-      // ESC ladder: undock → toasts → fly-back → clear fresh-doc highlight. Each consuming
+      // ESC ladder: toasts → fly-back → clear fresh-doc highlight. Each consuming
       // branch stopPropagation()s so the ESC does NOT also reach the focused xterm
       // (capture phase runs before it). Only the final fall-through (no overlay)
       // lets ESC reach the terminal.
       if (e.key === "Escape") {
-        // Undock first (Wave 2) — consume so the docked terminal doesn't receive Esc.
-        if (activeBoard()?.dockedTermId != null) {
-          e.preventDefault();
-          e.stopPropagation();
-          undockActive();
-          return;
-        }
         if (toastsRef.current.length > 0) {
           e.preventDefault();
           e.stopPropagation();
@@ -1639,30 +1583,6 @@ export default function App() {
   }));
   const viewportWorldRect = engine ? engine.viewportWorldRect : { x: 0, y: 0, w: 0, h: 0 };
 
-
-  // --- dock pane derived state (Wave 2) ----------------------------------------
-  const activeDockedTermId = activeBoard()?.dockedTermId ?? null;
-  // Pane is visible only when the docked term is live + present on the active board.
-  const dockedLive =
-    activeDockedTermId != null &&
-    activeCards.some(
-      (c) => c.kind === "term" && c.termId === activeDockedTermId && c.live && !c.dead,
-    );
-  const dockLabel =
-    (activeCards.find((c) => c.kind === "term" && c.termId === activeDockedTermId) as TermCardModel | undefined)
-      ?.label ?? "shell";
-
-  const dockCtx = useMemo<DockContextValue>(
-    () => ({
-      dockedTermId: dockedLive ? activeDockedTermId : null,
-      dockSlot,
-      registerTerm,
-      unregisterTerm,
-    }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [dockedLive, activeDockedTermId, dockSlot, registerTerm, unregisterTerm],
-  );
-
   // Switcher rows (computed fresh each render; also used in keydown via
   // currentSwitcherRows() which re-derives from the same buildSummaries).
   const renderedSwitcherRows: BoardRow[] = switcherOpen
@@ -1692,7 +1612,6 @@ export default function App() {
   return (
     <div className="app">
       <div className="board-stack">
-        <DockContext.Provider value={dockCtx}>
         {boardEntries.map(([bid, boardState]) => {
           const hidden = bid !== activeBoardId;
           const perBoardEngineRef = getBoardEngineRef(bid);
@@ -1726,6 +1645,8 @@ export default function App() {
                   : undefined
               }
               onTermActivity={onTermActivity}
+              onTermRegister={registerTerm}
+              onTermUnregister={unregisterTerm}
               onDocClose={removeDoc}
               selectedId={hidden ? null : selectedId}
               onBackgroundPointerDown={() => { if (!hidden) setSelectedId(null); }}
@@ -1759,8 +1680,6 @@ export default function App() {
           }}
         />
         <CycleHud hud={cycleHud} />
-        </DockContext.Provider>
-        <DockPane visible={dockedLive} label={dockLabel} bodyRef={setDockSlot} />
       </div>
       <StatusBar connected={status.connected} reason={status.reason} cards={activeCards.length} />
     </div>

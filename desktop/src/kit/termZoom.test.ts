@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { termWrapperBox, termCardVars, termInnerBox, termBcrScale } from "./termZoom";
+import { termWrapperBox, termCardVars, termInnerBox } from "./termZoom";
 import { docWrapperBox } from "./docZoom";
 import { worldToView } from "./boardTransform";
 
@@ -158,33 +158,5 @@ describe("S6 — outer origin projects via worldToView (eval actual transform st
 
     expect(screenX).toBeCloseTo(proj.x);
     expect(screenY).toBeCloseTo(proj.y);
-  });
-});
-
-describe("S7 — BCR scale product undocked", () => {
-  it("zoom=2, rs=1 → 2 — break: ignoring rs returns zoom, passes this case", () => {
-    expect(termBcrScale(2, 1, false)).toBe(2);
-  });
-
-  it("zoom=2, rs=2 → 1 — break: ignoring rs (return zoom) returns 2, not 1", () => {
-    expect(termBcrScale(2, 2, false)).toBe(1);
-  });
-
-  it("zoom=3, rs=1.5 → 2 — break: ignoring rs diverges", () => {
-    expect(termBcrScale(3, 1.5, false)).toBeCloseTo(2);
-  });
-});
-
-describe("S8 — BCR docked always returns 1", () => {
-  it("docked zoom=2, rs=1 → 1 — break: dropping docked guard returns zoom/rs=2", () => {
-    expect(termBcrScale(2, 1, true)).toBe(1);
-  });
-
-  it("docked zoom=3, rs=1 → 1", () => {
-    expect(termBcrScale(3, 1, true)).toBe(1);
-  });
-
-  it("docked zoom=0.5, rs=1 → 1", () => {
-    expect(termBcrScale(0.5, 1, true)).toBe(1);
   });
 });

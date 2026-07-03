@@ -1,4 +1,4 @@
-// Hand-authored sample props for the 10 in-scope kit components, used by
+// Hand-authored sample props for the 9 in-scope kit components, used by
 // build-kit.mjs to generate each components/<name>/index.html preview. Fixtures
 // are split into `props` (plain JSON-serializable data, embedded verbatim as a
 // JS object literal) and `fns` (a map of prop name -> function SOURCE TEXT,
@@ -161,17 +161,6 @@ export const fixtures = {
       onZoomIn: "() => {}",
       onZoomOut: "() => {}",
       onFit: "() => {}",
-    },
-  },
-
-  DockPane: {
-    group: "Chrome",
-    props: {
-      visible: true,
-      label: "zsh",
-    },
-    fns: {
-      bodyRef: "() => {}",
     },
   },
 };
