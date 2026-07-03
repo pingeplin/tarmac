@@ -1,0 +1,268 @@
+<!--
+  Sandbox probe card (spec 2607.0004, S18 + Milestone 0 spike gate).
+
+  This is a PERMANENT QA artifact, not a scratch file. It is meant to be
+  opened as a normal HTML doc card (`tarmac open desktop/qa/sandbox-probe.html`)
+  so it loads through the real tarmac-card:// pipeline (shim + CSP header,
+  exactly like agent-authored cards). Its script attempts every escape this
+  feature promises to block — outbound network (fetch/XHR/WebSocket/
+  sendBeacon/img), dynamic import, Tauri globals, IPC, storage, cookies — and
+  reports each result via console.log (relayed to the host by the shim) with
+  a "[probe]" prefix, ending in a machine-parseable summary + verdict line.
+
+  Re-run this probe any time tauri/wry are bumped (see design doc Security
+  Considerations: the guarantee rests on a CVE-fix behavior, not a documented
+  API contract).
+
+  Optional out-of-band network verification: run a throwaway listener in a
+  scratch dir and watch its access log for any hit at all —
+
+      python3 -m http.server 8737
+
+  Zero hits confirms the network attempts never left the process, independent
+  of what the page itself can observe (a `fetch()` rejection only proves the
+  request was blocked *from this frame's perspective*).
+-->
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>tarmac sandbox probe</title>
+<style>
+  body { font: 13px/1.4 -apple-system, sans-serif; background: #111; color: #ddd; padding: 16px; }
+  h1 { font-size: 14px; margin: 0 0 8px; }
+  table { border-collapse: collapse; width: 100%; margin-top: 8px; }
+  td, th { border: 1px solid #333; padding: 4px 8px; text-align: left; vertical-align: top; }
+  .sealed { color: #4caf50; }
+  .leaky { color: #f44336; }
+  .blocked { color: #4caf50; }
+  .escaped { color: #f44336; font-weight: bold; }
+  #verdict { font-size: 16px; font-weight: bold; margin-top: 12px; }
+</style>
+</head>
+<body>
+<h1>tarmac sandbox probe</h1>
+<div id="status">running…</div>
+<div id="verdict"></div>
+<table id="results">
+  <thead><tr><th>attempt</th><th>result</th><th>detail</th></tr></thead>
+  <tbody></tbody>
+</table>
+<script>
+(function () {
+  function describeError(e) {
+    try {
+      if (!e) return "unknown error";
+      return (e.name ? e.name + ": " : "") + (e.message !== undefined ? e.message : String(e));
+    } catch (_) {
+      return "unserializable error";
+    }
+  }
+
+  function withTimeout(promise, ms) {
+    return Promise.race([
+      promise,
+      new Promise((resolve) => setTimeout(() => resolve({ timedOut: true }), ms)),
+    ]);
+  }
+
+  async function probeFetch(url, label) {
+    try {
+      const res = await withTimeout(fetch(url), 3000);
+      if (res && res.timedOut) return { escaped: false, detail: "timed out (treated as blocked)" };
+      return { escaped: true, detail: label + " fetch succeeded: status " + res.status };
+    } catch (e) {
+      return { escaped: false, detail: "blocked: " + describeError(e) };
+    }
+  }
+
+  function probeXhr() {
+    return withTimeout(
+      new Promise((resolve) => {
+        try {
+          const xhr = new XMLHttpRequest();
+          xhr.open("GET", "http://127.0.0.1:8737/probe-xhr");
+          xhr.onload = () => resolve({ escaped: true, detail: "xhr loaded: status " + xhr.status });
+          xhr.onerror = () => resolve({ escaped: false, detail: "xhr blocked (error event)" });
+          xhr.send();
+        } catch (e) {
+          resolve({ escaped: false, detail: "blocked: " + describeError(e) });
+        }
+      }),
+      3000,
+    );
+  }
+
+  function probeWebSocket() {
+    return withTimeout(
+      new Promise((resolve) => {
+        try {
+          const ws = new WebSocket("ws://127.0.0.1:8737");
+          ws.onopen = () => {
+            resolve({ escaped: true, detail: "websocket opened" });
+            try { ws.close(); } catch (_) {}
+          };
+          ws.onerror = () => resolve({ escaped: false, detail: "websocket blocked (error event)" });
+        } catch (e) {
+          resolve({ escaped: false, detail: "blocked: " + describeError(e) });
+        }
+      }),
+      3000,
+    );
+  }
+
+  function probeSendBeacon() {
+    try {
+      if (!navigator.sendBeacon) return { escaped: false, detail: "sendBeacon unavailable" };
+      const ok = navigator.sendBeacon("http://127.0.0.1:8737/probe-beacon", "x");
+      return {
+        escaped: ok === true,
+        detail:
+          "sendBeacon returned " +
+          ok +
+          " — return value alone does not confirm delivery; cross-check the out-of-band listener log",
+      };
+    } catch (e) {
+      return { escaped: false, detail: "blocked: " + describeError(e) };
+    }
+  }
+
+  async function probeDynamicImport() {
+    try {
+      const mod = await withTimeout(import("data:text/javascript,export default 1"), 3000);
+      if (mod && mod.timedOut) return { escaped: false, detail: "timed out (treated as blocked)" };
+      return { escaped: true, detail: "dynamic import succeeded" };
+    } catch (e) {
+      return { escaped: false, detail: "blocked: " + describeError(e) };
+    }
+  }
+
+  function probeTauriGlobals() {
+    const tTauri = typeof window.__TAURI__;
+    const tInternals = typeof window.__TAURI_INTERNALS__;
+    const tKey = typeof window.__TAURI_INVOKE_KEY__;
+    const leaked = tTauri !== "undefined" || tInternals !== "undefined" || tKey !== "undefined";
+    return {
+      escaped: leaked,
+      detail: "__TAURI__=" + tTauri + " __TAURI_INTERNALS__=" + tInternals + " __TAURI_INVOKE_KEY__=" + tKey,
+    };
+  }
+
+  function probeIpc() {
+    try {
+      if (window.ipc && typeof window.ipc.postMessage === "function") {
+        window.ipc.postMessage("probe");
+        return { escaped: true, detail: "window.ipc.postMessage did not throw" };
+      }
+      return { escaped: false, detail: "window.ipc absent" };
+    } catch (e) {
+      return { escaped: false, detail: "blocked: " + describeError(e) };
+    }
+  }
+
+  function probeLocalStorage() {
+    try {
+      localStorage.setItem("probe", "x");
+      const v = localStorage.getItem("probe");
+      return { escaped: true, detail: "localStorage accessible, value=" + v };
+    } catch (e) {
+      return { escaped: false, detail: "blocked (opaque origin): " + describeError(e) };
+    }
+  }
+
+  function probeCookie() {
+    try {
+      document.cookie = "probe=x";
+      const c = document.cookie;
+      if (c && c.indexOf("probe=x") !== -1) {
+        return { escaped: true, detail: "cookie set and read back: " + c };
+      }
+      return { escaped: false, detail: "cookie write no-op, read empty (opaque origin)" };
+    } catch (e) {
+      return { escaped: false, detail: "blocked: " + describeError(e) };
+    }
+  }
+
+  function probeImg() {
+    return new Promise((resolve) => {
+      try {
+        const img = document.createElement("img");
+        let settled = false;
+        img.onload = () => {
+          if (settled) return;
+          settled = true;
+          resolve({ escaped: true, detail: "img onload fired (external image loaded)" });
+        };
+        img.onerror = () => {
+          if (settled) return;
+          settled = true;
+          resolve({ escaped: false, detail: "img onerror fired (blocked)" });
+        };
+        img.src = "http://127.0.0.1:8737/probe-img";
+        img.style.display = "none";
+        document.body.appendChild(img);
+        setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          resolve({ escaped: false, detail: "timed out, no load/error event (treated as blocked)" });
+        }, 3000);
+      } catch (e) {
+        resolve({ escaped: false, detail: "blocked: " + describeError(e) });
+      }
+    });
+  }
+
+  const attempts = [
+    { name: "fetch(http)", fn: () => probeFetch("http://127.0.0.1:8737/probe-fetch", "http") },
+    { name: "fetch(tarmac-card://)", fn: () => probeFetch("tarmac-card://doc/probe", "custom-scheme") },
+    { name: "XMLHttpRequest", fn: probeXhr },
+    { name: "WebSocket", fn: probeWebSocket },
+    { name: "navigator.sendBeacon", fn: async () => probeSendBeacon() },
+    { name: "import() data:", fn: probeDynamicImport },
+    { name: "__TAURI__ globals", fn: async () => probeTauriGlobals() },
+    { name: "window.ipc.postMessage", fn: async () => probeIpc() },
+    { name: "localStorage", fn: async () => probeLocalStorage() },
+    { name: "document.cookie", fn: async () => probeCookie() },
+    { name: "<img> external src", fn: probeImg },
+  ];
+
+  function addRow(name, result) {
+    const tbody = document.querySelector("#results tbody");
+    const tr = document.createElement("tr");
+    const cls = result.escaped ? "escaped" : "blocked";
+    tr.innerHTML =
+      "<td>" + name + "</td><td class=\"" + cls + "\">" + (result.escaped ? "ESCAPED" : "blocked") + "</td><td></td>";
+    tr.children[2].textContent = result.detail;
+    tbody.appendChild(tr);
+  }
+
+  async function run() {
+    const results = [];
+    for (const attempt of attempts) {
+      let r;
+      try {
+        r = await attempt.fn();
+      } catch (e) {
+        r = { escaped: false, detail: "threw: " + describeError(e) };
+      }
+      results.push(r);
+      addRow(attempt.name, r);
+      console.log("[probe] " + attempt.name + ": " + (r.escaped ? "ESCAPED" : "blocked") + " — " + r.detail);
+    }
+
+    const escapedCount = results.filter((r) => r.escaped).length;
+    document.querySelector("#status").textContent = "done";
+    const verdict = escapedCount === 0 ? "SEALED" : "LEAKY";
+    const verdictEl = document.querySelector("#verdict");
+    verdictEl.textContent = "VERDICT: " + verdict + " (" + escapedCount + "/" + results.length + " escapes)";
+    verdictEl.className = escapedCount === 0 ? "sealed" : "leaky";
+
+    console.log("[probe] SUMMARY: " + escapedCount + " of " + results.length + " escapes succeeded");
+    console.log("[probe] VERDICT: " + verdict);
+  }
+
+  run();
+})();
+</script>
+</body>
+</html>

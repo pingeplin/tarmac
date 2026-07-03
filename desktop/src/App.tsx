@@ -23,6 +23,7 @@ import { BoardSwitcher } from "./ui/BoardSwitcher";
 import { DockPane } from "./ui/DockPane";
 import { CycleHud } from "./ui/CycleHud";
 import { DockContext, type DockContextValue } from "./cards/DockContext";
+import { SpikeProbe } from "./dev/SpikeProbe";
 import { cycleOrder, step } from "./kit/termCycle";
 import type { BoardEngine, Viewport } from "./board/BoardEngine";
 import {
@@ -59,6 +60,7 @@ import {
   type ToastState,
 } from "./kit/toasts";
 import { Place, firstFreeSlot, scatterFrame } from "./kit/placement";
+import { docKind } from "./kit/docKind";
 import { buildTiles, parseTiles, type LayoutTile } from "./kit/layoutTiles";
 import type { Rect, Size } from "./kit/geom";
 import {
@@ -184,6 +186,11 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedIdRef = useRef<string | null>(null);
   selectedIdRef.current = selectedId;
+  // The HTML card whose shield is dropped (interactive borrow, spec 2607.0004).
+  // App-level because the Esc ladder must see it.
+  const [borrowedCardId, setBorrowedCardId] = useState<string | null>(null);
+  const borrowedCardIdRef = useRef<string | null>(null);
+  borrowedCardIdRef.current = borrowedCardId;
   const [toastState, setToastState] = useState<ToastState>(emptyToasts);
   const [docContents, setDocContents] = useState<Map<string, string>>(new Map());
 
@@ -279,6 +286,16 @@ export default function App() {
       else if (tries++ < 5) requestAnimationFrame(attempt);
     };
     requestAnimationFrame(attempt);
+  };
+
+  /** Un-borrow the interactive HTML card and send keyboard focus home to the
+   *  prime terminal — the one-keypress Esc contract (spec 2607.0004 S12). */
+  const escapeHome = () => {
+    setBorrowedCardId(null);
+    const p = activeBoard()?.cards.find((c) => c.kind === "term" && c.prime) as
+      | TermCardModel
+      | undefined;
+    if (p && p.live && !p.dead) focusTerm(p.termId);
   };
 
   /** The live terminal on the active board that currently owns DOM keyboard focus
@@ -448,6 +465,10 @@ export default function App() {
   // --- doc content -------------------------------------------------------------
 
   const fetchDoc = async (path: string) => {
+    // HTML docs never hit read_doc (S6/S14): the iframe loads the file itself
+    // via tarmac-card://, and file_event reloads it via the ?v= bump (S13).
+    // One gate here covers every caller (open, restore, refresh).
+    if (docKind(path) !== "markdown") return;
     try {
       const md = await readDoc(path);
       setDocContents((m) => new Map(m).set(path, md));
@@ -550,6 +571,8 @@ export default function App() {
   };
 
   const removeDoc = (path: string) => {
+    // A closed card cannot stay borrowed (a stale id would eat one Esc).
+    if (borrowedCardIdRef.current === `doc:${path}`) setBorrowedCardId(null);
     setActiveBoard((b) => {
       const docMeta = new Map(b.docMeta);
       docMeta.delete(path);
@@ -1450,7 +1473,7 @@ export default function App() {
         toggleDock();
         return;
       }
-      // ESC ladder: undock → toasts → fly-back → dismiss fresh doc. Each consuming
+      // ESC ladder: undock → toasts → fly-back → un-borrow → dismiss fresh doc. Each consuming
       // branch stopPropagation()s so the ESC does NOT also reach the focused xterm
       // (capture phase runs before it). Only the final fall-through (no overlay)
       // lets ESC reach the terminal.
@@ -1473,6 +1496,14 @@ export default function App() {
           e.stopPropagation();
           engineRef.current.flyTo(preFlightRef.current);
           preFlightRef.current = null;
+          return;
+        }
+        // Borrowed HTML card (host-focus path; the in-iframe path is the shim's
+        // escape relay): un-borrow + focus home in ONE keypress (S12).
+        if (borrowedCardIdRef.current != null) {
+          e.preventDefault();
+          e.stopPropagation();
+          escapeHome();
           return;
         }
         const b = activeBoard();
@@ -1727,6 +1758,9 @@ export default function App() {
               onTermActivity={onTermActivity}
               onDocClose={removeDoc}
               selectedId={hidden ? null : selectedId}
+              borrowedCardId={hidden ? null : borrowedCardId}
+              onCardBorrow={setBorrowedCardId}
+              onEscapeHome={escapeHome}
               onBackgroundPointerDown={() => { if (!hidden) setSelectedId(null); }}
             />
           );
@@ -1762,6 +1796,9 @@ export default function App() {
         <DockPane visible={dockedLive} label={dockLabel} bodyRef={setDockSlot} />
       </div>
       <StatusBar connected={status.connected} reason={status.reason} cards={activeCards.length} />
+      {/* Milestone 0 spike-gate QA runner (spec 2607.0004, S18) — never mounts
+          in a normal run; only when VITE_SPIKE_PROBE names a probe HTML path. */}
+      {import.meta.env.VITE_SPIKE_PROBE ? <SpikeProbe path={import.meta.env.VITE_SPIKE_PROBE as string} /> : null}
     </div>
   );
 }

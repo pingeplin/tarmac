@@ -3298,6 +3298,7 @@ name = "tarmac-app"
 version = "0.7.0"
 dependencies = [
  "libc",
+ "percent-encoding",
  "serde",
  "serde_json",
  "tarmac-protocol",

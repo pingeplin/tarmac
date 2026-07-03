@@ -7,6 +7,7 @@
 //! the frontend; the only privileged work down here is the socket + process spawn.
 
 mod bridge;
+mod card_protocol;
 mod commands;
 
 use bridge::Bridge;
@@ -17,6 +18,9 @@ use tokio::sync::mpsc;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .register_uri_scheme_protocol("tarmac-card", |_ctx, request| {
+            card_protocol::respond(&request.uri().to_string())
+        })
         .setup(|app| {
             // The outbound queue: commands push Msgs here, the connection task
             // drains it onto the socket. The task also owns reconnect + dispatch.
@@ -42,6 +46,7 @@ pub fn run() {
             commands::board_create,
             commands::board_rename,
             commands::board_delete,
+            commands::qa_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

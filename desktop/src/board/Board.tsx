@@ -15,7 +15,9 @@ import { EdgeLayer } from "./EdgeLayer";
 import type { EdgeLayerHandle } from "./BoardEngine";
 import { TerminalCard } from "../cards/TerminalCard";
 import { DocCard } from "../cards/DocCard";
+import { HtmlCard } from "../cards/HtmlCard";
 import { ownerChipName } from "../kit/ownerChip";
+import { docKind } from "../kit/docKind";
 import { docWrapperBox, docCardVars } from "../kit/docZoom";
 import { termWrapperBox, termCardVars, termInnerBox } from "../kit/termZoom";
 import { cardId, type CardModel, type WorldFrame, type DocMeta } from "./model";
@@ -43,6 +45,11 @@ interface BoardProps {
   docMeta: Map<string, DocMeta>;
   /** The active card (shows the focus ring + resize handles), or null. */
   selectedId: string | null;
+  /** The HTML card whose shield is dropped (interactive borrow), or null. */
+  borrowedCardId: string | null;
+  onCardBorrow: (id: string) => void;
+  /** Un-borrow + refocus the prime terminal (the shim Esc relay path). */
+  onEscapeHome: () => void;
   /** A press on empty board space clears the selection. */
   onBackgroundPointerDown: () => void;
   onCardResize: (id: string, frame: WorldFrame) => void;
@@ -182,11 +189,26 @@ export function Board(props: BoardProps) {
             </div>
           );
         })}
-        {/* Doc cards: outer wrapper (docWrapperBox+docCardVars+zIndex) → DocCard.
-            DocCard's CardShell uses inWrapper=true (inset:0) so it fills the wrapper.
-            The prose oversample→downscale subtree is unchanged. */}
+        {/* Doc cards: outer wrapper (docWrapperBox+docCardVars+zIndex) → DocCard
+            or HtmlCard by extension (docKind, spec 2607.0004 — kind is derived,
+            never stored). Both use CardShell inWrapper=true (inset:0) to fill the
+            wrapper. The prose oversample→downscale subtree is unchanged. */}
         {cards.filter((c) => c.kind === "doc").map((c) => {
           const id = cardId(c);
+          const shared = {
+            model: c,
+            ownerName: ownerChipName(c.ownerTermId, termLabel),
+            lastChangedMs: props.docMeta.get(c.path)?.lastChangedMs,
+            selected: id === props.selectedId,
+            getZoom,
+            onMove: (frame: WorldFrame) => props.onCardMove(id, frame),
+            onMoveStart: () => props.onCardMoveStart(id),
+            onMoveEnd: () => props.onCardMoveEnd(id),
+            onResize: (frame: WorldFrame) => props.onCardResize(id, frame),
+            onResizeEnd: () => props.onCardResizeEnd(id),
+            onGrab: () => props.onCardGrab(id),
+            onClose: () => props.onDocClose(c.path),
+          };
           return (
             <div
               key={id}
@@ -200,21 +222,16 @@ export function Board(props: BoardProps) {
                 zIndex: c.z,
               }}
             >
-              <DocCard
-                model={c}
-                markdown={props.docContents.get(c.path) ?? ""}
-                ownerName={ownerChipName(c.ownerTermId, termLabel)}
-                lastChangedMs={props.docMeta.get(c.path)?.lastChangedMs}
-                selected={id === props.selectedId}
-                getZoom={getZoom}
-                onMove={(frame) => props.onCardMove(id, frame)}
-                onMoveStart={() => props.onCardMoveStart(id)}
-                onMoveEnd={() => props.onCardMoveEnd(id)}
-                onResize={(frame) => props.onCardResize(id, frame)}
-                onResizeEnd={() => props.onCardResizeEnd(id)}
-                onGrab={() => props.onCardGrab(id)}
-                onClose={() => props.onDocClose(c.path)}
-              />
+              {docKind(c.path) === "html" ? (
+                <HtmlCard
+                  {...shared}
+                  borrowed={id === props.borrowedCardId}
+                  onBorrow={() => props.onCardBorrow(id)}
+                  onEscapeHome={props.onEscapeHome}
+                />
+              ) : (
+                <DocCard {...shared} markdown={props.docContents.get(c.path) ?? ""} />
+              )}
             </div>
           );
         })}
