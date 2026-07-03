@@ -27,6 +27,7 @@ fn m0_end_to_end() {
         cwd: None,
         cmd: Some(vec!["/bin/echo".into(), "tarmac-test-ok".into()]),
         board_id: None,
+        inherit_cwd_from: None,
     });
     let mut collected = Vec::new();
     let deadline = Instant::now() + LONG;
@@ -123,6 +124,7 @@ fn term_input_pty_size_and_exit_code() {
             "stty size; read line; echo got-$line; exit 7".into(),
         ]),
         board_id: None,
+        inherit_cwd_from: None,
     });
 
     let mut collected = Vec::new();

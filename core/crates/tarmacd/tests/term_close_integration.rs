@@ -25,6 +25,7 @@ fn spawn_live_cat(app: &mut Conn, term_id: &str) {
         cwd: None,
         cmd: Some(vec!["/bin/cat".into()]),
         board_id: None,
+        inherit_cwd_from: None,
     });
     app.send(&Msg::Input { term_id: term_id.into(), bytes: b"alive\n".to_vec() });
     app.recv_until("live output", |m| {

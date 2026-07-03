@@ -69,6 +69,10 @@ export interface TermCardModel {
    * pty) adopts the running shell instead — it attaches output but never spawns,
    * only syncing the pty size to the card. */
   needsSpawn: boolean;
+  /** issue #77: on a cold spawn, the term_id whose LIVE cwd this card's shell
+   * should inherit (e.g. ⌘T inheriting the prime terminal's current directory).
+   * Only consulted while needsSpawn is true. */
+  inheritCwdFrom?: string;
 }
 
 export interface DocCardModel {

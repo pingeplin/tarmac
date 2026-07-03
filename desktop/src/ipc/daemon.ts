@@ -44,6 +44,10 @@ export function spawnTerm(opts: {
   cwd?: string;
   cmd?: string[];
   boardId?: string;
+  /** issue #77: term_id whose LIVE cwd (resolved daemon-side, at spawn time)
+   * this terminal should start in — e.g. ⌘T inheriting the prime terminal's
+   * current directory. Ignored by the daemon when `cwd` is also set. */
+  inheritCwdFrom?: string;
 }): Promise<void> {
   return invoke("spawn_term", {
     termId: opts.termId,
@@ -52,6 +56,7 @@ export function spawnTerm(opts: {
     cwd: opts.cwd ?? null,
     cmd: opts.cmd ?? null,
     boardId: opts.boardId ?? null,
+    inheritCwdFrom: opts.inheritCwdFrom ?? null,
   });
 }
 

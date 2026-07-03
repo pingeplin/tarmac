@@ -224,7 +224,7 @@ async fn app_session(daemon: Arc<Daemon>, stream: UnixStream) -> anyhow::Result<
 
 async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
     match msg {
-        Msg::SpawnTerm { term_id, cols, rows, cwd, cmd, board_id } => {
+        Msg::SpawnTerm { term_id, cols, rows, cwd, cmd, board_id, inherit_cwd_from } => {
             // Resolve the owning board: an explicit, known board_id wins, else
             // the active board. Recorded only on a successful spawn.
             let board = {
@@ -232,6 +232,20 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
                 board_id
                     .filter(|id| boards.contains(id))
                     .unwrap_or_else(|| boards.active_id().to_string())
+            };
+            // issue #77: ⌘T inherits the prime terminal's LIVE cwd, not its spawn
+            // cwd. An explicit `cwd` always wins; an unknown/dead source term (or
+            // an OS lookup failure) silently falls through to term::spawn's own
+            // $HOME default — never an error.
+            let cwd = match cwd {
+                Some(c) => Some(c),
+                None => match inherit_cwd_from {
+                    Some(src) => {
+                        let handle = daemon.terms.lock().await.get(&src).cloned();
+                        handle.and_then(|h| term::live_cwd(&h))
+                    }
+                    None => None,
+                },
             };
             match term::spawn(daemon.clone(), term_id.clone(), cols, rows, cwd, cmd).await {
                 Ok(()) => {

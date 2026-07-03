@@ -137,6 +137,7 @@ fn boards_create_switch_route_and_survive_restart() {
         cwd: None,
         cmd: Some(vec!["/bin/cat".into()]),
         board_id: Some("board-1".into()),
+        inherit_cwd_from: None,
     });
 
     // Lay out board-1: its own doc (opened while board-1 is active) + term tile.
@@ -270,6 +271,7 @@ fn board_delete_kills_terms_fixes_active_and_refuses_last() {
         cwd: None,
         cmd: Some(vec!["/bin/cat".into()]),
         board_id: Some("board-1".into()),
+        inherit_cwd_from: None,
     });
     app.send(&Msg::Input { term_id: "tdel".into(), bytes: b"alive\n".to_vec() });
     app.recv_until("live output", |m| {
@@ -375,6 +377,7 @@ fn term_exit_recomputes_board_running_count() {
         cwd: None,
         cmd: Some(vec!["/bin/cat".into()]),
         board_id: None,
+        inherit_cwd_from: None,
     });
     // A short-lived shell that exits on its own.
     app.send(&Msg::SpawnTerm {
@@ -384,6 +387,7 @@ fn term_exit_recomputes_board_running_count() {
         cwd: None,
         cmd: Some(vec!["/bin/echo".into(), "hi".into()]),
         board_id: None,
+        inherit_cwd_from: None,
     });
 
     // When techo exits, the next (re-pushed) board_list reports board-0 running
@@ -420,6 +424,7 @@ fn reconnect_rebinds_live_terms_and_replays_scrollback() {
         cwd: None,
         cmd: Some(vec!["/bin/cat".into()]),
         board_id: None,
+        inherit_cwd_from: None,
     });
     app.send(&Msg::Input { term_id: "t0".into(), bytes: b"scrollmark\n".to_vec() });
     app.recv_until("live output with marker", |m| {

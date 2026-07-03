@@ -24,6 +24,7 @@ fn bel_in_output_yields_a_bell_frame() {
         cwd: None,
         cmd: Some(vec!["/bin/sh".into(), "-c".into(), "printf '\\a'; sleep 0.2".into()]),
         board_id: None,
+        inherit_cwd_from: None,
     });
 
     let bell = app.recv_until("bell", |m| matches!(m, Msg::Bell { .. }));
@@ -47,6 +48,7 @@ fn term_proc_reports_a_foreground_process_name() {
         cwd: None,
         cmd: Some(vec!["/bin/sh".into(), "-c".into(), "sleep 2".into()]),
         board_id: None,
+        inherit_cwd_from: None,
     });
 
     let deadline = Instant::now() + LONG;

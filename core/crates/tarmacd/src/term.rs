@@ -394,6 +394,62 @@ fn process_name(_pid: libc::pid_t) -> Option<String> {
     None
 }
 
+// issue #77: resolve a pid's CURRENT working directory via
+// proc_pidinfo(PROC_PIDVNODEPATHINFO) — the same fact `lsof -p <pid> -d cwd`
+// reports. Mirrors process_name's FFI pattern: all unsafe is guarded, any
+// failure (dead pid, permission) returns None.
+#[cfg(target_os = "macos")]
+fn pid_cwd(pid: libc::pid_t) -> Option<String> {
+    let mut info: libc::proc_vnodepathinfo = unsafe { std::mem::zeroed() };
+    let size = std::mem::size_of::<libc::proc_vnodepathinfo>() as libc::c_int;
+    // SAFETY: `info` is a valid, zeroed, exactly-sized buffer; proc_pidinfo
+    // writes at most `size` bytes and returns <=0 on error.
+    let ret = unsafe {
+        libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDVNODEPATHINFO,
+            0,
+            &mut info as *mut _ as *mut libc::c_void,
+            size,
+        )
+    };
+    if ret <= 0 {
+        return None;
+    }
+    // vip_path is a NUL-terminated cwd string packed as [[c_char; 32]; 32]
+    // (MAXPATHLEN split across a fixed 2D array for an old-rustc const-generic
+    // limit in libc) — read it as one flat byte buffer.
+    let vip_path = &info.pvi_cdir.vip_path;
+    // SAFETY: vip_path is a field of `info`, alive for this call; the length is
+    // its exact byte size (path is c_char == u8-sized on this target).
+    let bytes = unsafe {
+        std::slice::from_raw_parts(vip_path.as_ptr() as *const u8, std::mem::size_of_val(vip_path))
+    };
+    let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+    let cwd = String::from_utf8_lossy(&bytes[..end]).into_owned();
+    (!cwd.is_empty()).then_some(cwd)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn pid_cwd(_pid: libc::pid_t) -> Option<String> {
+    None
+}
+
+/// The CURRENT working directory of a term's foreground process, resolved live
+/// (never its spawn-time cwd) via the same process-group-leader pid
+/// `proc_name_loop` already polls for the card title. This is deliberately the
+/// FOREGROUND job's leader, not the shell/session leader: at a bare prompt (the
+/// common ⌘T case) that leader IS the shell, and when a job is running we
+/// inherit *its* cwd — where the user visually is, and the same pid whose name
+/// the card already shows. Locks `master` only for the pid read (never across an
+/// await), so this is safe to call from an async dispatch handler. None if the
+/// pty or the OS lookup doesn't resolve — callers fall back to the daemon's
+/// default cwd.
+pub fn live_cwd(handle: &TermHandle) -> Option<String> {
+    let pid = handle.master.lock().ok()?.process_group_leader()?;
+    pid_cwd(pid)
+}
+
 #[cfg(test)]
 mod tests {
     use super::force_utf8_ctype_decision;
@@ -438,5 +494,24 @@ mod tests {
         // An empty higher-precedence var is ignored; the next decides.
         assert!(!decide(&[("LC_ALL", ""), ("LANG", "en_US.UTF-8")]));
         assert!(decide(&[("LC_CTYPE", ""), ("LANG", "C")]));
+    }
+
+    // issue #77: pid_cwd resolves a live pid's real cwd — proven here on our own
+    // test process, which cargo always launches with a real (non-tmp) cwd.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn pid_cwd_resolves_own_process_cwd() {
+        use super::pid_cwd;
+        let pid = std::process::id() as libc::pid_t;
+        let cwd = pid_cwd(pid).expect("cwd resolves for our own live pid");
+        let expected = std::env::current_dir().unwrap().canonicalize().unwrap();
+        assert_eq!(std::path::Path::new(&cwd).canonicalize().unwrap(), expected);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn pid_cwd_returns_none_for_an_invalid_pid() {
+        use super::pid_cwd;
+        assert_eq!(pid_cwd(-1), None);
     }
 }
