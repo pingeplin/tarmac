@@ -31,6 +31,9 @@ serde_json = "1"
 # (tokio/tauri); declaring it directly lets the bridge signal a daemon it did
 # not spawn (the brew-upgrade case).
 libc = "0.2"
+# tarmac-card:// path decoding (card_protocol.rs) — already in the tree
+# transitively via tauri; declared explicitly since we call it directly.
+percent-encoding = "2"
 
 # Reused read-only from core/ — gives us the Msg enum, encode/decode,
 # frame::read_async/write_async (feature = "async"), repo_color_index, and the

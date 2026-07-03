@@ -154,3 +154,11 @@ pub fn board_rename(state: State<Bridge>, board_id: String, name: String) {
 pub fn board_delete(state: State<Bridge>, board_id: String) {
     state.send(Msg::BoardDelete { board_id });
 }
+
+/// Dev/QA spike-harness stdout mirror (spec 2607.0004 M0): SpikeProbe.tsx
+/// relays sandboxed-iframe console/escape messages here so they show up in
+/// `make run`'s terminal for the sandbox-probe gate. Not used outside QA.
+#[tauri::command]
+pub fn qa_log(line: String) {
+    println!("{line}");
+}
