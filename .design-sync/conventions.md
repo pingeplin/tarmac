@@ -1,11 +1,11 @@
-TarmacKit is the real Tarmac desktop-app UI, bundled as-is — 10 board-chrome
+TarmacKit is the real Tarmac desktop-app UI, bundled as-is — 9 board-chrome
 components, no rewrite. Two groups: `cards/` (`CardShell`, `DocCard`) and
-`general/` (`BoardSwitcher`, `CycleHud`, `DockPane`, `MinimapOverlay`,
+`general/` (`BoardSwitcher`, `CycleHud`, `MinimapOverlay`,
 `OffscreenHints`, `StatusBar`, `ToastOverlay`, `ZoomControl`).
 
 ## Wrapping every component needs
 
-None of these 10 are self-contained widgets — they're board chrome, and most
+None of these 9 are self-contained widgets — they're board chrome, and most
 position themselves against their nearest positioned ancestor (`CardShell`/
 `DocCard` fill it via `inset: 0`; `ZoomControl` pins `left/bottom: 12px`;
 `BoardSwitcher`'s veil is `inset: 0` with a panel centered via
@@ -44,7 +44,7 @@ const { BoardSwitcher } = window.TarmacKit;
 ReactDOM.createRoot(document.getElementById('ds-root')).render(<BoardSwitcher />);
 ```
 
-None of the 10 read from React context — no router, i18n, or theme provider
+None of the 9 read from React context — no router, i18n, or theme provider
 needed.
 
 ## Styling idiom
@@ -63,7 +63,7 @@ No spacing-scale token exists — the only layout var is `--grid-size: 24px`
 (the board's background grid pitch, not a general spacing unit). Use plain
 px for custom glue.
 
-Component styling is class-based BEM-ish (`.card`, `.dock-pane`,
+Component styling is class-based BEM-ish (`.card`,
 `.doc-card`, `.switcher-panel`, `.zoom-control`, `.tm-toast`, …) — don't
 invent new component classes. Compose with the shipped components; reach for
 token vars only for glue around them (the wrapper div above, spacing between

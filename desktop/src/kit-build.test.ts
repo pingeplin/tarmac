@@ -30,7 +30,6 @@ const IN_SCOPE_COMPONENTS = [
   "CycleHud",
   "StatusBar",
   "ZoomControl",
-  "DockPane",
 ] as const;
 
 const GROUP_BY_COMPONENT: Record<(typeof IN_SCOPE_COMPONENTS)[number], "Cards" | "Overlays" | "Chrome"> = {
@@ -43,7 +42,6 @@ const GROUP_BY_COMPONENT: Record<(typeof IN_SCOPE_COMPONENTS)[number], "Cards" |
   CycleHud: "Overlays",
   StatusBar: "Chrome",
   ZoomControl: "Chrome",
-  DockPane: "Chrome",
 };
 
 beforeAll(() => {
@@ -61,7 +59,7 @@ describe("kit build output tree (S1, S13)", () => {
     expect(fs.existsSync(path.join(distKit, "fonts", "ibm-plex-mono-bold.woff2"))).toBe(true);
   });
 
-  it("emits components/<name>/index.html for exactly the 10 in-scope components", () => {
+  it("emits components/<name>/index.html for exactly the 9 in-scope components", () => {
     const componentsDir = path.join(distKit, "components");
     const actualDirs = fs.readdirSync(componentsDir).sort();
     expect(actualDirs).toEqual([...IN_SCOPE_COMPONENTS].sort());

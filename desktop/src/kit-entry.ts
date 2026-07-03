@@ -1,6 +1,6 @@
 // Standalone kit entry point — bundled by desktop/scripts/build-kit.mjs into a
-// single IIFE (window.TarmacKit) for /design-sync. Re-exports the 10 in-scope
-// presentational components (8 from ui/ + CardShell/DocCard from cards/) plus a
+// single IIFE (window.TarmacKit) for /design-sync. Re-exports the 9 in-scope
+// presentational components (7 from ui/ + CardShell/DocCard from cards/) plus a
 // tiny `mount(name, props, el)` helper the per-component preview HTML calls.
 // Deliberately does NOT export TitleBarChip (dead code, dropped per the design
 // doc — see docs/designs/2607.0001_tarmac_ui_kit_design_sync_export.md).
@@ -12,7 +12,6 @@ import { CardShell } from "./cards/CardShell";
 import { DocCard } from "./cards/DocCard";
 import { BoardSwitcher } from "./ui/BoardSwitcher";
 import { CycleHud } from "./ui/CycleHud";
-import { DockPane } from "./ui/DockPane";
 import { MinimapOverlay } from "./ui/MinimapOverlay";
 import { OffscreenHints } from "./ui/OffscreenHints";
 import { StatusBar } from "./ui/StatusBar";
@@ -25,7 +24,6 @@ const components: Record<string, ComponentType<any>> = {
   DocCard,
   BoardSwitcher,
   CycleHud,
-  DockPane,
   MinimapOverlay,
   OffscreenHints,
   StatusBar,
@@ -50,7 +48,6 @@ export {
   DocCard,
   BoardSwitcher,
   CycleHud,
-  DockPane,
   MinimapOverlay,
   OffscreenHints,
   StatusBar,
