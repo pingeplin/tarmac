@@ -42,6 +42,7 @@ pub fn spawn_term(
     cwd: Option<String>,
     cmd: Option<Vec<String>>,
     board_id: Option<String>,
+    inherit_cwd_from: Option<String>,
 ) {
     state.send(Msg::SpawnTerm {
         term_id,
@@ -50,6 +51,7 @@ pub fn spawn_term(
         cwd,
         cmd,
         board_id,
+        inherit_cwd_from,
     });
 }
 

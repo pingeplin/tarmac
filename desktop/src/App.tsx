@@ -22,6 +22,7 @@ import { ToastOverlay } from "./ui/ToastOverlay";
 import { BoardSwitcher } from "./ui/BoardSwitcher";
 import { CycleHud } from "./ui/CycleHud";
 import { cycleOrder, step } from "./kit/termCycle";
+import { inheritCwdSource } from "./kit/cwdInherit";
 import type { BoardEngine, Viewport } from "./board/BoardEngine";
 import {
   cardId,
@@ -320,7 +321,7 @@ export default function App() {
     termId: string,
     frame: WorldFrame,
     z: number,
-    opts: { needsSpawn: boolean; live?: boolean; prime?: boolean },
+    opts: { needsSpawn: boolean; live?: boolean; prime?: boolean; inheritCwdFrom?: string },
   ): TermCardModel => ({
     kind: "term",
     termId,
@@ -332,6 +333,7 @@ export default function App() {
     prime: opts.prime ?? false,
     bell: false,
     needsSpawn: opts.needsSpawn,
+    inheritCwdFrom: opts.inheritCwdFrom,
   });
 
   const unprime = (c: CardModel): CardModel =>
@@ -580,11 +582,17 @@ export default function App() {
       Place.cascadeDx,
       Place.cascadeDy,
     );
+    // issue #77: ⌘T inherits the (live) prime terminal's current directory.
+    const inheritCwdFrom = inheritCwdSource(
+      existing
+        .filter((c): c is TermCardModel => c.kind === "term")
+        .map((c) => ({ termId: c.termId, prime: c.prime, live: c.live, dead: c.dead })),
+    );
     const term = makeTerm(
       mint(),
       { x: origin.x, y: origin.y, w: Place.termFrame.w, h: Place.termFrame.h },
       topZ(existing) + 1,
-      { needsSpawn: true, prime: true },
+      { needsSpawn: true, prime: true, inheritCwdFrom },
     );
     termBoardIndexRef.current.assign(term.termId, bid);
     setBoardCards(bid, (cs) => [...cs.map(unprime), term]);
@@ -643,7 +651,13 @@ export default function App() {
       | TermCardModel | undefined;
     if (!term) return;
     if (term.needsSpawn) {
-      void spawnTerm({ termId, cols, rows, boardId: boardId || undefined });
+      void spawnTerm({
+        termId,
+        cols,
+        rows,
+        boardId: boardId || undefined,
+        inheritCwdFrom: term.inheritCwdFrom,
+      });
       setBoardCards(boardId, (cs) =>
         cs.map((c) => (c.kind === "term" && c.termId === termId ? { ...c, needsSpawn: false } : c)),
       );

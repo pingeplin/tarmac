@@ -87,6 +87,15 @@ pub enum Msg {
         // board even when the target board is not the active one.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         board_id: Option<String>,
+        // issue #77 additive key (optional; missing => nil): the term_id whose
+        // LIVE cwd (not its spawn cwd) this new terminal should start in, e.g.
+        // ⌘T inheriting the prime terminal's current directory. Ignored when
+        // `cwd` is already set; resolved daemon-side at spawn time so it always
+        // reflects where that terminal is *now*, including after it has `cd`'d
+        // away. An unknown/dead source term silently falls through to
+        // term::spawn's own default.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        inherit_cwd_from: Option<String>,
     },
     Input {
         term_id: String,
@@ -966,7 +975,7 @@ mod tests {
         );
         assert_eq!(
             decode(&spawn).unwrap(),
-            Msg::SpawnTerm { term_id: "t1".into(), cols: 80, rows: 24, cwd: None, cmd: None, board_id: None }
+            Msg::SpawnTerm { term_id: "t1".into(), cols: 80, rows: 24, cwd: None, cmd: None, board_id: None, inherit_cwd_from: None }
         );
 
         // {t:"open", path:"/a.md"} — no term_id / board_id keys.
@@ -974,6 +983,44 @@ mod tests {
         assert_eq!(
             decode(&open).unwrap(),
             Msg::Open { path: "/a.md".into(), term_id: None, board_id: None }
+        );
+    }
+
+    // issue #77: inherit_cwd_from round-trips and — unlike cwd/cmd/board_id —
+    // is present on the wire only when Some (skip_serializing_if), so a spawn
+    // that never sets it stays byte-identical to a pre-#77 sender.
+    #[test]
+    fn inherit_cwd_from_roundtrips_and_omits_when_none() {
+        let with_hint = Msg::SpawnTerm {
+            term_id: "t1".into(),
+            cols: 80,
+            rows: 24,
+            cwd: None,
+            cmd: None,
+            board_id: None,
+            inherit_cwd_from: Some("prime".into()),
+        };
+        assert_eq!(roundtrip(&with_hint), with_hint);
+        let encoded = encode(&with_hint).unwrap();
+        let needle = b"inherit_cwd_from";
+        assert!(
+            encoded.windows(needle.len()).any(|w| w == needle),
+            "inherit_cwd_from key missing from encoded Some: {encoded:02x?}"
+        );
+
+        let without_hint = Msg::SpawnTerm {
+            term_id: "t1".into(),
+            cols: 80,
+            rows: 24,
+            cwd: None,
+            cmd: None,
+            board_id: None,
+            inherit_cwd_from: None,
+        };
+        let encoded_none = encode(&without_hint).unwrap();
+        assert!(
+            !encoded_none.windows(needle.len()).any(|w| w == needle),
+            "inherit_cwd_from key present despite None: {encoded_none:02x?}"
         );
     }
 
@@ -1057,7 +1104,7 @@ mod tests {
         );
         assert_eq!(
             decode(&bytes).unwrap(),
-            Msg::SpawnTerm { term_id: "t1".into(), cols: 80, rows: 24, cwd: None, cmd: None, board_id: None }
+            Msg::SpawnTerm { term_id: "t1".into(), cols: 80, rows: 24, cwd: None, cmd: None, board_id: None, inherit_cwd_from: None }
         );
     }
 
@@ -1071,7 +1118,7 @@ mod tests {
         );
         assert_eq!(
             decode(&bytes).unwrap(),
-            Msg::SpawnTerm { term_id: "t1".into(), cols: 80, rows: 24, cwd: None, cmd: None, board_id: None }
+            Msg::SpawnTerm { term_id: "t1".into(), cols: 80, rows: 24, cwd: None, cmd: None, board_id: None, inherit_cwd_from: None }
         );
     }
 
@@ -1188,8 +1235,19 @@ mod tests {
                 cwd: Some("/tmp".into()),
                 cmd: Some(vec!["/bin/echo".into(), "hi".into()]),
                 board_id: None,
+                inherit_cwd_from: None,
             },
-            Msg::SpawnTerm { term_id: "t2".into(), cols: 80, rows: 24, cwd: None, cmd: None, board_id: None },
+            Msg::SpawnTerm { term_id: "t2".into(), cols: 80, rows: 24, cwd: None, cmd: None, board_id: None, inherit_cwd_from: None },
+            // issue #77: cwd absent but an inherit-cwd-from hint present.
+            Msg::SpawnTerm {
+                term_id: "t3".into(),
+                cols: 80,
+                rows: 24,
+                cwd: None,
+                cmd: None,
+                board_id: None,
+                inherit_cwd_from: Some("t1".into()),
+            },
             Msg::Input { term_id: "t1".into(), bytes: vec![0u8; 64 * 1024] },
             Msg::Output { term_id: "t1".into(), bytes: b"hello\r\n".to_vec() },
             Msg::Resize { term_id: "t1".into(), cols: 80, rows: 24 },
@@ -1235,6 +1293,7 @@ mod tests {
                 cwd: None,
                 cmd: None,
                 board_id: Some("board-1".into()),
+                inherit_cwd_from: None,
             },
             Msg::Open { path: "/a.md".into(), term_id: Some("t9".into()), board_id: Some("board-1".into()) },
             // issue #34: close a doc card (app -> daemon).

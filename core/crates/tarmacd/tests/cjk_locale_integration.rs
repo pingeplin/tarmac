@@ -68,6 +68,7 @@ fn shell_locale_result(daemon: &TestDaemon, term_id: &str) -> String {
             "printf 'RESULT charmap=%s ctype=%s\\n' \"$(locale charmap)\" \"${LC_CTYPE-unset}\"".into(),
         ]),
         board_id: None,
+        inherit_cwd_from: None,
     });
 
     let deadline = Instant::now() + LONG;
