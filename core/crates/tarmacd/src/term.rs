@@ -437,10 +437,14 @@ fn pid_cwd(_pid: libc::pid_t) -> Option<String> {
 
 /// The CURRENT working directory of a term's foreground process, resolved live
 /// (never its spawn-time cwd) via the same process-group-leader pid
-/// `proc_name_loop` already polls for the card title. Locks `master` only for
-/// the pid read (never across an await), so this is safe to call from an async
-/// dispatch handler. None if the pty or the OS lookup doesn't resolve — callers
-/// fall back to the daemon's default cwd.
+/// `proc_name_loop` already polls for the card title. This is deliberately the
+/// FOREGROUND job's leader, not the shell/session leader: at a bare prompt (the
+/// common ⌘T case) that leader IS the shell, and when a job is running we
+/// inherit *its* cwd — where the user visually is, and the same pid whose name
+/// the card already shows. Locks `master` only for the pid read (never across an
+/// await), so this is safe to call from an async dispatch handler. None if the
+/// pty or the OS lookup doesn't resolve — callers fall back to the daemon's
+/// default cwd.
 pub fn live_cwd(handle: &TermHandle) -> Option<String> {
     let pid = handle.master.lock().ok()?.process_group_leader()?;
     pid_cwd(pid)
