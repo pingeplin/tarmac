@@ -16,6 +16,8 @@ import { CardShell } from "./CardShell";
 import { docProseScaler, DOC_OVERSAMPLE_K } from "../kit/docZoom";
 import { repoColors } from "../theme";
 import { recencyLabel } from "../kit/chromeText";
+import { isExternalHttpUrl } from "../kit/externalLink";
+import { openExternal } from "../ipc/shell";
 import type { DocCardModel, WorldFrame } from "../board/model";
 
 const basename = (p: string): string => {
@@ -191,7 +193,21 @@ export function DocCard(props: DocCardProps) {
       >
         <div className="doc-prose-sizer" ref={sizerRef}>
           <div className="doc-prose-scaler" style={docProseScaler()}>
-            <div className="doc-prose" ref={proseRef} />
+            <div
+              className="doc-prose"
+              ref={proseRef}
+              onPointerDown={(e) => {
+                const anchor = (e.target as HTMLElement).closest("a");
+                if (anchor) e.stopPropagation();
+              }}
+              onClick={(e) => {
+                const anchor = (e.target as HTMLElement).closest("a");
+                if (!anchor) return;
+                e.preventDefault();
+                const href = anchor.getAttribute("href") ?? "";
+                if (isExternalHttpUrl(href)) openExternal(href).catch(() => {});
+              }}
+            />
           </div>
         </div>
       </div>

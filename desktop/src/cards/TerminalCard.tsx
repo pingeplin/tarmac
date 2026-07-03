@@ -25,6 +25,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import {
   INITIAL_RENDERER_STATE,
   shouldAttemptWebgl,
@@ -34,6 +35,7 @@ import {
 } from "../kit/termRenderer";
 import { CardShell } from "./CardShell";
 import { attachTermOutput, detachTermOutput, termInput, termResize } from "../ipc/daemon";
+import { openExternal } from "../ipc/shell";
 import { termFontFamily, termFontSize, xtermTheme } from "../theme";
 import type { TermCardModel, WorldFrame } from "../board/model";
 import { termHostPadding } from "../kit/termHostPadding";
@@ -119,6 +121,7 @@ export function TerminalCard(props: TerminalCardProps) {
     term.loadAddon(fit);
     const unicode = new Unicode11Addon();
     term.loadAddon(unicode);
+    term.loadAddon(new WebLinksAddon((_event, uri) => openExternal(uri).catch(() => {})));
     // unicode11 reports width=1 for PUA glyphs (U+E000–F8FF) — do NOT add a
     // blanket PUA→2 override.  This is correct because we ship the NFM (Mono)
     // variant of JetBrainsMono Nerd Font, which forces every icon glyph into a
