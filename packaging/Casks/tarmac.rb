@@ -14,8 +14,8 @@
 cask "tarmac" do
   arch arm: "arm64"
 
-  version "0.8.0"
-  sha256 "ee825dcf7812e837bf83be962da7870fdec8fbb84748a70974eb4aa4da732b9c"
+  version "0.8.1"
+  sha256 "27533b1e46256b13d0c6d9bdc296df7a021a77f76b5556d554a6806dea394b5a"
 
   url "https://github.com/pingeplin/tarmac/releases/download/v#{version}/Tarmac-#{version}.dmg"
   name "Tarmac"
