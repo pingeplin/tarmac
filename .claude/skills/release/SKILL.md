@@ -26,6 +26,18 @@ You need, as env vars for `make release`:
 
 ## Steps
 
+**Pre-flight — sync `main` before you build.** A tree behind `origin/main` ships
+stale bits while git history still looks complete. Make sure local HEAD contains
+`origin/main` first:
+
+```
+git fetch origin && git merge-base --is-ancestor origin/main HEAD \
+  || { echo "HEAD is behind origin/main — rebase before releasing" >&2; exit 1; }
+```
+
+`scripts/bundle.sh` enforces the same check at build time, so a stale release
+can't ship — but sync here to catch it up front.
+
 1. **Bump the version — eight files end up in the release commit.**
    Hand-edit `version` to `x.y.z` in **three** files:
    - `desktop/src-tauri/tauri.conf.json` — Tauri stamps this into the bundle; the

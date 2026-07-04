@@ -19,6 +19,22 @@ SIDECAR_DIR="$ROOT/desktop/src-tauri/binaries"
 TRIPLE="aarch64-apple-darwin"
 TAURI_APP="$ROOT/desktop/src-tauri/target/$TRIPLE/release/bundle/macos/Tarmac.app"
 
+# Freshness guard: never compile a tree behind origin/main, or a stale DMG ships
+# while git history still looks complete. release.sh calls us, so this gates
+# releases too. Ancestry only — working-tree edits (release.sh's version sed) are
+# ignored. Offline fetch downgrades to a warning.
+if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+  echo "==> freshness guard: HEAD must contain origin/main"
+  if git -C "$ROOT" fetch --quiet origin 2>/dev/null; then
+    git -C "$ROOT" merge-base --is-ancestor origin/main HEAD || {
+      echo "FATAL: HEAD is behind origin/main — rebase before building." >&2
+      exit 1
+    }
+  else
+    echo "WARNING: could not fetch origin — skipping freshness check (offline?)." >&2
+  fi
+fi
+
 echo "==> building Rust core (release, arm64)"
 cargo build --release --locked --manifest-path "$ROOT/core/Cargo.toml"
 
