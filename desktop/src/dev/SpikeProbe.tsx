@@ -25,7 +25,9 @@ export function SpikeProbe({ path }: { path: string }) {
       const line =
         msg.kind === "escape"
           ? "[spike] escape-relay received"
-          : `[spike] console.${msg.level} ${msg.args.map((a) => String(a)).join(" ")}`;
+          : msg.kind === "console"
+            ? `[spike] console.${msg.level} ${msg.args.map((a: unknown) => String(a)).join(" ")}`
+            : `[spike] ready meta=${msg.meta ?? "null"}`;
       void invoke("qa_log", { line });
     };
 

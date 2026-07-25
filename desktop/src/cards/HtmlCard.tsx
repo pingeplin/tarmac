@@ -22,6 +22,7 @@ import {
   pushCardConsole,
   type CardConsoleEntry,
 } from "../kit/cardConsole";
+import { declaredZoomMode, effectiveZoomMode, zoomCapable, type ZoomMode } from "../kit/zoomMode";
 import { RASTER_SCALE_SETTLE_MS } from "../kit/rasterScale";
 import { repoColors } from "../theme";
 import { recencyLabel } from "../kit/chromeText";
@@ -79,6 +80,18 @@ export function HtmlCard(props: HtmlCardProps) {
   const onBorrowRef = useRef(props.onBorrow);
   onBorrowRef.current = props.onBorrow;
 
+  // Effective zoom mode (spec 2607.0006) for the CURRENT document load, read by
+  // the settle path below; readyHandledRef gates the ready handler itself (S17)
+  // — only the first ready per load is honored, so a forged repeat can't flip
+  // the mode out from under the console line. Both reset on reload (?v= bump)
+  // so a dropped meta tag can't leak the old mode forward.
+  const effectiveZoomRef = useRef<ZoomMode>("reveal");
+  const readyHandledRef = useRef(false);
+  useEffect(() => {
+    effectiveZoomRef.current = "reveal";
+    readyHandledRef.current = false;
+  }, [props.lastChangedMs]);
+
   // Shim message relay: filter to THIS card's iframe, validate, buffer.
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
@@ -87,6 +100,29 @@ export function HtmlCard(props: HtmlCardProps) {
       if (!msg) return;
       if (msg.kind === "escape") {
         if (borrowedRef.current) onEscapeHomeRef.current();
+        return;
+      }
+      if (msg.kind === "ready") {
+        if (readyHandledRef.current) return;
+        readyHandledRef.current = true;
+        const declared = declaredZoomMode(msg.meta);
+        const capable = zoomCapable(msg.probe);
+        const effective = effectiveZoomMode(declared, capable);
+        effectiveZoomRef.current = effective;
+        if (msg.meta !== null) {
+          setEntries((buf) =>
+            pushCardConsole(buf, {
+              level: "info",
+              args: [`zoom-mode declared=${declared} capable=${capable} effective=${effective}`],
+            }),
+          );
+        }
+        if (effective === "magnify") {
+          iframeRef.current?.contentWindow?.postMessage(
+            { tarmac: "zoom", z: settledZoomRef.current },
+            "*",
+          );
+        }
         return;
       }
       setEntries((buf) => pushCardConsole(buf, { level: msg.level, args: msg.args }));
@@ -122,6 +158,15 @@ export function HtmlCard(props: HtmlCardProps) {
       if (timer != null) window.clearTimeout(timer);
     };
   }, []);
+
+  // Settle-time zoom relayout (S11): keyed on settledZoom rather than fired
+  // from the timer above, so it runs after React commits the resized iframe
+  // box — postMessage vs. window resize interleaving is otherwise unordered,
+  // and the shim must never apply a new root zoom to a stale element box.
+  useEffect(() => {
+    if (effectiveZoomRef.current !== "magnify") return;
+    iframeRef.current?.contentWindow?.postMessage({ tarmac: "zoom", z: settledZoom }, "*");
+  }, [settledZoom]);
 
   // Borrow gesture: native dblclick (React synthetic timing is unreliable under
   // the board's native listeners — CardShell wheel precedent). Re-runs when the

@@ -7,8 +7,11 @@ import {
   type CardConsoleEntry,
 } from "./cardConsole";
 
-// Spec 2607.0004 — shim payload validation (S4, S17) and ring buffer (S5).
-describe("parseCardMessage (S4)", () => {
+// Two specs share this file: 2607.0004 (shim payload validation — S4, S17;
+// ring buffer — S5) and 2607.0006 (ready-payload parsing — S4, S14; forged
+// host->shim rejection — S16). Scenario IDs collide across the specs, so
+// every ID below is qualified with its spec number.
+describe("parseCardMessage (2607.0004 S4)", () => {
   it("accepts a well-formed console payload", () => {
     const m = parseCardMessage({ tarmac: "console", level: "warn", args: ["a", 1] });
     expect(m).toEqual({ kind: "console", level: "warn", args: ["a", 1] });
@@ -29,7 +32,36 @@ describe("parseCardMessage (S4)", () => {
   });
 });
 
-describe("parseCardMessage rejects junk (S17)", () => {
+describe("parseCardMessage ready payload (2607.0006 S4)", () => {
+  it("accepts a ready payload with string meta (2607.0006 S4)", () => {
+    const m = parseCardMessage({
+      tarmac: "ready",
+      meta: "magnify",
+      probe: { base: 400, zoomed: 200 },
+    });
+    expect(m).toEqual({ kind: "ready", meta: "magnify", probe: { base: 400, zoomed: 200 } });
+  });
+
+  it("accepts a ready payload with null meta (2607.0006 S4)", () => {
+    const m = parseCardMessage({
+      tarmac: "ready",
+      meta: null,
+      probe: { base: 400, zoomed: 400 },
+    });
+    expect(m).toEqual({ kind: "ready", meta: null, probe: { base: 400, zoomed: 400 } });
+  });
+
+  it("passes a non-finite probe value through — finiteness is zoomCapable's verdict, not parseCardMessage's (2607.0006 S4)", () => {
+    const m = parseCardMessage({
+      tarmac: "ready",
+      meta: "magnify",
+      probe: { base: NaN, zoomed: 200 },
+    });
+    expect(m).toEqual({ kind: "ready", meta: "magnify", probe: { base: NaN, zoomed: 200 } });
+  });
+});
+
+describe("parseCardMessage rejects junk (2607.0004 S17)", () => {
   it("rejects non-tarmac and malformed payloads", () => {
     expect(parseCardMessage(null)).toBeNull();
     expect(parseCardMessage("hello")).toBeNull();
@@ -47,7 +79,57 @@ describe("parseCardMessage rejects junk (S17)", () => {
   });
 });
 
-describe("pushCardConsole ring buffer (S5)", () => {
+describe("parseCardMessage rejects malformed ready payloads (2607.0006 S14)", () => {
+  it("rejects a ready payload missing probe", () => {
+    expect(parseCardMessage({ tarmac: "ready", meta: "magnify" })).toBeNull();
+  });
+
+  it("rejects a ready payload with non-numeric probe fields", () => {
+    expect(
+      parseCardMessage({ tarmac: "ready", meta: "magnify", probe: { base: "400", zoomed: 200 } }),
+    ).toBeNull();
+    expect(
+      parseCardMessage({ tarmac: "ready", meta: "magnify", probe: { base: 400, zoomed: null } }),
+    ).toBeNull();
+  });
+
+  it("rejects a ready payload with non-string, non-null meta", () => {
+    expect(
+      parseCardMessage({ tarmac: "ready", meta: 1, probe: { base: 400, zoomed: 200 } }),
+    ).toBeNull();
+  });
+
+  it("rejects a bare ready payload", () => {
+    expect(parseCardMessage({ tarmac: "ready" })).toBeNull();
+  });
+
+  it("rejects a ready payload with the meta key absent — undefined is neither string nor null (2607.0006 S14, guards 2607.0006 S8)", () => {
+    expect(
+      parseCardMessage({ tarmac: "ready", probe: { base: 400, zoomed: 200 } }),
+    ).toBeNull();
+  });
+
+  it("rejects a ready payload with null probe (2607.0006 S14)", () => {
+    expect(parseCardMessage({ tarmac: "ready", meta: "magnify", probe: null })).toBeNull();
+  });
+
+  it("still parses previously valid console and escape payloads unchanged", () => {
+    expect(parseCardMessage({ tarmac: "escape" })).toEqual({ kind: "escape" });
+    expect(parseCardMessage({ tarmac: "console", level: "warn", args: ["a", 1] })).toEqual({
+      kind: "console",
+      level: "warn",
+      args: ["a", 1],
+    });
+  });
+});
+
+describe("parseCardMessage rejects forged host->shim payloads (2607.0006 S16)", () => {
+  it("rejects an inbound {tarmac:'zoom'} payload — not a host message kind", () => {
+    expect(parseCardMessage({ tarmac: "zoom", z: 40 })).toBeNull();
+  });
+});
+
+describe("pushCardConsole ring buffer (2607.0004 S5)", () => {
   const entry = (n: number): CardConsoleEntry => ({ level: "log", args: [n] });
 
   it("appends in order below the cap", () => {
