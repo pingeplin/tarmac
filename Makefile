@@ -1,6 +1,6 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: core app app-deps sidecars test run kill-daemon bundle release kit
+.PHONY: core app app-deps sidecars test docs-check run kill-daemon bundle release kit
 
 core:
 	cd $(ROOT)/core && cargo build
@@ -33,7 +33,13 @@ app: app-deps
 kit: app-deps
 	cd $(ROOT)/desktop && npm run build:kit
 
-test:
+# Deterministic doc tripwires: status banners, link rot, ACTIVE docs citing
+# source paths that don't exist, and wire messages missing from the docs. No
+# dependencies (plain node), sub-second, so it runs first in `test`.
+docs-check:
+	node $(ROOT)/scripts/docs-check.mjs
+
+test: docs-check
 	cd $(ROOT)/core && cargo test
 	cd $(ROOT)/desktop && npm test
 	cargo test --manifest-path $(ROOT)/desktop/src-tauri/Cargo.toml

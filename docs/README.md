@@ -17,6 +17,22 @@ carries a status banner on its first line, and this table is the map.
 Grep rule: `grep -l "Doc status: ACTIVE" docs/**/*.md` is the complete set of
 pages you may trust for present-tense claims.
 
+## What is enforced
+
+`make docs-check` (also a required check on every PR, `.github/workflows/docs-check.yml`)
+runs deterministic tripwires only — it never judges prose:
+
+1. every doc carries a status banner;
+2. every relative link resolves;
+3. **ACTIVE** docs may not cite a source path that doesn't exist (HISTORICAL docs
+   are exempt — naming dead files is their job);
+4. every `Msg` variant in `tarmac-protocol` appears in both `architecture.md` and
+   `protocol.md`.
+
+On a PR it additionally *reports* (never fails) when an ACTIVE doc still names a
+file the PR deleted. Prose that is merely out of date is out of scope — that
+still needs a human or an agent reading the diff.
+
 ## ACTIVE
 
 | Doc | What it is |
@@ -61,3 +77,4 @@ M3 is tracked per GitHub issue; see [`workflow.md`](workflow.md).
 3. Add it to the right table above.
 4. When a doc stops describing reality, flip it to HISTORICAL — don't leave it
    ACTIVE and stale.
+5. Run `make docs-check`.

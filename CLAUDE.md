@@ -18,7 +18,8 @@ Everything goes through the root `Makefile`:
 
 - `make core` — `cargo build` the Rust workspace (daemon + CLI + protocol).
 - `make app` — `npm run build` + `cargo build` for the Tauri app.
-- `make test` — `cd core && cargo test` + `cd desktop && npm test` + app-cargo test.
+- `make test` — `make docs-check` + `cd core && cargo test` + `cd desktop && npm test` + app-cargo test.
+- `make docs-check` — deterministic doc tripwires (`scripts/docs-check.mjs`, plain node, sub-second): status banners, link rot, ACTIVE docs citing paths that don't exist, and `Msg` variants missing from `architecture.md`/`protocol.md`. Also a required PR check (`.github/workflows/docs-check.yml`) — the repo's only CI.
 - `make run` — launches the Tauri dev app with Vite HMR.
 - `make bundle` — `scripts/bundle.sh`: unsigned arm64 `dist/Tarmac.app` via `tauri build`.
 - `make release` — `scripts/release.sh`: sign + `.dmg` + notarize + staple. Requires env `DEVID_IDENTITY` and `NOTARY_PROFILE` (both hard-asserted); `VERSION` optional (default `0.1.0`).
