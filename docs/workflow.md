@@ -1,5 +1,7 @@
 # Tarmac dev workflow
 
+> **Doc status: ACTIVE** — normative. Docs index: [`README.md`](README.md).
+
 How an idea becomes shipped code. The issue number is the thread that ties
 **issue → branch → worktree → commit → PR → board card** together. Everything
 below is derivable from the issue, so most of it is automatable (see

@@ -1,5 +1,10 @@
 # Tarmac v4 (Whiteboard) — visual crib
 
+> **Doc status: HISTORICAL** — a frozen milestone record, kept for provenance.
+> It describes the system *as it was then* — much of it the Swift/AppKit app that
+> no longer exists — and is not maintained. For current behaviour see
+> [`../../architecture.md`](../../architecture.md).
+
 Exact values for the Swift/AppKit implementer of Phases 0–2. Sources:
 `design_handoff_tarmac/tarmac/breeze.css` (canonical Breeze token sheet + chrome
 overrides), `board.css` (board/card/chrome geometry), `board-v4.jsx` + `canvas-v4.jsx`

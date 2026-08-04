@@ -1,5 +1,9 @@
 # Unified Screen-Space `.card-layer` for the Tauri Board
 
+> **Doc status: HISTORICAL** — a design record for work that has already shipped.
+> It describes the system *as of the change it accompanied*, not as it is today.
+> For current behaviour see [`../architecture.md`](../architecture.md).
+
 **Date:** 2026-06-28
 **Status:** proposed
 **Author:** EP Lin

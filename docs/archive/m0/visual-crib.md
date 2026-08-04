@@ -1,5 +1,10 @@
 # Tarmac M0 — visual crib
 
+> **Doc status: HISTORICAL** — a frozen milestone record, kept for provenance.
+> It describes the system *as it was then* — much of it the Swift/AppKit app that
+> no longer exists — and is not maintained. For current behaviour see
+> [`../../architecture.md`](../../architecture.md).
+
 Exact values for the Swift/AppKit implementer. Sources: `design_handoff_tarmac/tarmac/theme.css`
 (canonical token sheet), `converged.css`, `tarmac-proto/proto.css`, README "Design Tokens" /
 "Peek" / type scale. Where the design authors oklch, the sRGB hex below was computed via the

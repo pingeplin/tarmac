@@ -1,5 +1,9 @@
 # Tarmac wire protocol — v1 (M0 + M1 subsets)
 
+> **Doc status: ACTIVE** — normative, and gated by the conformance vectors at
+> the bottom. If this page and the code disagree, one of them is a bug. Docs
+> index: [`README.md`](README.md).
+
 Authoritative contract between `tarmacd` (Rust daemon), the `tarmac` CLI, and the
 macOS app. Both sides implement exactly this; the conformance vectors at the bottom
 are mandatory tests in both codebases. Unknown message *types* received by any party
@@ -339,6 +343,70 @@ the next keystroke to that terminal or when it regains focus.
 | key | type | missing ⇒ | semantics |
 |---|---|---|---|
 | `term_id` | string (required) | — | the terminal that rang the bell |
+
+## M3 boards ("strips = boards")
+
+Five additive message types. A receiver that does not know them ignores them
+under the unknown-type rule, so every pre-M3 vector decodes unchanged.
+
+    {t:"board_list", boards:[<board meta>, ...], active}   — daemon → app
+    {t:"board_switch", board_id}                           — app → daemon
+    {t:"board_create"}                                     — app → daemon
+    {t:"board_rename", board_id, name}                     — app → daemon
+    {t:"board_delete", board_id}                           — app → daemon
+
+`board_list` is pushed right after `hello_ok` and again on every board change
+(create / rename / delete / switch, and terminal spawn+exit, which move the
+`running` count). `board_switch` makes a board active and the daemon replies with
+that board's `restore`. `board_create` mints a board — the **daemon** assigns the
+slug id, so there is no id on the request. `board_rename` with an empty `name`
+clears the name back to the slug fallback. `board_delete` kills the board's ptys
+and is a **no-op when it targets the last board**; if the deleted board was
+active, the daemon fixes `active` and sends the new active board's `restore`.
+
+### Board meta
+
+    {board_id, name?, running?}
+
+| key | type | missing ⇒ | semantics |
+|---|---|---|---|
+| `board_id` | string (required) | — | stable slug (`board-0`, `board-1`, …); display order is the array order, which backs `⌘1`–`9` |
+| `name` | string | unnamed | user-given display name; the app falls back to `board_id` |
+| `running` | uint | unknown | terminals on that board with a live pty — one of the two honest session signals |
+
+### Additive `board_id` keys on existing messages
+
+M3 scopes the pre-existing messages per board. Every one is optional with a
+missing⇒default decode, so a single-board sender that never sets them keeps the
+byte-identical wire:
+
+| message | key | missing ⇒ |
+|---|---|---|
+| `open` | `board_id` | the calling term's board, else the active board |
+| `layout` | `board_id` | the active board |
+| `spawn_term` | `board_id` | `board-0` / active |
+| `restore` | `board_id` | `board-0` — the daemon always stamps it so the app can bind a restore unambiguously across rapid switches |
+
+### `restore.live_terms` (P5)
+
+    {t:"restore", ..., live_terms:[term_id, ...]}
+
+The term_ids the daemon currently owns a **live** pty for on the restored board.
+The app re-binds those cards to the running shells — consuming the scrollback
+replayed as `output` frames right after the restore — instead of cold-spawning.
+Missing or empty means cold-spawn: the pre-P5 behaviour, and the daemon-restart
+case where the shells really are gone. This is what makes an app reconnect
+survive with live terminals while a daemon restart does not.
+
+### `spawn_term.inherit_cwd_from` (issue #77)
+
+    {t:"spawn_term", ..., inherit_cwd_from:"t1"}
+
+Start the new pty in the **live** cwd of another terminal (⌘T inheriting the
+prime terminal's current directory), resolved daemon-side at spawn time so it
+reflects where that shell is *now*, including after it has `cd`'d away. Ignored
+when `cwd` is already set; an unknown or dead source term falls through to the
+normal default.
 
 ## Closing a single terminal (issue #15)
 

@@ -90,18 +90,21 @@ Built and shipped on `main`:
 - **Wayfinding**: minimap, zoom control, and offscreen signal pills.
 - **Terminal primacy**: a prime card, multiple terminal cards (`⌘T`), `⌥`-tab
   cycling, dead cards on exit (no auto-respawn).
-- **Multiple boards**: a `⌘K` switcher with live thumbnails, `⌘1`–`9` jump,
-  create / rename (`⌘E`) / delete (`⌘⌫`, refuses the last board).
+- **Multiple boards**: a `⌘K` switcher with live per-board running / bell / card
+  counts, `⌘1`–`9` jump to the filtered rows, create (`⌘N`) / rename (`⌘E`) /
+  delete (`⌘⌫`, refuses the last board).
 - **Session liveness**: an honest attached/detached chip, bounded
   auto-reconnect, and in-place re-bind to surviving shells with scrollback
   replay (no respawn) when the app reconnects to a still-running daemon.
 
 Not built yet — see [`docs/backlog.md`](docs/backlog.md) for the full audit:
 the `tarmac focus` verb + idle-switch banner, the session-restore overlay,
-in-terminal doc-path linkification, the titlebar process chip, the doc-rewrite
-"place kept" pill, and edge-split drop. **Editable docs (v4c)** is the next
-milestone. Real tmux/bare-attach, auto board-naming, daemon-restart PTY
-re-parenting, and a libghostty renderer swap are deferred by decision.
+in-terminal doc-path linkification, the status-bar process chip, the doc-rewrite
+"place kept" pill, and edge-split drop. **Editable docs (v4c)** is a captured
+*proposal*, not scheduled work — nothing of it exists in the code. Real
+tmux/bare-attach, auto board-naming, and daemon-restart PTY re-parenting are
+deferred by decision; the shelf, the terminal dock pane, and peek (`⌘P`) were
+deliberately dropped after the Tauri rebuild.
 
 ## Architecture at a glance
 
@@ -179,31 +182,29 @@ there is no second-language codec to keep in lockstep.
 
 ## Docs
 
-Current — the live set at the `docs/` root:
+**Start at [`docs/README.md`](docs/README.md)** — the index. Every doc carries a
+status banner on its first line, because the doc set spans two UIs and five
+closed milestones and a page's path does not tell you whether it is current:
 
-- [`docs/architecture.md`](docs/architecture.md) — the high-level design (this
-  repo's engineering overview).
-- [`docs/protocol.md`](docs/protocol.md) — the authoritative wire contract
-  (transport, framing, every message, the frozen conformance vectors).
-- [`docs/backlog.md`](docs/backlog.md) — what's designed but unbuilt, and what's
-  deferred by decision.
+- **ACTIVE** — describes `main` today; safe to cite as behaviour.
+  [`docs/architecture.md`](docs/architecture.md) (engineering overview),
+  [`docs/protocol.md`](docs/protocol.md) (wire contract + frozen conformance
+  vectors), [`docs/backlog.md`](docs/backlog.md) (the audited unbuilt list),
+  [`docs/workflow.md`](docs/workflow.md) (issue → PR conventions).
+- **PROPOSED** — designed, zero lines implemented.
+  [`docs/proposed/`](docs/proposed) — currently just the editable-docs (v4c)
+  crib.
+- **HISTORICAL** — frozen records, mostly of the Swift/AppKit app that no longer
+  exists. [`docs/archive/`](docs/archive) (closed milestone plans + visual cribs)
+  and [`docs/designs/`](docs/designs) (one record per shipped change).
 
-History — milestone plans and visual cribs under [`docs/archive/`](docs/archive),
-kept for provenance and superseded by the docs above:
-
-- [`docs/archive/m3/plan.md`](docs/archive/m3/plan.md) — the "strips = boards"
-  milestone record.
-- [`docs/archive/v4/migration-plan.md`](docs/archive/v4/migration-plan.md) — the
-  v3-grid → v4-whiteboard migration record.
-- `docs/archive/m0/`, `docs/archive/m1/` — visual cribs from the earliest
-  milestones.
+`M0`–`M3` and `v4` are closed milestone names; `v4c` is an unstarted proposal.
+There is no `M4`. Work since M3 is tracked per GitHub issue.
 
 The original v3 design handoff (README + mocks + design-chat transcripts) is
 preserved in git history; the surfaces it described (dock/index rails, grid desk,
 tabs/splits) were intentionally replaced by the v4 whiteboard and are recorded as
-such in [`docs/backlog.md`](docs/backlog.md). Its still-relevant unbuilt details
-were absorbed into `docs/` (e.g. the next milestone's
-[`docs/v4c/visual-crib.md`](docs/v4c/visual-crib.md)).
+such in [`docs/backlog.md`](docs/backlog.md).
 
 ## License
 

@@ -1,5 +1,9 @@
 # IME second-keystroke drop in terminal cards — root cause + fix
 
+> **Doc status: HISTORICAL** — a design record for work that has already shipped.
+> It describes the system *as of the change it accompanied*, not as it is today.
+> For current behaviour see [`../architecture.md`](../architecture.md).
+
 Status: implemented
 Area: desktop (Tauri UI), `desktop/src/cards/TerminalCard.tsx`
 

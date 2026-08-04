@@ -1,0 +1,49 @@
+# Tier-1 doc drift tripwires. Runs on every PR (not just doc-touching ones):
+# renaming a source file or adding a wire message is exactly what makes an
+# ACTIVE doc start lying, and neither of those touches docs/.
+name: docs-check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  docs-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so the advisory scan can diff against the PR base.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The blocking rules — the same entry point contributors run locally.
+      - name: make docs-check
+        run: make docs-check
+
+      # Advisory only. Deleting a component is the most reliable way to strand a
+      # doc (the shelf and DockPane both outlived their code here), but a doc may
+      # legitimately name a dead symbol — backlog.md's removals register exists to
+      # do exactly that. So this reports, it never fails the build.
+      - name: Deleted-file doc references (advisory)
+        if: github.event_name == 'pull_request'
+        run: |
+          out=$(node scripts/docs-check.mjs --deleted "${{ github.event.pull_request.base.sha }}" | grep '^notice:' || true)
+          if [ -n "$out" ]; then
+            {
+              echo "### Docs still naming files deleted by this PR"
+              echo
+              echo "Advisory — check whether these should be updated, or whether the mention is deliberate (e.g. \`docs/backlog.md\` §4 records removals on purpose)."
+              echo
+              echo '```'
+              echo "$out"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi

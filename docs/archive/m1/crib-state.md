@@ -1,5 +1,10 @@
 # Tarmac M1 — state & signal crib
 
+> **Doc status: HISTORICAL** — a frozen milestone record, kept for provenance.
+> It describes the system *as it was then* — much of it the Swift/AppKit app that
+> no longer exists — and is not maintained. For current behaviour see
+> [`../../architecture.md`](../../architecture.md).
+
 The M1 state model and signal semantics, extracted so implementers (and the wire-protocol
 designer) never interpret the design themselves. Sources: `design_handoff_tarmac/README.md`
 ("Core model", "Screens", "Interactions & Behavior", "State Management", "Cold start",
