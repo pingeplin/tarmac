@@ -389,10 +389,12 @@ terminal renderer, `⌘T` cwd inheritance, OS-browser card links, and the
 `/design-sync` UI-kit export. Each has a record in
 [`designs/`](designs) or `.blueprint/specs/`.
 
-Two surfaces were **removed** after M3 and no longer exist despite older docs
+Three surfaces were **removed** after M3 and no longer exist despite older docs
 describing them: the **shelf** (parked/unplaced doc chips — `⌘W` now just removes
-the doc card) and the terminal **dock pane** (#74). `doc_read` / peek (`⌘P`) is
-wired in the protocol and the daemon but has **no caller in the app**.
+the doc card), the terminal **dock pane** (#74), and **peek (`⌘P`)**. All three
+were deliberate; see [`backlog.md`](backlog.md) §4. Peek leaves residue: `DocRead`
+is still routed by the daemon but has **no caller in the app**, so the persisted
+per-doc `read` flag is never set.
 
 ### Not built
 

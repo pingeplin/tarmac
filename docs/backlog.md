@@ -83,8 +83,8 @@ are confirmed absent in the code. Roughly ordered by value.
   linkifier.
 - **Scope:** a custom xterm.js link provider (`registerLinkProvider`) that matches
   known doc paths against the app's `docStore` and routes ⌘click to the doc card.
-  Note the ⌘click destination in the v3 spec was *peek*, which itself is unbuilt
-  (see §1.7) — target the existing card instead.
+  Note the ⌘click destination in the v3 spec was *peek*, which was deliberately
+  dropped (§4) — target the existing card instead.
 
 ### 1.4 · Status-bar right-aligned process chip
 - **What:** the chrome shows a right-aligned process chip (the active terminal's
@@ -121,19 +121,6 @@ are confirmed absent in the code. Roughly ordered by value.
   (noted optional in both plans). No `split` code in `desktop/src/board/`.
 - **Scope:** drop-zone hit-testing + preview + placement. Lowest priority — the
   infinite board's free placement largely covers the need.
-
-### 1.7 · Peek (`⌘P`) — regressed, not merely unbuilt
-- **What:** open a doc in a transient peek overlay and mark it read without
-  moving focus. This **shipped in the Swift app** and was described as current in
-  `architecture.md` until 2026-08-04.
-- **State:** the wire type and the daemon route survive — `Msg::DocRead` /
-  `conn.rs` handle it, and `ipc/daemon.ts:docRead()` exists — but **nothing in the
-  app ever calls it**, and there is no peek overlay. The `fresh` (unread)
-  highlight is cleared app-locally by `ESC` (`kit/clearFreshDoc.ts`), so the
-  daemon's per-doc `read` flag is never set by the Tauri UI.
-- **Scope:** either rebuild a peek surface and call `docRead`, or call `docRead`
-  from the existing `ESC`/open path so the persisted read flag stops lying.
-  The second is a few lines and worth doing regardless.
 
 ---
 
@@ -178,3 +165,11 @@ An agent finding them referenced in `docs/archive/` is reading history:
 - **The terminal dock pane** (dock/undock reparenting, `DockPane`, `DockContext`,
   `dockedTermId`) — removed in #74.
 - **`TitleBarChip`** — dropped as dead code during the UI-kit export (#52).
+- **Peek (`⌘P`)** — the transient read-without-focus overlay. Deliberately not
+  carried into the Tauri UI: doc cards on an infinite board already give you the
+  content without moving focus, so the overlay was a second surface for the same
+  job. Residue: `Msg::DocRead` and its daemon route survive on the wire with **no
+  caller** in the app (`ipc/daemon.ts:docRead()` is unused), so the daemon's
+  per-doc `read` flag is never set by the Tauri UI. Either wire `docRead` into the
+  existing open/`ESC` path or retire the flag — but do not re-file peek itself as
+  a missing feature.

@@ -100,10 +100,11 @@ Built and shipped on `main`:
 Not built yet — see [`docs/backlog.md`](docs/backlog.md) for the full audit:
 the `tarmac focus` verb + idle-switch banner, the session-restore overlay,
 in-terminal doc-path linkification, the status-bar process chip, the doc-rewrite
-"place kept" pill, edge-split drop, and peek (`⌘P`, which shipped in the Swift app
-and is currently unwired). **Editable docs (v4c)** is a captured *proposal*, not
-scheduled work — nothing of it exists in the code. Real tmux/bare-attach, auto
-board-naming, and daemon-restart PTY re-parenting are deferred by decision.
+"place kept" pill, and edge-split drop. **Editable docs (v4c)** is a captured
+*proposal*, not scheduled work — nothing of it exists in the code. Real
+tmux/bare-attach, auto board-naming, and daemon-restart PTY re-parenting are
+deferred by decision; the shelf, the terminal dock pane, and peek (`⌘P`) were
+deliberately dropped after the Tauri rebuild.
 
 ## Architecture at a glance
 
