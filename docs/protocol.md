@@ -1,5 +1,9 @@
 # Tarmac wire protocol — v1 (M0 + M1 subsets)
 
+> **Doc status: ACTIVE** — normative, and gated by the conformance vectors at
+> the bottom. If this page and the code disagree, one of them is a bug. Docs
+> index: [`README.md`](README.md).
+
 Authoritative contract between `tarmacd` (Rust daemon), the `tarmac` CLI, and the
 macOS app. Both sides implement exactly this; the conformance vectors at the bottom
 are mandatory tests in both codebases. Unknown message *types* received by any party

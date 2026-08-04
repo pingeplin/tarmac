@@ -1,5 +1,10 @@
 # Tarmac M1 — visual crib: dock + index
 
+> **Doc status: HISTORICAL** — a frozen milestone record, kept for provenance.
+> It describes the system *as it was then* — much of it the Swift/AppKit app that
+> no longer exists — and is not maintained. For current behaviour see
+> [`../../architecture.md`](../../architecture.md).
+
 Exact values for the Swift/AppKit implementer. Sources: `design_handoff_tarmac/README.md`
 (§2 Dock, §3 Index, §9 Cold start, "Interactions & Behavior"), `tarmac-proto/panels.jsx`
 (`PDock`, `PIndex`), `tarmac-proto/app.jsx` (state + keyboard), `tarmac-proto/proto.css`,

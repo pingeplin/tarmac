@@ -1,8 +1,17 @@
-# Tarmac v4c (editable docs) — visual crib
+# Tarmac v4c (editable docs) — proposed visual crib
 
-Exact values + mock structure for the **v4c editable-docs** milestone (doc cards
+> **Doc status: PROPOSED — NOT IMPLEMENTED.** Nothing on this page exists in the
+> code. Doc cards are read-only today; there is no edit state, no caret, no home
+> chip, no conflict banner, and no `tarmac`-side write path. Do not cite this doc
+> as a description of Tarmac's behaviour, and do not treat its class names or
+> copy as things you can find in the repo — they come from mocks that were never
+> built. For what actually ships, see
+> [`../architecture.md`](../architecture.md); for the audited unbuilt list, see
+> [`../backlog.md`](../backlog.md).
+
+Exact values + mock structure for the **v4c editable-docs** proposal (doc cards
 become editors; focus is borrowed; write conflicts are reported, never
-arbitrated). This is the next milestone after M3 — see
+arbitrated). It was captured as the intended milestone after M3 — see
 [`docs/archive/v4/migration-plan.md`](../archive/v4/migration-plan.md) §Deferred
 for the driving loop (design round → implement in three layers → near-zero daemon
 work) and the load-bearing invariants; this crib carries the **exact geometry,
@@ -148,9 +157,13 @@ Three layers, cheapest first:
 - **(a) Edit-state chrome + borrowed-focus mechanics** — cheap: the card ring,
   the caret, the `⌂ esc` home chip, and `esc`-home focus routing. Mostly the
   values in §3 plus key handling.
-- **(b) The editor surface itself** — the real tech decision. `DocWebView` is a
-  read-only `WKWebView`, so "editable" means either `contenteditable`/CodeMirror
-  inside the webview, or a native text view. Tied to open questions 1–2.
+- **(b) The editor surface itself** — the real tech decision. *(Restated for the
+  Tauri app: the original text assumed the Swift `DocWebView`/`WKWebView`, which
+  no longer exists.)* `desktop/src/cards/DocCard.tsx` renders markdown with
+  `marked` straight into the app's own DOM, so "editable" means either
+  `contenteditable` on the rendered prose or a real editor component
+  (CodeMirror) in the same tree — no nested webview is involved either way.
+  Tied to open questions 1–2.
 - **(c) Conflict banner + diff exit** — the `.tm-conflict` banner (§3) plus the
   chosen diff-view shape (open question 1).
 

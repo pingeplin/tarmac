@@ -1,5 +1,10 @@
 # v4 Whiteboard — visual migration plan
 
+> **Doc status: HISTORICAL** — a frozen milestone record, kept for provenance.
+> It describes the system *as it was then* — much of it the Swift/AppKit app that
+> no longer exists — and is not maintained. For current behaviour see
+> [`../../architecture.md`](../../architecture.md).
+
 Target: `design_handoff_tarmac/Tarmac Cockpit - v4 Whiteboard.html` and its
 sources (`tarmac/board-v4*.jsx`, `tarmac/canvas-v4.jsx`, `tarmac/board.css`,
 `tarmac/breeze.css`, layered over `theme.css` + `converged.css`).
@@ -153,7 +158,7 @@ rail is built.
 - **Boards switcher ⌘K + per-strip boards** → M3 (strips/tmux); design B5 ready.
 - **Editable docs / conflict banner (v4c)** → milestone after M3 (needs the
   write-signal honesty model). The captured design spec is
-  [`docs/v4c/visual-crib.md`](../../v4c/visual-crib.md) — transcribed from the
+  [`docs/proposed/v4c-editable-docs.md`](../../proposed/v4c-editable-docs.md) — transcribed from the
   v4c handoff mocks (`board-v4c.jsx` rules board + E1/E2 mocks, `board.css` §v4c
   `.edit`/`.tm-caret`/`.tm-homechip`/`.tm-conflict`) and `chat2.md` before the
   `design_handoff_tarmac/` bundle was removed (originals in git history). Core
@@ -175,7 +180,7 @@ rail is built.
      re-export.
   2. **Fetch + diff the new bundle** against the v4c mocks preserved in git
      history (removed with `design_handoff_tarmac/` once captured).
-  3. **Update [`docs/v4c/visual-crib.md`](../../v4c/visual-crib.md)** — already
+  3. **Update [`docs/proposed/v4c-editable-docs.md`](../../proposed/v4c-editable-docs.md)** — already
      captured from the original mocks — with whatever the refreshed export changes.
   4. **Implement in three layers**: (a) edit-state chrome + borrowed-focus
      mechanics (cheap — card ring, caret, `⌂ esc` chip, esc-home routing);

@@ -1,5 +1,10 @@
 # M3 — Strips = Boards (implementation plan)
 
+> **Doc status: HISTORICAL** — a frozen milestone record, kept for provenance.
+> It describes the system *as it was then* — much of it the Swift/AppKit app that
+> no longer exists — and is not maintained. For current behaviour see
+> [`../../architecture.md`](../../architecture.md).
+
 The v4 whiteboard migration (Phases 0–5b) is complete on `main`: a single
 infinite board with Breeze theme, persisted layout, gravity/shelf/provenance,
 honest signals, wayfinding, terminal primacy, and multiple terminal cards.

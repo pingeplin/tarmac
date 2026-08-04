@@ -33,7 +33,7 @@ Build outputs (gitignored): Rust → `core/target/{debug,release}/`, Tauri → `
 
 - `desktop/` — Tauri 2 app. `src/` (React + xterm.js frontend), `src-tauri/` (Rust backend, path-deps `tarmac-protocol`), `src-tauri/icons/` (app icons).
 - `core/` — Cargo workspace. `crates/{tarmacd,tarmac-cli,tarmac-protocol}/`. Daemon source: `main.rs`, `conn.rs`, `docs.rs`, `state.rs`, `term.rs`, `persist.rs`. Daemon integration tests: `core/crates/tarmacd/tests/{m0,m1,m2,m3}_integration.rs` + `cjk_locale_integration.rs`.
-- `docs/` — `architecture.md`, `protocol.md` (wire contract + conformance vectors), `backlog.md` (designed-but-unbuilt + deferred), `v4c/visual-crib.md` (next milestone: editable docs), `designs/`.
+- `docs/` — **read [`docs/README.md`](docs/README.md) first**: it classifies every doc as ACTIVE / PROPOSED / HISTORICAL. ACTIVE (trust as current): `architecture.md`, `protocol.md` (wire contract + conformance vectors), `backlog.md` (the audited *unbuilt* list), `workflow.md`. PROPOSED (**zero lines implemented**): `proposed/`. HISTORICAL (frozen, mostly Swift-era): `archive/`, `designs/`.
 - `scripts/` — `bundle.sh`, `release.sh`.
 - `packaging/` — `Tarmac.entitlements` (hardened-runtime entitlements for signing), `Casks/tarmac.rb` (Homebrew cask — bump version+sha256 after release), `icon/`.
 
@@ -47,6 +47,8 @@ Build outputs (gitignored): Rust → `core/target/{debug,release}/`, Tauri → `
 
 ## Gotchas
 
+- **Milestone names are history, not a roadmap.** `M0`–`M3` and `v4` are *closed*; they survive as archived plans and as `tests/m{0,1,2,3}_integration.rs` file names. `v4c` (editable docs) is a **proposal that was never started** — doc cards are read-only, and none of its chrome (`.edit`, `.tm-caret`, `.tm-homechip`, `.tm-conflict`) exists in the code. There is no `M4`/`M4c`/`v5`. Work since M3 is per-issue (`docs/workflow.md`).
+- **Anything naming a `.swift` file, `SwiftTerm`, `WKWebView`, `DocWebView`, or `app/Sources/` is describing the deleted Swift app** (replaced by Tauri + React + xterm.js in #27). Such references survive in `docs/archive/`, `docs/designs/`, `.blueprint/specs/`, and in code comments that cite the Swift original as the port's provenance — none of them are current file paths. Also gone on purpose: the **shelf** and the terminal **dock pane**; `doc_read`/peek exists on the wire but has no caller in the app.
 - **`make` is the source of truth, not the editor.** Always verify compilation with `make`, not IDE diagnostics.
 - **A persistent installed `tarmacd` can hijack the dev app.** `make run` only points the dev app at the debug daemon via env — it doesn't kill an already-installed one. Kill any running/installed daemon before testing daemon changes.
 - **Do NOT `cargo fmt` the Rust crates.** Local rustfmt disagrees with the whole committed repo and would create spurious churn.

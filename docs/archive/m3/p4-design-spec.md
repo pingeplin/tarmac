@@ -1,5 +1,10 @@
 # P4 design spec — extracted from the design refs (board-v4.jsx B5, parts.jsx, theme.css, board.css)
 
+> **Doc status: HISTORICAL** — a frozen milestone record, kept for provenance.
+> It describes the system *as it was then* — much of it the Swift/AppKit app that
+> no longer exists — and is not maintained. For current behaviour see
+> [`../../architecture.md`](../../architecture.md).
+
 Visual source of truth for P4 (⌘K boards switcher + titlebar session chip + status-bar
 board state). All numbers/colors quoted verbatim from
 `design_handoff_tarmac/tarmac/{board-v4.jsx,parts.jsx,theme.css,board.css}`.

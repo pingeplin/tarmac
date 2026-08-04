@@ -1,5 +1,10 @@
 # Tarmac — Architecture
 
+> **Doc status: ACTIVE** — normative. Describes Tarmac as it is on `main`; keep
+> it in sync with the code. Anything designed-but-unbuilt belongs in
+> [`backlog.md`](backlog.md) or [`proposed/`](proposed/), never here. See the
+> [docs index](README.md) for how the doc set is classified.
+
 This is the engineering overview of how Tarmac is built. For what Tarmac *is*
 and how to run it, see the [root README](../README.md). For the exact wire
 contract, see [`protocol.md`](protocol.md).
@@ -64,8 +69,10 @@ them. They survived intact from the v3 design into the shipped v4 build.
    indistinguishable from no restart.
 
 5. **Never block the user for performance.** There is no hard card cap per
-   board. Cost is managed by offloading offscreen work (suspending inactive
-   boards' doc webviews, semantic-zoom locards), never by refusing the user.
+   board. Cost is managed by offloading offscreen work (viewport culling hides
+   far-offscreen cards without unmounting them; below the semantic-zoom
+   threshold cards bitmap-scale instead of re-laying out), never by refusing the
+   user.
 
 6. **The daemon owns facts; the app owns the moment.** Anything that must
    survive a restart, or is an observed OS fact, lives in the daemon. Live,
@@ -138,6 +145,8 @@ at the committed dev value.)
 | | `BoardCreate` | app→D | mint a fresh board |
 | | `BoardRename {board_id, name}` | app→D | set/clear display name |
 | | `BoardDelete {board_id}` | app→D | remove a board (refuses the last) |
+| Teardown | `TermClose {term_id}` | app→D | kill a terminal's pty and forget it |
+| | `DocClose {path}` | app→D | drop a doc from its board + unwatch it |
 
 Supporting structs: `DocEntry`, `Tile` (kind + optional `path,x,y,w,h,z,loose,
 shelf,term_id`), `BoardMeta {board_id, name?, running?}`, `BoardViewport {zoom,
@@ -286,20 +295,25 @@ transform; pan / pinch-zoom / `fitToCards` reproject the card layer. Each card
 carries a world-space `CardFrame {x,y,w,h,z}`. Card chrome states —
 `prime/quiet/dead/detached/fresh/selected` — are mostly orthogonal flags.
 **Gravity**: moving a terminal card drags its attached doc satellites; a user
-move of a doc card detaches it. Below zoom 0.5 cards collapse to locards.
+move of a doc card detaches it. Cards further than one viewport offscreen are
+culled to `visibility:hidden` (never unmounted, so a terminal keeps consuming PTY
+output); below the semantic-zoom threshold (0.5) the dot grid densifies and cards
+scale rather than re-laying out — there is no locard collapse.
 
 **Terminal cards** embed an xterm.js instance keyed by `term_id`. Input/resize
 forward to the daemon; output routes to the owning board's buffer even when
 backgrounded so the shell keeps progressing.
 
-**Doc cards** render markdown (DocTemplate pattern). Inactive boards' doc views
-are suspended on switch-away and resumed on switch-back. Peek (`⌘P`) marks a
-doc read without moving focus. The shelf holds unplaced docs as chips. Provenance
-edges (dashed cyan bézier) connect a doc card to its caller terminal.
+**Doc cards** render markdown with `marked` directly into the app's own DOM —
+there is no nested webview, hence no suspend/resume on board switch. Scroll
+position is preserved as a fraction across live `FileEvent` re-renders.
+Provenance edges (dashed cyan bézier) connect a doc card to its caller terminal.
+The `fresh` (agent-opened, unread) highlight is cleared locally by `ESC`.
 
 **Multiple boards.** A `⌘K` switcher shows per-board running/bell/card counts,
-supports type-to-filter, `⌘N` create, `⌘E` rename, `⌘⌫` delete. `⌘1`–`9` jump
-directly. Switching suspends the leaving board's doc views and mounts the target.
+supports type-to-filter, `⌘N` create, `⌘E` rename, `⌘⌫` delete, and `⌘1`–`9`
+jump to the *visible* (filtered) rows. Switching mounts the target board's cards
+and re-binds chrome to its viewport.
 
 ---
 
@@ -319,11 +333,10 @@ ramps. On reconnect the daemon sends `BoardList` + the active board's `Restore`
 frames. App revives each surviving card in place (re-bind, not respawn) and the
 chip flips back to *attached*.
 
-**Board switch (`⌘K` → Enter).** App suspends the leaving board's doc webviews,
-undocks, detaches its view, and sends `BoardSwitch` → daemon sets active and
-replies `BoardList` + that board's `Restore` (+ scrollback for its live terms) →
-app mounts the target board, resumes its doc webviews, and re-binds chrome to its
-viewport.
+**Board switch (`⌘K` → Enter).** App detaches the leaving board's card layer and
+sends `BoardSwitch` → daemon sets active and replies `BoardList` + that board's
+`Restore` (+ scrollback for its live terms) → app mounts the target board and
+re-binds chrome to its viewport.
 
 ---
 
@@ -345,39 +358,66 @@ decision 2.
 
 ## 7 · Milestones & status
 
-Complete on `main` (2026-06-15):
+**Milestone names are historical labels, not a roadmap.** `M0`–`M3` and `v4` are
+*done*; they survive only as archived plans and as test-file names
+(`tests/m{0,1,2,3}_integration.rs`). `v4c` is a **proposal that was never
+started**. Nothing named `M4`/`v5` exists. Since the v4 milestones ended, work is
+tracked per GitHub issue (see [`workflow.md`](workflow.md)), not by milestone.
 
-- **M0** — walking skeleton: daemon + CLI + app over the v1 wire; `tarmac open`,
-  ptys, file watching.
-- **M1** — doc states + layout: additive doc-entry keys (repo/color/read/
-  timestamps), normative dock order, desk tiles, `doc_read`/`layout`.
-- **v4 whiteboard migration** (Phases 0–5b) — the pivot from a slot grid to a
-  single infinite board: Breeze theme, world-space card frames + persisted
-  viewport, gravity/shelf/provenance, wayfinding, terminal primacy, and N
-  terminal cards keyed by `term_id`.
-- **M2** — honest signals (absorbed as v4 Phase 3.5): `TermProc`, `Bell`, exit
-  codes as new daemon→app message types.
-- **M3** — strips = boards: N named boards, the `⌘K` switcher, `⌘1`–`9`, per-board
-  restore, the titlebar session chip, an honest attached/detached signal, board
-  rename/delete, reconnect re-bind, and inactive-board webview suspension. P5
-  shipped a simplified "two honest signals" session model (app-local chip +
-  additive `BoardMeta.running` + `Restore.live_terms`, no new session struct).
+### Shipped milestones (all closed)
 
-Unbuilt / deferred is audited in [`backlog.md`](backlog.md). The next milestone
-is **editable docs (v4c)** — it needs a design round and the write-honesty model
-first.
+| Milestone | Closed | What it delivered |
+| --- | --- | --- |
+| **M0** | 2026-06 | Walking skeleton: daemon + CLI + app over the v1 wire; `tarmac open`, ptys, file watching. |
+| **M1** | 2026-06 | Doc states + layout: additive doc-entry keys (repo/color/read/timestamps), normative dock order, desk tiles, `doc_read`/`layout`. |
+| **v4 whiteboard** (Phases 0–5b) | 2026-06 | Slot grid → one infinite board: Breeze theme, world-space card frames + persisted viewport, gravity/provenance, wayfinding, terminal primacy, N terminal cards keyed by `term_id`. |
+| **M2** | 2026-06 | Honest signals (absorbed as v4 Phase 3.5): `TermProc`, `Bell`, exit codes as new daemon→app types. |
+| **M3** | 2026-06-15 | Strips = boards: N named boards, the `⌘K` switcher, per-board restore, the session chip, an honest attached/detached signal, board rename/delete, reconnect re-bind. P5 shipped a simplified "two honest signals" session model (app-local chip + additive `BoardMeta.running` + `Restore.live_terms`, no new session struct). |
+
+### After the milestones (issue-tracked, on `main`)
+
+The largest single change post-M3 is **not** a numbered milestone: the whole UI
+was rebuilt from Swift/AppKit + SwiftTerm onto **Tauri 2 + React + xterm.js**
+(#27, 2026-06-29). Any doc that names a `.swift` file, `WKWebView`, `DocWebView`,
+`SwiftTerm`, or `app/Sources/` is describing code that no longer exists.
+
+Also shipped since M3, none of it covered by a milestone plan: per-channel
+socket + state namespacing, the notarized-`.dmg` / Homebrew-cask release
+pipeline, daemon auto-restart on version mismatch, `TermClose` / `DocClose`
+teardown, `⌘W` close + the `ESC` focus ladder, full edge/corner resize, the WebGL
+terminal renderer, `⌘T` cwd inheritance, OS-browser card links, and the
+`/design-sync` UI-kit export. Each has a record in
+[`designs/`](designs) or `.blueprint/specs/`.
+
+Two surfaces were **removed** after M3 and no longer exist despite older docs
+describing them: the **shelf** (parked/unplaced doc chips — `⌘W` now just removes
+the doc card) and the terminal **dock pane** (#74). `doc_read` / peek (`⌘P`) is
+wired in the protocol and the daemon but has **no caller in the app**.
+
+### Not built
+
+Audited in [`backlog.md`](backlog.md). **Editable docs (v4c)** remains the
+largest proposed-but-unstarted piece — captured in
+[`proposed/v4c-editable-docs.md`](proposed/v4c-editable-docs.md), still needing a
+design round and the write-honesty model. It is a proposal, not scheduled work.
 
 ## 8 · Further reading
 
-- [`protocol.md`](protocol.md) — the authoritative wire contract + conformance
-  vectors.
-- [`archive/m3/plan.md`](archive/m3/plan.md) — the "strips = boards" milestone,
-  decisions, and phase acceptance.
-- [`archive/v4/migration-plan.md`](archive/v4/migration-plan.md) — the
-  grid→whiteboard migration.
+Start at the [docs index](README.md) — it classifies every doc as ACTIVE,
+PROPOSED, or HISTORICAL, which is the difference between "this is how Tarmac
+works" and "this is how someone once planned it".
+
+- [`README.md`](README.md) — the docs index + classification rules. **ACTIVE**
+- [`protocol.md`](protocol.md) — authoritative wire contract + conformance
+  vectors. **ACTIVE**
 - [`backlog.md`](backlog.md) — designed-but-unbuilt features and by-decision
-  deferrals.
-- [`v4c/visual-crib.md`](v4c/visual-crib.md) — captured spec for the next
-  milestone (editable docs). The original v3/v4 design handoff (README + mocks +
-  chat transcripts) is preserved in git history; its still-relevant details were
-  absorbed into the cribs and `backlog.md`.
+  deferrals, re-verified against the Tauri app. **ACTIVE (describes unbuilt work)**
+- [`proposed/v4c-editable-docs.md`](proposed/v4c-editable-docs.md) — the editable-docs
+  proposal. **PROPOSED — none of it is implemented.**
+- [`archive/m3/plan.md`](archive/m3/plan.md),
+  [`archive/v4/migration-plan.md`](archive/v4/migration-plan.md) — closed
+  milestone records. **HISTORICAL — Swift-era, do not cite as current.**
+
+The original v3/v4 design handoff (README + mocks + chat transcripts) is
+preserved in git history; its still-relevant details were absorbed into the
+cribs and `backlog.md`.

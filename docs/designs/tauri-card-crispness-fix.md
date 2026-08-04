@@ -1,5 +1,9 @@
 # Handoff: crisp card text under board zoom (Tauri)
 
+> **Doc status: HISTORICAL** — a design record for work that has already shipped.
+> It describes the system *as of the change it accompanied*, not as it is today.
+> For current behaviour see [`../architecture.md`](../architecture.md).
+
 **For:** Sonnet implementer. **Area:** `desktop/` (Tauri 2 + React + xterm).
 **Deliver a SOLID design, not point hacks.** Centralize; no scattered transform math per card.
 

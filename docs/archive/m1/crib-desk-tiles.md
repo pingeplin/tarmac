@@ -1,5 +1,10 @@
 # Tarmac M1 — crib: desk, pinned tiles, drag-swap
 
+> **Doc status: HISTORICAL** — a frozen milestone record, kept for provenance.
+> It describes the system *as it was then* — much of it the Swift/AppKit app that
+> no longer exists — and is not maintained. For current behaviour see
+> [`../../architecture.md`](../../architecture.md).
+
 Exact values + behaviors for the Swift/AppKit implementer. Sources: README §5 "Desk + pinned
 tiles" + "State Management"; `tarmac-proto/desk.jsx` (primary behavioral spec), `app.jsx`
 (pin/unpin/swap state), `proto.css`; `tarmac/theme.css` (tokens, `.tm-tile`), `converged.css`.
