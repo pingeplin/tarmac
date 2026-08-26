@@ -15,7 +15,9 @@ body,
   color: var(--text);
   font-family: var(--chrome-font);
   font-size: 12px;
-  -webkit-font-smoothing: antialiased;
+  /* NOT `antialiased`: it thins strokes everywhere, which reads as fringing on
+     1× displays (BenQ 1440p @109ppi) and buys nothing on Retina. */
+  -webkit-font-smoothing: auto;
 }
 
 .app {
@@ -38,6 +40,10 @@ body,
 /* --- board / infinite canvas --- */
 
 .board {
+  /* Fallback only — BoardEngine.apply() overrides this inline from
+     devicePixelRatio. Without a default, an unset var makes the card wrappers'
+     round() invalid and every card collapses to 0,0. */
+  --device-px: 1px;
   position: relative;
   flex: 1 1 auto;
   overflow: hidden;

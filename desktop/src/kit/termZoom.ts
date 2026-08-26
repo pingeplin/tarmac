@@ -14,7 +14,7 @@ export function termWrapperBox(): {
     width: "calc(var(--card-w) * var(--zoom))",
     height: "calc(var(--card-h) * var(--zoom))",
     transform:
-      "translate(calc(var(--world-tx) + var(--card-x) * var(--zoom)),calc(var(--world-ty) + var(--card-y) * var(--zoom)))",
+      "translate(round(calc(var(--world-tx) + var(--card-x) * var(--zoom)),var(--device-px)),round(calc(var(--world-ty) + var(--card-y) * var(--zoom)),var(--device-px)))",
     transformOrigin: "0 0",
   };
 }

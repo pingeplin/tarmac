@@ -27,8 +27,14 @@ function evalCalcPx(expr: string, vars: Record<string, string>): number {
     return vars[key];
   });
   const noUnits = substituted.replace(/(-?\d+(?:\.\d+)?)px/g, "$1");
+  // CSS round(A,B) — the device-pixel snap in docWrapperBox(). Supplied to the
+  // evaluated scope so the test reads the real string rather than a stripped one.
+  const round = (v: number, step: number): number => Math.round(v / step) * step;
+  // `calc` survives as an inner call once round() wraps it; JS precedence already
+  // matches CSS math, so it evaluates as identity.
+  const calc = (v: number): number => v;
   // eslint-disable-next-line no-new-func
-  return Function(`"use strict"; return (${noUnits})`)() as number;
+  return Function("round", "calc", `"use strict"; return (${noUnits})`)(round, calc) as number;
 }
 
 /** Split the two args of translate(A,B) respecting nested parens. */
@@ -93,9 +99,9 @@ describe("S1 — box size + translate-only position", () => {
     expect(docWrapperBox().height).toBe("calc(var(--card-h) * var(--zoom))");
   });
 
-  it("transform is the exact translate-only calc string", () => {
+  it("transform is the exact translate-only calc string, device-pixel snapped", () => {
     expect(docWrapperBox().transform).toBe(
-      "translate(calc(var(--world-tx) + var(--card-x) * var(--zoom)),calc(var(--world-ty) + var(--card-y) * var(--zoom)))",
+      "translate(round(calc(var(--world-tx) + var(--card-x) * var(--zoom)),var(--device-px)),round(calc(var(--world-ty) + var(--card-y) * var(--zoom)),var(--device-px)))",
     );
   });
 
@@ -175,6 +181,35 @@ describe("S12 — prose layout is zoom-INDEPENDENT (reflow regression)", () => {
   });
 });
 
+describe("S14 — wrapper translate snaps to whole device pixels", () => {
+  // world-tx = viewW/2 - cx*zoom is a raw float, so the unsnapped translate lands
+  // the card's raster off the device grid and WebKit filters it — every glyph and
+  // hairline in the card softens on a 1× display while the board's own transform-
+  // free chrome stays sharp. Snapping is what closes that gap.
+  const cases = [
+    { devicePx: 1, tx: 380.4, want: 380 },
+    { devicePx: 1, tx: 380.6, want: 381 },
+    { devicePx: 0.5, tx: 380.4, want: 380.5 }, // Retina: half-CSS-px grid
+    { devicePx: 0.5, tx: 380.1, want: 380 },
+  ];
+
+  for (const { devicePx, tx, want } of cases) {
+    it(`--device-px ${devicePx}px snaps ${tx} to ${want}`, () => {
+      const vars: Record<string, string> = {
+        "--world-tx": `${tx}px`,
+        "--world-ty": `${tx}px`,
+        "--card-x": "0px",
+        "--card-y": "0px",
+        "--zoom": "1",
+        "--device-px": `${devicePx}px`,
+      };
+      const { x, y } = evalWrapperTranslate(docWrapperBox().transform, vars);
+      expect(x).toBeCloseTo(want);
+      expect(y).toBeCloseTo(want);
+    });
+  }
+});
+
 describe("S13 — K never upsamples", () => {
   // K >= the engine's MAX_ZOOM guarantees scale(zoom/K) <= 1 across the whole
   // range, so the prose layer is only ever DOWN-scaled (crisp, never bitmap-
@@ -222,6 +257,7 @@ describe("S6 — box origin projects via worldToView (non-vacuous: derived from 
       "--card-x": `${cardX}px`,
       "--card-y": `${cardY}px`,
       "--zoom": String(zoom),
+      "--device-px": "1px",
     };
 
     // Derive screen point from the ACTUAL transform string, not by hand
@@ -251,6 +287,7 @@ describe("S6 — box origin projects via worldToView (non-vacuous: derived from 
       "--card-x": `${cardX}px`,
       "--card-y": `${cardY}px`,
       "--zoom": String(zoom),
+      "--device-px": "1px",
     };
 
     const { transform } = docWrapperBox();

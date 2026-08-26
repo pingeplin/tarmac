@@ -13,8 +13,12 @@ function evalCalcPx(expr: string, vars: Record<string, string>): number {
     return vars[key];
   });
   const noUnits = substituted.replace(/(-?\d+(?:\.\d+)?)px/g, "$1");
+  const round = (v: number, step: number): number => Math.round(v / step) * step;
+  // `calc` survives as an inner call once round() wraps it; JS precedence already
+  // matches CSS math, so it evaluates as identity.
+  const calc = (v: number): number => v;
   // eslint-disable-next-line no-new-func
-  return Function(`"use strict"; return (${noUnits})`)() as number;
+  return Function("round", "calc", `"use strict"; return (${noUnits})`)(round, calc) as number;
 }
 
 function splitTranslateArgs(transformStr: string): [string, string] {
@@ -116,6 +120,7 @@ describe("S6 — outer origin projects via worldToView (eval actual transform st
       "--card-x": `${cardX}px`,
       "--card-y": `${cardY}px`,
       "--zoom": String(zoom),
+      "--device-px": "1px",
     };
 
     const { transform } = termWrapperBox();
@@ -144,6 +149,7 @@ describe("S6 — outer origin projects via worldToView (eval actual transform st
       "--card-x": `${cardX}px`,
       "--card-y": `${cardY}px`,
       "--zoom": String(zoom),
+      "--device-px": "1px",
     };
 
     const { transform } = termWrapperBox();
