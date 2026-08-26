@@ -34,9 +34,20 @@ export function termCardVars({ x, y, w, h }: { x: number; y: number; w: number; 
   };
 }
 
-/** Zoom-free host box: width/height are var(--card-w/h) so the host never
- *  changes size during zoom; scale(var(--zoom)) renders the terminal at the
- *  right screen size without triggering ResizeObserver / fit() / PTY resize. */
+/** Card-header height in WORLD px. Mirrors the 30px in card.css; the chrome
+ *  renders it at 30px×zoom real px, so the body owns card-h minus this. */
+export const CARD_HEADER_H_PX = 30;
+
+/** Zoom-free host box, living INSIDE the card body. Width/height are zoom-free
+ *  so the host never changes size during zoom — that is what keeps ResizeObserver
+ *  / fit() / PTY resize off the zoom path — and scale(var(--zoom)) renders it at
+ *  the right screen size.
+ *
+ *  It covers the BODY only, not the whole card. With the whole card in here the
+ *  header rode along inside the scale, which at zoom > 1 is an UPSCALE of a 1×
+ *  raster: terminal titles blurred while doc-card titles (laid out at real px per
+ *  zoom) stayed sharp. Chrome does not need the zoom-free constraint the host
+ *  does, so the two are split — the HtmlCard body box is the same idea. */
 export function termInnerBox(): {
   width: string;
   height: string;
@@ -45,7 +56,7 @@ export function termInnerBox(): {
 } {
   return {
     width: "var(--card-w)",
-    height: "var(--card-h)",
+    height: `calc(var(--card-h) - ${CARD_HEADER_H_PX}px)`,
     transform: "scale(var(--zoom))",
     transformOrigin: "0 0",
   };

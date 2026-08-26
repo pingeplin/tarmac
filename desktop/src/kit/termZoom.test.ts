@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { termWrapperBox, termCardVars, termInnerBox } from "./termZoom";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { termWrapperBox, termCardVars, termInnerBox, CARD_HEADER_H_PX } from "./termZoom";
 import { docWrapperBox } from "./docZoom";
 import { worldToView } from "./boardTransform";
 
@@ -69,8 +71,17 @@ describe("S3 — inner box is zoom-free (no --zoom in width/height)", () => {
     expect(termInnerBox().width).toBe("var(--card-w)");
   });
 
-  it("height is exactly 'var(--card-h)'", () => {
-    expect(termInnerBox().height).toBe("var(--card-h)");
+  // Body only, not the whole card: the header is chrome and stays outside this
+  // scale, or it gets upscaled from a 1× raster and terminal titles blur.
+  it("height is card-h minus the header, in world px", () => {
+    expect(termInnerBox().height).toBe(`calc(var(--card-h) - ${CARD_HEADER_H_PX}px)`);
+  });
+
+  it("subtracts the header height card.css actually renders", () => {
+    const css = readFileSync(fileURLToPath(new URL("../theme/card.css", import.meta.url)), "utf8");
+    expect(css).toMatch(
+      new RegExp(`\\.term-card \\.card-header[^}]*height:\\s*calc\\(${CARD_HEADER_H_PX}px \\* var\\(--zoom\\)\\)`, "s"),
+    );
   });
 
   it("width does not reference --zoom", () => {

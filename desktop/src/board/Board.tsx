@@ -1,8 +1,10 @@
 // The infinite-canvas host: a clipping viewport driven by BoardEngine. Cards
 // live in a screen-space .card-layer; each card gets a translate-only outer
-// wrapper (sized card{w,h}×zoom via calc()) carrying zIndex:c.z. Terminals add
-// a second inner div (zoom-free var(--card-w/h)) with scale(var(--zoom)) so
-// the host box is never zoom-reactive → no fit()/PTY-resize on zoom.
+// wrapper (sized card{w,h}×zoom via calc()) carrying zIndex:c.z. Every card type
+// puts CardShell straight in that wrapper, so chrome is laid out per zoom rather
+// than bitmap-scaled. The terminal's zoom-free host box (scale(var(--zoom)) over
+// a zoom-free size, so no fit()/PTY-resize on zoom) is inside TerminalCard's body
+// — it wraps the host, not the header.
 //
 // P5 multi-board: App renders ONE Board per board simultaneously; inactive boards
 // are display:none (hidden=true) so their xterm terminals stay WARM — output
@@ -19,7 +21,7 @@ import { HtmlCard } from "../cards/HtmlCard";
 import { ownerChipName } from "../kit/ownerChip";
 import { docKind } from "../kit/docKind";
 import { docWrapperBox, docCardVars } from "../kit/docZoom";
-import { termWrapperBox, termCardVars, termInnerBox } from "../kit/termZoom";
+import { termWrapperBox, termCardVars } from "../kit/termZoom";
 import { cardId, type CardModel, type WorldFrame, type DocMeta } from "./model";
 
 interface BoardProps {
@@ -166,29 +168,29 @@ export function Board(props: BoardProps) {
                 zIndex: c.z,
               }}
             >
-              {/* Inner wrapper: zoom-free var(--card-w/h) + scale(var(--zoom)).
-                  Host box never changes size on zoom → no fit()/PTY-resize. */}
-              <div style={termInnerBox() as React.CSSProperties}>
-                <TerminalCard
-                  model={c}
-                  selected={id === props.selectedId}
-                  quiet={anyTermPrime && !c.prime && !c.dead}
-                  getZoom={getZoom}
-                  rasterScale={rasterScale}
-                  inWrapper
-                  onMove={(frame) => props.onCardMove(id, frame)}
-                  onMoveStart={() => props.onCardMoveStart(id)}
-                  onMoveEnd={() => props.onCardMoveEnd(id)}
-                  onResize={(frame) => props.onCardResize(id, frame)}
-                  onResizeEnd={() => props.onCardResizeEnd(id)}
-                  onGrab={() => props.onCardGrab(id)}
-                  onSpawn={(cols, rows) => props.onTermSpawn(c.termId, cols, rows)}
-                  onTitle={(title) => props.onTermTitle(c.termId, title)}
-                  onActivity={() => props.onTermActivity(c.termId)}
-                  onRegister={props.onTermRegister}
-                  onUnregister={props.onTermUnregister}
-                />
-              </div>
+              {/* CardShell sits directly in the real-px wrapper, exactly as doc
+                  and HTML cards do, so its chrome is laid out per zoom instead of
+                  being upscaled. The zoom-free host box now lives inside the card
+                  body (termInnerBox, applied in TerminalCard). */}
+              <TerminalCard
+                model={c}
+                selected={id === props.selectedId}
+                quiet={anyTermPrime && !c.prime && !c.dead}
+                getZoom={getZoom}
+                rasterScale={rasterScale}
+                inWrapper
+                onMove={(frame) => props.onCardMove(id, frame)}
+                onMoveStart={() => props.onCardMoveStart(id)}
+                onMoveEnd={() => props.onCardMoveEnd(id)}
+                onResize={(frame) => props.onCardResize(id, frame)}
+                onResizeEnd={() => props.onCardResizeEnd(id)}
+                onGrab={() => props.onCardGrab(id)}
+                onSpawn={(cols, rows) => props.onTermSpawn(c.termId, cols, rows)}
+                onTitle={(title) => props.onTermTitle(c.termId, title)}
+                onActivity={() => props.onTermActivity(c.termId)}
+                onRegister={props.onTermRegister}
+                onUnregister={props.onTermUnregister}
+              />
             </div>
           );
         })}
