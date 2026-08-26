@@ -37,6 +37,9 @@
     "externalBin": [
       "binaries/tarmacd",
       "binaries/tarmac"
-    ]
+    ],
+    "macOS": {
+      "minimumSystemVersion": "26.0"
+    }
   }
 }

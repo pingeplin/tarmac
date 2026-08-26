@@ -136,7 +136,7 @@ Full design: **[`docs/architecture.md`](docs/architecture.md)**. Wire contract:
 
 ## Build & run
 
-Requires macOS 14+, a Rust toolchain with edition 2024, and Node.js (for the
+Requires macOS 26+, a Rust toolchain with edition 2024, and Node.js (for the
 Tauri 2 + Vite + React frontend). Everything goes through the `Makefile`:
 
 ```sh
@@ -162,7 +162,7 @@ the doc to the calling terminal card via `TARMAC_TERM_ID`.
 | Path | What it is |
 | --- | --- |
 | `core/` | Rust cargo workspace (edition 2024): `tarmac-protocol` (wire types + codec + conformance vectors), `tarmacd` (the daemon), `tarmac-cli` (the `tarmac` CLI). |
-| `desktop/` | Tauri 2 app (macOS 14+): `src/` (the React + xterm.js frontend, with pure unit-tested logic in `src/kit/`), `src-tauri/` (the Rust backend, which path-deps the `tarmac-protocol` crate). |
+| `desktop/` | Tauri 2 app (macOS 26+): `src/` (the React + xterm.js frontend, with pure unit-tested logic in `src/kit/`), `src-tauri/` (the Rust backend, which path-deps the `tarmac-protocol` crate). |
 | `docs/` | Engineering docs — see the [docs map](#docs) below. |
 | `scripts/` | `bundle.sh` (unsigned `.app`) and `release.sh` (sign + notarized `.dmg`). |
 | `Makefile` | The build / test / run entrypoint. |
