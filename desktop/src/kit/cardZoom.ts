@@ -23,6 +23,14 @@ export function cardIframePx(frame: CardFrameSize, zoom: number): CardFrameSize 
   return { w: Math.round(frame.w * zoom), h: Math.round(frame.h * zoom) };
 }
 
+/** A screen-px wheel delta in the card document's own layout units. Magnify
+ *  freezes the document at root zoom K inside a frame×K box under scale(zoom/K),
+ *  so one screen px is 1/zoom of a local unit; reveal lays the document out at
+ *  real screen px, where the two are already 1:1. */
+export function cardScrollDelta(deltaPx: number, zoom: number, magnify: boolean): number {
+  return magnify && zoom > 0 ? deltaPx / zoom : deltaPx;
+}
+
 // Mid-gesture transform: the iframe keeps its settled px size and scales by
 // the ratio of live zoom to the zoom it was last sized at.
 export function cardGestureScale(zoom: number, settledZoom: number): number {

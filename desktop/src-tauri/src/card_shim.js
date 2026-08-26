@@ -156,7 +156,15 @@
       // opaque-origin, so the host's origin string is not stable.
       if (e.source !== window.parent) return;
       var d = e.data;
-      if (!d || d.tarmac !== "zoom") return;
+      if (!d) return;
+      // The shield swallows wheel before it can reach this document, so the host
+      // relays the delta instead — reading is not the "touch" the shield exists
+      // to block. Deltas arrive already converted to this document's own units.
+      if (d.tarmac === "scroll") {
+        window.scrollBy(d.dx, d.dy);
+        return;
+      }
+      if (d.tarmac !== "zoom") return;
       if (ready) applyZoom(d.z);
       else pendingZoom = d.z;
     } catch (err) {

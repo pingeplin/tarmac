@@ -15,7 +15,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CardShell } from "./CardShell";
 import { cardSrcUrl } from "../kit/docKind";
-import { cardIframePx, cardGestureScale, MAGNIFY_K } from "../kit/cardZoom";
+import { cardIframePx, cardGestureScale, cardScrollDelta, MAGNIFY_K } from "../kit/cardZoom";
 import {
   formatCardArgs,
   parseCardMessage,
@@ -188,6 +188,32 @@ export function HtmlCard(props: HtmlCardProps) {
     el.addEventListener("dblclick", onDblClick);
     return () => el.removeEventListener("dblclick", onDblClick);
   }, [props.borrowed]);
+
+  // Wheel relay. On a selected card CardShell stops the wheel from panning the
+  // board, and the shield above the iframe has nothing to scroll — so scrolling
+  // a shielded HTML card did nothing at all. Reading is not the "touch" the
+  // shield blocks, so forward the delta to the document instead. Only while
+  // selected (an unselected card still pans the board) and only when the shield
+  // is up (once borrowed the iframe gets the wheel natively). ctrl+wheel is
+  // pinch and always belongs to the board.
+  useEffect(() => {
+    const el = shieldRef.current;
+    if (!el || !props.selected) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) return;
+      const zoom = getZoomRef.current();
+      iframeRef.current?.contentWindow?.postMessage(
+        {
+          tarmac: "scroll",
+          dx: cardScrollDelta(e.deltaX, zoom, magnifyRef.current),
+          dy: cardScrollDelta(e.deltaY, zoom, magnifyRef.current),
+        },
+        "*",
+      );
+    };
+    el.addEventListener("wheel", onWheel, { passive: true });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [props.selected, props.borrowed]);
 
   const [recencyTick, setRecencyTick] = useState(0);
   useEffect(() => {

@@ -11,12 +11,22 @@ describe("declaredZoomMode (S1)", () => {
     expect(declaredZoomMode("Magnify")).toBe("magnify");
   });
 
-  it("falls back to reveal for anything else", () => {
-    expect(declaredZoomMode(null)).toBe("reveal");
-    expect(declaredZoomMode(undefined)).toBe("reveal");
-    expect(declaredZoomMode("")).toBe("reveal");
+  it("recognizes reveal case- and whitespace-insensitively — the only opt-out", () => {
     expect(declaredZoomMode("reveal")).toBe("reveal");
-    expect(declaredZoomMode("magnifying")).toBe("reveal");
+    expect(declaredZoomMode("  REVEAL  ")).toBe("reveal");
+    expect(declaredZoomMode("Reveal")).toBe("reveal");
+  });
+
+  it("defaults to magnify when the meta is absent", () => {
+    expect(declaredZoomMode(null)).toBe("magnify");
+    expect(declaredZoomMode(undefined)).toBe("magnify");
+    expect(declaredZoomMode("")).toBe("magnify");
+  });
+
+  it("defaults to magnify on a malformed value — opting out must be deliberate", () => {
+    expect(declaredZoomMode("revealing")).toBe("magnify");
+    expect(declaredZoomMode("magnifying")).toBe("magnify");
+    expect(declaredZoomMode("rEvEaL more")).toBe("magnify");
   });
 });
 

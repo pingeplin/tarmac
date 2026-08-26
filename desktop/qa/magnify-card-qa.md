@@ -44,23 +44,38 @@ committing any other change.
 
 ## S6 — Magnify wraps freeze, glyphs crisp across zooms
 
-- [ ] Open a document with `<meta name="tarmac-zoom" content="magnify">` and
-      prose paragraphs or a diagram.
-- [ ] Zoom the card below 1× (e.g. 0.5×, 0.3×), settle; then above 1× (e.g.
-      1.5×, 2×, 3×), settle. At least one zoom below and one above.
-- [ ] Text wrap points never change across zoom levels (same line breaks as
-      seen at 1×, scaled but not reflowed).
-- [ ] Glyphs are crisp at rest after each zoom settles (no persistent blur; brief
-      softness mid-gesture is expected).
+Magnify is now the DEFAULT (`declaredZoomMode`), and its root zoom is frozen at
+`MAGNIFY_K` rather than tracked per settle. There is no settle relayout left to
+wait for, so the old "settle at each level" step is gone and the wrap-point
+check is exact again rather than the ICB-only claim S6 was weakened to.
+
+- [ ] Open a document with prose paragraphs or a diagram and NO `tarmac-zoom`
+      meta — the default is what most cards will exercise.
+- [ ] Sweep the card continuously from 0.25× to 3×, not level by level.
+- [ ] Text wrap points never change anywhere in the sweep — same line breaks at
+      every zoom, scaled but never reflowed. `desktop/qa/wrap-probe.html` decides
+      this by character offset rather than by eye; a line COUNT holding while a
+      break moves is the failure this catches.
+- [ ] Glyphs are crisp at rest AND mid-gesture. Frozen K makes `scale(zoom/K)` a
+      permanent down-scale, so the transient blur the settle path existed to
+      resolve should be absent — mid-gesture softness is now a regression, not
+      expected behaviour.
 - [ ] Tested on both a 1× and a 2× display.
-- [ ] Card console strip contains exactly one line per document load reading
-      (verbatim, from `HtmlCard.tsx`): `zoom-mode declared=magnify
-      capable=true effective=magnify`.
+- [ ] Card console strip logs the `zoom-mode` line only when the document
+      declares a mode. A default (meta-less) document logs nothing; that is the
+      quiet common case, not a missing line.
 
-## S8 — Reveal-more fallback when magnify meta is absent
+## S8 — Reveal-more when the document deliberately opts out
 
-- [ ] Open `magnify-probe.html` (or a copy) with the `<meta name="tarmac-zoom"
-      content="magnify">` line commented out or deleted, then `tarmac open <file>`.
+Absent meta no longer means reveal — it means magnify. Reveal is now reached
+only by declaring it, which is the point: opting out of a stable layout is a
+choice with a reason behind it (honest viewport dimensions for a self-contained
+D3/Canvas dashboard), not something a document falls into by saying nothing.
+
+- [ ] Open a copy of the probe whose meta reads `<meta name="tarmac-zoom"
+      content="reveal">`, then `tarmac open <file>`.
+- [ ] A malformed value (`revealing`, `magnifying`, empty) must NOT reach this
+      mode — it takes the magnify default. Check one.
 - [ ] Zoom the card across several levels (at least one below 1×, one above),
       settling at each.
 - [ ] Content re-wraps identically to a standard 2607.0004 card: line count and
