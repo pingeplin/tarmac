@@ -49,8 +49,6 @@ interface TerminalCardProps {
   /** Settled rasterScale from BoardEngine; 1 at rest, > 1 after zoom settles. */
   rasterScale: number;
   rootRef?: (el: HTMLDivElement | null) => void;
-  /** When true, the outer wrapper in Board.tsx owns position+z; CardShell uses inset:0. */
-  inWrapper?: boolean;
   onMove: (frame: WorldFrame) => void;
   onMoveStart?: () => void;
   onMoveEnd?: () => void;
@@ -361,8 +359,6 @@ export function TerminalCard(props: TerminalCardProps) {
   return (
     <CardShell
       frame={model.frame}
-      z={model.z}
-      inWrapper={props.inWrapper}
       dead={model.dead}
       prime={model.prime}
       quiet={props.quiet}

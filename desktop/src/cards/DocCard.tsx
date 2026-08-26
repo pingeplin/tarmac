@@ -10,12 +10,11 @@
 // the bare innermost .doc-prose-scaler carries scale(zoom/K), a pure DOWN-scale
 // (≤1) → WebKit downsamples a high-detail layer, crisp at every zoom, no reflow.
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { marked } from "marked";
 import { CardShell } from "./CardShell";
+import { CardHeader } from "./CardHeader";
 import { docProseScaler, DOC_OVERSAMPLE_K } from "../kit/docZoom";
-import { repoColors } from "../theme";
-import { recencyLabel } from "../kit/chromeText";
 import { isExternalHttpUrl } from "../kit/externalLink";
 import { openExternal } from "../ipc/shell";
 import { basename } from "../kit/docStore";
@@ -118,27 +117,10 @@ export function DocCard(props: DocCardProps) {
     };
   }, []);
 
-  // 1Hz tick, only while inside the 30s window. When recencyLabel goes null we early-
-  // return (schedule nothing) so a stale doc stops re-rendering; a fresh file_event
-  // changes lastChangedMs, re-running this effect and restarting the tick.
-  const [recencyTick, setRecencyTick] = useState(0);
-  useEffect(() => {
-    if (props.lastChangedMs === undefined) return;
-    if (recencyLabel(props.lastChangedMs, Date.now()) === null) return;
-    const id = window.setTimeout(() => setRecencyTick((n) => n + 1), 1000);
-    return () => window.clearTimeout(id);
-  }, [props.lastChangedMs, recencyTick]);
-  const recency =
-    props.lastChangedMs !== undefined ? recencyLabel(props.lastChangedMs, Date.now()) : null;
-
-  const dotColor = model.repoColor != null ? repoColors[model.repoColor % repoColors.length] : undefined;
-
   return (
     <CardShell
       className="doc-card"
       frame={model.frame}
-      z={model.z}
-      inWrapper
       fresh={model.fresh}
       selected={props.selected}
       hasClose
@@ -151,23 +133,15 @@ export function DocCard(props: DocCardProps) {
       onResizeEnd={props.onResizeEnd}
       onGrab={props.onGrab}
       header={
-        <>
-          <span className="glyph">¶</span>
-          {dotColor && <span className="repo-dot" style={{ background: dotColor }} />}
-          <span className="label">{basename(model.path)}</span>
-          <span className="spacer" />
-          {props.ownerName && <span className="owner-chip">{"← "}{props.ownerName}</span>}
-          {model.fresh && <span style={{ color: "var(--agent)" }}>✚ now</span>}
-          {recency && <span className="recency-meta">{recency}</span>}
-          <span
-            className="close"
-            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
-            onClick={props.onClose}
-            title="Close"
-          >
-            ✕
-          </span>
-        </>
+        <CardHeader
+          glyph="¶"
+          repoColor={model.repoColor}
+          label={basename(model.path)}
+          ownerName={props.ownerName}
+          fresh={model.fresh}
+          lastChangedMs={props.lastChangedMs}
+          onClose={props.onClose}
+        />
       }
     >
       {/* doc-scroll: fills card body, no transform, no padding (padding lives on

@@ -17,6 +17,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CardShell } from "./CardShell";
+import { CardHeader } from "./CardHeader";
 import { cardSrcUrl } from "../kit/docKind";
 import { cardIframePx, cardGestureScale, cardScrollDelta, MAGNIFY_K } from "../kit/cardZoom";
 import {
@@ -29,8 +30,6 @@ import { declaredZoomMode, effectiveZoomMode, zoomCapable } from "../kit/zoomMod
 import { RASTER_SCALE_SETTLE_MS } from "../kit/rasterScale";
 import { CARD_HEADER_H_PX } from "../kit/termZoom";
 import { basename } from "../kit/docStore";
-import { repoColors } from "../theme";
-import { recencyLabel } from "../kit/chromeText";
 import type { DocCardModel, WorldFrame } from "../board/model";
 
 /** Magnify's whole zoom path: the frozen-K layout, down-scaled to the live board
@@ -204,17 +203,6 @@ export function HtmlCard(props: HtmlCardProps) {
     return () => el.removeEventListener("wheel", onWheel);
   }, [props.selected, props.borrowed, magnify]);
 
-  const [recencyTick, setRecencyTick] = useState(0);
-  useEffect(() => {
-    if (props.lastChangedMs === undefined) return;
-    if (recencyLabel(props.lastChangedMs, Date.now()) === null) return;
-    const id = window.setTimeout(() => setRecencyTick((n) => n + 1), 1000);
-    return () => window.clearTimeout(id);
-  }, [props.lastChangedMs, recencyTick]);
-  const recency =
-    props.lastChangedMs !== undefined ? recencyLabel(props.lastChangedMs, Date.now()) : null;
-
-  const dotColor = model.repoColor != null ? repoColors[model.repoColor % repoColors.length] : undefined;
   // Body-area box (frame minus the header). Reveal sizes it in real screen px and
   // re-sizes on settle; magnify sizes it once at K and lets MAGNIFY_TRANSFORM do
   // the rest, so nothing about the box depends on board zoom.
@@ -227,8 +215,6 @@ export function HtmlCard(props: HtmlCardProps) {
     <CardShell
       className={props.borrowed ? "html-card borrowed" : "html-card"}
       frame={model.frame}
-      z={model.z}
-      inWrapper
       fresh={model.fresh}
       selected={props.selected}
       hasClose
@@ -241,14 +227,15 @@ export function HtmlCard(props: HtmlCardProps) {
       onResizeEnd={props.onResizeEnd}
       onGrab={props.onGrab}
       header={
-        <>
-          <span className="glyph">{"</>"}</span>
-          {dotColor && <span className="repo-dot" style={{ background: dotColor }} />}
-          <span className="label">{basename(model.path)}</span>
-          <span className="spacer" />
-          {props.ownerName && <span className="owner-chip">{"← "}{props.ownerName}</span>}
-          {model.fresh && <span style={{ color: "var(--agent)" }}>✚ now</span>}
-          {recency && <span className="recency-meta">{recency}</span>}
+        <CardHeader
+          glyph="</>"
+          repoColor={model.repoColor}
+          label={basename(model.path)}
+          ownerName={props.ownerName}
+          fresh={model.fresh}
+          lastChangedMs={props.lastChangedMs}
+          onClose={props.onClose}
+        >
           {entries.length > 0 && (
             <span
               className="console-badge"
@@ -259,15 +246,7 @@ export function HtmlCard(props: HtmlCardProps) {
               ⌥ {entries.length}
             </span>
           )}
-          <span
-            className="close"
-            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
-            onClick={props.onClose}
-            title="Close"
-          >
-            ✕
-          </span>
-        </>
+        </CardHeader>
       }
     >
       <div className="html-body">
