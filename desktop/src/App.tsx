@@ -21,7 +21,6 @@ import { OffscreenHints } from "./ui/OffscreenHints";
 import { ToastOverlay } from "./ui/ToastOverlay";
 import { BoardSwitcher } from "./ui/BoardSwitcher";
 import { CycleHud } from "./ui/CycleHud";
-import { SpikeProbe } from "./dev/SpikeProbe";
 import { cycleOrder, step } from "./kit/termCycle";
 import { inheritCwdSource } from "./kit/cwdInherit";
 import type { BoardEngine, Viewport } from "./board/BoardEngine";
@@ -1738,13 +1737,6 @@ export default function App() {
         <CycleHud hud={cycleHud} />
       </div>
       <StatusBar connected={status.connected} reason={status.reason} cards={activeCards.length} />
-      {/* Milestone 0 spike-gate QA runner (spec 2607.0004, S18) — never mounts in a
-          normal run; only in a dev build, and only when VITE_SPIKE_PROBE names a
-          probe HTML path. The DEV conjunct is what lets the bundler drop it from a
-          release build outright rather than relying on the env var being unset. */}
-      {import.meta.env.DEV && import.meta.env.VITE_SPIKE_PROBE ? (
-        <SpikeProbe path={import.meta.env.VITE_SPIKE_PROBE as string} />
-      ) : null}
     </div>
   );
 }
