@@ -9,6 +9,15 @@ export interface CardFrameSize {
   h: number;
 }
 
+/** Frozen root zoom for magnify mode. Tracking board zoom (the 2607.0006 shape)
+ *  re-runs layout at a NEW zoom value on every settle, and WebKit does not scale
+ *  glyph advances linearly across those values — ffddbfa measured one paragraph
+ *  at 9/7/7/6 lines over z=0.5..3 while the ICB never moved. Freezing the root
+ *  zoom removes the variable: layout runs once, at this factor, and never again,
+ *  so a wrap point cannot move. Must be >= BoardEngine MAX_ZOOM so the outer
+ *  scale(zoom/K) is always a DOWN-scale (crisp, never an upsample). */
+export const MAGNIFY_K = 3;
+
 // The settled iframe box in screen px for a world-frame at a given zoom.
 export function cardIframePx(frame: CardFrameSize, zoom: number): CardFrameSize {
   return { w: Math.round(frame.w * zoom), h: Math.round(frame.h * zoom) };

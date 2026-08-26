@@ -15,7 +15,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CardShell } from "./CardShell";
 import { cardSrcUrl } from "../kit/docKind";
-import { cardIframePx, cardGestureScale } from "../kit/cardZoom";
+import { cardIframePx, cardGestureScale, MAGNIFY_K } from "../kit/cardZoom";
 import {
   formatCardArgs,
   parseCardMessage,
@@ -87,9 +87,15 @@ export function HtmlCard(props: HtmlCardProps) {
   // so a dropped meta tag can't leak the old mode forward.
   const effectiveZoomRef = useRef<ZoomMode>("reveal");
   const readyHandledRef = useRef(false);
+  // Same verdict as effectiveZoomRef, but as state: the render branches on it
+  // (frozen-K box + permanent scale), and a ref would not re-render.
+  const [magnify, setMagnify] = useState(false);
+  const magnifyRef = useRef(magnify);
+  magnifyRef.current = magnify;
   useEffect(() => {
     effectiveZoomRef.current = "reveal";
     readyHandledRef.current = false;
+    setMagnify(false);
   }, [props.lastChangedMs]);
 
   // Shim message relay: filter to THIS card's iframe, validate, buffer.
@@ -118,10 +124,12 @@ export function HtmlCard(props: HtmlCardProps) {
           );
         }
         if (effective === "magnify") {
-          iframeRef.current?.contentWindow?.postMessage(
-            { tarmac: "zoom", z: settledZoomRef.current },
-            "*",
-          );
+          // Frozen K, not the live board zoom: this is the ONLY root zoom the
+          // document ever sees, so its layout is computed once and the outer
+          // scale(zoom/K) carries every subsequent board zoom.
+          iframeRef.current?.contentWindow?.postMessage({ tarmac: "zoom", z: MAGNIFY_K }, "*");
+          setMagnify(true);
+          setGestureScale(cardGestureScale(getZoomRef.current(), MAGNIFY_K));
         }
         return;
       }
@@ -145,6 +153,13 @@ export function HtmlCard(props: HtmlCardProps) {
       const zoom = getZoomRef.current();
       if (zoom === lastZoom) return;
       lastZoom = zoom;
+      if (magnifyRef.current) {
+        // No settle: the iframe box and its root zoom are both frozen at K, so
+        // the scale is permanent rather than a mid-gesture stand-in. Nothing
+        // re-lays-out, which is exactly why wrap points hold.
+        setGestureScale(cardGestureScale(zoom, MAGNIFY_K));
+        return;
+      }
       setGestureScale(cardGestureScale(zoom, settledZoomRef.current));
       if (timer != null) window.clearTimeout(timer);
       timer = window.setTimeout(() => {
@@ -159,14 +174,9 @@ export function HtmlCard(props: HtmlCardProps) {
     };
   }, []);
 
-  // Settle-time zoom relayout (S11): keyed on settledZoom rather than fired
-  // from the timer above, so it runs after React commits the resized iframe
-  // box — postMessage vs. window resize interleaving is otherwise unordered,
-  // and the shim must never apply a new root zoom to a stale element box.
-  useEffect(() => {
-    if (effectiveZoomRef.current !== "magnify") return;
-    iframeRef.current?.contentWindow?.postMessage({ tarmac: "zoom", z: settledZoom }, "*");
-  }, [settledZoom]);
+  // No settle-time zoom relayout (was S11): magnify's root zoom is the constant
+  // MAGNIFY_K, posted once from the ready handler. Re-posting it per settle is
+  // precisely what re-wrapped the text (ffddbfa), so the settle path is gone.
 
   // Borrow gesture: native dblclick (React synthetic timing is unreliable under
   // the board's native listeners — CardShell wheel precedent). Re-runs when the
@@ -190,8 +200,13 @@ export function HtmlCard(props: HtmlCardProps) {
     props.lastChangedMs !== undefined ? recencyLabel(props.lastChangedMs, Date.now()) : null;
 
   const dotColor = model.repoColor != null ? repoColors[model.repoColor % repoColors.length] : undefined;
-  // Real-px box for the body area (frame minus the world-30px header).
-  const box = cardIframePx({ w: model.frame.w, h: model.frame.h - HEADER_H }, settledZoom);
+  // Body-area box (frame minus the world-30px header). Reveal sizes it in real
+  // screen px and re-sizes on settle; magnify sizes it once at K and lets the
+  // scale above do the rest, so nothing about the box depends on board zoom.
+  const box = cardIframePx(
+    { w: model.frame.w, h: model.frame.h - HEADER_H },
+    magnify ? MAGNIFY_K : settledZoom,
+  );
 
   return (
     <CardShell
