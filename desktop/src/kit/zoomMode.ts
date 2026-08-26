@@ -16,7 +16,6 @@ export const ZOOM_PROBE_EXPECTED_RATIO = 1 / ZOOM_PROBE_FACTOR;
  *  asserted by a test — IEEE-754 rounding makes it undecidable. */
 export const ZOOM_PROBE_TOLERANCE = 0.02;
 
-// Trimmed, case-insensitive "magnify" opts in; everything else (including
 // Magnify is the DEFAULT: an agent writing a report does not know to ask for a
 // stable layout, and a document that re-wraps as you zoom is the wrong default
 // for the thing most HTML cards are. Only a deliberate, well-formed "reveal"

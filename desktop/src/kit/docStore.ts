@@ -38,7 +38,7 @@ export interface DocGroup {
 
 /// Final path segment, mirroring NSString.lastPathComponent over '/'-separated
 /// paths. A trailing slash is dropped first; "/" maps to "/" and "" to "".
-function basename(path: string): string {
+export function basename(path: string): string {
   if (path === "") return "";
   // Drop a single trailing slash (NSString treats "/a/b/" like "/a/b").
   let p = path;

@@ -176,8 +176,9 @@
   function postReady(probe) {
     if (ready) return;
     ready = true;
-    // The settle and the document load race; the retained value wins. It is
-    // applied after the probe, which must measure an unzoomed root.
+    // The host posts zoom in reply to ready, so pendingZoom is normally empty;
+    // it catches a zoom aimed at a previous load that crosses a reload in
+    // flight. Applied after the probe, which must measure an unzoomed root.
     if (pendingZoom !== null) applyZoom(pendingZoom);
     try {
       window.parent.postMessage({ tarmac: "ready", meta: readMeta(), probe: probe }, "*");
@@ -213,7 +214,7 @@
   }
 
   // No requestAnimationFrame fallback: ResizeObserver is universally present
-  // on the macOS 14+ WKWebView floor, and WebKit services rAF at ~22 fps
+  // on the macOS 26+ WKWebView floor, and WebKit services rAF at ~22 fps
   // inside a display:none iframe, so any bounded poll expires while hidden and
   // strands the card. Without ResizeObserver the card stays in reveal.
   //

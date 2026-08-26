@@ -18,12 +18,8 @@ import { repoColors } from "../theme";
 import { recencyLabel } from "../kit/chromeText";
 import { isExternalHttpUrl } from "../kit/externalLink";
 import { openExternal } from "../ipc/shell";
+import { basename } from "../kit/docStore";
 import type { DocCardModel, WorldFrame } from "../board/model";
-
-const basename = (p: string): string => {
-  const i = p.lastIndexOf("/");
-  return i >= 0 ? p.slice(i + 1) : p;
-};
 
 interface DocCardProps {
   model: DocCardModel;

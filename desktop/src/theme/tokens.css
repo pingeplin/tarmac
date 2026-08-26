@@ -44,6 +44,9 @@
   --zoom: 1;
   --world-tx: 0px;
   --world-ty: 0px;
+  /* 1px/devicePixelRatio — the snap unit for card-wrapper translates. Without a
+     default the wrappers' round() is invalid and every card collapses to 0,0. */
+  --device-px: 1px;
   /* Doc-card oversample factor (Panel H): prose is laid out at K× and the scaler
      down-scales by zoom/K so it never upsamples. MUST stay ≥ BoardEngine MAX_ZOOM
      and in sync with DOC_OVERSAMPLE_K in kit/docZoom.ts. */

@@ -168,10 +168,6 @@ export function Board(props: BoardProps) {
                 zIndex: c.z,
               }}
             >
-              {/* CardShell sits directly in the real-px wrapper, exactly as doc
-                  and HTML cards do, so its chrome is laid out per zoom instead of
-                  being upscaled. The zoom-free host box now lives inside the card
-                  body (termInnerBox, applied in TerminalCard). */}
               <TerminalCard
                 model={c}
                 selected={id === props.selectedId}

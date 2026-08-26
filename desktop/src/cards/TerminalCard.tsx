@@ -360,7 +360,6 @@ export function TerminalCard(props: TerminalCardProps) {
   const repoGlyph = "›_";
   return (
     <CardShell
-      className="term-card"
       frame={model.frame}
       z={model.z}
       inWrapper={props.inWrapper}

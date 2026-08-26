@@ -40,10 +40,6 @@ body,
 /* --- board / infinite canvas --- */
 
 .board {
-  /* Fallback only — BoardEngine.apply() overrides this inline from
-     devicePixelRatio. Without a default, an unset var makes the card wrappers'
-     round() invalid and every card collapses to 0,0. */
-  --device-px: 1px;
   position: relative;
   flex: 1 1 auto;
   overflow: hidden;

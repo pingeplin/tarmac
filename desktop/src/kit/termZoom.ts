@@ -1,38 +1,11 @@
-// Pure module: terminal-card zoom layout — the outer wrapper is translate-only
-// (identical formula to docWrapperBox); the inner box is zoom-free (var(--card-w/h))
-// with a single scale(var(--zoom)) so the host never resizes on zoom → no fit()/PTY resize.
+// Pure module: terminal-card zoom layout. The outer wrapper is the SAME
+// translate-only box every card type uses, so it is docZoom's — re-exported here
+// rather than restated (the two bodies were string-for-string identical, and the
+// device-pixel snap had to be edited into both). What is terminal-specific is
+// termInnerBox: zoom-free (var(--card-w/h)) with a single scale(var(--zoom)), so
+// the host never resizes on zoom → no fit()/PTY resize.
 
-/** Real-px outer wrapper for a terminal card in .card-layer.
- *  String-for-string identical to docWrapperBox() — asserted by S1. */
-export function termWrapperBox(): {
-  width: string;
-  height: string;
-  transform: string;
-  transformOrigin: string;
-} {
-  return {
-    width: "calc(var(--card-w) * var(--zoom))",
-    height: "calc(var(--card-h) * var(--zoom))",
-    transform:
-      "translate(round(calc(var(--world-tx) + var(--card-x) * var(--zoom)),var(--device-px)),round(calc(var(--world-ty) + var(--card-y) * var(--zoom)),var(--device-px)))",
-    transformOrigin: "0 0",
-  };
-}
-
-/** Per-card CSS custom properties — same shape as docCardVars(). */
-export function termCardVars({ x, y, w, h }: { x: number; y: number; w: number; h: number }): {
-  "--card-x": string;
-  "--card-y": string;
-  "--card-w": string;
-  "--card-h": string;
-} {
-  return {
-    "--card-x": `${x}px`,
-    "--card-y": `${y}px`,
-    "--card-w": `${w}px`,
-    "--card-h": `${h}px`,
-  };
-}
+export { docWrapperBox as termWrapperBox, docCardVars as termCardVars } from "./docZoom";
 
 /** Card-header height in WORLD px. Mirrors the 30px in card.css; the chrome
  *  renders it at 30px×zoom real px, so the body owns card-h minus this. */
