@@ -34,6 +34,7 @@ import {
   onWebglUnavailable,
 } from "../kit/termRenderer";
 import { CardShell } from "./CardShell";
+import { termInnerBox } from "../kit/termZoom";
 import { attachTermOutput, detachTermOutput, termInput, termResize } from "../ipc/daemon";
 import { openExternal } from "../ipc/shell";
 import { termFontFamily, termFontSize, xtermTheme } from "../theme";
@@ -48,8 +49,6 @@ interface TerminalCardProps {
   /** Settled rasterScale from BoardEngine; 1 at rest, > 1 after zoom settles. */
   rasterScale: number;
   rootRef?: (el: HTMLDivElement | null) => void;
-  /** When true, the outer wrapper in Board.tsx owns position+z; CardShell uses inset:0. */
-  inWrapper?: boolean;
   onMove: (frame: WorldFrame) => void;
   onMoveStart?: () => void;
   onMoveEnd?: () => void;
@@ -360,8 +359,6 @@ export function TerminalCard(props: TerminalCardProps) {
   return (
     <CardShell
       frame={model.frame}
-      z={model.z}
-      inWrapper={props.inWrapper}
       dead={model.dead}
       prime={model.prime}
       quiet={props.quiet}
@@ -383,22 +380,28 @@ export function TerminalCard(props: TerminalCardProps) {
         </>
       }
     >
-      {/* term-raster-clip clips the over-sized wrapper when rs > 1.
+      {/* The zoom-free host box. It wraps the body ONLY — the header is outside
+          it, in real-px chrome, so titles are laid out per zoom rather than
+          upscaled with the host. Everything below is unchanged by that move.
+
+          term-raster-clip clips the over-sized wrapper when rs > 1.
           term-raster-wrapper expands to rs× card-body size; the counter-scale
           brings it back to the original visual footprint. term-host-slot fills
           the (now larger) wrapper, so the imperative host and its xterm canvas
           are rs× bigger in layout → canvas backing is rs×DPR pixels. */}
-      <div className="term-raster-clip">
-        <div
-          className="term-raster-wrapper"
-          style={props.rasterScale !== 1 ? {
-            width: `${props.rasterScale * 100}%`,
-            height: `${props.rasterScale * 100}%`,
-            transform: `scale(${1 / props.rasterScale})`,
-            transformOrigin: "0 0",
-          } : undefined}
-        >
-          <div className="term-host-slot" ref={slotRef} />
+      <div style={termInnerBox()}>
+        <div className="term-raster-clip">
+          <div
+            className="term-raster-wrapper"
+            style={props.rasterScale !== 1 ? {
+              width: `${props.rasterScale * 100}%`,
+              height: `${props.rasterScale * 100}%`,
+              transform: `scale(${1 / props.rasterScale})`,
+              transformOrigin: "0 0",
+            } : undefined}
+          >
+            <div className="term-host-slot" ref={slotRef} />
+          </div>
         </div>
       </div>
     </CardShell>

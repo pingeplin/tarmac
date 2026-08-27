@@ -18,8 +18,15 @@ use tokio::sync::mpsc;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .register_uri_scheme_protocol("tarmac-card", |_ctx, request| {
-            card_protocol::respond(&request.uri().to_string())
+        // Async variant: `respond` does a blocking file read, and the sync
+        // registration would run the handler inline on the WKWebView
+        // scheme-handler thread (the main thread on macOS), stalling the UI
+        // on a cold or large file. spawn_blocking moves that read off it.
+        .register_asynchronous_uri_scheme_protocol("tarmac-card", |_ctx, request, responder| {
+            let uri = request.uri().to_string();
+            tauri::async_runtime::spawn_blocking(move || {
+                responder.respond(card_protocol::respond(&uri));
+            });
         })
         .setup(|app| {
             // The outbound queue: commands push Msgs here, the connection task
@@ -46,7 +53,6 @@ pub fn run() {
             commands::board_create,
             commands::board_rename,
             commands::board_delete,
-            commands::qa_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

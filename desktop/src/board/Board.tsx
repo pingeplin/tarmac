@@ -1,8 +1,10 @@
 // The infinite-canvas host: a clipping viewport driven by BoardEngine. Cards
 // live in a screen-space .card-layer; each card gets a translate-only outer
-// wrapper (sized card{w,h}×zoom via calc()) carrying zIndex:c.z. Terminals add
-// a second inner div (zoom-free var(--card-w/h)) with scale(var(--zoom)) so
-// the host box is never zoom-reactive → no fit()/PTY-resize on zoom.
+// wrapper (sized card{w,h}×zoom via calc()) carrying zIndex:c.z. Every card type
+// puts CardShell straight in that wrapper, so chrome is laid out per zoom rather
+// than bitmap-scaled. The terminal's zoom-free host box (scale(var(--zoom)) over
+// a zoom-free size, so no fit()/PTY-resize on zoom) is inside TerminalCard's body
+// — it wraps the host, not the header.
 //
 // P5 multi-board: App renders ONE Board per board simultaneously; inactive boards
 // are display:none (hidden=true) so their xterm terminals stay WARM — output
@@ -18,8 +20,9 @@ import { DocCard } from "../cards/DocCard";
 import { HtmlCard } from "../cards/HtmlCard";
 import { ownerChipName } from "../kit/ownerChip";
 import { docKind } from "../kit/docKind";
+// The outer wrapper is ONE thing across card kinds — kit/termZoom re-exports
+// these under term* names, so importing docZoom's covers both.
 import { docWrapperBox, docCardVars } from "../kit/docZoom";
-import { termWrapperBox, termCardVars, termInnerBox } from "../kit/termZoom";
 import { cardId, type CardModel, type WorldFrame, type DocMeta } from "./model";
 
 interface BoardProps {
@@ -147,35 +150,34 @@ export function Board(props: BoardProps) {
       {/* Screen-space card layer: no transform on the layer; each card wrapper
           is translated to screen position via calc() off --zoom/--world-tx/ty.
           zIndex:c.z on each outer wrapper → single stacking context, cross-type
-          focus-on-top works. */}
+          focus-on-top works. Cards are grouped term-then-doc (matching the old
+          term-pass-then-doc-pass DOM order byte-for-byte, ties included) rather
+          than sorted by z: z is mutable (select-to-front) and this grouping never
+          reorders on a z change, so React never moves a card's DOM node — a z-sort
+          would, and moving an HtmlCard's node detaches+reattaches its iframe,
+          reloading it on every click-to-front. */}
       <div className="card-layer" ref={cardLayerRef}>
-        {cards.filter((c) => c.kind === "term").map((c) => {
+        {[...cards.filter((c) => c.kind === "term"), ...cards.filter((c) => c.kind === "doc")].map((c) => {
           const id = cardId(c);
-          return (
-            // Outer wrapper: termWrapperBox() translate-only (no scale) + real-px
-            // size calc(--card-w*--zoom). Cullable element (setEl); zIndex here only.
-            <div
-              key={id}
-              ref={setEl(id)}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                ...termWrapperBox(),
-                ...(termCardVars(c.frame) as React.CSSProperties),
-                zIndex: c.z,
-              }}
-            >
-              {/* Inner wrapper: zoom-free var(--card-w/h) + scale(var(--zoom)).
-                  Host box never changes size on zoom → no fit()/PTY-resize. */}
-              <div style={termInnerBox() as React.CSSProperties}>
+          // Outer wrapper: docWrapperBox() translate-only (no scale) + real-px
+          // size calc(--card-w*--zoom). Cullable element (setEl); zIndex here only.
+          const wrapperStyle: React.CSSProperties = {
+            position: "absolute",
+            top: 0,
+            left: 0,
+            ...docWrapperBox(),
+            ...(docCardVars(c.frame) as React.CSSProperties),
+            zIndex: c.z,
+          };
+          if (c.kind === "term") {
+            return (
+              <div key={id} ref={setEl(id)} style={wrapperStyle}>
                 <TerminalCard
                   model={c}
                   selected={id === props.selectedId}
                   quiet={anyTermPrime && !c.prime && !c.dead}
                   getZoom={getZoom}
                   rasterScale={rasterScale}
-                  inWrapper
                   onMove={(frame) => props.onCardMove(id, frame)}
                   onMoveStart={() => props.onCardMoveStart(id)}
                   onMoveEnd={() => props.onCardMoveEnd(id)}
@@ -189,15 +191,10 @@ export function Board(props: BoardProps) {
                   onUnregister={props.onTermUnregister}
                 />
               </div>
-            </div>
-          );
-        })}
-        {/* Doc cards: outer wrapper (docWrapperBox+docCardVars+zIndex) → DocCard
-            or HtmlCard by extension (docKind, spec 2607.0004 — kind is derived,
-            never stored). Both use CardShell inWrapper=true (inset:0) to fill the
-            wrapper. The prose oversample→downscale subtree is unchanged. */}
-        {cards.filter((c) => c.kind === "doc").map((c) => {
-          const id = cardId(c);
+            );
+          }
+          // Doc card: HtmlCard or DocCard by extension (docKind, spec 2607.0004 —
+          // kind is derived, never stored). shared dedups their common prop surface.
           const shared = {
             model: c,
             ownerName: ownerChipName(c.ownerTermId, termLabel),
@@ -213,18 +210,7 @@ export function Board(props: BoardProps) {
             onClose: () => props.onDocClose(c.path),
           };
           return (
-            <div
-              key={id}
-              ref={setEl(id)}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                ...docWrapperBox(),
-                ...(docCardVars(c.frame) as React.CSSProperties),
-                zIndex: c.z,
-              }}
-            >
+            <div key={id} ref={setEl(id)} style={wrapperStyle}>
               {docKind(c.path) === "html" ? (
                 <HtmlCard
                   {...shared}

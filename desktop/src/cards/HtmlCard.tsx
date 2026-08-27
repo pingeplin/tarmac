@@ -6,34 +6,35 @@
 // goes home via the shim's escape relay (focus inside the iframe) or the App
 // Esc ladder (focus in the host).
 //
-// Crispness: the iframe is laid out at real screen px (cardIframePx) with no
-// transform at rest; during a pan/zoom gesture it keeps its px size under a
-// temporary scale (cardGestureScale) and is re-sized once on settle — the
-// terminal-canvas model, not DocCard's prose oversample→downscale (a foreign
-// iframe document cannot be pre-laid-out at K×).
+// Crispness, two modes. MAGNIFY (the default): the document is laid out ONCE at
+// root zoom MAGNIFY_K inside a frame×K box, and board zoom is carried entirely by
+// scale(--zoom / K) — pure CSS, so no JS runs on the zoom path and no wrap point
+// can move. REVEAL (opt-in via <meta name="tarmac-zoom" content="reveal">): the
+// iframe is laid out at real screen px (cardIframePx) with no transform at rest,
+// takes a temporary scale during a gesture, and is re-sized once on settle — the
+// terminal-canvas model. Neither is DocCard's prose oversample→downscale: a
+// foreign iframe document cannot be pre-laid-out by the host.
 
 import { useEffect, useRef, useState } from "react";
 import { CardShell } from "./CardShell";
+import { CardHeader } from "./CardHeader";
 import { cardSrcUrl } from "../kit/docKind";
-import { cardIframePx, cardGestureScale } from "../kit/cardZoom";
+import { cardIframePx, cardGestureScale, cardScrollDelta, MAGNIFY_K } from "../kit/cardZoom";
 import {
   formatCardArgs,
   parseCardMessage,
   pushCardConsole,
   type CardConsoleEntry,
 } from "../kit/cardConsole";
+import { declaredZoomMode, effectiveZoomMode, zoomCapable } from "../kit/zoomMode";
 import { RASTER_SCALE_SETTLE_MS } from "../kit/rasterScale";
-import { repoColors } from "../theme";
-import { recencyLabel } from "../kit/chromeText";
+import { CARD_HEADER_H_PX } from "../kit/termZoom";
+import { basename } from "../kit/docStore";
 import type { DocCardModel, WorldFrame } from "../board/model";
 
-/** .card-header world height (30px in card.css, zoom-scaled for doc-layer cards). */
-const HEADER_H = 30;
-
-const basename = (p: string): string => {
-  const i = p.lastIndexOf("/");
-  return i >= 0 ? p.slice(i + 1) : p;
-};
+/** Magnify's whole zoom path: the frozen-K layout, down-scaled to the live board
+ *  zoom by the compositor. No React, no observer, no per-frame work. */
+const MAGNIFY_TRANSFORM = `scale(calc(var(--zoom) / ${MAGNIFY_K}))`;
 
 interface HtmlCardProps {
   model: DocCardModel;
@@ -64,8 +65,8 @@ export function HtmlCard(props: HtmlCardProps) {
   const [entries, setEntries] = useState<CardConsoleEntry[]>([]);
   const [consoleOpen, setConsoleOpen] = useState(false);
 
-  // Settled zoom drives the real-px iframe box; a gesture applies a temporary
-  // scale and re-settles once after RASTER_SCALE_SETTLE_MS of stability.
+  // REVEAL only: settled zoom drives the real-px iframe box, and a gesture applies
+  // a temporary scale that re-settles after RASTER_SCALE_SETTLE_MS of stability.
   const [settledZoom, setSettledZoom] = useState(props.getZoom);
   const [gestureScale, setGestureScale] = useState(1);
   const settledZoomRef = useRef(settledZoom);
@@ -79,6 +80,21 @@ export function HtmlCard(props: HtmlCardProps) {
   const onBorrowRef = useRef(props.onBorrow);
   onBorrowRef.current = props.onBorrow;
 
+  // The effective zoom mode (spec 2607.0006) for the CURRENT document load. State,
+  // not a ref: the render branches on it. readyHandledRef gates the ready handler
+  // (S17) — only the first ready per load is honored, so a forged repeat can't flip
+  // the mode out from under the console line. Both reset on reload (?v= bump) so a
+  // dropped meta tag can't leak the old mode forward, and the reveal box resets
+  // with them (its settled zoom went stale while magnify held the zoom path).
+  const readyHandledRef = useRef(false);
+  const [magnify, setMagnify] = useState(false);
+  useEffect(() => {
+    readyHandledRef.current = false;
+    setMagnify(false);
+    setSettledZoom(getZoomRef.current());
+    setGestureScale(1);
+  }, [props.lastChangedMs]);
+
   // Shim message relay: filter to THIS card's iframe, validate, buffer.
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
@@ -89,16 +105,43 @@ export function HtmlCard(props: HtmlCardProps) {
         if (borrowedRef.current) onEscapeHomeRef.current();
         return;
       }
+      if (msg.kind === "ready") {
+        if (readyHandledRef.current) return;
+        readyHandledRef.current = true;
+        const declared = declaredZoomMode(msg.meta);
+        const capable = zoomCapable(msg.probe);
+        const effective = effectiveZoomMode(declared, capable);
+        if (msg.meta !== null) {
+          setEntries((buf) =>
+            pushCardConsole(buf, {
+              level: "info",
+              args: [`zoom-mode declared=${declared} capable=${capable} effective=${effective}`],
+            }),
+          );
+        }
+        if (effective === "magnify") {
+          // Frozen K, not the live board zoom: this is the ONLY root zoom the
+          // document ever sees, so its layout is computed once and the outer
+          // scale(zoom/K) carries every subsequent board zoom. Re-posting it per
+          // settle is exactly what re-wrapped the text (ffddbfa) — don't.
+          iframeRef.current?.contentWindow?.postMessage({ tarmac: "zoom", z: MAGNIFY_K }, "*");
+          setMagnify(true);
+        }
+        return;
+      }
       setEntries((buf) => pushCardConsole(buf, { level: msg.level, args: msg.args }));
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
-  // Zoom watcher: the board's style attr mutates every pan/zoom frame (DocCard
-  // precedent); we react only to zoom changes — scale immediately, resize the
-  // iframe once on settle.
+  // Zoom watcher, REVEAL only: the board's style attr mutates every pan/zoom frame
+  // (DocCard precedent); we react only to zoom changes — scale immediately, resize
+  // the iframe once on settle. Magnify needs none of it (MAGNIFY_TRANSFORM does the
+  // whole job in CSS), so it disconnects the observer rather than re-rendering the
+  // card on every frame of every gesture.
   useEffect(() => {
+    if (magnify) return;
     const el = iframeRef.current;
     if (!el) return;
     const board = el.closest(".board") as HTMLElement | null;
@@ -121,7 +164,7 @@ export function HtmlCard(props: HtmlCardProps) {
       mo.disconnect();
       if (timer != null) window.clearTimeout(timer);
     };
-  }, []);
+  }, [magnify]);
 
   // Borrow gesture: native dblclick (React synthetic timing is unreliable under
   // the board's native listeners — CardShell wheel precedent). Re-runs when the
@@ -134,26 +177,44 @@ export function HtmlCard(props: HtmlCardProps) {
     return () => el.removeEventListener("dblclick", onDblClick);
   }, [props.borrowed]);
 
-  const [recencyTick, setRecencyTick] = useState(0);
+  // Wheel relay. On a selected card CardShell stops the wheel from panning the
+  // board, and the shield above the iframe has nothing to scroll — so scrolling
+  // a shielded HTML card did nothing at all. Reading is not the "touch" the
+  // shield blocks, so forward the delta to the document instead. Only while
+  // selected (an unselected card still pans the board) and only when the shield
+  // is up (once borrowed the iframe gets the wheel natively). ctrl+wheel is
+  // pinch and always belongs to the board.
   useEffect(() => {
-    if (props.lastChangedMs === undefined) return;
-    if (recencyLabel(props.lastChangedMs, Date.now()) === null) return;
-    const id = window.setTimeout(() => setRecencyTick((n) => n + 1), 1000);
-    return () => window.clearTimeout(id);
-  }, [props.lastChangedMs, recencyTick]);
-  const recency =
-    props.lastChangedMs !== undefined ? recencyLabel(props.lastChangedMs, Date.now()) : null;
+    const el = shieldRef.current;
+    if (!el || !props.selected) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) return;
+      const zoom = getZoomRef.current();
+      iframeRef.current?.contentWindow?.postMessage(
+        {
+          tarmac: "scroll",
+          dx: cardScrollDelta(e.deltaX, zoom, magnify),
+          dy: cardScrollDelta(e.deltaY, zoom, magnify),
+        },
+        "*",
+      );
+    };
+    el.addEventListener("wheel", onWheel, { passive: true });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [props.selected, props.borrowed, magnify]);
 
-  const dotColor = model.repoColor != null ? repoColors[model.repoColor % repoColors.length] : undefined;
-  // Real-px box for the body area (frame minus the world-30px header).
-  const box = cardIframePx({ w: model.frame.w, h: model.frame.h - HEADER_H }, settledZoom);
+  // Body-area box (frame minus the header). Reveal sizes it in real screen px and
+  // re-sizes on settle; magnify sizes it once at K and lets MAGNIFY_TRANSFORM do
+  // the rest, so nothing about the box depends on board zoom.
+  const box = cardIframePx(
+    { w: model.frame.w, h: model.frame.h - CARD_HEADER_H_PX },
+    magnify ? MAGNIFY_K : settledZoom,
+  );
 
   return (
     <CardShell
       className={props.borrowed ? "html-card borrowed" : "html-card"}
       frame={model.frame}
-      z={model.z}
-      inWrapper
       fresh={model.fresh}
       selected={props.selected}
       hasClose
@@ -166,14 +227,15 @@ export function HtmlCard(props: HtmlCardProps) {
       onResizeEnd={props.onResizeEnd}
       onGrab={props.onGrab}
       header={
-        <>
-          <span className="glyph">{"</>"}</span>
-          {dotColor && <span className="repo-dot" style={{ background: dotColor }} />}
-          <span className="label">{basename(model.path)}</span>
-          <span className="spacer" />
-          {props.ownerName && <span className="owner-chip">{"← "}{props.ownerName}</span>}
-          {model.fresh && <span style={{ color: "var(--agent)" }}>✚ now</span>}
-          {recency && <span className="recency-meta">{recency}</span>}
+        <CardHeader
+          glyph="</>"
+          repoColor={model.repoColor}
+          label={basename(model.path)}
+          ownerName={props.ownerName}
+          fresh={model.fresh}
+          lastChangedMs={props.lastChangedMs}
+          onClose={props.onClose}
+        >
           {entries.length > 0 && (
             <span
               className="console-badge"
@@ -184,15 +246,7 @@ export function HtmlCard(props: HtmlCardProps) {
               ⌥ {entries.length}
             </span>
           )}
-          <span
-            className="close"
-            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
-            onClick={props.onClose}
-            title="Close"
-          >
-            ✕
-          </span>
-        </>
+        </CardHeader>
       }
     >
       <div className="html-body">
@@ -205,7 +259,11 @@ export function HtmlCard(props: HtmlCardProps) {
           style={{
             width: box.w,
             height: box.h,
-            transform: gestureScale === 1 ? undefined : `scale(${gestureScale})`,
+            transform: magnify
+              ? MAGNIFY_TRANSFORM
+              : gestureScale === 1
+                ? undefined
+                : `scale(${gestureScale})`,
             transformOrigin: "0 0",
           }}
         />

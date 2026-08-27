@@ -92,8 +92,11 @@ export interface DocCardModel {
 
 export type CardModel = TermCardModel | DocCardModel;
 
+/** The doc half of cardId(), for callers holding only a path. */
+export const docCardId = (path: string): string => `doc:${path}`;
+
 export const cardId = (c: CardModel): string =>
-  c.kind === "term" ? `term:${c.termId}` : `doc:${c.path}`;
+  c.kind === "term" ? `term:${c.termId}` : docCardId(c.path);
 
 /** Highest z among a card set (for select-to-front: new front = topZ + 1). */
 export const topZ = (cards: CardModel[]): number =>

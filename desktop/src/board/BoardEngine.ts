@@ -290,6 +290,9 @@ export class BoardEngine {
     // the Swift board's look (free here — just a background-size change).
     const worldSpacing = this.vp.zoom < SEMANTIC_ZOOM_THRESHOLD ? GRID_SPACING_LO : GRID_SPACING;
     this.viewportEl.style.setProperty("--zoom", String(this.vp.zoom));
+    // Snap unit for the card wrappers' translate (see docWrapperBox). Re-read every
+    // apply() because dragging the window to another display changes devicePixelRatio.
+    this.viewportEl.style.setProperty("--device-px", `${1 / (window.devicePixelRatio || 1)}px`);
     this.viewportEl.style.setProperty("--world-tx", `${tx}px`);
     this.viewportEl.style.setProperty("--world-ty", `${ty}px`);
     this.viewportEl.style.setProperty("--grid-size", `${worldSpacing * this.vp.zoom}px`);
@@ -354,5 +357,22 @@ export class BoardEngine {
     });
     ro.observe(this.viewportEl);
     this.detachers.push(() => ro.disconnect());
+
+    // Dragging the window between a Retina panel and a 1× display changes
+    // devicePixelRatio without any pan/zoom/resize, which would leave --device-px
+    // stale and the cards snapped to the wrong grid. A resolution media query is
+    // the only event for it, and it must be re-armed against the NEW ratio.
+    let dprQuery: MediaQueryList | null = null;
+    const onDprChange = () => {
+      this.apply();
+      armDprWatch();
+    };
+    const armDprWatch = () => {
+      dprQuery?.removeEventListener("change", onDprChange);
+      dprQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      dprQuery.addEventListener("change", onDprChange);
+    };
+    armDprWatch();
+    this.detachers.push(() => dprQuery?.removeEventListener("change", onDprChange));
   }
 }

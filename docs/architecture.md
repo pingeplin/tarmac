@@ -310,6 +310,30 @@ position is preserved as a fraction across live `FileEvent` re-renders.
 Provenance edges (dashed cyan bézier) connect a doc card to its caller terminal.
 The `fresh` (agent-opened, unread) highlight is cleared locally by `ESC`.
 
+**HTML cards.** A doc whose path ends `.html`/`.htm` is routed by extension
+(`kit/docKind.ts` — the kind is derived, never stored, so the wire protocol knows
+nothing about it) to a card whose body is a sandboxed `<iframe>`. The file is
+served by the app's own `tarmac-card://` scheme handler, which prepends a console
+/escape/zoom shim and sets a strict response-header CSP; the document runs real
+JS at an opaque origin with no network and no Tauri IPC reach. It is
+shield-by-default — a transparent overlay keeps the card look-don't-touch until a
+double-click *borrows* it, and `ESC` un-borrows and returns focus to the prime
+terminal. Relayed `console.*` output collects in a per-card ring buffer behind a
+header badge.
+
+**Card zoom has two models.** Markdown prose is laid out once at a frozen `K×`
+reference and down-scaled by `scale(zoom/K)`, so board zoom never reflows it.
+HTML cards default to **magnify**, which is the same idea reached differently: we
+cannot author a foreign document's CSS, so the shim sets its root `zoom` to a
+constant `MAGNIFY_K` once per load and the outer box carries board zoom by
+`scale(zoom/K)`. Layout runs once, so wrap points cannot move. A document opting
+out with `<meta name="tarmac-zoom" content="reveal">` instead gets **reveal**:
+real-px sizing that re-lays out at each settle, for content that needs honest
+viewport dimensions (a self-contained D3/Canvas dashboard). Both `K`s are ≥
+`MAX_ZOOM` so the scale is always a down-scale, never an upsample. Terminals use
+neither: their chrome lays out per zoom while a zoom-free host box keeps
+`fit()`/PTY-resize off the zoom path.
+
 **Multiple boards.** A `⌘K` switcher shows per-board running/bell/card counts,
 supports type-to-filter, `⌘N` create, `⌘E` rename, `⌘⌫` delete, and `⌘1`–`9`
 jump to the *visible* (filtered) rows. Switching mounts the target board's cards

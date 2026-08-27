@@ -3,12 +3,15 @@
 //! shim, so agent-written HTML/JS runs sandboxed inside a `<iframe
 //! sandbox="allow-scripts">` with no network and no Tauri IPC reach. Pure
 //! helpers here (decode, compose, respond) are separated from the
-//! `register_uri_scheme_protocol` glue in `lib.rs` so they unit-test inline,
-//! per the `bridge.rs` precedent.
+//! `register_asynchronous_uri_scheme_protocol` glue in `lib.rs` so they
+//! unit-test inline, per the `bridge.rs` precedent.
 //!
 //! Same filesystem trust model as `commands::read_doc`: raw path, no
 //! canonicalization, no jail — a deliberate non-goal (no docs-root concept
 //! exists), not an oversight.
+
+use std::fs::File;
+use std::io::{self, Read};
 
 use percent_encoding::percent_decode_str;
 use tauri::http::{Response, StatusCode};
@@ -35,15 +38,17 @@ pub fn decode_card_path(uri: &str) -> Result<String, String> {
 
 /// Prepend the shim, unconditionally and strictly before the first file
 /// byte — no content sniffing, works identically for `<!DOCTYPE html>` or a
-/// BOM-prefixed file (S9).
-fn compose_body(file_bytes: &[u8]) -> Vec<u8> {
+/// BOM-prefixed file (S9). Reads `file` directly into the body buffer (after
+/// the shim prefix) instead of copying an already-read `Vec` into a second
+/// one; `size_hint` (best-effort, 0 if `metadata()` fails) just pre-sizes it.
+fn compose_body(file: &mut File, size_hint: usize) -> io::Result<Vec<u8>> {
     const SHIM: &str = include_str!("card_shim.js");
-    let mut body = Vec::with_capacity(SHIM.len() + 20 + file_bytes.len());
+    let mut body = Vec::with_capacity(SHIM.len() + 20 + size_hint);
     body.extend_from_slice(b"<script>");
     body.extend_from_slice(SHIM.as_bytes());
     body.extend_from_slice(b"</script>\n");
-    body.extend_from_slice(file_bytes);
-    body
+    file.read_to_end(&mut body)?;
+    Ok(body)
 }
 
 fn text_response(status: StatusCode, body: String) -> Response<Vec<u8>> {
@@ -61,7 +66,12 @@ pub fn respond(uri: &str) -> Response<Vec<u8>> {
         Ok(p) => p,
         Err(e) => return text_response(StatusCode::BAD_REQUEST, e),
     };
-    let bytes = match std::fs::read(&path) {
+    let mut file = match File::open(&path) {
+        Ok(f) => f,
+        Err(e) => return text_response(StatusCode::NOT_FOUND, format!("{path}: {e}")),
+    };
+    let size_hint = file.metadata().map(|m| m.len() as usize).unwrap_or(0);
+    let body = match compose_body(&mut file, size_hint) {
         Ok(b) => b,
         Err(e) => return text_response(StatusCode::NOT_FOUND, format!("{path}: {e}")),
     };
@@ -69,7 +79,7 @@ pub fn respond(uri: &str) -> Response<Vec<u8>> {
         .status(StatusCode::OK)
         .header("Content-Type", "text/html; charset=utf-8")
         .header("Content-Security-Policy", CARD_CSP)
-        .body(compose_body(&bytes))
+        .body(body)
         .expect("static response builder never fails")
 }
 

@@ -1,5 +1,20 @@
 import { describe, it, expect } from "vitest";
-import { cardIframePx, cardGestureScale } from "./cardZoom";
+import { cardIframePx, cardGestureScale, MAGNIFY_K } from "./cardZoom";
+import { MAX_ZOOM } from "../board/BoardEngine";
+
+// Spec 2607.0006 — MAGNIFY_K's docstring asserts this; nothing else enforced it.
+// K >= MAX_ZOOM is what makes scale(zoom/K) a DOWN-scale across the whole range,
+// so the frozen-K layout is never bitmap-upscaled. Imported from BoardEngine so
+// raising MAX_ZOOM above K fails here.
+describe("MAGNIFY_K never upsamples", () => {
+  it("is >= the engine MAX_ZOOM", () => {
+    expect(MAGNIFY_K).toBeGreaterThanOrEqual(MAX_ZOOM);
+  });
+
+  it("at max zoom the card scale factor is <= 1", () => {
+    expect(MAX_ZOOM / MAGNIFY_K).toBeLessThanOrEqual(1);
+  });
+});
 
 // Spec 2607.0004 S10 — settled real-px box and mid-gesture scale.
 describe("cardIframePx (S10)", () => {

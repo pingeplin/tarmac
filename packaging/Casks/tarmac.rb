@@ -28,7 +28,11 @@ cask "tarmac" do
   end
 
   depends_on arch: :arm64
-  depends_on macos: :sonoma
+  # Tahoe (26), not Sonoma: doc/HTML cards freeze their layout with CSS `zoom`,
+  # which older field WebKit no-ops entirely — cards would render at 1/K size.
+  # Standardized `zoom` ships ~Safari 26.4; 17.4 is a verified no-op and the
+  # range between them was never tested. See desktop/qa/one-x-display-crispness.md.
+  depends_on macos: :tahoe
 
   app "Tarmac.app"
   # The standalone universal CLI shipped at the .dmg root (NOT a path inside the

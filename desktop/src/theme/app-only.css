@@ -15,7 +15,9 @@ body,
   color: var(--text);
   font-family: var(--chrome-font);
   font-size: 12px;
-  -webkit-font-smoothing: antialiased;
+  /* NOT `antialiased`: it thins strokes everywhere, which reads as fringing on
+     1× displays (BenQ 1440p @109ppi) and buys nothing on Retina. */
+  -webkit-font-smoothing: auto;
 }
 
 .app {

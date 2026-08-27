@@ -1,48 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { termWrapperBox, termCardVars, termInnerBox } from "./termZoom";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { termWrapperBox, termCardVars, termInnerBox, CARD_HEADER_H_PX } from "./termZoom";
 import { docWrapperBox } from "./docZoom";
 import { worldToView } from "./boardTransform";
-
-// --- S6 helper (mirrors docZoom.test.ts) -----------------------------------
-
-function evalCalcPx(expr: string, vars: Record<string, string>): number {
-  const inner = expr.match(/^calc\((.+)\)$/)?.[1] ?? expr;
-  const substituted = inner.replace(/var\(--([a-z-]+)\)/g, (_, name: string) => {
-    const key = `--${name}`;
-    if (!(key in vars)) throw new Error(`unknown CSS var ${key}`);
-    return vars[key];
-  });
-  const noUnits = substituted.replace(/(-?\d+(?:\.\d+)?)px/g, "$1");
-  // eslint-disable-next-line no-new-func
-  return Function(`"use strict"; return (${noUnits})`)() as number;
-}
-
-function splitTranslateArgs(transformStr: string): [string, string] {
-  const prefix = "translate(";
-  if (!transformStr.startsWith(prefix) || !transformStr.endsWith(")")) {
-    throw new Error(`expected translate(...), got: ${transformStr}`);
-  }
-  const inner = transformStr.slice(prefix.length, -1);
-  let depth = 0;
-  for (let i = 0; i < inner.length; i++) {
-    if (inner[i] === "(") depth++;
-    else if (inner[i] === ")") depth--;
-    else if (inner[i] === "," && depth === 0) {
-      return [inner.slice(0, i), inner.slice(i + 1)];
-    }
-  }
-  throw new Error("no top-level comma in translate args");
-}
-
-function evalWrapperTranslate(
-  transformStr: string,
-  vars: Record<string, string>,
-): { x: number; y: number } {
-  const [xExpr, yExpr] = splitTranslateArgs(transformStr);
-  return { x: evalCalcPx(xExpr, vars), y: evalCalcPx(yExpr, vars) };
-}
-
-// ---------------------------------------------------------------------------
+import { evalWrapperTranslate } from "./cssEval";
 
 describe("S1 — outer wrapper equals doc formula (translate-only, no scale)", () => {
   it("termWrapperBox() is string-for-string identical to docWrapperBox()", () => {
@@ -65,8 +27,17 @@ describe("S3 — inner box is zoom-free (no --zoom in width/height)", () => {
     expect(termInnerBox().width).toBe("var(--card-w)");
   });
 
-  it("height is exactly 'var(--card-h)'", () => {
-    expect(termInnerBox().height).toBe("var(--card-h)");
+  // Body only, not the whole card: the header is chrome and stays outside this
+  // scale, or it gets upscaled from a 1× raster and terminal titles blur.
+  it("height is card-h minus the header, in world px", () => {
+    expect(termInnerBox().height).toBe(`calc(var(--card-h) - ${CARD_HEADER_H_PX}px)`);
+  });
+
+  it("subtracts the header height card.css actually renders", () => {
+    const css = readFileSync(fileURLToPath(new URL("../theme/card.css", import.meta.url)), "utf8");
+    expect(css).toMatch(
+      new RegExp(`\\.card-header\\s*\\{[^}]*height:\\s*calc\\(${CARD_HEADER_H_PX}px \\* var\\(--zoom\\)\\)`, "s"),
+    );
   });
 
   it("width does not reference --zoom", () => {
@@ -116,6 +87,7 @@ describe("S6 — outer origin projects via worldToView (eval actual transform st
       "--card-x": `${cardX}px`,
       "--card-y": `${cardY}px`,
       "--zoom": String(zoom),
+      "--device-px": "1px",
     };
 
     const { transform } = termWrapperBox();
@@ -144,6 +116,7 @@ describe("S6 — outer origin projects via worldToView (eval actual transform st
       "--card-x": `${cardX}px`,
       "--card-y": `${cardY}px`,
       "--zoom": String(zoom),
+      "--device-px": "1px",
     };
 
     const { transform } = termWrapperBox();

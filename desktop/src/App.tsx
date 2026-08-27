@@ -21,12 +21,12 @@ import { OffscreenHints } from "./ui/OffscreenHints";
 import { ToastOverlay } from "./ui/ToastOverlay";
 import { BoardSwitcher } from "./ui/BoardSwitcher";
 import { CycleHud } from "./ui/CycleHud";
-import { SpikeProbe } from "./dev/SpikeProbe";
 import { cycleOrder, step } from "./kit/termCycle";
 import { inheritCwdSource } from "./kit/cwdInherit";
 import type { BoardEngine, Viewport } from "./board/BoardEngine";
 import {
   cardId,
+  docCardId,
   emptyBoardState,
   topZ,
   type BoardState,
@@ -60,6 +60,7 @@ import {
 } from "./kit/toasts";
 import { Place, firstFreeSlot, scatterFrame } from "./kit/placement";
 import { docKind } from "./kit/docKind";
+import { basename } from "./kit/docStore";
 import { buildTiles, parseTiles, type LayoutTile } from "./kit/layoutTiles";
 import type { Rect, Size } from "./kit/geom";
 import {
@@ -112,11 +113,6 @@ const HINT_STACK_GAP = 8;
 type Gesture =
   | { kind: "term"; termId: string; startFrame: WorldFrame; sats: Map<string, WorldFrame> }
   | { kind: "doc"; path: string };
-
-const basename = (p: string): string => {
-  const i = p.lastIndexOf("/");
-  return i >= 0 ? p.slice(i + 1) : p;
-};
 
 /** A card's wayfinding signal (bell outranks live); docs carry none yet. */
 const cardSignal = (c: CardModel): Signal | null => {
@@ -573,7 +569,7 @@ export default function App() {
 
   const removeDoc = (path: string) => {
     // A closed card cannot stay borrowed (a stale id would eat one Esc).
-    if (borrowedCardIdRef.current === `doc:${path}`) setBorrowedCardId(null);
+    if (borrowedCardIdRef.current === docCardId(path)) setBorrowedCardId(null);
     setActiveBoard((b) => {
       const docMeta = new Map(b.docMeta);
       docMeta.delete(path);
@@ -1741,9 +1737,6 @@ export default function App() {
         <CycleHud hud={cycleHud} />
       </div>
       <StatusBar connected={status.connected} reason={status.reason} cards={activeCards.length} />
-      {/* Milestone 0 spike-gate QA runner (spec 2607.0004, S18) — never mounts
-          in a normal run; only when VITE_SPIKE_PROBE names a probe HTML path. */}
-      {import.meta.env.VITE_SPIKE_PROBE ? <SpikeProbe path={import.meta.env.VITE_SPIKE_PROBE as string} /> : null}
     </div>
   );
 }
