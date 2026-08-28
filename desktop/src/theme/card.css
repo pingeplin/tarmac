@@ -299,11 +299,17 @@
   font-family: var(--chrome-font);
   font-size: 0.8929em;
 }
+/* overflow: auto on an overflowing code block promotes .doc-prose-scaler to its
+   own composited layer, sized by the K× box rather than what it paints — the
+   whole K² raster cost (see docs/designs/2608.0002). visible + wrap de-promotes
+   it; word-break is required or long unbroken tokens stay clipped at the edge. */
 .doc-prose pre {
   background: var(--term-bg);
   padding: 0.8571em 1em;
   border-radius: 0.5714em;
-  overflow: auto;
+  overflow: visible;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .doc-prose pre code {
   background: none;

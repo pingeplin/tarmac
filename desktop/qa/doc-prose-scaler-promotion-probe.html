@@ -1,0 +1,189 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>doc-prose-scaler promotion detector (R1) — spec 2608.0002 S11</title>
+<link rel="stylesheet" href="../src/theme/kit.css">
+<!--
+  R1 standing detector (spec 2608.0002's "Instrument extension" + Follow-up
+  #2). Unlike doc-prose-zoom-probe.html, which measures an ANALOG of the doc
+  card (.prose/.scroll/.scaler, hand-copied metrics that could drift from
+  card.css), this page links the REAL stylesheet every card uses
+  (../src/theme/kit.css -> tokens.css + card.css) and builds each case out of
+  the REAL class names (.doc-card, .card-body, .doc-scroll, .doc-prose-sizer,
+  .doc-prose-scaler, .doc-prose) — the only durable guard against R1, per the
+  design doc.
+
+  R1: the invariant "no composited descendant inside .doc-prose-scaler" is
+  silently reversible. Raw HTML a markdown renderer passes through untouched
+  can carry `will-change` or a 3D transform; either re-promotes the scaler to
+  its own composited layer (~4x memory), degrading to the pre-2608.0002 cost
+  and never worse. There is no code guard against this (Trade-offs,
+  docs/designs/2608.0002) — this page is the only way to notice it.
+
+  In-page JS has NO compositing API (same constraint as
+  doc-prose-zoom-probe.html) — this page cannot self-measure promotion. It
+  only renders the cases below and exposes
+  window.__promotionProbe.report(caseId, composited) for an external driver
+  (WebKit Inspector / CDP LayerTree, on a real engine) to call after
+  inspecting each case's #scaler-<id> element in the layer tree.
+  window.__promotionProbe.results is NEVER a self-report — it reads null
+  until a human or driver calls report() for that case, and this page must
+  not be read as though it measured itself.
+
+  Fixed false safe (S11 reading, this session): the `will-change` case's
+  hostile node was a bare `<span>`. `will-change`/`transform` do not apply to
+  non-replaced inline boxes, so WebKit never promoted it and the case read
+  "not composited" — a false safe on half of R1's surface. The node is now a
+  block-context box (matching transform3d's own `display: inline-block`
+  spelling below); `will-change-inline` keeps the original inert `<span>` as
+  an explicitly-labelled control, not a second hazard.
+
+  Cases:
+    clean            ordinary prose, shipped .doc-prose pre — expect NOT composited
+    will-change      a raw-HTML block-context descendant declares
+                     will-change: transform — expect COMPOSITED (this is R1)
+    will-change-inline  same declaration on a bare inline <span> — a LABELLED
+                     CONTROL, not a second hazard: will-change/transform hints
+                     do not apply to non-replaced inline boxes, so this expects
+                     NOT composited. Exists so a genuine non-promoter isn't
+                     mistaken for R1 coverage.
+    transform3d      a raw-HTML descendant declares a 3D transform
+    overflow-pre     a <pre> holding a 200-char unbreakable token — content
+                     that would have needed its own scrollbar under the
+                     pre-2608.0002 overflow:auto spelling — expect NOT
+                     composited under the shipped rule, which wraps it in
+                     place instead.
+-->
+<style>
+  html, body { margin: 0; background: var(--bg0); color: var(--text); }
+  #cases { display: flex; gap: 20px; padding: 16px; flex-wrap: wrap; align-items: flex-start; }
+  .case .tag { font: 12px/1.4 var(--chrome-font); color: var(--faint); margin-bottom: 4px; }
+  .case .verdict { font: 11px/1.4 var(--chrome-font); margin-bottom: 6px; }
+  .case .verdict.pending { color: var(--faint); }
+  .case .verdict.composited { color: var(--amber); }
+  .case .verdict.not-composited { color: var(--ok); }
+  .case .doc-card { width: 392px; }
+  .case .card-body { width: 392px; height: 310px; }
+  #out { padding: 0 16px 16px; white-space: pre-wrap; font: 11px/1.4 var(--chrome-font); color: var(--muted); }
+  #refresh { margin: 0 16px 12px; }
+</style>
+
+<div id="cases"></div>
+<button id="refresh">refresh readout</button>
+<div id="out">idle — inspect #scaler-&lt;case&gt; in WebKit Inspector's LayerTree, then call
+window.__promotionProbe.report(caseId, composited) from an external driver, then refresh.</div>
+
+<script>
+(() => {
+  const CASES = ["clean", "will-change", "will-change-inline", "transform3d", "overflow-pre"];
+
+  const cleanPre = `<pre data-b="pre0"><code>tarmac open ./docs/architecture.md</code></pre>`;
+
+  const TOKEN_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const unbreakableToken = (n) => Array.from({length: n}, (_, i) =>
+    TOKEN_CHARS[(i * 7 + 3) % TOKEN_CHARS.length]).join("");
+  const overflowPre = `<pre data-b="pre-token"><code>${unbreakableToken(200)}</code></pre>`;
+
+  // Raw HTML a markdown renderer passes through untouched — the vector R1
+  // exists to catch. All are otherwise visually inert (no declared size),
+  // so a composited scaler in these cases is attributable ONLY to the
+  // promotion hint, not to some other layout change.
+  //
+  // will-change/transform hints do not apply to non-replaced inline boxes
+  // (CSS Transforms §2, CSS Will Change §3) — a bare <span> ignores them.
+  // The hazard case must therefore be a block-context box, same spelling as
+  // transform3d; will-change-inline keeps the inert <span> as a labelled
+  // control so a genuine non-promoter isn't mistaken for missing R1 coverage.
+  const willChangeHtml =
+    `<div style="will-change: transform; display: inline-block;" data-hostile="will-change">raw HTML (will-change)</div>`;
+  const willChangeInlineHtml =
+    `<span style="will-change: transform;" data-hostile="will-change-inline">raw HTML (will-change, inline span)</span>`;
+  const transform3dHtml =
+    `<div style="transform: translateZ(0); display: inline-block;" data-hostile="transform3d">raw HTML (3D transform)</div>`;
+
+  const CONTENT = {
+    clean: `
+<h2 data-b="h2">Deployment notes for the observatory</h2>
+<p data-b="p1">The daemon owns every PTY and writes <code>state.json</code> atomically; the cockpit renders what it is told and never parses agent output.</p>
+<ul><li data-b="li1">Length-prefixed MessagePack frames, four-byte big-endian length.</li></ul>
+${cleanPre}
+<p data-b="p2">Ordinary markdown, nothing hostile — the baseline this spec buys.</p>`,
+
+    "will-change": `
+<h2 data-b="h2">Deployment notes for the observatory</h2>
+<p data-b="p1">The daemon owns every PTY and writes <code>state.json</code> atomically.</p>
+${willChangeHtml}
+${cleanPre}
+<p data-b="p2">A raw HTML block with <code>will-change: transform</code>, passed through by the markdown renderer.</p>`,
+
+    "will-change-inline": `
+<h2 data-b="h2">Deployment notes for the observatory</h2>
+<p data-b="p1">The daemon owns every PTY and writes <code>state.json</code> atomically. ${willChangeInlineHtml}</p>
+${cleanPre}
+<p data-b="p2">Control: the same declaration on a bare inline span, which cannot accept it — expect NOT composited.</p>`,
+
+    transform3d: `
+<h2 data-b="h2">Deployment notes for the observatory</h2>
+<p data-b="p1">The daemon owns every PTY and writes <code>state.json</code> atomically.</p>
+${transform3dHtml}
+${cleanPre}
+<p data-b="p2">A raw HTML div with a 3D transform, passed through by the markdown renderer.</p>`,
+
+    "overflow-pre": `
+<h2 data-b="h2">Deployment notes for the observatory</h2>
+<p data-b="p1">The daemon owns every PTY and writes <code>state.json</code> atomically.</p>
+${overflowPre}
+<p data-b="p2">A 200-char unbreakable token: genuinely overflowing under the pre-2608.0002 <code>overflow: auto</code> spelling, wrapped in place under the shipped rule.</p>`,
+  };
+
+  const casesEl = document.getElementById("cases");
+  for (const id of CASES) {
+    const wrap = document.createElement("div");
+    wrap.className = "case";
+    wrap.dataset.case = id;
+    wrap.innerHTML =
+      `<div class="tag">${id}</div>` +
+      `<div class="verdict pending">not yet reported</div>` +
+      `<div class="doc-card"><div class="card-body">` +
+      `<div class="doc-scroll"><div class="doc-prose-sizer">` +
+      `<div class="doc-prose-scaler" id="scaler-${id}">` +
+      `<div class="doc-prose">${CONTENT[id]}</div>` +
+      `</div></div></div></div></div>`;
+    casesEl.appendChild(wrap);
+    // Same transform docProseScaler() sets in production (docZoom.ts) — the
+    // scaler must carry it for the promotion question to even be in play;
+    // an untransformed element has no compositing reason to check.
+    document.getElementById(`scaler-${id}`).style.transform =
+      "scale(calc(var(--zoom) / var(--oversample-k)))";
+  }
+
+  function paintCase(id) {
+    const v = window.__promotionProbe.results[id];
+    const el = document.querySelector(`.case[data-case="${id}"] .verdict`);
+    el.className = "verdict " + (v === null ? "pending" : v ? "composited" : "not-composited");
+    el.textContent = v === null ? "not yet reported" : v ? "COMPOSITED" : "not composited";
+  }
+
+  function render() {
+    for (const id of CASES) paintCase(id);
+    document.getElementById("out").textContent =
+      JSON.stringify(window.__promotionProbe.results, null, 1);
+  }
+  document.getElementById("refresh").onclick = render;
+
+  window.__promotionProbe = {
+    cases: CASES,
+    scalerEl: (id) => document.getElementById(`scaler-${id}`),
+    results: Object.fromEntries(CASES.map((id) => [id, null])),
+    // Not self-measured — in-page JS cannot ask "is this element composited?".
+    // An external driver (WebKit Inspector / CDP LayerTree, on a real engine)
+    // selects scalerEl(id) in the layer tree and calls this with what it
+    // observed. `results` is never written any other way.
+    report(id, composited) {
+      if (!(id in window.__promotionProbe.results)) throw new Error("unknown case: " + id);
+      window.__promotionProbe.results[id] = !!composited;
+      render();
+    },
+  };
+  render();
+})();
+</script>

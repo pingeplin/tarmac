@@ -1,0 +1,395 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Doc-prose zoom probe — arm A (css zoom) vs B (frozen-K zoom) vs C (shipped ×K)</title>
+<!--
+  Wrap-fingerprint probe for issue #76. Unlike wrap-probe.html (which lives
+  inside a sandboxed HTML card and measures the iframe documentElement), this
+  page measures a MAIN-DOCUMENT .doc-prose analog, which is the situation #76
+  actually proposes to change.
+
+  Three arms, identical content, identical base metrics (mirrors .doc-prose in
+  desktop/src/theme/card.css):
+    A  issue #76         prose zoom = board zoom (CHANGING), base metrics
+    B  frozen-K (#96)    prose zoom = 3 (CONSTANT), outer scale(z/3)
+    C  shipped control   metrics x3 by hand (frozen), outer scale(z/3)
+
+  Self-reporting: window.__probe.run(z) applies z to all three arms and returns
+  a JSON record of every line-start character offset per block per arm, plus
+  box rects, layout widths, computed zoom, and scroll-container geometry.
+  Drive it from Playwright, or open standalone and use the on-page control.
+
+  RESULT (2608, Playwright WebKit 26.5 and system WKWebView on macOS 26.6, both
+  agreeing): arm A produced SEVEN distinct layouts across nine zoom steps -- the
+  iframe wrap drift ffddbfa found transfers intact to a main-document element.
+  Arms B and C were byte-stable at every step. Arm A at z=K reproduces arm B
+  exactly, which is the probe's own validity check. On system WebKit (not on
+  Playwright's) arm B and arm C disagree on one list item at every zoom, so
+  zoom:K and manual xK are stable-but-not-identical layouts.
+
+  2608.0002 extension: the three `<pre>` blocks (pre0 short, pre1 genuinely
+  overflowing, pre2 a 200-char unbreakable token) are now fingerprinted like
+  every other prose block, and their spelling is switchable via ?pre=base|
+  wrapx|wrap (base = shipped overflow:auto, wrapx = visible+pre-wrap, wrap =
+  the chosen de-promoted arm — visible+pre-wrap+break-word), same style as
+  the existing ?w=/?h= params, so base and wrap are measurable back-to-back
+  across page loads in one pinned session. run(z)'s record gains
+  arms[X].preMetrics (scrollWidth/clientWidth/offsetHeight per pre block) and
+  a page-level scalerN. scalerN is NOT self-measured — in-page JS has no API
+  to observe compositing — it is null until an external driver (WebKit
+  Inspector / CDP LayerTree, on a real engine) calls
+  window.__probe.setScalerN(n) with the composited-layer count it observed
+  for .scaler; that is the honest instrument for the R1 promotion invariant.
+  Each injection is consumed by the very next run() and then reverts to null,
+  so a sweep's synchronous run() loop can never restamp one setScalerN() call
+  onto every step's record — a per-step sweep needs setScalerN() called again
+  before each step it should cover.
+-->
+<style>
+  :root { --K: 3; }
+  html, body { margin: 0; background: #14181b; color: #ced3d7;
+               font: 12px/1.5 "SF Mono", ui-monospace, Menlo, monospace; }
+  #rail { padding: 10px 14px; border-bottom: 1px solid #2a3238; }
+  #rail input { width: 5em; }
+  #out { padding: 10px 14px; white-space: pre-wrap; font-size: 11px; }
+  #arms { display: flex; gap: 24px; padding: 14px; align-items: flex-start; }
+  .arm > .tag { color: #7d8b95; margin-bottom: 6px; }
+
+  /* .doc-scroll analog: real-px box (card{w,h} x zoom), no transform, no zoom. */
+  .scroll { position: relative; overflow-y: auto; overflow-x: hidden;
+            background: #1b2126; border: 1px solid #2a3238; }
+  /* .doc-prose-sizer analog: NON-transformed clip box. */
+  .sizer { overflow: hidden; }
+  /* .doc-prose-scaler analog: bare, carries the sole transform. */
+  .scaler { transform-origin: 0 0; }
+
+  /* .doc-prose base metrics, verbatim from card.css with K factored out. */
+  .prose { box-sizing: border-box;
+           color: #ced3d7;
+           font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+           line-height: 1.7; }
+  .prose h1, .prose h2, .prose h3 { color: #eef2f4; line-height: 1.3; }
+  .prose a { color: #4fd1c5; text-decoration: none; border-bottom: 1px dashed #4fd1c5; }
+  .prose ul, .prose ol { padding-inline-start: 2.857em; }
+  .prose blockquote { margin-inline: 2.857em; }
+  .prose code { background: #232a30; padding: 0.08em 0.4em; border-radius: 0.32em;
+                font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 0.8929em; }
+  /* overflow/white-space/word-break are set per-run by applyPreSpelling(), not
+     here — that is the axis ?pre= switches. */
+  .prose pre { background: #0f1416; padding: 0.8571em 1em; border-radius: 0.5714em; }
+  .prose pre code { background: none; padding: 0; }
+  /* The zoom-is-really-implemented guard: a hard 300px box inside the prose. */
+  .prose .guard { width: 300px; border: 1px solid #4fd1c5; padding: 4px; box-sizing: border-box; }
+</style>
+
+<div id="rail">
+  z <input id="z" type="number" step="0.01" value="1">
+  <button id="go">apply + measure</button>
+  <button id="sweep">sweep</button>
+  <span id="meta"></span>
+</div>
+<div id="arms"></div>
+<div id="out">idle</div>
+
+<script>
+(() => {
+  const K = 3;
+  const params = new URLSearchParams(location.search);
+  const CARD_W = Number(params.get("w") || 392);   // default doc card frame w
+  const CARD_H = Number(params.get("h") || 310);   // default doc card frame h
+  const BASE_FS = 14, MAXW = 720, PAD_V = 18, PAD_H = 22;
+  const ARMS = ["A", "B", "C"];
+
+  // ?pre= switches ALL arms' <pre> spelling together (spec 2608.0002 S1-S10):
+  // base = shipped overflow:auto; wrapx = visible+pre-wrap (no word-break);
+  // wrap = the chosen de-promoted arm (visible+pre-wrap+break-word). Default
+  // wrap so a plain load of this file measures what card.css ships today.
+  const PRE_SPELLINGS = {
+    base:  { overflow: "auto",    whiteSpace: "pre",      wordBreak: "normal" },
+    wrapx: { overflow: "visible", whiteSpace: "pre-wrap", wordBreak: "normal" },
+    wrap:  { overflow: "visible", whiteSpace: "pre-wrap", wordBreak: "break-word" },
+  };
+  const PRE_SPELLING = PRE_SPELLINGS[params.get("pre")] ? params.get("pre") : "wrap";
+
+  const WORDS = ["alpha","bravo","charlie","delta","echo","foxtrot","golf","hotel",
+    "india","juliet","kilo","lima","mike","november","oscar","papa","quebec","romeo",
+    "sierra","tango","uniform","victor","whiskey","xray","yankee","zulu"];
+  const ruler = (n, off) => Array.from({length: n}, (_, i) =>
+    `${i + 1 + off}${WORDS[(i + off) % WORDS.length]}`).join(" ");
+
+  // pre1: a genuinely overflowing code line — real word-break opportunities
+  // (spaces), so even wrapx (pre-wrap alone, no word-break) reaches every
+  // character; it exercises the "re-wraps once" fingerprint change (S6/S7).
+  const overflowLine = () => Array.from({length: 40}, (_, i) =>
+    `--flag-${i}=value${i}`).join(" ");
+  // pre2: a 200-char token with NO break opportunities at all (alnum only) —
+  // this is what makes word-break load-bearing rather than cosmetic (S8):
+  // pre-wrap alone still clips it at the card edge, unreachable.
+  const TOKEN_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const unbreakableToken = (n) => Array.from({length: n}, (_, i) =>
+    TOKEN_CHARS[(i * 7 + 3) % TOKEN_CHARS.length]).join("");
+
+  // Realistic markdown-rendered prose: heading, paragraphs, a list (2.857em
+  // indent), inline code (0.8929em), a pre block, a link. The em-relative rules
+  // are where a non-linear used-value resolution would show up first.
+  const CONTENT = `
+<h2 data-b="h2">Deployment notes for the observatory</h2>
+<p data-b="p1">${ruler(34, 0)}</p>
+<p data-b="p2">The daemon owns every PTY and writes <code data-b-skip>state.json</code> atomically; the
+cockpit renders what it is told and never parses agent output. See
+<a href="#" data-b-skip>the protocol spec</a> for the framing rules and the eight conformance vectors.</p>
+<ul>
+  <li data-b="li1">${ruler(14, 40)}</li>
+  <li data-b="li2">Length-prefixed MessagePack frames, four-byte big-endian length, sixteen mebibyte ceiling.</li>
+</ul>
+<pre data-b="pre0"><code>tarmac open ./docs/architecture.md</code></pre>
+<pre data-b="pre1"><code>${overflowLine()}</code></pre>
+<pre data-b="pre2"><code>${unbreakableToken(200)}</code></pre>
+<p data-b="p3">${ruler(28, 60)}</p>
+<div class="guard" data-guard>fixed 300px</div>
+<p data-b="p4">Wrap points are recorded by character offset rather than by line count, because a
+count can hold steady while a break moves. ${ruler(20, 90)}</p>
+<p data-b="p5">${ruler(30, 112)}</p>
+`;
+
+  const armsEl = document.getElementById("arms");
+  const nodes = {};
+  for (const a of ARMS) {
+    const wrap = document.createElement("div");
+    wrap.className = "arm";
+    wrap.innerHTML =
+      `<div class="tag">arm ${a}</div>` +
+      `<div class="scroll" id="s${a}"><div class="sizer" id="z${a}">` +
+      `<div class="scaler" id="c${a}"><div class="prose" id="p${a}"></div></div></div></div>`;
+    armsEl.appendChild(wrap);
+    nodes[a] = {
+      scroll: wrap.querySelector(`#s${a}`),
+      sizer: wrap.querySelector(`#z${a}`),
+      scaler: wrap.querySelector(`#c${a}`),
+      prose: wrap.querySelector(`#p${a}`),
+    };
+    nodes[a].prose.innerHTML = CONTENT;
+  }
+
+  // Arm-specific static metrics. Only the zoom value and the outer scale change
+  // per sweep step; everything below is set once.
+  function applyArmStatics() {
+    // A: base metrics, no outer scale. Layout width stays CARD_W CSS px forever;
+    //    the changing element zoom is what is supposed to do the magnifying.
+    Object.assign(nodes.A.prose.style, {
+      width: CARD_W + "px", maxWidth: MAXW + "px",
+      padding: `${PAD_V}px ${PAD_H}px`, fontSize: BASE_FS + "px",
+    });
+    // B: base metrics + CONSTANT zoom K; the outer scaler does zoom/K.
+    Object.assign(nodes.B.prose.style, {
+      width: CARD_W + "px", maxWidth: MAXW + "px",
+      padding: `${PAD_V}px ${PAD_H}px`, fontSize: BASE_FS + "px",
+      zoom: String(K),
+    });
+    // C: the shipped model — every metric multiplied by K by hand, frozen.
+    Object.assign(nodes.C.prose.style, {
+      width: CARD_W * K + "px", maxWidth: MAXW * K + "px",
+      padding: `${PAD_V * K}px ${PAD_H * K}px`, fontSize: BASE_FS * K + "px",
+    });
+  }
+  applyArmStatics();
+
+  // The ?pre= axis (spec 2608.0002): applies the same overflow/white-space/
+  // word-break spelling to every <pre> in every arm, since the arms above test
+  // the ZOOM mechanism, an orthogonal axis to <pre> promotion.
+  function applyPreSpelling() {
+    const spelling = PRE_SPELLINGS[PRE_SPELLING];
+    for (const a of ARMS) {
+      for (const pre of nodes[a].prose.querySelectorAll("pre[data-b]")) {
+        Object.assign(pre.style, spelling);
+      }
+    }
+  }
+  applyPreSpelling();
+
+  // Line-start character offsets, per block. Adapted from wrap-probe.html: walk
+  // the block's text nodes and record every offset whose first client rect
+  // starts a new top. Threshold scales with the arm's visual line height so it
+  // stays valid at z=0.5 (visual leading ~11.9px) as well as z=3.
+  function blockSignature(block, tol) {
+    const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+    const range = document.createRange();
+    const tops = [], offsets = [];
+    let node, seen = 0;
+    while ((node = walker.nextNode())) {
+      for (let i = 0; i < node.length; i++) {
+        range.setStart(node, i);
+        range.setEnd(node, i + 1);
+        const r = range.getClientRects()[0];
+        if (!r) { seen++; continue; }
+        const top = Math.round(r.top * 100) / 100;
+        if (tops.length === 0 || Math.abs(top - tops[tops.length - 1]) > tol) {
+          tops.push(top);
+          offsets.push(seen);
+        }
+        seen++;
+      }
+    }
+    return offsets.join(",");
+  }
+
+  function armSignature(a, z) {
+    // Visual line box: A scales by z, B/C lay out at K then scale by z/K —
+    // both land on 14*1.7*z. Half of that is a safe new-line threshold.
+    const tol = Math.max(1, BASE_FS * 1.7 * z * 0.4);
+    const out = {};
+    for (const el of nodes[a].prose.querySelectorAll("[data-b]")) {
+      out[el.getAttribute("data-b")] = blockSignature(el, tol);
+    }
+    return out;
+  }
+
+  const rect = (el) => {
+    const r = el.getBoundingClientRect();
+    return { w: +r.width.toFixed(2), h: +r.height.toFixed(2) };
+  };
+
+  // Per-code-block reachability geometry (spec 2608.0002 S6-S8): scrollWidth
+  // vs clientWidth is the overflow/reachability tell, offsetHeight is the
+  // re-wrap tell — pre1/pre2 grow taller once when wrap is applied; pre0
+  // never overflows and is the null control.
+  function preMetrics(a) {
+    const out = {};
+    for (const pre of nodes[a].prose.querySelectorAll("pre[data-b]")) {
+      out[pre.getAttribute("data-b")] = {
+        scrollWidth: pre.scrollWidth,
+        clientWidth: pre.clientWidth,
+        offsetHeight: pre.offsetHeight,
+      };
+    }
+    return out;
+  }
+
+  // Marker nearest the scroll container's top edge — the scroll-restore probe.
+  function topBlock(a) {
+    const c = nodes[a].scroll.getBoundingClientRect();
+    let best = null, bestD = Infinity;
+    for (const el of nodes[a].prose.querySelectorAll("[data-b]")) {
+      const r = el.getBoundingClientRect();
+      const d = Math.abs(r.top - c.top);
+      if (r.bottom > c.top && d < bestD) { bestD = d; best = el.getAttribute("data-b"); }
+    }
+    return best;
+  }
+
+  const natH = {};   // per-arm natural prose height at its own layout scale
+
+  function apply(z) {
+    for (const a of ARMS) {
+      const n = nodes[a];
+      // The real-px card box: card{w,h} x zoom, exactly as .doc-layer sizes it.
+      n.scroll.style.width = Math.round(CARD_W * z) + "px";
+      n.scroll.style.height = Math.round(CARD_H * z) + "px";
+      if (a === "A") {
+        n.prose.style.zoom = String(z);        // <-- issue #76's proposal
+        n.scaler.style.transform = "none";
+      } else {
+        n.scaler.style.transform = `scale(${z / K})`;
+      }
+      n.sizer.style.height = "";               // natural first; measured below
+    }
+  }
+
+  function run(z, opts) {
+    opts = opts || {};
+    apply(z);
+    document.body.offsetHeight;                // force layout
+    // scalerN is consumed here: a fresh injection (setScalerN, since the
+    // previous run()) reads once and is cleared, so a sweep's synchronous
+    // loop can attribute a single external reading to at most ONE record,
+    // never restamp it onto every step (S10a — one injection is one reading).
+    const p = window.__probe;
+    const scalerN = p && p._scalerNFresh ? p.scalerN : null;
+    if (p) p._scalerNFresh = false;
+    const rec = {
+      z, cardW: CARD_W, cardH: CARD_H, preSpelling: PRE_SPELLING,
+      scalerN,
+      arms: {},
+    };
+    for (const a of ARMS) {
+      const n = nodes[a];
+      natH[a] = n.prose.offsetHeight;
+      const scrollAuto = n.scroll.scrollHeight;
+      // The app's JS sizer override (relayout() in DocCard.tsx), corrected per
+      // arm for the coordinate space offsetHeight actually reports in. MEASURED:
+      // offsetHeight on a zoomed element is in the element's OWN pre-zoom space,
+      // so arms A and B (which carry zoom) need natH*z, while arm C (no zoom, K
+      // baked into the metrics) needs the shipped natH*z/K. Getting this wrong is
+      // silent: the sizer is simply the wrong height and the scrollbar lies.
+      const want = a === "C" ? Math.ceil(natH[a] * z / K) : Math.ceil(natH[a] * z);
+      n.sizer.style.height = want + "px";
+      document.body.offsetHeight;
+      rec.arms[a] = {
+        sig: armSignature(a, z),
+        preMetrics: preMetrics(a),
+        computedZoom: getComputedStyle(n.prose).zoom,
+        layoutW: n.prose.offsetWidth,          // CSS px in the prose's own space
+        layoutH: n.prose.offsetHeight,
+        proseRect: rect(n.prose),              // screen px
+        guardRect: rect(n.prose.querySelector("[data-guard]")),
+        scrollBox: rect(n.scroll),
+        scrollHeightAuto: scrollAuto,          // before the JS sizer override
+        scrollHeightFixed: n.scroll.scrollHeight,
+        sizerH: n.sizer.offsetHeight,          // read back, not `want`'s input — S9(b)/(c)
+        clientH: n.scroll.clientHeight,
+        // Laid-out box in the prose's OWN coordinate space -- the area WebKit
+        // must lay out and (before any transform) rasterize.
+        layoutArea: n.prose.offsetWidth * n.prose.offsetHeight,
+        screenArea: +(rect(n.prose).w * rect(n.prose).h).toFixed(0),
+      };
+    }
+    if (opts.scroll) {
+      const frac = opts.scroll;
+      for (const a of ARMS) {
+        const n = nodes[a];
+        n.scroll.scrollTop = frac * n.scroll.scrollHeight;
+        rec.arms[a].scrollTop = +n.scroll.scrollTop.toFixed(2);
+        rec.arms[a].topBlock = topBlock(a);
+      }
+    }
+    return rec;
+  }
+
+  window.__probe = {
+    run,
+    K, CARD_W, CARD_H, preSpelling: PRE_SPELLING,
+    scalerN: null,
+    _scalerNFresh: false,
+    // Not self-measured: in-page JS cannot ask "is this element composited?".
+    // An external driver (WebKit Inspector / CDP LayerTree, on a real engine)
+    // calls this with the layer count it observed for .scaler (R1, S10).
+    // Marked fresh for the NEXT run() only — see run()'s consume-on-read.
+    setScalerN(n) { window.__probe.scalerN = n; window.__probe._scalerNFresh = true; },
+    reset: () => { for (const a of ARMS) nodes[a].scroll.scrollTop = 0; },
+    fontProbe: () => {
+      const c = document.createElement("canvas").getContext("2d");
+      c.font = `14px -apple-system, "SF Pro Text", system-ui, sans-serif`;
+      return +c.measureText("alpha bravo charlie delta").width.toFixed(3);
+    },
+  };
+
+  const out = document.getElementById("out");
+  document.getElementById("meta").textContent =
+    ` cardW=${CARD_W} cardH=${CARD_H} K=${K} dpr=${devicePixelRatio} pre=${PRE_SPELLING}`;
+  document.getElementById("go").onclick = () => {
+    out.textContent = JSON.stringify(run(Number(document.getElementById("z").value)), null, 1);
+  };
+  document.getElementById("sweep").onclick = () => {
+    const zs = [0.5, 0.55, 0.75, 1, 1.37, 1.5, 2, 2.5, 3];
+    out.textContent = zs.map((z) => {
+      const r = run(z);
+      return `z=${z}\n` + ARMS.map((a) =>
+        `  ${a} zoom=${r.arms[a].computedZoom} lw=${r.arms[a].layoutW} ` +
+        `guard=${r.arms[a].guardRect.w} p1=[${r.arms[a].sig.p1}] ` +
+        `pre1=[sw=${r.arms[a].preMetrics.pre1.scrollWidth},cw=${r.arms[a].preMetrics.pre1.clientWidth}] ` +
+        `pre2=[sw=${r.arms[a].preMetrics.pre2.scrollWidth},cw=${r.arms[a].preMetrics.pre2.clientWidth}]`).join("\n");
+    }).join("\n");
+  };
+  // Apply once so a standalone open shows something sane.
+  run(1);
+})();
+</script>
