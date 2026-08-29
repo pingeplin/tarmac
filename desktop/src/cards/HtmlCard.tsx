@@ -26,7 +26,7 @@ import {
   pushCardConsole,
   type CardConsoleEntry,
 } from "../kit/cardConsole";
-import { declaredZoomMode, effectiveZoomMode, zoomCapable } from "../kit/zoomMode";
+import { declaredZoomMode } from "../kit/zoomMode";
 import { RASTER_SCALE_SETTLE_MS } from "../kit/rasterScale";
 import { CARD_HEADER_H_PX } from "../kit/termZoom";
 import { basename } from "../kit/docStore";
@@ -109,17 +109,20 @@ export function HtmlCard(props: HtmlCardProps) {
         if (readyHandledRef.current) return;
         readyHandledRef.current = true;
         const declared = declaredZoomMode(msg.meta);
-        const capable = zoomCapable(msg.probe);
-        const effective = effectiveZoomMode(declared, capable);
+        // declared and effective can no longer disagree — the capability probe
+        // that split them died with the macOS 26 floor (#94). Both halves stay
+        // because the line's job is to say what mode is in force for a document
+        // whose meta may be a typo, and `declared` is the resolved value, not
+        // the raw string.
         if (msg.meta !== null) {
           setEntries((buf) =>
             pushCardConsole(buf, {
               level: "info",
-              args: [`zoom-mode declared=${declared} capable=${capable} effective=${effective}`],
+              args: [`zoom-mode declared=${declared} effective=${declared}`],
             }),
           );
         }
-        if (effective === "magnify") {
+        if (declared === "magnify") {
           // Frozen K, not the live board zoom: this is the ONLY root zoom the
           // document ever sees, so its layout is computed once and the outer
           // scale(zoom/K) carries every subsequent board zoom. Re-posting it per
