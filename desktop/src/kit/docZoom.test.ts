@@ -254,3 +254,73 @@ describe("S6 — box origin projects via worldToView (non-vacuous: derived from 
     expect(screenY).toBeCloseTo(proj.y);
   });
 });
+
+describe("2608.0002 S1 — .doc-prose pre de-promotes (visible + wrap + break-word)", () => {
+  // Same read-off-disk approach as docZoom S12: the rule text is the fact
+  // under test, not a hand-copied expectation of it.
+  const themeCss = readFileSync(
+    fileURLToPath(new URL("../theme/card.css", import.meta.url)),
+    "utf8",
+  );
+
+  /** Extract the body of a top-level CSS rule by exact selector. Fails if the
+   * selector is declared zero or MORE THAN ONCE — a later duplicate (equal
+   * specificity, last rule wins) or an earlier decoy would otherwise let
+   * indexOf's first match hide a reverted real rule. */
+  function ruleBody(selector: string): string {
+    const needle = selector + " {";
+    const occurrences = themeCss.split(needle).length - 1;
+    expect(
+      occurrences,
+      `selector ${selector} must be declared exactly once in theme/card.css (found ${occurrences})`,
+    ).toBe(1);
+    const i = themeCss.indexOf(needle);
+    const open = themeCss.indexOf("{", i);
+    const close = themeCss.indexOf("}", open);
+    return themeCss.slice(open + 1, close);
+  }
+
+  it("declares overflow: visible", () => {
+    expect(ruleBody(".doc-prose pre")).toMatch(/overflow:\s*visible/);
+  });
+
+  it("declares white-space: pre-wrap", () => {
+    expect(ruleBody(".doc-prose pre")).toMatch(/white-space:\s*pre-wrap/);
+  });
+
+  it("declares word-break: break-word", () => {
+    expect(ruleBody(".doc-prose pre")).toMatch(/word-break:\s*break-word/);
+  });
+});
+
+describe("2608.0002 S2 — overflow: auto is gone from .doc-prose pre, .doc-scroll keeps its own", () => {
+  const themeCss = readFileSync(
+    fileURLToPath(new URL("../theme/card.css", import.meta.url)),
+    "utf8",
+  );
+
+  /** Extract the body of a top-level CSS rule by exact selector. Fails if the
+   * selector is declared zero or MORE THAN ONCE — a later duplicate (equal
+   * specificity, last rule wins) or an earlier decoy would otherwise let
+   * indexOf's first match hide a reverted real rule. */
+  function ruleBody(selector: string): string {
+    const needle = selector + " {";
+    const occurrences = themeCss.split(needle).length - 1;
+    expect(
+      occurrences,
+      `selector ${selector} must be declared exactly once in theme/card.css (found ${occurrences})`,
+    ).toBe(1);
+    const i = themeCss.indexOf(needle);
+    const open = themeCss.indexOf("{", i);
+    const close = themeCss.indexOf("}", open);
+    return themeCss.slice(open + 1, close);
+  }
+
+  it(".doc-prose pre rule body no longer declares overflow: auto", () => {
+    expect(ruleBody(".doc-prose pre")).not.toMatch(/overflow:\s*auto/);
+  });
+
+  it("guard: .doc-scroll still declares overflow-y: auto (the edit was scoped, not a whole-file change)", () => {
+    expect(ruleBody(".doc-scroll")).toMatch(/overflow-y:\s*auto/);
+  });
+});
