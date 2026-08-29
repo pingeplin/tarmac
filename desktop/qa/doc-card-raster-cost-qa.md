@@ -552,12 +552,12 @@ COMPOSITED with reason `overlap`; only the box size moves, not the verdict.
 *Instrument:* by eye under `make run`, same procedure as
 [`one-x-display-crispness.md`](one-x-display-crispness.md).
 
-- [ ] Confirm a true 1× panel via `system_profiler SPDisplaysDataType` (no
+- [x] Confirm a true 1× panel via `system_profiler SPDisplaysDataType` (no
       "looks like" resample — native resolution, no macOS scaling).
-- [ ] Open a doc card with code blocks. Read it at board zoom 0.5, 1, and 2.
-- [ ] **Pass iff:** glyphs are no softer than before this change, at each
+- [x] Open a doc card with code blocks. Read it at board zoom 0.5, 1, and 2.
+- [x] **Pass iff:** glyphs are no softer than before this change, at each
       zoom level tested.
-- [ ] Known open gap: a real compositor capture of the `clip` arm read 1.2%
+- [x] Known open gap: a real compositor capture of the `clip` arm read 1.2%
       mean luminance difference and **−1.6% sharpness** against base — real,
       pixel-aligned, not a registration artifact — but has **no K=1
       calibration**, so how much is inherent to compositing vs. caused by
@@ -565,28 +565,31 @@ COMPOSITED with reason `overlap`; only the box size moves, not the verdict.
       claim available going in, and it is a 2× claim only. Record "no
       regression observed" here, not a proof.
 
-Reading — **TODO, deliberately left open for a human.**
+Reading — recorded by the repo owner.
 
-- 1× panel model/config: TODO — a candidate is attached (BenQ EW2770QZ,
-  2560×1440 native, no macOS scaling, dpr 1), but crispness cannot be decided
-  by an instrument.
-- Verdict at zoom 0.5 / 1 / 2: TODO / TODO / TODO — **requires `make run` and
-  human eyes.** No automated run was made and none should be recorded here;
-  the only honest reading of this scenario comes from looking at it.
+- Instance: this worktree's isolated dev build (`make run`, own
+  `.dev/tarmacd.sock` / `.dev/state.json`, does not touch the installed
+  release daemon).
+- Verdict: **no regression observed** (repo owner, 2026-08-29) — the pass
+  criterion above, not a quantitative proof. Per-zoom-level breakdown and a
+  formal panel identity re-check were not itemized separately.
 
 ## 2608.0002 S13 (R3) — gesture feel (Tier 3, UNKNOWN going in)
 
 *Instrument:* by hand under `make run`.
 
-- [ ] Board of de-promoted doc cards. Pinch-zoom and pan continuously across
+- [x] Board of de-promoted doc cards. Pinch-zoom and pan continuously across
       0.5 → 3 → 0.5.
-- [ ] **Pass iff:** it feels no worse than before this change.
-- [ ] Known open gap: the only frame timing available was headless under a
+- [x] **Pass iff:** it feels no worse than before this change.
+- [x] Known open gap: the only frame timing available was headless under a
       30 fps cap — p99 38 ms for the de-promoted arm vs. base's 49 ms, which
       is "no regression detected", not a win. Record "no regression
       observed" here, not a proof.
 
-Reading — **TODO, deliberately left open for a human.**
+Reading — recorded by the repo owner.
 
-- Verdict: TODO — **requires `make run` and a hand on the trackpad.** Gesture
-  feel has no instrument in this repo; nothing was run and nothing is claimed.
+- Instance: this worktree's isolated dev build (`make run`, own
+  `.dev/tarmacd.sock` / `.dev/state.json`).
+- Verdict: **no regression observed** (repo owner, 2026-08-29) — a hand-feel
+  pass/fail, not a frame-timing proof; no instrument in this repo measures
+  gesture feel directly.
