@@ -48,6 +48,7 @@ interface BoardProps {
   onTermRegister?: (termId: string, handle: { focus(): void }) => void;
   onTermUnregister?: (termId: string) => void;
   onDocClose: (path: string) => void;
+  onDocRefresh: (path: string) => void;
   docMeta: Map<string, DocMeta>;
   /** The active card (shows the focus ring + resize handles), or null. */
   selectedId: string | null;
@@ -207,6 +208,7 @@ export function Board(props: BoardProps) {
             onResize: (frame: WorldFrame) => props.onCardResize(id, frame),
             onResizeEnd: () => props.onCardResizeEnd(id),
             onGrab: () => props.onCardGrab(id),
+            onRefresh: () => props.onDocRefresh(c.path),
             onClose: () => props.onDocClose(c.path),
           };
           return (

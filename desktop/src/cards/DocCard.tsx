@@ -25,6 +25,7 @@ interface DocCardProps {
   markdown: string;
   ownerName?: string | null;
   lastChangedMs?: number;
+  onRefresh?: () => void;
   selected?: boolean;
   getZoom: () => number;
   rootRef?: (el: HTMLDivElement | null) => void;
@@ -140,6 +141,7 @@ export function DocCard(props: DocCardProps) {
           ownerName={props.ownerName}
           fresh={model.fresh}
           lastChangedMs={props.lastChangedMs}
+          onRefresh={props.onRefresh}
           onClose={props.onClose}
         />
       }

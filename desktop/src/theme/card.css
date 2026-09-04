@@ -105,6 +105,7 @@
   color: var(--amber);
 }
 .card-header .close,
+.card-header .refresh,
 .card-header .console-badge {
   cursor: pointer;
   color: var(--faint);
@@ -112,9 +113,13 @@
   border-radius: 4px;
 }
 .card-header .close:hover,
+.card-header .refresh:hover,
 .card-header .console-badge:hover {
   color: var(--text);
   background: var(--bg3);
+}
+.card-header .refresh {
+  flex: 0 0 auto;
 }
 .owner-chip {
   flex: 0 0 auto;

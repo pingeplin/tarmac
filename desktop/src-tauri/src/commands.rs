@@ -105,6 +105,12 @@ pub fn doc_close(state: State<Bridge>, path: String) {
     state.send(Msg::DocClose { path });
 }
 
+/// Re-stat a doc now (issue #89); the daemon answers with the usual `file_event`.
+#[tauri::command]
+pub fn doc_refresh(state: State<Bridge>, path: String) {
+    state.send(Msg::DocRefresh { path });
+}
+
 /// Read a doc's markdown content for rendering. The daemon sends only the path
 /// (+ mtime via file_event); the UI reads the file itself, exactly as the Swift
 /// app did (readMarkdown). Returns the file text, or an error string.

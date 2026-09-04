@@ -65,6 +65,7 @@ import { buildTiles, parseTiles, type LayoutTile } from "./kit/layoutTiles";
 import type { Rect, Size } from "./kit/geom";
 import {
   docClose,
+  docRefresh,
   frontendReady,
   onDaemonMsg,
   onDaemonStatus,
@@ -565,6 +566,13 @@ export default function App() {
     // active-board schedule would miss — e.g. `tarmac open` from a background term).
     schedulePersist(boardId);
     void fetchDoc(path);
+  };
+
+  /** The header ↻ (issue #89). Updates nothing locally on purpose — the daemon's
+   *  `file_event` is the single receive path, and that is what keeps an unchanged
+   *  mtime from reloading an HTML card (issue #99). */
+  const refreshDocFromDisk = (path: string) => {
+    void docRefresh(path);
   };
 
   const removeDoc = (path: string) => {
@@ -1700,6 +1708,7 @@ export default function App() {
               onTermRegister={registerTerm}
               onTermUnregister={unregisterTerm}
               onDocClose={removeDoc}
+              onDocRefresh={refreshDocFromDisk}
               selectedId={hidden ? null : selectedId}
               borrowedCardId={hidden ? null : borrowedCardId}
               onCardBorrow={setBorrowedCardId}
