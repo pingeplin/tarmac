@@ -34,30 +34,30 @@ describe("parseCardMessage (2607.0004 S4)", () => {
 
 describe("parseCardMessage ready payload (2607.0006 S4)", () => {
   it("accepts a ready payload with string meta (2607.0006 S4)", () => {
-    const m = parseCardMessage({
-      tarmac: "ready",
+    expect(parseCardMessage({ tarmac: "ready", meta: "magnify" })).toEqual({
+      kind: "ready",
       meta: "magnify",
-      probe: { base: 400, zoomed: 200 },
     });
-    expect(m).toEqual({ kind: "ready", meta: "magnify", probe: { base: 400, zoomed: 200 } });
   });
 
   it("accepts a ready payload with null meta (2607.0006 S4)", () => {
-    const m = parseCardMessage({
-      tarmac: "ready",
+    expect(parseCardMessage({ tarmac: "ready", meta: null })).toEqual({
+      kind: "ready",
       meta: null,
-      probe: { base: 400, zoomed: 400 },
     });
-    expect(m).toEqual({ kind: "ready", meta: null, probe: { base: 400, zoomed: 400 } });
   });
 
-  it("passes a non-finite probe value through — finiteness is zoomCapable's verdict, not parseCardMessage's (2607.0006 S4)", () => {
-    const m = parseCardMessage({
-      tarmac: "ready",
-      meta: "magnify",
-      probe: { base: NaN, zoomed: 200 },
-    });
-    expect(m).toEqual({ kind: "ready", meta: "magnify", probe: { base: NaN, zoomed: 200 } });
+  // The probe field was removed with the capability probe (#94). It gets no
+  // special treatment on the way out: a card that forges one is treated exactly
+  // as a card forging any other unknown key — ignored, not rejected.
+  it("ignores a stray probe key exactly as it ignores any other unknown key (#94)", () => {
+    const bare = { kind: "ready", meta: "magnify" };
+    expect(
+      parseCardMessage({ tarmac: "ready", meta: "magnify", probe: { base: 400, zoomed: 200 } }),
+    ).toEqual(bare);
+    expect(parseCardMessage({ tarmac: "ready", meta: "magnify", probe: null })).toEqual(bare);
+    expect(parseCardMessage({ tarmac: "ready", meta: "magnify", probe: "nonsense" })).toEqual(bare);
+    expect(parseCardMessage({ tarmac: "ready", meta: "magnify", somethingElse: 1 })).toEqual(bare);
   });
 });
 
@@ -80,23 +80,9 @@ describe("parseCardMessage rejects junk (2607.0004 S17)", () => {
 });
 
 describe("parseCardMessage rejects malformed ready payloads (2607.0006 S14)", () => {
-  it("rejects a ready payload missing probe", () => {
-    expect(parseCardMessage({ tarmac: "ready", meta: "magnify" })).toBeNull();
-  });
-
-  it("rejects a ready payload with non-numeric probe fields", () => {
-    expect(
-      parseCardMessage({ tarmac: "ready", meta: "magnify", probe: { base: "400", zoomed: 200 } }),
-    ).toBeNull();
-    expect(
-      parseCardMessage({ tarmac: "ready", meta: "magnify", probe: { base: 400, zoomed: null } }),
-    ).toBeNull();
-  });
-
   it("rejects a ready payload with non-string, non-null meta", () => {
-    expect(
-      parseCardMessage({ tarmac: "ready", meta: 1, probe: { base: 400, zoomed: 200 } }),
-    ).toBeNull();
+    expect(parseCardMessage({ tarmac: "ready", meta: 1 })).toBeNull();
+    expect(parseCardMessage({ tarmac: "ready", meta: {} })).toBeNull();
   });
 
   it("rejects a bare ready payload", () => {
@@ -104,13 +90,7 @@ describe("parseCardMessage rejects malformed ready payloads (2607.0006 S14)", ()
   });
 
   it("rejects a ready payload with the meta key absent — undefined is neither string nor null (2607.0006 S14, guards 2607.0006 S8)", () => {
-    expect(
-      parseCardMessage({ tarmac: "ready", probe: { base: 400, zoomed: 200 } }),
-    ).toBeNull();
-  });
-
-  it("rejects a ready payload with null probe (2607.0006 S14)", () => {
-    expect(parseCardMessage({ tarmac: "ready", meta: "magnify", probe: null })).toBeNull();
+    expect(parseCardMessage({ tarmac: "ready", probe: { base: 400, zoomed: 200 } })).toBeNull();
   });
 
   it("still parses previously valid console and escape payloads unchanged", () => {

@@ -83,16 +83,19 @@ D3/Canvas dashboard), not something a document falls into by saying nothing.
       `innerWidth` both increase proportionally.
 - [ ] Card console strip never logs any received `{tarmac:"zoom"}` message (no
       "received" entry when inspecting the strip).
-- [ ] No line beginning `zoom-mode` appears in the console strip (that prefix
-      is the stable anchor — do not grep for prose like "declared magnify").
+- [ ] Exactly one line beginning `zoom-mode` appears, reading `zoom-mode
+      declared=reveal effective=reveal` — the line is keyed on the meta being
+      *present*, so declaring reveal logs it. Only a meta-less (default-magnify)
+      document is silent, per S6. That prefix is the stable anchor — do not grep
+      for prose like "declared magnify".
 
 ## S9 — Retained zoom applied at ready (self-reload only, defensive branch)
 
 **This branch is defensive; neither a first open nor a `?v=` reload can
 reach it.** The host only posts `{tarmac:"zoom"}` while its effective mode is
-magnify, and `effectiveZoomRef`/`readyHandledRef` reset in the same commit
-that bumps `?v=` (keyed on `lastChangedMs`) — so `pendingZoom` stays null on
-both a first open and a file-rewrite reload. The one reachable trigger is a
+magnify, and `readyHandledRef`/`magnify` reset in the same commit that bumps
+`?v=` (keyed on `lastChangedMs`) — so `pendingZoom` stays null on both a first
+open and a file-rewrite reload. The one reachable trigger is a
 document that reloads **itself** (card JS calling `location.reload()`, or
 webview recovery): `src` and `lastChangedMs` never change, the host stays in
 magnify, and a settle during that load window retains.
@@ -131,75 +134,65 @@ magnify, and a settle during that load window retains.
 - [ ] **Expected, not a bug:** the reloaded document keeps its old mode and
       the console strip gains no second `zoom-mode …` line. The host's
       per-load reset keys on `lastChangedMs`, which `location.reload()` does
-      not change, so the second genuine `ready` is discarded as a repeat and
-      capability is never re-probed — do not report the silence as a
-      failure.
+      not change, so the second genuine `ready` is discarded as a repeat — do
+      not report the silence as a failure.
 
 **Standing note:** do not delete the `pendingZoom` retention branch on the
 strength of a not-verified result. It guards a race the host cannot rule
 out, and it costs three lines.
 
+> **Read this before running S9 — the repro above cannot reach the branch any
+> more, and the reason is a suspected bug, not a spent scenario.** Under
+> frozen-K the host posts `{tarmac:"zoom"}` from exactly one place
+> (`HtmlCard.tsx:130`), inside the `ready` handler, and the shim sets its own
+> `ready` flag *before* it posts `ready` — so nothing can deliver a zoom while
+> the shim is still unready, and `pendingZoom` is never written. Worse, on the
+> self-reload this scenario asks for, `readyHandledRef` is still `true`
+> (`lastChangedMs` did not change), so the host ignores the reloaded document's
+> genuine `ready` and posts **no** root zoom at all — while `magnify` stays on
+> and the outer box stays `frame×K`, which renders the card at 1/K size. Found
+> by code reading during #94/#95, not by a run; filed as **#99**. **Record S9 as NOT VERIFIED and
+> report what the card actually looks like after `location.reload()`** rather
+> than working around it here.
+
 ## S10 — Magnified file reload preserves zoom
 
-- [ ] Open a magnify document and zoom it to 2× or higher; allow it to settle.
+- [ ] Open a magnify document and zoom it to 2× or higher, then end the
+      gesture. (A magnify card has no settle of its own — `HtmlCard`
+      disconnects the zoom watcher — so this is just "stop gesturing".)
 - [ ] Rewrite the file on disk (e.g. add a comment, `touch` it, or edit the
       content).
 - [ ] Card reloads within 100ms (check iframe src in devtools for a new `?v=<mtime>`).
       The document comes back magnified at the current board zoom (e.g. still
       2×), not reset to 1×.
 
-## S11 — Smooth mid-gesture, frozen wrap during gesture, re-layout at settle
+## S11 — Smooth mid-gesture, wrap frozen through the gesture *and* after it
+
+Frozen K removed the settle relayout this scenario was written around. The
+document lays out once at `ready` and never again; `scale(zoom/K)` carries the
+gesture and everything after it alike, so there is no moment of reflow and no
+"after settle" state that differs from mid-gesture. The old checklist asked for
+a relayout that can no longer happen.
 
 - [ ] Open a magnify document at 1×. Perform a pan/zoom gesture (pinch or
       scroll+modifier).
-- [ ] Mid-gesture (while holding): card content scales smoothly under the
-      gesture transform (temporary scale applied on top of magnify). Text wrap
-      points do NOT change mid-gesture (layout is frozen by the transform).
-- [ ] On gesture end (release): card settles within ~150ms (RASTER_SCALE_SETTLE_MS).
-      Content re-lays out exactly once at settle, and glyphs are crisp after
-      settle.
-- [ ] Repeat at different board zoom levels (0.5×, 1.5×, 2×). Gesture behavior
-      is identical to reveal-more cards.
+- [ ] Mid-gesture (while holding): content scales smoothly and text wrap points
+      do NOT change.
+- [ ] On release: the wrap points are the *same* ones, and nothing re-lays out —
+      no visible reflow and no line-count change at the moment of release. A
+      reflow here is the regression frozen K exists to prevent.
+- [ ] Glyphs are crisp mid-gesture as well as at rest. `scale(zoom/K)` is a
+      down-scale at every board zoom ≤ K, so the transient blur a reveal-more
+      card shows until its settle should be absent throughout.
+- [ ] Repeat at 0.5×, 1.5×, 2×. Behaviour is identical at every level, because
+      nothing about a magnify card's layout depends on the level — unlike a
+      reveal-more card, which resizes once per `RASTER_SCALE_SETTLE_MS` settle.
 
-## S12 — Fallback on zoom-incapable WebKit (split by method)
-
-This scenario has two halves—one method checkable on any machine (via a forged
-probe), one needs genuinely incapable WebKit. Verify what you can; record which
-half you tested and how.
-
-### Host branch (forged probe, checkable anywhere)
-
-- [ ] Edit `desktop/src-tauri/src/card_shim.js`: in `probeZoom()`, after
-      reading `zoomed`, set `zoomed = base` to forge a no-op verdict.
-      `probeZoom()` is called from `tryReady()`, which both the direct
-      `DOMContentLoaded` path and the deferred `waitForLayout()`/
-      `ResizeObserver` path reach — one edit covers both, no need to forge
-      twice. Run `make app` to rebuild.
-- [ ] Open a document with `<meta name="tarmac-zoom" content="magnify">` and
-      zoom it.
-- [ ] Card console strip reads (verbatim): `zoom-mode declared=magnify
-      capable=false effective=reveal`.
-- [ ] Card console strip never logs any received `{tarmac:"zoom"}` message (no
-      zoom messages reach the card).
-- [ ] Content behaves as reveal-more: re-wraps when zoomed, one resize per
-      settle.
-- [ ] Revert the shim change and rebuild.
-
-### Render half (genuine incapable WebKit only)
-
-On a machine where WebKit no-ops `zoom` or leaves the initial containing block
-at W units:
-- [ ] Open a magnify document without forging the probe. The shim's genuine
-      verdict will be `capable=false`.
-- [ ] Zoom the card. Content re-wraps (reveals more) exactly as 2607.0004
-      reveal-more today.
-- [ ] Content does NOT freeze at 1× inside a growing frame. Line count, the
-      ICB probe's `offsetWidth`, and `innerWidth` all change proportionally
-      with zoom.
-- [ ] One resize per gesture, same as reveal-more.
-
-**Note:** If you can only test the forged-probe half, record that; CI and field
-testing on older macOS will cover the genuine-incapable render half.
+<!-- S12 ("Fallback on zoom-incapable WebKit") removed in #94: the macOS 26
+     floor (packaging/Casks/tarmac.rb, `depends_on macos: :tahoe`) leaves no
+     zoom-incapable target, so the capability probe it tested no longer exists.
+     Numbers are not reassigned — they are spec 2607.0006's scenario IDs, which
+     tests and the spec both cite. -->
 
 ## S15 — Nested/forged zoom messages rejected (event.source guard)
 
@@ -229,54 +222,54 @@ at all. That check would report a false pass even with the
 `event.source === window.parent` guard deleted outright, because nothing was
 ever delivered to the guard to reject.
 
-## S17 — Forged second ready does not flip effective mode
+## S17 — Forged second ready does not flip the mode in force
 
-- [ ] Open `magnify-probe.html` as a card on capable WebKit and let it settle
-      normally. Console strip shows exactly one line: `zoom-mode
-      declared=magnify capable=true effective=magnify`.
+Frozen K changed this scenario's tell. The host posts zoom **once per document
+load**, in reply to `ready` — so "a new entry appears on the next settle" is no
+longer a signal of anything. What the guard (`readyHandledRef`) protects is
+that a second `ready` produces neither a second zoom message nor a second
+console line.
+
+- [ ] Open `magnify-probe.html` as a card and let it load. Console strip shows
+      exactly one line: `zoom-mode declared=magnify effective=magnify`, and the
+      probe's "received zoom messages" panel shows exactly one entry.
 - [ ] Borrow the card, open its console, select the card's iframe as the
       execution context (same caveat as S15 — the top-document context makes
-      this a silent no-op), and post a forged second `ready` claiming a
-      different mode/capability — `ready` travels shim→host, so
-      target `window.parent` (the host), same direction as the genuine one:
-      `window.parent.postMessage({tarmac:"ready", meta:"reveal",
-      probe:{base:400, zoomed:400}}, "*")`.
-- [ ] Immediately after posting the forgery, rendered zoom is unchanged (a
-      flipped internal mode wouldn't repaint anything by itself — this alone
-      is not proof the mode held).
-- [ ] **Zoom the board again** (a normal gesture) and let it settle. Check the
-      probe's "received zoom messages" panel (reused from S18): a new
-      `{tarmac:"zoom"}` entry is appended and wrap points stay frozen at the
-      new size, exactly as before the forgery. A binary tell for the same
-      failure: if the panel gains **no** new entry on this settle, the forged
-      `ready` flipped the effective mode even though nothing looked different
-      right after posting it.
-- [ ] Console strip still shows **exactly one** capability line for this
-      document load (the forged `ready` does not append a second line), and
-      that line still reads `effective=magnify` — the strip never disagrees
-      with the mode actually in force.
+      this a silent no-op), and post a forged second `ready`. `ready` travels
+      shim→host, so target `window.parent`, same direction as the genuine one.
+      **Forge `meta:"magnify"`, not `"reveal"`** — magnify is the branch that
+      posts a zoom message, so it is the one whose leak is visible:
+      `window.parent.postMessage({tarmac:"ready", meta:"magnify"}, "*")`.
+- [ ] The probe's received-messages panel gains **no** second `{tarmac:"zoom"}`
+      entry. This is the binary tell: with `readyHandledRef` deleted, the
+      forgery would post one immediately.
+- [ ] Console strip still shows **exactly one** `zoom-mode` line for this
+      document load — the strip never disagrees with the mode actually in force.
+- [ ] Repeat with `meta:"reveal"` forged. Same result: no second console line,
+      no change in rendered zoom, wrap points still frozen when you zoom the
+      board afterwards.
 
-## S19 — Magnify capability survives a non-active board
+## S19 — Magnify engages on a card whose board was not active at load
 
 **Why:** `App.tsx` renders every board at once and `Board.tsx` sets
-`display:none` on inactive ones, so a card whose document loads on a hidden
-board has no layout to measure at `DOMContentLoaded`; the shim defers
-`ready` until the card first has width, then probes and posts once.
+`display:none` on inactive ones, so a card can finish loading with no layout at
+all. Before #94 the shim deferred `ready` until the card first had width, so it
+could measure a capability probe; there is no probe now and `postReady` fires at
+`DOMContentLoaded` regardless of visibility. The mechanism changed, the
+user-visible risk did not — this checks the outcome, not the old path.
 
 ### Setup (a) — restored card, non-active at launch
 
 - [ ] On a board other than the one that will be active on next launch, open
-      a magnify document, zoom it, and let it settle.
+      a magnify document, zoom it, and end the gesture.
 - [ ] Fully quit the app and relaunch it (`make run`) so the card is
       restored while its board is not the active one.
 - [ ] Switch to that board.
-- [ ] Console strip's capability line reads (verbatim): `zoom-mode
-      declared=magnify capable=true effective=magnify` — the engine's real
-      capability, not `capable=false effective=reveal` from a zero-layout probe.
-- [ ] Magnify engages: zooming the board freezes wrap points as in S6.
-- [ ] Exactly one capability line appears for this document load, logged at
-      the moment the card first had layout (when its board was shown), not
-      at document load.
+- [ ] Console strip's line reads (verbatim): `zoom-mode declared=magnify
+      effective=magnify`, and exactly one such line appears for this load.
+- [ ] Magnify engages: zooming the board freezes wrap points as in S6, and the
+      card is not rendered at 1/K size (the visible tell that root zoom never
+      landed).
 
 ### Setup (b) — file rewritten while on another board
 
@@ -284,23 +277,25 @@ board has no layout to measure at `DOMContentLoaded`; the shim defers
       disk (edit its content; keep `<meta name="tarmac-zoom"
       content="magnify">`).
 - [ ] Switch to that card's board.
-- [ ] Same checks as (a): console strip's capability line reads (verbatim)
-      `zoom-mode declared=magnify capable=true effective=magnify`, magnify
-      engages, and exactly one capability line appears, logged when the card
-      first had layout rather than at document load.
+- [ ] Same checks as (a).
 
-## S18 — Positive wire check: one zoom message per settle, correct z and source
+## S18 — Positive wire check: exactly one zoom message per document load, z = K
 
 The positive counterpart to S8's negative — without it, a regression that
 silently stops the host from posting zoom messages at all would leave every
 other item in this checklist green.
 
-- [ ] Open `magnify-probe.html` as a card (meta present, magnify declared) on
-      zoom-capable WebKit.
-- [ ] Zoom the board to a new level and let it settle; repeat at 2–3 more
-      levels.
-- [ ] After each settle, the probe's "received zoom messages" panel gains
-      exactly **one** new `{tarmac:"zoom"}` entry (not zero, not more than
-      one per settle).
-- [ ] Each entry's `z` equals the board zoom level just settled to.
-- [ ] Each entry's source reads `window.parent` (not "other source").
+Frozen K changed the count this asserts. The host posts once, in reply to
+`ready`, and never again; "one per settle" was the settle-time shape.
+
+- [ ] Open `magnify-probe.html` as a card (meta present, magnify declared).
+- [ ] The probe's "received zoom messages" panel shows exactly **one**
+      `{tarmac:"zoom"}` entry, whose `z` equals `MAGNIFY_K` (3, in
+      `desktop/src/kit/cardZoom.ts`) — a constant, not the board zoom.
+- [ ] Its source reads `window.parent` (not "other source").
+- [ ] Zoom the board to 2–3 further levels, ending the gesture at each. The
+      panel gains **no** further entries. One per settle is the settle-time
+      shape returning — the thing that re-wrapped the text.
+- [ ] Rewrite the file on disk so the card reloads. The panel (reset with the
+      document) shows one entry again: one per *load*, not one per card
+      lifetime.

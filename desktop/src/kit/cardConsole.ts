@@ -15,7 +15,7 @@ export interface CardConsoleEntry {
 export type CardMessage =
   | { kind: "console"; level: CardConsoleLevel; args: unknown[] }
   | { kind: "escape" }
-  | { kind: "ready"; meta: string | null; probe: { base: number; zoomed: number } };
+  | { kind: "ready"; meta: string | null };
 
 const LEVELS: readonly string[] = ["log", "info", "warn", "error"];
 
@@ -27,10 +27,7 @@ export function parseCardMessage(data: unknown): CardMessage | null {
   if (d.tarmac === "escape") return { kind: "escape" };
   if (d.tarmac === "ready") {
     if (typeof d.meta !== "string" && d.meta !== null) return null;
-    if (typeof d.probe !== "object" || d.probe === null) return null;
-    const p = d.probe as Record<string, unknown>;
-    if (typeof p.base !== "number" || typeof p.zoomed !== "number") return null;
-    return { kind: "ready", meta: d.meta, probe: { base: p.base, zoomed: p.zoomed } };
+    return { kind: "ready", meta: d.meta };
   }
   if (d.tarmac !== "console") return null;
   if (typeof d.level !== "string" || !LEVELS.includes(d.level)) return null;
