@@ -231,7 +231,7 @@ signals nothing either.
       messages" panel shows one entry. Count that prefix, not the strip: a
       `magnify-probe.html` load produces five console entries in total, only one
       of which is the host's (see S8's note on grepping the prefix, not prose).
-- [x] Borrow the card, open its console, select the card's iframe as the
+- [ ] Borrow the card, open its console, select the card's iframe as the
       execution context (same caveat as S15 — the top-document context makes
       this a silent no-op), and post a forged second `ready`. `ready` travels
       shim→host, so target `window.parent`, same direction as the genuine one.
@@ -256,7 +256,10 @@ Observation (2026-09-05, `7702f59`): **PASS.** No devtools console exists in thi
 build, so both readies were forged from buttons added to `s11probe.html`; each
 runs `window.parent.postMessage({tarmac:"ready", meta:…}, "*")` from the card
 document while the card is borrowed — the same call, in the same execution
-context, this scenario prescribes (**Run conditions** below). Before the
+context, this scenario prescribes (**Run conditions** below). The second bullet
+stays unchecked for that reason: the card was borrowed and the forgeries did come
+from inside the document, but no execution context was selected, because no
+inspector offered one. Before the
 forgeries the strip held one `zoom-mode declared=magnify effective=magnify` line
 and the panel one `z:3` entry. `meta:"magnify"` and then `meta:"reveal"` each
 drew a reply, taking the panel to three entries — `…12:55:15.411Z`,

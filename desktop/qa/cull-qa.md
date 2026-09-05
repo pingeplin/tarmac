@@ -522,7 +522,7 @@ reads (`s15_strip_gen2.png`, `s15_gap_line.png`):
     [s36] culled -> location.reload() gen=1
     [s36] boot=1788613361093.395058 gen=2
     [s36] t=1 gen=2 dt=26814 raf=18 gapRaf=26228 int=17 gapInt=26298 to=25 gapTo=26227 boxB=960.0 boot=1788613361093.395058
-    [s36] t=2 gen=2 dt=1021 raf=30 gapRaf=47  int=34 gapInt=33    to=34 gapTo=33    boxB=960.0 …
+    [s36] t=2 gen=2 dt=1021 raf=30 gapRaf=47 int=34 gapInt=33 to=34 gapTo=33 boxB=960.0 boot=1788613361093.395058
 
 — **silence** between generation 2's boot line and its first report 26.8 s
 later, and on that first line all three gaps sit within **587 ms** of `dt`
