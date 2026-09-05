@@ -4,24 +4,35 @@ use std::time::Duration;
 
 use tarmac_protocol::{self as proto, Msg, frame};
 
+mod skill;
+
 const HELP: &str = "\
 tarmac — agent cockpit CLI
 
 USAGE:
     tarmac open <path>      register a file with the running tarmac app
+    tarmac skill            print the agent-facing Tarmac guide
+    tarmac skill install    install that guide as a SKILL.md for coding agents
     tarmac --help           show this help
 
 `tarmac open` is fire-and-forget: anything (you, an agent, a Makefile, a git
 hook) can run it to surface a doc in the cockpit. The path is canonicalized
 and must point to an existing file.
 
+`tarmac skill` never talks to the daemon. `install` writes one SKILL.md per
+target — claude-code (~/.claude/skills) and codex (~/.agents/skills) — and
+accepts:
+    --target claude-code|codex|all   default: all
+    --scope  user|project            default: user
+    --dry-run                        print the paths, write nothing
+
 The daemon socket defaults to ~/Library/Application Support/tarmac/tarmacd.sock
 (release builds) or ~/Library/Application Support/tarmac/dev/tarmacd.sock (dev
 builds); override with TARMAC_SOCKET.
 
 EXIT STATUS:
-    0  the daemon acknowledged the open
-    1  the daemon rejected it, or no daemon is running
+    0  success
+    1  the daemon rejected the open, no daemon is running, or an install failed
     2  usage error
 ";
 
@@ -49,6 +60,7 @@ fn main() {
             print!("{HELP}");
             std::process::exit(0);
         }
+        Some("skill") => std::process::exit(skill::run(&args[1..])),
         Some("open") => {}
         Some(other) => {
             eprintln!("tarmac: unknown command '{other}' (see tarmac --help)");
