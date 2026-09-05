@@ -131,8 +131,9 @@ What follows from that:
   about 1176px on a 392px-wide card and overflows it badly, and
   `@media (min-width: 1000px)` matches on a card barely wider than a phone.
   **Lay out with percentages; never size anything in `vw`/`vh`, and do not write
-  breakpoints.** If you need the card's width as a number,
-  `document.body.clientWidth` is the honest one.
+  breakpoints.** If you need the card's width as a number, measure a full-width
+  block element's `offsetWidth`: a plain `<div>` reports the card, while
+  `innerWidth` reports the reference.
 - **Layout runs once, so nothing about the viewport changes.** `resize` and
   `ResizeObserver` fire at load and then effectively never again. Read
   dimensions at startup if you must; do not build a layout that waits for them
