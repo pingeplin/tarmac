@@ -26,7 +26,7 @@ import {
   pushCardConsole,
   type CardConsoleEntry,
 } from "../kit/cardConsole";
-import { declaredZoomMode } from "../kit/zoomMode";
+import { readyActions, type ZoomMode } from "../kit/zoomMode";
 import { cullPayload } from "../kit/cardCull";
 import { RASTER_SCALE_SETTLE_MS } from "../kit/rasterScale";
 import { CARD_HEADER_H_PX } from "../kit/termZoom";
@@ -108,16 +108,21 @@ export function HtmlCard(props: HtmlCardProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // The effective zoom mode (spec 2607.0006) for the CURRENT document load. State,
-  // not a ref: the render branches on it. readyHandledRef gates the ready handler
-  // (S17) — only the first ready per load is honored, so a forged repeat can't flip
-  // the mode out from under the console line. Both reset on reload (?v= bump) so a
-  // dropped meta tag can't leak the old mode forward, and the reveal box resets
-  // with them (its settled zoom went stale while magnify held the zoom path).
-  const readyHandledRef = useRef(false);
+  // The zoom mode in force for the CURRENT document load (spec 2607.0006,
+  // 2609.0003). ONE ref, not a boolean guard beside a mode: "has a genuine ready
+  // been honored" and "which mode won" are the same fact, and two of them could
+  // drift. null = no ready honored yet, which is what keeps a forged repeat inert
+  // (S17). The mode is also state because the render branches on it; both are
+  // written at the same two sites, so a message arriving before React re-renders
+  // still reads the mode actually adopted.
+  const loadModeRef = useRef<ZoomMode | null>(null);
   const [magnify, setMagnify] = useState(false);
+  // Reset on reload (?v= bump) so a dropped meta tag can't leak the old mode
+  // forward, and the reveal box resets with it (its settled zoom went stale while
+  // magnify held the zoom path). A self-reload does NOT arrive here — same src,
+  // same mtime — which is the whole of #99.
   useEffect(() => {
-    readyHandledRef.current = false;
+    loadModeRef.current = null;
     setMagnify(false);
     setSettledZoom(getZoomRef.current());
     setGestureScale(1);
@@ -134,34 +139,36 @@ export function HtmlCard(props: HtmlCardProps) {
         return;
       }
       if (msg.kind === "ready") {
-        // BEFORE the guard, on purpose: a #99-shaped self-reload leaves
-        // readyHandledRef set, so anything below it is skipped and the fresh
-        // document would come back running while its card is culled. The payload
-        // is a state, so re-asserting it here cannot weaken S17's guard.
+        // Unconditional and first: every generation of a self-reloading document
+        // must be told the state it is born into, and the payload is a state, so
+        // re-asserting it costs nothing (spec 2609.0002).
         postCull(culledRef.current);
-        if (readyHandledRef.current) return;
-        readyHandledRef.current = true;
-        const declared = declaredZoomMode(msg.meta);
+        // The verdict is applied verbatim — every branch lives in readyActions,
+        // which is the only side a unit test can reach.
+        const act = readyActions(loadModeRef.current, msg.meta);
+        if (act.zoomPost) {
+          // Frozen K, not the live board zoom: the document lays out once at this
+          // factor and the outer scale(zoom/K) carries every board zoom after.
+          // Re-posting per SETTLE is what re-wrapped the text (ffddbfa) — this
+          // re-posts per genuine ready, which is a constant and cannot re-wrap.
+          iframeRef.current?.contentWindow?.postMessage(act.zoomPost, "*");
+        }
         // declared and effective can no longer disagree — the capability probe
         // that split them died with the macOS 26 floor (#94). Both halves stay
         // because the line's job is to say what mode is in force for a document
         // whose meta may be a typo, and `declared` is the resolved value, not
         // the raw string.
-        if (msg.meta !== null) {
+        if (act.logMode) {
           setEntries((buf) =>
             pushCardConsole(buf, {
               level: "info",
-              args: [`zoom-mode declared=${declared} effective=${declared}`],
+              args: [`zoom-mode declared=${act.declared} effective=${act.declared}`],
             }),
           );
         }
-        if (declared === "magnify") {
-          // Frozen K, not the live board zoom: this is the ONLY root zoom the
-          // document ever sees, so its layout is computed once and the outer
-          // scale(zoom/K) carries every subsequent board zoom. Re-posting it per
-          // settle is exactly what re-wrapped the text (ffddbfa) — don't.
-          iframeRef.current?.contentWindow?.postMessage({ tarmac: "zoom", z: MAGNIFY_K }, "*");
-          setMagnify(true);
+        if (act.adopt) {
+          loadModeRef.current = act.adopt;
+          setMagnify(act.adopt === "magnify");
         }
         return;
       }

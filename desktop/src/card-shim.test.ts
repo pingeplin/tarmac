@@ -1,5 +1,9 @@
 // Gate tests for the SHIPPED card_shim.js (spec 2609.0002, scenarios S5-S28 and
-// S40).
+// S40; spec 2609.0003, scenarios S8-S10).
+//
+// Scenario ids are per-spec and DO collide across them — 2609.0002 and 2609.0003
+// each have an S8, S9 and S10. Every 2609.0003 case therefore names its spec in
+// the enclosing describe and in the `it`.
 //
 // These read `desktop/src-tauri/src/card_shim.js` off disk and evaluate it in a
 // Node `vm` against fake schedulers, so what is asserted is the exact text that
@@ -881,5 +885,57 @@ describe("hostile and malformed cull messages (S27, S28)", () => {
     h.send({ tarmac: "cull", culled: {} });
     h.win.console.log("alive");
     expect(h.posted).toContainEqual({ tarmac: "console", level: "log", args: ["alive"] });
+  });
+});
+
+// --------------------------------------------------------------------------
+// Spec 2609.0003 (#99) — the zoom handshake under a host that answers EVERY ready
+// --------------------------------------------------------------------------
+
+describe("2609.0003 (#99): the host may now post zoom more than once per document", () => {
+  it("2609.0003 S8: a zoom arriving before DOMContentLoaded is retained, not dropped", () => {
+    const h = loadShim("magnify");
+
+    // Negative control. Without it "the zoom landed" cannot be told apart from
+    // "the shim applies whatever arrives, whenever" — and an apply-on-arrival
+    // mutant would pass the assertion below.
+    h.send({ tarmac: "zoom", z: 3 });
+    expect(h.style.zoom).toBeUndefined();
+
+    h.domReady();
+    expect(h.style.zoom).toBe(3);
+    expect(h.posted).toContainEqual({ tarmac: "ready", meta: "magnify" });
+  });
+
+  it("2609.0003 S9: every post-ready zoom is applied, not just the first", () => {
+    // The premise the #99 fix rests on: the host re-posts the same constant on a
+    // self-reload, so a shim that ignored anything after the first zoom would
+    // leave the reloaded document unzoomed. DISTINCT values are what make this
+    // non-vacuous — re-sending 3 and asserting 3 cannot distinguish "applied
+    // again" from "ignored" against a plain style object.
+    const h = loadShim("magnify");
+    h.domReady();
+    const postedAfterReady = h.posted.length;
+
+    h.send({ tarmac: "zoom", z: 3 });
+    expect(h.style.zoom).toBe(3);
+    h.send({ tarmac: "zoom", z: 4 });
+    expect(h.style.zoom).toBe(4);
+    h.send({ tarmac: "zoom", z: 3 });
+    expect(h.style.zoom).toBe(3);
+
+    // Applying a zoom is not a conversation: nothing goes back to the host.
+    expect(h.posted.length).toBe(postedAfterReady);
+    // NOTE: this cannot show that a repeat causes no relayout or re-wrap — the
+    // harness's `style` has no layout behind it. That half is QA (2609.0003 S14).
+  });
+
+  it("2609.0003 S10: a repeat zoom from any source but window.parent is ignored", () => {
+    const h = loadShim("magnify");
+    h.domReady();
+    h.send({ tarmac: "zoom", z: 3 });
+
+    h.send({ tarmac: "zoom", z: 40 }, { nested: "iframe" });
+    expect(h.style.zoom).toBe(3);
   });
 });
