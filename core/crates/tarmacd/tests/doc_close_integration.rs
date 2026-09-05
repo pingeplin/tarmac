@@ -6,43 +6,10 @@
 mod common;
 
 use std::io::Write;
-use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use common::{Conn, LONG, TestDaemon, none_within};
+use common::{Conn, TestDaemon, cli_open, drain_connect, none_within, wait_for_state, write_doc};
 use tarmac_protocol::Msg;
-
-fn write_doc(path: &Path, content: &str) -> String {
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(path, content).unwrap();
-    std::fs::canonicalize(path).unwrap().to_string_lossy().into_owned()
-}
-
-fn cli_open(sock: &Path, path: &str) {
-    let mut cli = Conn::hello(sock, "cli");
-    cli.send(&Msg::Open { path: path.into(), term_id: None, board_id: None });
-    let reply = cli.recv(Instant::now() + LONG, "ack");
-    assert!(matches!(reply, Msg::Ack), "expected ack, got {reply:?}");
-}
-
-fn drain_connect(app: &mut Conn) {
-    app.recv_until("board_list", |m| matches!(m, Msg::BoardList { .. }));
-    app.recv_until("restore", |m| matches!(m, Msg::Restore { .. }));
-}
-
-fn wait_for_state(state: &Path, what: &str, pred: impl Fn(&serde_json::Value) -> bool) {
-    let deadline = Instant::now() + LONG;
-    loop {
-        if let Ok(bytes) = std::fs::read(state)
-            && let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes)
-            && pred(&v)
-        {
-            return;
-        }
-        assert!(Instant::now() < deadline, "state file never showed {what}");
-        std::thread::sleep(Duration::from_millis(25));
-    }
-}
 
 // touch a file to trigger a file-system event and update mtime
 fn touch(path: &str) {

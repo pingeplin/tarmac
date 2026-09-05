@@ -7,6 +7,7 @@
 //! the frontend; the only privileged work down here is the socket + process spawn.
 
 mod bridge;
+mod card_protocol;
 mod commands;
 
 use bridge::Bridge;
@@ -17,6 +18,16 @@ use tokio::sync::mpsc;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        // Async variant: `respond` does a blocking file read, and the sync
+        // registration would run the handler inline on the WKWebView
+        // scheme-handler thread (the main thread on macOS), stalling the UI
+        // on a cold or large file. spawn_blocking moves that read off it.
+        .register_asynchronous_uri_scheme_protocol("tarmac-card", |_ctx, request, responder| {
+            let uri = request.uri().to_string();
+            tauri::async_runtime::spawn_blocking(move || {
+                responder.respond(card_protocol::respond(&uri));
+            });
+        })
         .setup(|app| {
             // The outbound queue: commands push Msgs here, the connection task
             // drains it onto the socket. The task also owns reconnect + dispatch.
@@ -36,6 +47,7 @@ pub fn run() {
             commands::doc_open,
             commands::doc_read,
             commands::doc_close,
+            commands::doc_refresh,
             commands::read_doc,
             commands::persist_layout,
             commands::board_switch,

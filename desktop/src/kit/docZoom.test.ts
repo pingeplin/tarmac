@@ -14,53 +14,9 @@ import {
 } from "./docZoom";
 import { worldToView } from "./boardTransform";
 import { MAX_ZOOM } from "../board/BoardEngine";
-
-// --- S6 helper: evaluate a CSS calc() or plain value as a pixel number ------
-
-/** Resolve var(--xxx) references then arithmetic-eval the expression.
- *  Handles `calc(A + B * C)` patterns and px units. */
-function evalCalcPx(expr: string, vars: Record<string, string>): number {
-  const inner = expr.match(/^calc\((.+)\)$/)?.[1] ?? expr;
-  const substituted = inner.replace(/var\(--([a-z-]+)\)/g, (_, name: string) => {
-    const key = `--${name}`;
-    if (!(key in vars)) throw new Error(`unknown CSS var ${key}`);
-    return vars[key];
-  });
-  const noUnits = substituted.replace(/(-?\d+(?:\.\d+)?)px/g, "$1");
-  // eslint-disable-next-line no-new-func
-  return Function(`"use strict"; return (${noUnits})`)() as number;
-}
-
-/** Split the two args of translate(A,B) respecting nested parens. */
-function splitTranslateArgs(transformStr: string): [string, string] {
-  const prefix = "translate(";
-  if (!transformStr.startsWith(prefix) || !transformStr.endsWith(")")) {
-    throw new Error(`expected translate(...), got: ${transformStr}`);
-  }
-  const inner = transformStr.slice(prefix.length, -1);
-  let depth = 0;
-  for (let i = 0; i < inner.length; i++) {
-    if (inner[i] === "(") depth++;
-    else if (inner[i] === ")") depth--;
-    else if (inner[i] === "," && depth === 0) {
-      return [inner.slice(0, i), inner.slice(i + 1)];
-    }
-  }
-  throw new Error("no top-level comma in translate args");
-}
-
-/** Derive the screen (x,y) by substituting CSS var values into the actual
- *  docWrapperBox().transform string — the test reads the live string, not a
- *  hand-derived formula, so a wrong string fails the assertion. */
-function evalWrapperTranslate(
-  transformStr: string,
-  vars: Record<string, string>,
-): { x: number; y: number } {
-  const [xExpr, yExpr] = splitTranslateArgs(transformStr);
-  return { x: evalCalcPx(xExpr, vars), y: evalCalcPx(yExpr, vars) };
-}
-
-// ---------------------------------------------------------------------------
+// Derives the screen (x,y) from the ACTUAL docWrapperBox().transform string, so
+// the test reads the live string rather than a hand-derived formula.
+import { evalWrapperTranslate } from "./cssEval";
 
 describe("S4 — prose layout frozen (no zoom parameter)", () => {
   it("returns the four named constants", () => {
@@ -93,9 +49,9 @@ describe("S1 — box size + translate-only position", () => {
     expect(docWrapperBox().height).toBe("calc(var(--card-h) * var(--zoom))");
   });
 
-  it("transform is the exact translate-only calc string", () => {
+  it("transform is the exact translate-only calc string, device-pixel snapped", () => {
     expect(docWrapperBox().transform).toBe(
-      "translate(calc(var(--world-tx) + var(--card-x) * var(--zoom)),calc(var(--world-ty) + var(--card-y) * var(--zoom)))",
+      "translate(round(calc(var(--world-tx) + var(--card-x) * var(--zoom)),var(--device-px)),round(calc(var(--world-ty) + var(--card-y) * var(--zoom)),var(--device-px)))",
     );
   });
 
@@ -175,6 +131,35 @@ describe("S12 — prose layout is zoom-INDEPENDENT (reflow regression)", () => {
   });
 });
 
+describe("S14 — wrapper translate snaps to whole device pixels", () => {
+  // world-tx = viewW/2 - cx*zoom is a raw float, so the unsnapped translate lands
+  // the card's raster off the device grid and WebKit filters it — every glyph and
+  // hairline in the card softens on a 1× display while the board's own transform-
+  // free chrome stays sharp. Snapping is what closes that gap.
+  const cases = [
+    { devicePx: 1, tx: 380.4, want: 380 },
+    { devicePx: 1, tx: 380.6, want: 381 },
+    { devicePx: 0.5, tx: 380.4, want: 380.5 }, // Retina: half-CSS-px grid
+    { devicePx: 0.5, tx: 380.1, want: 380 },
+  ];
+
+  for (const { devicePx, tx, want } of cases) {
+    it(`--device-px ${devicePx}px snaps ${tx} to ${want}`, () => {
+      const vars: Record<string, string> = {
+        "--world-tx": `${tx}px`,
+        "--world-ty": `${tx}px`,
+        "--card-x": "0px",
+        "--card-y": "0px",
+        "--zoom": "1",
+        "--device-px": `${devicePx}px`,
+      };
+      const { x, y } = evalWrapperTranslate(docWrapperBox().transform, vars);
+      expect(x).toBeCloseTo(want);
+      expect(y).toBeCloseTo(want);
+    });
+  }
+});
+
 describe("S13 — K never upsamples", () => {
   // K >= the engine's MAX_ZOOM guarantees scale(zoom/K) <= 1 across the whole
   // range, so the prose layer is only ever DOWN-scaled (crisp, never bitmap-
@@ -222,6 +207,7 @@ describe("S6 — box origin projects via worldToView (non-vacuous: derived from 
       "--card-x": `${cardX}px`,
       "--card-y": `${cardY}px`,
       "--zoom": String(zoom),
+      "--device-px": "1px",
     };
 
     // Derive screen point from the ACTUAL transform string, not by hand
@@ -251,6 +237,7 @@ describe("S6 — box origin projects via worldToView (non-vacuous: derived from 
       "--card-x": `${cardX}px`,
       "--card-y": `${cardY}px`,
       "--zoom": String(zoom),
+      "--device-px": "1px",
     };
 
     const { transform } = docWrapperBox();
@@ -265,5 +252,75 @@ describe("S6 — box origin projects via worldToView (non-vacuous: derived from 
 
     expect(screenX).toBeCloseTo(proj.x);
     expect(screenY).toBeCloseTo(proj.y);
+  });
+});
+
+describe("2608.0002 S1 — .doc-prose pre de-promotes (visible + wrap + break-word)", () => {
+  // Same read-off-disk approach as docZoom S12: the rule text is the fact
+  // under test, not a hand-copied expectation of it.
+  const themeCss = readFileSync(
+    fileURLToPath(new URL("../theme/card.css", import.meta.url)),
+    "utf8",
+  );
+
+  /** Extract the body of a top-level CSS rule by exact selector. Fails if the
+   * selector is declared zero or MORE THAN ONCE — a later duplicate (equal
+   * specificity, last rule wins) or an earlier decoy would otherwise let
+   * indexOf's first match hide a reverted real rule. */
+  function ruleBody(selector: string): string {
+    const needle = selector + " {";
+    const occurrences = themeCss.split(needle).length - 1;
+    expect(
+      occurrences,
+      `selector ${selector} must be declared exactly once in theme/card.css (found ${occurrences})`,
+    ).toBe(1);
+    const i = themeCss.indexOf(needle);
+    const open = themeCss.indexOf("{", i);
+    const close = themeCss.indexOf("}", open);
+    return themeCss.slice(open + 1, close);
+  }
+
+  it("declares overflow: visible", () => {
+    expect(ruleBody(".doc-prose pre")).toMatch(/overflow:\s*visible/);
+  });
+
+  it("declares white-space: pre-wrap", () => {
+    expect(ruleBody(".doc-prose pre")).toMatch(/white-space:\s*pre-wrap/);
+  });
+
+  it("declares word-break: break-word", () => {
+    expect(ruleBody(".doc-prose pre")).toMatch(/word-break:\s*break-word/);
+  });
+});
+
+describe("2608.0002 S2 — overflow: auto is gone from .doc-prose pre, .doc-scroll keeps its own", () => {
+  const themeCss = readFileSync(
+    fileURLToPath(new URL("../theme/card.css", import.meta.url)),
+    "utf8",
+  );
+
+  /** Extract the body of a top-level CSS rule by exact selector. Fails if the
+   * selector is declared zero or MORE THAN ONCE — a later duplicate (equal
+   * specificity, last rule wins) or an earlier decoy would otherwise let
+   * indexOf's first match hide a reverted real rule. */
+  function ruleBody(selector: string): string {
+    const needle = selector + " {";
+    const occurrences = themeCss.split(needle).length - 1;
+    expect(
+      occurrences,
+      `selector ${selector} must be declared exactly once in theme/card.css (found ${occurrences})`,
+    ).toBe(1);
+    const i = themeCss.indexOf(needle);
+    const open = themeCss.indexOf("{", i);
+    const close = themeCss.indexOf("}", open);
+    return themeCss.slice(open + 1, close);
+  }
+
+  it(".doc-prose pre rule body no longer declares overflow: auto", () => {
+    expect(ruleBody(".doc-prose pre")).not.toMatch(/overflow:\s*auto/);
+  });
+
+  it("guard: .doc-scroll still declares overflow-y: auto (the edit was scoped, not a whole-file change)", () => {
+    expect(ruleBody(".doc-scroll")).toMatch(/overflow-y:\s*auto/);
   });
 });

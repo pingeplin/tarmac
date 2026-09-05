@@ -131,6 +131,7 @@ at the committed dev value.)
 | | `DocRead {path}` | app→D | mark a doc read |
 | | `DocOpened(DocEntry)` | D→app | a doc was opened/updated |
 | | `FileEvent {path, mtime_ms}` | D→app | a watched doc changed on disk |
+| | `DocRefresh {path}` | app→D | re-stat a doc now and push its `file_event` |
 | Terminal I/O | `SpawnTerm {term_id, cols, rows, cwd?, cmd?, board_id?}` | app→D | create a PTY card |
 | | `Input {term_id, bytes}` | app→D | keystrokes |
 | | `Output {term_id, bytes}` | D→app | raw PTY output (≤64 KiB chunks) |
@@ -298,7 +299,15 @@ carries a world-space `CardFrame {x,y,w,h,z}`. Card chrome states —
 move of a doc card detaches it. Cards further than one viewport offscreen are
 culled to `visibility:hidden` (never unmounted, so a terminal keeps consuming PTY
 output); below the semantic-zoom threshold (0.5) the dot grid densifies and cards
-scale rather than re-laying out — there is no locard collapse.
+scale rather than re-laying out — there is no locard collapse. A culled **HTML**
+card is additionally paused: the engine publishes each cull flip and `card_shim.js`
+gates that card's `requestAnimationFrame`/`setInterval`/`setTimeout`, cancelling
+outstanding frame requests rather than merely holding their callbacks — WebKit
+throttles an offscreen frame on its own, but an unserviced pending request keeps
+costing CPU until its next ~10 s service tick (spec 2609.0002). Measured in the
+app at six culled animating cards: ~6 points of marginal WebContent CPU removed,
+in the first 10 s window as well as the second, with a visible card's rate and
+cost unchanged (`desktop/qa/cull-qa.md`).
 
 **Terminal cards** embed an xterm.js instance keyed by `term_id`. Input/resize
 forward to the daemon; output routes to the owning board's buffer even when
@@ -309,6 +318,30 @@ there is no nested webview, hence no suspend/resume on board switch. Scroll
 position is preserved as a fraction across live `FileEvent` re-renders.
 Provenance edges (dashed cyan bézier) connect a doc card to its caller terminal.
 The `fresh` (agent-opened, unread) highlight is cleared locally by `ESC`.
+
+**HTML cards.** A doc whose path ends `.html`/`.htm` is routed by extension
+(`kit/docKind.ts` — the kind is derived, never stored, so the wire protocol knows
+nothing about it) to a card whose body is a sandboxed `<iframe>`. The file is
+served by the app's own `tarmac-card://` scheme handler, which prepends a console
+/escape/zoom shim and sets a strict response-header CSP; the document runs real
+JS at an opaque origin with no network and no Tauri IPC reach. It is
+shield-by-default — a transparent overlay keeps the card look-don't-touch until a
+double-click *borrows* it, and `ESC` un-borrows and returns focus to the prime
+terminal. Relayed `console.*` output collects in a per-card ring buffer behind a
+header badge.
+
+**Card zoom has two models.** Markdown prose is laid out once at a frozen `K×`
+reference and down-scaled by `scale(zoom/K)`, so board zoom never reflows it.
+HTML cards default to **magnify**, which is the same idea reached differently: we
+cannot author a foreign document's CSS, so the shim sets its root `zoom` to a
+constant `MAGNIFY_K` once per load and the outer box carries board zoom by
+`scale(zoom/K)`. Layout runs once, so wrap points cannot move. A document opting
+out with `<meta name="tarmac-zoom" content="reveal">` instead gets **reveal**:
+real-px sizing that re-lays out at each settle, for content that needs honest
+viewport dimensions (a self-contained D3/Canvas dashboard). Both `K`s are ≥
+`MAX_ZOOM` so the scale is always a down-scale, never an upsample. Terminals use
+neither: their chrome lays out per zoom while a zoom-free host box keeps
+`fit()`/PTY-resize off the zoom path.
 
 **Multiple boards.** A `⌘K` switcher shows per-board running/bell/card counts,
 supports type-to-filter, `⌘N` create, `⌘E` rename, `⌘⌫` delete, and `⌘1`–`9`

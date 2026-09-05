@@ -160,22 +160,37 @@ pub async fn watch_loop(daemon: Arc<Daemon>, mut rx: UnboundedReceiver<DebounceE
             }
         }
         for path in hits {
-            // Deleted files emit nothing until the path exists again.
-            let Ok(meta) = std::fs::metadata(&path) else { continue };
-            let Ok(modified) = meta.modified() else { continue };
-            let mtime_ms = modified
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
-            // Registry update lands before the push so a crash between the
-            // two never loses the fact (crib §8 req 6).
-            if let Some(info) = daemon.boards.lock().await.active_registry_mut().docs.get_mut(&path) {
-                info.last_changed_ms = Some(mtime_ms);
-            }
-            daemon.mark_dirty();
-            daemon
-                .push(Msg::FileEvent { path: path.to_string_lossy().into_owned(), mtime_ms })
-                .await;
+            stat_and_push(&daemon, &path).await;
         }
     }
+}
+
+/// Stat `path` and, if it is a doc on the ACTIVE board, record the real mtime and
+/// push `file_event`. Returns whether it pushed.
+///
+/// The sole producer of `Msg::FileEvent`: the notify watcher and the on-demand
+/// `doc_refresh` (issue #89) share it, so the always-push rule (the mtime goes out
+/// changed or not — "did anything change" is answered app-side by value) and the
+/// active-board scoping are defined once. The registry lookup doubles as that
+/// scoping check, which is why an unknown path costs one lock and no push.
+pub async fn stat_and_push(daemon: &Arc<Daemon>, path: &Path) -> bool {
+    // Deleted files emit nothing until the path exists again.
+    let Ok(meta) = std::fs::metadata(path) else { return false };
+    let Ok(modified) = meta.modified() else { return false };
+    let mtime_ms = modified
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    // Registry update lands before the push so a crash between the two never
+    // loses the fact (crib §8 req 6).
+    {
+        let mut boards = daemon.boards.lock().await;
+        let Some(info) = boards.active_registry_mut().docs.get_mut(path) else { return false };
+        info.last_changed_ms = Some(mtime_ms);
+    }
+    daemon.mark_dirty();
+    daemon
+        .push(Msg::FileEvent { path: path.to_string_lossy().into_owned(), mtime_ms })
+        .await;
+    true
 }

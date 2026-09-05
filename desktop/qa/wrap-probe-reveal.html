@@ -1,0 +1,96 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="tarmac-zoom" content="reveal">
+<title>Wrap probe — reveal control (declared opt-out)</title>
+<style>
+  body { margin: 0; padding: 18px 22px; background: #fff; color: #1a1a1a;
+         font: 14px/1.6 -apple-system, "SF Pro Text", system-ui, sans-serif; }
+  h2 { font-size: 15px; margin: 0 0 6px; text-transform: uppercase; color: #666; }
+  section { margin-bottom: 20px; }
+  #ruler { font: 13px/1.55 "SF Mono", ui-monospace, Menlo, monospace; }
+  #ruler b { font-weight: 600; color: #b02; }
+  .fixed { width: 300px; border: 1px solid #333; padding: 8px; box-sizing: border-box; }
+  .hair { border-top: 1px solid #000; margin: 3px 0; }
+  .fine { font-size: 9px; line-height: 1.35; }
+  .fine-2 { font-size: 7px; line-height: 1.3; color: #555; }
+  #verdict { font: 12px/1.5 "SF Mono", ui-monospace, monospace; background: #f4f4f4;
+             border-left: 3px solid #888; padding: 8px 10px; white-space: pre-wrap; }
+</style>
+
+<section>
+  <h2>1 · Wrap ruler — self-reporting</h2>
+  <p id="ruler"></p>
+  <div id="verdict">measuring…</div>
+</section>
+
+<section>
+  <h2>2 · Fixed 300px box</h2>
+  <div class="fixed">Exactly 300 CSS px. Under frozen-K magnify its screen width tracks board zoom linearly.</div>
+</section>
+
+<section>
+  <h2>3 · Crispness</h2>
+  <div class="hair"></div><div class="hair"></div><div class="hair"></div>
+  <p class="fine">9px — sharp at 300%?</p>
+  <p class="fine-2">7px — the harsh case.</p>
+</section>
+
+<script>
+  // Numbered words so a wrap point is readable by eye as well as measurable.
+  const WORDS = ["alpha","bravo","charlie","delta","echo","foxtrot","golf","hotel",
+    "india","juliet","kilo","lima","mike","november","oscar","papa","quebec","romeo",
+    "sierra","tango","uniform","victor","whiskey","xray","yankee","zulu"];
+  const ruler = document.getElementById("ruler");
+  ruler.innerHTML = Array.from({length: 40}, (_, i) =>
+    `<b>${i + 1}</b>${WORDS[i % WORDS.length]}`).join(" ");
+
+  // Wrap points by character offset: walk the text node and record every offset
+  // whose client rect starts a new top. This is the actual line-break position,
+  // not a line count — a count can stay equal while breaks move.
+  function wrapSignature() {
+    const walker = document.createTreeWalker(ruler, NodeFilter.SHOW_TEXT);
+    const tops = [], offsets = [];
+    let node, seen = 0;
+    const range = document.createRange();
+    while ((node = walker.nextNode())) {
+      for (let i = 0; i < node.length; i++) {
+        range.setStart(node, i);
+        range.setEnd(node, i + 1);
+        const r = range.getClientRects()[0];
+        if (!r) { seen++; continue; }
+        const top = Math.round(r.top * 100) / 100;
+        if (tops.length === 0 || Math.abs(top - tops[tops.length - 1]) > 0.5) {
+          tops.push(top);
+          offsets.push(seen);
+        }
+        seen++;
+      }
+    }
+    return offsets.join(",");
+  }
+
+  const icb = () => document.documentElement.clientWidth;
+
+  let baseline = null, changes = 0;
+  function check() {
+    const sig = wrapSignature();
+    const line = `ICB ${icb()}px · breaks @ ${sig}`;
+    if (baseline === null) {
+      baseline = sig;
+      document.getElementById("verdict").textContent =
+        `baseline\n${line}\n\nSweep the board 25% → 300%. This box only changes if a wrap point moves.`;
+      console.log("magnify-probe baseline:", line);
+      return;
+    }
+    if (sig !== baseline) {
+      changes++;
+      document.getElementById("verdict").textContent =
+        `REFLOWED (${changes})\nbaseline breaks @ ${baseline}\nnow      ${line}`;
+      console.log("magnify-probe REFLOW:", line, "baseline was", baseline);
+      baseline = sig;
+    }
+  }
+
+  check();
+  setInterval(check, 400);
+</script>

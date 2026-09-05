@@ -1,8 +1,10 @@
 // The infinite-canvas host: a clipping viewport driven by BoardEngine. Cards
 // live in a screen-space .card-layer; each card gets a translate-only outer
-// wrapper (sized card{w,h}×zoom via calc()) carrying zIndex:c.z. Terminals add
-// a second inner div (zoom-free var(--card-w/h)) with scale(var(--zoom)) so
-// the host box is never zoom-reactive → no fit()/PTY-resize on zoom.
+// wrapper (sized card{w,h}×zoom via calc()) carrying zIndex:c.z. Every card type
+// puts CardShell straight in that wrapper, so chrome is laid out per zoom rather
+// than bitmap-scaled. The terminal's zoom-free host box (scale(var(--zoom)) over
+// a zoom-free size, so no fit()/PTY-resize on zoom) is inside TerminalCard's body
+// — it wraps the host, not the header.
 //
 // P5 multi-board: App renders ONE Board per board simultaneously; inactive boards
 // are display:none (hidden=true) so their xterm terminals stay WARM — output
@@ -15,9 +17,12 @@ import { EdgeLayer } from "./EdgeLayer";
 import type { EdgeLayerHandle } from "./BoardEngine";
 import { TerminalCard } from "../cards/TerminalCard";
 import { DocCard } from "../cards/DocCard";
+import { HtmlCard } from "../cards/HtmlCard";
 import { ownerChipName } from "../kit/ownerChip";
+import { docKind } from "../kit/docKind";
+import { isCulled, registerCullListener, type CullListener } from "../kit/cardCull";
+// The outer wrapper is ONE thing across card kinds.
 import { docWrapperBox, docCardVars } from "../kit/docZoom";
-import { termWrapperBox, termCardVars, termInnerBox } from "../kit/termZoom";
 import { cardId, type CardModel, type WorldFrame, type DocMeta } from "./model";
 
 interface BoardProps {
@@ -43,9 +48,15 @@ interface BoardProps {
   onTermRegister?: (termId: string, handle: { focus(): void }) => void;
   onTermUnregister?: (termId: string) => void;
   onDocClose: (path: string) => void;
+  onDocRefresh: (path: string) => void;
   docMeta: Map<string, DocMeta>;
   /** The active card (shows the focus ring + resize handles), or null. */
   selectedId: string | null;
+  /** The HTML card whose shield is dropped (interactive borrow), or null. */
+  borrowedCardId: string | null;
+  onCardBorrow: (id: string) => void;
+  /** Un-borrow + refocus the prime terminal (the shim Esc relay path). */
+  onEscapeHome: () => void;
   /** A press on empty board space clears the selection. */
   onBackgroundPointerDown: () => void;
   onCardResize: (id: string, frame: WorldFrame) => void;
@@ -57,6 +68,10 @@ export function Board(props: BoardProps) {
   const cardLayerRef = useRef<HTMLDivElement>(null);
   const edgeLayerRef = useRef<EdgeLayerHandle | null>(null);
   const cardEls = useRef<Map<string, HTMLElement>>(new Map());
+  // Cull listeners (spec 2609.0002). A ref, not state: applyCull runs inside the
+  // wheel handler and inside flyTo's rAF loop, and no card is memo'd — a useState
+  // of culled ids would re-render every card on every frame a pan flips one.
+  const cullListeners = useRef<Map<string, CullListener>>(new Map());
   const { engineRef, cards, boardId } = props;
 
   // rasterScale: 1 at rest, increases with zoom after settle. Cards subscribe to
@@ -70,6 +85,9 @@ export function Board(props: BoardProps) {
     engine.edgesRef = edgeLayerRef;
     engine.onViewportChange = props.onViewport;
     engine.onRasterScaleSettle = setRasterScale;
+    engine.onCullChange = (id, visible) => {
+      cullListeners.current.get(id)?.(isCulled(visible));
+    };
     engineRef.current = engine;
     props.onEngineReady(boardId, engine);
     // Seed the chrome (zoom readout, minimap, offscreen hints) with the initial
@@ -140,35 +158,34 @@ export function Board(props: BoardProps) {
       {/* Screen-space card layer: no transform on the layer; each card wrapper
           is translated to screen position via calc() off --zoom/--world-tx/ty.
           zIndex:c.z on each outer wrapper → single stacking context, cross-type
-          focus-on-top works. */}
+          focus-on-top works. Cards are grouped term-then-doc (matching the old
+          term-pass-then-doc-pass DOM order byte-for-byte, ties included) rather
+          than sorted by z: z is mutable (select-to-front) and this grouping never
+          reorders on a z change, so React never moves a card's DOM node — a z-sort
+          would, and moving an HtmlCard's node detaches+reattaches its iframe,
+          reloading it on every click-to-front. */}
       <div className="card-layer" ref={cardLayerRef}>
-        {cards.filter((c) => c.kind === "term").map((c) => {
+        {[...cards.filter((c) => c.kind === "term"), ...cards.filter((c) => c.kind === "doc")].map((c) => {
           const id = cardId(c);
-          return (
-            // Outer wrapper: termWrapperBox() translate-only (no scale) + real-px
-            // size calc(--card-w*--zoom). Cullable element (setEl); zIndex here only.
-            <div
-              key={id}
-              ref={setEl(id)}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                ...termWrapperBox(),
-                ...(termCardVars(c.frame) as React.CSSProperties),
-                zIndex: c.z,
-              }}
-            >
-              {/* Inner wrapper: zoom-free var(--card-w/h) + scale(var(--zoom)).
-                  Host box never changes size on zoom → no fit()/PTY-resize. */}
-              <div style={termInnerBox() as React.CSSProperties}>
+          // Outer wrapper: docWrapperBox() translate-only (no scale) + real-px
+          // size calc(--card-w*--zoom). Cullable element (setEl); zIndex here only.
+          const wrapperStyle: React.CSSProperties = {
+            position: "absolute",
+            top: 0,
+            left: 0,
+            ...docWrapperBox(),
+            ...(docCardVars(c.frame) as React.CSSProperties),
+            zIndex: c.z,
+          };
+          if (c.kind === "term") {
+            return (
+              <div key={id} ref={setEl(id)} style={wrapperStyle}>
                 <TerminalCard
                   model={c}
                   selected={id === props.selectedId}
                   quiet={anyTermPrime && !c.prime && !c.dead}
                   getZoom={getZoom}
                   rasterScale={rasterScale}
-                  inWrapper
                   onMove={(frame) => props.onCardMove(id, frame)}
                   onMoveStart={() => props.onCardMoveStart(id)}
                   onMoveEnd={() => props.onCardMoveEnd(id)}
@@ -182,42 +199,41 @@ export function Board(props: BoardProps) {
                   onUnregister={props.onTermUnregister}
                 />
               </div>
-            </div>
-          );
-        })}
-        {/* Doc cards: outer wrapper (docWrapperBox+docCardVars+zIndex) → DocCard.
-            DocCard's CardShell uses inWrapper=true (inset:0) so it fills the wrapper.
-            The prose oversample→downscale subtree is unchanged. */}
-        {cards.filter((c) => c.kind === "doc").map((c) => {
-          const id = cardId(c);
+            );
+          }
+          // Doc card: HtmlCard or DocCard by extension (docKind, spec 2607.0004 —
+          // kind is derived, never stored). shared dedups their common prop surface.
+          const shared = {
+            model: c,
+            ownerName: ownerChipName(c.ownerTermId, termLabel),
+            lastChangedMs: props.docMeta.get(c.path)?.lastChangedMs,
+            selected: id === props.selectedId,
+            getZoom,
+            onMove: (frame: WorldFrame) => props.onCardMove(id, frame),
+            onMoveStart: () => props.onCardMoveStart(id),
+            onMoveEnd: () => props.onCardMoveEnd(id),
+            onResize: (frame: WorldFrame) => props.onCardResize(id, frame),
+            onResizeEnd: () => props.onCardResizeEnd(id),
+            onGrab: () => props.onCardGrab(id),
+            onRefresh: () => props.onDocRefresh(c.path),
+            onClose: () => props.onDocClose(c.path),
+          };
           return (
-            <div
-              key={id}
-              ref={setEl(id)}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                ...docWrapperBox(),
-                ...(docCardVars(c.frame) as React.CSSProperties),
-                zIndex: c.z,
-              }}
-            >
-              <DocCard
-                model={c}
-                markdown={props.docContents.get(c.path) ?? ""}
-                ownerName={ownerChipName(c.ownerTermId, termLabel)}
-                lastChangedMs={props.docMeta.get(c.path)?.lastChangedMs}
-                selected={id === props.selectedId}
-                getZoom={getZoom}
-                onMove={(frame) => props.onCardMove(id, frame)}
-                onMoveStart={() => props.onCardMoveStart(id)}
-                onMoveEnd={() => props.onCardMoveEnd(id)}
-                onResize={(frame) => props.onCardResize(id, frame)}
-                onResizeEnd={() => props.onCardResizeEnd(id)}
-                onGrab={() => props.onCardGrab(id)}
-                onClose={() => props.onDocClose(c.path)}
-              />
+            <div key={id} ref={setEl(id)} style={wrapperStyle}>
+              {docKind(c.path) === "html" ? (
+                <HtmlCard
+                  {...shared}
+                  borrowed={id === props.borrowedCardId}
+                  onBorrow={() => props.onCardBorrow(id)}
+                  onEscapeHome={props.onEscapeHome}
+                  // Deliberately not in `shared`: that object is spread into
+                  // DocCard too, and a spread of a variable skips TS excess-
+                  // property checking, so the leak would compile silently.
+                  onCullRegister={(fn) => registerCullListener(cullListeners.current, id, fn)}
+                />
+              ) : (
+                <DocCard {...shared} markdown={props.docContents.get(c.path) ?? ""} />
+              )}
             </div>
           );
         })}

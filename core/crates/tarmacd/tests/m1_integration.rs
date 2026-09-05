@@ -4,17 +4,10 @@
 mod common;
 
 use std::io::Write;
-use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use common::{Conn, LONG, TestDaemon};
+use common::{Conn, TestDaemon, cli_open, wait_for_state, write_doc};
 use tarmac_protocol::{BoardViewport, Msg, Tile, repo_color_index};
-
-fn write_doc(path: &Path, content: &str) -> String {
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(path, content).unwrap();
-    std::fs::canonicalize(path).unwrap().to_string_lossy().into_owned()
-}
 
 // Geometry-less tiles (M1 shape): the v4 x/y/w/h/z (+ Phase 3 loose/shelf)
 // keys default to None.
@@ -37,13 +30,6 @@ fn doc_tile(path: &str) -> Tile {
     Tile { kind: "doc".into(), path: Some(path.into()), ..term_tile() }
 }
 
-fn cli_open(sock: &Path, path: &str) {
-    let mut cli = Conn::hello(sock, "cli");
-    cli.send(&Msg::Open { path: path.into(), term_id: None, board_id: None });
-    let reply = cli.recv(Instant::now() + LONG, "ack");
-    assert!(matches!(reply, Msg::Ack), "expected ack, got {reply:?}");
-}
-
 fn recv_doc_opened(app: &mut Conn) -> tarmac_protocol::DocEntry {
     let msg = app.recv_until("doc_opened", |m| matches!(m, Msg::DocOpened(_)));
     let Msg::DocOpened(entry) = msg else { unreachable!() };
@@ -54,22 +40,6 @@ fn recv_restore(app: &mut Conn) -> (Vec<tarmac_protocol::DocEntry>, Vec<Tile>) {
     let msg = app.recv_until("restore", |m| matches!(m, Msg::Restore { .. }));
     let Msg::Restore { docs, tiles, .. } = msg else { unreachable!() };
     (docs, tiles)
-}
-
-// Persistence is debounced; poll the state file until it reflects the
-// expected facts before killing the daemon.
-fn wait_for_state(state: &Path, what: &str, pred: impl Fn(&serde_json::Value) -> bool) {
-    let deadline = Instant::now() + LONG;
-    loop {
-        if let Ok(bytes) = std::fs::read(state)
-            && let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes)
-            && pred(&v)
-        {
-            return;
-        }
-        assert!(Instant::now() < deadline, "state file never showed {what}");
-        std::thread::sleep(Duration::from_millis(25));
-    }
 }
 
 #[test]

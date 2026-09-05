@@ -90,8 +90,14 @@ export class BoardEngine {
    *  to re-raster at device resolution; they never re-derive zoom themselves. */
   onRasterScaleSettle?: (scale: number) => void;
 
+  /** Fires when a card's culled state flips (spec 2609.0002). HTML cards use it
+   *  to pause their schedulers. The Board routes it to a ref-held listener map,
+   *  never through React state — applyCull runs on the pan/zoom hot path. */
+  onCullChange?: (id: string, visible: boolean) => void;
+
   constructor(viewportEl: HTMLElement) {
     this.viewportEl = viewportEl;
+    this.applyDevicePx();
     this.bindGestures();
     this.apply();
   }
@@ -298,6 +304,12 @@ export class BoardEngine {
     this.edgesRef?.current?.updateEdges(this._cards, this.vp, rect);
   }
 
+  /** Snap unit for the card wrappers' translate (see docWrapperBox). Written once
+   *  and again from the DPR watcher, not per apply(). */
+  private applyDevicePx(): void {
+    this.viewportEl.style.setProperty("--device-px", `${1 / (window.devicePixelRatio || 1)}px`);
+  }
+
   /** Debounce rasterScale settle: cheap GPU transform during the gesture, cards
    *  re-raster only after zoom is idle for RASTER_SCALE_SETTLE_MS. Idempotent —
    *  fires the callback only when the derived scale actually changes. */
@@ -324,6 +336,7 @@ export class BoardEngine {
       if (this.cullVisible.get(c.id) === visible) continue;
       this.cullVisible.set(c.id, visible);
       c.el.style.visibility = visible ? "" : "hidden";
+      this.onCullChange?.(c.id, visible);
     }
   }
 
@@ -354,5 +367,23 @@ export class BoardEngine {
     });
     ro.observe(this.viewportEl);
     this.detachers.push(() => ro.disconnect());
+
+    // Dragging the window between a Retina panel and a 1× display changes
+    // devicePixelRatio without any pan/zoom/resize, which would leave --device-px
+    // stale and the cards snapped to the wrong grid. A resolution media query is
+    // the only event for it, and it must be re-armed against the NEW ratio.
+    let dprQuery: MediaQueryList | null = null;
+    const onDprChange = () => {
+      this.applyDevicePx();
+      this.apply();
+      armDprWatch();
+    };
+    const armDprWatch = () => {
+      dprQuery?.removeEventListener("change", onDprChange);
+      dprQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      dprQuery.addEventListener("change", onDprChange);
+    };
+    armDprWatch();
+    this.detachers.push(() => dprQuery?.removeEventListener("change", onDprChange));
   }
 }

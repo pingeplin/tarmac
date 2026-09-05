@@ -22,10 +22,11 @@ import { ToastOverlay } from "./ui/ToastOverlay";
 import { BoardSwitcher } from "./ui/BoardSwitcher";
 import { CycleHud } from "./ui/CycleHud";
 import { cycleOrder, step } from "./kit/termCycle";
-import { inheritCwdSource } from "./kit/cwdInherit";
+import { inheritCwdSource, primeTermId } from "./kit/cwdInherit";
 import type { BoardEngine, Viewport } from "./board/BoardEngine";
 import {
   cardId,
+  docCardId,
   emptyBoardState,
   topZ,
   type BoardState,
@@ -58,10 +59,13 @@ import {
   type ToastState,
 } from "./kit/toasts";
 import { Place, firstFreeSlot, scatterFrame } from "./kit/placement";
+import { docKind } from "./kit/docKind";
+import { basename } from "./kit/docStore";
 import { buildTiles, parseTiles, type LayoutTile } from "./kit/layoutTiles";
 import type { Rect, Size } from "./kit/geom";
 import {
   docClose,
+  docRefresh,
   frontendReady,
   onDaemonMsg,
   onDaemonStatus,
@@ -110,11 +114,6 @@ const HINT_STACK_GAP = 8;
 type Gesture =
   | { kind: "term"; termId: string; startFrame: WorldFrame; sats: Map<string, WorldFrame> }
   | { kind: "doc"; path: string };
-
-const basename = (p: string): string => {
-  const i = p.lastIndexOf("/");
-  return i >= 0 ? p.slice(i + 1) : p;
-};
 
 /** A card's wayfinding signal (bell outranks live); docs carry none yet. */
 const cardSignal = (c: CardModel): Signal | null => {
@@ -185,6 +184,11 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedIdRef = useRef<string | null>(null);
   selectedIdRef.current = selectedId;
+  // The HTML card whose shield is dropped (interactive borrow, spec 2607.0004).
+  // App-level because the Esc ladder must see it.
+  const [borrowedCardId, setBorrowedCardId] = useState<string | null>(null);
+  const borrowedCardIdRef = useRef<string | null>(null);
+  borrowedCardIdRef.current = borrowedCardId;
   const [toastState, setToastState] = useState<ToastState>(emptyToasts);
   const [docContents, setDocContents] = useState<Map<string, string>>(new Map());
 
@@ -279,6 +283,17 @@ export default function App() {
       else if (tries++ < 5) requestAnimationFrame(attempt);
     };
     requestAnimationFrame(attempt);
+  };
+
+  const termCards = (cards: CardModel[]) =>
+    cards.filter((c): c is TermCardModel => c.kind === "term");
+
+  /** Un-borrow the interactive HTML card and send keyboard focus home to the
+   *  prime terminal — the one-keypress Esc contract (spec 2607.0004 S12). */
+  const escapeHome = () => {
+    setBorrowedCardId(null);
+    const p = primeTermId(termCards(activeBoard()?.cards ?? []));
+    if (p) focusTerm(p);
   };
 
   /** The live terminal on the active board that currently owns DOM keyboard focus
@@ -449,6 +464,10 @@ export default function App() {
   // --- doc content -------------------------------------------------------------
 
   const fetchDoc = async (path: string) => {
+    // HTML docs never hit read_doc (S6/S14): the iframe loads the file itself
+    // via tarmac-card://, and file_event reloads it via the ?v= bump (S13).
+    // One gate here covers every caller (open, restore, refresh).
+    if (docKind(path) !== "markdown") return;
     try {
       const md = await readDoc(path);
       setDocContents((m) => new Map(m).set(path, md));
@@ -550,7 +569,16 @@ export default function App() {
     void fetchDoc(path);
   };
 
+  /** The header ↻ (issue #89). Updates nothing locally on purpose — the daemon's
+   *  `file_event` is the single receive path, and that is what keeps an unchanged
+   *  mtime from reloading an HTML card (issue #99). */
+  const refreshDocFromDisk = (path: string) => {
+    void docRefresh(path);
+  };
+
   const removeDoc = (path: string) => {
+    // A closed card cannot stay borrowed (a stale id would eat one Esc).
+    if (borrowedCardIdRef.current === docCardId(path)) setBorrowedCardId(null);
     setActiveBoard((b) => {
       const docMeta = new Map(b.docMeta);
       docMeta.delete(path);
@@ -584,11 +612,7 @@ export default function App() {
       Place.cascadeDy,
     );
     // issue #77: ⌘T inherits the (live) prime terminal's current directory.
-    const inheritCwdFrom = inheritCwdSource(
-      existing
-        .filter((c): c is TermCardModel => c.kind === "term")
-        .map((c) => ({ termId: c.termId, prime: c.prime, live: c.live, dead: c.dead })),
-    );
+    const inheritCwdFrom = inheritCwdSource(termCards(existing));
     const term = makeTerm(
       mint(),
       { x: origin.x, y: origin.y, w: Place.termFrame.w, h: Place.termFrame.h },
@@ -970,10 +994,7 @@ export default function App() {
     // Re-establish keyboard focus on the arrived board (Swift parity: finishArrive).
     // The previously-focused terminal was blurred when its board went display:none,
     // so without this, post-switch keystrokes go nowhere until the user clicks.
-    const arrived = boardsRef.current.get(targetId);
-    const arrivedPrime = (arrived?.cards.find(
-      (c) => c.kind === "term" && c.prime && c.live && !c.dead,
-    ) as TermCardModel | undefined)?.termId;
+    const arrivedPrime = primeTermId(termCards(boardsRef.current.get(targetId)?.cards ?? []));
     if (arrivedPrime) focusTerm(arrivedPrime);
 
     closeSwitcher();
@@ -1418,12 +1439,12 @@ export default function App() {
           return;
         }
       }
-      // ESC ladder: toasts → fly-back → clear fresh-doc highlight → defocus a
-      // selected doc card. Each consuming branch stopPropagation()s so the ESC
-      // does NOT also reach the focused xterm (capture phase runs before it).
-      // Only the final fall-through (nothing matched) lets ESC reach the terminal
-      // — a selected TERMINAL card is intentionally not defocused here, so ESC
-      // still reaches agent-interrupt / vim (issue #15 / #68).
+      // ESC ladder: toasts → fly-back → un-borrow → clear fresh-doc highlight →
+      // defocus a selected doc card. Each consuming branch stopPropagation()s so
+      // the ESC does NOT also reach the focused xterm (capture phase runs before
+      // it). Only the final fall-through (nothing matched) lets ESC reach the
+      // terminal — a selected TERMINAL card is intentionally not defocused here,
+      // so ESC still reaches agent-interrupt / vim (issue #15 / #68).
       if (e.key === "Escape") {
         if (toastsRef.current.length > 0) {
           e.preventDefault();
@@ -1436,6 +1457,14 @@ export default function App() {
           e.stopPropagation();
           engineRef.current.flyTo(preFlightRef.current);
           preFlightRef.current = null;
+          return;
+        }
+        // Borrowed HTML card (host-focus path; the in-iframe path is the shim's
+        // escape relay): un-borrow + focus home in ONE keypress (S12).
+        if (borrowedCardIdRef.current != null) {
+          e.preventDefault();
+          e.stopPropagation();
+          escapeHome();
           return;
         }
         const b = activeBoard();
@@ -1673,7 +1702,11 @@ export default function App() {
               onTermRegister={registerTerm}
               onTermUnregister={unregisterTerm}
               onDocClose={removeDoc}
+              onDocRefresh={refreshDocFromDisk}
               selectedId={hidden ? null : selectedId}
+              borrowedCardId={hidden ? null : borrowedCardId}
+              onCardBorrow={setBorrowedCardId}
+              onEscapeHome={escapeHome}
               onBackgroundPointerDown={() => { if (!hidden) setSelectedId(null); }}
             />
           );

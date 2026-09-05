@@ -12,8 +12,6 @@ import type { WorldFrame } from "../board/model";
 
 interface CardShellProps {
   frame: WorldFrame;
-  /** Stacking order (world z) → CSS z-index. */
-  z?: number;
   className?: string;
   dead?: boolean;
   /** A non-prime card while another terminal is prime (Swift setQuiet, 0.8). */
@@ -29,10 +27,6 @@ interface CardShellProps {
   children: ReactNode;
   /** Screen→world scale for drag/resize (1/zoom). */
   getZoom: () => number;
-  /** When true, the wrapper div in .card-layer owns position via CSS-var transform;
-   *  CardShell renders at 0,0 and omits its own left/top. Drag/resize math still
-   *  reads the real frame + getZoom() so committed frames stay world-coord. */
-  inWrapper?: boolean;
   /** The card's root element, for the engine's viewport culling (visibility). */
   rootRef?: (el: HTMLDivElement | null) => void;
   /** Called with the new frame as the header is dragged. */
@@ -177,11 +171,10 @@ export function CardShell(props: CardShellProps) {
     <div
       ref={props.rootRef}
       className={classes.join(" ")}
-      style={
-        props.inWrapper
-          ? { inset: 0 }                                              // fill the real-px wrapper; z lives on the outer wrapper only
-          : { left: frame.x, top: frame.y, width: frame.w, height: frame.h, zIndex: props.z }
-      }
+      // Every card lives in a .card-layer wrapper that owns position (CSS-var
+      // transform) and zIndex, so the shell just fills it. Drag/resize math still
+      // reads the real frame + getZoom(), so committed frames stay world-coord.
+      style={{ inset: 0 }}
     >
       <div
         className="card-header"

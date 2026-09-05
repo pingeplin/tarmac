@@ -1,0 +1,264 @@
+<!--
+  Magnify geometry probe (spec 2607.0006, Milestone 0 gate + permanent QA).
+
+  This is a PERMANENT QA artifact, not a scratch file. Open it as a normal
+  HTML doc card (`tarmac open desktop/qa/magnify-probe.html`) so it loads
+  through the real tarmac-card:// pipeline, exactly like agent-authored
+  cards. It tests the one unverified claim the whole magnify design rests
+  on: that `zoom: z` on the root of a W-real-px iframe yields a layout
+  viewport of W / z CSS px, not W left alone and simply overflowing.
+
+  Procedure (S5): borrow the card (double-click), then at each board zoom
+  level click the "root zoom" button matching it — board 1x -> root zoom 1,
+  board 2x -> root zoom 2 — and read the REPORT panel. See the spec's
+  Milestone 0 section for the pass/fail table; in short: line count and the
+  ICB probe's offsetWidth (the GATE reading) must hold steady across that
+  step while window.innerWidth and the two measured box widths double.
+  documentElement.clientWidth and body.clientWidth are recorded below as
+  EVIDENCE only — not gate criteria — and are expected to disagree with
+  each other about which one halved (quirks mode; see spec). Only a reading
+  whose "root zoom (applied)" label matches the current board zoom counts —
+  the resize listener refreshes the panel the instant board zoom changes,
+  before the matching button is clicked, and that intermediate reading (board
+  zoom moved, root zoom control has not yet) is expected noise, not a gate
+  failure; ignore it and read again after clicking the matching button.
+
+  S8 (negative case): comment out the <meta name="tarmac-zoom"> line below,
+  reload, and zoom. The "received zoom messages" panel must stay empty —
+  no {tarmac:"zoom"} ever arrives when a card hasn't opted in.
+
+  "No content overflows the card frame" (S5) is judged on boxes A/B/C, the
+  geometry under test — the report and zoom-message panels scroll their own
+  overflow internally on purpose, since they are QA chrome, not the probe.
+
+  This file has no dependency on the shim or on HtmlCard: its own root-zoom
+  buttons drive `document.documentElement.style.zoom` directly, which is
+  what lets Milestone 0 run before either is wired.
+-->
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>tarmac magnify probe</title>
+<meta name="tarmac-zoom" content="magnify">
+<style>
+  body { font: 15px/1.5 -apple-system, sans-serif; background: #111; color: #ddd; padding: 16px; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  h2 { font-size: 13px; margin: 20px 0 6px; color: #9ab; text-transform: uppercase; letter-spacing: 0.04em; }
+  .controls button {
+    font-size: 15px; padding: 8px 16px; margin-right: 8px; cursor: pointer;
+    background: #2a2a2a; color: #ddd; border: 1px solid #555; border-radius: 4px;
+  }
+  .controls button:active { background: #444; }
+  #currentZoom { font-size: 15px; margin-left: 8px; color: #9ab; }
+  #report {
+    font: bold 20px/1.6 ui-monospace, monospace; white-space: pre; background: #1a1a1a;
+    border: 1px solid #444; border-radius: 4px; padding: 12px 16px; color: #7fdc7f;
+    overflow-x: auto;
+  }
+  #zoomLog {
+    font: 13px/1.5 ui-monospace, monospace; white-space: pre-wrap; background: #1a1a1a;
+    border: 1px solid #444; border-radius: 4px; padding: 12px 16px; color: #eab676;
+    max-height: 120px; overflow: auto;
+  }
+  .box { border: 2px solid #6aa; border-radius: 4px; padding: 8px 10px; margin-bottom: 10px; box-sizing: border-box; }
+  .box .label { font-size: 11px; color: #6aa; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+  #fixedBox { width: 320px; }
+  #pctBox { width: 100%; }
+</style>
+</head>
+<body>
+<h1>tarmac magnify probe</h1>
+<div>Milestone 0 geometry gate for spec 2607.0006 — see spec for the pass/fail table.</div>
+
+<h2>root zoom control (this page's own, no shim involved)</h2>
+<div class="controls">
+  <button id="zoom1">root zoom = 1</button>
+  <button id="zoom2">root zoom = 2</button>
+  <span id="currentZoom"></span>
+</div>
+
+<h2>report (refreshed on load, on zoom-button click, and on resize)</h2>
+<div id="report">measuring…</div>
+
+<h2>{tarmac:"zoom"} messages received from parent</h2>
+<div id="zoomLog">(none received)</div>
+
+<h2>box A — auto-width prose (no explicit width; wraps against the containing block)</h2>
+<div class="box" id="proseBox">
+  <div class="label">box A</div>
+  <p id="prose">This paragraph is box A. It has no explicit width, so it fills whatever
+  containing block the layout viewport hands it, and its wrap points are the entire
+  experiment: if CSS zoom truly divides the layout viewport rather than leaving it fixed
+  at the iframe's real pixel width, this text re-wraps identically after root zoom flips
+  from 1 to 2, even though the iframe element itself has grown to twice its size in real
+  screen pixels. Watch the rendered line count in the report above rather than trusting
+  your eyes — a doubled font size can look identical to a doubled viewport at a glance,
+  and the whole point of this probe is to replace that glance with a number. If the line
+  count changes when the zoom control flips, or if the ICB probe's offsetWidth moves
+  instead of holding steady, the geometry assumption behind magnify mode is false and
+  nothing past this file should be built.</p>
+</div>
+
+<h2>box B — fixed-px (width: 320px)</h2>
+<div class="box" id="fixedBox">
+  <div class="label">box B</div>
+  A 320px-wide box. Its rendered rect width should double from board 1x to board 2x —
+  that doubling is the magnification, not a bug.
+</div>
+
+<h2>box C — width: 100%</h2>
+<div class="box" id="pctBox">
+  <div class="label">box C</div>
+  A width:100% box. Same expectation as box A: constant in layout terms, doubled in
+  rendered rect terms.
+</div>
+
+<script>
+(function () {
+  var prose = document.getElementById("prose");
+  var fixedBox = document.getElementById("fixedBox");
+  var pctBox = document.getElementById("pctBox");
+  var reportEl = document.getElementById("report");
+  var currentZoomEl = document.getElementById("currentZoom");
+  var zoomLogEl = document.getElementById("zoomLog");
+  var zoomLog = [];
+  var appliedZoom = "1 (unset, initial load)";
+
+  // Rendered line count: a Range spanning the paragraph's text produces one
+  // client rect per wrapped line box (this is how inline text layout is
+  // exposed to script — there is no direct "line count" API). Robust to
+  // reflow width changes; wrong only if the paragraph gained child elements
+  // that themselves span multiple lines, which box A deliberately avoids.
+  function countLines(el) {
+    var range = document.createRange();
+    range.selectNodeContents(el);
+    return range.getClientRects().length;
+  }
+
+  // The GATE reading (spec Milestone 0): a synthetic width:100% probe with
+  // no positioned ancestor resolves against the initial containing block,
+  // in local layout units — the same read card_shim.js performs. Unlike
+  // documentElement.clientWidth, which returns the <html> element's own
+  // padding box (not the ICB) in quirks mode — and every tarmac-card://
+  // document, this file included, is quirks mode, since card_protocol.rs
+  // writes the shim's <script> ahead of the doctype — this read is
+  // compat-mode-independent. overflow is forced via a saved/restored
+  // cssText round-trip (not the overflow property alone — restoring ""
+  // would removeProperty a shorthand and could drop the button-applied
+  // zoom) so an appearing scrollbar can't perturb the read; try/finally
+  // guarantees the probe element and root style are never left behind.
+  function icbProbeWidth() {
+    var root = document.documentElement;
+    var saved = root.style.cssText;
+    var el = document.createElement("div");
+    el.style.cssText = "position:absolute; left:0; top:0; width:100%; height:0; visibility:hidden;";
+    var w = NaN;
+    try {
+      root.style.overflow = "hidden";
+      root.appendChild(el);
+      w = el.offsetWidth;
+    } finally {
+      if (el.parentNode) root.removeChild(el);
+      root.style.cssText = saved;
+    }
+    return w;
+  }
+
+  function report() {
+    var lines = countLines(prose);
+    var icbW = icbProbeWidth();
+    var winW = window.innerWidth;
+    var proseW = prose.getBoundingClientRect().width;
+    var fixedW = fixedBox.getBoundingClientRect().width;
+    var pctW = pctBox.getBoundingClientRect().width;
+    // A vertical scrollbar appearing between two readings moves the evidence
+    // clientWidth values by its own width on non-overlay-scrollbar builds —
+    // surfaced here so that movement reads as "scrollbar", not "ICB left at
+    // W". The GATE reading (icbProbeWidth) is immune: it forces overflow
+    // hidden for its own measurement regardless of this flag.
+    var scrolled = document.documentElement.scrollHeight > document.documentElement.clientHeight;
+    var compatMode = document.compatMode;
+    var docW = document.documentElement.clientWidth;
+    var bodyW = document.body.clientWidth;
+
+    var text =
+      "root zoom (applied):           " + appliedZoom + "\n" +
+      "prose line count:              " + lines + "\n" +
+      "ICB probe offsetWidth:         " + icbW.toFixed(1) + " px\n" +
+      "window.innerWidth:             " + winW.toFixed(1) + " px\n" +
+      "box A (auto-width) rect width: " + proseW.toFixed(1) + " px\n" +
+      "box B (fixed-px) rect width:   " + fixedW.toFixed(1) + " px\n" +
+      "box C (width:100%) rect width: " + pctW.toFixed(1) + " px\n" +
+      "page scrolled (scrollbar?):    " + scrolled + "\n" +
+      "\n" +
+      "-- evidence only, NOT gate criteria (expected to disagree about which halved) --\n" +
+      "document.compatMode:           " + compatMode + "\n" +
+      "documentElement.clientWidth:   " + docW.toFixed(1) + " px\n" +
+      "document.body.clientWidth:     " + bodyW.toFixed(1) + " px";
+
+    reportEl.textContent = text;
+    console.log(
+      "[magnify-probe] zoom=" + appliedZoom +
+      " lines=" + lines +
+      " icbProbeWidth=" + icbW.toFixed(1) +
+      " innerWidth=" + winW.toFixed(1) +
+      " boxA=" + proseW.toFixed(1) +
+      " boxB=" + fixedW.toFixed(1) +
+      " boxC=" + pctW.toFixed(1) +
+      " scrolled=" + scrolled +
+      " | evidence: compatMode=" + compatMode +
+      " clientWidth=" + docW.toFixed(1) +
+      " bodyClientWidth=" + bodyW.toFixed(1)
+    );
+  }
+
+  function setZoom(z) {
+    document.documentElement.style.zoom = z;
+    appliedZoom = String(z) + " (local control)";
+    currentZoomEl.textContent = "(applied: " + z + ")";
+    report();
+  }
+
+  document.getElementById("zoom1").addEventListener("click", function () { setZoom(1); });
+  document.getElementById("zoom2").addEventListener("click", function () { setZoom(2); });
+
+  // Board-zoom resizes the iframe element (real px), which fires a resize
+  // event here even when nobody touched the root-zoom buttons — refresh so
+  // the report never goes stale while comparing board 1x vs 2x.
+  window.addEventListener("resize", report);
+
+  function renderZoomLog() {
+    zoomLogEl.textContent = zoomLog.length ? zoomLog.join("\n") : "(none received)";
+  }
+
+  // S8's negative case is proved by this listener staying silent: with the
+  // tarmac-zoom meta tag absent, no host ever posts {tarmac:"zoom"}, so
+  // nothing is ever appended here.
+  //
+  // The real shim's own listener (card_shim.js) registers before this
+  // document's bytes even parse and applies documentElement.style.zoom
+  // synchronously, so by the time this handler runs for the same event the
+  // zoom is already in effect — re-measuring here is what keeps S9/S10's
+  // "reported line count and ICB probe width match" comparison honest.
+  window.addEventListener("message", function (e) {
+    if (!e || !e.data || e.data.tarmac !== "zoom") return;
+    var entry = new Date().toISOString() + " — {tarmac:\"zoom\", z:" + e.data.z + "} from " +
+      (e.source === window.parent ? "window.parent" : "other source (would be ignored by the real shim)");
+    zoomLog.push(entry);
+    console.log("[magnify-probe] received " + entry);
+    renderZoomLog();
+    if (e.source === window.parent) {
+      appliedZoom = String(e.data.z) + " (from shim message)";
+      currentZoomEl.textContent = "(applied: " + e.data.z + ")";
+      report();
+    }
+  });
+
+  currentZoomEl.textContent = "(" + appliedZoom + ")";
+  renderZoomLog();
+  report();
+})();
+</script>
+</body>
+</html>

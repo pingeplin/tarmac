@@ -42,7 +42,15 @@ export function docProseLayout(): {
 /** Real-px box style for the per-card wrapper in .doc-layer. Width/height are
  *  card{w,h}×zoom (real pixels); transform is translate-only (NO scale). The
  *  box origin (0,0) lands at the same screen point worldToView projects the
- *  card's world origin, keeping EdgeLayer endpoints co-located at every zoom. */
+ *  card's world origin, keeping EdgeLayer endpoints co-located at every zoom.
+ *
+ *  The translate is SNAPPED to whole device pixels (--device-px = 1px/dpr, written
+ *  by BoardEngine.apply()). world-tx + card-x*zoom is a raw float, so unsnapped the
+ *  card's raster lands on a fractional device grid and WebKit resolves it by
+ *  filtering — every glyph and hairline in the card softens. Invisible at 254ppi,
+ *  plainly visible at 109ppi (the board's own chrome, which has no transform, stays
+ *  sharp next to it). Costs ≤0.5 device px against the EdgeLayer endpoints, which
+ *  terminate at card centers behind the card. */
 export function docWrapperBox(): {
   width: string;
   height: string;
@@ -53,7 +61,7 @@ export function docWrapperBox(): {
     width: "calc(var(--card-w) * var(--zoom))",
     height: "calc(var(--card-h) * var(--zoom))",
     transform:
-      "translate(calc(var(--world-tx) + var(--card-x) * var(--zoom)),calc(var(--world-ty) + var(--card-y) * var(--zoom)))",
+      "translate(round(calc(var(--world-tx) + var(--card-x) * var(--zoom)),var(--device-px)),round(calc(var(--world-ty) + var(--card-y) * var(--zoom)),var(--device-px)))",
     transformOrigin: "0 0",
   };
 }

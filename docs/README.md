@@ -58,7 +58,7 @@ replaced by Tauri 2 + React + xterm.js in #27 (2026-06-29).
 - [`archive/m0/`](archive/m0), [`archive/m1/`](archive/m1) — earliest visual cribs.
 - [`archive/m3/plan.md`](archive/m3/plan.md) — the "strips = boards" milestone record.
 - [`archive/v4/`](archive/v4) — the v3-grid → v4-whiteboard migration plan + visual crib.
-- [`designs/`](designs) — one record per shipped change (numbered `YYMM.NNNN_*` plus a few named ones). These are *change* records: accurate about the change they accompanied, not about today.
+- [`designs/`](designs) — one record per shipped change (numbered `YYMM.NNNN_*` plus a few named ones). These are *change* records: accurate about the change they accompanied, not about today. A design record for a change that was investigated but **not** built lives here too and carries a PROPOSED banner — read the banner, not the directory.
 - `.blueprint/specs/` (repo root) — the per-issue implementation specs the design records are derived from. Same rule: historical.
 
 ## Milestone vocabulary
@@ -73,7 +73,10 @@ M3 is tracked per GitHub issue; see [`workflow.md`](workflow.md).
 
 1. Put a status banner on line 3, right under the `#` title.
 2. ACTIVE goes at `docs/` root; PROPOSED goes in `docs/proposed/`; a record of a
-   change you just shipped goes in `docs/designs/` and is **born HISTORICAL**.
+   change you just shipped goes in `docs/designs/` and is **born HISTORICAL**. A
+   design record for a change you investigated but did **not** build also goes in
+   `docs/designs/`, born **PROPOSED** — the banner is what classifies it, and it
+   flips to HISTORICAL if the change later ships.
 3. Add it to the right table above.
 4. When a doc stops describing reality, flip it to HISTORICAL — don't leave it
    ACTIVE and stale.
