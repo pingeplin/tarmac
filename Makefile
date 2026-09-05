@@ -41,7 +41,7 @@ docs-check:
 
 test: docs-check
 	cd $(ROOT)/core && cargo test
-	cd $(ROOT)/desktop && npm test
+	cd $(ROOT)/desktop && npx tsc --noEmit && npm test
 	cargo test --manifest-path $(ROOT)/desktop/src-tauri/Cargo.toml
 
 # `make run` launches the Tauri dev app (Vite HMR + Rust backend). TARMAC_DAEMON
