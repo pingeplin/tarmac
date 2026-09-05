@@ -53,13 +53,15 @@ instructions and a later reader needs to know:
   `tauri dev` binary could not be used: it was invisible to the computer-use
   screenshot filter and shared the installed app's bundle id, so it could
   neither be captured nor told apart from the Tarmac the operator had open (see
-  issue #102). The wrapped copy was checked to carry the same LC_UUID as the
-  worktree binary, and the daemon log reads
+  issue #102). The wrapped copy was checked to carry the same LC_UUID
+  (`DAD6246E-38F1-3BAB-8D47-3A9C0E93F1AB`) as the worktree binary, and the
+  daemon log reads
   `tarmacd (dev) listening on <worktree>/.dev/tarmacd.sock` continuously across
   the run. This changes only how the app was launched — not which binary, which
   daemon or which socket was observed.
 
-**The app was relaunched mid-run.** The wrapper was rebuilt at ~08:25 and the app
+**The app was relaunched mid-run** (twice; no scenario ran on the second
+generation). The wrapper was rebuilt at ~08:25 and the app
 restarted at 08:26 (`app connected (generation 3)` in the daemon log; the
 generation numbers climbing from 08:35 on are the `board_create`/`board_switch`
 reconnects described above, not further launches). S13/S14/S16/S18/S20 ran on the
@@ -110,8 +112,8 @@ refreshes an already-current card proves nothing.
   `¶ probe.md … ✚ now ↻ ✕` and `qa-magnify.html` reads
   `</> qa-magnify.html … ✚ now ↻ ⌥5 ✕`. `screencapture -x` omits the cursor, so
   the pointer's position is not in the frame; what evidences "without hovering" is
-  that neither `↻` carries the hover chip `s19_hdr.png` and `s20_second_card.png`
-  show behind a hovered control. Both cards were freshly opened, so the slot
+  that neither `↻` carries the hover chip that `s19_hdr.png` and
+  `s20_second_card.png` show behind a hovered control. Both cards were freshly opened, so the slot
   before `↻` held the fresh marker rather than a recency label; `s19_hdr.png`
   shows the same slot occupied by the real recency label
   (`¶ probe.md … ✎ 19s ↻ ✕`), so the full order is evidenced across the two.
@@ -123,6 +125,9 @@ refreshes an already-current card proves nothing.
   px; the card did not move and its persisted tile stayed at `x=636, y=80`.
   `s13.png` and `s14.png` are pixel-identical apart from two regions that are not
   the card: the HTML card's ticking `aliveSec` counter and the menu-bar clock.
+  (`s13.png` is a byte-copy of the earlier `fit2.png` frame, so its clock reads
+  08:08 against `s14.png`'s 08:09 — the two frames are 59 s apart, not the 10 s
+  their file mtimes suggest.)
   **Uncaptured:** the control run — the identical drag started from the header
   *background* moved the same card to `x=740, y=184`, so the drag mechanism was
   live and only `↻` suppressed it — was watched live. No screenshot was taken and
@@ -223,8 +228,8 @@ repo before editing so the QA run does not dirty the worktree.
   the value the registry moved to and still the file's mtime today. The edit was
   written while board-1 was active and dropped by the watcher (the registry still
   held the pre-edit `1788568868835`). The click landed after 08:44:15 — the daemon
-  log's board-switch reconnect pairs at 08:44:08/09 and 08:44:14/15 bracket the
-  edit — so a label stamped from the click could have read no more than 15 s at
+  log's board-switch reconnect pairs at 08:44:08/09 and 08:44:14/15 local time
+  (the log itself prints UTC, `00:44:…`) bracket the edit — so a label stamped from the click could have read no more than 15 s at
   that capture. 19 s is the edit's age, counted from its real mtime.
   **Uncaptured:** the pre-click header (carrying no recency label for that edit)
   and the first post-click reading (`✎ 9s`) were watched live, not screenshotted.
