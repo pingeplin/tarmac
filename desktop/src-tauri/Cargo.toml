@@ -1,6 +1,6 @@
 [package]
 name = "tarmac-app"
-version = "0.8.1"
+version = "0.9.0"
 description = "Tarmac cockpit — Tauri 2 + xterm.js UI"
 authors = ["Tarmac"]
 edition = "2021"
