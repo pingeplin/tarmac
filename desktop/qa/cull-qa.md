@@ -70,8 +70,21 @@ instructions and a later reader needs to know:
   the frontmost-pid guard fired on none of the 36 rows.
 
 **Companion artifact:** [`cull-probe.html`](cull-probe.html) — open it with
-`tarmac open desktop/qa/cull-probe.html`. Its URL switches (`n`, `loops`, `across`,
-`ms`) make one file serve every cell below. It reports through the console relay with
+`tarmac open desktop/qa/cull-probe.html`. Its switches (`n`, `loops`, `across`,
+`ms`) are **space-separated tokens in its `<meta name="cull-probe" content="…">`
+tag** — not URL query parameters, which cannot reach a card (S37). Configure a cell
+by editing that one line in a scratch copy; a six-card cell needs six copies anyway,
+one per path:
+
+```sh
+for i in 1 2 3 4 5 6; do
+  sed 's/content="n=1 loops=all/content="n=6 loops=all/' \
+      desktop/qa/cull-probe.html > /tmp/cull$i.html
+  tarmac open /tmp/cull$i.html
+done
+```
+
+One file so configured serves every cell below. It reports through the console relay with
 a `[cull]` prefix, one line per period, carrying each family's delivery count **and
 max inter-delivery gap**, the real wall time `dt` the window covered, its card-side
 outstanding-rAF count, and a boot id.
@@ -112,18 +125,19 @@ outstanding-rAF count, and a boot id.
 
 ## S29 — Culled cards deliver nothing (criterion 1)
 
-- [x] Open one probe card (`?n=1`). Note its steady visible gaps (tens of ms).
+- [x] Open one probe card (meta `n=1 loops=all`). Note its steady visible gaps
+      (tens of ms).
 - [x] Pan until it culls (more than one viewport out), hold it culled for ~10 s,
       then pan back. On the **first line after un-cull**, `gapRaf`, `gapInt` **and**
       `gapTo` are each within ~2 report periods of `dt` — all three, not just `gapRaf`.
       Ignore the counts on that line; they are expected to be non-zero.
-- [x] Repeat with six probe cards (`?n=6`) on a 3×2 grid; every card shows the same
+- [x] Repeat with six probe cards (meta `n=6`) on a 3×2 grid; every card shows the same
       three-gap-≈-`dt` reading.
 - [x] **The across-the-pause one-shot — mind the ordering, it is the whole cell.**
       The deadline is armed once at load and is fixed, so it discriminates nothing
       unless the cull actually *contains* it. **Cull the card within ~10 s of opening
       it, before any `ACROSS-FIRED` line appears, and hold it culled past the 12 s
-      mark** — or open it as `?across=<ms>` with a deadline you know your cull will
+      mark** — or set meta `across=<ms>` to a deadline you know your cull will
       span. Every report line carries `across=pending|fired`; if it already reads
       `fired` before you culled, the cell is void — reload and retry.
 - [x] With that ordering satisfied, read the
@@ -156,7 +170,7 @@ would have recorded had the gate not held.
 
 Sample **two consecutive 10 s windows, the first opening AT the pause** — not after
 a settle. Baseline is the **same board with the probes' loops disabled**
-(`?loops=none`), not an empty board: it holds card count, DOM, iframes and layout
+(meta `loops=none`), not an empty board: it holds card count, DOM, iframes and layout
 fixed and varies only the thing under test.
 
 **The probe must not rely on WebKit's 10 s service tick**, which is undocumented,
@@ -172,8 +186,8 @@ out-of-repo harness made before it added two-window sampling.
       cell, then `git checkout HEAD -- desktop/src-tauri/src/card_shim.js` to restore.
       (Reverting only the shim is deliberate — checking out the whole parent commit
       would take the probe with it.) Expect
-      roughly **+6 points**, which is #72 reproduced. There is no URL switch for
-      this: nothing a card can do bypasses the shim. Without this cell the delta is
+      roughly **+6 points**, which is #72 reproduced. There is no switch for this:
+      nothing a card can do bypasses the shim. Without this cell the delta is
       being compared against a number from another machine.
 
 Observation: **PASS at both windows.** Six 300×200 probes on a 3×2 grid,
@@ -368,8 +382,9 @@ came back paused — so the cull post is genuinely sitting *before* that guard.
 - [ ] `desktop/qa/cull-probe.html` is in the repo, installs its rAF/cAF
       outstanding-count wrapper as the **first statement of its own script**, and
       reports `outstanding=` in every line.
-- [ ] Its `n` / `loops` / `across` / `ms` URL switches all work, so one
-      file serves every cell above.
+- [ ] Its `n` / `loops` / `across` / `ms` switches all work — set in the
+      `<meta name="cull-probe" content="…">` tag of a scratch copy — so one file
+      serves every cell above.
 - [x] The in-app numbers from this sheet are recorded in
       `../../docs/designs/2609.0002_offscreen_html_card_throttle.md` and summarised
       in `../../docs/architecture.md`.
@@ -411,6 +426,38 @@ Observation: **FAIL — two independent defects in the committed probe.**
 Neither defect touches the feature under test — both are in the QA artifact — but
 criterion 9 as written is not met. The third box below is met: the numbers are
 recorded in the RFC and summarised in `architecture.md`.
+
+> **Fixed by the `fix(qa): make cull-probe.html report and take its switches`
+> commit — the two boxes above stay unchecked pending a re-run.**
+> The record above is kept as history; it is what the artifact did at `c82f899`.
+> What changed:
+>
+> 1. The literal `</script>` at `cull-probe.html:102` is now spelled
+>    `<\/script>`, so the first script element runs to completion, `TM` is
+>    defined and the reporter emits `[cull] t=… gapRaf=… outstanding=…` lines.
+> 2. **The switch mechanism is replaced, not repaired.** URL switches cannot work
+>    through `tarmac open` + `cardSrcUrl` — the diagnosis above is exactly right —
+>    so switches now live in a **`<meta name="cull-probe" content="n=1 loops=all
+>    across=12000 ms=1000">`** tag, read with `document.querySelector`. That is the
+>    mechanism already proven to survive this pipeline: it is how `tarmac-zoom`
+>    reaches the shim. Configure a cell by editing that one line in a scratch
+>    **copy** (a six-card cell needs six copies anyway, one per path):
+>
+>    ```sh
+>    for i in 1 2 3 4 5 6; do
+>      sed 's/content="n=1 loops=all/content="n=6 loops=all/' \
+>          desktop/qa/cull-probe.html > /tmp/cull$i.html
+>      tarmac open /tmp/cull$i.html
+>    done
+>    ```
+>
+>    The probe's header comment carries the same recipe, and every report line
+>    still echoes `n=` and `loops=` so a cell stays self-describing in the log.
+> 3. `desktop/src/cull-probe.test.ts` now loads the shipped file, parses it the
+>    way an HTML parser would, and **executes both script blocks in a `node:vm`**,
+>    asserting a real `[cull]` report line comes out carrying the gaps and the
+>    meta tag's values. Both halves of defect 1 fail that suite, so a probe that
+>    silently stops reporting can no longer reach a QA agent.
 
 > Consistent with the note above, nothing in this run instrumented the **host**
 > page's outstanding-rAF count (#105), and no cell here claims to have moved

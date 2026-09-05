@@ -38,7 +38,30 @@
   `gapTo=1000` would be the failure -- the timeout chain kept running while
   culled, whatever its count says.
 
-  URL switches (append to the path, e.g. `...cull-probe.html?n=6&loops=rafonly`):
+  HOW TO SET THE SWITCHES. Not in the URL -- a card is opened by PATH
+  (`tarmac open <file>`), and cardSrcUrl serves it as
+  `tarmac-card://doc/<percent-encoded path>?v=<mtime>`, so `location.search`
+  always belongs to the host and never to the tester. Switches therefore live in
+  the `<meta name="cull-probe" content="...">` tag below, which is the mechanism
+  already proven to survive this pipeline (it is how `tarmac-zoom` reaches the
+  shim). Configure a cell by editing that tag in a scratch COPY:
+
+      cp desktop/qa/cull-probe.html /tmp/p1.html
+      # then edit /tmp/p1.html's cull-probe meta, or do it in one step:
+      sed 's/content="n=1 loops=all/content="n=6 loops=none/' \
+          desktop/qa/cull-probe.html > /tmp/p1.html
+      tarmac open /tmp/p1.html
+
+  A six-card cell needs six copies anyway (one card per path), so:
+
+      for i in 1 2 3 4 5 6; do
+        sed 's/content="n=1 loops=all/content="n=6 loops=all/' \
+            desktop/qa/cull-probe.html > /tmp/cull$i.html
+        tarmac open /tmp/cull$i.html
+      done
+
+  Every value below is a space-separated `key=value` token in that one tag.
+  Unknown keys are ignored; a missing tag means all defaults.
 
     n=<int>       cards this instance is one of; recorded in the report line
                   only, so a 6-card cell is self-describing in the log.
@@ -48,8 +71,7 @@
      gate and is prepended before this file's first byte, so nothing a card can
      do bypasses it — any reference this document captures is already the shim's
      wrapper. An un-gated baseline is obtained by measuring a BUILD with the gate
-     reverted, never by a URL switch. An earlier draft of this file claimed
-     otherwise; it was wrong.)
+     reverted. An earlier draft of this file claimed otherwise; it was wrong.)
     across=on     (default, 12000) arm a one-shot timeout whose deadline is meant
          =<ms>    to land INSIDE a cull, to exercise the ONE case no measurement
          =off     before this had: a timeout outstanding ACROSS the pause boundary
@@ -75,6 +97,11 @@
 <head>
 <meta charset="utf-8" />
 <meta name="tarmac-zoom" content="magnify" />
+<!-- Switches live HERE, not in the URL: a card is opened by path via
+     `tarmac open`, and cardSrcUrl percent-encodes that path into one segment and
+     appends its own ?v=<mtime>, so location.search is never the tester's. Edit
+     this line in a scratch COPY of the file (see the header). -->
+<meta name="cull-probe" content="n=1 loops=all across=12000 ms=1000" />
 <title>tarmac cull probe</title>
 <style>
   body { font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; margin: 10px; }
@@ -98,8 +125,10 @@
 
 <script>
 // FIRST STATEMENT OF THIS DOCUMENT'S SCRIPT — the earliest a card can run.
-// It cannot precede the shim: card_protocol.rs's compose_body writes <script> +
-// the whole shim + </script> before this file's first byte, so once the gate
+// It cannot precede the shim: card_protocol.rs's compose_body writes the opening
+// <script> tag, the whole shim, and the closing tag (spelled <\/script> here so
+// the HTML parser does not end THIS element) before this file's first byte, so
+// once the gate
 // ships these wrap the SHIM's wrappers rather than the raw natives. That is
 // what makes the count meaningful here — it is this card's outstanding
 // requests, which is exactly what S29/S37 want.
@@ -133,12 +162,22 @@ var TM = (function () {
 
 <script>
 (function () {
+  // Switches come from <meta name="cull-probe">, never from location.search:
+  // this document is served as tarmac-card://doc/<percent-encoded path>?v=<mtime>,
+  // so its query string always belongs to the host. A meta tag is the mechanism
+  // already proven to survive this pipeline -- it is how tarmac-zoom reaches the
+  // shim. Edit the tag in a scratch copy of this file to configure a cell.
   var q = {};
-  String(location.search || "").replace(/^\?/, "").split("&").forEach(function (kv) {
-    if (!kv) return;
-    var i = kv.indexOf("=");
-    q[i < 0 ? kv : kv.slice(0, i)] = i < 0 ? "" : decodeURIComponent(kv.slice(i + 1));
-  });
+  (function () {
+    var el = null;
+    try { el = document.querySelector('meta[name="cull-probe"]'); } catch (e) {}
+    var raw = el && el.content ? el.content : "";
+    raw.split(/\s+/).forEach(function (kv) {
+      if (!kv) return;
+      var i = kv.indexOf("=");
+      if (i > 0) q[kv.slice(0, i)] = kv.slice(i + 1);
+    });
+  })();
 
   var N = q.n || "?";
   var LOOPS = q.loops || "all";
