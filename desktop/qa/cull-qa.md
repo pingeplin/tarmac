@@ -12,12 +12,14 @@ the CPU cells identify the WebContent and GPU XPC services by set-difference aga
 what was running *before* launch, so a second Tarmac (an installed build, or another
 agent's QA app) both hijacks the daemon and makes the process attribution wrong.
 
-## Status: 10 PASS / 1 FAIL — 11/11 run (2026-09-05, commit `c82f899`)
+## Status: VERIFIED — 11/11 PASS (2026-09-05, commits `c82f899` + `e6782da`)
 
-**S29–S36 and S38–S39 ran and passed. S37 FAILS**: the committed
-`cull-probe.html` is broken two independent ways (both in its Observation below),
-and the rest of this sheet could only be filled in after fixing the first of them
-in a scratch copy. Everything below was observed on screen against a **debug**
+**S29–S36 and S38–S39 ran and passed against `c82f899`. S37 failed there** — the
+probe shipped with that commit was broken two independent ways (kept below as
+history), so every behavioural cell in that pass ran a fixed scratch copy.
+`e6782da` fixed both defects, and **S37 and S29 N=1 were re-run against the
+shipped file**: S37 now PASSES and S29 N=1 reproduces with the committed probe
+unmodified. The re-runs are the second Observation paragraph under each. Everything below was observed on screen against a **debug**
 build of `c82f899` — the PR's feature commit — driven through the real UI in
 `../tarmac-worktrees/72-offscreen-card-throttle`. Screenshots are named in each
 Observation and live outside the repo in `../tarmac-worktrees/qa72-scratch/shots/`,
@@ -34,7 +36,10 @@ instructions and a later reader needs to know:
   hard-code `String("?n=6&loops=none")` in place of `location.search`, because the
   URL switches are unreachable through `tarmac open` (also S37). The scheduler
   loops the CPU cells measure are identical either way, and the reporter runs in
-  both arms of every marginal, so no CPU figure depends on the fix.
+  both arms of every marginal, so no CPU figure depends on the fix. **`e6782da`
+  fixed the probe**; S37 and S29 N=1 were then re-run against the shipped file
+  (see their second Observation paragraphs), so at least one gap cell on this
+  sheet is taken with the committed artifact unmodified.
 - **Daemon isolation was by socket, not by `pkill`.** The installed `tarmacd`
   belongs to a Tarmac the operator had open, so it was left running untouched; the
   QA app and every `tarmac open` used
@@ -165,6 +170,17 @@ same machine 20 minutes later (`s30_ungated_leak_proof.png`): the same probe,
 culled, reads `gapInt=1000 gapTo=1000` while `dt` runs to 2000, and its one-shot
 fires at `elapsed=12002` — on time, while culled. That is the failure this cell
 would have recorded had the gate not held.
+
+**Re-run on `e6782da` with the committed probe unmodified** (`s29_n1_committed_probe.png`).
+`qa72-scratch/v_default.html` is a `cp` of `desktop/qa/cull-probe.html`, verified
+byte-identical with `cmp`; no meta edit, so it carries the shipped default
+`n=1 loops=all across=12000 ms=1000`. Same big-card layout, same synthetic pan.
+Visible band `t=3`–`t=8`: raf 30/s (`gapRaf` 35–45 ms), int 33–34/s, to 33–34/s
+(`gapInt`/`gapTo` 31–32 ms). Straddling line:
+`t=9 dt=16949 raf=26 gapRaf=16105 int=29 gapInt=16105 to=33 gapTo=16105` — all
+three gaps within **844 ms** of `dt`. `across` read `pending` on every pre-cull
+line and `ACROSS-FIRED` reports `elapsed=24374` against `deadline=12000`. The
+shipped file now produces the gap cell on its own.
 
 ## S30 — Marginal CPU ≤ 1 point at every phase (criterion 3)
 
@@ -379,10 +395,10 @@ came back paused — so the cull post is genuinely sitting *before* that guard.
 
 ## S37 — The probe is committed and instrumented (criterion 9)
 
-- [ ] `desktop/qa/cull-probe.html` is in the repo, installs its rAF/cAF
+- [x] `desktop/qa/cull-probe.html` is in the repo, installs its rAF/cAF
       outstanding-count wrapper as the **first statement of its own script**, and
       reports `outstanding=` in every line.
-- [ ] Its `n` / `loops` / `across` / `ms` switches all work — set in the
+- [x] Its `n` / `loops` / `across` / `ms` switches all work — set in the
       `<meta name="cull-probe" content="…">` tag of a scratch copy — so one file
       serves every cell above.
 - [x] The in-app numbers from this sheet are recorded in
@@ -423,9 +439,48 @@ Observation: **FAIL — two independent defects in the committed probe.**
    reach any other value. One file therefore does **not** serve every cell; the
    `loops=none` baseline needed a copy with the query hard-coded.
 
-Neither defect touches the feature under test — both are in the QA artifact — but
-criterion 9 as written is not met. The third box below is met: the numbers are
-recorded in the RFC and summarised in `architecture.md`.
+Neither defect touched the feature under test — both were in the QA artifact.
+That FAIL record is kept above as history; `e6782da` fixed both and the scenario
+was re-run against the shipped file.
+
+**Re-run on `e6782da`: PASS.** Every box now holds.
+
+*It reports, with the outstanding-count wrapper live.* A card opened from a
+byte-identical `cp` of `desktop/qa/cull-probe.html` (`s29_n1_committed_probe.png`)
+emits, verbatim, first two lines:
+
+```
+[cull] boot=1788600136765.54162 n=1 loops=all across=pending acrossMs=12000
+[cull] t=1 dt=1001 raf=1 gapRaf=1001 int=7 gapInt=834 to=12 gapTo=762 outstanding=1 across=pending n=1 loops=all boot=1788600136765.54162
+```
+
+— i.e. `t=`, `dt=`, all three gaps, `outstanding=`, `across=` and the meta's `n=`
+and `loops=` echoed, on every line. (The `zoom-mode` line sits between those two;
+it is the host's, not the probe's.) The counters no longer read `–` and no
+`Script error.` appears.
+
+*All four switches work.* Three cards on one board (`s37_switches.png`,
+`s37_switches_console.png`), each a copy of the shipped file whose **only**
+difference from it is the one `<meta name="cull-probe">` content line — confirmed
+by `diff`, which prints exactly `104c104` for each:
+
+| meta content | `cfg` echoed | rAF | interval | timeout | `last dt` | `outstanding` |
+| --- | --- | --- | --- | --- | --- | --- |
+| `n=1 loops=all across=12000 ms=1000` (shipped default) | `n=1 loops=all` | 30 | 34 | 34 | 1019 | **1** |
+| `n=6 loops=none across=12000 ms=1000` | `n=6 loops=none` | **0** | **0** | **0** | 1020 | **0** |
+| `n=3 loops=all across=3000 ms=500` | `n=3 loops=all` | 15 | 17 | 17 | **509** | **1** |
+
+`n` is echoed; `loops=none` really stops all three families **and drops the
+card-side outstanding count to 0**, which is what shows the rAF/cAF wrapper is a
+live instrument rather than a constant; `ms=500` halves both `dt` and every
+per-period count; and `across=3000` reaches the one-shot — that card's boot line
+reads `acrossMs=3000` and its
+`ACROSS-FIRED at=1788600207471 armedAt=1788600204470 deadline=3000 elapsed=3001`
+fires at the meta's deadline rather than the default 12000. One file, edited only
+in that tag, serves every cell above.
+
+The third box was already met: the numbers are recorded in the RFC and summarised
+in `architecture.md`.
 
 > **Fixed by the `fix(qa): make cull-probe.html report and take its switches`
 > commit — the two boxes above stay unchecked pending a re-run.**
