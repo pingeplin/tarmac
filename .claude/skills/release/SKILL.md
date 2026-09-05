@@ -47,8 +47,8 @@ can't ship — but sync here to catch it up front.
      `(cd desktop && npm install --package-lock-only)`.
    - `packaging/Casks/tarmac.rb` — version now; the `sha256` is filled in at step 4.
 
-   The **two Rust crate versions are auto-stamped, not hand-edited**: `release.sh`
-   step 0 `sed`s `VERSION` into `core/Cargo.toml` and `desktop/src-tauri/Cargo.toml`
+   The **two Rust crate versions are stamped by `release.sh`, idempotently** — step 0
+   `sed`s `VERSION` into `core/Cargo.toml` and `desktop/src-tauri/Cargo.toml`
    so `CARGO_PKG_VERSION` matches the shipped version (this is what makes the daemon
    auto-restart-on-version-mismatch check fire across upgrades). `make release`
    leaves them modified in the working tree — they **MUST go in the release commit**,
@@ -56,13 +56,23 @@ can't ship — but sync here to catch it up front.
    the version check silently breaks again.
 
 2. **Pre-build fixups (both are easy to forget and fail the build):**
-   - **Refresh the Cargo lockfiles.** The release build passes `--locked`, but
-     step-0's `sed` bumps the Cargo.toml versions without touching the locks → build
-     dies with `cannot update the lock file ... --locked was passed`. Run
-     `(cd core && cargo build --offline)` and
-     `(cd desktop/src-tauri && cargo build --offline)` to rewrite the workspace-crate
-     version entries in `core/Cargo.lock` and `desktop/src-tauri/Cargo.lock`. Commit
-     both. *(If `release.sh` ever learns to stamp the locks itself, drop this.)*
+   - **Refresh the Cargo lockfiles — but stamp the `Cargo.toml`s first.** The release
+     build passes `--locked`, and `release.sh` step 0 bumps the Cargo.toml versions
+     without touching the locks → build dies with
+     `cannot update the lock file ... --locked was passed`. A `cargo build` only
+     rewrites a lock to whatever the toml *currently* says, so refreshing before the
+     stamp just re-writes the **old** version and the build still dies. Apply step 0's
+     own sed yourself, then build:
+     ```
+     for f in core/Cargo.toml desktop/src-tauri/Cargo.toml; do
+       sed -i '' "s/^version = \".*\"/version = \"x.y.z\"/" "$f"
+     done
+     (cd core && cargo build --offline) && (cd desktop/src-tauri && cargo build --offline)
+     ```
+     `release.sh` re-applies the same sed later, so pre-stamping is a no-op for it.
+     Verify with `grep -A1 'name = "tarmacd"' core/Cargo.lock` before `make release`.
+     Commit both locks. *(If `release.sh` ever learns to stamp the locks itself, drop
+     this.)*
    - **Full `npm install` if a release added a frontend dep.** `--package-lock-only`
      rewrites the lockfile but NOT `node_modules`; a missing dep (e.g.
      `@xterm/addon-webgl`) makes the Tauri `npm run build` fail with
