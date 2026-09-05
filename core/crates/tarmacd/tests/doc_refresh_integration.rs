@@ -3,50 +3,15 @@
 // watcher. It always pushes on a successful stat (changed mtime or not), records the
 // mtime in the ACTIVE board's registry before pushing, and is a silent no-op for an
 // unknown path, a background-board doc, or an unreadable file.
-// Harness lives in common/. The first four helpers below (write_doc, cli_open,
-// drain_connect, wait_for_state) are file-local copies from doc_close_integration.rs,
-// as that file itself did; the rest are specific to this suite.
+// Harness lives in common/; the helpers below are specific to this suite.
 
 mod common;
 
 use std::io::Write;
-use std::path::Path;
-use std::time::{Duration, Instant, UNIX_EPOCH};
+use std::time::{Duration, UNIX_EPOCH};
 
-use common::{Conn, LONG, TestDaemon, none_within};
+use common::{Conn, TestDaemon, cli_open, drain_connect, none_within, wait_for_state, write_doc};
 use tarmac_protocol::Msg;
-
-fn write_doc(path: &Path, content: &str) -> String {
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(path, content).unwrap();
-    std::fs::canonicalize(path).unwrap().to_string_lossy().into_owned()
-}
-
-fn cli_open(sock: &Path, path: &str) {
-    let mut cli = Conn::hello(sock, "cli");
-    cli.send(&Msg::Open { path: path.into(), term_id: None, board_id: None });
-    let reply = cli.recv(Instant::now() + LONG, "ack");
-    assert!(matches!(reply, Msg::Ack), "expected ack, got {reply:?}");
-}
-
-fn drain_connect(app: &mut Conn) {
-    app.recv_until("board_list", |m| matches!(m, Msg::BoardList { .. }));
-    app.recv_until("restore", |m| matches!(m, Msg::Restore { .. }));
-}
-
-fn wait_for_state(state: &Path, what: &str, pred: impl Fn(&serde_json::Value) -> bool) {
-    let deadline = Instant::now() + LONG;
-    loop {
-        if let Ok(bytes) = std::fs::read(state)
-            && let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes)
-            && pred(&v)
-        {
-            return;
-        }
-        assert!(Instant::now() < deadline, "state file never showed {what}");
-        std::thread::sleep(Duration::from_millis(25));
-    }
-}
 
 // Append to a file: bumps mtime AND produces a watcher event.
 fn touch(path: &str) {

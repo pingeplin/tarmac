@@ -17,7 +17,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CardShell } from "./CardShell";
-import { CardHeader } from "./CardHeader";
+import { CardHeader, HeaderButton } from "./CardHeader";
 import { cardSrcUrl } from "../kit/docKind";
 import { cardIframePx, cardGestureScale, cardScrollDelta, MAGNIFY_K } from "../kit/cardZoom";
 import {
@@ -29,7 +29,7 @@ import {
 import { readyActions, type ZoomMode } from "../kit/zoomMode";
 import { cullPayload } from "../kit/cardCull";
 import { RASTER_SCALE_SETTLE_MS } from "../kit/rasterScale";
-import { CARD_HEADER_H_PX } from "../kit/termZoom";
+import { CARD_HEADER_H_PX } from "../kit/cardChrome";
 import { basename } from "../kit/docStore";
 import type { DocCardModel, WorldFrame } from "../board/model";
 
@@ -76,14 +76,10 @@ export function HtmlCard(props: HtmlCardProps) {
   const [gestureScale, setGestureScale] = useState(1);
   const settledZoomRef = useRef(settledZoom);
   settledZoomRef.current = settledZoom;
-  const getZoomRef = useRef(props.getZoom);
-  getZoomRef.current = props.getZoom;
-  const borrowedRef = useRef(props.borrowed);
-  borrowedRef.current = props.borrowed;
-  const onEscapeHomeRef = useRef(props.onEscapeHome);
-  onEscapeHomeRef.current = props.onEscapeHome;
-  const onBorrowRef = useRef(props.onBorrow);
-  onBorrowRef.current = props.onBorrow;
+  // Native listeners and observers below read the latest props through this ref
+  // (getZoom gets a new identity every Board render).
+  const latest = useRef(props);
+  latest.current = props;
 
   // Culled state for THIS card (spec 2609.0002). Held in a ref and posted from
   // two places covering disjoint cases: the listener below (every flip once the
@@ -109,12 +105,11 @@ export function HtmlCard(props: HtmlCardProps) {
   }, []);
 
   // The zoom mode in force for the CURRENT document load (spec 2607.0006,
-  // 2609.0003). ONE ref, not a boolean guard beside a mode: "has a genuine ready
-  // been honored" and "which mode won" are the same fact, and two of them could
-  // drift. null = no ready honored yet, which is what keeps a forged repeat inert
-  // (S17). The mode is also state because the render branches on it; both are
-  // written at the same two sites, so a message arriving before React re-renders
-  // still reads the mode actually adopted.
+  // 2609.0003). The ref is the authority: "has a genuine ready been honored" and
+  // "which mode won" are one fact, read synchronously by the message handler
+  // (null = no ready honored yet, which keeps a forged repeat inert, S17). The
+  // boolean state only triggers the render; both are written at the same two
+  // sites.
   const loadModeRef = useRef<ZoomMode | null>(null);
   const [magnify, setMagnify] = useState(false);
   // Reset on reload (?v= bump) so a dropped meta tag can't leak the old mode
@@ -124,7 +119,7 @@ export function HtmlCard(props: HtmlCardProps) {
   useEffect(() => {
     loadModeRef.current = null;
     setMagnify(false);
-    setSettledZoom(getZoomRef.current());
+    setSettledZoom(latest.current.getZoom());
     setGestureScale(1);
   }, [props.lastChangedMs]);
 
@@ -135,7 +130,7 @@ export function HtmlCard(props: HtmlCardProps) {
       const msg = parseCardMessage(e.data);
       if (!msg) return;
       if (msg.kind === "escape") {
-        if (borrowedRef.current) onEscapeHomeRef.current();
+        if (latest.current.borrowed) latest.current.onEscapeHome();
         return;
       }
       if (msg.kind === "ready") {
@@ -153,18 +148,8 @@ export function HtmlCard(props: HtmlCardProps) {
           // re-posts per genuine ready, which is a constant and cannot re-wrap.
           iframeRef.current?.contentWindow?.postMessage(act.zoomPost, "*");
         }
-        // declared and effective can no longer disagree — the capability probe
-        // that split them died with the macOS 26 floor (#94). Both halves stay
-        // because the line's job is to say what mode is in force for a document
-        // whose meta may be a typo, and `declared` is the resolved value, not
-        // the raw string.
-        if (act.logMode) {
-          setEntries((buf) =>
-            pushCardConsole(buf, {
-              level: "info",
-              args: [`zoom-mode declared=${act.declared} effective=${act.declared}`],
-            }),
-          );
+        if (act.logLine) {
+          setEntries((buf) => pushCardConsole(buf, { level: "info", args: [act.logLine] }));
         }
         if (act.adopt) {
           loadModeRef.current = act.adopt;
@@ -189,10 +174,10 @@ export function HtmlCard(props: HtmlCardProps) {
     if (!el) return;
     const board = el.closest(".board") as HTMLElement | null;
     if (!board) return;
-    let lastZoom = getZoomRef.current();
+    let lastZoom = latest.current.getZoom();
     let timer: number | null = null;
     const mo = new MutationObserver(() => {
-      const zoom = getZoomRef.current();
+      const zoom = latest.current.getZoom();
       if (zoom === lastZoom) return;
       lastZoom = zoom;
       setGestureScale(cardGestureScale(zoom, settledZoomRef.current));
@@ -215,7 +200,7 @@ export function HtmlCard(props: HtmlCardProps) {
   useEffect(() => {
     const el = shieldRef.current;
     if (!el) return;
-    const onDblClick = () => onBorrowRef.current();
+    const onDblClick = () => latest.current.onBorrow();
     el.addEventListener("dblclick", onDblClick);
     return () => el.removeEventListener("dblclick", onDblClick);
   }, [props.borrowed]);
@@ -232,7 +217,7 @@ export function HtmlCard(props: HtmlCardProps) {
     if (!el || !props.selected) return;
     const onWheel = (e: WheelEvent) => {
       if (e.ctrlKey) return;
-      const zoom = getZoomRef.current();
+      const zoom = latest.current.getZoom();
       iframeRef.current?.contentWindow?.postMessage(
         {
           tarmac: "scroll",
@@ -281,14 +266,13 @@ export function HtmlCard(props: HtmlCardProps) {
           onClose={props.onClose}
         >
           {entries.length > 0 && (
-            <span
+            <HeaderButton
               className="console-badge"
-              onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
               onClick={() => setConsoleOpen((o) => !o)}
               title="Toggle console"
             >
               ⌥ {entries.length}
-            </span>
+            </HeaderButton>
           )}
         </CardHeader>
       }

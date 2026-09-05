@@ -1,12 +1,11 @@
 // Test-only evaluator for the CSS strings the zoom-layout modules emit. The
 // wrapper box is authored as CSS text (docZoom/termZoom), so the only way to
 // assert it PROJECTS correctly rather than merely matching a literal is to
-// evaluate the real string. Lives outside *.test.ts because docZoom.test.ts and
-// termZoom.test.ts both need it; not referenced from kit-entry.ts, so it does
-// not ship.
+// evaluate the real string. Only *.test.ts files import it, so Vite never
+// bundles it.
 
 /** Evaluate a `calc(...)`/`round(...)` px expression against a var table. */
-export function evalCalcPx(expr: string, vars: Record<string, string>): number {
+function evalCalcPx(expr: string, vars: Record<string, string>): number {
   const inner = expr.match(/^calc\((.+)\)$/)?.[1] ?? expr;
   const substituted = inner.replace(/var\(--([a-z-]+)\)/g, (_, name: string) => {
     const key = `--${name}`;
@@ -24,7 +23,7 @@ export function evalCalcPx(expr: string, vars: Record<string, string>): number {
 }
 
 /** Split the two args of translate(A,B) respecting nested parens. */
-export function splitTranslateArgs(transformStr: string): [string, string] {
+function splitTranslateArgs(transformStr: string): [string, string] {
   const prefix = "translate(";
   if (!transformStr.startsWith(prefix) || !transformStr.endsWith(")")) {
     throw new Error(`expected translate(...), got: ${transformStr}`);

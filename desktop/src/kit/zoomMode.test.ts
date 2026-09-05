@@ -42,24 +42,23 @@ describe("declaredZoomMode (S1)", () => {
 // The payload is compared against the imported MAGNIFY_K, never a literal, so a
 // wrong constant fails here rather than only in QA.
 const MAGNIFY_POST = { tarmac: "zoom", z: MAGNIFY_K };
+const logLine = (mode: ZoomMode) => `zoom-mode declared=${mode} effective=${mode}`;
 
 describe("2609.0003 readyActions — a load's first ready (S1-S3, guards)", () => {
   // S1-S3 characterize behaviour that already shipped; they fail today only
   // because readyActions did not exist yet.
   it("2609.0003 S1: adopts magnify, logs the line and posts the zoom when magnify is declared", () => {
     expect(readyActions(null, "magnify")).toEqual({
-      declared: "magnify",
       adopt: "magnify",
-      logMode: true,
+      logLine: logLine("magnify"),
       zoomPost: MAGNIFY_POST,
     });
   });
 
   it("2609.0003 S2: a meta-less document takes the magnify default and posts, but logs nothing", () => {
     expect(readyActions(null, null)).toEqual({
-      declared: "magnify",
       adopt: "magnify",
-      logMode: false,
+      logLine: null,
       zoomPost: MAGNIFY_POST,
     });
   });
@@ -77,9 +76,8 @@ describe("2609.0003 readyActions — a load's first ready (S1-S3, guards)", () =
     "2609.0003 S2: a present-but-useless tag (%j) still logs, resolving to %s",
     (meta, mode, post) => {
       expect(readyActions(null, meta)).toEqual({
-        declared: mode,
         adopt: mode,
-        logMode: true,
+        logLine: logLine(mode),
         zoomPost: post,
       });
     },
@@ -87,9 +85,8 @@ describe("2609.0003 readyActions — a load's first ready (S1-S3, guards)", () =
 
   it("2609.0003 S3: adopts reveal, logs the line and posts nothing when reveal is declared", () => {
     expect(readyActions(null, "reveal")).toEqual({
-      declared: "reveal",
       adopt: "reveal",
-      logMode: true,
+      logLine: logLine("reveal"),
       zoomPost: null,
     });
   });
@@ -116,27 +113,24 @@ describe("2609.0003 readyActions — the posted zoom is always MAGNIFY_K (S5)", 
 describe("2609.0003 readyActions — a repeat ready (S4, S6-S7)", () => {
   it("2609.0003 S4: the self-reload shape is answered with the zoom, adopting and logging nothing", () => {
     expect(readyActions("magnify", "magnify")).toEqual({
-      declared: "magnify",
       adopt: null,
-      logMode: false,
+      logLine: null,
       zoomPost: MAGNIFY_POST,
     });
   });
 
   it("2609.0003 S4: and with no meta at all — the commoner real shape (cull-qa S36's fixture)", () => {
     expect(readyActions("magnify", null)).toEqual({
-      declared: "magnify",
       adopt: null,
-      logMode: false,
+      logLine: null,
       zoomPost: MAGNIFY_POST,
     });
   });
 
   it("2609.0003 S6: a forged reveal cannot flip a magnify card's mode or add a console line", () => {
     expect(readyActions("magnify", "reveal")).toEqual({
-      declared: "reveal",
       adopt: null,
-      logMode: false,
+      logLine: null,
       zoomPost: MAGNIFY_POST,
     });
   });
@@ -146,18 +140,16 @@ describe("2609.0003 readyActions — a repeat ready (S4, S6-S7)", () => {
     // never from its own meta. Deciding from `declared` here would hand a reveal
     // document a root zoom of K and break its layout outright.
     expect(readyActions("reveal", "magnify")).toEqual({
-      declared: "magnify",
       adopt: null,
-      logMode: false,
+      logLine: null,
       zoomPost: null,
     });
   });
 
   it("2609.0003 S7: a reveal card's honest repeat is equally silent", () => {
     expect(readyActions("reveal", "reveal")).toEqual({
-      declared: "reveal",
       adopt: null,
-      logMode: false,
+      logLine: null,
       zoomPost: null,
     });
   });
@@ -166,9 +158,8 @@ describe("2609.0003 readyActions — a repeat ready (S4, S6-S7)", () => {
     // Completes the inForce x meta grid: without this, "reveal in force" is only
     // ever exercised with a meta present.
     expect(readyActions("reveal", null)).toEqual({
-      declared: "magnify",
       adopt: null,
-      logMode: false,
+      logLine: null,
       zoomPost: null,
     });
   });

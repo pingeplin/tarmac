@@ -5,17 +5,10 @@
 
 mod common;
 
-use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use common::{Conn, LONG, TestDaemon};
+use common::{Conn, LONG, TestDaemon, cli_open, wait_for_state, write_doc};
 use tarmac_protocol::{BoardMeta, BoardViewport, DocEntry, Msg, Tile};
-
-fn write_doc(path: &Path, content: &str) -> String {
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(path, content).unwrap();
-    std::fs::canonicalize(path).unwrap().to_string_lossy().into_owned()
-}
 
 fn term_tile(term_id: &str, x: f64) -> Tile {
     Tile {
@@ -47,14 +40,6 @@ fn doc_tile(path: &str) -> Tile {
     }
 }
 
-// A fresh cli connection opens a doc on the active board (no TARMAC_TERM_ID).
-fn cli_open(sock: &Path, path: &str) {
-    let mut cli = Conn::hello(sock, "cli");
-    cli.send(&Msg::Open { path: path.into(), term_id: None, board_id: None });
-    let reply = cli.recv(Instant::now() + LONG, "ack");
-    assert!(matches!(reply, Msg::Ack), "expected ack, got {reply:?}");
-}
-
 fn recv_board_list(app: &mut Conn) -> (Vec<BoardMeta>, String) {
     let msg = app.recv_until("board_list", |m| matches!(m, Msg::BoardList { .. }));
     let Msg::BoardList { boards, active } = msg else { unreachable!() };
@@ -70,22 +55,6 @@ fn recv_restore(app: &mut Conn) -> (Option<String>, Vec<DocEntry>, Vec<Tile>, Op
 
 fn board_ids(boards: &[BoardMeta]) -> Vec<&str> {
     boards.iter().map(|b| b.board_id.as_str()).collect()
-}
-
-// Persistence is debounced; poll the state file until it reflects the expected
-// facts before SIGKILL-restarting the daemon (else the save can race the kill).
-fn wait_for_state(state: &Path, what: &str, pred: impl Fn(&serde_json::Value) -> bool) {
-    let deadline = Instant::now() + LONG;
-    loop {
-        if let Ok(bytes) = std::fs::read(state)
-            && let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes)
-            && pred(&v)
-        {
-            return;
-        }
-        assert!(Instant::now() < deadline, "state file never showed {what}");
-        std::thread::sleep(Duration::from_millis(25));
-    }
 }
 
 fn doc_paths(docs: &[DocEntry]) -> Vec<&str> {

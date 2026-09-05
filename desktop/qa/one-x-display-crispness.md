@@ -2,7 +2,7 @@
 
 **Status: ACTIVE.** Records the investigation that produced the
 `-webkit-font-smoothing` and device-pixel-snap changes, and what each step ruled
-out. Read it before touching `docWrapperBox()` / `termWrapperBox()` or the
+out. Read it before touching `docWrapperBox()` (shared by every card kind) or the
 oversample constants — several plausible-sounding theories here were tested and
 are wrong.
 

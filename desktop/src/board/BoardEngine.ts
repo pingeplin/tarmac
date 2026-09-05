@@ -97,6 +97,7 @@ export class BoardEngine {
 
   constructor(viewportEl: HTMLElement) {
     this.viewportEl = viewportEl;
+    this.applyDevicePx();
     this.bindGestures();
     this.apply();
   }
@@ -295,15 +296,18 @@ export class BoardEngine {
     // the Swift board's look (free here — just a background-size change).
     const worldSpacing = this.vp.zoom < SEMANTIC_ZOOM_THRESHOLD ? GRID_SPACING_LO : GRID_SPACING;
     this.viewportEl.style.setProperty("--zoom", String(this.vp.zoom));
-    // Snap unit for the card wrappers' translate (see docWrapperBox). Re-read every
-    // apply() because dragging the window to another display changes devicePixelRatio.
-    this.viewportEl.style.setProperty("--device-px", `${1 / (window.devicePixelRatio || 1)}px`);
     this.viewportEl.style.setProperty("--world-tx", `${tx}px`);
     this.viewportEl.style.setProperty("--world-ty", `${ty}px`);
     this.viewportEl.style.setProperty("--grid-size", `${worldSpacing * this.vp.zoom}px`);
     this.scheduleRasterSettle();
     this.applyCull(rect);
     this.edgesRef?.current?.updateEdges(this._cards, this.vp, rect);
+  }
+
+  /** Snap unit for the card wrappers' translate (see docWrapperBox). Written once
+   *  and again from the DPR watcher, not per apply(). */
+  private applyDevicePx(): void {
+    this.viewportEl.style.setProperty("--device-px", `${1 / (window.devicePixelRatio || 1)}px`);
   }
 
   /** Debounce rasterScale settle: cheap GPU transform during the gesture, cards
@@ -370,6 +374,7 @@ export class BoardEngine {
     // the only event for it, and it must be re-armed against the NEW ratio.
     let dprQuery: MediaQueryList | null = null;
     const onDprChange = () => {
+      this.applyDevicePx();
       this.apply();
       armDprWatch();
     };

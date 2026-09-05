@@ -31,11 +31,6 @@ export function isCulled(visible: boolean): boolean {
   return !visible;
 }
 
-/** The payload for a card whose engine-reported visibility is `visible`. */
-export function cullMessage(visible: boolean): CardCullMessage {
-  return cullPayload(isCulled(visible));
-}
-
 /**
  * Register `fn` under `id`, returning its unregister.
  *

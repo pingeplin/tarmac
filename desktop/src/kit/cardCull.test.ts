@@ -1,11 +1,14 @@
 // Tests for the host side of the culled-card scheduler gate (spec 2609.0002
 // S1-S3): the polarity mapping, the payload's state-not-toggle shape, and the
-// listener-map register/unregister rules.
+// listener-map register/unregister rules. S1/S2 run the composition the app
+// actually ships — Board calls isCulled, HtmlCard calls cullPayload.
 
 import { describe, it, expect, vi } from "vitest";
-import { cullMessage, registerCullListener, type CullListener } from "./cardCull";
+import { cullPayload, isCulled, registerCullListener, type CullListener } from "./cardCull";
 
-describe("cullMessage polarity (2609.0002 S1)", () => {
+const cullMessage = (visible: boolean) => cullPayload(isCulled(visible));
+
+describe("cull polarity (2609.0002 S1)", () => {
   it("maps a culled card (visible=false) to culled:true", () => {
     expect(cullMessage(false)).toEqual({ tarmac: "cull", culled: true });
   });
@@ -15,7 +18,7 @@ describe("cullMessage polarity (2609.0002 S1)", () => {
   });
 });
 
-describe("cullMessage is a state, not a toggle (2609.0002 S2)", () => {
+describe("the cull payload is a state, not a toggle (2609.0002 S2)", () => {
   it("returns the same culled value for repeated identical inputs", () => {
     // A toggle passes S1 and fails here: its second call would invert.
     expect(cullMessage(false).culled).toBe(true);

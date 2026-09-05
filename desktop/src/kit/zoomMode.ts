@@ -28,12 +28,10 @@ export interface CardZoomPost {
 }
 
 export interface ReadyActions {
-  /** This ready's own declaration. Inert whenever logMode is false. */
-  declared: ZoomMode;
   /** The mode to adopt for this load, or null to keep the one in force. */
   adopt: ZoomMode | null;
-  /** Emit the once-per-load `zoom-mode declared=… effective=…` line. */
-  logMode: boolean;
+  /** The once-per-load console line, or null to log nothing. */
+  logLine: string | null;
   /** What to post to the document, or null to post nothing. */
   zoomPost: CardZoomPost | null;
 }
@@ -64,12 +62,17 @@ export function readyActions(inForce: ZoomMode | null, meta: string | null): Rea
   const declared = declaredZoomMode(meta);
   const effective = inForce ?? declared;
   return {
-    declared,
     adopt: inForce === null ? declared : null,
     // Keyed on the tag being PRESENT, not on the resolved mode: an empty or
     // malformed content is a tag the author wrote, and only an absent one is
-    // silent.
-    logMode: inForce === null && meta !== null,
+    // silent. declared and effective read the same since the capability probe
+    // that split them died with the macOS 26 floor (#94); the line keeps both
+    // halves because its job is to name the mode in force for a document whose
+    // meta may be a typo, and `declared` is the resolved value, not the raw tag.
+    logLine:
+      inForce === null && meta !== null
+        ? `zoom-mode declared=${declared} effective=${declared}`
+        : null,
     zoomPost: effective === "magnify" ? { tarmac: "zoom", z: MAGNIFY_K } : null,
   };
 }

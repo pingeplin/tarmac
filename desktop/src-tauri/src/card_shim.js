@@ -6,11 +6,7 @@
 // defensive.
 (function () {
   function safeSerialize(args) {
-    var out = [];
-    for (var i = 0; i < args.length; i++) {
-      out.push(serializeOne(args[i]));
-    }
-    return out;
+    return Array.prototype.map.call(args, serializeOne);
   }
 
   function serializeOne(v) {
@@ -22,12 +18,12 @@
       if (typeof Node !== "undefined" && v instanceof Node) {
         return "[" + (v.nodeName || "NODE") + "]";
       }
-      var seen = [];
+      var seen = new Set();
       return JSON.parse(
         JSON.stringify(v, function (_key, val) {
           if (typeof val === "object" && val !== null) {
-            if (seen.indexOf(val) !== -1) return "[circular]";
-            seen.push(val);
+            if (seen.has(val)) return "[circular]";
+            seen.add(val);
           }
           if (typeof val === "function" || typeof val === "symbol" || typeof val === "bigint") {
             return String(val);

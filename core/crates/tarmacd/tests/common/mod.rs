@@ -160,3 +160,37 @@ pub fn none_within(conn: &mut Conn, timeout: Duration, mut pred: impl FnMut(&Msg
     conn.0.set_read_timeout(Some(LONG)).unwrap();
     true
 }
+
+pub fn write_doc(path: &Path, content: &str) -> String {
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, content).unwrap();
+    std::fs::canonicalize(path).unwrap().to_string_lossy().into_owned()
+}
+
+pub fn cli_open(sock: &Path, path: &str) {
+    let mut cli = Conn::hello(sock, "cli");
+    cli.send(&Msg::Open { path: path.into(), term_id: None, board_id: None });
+    let reply = cli.recv(Instant::now() + LONG, "ack");
+    assert!(matches!(reply, Msg::Ack), "expected ack, got {reply:?}");
+}
+
+/// Drain the connect-time board_list + restore so later reads see only the
+/// frames the test drives.
+pub fn drain_connect(app: &mut Conn) {
+    app.recv_until("board_list", |m| matches!(m, Msg::BoardList { .. }));
+    app.recv_until("restore", |m| matches!(m, Msg::Restore { .. }));
+}
+
+pub fn wait_for_state(state: &Path, what: &str, pred: impl Fn(&serde_json::Value) -> bool) {
+    let deadline = Instant::now() + LONG;
+    loop {
+        if let Ok(bytes) = std::fs::read(state)
+            && let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes)
+            && pred(&v)
+        {
+            return;
+        }
+        assert!(Instant::now() < deadline, "state file never showed {what}");
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}

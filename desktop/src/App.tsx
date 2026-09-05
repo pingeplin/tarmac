@@ -22,7 +22,7 @@ import { ToastOverlay } from "./ui/ToastOverlay";
 import { BoardSwitcher } from "./ui/BoardSwitcher";
 import { CycleHud } from "./ui/CycleHud";
 import { cycleOrder, step } from "./kit/termCycle";
-import { inheritCwdSource } from "./kit/cwdInherit";
+import { inheritCwdSource, primeTermId } from "./kit/cwdInherit";
 import type { BoardEngine, Viewport } from "./board/BoardEngine";
 import {
   cardId,
@@ -285,14 +285,15 @@ export default function App() {
     requestAnimationFrame(attempt);
   };
 
+  const termCards = (cards: CardModel[]) =>
+    cards.filter((c): c is TermCardModel => c.kind === "term");
+
   /** Un-borrow the interactive HTML card and send keyboard focus home to the
    *  prime terminal — the one-keypress Esc contract (spec 2607.0004 S12). */
   const escapeHome = () => {
     setBorrowedCardId(null);
-    const p = activeBoard()?.cards.find((c) => c.kind === "term" && c.prime) as
-      | TermCardModel
-      | undefined;
-    if (p && p.live && !p.dead) focusTerm(p.termId);
+    const p = primeTermId(termCards(activeBoard()?.cards ?? []));
+    if (p) focusTerm(p);
   };
 
   /** The live terminal on the active board that currently owns DOM keyboard focus
@@ -611,11 +612,7 @@ export default function App() {
       Place.cascadeDy,
     );
     // issue #77: ⌘T inherits the (live) prime terminal's current directory.
-    const inheritCwdFrom = inheritCwdSource(
-      existing
-        .filter((c): c is TermCardModel => c.kind === "term")
-        .map((c) => ({ termId: c.termId, prime: c.prime, live: c.live, dead: c.dead })),
-    );
+    const inheritCwdFrom = inheritCwdSource(termCards(existing));
     const term = makeTerm(
       mint(),
       { x: origin.x, y: origin.y, w: Place.termFrame.w, h: Place.termFrame.h },
@@ -997,10 +994,7 @@ export default function App() {
     // Re-establish keyboard focus on the arrived board (Swift parity: finishArrive).
     // The previously-focused terminal was blurred when its board went display:none,
     // so without this, post-switch keystrokes go nowhere until the user clicks.
-    const arrived = boardsRef.current.get(targetId);
-    const arrivedPrime = (arrived?.cards.find(
-      (c) => c.kind === "term" && c.prime && c.live && !c.dead,
-    ) as TermCardModel | undefined)?.termId;
+    const arrivedPrime = primeTermId(termCards(boardsRef.current.get(targetId)?.cards ?? []));
     if (arrivedPrime) focusTerm(arrivedPrime);
 
     closeSwitcher();

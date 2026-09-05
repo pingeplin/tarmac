@@ -56,7 +56,7 @@ these (all defined in `_ds_bundle.css`, verbatim from `src/theme/tokens.css`):
 - Borders/rings: `--line` `--line-soft` `--line-muted` `--lift-border` `--focus-border`
 - Text: `--text` `--muted` `--faint`
 - Accents/status: `--agent` `--agent-dim` `--amber` `--amber-dim` `--ok`
-- Shadows: `--shadow-card-rest` `--shadow-card-prime` `--shadow-card-lift` `--shadow-hint` `--shadow-toast`
+- Shadows: `--shadow-card-rest` `--shadow-hint` `--shadow-toast` (the zoom-scaled card shadows are `.card`-scoped in `card.css`)
 - Chrome font: `--chrome-font` (`"IBM Plex Mono", ui-monospace, SFMono-Regular, monospace`)
 
 No spacing-scale token exists — the only layout var is `--grid-size: 24px`

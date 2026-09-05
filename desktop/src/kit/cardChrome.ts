@@ -5,9 +5,14 @@
 // border — prime is signalled by header tint + shadow, fresh by its halo + "✚ now"
 // meta in the view layer, never by a border here.
 // Handle hit-areas are always live (hover-revealed via CSS); borderRole stays
-// focus-gated so idle cards never show the focus ring.
+// focus-gated so idle cards never show the focus ring. Also holds the header
+// height every card body subtracts.
 
 import type { Handle } from "./resize";
+
+/** Card-header height in WORLD px. Mirrors the 30px in card.css; the chrome
+ *  renders it at 30px×zoom real px, so the body owns card-h minus this. */
+export const CARD_HEADER_H_PX = 30;
 
 export interface CardChromeState {
   dead: boolean;

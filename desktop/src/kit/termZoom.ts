@@ -1,15 +1,9 @@
 // Pure module: terminal-card zoom layout. The outer wrapper is the SAME
-// translate-only box every card type uses, so it is docZoom's — re-exported here
-// rather than restated (the two bodies were string-for-string identical, and the
-// device-pixel snap had to be edited into both). What is terminal-specific is
-// termInnerBox: zoom-free (var(--card-w/h)) with a single scale(var(--zoom)), so
-// the host never resizes on zoom → no fit()/PTY resize.
+// translate-only box every card type uses (docZoom's docWrapperBox); what is
+// terminal-specific is termInnerBox: zoom-free (var(--card-w/h)) with a single
+// scale(var(--zoom)), so the host never resizes on zoom → no fit()/PTY resize.
 
-export { docWrapperBox as termWrapperBox, docCardVars as termCardVars } from "./docZoom";
-
-/** Card-header height in WORLD px. Mirrors the 30px in card.css; the chrome
- *  renders it at 30px×zoom real px, so the body owns card-h minus this. */
-export const CARD_HEADER_H_PX = 30;
+import { CARD_HEADER_H_PX } from "./cardChrome";
 
 /** Zoom-free host box, living INSIDE the card body. Width/height are zoom-free
  *  so the host never changes size during zoom — that is what keeps ResizeObserver

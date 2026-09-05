@@ -19,6 +19,28 @@ interface CardHeaderProps {
   children?: ReactNode;
 }
 
+interface HeaderButtonProps {
+  className: string;
+  title: string;
+  onClick: () => void;
+  children: ReactNode;
+}
+
+/** A header control. Swallows pointerdown so a click never starts the header
+ *  drag — load-bearing for every button, so it lives in one place. */
+export function HeaderButton(props: HeaderButtonProps) {
+  return (
+    <span
+      className={props.className}
+      onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+      onClick={props.onClick}
+      title={props.title}
+    >
+      {props.children}
+    </span>
+  );
+}
+
 export function CardHeader(props: CardHeaderProps) {
   // 1Hz tick, only while inside the 30s window. When recencyLabel goes null we early-
   // return (schedule nothing) so a stale doc stops re-rendering; a fresh file_event
@@ -46,24 +68,14 @@ export function CardHeader(props: CardHeaderProps) {
       {props.fresh && <span style={{ color: "var(--agent)" }}>✚ now</span>}
       {recency && <span className="recency-meta">{recency}</span>}
       {props.onRefresh && (
-        <span
-          className="refresh"
-          onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
-          onClick={props.onRefresh}
-          title="Refresh from disk"
-        >
+        <HeaderButton className="refresh" onClick={props.onRefresh} title="Refresh from disk">
           ↻
-        </span>
+        </HeaderButton>
       )}
       {props.children}
-      <span
-        className="close"
-        onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
-        onClick={props.onClose}
-        title="Close"
-      >
+      <HeaderButton className="close" onClick={props.onClose} title="Close">
         ✕
-      </span>
+      </HeaderButton>
     </>
   );
 }

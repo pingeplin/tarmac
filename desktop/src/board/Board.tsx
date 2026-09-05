@@ -21,8 +21,7 @@ import { HtmlCard } from "../cards/HtmlCard";
 import { ownerChipName } from "../kit/ownerChip";
 import { docKind } from "../kit/docKind";
 import { isCulled, registerCullListener, type CullListener } from "../kit/cardCull";
-// The outer wrapper is ONE thing across card kinds — kit/termZoom re-exports
-// these under term* names, so importing docZoom's covers both.
+// The outer wrapper is ONE thing across card kinds.
 import { docWrapperBox, docCardVars } from "../kit/docZoom";
 import { cardId, type CardModel, type WorldFrame, type DocMeta } from "./model";
 

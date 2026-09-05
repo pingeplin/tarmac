@@ -5,15 +5,8 @@
 
 mod common;
 
-use common::{Conn, TestDaemon};
+use common::{Conn, TestDaemon, drain_connect};
 use tarmac_protocol::Msg;
-
-// Drain the connect-time board_list + restore so later reads see only the frames
-// the test drives.
-fn drain_connect(app: &mut Conn) {
-    app.recv_until("board_list", |m| matches!(m, Msg::BoardList { .. }));
-    app.recv_until("restore", |m| matches!(m, Msg::Restore { .. }));
-}
 
 // Spawn a long-lived `cat` and prove it is alive by echoing a marker — so a
 // following Exit is a real live→dead transition, not a no-op match.
