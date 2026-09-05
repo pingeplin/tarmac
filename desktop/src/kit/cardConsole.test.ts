@@ -77,6 +77,13 @@ describe("parseCardMessage rejects junk (2607.0004 S17)", () => {
     expect(parseCardMessage({ tarmac: "console", level: "log", args: "x" })).toBeNull();
     expect(parseCardMessage({ tarmac: "console", level: 3, args: [] })).toBeNull();
   });
+
+  it("rejects a cull payload — cull is host->shim only (2609.0002 S4)", () => {
+    // Standing guard: `cull` must never enter the shim->host union, or a card
+    // could forge one at the host. Same call `zoom` got in 2607.0006 S16.
+    expect(parseCardMessage({ tarmac: "cull", culled: true })).toBeNull();
+    expect(parseCardMessage({ tarmac: "cull", culled: false })).toBeNull();
+  });
 });
 
 describe("parseCardMessage rejects malformed ready payloads (2607.0006 S14)", () => {

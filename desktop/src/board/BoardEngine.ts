@@ -90,6 +90,11 @@ export class BoardEngine {
    *  to re-raster at device resolution; they never re-derive zoom themselves. */
   onRasterScaleSettle?: (scale: number) => void;
 
+  /** Fires when a card's culled state flips (spec 2609.0002). HTML cards use it
+   *  to pause their schedulers. The Board routes it to a ref-held listener map,
+   *  never through React state — applyCull runs on the pan/zoom hot path. */
+  onCullChange?: (id: string, visible: boolean) => void;
+
   constructor(viewportEl: HTMLElement) {
     this.viewportEl = viewportEl;
     this.bindGestures();
@@ -327,6 +332,7 @@ export class BoardEngine {
       if (this.cullVisible.get(c.id) === visible) continue;
       this.cullVisible.set(c.id, visible);
       c.el.style.visibility = visible ? "" : "hidden";
+      this.onCullChange?.(c.id, visible);
     }
   }
 

@@ -15,7 +15,7 @@
 // terminal-canvas model. Neither is DocCard's prose oversample→downscale: a
 // foreign iframe document cannot be pre-laid-out by the host.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CardShell } from "./CardShell";
 import { CardHeader } from "./CardHeader";
 import { cardSrcUrl } from "../kit/docKind";
@@ -27,6 +27,7 @@ import {
   type CardConsoleEntry,
 } from "../kit/cardConsole";
 import { declaredZoomMode } from "../kit/zoomMode";
+import { cullPayload } from "../kit/cardCull";
 import { RASTER_SCALE_SETTLE_MS } from "../kit/rasterScale";
 import { CARD_HEADER_H_PX } from "../kit/termZoom";
 import { basename } from "../kit/docStore";
@@ -54,6 +55,9 @@ interface HtmlCardProps {
   onResizeEnd?: () => void;
   onGrab: () => void;
   onClose: () => void;
+  /** Subscribe to this card's cull flips (spec 2609.0002); returns the
+   *  unregister. Board binds the card id, so none leaks into this component. */
+  onCullRegister?: (fn: (culled: boolean) => void) => () => void;
 }
 
 export function HtmlCard(props: HtmlCardProps) {
@@ -81,6 +85,29 @@ export function HtmlCard(props: HtmlCardProps) {
   const onBorrowRef = useRef(props.onBorrow);
   onBorrowRef.current = props.onBorrow;
 
+  // Culled state for THIS card (spec 2609.0002). Held in a ref and posted from
+  // two places covering disjoint cases: the listener below (every flip once the
+  // document is live) and the ready handler (the state a document is BORN into —
+  // a post issued before the new document commits lands on the outgoing
+  // about:blank window and is dropped).
+  const culledRef = useRef(false);
+
+  const postCull = useCallback((culled: boolean) => {
+    iframeRef.current?.contentWindow?.postMessage(cullPayload(culled), "*");
+  }, []);
+
+  // Register for this card's cull flips. Child effects run before the parent's,
+  // so this is in place before Board hands the engine its first cullables.
+  useEffect(() => {
+    const register = props.onCullRegister;
+    if (!register) return;
+    return register((culled) => {
+      culledRef.current = culled;
+      postCull(culled);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // The effective zoom mode (spec 2607.0006) for the CURRENT document load. State,
   // not a ref: the render branches on it. readyHandledRef gates the ready handler
   // (S17) — only the first ready per load is honored, so a forged repeat can't flip
@@ -107,6 +134,11 @@ export function HtmlCard(props: HtmlCardProps) {
         return;
       }
       if (msg.kind === "ready") {
+        // BEFORE the guard, on purpose: a #99-shaped self-reload leaves
+        // readyHandledRef set, so anything below it is skipped and the fresh
+        // document would come back running while its card is culled. The payload
+        // is a state, so re-asserting it here cannot weaken S17's guard.
+        postCull(culledRef.current);
         if (readyHandledRef.current) return;
         readyHandledRef.current = true;
         const declared = declaredZoomMode(msg.meta);
