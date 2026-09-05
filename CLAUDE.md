@@ -8,7 +8,7 @@ Two processes that share nothing in-process, plus a tiny CLI, talking over **one
 
 - **`tarmacd`** (Rust / Tokio) — the PTY owner + observatory. Spawns and owns every terminal (`portable-pty`), watches opened docs (`notify` on the parent dir), tracks OS facts (foreground process name, file changes, bells, exits), holds all boards, persists to atomic JSON (`state.json`, override `TARMAC_STATE`). In `core/` (Cargo workspace, edition 2024): crates `tarmacd`, `tarmac-cli`, `tarmac-protocol`.
 - **`TarmacApp`** (Tauri 2 + React + xterm.js, macOS 26+) — the cockpit glass. Renders boards/cards, hosts terminal surfaces (xterm.js) and doc cards, turns input into daemon requests. In `desktop/` (Vite + React frontend, Rust/Tauri backend via `desktop/src-tauri/`).
-- **`tarmac` CLI** (Rust, std-only) — the universal doorbell. `tarmac open <path>` connects, names a doc, exits. Inside a Tarmac PTY it reads `TARMAC_TERM_ID` (the daemon sets it per PTY) to attribute the doc to the calling terminal. `open` is the only verb.
+- **`tarmac` CLI** (Rust, std-only) — the universal doorbell. `tarmac open <path>` connects, names a doc, exits. Inside a Tarmac PTY it reads `TARMAC_TERM_ID` (the daemon sets it per PTY) to attribute the doc to the calling terminal. `open` is the only verb that talks to the daemon; `tarmac skill` is a purely local second verb that prints `docs/agent-guide.md` and installs it as a `SKILL.md` for coding agents.
 
 The Rust side mirrors the same wire contract in `core/crates/tarmac-protocol` (the single `Msg` serde enum). Protocol grows **additive-only** (new optional keys / new message types; unknown keys and types ignored). Authoritative spec: `docs/protocol.md`; full engineering overview: `docs/architecture.md`.
 

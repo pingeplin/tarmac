@@ -42,6 +42,7 @@ still needs a human or an agent reading the diff.
 | [`architecture.md`](architecture.md) | The engineering overview. The single normative description of how Tarmac works. |
 | [`protocol.md`](protocol.md) | The authoritative wire contract + frozen conformance vectors. |
 | [`workflow.md`](workflow.md) | issue → branch → worktree → commit → PR conventions. |
+| [`agent-guide.md`](agent-guide.md) | The agent-facing guide to `tarmac open` and to authoring HTML cards. **Also a shipped product artifact** — `tarmac skill` embeds it and installs it as a `SKILL.md`, so it must stay self-contained: no repo-internal paths, no relative links. |
 | [`backlog.md`](backlog.md) | The audited list of what is **not** built, and what was removed on purpose. Active *as a list*; its contents are unbuilt by definition. |
 
 ## PROPOSED — not implemented
