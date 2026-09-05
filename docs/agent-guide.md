@@ -122,18 +122,21 @@ so a wrap point can never move and text can never reflow under the user's hands.
 
 What follows from that:
 
-- **Never depend on live viewport dimensions.** `window.innerWidth`, `resize`
-  events, and `ResizeObserver` fire once at load and then effectively never
-  again. Read them at startup if you must, but do not build a responsive layout
-  that expects them to change.
-- **Media queries are decided once**, at the frozen reference size. Treat the
-  card as a fixed canvas, not a responsive page.
-- Percentage and viewport units work fine — they simply resolve once.
-
-Your canvas is the **card**, not the screen: a default card is **392 × 310**, and
-percentage and viewport units resolve against that. The 3× reference is a
-rendering device for crispness — your CSS never sees it. Resizing a card is the
-one thing that does re-lay it out.
+- **Your canvas is the card.** A default card is **392 × 310** CSS pixels, and
+  that is what ordinary layout resolves against: `width: 50%` fills half the
+  card, and `px`, `rem`, and font sizes all behave normally — 15px text looks
+  like 15px.
+- **But `vw`, `vh`, `window.innerWidth`, and media queries report three times
+  that.** The frozen reference is a real viewport 3× the card, so `100vw` is
+  about 1176px on a 392px-wide card and overflows it badly, and
+  `@media (min-width: 1000px)` matches on a card barely wider than a phone.
+  **Lay out with percentages; never size anything in `vw`/`vh`, and do not write
+  breakpoints.** If you need the card's width as a number,
+  `document.body.clientWidth` is the honest one.
+- **Layout runs once, so nothing about the viewport changes.** `resize` and
+  `ResizeObserver` fire at load and then effectively never again. Read
+  dimensions at startup if you must; do not build a layout that waits for them
+  to change. Resizing a card is the one thing that does re-lay it out.
 
 If your document genuinely needs honest, changing viewport dimensions — a
 self-contained D3 or Canvas dashboard that recomputes its scales on resize — opt
@@ -155,6 +158,7 @@ a table, a diagram, or a static chart.
 - [ ] All CSS in a `<style>` block; system font stack.
 - [ ] All data embedded as literals; no `fetch`.
 - [ ] Images inline as `data:` URIs, or drawn as SVG.
+- [ ] Sizes use `%`, `px`, `rem` — no `vw`/`vh`, no media queries.
 - [ ] Layout does not depend on resize events (or you set `reveal` deliberately).
 - [ ] Animation reads the frame timestamp rather than counting frames.
 

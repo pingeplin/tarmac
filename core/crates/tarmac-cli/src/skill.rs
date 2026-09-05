@@ -22,6 +22,10 @@ when writing an HTML report, chart, or dashboard to be displayed on the board.";
 
 const SKILL_NAME: &str = "tarmac";
 
+/// How far in the banner may sit — the same first-12-lines window `docs-check`
+/// scans for it.
+const BANNER_WINDOW: usize = 12;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Target {
     ClaudeCode,
@@ -110,11 +114,18 @@ pub fn skill_path(target: Target, scope: Scope, env: &Env) -> PathBuf {
 /// `docs-check` requires of every doc in the repo and is meaningless once the
 /// file is installed elsewhere.
 pub fn guide_body() -> String {
-    let mut out = String::with_capacity(GUIDE.len());
-    let mut lines = GUIDE.lines().peekable();
+    strip_banner(GUIDE)
+}
+
+fn strip_banner(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut lines = text.lines().peekable();
     let mut stripped = false;
-    while let Some(line) = lines.next() {
-        if !stripped && line.starts_with('>') {
+    // Only a blockquote in docs-check's own banner window is the banner; a
+    // quote further down is the document's own prose and must survive.
+    for i in 0.. {
+        let Some(line) = lines.next() else { break };
+        if !stripped && i < BANNER_WINDOW && line.starts_with('>') {
             while lines.peek().is_some_and(|n| n.starts_with('>')) {
                 lines.next();
             }
@@ -285,11 +296,29 @@ mod tests {
     }
 
     #[test]
+    fn strip_banner_takes_the_banner_and_leaves_later_quotes_alone() {
+        let doc = "# T\n\n> **Doc status: ACTIVE** — x\n> more banner\n\nBody.\n\n> A real quote.\n\nEnd.\n";
+        assert_eq!(strip_banner(doc), "# T\n\nBody.\n\n> A real quote.\n\nEnd.\n");
+    }
+
+    #[test]
+    fn strip_banner_leaves_a_document_with_no_banner_untouched() {
+        let doc = "# T\n\nBody.\n";
+        assert_eq!(strip_banner(doc), doc);
+    }
+
+    #[test]
     fn guide_body_drops_the_repo_only_banner_and_keeps_the_document() {
         let body = guide_body();
         assert!(body.starts_with("# Tarmac for coding agents\n\n"), "got: {:?}", &body[..60]);
         assert!(!body.contains("Doc status"));
-        assert!(!body.contains('>') || !body.lines().any(|l| l.starts_with('>')));
+        let banner_lines = GUIDE.lines().take(BANNER_WINDOW).filter(|l| l.starts_with('>')).count();
+        assert!(banner_lines > 0, "the doc must carry a status banner");
+        assert_eq!(
+            body.lines().filter(|l| l.starts_with('>')).count(),
+            GUIDE.lines().filter(|l| l.starts_with('>')).count() - banner_lines,
+            "only the banner's quote lines may be stripped"
+        );
         assert!(body.contains("## Surfacing a file"));
         assert!(body.contains("tarmac-zoom"));
     }
