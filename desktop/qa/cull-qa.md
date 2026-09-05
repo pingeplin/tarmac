@@ -463,7 +463,7 @@ sender is a post that precedes the guard.
 history and stays as written — but it must not be carried into the squash message
 when this PR lands.)
 
-### Re-run required for #99 (spec 2609.0003 S15) — **NOT YET RE-RUN**
+### Re-run required for #99 (spec 2609.0003 S15) — **RE-RUN 2026-09-05: PASS**
 
 #99 changed the `ready` handler this scenario probes: the `readyHandledRef`
 boolean became a single per-load `loadModeRef`, and the zoom post now answers
@@ -479,14 +479,14 @@ what must never happen — is the post becoming **conditional** on the verdict
 Generation 2 of a self-reloading culled card would then receive no cull post and
 come back running.
 
-- [ ] Re-run S36's steps above unchanged against the fix. The self-reloaded
+- [x] Re-run S36's steps above unchanged against the fix. The self-reloaded
       document still comes back **paused**, decided by the same gap evidence as
       the original run (all three gaps within ~2 report periods of `dt` under the
       new boot id) — **not** by console silence, which S36's own observation
       already withdrew as vacuous.
-- [ ] **ADDED assertion (2609.0003 S15):** once un-culled, the card renders at
+- [x] **ADDED assertion (2609.0003 S15):** once un-culled, the card renders at
       board zoom rather than 1/K.
-- [ ] Record the re-run result in this section. If either box above is not
+- [x] Record the re-run result in this section. If either box above is not
       executed, leave this section marked NOT YET RE-RUN rather than writing a
       result nobody observed.
 
@@ -503,6 +503,43 @@ figure a missing root zoom gives — not by eye. Note the fixture carries no `<m
 as a default-magnify, meta-less document, which is exactly the shape #99's fix
 had to get right.
 
+Observation (2026-09-05, `7702f59`, PR #107): **PASS — both boxes.** The fixture
+was rebuilt exactly as prescribed: `qa72-scratch/s36probe.html` copied verbatim
+into `../tarmac-worktrees/qa99-scratch/s36probe.html`, with a `width: 320px`
+box B added and `boxB=<getBoundingClientRect().width>` appended to the 1 Hz
+reporter line. It still carries no `<meta name="tarmac-zoom">`, so it runs as a
+default-magnify, meta-less document. Board zoom 144%. Launch and fixture
+conventions for this run are recorded once, under `## Run conditions` in
+`magnify-card-qa.md` — in particular the dev app ran under its own bundle id and
+this build has no devtools. The card was culled by wheel-panning the board about
+2.8 viewports to the right (not by switching boards, which would only
+`display:none` it) and panned back after ~27 s.
+
+**Gap evidence — the discriminator, unchanged.** Before the cull the reporter
+ticked once a second under `boot=1788613204310.163857 gen=1`. The strip then
+reads (`s15_strip_gen2.png`, `s15_gap_line.png`):
+
+    [s36] culled -> location.reload() gen=1
+    [s36] boot=1788613361093.395058 gen=2
+    [s36] t=1 gen=2 dt=26814 raf=18 gapRaf=26228 int=17 gapInt=26298 to=25 gapTo=26227 boxB=960.0 boot=1788613361093.395058
+    [s36] t=2 gen=2 dt=1021 raf=30 gapRaf=47  int=34 gapInt=33    to=34 gapTo=33    boxB=960.0 …
+
+— **silence** between generation 2's boot line and its first report 26.8 s
+later, and on that first line all three gaps sit within **587 ms** of `dt`
+(26814 − 26228 = 586, − 26298 = 516, − 26227 = 587), i.e. inside a single report
+period and well inside the "~2 report periods" the original run used. From
+`t=2` the reporter returns to `dt≈1020` with ~32 ms gaps. Generation 2 of the
+self-reloading culled card therefore came back **paused**: the cull post still
+reaches every generation, so it is still unconditional (the M8 mutant — a post
+gated on the verdict — would have left generation 2 ticking through the cull).
+
+**ADDED assertion (2609.0003 S15).** `box B rect width` reads **960.0** — 320 CSS
+px under a landed root zoom of `K` = 3 — before the cull (`s15_pre_cull.png`),
+after un-culling (`s15_post_cull.png`), and already on generation 2's very first
+reporter line quoted above. On screen the box measured ≈457 device px against
+the 461 px that 320 × 1.44 predicts, not the ≈154 px (320 × 1.44 ⁄ 3) a card
+still laid out in a `K×` viewport would render. The self-reloaded, previously
+culled card renders at board zoom, not at 1/K.
 ## S37 — The probe is committed and instrumented (criterion 9)
 
 - [x] `desktop/qa/cull-probe.html` is in the repo, installs its rAF/cAF

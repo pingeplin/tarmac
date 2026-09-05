@@ -123,16 +123,36 @@ See `.blueprint/specs/2607.0006_magnify_zoom_mode_for_html_cards.md` S9's
 - [ ] Open a magnify document and zoom it to 2× or higher, then end the
       gesture. (A magnify card has no settle of its own — `HtmlCard`
       disconnects the zoom watcher — so this is just "stop gesturing".)
-- [ ] Rewrite the file on disk (e.g. add a comment, `touch` it, or edit the
+- [x] Rewrite the file on disk (e.g. add a comment, `touch` it, or edit the
       content).
 - [ ] Card reloads within 100ms (check iframe src in devtools for a new `?v=<mtime>`).
       The document comes back magnified at the current board zoom (e.g. still
       2×), not reset to 1×.
-- [ ] **Added for 2609.0003 S13 (#99):** exactly one line beginning `zoom-mode`
+- [x] **Added for 2609.0003 S13 (#99):** exactly one line beginning `zoom-mode`
       for the new load, and exactly one `z = 3` entry in the received-zoom panel.
       The `?v=` path resets the host's per-load state, so this must look exactly
       as it did before #99 — this item is the regression check that the fix did
       not disturb the ordinary reload.
+
+Observation (2026-09-05, `7702f59`): **PASS for the #99 bullet.** Run on
+`s11probe.html` — see **Run conditions** at the end of this sheet for the fixture
+and every launch deviation — at board zoom **144%**, not 2×, which is why the
+first bullet stays unchecked. Appending an HTML comment to the file while the
+card was visible reloaded it: generation 4 under the fixture's `window.name`
+counter, the received-zoom panel reset to a single new entry
+`2026-09-05T12:56:56.316Z — {tarmac:"zoom", z:3} from window.parent`, and the
+document came back magnified at the current board zoom — `ICB probe offsetWidth`
+1207.0 px against `window.innerWidth` 3621.0 px (ratio 3.000), `prose line count`
+15, box B 960.0 px, every number identical to the pre-edit reading
+(`s13_v_reload.png`). The console strip gained **exactly one** new
+`zoom-mode declared=magnify effective=magnify` line for the load; its tail reads
+`gen=4 zoom=1 (unset, initial load) … icbProbeWidth=1738.0` → `zoom-mode
+declared=magnify effective=magnify` → `received … z:3` → `gen=4 zoom=3 …
+icbProbeWidth=1207.0` (`s13_strip.png`). The third bullet stays unchecked: no
+inspector was available in this build, so the iframe `src` was never read and
+the reload latency was never measured — the new load is evidenced instead by the
+panel reset plus that new `zoom-mode` line, which only the `lastChangedMs` reset
+effect can produce, and by the header's freshness chip flipping to `now`.
 
 ## S11 — Smooth mid-gesture, wrap frozen through the gesture *and* after it
 
@@ -205,32 +225,50 @@ Frozen K had already changed this scenario's other tell: the host posts once per
 document load rather than per settle, so "a new entry appears on the next settle"
 signals nothing either.
 
-- [ ] Open `magnify-probe.html` as a card and let it load. The console strip
+- [x] Open `magnify-probe.html` as a card and let it load. The console strip
       shows exactly **one** line beginning `zoom-mode` — reading `zoom-mode
       declared=magnify effective=magnify` — and the probe's "received zoom
       messages" panel shows one entry. Count that prefix, not the strip: a
       `magnify-probe.html` load produces five console entries in total, only one
       of which is the host's (see S8's note on grepping the prefix, not prose).
-- [ ] Borrow the card, open its console, select the card's iframe as the
+- [x] Borrow the card, open its console, select the card's iframe as the
       execution context (same caveat as S15 — the top-document context makes
       this a silent no-op), and post a forged second `ready`. `ready` travels
       shim→host, so target `window.parent`, same direction as the genuine one.
       **Forge `meta:"magnify"`, not `"reveal"`** — magnify is the branch that
       posts a zoom message, so it is the one whose leak would be visible:
       `window.parent.postMessage({tarmac:"ready", meta:"magnify"}, "*")`.
-- [ ] Console strip still shows **exactly one** `zoom-mode` prefixed line for
+- [x] Console strip still shows **exactly one** `zoom-mode` prefixed line for
       this document load — the strip never disagrees with the mode actually in
       force. **This is the tell now.** With the once-per-load guard deleted, a
       second line appears here immediately.
-- [ ] The rendered zoom does not change and wrap points stay frozen when you
+- [x] The rendered zoom does not change and wrap points stay frozen when you
       zoom the board afterwards.
-- [ ] **Expected, NOT a failure:** the received-zoom panel **may** gain a second
+- [x] **Expected, NOT a failure:** the received-zoom panel **may** gain a second
       `{tarmac:"zoom"}` entry carrying the same `z = 3`. Re-applying the frozen
       constant is idempotent and cannot move a wrap point. Do not file it.
-- [ ] Repeat with `meta:"reveal"` forged. Same result: no second console line,
+- [x] Repeat with `meta:"reveal"` forged. Same result: no second console line,
       no change in rendered zoom, wrap points still frozen. (The reply is still
       the magnify payload, because a repeat is decided by the mode in force, not
       by what the forgery claims.)
+
+Observation (2026-09-05, `7702f59`): **PASS.** No devtools console exists in this
+build, so both readies were forged from buttons added to `s11probe.html`; each
+runs `window.parent.postMessage({tarmac:"ready", meta:…}, "*")` from the card
+document while the card is borrowed — the same call, in the same execution
+context, this scenario prescribes (**Run conditions** below). Before the
+forgeries the strip held one `zoom-mode declared=magnify effective=magnify` line
+and the panel one `z:3` entry. `meta:"magnify"` and then `meta:"reveal"` each
+drew a reply, taking the panel to three entries — `…12:55:15.411Z`,
+`…12:55:55.447Z`, `…12:56:05.758Z`, **all `z:3`**. The reveal forgery was
+therefore answered with the *magnify* payload: the reply is decided by the mode
+in force, not by what the forgery claims. The strip gained **no** second
+`zoom-mode` line — the badge went 26 → 29 → 32, i.e. exactly three probe entries
+per forgery (`[qa99] forging ready meta=…`, `[magnify-probe] received …`,
+`[magnify-probe] gen=3 zoom=3 … icbProbeWidth=1207.0`) and nothing else
+(`s14_strip.png`). The render did not move (`s14_forged_both.png`), and zooming
+the board to 144% afterwards left `ICB probe offsetWidth` 1207.0 px, `prose line
+count` 15 and box A's wrap points identical (`s14_after_zoom.png`).
 
 ## S19 — Magnify engages on a card whose board was not active at load
 
@@ -271,18 +309,18 @@ other item in this checklist green.
 Frozen K changed the count this asserts. The host posts once, in reply to
 `ready`, and never again; "one per settle" was the settle-time shape.
 
-- [ ] Open `magnify-probe.html` as a card (meta present, magnify declared).
-- [ ] The probe's "received zoom messages" panel shows exactly **one**
+- [x] Open `magnify-probe.html` as a card (meta present, magnify declared).
+- [x] The probe's "received zoom messages" panel shows exactly **one**
       `{tarmac:"zoom"}` entry, whose `z` equals `MAGNIFY_K` (3, in
       `desktop/src/kit/cardZoom.ts`) — a constant, not the board zoom.
-- [ ] Its source reads `window.parent` (not "other source").
-- [ ] Zoom the board to 2–3 further levels, ending the gesture at each. The
+- [x] Its source reads `window.parent` (not "other source").
+- [x] Zoom the board to 2–3 further levels, ending the gesture at each. The
       panel gains **no** further entries. One per settle is the settle-time
       shape returning — the thing that re-wrapped the text.
-- [ ] Rewrite the file on disk so the card reloads. The panel (reset with the
+- [x] Rewrite the file on disk so the card reloads. The panel (reset with the
       document) shows one entry again: one per *load*, not one per card
       lifetime.
-- [ ] **Added for 2609.0003 S12 (#99):** count the console line by its
+- [x] **Added for 2609.0003 S12 (#99):** count the console line by its
       `zoom-mode` prefix (S8's rule), not by the strip's total — a
       `magnify-probe.html` load logs five entries and only one is the host's.
       **Scope note:** "one per load" is now precisely "one per genuine `ready`",
@@ -293,6 +331,21 @@ Frozen K changed the count this asserts. The host posts once, in reply to
       flight can retain one *and* receive the reply — note that is the NEW S11 in
       the 2609.0003 section below, not the mid-gesture S11 above).
 
+Observation (2026-09-05, `7702f59`): **PASS.** On first open of `s11probe.html`
+at board zoom 100% the panel held exactly one entry —
+`2026-09-05T12:47:27.768Z — {tarmac:"zoom", z:3} from window.parent` — whose `z`
+is 3, the `MAGNIFY_K` constant, and whose source reads `window.parent`
+(`s12_first_open.png`). Counting by the `zoom-mode` prefix across the whole
+18-entry strip, scrolled top to bottom (`s12_strip_top.png`,
+`s12_strip_bottom.png`), found exactly one line, `zoom-mode declared=magnify
+effective=magnify`; the other 17 are `[magnify-probe] …` reports, most of them
+fired by the resize that sizing the card produced — which is precisely why the
+prefix, not the badge total, is the count. Zooming the board 100% → 207% → 144%
+added **no** panel entry and no console line, and left the report unchanged
+(`ICB probe offsetWidth` 1207.0 px, `prose line count` 15, box B 960.0 px). The
+file-rewrite step is recorded under **S10** above (panel reset to one entry for
+the new load).
+
 ---
 
 # Spec 2609.0003 (#99) — self-reload scenarios
@@ -302,10 +355,13 @@ already has an unrelated S11 (mid-gesture) above; every id below is written
 `2609.0003 S<n>` for that reason. Same setup rules as the rest of the sheet
 (`make run`, fresh dev daemon, kill any installed `tarmacd` first).
 
-**Status: NOT VERIFIED — no scenario below has been run.** The fix landed with
-its automated tiers green (`2609.0003` S1–S7 in `desktop/src/kit/zoomMode.test.ts`,
-S8–S10 in `desktop/src/card-shim.test.ts`); everything here is the manual half
-and is outstanding.
+**Status: RUN 2026-09-05 against `7702f59` (PR #107) — all six PASS.** The fix
+landed with its automated tiers green (`2609.0003` S1–S7 in
+`desktop/src/kit/zoomMode.test.ts`, S8–S10 in `desktop/src/card-shim.test.ts`);
+this is the manual half. **Read `## Run conditions` at the end of this sheet
+before trusting any number below** — the reload was not issued from a devtools
+console (there is none in this build), "above 1×" means 144%, and every
+console-line count is a delta rather than a total.
 
 Where the other ids live, so nothing looks missing:
 
@@ -330,32 +386,32 @@ a third of its size with broken scroll height.
 (#106) and cannot be double-clicked to borrow, so the console recipe below is
 unavailable there; the culled path is `cull-qa.md` S36 (2609.0003 S15) instead.
 
-- [ ] Open `magnify-probe.html` as a card and zoom the board above 1× (e.g. 2×).
+- [x] Open `magnify-probe.html` as a card and zoom the board above 1× (e.g. 2×).
       Let it settle.
-- [ ] **Record the probe's report block now** — `prose line count`, `ICB probe
+- [x] **Record the probe's report block now** — `prose line count`, `ICB probe
       offsetWidth`, `window.innerWidth` — and the received-zoom panel's contents.
 - [ ] Borrow the card (double-click), open its console, and **select the card's
       iframe as the execution context** (the top-document context makes the next
       step a silent no-op — same caveat as S15/S17).
-- [ ] Run `location.reload()`.
-- [ ] **Tell 1 — the wire.** The received-zoom panel (it resets with the
+- [x] Run `location.reload()`.
+- [x] **Tell 1 — the wire.** The received-zoom panel (it resets with the
       document) shows **at least one** `{tarmac:"zoom"}` entry with `z = 3`.
       Before the fix it reads `(none received)`. **Zero is the only failure;
       two is a pass** — a reload crossing a zoom in flight can retain one *and*
       receive the reply to the new document's own `ready`, same `z`, same render.
-- [ ] **Tell 2 — the geometry, and the one number that discriminates.** `ICB
+- [x] **Tell 2 — the geometry, and the one number that discriminates.** `ICB
       probe offsetWidth` equals its pre-reload value. It is the layout viewport
       in the document's own units, so a root zoom that landed makes it the
       un-zoomed box width and a missing one makes it **3× that**.
-- [ ] **Tell 3.** `prose line count` matches its pre-reload value (a `3×` wider
+- [x] **Tell 3.** `prose line count` matches its pre-reload value (a `3×` wider
       viewport re-wraps).
-- [ ] **Do NOT use `window.innerWidth` as the tell.** It tracks the iframe
+- [x] **Do NOT use `window.innerWidth` as the tell.** It tracks the iframe
       *element*, which the host sizes `frame × K` either way, so it is identical
       under the bug and under the fix. Record it as the control — it should
       **not** move.
 - [ ] Optional cross-check: `wrap-probe.html`'s character-offset signature is
       unchanged across the reload.
-- [ ] **Expected, not a bug:** the console strip gains **no** second `zoom-mode`
+- [x] **Expected, not a bug:** the console strip gains **no** second `zoom-mode`
       line. The fix deliberately keeps that line once per load; only the render
       was wrong, and only the render is fixed.
 
@@ -364,6 +420,39 @@ does not always offer it): use a copy of `magnify-probe.html` that calls
 `location.reload()` once — guarded by `window.name`, the `cull-qa.md` S36 idiom —
 from inside its own received-zoom handler. Generation 1 receives the zoom and
 reloads; generation 2 must receive one too. Same premise, no devtools needed.
+
+Observation (2026-09-05, `7702f59`): **PASS**, run twice — generation 1 → 2 at
+board zoom 100% and generation 2 → 3 at 144%. The 144% run is the one this
+scenario asks for; the 100% run is supplementary. The console context is not
+available in this build, so `location.reload()` was called from a button added
+to `s11probe.html` and clicked in the borrowed card — the sheet's fallback in a
+variant that keeps a same-card pre-reload capture (**Run conditions** below).
+The third bullet stays unchecked for that reason: no execution context was
+selected, because no inspector offered one.
+
+*Generation 1 → 2, board zoom 100%* (`s12_first_open.png` → `s11_gen2_zoom100.png`).
+Pre-reload: `ICB probe offsetWidth` 1207.0 px, `window.innerWidth` 3621.0 px
+(ratio 3.000), `prose line count` 15, box B 960.0 px, panel one entry
+`12:47:27.768Z … z:3`. Post: generation 2, every one of those numbers identical,
+panel reset to exactly one entry `12:53:29.811Z … z:3`.
+
+*Generation 2 → 3, board zoom 144%* (`s11_pre_144.png` → `s11_post_144.png`) —
+note the pre-state here is itself a self-reloaded generation. Pre: ICB 1207.0,
+innerWidth 3621.0, lines 15, box B 960.0, panel one entry `12:53:29.811Z … z:3`.
+Post: generation 3, **ICB still 1207.0 px — not 3621.0, the 3× a missing root
+zoom would give**; innerWidth unchanged at 3621.0 (the control, as prescribed);
+lines still 15; box B still 960.0; panel reset to exactly one entry
+`12:55:15.411Z … z:3`. One entry, not zero, is the wire tell; two would also
+have passed.
+
+The strip shows the mechanism directly (`s11_strip_gen2.png`,
+`s11_strip_gen3.png`): after each `[qa99] self-reload from gen=N`, the new
+generation's *first* report reads `icbProbeWidth=3621.0` — the un-zoomed, 3×
+viewport that is the #99 bug's steady state — and the next two entries are
+`received … {tarmac:"zoom", z:3}` and `icbProbeWidth=1207.0`. That is the reply
+to the reloaded document's own `ready` arriving and landing. Neither reload
+produced a second `zoom-mode` line. The optional `wrap-probe.html`
+character-offset cross-check was **not run**.
 
 ## 2609.0003 S16 — a reveal card's self-reload stays reveal
 
@@ -379,17 +468,113 @@ content="reveal">` — exactly what S8 above prescribes. `wrap-probe-reveal.html
 is the wrong instrument here: it is a wrap-signature probe and has **no
 received-zoom panel**, so the assertion below could not be read off it at all.
 
-- [ ] Open that copy with `tarmac open <file>` and zoom the board above 1×.
+- [x] Open that copy with `tarmac open <file>` and zoom the board above 1×.
       Console strip reads `zoom-mode declared=reveal effective=reveal` — one
       line, and note it says `effective=reveal`, not `magnify`. The received-zoom
       panel reads `(none received)`.
 - [ ] Borrow it, select the card's iframe as the execution context, run
       `location.reload()`.
-- [ ] The received-zoom panel is **still `(none received)`** — no
+- [x] The received-zoom panel is **still `(none received)`** — no
       `{tarmac:"zoom"}` entry arrives for the reloaded document. This is the
       assertion, and it is what a mutant deciding a repeat from the ready's own
       `meta` would break.
-- [ ] The document comes back laid out at real screen px and re-wraps as you
+- [x] The document comes back laid out at real screen px and re-wraps as you
       zoom, exactly as a reveal card did before the reload — not frozen, not
       magnified, not at 1/K.
-- [ ] The console strip gains no second `zoom-mode` line.
+- [x] The console strip gains no second `zoom-mode` line.
+
+Observation (2026-09-05, `7702f59`): **PASS.** Fixture `s16probe.html` — the
+`magnify-probe.html` copy with the meta flipped to `content="reveal"`, per the
+S8 recipe, plus the QA controls described under **Run conditions**. On open, the
+console strip read exactly one `zoom-mode declared=reveal effective=reveal`
+(badge `⌥ 2`: that line plus the probe's own first report) and the panel read
+`(none received)` (`s16_declared_reveal.png`). At board zoom 144%: root zoom
+`1 (unset, initial load)`, `ICB probe offsetWidth` 1728.0 px = `window.innerWidth`
+1728.0 px (ratio 1.000 — real screen px, 1200 × 1.44), `prose line count` 13
+against 15 at 100%, box B 320.0 px (`s16_pre_reveal.png`). After the
+document reloaded itself: generation 2, the panel **still reads
+`(none received)`** — no `{tarmac:"zoom"}` arrived for the new load — root zoom
+still unset, ICB 1728.0 = innerWidth 1728.0, lines 13, box B 320.0
+(`s16_post_reveal.png`). Zooming back to 100% after the reload returned `prose
+line count` to 15 and ICB to 1200.0: the reloaded document still re-wraps with
+the board, so it is neither frozen nor magnified nor at 1/K
+(`s16_rewrap_100.png`). The strip gained no second `zoom-mode` line and no
+`received` entry — its tail is `[qa99] self-reload from gen=1` followed only by
+two `gen=2 zoom=1 (unset, initial load)` reports (`s16_strip.png`). The second
+bullet stays unchecked only on its execution-context clause: the card was
+borrowed and the reload did come from inside the document, but from a button
+rather than a console, because this build offers no inspector.
+
+## Run conditions
+
+For the 2026-09-05 run of `2609.0003` S11–S16 above, and of the S10 / S17 / S18
+observations earlier in this sheet.
+
+**Commit under test:** `7702f59` on `fix/99-magnify-self-reload` (PR #107 →
+`m1/enrich-doc-card`). **Display:** a single 2560×1440 external monitor at 1×.
+
+**Launch — not `make run`.** All Tarmac builds share the bundle id
+`com.tarmac.desktop`, so the dev app was given its own: the debug binary
+`desktop/src-tauri/target/debug/tarmac-app` was copied into a hand-written
+`TarmacQA99.app` with `CFBundleIdentifier com.tarmac.qa99dev`,
+`CFBundleExecutable TarmacQA99`, and an `LSEnvironment` carrying
+`TARMAC_SOCKET`, `TARMAC_STATE`, `TARMAC_DAEMON` and `PATH` pointed into the
+worktree; it was launched with `open`. A debug `cargo build` binary loads its
+frontend from `devUrl`, so Vite ran alongside it on port 1420. The window was
+sized to 2560×1366 through System Events. Cards were opened from the shell with
+`TARMAC_SOCKET=… core/target/debug/tarmac open <file>`, not from a Tarmac PTY,
+so the docs have no owning terminal. Unrelated but worth recording: `npm run
+build` fails on this branch at a pre-existing TypeScript error in
+`desktop/src/ipc/daemon.test.ts:35` (landed with #101, nothing to do with #99);
+the dev-mode binary does not need it.
+
+**"Above 1×" is 144%, not 2×.** Board zoom was driven by the bottom-left zoom
+control, which steps by 1.2×, so the reachable levels are 100 / 120 / 144 / 173
+/ 207 %. At 207% a card big enough to show the probe's report *and* its
+received-zoom panel no longer fitted in the window, so the primary runs sit at
+**144%**. Nothing is lost by that: for a magnify card all three tells — `ICB
+probe offsetWidth`, `prose line count`, box B — are independent of board zoom
+(that independence *is* frozen-K), so the discriminator between "root zoom
+landed" (ICB = the card's frame width) and "it did not" (ICB = 3× that) reads
+identically at every level.
+
+**The iframe execution context was unavailable; the fallback was used in a
+button-driven variant.** A right-click on a borrowed card produces no context
+menu and no *Inspect Element* — `desktop/src-tauri/Cargo.toml` enables no
+`devtools` feature — so nothing could be typed into a console against the card's
+iframe. Scratch copies of `desktop/qa/magnify-probe.html` were used instead,
+under `../tarmac-worktrees/qa99-scratch/` (`s11probe.html`; `s16probe.html`, the
+same file with the meta flipped to `reveal`). Each adds, and changes nothing
+else:
+
+- a `window.name`-backed **generation counter** (the `cull-qa.md` S36 idiom),
+  shown in the report block and in every `[magnify-probe]` console line, so the
+  two sides of a self-reload can never be confused;
+- an `innerWidth / ICB probe` **ratio** line — 3.000 when root zoom `K` landed,
+  1.000 when it did not — so each generation is decidable on its own, without
+  the pre-reload capture;
+- three buttons: `location.reload()`, and two that post
+  `{tarmac:"ready", meta:"magnify"}` / `{…, meta:"reveal"}` at `window.parent`.
+
+The buttons are clicked in the **borrowed** card, so their handlers run in the
+card document: the same execution context the console recipe targets, issuing
+the same calls. This variant was preferred to the sheet's zoom-handler fallback
+because it preserves a **same-card pre-reload capture** — the zoom-handler
+fixture reloads on receipt of the first zoom, before generation 1 can be read.
+`desktop/qa/magnify-probe.html` itself was not modified.
+
+**Console-line counts are deltas, not totals.** `HtmlCard`'s `entries` buffer is
+never reset (cap 500), so it accumulates across self-reloads and `?v=` reloads
+alike. Every "no second `zoom-mode` line" claim above is a pair of readings —
+badge arithmetic plus the strip's tail after scrolling it to the end: 18 → 22 →
+26 across the two self-reloads, 29 → 32 across the two forged readies, 37 after
+the `?v=` reload. Each event adds three or four `[magnify-probe]` / `[qa99]`
+entries, and a `zoom-mode` line only where S13 expects one.
+
+**Other deviations and noise.** The first press of the reload button at 144%,
+issued immediately after the right-click that probed for an inspector, did
+nothing (the badge count did not move); repeated at the same zoom without a
+preceding right-click, it worked. Recorded as input noise, not a finding. The
+screenshots named in the observations live in
+`../tarmac-worktrees/qa99-scratch/`; each is cropped to the QA app's own window
+and none shows any other Tarmac build.
