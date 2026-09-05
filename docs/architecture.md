@@ -131,6 +131,7 @@ at the committed dev value.)
 | | `DocRead {path}` | app→D | mark a doc read |
 | | `DocOpened(DocEntry)` | D→app | a doc was opened/updated |
 | | `FileEvent {path, mtime_ms}` | D→app | a watched doc changed on disk |
+| | `DocRefresh {path}` | app→D | re-stat a doc now and push its `file_event` |
 | Terminal I/O | `SpawnTerm {term_id, cols, rows, cwd?, cmd?, board_id?}` | app→D | create a PTY card |
 | | `Input {term_id, bytes}` | app→D | keystrokes |
 | | `Output {term_id, bytes}` | D→app | raw PTY output (≤64 KiB chunks) |

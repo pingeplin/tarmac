@@ -40,6 +40,7 @@ interface HtmlCardProps {
   model: DocCardModel;
   ownerName?: string | null;
   lastChangedMs?: number;
+  onRefresh?: () => void;
   selected?: boolean;
   borrowed?: boolean;
   onBorrow: () => void;
@@ -237,6 +238,7 @@ export function HtmlCard(props: HtmlCardProps) {
           ownerName={props.ownerName}
           fresh={model.fresh}
           lastChangedMs={props.lastChangedMs}
+          onRefresh={props.onRefresh}
           onClose={props.onClose}
         >
           {entries.length > 0 && (

@@ -1,6 +1,7 @@
 // Shared card-header chrome: kind glyph, repo dot, label, owner chip, fresh
-// marker, recency label, and the close button. `children` renders between the
-// recency label and the close button — HtmlCard's console badge is the only user.
+// marker, recency label, the refresh control, and the close button. `children`
+// renders between the refresh control and the close button — HtmlCard's console
+// badge is the only user.
 
 import { useEffect, useState, type ReactNode } from "react";
 import { repoColors } from "../theme";
@@ -13,6 +14,7 @@ interface CardHeaderProps {
   ownerName?: string | null;
   fresh?: boolean;
   lastChangedMs?: number;
+  onRefresh?: () => void;
   onClose: () => void;
   children?: ReactNode;
 }
@@ -43,6 +45,16 @@ export function CardHeader(props: CardHeaderProps) {
       {props.ownerName && <span className="owner-chip">{"← "}{props.ownerName}</span>}
       {props.fresh && <span style={{ color: "var(--agent)" }}>✚ now</span>}
       {recency && <span className="recency-meta">{recency}</span>}
+      {props.onRefresh && (
+        <span
+          className="refresh"
+          onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+          onClick={props.onRefresh}
+          title="Refresh from disk"
+        >
+          ↻
+        </span>
+      )}
       {props.children}
       <span
         className="close"

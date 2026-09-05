@@ -90,6 +90,11 @@ export function docClose(path: string): Promise<void> {
   return invoke("doc_close", { path });
 }
 
+/** Re-stat a doc now (issue #89); the answer arrives as a `file_event`, not a reply. */
+export function docRefresh(path: string): Promise<void> {
+  return invoke("doc_refresh", { path });
+}
+
 /** Read a doc's markdown content for rendering (the UI reads files itself). */
 export function readDoc(path: string): Promise<string> {
   return invoke("read_doc", { path });

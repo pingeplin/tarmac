@@ -459,6 +459,11 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
                 debug!("doc_close for unknown path {path}");
             }
         }
+        Msg::DocRefresh { path } => {
+            if !crate::docs::stat_and_push(daemon, std::path::Path::new(&path)).await {
+                debug!("doc_refresh no-op for {path} (not on the active board, or unreadable)");
+            }
+        }
         Msg::Unknown => debug!("ignoring unknown message type from app"),
         other => debug!("ignoring unexpected app message: {other:?}"),
     }

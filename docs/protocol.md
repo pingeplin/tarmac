@@ -423,6 +423,31 @@ so all existing vectors decode unchanged.
 |---|---|---|---|
 | `term_id` | string (required) | — | the terminal whose pty to terminate |
 
+## Refreshing a doc on demand (issue #89)
+
+    {t:"doc_refresh", path}                         — app → daemon
+
+Re-stat a doc now and push the usual `file_event`, so a doc card can be refreshed
+without waiting for the watcher. This is the fallback for the case the watcher
+cannot cover: `watch_loop` matches events against the **active** board's registry
+at processing time, so an edit made while the doc's board is in the background is
+dropped and never re-emitted.
+
+The daemon stats the file and, if the path is a doc on the active board, records the
+real mtime in the registry (before pushing, as the watcher does) and pushes
+`file_event`. It **always** pushes on a successful stat, changed mtime or not — "did
+anything change" is answered by the receiver comparing values, which is what keeps a
+refresh of an unchanged file from reloading an HTML card. A `doc_refresh` for an
+unknown path, for a doc on a non-active board, or for a file that cannot be stat'd
+(deleted, unreadable) is a silent no-op: no push, no `err`. `path` must be the
+registry key — the daemon does not canonicalize it here. New **additive app→daemon
+type**: a receiver that does not know it ignores it under the unknown-type rule, so
+all existing vectors decode unchanged.
+
+| key | type | missing ⇒ | semantics |
+|---|---|---|---|
+| `path` | string (required) | — | the doc to re-stat (the registry key) |
+
 ## Conformance vectors
 
 Hex of the msgpack payload only (length prefix excluded). Decoding each vector MUST
@@ -501,4 +526,10 @@ round-trip. Byte-exact encoder output is NOT required (key order may legally dif
     decodes by tag and round-trips; existing vectors V1–V9 are unaffected.
 
         82 a1 74 a9 64 6f 63 5f 63 6c 6f 73 65
+        a4 70 61 74 68 a5 2f 61 2e 6d 64
+
+11. (issue #89) `{t:"doc_refresh", path:"/a.md"}` — new additive app→daemon type;
+    decodes by tag and round-trips; existing vectors V1–V10 are unaffected.
+
+        82 a1 74 ab 64 6f 63 5f 72 65 66 72 65 73 68
         a4 70 61 74 68 a5 2f 61 2e 6d 64

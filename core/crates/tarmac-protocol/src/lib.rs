@@ -175,6 +175,12 @@ pub enum Msg {
     DocClose {
         path: String,
     },
+    // DocRefresh (app -> daemon, issue #89): re-stat a doc on demand and push the
+    // usual file_event, so a card refreshes without waiting for the notify watcher.
+    // Semantics in docs/protocol.md; the handler is docs::stat_and_push.
+    DocRefresh {
+        path: String,
+    },
     // Unknown message types are ignored, not fatal (protocol rule).
     #[serde(other)]
     Unknown,
@@ -628,6 +634,17 @@ mod tests {
             "82 a1 74 a9 64 6f 63 5f 63 6c 6f 73 65 \
              a4 70 61 74 68 a5 2f 61 2e 6d 64",
             Msg::DocClose { path: "/a.md".into() },
+        );
+    }
+
+    #[test]
+    fn conformance_vector_11_doc_refresh() {
+        // issue #89: a new additive app -> daemon type. Decodes by tag and
+        // round-trips; existing vectors V1-V10 are unaffected (unknown-type rule).
+        assert_vector(
+            "82 a1 74 ab 64 6f 63 5f 72 65 66 72 65 73 68 \
+             a4 70 61 74 68 a5 2f 61 2e 6d 64",
+            Msg::DocRefresh { path: "/a.md".into() },
         );
     }
 
@@ -1298,6 +1315,8 @@ mod tests {
             Msg::Open { path: "/a.md".into(), term_id: Some("t9".into()), board_id: Some("board-1".into()) },
             // issue #34: close a doc card (app -> daemon).
             Msg::DocClose { path: "/tmp/a.md".into() },
+            // issue #89: refresh a doc card on demand (app -> daemon).
+            Msg::DocRefresh { path: "/tmp/a.md".into() },
         ];
         for m in msgs {
             assert_eq!(roundtrip(&m), m, "roundtrip failed for {m:?}");
