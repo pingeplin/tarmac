@@ -299,7 +299,15 @@ carries a world-space `CardFrame {x,y,w,h,z}`. Card chrome states —
 move of a doc card detaches it. Cards further than one viewport offscreen are
 culled to `visibility:hidden` (never unmounted, so a terminal keeps consuming PTY
 output); below the semantic-zoom threshold (0.5) the dot grid densifies and cards
-scale rather than re-laying out — there is no locard collapse.
+scale rather than re-laying out — there is no locard collapse. A culled **HTML**
+card is additionally paused: the engine publishes each cull flip and `card_shim.js`
+gates that card's `requestAnimationFrame`/`setInterval`/`setTimeout`, cancelling
+outstanding frame requests rather than merely holding their callbacks — WebKit
+throttles an offscreen frame on its own, but an unserviced pending request keeps
+costing CPU until its next ~10 s service tick (spec 2609.0002). Measured in the
+app at six culled animating cards: ~6 points of marginal WebContent CPU removed,
+in the first 10 s window as well as the second, with a visible card's rate and
+cost unchanged (`desktop/qa/cull-qa.md`).
 
 **Terminal cards** embed an xterm.js instance keyed by `term_id`. Input/resize
 forward to the daemon; output routes to the owning board's buffer even when

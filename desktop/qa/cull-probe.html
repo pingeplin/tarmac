@@ -1,0 +1,318 @@
+<!--
+  Cull-gate probe card (spec 2609.0002, issue #72, S37).
+
+  A PERMANENT QA artifact, not a scratch file. Open it as a normal HTML doc card
+  (`tarmac open desktop/qa/cull-probe.html`) so it loads through the real
+  tarmac-card:// pipeline — shim prepended, CSP header, opaque origin, allow=""
+  — exactly like an agent-authored card.
+
+  It runs an rAF loop, a setInterval and a re-arming setTimeout chain, keeps
+  delivery counts for each, and reports them through console.log (relayed to the
+  host by the shim) with a "[cull]" prefix. Because the document is never
+  reloaded across a cull round trip, the counts survive the trip and ARE the
+  evidence: read the rates off these counters, never off CPU.
+
+  HOW TO READ IT. The reporter is a timer, so the gate pauses it too -- a card
+  cannot hold an un-gated timer (the shim wraps setInterval before this file's
+  first byte), and an un-gated MessageChannel reporter would contaminate the CPU
+  cells this same probe serves. So a paused card emits NO lines, and the first
+  line after un-cull covers the pre-pause remainder + the whole cull + the gap
+  from resume to the next reporter tick.
+
+  That means the COUNTS decide nothing by themselves: on a correct build the
+  first post-un-cull line legitimately carries non-zero counts, because it
+  includes the running periods on both sides of the cull. The decidable quantity
+  is `gapRaf` / `gapInt` / `gapTo` -- the LARGEST interval between two
+  consecutive deliveries in that family during the window (the still-open
+  interval included, so a family that delivered nothing still reports one).
+
+      gate held   =>  gapRaf ~ gapInt ~ gapTo ~ dt   (within ~2 report periods)
+      family leak =>  that family's gap stays ~1000  (WebKit throttles an
+                      offscreen frame's timers to ~1 Hz) while dt runs to seconds
+
+  A line like
+
+      [cull] dt=8500 raf=15 gapRaf=8400 int=31 gapInt=8400 to=31 gapTo=8400
+
+  is a PASS: 8.4 s with nothing delivered in any family. The same line with
+  `gapTo=1000` would be the failure -- the timeout chain kept running while
+  culled, whatever its count says.
+
+  HOW TO SET THE SWITCHES. Not in the URL -- a card is opened by PATH
+  (`tarmac open <file>`), and cardSrcUrl serves it as
+  `tarmac-card://doc/<percent-encoded path>?v=<mtime>`, so `location.search`
+  always belongs to the host and never to the tester. Switches therefore live in
+  the `<meta name="cull-probe" content="...">` tag below, which is the mechanism
+  already proven to survive this pipeline (it is how `tarmac-zoom` reaches the
+  shim). Configure a cell by editing that tag in a scratch COPY:
+
+      cp desktop/qa/cull-probe.html /tmp/p1.html
+      # then edit /tmp/p1.html's cull-probe meta, or do it in one step:
+      sed 's/content="n=1 loops=all/content="n=6 loops=none/' \
+          desktop/qa/cull-probe.html > /tmp/p1.html
+      tarmac open /tmp/p1.html
+
+  A six-card cell needs six copies anyway (one card per path), so:
+
+      for i in 1 2 3 4 5 6; do
+        sed 's/content="n=1 loops=all/content="n=6 loops=all/' \
+            desktop/qa/cull-probe.html > /tmp/cull$i.html
+        tarmac open /tmp/cull$i.html
+      done
+
+  Every value below is a space-separated `key=value` token in that one tag.
+  Unknown keys are ignored; a missing tag means all defaults.
+
+    n=<int>       cards this instance is one of; recorded in the report line
+                  only, so a 6-card cell is self-describing in the log.
+    loops=all     (default) rAF + interval + timeout
+         =rafonly | timersonly | none
+    (There is deliberately NO card-side "gate off" switch. The shim owns the
+     gate and is prepended before this file's first byte, so nothing a card can
+     do bypasses it — any reference this document captures is already the shim's
+     wrapper. An un-gated baseline is obtained by measuring a BUILD with the gate
+     reverted. An earlier draft of this file claimed otherwise; it was wrong.)
+    across=on     (default, 12000) arm a one-shot timeout whose deadline is meant
+         =<ms>    to land INSIDE a cull, to exercise the ONE case no measurement
+         =off     before this had: a timeout outstanding ACROSS the pause boundary
+                  (S29). ORDERING MATTERS -- the deadline is fixed at LOAD, so it
+                  discriminates nothing unless the cull actually contains it. Cull
+                  within ~10 s of load and hold past the mark, or set `across=<ms>`
+                  to a deadline you know your cull will span. Every report line
+                  carries `across=pending|fired|off` so the state is visible
+                  without waiting for the ACROSS-FIRED line; if it already reads
+                  `fired` before you culled, the cell is void -- reload and retry.
+                  When it does fire it logs `elapsed`: ~= the deadline means it ran
+                  ON TIME, i.e. while culled (FAIL); visibly larger means it was
+                  held and flushed at the un-cull (PASS).
+    ms=<int>      report period, default 1000.
+
+  The outstanding-request counters below are CARD-SIDE. They say what this
+  document holds. They are NOT the host page's outstanding-rAF count — that is
+  a different instrument, needs a wrapper in the host document, and is issue
+  #105. Nothing here establishes which regime the app is in.
+-->
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="tarmac-zoom" content="magnify" />
+<!-- Switches live HERE, not in the URL: a card is opened by path via
+     `tarmac open`, and cardSrcUrl percent-encodes that path into one segment and
+     appends its own ?v=<mtime>, so location.search is never the tester's. Edit
+     this line in a scratch COPY of the file (see the header). -->
+<meta name="cull-probe" content="n=1 loops=all across=12000 ms=1000" />
+<title>tarmac cull probe</title>
+<style>
+  body { font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; margin: 10px; }
+  h1 { font-size: 14px; margin: 0 0 6px; }
+  td { padding: 1px 10px 1px 0; }
+  .n { text-align: right; font-variant-numeric: tabular-nums; }
+  .k { color: #666; }
+</style>
+</head>
+<body>
+<h1>cull probe</h1>
+<table>
+  <tr><td class="k">rAF n / maxgap</td><td class="n" id="raf">–</td></tr>
+  <tr><td class="k">interval n / maxgap</td><td class="n" id="int">–</td></tr>
+  <tr><td class="k">timeout n / maxgap</td><td class="n" id="to">–</td></tr>
+  <tr><td class="k">last dt (ms)</td><td class="n" id="dt">–</td></tr>
+  <tr><td class="k">outstanding rAF</td><td class="n" id="out">–</td></tr>
+  <tr><td class="k">boot</td><td class="n" id="boot">–</td></tr>
+  <tr><td class="k">cfg</td><td class="n" id="cfg">–</td></tr>
+</table>
+
+<script>
+// FIRST STATEMENT OF THIS DOCUMENT'S SCRIPT — the earliest a card can run.
+// It cannot precede the shim: card_protocol.rs's compose_body writes the opening
+// <script> tag, the whole shim, and the closing tag (spelled <\/script> here so
+// the HTML parser does not end THIS element) before this file's first byte, so
+// once the gate
+// ships these wrap the SHIM's wrappers rather than the raw natives. That is
+// what makes the count meaningful here — it is this card's outstanding
+// requests, which is exactly what S29/S37 want.
+var TM = (function () {
+  var raf = window.requestAnimationFrame;
+  var caf = window.cancelAnimationFrame;
+  var live = {};
+  var outstanding = 0;
+  window.requestAnimationFrame = function (cb) {
+    var id = raf.call(window, function (ts) {
+      if (live[id]) { delete live[id]; outstanding--; }
+      cb(ts);
+    });
+    live[id] = true;
+    outstanding++;
+    return id;
+  };
+  window.cancelAnimationFrame = function (id) {
+    if (live[id]) { delete live[id]; outstanding--; }
+    return caf.call(window, id);
+  };
+  return {
+    outstanding: function () { return outstanding; },
+    // The schedulers AS THIS DOCUMENT RECEIVED THEM — i.e. the shim's wrappers,
+    // not the raw natives. Kept so the reporter below can run on a timer that
+    // the counting wrappers do not see; it is NOT a way around the gate.
+    setInterval: window.setInterval,
+  };
+})();
+</script>
+
+<script>
+(function () {
+  // Switches come from <meta name="cull-probe">, never from location.search:
+  // this document is served as tarmac-card://doc/<percent-encoded path>?v=<mtime>,
+  // so its query string always belongs to the host. A meta tag is the mechanism
+  // already proven to survive this pipeline -- it is how tarmac-zoom reaches the
+  // shim. Edit the tag in a scratch copy of this file to configure a cell.
+  var q = {};
+  (function () {
+    var el = null;
+    try { el = document.querySelector('meta[name="cull-probe"]'); } catch (e) {}
+    var raw = el && el.content ? el.content : "";
+    raw.split(/\s+/).forEach(function (kv) {
+      if (!kv) return;
+      var i = kv.indexOf("=");
+      if (i > 0) q[kv.slice(0, i)] = kv.slice(i + 1);
+    });
+  })();
+
+  var N = q.n || "?";
+  var LOOPS = q.loops || "all";
+  // across=off disables it; across=<ms> sets the deadline; anything else = 12000.
+  // The deadline is fixed at LOAD, so it only discriminates if the cull actually
+  // contains it — see the report line's across= field and cull-qa.md S29.
+  var ACROSS = q.across !== "off";
+  var ACROSS_MS = Number(q.across) > 0 ? Number(q.across) : 12000;
+  var acrossState = "off";
+  var PERIOD = Number(q.ms || 1000) || 1000;
+
+  var wantRaf = LOOPS === "all" || LOOPS === "rafonly";
+  var wantTimers = LOOPS === "all" || LOOPS === "timersonly";
+
+  // The counting wrappers installed above, which sit on top of the shim's.
+  var RAF = window.requestAnimationFrame;
+  var SET_TIMEOUT = window.setTimeout;
+  var SET_INTERVAL = window.setInterval;
+
+  var BOOT = String(Date.now()) + "." + Math.floor(Math.random() * 1e6);
+  var BOOT_AT = Date.now();
+  var FAMILIES = ["raf", "int", "to"];
+  var counts = { raf: 0, int: 0, to: 0 };
+  // Per-family delivery clock. The COUNTS cannot decide anything on their own:
+  // the reporter is gated too, so the first line after an un-cull spans the
+  // pre-pause remainder + the cull + the post-resume gap, and a correct build
+  // legitimately reports a non-zero count over that window. The decidable
+  // quantity is the largest interval between two consecutive deliveries.
+  var lastAt = { raf: BOOT_AT, int: BOOT_AT, to: BOOT_AT };
+  var maxGap = { raf: 0, int: 0, to: 0 };
+  var second = 0;
+
+  function tick(fam) {
+    var now = Date.now();
+    var gap = now - lastAt[fam];
+    if (gap > maxGap[fam]) maxGap[fam] = gap;
+    lastAt[fam] = now;
+    counts[fam]++;
+  }
+
+  document.getElementById("boot").textContent = BOOT;
+  document.getElementById("cfg").textContent = "n=" + N + " loops=" + LOOPS;
+
+  function work() {
+    // Deliberately trivial: this probe measures DELIVERY TIMING, not throughput.
+    // The cost question is CPU, sampled host-side per S30.
+    var s = 0;
+    for (var i = 0; i < 200; i++) s += i;
+    return s;
+  }
+
+  if (wantRaf) {
+    (function frame() {
+      tick("raf");
+      work();
+      RAF.call(window, frame);
+    })();
+  }
+
+  if (wantTimers) {
+    SET_INTERVAL.call(window, function () {
+      tick("int");
+      work();
+    }, 16);
+
+    (function chain() {
+      tick("to");
+      work();
+      SET_TIMEOUT.call(window, chain, 16);
+    })();
+
+    if (ACROSS) {
+      // The one case no measurement before this exercised: a timeout armed
+      // while running whose deadline falls inside the cull. The chain above
+      // re-arms inside its own callback, so it never has one outstanding across
+      // a pause. 12 s is longer than a comfortable pan-away.
+      var armedAt = Date.now();
+      acrossState = "pending";
+      SET_TIMEOUT.call(window, function () {
+        acrossState = "fired";
+        // Absolute time and elapsed-since-armed, never the report counter --
+        // that counter is frozen during a cull, so "fired while culled" and
+        // "diverted, then flushed on resume" would print the same number.
+        // elapsed ~= 12000 means it ran while culled (FAIL); a visibly larger
+        // elapsed means it was held and flushed at the un-cull (PASS).
+        console.log("[cull] ACROSS-FIRED at=" + Date.now() +
+                    " armedAt=" + armedAt + " deadline=" + ACROSS_MS +
+                    " elapsed=" + (Date.now() - armedAt) + " boot=" + BOOT);
+      }, ACROSS_MS);
+    }
+  }
+
+  // The reporter is a timer like any other, so the gate pauses it too -- a card
+  // cannot hold an un-gated timer, and an ungated MessageChannel reporter would
+  // contaminate the CPU cells this probe also serves. Hence maxGap: on a working
+  // gate every family's gap comes within about two report periods of `dt`; a
+  // family still being delivered while culled shows a gap of ~1000 ms (WebKit
+  // throttles an offscreen frame's timers to ~1 Hz) while `dt` runs to seconds.
+  var lastReportAt = BOOT_AT;
+  TM.setInterval.call(window, function () {
+    var now = Date.now();
+    var dt = now - lastReportAt;
+    lastReportAt = now;
+    second++;
+    var gap = {};
+    for (var i = 0; i < FAMILIES.length; i++) {
+      var f = FAMILIES[i];
+      // Close the still-open interval too, so a family that delivered nothing
+      // at all in this window still reports a real gap.
+      gap[f] = Math.max(maxGap[f], now - lastAt[f]);
+      maxGap[f] = 0;
+    }
+    var out = TM.outstanding();
+    document.getElementById("raf").textContent = counts.raf + " / " + gap.raf;
+    document.getElementById("int").textContent = counts.int + " / " + gap.int;
+    document.getElementById("to").textContent = counts.to + " / " + gap.to;
+    document.getElementById("dt").textContent = dt;
+    document.getElementById("out").textContent = out;
+    console.log(
+      "[cull] t=" + second +
+      " dt=" + dt +
+      " raf=" + counts.raf + " gapRaf=" + gap.raf +
+      " int=" + counts.int + " gapInt=" + gap.int +
+      " to=" + counts.to + " gapTo=" + gap.to +
+      " outstanding=" + out +
+      " across=" + acrossState +
+      " n=" + N + " loops=" + LOOPS +
+      " boot=" + BOOT,
+    );
+    counts.raf = counts.int = counts.to = 0;
+  }, PERIOD);
+
+  console.log("[cull] boot=" + BOOT + " n=" + N + " loops=" + LOOPS +
+              " across=" + acrossState + " acrossMs=" + (ACROSS ? ACROSS_MS : 0));
+})();
+</script>
+</body>
+</html>

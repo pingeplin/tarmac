@@ -20,6 +20,7 @@ import { DocCard } from "../cards/DocCard";
 import { HtmlCard } from "../cards/HtmlCard";
 import { ownerChipName } from "../kit/ownerChip";
 import { docKind } from "../kit/docKind";
+import { isCulled, registerCullListener, type CullListener } from "../kit/cardCull";
 // The outer wrapper is ONE thing across card kinds — kit/termZoom re-exports
 // these under term* names, so importing docZoom's covers both.
 import { docWrapperBox, docCardVars } from "../kit/docZoom";
@@ -68,6 +69,10 @@ export function Board(props: BoardProps) {
   const cardLayerRef = useRef<HTMLDivElement>(null);
   const edgeLayerRef = useRef<EdgeLayerHandle | null>(null);
   const cardEls = useRef<Map<string, HTMLElement>>(new Map());
+  // Cull listeners (spec 2609.0002). A ref, not state: applyCull runs inside the
+  // wheel handler and inside flyTo's rAF loop, and no card is memo'd — a useState
+  // of culled ids would re-render every card on every frame a pan flips one.
+  const cullListeners = useRef<Map<string, CullListener>>(new Map());
   const { engineRef, cards, boardId } = props;
 
   // rasterScale: 1 at rest, increases with zoom after settle. Cards subscribe to
@@ -81,6 +86,9 @@ export function Board(props: BoardProps) {
     engine.edgesRef = edgeLayerRef;
     engine.onViewportChange = props.onViewport;
     engine.onRasterScaleSettle = setRasterScale;
+    engine.onCullChange = (id, visible) => {
+      cullListeners.current.get(id)?.(isCulled(visible));
+    };
     engineRef.current = engine;
     props.onEngineReady(boardId, engine);
     // Seed the chrome (zoom readout, minimap, offscreen hints) with the initial
@@ -219,6 +227,10 @@ export function Board(props: BoardProps) {
                   borrowed={id === props.borrowedCardId}
                   onBorrow={() => props.onCardBorrow(id)}
                   onEscapeHome={props.onEscapeHome}
+                  // Deliberately not in `shared`: that object is spread into
+                  // DocCard too, and a spread of a variable skips TS excess-
+                  // property checking, so the leak would compile silently.
+                  onCullRegister={(fn) => registerCullListener(cullListeners.current, id, fn)}
                 />
               ) : (
                 <DocCard {...shared} markdown={props.docContents.get(c.path) ?? ""} />
