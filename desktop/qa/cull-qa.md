@@ -54,7 +54,7 @@ instructions and a later reader needs to know:
   `TARMAC_SOCKET=<worktree>/.dev/tarmacd.sock`, served by this worktree's
   `core/target/debug/tarmacd` (`app connected (generation 1)` in its log). The CPU
   cells identify the WebContent/GPU/Networking services by set-difference against
-  what was running before each launch, and drop the two long-lived services that
+  what was running before each launch, and drop the three long-lived services that
   predate the run.
 - **The app was started from a hand-built wrapper bundle, not `make run`.**
   `qa72-scratch/TarmacQA72.app` (bundle id `com.tarmac.qa72dev`, process name
@@ -451,7 +451,8 @@ about. The discriminating evidence is the gap data. Under the "cull post placed
 to the reloaded document, so gen 2's fresh shim boots **un-gated inside a
 non-visible frame** — the state measured directly on the reverted-shim build
 (`s30_ungated_leak_proof.png`), where timers keep running at ~1 Hz. Its reporter
-would therefore have ticked roughly fourteen times across the 14.6 s cull, each
+would therefore have ticked roughly seven times across the 14.6 s cull (the
+un-gated reporter coalesces to `dt=2000`), each
 line carrying `gapInt`≈1000. What was observed instead is **no reporter line at
 all** between `[s36] boot=…gen=2` and a single `t=1` whose `dt=14598` says the
 reporter itself did not run for 14.6 s. Only a document that received
@@ -552,7 +553,7 @@ The third box was already met: the numbers are recorded in the RFC and summarise
 in `architecture.md`.
 
 > **Fixed by the `fix(qa): make cull-probe.html report and take its switches`
-> commit — the two boxes above stay unchecked pending a re-run.**
+> commit; the re-run on `e6782da` above ticked every box.**
 > The record above is kept as history; it is what the artifact did at `c82f899`.
 > What changed:
 >
