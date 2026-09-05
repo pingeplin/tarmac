@@ -12,14 +12,22 @@ the CPU cells identify the WebContent and GPU XPC services by set-difference aga
 what was running *before* launch, so a second Tarmac (an installed build, or another
 agent's QA app) both hijacks the daemon and makes the process attribution wrong.
 
-## Status: VERIFIED — 11/11 PASS (2026-09-05, commits `c82f899` + `e6782da`)
+## Status: VERIFIED — 11/11 PASS, S31 with a recorded deviation (2026-09-05, commits `c82f899` + `e6782da`)
 
 **S29–S36 and S38–S39 ran and passed against `c82f899`. S37 failed there** — the
 probe shipped with that commit was broken two independent ways (kept below as
 history), so every behavioural cell in that pass ran a fixed scratch copy.
 `e6782da` fixed both defects, and **S37 and S29 N=1 were re-run against the
 shipped file**: S37 now PASSES and S29 N=1 reproduces with the committed probe
-unmodified. The re-runs are the second Observation paragraph under each. Everything below was observed on screen against a **debug**
+unmodified. The re-runs are the second Observation paragraph under each.
+
+An independent review of this record then reproduced every cited number from the
+screenshots and found seven claims that overstated or misdescribed what backs
+them. **No result changed**; what changed is what the record asserts — S31 is now
+PASS-with-deviation, S36's discriminating evidence is restated (its `zoom-mode`
+clause was vacuous and is withdrawn), the CPU sampling caveats and the screenshot
+guarantee are stated accurately, and two previously undisclosed deviations are
+listed below. Everything below was observed on screen against a **debug**
 build of `c82f899` — the PR's feature commit — driven through the real UI in
 `../tarmac-worktrees/72-offscreen-card-throttle`. Screenshots are named in each
 Observation and live outside the repo in `../tarmac-worktrees/qa72-scratch/shots/`,
@@ -56,9 +64,13 @@ instructions and a later reader needs to know:
   `tauri dev --config` route of issue #102 was tried first and **did not work**:
   the dev process reported `bundle identifier = missing value` and the process
   name `tarmac-app`, i.e. indistinguishable from the installed app by name and
-  carrying no identifier at all — exactly the #89 hazard. The wrapper made the QA
-  app the only app in the computer-use allowlist, so screenshots are filtered to
-  it at the compositor level and none can contain the operator's Tarmac.
+  carrying no identifier at all — exactly the #89 hazard. The wrapper also made
+  the QA app the only entry in the computer-use allowlist, which is what let the
+  MCP screenshots exclude everything else. **The saved `.png` files come from
+  `screencapture -x -R<window rect>` and carry no such compositor guarantee**;
+  what backs them is procedural — the QA app was activated and its frontmost pid
+  checked before each shot, the rect is that window's own geometry, and all 21
+  files were opened and inspected afterwards. None shows the installed app.
 - **Cull and un-cull were driven by a synthetic two-finger pan, not by ⏎/ESC.**
   50 wheel ticks ≈ 2000 world px at zoom 1, comfortably past the one-viewport
   margin; ⏎ (fly to the offscreen terminal) was used only where a single
@@ -69,10 +81,37 @@ instructions and a later reader needs to know:
   Karabiner-Elements); `key code 40 using command down` opened the switcher
   normally. S39's board switches used key codes plus arrow/Return — no socket
   driving was needed.
+- **Board and card layouts were composed by writing `.dev/state.json`, not built
+  through the UI.** `qa72-scratch/mk.py` writes each cell's tile geometry, doc list
+  and saved viewport from a prototype the app itself produced, and the app is then
+  relaunched onto it — the only way to place six cards on a 3×2 grid, put a card
+  strictly over a hidden board's saved centre (S39), or park the prime terminal
+  30 000 units away, repeatably. Everything *observed* was observed through the
+  real UI afterwards: the cards are ordinary `tarmac-card://` doc cards, and the
+  cull flips came from real pans and real board switches.
+- **Two diagnostic screenshots show a stray select-all highlight.**
+  `s39_switcher_probe.png` and `s39_kcode_probe.png` were taken while working out
+  why `keystroke "k" using command down` did nothing; both show a full-page native
+  text selection inside the QA window, cause not established (Karabiner is the
+  likely culprit). Neither is cited as evidence for any scenario, nothing was
+  observed outside the QA window, and no cited cell can be affected — every CPU
+  rep and every gap cell relaunches the app onto a fresh state.
 - **CPU cells are three reps each, medians reported**, two consecutive 10 s
   windows with window 1 opening at the ⏎ that culls the six cards, plus a 10 s
-  visible window in the same run for S32. Load average 2.5–7.8 across the run;
-  the frontmost-pid guard fired on none of the 36 rows.
+  visible window in the same run for S32. One-minute load average across the 36
+  rows: **2.21–3.50** (`load0`/`load1` in `cpu.jsonl`). **The frontmost-pid guard
+  fired on no row** — but note that `cpu.sh` *records* a frontmost mismatch into
+  the row's `warn` field and does not abort on one, so that is a clean result, not
+  an enforced invariant. **Three rows did warn**: 33–35 (`ungated`/`none`/rep 3)
+  carry `warn:"nwc=2"`, because `lib.sh`'s `wk()` sorted pids with `sort -n` while
+  `comm -13` needs lexicographic order, so after PID wraparound three long-lived
+  services (`34529:gpu 34530:net 34533:wc`) leaked into that cell's class list.
+  All three read 0.0%, and the published numbers are the ones you get once they
+  are excluded. Both helpers have been corrected in the scratch dir — `wk()` now
+  uses plain `sort`, and `analyse.py` attributes only services this app minted
+  (`abs(pid - app) < 200`) instead of last-wins — so `python3 analyse.py cpu.jsonl`
+  now reproduces the tables below as shipped. To check by hand instead, delete the
+  three stale tokens from rows 33–35's `class` field.
 
 **Companion artifact:** [`cull-probe.html`](cull-probe.html) — open it with
 `tarmac open desktop/qa/cull-probe.html`. Its switches (`n`, `loops`, `across`,
@@ -166,7 +205,7 @@ the same six running): `last dt` 15615–15621 against `gapRaf` 15088 and
 satisfied its ordering precondition — every pre-cull line reads `across=pending` —
 and fired at `elapsed=22714` against `deadline=12000`, i.e. held through the cull
 and flushed at the un-cull. Cross-checked against the **un-gated** build on the
-same machine 20 minutes later (`s30_ungated_leak_proof.png`): the same probe,
+same machine 26 minutes later (16:33 → 16:58; `s30_ungated_leak_proof.png`): the same probe,
 culled, reads `gapInt=1000 gapTo=1000` while `dt` runs to 2000, and its one-shot
 fires at `elapsed=12002` — on time, while culled. That is the failure this cell
 would have recorded had the gate not held.
@@ -209,8 +248,9 @@ out-of-repo harness made before it added two-window sampling.
 Observation: **PASS at both windows.** Six 300×200 probes on a 3×2 grid,
 marginal WebContent = `loops=all` − `loops=none`, medians of 3 reps per cell,
 window 1 opening at the ⏎ fly-to-terminal that culls all six (raw rows:
-`qa72-scratch/cpu.jsonl`, 36 rows, 0 warned after dropping two long-lived WebKit
-services that predate the run).
+`qa72-scratch/cpu.jsonl`, 36 rows; no row saw a frontmost mismatch, and the three
+rows that warn `nwc=2` do so because of three stale pids in the set-difference —
+see the CPU bullet in the preamble for the cause, the fix and the by-hand recipe).
 
 | build | window 1 | window 2 | visible |
 | --- | --- | --- | --- |
@@ -237,14 +277,21 @@ were both empty afterwards.
 - [x] With a culled, paused card, pan back. **The first full one-second bucket that
       begins after the un-cull** already reads within the card's pre-cull band.
 
-Observation: **PASS.** Same run as S29 N=1 (`s29_s31_n1.png`). Pre-cull band,
+Observation: **PASS with a recorded deviation.** Same run as S29 N=1
+(`s29_s31_n1.png`). Pre-cull band,
 `t=3`–`t=6`: raf 30/s, int 33–34/s, to 33–34/s. `t=7` is the straddling bucket
 (`dt=16710`) and is not read here. **`t=8` is the first full one-second bucket
 that begins after the un-cull** — `dt=1007 raf=30 int=34 to=38`. raf and int are
-inside the pre-cull band in that very first bucket. `to` reads 4/s *above* the
-band, which is the resume flush landing — the held timeout chain plus the across
-one-shot are delivered inside that bucket — not a slow resume; `t=9` is fully in
-band at 30/34/34. Nothing here needed a second bucket to come back to rate.
+inside the pre-cull band in that very first bucket. **`to` reads 38/s against a
+33–34/s band, so the letter of the scenario — "within the card's pre-cull band on
+all three counters" — is not met on the third counter.** The excess is the resume
+flush: the timeout chain held across the pause is delivered in that bucket, and
+the spec carves out no allowance for it, so it is recorded as a deviation rather
+than waved through. It is an overshoot, not a shortfall — the card is back at (and
+briefly past) its rate inside one bucket, which is what criterion 4 exists to
+assert — and `t=9` is fully in band at 30/34/34. Nothing needed a second bucket to
+come back to rate.
+
 (Read the *counters* on this line, not its gaps: the probe reports the cull's own
 gap twice, once as the still-open interval on `t=7` and once as the closed
 interval on `t=8`, because `lastAt` is only advanced by a real delivery.)
@@ -330,7 +377,10 @@ one-second bucket* to be non-zero.
 Observation: **PASS.** The prime terminal was parked at world (2500,−165) with
 the viewport at the origin, then the probe was opened from the shell with
 `tarmac open` — an unattributed open anchors on the prime, so the card landed at
-(3056,−165) and was culled from birth (confirmed in `state.json` before the pan).
+(3056,−165) and was culled from birth — consistent with `mk.py`'s `bornculled`
+layout, which parks the prime at (2500,−165) with the saved viewport at the origin
+(`st_s34.json` is that pre-open layout; the landed doc tile is not in the evidence
+dir).
 After ~15 s culled, one pan brought it to centre. `s34_born_culled.png` is the
 first frame after the un-cull: rAF **2 / 14827**, interval **0 / 14828**, timeout
 **1 / 14828**, `last dt` **14828**, console badge **⌥ 4**. `s34_born_culled_console.png`
@@ -388,10 +438,29 @@ listens for the host's own `{tarmac:"cull", culled:true}` and calls
 set. `s36_self_reload.png`: `[s36] culled -> location.reload() gen=1`, then
 `[s36] boot=1788597902828.117413 gen=2`, then **silence**, then
 `t=1 gen=2 dt=14598 raf=17 gapRaf=14063 int=18 gapInt=14062 to=23 gapTo=14062` —
-all three gaps within 536 ms of `dt`. **No second `zoom-mode` line appeared for
-gen 2**, which is the positive proof that the reload really did take the guarded
-path: the host returned early at `readyHandledRef`, and the fresh document still
-came back paused — so the cull post is genuinely sitting *before* that guard.
+all three gaps within 536 ms of `dt`.
+
+**What discriminates the guard here is the silence, not the console.** An earlier
+version of this observation claimed the absence of a second `zoom-mode` line as
+positive proof; that was vacuous and is withdrawn. `s36probe.html` carries no
+`<meta name="tarmac-zoom">`, so `readMeta()` returns `null` and
+`HtmlCard.tsx:150` logs nothing for *either* generation — the absence is
+guaranteed by the fixture, which is exactly the trap S33's own preamble warns
+about. The discriminating evidence is the gap data. Under the "cull post placed
+*after* the `readyHandledRef` guard" mutant the host returns early and never posts
+to the reloaded document, so gen 2's fresh shim boots **un-gated inside a
+non-visible frame** — the state measured directly on the reverted-shim build
+(`s30_ungated_leak_proof.png`), where timers keep running at ~1 Hz. Its reporter
+would therefore have ticked roughly fourteen times across the 14.6 s cull, each
+line carrying `gapInt`≈1000. What was observed instead is **no reporter line at
+all** between `[s36] boot=…gen=2` and a single `t=1` whose `dt=14598` says the
+reporter itself did not run for 14.6 s. Only a document that received
+`{tarmac:"cull", culled:true}` can produce that, and on a self-reload the sole
+sender is a post that precedes the guard.
+
+(The withdrawn clause also appears in commit `b5ed99f`'s message, which is
+history and stays as written — but it must not be carried into the squash message
+when this PR lands.)
 
 ## S37 — The probe is committed and instrumented (criterion 9)
 
