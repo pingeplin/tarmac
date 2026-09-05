@@ -148,8 +148,12 @@ document came back magnified at the current board zoom — `ICB probe offsetWidt
 `zoom-mode declared=magnify effective=magnify` line for the load; its tail reads
 `gen=4 zoom=1 (unset, initial load) … icbProbeWidth=1738.0` → `zoom-mode
 declared=magnify effective=magnify` → `received … z:3` → `gen=4 zoom=3 …
-icbProbeWidth=1207.0` (`s13_strip.png`). The third bullet stays unchecked: no
-inspector was available in this build, so the iframe `src` was never read and
+icbProbeWidth=579.0` → `gen=4 zoom=3 … icbProbeWidth=1207.0` (`s13_strip.png`).
+The intermediate `579.0` is the iframe being briefly sized at the settled board
+zoom while `magnify` is false — the `lastChangedMs` effect resets it — before
+the mode is re-adopted and the box returns to `frame × K`. The third bullet
+stays unchecked: no inspector was available in this build, so the iframe `src`
+was never read and
 the reload latency was never measured — the new load is evidenced instead by the
 panel reset plus that new `zoom-mode` line, which only the `lastChangedMs` reset
 effect can produce, and by the header's freshness chip flipping to `now`.
@@ -266,8 +270,9 @@ drew a reply, taking the panel to three entries — `…12:55:15.411Z`,
 `…12:55:55.447Z`, `…12:56:05.758Z`, **all `z:3`**. The reveal forgery was
 therefore answered with the *magnify* payload: the reply is decided by the mode
 in force, not by what the forgery claims. The strip gained **no** second
-`zoom-mode` line — the badge went 26 → 29 → 32, i.e. exactly three probe entries
-per forgery (`[qa99] forging ready meta=…`, `[magnify-probe] received …`,
+`zoom-mode` line — the badge went 26 → 29 → 32 (26 and 29 derived from the
+strip, 32 read off the badge), i.e. exactly three probe entries per forgery
+(`[qa99] forging ready meta=…`, `[magnify-probe] received …`,
 `[magnify-probe] gen=3 zoom=3 … icbProbeWidth=1207.0`) and nothing else
 (`s14_strip.png`). The render did not move (`s14_forged_both.png`), and zooming
 the board to 144% afterwards left `ICB probe offsetWidth` 1207.0 px, `prose line
@@ -344,8 +349,10 @@ is 3, the `MAGNIFY_K` constant, and whose source reads `window.parent`
 effective=magnify`; the other 17 are `[magnify-probe] …` reports, most of them
 fired by the resize that sizing the card produced — which is precisely why the
 prefix, not the badge total, is the count. Zooming the board 100% → 207% → 144%
-added **no** panel entry and no console line, and left the report unchanged
-(`ICB probe offsetWidth` 1207.0 px, `prose line count` 15, box B 960.0 px). The
+added **no** panel entry and no console line, and left the report unchanged:
+`s11_pre.png` is the same generation 1 at 144%, still showing the single panel
+entry `12:47:27.768Z … z:3` and `ICB probe offsetWidth` 1207.0 px, `prose line
+count` 15, box B 960.0 px. The 207% step itself was not photographed. The
 file-rewrite step is recorded under **S10** above (panel reset to one entry for
 the new load).
 
@@ -490,9 +497,11 @@ Observation (2026-09-05, `7702f59`): **PASS.** Fixture `s16probe.html` — the
 `magnify-probe.html` copy with the meta flipped to `content="reveal"`, per the
 S8 recipe, plus the QA controls described under **Run conditions**. On open, the
 console strip read exactly one `zoom-mode declared=reveal effective=reveal`
-(badge `⌥ 2`: that line plus the probe's own first report) and the panel read
-`(none received)` (`s16_declared_reveal.png`). At board zoom 144%: root zoom
-`1 (unset, initial load)`, `ICB probe offsetWidth` 1728.0 px = `window.innerWidth`
+(badge `⌥ 2`: that line plus the probe's own first report —
+`s16_declared_reveal.png`, which is cropped to the badge and that strip line) and
+the panel read `(none received)` (`s16_pre_reveal.png`). At board zoom 144%:
+root zoom `1 (unset, initial load)`, `ICB probe offsetWidth` 1728.0 px =
+`window.innerWidth`
 1728.0 px (ratio 1.000 — real screen px, 1200 × 1.44), `prose line count` 13
 against 15 at 100%, box B 320.0 px (`s16_pre_reveal.png`). After the
 document reloaded itself: generation 2, the panel **still reads
@@ -542,11 +551,14 @@ landed" (ICB = the card's frame width) and "it did not" (ICB = 3× that) reads
 identically at every level.
 
 **The iframe execution context was unavailable; the fallback was used in a
-button-driven variant.** A right-click on a borrowed card produces no context
-menu and no *Inspect Element* — `desktop/src-tauri/Cargo.toml` enables no
-`devtools` feature — so nothing could be typed into a console against the card's
-iframe. Scratch copies of `desktop/qa/magnify-probe.html` were used instead,
-under `../tarmac-worktrees/qa99-scratch/` (`s11probe.html`; `s16probe.html`, the
+button-driven variant.** A right-click on a borrowed card produced no context
+menu and no *Inspect Element*, so nothing could be typed into a console against
+the card's iframe. **The cause was not established** — this was `cargo build`'s
+`target/debug/tarmac-app`, where Tauri 2 gates the inspector on
+`debug_assertions` as well as its `devtools` feature, so a missing feature flag
+does not explain it; only the absence of the menu was observed. Scratch copies
+of `desktop/qa/magnify-probe.html` were used instead, under
+`../tarmac-worktrees/qa99-scratch/` (`s11probe.html`; `s16probe.html`, the
 same file with the meta flipped to `reveal`). Each adds, and changes nothing
 else:
 
@@ -569,10 +581,19 @@ fixture reloads on receipt of the first zoom, before generation 1 can be read.
 **Console-line counts are deltas, not totals.** `HtmlCard`'s `entries` buffer is
 never reset (cap 500), so it accumulates across self-reloads and `?v=` reloads
 alike. Every "no second `zoom-mode` line" claim above is a pair of readings —
-badge arithmetic plus the strip's tail after scrolling it to the end: 18 → 22 →
+the badge count plus the strip's tail after scrolling it to the end: 18 → 22 →
 26 across the two self-reloads, 29 → 32 across the two forged readies, 37 after
-the `?v=` reload. Each event adds three or four `[magnify-probe]` / `[qa99]`
-entries, and a `zoom-mode` line only where S13 expects one.
+the `?v=` reload. **18, 22 and 32 were read off the badge in a capture; 26, 29
+and 37 are derived from the strip**, because at 144% the card's header sits
+above the window edge in those captures. Each event adds three to five
+`[magnify-probe]` / `[qa99]` entries — five for the `?v=` reload, 32 → 37, whose
+new load logs its own `zoom-mode` line and an extra intermediate report — and a
+`zoom-mode` line only where S13 expects one.
+
+**How the card was culled (S15).** By wheel-panning the board about 2.8
+viewports to the right and back, not by switching boards: a card on an inactive
+board is `display:none`, which is not the cull path #106 gates. Recorded again
+in the `cull-qa.md` S36 re-run observation.
 
 **Other deviations and noise.** The first press of the reload button at 144%,
 issued immediately after the right-click that probed for an inspector, did

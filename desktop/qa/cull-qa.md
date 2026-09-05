@@ -540,6 +540,7 @@ reporter line quoted above. On screen the box measured ≈457 device px against
 the 461 px that 320 × 1.44 predicts, not the ≈154 px (320 × 1.44 ⁄ 3) a card
 still laid out in a `K×` viewport would render. The self-reloaded, previously
 culled card renders at board zoom, not at 1/K.
+
 ## S37 — The probe is committed and instrumented (criterion 9)
 
 - [x] `desktop/qa/cull-probe.html` is in the repo, installs its rAF/cAF
