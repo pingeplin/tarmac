@@ -34,6 +34,14 @@ instructions and a later reader needs to know:
   (its window title read `board-1`), the edit really was dropped by `watch_loop`
   (`state.json` kept the pre-edit `last_changed_ms` — checked every time before
   clicking), and the app really came back to board-0 still showing the old bytes.
+  **One honest difference:** `board_create`/`board_switch` are app-role messages,
+  so each call replaced the app's daemon connection (`install_app` cancels the
+  previous slot — hence a "tarmacd connection lost" toast); the app reconnected
+  and re-derived the active board from the fresh `board_list`. The stale card
+  therefore survived `applyRestore`'s already-visited early return on a
+  *reconnect* restore rather than on a *switch* restore. Same guard, same
+  outcome, slightly different entry point — worth knowing if you re-read
+  `conn.rs` against this record.
 
 Automated coverage that also exists, for context:
 `core/crates/tarmacd/tests/doc_refresh_integration.rs` (S3–S10, S21, S22 — the whole
@@ -204,7 +212,9 @@ observable. A freshly opened card has no `lastChangedMs`, so its iframe sits at
   refresh — the S15 scroll check above was made against a card re-scrolled *after*
   the switch, so it is unaffected. Pre-existing behaviour, unrelated to `↻`.
 - **Nothing about the refresh control itself misbehaved.** The only friction in
-  the run was the harness: synthetic clicks that arrived while the window was not
-  key were swallowed by macOS window activation and had to be repeated. Every
-  repeat is visible in the daemon state (`last_changed_ms` moves only on the click
-  that landed), and no repeated click ever produced a second reload.
+  the run was the harness: some synthetic clicks on `↻` did not register and had
+  to be repeated — cause not established (window activation consuming the first
+  click, sub-glyph pointer precision, or both; the CSS hover box only appeared
+  after nudging the pointer ~3 px). Which click landed is unambiguous in the
+  daemon state (`last_changed_ms` moves only on the one that did), and no
+  repeated click ever produced a second reload.
