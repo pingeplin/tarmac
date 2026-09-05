@@ -463,6 +463,46 @@ sender is a post that precedes the guard.
 history and stays as written — but it must not be carried into the squash message
 when this PR lands.)
 
+### Re-run required for #99 (spec 2609.0003 S15) — **NOT YET RE-RUN**
+
+#99 changed the `ready` handler this scenario probes: the `readyHandledRef`
+boolean became a single per-load `loadModeRef`, and the zoom post now answers
+every genuine `ready`. **The cull post is unchanged — still first, still
+unconditional, still idempotent — and S36's steps and pass criterion are
+unchanged.** Re-run it as-is; the gap data is still what discriminates.
+
+**What the mutant is now.** With no early return left in the handler, merely
+*reordering* the cull post after the zoom verdict is a benign no-op that this
+scenario could not catch and that breaks nothing. What S36 still catches — and
+what must never happen — is the post becoming **conditional** on the verdict
+(e.g. issued only when a mode is adopted, i.e. only on a first `ready`).
+Generation 2 of a self-reloading culled card would then receive no cull post and
+come back running.
+
+- [ ] Re-run S36's steps above unchanged against the fix. The self-reloaded
+      document still comes back **paused**, decided by the same gap evidence as
+      the original run (all three gaps within ~2 report periods of `dt` under the
+      new boot id) — **not** by console silence, which S36's own observation
+      already withdrew as vacuous.
+- [ ] **ADDED assertion (2609.0003 S15):** once un-culled, the card renders at
+      board zoom rather than 1/K.
+- [ ] Record the re-run result in this section. If either box above is not
+      executed, leave this section marked NOT YET RE-RUN rather than writing a
+      result nobody observed.
+
+**Measure the right element for the added assertion.** `s36probe.html` is
+rebuilt from `cull-probe.html`, whose body is a monospace text block with a
+margin (`cull-probe.html:106–110`) and which has **no fixed-px box** — a
+`width:100%` container spans the ICB under the bug and under the fix alike, so
+its device-px width is identical either way and proves nothing. Add a
+`width: 320px` box to the rebuilt fixture (the `magnify-probe.html` box B shape)
+and compare its device-px width before the self-reload and after; failing that,
+measure a fixed-length monospace run. Decide it the way `doc-refresh-qa.md` S17
+decided the same question — against the pre-reload capture and against the ≈1/3
+figure a missing root zoom gives — not by eye. Note the fixture carries no `<meta name="tarmac-zoom">`, so it runs
+as a default-magnify, meta-less document, which is exactly the shape #99's fix
+had to get right.
+
 ## S37 — The probe is committed and instrumented (criterion 9)
 
 - [x] `desktop/qa/cull-probe.html` is in the repo, installs its rAF/cAF
