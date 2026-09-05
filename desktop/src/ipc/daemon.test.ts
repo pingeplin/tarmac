@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // same contract is pinned by commands.rs + lib.rs's generate_handler! list.
 // Limitation: they compare against literals, so they catch a swap BETWEEN verbs —
 // the dangerous case — but not a typo made identically on both sides.
-const invoke = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+const invoke = vi.hoisted(() => vi.fn((_cmd: string, _args?: unknown) => Promise.resolve()));
 vi.mock("@tauri-apps/api/core", () => ({ invoke, Channel: class {} }));
 
 const { docOpen, docRead, docClose, docRefresh, readDoc } = await import("./daemon");
