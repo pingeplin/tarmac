@@ -395,8 +395,10 @@ decision 2.
 ## 7 · Milestones & status
 
 **Milestone names are historical labels, not a roadmap.** `M0`–`M3` and `v4` are
-*done*; they survive only as archived plans and as test-file names
-(`tests/m{0,1,2,3}_integration.rs`). `v4c` is a **proposal that was never
+*done*; they survive only as archived plans — the integration suites that once
+carried their names are subject-named
+(`tests/{daemon_basics,restore,honest_signals,boards}_integration.rs`). `v4c` is
+a **proposal that was never
 started**. Nothing named `M4`/`v5` exists. Since the v4 milestones ended, work is
 tracked per GitHub issue (see [`workflow.md`](workflow.md)), not by milestone.
 

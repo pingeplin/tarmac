@@ -1,7 +1,7 @@
-// End-to-end M3 tests: multiple boards ("strips = boards"). board_list on
-// connect, board_create / board_switch, per-board layout that persists
-// independently across a daemon restart, and `tarmac open` provenance routing
-// the doc to the calling term's board. Harness lives in common/.
+// End-to-end boards (the closed M3 suite): multiple boards ("strips = boards").
+// board_list on connect, board_create / board_switch, per-board layout that
+// persists independently across a daemon restart, and `tarmac open` provenance
+// routing the doc to the calling term's board. Harness lives in common/.
 
 mod common;
 

@@ -1,6 +1,7 @@
-// End-to-end M2 honest-signal tests: a real daemon spawns a pty and the app
-// receives the additive daemon -> app types — `bell` (a BEL in the output) and
-// `term_proc` (the foreground process name). Harness lives in common/.
+// End-to-end honest-signal tests (the closed M2 suite): a real daemon spawns a
+// pty and the app receives the additive daemon -> app types — `bell` (a BEL in
+// the output) and `term_proc` (the foreground process name). Harness lives in
+// common/.
 
 mod common;
 

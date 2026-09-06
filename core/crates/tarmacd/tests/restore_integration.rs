@@ -1,5 +1,6 @@
-// End-to-end M1 tests: doc states (repo, read, recency), layout snapshots,
-// and durable state across a daemon restart. Harness lives in common/.
+// End-to-end restore (the closed M1 suite): doc states (repo, read, recency),
+// layout snapshots, and durable state across a daemon restart. Harness lives in
+// common/.
 
 mod common;
 

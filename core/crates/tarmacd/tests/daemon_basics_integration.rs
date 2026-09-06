@@ -1,5 +1,6 @@
-// End-to-end M0 tests: real daemon process on a temp socket, app + cli clients
-// speaking the wire protocol over std unix sockets. Harness lives in common/.
+// End-to-end daemon basics (the closed M0 suite): a real daemon process on a
+// temp socket, app + cli clients speaking the wire protocol over std unix
+// sockets. Harness lives in common/.
 
 mod common;
 

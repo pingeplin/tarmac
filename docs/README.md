@@ -80,8 +80,9 @@ replaced by Tauri 2 + React + xterm.js in #27 (2026-06-29).
 ## Milestone vocabulary
 
 `M0`, `M1`, `M2`, `M3`, `v4` are **closed milestone names**, kept alive only by
-archived plans and the `core/crates/tarmacd/tests/m{0,1,2,3}_integration.rs` file
-names. `v4c` is a **proposal that was never started**. There is no `M4`, `M4c`,
+archived plans; the `core/crates/tarmacd/tests/` suites that once carried them
+are now named for their subject (`daemon_basics`, `restore`, `honest_signals`,
+`boards`). `v4c` is a **proposal that was never started**. There is no `M4`, `M4c`,
 or `v5` — if you see one, it is a hallucination or a typo for `v4c`. Work after
 M3 is tracked per GitHub issue; see [`workflow.md`](workflow.md).
 
