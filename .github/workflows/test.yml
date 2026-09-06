@@ -71,7 +71,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: desktop/src-tauri
+          workspaces: |
+            core
+            desktop/src-tauri
 
       - uses: actions/setup-node@v4
         with:
@@ -83,9 +85,14 @@ jobs:
         run: npm ci
         working-directory: desktop
 
+      # Two build prerequisites, not extra suites: tauri.conf.json declares the
+      # daemon and CLI as externalBin, so tauri-build fails the crate outright
+      # without the arch-suffixed sidecars staged (`make sidecars`), and
       # `tauri::generate_context!` embeds frontendDist (desktop/dist) at compile
-      # time, so the frontend bundle must exist before cargo can build the crate
-      # at all. This is a build prerequisite, not a second suite.
+      # time, so the frontend bundle must exist before cargo can build at all.
+      - name: make sidecars
+        run: make sidecars
+
       - name: npm run build
         run: npm run build
         working-directory: desktop
