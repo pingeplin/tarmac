@@ -6,7 +6,7 @@ use tarmac_protocol::{self as proto, Msg, frame};
 
 mod skill;
 
-const HELP: &str = "\
+const HELP_HEAD: &str = "\
 tarmac — agent cockpit CLI
 
 USAGE:
@@ -22,10 +22,9 @@ and must point to an existing file.
 `tarmac skill` never talks to the daemon. `install` writes one SKILL.md per
 target — claude-code (~/.claude/skills) and codex (~/.agents/skills) — and
 accepts:
-    --target claude-code|codex|all   default: all
-    --scope  user|project            default: user
-    --dry-run                        print the paths, write nothing
+";
 
+const HELP_TAIL: &str = "
 The daemon socket defaults to ~/Library/Application Support/tarmac/tarmacd.sock
 (release builds) or ~/Library/Application Support/tarmac/dev/tarmacd.sock (dev
 builds); override with TARMAC_SOCKET.
@@ -47,8 +46,14 @@ fn current_channel() -> proto::Channel {
     }
 }
 
+/// An env override, where an empty value means unset — the convention
+/// `tarmac-protocol`'s path resolvers already follow.
+pub fn env_override(name: &str) -> Option<std::ffi::OsString> {
+    std::env::var_os(name).filter(|v| !v.is_empty())
+}
+
 fn socket_path() -> PathBuf {
-    let over = std::env::var_os("TARMAC_SOCKET").filter(|v| !v.is_empty());
+    let over = env_override("TARMAC_SOCKET");
     let home = std::env::var_os("HOME").unwrap_or_else(|| std::ffi::OsString::from("/"));
     proto::resolve_socket_path(over, &home, current_channel())
 }
@@ -57,7 +62,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("-h") | Some("--help") | Some("help") => {
-            print!("{HELP}");
+            print!("{HELP_HEAD}{}{HELP_TAIL}", skill::USAGE);
             std::process::exit(0);
         }
         Some("skill") => std::process::exit(skill::run(&args[1..])),
@@ -67,7 +72,7 @@ fn main() {
             std::process::exit(2);
         }
         None => {
-            eprint!("{HELP}");
+            eprint!("{HELP_HEAD}{}{HELP_TAIL}", skill::USAGE);
             std::process::exit(2);
         }
     }

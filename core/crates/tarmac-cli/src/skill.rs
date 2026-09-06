@@ -11,7 +11,6 @@
 //! keep it self-contained (no repo-internal paths, no relative links), because
 //! it is read from a machine that has no checkout.
 
-use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -19,6 +18,13 @@ use std::path::{Path, PathBuf};
 const SKILL_DOC: &str = include_str!("SKILL.md");
 
 const SKILL_NAME: &str = "tarmac";
+
+/// `install`'s flags, owned here because this module is what parses them.
+/// `main.rs` splices it into `--help`; a usage error prints it verbatim.
+pub const USAGE: &str = "    --target claude-code|codex|all   default: all
+    --scope  user|project            default: user
+    --dry-run                        print the paths, write nothing
+";
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Target {
@@ -52,6 +58,17 @@ impl Target {
             Target::Codex => ".agents",
         }
     }
+
+    /// The user-scope root. The inner match is deliberately exhaustive on
+    /// `Target`: a new agent must answer "does it have a config-dir override?"
+    /// at the compiler's insistence rather than inherit a wildcard's answer.
+    fn user_root(self, env: &Env) -> PathBuf {
+        match self {
+            Target::ClaudeCode => env.claude_config_dir.clone(),
+            Target::Codex => None,
+        }
+        .unwrap_or_else(|| env.home.join(self.config_dir()))
+    }
 }
 
 impl Scope {
@@ -75,15 +92,11 @@ pub struct Env {
 
 impl Env {
     pub fn from_process() -> Result<Self, String> {
-        let home = std::env::var_os("HOME")
-            .filter(|v| !v.is_empty())
-            .ok_or_else(|| "HOME is not set".to_string())?;
+        let home = crate::env_override("HOME").ok_or_else(|| "HOME is not set".to_string())?;
         let cwd = std::env::current_dir().map_err(|e| format!("cannot read cwd: {e}"))?;
         Ok(Env {
             home: PathBuf::from(home),
-            claude_config_dir: std::env::var_os("CLAUDE_CONFIG_DIR")
-                .filter(|v: &OsString| !v.is_empty())
-                .map(PathBuf::from),
+            claude_config_dir: crate::env_override("CLAUDE_CONFIG_DIR").map(PathBuf::from),
             cwd,
         })
     }
@@ -92,13 +105,9 @@ impl Env {
 /// Where one target's `SKILL.md` belongs. Codex's user scope is keyed on `$HOME`
 /// and not on `$CODEX_HOME` — the latter only reaches its deprecated root.
 pub fn skill_path(target: Target, scope: Scope, env: &Env) -> PathBuf {
-    let root = match (target, scope) {
-        (Target::ClaudeCode, Scope::User) => match &env.claude_config_dir {
-            Some(dir) => dir.clone(),
-            None => env.home.join(target.config_dir()),
-        },
-        (_, Scope::User) => env.home.join(target.config_dir()),
-        (_, Scope::Project) => env.cwd.join(target.config_dir()),
+    let root = match scope {
+        Scope::User => target.user_root(env),
+        Scope::Project => env.cwd.join(target.config_dir()),
     };
     root.join("skills").join(SKILL_NAME).join("SKILL.md")
 }
@@ -118,7 +127,7 @@ struct InstallArgs {
 }
 
 fn parse_install(args: &[String]) -> Result<InstallArgs, String> {
-    let mut targets: Option<Vec<Target>> = None;
+    let mut targets = Target::ALL.to_vec();
     let mut scope = Scope::User;
     let mut dry_run = false;
     let mut it = args.iter();
@@ -127,13 +136,13 @@ fn parse_install(args: &[String]) -> Result<InstallArgs, String> {
             "--dry-run" => dry_run = true,
             "--target" => {
                 let v = it.next().ok_or("--target needs a value")?;
-                targets = Some(if v == "all" {
+                targets = if v == "all" {
                     Target::ALL.to_vec()
                 } else {
                     vec![Target::parse(v).ok_or_else(|| {
                         format!("unknown target '{v}' (claude-code, codex, all)")
                     })?]
-                });
+                };
             }
             "--scope" => {
                 let v = it.next().ok_or("--scope needs a value")?;
@@ -143,55 +152,58 @@ fn parse_install(args: &[String]) -> Result<InstallArgs, String> {
             other => return Err(format!("unexpected argument '{other}'")),
         }
     }
-    Ok(InstallArgs { targets: targets.unwrap_or_else(|| Target::ALL.to_vec()), scope, dry_run })
+    Ok(InstallArgs { targets, scope, dry_run })
 }
 
 /// `tarmac skill [install …]`. Returns the process exit code: 0 ok, 1 a target
-/// failed, 2 usage. Every target is attempted — one unwritable root must not
-/// deny the other agent its skill.
+/// failed, 2 usage.
 pub fn run(args: &[String]) -> i32 {
     match args.first().map(String::as_str) {
         None => {
             print!("{SKILL_DOC}");
             0
         }
-        Some("install") => {
-            let parsed = match parse_install(&args[1..]) {
-                Ok(p) => p,
-                Err(e) => {
-                    eprintln!("tarmac: {e}");
-                    return 2;
-                }
-            };
-            let env = match Env::from_process() {
-                Ok(e) => e,
-                Err(e) => {
-                    eprintln!("tarmac: {e}");
-                    return 1;
-                }
-            };
-            let mut failed = false;
-            for target in parsed.targets {
-                let path = skill_path(target, parsed.scope, &env);
-                if parsed.dry_run {
-                    println!("would install {}", path.display());
-                    continue;
-                }
-                match write_skill(&path, SKILL_DOC) {
-                    Ok(()) => println!("installed {}", path.display()),
-                    Err(e) => {
-                        eprintln!("tarmac: {e}");
-                        failed = true;
-                    }
-                }
-            }
-            if failed { 1 } else { 0 }
-        }
+        Some("install") => install(&args[1..]),
         Some(other) => {
             eprintln!("tarmac: unknown skill subcommand '{other}' (see tarmac --help)");
             2
         }
     }
+}
+
+/// Every target is attempted — one unwritable root must not deny the other
+/// agent its skill — so the exit code is the aggregate, not the first failure.
+fn install(args: &[String]) -> i32 {
+    let parsed = match parse_install(args) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("tarmac: {e}\n{USAGE}");
+            return 2;
+        }
+    };
+    let env = match Env::from_process() {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("tarmac: {e}");
+            return 1;
+        }
+    };
+    let mut failed = false;
+    for target in parsed.targets {
+        let path = skill_path(target, parsed.scope, &env);
+        if parsed.dry_run {
+            println!("would install {}", path.display());
+            continue;
+        }
+        match write_skill(&path, SKILL_DOC) {
+            Ok(()) => println!("installed {}", path.display()),
+            Err(e) => {
+                eprintln!("tarmac: {e}");
+                failed = true;
+            }
+        }
+    }
+    if failed { 1 } else { 0 }
 }
 
 #[cfg(test)]
@@ -250,19 +262,26 @@ mod tests {
         );
     }
 
+    /// The frontmatter as key → value, so the contract can be asserted without
+    /// pinning key order or forbidding a future third key.
+    fn frontmatter() -> Vec<(&'static str, &'static str)> {
+        let rest = SKILL_DOC.strip_prefix("---\n").expect("frontmatter must open on line 1");
+        let block = rest.split_once("\n---\n").expect("frontmatter must be closed").0;
+        block.lines().filter_map(|l| l.split_once(": ")).collect()
+    }
+
+    fn field(key: &str) -> &'static str {
+        frontmatter().into_iter().find(|(k, _)| *k == key).unwrap_or_else(|| panic!("missing `{key}`")).1
+    }
+
     // The embedded file is shipped as-is, so its frontmatter is the contract with
     // both agents: Claude Code treats every field as optional, Codex requires a
     // non-empty `name` (<= 64 chars) and `description`. One envelope serves both.
     #[test]
     fn the_embedded_document_is_a_valid_skill_for_both_agents() {
-        let mut lines = SKILL_DOC.lines();
-        assert_eq!(lines.next(), Some("---"), "frontmatter must open on line 1");
-        assert_eq!(lines.next(), Some(&format!("name: {SKILL_NAME}")[..]));
-        let desc = lines.next().unwrap();
-        assert!(desc.starts_with("description: "), "got: {desc}");
-        assert!(desc.len() > "description: ".len() + 2, "description must not be empty");
-        assert_eq!(lines.next(), Some("---"));
+        assert_eq!(field("name"), SKILL_NAME);
         assert!(SKILL_NAME.len() <= 64, "Codex caps `name` at 64 chars");
+        assert!(!field("description").trim_matches('"').trim().is_empty());
     }
 
     #[test]
@@ -273,8 +292,14 @@ mod tests {
         // It is read on a machine with no checkout, so nothing repo-internal may
         // leak in — docs-check's ACTIVE rules do not reach this file.
         assert!(!SKILL_DOC.contains("Doc status"));
-        assert!(!SKILL_DOC.contains("](../"), "no relative links");
-        for repo_path in ["core/", "desktop/", "docs/", "scripts/", "packaging/"] {
+        for link in SKILL_DOC.split("](").skip(1) {
+            let target = link.split(')').next().unwrap_or_default();
+            assert!(target.starts_with("http"), "link resolves nowhere off-checkout: {target}");
+        }
+        // Keep in sync with TOP in scripts/docs-check.mjs.
+        for repo_path in
+            ["core/", "desktop/", "docs/", "scripts/", "packaging/", ".github/", ".blueprint/"]
+        {
             assert!(!SKILL_DOC.contains(repo_path), "leaks a repo path: {repo_path}");
         }
     }
@@ -295,6 +320,13 @@ mod tests {
         assert_eq!(a.targets, vec![Target::Codex]);
         assert_eq!(a.scope, Scope::Project);
         assert!(a.dry_run);
+    }
+
+    #[test]
+    fn usage_text_documents_every_flag_the_parser_accepts() {
+        for flag in ["--target", "--scope", "--dry-run"] {
+            assert!(USAGE.contains(flag), "USAGE omits {flag}");
+        }
     }
 
     #[test]

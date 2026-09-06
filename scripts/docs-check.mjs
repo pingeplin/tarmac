@@ -85,6 +85,8 @@ for (const p of [...docs, ...rootDocs]) {
 //   - a token with a source extension may be written relative (kit/foo.ts), so it
 //     only has to be a path-boundary suffix of some tracked file.
 
+// Keep in sync with the repo-path denylist in core/crates/tarmac-cli/src/skill.rs:
+// that file asserts the inverse rule (a shipped artifact may name none of these).
 const TOP = ["core/", "desktop/", "docs/", "scripts/", "packaging/", ".github/", ".blueprint/"];
 const SRC_EXT = /\.(ts|tsx|rs|mjs|js|css|html|json|swift|sh|toml|rb)$/;
 const CODE = /`([^`\n]+)`/g;
