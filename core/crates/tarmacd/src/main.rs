@@ -8,6 +8,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use tarmac_protocol::{Channel, channel_label, check_socket_path_len, resolve_socket_path, resolve_state_path};
 use tokio::net::UnixListener;
+use tokio::signal::unix::{SignalKind, signal};
 use tracing::{error, info, warn};
 
 /// The ONE audited build-config → Channel mapping for this binary (spec
@@ -78,6 +79,12 @@ async fn main() -> anyhow::Result<()> {
         return Err(anyhow::anyhow!("{msg}"));
     }
     claim_socket(&sock)?;
+    // Installed before the bind: the socket must not be connectable before the
+    // handlers exist, or a signal arriving in that window takes its default
+    // action and kills the process.
+    let mut sighup = signal(SignalKind::hangup())?;
+    let mut sigterm = signal(SignalKind::terminate())?;
+    let mut sigint = signal(SignalKind::interrupt())?;
     let listener = UnixListener::bind(&sock)?;
     info!("tarmacd ({}) listening on {}", channel_label(current_channel()), sock.display());
 
@@ -85,10 +92,10 @@ async fn main() -> anyhow::Result<()> {
 
     let sock_for_signal = sock.clone();
     tokio::spawn(async move {
-        use tokio::signal::unix::{SignalKind, signal};
-        let mut sigterm = signal(SignalKind::terminate()).expect("install SIGTERM handler");
-        let mut sigint = signal(SignalKind::interrupt()).expect("install SIGINT handler");
+        // SIGHUP included: it is what a terminal sends its session on teardown,
+        // and it was the one death that skipped the unlink.
         tokio::select! {
+            _ = sighup.recv() => {}
             _ = sigterm.recv() => {}
             _ = sigint.recv() => {}
         }

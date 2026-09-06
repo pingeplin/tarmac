@@ -171,7 +171,7 @@ encoder drift. Vectors only grow additively (V1–V8 frozen).
 
 `main()` claims the socket, builds one shared `Arc<Daemon>`, and accepts
 connections on a `tokio::net::UnixListener`, spawning `conn::handle` per
-connection. A SIGTERM/SIGINT handler removes the socket and `exit(0)`s (so live
+connection. A SIGHUP/SIGTERM/SIGINT handler removes the socket and `exit(0)`s (so live
 shells die with a full daemon restart — see [§6](#6--what-survives-what)).
 
 The CLI gets a short-lived `cli_session`. The app gets a long-lived

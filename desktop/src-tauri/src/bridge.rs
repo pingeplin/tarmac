@@ -12,6 +12,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::OsString;
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
@@ -56,7 +57,8 @@ pub struct Bridge {
     // (not just the last) lets a webview reload / HMR replay rehydrate every board
     // that was visited this session, not only the most-recent one.
     last_restores: Mutex<HashMap<String, serde_json::Value>>,
-    /// The spawned daemon child. Retained so we can SIGTERM it on version mismatch.
+    /// The spawned daemon child. Retained so we can SIGTERM it on version
+    /// mismatch, and so the spawn decision can observe whether it is still alive.
     daemon_child: Mutex<Option<std::process::Child>>,
 }
 
@@ -229,9 +231,9 @@ pub fn start(app: AppHandle, rx: UnboundedReceiver<Msg>) {
     tauri::async_runtime::spawn(connection_loop(app, rx));
 }
 
-/// The reconnect-bounded outer loop: connect (auto-spawning the daemon on the
-/// first miss), run the connection until it drops, then back off on the
-/// `Reconnect` schedule until the bounded budget is spent.
+/// The reconnect-bounded outer loop: connect (spawning the daemon on a miss
+/// whenever we are not already supervising a live one), run the connection until
+/// it drops, then back off on the `Reconnect` schedule until the budget is spent.
 async fn connection_loop(app: AppHandle, mut rx: UnboundedReceiver<Msg>) {
     let mut spawned = false;
     let mut already_restarted = false;
@@ -388,9 +390,10 @@ fn emit_status(app: &AppHandle, connected: bool, reason: Option<&str>) {
     let _ = app.emit("daemon-status", value);
 }
 
-/// Connect to the daemon socket, auto-spawning `tarmacd` on the first miss and
-/// retrying for ~3s (mirrors `DaemonClient.connect`). `spawned` latches so we
-/// only launch one daemon across reconnects.
+/// Connect to the daemon socket, spawning `tarmacd` on a miss and retrying for
+/// ~3s (mirrors `DaemonClient.connect`). The spawn is gated on `may_spawn_now`
+/// rather than a bare latch: we skip it only while a daemon we started is still
+/// alive, so a spawn that failed or died never locks the app out.
 async fn connect(app: &AppHandle, spawned: &mut bool) -> std::io::Result<UnixStream> {
     let path = socket_path();
     if let Err(msg) = check_socket_path_len(&path) {
@@ -399,10 +402,9 @@ async fn connect(app: &AppHandle, spawned: &mut bool) -> std::io::Result<UnixStr
     if let Ok(stream) = UnixStream::connect(&path).await {
         return Ok(stream);
     }
-    if !*spawned {
+    if may_spawn_now(*spawned, &app.state::<Bridge>().daemon_child) {
         if let Some(daemon) = resolve_daemon_path() {
-            spawn_daemon(app, &daemon);
-            *spawned = true;
+            *spawned = spawn_daemon(app, &daemon);
         }
     }
     let deadline = Instant::now() + Duration::from_secs(3);
@@ -473,23 +475,91 @@ fn resolve_daemon_path() -> Option<String> {
     path.into_os_string().into_string().ok()
 }
 
-/// Launch the daemon detached, prepending its own dir onto the child `PATH` so
-/// the PTYs it spawns resolve the `tarmac` CLI (port of `DaemonLaunch`).
-/// The `Child` handle is retained on `Bridge` so a version-mismatch restart
-/// can SIGTERM the stale process.
-fn spawn_daemon(app: &AppHandle, daemon: &str) {
+/// Launch the daemon, retaining the `Child` on `Bridge` (the version-mismatch
+/// restart SIGTERMs it, and the spawn decision reads its liveness). Reports
+/// whether a child was actually created — a failed spawn must not latch.
+fn spawn_daemon(app: &AppHandle, daemon: &str) -> bool {
     let cli_dir = Path::new(daemon)
         .parent()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default();
     let base = std::env::var("PATH").ok();
-    if let Ok(child) = Command::new(daemon)
-        .stdin(Stdio::null())
-        .env("PATH", inject_cli_path(base.as_deref(), &cli_dir))
-        .spawn()
-    {
-        *app.state::<Bridge>().daemon_child.lock().unwrap() = Some(child);
+    match daemon_command(daemon, base.as_deref(), &cli_dir, &daemon_log_path()).spawn() {
+        Ok(child) => {
+            *app.state::<Bridge>().daemon_child.lock().unwrap() = Some(child);
+            true
+        }
+        Err(_) => false,
     }
+}
+
+/// `tarmacd.log`, beside the socket — `.dev/` under `make run`, the per-channel
+/// support dir otherwise.
+fn daemon_log_path() -> PathBuf {
+    let sock = socket_path();
+    sock.parent().unwrap_or(Path::new(".")).join("tarmacd.log")
+}
+
+/// The daemon's launch command, built but not spawned. It is genuinely detached:
+/// `setsid()` puts it in its own *session*, so a SIGHUP aimed at the launching
+/// terminal's session (which a new process group alone would not escape) never
+/// reaches the observatory. Its output goes to `log`, truncated per launch so the
+/// file is bounded by one session; if that cannot be opened the daemon still
+/// starts with inherited stdio, since a bad log dir must never cost us the daemon.
+/// `cli_dir` is prepended onto the child `PATH` so the PTYs it spawns resolve the
+/// `tarmac` CLI (port of `DaemonLaunch`).
+fn daemon_command(program: &str, base_path: Option<&str>, cli_dir: &str, log: &Path) -> Command {
+    let mut cmd = Command::new(program);
+    cmd.stdin(Stdio::null())
+        .env("PATH", inject_cli_path(base_path, cli_dir));
+    if let Some(out) = open_log(log) {
+        if let Ok(err) = out.try_clone() {
+            cmd.stdout(Stdio::from(out)).stderr(Stdio::from(err));
+        }
+    }
+    // Runs between fork and exec: only async-signal-safe calls belong here.
+    unsafe {
+        cmd.pre_exec(|| {
+            libc::setsid();
+            Ok(())
+        });
+    }
+    cmd
+}
+
+fn open_log(path: &Path) -> Option<std::fs::File> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).ok()?;
+    }
+    std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path).ok()
+}
+
+/// May we spawn a daemon on this pass? The latch is there to stop us piling a
+/// second daemon onto one we just started — which is only a reason to wait while
+/// that child is actually alive.
+fn may_spawn(already_spawned: bool, prior_child_exited: bool) -> bool {
+    !already_spawned || prior_child_exited
+}
+
+/// "No live child we spawned": `Command::spawn` never produced one (`None`), the
+/// one it produced has exited, or we cannot tell. Only an observed-live child
+/// blocks a respawn — a `try_wait` error is the "we don't know" case, and
+/// answering it with `false` would be the very defect this function exists to
+/// remove: an unknown state that locks the app out permanently. Erring the other
+/// way costs at most one extra spawn per pass, bounded by the reconnect budget.
+fn prior_child_exited(child: Option<&mut std::process::Child>) -> bool {
+    match child {
+        None => true,
+        Some(child) => !matches!(child.try_wait(), Ok(None)),
+    }
+}
+
+/// The spawn decision over the live child slot. Takes the lock for the
+/// `try_wait` observation and releases it before returning — `connect()` is
+/// `async` and this is a `std::sync::Mutex`.
+fn may_spawn_now(already_spawned: bool, slot: &Mutex<Option<std::process::Child>>) -> bool {
+    let mut guard = slot.lock().unwrap();
+    may_spawn(already_spawned, prior_child_exited(guard.as_mut()))
 }
 
 /// Pure backoff schedule — exact port of `Reconnect.delay(forAttempt:)`: ramp
@@ -531,6 +601,153 @@ fn inject_cli_path(base: Option<&str>, cli_dir: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static DIR_SEQ: AtomicU64 = AtomicU64::new(0);
+
+    fn temp_dir() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "tarmac-bridge-{}-{}",
+            std::process::id(),
+            DIR_SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    // ── daemon_command: detachment, logging, PATH ─────────────────────────────
+
+    /// The spawned daemon is its own session leader, so a session-wide SIGHUP
+    /// aimed at the launching terminal cannot reach it.
+    #[test]
+    fn daemon_command_starts_its_own_session() {
+        let dir = temp_dir();
+        let mut child = daemon_command("/bin/sleep", None, "", &dir.join("tarmacd.log"))
+            .arg("30")
+            .spawn()
+            .unwrap();
+
+        let pid = child.id() as libc::pid_t;
+        let sid = unsafe { libc::getsid(pid) };
+        assert_eq!(sid, pid, "daemon must be a session leader, got sid {sid} for pid {pid}");
+        assert_ne!(sid, unsafe { libc::getsid(0) }, "daemon must leave our session");
+
+        let _ = child.kill();
+        let _ = child.wait();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Both streams land in the log, and its directory is created on the way.
+    #[test]
+    fn daemon_command_logs_both_streams_into_a_created_dir() {
+        let dir = temp_dir();
+        let log = dir.join("not-yet").join("tarmacd.log");
+        let mut child = daemon_command("/bin/sh", None, "", &log)
+            .args(["-c", "echo out; echo err >&2"])
+            .spawn()
+            .unwrap();
+        child.wait().unwrap();
+
+        let body = std::fs::read_to_string(&log).unwrap();
+        assert!(body.contains("out"), "stdout must be redirected, log was {body:?}");
+        assert!(body.contains("err"), "stderr must be redirected, log was {body:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Each launch truncates: the file is bounded by one daemon session.
+    #[test]
+    fn daemon_command_truncates_the_log_per_launch() {
+        let dir = temp_dir();
+        let log = dir.join("tarmacd.log");
+        for marker in ["FIRST-MARKER-WITH-PADDING", "SECOND"] {
+            let mut child = daemon_command("/bin/sh", None, "", &log)
+                .args(["-c", &format!("echo {marker}")])
+                .spawn()
+                .unwrap();
+            child.wait().unwrap();
+        }
+
+        assert_eq!(std::fs::read_to_string(&log).unwrap(), "SECOND\n");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// An unopenable log path costs the log, never the daemon.
+    #[test]
+    fn daemon_command_still_runs_when_the_log_cannot_be_opened() {
+        let dir = temp_dir();
+        let mut child = daemon_command("/bin/sh", None, "", &dir)
+            .args(["-c", "exit 7"])
+            .spawn()
+            .unwrap();
+
+        assert_eq!(child.wait().unwrap().code(), Some(7));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The child's PATH is the injected one, observed from the child itself.
+    #[test]
+    fn daemon_command_injects_cli_dir_into_the_child_path() {
+        let dir = temp_dir();
+        let log = dir.join("tarmacd.log");
+        let mut child = daemon_command("/bin/sh", Some("/usr/bin:/bin"), "/x/bin", &log)
+            .args(["-c", "printenv PATH"])
+            .spawn()
+            .unwrap();
+        child.wait().unwrap();
+
+        assert_eq!(std::fs::read_to_string(&log).unwrap(), "/x/bin:/usr/bin:/bin\n");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── the spawn decision ────────────────────────────────────────────────────
+
+    #[test]
+    fn may_spawn_allows_the_first_daemon() {
+        assert!(may_spawn(false, false));
+    }
+
+    #[test]
+    fn may_spawn_refuses_to_pile_onto_a_live_daemon() {
+        assert!(!may_spawn(true, false));
+    }
+
+    #[test]
+    fn may_spawn_allows_a_respawn_once_the_child_is_gone() {
+        assert!(may_spawn(true, true));
+    }
+
+    /// The fourth row is the one that matters: no child at all means the spawn
+    /// itself failed, which is nothing to pile onto.
+    #[test]
+    fn prior_child_exited_truth_table() {
+        assert!(prior_child_exited(None), "a spawn that produced no child must permit a retry");
+
+        let mut live = Command::new("/bin/sleep").arg("30").spawn().unwrap();
+        assert!(!prior_child_exited(Some(&mut live)));
+        live.kill().unwrap();
+        live.wait().unwrap();
+
+        let mut done = Command::new("/usr/bin/true").spawn().unwrap();
+        done.wait().unwrap();
+        assert!(prior_child_exited(Some(&mut done)));
+    }
+
+    /// The wired decision, driven with a real child: a dead daemon re-enables
+    /// spawning where a live one blocks it.
+    #[test]
+    fn a_dead_child_re_enables_spawning() {
+        let slot = Mutex::new(Some(Command::new("/bin/sleep").arg("30").spawn().unwrap()));
+        assert!(!may_spawn_now(true, &slot), "a live child must block a second spawn");
+
+        {
+            let mut guard = slot.lock().unwrap();
+            let child = guard.as_mut().unwrap();
+            child.kill().unwrap();
+            child.wait().unwrap();
+        }
+
+        assert!(may_spawn_now(true, &slot), "a dead child must re-enable spawning");
+    }
 
     // Mirrors ReconnectTests: ramp 0.5→1→2→4→8 then 15 s cap, bounded at 10.
     #[test]

@@ -7,7 +7,7 @@ mod common;
 use std::io::Write;
 use std::time::{Duration, Instant};
 
-use common::{Conn, LONG, TestDaemon, contains, spawn_daemon, temp_dir, wait_for_socket};
+use common::{Conn, LONG, TestDaemon, contains, signal_and_wait, spawn_daemon, temp_dir, wait_for_socket};
 use tarmac_protocol::Msg;
 
 #[test]
@@ -196,6 +196,8 @@ fn socket_claiming() {
         std::thread::sleep(Duration::from_millis(50));
     };
     assert_eq!(status.code(), Some(1));
+    // The loser exiting must not disturb the winner: it still serves.
+    let _ = Conn::hello(&sock, "cli");
 
     // SIGKILL the live daemon: the socket file goes stale on disk.
     first.kill().unwrap();
@@ -210,4 +212,17 @@ fn socket_claiming() {
     let _ = third.kill();
     let _ = third.wait();
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn sighup_shuts_down_cleanly() {
+    let mut daemon = TestDaemon::start();
+
+    let status = signal_and_wait(&mut daemon.child, libc::SIGHUP);
+
+    assert!(
+        status.code() == Some(0) && !daemon.sock.exists(),
+        "SIGHUP must unlink the socket and exit 0; got status={status:?} socket_exists={}",
+        daemon.sock.exists()
+    );
 }
