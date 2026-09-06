@@ -1,5 +1,6 @@
-// Pure helper for the .term-host padding string used in the rasterScale
-// useLayoutEffect. Must stay in sync with .term-host in theme.css.
+// Pure helper for the .term-host padding string TerminalCard writes inline — at
+// construction and on every rasterScale settle. Must stay in sync with .term-host
+// in theme/app-only.css.
 
 export const HOST_PADDING_V_PX = 8;
 export const HOST_PADDING_H_PX = 10;

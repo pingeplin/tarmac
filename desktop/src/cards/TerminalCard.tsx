@@ -13,8 +13,12 @@
 // wrapper expands the slot to rasterScale× the card size and applies a
 // counter-scale CSS transform to bring it back to visual card size.
 // The term-host fills the slot (so it too is rasterScale× bigger in layout).
-// host.style.padding and term.options.fontSize are scaled by the same factor so
-// FitAddon.fit() recomputes the SAME cols×rows — only pixel density changes.
+// term.options.fontSize is scaled by the same factor, which is what makes
+// FitAddon.fit() recompute the SAME cols×rows — only pixel density changes.
+// host.style.padding is scaled too, but it buys the visual GUTTER alone: the
+// global `* { box-sizing: border-box }` (theme/tokens.css) means fit() already
+// measures a host width that includes the padding, so the padding has no
+// cols×rows effect — left unscaled it would only shrink the gutter to 1/rs.
 // The xterm canvas backing is therefore rasterScale×DPR pixels per logical px.
 // The existing BCR override for selection coords remains correct: because padding
 // and font scale together, the BCR of .xterm and the cols×rows ratio are
@@ -105,9 +109,15 @@ export function TerminalCard(props: TerminalCardProps) {
 
     let disposed = false;
 
+    // React runs layout effects before passive effects, so the rasterScale effect
+    // below cannot seed a terminal that does not exist yet. Read the settled scale
+    // here — once, so fontSize and padding can never disagree — and apply it before
+    // the fit() whose cols×rows onSpawn ships to the PTY.
+    const rs = rsRef.current;
+
     const term = new Terminal({
       fontFamily: termFontFamily,
-      fontSize: termFontSize,
+      fontSize: termFontSize * rs,
       theme: xtermTheme,
       cursorBlink: true,
       scrollback: 5000,
@@ -203,6 +213,7 @@ export function TerminalCard(props: TerminalCardProps) {
     // Register focus handle so App can focus this terminal (⌥Tab cycle, restore).
     onRegister?.(model.termId, term);
 
+    host.style.padding = termHostPadding(rs);
     fit.fit();
     const cols = Math.max(2, term.cols);
     const rows = Math.max(2, term.rows);
@@ -331,9 +342,10 @@ export function TerminalCard(props: TerminalCardProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model.termId]);
 
-  // rasterScale oversampling: on settle, scale the host's fontSize and padding by
-  // the effective scale so the xterm canvas backing is rasterScale×DPR pixels and
-  // the terminal remains cols×rows-identical (see comment block at top of file).
+  // rasterScale oversampling: on settle, scale the host's fontSize by the effective
+  // scale so the xterm canvas backing is rasterScale×DPR pixels and the terminal
+  // remains cols×rows-identical; the padding is scaled alongside it to hold the
+  // visual gutter (see comment block at top of file).
   //
   // MUST be useLayoutEffect: the same rasterScale commit also resizes the wrapper
   // (rs×100% width), which the host's ResizeObserver observes. Setting fontSize +
