@@ -1,10 +1,9 @@
-# Tarmac for coding agents
+---
+name: tarmac
+description: "How to surface files as cards on the Tarmac board with `tarmac open`, and how to author self-contained HTML cards that satisfy Tarmac's sandbox CSP and its frozen-zoom layout model. Use when working inside Tarmac, when a file is worth showing the user as a card, or when writing an HTML report, chart, or dashboard to be displayed on the board."
+---
 
-> **Doc status: ACTIVE** — normative, and the only doc that is also a shipped
-> product artifact: `tarmac skill` embeds this file and installs it as a
-> `SKILL.md`. Everything from the title down is what an agent reads, so keep it
-> self-contained — no repo-internal paths a reader outside this checkout cannot
-> resolve, and no relative links.
+# Tarmac for coding agents
 
 Tarmac is a terminal-first macOS cockpit. You run inside a real terminal on an
 infinite, pannable, zoomable **board**. When anything runs `tarmac open <path>`,

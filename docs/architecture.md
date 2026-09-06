@@ -23,8 +23,8 @@ Unix socket:
 A third tiny binary, the **`tarmac` CLI**, is the universal doorbell: `tarmac
 open <path>` connects to the daemon, names a doc, and exits. `open` is its only
 verb that talks to the daemon; `tarmac skill` is a purely local second verb that
-prints the agent-facing guide (`docs/agent-guide.md`, embedded in the binary) and
-installs it as a `SKILL.md` under each supported agent's skills directory.
+prints the agent-facing guide (`core/crates/tarmac-cli/src/SKILL.md`, embedded in
+the binary) and copies it verbatim into each supported agent's skills directory.
 
 ```
    +----------------------------+         +----------------------------------+

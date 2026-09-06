@@ -4,27 +4,21 @@
 //! This verb never touches the daemon socket: it is a pure local file operation,
 //! so it works with nothing running. The guide ships inside the binary because
 //! the cask-installed CLI has no repo checkout to read it from.
+//!
+//! `SKILL.md` beside this file IS the artifact — frontmatter and all. It is
+//! printed verbatim and copied verbatim, so what a reviewer reads in the repo is
+//! byte-for-byte what an agent reads after `install`. Nothing here rewrites it;
+//! keep it self-contained (no repo-internal paths, no relative links), because
+//! it is read from a machine that has no checkout.
 
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// The guide, verbatim from the repo doc that is its single source of truth.
-const GUIDE: &str = include_str!("../../../../docs/agent-guide.md");
-
-/// The `description:` an agent matches against to decide whether to load the
-/// skill. It lives here rather than in the doc so that `tarmac skill` stdout
-/// stays a clean document and every target's envelope is composed at install.
-const DESCRIPTION: &str = "How to surface files as cards on the Tarmac board with `tarmac open`, and \
-how to author self-contained HTML cards that satisfy Tarmac's sandbox CSP and its frozen-zoom \
-layout model. Use when working inside Tarmac, when a file is worth showing the user as a card, or \
-when writing an HTML report, chart, or dashboard to be displayed on the board.";
+/// The installable document, verbatim. Editing it is the whole authoring story.
+const SKILL_DOC: &str = include_str!("SKILL.md");
 
 const SKILL_NAME: &str = "tarmac";
-
-/// How far in the banner may sit — the same first-12-lines window `docs-check`
-/// scans for it.
-const BANNER_WINDOW: usize = 12;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Target {
@@ -109,44 +103,6 @@ pub fn skill_path(target: Target, scope: Scope, env: &Env) -> PathBuf {
     root.join("skills").join(SKILL_NAME).join("SKILL.md")
 }
 
-/// The guide with its repo-only status banner removed: the first blockquote
-/// paragraph, plus the blank line that closes it. The banner is what
-/// `docs-check` requires of every doc in the repo and is meaningless once the
-/// file is installed elsewhere.
-pub fn guide_body() -> String {
-    strip_banner(GUIDE)
-}
-
-fn strip_banner(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut lines = text.lines().peekable();
-    let mut stripped = false;
-    // Only a blockquote in docs-check's own banner window is the banner; a
-    // quote further down is the document's own prose and must survive.
-    for i in 0.. {
-        let Some(line) = lines.next() else { break };
-        if !stripped && i < BANNER_WINDOW && line.starts_with('>') {
-            while lines.peek().is_some_and(|n| n.starts_with('>')) {
-                lines.next();
-            }
-            if lines.peek().is_some_and(|n| n.trim().is_empty()) {
-                lines.next();
-            }
-            stripped = true;
-            continue;
-        }
-        out.push_str(line);
-        out.push('\n');
-    }
-    out
-}
-
-/// The installed artifact: one frontmatter envelope that satisfies both targets
-/// (Claude Code treats every field as optional; Codex wants `name` + `description`).
-pub fn skill_document(body: &str) -> String {
-    format!("---\nname: {SKILL_NAME}\ndescription: \"{DESCRIPTION}\"\n---\n\n{body}")
-}
-
 fn write_skill(path: &Path, doc: &str) -> Result<(), String> {
     let parent = path
         .parent()
@@ -196,7 +152,7 @@ fn parse_install(args: &[String]) -> Result<InstallArgs, String> {
 pub fn run(args: &[String]) -> i32 {
     match args.first().map(String::as_str) {
         None => {
-            print!("{}", guide_body());
+            print!("{SKILL_DOC}");
             0
         }
         Some("install") => {
@@ -214,7 +170,6 @@ pub fn run(args: &[String]) -> i32 {
                     return 1;
                 }
             };
-            let doc = skill_document(&guide_body());
             let mut failed = false;
             for target in parsed.targets {
                 let path = skill_path(target, parsed.scope, &env);
@@ -222,7 +177,7 @@ pub fn run(args: &[String]) -> i32 {
                     println!("would install {}", path.display());
                     continue;
                 }
-                match write_skill(&path, &doc) {
+                match write_skill(&path, SKILL_DOC) {
                     Ok(()) => println!("installed {}", path.display()),
                     Err(e) => {
                         eprintln!("tarmac: {e}");
@@ -295,43 +250,33 @@ mod tests {
         );
     }
 
+    // The embedded file is shipped as-is, so its frontmatter is the contract with
+    // both agents: Claude Code treats every field as optional, Codex requires a
+    // non-empty `name` (<= 64 chars) and `description`. One envelope serves both.
     #[test]
-    fn strip_banner_takes_the_banner_and_leaves_later_quotes_alone() {
-        let doc = "# T\n\n> **Doc status: ACTIVE** — x\n> more banner\n\nBody.\n\n> A real quote.\n\nEnd.\n";
-        assert_eq!(strip_banner(doc), "# T\n\nBody.\n\n> A real quote.\n\nEnd.\n");
-    }
-
-    #[test]
-    fn strip_banner_leaves_a_document_with_no_banner_untouched() {
-        let doc = "# T\n\nBody.\n";
-        assert_eq!(strip_banner(doc), doc);
-    }
-
-    #[test]
-    fn guide_body_drops_the_repo_only_banner_and_keeps_the_document() {
-        let body = guide_body();
-        assert!(body.starts_with("# Tarmac for coding agents\n\n"), "got: {:?}", &body[..60]);
-        assert!(!body.contains("Doc status"));
-        let banner_lines = GUIDE.lines().take(BANNER_WINDOW).filter(|l| l.starts_with('>')).count();
-        assert!(banner_lines > 0, "the doc must carry a status banner");
-        assert_eq!(
-            body.lines().filter(|l| l.starts_with('>')).count(),
-            GUIDE.lines().filter(|l| l.starts_with('>')).count() - banner_lines,
-            "only the banner's quote lines may be stripped"
-        );
-        assert!(body.contains("## Surfacing a file"));
-        assert!(body.contains("tarmac-zoom"));
-    }
-
-    #[test]
-    fn skill_document_opens_with_frontmatter_both_agents_can_read() {
-        let doc = skill_document(&guide_body());
-        let mut lines = doc.lines();
+    fn the_embedded_document_is_a_valid_skill_for_both_agents() {
+        let mut lines = SKILL_DOC.lines();
+        assert_eq!(lines.next(), Some("---"), "frontmatter must open on line 1");
+        assert_eq!(lines.next(), Some(&format!("name: {SKILL_NAME}")[..]));
+        let desc = lines.next().unwrap();
+        assert!(desc.starts_with("description: "), "got: {desc}");
+        assert!(desc.len() > "description: ".len() + 2, "description must not be empty");
         assert_eq!(lines.next(), Some("---"));
-        assert_eq!(lines.next(), Some("name: tarmac"));
-        assert!(lines.next().unwrap().starts_with("description: \""));
-        assert_eq!(lines.next(), Some("---"));
-        assert!(doc.contains("\n---\n\n# Tarmac for coding agents\n"));
+        assert!(SKILL_NAME.len() <= 64, "Codex caps `name` at 64 chars");
+    }
+
+    #[test]
+    fn the_document_body_follows_the_frontmatter_and_carries_the_guide() {
+        assert!(SKILL_DOC.contains("\n---\n\n# Tarmac for coding agents\n"));
+        assert!(SKILL_DOC.contains("## Surfacing a file"));
+        assert!(SKILL_DOC.contains("tarmac-zoom"));
+        // It is read on a machine with no checkout, so nothing repo-internal may
+        // leak in — docs-check's ACTIVE rules do not reach this file.
+        assert!(!SKILL_DOC.contains("Doc status"));
+        assert!(!SKILL_DOC.contains("](../"), "no relative links");
+        for repo_path in ["core/", "desktop/", "docs/", "scripts/", "packaging/"] {
+            assert!(!SKILL_DOC.contains(repo_path), "leaks a repo path: {repo_path}");
+        }
     }
 
     #[test]

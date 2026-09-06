@@ -158,10 +158,11 @@ tarmac skill install   # install that guide as a SKILL.md for coding agents
 
 `open` is the only verb that talks to the daemon. Inside a Tarmac terminal it
 auto-attributes the doc to the calling terminal card via `TARMAC_TERM_ID`.
-`tarmac skill` never opens the socket: it emits [`docs/agent-guide.md`](docs/agent-guide.md)
-and installs it into Claude Code (`~/.claude/skills`) and Codex (`~/.agents/skills`),
-so an agent knows how to surface files and how to author HTML cards that satisfy
-the board's sandbox and zoom model.
+`tarmac skill` never opens the socket: it emits
+[`core/crates/tarmac-cli/src/SKILL.md`](core/crates/tarmac-cli/src/SKILL.md) and copies it
+into Claude Code (`~/.claude/skills`) and Codex (`~/.agents/skills`), so an agent
+knows how to surface files and how to author HTML cards that satisfy the board's
+sandbox and zoom model.
 
 ## Repo layout
 
