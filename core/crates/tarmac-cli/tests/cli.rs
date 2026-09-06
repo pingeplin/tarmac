@@ -227,4 +227,7 @@ fn help_documents_the_skill_verb_too() {
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(text.contains("tarmac skill"));
     assert!(text.contains("tarmac skill install"));
+    // --help splices skill::USAGE; without this the interpolation could be
+    // dropped and every other test would stay green.
+    assert!(text.contains("--dry-run"), "--help must carry install's flags");
 }

@@ -48,7 +48,7 @@ fn current_channel() -> proto::Channel {
 
 /// An env override, where an empty value means unset — the convention
 /// `tarmac-protocol`'s path resolvers already follow.
-pub fn env_override(name: &str) -> Option<std::ffi::OsString> {
+pub(crate) fn env_override(name: &str) -> Option<std::ffi::OsString> {
     std::env::var_os(name).filter(|v| !v.is_empty())
 }
 
