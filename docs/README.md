@@ -19,7 +19,7 @@ pages you may trust for present-tense claims.
 
 ## What is enforced
 
-`make docs-check` (also a required check on every PR, `.github/workflows/docs-check.yml`)
+`make docs-check` (also a check on every PR, `.github/workflows/docs-check.yml`)
 runs deterministic tripwires only — it never judges prose:
 
 1. every doc carries a status banner;
@@ -32,6 +32,11 @@ runs deterministic tripwires only — it never judges prose:
 On a PR it additionally *reports* (never fails) when an ACTIVE doc still names a
 file the PR deleted. Prose that is merely out of date is out of scope — that
 still needs a human or an agent reading the diff.
+
+The code is enforced by a second workflow, `.github/workflows/test.yml`: the
+`core` and app-backend cargo suites on macOS, the Vitest suite on Linux. Neither
+workflow is wired into the branch ruleset as a *required* check yet, so both are
+read, not gates.
 
 ## ACTIVE
 
@@ -75,8 +80,9 @@ replaced by Tauri 2 + React + xterm.js in #27 (2026-06-29).
 ## Milestone vocabulary
 
 `M0`, `M1`, `M2`, `M3`, `v4` are **closed milestone names**, kept alive only by
-archived plans and the `core/crates/tarmacd/tests/m{0,1,2,3}_integration.rs` file
-names. `v4c` is a **proposal that was never started**. There is no `M4`, `M4c`,
+archived plans; the `core/crates/tarmacd/tests/` suites that once carried them
+are now named for their subject (`daemon_basics`, `restore`, `honest_signals`,
+`boards`). `v4c` is a **proposal that was never started**. There is no `M4`, `M4c`,
 or `v5` — if you see one, it is a hallucination or a typo for `v4c`. Work after
 M3 is tracked per GitHub issue; see [`workflow.md`](workflow.md).
 

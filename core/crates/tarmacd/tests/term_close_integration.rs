@@ -28,7 +28,7 @@ fn spawn_live_cat(app: &mut Conn, term_id: &str) {
 }
 
 // term_close on a live terminal kills its pty: the killed pump pushes an Exit for
-// exactly that term_id (the established teardown proof, see m3_integration).
+// exactly that term_id (the established teardown proof, see boards_integration).
 #[test]
 fn term_close_kills_term_and_emits_exit() {
     let daemon = TestDaemon::start();
