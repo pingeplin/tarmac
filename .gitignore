@@ -4,6 +4,7 @@
 /dist/
 *.sock
 .dev/
+.playwright-mcp/
 
 # design-sync machine state (config.json, NOTES.md, previews/, overrides/ ARE committed)
 .design-sync/.cache/
