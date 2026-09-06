@@ -194,3 +194,18 @@ pub fn wait_for_state(state: &Path, what: &str, pred: impl Fn(&serde_json::Value
         std::thread::sleep(Duration::from_millis(25));
     }
 }
+
+/// Send `sig` to a daemon child and wait, to a deadline, for it to exit.
+/// Returns the exit status so a test can distinguish a clean `exit(0)` from a
+/// death by signal (`status.code() == None`).
+pub fn signal_and_wait(child: &mut Child, sig: libc::c_int) -> std::process::ExitStatus {
+    unsafe { libc::kill(child.id() as libc::pid_t, sig) };
+    let deadline = Instant::now() + LONG;
+    loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            return status;
+        }
+        assert!(Instant::now() < deadline, "daemon never exited after signal {sig}");
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
