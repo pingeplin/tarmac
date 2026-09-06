@@ -4,24 +4,34 @@ use std::time::Duration;
 
 use tarmac_protocol::{self as proto, Msg, frame};
 
-const HELP: &str = "\
+mod skill;
+
+const HELP_HEAD: &str = "\
 tarmac — agent cockpit CLI
 
 USAGE:
     tarmac open <path>      register a file with the running tarmac app
+    tarmac skill            print the agent-facing Tarmac guide
+    tarmac skill install    install that guide as a SKILL.md for coding agents
     tarmac --help           show this help
 
 `tarmac open` is fire-and-forget: anything (you, an agent, a Makefile, a git
 hook) can run it to surface a doc in the cockpit. The path is canonicalized
 and must point to an existing file.
 
+`tarmac skill` never talks to the daemon. `install` writes one SKILL.md per
+target — claude-code (~/.claude/skills) and codex (~/.agents/skills) — and
+accepts:
+";
+
+const HELP_TAIL: &str = "
 The daemon socket defaults to ~/Library/Application Support/tarmac/tarmacd.sock
 (release builds) or ~/Library/Application Support/tarmac/dev/tarmacd.sock (dev
 builds); override with TARMAC_SOCKET.
 
 EXIT STATUS:
-    0  the daemon acknowledged the open
-    1  the daemon rejected it, or no daemon is running
+    0  success
+    1  the daemon rejected the open, no daemon is running, or an install failed
     2  usage error
 ";
 
@@ -36,8 +46,14 @@ fn current_channel() -> proto::Channel {
     }
 }
 
+/// An env override, where an empty value means unset — the convention
+/// `tarmac-protocol`'s path resolvers already follow.
+pub(crate) fn env_override(name: &str) -> Option<std::ffi::OsString> {
+    std::env::var_os(name).filter(|v| !v.is_empty())
+}
+
 fn socket_path() -> PathBuf {
-    let over = std::env::var_os("TARMAC_SOCKET").filter(|v| !v.is_empty());
+    let over = env_override("TARMAC_SOCKET");
     let home = std::env::var_os("HOME").unwrap_or_else(|| std::ffi::OsString::from("/"));
     proto::resolve_socket_path(over, &home, current_channel())
 }
@@ -46,16 +62,17 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("-h") | Some("--help") | Some("help") => {
-            print!("{HELP}");
+            print!("{HELP_HEAD}{}{HELP_TAIL}", skill::USAGE);
             std::process::exit(0);
         }
+        Some("skill") => std::process::exit(skill::run(&args[1..])),
         Some("open") => {}
         Some(other) => {
             eprintln!("tarmac: unknown command '{other}' (see tarmac --help)");
             std::process::exit(2);
         }
         None => {
-            eprint!("{HELP}");
+            eprint!("{HELP_HEAD}{}{HELP_TAIL}", skill::USAGE);
             std::process::exit(2);
         }
     }
