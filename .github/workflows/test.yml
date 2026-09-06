@@ -1,0 +1,94 @@
+# The test suites — everything `make test` runs except docs-check, which keeps
+# its own workflow on purpose: it is plain node and sub-second, and must never
+# queue behind a cargo build.
+#
+# Runner choice is per suite, not per convenience. The daemon resolves a term's
+# foreground process name and live cwd through proc_pidpath/proc_pidinfo, macOS
+# syscalls with `None` fallbacks elsewhere, so three of its integration tests
+# cannot pass on Linux — `core` therefore runs on macOS, the only platform
+# Tarmac ships on. The Vitest suite is platform-independent, so it takes the
+# cheaper Linux runner.
+name: test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: core (cargo test)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+
+      - name: cargo test
+        run: cargo test --locked
+        working-directory: core
+
+  desktop:
+    name: desktop (vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+        working-directory: desktop
+
+      # `npm test` is `tsc --noEmit && vitest run` — a red here can be a type
+      # error rather than a failing test.
+      - name: npm test
+        run: npm test
+        working-directory: desktop
+
+  app:
+    name: app backend (cargo test)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+        working-directory: desktop
+
+      # `tauri::generate_context!` embeds frontendDist (desktop/dist) at compile
+      # time, so the frontend bundle must exist before cargo can build the crate
+      # at all. This is a build prerequisite, not a second suite.
+      - name: npm run build
+        run: npm run build
+        working-directory: desktop
+
+      - name: cargo test
+        run: cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml

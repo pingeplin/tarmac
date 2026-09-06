@@ -19,7 +19,7 @@ pages you may trust for present-tense claims.
 
 ## What is enforced
 
-`make docs-check` (also a required check on every PR, `.github/workflows/docs-check.yml`)
+`make docs-check` (also a check on every PR, `.github/workflows/docs-check.yml`)
 runs deterministic tripwires only — it never judges prose:
 
 1. every doc carries a status banner;
@@ -32,6 +32,11 @@ runs deterministic tripwires only — it never judges prose:
 On a PR it additionally *reports* (never fails) when an ACTIVE doc still names a
 file the PR deleted. Prose that is merely out of date is out of scope — that
 still needs a human or an agent reading the diff.
+
+The code is enforced by a second workflow, `.github/workflows/test.yml`: the
+`core` and app-backend cargo suites on macOS, the Vitest suite on Linux. Neither
+workflow is wired into the branch ruleset as a *required* check yet, so both are
+read, not gates.
 
 ## ACTIVE
 

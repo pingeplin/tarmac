@@ -18,8 +18,8 @@ Everything goes through the root `Makefile`:
 
 - `make core` — `cargo build` the Rust workspace (daemon + CLI + protocol).
 - `make app` — `npm run build` + `cargo build` for the Tauri app.
-- `make test` — `make docs-check` + `cd core && cargo test` + `cd desktop && npm test` + app-cargo test.
-- `make docs-check` — deterministic doc tripwires (`scripts/docs-check.mjs`, plain node, sub-second): status banners, link rot, ACTIVE docs citing paths that don't exist, and `Msg` variants missing from `architecture.md`/`protocol.md`. Also a required PR check (`.github/workflows/docs-check.yml`) — the repo's only CI.
+- `make test` — `make docs-check` + `cd core && cargo test` + `cd desktop && npm test` + app-cargo test. Every line of it also runs on CI (`.github/workflows/test.yml`), but `make test` stays the local entry point.
+- `make docs-check` — deterministic doc tripwires (`scripts/docs-check.mjs`, plain node, sub-second): status banners, link rot, ACTIVE docs citing paths that don't exist, and `Msg` variants missing from `architecture.md`/`protocol.md`. Runs on every PR as its own workflow (`.github/workflows/docs-check.yml`), kept separate from `test.yml` so it never queues behind a cargo build.
 - `make run` — launches the Tauri dev app with Vite HMR.
 - `make bundle` — `scripts/bundle.sh`: unsigned arm64 `dist/Tarmac.app` via `tauri build`.
 - `make release` — `scripts/release.sh`: sign + `.dmg` + notarize + staple. Requires env `DEVID_IDENTITY` and `NOTARY_PROFILE` (both hard-asserted); `VERSION` optional (default `0.1.0`).
@@ -42,7 +42,7 @@ Build outputs (gitignored): Rust → `core/target/{debug,release}/`, Tauri → `
 
 - **Commits: Conventional Commits.** `type(scope): summary` (whole history conforms). Types in use: `feat`, `fix`, `refactor`, `perf`, `docs`, `chore`, plus bare `release:` for version bumps. Scopes are area tags, not paths (`feat(terminal)`, `fix(board)`, `feat(m3)`, `feat(protocol)`, …). PRs are squash-merged with `(#N)` suffix.
 - **Where tests live.** Rust: inline `#[test]`/`#[tokio::test]` in `src/` + milestone-named integration suites under each crate's `tests/`. Desktop: Vitest unit tests in `desktop/` (`npm test`). `desktop/src-tauri/` has its own `cargo test`.
-- **Formatting is convention-by-imitation.** No `rustfmt.toml`/`.swiftformat`/`.editorconfig`, no CI, no formatter command. Match surrounding code. `make` must pass before opening a PR.
+- **Formatting is convention-by-imitation.** No `rustfmt.toml`/`.swiftformat`/`.editorconfig`, no formatter command, and no CI check on style — the CI workflows run docs-check and the test suites only. Match surrounding code. `make` must pass before opening a PR.
 - Note: `CONTRIBUTING.md` mandates a DCO `Signed-off-by` line, but the actual history uses `Co-Authored-By` trailers instead — follow the repo's de-facto pattern, not the literal CONTRIBUTING text.
 - **Coding style: SOLID, ultra-concise, no line-noise comments.** Keep modules/functions single-responsibility and depend on narrow interfaces (protocol types, trait boundaries) rather than reaching across layers. Prefer the smallest correct diff over a more "thorough" one. Don't add comments that restate what the code already says line-by-line; a comment earns its place only by explaining a non-obvious *why* (a hidden constraint, a workaround, an invariant) — see the Gotchas below for the kind of thing that's worth a comment.
 
