@@ -30,6 +30,18 @@ fn doc_tile(path: &str) -> Tile {
     Tile { kind: "doc".into(), path: Some(path.into()), ..term_tile() }
 }
 
+// The daemon derives a file_event's mtime_ms exactly this way (docs.rs), so a
+// test can wait on the specific write it just made rather than on "any event
+// for this path".
+fn mtime_ms(path: &str) -> u64 {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .unwrap()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64
+}
+
 fn recv_doc_opened(app: &mut Conn) -> tarmac_protocol::DocEntry {
     let msg = app.recv_until("doc_opened", |m| matches!(m, Msg::DocOpened(_)));
     let Msg::DocOpened(entry) = msg else { unreachable!() };
@@ -171,7 +183,13 @@ fn layout_and_state_survive_daemon_restart() {
     f.write_all(b"\nmore\n").unwrap();
     f.sync_all().unwrap();
     drop(f);
-    app.recv_until("file_event", |m| matches!(m, Msg::FileEvent { path, .. } if *path == a));
+    // Match the append's own mtime, not merely the path: a.md's earlier creation
+    // event can still be in flight, and a path-only predicate lets it satisfy
+    // this wait, so the restart below races the append it is meant to observe.
+    let appended_ms = mtime_ms(&a);
+    app.recv_until("file_event", |m| {
+        matches!(m, Msg::FileEvent { path, mtime_ms } if *path == a && *mtime_ms >= appended_ms)
+    });
 
     wait_for_state(&daemon.state_file(), "merged layout + read + change", |v| {
         let docs = v["boards"][0]["docs"].as_array();
@@ -180,7 +198,7 @@ fn layout_and_state_survive_daemon_restart() {
                 && d[0]["path"] == serde_json::json!(b)
                 && d[1]["path"] == serde_json::json!(a)
                 && d[1]["read"] == serde_json::json!(true)
-                && d[1]["last_changed_ms"].is_u64()
+                && d[1]["last_changed_ms"].as_u64().is_some_and(|ms| ms >= appended_ms)
         }) && v["boards"][0]["tiles"].as_array().is_some_and(|t| t.len() == 2)
     });
 
