@@ -15,6 +15,8 @@ import React, { useEffect, useRef, useState, type MutableRefObject } from "react
 import { BoardEngine, type Cullable, type Viewport } from "./BoardEngine";
 import { EdgeLayer } from "./EdgeLayer";
 import type { EdgeLayerHandle } from "./BoardEngine";
+import { OffscreenHints } from "../ui/OffscreenHints";
+import type { PlacedPill } from "../kit/offscreenHints";
 import { TerminalCard } from "../cards/TerminalCard";
 import { DocCard } from "../cards/DocCard";
 import { HtmlCard } from "../cards/HtmlCard";
@@ -61,6 +63,10 @@ interface BoardProps {
   onBackgroundPointerDown: () => void;
   onCardResize: (id: string, frame: WorldFrame) => void;
   onCardResizeEnd: (id: string) => void;
+  /** The offscreen-signal pills stackPills could not place clear of a card, for
+   * THIS board. App passes [] for a hidden board, and keeps the pills that did
+   * find room in its own overlay above the cards. */
+  hintPillsUnder: PlacedPill[];
 }
 
 export function Board(props: BoardProps) {
@@ -155,6 +161,14 @@ export function Board(props: BoardProps) {
     >
       {/* Provenance edges: painted behind cards, pointer-events:none */}
       <EdgeLayer ref={edgeLayerRef} cards={cards} />
+      {/* The occluded offscreen-signal pills, painted under the cards so a pill with
+          nowhere clear to go hides behind the card instead of covering it (#126).
+          It has to live INSIDE .board — the board paints an opaque --bg0, so an
+          overlay left outside it can only be above the cards or invisible behind
+          the whole board. Sitting before .card-layer is load-bearing: a restored
+          tile's z can be 0 (layoutTiles `t.z ?? 0`), and that tie with the
+          overlay's z-index breaks in DOM order. */}
+      <OffscreenHints pills={props.hintPillsUnder} />
       {/* Screen-space card layer: no transform on the layer; each card wrapper
           is translated to screen position via calc() off --zoom/--world-tx/ty.
           zIndex:c.z on each outer wrapper → single stacking context, cross-type
