@@ -10,12 +10,13 @@
 //! The wire codec, framing, conformance, and channel-path derivation all come
 //! from `core/`'s `tarmac-protocol` (path dep) — reused, never re-ported.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::ffi::OsString;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use tarmac_protocol::{
@@ -31,6 +32,31 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 /// Oldest chunks are evicted when a term's buffer would exceed this.
 const BUFFER_CAP_BYTES: usize = 256 * 1024;
 
+/// How long a card waits for its `Scrollback` reply before giving up on history
+/// and showing live output instead (issue #41).
+const AWAIT_TIMEOUT: Duration = Duration::from_millis(2000);
+
+/// Per-terminal routing state, shared (`Arc`) with the deadline task each attach
+/// spawns. Lock order is always outputs → awaiting → buffers.
+#[derive(Default)]
+struct Terms {
+    /// Per-terminal binary output sinks the frontend registers via `term_attach`.
+    outputs: Mutex<HashMap<String, IpcChannel<InvokeResponseBody>>>,
+    /// Live bytes held back rather than written to the xterm: output that arrived
+    /// with no channel attached, or while the term is `awaiting`. Bounded per-term
+    /// at `BUFFER_CAP_BYTES`; oldest chunks evicted on overflow. Held until the
+    /// term's `Scrollback` reply lands — then discarded, because the daemon's ring
+    /// is a superset — or until the reply times out, then delivered in order.
+    buffers: Mutex<HashMap<String, VecDeque<Vec<u8>>>>,
+    /// Terms whose `ScrollbackRequest` is still outstanding (issue #41), mapped to
+    /// the generation of the attach that sent it. While a term is here its live
+    /// output is buffered, so the daemon's ring reaches a freshly-mounted xterm
+    /// before anything produced since. The generation is what lets a stale
+    /// deadline recognise that the card it was spawned for is already gone.
+    awaiting: Mutex<HashMap<String, u64>>,
+    next_generation: AtomicU64,
+}
+
 /// Shared bridge state, managed by Tauri (`app.manage`). Commands look it up via
 /// `State<Bridge>`; the connection task looks it up via `app.state::<Bridge>()`.
 pub struct Bridge {
@@ -38,25 +64,15 @@ pub struct Bridge {
     /// drains it and frames each `Msg` onto the socket. Unbounded so a brief
     /// disconnect buffers rather than blocks the UI thread.
     tx: UnboundedSender<Msg>,
-    /// Per-terminal binary output sinks the frontend registers via `term_attach`.
-    outputs: Mutex<HashMap<String, IpcChannel<InvokeResponseBody>>>,
-    /// Scrollback buffer: bytes that arrived before `term_attach` was called.
-    /// Bounded per-term at `BUFFER_CAP_BYTES`; oldest chunks evicted on overflow.
-    /// NOT cleared on `detach_output` — a transient detach+reattach still delivers.
-    /// Cleared on `attach_output` after draining (delivery guarantees order).
-    buffers: Mutex<HashMap<String, VecDeque<Vec<u8>>>>,
+    terms: Arc<Terms>,
     // The Rust setup hook connects to the daemon BEFORE the webview's JS mounts,
-    // so the connection's first status/board_list/restore are emitted with no
-    // listener yet. We remember the latest of each (the daemon's authoritative
-    // current state) and replay them when the frontend signals it is ready — which
-    // also makes a dev HMR reload re-sync cleanly.
+    // so the connection's first status/board_list are emitted with no listener
+    // yet. We remember the latest of each and re-emit them when the frontend
+    // signals it is ready — which also makes a webview or dev HMR reload re-sync
+    // cleanly. The board's contents are NOT cached: `replay` asks the daemon for a
+    // fresh restore instead (issue #123).
     last_status: Mutex<Option<serde_json::Value>>,
     last_board_list: Mutex<Option<serde_json::Value>>,
-    // The latest `restore` per board_id. The daemon sends a restore for the active
-    // board on connect and for each board as it's visited; remembering ALL of them
-    // (not just the last) lets a webview reload / HMR replay rehydrate every board
-    // that was visited this session, not only the most-recent one.
-    last_restores: Mutex<HashMap<String, serde_json::Value>>,
     /// The spawned daemon child. Retained so we can SIGTERM it on version
     /// mismatch, and so the spawn decision can observe whether it is still alive.
     daemon_child: Mutex<Option<std::process::Child>>,
@@ -66,11 +82,9 @@ impl Bridge {
     pub fn new(tx: UnboundedSender<Msg>) -> Self {
         Self {
             tx,
-            outputs: Mutex::new(HashMap::new()),
-            buffers: Mutex::new(HashMap::new()),
+            terms: Arc::new(Terms::default()),
             last_status: Mutex::new(None),
             last_board_list: Mutex::new(None),
-            last_restores: Mutex::new(HashMap::new()),
             daemon_child: Mutex::new(None),
         }
     }
@@ -80,49 +94,30 @@ impl Bridge {
     }
 
     fn remember_msg(&self, tag: &str, value: &serde_json::Value) {
-        match tag {
-            "board_list" => {
-                // Drop remembered restores for boards no longer in the list so a
-                // deleted board can't resurrect on a later replay.
-                if let Some(boards) = value.get("boards").and_then(|b| b.as_array()) {
-                    let ids: HashSet<&str> = boards
-                        .iter()
-                        .filter_map(|b| b.get("board_id").and_then(|v| v.as_str()))
-                        .collect();
-                    self.last_restores
-                        .lock()
-                        .unwrap()
-                        .retain(|k, _| ids.contains(k.as_str()));
-                }
-                *self.last_board_list.lock().unwrap() = Some(value.clone());
-            }
-            "restore" => {
-                // Key by board_id (empty string for a board_id-less single-board
-                // daemon) so each board's latest restore is remembered separately.
-                let bid = value
-                    .get("board_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                self.last_restores.lock().unwrap().insert(bid, value.clone());
-            }
-            _ => {}
+        if tag == "board_list" {
+            *self.last_board_list.lock().unwrap() = Some(value.clone());
         }
     }
 
-    /// Re-emit the remembered status + current board/restore so a freshly-mounted
-    /// (or reloaded) frontend gets the state it may have missed on connect.
+    /// Re-emit the remembered status + board list, then — while connected — ask
+    /// the daemon for the active board's CURRENT state, so a freshly-mounted (or
+    /// reloaded) frontend gets what it may have missed on connect.
     pub fn replay(&self, app: &AppHandle) {
-        if let Some(s) = self.last_status.lock().unwrap().clone() {
+        let status = self.last_status.lock().unwrap().clone();
+        if let Some(s) = status.clone() {
             let _ = app.emit("daemon-status", s);
         }
-        if let Some(b) = self.last_board_list.lock().unwrap().clone() {
+        let board_list = self.last_board_list.lock().unwrap().clone();
+        if let Some(b) = board_list.clone() {
             let _ = app.emit("daemon", b);
         }
-        // Replay every remembered board's restore (board_list emitted first above,
-        // so the frontend has the board set before the per-board cards arrive).
-        for r in self.last_restores.lock().unwrap().values() {
-            let _ = app.emit("daemon", r.clone());
+        let connected = status
+            .as_ref()
+            .and_then(|s| s.get("connected"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        if let Some(msg) = replay_request(connected, board_list.as_ref()) {
+            self.send(msg);
         }
     }
 
@@ -132,40 +127,134 @@ impl Bridge {
         let _ = self.tx.send(msg);
     }
 
+    /// A terminal card mounted: bind its channel, ask the daemon for that term's
+    /// ring, and hold live output until the reply lands (or the deadline passes).
+    /// Every mount is treated alike — a fresh spawn, a first board visit, or a
+    /// webview reload that remounted a running shell's xterm (issue #41).
     pub fn attach_output(&self, term_id: String, channel: IpcChannel<InvokeResponseBody>) {
-        // Hold `outputs` across insert + buffer-drain + send so the
-        // channel-presence decision is atomic against `dispatch` (which also
-        // locks `outputs` before touching `buffers`). Otherwise a live byte
-        // arriving between the insert and the drain could be sent ahead of the
-        // replayed scrollback — out-of-order delivery, the very race this buffer
-        // exists to prevent. Lock order is always outputs → buffers.
+        let generation = self.terms.attach(term_id.clone(), channel);
+        self.send(Msg::ScrollbackRequest { term_id: term_id.clone() });
+        tauri::async_runtime::spawn(await_reply_deadline(self.terms.clone(), term_id, generation));
+    }
+
+    pub fn detach_output(&self, term_id: &str) {
+        self.terms.outputs.lock().unwrap().remove(term_id);
+        // The buffer is left to `forget_term`, the next reply, or the deadline
+        // (the one path that delivers it); a reattach re-requests the ring, so
+        // nothing here is a replay source.
+    }
+
+    /// Forget a terminal entirely: drop its output channel, its held bytes AND
+    /// its outstanding request. Called on `term_detach` (a card unmounted for
+    /// good — exit-removal or board prune), so an unmount mid-request leaves
+    /// nothing behind and a late reply is dropped.
+    pub fn forget_term(&self, term_id: &str) {
+        self.terms.forget(term_id);
+    }
+}
+
+impl Terms {
+    /// Hold `outputs` across the insert + the awaiting mark so the routing
+    /// decision is atomic against `dispatch` (which also locks `outputs` first).
+    /// Returns this attach's generation, which its deadline task carries.
+    fn attach(&self, term_id: String, channel: IpcChannel<InvokeResponseBody>) -> u64 {
         let mut outputs = self.outputs.lock().unwrap();
         outputs.insert(term_id.clone(), channel);
-        // Drain under the buffers lock (released at the `;`), then send while
-        // still holding `outputs` so no later dispatch can interleave ahead.
-        let pending = take_buffered(&mut self.buffers.lock().unwrap(), &term_id);
-        if let Some(ch) = outputs.get(&term_id) {
+        let generation = self.next_generation.fetch_add(1, Ordering::Relaxed) + 1;
+        self.awaiting.lock().unwrap().insert(term_id, generation);
+        generation
+    }
+
+    fn forget(&self, term_id: &str) {
+        self.outputs.lock().unwrap().remove(term_id);
+        self.awaiting.lock().unwrap().remove(term_id);
+        self.buffers.lock().unwrap().remove(term_id);
+    }
+
+    /// Route one `Output` chunk: straight to the xterm when a channel is bound
+    /// and no reply is outstanding, else held.
+    fn on_output(&self, term_id: String, bytes: Vec<u8>) {
+        let outputs = self.outputs.lock().unwrap();
+        let awaiting = self.awaiting.lock().unwrap().contains_key(&term_id);
+        match outputs.get(&term_id) {
+            Some(channel) if !awaiting => {
+                let _ = channel.send(InvokeResponseBody::Raw(bytes));
+            }
+            _ => push_buffered(&mut self.buffers.lock().unwrap(), &term_id, bytes, BUFFER_CAP_BYTES),
+        }
+    }
+
+    /// Apply the daemon's answer to one `ScrollbackRequest`: the ring is the only
+    /// history the xterm gets. A reply for a term we are not awaiting is dropped
+    /// (a double attach, a card unmounted mid-request, or a timed-out request).
+    fn on_scrollback(&self, term_id: String, bytes: Vec<u8>) {
+        let outputs = self.outputs.lock().unwrap();
+        // Generation-free on purpose: any outstanding attach is answered by the
+        // first reply to arrive, whichever request produced it — they all carry
+        // the same ring.
+        if self.awaiting.lock().unwrap().remove(&term_id).is_none() {
+            return;
+        }
+        // Discard rather than drain: everything held while awaiting was already
+        // in the daemon's snapshot, and everything produced after it arrives
+        // after this reply on the same FIFO socket. Draining would duplicate.
+        self.buffers.lock().unwrap().remove(&term_id);
+        if let Some(channel) = outputs.get(&term_id) {
+            let _ = channel.send(InvokeResponseBody::Raw(bytes));
+        }
+    }
+
+    /// No reply is coming: stop holding, and deliver what was held in order, so
+    /// the card degrades to live-only output rather than staying blank. Acts only
+    /// on the attach it was spawned for — a card that unmounted and remounted
+    /// inside the window is a newer generation, whose own deadline still stands.
+    fn expire(&self, term_id: &str, generation: u64) {
+        let outputs = self.outputs.lock().unwrap();
+        let mut awaiting = self.awaiting.lock().unwrap();
+        if awaiting.get(term_id) != Some(&generation) {
+            return;
+        }
+        awaiting.remove(term_id);
+        drop(awaiting);
+        let pending = take_buffered(&mut self.buffers.lock().unwrap(), term_id);
+        if let Some(channel) = outputs.get(term_id) {
             for chunk in pending {
-                let _ = ch.send(InvokeResponseBody::Raw(chunk));
+                let _ = channel.send(InvokeResponseBody::Raw(chunk));
             }
         }
     }
 
-    pub fn detach_output(&self, term_id: &str) {
-        self.outputs.lock().unwrap().remove(term_id);
-        // NOTE: buffer is intentionally NOT cleared here. A transient
-        // detach+reattach should still deliver the pending bytes on the next
-        // attach_output call. The bounded cap prevents unbounded growth.
+    /// The socket died: no outstanding request will ever be answered on it.
+    fn clear_awaiting(&self) {
+        self.awaiting.lock().unwrap().clear();
     }
+}
 
-    /// Forget a terminal entirely: drop its output channel AND its scrollback
-    /// buffer. Called on `term_detach` (a card unmounted for good — exit-removal
-    /// or board prune), so neither the channel nor a never-to-be-drained buffer
-    /// lingers. Lock order outputs → buffers (consistent with dispatch/attach).
-    pub fn forget_term(&self, term_id: &str) {
-        self.outputs.lock().unwrap().remove(term_id);
-        self.buffers.lock().unwrap().remove(term_id);
+/// Bound the wait for one term's `Scrollback`. A daemon of the same version built
+/// before issue #41 decodes `scrollback_request` as `Unknown` and never replies;
+/// without this the term would await forever and its card would stay blank.
+async fn await_reply_deadline(terms: Arc<Terms>, term_id: String, generation: u64) {
+    tokio::time::sleep(AWAIT_TIMEOUT).await;
+    terms.expire(&term_id, generation);
+}
+
+/// What a re-mounted frontend must ask the daemon for (issue #123). Switching to
+/// the board that is *already* active is not a no-op: `set_active` succeeds, so
+/// the daemon answers with a restore built from its live registry — the layout as
+/// of now, including every card made since connect. Replaying the cached
+/// connect-time restore instead would drop those cards.
+///
+/// `None` when there is nothing to ask for yet (no board_list) or nobody to ask
+/// (`!connected`): a request queued while the socket is down would be delivered
+/// after the reconnect's own restore, and a second restore on a board the
+/// frontend has already built takes the reconnect-revive path, marking those
+/// cards dead.
+fn replay_request(connected: bool, board_list: Option<&serde_json::Value>) -> Option<Msg> {
+    if !connected {
+        return None;
     }
+    let active = board_list?.get("active")?.as_str()?;
+    (!active.is_empty()).then(|| Msg::BoardSwitch { board_id: active.to_string() })
 }
 
 // ── Version check ────────────────────────────────────────────────────────────
@@ -215,7 +304,7 @@ fn push_buffered(
     deque.push_back(bytes);
 }
 
-/// Remove and return all buffered chunks for `term_id` in order (oldest first).
+/// Remove and return all held chunks for `term_id` in order (oldest first).
 /// Returns an empty Vec if there is no buffer entry for that term.
 fn take_buffered(
     map: &mut HashMap<String, VecDeque<Vec<u8>>>,
@@ -243,7 +332,9 @@ async fn connection_loop(app: AppHandle, mut rx: UnboundedReceiver<Msg>) {
             Ok(stream) => {
                 attempt = 0;
                 emit_status(&app, true, None);
-                if run_connection(&app, &mut rx, stream, already_restarted).await {
+                let restarted = run_connection(&app, &mut rx, stream, already_restarted).await;
+                app.state::<Bridge>().terms.clear_awaiting();
+                if restarted {
                     spawned = false;
                     already_restarted = true;
                     continue;
@@ -354,26 +445,10 @@ async fn run_connection(
 fn dispatch(app: &AppHandle, msg: Msg) {
     let bridge = app.state::<Bridge>();
     match msg {
-        Msg::Output { term_id, bytes } => {
-            // Hold `outputs` across the whole arm so the channel-present decision
-            // and the buffer push are atomic against `attach_output` (same lock
-            // order, outputs → buffers). Without this, an attach racing in could
-            // drain the buffer and then this byte would be buffered forever.
-            let outputs = bridge.outputs.lock().unwrap();
-            if let Some(channel) = outputs.get(&term_id) {
-                // Fast path: channel is attached — send directly.
-                let _ = channel.send(InvokeResponseBody::Raw(bytes));
-            } else {
-                // No channel yet (daemon replayed scrollback before `term_attach`).
-                // Buffer the bytes; drained in order when attach_output is called.
-                push_buffered(
-                    &mut bridge.buffers.lock().unwrap(),
-                    &term_id,
-                    bytes,
-                    BUFFER_CAP_BYTES,
-                );
-            }
-        }
+        Msg::Output { term_id, bytes } => bridge.terms.on_output(term_id, bytes),
+        // Binary like `Output`, and must never reach the JSON arm below — a
+        // 256 KiB ring would be emitted as a JSON array of integers.
+        Msg::Scrollback { term_id, bytes } => bridge.terms.on_scrollback(term_id, bytes),
         other => {
             if let Ok(value) = serde_json::to_value(&other) {
                 let tag = value.get("t").and_then(|t| t.as_str()).unwrap_or("?");
@@ -601,7 +676,6 @@ fn inject_cli_path(base: Option<&str>, cli_dir: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicU64, Ordering};
 
     static DIR_SEQ: AtomicU64 = AtomicU64::new(0);
 
@@ -892,6 +966,224 @@ mod tests {
         let _ = take_buffered(&mut map, "t1");
         let second = take_buffered(&mut map, "t1");
         assert!(second.is_empty());
+    }
+
+    // ── Reload re-sync (issue #123) ───────────────────────────────────────────
+
+    fn board_list(active: &str) -> serde_json::Value {
+        serde_json::json!({
+            "t": "board_list",
+            "boards": [{ "board_id": "board-0" }, { "board_id": "board-1" }],
+            "active": active,
+        })
+    }
+
+    /// A reload asks the daemon for the active board's CURRENT state rather than
+    /// replaying the connect-time cache, which predates every card made since.
+    #[test]
+    fn replay_request_switches_to_the_active_board() {
+        assert_eq!(
+            replay_request(true, Some(&board_list("board-1"))),
+            Some(Msg::BoardSwitch { board_id: "board-1".into() })
+        );
+    }
+
+    /// Nothing cached yet (a reload before the first board_list): ask nothing —
+    /// the connect-time board_list + restore are still on their way.
+    #[test]
+    fn replay_request_without_a_board_list_is_none() {
+        assert_eq!(replay_request(true, None), None);
+    }
+
+    /// A board_list with no usable `active` must not produce a switch to "".
+    #[test]
+    fn replay_request_without_an_active_board_is_none() {
+        let malformed = serde_json::json!({ "t": "board_list", "boards": [] });
+        assert_eq!(replay_request(true, Some(&malformed)), None);
+    }
+
+    /// A reload while the socket is down must ask for nothing. The request would
+    /// sit on the unbounded queue and land AFTER the reconnect's own restore, and
+    /// a second restore on an already-built board takes the reconnect-revive path
+    /// — marking the freshly-built cards dead.
+    #[test]
+    fn replay_request_while_disconnected_is_none() {
+        assert_eq!(replay_request(false, Some(&board_list("board-1"))), None);
+    }
+
+    // ── Scrollback replay rule (issue #41) ────────────────────────────────────
+
+    /// A Bridge with no AppHandle, plus the receiver its outbound Msgs land in.
+    fn test_bridge() -> (Bridge, UnboundedReceiver<Msg>) {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        (Bridge::new(tx), rx)
+    }
+
+    /// A recording IpcChannel: every raw body it is sent lands in the returned Vec.
+    fn recording_channel() -> (IpcChannel<InvokeResponseBody>, Arc<Mutex<Vec<Vec<u8>>>>) {
+        let sink: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(Vec::new()));
+        let seen = sink.clone();
+        let channel = IpcChannel::new(move |body| {
+            if let InvokeResponseBody::Raw(bytes) = body {
+                seen.lock().unwrap().push(bytes);
+            }
+            Ok(())
+        });
+        (channel, sink)
+    }
+
+    fn delivered(sink: &Arc<Mutex<Vec<Vec<u8>>>>) -> Vec<u8> {
+        sink.lock().unwrap().iter().flatten().copied().collect()
+    }
+
+    /// An attach asks the daemon for the ring and holds live bytes until it lands.
+    #[test]
+    fn attach_requests_the_ring_and_marks_the_term_awaiting() {
+        let (bridge, mut rx) = test_bridge();
+        let (channel, _sink) = recording_channel();
+        bridge.attach_output("t1".into(), channel);
+
+        assert_eq!(rx.try_recv().unwrap(), Msg::ScrollbackRequest { term_id: "t1".into() });
+        assert!(bridge.terms.awaiting.lock().unwrap().contains_key("t1"));
+    }
+
+    /// S2: the reply is the single source — bytes buffered while awaiting are
+    /// discarded, only the reply reaches the xterm, and the term stops awaiting.
+    #[test]
+    fn scrollback_reply_discards_the_buffer_and_delivers_only_the_ring() {
+        let (bridge, _rx) = test_bridge();
+        let (channel, sink) = recording_channel();
+        bridge.attach_output("t1".into(), channel);
+        bridge.terms.on_output("t1".into(), b"live".to_vec());
+
+        bridge.terms.on_scrollback("t1".into(), b"history".to_vec());
+
+        assert_eq!(delivered(&sink), b"history".to_vec());
+        assert!(!bridge.terms.awaiting.lock().unwrap().contains_key("t1"));
+        assert!(!bridge.terms.buffers.lock().unwrap().contains_key("t1"));
+    }
+
+    /// S7: awaiting buffers, not-awaiting writes through.
+    #[test]
+    fn output_is_buffered_while_awaiting_and_written_through_after() {
+        let (bridge, _rx) = test_bridge();
+        let (channel, sink) = recording_channel();
+        bridge.attach_output("t1".into(), channel);
+
+        bridge.terms.on_output("t1".into(), b"held".to_vec());
+        assert!(delivered(&sink).is_empty(), "an awaiting term must not write through");
+
+        bridge.terms.on_scrollback("t1".into(), Vec::new());
+        bridge.terms.on_output("t1".into(), b"live".to_vec());
+        assert_eq!(delivered(&sink), b"live".to_vec());
+    }
+
+    /// S8: forget_term drops the buffer AND the awaiting mark, so a reply that
+    /// arrives after an unmount is dropped (Replay-rule row 3).
+    #[test]
+    fn forget_term_clears_the_awaiting_entry_and_the_buffer() {
+        let (bridge, _rx) = test_bridge();
+        let (channel, sink) = recording_channel();
+        bridge.terms.attach("t1".into(), channel);
+        bridge.terms.on_output("t1".into(), b"held".to_vec());
+
+        bridge.forget_term("t1");
+
+        assert!(!bridge.terms.awaiting.lock().unwrap().contains_key("t1"));
+        assert!(!bridge.terms.buffers.lock().unwrap().contains_key("t1"));
+
+        // A late reply for the now-forgotten term must not reach the channel the
+        // card left behind, nor resurrect its buffer.
+        bridge.terms.on_scrollback("t1".into(), b"history".to_vec());
+        assert!(delivered(&sink).is_empty(), "a reply after forget_term must be dropped");
+        assert!(!bridge.terms.buffers.lock().unwrap().contains_key("t1"));
+    }
+
+    /// S9: a reply for a non-awaiting term changes nothing; a reply for an
+    /// awaiting term whose channel is gone still clears the mark.
+    #[test]
+    fn scrollback_for_a_non_awaiting_term_is_dropped() {
+        let (bridge, _rx) = test_bridge();
+        let (channel, sink) = recording_channel();
+        bridge.attach_output("t1".into(), channel);
+        bridge.terms.on_scrollback("t1".into(), Vec::new()); // settles the attach
+        bridge.terms.on_output("t1".into(), b"live".to_vec());
+
+        bridge.terms.on_scrollback("t1".into(), b"duplicate".to_vec());
+        assert_eq!(delivered(&sink), b"live".to_vec(), "a duplicate reply must not be written");
+
+        // Awaiting with no channel: the mark clears, the bytes are dropped.
+        bridge.detach_output("t1");
+        bridge.terms.awaiting.lock().unwrap().insert("t1".into(), 99);
+        bridge.terms.on_scrollback("t1".into(), b"orphan".to_vec());
+        assert!(!bridge.terms.awaiting.lock().unwrap().contains_key("t1"));
+        assert_eq!(delivered(&sink), b"live".to_vec());
+    }
+
+    /// A daemon that never answers (a same-version build from before issue #41
+    /// ignores the request) must not blank the card: at the deadline the held
+    /// bytes are delivered once, and a reply arriving later is dropped.
+    #[tokio::test(start_paused = true)]
+    async fn an_unanswered_request_expires_and_releases_the_held_bytes() {
+        let (bridge, _rx) = test_bridge();
+        let (channel, sink) = recording_channel();
+        let generation = bridge.terms.attach("t1".into(), channel);
+        bridge.terms.on_output("t1".into(), b"live".to_vec());
+        assert!(delivered(&sink).is_empty(), "bytes are held while awaiting");
+
+        let deadline =
+            tokio::spawn(await_reply_deadline(bridge.terms.clone(), "t1".into(), generation));
+        tokio::time::advance(AWAIT_TIMEOUT).await;
+        deadline.await.unwrap();
+
+        assert_eq!(delivered(&sink), b"live".to_vec());
+        assert!(!bridge.terms.awaiting.lock().unwrap().contains_key("t1"));
+
+        bridge.terms.on_scrollback("t1".into(), b"history".to_vec());
+        assert_eq!(delivered(&sink), b"live".to_vec(), "a reply after the deadline is dropped");
+    }
+
+    /// A card that unmounted and remounted inside the window must not be robbed
+    /// of its history by the first attach's deadline: that deadline is stale, and
+    /// the remount's own request is still outstanding.
+    #[tokio::test(start_paused = true)]
+    async fn a_stale_deadline_leaves_the_remounted_card_awaiting() {
+        let (bridge, _rx) = test_bridge();
+        let (first, _gone) = recording_channel();
+        let stale = bridge.terms.attach("t1".into(), first);
+
+        bridge.forget_term("t1");
+        let (second, sink) = recording_channel();
+        let current = bridge.terms.attach("t1".into(), second);
+        bridge.terms.on_output("t1".into(), b"live".to_vec());
+
+        // Only the FIRST attach's deadline elapses.
+        let deadline = tokio::spawn(await_reply_deadline(bridge.terms.clone(), "t1".into(), stale));
+        tokio::time::advance(AWAIT_TIMEOUT).await;
+        deadline.await.unwrap();
+
+        assert_ne!(stale, current, "each attach gets its own generation");
+        assert_eq!(bridge.terms.awaiting.lock().unwrap().get("t1"), Some(&current));
+        assert!(delivered(&sink).is_empty(), "a stale deadline must not flush the remount");
+
+        // The remount's own reply still lands, and still wins over the held bytes.
+        bridge.terms.on_scrollback("t1".into(), b"history".to_vec());
+        assert_eq!(delivered(&sink), b"history".to_vec());
+    }
+
+    /// S13: losing the socket clears every awaiting mark, so a card is never
+    /// left holding live bytes forever behind a reply that will never come.
+    #[test]
+    fn socket_loss_clears_awaiting() {
+        let (bridge, _rx) = test_bridge();
+        let (channel, sink) = recording_channel();
+        bridge.attach_output("t1".into(), channel);
+
+        bridge.terms.clear_awaiting();
+
+        assert!(!bridge.terms.awaiting.lock().unwrap().contains_key("t1"));
+        bridge.terms.on_output("t1".into(), b"live".to_vec());
+        assert_eq!(delivered(&sink), b"live".to_vec());
     }
 
     // ── resolve_daemon_path_pure tests ────────────────────────────────────────

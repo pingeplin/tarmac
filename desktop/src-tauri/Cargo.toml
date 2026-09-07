@@ -50,3 +50,8 @@ tokio = { version = "1", features = [
     "io-util",
     "time",
 ] }
+
+[dev-dependencies]
+# `test-util` gives the bridge's reply-deadline test a paused clock, so the
+# bounded wait is asserted without spending its real 2 s.
+tokio = { version = "1", features = ["test-util"] }

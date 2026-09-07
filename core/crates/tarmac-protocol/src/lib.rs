@@ -181,6 +181,20 @@ pub enum Msg {
     DocRefresh {
         path: String,
     },
+    // ScrollbackRequest (app -> daemon, issue #41): re-emit one term's scrollback
+    // ring now, so a terminal card remounted by a webview reload gets its history
+    // back. An unknown term_id is NOT an error — see Scrollback.
+    ScrollbackRequest {
+        term_id: String,
+    },
+    // Scrollback (daemon -> app, issue #41): the answer to exactly one
+    // ScrollbackRequest, one frame per request. Always sent, even when the ring is
+    // empty or the term is unknown, so the app never waits forever.
+    Scrollback {
+        term_id: String,
+        #[serde(with = "serde_bytes")]
+        bytes: Vec<u8>,
+    },
     // Unknown message types are ignored, not fatal (protocol rule).
     #[serde(other)]
     Unknown,
@@ -646,6 +660,37 @@ mod tests {
              a4 70 61 74 68 a5 2f 61 2e 6d 64",
             Msg::DocRefresh { path: "/a.md".into() },
         );
+    }
+
+    #[test]
+    fn conformance_vector_12_scrollback_request() {
+        // issue #41: a new additive app -> daemon type. Decodes by tag and
+        // round-trips; existing vectors V1-V11 are unaffected (unknown-type rule).
+        assert_vector(
+            "82 a1 74 b2 73 63 72 6f 6c 6c 62 61 63 6b 5f 72 65 71 75 65 73 74 \
+             a7 74 65 72 6d 5f 69 64 a2 74 31",
+            Msg::ScrollbackRequest { term_id: "t1".into() },
+        );
+    }
+
+    #[test]
+    fn conformance_vector_13_scrollback() {
+        // issue #41: the daemon -> app reply. `bytes` rides the msgpack bin
+        // family (c4), exactly like input/output.
+        assert_vector(
+            "83 a1 74 aa 73 63 72 6f 6c 6c 62 61 63 6b \
+             a7 74 65 72 6d 5f 69 64 a2 74 31 \
+             a5 62 79 74 65 73 c4 03 68 69 0a",
+            Msg::Scrollback { term_id: "t1".into(), bytes: b"hi\n".to_vec() },
+        );
+    }
+
+    #[test]
+    fn scrollback_reply_round_trips_empty_bytes() {
+        // The daemon always answers, even with an empty ring — the empty reply
+        // must survive the codec so the app can stop awaiting.
+        let m = Msg::Scrollback { term_id: "t1".into(), bytes: Vec::new() };
+        assert_eq!(roundtrip(&m), m);
     }
 
     #[test]

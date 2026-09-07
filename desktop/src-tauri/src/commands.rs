@@ -9,9 +9,11 @@ use tauri::{AppHandle, State};
 
 use crate::bridge::Bridge;
 
-/// The frontend calls this once its daemon listeners are registered, so the
-/// bridge replays the status/board_list/restore it emitted before the webview
-/// existed (startup race) — and re-syncs after a dev HMR reload.
+/// The frontend calls this once its daemon listeners are registered. The bridge
+/// re-emits the status + board_list it sent before the webview existed (startup
+/// race) and re-requests the active board's restore from the daemon rather than
+/// replaying a cached one — so a webview or dev HMR reload rebuilds the board as
+/// it is now, not as it was on connect (issue #123).
 #[tauri::command]
 pub fn frontend_ready(app: AppHandle, state: State<Bridge>) {
     state.replay(&app);

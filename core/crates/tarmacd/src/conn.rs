@@ -464,6 +464,13 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
                 debug!("doc_refresh no-op for {path} (not on the active board, or unreadable)");
             }
         }
+        Msg::ScrollbackRequest { term_id } => {
+            // `conn.replayed` is deliberately neither read nor written here: the
+            // per-board one-time replay is a separate guarantee (issue #41).
+            let handle = daemon.terms.lock().await.get(&term_id).cloned();
+            let bytes = handle.map(|h| h.scrollback_snapshot()).unwrap_or_default();
+            let _ = conn.tx.send(Msg::Scrollback { term_id, bytes }).await;
+        }
         Msg::Unknown => debug!("ignoring unknown message type from app"),
         other => debug!("ignoring unexpected app message: {other:?}"),
     }

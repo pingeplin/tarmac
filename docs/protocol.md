@@ -448,6 +448,40 @@ all existing vectors decode unchanged.
 |---|---|---|---|
 | `path` | string (required) | — | the doc to re-stat (the registry key) |
 
+## Replaying a terminal's scrollback on demand (issue #41)
+
+    {t:"scrollback_request", term_id}               — app → daemon
+    {t:"scrollback", term_id, bytes}                — daemon → app
+
+Re-send one terminal's scrollback ring now, so a card whose xterm was remounted
+from scratch — a webview reload, a first board visit, a fresh spawn — gets its
+history back. The connect-time replay (`restore` + `output` frames) cannot cover
+this: it fires at most once per board per **connection**, and a webview reload
+does not drop the socket.
+
+The daemon snapshots that one term's ring and replies with **exactly one**
+`scrollback` frame on the requesting connection. It **always** replies, even when
+the ring is empty or the `term_id` is unknown — silence would leave the app
+holding live output behind a reply that never comes. The request neither reads nor
+sets the per-connection board-replay latch, so a board visited for the first time
+after a request still gets its one-time `output` replay. Both are new **additive
+types**: a receiver that does not know them ignores them under the unknown-type
+rule, so all existing vectors decode unchanged.
+
+`bytes` rides the msgpack **bin** family, exactly like `input`/`output`; the ring
+is capped at 256 KiB, well inside the 16 MiB frame limit, so the reply is never
+chunked. Receiving it is the app's single history source for that terminal: it
+discards whatever it was holding for the term and writes these bytes, then
+resumes live output. The app bounds that hold at 2 s: a daemon of the same version
+built before this change decodes `scrollback_request` as `Unknown` and never
+replies, so on the deadline the card releases what it held and degrades to
+live-only output rather than staying blank.
+
+| key | type | missing ⇒ | semantics |
+|---|---|---|---|
+| `term_id` | string (required) | — | the terminal whose ring to re-send / the ring's owner |
+| `bytes` | bin (required, `scrollback` only) | — | the ring snapshot; empty for a silent or unknown term |
+
 ## Conformance vectors
 
 Hex of the msgpack payload only (length prefix excluded). Decoding each vector MUST
@@ -533,3 +567,17 @@ round-trip. Byte-exact encoder output is NOT required (key order may legally dif
 
         82 a1 74 ab 64 6f 63 5f 72 65 66 72 65 73 68
         a4 70 61 74 68 a5 2f 61 2e 6d 64
+
+12. (issue #41) `{t:"scrollback_request", term_id:"t1"}` — new additive app→daemon
+    type; decodes by tag and round-trips; existing vectors V1–V11 are unaffected.
+
+        82 a1 74 b2 73 63 72 6f 6c 6c 62 61 63 6b 5f 72 65 71 75 65 73 74
+        a7 74 65 72 6d 5f 69 64 a2 74 31
+
+13. (issue #41) `{t:"scrollback", term_id:"t1", bytes:"hi\n"}` (3 payload bytes) —
+    new additive daemon→app type; `bytes` is the msgpack **bin** family (`c4`), as
+    in vector 3. An empty ring is the same frame with `c4 00`.
+
+        83 a1 74 aa 73 63 72 6f 6c 6c 62 61 63 6b
+        a7 74 65 72 6d 5f 69 64 a2 74 31
+        a5 62 79 74 65 73 c4 03 68 69 0a
