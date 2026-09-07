@@ -49,10 +49,17 @@ test: docs-check
 # into spawned ptys so `tarmac open <file>` works inside xterm terminals.
 # TARMAC_SOCKET/TARMAC_STATE pin a stable per-worktree dev path so simultaneous
 # `make run`s from different worktrees don't share a socket or state file.
+# VITE_TARMAC_DEV_LABEL suffixes the window title with ` · <worktree>` for the
+# same reason: the dev binary is not a .app, so Launch Services reports no bundle
+# id for it and the title is the only tell separating one dev app from another
+# (and from the installed one). The VITE_ prefix is load-bearing — it is what
+# makes Vite bake the value into the bundle, so the title needs no IPC hop.
+# `bundle`/`release` never set it, so a shipped Tarmac's title is unchanged.
 run: core app-deps sidecars
 	cd $(ROOT)/desktop && \
 	TARMAC_SOCKET="$(ROOT)/.dev/tarmacd.sock" \
 	TARMAC_STATE="$(ROOT)/.dev/state.json" \
+	VITE_TARMAC_DEV_LABEL="$(notdir $(ROOT))" \
 	TARMAC_DAEMON="$(ROOT)/core/target/debug/tarmacd" \
 	PATH="$(ROOT)/core/target/debug:$$PATH" \
 	npm run tauri dev

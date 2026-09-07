@@ -60,6 +60,7 @@ import {
 } from "./kit/toasts";
 import { Place, firstFreeSlot, scatterFrame } from "./kit/placement";
 import { docKind } from "./kit/docKind";
+import { devTitleSuffix } from "./kit/devTitle";
 import { basename } from "./kit/docStore";
 import { buildTiles, parseTiles, type LayoutTile } from "./kit/layoutTiles";
 import type { Rect, Size } from "./kit/geom";
@@ -98,6 +99,9 @@ import { decide as focusedCloseDecide } from "./kit/focusedClose";
 import { bytes as termKeyBytes } from "./kit/termKeyBinding";
 import { clearFreshDoc } from "./kit/clearFreshDoc";
 import { forFocusedDoc } from "./kit/escFocusAction";
+
+// Baked in at build time by Vite — see the `run` recipe in the Makefile.
+const devSuffix = devTitleSuffix(import.meta.env.VITE_TARMAC_DEV_LABEL);
 
 const BOOT_FRAME: WorldFrame = { ...Place.termFrame };
 const PERSIST_DEBOUNCE_MS = 200;
@@ -164,7 +168,7 @@ export default function App() {
   useEffect(() => {
     const meta = boardMetas.find((m) => m.board_id === activeBoardId);
     const name = meta?.name?.trim() || activeBoardId || "tarmac";
-    getCurrentWindow().setTitle(` ▞ ${name} `);
+    getCurrentWindow().setTitle(` ▞ ${name}${devSuffix} `);
   }, [activeBoardId, boardMetas]);
 
   // --- per-board engines (populated via onEngineReady callbacks) ---------------
