@@ -15,16 +15,18 @@
 // The term-host fills the slot (so it too is rasterScale× bigger in layout).
 // term.options.fontSize is scaled by the same factor, which is what makes
 // FitAddon.fit() recompute the SAME cols×rows — only pixel density changes.
-// host.style.padding is scaled too, but it buys the visual GUTTER alone: the
-// global `* { box-sizing: border-box }` (theme/tokens.css) means fit() already
-// measures a host width that includes the padding, so the padding has no
-// cols×rows effect — left unscaled it would only shrink the gutter to 1/rs.
+// The host padding is scaled too — declaratively: the wrapper sets `--rs` and
+// .term-host in theme/app-only.css multiplies its padding by it. That buys the
+// visual GUTTER alone: the global `* { box-sizing: border-box }`
+// (theme/tokens.css) means fit() already measures a host width that includes the
+// padding, so the padding has no cols×rows effect — left unscaled it would only
+// shrink the gutter to 1/rs.
 // The xterm canvas backing is therefore rasterScale×DPR pixels per logical px.
 // The existing BCR override for selection coords remains correct: because padding
 // and font scale together, the BCR of .xterm and the cols×rows ratio are
 // identical to the unscaled case (proven in tauri-card-crispness-fix.md math).
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
@@ -43,7 +45,6 @@ import { attachTermOutput, detachTermOutput, termInput, termResize } from "../ip
 import { openExternal } from "../ipc/shell";
 import { termFontFamily, termFontSize, xtermTheme } from "../theme";
 import type { TermCardModel, WorldFrame } from "../board/model";
-import { termHostPadding } from "../kit/termHostPadding";
 
 interface TerminalCardProps {
   model: TermCardModel;
@@ -111,8 +112,9 @@ export function TerminalCard(props: TerminalCardProps) {
 
     // React runs layout effects before passive effects, so the rasterScale effect
     // below cannot seed a terminal that does not exist yet. Read the settled scale
-    // here — once, so fontSize and padding can never disagree — and apply it before
-    // the fit() whose cols×rows onSpawn ships to the PTY.
+    // here and apply it to fontSize before the fit() whose cols×rows onSpawn ships
+    // to the PTY. (The padding needs no read: it inherits --rs from the wrapper,
+    // which React already committed in the initial render.)
     const rs = rsRef.current;
 
     const term = new Terminal({
@@ -213,7 +215,6 @@ export function TerminalCard(props: TerminalCardProps) {
     // Register focus handle so App can focus this terminal (⌥Tab cycle, restore).
     onRegister?.(model.termId, term);
 
-    host.style.padding = termHostPadding(rs);
     fit.fit();
     const cols = Math.max(2, term.cols);
     const rows = Math.max(2, term.rows);
@@ -344,12 +345,12 @@ export function TerminalCard(props: TerminalCardProps) {
 
   // rasterScale oversampling: on settle, scale the host's fontSize by the effective
   // scale so the xterm canvas backing is rasterScale×DPR pixels and the terminal
-  // remains cols×rows-identical; the padding is scaled alongside it to hold the
-  // visual gutter (see comment block at top of file).
+  // remains cols×rows-identical. The padding scales in the same commit via --rs
+  // (see comment block at top of file).
   //
   // MUST be useLayoutEffect: the same rasterScale commit also resizes the wrapper
-  // (rs×100% width), which the host's ResizeObserver observes. Setting fontSize +
-  // padding SYNCHRONOUSLY at commit — before the RO fires — means the RO's fit()
+  // (rs×100% width), which the host's ResizeObserver observes. Setting fontSize
+  // SYNCHRONOUSLY at commit — before the RO fires — means the RO's fit()
   // sees the already-scaled cell metrics and is a no-op, so the cols×rows stay
   // fixed. A passive useEffect would let the RO fit() the enlarged host against
   // the OLD base fontSize first, blowing up to ~rs× columns (a spurious PTY
@@ -360,7 +361,6 @@ export function TerminalCard(props: TerminalCardProps) {
     if (!term || !fit) return;
     const rs = props.rasterScale;
     term.options.fontSize = termFontSize * rs;
-    host.style.padding = termHostPadding(rs);
     // fit() re-measures the (now rs×) host with the (now rs×) cell size and
     // arrives at the same cols×rows; the canvas is sized at rs×DPR resolution.
     fit.fit();
@@ -405,12 +405,15 @@ export function TerminalCard(props: TerminalCardProps) {
         <div className="term-raster-clip">
           <div
             className="term-raster-wrapper"
-            style={props.rasterScale !== 1 ? {
-              width: `${props.rasterScale * 100}%`,
-              height: `${props.rasterScale * 100}%`,
-              transform: `scale(${1 / props.rasterScale})`,
-              transformOrigin: "0 0",
-            } : undefined}
+            style={{
+              "--rs": String(props.rasterScale),
+              ...(props.rasterScale !== 1 ? {
+                width: `${props.rasterScale * 100}%`,
+                height: `${props.rasterScale * 100}%`,
+                transform: `scale(${1 / props.rasterScale})`,
+                transformOrigin: "0 0",
+              } : {}),
+            } as CSSProperties}
           >
             <div className="term-host-slot" ref={slotRef} />
           </div>

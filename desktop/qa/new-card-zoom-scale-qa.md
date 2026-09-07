@@ -3,11 +3,12 @@
 S1–S4 of `.blueprint/specs/2609.0005_new_terminal_card_zoom_scale.md`. These are
 [Q] scenarios by necessity, not by preference: the contract is *what `FitAddon`
 computes for a real xterm inside a real `rs ×` host*, and `desktop/` has no jsdom
-or xterm harness (see the repo testing convention). The one automated scenario,
-**S5**, is a drift tripwire on the padding constant in
-`desktop/src/kit/termHostPadding.test.ts` — **it passes on a completely unfixed
-build and is not evidence of anything below.** This sheet is the only durable
-artefact of the fix.
+or xterm harness (see the repo testing convention). There was one automated
+scenario, **S5** — a drift tripwire on the padding constant, which **passed on a
+completely unfixed build and was not evidence of anything below**. #117 (spec
+`.blueprint/specs/2609.0007_term_host_padding.md`) removed the duplicated constant
+it pinned, and with it the tripwire: the padding contract is now QA-only. This
+sheet is the only durable artefact of the fix.
 
 Run against `make run` with a fresh dev daemon (`make kill-daemon` first).
 
@@ -411,3 +412,40 @@ dev app running, ⌘T a reference card at 100 %, `+` three times to 173 %, re-re
 the reference, ⌘T the card under test, then read both cards with
 `stty -f /dev/ttysNNN size` and compare the two gutters side by side. That is the
 whole of S1, and S1 is the only scenario that exercises the new code path.
+
+---
+
+## Run 3 — 2026-09-07 (#117 zoom ladder, spec 2609.0007)
+
+**Scope note.** This run exercised the **S1–S5 ladder of
+`.blueprint/specs/2609.0007_term_host_padding.md`** (the `--rs` custom-property
+refactor), not the S1–S4 scenarios of this sheet. The two numberings are
+unrelated; nothing above this line is amended by it, and no checkbox above is
+ticked by it.
+
+- **Commit under test:** `4291355` on `refactor/117-term-host-padding`.
+- **Date:** 2026-09-07.
+- **Launch:** the dev app (`make run`) from a **fresh `.dev` state**.
+- **Zoom readouts used:** `100%` / `120%` / `173%` / `299%` / `100%`
+  (`rs` 1 / 1.5 / 2 / 3 / 1).
+- **Outcome:** the maintainer ran S1–S5 of spec 2609.0007 and reported them
+  **checked — a visual pass by eye**.
+
+**Readings not transcribed.** No `stty size` value, no devtools computed-padding
+or `--rs` value, and no `WINCH` count was reported, so none is recorded here and
+the observation table above stays empty. Per this sheet's standing rule, a number
+here must be a number someone read.
+
+| spec 2609.0007 scenario | tell | reading |
+|---|---|---|
+| S1 | computed `.term-host` padding at `rs` 2 and 1, inline `padding` absent | not recorded (visual pass) |
+| S2 | `stty size` across 100/120/173/299/100 % | not recorded (visual pass) |
+| S3 | gutter width vs. the 100 % reference card | not recorded (visual pass) |
+| S4 | `WINCH` count over the 173→100→173 % round-trip | not recorded (visual pass) |
+| S5 | `--rs` present with value `1`; no inline width/height/transform | not recorded (visual pass) |
+
+**What this is worth.** Same standing as the 2026-09-06 owner sign-off above: an
+acceptance by the person who owns the code, on a build containing the change —
+real evidence, and not a per-tell measurement. In particular the gutter tell
+(S3), still the only tell for the padding half, remains without a recorded
+numeric observation.
