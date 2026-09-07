@@ -78,13 +78,17 @@ can't ship — but sync here to catch it up front.
      `@xterm/addon-webgl`) makes the Tauri `npm run build` fail with
      `Cannot find module …`. Run a full `(cd desktop && npm install)`.
 
-3. **Build, sign, notarize, staple.** Kill any stray daemon first
-   (`pkill -f tarmacd`), then:
+3. **Build, sign, notarize, staple.** Don't kill any daemon first — the build only
+   compiles binaries, it never binds the socket, and `pkill -f tarmacd` would take
+   down the user's *installed* Tarmac. (If a dev daemon ever genuinely needs to go,
+   `make kill-daemon` is socket-scoped to this worktree.)
    ```
    DEVID_IDENTITY="…" NOTARY_PROFILE="…" VERSION=x.y.z make release
    ```
    Run from the **repo root** (Bash cwd persists between calls — a prior `cd` into a
-   crate dir will make `make` say "No rule to make target `release`"). This builds
+   crate dir will make `make` say "No rule to make target `release`"). Notarization
+   pushes this well past a 2-minute command timeout — run it **in the background**,
+   teeing to a log you can grep the sha256 out of. This builds
    (Tauri + Rust sidecars), signs inside-out, notarizes, staples
    `dist/Tarmac-x.y.z.dmg`, and **prints the sha256**. `release.sh` warns if
    `$VERSION` ≠ `tauri.conf.json` version — keep them in sync.
