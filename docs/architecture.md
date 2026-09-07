@@ -142,6 +142,8 @@ at the committed dev value.)
 | | `Exit {term_id, code?}` | D→app | the PTY exited (nil code = signal death) |
 | | `TermProc {term_id, name, pid?}` | D→app | foreground process name changed |
 | | `Bell {term_id}` | D→app | a BEL (0x07) was seen |
+| | `ScrollbackRequest {term_id}` | app→D | re-send one term's scrollback ring now |
+| | `Scrollback {term_id, bytes}` | D→app | that ring, one frame per request |
 | Layout | `Layout {dock, tiles, board?, board_id?}` | app→D | layout snapshot for a board |
 | | `Restore {docs, tiles?, board?, board_id?, live_terms?}` | D→app | full board state to mount |
 | Boards | `BoardList {boards, active}` | D→app | all boards + active id |
