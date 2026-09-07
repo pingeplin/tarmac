@@ -32,6 +32,11 @@ socket (`TARMAC_SOCKET=<worktree>/.dev/tarmacd.sock`, which `make run` sets) or 
 
 ## Known limitations (expected, not bugs)
 
+- **A reload can still take two restores, in one narrow window.** If the daemon's
+  connect-time restore reaches the frontend before `frontend_ready` reaches the
+  bridge, the re-requested restore is that board's second and takes the
+  reconnect-revive path (cards marked dead). Pre-existing on `main`; issue #123's
+  fix stops the *stale* restore, not the second one.
 - **A dead-but-retained card is blank after a reload.** The daemon's ring dies with
   the pty handle, so a card held open by a non-zero exit answers its post-reload
   request with empty bytes — the transcript that explains the failure is gone. The

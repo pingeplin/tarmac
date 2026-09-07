@@ -237,6 +237,45 @@ fn layout_and_state_survive_daemon_restart() {
     });
 }
 
+// issue #123: a webview reload re-syncs by switching to the ALREADY-active board.
+// The daemon must answer that with a restore built from its current registry — the
+// latest layout, stamped with live_terms — not the state it sent on connect.
+#[test]
+fn board_switch_to_the_active_board_returns_the_latest_layout() {
+    let daemon = TestDaemon::start();
+    let mut app = Conn::hello(&daemon.sock, "app");
+    recv_restore(&mut app);
+
+    let a = write_doc(&daemon.dir.join("a.md"), "a\n");
+    cli_open(&daemon.sock, &a);
+    recv_doc_opened(&mut app);
+
+    app.send(&Msg::SpawnTerm {
+        term_id: "tlive".into(),
+        cols: 80,
+        rows: 24,
+        cwd: None,
+        cmd: Some(vec!["/bin/cat".into()]),
+        board_id: None,
+        inherit_cwd_from: None,
+    });
+    // The two-tile layout a ⌘T would produce: it reaches the daemon but is never
+    // echoed back, so only a fresh restore can carry it.
+    app.send(&Msg::Layout {
+        dock: vec![a.clone()],
+        tiles: vec![term_tile(), doc_tile(&a)],
+        board: None,
+        board_id: None,
+    });
+
+    app.send(&Msg::BoardSwitch { board_id: "board-0".into() });
+    let restore = app.recv_until("restore", |m| matches!(m, Msg::Restore { .. }));
+    let Msg::Restore { tiles, live_terms, .. } = restore else { unreachable!() };
+
+    assert_eq!(tiles, vec![term_tile(), doc_tile(&a)], "restore must carry the latest layout");
+    assert_eq!(live_terms, vec!["tlive".to_string()], "and the board's live shells");
+}
+
 // v4 Phase 2 (additive): the board viewport + per-tile world frame round-trip
 // through a layout snapshot, persist to disk, and reproduce after a restart.
 #[test]

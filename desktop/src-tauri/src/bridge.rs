@@ -10,7 +10,7 @@
 //! The wire codec, framing, conformance, and channel-path derivation all come
 //! from `core/`'s `tarmac-protocol` (path dep) — reused, never re-ported.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::ffi::OsString;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -66,17 +66,13 @@ pub struct Bridge {
     tx: UnboundedSender<Msg>,
     terms: Arc<Terms>,
     // The Rust setup hook connects to the daemon BEFORE the webview's JS mounts,
-    // so the connection's first status/board_list/restore are emitted with no
-    // listener yet. We remember the latest of each (the daemon's authoritative
-    // current state) and replay them when the frontend signals it is ready — which
-    // also makes a dev HMR reload re-sync cleanly.
+    // so the connection's first status/board_list are emitted with no listener
+    // yet. We remember the latest of each and re-emit them when the frontend
+    // signals it is ready — which also makes a webview or dev HMR reload re-sync
+    // cleanly. The board's contents are NOT cached: `replay` asks the daemon for a
+    // fresh restore instead (issue #123).
     last_status: Mutex<Option<serde_json::Value>>,
     last_board_list: Mutex<Option<serde_json::Value>>,
-    // The latest `restore` per board_id. The daemon sends a restore for the active
-    // board on connect and for each board as it's visited; remembering ALL of them
-    // (not just the last) lets a webview reload / HMR replay rehydrate every board
-    // that was visited this session, not only the most-recent one.
-    last_restores: Mutex<HashMap<String, serde_json::Value>>,
     /// The spawned daemon child. Retained so we can SIGTERM it on version
     /// mismatch, and so the spawn decision can observe whether it is still alive.
     daemon_child: Mutex<Option<std::process::Child>>,
@@ -89,7 +85,6 @@ impl Bridge {
             terms: Arc::new(Terms::default()),
             last_status: Mutex::new(None),
             last_board_list: Mutex::new(None),
-            last_restores: Mutex::new(HashMap::new()),
             daemon_child: Mutex::new(None),
         }
     }
@@ -99,49 +94,30 @@ impl Bridge {
     }
 
     fn remember_msg(&self, tag: &str, value: &serde_json::Value) {
-        match tag {
-            "board_list" => {
-                // Drop remembered restores for boards no longer in the list so a
-                // deleted board can't resurrect on a later replay.
-                if let Some(boards) = value.get("boards").and_then(|b| b.as_array()) {
-                    let ids: HashSet<&str> = boards
-                        .iter()
-                        .filter_map(|b| b.get("board_id").and_then(|v| v.as_str()))
-                        .collect();
-                    self.last_restores
-                        .lock()
-                        .unwrap()
-                        .retain(|k, _| ids.contains(k.as_str()));
-                }
-                *self.last_board_list.lock().unwrap() = Some(value.clone());
-            }
-            "restore" => {
-                // Key by board_id (empty string for a board_id-less single-board
-                // daemon) so each board's latest restore is remembered separately.
-                let bid = value
-                    .get("board_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                self.last_restores.lock().unwrap().insert(bid, value.clone());
-            }
-            _ => {}
+        if tag == "board_list" {
+            *self.last_board_list.lock().unwrap() = Some(value.clone());
         }
     }
 
-    /// Re-emit the remembered status + current board/restore so a freshly-mounted
-    /// (or reloaded) frontend gets the state it may have missed on connect.
+    /// Re-emit the remembered status + board list, then — while connected — ask
+    /// the daemon for the active board's CURRENT state, so a freshly-mounted (or
+    /// reloaded) frontend gets what it may have missed on connect.
     pub fn replay(&self, app: &AppHandle) {
-        if let Some(s) = self.last_status.lock().unwrap().clone() {
+        let status = self.last_status.lock().unwrap().clone();
+        if let Some(s) = status.clone() {
             let _ = app.emit("daemon-status", s);
         }
-        if let Some(b) = self.last_board_list.lock().unwrap().clone() {
+        let board_list = self.last_board_list.lock().unwrap().clone();
+        if let Some(b) = board_list.clone() {
             let _ = app.emit("daemon", b);
         }
-        // Replay every remembered board's restore (board_list emitted first above,
-        // so the frontend has the board set before the per-board cards arrive).
-        for r in self.last_restores.lock().unwrap().values() {
-            let _ = app.emit("daemon", r.clone());
+        let connected = status
+            .as_ref()
+            .and_then(|s| s.get("connected"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        if let Some(msg) = replay_request(connected, board_list.as_ref()) {
+            self.send(msg);
         }
     }
 
@@ -260,6 +236,25 @@ impl Terms {
 async fn await_reply_deadline(terms: Arc<Terms>, term_id: String, generation: u64) {
     tokio::time::sleep(AWAIT_TIMEOUT).await;
     terms.expire(&term_id, generation);
+}
+
+/// What a re-mounted frontend must ask the daemon for (issue #123). Switching to
+/// the board that is *already* active is not a no-op: `set_active` succeeds, so
+/// the daemon answers with a restore built from its live registry — the layout as
+/// of now, including every card made since connect. Replaying the cached
+/// connect-time restore instead would drop those cards.
+///
+/// `None` when there is nothing to ask for yet (no board_list) or nobody to ask
+/// (`!connected`): a request queued while the socket is down would be delivered
+/// after the reconnect's own restore, and a second restore on a board the
+/// frontend has already built takes the reconnect-revive path, marking those
+/// cards dead.
+fn replay_request(connected: bool, board_list: Option<&serde_json::Value>) -> Option<Msg> {
+    if !connected {
+        return None;
+    }
+    let active = board_list?.get("active")?.as_str()?;
+    (!active.is_empty()).then(|| Msg::BoardSwitch { board_id: active.to_string() })
 }
 
 // ── Version check ────────────────────────────────────────────────────────────
@@ -971,6 +966,49 @@ mod tests {
         let _ = take_buffered(&mut map, "t1");
         let second = take_buffered(&mut map, "t1");
         assert!(second.is_empty());
+    }
+
+    // ── Reload re-sync (issue #123) ───────────────────────────────────────────
+
+    fn board_list(active: &str) -> serde_json::Value {
+        serde_json::json!({
+            "t": "board_list",
+            "boards": [{ "board_id": "board-0" }, { "board_id": "board-1" }],
+            "active": active,
+        })
+    }
+
+    /// A reload asks the daemon for the active board's CURRENT state rather than
+    /// replaying the connect-time cache, which predates every card made since.
+    #[test]
+    fn replay_request_switches_to_the_active_board() {
+        assert_eq!(
+            replay_request(true, Some(&board_list("board-1"))),
+            Some(Msg::BoardSwitch { board_id: "board-1".into() })
+        );
+    }
+
+    /// Nothing cached yet (a reload before the first board_list): ask nothing —
+    /// the connect-time board_list + restore are still on their way.
+    #[test]
+    fn replay_request_without_a_board_list_is_none() {
+        assert_eq!(replay_request(true, None), None);
+    }
+
+    /// A board_list with no usable `active` must not produce a switch to "".
+    #[test]
+    fn replay_request_without_an_active_board_is_none() {
+        let malformed = serde_json::json!({ "t": "board_list", "boards": [] });
+        assert_eq!(replay_request(true, Some(&malformed)), None);
+    }
+
+    /// A reload while the socket is down must ask for nothing. The request would
+    /// sit on the unbounded queue and land AFTER the reconnect's own restore, and
+    /// a second restore on an already-built board takes the reconnect-revive path
+    /// — marking the freshly-built cards dead.
+    #[test]
+    fn replay_request_while_disconnected_is_none() {
+        assert_eq!(replay_request(false, Some(&board_list("board-1"))), None);
     }
 
     // ── Scrollback replay rule (issue #41) ────────────────────────────────────
