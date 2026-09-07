@@ -29,6 +29,11 @@ describe("visibleWorldRect", () => {
     expect(r.x).toBe(200 - VW / 2);
     expect(r.y).toBe(100 - VH / 2);
   });
+
+  it("stays the degenerate rect at the center for a zero-size viewport", () => {
+    const r = visibleWorldRect({ zoom: 1, cx: 100, cy: 100 }, 0, 0, 1);
+    expect(r).toEqual({ x: 100, y: 100, w: 0, h: 0 });
+  });
 });
 
 describe("isCardVisible", () => {
@@ -53,5 +58,31 @@ describe("isCardVisible", () => {
   it("a wider margin keeps a distant card alive", () => {
     const card: Rect = { x: 2 * VW, y: 0, w: 100, h: 100 };
     expect(isCardVisible(card, vp, VW, VH, 3)).toBe(true);
+  });
+
+  // A hidden board measures 0×0; the card whose frame strictly contains the
+  // saved center used to survive the degenerate rect at (cx, cy) (#104).
+  it("hides the center-straddling card on a zero-width viewport", () => {
+    const hidden: Viewport = { zoom: 1, cx: 100, cy: 100 };
+    const card: Rect = { x: 50, y: 50, w: 100, h: 100 };
+    expect(isCardVisible(card, hidden, 0, VH, 1)).toBe(false);
+  });
+
+  it("hides the center-straddling card on a zero-height viewport", () => {
+    const hidden: Viewport = { zoom: 1, cx: 100, cy: 100 };
+    const card: Rect = { x: 50, y: 50, w: 100, h: 100 };
+    expect(isCardVisible(card, hidden, VW, 0, 1)).toBe(false);
+  });
+
+  it("hides the center-straddling card on a zero-area viewport", () => {
+    const hidden: Viewport = { zoom: 1, cx: 100, cy: 100 };
+    const card: Rect = { x: 50, y: 50, w: 100, h: 100 };
+    expect(isCardVisible(card, hidden, 0, 0)).toBe(false);
+  });
+
+  it("a wider margin cannot resurrect a card on a zero-area viewport", () => {
+    const hidden: Viewport = { zoom: 1, cx: 100, cy: 100 };
+    const card: Rect = { x: 50, y: 50, w: 100, h: 100 };
+    expect(isCardVisible(card, hidden, 0, 0, 3)).toBe(false);
   });
 });
