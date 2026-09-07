@@ -726,22 +726,28 @@ reports a 0×0 viewport, `visibleWorldRect` degenerates to a zero-area rect at
 strictly contains that point visible. Already true today, not changed by this
 work, and recorded here as asked.
 
-### Re-run required for #104 (spec 2609.0006 S8) — **NOT YET RE-RUN**
+### Re-run 2026-09-07 — **visual pass, gap table not captured**
 
 #104 targets the gap this section recorded: `isCardVisible` now early-returns
 `false` when the measured viewport has zero area (`../src/kit/cull.ts`), which
-is expected to cull the straddling card with the rest. Whether it does is what
-this re-run has to observe — nothing below has been executed yet. **The
-observation above stands as the "before" reading**; S39's steps and probe setup
-are unchanged, so re-run them as-is.
+is expected to cull the straddling card with the rest. **The observation above
+stands as the "before" reading**; S39's steps and probe setup are unchanged, so
+they were re-run as-is.
 
-- [ ] Re-run S39's steps above unchanged against the fix, with the same two-card
+Observation: the maintainer ran S6–S8 on the dev app with the S39 fixture
+(`all2`/`all3` via `.dev/state.json`) and reported everything looked normal —
+the board revealed cleanly and the straddling card behaved as expected by eye.
+**No `[cull]` gap readings were transcribed**, so this section carries no
+discriminating evidence: it is a visual pass, not the gap-based verdict S39's
+criterion asks for.
+
+- [x] Re-run S39's steps above unchanged against the fix, with the same two-card
       layout (one card strictly containing board-1's saved centre, one off-centre)
       and a hidden window of ~15 s.
 - [ ] **Pass criterion (gaps, not counts):** on the straddling card's first line
       after the switch back, `gapRaf`, `gapInt` **and** `gapTo` are each within
       ~2 report periods of `dt`, matching the off-centre card. **Fail:** any gap
       pinned near ~1000 ms while `dt` runs to seconds.
-- [ ] Record the observed gap table here. If any box above is not executed, leave
-      this section marked NOT YET RE-RUN rather than writing a result nobody
-      observed.
+- [ ] Record the observed gap table here. Judged by eye on the 2026-09-07 run; no
+      `[cull]` gap readings were transcribed, so no table is written — a result
+      nobody recorded is not one this sheet states.
