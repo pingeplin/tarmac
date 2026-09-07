@@ -57,5 +57,9 @@ export function isCardVisible(
   viewHeightPx: number,
   marginViewports: number = CULL_MARGIN_VIEWPORTS,
 ): boolean {
+  // Without this, a 0×0 viewport degenerates `visibleWorldRect` to a point at
+  // (cx, cy) and `rectsIntersect`'s strict `<` still keeps the one card that
+  // strictly contains it alive (#104).
+  if (viewWidthPx === 0 || viewHeightPx === 0) return false;
   return rectsIntersect(frame, visibleWorldRect(vp, viewWidthPx, viewHeightPx, marginViewports));
 }
