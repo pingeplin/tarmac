@@ -3,11 +3,12 @@
 S1–S4 of `.blueprint/specs/2609.0005_new_terminal_card_zoom_scale.md`. These are
 [Q] scenarios by necessity, not by preference: the contract is *what `FitAddon`
 computes for a real xterm inside a real `rs ×` host*, and `desktop/` has no jsdom
-or xterm harness (see the repo testing convention). The one automated scenario,
-**S5**, is a drift tripwire on the padding constant in
-`desktop/src/kit/termHostPadding.test.ts` — **it passes on a completely unfixed
-build and is not evidence of anything below.** This sheet is the only durable
-artefact of the fix.
+or xterm harness (see the repo testing convention). There was one automated
+scenario, **S5** — a drift tripwire on the padding constant, which **passed on a
+completely unfixed build and was not evidence of anything below**. #117 (spec
+`.blueprint/specs/2609.0007_term_host_padding.md`) removed the duplicated constant
+it pinned, and with it the tripwire: the padding contract is now QA-only. This
+sheet is the only durable artefact of the fix.
 
 Run against `make run` with a fresh dev daemon (`make kill-daemon` first).
 
