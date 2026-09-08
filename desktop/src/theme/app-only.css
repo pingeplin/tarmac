@@ -82,9 +82,21 @@ body,
      cards/TerminalCard.tsx. */
   padding: calc(8px * var(--rs, 1)) calc(10px * var(--rs, 1)) calc(16px * var(--rs, 1));
   background: var(--term-bg);
+  /* Bottom-anchored: the grid is a whole number of rows, so the content box
+     almost never divides evenly and a sub-row remainder is left over. Anchoring
+     the grid to the bottom puts that remainder ABOVE the first row — where the
+     scrollback is already scrolling out of view — instead of under the last one,
+     where it read as a gutter that jumped around with the card size (spec
+     2609.0011). The gutter below the last row is then exactly the 16·rs declared
+     above, at every rasterScale. */
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
 }
+/* Natural height (rows × cell height), NOT 100%: stretching the painted element
+   over the remainder would put the gap back below the last row. */
 .term-host .xterm {
-  height: 100%;
+  height: auto;
 }
 
 /* --- provenance edges (SVG overlay over the world) --- */

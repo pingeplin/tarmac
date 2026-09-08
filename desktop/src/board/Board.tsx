@@ -3,13 +3,15 @@
 // wrapper (sized card{w,h}×zoom via calc()) carrying zIndex:c.z. Every card type
 // puts CardShell straight in that wrapper, so chrome is laid out per zoom rather
 // than bitmap-scaled. The terminal's zoom-free host box (scale(var(--zoom)) over
-// a zoom-free size, so no fit()/PTY-resize on zoom) is inside TerminalCard's body
-// — it wraps the host, not the header.
+// a zoom-free size) is inside TerminalCard's body — it wraps the host, not the
+// header. Zoom still re-measures the grid when the rasterScale steps, but the
+// card clamps it rather than re-fitting (kit/termGrid.ts).
 //
 // P5 multi-board: App renders ONE Board per board simultaneously; inactive boards
 // are display:none (hidden=true) so their xterm terminals stay WARM — output
-// Channels stay attached and scrollback survives switch-back. FitAddon.fit() is a
-// safe no-op at 0 size; the ResizeObserver fires on show → auto-refit on reveal.
+// Channels stay attached and scrollback survives switch-back. A hidden card
+// measures a 0×0 box, which proposes no grid at all (so a live PTY is never
+// shrunk to 2×1); the ResizeObserver fires again on show → re-measure on reveal.
 
 import React, { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { BoardEngine, type Cullable, type Viewport } from "./BoardEngine";
@@ -145,7 +147,7 @@ export function Board(props: BoardProps) {
       className="board"
       ref={viewportRef}
       // display:none hides the board without unmounting — terminals stay warm
-      // (P5 warm-board model). ResizeObserver fires on show → auto-refit.
+      // (P5 warm-board model). ResizeObserver fires on show → re-measure.
       style={props.hidden ? { display: "none" } : undefined}
       onPointerDown={(e) => {
         // A press on empty board space (not a card) clears the selection AND moves

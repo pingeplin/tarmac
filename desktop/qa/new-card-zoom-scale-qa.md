@@ -207,6 +207,13 @@ under test to compare.
 **Not run as a measured scenario — see *Run 2* and *Owner sign-off* at the end of this sheet.** (2026-09-06.) S4 begins from "reach an S1-passing state", and S1 was
 never run (same blocker).
 
+> **Superseded by spec 2609.0011 (issue #130).** The paragraph below described
+> `FitAddon`'s behaviour, which the terminal card no longer uses: the grid is now
+> proposed by `kit/termGrid.ts` and clamped against the rest grid on a rasterScale
+> change, so a settle does not drift the column count upward at all. It is kept
+> for the history of runs recorded above. (The real drift was also larger than ±1
+> under the WebGL renderer the app actually loads — see 2609.0011's Context.)
+
 **±1 column across a settle is expected, not a regression.** `FitAddon` subtracts
 a fixed `DEFAULT_SCROLL_BAR_WIDTH = 14` px that does **not** scale with `rs`, so
 
