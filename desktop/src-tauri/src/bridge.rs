@@ -268,6 +268,19 @@ fn should_restart(expected: &str, reported: Option<&str>, already_restarted: boo
     reported != Some(expected) && !already_restarted
 }
 
+/// The app's `hello` frame, encoded. Pulled out of `run_connection` so the
+/// version it stamps is assertable: it is the only source of the app version
+/// `tarmac --version` reports (spec 2609.0012), and nothing else in the suite
+/// would notice if it stopped being sent.
+fn app_hello_payload() -> Vec<u8> {
+    encode(&Msg::Hello {
+        role: "app".into(),
+        v: PROTOCOL_VERSION,
+        app_version: Some(env!("CARGO_PKG_VERSION").into()),
+    })
+    .expect("hello encodes")
+}
+
 // ── Pure buffer helpers (unit-testable without Tauri types) ──────────────────
 
 /// Push `bytes` into the per-term output buffer, evicting oldest chunks when the
@@ -366,8 +379,7 @@ async fn run_connection(
 ) -> bool {
     let (mut read_half, mut write_half) = stream.into_split();
 
-    let hello = encode(&Msg::Hello { role: "app".into(), v: PROTOCOL_VERSION }).expect("hello encodes");
-    if frame::write_async(&mut write_half, &hello).await.is_err() {
+    if frame::write_async(&mut write_half, &app_hello_payload()).await.is_err() {
         return false;
     }
 
@@ -1219,6 +1231,21 @@ mod tests {
         // Empty string must not count as an override.
         let result = resolve_daemon_path_pure(Some(""), dir, |p| p == Path::new("/app/Contents/MacOS/tarmacd"));
         assert_eq!(result, Some(PathBuf::from("/app/Contents/MacOS/tarmacd")));
+    }
+
+    // S28: the app's hello actually carries this build's version — the whole
+    // chain (app → daemon slot → hello_ok → `tarmac --version`) starts here, and
+    // every other test in the repo passes with the version omitted.
+    #[test]
+    fn app_hello_reports_this_builds_version() {
+        assert_eq!(
+            decode(&app_hello_payload()).unwrap(),
+            Msg::Hello {
+                role: "app".into(),
+                v: PROTOCOL_VERSION,
+                app_version: Some(env!("CARGO_PKG_VERSION").into()),
+            }
+        );
     }
 
     // ── should_restart tests ─────────────────────────────────────────────────

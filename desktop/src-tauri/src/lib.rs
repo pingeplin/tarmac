@@ -71,6 +71,7 @@ mod tests {
         let msg = Msg::Hello {
             role: "app".into(),
             v: tarmac_protocol::PROTOCOL_VERSION,
+            app_version: Some("0.0.0-test".into()),
         };
         let bytes = encode(&msg).expect("encode");
         assert_eq!(decode(&bytes).expect("decode"), msg);

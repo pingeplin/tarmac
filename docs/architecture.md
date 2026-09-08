@@ -21,8 +21,10 @@ Unix socket:
   doc cards, and turns human input into requests to the daemon.
 
 A third tiny binary, the **`tarmac` CLI**, is the universal doorbell: `tarmac
-open <path>` connects to the daemon, names a doc, and exits. `open` is its only
-verb that talks to the daemon; `tarmac skill` is a purely local second verb that
+open <path>` connects to the daemon, names a doc, and exits. `open` and
+`--version` are its two verbs that talk to the daemon (`--version` only completes
+the handshake, to report the daemon's and the connected app's versions);
+`tarmac skill` is a purely local third verb that
 prints the agent-facing guide (`core/crates/tarmac-cli/src/SKILL.md`, embedded in
 the binary) and copies it verbatim into each supported agent's skills directory.
 
@@ -110,7 +112,8 @@ arrays of ints. Decoders accept keys in any order, accept any integer width, and
 treat a missing optional key as nil.
 
 **Handshake & the single-app slot.** The first frame is
-`Hello { role: "cli" | "app", v }`; the daemon replies `HelloOk { v, daemon_version? }` (version
+`Hello { role: "cli" | "app", v, app_version? }`; the daemon replies
+`HelloOk { v, daemon_version?, daemon_pid?, app_version?, app_connected? }` (version
 1) or `Err` and drops. The daemon serves a **single app at a time**: a newly
 connecting app evicts the previous one (its cancellation token is fired). Every
 daemon→app frame funnels through one bounded mpsc channel drained FIFO by one
@@ -120,14 +123,19 @@ the PTY pump keeps running and filling scrollback even with the UI gone.
 `core/Cargo.toml` and `desktop/src-tauri/Cargo.toml` by `scripts/release.sh` before
 the build — so the app can detect a stale daemon after a brew upgrade and restart
 it. (`make release` is the only path that stamps this version; ad-hoc builds stay
-at the committed dev value.)
+at the committed dev value.) The app stamps its own `CARGO_PKG_VERSION` into
+`Hello.app_version`; the daemon keeps it on the app slot and hands it back to
+`cli` clients as `HelloOk.app_version`, alongside `app_connected` — slot occupancy
+reported separately so a connected app that named no version is never rendered as
+no app. Neither key is sent to an `app` client. This is what `tarmac --version`
+reports.
 
 **The message set** (one tagged `Msg` enum; unknown tags decode to `Unknown`):
 
 | Group | Message | Dir | Purpose |
 | --- | --- | --- | --- |
-| Lifecycle | `Hello {role, v}` | C→D | handshake |
-| | `HelloOk {v}` | D→C | accept |
+| Lifecycle | `Hello {role, v, app_version?}` | C→D | handshake |
+| | `HelloOk {v, daemon_version?, daemon_pid?, app_version?, app_connected?}` | D→C | accept |
 | | `Ack` | D→cli | generic success (reply to `open`) |
 | | `Err {msg}` | D→C | error notice (closes the link on a handshake error) |
 | Docs | `Open {path, term_id?, board_id?}` | cli/app→D | surface a doc |

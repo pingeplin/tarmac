@@ -14,6 +14,10 @@ pub enum Msg {
     Hello {
         role: String,
         v: u32,
+        // 2609.0012 additive key (optional; missing => nil): the client's own
+        // version. Only the app sets it; the CLI never does.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        app_version: Option<String>,
     },
     HelloOk {
         v: u32,
@@ -21,6 +25,16 @@ pub enum Msg {
         daemon_version: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         daemon_pid: Option<u32>,
+        // 2609.0012 additive keys (optional; missing => nil), sent to `cli`
+        // clients only: the connected app's reported version, and whether an app
+        // holds the slot at all. The second key is what keeps "no app" an
+        // observed fact — without it a connected app that reported no version is
+        // indistinguishable from no app, and `tarmac --version` would state an
+        // absence it never observed.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        app_version: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        app_connected: Option<bool>,
     },
     Ack,
     Err {
@@ -520,7 +534,7 @@ mod tests {
     fn conformance_vector_2_hello() {
         assert_vector(
             "83 a1 74 a5 68 65 6c 6c 6f a4 72 6f 6c 65 a3 61 70 70 a1 76 01",
-            Msg::Hello { role: "app".into(), v: 1 },
+            Msg::Hello { role: "app".into(), v: 1, app_version: None },
         );
     }
 
@@ -1210,8 +1224,15 @@ mod tests {
     #[test]
     fn all_message_types_roundtrip() {
         let msgs = vec![
-            Msg::Hello { role: "cli".into(), v: 1 },
-            Msg::HelloOk { v: 1, daemon_version: None, daemon_pid: None },
+            Msg::Hello { role: "cli".into(), v: 1, app_version: None },
+            Msg::Hello { role: "app".into(), v: 1, app_version: Some("9.9.9".into()) },
+            Msg::HelloOk {
+                v: 1,
+                daemon_version: None,
+                daemon_pid: None,
+                app_version: None,
+                app_connected: None,
+            },
             Msg::Ack,
             Msg::Err { msg: "boom".into() },
             Msg::Open { path: "/tmp/a.md".into(), term_id: None, board_id: None },
@@ -1594,7 +1615,13 @@ mod tests {
     // wire; a key-less HelloOk decodes both as None; Some values round-trip.
     #[test]
     fn hello_ok_daemon_version_additive() {
-        let none_keyed = Msg::HelloOk { v: 1, daemon_version: None, daemon_pid: None };
+        let none_keyed = Msg::HelloOk {
+            v: 1,
+            daemon_version: None,
+            daemon_pid: None,
+            app_version: None,
+            app_connected: None,
+        };
         let bytes = encode(&none_keyed).unwrap();
         // The encoded bytes must not contain either optional key string.
         assert!(
@@ -1614,7 +1641,75 @@ mod tests {
         assert_eq!(daemon_version, None);
         assert_eq!(daemon_pid, None);
         // Some values round-trip.
-        let with_vals = Msg::HelloOk { v: 1, daemon_version: Some("0.1.0".into()), daemon_pid: Some(4242) };
+        let with_vals = Msg::HelloOk {
+            v: 1,
+            daemon_version: Some("0.1.0".into()),
+            daemon_pid: Some(4242),
+            app_version: None,
+            app_connected: None,
+        };
         assert_eq!(roundtrip(&with_vals), with_vals);
+    }
+
+    // S1: the app_version key is additive on `hello` — a None-valued field must
+    // leave conformance vector 2's *encoded bytes* untouched (map size included),
+    // not merely omit the key string. `assert_vector` only decodes, so byte
+    // equality is asserted here or nowhere. Deliberately stricter than
+    // protocol.md's "byte-exact output is not required": the claim being pinned
+    // is additivity, not a new wire requirement.
+    #[test]
+    fn hello_app_version_additive() {
+        let vector_2 = unhex("83 a1 74 a5 68 65 6c 6c 6f a4 72 6f 6c 65 a3 61 70 70 a1 76 01");
+        let none_keyed = Msg::Hello { role: "app".into(), v: 1, app_version: None };
+        assert_eq!(encode(&none_keyed).unwrap(), vector_2);
+        assert_eq!(decode(&vector_2).unwrap(), none_keyed);
+        // S2: a value round-trips on `hello`.
+        let with_val = Msg::Hello { role: "app".into(), v: 1, app_version: Some("9.9.9".into()) };
+        assert_eq!(roundtrip(&with_val), with_val);
+    }
+
+    // S2/S3: hello_ok's app_version + app_connected are additive — None omits
+    // both keys, a key-less frame decodes both to None, and values round-trip.
+    #[test]
+    fn hello_ok_app_keys_additive() {
+        let none_keyed = Msg::HelloOk {
+            v: 1,
+            daemon_version: Some("0.1.0".into()),
+            daemon_pid: Some(1),
+            app_version: None,
+            app_connected: None,
+        };
+        let bytes = encode(&none_keyed).unwrap();
+        assert!(
+            !bytes.windows(11).any(|w| w == b"app_version"),
+            "None must omit the app_version key on the wire"
+        );
+        assert!(
+            !bytes.windows(13).any(|w| w == b"app_connected"),
+            "None must omit the app_connected key on the wire"
+        );
+        let Msg::HelloOk { app_version, app_connected, .. } = decode(&bytes).unwrap() else {
+            panic!("expected hello_ok")
+        };
+        assert_eq!(app_version, None);
+        assert_eq!(app_connected, None);
+
+        let with_vals = Msg::HelloOk {
+            v: 1,
+            daemon_version: Some("0.1.0".into()),
+            daemon_pid: Some(4242),
+            app_version: Some("8.8.8".into()),
+            app_connected: Some(true),
+        };
+        assert_eq!(roundtrip(&with_vals), with_vals);
+        // app_connected carries false distinctly from absent.
+        let absent_app = Msg::HelloOk {
+            v: 1,
+            daemon_version: Some("0.1.0".into()),
+            daemon_pid: Some(4242),
+            app_version: None,
+            app_connected: Some(false),
+        };
+        assert_eq!(roundtrip(&absent_app), absent_app);
     }
 }

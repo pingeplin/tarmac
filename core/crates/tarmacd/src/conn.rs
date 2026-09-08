@@ -28,18 +28,29 @@ async fn write_msg(
 
 /// The daemon's handshake reply, stamping this build's version and OS pid so the
 /// app can detect a post-upgrade mismatch and SIGTERM the running daemon by pid.
-fn hello_ok() -> Msg {
+///
+/// `app` describes the app slot for `tarmac --version` (spec 2609.0012): `None`
+/// makes no claim, `Some((connected, version))` reports what the daemon actually
+/// observes. Only `cli` clients get a claim — telling an app that no app is
+/// connected would be false while a predecessor still holds the slot.
+fn hello_ok(app: Option<(bool, Option<String>)>) -> Msg {
+    let (app_connected, app_version) = match app {
+        Some((connected, version)) => (Some(connected), version),
+        None => (None, None),
+    };
     Msg::HelloOk {
         v: PROTOCOL_VERSION,
         daemon_version: Some(env!("CARGO_PKG_VERSION").into()),
         daemon_pid: Some(std::process::id()),
+        app_version,
+        app_connected,
     }
 }
 
 async fn handshake(daemon: Arc<Daemon>, mut stream: UnixStream) -> anyhow::Result<()> {
     let first = frame::read_async(&mut stream).await?;
-    let (role, v) = match proto::decode(&first) {
-        Ok(Msg::Hello { role, v }) => (role, v),
+    let (role, v, app_version) = match proto::decode(&first) {
+        Ok(Msg::Hello { role, v, app_version }) => (role, v, app_version),
         Ok(other) => {
             write_msg(&mut stream, &Msg::Err { msg: format!("expected hello, got {other:?}") })
                 .await?;
@@ -57,12 +68,13 @@ async fn handshake(daemon: Arc<Daemon>, mut stream: UnixStream) -> anyhow::Resul
     }
     match role.as_str() {
         "cli" => {
-            write_msg(&mut stream, &hello_ok()).await?;
+            let slot = daemon.app_slot_version().await;
+            write_msg(&mut stream, &hello_ok(Some(slot))).await?;
             cli_session(daemon, stream).await
         }
         "app" => {
-            write_msg(&mut stream, &hello_ok()).await?;
-            app_session(daemon, stream).await
+            write_msg(&mut stream, &hello_ok(None)).await?;
+            app_session(daemon, stream, app_version).await
         }
         other => {
             write_msg(&mut stream, &Msg::Err { msg: format!("unsupported role: {other}") })
@@ -167,10 +179,14 @@ async fn send_board(
     }
 }
 
-async fn app_session(daemon: Arc<Daemon>, stream: UnixStream) -> anyhow::Result<()> {
+async fn app_session(
+    daemon: Arc<Daemon>,
+    stream: UnixStream,
+    app_version: Option<String>,
+) -> anyhow::Result<()> {
     let (mut rd, mut wr) = stream.into_split();
     let (tx, mut rx) = mpsc::channel::<Msg>(256);
-    let (generation, cancel) = daemon.install_app(tx.clone()).await;
+    let (generation, cancel) = daemon.install_app(tx.clone(), app_version).await;
     info!("app connected (generation {generation})");
 
     let writer_cancel = cancel.clone();
