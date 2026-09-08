@@ -27,8 +27,9 @@ body,
   flex-direction: column;
 }
 
-/* The board area above the status bar; the positioned ancestor for all wayfinding
-   + feedback overlays so their insets are measured from the board, not the window. */
+/* The board area above the status bar; the positioned ancestor for the wayfinding
+   + feedback overlays so their insets are measured from the board, not the window.
+   (The exception is the under-card half of the offscreen hints — see .board below.) */
 .board-stack {
   position: relative;
   flex: 1 1 auto;
@@ -51,6 +52,13 @@ body,
      a native selection (反白). Card bodies opt back in below. */
   user-select: none;
   -webkit-user-select: none;
+}
+
+/* The under-card offscreen-hint overlay Board.tsx mounts inside .board (the
+   why is there): above the provenance edges, below every card. The sibling
+   overlay in .board-stack keeps its z-index 40 and the pills that found room. */
+.board > .offscreen-hints {
+  z-index: 0;
 }
 
 /* Screen-space card layer: no transform, so card wrappers translate themselves

@@ -21,7 +21,8 @@ export interface OffscreenHint {
   z: number;
 }
 
-/** A laid-out pill: which edge, its arrow glyph, and the overlay-local top-left. */
+/** A laid-out pill: which edge, its arrow glyph, the overlay-local top-left, and
+ *  whether it ended up on top of a card. */
 export interface PlacedPill {
   cardId: string;
   signal: Signal;
@@ -30,6 +31,11 @@ export interface PlacedPill {
   arrow: string;
   left: number;
   top: number;
+  /** The placed pill still overlaps a card: the edge band was saturated and the
+   * gap search had to fall back. The view paints these UNDER the cards (#126).
+   * Measured with the same `pillSize` the layout uses, which under-reports the
+   * rendered height by ~1px, so a hairline overlap can read as false. */
+  occluded: boolean;
 }
 
 /** Bell always outranks live; within a class the most-recently-fronted (higher z)
@@ -124,14 +130,21 @@ export function stackPills(hints: OffscreenHint[], viewRect: Rect, opts: StackOp
       const desired = clamp(p.along - len / 2, posLo, posHi);
       const pos = resolveAlongPos(desired, len, obstacleIntervals, siblingFloor, posLo, posHi);
       lastEnd = pos + len;
+      const left = Math.round(vertical ? crossPos : pos);
+      const top = Math.round(vertical ? pos : crossPos);
+      // Measured on the ROUNDED rect actually painted, and against the raw card
+      // rects rather than the stackGap-padded intervals: `occluded` means the
+      // pill covers card content, not that it sits close to a card.
+      const rect: Rect = { x: left, y: top, w: size.w, h: size.h };
       out.push({
         cardId: h.cardId,
         signal: h.signal,
         label: h.label,
         edge,
         arrow: arrow(edge),
-        left: Math.round(vertical ? crossPos : pos),
-        top: Math.round(vertical ? pos : crossPos),
+        left,
+        top,
+        occluded: obstacles.some((o) => rectsIntersect(rect, o)),
       });
     }
   }

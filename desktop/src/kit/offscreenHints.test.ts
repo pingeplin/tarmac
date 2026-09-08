@@ -192,4 +192,89 @@ describe("stackPills", () => {
     const bRect = { x: b.left, y: b.top, w: size.w, h: size.h };
     expect(rectsIntersect(bRect, obstacle)).toBe(false);
   });
+
+  // `occluded` is what the view splits on: an occluded pill is painted under the
+  // cards, the rest keep the over-card overlay (#126). The flag must therefore
+  // agree with the pill's own placed rect, not with which branch produced it.
+  describe("occluded", () => {
+    const rectOf = (p: { left: number; top: number }): Rect => ({ x: p.left, y: p.top, w: size.w, h: size.h });
+
+    it("is false when there are no obstacles at all", () => {
+      const [p] = stackPills([hint("r", { x: 2000, y: 400 }, "bell", 0)], view, opts);
+      expect(p!.occluded).toBe(false);
+    });
+
+    it("is false for a pill nudged into a free gap", () => {
+      const obstacleA: Rect = { x: 900, y: 180, w: 100, h: 40 };
+      const obstacleB: Rect = { x: 900, y: 260, w: 100, h: 40 };
+      const [p] = stackPills([hint("r", { x: 2000, y: 200 }, "bell", 0)], view, {
+        ...opts,
+        obstacles: [obstacleA, obstacleB],
+      });
+      expect(p!.occluded).toBe(false);
+    });
+
+    it("is true when the band is saturated and the pill lands on a card", () => {
+      const saturating: Rect = { x: 900, y: -1000, w: 100, h: 3000 };
+      const [p] = stackPills([hint("r", { x: 2000, y: 400 }, "bell", 0)], view, {
+        ...opts,
+        obstacles: [saturating],
+      });
+      expect(rectsIntersect(rectOf(p!), saturating)).toBe(true);
+      expect(p!.occluded).toBe(true);
+    });
+
+    it("agrees with the placed rect for every pill of a saturated multi-pill edge", () => {
+      const obstacle: Rect = { x: 900, y: 300, w: 100, h: 460 };
+      const pills = stackPills(
+        [
+          hint("a", { x: 2000, y: 400 }, "bell", 0),
+          hint("b", { x: 2000, y: 412 }, "bell", 0),
+          hint("c", { x: 2000, y: 424 }, "bell", 0),
+          hint("d", { x: 2000, y: 436 }, "bell", 0),
+        ],
+        view,
+        { ...opts, obstacles: [obstacle] },
+      );
+      expect(pills.length).toBe(4);
+      // Some of these clear the card and some cannot; the flag has to track each
+      // pill individually, so a blanket true/false would fail here.
+      for (const p of pills) expect(p.occluded).toBe(rectsIntersect(rectOf(p), obstacle));
+      expect(pills.some((p) => p.occluded)).toBe(true);
+      expect(pills.some((p) => !p.occluded)).toBe(true);
+    });
+
+    it("is false when the gap search falls back but the pill still lands clear", () => {
+      // The case that separates the three candidate definitions. The raw gap
+      // between A and B is 36px — wider than the 24px pill, narrower than the
+      // 24 + 2*8 the padded intervals demand — so resolveAlongPos finds no
+      // qualifying gap and falls back to the clamped desired position, which
+      // happens to sit 6px clear of both cards. A flag derived from "the search
+      // fell back", or from the stackGap-padded intervals, would call this
+      // occluded and demote a pill that covers nothing.
+      const a: Rect = { x: 900, y: 0, w: 100, h: 400 };
+      const b: Rect = { x: 900, y: 436, w: 100, h: 364 };
+      const [p] = stackPills([hint("r", { x: 2000, y: 418 }, "bell", 0)], view, {
+        ...opts,
+        obstacles: [a, b],
+      });
+      expect(p!.left).toBe(910);
+      expect(p!.top).toBe(406); // the fallback position, not a gap-search result
+      expect(rectsIntersect(rectOf(p!), a)).toBe(false);
+      expect(rectsIntersect(rectOf(p!), b)).toBe(false);
+      expect(p!.occluded).toBe(false);
+    });
+
+    it("is true when the pill overlaps ANY obstacle, not only when it overlaps all of them", () => {
+      const near: Rect = { x: 900, y: -1000, w: 100, h: 3000 };
+      const far: Rect = { x: 0, y: 0, w: 60, h: 60 };
+      const [p] = stackPills([hint("r", { x: 2000, y: 400 }, "bell", 0)], view, {
+        ...opts,
+        obstacles: [near, far],
+      });
+      expect(rectsIntersect(rectOf(p!), near)).toBe(true);
+      expect(rectsIntersect(rectOf(p!), far)).toBe(false);
+      expect(p!.occluded).toBe(true);
+    });
+  });
 });

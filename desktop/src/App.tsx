@@ -1601,9 +1601,16 @@ export default function App() {
 
   const activeCards = activeBoard()?.cards ?? [];
 
-  const offscreen = useMemo<{ pills: PlacedPill[]; flyTarget: string | null }>(() => {
+  // pillsOver keep the .board-stack overlay above every card; pillsUnder are the
+  // ones stackPills could not place clear of a card and go into the board itself,
+  // under .card-layer (#126).
+  const offscreen = useMemo<{
+    pillsOver: PlacedPill[];
+    pillsUnder: PlacedPill[];
+    flyTarget: string | null;
+  }>(() => {
     const engine = engineRef.current;
-    if (!engine) return { pills: [], flyTarget: null };
+    if (!engine) return { pillsOver: [], pillsUnder: [], flyTarget: null };
     const wr = engine.viewportWorldRect;
     const size = engine.viewportSize;
     const hints: OffscreenHint[] = [];
@@ -1629,7 +1636,11 @@ export default function App() {
       pillSize: measurePill,
       obstacles,
     });
-    return { pills, flyTarget: selectFlyTarget(hints) };
+    return {
+      pillsOver: pills.filter((p) => !p.occluded),
+      pillsUnder: pills.filter((p) => p.occluded),
+      flyTarget: selectFlyTarget(hints),
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCards, viewport]);
   flyTargetRef.current = offscreen.flyTarget;
@@ -1712,6 +1723,7 @@ export default function App() {
               onCardBorrow={setBorrowedCardId}
               onEscapeHome={escapeHome}
               onBackgroundPointerDown={() => { if (!hidden) setSelectedId(null); }}
+              hintPillsUnder={hidden ? [] : offscreen.pillsUnder}
             />
           );
         })}
@@ -1722,7 +1734,7 @@ export default function App() {
           onFit={() => engineRef.current?.fitToCards()}
         />
         <MinimapOverlay items={minimapItems} viewportWorldRect={viewportWorldRect} onJump={onMinimapJump} />
-        <OffscreenHints pills={offscreen.pills} />
+        <OffscreenHints pills={offscreen.pillsOver} />
         <ToastOverlay toasts={toastState.toasts} onChipClick={onToastChip} />
         {/* ⌘K board switcher — rendered only when open (the veil + panel are portaled
             inside the board-stack so the z-index ordering is local to it). */}
