@@ -87,18 +87,49 @@ two sizes.
 
 ## Results
 
-Fill in `Result` by running the steps above against `make run`. The `Pre-check`
-column is what the offline harness in `.dev/term-clip-2609/` already showed for
-the shipped code — useful context, **not** a substitute: the harness reproduces
-the card's DOM and rules, not the app.
+Run by **EP Lin, 2026-09-08**, against `make run` on the `fix/130-term-grid-clip`
+worktree (dev app, Retina / dpr 2), after the top-padding tuning (`b8e0ae7`).
+
+Reported verbatim: *"visual 看起來都沒問題，功能也都正常"*, plus the top gap being
+conspicuous — which was measured, tuned (8px → 2px) and re-checked. That covers the
+scenarios below marked **reported pass**: they were observed in ordinary use, not
+stepped through criterion by criterion. The four marked **not run** need a specific
+action nobody has taken yet; none of them is visible by just looking at a card.
+
+The `Pre-check` column is what the offline harness in `.dev/term-clip-2609/` showed
+for the shipped code — context, not evidence about the app.
 
 | Scenario | Pre-check (harness) | Result | Notes |
 |---|---|---|---|
-| Q1 | 0 clipping in 73 card heights × zoom 1/1.5/2/3 | | |
-| Q2 | gutter exactly 16 × zoom, 0.0px variance across all heights | | |
-| Q3 | — (needs a real drag) | | |
-| Q4 | replay of mount → rs 1.5→2→2.5→3→2→1, running the layout effect AND the ResizeObserver at each step against the shipped kit rules: grid unchanged, 14/14 cases, both dprs (`harness/clamp-run.mjs`). Not a substitute for the app: the replay drives the rules directly, not React's own effect ordering | | |
-| Q5 | — (needs a real pointer) | | |
-| Q6 | — (needs a real IME) | | |
-| Q7 | — (needs real scrolling) | | |
-| Q8 | the *rule* rejects a 0×0 box (`termGrid.test.ts` S10). The RO's own 0×0 early-return and the rest grid surviving a hide/show round trip are **not** covered — this one needs the app | | |
+| Q1 last row survives a zoom sweep | 0 clipping, 73 card heights × zoom 1/1.5/2/3 | **reported pass** | The symptom under investigation; would have been the first thing seen. Not stepped 100→300→100 with a stopwatch |
+| Q2 gutter stable below the last row | gutter exactly 16 × zoom, 0.0px variance | **reported pass** | The *top* gap was the thing flagged, and it was the declared padding, not the anchor. Bottom behaved |
+| Q3 dragging the height leaves no half row | — (needs a real drag) | **reported pass** | Cards were resized in normal use; not a deliberate slow sweep through a full cell |
+| Q4 zoom does not reflow the running program | replay of mount → rs 1.5→2→2.5→3→2→1 with both observers: grid unchanged, 14/14, both dprs (`harness/clamp-run.mjs`) | **not run** | Needs the PTY's own report — see below. "Looks fine" cannot see a SIGWINCH |
+| Q5 selection lands on the right cells at zoom ≠ 1 | — (needs a real pointer) | **reported pass** | Covered by "功能也都正常" if text was selected while zoomed; not separately confirmed |
+| Q6 IME candidate window tracks the cursor | — (needs a real IME) | **not run** | Needs CJK typed *into a dev-app card*. This session's terminal is the installed build, so it is not evidence |
+| Q7 scrollback and the scrollbar | — (needs real scrolling) | **not run** | `.xterm` no longer fills the host, so the bar now spans the painted grid — the one thing this change could plausibly have broken without being obvious |
+| Q8 hidden board must not resize the PTY | the *rule* rejects a 0×0 box (`termGrid.test.ts` S10); the RO's own early-return and the rest grid surviving hide/show are **not** covered | **not run** | Needs a board switch with a program running |
+
+### The four outstanding checks
+
+**Q4 + Q8 in one go.** Paste this into a terminal card in the dev app — it prints a
+line only when the PTY is actually resized, which is the observable OS fact both
+scenarios are really about:
+
+```sh
+trap 'echo "$(date +%T) SIGWINCH → $(stty size)"' WINCH; echo "start → $(stty size)"; while sleep 1; do :; done
+```
+
+- **Q4:** zoom 100% → 300% → 100%. **Pass** = no `SIGWINCH` lines at all (on a 1×
+  external display a shrink and its matching restore are allowed; a *grow* above the
+  starting size is a fail).
+- **Q8:** switch to another board, wait, switch back. **Pass** = still no lines, and
+  `stty size` unchanged.
+- Ctrl-C to stop.
+
+**Q7:** scroll that same card's scrollback with the wheel, then drag the scrollbar.
+Pass = scrolls, bar is grabbable and tracks position, no horizontal bar, and the bar
+does not overhang the text at either end.
+
+**Q6:** switch to a CJK IME and type a few characters into a dev-app card at 100% and
+again at 200%. Pass = the candidate window sits at the cursor, not at the card corner.
