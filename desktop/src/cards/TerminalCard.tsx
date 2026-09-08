@@ -1,8 +1,9 @@
 // A live terminal card: hosts an xterm.js instance, streams PTY output in over a
 // binary Channel, sends keystrokes/resizes out via invoke. The board's CSS zoom
 // transform scales the whole card as a bitmap (matching the Swift bitmap-scale of
-// SwiftTerm layers); xterm is only ever re-measured by `fit()` on a real layout
-// resize — driven by a ResizeObserver, which does NOT fire on CSS transforms.
+// SwiftTerm layers); xterm is re-measured by a ResizeObserver on the host, which
+// fires both when the card is resized and when a rasterScale commit resizes the
+// raster wrapper. What the grid does about each is decided in kit/termGrid.ts.
 // Selection coord correction is via a getBoundingClientRect() override on host.
 //
 // The xterm host node is created ONCE imperatively (useState lazy init) and
@@ -13,22 +14,25 @@
 // wrapper expands the slot to rasterScale× the card size and applies a
 // counter-scale CSS transform to bring it back to visual card size.
 // The term-host fills the slot (so it too is rasterScale× bigger in layout).
-// term.options.fontSize is scaled by the same factor, which is what makes
-// FitAddon.fit() recompute the SAME cols×rows — only pixel density changes.
+// term.options.fontSize is scaled by the same factor, so the grid comes out
+// nearly unchanged — but not exactly: the cell size is rounded to whole device
+// pixels, so it is NOT a clean multiple of the 1× one (21 → 31 → 43 → 53 → 63).
+// Re-measuring on a zoom therefore moved the PTY grid under the running program,
+// which is why the rasterScale path clamps against the rest grid instead of
+// re-proposing freely (kit/termGrid.ts, spec 2609.0011).
 // The host padding is scaled too — declaratively: the wrapper sets `--rs` and
-// .term-host in theme/app-only.css multiplies its padding by it. That buys the
-// visual GUTTER alone: the global `* { box-sizing: border-box }`
-// (theme/tokens.css) means fit() already measures a host width that includes the
-// padding, so the padding has no cols×rows effect — left unscaled it would only
-// shrink the gutter to 1/rs.
+// .term-host in theme/app-only.css multiplies its padding by it. That padding is
+// real estate the grid may not use, and proposeGrid() subtracts it; the addon
+// this replaced did not, which is what clipped the last row.
 // The xterm canvas backing is therefore rasterScale×DPR pixels per logical px.
-// The existing BCR override for selection coords remains correct: because padding
-// and font scale together, the BCR of .xterm and the cols×rows ratio are
-// identical to the unscaled case (proven in tauri-card-crispness-fix.md math).
+// The existing BCR override for selection coords remains correct: padding and
+// font scale together, so .xterm's BCR scales with everything else and the
+// override's zoom/rs divisor still holds (tauri-card-crispness-fix.md math).
+// It does NOT depend on the grid being invariant across the step — it is not
+// (kit/rasterScale.ts) — only on the geometry scaling uniformly.
 
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -40,6 +44,14 @@ import {
   onWebglUnavailable,
 } from "../kit/termRenderer";
 import { CardShell } from "./CardShell";
+import {
+  cardBox,
+  nextGrid,
+  proposeGrid,
+  scrollbarReserve,
+  type GridBox,
+  type RestGrid,
+} from "../kit/termGrid";
 import { termInnerBox } from "../kit/termZoom";
 import { attachTermOutput, detachTermOutput, termInput, termResize } from "../ipc/daemon";
 import { openExternal } from "../ipc/shell";
@@ -71,6 +83,27 @@ interface TerminalCardProps {
   onUnregister?: (termId: string) => void;
 }
 
+/** Read the card's live box into the numbers the grid rules work on, or null
+ *  while it cannot be measured (renderer not up yet, or the board is hidden
+ *  behind display:none). */
+function measureBox(host: HTMLDivElement, term: Terminal): GridBox | null {
+  const cell = term.dimensions?.css.cell;
+  if (!cell) return null;
+  const pad = (style: CSSStyleDeclaration | null, side: string) =>
+    style ? parseFloat(style.getPropertyValue(`padding-${side}`)) : 0;
+  const h = getComputedStyle(host);
+  const x = term.element ? getComputedStyle(term.element) : null;
+  return {
+    boxH: host.clientHeight,
+    boxW: host.clientWidth,
+    padV: pad(h, "top") + pad(h, "bottom") + pad(x, "top") + pad(x, "bottom"),
+    padH: pad(h, "left") + pad(h, "right") + pad(x, "left") + pad(x, "right"),
+    scrollbar: scrollbarReserve(term.options),
+    cellW: cell.width,
+    cellH: cell.height,
+  };
+}
+
 export function TerminalCard(props: TerminalCardProps) {
   const { model, onSpawn, onTitle, onRegister, onUnregister } = props;
 
@@ -87,7 +120,10 @@ export function TerminalCard(props: TerminalCardProps) {
   const slotRef = useRef<HTMLDivElement>(null);
 
   const termRef = useRef<Terminal | null>(null);
-  const fitRef = useRef<FitAddon | null>(null);
+  // The grid this card settled on at its current SIZE, plus the size itself. A
+  // zoom clamps against it but never replaces it, so zooming back out restores
+  // what zooming in gave up (kit/termGrid.ts nextGrid).
+  const restRef = useRef<RestGrid | null>(null);
   const webglRef = useRef<WebglAddon | null>(null);
   // Read inside the (termId-scoped) onData closure so it sees the live bell state.
   const bellRef = useRef(model.bell);
@@ -104,6 +140,24 @@ export function TerminalCard(props: TerminalCardProps) {
   const rsRef = useRef(1);
   rsRef.current = props.rasterScale;
 
+  // Every re-measure goes through here, whatever triggered it: the card was
+  // resized, or the board's zoom settled on a new rasterScale. Which one it was
+  // is decided by the card box (the measurement with the rasterScale divided
+  // out) — NOT by which observer fired, because a rasterScale commit resizes
+  // .term-host for real (288 → 432 px at rs 1.5) and the ResizeObserver fires
+  // for zooms as well as for resizes.
+  const applyGrid = (term: Terminal) => {
+    const box = measureBox(host, term);
+    if (!box) return;
+    const proposed = proposeGrid(box);
+    if (!proposed) return;
+    const { grid, rest } = nextGrid(proposed, restRef.current, cardBox(box, rsRef.current));
+    restRef.current = rest;
+    term.resize(grid.cols, grid.rows);
+  };
+  const applyGridRef = useRef(applyGrid);
+  applyGridRef.current = applyGrid;
+
   useEffect(() => {
     // Append the host into the in-card slot on initial mount.
     slotRef.current?.appendChild(host);
@@ -112,9 +166,9 @@ export function TerminalCard(props: TerminalCardProps) {
 
     // React runs layout effects before passive effects, so the rasterScale effect
     // below cannot seed a terminal that does not exist yet. Read the settled scale
-    // here and apply it to fontSize before the fit() whose cols×rows onSpawn ships
-    // to the PTY. (The padding needs no read: it inherits --rs from the wrapper,
-    // which React already committed in the initial render.)
+    // here and apply it to fontSize before the measurement whose cols×rows onSpawn
+    // ships to the PTY. (The padding needs no read: it inherits --rs from the
+    // wrapper, which React already committed in the initial render.)
     const rs = rsRef.current;
 
     const term = new Terminal({
@@ -127,9 +181,6 @@ export function TerminalCard(props: TerminalCardProps) {
       macOptionIsMeta: true,
       vtExtensions: { kittyKeyboard: true },
     });
-    const fit = new FitAddon();
-    fitRef.current = fit;
-    term.loadAddon(fit);
     const unicode = new Unicode11Addon();
     term.loadAddon(unicode);
     term.loadAddon(new WebLinksAddon((_event, uri) => openExternal(uri).catch(() => {})));
@@ -215,7 +266,8 @@ export function TerminalCard(props: TerminalCardProps) {
     // Register focus handle so App can focus this terminal (⌥Tab cycle, restore).
     onRegister?.(model.termId, term);
 
-    fit.fit();
+    // The grid the card's content box holds, which also becomes the rest grid.
+    applyGridRef.current(term);
     const cols = Math.max(2, term.cols);
     const rows = Math.max(2, term.rows);
 
@@ -303,15 +355,16 @@ export function TerminalCard(props: TerminalCardProps) {
     const offResize = term.onResize(({ cols, rows }) => termResize(model.termId, cols, rows));
     const offTitle = term.onTitleChange((title) => onTitle(title));
 
-    // Re-fit only on REAL layout size changes (card resize) — ResizeObserver does
-    // not fire on CSS transforms, so zoom never triggers a re-measure. Guard the
-    // 0×0 box: when this card's board is backgrounded (display:none, P5 warm-board
-    // model) the observer fires with an empty contentRect, and FitAddon would
-    // wrongly propose 2×1 for an already-measured terminal (cell metrics stay
-    // cached > 0) — shrinking the running program's PTY. Skip until reveal (size>0).
+    // Fires for BOTH card resizes and rasterScale commits (the latter really do
+    // resize the host — the wrapper goes rs×100% and the host is inset:0 of it).
+    // applyGrid tells them apart; this callback only has to skip the 0×0
+    // contentRect a backgrounded board reports (display:none, P5 warm-board
+    // model), which proposeGrid would reject anyway — shrinking a live program's
+    // PTY to 2×1 is the failure being guarded against, twice.
     const ro = new ResizeObserver((entries) => {
       const r = entries[0]?.contentRect;
-      if (r && (r.width > 0 || r.height > 0)) fit.fit();
+      if (!r || (r.width === 0 && r.height === 0)) return;
+      applyGridRef.current(term);
     });
     ro.observe(host);
 
@@ -336,7 +389,7 @@ export function TerminalCard(props: TerminalCardProps) {
       webglRef.current = null;
       term.dispose();
       termRef.current = null;
-      fitRef.current = null;
+      restRef.current = null;
       delete (host as any).__xtermTerm;
       host.remove();
     };
@@ -344,26 +397,26 @@ export function TerminalCard(props: TerminalCardProps) {
   }, [model.termId]);
 
   // rasterScale oversampling: on settle, scale the host's fontSize by the effective
-  // scale so the xterm canvas backing is rasterScale×DPR pixels and the terminal
-  // remains cols×rows-identical. The padding scales in the same commit via --rs
-  // (see comment block at top of file).
+  // scale so the xterm canvas backing is rasterScale×DPR pixels. The padding
+  // scales in the same commit via --rs (see comment block at top of file).
+  //
+  // The grid ends up CLAMPED rather than re-proposed, because applyGrid sees the
+  // same card box at a new rasterScale (kit/termGrid.ts nextGrid).
   //
   // MUST be useLayoutEffect: the same rasterScale commit also resizes the wrapper
   // (rs×100% width), which the host's ResizeObserver observes. Setting fontSize
-  // SYNCHRONOUSLY at commit — before the RO fires — means the RO's fit()
-  // sees the already-scaled cell metrics and is a no-op, so the cols×rows stay
-  // fixed. A passive useEffect would let the RO fit() the enlarged host against
-  // the OLD base fontSize first, blowing up to ~rs× columns (a spurious PTY
-  // resize + one-frame grid blow-up) before this effect corrected it back.
+  // SYNCHRONOUSLY at commit — before the RO fires — means the RO measures the new
+  // box against the new cell. A passive useEffect would let it measure the new box
+  // against the OLD cell first: on the way DOWN that under-proposes, and since the
+  // clamp takes minimums it would apply the shrink and keep it until the next card
+  // resize. (On the way up the mismatch over-proposes, which the clamp absorbs.)
+  // The RO firing after this effect is harmless: same box, same card, same
+  // decision, and term.resize on an unchanged grid is a no-op.
   useLayoutEffect(() => {
     const term = termRef.current;
-    const fit = fitRef.current;
-    if (!term || !fit) return;
-    const rs = props.rasterScale;
-    term.options.fontSize = termFontSize * rs;
-    // fit() re-measures the (now rs×) host with the (now rs×) cell size and
-    // arrives at the same cols×rows; the canvas is sized at rs×DPR resolution.
-    fit.fit();
+    if (!term) return;
+    term.options.fontSize = termFontSize * props.rasterScale;
+    applyGridRef.current(term);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.rasterScale]);
 

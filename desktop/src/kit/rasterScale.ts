@@ -8,9 +8,12 @@
 //     rasterize at device resolution. Every dimension scaled by the same factor
 //     so wrap points are provably identical (no reflow).
 //   Terminal cards (TerminalCard): oversample — resize xterm into a rasterScale×
-//     larger host with rasterScale× larger fontSize; the FitAddon recomputes the
-//     same cols×rows (ratio unchanged); a counter-scale CSS transform brings the
-//     card back to its original visual footprint. Canvas backing is rasterScale×DPR.
+//     larger host with rasterScale× larger fontSize; a counter-scale CSS transform
+//     brings the card back to its original visual footprint. Canvas backing is
+//     rasterScale×DPR. The grid is NOT invariant across this: the oversampled cell
+//     is rounded to whole device pixels, so it is not a clean multiple of the 1×
+//     one (21 → 31 → 43 → 53 → 63) and a free re-measure moves cols×rows. That is
+//     why the rasterScale path clamps against the rest grid (kit/termGrid.ts).
 
 /** Quantization step: snap zoom to multiples of this to bound re-raster churn. */
 export const RASTER_SCALE_STEP = 0.5;

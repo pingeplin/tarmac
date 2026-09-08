@@ -80,11 +80,28 @@ body,
   inset: 0;
   /* --rs is the settled rasterScale, set on the ancestor .term-raster-wrapper by
      cards/TerminalCard.tsx. */
-  padding: calc(8px * var(--rs, 1)) calc(10px * var(--rs, 1)) calc(16px * var(--rs, 1));
+  /* Top is deliberately tight: the sub-row remainder (0–20px at rs 1) is
+     anchored above the first row, so the SEEN top gap is this plus that
+     remainder. 2px keeps the effective gap (2–22, median 13) under the 16 below
+     it on most card heights — the asymmetry #36 asked for, now that the
+     remainder lives up here. */
+  padding: calc(2px * var(--rs, 1)) calc(10px * var(--rs, 1)) calc(16px * var(--rs, 1));
   background: var(--term-bg);
+  /* Bottom-anchored: the grid is a whole number of rows, so the content box
+     almost never divides evenly and a sub-row remainder is left over. Anchoring
+     the grid to the bottom puts that remainder ABOVE the first row — where the
+     scrollback is already scrolling out of view — instead of under the last one,
+     where it read as a gutter that jumped around with the card size (spec
+     2609.0011). The gutter below the last row is then exactly the 16·rs declared
+     above, at every rasterScale. */
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
 }
+/* Natural height (rows × cell height), NOT 100%: stretching the painted element
+   over the remainder would put the gap back below the last row. */
 .term-host .xterm {
-  height: 100%;
+  height: auto;
 }
 
 /* --- provenance edges (SVG overlay over the world) --- */

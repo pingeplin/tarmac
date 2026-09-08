@@ -11,8 +11,16 @@
 import type { Handle } from "./resize";
 
 /** Card-header height in WORLD px. Mirrors the 30px in card.css; the chrome
- *  renders it at 30px×zoom real px, so the body owns card-h minus this. */
+ *  renders it at 30px×zoom real px. The body owns card-h minus this AND minus
+ *  both card borders — see CARD_BORDER_W_PX. */
 export const CARD_HEADER_H_PX = 30;
+
+/** Card border width in WORLD px, mirroring `.card { border-width: calc(1px *
+ *  var(--zoom)) }` in card.css. `.card` is border-box, so `.card-body` is inset
+ *  by one of these on every side: a box that subtracts only the header overhangs
+ *  the body by 2·zoom px and gets clipped (spec 2609.0011). `HtmlCard` still has
+ *  that overhang — it clips no text and is left for its own issue. */
+export const CARD_BORDER_W_PX = 1;
 
 export interface CardChromeState {
   dead: boolean;

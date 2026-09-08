@@ -43,7 +43,6 @@ export default defineConfig(async () => ({
           react: ["react", "react-dom"],
           xterm: [
             "@xterm/xterm",
-            "@xterm/addon-fit",
             "@xterm/addon-unicode11",
             "@xterm/addon-web-links",
           ],
