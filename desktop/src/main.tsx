@@ -1,3 +1,6 @@
+// First import on purpose: the dev-only rAF probe must patch the schedulers
+// before any other module body runs (#105).
+import "./devRafProbe";
 import ReactDOM from "react-dom/client";
 import "@xterm/xterm/css/xterm.css";
 import "./theme.css";
