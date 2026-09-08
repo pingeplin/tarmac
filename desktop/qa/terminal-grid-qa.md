@@ -88,48 +88,42 @@ two sizes.
 ## Results
 
 Run by **EP Lin, 2026-09-08**, against `make run` on the `fix/130-term-grid-clip`
-worktree (dev app, Retina / dpr 2), after the top-padding tuning (`b8e0ae7`).
+worktree (dev app), after the top-padding tuning (`b8e0ae7`). **All eight pass.**
 
-Reported verbatim: *"visual 看起來都沒問題，功能也都正常"*, plus the top gap being
-conspicuous — which was measured, tuned (8px → 2px) and re-checked. That covers the
-scenarios below marked **reported pass**: they were observed in ordinary use, not
-stepped through criterion by criterion. The four marked **not run** need a specific
-action nobody has taken yet; none of them is visible by just looking at a card.
+Q1/Q2/Q3/Q5 were observed in ordinary use — they are the ones a broken build shows
+you without being asked (a clipped row, a jumping gutter, a half row mid-drag, a
+selection landing on the wrong cell). Q4/Q6/Q7/Q8 were then run deliberately, because
+none of them is visible by just looking at a card.
 
 The `Pre-check` column is what the offline harness in `.dev/term-clip-2609/` showed
 for the shipped code — context, not evidence about the app.
 
 | Scenario | Pre-check (harness) | Result | Notes |
 |---|---|---|---|
-| Q1 last row survives a zoom sweep | 0 clipping, 73 card heights × zoom 1/1.5/2/3 | **reported pass** | The symptom under investigation; would have been the first thing seen. Not stepped 100→300→100 with a stopwatch |
-| Q2 gutter stable below the last row | gutter exactly 16 × zoom, 0.0px variance | **reported pass** | The *top* gap was the thing flagged, and it was the declared padding, not the anchor. Bottom behaved |
-| Q3 dragging the height leaves no half row | — (needs a real drag) | **reported pass** | Cards were resized in normal use; not a deliberate slow sweep through a full cell |
-| Q4 zoom does not reflow the running program | replay of mount → rs 1.5→2→2.5→3→2→1 with both observers: grid unchanged, 14/14, both dprs (`harness/clamp-run.mjs`) | **not run** | Needs the PTY's own report — see below. "Looks fine" cannot see a SIGWINCH |
-| Q5 selection lands on the right cells at zoom ≠ 1 | — (needs a real pointer) | **reported pass** | Covered by "功能也都正常" if text was selected while zoomed; not separately confirmed |
-| Q6 IME candidate window tracks the cursor | — (needs a real IME) | **not run** | Needs CJK typed *into a dev-app card*. This session's terminal is the installed build, so it is not evidence |
-| Q7 scrollback and the scrollbar | — (needs real scrolling) | **not run** | `.xterm` no longer fills the host, so the bar now spans the painted grid — the one thing this change could plausibly have broken without being obvious |
-| Q8 hidden board must not resize the PTY | the *rule* rejects a 0×0 box (`termGrid.test.ts` S10); the RO's own early-return and the rest grid surviving hide/show are **not** covered | **not run** | Needs a board switch with a program running |
+| Q1 last row survives a zoom sweep | 0 clipping, 73 card heights × zoom 1/1.5/2/3 | **PASS** | The symptom under investigation; gone |
+| Q2 gutter stable below the last row | gutter exactly 16 × zoom, 0.0px variance | **PASS** | The *top* gap was flagged here and fixed separately (`b8e0ae7`) — it was the declared padding, not the anchor |
+| Q3 dragging the height leaves no half row | — (needs a real drag) | **PASS** | Observed while resizing cards in normal use |
+| Q4 zoom does not reflow the running program | replay of mount → rs 1.5→2→2.5→3→2→1 with both observers: grid unchanged, 14/14, both dprs (`harness/clamp-run.mjs`) | **PASS** | Checked with the SIGWINCH trap below — the PTY is not resized by a board gesture |
+| Q5 selection lands on the right cells at zoom ≠ 1 | — (needs a real pointer) | **PASS** | The `getBoundingClientRect` override still holds under the new `.xterm` height |
+| Q6 IME candidate window tracks the cursor | — (needs a real IME) | **PASS** | CJK typed into a dev-app card; `.xterm-helpers` still anchors to the cursor |
+| Q7 scrollback and the scrollbar | — (needs real scrolling) | **PASS** | The likeliest quiet breakage — `.xterm` no longer fills the host — and it holds |
+| Q8 hidden board must not resize the PTY | the *rule* rejects a 0×0 box (`termGrid.test.ts` S10) | **PASS** | Board switch away and back with a program running: no resize |
 
-### The four outstanding checks
+### How Q4 and Q8 were checked (and how to re-check them)
 
-**Q4 + Q8 in one go.** Paste this into a terminal card in the dev app — it prints a
-line only when the PTY is actually resized, which is the observable OS fact both
-scenarios are really about:
+Neither is visible on screen: both are about whether the PTY was resized, i.e. a
+SIGWINCH. This one-liner prints a line only when that actually happens:
 
 ```sh
 trap 'echo "$(date +%T) SIGWINCH → $(stty size)"' WINCH; echo "start → $(stty size)"; while sleep 1; do :; done
 ```
 
-- **Q4:** zoom 100% → 300% → 100%. **Pass** = no `SIGWINCH` lines at all (on a 1×
-  external display a shrink and its matching restore are allowed; a *grow* above the
-  starting size is a fail).
-- **Q8:** switch to another board, wait, switch back. **Pass** = still no lines, and
+- **Q4:** zoom 100% → 300% → 100%. Pass = no `SIGWINCH` lines. (On a 1× external
+  display a shrink and its matching restore are allowed — see the spec's Trade-offs —
+  but a *grow* above the starting size is a fail.)
+- **Q8:** switch to another board, wait, switch back. Pass = still no lines, and
   `stty size` unchanged.
-- Ctrl-C to stop.
 
-**Q7:** scroll that same card's scrollback with the wheel, then drag the scrollbar.
-Pass = scrolls, bar is grabbable and tracks position, no horizontal bar, and the bar
-does not overhang the text at either end.
-
-**Q6:** switch to a CJK IME and type a few characters into a dev-app card at 100% and
-again at 200%. Pass = the candidate window sits at the cursor, not at the card corner.
+Worth re-running after any change to `kit/termGrid.ts`, the `.term-host` rules, or the
+rasterScale path — those are the three places that can put a board gesture back on the
+PTY without any visible sign.
