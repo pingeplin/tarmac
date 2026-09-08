@@ -12,12 +12,12 @@ import {
   type RestGrid,
 } from "./termGrid";
 
-/** The live card's numbers at rasterScale 1: .term-host padding 8/10/16, the
+/** The live card's numbers at rasterScale 1: .term-host padding 2/10/16, the
  *  14px scrollbar reserve FitAddon used, and the measured JetBrainsMono cell. */
 const box = (over: Partial<GridBox> = {}): GridBox => ({
   boxH: 290,
   boxW: 720,
-  padV: 24,
+  padV: 18,
   padH: 20,
   scrollbar: 14,
   cellW: 9.5,
@@ -73,9 +73,10 @@ describe("S3 — the proposed grid always fits, and is the largest that does", (
 
 describe("S4 — an exact multiple of the cell height proposes no extra row", () => {
   it("content of exactly 14 cells holds 14 rows, not 15", () => {
-    // boxH − padV = 294 = 14 × 21. This is the height that clips worst today:
-    // the padding-box answer is floor(318/21) = 15.
-    const { rows } = proposeGrid(box({ boxH: 318 }))!;
+    // boxH − padV = 294 = 14 × 21. This is the height that clipped worst before
+    // the fix: the padding-box answer is floor(312/21) = 14 rows starting 2px
+    // down, ending 2px past the box.
+    const { rows } = proposeGrid(box({ boxH: 312 }))!;
     expect(rows).toBe(14);
     expect(rows * 21).toBe(294);
   });
@@ -346,7 +347,7 @@ describe("S12 — the host bottom-anchors its grid (CSS declaration lock)", () =
     // Spec 2609.0007: .term-host padding is declarative. Nothing in the grid
     // change may reintroduce an imperative padding write.
     expect(effective("padding")).toBe(
-      "calc(8px * var(--rs, 1)) calc(10px * var(--rs, 1)) calc(16px * var(--rs, 1))",
+      "calc(2px * var(--rs, 1)) calc(10px * var(--rs, 1)) calc(16px * var(--rs, 1))",
     );
   });
 });
