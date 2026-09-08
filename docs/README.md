@@ -34,8 +34,10 @@ file the PR deleted. Prose that is merely out of date is out of scope — that
 still needs a human or an agent reading the diff.
 
 The code is enforced by a second workflow, `.github/workflows/test.yml`: the
-`core` and app-backend cargo suites on macOS, the Vitest suite on Linux. Neither
-workflow is wired into the branch ruleset as a *required* check yet, so both are
+`core` and app-backend cargo suites on macOS, the Vitest suite on Linux. A third,
+`.github/workflows/dco.yml`, runs `scripts/dco-check.mjs` over the commits a pull
+request adds, requiring the DCO sign-off `CONTRIBUTING.md` asks for. None of the
+three is wired into the branch ruleset as a *required* check yet, so all three are
 read, not gates.
 
 ## ACTIVE

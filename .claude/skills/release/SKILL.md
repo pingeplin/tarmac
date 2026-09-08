@@ -113,7 +113,7 @@ can't ship — but sync here to catch it up front.
    ```
    git switch -c release-x.y.z
    git add <the 8 files>
-   git commit -F <msg>            # subject: "release: x.y.z — <summary>"
+   git commit -s -F <msg>            # subject: "release: x.y.z — <summary>"
    git push https://github.com/pingeplin/tarmac.git release-x.y.z   # HTTPS, see SSH note
    gh pr create --base main --head release-x.y.z --title '…' --body-file <f>
    gh pr merge release-x.y.z --squash --delete-branch

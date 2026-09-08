@@ -1,0 +1,32 @@
+# Developer Certificate of Origin sign-off check. CONTRIBUTING.md has required a
+# `Signed-off-by` trailer since the project was opened, but nothing enforced it
+# and the history did not follow it — see #137. This makes the requirement
+# mechanical from here on; existing commits are not retroactively signed.
+name: dco
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dco-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so the base branch is reachable. checkout's all-history
+          # refspec also populates origin/<base>, which is what we diff against.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # origin/<base_ref>, NOT the payload's base.sha: on a pull_request event the
+      # checkout is the merge ref, and base.sha is a snapshot that goes stale the
+      # moment the base branch advances — which would blame this PR for every
+      # unsigned commit that landed on the base since it opened.
+      - name: make dco-check
+        run: make dco-check BASE="origin/${{ github.base_ref }}"
