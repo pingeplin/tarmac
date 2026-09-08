@@ -53,12 +53,32 @@ long as the rules above hold.
 
 First frame from any client:
 
-    {t:"hello", role:"cli"|"app", v:1}
+    {t:"hello", role:"cli"|"app", v:1, app_version?:"<semver>"}
 
-Daemon replies `{t:"hello_ok", v:1, daemon_version:"<semver>"}`. The
-`daemon_version` key is OPTIONAL (skip_serializing_if = None); a receiver that
-does not know it decodes `None` and treats the daemon as version-unverified.
-Unsupported version or role: `{t:"err", msg:"..."}` then close.
+Daemon replies:
+
+    {t:"hello_ok", v:1, daemon_version?:"<semver>", daemon_pid?:<u32>,
+                        app_version?:"<semver>", app_connected?:<bool>}
+
+Every key but `v` is OPTIONAL (`skip_serializing_if = None`); a missing key
+decodes to nil. Unsupported version or role: `{t:"err", msg:"..."}` then close.
+
+| key | on | missing ⇒ | semantics |
+|---|---|---|---|
+| `app_version` | `hello` | the client named no version | the client's own `CARGO_PKG_VERSION`. Only an `app` sets it; a `cli` client MUST NOT. |
+| `daemon_version` | `hello_ok` | daemon version-unverified | the daemon's `CARGO_PKG_VERSION`. |
+| `daemon_pid` | `hello_ok` | pid unknown | the daemon's OS pid, so the app can SIGTERM a stale daemon it did not spawn. |
+| `app_version` | `hello_ok` | the app named no version, or no app is connected — `app_connected` disambiguates | the version the currently-connected app reported in its `hello`. |
+| `app_connected` | `hello_ok` | **the daemon predates this key** — NOT "no app" | whether an app holds the daemon's app slot right now. |
+
+`app_version` and `app_connected` are sent to `cli` clients only; to an `app`
+client the daemon sends neither. Telling a connecting app that no app is
+connected would be false while its predecessor still holds the slot, and the
+daemon reports observed facts or nothing.
+
+The two `hello_ok` app keys are deliberately independent: `{app_connected:true,
+app_version:nil}` is an app that connected without naming a version, which a
+reader MUST NOT render as "no app". `tarmac --version` is the consumer.
 
 The app compares `daemon_version` against its own `CARGO_PKG_VERSION` on every
 connect. On mismatch (or absent key) the app SIGTERMs the stale daemon, waits
@@ -69,6 +89,10 @@ reconnects; a restart-once guard prevents thrashing on persistent mismatch.
 
     → {t:"open", path:"/abs/canonical/path.md"}
     ← {t:"ack"}  |  {t:"err", msg}
+
+`tarmac --version` is the other CLI verb that opens the socket. It completes the
+handshake, renders `hello_ok`'s daemon and app keys, and closes without sending a
+second frame.
 
 - `path` MUST be absolute and canonicalized by the CLI before sending.
 - v4 Phase 3 adds an OPTIONAL `term_id` to `open` (see *v4 Phase 3 additive

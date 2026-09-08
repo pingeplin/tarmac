@@ -97,11 +97,30 @@ impl Conn {
     }
 
     pub fn hello(sock: &Path, role: &str) -> Self {
+        Conn::hello_as(sock, role, None).0
+    }
+
+    /// `hello` with an explicit `app_version`, returning the `hello_ok` too so a
+    /// test can read what the daemon reported back (spec 2609.0012).
+    pub fn hello_as(sock: &Path, role: &str, app_version: Option<&str>) -> (Self, Msg) {
         let mut conn = Conn::connect(sock);
-        conn.send(&Msg::Hello { role: role.into(), v: proto::PROTOCOL_VERSION });
+        conn.send(&Msg::Hello {
+            role: role.into(),
+            v: proto::PROTOCOL_VERSION,
+            app_version: app_version.map(str::to_string),
+        });
         let reply = conn.recv(Instant::now() + LONG, "hello_ok");
         assert!(matches!(reply, Msg::HelloOk { v: 1, .. }), "expected hello_ok, got {reply:?}");
-        conn
+        (conn, reply)
+    }
+
+    /// The app-slot fields of a fresh `cli` handshake: `(app_connected, app_version)`.
+    pub fn probe_app_slot(sock: &Path) -> (Option<bool>, Option<String>) {
+        let (_, reply) = Conn::hello_as(sock, "cli", None);
+        let Msg::HelloOk { app_connected, app_version, .. } = reply else {
+            panic!("expected hello_ok, got {reply:?}")
+        };
+        (app_connected, app_version)
     }
 
     pub fn send(&mut self, msg: &Msg) {

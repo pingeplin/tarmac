@@ -98,9 +98,13 @@ fn m0_end_to_end() {
 fn hello_ok_reports_daemon_version_and_pid() {
     let daemon = TestDaemon::start();
     let mut app = Conn::connect(&daemon.sock);
-    app.send(&Msg::Hello { role: "app".into(), v: tarmac_protocol::PROTOCOL_VERSION });
+    app.send(&Msg::Hello {
+        role: "app".into(),
+        v: tarmac_protocol::PROTOCOL_VERSION,
+        app_version: None,
+    });
     let reply = app.recv(Instant::now() + LONG, "hello_ok");
-    let Msg::HelloOk { v, daemon_version, daemon_pid } = reply else {
+    let Msg::HelloOk { v, daemon_version, daemon_pid, .. } = reply else {
         panic!("expected hello_ok, got {reply:?}");
     };
     assert_eq!(v, tarmac_protocol::PROTOCOL_VERSION);
@@ -172,7 +176,7 @@ fn open_errors_for_missing_or_relative_paths() {
 fn bad_role_is_rejected() {
     let daemon = TestDaemon::start();
     let mut conn = Conn::connect(&daemon.sock);
-    conn.send(&Msg::Hello { role: "gremlin".into(), v: 1 });
+    conn.send(&Msg::Hello { role: "gremlin".into(), v: 1, app_version: None });
     let reply = conn.recv(Instant::now() + LONG, "err for bad role");
     assert!(matches!(reply, Msg::Err { .. }), "expected err, got {reply:?}");
 }
@@ -225,4 +229,114 @@ fn sighup_shuts_down_cleanly() {
         "SIGHUP must unlink the socket and exit 0; got status={status:?} socket_exists={}",
         daemon.sock.exists()
     );
+}
+
+// ── app-version relay (spec 2609.0012) ───────────────────────────────────────
+//
+// `tarmac --version` reports the *running* app's version, which reaches the CLI
+// only through the daemon's app slot. `app_connected` and `app_version` are
+// deliberately independent: an app that reports no version is still an observed
+// app, and must never render as "no app".
+//
+// Timing note: the daemon writes `hello_ok` BEFORE `install_app` fills the slot,
+// so an app's own reply is not proof the slot is populated. `drain_connect`
+// waits for board_list+restore, which are sent after the install — that is the
+// signal these tests synchronise on.
+
+#[test]
+fn cli_hello_ok_reports_the_connected_apps_version() {
+    let daemon = TestDaemon::start();
+    let (mut app, _) = Conn::hello_as(&daemon.sock, "app", Some("9.9.9"));
+    common::drain_connect(&mut app);
+
+    let (connected, version) = Conn::probe_app_slot(&daemon.sock);
+    assert_eq!(connected, Some(true));
+    assert_eq!(version.as_deref(), Some("9.9.9"));
+}
+
+#[test]
+fn cli_hello_ok_reports_an_absent_app_as_observed_absence() {
+    let daemon = TestDaemon::start();
+
+    let (connected, version) = Conn::probe_app_slot(&daemon.sock);
+    assert_eq!(connected, Some(false), "an empty slot is a fact, not an unset key");
+    assert_eq!(version, None);
+}
+
+#[test]
+fn cli_hello_ok_separates_app_presence_from_app_version() {
+    let daemon = TestDaemon::start();
+    // A pre-key app: connected, but naming no version.
+    let (mut app, _) = Conn::hello_as(&daemon.sock, "app", None);
+    common::drain_connect(&mut app);
+
+    let (connected, version) = Conn::probe_app_slot(&daemon.sock);
+    assert_eq!(connected, Some(true), "a version-less app is still a connected app");
+    assert_eq!(version, None);
+}
+
+#[test]
+fn a_disconnected_app_is_never_reported_as_connected() {
+    let daemon = TestDaemon::start();
+    let (mut app, _) = Conn::hello_as(&daemon.sock, "app", Some("9.9.9"));
+    common::drain_connect(&mut app);
+    assert_eq!(Conn::probe_app_slot(&daemon.sock).0, Some(true));
+
+    drop(app);
+    // remove_app runs only once the daemon observes the EOF, so poll rather than
+    // race it.
+    let deadline = Instant::now() + LONG;
+    loop {
+        let (connected, version) = Conn::probe_app_slot(&daemon.sock);
+        if connected == Some(false) {
+            assert_eq!(version, None, "a dead app must not leave its version behind");
+            return;
+        }
+        assert!(Instant::now() < deadline, "app slot never cleared after disconnect");
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+
+#[test]
+fn a_cli_hello_never_fills_the_app_slot() {
+    let daemon = TestDaemon::start();
+    // A cli client that (wrongly) names a version must not be mistaken for an app.
+    let (_held, _) = Conn::hello_as(&daemon.sock, "cli", Some("6.6.6"));
+
+    let (connected, version) = Conn::probe_app_slot(&daemon.sock);
+    assert_eq!(connected, Some(false));
+    assert_eq!(version, None);
+}
+
+#[test]
+fn the_daemon_makes_no_app_claim_to_an_app() {
+    let daemon = TestDaemon::start();
+    let (mut first, _) = Conn::hello_as(&daemon.sock, "app", Some("9.9.9"));
+    common::drain_connect(&mut first);
+
+    // The second app's own hello_ok must carry neither key: `false` would be an
+    // observably wrong claim while the first app still holds the slot. The reply
+    // is built before install_app runs, so an arm that read the slot would report
+    // app 1 here — which is what makes the two-app form the one that can fail.
+    let (_second, reply) = Conn::hello_as(&daemon.sock, "app", Some("7.7.7"));
+    let Msg::HelloOk { app_version, app_connected, .. } = reply else {
+        panic!("expected hello_ok, got {reply:?}")
+    };
+    assert_eq!(app_version, None);
+    assert_eq!(app_connected, None);
+}
+
+#[test]
+fn cli_hello_ok_reports_daemon_version_and_pid_alongside_the_app() {
+    let daemon = TestDaemon::start();
+    let (mut app, _) = Conn::hello_as(&daemon.sock, "app", Some("9.9.9"));
+    common::drain_connect(&mut app);
+
+    let (_cli, reply) = Conn::hello_as(&daemon.sock, "cli", None);
+    let Msg::HelloOk { daemon_version, daemon_pid, app_version, .. } = reply else {
+        panic!("expected hello_ok, got {reply:?}")
+    };
+    assert_eq!(daemon_version.as_deref(), Some(env!("CARGO_PKG_VERSION")));
+    assert_eq!(daemon_pid, Some(daemon.child.id()));
+    assert_eq!(app_version.as_deref(), Some("9.9.9"));
 }

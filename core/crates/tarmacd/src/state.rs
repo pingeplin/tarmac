@@ -351,6 +351,10 @@ pub struct AppSlot {
     pub generation: u64,
     pub tx: mpsc::Sender<Msg>,
     pub cancel: CancellationToken,
+    /// What the app reported in its `hello` (spec 2609.0012). `None` means the
+    /// app connected without naming a version, which is NOT the same as no app —
+    /// slot occupancy is the separate fact `app_slot_version` reports first.
+    pub version: Option<String>,
 }
 
 pub struct WatcherState {
@@ -450,19 +454,33 @@ impl Daemon {
         &self.state_path
     }
 
-    pub async fn install_app(&self, tx: mpsc::Sender<Msg>) -> (u64, CancellationToken) {
+    pub async fn install_app(
+        &self,
+        tx: mpsc::Sender<Msg>,
+        version: Option<String>,
+    ) -> (u64, CancellationToken) {
         let cancel = CancellationToken::new();
         let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
         let old = self.app.lock().await.replace(AppSlot {
             generation,
             tx,
             cancel: cancel.clone(),
+            version,
         });
         if let Some(old) = old {
             tracing::info!("replacing previous app connection");
             old.cancel.cancel();
         }
         (generation, cancel)
+    }
+
+    /// Slot occupancy and the version the occupant reported — see `AppSlot`.
+    pub async fn app_slot_version(&self) -> (bool, Option<String>) {
+        let slot = self.app.lock().await;
+        match slot.as_ref() {
+            Some(s) => (true, s.version.clone()),
+            None => (false, None),
+        }
     }
 
     pub async fn remove_app(&self, generation: u64) {
