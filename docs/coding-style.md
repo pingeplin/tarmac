@@ -243,6 +243,7 @@ not shipped. Delete it and redo the work test-first.
    or the change is on the exception list and you have discharged what §1.3 owes
    it.
 2. `make test` passes (docs-check plus all three suites).
-3. Commits are Conventional and carry the trailer named in
-   [`workflow.md`](workflow.md).
+3. Commits are Conventional and carry both trailers named in
+   [`workflow.md`](workflow.md) — the DCO `Signed-off-by:` and `Co-Authored-By:`.
+   `make dco-check` verifies the branch.
 4. The PR body says `Closes #N`.

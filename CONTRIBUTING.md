@@ -13,11 +13,15 @@ Section 5 of the license.
 
 ### Developer Certificate of Origin (DCO)
 
-To keep the project's provenance clean and to preserve the maintainer's ability
-to relicense or offer the software under commercial terms in the future, every
-commit must be signed off under the [Developer Certificate of Origin](https://developercertificate.org/)
+To keep the project's provenance clean, every commit must be signed off under
+the [Developer Certificate of Origin](https://developercertificate.org/)
 (reproduced below). Signing off certifies that you wrote the change or otherwise
 have the right to submit it under the project's license.
+
+A DCO is a statement about **provenance, not a transfer of rights**. It is not a
+CLA: it grants the maintainer no rights beyond the ones Apache 2.0 already grants
+everyone. Relicensing your contribution itself under other terms would require a
+CLA, which this project does not use.
 
 Add a sign-off line to each commit message:
 
@@ -33,6 +37,12 @@ git commit -s -m "your message"
 
 The name and email must match your real identity (matching your git
 `user.name` and `user.email`).
+
+`.github/workflows/dco.yml` checks every commit in a pull request; run
+`make dco-check` to check your branch before pushing (for a branch stacked on
+another branch rather than `main`, pass its base: `make dco-check BASE=origin/…`). Enforcement starts from
+that workflow — commits made before it were not signed off, and the history has
+deliberately not been rewritten to add them.
 
 <details>
 <summary>Developer Certificate of Origin 1.1 (full text)</summary>
@@ -99,7 +109,9 @@ editor/IDE may show stale SourceKit diagnostics — `make` is the source of trut
    pass (`make test`). On a fresh checkout, run `make sidecars` and, in
    `desktop/`, `npm ci && npm run build` first — `make test` does not stage them
    for you.
-4. Commit with a clear message and a DCO sign-off (`git commit -s`).
+4. Commit with a clear message, a DCO sign-off (`git commit -s`), and the
+   `Co-Authored-By:` trailer if someone or something co-wrote the change. Verify
+   with `make dco-check`.
 5. Open a pull request describing the change and the motivation. If your change
    took one of the TDD exceptions, discharge what
    [`docs/coding-style.md`](docs/coding-style.md) §1.3 asks of it.

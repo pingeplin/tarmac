@@ -1,6 +1,6 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: core app app-deps sidecars test docs-check run kill-daemon bundle release kit
+.PHONY: core app app-deps sidecars test docs-check dco-check run kill-daemon bundle release kit
 
 core:
 	cd $(ROOT)/core && cargo build
@@ -38,6 +38,14 @@ kit: app-deps
 # dependencies (plain node), sub-second, so it runs first in `test`.
 docs-check:
 	node $(ROOT)/scripts/docs-check.mjs
+
+# DCO sign-off tripwire over the commits a branch adds. Not part of `test`: it is
+# a property of the commits, not the tree, and needs a fetched base ref, while
+# `make test` is otherwise offline-safe. Override BASE for a stacked branch —
+# `make dco-check BASE=origin/some-other-branch`.
+BASE ?= origin/main
+dco-check:
+	node $(ROOT)/scripts/dco-check.mjs --base $(BASE)
 
 test: docs-check
 	cd $(ROOT)/core && cargo test
