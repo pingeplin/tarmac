@@ -55,7 +55,8 @@ stays clean — this is the parallel-agent workflow Tarmac is built for.
 
 Conventional Commits (whole history conforms). End the message with the
 `Co-Authored-By:` trailer the repo uses (not the DCO `Signed-off-by` that
-CONTRIBUTING mentions — follow the de-facto pattern). `make` must pass first.
+CONTRIBUTING mentions — follow the de-facto pattern). `make test` must pass
+first; see [`coding-style.md`](coding-style.md) for the TDD workflow it gates.
 
 ## PRs
 
