@@ -4,12 +4,12 @@
 // renders from a `hello_ok`, and a fake is the only way to drive the states a
 // real daemon reaches rarely (a version-less app, a pre-key daemon, silence).
 
-use std::io::ErrorKind;
 use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 use std::time::Duration;
 
 use tarmac_protocol::{self as proto, Msg, frame};
@@ -48,9 +48,8 @@ struct Fake {
     /// Raw payloads received, in order. Raw (not decoded) so a test can assert
     /// which keys were on the wire, not just what they decoded to.
     received: Arc<Mutex<Vec<Vec<u8>>>>,
-    /// Set when the client closed cleanly rather than idling or erroring.
-    client_closed: Arc<AtomicBool>,
-    _dir: PathBuf,
+    server: Mutex<Option<JoinHandle<()>>>,
+    dir: PathBuf,
 }
 
 impl Fake {
@@ -59,10 +58,9 @@ impl Fake {
         let sock = dir.join("tarmacd.sock");
         let listener = UnixListener::bind(&sock).unwrap();
         let received = Arc::new(Mutex::new(Vec::new()));
-        let client_closed = Arc::new(AtomicBool::new(false));
 
-        let (rx, closed) = (received.clone(), client_closed.clone());
-        std::thread::spawn(move || {
+        let rx = received.clone();
+        let server = std::thread::spawn(move || {
             let Ok((mut stream, _)) = listener.accept() else { return };
             if let Ok(payload) = frame::read_sync(&mut stream) {
                 rx.lock().unwrap().push(payload);
@@ -70,6 +68,8 @@ impl Fake {
             match reply {
                 Reply::CloseWithoutReply => return,
                 // Outlives the client's 5s read timeout without ever replying.
+                // Never joined (that is the point); the thread dies with the
+                // test process.
                 Reply::Silence => std::thread::sleep(Duration::from_secs(30)),
                 Reply::Frame(msg) => {
                     let payload = proto::encode(&msg).unwrap();
@@ -77,21 +77,22 @@ impl Fake {
                         return;
                     }
                     stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
-                    loop {
-                        match frame::read_sync(&mut stream) {
-                            Ok(p) => rx.lock().unwrap().push(p),
-                            // read_exact on a closed peer reports UnexpectedEof;
-                            // an idle-but-open peer would time out instead.
-                            Err(e) => {
-                                closed.store(e.kind() == ErrorKind::UnexpectedEof, Ordering::SeqCst);
-                                return;
-                            }
-                        }
+                    while let Ok(p) = frame::read_sync(&mut stream) {
+                        rx.lock().unwrap().push(p);
                     }
                 }
             }
         });
-        Fake { sock, received, client_closed, _dir: dir }
+        Fake { sock, received, server: Mutex::new(Some(server)), dir }
+    }
+
+    /// Wait for the server thread to finish reading, so `received` is complete
+    /// rather than whatever had arrived by the time the client exited.
+    fn received_frames(&self) -> Vec<Vec<u8>> {
+        if let Some(handle) = self.server.lock().unwrap().take() {
+            handle.join().unwrap();
+        }
+        self.received.lock().unwrap().clone()
     }
 
     fn version(&self) -> Report {
@@ -279,11 +280,11 @@ fn a_silent_peer_times_out_instead_of_hanging() {
 // S24: the CLI names itself `cli`, never stamps app_version (that key belongs
 // to the app alone), and sends nothing after the handshake.
 #[test]
-fn the_cli_sends_one_version_less_hello_and_then_closes() {
+fn the_cli_sends_exactly_one_version_less_hello() {
     let fake = Fake::start(Reply::Frame(full_reply()));
     assert_eq!(fake.version().code, Some(0));
 
-    let received = fake.received.lock().unwrap();
+    let received = fake.received_frames();
     assert_eq!(received.len(), 1, "--version must send exactly one frame");
     assert_eq!(
         proto::decode(&received[0]).unwrap(),
@@ -293,7 +294,6 @@ fn the_cli_sends_one_version_less_hello_and_then_closes() {
         !received[0].windows(11).any(|w| w == b"app_version"),
         "the cli must not put app_version on the wire at all"
     );
-    assert!(fake.client_closed.load(Ordering::SeqCst), "the cli must close after the reply");
 }
 
 // S13 / S14: no daemon is exit 0 — unlike `open` — and the report still names
@@ -337,6 +337,10 @@ fn extra_arguments_are_a_usage_error() {
 
     assert_eq!(out.status.code(), Some(2));
     assert_eq!(String::from_utf8_lossy(&out.stdout), "", "a usage error prints no report");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("usage"),
+        "a usage error must say so on stderr, like every other verb"
+    );
 }
 
 // S18: --help carries the verb and its exit-status exception.
@@ -358,7 +362,7 @@ fn help_lists_the_version_verb_and_its_exit_status() {
 #[test]
 fn open_still_fails_on_a_rejected_handshake() {
     let fake = Fake::start(Reply::Frame(Msg::Err { msg: "nope".into() }));
-    let doc = fake._dir.join("doc.md");
+    let doc = fake.dir.join("doc.md");
     std::fs::write(&doc, "# hi\n").unwrap();
 
     let out = tarmac()

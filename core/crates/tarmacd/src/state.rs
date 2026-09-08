@@ -474,9 +474,7 @@ impl Daemon {
         (generation, cancel)
     }
 
-    /// Whether an app holds the slot right now, and the version it reported.
-    /// The two are independent: `(true, None)` is an app that predates the
-    /// `app_version` key, which must never be rendered as "no app".
+    /// Slot occupancy and the version the occupant reported — see `AppSlot`.
     pub async fn app_slot_version(&self) -> (bool, Option<String>) {
         let slot = self.app.lock().await;
         match slot.as_ref() {

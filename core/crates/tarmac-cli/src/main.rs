@@ -142,7 +142,6 @@ fn handshake(sock: &Path) -> Result<(UnixStream, DaemonInfo), NoHandshake> {
     send(&mut stream, &Msg::Hello {
         role: "cli".into(),
         v: proto::PROTOCOL_VERSION,
-        // Only the app names itself here; a cli client is not an app.
         app_version: None,
     })
     .map_err(NoHandshake::Reason)?;

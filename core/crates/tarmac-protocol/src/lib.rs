@@ -26,11 +26,9 @@ pub enum Msg {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         daemon_pid: Option<u32>,
         // 2609.0012 additive keys (optional; missing => nil), sent to `cli`
-        // clients only: the connected app's reported version, and whether an app
-        // holds the slot at all. The second key is what keeps "no app" an
-        // observed fact — without it a connected app that reported no version is
-        // indistinguishable from no app, and `tarmac --version` would state an
-        // absence it never observed.
+        // clients only. They are separate because presence and version are
+        // separate facts: `app_connected: true` with no `app_version` is an app
+        // that named no version, which must not be reported as no app.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         app_version: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]

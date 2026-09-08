@@ -46,14 +46,7 @@ export interface WireBoardMeta {
 // The daemon→app messages, discriminated on `t`. Unknown messages decode to
 // { t: string } and are ignored by the handler's default branch.
 export type DaemonMsg =
-  | {
-      t: "hello_ok";
-      v: number;
-      daemon_version?: string;
-      daemon_pid?: number;
-      app_version?: string;
-      app_connected?: boolean;
-    }
+  | { t: "hello_ok"; v: number }
   | { t: "err"; msg: string }
   | {
       t: "restore";

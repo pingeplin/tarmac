@@ -315,7 +315,9 @@ fn the_daemon_makes_no_app_claim_to_an_app() {
     common::drain_connect(&mut first);
 
     // The second app's own hello_ok must carry neither key: `false` would be an
-    // observably wrong claim while the first app still holds the slot.
+    // observably wrong claim while the first app still holds the slot. The reply
+    // is built before install_app runs, so an arm that read the slot would report
+    // app 1 here — which is what makes the two-app form the one that can fail.
     let (_second, reply) = Conn::hello_as(&daemon.sock, "app", Some("7.7.7"));
     let Msg::HelloOk { app_version, app_connected, .. } = reply else {
         panic!("expected hello_ok, got {reply:?}")
