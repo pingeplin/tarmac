@@ -202,7 +202,8 @@ closed milestones and a page's path does not tell you whether it is current:
   [`docs/architecture.md`](docs/architecture.md) (engineering overview),
   [`docs/protocol.md`](docs/protocol.md) (wire contract + frozen conformance
   vectors), [`docs/backlog.md`](docs/backlog.md) (the audited unbuilt list),
-  [`docs/workflow.md`](docs/workflow.md) (issue → PR conventions).
+  [`docs/workflow.md`](docs/workflow.md) (issue → PR conventions),
+  [`docs/coding-style.md`](docs/coding-style.md) (coding style + mandatory TDD).
 - **PROPOSED** — designed, zero lines implemented.
   [`docs/proposed/`](docs/proposed) — currently just the editable-docs (v4c)
   crib.

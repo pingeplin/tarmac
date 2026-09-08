@@ -84,17 +84,25 @@ Build the project with:
 make
 ```
 
-Please make sure `make` succeeds before opening a pull request. Note that the
+Please make sure `make test` succeeds before opening a pull request. Note that the
 editor/IDE may show stale SourceKit diagnostics — `make` is the source of truth.
 
 ## Submitting changes
 
 1. Fork the repository and create a topic branch from `main`.
 2. Make your change, keeping it focused and matching the surrounding code style.
-3. Ensure the build passes (`make`) and add tests where the architecture allows
-   (pure logic lives in `core/` and is unit-tested there).
+3. **Work test-first.** Tarmac requires TDD: write the failing test, watch it
+   fail on the unmodified tree, then make it pass. The house style, the placement
+   table (which layer a given test belongs in), the rule for the React/Tauri
+   shell — which is not unit-tested by design — and the closed list of exceptions
+   are all in [`docs/coding-style.md`](docs/coding-style.md). Ensure all suites
+   pass (`make test`). On a fresh checkout, run `make sidecars` and, in
+   `desktop/`, `npm ci && npm run build` first — `make test` does not stage them
+   for you.
 4. Commit with a clear message and a DCO sign-off (`git commit -s`).
-5. Open a pull request describing the change and the motivation.
+5. Open a pull request describing the change and the motivation. If your change
+   took one of the TDD exceptions, discharge what
+   [`docs/coding-style.md`](docs/coding-style.md) §1.3 asks of it.
 
 ## Questions
 

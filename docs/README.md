@@ -47,6 +47,7 @@ read, not gates.
 | [`architecture.md`](architecture.md) | The engineering overview. The single normative description of how Tarmac works. |
 | [`protocol.md`](protocol.md) | The authoritative wire contract + frozen conformance vectors. |
 | [`workflow.md`](workflow.md) | issue → branch → worktree → commit → PR conventions. |
+| [`coding-style.md`](coding-style.md) | Coding style and the mandatory TDD workflow. What new code is held to. |
 | [`backlog.md`](backlog.md) | The audited list of what is **not** built, and what was removed on purpose. Active *as a list*; its contents are unbuilt by definition. |
 
 ### Not a doc — the agent guide
