@@ -53,8 +53,8 @@ export interface SampleResult extends Summary {
  * end, not a whole pan. 256 covers ~2 s of 60 Hz churn. */
 const TRANSITION_TAIL = 256;
 
-export const DEFAULT_SAMPLE_MS = 10_000;
-export const DEFAULT_SAMPLE_HZ = 20;
+const DEFAULT_SAMPLE_MS = 10_000;
+const DEFAULT_SAMPLE_HZ = 20;
 
 /**
  * Wraps `host`'s rAF pair with a live count of outstanding requests.

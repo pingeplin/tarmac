@@ -82,6 +82,16 @@ app from above — see *Reads the dev page* below.
 - **Does not count:** an HTML doc card's requests. Those live in the iframe realm
   behind `card_shim.js`, which is a different instrument for a different question
   (see `cull-qa.md` S37). That is the point of this one.
+- **Cannot see a request that was already outstanding when it installed.** The
+  wrappers go in from `main.tsx`'s first import, and every dependency here calls
+  `requestAnimationFrame` off the global at call time rather than through a
+  captured reference (audited: react-dom, scheduler, xterm + addons, marked,
+  @tauri-apps/api), so in practice nothing escapes the count — including a loop
+  that started before the install, whose *next* request goes through the wrapper.
+  The two scripts that do run earlier in dev, Vite's client and the react-refresh
+  preamble, request no frames. Re-check that on a Vite or dependency bump: an
+  invisible request reads as *idle*, the direction that would falsely confirm the
+  regime.
 - **Does not measure CPU.** Do not mix a run of this sheet with a CPU cell: the
   wrapper is a pass-through and does not change *when* frames are serviced, but
   it is still one extra closure per request, and `cull-qa.md`'s bands were taken

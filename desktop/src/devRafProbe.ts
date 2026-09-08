@@ -1,8 +1,15 @@
 // Dev-only install site for the host-page rAF counter (#105). `main.tsx` imports
-// it FIRST, so the wrappers are in place before react-dom, xterm and App
-// evaluate: none of them captures a scheduler at module-eval time today, but
-// "installed before anything else loads" is the instrument's whole premise, and
-// a side-effect module is the cheapest way to keep that true as deps change.
+// it FIRST, so the wrappers precede every other module body.
+//
+// What that placement actually buys, since the reading rests on it: the counter
+// sees every request made *through the global*, whenever the caller's module was
+// evaluated — no dependency here aliases or binds `requestAnimationFrame`
+// (audited across react-dom, scheduler, xterm + addons, marked,
+// @tauri-apps/api), and the two scripts that do run ahead of this module in dev,
+// Vite's client and @vitejs/plugin-react's refresh preamble, request no frames
+// at all. Re-check that on a Vite or dependency bump: a request outstanding
+// before the install is invisible, and invisible reads as *idle* — the one
+// direction that would falsely confirm the regime this instrument exists to test.
 //
 // Two flags, two jobs. `DEV` is the release guarantee — Vite replaces it with
 // `false` in `vite build`, so the branch, this module and `kit/rafProbe.ts` all
