@@ -314,7 +314,15 @@ offscreen frame on its own, but an unserviced pending request keeps costing CPU
 until its next ~10 s service tick (spec 2609.0002). Measured in the app at six
 culled animating cards: ~6 points of marginal WebContent CPU removed, in the
 first 10 s window as well as the second, with a visible card's rate and cost
-unchanged (`desktop/qa/cull-qa.md`).
+unchanged (`desktop/qa/cull-qa.md`). That the *full* ~6 points is recoverable —
+2609.0002's *isolated* regime, where the page holds no rAF request of its own to
+pay the per-page constant — is now measured rather than inferred: a dev-only
+host-page counter (`desktop/src/kit/rafProbe.ts`, off unless
+`VITE_TARMAC_RAF_PROBE` is set, absent from release builds) reads **0 outstanding
+requests in 197 of 200 samples at 20 Hz** on an idle board with a focused
+terminal, and 200/200 with it blurred — where it then logs 33.9 s without a
+single request; the three non-zero samples are consistent with the cursor's
+600 ms blink alone, one frame each (`desktop/qa/raf-outstanding-qa.md`).
 
 **Terminal cards** embed an xterm.js instance keyed by `term_id`. Input/resize
 forward to the daemon; output routes to the owning board's buffer even when
