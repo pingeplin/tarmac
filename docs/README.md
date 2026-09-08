@@ -36,9 +36,15 @@ still needs a human or an agent reading the diff.
 The code is enforced by a second workflow, `.github/workflows/test.yml`: the
 `core` and app-backend cargo suites on macOS, the Vitest suite on Linux. A third,
 `.github/workflows/dco.yml`, runs `scripts/dco-check.mjs` over the commits a pull
-request adds, requiring the DCO sign-off `CONTRIBUTING.md` asks for. None of the
-three is wired into the branch ruleset as a *required* check yet, so all three are
-read, not gates.
+request adds, requiring the DCO sign-off `CONTRIBUTING.md` asks for.
+
+All three are **gates**, not just reports: the `Protect main` ruleset requires
+`docs-check`, `dco-check`, `core (cargo test)`, `desktop (vitest)`, and
+`app backend (cargo test)` to pass, and requires the branch to be up to date with
+`main` before merging. `main` also refuses force-pushes and deletion, keeps a
+linear history, and takes changes only through a pull request. There are no
+bypass actors — if CI itself is broken, the way through is to relax the ruleset
+in the repo settings, not to push around it.
 
 ## ACTIVE
 
