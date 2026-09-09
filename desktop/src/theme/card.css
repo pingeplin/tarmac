@@ -65,7 +65,7 @@
   flex: 0 0 calc(30px * var(--zoom));
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: calc(6px * var(--zoom));
   padding: 0 calc(10px * var(--zoom));
   background: var(--bg2);
   border-bottom: 1px solid var(--line-soft);
@@ -103,6 +103,13 @@
   border-radius: 50%;
   flex: 0 0 7px;
 }
+/* Header children are world-px like the header itself (#146): everything that
+   sizes a chip, dot, or button scales with --zoom, never a fixed screen px. */
+.card-header .repo-dot {
+  width: calc(7px * var(--zoom));
+  height: calc(7px * var(--zoom));
+  flex-basis: calc(7px * var(--zoom));
+}
 .card-header .bell {
   color: var(--amber);
 }
@@ -111,8 +118,8 @@
 .card-header .console-badge {
   cursor: pointer;
   color: var(--faint);
-  padding: 1px 5px;
-  border-radius: 4px;
+  padding: calc(1px * var(--zoom)) calc(5px * var(--zoom));
+  border-radius: calc(4px * var(--zoom));
 }
 .card-header .close:hover,
 .card-header .refresh:hover,
@@ -126,20 +133,20 @@
 }
 .owner-chip {
   flex: 0 0 auto;
-  max-width: 120px;
+  max-width: calc(120px * var(--zoom));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 9px;
+  font-size: calc(9px * var(--zoom));
   color: var(--faint);
-  border: 1px solid var(--line-soft);
-  border-radius: 4px;
-  padding: 1px 6px;
+  border: calc(1px * var(--zoom)) solid var(--line-soft);
+  border-radius: calc(4px * var(--zoom));
+  padding: calc(1px * var(--zoom)) calc(6px * var(--zoom));
   line-height: 1.4;
 }
 .recency-meta {
   flex: 0 0 auto;
-  font-size: 9.5px;
+  font-size: calc(9.5px * var(--zoom));
   color: var(--agent);
   white-space: nowrap;
 }
@@ -357,7 +364,7 @@
 }
 /* Rest of its look is shared with .close above. */
 .card-header .console-badge {
-  font-size: 9.5px;
+  font-size: calc(9.5px * var(--zoom));
   white-space: nowrap;
 }
 .html-console {
