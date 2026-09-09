@@ -104,7 +104,8 @@
   flex: 0 0 7px;
 }
 /* Header children are world-px like the header itself (#146): everything that
-   sizes a chip, dot, or button scales with --zoom, never a fixed screen px. */
+   sizes a chip, dot, or button scales with --zoom, never a fixed screen px.
+   Scoped to the header so the shared .repo-dot rule above is untouched. */
 .card-header .repo-dot {
   width: calc(7px * var(--zoom));
   height: calc(7px * var(--zoom));
