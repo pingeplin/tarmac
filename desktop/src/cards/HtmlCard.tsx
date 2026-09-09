@@ -19,7 +19,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CardShell } from "./CardShell";
 import { CardHeader, HeaderButton } from "./CardHeader";
 import { cardSrcUrl } from "../kit/docKind";
-import { cardIframePx, cardGestureScale, cardScrollDelta, MAGNIFY_K } from "../kit/cardZoom";
+import {
+  cardIframePx,
+  cardGestureScale,
+  cardScrollDelta,
+  createScrollRelay,
+  MAGNIFY_K,
+} from "../kit/cardZoom";
 import {
   formatCardArgs,
   parseCardMessage,
@@ -215,15 +221,19 @@ export function HtmlCard(props: HtmlCardProps) {
   useEffect(() => {
     const el = shieldRef.current;
     if (!el || !props.selected) return;
+    // Whole-px steps only: the relay owns the carry and every decision about it
+    // (spec 2609.0013). A fresh relay per effect run costs one sub-pixel at most.
+    const relay = createScrollRelay();
     const onWheel = (e: WheelEvent) => {
       if (e.ctrlKey) return;
       const zoom = latest.current.getZoom();
+      const r = relay(
+        cardScrollDelta(e.deltaX, zoom, magnify),
+        cardScrollDelta(e.deltaY, zoom, magnify),
+      );
+      if (!r.post) return;
       iframeRef.current?.contentWindow?.postMessage(
-        {
-          tarmac: "scroll",
-          dx: cardScrollDelta(e.deltaX, zoom, magnify),
-          dy: cardScrollDelta(e.deltaY, zoom, magnify),
-        },
+        { tarmac: "scroll", dx: r.dx, dy: r.dy },
         "*",
       );
     };
