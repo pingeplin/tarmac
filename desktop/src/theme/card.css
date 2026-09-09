@@ -59,7 +59,9 @@
 }
 
 /* Only CardShell emits .card-header, and it always emits .card alongside, so the
-   zoom-scaled values live directly on the base rule. */
+   zoom-scaled values live directly on the base rule. Its children are world-px
+   too (#146): everything that sizes a chip, dot, or button multiplies by --zoom,
+   never a fixed screen px. */
 .card-header {
   height: calc(30px * var(--zoom));
   flex: 0 0 calc(30px * var(--zoom));
@@ -103,9 +105,7 @@
   border-radius: 50%;
   flex: 0 0 7px;
 }
-/* Header children are world-px like the header itself (#146): everything that
-   sizes a chip, dot, or button scales with --zoom, never a fixed screen px.
-   Scoped to the header so the shared .repo-dot rule above is untouched. */
+/* Scoped to the header so the shared .repo-dot rule above is untouched. */
 .card-header .repo-dot {
   width: calc(7px * var(--zoom));
   height: calc(7px * var(--zoom));

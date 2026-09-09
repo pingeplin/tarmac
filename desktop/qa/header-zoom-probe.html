@@ -2,8 +2,8 @@
 <meta charset="utf-8">
 <title>Card-header zoom probe (#146)</title>
 <!--
-  Renders the real CardShell/CardHeader markup against the real theme (tokens +
-  card.css) at --zoom 0.5 / 1 / 2 / 3, so header children can be checked for
+  Renders the CardShell/CardHeader header markup (same class names, plain spans
+  in place of HeaderButton) against the real theme (tokens + card.css) at --zoom 0.5 / 1 / 2 / 3, so header children can be checked for
   world-px scaling without driving the app. window.__probe() returns, per zoom,
   the computed font-size/box of the owner chip, repo dot, recency meta, and the
   header itself, each divided by zoom — every row must read identical.
@@ -33,6 +33,7 @@
           <span class="owner-chip">← ✳ Doc card 元素命名</span>
           <span class="recency-meta">✎ 3s</span>
           <span class="refresh">↻</span>
+          <span class="console-badge">⚠ 2</span>
           <span class="close">✕</span>
         </div>
       </div>`;
@@ -60,6 +61,7 @@
         closeFont: r(px(q(".close"), "fontSize")),
         closeH: r(q(".close").getBoundingClientRect().height),
         labelFont: r(px(q(".label"), "fontSize")),
+        badgeFont: r(px(q(".console-badge"), "fontSize")),
       };
     });
   };
