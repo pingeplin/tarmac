@@ -1,0 +1,68 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Card-header zoom probe (#146)</title>
+<!--
+  Renders the CardShell/CardHeader header markup (same class names, plain spans
+  in place of HeaderButton) against the real theme (tokens + card.css) at --zoom 0.5 / 1 / 2 / 3, so header children can be checked for
+  world-px scaling without driving the app. window.__probe() returns, per zoom,
+  the computed font-size/box of the owner chip, repo dot, recency meta, and the
+  header itself, each divided by zoom — every row must read identical.
+  Open standalone (file://) or drive from Playwright.
+-->
+<link rel="stylesheet" href="../src/theme/tokens.css">
+<link rel="stylesheet" href="../src/theme/card.css">
+<style>
+  body { background: #1a1e22; padding: 16px; display: grid; gap: 24px; }
+  .row { display: flex; align-items: center; gap: 16px; color: #7d8b95; font: 12px monospace; }
+  .card { position: relative; }
+</style>
+<div id="rows"></div>
+<script>
+  const ZOOMS = [0.5, 1, 2, 3];
+  const rows = document.getElementById("rows");
+  for (const z of ZOOMS) {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `<span>${z}×</span>
+      <div class="card prime" data-zoom="${z}" style="--zoom:${z}; width:${480 * z}px">
+        <div class="card-header">
+          <span class="glyph">¶</span>
+          <span class="repo-dot" style="background:#b070d0"></span>
+          <span class="label">architecture.md</span>
+          <span class="spacer"></span>
+          <span class="owner-chip">← ✳ Doc card 元素命名</span>
+          <span class="recency-meta">✎ 3s</span>
+          <span class="refresh">↻</span>
+          <span class="console-badge">⚠ 2</span>
+          <span class="close">✕</span>
+        </div>
+      </div>`;
+    rows.appendChild(row);
+  }
+  window.__probe = () => {
+    const px = (el, prop) => parseFloat(getComputedStyle(el)[prop]);
+    return [...document.querySelectorAll(".card")].map((card) => {
+      const z = parseFloat(card.dataset.zoom);
+      const q = (s) => card.querySelector(s);
+      const r = (v) => Math.round((v / z) * 100) / 100;
+      const chip = q(".owner-chip"), dot = q(".repo-dot"), meta = q(".recency-meta"), hdr = q(".card-header");
+      return {
+        zoom: z,
+        headerH: r(hdr.getBoundingClientRect().height),
+        headerGap: r(px(hdr, "gap")),
+        chipFont: r(px(chip, "fontSize")),
+        chipH: r(chip.getBoundingClientRect().height),
+        chipMaxW: r(px(chip, "maxWidth")),
+        chipBorder: r(px(chip, "borderTopWidth")),
+        chipPadX: r(px(chip, "paddingLeft")),
+        dotW: r(dot.getBoundingClientRect().width),
+        metaFont: r(px(meta, "fontSize")),
+        closePadX: r(px(q(".close"), "paddingLeft")),
+        closeFont: r(px(q(".close"), "fontSize")),
+        closeH: r(q(".close").getBoundingClientRect().height),
+        labelFont: r(px(q(".label"), "fontSize")),
+        badgeFont: r(px(q(".console-badge"), "fontSize")),
+      };
+    });
+  };
+</script>
