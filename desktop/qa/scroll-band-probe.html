@@ -1,0 +1,291 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>終端卡片「下緣被吃掉」：根因與解法</title>
+<style>
+  :root{
+    --bg0:#24282c; --bg1:#2b3036; --bg2:#353b41; --line:#474e55; --line-soft:#3d434a;
+    --text:#eff0f1; --muted:#b9bfc4; --faint:#7f8c8d; --agent:#1abc9c; --amber:#fdbc4b;
+    --red:#e06c75; --code:#31363b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:22px 20px 40px;background:var(--bg0);color:var(--text);
+    font:15px/1.62 ui-sans-serif,-apple-system,system-ui,"PingFang TC","Helvetica Neue",sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:880px;margin:0 auto}
+  h1{font-size:22px;line-height:1.35;margin:0 0 6px;letter-spacing:.2px}
+  .sub{color:var(--faint);font-size:12.5px;margin:0 0 22px}
+  h2{font-size:16px;margin:30px 0 10px;padding-bottom:7px;border-bottom:1px solid var(--line-soft);
+    display:flex;align-items:baseline;gap:8px}
+  h2 .n{color:var(--agent);font-variant-numeric:tabular-nums;font-size:12px;
+    border:1px solid var(--agent);border-radius:4px;padding:1px 6px;flex:0 0 auto}
+  h3{font-size:14px;margin:20px 0 6px;color:var(--muted)}
+  p{margin:9px 0}
+  code{font-family:ui-monospace,SFMono-Regular,"JetBrains Mono",Menlo,monospace;
+    font-size:12.5px;background:var(--code);border:1px solid var(--line-soft);
+    border-radius:4px;padding:1px 5px;color:#d7dce0}
+  pre{background:var(--code);border:1px solid var(--line-soft);border-radius:6px;
+    padding:10px 12px;overflow-x:auto;margin:10px 0}
+  pre code{background:none;border:0;padding:0;font-size:12px;line-height:1.55}
+  .lead{background:var(--bg1);border:1px solid var(--line);border-left:3px solid var(--agent);
+    border-radius:6px;padding:14px 16px;margin:0 0 8px}
+  .lead p{margin:6px 0}
+  .lead p:first-child{margin-top:0}
+  .lead p:last-child{margin-bottom:0}
+  ol,ul{margin:9px 0;padding-left:22px}
+  li{margin:5px 0}
+  .k{color:var(--agent);font-weight:600}
+  .bad{color:var(--red)}
+  .warn{color:var(--amber)}
+  .muted{color:var(--faint)}
+  .scroll{overflow-x:auto;margin:12px 0;border:1px solid var(--line-soft);border-radius:6px}
+  table{border-collapse:collapse;width:100%;font-size:12.5px}
+  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line-soft);white-space:nowrap}
+  th{color:var(--faint);font-weight:600;background:var(--bg1)}
+  tr:last-child td{border-bottom:0}
+  td.num{font-variant-numeric:tabular-nums;text-align:right}
+  .win{color:var(--agent)} .lose{color:var(--red)}
+  figure{margin:16px 0}
+  figcaption{color:var(--faint);font-size:12px;margin-top:7px}
+  .facts{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+  .fact{flex:1 1 150px;background:var(--bg1);border:1px solid var(--line);border-radius:6px;padding:10px 12px}
+  .fact b{display:block;font-size:19px;font-variant-numeric:tabular-nums;line-height:1.25}
+  .fact span{display:block;color:var(--faint);font-size:11.5px;margin-top:2px}
+  .foot{margin-top:34px;padding-top:12px;border-top:1px solid var(--line-soft);
+    color:var(--faint);font-size:11.5px}
+  .tag{display:inline-block;font-size:11px;border-radius:4px;padding:1px 6px;
+    border:1px solid var(--line);color:var(--muted);margin-left:6px}
+</style>
+<div class="wrap">
+
+<h1>終端卡片「下緣被吃掉」：根因與解法</h1>
+<p class="sub">實測基礎 — WebKit（Tauri 在 macOS 用的引擎家族）＋專案實際的 CSS 與 xterm.js 版本，9 份原始量測資料、15,000+ 組樣本</p>
+
+<div class="lead">
+<p><b>一句話結論：</b>xterm 的 <code>FitAddon</code> 是拿「<span class="k">含 padding</span> 的 <code>.term-host</code> 盒子」去除以格高（cellH）算出行數，但真正畫字的 <code>.xterm</code> 只拿到「<span class="k">不含 padding</span> 的內容盒」。於是只要餘數落在門檻內（約半數的卡片高度都會），fit 就會多算一行，那一行就從卡片下緣溢出去被裁掉。</p>
+<p><b>所以加 padding 沒用：</b>padding 在被量測的盒子<b>裡面</b>。實測 <code>padding-bottom</code> 設 0 / 16 / 40 px，裁切情形<b>逐格一模一樣</b>（§5）—— 不是治標，是零效果。</p>
+<p><b>為什麼縮放後才發作：</b>rasterScale 改變字級後，格高變成 21 → 31 → 43 → 53 → 63 —— 並不是原字高的等比例放大，行數因此重算而改變，卡片就在「會裁 / 不會裁」之間跳。</p>
+</div>
+
+<div class="facts">
+  <div class="fact"><b>≈48%</b><span>會裁切的卡片高度比例（每個縮放階都落在 46–49%）</span></div>
+  <div class="fact"><b>10 × zoom</b><span>裁切量上界（螢幕 px），最多吃掉半行字</span></div>
+  <div class="fact"><b>294/294</b><span>裁切判準公式的命中率</span></div>
+  <div class="fact"><b>0 / 1,630</b><span>套用修法 1–4 後的裁切數；推薦組合 3＋D′ 為 0 / 815</span></div>
+</div>
+
+<h2><span class="n">1</span>量測方法</h2>
+<p>結論不是讀 code 推論出來的，是量出來的。作法：用專案未經簡化的 <code>theme/*.css</code>、實際版本的 <code>@xterm/xterm</code> 與 <code>@xterm/addon-fit</code>，在 headless 瀏覽器裡重建 <code>Board → CardShell → TerminalCard</code> 的完整 DOM 鏈（wrapper → <code>.card</code> → <code>.card-header</code> → <code>.card-body</code> → <code>termInnerBox</code> → <code>.term-raster-clip</code> → <code>.term-raster-wrapper</code> → <code>.term-host</code>），然後掃過<b>縮放階 × 卡片高度 × 掛載／縮放兩條路徑</b>，逐一量測。（縮放階不是獨立的第三軸 —— rasterScale 是 zoom 的函數，見 §2 的定義。）</p>
+<ul>
+  <li>引擎：playwright <b>webkit-2336</b>（WKWebView 家族，Tauri 在 macOS 實際使用），dpr 2 與 dpr 1 各跑一輪，另跑 Chrome 對照（資料檔名為 <code>chromium-dpr2.json</code>）。<b>裁切成因、判準公式與行數算法三者完全一致</b>，這不是單一引擎的怪癖；只有<b>欄數</b>會隨 renderer 與 dpr 而異（見 §3）。</li>
+  <li>字型：專案內建的 JetBrainsMono NFM；字級 <code>termFontSize = 16</code>。</li>
+  <li>Renderer：DOM 與 <b>WebGL</b> 都跑過。應用實際用的是 WebGL，兩者的<b>行</b>算法相同（<code>webgl-tall.json</code>；覆核者另以自己重建的 WebGL harness 重跑，210/210 一致），<b>欄</b>算法不同（見 §3）。</li>
+  <li>量測欄位：<code>getComputedStyle(host).height</code>、<code>clientHeight</code>、<code>.xterm</code> 版面高、<code>term.rows/cols</code>、cell 尺寸，以及最關鍵的 <b>畫面溢出量</b>＝<code>.xterm-screen</code> 底緣減去 <code>.card-body</code> 底緣（螢幕 px，正值＝被吃掉）。</li>
+</ul>
+
+<h2><span class="n">2</span>根因 A：量錯盒子（主因）</h2>
+<p><code>FitAddon.proposeDimensions()</code> 的實作是：</p>
+<pre><code>parentH = parseInt(getComputedStyle(term.element.parentElement).height)  // ← .term-host
+padding = getComputedStyle(term.element).padding…                        // ← .xterm，目前是 0
+rows    = floor((parentH - padding) / cell.height)</code></pre>
+<p>兩個關鍵事實（實測）：</p>
+<ol>
+  <li><code>getComputedStyle(el).height</code> 回報的是「以該元素自己的 <code>box-sizing</code> 為準」的高度。專案全域是 <code>* { box-sizing: border-box }</code>，所以它<b>含 padding</b>。獨立探針（兩次獨立實作、WebKit 與 Chrome 都一致）：<code>height:300px; padding:8px 10px 16px</code> 的 border-box div 回報 <code>"300px"</code>（內容盒應為 276px）；<code>inset:0</code> 撐滿 400px 父層時回報 <code>"400px"</code>，而它 <code>height:100%</code> 的子元素只拿到 <code>376px</code> —— 這就是 <code>.term-host</code> / <code>.xterm</code> 那一對的最小重現。</li>
+  <li>padding 掛在 <code>.term-host</code>，但 FitAddon 只會扣掉 <code>.xterm</code> 自己的 padding —— 而 <code>.xterm</code> 沒有 padding（<code>xterm.css</code> 未定義）。</li>
+</ol>
+<p class="muted" style="font-size:12.5px">附帶一提：<code>parseInt</code> 會直接截掉小數，rs=1.5 且卡片高度為奇數時 host 是 406.5px、FitAddon 只看到 406 —— 這是另一個次像素誤差來源，但不是本 bug 的主因。</p>
+<p>結果：<b>行數是用「含 padding 的盒子」算的，字卻只畫在「不含 padding 的內容盒」裡。</b>多算出來的那一行，先被上緣 padding 往下推 8·rs px，再從下緣溢出。</p>
+
+<figure id="fig-box"></figure>
+
+<h3>精確判準</h3>
+<p>先定義三個貫穿全文的量：<b><code>zoom</code></b> 是看板的連續縮放值；<b><code>rs</code></b>（rasterScale）是它吸附後的階梯值 —— <code>zoom ≤ 1</code> 時為 1，否則往上吸附到 0.5 的倍數、上限 3（所以 zoom 1.03 與 1.5 都對應 rs 1.5）；<b><code>card_h</code></b> 是看板座標下的卡片高度（螢幕高度＝<code>card_h × zoom</code>）。</p>
+<p>判準寫在<b>版面座標</b>（<code>.term-host</code> 內部的座標系，與 zoom 無關）。令 <code>H = rs × (card_h − 30)</code> 為 <code>.term-host</code> 的版面高度（30 ＝ header 高度）、<code>cellH</code> 為該 rs 下的格高（一行文字的高度）：</p>
+<pre><code>下緣被吃掉  ⟺  (H mod cellH) &lt; (8 + 2) × rs</code></pre>
+<p>門檻的兩項是 <code>8·rs</code>（上緣 padding，見下）與 <code>2·rs</code>（根因 C 的邊框溢出 —— 它在螢幕上是 2·zoom px，換算回版面座標要除以 <code>zoom/rs</code>，正好是 2·rs）。這條規則在 <code>fixes2.json</code> 的 294 組實測樣本上<b>全數命中</b>，包含 zoom 1.03、1.6 這類 <code>zoom ≠ rs</code> 的情形（覆核者另以自己的彙總涵蓋 882 個取樣點重驗，同樣全中）。它同時解釋了三件事：</p>
+<ul>
+  <li><b>約 48% 的卡片高度會命中裁切條件</b>（10·rs / cellH ≈ 0.48，下稱「中獎」），所以「有時候好、有時候壞」。</li>
+  <li><b>拉一下卡片大小就好了</b>：改變 <code>card_h</code> 就是改變餘數。</li>
+  <li><b>再縮放又壞掉</b>：改變 rs 就是同時改變 <code>H</code> 和 <code>cellH</code>，餘數重骰。</li>
+</ul>
+
+<h2><span class="n">3</span>觸發器（兼獨立缺陷 B）：rasterScale 讓格子尺寸非線性</h2>
+<p>xterm 會把 cell 尺寸對齊到整數裝置像素，所以放大字級後的格子<b>不是</b>原本的等比例放大。<b>高度</b>用 <code>ceil(charHeight * dpr)</code>（讀自 <code>xterm.js</code> 與 <code>addon-webgl</code> 的 <code>_updateDimensions</code>，並經實測吻合），兩種 renderer 算法相同，dpr 1 與 dpr 2 實測也相同：</p>
+<div class="scroll"><table>
+<thead><tr><th>rs</th><th class="num">實測格高 cellH</th><th class="num">21 × rs（以 rs=1 的取整值推算）</th><th class="num">差距</th></tr></thead>
+<tbody>
+<tr><td>1.0</td><td class="num">21</td><td class="num">21.0</td><td class="num">0</td></tr>
+<tr><td>1.5</td><td class="num">31</td><td class="num">31.5</td><td class="num lose">−0.5</td></tr>
+<tr><td>2.0</td><td class="num">43</td><td class="num">42.0</td><td class="num lose">+1.0</td></tr>
+<tr><td>2.5</td><td class="num">53</td><td class="num">52.5</td><td class="num lose">+0.5</td></tr>
+<tr><td>3.0</td><td class="num">63</td><td class="num">63.0</td><td class="num">0</td></tr>
+</tbody></table></div>
+<p>差距雖小，但 <code>floor(H / cellH)</code> 只要跨過一個整數就會多一行或少一行。實測 815 次縮放事件（寬 720px 的卡片、163 種高度，含 11–14 行的小卡與 27–45 行的高卡；163 × 5 階 = 815）：<b>rows 在 41% 的情況下改變</b>（例如 12 → 13 行）。這就是「一縮放就發作」的觸發器 —— 它同時改變 <code>H</code> 與 <code>cellH</code>，把 §2 的餘數重骰一次。</p>
+
+<h3>欄數的漂移更大，而且跟 renderer 有關</h3>
+<p><b>寬度</b>則兩種 renderer 不同：DOM renderer 用 <code>charWidth * dpr</code>（不取整），WebGL renderer 用 <code>floor(charWidth * dpr)</code>。<b>應用實際載入的是 WebGL</b>（<code>TerminalCard.tsx</code> 探測後掛 <code>WebglAddon</code>，只有失敗才退回 DOM），所以要看的是 WebGL 那一組。再加上 <code>proposeDimensions</code> 為捲軸保留的 <b>14px 是固定值、不隨 rs 縮放</b>，一張 720px 寬的卡片沿著縮放階梯走一趟會變成：</p>
+<div class="scroll"><table>
+<thead><tr><th>renderer / dpr</th><th class="num">rs 1</th><th class="num">1.5</th><th class="num">2</th><th class="num">2.5</th><th class="num">3</th><th class="num">最大偏移</th></tr></thead>
+<tbody>
+<tr><td>WebGL, dpr 2 <span class="tag">實際情況</span></td><td class="num">74</td><td class="num">76</td><td class="num">75</td><td class="num">74</td><td class="num">75</td><td class="num bad">+2</td></tr>
+<tr><td>WebGL, dpr 1 <span class="tag">外接螢幕</span></td><td class="num">78</td><td class="num">76</td><td class="num">75</td><td class="num">74</td><td class="num">76</td><td class="num bad">−4</td></tr>
+<tr><td class="muted">DOM renderer（僅供對照）</td><td class="num muted">73</td><td class="num muted">74</td><td class="num muted">74</td><td class="num muted">74</td><td class="num muted">74</td><td class="num muted">+1</td></tr>
+</tbody></table></div>
+<p>意思是：<b>光是縮放看板，就會對 PTY 送出 <code>term_resize</code>／SIGWINCH</b>，讓 vim、htop 這類程式無謂重排 —— 在 1× 螢幕上從 100% 放到 173%（rs 2）欄數會少掉 3 欄，整條階梯最壞是 −4 欄。spec <code>2609.0007</code> 當初已經明文接受「±1 欄 ±1 行的既有 FitAddon 漂移」—— 那個 ±1 與 DOM renderer 的實測恰好吻合，推測是拿 DOM 的數字估的；實際 renderer 下的漂移超出這個容忍值。<code>TerminalCard.tsx</code> 檔頭那句「fit() 會算出<b>相同</b>的 cols×rows」則與實測不符，應一併更正。</p>
+<p class="muted" style="font-size:12.5px">注意：<b>欄數漂移</b>與「下緣被吃掉」是兩個獨立缺陷 —— 本節前半（格高非線性）是後者的<b>觸發器</b>，後半（欄數）則是另一個 bug。行數的算法與 renderer 無關，所以 §2 的診斷、判準公式與 §5 的 padding 結論在 WebGL 下完全成立；只有欄數需要看 WebGL 的數字。</p>
+
+<h2><span class="n">4</span>根因 C：inner box 比 card body 高 2 × zoom px</h2>
+<p><code>termInnerBox()</code> 的高度是 <code>calc(var(--card-h) − 30px)</code>，只扣了 header；但 <code>.card</code> 有 <code>border-width: calc(1px * var(--zoom))</code>，<code>.card-body</code> 實際只有 <code>(card_h − 30 − 2) × zoom</code>。實測 zoom 落在 0.5 的倍數上時，溢出量正好是 2 × zoom（1/1.5/2/2.5/3 → 2/3/4/5/6 px）；zoom 落在其他值（1.03、1.6）時邊框會被吸附到裝置像素，量到的是 ~2.00 而非 2.06 —— 上界仍是 2 × zoom。這段溢出被 <code>.card-body</code> 的 <code>overflow:hidden</code> 裁掉。</p>
+<p>單獨看它不嚴重（吃掉的是下緣留白），但它是判準公式裡的那個 <code>+2</code>：把它修掉，門檻會從 <code>10·rs</code> 降成 <code>8·rs</code>，命中率由公式推算會從 ~48% 降到 ~38%。（反過來把<b>上緣</b> padding 設 0、只留那 2px，公式預測 ~10%，實測 13/126 ≈ 10% 吻合 —— 公式在兩端都成立。）<b>只修它不會解決問題</b>。</p>
+
+<h2><span class="n">5</span>為什麼「加 padding」註定無效</h2>
+<p>現況 <code>.term-host</code> 的 <code>padding-bottom: 16px</code>，是 issue #36 為了「最後一行不要貼著邊框」加的，依據是 spec <code>2606.0015</code> §Motivation 的一段推論（原文為英文，以下為中譯）：</p>
+<pre><code>「…proposeDimensions() 讀的是父元素（.term-host）的<b>內容</b>高度…
+  因為 padding 掛在 .term-host 上，它已經反映在內容高度裡，FitAddon 已經算進去了。
+  在那裡增加下緣 padding 只會讓算出來的 rows 變少，<b>不可能</b>裁到內容。
+  這一點已對照 addon 的 sizing 邏輯驗證過。」</code></pre>
+<p>這段話的每一個技術主張都與實測相反：<code>getComputedStyle</code> 給的不是內容高度、padding 沒有被算進去、rows 不會變少 —— 「加 padding 不可能裁到內容」這個結論建立在假前提上，得到的正是與事實相反的答案。（至於最後那句「已對照 addon 的 sizing 邏輯驗證過」，顯然沒有真的對照。）這是 16px 會 ship 的原因，也是為什麼它從來沒有解決問題。（後來的 spec <code>2609.0007</code> 換了說法：「padding 對 cols×rows <b>沒有</b>影響 —— 它只買到視覺留白」。這句話是對的，但它描述的正是 bug 本身：既然沒有影響，行數就是照著含 padding 的盒子算的。）</p>
+<p>直接實測：只改 <code>.term-host</code> 的 <code>padding-bottom</code>，其餘不動（每格 126 個樣本＝ 3 個 zoom × 42 種高度，資料檔 <code>padding.json</code>；這一輪只跑到 zoom 2，所以上界是 20px 而不是 §6 的 30px）。</p>
+<div class="scroll"><table>
+<thead><tr><th>padding-bottom</th><th class="num">會裁切的尺寸數</th><th class="num">最大裁切量</th><th class="num">zoom 1 / card_h 300 的行數</th></tr></thead>
+<tbody>
+<tr><td>0 px</td><td class="num">61 / 126</td><td class="num">20.0 px</td><td class="num">12</td></tr>
+<tr><td>16 px <span class="tag">現況</span></td><td class="num">61 / 126</td><td class="num">20.0 px</td><td class="num">12</td></tr>
+<tr><td>40 px</td><td class="num">61 / 126</td><td class="num">20.0 px</td><td class="num">12</td></tr>
+<tr><td>上緣 padding 改 0 px</td><td class="num win">13 / 126</td><td class="num win">4.0 px</td><td class="num">12</td></tr>
+</tbody></table></div>
+<p>前三列（0 / 16 / 40 px）<b>逐格相同</b>。原因是：下緣 padding 既不影響 <code>rows</code>（它在量測盒內），也不影響字的起始位置（那是上緣 padding）。它唯一的作用是在「沒中獎」時提供下緣留白（gutter） —— 中獎時它完全幫不上忙。真正把字往下推出去的是<b>上緣</b> padding，這也是為什麼把上緣設成 0 時中獎率會掉到一成。</p>
+
+<h2><span class="n">6</span>解法（皆已實測）</h2>
+<p>前四個修法是同一件事的不同寫法：<b>讓 FitAddon 量到的盒子，等於 <code>.xterm</code> 真正能畫的盒子</b>。實測都把裁切歸零。最後兩列（D 與它的夾限版 D′）處理的是另一半問題 —— 縮放時的 PTY 抖動；其中只有 <b>D′</b> 是可以直接上的版本。</p>
+
+<div class="scroll"><table>
+<thead><tr><th>方案</th><th class="num">會被裁切</th><th class="num">最大裁切</th><th class="num">縮放時 rows 漂移</th><th class="num">cols 漂移</th><th>代價 / 風險</th></tr></thead>
+<tbody>
+<tr><td class="muted">現況</td><td class="num bad">47%<span class="muted"> (762/1630)</span></td><td class="num bad">30 px</td><td class="num bad">41%</td><td class="num bad">100%</td><td class="muted">—</td></tr>
+<tr><td><b>1</b> padding 移到 <code>.xterm</code></td><td class="num win">0%</td><td class="num win">0</td><td class="num warn">39%</td><td class="num warn">60%</td><td class="warn">捲軸與 IME 錨點外移</td></tr>
+<tr><td><b>2</b> <code>.term-host</code> 改 <code>content-box</code></td><td class="num win">0%</td><td class="num win">0</td><td class="num warn">39%</td><td class="num warn">60%</td><td>零視覺變化，但需要註解</td></tr>
+<tr><td><b>3</b> 拿掉 padding，改用 <code>inset</code> <span class="tag">推薦</span></td><td class="num win">0%</td><td class="num win">0</td><td class="num warn">39%</td><td class="num warn">60%</td><td>零視覺變化，本輪未見副作用</td></tr>
+<tr><td><b>4</b> 自寫 <code>proposeGrid()</code></td><td class="num win">0%</td><td class="num win">0</td><td class="num warn">39%</td><td class="num warn">60%</td><td>多寫幾行，換來可單測</td></tr>
+<tr><td><b>D</b> 3 或 4 ＋ 縮放時鎖住格子</td><td class="num bad">3%<span class="muted"> (25/815)</span></td><td class="num bad">15 px</td><td class="num win">0%</td><td class="num win">0%</td><td class="bad">高卡片會重新裁切</td></tr>
+<tr><td><b>D′</b> 同上，但加夾限 <span class="tag">推薦</span></td><td class="num win">0%</td><td class="num win">0</td><td class="num warn">20%</td><td class="num win">0%<span class="muted">＊</span></td><td>下緣留白會隨尺寸浮動</td></tr>
+</tbody></table></div>
+<p class="muted" style="font-size:12px">樣本：5 個 zoom × 163 種卡片高度（含 11–14 行的小卡與 27–45 行的高卡）× 掛載／縮放兩條路徑 = 1,630 組；D 系列只有縮放路徑，815 組。裁切以「任何正值」計。漂移兩欄是用 DOM renderer 量的：<b>行</b>的算法與 renderer 無關，可直接套用；<b>欄</b>的算法與 renderer 有關，實際的 WebGL 漂移比表中更大（見 §3）。D′ 能把漂移壓到最低是因為它「沿用原格子、只在放不下時縮」，這個性質與 renderer 無關。修法 1–4 之所以順帶把欄數漂移從 100% 壓到 60%，是因為它們同時修正了 FitAddon 量到的<b>寬度</b>（水平 padding 也終於被扣掉）；要歸零仍得靠 D′。另外，本表「會被裁切」欄的 47% 與上方 fact card 的 ≈48% 是同一件事在不同資料集上的值（各資料集都落在 47–48%）。</p>
+
+<h3>各方案細節與風險</h3>
+<p><b>1 — padding 移到 <code>.xterm</code>。</b>最貼近 FitAddon 的契約（它本來就扣 <code>term.element</code> 的 padding）。但 xterm 自己的 <code>.xterm-viewport</code> 與 <code>.xterm-helpers</code> 都是相對 <code>.xterm</code> 的 <b>padding 盒</b>定位：捲軸從「內縮 10px」變成貼齊圓角邊框（實測 <code>viewport.right − host.right</code>：−10 → 0），輸入法候選字窗的錨點也位移 (10·rs, 8·rs)。要動它就得補一輪 CJK 輸入 QA。</p>
+<p><b>2 — <code>.term-host { box-sizing: content-box }</code>。</b>因為它是 <code>inset:0</code> 的絕對定位元素，改成 content-box 後 <code>getComputedStyle().height</code> 回報的正好是 <code>.xterm</code> 拿到的內容盒 —— 這就是修法奏效的地方。<b>版面幾何完全不動</b>：實測 <code>clientHeight</code>/<code>offsetHeight</code> 與現況在 <code>fixes2.json</code> 的 588 組中完全相同，改變的只有 <code>getComputedStyle().height</code> 這一個回報值。缺點有兩個：它替全域 <code>* { box-sizing: border-box }</code> 開了一個例外（<code>tokens.css</code> 的註解宣稱那條規則是普遍的），而且它<b>依賴的正是造成這個 bug 的同一個引擎語意</b> —— 沒有註解的話，下一個人會順手刪掉。</p>
+<p><b>3 — 不要 padding，改用 <code>inset</code>。</b><code>.term-host</code> 本來就是 <code>position:absolute; inset:0</code>；把 padding 換成 <code>inset: calc(8px * var(--rs)) calc(10px * var(--rs)) calc(16px * var(--rs))</code>，host 的盒子<b>就是</b>內容區，FitAddon 讀到的自然是對的。不需要 box-sizing 例外、不需要改 addon、捲軸與 IME 錨點都不動，留白處露出的是 <code>.card</code> 的 <code>--term-bg</code>（與終端背景同色，肉眼看不出差異）。實測各項數字與方案 2 完全相同。</p>
+<p><b>4 — 自己算格子。</b>把規則抽成 <code>kit/</code> 的純函式（輸入：內容盒寬高、padding、捲軸保留寬、cell 寬高；輸出：cols×rows），在 mount / ResizeObserver / rasterScale 三處呼叫 <code>term.resize()</code>。換來的是<b>這條規則終於能被 Vitest 單測</b>（符合本專案「純邏輯進 kit 才測得到」的慣例）。實作時要保留 FitAddon 原本的細節：讀公開的 <code>term.dimensions</code>、cell 尺寸為 0 時早退、尊重 <code>options.scrollbar</code>、保留 <code>max(2, cols)</code>／<code>max(1, rows)</code> 夾限，以及既有的 ResizeObserver 0×0 防護。</p>
+<p><b>D — 縮放時鎖住格子，但一定要夾限。</b>rasterScale 變動時不重新 fit，直接沿用原本的 <code>cols0 × rows0</code>。<b>單純鎖住會出事</b>：cellH 在 rs=2 每行比等比例值多 1px，所以超過約 31 行的高卡片會再度裁切（實測值，非推算：<code>final.json</code> 中 25/815 組、最多 15px，全部落在 31 行以上且 rs 2 的組合）。正確寫法是夾限（clamp，只取 min）：</p>
+<pre><code>rows = min(rows0, floor(contentH / cellH(rs)))
+cols = min(cols0, floor((contentW − scrollbar) / cellW(rs)))
+
+// contentH / contentW = 修好之後 .term-host 的內容盒尺寸
+// scrollbar = FitAddon 保留的 14px；rows0 / cols0 = rs 變動前的格子</code></pre>
+<p>夾限後實測（DOM renderer）：裁切 0、欄數不再變動、行數只有在真的放不下時才少一行（20%）。文件與 release note 上的承諾要誠實寫成「縮放不會放大 PTY，只會在放不下時縮一行」，而不是「縮放永不改變 PTY」。</p>
+<p><b>＊但欄數的承諾要看螢幕：</b>把 D′ 放到實際的 WebGL renderer 上再量一次（64 組，兩種寬度 × 四種高度 × 四個 rs × 兩種 dpr）：<b>dpr 2（Retina）欄數 0/32 完全不動</b>；<b>dpr 1（外接 1× 螢幕）則 32/32 仍會縮，最多 −5 欄</b>。原因是 WebGL 在 dpr 1 的格寬隨 rs 跳得更兇（每單位 9.0 → 9.5），原本的欄數是真的放不下，夾限只好縮。兩種 dpr 下裁切都是 0、也永遠不會<b>放大</b>格子。所以承諾應該寫成：「縮放不會放大 PTY；在 Retina 上完全不動，在 1× 螢幕上只會在放不下時縮。」</p>
+<p class="muted">另一條路我也量了、但<b>沒有用</b>：把捲軸保留寬 14px 跟著 rs 縮放（<code>term.options.scrollbar = { width: 14 * rs }</code>）。實測欄數階梯 dpr 2 從 +2 變 +1、dpr 1 從 −4 變 −5 —— 因為欄數漂移的主因是 WebGL 的 <code>floor(charWidth * dpr)</code>，不是捲軸。別花時間在這裡。</p>
+
+<h3>建議</h3>
+<ol>
+  <li><b>修法 3 ＋ D′（夾限版鎖格子）</b> —— 裁切歸零；Retina 上縮放完全不動格子，1× 外接螢幕上欄數仍會縮（但不會裁切、也不會放大）。若希望這條規則能進 Vitest，改用<b>修法 4 ＋ D′</b>（<b>3 與 4 也可以疊</b>：4 的純函式正好就是 D′ 夾限用的那個式子）。</li>
+  <li><b>順手修根因 C</b>：<code>termInnerBox()</code> 的高度改成 <code>calc(var(--card-h) - 32px)</code>（header 30 + 上下邊框 2）。注意這會動到 <code>termZoom.test.ts</code>（它斷言「card-h 減 header」），是<b>測試看得見</b>的改動，建議獨立一個 commit。</li>
+  <li><b>更正 spec <code>2606.0015</code></b> 那段錯誤前提，否則下次還會有人依它推論。<code>docs-check</code> 只驗路徑存在，不驗內容真偽。</li>
+  <li><b>不要再加 padding</b>（§5 已證明零效果）；<b>不用查</b> <code>useLayoutEffect</code> 的時序 —— 實測 <code>fixes2.json</code> 全部 1,176 組「先改 fontSize 再 fit」「ResizeObserver 事後再 fit」「一開始就用 rs 掛載」三者結果完全相同，現有時序設計是對的。</li>
+</ol>
+
+<h3>取捨：留白會浮動</h3>
+<p>修好之後，原本被拿去畫「半行字」的餘料會變成下緣留白：<b>在 100% 縮放下是 14–35 螢幕 px</b>（實測；zoom 3 的極端值到 102，理論上界 <code>16·rs − 2·rs + cellH(rs)</code> ≈ 105）。留白下限是 14 而不是 16，正是因為根因 C 那 2px 還在吃它 —— 這也是為什麼建議順手一起修。若要讓留白恆定，額外的作法是<b>在 resize 結束時把卡片高度吸附到整數行</b>（以 rs=1 為基準：<code>card_h = 32 + 24 + n × cellH(1)</code>，32 ＝ header 30 + 上下邊框 2，24 ＝ 上下 padding 8+16）；這是獨立的體驗改善，不是修 bug 的必要條件。</p>
+
+<h2><span class="n">7</span>落地檢查點</h2>
+<ul>
+  <li><b>單測</b>：<code>proposeGrid()</code> 的純函式測試 —— 邊界要蓋到 <code>H mod cellH == 0</code>（裁切量最大的那格）、<code>H mod cellH == 10·rs</code>（第一格<b>不該</b>裁的），以及夾限生效的高卡片。CSS 行為本身無法單測，建議把這次的 harness 存成一份不進 CI 的驗證腳本，日後動到 <code>.term-host</code> 時再手動跑一次。</li>
+  <li><b>既有測試的影響面</b>：<code>termZoom.test.ts</code> 會變紅（若修根因 C）。<code>kit-build.test.ts</code> 斷言 kit 樣式表不含 <code>.term-host</code> —— 這一項<b>不會</b>變紅，列出來是因為容易誤判：規則要加的位置 <code>app-only.css</code> 不在 kit 的 import closure 內，所以在那裡動 <code>.term-host</code> 的樣式是安全的；前提是修法 1 的選擇器要寫成 <code>.term-host .xterm</code>，不要用裸的 <code>.xterm</code>。</li>
+  <li><b>手動 QA</b>：固定一張卡片，從 100% 依序縮放到 300% 再回來，每一級都確認最後一行完整、下緣留白存在；再拉一次卡片大小重複一輪。走修法 1 的話另加一輪 CJK 輸入法候選字窗位置檢查。</li>
+  <li><b>回歸風險</b>：修好後卡片的 rows 會少 1–2 行（實測 86% 少 1 行、14% 少 2 行 —— 那些本來就是畫不下的行），既有 board 的 PTY 會收到一次 resize —— 這是正確行為，但值得在 release note 提一句。</li>
+</ul>
+
+<div class="foot">
+量測資料（皆與 harness 原始碼同放在本 session 的 scratchpad）：<code>webkit-dpr2.json</code>／<code>webkit-dpr1.json</code>／<code>chromium-dpr2.json</code>（跨引擎對照，各 372 組）、<code>fixes2.json</code>（修法比較，3,234 組）、<code>padding.json</code>（padding 對照，2,142 組）、<code>webgl-tall.json</code>（WebGL 對照 + 高卡片，1,508 組）、<code>final.json</code>（欄數階梯 + inset 修法 + 夾限，7,335 組）、<code>scrollbar.json</code>（捲軸保留寬實驗，60 組）、<code>dprime-webgl.json</code>（D′ 在 WebGL／兩種 dpr 下的欄數，64 組）。結論另經一位獨立覆核者用自己寫的探針與彙總重跑驗證。
+</div>
+
+</div>
+
+<script>
+// 盒模型示意圖。兩個面板用同一組幾何常數，行數各自依「現況／修法」的規則算出來，
+// 不是手畫的——所以圖上的溢出量就是規則本身的結果。
+const HOST_H = 208, PAD_TOP = 14, PAD_BOT = 28, CELL = 26, PANEL_W = 250, BOX_TOP = 52;
+const W = 620, H = 348;
+
+function panel(x, title, rows, tone) {
+  const top = BOX_TOP, bot = BOX_TOP + HOST_H;
+  const contentTop = top + PAD_TOP, contentBot = bot - PAD_BOT;
+  const painted = rows * CELL;
+  const overflow = Math.max(0, contentTop + painted - bot);
+  let g = `<text x="${x}" y="24" fill="#eff0f1" font-size="13.5" font-weight="600">${title}</text>`;
+  g += `<text x="${x}" y="42" fill="#7f8c8d" font-size="11.5">算出 ${rows} 行 ${overflow > 0 ? `→ 最後一行溢出 ${overflow}px` : "→ 全部畫得下"}</text>`;
+  // padding 帶
+  g += `<rect x="${x}" y="${top}" width="${PANEL_W}" height="${PAD_TOP}" fill="#1abc9c" opacity=".2"/>`;
+  g += `<rect x="${x}" y="${contentBot}" width="${PANEL_W}" height="${PAD_BOT}" fill="#1abc9c" opacity=".2"/>`;
+  // 文字行：超出卡片可見下緣的部分用剪裁 + 殘影表示「被吃掉」
+  const clipId = "clip" + x;
+  g += `<clipPath id="${clipId}"><rect x="${x}" y="${top}" width="${PANEL_W}" height="${HOST_H}"/></clipPath>`;
+  let bars = "";
+  for (let i = 0; i < rows; i++) {
+    const y = contentTop + i * CELL;
+    const cut = y + CELL > bot;
+    bars += `<rect x="${x + 12}" y="${y + 4}" width="${PANEL_W - 24}" height="${CELL - 9}" rx="2"
+      fill="${cut ? "#e06c75" : "#9aa4ad"}" opacity="${cut ? ".95" : ".5"}"/>`;
+  }
+  g += `<g clip-path="url(#${clipId})">${bars}</g>`;
+  if (overflow > 0) {
+    const y = contentTop + (rows - 1) * CELL;
+    g += `<rect x="${x + 12}" y="${y + 4}" width="${PANEL_W - 24}" height="${CELL - 9}" rx="2"
+      fill="none" stroke="#e06c75" stroke-dasharray="3 3" opacity=".55"/>`;
+  }
+  // .xterm 內容盒（字理應停在這裡）
+  g += `<rect x="${x}" y="${contentTop}" width="${PANEL_W}" height="${HOST_H - PAD_TOP - PAD_BOT}"
+    fill="none" stroke="#b9bfc4" stroke-dasharray="4 3" stroke-width="1"/>`;
+  // .term-host ＝ FitAddon 量到的盒子 ≈ 卡片可見下緣
+  g += `<rect x="${x}" y="${top}" width="${PANEL_W}" height="${HOST_H}" fill="none" stroke="${tone}" stroke-width="1.5" rx="3"/>`;
+  const note = overflow > 0
+    ? `<text x="${x}" y="${bot + 30}" fill="#e06c75" font-size="11.5">紅色那行在卡片外，只看得到上半截</text>`
+    : `<text x="${x}" y="${bot + 30}" fill="#1abc9c" font-size="11.5">最後一行完整，下緣留白保住</text>`;
+  return g + note;
+}
+
+// 現況：rows 用「含 padding 的外框」算；修法：rows 用「內容盒」算。
+const rowsNow = Math.floor(HOST_H / CELL);
+const rowsFixed = Math.floor((HOST_H - PAD_TOP - PAD_BOT) / CELL);
+const svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img"
+  aria-label="盒模型示意：現況用含 padding 的外框算行數而多算一行導致下緣裁切，修法用內容盒算行數則全部畫得下">
+  <rect width="${W}" height="${H}" fill="#2b3036" rx="6"/>
+  ${panel(24, "現況：用實線外框（含 padding）算", rowsNow, "#e06c75")}
+  ${panel(340, "修法：用虛線內容盒算", rowsFixed, "#1abc9c")}
+  <text x="24" y="${H - 26}" fill="#7f8c8d" font-size="11">實線＝FitAddon 量到的盒子，也就是卡片可見下緣　　虛線＝.xterm 內容盒，字理應停在這裡</text>
+  <text x="24" y="${H - 10}" fill="#7f8c8d" font-size="11">淺綠＝padding（上 8·rs、下 16·rs）　　灰＝畫出來的每一行文字</text>
+</svg>`;
+document.getElementById("fig-box").innerHTML = svg +
+  `<figcaption>同一個盒子、同一個格高：左邊用外框算出 ${rowsNow} 行，最後一行被推出可見範圍；右邊用內容盒算出 ${rowsFixed} 行，全部畫得下，餘料變成下緣留白。
+   圖為示意（格高與 padding 的比例經過放大以利閱讀），取的是餘數最小、溢出最明顯的一格 —— 此時修好後會少兩行；實測 86% 的卡片高度只少一行。</figcaption>`;
+console.log("report rendered", { rowsNow, rowsFixed });
+</script>
+
+<script>
+(function () {
+  var n = 0, frac = 0, last = null;
+  var el = document.createElement("div");
+  el.style.cssText = "position:fixed;left:0;top:0;z-index:99999;background:#000;color:#0f0;" +
+    "font:14px ui-monospace,monospace;padding:6px 10px;white-space:pre";
+  document.addEventListener("DOMContentLoaded", function () { document.body.appendChild(el); });
+  window.addEventListener("message", function (e) {
+    var d = e.data;
+    if (!d || d.tarmac !== "scroll") return;
+    n++;
+    if (!Number.isInteger(d.dy) || !Number.isInteger(d.dx)) frac++;
+    last = d.dy;
+    el.textContent = "relay msgs=" + n + "  lastDy=" + last +
+      "  allInteger=" + (frac === 0) + "  fractional=" + frac;
+  });
+})();
+</script>
