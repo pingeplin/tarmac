@@ -6,7 +6,8 @@
 //     interceptor, so macOS CJK IMEs in alphanumeric mode (which commit every
 //     ASCII key as `insertText`) and plain typing share one path. xterm stands
 //     aside on keypress too, or its `_keyPress` would send the char first. A
-//     dead-key keydown without ⌥ (plain, ⇧, ⌃ or ⌘) stands aside as well: xterm
+//     dead-key keydown without ⌥ (plain, ⇧, ⌃ or ⌘) outside a composition stands
+//     aside as well: xterm
 //     would otherwise set its dead-key flag, which only its keypress/input paths
 //     reset, and swallow the next key it owns (Enter, an arrow, ⌃C).
 //   - ⌘V reaches WebKit's Edit menu Paste, and ⌘C its Copy while the terminal
