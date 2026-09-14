@@ -22,9 +22,22 @@ describe("xtermHandlesKey", () => {
     expect(decide({ key: "/" })).toBe(false);
   });
 
-  it("handles non-keydown events", () => {
+  it("handles keyup events", () => {
     expect(decide({ type: "keyup", key: "a" })).toBe(true);
-    expect(decide({ type: "keypress", key: "a" })).toBe(true);
+    expect(decide({ type: "keyup", key: "v", meta: true })).toBe(true);
+  });
+
+  it("leaves a plain printable keypress to the beforeinput interceptor, so xterm never sends it too", () => {
+    expect(decide({ type: "keypress", key: "a" })).toBe(false);
+    expect(decide({ type: "keypress", key: " " })).toBe(false);
+    expect(decide({ type: "keypress", key: "a", kittyFlags: 5 })).toBe(false);
+  });
+
+  it("handles a keypress xterm owns on keydown", () => {
+    expect(decide({ type: "keypress", key: "a", kittyFlags: 13 })).toBe(true);
+    expect(decide({ type: "keypress", key: "a", composing: true })).toBe(true);
+    expect(decide({ type: "keypress", key: "o", alt: true })).toBe(true);
+    expect(decide({ type: "keypress", key: "Enter" })).toBe(true);
   });
 
   it("handles IME composition", () => {

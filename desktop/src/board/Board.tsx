@@ -49,7 +49,7 @@ interface BoardProps {
   onTermTitle: (termId: string, title: string) => void;
   onTermActivity: (termId: string) => void;
   /** Register/unregister a terminal's focus handle (⌥Tab cycle, restore focus). */
-  onTermRegister?: (termId: string, handle: { focus(): void }) => void;
+  onTermRegister?: (termId: string, handle: { focus(): void; input(data: string): void }) => void;
   onTermUnregister?: (termId: string) => void;
   onDocClose: (path: string) => void;
   onDocRefresh: (path: string) => void;

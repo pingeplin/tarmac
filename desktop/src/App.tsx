@@ -74,7 +74,6 @@ import {
   readDoc,
   spawnTerm,
   termClose,
-  termInput,
   termResize,
   boardSwitch,
   boardCreate,
@@ -266,9 +265,9 @@ export default function App() {
 
   // --- focus registry (Wave 2 cycle) -------------------------------------------
 
-  const termHandlesRef = useRef<Map<string, { focus(): void }>>(new Map());
+  const termHandlesRef = useRef<Map<string, { focus(): void; input(data: string): void }>>(new Map());
 
-  const registerTerm = useCallback((id: string, handle: { focus(): void }) => {
+  const registerTerm = useCallback((id: string, handle: { focus(): void; input(data: string): void }) => {
     termHandlesRef.current.set(id, handle);
   }, []);
 
@@ -1387,7 +1386,9 @@ export default function App() {
       //
       // ⌥↑/⌥↓: macOptionIsMeta:true would also send an ESC-prefixed sequence; we
       // preventDefault() here to suppress xterm's own path and inject the explicit
-      // ESC[1;3A/B sequence instead (Swift parity).
+      // ESC[1;3A/B sequence instead (Swift parity). The bytes go through xterm's
+      // `input()` so, like typed keys, they scroll to the bottom and clear a
+      // selection before reaching the PTY via TerminalCard's onData.
       {
         const termId = focusedLiveTermId();
         if (termId) {
@@ -1402,7 +1403,7 @@ export default function App() {
           if (binding !== null) {
             e.preventDefault();
             e.stopPropagation();
-            void termInput(termId, String.fromCharCode(...binding));
+            termHandlesRef.current.get(termId)?.input(String.fromCharCode(...binding));
             return;
           }
         }
