@@ -83,7 +83,7 @@ interface TerminalCardProps {
   onActivity?: () => void;
   /** Register/unregister a focus handle so App can focus this terminal (⌥Tab cycle,
    *  board-switch/restore focus). */
-  onRegister?: (termId: string, handle: { focus(): void }) => void;
+  onRegister?: (termId: string, handle: { focus(): void; input(data: string): void }) => void;
   onUnregister?: (termId: string) => void;
 }
 
@@ -286,18 +286,20 @@ export function TerminalCard(props: TerminalCardProps) {
       if (!disposed) onSpawn(cols, rows);
     });
 
-    // ── Input routing: unify printable keys on the `beforeinput` path ──────────
+    // ── Input routing: `beforeinput` owns plain printable keys ─────────────────
     //
-    // Tier 2: a custom key-event handler suppresses xterm's OWN keydown emission for
-    // plain printable single chars, so letters AND space AND punctuation all reach
-    // the PTY uniformly via the `beforeinput` interceptor below — no diff race, no
-    // per-key dedupe needed. attachCustomKeyEventHandler returns `false` to tell
-    // xterm "do not process this key": verified in the installed source
-    // (node_modules/@xterm/xterm/lib/xterm.js `_keyDown`) that the early
-    //   `if(this._customKeyEventHandler&&false===this._customKeyEventHandler(e))return false`
-    // returns WITHOUT preventDefault/stopPropagation, so the default action proceeds
-    // and `beforeinput`/`input` still fire. Which keys xterm keeps is decided in
-    // kit/termKeyRoute.ts.
+    // The custom key handler makes xterm stand aside on keydown AND keypress for
+    // plain printable chars, and on a dead-key keydown without ⌥
+    // (kit/termKeyRoute.ts), so letters, space, punctuation, dead-key results
+    // committed without a composition, and IME alphanumeric commits (keyCode 229,
+    // no keypress) all arrive as one `insertText` beforeinput. A dead key that
+    // opens a composition commits through xterm's CompositionHelper instead: the
+    // interceptor skips composing and `insertFromComposition` events.
+    // Returning `false` skips xterm's `_keyDown` / `_keyPress` WITHOUT
+    // preventDefault, so that default action still fires. Keys xterm does send
+    // (chords, named keys, kitty flag 8) are preventDefault-ed by xterm afterwards
+    // — it does that whenever screenReaderMode is off, as here — so they never
+    // reach beforeinput: every key has one owner.
     term.attachCustomKeyEventHandler((e) =>
       xtermHandlesKey({
         type: e.type,
@@ -311,49 +313,24 @@ export function TerminalCard(props: TerminalCardProps) {
       }),
     );
 
-    // Echo dedupe state — set by onData, read by the beforeinput interceptor. With the
-    // Tier 2 custom handler above, onData and beforeinput are now MUTUALLY EXCLUSIVE
-    // per key: plain printables go only through beforeinput, and any key xterm does
-    // emit from keydown (e.g. ⌥-as-meta) is followed by xterm's own preventDefault()
-    // (verified in `_keyDown`: after triggerDataEvent it always calls
-    // preventDefault/stopPropagation since screenReaderMode is off), which suppresses
-    // beforeinput. So this dedupe is now defensive insurance, not load-bearing. The
-    // flag is reset at the START of every keydown (capture phase, before xterm's
-    // handler) so its lifetime is exactly one physical key: keydown(reset) →
-    // onData(set) → beforeinput(read). It must NOT be cleared by a microtask — the
-    // browser drains microtasks when the keydown dispatch's JS stack empties, BEFORE
-    // the default action dispatches beforeinput, which would clear it too early. The
-    // keydown reset also clears a stale flag left by keys that emit onData but no
-    // beforeinput (Enter, arrows).
-    let echoData = "";
-    let xtermSent = false;
     const ta = term.textarea;
     const offIme: Array<() => void> = [];
     if (ta) {
-      const onKeyDownReset = () => { xtermSent = false; };
-      ta.addEventListener("keydown", onKeyDownReset, true);
-      offIme.push(() => ta.removeEventListener("keydown", onKeyDownReset, true));
-      // macOS CJK IMEs in alphanumeric mode deliver every ASCII key as a committed
-      // `insertText` whose char is authoritative in `e.data`. We intercept the
-      // committed text directly and preventDefault so the textarea never mutates
-      // (xterm's diff path is a no-op and cannot echo). Real compositions
-      // (isComposing) and non-insert edits are left to xterm.
+      // The committed char in `e.data` is authoritative. preventDefault keeps the
+      // textarea empty, so xterm's diff path has nothing to echo, and
+      // `term.input` sends it as xterm's own user input: it scrolls to the
+      // bottom, clears a selection, and reaches the PTY through onData below.
+      // Compositions and non-insert edits stay with xterm.
       const onBeforeInput = (e: InputEvent) => {
         if (e.isComposing || e.inputType !== "insertText" || e.data == null) return;
         e.preventDefault();
-        if (xtermSent && e.data === echoData) return;
-        // xterm clears its selection on input it sends; this path bypasses it.
-        if (term.hasSelection()) term.clearSelection();
-        termInput(model.termId, e.data);
-        if (bellRef.current) onActivityRef.current?.();
+        term.input(e.data);
       };
       ta.addEventListener("beforeinput", onBeforeInput, true);
       offIme.push(() => ta.removeEventListener("beforeinput", onBeforeInput, true));
     }
 
     const offData = term.onData((data) => {
-      xtermSent = true;
-      echoData = data;
       termInput(model.termId, data);
       // A keystroke clears this terminal's bell (only notify when one is lit, so
       // normal typing never churns React state).

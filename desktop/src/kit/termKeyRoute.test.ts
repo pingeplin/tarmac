@@ -22,9 +22,37 @@ describe("xtermHandlesKey", () => {
     expect(decide({ key: "/" })).toBe(false);
   });
 
-  it("handles non-keydown events", () => {
+  it("handles keyup events", () => {
     expect(decide({ type: "keyup", key: "a" })).toBe(true);
-    expect(decide({ type: "keypress", key: "a" })).toBe(true);
+    expect(decide({ type: "keyup", key: "v", meta: true })).toBe(true);
+  });
+
+  it("leaves a plain printable keypress to the beforeinput interceptor, so xterm never sends it too", () => {
+    expect(decide({ type: "keypress", key: "a" })).toBe(false);
+    expect(decide({ type: "keypress", key: " " })).toBe(false);
+    expect(decide({ type: "keypress", key: "a", kittyFlags: 5 })).toBe(false);
+  });
+
+  it("leaves a plain dead-key keydown to the browser, so xterm never waits for a keypress that doesn't come", () => {
+    expect(decide({ key: "Dead" })).toBe(false);
+    expect(decide({ key: "Dead", kittyFlags: 5 })).toBe(false);
+  });
+
+  it("leaves a ⌃ or ⌘ dead-key keydown to the browser too", () => {
+    expect(decide({ key: "Dead", meta: true })).toBe(false);
+    expect(decide({ key: "Dead", ctrl: true })).toBe(false);
+  });
+
+  it("handles a dead key held with ⌥ and a dead-key keyup", () => {
+    expect(decide({ key: "Dead", alt: true })).toBe(true);
+    expect(decide({ type: "keyup", key: "Dead" })).toBe(true);
+  });
+
+  it("handles a keypress xterm owns on keydown", () => {
+    expect(decide({ type: "keypress", key: "a", kittyFlags: 13 })).toBe(true);
+    expect(decide({ type: "keypress", key: "a", composing: true })).toBe(true);
+    expect(decide({ type: "keypress", key: "o", alt: true })).toBe(true);
+    expect(decide({ type: "keypress", key: "Enter" })).toBe(true);
   });
 
   it("handles IME composition", () => {
