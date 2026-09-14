@@ -5,7 +5,10 @@
 //   - plain printable chars reach the PTY through TerminalCard's `beforeinput`
 //     interceptor, so macOS CJK IMEs in alphanumeric mode (which commit every
 //     ASCII key as `insertText`) and plain typing share one path. xterm stands
-//     aside on keypress too, or its `_keyPress` would send the char first.
+//     aside on keypress too, or its `_keyPress` would send the char first. A
+//     plain dead-key keydown stands aside as well: xterm would otherwise set its
+//     dead-key flag, which only its keypress/input paths reset, and swallow the
+//     next key it owns (Enter, an arrow, ⌃C).
 //   - ⌘V reaches WebKit's Edit menu Paste, and ⌘C its Copy while the terminal
 //     has a selection (Ghostty's `performable:` semantics). Under a kitty
 //     keyboard program (Claude Code pushes flags 5) xterm would encode them as
@@ -42,5 +45,6 @@ export function xtermHandlesKey(input: TermKeyRouteInput): boolean {
     if (key === "v" || (key === "c" && input.hasSelection)) return false;
   }
   if (input.ctrl || input.meta || input.alt) return true;
+  if (input.type === "keydown" && input.key === "Dead") return false;
   return (input.kittyFlags & REPORT_ALL_KEYS_AS_ESCAPE_CODES) !== 0 || input.key.length !== 1;
 }
