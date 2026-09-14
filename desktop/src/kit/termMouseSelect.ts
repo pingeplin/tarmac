@@ -7,9 +7,11 @@
 //     `altClickMovesCursor`, whose arrow keys would drive the program (Claude
 //     Code's ↑ walks history), so cursor moves stay shell-only.
 //   - swallowsHover: xterm clears its selection on any user input, and every
-//     hover report counts, so a buttonless move over a selection is kept from
-//     xterm while tracking is on. Cost: no hover reports or link underline while
-//     a selection is shown; a plain click dismisses it and reports resume.
+//     hover report counts. Only any-event tracking (`?1003h`) reports hover, so
+//     under it a buttonless move over the terminal is kept from xterm while a
+//     selection is shown. Cost, under any-event tracking only: no hover reports
+//     or link underline while a selection is shown; a plain click dismisses it
+//     and reports resume.
 
 import type { IModes } from "@xterm/xterm";
 
@@ -26,5 +28,5 @@ export function mouseSelectOptions(mode: MouseTrackingMode): MouseSelectOptions 
 }
 
 export function swallowsHover(input: { mode: MouseTrackingMode; buttons: number; hasSelection: boolean }): boolean {
-  return input.mode !== "none" && input.buttons === 0 && input.hasSelection;
+  return input.mode === "any" && input.buttons === 0 && input.hasSelection;
 }
