@@ -23,9 +23,11 @@
 // Matching is by code AND an *exact* intent-modifier set: the ⌘ rows fire only
 // when meta is the SOLE intent modifier (no alt/ctrl/shift), the ⌥ rows only when
 // alt is sole. So ⌃⌘←, ⌥⌘←, ⇧⌘←, ⇧⌥↑, … all defer. While a CJK IME is composing
-// or a kitty keyboard program is active we return `null` unconditionally, so
-// neither the candidate preview nor a kitty-aware app (Claude Code, neovim) is
-// ever corrupted.
+// we return `null` unconditionally, so the candidate preview is never corrupted.
+//
+// The rows fire even while a kitty keyboard program owns the encoding: like
+// Ghostty's `text:` keybinds, they pre-empt the encoder. The Swift port's
+// `keyboardEnhancementFlags` gate was never live in the Tauri app (#149).
 
 export interface TermKeyInput {
   /** A `KeyboardEvent.code`: 'Backspace' | 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown'. */
@@ -36,8 +38,6 @@ export interface TermKeyInput {
   shift: boolean;
   /** A CJK IME is mid-composition — defer everything. */
   composing: boolean;
-  /** A kitty keyboard program owns the keys — defer everything. */
-  kittyActive: boolean;
 }
 
 /**
@@ -51,10 +51,10 @@ export interface TermKeyInput {
  *   ⌥↑  → [0x1b,0x5b,0x31,0x3b,0x33,0x41] ESC[1;3A
  *   ⌥↓  → [0x1b,0x5b,0x31,0x3b,0x33,0x42] ESC[1;3B
  *
- * Returns `null` unconditionally while composing or kittyActive.
+ * Returns `null` unconditionally while composing.
  */
 export function bytes(input: TermKeyInput): number[] | null {
-  if (input.composing || input.kittyActive) return null;
+  if (input.composing) return null;
 
   // Exact intent-modifier gating: meta-only means meta down and the other three
   // up; alt-only the mirror. CapsLock is intentionally absent from the input.
