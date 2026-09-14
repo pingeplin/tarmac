@@ -38,6 +38,11 @@ describe("xtermHandlesKey", () => {
     expect(decide({ key: "Dead", kittyFlags: 5 })).toBe(false);
   });
 
+  it("leaves a ⌃ or ⌘ dead-key keydown to the browser too", () => {
+    expect(decide({ key: "Dead", meta: true })).toBe(false);
+    expect(decide({ key: "Dead", ctrl: true })).toBe(false);
+  });
+
   it("handles a dead key held with ⌥ and a dead-key keyup", () => {
     expect(decide({ key: "Dead", alt: true })).toBe(true);
     expect(decide({ type: "keyup", key: "Dead" })).toBe(true);

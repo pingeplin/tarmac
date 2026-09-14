@@ -288,10 +288,13 @@ export function TerminalCard(props: TerminalCardProps) {
     // ── Input routing: `beforeinput` owns plain printable keys ─────────────────
     //
     // The custom key handler makes xterm stand aside on keydown AND keypress for
-    // plain printable chars, and on a plain dead-key keydown (kit/termKeyRoute.ts),
-    // so letters, space, punctuation, dead-key results and IME alphanumeric
-    // commits (keyCode 229, no keypress) all arrive as one `insertText`
-    // beforeinput. Returning `false` skips xterm's `_keyDown` / `_keyPress` WITHOUT
+    // plain printable chars, and on a dead-key keydown without ⌥
+    // (kit/termKeyRoute.ts), so letters, space, punctuation, dead-key results
+    // committed without a composition, and IME alphanumeric commits (keyCode 229,
+    // no keypress) all arrive as one `insertText` beforeinput. A dead key that
+    // opens a composition commits through xterm's CompositionHelper instead: the
+    // interceptor skips composing and `insertFromComposition` events.
+    // Returning `false` skips xterm's `_keyDown` / `_keyPress` WITHOUT
     // preventDefault, so that default action still fires. Keys xterm does send
     // (chords, named keys, kitty flag 8) are preventDefault-ed by xterm afterwards
     // — it does that whenever screenReaderMode is off, as here — so they never
