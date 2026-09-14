@@ -61,6 +61,8 @@ describe("xtermHandlesKey", () => {
     expect(decide({ key: "c", meta: true, hasSelection: false, kittyActive: true })).toBe(true);
     expect(decide({ key: "c", meta: true, ctrl: true, hasSelection: true })).toBe(true);
     expect(decide({ key: "c", meta: true, alt: true, hasSelection: true })).toBe(true);
+    expect(decide({ key: "a", meta: true, hasSelection: true })).toBe(true);
+    expect(decide({ key: "s", meta: true, hasSelection: true, kittyActive: true })).toBe(true);
   });
 
   it("handles other ⌘ chords, where a kitty program can bind them", () => {
