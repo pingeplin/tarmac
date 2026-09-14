@@ -54,9 +54,10 @@ import {
 } from "../kit/termGrid";
 import { termInnerBox } from "../kit/termZoom";
 import { xtermHandlesKey } from "../kit/termKeyRoute";
+import { binaryBytes } from "../kit/termBinaryInput";
 import { mouseSelectOptions, swallowsHover } from "../kit/termMouseSelect";
 import { xtermKittyFlags } from "./xtermKittyFlags";
-import { attachTermOutput, detachTermOutput, termInput, termResize } from "../ipc/daemon";
+import { attachTermOutput, detachTermOutput, termInput, termInputBytes, termResize } from "../ipc/daemon";
 import { openExternal } from "../ipc/shell";
 import { termFontFamily, termFontSize, xtermTheme } from "../theme";
 import type { TermCardModel, WorldFrame } from "../board/model";
@@ -335,6 +336,12 @@ export function TerminalCard(props: TerminalCardProps) {
       // normal typing never churns React state).
       if (bellRef.current) onActivityRef.current?.();
     });
+    // Non-SGR mouse reports. They clear a lit bell like onData does, so a click
+    // counts the same whichever encoding the program asked for.
+    const offBinary = term.onBinary((data) => {
+      termInputBytes(model.termId, binaryBytes(data));
+      if (bellRef.current) onActivityRef.current?.();
+    });
     const offResize = term.onResize(({ cols, rows }) => termResize(model.termId, cols, rows));
     const offTitle = term.onTitleChange((title) => onTitle(title));
 
@@ -368,6 +375,7 @@ export function TerminalCard(props: TerminalCardProps) {
       host.removeEventListener("mousemove", holdSelection, { capture: true });
       offIme.forEach((off) => off());
       offData.dispose();
+      offBinary.dispose();
       offResize.dispose();
       offTitle.dispose();
       webglRef.current?.dispose();
