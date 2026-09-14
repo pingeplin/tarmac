@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { route, type TermKeyRouteInput } from "./termKeyRoute";
+import { xtermHandlesKey, type TermKeyRouteInput } from "./termKeyRoute";
 
 function decide(over: Partial<TermKeyRouteInput>) {
-  return route({
+  return xtermHandlesKey({
     type: "keydown",
     key: "",
     composing: false,
@@ -14,56 +14,56 @@ function decide(over: Partial<TermKeyRouteInput>) {
   });
 }
 
-describe("termKeyRoute", () => {
-  it("sends plain printable keys through beforeinput", () => {
-    expect(decide({ key: "a" })).toBe("beforeinput");
-    expect(decide({ key: " " })).toBe("beforeinput");
-    expect(decide({ key: "/" })).toBe("beforeinput");
+describe("xtermHandlesKey", () => {
+  it("leaves plain printable keys to the beforeinput interceptor", () => {
+    expect(decide({ key: "a" })).toBe(false);
+    expect(decide({ key: " " })).toBe(false);
+    expect(decide({ key: "/" })).toBe(false);
   });
 
-  it("leaves non-keydown events to xterm", () => {
-    expect(decide({ type: "keyup", key: "a" })).toBe("xterm");
-    expect(decide({ type: "keypress", key: "a" })).toBe("xterm");
+  it("handles non-keydown events", () => {
+    expect(decide({ type: "keyup", key: "a" })).toBe(true);
+    expect(decide({ type: "keypress", key: "a" })).toBe(true);
   });
 
-  it("leaves IME composition to xterm", () => {
-    expect(decide({ key: "a", composing: true })).toBe("xterm");
+  it("handles IME composition", () => {
+    expect(decide({ key: "a", composing: true })).toBe(true);
   });
 
-  it("leaves ⌃ and ⌥ chords to xterm", () => {
-    expect(decide({ key: "c", ctrl: true })).toBe("xterm");
-    expect(decide({ key: "o", alt: true })).toBe("xterm");
+  it("handles ⌃ and ⌥ chords", () => {
+    expect(decide({ key: "c", ctrl: true })).toBe(true);
+    expect(decide({ key: "o", alt: true })).toBe(true);
   });
 
-  it("leaves named keys to xterm", () => {
-    expect(decide({ key: "Enter" })).toBe("xterm");
-    expect(decide({ key: "ArrowUp" })).toBe("xterm");
-    expect(decide({ key: "Enter", meta: true })).toBe("xterm");
+  it("handles named keys", () => {
+    expect(decide({ key: "Enter" })).toBe(true);
+    expect(decide({ key: "ArrowUp" })).toBe(true);
+    expect(decide({ key: "Enter", meta: true })).toBe(true);
   });
 
-  it("leaves plain printable keys to xterm while a kitty keyboard program is active", () => {
-    expect(decide({ key: "a", kittyActive: true })).toBe("xterm");
+  it("handles plain printable keys while a kitty keyboard program is active", () => {
+    expect(decide({ key: "a", kittyActive: true })).toBe(true);
   });
 
-  it("hands ⌘V to the browser so the Edit menu's Paste fires", () => {
-    expect(decide({ key: "v", meta: true })).toBe("browser");
-    expect(decide({ key: "V", meta: true })).toBe("browser");
-    expect(decide({ key: "v", meta: true, kittyActive: true })).toBe("browser");
+  it("leaves ⌘V to the browser so the Edit menu's Paste fires", () => {
+    expect(decide({ key: "v", meta: true })).toBe(false);
+    expect(decide({ key: "V", meta: true })).toBe(false);
+    expect(decide({ key: "v", meta: true, kittyActive: true })).toBe(false);
   });
 
-  it("leaves other ⌘ chords to xterm, where a kitty program can bind them", () => {
-    expect(decide({ key: "c", meta: true, kittyActive: true })).toBe("xterm");
-    expect(decide({ key: "s", meta: true, kittyActive: true })).toBe("xterm");
-    expect(decide({ key: "a", meta: true })).toBe("xterm");
+  it("handles other ⌘ chords, where a kitty program can bind them", () => {
+    expect(decide({ key: "c", meta: true, kittyActive: true })).toBe(true);
+    expect(decide({ key: "s", meta: true, kittyActive: true })).toBe(true);
+    expect(decide({ key: "a", meta: true })).toBe(true);
   });
 
-  it("leaves ⌘ chords to xterm on keyup and during IME composition", () => {
-    expect(decide({ type: "keyup", key: "v", meta: true })).toBe("xterm");
-    expect(decide({ key: "v", meta: true, composing: true })).toBe("xterm");
+  it("handles ⌘ chords on keyup and during IME composition", () => {
+    expect(decide({ type: "keyup", key: "v", meta: true })).toBe(true);
+    expect(decide({ key: "v", meta: true, composing: true })).toBe(true);
   });
 
-  it("leaves ⌃⌘ and ⌥⌘ chords to xterm", () => {
-    expect(decide({ key: "v", meta: true, ctrl: true })).toBe("xterm");
-    expect(decide({ key: "v", meta: true, alt: true })).toBe("xterm");
+  it("handles ⌃⌘ and ⌥⌘ chords", () => {
+    expect(decide({ key: "v", meta: true, ctrl: true })).toBe(true);
+    expect(decide({ key: "v", meta: true, alt: true })).toBe(true);
   });
 });

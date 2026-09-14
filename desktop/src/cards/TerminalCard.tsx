@@ -53,7 +53,7 @@ import {
   type RestGrid,
 } from "../kit/termGrid";
 import { termInnerBox } from "../kit/termZoom";
-import { route as termKeyRoute } from "../kit/termKeyRoute";
+import { xtermHandlesKey } from "../kit/termKeyRoute";
 import { attachTermOutput, detachTermOutput, termInput, termResize } from "../ipc/daemon";
 import { openExternal } from "../ipc/shell";
 import { termFontFamily, termFontSize, xtermTheme } from "../theme";
@@ -292,7 +292,7 @@ export function TerminalCard(props: TerminalCardProps) {
     const kittyActive = (): boolean =>
       !!((term as any)?._core?._coreService?.kittyKeyboard?.flags);
     term.attachCustomKeyEventHandler((e) =>
-      termKeyRoute({
+      xtermHandlesKey({
         type: e.type,
         key: e.key,
         composing: e.isComposing,
@@ -300,7 +300,7 @@ export function TerminalCard(props: TerminalCardProps) {
         alt: e.altKey,
         ctrl: e.ctrlKey,
         kittyActive: kittyActive(),
-      }) === "xterm",
+      }),
     );
 
     // Echo dedupe state — set by onData, read by the beforeinput interceptor. With the
