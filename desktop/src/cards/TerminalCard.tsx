@@ -53,6 +53,7 @@ import {
   type RestGrid,
 } from "../kit/termGrid";
 import { termInnerBox } from "../kit/termZoom";
+import { route as termKeyRoute } from "../kit/termKeyRoute";
 import { attachTermOutput, detachTermOutput, termInput, termResize } from "../ipc/daemon";
 import { openExternal } from "../ipc/shell";
 import { termFontFamily, termFontSize, xtermTheme } from "../theme";
@@ -286,25 +287,21 @@ export function TerminalCard(props: TerminalCardProps) {
     // (node_modules/@xterm/xterm/lib/xterm.js `_keyDown`) that the early
     //   `if(this._customKeyEventHandler&&false===this._customKeyEventHandler(e))return false`
     // returns WITHOUT preventDefault/stopPropagation, so the default action proceeds
-    // and `beforeinput`/`input` still fire. We return `true` (let xterm handle it)
-    // for anything that must keep xterm's key evaluation:
-    //   - modifiers (ctrl/meta/alt): chords + macOptionIsMeta (⌥O must emit ESC o,
-    //     not ø) need xterm's keydown path.
-    //   - kitty keyboard active: don't break progressive-enhancement sequences for
-    //     plain keys (kittyActive reads the same per-terminal runtime flag App.tsx
-    //     uses: term._core._coreService.kittyKeyboard.flags).
-    //   - composition (isComposing) or multi-char keys (Enter/Esc/Tab/arrows/F-keys,
-    //     e.key.length !== 1): owned by xterm / its CompositionHelper.
+    // and `beforeinput`/`input` still fire. Which keys xterm keeps is decided in
+    // kit/termKeyRoute.ts.
     const kittyActive = (): boolean =>
       !!((term as any)?._core?._coreService?.kittyKeyboard?.flags);
-    term.attachCustomKeyEventHandler((e) => {
-      if (e.type !== "keydown") return true;
-      if (e.isComposing) return true;
-      if (e.ctrlKey || e.metaKey || e.altKey) return true;
-      if (kittyActive()) return true;
-      if (e.key.length !== 1) return true;
-      return false; // plain printable single char → handled by `beforeinput`.
-    });
+    term.attachCustomKeyEventHandler((e) =>
+      termKeyRoute({
+        type: e.type,
+        key: e.key,
+        composing: e.isComposing,
+        meta: e.metaKey,
+        alt: e.altKey,
+        ctrl: e.ctrlKey,
+        kittyActive: kittyActive(),
+      }) === "xterm",
+    );
 
     // Echo dedupe state — set by onData, read by the beforeinput interceptor. With the
     // Tier 2 custom handler above, onData and beforeinput are now MUTUALLY EXCLUSIVE
