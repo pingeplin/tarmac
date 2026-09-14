@@ -12,9 +12,16 @@ import { xtermKittyFlags } from "./cards/xtermKittyFlags";
 describe("xtermKittyFlags", () => {
   it("reads the kitty keyboard flags a program pushes to a real xterm", async () => {
     const term = new Terminal({ allowProposedApi: true, vtExtensions: { kittyKeyboard: true } });
-    expect(xtermKittyFlags(term)).toBe(0);
-    await new Promise<void>((resolve) => term.write("\x1b[>13u", resolve));
-    expect(xtermKittyFlags(term)).toBe(13);
-    term.dispose();
+    try {
+      expect(xtermKittyFlags(term)).toBe(0);
+      await new Promise<void>((resolve) => term.write("\x1b[>13u", resolve));
+      expect(xtermKittyFlags(term)).toBe(13);
+    } finally {
+      term.dispose();
+    }
+  });
+
+  it("reads 0 when xterm's internal field is missing", () => {
+    expect(xtermKittyFlags({} as unknown as Terminal)).toBe(0);
   });
 });

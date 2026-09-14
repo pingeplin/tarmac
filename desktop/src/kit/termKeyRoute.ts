@@ -27,8 +27,9 @@ export interface TermKeyRouteInput {
 
 // Only this kitty flag turns every plain printable key into CSI u. Under the
 // others xterm's encoder emits the raw char for text keys — the bytes the
-// beforeinput path sends — but not for keypad keys, which flags 1/2 encode as
-// CSI 57399+n u; beforeinput still sends the raw digit there, as before #149.
+// beforeinput path sends — but not for numpad keys, which flags 1/2 encode as
+// CSI u (codes 57399–57415); beforeinput still sends the raw char there, as
+// before #149.
 const REPORT_ALL_KEYS_AS_ESCAPE_CODES = 8;
 
 export function xtermHandlesKey(input: TermKeyRouteInput): boolean {

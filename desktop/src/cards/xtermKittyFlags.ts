@@ -6,6 +6,5 @@ import type { Terminal } from "@xterm/xterm";
 // key handler would kill every key xterm handles; xterm-kitty-flags.test.ts
 // fails if an upgrade moves the field.
 export function xtermKittyFlags(term: Terminal): number {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (term as any)._core?.coreService?.kittyKeyboard?.flags ?? 0;
 }
