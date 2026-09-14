@@ -64,6 +64,11 @@ export function termInput(termId: string, data: string): Promise<void> {
   return invoke("term_input", { termId, data });
 }
 
+/** Raw input bytes (xterm `onBinary`), sent as-is rather than UTF-8 encoded. */
+export function termInputBytes(termId: string, bytes: number[]): Promise<void> {
+  return invoke("term_input_bytes", { termId, bytes });
+}
+
 export function termResize(termId: string, cols: number, rows: number): Promise<void> {
   return invoke("term_resize", { termId, cols, rows });
 }

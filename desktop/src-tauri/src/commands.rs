@@ -68,6 +68,14 @@ pub fn term_input(state: State<Bridge>, term_id: String, data: String) {
     });
 }
 
+/// Binary terminal input. xterm's `onBinary` yields one char per byte (non-SGR
+/// mouse reports, whose coordinates past 95 are bytes ≥ 0x80), so the frontend
+/// sends the bytes themselves; `term_input`'s UTF-8 path would split those.
+#[tauri::command]
+pub fn term_input_bytes(state: State<Bridge>, term_id: String, bytes: Vec<u8>) {
+    state.send(Msg::Input { term_id, bytes });
+}
+
 #[tauri::command]
 pub fn term_resize(state: State<Bridge>, term_id: String, cols: u16, rows: u16) {
     state.send(Msg::Resize {
