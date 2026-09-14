@@ -54,6 +54,7 @@ import {
 } from "../kit/termGrid";
 import { termInnerBox } from "../kit/termZoom";
 import { xtermHandlesKey } from "../kit/termKeyRoute";
+import { mouseSelectOptions, swallowsHover } from "../kit/termMouseSelect";
 import { xtermKittyFlags } from "./xtermKittyFlags";
 import { attachTermOutput, detachTermOutput, termInput, termResize } from "../ipc/daemon";
 import { openExternal } from "../ipc/shell";
@@ -259,6 +260,18 @@ export function TerminalCard(props: TerminalCardProps) {
     xtermEl.getBoundingClientRect = fakeBCR(origElBCR);
     xtermScreen.getBoundingClientRect = fakeBCR(origScreenBCR);
 
+    // Capture on the host: xterm reads macOptionClickForcesSelection in its own
+    // .xterm mousedown, and hover reports come from .xterm's mousemove.
+    const syncMouseSelect = () => {
+      Object.assign(term.options, mouseSelectOptions(term.modes.mouseTrackingMode));
+    };
+    const holdSelection = (e: MouseEvent) => {
+      const mode = term.modes.mouseTrackingMode;
+      if (swallowsHover({ mode, buttons: e.buttons, hasSelection: term.hasSelection() })) e.stopPropagation();
+    };
+    host.addEventListener("mousedown", syncMouseSelect, { capture: true });
+    host.addEventListener("mousemove", holdSelection, { capture: true });
+
     // Register focus handle so App can focus this terminal (⌥Tab cycle, restore).
     onRegister?.(model.termId, term);
 
@@ -293,6 +306,7 @@ export function TerminalCard(props: TerminalCardProps) {
         alt: e.altKey,
         ctrl: e.ctrlKey,
         kittyFlags: xtermKittyFlags(term),
+        hasSelection: term.hasSelection(),
       }),
     );
 
@@ -327,6 +341,8 @@ export function TerminalCard(props: TerminalCardProps) {
         if (e.isComposing || e.inputType !== "insertText" || e.data == null) return;
         e.preventDefault();
         if (xtermSent && e.data === echoData) return;
+        // xterm clears its selection on input it sends; this path bypasses it.
+        if (term.hasSelection()) term.clearSelection();
         termInput(model.termId, e.data);
         if (bellRef.current) onActivityRef.current?.();
       };
@@ -371,6 +387,8 @@ export function TerminalCard(props: TerminalCardProps) {
       document.removeEventListener("mousemove", trackMouse, { capture: true });
       xtermEl.getBoundingClientRect = origElBCR;
       xtermScreen.getBoundingClientRect = origScreenBCR;
+      host.removeEventListener("mousedown", syncMouseSelect, { capture: true });
+      host.removeEventListener("mousemove", holdSelection, { capture: true });
       offIme.forEach((off) => off());
       offData.dispose();
       offResize.dispose();
