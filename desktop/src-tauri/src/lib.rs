@@ -42,6 +42,7 @@ pub fn run() {
             commands::term_detach,
             commands::spawn_term,
             commands::term_input,
+            commands::term_input_bytes,
             commands::term_resize,
             commands::term_close,
             commands::doc_open,

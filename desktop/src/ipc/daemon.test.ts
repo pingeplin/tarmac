@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const invoke = vi.hoisted(() => vi.fn((_cmd: string, _args?: unknown) => Promise.resolve()));
 vi.mock("@tauri-apps/api/core", () => ({ invoke, Channel: class {} }));
 
-const { docOpen, docRead, docClose, docRefresh, readDoc } = await import("./daemon");
+const { docOpen, docRead, docClose, docRefresh, readDoc, termInput, termInputBytes } = await import("./daemon");
 
 beforeEach(() => invoke.mockClear());
 
@@ -39,5 +39,19 @@ describe("doc IPC verbs map to their own Tauri commands", () => {
       "doc_refresh",
       "read_doc",
     ]);
+  });
+});
+
+describe("terminal input verbs map to their own Tauri commands", () => {
+  // termInputBytes routed through term_input would type-check and pass every other
+  // suite, then UTF-8-encode every non-SGR mouse report (a byte >= 0x80 becomes two).
+  it("termInput sends term_input with a string payload", async () => {
+    await termInput("t1", "a");
+    expect(invoke).toHaveBeenCalledWith("term_input", { termId: "t1", data: "a" });
+  });
+
+  it("termInputBytes sends term_input_bytes with a byte-array payload", async () => {
+    await termInputBytes("t1", [0x1b, 0x84]);
+    expect(invoke).toHaveBeenCalledWith("term_input_bytes", { termId: "t1", bytes: [0x1b, 0x84] });
   });
 });
