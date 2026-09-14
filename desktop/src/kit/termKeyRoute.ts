@@ -10,9 +10,10 @@
 //     would encode it as ESC[118;9u and preventDefault the paste; in legacy
 //     mode xterm emits nothing for it anyway.
 // xterm keeps ⌃/⌥ chords (macOptionIsMeta: ⌥O must emit ESC o), named keys,
-// compositions, and everything while a kitty keyboard program owns the
-// encoding. Other ⌘ chords stay too: kitty programs bind them (Claude Code's
-// fullscreen selection copy is `cmd+c`), and legacy ⌘A is xterm's select-all.
+// compositions, and plain printable chars when a kitty program asks for every
+// key as an escape code. Other ⌘ chords stay too: kitty programs bind them
+// (Claude Code's fullscreen selection copy is `cmd+c`), and legacy ⌘A is xterm's
+// select-all.
 
 export interface TermKeyRouteInput {
   type: string;
@@ -21,12 +22,19 @@ export interface TermKeyRouteInput {
   meta: boolean;
   alt: boolean;
   ctrl: boolean;
-  kittyActive: boolean;
+  kittyFlags: number;
 }
+
+// Only this kitty flag turns every plain printable key into CSI u. Under the
+// others xterm's encoder emits the raw char for text keys — the bytes the
+// beforeinput path sends — but not for numpad keys, which flags 1/2 encode as
+// CSI u (codes 57399–57415); beforeinput still sends the raw char there, as
+// before #149.
+const REPORT_ALL_KEYS_AS_ESCAPE_CODES = 8;
 
 export function xtermHandlesKey(input: TermKeyRouteInput): boolean {
   if (input.type !== "keydown" || input.composing) return true;
   if (input.meta && !input.ctrl && !input.alt && input.key.toLowerCase() === "v") return false;
   if (input.ctrl || input.meta || input.alt) return true;
-  return input.kittyActive || input.key.length !== 1;
+  return (input.kittyFlags & REPORT_ALL_KEYS_AS_ESCAPE_CODES) !== 0 || input.key.length !== 1;
 }

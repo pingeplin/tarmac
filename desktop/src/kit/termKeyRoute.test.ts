@@ -9,7 +9,7 @@ function decide(over: Partial<TermKeyRouteInput>) {
     meta: false,
     alt: false,
     ctrl: false,
-    kittyActive: false,
+    kittyFlags: 0,
     ...over,
   });
 }
@@ -41,19 +41,27 @@ describe("xtermHandlesKey", () => {
     expect(decide({ key: "Enter", meta: true })).toBe(true);
   });
 
-  it("handles plain printable keys while a kitty keyboard program is active", () => {
-    expect(decide({ key: "a", kittyActive: true })).toBe(true);
+  it("handles plain printable keys when a kitty program asks for every key as an escape code", () => {
+    expect(decide({ key: "a", kittyFlags: 8 })).toBe(true);
+    expect(decide({ key: "a", kittyFlags: 13 })).toBe(true);
+    expect(decide({ key: "a", kittyFlags: 31 })).toBe(true);
+  });
+
+  it("leaves plain printable keys to the beforeinput interceptor under other kitty flags", () => {
+    expect(decide({ key: "a", kittyFlags: 5 })).toBe(false);
+    expect(decide({ key: "a", kittyFlags: 1 })).toBe(false);
+    expect(decide({ key: "a", kittyFlags: 16 })).toBe(false);
   });
 
   it("leaves ⌘V to the browser so the Edit menu's Paste fires", () => {
     expect(decide({ key: "v", meta: true })).toBe(false);
     expect(decide({ key: "V", meta: true })).toBe(false);
-    expect(decide({ key: "v", meta: true, kittyActive: true })).toBe(false);
+    expect(decide({ key: "v", meta: true, kittyFlags: 5 })).toBe(false);
   });
 
   it("handles other ⌘ chords, where a kitty program can bind them", () => {
-    expect(decide({ key: "c", meta: true, kittyActive: true })).toBe(true);
-    expect(decide({ key: "s", meta: true, kittyActive: true })).toBe(true);
+    expect(decide({ key: "c", meta: true, kittyFlags: 5 })).toBe(true);
+    expect(decide({ key: "s", meta: true, kittyFlags: 5 })).toBe(true);
     expect(decide({ key: "a", meta: true })).toBe(true);
   });
 
