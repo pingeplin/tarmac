@@ -5,14 +5,16 @@
 //   - plain printable chars reach the PTY through TerminalCard's `beforeinput`
 //     interceptor, so macOS CJK IMEs in alphanumeric mode (which commit every
 //     ASCII key as `insertText`) and plain typing share one path.
-//   - ⌘V reaches WebKit's Edit menu Paste — like Ghostty, the terminal owns
-//     paste. Under a kitty keyboard program (Claude Code pushes flags 5) xterm
-//     would encode it as ESC[118;9u and preventDefault the paste; in legacy
-//     mode xterm emits nothing for it anyway.
+//   - ⌘V reaches WebKit's Edit menu Paste, and ⌘C its Copy while the terminal
+//     has a selection (Ghostty's `performable:` semantics). Under a kitty
+//     keyboard program (Claude Code pushes flags 5) xterm would encode them as
+//     ESC[118;9u / ESC[99;9u and preventDefault the menu action; in legacy mode
+//     xterm emits nothing for them anyway.
 // xterm keeps ⌃/⌥ chords (macOptionIsMeta: ⌥O must emit ESC o), named keys,
 // compositions, and everything while a kitty keyboard program owns the
-// encoding. Other ⌘ chords stay too: kitty programs bind them (Claude Code's
-// fullscreen selection copy is `cmd+c`), and legacy ⌘A is xterm's select-all.
+// encoding. ⌘C without a selection and other ⌘ chords stay too: kitty programs
+// bind them (Claude Code's fullscreen selection copy is `cmd+c`), and legacy ⌘A
+// is xterm's select-all.
 
 export interface TermKeyRouteInput {
   type: string;
@@ -22,11 +24,15 @@ export interface TermKeyRouteInput {
   alt: boolean;
   ctrl: boolean;
   kittyActive: boolean;
+  hasSelection: boolean;
 }
 
 export function xtermHandlesKey(input: TermKeyRouteInput): boolean {
   if (input.type !== "keydown" || input.composing) return true;
-  if (input.meta && !input.ctrl && !input.alt && input.key.toLowerCase() === "v") return false;
+  if (input.meta && !input.ctrl && !input.alt) {
+    const key = input.key.toLowerCase();
+    if (key === "v" || (key === "c" && input.hasSelection)) return false;
+  }
   if (input.ctrl || input.meta || input.alt) return true;
   return input.kittyActive || input.key.length !== 1;
 }

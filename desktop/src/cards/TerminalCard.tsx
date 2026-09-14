@@ -54,6 +54,7 @@ import {
 } from "../kit/termGrid";
 import { termInnerBox } from "../kit/termZoom";
 import { xtermHandlesKey } from "../kit/termKeyRoute";
+import { altClickMovesCursor } from "../kit/termAltClick";
 import { attachTermOutput, detachTermOutput, termInput, termResize } from "../ipc/daemon";
 import { openExternal } from "../ipc/shell";
 import { termFontFamily, termFontSize, xtermTheme } from "../theme";
@@ -180,6 +181,8 @@ export function TerminalCard(props: TerminalCardProps) {
       scrollback: 5000,
       allowProposedApi: true,
       macOptionIsMeta: true,
+      // ⌥-drag selects even while an app has mouse tracking on; ⌘C then copies it.
+      macOptionClickForcesSelection: true,
       vtExtensions: { kittyKeyboard: true },
     });
     const unicode = new Unicode11Addon();
@@ -264,6 +267,11 @@ export function TerminalCard(props: TerminalCardProps) {
     xtermEl.getBoundingClientRect = fakeBCR(origElBCR);
     xtermScreen.getBoundingClientRect = fakeBCR(origScreenBCR);
 
+    const syncAltClick = () => {
+      term.options.altClickMovesCursor = altClickMovesCursor(term.modes.mouseTrackingMode);
+    };
+    xtermEl.addEventListener("mousedown", syncAltClick, { capture: true });
+
     // Register focus handle so App can focus this terminal (⌥Tab cycle, restore).
     onRegister?.(model.termId, term);
 
@@ -300,6 +308,7 @@ export function TerminalCard(props: TerminalCardProps) {
         alt: e.altKey,
         ctrl: e.ctrlKey,
         kittyActive: kittyActive(),
+        hasSelection: term.hasSelection(),
       }),
     );
 
@@ -378,6 +387,7 @@ export function TerminalCard(props: TerminalCardProps) {
       document.removeEventListener("mousemove", trackMouse, { capture: true });
       xtermEl.getBoundingClientRect = origElBCR;
       xtermScreen.getBoundingClientRect = origScreenBCR;
+      xtermEl.removeEventListener("mousedown", syncAltClick, { capture: true });
       offIme.forEach((off) => off());
       offData.dispose();
       offResize.dispose();

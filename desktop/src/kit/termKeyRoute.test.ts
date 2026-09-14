@@ -10,6 +10,7 @@ function decide(over: Partial<TermKeyRouteInput>) {
     alt: false,
     ctrl: false,
     kittyActive: false,
+    hasSelection: false,
     ...over,
   });
 }
@@ -49,6 +50,17 @@ describe("xtermHandlesKey", () => {
     expect(decide({ key: "v", meta: true })).toBe(false);
     expect(decide({ key: "V", meta: true })).toBe(false);
     expect(decide({ key: "v", meta: true, kittyActive: true })).toBe(false);
+  });
+
+  it("leaves ⌘C to the browser when the terminal has a selection, so the Edit menu's Copy fires", () => {
+    expect(decide({ key: "c", meta: true, hasSelection: true })).toBe(false);
+    expect(decide({ key: "C", meta: true, hasSelection: true, kittyActive: true })).toBe(false);
+  });
+
+  it("handles ⌘C without a selection, so a kitty program's own cmd+c binding receives it", () => {
+    expect(decide({ key: "c", meta: true, hasSelection: false, kittyActive: true })).toBe(true);
+    expect(decide({ key: "c", meta: true, ctrl: true, hasSelection: true })).toBe(true);
+    expect(decide({ key: "c", meta: true, alt: true, hasSelection: true })).toBe(true);
   });
 
   it("handles other ⌘ chords, where a kitty program can bind them", () => {
