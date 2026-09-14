@@ -8,7 +8,8 @@ import { bytes, type TermKeyInput } from "./termKeyBinding";
 // explicit bit in the Swift matrix (always-irrelevant); here it has no field at
 // all, so the CapsLock-invariance cases (S6) become identity assertions on the
 // surviving inputs — there is no CapsLock knob to flip, which is exactly the
-// guarantee. Every Swift case/assertion is reproduced.
+// guarantee. Every Swift case/assertion is reproduced except the kitty gate
+// (S10, and S18's kitty half), which never ran in the Tauri app (#149).
 
 // Build a decision input with everything off, overridden by `over`.
 function decide(over: Partial<TermKeyInput>): number[] | null {
@@ -19,7 +20,6 @@ function decide(over: Partial<TermKeyInput>): number[] | null {
     ctrl: false,
     shift: false,
     composing: false,
-    kittyActive: false,
     ...over,
   });
 }
@@ -97,7 +97,7 @@ describe("TermKeyBinding", () => {
     expect(decide({ code: "ArrowRight", alt: true, shift: true })).toBeNull();
   });
 
-  // IME & kitty gates (S9–S10) — paired bytes-off / null-on on identical input.
+  // IME gate (S9) — paired bytes-off / null-on on identical input.
   it("composing defers (across a ⌘ and a ⌥ row)", () => {
     // S9
     expect(decide({ code: "Backspace", meta: true, composing: false })).toEqual(ctrlU);
@@ -105,19 +105,12 @@ describe("TermKeyBinding", () => {
     expect(decide({ code: "ArrowUp", alt: true, composing: false })).toEqual(optUp);
     expect(decide({ code: "ArrowUp", alt: true, composing: true })).toBeNull();
   });
-  it("kittyActive defers (across a ⌘ and a ⌥ row)", () => {
-    // S10
-    expect(decide({ code: "Backspace", meta: true, kittyActive: false })).toEqual(ctrlU);
-    expect(decide({ code: "Backspace", meta: true, kittyActive: true })).toBeNull();
-    expect(decide({ code: "ArrowUp", alt: true, kittyActive: false })).toEqual(optUp);
-    expect(decide({ code: "ArrowUp", alt: true, kittyActive: true })).toBeNull();
-  });
-  it("composing/kittyActive defer the ⌥←/⌥→ rows too", () => {
+  it("composing defers the ⌥←/⌥→ rows too", () => {
     // S18
     expect(decide({ code: "ArrowLeft", alt: true, composing: false })).toEqual(optLeft);
     expect(decide({ code: "ArrowLeft", alt: true, composing: true })).toBeNull();
-    expect(decide({ code: "ArrowRight", alt: true, kittyActive: false })).toEqual(optRight);
-    expect(decide({ code: "ArrowRight", alt: true, kittyActive: true })).toBeNull();
+    expect(decide({ code: "ArrowRight", alt: true, composing: false })).toEqual(optRight);
+    expect(decide({ code: "ArrowRight", alt: true, composing: true })).toBeNull();
   });
 
   // No-regression — keys that must stay xterm.js's (S11–S14)

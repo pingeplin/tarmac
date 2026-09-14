@@ -317,24 +317,6 @@ export default function App() {
     return c && c.live && !c.dead ? id : undefined;
   };
 
-  /** Returns true when the focused terminal's xterm instance has an active kitty
-   *  keyboard program (flags !== 0). Mirrors Swift's
-   *  `!tv.getTerminal().keyboardEnhancementFlags.isEmpty` (issue #21).
-   *  The xterm instance is attached to the host element as __xtermTerm by
-   *  TerminalCard on mount and removed on dispose. */
-  const focusedTermKittyActive = (): boolean => {
-    const hostEl = (document.activeElement as HTMLElement | null)?.closest?.(".term-host") as
-      | HTMLElement
-      | null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const term = (hostEl as any)?.__xtermTerm;
-    // Access xterm's internal core service to read the current kitty keyboard
-    // flags. A non-zero value means a kitty-aware app has sent the enable
-    // sequence and owns key encoding — we must not inject our own bytes.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return !!((term as any)?._core?._coreService?.kittyKeyboard?.flags);
-  };
-
   // --- card factories ----------------------------------------------------------
 
   const makeTerm = (
@@ -1400,9 +1382,8 @@ export default function App() {
       // Only fires when a live terminal is focused and the switcher is closed (we
       // are past the switcher block above). The top-level isComposingKey() guard
       // already returned early for IME compositions, so composing is always false
-      // here. kittyActive is queried from the xterm instance on the host element
-      // (set by TerminalCard; see __xtermTerm) so kitty-aware apps (neovim, Claude
-      // Code) receive the correct kitty-encoded keys instead.
+      // here. Like Ghostty's `text:` keybinds, these fire even while a kitty
+      // keyboard program owns the encoding (#149).
       //
       // ⌥↑/⌥↓: macOptionIsMeta:true would also send an ESC-prefixed sequence; we
       // preventDefault() here to suppress xterm's own path and inject the explicit
@@ -1417,7 +1398,6 @@ export default function App() {
             ctrl: e.ctrlKey,
             shift: e.shiftKey,
             composing: false, // already guarded by isComposingKey() at handler top
-            kittyActive: focusedTermKittyActive(),
           });
           if (binding !== null) {
             e.preventDefault();

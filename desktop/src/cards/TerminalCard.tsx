@@ -55,6 +55,7 @@ import {
 import { termInnerBox } from "../kit/termZoom";
 import { xtermHandlesKey } from "../kit/termKeyRoute";
 import { mouseSelectOptions, swallowsHover } from "../kit/termMouseSelect";
+import { xtermKittyFlags } from "./xtermKittyFlags";
 import { attachTermOutput, detachTermOutput, termInput, termResize } from "../ipc/daemon";
 import { openExternal } from "../ipc/shell";
 import { termFontFamily, termFontSize, xtermTheme } from "../theme";
@@ -222,12 +223,6 @@ export function TerminalCard(props: TerminalCardProps) {
       }
     }
 
-    // Expose the xterm instance on the host DOM element so App-level keydown
-    // handlers can query kitty keyboard flags (issue #21 terminal key bindings)
-    // without requiring a ref-callback threading. Cleaned up in the dispose
-    // closure below when termRef is also cleared.
-    (host as any).__xtermTerm = term;
-
     // xterm calls getBoundingClientRect() on term.element (.xterm) and
     // term.screenElement (.xterm-screen) to translate mouse coords to cells
     // (getCoordsRelativeToElement in xterm module 5251). Under the board's
@@ -302,8 +297,6 @@ export function TerminalCard(props: TerminalCardProps) {
     // returns WITHOUT preventDefault/stopPropagation, so the default action proceeds
     // and `beforeinput`/`input` still fire. Which keys xterm keeps is decided in
     // kit/termKeyRoute.ts.
-    const kittyActive = (): boolean =>
-      !!((term as any)?._core?._coreService?.kittyKeyboard?.flags);
     term.attachCustomKeyEventHandler((e) =>
       xtermHandlesKey({
         type: e.type,
@@ -312,7 +305,7 @@ export function TerminalCard(props: TerminalCardProps) {
         meta: e.metaKey,
         alt: e.altKey,
         ctrl: e.ctrlKey,
-        kittyActive: kittyActive(),
+        kittyFlags: xtermKittyFlags(term),
         hasSelection: term.hasSelection(),
       }),
     );
@@ -405,7 +398,6 @@ export function TerminalCard(props: TerminalCardProps) {
       term.dispose();
       termRef.current = null;
       restRef.current = null;
-      delete (host as any).__xtermTerm;
       host.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
