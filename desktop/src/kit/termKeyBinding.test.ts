@@ -8,8 +8,8 @@ import { bytes, type TermKeyInput } from "./termKeyBinding";
 // explicit bit in the Swift matrix (always-irrelevant); here it has no field at
 // all, so the CapsLock-invariance cases (S6) become identity assertions on the
 // surviving inputs — there is no CapsLock knob to flip, which is exactly the
-// guarantee. Every Swift case/assertion is reproduced except S10's kitty gate,
-// which never ran in the Tauri app (#149).
+// guarantee. Every Swift case/assertion is reproduced except the kitty gate
+// (S10, and S18's kitty half), which never ran in the Tauri app (#149).
 
 // Build a decision input with everything off, overridden by `over`.
 function decide(over: Partial<TermKeyInput>): number[] | null {

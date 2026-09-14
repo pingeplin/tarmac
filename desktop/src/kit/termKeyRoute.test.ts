@@ -43,12 +43,14 @@ describe("xtermHandlesKey", () => {
 
   it("handles plain printable keys when a kitty program asks for every key as an escape code", () => {
     expect(decide({ key: "a", kittyFlags: 8 })).toBe(true);
+    expect(decide({ key: "a", kittyFlags: 13 })).toBe(true);
     expect(decide({ key: "a", kittyFlags: 31 })).toBe(true);
   });
 
   it("leaves plain printable keys to the beforeinput interceptor under other kitty flags", () => {
     expect(decide({ key: "a", kittyFlags: 5 })).toBe(false);
     expect(decide({ key: "a", kittyFlags: 1 })).toBe(false);
+    expect(decide({ key: "a", kittyFlags: 16 })).toBe(false);
   });
 
   it("leaves ⌘V to the browser so the Edit menu's Paste fires", () => {

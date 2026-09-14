@@ -54,6 +54,7 @@ import {
 } from "../kit/termGrid";
 import { termInnerBox } from "../kit/termZoom";
 import { xtermHandlesKey } from "../kit/termKeyRoute";
+import { xtermKittyFlags } from "./xtermKittyFlags";
 import { attachTermOutput, detachTermOutput, termInput, termResize } from "../ipc/daemon";
 import { openExternal } from "../ipc/shell";
 import { termFontFamily, termFontSize, xtermTheme } from "../theme";
@@ -283,10 +284,6 @@ export function TerminalCard(props: TerminalCardProps) {
     // returns WITHOUT preventDefault/stopPropagation, so the default action proceeds
     // and `beforeinput`/`input` still fire. Which keys xterm keeps is decided in
     // kit/termKeyRoute.ts.
-    // The kitty keyboard flags a program pushed (CSI > flags u). xterm 6.1 has no
-    // public accessor; no optional chaining, so an xterm upgrade that moves the
-    // field fails loudly instead of silently reading 0 (#149).
-    const kittyFlags = (): number => (term as any)._core.coreService.kittyKeyboard.flags;
     term.attachCustomKeyEventHandler((e) =>
       xtermHandlesKey({
         type: e.type,
@@ -295,7 +292,7 @@ export function TerminalCard(props: TerminalCardProps) {
         meta: e.metaKey,
         alt: e.altKey,
         ctrl: e.ctrlKey,
-        kittyFlags: kittyFlags(),
+        kittyFlags: xtermKittyFlags(term),
       }),
     );
 
