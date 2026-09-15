@@ -8,6 +8,7 @@
 import { useRef, useState, useEffect, type ReactNode, type PointerEvent as ReactPointerEvent } from "react";
 import { borderRole, cardChromeState, cardHandles } from "../kit/cardChrome";
 import { resizeFrame, type Handle } from "../kit/resize";
+import { flushesOnResize } from "../kit/resizeSelection";
 import type { WorldFrame } from "../board/model";
 
 interface CardShellProps {
@@ -116,7 +117,10 @@ export function CardShell(props: CardShellProps) {
     if (e.button !== 0 || !props.onResize) return;
     e.preventDefault();            // suppress native text selection (反白) at the source
     e.stopPropagation();
-    window.getSelection()?.removeAllRanges(); // flush any selection already in progress
+    // Flush a highlight already in progress, but never a focused terminal's selection.
+    const sel = window.getSelection();
+    const focusTag = document.activeElement?.tagName;
+    if (sel && flushesOnResize({ type: sel.type, focusTag })) sel.removeAllRanges();
     onGrab?.();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     resizeStart.current = { px: e.clientX, py: e.clientY, frame, handle };
