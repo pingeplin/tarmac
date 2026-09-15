@@ -56,8 +56,10 @@ pretty-printed.
 ### Markdown cards
 
 Ordinary markdown, rendered into the app's own DOM. Tables, code blocks, and
-lists all work. Scroll position is preserved across rewrites, so a card the user
-is reading does not jump when you update it.
+lists all work. Local images load from disk, whether the image source is relative
+to the markdown file, an absolute path, or a `file://` URL. Scroll position is
+preserved across rewrites, so a card the user is reading does not jump when you
+update it.
 
 Board zoom never re-wraps prose: it is laid out once and scaled. Write for a
 narrow column and let the user zoom.

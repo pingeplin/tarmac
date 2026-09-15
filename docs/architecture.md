@@ -339,6 +339,10 @@ backgrounded so the shell keeps progressing.
 **Doc cards** render markdown with `marked` directly into the app's own DOM —
 there is no nested webview, hence no suspend/resume on board switch. Scroll
 position is preserved as a fraction across live `FileEvent` re-renders.
+Local images (doc-relative, absolute, or `file://`) are re-addressed before
+insertion to the `img` host of the same `tarmac-card://` scheme, which
+`desktop/src-tauri/src/image_protocol.rs` answers with the file's bytes for
+allowlisted image types only, never HTML.
 Provenance edges (dashed cyan bézier) connect a doc card to its caller terminal.
 The `fresh` (agent-opened, unread) highlight is cleared locally by `ESC`.
 

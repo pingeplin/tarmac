@@ -331,6 +331,13 @@
   background: none;
   padding: 0;
 }
+/* Image sizes are CSS px but the prose is laid out at K×: zoom carries each image
+   into that layout, so width="160" is 160 px at 100% board zoom, and max-width
+   caps it to the prose. No height rule: height: auto drops an explicit height. */
+.doc-prose img {
+  zoom: var(--oversample-k);
+  max-width: 100%;
+}
 .doc-prose ::selection {
   background: var(--agent-dim);
 }
