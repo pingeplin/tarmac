@@ -5,13 +5,6 @@
 // word's Range. Flushing that leaves the terminal focused while WebKit fires no
 // `beforeinput`, the only path plain keys take to the PTY since #160 (#162).
 
-export interface ResizeSelection {
-  /** `Selection.type` at the press. */
-  type: string;
-  /** `document.activeElement?.tagName` at the press. */
-  focusTag: string | undefined;
-}
-
-export function flushesOnResize(s: ResizeSelection): boolean {
+export function flushesOnResize(s: { type: string; focusTag: string | undefined }): boolean {
   return s.type === "Range" && s.focusTag !== "TEXTAREA";
 }
