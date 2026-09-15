@@ -25,7 +25,13 @@ const URI_PREFIX: &str = "tarmac-card://doc/";
 /// `tarmac-card://doc/<path>?v=<mtime>` URI. Errors are user-facing 400
 /// messages, not panics.
 pub fn decode_card_path(uri: &str) -> Result<String, String> {
-    let rest = uri.strip_prefix(URI_PREFIX).ok_or_else(|| format!("malformed tarmac-card URI: {uri}"))?;
+    decode_scheme_path(uri, URI_PREFIX)
+}
+
+/// Decode the percent-encoded path segment after `prefix`, up to any `?`.
+/// Shared by every `tarmac-card://` host.
+pub(crate) fn decode_scheme_path(uri: &str, prefix: &str) -> Result<String, String> {
+    let rest = uri.strip_prefix(prefix).ok_or_else(|| format!("malformed tarmac-card URI: {uri}"))?;
     let encoded = rest.split('?').next().unwrap_or("");
     if encoded.is_empty() {
         return Err("empty path".into());
@@ -51,7 +57,7 @@ fn compose_body(file: &mut File, size_hint: usize) -> io::Result<Vec<u8>> {
     Ok(body)
 }
 
-fn text_response(status: StatusCode, body: String) -> Response<Vec<u8>> {
+pub(crate) fn text_response(status: StatusCode, body: String) -> Response<Vec<u8>> {
     Response::builder()
         .status(status)
         .header("Content-Type", "text/plain; charset=utf-8")

@@ -1,12 +1,14 @@
 // A markdown doc card. The whole frontend is already a webview, so we render
-// markdown with marked.js straight into the DOM — no nested WKWebView, hence no
-// about:blank suspend/restore hack. The scroll area is plain (no tabindex), so a
-// click here never pulls keyboard focus off the prime terminal.
+// markdown with marked.js into the DOM — no nested WKWebView, hence no
+// about:blank suspend/restore hack. marked's output is parsed into a detached
+// <template> and each local <img src> is re-addressed to tarmac-card://img/
+// (kit/docImage) before the nodes are inserted. The scroll area is plain (no
+// tabindex), so a click here never pulls keyboard focus off the prime terminal.
 //
 // The card renders in .doc-layer via a real-px-sized wrapper (Panel H): the
 // wrapper is sized at card{w,h}×zoom with NO transform scale, so its
 // border/clip/shadow rasterize crisply at real pixel size. The prose is laid out
-// ONCE at the K× reference (frozen, zoom-free — see .doc-prose in theme.css) and
+// ONCE at the K× reference (frozen, zoom-free — see .doc-prose in card.css) and
 // the bare innermost .doc-prose-scaler carries scale(zoom/K), a pure DOWN-scale
 // (≤1) → WebKit downsamples a high-detail layer, crisp at every zoom, no reflow.
 
@@ -16,6 +18,7 @@ import { CardShell } from "./CardShell";
 import { CardHeader } from "./CardHeader";
 import { docProseScaler, DOC_OVERSAMPLE_K } from "../kit/docZoom";
 import { isExternalHttpUrl } from "../kit/externalLink";
+import { docImageSrc } from "../kit/docImage";
 import { openExternal } from "../ipc/shell";
 import { basename } from "../kit/docStore";
 import type { DocCardModel, WorldFrame } from "../board/model";
@@ -46,7 +49,7 @@ export function DocCard(props: DocCardProps) {
   // Store scroll position as a fraction (scrollTop / scrollHeight) so it can be
   // restored after content changes (live file_event re-renders).
   const savedScrollFrac = useRef(0);
-  // K× natural prose height — captured after innerHTML set, before any scale.
+  // K× natural prose height — captured after the content is inserted, before any scale.
   const proseNatH = useRef(0);
   // Last observed zoom — used by MutationObserver to skip pan-only board frames.
   const lastZoom = useRef(props.getZoom());
@@ -79,7 +82,15 @@ export function DocCard(props: DocCardProps) {
     const prose = proseRef.current;
     const scroll = scrollRef.current;
     if (!prose || !scroll) return;
-    prose.innerHTML = marked.parse(markdown, { async: false }) as string;
+    // Template content has no browsing context, so no image fetch starts before
+    // the rewrite: the broken app-origin URL is never requested.
+    const tpl = document.createElement("template");
+    tpl.innerHTML = marked.parse(markdown, { async: false }) as string;
+    tpl.content.querySelectorAll("img[src]").forEach((img) => {
+      const src = img.getAttribute("src") ?? "";
+      img.setAttribute("src", docImageSrc(src, model.path, props.lastChangedMs));
+    });
+    prose.replaceChildren(tpl.content);
     proseNatH.current = prose.offsetHeight;
     relayout();
   }, [markdown]);
