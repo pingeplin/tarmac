@@ -141,6 +141,12 @@ can't ship — but sync here to catch it up front.
 
 ## Gotchas
 
+- **An Xcode update resets its license acceptance**, and then every Rust link fails
+  at step 2's `cargo build`: `linking with cc failed: exit status: 69` / "You have
+  not agreed to the Xcode license agreements". The fix is
+  `sudo xcodebuild -license accept`, run by the user in their **own** terminal
+  (Terminal.app or a Tarmac terminal). The `!` prompt has no TTY, so sudo there
+  fails with "a terminal is required to read the password".
 - **SSH-agent fails in Claude Code's non-interactive shell** ("communication with
   agent failed") — but only for raw `git push`/`git fetch`, NOT `gh` API ops. Push
   branches over **HTTPS** (`gh auth setup-git` once, then
