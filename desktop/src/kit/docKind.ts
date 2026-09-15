@@ -1,6 +1,7 @@
 // Doc-kind routing + tarmac-card:// addressing for HTML doc cards (spec
-// 2607.0004). Kind is derived from the path extension, never stored — the
-// DocCardModel and wire protocol know nothing about it.
+// 2607.0004) and markdown doc-card images (spec 2609.0014). Kind is derived from
+// the path extension, never stored — the DocCardModel and wire protocol know
+// nothing about it.
 
 export type DocKind = "markdown" | "html";
 
@@ -14,9 +15,10 @@ export function docKind(path: string): DocKind {
   return ext === "html" || ext === "htm" ? "html" : "markdown";
 }
 
-// The whole absolute path is one percent-encoded segment under the "doc" host;
-// ?v= is a cache-buster only (the Rust handler ignores it and serves current
-// bytes) — bumping it on file_event is what forces the iframe reload.
-export function cardSrcUrl(path: string, mtimeMs: number | undefined): string {
-  return `tarmac-card://doc/${encodeURIComponent(path)}?v=${mtimeMs ?? 0}`;
+// The whole absolute path is one percent-encoded segment under `host` ("doc" for
+// HTML cards, "img" for markdown doc-card images); ?v= is a cache-buster only
+// (the Rust handler ignores it and serves current bytes) — bumping it on
+// file_event is what forces the iframe reload.
+export function cardSrcUrl(path: string, mtimeMs: number | undefined, host: "doc" | "img" = "doc"): string {
+  return `tarmac-card://${host}/${encodeURIComponent(path)}?v=${mtimeMs ?? 0}`;
 }

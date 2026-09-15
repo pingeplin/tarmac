@@ -3,6 +3,8 @@
 // the SPA fallback; a local src is re-addressed to the tarmac-card://img/ host
 // instead. The DOM walk that applies this stays in DocCard as wiring.
 
+import { cardSrcUrl } from "./docKind";
+
 /** Absolute on-disk path a doc image `src` names, or undefined when `src` is not
  *  a local file reference (the caller leaves it unchanged). `docPath` is the
  *  doc's absolute path (DocCardModel.path). Never throws. */
@@ -22,8 +24,7 @@ export function localImagePath(src: string, docPath: string): string | undefined
  *  otherwise `src` itself, returned unchanged. Pure. */
 export function docImageSrc(src: string, docPath: string, mtimeMs: number | undefined): string {
   const path = localImagePath(src, docPath);
-  // Mirrors cardSrcUrl: ?v= only busts the cache; the handler serves current bytes.
-  return path === undefined ? src : `tarmac-card://img/${encodeURIComponent(path)}?v=${mtimeMs ?? 0}`;
+  return path === undefined ? src : cardSrcUrl(path, mtimeMs, "img");
 }
 
 interface LocalRef {

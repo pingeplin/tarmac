@@ -211,36 +211,24 @@ mod tests {
         resp.headers().get(name).map(|v| v.to_str().expect("visible ASCII header"))
     }
 
-    // S12
+    // S12: two types in one run, so a constant Content-Type fails.
     #[test]
-    fn a_readable_png_is_served_byte_for_byte_with_image_only_headers() {
+    fn a_readable_image_is_served_byte_for_byte_with_its_type_and_image_only_headers() {
         // PNG signature plus 0xFF, never valid UTF-8: a text path would mangle it.
-        let bytes = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0xFF, 0xFE];
-        let path = write_temp("s12.png", &bytes);
-        let resp = respond(&img_uri(&path));
-        fs::remove_file(&path).ok();
+        let png: &[u8] = &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0xFF, 0xFE];
+        let svg: &[u8] = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"4\" height=\"4\"/>";
+        for (name, bytes, ty) in [("s12.png", png, "image/png"), ("s12.svg", svg, "image/svg+xml")] {
+            let path = write_temp(name, bytes);
+            let resp = respond(&img_uri(&path));
+            fs::remove_file(&path).ok();
 
-        assert_eq!(resp.status(), StatusCode::OK);
-        assert_eq!(resp.body().as_slice(), &bytes);
-        assert_eq!(header(&resp, "Content-Type"), Some("image/png"));
-        assert_eq!(header(&resp, "Content-Security-Policy"), Some("sandbox"));
-        assert_eq!(header(&resp, "X-Content-Type-Options"), Some("nosniff"));
-        assert_eq!(header(&resp, "Access-Control-Allow-Origin"), None);
-    }
-
-    // S12: the Content-Type comes from Appendix A, not a constant.
-    #[test]
-    fn a_readable_svg_is_served_as_image_svg_xml() {
-        let bytes = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"4\" height=\"4\"/>";
-        let path = write_temp("s12.svg", bytes);
-        let resp = respond(&img_uri(&path));
-        fs::remove_file(&path).ok();
-
-        assert_eq!(resp.status(), StatusCode::OK);
-        assert_eq!(header(&resp, "Content-Type"), Some("image/svg+xml"));
-        assert_eq!(header(&resp, "Content-Security-Policy"), Some("sandbox"));
-        assert_eq!(header(&resp, "X-Content-Type-Options"), Some("nosniff"));
-        assert_eq!(resp.body().as_slice(), bytes);
+            assert_eq!(resp.status(), StatusCode::OK, "{name}");
+            assert_eq!(resp.body().as_slice(), bytes, "{name}");
+            assert_eq!(header(&resp, "Content-Type"), Some(ty), "{name}");
+            assert_eq!(header(&resp, "Content-Security-Policy"), Some("sandbox"), "{name}");
+            assert_eq!(header(&resp, "X-Content-Type-Options"), Some("nosniff"), "{name}");
+            assert_eq!(header(&resp, "Access-Control-Allow-Origin"), None, "{name}");
+        }
     }
 
     // S17
