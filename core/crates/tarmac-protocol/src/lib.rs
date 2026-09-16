@@ -464,6 +464,232 @@ pub mod frame {
     }
 }
 
+
+// ---------------------------------------------------------------- dev driver
+// The in-app QA driver's wire types (spec 2609.0015, issue #166). Deliberately
+// NOT `Msg` variants: this socket is a debug-build-only side channel, and the
+// main protocol's additive-only rule would make anything added there permanent.
+// `Msg`, docs/protocol.md and the V1-V13 conformance vectors are untouched.
+pub mod dev {
+    use super::{channel_dir, Channel};
+    use serde::{Deserialize, Serialize};
+    use std::ffi::{OsStr, OsString};
+    use std::path::{Path, PathBuf};
+
+    /// One verb, one variant. Tagged exactly like `Msg` so a reader that knows one
+    /// socket knows the other: `"t"` names the verb in snake_case.
+    #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+    #[serde(tag = "t", rename_all = "snake_case")]
+    pub enum DevRequest {
+        Snapshot {
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            until: Option<String>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            timeout_ms: Option<u32>,
+        },
+        Zoom {
+            z: f64,
+        },
+        /// `card: None` is the board background, which is what blurs a focused
+        /// terminal. Card ids are never the literal "board" (they are term ids or
+        /// absolute paths), so the absence carries the meaning with no sentinel.
+        Focus {
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            card: Option<String>,
+        },
+        Resize {
+            card: String,
+            w: f64,
+            h: f64,
+        },
+        Type {
+            card: String,
+            text: String,
+        },
+        Key {
+            card: String,
+            combo: String,
+        },
+        /// A verb this build does not know. Decoding to a value rather than an error
+        /// lets the app answer "unsupported" instead of dropping the frame.
+        #[serde(other)]
+        Unknown,
+    }
+
+    /// `body` is an opaque string the CLI prints verbatim and never parses — which
+    /// is what keeps `tarmac-cli` std-only.
+    #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+    pub struct DevReply {
+        pub ok: bool,
+        pub body: String,
+    }
+
+    // to_vec_named for the same reason the main codec uses it: plain to_vec emits
+    // structs as msgpack arrays and breaks the map-with-string-keys rule.
+    pub fn encode_request(req: &DevRequest) -> Result<Vec<u8>, rmp_serde::encode::Error> {
+        rmp_serde::to_vec_named(req)
+    }
+
+    pub fn decode_request(bytes: &[u8]) -> Result<DevRequest, rmp_serde::decode::Error> {
+        rmp_serde::from_slice(bytes)
+    }
+
+    pub fn encode_reply(reply: &DevReply) -> Result<Vec<u8>, rmp_serde::encode::Error> {
+        rmp_serde::to_vec_named(reply)
+    }
+
+    pub fn decode_reply(bytes: &[u8]) -> Result<DevReply, rmp_serde::decode::Error> {
+        rmp_serde::from_slice(bytes)
+    }
+
+    /// PURE dev-socket resolver — the sibling of [`super::resolve_socket_path`],
+    /// sharing its `channel_dir` so the `dev` path segment exists in exactly one
+    /// place. `over` is `TARMAC_DEV_SOCKET`; present-and-non-empty wins verbatim,
+    /// empty is unset, matching every other resolver here.
+    pub fn resolve_dev_socket_path(over: Option<OsString>, home: &OsStr, channel: Channel) -> PathBuf {
+        if let Some(p) = over.filter(|v| !v.is_empty()) {
+            return PathBuf::from(p);
+        }
+        channel_dir(Path::new(home), channel).join("tarmac-dev.sock")
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use crate::{channel_dir, resolve_socket_path, Channel};
+        use std::ffi::OsString;
+        use std::path::Path;
+
+        fn roundtrip(req: &DevRequest) -> DevRequest {
+            decode_request(&encode_request(req).unwrap()).unwrap()
+        }
+
+        /// S45 - every variant survives encode -> the dev module's own decode.
+        #[test]
+        fn every_dev_request_variant_roundtrips() {
+            let all = [
+                DevRequest::Snapshot { until: None, timeout_ms: None },
+                DevRequest::Snapshot {
+                    until: Some("cards[t-1].term.cols != 80".into()),
+                    timeout_ms: Some(1500),
+                },
+                DevRequest::Zoom { z: 0.5 },
+                DevRequest::Focus { card: Some("t-1".into()) },
+                DevRequest::Focus { card: None },
+                DevRequest::Resize { card: "t-1".into(), w: 800.0, h: 600.0 },
+                DevRequest::Type { card: "t-1".into(), text: "a\nb".into() },
+                DevRequest::Key { card: "t-1".into(), combo: "ctrl+c".into() },
+            ];
+            for req in all {
+                assert_eq!(roundtrip(&req), req, "roundtrip changed {req:?}");
+            }
+        }
+
+        /// S46 - the encoding is a msgpack MAP, not an array. This is the one
+        /// assertion that catches plain `to_vec`, which the wire contract forbids.
+        #[test]
+        fn dev_frames_encode_as_maps_not_arrays() {
+            for bytes in [
+                encode_request(&DevRequest::Zoom { z: 1.0 }).unwrap(),
+                encode_request(&DevRequest::Focus { card: None }).unwrap(),
+                encode_reply(&DevReply { ok: true, body: "{}".into() }).unwrap(),
+            ] {
+                let head = bytes[0];
+                let is_map = (0x80..=0x8f).contains(&head) || head == 0xde || head == 0xdf;
+                assert!(is_map, "expected a msgpack map, first byte was {head:#04x}");
+            }
+        }
+
+        /// S45 (tagging) - the tag key is "t" and the tag value is snake_case,
+        /// mirroring `Msg`, so one reader convention covers both sockets.
+        #[test]
+        fn dev_requests_are_tagged_like_msg() {
+            let bytes = encode_request(&DevRequest::Snapshot { until: None, timeout_ms: None }).unwrap();
+            let text = String::from_utf8_lossy(&bytes);
+            assert!(text.contains("t"), "no tag key in {text:?}");
+            assert!(text.contains("snapshot"), "tag is not snake_case in {text:?}");
+            let typed = encode_request(&DevRequest::Type { card: "t-1".into(), text: "x".into() }).unwrap();
+            assert!(String::from_utf8_lossy(&typed).contains("type"));
+        }
+
+        /// S47 - additive-only: an unknown key on a known request is ignored.
+        #[test]
+        fn unknown_keys_are_ignored() {
+            // A `zoom` request from a newer CLI that also sends an `anchor` key.
+            #[derive(serde::Serialize)]
+            struct Future<'a> { t: &'a str, z: f64, anchor: &'a str }
+            let bytes = rmp_serde::to_vec_named(&Future { t: "zoom", z: 0.5, anchor: "pointer" }).unwrap();
+            assert_eq!(decode_request(&bytes).unwrap(), DevRequest::Zoom { z: 0.5 });
+        }
+
+        /// S47 - an unknown request TYPE decodes to `Unknown` rather than failing,
+        /// so an older app can refuse a newer verb instead of dropping the frame.
+        #[test]
+        fn unknown_request_types_decode_to_unknown() {
+            #[derive(serde::Serialize)]
+            struct Future<'a> { t: &'a str }
+            let bytes = rmp_serde::to_vec_named(&Future { t: "teleport" }).unwrap();
+            assert_eq!(decode_request(&bytes).unwrap(), DevRequest::Unknown);
+        }
+
+        /// S48 - `body` is opaque: it survives byte-for-byte, JSON or not.
+        #[test]
+        fn reply_body_survives_verbatim() {
+            for body in ["{\"v\":1}", "not json at all", "two\nlines", ""] {
+                let reply = DevReply { ok: false, body: body.into() };
+                let back = decode_reply(&encode_reply(&reply).unwrap()).unwrap();
+                assert_eq!(back, reply);
+            }
+        }
+
+        /// S50 - the default path per channel.
+        #[test]
+        fn dev_socket_defaults_per_channel() {
+            let home = Path::new("/Users/x");
+            assert_eq!(
+                resolve_dev_socket_path(None, home.as_os_str(), Channel::Dev),
+                Path::new("/Users/x/Library/Application Support/tarmac/dev/tarmac-dev.sock"),
+            );
+            assert_eq!(
+                resolve_dev_socket_path(None, home.as_os_str(), Channel::Release),
+                Path::new("/Users/x/Library/Application Support/tarmac/tarmac-dev.sock"),
+            );
+        }
+
+        /// S51 - TARMAC_DEV_SOCKET wins verbatim in both channels; empty means unset.
+        #[test]
+        fn dev_socket_override_wins_and_empty_means_unset() {
+            let home = std::ffi::OsStr::new("/Users/x");
+            for channel in [Channel::Release, Channel::Dev] {
+                assert_eq!(
+                    resolve_dev_socket_path(Some(OsString::from("/tmp/x.sock")), home, channel),
+                    Path::new("/tmp/x.sock"),
+                );
+                assert_eq!(
+                    resolve_dev_socket_path(Some(OsString::new()), home, channel),
+                    resolve_dev_socket_path(None, home, channel),
+                );
+            }
+        }
+
+        /// S52 - the dev socket shares `channel_dir` with the daemon socket, so the
+        /// `dev` path literal cannot drift into a second definition.
+        #[test]
+        fn dev_socket_shares_the_channel_dir() {
+            let home = std::ffi::OsStr::new("/Users/x");
+            for channel in [Channel::Release, Channel::Dev] {
+                let dev = resolve_dev_socket_path(None, home, channel);
+                assert_eq!(dev.parent().unwrap(), channel_dir(Path::new(home), channel));
+                assert_eq!(
+                    dev.parent(),
+                    resolve_socket_path(None, home, channel).parent(),
+                );
+                assert_eq!(dev.file_name().unwrap(), "tarmac-dev.sock");
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
