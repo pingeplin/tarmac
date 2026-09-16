@@ -23,6 +23,8 @@ import { BoardSwitcher } from "./ui/BoardSwitcher";
 import { CycleHud } from "./ui/CycleHud";
 import { cycleOrder, step } from "./kit/termCycle";
 import { inheritCwdSource, primeTermId } from "./kit/cwdInherit";
+
+import type { TermHandle } from "./cards/TerminalCard";
 import type { BoardEngine, Viewport } from "./board/BoardEngine";
 import {
   cardId,
@@ -225,6 +227,10 @@ export default function App() {
   const gestureRef = useRef<Gesture | null>(null);
   const persistTimers = useRef<Map<string, number>>(new Map());
   const bellTimeRef = useRef<Map<string, number>>(new Map());
+  // The daemon's last TermProc name, verbatim. applyTermProc folds it into the
+  // card label, which a later term_title overwrites — so this is the only place
+  // the observed process name survives (issue #166's snapshot reports it).
+  const termProcRef = useRef<Map<string, string>>(new Map());
   const toastsRef = useRef<Toast[]>([]);
   toastsRef.current = toastState.toasts;
   const flyTargetRef = useRef<string | null>(null);
@@ -265,9 +271,11 @@ export default function App() {
 
   // --- focus registry (Wave 2 cycle) -------------------------------------------
 
-  const termHandlesRef = useRef<Map<string, { focus(): void; input(data: string): void }>>(new Map());
+  // `focus`/`input` are all the app itself uses; the dev QA driver also reads
+  // element, textarea and buffer — see TermHandle for the declared surface.
+  const termHandlesRef = useRef<Map<string, TermHandle>>(new Map());
 
-  const registerTerm = useCallback((id: string, handle: { focus(): void; input(data: string): void }) => {
+  const registerTerm = useCallback((id: string, handle: TermHandle) => {
     termHandlesRef.current.set(id, handle);
   }, []);
 
@@ -431,6 +439,35 @@ export default function App() {
       if (pendingVpRef.current) setViewportState(pendingVpRef.current);
     });
   };
+
+  // --- dev QA driver (issue #166) ----------------------------------------------
+  // Dev builds only: `import.meta.env.DEV` is the third of three gates (the CLI
+  // verb and the backend endpoint are `#[cfg(debug_assertions)]`), and it is what
+  // lets Vite drop this import from a production bundle entirely. The driver
+  // cannot reach React state from outside, so it is handed the world by argument.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    let dispose: (() => void) | undefined;
+    void import("./devDriver").then(({ installDevDriver }) => {
+      dispose = installDevDriver({
+        activeBoardId: () => activeIdRef.current,
+        engine: () => enginesRef.current.get(activeIdRef.current) ?? null,
+        cards: () =>
+          (activeBoard()?.cards ?? []).map((c) => ({
+            id: cardId(c),
+            kind: c.kind,
+            frame: c.frame,
+            live: c.kind === "term" ? c.live : undefined,
+            dead: c.kind === "term" ? c.dead : undefined,
+          })),
+        terminal: (termId) => termHandlesRef.current.get(termId),
+        selectedId: () => selectedIdRef.current,
+        proc: (termId) => termProcRef.current.get(termId) ?? null,
+      });
+    });
+    return () => dispose?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // --- toasts ------------------------------------------------------------------
 
@@ -651,6 +688,9 @@ export default function App() {
     }
     // Remove from the index after handling.
     termBoardIndexRef.current.remove(termId);
+    // ...and drop the observed process name with it, so the map tracks live
+    // terminals rather than every terminal this session has ever had.
+    termProcRef.current.delete(termId);
     // Persist this board's new card set (it may be backgrounded).
     schedulePersist(boardId);
   };
@@ -1107,6 +1147,7 @@ export default function App() {
 
       case "term_proc": {
         const boardId = routeBoardId(msg.term_id);
+        termProcRef.current.set(msg.term_id, msg.name);
         applyTermProc(boardId, msg.term_id, msg.name);
         break;
       }

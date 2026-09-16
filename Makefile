@@ -1,6 +1,6 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: core app app-deps sidecars test docs-check dco-check run kill-daemon bundle release kit
+.PHONY: core app app-deps sidecars test docs-check dco-check run qa kill-daemon bundle release kit
 
 core:
 	cd $(ROOT)/core && cargo build
@@ -57,6 +57,8 @@ test: docs-check
 # into spawned ptys so `tarmac open <file>` works inside xterm terminals.
 # TARMAC_SOCKET/TARMAC_STATE pin a stable per-worktree dev path so simultaneous
 # `make run`s from different worktrees don't share a socket or state file.
+# TARMAC_DEV_SOCKET pins the QA driver's own socket (issue #166) for the same
+# reason — unpinned, `make qa` from one worktree would drive another's window.
 # VITE_TARMAC_DEV_LABEL suffixes the window title with ` · <worktree>` for the
 # same reason: the dev binary is not a .app, so Launch Services reports no bundle
 # id for it and the title is the only tell separating one dev app from another
@@ -67,10 +69,20 @@ run: core app-deps sidecars
 	cd $(ROOT)/desktop && \
 	TARMAC_SOCKET="$(ROOT)/.dev/tarmacd.sock" \
 	TARMAC_STATE="$(ROOT)/.dev/state.json" \
+	TARMAC_DEV_SOCKET="$(ROOT)/.dev/tarmac-dev.sock" \
 	VITE_TARMAC_DEV_LABEL="$(notdir $(ROOT))" \
 	TARMAC_DAEMON="$(ROOT)/core/target/debug/tarmacd" \
 	PATH="$(ROOT)/core/target/debug:$$PATH" \
 	npm run tauri dev
+
+# The QA driver's scenario suite (spec 2609.0015). NOT part of `make test` and
+# not on CI: every scenario drives a LIVE window, so it needs `make run` up in
+# another shell. The same TARMAC_DEV_SOCKET pin as `run`, so this can only ever
+# reach this worktree's app.
+qa: core
+	TARMAC_DEV_SOCKET="$(ROOT)/.dev/tarmac-dev.sock" \
+	TARMAC_STATE="$(ROOT)/.dev/state.json" \
+	node $(ROOT)/scripts/qa/smoke.mjs
 
 # Kill the dev tarmacd for this worktree (same socket path as `make run`).
 # Sends SIGKILL (kill -9); exits 0 whether or not it was running.

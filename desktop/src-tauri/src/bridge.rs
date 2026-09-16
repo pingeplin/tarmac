@@ -513,15 +513,21 @@ async fn connect(app: &AppHandle, spawned: &mut bool) -> std::io::Result<UnixStr
 /// the `dev/` channel (matching `tarmacd`'s own `cfg!(debug_assertions)`), and a
 /// non-empty `TARMAC_SOCKET` overrides verbatim — so `make run` pins a
 /// per-worktree path exactly like `make run` does for the Swift app.
-fn socket_path() -> PathBuf {
-    let over: Option<OsString> = std::env::var_os("TARMAC_SOCKET");
-    let home = std::env::var_os("HOME").unwrap_or_default();
-    let channel = if cfg!(debug_assertions) {
+/// The ONE audited build-config -> Channel mapping for this binary, mirroring the
+/// named helper each `core` binary has. Shared so the dev driver's socket cannot
+/// resolve a different channel than the daemon socket beside it.
+pub(crate) fn current_channel() -> WireChannel {
+    if cfg!(debug_assertions) {
         WireChannel::Dev
     } else {
         WireChannel::Release
-    };
-    resolve_socket_path(over, home.as_os_str(), channel)
+    }
+}
+
+fn socket_path() -> PathBuf {
+    let over: Option<OsString> = std::env::var_os("TARMAC_SOCKET");
+    let home = std::env::var_os("HOME").unwrap_or_default();
+    resolve_socket_path(over, home.as_os_str(), current_channel())
 }
 
 /// Pure, testable resolver — mirror of Swift `DaemonLaunch.resolveDaemonPath`:

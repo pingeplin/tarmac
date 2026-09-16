@@ -15,6 +15,7 @@
 
 import React, { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { BoardEngine, type Cullable, type Viewport } from "./BoardEngine";
+import type { TermHandle } from "../cards/TerminalCard";
 import { EdgeLayer } from "./EdgeLayer";
 import type { EdgeLayerHandle } from "./BoardEngine";
 import { OffscreenHints } from "../ui/OffscreenHints";
@@ -49,7 +50,7 @@ interface BoardProps {
   onTermTitle: (termId: string, title: string) => void;
   onTermActivity: (termId: string) => void;
   /** Register/unregister a terminal's focus handle (⌥Tab cycle, restore focus). */
-  onTermRegister?: (termId: string, handle: { focus(): void; input(data: string): void }) => void;
+  onTermRegister?: (termId: string, handle: TermHandle) => void;
   onTermUnregister?: (termId: string) => void;
   onDocClose: (path: string) => void;
   onDocRefresh: (path: string) => void;

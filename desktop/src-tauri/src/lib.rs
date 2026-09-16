@@ -9,6 +9,9 @@
 mod bridge;
 mod card_protocol;
 mod commands;
+// Dev-only QA driver (issue #166): compiled out of release builds entirely.
+#[cfg(debug_assertions)]
+mod dev_driver;
 mod image_protocol;
 
 use bridge::Bridge;
@@ -46,6 +49,11 @@ pub fn run() {
             let (tx, rx) = mpsc::unbounded_channel();
             app.manage(Bridge::new(tx));
             bridge::start(app.handle().clone(), rx);
+            #[cfg(debug_assertions)]
+            {
+                app.manage(std::sync::Arc::new(dev_driver::DevDriver::default()));
+                dev_driver::start(app.handle().clone());
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -67,6 +75,12 @@ pub fn run() {
             commands::board_create,
             commands::board_rename,
             commands::board_delete,
+            // Dev-only, and `generate_handler!` honours a per-entry cfg — so the
+            // list stays single and cannot drift between the two builds.
+            #[cfg(debug_assertions)]
+            dev_driver::dev_ready,
+            #[cfg(debug_assertions)]
+            dev_driver::dev_reply,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
