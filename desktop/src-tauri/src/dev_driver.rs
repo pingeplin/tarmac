@@ -207,7 +207,14 @@ pub async fn serve_connection(
 ) -> std::io::Result<()> {
     // Rejects an oversized length prefix before allocating it — the main
     // socket's rule, restated because this is a second listener.
-    let payload = frame::read_async(&mut stream).await?;
+    let payload = match frame::read_async(&mut stream).await {
+        Ok(payload) => payload,
+        // A peer that connected and closed without sending anything is a liveness
+        // probe — exactly what `claim_dev_socket` does to a sibling app. Dropping
+        // it silently is the point: logging here would make every probe noisy.
+        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(()),
+        Err(e) => return Err(e),
+    };
     let reply = match decode_request(&payload) {
         Ok(DevRequest::Unknown) => err_reply(
             "unsupported_verb",
@@ -444,6 +451,29 @@ mod tests {
         let reply = driver.dispatch(DevRequest::Zoom { z: 0.5 }, &sink).await;
         assert!(reply.ok);
         assert_eq!(reply.body, "{\"zoom\":0.5}");
+    }
+
+    /// S69 — a peer that connects and closes without sending a frame is dropped
+    /// silently. That is precisely what `claim_dev_socket`'s liveness probe does
+    /// to a sibling app, so an endpoint that errored or logged on it would make
+    /// every probe noisy.
+    #[tokio::test]
+    async fn an_empty_connection_is_dropped_silently() {
+        let path = scratch("empty").join("tarmac-dev.sock");
+        let claimed = std::sync::Arc::new(claim_dev_socket(&path).unwrap().into_async().unwrap());
+        let driver = std::sync::Arc::new(DevDriver::default());
+        let sink: Sink = Box::new(|_, _| {});
+
+        let accepting = claimed.clone();
+        let served = tokio::spawn(async move {
+            let stream = accepting.accept().await.unwrap();
+            serve_connection(stream, driver, &sink).await
+        });
+
+        // Exactly what claim_dev_socket does: connect, then drop.
+        drop(std::os::unix::net::UnixStream::connect(&path).unwrap());
+
+        assert!(served.await.unwrap().is_ok(), "an empty connection must not be an error");
     }
 
     /// S69 — an oversized frame is refused before it is allocated, and the

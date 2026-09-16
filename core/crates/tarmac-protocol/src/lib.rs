@@ -604,12 +604,17 @@ pub mod dev {
         /// mirroring `Msg`, so one reader convention covers both sockets.
         #[test]
         fn dev_requests_are_tagged_like_msg() {
-            let bytes = encode_request(&DevRequest::Snapshot { until: None, timeout_ms: None }).unwrap();
-            let text = String::from_utf8_lossy(&bytes);
-            assert!(text.contains("t"), "no tag key in {text:?}");
-            assert!(text.contains("snapshot"), "tag is not snake_case in {text:?}");
-            let typed = encode_request(&DevRequest::Type { card: "t-1".into(), text: "x".into() }).unwrap();
-            assert!(String::from_utf8_lossy(&typed).contains("type"));
+            // Read the tag by KEY NAME. A substring check for "t" would be
+            // satisfied by the tag *value* ("snapsho-t-") and could never fail;
+            // this deserialize fails if the key is named anything but `t`.
+            #[derive(serde::Deserialize)]
+            struct Tag {
+                t: String,
+            }
+            let tag_of = |req| rmp_serde::from_slice::<Tag>(&encode_request(&req).unwrap()).unwrap().t;
+            assert_eq!(tag_of(DevRequest::Snapshot { until: None, timeout_ms: None }), "snapshot");
+            assert_eq!(tag_of(DevRequest::Type { card: "t-1".into(), text: "x".into() }), "type");
+            assert_eq!(tag_of(DevRequest::Focus { card: None }), "focus");
         }
 
         /// S47 - additive-only: an unknown key on a known request is ignored.

@@ -65,10 +65,19 @@ export function installDevDriver(deps: DevDriverDeps): () => void {
 
   void listen<{ id: number; req: Record<string, unknown> }>("dev-request", (e) => {
     const { id, req } = e.payload;
-    queue = queue.then(async () => {
-      const reply = await handle(req, deps);
-      await invoke("dev_reply", { id, ok: reply.ok, body: reply.body });
-    });
+    queue = queue
+      .then(async () => {
+        const reply = await handle(req, deps);
+        await invoke("dev_reply", { id, ok: reply.ok, body: reply.body });
+      })
+      // Load-bearing: without it one rejection poisons the chain — every later
+      // `.then` would be skipped and every subsequent request would come back
+      // `app_unresponsive` with nothing said, which a `make qa` run would blame
+      // on the backend.
+      .catch(async (e) => {
+        const body = JSON.stringify({ error: "driver_threw", message: String(e) });
+        await invoke("dev_reply", { id, ok: false, body }).catch(() => {});
+      });
   }).then((un) => {
     if (stopped) {
       un();
@@ -178,9 +187,12 @@ function describe(error: string): string {
   }
 }
 
+/** Throws rather than no-op: routing has already said this card exists, so a
+ *  missing element is a real failure. Replying `ok` after dispatching nothing is
+ *  the shape Decision 6 refuses. */
 function dispatchStep(step: RouteStep, deps: DevDriverDeps, engine: BoardEngine) {
   const el = targetElement(step, deps, engine);
-  if (!el) return;
+  if (!el) throw new Error(`no ${step.target} element for ${step.card ?? "the board"}`);
   const rect = el.getBoundingClientRect();
   const clientX = rect.x + rect.width / 2;
   const clientY = rect.y + rect.height / 2;
@@ -273,8 +285,9 @@ function termFacts(card: DevCardInput, deps: DevDriverDeps) {
     cols: term.cols,
     rows: term.rows,
     proc: deps.proc(termId),
-    // "" would make `contains ""` match vacuously.
-    selection: term.getSelection() || null,
+    // Verbatim; kit/devSnapshot normalises xterm's "" to null, because that is a
+    // decision and this file is wiring.
+    selection: term.getSelection(),
     lines,
     cursorLine: buffer.baseY + buffer.cursorY,
   };

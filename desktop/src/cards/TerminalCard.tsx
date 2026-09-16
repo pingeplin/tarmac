@@ -81,11 +81,10 @@ interface TerminalCardProps {
   onTitle: (title: string) => void;
   /** A keystroke into this terminal — used to clear a lit bell (Swift parity). */
   onActivity?: () => void;
-  /** Register/unregister a focus handle so App can focus this terminal (⌥Tab cycle,
-   *  board-switch/restore focus). */
-  /** The whole xterm instance. Narrower would do for the app's own uses, but
-   *  the dev QA driver (#166) needs `element`/`textarea` off the same object,
-   *  and `term` is already what gets passed — this is the declared type
+  /** Register/unregister the whole xterm instance, so App can focus this terminal
+   *  (⌥Tab cycle, board-switch/restore focus). The instance, not a narrower focus
+   *  handle: `term` is already what gets passed, and the dev QA driver (#166)
+   *  reads `element`/`textarea` off the same object — this is the declared type
    *  catching up with the value. */
   onRegister?: (termId: string, handle: Terminal) => void;
   onUnregister?: (termId: string) => void;

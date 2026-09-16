@@ -31,7 +31,8 @@ export interface DevTermInput {
   rows: number;
   /** The daemon's last TermProc name; null when it has never reported one. */
   proc: string | null;
-  /** xterm's current selection; null (never "") when there is none. */
+  /** xterm's current selection, verbatim — including the "" it reports when
+   *  there is none. `buildSnapshot` normalises that to null. */
   selection: string | null;
   /** The buffer's lines, top to bottom. */
   lines: string[];
@@ -57,8 +58,12 @@ export interface DevSnapshotInput {
   viewRect: Rect;
   /** The ACTIVE board's cards, in the order they should be reported. */
   cards: DevCardInput[];
-  /** Measured client rects, keyed by the internal id. A card with no entry is
-   *  reported unmeasured rather than invented. */
+  /** Measured client rects, keyed by the internal id — what the card's DOM node
+   *  actually reports. A card with no entry is reported unmeasured (`null`)
+   *  rather than invented. These are REPORTED AS MEASURED, never replaced by the
+   *  projection: `screen_rect` exists so a scenario can compare where a card is
+   *  painted against where the transform says it should be, and a projected value
+   *  would make that comparison an identity. */
   screenRects: Map<string, Rect>;
   /** `App.tsx`'s selectedId — prefixed, like every other internal id. */
   selectedId: string | null;
@@ -160,7 +165,9 @@ export function buildSnapshot(input: DevSnapshotInput): DevSnapshot {
         id: bareCardId(c.id),
         kind: c.kind,
         board_rect: c.frame,
-        screen_rect: measured ? boardRectToScreenRect(c.frame, input.viewport, input.viewRect) : null,
+        // The measurement itself. Reporting `boardRectToScreenRect(c.frame, …)`
+        // here instead would make D1 compare the projection with itself.
+        screen_rect: measured ?? null,
         focused: focusedCard !== null && bareCardId(c.id) === focusedCard,
       };
       // Assigned rather than spread with a possibly-undefined value: a `term`
@@ -172,7 +179,10 @@ export function buildSnapshot(input: DevSnapshotInput): DevSnapshot {
           cols: c.term.cols,
           rows: c.term.rows,
           proc: c.term.proc,
-          selection: c.term.selection,
+          // xterm reports "" for no selection; "" would make `contains ""` match
+          // vacuously, so the normalisation is a decision and lives here rather
+          // than in the shell that reads it.
+          selection: c.term.selection || null,
           scrollback_tail: scrollbackTail(c.term.lines, c.term.cursorLine),
         };
       }

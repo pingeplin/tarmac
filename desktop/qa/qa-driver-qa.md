@@ -158,6 +158,28 @@ distinction ever matters; the hidden case is the one a shell-driven run is in.
 
 ---
 
+## D1's knockout — the scenario now observes something
+
+Recorded because D1 was **vacuous in the first implementation** and the referee
+caught it: `screen_rect` was being filled with `boardRectToScreenRect(frame, …)`
+and the card's real measurement was used only as a presence flag. D1 was
+therefore comparing the projection against `smoke.mjs`'s inline copy of the same
+formula — it could not have failed for any card, anywhere. `screen_rect` now
+reports the measurement.
+
+**Knockout, one knob** (`devDriver.ts`, `+5` on the measured `x`, Vite HMR only):
+
+| | frontmost |
+|---|---|
+| perturbed | **9/11** — `x: off by 5.00px` at zoom 1 *and* at zoom 1.7 |
+| reverted | 11/11 |
+
+Before the fix this same perturbation changed nothing, because the measurement
+never reached the snapshot. D1 is now the end-to-end check it was written to be:
+the painted position and the board transform agree within ±1 px at both zooms.
+
+---
+
 ## Incidental finding — the unit tests could not have caught the reactor bug
 
 Worth recording because it bounds what the `[S]` tier is worth here. The first

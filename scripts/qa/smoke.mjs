@@ -73,7 +73,13 @@ function preflight() {
   }
   const probe = dev("snapshot");
   if (probe.code !== 0) {
-    die(`the dev driver did not answer: ${probe.err.trim() || probe.out.trim()}`);
+    // A leftover socket file from a killed app lands here rather than in the
+    // branch above, so this message names the remedy too.
+    die(
+      `the dev driver did not answer — start the app with \`make run\` first ` +
+        `(a stale socket file is left behind when the app is killed). ` +
+        `Reply: ${probe.err.trim() || probe.out.trim()}`,
+    );
   }
   const snap = JSON.parse(probe.out);
   const term = snap.cards.find((c) => c.kind === "term" && c.term?.alive);
@@ -84,7 +90,18 @@ function preflight() {
   if (snap.visibility !== "visible") {
     console.log("note: the window is not visible; see Q5 before blaming a failure on the driver");
   }
-  return term.id;
+  return { term: term.id, boardId: snap.board_id };
+}
+
+/** The active board's persisted zoom, whatever shape state.json nests it in.
+ *  Returns null when the board or its viewport is not there yet. */
+function activeBoardZoom(state, boardId) {
+  const boards = state.boards ?? state.Boards ?? null;
+  const board = Array.isArray(boards)
+    ? boards.find((b) => (b.id ?? b.board_id) === boardId)
+    : (boards?.[boardId] ?? null);
+  const zoom = board?.board?.zoom ?? board?.viewport?.zoom ?? board?.zoom;
+  return typeof zoom === "number" ? zoom : null;
 }
 
 function die(message) {
@@ -119,7 +136,7 @@ function d1_projection(snap) {
 }
 
 async function run() {
-  const term = preflight();
+  const { term, boardId } = preflight();
   console.log("\nD1 — screen_rect matches board_rect projected through viewport");
   check("at zoom 1", () => {
     dev("zoom", "1");
@@ -144,12 +161,19 @@ async function run() {
     for (let i = 0; i < 40 && persisted === null; i++) {
       await sleep(50);
       if (!existsSync(STATE) || statSync(STATE).mtimeMs <= mark) continue;
+      // The ACTIVE board's zoom specifically. A grep over the whole file would
+      // match another board's viewport, and `includes("0.5")` would match 0.55.
       const state = JSON.parse(readFileSync(STATE, "utf8"));
-      const zooms = JSON.stringify(state).match(/"zoom":\s*([0-9.]+)/g) ?? [];
-      if (zooms.some((z) => z.includes("0.5"))) persisted = zooms;
+      const z = activeBoardZoom(state, boardId);
+      if (z === 0.5) persisted = z;
     }
-    check("state.json advanced and holds zoom 0.5", () => {
-      if (persisted === null) throw new Error(`${STATE} never recorded zoom 0.5 (mtime ${mark})`);
+    check("state.json advanced and holds the active board's zoom at 0.5", () => {
+      if (persisted === null) {
+        throw new Error(
+          `${STATE} never recorded zoom 0.5 for board ${boardId} (mtime ${mark}); ` +
+            `last read: ${JSON.stringify(activeBoardZoom(JSON.parse(readFileSync(STATE, "utf8")), boardId))}`,
+        );
+      }
     });
     check("mtime advanced", () => {
       if (statSync(STATE).mtimeMs <= before) throw new Error("state.json mtime did not advance");

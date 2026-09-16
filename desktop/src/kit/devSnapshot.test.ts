@@ -65,11 +65,30 @@ describe("S2 — a doc card has no `term` key at all", () => {
   });
 });
 
-describe("S3 — an unmeasured card", () => {
-  it("reports screen_rect null and keeps its board_rect", () => {
+describe("S3 — screen_rect is the measurement, or null", () => {
+  it("reports screen_rect null and keeps its board_rect when nothing measured it", () => {
     const snap = buildSnapshot(input());
     expect(snap.cards[0].screen_rect).toBeNull();
     expect(snap.cards[0].board_rect).toEqual({ x: 10, y: 20, w: 400, h: 300 });
+  });
+
+  it("reports the MEASURED rect, not the projection of the board rect", () => {
+    // The two deliberately disagree. Reporting the projection here would make
+    // D1 — "the painted position matches the projection within ±1px" — compare
+    // the projection with itself and pass for any card, anywhere.
+    const measured = { x: 999, y: 888, w: 77, h: 66 };
+    const snap = buildSnapshot(input({ screenRects: new Map([["term:t-1", measured]]) }));
+    expect(snap.cards[0].screen_rect).toEqual(measured);
+    const projected = boardRectToScreenRect(snap.cards[0].board_rect, snap.viewport, VIEW);
+    expect(snap.cards[0].screen_rect).not.toEqual(projected);
+  });
+
+  it("reports a zero-size measurement as measured, not as absent", () => {
+    // S3's "never {0,0,0,0}" is about an absent NODE. A node that measured zero
+    // is an observation and must survive as one.
+    const zero = { x: 12, y: 34, w: 0, h: 0 };
+    const snap = buildSnapshot(input({ screenRects: new Map([["term:t-1", zero]]) }));
+    expect(snap.cards[0].screen_rect).toEqual(zero);
   });
 });
 
@@ -94,13 +113,22 @@ describe("S4 — scrollback_tail ends at the cursor row", () => {
 });
 
 describe("S5 — absent facts are null, never empty strings", () => {
-  it("reports no proc and no selection as null", () => {
-    const snap = buildSnapshot(
-      input({ cards: [term({ term: { cols: 80, rows: 24, proc: null, selection: null, lines: [], cursorLine: 0 } })] }),
-    );
-    expect(snap.cards[0].term!.proc).toBeNull();
-    // "" would make `contains ""` match vacuously.
-    expect(snap.cards[0].term!.selection).toBeNull();
+  const withSelection = (selection: string | null) =>
+    buildSnapshot(
+      input({ cards: [term({ term: { cols: 80, rows: 24, proc: null, selection, lines: [], cursorLine: 0 } })] }),
+    ).cards[0].term!;
+
+  it("reports no proc as null", () => {
+    expect(withSelection(null).proc).toBeNull();
+  });
+
+  it("normalises xterm's empty-string selection to null", () => {
+    // xterm returns "" for no selection, and "" would make `contains ""` match
+    // vacuously — so the driver must not pass it through. This is the assertion
+    // that fails if the normalisation moves back out into the untested shell.
+    expect(withSelection("").selection).toBeNull();
+    expect(withSelection(null).selection).toBeNull();
+    expect(withSelection("hi").selection).toBe("hi");
   });
 });
 
