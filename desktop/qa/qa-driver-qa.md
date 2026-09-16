@@ -312,3 +312,83 @@ the centre of the terminal element. `tarmac --help` and the dev-channel skill
 both say so.
 
 Restored with `tarmac dev key <term> ctrl+c` and `printf '\033[?1000l'; clear`.
+
+---
+
+## S17's "unpatched rect" has no test, at any tier — measured, not assumed
+
+Recorded because the referee flagged it as covered-but-vacuous and the obvious fix
+did not work.
+
+`key <card> contextmenu` must compute its point from the **unpatched**
+`screenElement` rect —
+`Element.prototype.getBoundingClientRect.call(screen)` in `devDriver.ts` — because
+`TerminalCard` patches `getBoundingClientRect` on that very element. S17 claims
+"a patched-rect implementation fails it". It does not:
+
+- The **kit** test cannot see it. `devCellPoint` takes the rect by argument, so
+  the test can only re-derive the same formula from a second literal; it never
+  observes which rect the *caller* passes.
+- No **`[D]`** scenario catches it either. D5 pins zoom 1, where
+  `deriveRasterScale(1) === 1` makes the patch a no-op by construction.
+
+### The knockout, and why a new scenario was written and then deleted
+
+`devDriver.ts` switched to the patched `screen.getBoundingClientRect()` —
+nothing else, Vite HMR only — and a new D5b was written to catch it: at zoom 1.7,
+print a target on its own line, hold the terminal with a foreground `sleep` (so
+the last written row is the target and not the user's shell prompt),
+`key contextmenu`, and assert the selected word.
+
+| target | zoom | patched rect selects |
+|---|---|---|
+| 12-char token | 1.7 | the token — **passes under the knockout** |
+| `AAA BBB … HHH` (31 chars) | 1.7, 2.5 | `HHH`, the correct last word |
+| `QQQ` (3 chars, row's left edge — the most displaced case) | 1.05, 1.1, 1.4, 1.7, 2.1, 2.9 | `QQQ` every time |
+
+**Every variant passed under the knockout.** The reason is in S17's own algebra:
+the leading `mousemove` (S16) re-anchors the patched rect on the very point being
+dispatched, and that cancels most of the error back out — enough that the
+resolved cell stays inside the target at every reachable zoom.
+
+**D5b was deleted rather than kept.** A check that passes identically with and
+without the behaviour under test is exactly the vacuity the Definition of Done
+forbids; keeping it would have been worse than not having it, because it would
+have looked like coverage. The `Element.prototype` call now stands on the algebra
+and on a comment that says it is the only guard, and S17's claim is corrected in
+the spec.
+
+---
+
+## Pre-check 4, second pass — the pointer-capture premise was wrong in both directions
+
+The spec's scope list mandates a `try`/`catch` around `CardShell`'s
+`setPointerCapture` (`:124`) and `releasePointerCapture` (`:138`), reasoning that
+"an untrusted synthetic `PointerEvent` has no active pointer, so
+`setPointerCapture` throws `NotFoundError` and the resize never starts".
+
+The first pass measured "no throw" but read `hasPointerCapture` **after**
+`pointerup`, which had already released it — so it could not tell "capture never
+happened" from "capture happened and was released". Second pass reads it inside
+the handler and varies the pointer id:
+
+| `pointerId` | `setPointerCapture` | `hasPointerCapture` inside the handler | `gotpointercapture` | `releasePointerCapture` |
+|---|---|---|---|---|
+| **1** (the mouse's reserved id) | no throw | **false** | never fires | **no throw** |
+| 2 | **`NotFoundError`** | — | — | `NotFoundError` |
+| 99 | **`NotFoundError`** | — | — | `NotFoundError` |
+
+So the throw depends on the **pointer id**, not on whether the event is trusted.
+Two consequences:
+
+1. **No guard is needed.** `CardShell.tsx` is untouched, and D3/D4/D5/D10(b) pass
+   — a throw at `:124` would abort before `resizeStart.current` was set and D3
+   would fail outright. `releasePointerCapture(1)` does not throw either, so the
+   pointerup path completes and the card's lifted state clears.
+2. **`pointerId: 1` in `devResizeGrip` is load-bearing for safety, not fidelity.**
+   Any other id throws at `:124` and the resize silently never starts while the
+   driver still reports success. S44 asserts the id for that reason.
+
+Capture itself never happens for id 1 — which is harmless: all three events land
+on the grip, where `CardShell` wires its own move/up listeners, so capture only
+ever matters for a real pointer that leaves the element.

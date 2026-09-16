@@ -111,9 +111,9 @@ export function routeVerb(verb: DevVerb, ctx: RouteContext): Route {
       steps: [{ target: "term-element", card: card.id, events: ["mousemove", "contextmenu"] }],
     };
   }
-  // The events themselves come from `devKeyPlan`/`devTypePlan` in stage 2; the
-  // routing decision — which element, and whether the preconditions hold — is
-  // what lives here, and it is the same either way.
+  // The events themselves come from `devKeyPlan`/`devTypePlan`; the routing
+  // decision — which element, and whether the preconditions hold — is what lives
+  // here, and it is the same either way.
   return {
     kind: "dispatch",
     steps: [{ target: "term-textarea", card: card.id, events: [] }],

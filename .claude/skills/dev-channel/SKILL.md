@@ -99,8 +99,10 @@ tarmac dev key t-1 ctrl+c
 ```
 
 - `type` sends printables through the editing path a real keystroke takes, and
-  control characters as key events (LF/CR → Enter, TAB → Tab, the rest of C0 →
-  its ctrl chord, so `\x03` is ctrl+c). Its reply counts what landed:
+  control characters as key events: LF/CR → Enter, TAB → Tab, ESC/DEL → Escape
+  and Backspace, and `\x01`–`\x1a` → their ctrl chords, so `\x03` is ctrl+c.
+  (`\x00` and `\x1c`–`\x1f` have no spelling in the combo grammar and take the
+  editing path.) Its reply counts what landed:
   `{"chars": 6, "inserted": 6, "dropped": [], "mode": "insert"}`. A non-empty
   `dropped` is the #162 failure mode.
 - `key` takes a closed set: `enter`, `tab`, `escape`, `backspace`, the four

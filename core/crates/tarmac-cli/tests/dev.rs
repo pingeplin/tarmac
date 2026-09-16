@@ -226,10 +226,17 @@ fn a_silent_app_is_given_up_on_within_the_deadline() {
     assert!(!err.contains('{'), "CLI-side errors are plain text, got: {err}");
 }
 
-/// S58 — `--help` documents the family, the dev-build gate, and the three notes
-/// that are otherwise folklore. This suite only ever runs in a debug build, which
-/// is the build that should document it; that a RELEASE `--help` says nothing
-/// about `dev` is Q1's to observe, and it does.
+/// S58 — `--help` documents the family, the dev-build gate, and the notes that are
+/// otherwise folklore. This suite only ever runs in a debug build, which is the
+/// build that should document it; that a RELEASE `--help` says nothing about `dev`
+/// is Q1's to observe, and it does.
+///
+/// The needle list is also what discharges the DOCS half of S12c, S16 and S77.
+/// Each of those scenarios asks for a statement in the help text as well as a
+/// plan — what `alt+tab` does to focus, what `contextmenu` leaves behind, and what
+/// kitty flag 8 does to `type` — and a kit test cannot see whether the statement
+/// was ever written. Without these rows the whole block could be deleted and
+/// `make test` would stay green.
 #[test]
 fn help_documents_the_dev_family_and_its_limits() {
     let out = tarmac().arg("--help").output().unwrap();
@@ -245,6 +252,15 @@ fn help_documents_the_dev_family_and_its_limits() {
         "Edit-menu",
         "bare printable",
         "mouse reporting",
+        // S12c: alt+tab cycles the prime terminal and takes focus with it.
+        "alt+tab",
+        "not_focused",
+        // S16: what the right-click leaves behind.
+        "contextmenu",
+        "helper textarea",
+        // S77: the kitty flag 8 consequence for `type`.
+        "kitty flag",
+        "mode: key",
     ] {
         assert!(text.contains(needle), "--help does not mention {needle:?}");
     }

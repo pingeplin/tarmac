@@ -18,10 +18,12 @@
 //    predicate.
 //
 //  - A CONTROL CHARACTER becomes a key plan, because execCommand cannot type one.
-//    \n, \r, \t, \x1b and \x7f are the named keys; the rest of C0 is the ctrl
-//    chord it stands for (\x03 → ctrl+c), which is a rule rather than a list so an
-//    unnamed control character cannot fall through to an insert that silently
-//    does nothing.
+//    \n, \r, \t, \x1b and \x7f are the named keys, and \x01–\x1a are the ctrl
+//    chords they stand for (\x03 → ctrl+c) — a rule rather than a list, so \x03 is
+//    not a special case and no letter chord is missing. \x00 and \x1c–\x1f have no
+//    spelling in the `<combo>` grammar (they are ctrl+@ and ctrl+\ ] ^ _), so they
+//    fall through to the insert path like any other character. Widening the
+//    grammar for them would make `comboEvents` the only caller that can throw.
 //
 // Under KITTY FLAG 8 the printable path switches to a key event too (S77): xterm
 // then owns every key and encodes it as CSI u, so an execCommand on top would fire

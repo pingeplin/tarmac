@@ -45,10 +45,12 @@ export interface DevDriverDeps {
 }
 
 /** How long the settle waits when animation frames are not being serviced.
- *  WebKit is documented to throttle rAF for an occluded window, which is this
- *  driver's most normal usage (called from a shell, Tarmac behind the terminal).
- *  Unverified here — Q5 observes it — so the cap bounds the risk rather than
- *  claiming the behaviour. It can only ever end the wait early. */
+ *  Measured, twice (Q5, `desktop/qa/qa-driver-qa.md`): a HIDDEN or MINIMISED app
+ *  services no animation frames at all and the settle runs to this cap (101 ms,
+ *  105 ms); frontmost it ends on the second frame (21 ms), and so does a window
+ *  merely sitting behind another app's — the driver's most common posture, which
+ *  costs nothing. So the cap is what keeps a hidden app usable rather than a
+ *  hedge, and it can only ever end the wait early. */
 const SETTLE_CAP_MS = 100;
 /** `--until` re-evaluates on a timer, not a rAF loop: every fact it waits on (a
  *  ResizeObserver round trip, the daemon's 750 ms TermProc poll, a debounced
@@ -118,9 +120,12 @@ async function handle(raw: Record<string, unknown>, deps: DevDriverDeps) {
   // `no_such_card` or `not_focused` for a verb this build does not implement at
   // all — three different answers to one question.
   if (!IMPLEMENTED.has(raw.t as string)) {
+    // Every verb the CLI can parse is implemented, so the only caller left is a
+    // `DevRequest::Unknown` — a newer CLI meeting this app. Saying which verbs
+    // exist is more use to them than naming the verb they sent back at them.
     return fail(
       "unsupported_verb",
-      `\`${raw.t}\` lands in stage 2 of issue #166; this build implements ${[...IMPLEMENTED].join(", ")}`,
+      `this app does not implement \`${raw.t}\`; it has ${[...IMPLEMENTED].join(", ")}`,
     );
   }
 
@@ -131,8 +136,8 @@ async function handle(raw: Record<string, unknown>, deps: DevDriverDeps) {
   const nodes = cardNodes(deps, engine);
   const route = routeVerb(verb, {
     cards,
-    // Only `type`/`key` consult it, and both are stage 2 — but routing takes a
-    // value, so it is computed once here and reused by the reply's snapshot.
+    // Only `type`/`key` consult it, but routing takes a value, so it is computed
+    // once here and reused by the reply's snapshot.
     activeElementCard: activeElementCard(cards, nodes),
   });
   if (route.kind === "error") {
@@ -246,8 +251,17 @@ function dispatchKeys(descriptors: KeyDescriptor[], element: HTMLElement): strin
 
 /** The mouse pair, at the centre of the last written cell. The rect handed to
  *  `devCellPoint` must be the UNPATCHED one — TerminalCard patches
- *  getBoundingClientRect on this very element, and the patched rect carries a
- *  stale mouse anchor. See kit/devCellPoint for why that cancels out. */
+ *  getBoundingClientRect on this very element. See kit/devCellPoint for the
+ *  algebra.
+ *
+ *  THIS LINE IS THE ONLY GUARD, and that is measured rather than assumed: swapping
+ *  it for `screen.getBoundingClientRect()` was driven against a live app at zooms
+ *  1.05, 1.1, 1.4, 1.7, 2.1, 2.5 and 2.9, and every one still right-clicked the
+ *  cell it aimed at (#174, recorded in `desktop/qa/qa-driver-qa.md`). A kit test
+ *  cannot see it either — `devCellPoint` takes the rect by argument. So S17's
+ *  "a patched-rect implementation fails it" is not true at any tier; keep the
+ *  `Element.prototype` call on the reasoning, not on a test that would pass
+ *  either way. */
 function dispatchContextMenu(
   term: TermHandle,
   element: HTMLElement,

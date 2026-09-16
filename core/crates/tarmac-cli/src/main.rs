@@ -60,8 +60,9 @@ scenario blames the next verb:
 
 `dev type` sends printable characters through the editing path — the one a real
 keystroke takes — and control characters as key events: LF and CR are Enter, TAB
-is Tab, and the rest of the C0 range is the ctrl chord it stands for, so 0x03 is
-ctrl+c. Under a program that asked for every key as an escape code (kitty flag
+is Tab, ESC and DEL are Escape and Backspace, and 0x01-0x1a are the ctrl chords
+they stand for, so 0x03 is ctrl+c. (0x00 and 0x1c-0x1f have no spelling in the
+combo grammar and take the editing path like any other character.) Under a program that asked for every key as an escape code (kitty flag
 8) the editing path would deliver each character twice, so `type` sends key
 events for those too and its reply reports mode: key.
 

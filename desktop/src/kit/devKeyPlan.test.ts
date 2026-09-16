@@ -115,6 +115,33 @@ describe("S13 — the whole accepted set", () => {
     }
   });
 
+  it.each([
+    ["enter", "Enter", "Enter", 13],
+    ["tab", "Tab", "Tab", 9],
+    ["escape", "Escape", "Escape", 27],
+    ["backspace", "Backspace", "Backspace", 8],
+    ["up", "ArrowUp", "ArrowUp", 38],
+    ["down", "ArrowDown", "ArrowDown", 40],
+    ["left", "ArrowLeft", "ArrowLeft", 37],
+    ["right", "ArrowRight", "ArrowRight", 39],
+  ] as const)("%s is exactly %s / %s / %i", (combo, key, code, keyCode) => {
+    // The values, not just the shape. Without this row `up` could carry
+    // ArrowDown's keyCode and send the wrong key to the PTY with the whole suite
+    // green — the table above only asserts that `keyCode` is non-zero and equals
+    // `which`.
+    for (const e of keys(combo)) expect(e).toMatchObject({ key, code, keyCode, which: keyCode });
+  });
+
+  it("uppercases a shifted letter base, and leaves a shifted digit alone", () => {
+    // WebKit uppercases a letter under shift, so a plan that did not would carry a
+    // `key` no real press produces. A digit's shifted face is layout-dependent
+    // (`shift+7` is `&` on US, `/` on DE), so the driver reports the digit rather
+    // than guessing — the same refusal to invent as S24's `keyCode: 0`.
+    expect(keys("ctrl+shift+c")[0]).toMatchObject({ key: "C", code: "KeyC", keyCode: 67 });
+    expect(keys("ctrl+c")[0]).toMatchObject({ key: "c", code: "KeyC", keyCode: 67 });
+    expect(keys("ctrl+shift+7")[0]).toMatchObject({ key: "7", code: "Digit7", keyCode: 55 });
+  });
+
   it.each(rows)("%s is a combo xterm actually delivers", (combo) => {
     // The anti-vacuity half: every accepted combo must be one xterm OWNS, or the
     // key verb is a silent no-op for it. The real predicate, not a restatement.

@@ -5,6 +5,9 @@ describe("S43 — the delta is board units scaled INTO screen px", () => {
   it("multiplies by zoom, because CardShell divides by it", () => {
     // CardShell.onHandlePointerMove computes `dx = (e.clientX − s.px) / zoom`, so
     // a plan that omits zoom here returns 200 and resizes to the wrong size.
+    // Asymmetric FIRST: every dx === dy row below is also satisfied by an
+    // implementation that swaps the two axes.
+    expect(gripDelta({ w: 600, h: 400 }, { w: 800, h: 500 }, 0.5)).toEqual({ dx: 100, dy: 50 });
     expect(gripDelta({ w: 600, h: 400 }, { w: 800, h: 600 }, 0.5)).toEqual({ dx: 100, dy: 100 });
     expect(gripDelta({ w: 600, h: 400 }, { w: 800, h: 600 }, 1)).toEqual({ dx: 200, dy: 200 });
     expect(gripDelta({ w: 800, h: 600 }, { w: 600, h: 400 }, 2)).toEqual({ dx: -400, dy: -400 });
@@ -28,12 +31,14 @@ describe("S44 — the grip drag is three pointer events on the grip itself", () 
     ]);
   });
 
-  it("keeps all three on the same element, which is what makes capture unneeded", () => {
-    // CardShell wires onPointerMove/Up on the handle element itself, so capture is
-    // only ever needed for a REAL pointer that leaves the element. Measured
-    // (#174 pre-check 4): WebKit's setPointerCapture with a synthetic pointerId
-    // does not throw, it silently no-ops — hasPointerCapture stays false — so the
-    // grab is recorded and the drag runs.
-    expect(plan.every((d) => d.pointerId === 1)).toBe(true);
+  it("uses pointer id 1, without which CardShell's handler aborts before the grab", () => {
+    // Not cosmetic. CardShell calls setPointerCapture(e.pointerId) BEFORE recording
+    // the grab, and WebKit throws NotFoundError for an id no pointer ever had —
+    // measured (#174 pre-check 4): 2 and 99 throw, 1 does not, because 1 is the
+    // mouse's reserved id. Capture still never happens (hasPointerCapture reads
+    // false inside the handler), which is fine: all three events land on the same
+    // element, where CardShell's own move/up listeners are.
+    expect(plan.map((d) => d.pointerId)).toEqual([1, 1, 1]);
+    expect(new Set(plan.map((d) => d.type)).size).toBe(3);
   });
 });
