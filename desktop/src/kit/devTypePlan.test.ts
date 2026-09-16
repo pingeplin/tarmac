@@ -103,6 +103,33 @@ describe("S77 — kitty flag 8 switches the whole delivery path", () => {
   it("switches on flag 8 wherever it appears in the mask", () => {
     expect(devTypePlan("a", 13).mode).toBe("key");
   });
+
+  it("reports the UNSHIFTED physical key, which is what kitty's CSI u encodes", () => {
+    // Measured from real WebKit presses on the US layout (#174 pre-check 6), and
+    // load-bearing rather than cosmetic: xterm derives the CSI u code point from
+    // `keyCode`, so `!` carrying its own char code (33) would emit ESC[33;2u where
+    // a real press emits ESC[49;2u — a key nobody pressed. Verified in the same
+    // harness: keyCode 49 -> ESC[49;2u, keyCode 33 -> ESC[33;2u.
+    const rows: Array<[string, string, number, boolean]> = [
+      ["a", "KeyA", 65, false],
+      ["A", "KeyA", 65, true],
+      ["1", "Digit1", 49, false],
+      ["!", "Digit1", 49, true],
+      [")", "Digit0", 48, true],
+      ["^", "Digit6", 54, true],
+      [" ", "Space", 32, false],
+      ["-", "Minus", 189, false],
+      ["_", "Minus", 189, true],
+      ["/", "Slash", 191, false],
+      ["?", "Slash", 191, true],
+      ['"', "Quote", 222, true],
+      ["中", "", 0, false],
+    ];
+    for (const [char, code, keyCode, shiftKey] of rows) {
+      const [down] = keyEvents(devTypePlan(char, 8).steps[0]);
+      expect({ char, ...down }).toMatchObject({ char, key: char, code, keyCode, which: keyCode, shiftKey });
+    }
+  });
 });
 
 describe("S20/S21/S22 — control characters become key events, not inserts", () => {

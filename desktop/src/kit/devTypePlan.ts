@@ -124,15 +124,14 @@ function comboEvents(combo: string): KeyDescriptor[] {
  *  same character as a `key` combo (S14b): there, xterm would stand aside and the
  *  event would reach nothing. */
 function printableEvents(char: string): KeyDescriptor[] {
-  const upper = char.toUpperCase();
-  const ascii = /^[\x20-\x7e]$/.test(char);
+  const { code, keyCode, shift } = physicalKey(char);
   const shared = {
     key: char,
-    code: ascii ? asciiCode(upper) : "",
-    keyCode: ascii ? upper.charCodeAt(0) : 0,
-    which: ascii ? upper.charCodeAt(0) : 0,
+    code,
+    keyCode,
+    which: keyCode,
     ctrlKey: false,
-    shiftKey: /[A-Z]/.test(char),
+    shiftKey: shift,
     altKey: false,
     metaKey: false,
     bubbles: true,
@@ -144,10 +143,60 @@ function printableEvents(char: string): KeyDescriptor[] {
   ];
 }
 
-function asciiCode(upper: string): string {
-  if (/[A-Z]/.test(upper)) return `Key${upper}`;
-  if (/[0-9]/.test(upper)) return `Digit${upper}`;
-  return "";
+// The US-layout physical key behind each ASCII printable, measured from real key
+// chords in WebKit (#174 pre-check 6). This is not cosmetic: kitty's CSI u
+// reports the UNSHIFTED key, and xterm derives it from `keyCode` — so `!` must
+// carry Digit1/49 with shift, or `type` emits ESC[33;2u where a real press emits
+// ESC[49;2u and the program receives a key nobody pressed. The harness compares
+// every ASCII printable against a real chord: 36/36 byte-identical.
+//
+// One documented difference remains. A real shifted press also reports the Shift
+// key itself (ESC[57441;2u) before the character; the driver plans no modifier
+// keydown, so a flag-8 program that acts on Shift's own press sees one fewer
+// event. Left as-is: the character arrives identically, and bracketing every
+// shifted character with a Shift press/release would put events on the wire for
+// a corner narrower than the one it fixes.
+//
+// A synthetic event has no layout, so US is the only table there can be; a
+// non-ASCII character reports nothing at all, the same rule as S24.
+const SHIFTED_DIGITS = ")!@#$%^&*(";
+const PUNCTUATION: Record<string, { code: string; keyCode: number; shift: boolean }> = {
+  " ": { code: "Space", keyCode: 32, shift: false },
+  ";": { code: "Semicolon", keyCode: 186, shift: false },
+  ":": { code: "Semicolon", keyCode: 186, shift: true },
+  "=": { code: "Equal", keyCode: 187, shift: false },
+  "+": { code: "Equal", keyCode: 187, shift: true },
+  ",": { code: "Comma", keyCode: 188, shift: false },
+  "<": { code: "Comma", keyCode: 188, shift: true },
+  "-": { code: "Minus", keyCode: 189, shift: false },
+  _: { code: "Minus", keyCode: 189, shift: true },
+  ".": { code: "Period", keyCode: 190, shift: false },
+  ">": { code: "Period", keyCode: 190, shift: true },
+  "/": { code: "Slash", keyCode: 191, shift: false },
+  "?": { code: "Slash", keyCode: 191, shift: true },
+  "`": { code: "Backquote", keyCode: 192, shift: false },
+  "~": { code: "Backquote", keyCode: 192, shift: true },
+  "[": { code: "BracketLeft", keyCode: 219, shift: false },
+  "{": { code: "BracketLeft", keyCode: 219, shift: true },
+  "\\": { code: "Backslash", keyCode: 220, shift: false },
+  "|": { code: "Backslash", keyCode: 220, shift: true },
+  "]": { code: "BracketRight", keyCode: 221, shift: false },
+  "}": { code: "BracketRight", keyCode: 221, shift: true },
+  "'": { code: "Quote", keyCode: 222, shift: false },
+  '"': { code: "Quote", keyCode: 222, shift: true },
+};
+
+function physicalKey(char: string): { code: string; keyCode: number; shift: boolean } {
+  if (/^[a-zA-Z]$/.test(char)) {
+    const upper = char.toUpperCase();
+    return { code: `Key${upper}`, keyCode: upper.charCodeAt(0), shift: char === upper };
+  }
+  if (/^[0-9]$/.test(char)) {
+    return { code: `Digit${char}`, keyCode: char.charCodeAt(0), shift: false };
+  }
+  const digit = SHIFTED_DIGITS.indexOf(char);
+  if (digit >= 0) return { code: `Digit${digit}`, keyCode: 48 + digit, shift: true };
+  return PUNCTUATION[char] ?? { code: "", keyCode: 0, shift: false };
 }
 
 function inert(char: string) {
