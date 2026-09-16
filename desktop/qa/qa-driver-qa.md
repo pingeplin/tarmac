@@ -1,13 +1,17 @@
 # In-app QA driver — manual QA (spec 2609.0015, #166)
 
-Q1, Q4 and Q5 of [`2609.0015_in_app_qa_driver.md`](../../.blueprint/specs/2609.0015_in_app_qa_driver.md).
-These three are `[Q]` scenarios because each is a property of a **build** or of a
-**window**, not of the code: `make test` runs debug, so nothing automated can
-observe a release binary; `make qa` cannot test its own entry condition; and
-whether WebKit services `requestAnimationFrame` behind another window is an
-observation, not an assertion.
+Q1…Q5 of [`2609.0015_in_app_qa_driver.md`](../../.blueprint/specs/2609.0015_in_app_qa_driver.md).
+These are `[Q]` scenarios because each is a property of a **build**, a **window**
+or a **deliberate break**, not of the code: `make test` runs debug, so nothing
+automated can observe a release binary; `make qa` cannot test its own entry
+condition; whether WebKit services `requestAnimationFrame` behind another window
+is an observation, not an assertion; and a knockout is a thing you do to a
+working tree, not a test you can commit.
 
-Q2 and Q3 belong to stage 2 (`type`, `key`, `resize`) and are not run here.
+Q1, Q4 and Q5 were run for stage 1 (`snapshot`, `zoom`, `focus`). Q2, Q3 and the
+stage-2 half of Q5 were run for stage 2 (`resize`, `type`, `key`) and are recorded
+below their stage-1 sections. Counts differ by stage: stage 1's suite was 11
+checks, stage 2's is 18.
 
 **CAUTION: do NOT `pkill tarmacd` or `pkill tarmac-app`.** That kills the user's
 installed Tarmac and every terminal its daemon owns. `make run` pins
@@ -152,17 +156,54 @@ would come back `app_unresponsive`. Decision 15's cap is **not** a hedge against
 documented-but-unobserved behaviour; it is the thing that makes the driver usable
 in its most normal posture — called from a shell with Tarmac behind the terminal.
 
-**Correction this run forces on the spec.** `visibility` reported `"visible"` the
-whole time the app was hidden: `document.visibilityState` does not flip for a
-hidden macOS *application*, only for an occluded/minimised *page*. The field is
-still honest — it reports what the DOM says — but Decision 16's claim that it is
-"what makes that state readable" is **wrong for app-hiding**, the exact case that
-matters here. Keep the field (it still catches minimise and a genuinely hidden
-page), and stop citing it as the diagnostic for a slow run; the latency delta
-above is the real tell.
+**Correction this run forced on the spec — and which the stage-2 re-run below
+reverses.** `visibility` reported `"visible"` the whole time the app was hidden,
+so Decision 16 was rewritten to say `document.visibilityState` does not flip for
+a hidden macOS *application*. **That reading did not reproduce.** See the
+stage-2 section below: the flip is observable in both directions, repeatedly.
+This paragraph is kept as the record of what was recorded when, not as a
+statement of fact.
 
-**Not run:** minimised (⌘M) as distinct from hidden. Worth adding if the
-distinction ever matters; the hidden case is the one a shell-driven run is in.
+**Not run in stage 1:** minimised (⌘M) as distinct from hidden. Run in stage 2.
+
+### Stage-2 re-run: the cap holds, the visibility reading does not (2026-09-16, `c41d20f`)
+
+Same instrument, dev app pid 92364, addressed by pid. `tarmac dev snapshot`
+reads state and never settles, so its wall time is the process-start floor and
+the difference is the settle itself. Medians of 12 paired runs:
+
+| window state | `visibility` | `snapshot` | `focus board` | settle | ended on |
+|---|---|---|---|---|---|
+| frontmost (key) | `visible` | 5.8 ms | 27.1 ms | **21.3 ms** | two frames |
+| another app key, Tarmac on screen | `visible` | 4.7 ms | 28.4 ms | **23.7 ms** | two frames |
+| app hidden (`visible = false`) | `hidden` | 6.0 ms | 107.4 ms | **101.4 ms** | the 100 ms cap |
+| window minimised (`AXMinimized`) | `hidden` | 5.4 ms | 110.5 ms | **105.1 ms** | the 100 ms cap |
+
+**Decision 15's cap is load-bearing — confirmed, and now with the minimised case
+too.** Both states that stall rAF pin the settle at the cap; both states that
+service it end on the second frame. Merely being behind another app's window is
+*not* one of the stalling states, which is worth knowing: the driver's most
+common posture costs nothing.
+
+**`visibility` DOES flip, contradicting stage 1.** Three independent
+observations, all the opposite of the stage-1 record:
+
+1. `make qa` with the app hidden printed header `visibility hidden` — literally
+   stage 1's experiment, opposite result.
+2. Two hide/unhide cycles: `visible` → `hidden` within 0.5 s of hiding, still
+   `hidden` at +4 s, back to `visible` on unhide. Both cycles identical.
+3. Twelve consecutive snapshots over 12 s while hidden: `hidden` every time,
+   with `System Events` confirming `visible = false` at the end.
+
+The stage-1 reading was not reproducible and the spec's Decision 16 and Interface
+Contract are corrected back. `visibility` is a usable tell for exactly the two
+states where the cap fires.
+
+**Pre-check 3 — does `execCommand("insertText")` work in a non-key window?**
+This is the third stage-2 entry pre-check, which the Playwright harness could not
+answer because it needs the real WKWebView. Answered here: `make qa` run with the
+app **hidden** passed **18/18**, D4 and D5 included, both reporting
+`dropped: []`. The editing path is unaffected by key-window status.
 
 ---
 
@@ -206,3 +247,68 @@ registration (`into_async`, inside the spawned task).
 
 The `[S]` tier cannot see this class of bug at all. `make qa` found it on its
 first live run, which is the argument for the `[D]` tier existing.
+
+---
+
+## Q2 — the #162 knockout (one knob, one factor)
+
+`desktop/src/kit/resizeSelection.ts`'s `flushesOnResize` changed to `return true;`
+— **nothing else** — and applied by Vite HMR with no relaunch, so the app, the
+daemon, the terminal and its shell are all the same ones the passing run used.
+
+### Result: PASS, both halves (2026-09-16, `c41d20f`, dev app pid 92364)
+
+| run | D4 | D5 | everything else | total |
+|---|---|---|---|---|
+| unmodified | ok | ok | ok | **18/18** |
+| knockout (`return true`) | **FAIL** | **FAIL** | ok | 16/18 |
+| reverted | ok | ok | ok | **18/18** |
+
+Both failures read `second type dropped [{"index":0,"char":"b"}]` — which is
+#162's mechanism exactly: the resize press flushed the focused terminal's
+selection, WebKit then fired no `beforeinput`, and `execCommand` returned
+`false`. The driver reported it rather than passing quietly, which is the whole
+point of S71's summariser.
+
+**One knob, one factor.** Sixteen other checks stayed green under the knockout,
+so the two failures are attributable to the predicate and not to a disturbed app.
+D5 failing alongside D4 is expected and is noted in the spec: the knockout removes
+both branches of the predicate, and D4 is the required observation.
+
+**What this rules out.** If `type` were delivering text through its bracket
+keydown rather than through `execCommand`, the knockout could not have changed
+anything and D4 would have passed — S19's inert bracket (Decision 1) is what makes
+these scenarios able to fail at all. They can.
+
+---
+
+## Q3 — the mouse-report side effect, observed
+
+`focus <term>` goes through xterm's real `mousedown`/`mouseup` handlers, so a
+program with mouse reporting enabled receives a button report. Documented rather
+than worked around; this records what it actually looks like.
+
+### Result: confirmed (2026-09-16, `c41d20f`, dev app pid 92364)
+
+Driven entirely through `tarmac dev`, no keyboard:
+
+```
+tarmac dev focus board && tarmac dev focus <term>
+tarmac dev type <term> "printf '\033[?1000h'; cat -v\n"
+tarmac dev focus board && tarmac dev focus <term>
+```
+
+`cat -v` then showed, in the snapshot's `scrollback_tail`:
+
+```
+❯ printf '\033[?1000h'; cat -v
+^[[M ?(^[[M#?(
+```
+
+Two reports, not one: `^[[M ?(` is the button **press** and `^[[M#?(` the
+**release** — `focus` plans `mousedown` + `mouseup` (S35), and xterm encodes
+both. A program that acts on a click (Claude Code, vim) sees a complete click at
+the centre of the terminal element. `tarmac --help` and the dev-channel skill
+both say so.
+
+Restored with `tarmac dev key <term> ctrl+c` and `printf '\033[?1000l'; clear`.

@@ -5,9 +5,13 @@
 // app, driven entirely through `tarmac dev`. They are not part of `make test`
 // and not on CI, because they need a window.
 //
-// Stage 1 covers D1, D2, D8, D9(a), D9(b) and D10(a) — everything reachable with
-// `snapshot`, `zoom` and `focus`. D3-D7, D9(c) and D10(b) arrive with `resize`,
-// `type` and `key` in stage 2.
+// D1, D2, D8, D9(a), D9(b) and D10(a) need only `snapshot`, `zoom` and `focus`.
+// D3-D7, D9(c) and D10(b) drive `resize`, `type` and `key` as well.
+//
+// Every scenario that types mints its OWN sentinel from a per-run nonce, and the
+// run asserts they are all distinct: `scrollback_tail` spans 40 lines, so an
+// earlier scenario's echo would satisfy a repeated `contains` and turn a later
+// scenario green without doing anything.
 //
 // Run:  make qa          (pins TARMAC_DEV_SOCKET to this worktree's .dev/)
 
@@ -59,6 +63,51 @@ function eq(actual, expected, what) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ------------------------------------------------------------------- sentinels
+// One nonce per run, one sentinel per scenario. Short, alphanumeric and
+// lowercase: it is echoed by a shell, so anything a shell would expand or a
+// narrow card would wrap across lines breaks `contains` for reasons unrelated to
+// the bug under test.
+const NONCE = Math.random().toString(36).slice(2, 8);
+const minted = new Set();
+function sentinel(tag) {
+  const s = `qa${NONCE}${tag}`;
+  if (minted.has(s)) throw new Error(`sentinel ${s} was minted twice`);
+  minted.add(s);
+  return s;
+}
+
+/** `focus board` then `focus <term>` — the clean reset. Per #162, `focus()` on an
+ *  already-focused textarea does not restore the caret, so the blur is required.
+ *  The leading `zoom 1` is not decoration: zoom persists, so a re-run after D2
+ *  would start at 0.5 and shift every grip delta and cell point below. */
+function reset(term) {
+  dev("zoom", "1");
+  snapshot("--until", "viewport.zoom == 1");
+  dev("focus", "board");
+  dev("focus", term);
+}
+
+/** Wait for an expression, and on timeout raise the terminal's tail with it — the
+ *  difference between a diagnosable failure and a mysterious one. */
+function waitFor(term, expr, ...args) {
+  const r = dev("snapshot", "--until", expr, ...args);
+  if (r.code === 0) return JSON.parse(r.out);
+  const tail = (() => {
+    try {
+      return JSON.parse(r.err).snapshot?.cards?.find((c) => c.id === term)?.term?.scrollback_tail;
+    } catch {
+      return null;
+    }
+  })();
+  throw new Error(`\`${expr}\` never held.\n       tail: ${JSON.stringify(tail)}`);
+}
+
+const termCard = (snap, term) => snap.cards.find((c) => c.id === term);
+const near = (a, b, tol, what) => {
+  if (Math.abs(a - b) > tol) throw new Error(`${what}: ${a} is not within ${tol} of ${b}`);
+};
 
 // ---------------------------------------------------------------- preconditions
 // No verb creates a terminal, so the suite needs one that already exists.
@@ -182,6 +231,100 @@ async function run() {
     dev("zoom", "1");
   })();
 
+  console.log("\nD3 — a resize reaches the PTY's winsize");
+  check("the grip drag lands the card, and stty sees the new grid", () => {
+    reset(term);
+    // Pin the start size too, so the grip delta below is exact.
+    dev("resize", term, "600x400");
+    waitFor(term, `cards[${term}].board_rect.w ~= 600`);
+    const cols0 = termCard(snapshot(), term).term.cols;
+
+    const body = json(dev("resize", term, "800x600"));
+    // The card's stored frame can be a float from an earlier gesture, so
+    // `w0 + (800 − w0)` need not be bit-identical to 800 — `===` would flake.
+    near(body.to.w, 800, 1e-6, "reply to.w");
+    near(body.to.h, 600, 1e-6, "reply to.h");
+
+    waitFor(term, `cards[${term}].board_rect.w ~= 800`);
+    // Separate waits on purpose: the frame settles before xterm refits and the
+    // daemon's Resize lands.
+    const snap = waitFor(term, `cards[${term}].term.cols != ${cols0}`);
+    const { rows, cols } = termCard(snap, term).term;
+
+    dev("type", term, "stty size\n");
+    // The OS fact: the PTY's winsize changed, and the shell can read it back.
+    waitFor(term, `cards[${term}].term.scrollback_tail contains "${rows} ${cols}"`);
+  });
+
+  console.log("\nD4 — #162 regression, caret variant");
+  check("a resize press between two types drops nothing", () => {
+    const s4 = sentinel("d4");
+    reset(term);
+    // This is issue #162's own repro: NO focus round-trip anywhere between.
+    const first = json(dev("type", term, `${s4}a`));
+    dev("resize", term, "700x500");
+    const second = json(dev("type", term, "b\n"));
+    if (first.dropped.length > 0) throw new Error(`first type dropped ${JSON.stringify(first.dropped)}`);
+    if (second.dropped.length > 0) throw new Error(`second type dropped ${JSON.stringify(second.dropped)}`);
+    waitFor(term, `cards[${term}].term.scrollback_tail contains "${s4}ab"`);
+  });
+
+  console.log("\nD5 — #162 regression, Range variant");
+  check("a right-click selection survives the resize press", () => {
+    const seed = sentinel("d5a");
+    const s5 = sentinel("d5b");
+    reset(term);
+    dev("type", term, `echo ${seed}\n`);
+    waitFor(term, `cards[${term}].term.scrollback_tail contains "${seed}"`);
+
+    const keyed = dev("key", term, "contextmenu");
+    eq(keyed.code, 0, "key contextmenu exit code");
+    const selType = snapshot().active_element.selection_type;
+    // A right-click on blank space degrades to a Caret and would silently re-run
+    // D4 under a different name. The Range comes from xterm's own
+    // rightClickSelectsWord default (isMac); if xterm ever changes it, this line
+    // fails loudly rather than quietly.
+    eq(selType, "Range", "active_element.selection_type after contextmenu");
+
+    // Stronger than the spec's bare `contains "ab"`, per the suite's own sentinel
+    // hygiene: D4's echo is still inside the 40-line tail and would satisfy it.
+    const first = json(dev("type", term, `${s5}a`));
+    dev("resize", term, "720x520");
+    const second = json(dev("type", term, "b\n"));
+    if (first.dropped.length > 0) throw new Error(`first type dropped ${JSON.stringify(first.dropped)}`);
+    if (second.dropped.length > 0) throw new Error(`second type dropped ${JSON.stringify(second.dropped)}`);
+    waitFor(term, `cards[${term}].term.scrollback_tail contains "${s5}ab"`);
+  });
+
+  console.log("\nD6 — bytes reach the PTY, exactly once");
+  check("the echo carries the sentinel and not its doubled form", () => {
+    const s6 = sentinel("d6");
+    reset(term);
+    dev("type", term, `printf ${s6}\n`);
+    waitFor(term, `cards[${term}].term.scrollback_tail contains "${s6}"`);
+    // The end-to-end guard on S19's inert bracket: if the keydown ALSO delivered
+    // the character, every character would echo twice and every #162 scenario
+    // would be vacuous.
+    const doubled = [...s6].map((c) => c + c).join("");
+    const tail = termCard(snapshot(), term).term.scrollback_tail;
+    if (tail.includes(doubled)) {
+      throw new Error(`the tail holds the doubled form ${doubled} — the bracket is delivering too`);
+    }
+  });
+
+  console.log("\nD7 — the foreground process changes, both directions");
+  check("type starts sleep and ctrl+c ends it", () => {
+    reset(term);
+    dev("type", term, "sleep 100\n");
+    // The daemon polls TermProc at 750ms, so the wait is required.
+    waitFor(term, `cards[${term}].term.proc == "sleep"`);
+    const body = json(dev("key", term, "ctrl+c"));
+    eq(body.combo, "ctrl+c", "reply combo");
+    // No keypress — the app produces none for a combo xterm owns (S10, measured).
+    eq(JSON.stringify(body.events), '["keydown","keyup"]', "reply events");
+    waitFor(term, `cards[${term}].term.proc != "sleep"`, "--timeout", "3000");
+  });
+
   console.log("\nD8 — focus and blur are two separate facts");
   check("focus <term> selects the card AND moves keyboard focus", () => {
     const body = json(dev("focus", term));
@@ -220,6 +363,21 @@ async function run() {
     if (elapsed > 800) throw new Error(`took ${elapsed}ms, expected under 800ms`);
   });
 
+  check("(c) type without focus is refused BEFORE anything is dispatched", () => {
+    const s9 = sentinel("d9c");
+    // Deliberately unfocused — that is the condition under test, so this is the
+    // one scenario that does not reset focus.
+    dev("focus", "board");
+    const r = dev("type", term, s9);
+    eq(r.code, 1, "exit code");
+    eq(JSON.parse(r.err).error, "not_focused", "error code");
+    // The operational form of "the tail never gains that sentinel": proof the
+    // precondition ran before any event was dispatched rather than after.
+    const t = dev("snapshot", "--until", `cards[${term}].term.scrollback_tail contains "${s9}"`, "--timeout", "500");
+    eq(t.code, 1, "the sentinel must never appear");
+    eq(JSON.parse(t.err).error, "timeout", "error code");
+  });
+
   console.log("\nD10 — a clamped request is reported, not refused");
   check("(a) zoom 99 clamps to 3 and says so", () => {
     const r = dev("zoom", "99");
@@ -230,6 +388,19 @@ async function run() {
     eq(snapshot("--until", "viewport.zoom == 3").viewport.zoom, 3, "snapshot zoom");
     eq(json(dev("zoom", "0.01")).zoom, 0.1, "reply zoom at the low clamp");
     dev("zoom", "1");
+  });
+  check("(b) resize below the minimum clamps to 160x90 and says so", () => {
+    reset(term);
+    const body = json(dev("resize", term, "10x10"));
+    eq(body.to.w, 160, "reply to.w");
+    eq(body.to.h, 90, "reply to.h");
+    const snap = waitFor(term, `cards[${term}].board_rect.w ~= 160`);
+    near(termCard(snap, term).board_rect.h, 90, 1, "snapshot board_rect.h");
+    // Restore: a card left at 160x90 is ~15 columns wide and would wrap every
+    // later sentinel across lines, breaking `contains` for reasons that have
+    // nothing to do with the bug under test.
+    dev("resize", term, "600x400");
+    waitFor(term, `cards[${term}].board_rect.w ~= 600`);
   });
 
   console.log(`\n${checks - failures.length}/${checks} checks passed`);
