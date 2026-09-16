@@ -227,7 +227,9 @@ fn a_silent_app_is_given_up_on_within_the_deadline() {
 }
 
 /// S58 — `--help` documents the family, the dev-build gate, and the three notes
-/// that are otherwise folklore.
+/// that are otherwise folklore. This suite only ever runs in a debug build, which
+/// is the build that should document it; that a RELEASE `--help` says nothing
+/// about `dev` is Q1's to observe, and it does.
 #[test]
 fn help_documents_the_dev_family_and_its_limits() {
     let out = tarmac().arg("--help").output().unwrap();

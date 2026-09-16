@@ -24,6 +24,7 @@ Three gates, one predicate each. All three must hold.
 | # | Gate | How to observe |
 |---|---|---|
 | 1 | `#[cfg(debug_assertions)]` on the CLI verb | `cd core && cargo build --release && ./target/release/tarmac dev snapshot` |
+| 1b | the verb is not *advertised* in release | `./target/release/tarmac --help \| grep -c dev` |
 | 2 | `#[cfg(debug_assertions)]` on the endpoint | `make bundle`, launch `dist/Tarmac.app`, then `ls`/`lsof` its channel dir for `tarmac-dev.sock` |
 | 3 | `import.meta.env.DEV` on the frontend half | `cd desktop && npm run build && grep -rl "dev-request\|installDevDriver" dist/` |
 
@@ -49,6 +50,13 @@ socket has several possible causes, absent *code* has one.
 $ dist/Tarmac.app/Contents/MacOS/tarmac dev snapshot
 tarmac: driver unavailable in release builds        # exit 1
 ```
+
+**Gate 1b** — a release `--help` mentions `tarmac dev` and `TARMAC_DEV_SOCKET`
+**0** times; the same debug binary mentions them 11 times. `README.md` and
+`SKILL.md` leave the family out because they are user-facing, and `--help` is at
+least as user-facing as either — but the verb stays *recognised*, so a user who
+types it gets `driver unavailable in release builds` and exit 1 rather than an
+`unknown command` exit 2. Recognised, not advertised.
 
 Strings in `dist/Tarmac.app/Contents/MacOS/tarmac-app` (the release app, with the
 production frontend bundle embedded):
