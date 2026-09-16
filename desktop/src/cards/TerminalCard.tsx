@@ -83,7 +83,11 @@ interface TerminalCardProps {
   onActivity?: () => void;
   /** Register/unregister a focus handle so App can focus this terminal (⌥Tab cycle,
    *  board-switch/restore focus). */
-  onRegister?: (termId: string, handle: { focus(): void; input(data: string): void }) => void;
+  /** The whole xterm instance. Narrower would do for the app's own uses, but
+   *  the dev QA driver (#166) needs `element`/`textarea` off the same object,
+   *  and `term` is already what gets passed — this is the declared type
+   *  catching up with the value. */
+  onRegister?: (termId: string, handle: Terminal) => void;
   onUnregister?: (termId: string) => void;
 }
 

@@ -113,6 +113,21 @@ export class BoardEngine {
     this.onViewportChange?.(this.viewport);
   }
 
+  /** The board's own element. The QA driver needs it for two things the board
+   *  otherwise keeps to itself: `view_rect` (what turns board-local coordinates
+   *  into client ones) and the `focus board` press target, which `Board.tsx`
+   *  gates on `e.target` identity. Read-only — nothing outside may re-point it. */
+  get viewportElement(): HTMLElement {
+    return this.viewportEl;
+  }
+
+  /** The wrapper element of one card, by its internal (prefixed) id. Already
+   *  tracked for culling; exposed so the QA driver can measure a card's screen
+   *  rect and dispatch on it without a second registry. */
+  cardNode(id: string): HTMLElement | undefined {
+    return this.cullables.find((c) => c.id === id)?.el;
+  }
+
   /** The visible region in WORLD coords (inverse-projected viewport bounds).
    * Drives the minimap viewport box + offscreen-hint isOffscreen test. */
   get viewportWorldRect(): Rect {
