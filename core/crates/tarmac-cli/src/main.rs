@@ -14,11 +14,37 @@ USAGE:
     tarmac --version        report the cli, daemon, and app versions
     tarmac skill            print the agent-facing Tarmac guide
     tarmac skill install    install that guide as a SKILL.md for coding agents
+    tarmac dev <verb>       drive and inspect the running app (dev builds only)
     tarmac --help           show this help
 
 `tarmac open` is fire-and-forget: anything (you, an agent, a Makefile, a git
 hook) can run it to surface a doc in the cockpit. The path is canonicalized
 and must point to an existing file.
+
+`tarmac dev` talks to the app, not the daemon, over its own socket
+(TARMAC_DEV_SOCKET). It exists so an agent or a script can drive and read the
+cockpit without a keyboard, and it is available in dev builds only — a release
+binary exits 1 with \"driver unavailable in release builds\".
+
+    tarmac dev snapshot [--until <expr>] [--timeout <ms>]
+    tarmac dev zoom <z>
+    tarmac dev resize <card> <w>x<h>
+    tarmac dev focus <card>|board
+    tarmac dev type <card> \"<text>\"
+    tarmac dev key <card> \"<combo>\"
+
+<card> is a terminal's term id or a doc's absolute path. snapshot prints JSON on
+stdout; every other verb prints a small JSON object describing what it observed.
+A failing verb prints the app's JSON error on stderr and exits 1.
+
+Three things `dev key` cannot do, by design rather than by omission:
+  - ⌘C and ⌘V cannot be driven. They rely on WebKit's native Edit-menu action,
+    which an untrusted dispatched event never triggers.
+  - A bare printable character is refused; use `tarmac dev type` for text.
+    xterm stands aside for such a key, so dispatching one would send nothing.
+  - `focus` and `key` go through the real mouse and key paths, so a program with
+    mouse reporting on (Claude Code, vim) also receives a button-press report
+    when a card is focused.
 
 `tarmac skill` never talks to the daemon. `install` writes one SKILL.md per
 target — claude-code (~/.claude/skills) and codex (~/.agents/skills) — and
@@ -28,7 +54,8 @@ accepts:
 const HELP_TAIL: &str = "
 The daemon socket defaults to ~/Library/Application Support/tarmac/tarmacd.sock
 (release builds) or ~/Library/Application Support/tarmac/dev/tarmacd.sock (dev
-builds); override with TARMAC_SOCKET.
+builds); override with TARMAC_SOCKET. The dev driver's socket sits beside it as
+tarmac-dev.sock; override with TARMAC_DEV_SOCKET.
 
 `tarmac --version` reports three versions that drift independently — this cli
 binary, the running daemon, and the app connected to that daemon — plus the
@@ -64,6 +91,32 @@ fn socket_path() -> PathBuf {
     proto::resolve_socket_path(over, &home, current_channel())
 }
 
+// Compiled out of release builds entirely (issue #166): the driver is dev-only
+// machinery, and the same `cfg!(debug_assertions)` predicate feeds the audited
+// channel mapping below, so availability and channel cannot disagree.
+#[cfg(debug_assertions)]
+mod dev;
+
+const DEV_UNAVAILABLE: &str = "driver unavailable in release builds";
+
+fn dev_unavailable() -> i32 {
+    eprintln!("tarmac: {DEV_UNAVAILABLE}");
+    1
+}
+
+/// Without the release arm the verb falls through to the unknown-command path
+/// below and exits 2 with the wrong message; the contract is exit 1 with
+/// `DEV_UNAVAILABLE`.
+#[cfg(debug_assertions)]
+fn dev_dispatch(args: &[String]) -> i32 {
+    if dev::dev_available() { dev::run(args) } else { dev_unavailable() }
+}
+
+#[cfg(not(debug_assertions))]
+fn dev_dispatch(_args: &[String]) -> i32 {
+    dev_unavailable()
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
@@ -79,6 +132,7 @@ fn main() {
             print!("{}", version_report(&socket_path()));
             std::process::exit(0);
         }
+        Some("dev") => std::process::exit(dev_dispatch(&args[1..])),
         Some("skill") => std::process::exit(skill::run(&args[1..])),
         Some("open") => {}
         Some(other) => {
