@@ -123,18 +123,50 @@ fn err_reply(code: &str, message: &str) -> DevReply {
 
 /// A bound dev socket that unlinks its path when dropped, so the next run claims
 /// a free path rather than having to decide whether a leftover is stale.
+///
+/// Deliberately std, not tokio: the claim happens in Tauri's `setup`, which runs
+/// OUTSIDE the async runtime, and `tokio::net::UnixListener::from_std` panics
+/// ("there is no reactor running") when called there. [`ClaimedSocket::into_async`]
+/// does the conversion, from inside the spawned task where a reactor exists.
 pub struct ClaimedSocket {
+    /// `None` once handed to [`ClaimedSocket::into_async`], which is how Drop
+    /// knows not to unlink a path the async half now owns.
+    listener: Option<std::os::unix::net::UnixListener>,
+    path: PathBuf,
+}
+
+/// The same socket, registered with the reactor. Owns the unlink from here on.
+pub struct AsyncSocket {
     listener: UnixListener,
     path: PathBuf,
 }
 
 impl ClaimedSocket {
+    /// Call from inside a Tokio context. Consumes the claim, so the path is
+    /// unlinked exactly once by whichever half is still alive.
+    pub fn into_async(mut self) -> std::io::Result<AsyncSocket> {
+        let listener = self.listener.take().expect("a claim can only be converted once");
+        let path = std::mem::take(&mut self.path);
+        listener.set_nonblocking(true)?;
+        Ok(AsyncSocket { listener: UnixListener::from_std(listener)?, path })
+    }
+}
+
+impl AsyncSocket {
     pub async fn accept(&self) -> std::io::Result<UnixStream> {
         Ok(self.listener.accept().await?.0)
     }
 }
 
 impl Drop for ClaimedSocket {
+    fn drop(&mut self) {
+        if self.listener.is_some() {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
+impl Drop for AsyncSocket {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.path);
     }
@@ -160,13 +192,11 @@ pub fn claim_dev_socket(path: &Path) -> Option<ClaimedSocket> {
         }
         let _ = std::fs::remove_file(path);
     }
-    let std_listener = std::os::unix::net::UnixListener::bind(path).ok()?;
+    let listener = std::os::unix::net::UnixListener::bind(path).ok()?;
     // `bind` leaves whatever the umask allows; the daemon's claim_socket never
     // chmods, so this is new work rather than a crib.
     let _ = std::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o600));
-    std_listener.set_nonblocking(true).ok()?;
-    let listener = UnixListener::from_std(std_listener).ok()?;
-    Some(ClaimedSocket { listener, path: path.to_path_buf() })
+    Some(ClaimedSocket { listener: Some(listener), path: path.to_path_buf() })
 }
 
 /// One request per connection: read a frame, relay it, write the answer, close.
@@ -224,9 +254,15 @@ pub fn start(app: AppHandle) {
 
     let driver: Arc<DevDriver> = app.state::<Arc<DevDriver>>().inner().clone();
     tauri::async_runtime::spawn(async move {
-        // Held for the task's lifetime so the socket file is unlinked on a clean
-        // exit; `claimed` dropping is what removes it.
-        let claimed = claimed;
+        // Registering with the reactor must happen HERE, not in `setup`, which
+        // runs outside the runtime.
+        let claimed = match claimed.into_async() {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("tarmac: dev driver could not start: {e}");
+                return;
+            }
+        };
         let emit = app.clone();
         let sink: Sink = Box::new(move |id, req| {
             let _ = emit.emit("dev-request", serde_json::json!({ "id": id, "req": req }));
@@ -279,8 +315,8 @@ mod tests {
 
     /// S66 — the socket is created, its parent with it, and it is owner-only.
     /// `tarmacd`'s `claim_socket` never chmods, so this is new work, not a crib.
-    #[tokio::test]
-    async fn claiming_creates_a_private_socket_and_its_parent() {
+    #[test]
+    fn claiming_creates_a_private_socket_and_its_parent() {
         let path = scratch("mode").join("nested").join("tarmac-dev.sock");
         let claimed = claim_dev_socket(&path).expect("expected to claim a free path");
         assert!(path.exists());
@@ -290,8 +326,8 @@ mod tests {
     }
 
     /// S67 — a leftover file nothing is listening on is stale: replace it.
-    #[tokio::test]
-    async fn a_stale_socket_file_is_replaced() {
+    #[test]
+    fn a_stale_socket_file_is_replaced() {
         let path = scratch("stale").join("tarmac-dev.sock");
         std::fs::write(&path, b"not a socket").unwrap();
         let claimed = claim_dev_socket(&path).expect("a stale file must not block the claim");
@@ -302,8 +338,8 @@ mod tests {
     /// S67 — a LIVE sibling's socket is never unlinked and never taken over. The
     /// daemon's rule here is to exit 1; the app must not, because losing a window
     /// over a dev-only endpoint is worse than not having the endpoint.
-    #[tokio::test]
-    async fn a_live_siblings_socket_is_left_alone() {
+    #[test]
+    fn a_live_siblings_socket_is_left_alone() {
         let path = scratch("live").join("tarmac-dev.sock");
         let sibling = claim_dev_socket(&path).expect("first claim should succeed");
         assert!(claim_dev_socket(&path).is_none(), "took over a live sibling's socket");
@@ -312,8 +348,8 @@ mod tests {
     }
 
     /// S68 — removed on clean exit, so the next run claims rather than replaces.
-    #[tokio::test]
-    async fn the_socket_is_removed_on_drop() {
+    #[test]
+    fn the_socket_is_removed_on_drop() {
         let path = scratch("drop").join("tarmac-dev.sock");
         let claimed = claim_dev_socket(&path).unwrap();
         assert!(path.exists());
@@ -421,7 +457,7 @@ mod tests {
         let driver = std::sync::Arc::new(DevDriver::default());
         let sink: Sink = Box::new(|_, _| {});
 
-        let claimed = std::sync::Arc::new(claimed);
+        let claimed = std::sync::Arc::new(claimed.into_async().unwrap());
         let accepting = claimed.clone();
         let served = tokio::spawn(async move {
             let stream = accepting.accept().await.unwrap();
