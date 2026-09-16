@@ -181,9 +181,17 @@ Work down this list before suspecting the driver:
 4. **Did the app panic at startup?** Read the `make run` output — a backend
    panic aborts before the endpoint binds.
 5. **Is the window hidden?** Verbs still work, but the settle falls back to a
-   100 ms cap because a hidden macOS app services no animation frames. Note the
-   snapshot's `visibility` stays `"visible"` for a *hidden app* — it only catches
-   a minimised or genuinely hidden page — so use the latency, not that field.
+   100 ms cap because a hidden or minimised macOS app services no animation
+   frames. The snapshot's `visibility` reads `"hidden"` for exactly those two
+   states and `"visible"` for a window merely sitting behind another app's —
+   which does *not* stall frames and costs nothing. So the field is the tell; read
+   it before blaming the driver. (An earlier note here said `visibility` stays
+   `"visible"` for a hidden app. It does not — see Q5 in
+   `desktop/qa/qa-driver-qa.md`.)
+6. **Did something reload the page mid-run?** `npm test` writes `dist-kit/`, which
+   a live `make run` picks up as a **full page reload** — the driver re-installs
+   and a verb in flight answers `app_unresponsive`. Don't run the unit suite and a
+   `tarmac dev` session at the same time.
 
 ## Adding a scenario
 
