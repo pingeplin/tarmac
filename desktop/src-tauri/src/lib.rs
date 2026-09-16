@@ -9,6 +9,9 @@
 mod bridge;
 mod card_protocol;
 mod commands;
+// Dev-only QA driver (issue #166): compiled out of release builds entirely.
+#[cfg(debug_assertions)]
+mod dev_driver;
 mod image_protocol;
 
 use bridge::Bridge;
@@ -27,6 +30,60 @@ fn respond_card_scheme(uri: &str) -> tauri::http::Response<Vec<u8>> {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+// `generate_handler!` expands to a closure whose type only infers at the
+// `invoke_handler` call site, so the list cannot be built behind a `let` and the
+// two builds cannot share one entry list. Two whole lists it is — the dev-only
+// pair is the only difference.
+#[cfg(debug_assertions)]
+fn handlers() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
+            commands::frontend_ready,
+            commands::term_attach,
+            commands::term_detach,
+            commands::spawn_term,
+            commands::term_input,
+            commands::term_input_bytes,
+            commands::term_resize,
+            commands::term_close,
+            commands::doc_open,
+            commands::doc_read,
+            commands::doc_close,
+            commands::doc_refresh,
+            commands::read_doc,
+            commands::persist_layout,
+            commands::board_switch,
+            commands::board_create,
+            commands::board_rename,
+            commands::board_delete,
+        dev_driver::dev_ready,
+        dev_driver::dev_reply,
+    ]
+}
+
+#[cfg(not(debug_assertions))]
+fn handlers() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
+            commands::frontend_ready,
+            commands::term_attach,
+            commands::term_detach,
+            commands::spawn_term,
+            commands::term_input,
+            commands::term_input_bytes,
+            commands::term_resize,
+            commands::term_close,
+            commands::doc_open,
+            commands::doc_read,
+            commands::doc_close,
+            commands::doc_refresh,
+            commands::read_doc,
+            commands::persist_layout,
+            commands::board_switch,
+            commands::board_create,
+            commands::board_rename,
+            commands::board_delete,
+    ]
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -46,28 +103,14 @@ pub fn run() {
             let (tx, rx) = mpsc::unbounded_channel();
             app.manage(Bridge::new(tx));
             bridge::start(app.handle().clone(), rx);
+            #[cfg(debug_assertions)]
+            {
+                app.manage(std::sync::Arc::new(dev_driver::DevDriver::default()));
+                dev_driver::start(app.handle().clone());
+            }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
-            commands::frontend_ready,
-            commands::term_attach,
-            commands::term_detach,
-            commands::spawn_term,
-            commands::term_input,
-            commands::term_input_bytes,
-            commands::term_resize,
-            commands::term_close,
-            commands::doc_open,
-            commands::doc_read,
-            commands::doc_close,
-            commands::doc_refresh,
-            commands::read_doc,
-            commands::persist_layout,
-            commands::board_switch,
-            commands::board_create,
-            commands::board_rename,
-            commands::board_delete,
-        ])
+        .invoke_handler(handlers())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
