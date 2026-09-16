@@ -233,11 +233,10 @@ async function keyVerb(
   const plan = devKeyPlan(verb.combo);
   if (plan.kind === "error") return fail(plan.error, plan.message, { combo: verb.combo });
 
-  const term = requireTerminal(step, deps);
   const element = requireElement(step, deps, engine);
   const events =
     plan.kind === "contextmenu"
-      ? dispatchContextMenu(term, element)
+      ? dispatchContextMenu(requireTerminal(step, deps), element)
       : dispatchKeys(plan.events, element);
   if ("error" in events) return fail(events.error, events.message, { card: verb.card });
   await settle();

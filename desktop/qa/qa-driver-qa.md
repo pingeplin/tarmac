@@ -1,6 +1,7 @@
 # In-app QA driver — manual QA (spec 2609.0015, #166)
 
-Q1…Q5 of [`2609.0015_in_app_qa_driver.md`](../../.blueprint/specs/2609.0015_in_app_qa_driver.md).
+Q1…Q6 of [`2609.0015_in_app_qa_driver.md`](../../.blueprint/specs/2609.0015_in_app_qa_driver.md)
+(Q6 was added to the spec during stage 2).
 These are `[Q]` scenarios because each is a property of a **build**, a **window**
 or a **deliberate break**, not of the code: `make test` runs debug, so nothing
 automated can observe a release binary; `make qa` cannot test its own entry
