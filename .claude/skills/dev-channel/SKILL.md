@@ -114,6 +114,14 @@ tarmac dev key t-1 ctrl+c
   away**, so every later verb in the scenario fails `not_focused`; `contextmenu`
   right-clicks the last written cell and leaves xterm's helper textarea parked
   under the cursor (which is what makes the selection real).
+- **Kitty flag 8 is a trap.** A program that pushes it (`ESC[>8u`) puts `type` on
+  the key path — the reply reads `"mode": "key"` — and while it is set, `key
+  ctrl+c` **cannot interrupt a program that does not speak kitty**: xterm encodes
+  it as an escape code instead of a raw `0x03`, so no SIGINT is raised. `ctrl+d`
+  likewise. The flags survive an app reload too, because the daemon replays the
+  scrollback that set them. If a program leaves them set there is no in-band
+  recovery; pop them from the program side against that terminal's tty:
+  `printf '\033[>0u' > /dev/ttysNNN`.
 - `resize` drags the bottom-right grip in board units and reports where the card
   landed, clamped to the 160×90 minimum:
   `{"from": {...}, "to": {"w": 800, "h": 600}, "delta_px": {...}}`.

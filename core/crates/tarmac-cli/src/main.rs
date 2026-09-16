@@ -66,6 +66,14 @@ combo grammar and take the editing path like any other character.) Under a progr
 8) the editing path would deliver each character twice, so `type` sends key
 events for those too and its reply reports mode: key.
 
+One trap comes with that mode: while flag 8 is set, `dev key <card> ctrl+c`
+cannot interrupt a program that does not speak the kitty protocol. xterm encodes
+it as an escape code instead of a raw 0x03, so the line discipline never raises
+SIGINT; ctrl+d behaves the same. The flags also survive an app reload, because
+the replayed scrollback re-applies them. If a program leaves them set, nothing
+can be sent as raw bytes and the pop sequence has to come from the program side
+-- e.g. `printf \'\\033[>0u\' > /dev/ttysNNN` against that terminal\'s tty.
+
 ";
 #[cfg(not(debug_assertions))]
 const DEV_HELP: &str = "";

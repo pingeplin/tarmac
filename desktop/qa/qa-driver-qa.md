@@ -395,3 +395,69 @@ Two consequences:
 Capture itself never happens for id 1 — which is harmless: all three events land
 on the grip, where `CardShell` wires its own move/up listeners, so capture only
 ever matters for a real pointer that leaves the element.
+
+---
+
+## Q6 — `type` under kitty flag 8, in the real WKWebView
+
+The flag-8 branch (S77) was the one production path whose only evidence was the
+Playwright harness — the instrument this spec's own *Alternatives Considered*
+distrusts, for exactly the reason it gives there. This closes that gap against the
+real app. It is a **[Q] hand-run and not a `make qa` scenario**, for a reason
+measured below: it cannot safely clean up after itself.
+
+### Result: PASS (2026-09-16, `c7efcd0`, dev app pid 92364)
+
+`cat -v` renders escape codes as text, so the PTY's own bytes are readable through
+`scrollback_tail`:
+
+```sh
+tarmac dev focus board && tarmac dev focus <term>
+tarmac dev type <term> "clear; printf '\033[>8u'; cat -v\n"
+tarmac dev type <term> "ab!"
+```
+
+Reply: `{"chars":3,"inserted":0,"dropped":[],"mode":"key"}` — **no `insertText` at
+all**, which is S77's point: under flag 8 xterm owns every key, and an
+`execCommand` on top would deliver each character a second time.
+
+The PTY received:
+
+```
+^[[97u^[[98u^[[49;2u
+```
+
+`a` → `ESC[97u`, `b` → `ESC[98u`, and `!` → **`ESC[49;2u`** — the *unshifted*
+Digit1 with the shift modifier, which is what a real `Shift+1` press produces.
+That is the physical-key table confirmed end to end in the real WKWebView, not
+just against Playwright: a plan carrying the character's own code point would
+have sent `ESC[33;2u`, a key nobody pressed.
+
+### Why this is not a `make qa` scenario
+
+Written as D11 first, it wedged the terminal and failed five later scenarios. Two
+measured reasons, both worth knowing independently of this test:
+
+1. **Under kitty flag 8, `tarmac dev key <term> ctrl+c` cannot interrupt a
+   non-kitty program.** xterm encodes it as `ESC[99;5u` rather than emitting raw
+   `0x03`, so the line discipline never raises SIGINT and `cat -v` just prints the
+   escape. `ctrl+d` is the same. A program that pushed flag 8 and does not
+   understand kitty input therefore cannot be stopped through the driver at all.
+2. **Kitty flags survive an app reload.** Forcing a Vite page reload recreates the
+   `Terminal`, but the daemon replays the stored scrollback into it — including
+   the original `ESC[>8u` — so the flags are re-applied and the terminal is still
+   in key mode.
+
+Together those leave no in-band recovery: nothing can be typed as raw bytes, so
+nothing can pop the flags. The terminal was restored out of band, by killing the
+stuck `cat` by pid (verified as a child of *this worktree's* `tarmacd`, never by
+name) and writing the pop sequence straight to the PTY's tty, which reaches xterm
+from the program side:
+
+```sh
+printf '\033[>0u' > /dev/ttys000
+```
+
+A scenario whose failure mode requires that is not one `make qa` should run
+unattended. The limitation is documented in `tarmac --help` and the dev-channel
+skill instead.
