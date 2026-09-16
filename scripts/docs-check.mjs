@@ -112,6 +112,12 @@ for (const [p, status] of statusOf) {
 // The Msg enum is the contract. architecture.md's message table names variants in
 // CamelCase; protocol.md names the on-wire snake_case "t" tag. A message that
 // ships without landing in both is invisible to anyone reading the docs.
+//
+// This rule is also what discharges spec 2609.0015's S49: the QA driver's
+// `DevRequest` is a separate enum on a separate socket, deliberately NOT a `Msg`
+// variant, so this rule finds nothing new and the V1-V13 conformance vectors stay
+// untouched. Make it a `Msg` variant and this rule fails until both docs and the
+// vectors are updated — which is the point.
 
 const PROTO_SRC = "core/crates/tarmac-protocol/src/lib.rs";
 const enumBody = read(PROTO_SRC).match(/pub enum Msg \{\n([\s\S]*?)\n\}/);

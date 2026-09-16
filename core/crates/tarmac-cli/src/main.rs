@@ -48,6 +48,33 @@ Three things `dev key` cannot do, by design rather than by omission:
     mouse reporting on (Claude Code, vim) also receives a button-press report
     when a card is focused.
 
+Two combos leave the cockpit somewhere else, which is worth knowing before a
+scenario blames the next verb:
+  - `alt+tab` cycles the prime terminal. The app catches it at the window capture
+    phase, so it never reaches the PTY AND IT MOVES FOCUS — every later verb in
+    the same scenario then fails not_focused.
+  - `contextmenu` right-clicks the last written cell to make a selection. xterm
+    moves its helper textarea to 20x20 px under the cursor and refocuses it, and
+    leaves it there; that is what makes the selection real, and a following
+    `type` still lands.
+
+`dev type` sends printable characters through the editing path — the one a real
+keystroke takes — and control characters as key events: LF and CR are Enter, TAB
+is Tab, ESC and DEL are Escape and Backspace, and 0x01-0x1a are the ctrl chords
+they stand for, so 0x03 is ctrl+c. (0x00 and 0x1c-0x1f have no spelling in the
+combo grammar and take the editing path like any other character.) Under a program that asked for every key as an escape code (kitty flag
+8) the editing path would deliver each character twice, so `type` sends key
+events for those too and its reply reports mode: key.
+
+One trap comes with that mode: while flag 8 is set, `dev key <card> ctrl+c`
+cannot interrupt a program that does not speak the kitty protocol. xterm encodes
+it as an escape code instead of a raw 0x03, so the line discipline never raises
+SIGINT; ctrl+d behaves the same. The flags also survive an app reload, because
+the replayed scrollback re-applies them. If a program leaves them set, nothing
+can be sent as raw bytes and the pop sequence has to come from the program side
+— write it to that terminal's own tty, e.g.
+`printf '\\033[>0u' > /dev/ttysNNN`.
+
 ";
 #[cfg(not(debug_assertions))]
 const DEV_HELP: &str = "";

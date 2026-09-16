@@ -13,6 +13,7 @@
 //     request rather than of wherever focus happened to be.
 
 import { bareCardId, type DevCardInput } from "./devSnapshot";
+import { CONTEXT_MENU } from "./devKeyPlan";
 
 export type DevTarget =
   | "card-body"
@@ -63,8 +64,6 @@ export type DevVerb =
   | { t: "type"; card: string; text: string }
   | { t: "key"; card: string; combo: string };
 
-const CONTEXT_MENU = "contextmenu";
-
 export function routeVerb(verb: DevVerb, ctx: RouteContext): Route {
   if (verb.t === "zoom") return { kind: "viewport" };
   if (verb.t === "focus" && verb.card === null) {
@@ -106,14 +105,18 @@ export function routeVerb(verb: DevVerb, ctx: RouteContext): Route {
   if (ctx.activeElementCard !== verb.card) return { kind: "error", error: "not_focused" };
 
   if (verb.t === "key" && verb.combo === CONTEXT_MENU) {
+    // Events empty for the same reason as the three below: the pair comes from
+    // `devKeyPlan.contextMenuPlan`, which needs a coordinate per event that a
+    // `RouteStep` cannot carry. Naming them here too would leave a second,
+    // unread list for a reader to change by mistake.
     return {
       kind: "dispatch",
-      steps: [{ target: "term-element", card: card.id, events: ["mousemove", "contextmenu"] }],
+      steps: [{ target: "term-element", card: card.id, events: [] }],
     };
   }
-  // The events themselves come from `devKeyPlan`/`devTypePlan` in stage 2; the
-  // routing decision — which element, and whether the preconditions hold — is
-  // what lives here, and it is the same either way.
+  // The events themselves come from `devKeyPlan`/`devTypePlan`; the routing
+  // decision — which element, and whether the preconditions hold — is what lives
+  // here, and it is the same either way.
   return {
     kind: "dispatch",
     steps: [{ target: "term-textarea", card: card.id, events: [] }],
