@@ -166,7 +166,7 @@ statement of fact.
 
 **Not run in stage 1:** minimised (⌘M) as distinct from hidden. Run in stage 2.
 
-### Stage-2 re-run: the cap holds, the visibility reading does not (2026-09-16, `c41d20f`)
+### Stage-2 re-run: the cap holds, the visibility reading does not (2026-09-16, `da07c62`)
 
 Same instrument, dev app pid 92364, addressed by pid. `tarmac dev snapshot`
 reads state and never settles, so its wall time is the process-start floor and
@@ -256,7 +256,10 @@ first live run, which is the argument for the `[D]` tier existing.
 — **nothing else** — and applied by Vite HMR with no relaunch, so the app, the
 daemon, the terminal and its shell are all the same ones the passing run used.
 
-### Result: PASS, both halves (2026-09-16, `c41d20f`, dev app pid 92364)
+### Result: PASS, both halves (2026-09-16, `da07c62`, dev app pid 92364)
+
+Re-run at `da07c62` after the referee pass, because production code in the `type`
+path had changed since the first run. Identical result both times.
 
 | run | D4 | D5 | everything else | total |
 |---|---|---|---|---|
@@ -288,7 +291,7 @@ these scenarios able to fail at all. They can.
 program with mouse reporting enabled receives a button report. Documented rather
 than worked around; this records what it actually looks like.
 
-### Result: confirmed (2026-09-16, `c41d20f`, dev app pid 92364)
+### Result: confirmed (2026-09-16, `da07c62`, dev app pid 92364)
 
 Driven entirely through `tarmac dev`, no keyboard:
 
