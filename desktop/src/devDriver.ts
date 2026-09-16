@@ -26,6 +26,11 @@ import {
 } from "./kit/devSnapshot";
 import { routeVerb, DEV_ERROR_MESSAGE, type DevVerb, type RouteStep } from "./kit/devRouting";
 import { parseUntil, evalUntil } from "./kit/devUntil";
+import { devKeyPlan, contextMenuPlan, type KeyDescriptor } from "./kit/devKeyPlan";
+import { devCellPoint } from "./kit/devCellPoint";
+import { devTypePlan, devTypeSummary } from "./kit/devTypePlan";
+import { gripDelta, gripPlan, type PointerDescriptor } from "./kit/devResizeGrip";
+import { xtermKittyFlags } from "./cards/xtermKittyFlags";
 
 /** Everything the driver cannot reach from outside React. */
 export interface DevDriverDeps {
@@ -146,6 +151,12 @@ async function handle(raw: Record<string, unknown>, deps: DevDriverDeps) {
     return { ok: true, body: JSON.stringify({ zoom: engine.viewport.zoom }) };
   }
 
+  // Routing has already resolved the card and checked the preconditions, so each
+  // verb below only has to plan its own events and report what it observed.
+  if (verb.t === "resize") return resizeVerb(verb, route.steps[0], deps, engine);
+  if (verb.t === "type") return typeVerb(verb, route.steps[0], deps, engine);
+  if (verb.t === "key") return keyVerb(verb, route.steps[0], deps, engine);
+
   for (const step of route.steps) dispatchStep(step, deps, engine);
   await settle();
   const snap = build(deps, engine);
@@ -153,6 +164,139 @@ async function handle(raw: Record<string, unknown>, deps: DevDriverDeps) {
     ok: true,
     body: JSON.stringify({ focused_card: snap.focused_card, active_element: snap.active_element }),
   };
+}
+
+/** Drags the bottom-right grip. `from`/`to` are read off the card's frame before
+ *  and after, so the reply reports where the card LANDED — including the
+ *  160×90 minimum clamp — rather than echoing the request. */
+async function resizeVerb(
+  verb: { card: string; w: number; h: number },
+  step: RouteStep,
+  deps: DevDriverDeps,
+  engine: BoardEngine,
+) {
+  const grip = requireElement(step, deps, engine);
+  const from = requireFrame(step.card, deps);
+  const delta = gripDelta(from, { w: verb.w, h: verb.h }, engine.viewport.zoom);
+  const r = grip.getBoundingClientRect();
+  const centre = { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  for (const d of gripPlan(centre, delta)) grip.dispatchEvent(pointerEvent(d));
+  await settle();
+  const to = requireFrame(step.card, deps);
+  return json({
+    from: { w: from.w, h: from.h },
+    to: { w: to.w, h: to.h },
+    delta_px: delta,
+  });
+}
+
+/** Each printable goes in through `execCommand`, bracketed by the plan's inert
+ *  keydown/keyup — the `beforeinput` path #162 broke, and the only one a scenario
+ *  can prove. Under kitty flag 8 the plan switches to key events and nothing is
+ *  inserted (S77); the reply's `mode` says which happened. */
+async function typeVerb(
+  verb: { card: string; text: string },
+  step: RouteStep,
+  deps: DevDriverDeps,
+  engine: BoardEngine,
+) {
+  const term = requireTerminal(step, deps);
+  const textarea = requireElement(step, deps, engine);
+  const plan = devTypePlan(verb.text, xtermKittyFlags(term));
+  const inserted: boolean[] = [];
+  for (const s of plan.steps) {
+    if (s.kind === "key") {
+      for (const d of s.events) textarea.dispatchEvent(keyEvent(d));
+      continue;
+    }
+    textarea.dispatchEvent(keyEvent(s.keydown));
+    // The precondition guarantees this textarea holds focus, which is what
+    // execCommand acts on. Its return value IS the dropped/inserted fact.
+    inserted.push(document.execCommand("insertText", false, s.char));
+    textarea.dispatchEvent(keyEvent(s.keyup));
+  }
+  await settle();
+  return json(devTypeSummary(plan, inserted));
+}
+
+async function keyVerb(
+  verb: { card: string; combo: string },
+  step: RouteStep,
+  deps: DevDriverDeps,
+  engine: BoardEngine,
+) {
+  const plan = devKeyPlan(verb.combo);
+  if (plan.kind === "error") return fail(plan.error, plan.message, { combo: verb.combo });
+
+  const term = requireTerminal(step, deps);
+  const element = requireElement(step, deps, engine);
+  const events =
+    plan.kind === "contextmenu"
+      ? dispatchContextMenu(term, element)
+      : dispatchKeys(plan.events, element);
+  if ("error" in events) return fail(events.error, events.message, { card: verb.card });
+  await settle();
+  return json({ combo: verb.combo, events });
+}
+
+function dispatchKeys(descriptors: KeyDescriptor[], element: HTMLElement): string[] {
+  for (const d of descriptors) element.dispatchEvent(keyEvent(d));
+  return descriptors.map((d) => d.type);
+}
+
+/** The mouse pair, at the centre of the last written cell. The rect handed to
+ *  `devCellPoint` must be the UNPATCHED one — TerminalCard patches
+ *  getBoundingClientRect on this very element, and the patched rect carries a
+ *  stale mouse anchor. See kit/devCellPoint for why that cancels out. */
+function dispatchContextMenu(
+  term: TermHandle,
+  element: HTMLElement,
+): string[] | { error: "empty_buffer"; message: string } {
+  const screen = term.screenElement;
+  if (!screen) throw new Error("the terminal has no screen element to right-click");
+  const r = Element.prototype.getBoundingClientRect.call(screen);
+  const buffer = term.buffer.active;
+  const lines: string[] = [];
+  for (let i = 0; i < term.rows; i++) {
+    lines.push(buffer.getLine(buffer.viewportY + i)?.translateToString(true) ?? "");
+  }
+  const point = devCellPoint({
+    lines,
+    screenRect: { x: r.x, y: r.y, w: r.width, h: r.height },
+    cols: term.cols,
+    rows: term.rows,
+  });
+  if ("error" in point) return point;
+  const plan = contextMenuPlan(point);
+  for (const d of plan) element.dispatchEvent(new MouseEvent(d.type, d));
+  return plan.map((d) => d.type);
+}
+
+const json = (body: unknown) => ({ ok: true, body: JSON.stringify(body) });
+
+/** `keyCode` and `which` are legacy KeyboardEventInit members, absent from the
+ *  standard typings. WebKit honours them (measured, #174 pre-check 5), and it has
+ *  to: xterm's evaluator reads `keyCode`, so an event without it encodes nothing
+ *  and the verb is a silent no-op that still reports success. */
+const keyEvent = (d: KeyDescriptor) => new KeyboardEvent(d.type, d as KeyboardEventInit);
+const pointerEvent = (d: PointerDescriptor) => new PointerEvent(d.type, d);
+
+function requireElement(step: RouteStep, deps: DevDriverDeps, engine: BoardEngine): HTMLElement {
+  const el = targetElement(step, deps, engine);
+  if (!el) throw new Error(`no ${step.target} element for ${step.card ?? "the board"}`);
+  return el;
+}
+
+function requireTerminal(step: RouteStep, deps: DevDriverDeps): TermHandle {
+  const term = deps.terminal(bareCardId(step.card ?? ""));
+  if (!term) throw new Error(`no live terminal behind ${step.card}`);
+  return term;
+}
+
+function requireFrame(cardId: string | null, deps: DevDriverDeps) {
+  const card = deps.cards().find((c) => c.id === cardId);
+  if (!card) throw new Error(`card ${cardId} vanished mid-verb`);
+  return card.frame;
 }
 
 async function snapshotReply(
@@ -189,16 +333,16 @@ async function snapshotReply(
 
 const settle = () => Promise.race([twoFrames(), sleep(SETTLE_CAP_MS)]);
 
-/** The verbs this build actually dispatches. `resize`, `type` and `key` parse and
- *  route (their preconditions are real) but land in stage 2. */
-const IMPLEMENTED = new Set(["snapshot", "zoom", "focus"]);
+/** The verbs this build dispatches. Kept as a set so a newer CLI meeting an older
+ *  app gets `unsupported_verb` rather than a routing error that blames its
+ *  spelling. */
+const IMPLEMENTED = new Set(["snapshot", "zoom", "focus", "resize", "type", "key"]);
 
 /** Throws rather than no-op: routing has already said this card exists, so a
  *  missing element is a real failure. Replying `ok` after dispatching nothing is
  *  the shape Decision 6 refuses. */
 function dispatchStep(step: RouteStep, deps: DevDriverDeps, engine: BoardEngine) {
-  const el = targetElement(step, deps, engine);
-  if (!el) throw new Error(`no ${step.target} element for ${step.card ?? "the board"}`);
+  const el = requireElement(step, deps, engine);
   const rect = el.getBoundingClientRect();
   const clientX = rect.x + rect.width / 2;
   const clientY = rect.y + rect.height / 2;

@@ -48,6 +48,23 @@ Three things `dev key` cannot do, by design rather than by omission:
     mouse reporting on (Claude Code, vim) also receives a button-press report
     when a card is focused.
 
+Two combos leave the cockpit somewhere else, which is worth knowing before a
+scenario blames the next verb:
+  - `alt+tab` cycles the prime terminal. The app catches it at the window capture
+    phase, so it never reaches the PTY AND IT MOVES FOCUS — every later verb in
+    the same scenario then fails not_focused.
+  - `contextmenu` right-clicks the last written cell to make a selection. xterm
+    moves its helper textarea to 20x20 px under the cursor and refocuses it, and
+    leaves it there; that is what makes the selection real, and a following
+    `type` still lands.
+
+`dev type` sends printable characters through the editing path — the one a real
+keystroke takes — and control characters as key events: LF and CR are Enter, TAB
+is Tab, and the rest of the C0 range is the ctrl chord it stands for, so 0x03 is
+ctrl+c. Under a program that asked for every key as an escape code (kitty flag
+8) the editing path would deliver each character twice, so `type` sends key
+events for those too and its reply reports mode: key.
+
 ";
 #[cfg(not(debug_assertions))]
 const DEV_HELP: &str = "";

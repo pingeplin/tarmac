@@ -58,11 +58,11 @@ builds` and does not document the family at all.
 ```sh
 tarmac dev snapshot [--until <expr>] [--timeout <ms>]
 tarmac dev zoom <z>
+tarmac dev resize <card> <w>x<h>
 tarmac dev focus <card>|board
+tarmac dev type <card> "<text>"
+tarmac dev key <card> "<combo>"
 ```
-
-`resize`, `type` and `key` parse and route but answer `unsupported_verb` — they
-land in stage 2 of #166.
 
 Use the debug CLI with the socket pinned, or nothing will answer:
 
@@ -80,9 +80,41 @@ core/target/debug/tarmac dev snapshot | jq .
   not what you asked for — `zoom 99` answers `{"zoom": 3}` because the board
   clamps.
 - A failure prints JSON on **stderr** and exits 1: `no_such_card`,
-  `not_focused`, `unsupported_card_kind`, `unsupported_verb`, `bad_expr`,
-  `timeout`, `app_not_ready`, `app_unresponsive`. CLI-side failures (no app, a
-  too-long socket path) stay one-line plain text.
+  `not_focused`, `unsupported_card_kind`, `unsupported_combo`, `bad_combo`,
+  `empty_buffer`, `unsupported_verb`, `bad_expr`, `timeout`, `app_not_ready`,
+  `app_unresponsive`. CLI-side failures (no app, a too-long socket path) stay
+  one-line plain text.
+
+### Typing and keying
+
+`type` and `key` require the card to **already** hold keyboard focus — they
+answer `not_focused` rather than establishing it, so a passing verb proves focus
+was right. `focus board` then `focus <term>` is the clean reset: per #162,
+`focus()` on an already-focused textarea does not restore the caret.
+
+```sh
+tarmac dev focus board && tarmac dev focus t-1
+tarmac dev type t-1 'printf hello\n'
+tarmac dev key t-1 ctrl+c
+```
+
+- `type` sends printables through the editing path a real keystroke takes, and
+  control characters as key events (LF/CR → Enter, TAB → Tab, the rest of C0 →
+  its ctrl chord, so `\x03` is ctrl+c). Its reply counts what landed:
+  `{"chars": 6, "inserted": 6, "dropped": [], "mode": "insert"}`. A non-empty
+  `dropped` is the #162 failure mode.
+- `key` takes a closed set: `enter`, `tab`, `escape`, `backspace`, the four
+  arrows, a lowercase letter or digit **as the base of a ctrl/alt chord**, or
+  `contextmenu`. Lowercase only. A bare printable is refused with
+  `unsupported_combo` — use `type`. So are ⌘ chords: they need WebKit's native
+  Edit menu, which a dispatched event never reaches.
+- Two combos move things: `alt+tab` cycles the prime terminal and **takes focus
+  away**, so every later verb in the scenario fails `not_focused`; `contextmenu`
+  right-clicks the last written cell and leaves xterm's helper textarea parked
+  under the cursor (which is what makes the selection real).
+- `resize` drags the bottom-right grip in board units and reports where the card
+  landed, clamped to the 160×90 minimum:
+  `{"from": {...}, "to": {"w": 800, "h": 600}, "delta_px": {...}}`.
 
 ### Waiting for something to become true
 

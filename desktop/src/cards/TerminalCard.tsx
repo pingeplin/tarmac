@@ -41,7 +41,15 @@ import { Terminal } from "@xterm/xterm";
  *  textarea and buffer alongside the focus/input the app already used. */
 export type TermHandle = Pick<
   Terminal,
-  "focus" | "input" | "element" | "textarea" | "buffer" | "cols" | "rows" | "getSelection"
+  | "focus"
+  | "input"
+  | "element"
+  | "textarea"
+  | "screenElement"
+  | "buffer"
+  | "cols"
+  | "rows"
+  | "getSelection"
 >;
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
