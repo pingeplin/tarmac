@@ -69,6 +69,23 @@ describe("S38 — resize targets the bottom-right grip", () => {
   });
 });
 
+describe("S76 — the wire speaks bare ids, the app speaks prefixed ones", () => {
+  it("resolves a bare id, and refuses the app-internal prefixed form", () => {
+    // Tested through routing rather than a standalone inverse, because routing is
+    // the only thing that resolves a wire id — and `tarmac dev focus t-1` is what
+    // a user types. An implementation that never strips answers `no_such_card`
+    // here and passes every other scenario.
+    expect(routeVerb({ t: "focus", card: "t-1" }, ctx())).toMatchObject({
+      kind: "dispatch",
+      steps: [{ card: "term:t-1" }, { card: "term:t-1" }],
+    });
+    expect(routeVerb({ t: "focus", card: "term:t-1" }, ctx())).toEqual({
+      kind: "error",
+      error: "no_such_card",
+    });
+  });
+});
+
 describe("S39 — an unknown card is refused, with nothing dispatched", () => {
   it("refuses every verb that takes a card", () => {
     for (const verb of [

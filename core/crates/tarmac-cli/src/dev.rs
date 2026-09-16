@@ -4,11 +4,11 @@
 //! `body`, which is what keeps this crate std-only: the app owns every decision
 //! about what a verb means, and this file owns only argv and exit codes.
 //!
-//! The whole family is debug-builds-only. `dev_available()` is the single gate,
-//! derived from the same `cfg!(debug_assertions)` the audited channel mapping
-//! uses, so availability and channel can never disagree (S65). `main.rs` carries
-//! the release arm — without it the verb falls through to the unknown-command
-//! path and exits 2 instead of 1.
+//! The whole family is debug-builds-only, and the gate is this module's own
+//! `#[cfg(debug_assertions)]` in `main.rs` — nothing inside here re-checks it,
+//! because inside a module that only exists in debug builds any such check is
+//! constant. `main.rs` carries the matching release arm; without it the verb
+//! would fall through to the unknown-command path and exit 2 instead of 1.
 
 use std::io::Write;
 use std::os::unix::net::UnixStream;
@@ -27,19 +27,6 @@ use crate::{current_channel, env_override};
 /// fixed 5 s would make `--timeout 10000` die client-side and blame a healthy app.
 pub fn read_deadline_ms(timeout_ms: Option<u32>) -> u64 {
     timeout_ms.unwrap_or(0) as u64 + 3_000
-}
-
-/// Only `snapshot` carries a budget; every other verb gets the bare 3 s.
-pub fn request_timeout_ms(req: &DevRequest) -> Option<u32> {
-    match req {
-        DevRequest::Snapshot { timeout_ms, .. } => *timeout_ms,
-        _ => None,
-    }
-}
-
-/// The one predicate gating the verb family. See the module header.
-pub fn dev_available() -> bool {
-    cfg!(debug_assertions)
 }
 
 const USAGE: &str = "\
@@ -151,10 +138,6 @@ pub fn dev_socket_path() -> PathBuf {
 /// `body` and are printed verbatim — stdout when `ok`, stderr when not, so
 /// `tarmac dev snapshot | jq` is never fed an error object.
 pub fn run(args: &[String]) -> i32 {
-    if !dev_available() {
-        eprintln!("tarmac: driver unavailable in release builds");
-        return 1;
-    }
     let req = match parse_verb(args) {
         Ok(req) => req,
         Err(msg) => {
@@ -184,7 +167,7 @@ fn exchange(req: &DevRequest) -> Result<proto::dev::DevReply, String> {
     proto::check_socket_path_len(&sock)?;
     let mut stream = UnixStream::connect(&sock)
         .map_err(|_| format!("no tarmac app driver at {} (is `make run` up?)", sock.display()))?;
-    let deadline = Duration::from_millis(read_deadline_ms(request_timeout_ms(req)));
+    let deadline = Duration::from_millis(read_deadline_ms(req.timeout_ms()));
     let _ = stream.set_read_timeout(Some(deadline));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
 
@@ -325,20 +308,22 @@ mod tests {
     }
 
     /// S73(a) - and it is derived from the request, so no caller can forget it.
+    /// The rule lives on `DevRequest` because both ends of the socket need it.
     #[test]
     fn the_deadline_reads_the_budget_off_the_request() {
         assert_eq!(
-            request_timeout_ms(&DevRequest::Snapshot { until: None, timeout_ms: Some(10_000) }),
+            DevRequest::Snapshot { until: None, timeout_ms: Some(10_000) }.timeout_ms(),
             Some(10_000),
         );
-        assert_eq!(request_timeout_ms(&DevRequest::Zoom { z: 1.0 }), None);
+        assert_eq!(DevRequest::Zoom { z: 1.0 }.timeout_ms(), None);
     }
 
-    /// S65 - deliberately weak: both sides derive from `cfg!(debug_assertions)`, so
-    /// this can only catch a *different* gate (an env var, a hard-coded `true`),
-    /// never the release behaviour itself. Q1 is the real coverage.
+    /// S65 - this module exists only under `#[cfg(debug_assertions)]`, so the
+    /// channel it resolves is necessarily `Dev`. Asserting it is the whole of what
+    /// an in-build test can say; Q1 (a real release bundle) is the coverage that
+    /// matters, and the spec says so.
     #[test]
-    fn availability_tracks_the_audited_channel_mapping() {
-        assert_eq!(dev_available(), crate::current_channel() == proto::Channel::Dev);
+    fn the_dev_family_resolves_the_dev_channel() {
+        assert_eq!(crate::current_channel(), proto::Channel::Dev);
     }
 }

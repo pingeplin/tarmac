@@ -109,7 +109,7 @@ fn dev_unavailable() -> i32 {
 /// `DEV_UNAVAILABLE`.
 #[cfg(debug_assertions)]
 fn dev_dispatch(args: &[String]) -> i32 {
-    if dev::dev_available() { dev::run(args) } else { dev_unavailable() }
+    dev::run(args)
 }
 
 #[cfg(not(debug_assertions))]

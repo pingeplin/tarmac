@@ -13,10 +13,9 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const ROOT = resolve(import.meta.dirname, "../..");
 const CLI = resolve(ROOT, "core/target/debug/tarmac");
 const STATE = process.env.TARMAC_STATE ?? resolve(ROOT, ".dev/state.json");
 const SOCK = process.env.TARMAC_DEV_SOCKET ?? resolve(ROOT, ".dev/tarmac-dev.sock");
@@ -93,14 +92,16 @@ function preflight() {
   return { term: term.id, boardId: snap.board_id };
 }
 
-/** The active board's persisted zoom, whatever shape state.json nests it in.
- *  Returns null when the board or its viewport is not there yet. */
+/** The active board's persisted zoom. The shape is the one `persist.rs` writes —
+ *  `{ boards: [{ board_id, board: { zoom, cx, cy } }] }` — and nothing else can
+ *  reach this file, so a missing `boards` array is a schema change and throws
+ *  rather than degrading into a silent "never recorded zoom 0.5".
+ *  A board with no viewport yet is a normal `null`. */
 function activeBoardZoom(state, boardId) {
-  const boards = state.boards ?? state.Boards ?? null;
-  const board = Array.isArray(boards)
-    ? boards.find((b) => (b.id ?? b.board_id) === boardId)
-    : (boards?.[boardId] ?? null);
-  const zoom = board?.board?.zoom ?? board?.viewport?.zoom ?? board?.zoom;
+  if (!Array.isArray(state.boards)) {
+    throw new Error(`${STATE}: expected a \`boards\` array; has the persisted shape changed?`);
+  }
+  const zoom = state.boards.find((b) => b.board_id === boardId)?.board?.zoom;
   return typeof zoom === "number" ? zoom : null;
 }
 

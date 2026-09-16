@@ -15,10 +15,16 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { Terminal } from "@xterm/xterm";
+import type { TermHandle } from "./cards/TerminalCard";
 import type { BoardEngine } from "./board/BoardEngine";
-import { buildSnapshot, bareCardId, type DevCardInput, type DevSelectionType } from "./kit/devSnapshot";
-import { routeVerb, type DevVerb, type RouteStep } from "./kit/devRouting";
+import {
+  buildSnapshot,
+  bareCardId,
+  tailWindowBounds,
+  type DevCardInput,
+  type DevSelectionType,
+} from "./kit/devSnapshot";
+import { routeVerb, DEV_ERROR_MESSAGE, type DevVerb, type RouteStep } from "./kit/devRouting";
 import { parseUntil, evalUntil } from "./kit/devUntil";
 
 /** Everything the driver cannot reach from outside React. */
@@ -27,12 +33,10 @@ export interface DevDriverDeps {
   engine(): BoardEngine | null;
   /** The ACTIVE board's cards, with internal (prefixed) ids. */
   cards(): DevCardInput[];
-  terminal(termId: string): Terminal | undefined;
+  terminal(termId: string): TermHandle | undefined;
   selectedId(): string | null;
   /** The daemon's last TermProc name for a terminal, if it has reported one. */
   proc(termId: string): string | null;
-  /** Commit a zoom through the same path the wheel gesture ends in. */
-  setZoom(z: number): void;
 }
 
 /** How long the settle waits when animation frames are not being serviced.
@@ -105,30 +109,41 @@ async function handle(raw: Record<string, unknown>, deps: DevDriverDeps) {
     return snapshotReply(raw as Parameters<typeof snapshotReply>[0], deps, engine);
   }
 
+  // Answered from the verb alone, before routing: routing would otherwise reply
+  // `no_such_card` or `not_focused` for a verb this build does not implement at
+  // all — three different answers to one question.
+  if (!IMPLEMENTED.has(raw.t as string)) {
+    return fail(
+      "unsupported_verb",
+      `\`${raw.t}\` lands in stage 2 of issue #166; this build implements ${[...IMPLEMENTED].join(", ")}`,
+    );
+  }
+
   // `Focus { card: None }` arrives with no `card` key at all (the encoder skips
   // it), so normalise before routing rather than letting `undefined` through.
   const verb = { ...raw, card: (raw.card as string | undefined) ?? null } as unknown as DevVerb;
+  const cards = deps.cards();
+  const nodes = cardNodes(deps, engine);
   const route = routeVerb(verb, {
-    cards: deps.cards(),
-    activeElementCard: activeElementCard(deps, engine),
+    cards,
+    // Only `type`/`key` consult it, and both are stage 2 — but routing takes a
+    // value, so it is computed once here and reused by the reply's snapshot.
+    activeElementCard: activeElementCard(cards, nodes),
   });
   if (route.kind === "error") {
-    return fail(route.error, describe(route.error), { card: "card" in verb ? verb.card : null });
+    return fail(route.error, DEV_ERROR_MESSAGE[route.error], {
+      card: "card" in verb ? verb.card : null,
+    });
   }
 
   if (route.kind === "viewport") {
-    const z = (verb as { z: number }).z;
-    deps.setZoom(z);
+    // The engine's own commit — the same path the wheel gesture ends in, so
+    // `onViewportChange` fires and `Msg::Layout` still lands. It also clamps,
+    // which is why the reply reads the zoom back rather than echoing `z`.
+    engine.setViewport({ ...engine.viewport, zoom: (verb as { z: number }).z });
     await settle();
     // The observed zoom, not the requested one: the engine clamps to [0.1, 3.0].
     return { ok: true, body: JSON.stringify({ zoom: engine.viewport.zoom }) };
-  }
-
-  if (verb.t !== "focus") {
-    return fail(
-      "unsupported_verb",
-      `\`${verb.t}\` lands in stage 2 of issue #166; this build implements snapshot, zoom and focus`,
-    );
   }
 
   for (const step of route.steps) dispatchStep(step, deps, engine);
@@ -174,18 +189,9 @@ async function snapshotReply(
 
 const settle = () => Promise.race([twoFrames(), sleep(SETTLE_CAP_MS)]);
 
-function describe(error: string): string {
-  switch (error) {
-    case "no_such_card":
-      return "no card with that id on the active board";
-    case "not_focused":
-      return "that card does not hold keyboard focus; `tarmac dev focus <card>` first";
-    case "unsupported_card_kind":
-      return "doc cards have no focus target an untrusted event can reach";
-    default:
-      return error;
-  }
-}
+/** The verbs this build actually dispatches. `resize`, `type` and `key` parse and
+ *  route (their preconditions are real) but land in stage 2. */
+const IMPLEMENTED = new Set(["snapshot", "zoom", "focus"]);
 
 /** Throws rather than no-op: routing has already said this card exists, so a
  *  missing element is a real failure. Replying `ok` after dispatching nothing is
@@ -231,28 +237,38 @@ function targetElement(
   }
 }
 
-function activeElementCard(deps: DevDriverDeps, engine: BoardEngine): string | null {
+/** Every card's node, resolved once. `BoardEngine.cardNode` is a linear scan, and
+ *  a snapshot looks every card up twice — once to measure, once to locate focus. */
+function cardNodes(deps: DevDriverDeps, engine: BoardEngine): Map<string, HTMLElement> {
+  const nodes = new Map<string, HTMLElement>();
+  for (const card of deps.cards()) {
+    const node = engine.cardNode(card.id);
+    if (node) nodes.set(card.id, node);
+  }
+  return nodes;
+}
+
+function activeElementCard(cards: DevCardInput[], nodes: Map<string, HTMLElement>): string | null {
   const active = document.activeElement as HTMLElement | null;
   if (!active) return null;
   // Terminals carry the hook already: `.term-host` is tagged with data-term-id,
   // which is how App's own focusedLiveTermId works.
   const host = active.closest?.(".term-host") as HTMLElement | null;
   if (host?.dataset.termId) return host.dataset.termId;
-  for (const card of deps.cards()) {
-    if (engine.cardNode(card.id)?.contains(active)) return bareCardId(card.id);
+  for (const card of cards) {
+    if (nodes.get(card.id)?.contains(active)) return bareCardId(card.id);
   }
   return null;
 }
 
 function build(deps: DevDriverDeps, engine: BoardEngine) {
   const cards = deps.cards();
+  const nodes = cardNodes(deps, engine);
   const viewRect = engine.viewportElement.getBoundingClientRect();
   const screenRects = new Map<string, { x: number; y: number; w: number; h: number }>();
-  for (const c of cards) {
-    const node = engine.cardNode(c.id);
-    if (!node) continue;
+  for (const [id, node] of nodes) {
     const r = node.getBoundingClientRect();
-    screenRects.set(c.id, { x: r.x, y: r.y, w: r.width, h: r.height });
+    screenRects.set(id, { x: r.x, y: r.y, w: r.width, h: r.height });
   }
   const active = document.activeElement as HTMLElement | null;
   return buildSnapshot({
@@ -264,7 +280,7 @@ function build(deps: DevDriverDeps, engine: BoardEngine) {
     screenRects,
     selectedId: deps.selectedId(),
     activeElement: {
-      card: activeElementCard(deps, engine),
+      card: activeElementCard(cards, nodes),
       tag: active?.tagName ?? "",
       classes: active ? Array.from(active.classList) : [],
       selectionType: (window.getSelection()?.type ?? "None") as DevSelectionType,
@@ -277,8 +293,13 @@ function termFacts(card: DevCardInput, deps: DevDriverDeps) {
   const term = deps.terminal(termId);
   if (!term) return { cols: 0, rows: 0, proc: null, selection: null, lines: [], cursorLine: 0 };
   const buffer = term.buffer.active;
+  const cursorLine = buffer.baseY + buffer.cursorY;
+  // Only the window the snapshot will keep. A terminal holds 5000 lines of
+  // scrollback and reports ~40, and this runs once per 50 ms `--until` poll —
+  // reading the whole buffer would make the cost grow with session length.
+  const { start, end } = tailWindowBounds(cursorLine, buffer.length);
   const lines: string[] = [];
-  for (let y = 0; y < buffer.length; y++) {
+  for (let y = start; y <= end; y++) {
     lines.push(buffer.getLine(y)?.translateToString(true) ?? "");
   }
   return {
@@ -288,7 +309,9 @@ function termFacts(card: DevCardInput, deps: DevDriverDeps) {
     // Verbatim; kit/devSnapshot normalises xterm's "" to null, because that is a
     // decision and this file is wiring.
     selection: term.getSelection(),
+    // `lines` is the window, `cursorLine` is still absolute — `scrollbackTail`
+    // recomputes the same bounds and selects the whole window back out.
     lines,
-    cursorLine: buffer.baseY + buffer.cursorY,
+    cursorLine,
   };
 }

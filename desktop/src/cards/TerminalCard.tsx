@@ -33,6 +33,16 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { Terminal } from "@xterm/xterm";
+
+/** What a registered terminal exposes to the rest of the app. A `Pick` rather
+ *  than the whole `Terminal`: the runtime value has ~80 members, and every one
+ *  left in the declared type is a seam a later feature reaches through
+ *  unnoticed. Widened here when the dev QA driver (#166) needed element,
+ *  textarea and buffer alongside the focus/input the app already used. */
+export type TermHandle = Pick<
+  Terminal,
+  "focus" | "input" | "element" | "textarea" | "buffer" | "cols" | "rows" | "getSelection"
+>;
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -81,12 +91,10 @@ interface TerminalCardProps {
   onTitle: (title: string) => void;
   /** A keystroke into this terminal — used to clear a lit bell (Swift parity). */
   onActivity?: () => void;
-  /** Register/unregister the whole xterm instance, so App can focus this terminal
-   *  (⌥Tab cycle, board-switch/restore focus). The instance, not a narrower focus
-   *  handle: `term` is already what gets passed, and the dev QA driver (#166)
-   *  reads `element`/`textarea` off the same object — this is the declared type
-   *  catching up with the value. */
-  onRegister?: (termId: string, handle: Terminal) => void;
+  /** Register/unregister the terminal, so App can focus it (⌥Tab cycle,
+   *  board-switch/restore focus) and the dev QA driver (#166) can read its
+   *  element, textarea and buffer. */
+  onRegister?: (termId: string, handle: TermHandle) => void;
   onUnregister?: (termId: string) => void;
 }
 

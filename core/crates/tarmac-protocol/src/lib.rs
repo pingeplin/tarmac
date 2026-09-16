@@ -516,6 +516,19 @@ pub mod dev {
         Unknown,
     }
 
+    impl DevRequest {
+        /// The caller's own budget, where the verb has one. Only `snapshot` waits
+        /// on anything, so only `snapshot` carries it — and both ends of the
+        /// socket need that rule, which is why it lives on the type rather than
+        /// being re-matched in each crate.
+        pub fn timeout_ms(&self) -> Option<u32> {
+            match self {
+                DevRequest::Snapshot { timeout_ms, .. } => *timeout_ms,
+                _ => None,
+            }
+        }
+    }
+
     /// `body` is an opaque string the CLI prints verbatim and never parses — which
     /// is what keeps `tarmac-cli` std-only.
     #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]

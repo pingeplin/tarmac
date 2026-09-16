@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { buildSnapshot, boardRectToScreenRect, scrollbackTail, bareCardId, internalCardId } from "./devSnapshot";
+import {
+  buildSnapshot,
+  boardRectToScreenRect,
+  scrollbackTail,
+  tailWindowBounds,
+  bareCardId,
+} from "./devSnapshot";
+import { cardId } from "../board/model";
 import { worldToView } from "./boardTransform";
 import type { Rect } from "./geom";
 
@@ -112,6 +119,37 @@ describe("S4 — scrollback_tail ends at the cursor row", () => {
   });
 });
 
+describe("S4 — the caller may pass the window instead of the whole buffer", () => {
+  const lines = (n: number) => Array.from({ length: n }, (_, i) => `line ${i + 1}`);
+
+  it("gives the same answer from the window as from the whole buffer", () => {
+    // The shell reads only `tailWindowBounds` rows off xterm — a terminal holds
+    // 5000 lines of scrollback and reports 40 — so `scrollbackTail` must be
+    // indifferent to which of the two it is handed, with `cursorLine` absolute
+    // either way. Nothing else pins that, and it is what the windowed read rests
+    // on: get it wrong and every `contains` assertion silently reads the wrong
+    // rows.
+    for (const [len, cursor] of [
+      [5000, 4999],
+      [5000, 2500],
+      [120, 99],
+      [50, 4],
+      [3, 2],
+      [1, 0],
+    ] as const) {
+      const buffer = lines(len);
+      const { start, end } = tailWindowBounds(cursor, buffer.length);
+      const window = buffer.slice(start, end + 1);
+      expect(scrollbackTail(window, cursor)).toBe(scrollbackTail(buffer, cursor));
+    }
+  });
+
+  it("never asks for more rows than the tail keeps", () => {
+    const { start, end } = tailWindowBounds(4999, 5000);
+    expect(end - start + 1).toBe(40);
+  });
+});
+
 describe("S5 — absent facts are null, never empty strings", () => {
   const withSelection = (selection: string | null) =>
     buildSnapshot(
@@ -166,20 +204,22 @@ describe("S76 — ids on the wire are bare, ids inside the app are prefixed", ()
     expect(snap.cards[1].focused).toBe(false);
   });
 
-  it("maps a bare id back to the internal one, and refuses a prefixed one", () => {
-    const cards = input().cards;
-    expect(internalCardId("t-1", cards)).toBe("term:t-1");
-    expect(internalCardId("/Users/e/a.b.md", cards)).toBe("doc:/Users/e/a.b.md");
-    // `tarmac dev focus term:t-1` is not the CLI's contract, and accepting it
-    // would hide an implementation that never strips at all.
-    expect(internalCardId("term:t-1", cards)).toBeNull();
-    expect(internalCardId("t-9", cards)).toBeNull();
-  });
-
   it("strips both prefixes and leaves anything else alone", () => {
     expect(bareCardId("term:t-1")).toBe("t-1");
     expect(bareCardId("doc:/a/b.md")).toBe("/a/b.md");
     expect(bareCardId("t-1")).toBe("t-1");
+  });
+
+  it("is the exact inverse of the app's own cardId()", () => {
+    // The prefix convention is declared in board/model.ts and undone here. The
+    // kit layering forbids importing that at runtime, so nothing but this test
+    // ties the two together — without it they drift silently and every wire id
+    // the driver reports goes wrong at once. (A kit TEST importing board/ is the
+    // sanctioned shape; kit/zOrder.test.ts does the same, docs/coding-style.md.)
+    const term = { kind: "term", termId: "t-1" } as Parameters<typeof cardId>[0];
+    const doc = { kind: "doc", path: "/Users/e/a.b.md" } as Parameters<typeof cardId>[0];
+    expect(bareCardId(cardId(term))).toBe("t-1");
+    expect(bareCardId(cardId(doc))).toBe("/Users/e/a.b.md");
   });
 });
 

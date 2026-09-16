@@ -23,6 +23,14 @@ export type DevTarget =
 
 export type DevErrorCode = "no_such_card" | "not_focused" | "unsupported_card_kind";
 
+/** What each refusal means, in the words the caller sees. A Record rather than a
+ *  switch so adding a code is a type error until its message exists. */
+export const DEV_ERROR_MESSAGE: Record<DevErrorCode, string> = {
+  no_such_card: "no card with that id on the active board",
+  not_focused: "that card does not hold keyboard focus; `tarmac dev focus <card>` first",
+  unsupported_card_kind: "doc cards have no focus target an untrusted event can reach",
+};
+
 export interface RouteStep {
   target: DevTarget;
   /** The app-internal (prefixed) card id, or null for the board itself. */
@@ -71,10 +79,13 @@ export function routeVerb(verb: DevVerb, ctx: RouteContext): Route {
 
   if (verb.t === "resize") {
     // A doc card resizes like any other; only the focus-bearing verbs need a
-    // terminal.
+    // terminal. Events are empty for the same reason as `type`/`key` below: a
+    // drag needs a coordinate PER event, which `RouteStep` does not carry, so
+    // naming the three pointer events here would pin a plan that dispatches them
+    // all at the grip's centre — a zero-delta drag that cannot resize anything.
     return {
       kind: "dispatch",
-      steps: [{ target: "card-handle-br", card: card.id, events: ["pointerdown", "pointermove", "pointerup"] }],
+      steps: [{ target: "card-handle-br", card: card.id, events: [] }],
     };
   }
 

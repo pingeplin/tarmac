@@ -23,7 +23,8 @@ import { BoardSwitcher } from "./ui/BoardSwitcher";
 import { CycleHud } from "./ui/CycleHud";
 import { cycleOrder, step } from "./kit/termCycle";
 import { inheritCwdSource, primeTermId } from "./kit/cwdInherit";
-import type { Terminal } from "@xterm/xterm";
+
+import type { TermHandle } from "./cards/TerminalCard";
 import type { BoardEngine, Viewport } from "./board/BoardEngine";
 import {
   cardId,
@@ -270,11 +271,11 @@ export default function App() {
 
   // --- focus registry (Wave 2 cycle) -------------------------------------------
 
-  // The whole xterm instance (see TerminalCard's onRegister) — `focus`/`input`
-  // are all the app itself uses; the dev QA driver also reads element/textarea.
-  const termHandlesRef = useRef<Map<string, Terminal>>(new Map());
+  // `focus`/`input` are all the app itself uses; the dev QA driver also reads
+  // element, textarea and buffer — see TermHandle for the declared surface.
+  const termHandlesRef = useRef<Map<string, TermHandle>>(new Map());
 
-  const registerTerm = useCallback((id: string, handle: Terminal) => {
+  const registerTerm = useCallback((id: string, handle: TermHandle) => {
     termHandlesRef.current.set(id, handle);
   }, []);
 
@@ -462,12 +463,6 @@ export default function App() {
         terminal: (termId) => termHandlesRef.current.get(termId),
         selectedId: () => selectedIdRef.current,
         proc: (termId) => termProcRef.current.get(termId) ?? null,
-        setZoom: (z) => {
-          // Through the engine's own commit, which is where the wheel gesture
-          // ends too — so onViewportChange fires and Msg::Layout still lands.
-          const eng = enginesRef.current.get(activeIdRef.current);
-          if (eng) eng.setViewport({ ...eng.viewport, zoom: z });
-        },
       });
     });
     return () => dispose?.();
@@ -693,6 +688,9 @@ export default function App() {
     }
     // Remove from the index after handling.
     termBoardIndexRef.current.remove(termId);
+    // ...and drop the observed process name with it, so the map tracks live
+    // terminals rather than every terminal this session has ever had.
+    termProcRef.current.delete(termId);
     // Persist this board's new card set (it may be backgrounded).
     schedulePersist(boardId);
   };

@@ -120,24 +120,26 @@ export function bareCardId(internalId: string): string {
   return internalId;
 }
 
-/** The inverse, resolved against the cards that actually exist: a bare id from
- *  the wire becomes the internal id the app keys everything by. `null` when no
- *  card matches — including for an already-prefixed id, which is not the CLI's
- *  contract and would mask an implementation that never strips. */
-export function internalCardId(bare: string, cards: DevCardInput[]): string | null {
-  return cards.find((c) => bareCardId(c.id) === bare)?.id ?? null;
-}
-
 /** How many lines of context `scrollback_tail` carries. */
 export const SCROLLBACK_TAIL_LINES = 40;
 
-/** The 40 buffer lines ENDING AT THE CURSOR, not the last 40 of the buffer:
- *  `buffer.active.length` is `baseY + rows`, so on a tall card with little output
- *  the last 40 lines are all blank and every `contains` assertion would fail
- *  against output plainly on screen. */
+/** The rows `scrollback_tail` will keep: the 40 ENDING AT THE CURSOR, not the last
+ *  40 of the buffer. `buffer.active.length` is `baseY + rows`, so on a tall card
+ *  with little output the last 40 lines are all blank and every `contains`
+ *  assertion would fail against output plainly on screen.
+ *
+ *  Exported because the caller reading xterm needs the same bounds: a terminal
+ *  keeps 5000 lines of scrollback and only these ~40 are ever reported, so
+ *  materialising the rest — once per 50 ms `--until` poll — is pure waste. */
+export function tailWindowBounds(cursorLine: number, length: number): { start: number; end: number } {
+  const end = Math.min(cursorLine, length - 1);
+  return { start: Math.max(0, end - SCROLLBACK_TAIL_LINES + 1), end };
+}
+
+/** `lines` may be the whole buffer or just the `tailWindowBounds` window of it;
+ *  `cursorLine` is absolute either way, so both give the same answer. */
 export function scrollbackTail(lines: string[], cursorLine: number): string {
-  const end = Math.min(cursorLine, lines.length - 1);
-  const start = Math.max(0, end - SCROLLBACK_TAIL_LINES + 1);
+  const { start, end } = tailWindowBounds(cursorLine, lines.length);
   return lines.slice(start, end + 1).join("\n");
 }
 
