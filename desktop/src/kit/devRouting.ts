@@ -45,8 +45,10 @@ export interface RouteContext {
   activeElementCard: string | null;
 }
 
+/** Every verb that routes. `snapshot` is deliberately absent: it reads state and
+ *  dispatches nothing, so it is answered before routing and the type system is
+ *  what keeps it out of here. */
 export type DevVerb =
-  | { t: "snapshot" }
   | { t: "zoom"; z: number }
   | { t: "focus"; card: string | null }
   | { t: "resize"; card: string; w: number; h: number }
@@ -57,7 +59,6 @@ const CONTEXT_MENU = "contextmenu";
 
 export function routeVerb(verb: DevVerb, ctx: RouteContext): Route {
   if (verb.t === "zoom") return { kind: "viewport" };
-  if (verb.t === "snapshot") return { kind: "dispatch", steps: [] };
   if (verb.t === "focus" && verb.card === null) {
     return {
       kind: "dispatch",
@@ -99,6 +100,9 @@ export function routeVerb(verb: DevVerb, ctx: RouteContext): Route {
       steps: [{ target: "term-element", card: card.id, events: ["mousemove", "contextmenu"] }],
     };
   }
+  // The events themselves come from `devKeyPlan`/`devTypePlan` in stage 2; the
+  // routing decision — which element, and whether the preconditions hold — is
+  // what lives here, and it is the same either way.
   return {
     kind: "dispatch",
     steps: [{ target: "term-textarea", card: card.id, events: [] }],

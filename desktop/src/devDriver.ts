@@ -87,14 +87,18 @@ export function installDevDriver(deps: DevDriverDeps): () => void {
 }
 
 async function handle(raw: Record<string, unknown>, deps: DevDriverDeps) {
-  // `Focus { card: None }` arrives with no `card` key at all (the encoder skips
-  // it), so normalise before routing rather than letting `undefined` through.
-  const verb = { ...raw, card: (raw.card as string | undefined) ?? null } as unknown as DevVerb;
   const engine = deps.engine();
   if (!engine) return fail("app_not_ready", "no board engine on the active board");
 
-  if (verb.t === "snapshot") return snapshotReply(verb, deps, engine);
+  // `snapshot` reads state and dispatches nothing, so it never routes — which is
+  // why `DevVerb` does not include it and this branch comes first.
+  if (raw.t === "snapshot") {
+    return snapshotReply(raw as Parameters<typeof snapshotReply>[0], deps, engine);
+  }
 
+  // `Focus { card: None }` arrives with no `card` key at all (the encoder skips
+  // it), so normalise before routing rather than letting `undefined` through.
+  const verb = { ...raw, card: (raw.card as string | undefined) ?? null } as unknown as DevVerb;
   const route = routeVerb(verb, {
     cards: deps.cards(),
     activeElementCard: activeElementCard(deps, engine),

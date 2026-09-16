@@ -27,7 +27,7 @@ Three gates, one predicate each. All three must hold.
 | 2 | `#[cfg(debug_assertions)]` on the endpoint | `make bundle`, launch `dist/Tarmac.app`, then `ls`/`lsof` its channel dir for `tarmac-dev.sock` |
 | 3 | `import.meta.env.DEV` on the frontend half | `cd desktop && npm run build && grep -rl "dev-request\|installDevDriver" dist/` |
 
-### Result — gates 1 and 3: PASS (2026-09-16, `8e90b62`)
+### Result — all three gates: PASS (2026-09-16, `make bundle` of `516dcaa`)
 
 - **Gate 1.** `core/target/release/tarmac dev snapshot` printed
   `tarmac: driver unavailable in release builds` and exited **1** — not the
@@ -39,11 +39,38 @@ Three gates, one predicate each. All three must hold.
   entirely, so the driver is not merely inert in a production bundle — it is not
   in it.
 
-### Result — gate 2: NOT YET RUN
+### Result — gate 2, and gates 1/3 re-checked on the shipped artifact
 
-Needs `make bundle` (a release `tauri build`); `cargo build --release` on
-`desktop/src-tauri` alone produces no launchable app. Record the `ls`/`lsof`
-result here when it runs.
+`make bundle` produced `dist/Tarmac.app`. Checked its **actual shipped
+binaries**, which is stronger than the `ls`/`lsof` the spec suggested: an absent
+socket has several possible causes, absent *code* has one.
+
+```
+$ dist/Tarmac.app/Contents/MacOS/tarmac dev snapshot
+tarmac: driver unavailable in release builds        # exit 1
+```
+
+Strings in `dist/Tarmac.app/Contents/MacOS/tarmac-app` (the release app, with the
+production frontend bundle embedded):
+
+| needle | count |
+|---|---|
+| `dev-request` | 0 |
+| `tarmac-dev.sock` | 0 |
+| `installDevDriver` | 0 |
+| `dev_ready` | 0 |
+| `app_unresponsive` | 0 |
+| `not_focused` | 0 |
+| `daemon-status` *(control — must be present)* | 1 |
+
+So the endpoint, its socket path literal, its error codes and the whole frontend
+half are absent from the release build, not merely unreachable in it. The control
+row is what makes the zeros mean something.
+
+**Launching the bundle was deliberately skipped.** A release app resolves the
+*release* channel socket — the one the user's installed Tarmac is already on — so
+launching it would have put a second window on their live daemon. The static
+evidence above answers the same question without touching it.
 
 ---
 
