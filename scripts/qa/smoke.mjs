@@ -83,10 +83,20 @@ function sentinel(tag) {
  *  The leading `zoom 1` is not decoration: zoom persists, so a re-run after D2
  *  would start at 0.5 and shift every grip delta and cell point below. */
 function reset(term) {
-  dev("zoom", "1");
-  snapshot("--until", "viewport.zoom == 1");
+  // `zoom` settles before it replies and reports the observed zoom, so asserting
+  // the reply is both stronger and a subprocess cheaper than re-reading it.
+  eq(json(dev("zoom", "1")).zoom, 1, "zoom after reset");
   dev("focus", "board");
   dev("focus", term);
+}
+
+/** Type, and assert the driver dropped nothing — the #162 fact D4 and D5 turn on. */
+function typeAll(term, text) {
+  const body = json(dev("type", term, text));
+  if (body.dropped.length > 0) {
+    throw new Error(`type ${JSON.stringify(text)} dropped ${JSON.stringify(body.dropped)}`);
+  }
+  return body;
 }
 
 /** Wait for an expression, and on timeout raise the terminal's tail with it — the
@@ -94,13 +104,13 @@ function reset(term) {
 function waitFor(term, expr, ...args) {
   const r = dev("snapshot", "--until", expr, ...args);
   if (r.code === 0) return JSON.parse(r.out);
-  const tail = (() => {
-    try {
-      return JSON.parse(r.err).snapshot?.cards?.find((c) => c.id === term)?.term?.scrollback_tail;
-    } catch {
-      return null;
-    }
-  })();
+  let tail = null;
+  try {
+    tail = termCard(JSON.parse(r.err).snapshot, term)?.term?.scrollback_tail;
+  } catch {
+    // A timeout body always carries the final snapshot; anything else means the
+    // driver failed for a different reason, and `expr` is the useful half.
+  }
   throw new Error(`\`${expr}\` never held.\n       tail: ${JSON.stringify(tail)}`);
 }
 
@@ -236,8 +246,8 @@ async function run() {
     reset(term);
     // Pin the start size too, so the grip delta below is exact.
     dev("resize", term, "600x400");
-    waitFor(term, `cards[${term}].board_rect.w ~= 600`);
-    const cols0 = termCard(snapshot(), term).term.cols;
+    const started = waitFor(term, `cards[${term}].board_rect.w ~= 600`);
+    const cols0 = termCard(started, term).term.cols;
 
     const body = json(dev("resize", term, "800x600"));
     // The card's stored frame can be a float from an earlier gesture, so
@@ -261,11 +271,9 @@ async function run() {
     const s4 = sentinel("d4");
     reset(term);
     // This is issue #162's own repro: NO focus round-trip anywhere between.
-    const first = json(dev("type", term, `${s4}a`));
+    typeAll(term, `${s4}a`);
     dev("resize", term, "700x500");
-    const second = json(dev("type", term, "b\n"));
-    if (first.dropped.length > 0) throw new Error(`first type dropped ${JSON.stringify(first.dropped)}`);
-    if (second.dropped.length > 0) throw new Error(`second type dropped ${JSON.stringify(second.dropped)}`);
+    typeAll(term, "b\n");
     waitFor(term, `cards[${term}].term.scrollback_tail contains "${s4}ab"`);
   });
 
@@ -288,11 +296,9 @@ async function run() {
 
     // Stronger than the spec's bare `contains "ab"`, per the suite's own sentinel
     // hygiene: D4's echo is still inside the 40-line tail and would satisfy it.
-    const first = json(dev("type", term, `${s5}a`));
+    typeAll(term, `${s5}a`);
     dev("resize", term, "720x520");
-    const second = json(dev("type", term, "b\n"));
-    if (first.dropped.length > 0) throw new Error(`first type dropped ${JSON.stringify(first.dropped)}`);
-    if (second.dropped.length > 0) throw new Error(`second type dropped ${JSON.stringify(second.dropped)}`);
+    typeAll(term, "b\n");
     waitFor(term, `cards[${term}].term.scrollback_tail contains "${s5}ab"`);
   });
 
@@ -301,12 +307,16 @@ async function run() {
     const s6 = sentinel("d6");
     reset(term);
     dev("type", term, `printf ${s6}\n`);
-    waitFor(term, `cards[${term}].term.scrollback_tail contains "${s6}"`);
+    const echoed = waitFor(term, `cards[${term}].term.scrollback_tail contains "${s6}"`);
     // The end-to-end guard on S19's inert bracket: if the keydown ALSO delivered
     // the character, every character would echo twice and every #162 scenario
     // would be vacuous.
+    // Read off the snapshot the wait already returned, not a fresh one: nothing
+    // ran in between. And under real doubling the wait itself is what fails —
+    // the echo would read `pprriinnttff`, so the undoubled sentinel never
+    // appears — which makes this check the second line of defence, not the first.
     const doubled = [...s6].map((c) => c + c).join("");
-    const tail = termCard(snapshot(), term).term.scrollback_tail;
+    const tail = termCard(echoed, term).term.scrollback_tail;
     if (tail.includes(doubled)) {
       throw new Error(`the tail holds the doubled form ${doubled} — the bracket is delivering too`);
     }

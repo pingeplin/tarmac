@@ -29,7 +29,8 @@ import { parseUntil, evalUntil } from "./kit/devUntil";
 import { devKeyPlan, contextMenuPlan, type KeyDescriptor } from "./kit/devKeyPlan";
 import { devCellPoint } from "./kit/devCellPoint";
 import { devTypePlan, devTypeSummary } from "./kit/devTypePlan";
-import { gripDelta, gripPlan, type PointerDescriptor } from "./kit/devResizeGrip";
+import { gripDelta, gripPlan } from "./kit/devResizeGrip";
+import type { Point } from "./kit/geom";
 import { xtermKittyFlags } from "./cards/xtermKittyFlags";
 
 /** Everything the driver cannot reach from outside React. */
@@ -133,12 +134,15 @@ async function handle(raw: Record<string, unknown>, deps: DevDriverDeps) {
   // it), so normalise before routing rather than letting `undefined` through.
   const verb = { ...raw, card: (raw.card as string | undefined) ?? null } as unknown as DevVerb;
   const cards = deps.cards();
-  const nodes = cardNodes(deps, engine);
   const route = routeVerb(verb, {
     cards,
-    // Only `type`/`key` consult it, but routing takes a value, so it is computed
-    // once here and reused by the reply's snapshot.
-    activeElementCard: activeElementCard(cards, nodes),
+    // Resolving this walks every card's DOM node, and only `type`/`key` read it
+    // (`devRouting`'s `not_focused` precondition). `zoom`, `focus` and `resize`
+    // would pay for a value their branch never touches.
+    activeElementCard:
+      verb.t === "type" || verb.t === "key"
+        ? activeElementCard(cards, cardNodes(deps, engine))
+        : null,
   });
   if (route.kind === "error") {
     return fail(route.error, DEV_ERROR_MESSAGE[route.error], {
@@ -158,7 +162,7 @@ async function handle(raw: Record<string, unknown>, deps: DevDriverDeps) {
 
   // Routing has already resolved the card and checked the preconditions, so each
   // verb below only has to plan its own events and report what it observed.
-  if (verb.t === "resize") return resizeVerb(verb, route.steps[0], deps, engine);
+  if (verb.t === "resize") return resizeVerb(verb, route.steps[0], deps, engine, cards);
   if (verb.t === "type") return typeVerb(verb, route.steps[0], deps, engine);
   if (verb.t === "key") return keyVerb(verb, route.steps[0], deps, engine);
 
@@ -179,15 +183,15 @@ async function resizeVerb(
   step: RouteStep,
   deps: DevDriverDeps,
   engine: BoardEngine,
+  cards: DevCardInput[],
 ) {
   const grip = requireElement(step, deps, engine);
-  const from = requireFrame(step.card, deps);
+  const from = requireFrame(step.card, cards);
   const delta = gripDelta(from, { w: verb.w, h: verb.h }, engine.viewport.zoom);
-  const r = grip.getBoundingClientRect();
-  const centre = { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-  for (const d of gripPlan(centre, delta)) grip.dispatchEvent(pointerEvent(d));
+  for (const d of gripPlan(centreOf(grip), delta)) grip.dispatchEvent(new PointerEvent(d.type, d));
   await settle();
-  const to = requireFrame(step.card, deps);
+  // Read fresh: this one must observe the state the drag produced.
+  const to = requireFrame(step.card, deps.cards());
   return json({
     from: { w: from.w, h: from.h },
     to: { w: to.w, h: to.h },
@@ -277,7 +281,6 @@ function dispatchContextMenu(
     lines,
     screenRect: { x: r.x, y: r.y, w: r.width, h: r.height },
     cols: term.cols,
-    rows: term.rows,
   });
   if ("error" in point) return point;
   const plan = contextMenuPlan(point);
@@ -292,7 +295,12 @@ const json = (body: unknown) => ({ ok: true, body: JSON.stringify(body) });
  *  to: xterm's evaluator reads `keyCode`, so an event without it encodes nothing
  *  and the verb is a silent no-op that still reports success. */
 const keyEvent = (d: KeyDescriptor) => new KeyboardEvent(d.type, d as KeyboardEventInit);
-const pointerEvent = (d: PointerDescriptor) => new PointerEvent(d.type, d);
+
+/** Where a plan with no coordinate of its own aims: the element's middle. */
+function centreOf(el: HTMLElement): Point {
+  const r = el.getBoundingClientRect();
+  return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+}
 
 function requireElement(step: RouteStep, deps: DevDriverDeps, engine: BoardEngine): HTMLElement {
   const el = targetElement(step, deps, engine);
@@ -306,8 +314,8 @@ function requireTerminal(step: RouteStep, deps: DevDriverDeps): TermHandle {
   return term;
 }
 
-function requireFrame(cardId: string | null, deps: DevDriverDeps) {
-  const card = deps.cards().find((c) => c.id === cardId);
+function requireFrame(cardId: string | null, cards: DevCardInput[]) {
+  const card = cards.find((c) => c.id === cardId);
   if (!card) throw new Error(`card ${cardId} vanished mid-verb`);
   return card.frame;
 }
@@ -356,9 +364,7 @@ const IMPLEMENTED = new Set(["snapshot", "zoom", "focus", "resize", "type", "key
  *  the shape Decision 6 refuses. */
 function dispatchStep(step: RouteStep, deps: DevDriverDeps, engine: BoardEngine) {
   const el = requireElement(step, deps, engine);
-  const rect = el.getBoundingClientRect();
-  const clientX = rect.x + rect.width / 2;
-  const clientY = rect.y + rect.height / 2;
+  const { x: clientX, y: clientY } = centreOf(el);
   for (const type of step.events) {
     const init = { bubbles: true, cancelable: true, clientX, clientY, button: 0 };
     el.dispatchEvent(

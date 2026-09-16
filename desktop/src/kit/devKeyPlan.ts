@@ -61,9 +61,12 @@ const NAMED: Record<string, { key: string; code: string; keyCode: number }> = {
   right: { key: "ArrowRight", code: "ArrowRight", keyCode: 39 },
 };
 
-const MODIFIERS = ["ctrl", "shift", "alt"] as const;
+const MODIFIERS = ["ctrl", "shift", "alt"];
 const NATIVE_MODIFIERS = ["cmd", "meta"];
-const CONTEXT_MENU = "contextmenu";
+/** Exported so routing spells the verb the same way the grammar does; a rename
+ *  that reached only one of them would compile and silently route to the
+ *  textarea, where a right-click yields a Caret instead of a Range. */
+export const CONTEXT_MENU = "contextmenu";
 
 const bad = (message: string): KeyPlan => ({ kind: "error", error: "bad_combo", message });
 const unsupported = (message: string): KeyPlan => ({
@@ -82,7 +85,7 @@ export function devKeyPlan(combo: string): KeyPlan {
       "cmd/meta chords reach the PTY through WebKit's native Edit menu action, which an untrusted dispatched event never triggers",
     );
   }
-  if (mods.some((m) => !MODIFIERS.includes(m as (typeof MODIFIERS)[number]))) {
+  if (mods.some((m) => !MODIFIERS.includes(m))) {
     return bad(`unknown modifier in \`${combo}\`; the set is ctrl, shift, alt (lowercase)`);
   }
   if (new Set(mods).size !== mods.length) return bad(`repeated modifier in \`${combo}\``);
@@ -109,16 +112,16 @@ export function devKeyPlan(combo: string): KeyPlan {
         `\`${combo}\` is a printable character: xterm stands aside for it and a dispatched key event reaches nothing — use \`tarmac dev type\` instead`,
       );
     }
-    const isLetter = base >= "a" && base <= "z";
+    const { code, keyCode } = physicalKey(base);
     return {
       kind: "key",
       events: pair(
         {
           // WebKit uppercases a letter under shift. A digit's shifted symbol is
           // layout-dependent, so the digit itself is reported rather than guessed.
-          key: isLetter && flags.shiftKey ? base.toUpperCase() : base,
-          code: isLetter ? `Key${base.toUpperCase()}` : `Digit${base}`,
-          keyCode: base.toUpperCase().charCodeAt(0),
+          key: flags.shiftKey ? base.toUpperCase() : base,
+          code,
+          keyCode,
         },
         flags,
       ),
@@ -143,7 +146,9 @@ export function contextMenuPlan(point: { x: number; y: number }): MouseDescripto
   ];
 }
 
-function pair(
+/** The keydown/keyup pair every plan is made of. Exported so `devTypePlan` builds
+ *  its brackets from the same ten fields rather than a second hand-written copy. */
+export function pair(
   key: { key: string; code: string; keyCode: number },
   flags: { ctrlKey: boolean; shiftKey: boolean; altKey: boolean; metaKey: boolean },
 ): KeyDescriptor[] {
@@ -152,4 +157,61 @@ function pair(
     { type: "keydown", ...shared },
     { type: "keyup", ...shared },
   ];
+}
+
+// ── The US-layout physical key behind an ASCII printable ───────────────────────
+//
+// Measured from real key chords in WebKit (#174 pre-check 6), and shared with
+// `devTypePlan` because both need the same answer for different reasons: a combo
+// like `ctrl+c` needs the `code`/`keyCode` a real `c` press carries, and `type`
+// under kitty flag 8 needs them because xterm encodes CSI u from `keyCode`, which
+// kitty defines as the UNSHIFTED key — so `!` must carry Digit1/49, not its own
+// code point 33, or a flag-8 program receives a key nobody pressed. The harness
+// compares every ASCII printable against a real chord: 36/36 byte-identical.
+//
+// One documented difference: a real shifted press also reports the Shift key
+// itself (ESC[57441;2u) before the character; no modifier keydown is planned, so
+// a flag-8 program that acts on Shift's own press sees one fewer event.
+//
+// A synthetic event has no layout, so US is the only table there can be; a
+// non-ASCII character reports nothing at all, the same rule as S24.
+
+const SHIFTED_DIGITS = ")!@#$%^&*(";
+const PUNCTUATION: Record<string, { code: string; keyCode: number; shift: boolean }> = {
+  " ": { code: "Space", keyCode: 32, shift: false },
+  ";": { code: "Semicolon", keyCode: 186, shift: false },
+  ":": { code: "Semicolon", keyCode: 186, shift: true },
+  "=": { code: "Equal", keyCode: 187, shift: false },
+  "+": { code: "Equal", keyCode: 187, shift: true },
+  ",": { code: "Comma", keyCode: 188, shift: false },
+  "<": { code: "Comma", keyCode: 188, shift: true },
+  "-": { code: "Minus", keyCode: 189, shift: false },
+  _: { code: "Minus", keyCode: 189, shift: true },
+  ".": { code: "Period", keyCode: 190, shift: false },
+  ">": { code: "Period", keyCode: 190, shift: true },
+  "/": { code: "Slash", keyCode: 191, shift: false },
+  "?": { code: "Slash", keyCode: 191, shift: true },
+  "`": { code: "Backquote", keyCode: 192, shift: false },
+  "~": { code: "Backquote", keyCode: 192, shift: true },
+  "[": { code: "BracketLeft", keyCode: 219, shift: false },
+  "{": { code: "BracketLeft", keyCode: 219, shift: true },
+  "\\": { code: "Backslash", keyCode: 220, shift: false },
+  "|": { code: "Backslash", keyCode: 220, shift: true },
+  "]": { code: "BracketRight", keyCode: 221, shift: false },
+  "}": { code: "BracketRight", keyCode: 221, shift: true },
+  "'": { code: "Quote", keyCode: 222, shift: false },
+  '"': { code: "Quote", keyCode: 222, shift: true },
+};
+
+export function physicalKey(char: string): { code: string; keyCode: number; shift: boolean } {
+  if (/^[a-zA-Z]$/.test(char)) {
+    const upper = char.toUpperCase();
+    return { code: `Key${upper}`, keyCode: upper.charCodeAt(0), shift: char === upper };
+  }
+  if (/^[0-9]$/.test(char)) {
+    return { code: `Digit${char}`, keyCode: char.charCodeAt(0), shift: false };
+  }
+  const digit = SHIFTED_DIGITS.indexOf(char);
+  if (digit >= 0) return { code: `Digit${digit}`, keyCode: 48 + digit, shift: true };
+  return PUNCTUATION[char] ?? { code: "", keyCode: 0, shift: false };
 }

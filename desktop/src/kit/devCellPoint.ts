@@ -13,26 +13,36 @@
 // dispatched at, so xterm computes `x_rel = p − left'(p) = (p − r.left)/s` against
 // the unpatched `r`. Setting that equal to the wanted
 // `(col + 0.5)·r.w/(s·cols)` cancels `s` out entirely, leaving
-// `p = r.left + (col + 0.5)·r.w/cols`. Passing the patched rect instead feeds a
-// STALE anchor — whatever the last real mouse event left — and lands a full cell
-// or more off at zoom 1.7.
+// `p = r.left + (col + 0.5)·r.w/cols`.
+//
+// The caller passing the patched rect instead would feed a stale anchor — but be
+// honest about how visible that is: it is NOT observable. Swapping
+// `devDriver.ts`'s `Element.prototype` call for the patched rect was driven
+// against a live app at zooms 1.05 through 2.9 with the most displaced target
+// available, and every one still right-clicked the cell it aimed at, because the
+// leading mousemove re-anchors the patched rect on the very point being
+// dispatched and cancels most of the error back out (#174, recorded in
+// `desktop/qa/qa-driver-qa.md`; the spec's S17 is corrected to match). The
+// unpatched rect stands on the algebra above, not on a test — no test at any
+// tier can tell the difference.
+
+import type { Point, Rect } from "./geom";
 
 export interface CellPointInput {
   /** The VIEWPORT's rows, top-first — not the scrollback window. xterm resolves
-   *  a viewport cell, so the row index must be one. */
+   *  a viewport cell, so the row index must be one, and `lines.length` is the
+   *  grid's row count. */
   lines: string[];
-  screenRect: { x: number; y: number; w: number; h: number };
+  screenRect: Rect;
   cols: number;
-  rows: number;
 }
 
-export type CellPoint =
-  | { x: number; y: number }
-  | { error: "empty_buffer"; message: string };
+export type CellPoint = Point | { error: "empty_buffer"; message: string };
 
 export function devCellPoint(input: CellPointInput): CellPoint {
-  const { lines, screenRect: r, cols, rows } = input;
-  for (let row = Math.min(lines.length, rows) - 1; row >= 0; row--) {
+  const { lines, screenRect: r, cols } = input;
+  const rows = lines.length;
+  for (let row = rows - 1; row >= 0; row--) {
     const written = lines[row].replace(/\s+$/, "").length;
     if (written === 0) continue;
     const col = written - 1;

@@ -32,7 +32,7 @@
 // not exercise the beforeinput path at all, so the #162 scenarios are meaningful
 // only against a plain shell.
 
-import { devKeyPlan, type KeyDescriptor } from "./devKeyPlan";
+import { devKeyPlan, pair, physicalKey, type KeyDescriptor } from "./devKeyPlan";
 
 export type TypeStep =
   | { kind: "insert"; index: number; char: string; keydown: KeyDescriptor; keyup: KeyDescriptor }
@@ -77,13 +77,10 @@ export function devTypePlan(text: string, kittyFlags: number): TypePlan {
     } else if (mode === "key") {
       steps.push({ kind: "key", index, char, events: printableEvents(char) });
     } else {
-      steps.push({
-        kind: "insert",
-        index,
-        char,
-        keydown: { type: "keydown", ...inert(char) },
-        keyup: { type: "keyup", ...inert(char) },
-      });
+      // `code: ""` / `keyCode: 0` is what makes xtermHandlesKey return false for
+      // this bracket — the inertness is the contract, not a shortcut.
+      const [keydown, keyup] = pair({ key: char, code: "", keyCode: 0 }, NO_MODIFIERS);
+      steps.push({ kind: "insert", index, char, keydown, keyup });
     }
   }
   return { mode, steps };
@@ -124,94 +121,11 @@ function comboEvents(combo: string): KeyDescriptor[] {
 /** The descriptor a real printable keypress carries. Only reachable under flag 8,
  *  where xterm owns and encodes it — which is why `devKeyPlan` still refuses the
  *  same character as a `key` combo (S14b): there, xterm would stand aside and the
- *  event would reach nothing. */
+ *  event would reach nothing. The US-layout table behind `physicalKey` is shared
+ *  with the combo grammar; see its header for what was measured. */
 function printableEvents(char: string): KeyDescriptor[] {
   const { code, keyCode, shift } = physicalKey(char);
-  const shared = {
-    key: char,
-    code,
-    keyCode,
-    which: keyCode,
-    ctrlKey: false,
-    shiftKey: shift,
-    altKey: false,
-    metaKey: false,
-    bubbles: true,
-    cancelable: true,
-  } as const;
-  return [
-    { type: "keydown", ...shared },
-    { type: "keyup", ...shared },
-  ];
+  return pair({ key: char, code, keyCode }, { ...NO_MODIFIERS, shiftKey: shift });
 }
 
-// The US-layout physical key behind each ASCII printable, measured from real key
-// chords in WebKit (#174 pre-check 6). This is not cosmetic: kitty's CSI u
-// reports the UNSHIFTED key, and xterm derives it from `keyCode` — so `!` must
-// carry Digit1/49 with shift, or `type` emits ESC[33;2u where a real press emits
-// ESC[49;2u and the program receives a key nobody pressed. The harness compares
-// every ASCII printable against a real chord: 36/36 byte-identical.
-//
-// One documented difference remains. A real shifted press also reports the Shift
-// key itself (ESC[57441;2u) before the character; the driver plans no modifier
-// keydown, so a flag-8 program that acts on Shift's own press sees one fewer
-// event. Left as-is: the character arrives identically, and bracketing every
-// shifted character with a Shift press/release would put events on the wire for
-// a corner narrower than the one it fixes.
-//
-// A synthetic event has no layout, so US is the only table there can be; a
-// non-ASCII character reports nothing at all, the same rule as S24.
-const SHIFTED_DIGITS = ")!@#$%^&*(";
-const PUNCTUATION: Record<string, { code: string; keyCode: number; shift: boolean }> = {
-  " ": { code: "Space", keyCode: 32, shift: false },
-  ";": { code: "Semicolon", keyCode: 186, shift: false },
-  ":": { code: "Semicolon", keyCode: 186, shift: true },
-  "=": { code: "Equal", keyCode: 187, shift: false },
-  "+": { code: "Equal", keyCode: 187, shift: true },
-  ",": { code: "Comma", keyCode: 188, shift: false },
-  "<": { code: "Comma", keyCode: 188, shift: true },
-  "-": { code: "Minus", keyCode: 189, shift: false },
-  _: { code: "Minus", keyCode: 189, shift: true },
-  ".": { code: "Period", keyCode: 190, shift: false },
-  ">": { code: "Period", keyCode: 190, shift: true },
-  "/": { code: "Slash", keyCode: 191, shift: false },
-  "?": { code: "Slash", keyCode: 191, shift: true },
-  "`": { code: "Backquote", keyCode: 192, shift: false },
-  "~": { code: "Backquote", keyCode: 192, shift: true },
-  "[": { code: "BracketLeft", keyCode: 219, shift: false },
-  "{": { code: "BracketLeft", keyCode: 219, shift: true },
-  "\\": { code: "Backslash", keyCode: 220, shift: false },
-  "|": { code: "Backslash", keyCode: 220, shift: true },
-  "]": { code: "BracketRight", keyCode: 221, shift: false },
-  "}": { code: "BracketRight", keyCode: 221, shift: true },
-  "'": { code: "Quote", keyCode: 222, shift: false },
-  '"': { code: "Quote", keyCode: 222, shift: true },
-};
-
-function physicalKey(char: string): { code: string; keyCode: number; shift: boolean } {
-  if (/^[a-zA-Z]$/.test(char)) {
-    const upper = char.toUpperCase();
-    return { code: `Key${upper}`, keyCode: upper.charCodeAt(0), shift: char === upper };
-  }
-  if (/^[0-9]$/.test(char)) {
-    return { code: `Digit${char}`, keyCode: char.charCodeAt(0), shift: false };
-  }
-  const digit = SHIFTED_DIGITS.indexOf(char);
-  if (digit >= 0) return { code: `Digit${digit}`, keyCode: 48 + digit, shift: true };
-  return PUNCTUATION[char] ?? { code: "", keyCode: 0, shift: false };
-}
-
-function inert(char: string) {
-  return {
-    key: char,
-    code: "",
-    keyCode: 0,
-    which: 0,
-    ctrlKey: false,
-    shiftKey: false,
-    altKey: false,
-    metaKey: false,
-    bubbles: true,
-    cancelable: true,
-  } as const;
-}
+const NO_MODIFIERS = { ctrlKey: false, shiftKey: false, altKey: false, metaKey: false };

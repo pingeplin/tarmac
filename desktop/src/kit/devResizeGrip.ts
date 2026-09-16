@@ -16,6 +16,8 @@
 // pre-check 4): WebKit's setPointerCapture with a synthetic pointerId does not
 // throw — it silently no-ops — so the handler records the grab and runs on.
 
+import type { Point, Size } from "./geom";
+
 export interface PointerDescriptor {
   type: "pointerdown" | "pointermove" | "pointerup";
   clientX: number;
@@ -29,18 +31,11 @@ export interface PointerDescriptor {
   cancelable: true;
 }
 
-export function gripDelta(
-  from: { w: number; h: number },
-  to: { w: number; h: number },
-  zoom: number,
-): { dx: number; dy: number } {
+export function gripDelta(from: Size, to: Size, zoom: number): { dx: number; dy: number } {
   return { dx: (to.w - from.w) * zoom, dy: (to.h - from.h) * zoom };
 }
 
-export function gripPlan(
-  centre: { x: number; y: number },
-  delta: { dx: number; dy: number },
-): PointerDescriptor[] {
+export function gripPlan(centre: Point, delta: { dx: number; dy: number }): PointerDescriptor[] {
   const shared = {
     pointerId: 1,
     pointerType: "mouse",

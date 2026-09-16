@@ -23,23 +23,23 @@ describe("S17 — the point is the centre of the last written cell", () => {
   it("is the exact cell centre, not a range", () => {
     // An off-by-one in either axis lands in a neighbouring cell, so this asserts
     // the centre exactly.
-    expect(devCellPoint({ lines, screenRect: UNPATCHED, cols: COLS, rows: ROWS })).toEqual({
+    expect(devCellPoint({ lines, screenRect: UNPATCHED, cols: COLS })).toEqual({
       x: UNPATCHED.x + 8.5 * (UNPATCHED.w / COLS),
       y: UNPATCHED.y + 7.5 * (UNPATCHED.h / ROWS),
     });
   });
 
   it("is computed from the UNPATCHED rect — that is the algebra, not an oversight", () => {
-    // xterm's getCoords reads the PATCHED rect, but by then the leading mousemove
-    // (S16) has set the anchor to the very point p we dispatched at, so xterm
-    // computes x_rel = (p − r.left)/s against the UNPATCHED r. Setting that equal
-    // to the wanted (col + 0.5)·r.w/(s·cols) gives p = r.left + (col + 0.5)·r.w/cols
-    // — no `s` in it at all. Feeding the patched rect in feeds a STALE anchor and
-    // lands a full cell or more off at zoom 1.7.
+    // The algebra is in the module header; this pins its consequence — the two
+    // rects give different points, and the contract is that the caller passes the
+    // unpatched one. Note what this test CANNOT do: the rect arrives by argument,
+    // so it never sees which one `devDriver` actually passes, and no scenario at
+    // any tier can tell either (measured at seven zooms — #174). The caller's
+    // `Element.prototype` call stands on the algebra, not on this test.
     const fromPatched = PATCHED.x + 8.5 * (PATCHED.w / COLS);
-    const point = devCellPoint({ lines, screenRect: UNPATCHED, cols: COLS, rows: ROWS });
+    const point = devCellPoint({ lines, screenRect: UNPATCHED, cols: COLS });
     expect(point).not.toEqual(expect.objectContaining({ x: fromPatched }));
-    expect(devCellPoint({ lines, screenRect: PATCHED, cols: COLS, rows: ROWS })).toEqual({
+    expect(devCellPoint({ lines, screenRect: PATCHED, cols: COLS })).toEqual({
       x: fromPatched,
       y: PATCHED.y + 7.5 * (PATCHED.h / ROWS),
     });
@@ -47,8 +47,8 @@ describe("S17 — the point is the centre of the last written cell", () => {
 
   it("ignores trailing blank rows below the last written one", () => {
     const trailing = viewport(["abc", "", "", "", "", "", "", "123456789", "", ""]);
-    expect(devCellPoint({ lines: trailing, screenRect: UNPATCHED, cols: COLS, rows: ROWS })).toEqual(
-      devCellPoint({ lines, screenRect: UNPATCHED, cols: COLS, rows: ROWS }),
+    expect(devCellPoint({ lines: trailing, screenRect: UNPATCHED, cols: COLS })).toEqual(
+      devCellPoint({ lines, screenRect: UNPATCHED, cols: COLS }),
     );
   });
 });
@@ -57,11 +57,11 @@ describe("S18 — an empty buffer has no cell to right-click", () => {
   it("refuses rather than pointing at blank space", () => {
     // A right-click on blank space produces a Caret, not a Range, which would
     // silently downgrade D5 into a second copy of D4.
-    expect(devCellPoint({ lines: viewport([]), screenRect: UNPATCHED, cols: COLS, rows: ROWS })).toMatchObject(
+    expect(devCellPoint({ lines: viewport([]), screenRect: UNPATCHED, cols: COLS })).toMatchObject(
       { error: "empty_buffer" },
     );
     expect(
-      devCellPoint({ lines: viewport(["   ", "\t"]), screenRect: UNPATCHED, cols: COLS, rows: ROWS }),
+      devCellPoint({ lines: viewport(["   ", "\t"]), screenRect: UNPATCHED, cols: COLS }),
     ).toMatchObject({ error: "empty_buffer" });
   });
 });

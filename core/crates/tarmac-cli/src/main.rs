@@ -72,7 +72,8 @@ it as an escape code instead of a raw 0x03, so the line discipline never raises
 SIGINT; ctrl+d behaves the same. The flags also survive an app reload, because
 the replayed scrollback re-applies them. If a program leaves them set, nothing
 can be sent as raw bytes and the pop sequence has to come from the program side
--- e.g. `printf \'\\033[>0u\' > /dev/ttysNNN` against that terminal\'s tty.
+— write it to that terminal's own tty, e.g.
+`printf '\\033[>0u' > /dev/ttysNNN`.
 
 ";
 #[cfg(not(debug_assertions))]

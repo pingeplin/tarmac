@@ -8,6 +8,20 @@ const keys = (combo: string): KeyDescriptor[] => {
   return plan.events;
 };
 
+/** The real predicate, fed a descriptor a plan actually produced. Shared so a new
+ *  field on `TermKeyRouteInput` is threaded in one place, not four. */
+const handles = (d: KeyDescriptor, kittyFlags = 0) =>
+  xtermHandlesKey({
+    type: d.type,
+    key: d.key,
+    composing: false,
+    meta: d.metaKey,
+    alt: d.altKey,
+    ctrl: d.ctrlKey,
+    kittyFlags,
+    hasSelection: false,
+  });
+
 describe("S9 — enter", () => {
   it("plans keydown and keyup, and NO keypress", () => {
     // Measured on the stage-2 entry pre-check (#174): WebKit fires a keypress for
@@ -146,18 +160,7 @@ describe("S13 — the whole accepted set", () => {
     // The anti-vacuity half: every accepted combo must be one xterm OWNS, or the
     // key verb is a silent no-op for it. The real predicate, not a restatement.
     const [down] = keys(combo);
-    expect(
-      xtermHandlesKey({
-        type: down.type,
-        key: down.key,
-        composing: false,
-        meta: down.metaKey,
-        alt: down.altKey,
-        ctrl: down.ctrlKey,
-        kittyFlags: 0,
-        hasSelection: false,
-      }),
-    ).toBe(true);
+    expect(handles(down)).toBe(true);
   });
 });
 
@@ -214,10 +217,9 @@ describe("S16 — contextmenu is a mouse plan", () => {
   });
 
   it("leads with a mousemove at the same point, then the contextmenu", () => {
-    // The mousemove is load-bearing, not politeness: TerminalCard patches
-    // getBoundingClientRect anchored on lastMouseX/lastMouseY, which it tracks
-    // from real mousedown/mousemove only — never from contextmenu. Without it
-    // xterm's getCoords resolves a cell far from the one S17 computed.
+    // The leading mousemove is load-bearing, not politeness — `contextMenuPlan`'s
+    // header has the reason. What fails here if it goes: xterm resolves a cell
+    // from a stale mouse anchor instead of the one S17 computed.
     expect(contextMenuPlan({ x: 120.5, y: 64 })).toEqual([
       { type: "mousemove", clientX: 120.5, clientY: 64, bubbles: true, cancelable: true },
       {

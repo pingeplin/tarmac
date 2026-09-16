@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { devTypePlan, devTypeSummary, type TypeStep } from "./devTypePlan";
-import { devKeyPlan } from "./devKeyPlan";
+import { devKeyPlan, type KeyDescriptor } from "./devKeyPlan";
 import { xtermHandlesKey } from "./termKeyRoute";
 
 const inert = (char: string) => ({
@@ -21,6 +21,20 @@ const keyEvents = (step: TypeStep) => {
   if (step.kind !== "key") throw new Error(`expected a key step, got ${step.kind}`);
   return step.events;
 };
+
+/** The real predicate, fed a descriptor a plan actually produced. Shared so a new
+ *  field on `TermKeyRouteInput` is threaded in one place, not four. */
+const handles = (d: KeyDescriptor, kittyFlags = 0) =>
+  xtermHandlesKey({
+    type: d.type,
+    key: d.key,
+    composing: false,
+    meta: d.metaKey,
+    alt: d.altKey,
+    ctrl: d.ctrlKey,
+    kittyFlags,
+    hasSelection: false,
+  });
 
 describe("S19 — a printable is bracketed by an INERT keydown/keyup", () => {
   const plan = devTypePlan("ab", 0);
@@ -49,19 +63,7 @@ describe("S19 — a printable is bracketed by an INERT keydown/keyup", () => {
     // predicate's early return, not this bracket.
     for (const step of plan.steps) {
       if (step.kind !== "insert") throw new Error("unreachable");
-      const d = step.keydown;
-      expect(
-        xtermHandlesKey({
-          type: d.type,
-          key: d.key,
-          composing: false,
-          meta: d.metaKey,
-          alt: d.altKey,
-          ctrl: d.ctrlKey,
-          kittyFlags: 0,
-          hasSelection: false,
-        }),
-      ).toBe(false);
+      expect(handles(step.keydown)).toBe(false);
     }
   });
 });
@@ -86,18 +88,7 @@ describe("S77 — kitty flag 8 switches the whole delivery path", () => {
     const [down, up] = keyEvents(plan.steps[0]);
     expect(down).toMatchObject({ type: "keydown", key: "a", code: "KeyA", keyCode: 65, which: 65 });
     expect(up.type).toBe("keyup");
-    expect(
-      xtermHandlesKey({
-        type: "keydown",
-        key: down.key,
-        composing: false,
-        meta: false,
-        alt: false,
-        ctrl: false,
-        kittyFlags: 8,
-        hasSelection: false,
-      }),
-    ).toBe(true);
+    expect(handles(down, 8)).toBe(true);
   });
 
   it("switches on flag 8 wherever it appears in the mask", () => {
