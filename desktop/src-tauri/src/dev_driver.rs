@@ -212,6 +212,8 @@ pub async fn serve_connection(
         // A peer that connected and closed without sending anything is a liveness
         // probe — exactly what `claim_dev_socket` does to a sibling app. Dropping
         // it silently is the point: logging here would make every probe noisy.
+        // This also swallows a TRUNCATED frame, which reports the same errno.
+        // Deliberate: the peer is gone either way, so there is nobody to tell.
         Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(()),
         Err(e) => return Err(e),
     };
