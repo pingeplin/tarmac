@@ -157,6 +157,12 @@ can't ship — but sync here to catch it up front.
   approval as scoped to ONE repo. Expect to pause for **two separate approvals** —
   once for the main-repo PR, once for the `homebrew-tarmac` tap PR — or have the
   user run the `gh pr merge … --squash --delete-branch` themselves.
+  **After either path, verify — don't assume it landed:** `gh pr view <n> --json
+  state,mergedAt --repo <owner>/<repo>`. Observed twice (0.11.1, main repo #145
+  and tap #15): the user's own `gh pr merge` from their terminal still left the
+  PR `OPEN`, but retrying the identical command immediately afterward went
+  through. If `state` still comes back `OPEN`, retry the merge yourself once
+  before reporting a block.
 - Squash-merge yields the repo's `<title> (#N)` convention. Commit subject is
   `release: x.y.z — <summary>` (bare `release:` type, per the repo's history).
 - The Rust crate version was historically frozen at `0.1.0`; since #46 it tracks the
