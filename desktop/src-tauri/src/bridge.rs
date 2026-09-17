@@ -76,6 +76,8 @@ pub struct Bridge {
     /// The spawned daemon child. Retained so we can SIGTERM it on version
     /// mismatch, and so the spawn decision can observe whether it is still alive.
     daemon_child: Mutex<Option<std::process::Child>>,
+    /// Set by the version-mismatch restart; `dispatch` stamps it onto every restore.
+    daemon_replaced: Mutex<Option<DaemonReplaced>>,
 }
 
 impl Bridge {
@@ -86,6 +88,7 @@ impl Bridge {
             last_status: Mutex::new(None),
             last_board_list: Mutex::new(None),
             daemon_child: Mutex::new(None),
+            daemon_replaced: Mutex::new(None),
         }
     }
 
@@ -263,9 +266,40 @@ fn replay_request(connected: bool, board_list: Option<&serde_json::Value>) -> Op
 /// is absent) AND we have not already triggered a restart for this mismatch.
 /// The `already_restarted` latch prevents a second restart when the newly-spawned
 /// daemon still reports a wrong version (bad PATH, stale install, etc.); in that
-/// case the persistent mismatch surfaces via the daemon-status event instead.
+/// case the connection proceeds against it.
 fn should_restart(expected: &str, reported: Option<&str>, already_restarted: bool) -> bool {
     reported != Some(expected) && !already_restarted
+}
+
+/// The daemon a version-mismatch restart replaced (spec 2609.0017). Created by the
+/// mismatch branch and never cleared; that branch runs at most once per process
+/// because `connection_loop` never resets `already_restarted`. `to` is what a later
+/// proceeding connection reported, not this app's version, so a respawn that still
+/// mismatches is named as what it is.
+#[derive(Debug, PartialEq)]
+struct DaemonReplaced {
+    from: Option<String>,
+    to: Option<String>,
+}
+
+/// Stamp `daemon_replaced` onto a `restore`, so the fact travels with the restore
+/// that builds the board. A separate event would race that restore, and at launch
+/// would reach a webview with no listener yet (Tauri does not buffer).
+fn annotate_restore(mut value: serde_json::Value, replaced: Option<&DaemonReplaced>) -> serde_json::Value {
+    let Some(r) = replaced else { return value };
+    if value.get("t").and_then(|t| t.as_str()) == Some("restore") {
+        value["daemon_replaced"] = serde_json::json!({ "from": r.from, "to": r.to });
+    }
+    value
+}
+
+/// A connection that proceeded past the version check fills an open `to` with
+/// the version it reported. The first reported version sticks; an unreported one
+/// leaves `to` open for a later connection.
+fn note_proceeding(record: &mut Option<DaemonReplaced>, reported: Option<&str>) {
+    if let Some(r) = record.as_mut().filter(|r| r.to.is_none()) {
+        r.to = reported.map(str::to_string);
+    }
 }
 
 /// The app's `hello` frame, encoded. Pulled out of `run_connection` so the
@@ -399,6 +433,8 @@ async fn run_connection(
 
     if should_restart(env!("CARGO_PKG_VERSION"), reported_version.as_deref(), already_restarted) {
         emit_status(app, false, Some("version mismatch / restarting"));
+        *app.state::<Bridge>().daemon_replaced.lock().expect("daemon_replaced lock") =
+            Some(DaemonReplaced { from: reported_version, to: None });
         // SIGTERM the daemon the handshake came from, by its reported pid — this
         // is the brew-upgrade case where the app did NOT spawn the stale daemon
         // (so daemon_child is None). The tracked child is a secondary fallback.
@@ -421,6 +457,10 @@ async fn run_connection(
         return true;
     }
 
+    note_proceeding(
+        &mut app.state::<Bridge>().daemon_replaced.lock().expect("daemon_replaced lock"),
+        reported_version.as_deref(),
+    );
     dispatch(app, first_msg);
 
     loop {
@@ -462,7 +502,13 @@ fn dispatch(app: &AppHandle, msg: Msg) {
         // 256 KiB ring would be emitted as a JSON array of integers.
         Msg::Scrollback { term_id, bytes } => bridge.terms.on_scrollback(term_id, bytes),
         other => {
-            if let Ok(value) = serde_json::to_value(&other) {
+            if let Ok(mut value) = serde_json::to_value(&other) {
+                if matches!(other, Msg::Restore { .. }) {
+                    value = annotate_restore(
+                        value,
+                        bridge.daemon_replaced.lock().expect("daemon_replaced lock").as_ref(),
+                    );
+                }
                 let tag = value.get("t").and_then(|t| t.as_str()).unwrap_or("?");
                 bridge.remember_msg(tag, &value);
                 let _ = app.emit("daemon", value);
@@ -1275,6 +1321,108 @@ mod tests {
     fn should_restart_already_restarted_is_false() {
         assert!(!should_restart("0.2.0", Some("0.1.0"), true));
         assert!(!should_restart("0.1.0", None, true));
+    }
+
+    // ── daemon_replaced annotation (spec 2609.0017) ─────────────────────────
+
+    fn restore_json() -> serde_json::Value {
+        serde_json::json!({
+            "t": "restore",
+            "docs": [],
+            "tiles": [{ "kind": "term", "term_id": "t1" }],
+            "board_id": "board-0",
+            "live_terms": [],
+        })
+    }
+
+    fn replaced(from: Option<&str>, to: Option<&str>) -> DaemonReplaced {
+        DaemonReplaced { from: from.map(str::to_string), to: to.map(str::to_string) }
+    }
+
+    /// S2
+    #[test]
+    fn annotate_restore_adds_both_versions_and_keeps_every_original_key() {
+        let record = replaced(Some("0.12.2"), Some("0.12.3"));
+        let mut out = annotate_restore(restore_json(), Some(&record));
+
+        let added = out.as_object_mut().unwrap().remove("daemon_replaced");
+        assert_eq!(added, Some(serde_json::json!({ "from": "0.12.2", "to": "0.12.3" })));
+        assert_eq!(out, restore_json());
+    }
+
+    /// S12: a missing version must not read as "no restart" — both keys are
+    /// present, as JSON null.
+    #[test]
+    fn annotate_restore_keeps_unreported_versions_as_null_keys() {
+        let record = replaced(None, None);
+        let out = annotate_restore(restore_json(), Some(&record));
+
+        let annotation = out.get("daemon_replaced").and_then(serde_json::Value::as_object);
+        let annotation = annotation.expect("daemon_replaced present as an object");
+        assert_eq!(annotation.get("from"), Some(&serde_json::Value::Null));
+        assert_eq!(annotation.get("to"), Some(&serde_json::Value::Null));
+    }
+
+    /// S10
+    #[test]
+    fn annotate_restore_leaves_other_messages_unchanged() {
+        let record = replaced(Some("0.12.2"), Some("0.12.3"));
+        assert_eq!(annotate_restore(board_list("board-0"), Some(&record)), board_list("board-0"));
+    }
+
+    /// S10
+    #[test]
+    fn annotate_restore_leaves_an_exit_unchanged() {
+        let record = replaced(Some("0.12.2"), Some("0.12.3"));
+        let exit = serde_json::json!({ "t": "exit", "term_id": "t1" });
+        assert_eq!(annotate_restore(exit.clone(), Some(&record)), exit);
+    }
+
+    /// S11
+    #[test]
+    fn annotate_restore_without_a_replaced_daemon_leaves_the_restore_unchanged() {
+        assert_eq!(annotate_restore(restore_json(), None), restore_json());
+    }
+
+    /// S13: `to` names the daemon actually running, not this app's version.
+    #[test]
+    fn note_proceeding_records_the_version_the_respawn_reported() {
+        let mut record = Some(replaced(Some("0.12.2"), None));
+        note_proceeding(&mut record, Some("0.12.2"));
+        assert_eq!(record, Some(replaced(Some("0.12.2"), Some("0.12.2"))));
+    }
+
+    /// S13b: an ordinary connect with matching versions creates no record.
+    #[test]
+    fn note_proceeding_without_a_record_creates_none() {
+        let mut record = None;
+        note_proceeding(&mut record, Some("0.12.3"));
+        assert_eq!(record, None);
+    }
+
+    /// S13c: the first proceeding connection's version sticks.
+    #[test]
+    fn note_proceeding_leaves_a_filled_record_unchanged() {
+        let mut record = Some(replaced(Some("0.12.2"), Some("0.12.3")));
+        note_proceeding(&mut record, Some("0.12.9"));
+        assert_eq!(record, Some(replaced(Some("0.12.2"), Some("0.12.3"))));
+    }
+
+    /// S13d: a respawn that reports no version leaves `to` open for a later
+    /// connection, and is never filled with this app's version.
+    #[test]
+    fn note_proceeding_with_no_reported_version_leaves_the_record_unchanged() {
+        let mut record = Some(replaced(Some("0.12.2"), None));
+        note_proceeding(&mut record, None);
+        assert_eq!(record, Some(replaced(Some("0.12.2"), None)));
+    }
+
+    /// S13e: filling `to` preserves `from`.
+    #[test]
+    fn note_proceeding_fills_to_and_keeps_from() {
+        let mut record = Some(replaced(Some("0.12.2"), None));
+        note_proceeding(&mut record, Some("0.12.3"));
+        assert_eq!(record, Some(replaced(Some("0.12.2"), Some("0.12.3"))));
     }
 
 }
