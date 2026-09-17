@@ -420,7 +420,7 @@ re-binds chrome to its viewport.
 | **App reconnect** (daemon stays up) | **Survive** — re-bound to live ptys, scrollback replayed | Restored from daemon memory |
 | **App relaunch** (daemon stays up) | **Survive** — re-bound on connect | Restored |
 | **Daemon restart** | Re-spawned fresh (cold) — live shells died with the daemon | Restored exactly from `state.json` |
-| **Version-mismatch restart** (brew upgrade) | Cold-spawned on the new daemon (same as above) | Restored from `state.json` via `Msg::Restore` on reconnect |
+| **Version-mismatch restart** (brew upgrade) | Cold-spawned on the new daemon (same as above). The app toasts the version change (`tarmacd restarted: <from> → <to>`) when a first-visit board has lost terminals; otherwise the existing reconnect toast is what the user sees | Restored from `state.json` via `Msg::Restore` on reconnect |
 
 Daemon-restart PTY re-parenting (true live-shell survival across a daemon
 restart) is designed but deliberately unbuilt; cold layout-only restore + the

@@ -42,6 +42,7 @@ import { mint } from "./kit/bootTerminal";
 import { displayLabel } from "./kit/termTitle";
 import { decide } from "./kit/termExit";
 import { plan } from "./kit/termRestore";
+import { restartNotice } from "./kit/restartNotice";
 import { cascadeOrigin, isOffscreen } from "./kit/boardWayfinding";
 import {
   pillLabel,
@@ -857,11 +858,19 @@ export default function App() {
       (msg.tiles ?? []) as unknown as LayoutTile[],
     );
     const liveTerms = new Set(msg.live_terms ?? []);
+    const tileTermIds = termTiles.map((t) => t.termId);
 
-    const plans = plan(
-      termTiles.map((t) => t.termId),
+    const plans = plan(tileTermIds, liveTerms);
+    const notice = restartNotice(
+      msg.daemon_replaced,
+      tileTermIds,
       liveTerms,
+      daemonRestartToastedRef.current,
     );
+    if (notice) {
+      daemonRestartToastedRef.current = true;
+      pushToast({ icon: "¶", title: notice.title, body: notice.body, chips: [] });
+    }
     const oldToNew = new Map<string, string>();
     const newTerms: TermCardModel[] = termTiles.map((t, i) => {
       const frame =

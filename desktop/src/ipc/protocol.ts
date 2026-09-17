@@ -55,6 +55,8 @@ export type DaemonMsg =
       board?: WireBoardViewport | null;
       board_id?: string | null;
       live_terms?: string[];
+      // Added by the bridge after a version-mismatch restart; not on the msgpack wire.
+      daemon_replaced?: { from: string | null; to: string | null };
     }
   | { t: "exit"; term_id: string; code?: number | null }
   | ({ t: "doc_opened" } & WireDocEntry)
