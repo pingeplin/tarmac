@@ -110,10 +110,14 @@ tree = the #171 implementation (`make test` green, `cargo build` warning-free).
   - **Built, not yet launched** (2026-09-18). `make bundle` exits 0 and
     assembles `dist/Tarmac.app`. `strings` on the release binary finds no
     `dev_quit_guard` (the dev command is compiled out, as the three `cfg` gates
-    intend) and does find the notice's text, so the guard ships. The prompt
-    question needs a launch, and a bundled build runs on the RELEASE channel —
-    the user's real daemon, state and boards, not this worktree's `.dev/`.
-    Decide that before running it.
+    intend) and does find the notice's text, so the guard ships.
+  - **PASS** (2026-09-18, hand-run). Launched from Finder — a terminal launch
+    would attribute TCC to the terminal and prove nothing — against the release
+    channel. Bundle, installed app and running daemon were all 0.12.3, so no
+    version-mismatch restart was risked. A tap showed the notice, a hold quit on
+    release, and **no permission dialog appeared**: `CGEventSourceKeyState`
+    needs no Input Monitoring grant for this use, which the design could only
+    infer.
 - **Q9** — Quit remapped to ⌥⌘Q in System Settings → Keyboard → App Shortcuts:
   ⌥⌘Q is guarded, plain ⌘Q does nothing, the notice reads "Hold ⌥⌘Q to Quit",
   and both hold with the switcher open and with Claude Code focused.
