@@ -22,7 +22,8 @@ every terminal its daemon owns. `make run` pins `TARMAC_SOCKET`,
 an installed app coexist. `make kill-daemon` is the correct tool. If an
 installed Tarmac is running there will be two windows, both named `tarmac-app`
 with bundle id `com.tarmac.desktop`; the dev window's title carries
-` · 171-confirm-quit-live-terminal`.
+` · <worktree name>` — ` · 171-confirm-quit-live-terminal` for the #171 runs,
+` · 179-quit-poll-run-loop-timer` for #179's.
 
 **What to watch.** The `make run` terminal logs one line per call to the Quit
 item (debug builds only):

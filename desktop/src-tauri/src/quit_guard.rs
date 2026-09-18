@@ -37,6 +37,8 @@ const MATCHED: u64 = SHIFT | CONTROL | OPTION | COMMAND;
 pub enum Phase {
     Idle { last_start_ms: Option<u64> },
     Showing { started_ms: u64 },
+    /// `since_ms` records when the gesture committed, for the tests' view of
+    /// the state table; no decision reads it.
     Confirming { since_ms: u64 },
 }
 
@@ -138,7 +140,8 @@ impl QuitGuard {
 
     /// One key-state sample. The wiring takes it on the main thread and stops
     /// polling the moment `StopPolling` is applied, so a sample always belongs
-    /// to the phase it lands in.
+    /// to the phase it lands in — and, since `route` never guards a press from
+    /// the future, it is never older than the press that started the gesture.
     pub fn on_poll(&mut self, sampled_ms: u64, key_down: bool) -> Vec<Effect> {
         match self.phase {
             Phase::Idle { .. } => Vec::new(),
