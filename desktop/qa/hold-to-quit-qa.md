@@ -70,9 +70,15 @@ tree = the #171 implementation (`make test` green, `cargo build` warning-free).
     both behave as specified. The notice's **text sat too high inside the
     slab** — an `NSTextField` draws its single line at the top of its frame,
     and the label had been given the slab's full height. Fixed by sizing the
-    label to its text and centring that box (`label_y`, S39). Re-check pending,
-    as is the rest of the grid (this row was run in one cell: a plain-shell
-    terminal under ABC).
+    label to its text and centring that box (`label_y`, S39), and by zeroing the
+    `NSBox`'s content-view margins: the box insets its content view by 5 pt plus
+    the border, so a label centred on the slab's own height was drawn 6 pt high
+    and 6 pt right. Measured from the QA screenshot (text centre 4–5 px above
+    the slab centre) and reproduced headlessly in
+    `scratchpad/boxprobe.swift` (text centre 41.0 vs slab centre 35.0; 35.0
+    after the fix). **Re-checked by hand: centred.** The rest of the grid is
+    still pending — this row was run in one cell, a plain-shell terminal under
+    ABC.
 - **Q2** — window minimized: a tap shows the notice on the main screen, app
   stays.
   - Result: _pending_

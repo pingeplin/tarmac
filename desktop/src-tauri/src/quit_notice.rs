@@ -142,6 +142,11 @@ impl Notice {
         slab.setTitlePosition(NSTitlePosition::NoTitle);
         slab.setBorderWidth(0.0);
         slab.setCornerRadius(CORNER_RADIUS);
+        // An NSBox insets its content view by 5 pt plus the border, and
+        // `addSubview` goes to that content view — so a label centred on the
+        // slab's own height would sit 6 pt high and 6 pt right (measured in QA,
+        // Q1). Zeroing the margins makes the content view the slab.
+        slab.setContentViewMargins(NSSize::new(0.0, 0.0));
         slab.setFillColor(&NSColor::colorWithWhite_alpha(FILL_WHITE, FILL_ALPHA));
 
         let label = NSTextField::labelWithString(&NSString::from_str(""), mtm);
