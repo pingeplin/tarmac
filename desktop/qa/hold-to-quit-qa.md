@@ -81,7 +81,7 @@ tree = the #171 implementation (`make test` green, `cargo build` warning-free).
     ABC.
 - **Q2** — window minimized: a tap shows the notice on the main screen, app
   stays.
-  - Result: _pending_
+  - **PASS** (2026-09-18, hand-run).
 - **Q3** — uncheck *Warn Before Quitting (⌘Q)*: `.dev/app-prefs.json` reads
   `{"warn_before_quit":false}`, `tarmac dev snapshot` shows
   `quit_guard.enabled` false, and a tap quits at once. After a relaunch the item
@@ -101,13 +101,19 @@ tree = the #171 implementation (`make test` green, `cargo build` warning-free).
 - **Q6** — plain shell: ⌘C with a selection copies, ⌘V pastes. Claude Code: its
   fullscreen `cmd+c` selection copy still works, ⌘V pastes, ⌘H hides the app and
   ⌘M minimizes (both newly reachable).
-  - Result: _pending_
+  - **PASS** (2026-09-18, hand-run).
 - **Q7** — VoiceOver announces "Hold ⌘Q to Quit", also with the window hidden.
   - Result: _pending_
 - **Q8** — on a `make bundle` build, a hold quits with no permission prompt
   (`CGEventSourceKeyState` has no documented TCC requirement, and `make run`
   attributes TCC to the launching terminal).
-  - Result: _pending_
+  - **Built, not yet launched** (2026-09-18). `make bundle` exits 0 and
+    assembles `dist/Tarmac.app`. `strings` on the release binary finds no
+    `dev_quit_guard` (the dev command is compiled out, as the three `cfg` gates
+    intend) and does find the notice's text, so the guard ships. The prompt
+    question needs a launch, and a bundled build runs on the RELEASE channel —
+    the user's real daemon, state and boards, not this worktree's `.dev/`.
+    Decide that before running it.
 - **Q9** — Quit remapped to ⌥⌘Q in System Settings → Keyboard → App Shortcuts:
   ⌥⌘Q is guarded, plain ⌘Q does nothing, the notice reads "Hold ⌥⌘Q to Quit",
   and both hold with the switcher open and with Claude Code focused.
@@ -139,7 +145,7 @@ tree = the #171 implementation (`make test` green, `cargo build` warning-free).
   ⌘N / Esc behave as before; a ⌘Q tap shows the notice; ⌘H hides the app; ⌘A, ⌘Z
   and ⌘X send nothing to the PTY (`scrollback_tail` unchanged) — record what
   else they do.
-  - Result: _pending_
+  - **PASS** (2026-09-18, hand-run).
 - **Q14** — ⌘W typed inside an HTML card's iframe (`App.tsx` never sees it):
   expected to hide the window, app still running.
   - Result: _pending_
