@@ -37,9 +37,7 @@ const MATCHED: u64 = SHIFT | CONTROL | OPTION | COMMAND;
 pub enum Phase {
     Idle { last_start_ms: Option<u64> },
     Showing { started_ms: u64 },
-    /// `since_ms` records when the gesture committed, for the tests' view of
-    /// the state table; no decision reads it.
-    Confirming { since_ms: u64 },
+    Confirming,
 }
 
 #[derive(Debug, PartialEq)]
@@ -120,7 +118,7 @@ impl QuitGuard {
                     .and_then(|start| press_ms.checked_sub(start))
                     .is_some_and(|since| since < SECOND_TAP_MS);
                 if recent {
-                    self.phase = Phase::Confirming { since_ms: press_ms };
+                    self.phase = Phase::Confirming;
                     vec![Effect::HideWindows, Effect::StartPolling(key_code)]
                 } else {
                     self.phase = Phase::Showing { started_ms: press_ms };
@@ -131,10 +129,10 @@ impl QuitGuard {
             // `StartPolling` — the poller is already running on the first
             // chord's key, which is the key still physically down.
             Phase::Showing { .. } => {
-                self.phase = Phase::Confirming { since_ms: press_ms };
+                self.phase = Phase::Confirming;
                 vec![Effect::HideWindows]
             }
-            Phase::Confirming { .. } => Vec::new(),
+            Phase::Confirming => Vec::new(),
         }
     }
 
@@ -153,10 +151,10 @@ impl QuitGuard {
                 if sampled_ms.saturating_sub(started_ms) < HOLD_MS {
                     return Vec::new();
                 }
-                self.phase = Phase::Confirming { since_ms: sampled_ms };
+                self.phase = Phase::Confirming;
                 vec![Effect::HideWindows]
             }
-            Phase::Confirming { .. } => {
+            Phase::Confirming => {
                 if key_down {
                     return Vec::new();
                 }
@@ -442,10 +440,10 @@ mod tests {
     fn a_hold_hides_the_windows_and_exits_on_release() {
         let mut guard = showing(10_000);
         assert_eq!(guard.on_poll(10_500, true), vec![Effect::HideWindows]);
-        assert_eq!(*guard.phase(), Phase::Confirming { since_ms: 10_500 });
+        assert_eq!(*guard.phase(), Phase::Confirming);
 
         assert_eq!(guard.on_poll(10_550, true), vec![]);
-        assert_eq!(*guard.phase(), Phase::Confirming { since_ms: 10_500 });
+        assert_eq!(*guard.phase(), Phase::Confirming);
 
         assert_eq!(guard.on_poll(10_600, false), vec![Effect::StopPolling, Effect::Exit]);
         assert_eq!(*guard.phase(), Phase::Idle { last_start_ms: None });
@@ -464,7 +462,7 @@ mod tests {
 
         let mut held = showing(10_000);
         assert_eq!(held.on_poll(10_700, true), vec![Effect::HideWindows]);
-        assert_eq!(*held.phase(), Phase::Confirming { since_ms: 10_700 });
+        assert_eq!(*held.phase(), Phase::Confirming);
     }
 
     /// S14 — Chromium's second tap, measured from the first PRESS.
@@ -475,7 +473,7 @@ mod tests {
             guard.on_quit_key(950, 12, false),
             vec![Effect::HideWindows, Effect::StartPolling(12)]
         );
-        assert_eq!(*guard.phase(), Phase::Confirming { since_ms: 950 });
+        assert_eq!(*guard.phase(), Phase::Confirming);
 
         assert_eq!(guard.on_poll(1_000, false), vec![Effect::StopPolling, Effect::Exit]);
         assert_eq!(*guard.phase(), Phase::Idle { last_start_ms: None });
@@ -500,7 +498,7 @@ mod tests {
             guard.on_quit_key(999, 12, false),
             vec![Effect::HideWindows, Effect::StartPolling(12)]
         );
-        assert_eq!(*guard.phase(), Phase::Confirming { since_ms: 999 });
+        assert_eq!(*guard.phase(), Phase::Confirming);
     }
 
     /// S21 — a press older than the last start (a clock that went backwards,
@@ -519,7 +517,7 @@ mod tests {
     fn a_re_press_while_the_notice_shows_commits_without_a_second_poller() {
         let mut guard = showing(10_000);
         assert_eq!(guard.on_quit_key(10_300, 13, false), vec![Effect::HideWindows]);
-        assert_eq!(*guard.phase(), Phase::Confirming { since_ms: 10_300 });
+        assert_eq!(*guard.phase(), Phase::Confirming);
     }
 
     /// S17 — once committed, another chord changes nothing.
@@ -528,7 +526,7 @@ mod tests {
         let mut guard = showing(10_000);
         guard.on_poll(10_500, true);
         assert_eq!(guard.on_quit_key(10_700, 12, false), vec![]);
-        assert_eq!(*guard.phase(), Phase::Confirming { since_ms: 10_500 });
+        assert_eq!(*guard.phase(), Phase::Confirming);
     }
 
     /// S18 — auto-repeat reaches the retargeted item too, and must never
@@ -546,7 +544,7 @@ mod tests {
         let mut confirming = showing(10_000);
         confirming.on_poll(10_500, true);
         assert_eq!(confirming.on_quit_key(10_560, 12, true), vec![]);
-        assert_eq!(*confirming.phase(), Phase::Confirming { since_ms: 10_500 });
+        assert_eq!(*confirming.phase(), Phase::Confirming);
     }
 
     /// S18 — if key state is unreadable the first sample reads "up", so the
@@ -566,7 +564,7 @@ mod tests {
             second.on_quit_key(900, 12, false),
             vec![Effect::HideWindows, Effect::StartPolling(12)]
         );
-        assert_eq!(*second.phase(), Phase::Confirming { since_ms: 900 });
+        assert_eq!(*second.phase(), Phase::Confirming);
     }
 
     /// S20 — WebKit re-sends the original `NSEvent`, so the same press can
