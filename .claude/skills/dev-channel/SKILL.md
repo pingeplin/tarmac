@@ -74,8 +74,10 @@ core/target/debug/tarmac dev snapshot | jq .
 - `<card>` is a terminal's **term id** or a doc's **absolute path** — the bare
   wire ids, not the app-internal `term:`/`doc:` form.
 - `snapshot` prints the active board's live state: viewport, every card's
-  `board_rect` and measured `screen_rect`, `focused_card`, `active_element`, and
-  per-terminal `cols`/`rows`/`proc`/`selection`/`scrollback_tail`.
+  `board_rect` and measured `screen_rect`, `focused_card`, `active_element`,
+  per-terminal `cols`/`rows`/`proc`/`selection`/`scrollback_tail`, and
+  `quit_guard` (`retargeted`, `enabled`) — the ⌘Q guard's hold on the native
+  Quit item, which `make qa`'s D11 asserts.
 - Every other verb prints a small JSON object describing **what it observed**,
   not what you asked for — `zoom 99` answers `{"zoom": 3}` because the board
   clamps.

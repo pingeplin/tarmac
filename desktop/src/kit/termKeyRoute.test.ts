@@ -93,17 +93,17 @@ describe("xtermHandlesKey", () => {
     expect(decide({ key: "C", meta: true, hasSelection: true, kittyFlags: 5 })).toBe(false);
   });
 
-  it("handles ⌘C without a selection, so a kitty program's own cmd+c binding receives it", () => {
+  it("handles ⌘C without a selection, and ⌃/⌥⌘ chords, but stands aside for other kitty ⌘ chords", () => {
     expect(decide({ key: "c", meta: true, hasSelection: false, kittyFlags: 5 })).toBe(true);
     expect(decide({ key: "c", meta: true, ctrl: true, hasSelection: true })).toBe(true);
     expect(decide({ key: "c", meta: true, alt: true, hasSelection: true })).toBe(true);
     expect(decide({ key: "a", meta: true, hasSelection: true })).toBe(true);
-    expect(decide({ key: "s", meta: true, hasSelection: true, kittyFlags: 5 })).toBe(true);
+    expect(decide({ key: "s", meta: true, hasSelection: true, kittyFlags: 5 })).toBe(false);
   });
 
-  it("handles other ⌘ chords, where a kitty program can bind them", () => {
+  it("handles ⌘C without a selection under a kitty program, and every ⌘ chord in legacy mode", () => {
     expect(decide({ key: "c", meta: true, kittyFlags: 5 })).toBe(true);
-    expect(decide({ key: "s", meta: true, kittyFlags: 5 })).toBe(true);
+    expect(decide({ key: "s", meta: true, kittyFlags: 5 })).toBe(false);
     expect(decide({ key: "a", meta: true })).toBe(true);
   });
 
@@ -115,5 +115,47 @@ describe("xtermHandlesKey", () => {
   it("handles ⌃⌘ and ⌥⌘ chords", () => {
     expect(decide({ key: "v", meta: true, ctrl: true })).toBe(true);
     expect(decide({ key: "v", meta: true, alt: true })).toBe(true);
+  });
+
+  // #171: a kitty program encodes ⌘Q as ESC[113;9u and preventDefaults it, so
+  // WebKit never re-sends the keydown to the native menu and the hold-to-quit
+  // guard — like Hide, Minimize and Select All — never fires.
+  it("S30 — stands aside for every ⌘ chord on a character key under a kitty program", () => {
+    for (const kittyFlags of [1, 5]) {
+      expect(decide({ key: "q", meta: true, kittyFlags })).toBe(false);
+      expect(decide({ key: "h", meta: true, kittyFlags })).toBe(false);
+      expect(decide({ key: "m", meta: true, kittyFlags })).toBe(false);
+      expect(decide({ key: "a", meta: true, kittyFlags })).toBe(false);
+      expect(decide({ key: "t", meta: true, kittyFlags })).toBe(false);
+      expect(decide({ key: "Q", meta: true, kittyFlags })).toBe(false);
+      expect(decide({ key: "q", meta: true, alt: true, kittyFlags })).toBe(false);
+      expect(decide({ key: "f", meta: true, ctrl: true, kittyFlags })).toBe(false);
+      expect(decide({ key: "s", meta: true, kittyFlags })).toBe(false);
+      expect(decide({ key: "s", meta: true, hasSelection: true, kittyFlags })).toBe(false);
+    }
+  });
+
+  it("S31 — keeps only plain ⌘C without a selection, and leaves named keys alone", () => {
+    expect(decide({ key: "c", meta: true, hasSelection: false, kittyFlags: 5 })).toBe(true);
+    expect(decide({ key: "c", meta: true, alt: true, hasSelection: false, kittyFlags: 5 })).toBe(
+      false,
+    );
+    expect(decide({ key: "v", meta: true, kittyFlags: 5 })).toBe(false);
+    expect(decide({ key: "c", meta: true, hasSelection: true, kittyFlags: 5 })).toBe(false);
+    expect(decide({ key: "C", meta: true, hasSelection: false, kittyFlags: 5 })).toBe(true);
+    expect(decide({ key: "Enter", meta: true, kittyFlags: 5 })).toBe(true);
+    expect(decide({ key: "Meta", meta: true, kittyFlags: 8 })).toBe(true);
+  });
+
+  it("S32 — legacy mode keeps every ⌘ chord", () => {
+    expect(decide({ key: "q", meta: true })).toBe(true);
+    expect(decide({ key: "a", meta: true })).toBe(true);
+    expect(decide({ key: "v", meta: true, ctrl: true })).toBe(true);
+    expect(decide({ key: "v", meta: true, alt: true })).toBe(true);
+  });
+
+  it("S33 — a composing or keyup ⌘ chord is still xterm's under a kitty program", () => {
+    expect(decide({ key: "q", meta: true, composing: true, kittyFlags: 5 })).toBe(true);
+    expect(decide({ type: "keyup", key: "q", meta: true, kittyFlags: 5 })).toBe(true);
   });
 });

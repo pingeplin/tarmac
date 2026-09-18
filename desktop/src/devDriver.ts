@@ -326,7 +326,9 @@ async function snapshotReply(
   engine: BoardEngine,
 ) {
   const src = verb.until ?? null;
-  if (src === null) return { ok: true, body: JSON.stringify(build(deps, engine)) };
+  if (src === null) {
+    return { ok: true, body: JSON.stringify(build(deps, engine, await quitGuardFacts())) };
+  }
 
   const parsed = parseUntil(src);
   if ("error" in parsed) {
@@ -336,7 +338,7 @@ async function snapshotReply(
   }
   const budget = verb.timeout_ms ?? 5000;
   const deadline = Date.now() + budget;
-  let snap = build(deps, engine);
+  let snap = build(deps, engine, await quitGuardFacts());
   // `--timeout 0` means evaluate once, so the check precedes the first wait.
   while (!evalUntil(parsed, snap)) {
     if (Date.now() >= deadline) {
@@ -347,7 +349,9 @@ async function snapshotReply(
       });
     }
     await sleep(POLL_MS);
-    snap = build(deps, engine);
+    // Re-read per tick, not once before the wait: an `--until` on the guard is
+    // waiting for exactly this fact to change.
+    snap = build(deps, engine, await quitGuardFacts());
   }
   return { ok: true, body: JSON.stringify(snap) };
 }
@@ -424,7 +428,17 @@ function activeElementCard(cards: DevCardInput[], nodes: Map<string, HTMLElement
   return null;
 }
 
-function build(deps: DevDriverDeps, engine: BoardEngine) {
+/** The guard's live state, which only `snapshot` reports. A rejected invoke is
+ *  `null`, not a throw: the command is `#[cfg(debug_assertions)]` and an app
+ *  without it must still answer `snapshot`. */
+const quitGuardFacts = () =>
+  invoke<{ retargeted: boolean; enabled: boolean }>("dev_quit_guard").catch(() => null);
+
+function build(
+  deps: DevDriverDeps,
+  engine: BoardEngine,
+  quitGuard: { retargeted: boolean; enabled: boolean } | null = null,
+) {
   const cards = deps.cards();
   const nodes = cardNodes(deps, engine);
   const viewRect = engine.viewportElement.getBoundingClientRect();
@@ -448,6 +462,7 @@ function build(deps: DevDriverDeps, engine: BoardEngine) {
       classes: active ? Array.from(active.classList) : [],
       selectionType: (window.getSelection()?.type ?? "None") as DevSelectionType,
     },
+    quitGuard,
   });
 }
 

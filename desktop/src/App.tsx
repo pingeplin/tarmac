@@ -92,6 +92,7 @@ import {
   sanitizedName,
   isTypable,
   liveness,
+  switcherCancelsUnhandledKey,
   type BoardSummary,
   type BoardRow,
 } from "./kit/boardSwitcher";
@@ -1208,11 +1209,12 @@ export default function App() {
         return;
       }
 
-      // ⌘W — close the focused card. Must be handled here (before the switcher
-      // block and before any passThrough) so Tauri's native "Close Window" menu
-      // item never sees this keystroke. Desktop parity note: the Swift app parks
-      // docs on the shelf (recoverable); we removed the shelf, so we just remove
-      // the doc card. Nothing focused → noop, but still swallow the key.
+      // ⌘W — close the focused card. Must be handled here, before the switcher
+      // block (which leaves every ⌘ chord uncancelled), so Tauri's native "Close
+      // Window" menu item never sees this keystroke. Desktop parity note: the
+      // Swift app parks docs on the shelf (recoverable); we removed the shelf, so
+      // we just remove the doc card. Nothing focused → noop, but still swallow
+      // the key.
       if (e.metaKey && !e.altKey && !e.ctrlKey && e.key.toLowerCase() === "w") {
         e.preventDefault();
         e.stopPropagation();
@@ -1266,10 +1268,10 @@ export default function App() {
         // The switcher owns the keyboard while open. This handler runs in CAPTURE
         // phase (below), so stopping propagation here keeps the focused terminal's
         // xterm from also receiving the keystroke (it would otherwise type filter
-        // chars into the prime PTY). Only ⌘Q / ⌘W fall through to the menus.
-        // ⌘W is handled above (before this block) so it never reaches here.
-        const passThrough = e.metaKey && e.key.toLowerCase() === "q";
-        if (!passThrough) e.stopPropagation();
+        // chars into the prime PTY). It stops unconditionally: a ⌘ chord reaches
+        // the native menu by staying UNCANCELLED (see the fallthrough below), not
+        // by travelling on to xterm. ⌘W is handled above and never reaches here.
+        e.stopPropagation();
         const rows = currentSwitcherRows();
         const sel = switcherSelectedRef.current;
         const editing = switcherEditingRef.current;
@@ -1401,9 +1403,11 @@ export default function App() {
           return;
         }
 
-        // Swallow everything else while the switcher is open (except ⌘Q).
+        // Swallow everything else while the switcher is open. A ⌘ chord is left
+        // uncancelled so AppKit's menu — not a character comparison here — decides
+        // what the Quit shortcut is, whatever the user remapped it to (#171).
         // ⌘W is handled above (before this block) and never reaches here.
-        if (!(e.metaKey && (e.key === "q" || e.key === "Q"))) {
+        if (switcherCancelsUnhandledKey(e.metaKey)) {
           e.preventDefault();
         }
         return;
@@ -1519,17 +1523,29 @@ export default function App() {
       }
     };
 
+    // ⌘V now reaches the Edit menu's Paste while the switcher is open (the
+    // keydown above leaves ⌘ chords uncancelled), and the resulting `paste` would
+    // land in the focused terminal. stopPropagation is what stops it: xterm's own
+    // handler never reads defaultPrevented.
+    const onPaste = (e: ClipboardEvent) => {
+      if (!switcherOpenRef.current) return;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
     // Capture phase: the window handler must run BEFORE the focused xterm so the
     // switcher (and the board shortcuts) can intercept keys. Closed-switcher paths
     // never stopPropagation, so ESC/⏎ still reach the terminal exactly as before.
     const onFlush = () => flushPersist();
     window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("paste", onPaste, true);
     window.addEventListener("blur", onFlush);
     window.addEventListener("beforeunload", onFlush);
 
     return () => {
       subs.forEach((p) => void p.then((off) => off()));
       window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("paste", onPaste, true);
       window.removeEventListener("blur", onFlush);
       window.removeEventListener("beforeunload", onFlush);
       if (vpRafRef.current != null) cancelAnimationFrame(vpRafRef.current);

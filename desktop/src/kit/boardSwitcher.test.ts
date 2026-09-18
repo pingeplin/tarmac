@@ -8,6 +8,7 @@ import {
   isTypable,
   liveness,
   meta,
+  switcherCancelsUnhandledKey,
   type BoardSummary,
 } from "./boardSwitcher";
 
@@ -194,6 +195,13 @@ describe("BoardSwitcher", () => {
     expect(isTypable(0xf700)).toBe(false); // NSUpArrowFunctionKey
     expect(isTypable(0xf729)).toBe(false); // NSHomeFunctionKey
     expect(isTypable(0xf8ff)).toBe(false); // private-use top
+  });
+
+  // S34 (#171): an open switcher must not swallow a ⌘ chord, or AppKit's menu
+  // never sees the Quit shortcut — whatever the user remapped it to.
+  it("S34 — cancels an unhandled key only when ⌘ is not held", () => {
+    expect(switcherCancelsUnhandledKey(true)).toBe(false);
+    expect(switcherCancelsUnhandledKey(false)).toBe(true);
   });
 });
 
