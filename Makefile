@@ -86,12 +86,16 @@ qa: core
 
 # Kill the dev tarmacd for this worktree (same socket path as `make run`).
 # Sends SIGKILL (kill -9); exits 0 whether or not it was running.
+# `lsof -t` prints ONE PID PER LINE, and a restarted `make run` can leave more
+# than one daemon holding the socket — so the list is unquoted on purpose, to
+# reach `kill` as separate arguments. Quoting it makes the target fail outright
+# in exactly the case it exists for.
 kill-daemon:
 	sock="$(ROOT)/.dev/tarmacd.sock"; \
-	pid=$$(lsof -t "$$sock" 2>/dev/null); \
-	if [ -n "$$pid" ]; then \
-		echo "killing tarmacd pid $$pid on $$sock"; \
-		kill -9 "$$pid"; \
+	pids=$$(lsof -t "$$sock" 2>/dev/null | tr '\n' ' '); \
+	if [ -n "$$pids" ]; then \
+		echo "killing tarmacd pid(s) $${pids% } on $$sock"; \
+		kill -9 $$pids; \
 	else \
 		echo "no tarmacd on $$sock"; \
 	fi
