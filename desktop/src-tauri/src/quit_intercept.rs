@@ -17,11 +17,11 @@
 //!     `applicationWillTerminate:`. The guard's own exit is `app.exit(0)`.
 //!   - Q's keyUp never arrives while ⌘ is held (tao's `sendEvent:` sends those
 //!     straight to the key window, and a hidden window is not one), so release
-//!     is polled off the main thread and hops back with `run_on_main_thread`.
+//!     is polled — by a timer on the main run loop, which `StopPolling`
+//!     invalidates on the spot, so no sample outlives the phase that asked.
 
 use std::cell::{Cell, RefCell};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use objc2::rc::Retained;
@@ -32,7 +32,7 @@ use objc2_app_kit::{
     NSScreen, NSWindow,
 };
 use objc2_core_graphics::{CGEventSource, CGEventSourceStateID};
-use objc2_foundation::NSNotificationCenter;
+use objc2_foundation::{NSNotificationCenter, NSRunLoop, NSRunLoopCommonModes, NSTimer};
 use tauri::menu::{CheckMenuItem, Menu, MenuEvent, MenuId};
 use tauri::{AppHandle, Manager, Wry};
 
@@ -65,9 +65,9 @@ impl QuitToggle {
 }
 
 // The retargeted item holds its target WEAKLY, so this must outlive the menu.
-// It is also where the guard, the notice and the two generation counters live:
-// all of it is main-thread-only, and none of it can ride a `run_on_main_thread`
-// closure (AppKit objects are not `Send`).
+// It is also where the guard, the notice, the poll timer and the notice's
+// generation counter live: all of it is main-thread-only, and none of it can
+// ride a `run_on_main_thread` closure (AppKit objects are not `Send`).
 thread_local! {
     static TARGET: RefCell<Option<Retained<QuitTarget>>> = const { RefCell::new(None) };
 }
@@ -76,9 +76,9 @@ struct QuitIvars {
     app: AppHandle,
     guard: RefCell<QuitGuard>,
     notice: RefCell<Option<Notice>>,
-    /// Bumped by `StartPolling`/`StopPolling`; a sampler whose generation is
-    /// stale stops, and its queued hop does nothing.
-    poll_gen: Arc<AtomicU64>,
+    /// The running poll and the key it samples. The run loop holds the timer,
+    /// so dropping it here would not stop it: it is always invalidated.
+    poll: RefCell<Option<(Retained<NSTimer>, u16)>>,
     /// Bumped by `ShowHud`, so a linger or fade left over from an earlier tap
     /// cannot take the new notice away.
     hud_gen: Cell<u64>,
@@ -99,6 +99,11 @@ define_class!(
             self.on_quit(sender);
         }
 
+        #[unsafe(method(tarmacPoll:))]
+        fn tarmac_poll(&self, _timer: &NSTimer) {
+            self.on_poll();
+        }
+
         #[unsafe(method(appDidBecomeActive:))]
         fn app_did_become_active(&self, _notification: Option<&AnyObject>) {
             restore_window(&self.ivars().app);
@@ -112,7 +117,7 @@ impl QuitTarget {
             app,
             guard: RefCell::new(QuitGuard::default()),
             notice: RefCell::new(None),
-            poll_gen: Arc::new(AtomicU64::new(0)),
+            poll: RefCell::new(None),
             hud_gen: Cell::new(0),
         });
         unsafe { msg_send![super(this), init] }
@@ -162,8 +167,12 @@ impl QuitTarget {
         }
     }
 
-    fn on_poll(&self, sampled_ms: u64, key_down: bool) {
-        let effects = self.ivars().guard.borrow_mut().on_poll(sampled_ms, key_down);
+    fn on_poll(&self) {
+        let Some(key_code) = self.ivars().poll.borrow().as_ref().map(|&(_, key)| key) else {
+            return;
+        };
+        let held = CGEventSource::key_state(CGEventSourceStateID::CombinedSessionState, key_code);
+        let effects = self.ivars().guard.borrow_mut().on_poll(now_ms(), held);
         // No notice text to give: only a chord can raise `ShowHud`.
         self.apply(MainThreadMarker::from(self), effects, None);
     }
@@ -185,9 +194,7 @@ impl QuitTarget {
                     }
                 }
                 Effect::StartPolling(key_code) => self.start_polling(key_code),
-                Effect::StopPolling => {
-                    self.ivars().poll_gen.fetch_add(1, Ordering::SeqCst);
-                }
+                Effect::StopPolling => self.stop_polling(),
                 Effect::Exit => self.ivars().app.exit(0),
             }
         }
@@ -239,35 +246,34 @@ impl QuitTarget {
         }
     }
 
-    /// Sample the triggering key — never a hard-coded Q — until the guard says
-    /// to stop or the event loop is gone.
+    /// Sample the triggering key — never a hard-coded Q — every `POLL_MS` until
+    /// the guard says to stop. Common modes, so a tracked menu cannot stall it.
     fn start_polling(&self, key_code: u16) {
-        let generation = self.ivars().poll_gen.fetch_add(1, Ordering::SeqCst) + 1;
-        let poll_gen = self.ivars().poll_gen.clone();
-        let app = self.ivars().app.clone();
-        std::thread::spawn(move || loop {
-            let held =
-                CGEventSource::key_state(CGEventSourceStateID::CombinedSessionState, key_code);
-            let sampled_ms = now_ms();
-            if poll_gen.load(Ordering::SeqCst) != generation {
-                return;
-            }
-            let still_ours = poll_gen.clone();
-            let hopped = on_main(&app, move |target| {
-                if still_ours.load(Ordering::SeqCst) == generation {
-                    target.on_poll(sampled_ms, held);
-                }
-            });
-            if hopped.is_err() {
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(quit_guard::POLL_MS));
-        });
+        self.stop_polling();
+        let interval = quit_guard::POLL_MS as f64 / 1_000.0;
+        let timer = unsafe {
+            NSTimer::timerWithTimeInterval_target_selector_userInfo_repeats(
+                interval,
+                self,
+                sel!(tarmacPoll:),
+                None,
+                true,
+            )
+        };
+        unsafe { NSRunLoop::mainRunLoop().addTimer_forMode(&timer, NSRunLoopCommonModes) };
+        *self.ivars().poll.borrow_mut() = Some((timer, key_code));
+    }
+
+    fn stop_polling(&self) {
+        let running = self.ivars().poll.borrow_mut().take();
+        if let Some((timer, _)) = running {
+            timer.invalidate();
+        }
     }
 }
 
 /// Run `f` against the live target on the main thread. `Err` means the event
-/// loop has exited, which is every poller's signal to stop.
+/// loop has exited, which is the fade's signal to stop.
 fn on_main(
     app: &AppHandle,
     f: impl FnOnce(&QuitTarget) + Send + 'static,

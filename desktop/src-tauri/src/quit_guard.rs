@@ -136,28 +136,25 @@ impl QuitGuard {
         }
     }
 
-    /// One key-state sample. A sample older than the phase it lands in was
-    /// queued before the last `StopPolling`; acting on its "released" would
-    /// exit with Q still down.
+    /// One key-state sample. The wiring takes it on the main thread and stops
+    /// polling the moment `StopPolling` is applied, so a sample always belongs
+    /// to the phase it lands in.
     pub fn on_poll(&mut self, sampled_ms: u64, key_down: bool) -> Vec<Effect> {
         match self.phase {
             Phase::Idle { .. } => Vec::new(),
             Phase::Showing { started_ms } => {
-                if sampled_ms < started_ms {
-                    return Vec::new();
-                }
                 if !key_down {
                     self.phase = Phase::Idle { last_start_ms: Some(started_ms) };
                     return vec![Effect::LingerThenFadeHud, Effect::StopPolling];
                 }
-                if sampled_ms - started_ms < HOLD_MS {
+                if sampled_ms.saturating_sub(started_ms) < HOLD_MS {
                     return Vec::new();
                 }
                 self.phase = Phase::Confirming { since_ms: sampled_ms };
                 vec![Effect::HideWindows]
             }
-            Phase::Confirming { since_ms } => {
-                if key_down || sampled_ms < since_ms {
+            Phase::Confirming { .. } => {
+                if key_down {
                     return Vec::new();
                 }
                 self.phase = Phase::Idle { last_start_ms: None };
@@ -567,44 +564,6 @@ mod tests {
             vec![Effect::HideWindows, Effect::StartPolling(12)]
         );
         assert_eq!(*second.phase(), Phase::Confirming { since_ms: 900 });
-    }
-
-    /// S19 — a sample queued before `StopPolling` can land after the next
-    /// chord. Acting on it would exit with Q still down.
-    #[test]
-    fn a_poll_older_than_the_phase_it_lands_in_is_ignored() {
-        let mut fresh = QuitGuard::default();
-        assert_eq!(fresh.on_poll(10_200, false), vec![]);
-        assert_eq!(fresh.on_poll(10_200, true), vec![]);
-        assert_eq!(*fresh.phase(), Phase::Idle { last_start_ms: None });
-
-        let mut idle = tapped(10_000, 10_120);
-        assert_eq!(idle.on_poll(10_200, false), vec![]);
-        assert_eq!(*idle.phase(), Phase::Idle { last_start_ms: Some(10_000) });
-
-        let mut notice = showing(950);
-        assert_eq!(notice.on_poll(450, false), vec![]);
-        assert_eq!(*notice.phase(), Phase::Showing { started_ms: 950 });
-
-        let mut second_tap = tapped(0, 400);
-        second_tap.on_quit_key(950, 12, false);
-        assert_eq!(second_tap.on_poll(900, false), vec![]);
-        assert_eq!(*second_tap.phase(), Phase::Confirming { since_ms: 950 });
-    }
-
-    /// S19 — the boundary: a sample taken at the phase's own start is not stale,
-    /// in either phase.
-    #[test]
-    fn a_poll_sampled_at_the_phase_start_still_counts() {
-        let mut guard = showing(10_000);
-        assert_eq!(
-            guard.on_poll(10_000, false),
-            vec![Effect::LingerThenFadeHud, Effect::StopPolling]
-        );
-
-        let mut second_tap = tapped(0, 400);
-        second_tap.on_quit_key(950, 12, false);
-        assert_eq!(second_tap.on_poll(950, false), vec![Effect::StopPolling, Effect::Exit]);
     }
 
     /// S20 — WebKit re-sends the original `NSEvent`, so the same press can
