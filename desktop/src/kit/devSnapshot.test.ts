@@ -42,6 +42,7 @@ const input = (over = {}) => ({
   screenRects: new Map<string, Rect>(),
   selectedId: null as string | null,
   activeElement: { card: null, tag: "BODY", classes: [], selectionType: "None" as const },
+  quitGuard: null as { retargeted: boolean; enabled: boolean } | null,
   ...over,
 });
 
@@ -49,7 +50,16 @@ describe("S1 — the snapshot's shape", () => {
   it("carries exactly the documented top-level keys", () => {
     const snap = buildSnapshot(input());
     expect(Object.keys(snap).sort()).toEqual(
-      ["active_element", "board_id", "cards", "focused_card", "v", "viewport", "visibility"].sort(),
+      [
+        "active_element",
+        "board_id",
+        "cards",
+        "focused_card",
+        "quit_guard",
+        "v",
+        "viewport",
+        "visibility",
+      ].sort(),
     );
     expect(snap.v).toBe(1);
     expect(snap.board_id).toBe("board-0");
@@ -265,5 +275,18 @@ describe("S8 — zoom scales the size, not only the origin", () => {
     const got = boardRectToScreenRect(r, { zoom: 2.37, cx: VIEW.w / 2, cy: VIEW.h / 2 }, VIEW);
     expect(got.w).toBeCloseTo(474, 9);
     expect(got.h).toBeCloseTo(284.4, 9);
+  });
+});
+
+describe("S35 — the quit guard's own facts ride along", () => {
+  it("copies quitGuard verbatim", () => {
+    const snap = buildSnapshot(input({ quitGuard: { retargeted: true, enabled: false } }));
+    expect(snap.quit_guard).toEqual({ retargeted: true, enabled: false });
+  });
+
+  it("reports null when the backend could not answer", () => {
+    // Not `undefined`: `--until` reads a missing path as unresolvable, and an
+    // absent key would make `quit_guard.retargeted == true` a silent false.
+    expect(buildSnapshot(input({ quitGuard: null })).quit_guard).toBeNull();
   });
 });

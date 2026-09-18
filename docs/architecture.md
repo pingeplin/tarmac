@@ -386,7 +386,26 @@ neither: their chrome lays out per zoom while a zoom-free host box keeps
 **Multiple boards.** A `⌘K` switcher shows per-board running/bell/card counts,
 supports type-to-filter, `⌘N` create, `⌘E` rename, `⌘⌫` delete, and `⌘1`–`9`
 jump to the *visible* (filtered) rows. Switching mounts the target board's cards
-and re-binds chrome to its viewport.
+and re-binds chrome to its viewport. While it is open it swallows the keyboard,
+but never a `⌘` press it does not own — AppKit's menu, not a character
+comparison, is what decides which chord is Quit.
+
+**Quitting and closing (spec 2609.0016).** A keyboard `⌘Q` no longer quits on a
+tap: it shows a centered "Hold ⌘Q to Quit" notice, and quits when Q is held
+~500 ms or tapped twice within 1 s — Chromium's confirm-to-quit, including its
+numbers. The app menu carries *Warn Before Quitting (⌘Q)*, on by default and
+saved in `app-prefs.json` beside the daemon socket. A mouse click on Quit,
+Dock → Quit and logout still quit at once. The intercept is the native Quit
+menu item retargeted onto a Tarmac object (`desktop/src-tauri/src/quit_intercept.rs`),
+because tao implements no `applicationShouldTerminate:` and a Tauri menu event
+arrives too late to tell a keypress from a click; every decision it makes lives
+in the pure `quit_guard.rs`. Release is detected by polling the triggering key's
+state, since Q's keyUp never arrives while ⌘ is held. **The red button hides the
+window** instead of quitting, and the window returns on the next activation or
+Dock click; ⌘Q stays guarded while it is hidden. With a kitty keyboard program
+running (Claude Code), ⌘ chords on character keys go to the menu rather than the
+program, so these shortcuts work there too — `⌘C` without a selection stays with
+the program.
 
 ---
 
@@ -420,6 +439,7 @@ re-binds chrome to its viewport.
 | **App reconnect** (daemon stays up) | **Survive** — re-bound to live ptys, scrollback replayed | Restored from daemon memory |
 | **App relaunch** (daemon stays up) | **Survive** — re-bound on connect | Restored |
 | **Daemon restart** | Re-spawned fresh (cold) — live shells died with the daemon | Restored exactly from `state.json` |
+| **Red button / hide** | **Survive** — the app keeps running with its window hidden, and comes back on the next activation or Dock click | Untouched |
 | **Version-mismatch restart** (brew upgrade) | Cold-spawned on the new daemon (same as above). The app toasts the version change (`tarmacd restarted: <from> → <to>`) when a first-visit board has lost terminals; otherwise the existing reconnect toast is what the user sees | Restored from `state.json` via `Msg::Restore` on reconnect |
 
 Daemon-restart PTY re-parenting (true live-shell survival across a daemon

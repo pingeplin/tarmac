@@ -35,6 +35,51 @@ libc = "0.2"
 # transitively via tauri; declared explicitly since we call it directly.
 percent-encoding = "2"
 
+# The ⌘Q guard (#171). tao has no applicationShouldTerminate:, so the only
+# place to intercept a keyboard Quit is the native menu item itself: these are
+# the AppKit pieces that retarget it, read the key state while Q is held, and
+# draw the notice. All five crates are already in Cargo.lock at these versions
+# (tao/muda/wry pull them); declared here because we call them directly, with
+# features listed explicitly so a dependency dropping one is a build error.
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "objc2-core-foundation",
+    "NSResponder",
+    "NSApplication",
+    "NSMenu",
+    "NSMenuItem",
+    "NSEvent",
+    "NSWindow",
+    "NSPanel",
+    "NSGraphics",
+    "NSScreen",
+    "NSView",
+    "NSControl",
+    "NSTextField",
+    "NSText",
+    "NSFont",
+    "NSColor",
+    "NSBox",
+    "NSAccessibilityConstants",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSString",
+    "NSNotification",
+    "NSDictionary",
+    "NSObject",
+    "NSValue",
+    "NSGeometry",
+    "objc2-core-foundation",
+] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = [
+    "std",
+    "CGEventSource",
+    "CGEventTypes",
+    "CGRemoteOperation",
+] }
+
 # Reused read-only from core/ — gives us the Msg enum, encode/decode,
 # frame::read_async/write_async (feature = "async"), repo_color_index, and the
 # channel-path resolvers. Its cargo tests already cover conformance V1–V9.

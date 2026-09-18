@@ -632,6 +632,13 @@ fn spawn_daemon(app: &AppHandle, daemon: &str) -> bool {
     }
 }
 
+/// `app-prefs.json`, beside the socket, for the same reason `tarmacd.log` is:
+/// it is the one path that already separates the dev app from the installed one
+/// (Tauri's `app_config_dir()` resolves from the bundle id, which they share).
+pub(crate) fn app_prefs_path() -> PathBuf {
+    crate::app_prefs::prefs_path(&socket_path())
+}
+
 /// `tarmacd.log`, beside the socket — `.dev/` under `make run`, the per-channel
 /// support dir otherwise.
 fn daemon_log_path() -> PathBuf {

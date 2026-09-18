@@ -6,6 +6,7 @@
 //! the React frontend. All UI (board, terminals via xterm.js, doc cards) lives in
 //! the frontend; the only privileged work down here is the socket + process spawn.
 
+mod app_prefs;
 mod bridge;
 mod card_protocol;
 mod commands;
@@ -13,6 +14,10 @@ mod commands;
 #[cfg(debug_assertions)]
 mod dev_driver;
 mod image_protocol;
+mod quit_guard;
+mod quit_intercept;
+mod quit_notice;
+mod window_lifecycle;
 
 use bridge::Bridge;
 use tauri::Manager;
@@ -31,8 +36,28 @@ fn respond_card_scheme(uri: &str) -> tauri::http::Response<Vec<u8>> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Read before the builder: the menu's check item needs its initial state,
+    // and so does the guard (#171). One read, one source of truth.
+    let warn_before_quit = app_prefs::load(&bridge::app_prefs_path());
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .menu(move |handle| quit_intercept::app_menu(handle, warn_before_quit))
+        .on_menu_event(|app, event| quit_intercept::on_menu_event(app, &event))
+        // The red button hides the window instead of quitting: a hidden Tarmac
+        // still owns live terminals, and ⌘Q stays guarded (#171). `app.exit(0)`
+        // sends no CloseRequested, so the guard's own quit cannot land here.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+                window
+                    .app_handle()
+                    .state::<std::sync::Mutex<window_lifecycle::HiddenByClose>>()
+                    .lock()
+                    .expect("hidden_by_close lock")
+                    .close_requested();
+            }
+        })
         // Async variant: `respond` does a blocking file read, and the sync
         // registration would run the handler inline on the WKWebView
         // scheme-handler thread (the main thread on macOS), stalling the UI
@@ -43,12 +68,17 @@ pub fn run() {
                 responder.respond(respond_card_scheme(&uri));
             });
         })
-        .setup(|app| {
+        .setup(move |app| {
             // The outbound queue: commands push Msgs here, the connection task
             // drains it onto the socket. The task also owns reconnect + dispatch.
             let (tx, rx) = mpsc::unbounded_channel();
             app.manage(Bridge::new(tx));
             bridge::start(app.handle().clone(), rx);
+            // Managed before the retarget: the Quit handler reads the toggle,
+            // and the activation observer reads the hide state.
+            app.manage(quit_intercept::QuitToggle::new(warn_before_quit));
+            app.manage(std::sync::Mutex::new(window_lifecycle::HiddenByClose::default()));
+            quit_intercept::install(app.handle().clone());
             #[cfg(debug_assertions)]
             {
                 app.manage(std::sync::Arc::new(dev_driver::DevDriver::default()));
@@ -81,9 +111,19 @@ pub fn run() {
             dev_driver::dev_ready,
             #[cfg(debug_assertions)]
             dev_driver::dev_reply,
+            #[cfg(debug_assertions)]
+            quit_intercept::dev_quit_guard,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        // `build().run(..)` rather than `run(ctx)` — the same call underneath —
+        // so `RunEvent::Reopen` is visible: a Dock click on an already-active
+        // Tarmac raises no activation notification (#171).
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Reopen { .. } = event {
+                quit_intercept::restore_window(app);
+            }
+        });
 }
 
 // Keep a tiny self-test of the reused codec link (the crate's own conformance

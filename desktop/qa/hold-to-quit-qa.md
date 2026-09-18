@@ -1,0 +1,134 @@
+# Hold ⌘Q to quit — manual QA (spec 2609.0016, #171)
+
+Q1–Q16 and S37 of `.blueprint/specs/2609.0016_hold_to_quit.md`. They discharge
+the thin-wiring exception (`quit_intercept.rs`, the AppKit half of
+`quit_notice.rs`, the `lib.rs` menu/window/run wiring, `app_prefs.rs`'s file IO,
+`bridge.rs::app_prefs_path`, `devDriver.ts`, and the `App.tsx` switcher and
+paste changes) and the pure-presentation exception (the notice's look).
+
+The automated suites cover every decision without a window: `quit_guard.rs`
+(routing, the state table, the labels), `app_prefs.rs`, `window_lifecycle.rs`,
+`quit_notice.rs` (frame and screen choice), `kit/termKeyRoute.test.ts`,
+`kit/boardSwitcher.test.ts` and `kit/devSnapshot.test.ts`. None of them presses a
+key: **synthetic input never reaches AppKit** — `tarmac dev key` dispatches DOM
+events, and neither computer-use nor `cliclick` reaches this window — so every
+row below needs a human at the keyboard.
+
+Run against this worktree's `make run` and its `.dev/` socket only.
+
+**CAUTION: do NOT `pkill tarmacd`.** That kills the user's installed Tarmac and
+every terminal its daemon owns. `make run` pins `TARMAC_SOCKET`,
+`TARMAC_STATE` and `TARMAC_DEV_SOCKET` under `$(ROOT)/.dev/`, so the dev app and
+an installed app coexist. `make kill-daemon` is the correct tool. If an
+installed Tarmac is running there will be two windows, both named `tarmac-app`
+with bundle id `com.tarmac.desktop`; the dev window's title carries
+` · 171-confirm-quit-live-terminal`.
+
+**What to watch.** The `make run` terminal logs one line per call to the Quit
+item (debug builds only):
+
+```
+tarmac: quit-key route=<guard|terminate> type=<NSEventType raw> repeat=<bool> age_ms=<n> press_ms=<n>
+```
+
+`type=10` is a keyDown, `type=1` a mouse-down. Record any two lines with the
+same `press_ms` and `repeat=false`: that is the double delivery S20 guards
+against, for which no path was found. `-` means the field does not apply.
+
+**Build under test:** `make run` from this worktree at 2026-09-18 08:23,
+tree = the #171 implementation (`make test` green, `cargo build` warning-free).
+
+---
+
+## Agent-runnable
+
+- **S36 / D11 (`make qa`)** — with the app up, `make qa` must pass, including
+  `D11 — the ⌘Q guard says whether the Quit item is really retargeted`.
+  - **PASS** (2026-09-18). `19/19 checks passed`, D11 included. A bare
+    `tarmac dev snapshot` reports `quit_guard: {"enabled": true,
+    "retargeted": true}` — the retarget survives into the running app, and the
+    dev command answers on the main thread.
+- **S37 (knockout)** — comment out the `quit_intercept::install(...)` line in
+  `lib.rs` (revert the line afterwards, not the file), let `tauri dev` relaunch,
+  and re-run D11: it must fail with `quit_guard.retargeted` false.
+  - **PASS** (2026-09-18). With the line commented out and the app relaunched,
+    `snapshot --until "quit_guard.retargeted == true" --timeout 2000` exited 1
+    with `{"error":"timeout"}`, and the plain snapshot read
+    `{"enabled": true, "retargeted": false}`. Restoring the line put it back to
+    exit 0. So D11 is not vacuous.
+
+## Needs a human at the keyboard
+
+- **Q1** — the grid: focus in (a) a terminal on a plain shell, (b) a terminal
+  running Claude Code, (c) an HTML card, (d) a markdown card, (e) the board ×
+  input sources ABC, Zhuyin, Japanese Romaji, Japanese Kana. In each cell: a tap
+  shows the notice and the app stays (it fades ~1 s after release, and typing
+  still reaches the card); a ~1 s hold hides the window with the notice up and
+  quits only on release, with no ⌘Q reaching the app behind; no `q` is typed;
+  two taps within 1 s quit.
+  - Result: _pending_
+- **Q2** — window minimized: a tap shows the notice on the main screen, app
+  stays.
+  - Result: _pending_
+- **Q3** — uncheck *Warn Before Quitting (⌘Q)*: `.dev/app-prefs.json` reads
+  `{"warn_before_quit":false}`, `tarmac dev snapshot` shows
+  `quit_guard.enabled` false, and a tap quits at once. After a relaunch the item
+  is still unchecked and the snapshot still false. Re-check it: the file reads
+  `true`.
+  - Result: _pending_
+- **Q4** — a menu click on Quit, and Dock → Quit, each quit immediately
+  (`route=terminate`, `type=1` for the click).
+  - Result: _pending_
+- **Q5** — the red button hides the window and the app keeps running
+  (`tarmac dev snapshot` still answers; a terminal running
+  `while :; do date; sleep 1; done` keeps advancing). ⌘Tab back, a Dock click
+  and Spotlight each restore it with terminals live, also while an earlier tap's
+  notice is still on screen. While hidden, a tap shows the notice on the main
+  screen and a hold quits. File → Close Window hides as well.
+  - Result: _pending_
+- **Q6** — plain shell: ⌘C with a selection copies, ⌘V pastes. Claude Code: its
+  fullscreen `cmd+c` selection copy still works, ⌘V pastes, ⌘H hides the app and
+  ⌘M minimizes (both newly reachable).
+  - Result: _pending_
+- **Q7** — VoiceOver announces "Hold ⌘Q to Quit", also with the window hidden.
+  - Result: _pending_
+- **Q8** — on a `make bundle` build, a hold quits with no permission prompt
+  (`CGEventSourceKeyState` has no documented TCC requirement, and `make run`
+  attributes TCC to the launching terminal).
+  - Result: _pending_
+- **Q9** — Quit remapped to ⌥⌘Q in System Settings → Keyboard → App Shortcuts:
+  ⌥⌘Q is guarded, plain ⌘Q does nothing, the notice reads "Hold ⌥⌘Q to Quit",
+  and both hold with the switcher open and with Claude Code focused.
+  - Result: _pending_
+- **Q10** — keyboard menu navigation (⌃F2 → Quit → Return) and a VoiceOver press
+  on Quit each quit immediately, including within 1 s of a guarded tap. Record
+  each line's `route`.
+  - Result: _pending_
+- **Q11** — one tap and one hold each under AZERTY, Dvorak, "Dvorak – QWERTY ⌘",
+  Cangjie, Korean 2-Set, and one of Hebrew/Greek/Russian; Caps Lock on; ⌘Q
+  during a Zhuyin or Japanese composition; Zhuyin with the switcher open.
+  - Result: _pending_
+- **Q12 (freshness)** — record `age_ms` for 5 taps on an idle page. Then, in Web
+  Inspector, run
+  `setTimeout(() => { const t = performance.now(); while (performance.now() - t < 1000); }, 3000)`
+  and tap ⌘Q during the loop, 3 times. Pass: every busy age ≤ 2000
+  (`FRESHNESS_BOUND_MS`) and each busy tap still shows the notice.
+  - Result: _pending_
+- **Q13 (switcher)** — with a terminal focused (plain shell, then Claude Code),
+  open ⌘K: ⌘V pastes nothing into the terminal; letters filter; ⌘E / ⌘⌫ / ⌘1–9 /
+  ⌘N / Esc behave as before; a ⌘Q tap shows the notice; ⌘H hides the app; ⌘A, ⌘Z
+  and ⌘X send nothing to the PTY (`scrollback_tail` unchanged) — record what
+  else they do.
+  - Result: _pending_
+- **Q14** — ⌘W typed inside an HTML card's iframe (`App.tsx` never sees it):
+  expected to hide the window, app still running.
+  - Result: _pending_
+- **Q15** — run S37's knockout, then restore the line.
+  - **Done above** (agent-runnable), no keyboard needed.
+- **Q16 (notice re-show)** — under ABC with a plain-shell terminal focused, tap
+  ⌘Q, then tap again ~1.1–1.2 s after the first press, while the notice still
+  lingers or fades (a second press within 1 s quits; if it does, relaunch and
+  retry). The notice returns to full opacity, stays up until ~1 s after the
+  second release, then fades — it never vanishes early. Record the time from the
+  second release to its disappearance (expected ~1.2 s).
+  - Result: _pending_

@@ -5,8 +5,12 @@
 // app, driven entirely through `tarmac dev`. They are not part of `make test`
 // and not on CI, because they need a window.
 //
-// D1, D2, D8, D9(a), D9(b) and D10(a) need only `snapshot`, `zoom` and `focus`.
-// D3-D7, D9(c) and D10(b) drive `resize`, `type` and `key` as well.
+// D1, D2, D8, D9(a), D9(b), D10(a) and D11 need only `snapshot`, `zoom` and
+// `focus`. D3-D7, D9(c) and D10(b) drive `resize`, `type` and `key` as well.
+//
+// D11 (spec 2609.0016, issue #171) is the only automated check on the ⌘Q guard's
+// native retarget: replacing the app menu silently drops it, and no unit test can
+// read a live NSMenu.
 //
 // Every scenario that types mints its OWN sentinel from a per-run nonce, and the
 // run asserts they are all distinct: `scrollback_tail` spans 40 lines, so an
@@ -411,6 +415,18 @@ async function run() {
     // nothing to do with the bug under test.
     dev("resize", term, "600x400");
     waitFor(term, `cards[${term}].board_rect.w ~= 600`);
+  });
+
+  console.log("\nD11 — the ⌘Q guard says whether the Quit item is really retargeted");
+  check("quit_guard reports a retargeted Quit item and a boolean toggle", () => {
+    const r = dev("snapshot", "--until", "quit_guard.retargeted == true", "--timeout", "2000");
+    eq(r.code, 0, "exit code");
+    const { quit_guard } = json(r);
+    // The toggle's VALUE is the user's, so only its type can be asserted — but a
+    // backend that answered nothing would report it as null rather than a bool.
+    if (typeof quit_guard?.enabled !== "boolean") {
+      throw new Error(`quit_guard.enabled is ${JSON.stringify(quit_guard?.enabled)}, not a boolean`);
+    }
   });
 
   console.log(`\n${checks - failures.length}/${checks} checks passed`);

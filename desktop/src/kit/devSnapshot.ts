@@ -74,6 +74,9 @@ export interface DevSnapshotInput {
     classes: string[];
     selectionType: DevSelectionType;
   };
+  /** The hold-⌘Q guard's own facts (#171), or null when the backend did not
+   *  answer — a release build, or one without the command. */
+  quitGuard: { retargeted: boolean; enabled: boolean } | null;
 }
 
 export interface DevSnapshotTerm {
@@ -107,6 +110,7 @@ export interface DevSnapshot {
     classes: string[];
     selection_type: DevSelectionType;
   };
+  quit_guard: { retargeted: boolean; enabled: boolean } | null;
 }
 
 const TERM_PREFIX = "term:";
@@ -197,5 +201,6 @@ export function buildSnapshot(input: DevSnapshotInput): DevSnapshot {
       classes: input.activeElement.classes,
       selection_type: input.activeElement.selectionType,
     },
+    quit_guard: input.quitGuard,
   };
 }
