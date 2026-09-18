@@ -48,7 +48,7 @@ and S37's knockout was re-run against it. **Not yet re-checked by hand:** one ta
 and one hold on the refactored build would re-earn the keyboard rows above.
 
 **#179 moved the release poll to a main-run-loop timer**
-(`refactor/179-quit-poll-run-loop-timer` @ `37b4c3b`, 2026-09-18). The detached
+(`refactor/179-quit-poll-run-loop-timer` @ `779f9b1`, 2026-09-18). The detached
 polling thread is now a repeating `NSTimer` in `NSRunLoopCommonModes`, which
 `StopPolling` invalidates synchronously. That changes how release is detected,
 so every row that depends on a real hold or release is owed again. What was
@@ -96,8 +96,10 @@ PASS marks on those rows are for the #171 build only.
     `tarmac dev snapshot` reports `quit_guard: {"enabled": true,
     "retargeted": true}` — the retarget survives into the running app, and the
     dev command answers on the main thread.
-  - **PASS on #179** (2026-09-18, `37b4c3b`). `19/19 checks passed`, D11
-    included, and the snapshot read `{"enabled": true, "retargeted": true}`.
+  - **PASS on #179** (2026-09-18, `37b4c3b`, then again on `779f9b1`).
+    `19/19 checks passed`, D11 included, and the snapshot read
+    `{"enabled": true, "retargeted": true}`. The `779f9b1` run's output is in
+    the main checkout at `.dev/nstimer-179/qa-779f9b1.log`.
 - **S37 (knockout)** — comment out the `quit_intercept::install(...)` line in
   `lib.rs` (revert the line afterwards, not the file), let `tauri dev` relaunch,
   and re-run D11: it must fail with `quit_guard.retargeted` false.
@@ -106,9 +108,11 @@ PASS marks on those rows are for the #171 build only.
     with `{"error":"timeout"}`, and the plain snapshot read
     `{"enabled": true, "retargeted": false}`. Restoring the line put it back to
     exit 0. So D11 is not vacuous.
-  - **PASS on #179** (2026-09-18, `37b4c3b`). Knocked out, the same
-    `--until` exited 1 with `retargeted: false`, and `make qa` failed D11 with
-    `exit code: expected 0, got 1`. With the line restored it exited 0.
+  - **PASS on #179** (2026-09-18, `37b4c3b`, then again on `779f9b1`).
+    Knocked out, the same `--until` exited 1 with `retargeted: false`, and
+    `make qa` failed D11 with `exit code: expected 0, got 1`. With the line
+    restored it exited 0 and the tree was clean again. The `779f9b1` run's
+    output is in the main checkout at `.dev/nstimer-179/s37-knockout-779f9b1.log`.
 
 ## Needs a human at the keyboard
 
