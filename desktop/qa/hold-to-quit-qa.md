@@ -81,10 +81,19 @@ re-earned without a keyboard:
     and `[StopPolling, Exit]` on fire 13. The app then exited through
     `app.exit(0)` called from the timer callback.
 
-**Owed by hand on this build:** Q1, Q11, Q12 and Q16, the rows #179 names. At
-minimum, Q1's plain-shell × ABC cell needs a tap, a ~1 s hold and two taps
-within 1 s. That same cell also pays the `/simplify` debt above. Until then, the
-PASS marks on those rows are for the #171 build only.
+**Hand-run on this build (2026-09-19).** Q1, Q11, Q12 and Q16 are the rows
+#179 names.
+- **Build.** Both `make run` sessions ran `391b6ef`. The later `dd1bd38` only
+  turns `Confirming` into a unit variant; it is behaviour-identical, and the
+  suite is green on it.
+- **Evidence.** The `quit-key` lines are in the main checkout's
+  `.dev/nstimer-179/make-run-handqa.log`. "Line n" below means the n-th
+  `quit-key` line in that file.
+- **Two gaps.** The operator reported every row as passing. The log backs Q1,
+  Q12's idle half and Q16. It does not yet back Q11 or Q12's busy half (see
+  those rows).
+
+The Q1 cell (plain shell × ABC) also pays the `/simplify` debt above.
 
 ---
 
@@ -136,7 +145,12 @@ PASS marks on those rows are for the #171 build only.
     after the fix). **Re-checked by hand: centred.** The rest of the grid is
     still pending — this row was run in one cell, a plain-shell terminal under
     ABC.
-  - **#179: owed** on the timer build (see the #179 note at the top).
+  - **#179: PASS** (2026-09-19, hand-run, plain shell × ABC).
+    - Line 1 is a tap (`route=guard`, `age_ms=70`), and the app stayed up.
+    - Line 2 is a hold (`age_ms=30`). The app exited after it, ending the first
+      session.
+    - Lines 18–19 are two taps 163 ms apart. The app exited, ending the second
+      session.
 - **Q2** — window minimized: a tap shows the notice on the main screen, app
   stays.
   - **PASS** (2026-09-18, hand-run).
@@ -195,7 +209,11 @@ PASS marks on those rows are for the #171 build only.
   Cangjie, Korean 2-Set, and one of Hebrew/Greek/Russian; Caps Lock on; ⌘Q
   during a Zhuyin or Japanese composition; Zhuyin with the switcher open.
   - **PASS** (2026-09-18, hand-run).
-  - **#179: owed** on the timer build.
+  - **#179: reported PASS, not yet in the log.** The operator reported this
+    row as passing. But every hold quits the app, and the second session
+    (lines 3–19) never exited before its final double tap. So no Q11 hold is
+    in this build's log. Still to confirm: which app the row was run
+    against. The installed 0.13.0 has the old thread poller and does not count.
 - **Q12 (freshness)** — record `age_ms` for 5 taps on an idle page. Then, in Web
   Inspector, run
   `setTimeout(() => { const t = performance.now(); while (performance.now() - t < 1000); }, 3000)`
@@ -216,7 +234,13 @@ PASS marks on those rows are for the #171 build only.
     `repeat=true` line appeared** during a ~1 s hold, which is consistent with
     Key Repeat being off on this Mac. Worth re-checking on a machine with Key
     Repeat on.
-  - **#179: owed** on the timer build.
+  - **#179: idle half PASS; busy half reported, not yet in the log.**
+    - Idle: lines 6–10 are five taps 1.7–2.2 s apart, all `route=guard`,
+      with `age_ms` 9, 11, 14, 17, 11.
+    - Busy: the operator reported it as passing. But no press in the log
+      carries the delay a frozen page adds (the highest age in the second
+      session is 59 ms; #171's busy taps reached 268 ms). Still to confirm,
+      as for Q11.
 - **Q13 (switcher)** — with a terminal focused (plain shell, then Claude Code),
   open ⌘K: ⌘V pastes nothing into the terminal; letters filter; ⌘E / ⌘⌫ / ⌘1–9 /
   ⌘N / Esc behave as before; a ⌘Q tap shows the notice; ⌘H hides the app; ⌘A, ⌘Z
@@ -235,4 +259,9 @@ PASS marks on those rows are for the #171 build only.
   second release, then fades — it never vanishes early. Record the time from the
   second release to its disappearance (expected ~1.2 s).
   - **PASS** (2026-09-18, hand-run).
-  - **#179: owed** on the timer build.
+  - **#179: PASS** (2026-09-19, hand-run).
+    - Lines 13–17 are taps 1.2–1.4 s apart, all `route=guard`.
+    - The app stayed up throughout, so none of them landed inside the 1 s
+      second-tap window.
+    - The operator saw the notice return to full opacity each time.
+    - The time from release to disappearance was not recorded.
