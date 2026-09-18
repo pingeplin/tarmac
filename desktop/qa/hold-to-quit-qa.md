@@ -38,6 +38,14 @@ against, for which no path was found. `-` means the field does not apply.
 **Build under test:** `make run` from this worktree at 2026-09-18 08:23,
 tree = the #171 implementation (`make test` green, `cargo build` warning-free).
 
+**After these rows were run**, a `/simplify` pass landed a behaviour-preserving
+refactor of the same wiring (the notice text is computed at the call site, the
+retarget check reads selectors instead of comparing targets, `HiddenByClose`
+owns its own atomic, the debug log line is built from fewer arguments). The log
+line's format is unchanged, `make test` and `make qa` are green on the refactor,
+and S37's knockout was re-run against it. **Not yet re-checked by hand:** one tap
+and one hold on the refactored build would re-earn the keyboard rows above.
+
 ---
 
 ## Agent-runnable

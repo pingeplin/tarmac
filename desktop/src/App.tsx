@@ -1407,7 +1407,7 @@ export default function App() {
         // uncancelled so AppKit's menu — not a character comparison here — decides
         // what the Quit shortcut is, whatever the user remapped it to (#171).
         // ⌘W is handled above (before this block) and never reaches here.
-        if (switcherCancelsUnhandledKey({ meta: e.metaKey })) {
+        if (switcherCancelsUnhandledKey(e.metaKey)) {
           e.preventDefault();
         }
         return;

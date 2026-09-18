@@ -146,8 +146,8 @@ export function liveness(
  * is. The switcher still stops propagation either way, so nothing reaches the
  * focused terminal.
  */
-export function switcherCancelsUnhandledKey(mods: { meta: boolean }): boolean {
-  return !mods.meta;
+export function switcherCancelsUnhandledKey(meta: boolean): boolean {
+  return !meta;
 }
 
 /**

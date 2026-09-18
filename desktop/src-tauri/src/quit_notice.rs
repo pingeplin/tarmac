@@ -7,8 +7,8 @@
 //! says nothing about a miniaturized one), so both fall back to the main one.
 
 /// Chromium's panel size (`confirm_quit_panel_controller.mm`).
-pub const NOTICE_W: f64 = 350.0;
-pub const NOTICE_H: f64 = 70.0;
+const NOTICE_W: f64 = 350.0;
+const NOTICE_H: f64 = 70.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NoticeRect {

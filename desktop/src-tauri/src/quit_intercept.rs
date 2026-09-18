@@ -21,7 +21,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use objc2::rc::Retained;
@@ -145,43 +145,40 @@ impl QuitTarget {
             is_key_down,
             modifiers: event.as_ref().map_or(0, |e| e.modifierFlags().0 as u64),
             item_mask,
-            item_key_equivalent: key_equivalent.clone(),
+            item_key_equivalent: key_equivalent,
             age_ms: quit_guard::age_ms(now_ms(), press_ms),
         };
         let enabled = self.ivars().app.state::<QuitToggle>().get();
         let route = self.ivars().guard.borrow().route(&ev, enabled);
-        log_quit_key(&route, event.as_ref().map(|e| e.r#type().0), is_key_down, is_repeat, &ev, press_ms);
+        log_quit_key(&route, event.as_ref().map(|e| e.r#type().0), is_repeat, &ev, press_ms);
 
         match route {
             Route::TerminateNow => ns_app.terminate(None),
             Route::Guard => {
                 let effects = self.ivars().guard.borrow_mut().on_quit_key(press_ms, key_code, is_repeat);
-                self.apply(mtm, effects, Some((&key_equivalent, item_mask)));
+                let notice = quit_guard::notice_text(&ev.item_key_equivalent, ev.item_mask);
+                self.apply(mtm, effects, Some(&notice));
             }
         }
     }
 
     fn on_poll(&self, sampled_ms: u64, key_down: bool) {
         let effects = self.ivars().guard.borrow_mut().on_poll(sampled_ms, key_down);
-        if !effects.is_empty() {
-            // No shortcut to name: only a chord can raise `ShowHud`.
-            self.apply(MainThreadMarker::from(self), effects, None);
-        }
+        // No notice text to give: only a chord can raise `ShowHud`.
+        self.apply(MainThreadMarker::from(self), effects, None);
     }
 
-    fn apply(&self, mtm: MainThreadMarker, effects: Vec<Effect>, shortcut: Option<(&str, u64)>) {
+    fn apply(&self, mtm: MainThreadMarker, effects: Vec<Effect>, notice: Option<&str>) {
         for effect in effects {
             match effect {
                 Effect::ShowHud => {
-                    if let Some((key_equivalent, mask)) = shortcut {
-                        self.show_notice(mtm, key_equivalent, mask);
+                    if let Some(text) = notice {
+                        self.show_notice(mtm, text);
                     }
                 }
                 Effect::LingerThenFadeHud => self.linger_then_fade(),
                 Effect::HideWindows => {
-                    // Also cancels a pending linger or fade: past the threshold
-                    // the notice stays up over the hidden window until the app
-                    // exits, and a second tap inherits the first tap's notice.
+                    // The fade cancellation `Effect::HideWindows` promises.
                     self.ivars().hud_gen.set(self.ivars().hud_gen.get() + 1);
                     if let Some(window) = self.ivars().app.get_webview_window("main") {
                         let _ = window.hide();
@@ -196,15 +193,11 @@ impl QuitTarget {
         }
     }
 
-    fn show_notice(&self, mtm: MainThreadMarker, key_equivalent: &str, mask: u64) {
+    fn show_notice(&self, mtm: MainThreadMarker, text: &str) {
         self.ivars().hud_gen.set(self.ivars().hud_gen.get() + 1);
         let mut slot = self.ivars().notice.borrow_mut();
         let notice = slot.get_or_insert_with(|| Notice::new(mtm));
-        notice.show(
-            mtm,
-            &quit_guard::notice_text(key_equivalent, mask),
-            notice_screen(mtm, &self.ivars().app),
-        );
+        notice.show(mtm, text, notice_screen(mtm, &self.ivars().app));
     }
 
     /// Chromium's ending: the notice sits for a second, then fades out. It is
@@ -318,24 +311,26 @@ fn now_ms() -> u64 {
 fn log_quit_key(
     route: &Route,
     event_type: Option<usize>,
-    is_key_down: bool,
     is_repeat: bool,
     ev: &QuitEvent,
     press_ms: u64,
 ) {
     #[cfg(debug_assertions)]
     {
-        let show = |v: String, present: bool| if present { v } else { "-".to_string() };
+        // `-` for a field this event cannot carry: keyCode and isARepeat are
+        // only valid on a key event, and there is no event at all behind a
+        // VoiceOver press.
+        let show = |v: Option<String>| v.unwrap_or_else(|| "-".to_string());
         eprintln!(
             "tarmac: quit-key route={} type={} repeat={} age_ms={} press_ms={}",
             match route {
                 Route::Guard => "guard",
                 Route::TerminateNow => "terminate",
             },
-            show(event_type.unwrap_or_default().to_string(), event_type.is_some()),
-            show(is_repeat.to_string(), is_key_down),
-            show(ev.age_ms.to_string(), event_type.is_some()),
-            show(press_ms.to_string(), event_type.is_some()),
+            show(event_type.map(|t| t.to_string())),
+            show(ev.is_key_down.then(|| is_repeat.to_string())),
+            show(event_type.map(|_| ev.age_ms.to_string())),
+            show(event_type.map(|_| press_ms.to_string())),
         );
     }
 }
@@ -392,12 +387,7 @@ fn warn_item(app: &AppHandle) -> Option<CheckMenuItem<Wry>> {
 /// click. Both can fire for one click on an inactive app, so the restore is
 /// handed out once (`window_lifecycle.rs`).
 pub fn restore_window(app: &AppHandle) {
-    let restore = app
-        .state::<Mutex<HiddenByClose>>()
-        .lock()
-        .expect("hidden_by_close lock")
-        .take_restore();
-    if !restore {
+    if !app.state::<HiddenByClose>().take_restore() {
         return;
     }
     if let Some(window) = app.get_webview_window("main") {
@@ -452,25 +442,24 @@ fn retarget(menu: &NSMenu, target: &QuitTarget) -> usize {
 }
 
 /// Whether the guard still owns Quit. `make qa`'s D11 asserts this, because
-/// anything that replaces the app menu silently drops the retarget.
+/// anything that replaces the app menu silently drops the retarget. Only
+/// `QuitTarget` defines `tarmacQuit:`, so the selector names our item — but the
+/// target is held WEAKLY, so a dropped `TARGET` leaves the selector in place on
+/// a nil target and AppKit quietly disables the item. Both have to hold.
 #[cfg(debug_assertions)]
 fn is_retargeted(mtm: MainThreadMarker) -> bool {
-    fn walk(menu: &NSMenu, ours: Option<&AnyObject>) -> (usize, usize) {
+    fn walk(menu: &NSMenu) -> (usize, usize) {
         let (mut mine, mut native) = (0, 0);
         for index in 0..menu.numberOfItems() {
             let Some(item) = menu.itemAtIndex(index) else { continue };
             match item.action() {
                 Some(action) if action == sel!(tarmacQuit:) => {
-                    let same = match (item.target(), ours) {
-                        (Some(target), Some(ours)) => std::ptr::eq(&*target as *const _, ours as *const _),
-                        _ => false,
-                    };
-                    mine += usize::from(same);
+                    mine += usize::from(item.target().is_some());
                 }
                 Some(action) if action == sel!(terminate:) => native += 1,
                 _ => {
                     if let Some(submenu) = item.submenu() {
-                        let (m, n) = walk(&submenu, ours);
+                        let (m, n) = walk(&submenu);
                         mine += m;
                         native += n;
                     }
@@ -479,12 +468,8 @@ fn is_retargeted(mtm: MainThreadMarker) -> bool {
         }
         (mine, native)
     }
-    let ours = TARGET.with(|cell| {
-        cell.borrow().as_ref().map(|t| Retained::as_ptr(t) as *const AnyObject)
-    });
-    let Some(ours) = ours else { return false };
     let Some(menu) = NSApplication::sharedApplication(mtm).mainMenu() else { return false };
-    let (mine, native) = walk(&menu, Some(unsafe { &*ours }));
+    let (mine, native) = walk(&menu);
     mine > 0 && native == 0
 }
 

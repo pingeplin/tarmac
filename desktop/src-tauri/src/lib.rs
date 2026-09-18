@@ -50,12 +50,7 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
-                window
-                    .app_handle()
-                    .state::<std::sync::Mutex<window_lifecycle::HiddenByClose>>()
-                    .lock()
-                    .expect("hidden_by_close lock")
-                    .close_requested();
+                window.app_handle().state::<window_lifecycle::HiddenByClose>().close_requested();
             }
         })
         // Async variant: `respond` does a blocking file read, and the sync
@@ -77,7 +72,7 @@ pub fn run() {
             // Managed before the retarget: the Quit handler reads the toggle,
             // and the activation observer reads the hide state.
             app.manage(quit_intercept::QuitToggle::new(warn_before_quit));
-            app.manage(std::sync::Mutex::new(window_lifecycle::HiddenByClose::default()));
+            app.manage(window_lifecycle::HiddenByClose::default());
             quit_intercept::install(app.handle().clone());
             #[cfg(debug_assertions)]
             {

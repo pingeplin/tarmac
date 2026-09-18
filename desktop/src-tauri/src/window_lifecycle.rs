@@ -6,19 +6,23 @@
 //! restore is handed out once per close, not once per trigger. The guard's own
 //! `HideWindows` never sets it: a hidden-then-quitting window must stay hidden.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Owns its own synchronisation, so the window event and the two restore
+/// triggers share it without either call site spelling a lock.
 #[derive(Default)]
 pub struct HiddenByClose {
-    hidden: bool,
+    hidden: AtomicBool,
 }
 
 impl HiddenByClose {
-    pub fn close_requested(&mut self) {
-        self.hidden = true;
+    pub fn close_requested(&self) {
+        self.hidden.store(true, Ordering::SeqCst);
     }
 
     /// True once after a close, then false until the next one.
-    pub fn take_restore(&mut self) -> bool {
-        std::mem::take(&mut self.hidden)
+    pub fn take_restore(&self) -> bool {
+        self.hidden.swap(false, Ordering::SeqCst)
     }
 }
 
@@ -29,7 +33,7 @@ mod tests {
     /// S27 — activation and `Reopen` both fire for one Dock click.
     #[test]
     fn a_close_is_worth_exactly_one_restore() {
-        let mut state = HiddenByClose::default();
+        let state = HiddenByClose::default();
         state.close_requested();
         assert!(state.take_restore());
         assert!(!state.take_restore());

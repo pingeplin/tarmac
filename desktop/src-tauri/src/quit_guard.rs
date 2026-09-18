@@ -24,10 +24,10 @@ pub const LINGER_MS: u64 = 1_000;
 pub const FADE_MS: u64 = 200;
 
 // NSEventModifierFlags raw bits, restated so this module needs no AppKit.
-pub const SHIFT: u64 = 1 << 17;
-pub const CONTROL: u64 = 1 << 18;
-pub const OPTION: u64 = 1 << 19;
-pub const COMMAND: u64 = 1 << 20;
+const SHIFT: u64 = 1 << 17;
+const CONTROL: u64 = 1 << 18;
+const OPTION: u64 = 1 << 19;
+const COMMAND: u64 = 1 << 20;
 
 /// The only bits a shortcut match may consider. Caps Lock, Fn, NumericPad and
 /// Help ride along on a perfectly ordinary ⌘Q and must never break it.
@@ -36,8 +36,8 @@ const MATCHED: u64 = SHIFT | CONTROL | OPTION | COMMAND;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Phase {
     Idle { last_start_ms: Option<u64> },
-    Showing { started_ms: u64, key_code: u16 },
-    Confirming { since_ms: u64, key_code: u16 },
+    Showing { started_ms: u64 },
+    Confirming { since_ms: u64 },
 }
 
 #[derive(Debug, PartialEq)]
@@ -50,6 +50,9 @@ pub enum Route {
 pub enum Effect {
     ShowHud,
     LingerThenFadeHud,
+    /// Hides the cockpit AND cancels any pending linger or fade: past the
+    /// threshold the notice stays up over the hidden window until the app
+    /// exits, and a second tap inherits the first tap's notice.
     HideWindows,
     StartPolling(u16),
     StopPolling,
@@ -115,17 +118,18 @@ impl QuitGuard {
                     .and_then(|start| press_ms.checked_sub(start))
                     .is_some_and(|since| since < SECOND_TAP_MS);
                 if recent {
-                    self.phase = Phase::Confirming { since_ms: press_ms, key_code };
+                    self.phase = Phase::Confirming { since_ms: press_ms };
                     vec![Effect::HideWindows, Effect::StartPolling(key_code)]
                 } else {
-                    self.phase = Phase::Showing { started_ms: press_ms, key_code };
+                    self.phase = Phase::Showing { started_ms: press_ms };
                     vec![Effect::ShowHud, Effect::StartPolling(key_code)]
                 }
             }
-            // Re-pressed before a poll saw the release: a second tap, and the
-            // poller is already running on the first chord's key.
-            Phase::Showing { key_code: polling, .. } => {
-                self.phase = Phase::Confirming { since_ms: press_ms, key_code: polling };
+            // Re-pressed before a poll saw the release: a second tap. No
+            // `StartPolling` — the poller is already running on the first
+            // chord's key, which is the key still physically down.
+            Phase::Showing { .. } => {
+                self.phase = Phase::Confirming { since_ms: press_ms };
                 vec![Effect::HideWindows]
             }
             Phase::Confirming { .. } => Vec::new(),
@@ -138,7 +142,7 @@ impl QuitGuard {
     pub fn on_poll(&mut self, sampled_ms: u64, key_down: bool) -> Vec<Effect> {
         match self.phase {
             Phase::Idle { .. } => Vec::new(),
-            Phase::Showing { started_ms, key_code } => {
+            Phase::Showing { started_ms } => {
                 if sampled_ms < started_ms {
                     return Vec::new();
                 }
@@ -149,10 +153,10 @@ impl QuitGuard {
                 if sampled_ms - started_ms < HOLD_MS {
                     return Vec::new();
                 }
-                self.phase = Phase::Confirming { since_ms: sampled_ms, key_code };
+                self.phase = Phase::Confirming { since_ms: sampled_ms };
                 vec![Effect::HideWindows]
             }
-            Phase::Confirming { since_ms, .. } => {
+            Phase::Confirming { since_ms } => {
                 if key_down || sampled_ms < since_ms {
                     return Vec::new();
                 }
@@ -411,11 +415,11 @@ mod tests {
     fn a_first_tap_shows_the_notice_and_polls_the_pressed_key() {
         let mut guard = QuitGuard::default();
         assert_eq!(guard.on_quit_key(10_000, 12, false), vec![Effect::ShowHud, Effect::StartPolling(12)]);
-        assert_eq!(*guard.phase(), Phase::Showing { started_ms: 10_000, key_code: 12 });
+        assert_eq!(*guard.phase(), Phase::Showing { started_ms: 10_000 });
 
         let mut remapped = QuitGuard::default();
         assert_eq!(remapped.on_quit_key(10_000, 13, false), vec![Effect::ShowHud, Effect::StartPolling(13)]);
-        assert_eq!(*remapped.phase(), Phase::Showing { started_ms: 10_000, key_code: 13 });
+        assert_eq!(*remapped.phase(), Phase::Showing { started_ms: 10_000 });
     }
 
     /// S11 — released before the threshold: the notice lingers, nothing quits.
@@ -423,7 +427,7 @@ mod tests {
     fn a_release_before_the_hold_threshold_is_a_tap() {
         let mut guard = showing(10_000);
         assert_eq!(guard.on_poll(10_499, true), vec![]);
-        assert_eq!(*guard.phase(), Phase::Showing { started_ms: 10_000, key_code: 12 });
+        assert_eq!(*guard.phase(), Phase::Showing { started_ms: 10_000 });
 
         assert_eq!(
             guard.on_poll(10_120, false),
@@ -438,10 +442,10 @@ mod tests {
     fn a_hold_hides_the_windows_and_exits_on_release() {
         let mut guard = showing(10_000);
         assert_eq!(guard.on_poll(10_500, true), vec![Effect::HideWindows]);
-        assert_eq!(*guard.phase(), Phase::Confirming { since_ms: 10_500, key_code: 12 });
+        assert_eq!(*guard.phase(), Phase::Confirming { since_ms: 10_500 });
 
         assert_eq!(guard.on_poll(10_550, true), vec![]);
-        assert_eq!(*guard.phase(), Phase::Confirming { since_ms: 10_500, key_code: 12 });
+        assert_eq!(*guard.phase(), Phase::Confirming { since_ms: 10_500 });
 
         assert_eq!(guard.on_poll(10_600, false), vec![Effect::StopPolling, Effect::Exit]);
         assert_eq!(*guard.phase(), Phase::Idle { last_start_ms: None });
@@ -460,7 +464,7 @@ mod tests {
 
         let mut held = showing(10_000);
         assert_eq!(held.on_poll(10_700, true), vec![Effect::HideWindows]);
-        assert_eq!(*held.phase(), Phase::Confirming { since_ms: 10_700, key_code: 12 });
+        assert_eq!(*held.phase(), Phase::Confirming { since_ms: 10_700 });
     }
 
     /// S14 — Chromium's second tap, measured from the first PRESS.
@@ -471,7 +475,7 @@ mod tests {
             guard.on_quit_key(950, 12, false),
             vec![Effect::HideWindows, Effect::StartPolling(12)]
         );
-        assert_eq!(*guard.phase(), Phase::Confirming { since_ms: 950, key_code: 12 });
+        assert_eq!(*guard.phase(), Phase::Confirming { since_ms: 950 });
 
         assert_eq!(guard.on_poll(1_000, false), vec![Effect::StopPolling, Effect::Exit]);
         assert_eq!(*guard.phase(), Phase::Idle { last_start_ms: None });
@@ -488,7 +492,7 @@ mod tests {
                 vec![Effect::ShowHud, Effect::StartPolling(12)],
                 "press at {press}"
             );
-            assert_eq!(*guard.phase(), Phase::Showing { started_ms: press, key_code: 12 });
+            assert_eq!(*guard.phase(), Phase::Showing { started_ms: press });
         }
 
         let mut guard = tapped(0, 400);
@@ -496,7 +500,7 @@ mod tests {
             guard.on_quit_key(999, 12, false),
             vec![Effect::HideWindows, Effect::StartPolling(12)]
         );
-        assert_eq!(*guard.phase(), Phase::Confirming { since_ms: 999, key_code: 12 });
+        assert_eq!(*guard.phase(), Phase::Confirming { since_ms: 999 });
     }
 
     /// S21 — a press older than the last start (a clock that went backwards,
@@ -505,7 +509,7 @@ mod tests {
     fn a_press_older_than_the_last_start_is_not_a_second_tap() {
         let mut guard = tapped(1_000, 1_100);
         assert_eq!(guard.on_quit_key(900, 12, false), vec![Effect::ShowHud, Effect::StartPolling(12)]);
-        assert_eq!(*guard.phase(), Phase::Showing { started_ms: 900, key_code: 12 });
+        assert_eq!(*guard.phase(), Phase::Showing { started_ms: 900 });
     }
 
     /// S16 — Q was re-pressed before a poll saw the release, so this is a
@@ -515,7 +519,7 @@ mod tests {
     fn a_re_press_while_the_notice_shows_commits_without_a_second_poller() {
         let mut guard = showing(10_000);
         assert_eq!(guard.on_quit_key(10_300, 13, false), vec![Effect::HideWindows]);
-        assert_eq!(*guard.phase(), Phase::Confirming { since_ms: 10_300, key_code: 12 });
+        assert_eq!(*guard.phase(), Phase::Confirming { since_ms: 10_300 });
     }
 
     /// S17 — once committed, another chord changes nothing.
@@ -524,7 +528,7 @@ mod tests {
         let mut guard = showing(10_000);
         guard.on_poll(10_500, true);
         assert_eq!(guard.on_quit_key(10_700, 12, false), vec![]);
-        assert_eq!(*guard.phase(), Phase::Confirming { since_ms: 10_500, key_code: 12 });
+        assert_eq!(*guard.phase(), Phase::Confirming { since_ms: 10_500 });
     }
 
     /// S18 — auto-repeat reaches the retargeted item too, and must never
@@ -537,21 +541,23 @@ mod tests {
 
         let mut notice = showing(10_000);
         assert_eq!(notice.on_quit_key(10_100, 12, true), vec![]);
-        assert_eq!(*notice.phase(), Phase::Showing { started_ms: 10_000, key_code: 12 });
+        assert_eq!(*notice.phase(), Phase::Showing { started_ms: 10_000 });
 
         let mut confirming = showing(10_000);
         confirming.on_poll(10_500, true);
         assert_eq!(confirming.on_quit_key(10_560, 12, true), vec![]);
-        assert_eq!(*confirming.phase(), Phase::Confirming { since_ms: 10_500, key_code: 12 });
+        assert_eq!(*confirming.phase(), Phase::Confirming { since_ms: 10_500 });
     }
 
-    /// S18 — if key state is unreadable the first sample reads "up", so a hold
-    /// cannot quit. A real second tap still can.
+    /// S18 — if key state is unreadable the first sample reads "up", so the
+    /// hold ends as a tap and the auto-repeats that follow cannot confirm it.
+    /// A real second tap still can.
     #[test]
-    fn a_hold_whose_first_poll_reads_up_cannot_quit_but_a_second_tap_can() {
+    fn a_hold_whose_first_poll_reads_up_ends_as_a_tap_that_repeats_cannot_confirm() {
         let mut guard = tapped(0, 50);
+        // Inside the second-tap window, so `is_repeat` is the only thing
+        // standing between this press and Confirming.
         assert_eq!(guard.on_quit_key(500, 12, true), vec![]);
-        assert_eq!(guard.on_quit_key(1_500, 12, true), vec![]);
         assert_eq!(*guard.phase(), Phase::Idle { last_start_ms: Some(0) });
 
         let mut second = tapped(0, 50);
@@ -560,7 +566,7 @@ mod tests {
             second.on_quit_key(900, 12, false),
             vec![Effect::HideWindows, Effect::StartPolling(12)]
         );
-        assert_eq!(*second.phase(), Phase::Confirming { since_ms: 900, key_code: 12 });
+        assert_eq!(*second.phase(), Phase::Confirming { since_ms: 900 });
     }
 
     /// S19 — a sample queued before `StopPolling` can land after the next
@@ -578,12 +584,12 @@ mod tests {
 
         let mut notice = showing(950);
         assert_eq!(notice.on_poll(450, false), vec![]);
-        assert_eq!(*notice.phase(), Phase::Showing { started_ms: 950, key_code: 12 });
+        assert_eq!(*notice.phase(), Phase::Showing { started_ms: 950 });
 
         let mut second_tap = tapped(0, 400);
         second_tap.on_quit_key(950, 12, false);
         assert_eq!(second_tap.on_poll(900, false), vec![]);
-        assert_eq!(*second_tap.phase(), Phase::Confirming { since_ms: 950, key_code: 12 });
+        assert_eq!(*second_tap.phase(), Phase::Confirming { since_ms: 950 });
     }
 
     /// S19 — the boundary: a sample taken at the phase's own start is not stale,
@@ -608,7 +614,7 @@ mod tests {
     fn the_same_keydown_delivered_twice_advances_nothing() {
         let mut guard = showing(10_000);
         assert_eq!(guard.on_quit_key(10_000, 12, false), vec![]);
-        assert_eq!(*guard.phase(), Phase::Showing { started_ms: 10_000, key_code: 12 });
+        assert_eq!(*guard.phase(), Phase::Showing { started_ms: 10_000 });
 
         let mut after_tap = tapped(10_000, 10_120);
         assert_eq!(after_tap.on_quit_key(10_000, 12, false), vec![]);
@@ -617,7 +623,7 @@ mod tests {
         let mut with_repeat = showing(10_000);
         assert_eq!(with_repeat.on_quit_key(10_100, 12, true), vec![]);
         assert_eq!(with_repeat.on_quit_key(10_000, 12, false), vec![]);
-        assert_eq!(*with_repeat.phase(), Phase::Showing { started_ms: 10_000, key_code: 12 });
+        assert_eq!(*with_repeat.phase(), Phase::Showing { started_ms: 10_000 });
     }
 
     /// S38 — the wiring never subtracts `u64`s itself: a future timestamp is a

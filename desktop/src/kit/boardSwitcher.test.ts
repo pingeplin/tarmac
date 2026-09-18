@@ -200,8 +200,8 @@ describe("BoardSwitcher", () => {
   // S34 (#171): an open switcher must not swallow a ⌘ chord, or AppKit's menu
   // never sees the Quit shortcut — whatever the user remapped it to.
   it("S34 — cancels an unhandled key only when ⌘ is not held", () => {
-    expect(switcherCancelsUnhandledKey({ meta: true })).toBe(false);
-    expect(switcherCancelsUnhandledKey({ meta: false })).toBe(true);
+    expect(switcherCancelsUnhandledKey(true)).toBe(false);
+    expect(switcherCancelsUnhandledKey(false)).toBe(true);
   });
 });
 

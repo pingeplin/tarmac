@@ -11,7 +11,7 @@
 
 use std::path::{Path, PathBuf};
 
-pub const PREFS_FILE: &str = "app-prefs.json";
+const PREFS_FILE: &str = "app-prefs.json";
 const WARN_KEY: &str = "warn_before_quit";
 
 pub fn prefs_path(socket: &Path) -> PathBuf {

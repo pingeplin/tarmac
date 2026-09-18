@@ -168,7 +168,7 @@ async function handle(raw: Record<string, unknown>, deps: DevDriverDeps) {
 
   for (const step of route.steps) dispatchStep(step, deps, engine);
   await settle();
-  const snap = await build(deps, engine);
+  const snap = build(deps, engine);
   return {
     ok: true,
     body: JSON.stringify({ focused_card: snap.focused_card, active_element: snap.active_element }),
@@ -326,7 +326,9 @@ async function snapshotReply(
   engine: BoardEngine,
 ) {
   const src = verb.until ?? null;
-  if (src === null) return { ok: true, body: JSON.stringify(await build(deps, engine)) };
+  if (src === null) {
+    return { ok: true, body: JSON.stringify(build(deps, engine, await quitGuardFacts())) };
+  }
 
   const parsed = parseUntil(src);
   if ("error" in parsed) {
@@ -336,7 +338,7 @@ async function snapshotReply(
   }
   const budget = verb.timeout_ms ?? 5000;
   const deadline = Date.now() + budget;
-  let snap = await build(deps, engine);
+  let snap = build(deps, engine, await quitGuardFacts());
   // `--timeout 0` means evaluate once, so the check precedes the first wait.
   while (!evalUntil(parsed, snap)) {
     if (Date.now() >= deadline) {
@@ -347,7 +349,9 @@ async function snapshotReply(
       });
     }
     await sleep(POLL_MS);
-    snap = await build(deps, engine);
+    // Re-read per tick, not once before the wait: an `--until` on the guard is
+    // waiting for exactly this fact to change.
+    snap = build(deps, engine, await quitGuardFacts());
   }
   return { ok: true, body: JSON.stringify(snap) };
 }
@@ -424,14 +428,17 @@ function activeElementCard(cards: DevCardInput[], nodes: Map<string, HTMLElement
   return null;
 }
 
-async function build(deps: DevDriverDeps, engine: BoardEngine) {
-  // Read per build, so an `--until` poll sees the guard's live state rather than
-  // one sampled before the wait started. A rejected invoke is `null`, not a
-  // throw: the command is `#[cfg(debug_assertions)]` and an app without it must
-  // still answer `snapshot`.
-  const quitGuard = await invoke<{ retargeted: boolean; enabled: boolean }>(
-    "dev_quit_guard",
-  ).catch(() => null);
+/** The guard's live state, which only `snapshot` reports. A rejected invoke is
+ *  `null`, not a throw: the command is `#[cfg(debug_assertions)]` and an app
+ *  without it must still answer `snapshot`. */
+const quitGuardFacts = () =>
+  invoke<{ retargeted: boolean; enabled: boolean }>("dev_quit_guard").catch(() => null);
+
+function build(
+  deps: DevDriverDeps,
+  engine: BoardEngine,
+  quitGuard: { retargeted: boolean; enabled: boolean } | null = null,
+) {
   const cards = deps.cards();
   const nodes = cardNodes(deps, engine);
   const viewRect = engine.viewportElement.getBoundingClientRect();
