@@ -27,6 +27,14 @@ pub fn notice_frame(visible_frame: NoticeRect) -> NoticeRect {
     }
 }
 
+/// Where the text sits inside the slab. An `NSTextField` draws its single line
+/// at the TOP of its frame, so the label is sized to its glyphs and that tight
+/// box is centred — giving it the slab's full height would ride the text high
+/// (found in QA, Q1).
+pub fn label_y(notice_h: f64, text_h: f64) -> f64 {
+    ((notice_h - text_h) / 2.0).max(0.0)
+}
+
 /// `window_on_screen` is "visible and not minimized".
 pub fn pick_screen<T>(
     window_screen: Option<T>,
@@ -51,6 +59,16 @@ mod tests {
             notice_frame(NoticeRect { x: 100.0, y: 50.0, w: 1000.0, h: 800.0 }),
             NoticeRect { x: 425.0, y: 415.0, w: NOTICE_W, h: NOTICE_H }
         );
+    }
+
+    /// S39 — the text is centred on the slab's own centre line, not hung from
+    /// its top edge.
+    #[test]
+    fn the_label_is_centred_in_the_slab() {
+        assert_eq!(label_y(NOTICE_H, 29.0), 20.5);
+        assert_eq!(label_y(NOTICE_H, NOTICE_H), 0.0);
+        // Text taller than the slab starts at the top edge rather than above it.
+        assert_eq!(label_y(NOTICE_H, 80.0), 0.0);
     }
 
     /// S29 — the window's own screen while it is on one; the main screen while
@@ -130,11 +148,6 @@ impl Notice {
         label.setAlignment(NSTextAlignment::Center);
         label.setFont(Some(&NSFont::boldSystemFontOfSize(FONT_SIZE)));
         label.setTextColor(Some(&NSColor::whiteColor()));
-        let text_height = FONT_SIZE * 1.4;
-        label.setFrame(NSRect::new(
-            NSPoint::new(0.0, (NOTICE_H - text_height) / 2.0),
-            NSSize::new(NOTICE_W, text_height),
-        ));
         slab.addSubview(&label);
         panel.setContentView(Some(slab.as_super()));
 
@@ -147,6 +160,14 @@ impl Notice {
     /// is hidden (`NSAccessibilityConstants.h:492-493`).
     pub fn show(&self, mtm: MainThreadMarker, text: &str, screen: Option<Retained<NSScreen>>) {
         self.label.setStringValue(&NSString::from_str(text));
+        // Re-laid out per text: a remapped shortcut ("Hold ⌥⌘Q to Quit") is a
+        // different string, and only the fitted height can be centred.
+        self.label.sizeToFit();
+        let text_height = self.label.frame().size.height;
+        self.label.setFrame(NSRect::new(
+            NSPoint::new(0.0, label_y(NOTICE_H, text_height)),
+            NSSize::new(NOTICE_W, text_height),
+        ));
         if let Some(screen) = screen {
             let visible = screen.visibleFrame();
             let frame = notice_frame(NoticeRect {

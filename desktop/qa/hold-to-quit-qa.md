@@ -66,7 +66,13 @@ tree = the #171 implementation (`make test` green, `cargo build` warning-free).
   still reaches the card); a ~1 s hold hides the window with the notice up and
   quits only on release, with no ⌘Q reaching the app behind; no `q` is typed;
   two taps within 1 s quit.
-  - Result: _pending_
+  - **PASS with one defect, now fixed** (2026-09-18, hand-run): tap and hold
+    both behave as specified. The notice's **text sat too high inside the
+    slab** — an `NSTextField` draws its single line at the top of its frame,
+    and the label had been given the slab's full height. Fixed by sizing the
+    label to its text and centring that box (`label_y`, S39). Re-check pending,
+    as is the rest of the grid (this row was run in one cell: a plain-shell
+    terminal under ABC).
 - **Q2** — window minimized: a tap shows the notice on the main screen, app
   stays.
   - Result: _pending_
@@ -75,17 +81,17 @@ tree = the #171 implementation (`make test` green, `cargo build` warning-free).
   `quit_guard.enabled` false, and a tap quits at once. After a relaunch the item
   is still unchecked and the snapshot still false. Re-check it: the file reads
   `true`.
-  - Result: _pending_
+  - **PASS** (2026-09-18, hand-run).
 - **Q4** — a menu click on Quit, and Dock → Quit, each quit immediately
   (`route=terminate`, `type=1` for the click).
-  - Result: _pending_
+  - **PASS** (2026-09-18, hand-run).
 - **Q5** — the red button hides the window and the app keeps running
   (`tarmac dev snapshot` still answers; a terminal running
   `while :; do date; sleep 1; done` keeps advancing). ⌘Tab back, a Dock click
   and Spotlight each restore it with terminals live, also while an earlier tap's
   notice is still on screen. While hidden, a tap shows the notice on the main
   screen and a hold quits. File → Close Window hides as well.
-  - Result: _pending_
+  - **PASS** (2026-09-18, hand-run).
 - **Q6** — plain shell: ⌘C with a selection copies, ⌘V pastes. Claude Code: its
   fullscreen `cmd+c` selection copy still works, ⌘V pastes, ⌘H hides the app and
   ⌘M minimizes (both newly reachable).
@@ -113,7 +119,15 @@ tree = the #171 implementation (`make test` green, `cargo build` warning-free).
   `setTimeout(() => { const t = performance.now(); while (performance.now() - t < 1000); }, 3000)`
   and tap ⌘Q during the loop, 3 times. Pass: every busy age ≤ 2000
   (`FRESHNESS_BOUND_MS`) and each busy tap still shows the notice.
-  - Result: _pending_
+  - **Idle half measured** (2026-09-18, from the first hand-run session): six
+    real ⌘Q presses logged `route=guard type=10 repeat=false` with
+    `age_ms` = 18, 18, 20, 22, 28, 72 — two orders of magnitude under the
+    2000 ms bound. The busy-page half is still pending.
+  - Two side facts from the same six lines: **no two presses shared a
+    `press_ms`**, so the double delivery S20 guards against did not occur; and
+    **no `repeat=true` line appeared** during a ~1 s hold, which is consistent
+    with Key Repeat being off on this Mac. Worth re-checking on a machine with
+    Key Repeat on.
 - **Q13 (switcher)** — with a terminal focused (plain shell, then Claude Code),
   open ⌘K: ⌘V pastes nothing into the terminal; letters filter; ⌘E / ⌘⌫ / ⌘1–9 /
   ⌘N / Esc behave as before; a ⌘Q tap shows the notice; ⌘H hides the app; ⌘A, ⌘Z
