@@ -46,6 +46,45 @@ line's format is unchanged, `make test` and `make qa` are green on the refactor,
 and S37's knockout was re-run against it. **Not yet re-checked by hand:** one tap
 and one hold on the refactored build would re-earn the keyboard rows above.
 
+**#179 moved the release poll to a main-run-loop timer**
+(`refactor/179-quit-poll-run-loop-timer` @ `37b4c3b`, 2026-09-18). The detached
+polling thread is now a repeating `NSTimer` in `NSRunLoopCommonModes`, which
+`StopPolling` invalidates synchronously. That changes how release is detected,
+so every row that depends on a real hold or release is owed again. What was
+re-earned without a keyboard:
+
+- `make test` green, `make qa` 19/19 with D11, and S37's knockout re-run (both
+  below).
+- **The timer under tao, in isolation.** A standalone tao 0.35.3 / objc2 0.6.4
+  harness (main checkout `.dev/nstimer-179/`, three runs) posted an in-process
+  ⌘J keyDown. AppKit routed it through `-[NSMenu performKeyEquivalent:]` to a
+  target/selector action, and that action created the timers.
+  - A common-modes timer first fired about 51 ms after the action returned,
+    then every 50.0 ms (p95 at most 50.8).
+  - It kept firing while a pop-up menu was tracking (14 fires, all in
+    `NSEventTrackingRunLoopMode`) and while tracking mode was forced (10
+    fires). Default-mode timers fired 0 times in both.
+  - `invalidate()` was called three ways: inside the timer's own fire, from
+    another menu action, and from another timer, each after a 120 ms stall.
+    Every time, 0 fires followed.
+  - `[NSRunLoop currentMode]` is nil inside the key-equivalent action.
+  - Not covered: the tauri/wry/muda layers, a real keypress, and a menu-bar
+    menu opened with the mouse.
+- **The timer in the real app.** A temporary probe (reverted; its log is in the
+  main checkout at `.dev/nstimer-179/in-app-probe.log`) fed `on_quit_key` from
+  `.setup()` and logged every poll.
+  - Tap: one fire 88 ms after the start. Key 12 read up, the effects were
+    `[LingerThenFadeHud, StopPolling]`, and no fire followed.
+  - Hold (the probe forced `held` for the first 12 fires): a fire about every
+    50 ms in `kCFRunLoopDefaultMode`, `[HideWindows]` on fire 10 at +509 ms,
+    and `[StopPolling, Exit]` on fire 13. The app then exited through
+    `app.exit(0)` called from the timer callback.
+
+**Owed by hand on this build:** Q1, Q11, Q12 and Q16, the rows #179 names. At
+minimum, Q1's plain-shell × ABC cell needs a tap, a ~1 s hold and two taps
+within 1 s. That same cell also pays the `/simplify` debt above. Until then, the
+PASS marks on those rows are for the #171 build only.
+
 ---
 
 ## Agent-runnable
@@ -56,6 +95,8 @@ and one hold on the refactored build would re-earn the keyboard rows above.
     `tarmac dev snapshot` reports `quit_guard: {"enabled": true,
     "retargeted": true}` — the retarget survives into the running app, and the
     dev command answers on the main thread.
+  - **PASS on #179** (2026-09-18, `37b4c3b`). `19/19 checks passed`, D11
+    included, and the snapshot read `{"enabled": true, "retargeted": true}`.
 - **S37 (knockout)** — comment out the `quit_intercept::install(...)` line in
   `lib.rs` (revert the line afterwards, not the file), let `tauri dev` relaunch,
   and re-run D11: it must fail with `quit_guard.retargeted` false.
@@ -64,6 +105,9 @@ and one hold on the refactored build would re-earn the keyboard rows above.
     with `{"error":"timeout"}`, and the plain snapshot read
     `{"enabled": true, "retargeted": false}`. Restoring the line put it back to
     exit 0. So D11 is not vacuous.
+  - **PASS on #179** (2026-09-18, `37b4c3b`). Knocked out, the same
+    `--until` exited 1 with `retargeted: false`, and `make qa` failed D11 with
+    `exit code: expected 0, got 1`. With the line restored it exited 0.
 
 ## Needs a human at the keyboard
 
@@ -87,6 +131,7 @@ and one hold on the refactored build would re-earn the keyboard rows above.
     after the fix). **Re-checked by hand: centred.** The rest of the grid is
     still pending — this row was run in one cell, a plain-shell terminal under
     ABC.
+  - **#179: owed** on the timer build (see the #179 note at the top).
 - **Q2** — window minimized: a tap shows the notice on the main screen, app
   stays.
   - **PASS** (2026-09-18, hand-run).
@@ -145,6 +190,7 @@ and one hold on the refactored build would re-earn the keyboard rows above.
   Cangjie, Korean 2-Set, and one of Hebrew/Greek/Russian; Caps Lock on; ⌘Q
   during a Zhuyin or Japanese composition; Zhuyin with the switcher open.
   - **PASS** (2026-09-18, hand-run).
+  - **#179: owed** on the timer build.
 - **Q12 (freshness)** — record `age_ms` for 5 taps on an idle page. Then, in Web
   Inspector, run
   `setTimeout(() => { const t = performance.now(); while (performance.now() - t < 1000); }, 3000)`
@@ -165,6 +211,7 @@ and one hold on the refactored build would re-earn the keyboard rows above.
     `repeat=true` line appeared** during a ~1 s hold, which is consistent with
     Key Repeat being off on this Mac. Worth re-checking on a machine with Key
     Repeat on.
+  - **#179: owed** on the timer build.
 - **Q13 (switcher)** — with a terminal focused (plain shell, then Claude Code),
   open ⌘K: ⌘V pastes nothing into the terminal; letters filter; ⌘E / ⌘⌫ / ⌘1–9 /
   ⌘N / Esc behave as before; a ⌘Q tap shows the notice; ⌘H hides the app; ⌘A, ⌘Z
@@ -183,3 +230,4 @@ and one hold on the refactored build would re-earn the keyboard rows above.
   second release, then fades — it never vanishes early. Record the time from the
   second release to its disappearance (expected ~1.2 s).
   - **PASS** (2026-09-18, hand-run).
+  - **#179: owed** on the timer build.
