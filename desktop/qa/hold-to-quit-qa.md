@@ -103,7 +103,7 @@ tree = the #171 implementation (`make test` green, `cargo build` warning-free).
   ⌘M minimizes (both newly reachable).
   - **PASS** (2026-09-18, hand-run).
 - **Q7** — VoiceOver announces "Hold ⌘Q to Quit", also with the window hidden.
-  - Result: _pending_
+  - **PASS** (2026-09-18, hand-run).
 - **Q8** — on a `make bundle` build, a hold quits with no permission prompt
   (`CGEventSourceKeyState` has no documented TCC requirement, and `make run`
   attributes TCC to the launching terminal).
@@ -117,15 +117,22 @@ tree = the #171 implementation (`make test` green, `cargo build` warning-free).
 - **Q9** — Quit remapped to ⌥⌘Q in System Settings → Keyboard → App Shortcuts:
   ⌥⌘Q is guarded, plain ⌘Q does nothing, the notice reads "Hold ⌥⌘Q to Quit",
   and both hold with the switcher open and with Claude Code focused.
-  - Result: _pending_
+  - **PASS** (2026-09-18, hand-run). The shortcut was applied to the dev app's
+    own defaults domain (`defaults write tarmac-app NSUserKeyEquivalents
+    -dict-add "Quit Tarmac" "@~q"`, the installed app's domain untouched) and
+    removed afterwards; that domain held no `NSUserKeyEquivalents` before, so
+    the undo was exact. ⌥⌘Q guarded and the notice read "Hold ⌥⌘Q to Quit",
+    plain ⌘Q did nothing, and both held with the switcher open and with Claude
+    Code focused. This is the row that earns the retarget over matching a
+    literal key: the guard follows whatever chord AppKit matched.
 - **Q10** — keyboard menu navigation (⌃F2 → Quit → Return) and a VoiceOver press
   on Quit each quit immediately, including within 1 s of a guarded tap. Record
   each line's `route`.
-  - Result: _pending_
+  - **PASS** (2026-09-18, hand-run).
 - **Q11** — one tap and one hold each under AZERTY, Dvorak, "Dvorak – QWERTY ⌘",
   Cangjie, Korean 2-Set, and one of Hebrew/Greek/Russian; Caps Lock on; ⌘Q
   during a Zhuyin or Japanese composition; Zhuyin with the switcher open.
-  - Result: _pending_
+  - **PASS** (2026-09-18, hand-run).
 - **Q12 (freshness)** — record `age_ms` for 5 taps on an idle page. Then, in Web
   Inspector, run
   `setTimeout(() => { const t = performance.now(); while (performance.now() - t < 1000); }, 3000)`
@@ -135,11 +142,17 @@ tree = the #171 implementation (`make test` green, `cargo build` warning-free).
     real ⌘Q presses logged `route=guard type=10 repeat=false` with
     `age_ms` = 18, 18, 20, 22, 28, 72 — two orders of magnitude under the
     2000 ms bound. The busy-page half is still pending.
-  - Two side facts from the same six lines: **no two presses shared a
-    `press_ms`**, so the double delivery S20 guards against did not occur; and
-    **no `repeat=true` line appeared** during a ~1 s hold, which is consistent
-    with Key Repeat being off on this Mac. Worth re-checking on a machine with
-    Key Repeat on.
+  - **Busy half PASS** (2026-09-18, hand-run): with the page frozen by the
+    Inspector snippet, each tap still showed the notice.
+  - Ages across the 14 presses this log captured (some rows were run in the
+    operator's own `make run` session, whose log is elsewhere): 4, 8, 10, 13,
+    14, 15, 18, 19, 21, 26, 27, 62, 98 and **268 ms** — the highest is an
+    eighth of the 2000 ms bound.
+  - Two side facts from those lines: **no two presses shared a `press_ms`**, so
+    the double delivery S20 guards against did not occur; and **no
+    `repeat=true` line appeared** during a ~1 s hold, which is consistent with
+    Key Repeat being off on this Mac. Worth re-checking on a machine with Key
+    Repeat on.
 - **Q13 (switcher)** — with a terminal focused (plain shell, then Claude Code),
   open ⌘K: ⌘V pastes nothing into the terminal; letters filter; ⌘E / ⌘⌫ / ⌘1–9 /
   ⌘N / Esc behave as before; a ⌘Q tap shows the notice; ⌘H hides the app; ⌘A, ⌘Z
@@ -148,7 +161,7 @@ tree = the #171 implementation (`make test` green, `cargo build` warning-free).
   - **PASS** (2026-09-18, hand-run).
 - **Q14** — ⌘W typed inside an HTML card's iframe (`App.tsx` never sees it):
   expected to hide the window, app still running.
-  - Result: _pending_
+  - **PASS** (2026-09-18, hand-run).
 - **Q15** — run S37's knockout, then restore the line.
   - **Done above** (agent-runnable), no keyboard needed.
 - **Q16 (notice re-show)** — under ABC with a plain-shell terminal focused, tap
@@ -157,4 +170,4 @@ tree = the #171 implementation (`make test` green, `cargo build` warning-free).
   retry). The notice returns to full opacity, stays up until ~1 s after the
   second release, then fades — it never vanishes early. Record the time from the
   second release to its disappearance (expected ~1.2 s).
-  - Result: _pending_
+  - **PASS** (2026-09-18, hand-run).
