@@ -89,9 +89,9 @@ re-earned without a keyboard:
 - **Evidence.** The `quit-key` lines are in the main checkout's
   `.dev/nstimer-179/make-run-handqa.log`. "Line n" below means the n-th
   `quit-key` line in that file.
-- **Two gaps.** The operator reported every row as passing. The log backs Q1,
-  Q12's idle half and Q16. It does not yet back Q11 or Q12's busy half (see
-  those rows).
+- **Two rows without log lines.** The operator ran every row on the dev app.
+  The log backs Q1, Q12's idle half and Q16. For Q11 and Q12's busy half the
+  record is the operator's confirmation (see those rows).
 
 The Q1 cell (plain shell × ABC) also pays the `/simplify` debt above.
 
@@ -209,11 +209,11 @@ The Q1 cell (plain shell × ABC) also pays the `/simplify` debt above.
   Cangjie, Korean 2-Set, and one of Hebrew/Greek/Russian; Caps Lock on; ⌘Q
   during a Zhuyin or Japanese composition; Zhuyin with the switcher open.
   - **PASS** (2026-09-18, hand-run).
-  - **#179: reported PASS, not yet in the log.** The operator reported this
-    row as passing. But every hold quits the app, and the second session
-    (lines 3–19) never exited before its final double tap. So no Q11 hold is
-    in this build's log. Still to confirm: which app the row was run
-    against. The installed 0.13.0 has the old thread poller and does not count.
+  - **#179: PASS** (2026-09-19, hand-run on the dev app, operator-confirmed).
+    These presses cannot be matched to lines in the captured log: no Q11
+    hold appears there, because the second session (lines 3–19) never exited
+    before its final double tap. The operator confirmed that the row ran on
+    the dev app, not on the installed 0.13.0.
 - **Q12 (freshness)** — record `age_ms` for 5 taps on an idle page. Then, in Web
   Inspector, run
   `setTimeout(() => { const t = performance.now(); while (performance.now() - t < 1000); }, 3000)`
@@ -237,10 +237,10 @@ The Q1 cell (plain shell × ABC) also pays the `/simplify` debt above.
   - **#179: idle half PASS; busy half reported, not yet in the log.**
     - Idle: lines 6–10 are five taps 1.7–2.2 s apart, all `route=guard`,
       with `age_ms` 9, 11, 14, 17, 11.
-    - Busy: the operator reported it as passing. But no press in the log
-      carries the delay a frozen page adds (the highest age in the second
-      session is 59 ms; #171's busy taps reached 268 ms). Still to confirm,
-      as for Q11.
+    - Busy: PASS (hand-run on the dev app, operator-confirmed). No press in
+      the captured log carries the delay a frozen page adds: the highest age in
+      the second session is 59 ms, while #171's busy taps reached 268 ms. So
+      this half rests on the operator's confirmation, as Q11 does.
 - **Q13 (switcher)** — with a terminal focused (plain shell, then Claude Code),
   open ⌘K: ⌘V pastes nothing into the terminal; letters filter; ⌘E / ⌘⌫ / ⌘1–9 /
   ⌘N / Esc behave as before; a ⌘Q tap shows the notice; ⌘H hides the app; ⌘A, ⌘Z
