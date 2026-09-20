@@ -276,10 +276,13 @@ are the spec's `[D]` scenarios (`make qa` D12–D19, `make qa-quit`), each with 
 knockout run, plus the `[QA]` rows S22 and S33–S35. `desktop/qa/qa-driver-qa.md`
 records the driver-side rows (D12–D19 as driver scenarios, S36).
 
-**Build under test:** `feat/183-quit-guard-qa-driver` at `b1cb7c4` plus the
-uncommitted scripts (`scripts/qa/{lib,smoke,quit}.mjs`, `Makefile`), 2026-09-20,
-`make test` green. Screen unlocked (`CGSSessionScreenIsLocked 0`) for every run
-recorded as a result; the runs that hit a locked screen are named as such.
+**Build under test:** `feat/183-quit-guard-qa-driver`, 2026-09-20: the first
+`make qa` runs and the TS knockouts at `b1cb7c4` plus the then-uncommitted
+scripts; S36 at `03f72df`; S35 at `3d424a8`; the Rust knockouts, `make
+qa-quit`, S22, S33 and S34 at `2268085` (which carries the one defect the
+knockouts found, below). `make test` green throughout. Screen unlocked
+(`CGSSessionScreenIsLocked 0`) for every run recorded as a result; the runs
+that hit a locked screen are named as such.
 
 ### Which Q rows the driver now covers
 
@@ -331,18 +334,68 @@ Q11, Q13, Q14.
   - **S19, fixture `keydown` → `preventDefault()` (in `smoke.mjs`, not on
     disk):** D18 **FAIL** — the matching wait timed out: the frame handled the
     ⌘Q and the menu never saw it. So D18's ⌘Q really passes through the frame.
-  - **S10** (`Effect::ShowHud` does nothing), **S13** (no `hud_gen` bump in
-    `show_notice`), **S21** (the "already key?" test always true), **S24** (the
-    `eval` skipped): PENDING — the first S10/S13 attempts ran into a locked
-    screen (every press `not_key`, 19/27; inconclusive, not a result).
-- **`make qa-quit`** (`CASE=hold`, `double`, `stale`) and their knockouts
-  (S15: drop the override from `on_poll`; S16: `recent` always false; S17:
-  `FRESHNESS_BOUND_MS` = 10000): PENDING.
-- **S22** (window made non-key by another app; `press cmd+q` activates and
-  routes `guard` through the page, checked with a temporary backtrace line):
-  PENDING.
-- **S33** (2609.0016's S37 knockout, `install(...)` commented out): PENDING.
-- **S34** (window minimised → `not_key`, app stays): PENDING.
+  - **S10** (`Effect::ShowHud` does nothing): D12 **FAIL** — `notice.visible`
+    expected `true`, got `false`; so did every other ⌘Q row (D13, D14, D15,
+    D17, D18, D19), 20/27. D16 still passed: ⌘T/⌘W never show a notice.
+  - **S13** (no `hud_gen` bump in `show_notice`): D15 **FAIL** — after the
+    second press, `quit_guard.notice.alpha == 1` never held within 300 ms: the
+    first notice's fade kept stepping the re-shown notice down. (The spec
+    predicted the later `visible == false` check would catch it; the fade's
+    alpha steps are what the scenario met first.)
+  - **S21** (the "already key?" test always true, Finder in front): D12's
+    tap **passed** (the post went straight to the inactive app's menu and
+    still routed `guard`, as spike 2 found) and S21 **FAIL** — `activated`
+    expected `true`, got `false`. Two more rows failed under it and are worth
+    knowing: D16 (⌘W went to the native Close Window item, and the new
+    terminal stayed on the board) and D19 (`age_ms` read 1: the post bypassed
+    the frozen page). 25/28.
+    - The first attempt at this knockout surfaced a **real defect**: with the
+      app inactive, `NSApp.mainWindow` is nil, and `post_key` answered
+      `app_not_ready` instead of posting. Fixed in `2268085` (`press` now
+      addresses Tauri's `main` window, as `notice_screen` does); the normal
+      run re-passed 28/28 before the knockout was re-run.
+  - **S24** (the `eval` skipped): D19 **FAIL** — the press exited 51 ms after
+    spawn (no freeze to wait out), 26/27.
+  - The first S10/S13 attempts ran into a locked screen (every press
+    `not_key`, 19/27): inconclusive, not a result. Both were re-run unlocked
+    (above).
+- **`make qa-quit`** — each **PASS**, one per fresh `make run`:
+  - `CASE=hold` (S15): `route=guard`, `confirming` with the notice up,
+    `visibility == "hidden"`, still answering at +1500 ms, gone **1993 ms**
+    after the reply.
+  - `CASE=double` (S16): two presses 182 ms apart, the second routed `guard`
+    into `confirming`, gone **477 ms** after the second reply.
+  - `CASE=stale` (S17): gone **4 ms** after the CLI exited; the `make run`
+    line read `quit-key route=terminate type=10 repeat=false age_ms=2549`.
+  - **Knockouts**, each also one fresh `make run`, the app then stopped by pid:
+    - S15 (the `|| self.held_override(key_code)` dropped from `on_poll`):
+      `CASE=hold` **FAIL** — `phase == "confirming"` never held; the app
+      stayed up.
+    - S16 (`recent` always false in `on_quit_key`): `CASE=double` **FAIL** —
+      phase after the second tap expected `confirming`, got `showing`; the
+      app stayed up.
+    - S17 (`FRESHNESS_BOUND_MS` = 10 000): `CASE=stale` **FAIL** — the app
+      still answered 1000 ms on; its line read `route=guard … age_ms=2545`.
+- **S22** — **PASS**. With Finder raised (`open -a Finder`, frontmost
+  confirmed by `lsappinfo`), `press cmd+q --hold 300` replied
+  `activated: true`, the frontmost app read `tarmac-app` afterwards, the line
+  was `route=guard … age_ms=48`, and a temporary libc `backtrace_symbols_fd`
+  probe at the top of `on_quit` (reverted) showed **9 WebKit frames**
+  (`WebPageProxy::didReceiveEvent → PageClientImpl::doneWithKeyEvent →
+  WebViewImpl::doneWithKeyEvent → … → -[NSMenu performKeyEquivalent:]`): the
+  page saw the key first. A control press with the window already key gave
+  the same 9 frames. (Rust's `std::backtrace` names none of those frames;
+  only the libc probe does.)
+- **S33** — **PASS**. With `quit_intercept::install(...)` commented out in
+  `lib.rs` (reverted), the snapshot read `retargeted: false`; `press cmd+q`
+  exited 1 with `not_retargeted` ("would reach a native terminate: item …
+  not posted") and **the app stayed up**; `press cmd+t` exited 0 and a new
+  terminal card appeared, so only the Quit chord is refused.
+- **S34** — **PASS**. `press cmd+m` minimised the window (`visibility`
+  `"hidden"`); `press cmd+q` then exited 1 with `not_key` after **1032 ms**
+  (`KEY_WAIT_MS` plus hops), the app stayed up, and `last_press` stayed
+  `null`, so nothing was posted. `activateIgnoringOtherApps(true)` made the
+  app frontmost but did **not** un-minimise the window, as the row expected.
 - **S35** — **PASS** (2026-09-20, `make bundle` at `3d424a8`). `strings` on
   `dist/Tarmac.app/Contents/MacOS/tarmac-app` finds `dev_press`,
   `dev_quit_guard` and `not_retargeted` **0** times each (the debug binary has
