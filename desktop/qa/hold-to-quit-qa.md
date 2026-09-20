@@ -343,7 +343,9 @@ Q11, Q13, Q14.
   PENDING.
 - **S33** (2609.0016's S37 knockout, `install(...)` commented out): PENDING.
 - **S34** (window minimised → `not_key`, app stays): PENDING.
-- **S35** (`make bundle`, then `strings`): PENDING as `make bundle`; a
-  `cargo build --release` of the same crate already shows `dev_press`,
-  `dev_quit_guard` and `not_retargeted` **0** times in the release binary and
-  once each in the debug one.
+- **S35** — **PASS** (2026-09-20, `make bundle` at `3d424a8`). `strings` on
+  `dist/Tarmac.app/Contents/MacOS/tarmac-app` finds `dev_press`,
+  `dev_quit_guard` and `not_retargeted` **0** times each (the debug binary has
+  each once) and the notice's text once, so the guard ships and the verb does
+  not. The bundled CLI's `tarmac dev snapshot` prints
+  `tarmac: driver unavailable in release builds` and exits 1.
