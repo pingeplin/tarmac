@@ -738,7 +738,7 @@ fn quit_chord_refused(mtm: MainThreadMarker, chord: &Chord) -> bool {
 /// is nil whenever the app is inactive — exactly the posture `press` has to
 /// see through.
 #[cfg(debug_assertions)]
-fn main_ns_window(app: &AppHandle) -> Option<Retained<NSWindow>> {
+fn main_ns_window(_mtm: MainThreadMarker, app: &AppHandle) -> Option<Retained<NSWindow>> {
     let ptr = app.get_webview_window("main")?.ns_window().ok()?;
     unsafe { Retained::retain(ptr as *mut NSWindow) }
 }
@@ -747,7 +747,7 @@ fn main_ns_window(app: &AppHandle) -> Option<Retained<NSWindow>> {
 /// page's path (spike 2).
 #[cfg(debug_assertions)]
 fn window_is_key(mtm: MainThreadMarker, app: &AppHandle) -> bool {
-    NSApplication::sharedApplication(mtm).isActive() && main_ns_window(app).is_some_and(|w| w.isKeyWindow())
+    NSApplication::sharedApplication(mtm).isActive() && main_ns_window(mtm, app).is_some_and(|w| w.isKeyWindow())
 }
 
 /// Post one key event for `chord` to the cockpit window. `None` when there is
@@ -763,7 +763,7 @@ fn post_key(
     use objc2_app_kit::{NSEvent, NSEventModifierFlags};
     use objc2_foundation::{NSPoint, NSString};
 
-    let window_number = main_ns_window(app)?.windowNumber();
+    let window_number = main_ns_window(mtm, app)?.windowNumber();
     let chars = NSString::from_str(&chord.chars);
     let event = NSEvent::keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode(
         kind,
