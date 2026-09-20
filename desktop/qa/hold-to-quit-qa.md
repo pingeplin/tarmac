@@ -22,7 +22,8 @@ every terminal its daemon owns. `make run` pins `TARMAC_SOCKET`,
 an installed app coexist. `make kill-daemon` is the correct tool. If an
 installed Tarmac is running there will be two windows, both named `tarmac-app`
 with bundle id `com.tarmac.desktop`; the dev window's title carries
-` · 171-confirm-quit-live-terminal`.
+` · <worktree name>` — ` · 171-confirm-quit-live-terminal` for the #171 runs,
+` · 179-quit-poll-run-loop-timer` for #179's.
 
 **What to watch.** The `make run` terminal logs one line per call to the Quit
 item (debug builds only):
@@ -46,6 +47,54 @@ line's format is unchanged, `make test` and `make qa` are green on the refactor,
 and S37's knockout was re-run against it. **Not yet re-checked by hand:** one tap
 and one hold on the refactored build would re-earn the keyboard rows above.
 
+**#179 moved the release poll to a main-run-loop timer**
+(`refactor/179-quit-poll-run-loop-timer` @ `779f9b1`, 2026-09-18). The detached
+polling thread is now a repeating `NSTimer` in `NSRunLoopCommonModes`, which
+`StopPolling` invalidates synchronously. That changes how release is detected,
+so every row that depends on a real hold or release is owed again. What was
+re-earned without a keyboard:
+
+- `make test` green, `make qa` 19/19 with D11, and S37's knockout re-run (both
+  below).
+- **The timer under tao, in isolation.** A standalone tao 0.35.3 / objc2 0.6.4
+  harness (main checkout `.dev/nstimer-179/`, three runs) posted an in-process
+  ⌘J keyDown. AppKit routed it through `-[NSMenu performKeyEquivalent:]` to a
+  target/selector action, and that action created the timers.
+  - A common-modes timer first fired about 51 ms after the action returned,
+    then every 50.0 ms (p95 at most 50.8).
+  - It kept firing while a pop-up menu was tracking (14 fires, all in
+    `NSEventTrackingRunLoopMode`) and while tracking mode was forced (10
+    fires). Default-mode timers fired 0 times in both.
+  - `invalidate()` was called three ways: inside the timer's own fire, from
+    another menu action, and from another timer, each after a 120 ms stall.
+    Every time, 0 fires followed.
+  - `[NSRunLoop currentMode]` is nil inside the key-equivalent action.
+  - Not covered: the tauri/wry/muda layers, a real keypress, and a menu-bar
+    menu opened with the mouse.
+- **The timer in the real app.** A temporary probe (reverted; its log is in the
+  main checkout at `.dev/nstimer-179/in-app-probe.log`) fed `on_quit_key` from
+  `.setup()` and logged every poll.
+  - Tap: one fire 88 ms after the start. Key 12 read up, the effects were
+    `[LingerThenFadeHud, StopPolling]`, and no fire followed.
+  - Hold (the probe forced `held` for the first 12 fires): a fire about every
+    50 ms in `kCFRunLoopDefaultMode`, `[HideWindows]` on fire 10 at +509 ms,
+    and `[StopPolling, Exit]` on fire 13. The app then exited through
+    `app.exit(0)` called from the timer callback.
+
+**Hand-run on this build (2026-09-19).** Q1, Q11, Q12 and Q16 are the rows
+#179 names.
+- **Build.** Both `make run` sessions ran `391b6ef`. The later `dd1bd38` only
+  turns `Confirming` into a unit variant; it is behaviour-identical, and the
+  suite is green on it.
+- **Evidence.** The `quit-key` lines are in the main checkout's
+  `.dev/nstimer-179/make-run-handqa.log`. "Line n" below means the n-th
+  `quit-key` line in that file.
+- **Two rows without log lines.** The operator ran every row on the dev app.
+  The log backs Q1, Q12's idle half and Q16. For Q11 and Q12's busy half the
+  record is the operator's confirmation (see those rows).
+
+The Q1 cell (plain shell × ABC) also pays the `/simplify` debt above.
+
 ---
 
 ## Agent-runnable
@@ -56,6 +105,10 @@ and one hold on the refactored build would re-earn the keyboard rows above.
     `tarmac dev snapshot` reports `quit_guard: {"enabled": true,
     "retargeted": true}` — the retarget survives into the running app, and the
     dev command answers on the main thread.
+  - **PASS on #179** (2026-09-18, `37b4c3b`, then again on `779f9b1`).
+    `19/19 checks passed`, D11 included, and the snapshot read
+    `{"enabled": true, "retargeted": true}`. The `779f9b1` run's output is in
+    the main checkout at `.dev/nstimer-179/qa-779f9b1.log`.
 - **S37 (knockout)** — comment out the `quit_intercept::install(...)` line in
   `lib.rs` (revert the line afterwards, not the file), let `tauri dev` relaunch,
   and re-run D11: it must fail with `quit_guard.retargeted` false.
@@ -64,6 +117,11 @@ and one hold on the refactored build would re-earn the keyboard rows above.
     with `{"error":"timeout"}`, and the plain snapshot read
     `{"enabled": true, "retargeted": false}`. Restoring the line put it back to
     exit 0. So D11 is not vacuous.
+  - **PASS on #179** (2026-09-18, `37b4c3b`, then again on `779f9b1`).
+    Knocked out, the same `--until` exited 1 with `retargeted: false`, and
+    `make qa` failed D11 with `exit code: expected 0, got 1`. With the line
+    restored it exited 0 and the tree was clean again. The `779f9b1` run's
+    output is in the main checkout at `.dev/nstimer-179/s37-knockout-779f9b1.log`.
 
 ## Needs a human at the keyboard
 
@@ -87,6 +145,12 @@ and one hold on the refactored build would re-earn the keyboard rows above.
     after the fix). **Re-checked by hand: centred.** The rest of the grid is
     still pending — this row was run in one cell, a plain-shell terminal under
     ABC.
+  - **#179: PASS** (2026-09-19, hand-run, plain shell × ABC).
+    - Line 1 is a tap (`route=guard`, `age_ms=70`), and the app stayed up.
+    - Line 2 is a hold (`age_ms=30`). The app exited after it, ending the first
+      session.
+    - Lines 18–19 are two taps 163 ms apart. The app exited, ending the second
+      session.
 - **Q2** — window minimized: a tap shows the notice on the main screen, app
   stays.
   - **PASS** (2026-09-18, hand-run).
@@ -145,6 +209,11 @@ and one hold on the refactored build would re-earn the keyboard rows above.
   Cangjie, Korean 2-Set, and one of Hebrew/Greek/Russian; Caps Lock on; ⌘Q
   during a Zhuyin or Japanese composition; Zhuyin with the switcher open.
   - **PASS** (2026-09-18, hand-run).
+  - **#179: PASS** (2026-09-19, hand-run on the dev app, operator-confirmed).
+    These presses cannot be matched to lines in the captured log: no Q11
+    hold appears there, because the second session (lines 3–19) never exited
+    before its final double tap. The operator confirmed that the row ran on
+    the dev app, not on the installed 0.13.0.
 - **Q12 (freshness)** — record `age_ms` for 5 taps on an idle page. Then, in Web
   Inspector, run
   `setTimeout(() => { const t = performance.now(); while (performance.now() - t < 1000); }, 3000)`
@@ -165,6 +234,13 @@ and one hold on the refactored build would re-earn the keyboard rows above.
     `repeat=true` line appeared** during a ~1 s hold, which is consistent with
     Key Repeat being off on this Mac. Worth re-checking on a machine with Key
     Repeat on.
+  - **#179: idle half PASS; busy half reported, not yet in the log.**
+    - Idle: lines 6–10 are five taps 1.7–2.2 s apart, all `route=guard`,
+      with `age_ms` 9, 11, 14, 17, 11.
+    - Busy: PASS (hand-run on the dev app, operator-confirmed). No press in
+      the captured log carries the delay a frozen page adds: the highest age in
+      the second session is 59 ms, while #171's busy taps reached 268 ms. So
+      this half rests on the operator's confirmation, as Q11 does.
 - **Q13 (switcher)** — with a terminal focused (plain shell, then Claude Code),
   open ⌘K: ⌘V pastes nothing into the terminal; letters filter; ⌘E / ⌘⌫ / ⌘1–9 /
   ⌘N / Esc behave as before; a ⌘Q tap shows the notice; ⌘H hides the app; ⌘A, ⌘Z
@@ -183,3 +259,9 @@ and one hold on the refactored build would re-earn the keyboard rows above.
   second release, then fades — it never vanishes early. Record the time from the
   second release to its disappearance (expected ~1.2 s).
   - **PASS** (2026-09-18, hand-run).
+  - **#179: PASS** (2026-09-19, hand-run).
+    - Lines 13–17 are taps 1.2–1.4 s apart, all `route=guard`.
+    - The app stayed up throughout, so none of them landed inside the 1 s
+      second-tap window.
+    - The operator saw the notice return to full opacity each time.
+    - The time from release to disappearance was not recorded.

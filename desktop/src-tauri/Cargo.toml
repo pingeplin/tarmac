@@ -71,6 +71,10 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
     "NSObject",
     "NSValue",
     "NSGeometry",
+    "NSDate",
+    "NSObjCRuntime",
+    "NSRunLoop",
+    "NSTimer",
     "objc2-core-foundation",
 ] }
 objc2-core-graphics = { version = "0.3", default-features = false, features = [
