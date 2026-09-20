@@ -9,6 +9,8 @@ const ctx = (over: Partial<RouteContext> = {}): RouteContext => ({
     { id: "doc:/a/b.md", kind: "doc", frame: { x: 0, y: 0, w: 1, h: 1 } },
   ],
   activeElementCard: null,
+  viewport: { zoom: 1, cx: 0, cy: 0 },
+  viewSize: { w: 1000, h: 800 },
   ...over,
 });
 
@@ -126,10 +128,9 @@ describe("S40 — type/key require focus to already be right", () => {
   });
 });
 
-describe("S41 — doc cards have no drivable focus target", () => {
-  it("refuses focus, type and key on a doc card", () => {
+describe("S41 — doc cards take focus, but cannot be typed into or keyed", () => {
+  it("refuses type and key on a doc card", () => {
     for (const verb of [
-      { t: "focus", card: "/a/b.md" },
       { t: "type", card: "/a/b.md", text: "x" },
       { t: "key", card: "/a/b.md", combo: "enter" },
     ] as const) {
@@ -156,5 +157,100 @@ describe("S41 — doc cards have no drivable focus target", () => {
 describe("S42 — zoom is not a dispatched event", () => {
   it("routes to the engine's viewport commit, with no element target", () => {
     expect(routeVerb({ t: "zoom", z: 0.5 }, ctx())).toEqual({ kind: "viewport" });
+  });
+});
+
+describe("S8 (2609.0018) — focus on a doc card is a DOM plan per kind", () => {
+  const FRAME = { x: 0, y: 0, w: 400, h: 300 };
+  const docs = (over: { html?: typeof FRAME; md?: typeof FRAME } = {}) =>
+    ctx({
+      cards: [
+        { id: "term:t-1", kind: "term", frame: FRAME },
+        { id: "doc:/a/b.md", kind: "doc", frame: over.md ?? FRAME },
+        { id: "doc:/a/c.html", kind: "doc", frame: over.html ?? FRAME },
+        { id: "doc:/a/C.HTM", kind: "doc", frame: FRAME },
+      ],
+    });
+
+  it("selects a markdown card, then drops focus to the page body", () => {
+    expect(routeVerb({ t: "focus", card: "/a/b.md" }, docs())).toEqual({
+      kind: "dispatch",
+      steps: [
+        { target: "card-body", card: "doc:/a/b.md", events: ["pointerdown", "pointerup"] },
+        { target: "page-body", card: null, events: ["focus"] },
+      ],
+    });
+  });
+
+  it("selects an HTML card, lifts its shield, then focuses its iframe", () => {
+    expect(routeVerb({ t: "focus", card: "/a/c.html" }, docs())).toEqual({
+      kind: "dispatch",
+      steps: [
+        { target: "card-body", card: "doc:/a/c.html", events: ["pointerdown", "pointerup"] },
+        { target: "doc-shield", card: "doc:/a/c.html", events: ["dblclick"] },
+        { target: "doc-iframe", card: "doc:/a/c.html", events: ["focus"] },
+      ],
+    });
+  });
+
+  it("routes .HTM as HTML, ignoring case", () => {
+    expect(routeVerb({ t: "focus", card: "/a/C.HTM" }, docs())).toMatchObject({
+      kind: "dispatch",
+      steps: [{ target: "card-body" }, { target: "doc-shield" }, { target: "doc-iframe" }],
+    });
+  });
+
+  it("still refuses the prefixed id", () => {
+    expect(routeVerb({ t: "focus", card: "doc:/a/b.md" }, docs())).toEqual({
+      kind: "error",
+      error: "no_such_card",
+    });
+  });
+
+  it("refuses a culled HTML card with card_hidden, and nothing else", () => {
+    // Kept region for this context: x in (−1500, 1500), y in (−1200, 1200).
+    const far = { x: 10000, y: 0, w: 400, h: 300 };
+    expect(routeVerb({ t: "focus", card: "/a/c.html" }, docs({ html: far }))).toEqual({
+      kind: "error",
+      error: "card_hidden",
+    });
+    // Inside ±1500 but outside ±1200 and ±500: pins the same predicate the
+    // board culls with (w/h not swapped, one-view margin kept).
+    const edge = { x: 1300, y: 0, w: 400, h: 300 };
+    expect(routeVerb({ t: "focus", card: "/a/c.html" }, docs({ html: edge }))).toMatchObject({
+      kind: "dispatch",
+      steps: [{ target: "card-body" }, { target: "doc-shield" }, { target: "doc-iframe" }],
+    });
+    // The markdown plan works on a culled card.
+    expect(routeVerb({ t: "focus", card: "/a/b.md" }, docs({ md: far }))).toMatchObject({
+      kind: "dispatch",
+      steps: [{ target: "card-body" }, { target: "page-body" }],
+    });
+    // card_hidden is focus's alone.
+    expect(routeVerb({ t: "type", card: "/a/c.html", text: "x" }, docs({ html: far }))).toEqual({
+      kind: "error",
+      error: "unsupported_card_kind",
+    });
+    expect(routeVerb({ t: "key", card: "/a/c.html", combo: "enter" }, docs({ html: far }))).toEqual({
+      kind: "error",
+      error: "unsupported_card_kind",
+    });
+    expect(routeVerb({ t: "resize", card: "/a/c.html", w: 1, h: 1 }, docs({ html: far }))).toMatchObject({
+      kind: "dispatch",
+      steps: [{ target: "card-handle-br", card: "doc:/a/c.html" }],
+    });
+  });
+
+  it("still refuses type and key on either doc kind", () => {
+    for (const card of ["/a/b.md", "/a/c.html"]) {
+      expect(routeVerb({ t: "type", card, text: "x" }, docs())).toEqual({
+        kind: "error",
+        error: "unsupported_card_kind",
+      });
+      expect(routeVerb({ t: "key", card, combo: "enter" }, docs())).toEqual({
+        kind: "error",
+        error: "unsupported_card_kind",
+      });
+    }
   });
 });

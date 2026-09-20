@@ -11,30 +11,43 @@
 //     would yield a Caret where the scenario needs a Range.
 //   - the card KIND is checked before focus, so the error names a property of the
 //     request rather than of wherever focus happened to be.
+//   - `focus <doc card>` (2609.0018) is DOM dispatch too: a markdown card is
+//     selected and focus dropped to the page body; an HTML card is selected,
+//     borrowed (its shield lifted) and its iframe focused. A culled HTML card is
+//     refused first, because a `visibility: hidden` iframe silently ignores
+//     `.focus()` — and the predicate is the one BoardEngine culls with, so the
+//     refusal and the paint agree.
 
 import { bareCardId, type DevCardInput } from "./devSnapshot";
 import { CONTEXT_MENU } from "./devKeyPlan";
+import { docKind } from "./docKind";
+import { isCardVisible, type Viewport } from "./cull";
 
 export type DevTarget =
   | "card-body"
   | "term-element"
   | "term-textarea"
   | "card-handle-br"
-  | "board-viewport";
+  | "board-viewport"
+  | "page-body"
+  | "doc-shield"
+  | "doc-iframe";
 
-export type DevErrorCode = "no_such_card" | "not_focused" | "unsupported_card_kind";
+export type DevErrorCode = "no_such_card" | "not_focused" | "unsupported_card_kind" | "card_hidden";
 
 /** What each refusal means, in the words the caller sees. A Record rather than a
  *  switch so adding a code is a type error until its message exists. */
 export const DEV_ERROR_MESSAGE: Record<DevErrorCode, string> = {
   no_such_card: "no card with that id on the active board",
   not_focused: "that card does not hold keyboard focus; `tarmac dev focus <card>` first",
-  unsupported_card_kind: "doc cards have no focus target an untrusted event can reach",
+  unsupported_card_kind: "doc cards take `focus`, but cannot be typed into or keyed",
+  card_hidden: "that HTML card is culled off-screen and its frame cannot take focus; zoom out (or pan by hand — no verb pans)",
 };
 
 export interface RouteStep {
   target: DevTarget;
-  /** The app-internal (prefixed) card id, or null for the board itself. */
+  /** The app-internal (prefixed) card id, or null for the board itself and for
+   *  `page-body`, which has no card either. */
   card: string | null;
   events: string[];
 }
@@ -52,6 +65,8 @@ export interface RouteContext {
   cards: DevCardInput[];
   /** The bare id of the card holding document.activeElement, if any. */
   activeElementCard: string | null;
+  viewport: Viewport;
+  viewSize: { w: number; h: number };
 }
 
 /** Every verb that routes. `snapshot` is deliberately absent: it reads state and
@@ -88,7 +103,10 @@ export function routeVerb(verb: DevVerb, ctx: RouteContext): Route {
     };
   }
 
-  if (card.kind !== "term") return { kind: "error", error: "unsupported_card_kind" };
+  if (card.kind !== "term") {
+    if (verb.t !== "focus") return { kind: "error", error: "unsupported_card_kind" };
+    return focusDoc(card, ctx);
+  }
 
   if (verb.t === "focus") {
     return {
@@ -120,5 +138,23 @@ export function routeVerb(verb: DevVerb, ctx: RouteContext): Route {
   return {
     kind: "dispatch",
     steps: [{ target: "term-textarea", card: card.id, events: [] }],
+  };
+}
+
+function focusDoc(card: DevCardInput, ctx: RouteContext): Route {
+  const select: RouteStep = { target: "card-body", card: card.id, events: ["pointerdown", "pointerup"] };
+  if (docKind(bareCardId(card.id)) === "markdown") {
+    return { kind: "dispatch", steps: [select, { target: "page-body", card: null, events: ["focus"] }] };
+  }
+  if (!isCardVisible(card.frame, ctx.viewport, ctx.viewSize.w, ctx.viewSize.h)) {
+    return { kind: "error", error: "card_hidden" };
+  }
+  return {
+    kind: "dispatch",
+    steps: [
+      select,
+      { target: "doc-shield", card: card.id, events: ["dblclick"] },
+      { target: "doc-iframe", card: card.id, events: ["focus"] },
+    ],
   };
 }

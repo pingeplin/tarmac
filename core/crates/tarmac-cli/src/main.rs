@@ -34,14 +34,24 @@ binary exits 1 with \\\"driver unavailable in release builds\\\".
     tarmac dev focus <card>|board
     tarmac dev type <card> \\\"<text>\\\"
     tarmac dev key <card> \\\"<combo>\\\"
+    tarmac dev press <combo> [--hold <ms>] [--age <ms>] [--busy <ms>]
 
 <card> is a terminal's term id or a doc's absolute path. snapshot prints JSON on
 stdout; every other verb prints a small JSON object describing what it observed.
 A failing verb prints the app's JSON error on stderr and exits 1.
 
+`dev press` is the one verb that reaches AppKit: it posts a native ⌘ chord
+(cmd plus shift/alt/ctrl, then one lowercase letter or digit) to the cockpit
+window, activating the app if it is not key, and the snapshot's quit_guard
+reports what the ⌘Q guard did with it. A chord that would reach a native
+terminate: item is refused. It steals focus, so keep your hands off other apps;
+a ⌘Q --hold of 500 or more, two ⌘Q within 1 s, or --age past 2000 ms really
+quit the app.
+
 Three things `dev key` cannot do, by design rather than by omission:
-  - ⌘C and ⌘V cannot be driven. They rely on WebKit's native Edit-menu action,
-    which an untrusted dispatched event never triggers.
+  - ⌘C and ⌘V cannot be driven through `key`. They rely on WebKit's native
+    Edit-menu action, which an untrusted dispatched event never triggers;
+    `press` posts them, but nothing in the snapshot shows what they did.
   - A bare printable character is refused; use `tarmac dev type` for text.
     xterm stands aside for such a key, so dispatching one would send nothing.
   - `focus` and `key` go through the real mouse and key paths, so a program with

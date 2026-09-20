@@ -36,6 +36,8 @@ use objc2_foundation::{NSNotificationCenter, NSRunLoop, NSRunLoopCommonModes, NS
 use tauri::menu::{CheckMenuItem, Menu, MenuEvent, MenuId};
 use tauri::{AppHandle, Manager, Wry};
 
+#[cfg(debug_assertions)]
+use crate::dev_press::{matches_item, Chord};
 use crate::quit_guard::{self, Effect, QuitEvent, QuitGuard, Route};
 use crate::quit_notice::Notice;
 use crate::window_lifecycle::HiddenByClose;
@@ -82,6 +84,14 @@ struct QuitIvars {
     /// Bumped by `ShowHud`, so a linger or fade left over from an earlier tap
     /// cannot take the new notice away.
     hud_gen: Cell<u64>,
+    /// `tarmac dev press`'s key-held override: a key code and the time it reads
+    /// as held until. The poller ORs it into its physical read (2609.0018).
+    #[cfg(debug_assertions)]
+    held: Cell<Option<(u16, u64)>>,
+    /// What the handler recorded for the most recent keyboard press it saw:
+    /// `press_ms`, route, `age_ms`. A menu click leaves it alone.
+    #[cfg(debug_assertions)]
+    last_press: Cell<Option<(u64, Route, i64)>>,
 }
 
 define_class!(
@@ -119,6 +129,10 @@ impl QuitTarget {
             notice: RefCell::new(None),
             poll: RefCell::new(None),
             hud_gen: Cell::new(0),
+            #[cfg(debug_assertions)]
+            held: Cell::new(None),
+            #[cfg(debug_assertions)]
+            last_press: Cell::new(None),
         });
         unsafe { msg_send![super(this), init] }
     }
@@ -156,6 +170,10 @@ impl QuitTarget {
         let enabled = self.ivars().app.state::<QuitToggle>().get();
         let route = self.ivars().guard.borrow().route(&ev, enabled);
         log_quit_key(&route, event.as_ref().map(|e| e.r#type().0), is_repeat, &ev, press_ms);
+        #[cfg(debug_assertions)]
+        if is_key_down {
+            self.ivars().last_press.set(Some((press_ms, route, ev.age_ms)));
+        }
 
         match route {
             Route::TerminateNow => ns_app.terminate(None),
@@ -171,10 +189,21 @@ impl QuitTarget {
         let Some(key_code) = self.ivars().poll.borrow().as_ref().map(|&(_, key)| key) else {
             return;
         };
-        let held = CGEventSource::key_state(CGEventSourceStateID::CombinedSessionState, key_code);
+        let held = CGEventSource::key_state(CGEventSourceStateID::CombinedSessionState, key_code)
+            || self.held_override(key_code);
         let effects = self.ivars().guard.borrow_mut().on_poll(now_ms(), held);
         // No notice text to give: only a chord can raise `ShowHud`.
         self.apply(MainThreadMarker::from(self), effects, None);
+    }
+
+    #[cfg(debug_assertions)]
+    fn held_override(&self, key_code: u16) -> bool {
+        self.ivars().held.get().is_some_and(|(key, until)| key == key_code && now_ms() < until)
+    }
+
+    #[cfg(not(debug_assertions))]
+    fn held_override(&self, _key_code: u16) -> bool {
+        false
     }
 
     fn apply(&self, mtm: MainThreadMarker, effects: Vec<Effect>, notice: Option<&str>) {
@@ -479,21 +508,275 @@ fn is_retargeted(mtm: MainThreadMarker) -> bool {
     mine > 0 && native == 0
 }
 
-/// Dev-only: what the QA driver reports as `quit_guard`.
+/// Dev-only: what the QA driver reports as `quit_guard`. Every fact is read in
+/// one main-thread hop, so a snapshot that matches a press also shows the phase
+/// and notice that press produced. Without a `QuitTarget` (2609.0016's S37
+/// knockout) the guard has no phase or press to report; `retargeted: false` is
+/// what carries the meaning.
 #[cfg(debug_assertions)]
 #[tauri::command]
 pub fn dev_quit_guard(app: AppHandle) -> serde_json::Value {
+    type Facts = (String, Option<(bool, f64)>, Option<(u64, Route, i64)>);
     let (tx, rx) = std::sync::mpsc::channel();
     let asked = app.run_on_main_thread(move || {
         let mtm = MainThreadMarker::new().expect("run_on_main_thread runs on the main thread");
-        let _ = tx.send(is_retargeted(mtm));
+        let facts: Option<Facts> = TARGET.with(|cell| {
+            cell.borrow().as_ref().map(|target| {
+                let ivars = target.ivars();
+                (
+                    quit_guard::phase_name(ivars.guard.borrow().phase()).to_string(),
+                    ivars.notice.borrow().as_ref().map(|n| (n.is_visible(), n.alpha())),
+                    ivars.last_press.get(),
+                )
+            })
+        });
+        let _ = tx.send((is_retargeted(mtm), facts));
     });
-    let retargeted = match asked {
-        Ok(()) => rx.recv_timeout(Duration::from_millis(500)).unwrap_or(false),
-        Err(_) => false,
+    let (retargeted, facts) = match asked {
+        Ok(()) => rx.recv_timeout(Duration::from_millis(500)).unwrap_or((false, None)),
+        Err(_) => (false, None),
     };
+    let (phase, notice, last_press) = facts.unwrap_or_else(|| ("idle".to_string(), None, None));
+    let (visible, alpha) = notice.unwrap_or((false, 0.0));
     serde_json::json!({
         "retargeted": retargeted,
         "enabled": app.state::<QuitToggle>().get(),
+        "phase": phase,
+        "notice": { "visible": visible, "alpha": alpha },
+        "last_press": last_press.map(|(press_ms, route, age_ms)| serde_json::json!({
+            "press_ms": press_ms,
+            "route": quit_guard::route_name(&route),
+            "age_ms": age_ms,
+        })),
     })
+}
+
+// ------------------------------------------------------------- tarmac dev press
+// Dev-only (spec 2609.0018, #183): a native ⌘ chord posted in-process. Every
+// AppKit step is a `run_on_main_thread` hop and every wait an async sleep, so
+// the command never blocks the main thread — which is what lets the page
+// receive the key it posts.
+
+/// A press that names no `--hold`. Long enough that a double tap quits on
+/// release, as a real one does, not on the first poll.
+#[cfg(debug_assertions)]
+const TAP_HOLD_MS: u64 = 100;
+/// How long activation may take to key the window. Spike 5 measured 7–31 ms;
+/// this stays inside the backend's 2 s slack with room for the hops.
+#[cfg(debug_assertions)]
+const KEY_WAIT_MS: u64 = 1_000;
+
+#[cfg(debug_assertions)]
+#[tauri::command]
+pub async fn dev_press(
+    app: AppHandle,
+    combo: String,
+    hold_ms: Option<u32>,
+    age_ms: Option<u32>,
+    busy_ms: Option<u32>,
+) -> Result<serde_json::Value, serde_json::Value> {
+    use crate::dev_press::{parse_chord, ChordError};
+    use tarmac_protocol::dev::{AGE_MS_MAX, BUSY_MS_MAX, HOLD_MS_MAX};
+
+    let err = |code: &str, message: String| serde_json::json!({ "error": code, "message": message });
+    let unresponsive = || err("app_unresponsive", "the event loop is exiting".into());
+
+    // The wire accepts any u32; the CLI already refused these, so this is only
+    // a guard against a hand-built frame.
+    let in_range = hold_ms.is_none_or(|h| (1..=HOLD_MS_MAX).contains(&h))
+        && age_ms.is_none_or(|a| a <= AGE_MS_MAX)
+        && busy_ms.is_none_or(|b| (1..=BUSY_MS_MAX).contains(&b))
+        && !(busy_ms.is_some() && age_ms.is_some());
+    if !in_range {
+        return Err(err("bad_request", "hold, age or busy out of range, or busy with age".into()));
+    }
+    let hold = hold_ms.map_or(TAP_HOLD_MS, u64::from);
+    let age = age_ms.map_or(0, u64::from);
+
+    let chord = match parse_chord(&combo) {
+        Ok(chord) => chord,
+        Err(ChordError::Unsupported(m)) => return Err(err("unsupported_combo", m)),
+        Err(ChordError::Bad(m)) => return Err(err("bad_combo", m)),
+    };
+
+    let refused = on_main_async(&app, {
+        let chord = chord.clone();
+        move |mtm| quit_chord_refused(mtm, &chord)
+    })
+    .await
+    .ok_or_else(unresponsive)?;
+    if refused {
+        return Err(err(
+            "not_retargeted",
+            format!("`{combo}` would reach a native terminate: item, or a Quit item with no guard behind it; not posted"),
+        ));
+    }
+
+    let is_key = {
+        let app = app.clone();
+        move |mtm| window_is_key(mtm, &app)
+    };
+    let mut key = on_main_async(&app, is_key.clone()).await.ok_or_else(unresponsive)?;
+    let activated = !key;
+    if !key {
+        on_main_async(&app, |mtm| {
+            // Spike 5: the only call that takes focus from an unrelated app.
+            #[allow(deprecated)]
+            NSApplication::sharedApplication(mtm).activateIgnoringOtherApps(true);
+        })
+        .await
+        .ok_or_else(unresponsive)?;
+        let deadline = std::time::Instant::now() + Duration::from_millis(KEY_WAIT_MS);
+        while !key {
+            if std::time::Instant::now() >= deadline {
+                return Err(err(
+                    "not_key",
+                    "activation was refused (a locked screen?); click the dev window and re-run".into(),
+                ));
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            key = on_main_async(&app, is_key.clone()).await.ok_or_else(unresponsive)?;
+        }
+    }
+
+    if let Some(busy) = busy_ms {
+        let window = app
+            .get_webview_window("main")
+            .ok_or_else(|| err("app_not_ready", "no main window".into()))?;
+        // Braces: wry runs this as a global script, and a top-level `const`
+        // would make the second `--busy` in one page load a SyntaxError.
+        window
+            .eval(format!("{{ const t = performance.now(); while (performance.now() - t < {busy}); }}"))
+            .map_err(|e| err("app_unresponsive", e.to_string()))?;
+        // Off the main thread, so the loop is running before the key arrives.
+        tokio::time::sleep(Duration::from_millis(30)).await;
+    }
+
+    let (stamp_ms, until) = on_main_async(&app, {
+        let chord = chord.clone();
+        let app = app.clone();
+        move |mtm| {
+            let now = now_ms();
+            let until = now + hold;
+            TARGET.with(|cell| {
+                if let Some(target) = cell.borrow().as_ref() {
+                    target.ivars().held.set(Some((chord.key_code, until)));
+                }
+            });
+            let stamp_ms = now.saturating_sub(age);
+            post_key(mtm, &app, &chord, NSEventType::KeyDown, stamp_ms).map(|()| (stamp_ms, until))
+        }
+    })
+    .await
+    .ok_or_else(unresponsive)?
+    .ok_or_else(|| err("app_not_ready", "no main window to post into".into()))?;
+
+    // The next press may re-arm `held`, so the release captures its own time.
+    // By then the app may be exiting; a failed hop is nothing to report.
+    let release = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(until.saturating_sub(now_ms()))).await;
+        let app = release.clone();
+        let _ = on_main_async(&release, move |mtm| post_key(mtm, &app, &chord, NSEventType::KeyUp, now_ms())).await;
+    });
+
+    Ok(serde_json::json!({
+        "combo": combo,
+        "press_ms": stamp_ms,
+        "hold_ms": hold,
+        "activated": activated,
+        "busy_ms": busy_ms,
+    }))
+}
+
+/// One main-thread hop with a value back. `None` means the event loop is
+/// exiting: the hop was refused, or its closure never ran.
+#[cfg(debug_assertions)]
+async fn on_main_async<T: Send + 'static>(
+    app: &AppHandle,
+    f: impl FnOnce(MainThreadMarker) -> T + Send + 'static,
+) -> Option<T> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let asked = app.run_on_main_thread(move || {
+        let mtm = MainThreadMarker::new().expect("run_on_main_thread runs on the main thread");
+        let _ = tx.send(f(mtm));
+    });
+    match asked {
+        Ok(()) => rx.await.ok(),
+        Err(_) => None,
+    }
+}
+
+/// Step 4.2: would this chord reach a native `terminate:` item, or a Quit item
+/// whose guard is gone (its target dropped, so AppKit disabled it)? Walked the
+/// way `is_retargeted` walks, so the two agree on what the menu holds.
+#[cfg(debug_assertions)]
+fn quit_chord_refused(mtm: MainThreadMarker, chord: &Chord) -> bool {
+    fn walk(menu: &NSMenu, chord: &Chord) -> bool {
+        for index in 0..menu.numberOfItems() {
+            let Some(item) = menu.itemAtIndex(index) else { continue };
+            let native = item.action() == Some(sel!(terminate:));
+            let orphaned = item.action() == Some(sel!(tarmacQuit:)) && item.target().is_none();
+            if native || orphaned {
+                let key_equivalent = item.keyEquivalent().to_string();
+                let mask = item.keyEquivalentModifierMask().0 as u64;
+                if matches_item(chord, &key_equivalent, mask) {
+                    return true;
+                }
+            } else if let Some(submenu) = item.submenu() {
+                if walk(&submenu, chord) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+    NSApplication::sharedApplication(mtm).mainMenu().is_some_and(|menu| walk(&menu, chord))
+}
+
+/// The cockpit's own window, by Tauri's label. Not `NSApp.mainWindow`, which
+/// is nil whenever the app is inactive — exactly the posture `press` has to
+/// see through.
+#[cfg(debug_assertions)]
+fn main_ns_window(_mtm: MainThreadMarker, app: &AppHandle) -> Option<Retained<NSWindow>> {
+    let ptr = app.get_webview_window("main")?.ns_window().ok()?;
+    unsafe { Retained::retain(ptr as *mut NSWindow) }
+}
+
+/// Step 4.3's one-line test: only a key window on an active app takes the
+/// page's path (spike 2).
+#[cfg(debug_assertions)]
+fn window_is_key(mtm: MainThreadMarker, app: &AppHandle) -> bool {
+    NSApplication::sharedApplication(mtm).isActive() && main_ns_window(mtm, app).is_some_and(|w| w.isKeyWindow())
+}
+
+/// Post one key event for `chord` to the cockpit window. `None` when there is
+/// no such window to address.
+#[cfg(debug_assertions)]
+fn post_key(
+    mtm: MainThreadMarker,
+    app: &AppHandle,
+    chord: &Chord,
+    kind: NSEventType,
+    stamp_ms: u64,
+) -> Option<()> {
+    use objc2_app_kit::{NSEvent, NSEventModifierFlags};
+    use objc2_foundation::{NSPoint, NSString};
+
+    let window_number = main_ns_window(mtm, app)?.windowNumber();
+    let chars = NSString::from_str(&chord.chars);
+    let event = NSEvent::keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode(
+        kind,
+        NSPoint::new(0.0, 0.0),
+        NSEventModifierFlags(chord.flags as usize),
+        stamp_ms as f64 / 1000.0,
+        window_number,
+        None,
+        &chars,
+        &chars,
+        false,
+        chord.key_code,
+    )?;
+    NSApplication::sharedApplication(mtm).postEvent_atStart(&event, false);
+    Some(())
 }

@@ -31,7 +31,10 @@ A fourth family, `tarmac dev <verb>`, talks to the **app** rather than the daemo
 over a second socket the app owns (`tarmac-dev.sock`, beside the daemon's in the
 same per-channel dir; override `TARMAC_DEV_SOCKET`). It is the in-app QA driver
 from issue #166 — `snapshot`, `zoom`, `resize`, `focus`, `type` and `key` — so an
-agent or a script can drive and read the cockpit without a keyboard.
+agent or a script can drive and read the cockpit without a keyboard. `press`
+(#183) is the one verb that reaches AppKit: it posts a native ⌘ chord
+in-process, with a debug-only key-held override, so the ⌘Q guard's tap, hold,
+double tap and stale press can be driven and read back through `quit_guard`.
 It is compiled out of release builds at three gates, one predicate each:
 `#[cfg(debug_assertions)]` on the CLI verb (`core/crates/tarmac-cli/src/dev.rs`)
 and on the endpoint (`desktop/src-tauri/src/dev_driver.rs`), and

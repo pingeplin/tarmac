@@ -16,15 +16,16 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use tarmac_protocol::{self as proto, frame};
-use proto::dev::{DevRequest, decode_reply, encode_request};
+use proto::dev::{AGE_MS_MAX, BUSY_MS_MAX, DevRequest, HOLD_MS_MAX, decode_reply, encode_request};
 
 use crate::{current_channel, env_override};
 
 /// The app's own budget, plus 3 s of slack. The three deadlines nest — the
-/// frontend's `--until` poll ends at `timeout_ms`, the backend at `+2000`, the
-/// CLI at `+3000` — so the innermost one always fires and an expired wait is
-/// reported by the side that actually observed it. Reusing the handshake path's
-/// fixed 5 s would make `--timeout 10000` die client-side and blame a healthy app.
+/// frontend's `--until` poll (or `press --busy`'s freeze) ends at `timeout_ms`,
+/// the backend at `+2000`, the CLI at `+3000` — so the innermost one always
+/// fires and an expired wait is reported by the side that actually observed it.
+/// Reusing the handshake path's fixed 5 s would make `--timeout 10000` die
+/// client-side and blame a healthy app.
 pub fn read_deadline_ms(timeout_ms: Option<u32>) -> u64 {
     timeout_ms.unwrap_or(0) as u64 + 3_000
 }
@@ -35,7 +36,8 @@ usage: tarmac dev snapshot [--until <expr>] [--timeout <ms>]
        tarmac dev resize <card> <w>x<h>
        tarmac dev focus <card>|board
        tarmac dev type <card> \"<text>\"
-       tarmac dev key <card> \"<combo>\"";
+       tarmac dev key <card> \"<combo>\"
+       tarmac dev press <combo> [--hold <ms>] [--age <ms>] [--busy <ms>]";
 
 fn usage<T>(what: &str) -> Result<T, String> {
     Err(format!("{what}\n{USAGE}"))
@@ -80,6 +82,7 @@ pub fn parse_verb(args: &[String]) -> Result<DevRequest, String> {
             [card, combo] => Ok(DevRequest::Key { card: card.clone(), combo: combo.clone() }),
             _ => usage("tarmac dev key: expected <card> <combo>"),
         },
+        "press" => parse_press(rest),
         other => usage(&format!("tarmac dev: unknown verb '{other}'")),
     }
 }
@@ -109,6 +112,50 @@ fn parse_snapshot(mut rest: &[String]) -> Result<DevRequest, String> {
         rest = &rest[2..];
     }
     Ok(DevRequest::Snapshot { until, timeout_ms: Some(timeout_ms) })
+}
+
+/// `press <combo> [--hold <ms>] [--age <ms>] [--busy <ms>]`. The combo is not
+/// checked (the app parses it, as for `key`); the flags are range-checked here
+/// against the protocol's constants, so a scenario that typos a hold fails
+/// before anything is posted. `--busy` with `--age` is refused in either order,
+/// even at `--age 0`: their sum could cross the freshness bound and really quit.
+fn parse_press(rest: &[String]) -> Result<DevRequest, String> {
+    let Some(combo) = rest.first() else {
+        return usage("tarmac dev press: expected <combo>");
+    };
+    if combo.starts_with("--") {
+        return usage(&format!("tarmac dev press: expected <combo> before {combo}"));
+    }
+    let mut hold_ms = None;
+    let mut age_ms = None;
+    let mut busy_ms = None;
+    let mut rest = &rest[1..];
+    while let Some(flag) = rest.first().map(String::as_str) {
+        let (slot, lo, hi) = match flag {
+            "--hold" => (&mut hold_ms, 1, HOLD_MS_MAX),
+            "--age" => (&mut age_ms, 0, AGE_MS_MAX),
+            "--busy" => (&mut busy_ms, 1, BUSY_MS_MAX),
+            other if other.starts_with("--") => {
+                return usage(&format!("tarmac dev press: unknown flag {other}"));
+            }
+            other => return usage(&format!("tarmac dev press: unexpected argument {other}")),
+        };
+        if slot.is_some() {
+            return usage(&format!("tarmac dev press: {flag} given twice"));
+        }
+        let Some(value) = rest.get(1) else {
+            return usage(&format!("tarmac dev press: {flag} needs a value"));
+        };
+        match value.parse::<u32>() {
+            Ok(ms) if (lo..=hi).contains(&ms) => *slot = Some(ms),
+            _ => return usage(&format!("tarmac dev press: {flag} must be {lo}..={hi}, got {value}")),
+        }
+        rest = &rest[2..];
+    }
+    if busy_ms.is_some() && age_ms.is_some() {
+        return usage("tarmac dev press: --busy cannot be combined with --age");
+    }
+    Ok(DevRequest::Press { combo: combo.clone(), hold_ms, age_ms, busy_ms })
 }
 
 /// `<w>x<h>` in board units. Lowercase `x` only, and both halves required: one
@@ -316,6 +363,90 @@ mod tests {
             Some(10_000),
         );
         assert_eq!(DevRequest::Zoom { z: 1.0 }.timeout_ms(), None);
+    }
+
+    fn press(combo: &str, hold_ms: Option<u32>, age_ms: Option<u32>, busy_ms: Option<u32>) -> DevRequest {
+        DevRequest::Press { combo: combo.into(), hold_ms, age_ms, busy_ms }
+    }
+
+    /// S1 (2609.0018) - `press <combo>` and its three flags; the combo itself is
+    /// not checked here, the app parses it.
+    #[test]
+    fn press_parses_its_combo_and_flags() {
+        assert_eq!(parse(&["press", "cmd+q"]).unwrap(), press("cmd+q", None, None, None));
+        assert_eq!(
+            parse(&["press", "cmd+q", "--hold", "1000"]).unwrap(),
+            press("cmd+q", Some(1000), None, None),
+        );
+        assert_eq!(
+            parse(&["press", "cmd+q", "--age", "2500"]).unwrap(),
+            press("cmd+q", None, Some(2500), None),
+        );
+        assert_eq!(
+            parse(&["press", "alt+cmd+q", "--age", "0", "--hold", "10000"]).unwrap(),
+            press("alt+cmd+q", Some(10000), Some(0), None),
+        );
+        assert_eq!(parse(&["press", "nonsense"]).unwrap(), press("nonsense", None, None, None));
+        assert_eq!(
+            parse(&["press", "cmd+q", "--busy", "1000"]).unwrap(),
+            press("cmd+q", None, None, Some(1000)),
+        );
+    }
+
+    /// S20 (2609.0018) - the bounds of every flag parse.
+    #[test]
+    fn press_flag_bounds_parse() {
+        assert_eq!(parse(&["press", "cmd+q", "--hold", "1"]).unwrap(), press("cmd+q", Some(1), None, None));
+        assert_eq!(
+            parse(&["press", "cmd+q", "--age", "60000"]).unwrap(),
+            press("cmd+q", None, Some(60000), None),
+        );
+        assert_eq!(parse(&["press", "cmd+q", "--busy", "1"]).unwrap(), press("cmd+q", None, None, Some(1)));
+        assert_eq!(
+            parse(&["press", "cmd+q", "--busy", "1800"]).unwrap(),
+            press("cmd+q", None, None, Some(1800)),
+        );
+    }
+
+    /// S30 (2609.0018) - every malformed `press` is a usage error whose FIRST
+    /// line names the offending flag or argument. `usage()` appends the whole
+    /// USAGE text, which names every flag, so only the first line can tell.
+    #[test]
+    fn press_usage_errors_name_the_flag_or_argument() {
+        let first_line = |args: &[&str]| -> String {
+            let err = parse(args).expect_err(&format!("expected a usage error for {args:?}"));
+            err.lines().next().unwrap_or_default().to_string()
+        };
+        let names = |args: &[&str], wants: &[&str]| {
+            let line = first_line(args);
+            assert!(line.starts_with("tarmac dev press:"), "{args:?}: {line}");
+            for want in wants {
+                assert!(line.contains(want), "{args:?}: first line {line:?} does not name {want}");
+            }
+        };
+        names(&["press"], &["<combo>"]);
+        names(&["press", "--hold", "5", "cmd+q"], &["--hold"]);
+        names(&["press", "cmd+q", "--hold"], &["--hold"]);
+        names(&["press", "cmd+q", "--hold", "0"], &["--hold"]);
+        names(&["press", "cmd+q", "--hold", "10001"], &["--hold"]);
+        names(&["press", "cmd+q", "--hold", "x"], &["--hold"]);
+        names(&["press", "cmd+q", "--age", "-1"], &["--age"]);
+        names(&["press", "cmd+q", "--age", "60001"], &["--age"]);
+        names(&["press", "cmd+q", "--now"], &["--now"]);
+        names(&["press", "cmd+q", "extra"], &["extra"]);
+        names(&["press", "cmd+q", "--hold", "5", "--hold", "6"], &["--hold"]);
+        names(&["press", "cmd+q", "--busy", "0"], &["--busy"]);
+        names(&["press", "cmd+q", "--busy", "1801"], &["--busy"]);
+        names(&["press", "cmd+q", "--busy", "500", "--age", "10"], &["--busy", "--age"]);
+        names(&["press", "cmd+q", "--age", "0", "--busy", "500"], &["--busy", "--age"]);
+    }
+
+    /// S23 (2609.0018), the CLI half - `--busy` reaches the read deadline
+    /// through `timeout_ms()`, as `--timeout` does.
+    #[test]
+    fn the_deadline_reads_busy_off_a_press() {
+        assert_eq!(read_deadline_ms(press("cmd+q", None, None, Some(1000)).timeout_ms()), 4_000);
+        assert_eq!(read_deadline_ms(press("cmd+q", None, None, None).timeout_ms()), 3_000);
     }
 
     /// S65 - this module exists only under `#[cfg(debug_assertions)]`, so the

@@ -62,6 +62,7 @@ tarmac dev resize <card> <w>x<h>
 tarmac dev focus <card>|board
 tarmac dev type <card> "<text>"
 tarmac dev key <card> "<combo>"
+tarmac dev press <combo> [--hold <ms>] [--age <ms>] [--busy <ms>]
 ```
 
 Use the debug CLI with the socket pinned, or nothing will answer:
@@ -75,17 +76,21 @@ core/target/debug/tarmac dev snapshot | jq .
   wire ids, not the app-internal `term:`/`doc:` form.
 - `snapshot` prints the active board's live state: viewport, every card's
   `board_rect` and measured `screen_rect`, `focused_card`, `active_element`,
-  per-terminal `cols`/`rows`/`proc`/`selection`/`scrollback_tail`, and
-  `quit_guard` (`retargeted`, `enabled`) — the ⌘Q guard's hold on the native
-  Quit item, which `make qa`'s D11 asserts.
+  per-terminal `cols`/`rows`/`proc`/`selection`/`scrollback_tail`, per-doc-card
+  `borrowed` (the HTML card whose shield is lifted), and `quit_guard` — the ⌘Q
+  guard's hold on the native Quit item (`retargeted`, `enabled`, which `make
+  qa`'s D11 asserts) plus what it last did: `phase` (`idle` | `showing` |
+  `confirming`), `notice` (`visible`, `alpha`; alpha reads 0 while not visible)
+  and `last_press` (`press_ms`, `route` of `guard` | `terminate`, `age_ms`, or
+  `null` before the first keyboard press).
 - Every other verb prints a small JSON object describing **what it observed**,
   not what you asked for — `zoom 99` answers `{"zoom": 3}` because the board
   clamps.
 - A failure prints JSON on **stderr** and exits 1: `no_such_card`,
-  `not_focused`, `unsupported_card_kind`, `unsupported_combo`, `bad_combo`,
-  `empty_buffer`, `unsupported_verb`, `bad_expr`, `timeout`, `app_not_ready`,
-  `app_unresponsive`. CLI-side failures (no app, a too-long socket path) stay
-  one-line plain text.
+  `not_focused`, `unsupported_card_kind`, `card_hidden`, `unsupported_combo`,
+  `bad_combo`, `empty_buffer`, `unsupported_verb`, `bad_expr`, `timeout`,
+  `not_retargeted`, `not_key`, `app_not_ready`, `app_unresponsive`. CLI-side
+  failures (no app, a too-long socket path) stay one-line plain text.
 
 ### Typing and keying
 
@@ -127,6 +132,68 @@ tarmac dev key t-1 ctrl+c
 - `resize` drags the bottom-right grip in board units and reports where the card
   landed, clamped to the 160×90 minimum:
   `{"from": {...}, "to": {"w": 800, "h": 600}, "delta_px": {...}}`.
+- `focus <doc card>` works too (#183), with DOM dispatch as for terminals: a
+  markdown card is selected and focus drops to the page body
+  (`active_element.tag` reads `BODY`); an HTML card is selected, **borrowed**
+  (its shield lifted, `cards[].borrowed` true) and its iframe focused
+  (`IFRAME`). Two things to know:
+  - a culled HTML card is refused with `card_hidden` — a `visibility: hidden`
+    iframe silently ignores `.focus()`. `zoom` out, or pan by hand; no verb pans;
+  - a borrowed card **stays borrowed** after focus moves away, and the next Esc
+    that no toast or fly-back claims is spent un-borrowing it (it never reaches
+    the terminal). Send `key <term> escape` while `borrowed` reads true to undo
+    it, as D18 does.
+  `type` and `key` still refuse doc cards (`unsupported_card_kind`).
+
+### Pressing a native ⌘ chord — `press`
+
+`press` (#183) is the one verb that reaches AppKit: it posts a constructed
+keyDown **in-process** to the main window, so the chord takes the same path a
+real one does (page first, then the menu). It is what `make qa` uses to drive
+the ⌘Q guard, and it presses any ⌘ chord: `cmd+q`, `cmd+shift+z`, `alt+cmd+q`,
+`cmd+1`. `cmd` plus any of `shift`, `alt`, `ctrl`, then one lowercase letter or
+digit; no named keys (⌘⌫, ⌘Enter) and no `meta`.
+
+```sh
+tarmac dev press cmd+q --hold 300      # a tap: 300 < the 500 ms hold threshold
+tarmac dev snapshot --until 'quit_guard.last_press.press_ms ~= <press_ms>' --timeout 1000
+```
+
+- The reply says **what it did, not what the key caused**:
+  `{"combo": "cmd+q", "press_ms": 268318196, "hold_ms": 300, "activated": false, "busy_ms": null}`.
+  Read the effect off the snapshot: wait for `quit_guard.last_press.press_ms`
+  to match the reply (`~=` absorbs a ±1 truncation), then read `route`,
+  `age_ms`, `phase` and `notice` off the snapshot that wait returns.
+- `--hold <ms>` (1–10000, default 100): how long the key **reads as held** — a
+  debug-only override the guard's poller ORs into its physical key read, since
+  no posted event can make `CGEventSourceKeyState` read a key as down. `--age
+  <ms>` (0–60000) stamps the press that far in the past. `--busy <ms>`
+  (1–1800) freezes the page with a busy loop, then posts into it; the reply
+  arrives only once the freeze ends, and `age_ms` shows the freeze.
+- **`press` takes focus.** When the main window is not key it calls
+  `activateIgnoringOtherApps`, which steals focus from whatever you were
+  using, and the reply says `activated: true`. So **do not type in other apps
+  while `make qa` runs** — those keys land in the dev app's focused terminal.
+  If activation is refused (a **locked screen** refuses every activation call)
+  the reply is `not_key` and nothing is posted: `make qa` needs an unlocked
+  session; on `not_key`, click the dev window and re-run.
+- **A posted chord fires its native menu action.** `press alt+cmd+h` runs Hide
+  Others and hides your other apps; `press cmd+h` / `cmd+m` hide or minimise the
+  dev window. The one chord refused is a real quit: a chord that a native
+  `terminate:` item would take (or a Quit item whose guard target is gone)
+  answers `not_retargeted` and posts nothing.
+- **These quit the app for real** — keep them to `make qa-quit`: a ⌘Q
+  `--hold` of 500 or more; two ⌘Q presses within 1 s; `--age` past the 2000 ms
+  freshness bound; `--age` plus `--hold` reaching ~500 ms; and a `--hold` of
+  500 or more that outlasts a `--busy` freeze. `--busy` cannot be combined
+  with `--age` for that reason. *Warn Before Quitting* is not read: with the
+  toggle off a ⌘Q press quits at once, so check `quit_guard.enabled` first.
+- **Never `press cmd+w` while an HTML card's iframe has focus** — ⌘W typed
+  inside the frame never reaches the page's handler; it hits the native Close
+  Window item and hides the window (Q14).
+- The chord's characters are supplied, so the input source and IME play no
+  part (Q11 stays a hand-run row), and a shifted digit carries the digit, not
+  its layout's symbol.
 
 ### Waiting for something to become true
 
@@ -146,10 +213,11 @@ timeout 5000 ms; `--timeout 0` means evaluate once.
 ### What it cannot do
 
 - **Not a release feature.** Three build gates, one predicate each.
-- ⌘C / ⌘V cannot be driven — they need WebKit's native Edit-menu action, which
-  an untrusted dispatched event never triggers.
-- `focus` on a doc card is refused: no focus target an untrusted `mousedown`
-  reaches.
+- `key` cannot send a ⌘ chord (a dispatched event never reaches the native
+  menu); `press` can, but its reply does not say what the key did, and ⌘C / ⌘V
+  have no snapshot field yet (the clipboard, the paste), so nothing can assert
+  on them.
+- `type` and `key` refuse doc cards; only `focus` accepts them.
 - `focus`/`key` go through the real mouse path, so a program with mouse reporting
   on (Claude Code, vim) also receives a button-press report.
 
@@ -166,6 +234,24 @@ terminal and `visibility` it chose in its header.
 
 It needs **a live terminal card on the active board** — no verb creates one — and
 picks the first card with `term.alive`. A fresh board always boots one.
+
+D12–D19 press ⌘Q (and ⌘T/⌘W) natively, so the run also needs an **unlocked
+session** and **your hands off other apps** while it runs (see `press` above).
+S21 — that `press` activates a non-frontmost app — is exercised only when
+another app is in front when D12 runs (`open -a Finder` first); otherwise it is
+reported as skipped, never as passed.
+
+```sh
+make qa-quit CASE=hold      # S15: a 2 s hold hides the window, then quits on release
+make qa-quit CASE=double    # S16: two taps within 1 s quit
+make qa-quit CASE=stale     # S17: a press stamped 2.5 s old quits at once
+```
+
+`scripts/qa/quit.mjs` holds the three scenarios that **end the app**. One
+`CASE` per run, and `make run` again between cases: `tauri dev` exits with the
+app, the daemon survives, and the next app reconnects to it. `CASE=stale`'s
+route is only visible in the `make run` output (`quit-key route=terminate`);
+record it by hand.
 
 Results and the hand-run scenarios live in
 [`desktop/qa/qa-driver-qa.md`](../../desktop/qa/qa-driver-qa.md).

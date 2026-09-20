@@ -74,9 +74,19 @@ export interface DevSnapshotInput {
     classes: string[];
     selectionType: DevSelectionType;
   };
-  /** The hold-⌘Q guard's own facts (#171), or null when the backend did not
-   *  answer — a release build, or one without the command. */
-  quitGuard: { retargeted: boolean; enabled: boolean } | null;
+  /** The hold-⌘Q guard's own facts (#171, #183), or null when the backend did
+   *  not answer — a release build, or one without the command. */
+  quitGuard: DevQuitGuard | null;
+  /** `App.tsx`'s borrowedCardId — prefixed, like every other internal id. */
+  borrowedId: string | null;
+}
+
+export interface DevQuitGuard {
+  retargeted: boolean;
+  enabled: boolean;
+  phase: "idle" | "showing" | "confirming";
+  notice: { visible: boolean; alpha: number };
+  last_press: { press_ms: number; route: "guard" | "terminate"; age_ms: number } | null;
 }
 
 export interface DevSnapshotTerm {
@@ -95,6 +105,8 @@ export interface DevSnapshotCard {
   screen_rect: Rect | null;
   focused: boolean;
   term?: DevSnapshotTerm;
+  /** Doc cards only: whether this is the HTML card whose shield is lifted. */
+  borrowed?: boolean;
 }
 
 export interface DevSnapshot {
@@ -110,7 +122,7 @@ export interface DevSnapshot {
     classes: string[];
     selection_type: DevSelectionType;
   };
-  quit_guard: { retargeted: boolean; enabled: boolean } | null;
+  quit_guard: DevQuitGuard | null;
 }
 
 const TERM_PREFIX = "term:";
@@ -176,6 +188,7 @@ export function buildSnapshot(input: DevSnapshotInput): DevSnapshot {
         screen_rect: measured ?? null,
         focused: focusedCard !== null && bareCardId(c.id) === focusedCard,
       };
+      if (c.kind === "doc") card.borrowed = c.id === input.borrowedId;
       // Assigned rather than spread with a possibly-undefined value: a `term`
       // key set to undefined reads as an unresolvable path to `--until`, which
       // silently evaluates false instead of saying the card has no terminal.
@@ -201,6 +214,14 @@ export function buildSnapshot(input: DevSnapshotInput): DevSnapshot {
       classes: input.activeElement.classes,
       selection_type: input.activeElement.selectionType,
     },
-    quit_guard: input.quitGuard,
+    quit_guard: input.quitGuard && {
+      ...input.quitGuard,
+      // `hide_notice` resets a hidden panel's alphaValue to 1.0, which would
+      // read as a notice at full opacity.
+      notice: {
+        visible: input.quitGuard.notice.visible,
+        alpha: input.quitGuard.notice.visible ? input.quitGuard.notice.alpha : 0,
+      },
+    },
   };
 }

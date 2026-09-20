@@ -201,6 +201,17 @@ impl Notice {
     pub fn order_out(&self) {
         self.panel.orderOut(None);
     }
+
+    /// Read on the main thread by the QA driver's `dev_quit_guard` only.
+    #[cfg(debug_assertions)]
+    pub fn is_visible(&self) -> bool {
+        self.panel.isVisible()
+    }
+
+    #[cfg(debug_assertions)]
+    pub fn alpha(&self) -> f64 {
+        self.panel.alphaValue()
+    }
 }
 
 fn announce(mtm: MainThreadMarker, text: &str) {

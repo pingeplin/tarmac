@@ -24,10 +24,11 @@ pub const LINGER_MS: u64 = 1_000;
 pub const FADE_MS: u64 = 200;
 
 // NSEventModifierFlags raw bits, restated so this module needs no AppKit.
-const SHIFT: u64 = 1 << 17;
-const CONTROL: u64 = 1 << 18;
-const OPTION: u64 = 1 << 19;
-const COMMAND: u64 = 1 << 20;
+// `pub(crate)` so `dev_press.rs` can build a chord from them, not a third copy.
+pub(crate) const SHIFT: u64 = 1 << 17;
+pub(crate) const CONTROL: u64 = 1 << 18;
+pub(crate) const OPTION: u64 = 1 << 19;
+pub(crate) const COMMAND: u64 = 1 << 20;
 
 /// The only bits a shortcut match may consider. Caps Lock, Fn, NumericPad and
 /// Help ride along on a perfectly ordinary ⌘Q and must never break it.
@@ -40,10 +41,28 @@ pub enum Phase {
     Confirming,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Route {
     TerminateNow,
     Guard,
+}
+
+/// The names the QA driver's snapshot reports (spec 2609.0018).
+#[cfg_attr(not(any(test, debug_assertions)), allow(dead_code))]
+pub fn phase_name(phase: &Phase) -> &'static str {
+    match phase {
+        Phase::Idle { .. } => "idle",
+        Phase::Showing { .. } => "showing",
+        Phase::Confirming => "confirming",
+    }
+}
+
+#[cfg_attr(not(any(test, debug_assertions)), allow(dead_code))]
+pub fn route_name(route: &Route) -> &'static str {
+    match route {
+        Route::Guard => "guard",
+        Route::TerminateNow => "terminate",
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -86,7 +105,7 @@ impl Default for QuitGuard {
 impl QuitGuard {
     /// The wiring acts on the effects, never on the phase; the tests read it to
     /// pin the transitions the table promises.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(any(test, debug_assertions)), allow(dead_code))]
     pub fn phase(&self) -> &Phase {
         &self.phase
     }
@@ -178,7 +197,7 @@ fn is_keyboard_quit(ev: &QuitEvent) -> bool {
 
 /// The chord the item carries. A remap can put Shift in the key equivalent's
 /// character instead of the mask (Chromium `nsmenuitem_additions.mm`).
-fn expected_modifiers(key_equivalent: &str, mask: u64) -> u64 {
+pub(crate) fn expected_modifiers(key_equivalent: &str, mask: u64) -> u64 {
     let mut wanted = mask & MATCHED;
     if carries_shift(key_equivalent) {
         wanted |= SHIFT;
@@ -237,6 +256,17 @@ mod tests {
             item_key_equivalent: "q".into(),
             age_ms: 0,
         }
+    }
+
+    /// S4 (2609.0018) — the snapshot's names for each phase and route.
+    #[test]
+    fn phase_and_route_names_are_the_snapshots_words() {
+        assert_eq!(phase_name(&Phase::Idle { last_start_ms: None }), "idle");
+        assert_eq!(phase_name(&Phase::Idle { last_start_ms: Some(1) }), "idle");
+        assert_eq!(phase_name(&Phase::Showing { started_ms: 1 }), "showing");
+        assert_eq!(phase_name(&Phase::Confirming), "confirming");
+        assert_eq!(route_name(&Route::Guard), "guard");
+        assert_eq!(route_name(&Route::TerminateNow), "terminate");
     }
 
     /// S1 — the keypress the whole feature exists for.
