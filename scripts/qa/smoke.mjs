@@ -12,61 +12,49 @@
 // native retarget: replacing the app menu silently drops it, and no unit test can
 // read a live NSMenu.
 //
+// D12–D19 (spec 2609.0018, issue #183) press a native ⌘ chord with `tarmac dev
+// press` and read what the guard did off the snapshot: a tap from a plain
+// shell (D12, with S21's activation check), through kitty flags 5 (D13), from
+// the board (D14), the re-show (D15), a page shortcut ⌘T/⌘W (D16), from a
+// markdown card (D17) and an HTML card (D18), and into a frozen page (D19).
+// The cases that END the app are `make qa-quit` (`quit.mjs`).
+//
 // Every scenario that types mints its OWN sentinel from a per-run nonce, and the
 // run asserts they are all distinct: `scrollback_tail` spans 40 lines, so an
 // earlier scenario's echo would satisfy a repeated `contains` and turn a later
 // scenario green without doing anything.
 //
-// Run:  make qa          (pins TARMAC_DEV_SOCKET to this worktree's .dev/)
+// Run:  make qa          (pins TARMAC_DEV_SOCKET and TARMAC_SOCKET to this worktree's .dev/)
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
+import {
+  ROOT,
+  STATE,
+  SOCK,
+  dev,
+  json,
+  snapshot,
+  sleep,
+  termCard,
+  eq,
+  near,
+  between,
+  waitFor,
+  reset,
+  typeAll,
+  runner,
+  preflight,
+  open,
+  pressQuit,
+  pressQuitAgain,
+  pressBody,
+  matchPress,
+} from "./lib.mjs";
 
-const ROOT = resolve(import.meta.dirname, "../..");
-const CLI = resolve(ROOT, "core/target/debug/tarmac");
-const STATE = process.env.TARMAC_STATE ?? resolve(ROOT, ".dev/state.json");
-const SOCK = process.env.TARMAC_DEV_SOCKET ?? resolve(ROOT, ".dev/tarmac-dev.sock");
-
-const failures = [];
-let checks = 0;
-
-/** Run a verb. Returns { code, out, err } — never throws on a non-zero exit, so a
- *  scenario can assert on failure as readily as on success. */
-function dev(...args) {
-  try {
-    const out = execFileSync(CLI, ["dev", ...args], {
-      encoding: "utf8",
-      env: { ...process.env, TARMAC_DEV_SOCKET: SOCK },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    return { code: 0, out, err: "" };
-  } catch (e) {
-    return { code: e.status ?? 1, out: e.stdout ?? "", err: e.stderr ?? "" };
-  }
-}
-
-const json = (r) => JSON.parse(r.out || r.err);
-const snapshot = (...args) => json(dev("snapshot", ...args));
-
-function check(name, fn) {
-  checks++;
-  try {
-    fn();
-    console.log(`  ok   ${name}`);
-  } catch (e) {
-    failures.push(`${name}: ${e.message}`);
-    console.log(`  FAIL ${name}\n       ${e.message}`);
-  }
-}
-
-function eq(actual, expected, what) {
-  if (actual !== expected) {
-    throw new Error(`${what}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
-  }
-}
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const run = runner("make qa");
+const { check, checkAsync, skip } = run;
 
 // ------------------------------------------------------------------- sentinels
 // One nonce per run, one sentinel per scenario. Short, alphanumeric and
@@ -82,79 +70,6 @@ function sentinel(tag) {
   return s;
 }
 
-/** `focus board` then `focus <term>` — the clean reset. Per #162, `focus()` on an
- *  already-focused textarea does not restore the caret, so the blur is required.
- *  The leading `zoom 1` is not decoration: zoom persists, so a re-run after D2
- *  would start at 0.5 and shift every grip delta and cell point below. */
-function reset(term) {
-  // `zoom` settles before it replies and reports the observed zoom, so asserting
-  // the reply is both stronger and a subprocess cheaper than re-reading it.
-  eq(json(dev("zoom", "1")).zoom, 1, "zoom after reset");
-  dev("focus", "board");
-  dev("focus", term);
-}
-
-/** Type, and assert the driver dropped nothing — the #162 fact D4 and D5 turn on. */
-function typeAll(term, text) {
-  const body = json(dev("type", term, text));
-  if (body.dropped.length > 0) {
-    throw new Error(`type ${JSON.stringify(text)} dropped ${JSON.stringify(body.dropped)}`);
-  }
-  return body;
-}
-
-/** Wait for an expression, and on timeout raise the terminal's tail with it — the
- *  difference between a diagnosable failure and a mysterious one. */
-function waitFor(term, expr, ...args) {
-  const r = dev("snapshot", "--until", expr, ...args);
-  if (r.code === 0) return JSON.parse(r.out);
-  let tail = null;
-  try {
-    tail = termCard(JSON.parse(r.err).snapshot, term)?.term?.scrollback_tail;
-  } catch {
-    // A timeout body always carries the final snapshot; anything else means the
-    // driver failed for a different reason, and `expr` is the useful half.
-  }
-  throw new Error(`\`${expr}\` never held.\n       tail: ${JSON.stringify(tail)}`);
-}
-
-const termCard = (snap, term) => snap.cards.find((c) => c.id === term);
-const near = (a, b, tol, what) => {
-  if (Math.abs(a - b) > tol) throw new Error(`${what}: ${a} is not within ${tol} of ${b}`);
-};
-
-// ---------------------------------------------------------------- preconditions
-// No verb creates a terminal, so the suite needs one that already exists.
-
-function preflight() {
-  if (!existsSync(CLI)) {
-    die(`no debug CLI at ${CLI} — run \`make core\` first`);
-  }
-  if (!existsSync(SOCK)) {
-    die(`no dev driver socket at ${SOCK} — start the app with \`make run\` first`);
-  }
-  const probe = dev("snapshot");
-  if (probe.code !== 0) {
-    // A leftover socket file from a killed app lands here rather than in the
-    // branch above, so this message names the remedy too.
-    die(
-      `the dev driver did not answer — start the app with \`make run\` first ` +
-        `(a stale socket file is left behind when the app is killed). ` +
-        `Reply: ${probe.err.trim() || probe.out.trim()}`,
-    );
-  }
-  const snap = JSON.parse(probe.out);
-  const term = snap.cards.find((c) => c.kind === "term" && c.term?.alive);
-  if (!term) {
-    die("no live terminal card on the active board — open one and re-run");
-  }
-  console.log(`board ${snap.board_id} · terminal ${term.id} · visibility ${snap.visibility}`);
-  if (snap.visibility !== "visible") {
-    console.log("note: the window is not visible; see Q5 before blaming a failure on the driver");
-  }
-  return { term: term.id, boardId: snap.board_id };
-}
-
 /** The active board's persisted zoom. The shape is the one `persist.rs` writes —
  *  `{ boards: [{ board_id, board: { zoom, cx, cy } }] }` — and nothing else can
  *  reach this file, so a missing `boards` array is a schema change and throws
@@ -168,9 +83,86 @@ function activeBoardZoom(state, boardId) {
   return typeof zoom === "number" ? zoom : null;
 }
 
-function die(message) {
-  console.error(`make qa: ${message}`);
-  process.exit(1);
+// ------------------------------------------------------------- pids (S21)
+
+/** `lsappinfo front` prints an ASN, not a pid; `info -only pid` prints
+ *  `"pid"=637`. */
+function frontmostPid() {
+  const asn = execFileSync("lsappinfo", ["front"], { encoding: "utf8" }).trim();
+  const line = execFileSync("lsappinfo", ["info", "-only", "pid", asn], { encoding: "utf8" });
+  const m = /=\s*(\d+)/.exec(line);
+  return m ? Number(m[1]) : null;
+}
+
+/** The dev app's pid, the way `make kill-daemon` finds its daemon. */
+function devAppPid() {
+  try {
+    const out = execFileSync("lsof", ["-t", SOCK], { encoding: "utf8" });
+    const pid = out.trim().split("\n").map(Number).find((n) => n > 0);
+    return pid ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------- fixtures
+// Written only when missing or when the bytes differ: rewriting an open
+// fixture bumps its mtime, and the daemon's file_event then refetches a
+// markdown card and reloads an HTML card's iframe, racing the focus and the
+// press. Both are written before the first `tarmac open`, because the first
+// open makes the daemon watch the directory and a later create would raise a
+// debounced event after its own open.
+
+const FIXTURES = resolve(ROOT, ".dev/qa-fixtures");
+const D17_MD = "# D17\n\nA markdown fixture for the ⌘Q guard.\n\n[a link](https://example.com/)\n";
+const D18_HTML =
+  "<!doctype html><html><body><p>D18: an HTML fixture for the ⌘Q guard.</p>" +
+  "<button>a button</button> <a href=\"https://example.com/\">a link</a></body></html>\n";
+
+function writeFixtures() {
+  mkdirSync(FIXTURES, { recursive: true });
+  const paths = {};
+  for (const [name, bytes] of [["d17.md", D17_MD], ["d18.html", D18_HTML]]) {
+    const path = resolve(FIXTURES, name);
+    if (!existsSync(path) || readFileSync(path, "utf8") !== bytes) writeFileSync(path, bytes);
+    // The daemon canonicalises the path, and that is the card's id.
+    paths[name] = realpathSync(path);
+  }
+  return paths;
+}
+
+/** Open a fixture and wait until the app has registered its card's node —
+ *  `tarmac open` exits on the daemon's ack, before the card exists. */
+function openFixture(path) {
+  open(path);
+  waitFor(null, `cards[${path}].screen_rect != null`, "--timeout", "3000");
+  return path;
+}
+
+/** Un-borrow an HTML card: Esc while `borrowed` reads true, up to three times
+ *  (a visible toast or a pending fly-back takes an Esc first). Escape is sent
+ *  only while borrowed — otherwise the ladder's `fresh` branch takes it, or it
+ *  reaches zsh. */
+function unborrow(term, id) {
+  for (let i = 0; i < 3; i++) {
+    if (termCard(snapshot(), id)?.borrowed !== true) return;
+    dev("key", term, "escape");
+    try {
+      waitFor(term, `cards[${id}].borrowed == false`, "--timeout", "1000");
+      return;
+    } catch {
+      // Something else claimed that Esc; go round again.
+    }
+  }
+  if (termCard(snapshot(), id)?.borrowed === true) throw new Error(`${id} is still borrowed after three Esc`);
+}
+
+/** The route and the notice of a ⌘Q press that must have been guarded. */
+function assertGuarded(pressMs, timeoutMs = 1000) {
+  const snap = matchPress(pressMs, timeoutMs);
+  eq(snap.quit_guard.last_press.route, "guard", "last_press.route");
+  eq(snap.quit_guard.notice.visible, true, "notice.visible");
+  return snap;
 }
 
 // ------------------------------------------------------------------- scenarios
@@ -199,8 +191,8 @@ function d1_projection(snap) {
   if (measured === 0) throw new Error("no card had a measured screen_rect");
 }
 
-async function run() {
-  const { term, boardId } = preflight();
+async function main() {
+  const { term, boardId } = preflight(run);
   console.log("\nD1 — screen_rect matches board_rect projected through viewport");
   check("at zoom 1", () => {
     dev("zoom", "1");
@@ -429,11 +421,203 @@ async function run() {
     }
   });
 
-  console.log(`\n${checks - failures.length}/${checks} checks passed`);
-  if (failures.length > 0) {
-    console.error(`\nmake qa: ${failures.length} check(s) failed`);
-    process.exit(1);
-  }
+  await quitGuardScenarios(term);
+  run.finish();
 }
 
-await run();
+// ------------------------------------------------- the ⌘Q guard (2609.0018)
+// D12–D19 press a native ⌘Q with `tarmac dev press` and read what the guard did
+// off the snapshot. Every ⌘Q press goes through `pressQuit` (the *Before every
+// ⌘Q press* checks) and `matchPress`; the deliberate second presses in D15 are
+// the only exception. The cases that END the app live in `quit.mjs`.
+
+async function quitGuardScenarios(term) {
+  let s21 = null;
+
+  console.log("\nD12 — ⌘Q tap from a plain-shell terminal (S10), and the verb activates the app (S21)");
+  await checkAsync("a tap routes guard, shows the notice, and leaves the prompt clean", async () => {
+    reset(term);
+    const tail0 = termCard(snapshot(), term).term.scrollback_tail;
+    const frontBefore = frontmostPid();
+    const devPid = devAppPid();
+    // 300 ms: still a tap (HOLD_MS is 500), and long enough that the matching
+    // snapshot lands inside `showing`.
+    const body = pressBody(await pressQuit("--hold", "300"));
+    eq(body.hold_ms, 300, "reply hold_ms");
+    const snap = matchPress(body.press_ms);
+    const { last_press, phase, notice } = snap.quit_guard;
+    eq(last_press.route, "guard", "last_press.route");
+    between(last_press.age_ms, 0, 2000, "last_press.age_ms");
+    eq(phase, "showing", "phase");
+    eq(notice.visible, true, "notice.visible");
+    // Read only after the matching wait: `showing` lasts about 300 ms and the
+    // lsappinfo call must not delay that snapshot.
+    s21 = { frontBefore, devPid, activated: body.activated, frontAfter: frontmostPid() };
+    waitFor(term, 'quit_guard.phase == "idle"', "--timeout", "3000");
+    waitFor(term, "quit_guard.notice.visible == false", "--timeout", "3000");
+    eq(termCard(snapshot(), term).term.scrollback_tail, tail0, "scrollback_tail (a stray q would echo)");
+  });
+  if (s21 === null) {
+    skip("S21 — the verb activates a non-frontmost app", "D12 did not reach its press");
+  } else if (s21.devPid === null) {
+    skip("S21 — the verb activates a non-frontmost app", `could not resolve the dev app's pid from ${SOCK}`);
+  } else if (s21.frontBefore === s21.devPid) {
+    skip("S21 — the verb activates a non-frontmost app", "not exercised: the dev app was already frontmost");
+  } else {
+    check("S21 — the verb activates a non-frontmost app", () => {
+      eq(s21.activated, true, "reply activated");
+      eq(s21.frontAfter, s21.devPid, `frontmost pid after the press (was ${s21.frontBefore})`);
+    });
+  }
+
+  console.log("\nD13 — ⌘Q tap through a kitty-flags-5 terminal (S11)");
+  await checkAsync("with flags 5 pushed, the key still reaches the guard", async () => {
+    reset(term);
+    const pushed = sentinel("d13a");
+    const popped = sentinel("d13b");
+    try {
+      // Only the command's output carries `-42`; the typed line's echo cannot
+      // satisfy the wait. Flags 5 is what Claude Code pushes (#171).
+      typeAll(term, `printf '\\033[>5u' && echo ${pushed}-$((6*7))\n`);
+      waitFor(term, `cards[${term}].term.scrollback_tail contains "${pushed}-42"`);
+      assertGuarded(pressBody(await pressQuit()).press_ms);
+    } finally {
+      // Under the knockout, xterm's `ESC[113;9u` sits at the prompt; Enter is
+      // still a legacy CR under flags 5 and flushes it as its own failing
+      // command. Pushed flags would otherwise leak into every later run,
+      // because the daemon replays the scrollback.
+      dev("type", term, "\n");
+      dev("type", term, `printf '\\033[<u' && echo ${popped}-$((6*7))\n`);
+      waitFor(term, `cards[${term}].term.scrollback_tail contains "${popped}-42"`);
+    }
+  });
+
+  console.log("\nD14 — ⌘Q tap from the board (S12)");
+  await checkAsync("with nothing focused, the key routes guard", async () => {
+    reset(term);
+    dev("focus", "board");
+    assertGuarded(pressBody(await pressQuit()).press_ms);
+  });
+
+  console.log("\nD15 — a second tap while the first notice fades re-shows it (S13, Q16)");
+  await checkAsync("the notice returns to full opacity and lingers its own second", async () => {
+    reset(term);
+    const first = pressBody(await pressQuit());
+    matchPress(first.press_ms);
+    const fading = waitFor(term, "quit_guard.notice.alpha != 1", "--timeout", "3000");
+    eq(fading.quit_guard.notice.visible, true, "the first notice is fading, not gone");
+    const r2 = await pressQuitAgain();
+    const second = pressBody(r2);
+    const gap = second.press_ms - first.press_ms;
+    // Above 1000 or it is a second tap (and quits); below 1300 or the first
+    // notice may already be gone, which would make the knockout vacuous.
+    if (!(gap > 1000 && gap < 1300)) {
+      throw new Error(`inconclusive: press_ms₂ − press_ms₁ = ${gap} ms, outside (1000, 1300); re-run`);
+    }
+    const snap = matchPress(second.press_ms);
+    eq(snap.quit_guard.last_press.route, "guard", "second press route");
+    waitFor(term, "quit_guard.notice.alpha == 1", "--timeout", "300");
+    waitFor(term, "quit_guard.notice.visible == false", "--timeout", "3000");
+    const lingered = Date.now() - r2.exitedAt;
+    if (lingered < 900) throw new Error(`the second notice was gone ${lingered} ms after its reply; expected ≥ 900`);
+    eq(dev("snapshot").code, 0, "the app still answers");
+  });
+
+  console.log("\nD16 — a page shortcut: ⌘T opens a terminal and ⌘W closes it (S14)");
+  await checkAsync("the verb is not ⌘Q-specific", async () => {
+    reset(term);
+    const before = snapshot();
+    const ids = new Set(before.cards.map((c) => c.id));
+    const lastPress = JSON.stringify(before.quit_guard.last_press);
+
+    const opened = dev("press", "cmd+t");
+    eq(opened.code, 0, "press cmd+t exit code");
+    eq(json(opened).combo, "cmd+t", "reply combo");
+    let created = null;
+    for (const deadline = Date.now() + 3000; created === null && Date.now() < deadline; ) {
+      created = snapshot().cards.find((c) => c.kind === "term" && !ids.has(c.id))?.id ?? null;
+      if (created === null) await sleep(100);
+    }
+    if (created === null) throw new Error("no new terminal card appeared within 3000 ms of ⌘T");
+    // The card enters `cards` before its xterm mounts; a `proc` means the
+    // daemon has spawned its shell, so ⌘W's close has a PTY to close.
+    waitFor(term, `cards[${created}].term.proc != null`, "--timeout", "3000");
+    eq(json(dev("focus", created)).focused_card, created, "focus the new terminal");
+    // ⌘W inside an HTML card's frame would hide the window (Q14).
+    eq(snapshot().active_element.tag, "TEXTAREA", "active_element.tag before ⌘W");
+
+    const closed = dev("press", "cmd+w");
+    eq(closed.code, 0, "press cmd+w exit code");
+    eq(json(closed).combo, "cmd+w", "reply combo");
+    let after = null;
+    for (const deadline = Date.now() + 3000; after === null && Date.now() < deadline; ) {
+      const snap = snapshot();
+      if (!snap.cards.some((c) => c.id === created)) after = snap;
+      else await sleep(100);
+    }
+    if (after === null) throw new Error(`${created} was still on the board 3000 ms after ⌘W`);
+    for (const id of ids) {
+      if (!after.cards.some((c) => c.id === id)) throw new Error(`⌘W removed ${id} as well`);
+    }
+    eq(termCard(after, term).term.alive, true, "the original terminal is still alive");
+    eq(JSON.stringify(after.quit_guard.last_press), lastPress, "last_press is untouched by ⌘T/⌘W");
+  });
+
+  console.log("\nD17 — ⌘Q tap with a markdown card focused (S18, Q1's markdown cell)");
+  const fixtures = writeFixtures();
+  await checkAsync("focus drops to BODY, and the key routes guard", async () => {
+    const id = openFixture(fixtures["d17.md"]);
+    reset(term);
+    eq(json(dev("zoom", "0.5")).zoom, 0.5, "zoom 0.5");
+    // If focus were already on BODY, the page-body knockout would pass vacuously.
+    eq(snapshot().active_element.tag, "TEXTAREA", "active_element.tag before focus");
+    const focused = json(dev("focus", id));
+    eq(focused.focused_card, id, "reply focused_card");
+    eq(focused.active_element.tag, "BODY", "reply active_element.tag");
+    assertGuarded(pressBody(await pressQuit()).press_ms);
+  });
+
+  console.log("\nD18 — ⌘Q tap with an HTML card focused (S19, Q1's HTML cell)");
+  await checkAsync("focus lands in the IFRAME, the card is borrowed, and the key routes guard", async () => {
+    const id = openFixture(fixtures["d18.html"]);
+    reset(term);
+    eq(json(dev("zoom", "0.5")).zoom, 0.5, "zoom 0.5");
+    eq(snapshot().active_element.tag, "TEXTAREA", "active_element.tag before focus");
+    // Un-borrowed first, so every run really exercises the dblclick.
+    unborrow(term, id);
+    try {
+      const r = dev("focus", id);
+      if (r.code !== 0 && json(r).error === "card_hidden") {
+        const snap = snapshot();
+        throw new Error(
+          `card_hidden: ${id} sits at ${JSON.stringify(termCard(snap, id)?.board_rect)} with the viewport at ` +
+            `${JSON.stringify(snap.viewport)}; pan the board toward the prime terminal and re-run`,
+        );
+      }
+      eq(r.code, 0, `focus ${id} exit code (${r.err.trim()})`);
+      const focused = json(r);
+      eq(focused.focused_card, id, "reply focused_card");
+      eq(focused.active_element.tag, "IFRAME", "reply active_element.tag");
+      eq(termCard(snapshot(), id).borrowed, true, "cards[].borrowed after focus");
+      assertGuarded(pressBody(await pressQuit()).press_ms);
+    } finally {
+      // Never press ⌘W while the IFRAME has focus: it hides the window (Q14).
+      dev("focus", term);
+      unborrow(term, id);
+    }
+  });
+
+  console.log("\nD19 — a ⌘Q into a frozen page (S24, Q12's busy half)");
+  await checkAsync("the press waits out the freeze, and age_ms reflects it", async () => {
+    reset(term);
+    const r = await pressQuit("--busy", "1000");
+    const body = pressBody(r);
+    eq(body.busy_ms, 1000, "reply busy_ms");
+    const took = r.exitedAt - r.spawnedAt;
+    if (took < 950) throw new Error(`press exited ${took} ms after spawn; a frozen page cannot answer before the freeze ends`);
+    const snap = assertGuarded(body.press_ms, 3000);
+    between(snap.quit_guard.last_press.age_ms, 900, 2000, "last_press.age_ms");
+  });
+}
+
+await main();

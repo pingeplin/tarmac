@@ -1,6 +1,6 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: core app app-deps sidecars test docs-check dco-check run qa kill-daemon bundle release kit
+.PHONY: core app app-deps sidecars test docs-check dco-check run qa qa-quit kill-daemon bundle release kit
 
 core:
 	cd $(ROOT)/core && cargo build
@@ -78,11 +78,23 @@ run: core app-deps sidecars
 # The QA driver's scenario suite (spec 2609.0015). NOT part of `make test` and
 # not on CI: every scenario drives a LIVE window, so it needs `make run` up in
 # another shell. The same TARMAC_DEV_SOCKET pin as `run`, so this can only ever
-# reach this worktree's app.
+# reach this worktree's app; TARMAC_SOCKET is pinned too, so the doc-card
+# scenarios can `tarmac open` their fixtures into that same app (#183).
 qa: core
 	TARMAC_DEV_SOCKET="$(ROOT)/.dev/tarmac-dev.sock" \
+	TARMAC_SOCKET="$(ROOT)/.dev/tarmacd.sock" \
 	TARMAC_STATE="$(ROOT)/.dev/state.json" \
 	node $(ROOT)/scripts/qa/smoke.mjs
+
+# The ⌘Q guard's QUITTING scenarios (spec 2609.0018): one CASE per run, and
+# each ends the app, so `make run` again between cases.
+CASE ?= hold
+qa-quit: core
+	TARMAC_DEV_SOCKET="$(ROOT)/.dev/tarmac-dev.sock" \
+	TARMAC_SOCKET="$(ROOT)/.dev/tarmacd.sock" \
+	TARMAC_STATE="$(ROOT)/.dev/state.json" \
+	CASE="$(CASE)" \
+	node $(ROOT)/scripts/qa/quit.mjs
 
 # Kill the dev tarmacd for this worktree (same socket path as `make run`).
 # Sends SIGKILL (kill -9); exits 0 whether or not it was running.

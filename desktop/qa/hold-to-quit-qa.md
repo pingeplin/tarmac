@@ -265,3 +265,85 @@ The Q1 cell (plain shell × ABC) also pays the `/simplify` debt above.
       second-tap window.
     - The operator saw the notice return to full opacity each time.
     - The time from release to disappearance was not recorded.
+
+---
+
+## #183 — the guard driven from `tarmac dev press` (spec 2609.0018)
+
+`press` posts a native ⌘ chord in-process with a debug-only key-held override,
+and `quit_guard` now reports `phase`, `notice` and `last_press`. The rows below
+are the spec's `[D]` scenarios (`make qa` D12–D19, `make qa-quit`), each with its
+knockout run, plus the `[QA]` rows S22 and S33–S35. `desktop/qa/qa-driver-qa.md`
+records the driver-side rows (D12–D19 as driver scenarios, S36).
+
+**Build under test:** `feat/183-quit-guard-qa-driver` at `b1cb7c4` plus the
+uncommitted scripts (`scripts/qa/{lib,smoke,quit}.mjs`, `Makefile`), 2026-09-20,
+`make test` green. Screen unlocked (`CGSSessionScreenIsLocked 0`) for every run
+recorded as a result; the runs that hit a locked screen are named as such.
+
+### Which Q rows the driver now covers
+
+| Row | Driver | Notes |
+|---|---|---|
+| Q1 tap, plain shell × ABC | **D12** | `route=guard`, `phase == "showing"`, notice visible, prompt clean |
+| Q1 tap, board | **D14** | |
+| Q1 tap, markdown card | **D17** | focus via the DOM plan (`active_element.tag == "BODY"`) |
+| Q1 tap, HTML card | **D18** | `IFRAME` focused, `borrowed == true`; the fixture knockout shows the ⌘Q passes through the frame |
+| Q1 tap, Claude Code (kitty flags 5) | **D13** | a plain shell with flags 5 pushed, #171's headline case; a real Claude Code session stays manual |
+| Q1 hold hides then quits on release | **`make qa-quit CASE=hold`** | the override stands in for the physical key read |
+| Q1 two taps within 1 s quit | **`CASE=double`** | |
+| Q12 freshness, idle half | **D12** (`0 <= age_ms <= 2000`) | idle `age_ms` 2–24 across 50 driver presses this run |
+| Q12 freshness, busy half | **D19** (`press --busy 1000`) | `age_ms` 968–973 |
+| Q16 re-show | **D15** | second press while the first notice fades; `alpha` back to 1; lingers ≥ 900 ms |
+| stale press (S7 of 2609.0016) | **`CASE=stale`** | `--age 2500 --hold 1` |
+| ⌘T / ⌘W as page shortcuts | **D16** | proves the verb is not ⌘Q-specific |
+
+**Still manual:** Q1 × Zhuyin / Japanese (the chord's characters are supplied,
+so the input source plays no part), Q1's real Claude Code cell, Q2 (minimised;
+`press` answers `not_key` there, S34), Q3 (the toggle), Q4 (a menu click), Q5
+(the red button), Q6 (⌘C/⌘V have no snapshot field), Q7 (VoiceOver), Q8 (the
+release bundle's physical key read — the override bypasses it), Q9 (a remap:
+`press alt+cmd+q` can press it, but the row also reads the notice's text), Q10,
+Q11, Q13, Q14.
+
+### Results
+
+- **`make qa`** — **PASS, 27/27** (first run; S21 skipped because the dev app
+  was already frontmost), then **PASS, 28/28** with Finder raised first
+  (`open -a Finder`), which exercised S21: `activated == true` and the frontmost
+  pid after the press was the dev app's.
+  - Every driver press this session logged `route=guard type=10 repeat=false`
+    (60 `quit-key` lines): idle `age_ms` 2–24 (one first-press 93), busy
+    968–973 at `--busy 1000`.
+- **Knockouts (each reverted by the line, and the run re-passed after):**
+  - **S11** (kitty rule in `kit/termKeyRoute.ts` prefixed `false &&`): D13
+    **FAIL** — `quit_guard.last_press.press_ms ~= …` never held (xterm swallowed
+    the key). The `finally` popped the flags and D14–D19 still passed, 26/27.
+  - **S14** (`App.tsx`'s ⌘T branch returns before `spawnNewTerminal()`): D16
+    **FAIL** — no new terminal card appeared within 3000 ms of ⌘T.
+  - **S18** (`dispatchStep`'s `page-body` case does nothing): D17 **FAIL** —
+    `active_element.tag` expected `BODY`, got `TEXTAREA`.
+  - **S19, `doc-iframe` case does nothing:** D18 **FAIL** — `active_element.tag`
+    expected `IFRAME`, got `TEXTAREA`.
+  - **S19, `doc-shield` case does nothing:** D18 **FAIL** —
+    `cards[].borrowed` expected `true`, got `false` (`active_element` still read
+    `IFRAME`, as V4 predicts: only `borrowed` catches this one).
+  - **S19, fixture `keydown` → `preventDefault()` (in `smoke.mjs`, not on
+    disk):** D18 **FAIL** — the matching wait timed out: the frame handled the
+    ⌘Q and the menu never saw it. So D18's ⌘Q really passes through the frame.
+  - **S10** (`Effect::ShowHud` does nothing), **S13** (no `hud_gen` bump in
+    `show_notice`), **S21** (the "already key?" test always true), **S24** (the
+    `eval` skipped): PENDING — the first S10/S13 attempts ran into a locked
+    screen (every press `not_key`, 19/27; inconclusive, not a result).
+- **`make qa-quit`** (`CASE=hold`, `double`, `stale`) and their knockouts
+  (S15: drop the override from `on_poll`; S16: `recent` always false; S17:
+  `FRESHNESS_BOUND_MS` = 10000): PENDING.
+- **S22** (window made non-key by another app; `press cmd+q` activates and
+  routes `guard` through the page, checked with a temporary backtrace line):
+  PENDING.
+- **S33** (2609.0016's S37 knockout, `install(...)` commented out): PENDING.
+- **S34** (window minimised → `not_key`, app stays): PENDING.
+- **S35** (`make bundle`, then `strings`): PENDING as `make bundle`; a
+  `cargo build --release` of the same crate already shows `dev_press`,
+  `dev_quit_guard` and `not_retargeted` **0** times in the release binary and
+  once each in the debug one.

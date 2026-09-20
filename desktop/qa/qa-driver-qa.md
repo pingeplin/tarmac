@@ -462,3 +462,51 @@ printf '\033[>0u' > /dev/ttys000
 A scenario whose failure mode requires that is not one `make qa` should run
 unattended. The limitation is documented in `tarmac --help` and the dev-channel
 skill instead.
+
+---
+
+## D12–D19 — the ⌘Q guard through `press` (spec 2609.0018, #183)
+
+`press` is the first verb that reaches AppKit, and `focus` now takes doc cards.
+The scenarios and their knockout runs are recorded in
+[`hold-to-quit-qa.md`](hold-to-quit-qa.md) (the guard's own QA doc), since each
+is a row of the guard's Q grid. Driver-side facts from the runs (2026-09-20,
+`b1cb7c4` + the scripts):
+
+- **`make qa` 27/27, then 28/28** with Finder raised first so S21 ran. D1–D11
+  are unchanged by the new verb and still pass.
+- **`focus <doc card>`** replies as observed: `{"focused_card": "<path>",
+  "active_element": {"tag": "BODY", …}}` for markdown and `"IFRAME"` for HTML,
+  and the snapshot's new `cards[].borrowed` reads `true` after the HTML plan.
+  The un-borrow (`key <term> escape` while `borrowed` is true) took one Esc
+  every time.
+- **`press`** replied within the backend's slack every time without `--busy`;
+  with `--busy 1000` the CLI exited ≥ 950 ms after spawn (D19's check), i.e.
+  the frozen page answered only once the freeze ended, as the spec inferred.
+- **D15's window** (`press_ms₂ − press_ms₁` in (1000, 1300)) was hit on every
+  run so far; no inconclusive run yet.
+- **Fixtures** live in this worktree's `.dev/qa-fixtures/` (gitignored) and are
+  rewritten only when their bytes differ. After the S19 fixture knockout the
+  on-disk `d18.html` carried the `preventDefault` script until the next run's
+  D17 rewrote it — which is the designed behaviour, and the iframe reloaded on
+  the daemon's `file_event`.
+
+## S36 — `card_hidden` in a live app
+
+### Result: PASS (2026-09-20, screen locked — the row is DOM-only)
+
+- **Given** the plain-shell terminal focused and `zoom 3`. D18's card then
+  measured `screen_rect` `{x: 4282, y: 561, w: 1176, h: 930}` against a
+  `view_rect` of `{x: 0, y: 0, w: 1100, h: 641}`: more than one view width to
+  the right, so `kit/cull` culls it.
+- **Then** `focus <d18.html>` exited **1** with
+  `{"error": "card_hidden", "message": "that HTML card is culled off-screen …"}`,
+  and the snapshot still read `focused_card` = the terminal and
+  `active_element.tag` `TEXTAREA`.
+- **Knockout** (`handle` passes `viewSize: { w: 1e9, h: 1e9 }`): the same
+  `focus` exited **0**, replied `focused_card` = the card with
+  `active_element.tag` still `TEXTAREA`, and the snapshot read
+  `borrowed: true` — the plan selected and borrowed a card whose hidden iframe
+  ignored `.focus()`, exactly `r-hplan-culled.json`. Line reverted.
+- **Afterwards** `zoom 1`, then one `key <term> escape` un-borrowed it
+  (`cards[].borrowed == false` held within 1000 ms).
