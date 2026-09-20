@@ -88,9 +88,11 @@ pub fn matches_item(chord: &Chord, key_equivalent: &str, item_mask: u64) -> bool
 mod tests {
     use super::*;
 
+    // Restated as literals on purpose, so a change to the crate's bits is
+    // caught here rather than mirrored.
     const CMD: u64 = 1 << 20;
-    const SHIFT: u64 = 1 << 17;
-    const CTRL: u64 = 1 << 18;
+    const SHF: u64 = 1 << 17;
+    const CTL: u64 = 1 << 18;
     const ALT: u64 = 1 << 19;
 
     fn chord(flags: u64, chars: &str, key_code: u16) -> Chord {
@@ -105,12 +107,12 @@ mod tests {
         assert_eq!(parse_chord("cmd+t"), Ok(chord(CMD, "t", 17)));
         assert_eq!(parse_chord("cmd+w"), Ok(chord(CMD, "w", 13)));
         assert_eq!(parse_chord("cmd+k"), Ok(chord(CMD, "k", 40)));
-        assert_eq!(parse_chord("cmd+shift+z"), Ok(chord(CMD | SHIFT, "Z", 6)));
+        assert_eq!(parse_chord("cmd+shift+z"), Ok(chord(CMD | SHF, "Z", 6)));
         assert_eq!(parse_chord("alt+cmd+q"), Ok(chord(CMD | ALT, "q", 12)));
-        assert_eq!(parse_chord("ctrl+cmd+a"), Ok(chord(CMD | CTRL, "a", 0)));
+        assert_eq!(parse_chord("ctrl+cmd+a"), Ok(chord(CMD | CTL, "a", 0)));
         assert_eq!(parse_chord("cmd+1"), Ok(chord(CMD, "1", 18)));
         assert_eq!(parse_chord("cmd+0"), Ok(chord(CMD, "0", 29)));
-        assert_eq!(parse_chord("cmd+shift+1"), Ok(chord(CMD | SHIFT, "1", 18)));
+        assert_eq!(parse_chord("cmd+shift+1"), Ok(chord(CMD | SHF, "1", 18)));
     }
 
     /// S7 — the refusal predicate, with chords from the parser.
@@ -121,7 +123,7 @@ mod tests {
         };
         assert!(m("cmd+q", "q", CMD));
         assert!(m("cmd+shift+q", "Q", CMD));
-        assert!(m("cmd+shift+q", "q", CMD | SHIFT));
+        assert!(m("cmd+shift+q", "q", CMD | SHF));
         assert!(m("alt+cmd+q", "q", CMD | ALT));
         assert!(m("cmd+q", "q", CMD | (1 << 16)), "Caps Lock in the item's mask is ignored");
 

@@ -188,10 +188,10 @@ export function buildSnapshot(input: DevSnapshotInput): DevSnapshot {
         screen_rect: measured ?? null,
         focused: focusedCard !== null && bareCardId(c.id) === focusedCard,
       };
+      if (c.kind === "doc") card.borrowed = c.id === input.borrowedId;
       // Assigned rather than spread with a possibly-undefined value: a `term`
       // key set to undefined reads as an unresolvable path to `--until`, which
       // silently evaluates false instead of saying the card has no terminal.
-      if (c.kind === "doc") card.borrowed = c.id === input.borrowedId;
       if (c.term) {
         card.term = {
           alive: c.live === true && c.dead !== true,

@@ -36,6 +36,8 @@ use objc2_foundation::{NSNotificationCenter, NSRunLoop, NSRunLoopCommonModes, NS
 use tauri::menu::{CheckMenuItem, Menu, MenuEvent, MenuId};
 use tauri::{AppHandle, Manager, Wry};
 
+#[cfg(debug_assertions)]
+use crate::dev_press::{matches_item, Chord};
 use crate::quit_guard::{self, Effect, QuitEvent, QuitGuard, Route};
 use crate::quit_notice::Notice;
 use crate::window_lifecycle::HiddenByClose;
@@ -703,8 +705,8 @@ async fn on_main_async<T: Send + 'static>(
 /// whose guard is gone (its target dropped, so AppKit disabled it)? Walked the
 /// way `is_retargeted` walks, so the two agree on what the menu holds.
 #[cfg(debug_assertions)]
-fn quit_chord_refused(mtm: MainThreadMarker, chord: &crate::dev_press::Chord) -> bool {
-    fn walk(menu: &NSMenu, chord: &crate::dev_press::Chord) -> bool {
+fn quit_chord_refused(mtm: MainThreadMarker, chord: &Chord) -> bool {
+    fn walk(menu: &NSMenu, chord: &Chord) -> bool {
         for index in 0..menu.numberOfItems() {
             let Some(item) = menu.itemAtIndex(index) else { continue };
             let native = item.action() == Some(sel!(terminate:));
@@ -712,7 +714,7 @@ fn quit_chord_refused(mtm: MainThreadMarker, chord: &crate::dev_press::Chord) ->
             if native || orphaned {
                 let key_equivalent = item.keyEquivalent().to_string();
                 let mask = item.keyEquivalentModifierMask().0 as u64;
-                if crate::dev_press::matches_item(chord, &key_equivalent, mask) {
+                if matches_item(chord, &key_equivalent, mask) {
                     return true;
                 }
             } else if let Some(submenu) = item.submenu() {
@@ -730,7 +732,8 @@ fn quit_chord_refused(mtm: MainThreadMarker, chord: &crate::dev_press::Chord) ->
 /// page's path (spike 2).
 #[cfg(debug_assertions)]
 fn window_is_key(mtm: MainThreadMarker) -> bool {
-    NSApplication::sharedApplication(mtm).isActive() && NSApplication::sharedApplication(mtm).mainWindow().is_some_and(|w| w.isKeyWindow())
+    let ns_app = NSApplication::sharedApplication(mtm);
+    ns_app.isActive() && ns_app.mainWindow().is_some_and(|w| w.isKeyWindow())
 }
 
 /// Post one key event for `chord` to the main window. `None` when there is no
@@ -738,7 +741,7 @@ fn window_is_key(mtm: MainThreadMarker) -> bool {
 #[cfg(debug_assertions)]
 fn post_key(
     mtm: MainThreadMarker,
-    chord: &crate::dev_press::Chord,
+    chord: &Chord,
     kind: NSEventType,
     stamp_ms: u64,
 ) -> Option<()> {

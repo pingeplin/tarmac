@@ -279,6 +279,15 @@ describe("S8 — zoom scales the size, not only the origin", () => {
   });
 });
 
+const guard = (over = {}) => ({
+  retargeted: true,
+  enabled: true,
+  phase: "showing" as const,
+  notice: { visible: true, alpha: 0.5 },
+  last_press: { press_ms: 5, route: "guard" as const, age_ms: 3 },
+  ...over,
+});
+
 describe("S35 — the quit guard's own facts ride along", () => {
   it("copies quitGuard verbatim", () => {
     const snap = buildSnapshot(input({ quitGuard: guard() }));
@@ -290,15 +299,6 @@ describe("S35 — the quit guard's own facts ride along", () => {
     // absent key would make `quit_guard.retargeted == true` a silent false.
     expect(buildSnapshot(input({ quitGuard: null })).quit_guard).toBeNull();
   });
-});
-
-const guard = (over = {}) => ({
-  retargeted: true,
-  enabled: true,
-  phase: "showing" as const,
-  notice: { visible: true, alpha: 0.5 },
-  last_press: { press_ms: 5, route: "guard" as const, age_ms: 3 },
-  ...over,
 });
 
 describe("S5 (2609.0018) — a hidden notice reads alpha 0", () => {
@@ -319,6 +319,15 @@ describe("S5 (2609.0018) — a hidden notice reads alpha 0", () => {
       input({ quitGuard: guard({ phase: "idle", notice: { visible: false, alpha: 1 } }) }),
     );
     expect(snap.quit_guard?.notice).toEqual({ visible: false, alpha: 0 });
+  });
+
+  it("keeps a visible notice's alpha while the guard is already idle", () => {
+    // After a tap's release the guard is Idle while the notice still lingers
+    // and fades: `visible` is the discriminator, never `phase`.
+    const snap = buildSnapshot(
+      input({ quitGuard: guard({ phase: "idle", notice: { visible: true, alpha: 0.3 } }) }),
+    );
+    expect(snap.quit_guard?.notice).toEqual({ visible: true, alpha: 0.3 });
   });
 });
 
