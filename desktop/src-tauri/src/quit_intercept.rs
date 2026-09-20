@@ -612,7 +612,11 @@ pub async fn dev_press(
         ));
     }
 
-    let mut key = on_main_async(&app, window_is_key).await.ok_or_else(unresponsive)?;
+    let is_key = {
+        let app = app.clone();
+        move |mtm| window_is_key(mtm, &app)
+    };
+    let mut key = on_main_async(&app, is_key.clone()).await.ok_or_else(unresponsive)?;
     let activated = !key;
     if !key {
         on_main_async(&app, |mtm| {
@@ -631,7 +635,7 @@ pub async fn dev_press(
                 ));
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
-            key = on_main_async(&app, window_is_key).await.ok_or_else(unresponsive)?;
+            key = on_main_async(&app, is_key.clone()).await.ok_or_else(unresponsive)?;
         }
     }
 
@@ -650,6 +654,7 @@ pub async fn dev_press(
 
     let (stamp_ms, until) = on_main_async(&app, {
         let chord = chord.clone();
+        let app = app.clone();
         move |mtm| {
             let now = now_ms();
             let until = now + hold;
@@ -659,7 +664,7 @@ pub async fn dev_press(
                 }
             });
             let stamp_ms = now.saturating_sub(age);
-            post_key(mtm, &chord, NSEventType::KeyDown, stamp_ms).map(|()| (stamp_ms, until))
+            post_key(mtm, &app, &chord, NSEventType::KeyDown, stamp_ms).map(|()| (stamp_ms, until))
         }
     })
     .await
@@ -671,7 +676,8 @@ pub async fn dev_press(
     let release = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_millis(until.saturating_sub(now_ms()))).await;
-        let _ = on_main_async(&release, move |mtm| post_key(mtm, &chord, NSEventType::KeyUp, now_ms())).await;
+        let app = release.clone();
+        let _ = on_main_async(&release, move |mtm| post_key(mtm, &app, &chord, NSEventType::KeyUp, now_ms())).await;
     });
 
     Ok(serde_json::json!({
@@ -728,19 +734,28 @@ fn quit_chord_refused(mtm: MainThreadMarker, chord: &Chord) -> bool {
     NSApplication::sharedApplication(mtm).mainMenu().is_some_and(|menu| walk(&menu, chord))
 }
 
+/// The cockpit's own window, by Tauri's label. Not `NSApp.mainWindow`, which
+/// is nil whenever the app is inactive — exactly the posture `press` has to
+/// see through.
+#[cfg(debug_assertions)]
+fn main_ns_window(app: &AppHandle) -> Option<Retained<NSWindow>> {
+    let ptr = app.get_webview_window("main")?.ns_window().ok()?;
+    unsafe { Retained::retain(ptr as *mut NSWindow) }
+}
+
 /// Step 4.3's one-line test: only a key window on an active app takes the
 /// page's path (spike 2).
 #[cfg(debug_assertions)]
-fn window_is_key(mtm: MainThreadMarker) -> bool {
-    let ns_app = NSApplication::sharedApplication(mtm);
-    ns_app.isActive() && ns_app.mainWindow().is_some_and(|w| w.isKeyWindow())
+fn window_is_key(mtm: MainThreadMarker, app: &AppHandle) -> bool {
+    NSApplication::sharedApplication(mtm).isActive() && main_ns_window(app).is_some_and(|w| w.isKeyWindow())
 }
 
-/// Post one key event for `chord` to the main window. `None` when there is no
-/// main window to address.
+/// Post one key event for `chord` to the cockpit window. `None` when there is
+/// no such window to address.
 #[cfg(debug_assertions)]
 fn post_key(
     mtm: MainThreadMarker,
+    app: &AppHandle,
     chord: &Chord,
     kind: NSEventType,
     stamp_ms: u64,
@@ -748,8 +763,7 @@ fn post_key(
     use objc2_app_kit::{NSEvent, NSEventModifierFlags};
     use objc2_foundation::{NSPoint, NSString};
 
-    let ns_app = NSApplication::sharedApplication(mtm);
-    let window_number = ns_app.mainWindow()?.windowNumber();
+    let window_number = main_ns_window(app)?.windowNumber();
     let chars = NSString::from_str(&chord.chars);
     let event = NSEvent::keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode(
         kind,
@@ -763,6 +777,6 @@ fn post_key(
         false,
         chord.key_code,
     )?;
-    ns_app.postEvent_atStart(&event, false);
+    NSApplication::sharedApplication(mtm).postEvent_atStart(&event, false);
     Some(())
 }
