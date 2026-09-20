@@ -199,6 +199,14 @@ describe("S14 — cmd/meta are refused, with the reason", () => {
     if (plan.kind !== "error") throw new Error("unreachable");
     expect(plan.message).toMatch(/Edit menu/i);
   });
+
+  // S6 (2609.0018): the message now points at the verb that CAN press a ⌘ chord.
+  it.each(["cmd+q", "meta+q"])("%s points at `tarmac dev press cmd+`", (combo) => {
+    const plan = devKeyPlan(combo);
+    expect(plan).toMatchObject({ kind: "error", error: "unsupported_combo" });
+    if (plan.kind !== "error") throw new Error("unreachable");
+    expect(plan.message).toContain("tarmac dev press cmd+");
+  });
 });
 
 describe("S15 — malformed combos are bad_combo, never a neighbour", () => {

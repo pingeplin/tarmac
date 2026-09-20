@@ -465,6 +465,7 @@ export default function App() {
         terminal: (termId) => termHandlesRef.current.get(termId),
         selectedId: () => selectedIdRef.current,
         proc: (termId) => termProcRef.current.get(termId) ?? null,
+        borrowedId: () => borrowedCardIdRef.current,
       });
     });
     return () => dispose?.();

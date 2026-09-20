@@ -42,7 +42,8 @@ const input = (over = {}) => ({
   screenRects: new Map<string, Rect>(),
   selectedId: null as string | null,
   activeElement: { card: null, tag: "BODY", classes: [], selectionType: "None" as const },
-  quitGuard: null as { retargeted: boolean; enabled: boolean } | null,
+  quitGuard: null as Parameters<typeof buildSnapshot>[0]["quitGuard"],
+  borrowedId: null as string | null,
   ...over,
 });
 
@@ -280,13 +281,66 @@ describe("S8 — zoom scales the size, not only the origin", () => {
 
 describe("S35 — the quit guard's own facts ride along", () => {
   it("copies quitGuard verbatim", () => {
-    const snap = buildSnapshot(input({ quitGuard: { retargeted: true, enabled: false } }));
-    expect(snap.quit_guard).toEqual({ retargeted: true, enabled: false });
+    const snap = buildSnapshot(input({ quitGuard: guard() }));
+    expect(snap.quit_guard).toEqual(guard());
   });
 
   it("reports null when the backend could not answer", () => {
     // Not `undefined`: `--until` reads a missing path as unresolvable, and an
     // absent key would make `quit_guard.retargeted == true` a silent false.
     expect(buildSnapshot(input({ quitGuard: null })).quit_guard).toBeNull();
+  });
+});
+
+const guard = (over = {}) => ({
+  retargeted: true,
+  enabled: true,
+  phase: "showing" as const,
+  notice: { visible: true, alpha: 0.5 },
+  last_press: { press_ms: 5, route: "guard" as const, age_ms: 3 },
+  ...over,
+});
+
+describe("S5 (2609.0018) — a hidden notice reads alpha 0", () => {
+  it("copies a visible notice as is", () => {
+    expect(buildSnapshot(input({ quitGuard: guard() })).quit_guard).toEqual({
+      retargeted: true,
+      enabled: true,
+      phase: "showing",
+      notice: { visible: true, alpha: 0.5 },
+      last_press: { press_ms: 5, route: "guard", age_ms: 3 },
+    });
+  });
+
+  it("zeroes alpha when the panel is not visible", () => {
+    // `hide_notice` resets a hidden panel's alphaValue to 1.0, which would read
+    // as a notice at full opacity.
+    const snap = buildSnapshot(
+      input({ quitGuard: guard({ phase: "idle", notice: { visible: false, alpha: 1 } }) }),
+    );
+    expect(snap.quit_guard?.notice).toEqual({ visible: false, alpha: 0 });
+  });
+});
+
+describe("S9 (2609.0018) — borrowed is a doc card's fact", () => {
+  const cards = () => [
+    doc({ id: "doc:/a/c.html" }),
+    doc({ id: "doc:/a/b.md" }),
+    term(),
+  ];
+  const byId = (snap: ReturnType<typeof buildSnapshot>, id: string) =>
+    snap.cards.find((c) => c.id === id)!;
+
+  it("is true only for the borrowed card, and absent from a terminal", () => {
+    const snap = buildSnapshot(input({ cards: cards(), borrowedId: "doc:/a/c.html" }));
+    expect(byId(snap, "/a/c.html").borrowed).toBe(true);
+    expect(byId(snap, "/a/b.md").borrowed).toBe(false);
+    expect("borrowed" in byId(snap, "t-1")).toBe(false);
+  });
+
+  it("is false on every doc card when nothing is borrowed", () => {
+    const snap = buildSnapshot(input({ cards: cards(), borrowedId: null }));
+    expect(byId(snap, "/a/c.html").borrowed).toBe(false);
+    expect(byId(snap, "/a/b.md").borrowed).toBe(false);
   });
 });

@@ -510,20 +510,42 @@ pub mod dev {
             card: String,
             combo: String,
         },
+        /// A native ⌘ chord, posted in-process (spec 2609.0018, #183). The
+        /// app parses `combo`; the CLI only checks the flags' ranges.
+        Press {
+            combo: String,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            hold_ms: Option<u32>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            age_ms: Option<u32>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            busy_ms: Option<u32>,
+        },
         /// A verb this build does not know. Decoding to a value rather than an error
         /// lets the app answer "unsupported" instead of dropping the frame.
         #[serde(other)]
         Unknown,
     }
 
+    /// `press --hold` is `1..=HOLD_MS_MAX`, `--age` is `0..=AGE_MS_MAX`, and
+    /// `--busy` is `1..=BUSY_MS_MAX` — the only definition of the verb's
+    /// ranges. `BUSY_MS_MAX` sits below the guard's 2000 ms freshness bound:
+    /// past it a frozen page's ⌘Q routes `terminate` and really quits.
+    pub const HOLD_MS_MAX: u32 = 10_000;
+    pub const AGE_MS_MAX: u32 = 60_000;
+    pub const BUSY_MS_MAX: u32 = 1_800;
+
     impl DevRequest {
-        /// The caller's own budget, where the verb has one. Only `snapshot` waits
-        /// on anything, so only `snapshot` carries it — and both ends of the
-        /// socket need that rule, which is why it lives on the type rather than
-        /// being re-matched in each crate.
+        /// The caller's own budget, where the verb has one: `snapshot` carries
+        /// its `--timeout`, `press` its `--busy` (the page answers only once the
+        /// freeze ends). Every other wait, `press`'s activation included, fits in
+        /// the backend's fixed slack. Both ends of the socket need that rule,
+        /// which is why it lives on the type rather than being re-matched in
+        /// each crate.
         pub fn timeout_ms(&self) -> Option<u32> {
             match self {
                 DevRequest::Snapshot { timeout_ms, .. } => *timeout_ms,
+                DevRequest::Press { busy_ms, .. } => *busy_ms,
                 _ => None,
             }
         }
@@ -648,6 +670,54 @@ pub mod dev {
             struct Future<'a> { t: &'a str }
             let bytes = rmp_serde::to_vec_named(&Future { t: "teleport" }).unwrap();
             assert_eq!(decode_request(&bytes).unwrap(), DevRequest::Unknown);
+        }
+
+        /// S2 (2609.0018) - every `Press` shape round-trips under the `press`
+        /// tag, and absent flags are absent keys, not nils.
+        #[test]
+        fn press_roundtrips_and_skips_absent_flags() {
+            let bare = DevRequest::Press { combo: "cmd+q".into(), hold_ms: None, age_ms: None, busy_ms: None };
+            let all = [
+                bare.clone(),
+                DevRequest::Press { combo: "cmd+q".into(), hold_ms: Some(1000), age_ms: None, busy_ms: None },
+                DevRequest::Press { combo: "cmd+q".into(), hold_ms: None, age_ms: Some(2500), busy_ms: None },
+                DevRequest::Press { combo: "alt+cmd+q".into(), hold_ms: Some(10000), age_ms: Some(0), busy_ms: None },
+                DevRequest::Press { combo: "nonsense".into(), hold_ms: None, age_ms: None, busy_ms: None },
+                DevRequest::Press { combo: "cmd+q".into(), hold_ms: None, age_ms: None, busy_ms: Some(1000) },
+            ];
+            for req in all {
+                assert_eq!(roundtrip(&req), req, "roundtrip changed {req:?}");
+            }
+            #[derive(serde::Deserialize)]
+            struct Tag {
+                t: String,
+            }
+            let bytes = encode_request(&bare).unwrap();
+            assert_eq!(rmp_serde::from_slice::<Tag>(&bytes).unwrap().t, "press");
+            let keys: std::collections::BTreeMap<String, serde::de::IgnoredAny> =
+                rmp_serde::from_slice(&bytes).unwrap();
+            assert_eq!(keys.keys().cloned().collect::<Vec<_>>(), ["combo", "t"]);
+        }
+
+        /// S23 (2609.0018) - `press` carries its `--busy` as its budget, so both
+        /// ends of the socket wait out the freeze.
+        #[test]
+        fn press_budget_is_its_busy_ms() {
+            let press = |busy_ms| DevRequest::Press { combo: "cmd+q".into(), hold_ms: None, age_ms: None, busy_ms };
+            assert_eq!(press(Some(1000)).timeout_ms(), Some(1000));
+            assert_eq!(press(None).timeout_ms(), None);
+        }
+
+        /// S31 (2609.0018) - additive-only holds for `press` too.
+        #[test]
+        fn unknown_keys_on_press_are_ignored() {
+            #[derive(serde::Serialize)]
+            struct Future<'a> { t: &'a str, combo: &'a str, hold_ms: u32, pressure: u32 }
+            let bytes = rmp_serde::to_vec_named(&Future { t: "press", combo: "cmd+q", hold_ms: 1, pressure: 5 }).unwrap();
+            assert_eq!(
+                decode_request(&bytes).unwrap(),
+                DevRequest::Press { combo: "cmd+q".into(), hold_ms: Some(1), age_ms: None, busy_ms: None },
+            );
         }
 
         /// S48 - `body` is opaque: it survives byte-for-byte, JSON or not.

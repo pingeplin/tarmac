@@ -13,6 +13,8 @@ mod commands;
 // Dev-only QA driver (issue #166): compiled out of release builds entirely.
 #[cfg(debug_assertions)]
 mod dev_driver;
+#[cfg(any(test, debug_assertions))]
+mod dev_press;
 mod image_protocol;
 mod quit_guard;
 mod quit_intercept;
@@ -108,6 +110,8 @@ pub fn run() {
             dev_driver::dev_reply,
             #[cfg(debug_assertions)]
             quit_intercept::dev_quit_guard,
+            #[cfg(debug_assertions)]
+            quit_intercept::dev_press,
         ])
         // `build().run(..)` rather than `run(ctx)` — the same call underneath —
         // so `RunEvent::Reopen` is visible: a Dock click on an already-active

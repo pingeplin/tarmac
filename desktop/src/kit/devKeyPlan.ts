@@ -82,7 +82,7 @@ export function devKeyPlan(combo: string): KeyPlan {
 
   if (mods.some((m) => NATIVE_MODIFIERS.includes(m))) {
     return unsupported(
-      "cmd/meta chords reach the PTY through WebKit's native Edit menu action, which an untrusted dispatched event never triggers",
+      "cmd/meta chords reach the PTY through WebKit's native Edit menu action, which an untrusted dispatched event never triggers; `tarmac dev press cmd+<letter or digit>` posts one natively",
     );
   }
   if (mods.some((m) => !MODIFIERS.includes(m))) {

@@ -22,6 +22,7 @@ import {
   bareCardId,
   tailWindowBounds,
   type DevCardInput,
+  type DevQuitGuard,
   type DevSelectionType,
 } from "./kit/devSnapshot";
 import { routeVerb, DEV_ERROR_MESSAGE, type DevVerb, type RouteStep } from "./kit/devRouting";
@@ -43,6 +44,8 @@ export interface DevDriverDeps {
   selectedId(): string | null;
   /** The daemon's last TermProc name for a terminal, if it has reported one. */
   proc(termId: string): string | null;
+  /** App's borrowedCardId (prefixed), the HTML card whose shield is lifted. */
+  borrowedId(): string | null;
 }
 
 /** How long the settle waits when animation frames are not being serviced.
@@ -116,6 +119,10 @@ async function handle(raw: Record<string, unknown>, deps: DevDriverDeps) {
   if (raw.t === "snapshot") {
     return snapshotReply(raw as Parameters<typeof snapshotReply>[0], deps, engine);
   }
+  // `press` needs no card either: the backend posts a native chord and the
+  // page's event loop stays free while this awaits, which is what lets the
+  // page receive the key (2609.0018).
+  if (raw.t === "press") return pressReply(raw as Parameters<typeof pressReply>[0]);
 
   // Answered from the verb alone, before routing: routing would otherwise reply
   // `no_such_card` or `not_focused` for a verb this build does not implement at
@@ -136,6 +143,8 @@ async function handle(raw: Record<string, unknown>, deps: DevDriverDeps) {
   const cards = deps.cards();
   const route = routeVerb(verb, {
     cards,
+    viewport: engine.viewport,
+    viewSize: engine.viewportSize,
     // Resolving this walks every card's DOM node, and only `type`/`key` read it
     // (`devRouting`'s `not_focused` precondition). `zoom`, `focus` and `resize`
     // would pay for a value their branch never touches.
@@ -290,6 +299,27 @@ function dispatchContextMenu(
 
 const json = (body: unknown) => ({ ok: true, body: JSON.stringify(body) });
 
+/** The reply is the command's own JSON, success or error: the backend decides
+ *  everything about a press, and a rejection already carries `error`. */
+async function pressReply(verb: {
+  combo: string;
+  hold_ms?: number | null;
+  age_ms?: number | null;
+  busy_ms?: number | null;
+}) {
+  try {
+    const body = await invoke<unknown>("dev_press", {
+      combo: verb.combo,
+      holdMs: verb.hold_ms ?? null,
+      ageMs: verb.age_ms ?? null,
+      busyMs: verb.busy_ms ?? null,
+    });
+    return json(body);
+  } catch (e) {
+    return { ok: false, body: JSON.stringify(e) };
+  }
+}
+
 /** `keyCode` and `which` are legacy KeyboardEventInit members, absent from the
  *  standard typings. WebKit honours them (measured, #174 pre-check 5), and it has
  *  to: xterm's evaluator reads `keyCode`, so an event without it encodes nothing
@@ -361,12 +391,28 @@ const settle = () => Promise.race([twoFrames(), sleep(SETTLE_CAP_MS)]);
 /** The verbs this build dispatches. Kept as a set so a newer CLI meeting an older
  *  app gets `unsupported_verb` rather than a routing error that blames its
  *  spelling. */
-const IMPLEMENTED = new Set(["snapshot", "zoom", "focus", "resize", "type", "key"]);
+const IMPLEMENTED = new Set(["snapshot", "zoom", "focus", "resize", "type", "key", "press"]);
 
 /** Throws rather than no-op: routing has already said this card exists, so a
  *  missing element is a real failure. Replying `ok` after dispatching nothing is
- *  the shape Decision 6 refuses. */
+ *  the shape Decision 6 refuses. The three doc-focus targets branch first: in a
+ *  plan, `focus` names a `.focus()` call, not an event, and `page-body` has no
+ *  card element to resolve. */
 function dispatchStep(step: RouteStep, deps: DevDriverDeps, engine: BoardEngine) {
+  if (step.target === "page-body") return focusPageBody();
+  if (step.target === "doc-shield") {
+    // A missing shield is the one deliberate no-op: the card is already
+    // borrowed, which every re-run meets.
+    const shield = cardNode(step, engine).querySelector<HTMLElement>(".html-shield");
+    shield?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true, detail: 2 }));
+    return;
+  }
+  if (step.target === "doc-iframe") {
+    const iframe = cardNode(step, engine).querySelector<HTMLIFrameElement>("iframe");
+    if (!iframe) throw new Error(`no iframe in ${step.card}`);
+    iframe.focus();
+    return;
+  }
   const el = requireElement(step, deps, engine);
   const { x: clientX, y: clientY } = centreOf(el);
   for (const type of step.events) {
@@ -377,6 +423,24 @@ function dispatchStep(step: RouteStep, deps: DevDriverDeps, engine: BoardEngine)
         : new MouseEvent(type, init),
     );
   }
+}
+
+/** `blur()` cannot move focus off a focused IFRAME (spike 4); focusing a
+ *  throwaway element and removing it leaves `activeElement` on BODY from any
+ *  start. */
+function focusPageBody() {
+  if (document.activeElement === document.body) return;
+  const sink = document.createElement("div");
+  sink.tabIndex = -1;
+  document.body.appendChild(sink);
+  sink.focus({ preventScroll: true });
+  sink.remove();
+}
+
+function cardNode(step: RouteStep, engine: BoardEngine): HTMLElement {
+  const node = step.card === null ? undefined : engine.cardNode(step.card);
+  if (!node) throw new Error(`no card node for ${step.card}`);
+  return node;
 }
 
 function targetElement(
@@ -431,14 +495,9 @@ function activeElementCard(cards: DevCardInput[], nodes: Map<string, HTMLElement
 /** The guard's live state, which only `snapshot` reports. A rejected invoke is
  *  `null`, not a throw: the command is `#[cfg(debug_assertions)]` and an app
  *  without it must still answer `snapshot`. */
-const quitGuardFacts = () =>
-  invoke<{ retargeted: boolean; enabled: boolean }>("dev_quit_guard").catch(() => null);
+const quitGuardFacts = () => invoke<DevQuitGuard>("dev_quit_guard").catch(() => null);
 
-function build(
-  deps: DevDriverDeps,
-  engine: BoardEngine,
-  quitGuard: { retargeted: boolean; enabled: boolean } | null = null,
-) {
+function build(deps: DevDriverDeps, engine: BoardEngine, quitGuard: DevQuitGuard | null = null) {
   const cards = deps.cards();
   const nodes = cardNodes(deps, engine);
   const viewRect = engine.viewportElement.getBoundingClientRect();
@@ -463,6 +522,7 @@ function build(
       selectionType: (window.getSelection()?.type ?? "None") as DevSelectionType,
     },
     quitGuard,
+    borrowedId: deps.borrowedId(),
   });
 }
 
