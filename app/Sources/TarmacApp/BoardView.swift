@@ -50,6 +50,12 @@ final class BoardView: NSView {
     /// Fires when a doc card's ↻ button is clicked.
     var onCardRefresh: ((CardID) -> Void)?
 
+    /// Fires when a card is culled or comes back, with whether it is now
+    /// visible — once when the card is first placed and then on each flip. A
+    /// culled card is hidden but alive; this is the cue to pause work that only
+    /// matters on screen.
+    var onCullChanged: ((CardID, _ visible: Bool) -> Void)?
+
     /// Current viewport (zoom + world center). Read for persistence; set by 2c
     /// from `restore.board` to reproduce the saved viewport.
     private(set) var viewport: Viewport = .default
@@ -81,6 +87,7 @@ final class BoardView: NSView {
 
     func removeCard(id: CardID) {
         guard let card = cards.removeValue(forKey: id) else { return }
+        culls.forget(id)
         if selectedID == id { selectedID = nil }
         card.removeFromSuperview()
         recomputeEdges()
@@ -257,6 +264,7 @@ final class BoardView: NSView {
     private var carry: SatelliteCarry?
     private let cursors = HoverCursorRouter()
     private let flight = ViewportFlight()
+    private var culls = CullLedger<CardID>()
     private var pointerTracking: NSTrackingArea?
 
     private var viewportCenter: CGPoint { CGPoint(x: bounds.midX, y: bounds.midY) }
@@ -475,19 +483,21 @@ final class BoardView: NSView {
         cull(card)
     }
 
-    /// Fix #5 — viewport culling. Keep every card ALIVE in the hierarchy (never
-    /// removeFromSuperview: that would reset a doc card's WKWebView scroll and
-    /// detach the terminal view) but hide cards more than a viewport off-screen so
-    /// the window server stops compositing / tiling them each frame. The live
-    /// region is the viewport grown by one viewport on every side, so a card is
-    /// already un-hidden a full screen before it scrolls into view — no pop-in or
-    /// WKWebView repaint flash. Skipped while bounds is empty (pre-layout) so a
-    /// transient never hides everything.
+    /// Hides a card that lies more than a viewport off screen and shows it
+    /// again a full viewport before it scrolls into view. The card stays in the
+    /// hierarchy either way, so a terminal keeps taking output and a doc keeps
+    /// its scroll. A board that is not in a window has no viewport, and every
+    /// card on it is culled.
     private func cull(_ card: CardView) {
-        guard bounds.width > 0, bounds.height > 0 else { return }
-        let live = bounds.insetBy(dx: -bounds.width, dy: -bounds.height)
-        let shouldHide = !card.frame.intersects(live)
-        if card.isHidden != shouldHide { card.isHidden = shouldHide }
+        let visible = Cull.isCardVisible(
+            frame: card.worldFrame.rect,
+            zoom: viewport.zoom,
+            center: CGPoint(x: viewport.cx, y: viewport.cy),
+            viewSize: window == nil ? .zero : bounds.size
+        )
+        guard culls.record(card.id, visible: visible) else { return }
+        card.isHidden = !visible
+        onCullChanged?(card.id, visible)
     }
 
     /// Rebuilds the provenance edge set in view space (crib §8): one edge per
@@ -648,10 +658,10 @@ final class BoardView: NSView {
         super.viewDidMoveToWindow()
         cursors.attach(to: window)
         if window == nil { select(nil) }
-        // The real backing scale is only known once attached to a window; force
-        // the content-scale to re-apply (the zoom-guard would otherwise skip it).
+        // The backing scale is only known in a window, so the content scale is
+        // re-applied on arrival; and a board out of a window culls every card.
         lastContentScaleZoom = 0
-        updateContentScaleIfNeeded()
+        reprojectAll()
     }
 
     /// Dot grid drawn in board space: a world lattice at `spacing` (phased by
