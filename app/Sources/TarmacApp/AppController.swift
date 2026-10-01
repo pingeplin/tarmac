@@ -144,10 +144,6 @@ final class AppController {
     // and tells the restore handler to mount the arriving board (crit B4).
     var switching = false
 
-    // M3 P4: the titlebar session chip (`▞ <board>`), hosted in a leading
-    // titlebar accessory; shows the active board + dims with the ⌘K switcher.
-    let titleChip = TitleBarChip()
-
     // MARK: - Board placement rule (crib §4/§5)
     //
     // World-frame defaults for fresh placement and the M1→v4 restore scatter.
@@ -249,33 +245,24 @@ final class AppController {
         // persistence). The same `mount(_:)` runs on every switch-arrive.
         mount(board0)
 
-        // M3 P4: host the session chip in the titlebar (hides the redundant
-        // native title) and seed it with board-0's name.
-        setupTitlebar()
+        updateWindowTitle()
     }
 
-    /// Installs the titlebar session chip as a leading accessory and hides the
-    /// native window title (the chip carries the board identity instead).
-    private func setupTitlebar() {
-        window?.titleVisibility = .hidden
-        let accessory = NSTitlebarAccessoryViewController()
-        accessory.layoutAttribute = .leading
-        accessory.view = titleChip
-        window?.addTitlebarAccessoryViewController(accessory)
-        updateTitleChip()
+    /// Names the active board in the window title, which is what the Dock,
+    /// Exposé and the window list show for the app.
+    func updateWindowTitle() {
+        window?.title = WindowTitle.text(
+            boardName: boardMetas.first { $0.boardID == activeBoardID }?.name,
+            boardID: activeBoardID,
+            devLabel: ProcessInfo.processInfo.environment["TARMAC_DEV_LABEL"]
+        )
     }
 
-    /// Refreshes the titlebar chip with the active board's display name.
-    func updateTitleChip() {
-        titleChip.setName(activeBoard.name ?? activeBoardID)
-    }
-
-    /// P5 (two honest signals): the app-local attached/detached signal. The chip
-    /// + status-bar word reflect whether we currently hold a live daemon
+    /// P5 (two honest signals): the app-local attached/detached signal. The
+    /// status-bar word reflects whether we currently hold a live daemon
     /// connection (the daemon cannot tell a gone app that it detached, so this is
     /// driven locally by `connected`). Reconnect (P5.3) flips it back to attached.
     func updateSessionLiveness() {
-        titleChip.setAttached(connected)
         rootView.statusBar.setSession(attached: connected)
     }
 

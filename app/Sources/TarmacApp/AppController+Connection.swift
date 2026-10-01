@@ -22,7 +22,7 @@ extension AppController {
         case .boardList(let metas, let active):
             boardMetas = metas
             // P5.4: sync each visited board's local display name from the daemon's
-            // authoritative list, so a rename reflects in the titlebar chip +
+            // authoritative list, so a rename reflects in the window title +
             // status bar (which read `activeBoard.name`), not just the switcher rows.
             for meta in metas { boards[meta.boardID]?.name = meta.name }
             // The daemon changed the active board out from under us (board_create
