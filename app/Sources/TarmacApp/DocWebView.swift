@@ -68,7 +68,7 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
         reads += 1
         let read = reads
         let path = self.path
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let markdown = DocSource.markdown(path: path, contents: FileBytes.read(path: path))
             DispatchQueue.main.async { [weak self] in
                 guard let self, read == self.reads else { return }

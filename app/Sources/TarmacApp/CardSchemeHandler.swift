@@ -25,7 +25,7 @@ final class CardSchemeHandler: NSObject, WKURLSchemeHandler {
         let id = ObjectIdentifier(urlSchemeTask)
         live[id] = urlSchemeTask
         let shim = self.shim
-        reads.async {
+        reads.async { [weak self] in
             // The whole URL as text: `URL.path` would percent-decode it.
             let response = CardSchemeRouter.respond(url: url.absoluteString, shim: shim, read: FileBytes.read)
             DispatchQueue.main.async { [weak self] in
