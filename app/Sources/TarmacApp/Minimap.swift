@@ -1,12 +1,11 @@
 import AppKit
 import TarmacKit
 
-/// Minimap (crib §6, Phase 4): a bottom-right 132×88 overview. bg rgba(36,40,44,
-/// 0.92), 1px line border, radius 8, clipped. Maps the world bbox of all cards
-/// (plus the current viewport rect) into the 132×88 area; each card is a small
-/// radius-1.5 rect colored by its signal (default bg3, live cyan@0.8, bell
-/// amber@0.85). The viewport rect is a 1px agent border + agentDim fill, radius 2.
-/// A click maps back to a world point and re-centers the viewport.
+/// The board's bottom-right overview: every card as a small rect coloured by
+/// its signal, and the viewport as a box, both mapped from the bounding box of
+/// the cards and the visible region so the box stays in the picture however
+/// far the board is panned. A click re-centers the viewport on the world point
+/// under it.
 @MainActor
 final class Minimap: NSView {
     /// One card in the minimap: its world frame + signal (for the rect color).
@@ -32,8 +31,7 @@ final class Minimap: NSView {
     init() {
         super.init(frame: NSRect(x: 0, y: 0, width: Self.mapWidth, height: Self.mapHeight))
         wantsLayer = true
-        // bg0 @ 0.92 (crib §1: minimap bg).
-        layer?.backgroundColor = Theme.bg0.withAlphaComponent(0.92).cgColor
+        layer?.backgroundColor = OverlayPalette.minimapBackground.cgColor
         layer?.borderColor = Theme.line.cgColor
         layer?.borderWidth = 1
         layer?.cornerRadius = 8
@@ -70,16 +68,10 @@ final class Minimap: NSView {
         guard let mapping else { return }
         for item in items {
             let r = mapping.toMinimap(item.worldRect)
-            let color: NSColor
-            switch item.signal {
-            case .live: color = Theme.agent.withAlphaComponent(0.8)
-            case .bell: color = Theme.amber.withAlphaComponent(0.85)
-            case .none: color = Theme.bg3
-            }
-            color.setFill()
+            OverlayPalette.minimapFill(item.signal).setFill()
             NSBezierPath(roundedRect: r, xRadius: 1.5, yRadius: 1.5).fill()
         }
-        // Viewport rect: agentDim fill + 1px agent border, radius 2 (crib §6).
+        // Inset by half the stroke, so the 1px line lands inside the box.
         let vp = mapping.toMinimap(viewportWorldRect)
         let vpPath = NSBezierPath(roundedRect: vp.insetBy(dx: 0.5, dy: 0.5), xRadius: 2, yRadius: 2)
         Theme.agentDim.setFill()
