@@ -2,8 +2,8 @@ import AppKit
 import TarmacTerm
 
 /// Content view: the infinite whiteboard (`BoardView`) fills the window above a
-/// 27px status bar, with the cold-start hint, the wayfinding chrome, and the
-/// toast overlay layered on top.
+/// 27px status bar, with the wayfinding chrome and the toast overlay layered on
+/// top.
 @MainActor
 final class RootView: NSView {
     /// The mounted whiteboard. M3: one `BoardView` per board; `mountBoard(_:)`
@@ -11,7 +11,6 @@ final class RootView: NSView {
     /// view is displayed — the controller owns each board's cards + viewport.
     private(set) var board = BoardView()
     let statusBar = StatusBar()
-    let coldStartHint = ColdStartHintView()
     let toasts = ToastStackView()
     // Phase 4 wayfinding chrome (crib §6): zoom control (bottom-left), minimap
     // (bottom-right), and offscreen-signal hint pills (pinned to viewport edges).
@@ -38,8 +37,6 @@ final class RootView: NSView {
 
         addSubview(board)
         addSubview(statusBar)
-        coldStartHint.isHidden = true
-        addSubview(coldStartHint)
         // Wayfinding overlays sit above the board, below the toasts. The hint
         // overlay is click-through and spans the board.
         addSubview(offHints)
@@ -149,8 +146,6 @@ final class RootView: NSView {
         super.layout()
         board.frame = NSRect(x: 0, y: 0, width: bounds.width, height: boardHeight)
         statusBar.frame = NSRect(x: 0, y: boardHeight, width: bounds.width, height: StatusBar.height)
-        // Cold-start hint: one line just above the status bar, full width.
-        coldStartHint.frame = NSRect(x: 0, y: boardHeight - 28, width: bounds.width, height: 20)
 
         // Offscreen-hint overlay spans the board (its hint coords are board-space).
         offHints.frame = NSRect(x: 0, y: 0, width: bounds.width, height: boardHeight)

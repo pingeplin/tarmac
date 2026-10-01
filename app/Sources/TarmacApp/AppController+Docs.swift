@@ -170,7 +170,7 @@ extension AppController {
     }
 
     /// Syncs on-board card headers (incl. owner chips) with the registry, and
-    /// updates the status-bar counts + cold-start hint.
+    /// updates the status-bar counts.
     func refreshStrips() {
         for path in boardDocPaths {
             guard let card = activeBoard.view.card(.doc(path)) else { continue }
@@ -184,7 +184,6 @@ extension AppController {
         rootView.statusBar.setBoard(activeBoard.name ?? activeBoardID, count: count)
         updateWindowTitle()
         updateSessionLiveness()
-        rootView.coldStartHint.isHidden = !boardDocPaths.isEmpty
     }
 
     /// `tarmac open · HH:MM` edge label (crib §8): HH:MM from the doc's
