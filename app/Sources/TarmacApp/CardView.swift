@@ -360,9 +360,9 @@ final class CardView: NSView {
     /// drop any prime styling, and label the header `exit N` (or `killed` when
     /// the exit code is nil). The card stays on the board at its world frame so
     /// the failure stays visible; a clean (code 0) exit removes the card instead
-    /// and never reaches here. No close affordance yet (spec 2606.0001 — the
-    /// placeholder is session-local and clears on relaunch, since it is excluded
-    /// from the persisted layout by this `dead` state).
+    /// and never reaches here. ⌘W closes the placeholder; it is session-local
+    /// either way and clears on relaunch, since this `dead` state excludes it
+    /// from the persisted layout (spec 2606.0001).
     func setExited(_ code: Int?) {
         guard !dead else { return }
         // Clear any live/bell signal first (while still !dead so the guarded
@@ -409,8 +409,9 @@ final class CardView: NSView {
     }
 
     /// Amber bell signal in the header (a `●` dot + amber kind-glyph accent),
-    /// shown on a seen BEL and cleared on the next keystroke / focus. Display
-    /// state only — no animation (stays under Reduce Motion).
+    /// shown on a seen BEL and cleared on the next keystroke, paste or click in
+    /// that terminal. Display state only — no animation (stays under Reduce
+    /// Motion).
     func setBell(_ on: Bool) {
         guard !dead, on != bellActive else { return }
         bellActive = on

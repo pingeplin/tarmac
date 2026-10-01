@@ -12,11 +12,6 @@ final class TerminalSession {
     let view: TerminalView
     /// Whether the pty backing this card is currently running.
     var live = false
-    /// P5.3: the daemon connection dropped while this shell was live — the pty may
-    /// still be alive daemon-side, awaiting reconnect + rebind. Distinct from dead
-    /// (exit): `live` is false (routing/spawn guards treat it as not-running) but
-    /// the shell is presumed revivable. Set on disconnect, cleared on revive.
-    var detached = false
     /// Header label: the displayed title — an OSC title if one is set, else the
     /// foreground process name, else the shell basename. Recomputed from the
     /// sources below via `TermTitle.displayLabel`; never written directly.
@@ -89,12 +84,10 @@ final class AppController {
     // MARK: - Boards (M3 P3)
     //
     // The app holds N boards keyed by `board_id`; `activeBoard` is the one the
-    // user is looking at (its `view` is the mounted BoardView). board-0 wraps
-    // today's single board losslessly. The board-scoped state — sessions, prime,
-    // provenance, restore latch — lives on `Board`; the shims below keep
-    // AppController's existing call sites compiling while that
-    // state delegates to whichever board is active, so once the real switch
-    // lands every read/write automatically targets the right board.
+    // user is looking at (its `view` is the mounted BoardView). The board-scoped
+    // state — sessions, prime, provenance, restore latch — lives on `Board`; the
+    // shims below delegate to whichever board is active, so an unqualified
+    // read/write always targets the board on screen.
     private var boards: [String: Board] = [:]
     private var activeBoardID = Board.defaultID
     /// The active board. Force-unwrapped: `boards` always contains
@@ -205,8 +198,8 @@ final class AppController {
         self.rootView = rootView
         self.client = DaemonClient()
 
-        // M3: board-0 wraps the single BoardView that exists today; until the
-        // P3 switch lands it is the only board and is always active + mounted.
+        // board-0 wraps the BoardView RootView was built with; it is the active,
+        // mounted board until the daemon's board_list says otherwise.
         let board0 = Board(boardID: Board.defaultID, view: rootView.board)
         self.boards = [board0.boardID: board0]
         self.activeBoardID = board0.boardID
@@ -480,13 +473,11 @@ final class AppController {
         // drag). Never swallows: the selection's own mouseUp must reach the content.
         //
         // Deferred to the NEXT runloop tick (not run inline): a local monitor fires
-        // BEFORE the event is dispatched, so a synchronous restack here would
-        // removeFromSuperview the content view before it receives this very mouseUp.
-        // A doc card's WKWebView never ends its selection drag without the
-        // mouseUp — the highlight runs away to the end of
-        // the doc. Replaying one tick later lets the mouseUp land on the content
-        // first, then reorders z (the gesture's mouse-tracking is fully over by then,
-        // mirroring how onFrameCommitted restacks post-gesture). Imperceptible.
+        // BEFORE the event is dispatched, and the content must get this very
+        // mouseUp first — a doc card's WKWebView never ends its selection drag
+        // without it, and the highlight runs away to the end of the doc. One tick
+        // later the gesture's mouse-tracking is fully over (mirroring how
+        // onFrameCommitted restacks post-gesture). Imperceptible.
         mouseUpRestackMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.rootView.board.flushPendingRestack() } }
             return event
@@ -641,7 +632,6 @@ final class AppController {
             var hadLive = false
             for s in board.sessions.values where s.live {
                 s.live = false
-                s.detached = true
                 hadLive = true
             }
             if hadLive { boardsAwaitingRevive.insert(board.boardID) }
@@ -1436,7 +1426,7 @@ final class AppController {
             // Error / signal exit: hold the card open as a read-only placeholder
             // so the failure stays visible. It stays in `sessionOrder`, but its
             // `dead` state excludes it from persistence; the user opens a fresh
-            // terminal (⌘T) to keep working (no close affordance this iteration).
+            // terminal (⌘T) to keep working and closes the placeholder with ⌘W.
             card.setExited(code)
             board.view.signalsChanged()
             advancePrime(on: board, after: termID)

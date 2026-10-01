@@ -2,9 +2,8 @@ import AppKit
 import QuartzCore
 import TarmacKit
 
-/// A top-down (flipped) container view. Was defined in the now-removed
-/// DockView.swift; relocated here as it backs `CardView.clip`, `BoardView`'s
-/// card layer, and the edge layer.
+/// A top-down (flipped) container view: backs `CardView.clip` and
+/// `BoardView`'s card layer.
 @MainActor
 final class FlippedColumnView: NSView {
     override var isFlipped: Bool { true }
@@ -13,7 +12,7 @@ final class FlippedColumnView: NSView {
 
 /// NSTextField's intrinsicContentSize under-reports its drawn width (cell
 /// insets), which triggers spurious truncation at exact-fit frames; measure
-/// via sizeToFit instead. (Was defined in the now-removed DockView.swift.)
+/// via sizeToFit instead.
 @MainActor
 extension NSTextField {
     var fittedSize: NSSize {
@@ -25,10 +24,8 @@ extension NSTextField {
     }
 }
 
-// Shared card/tile chrome (was TileView.swift). The v4 `CardView` (board cards)
-// reuses these components; the desk-grid `TileView`/`DashedBorderView` were
-// removed with `DeskGridView` in Phase 2c. `CloseButton` is the doc card's
-// header ✕ affordance; term cards pass nil.
+// Card chrome shared by `CardView`'s terminal and doc cards. `CloseButton` is
+// the doc card's header ✕ affordance; term cards pass nil.
 
 /// `✎ Ns` honest meta (crib-desk-tiles §3): visible while the 30s recency
 /// window is open, ticking at 1Hz (display granularity is 1s). The tick is a
@@ -225,7 +222,8 @@ final class TileHeaderView: NSView {
     private let freshMeta = NSTextField(labelWithString: "✚ now")
     private let ownerChip = OwnerChipView()
     // Phase 3.5 (M2 honest signals): an amber `●` bell dot in the right cluster,
-    // shown when a BEL was seen, cleared on the next keystroke / focus.
+    // shown when a BEL was seen, cleared on the next keystroke, paste or click
+    // in that terminal.
     private let bellDot = NSTextField(labelWithString: "●")
 
     override var isFlipped: Bool { true }
@@ -320,8 +318,8 @@ final class TileHeaderView: NSView {
 
     /// Phase 3.5 (M2 honest signals): an amber bell signal — a `●` dot in the
     /// right cluster plus an amber accent on the kind glyph — shown when a BEL
-    /// was seen, cleared on the next keystroke to / focus on the terminal. This
-    /// is a state display (no animation; stays under Reduce Motion).
+    /// was seen, cleared on the next keystroke, paste or click in the terminal.
+    /// This is a state display (no animation; stays under Reduce Motion).
     func setBell(_ on: Bool) {
         guard on != !bellDot.isHidden else { return }
         bellDot.isHidden = !on
