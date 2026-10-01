@@ -88,6 +88,15 @@ public final class TerminalEngine {
         )
     }
 
+    /// Caps history by line count alone. An estimate: history is pruned a page at
+    /// a time, so somewhat more is kept. The byte cap libghostty-vt starts with is
+    /// lifted, since at ~1000 lines it would bind long before any useful limit.
+    public func setScrollbackLimit(lines: Int) throws {
+        try check(ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_BYTES, nil), "clear scrollback bytes")
+        var limit = lines
+        try check(ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_LINES, &limit), "set scrollback lines")
+    }
+
     // MARK: program-set state
 
     public var title: String? { borrowedString(GHOSTTY_TERMINAL_DATA_TITLE) }

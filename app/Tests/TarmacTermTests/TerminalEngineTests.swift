@@ -144,6 +144,15 @@ final class TerminalEngineTests: XCTestCase {
         XCTAssertTrue(engine.isViewportAtBottom)
     }
 
+    func testScrollbackIsCappedNearItsLineLimit() throws {
+        let engine = try engine(cols: 80, rows: 24)
+        try engine.setScrollbackLimit(lines: 5000)
+        feed(engine, (1...20000).map { "l\($0)" }.joined(separator: "\r\n"))
+        // libghostty-vt prunes whole pages, so the cap lands within a page of the limit.
+        XCTAssertLessThan(engine.scrollbar.total, 6000)
+        XCTAssertGreaterThan(engine.scrollbar.total, 4000)
+    }
+
     // MARK: paste / focus
 
     func testPasteIsBracketedOnlyWhenTheProgramAskedForIt() throws {

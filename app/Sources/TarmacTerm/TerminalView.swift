@@ -79,9 +79,12 @@ public final class TerminalView: NSView {
     private var autoscrollTimer: Timer?
     private var lastDragPoint: SurfacePoint?
 
-    public init(frame: NSRect = .zero, theme: TerminalTheme = .breeze, fontSize: CGFloat = 16) throws {
+    public init(
+        frame: NSRect = .zero, theme: TerminalTheme = .breeze, fontSize: CGFloat = 16, scrollbackLines: Int = 5000
+    ) throws {
         engine = try TerminalEngine(cols: 80, rows: 24)
         try engine.apply(theme)
+        try engine.setScrollbackLimit(lines: scrollbackLines)
         selection = try TerminalSelection(engine: engine)
         selection.multiClickInterval = NSEvent.doubleClickInterval
         reader = try FrameReader()
