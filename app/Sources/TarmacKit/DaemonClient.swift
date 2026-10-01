@@ -19,6 +19,14 @@ public enum DaemonClientError: Error, CustomStringConvertible, Sendable {
 /// `deliveryQueue` (main by default).
 public final class DaemonClient: @unchecked Sendable {
     public let socketPath: String
+    /// The build channel the socket was resolved for; named in the
+    /// connect-failure diagnostics.
+    public let channel: ChannelPaths.Channel
+    /// Sent as `hello.app_version`. It must be the same string `tarmacd` reports
+    /// as `daemon_version` for a matching install (the daemon's
+    /// `CARGO_PKG_VERSION`), or `DaemonLaunch.shouldRestart` reads every daemon
+    /// as stale. nil names no version.
+    public let appVersion: String?
 
     public var onMessage: (@Sendable (Message) -> Void)?
     public var onDisconnect: (@Sendable (String) -> Void)?
@@ -31,31 +39,29 @@ public final class DaemonClient: @unchecked Sendable {
     private var closed = false
     private var spawnedDaemon: Process?
 
-    public init(socketPath: String? = nil, deliveryQueue: DispatchQueue = .main) {
-        self.socketPath = socketPath ?? Self.resolveSocketPath()
+    /// `channel` defaults to the build configuration (`ChannelPaths.Channel.build`,
+    /// the one audited `#if DEBUG` mapping); pass it to override. An explicit
+    /// `socketPath` wins over both it and `TARMAC_SOCKET`.
+    public init(
+        socketPath: String? = nil,
+        channel: ChannelPaths.Channel = .build,
+        appVersion: String? = nil,
+        deliveryQueue: DispatchQueue = .main
+    ) {
+        self.socketPath = socketPath ?? Self.resolveSocketPath(channel: channel)
+        self.channel = channel
+        self.appVersion = appVersion
         self.deliveryQueue = deliveryQueue
     }
 
-    /// The app's build channel — the ONE audited `#if DEBUG` → `Channel`
-    /// mapping (spec 2606.0003). Used by both socket resolution and the
-    /// connect-failure diagnostic, so the mapping lives in exactly one place
-    /// (never sprinkled through the path code).
-    static var channel: ChannelPaths.Channel {
-        #if DEBUG
-        return .dev
-        #else
-        return .release
-        #endif
-    }
-
     /// `TARMAC_SOCKET` override (non-empty wins verbatim), else the per-channel
-    /// default. The build configuration is the channel: a DEBUG build resolves
-    /// under `dev/`, a release build keeps the flat legacy path byte-for-byte
-    /// (spec 2606.0003). Pure derivation lives in `ChannelPaths`.
-    public static func resolveSocketPath() -> String {
-        ChannelPaths.socketPath(
-            override: ProcessInfo.processInfo.environment["TARMAC_SOCKET"],
-            home: NSHomeDirectory(),
+    /// default under `$HOME` (spec 2606.0003). The impure shell over
+    /// `ChannelPaths`: the environment read happens here and nowhere else.
+    public static func resolveSocketPath(channel: ChannelPaths.Channel = .build) -> String {
+        let env = ProcessInfo.processInfo.environment
+        return ChannelPaths.socketPath(
+            override: env["TARMAC_SOCKET"],
+            home: ChannelPaths.home(env: env),
             channel: channel
         )
     }
@@ -94,10 +100,13 @@ public final class DaemonClient: @unchecked Sendable {
             guard let daemonBin = daemon else {
                 throw DaemonClientError.connectFailed(
                     path: socketPath,
-                    detail: "\(detail(of: error)) — is tarmacd (\(ChannelPaths.channelLabel(Self.channel)) channel) running? (set TARMAC_SOCKET to point elsewhere, or TARMAC_DAEMON to auto-spawn it)"
+                    detail: "\(detail(of: error)) — is tarmacd (\(ChannelPaths.channelLabel(channel)) channel) running? (set TARMAC_SOCKET to point elsewhere, or TARMAC_DAEMON to auto-spawn it)"
                 )
             }
-            try spawnDaemon(at: daemonBin)
+            let child = spawnedChild()
+            if DaemonLaunch.maySpawn(alreadySpawned: child != nil, priorChildExited: !(child?.isRunning ?? false)) {
+                try spawnDaemon(at: daemonBin)
+            }
             let deadline = Date().addingTimeInterval(3.0)
             var lastError = error
             var connected = false
@@ -114,12 +123,18 @@ public final class DaemonClient: @unchecked Sendable {
             guard connected else {
                 throw DaemonClientError.connectFailed(
                     path: socketPath,
-                    detail: "spawned \(daemonBin) (\(ChannelPaths.channelLabel(Self.channel)) channel) but the socket did not accept a connection within 3 s (last error: \(detail(of: lastError)))"
+                    detail: "spawned \(daemonBin) (\(ChannelPaths.channelLabel(channel)) channel) but the socket did not accept a connection within 3 s (last error: \(detail(of: lastError)))"
                 )
             }
         }
-        try sendBlocking(.hello(role: "app", v: 1))
+        try sendBlocking(.hello(role: "app", v: 1, appVersion: appVersion))
         startReadLoop()
+    }
+
+    /// The pid of the daemon this client spawned, if any — the fallback
+    /// `DaemonLaunch.restartTarget` takes when `hello_ok` reports no pid.
+    public var spawnedDaemonPid: Int? {
+        spawnedChild().map { Int($0.processIdentifier) }
     }
 
     public func close() {
@@ -145,8 +160,19 @@ public final class DaemonClient: @unchecked Sendable {
         }
     }
 
-    public func spawnTerm(termID: String, cols: Int, rows: Int, cwd: String?, cmd: [String]?) {
-        send(.spawnTerm(termID: termID, cols: cols, rows: rows, cwd: cwd, cmd: cmd))
+    public func spawnTerm(
+        termID: String,
+        cols: Int,
+        rows: Int,
+        cwd: String?,
+        cmd: [String]?,
+        boardID: String? = nil,
+        inheritCwdFrom: String? = nil
+    ) {
+        send(.spawnTerm(
+            termID: termID, cols: cols, rows: rows, cwd: cwd, cmd: cmd,
+            boardID: boardID, inheritCwdFrom: inheritCwdFrom
+        ))
     }
 
     public func input(termID: String, bytes: Data) {
@@ -157,8 +183,8 @@ public final class DaemonClient: @unchecked Sendable {
         send(.resize(termID: termID, cols: cols, rows: rows))
     }
 
-    public func open(path: String, termID: String? = nil) {
-        send(.open(path: path, termID: termID))
+    public func open(path: String, termID: String? = nil, boardID: String? = nil) {
+        send(.open(path: path, termID: termID, boardID: boardID))
     }
 
     public func docRead(path: String) {
@@ -197,6 +223,24 @@ public final class DaemonClient: @unchecked Sendable {
     /// group). Used by ⌘W to close a single terminal card.
     public func termClose(termID: String) {
         send(.termClose(termID: termID))
+    }
+
+    /// issue #34: forget a doc (registry, dock, watcher). No reply frame.
+    public func docClose(path: String) {
+        send(.docClose(path: path))
+    }
+
+    /// issue #89: re-stat a doc now; the daemon answers with the usual
+    /// `file_event`, changed or not.
+    public func docRefresh(path: String) {
+        send(.docRefresh(path: path))
+    }
+
+    /// issue #41: ask for one terminal's scrollback ring. Exactly one
+    /// `scrollback` comes back, even for an unknown terminal — but a daemon that
+    /// predates the type never answers, so the caller bounds its wait.
+    public func scrollbackRequest(termID: String) {
+        send(.scrollbackRequest(termID: termID))
     }
 
     // MARK: - Internals
@@ -243,13 +287,20 @@ public final class DaemonClient: @unchecked Sendable {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: binPath)
         proc.standardInput = FileHandle.nullDevice
+        // A daemon that cannot log must still start, so a log that will not
+        // open leaves stdio inherited.
+        if let log = Self.openLog(at: DaemonLaunch.logPath(socketPath: socketPath)) {
+            proc.standardOutput = log
+            proc.standardError = log
+        }
         // Hand the daemon (and the PTYs it spawns) a PATH that resolves the
-        // bundled `tarmac` CLI, so `tarmac open` works inside the app's own
-        // terminals even under a Finder launch (minimal launchd PATH). No-op for
-        // `make run`, which already injects the debug build dir.
-        let cliDir = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS").path
+        // `tarmac` CLI beside it, so `tarmac open` works inside the app's own
+        // terminals even under a Finder launch (minimal launchd PATH).
         var environment = ProcessInfo.processInfo.environment
-        environment["PATH"] = DaemonLaunch.injectCLIPath(base: environment["PATH"], cliDir: cliDir)
+        environment["PATH"] = DaemonLaunch.injectCLIPath(
+            base: environment["PATH"],
+            cliDir: DaemonLaunch.cliDir(forDaemon: binPath)
+        )
         proc.environment = environment
         do {
             try proc.run()
@@ -262,6 +313,20 @@ public final class DaemonClient: @unchecked Sendable {
         stateLock.lock()
         spawnedDaemon = proc
         stateLock.unlock()
+    }
+
+    private func spawnedChild() -> Process? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return spawnedDaemon
+    }
+
+    /// Truncated per launch, so the file is bounded by one daemon session.
+    private static func openLog(at path: String) -> FileHandle? {
+        let dir = (path as NSString).deletingLastPathComponent
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        guard FileManager.default.createFile(atPath: path, contents: nil) else { return nil }
+        return FileHandle(forWritingAtPath: path)
     }
 
     private func sendBlocking(_ message: Message) throws {
