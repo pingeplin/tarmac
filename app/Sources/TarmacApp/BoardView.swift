@@ -361,7 +361,7 @@ final class BoardView: NSView {
             guard let satellite = cards[id] else { continue }
             satellite.worldFrame.x = anchor.x + dx
             satellite.worldFrame.y = anchor.y + dy
-            satellite.frame = worldToView(satellite.worldFrame.rect)
+            project(satellite)
         }
     }
 
@@ -447,15 +447,12 @@ final class BoardView: NSView {
         }
     }
 
-    /// A display move (or DSR change) fires this; the window's backing scale may
-    /// have flipped while zoom stayed constant, so force `updateContentScaleIfNeeded`
-    /// past its zoom-change guard to re-assert content scale and the doc override
-    /// against the new backing scale — e.g. recomputing the doc's oversample floor
-    /// when crossing between a 2× Retina and a 1× external screen.
+    /// The window moved to a display of another density: the content scale and
+    /// the device-pixel grid the cards are snapped to have both changed.
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         lastContentScaleZoom = 0
-        updateContentScaleIfNeeded()
+        reprojectAll()
     }
 
     private func reproject(_ card: CardView) {
@@ -464,23 +461,31 @@ final class BoardView: NSView {
         onCardsChanged?()
     }
 
-    /// Places a card on screen (infinite-canvas model). The card's on-screen
-    /// FRAME carries the world→view position *and* the zoom scale, but its
-    /// internal BOUNDS stay the card's intrinsic *world* size. AppKit realizes
-    /// the frame≠bounds size difference as a uniform scale on the card's layer
-    /// tree — so the card and everything it hosts (the terminal grid, the doc
-    /// webview, chrome) scale as a single unit and the content layout never
-    /// re-flows from a zoom. Only a card RESIZE changes the world size (`bounds`),
-    /// which is the one time the terminal re-measures its cols/rows. Zoom is thus
-    /// a pure view transform, matching the Heptabase/Figma canvas feel.
+    /// Places a card on screen. Its frame carries the position and the zoom
+    /// while its bounds stay the card's world size, so AppKit scales the card and
+    /// everything in it as one and its content never reflows under zoom: only a
+    /// resize changes the world size, which is the one time a terminal
+    /// re-measures its grid.
     private func project(_ card: CardView) {
-        card.frame = worldToView(card.worldFrame.rect)
-        // #9: a card's intrinsic world size changes only on a RESIZE, not on
-        // pan/zoom. setBoundsSize re-establishes the frame≠bounds zoom scale and
-        // triggers a layout pass, so skip it when the world size is unchanged.
-        let worldSize = CGSize(width: card.worldFrame.w, height: card.worldFrame.h)
-        if card.bounds.size != worldSize { card.setBoundsSize(worldSize) }
+        let frame = screenFrame(of: card.worldFrame.rect)
+        let resized = card.frame.size != frame.size
+        card.frame = frame
+        // A new frame size drags the bounds along with it, so they are put back
+        // to the world size on a zoom step or a resize. A pan leaves them alone.
+        if resized { card.setBoundsSize(CGSize(width: card.worldFrame.w, height: card.worldFrame.h)) }
         cull(card)
+    }
+
+    /// A world rect's place on screen, with its origin moved to the nearest
+    /// whole device pixel. An origin between pixels has the whole card
+    /// resampled, which softens every glyph and hairline in it — plainly so on a
+    /// 1× display. The size is left alone: it is what carries the zoom.
+    private func screenFrame(of world: CGRect) -> CGRect {
+        let raw = worldToView(world)
+        let aligned = cardLayer.backingAlignedRect(
+            raw, options: [.alignMinXNearest, .alignMinYNearest, .alignWidthNearest, .alignHeightNearest]
+        )
+        return CGRect(origin: aligned.origin, size: raw.size)
     }
 
     /// Hides a card that lies more than a viewport off screen and shows it
