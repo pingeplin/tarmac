@@ -90,12 +90,10 @@ public final class DaemonClient: @unchecked Sendable {
         do {
             try connectOnce()
         } catch {
-            let bundleURL = Bundle.main.bundleURL
-            let bundledDaemon = bundleURL.appendingPathComponent("Contents/MacOS/tarmacd").path
             let daemon = DaemonLaunch.resolveDaemonPath(
                 env: ProcessInfo.processInfo.environment,
-                bundleURL: bundleURL,
-                bundledBinaryExists: FileManager.default.fileExists(atPath: bundledDaemon)
+                executableDir: Bundle.main.executableURL?.deletingLastPathComponent().path ?? "",
+                exists: FileManager.default.fileExists(atPath:)
             )
             guard let daemonBin = daemon else {
                 throw DaemonClientError.connectFailed(

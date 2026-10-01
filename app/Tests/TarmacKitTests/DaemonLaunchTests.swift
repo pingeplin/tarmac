@@ -3,60 +3,59 @@ import XCTest
 
 /// 2606.0002: bundled-daemon-path resolution and PTY `PATH` injection.
 final class DaemonLaunchTests: XCTestCase {
-    private let bundle = URL(fileURLWithPath: "/A/Tarmac.app")
-    private var bundledDaemon: String { "/A/Tarmac.app/Contents/MacOS/tarmacd" }
+    private let macOS = "/A/Tarmac.app/Contents/MacOS"
+    private var siblingDaemon: String { "/A/Tarmac.app/Contents/MacOS/tarmacd" }
 
     // MARK: - resolveDaemonPath
 
     /// S1, S2, S4, S5, S11, S13: the full resolution grid. Columns are the env
-    /// value for `TARMAC_DAEMON` (`nil` = key absent) and whether a bundled binary
-    /// exists. The explicit override must win VERBATIM and UNCONDITIONALLY — even
-    /// with no bundled binary (S1) and even when one exists (S5) — while an absent
-    /// or empty override falls through to the bundled path (S2/S4) or `nil` (S11).
-    /// S13 pins that "non-empty" is `!isEmpty` with no trimming: a whitespace-only
-    /// override is honored verbatim, so it must NOT be confused with the empty case.
+    /// value for `TARMAC_DAEMON` (`nil` = key absent) and whether a `tarmacd`
+    /// sits beside the running executable. The explicit override must win
+    /// VERBATIM and UNCONDITIONALLY — even with no sibling (S1) and even when one
+    /// exists (S5) — while an absent or empty override falls through to the
+    /// sibling (S2/S4) or `nil` (S11). S13 pins that "non-empty" is `!isEmpty`
+    /// with no trimming: a whitespace-only override is honored verbatim.
     func testResolveDaemonPathGrid() {
         let cases: [(override: String?, exists: Bool, expected: String?)] = [
-            ("/dbg/tarmacd", false, "/dbg/tarmacd"),   // S1: override wins with no bundled binary
-            (nil, true, "/A/Tarmac.app/Contents/MacOS/tarmacd"), // S2: bundled fallback
-            ("", true, "/A/Tarmac.app/Contents/MacOS/tarmacd"),  // S4: empty == unset → bundled
-            ("/dbg/tarmacd", true, "/dbg/tarmacd"),    // S5: override beats the bundled path
-            (nil, false, nil),                          // S11: neither → nil (caller errors)
-            ("   ", true, "   "),                       // S13: whitespace-only counts as set
+            ("/dbg/tarmacd", false, "/dbg/tarmacd"),
+            (nil, true, "/A/Tarmac.app/Contents/MacOS/tarmacd"),
+            ("", true, "/A/Tarmac.app/Contents/MacOS/tarmacd"),
+            ("/dbg/tarmacd", true, "/dbg/tarmacd"),
+            (nil, false, nil),
+            ("   ", true, "   "),
         ]
         for c in cases {
             var env: [String: String] = [:]
             if let override = c.override { env["TARMAC_DAEMON"] = override }
             XCTAssertEqual(
-                DaemonLaunch.resolveDaemonPath(env: env, bundleURL: bundle, bundledBinaryExists: c.exists),
+                DaemonLaunch.resolveDaemonPath(env: env, executableDir: macOS) { _ in c.exists },
                 c.expected,
                 "resolveDaemonPath(override: \(c.override.map { "\"\($0)\"" } ?? "nil"), exists: \(c.exists))"
             )
         }
     }
 
-    /// S4-vs-S5 boundary, pinned on its own so the mutation is unmissable: with a
-    /// bundled binary present, an EMPTY override falls through to the bundled path
-    /// while a NON-empty override is returned verbatim. A `!isEmpty`→`!= nil`
-    /// mutation (treating "" as a valid override) flips the first assertion.
-    func testEmptyOverrideFallsThroughButSetOverrideWins() {
-        XCTAssertEqual(
-            DaemonLaunch.resolveDaemonPath(env: ["TARMAC_DAEMON": ""], bundleURL: bundle, bundledBinaryExists: true),
-            bundledDaemon
-        )
-        XCTAssertEqual(
-            DaemonLaunch.resolveDaemonPath(env: ["TARMAC_DAEMON": "/x"], bundleURL: bundle, bundledBinaryExists: true),
-            "/x"
-        )
+    /// The candidate is the `tarmacd` beside the running executable and nothing
+    /// else: a bare SwiftPM binary finds one in its build directory, a bundle in
+    /// `Contents/MacOS`. Guards a mutation that probes another name or directory.
+    func testTheOnlyCandidateIsTheExecutablesSibling() {
+        var probed: [String] = []
+        let found = DaemonLaunch.resolveDaemonPath(env: [:], executableDir: "/repo/app/.build/debug") { path in
+            probed.append(path)
+            return path == "/repo/app/.build/debug/tarmacd"
+        }
+        XCTAssertEqual(found, "/repo/app/.build/debug/tarmacd")
+        XCTAssertEqual(probed, ["/repo/app/.build/debug/tarmacd"])
     }
 
-    /// S2: the derived path is exactly `<bundleURL>/Contents/MacOS/tarmacd`. Guards
-    /// a mutation that drops `Contents/`, mislocates `MacOS/`, or renames the binary.
-    func testBundledPathShape() {
-        XCTAssertEqual(
-            DaemonLaunch.resolveDaemonPath(env: [:], bundleURL: bundle, bundledBinaryExists: true),
-            bundledDaemon
-        )
+    /// An override is never checked against the disk: `make run` names a build
+    /// that may not exist yet, and the spawn reports that itself.
+    func testAnOverrideIsNotProbed() {
+        let found = DaemonLaunch.resolveDaemonPath(env: ["TARMAC_DAEMON": "/x"], executableDir: macOS) { _ in
+            XCTFail("an override must not touch the disk")
+            return false
+        }
+        XCTAssertEqual(found, "/x")
     }
 
     // MARK: - injectCLIPath
@@ -123,6 +122,38 @@ final class DaemonLaunchTests: XCTestCase {
         }
     }
 
+    // MARK: - childEnvironment
+
+    /// The daemon inherits the app's environment with one change: its own
+    /// directory leads `PATH`, so the PTYs it spawns resolve the `tarmac` CLI
+    /// that sits beside it.
+    func testTheDaemonsEnvironmentIsTheAppsWithTheCLIOnPath() {
+        XCTAssertEqual(
+            DaemonLaunch.childEnvironment(
+                base: ["PATH": "/usr/bin:/bin", "HOME": "/Users/x", "TARMAC_SOCKET": "/repo/.dev/tarmacd.sock"],
+                daemonPath: "/repo/core/target/debug/tarmacd"
+            ),
+            [
+                "PATH": "/repo/core/target/debug:/usr/bin:/bin",
+                "HOME": "/Users/x",
+                "TARMAC_SOCKET": "/repo/.dev/tarmacd.sock",
+            ]
+        )
+    }
+
+    /// A Finder launch can hand over no `PATH` at all; one already naming the
+    /// directory is left as the user ordered it.
+    func testTheDaemonsPathIsInjectedOnceAndCreatedWhenMissing() {
+        XCTAssertEqual(
+            DaemonLaunch.childEnvironment(base: [:], daemonPath: "/A/Tarmac.app/Contents/MacOS/tarmacd"),
+            ["PATH": "/A/Tarmac.app/Contents/MacOS"]
+        )
+        XCTAssertEqual(
+            DaemonLaunch.childEnvironment(base: ["PATH": "/usr/bin:/x/bin"], daemonPath: "/x/bin/tarmacd"),
+            ["PATH": "/usr/bin:/x/bin"]
+        )
+    }
+
     // MARK: - shouldRestart
 
     /// The stale-daemon restart decision, as `bridge.rs` makes it: restart when
@@ -144,6 +175,15 @@ final class DaemonLaunchTests: XCTestCase {
                 "shouldRestart(expected: \(c.expected), reported: \(c.reported ?? "nil"), already: \(c.already))"
             )
         }
+    }
+
+    /// An app that knows no version of its own cannot call any daemon stale: an
+    /// unbundled dev binary with no `TARMAC_APP_VERSION` would otherwise kill
+    /// the daemon on every launch.
+    func testAnAppWithoutAVersionNeverRestarts() {
+        XCTAssertFalse(DaemonLaunch.shouldRestart(expected: nil, reported: "0.1.0", alreadyRestarted: false))
+        XCTAssertFalse(DaemonLaunch.shouldRestart(expected: nil, reported: nil, alreadyRestarted: false))
+        XCTAssertFalse(DaemonLaunch.shouldRestart(expected: nil, reported: "0.1.0", alreadyRestarted: true))
     }
 
     /// The pid from `hello_ok` wins: after a brew upgrade the stale daemon was
@@ -203,12 +243,23 @@ final class DaemonLaunchTests: XCTestCase {
         XCTAssertTrue(DaemonLaunch.maySpawn(alreadySpawned: true, priorChildExited: true))
     }
 
+    /// `waitResult` is what `waitpid(pid, WNOHANG)` returned for the child, nil
+    /// when there is none. Only an observed-live child (0) blocks a respawn: a
+    /// reaped child returns its pid, and an error (-1) is the "cannot tell" case
+    /// that must never lock the app out.
+    func testPriorChildExitedTruthTable() {
+        XCTAssertTrue(DaemonLaunch.priorChildExited(waitResult: nil), "no child at all: the spawn itself failed")
+        XCTAssertFalse(DaemonLaunch.priorChildExited(waitResult: 0))
+        XCTAssertTrue(DaemonLaunch.priorChildExited(waitResult: 4242))
+        XCTAssertTrue(DaemonLaunch.priorChildExited(waitResult: -1))
+    }
+
     // MARK: - cliDir / logPath
 
     /// The `tarmac` CLI sits beside whichever daemon is launched — the bundle's
     /// `Contents/MacOS`, or the debug build dir a `TARMAC_DAEMON` override names.
     func testCLIDirIsTheDaemonsDirectory() {
-        XCTAssertEqual(DaemonLaunch.cliDir(forDaemon: bundledDaemon), "/A/Tarmac.app/Contents/MacOS")
+        XCTAssertEqual(DaemonLaunch.cliDir(forDaemon: siblingDaemon), "/A/Tarmac.app/Contents/MacOS")
         XCTAssertEqual(DaemonLaunch.cliDir(forDaemon: "/repo/core/target/debug/tarmacd"), "/repo/core/target/debug")
         XCTAssertEqual(DaemonLaunch.cliDir(forDaemon: "tarmacd"), "")
     }
