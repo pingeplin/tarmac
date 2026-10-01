@@ -118,10 +118,10 @@ final class StatusBar: NSView {
 }
 
 /// Cold-start hint (migration-plan Phase 3 / DECISION 2026-06-13): a single
-/// centered line shown only while no doc exists yet — `docs appear when
+/// centered line shown only while the board has no doc card — `docs appear when
 /// anything runs  tarmac open <path>  — you or your tools`, faint 10.5px mono,
 /// with the `tarmac open <path>` span in muted. No empty-board placeholder;
-/// hidden once the first doc lands. Click-through.
+/// hidden once the first doc card lands. Click-through.
 @MainActor
 final class ColdStartHintView: NSView {
     private let textField = NSTextField(labelWithString: "")

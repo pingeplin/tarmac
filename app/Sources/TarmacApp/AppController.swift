@@ -609,6 +609,9 @@ final class AppController {
         if doc.via == "cli", !wasOnBoard {
             landFreshCard(path: doc.path, on: board)
             persistLayout(for: board)
+            // The store's change callback ran before the card existed, and the
+            // doc count and cold-start hint follow the cards.
+            if board === activeBoard { refreshStrips() }
         }
         // Read-on-open applies only when the doc is already on the ACTIVE board
         // (a brand-new fresh card keeps its unread/fresh ring until touched).
@@ -2324,7 +2327,7 @@ final class AppController {
         rootView.statusBar.setBoard(activeBoard.name ?? activeBoardID, count: count)
         updateTitleChip()
         updateSessionLiveness()
-        rootView.coldStartHint.isHidden = !store.isEmpty
+        rootView.coldStartHint.isHidden = !boardDocPaths.isEmpty
     }
 
     /// `tarmac open · HH:MM` edge label (crib §8): HH:MM from the doc's
