@@ -8,10 +8,8 @@ import TarmacKit
 /// under zoom. The header drags it and eight invisible handles resize it.
 @MainActor
 final class CardView: NSView {
-    static let headerHeight: CGFloat = 30
-    static let cornerRadius: CGFloat = 10
     let id: CardID
-    let header: TileHeaderView
+    let header: CardHeaderView
     private(set) var docView: DocWebView?
     private(set) var termBody: TerminalBodyView?
 
@@ -25,9 +23,10 @@ final class CardView: NSView {
     var onFrameChanging: ((CardView) -> Void)?
     /// The pointer was released, with what the gesture amounted to.
     var onGestureEnded: ((CardView, CardGesture.Outcome) -> Void)?
-    /// The header ✕ (doc cards only) was clicked — the board routes it to the
-    /// controller, which closes the doc card.
+    /// The header `✕` of a doc card was clicked.
     var onClose: ((CardView) -> Void)?
+    /// The header `↻` of a doc card was clicked.
+    var onRefresh: ((CardView) -> Void)?
 
     // MARK: - Gravity / provenance (crib §4, §8)
 
@@ -68,26 +67,30 @@ final class CardView: NSView {
         self.worldFrame = worldFrame
         switch id {
         case .term:
-            header = TileHeaderView(kindGlyph: "›_", showsRepoDot: false, closeButton: nil)
+            header = CardHeaderView(kind: .terminal)
             let term = TerminalBodyView()
             termBody = term
             body = term
-        case .doc:
-            header = TileHeaderView(kindGlyph: "¶", showsRepoDot: true, closeButton: CloseButton())
+        case .doc(let path):
+            header = CardHeaderView(kind: .doc(DocKind(path: path)))
             let doc = DocWebView()
+            doc.wantsLayer = true
+            doc.layer?.backgroundColor = Theme.bg1.cgColor
             docView = doc
             body = doc
         }
         super.init(frame: NSRect(origin: .zero, size: CGSize(width: worldFrame.w, height: worldFrame.h)))
         wantsLayer = true
-        layer?.cornerRadius = Self.cornerRadius
-        layer?.borderWidth = 1
+        layer?.backgroundColor = Theme.termBg.cgColor
+        layer?.cornerRadius = CardBox.cornerRadius
+        layer?.borderWidth = CardBox.borderWidth
         layer?.borderColor = Theme.line.cgColor
         applyRestingShadow()
 
+        // The content sits inside the border, so its corners follow the
+        // border's inner edge.
         clip.wantsLayer = true
-        clip.layer?.backgroundColor = Theme.bg1.cgColor
-        clip.layer?.cornerRadius = Self.cornerRadius
+        clip.layer?.cornerRadius = CardBox.cornerRadius - CardBox.borderWidth
         clip.layer?.masksToBounds = true
         addSubview(clip)
         clip.addSubview(header)
@@ -106,7 +109,10 @@ final class CardView: NSView {
             guard let self else { return }
             self.onClose?(self)
         }
-        header.closeButton?.isHidden = true
+        header.refreshButton?.onClick = { [weak self] in
+            guard let self else { return }
+            self.onRefresh?(self)
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -193,7 +199,6 @@ final class CardView: NSView {
         guard on != selected else { return }
         selected = on
         if !lifted { layer?.borderColor = currentBorderColor.cgColor }
-        header.closeButton?.isHidden = !on
     }
 
     /// The resting border: muted for a dead card, teal for the selected one,
@@ -226,7 +231,7 @@ final class CardView: NSView {
         fresh = on
         if on {
             ringLayer.backgroundColor = Theme.agentDim.cgColor
-            ringLayer.cornerRadius = Self.cornerRadius + Self.ringWidth
+            ringLayer.cornerRadius = CardBox.cornerRadius + Self.ringWidth
             layer.insertSublayer(ringLayer, at: 0)
         } else {
             ringLayer.removeFromSuperlayer()
@@ -353,15 +358,10 @@ final class CardView: NSView {
 
     override func layout() {
         super.layout()
-        let box = contentBox
-        clip.frame = box
-        header.frame = NSRect(x: 0, y: 0, width: box.width, height: Self.headerHeight)
-        body.frame = NSRect(
-            x: 0,
-            y: Self.headerHeight,
-            width: box.width,
-            height: max(0, box.height - Self.headerHeight)
-        )
+        let size = contentBox.size
+        clip.frame = CardBox.content(of: size)
+        header.frame = CardBox.header(of: size)
+        body.frame = CardBox.body(of: size)
         layoutRing()
     }
 

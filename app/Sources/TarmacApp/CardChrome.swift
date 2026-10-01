@@ -2,8 +2,7 @@ import AppKit
 import QuartzCore
 import TarmacKit
 
-/// A top-down (flipped) container view: backs `CardView.clip` and
-/// `BoardView`'s card layer.
+/// A top-down (flipped) container view.
 @MainActor
 final class FlippedColumnView: NSView {
     override var isFlipped: Bool { true }
@@ -24,12 +23,8 @@ extension NSTextField {
     }
 }
 
-// Card chrome shared by `CardView`'s terminal and doc cards. `CloseButton` is
-// the doc card's header ✕ affordance; term cards pass nil.
-
-/// `✎ Ns` honest meta (crib-desk-tiles §3): visible while the 30s recency
-/// window is open, ticking at 1Hz (display granularity is 1s). The tick is a
-/// state display, not motion — it stays under Reduce Motion (crib-state §3.2).
+/// The `✎ Ns` meta on a doc card: shown while the doc's last change is inside
+/// the recency window, and re-read once a second while it is.
 @MainActor
 final class RecentMetaLabel: NSTextField {
     var onUpdate: (() -> Void)?
@@ -62,16 +57,14 @@ final class RecentMetaLabel: NSTextField {
         tickWork?.cancel()
         tickWork = nil
         let nowMs = UInt64(Date().timeIntervalSince1970 * 1000)
-        guard let changed = lastChangedMs, DocStore.isRecent(lastChangedMs: changed, nowMs: nowMs) else {
+        guard let text = ChromeText.recencyLabel(lastChangedMs: lastChangedMs, nowMs: nowMs) else {
             if !isHidden {
                 isHidden = true
                 onUpdate?()
             }
             return
         }
-        let elapsed = nowMs > changed ? nowMs - changed : 0
-        let n = max(1, Int((Double(elapsed) / 1000).rounded()))
-        stringValue = "✎ \(n)s"
+        stringValue = text
         sizeToFit()
         isHidden = false
         onUpdate?()
@@ -83,42 +76,30 @@ final class RecentMetaLabel: NSTextField {
     }
 }
 
-/// Doc-card close ✕ (crib §2): label `✕`, mono 10px faint, padding 2px 5px,
-/// radius 4; hover bg3 + text. Owns its mouse-down so a press here never
-/// reaches the header (and never starts a drag).
+/// A control in a card header (`✕`, `↻`). It keeps the press to itself, so a
+/// click on it never selects the card or starts a drag, and acts on release
+/// inside it.
 @MainActor
-final class CloseButton: NSView {
+final class HeaderButton: NSView {
     var onClick: (() -> Void)?
 
-    /// Resting (non-hover) background. `.clear` for the in-header ✕ — the header
-    /// is its backdrop. The viewport-floating twin (see `BoardView.floatingClose`)
-    /// sets a visible chip, since it sits over arbitrary doc content with no
-    /// header behind it.
-    var restingBackground: NSColor = .clear {
-        didSet { layer?.backgroundColor = restingBackground.cgColor }
-    }
-
-    private let label = NSTextField(labelWithString: "✕")
+    private let label: NSTextField
     private let size: NSSize
     private var trackingArea: NSTrackingArea?
 
     override var acceptsFirstResponder: Bool { false }
 
-    init() {
-        label.font = Theme.mono(11)
-        label.textColor = Theme.muted
-        // `fittedSize`, not `intrinsicContentSize`: the latter under-reports a
-        // label's drawn width (see the NSTextField note atop this file), so an
-        // exact-fit `label.frame` clips the glyph's right edge — visible as the ✕
-        // losing its right arm, magnified under zoom. The other header labels
-        // already measure via `fittedSize`; this is the one that was missed.
+    init(glyph: String, toolTip: String) {
+        label = NSTextField(labelWithString: glyph)
+        label.font = Theme.mono(10.5)
+        label.textColor = Theme.faint
         let textSize = label.fittedSize
-        size = NSSize(width: textSize.width + 10, height: textSize.height + 4)
+        size = NSSize(width: textSize.width + 10, height: textSize.height + 2)
         super.init(frame: NSRect(origin: .zero, size: size))
         wantsLayer = true
         layer?.cornerRadius = 4
-        toolTip = "close"
-        label.frame = NSRect(x: 5, y: 2, width: textSize.width, height: textSize.height)
+        self.toolTip = toolTip
+        label.frame = NSRect(x: 5, y: 1, width: textSize.width, height: textSize.height)
         addSubview(label)
     }
 
@@ -126,13 +107,15 @@ final class CloseButton: NSView {
 
     override var intrinsicContentSize: NSSize { size }
 
-    // Labels swallow mouseDown; capture clicks on children too.
+    // The label would otherwise take the press itself.
     override func hitTest(_ point: NSPoint) -> NSView? {
         super.hitTest(point) == nil ? nil : self
     }
 
-    override func mouseDown(with event: NSEvent) {
-        onClick?()
+    override func mouseDown(with event: NSEvent) {}
+
+    override func mouseUp(with event: NSEvent) {
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?() }
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -141,8 +124,8 @@ final class CloseButton: NSView {
     }
 
     override func mouseExited(with event: NSEvent) {
-        layer?.backgroundColor = restingBackground.cgColor
-        label.textColor = Theme.muted
+        layer?.backgroundColor = nil
+        label.textColor = Theme.faint
     }
 
     override func updateTrackingAreas() {
@@ -158,15 +141,18 @@ final class CloseButton: NSView {
     }
 }
 
-extension CloseButton: HoverCursorProviding {
+extension HeaderButton: HoverCursorProviding {
     func hoverCursor(at windowPoint: NSPoint) -> NSCursor { .pointingHand }
 }
 
-/// `← <termname>` owner chip (crib §4): an attached doc card's header shows its
-/// owner term. Faint 9px mono, 1px line-soft border, radius 4, padding 1px 6px.
-/// Display-only (click-through).
+/// The `← <terminal>` chip on a doc card: at most 120 wide, the name cut at
+/// the tail. Display only.
 @MainActor
 final class OwnerChipView: NSView {
+    private static let maxWidth: CGFloat = 120
+    private static let padX: CGFloat = 6
+    private static let padY: CGFloat = 1
+
     private let label = NSTextField(labelWithString: "")
     private var size: NSSize = .zero
 
@@ -181,10 +167,7 @@ final class OwnerChipView: NSView {
         layer?.borderColor = Theme.lineSoft.cgColor
         label.font = Theme.mono(9)
         label.textColor = Theme.faint
-        label.isEditable = false
-        label.isSelectable = false
-        label.isBezeled = false
-        label.drawsBackground = false
+        label.lineBreakMode = .byTruncatingTail
         addSubview(label)
     }
 
@@ -192,240 +175,204 @@ final class OwnerChipView: NSView {
 
     func setLabel(_ text: String) {
         label.stringValue = text
-        let textSize = label.intrinsicContentSize
-        // padding 1px 6px.
-        size = NSSize(width: textSize.width + 12, height: textSize.height + 2)
-        label.frame = NSRect(x: 6, y: 1, width: textSize.width, height: textSize.height)
+        let textSize = label.fittedSize
+        let width = min(Self.maxWidth, textSize.width + Self.padX * 2)
+        size = NSSize(width: width, height: textSize.height + Self.padY * 2)
+        label.frame = NSRect(x: Self.padX, y: Self.padY, width: width - Self.padX * 2, height: textSize.height)
         invalidateIntrinsicContentSize()
     }
 
     override var intrinsicContentSize: NSSize { size }
 }
 
-/// 30px card header (crib §4): bg2, line-soft bottom hairline, padding 0 11px,
-/// gap 7px, mono 400 10.5px muted. The header is the drag handle; the close ✕
-/// is the one child that keeps its own mouse handling.
+/// A card's header: the handle the card is dragged by, with what identifies
+/// the card on the left and its state and controls packed against the right.
+///
+/// A terminal header reads `›_ label … ●`; a doc header reads
+/// `¶ ● label … ← owner  ✚ now  ✎ Ns  ↻  ✕`. The buttons keep their own
+/// presses; everywhere else a press is the header's.
 @MainActor
-final class TileHeaderView: NSView {
+final class CardHeaderView: NSView {
+    enum Kind {
+        case terminal
+        case doc(DocKind)
+
+        fileprivate var glyph: String {
+            switch self {
+            case .terminal: return "›_"
+            case .doc(.markdown): return "¶"
+            case .doc(.html): return "</>"
+            }
+        }
+    }
+
     var onMouseDown: ((NSEvent) -> Void)?
     var onMouseDragged: ((NSEvent) -> Void)?
     var onMouseUp: ((NSEvent) -> Void)?
 
-    let meta = RecentMetaLabel(font: Theme.mono(9.5), color: Theme.agent)
-    let closeButton: CloseButton?
+    let closeButton: HeaderButton?
+    let refreshButton: HeaderButton?
+
+    private static let font = Theme.mono(10.5)
+    private static let dotSize: CGFloat = 7
+
     private let hairline = NSView()
     private let kindGlyph: NSTextField
-    private let repoDot: NSView?
-    private let pathLabel = NSTextField(labelWithString: "")
-    // Phase 3 header right-cluster extras: `✚ now` fresh badge (agent cyan) and
-    // a `← <termname>` owner chip (faint, line-soft border) for an attached doc.
-    private let freshMeta = NSTextField(labelWithString: "✚ now")
+    private let repoDot = NSView()
+    private let label = NSTextField(labelWithString: "")
     private let ownerChip = OwnerChipView()
-    // Phase 3.5 (M2 honest signals): an amber `●` bell dot in the right cluster,
-    // shown when a BEL was seen, cleared on the next keystroke, paste or click
-    // in that terminal.
+    private let freshMeta = NSTextField(labelWithString: "✚ now")
+    private let recency = RecentMetaLabel(font: Theme.mono(9.5), color: Theme.agent)
     private let bellDot = NSTextField(labelWithString: "●")
+    /// An extra control between `↻` and `✕`.
+    private var accessory: NSView?
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
 
-    init(kindGlyph glyph: String, showsRepoDot: Bool, closeButton: CloseButton?) {
-        kindGlyph = NSTextField(labelWithString: glyph)
-        repoDot = showsRepoDot ? NSView() : nil
-        self.closeButton = closeButton
+    init(kind: Kind) {
+        kindGlyph = NSTextField(labelWithString: kind.glyph)
+        if case .doc = kind {
+            refreshButton = HeaderButton(glyph: "↻", toolTip: "Refresh from disk")
+            closeButton = HeaderButton(glyph: "✕", toolTip: "Close")
+        } else {
+            refreshButton = nil
+            closeButton = nil
+        }
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = Theme.bg2.cgColor
 
         hairline.wantsLayer = true
         hairline.layer?.backgroundColor = Theme.lineSoft.cgColor
-        addSubview(hairline)
 
-        kindGlyph.font = Theme.mono(10.5)
+        kindGlyph.font = Self.font
         kindGlyph.textColor = Theme.faint
-        addSubview(kindGlyph)
 
-        if let repoDot {
-            repoDot.wantsLayer = true
-            repoDot.layer?.cornerRadius = 3.5
-            addSubview(repoDot)
-        }
+        repoDot.wantsLayer = true
+        repoDot.layer?.cornerRadius = Self.dotSize / 2
+        repoDot.isHidden = true
 
-        pathLabel.font = Theme.mono(10.5)
-        pathLabel.textColor = Theme.muted
-        pathLabel.lineBreakMode = .byTruncatingMiddle
-        addSubview(pathLabel)
-
-        meta.onUpdate = { [weak self] in self?.needsLayout = true }
-        addSubview(meta)
-
-        freshMeta.font = Theme.mono(9.5)
-        freshMeta.textColor = Theme.agent
-        freshMeta.isHidden = true
-        addSubview(freshMeta)
+        label.font = Self.font
+        label.textColor = Theme.muted
+        label.lineBreakMode = .byTruncatingTail
 
         ownerChip.isHidden = true
-        addSubview(ownerChip)
 
-        bellDot.font = Theme.mono(9)
+        freshMeta.font = Self.font
+        freshMeta.textColor = Theme.agent
+        freshMeta.isHidden = true
+
+        recency.onUpdate = { [weak self] in self?.needsLayout = true }
+
+        bellDot.font = Self.font
         bellDot.textColor = Theme.amber
-        bellDot.isEditable = false
-        bellDot.isSelectable = false
-        bellDot.isBezeled = false
-        bellDot.drawsBackground = false
-        bellDot.toolTip = "bell"
         bellDot.isHidden = true
-        addSubview(bellDot)
 
-        if let closeButton { addSubview(closeButton) }
+        let controls: [NSView?] = [refreshButton, closeButton]
+        for view in [hairline, kindGlyph, repoDot, label, ownerChip, freshMeta, recency, bellDot] + controls.compactMap({ $0 }) {
+            addSubview(view)
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
+    // MARK: Content
+
     func apply(doc: RestoreDoc) {
-        pathLabel.stringValue = doc.displayPath
-        repoDot?.layer?.backgroundColor =
-            Theme.repoColor(index: doc.repoColor, fallbackName: doc.displayRepoName).cgColor
-        meta.setChanged(doc.lastChangedMs)
+        label.stringValue = doc.fileName
+        if let index = RepoDot.paletteIndex(repoColor: doc.repoColor, paletteSize: Theme.repoColors.count) {
+            repoDot.layer?.backgroundColor = Theme.repoColors[index].cgColor
+            repoDot.isHidden = false
+        } else {
+            repoDot.isHidden = true
+        }
+        recency.setChanged(doc.lastChangedMs)
         needsLayout = true
     }
 
     func setLabel(_ text: String) {
-        pathLabel.stringValue = text
+        label.stringValue = text
         needsLayout = true
     }
 
-    /// `✚ now` fresh badge (crib §5): a freshly-landed CLI doc card shows it in
-    /// agent cyan until selected / marked read.
     func setFreshMeta(_ on: Bool) {
-        guard on != !freshMeta.isHidden else { return }
+        guard on == freshMeta.isHidden else { return }
         freshMeta.isHidden = !on
-        if on { freshMeta.sizeToFit() }
         needsLayout = true
     }
 
-    /// `← <termname>` owner chip (crib §4): an attached doc card shows its
-    /// owner term's current label; a detached (loose) card passes nil.
-    func setOwnerChip(_ termName: String?) {
-        if let termName {
-            ownerChip.setLabel("← \(termName)")
-            ownerChip.isHidden = false
-        } else {
-            ownerChip.isHidden = true
-        }
+    /// Shows `← <name>`, or hides the chip with nil.
+    func setOwnerChip(_ name: String?) {
+        if let name { ownerChip.setLabel("← \(name)") }
+        ownerChip.isHidden = name == nil
         needsLayout = true
     }
 
-    /// Phase 3.5 (M2 honest signals): an amber bell signal — a `●` dot in the
-    /// right cluster plus an amber accent on the kind glyph — shown when a BEL
-    /// was seen, cleared on the next keystroke, paste or click in the terminal.
-    /// This is a state display (no animation; stays under Reduce Motion).
+    /// A lit bell turns the glyph amber and shows the amber dot.
     func setBell(_ on: Bool) {
-        guard on != !bellDot.isHidden else { return }
+        guard on == bellDot.isHidden else { return }
         bellDot.isHidden = !on
         kindGlyph.textColor = on ? Theme.amber : Theme.faint
         needsLayout = true
     }
 
-    /// Prime-header styling (crib §4 `.tm-bcard.prime .bhd`): bg `#3a4046`, label
-    /// text `text`. The focused terminal card uses it; off restores the resting
-    /// bg2 + muted label. Display-only.
     func setPrime(_ on: Bool) {
         layer?.backgroundColor = (on ? Theme.primeHeaderBg : Theme.bg2).cgColor
-        pathLabel.textColor = on ? Theme.text : Theme.muted
+        label.textColor = on ? Theme.text : Theme.muted
     }
+
+    func setAccessory(_ view: NSView?) {
+        accessory?.removeFromSuperview()
+        accessory = view
+        if let view { addSubview(view) }
+        needsLayout = true
+    }
+
+    // MARK: Layout
 
     override func layout() {
         super.layout()
-        let h = bounds.height
-        hairline.frame = NSRect(x: 0, y: h - 1, width: bounds.width, height: 1)
+        hairline.frame = NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1)
 
-        var x: CGFloat = 11
-        let glyphSize = kindGlyph.fittedSize
-        kindGlyph.frame = NSRect(
-            x: x,
-            y: ((h - glyphSize.height) / 2).rounded(),
-            width: glyphSize.width,
-            height: glyphSize.height
+        let leading = [(kindGlyph, kindGlyph.fittedSize), (repoDot, NSSize(width: Self.dotSize, height: Self.dotSize))]
+            .filter { !$0.0.isHidden }
+        let trailingViews: [NSView?] = [ownerChip, freshMeta, recency, refreshButton, accessory, closeButton, bellDot]
+        let trailing = trailingViews.compactMap { $0 }.filter { !$0.isHidden }.map { ($0, size(of: $0)) }
+        let labelSize = label.fittedSize
+
+        let frames = CardHeaderLayout.frames(
+            width: bounds.width,
+            leading: leading.map(\.1.width),
+            label: labelSize.width,
+            trailing: trailing.map(\.1.width)
         )
-        x = kindGlyph.frame.maxX + 7
-        if let repoDot {
-            repoDot.frame = NSRect(x: x, y: ((h - 7) / 2).rounded(), width: 7, height: 7)
-            x += 7 + 7
-        }
+        for (item, span) in zip(leading, frames.leading) { place(item.0, span, height: item.1.height) }
+        for (item, span) in zip(trailing, frames.trailing) { place(item.0, span, height: item.1.height) }
+        place(label, frames.label, height: labelSize.height)
+    }
 
-        // Right edge per crib §4/§5: right-to-left cluster
-        // [ownerChip][freshMeta][meta][✕][bell], gap 7 (mr cluster gap 8 ≈ 7).
-        // Inset 13 (vs the leading 11) clears the radius-10 corner and the
-        // corner-seated resize handle, so the ✕ never reads as clipped.
-        var rightX = bounds.width - 13
-        if !bellDot.isHidden {
-            let size = bellDot.fittedSize
-            bellDot.frame = NSRect(
-                x: rightX - size.width,
-                y: ((h - size.height) / 2).rounded(),
-                width: size.width,
-                height: size.height
-            )
-            rightX = bellDot.frame.minX - 7
-        }
-        // Laid out unconditionally (not gated on isHidden like its siblings) so its
-        // slot is reserved and it stays correctly positioned when focus toggles it
-        // visible — focus changes don't trigger a header relayout.
-        if let closeButton {
-            let size = closeButton.intrinsicContentSize
-            closeButton.frame = NSRect(
-                x: rightX - size.width,
-                y: ((h - size.height) / 2).rounded(),
-                width: size.width,
-                height: size.height
-            )
-            rightX = closeButton.frame.minX - 7
-        }
-        if !meta.isHidden {
-            let size = meta.frame.size
-            meta.frame = NSRect(
-                x: rightX - size.width,
-                y: ((h - size.height) / 2).rounded(),
-                width: size.width,
-                height: size.height
-            )
-            rightX = meta.frame.minX - 7
-        }
-        if !freshMeta.isHidden {
-            let size = freshMeta.fittedSize
-            freshMeta.frame = NSRect(
-                x: rightX - size.width,
-                y: ((h - size.height) / 2).rounded(),
-                width: size.width,
-                height: size.height
-            )
-            rightX = freshMeta.frame.minX - 7
-        }
-        if !ownerChip.isHidden {
-            let size = ownerChip.intrinsicContentSize
-            ownerChip.frame = NSRect(
-                x: rightX - size.width,
-                y: ((h - size.height) / 2).rounded(),
-                width: size.width,
-                height: size.height
-            )
-            rightX = ownerChip.frame.minX - 7
-        }
-        let labelHeight = pathLabel.intrinsicContentSize.height
-        pathLabel.frame = NSRect(
-            x: x,
-            y: ((h - labelHeight) / 2).rounded(),
-            width: max(0, min(pathLabel.fittedSize.width, rightX - x)),
-            height: labelHeight
+    private func size(of view: NSView) -> NSSize {
+        if let field = view as? NSTextField { return field.fittedSize }
+        return view.intrinsicContentSize
+    }
+
+    /// Centred in the header above its bottom hairline.
+    private func place(_ view: NSView, _ span: CardHeaderLayout.Span, height: CGFloat) {
+        view.frame = NSRect(
+            x: span.x,
+            y: ((bounds.height - 1 - height) / 2).rounded(),
+            width: span.width,
+            height: height
         )
     }
 
-    // The whole header is the drag handle except the ✕ (crib §5 initiation).
+    // MARK: Mouse
+
+    // A press anywhere but on a button is the header's own.
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let hit = super.hitTest(point) else { return nil }
-        if let closeButton, hit === closeButton { return hit }
-        return self
+        return hit is HeaderButton ? hit : self
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -441,7 +388,7 @@ final class TileHeaderView: NSView {
     }
 }
 
-extension TileHeaderView: HoverCursorProviding {
+extension CardHeaderView: HoverCursorProviding {
     func hoverCursor(at windowPoint: NSPoint) -> NSCursor { .openHand }
 }
 
@@ -463,9 +410,8 @@ final class TerminalBodyView: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     func attach(_ terminal: NSView) {
-        // P5.3 revive swaps a fresh view into an already-attached card. `terminal`
-        // is weak, so reassigning it does NOT release the prior view — it stays
-        // retained (and drawing) as a subview unless removed. Drop it first.
+        // `terminal` is weak, so reassigning it does not release a view swapped
+        // out of an already-attached card: it would stay a subview and keep drawing.
         if let old = self.terminal, old !== terminal { old.removeFromSuperview() }
         self.terminal = terminal
         addSubview(terminal)
@@ -477,4 +423,3 @@ final class TerminalBodyView: NSView {
         terminal?.frame = bounds
     }
 }
-

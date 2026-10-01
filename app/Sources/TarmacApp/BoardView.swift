@@ -47,6 +47,9 @@ final class BoardView: NSView {
     /// persistence policy.
     var onCardClose: ((CardID) -> Void)?
 
+    /// Fires when a doc card's ↻ button is clicked.
+    var onCardRefresh: ((CardID) -> Void)?
+
     /// Current viewport (zoom + world center). Read for persistence; set by 2c
     /// from `restore.board` to reproduce the saved viewport.
     private(set) var viewport: Viewport = .default
@@ -67,7 +70,6 @@ final class BoardView: NSView {
         let card = CardView(id: id, worldFrame: worldFrame)
         wire(card)
         cards[id] = card
-        if case .doc = id { docCardCount += 1 }
         cardLayer.addSubview(card)
         restack()
         reproject(card)
@@ -79,11 +81,9 @@ final class BoardView: NSView {
 
     func removeCard(id: CardID) {
         guard let card = cards.removeValue(forKey: id) else { return }
-        if case .doc = id { docCardCount -= 1 }
         if selectedID == id { selectedID = nil }
         card.removeFromSuperview()
         recomputeEdges()
-        refreshFloatingClose()
         onCardsChanged?()
     }
 
@@ -270,7 +270,6 @@ final class BoardView: NSView {
         if let previous = selectedID { cards[previous]?.setSelected(false) }
         selectedID = id
         if let id { cards[id]?.setSelected(true) }
-        refreshFloatingClose()
     }
 
     /// Puts `id` above every card on the board, even if it is already on top.
@@ -289,20 +288,6 @@ final class BoardView: NSView {
     private var carry: SatelliteCarry?
     private let cursors = HoverCursorRouter()
     private var pointerTracking: NSTrackingArea?
-
-    /// Viewport-pinned twin of the focused doc card's header ✕. The in-card ✕
-    /// rides the card under the pure-transform zoom, so on a doc larger than the
-    /// viewport (e.g. zoomed in to read) its top-right corner — and the ✕ with it —
-    /// scrolls off-screen ("eaten by the window"). This fixed top-right ✕ surfaces
-    /// only then, so closing stays reachable without breaking the
-    /// pure-transform model for the card itself. Routes to the same `onCardClose`.
-    let floatingClose = CloseButton()
-    private var floatingCloseTarget: CardID?
-
-    /// Live count of doc cards (the only kind the floating ✕ tracks), kept in sync
-    /// by add/removeCard so `refreshFloatingClose` can skip its per-reproject scan
-    /// on terminal-only boards (#7).
-    private var docCardCount = 0
 
     private var viewportCenter: CGPoint { CGPoint(x: bounds.midX, y: bounds.midY) }
 
@@ -332,24 +317,13 @@ final class BoardView: NSView {
         cardLayer.autoresizingMask = [.width, .height]
         addSubview(cardLayer)
 
-        // Floating close ✕ sits above the cards (a board sibling of `cardLayer`, so
-        // `restack()` never reorders it) and stays in viewport space. A visible
-        // chip backs it since it floats over doc content with no header behind it.
-        floatingClose.restingBackground = Theme.bg2
-        floatingClose.layer?.borderWidth = 1
-        floatingClose.layer?.borderColor = Theme.line.cgColor
-        floatingClose.isHidden = true
-        floatingClose.onClick = { [weak self] in
-            guard let self, let id = self.floatingCloseTarget else { return }
-            self.onCardClose?(id)
-        }
-        addSubview(floatingClose)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
     private func wire(_ card: CardView) {
         card.onClose = { [weak self] c in self?.onCardClose?(c.id) }
+        card.onRefresh = { [weak self] c in self?.onCardRefresh?(c.id) }
         card.onMoveBegan = { [weak self] c in self?.beginCarry(for: c) }
         card.onFrameChanging = { [weak self] c in
             guard let self else { return }
@@ -426,7 +400,6 @@ final class BoardView: NSView {
             for card in cards.values { project(card) }
             updateContentScaleIfNeeded()
             recomputeEdges()
-            refreshFloatingClose()
             // NB: no onCardsChanged?() here. reprojectAll runs on every pan/zoom,
             // where the card SET is unchanged and its callers already fire
             // onViewportChanged (→ one wayfinding refresh/frame). onCardsChanged
@@ -446,46 +419,6 @@ final class BoardView: NSView {
         cards.values.reduce(into: 0) { n, card in
             if !card.isHidden, card.frame.intersects(bounds) { n += 1 }
         }
-    }
-
-    /// Shows the viewport-pinned ✕ only when the focused/selected doc card's
-    /// in-card ✕ has scrolled out of the visible board (so closing stays reachable
-    /// while reading a zoomed-in doc), and parks it top-right. Cheap — one
-    /// coordinate convert + containment test — so it rides every reproject as well
-    /// as focus changes (`focusChromeChanged`).
-    func refreshFloatingClose() {
-        // #7: the floating ✕ only ever tracks a doc card, so on a terminal-only
-        // board (no doc cards) skip the per-reproject scan entirely.
-        guard docCardCount > 0 else {
-            if floatingCloseTarget != nil { floatingClose.isHidden = true; floatingCloseTarget = nil }
-            return
-        }
-        // Mirror exactly where an in-card ✕ is meant to be shown (`!isHidden` ==
-        // focused || selected), then check whether it actually landed on screen.
-        let target = cards.values.first { card in
-            guard case .doc = card.id, let btn = card.header.closeButton else { return false }
-            return !btn.isHidden
-        }
-        guard let card = target, let btn = card.header.closeButton,
-              !bounds.contains(convert(btn.bounds, from: btn)) else {
-            floatingClose.isHidden = true
-            floatingCloseTarget = nil
-            return
-        }
-        floatingCloseTarget = card.id
-        let s = floatingClose.intrinsicContentSize
-        let inset: CGFloat = 13
-        // Flipped board: y grows downward, so `inset` seats it at the top. The frame
-        // is viewport-fixed (only `bounds.maxX` moves it, i.e. a window resize), so
-        // this is usually a no-op once shown.
-        let frame = NSRect(x: bounds.maxX - inset - s.width, y: inset, width: s.width, height: s.height)
-        let changed = floatingClose.isHidden || floatingClose.frame != frame
-        floatingClose.frame = frame
-        floatingClose.isHidden = false
-        // A direct frame set doesn't re-sync cursor rects (the .inVisibleRect
-        // tracking area keeps hover in sync on its own), so refresh the pointing-hand
-        // rect when the ✕ first appears or its frame moves.
-        if changed { window?.invalidateCursorRects(for: floatingClose) }
     }
 
     /// The card layer is scaled as a bitmap by the `frame≠bounds` transform, so
@@ -540,7 +473,6 @@ final class BoardView: NSView {
     private func reproject(_ card: CardView) {
         project(card)
         recomputeEdges()
-        refreshFloatingClose()
         onCardsChanged?()
     }
 

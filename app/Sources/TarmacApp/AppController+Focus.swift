@@ -28,10 +28,8 @@ extension AppController {
     func handlePress(at point: NSPoint) {
         guard !switcherOpen, window?.isKeyWindow == true else { return }
         guard let hit = hitView(at: point), hit.isDescendant(of: rootView.board) else { return }
-        // The viewport-pinned close ✕ is a board subview but belongs to no card.
-        if hit.isDescendant(of: rootView.board.floatingClose) { return }
         guard let card = enclosingCard(hit) else { return defocus() }
-        if hit is CloseButton { return }
+        if hit is HeaderButton { return }
         select(card.id)
     }
 
@@ -57,10 +55,6 @@ extension AppController {
     func routeScroll(_ event: NSEvent) -> Bool {
         guard !switcherOpen else { return false }
         guard let hit = hitView(at: event.locationInWindow), hit.isDescendant(of: rootView.board) else { return false }
-        // The viewport-pinned close ✕ floats over the doc it closes; a scroll there
-        // must not pan the board out from under the doc being read. Swallow it (the
-        // ✕ is a small corner control — scrolling it is a no-op, not a board pan).
-        if hit.isDescendant(of: activeBoard.view.floatingClose) { return true }
         if let fid = focusedCardID, activeBoard.view.card(fid) != nil,
            enclosingCard(hit)?.id == fid {
             return false
@@ -118,9 +112,6 @@ extension AppController {
             // A card is quiet only while some terminal is prime and it isn't it.
             card.setQuiet(primeID != nil && !isPrime)
         }
-        // Focus drives whether a doc's in-card ✕ is shown, and a focus change does
-        // not reproject — so re-evaluate the viewport-pinned twin here too.
-        b.view.refreshFloatingClose()
     }
 
     /// Makes `termID` the prime (focused) terminal: re-applies primacy styling
