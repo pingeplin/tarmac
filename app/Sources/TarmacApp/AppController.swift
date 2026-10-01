@@ -2180,7 +2180,7 @@ final class AppController {
     /// Reports the full layout snapshot (docs/protocol.md `layout`;
     /// last-writer-wins): each terminal card's frame + its `term_id` (Phase 5b:
     /// N terminal cards, live AND dead, persist distinct positions) and each board
-    /// doc card's frame with its `loose` flag (shelf:false). Plus the board
+    /// doc card's frame with its `loose` flag. Plus the board
     /// viewport `{zoom,cx,cy}`. Fired on every committed board
     /// move/resize/zoom/pan, and on card-set/gravity changes.
     private func persistLayout() {
@@ -2291,7 +2291,6 @@ final class AppController {
             // The term card has no gravity tie; doc cards carry their attached
             // state as the loose flag.
             loose: kind == "doc" ? !card.attached : nil,
-            shelf: kind == "doc" ? false : nil,
             termID: termID
         )
     }
