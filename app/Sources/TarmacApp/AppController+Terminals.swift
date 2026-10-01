@@ -16,16 +16,22 @@ extension AppController {
     /// `onClipboardWrite`: a program may not overwrite the user's clipboard
     /// (OSC 52). `onActivity`: what clears a lit bell is bytes leaving for the
     /// PTY and the card becoming prime, not a key or click that sends nothing.
+    ///
+    /// The view is told the window's display scale because a card on a
+    /// backgrounded board spawns its shell before it is ever in the window, and
+    /// a cell measured at another scale is a different grid.
     private func makeTerminalView(termID: String) -> TerminalView {
+        let frame = NSRect(x: 0, y: 0, width: 800, height: 600)
         let view: TerminalView
         do {
-            view = try TerminalView(
-                frame: NSRect(x: 0, y: 0, width: 800, height: 600), theme: .breeze, fontSize: Theme.termFontSize
-            )
+            if let scale = window?.backingScaleFactor {
+                view = try TerminalView(frame: frame, theme: .breeze, fontSize: Theme.termFontSize, backingScale: scale)
+            } else {
+                view = try TerminalView(frame: frame, theme: .breeze, fontSize: Theme.termFontSize)
+            }
         } catch {
             fatalError("tarmac: could not create a terminal view: \(error)")
         }
-        adoptDisplayScale(view)
         view.onInput = { [weak self] bytes in self?.terminalDidSend(termID: termID, Data(bytes)) }
         view.onResize = { [weak self] _, _ in self?.terminalSizeChanged(termID: termID) }
         view.onTitleChanged = { [weak self] title in self?.handleTermTitle(termID: termID, title: title) }
@@ -44,20 +50,6 @@ extension AppController {
             )
         }
         return view
-    }
-
-    /// A terminal view sizes its cells for the display of the window it is in,
-    /// and one that has never been in a window assumes a 2× display. On a 1×
-    /// display that is a different cell width, so a card on a backgrounded board
-    /// would measure — and spawn its shell at — a grid it will not have once it
-    /// is shown. `TerminalView` cannot be told the scale, so the view is passed
-    /// through the window once, which leaves it with the real one.
-    private func adoptDisplayScale(_ view: TerminalView) {
-        guard rootView.window != nil else { return }
-        view.isHidden = true
-        rootView.addSubview(view)
-        view.removeFromSuperview()
-        view.isHidden = false
     }
 
     // MARK: - Routing
@@ -111,29 +103,21 @@ extension AppController {
         clearBell(termID: termID)
     }
 
-    /// `output` and `scrollback` bytes the gate let through. `replacingHistory`
-    /// means the chunks are the card's whole history, so a card that already
-    /// shows output is blanked first — that is what keeps a reconnect's replay
-    /// from being appended to the history it repeats.
-    func showOutput(termID: String, _ chunks: [Data], replacingHistory: Bool) {
-        guard let (s, board) = anySession(termID) else { return }
-        if replacingHistory, s.hasOutput { blank(s, on: board) }
-        for chunk in chunks {
-            s.feed(chunk)
+    /// `output` and `scrollback` bytes the gate let through. A ring is the
+    /// card's whole history, so the card is cleared first — that keeps a
+    /// reconnect's replay from being appended to the history it repeats — and
+    /// it is replayed, not fed: its queries were answered when they were live.
+    func showOutput(termID: String, _ release: ScrollbackGate.Release) {
+        guard let (s, _) = anySession(termID) else { return }
+        switch release {
+        case .replace(let ring):
+            s.view.reset()
+            s.view.replay(ring)
+        case .append(let chunks):
+            for chunk in chunks {
+                s.feed(chunk)
+            }
         }
-    }
-
-    /// Empties a card. `TerminalView` cannot be cleared in place, so the card
-    /// gets a fresh view of the same size (the ring must replay at the grid the
-    /// PTY has), and keyboard focus follows it.
-    private func blank(_ s: TerminalSession, on board: Board) {
-        let old = s.view
-        let focused = window?.firstResponder === old
-        let fresh = makeTerminalView(termID: s.termID)
-        fresh.frame = old.frame
-        s.replaceView(fresh)
-        board.view.card(.term(s.termID))?.attachTerminal(fresh)
-        if focused { window?.makeFirstResponder(fresh) }
     }
 
     // MARK: - Creating and spawning
@@ -167,8 +151,9 @@ extension AppController {
         return s
     }
 
-    /// Sends the spawn of every card still waiting for one. Kept under this
-    /// name for the connect and first-layout triggers.
+    /// Sends the spawn of every card still waiting for one. Called when the
+    /// connection comes up and when the view first lays out: `spawnPending`
+    /// needs both, and either may be the later.
     func maybeSpawn() {
         for board in boards.values {
             spawnPending(on: board)
@@ -254,7 +239,7 @@ extension AppController {
         let frame = card.worldFrame
         switch TermExit.decide(code: code, otherLiveTerminals: board.otherLiveTerminals(than: termID)) {
         case .holdOpen:
-            holdOpen(s, code: code, on: board)
+            holdOpen(s, on: board)
             board.reassignPrime()
         case .remove:
             removeTerminalCard(termID, on: board)
@@ -270,14 +255,14 @@ extension AppController {
     }
 
     /// The card stays on the board as a dead placeholder: it keeps its label
-    /// and its screen, takes no input, and is never persisted.
-    func holdOpen(_ s: TerminalSession, code: Int?, on board: Board) {
+    /// and its screen, takes no input, and is never persisted. A scrollback
+    /// wait is left running, so history asked for before the exit still lands.
+    func holdOpen(_ s: TerminalSession, on board: Board) {
         s.live = false
         s.needsSpawn = false
         s.procName = nil
         s.bellAt = nil
-        scrollback.unmount(s.termID)
-        board.view.card(.term(s.termID))?.setExited(code)
+        board.view.card(.term(s.termID))?.setExited()
         board.view.signalsChanged()
     }
 

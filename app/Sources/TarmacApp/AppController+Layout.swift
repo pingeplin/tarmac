@@ -137,7 +137,7 @@ extension AppController {
         guard !termIDs.isEmpty else { return }
         for termID in termIDs {
             guard let s = board.sessions[termID] else { continue }
-            holdOpen(s, code: nil, on: board)
+            holdOpen(s, on: board)
         }
         board.reassignPrime()
         updatePrimacy(on: board)

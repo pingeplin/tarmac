@@ -7,14 +7,11 @@ import TarmacKit
 final class ScrollbackRestore {
     private var gate = ScrollbackGate()
     private let request: (String) -> Void
-    /// `history` is true when the chunks are everything the card should show —
-    /// the daemon's ring, or what was held when no ring came — rather than live
-    /// output to append.
-    private let deliver: (_ termID: String, _ chunks: [Data], _ history: Bool) -> Void
+    private let deliver: (_ termID: String, ScrollbackGate.Release) -> Void
 
     init(
         request: @escaping (String) -> Void,
-        deliver: @escaping (_ termID: String, _ chunks: [Data], _ history: Bool) -> Void
+        deliver: @escaping (_ termID: String, ScrollbackGate.Release) -> Void
     ) {
         self.request = request
         self.deliver = deliver
@@ -30,13 +27,13 @@ final class ScrollbackRestore {
     }
 
     func output(_ termID: String, _ bytes: Data) {
-        guard let shown = gate.output(termID, bytes) else { return }
-        deliver(termID, [shown], false)
+        guard let release = gate.output(termID, bytes) else { return }
+        deliver(termID, release)
     }
 
     func reply(_ termID: String, _ bytes: Data) {
-        guard let ring = gate.scrollback(termID, bytes) else { return }
-        deliver(termID, [ring], true)
+        guard let release = gate.scrollback(termID, bytes) else { return }
+        deliver(termID, release)
     }
 
     /// The card is gone; nothing held for it is shown.
@@ -45,13 +42,13 @@ final class ScrollbackRestore {
     }
 
     func socketLost() {
-        for (termID, chunks) in gate.clearAwaiting() {
-            deliver(termID, chunks, true)
+        for (termID, release) in gate.clearAwaiting() {
+            deliver(termID, release)
         }
     }
 
     private func expire(_ termID: String, _ generation: UInt64) {
-        guard let held = gate.expire(termID, generation: generation) else { return }
-        deliver(termID, held, true)
+        guard let release = gate.expire(termID, generation: generation) else { return }
+        deliver(termID, release)
     }
 }

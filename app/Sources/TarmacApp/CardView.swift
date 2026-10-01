@@ -242,7 +242,7 @@ final class CardView: NSView {
     /// Holds an exited terminal's card open: dimmed, border muted, prime and
     /// bell dropped, the label left as it was. The exit code is the toast's to
     /// show, not the card's.
-    func setExited(_ code: Int?) {
+    func setExited() {
         guard !dead else { return }
         setBell(false)
         setLive(false)

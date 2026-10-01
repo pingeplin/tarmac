@@ -1,8 +1,7 @@
-/// Pure decision for a terminal card's lifecycle when its shell exits, plus the
-/// partition of which terminal tiles survive into the persisted layout. Kept in
-/// TarmacKit so the rules are unit-tested away from AppKit; the app
-/// (`AppController.handleExit` / `persistLayout`) only does the wiring. Mirrors
-/// the `TermRestore.plan()` pattern.
+/// Pure decision for a terminal card's lifecycle when its shell exits. Kept in
+/// TarmacKit so the rule is unit-tested away from AppKit; the app
+/// (`AppController.handleExit`) only does the wiring. Mirrors the
+/// `TermRestore.plan()` pattern.
 ///
 /// Exit-code semantics (from the daemon's `Exit` message, see `term.rs`): `nil`
 /// = killed by a signal, `0` = clean exit, non-zero = error.
@@ -32,21 +31,5 @@ public enum TermExit {
     public static func decide(code: Int?, otherLiveTerminals: Int) -> Action {
         guard code == 0 else { return .holdOpen }
         return otherLiveTerminals == 0 ? .removeAndReplace : .remove
-    }
-
-    /// Whether a terminal tile is written to the persisted layout. An `exited`
-    /// shell (clean-removed, or held-open after an error) is excluded so it never
-    /// reappears on relaunch. A DETACHED shell (the daemon connection dropped, so
-    /// its pty may still be alive — `live == false` but NOT exited) is kept, so
-    /// it re-binds on reconnect. Callers MUST source `exited` from the card's
-    /// terminal/`dead` state, never from `live`.
-    public static func persistsTile(exited: Bool) -> Bool { !exited }
-
-    /// The persisted-tile partition: given each terminal tile's id paired with
-    /// whether its shell has exited, returns the ids that survive into the
-    /// persisted layout, in input order. `persistLayout` routes through this so
-    /// the exited-vs-live guard is unit-tested here, not re-derived inline.
-    public static func persistedTermIDs(_ tiles: [(termID: String, exited: Bool)]) -> [String] {
-        tiles.filter { persistsTile(exited: $0.exited) }.map(\.termID)
     }
 }

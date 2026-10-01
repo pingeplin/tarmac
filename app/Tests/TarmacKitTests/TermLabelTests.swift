@@ -20,7 +20,7 @@ final class TermLabelTests: XCTestCase {
 
     /// A program clearing its title does not revert the card to the process name.
     func testABlankTitleIsIgnored() {
-        for blank in [nil, "", " ", "\t\n", "\u{00A0}\u{3000}", "\u{FEFF}", "\u{2028}\u{2029}"] {
+        for blank in [nil, "", " ", "\t\n", "\u{0B}\u{0C}\r", "\u{00A0}\u{3000}", "\u{FEFF}", "\u{2028}\u{2029}"] {
             XCTAssertEqual(TermLabel.afterTitle(blank, current: "vim"), "vim", "\(String(describing: blank))")
         }
     }
