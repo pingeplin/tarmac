@@ -54,4 +54,16 @@ public enum DevCellPoint {
             extra: ["card": .string(card)]
         )
     }
+
+    /// The other way a right-click selects nothing: the program takes the right
+    /// button as a mouse report. The Tauri driver has no code for it — it
+    /// answers ok and leaves the scenario to notice — so the refusal borrows
+    /// `empty_buffer`, which exists for exactly this outcome.
+    public static func mouseTracked(card: String) -> DevError {
+        DevError(
+            .emptyBuffer,
+            "the terminal's program tracks the mouse and takes the right-click as a report; nothing is selected",
+            extra: ["card": .string(card)]
+        )
+    }
 }
