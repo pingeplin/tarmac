@@ -51,8 +51,8 @@ accept a bare number or `#N`).
 
 5. **Hand off.** State the branch, the location (repo or worktree path), and a
    one-line plan from the issue. Don't start coding unless asked — `/start` opens
-   the work; implementation is the next step. When done, `/ship` (or a manual
-   Conventional commit + `gh pr create` with `Closes #N`) finishes it.
+   the work; implementation is the next step. When done, a Conventional commit +
+   `gh pr create` with `Closes #N` finishes it.
 
 ## Notes
 - Never branch off a dirty tree — stash or ask first.

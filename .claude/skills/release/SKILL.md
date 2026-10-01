@@ -41,8 +41,7 @@ can't ship — but sync here to catch it up front.
 1. **Bump the version — eight files end up in the release commit.**
    Hand-edit `version` to `x.y.z` in **three** files:
    - `desktop/src-tauri/tauri.conf.json` — Tauri stamps this into the bundle; the
-     authoritative embedded version. (`packaging/Info.plist` is gone — Tauri
-     generates Info.plist from this.)
+     authoritative embedded version. (Tauri generates Info.plist from this.)
    - `desktop/package.json` — then regenerate the lockfile:
      `(cd desktop && npm install --package-lock-only)`.
    - `packaging/Casks/tarmac.rb` — version now; the `sha256` is filled in at step 4.
@@ -52,8 +51,8 @@ can't ship — but sync here to catch it up front.
    so `CARGO_PKG_VERSION` matches the shipped version (this is what makes the daemon
    auto-restart-on-version-mismatch check fire across upgrades). `make release`
    leaves them modified in the working tree — they **MUST go in the release commit**,
-   else HEAD keeps the old `0.1.0`, the committed tree won't match what shipped, and
-   the version check silently breaks again.
+   else HEAD keeps the previous version, the committed tree won't match what shipped, and
+   the version check silently breaks.
 
 2. **Pre-build fixups (both are easy to forget and fail the build):**
    - **Refresh the Cargo lockfiles — but stamp the `Cargo.toml`s first.** The release
@@ -158,12 +157,9 @@ can't ship — but sync here to catch it up front.
   once for the main-repo PR, once for the `homebrew-tarmac` tap PR — or have the
   user run the `gh pr merge … --squash --delete-branch` themselves.
   **After either path, verify — don't assume it landed:** `gh pr view <n> --json
-  state,mergedAt --repo <owner>/<repo>`. Observed twice (0.11.1, main repo #145
-  and tap #15): the user's own `gh pr merge` from their terminal still left the
-  PR `OPEN`, but retrying the identical command immediately afterward went
-  through. If `state` still comes back `OPEN`, retry the merge yourself once
-  before reporting a block.
+  state,mergedAt --repo <owner>/<repo>`. The user's own `gh pr merge` can leave the
+  PR `OPEN` while an identical retry goes through, so if `state` still comes back
+  `OPEN`, retry the merge yourself once before reporting a block.
 - Squash-merge yields the repo's `<title> (#N)` convention. Commit subject is
   `release: x.y.z — <summary>` (bare `release:` type, per the repo's history).
-- The Rust crate version was historically frozen at `0.1.0`; since #46 it tracks the
-  release. Don't "fix" it back.
+- The Rust crate versions track the release version (step 1); don't reset them.
