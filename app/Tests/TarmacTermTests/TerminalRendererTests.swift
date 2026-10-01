@@ -89,6 +89,15 @@ final class TerminalRendererTests: XCTestCase {
         XCTAssertTrue(underlined.colours(inCols: 0..<1, row: 0).contains(theme.ansi[2]))
     }
 
+    func testCurlyUnderlineUndulatesWhereASingleOneIsFlat() throws {
+        let single = try render("\u{1b}[32;4m    ")
+        let curly = try render("\u{1b}[32;4:3m    ")
+        let flat = single.rows(containing: theme.ansi[2], inCols: 0..<4, row: 0)
+        let wavy = curly.rows(containing: theme.ansi[2], inCols: 0..<4, row: 0)
+        XCTAssertFalse(flat.isEmpty)
+        XCTAssertGreaterThan(wavy.count, flat.count)
+    }
+
     func testFocusedBlockCursorFillsItsCell() throws {
         let canvas = try render("ab", cursor: .focused)
         XCTAssertEqual(canvas.center(col: 2, row: 0), theme.cursor)
@@ -155,6 +164,18 @@ private struct Canvas {
     func center(col: Int, row: Int) -> RGB {
         let rect = layout.rect(col: col, row: row)
         return pixel(Int(rect.midX * scale), Int(rect.midY * scale))
+    }
+
+    /// The pixel rows of a span of cells that contain `colour`.
+    func rows(containing colour: RGB, inCols cols: Range<Int>, row: Int) -> Set<Int> {
+        let rect = layout.rect(col: cols.lowerBound, row: row, span: cols.count)
+        var found = Set<Int>()
+        for y in Int(rect.minY * scale)..<Int(rect.maxY * scale) {
+            for x in Int(rect.minX * scale)..<Int(rect.maxX * scale) where pixel(x, y) == colour {
+                found.insert(y)
+            }
+        }
+        return found
     }
 
     /// Every distinct colour inside a span of cells, inset by one pixel so a

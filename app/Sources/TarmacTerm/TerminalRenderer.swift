@@ -195,8 +195,27 @@ final class TerminalRenderer {
         switch style {
         case .none:
             break
-        case .single, .curly:
+        case .single:
             rule(0)
+        case .curly:
+            // One wave per cell, kept inside the cell's bottom edge.
+            let amplitude = thickness
+            let half = layout.cell.width / 2
+            let mid = top - amplitude + thickness / 2
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: x, y: mid))
+            for step in 0..<(span * 2) {
+                let start = x + CGFloat(step) * half
+                let bend = step.isMultiple(of: 2) ? -amplitude : amplitude
+                path.addQuadCurve(
+                    to: CGPoint(x: start + half, y: mid),
+                    control: CGPoint(x: start + half / 2, y: mid + bend * 2)
+                )
+            }
+            context.setStrokeColor(colour.cgColor)
+            context.setLineWidth(thickness)
+            context.addPath(path)
+            context.strokePath()
         case .double:
             rule(-thickness)
             rule(thickness)
