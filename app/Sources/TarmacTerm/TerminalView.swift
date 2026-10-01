@@ -447,10 +447,13 @@ public final class TerminalView: NSView {
 
     private func report(_ event: NSEvent, action: MouseAction, button: MouseButton?) {
         guard let gridLayout, let point = surfacePoint(event) else { return }
+        // A drag that leaves the grid keeps reporting from its nearest edge.
+        let size = gridLayout.gridSize
         let input = MouseInput(
             action: action, button: button,
             mods: KeyTranslation.mods(rawFlags: event.modifierFlags.rawValue),
-            x: point.x, y: point.y, anyButtonPressed: pressedButtons > 0
+            x: min(max(point.x, 0), size.width - 1), y: min(max(point.y, 0), size.height - 1),
+            anyButtonPressed: pressedButtons > 0
         )
         send(engine.encode(input, surface: gridLayout.surface))
     }
@@ -527,9 +530,8 @@ public final class TerminalView: NSView {
         report(event, action: .motion, button: nil)
     }
 
-    /// The board owns navigation: only the focused terminal scrolls itself.
     public override func scrollWheel(with event: NSEvent) {
-        guard isFocused, let gridLayout else { return super.scrollWheel(with: event) }
+        guard let gridLayout else { return super.scrollWheel(with: event) }
         let delta = event.hasPreciseScrollingDeltas
             ? event.scrollingDeltaY
             : event.scrollingDeltaY * gridLayout.cell.height

@@ -113,6 +113,43 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertTrue(view.engine.isViewportAtBottom)
     }
 
+    // MARK: wheel
+
+    private func wheel(lines: Int32) throws -> NSEvent {
+        let event = try XCTUnwrap(CGEvent(
+            scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: lines, wheel2: 0, wheel3: 0
+        ))
+        return try XCTUnwrap(NSEvent(cgEvent: event))
+    }
+
+    func testWheelScrollsIntoScrollback() throws {
+        feed((1...200).map { "line\($0)" }.joined(separator: "\r\n"))
+        view.scrollWheel(with: try wheel(lines: 3))
+        XCTAssertFalse(view.engine.isViewportAtBottom)
+        XCTAssertEqual(sent, [])
+    }
+
+    /// Which card a wheel event reaches is the board's decision, not the view's:
+    /// an event that arrives is scrolled even without keyboard focus.
+    func testWheelScrollsWithoutKeyboardFocus() throws {
+        feed((1...200).map { "line\($0)" }.joined(separator: "\r\n"))
+        window.makeFirstResponder(nil)
+        view.scrollWheel(with: try wheel(lines: 3))
+        XCTAssertFalse(view.engine.isViewportAtBottom)
+    }
+
+    func testWheelGoesToAProgramThatTracksTheMouse() throws {
+        feed("\u{1b}[?1000h\u{1b}[?1006h")
+        view.scrollWheel(with: try wheel(lines: 1))
+        XCTAssertTrue(sentText.hasPrefix("\u{1b}[<64;"), sentText.debugDescription)
+    }
+
+    func testWheelOnTheAlternateScreenSendsArrowKeys() throws {
+        feed("\u{1b}[?1049h")
+        view.scrollWheel(with: try wheel(lines: -1))
+        XCTAssertEqual(sentText, "\u{1b}[B")
+    }
+
     // MARK: IME
 
     func testCompositionHoldsKeysBackUntilItCommits() {
