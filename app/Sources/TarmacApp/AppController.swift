@@ -158,20 +158,11 @@ final class AppController {
     /// True while the ⌘K overlay is up; gates the key monitor (it owns the
     /// keyboard) and tells `board_list` updates to re-render the panel live.
     var switcherOpen = false
-    /// The type-to-filter query (prefix match on each board's display label).
-    var switcherFilter = ""
-    /// The keyboard-highlighted row among the *visible* (filtered) rows.
-    var switcherSelected = 0
+    /// The open switcher's filter, selection, rename and delete-confirm state.
+    var switcherState = SwitcherKeys.State()
     /// The rendered rows (pure view-model row + the board's thumbnail items),
     /// rebuilt on open / filter change / `board_list`.
     var switcherRows: [SwitcherRowVM] = []
-    /// P5.4: inline rename mode — the header becomes an edit prompt over
-    /// `switcherEditBuffer` (seeded from the selected row). ⏎ commits, esc cancels.
-    var switcherEditing = false
-    var switcherEditBuffer = ""
-    /// P5.4: the one-key delete-confirm latch — armed by ⌘⌫, confirmed by a second
-    /// ⌘⌫, disarmed by any other key.
-    var switcherConfirmingDelete = false
 
     /// Shared HH:mm formatter (en_US_POSIX). DateFormatter construction is
     /// expensive (ICU / locale load), and `edgeLabel` runs per doc-edge per

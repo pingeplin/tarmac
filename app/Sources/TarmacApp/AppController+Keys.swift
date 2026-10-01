@@ -62,7 +62,7 @@ extension AppController {
             closeSwitcher()
             closeSelectedCard()
         case .switcherKey:
-            return handleSwitcherKey(event, mods: event.modifierFlags.intersection([.control, .command, .option, .shift]))
+            return handleSwitcherKey(press)
         case .copyDocSelection:
             if case .doc(let path)? = focusedCardID {
                 activeBoard.view.card(.doc(path))?.docView?.copySelectionToPasteboard()
