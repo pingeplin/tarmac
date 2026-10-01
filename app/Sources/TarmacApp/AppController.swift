@@ -8,9 +8,7 @@ import TarmacTerm
 @MainActor
 final class TerminalSession {
     let termID: String
-    /// Replaced when replayed history has to take the place of what the card
-    /// already shows (`AppController.blank`).
-    private(set) var view: TerminalView
+    let view: TerminalView
     /// The card stands for a shell that is running or about to be spawned: true
     /// from the card's creation until its exit is seen or the daemon stops
     /// listing it. The placeholder a board shows before its first restore is
@@ -29,8 +27,6 @@ final class TerminalSession {
     var bellAt: Date?
     /// The grid last sent to the daemon; nil until a spawn or resize went out.
     var sentGrid: TermGrid.Size?
-    /// Whether `view` has been fed anything.
-    private(set) var hasOutput = false
 
     /// The PTY exists daemon-side as far as the app knows, so input and
     /// resizes may be sent for it.
@@ -43,13 +39,7 @@ final class TerminalSession {
 
     func feed(_ bytes: Data) {
         guard !bytes.isEmpty else { return }
-        hasOutput = true
         view.feed(bytes)
-    }
-
-    func replaceView(_ fresh: TerminalView) {
-        view = fresh
-        hasOutput = false
     }
 }
 
