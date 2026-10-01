@@ -52,6 +52,16 @@ final class ScrollbackGateTests: XCTestCase {
         XCTAssertEqual(appended(gate.expire("t1", generation: generation)), bytes("BBBBBCCCCC"))
     }
 
+    func testOneChunkCanEvictSeveral() {
+        var (gate, generation) = awaitingGate(capBytes: 10)
+        _ = gate.output("t1", bytes("AAAA"))
+        _ = gate.output("t1", bytes("BBBB"))
+        _ = gate.output("t1", bytes("CCCCCCCC"))
+
+        XCTAssertEqual(gate.heldBytes("t1"), 8)
+        XCTAssertEqual(gate.expire("t1", generation: generation), .append([bytes("CCCCCCCC")]))
+    }
+
     func testAnOversizedChunkKeepsOnlyItsTail() {
         var (gate, generation) = awaitingGate(capBytes: 4)
         _ = gate.output("t1", bytes("ABCDEFGH"))
@@ -157,6 +167,13 @@ final class ScrollbackGateTests: XCTestCase {
         XCTAssertNil(gate.scrollback("never-attached", bytes("orphan")))
     }
 
+    func testAReplyAnswersOnlyItsOwnTerminal() {
+        var (gate, _) = awaitingGate("t1")
+
+        XCTAssertNil(gate.scrollback("t2", bytes("history")))
+        XCTAssertTrue(gate.isAwaiting("t1"))
+    }
+
     // MARK: - deadline
 
     /// A daemon that never answers must not blank the card: at the deadline the
@@ -203,6 +220,16 @@ final class ScrollbackGateTests: XCTestCase {
 
         XCTAssertNil(gate.expire("t1", generation: first))
         XCTAssertEqual(gate.expire("t1", generation: second), .append([]))
+    }
+
+    /// A remount asks again; it does not drop what the first mount was holding.
+    func testAReattachKeepsWhatWasHeld() {
+        var gate = ScrollbackGate()
+        _ = gate.attach("t1")
+        _ = gate.output("t1", bytes("x"))
+        let second = gate.attach("t1")
+
+        XCTAssertEqual(gate.expire("t1", generation: second), .append([bytes("x")]))
     }
 
     func testAnAnsweredRequestDoesNotExpire() {

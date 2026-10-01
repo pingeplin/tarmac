@@ -38,6 +38,14 @@ final class ReconnectRestoreTests: XCTestCase {
         XCTAssertFalse(outcome.daemonRestarted)
     }
 
+    /// A restart is an empty live list. A daemon that lists any terminal is the
+    /// one that was running before, whatever this board lost to it.
+    func testLosingEveryLiveTerminalToADaemonThatListsAnotherIsNotARestart() {
+        let outcome = reconcile([Term(termID: "a", pty: .live)], live: ["z"])
+        XCTAssertEqual(outcome.lost, ["a"])
+        XCTAssertFalse(outcome.daemonRestarted)
+    }
+
     /// A card whose spawn has not been sent has lost nothing: it still spawns.
     func testATerminalThatNeverSpawnedIsNotLost() {
         let outcome = reconcile([Term(termID: "a", pty: .live), Term(termID: "b", pty: .unspawned)], live: ["a"])

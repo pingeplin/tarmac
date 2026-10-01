@@ -25,6 +25,13 @@ final class TermGridTests: XCTestCase {
         )
     }
 
+    func testAChangeInRowsAloneIsSent() {
+        XCTAssertEqual(
+            TermGrid.resize(Size(cols: 55, rows: 16), onScreen: true, lastSent: Size(cols: 55, rows: 14)),
+            Size(cols: 55, rows: 16)
+        )
+    }
+
     func testAnUnchangedGridIsNotSentAgain() {
         XCTAssertNil(TermGrid.resize(Size(cols: 55, rows: 14), onScreen: true, lastSent: Size(cols: 55, rows: 14)))
     }
@@ -48,5 +55,11 @@ final class TermGridTests: XCTestCase {
         XCTAssertNil(TermGrid.resize(Size(cols: 0, rows: 14), onScreen: true, lastSent: Size(cols: 55, rows: 14)))
         XCTAssertNil(TermGrid.resize(Size(cols: 55, rows: 0), onScreen: true, lastSent: nil))
         XCTAssertNil(TermGrid.resize(Size(cols: -1, rows: -1), onScreen: true, lastSent: nil))
+    }
+
+    /// The 2×2 floor is a spawn's alone: a running terminal measured at one
+    /// cell is resized to it.
+    func testAOneCellGridIsSentAsMeasured() {
+        XCTAssertEqual(TermGrid.resize(Size(cols: 1, rows: 1), onScreen: true, lastSent: nil), Size(cols: 1, rows: 1))
     }
 }

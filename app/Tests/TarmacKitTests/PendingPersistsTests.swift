@@ -45,6 +45,16 @@ final class PendingPersistsTests: XCTestCase {
         XCTAssertFalse(pending.fire("board-1", token: background), "a token belongs to the board it was issued for")
     }
 
+    func testFiringOneBoardLeavesTheOthersDue() {
+        var pending = PendingPersists()
+        let first = pending.schedule("board-0")
+        let second = pending.schedule("board-1")
+
+        XCTAssertTrue(pending.fire("board-0", token: first))
+        XCTAssertTrue(pending.isPending("board-1"))
+        XCTAssertTrue(pending.fire("board-1", token: second))
+    }
+
     func testFlushAllReturnsEveryPendingBoardOnce() {
         var pending = PendingPersists()
         _ = pending.schedule("board-1")
@@ -64,5 +74,17 @@ final class PendingPersistsTests: XCTestCase {
 
         XCTAssertFalse(pending.isPending("board-0"))
         XCTAssertFalse(pending.fire("board-0", token: token))
+    }
+
+    /// A token is never issued twice, so a timer armed before a flush cannot
+    /// pass for the one armed after it.
+    func testATimerFromBeforeAFlushCannotFireALaterSchedule() {
+        var pending = PendingPersists()
+        let stale = pending.schedule("board-0")
+        _ = pending.flushAll()
+        _ = pending.schedule("board-0")
+
+        XCTAssertFalse(pending.fire("board-0", token: stale))
+        XCTAssertTrue(pending.isPending("board-0"))
     }
 }
