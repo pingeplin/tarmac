@@ -70,16 +70,14 @@ final class AppController {
     var clickFocusMonitor: Any?
     var scrollRouteMonitor: Any?
     var magnifyRouteMonitor: Any?
-    /// Flushes a click-focus restack that was deferred while the button was held,
-    /// so a terminal selection drag isn't severed mid-track (see `raiseToFront`).
-    var mouseUpRestackMonitor: Any?
 
-    /// The card the user last clicked into. nil ⇒ board-navigation mode: pan,
-    /// pinch-zoom, and scroll drive the whiteboard even when the pointer is over a
-    /// card (point 2). A click on a card sets it (a live terminal also becomes
-    /// prime); a click on the empty board clears it. While set, scroll over *that*
-    /// card routes to its own content (terminal scrollback / doc scroll) instead.
-    var focusedCardID: CardID?
+    /// The selected card: the active board's one selection, which the board
+    /// view owns. A press on a card sets it and a press on the bare board clears
+    /// it; while set, a wheel over that card's body scrolls the card.
+    var focusedCardID: CardID? {
+        get { activeBoard.view.selectedID }
+        set { activeBoard.view.select(newValue) }
+    }
 
     // MARK: - Boards (M3 P3)
     //
@@ -319,14 +317,13 @@ final class AppController {
     /// monitor, and closes the client (so its disconnect path won't re-fire).
     func shutdown() {
         quitting = true
-        for monitor in [escMonitor, clickFocusMonitor, scrollRouteMonitor, magnifyRouteMonitor, mouseUpRestackMonitor] {
+        for monitor in [escMonitor, clickFocusMonitor, scrollRouteMonitor, magnifyRouteMonitor] {
             if let monitor { NSEvent.removeMonitor(monitor) }
         }
         escMonitor = nil
         clickFocusMonitor = nil
         scrollRouteMonitor = nil
         magnifyRouteMonitor = nil
-        mouseUpRestackMonitor = nil
         client.close()
     }
 }

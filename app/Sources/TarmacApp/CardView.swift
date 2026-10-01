@@ -69,11 +69,6 @@ final class CardView: NSView {
     private(set) var prime = false
     /// Quiet = a non-prime card while a terminal is prime (crib §4): opacity 0.8.
     private(set) var quiet = false
-    /// Focused = the pointer/scroll-active card (`AppController.focusedCardID`):
-    /// scrolling over it scrolls its own content. Border-only (a soft teal edge),
-    /// independent of prime — a doc can be focused (scroll target) while a terminal
-    /// stays prime (keyboard target). Set via `setFocused` from the focus model.
-    private(set) var focused = false
     /// Dead = a terminal card whose shell exited with an error/signal and is held
     /// open (2606.0001): the card stays on the board dimmed, labelled `exit N` /
     /// `killed`, read-only, and never reads as prime/quiet. Set via `setExited`.
@@ -233,12 +228,12 @@ final class CardView: NSView {
 
     // MARK: - Selection
 
+    /// Shows or drops the selection ring. The board owns which card is
+    /// selected; this is only how the card looks.
     func setSelected(_ on: Bool) {
-        // Selecting a fresh card clears the fresh ring (crib §5).
-        if on && fresh { setFresh(false) }
         guard on != selected else { return }
         selected = on
-        layer?.borderColor = currentBorderColor.cgColor
+        if !lifted { layer?.borderColor = currentBorderColor.cgColor }
         updateHandleVisibility()
     }
 
@@ -276,8 +271,7 @@ final class CardView: NSView {
     /// The card's visual-state inputs, snapshot for the pure chrome rule so the
     /// border and the resize handles derive from one source and cannot desync.
     private var chromeState: CardChrome.State {
-        CardChrome.State(dead: dead, fresh: fresh,
-                         prime: prime, focused: focused, selected: selected)
+        CardChrome.State(dead: dead, fresh: fresh, prime: prime, selected: selected)
     }
 
     // MARK: - Fresh state (crib §4/§5): 3px agent-dim halo + `✚ now` meta, no border.
@@ -336,21 +330,6 @@ final class CardView: NSView {
         guard !dead, on != quiet else { return }
         quiet = on
         alphaValue = on ? 0.8 : 1.0
-    }
-
-    /// Focused = the active card (`AppController.focusedCardID`): draws the unified
-    /// teal active ring (`CardChrome` `.focus`) and arms the resize handles.
-    /// Clears the `fresh` halo on activation, mirroring `setSelected`, so clicking
-    /// an agent-opened card dismisses its halo. Composes with `quiet` (a focused
-    /// doc beside a prime terminal is dimmed to 0.8 yet still rings teal). A dead
-    /// card is never a focus target.
-    func setFocused(_ on: Bool) {
-        // Activating a fresh card clears its agent halo (parity with setSelected).
-        if on && fresh { setFresh(false) }
-        guard !dead, on != focused else { return }
-        focused = on
-        if !lifted { layer?.borderColor = currentBorderColor.cgColor }
-        updateHandleVisibility()
     }
 
     // MARK: - Exited state (2606.0001: shell exited with an error/signal — held open)

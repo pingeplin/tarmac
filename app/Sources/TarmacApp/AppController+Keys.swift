@@ -125,13 +125,12 @@ extension AppController {
             return swallowed ? nil : event
         }
 
-        // Point 3 — a single click anywhere on a card focuses it. Deferred to the
-        // next runloop tick so the click first dispatches normally (so a header
-        // drag / terminal text-selection / first-responder change all happen as
-        // usual), then focus styling + prime are applied.
+        // A press selects and raises the card under it before the press is
+        // dispatched, so the card is already on top when its content starts
+        // tracking the mouse.
         clickFocusMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             let point = event.locationInWindow
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.handleClickFocus(at: point) } }
+            MainActor.assumeIsolated { self?.handlePress(at: point) }
             return event
         }
         // Point 2 — pan/scroll routes to the whiteboard unless the pointer is
@@ -147,21 +146,6 @@ extension AppController {
             let routed = MainActor.assumeIsolated { self?.routeMagnify(event) ?? false }
             return routed ? nil : event
         }
-        // Point 3 cleanup — replay any click-focus restack that was deferred while
-        // the button was held (so it couldn't sever an in-flight terminal selection
-        // drag). Never swallows: the selection's own mouseUp must reach the content.
-        //
-        // Deferred to the NEXT runloop tick (not run inline): a local monitor fires
-        // BEFORE the event is dispatched, and the content must get this very
-        // mouseUp first — a doc card's WKWebView never ends its selection drag
-        // without it, and the highlight runs away to the end of the doc. One tick
-        // later the gesture's mouse-tracking is fully over (mirroring how
-        // onFrameCommitted restacks post-gesture). Imperceptible.
-        mouseUpRestackMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.rootView.board.flushPendingRestack() } }
-            return event
-        }
-
         let client = self.client
         DispatchQueue.global(qos: .userInitiated).async {
             do {

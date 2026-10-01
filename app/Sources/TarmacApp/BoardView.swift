@@ -257,33 +257,34 @@ final class BoardView: NSView {
         if commit { onLayoutChanged?(viewport) }
     }
 
-    /// Selects a card and raises it to front (crib §4: select → front). Pass nil
-    /// to clear selection. Does not commit (selection is not persisted state).
+    /// The one selected card: it wears the ring and its body takes the wheel.
+    /// Only a board that is on screen can hold a selection, so a card set
+    /// up on a background board never arrives already selected.
+    private(set) var selectedID: CardID?
+
+    /// Selects `id`, or clears the selection with nil. Selecting never
+    /// reorders cards — `raise` does that.
     func select(_ id: CardID?) {
+        let id = window == nil ? nil : id.flatMap { cards[$0] == nil ? nil : $0 }
         guard id != selectedID else { return }
-        if let prev = selectedID { cards[prev]?.setSelected(false) }
+        if let previous = selectedID { cards[previous]?.setSelected(false) }
         selectedID = id
-        if let id, let card = cards[id] {
-            card.setSelected(true)
-            raiseToFront(card)
-        }
+        if let id { cards[id]?.setSelected(true) }
+        refreshFloatingClose()
     }
 
-    var selectedID: CardID?
+    /// Puts `id` above every card on the board, even if it is already on top.
+    func raise(_ id: CardID) {
+        guard let card = cards[id] else { return }
+        card.worldFrame.z = ZOrder.raised(above: cards.values.map(\.worldFrame.z))
+        restack()
+        onLayoutChanged?(viewport)
+    }
 
     /// True while a card move/resize is in flight — the controller suppresses
     /// board zoom during a gesture so the cached `worldPerView` (pointer→world
     /// scale, snapshot at gesture start) can't go stale mid-drag.
     var isGesturing: Bool { gesturingID != nil }
-
-    /// Raises `id` to the front without setting the board's `selectedID`. Used by
-    /// click-to-focus (point 3): a clicked card comes forward; its handles are
-    /// armed by the card's own `focused` state (via `CardChrome`), not by board
-    /// selection.
-    func bringToFront(_ id: CardID) {
-        guard let card = cards[id] else { return }
-        raiseToFront(card)
-    }
 
     /// esc drag-cancel priority (crib §5): cancels an in-flight move/resize and
     /// restores the pre-gesture world frame. Returns false when no card is
@@ -309,7 +310,7 @@ final class BoardView: NSView {
 
     // MARK: - Internals
 
-    private let cardLayer = FlippedColumnView()
+    private let cardLayer = CardLayerView()
     private let edgeLayer = EdgeLayerView()
     private var gesturingID: CardID?
     private var preGestureFrame: CardFrame?
@@ -375,11 +376,7 @@ final class BoardView: NSView {
     private func wire(_ card: CardView) {
         card.worldPerView = 1 / viewport.zoom
         card.onClose = { [weak self] c in self?.onCardClose?(c.id) }
-        card.onSelectRequested = { [weak self] c in
-            guard let self else { return }
-            self.beginGesture(on: c)
-            self.select(c.id)
-        }
+        card.onSelectRequested = { [weak self] c in self?.beginGesture(on: c) }
         card.onWorldFrameChangedDuringGesture = { [weak self] c in
             // Live reproject; terminal reflow waits for commit (crib §4: reflow
             // terminal once on resize end). A term-card move drags its attached
@@ -394,9 +391,6 @@ final class BoardView: NSView {
             self.gesturingID = nil
             self.preGestureFrame = nil
             self.satelliteAnchors = [:]
-            // Replay the z reorder deferred during the gesture (raiseToFront only
-            // bumped the z value; the subview order is still pre-gesture).
-            self.restack()
             self.reproject(c)
             self.onLayoutChanged?(self.viewport)
         }
@@ -447,40 +441,10 @@ final class BoardView: NSView {
 
     // MARK: Stacking
 
-    private func raiseToFront(_ card: CardView) {
-        let maxZ = cards.values.map(\.worldFrame.z).max() ?? 0
-        if card.worldFrame.z <= maxZ { card.worldFrame.z = maxZ + 1 }
-        // Leave the subview order alone while a move/resize is tracking the
-        // mouse (click-to-focus calls this one runloop tick after every
-        // mouseDown). The grabbed card already floats on top via its lift
-        // zPosition during the drag; the z reorder is replayed once at gesture
-        // commit.
-        guard !isGesturing else { return }
-        // A terminal text-selection drag is tracked entirely inside the terminal
-        // view and never sets `gesturingID`, so `isGesturing` misses it.
-        // Whenever a button is still down, defer the reorder to mouseUp. `z` is
-        // already bumped, so the order is logically correct and just needs
-        // replaying.
-        guard NSEvent.pressedMouseButtons == 0 else { pendingRestack = true; return }
-        restack()
-    }
-
-    /// True when a `raiseToFront` was suppressed because the mouse button was
-    /// down (a possible terminal selection drag). Flushed on mouseUp.
-    private var pendingRestack = false
-
-    /// Replays a restack deferred while the mouse button was held (so a terminal
-    /// selection drag wasn't severed). Called from the controller's mouseUp
-    /// monitor; a no-op when nothing was deferred.
-    func flushPendingRestack() {
-        guard pendingRestack else { return }
-        pendingRestack = false
-        restack()
-    }
-
     /// Orders subviews by world z (low → high = back → front). Sorted in place:
     /// taking a card out of the hierarchy to re-add it resigns the window's
-    /// first responder inside it, and typing stops reaching the terminal.
+    /// first responder inside it, severs a press in flight, and reloads a web
+    /// view.
     private func restack() {
         cardLayer.sortSubviews({ a, b, _ in
             MainActor.assumeIsolated {
@@ -789,6 +753,7 @@ final class BoardView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        if window == nil { select(nil) }
         // The real backing scale is only known once attached to a window; force
         // the content-scale to re-apply (the zoom-guard would otherwise skip it).
         lastContentScaleZoom = 0
@@ -872,5 +837,18 @@ final class BoardView: NSView {
         let c = CGFloat(pixelSize) / 2
         ctx.fillEllipse(in: CGRect(x: c - dotRadiusPx, y: c - dotRadiusPx, width: dotRadiusPx * 2, height: dotRadiusPx * 2))
         return ctx.makeImage()!
+    }
+}
+
+/// Holds the cards. Between cards it is not there: a press on the bare board
+/// lands on the `BoardView` itself, which takes keyboard focus for it.
+@MainActor
+private final class CardLayerView: NSView {
+    override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { false }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        return hit === self ? nil : hit
     }
 }

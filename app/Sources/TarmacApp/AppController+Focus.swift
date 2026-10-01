@@ -3,19 +3,15 @@ import TarmacKit
 import TarmacTerm
 
 extension AppController {
-    // MARK: - Click-to-focus + gesture routing (points 2 & 3)
+    // MARK: - Presses and selection
 
-    /// The deepest view under a window-space point, or nil. `window.contentView`
-    /// is the RootView (`main.swift`), and `locationInWindow` is already in the
-    /// window's base coordinate system (= the content view's superview coords),
-    /// so this is the standard hit test for a monitored event.
+    /// The deepest view under a window-space point, or nil.
     private func hitView(at point: NSPoint) -> NSView? {
         window?.contentView?.hitTest(point)
     }
 
-    /// Walks up from a hit view to the `CardView` that contains it (header, clip,
-    /// terminal/doc body, or a resize handle all live inside one), or nil
-    /// if the point is on the bare board / an overlay.
+    /// The card a hit view belongs to — its header, body or a resize handle —
+    /// or nil for the bare board and the overlays.
     private func enclosingCard(_ view: NSView?) -> CardView? {
         var v = view
         while let cur = v {
@@ -25,49 +21,32 @@ extension AppController {
         return nil
     }
 
-    /// Point 3: a single click on a card focuses it. A click on the empty board
-    /// background defocuses (board-navigation mode resumes). Clicks landing on the
-    /// overlays (switcher / minimap / status bar) are left alone. Runs one tick
-    /// after the click has dispatched.
-    func handleClickFocus(at point: NSPoint) {
+    /// A left-button press, seen before the view under it handles it. On a card
+    /// it selects and raises that card, and a live terminal also becomes prime;
+    /// on the bare board it clears the selection. A press on an overlay, or on a
+    /// header control that acts by itself, changes nothing here.
+    func handlePress(at point: NSPoint) {
         guard !switcherOpen, window?.isKeyWindow == true else { return }
         guard let hit = hitView(at: point), hit.isDescendant(of: rootView.board) else { return }
-        // The viewport-pinned close ✕ is a board subview but belongs to no card; a
-        // click on it already routed to close-the-doc via its own handler, so don't
-        // mistake it for a bare-board click and defocus the (possibly other) card.
+        // The viewport-pinned close ✕ is a board subview but belongs to no card.
         if hit.isDescendant(of: rootView.board.floatingClose) { return }
-        if let card = enclosingCard(hit) {
-            focus(card.id)
-        } else {
-            defocus()
-        }
+        guard let card = enclosingCard(hit) else { return defocus() }
+        if hit is CloseButton { return }
+        select(card.id)
     }
 
-    /// Makes `id` the focused card: brings it to the front, arms its resize
-    /// handles (a plain focus now shows handles — the card's own `focused` state
-    /// drives them), and for a live terminal makes it prime (keyboard + accent
-    /// border + darker header — the focus indicator). Clears any stale selection
-    /// left on a *different* card by an earlier header grab, so only the focused
-    /// card wears handles.
-    private func focus(_ id: CardID) {
-        guard activeBoard.view.card(id) != nil else { return }
-        if activeBoard.view.selectedID != id { activeBoard.view.select(nil) }
-        focusedCardID = id
-        activeBoard.view.bringToFront(id)
-        if case let .term(termID) = id, sessions[termID]?.live == true {
-            setPrime(termID)   // re-primes AND recomputes the focus edge via updatePrimacy
-        } else {
-            updatePrimacy()    // doc / dead: no re-prime, but paint the focus edge
-        }
+    private func select(_ id: CardID) {
+        let board = activeBoard.view
+        guard board.card(id) != nil else { return }
+        board.select(id)
+        board.raise(id)
+        if case let .term(termID) = id, sessions[termID]?.live == true { setPrime(termID) }
     }
 
-    /// Clears card focus so pan / pinch / scroll drive the board (point 2). Does
-    /// not touch the prime terminal — typing still follows it (terminal primacy).
+    /// Clears the selection, so the wheel pans the board wherever the pointer
+    /// is. The prime terminal is untouched.
     func defocus() {
-        guard focusedCardID != nil || activeBoard.view.selectedID != nil else { return }
-        focusedCardID = nil
         activeBoard.view.select(nil)
-        updatePrimacy()   // clear the focus edge off the previously-focused card
     }
 
     /// Point 2: a scroll/pan routes to the whiteboard — pans the board and returns
@@ -137,17 +116,11 @@ extension AppController {
     func updatePrimacy(on board: Board? = nil) {
         let b = board ?? activeBoard
         let primeID: CardID? = b.hasLivePrime ? b.primeTermID.map(CardID.term) : nil
-        // Focus (the scroll-active card) is an active-board-only concept — a
-        // background board never shows the focus edge, mirroring the board-switch
-        // clear at beginArrivingSwitch. This is the single loop where all three
-        // attention visuals (prime, quiet, focused) recompute per card.
-        let focusID: CardID? = (b === activeBoard) ? focusedCardID : nil
         for (id, card) in b.view.cards {
             let isPrime = (id == primeID)
             card.setPrime(isPrime)
             // A card is quiet only while some terminal is prime and it isn't it.
             card.setQuiet(primeID != nil && !isPrime)
-            card.setFocused(id == focusID)
         }
         // Focus drives whether a doc's in-card ✕ is shown, and a focus change does
         // not reproject — so re-evaluate the viewport-pinned twin here too.
