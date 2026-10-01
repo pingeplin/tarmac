@@ -23,6 +23,16 @@ final class ToastQueueTests: XCTestCase {
         XCTAssertEqual(queue.toasts.first?.expiresAtMs, 1000 + ToastQueue.ttlMs)
     }
 
+    func testAddSaturatesTheExpiryInsteadOfOverflowingNearIntMax() {
+        var queue = ToastQueue()
+        queue.add(id: "a", icon: "¶", title: "a", nowMs: .max)
+        XCTAssertEqual(queue.toasts.first?.expiresAtMs, .max)
+        queue.add(id: "b", icon: "¶", title: "b", nowMs: .max - ToastQueue.ttlMs)
+        XCTAssertEqual(queue.toasts.last?.expiresAtMs, .max)
+        queue.add(id: "c", icon: "¶", title: "c", nowMs: .max - ToastQueue.ttlMs - 1)
+        XCTAssertEqual(queue.toasts.last?.expiresAtMs, .max - 1)
+    }
+
     func testAddKeepsTheNewestLastAcrossAdds() {
         XCTAssertEqual(ids(queue(adding: ["a", "b"])), ["a", "b"])
     }

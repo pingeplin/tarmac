@@ -20,6 +20,14 @@ final class OffscreenHintLayoutTests: XCTestCase {
         XCTAssertGreaterThan(Layout.priority(signal: .bell, z: 0), Layout.priority(signal: .live, z: 999))
     }
 
+    func testPrioritySaturatesInsteadOfOverflowingForAHugeZ() {
+        XCTAssertEqual(Layout.priority(signal: .bell, z: .max), .max)
+        XCTAssertEqual(Layout.priority(signal: .live, z: .max), .max)
+        XCTAssertEqual(Layout.priority(signal: .bell, z: .max - 1000), .max)
+        XCTAssertEqual(Layout.priority(signal: .bell, z: .max - 1001), .max - 1)
+        XCTAssertEqual(Layout.priority(signal: .live, z: .min), .min)
+    }
+
     // MARK: - flyTarget
 
     func testFlyTargetIsNilForNoHints() {

@@ -75,9 +75,10 @@ public enum OffscreenHintLayout {
     }
 
     /// A bell always outranks live; within a class the most-recently-fronted
-    /// (higher z) wins.
+    /// (higher z) wins. Saturates rather than overflowing for a huge `z`.
     public static func priority(signal: Signal, z: Int) -> Int {
-        (signal == .bell ? 1000 : 0) + z
+        let (sum, overflowed) = (signal == .bell ? 1000 : 0).addingReportingOverflow(z)
+        return overflowed ? .max : sum
     }
 
     /// The single ⏎-fly target: the highest-priority hint's card id, or nil when

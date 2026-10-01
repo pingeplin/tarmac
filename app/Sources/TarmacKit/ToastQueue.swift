@@ -30,8 +30,9 @@ public struct ToastQueue: Equatable, Sendable {
 
     public init() {}
 
-    /// Appends a toast as the newest, expiring at `nowMs + ttlMs`. Past
-    /// `maxToasts` the OLDEST is evicted. Identical toasts are not coalesced.
+    /// Appends a toast as the newest, expiring at `nowMs + ttlMs` (saturating at
+    /// `Int.max`). Past `maxToasts` the OLDEST is evicted. Identical toasts are not
+    /// coalesced.
     public mutating func add(
         id: String,
         icon: String,
@@ -40,7 +41,11 @@ public struct ToastQueue: Equatable, Sendable {
         chips: [Chip] = [],
         nowMs: Int
     ) {
-        toasts.append(Toast(id: id, icon: icon, title: title, body: body, chips: chips, expiresAtMs: nowMs + Self.ttlMs))
+        let (expiresAtMs, overflowed) = nowMs.addingReportingOverflow(Self.ttlMs)
+        toasts.append(Toast(
+            id: id, icon: icon, title: title, body: body, chips: chips,
+            expiresAtMs: overflowed ? .max : expiresAtMs
+        ))
         if toasts.count > Self.maxToasts { toasts.removeFirst(toasts.count - Self.maxToasts) }
     }
 
