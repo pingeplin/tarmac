@@ -33,6 +33,7 @@ final class DevSnapshotTests: XCTestCase {
     private func input(
         cards: [Card]? = nil,
         visibility: DevSnapshot.Visibility = .visible,
+        viewport: DevSnapshot.Viewport = DevSnapshot.Viewport(zoom: 1, center: CGPoint(x: 500, y: 350)),
         selectedCard: String? = nil,
         borrowedCard: String? = nil,
         keyboardFocus: DevSnapshot.KeyboardFocus = .none,
@@ -41,7 +42,7 @@ final class DevSnapshotTests: XCTestCase {
         Input(
             boardID: "board-0",
             visibility: visibility,
-            viewport: DevSnapshot.Viewport(zoom: 1, center: CGPoint(x: 500, y: 350)),
+            viewport: viewport,
             viewRect: view,
             cards: cards ?? [term(), doc()],
             selectedCard: selectedCard,
@@ -87,6 +88,16 @@ final class DevSnapshotTests: XCTestCase {
         )
     }
 
+    /// The board's own viewport, away from the defaults: `smoke.mjs` waits on
+    /// `viewport.zoom` after every `zoom`.
+    func testS1TheViewportIsTheOneSupplied() {
+        let viewport = DevSnapshot.Viewport(zoom: 1.7, center: CGPoint(x: 12, y: -34))
+        XCTAssertEqual(
+            fields(DevSnapshot.build(input(viewport: viewport)))["viewport"],
+            ["zoom": 1.7, "cx": 12, "cy": -34, "view_rect": ["x": 24, "y": 40, "w": 1000, "h": 700]]
+        )
+    }
+
     func testS1ACardCarriesItsIdKindAndWorldFrame() {
         let snapshot = DevSnapshot.build(input())
         XCTAssertEqual(card(snapshot, "t-1")["kind"], "term")
@@ -120,6 +131,14 @@ final class DevSnapshotTests: XCTestCase {
         ])
     }
 
+    /// The view's rows as it hands them over: a blank row inside the tail is
+    /// output too, and `scrollback_tail == <an earlier tail>` compares them all.
+    func testTheTailIsReportedExactlyBlankRowsIncluded() {
+        let tail = "\n\n$ ls\n\na b\n  \n"
+        XCTAssertEqual(facts(terminal(tail: tail))["scrollback_tail"], .string(tail))
+        XCTAssertEqual(facts(terminal(tail: ""))["scrollback_tail"], "")
+    }
+
     // MARK: - S3 screen_rect is the measurement, or null
 
     func testS3AnUnmeasuredCardReportsNullAndKeepsItsBoardRect() {
@@ -135,6 +154,7 @@ final class DevSnapshotTests: XCTestCase {
         let source = input(cards: [term(screenRect: measured)])
         let card = card(DevSnapshot.build(source), "t-1")
         XCTAssertEqual(card["screen_rect"], ["x": 999, "y": 888, "w": 77, "h": 66])
+        XCTAssertEqual(card["board_rect"], ["x": 10, "y": 20, "w": 400, "h": 300])
         XCTAssertNotEqual(DevSnapshot.screenRect(of: source.cards[0].frame, viewport: source.viewport, viewRect: view), measured)
     }
 
@@ -291,6 +311,23 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(Guard.Phase.idle.rawValue, "idle")
     }
 
+    /// The toggle and the retarget are separate facts: `smoke.mjs` refuses to
+    /// press ⌘Q unless BOTH read true, so one must not stand in for the other.
+    func testTheToggleAndTheRetargetAreReportedSeparately() {
+        func reported(retargeted: Bool, enabled: Bool) -> [String: JSONValue] {
+            let source = Guard(
+                retargeted: retargeted, enabled: enabled, phase: .idle, noticeVisible: false, noticeAlpha: 0, lastPress: nil
+            )
+            return fields(fields(DevSnapshot.build(input(quitGuard: source)))["quit_guard"])
+        }
+        let off = reported(retargeted: true, enabled: false)
+        XCTAssertEqual(off["retargeted"], true)
+        XCTAssertEqual(off["enabled"], false)
+        let dropped = reported(retargeted: false, enabled: true)
+        XCTAssertEqual(dropped["retargeted"], false)
+        XCTAssertEqual(dropped["enabled"], true)
+    }
+
     /// `QuitGuard` names its phases and routes for this snapshot. The app maps
     /// one onto the other by that name, so the two spellings must stay one.
     func testTheGuardsOwnNamesAreThePhasesAndRoutesReportedHere() {
@@ -392,6 +429,27 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(
             DevSnapshot.focusReply(selectedCard: nil, keyboardFocus: .none).jsonString,
             #"{"active_element":{"card":null,"classes":[],"selection_type":"None","tag":"BODY"},"focused_card":null}"#
+        )
+    }
+
+    /// Selection and keyboard focus disagree legitimately — a selected markdown
+    /// card while a terminal still holds the keys — and each is reported as itself.
+    func testTheFocusReplyKeepsTheSelectedCardApartFromTheOneHoldingTheKeys() {
+        XCTAssertEqual(
+            DevSnapshot.focusReply(selectedCard: "/a/b.md", keyboardFocus: .terminal(card: "t-1", hasSelection: false)),
+            [
+                "focused_card": "/a/b.md",
+                "active_element": [
+                    "card": "t-1", "tag": "TEXTAREA", "classes": ["xterm-helper-textarea"], "selection_type": "Caret",
+                ],
+            ]
+        )
+        XCTAssertEqual(
+            DevSnapshot.focusReply(selectedCard: nil, keyboardFocus: .htmlDocument(card: "/a/c.html")),
+            [
+                "focused_card": .null,
+                "active_element": ["card": "/a/c.html", "tag": "IFRAME", "classes": ["html-frame"], "selection_type": "None"],
+            ]
         )
     }
 

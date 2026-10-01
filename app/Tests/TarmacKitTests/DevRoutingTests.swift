@@ -152,6 +152,18 @@ final class DevRoutingTests: XCTestCase {
         XCTAssertEqual(refusal(.focus(card: "t-on-another-board"))?.code, .noSuchCard)
     }
 
+    /// An id names a card whole or not at all: a fragment of one, or nothing,
+    /// must not resolve to whichever card happens to contain it.
+    func testS39APartialOrEmptyIdNamesNoCard() {
+        for id in ["1", "t-", "t-1 ", "T-1", "b.md", "/a", ""] {
+            XCTAssertEqual(refusal(.focus(card: id))?.code, .noSuchCard, "focus \"\(id)\"")
+            XCTAssertEqual(refusal(.resize(card: id, w: 1, h: 1))?.code, .noSuchCard, "resize \"\(id)\"")
+            XCTAssertEqual(
+                refusal(.type(card: id, text: "x"), context(keyboardFocus: id))?.code, .noSuchCard, "type \"\(id)\""
+            )
+        }
+    }
+
     // MARK: - S40 type/key require focus to already be right
 
     /// A passing verb proves focus rather than establishing it.
