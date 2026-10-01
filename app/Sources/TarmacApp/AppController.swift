@@ -1296,20 +1296,22 @@ final class AppController {
 
     func terminalDidSend(termID: String, _ bytes: Data) {
         guard let s = session(ofTerm: termID), s.live else { return }
-        clearBell(termID: termID)
         client.input(termID: termID, bytes: bytes)
     }
 
-    /// The user typed or clicked in a live terminal.
+    /// The user typed, pasted or clicked in a live terminal.
     private func terminalActivity(termID: String) {
-        guard let s = sessions[termID], s.live else { return }
+        guard let s = session(ofTerm: termID), s.live else { return }
         clearBell(termID: termID)
     }
 
-    /// Input to a terminal clears its amber bell signal (M2).
+    /// The user's own activity in a terminal clears its amber bell signal (M2);
+    /// bytes the terminal sends by itself (a reply to a program's query) do not.
     private func clearBell(termID: String) {
-        activeBoard.view.card(.term(termID))?.setBell(false)
-        activeBoard.view.signalsChanged()
+        guard let board = ownerBoard(ofTerm: termID),
+              let card = board.view.card(.term(termID)), card.bellActive else { return }
+        card.setBell(false)
+        board.view.signalsChanged()
     }
 
     /// Ensures the prime terminal is spawned (the boot terminal on a cold start).
