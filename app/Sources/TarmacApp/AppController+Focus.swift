@@ -63,11 +63,13 @@ extension AppController {
 
     /// A wheel event, seen before it is dispatched. Over the body of the
     /// selected card it is left for that card's own content; anywhere else on
-    /// the board it pans, and with control held it zooms. True means the board
-    /// took it. Overlays and the switcher keep their own wheel.
+    /// the board it pans, and with control held it zooms about the pointer.
+    /// True means the board took it. Overlays and the switcher keep their own
+    /// wheel.
     func routeScroll(_ event: NSEvent) -> Bool {
         guard !switcherOpen else { return false }
-        guard let hit = hitView(at: event.locationInWindow), hit.isDescendant(of: rootView.board) else { return false }
+        let board = rootView.board
+        guard let hit = hitView(at: event.locationInWindow), hit.isDescendant(of: board) else { return false }
         let card = enclosingCard(hit)
         let route = BoardWheel.route(
             pinch: event.modifierFlags.contains(.control),
@@ -75,8 +77,22 @@ extension AppController {
             inBody: card?.bodyContains(hit) ?? false,
             selected: focusedCardID
         )
-        if route == .card { return false }
-        rootView.board.scrollWheel(with: event)
+        let travel = BoardWheel.travel(
+            scrollingDelta: CGVector(dx: event.scrollingDeltaX, dy: event.scrollingDeltaY),
+            precise: event.hasPreciseScrollingDeltas
+        )
+        switch route {
+        case .card:
+            return false
+        case .pan:
+            board.pan(by: travel)
+        case .zoom:
+            board.zoom(
+                by: BoardWheel.zoomFactor(travel: travel),
+                anchorViewPoint: board.convert(event.locationInWindow, from: nil),
+                commit: true
+            )
+        }
         return true
     }
 

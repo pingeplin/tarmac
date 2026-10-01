@@ -462,17 +462,14 @@ final class BoardView: NSView {
 
     // MARK: - Pan and zoom
 
-    /// A wheel pans by its travel in screen points; with control held it zooms
-    /// about the pointer instead.
-    override func scrollWheel(with event: NSEvent) {
-        let travel = BoardWheel.travel(
-            scrollingDelta: CGVector(dx: event.scrollingDeltaX, dy: event.scrollingDeltaY),
-            precise: event.hasPreciseScrollingDeltas
-        )
-        if event.modifierFlags.contains(.control) {
-            zoom(by: BoardWheel.zoomFactor(travel: travel), anchorViewPoint: convert(event.locationInWindow, from: nil), commit: true)
-            return
-        }
+    /// The wheel moves the board only where the wheel router says so, through
+    /// `pan(by:)` and `zoom(by:)`. A wheel the selected card's content leaves
+    /// unconsumed — a doc at its scroll limit — climbs the responder chain to
+    /// here, and must not pan the board from under that card.
+    override func scrollWheel(with event: NSEvent) {}
+
+    /// Pans by a wheel's travel in screen points.
+    func pan(by travel: CGVector) {
         flight.cancel()
         show(Viewport(BoardTransform.panned(viewport.wire, by: travel)))
         onLayoutChanged?(viewport)
