@@ -47,6 +47,15 @@ extension AppController {
         activeBoard.view.select(nil)
     }
 
+    /// Takes the fresh mark off every doc card on the active board, leaving the
+    /// cards where they are. False when no card had it.
+    func clearFreshDocs() -> Bool {
+        let cards = Array(activeBoard.view.cards.values)
+        guard cards.contains(where: \.isFreshDoc) else { return false }
+        _ = ClearFreshDoc.apply(to: cards)
+        return true
+    }
+
     /// Point 2: a scroll/pan routes to the whiteboard — pans the board and returns
     /// `true` to swallow the event — UNLESS the pointer is inside the focused card,
     /// in which case it returns `false` so the event passes through to that card's
@@ -97,20 +106,20 @@ extension AppController {
 
     // MARK: - Terminal primacy: prime / quiet focus model (Phase 5a, crib §4)
 
-    /// Applies the prime/quiet card states (crib §4): the prime terminal card
-    /// (focused terminal: `#5a626a` border, `#3a4046` header, deeper shadow) is
-    /// raised and every other card — docs and non-prime terminals — is quiet
-    /// (opacity 0.8). Prime follows the ⌥tab cycle / ⌘T (Phase 5b); a dead
-    /// terminal card keeps its own dim and never reads as prime. Nothing is prime
-    /// when no terminal is live.
+    /// Restyles a board's cards for its prime terminal: that card is prime and
+    /// the other live terminals are quiet. Nothing is prime, and nothing quiet,
+    /// while no terminal on the board is live.
     func updatePrimacy(on board: Board? = nil) {
         let b = board ?? activeBoard
         let primeID: CardID? = b.hasLivePrime ? b.primeTermID.map(CardID.term) : nil
         for (id, card) in b.view.cards {
-            let isPrime = (id == primeID)
+            let isPrime = id == primeID
+            let isTerminal: Bool
+            if case .term = id { isTerminal = true } else { isTerminal = false }
             card.setPrime(isPrime)
-            // A card is quiet only while some terminal is prime and it isn't it.
-            card.setQuiet(primeID != nil && !isPrime)
+            card.setQuiet(CardDim.isQuiet(
+                terminal: isTerminal, prime: isPrime, dead: card.dead, boardHasPrime: primeID != nil
+            ))
         }
     }
 

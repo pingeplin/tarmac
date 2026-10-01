@@ -24,13 +24,14 @@ extension AppController {
             // doc count and cold-start hint follow the cards.
             if board === activeBoard { refreshStrips() }
         }
-        // Read-on-open applies only when the doc is already on the ACTIVE board
-        // (a brand-new fresh card keeps its unread/fresh ring until touched).
+        if wasOnBoard, let card = board.view.card(.doc(doc.path)) {
+            card.setFresh(CardFresh.afterOpen(via: doc.via, wasFresh: card.fresh))
+        }
+        // Read-on-open applies only when the doc is already on the ACTIVE board.
         guard board === activeBoard else { return }
         if wasOnBoard {
             board.store.markRead(doc.path)
             client.docRead(path: doc.path)
-            clearFreshIfRead(doc.path)
         }
     }
 
@@ -48,8 +49,6 @@ extension AppController {
         card.setOwnerChip(ownerChipLabel(for: card, on: b))
         card.renderDoc(markdown: readMarkdown(path))
         b.view.recomputeEdges()
-        // A doc card is quiet while a terminal is prime (crib §4).
-        if b.hasLivePrime { card.setQuiet(true) }
         return card
     }
 
@@ -139,12 +138,6 @@ extension AppController {
         }
         // Fallback: stack a little past the term card.
         return CardFrame(x: startX, y: startY, w: Place.docW, h: Place.docH, z: topZ)
-    }
-
-    /// Marking a doc read clears its fresh ring (crib §5).
-    private func clearFreshIfRead(_ path: String) {
-        guard let card = activeBoard.view.card(.doc(path)), card.fresh else { return }
-        card.setFresh(false)
     }
 
     /// Closes a doc card: removes it from the board and persists. The doc stays

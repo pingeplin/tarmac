@@ -104,6 +104,9 @@ extension AppController {
                     self.rootView.toasts.clearAll()
                     return true
                 }
+                if self.clearFreshDocs() {
+                    return true
+                }
                 // With the toasts dismissed, esc on a focused DOC card
                 // drops focus — the doc stays on the board; removal
                 // is the ✕ / ⌘W (issue #15). A focused TERMINAL is left for the

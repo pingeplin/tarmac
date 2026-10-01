@@ -47,16 +47,13 @@ final class CardView: NSView {
     private(set) var selected = false
     private(set) var fresh = false
     private var lifted = false
-    /// Prime = the focused terminal card (crib §4): border `#5a626a`, header
-    /// `#3a4046` + text label, deeper shadow `0 22px 50px rgba(0,0,0,0.6)`.
+    /// The board's prime terminal: a tinted header and a deeper shadow.
     private(set) var prime = false
-    /// Quiet = a non-prime card while a terminal is prime (crib §4): opacity 0.8.
+    /// A live terminal stepping back beside the prime one.
     private(set) var quiet = false
-    /// Dead = a terminal card whose shell exited with an error/signal and is held
-    /// open (2606.0001): the card stays on the board dimmed, labelled `exit N` /
-    /// `killed`, read-only, and never reads as prime/quiet. Set via `setExited`.
-    /// (A clean exit removes the card outright, so it never becomes `dead`.) This
-    /// flag is also the "exited" signal `persistLayout` uses to exclude the card.
+    /// A terminal whose shell exited with an error or a signal and is held open
+    /// so the failure stays visible. A dead card is left out of the persisted
+    /// layout.
     private(set) var dead = false
 
     override var isFlipped: Bool { true }
@@ -162,8 +159,6 @@ final class CardView: NSView {
     }
 
     func setTermLabel(_ label: String) {
-        // An exited (held-open) card keeps its `exit N` / `killed` label.
-        guard !dead else { return }
         header.setLabel(label)
     }
 
@@ -216,13 +211,11 @@ final class CardView: NSView {
         CardChrome.State(dead: dead, fresh: fresh, prime: prime, selected: selected)
     }
 
-    // MARK: - Fresh state (crib §4/§5): 3px agent-dim halo + `✚ now` meta, no border.
+    // MARK: - Fresh
 
-    /// Cyan-dim halo just outside the border (`box-shadow 0 0 0 3px agent-dim`).
-    /// Sits behind the card's own (clipped) content on the non-clipped outer
-    /// layer; cleared when the card is selected or its doc is marked read. `fresh`
-    /// drives only this halo + the `✚ now` meta — never the border, which stays
-    /// on the `CardChrome.borderRole` axis so a non-active fresh card reads plain.
+    /// A doc an agent just opened wears a 3-wide teal ring outside its border
+    /// and `✚ now` in its header. Only ESC and a completed drag of the card take
+    /// it off; selecting the card does not.
     private let ringLayer = CALayer()
     private static let ringWidth: CGFloat = 3
 
@@ -246,59 +239,37 @@ final class CardView: NSView {
         ringLayer.frame = contentBox.insetBy(dx: -w, dy: -w)
     }
 
-    // MARK: - Prime / quiet states (crib §4: terminal primacy)
+    // MARK: - Prime, quiet, dead
 
-    /// Prime = the keyboard-target terminal (crib §4): header `#3a4046` + `text`
-    /// label and a deeper resting shadow `0 22px 50px rgba(0,0,0,0.6)`; every
-    /// non-prime card is `quiet` (opacity 0.8). Prime deliberately draws NO
-    /// border — the active ring belongs to focus/selection alone (`CardChrome`).
-    /// Set by the controller from the focus model; exactly one live terminal is
-    /// prime (the one ⌥tab / ⌘T / a click last focused).
     func setPrime(_ on: Bool) {
         guard !dead, on != prime else { return }
         prime = on
-        // A prime card is never simultaneously quiet.
-        if on { setQuiet(false) }
         header.setPrime(on)
-        // Only the resting shadow follows prime; the border does not (prime is
-        // not a border input). Skip while transiently lifted by a gesture.
         if !lifted { applyRestingShadow() }
     }
 
-    /// Quiet = a non-prime card while a terminal holds prime focus (crib §4):
-    /// opacity 0.8. Cleared when nothing is prime (every card back to full). A
-    /// dead terminal card keeps its own dim and ignores quiet.
+    /// Whether the card steps back is the board's call (`CardDim.isQuiet`).
     func setQuiet(_ on: Bool) {
-        guard !dead, on != quiet else { return }
+        guard on != quiet else { return }
         quiet = on
-        alphaValue = on ? 0.8 : 1.0
+        applyDim()
     }
 
-    // MARK: - Exited state (2606.0001: shell exited with an error/signal — held open)
-
-    /// Marks a terminal card a read-only hold-open placeholder after its shell
-    /// exited with an error or was killed by a signal: dim it, mute the border,
-    /// drop any prime styling, and label the header `exit N` (or `killed` when
-    /// the exit code is nil). The card stays on the board at its world frame so
-    /// the failure stays visible; a clean (code 0) exit removes the card instead
-    /// and never reaches here. ⌘W closes the placeholder; it is session-local
-    /// either way and clears on relaunch, since this `dead` state excludes it
-    /// from the persisted layout (spec 2606.0001).
+    /// Holds an exited terminal's card open: dimmed, border muted, prime and
+    /// bell dropped, the label left as it was. The exit code is the toast's to
+    /// show, not the card's.
     func setExited(_ code: Int?) {
         guard !dead else { return }
-        // Clear any live/bell signal first (while still !dead so the guarded
-        // setters apply) — an exited card must not advertise a cyan/amber signal.
         setBell(false)
         setLive(false)
+        setPrime(false)
         dead = true
-        prime = false
-        quiet = false
-        header.setPrime(false)
-        alphaValue = 0.55
         layer?.borderColor = currentBorderColor.cgColor
-        applyRestingShadow()
-        let label = code.map { "exit \($0)" } ?? "killed"
-        header.setLabel(label)
+        applyDim()
+    }
+
+    private func applyDim() {
+        alphaValue = CardDim.opacity(dead: dead, quiet: quiet)
     }
 
     // MARK: - Owner chip bridge
@@ -443,4 +414,15 @@ enum CardSignal: Equatable {
     case none
     case live
     case bell
+}
+
+extension CardView: @MainActor ClearableFreshDoc {
+    var isFreshDoc: Bool {
+        if case .doc = id { return fresh }
+        return false
+    }
+
+    func clearFresh() {
+        setFresh(false)
+    }
 }
