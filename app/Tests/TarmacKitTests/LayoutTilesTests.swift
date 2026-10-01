@@ -145,4 +145,28 @@ final class LayoutTilesTests: XCTestCase {
         let parsed = LayoutTiles.parse(LayoutTiles.build(terms: [], docs: [doc("/c.md", x: 0, z: 5)]))
         XCTAssertEqual(parsed.docs.first?.z, 5)
     }
+
+    func testADocTileMarkedShelfFalseIsKept() {
+        let parsed = LayoutTiles.parse([
+            LayoutTile(kind: "doc", path: "/a.md", x: 1, y: 2, w: 3, h: 4, shelf: false),
+        ])
+        XCTAssertEqual(
+            parsed.docs,
+            [LayoutTiles.ParsedDoc(path: "/a.md", frame: CGRect(x: 1, y: 2, width: 3, height: 4), z: 0, attached: true)]
+        )
+    }
+
+    func testATileMissingAnySingleGeometryKeyHasNoFrame() {
+        let missing: [LayoutTile] = [
+            LayoutTile(kind: "term", y: 2, w: 3, h: 4, termID: "t"),
+            LayoutTile(kind: "term", x: 1, w: 3, h: 4, termID: "t"),
+            LayoutTile(kind: "term", x: 1, y: 2, h: 4, termID: "t"),
+            LayoutTile(kind: "term", x: 1, y: 2, w: 3, termID: "t"),
+        ]
+        for tile in missing {
+            XCTAssertNil(LayoutTiles.parse([tile]).terms.first?.frame, "\(tile)")
+        }
+        let complete = LayoutTile(kind: "term", x: 1, y: 2, w: 3, h: 4, termID: "t")
+        XCTAssertEqual(LayoutTiles.parse([complete]).terms.first?.frame, CGRect(x: 1, y: 2, width: 3, height: 4))
+    }
 }

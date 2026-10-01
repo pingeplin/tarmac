@@ -78,4 +78,11 @@ final class TermCycleTests: XCTestCase {
     func testCycleIsNilWhenNoTermIsLive() {
         XCTAssertNil(TermCycle.cycle([term("a", live: false), term("b", live: false)], from: "a", .next))
     }
+
+    func testTheOrderIsSpawnOrderNotAlphabetical() {
+        let terms = [term("b"), term("a"), term("c")]
+        XCTAssertEqual(TermCycle.order(terms), ["b", "a", "c"])
+        XCTAssertEqual(TermCycle.cycle(terms, from: "b", .next), "a")
+        XCTAssertEqual(TermCycle.cycle(terms, from: "b", .prev), "c")
+    }
 }

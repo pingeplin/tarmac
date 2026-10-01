@@ -95,4 +95,21 @@ final class ToastQueueTests: XCTestCase {
         queue.clearAll()
         XCTAssertEqual(queue.toasts.count, 0)
     }
+
+    /// Asserted against literals, not the constants, so a changed TTL cannot pass.
+    func testTheTTLIsSevenSecondsAndTheExpiryIsNowPlusIt() {
+        XCTAssertEqual(ToastQueue.ttlMs, 7000)
+        XCTAssertEqual(ToastQueue.maxToasts, 3)
+        var queue = ToastQueue()
+        queue.add(id: "a", icon: "¶", title: "a", nowMs: 1000)
+        XCTAssertEqual(queue.toasts.first?.expiresAtMs, 8000)
+    }
+
+    func testPruneDropsOnlyTheExpiredToastsOfAMixedStack() {
+        var queue = ToastQueue()
+        queue.add(id: "old", icon: "¶", title: "old", nowMs: 0)
+        queue.add(id: "new", icon: "¶", title: "new", nowMs: 5)
+        queue.pruneExpired(nowMs: 7002)
+        XCTAssertEqual(ids(queue), ["new"])
+    }
 }

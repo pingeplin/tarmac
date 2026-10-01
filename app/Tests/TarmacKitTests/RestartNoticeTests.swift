@@ -87,4 +87,10 @@ final class RestartNoticeTests: XCTestCase {
     func testS9ABoardWithNoTerminalTilesGetsNoNotice() {
         XCTAssertNil(notice(replaced, []))
     }
+
+    /// The count is per tile, not per distinct id: two tiles carrying the same lost
+    /// id are two lost terminals.
+    func testEachTileWithALostIDCountsEvenWhenTheIDRepeats() {
+        XCTAssertEqual(notice(replaced, ["t1", "t1"])?.body, "2 terminals on this board were restarted")
+    }
 }

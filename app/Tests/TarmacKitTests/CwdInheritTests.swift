@@ -39,4 +39,10 @@ final class CwdInheritTests: XCTestCase {
         let cards = [term("t1", prime: true, dead: true), term("t2", prime: true)]
         XCTAssertEqual(CwdInherit.primeTermID(in: cards), "t2")
     }
+
+    func testTheFirstOfTwoEligiblePrimesWins() {
+        let cards = [term("t1", prime: true), term("t2", prime: true)]
+        XCTAssertEqual(CwdInherit.primeTermID(in: cards), "t1")
+        XCTAssertEqual(CwdInherit.source(in: cards), "t1")
+    }
 }

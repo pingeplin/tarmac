@@ -42,4 +42,11 @@ final class ClearFreshDocTests: XCTestCase {
     func testS5EmptyInputGivesEmptyOutput() {
         XCTAssertEqual(ClearFreshDoc.apply(to: [Card]()), [])
     }
+
+    /// Only a FRESH DOC is cleared: a card that is not a doc keeps its flag even
+    /// when it is set.
+    func testACardThatIsNotADocIsNeverTouchedEvenWithItsFlagSet() {
+        let flaggedTerm = Card(kind: .term, id: "t1", fresh: true)
+        XCTAssertEqual(ClearFreshDoc.apply(to: [flaggedTerm]), [flaggedTerm])
+    }
 }
