@@ -137,6 +137,16 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(sent, [0x03])
     }
 
+    /// AppKit's text system binds ⌃Q to quotedInsert:, which swallows the next
+    /// key as a literal. A terminal has no such state: ⌃Q is just XON.
+    func testAControlChordLeavesNoStateInTheTextSystem() {
+        view.keyDown(with: key("\u{11}", code: 0x0c, flags: .control, unmodified: "q"))
+        view.keyDown(with: key("B", code: 0x0b, flags: .shift, unmodified: "B"))
+        view.keyDown(with: key("\u{16}", code: 0x09, flags: .control, unmodified: "v"))
+        view.keyDown(with: key("x", code: 0x07))
+        XCTAssertEqual(sent, [0x11, 0x42, 0x16, 0x78])
+    }
+
     func testNamedKeysAreEncoded() {
         view.keyDown(with: key("\r", code: 0x24))
         view.keyDown(with: key("\u{f700}", code: 0x7e, flags: [.function, .numericPad]))

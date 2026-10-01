@@ -386,7 +386,12 @@ public final class TerminalView: NSView {
         let composingBefore = hasMarkedText()
         keyTextAccumulator = []
         defer { keyTextAccumulator = nil }
-        interpretKeyEvents([translationEvent])
+        // The text system binds control chords to editing commands, and one of
+        // them (⌃Q, quotedInsert:) arms a state that swallows the next key. A
+        // terminal wants none of it; only an IME mid-composition gets them.
+        if composingBefore || !event.modifierFlags.contains(.control) {
+            interpretKeyEvents([translationEvent])
+        }
 
         let action: KeyAction = event.isARepeat ? .repeat : .press
         if let texts = keyTextAccumulator, !texts.isEmpty {
