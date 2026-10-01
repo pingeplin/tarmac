@@ -48,6 +48,13 @@ extension AppController {
         // The monitor sees every window's keys, and the board window keeps
         // receiving them after its close button hid it.
         guard let window, event.window === window, window.isVisible else { return false }
+        // When the view with keyboard focus is hidden — a culled card's
+        // terminal — AppKit makes the window its own first responder, and a
+        // window beeps at every key it is left with. The board takes them
+        // silently.
+        if window.firstResponder === window, rootView.board.window === window {
+            window.makeFirstResponder(rootView.board)
+        }
         let press = KeyPress(
             keyCode: event.keyCode, characters: event.characters ?? "",
             charactersIgnoringModifiers: event.charactersIgnoringModifiers ?? "",
