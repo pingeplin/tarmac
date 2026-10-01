@@ -52,8 +52,16 @@ public enum DaemonLaunch {
     /// upgrade the stale daemon was started by the previous app, so the child
     /// this app tracks is not the process the handshake came from. The tracked
     /// child is the fallback for a daemon too old to report a pid.
+    ///
+    /// The result goes to kill(2), where 0 and negatives address process groups
+    /// (-1: everything the user owns) and 1 is launchd, so only a pid that names
+    /// one ordinary process is ever returned.
     public static func restartTarget(reportedPid: Int?, spawnedChildPid: Int?) -> Int? {
-        reportedPid ?? spawnedChildPid
+        func oneProcess(_ pid: Int?) -> Int? {
+            guard let pid, pid > 1, pid <= Int(Int32.max) else { return nil }
+            return pid
+        }
+        return oneProcess(reportedPid) ?? oneProcess(spawnedChildPid)
     }
 
     /// The daemon a version-mismatch restart replaced, kept so the app can tell

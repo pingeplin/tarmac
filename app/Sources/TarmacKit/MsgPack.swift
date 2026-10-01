@@ -101,10 +101,12 @@ public enum MsgPackError: Error, Equatable, CustomStringConvertible {
     case unsupportedType(UInt8)
     case invalidUTF8
     case nonStringMapKey
+    case tooDeep
 
     public var description: String {
         switch self {
         case .truncated: return "msgpack: truncated input"
+        case .tooDeep: return "msgpack: nesting deeper than \(MsgPack.maxDepth) levels"
         case .trailingBytes(let n): return "msgpack: \(n) trailing bytes after value"
         case .unsupportedType(let b): return String(format: "msgpack: unsupported type byte 0x%02x", b)
         case .invalidUTF8: return "msgpack: string is not valid UTF-8"
@@ -114,6 +116,9 @@ public enum MsgPackError: Error, Equatable, CustomStringConvertible {
 }
 
 public enum MsgPack {
+    /// rmp-serde's limit, so both ends of the socket refuse the same frames.
+    public static let maxDepth = 1024
+
     public static func encode(_ value: MsgPackValue) -> Data {
         var out = Data()
         append(value, to: &out)
@@ -262,6 +267,7 @@ public enum MsgPack {
     private struct Reader {
         let bytes: [UInt8]
         var index = 0
+        var depth = 0
 
         var remaining: Int { bytes.count - index }
 
@@ -356,14 +362,30 @@ public enum MsgPack {
             }
         }
 
+        /// Runs `body` one container level down, refusing to pass `maxDepth`.
+        private mutating func nested<T>(_ body: (inout Reader) throws -> T) throws -> T {
+            guard depth < MsgPack.maxDepth else { throw MsgPackError.tooDeep }
+            depth += 1
+            defer { depth -= 1 }
+            return try body(&self)
+        }
+
         mutating func readArray(count: Int) throws -> MsgPackValue {
+            try nested { try $0.readArrayItems(count: count) }
+        }
+
+        mutating func readMap(count: Int) throws -> MsgPackValue {
+            try nested { try $0.readMapEntries(count: count) }
+        }
+
+        private mutating func readArrayItems(count: Int) throws -> MsgPackValue {
             var items: [MsgPackValue] = []
             items.reserveCapacity(min(count, 4096))
             for _ in 0..<count { items.append(try readValue()) }
             return .array(items)
         }
 
-        mutating func readMap(count: Int) throws -> MsgPackValue {
+        private mutating func readMapEntries(count: Int) throws -> MsgPackValue {
             var entries: [String: MsgPackValue] = [:]
             entries.reserveCapacity(min(count, 4096))
             for _ in 0..<count {

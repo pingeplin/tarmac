@@ -149,6 +149,16 @@ final class DaemonLaunchTests: XCTestCase {
     /// The pid from `hello_ok` wins: after a brew upgrade the stale daemon was
     /// spawned by the PREVIOUS app, so the child this app tracks (if any) is not
     /// the one the handshake came from.
+    /// The target is handed to kill(2), where 0 and negatives name process
+    /// groups and -1 means every process the user owns.
+    func testRestartTargetIsOnlyEverOneRealProcess() {
+        for pid in [-1, 0, 1, Int(Int32.max) + 1] {
+            XCTAssertNil(DaemonLaunch.restartTarget(reportedPid: pid, spawnedChildPid: nil), "\(pid)")
+            XCTAssertEqual(DaemonLaunch.restartTarget(reportedPid: pid, spawnedChildPid: 99), 99, "\(pid)")
+            XCTAssertNil(DaemonLaunch.restartTarget(reportedPid: nil, spawnedChildPid: pid), "\(pid)")
+        }
+    }
+
     func testRestartTargetPrefersTheReportedPid() {
         XCTAssertEqual(DaemonLaunch.restartTarget(reportedPid: 4242, spawnedChildPid: 99), 4242)
         XCTAssertEqual(DaemonLaunch.restartTarget(reportedPid: 4242, spawnedChildPid: nil), 4242)

@@ -123,6 +123,16 @@ final class MsgPackTests: XCTestCase {
         }
     }
 
+    /// rmp-serde stops at 1024 levels; without the same cap a hostile frame
+    /// recurses until the reader overflows its stack.
+    func testNestingIsCappedLikeTheRustDecoder() throws {
+        func nested(_ depth: Int) -> Data { Data(repeating: 0x91, count: depth) + [0xc0] }
+        XCTAssertNoThrow(try MsgPack.decode(nested(1000)))
+        XCTAssertThrowsError(try MsgPack.decode(nested(1100))) { error in
+            XCTAssertEqual(error as? MsgPackError, .tooDeep)
+        }
+    }
+
     func testUnsupportedTypeBytesThrow() {
         XCTAssertThrowsError(try MsgPack.decode(Data([0xc1])))
         XCTAssertThrowsError(try MsgPack.decode(Data([0xd4, 0x00, 0x00]))) // fixext1
