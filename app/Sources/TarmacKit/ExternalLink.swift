@@ -11,10 +11,11 @@ public enum ExternalLink {
         return isHTTP(url)
     }
 
-    /// The host requirement is what rejects `https://` and `https:`, which
-    /// `URL` parses happily but nothing could open.
+    /// The host requirement is what rejects `https://` and `https:`, and the port
+    /// range what rejects `:99999`, which `URL` parses happily but nothing could open.
     public static func isHTTP(_ url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return false }
+        if let port = url.port, !(0...65535).contains(port) { return false }
         return !(url.host ?? "").isEmpty
     }
 

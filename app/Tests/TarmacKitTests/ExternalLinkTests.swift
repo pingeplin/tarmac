@@ -44,15 +44,26 @@ final class ExternalLinkTests: XCTestCase {
         XCTAssertFalse(ExternalLink.isHTTP(href: "https:"))
     }
 
+    func testRejectsAPortOutsideTheValidRange() {
+        XCTAssertTrue(ExternalLink.isHTTP(href: "https://x.com:65535"))
+        XCTAssertFalse(ExternalLink.isHTTP(href: "https://x.com:65536"))
+        XCTAssertFalse(ExternalLink.isHTTP(href: "https://x.com:99999"))
+    }
+
     func testRejectsAnInvalidHost() {
         XCTAssertFalse(ExternalLink.isHTTP(href: "https://x y.com"))
     }
 
-    /// Stricter than the URL standard, which would read `https:x.com` as
-    /// `https://x.com`: a link needs an explicit authority to leave the app.
-    func testRejectsAnHTTPSchemeWithoutAnAuthority() {
+    /// Stricter than the URL standard, which reads each of these as `https://x.com`
+    /// (it ignores surplus slashes and treats a backslash as one): a link needs a
+    /// well-formed `//host` authority to leave the app. A webview hands over an
+    /// already-resolved URL, so a real click never takes these shapes.
+    func testRejectsAnHTTPSchemeWithoutAWellFormedAuthority() {
         XCTAssertFalse(ExternalLink.isHTTP(href: "https:x.com"))
         XCTAssertFalse(ExternalLink.isHTTP(href: "https:/x.com"))
+        XCTAssertFalse(ExternalLink.isHTTP(href: "http:///x.com"))
+        XCTAssertFalse(ExternalLink.isHTTP(href: "https:\\\\x.com"))
+        XCTAssertFalse(ExternalLink.isHTTP(href: "https://x.com\\path"))
     }
 
     func testAcceptsAParsedURLByItsScheme() throws {
