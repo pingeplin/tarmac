@@ -38,4 +38,12 @@ final class CullLedgerTests: XCTestCase {
         ledger.forget("a")
         XCTAssertTrue(ledger.record("a", visible: true))
     }
+
+    func testForgettingOneCardLeavesTheOthersAsRecorded() {
+        var ledger = CullLedger<String>()
+        _ = ledger.record("a", visible: true)
+        _ = ledger.record("b", visible: true)
+        ledger.forget("a")
+        XCTAssertFalse(ledger.record("b", visible: true))
+    }
 }

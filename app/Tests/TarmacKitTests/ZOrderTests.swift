@@ -29,4 +29,8 @@ final class ZOrderTests: XCTestCase {
     func testTheFirstCardOnAnEmptyBoardTakesOne() {
         XCTAssertEqual(ZOrder.raised(above: [Int]()), 1)
     }
+
+    func testARaisedCardClearsZeroEvenWhenEveryCardIsBelowIt() {
+        XCTAssertEqual(ZOrder.raised(above: [-4, -1]), 1)
+    }
 }

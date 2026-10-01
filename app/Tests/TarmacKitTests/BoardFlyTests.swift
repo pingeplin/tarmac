@@ -20,6 +20,16 @@ final class BoardFlyTests: XCTestCase {
         XCTAssertEqual(BoardFly.easeInOutQuad(0.75), 0.875)
     }
 
+    /// Either side of the midpoint the two halves give different values, which
+    /// pins where one hands over to the other.
+    func testShortOfTheMidpointTheEaseIsStillAccelerating() {
+        XCTAssertEqual(BoardFly.easeInOutQuad(0.4), 0.32, accuracy: 1e-12)
+    }
+
+    func testPastTheMidpointTheEaseIsAlreadyDecelerating() {
+        XCTAssertEqual(BoardFly.easeInOutQuad(0.6), 0.68, accuracy: 1e-12)
+    }
+
     func testItStartsAtTheOrigin() {
         XCTAssertEqual(fly.viewport(atElapsedMs: 0), fly.from)
     }
