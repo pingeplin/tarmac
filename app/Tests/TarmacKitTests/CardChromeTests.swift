@@ -4,8 +4,8 @@ import XCTest
 /// 2606.0006: the active-card chrome rule with `fresh` dropped from the border.
 /// The teal ring + handles still mark an active card (focused OR selected); both
 /// `prime` and `fresh` are now border-inert (signalled outside the border —
-/// header tint/shadow for prime, halo + `✚ now` meta for fresh), and dead/
-/// detached stay the one divergence (muted border yet handles for resize).
+/// header tint/shadow for prime, halo + `✚ now` meta for fresh), and dead stays
+/// the one divergence (muted border yet handles for resize).
 ///
 /// Scenario IDs below are 2606.0006's (they supersede 2606.0005's S1–S10 labels
 /// on this file); the extra tests past S5 are retained regression guards.
@@ -47,38 +47,37 @@ final class CardChromeTests: XCTestCase {
         XCTAssertTrue(CardChrome.showsHandles(s))
     }
 
-    // MARK: - S5: the invariant, exhaustive over all 64 states
+    // MARK: - S5: the invariant, exhaustive over all 32 states
 
-    /// S5: for every one of the 2^6 input combinations, the resting role equals
+    /// S5: for every one of the 2^5 input combinations, the resting role equals
     /// the role computed independently from the inputs. The expected side is
     /// derived from the booleans (never read back from `borderRole`), so the test
     /// cannot pass by mirroring the implementation. This one positive equality
     /// locks three things: (a) the teal ring shows exactly for an active,
-    /// non-dead/detached card; (b) every state lands in `.muted`/`.focus`/`.plain`
+    /// non-dead card; (b) every state lands in `.muted`/`.focus`/`.plain`
     /// — none takes a removed or fresh-driven role; (c) `prime` and `fresh` are
     /// both border-inert, so toggling either changes neither role nor handles.
-    func testInvariantExhaustiveOverAll64States() {
-        for mask in 0..<64 {
+    func testInvariantExhaustiveOverAll32States() {
+        for mask in 0..<32 {
             let s = CardChrome.State(
-                dead:     mask & 0b000001 != 0,
-                detached: mask & 0b000010 != 0,
-                fresh:    mask & 0b000100 != 0,
-                prime:    mask & 0b001000 != 0,
-                focused:  mask & 0b010000 != 0,
-                selected: mask & 0b100000 != 0
+                dead:     mask & 0b00001 != 0,
+                fresh:    mask & 0b00010 != 0,
+                prime:    mask & 0b00100 != 0,
+                focused:  mask & 0b01000 != 0,
+                selected: mask & 0b10000 != 0
             )
 
-            // (a) the focus ring coincides with an active, non-dead/detached card.
-            let expectFocusRing = (s.focused || s.selected) && !s.dead && !s.detached
+            // (a) the focus ring coincides with an active, non-dead card.
+            let expectFocusRing = (s.focused || s.selected) && !s.dead
             XCTAssertEqual(
                 CardChrome.borderRole(s) == .focus, expectFocusRing,
-                "state \(s): the focus ring must coincide with an active, non-dead/detached card"
+                "state \(s): the focus ring must coincide with an active, non-dead card"
             )
 
             // (b) role-coverage — expected computed from inputs, so no state can
             // take a removed (e.g. the old fresh-driven) role.
             let expectedRole: CardChrome.BorderRole =
-                (s.dead || s.detached) ? .muted
+                s.dead ? .muted
                 : (s.focused || s.selected) ? .focus
                 : .plain
             XCTAssertEqual(
@@ -142,12 +141,5 @@ final class CardChromeTests: XCTestCase {
         let s = CardChrome.State()
         XCTAssertEqual(CardChrome.borderRole(s), .plain)
         XCTAssertFalse(CardChrome.showsHandles(s))
-    }
-
-    /// Detached is an exception alongside dead — muted border yet handles.
-    func testDetachedSelectedIsMutedButShowsHandles() {
-        let s = CardChrome.State(detached: true, selected: true)
-        XCTAssertEqual(CardChrome.borderRole(s), .muted)
-        XCTAssertTrue(CardChrome.showsHandles(s))
     }
 }
