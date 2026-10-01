@@ -369,106 +369,112 @@ public extension Message {
     func encodedValue() -> MsgPackValue {
         switch self {
         case .hello(let role, let v):
-            return .map(["t": .string("hello"), "role": .string(role), "v": .int(Int64(v))])
+            return Self.tagged("hello") {
+                $0.put("role", .string(role))
+                $0.put("v", .int(Int64(v)))
+            }
         case .helloOK(let v):
-            return .map(["t": .string("hello_ok"), "v": .int(Int64(v))])
+            return Self.tagged("hello_ok") { $0.put("v", .int(Int64(v))) }
         case .ack:
-            return .map(["t": .string("ack")])
+            return Self.tagged("ack")
         case .err(let msg):
-            return .map(["t": .string("err"), "msg": .string(msg)])
+            return Self.tagged("err") { $0.put("msg", .string(msg)) }
         case .open(let path, let termID):
-            var map: [String: MsgPackValue] = ["t": .string("open"), "path": .string(path)]
-            if let termID { map["term_id"] = .string(termID) }
-            return .map(map)
+            return Self.tagged("open") {
+                $0.put("path", .string(path))
+                $0.put("term_id", unlessNil: termID.map(MsgPackValue.string))
+            }
         case .docRead(let path):
-            return .map(["t": .string("doc_read"), "path": .string(path)])
+            return Self.tagged("doc_read") { $0.put("path", .string(path)) }
         case .layout(let dock, let tiles, let board, let boardID):
-            var map: [String: MsgPackValue] = [
-                "t": .string("layout"),
-                "dock": .array(dock.map { .string($0) }),
-                "tiles": .array(tiles.map(Self.layoutTileValue)),
-            ]
-            if let board { map["board"] = Self.boardValue(board) }
-            if let boardID { map["board_id"] = .string(boardID) }
-            return .map(map)
+            return Self.tagged("layout") {
+                $0.put("dock", Self.stringArrayValue(dock))
+                $0.put("tiles", .array(tiles.map(Self.layoutTileValue)))
+                $0.put("board", unlessNil: board.map(Self.boardValue))
+                $0.put("board_id", unlessNil: boardID.map(MsgPackValue.string))
+            }
         case .restore(let docs, let tiles, let board, let boardID, let liveTerms):
-            var map: [String: MsgPackValue] = [
-                "t": .string("restore"),
-                "docs": .array(docs.map { .map(Self.docEntryFields($0)) }),
-                "tiles": .array(tiles.map(Self.layoutTileValue)),
-            ]
-            if let board { map["board"] = Self.boardValue(board) }
-            if let boardID { map["board_id"] = .string(boardID) }
-            if !liveTerms.isEmpty { map["live_terms"] = .array(liveTerms.map { .string($0) }) }
-            return .map(map)
+            return Self.tagged("restore") {
+                $0.put("docs", .array(docs.map { doc in
+                    var entry = WireFields()
+                    Self.putDocEntry(doc, into: &entry)
+                    return .orderedMap(entry.fields)
+                }))
+                $0.put("tiles", .array(tiles.map(Self.layoutTileValue)))
+                $0.put("board", unlessNil: board.map(Self.boardValue))
+                $0.put("board_id", unlessNil: boardID.map(MsgPackValue.string))
+                $0.put("live_terms", unlessNil: liveTerms.isEmpty ? nil : Self.stringArrayValue(liveTerms))
+            }
         case .spawnTerm(let termID, let cols, let rows, let cwd, let cmd):
-            var map: [String: MsgPackValue] = [
-                "t": .string("spawn_term"),
-                "term_id": .string(termID),
-                "cols": .int(Int64(cols)),
-                "rows": .int(Int64(rows)),
-            ]
-            if let cwd { map["cwd"] = .string(cwd) }
-            if let cmd { map["cmd"] = .array(cmd.map { .string($0) }) }
-            return .map(map)
+            return Self.tagged("spawn_term") {
+                $0.put("term_id", .string(termID))
+                $0.put("cols", .int(Int64(cols)))
+                $0.put("rows", .int(Int64(rows)))
+                $0.put("cwd", orNil: cwd.map(MsgPackValue.string))
+                $0.put("cmd", orNil: cmd.map(Self.stringArrayValue))
+            }
         case .input(let termID, let bytes):
-            return .map(["t": .string("input"), "term_id": .string(termID), "bytes": .binary(bytes)])
+            return Self.tagged("input") {
+                $0.put("term_id", .string(termID))
+                $0.put("bytes", .binary(bytes))
+            }
         case .resize(let termID, let cols, let rows):
-            return .map([
-                "t": .string("resize"),
-                "term_id": .string(termID),
-                "cols": .int(Int64(cols)),
-                "rows": .int(Int64(rows)),
-            ])
+            return Self.tagged("resize") {
+                $0.put("term_id", .string(termID))
+                $0.put("cols", .int(Int64(cols)))
+                $0.put("rows", .int(Int64(rows)))
+            }
         case .output(let termID, let bytes):
-            return .map(["t": .string("output"), "term_id": .string(termID), "bytes": .binary(bytes)])
+            return Self.tagged("output") {
+                $0.put("term_id", .string(termID))
+                $0.put("bytes", .binary(bytes))
+            }
         case .exit(let termID, let code):
-            var map: [String: MsgPackValue] = ["t": .string("exit"), "term_id": .string(termID)]
-            if let code { map["code"] = .int(Int64(code)) }
-            return .map(map)
+            return Self.tagged("exit") {
+                $0.put("term_id", .string(termID))
+                $0.put("code", orNil: code.map { .int(Int64($0)) })
+            }
         case .docOpened(let doc):
-            var map = Self.docEntryFields(doc)
-            map["t"] = .string("doc_opened")
-            return .map(map)
+            return Self.tagged("doc_opened") { Self.putDocEntry(doc, into: &$0) }
         case .fileEvent(let path, let mtimeMs):
-            return .map([
-                "t": .string("file_event"),
-                "path": .string(path),
-                "mtime_ms": Self.uintValue(mtimeMs),
-            ])
+            return Self.tagged("file_event") {
+                $0.put("path", .string(path))
+                $0.put("mtime_ms", Self.uintValue(mtimeMs))
+            }
         case .termProc(let termID, let name, let pid):
-            var map: [String: MsgPackValue] = [
-                "t": .string("term_proc"),
-                "term_id": .string(termID),
-                "name": .string(name),
-            ]
-            if let pid { map["pid"] = .int(Int64(pid)) }
-            return .map(map)
+            return Self.tagged("term_proc") {
+                $0.put("term_id", .string(termID))
+                $0.put("name", .string(name))
+                $0.put("pid", unlessNil: pid.map { .int(Int64($0)) })
+            }
         case .bell(let termID):
-            return .map(["t": .string("bell"), "term_id": .string(termID)])
+            return Self.tagged("bell") { $0.put("term_id", .string(termID)) }
         case .boardList(let boards, let active):
-            return .map([
-                "t": .string("board_list"),
-                "boards": .array(boards.map { meta in
-                    var m: [String: MsgPackValue] = ["board_id": .string(meta.boardID)]
-                    if let name = meta.name { m["name"] = .string(name) }
-                    if let running = meta.running { m["running"] = .int(Int64(running)) }
-                    return .map(m)
-                }),
-                "active": .string(active),
-            ])
+            return Self.tagged("board_list") {
+                $0.put("boards", .array(boards.map { meta in
+                    var entry = WireFields()
+                    entry.put("board_id", .string(meta.boardID))
+                    entry.put("name", unlessNil: meta.name.map(MsgPackValue.string))
+                    entry.put("running", unlessNil: meta.running.map { .int(Int64($0)) })
+                    return .orderedMap(entry.fields)
+                }))
+                $0.put("active", .string(active))
+            }
         case .boardSwitch(let boardID):
-            return .map(["t": .string("board_switch"), "board_id": .string(boardID)])
+            return Self.tagged("board_switch") { $0.put("board_id", .string(boardID)) }
         case .boardCreate:
-            return .map(["t": .string("board_create")])
+            return Self.tagged("board_create")
         case .boardRename(let boardID, let name):
-            return .map(["t": .string("board_rename"), "board_id": .string(boardID), "name": .string(name)])
+            return Self.tagged("board_rename") {
+                $0.put("board_id", .string(boardID))
+                $0.put("name", .string(name))
+            }
         case .boardDelete(let boardID):
-            return .map(["t": .string("board_delete"), "board_id": .string(boardID)])
+            return Self.tagged("board_delete") { $0.put("board_id", .string(boardID)) }
         case .termClose(let termID):
-            return .map(["t": .string("term_close"), "term_id": .string(termID)])
+            return Self.tagged("term_close") { $0.put("term_id", .string(termID)) }
         case .unknown(let type):
-            return .map(["t": .string(type)])
+            return Self.tagged(type)
         }
     }
 
@@ -476,47 +482,74 @@ public extension Message {
         MsgPack.encode(encodedValue())
     }
 
-    private static func docEntryFields(_ doc: RestoreDoc) -> [String: MsgPackValue] {
-        var entry: [String: MsgPackValue] = [
-            "path": .string(doc.path),
-            "via": .string(doc.via),
-            "read": .bool(doc.read),
-        ]
-        if let repo = doc.repo { entry["repo"] = .string(repo) }
-        if let root = doc.repoRoot { entry["repo_root"] = .string(root) }
-        if let color = doc.repoColor { entry["repo_color"] = .int(Int64(color)) }
-        if let ms = doc.lastChangedMs { entry["last_changed_ms"] = uintValue(ms) }
-        if let ms = doc.lastOpenedMs { entry["last_opened_ms"] = uintValue(ms) }
-        if let termID = doc.termID { entry["term_id"] = .string(termID) }
-        return entry
+    private static func tagged(_ t: String, _ build: (inout WireFields) -> Void = { _ in }) -> MsgPackValue {
+        var fields = WireFields()
+        fields.put("t", .string(t))
+        build(&fields)
+        return .orderedMap(fields.fields)
+    }
+
+    private static func putDocEntry(_ doc: RestoreDoc, into entry: inout WireFields) {
+        entry.put("path", .string(doc.path))
+        entry.put("via", .string(doc.via))
+        entry.put("repo", orNil: doc.repo.map(MsgPackValue.string))
+        entry.put("repo_root", orNil: doc.repoRoot.map(MsgPackValue.string))
+        entry.put("repo_color", orNil: doc.repoColor.map { .int(Int64($0)) })
+        entry.put("read", .bool(doc.read))
+        entry.put("last_changed_ms", orNil: doc.lastChangedMs.map(uintValue))
+        entry.put("last_opened_ms", orNil: doc.lastOpenedMs.map(uintValue))
+        entry.put("term_id", unlessNil: doc.termID.map(MsgPackValue.string))
     }
 
     private static func layoutTileValue(_ tile: LayoutTile) -> MsgPackValue {
-        var m: [String: MsgPackValue] = ["kind": .string(tile.kind)]
-        if let path = tile.path { m["path"] = .string(path) }
-        // v4 world frame: emit each key only when present (missing ⇒ nil).
-        if let x = tile.x { m["x"] = .double(x) }
-        if let y = tile.y { m["y"] = .double(y) }
-        if let w = tile.w { m["w"] = .double(w) }
-        if let h = tile.h { m["h"] = .double(h) }
-        if let z = tile.z { m["z"] = .int(Int64(z)) }
-        // v4 Phase 3: emit each flag only when present (missing ⇒ nil).
-        if let loose = tile.loose { m["loose"] = .bool(loose) }
-        if let shelf = tile.shelf { m["shelf"] = .bool(shelf) }
-        // v4 Phase 5b: emit the terminal tile's term_id only when present.
-        if let termID = tile.termID { m["term_id"] = .string(termID) }
-        return .map(m)
+        var m = WireFields()
+        m.put("kind", .string(tile.kind))
+        m.put("path", unlessNil: tile.path.map(MsgPackValue.string))
+        m.put("x", unlessNil: tile.x.map(MsgPackValue.double))
+        m.put("y", unlessNil: tile.y.map(MsgPackValue.double))
+        m.put("w", unlessNil: tile.w.map(MsgPackValue.double))
+        m.put("h", unlessNil: tile.h.map(MsgPackValue.double))
+        m.put("z", unlessNil: tile.z.map { .int(Int64($0)) })
+        m.put("loose", unlessNil: tile.loose.map(MsgPackValue.bool))
+        m.put("shelf", unlessNil: tile.shelf.map(MsgPackValue.bool))
+        m.put("term_id", unlessNil: tile.termID.map(MsgPackValue.string))
+        return .orderedMap(m.fields)
     }
 
     private static func boardValue(_ board: BoardViewport) -> MsgPackValue {
-        .map([
-            "zoom": .double(board.zoom),
-            "cx": .double(board.cx),
-            "cy": .double(board.cy),
+        .orderedMap([
+            MsgPackField("zoom", .double(board.zoom)),
+            MsgPackField("cx", .double(board.cx)),
+            MsgPackField("cy", .double(board.cy)),
         ])
+    }
+
+    private static func stringArrayValue(_ strings: [String]) -> MsgPackValue {
+        .array(strings.map(MsgPackValue.string))
     }
 
     private static func uintValue(_ n: UInt64) -> MsgPackValue {
         n <= UInt64(Int64.max) ? .int(Int64(n)) : .uint(n)
+    }
+}
+
+/// One wire map, built in the order `rmp_serde::to_vec_named` writes it: the
+/// struct's fields in declaration order. The two optional forms are the two ways
+/// the Rust structs declare an `Option`, which differ on the wire.
+struct WireFields {
+    private(set) var fields: [MsgPackField] = []
+
+    mutating func put(_ key: String, _ value: MsgPackValue) {
+        fields.append(MsgPackField(key, value))
+    }
+
+    /// `#[serde(skip_serializing_if = "Option::is_none")]` — no key when nil.
+    mutating func put(_ key: String, unlessNil value: MsgPackValue?) {
+        if let value { put(key, value) }
+    }
+
+    /// A bare `Option<T>` — the key is always present, msgpack nil when nil.
+    mutating func put(_ key: String, orNil value: MsgPackValue?) {
+        put(key, value ?? .nil)
     }
 }

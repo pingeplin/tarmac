@@ -32,7 +32,6 @@ final class ConformanceTests: XCTestCase {
         XCTAssertEqual(try Message.decode(payload: payload), .ack)
         assertRoundTrips(expected)
         assertRoundTrips(Message.ack)
-        // Byte-exact output is not required, but for this single-key map it holds.
         XCTAssertEqual(Message.ack.encodedPayload(), payload)
     }
 
@@ -44,8 +43,9 @@ final class ConformanceTests: XCTestCase {
         XCTAssertEqual(try Message.decode(payload: payload), .hello(role: "app", v: 1))
         assertRoundTrips(expected)
         assertRoundTrips(Message.hello(role: "app", v: 1))
-        // Our encoding must decode to the same structure as the vector (key order may differ).
-        XCTAssertEqual(try MsgPack.decode(Message.hello(role: "app", v: 1).encodedPayload()), expected)
+        // Rust pins this one byte-for-byte (`hello_app_version_additive`): a nil
+        // `app_version` must leave the vector's bytes, map size included, untouched.
+        XCTAssertEqual(Message.hello(role: "app", v: 1).encodedPayload(), payload)
     }
 
     func testVector3Input() throws {
@@ -64,7 +64,7 @@ final class ConformanceTests: XCTestCase {
         XCTAssertEqual(try Message.decode(payload: payload), .input(termID: "t1", bytes: bytes))
         assertRoundTrips(expected)
         assertRoundTrips(Message.input(termID: "t1", bytes: bytes))
-        XCTAssertEqual(try MsgPack.decode(Message.input(termID: "t1", bytes: bytes).encodedPayload()), expected)
+        XCTAssertEqual(Message.input(termID: "t1", bytes: bytes).encodedPayload(), payload)
     }
 
     func testVector4Resize() throws {
@@ -83,7 +83,7 @@ final class ConformanceTests: XCTestCase {
         XCTAssertEqual(try Message.decode(payload: payload), .resize(termID: "t1", cols: 120, rows: 40))
         assertRoundTrips(expected)
         assertRoundTrips(Message.resize(termID: "t1", cols: 120, rows: 40))
-        XCTAssertEqual(try MsgPack.decode(Message.resize(termID: "t1", cols: 120, rows: 40).encodedPayload()), expected)
+        XCTAssertEqual(Message.resize(termID: "t1", cols: 120, rows: 40).encodedPayload(), payload)
     }
 
     func testVector5DocRead() throws {
@@ -94,7 +94,7 @@ final class ConformanceTests: XCTestCase {
         XCTAssertEqual(try Message.decode(payload: payload), .docRead(path: "/a.md"))
         assertRoundTrips(expected)
         assertRoundTrips(Message.docRead(path: "/a.md"))
-        XCTAssertEqual(try MsgPack.decode(Message.docRead(path: "/a.md").encodedPayload()), expected)
+        XCTAssertEqual(Message.docRead(path: "/a.md").encodedPayload(), payload)
     }
 
     func testVector6Layout() throws {
@@ -124,7 +124,9 @@ final class ConformanceTests: XCTestCase {
         XCTAssertEqual(try Message.decode(payload: payload), message)
         assertRoundTrips(expected)
         assertRoundTrips(message)
-        XCTAssertEqual(try MsgPack.decode(message.encodedPayload()), expected)
+        // Rust pins this one byte-for-byte (`m3_keyless_layout_decodes_board_id_none`):
+        // a single-board sender's wire is identical to the pre-M3 frame.
+        XCTAssertEqual(message.encodedPayload(), payload)
     }
 
     func testVector7DocOpenedExtended() throws {
@@ -159,7 +161,13 @@ final class ConformanceTests: XCTestCase {
         XCTAssertEqual(try Message.decode(payload: payload), message)
         assertRoundTrips(expected)
         assertRoundTrips(message)
-        XCTAssertEqual(try MsgPack.decode(message.encodedPayload()), expected)
+        // The one vector that does not re-encode to its own bytes, on either side:
+        // it omits `repo_root` and `last_changed_ms`, which Rust declares without a
+        // skip and therefore writes back as explicit nils.
+        var reencoded = try XCTUnwrap(expected.mapValue)
+        reencoded["repo_root"] = .nil
+        reencoded["last_changed_ms"] = .nil
+        XCTAssertEqual(try MsgPack.decode(message.encodedPayload()), .map(reencoded))
     }
 
     /// v4 board additive keys (docs/protocol.md "v4 board additive keys"):
@@ -189,9 +197,8 @@ final class ConformanceTests: XCTestCase {
         )
 
         XCTAssertEqual(try Message.decode(payload: payload), message)
-        // Round-trips through our own encoder too (key order may differ).
         assertRoundTrips(message)
-        XCTAssertEqual(try Message.decode(payload: message.encodedPayload()), message)
+        XCTAssertEqual(message.encodedPayload(), payload)
     }
 
     /// issue #15 (additive app → daemon): the `term_close` wire vector (the same
@@ -208,8 +215,7 @@ final class ConformanceTests: XCTestCase {
         XCTAssertEqual(try Message.decode(payload: payload), .termClose(termID: "t1"))
         assertRoundTrips(expected)
         assertRoundTrips(Message.termClose(termID: "t1"))
-        // Our encoding decodes to the same structure as the vector (key order may differ).
-        XCTAssertEqual(try MsgPack.decode(Message.termClose(termID: "t1").encodedPayload()), expected)
+        XCTAssertEqual(Message.termClose(termID: "t1").encodedPayload(), payload)
     }
 
     /// An M1 layout (geometry-less tiles, no `board` key) must still decode
@@ -445,6 +451,20 @@ final class MessageDecodingRulesTests: XCTestCase {
             a4 63 6f 6c 73 cd 00 78 a4 72 6f 77 73 cc 28
             """)
         XCTAssertEqual(try Message.decode(payload: payload), .resize(termID: "t1", cols: 120, rows: 40))
+    }
+
+    /// serde's `f64` visitor takes an integer, so the daemon decodes `x:1` as
+    /// `1.0`; rejecting it here would drop a frame the other side accepts.
+    func testIntegerIsAcceptedWhereAFloatIsExpected() throws {
+        // {t:"layout", dock:[], tiles:[{kind:"doc", x:1}]}
+        let payload = hexData("""
+            83 a1 74 a6 6c 61 79 6f 75 74 a4 64 6f 63 6b 90
+            a5 74 69 6c 65 73 91 82 a4 6b 69 6e 64 a3 64 6f 63 a1 78 01
+            """)
+        XCTAssertEqual(
+            try Message.decode(payload: payload),
+            .layout(dock: [], tiles: [LayoutTile(kind: "doc", x: 1.0)], board: nil, boardID: nil)
+        )
     }
 
     func testMissingOptionalFieldsDecodeAsNil() throws {

@@ -90,6 +90,19 @@ final class MsgPackTests: XCTestCase {
         roundTrip(.map(big))
     }
 
+    func testOrderedMapWritesKeysInTheGivenOrder() throws {
+        let value = MsgPackValue.orderedMap([MsgPackField("b", .int(1)), MsgPackField("a", .int(2))])
+        let encoded = MsgPack.encode(value)
+        XCTAssertEqual(encoded, Data([0x82, 0xa1, 0x62, 0x01, 0xa1, 0x61, 0x02]))
+        XCTAssertEqual(try MsgPack.decode(encoded), .map(["b": .int(1), "a": .int(2)]))
+        XCTAssertEqual(value.mapValue, ["b": .int(1), "a": .int(2)])
+    }
+
+    func testOrderedMapUsesTheMap16HeaderPastFifteenKeys() {
+        let fields = (0..<16).map { MsgPackField("k\($0)", .int(Int64($0))) }
+        XCTAssertEqual(MsgPack.encode(.orderedMap(fields)).prefix(3), Data([0xde, 0x00, 0x10]))
+    }
+
     func testTruncatedInputThrows() {
         XCTAssertThrowsError(try MsgPack.decode(Data())) // empty
         XCTAssertThrowsError(try MsgPack.decode(Data([0xa3, 0x61]))) // fixstr len 3, 1 byte
