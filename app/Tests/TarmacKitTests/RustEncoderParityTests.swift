@@ -29,10 +29,54 @@ final class RustEncoderParityTests: XCTestCase {
             .hello(role: "cli", v: 1),
             "83 a1 74 a5 68 65 6c 6c 6f a4 72 6f 6c 65 a3 63 6c 69 a1 76 01"
         )
+        // Msg::Hello { role: "app", v: 1, app_version: Some("9.9.9") }
+        assertParity(
+            .hello(role: "app", v: 1, appVersion: "9.9.9"),
+            """
+            84 a1 74 a5 68 65 6c 6c 6f a4 72 6f 6c 65 a3 61 70 70 a1 76 01 ab 61 70
+            70 5f 76 65 72 73 69 6f 6e a5 39 2e 39 2e 39
+            """
+        )
         // Msg::Ack
         assertParity(.ack, "81 a1 74 a3 61 63 6b")
         // Msg::Err { msg: "boom" }
         assertParity(.err(msg: "boom"), "82 a1 74 a3 65 72 72 a3 6d 73 67 a4 62 6f 6f 6d")
+    }
+
+    func testHelloOK() {
+        // Msg::HelloOk { v: 1, .. all None }
+        assertParity(.helloOK(v: 1), "82 a1 74 a8 68 65 6c 6c 6f 5f 6f 6b a1 76 01")
+        // Msg::HelloOk { v: 1, daemon_version: Some("0.13.1"), daemon_pid: Some(4242),
+        //   app_version: None, app_connected: None } — what an `app` client receives.
+        assertParity(
+            .helloOK(v: 1, daemonVersion: "0.13.1", daemonPid: 4242),
+            """
+            84 a1 74 a8 68 65 6c 6c 6f 5f 6f 6b a1 76 01 ae 64 61 65 6d 6f 6e 5f 76
+            65 72 73 69 6f 6e a6 30 2e 31 33 2e 31 aa 64 61 65 6d 6f 6e 5f 70 69 64
+            cd 10 92
+            """
+        )
+        // Msg::HelloOk { v: 1, daemon_version: Some("0.13.1"), daemon_pid: Some(70000),
+        //   app_version: Some("8.8.8"), app_connected: Some(true) }
+        assertParity(
+            .helloOK(v: 1, daemonVersion: "0.13.1", daemonPid: 70000, appVersion: "8.8.8", appConnected: true),
+            """
+            86 a1 74 a8 68 65 6c 6c 6f 5f 6f 6b a1 76 01 ae 64 61 65 6d 6f 6e 5f 76
+            65 72 73 69 6f 6e a6 30 2e 31 33 2e 31 aa 64 61 65 6d 6f 6e 5f 70 69 64
+            ce 00 01 11 70 ab 61 70 70 5f 76 65 72 73 69 6f 6e a5 38 2e 38 2e 38 ad
+            61 70 70 5f 63 6f 6e 6e 65 63 74 65 64 c3
+            """
+        )
+        // Msg::HelloOk { v: 1, daemon_version: Some("0.13.1"), daemon_pid: Some(1),
+        //   app_version: None, app_connected: Some(false) }
+        assertParity(
+            .helloOK(v: 1, daemonVersion: "0.13.1", daemonPid: 1, appConnected: false),
+            """
+            85 a1 74 a8 68 65 6c 6c 6f 5f 6f 6b a1 76 01 ae 64 61 65 6d 6f 6e 5f 76
+            65 72 73 69 6f 6e a6 30 2e 31 33 2e 31 aa 64 61 65 6d 6f 6e 5f 70 69 64
+            01 ad 61 70 70 5f 63 6f 6e 6e 65 63 74 65 64 c2
+            """
+        )
     }
 
     func testDocVerbs() {
@@ -41,10 +85,63 @@ final class RustEncoderParityTests: XCTestCase {
             .open(path: "/a.md", termID: nil),
             "82 a1 74 a4 6f 70 65 6e a4 70 61 74 68 a5 2f 61 2e 6d 64"
         )
+        // Msg::Open { path: "/a.md", term_id: Some("t9"), board_id: Some("board-1") }
+        assertParity(
+            .open(path: "/a.md", termID: "t9", boardID: "board-1"),
+            """
+            84 a1 74 a4 6f 70 65 6e a4 70 61 74 68 a5 2f 61 2e 6d 64 a7 74 65 72 6d
+            5f 69 64 a2 74 39 a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 31
+            """
+        )
+        // Msg::Open { path: "/a.md", term_id: None, board_id: Some("board-1") }
+        assertParity(
+            .open(path: "/a.md", termID: nil, boardID: "board-1"),
+            """
+            83 a1 74 a4 6f 70 65 6e a4 70 61 74 68 a5 2f 61 2e 6d 64 a8 62 6f 61 72
+            64 5f 69 64 a7 62 6f 61 72 64 2d 31
+            """
+        )
         // Msg::DocRead { path: "/a.md" }
         assertParity(
             .docRead(path: "/a.md"),
             "82 a1 74 a8 64 6f 63 5f 72 65 61 64 a4 70 61 74 68 a5 2f 61 2e 6d 64"
+        )
+        // Msg::DocClose { path: "/a.md" } — conformance vector 10.
+        assertParity(
+            .docClose(path: "/a.md"),
+            "82 a1 74 a9 64 6f 63 5f 63 6c 6f 73 65 a4 70 61 74 68 a5 2f 61 2e 6d 64"
+        )
+        // Msg::DocRefresh { path: "/a.md" } — conformance vector 11.
+        assertParity(
+            .docRefresh(path: "/a.md"),
+            "82 a1 74 ab 64 6f 63 5f 72 65 66 72 65 73 68 a4 70 61 74 68 a5 2f 61 2e 6d 64"
+        )
+    }
+
+    func testScrollback() {
+        // Msg::ScrollbackRequest { term_id: "t1" } — conformance vector 12.
+        assertParity(
+            .scrollbackRequest(termID: "t1"),
+            """
+            82 a1 74 b2 73 63 72 6f 6c 6c 62 61 63 6b 5f 72 65 71 75 65 73 74 a7 74
+            65 72 6d 5f 69 64 a2 74 31
+            """
+        )
+        // Msg::Scrollback { term_id: "t1", bytes: b"hi\n" } — conformance vector 13.
+        assertParity(
+            .scrollback(termID: "t1", bytes: Data("hi\n".utf8)),
+            """
+            83 a1 74 aa 73 63 72 6f 6c 6c 62 61 63 6b a7 74 65 72 6d 5f 69 64 a2 74
+            31 a5 62 79 74 65 73 c4 03 68 69 0a
+            """
+        )
+        // Msg::Scrollback { term_id: "t1", bytes: [] } — the always-sent empty reply.
+        assertParity(
+            .scrollback(termID: "t1", bytes: Data()),
+            """
+            83 a1 74 aa 73 63 72 6f 6c 6c 62 61 63 6b a7 74 65 72 6d 5f 69 64 a2 74
+            31 a5 62 79 74 65 73 c4 00
+            """
         )
     }
 
@@ -168,6 +265,37 @@ final class RustEncoderParityTests: XCTestCase {
             """
             86 a1 74 aa 73 70 61 77 6e 5f 74 65 72 6d a7 74 65 72 6d 5f 69 64 a2 74
             32 a4 63 6f 6c 73 50 a4 72 6f 77 73 18 a3 63 77 64 c0 a3 63 6d 64 c0
+            """
+        )
+        // Msg::SpawnTerm { term_id: "t1", cols: 191, rows: 49, cwd: Some("/tmp"),
+        //   cmd: Some(["/bin/echo", "hi"]), board_id: Some("board-1"),
+        //   inherit_cwd_from: Some("t0") }
+        assertParity(
+            .spawnTerm(
+                termID: "t1",
+                cols: 191,
+                rows: 49,
+                cwd: "/tmp",
+                cmd: ["/bin/echo", "hi"],
+                boardID: "board-1",
+                inheritCwdFrom: "t0"
+            ),
+            """
+            88 a1 74 aa 73 70 61 77 6e 5f 74 65 72 6d a7 74 65 72 6d 5f 69 64 a2 74
+            31 a4 63 6f 6c 73 cc bf a4 72 6f 77 73 31 a3 63 77 64 a4 2f 74 6d 70 a3
+            63 6d 64 92 a9 2f 62 69 6e 2f 65 63 68 6f a2 68 69 a8 62 6f 61 72 64 5f
+            69 64 a7 62 6f 61 72 64 2d 31 b0 69 6e 68 65 72 69 74 5f 63 77 64 5f 66
+            72 6f 6d a2 74 30
+            """
+        )
+        // Msg::SpawnTerm { term_id: "t3", cols: 80, rows: 24, cwd: None, cmd: None,
+        //   board_id: None, inherit_cwd_from: Some("t1") }
+        assertParity(
+            .spawnTerm(termID: "t3", cols: 80, rows: 24, cwd: nil, cmd: nil, inheritCwdFrom: "t1"),
+            """
+            87 a1 74 aa 73 70 61 77 6e 5f 74 65 72 6d a7 74 65 72 6d 5f 69 64 a2 74
+            33 a4 63 6f 6c 73 50 a4 72 6f 77 73 18 a3 63 77 64 c0 a3 63 6d 64 c0 b0
+            69 6e 68 65 72 69 74 5f 63 77 64 5f 66 72 6f 6d a2 74 31
             """
         )
         // Msg::Input { term_id: "t1", bytes: b"ls\n" } — conformance vector 3.

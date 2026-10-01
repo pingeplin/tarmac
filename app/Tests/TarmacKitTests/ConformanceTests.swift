@@ -218,6 +218,79 @@ final class ConformanceTests: XCTestCase {
         XCTAssertEqual(Message.termClose(termID: "t1").encodedPayload(), payload)
     }
 
+    /// issue #34 (additive app → daemon).
+    func testVector10DocClose() throws {
+        let payload = hexData("""
+            82 a1 74 a9 64 6f 63 5f 63 6c 6f 73 65
+            a4 70 61 74 68 a5 2f 61 2e 6d 64
+            """)
+        let expected = MsgPackValue.map(["t": .string("doc_close"), "path": .string("/a.md")])
+
+        XCTAssertEqual(try MsgPack.decode(payload), expected)
+        XCTAssertEqual(try Message.decode(payload: payload), .docClose(path: "/a.md"))
+        assertRoundTrips(expected)
+        assertRoundTrips(Message.docClose(path: "/a.md"))
+        XCTAssertEqual(Message.docClose(path: "/a.md").encodedPayload(), payload)
+    }
+
+    /// issue #89 (additive app → daemon).
+    func testVector11DocRefresh() throws {
+        let payload = hexData("""
+            82 a1 74 ab 64 6f 63 5f 72 65 66 72 65 73 68
+            a4 70 61 74 68 a5 2f 61 2e 6d 64
+            """)
+        let expected = MsgPackValue.map(["t": .string("doc_refresh"), "path": .string("/a.md")])
+
+        XCTAssertEqual(try MsgPack.decode(payload), expected)
+        XCTAssertEqual(try Message.decode(payload: payload), .docRefresh(path: "/a.md"))
+        assertRoundTrips(expected)
+        assertRoundTrips(Message.docRefresh(path: "/a.md"))
+        XCTAssertEqual(Message.docRefresh(path: "/a.md").encodedPayload(), payload)
+    }
+
+    /// issue #41 (additive app → daemon).
+    func testVector12ScrollbackRequest() throws {
+        let payload = hexData("""
+            82 a1 74 b2 73 63 72 6f 6c 6c 62 61 63 6b 5f 72 65 71 75 65 73 74
+            a7 74 65 72 6d 5f 69 64 a2 74 31
+            """)
+        let expected = MsgPackValue.map(["t": .string("scrollback_request"), "term_id": .string("t1")])
+
+        XCTAssertEqual(try MsgPack.decode(payload), expected)
+        XCTAssertEqual(try Message.decode(payload: payload), .scrollbackRequest(termID: "t1"))
+        assertRoundTrips(expected)
+        assertRoundTrips(Message.scrollbackRequest(termID: "t1"))
+        XCTAssertEqual(Message.scrollbackRequest(termID: "t1").encodedPayload(), payload)
+    }
+
+    /// issue #41 (additive daemon → app): `bytes` rides the bin family, as in
+    /// vector 3.
+    func testVector13Scrollback() throws {
+        let payload = hexData("""
+            83 a1 74 aa 73 63 72 6f 6c 6c 62 61 63 6b
+            a7 74 65 72 6d 5f 69 64 a2 74 31
+            a5 62 79 74 65 73 c4 03 68 69 0a
+            """)
+        let bytes = Data([0x68, 0x69, 0x0a]) // "hi\n"
+        let expected = MsgPackValue.map([
+            "t": .string("scrollback"),
+            "term_id": .string("t1"),
+            "bytes": .binary(bytes),
+        ])
+
+        XCTAssertEqual(try MsgPack.decode(payload), expected)
+        XCTAssertEqual(try Message.decode(payload: payload), .scrollback(termID: "t1", bytes: bytes))
+        assertRoundTrips(expected)
+        assertRoundTrips(Message.scrollback(termID: "t1", bytes: bytes))
+        XCTAssertEqual(Message.scrollback(termID: "t1", bytes: bytes).encodedPayload(), payload)
+    }
+
+    /// The daemon answers every `scrollback_request`, even with an empty ring;
+    /// the empty reply must survive the codec so the app can stop waiting.
+    func testScrollbackReplyRoundTripsEmptyBytes() {
+        assertRoundTrips(Message.scrollback(termID: "t1", bytes: Data()))
+    }
+
     /// An M1 layout (geometry-less tiles, no `board` key) must still decode
     /// under v4 with all-nil tile geometry and a nil board (additive guarantee).
     func testM1LayoutDecodesWithNilBoardAndGeometry() throws {
@@ -483,6 +556,67 @@ final class MessageDecodingRulesTests: XCTestCase {
         )
     }
 
+    /// 2609.0012: `hello.app_version` is additive — vector 2 decodes it nil, and
+    /// a value survives the trip.
+    func testHelloAppVersionIsAdditive() throws {
+        let vector2 = hexData("83 a1 74 a5 68 65 6c 6c 6f a4 72 6f 6c 65 a3 61 70 70 a1 76 01")
+        guard case .hello(_, _, let appVersion) = try Message.decode(payload: vector2) else {
+            return XCTFail("not hello")
+        }
+        XCTAssertNil(appVersion)
+
+        let named = Message.hello(role: "app", v: 1, appVersion: "9.9.9")
+        XCTAssertEqual(try MsgPack.decode(named.encodedPayload())["app_version"], .string("9.9.9"))
+        XCTAssertEqual(try Message.decode(payload: named.encodedPayload()), named)
+    }
+
+    /// `hello_ok`'s four optional keys are additive: a key-less frame decodes
+    /// them all nil, nil omits each key, and `app_connected: false` stays
+    /// distinct from an absent key (an older daemon, NOT "no app").
+    func testHelloOKKeysAreAdditive() throws {
+        // {t:"hello_ok", v:1}
+        let keyless = hexData("82 a1 74 a8 68 65 6c 6c 6f 5f 6f 6b a1 76 01")
+        XCTAssertEqual(
+            try Message.decode(payload: keyless),
+            .helloOK(v: 1, daemonVersion: nil, daemonPid: nil, appVersion: nil, appConnected: nil)
+        )
+        XCTAssertEqual(Message.helloOK(v: 1).encodedPayload(), keyless)
+
+        let noApp = Message.helloOK(v: 1, daemonVersion: "0.1.0", daemonPid: 4242, appConnected: false)
+        let wire = try MsgPack.decode(noApp.encodedPayload())
+        XCTAssertEqual(wire["daemon_version"], .string("0.1.0"))
+        XCTAssertEqual(wire["daemon_pid"], .int(4242))
+        XCTAssertEqual(wire["app_connected"], .bool(false))
+        XCTAssertNil(wire["app_version"])
+        XCTAssertEqual(try Message.decode(payload: noApp.encodedPayload()), noApp)
+        XCTAssertNotEqual(noApp, .helloOK(v: 1, daemonVersion: "0.1.0", daemonPid: 4242))
+    }
+
+    /// M3 / issue #77: a pre-M3 `spawn_term` and `open` decode the newer keys nil.
+    func testKeylessSpawnAndOpenDecodeNewerKeysAsNil() throws {
+        // {t:"spawn_term", term_id:"t1", cols:80, rows:24}
+        let spawn = hexData("""
+            84 a1 74 aa 73 70 61 77 6e 5f 74 65 72 6d
+            a7 74 65 72 6d 5f 69 64 a2 74 31 a4 63 6f 6c 73 50 a4 72 6f 77 73 18
+            """)
+        XCTAssertEqual(
+            try Message.decode(payload: spawn),
+            .spawnTerm(termID: "t1", cols: 80, rows: 24, cwd: nil, cmd: nil, boardID: nil, inheritCwdFrom: nil)
+        )
+        // {t:"open", path:"/a.md"}
+        let open = hexData("82 a1 74 a4 6f 70 65 6e a4 70 61 74 68 a5 2f 61 2e 6d 64")
+        XCTAssertEqual(try Message.decode(payload: open), .open(path: "/a.md", termID: nil, boardID: nil))
+    }
+
+    func testNewerSpawnAndOpenKeysSurviveTheTrip() throws {
+        let spawn = Message.spawnTerm(
+            termID: "t9", cols: 80, rows: 24, cwd: nil, cmd: nil, boardID: "board-1", inheritCwdFrom: "prime"
+        )
+        XCTAssertEqual(try Message.decode(payload: spawn.encodedPayload()), spawn)
+        let open = Message.open(path: "/a.md", termID: "t9", boardID: "board-1")
+        XCTAssertEqual(try Message.decode(payload: open.encodedPayload()), open)
+    }
+
     func testExplicitNilOptionalFieldsDecodeAsNil() throws {
         XCTAssertEqual(
             try Message.decode(.map(["t": .string("exit"), "term_id": .string("t1"), "code": .nil])),
@@ -617,6 +751,15 @@ final class MessageDecodingRulesTests: XCTestCase {
             .termProc(termID: "u-1", name: "vim", pid: nil),
             .bell(termID: "u-1"),
             .termClose(termID: "u-1"),
+            .hello(role: "app", v: 1, appVersion: "9.9.9"),
+            .helloOK(v: 1, daemonVersion: "0.1.0", daemonPid: 4242, appVersion: "8.8.8", appConnected: true),
+            .open(path: "/abs/x.md", termID: "t9", boardID: "board-1"),
+            .spawnTerm(termID: "u-2", cols: 80, rows: 24, cwd: nil, cmd: nil, boardID: "board-1"),
+            .spawnTerm(termID: "u-3", cols: 80, rows: 24, cwd: nil, cmd: nil, inheritCwdFrom: "u-1"),
+            .docClose(path: "/abs/x.md"),
+            .docRefresh(path: "/abs/x.md"),
+            .scrollbackRequest(termID: "u-1"),
+            .scrollback(termID: "u-1", bytes: Data(repeating: 0xab, count: 70_000)),
         ]
         for message in messages {
             XCTAssertEqual(try Message.decode(payload: message.encodedPayload()), message)

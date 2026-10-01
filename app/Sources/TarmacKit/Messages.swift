@@ -126,11 +126,27 @@ public struct BoardMeta: Equatable, Sendable {
 
 /// Every message in docs/protocol.md (v1, M0 + M1 subsets).
 public enum Message: Equatable, Sendable {
-    case hello(role: String, v: Int)
-    case helloOK(v: Int)
+    /// `appVersion` (additive, missing ⇒ nil) is the client's own version. Only
+    /// an app sets it; `tarmac --version` reports it back to the user.
+    case hello(role: String, v: Int, appVersion: String? = nil)
+    /// Every key but `v` is additive (missing ⇒ nil). `daemonVersion` and
+    /// `daemonPid` are what the stale-daemon restart reads (`DaemonLaunch`).
+    /// `appVersion` / `appConnected` go to `cli` clients only; they are separate
+    /// because `appConnected: true` with no `appVersion` is an app that named no
+    /// version, and a nil `appConnected` is a daemon that predates the key —
+    /// neither is "no app".
+    case helloOK(
+        v: Int,
+        daemonVersion: String? = nil,
+        daemonPid: Int? = nil,
+        appVersion: String? = nil,
+        appConnected: Bool? = nil
+    )
     case ack
     case err(msg: String)
-    case open(path: String, termID: String?)
+    /// `boardID` (M3 additive, missing ⇒ the calling term's board, else the
+    /// active one) names an explicit target board.
+    case open(path: String, termID: String?, boardID: String? = nil)
     case docRead(path: String)
     /// M3 additive (missing ⇒ nil): the board this layout/restore belongs to.
     /// App→daemon `layout` stamps the active board so the daemon persists to the
@@ -143,7 +159,19 @@ public enum Message: Equatable, Sendable {
     /// shells (consuming the replayed scrollback that follows) instead of cold-
     /// spawning; empty ⇒ cold-spawn (pre-P5 / daemon-restart, shells gone).
     case restore(docs: [RestoreDoc], tiles: [LayoutTile], board: BoardViewport?, boardID: String?, liveTerms: [String])
-    case spawnTerm(termID: String, cols: Int, rows: Int, cwd: String?, cmd: [String]?)
+    /// `boardID` (M3 additive, missing ⇒ board-0 / active) is the board the new
+    /// terminal belongs to. `inheritCwdFrom` (issue #77, missing ⇒ nil) names a
+    /// terminal whose LIVE cwd the new one starts in; the daemon resolves it at
+    /// spawn time and ignores it when `cwd` is set.
+    case spawnTerm(
+        termID: String,
+        cols: Int,
+        rows: Int,
+        cwd: String?,
+        cmd: [String]?,
+        boardID: String? = nil,
+        inheritCwdFrom: String? = nil
+    )
     case input(termID: String, bytes: Data)
     case resize(termID: String, cols: Int, rows: Int)
     case output(termID: String, bytes: Data)
@@ -169,6 +197,18 @@ public enum Message: Equatable, Sendable {
     /// single terminal card. The daemon SIGHUPs its process group; the usual
     /// `exit` follows. An unknown term ⇒ no-op.
     case termClose(termID: String)
+    /// issue #34 (app → daemon): forget a doc — registry, dock and watcher. An
+    /// unknown path is a silent no-op.
+    case docClose(path: String)
+    /// issue #89 (app → daemon): re-stat a doc now and push the usual
+    /// `file_event`, changed or not. Covers edits the watcher drops while the
+    /// doc's board is in the background.
+    case docRefresh(path: String)
+    /// issue #41: `scrollbackRequest` (app → daemon) asks for one terminal's
+    /// scrollback ring; the daemon answers with exactly one `scrollback`, always —
+    /// empty bytes for a silent or unknown terminal.
+    case scrollbackRequest(termID: String)
+    case scrollback(termID: String, bytes: Data)
     /// Unknown message types are ignored per the protocol (log and continue).
     case unknown(type: String)
 }
@@ -209,15 +249,29 @@ public extension Message {
 
         switch t {
         case "hello":
-            return .hello(role: try req("role", \.stringValue), v: try req("v", \.intValue))
+            return .hello(
+                role: try req("role", \.stringValue),
+                v: try req("v", \.intValue),
+                appVersion: try opt("app_version", \.stringValue)
+            )
         case "hello_ok":
-            return .helloOK(v: try req("v", \.intValue))
+            return .helloOK(
+                v: try req("v", \.intValue),
+                daemonVersion: try opt("daemon_version", \.stringValue),
+                daemonPid: try opt("daemon_pid", \.intValue),
+                appVersion: try opt("app_version", \.stringValue),
+                appConnected: try opt("app_connected", \.boolValue)
+            )
         case "ack":
             return .ack
         case "err":
             return .err(msg: try req("msg", \.stringValue))
         case "open":
-            return .open(path: try req("path", \.stringValue), termID: try opt("term_id", \.stringValue))
+            return .open(
+                path: try req("path", \.stringValue),
+                termID: try opt("term_id", \.stringValue),
+                boardID: try opt("board_id", \.stringValue)
+            )
         case "doc_read":
             return .docRead(path: try req("path", \.stringValue))
         case "layout":
@@ -245,7 +299,9 @@ public extension Message {
                 cols: try req("cols", \.intValue),
                 rows: try req("rows", \.intValue),
                 cwd: try opt("cwd", \.stringValue),
-                cmd: try opt("cmd", Self.stringArray)
+                cmd: try opt("cmd", Self.stringArray),
+                boardID: try opt("board_id", \.stringValue),
+                inheritCwdFrom: try opt("inherit_cwd_from", \.stringValue)
             )
         case "input":
             return .input(termID: try req("term_id", \.stringValue), bytes: try req("bytes", \.binaryValue))
@@ -292,6 +348,14 @@ public extension Message {
             return .boardDelete(boardID: try req("board_id", \.stringValue))
         case "term_close":
             return .termClose(termID: try req("term_id", \.stringValue))
+        case "doc_close":
+            return .docClose(path: try req("path", \.stringValue))
+        case "doc_refresh":
+            return .docRefresh(path: try req("path", \.stringValue))
+        case "scrollback_request":
+            return .scrollbackRequest(termID: try req("term_id", \.stringValue))
+        case "scrollback":
+            return .scrollback(termID: try req("term_id", \.stringValue), bytes: try req("bytes", \.binaryValue))
         default:
             return .unknown(type: t)
         }
@@ -368,21 +432,29 @@ public extension Message {
 
     func encodedValue() -> MsgPackValue {
         switch self {
-        case .hello(let role, let v):
+        case .hello(let role, let v, let appVersion):
             return Self.tagged("hello") {
                 $0.put("role", .string(role))
                 $0.put("v", .int(Int64(v)))
+                $0.put("app_version", unlessNil: appVersion.map(MsgPackValue.string))
             }
-        case .helloOK(let v):
-            return Self.tagged("hello_ok") { $0.put("v", .int(Int64(v))) }
+        case .helloOK(let v, let daemonVersion, let daemonPid, let appVersion, let appConnected):
+            return Self.tagged("hello_ok") {
+                $0.put("v", .int(Int64(v)))
+                $0.put("daemon_version", unlessNil: daemonVersion.map(MsgPackValue.string))
+                $0.put("daemon_pid", unlessNil: daemonPid.map { .int(Int64($0)) })
+                $0.put("app_version", unlessNil: appVersion.map(MsgPackValue.string))
+                $0.put("app_connected", unlessNil: appConnected.map(MsgPackValue.bool))
+            }
         case .ack:
             return Self.tagged("ack")
         case .err(let msg):
             return Self.tagged("err") { $0.put("msg", .string(msg)) }
-        case .open(let path, let termID):
+        case .open(let path, let termID, let boardID):
             return Self.tagged("open") {
                 $0.put("path", .string(path))
                 $0.put("term_id", unlessNil: termID.map(MsgPackValue.string))
+                $0.put("board_id", unlessNil: boardID.map(MsgPackValue.string))
             }
         case .docRead(let path):
             return Self.tagged("doc_read") { $0.put("path", .string(path)) }
@@ -405,13 +477,15 @@ public extension Message {
                 $0.put("board_id", unlessNil: boardID.map(MsgPackValue.string))
                 $0.put("live_terms", unlessNil: liveTerms.isEmpty ? nil : Self.stringArrayValue(liveTerms))
             }
-        case .spawnTerm(let termID, let cols, let rows, let cwd, let cmd):
+        case .spawnTerm(let termID, let cols, let rows, let cwd, let cmd, let boardID, let inheritCwdFrom):
             return Self.tagged("spawn_term") {
                 $0.put("term_id", .string(termID))
                 $0.put("cols", .int(Int64(cols)))
                 $0.put("rows", .int(Int64(rows)))
                 $0.put("cwd", orNil: cwd.map(MsgPackValue.string))
                 $0.put("cmd", orNil: cmd.map(Self.stringArrayValue))
+                $0.put("board_id", unlessNil: boardID.map(MsgPackValue.string))
+                $0.put("inherit_cwd_from", unlessNil: inheritCwdFrom.map(MsgPackValue.string))
             }
         case .input(let termID, let bytes):
             return Self.tagged("input") {
@@ -473,6 +547,17 @@ public extension Message {
             return Self.tagged("board_delete") { $0.put("board_id", .string(boardID)) }
         case .termClose(let termID):
             return Self.tagged("term_close") { $0.put("term_id", .string(termID)) }
+        case .docClose(let path):
+            return Self.tagged("doc_close") { $0.put("path", .string(path)) }
+        case .docRefresh(let path):
+            return Self.tagged("doc_refresh") { $0.put("path", .string(path)) }
+        case .scrollbackRequest(let termID):
+            return Self.tagged("scrollback_request") { $0.put("term_id", .string(termID)) }
+        case .scrollback(let termID, let bytes):
+            return Self.tagged("scrollback") {
+                $0.put("term_id", .string(termID))
+                $0.put("bytes", .binary(bytes))
+            }
         case .unknown(let type):
             return Self.tagged(type)
         }
