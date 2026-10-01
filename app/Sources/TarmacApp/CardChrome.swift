@@ -458,9 +458,6 @@ final class TerminalBodyView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = Theme.termBg.cgColor
-        // A view may be asked to draw past its bounds; the terminal fills
-        // whatever rect it is handed, which would paint over the card header.
-        clipsToBounds = true
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
