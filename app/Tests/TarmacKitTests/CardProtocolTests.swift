@@ -180,12 +180,13 @@ final class CardProtocolTests: XCTestCase {
         XCTAssertEqual(CardProtocol.resolve(uri: "tarmac-card://doc/a%23b%3Fc?v=1"), .read(path: "a#b?c"))
     }
 
-    /// The host feeds `request.url.absoluteString`; Foundation re-encodes what it
-    /// finds unencoded (space, non-ASCII, a bare `%`) and the path must survive.
-    /// Not `%%41`: when any `%` is malformed Foundation re-encodes every `%` in the
-    /// URL, valid escapes included, so `%41` reaches the decoder as the literal
-    /// text `%41`. `encodeURIComponent` never emits a bare `%`, so no URL the app
-    /// builds can hit it.
+    /// The host feeds `request.url.absoluteString`; `URL(string:)` re-encodes what
+    /// it finds unencoded (space, non-ASCII, a bare `%`) and the path must survive.
+    /// Not `%%41`: when any `%` is malformed `URL(string:)` re-encodes every `%` in
+    /// the string, valid escapes included, so `%41` reaches the decoder as the
+    /// literal text `%41`. WebKit's own parser (an iframe `src`) re-encodes only the
+    /// bare `%` and matches Rust; and `encodeURIComponent` never emits a bare `%`,
+    /// so no URL the app builds can hit it.
     func testFoundationURLAbsoluteStringDecodesToTheSamePathAsTheRawString() throws {
         let rewrittenByFoundation: Set<String> = ["tarmac-card://doc/%%41"]
         var checked = 0
