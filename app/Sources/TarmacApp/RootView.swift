@@ -1,4 +1,5 @@
 import AppKit
+import TarmacKit
 import TarmacTerm
 
 /// Content view: the infinite whiteboard (`BoardView`) fills the window above a
@@ -19,8 +20,8 @@ final class RootView: NSView {
     let offHints = OffscreenHints()
     // The ⌥tab cycle HUD (top-center).
     let cycleHUD = CycleHUD()
-    // M3 P4: the ⌘K boards switcher overlay (veil + centered panel), topmost and
-    // modal; hidden until ⌘K. The controller drives its contents + key handling.
+    // The ⌘K boards switcher (veil + centered panel), modal; hidden until ⌘K.
+    // The controller drives its contents + key handling.
     let boardSwitcher = BoardSwitcherView()
 
     /// Supplies the per-card offscreen-hint models (label + priority) — the
@@ -37,20 +38,9 @@ final class RootView: NSView {
 
         addSubview(board)
         addSubview(statusBar)
-        // Wayfinding overlays sit above the board, below the toasts. The hint
-        // overlay is click-through and spans the board.
-        addSubview(offHints)
-        addSubview(zoomControl)
-        addSubview(minimap)
-
-        // Cycle HUD floats top-center; hidden until ⌥tab.
         cycleHUD.isHidden = true
-        addSubview(cycleHUD)
-
-        addSubview(toasts)
-        // The ⌘K switcher is the topmost overlay (modal veil over everything).
         boardSwitcher.isHidden = true
-        addSubview(boardSwitcher)
+        for layer in OverlayStack.backToFront { addSubview(overlay(layer)) }
 
         // Zoom control actions (crib §6): −/+ anchored at the viewport center;
         // fit = bounding box of all cards.
@@ -75,6 +65,17 @@ final class RootView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    private func overlay(_ layer: OverlayStack) -> NSView {
+        switch layer {
+        case .hints: return offHints
+        case .zoomControl: return zoomControl
+        case .minimap: return minimap
+        case .toasts: return toasts
+        case .switcher: return boardSwitcher
+        case .cycleHUD: return cycleHUD
+        }
+    }
 
     /// Wires a board view's wayfinding callbacks to this RootView — called for
     /// the initial board in `init` and for each board mounted by `mountBoard`.
