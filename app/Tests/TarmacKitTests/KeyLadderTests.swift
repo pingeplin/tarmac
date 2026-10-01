@@ -27,11 +27,16 @@ final class KeyLadderTests: XCTestCase {
 
     /// Every key the ladder would otherwise take.
     private var takenKeys: [KeyPress] {
-        [letter("k", command), letter("w", command), letter("t", command), tab(option), enter(), esc()]
+        [
+            letter("k", command), letter("w", command), letter("t", command), letter("c", command), tab(option),
+            enter(), esc(),
+        ]
     }
 
     /// Facts under which each of `takenKeys` is taken.
-    private let eager = Facts(keys: .host, hasFlyTarget: true, esc: EscLadder.Facts(toastsShowing: true))
+    private let eager = Facts(
+        keys: .host, hasFlyTarget: true, esc: EscLadder.Facts(toastsShowing: true, selectedIsDoc: true)
+    )
 
     func testEveryTakenKeyIsTakenUnderTheEagerFacts() {
         for key in takenKeys {
@@ -100,6 +105,30 @@ final class KeyLadderTests: XCTestCase {
         for key in keys {
             XCTAssertEqual(KeyLadder.decide(key, facts), .switcherKey, "\(key)")
         }
+    }
+
+    // MARK: D17 — ⌘C on a selected doc
+
+    private let docSelected = Facts(esc: EscLadder.Facts(selectedIsDoc: true))
+
+    func testCommandCCopiesFromTheSelectedDoc() {
+        XCTAssertEqual(KeyLadder.decide(letter("c", command), docSelected), .copyDocSelection)
+    }
+
+    func testCommandCIsTheFocusedViewsUnlessADocIsSelected() {
+        XCTAssertEqual(KeyLadder.decide(letter("c", command), Facts()), .passThrough)
+    }
+
+    func testOnlyPlainCommandCCopiesFromTheDoc() {
+        XCTAssertEqual(KeyLadder.decide(letter("C", command | shift), docSelected), .passThrough)
+        XCTAssertEqual(KeyLadder.decide(letter("c", command | option), docSelected), .passThrough)
+        XCTAssertEqual(KeyLadder.decide(letter("c"), docSelected), .passThrough)
+    }
+
+    func testCommandCUnderTheOpenSwitcherIsTheSwitchers() {
+        var facts = docSelected
+        facts.switcherOpen = true
+        XCTAssertEqual(KeyLadder.decide(letter("c", command), facts), .switcherKey)
     }
 
     // MARK: K9 — ⌥Tab
