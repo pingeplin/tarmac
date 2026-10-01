@@ -5,115 +5,8 @@ import TarmacTerm
 extension AppController {
     func start() {
         escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            // Only the four "intent" modifiers. macOS sets .function + .numericPad
-            // on arrow keys, so masking with the full .deviceIndependentFlagsMask
-            // made `mods == [.control, .command]` impossible for ⌃⌘→ (its raw mods
-            // are [.control, .command, .function, .numericPad]) — the cycle key
-            // silently never fired. Masking to these four also drops .capsLock,
-            // so the no-modifier / single-modifier checks below work with caps on.
-            let mods = event.modifierFlags.intersection([.control, .command, .option, .shift])
-            let isEsc = event.keyCode == 53
-            // Bare Return (no modifiers) flies to an offscreen signal.
-            let isReturn = event.keyCode == 36 && mods.isEmpty
-            // ⌥tab (tab = keyCode 48 with the Option modifier, ignoring caps lock)
-            // cycles the focused terminal among terminal cards + shows the HUD
-            // (crib §6). With one terminal this is a no-op cycle (single HUD item).
-            let isOptTab = event.keyCode == 48 && mods == .option
-            // ⌘T (T = keyCode 17) spawns a new terminal card (Phase 5b).
-            let isCmdT = event.keyCode == 17 && mods == .command
-            // M3 P4: ⌘K (K = keyCode 40) opens the boards switcher. While the
-            // switcher is open every keystroke routes through it (handled first
-            // below), so the board behind stays inert.
-            let isCmdK = event.keyCode == 40 && mods == .command
-            // ⌘C (C = keyCode 8): copy. Handled specially only when a doc card is
-            // focused (below); otherwise it falls through to the responder chain so
-            // the prime terminal's own copy still works.
-            let isCmdC = event.keyCode == 8 && mods == .command
-            // ⌘W (W = keyCode 13, issue #15) closes the focused card. Always
-            // swallowed so it never reaches the window-close menu.
-            let isCmdW = event.keyCode == 13 && mods == .command
-            let swallowed = MainActor.assumeIsolated { () -> Bool in
-                // A window hidden by its close button still has a key monitor;
-                // a board nobody can see takes no shortcuts.
-                guard let self, self.window?.isVisible == true else { return false }
-                // While the ⌘K switcher is open it owns the keyboard: route every
-                // key to it (filter / move / open / create) before anything else,
-                // so the board behind stays inert.
-                if self.switcherOpen {
-                    return self.handleSwitcherKey(event, mods: mods)
-                }
-                // Every keystroke passes through here before its view handles it,
-                // so keep prime in sync with the terminal the user is typing in
-                // (clicking a non-prime terminal made it first responder without
-                // updating primeTermID). Cheap: only re-styles on an actual change.
-                self.reconcilePrimeToFocus()
-                // ⌘C for a doc card: it hosts a non-focusable WKWebView (crib §9 —
-                // a doc click must not pull keyboard focus off the prime terminal),
-                // so the standard copy: never reaches it via the responder chain and
-                // ⌘C silently does nothing. Route it explicitly to the focused doc
-                // card. When none is focused this is skipped, so ⌘C still reaches
-                // the prime terminal / responder chain unchanged.
-                if isCmdC, case .doc(let path)? = self.focusedCardID,
-                   let docView = self.activeBoard.view.card(.doc(path))?.docView {
-                    docView.copySelectionToPasteboard()
-                    return true
-                }
-                if isCmdK {
-                    self.openSwitcher()
-                    return true
-                }
-                if isCmdT {
-                    self.spawnNewTerminal()
-                    return true
-                }
-                // ⌘W closes the focused card (issue #15). Always swallowed — even
-                // with nothing focused (a no-op) — so it never closes the window.
-                if isCmdW {
-                    self.closeFocusedCard()
-                    return true
-                }
-                if isOptTab {
-                    self.cycleTerminals()
-                    return true
-                }
-                // Return, when the board (not the terminal) holds focus and an
-                // offscreen signal is waiting, flies the viewport to it (crib §6).
-                // Gated on board focus so the shell's Enter key is never hijacked
-                // while typing. With nowhere to fly the key goes on to the board,
-                // which takes it silently.
-                if isReturn, self.boardHasFocus(), let target = self.rootView.offscreenFlyTarget {
-                    self.preFlightViewport = self.activeBoard.view.viewport
-                    self.activeBoard.view.fly(to: target)
-                    return true
-                }
-                guard isEsc else { return false }
-                // esc after a Return flight flies the viewport back (crib §6).
-                if let prev = self.preFlightViewport {
-                    self.preFlightViewport = nil
-                    self.activeBoard.view.flyTo(prev)
-                    return true
-                }
-                if self.rootView.toasts.hasToasts {
-                    self.rootView.toasts.clearAll()
-                    return true
-                }
-                if self.clearFreshDocs() {
-                    return true
-                }
-                // With the toasts dismissed, esc on a focused DOC card
-                // drops focus — the doc stays on the board; removal
-                // is the ✕ / ⌘W (issue #15). A focused TERMINAL is left for the
-                // responder chain so esc still reaches the program (agent-interrupt
-                // / vim). Routed through EscFocusAction so the rule is unit-tested.
-                let focusedIsDoc: Bool
-                if case .doc = self.focusedCardID { focusedIsDoc = true } else { focusedIsDoc = false }
-                if EscFocusAction.forFocusedDoc(focusedIsDoc) == .defocus {
-                    self.defocus()
-                    return true
-                }
-                return false
-            }
-            return swallowed ? nil : event
+            let taken = MainActor.assumeIsolated { self?.takeKey(event) ?? false }
+            return taken ? nil : event
         }
 
         // A press selects and raises the card under it before the press is
@@ -147,11 +40,108 @@ extension AppController {
         }
     }
 
-    /// ⌘W closes the focused card (issue #15), routed through `FocusedClose`: a doc
-    /// card is removed from the board; a terminal is terminated; nothing focused
-    /// is a no-op. The keyboard twin of the header ✕, scoped to the one card the
-    /// user is looking at.
-    private func closeFocusedCard() {
+    // MARK: - Keys
+
+    /// A key-down, seen before the view with keyboard focus gets it
+    /// (`KeyLadder`). True means the app took it.
+    private func takeKey(_ event: NSEvent) -> Bool {
+        // The monitor sees every window's keys, and the board window keeps
+        // receiving them after its close button hid it.
+        guard let window, event.window === window, window.isVisible else { return false }
+        let press = KeyPress(
+            keyCode: event.keyCode, characters: event.characters ?? "",
+            charactersIgnoringModifiers: event.charactersIgnoringModifiers ?? "",
+            modifierFlags: event.modifierFlags.rawValue
+        )
+        switch KeyLadder.decide(press, keyFacts()) {
+        case .passThrough:
+            return false
+        case .toggleSwitcher:
+            if switcherOpen { closeSwitcher() } else { openSwitcher() }
+        case .closeSelectedCard:
+            closeSwitcher()
+            closeSelectedCard()
+        case .switcherKey:
+            return handleSwitcherKey(event, mods: event.modifierFlags.intersection([.control, .command, .option, .shift]))
+        case .copyDocSelection:
+            if case .doc(let path)? = focusedCardID {
+                activeBoard.view.card(.doc(path))?.docView?.copySelectionToPasteboard()
+            }
+        case .cycleTerminals:
+            cycleTerminals()
+        case .newTerminal:
+            spawnNewTerminal()
+        case .flyToSignal:
+            guard let target = rootView.offscreenFlyTarget else { return false }
+            preFlightViewport = activeBoard.view.viewport
+            activeBoard.view.fly(to: target)
+        case .esc(let rung):
+            climb(rung)
+        }
+        return true
+    }
+
+    private func keyFacts() -> KeyLadder.Facts {
+        let terminal = focusedTerminal
+        let borrow = borrowedCard
+        let selectedIsDoc: Bool
+        if case .doc = focusedCardID { selectedIsDoc = true } else { selectedIsDoc = false }
+        return KeyLadder.Facts(
+            composing: terminal?.hasMarkedText() == true,
+            switcherOpen: switcherOpen,
+            keys: borrow.documentHoldsKeys ? .document : terminal != nil ? .terminal : .host,
+            hasFlyTarget: rootView.offscreenFlyTarget != nil,
+            esc: EscLadder.Facts(
+                toastsShowing: rootView.toasts.hasToasts,
+                hasPreFlightViewport: preFlightViewport != nil,
+                cardBorrowed: borrow.borrowed,
+                hasFreshDoc: activeBoard.view.cards.values.contains(where: \.isFreshDoc),
+                selectedIsDoc: selectedIsDoc
+            )
+        )
+    }
+
+    /// The terminal view with keyboard focus, live or dead.
+    private var focusedTerminal: TerminalView? {
+        var view = window?.firstResponder as? NSView
+        while let current = view {
+            if let terminal = current as? TerminalView { return terminal }
+            view = current.superview
+        }
+        return nil
+    }
+
+    /// Whether an HTML card is borrowed, and whether its document has keyboard
+    /// focus. Nothing can be borrowed until HTML cards exist.
+    private var borrowedCard: (borrowed: Bool, documentHoldsKeys: Bool) {
+        (false, false)
+    }
+
+    private func climb(_ rung: EscLadder.Rung) {
+        switch rung {
+        case .clearToasts:
+            rootView.toasts.clearAll()
+        case .flyBack:
+            if let viewport = preFlightViewport { activeBoard.view.flyTo(viewport) }
+            preFlightViewport = nil
+        case .unborrow:
+            escapeHome()
+        case .clearFreshDocs:
+            _ = clearFreshDocs()
+        case .deselectDoc:
+            defocus()
+        }
+    }
+
+    /// Gives a borrowed HTML card back and puts keyboard focus on the prime
+    /// terminal.
+    func escapeHome() {
+        focusPrimeTerminal()
+    }
+
+    /// ⌘W (`FocusedClose`): a doc card is closed, a terminal is terminated,
+    /// and with nothing selected nothing happens.
+    private func closeSelectedCard() {
         let kind: FocusedClose.Kind
         var otherLive = 0
         var dead = false
@@ -160,7 +150,7 @@ extension AppController {
             kind = .doc
         case .term(let termID):
             kind = .term
-            otherLive = activeBoard.sessions.filter { $0.key != termID && $0.value.live }.count
+            otherLive = activeBoard.otherLiveTerminals(than: termID)
             dead = activeBoard.view.card(.term(termID))?.dead ?? false
         case nil:
             kind = .none
@@ -175,22 +165,5 @@ extension AppController {
                 closeTerminal(termID, replace: replace, signalClose: signalClose)
             }
         }
-    }
-
-    /// True when keyboard focus is on the board rather than the terminal — so a
-    /// bare Return triggers the offscreen flight instead of the shell's Enter
-    /// (crib §6 focus model). The terminal is the default first responder; the
-    /// board takes focus only when the user clicks its background.
-    private func boardHasFocus() -> Bool {
-        guard let responder = window?.firstResponder else { return false }
-        // Any terminal view (or a descendant) holding focus means a terminal —
-        // not the board — is focused, so Return belongs to the shell.
-        for s in sessions.values {
-            if responder === s.view { return false }
-            if let view = responder as? NSView, view.isDescendant(of: s.view) { return false }
-        }
-        // The board view itself (or a non-terminal board descendant) is focused.
-        if let view = responder as? NSView, view.isDescendant(of: rootView.board) { return true }
-        return responder === rootView.board
     }
 }
