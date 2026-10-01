@@ -15,6 +15,22 @@ public enum MsgPackValue: Equatable, Sendable {
     case binary(Data)
     case array([MsgPackValue])
     case map([String: MsgPackValue])
+    /// A map written in exactly this key order. Encode-side only: the decoder
+    /// always yields `.map`, because the protocol makes key order irrelevant to a
+    /// reader. It exists because `rmp_serde::to_vec_named` writes a struct's
+    /// fields in declaration order and a Swift `Dictionary` has no stable order,
+    /// so a `.map` can never reproduce the bytes the Rust side sends.
+    case orderedMap([MsgPackField])
+}
+
+public struct MsgPackField: Equatable, Sendable {
+    public var key: String
+    public var value: MsgPackValue
+
+    public init(_ key: String, _ value: MsgPackValue) {
+        self.key = key
+        self.value = value
+    }
 }
 
 public extension MsgPackValue {
@@ -41,9 +57,15 @@ public extension MsgPackValue {
         }
     }
 
+    /// Integers count: serde's `f64` visitor accepts one, so the Rust side reads
+    /// `x:1` as `1.0`.
     var doubleValue: Double? {
-        if case .double(let d) = self { return d }
-        return nil
+        switch self {
+        case .double(let d): return d
+        case .int(let n): return Double(n)
+        case .uint(let n): return Double(n)
+        default: return nil
+        }
     }
 
     var boolValue: Bool? {
@@ -62,8 +84,12 @@ public extension MsgPackValue {
     }
 
     var mapValue: [String: MsgPackValue]? {
-        if case .map(let m) = self { return m }
-        return nil
+        switch self {
+        case .map(let m): return m
+        case .orderedMap(let fields):
+            return Dictionary(fields.map { ($0.key, $0.value) }, uniquingKeysWith: { _, last in last })
+        default: return nil
+        }
     }
 
     subscript(key: String) -> MsgPackValue? { mapValue?[key] }
@@ -162,20 +188,30 @@ public enum MsgPack {
             }
             for item in items { append(item, to: &out) }
         case .map(let entries):
-            switch entries.count {
-            case ..<16:
-                out.append(0x80 | UInt8(entries.count))
-            case ..<0x1_0000:
-                out.append(0xde)
-                appendBE(UInt16(entries.count), to: &out)
-            default:
-                out.append(0xdf)
-                appendBE(UInt32(entries.count), to: &out)
-            }
+            appendMapHeader(entries.count, to: &out)
             for (key, item) in entries {
                 append(.string(key), to: &out)
                 append(item, to: &out)
             }
+        case .orderedMap(let fields):
+            appendMapHeader(fields.count, to: &out)
+            for field in fields {
+                append(.string(field.key), to: &out)
+                append(field.value, to: &out)
+            }
+        }
+    }
+
+    private static func appendMapHeader(_ count: Int, to out: inout Data) {
+        switch count {
+        case ..<16:
+            out.append(0x80 | UInt8(count))
+        case ..<0x1_0000:
+            out.append(0xde)
+            appendBE(UInt16(count), to: &out)
+        default:
+            out.append(0xdf)
+            appendBE(UInt32(count), to: &out)
         }
     }
 

@@ -122,4 +122,95 @@ final class DaemonLaunchTests: XCTestCase {
             XCTAssertEqual(twice, once, "not idempotent for base \"\(input.base)\", cliDir \"\(input.cliDir)\"")
         }
     }
+
+    // MARK: - shouldRestart
+
+    /// The stale-daemon restart decision, as `bridge.rs` makes it: restart when
+    /// the daemon reports another version or none at all, but only once — the
+    /// latch stops a respawn that still mismatches from thrashing.
+    func testShouldRestartGrid() {
+        let cases: [(expected: String, reported: String?, already: Bool, restart: Bool)] = [
+            ("0.1.0", "0.1.0", false, false), // equal versions
+            ("0.2.0", "0.1.0", false, true),  // differing versions
+            ("0.1.0", nil, false, true),      // a daemon that predates the key
+            ("0.2.0", "0.1.0", true, false),  // already restarted once
+            ("0.1.0", nil, true, false),
+            ("0.1.0", "0.1.0", true, false),
+        ]
+        for c in cases {
+            XCTAssertEqual(
+                DaemonLaunch.shouldRestart(expected: c.expected, reported: c.reported, alreadyRestarted: c.already),
+                c.restart,
+                "shouldRestart(expected: \(c.expected), reported: \(c.reported ?? "nil"), already: \(c.already))"
+            )
+        }
+    }
+
+    /// The pid from `hello_ok` wins: after a brew upgrade the stale daemon was
+    /// spawned by the PREVIOUS app, so the child this app tracks (if any) is not
+    /// the one the handshake came from.
+    func testRestartTargetPrefersTheReportedPid() {
+        XCTAssertEqual(DaemonLaunch.restartTarget(reportedPid: 4242, spawnedChildPid: 99), 4242)
+        XCTAssertEqual(DaemonLaunch.restartTarget(reportedPid: 4242, spawnedChildPid: nil), 4242)
+        XCTAssertEqual(DaemonLaunch.restartTarget(reportedPid: nil, spawnedChildPid: 99), 99)
+        XCTAssertNil(DaemonLaunch.restartTarget(reportedPid: nil, spawnedChildPid: nil))
+    }
+
+    // MARK: - noteProceeding
+
+    func testNoteProceedingRecordsTheVersionTheRespawnReported() {
+        var record: DaemonLaunch.Replaced? = DaemonLaunch.Replaced(from: "0.1.0", to: nil)
+        DaemonLaunch.noteProceeding(&record, reported: "0.2.0")
+        XCTAssertEqual(record, DaemonLaunch.Replaced(from: "0.1.0", to: "0.2.0"))
+    }
+
+    func testNoteProceedingWithoutARecordCreatesNone() {
+        var record: DaemonLaunch.Replaced?
+        DaemonLaunch.noteProceeding(&record, reported: "0.2.0")
+        XCTAssertNil(record)
+    }
+
+    /// The first reported version sticks; an unreported one leaves `to` open for
+    /// a later connection.
+    func testNoteProceedingLeavesAFilledRecordUnchanged() {
+        var filled: DaemonLaunch.Replaced? = DaemonLaunch.Replaced(from: "0.1.0", to: "0.2.0")
+        DaemonLaunch.noteProceeding(&filled, reported: "0.3.0")
+        XCTAssertEqual(filled, DaemonLaunch.Replaced(from: "0.1.0", to: "0.2.0"))
+
+        var open: DaemonLaunch.Replaced? = DaemonLaunch.Replaced(from: nil, to: nil)
+        DaemonLaunch.noteProceeding(&open, reported: nil)
+        XCTAssertEqual(open, DaemonLaunch.Replaced(from: nil, to: nil))
+    }
+
+    // MARK: - maySpawn
+
+    /// Spawn the first daemon, never pile a second onto a live one, and respawn
+    /// once the child is gone — a spawn that died must not lock the app out.
+    func testMaySpawnGrid() {
+        XCTAssertTrue(DaemonLaunch.maySpawn(alreadySpawned: false, priorChildExited: true))
+        XCTAssertTrue(DaemonLaunch.maySpawn(alreadySpawned: false, priorChildExited: false))
+        XCTAssertFalse(DaemonLaunch.maySpawn(alreadySpawned: true, priorChildExited: false))
+        XCTAssertTrue(DaemonLaunch.maySpawn(alreadySpawned: true, priorChildExited: true))
+    }
+
+    // MARK: - cliDir / logPath
+
+    /// The `tarmac` CLI sits beside whichever daemon is launched — the bundle's
+    /// `Contents/MacOS`, or the debug build dir a `TARMAC_DAEMON` override names.
+    func testCLIDirIsTheDaemonsDirectory() {
+        XCTAssertEqual(DaemonLaunch.cliDir(forDaemon: bundledDaemon), "/A/Tarmac.app/Contents/MacOS")
+        XCTAssertEqual(DaemonLaunch.cliDir(forDaemon: "/repo/core/target/debug/tarmacd"), "/repo/core/target/debug")
+        XCTAssertEqual(DaemonLaunch.cliDir(forDaemon: "tarmacd"), "")
+    }
+
+    /// `tarmacd.log` sits beside the socket, which is the one path that already
+    /// separates a dev app from the installed one.
+    func testLogPathSitsBesideTheSocket() {
+        XCTAssertEqual(
+            DaemonLaunch.logPath(socketPath: "/Users/x/Library/Application Support/tarmac/dev/tarmacd.sock"),
+            "/Users/x/Library/Application Support/tarmac/dev/tarmacd.log"
+        )
+        XCTAssertEqual(DaemonLaunch.logPath(socketPath: "/repo/.dev/tarmacd.sock"), "/repo/.dev/tarmacd.log")
+        XCTAssertEqual(DaemonLaunch.logPath(socketPath: "tarmacd.sock"), "tarmacd.log")
+    }
 }

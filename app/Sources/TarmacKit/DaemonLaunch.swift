@@ -36,6 +36,70 @@ public enum DaemonLaunch {
         return bundleURL.appendingPathComponent("Contents/MacOS/tarmacd").path
     }
 
+    // MARK: - Stale-daemon restart (ports of `desktop/src-tauri/src/bridge.rs`)
+
+    /// Whether to replace the daemon a handshake just answered from. `expected`
+    /// is the app's own version, `reported` is `hello_ok.daemon_version`: a
+    /// different version, or none (a daemon that predates the key), is stale.
+    /// `alreadyRestarted` is a once-per-process latch — when the respawned daemon
+    /// STILL mismatches (bad PATH, stale install) the app proceeds against it
+    /// rather than killing daemons in a loop.
+    public static func shouldRestart(expected: String, reported: String?, alreadyRestarted: Bool) -> Bool {
+        reported != expected && !alreadyRestarted
+    }
+
+    /// Which pid the restart SIGTERMs. `hello_ok.daemon_pid` wins: after an
+    /// upgrade the stale daemon was started by the previous app, so the child
+    /// this app tracks is not the process the handshake came from. The tracked
+    /// child is the fallback for a daemon too old to report a pid.
+    public static func restartTarget(reportedPid: Int?, spawnedChildPid: Int?) -> Int? {
+        reportedPid ?? spawnedChildPid
+    }
+
+    /// The daemon a version-mismatch restart replaced, kept so the app can tell
+    /// the user their terminals were lost to an upgrade. `to` is what the next
+    /// proceeding connection reported — not the app's own version — so a respawn
+    /// that still mismatches is named as what it is.
+    public struct Replaced: Equatable, Sendable {
+        public var from: String?
+        public var to: String?
+
+        public init(from: String?, to: String?) {
+            self.from = from
+            self.to = to
+        }
+    }
+
+    /// A connection that got past the version check fills an open `to`. The
+    /// first reported version sticks; an unreported one leaves it open.
+    public static func noteProceeding(_ record: inout Replaced?, reported: String?) {
+        guard record != nil, record?.to == nil else { return }
+        record?.to = reported
+    }
+
+    /// May a daemon be spawned on this connect pass? The latch only stops a
+    /// second daemon piling onto one just started, so it holds only while that
+    /// child is alive. The caller passes `priorChildExited: true` whenever it
+    /// cannot tell: an unknown state must never lock the app out for good.
+    public static func maySpawn(alreadySpawned: Bool, priorChildExited: Bool) -> Bool {
+        !alreadySpawned || priorChildExited
+    }
+
+    /// The directory to put on the daemon's `PATH` (see `injectCLIPath`): the
+    /// daemon's own. The bundle places `tarmac` beside `tarmacd`, and so does a
+    /// cargo build dir named by `TARMAC_DAEMON`, so the PTYs resolve the CLI that
+    /// matches the daemon either way.
+    public static func cliDir(forDaemon daemonPath: String) -> String {
+        (daemonPath as NSString).deletingLastPathComponent
+    }
+
+    /// Where the spawned daemon's stdout/stderr go: `tarmacd.log` beside the
+    /// socket — the one path that already separates a dev app from the installed
+    /// one.
+    public static func logPath(socketPath: String) -> String {
+        ((socketPath as NSString).deletingLastPathComponent as NSString).appendingPathComponent("tarmacd.log")
+    }
+
     /// The `PATH` to hand the spawned daemon so it — and the PTYs it spawns — can
     /// resolve `tarmac`. Prepends `cliDir` (the bundle's `Contents/MacOS`) as the
     /// first segment, leaving the inherited `PATH` otherwise untouched.

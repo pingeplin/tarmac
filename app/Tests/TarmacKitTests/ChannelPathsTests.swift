@@ -48,6 +48,109 @@ final class ChannelPathsTests: XCTestCase {
         )
     }
 
+    // MARK: - channelDir
+
+    /// The one place the `dev` segment is spelled, shared by all three resolvers.
+    func testChannelDir() {
+        XCTAssertEqual(
+            ChannelPaths.channelDir(home: home, channel: .release),
+            "/Users/eplin/Library/Application Support/tarmac"
+        )
+        XCTAssertEqual(
+            ChannelPaths.channelDir(home: home, channel: .dev),
+            "/Users/eplin/Library/Application Support/tarmac/dev"
+        )
+    }
+
+    /// Rust joins with `Path::join`, not string concatenation, so the daemon and
+    /// CLI's `HOME`-unset fallback of `/` yields one slash, a trailing slash is
+    /// not doubled, and an empty home stays relative. Values are what
+    /// `resolve_socket_path` returns for each home.
+    func testHomeJoinsLikeARustPath() {
+        let cases: [(home: String, expected: String)] = [
+            ("/", "/Library/Application Support/tarmac/dev/tarmacd.sock"),
+            ("/Users/x/", "/Users/x/Library/Application Support/tarmac/dev/tarmacd.sock"),
+            ("", "Library/Application Support/tarmac/dev/tarmacd.sock"),
+            ("rel", "rel/Library/Application Support/tarmac/dev/tarmacd.sock"),
+        ]
+        for c in cases {
+            XCTAssertEqual(
+                ChannelPaths.socketPath(override: nil, home: c.home, channel: .dev),
+                c.expected,
+                "home: \"\(c.home)\""
+            )
+        }
+    }
+
+    // MARK: - statePath
+
+    /// S6/S7/S9 for the state resolver — the Rust `resolve_state_path_cases` grid.
+    func testStatePathGrid() {
+        let cases: [(override: String?, channel: ChannelPaths.Channel, expected: String)] = [
+            // S6: release == the legacy flat path.
+            (nil, .release, "/Users/eplin/Library/Application Support/tarmac/state.json"),
+            // S7: dev carries the SAME `dev/` segment as the socket.
+            (nil, .dev, "/Users/eplin/Library/Application Support/tarmac/dev/state.json"),
+            ("/tmp/s.json", .release, "/tmp/s.json"),
+            ("/tmp/s.json", .dev, "/tmp/s.json"),
+            // S9: empty override == unset.
+            ("", .dev, "/Users/eplin/Library/Application Support/tarmac/dev/state.json"),
+        ]
+        for c in cases {
+            XCTAssertEqual(
+                ChannelPaths.statePath(override: c.override, home: home, channel: c.channel),
+                c.expected,
+                "statePath(override: \(c.override.map { "\"\($0)\"" } ?? "nil"), channel: \(c.channel))"
+            )
+        }
+    }
+
+    // MARK: - devSocketPath
+
+    /// S50/S51: the QA driver's socket per channel; `TARMAC_DEV_SOCKET` wins
+    /// verbatim in both, and empty means unset.
+    func testDevSocketPathGrid() {
+        let cases: [(override: String?, channel: ChannelPaths.Channel, expected: String)] = [
+            (nil, .dev, "/Users/eplin/Library/Application Support/tarmac/dev/tarmac-dev.sock"),
+            (nil, .release, "/Users/eplin/Library/Application Support/tarmac/tarmac-dev.sock"),
+            ("/tmp/x.sock", .release, "/tmp/x.sock"),
+            ("/tmp/x.sock", .dev, "/tmp/x.sock"),
+            ("", .dev, "/Users/eplin/Library/Application Support/tarmac/dev/tarmac-dev.sock"),
+            ("", .release, "/Users/eplin/Library/Application Support/tarmac/tarmac-dev.sock"),
+        ]
+        for c in cases {
+            XCTAssertEqual(
+                ChannelPaths.devSocketPath(override: c.override, home: home, channel: c.channel),
+                c.expected,
+                "devSocketPath(override: \(c.override.map { "\"\($0)\"" } ?? "nil"), channel: \(c.channel))"
+            )
+        }
+    }
+
+    /// S7/S52 by construction: the three files share the per-channel directory,
+    /// so a dev app can never meet a dev socket beside release state.
+    func testSocketStateAndDevSocketShareTheChannelDir() {
+        for channel in [ChannelPaths.Channel.release, .dev] {
+            let dir = ChannelPaths.channelDir(home: home, channel: channel)
+            XCTAssertEqual(ChannelPaths.socketPath(override: nil, home: home, channel: channel), dir + "/tarmacd.sock")
+            XCTAssertEqual(ChannelPaths.statePath(override: nil, home: home, channel: channel), dir + "/state.json")
+            XCTAssertEqual(
+                ChannelPaths.devSocketPath(override: nil, home: home, channel: channel),
+                dir + "/tarmac-dev.sock"
+            )
+        }
+    }
+
+    // MARK: - home
+
+    /// The daemon and CLI read `HOME` and fall back to `/`; the app must feed its
+    /// resolvers the same value or it looks for a daemon somewhere else.
+    func testHomeComesFromTheEnvironment() {
+        XCTAssertEqual(ChannelPaths.home(env: ["HOME": "/Users/x"]), "/Users/x")
+        XCTAssertEqual(ChannelPaths.home(env: [:]), "/")
+        XCTAssertEqual(ChannelPaths.home(env: ["HOME": ""]), "")
+    }
+
     // MARK: - sockaddr_un byte budget (S8 / S8b)
 
     /// S8: the dev default appends a fixed 52-byte suffix to `home`. So a
