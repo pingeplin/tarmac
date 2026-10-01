@@ -357,12 +357,9 @@ extension AppController {
         // it once we switch (fix #2).
         flushPendingPersist()
         switching = true
-        // Keep prime synced to the terminal the user last typed in, then pull
-        // first responder OFF the leaving board's views before the view is
-        // swapped — a stale responder would leave the arrived board unfocused
-        // (boardHasFocus false until a click). Target nil, not rootView.board,
-        // which is about to be swapped (crit B3).
-        reconcilePrimeToFocus()
+        // First responder comes off the leaving board's views before the view
+        // is swapped; a stale one would leave the arrived board unfocused.
+        // Target nil, not rootView.board, which is about to be swapped.
         window?.makeFirstResponder(nil)
         // Clear card focus so the arrived board starts in board-navigation mode
         // (point 2). Otherwise a stale focusedCardID could collide with a same-id
