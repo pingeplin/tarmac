@@ -1,3 +1,5 @@
+import CoreGraphics
+
 /// Pure doc→terminal provenance logic (Phase 5b). Kept view-independent in
 /// TarmacKit so the best-effort cross-restart re-anchoring heuristic is a single
 /// unit-tested source of truth; `AppController` calls into it.
@@ -9,6 +11,22 @@ public enum Provenance {
     /// doc away must not hide the edge.
     public static func edgeShown(ownerTermID: String?, ownerCardPresent: Bool) -> Bool {
         ownerTermID != nil && ownerCardPresent
+    }
+
+    public struct Segment: Equatable, Sendable {
+        public var from: CGPoint
+        public var to: CGPoint
+
+        public init(from: CGPoint, to: CGPoint) {
+            self.from = from
+            self.to = to
+        }
+    }
+
+    /// The edge of a doc: a straight segment from its owner card's centre to
+    /// its own. Drawn beneath the cards, only the gap between them shows.
+    public static func edge(owner: CGRect, doc: CGRect) -> Segment {
+        Segment(from: CGPoint(x: owner.midX, y: owner.midY), to: CGPoint(x: doc.midX, y: doc.midY))
     }
 
     /// Re-anchors persisted doc→terminal owners across a restart (decision 2,
