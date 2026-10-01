@@ -1,56 +1,129 @@
 import AppKit
-import QuartzCore
 import TarmacKit
 
-/// A switcher row's render inputs: the pure view-model row (display, meta, glyph
-/// flags) plus the board's tile projection items for the thumbnail. Built by
-/// `AppController` from each board's live state.
-struct SwitcherRowVM {
-    let row: BoardSwitcher.BoardRow
-    /// World rects + signal for the 86×54 thumbnail (a board's `minimapItems`,
-    /// readable even while the board is backgrounded).
-    let thumb: [Minimap.Item]
-}
-
-/// The ⌘K boards switcher overlay (M3 P4, design ref board-v4.jsx B5 +
-/// board.css `.tm-boards`/`.tm-veil`/`.tm-bthumb`). A modal veil over the board
-/// hosting a centered 540px panel: a header (`▞ boards — type to filter`), a
-/// scrollable list of board rows (thumbnail · `▞ name` · meta counts), and a
-/// footer of key hints. **Render-only** — the view holds no selection/filter
-/// logic; `AppController` drives it via `render(...)` (state in `BoardSwitcher`,
-/// the unit-tested view-model) and handles all keys through the global key
-/// monitor (the established chrome pattern, as for ⌥tab / ⌘T). Clicks on a row
-/// fire `onPickRow`; a click on the veil fires `onDismiss`.
+/// The ⌘K switcher: a veil over the board area and a centered panel holding a
+/// query bar, the board rows and a footer. It draws the rows and the state it
+/// is given, with `SwitcherChrome`'s words, and reports clicks; the controller
+/// owns the state and every key.
 @MainActor
 final class BoardSwitcherView: NSView {
     /// A row was clicked (its index among the visible rows).
     var onPickRow: ((Int) -> Void)?
-    /// The veil (outside the panel) was clicked.
+    /// The veil outside the panel was clicked.
     var onDismiss: (() -> Void)?
 
-    static let panelWidth: CGFloat = 540
-    static let panelTop: CGFloat = 72
-    private static let headerH: CGFloat = 41
-    private static let footerH: CGFloat = 37
-    static let rowH: CGFloat = 76
-    // Keep the panel clear of the status bar when there are many boards.
-    private static let bottomMargin: CGFloat = 56
+    /// Who gets keyboard focus back when the switcher closes.
+    weak var keysOwner: NSResponder?
+
+    private enum Metric {
+        static let panelWidth: CGFloat = 380
+        static let panelMaxHeight: CGFloat = 480
+        static let border: CGFloat = 1
+        static let padX: CGFloat = 14
+        static let gap: CGFloat = 8
+        static let queryPadY: CGFloat = 10
+        static let listPadY: CGFloat = 4
+        static let emptyPadY: CGFloat = 16
+        static let footerPadY: CGFloat = 8
+        static let caretBlink: TimeInterval = 0.5
+    }
+
+    @MainActor
+    private enum Font {
+        static let queryLabel = Theme.mono(10)
+        static let query = Theme.mono(12)
+        static let empty = Theme.mono(10.5)
+        static let footer = Theme.mono(10)
+        static let footerStrong = Theme.mono(10, weight: .semibold)
+        /// The footer's own text size, which sets its line height.
+        static let panel = Theme.mono(11)
+    }
 
     private let panel = FlippedBox()
-    private let headerLabel = NSTextField(labelWithString: "")
-    private let headerSep = NSView()
-    private let footerLabel = NSTextField(labelWithString: "")
-    private let footerSep = NSView()
+    private let content = FlippedBox()
+    private let queryBar = FlippedBox()
+    private let queryRule = NSView()
+    private let queryLabel = SwitcherLabel()
+    private let queryClip = FlippedBox()
+    private let queryText = SwitcherLabel()
+    private let caret = SwitcherLabel()
     private let scroll = NSScrollView()
     private let rowsDoc = FlippedBox()
+    private let emptyLabel = SwitcherLabel()
+    private let footer = FlippedBox()
+    private let footerRule = NSView()
+    private let footerLabel = SwitcherLabel()
     private var rowViews: [BoardSwitcherRow] = []
-    private var selected = 0
+    private var blink: Timer?
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
 
-    /// Who gets keyboard focus back when the switcher closes.
-    weak var keysOwner: NSResponder?
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.45).cgColor
+
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.5)
+        shadow.shadowOffset = NSSize(width: 0, height: -16)
+        shadow.shadowBlurRadius = 38
+        panel.wantsLayer = true
+        panel.shadow = shadow
+        addSubview(panel)
+
+        // The border is the clipping layer's own, so it is drawn over the
+        // bars' fills, and the shadow stays on the unclipped panel behind it.
+        content.wantsLayer = true
+        content.layer?.backgroundColor = Theme.bg2.cgColor
+        content.layer?.borderColor = Theme.line.cgColor
+        content.layer?.borderWidth = Metric.border
+        content.layer?.cornerRadius = 12
+        content.layer?.masksToBounds = true
+        panel.addSubview(content)
+
+        for bar in [queryBar, footer] {
+            bar.wantsLayer = true
+            bar.layer?.backgroundColor = Theme.bg1.cgColor
+            content.addSubview(bar)
+        }
+        for rule in [queryRule, footerRule] {
+            rule.wantsLayer = true
+            rule.layer?.backgroundColor = Theme.lineSoft.cgColor
+        }
+        queryBar.addSubview(queryRule)
+        footer.addSubview(footerRule)
+
+        queryBar.addSubview(queryLabel)
+        queryClip.wantsLayer = true
+        queryClip.layer?.masksToBounds = true
+        queryBar.addSubview(queryClip)
+        queryClip.addSubview(queryText)
+        caret.attributedStringValue = NSAttributedString(
+            string: SwitcherChrome.caret, attributes: [.font: Font.query, .foregroundColor: Theme.agent]
+        )
+        queryClip.addSubview(caret)
+
+        scroll.drawsBackground = false
+        scroll.hasVerticalScroller = false
+        scroll.scrollerStyle = .overlay
+        scroll.automaticallyAdjustsContentInsets = false
+        scroll.documentView = rowsDoc
+        content.addSubview(scroll)
+
+        emptyLabel.attributedStringValue = NSAttributedString(
+            string: SwitcherChrome.emptyList, attributes: [.font: Font.empty, .foregroundColor: Theme.faint]
+        )
+        rowsDoc.addSubview(emptyLabel)
+
+        footer.addSubview(footerLabel)
+
+        isHidden = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    // MARK: - Keyboard focus
 
     /// Takes first responder, remembering who had it. The view answers none
     /// of the menu's first-responder commands, so while it is up Paste, Copy
@@ -76,252 +149,273 @@ final class BoardSwitcherView: NSView {
     /// it would run off the responder chain and the window would beep.
     override func keyDown(with event: NSEvent) {}
 
-    init() {
-        super.init(frame: .zero)
-        wantsLayer = true
-        // Veil (board.css `.tm-veil`: rgba(8,10,13,0.62)) — darkens the board behind.
-        layer?.backgroundColor = NSColor(srgbRed: 8 / 255, green: 10 / 255, blue: 13 / 255, alpha: 0.62).cgColor
+    // MARK: - Rendering
 
-        panel.wantsLayer = true
-        panel.layer?.backgroundColor = Theme.bg2.cgColor
-        panel.layer?.borderColor = Theme.line.cgColor
-        panel.layer?.borderWidth = 1
-        panel.layer?.cornerRadius = 12
-        // Keep the drop shadow (board.css `box-shadow: 0 24px 60px rgba(0,0,0,0.6)`).
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.6)
-        shadow.shadowOffset = NSSize(width: 0, height: -24)
-        shadow.shadowBlurRadius = 60
-        panel.shadow = shadow
-        addSubview(panel)
-
-        headerLabel.font = Theme.mono(12)
-        headerLabel.drawsBackground = false
-        headerLabel.isBezeled = false
-        panel.addSubview(headerLabel)
-
-        headerSep.wantsLayer = true
-        headerSep.layer?.backgroundColor = Theme.lineSoft.cgColor
-        panel.addSubview(headerSep)
-
-        scroll.drawsBackground = false
-        scroll.hasVerticalScroller = false
-        scroll.scrollerStyle = .overlay
-        scroll.automaticallyAdjustsContentInsets = false
-        scroll.documentView = rowsDoc
-        panel.addSubview(scroll)
-
-        footerSep.wantsLayer = true
-        footerSep.layer?.backgroundColor = Theme.lineSoft.cgColor
-        panel.addSubview(footerSep)
-
-        footerLabel.font = Theme.mono(10)
-        footerLabel.textColor = Theme.faint
-        footerLabel.drawsBackground = false
-        footerLabel.isBezeled = false
-        footerLabel.stringValue = "⏎ open board      ⌘1-9 jump      ⌘N new board"
-        panel.addSubview(footerLabel)
-
-        isHidden = true
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    func setVisible(_ on: Bool) { isHidden = !on }
-
-    /// Rebuilds the panel from the visible rows, the keyboard selection, and the
-    /// current filter query, then scrolls the selection into view. P5.4: when
-    /// `editing` the header becomes a rename prompt over `editBuffer`; when
-    /// `confirmingDelete` the footer becomes an amber confirm banner for
-    /// `deleteTarget`. The view holds no logic — `AppController` passes the flags.
-    func render(
-        rows: [SwitcherRowVM],
-        selected: Int,
-        query: String,
-        editing: Bool = false,
-        editBuffer: String = "",
-        confirmingDelete: Bool = false,
-        deleteTarget: String? = nil
-    ) {
-        self.selected = selected
-        headerLabel.attributedStringValue = editing
-            ? renameHeaderAttr(buffer: editBuffer)
-            : headerAttr(query: query)
-        footerLabel.attributedStringValue = footerAttr(
-            editing: editing, confirmingDelete: confirmingDelete, deleteTarget: deleteTarget
+    /// `nowMs` is the wall clock, which picks a live board's glyph.
+    func render(rows: [BoardSwitcher.BoardRow], state: SwitcherKeys.State, nowMs: UInt64) {
+        let query = SwitcherChrome.queryBar(state)
+        queryLabel.attributedStringValue = NSAttributedString(
+            string: query.label,
+            attributes: [.font: Font.queryLabel, .foregroundColor: Theme.faint, .kern: 0.8]
         )
+        queryText.attributedStringValue = query.text.isEmpty
+            ? NSAttributedString(
+                string: query.placeholder,
+                // The web app ships no italic face, so its italic is the
+                // regular one slanted.
+                attributes: [.font: Font.query, .foregroundColor: Theme.faint, .obliqueness: 0.25]
+            )
+            : NSAttributedString(string: query.text, attributes: [.font: Font.query, .foregroundColor: Theme.text])
+        footerLabel.attributedStringValue = footerText(SwitcherChrome.footer(state, rows: rows))
 
-        for v in rowViews { v.removeFromSuperview() }
-        rowViews = rows.enumerated().map { idx, vm in
-            let r = BoardSwitcherRow()
-            r.configure(vm: vm, selected: idx == selected)
-            r.onClick = { [weak self] in self?.onPickRow?(idx) }
-            rowsDoc.addSubview(r)
-            return r
+        for view in rowViews { view.removeFromSuperview() }
+        rowViews = rows.enumerated().map { index, row in
+            let view = BoardSwitcherRow()
+            view.configure(
+                row: row, selected: index == state.selected,
+                glyph: SwitcherChrome.liveGlyph(isLive: row.isLive, nowMs: nowMs),
+                ordinal: SwitcherChrome.ordinalHint(row: index)
+            )
+            view.onClick = { [weak self] in self?.onPickRow?(index) }
+            rowsDoc.addSubview(view)
+            return view
         }
+        emptyLabel.isHidden = !rows.isEmpty
         needsLayout = true
         layoutSubtreeIfNeeded()
-        if rowViews.indices.contains(selected) {
-            rowViews[selected].scrollToVisible(rowViews[selected].bounds)
+        if rowViews.indices.contains(state.selected) {
+            let selected = rowViews[state.selected]
+            selected.scrollToVisible(selected.bounds)
         }
+    }
+
+    private func footerText(_ footer: SwitcherChrome.Footer) -> NSAttributedString {
+        let color: NSColor
+        if case .confirmDelete = footer { color = Theme.amber } else { color = Theme.faint }
+        let text = NSMutableAttributedString()
+        for run in footer.runs {
+            text.append(NSAttributedString(
+                string: run.text,
+                attributes: [.font: run.strong ? Font.footerStrong : Font.footer, .foregroundColor: color]
+            ))
+        }
+        return text
     }
 
     override func mouseDown(with event: NSEvent) {
-        // A click outside the panel dismisses (the veil is modal but tap-to-close).
-        let p = convert(event.locationInWindow, from: nil)
-        if !panel.frame.contains(p) { onDismiss?() }
+        if !panel.frame.contains(convert(event.locationInWindow, from: nil)) { onDismiss?() }
+    }
+
+    // MARK: - Layout
+
+    /// A line of `font` as the web app's layout measures it: each of the
+    /// font's vertical metrics rounded to a whole pixel.
+    static func lineHeight(_ font: NSFont) -> CGFloat {
+        font.ascender.rounded() + (-font.descender).rounded() + font.leading.rounded()
     }
 
     override func layout() {
         super.layout()
-        let totalRows = CGFloat(rowViews.count) * Self.rowH
-        let maxRows = max(Self.rowH, bounds.height - Self.panelTop - Self.headerH - Self.footerH - Self.bottomMargin)
-        let rowsAreaH = min(totalRows, maxRows).rounded()
-        let panelH = Self.headerH + rowsAreaH + Self.footerH
-        let px = ((bounds.width - Self.panelWidth) / 2).rounded()
-        panel.frame = NSRect(x: px, y: Self.panelTop, width: Self.panelWidth, height: panelH)
+        let width = Metric.panelWidth - Metric.border * 2
+        let queryHeight = Metric.queryPadY * 2 + Self.lineHeight(Font.query) + 1
+        let footerHeight = 1 + Metric.footerPadY * 2 + Self.lineHeight(Font.panel)
+        let rowHeight = BoardSwitcherRow.height
+        let emptyHeight = Metric.emptyPadY * 2 + Self.lineHeight(Font.empty)
+        let listContent = Metric.listPadY * 2 + (rowViews.isEmpty ? emptyHeight : CGFloat(rowViews.count) * rowHeight)
+        let listHeight = min(listContent, Metric.panelMaxHeight - Metric.border * 2 - queryHeight - footerHeight)
+        let height = Metric.border * 2 + queryHeight + listHeight + footerHeight
 
-        // Header (band 0..headerH), label inset 16, vertically centered.
-        headerLabel.sizeToFit()
-        let hh = headerLabel.frame.height
-        headerLabel.frame = NSRect(x: 16, y: ((Self.headerH - hh) / 2).rounded(), width: Self.panelWidth - 32, height: hh)
-        headerSep.frame = NSRect(x: 0, y: Self.headerH - 1, width: Self.panelWidth, height: 1)
-
-        scroll.frame = NSRect(x: 0, y: Self.headerH, width: Self.panelWidth, height: rowsAreaH)
-        rowsDoc.frame = NSRect(x: 0, y: 0, width: Self.panelWidth, height: totalRows)
-        for (idx, r) in rowViews.enumerated() {
-            r.frame = NSRect(x: 0, y: CGFloat(idx) * Self.rowH, width: Self.panelWidth, height: Self.rowH)
-        }
-
-        footerSep.frame = NSRect(x: 0, y: Self.headerH + rowsAreaH, width: Self.panelWidth, height: 1)
-        footerLabel.sizeToFit()
-        let fh = footerLabel.frame.height
-        footerLabel.frame = NSRect(x: 16, y: Self.headerH + rowsAreaH + ((Self.footerH - fh) / 2).rounded(), width: Self.panelWidth - 32, height: fh)
-    }
-
-    private func headerAttr(query: String) -> NSAttributedString {
-        let s = NSMutableAttributedString()
-        let faint: [NSAttributedString.Key: Any] = [.font: Theme.mono(12), .foregroundColor: Theme.faint]
-        let textc: [NSAttributedString.Key: Any] = [.font: Theme.mono(12), .foregroundColor: Theme.text]
-        s.append(NSAttributedString(string: "▞ ", attributes: faint))
-        s.append(NSAttributedString(string: "boards", attributes: textc))
-        if query.isEmpty {
-            s.append(NSAttributedString(string: "  — type to filter", attributes: [.font: Theme.mono(12), .foregroundColor: Theme.faint.withAlphaComponent(0.6)]))
-        } else {
-            s.append(NSAttributedString(string: "  · \(query)", attributes: textc))
-        }
-        return s
-    }
-
-    /// P5.4 rename prompt header: `▞ rename · <buffer>▏` (a caret), buffer in
-    /// `text`; an empty buffer reads `(clears name)` faint (the daemon maps "" to
-    /// clearing the name back to the slug).
-    private func renameHeaderAttr(buffer: String) -> NSAttributedString {
-        let faint: [NSAttributedString.Key: Any] = [.font: Theme.mono(12), .foregroundColor: Theme.faint]
-        let textc: [NSAttributedString.Key: Any] = [.font: Theme.mono(12), .foregroundColor: Theme.text]
-        let s = NSMutableAttributedString()
-        s.append(NSAttributedString(string: "▞ ", attributes: faint))
-        s.append(NSAttributedString(string: "rename", attributes: textc))
-        s.append(NSAttributedString(string: "  · ", attributes: faint))
-        s.append(NSAttributedString(
-            string: buffer.isEmpty ? "(clears name)" : buffer,
-            attributes: buffer.isEmpty ? faint : textc
-        ))
-        s.append(NSAttributedString(string: "▏", attributes: textc))
-        return s
-    }
-
-    /// P5.4 footer: the key hints (faint), the rename edit hints, or — armed — the
-    /// amber one-key delete confirm banner for `deleteTarget`.
-    private func footerAttr(editing: Bool, confirmingDelete: Bool, deleteTarget: String?) -> NSAttributedString {
-        let faint: [NSAttributedString.Key: Any] = [.font: Theme.mono(10), .foregroundColor: Theme.faint]
-        if confirmingDelete {
-            let amber: [NSAttributedString.Key: Any] = [.font: Theme.mono(10), .foregroundColor: Theme.amber]
-            return NSAttributedString(
-                string: "⌘⌫ again to delete \"\(deleteTarget ?? "board")\"      esc cancel",
-                attributes: amber
-            )
-        }
-        if editing {
-            return NSAttributedString(string: "⏎ commit      esc cancel", attributes: faint)
-        }
-        return NSAttributedString(
-            string: "⏎ open   ⌘1-9 jump   ⌘N new   ⌘E rename   ⌘⌫ delete",
-            attributes: faint
+        panel.frame = NSRect(
+            x: ((bounds.width - Metric.panelWidth) / 2).rounded(), y: ((bounds.height - height) / 2).rounded(),
+            width: Metric.panelWidth, height: height
         )
+        content.frame = panel.bounds
+        let inner = content.bounds.insetBy(dx: Metric.border, dy: Metric.border)
+
+        queryBar.frame = NSRect(x: inner.minX, y: inner.minY, width: width, height: queryHeight)
+        queryRule.frame = NSRect(x: 0, y: queryHeight - 1, width: width, height: 1)
+        let labelSize = queryLabel.fittedSize
+        queryLabel.frame = NSRect(
+            x: Metric.padX, y: ((queryHeight - 1 - labelSize.height) / 2).rounded(),
+            width: labelSize.width, height: labelSize.height
+        )
+        let textSize = queryText.fittedSize
+        let caretSize = caret.fittedSize
+        let clipX = queryLabel.frame.maxX + Metric.gap
+        let clipHeight = max(textSize.height, caretSize.height)
+        queryClip.frame = NSRect(
+            x: clipX, y: ((queryHeight - 1 - clipHeight) / 2).rounded(),
+            width: max(0, width - Metric.padX - clipX), height: clipHeight
+        )
+        queryText.frame = NSRect(origin: .zero, size: textSize)
+        caret.frame = NSRect(x: textSize.width, y: 0, width: caretSize.width, height: caretSize.height)
+
+        scroll.frame = NSRect(x: inner.minX, y: queryBar.frame.maxY, width: width, height: listHeight)
+        rowsDoc.frame = NSRect(x: 0, y: 0, width: width, height: listContent)
+        for (index, row) in rowViews.enumerated() {
+            row.frame = NSRect(x: 0, y: Metric.listPadY + CGFloat(index) * rowHeight, width: width, height: rowHeight)
+        }
+        let emptySize = emptyLabel.fittedSize
+        emptyLabel.frame = NSRect(
+            x: ((width - emptySize.width) / 2).rounded(),
+            y: Metric.listPadY + ((emptyHeight - emptySize.height) / 2).rounded(),
+            width: emptySize.width, height: emptySize.height
+        )
+
+        footer.frame = NSRect(x: inner.minX, y: scroll.frame.maxY, width: width, height: footerHeight)
+        footerRule.frame = NSRect(x: 0, y: 0, width: width, height: 1)
+        let footerSize = footerLabel.fittedSize
+        footerLabel.frame = NSRect(
+            x: Metric.padX, y: 1 + ((footerHeight - 1 - footerSize.height) / 2).rounded(),
+            width: min(footerSize.width, width - Metric.padX * 2), height: footerSize.height
+        )
+    }
+
+    // MARK: - Caret
+
+    override func viewDidUnhide() {
+        super.viewDidUnhide()
+        caret.alphaValue = 1
+        let timer = Timer(timeInterval: Metric.caretBlink, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let caret = self?.caret else { return }
+                caret.alphaValue = caret.alphaValue == 0 ? 1 : 0
+            }
+        }
+        // Common modes, so the caret keeps blinking while a menu is tracked.
+        RunLoop.main.add(timer, forMode: .common)
+        blink?.invalidate()
+        blink = timer
+    }
+
+    override func viewDidHide() {
+        super.viewDidHide()
+        blink?.invalidate()
+        blink = nil
     }
 }
 
-/// One switcher row (board.css `.tm-brow`): thumbnail · `▞ name` · meta counts,
-/// `.on` (selected) painted bg3 with the name in `text`. Clicking it opens that
-/// board.
+/// One board row: the live glyph, the name (teal, with a mark, for the active
+/// board), the counts and the ⌘n hint. Clicking it switches to that board.
 @MainActor
 final class BoardSwitcherRow: NSView {
     var onClick: (() -> Void)?
 
-    private let thumb = BoardThumbView()
-    private let nameLabel = NSTextField(labelWithString: "")
-    private let metaLabel = NSTextField(labelWithString: "")
+    private enum Metric {
+        static let padX: CGFloat = 14
+        static let padY: CGFloat = 7
+        static let gap: CGFloat = 8
+        static let glyphWidth: CGFloat = 12
+        static let markGap: CGFloat = 4
+    }
+
+    @MainActor
+    private enum Font {
+        static let glyph = Theme.mono(11)
+        static let name = Theme.mono(11.5)
+        static let mark = Theme.mono(8)
+        static let meta = Theme.mono(10)
+        static let ordinal = Theme.mono(9.5)
+    }
+
+    static var height: CGFloat { Metric.padY * 2 + BoardSwitcherView.lineHeight(Font.name) }
+
+    private let glyphLabel = SwitcherLabel()
+    private let nameLabel = SwitcherLabel()
+    private let metaLabel = SwitcherLabel()
+    private let ordinalLabel = SwitcherLabel()
+    private var selected = false
+    private var hovered = false
+    private var tracking: NSTrackingArea?
 
     override var isFlipped: Bool { true }
 
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        for label in [nameLabel, metaLabel] {
-            label.drawsBackground = false
-            label.isBezeled = false
-            label.isEditable = false
+        nameLabel.lineBreakMode = .byTruncatingTail
+        for label in [glyphLabel, nameLabel, metaLabel, ordinalLabel] {
+            addSubview(label)
         }
-        addSubview(thumb)
-        addSubview(nameLabel)
-        addSubview(metaLabel)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    func configure(vm: SwitcherRowVM, selected: Bool) {
-        layer?.backgroundColor = (selected ? Theme.bg3 : NSColor.clear).cgColor
-        thumb.setItems(vm.thumb)
+    func configure(row: BoardSwitcher.BoardRow, selected: Bool, glyph: String, ordinal: String?) {
+        self.selected = selected
+        paint()
 
-        // Name: `▞` glyph (cyan when live, else faint) + display name (text when
-        // selected, else muted).
-        let glyphColor = vm.row.isLive ? Theme.agent : Theme.faint
-        let nameColor = selected ? Theme.text : Theme.muted
-        let nameFont = Theme.mono(12, weight: .medium)
-        let n = NSMutableAttributedString()
-        n.append(NSAttributedString(string: "▞ ", attributes: [.font: nameFont, .foregroundColor: glyphColor]))
-        n.append(NSAttributedString(string: vm.row.display, attributes: [.font: nameFont, .foregroundColor: nameColor]))
-        nameLabel.attributedStringValue = n
-
-        // Meta: leading ⠧ spinner (agent) when running, then the faint count line.
-        let metaFont = Theme.mono(10)
-        let m = NSMutableAttributedString()
-        if vm.row.running > 0 {
-            // Cyan ⠧ spinner — a board with a live agent.
-            m.append(NSAttributedString(string: "⠧ ", attributes: [.font: metaFont, .foregroundColor: Theme.agent]))
-        } else if vm.row.bell > 0 {
-            // Amber ● — a board that rang a bell but has no running agent (B5).
-            m.append(NSAttributedString(string: "● ", attributes: [.font: metaFont, .foregroundColor: Theme.amber]))
+        glyphLabel.attributedStringValue = NSAttributedString(
+            string: glyph,
+            attributes: [.font: Font.glyph, .foregroundColor: row.isLive ? Theme.agent : Theme.faint]
+        )
+        let name = NSMutableAttributedString(
+            string: row.display,
+            attributes: [.font: Font.name, .foregroundColor: row.isActive ? Theme.agent : Theme.text]
+        )
+        if row.isActive {
+            // The mark is smaller than the name and sits on its middle.
+            name.append(NSAttributedString(string: " ", attributes: [.font: Font.mark, .kern: Metric.markGap]))
+            name.append(NSAttributedString(
+                string: SwitcherChrome.activeMark,
+                attributes: [.font: Font.mark, .foregroundColor: Theme.agent, .baselineOffset: 1.5]
+            ))
         }
-        m.append(NSAttributedString(string: vm.row.meta, attributes: [.font: metaFont, .foregroundColor: Theme.faint]))
-        metaLabel.attributedStringValue = m
-
+        nameLabel.attributedStringValue = name
+        metaLabel.attributedStringValue = NSAttributedString(
+            string: row.meta, attributes: [.font: Font.meta, .foregroundColor: Theme.faint]
+        )
+        ordinalLabel.attributedStringValue = NSAttributedString(
+            string: ordinal ?? "", attributes: [.font: Font.ordinal, .foregroundColor: Theme.line]
+        )
+        ordinalLabel.isHidden = ordinal == nil
         needsLayout = true
+    }
+
+    private func paint() {
+        layer?.backgroundColor = (selected || hovered ? Theme.bg3 : NSColor.clear).cgColor
     }
 
     override func layout() {
         super.layout()
-        thumb.frame = NSRect(x: 16, y: ((bounds.height - BoardThumbView.size.height) / 2).rounded(),
-                             width: BoardThumbView.size.width, height: BoardThumbView.size.height)
-        let nameX = 16 + BoardThumbView.size.width + 13
-        nameLabel.sizeToFit()
-        let nh = nameLabel.frame.height
-        nameLabel.frame = NSRect(x: nameX, y: ((bounds.height - nh) / 2).rounded(), width: nameLabel.frame.width, height: nh)
-        metaLabel.sizeToFit()
-        let mw = metaLabel.frame.width
-        let mh = metaLabel.frame.height
-        metaLabel.frame = NSRect(x: bounds.width - 16 - mw, y: ((bounds.height - mh) / 2).rounded(), width: mw, height: mh)
+        func centered(_ size: NSSize, x: CGFloat, width: CGFloat? = nil) -> NSRect {
+            NSRect(x: x, y: ((bounds.height - size.height) / 2).rounded(), width: width ?? size.width, height: size.height)
+        }
+        glyphLabel.frame = centered(glyphLabel.fittedSize, x: Metric.padX)
+
+        var right = bounds.width - Metric.padX
+        if !ordinalLabel.isHidden {
+            let size = ordinalLabel.fittedSize
+            ordinalLabel.frame = centered(size, x: right - size.width)
+            right = ordinalLabel.frame.minX - Metric.gap
+        }
+        let metaSize = metaLabel.fittedSize
+        metaLabel.frame = centered(metaSize, x: right - metaSize.width)
+        right = metaLabel.frame.minX - Metric.gap
+
+        let nameX = Metric.padX + Metric.glyphWidth + Metric.gap
+        let nameSize = nameLabel.fittedSize
+        nameLabel.frame = centered(nameSize, x: nameX, width: max(0, min(nameSize.width, right - nameX)))
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(
+            rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self
+        )
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        hovered = true
+        paint()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hovered = false
+        paint()
     }
 
     override func mouseDown(with event: NSEvent) { onClick?() }
@@ -329,79 +423,24 @@ final class BoardSwitcherRow: NSView {
     override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
 }
 
-/// The 86×54 board thumbnail (board.css `.tm-bthumb`): a static mini-projection
-/// of the board's tile world-frames into the box, colored by signal (cyan live,
-/// amber bell, neutral). Reuses `BoardWayfinding`'s world→box mapping (the same
-/// projection the minimap uses) — NOT live views. Empty boards render just the
-/// dot grid.
+/// A text run of the panel. Clicks go to whatever holds it.
 @MainActor
-final class BoardThumbView: NSView {
-    static let size = NSSize(width: 86, height: 54)
-    private static let pad: CGFloat = 5
-
-    private var items: [Minimap.Item] = []
-
-    override var isFlipped: Bool { true }
-    // Clicks belong to the enclosing row, not the thumbnail.
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
+private final class SwitcherLabel: NSTextField {
     init() {
-        super.init(frame: NSRect(origin: .zero, size: Self.size))
-        wantsLayer = true
-        layer?.backgroundColor = Theme.bg0.cgColor
-        layer?.borderColor = Theme.line.cgColor
-        layer?.borderWidth = 1
-        layer?.cornerRadius = 6
-        layer?.masksToBounds = true
+        super.init(frame: .zero)
+        isEditable = false
+        isSelectable = false
+        isBezeled = false
+        drawsBackground = false
+        lineBreakMode = .byClipping
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    func setItems(_ items: [Minimap.Item]) {
-        self.items = items
-        needsDisplay = true
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        // Faint dot grid (board.css `.tm-bthumb` radial 9px lattice).
-        Theme.line.withAlphaComponent(0.35).setFill()
-        let step: CGFloat = 9
-        var y = step / 2
-        while y < bounds.height {
-            var x = step / 2
-            while x < bounds.width {
-                NSBezierPath(ovalIn: NSRect(x: x - 0.4, y: y - 0.4, width: 0.8, height: 0.8)).fill()
-                x += step
-            }
-            y += step
-        }
-        // Projected tiles.
-        guard let box = BoardWayfinding.boundingBox(of: items.map(\.worldRect)) else { return }
-        let mapping = BoardWayfinding.minimapMapping(worldBox: box, minimapSize: bounds.size, pad: Self.pad)
-        for item in items {
-            let r = mapping.toMinimap(item.worldRect)
-            let path = NSBezierPath(roundedRect: r, xRadius: 1.5, yRadius: 1.5)
-            let color: NSColor
-            switch item.signal {
-            case .live: color = Theme.agent.withAlphaComponent(0.55)
-            case .bell: color = Theme.amber.withAlphaComponent(0.7)
-            case .none: color = Theme.bg3
-            }
-            color.setFill()
-            path.fill()
-            // Neutral (doc / non-live) tiles get a 0.5px hairline so stacked docs
-            // stay discrete (board.css `.tm-bthumb i`; live/bell are borderless).
-            if case .none = item.signal {
-                Theme.line.setStroke()
-                path.lineWidth = 0.5
-                path.stroke()
-            }
-        }
-    }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-/// A plain top-down (flipped) container, so panel + row-list math is y-down like
-/// the rest of the chrome.
+/// A container whose y runs down, like the rest of the chrome.
 @MainActor
 private final class FlippedBox: NSView {
     override var isFlipped: Bool { true }

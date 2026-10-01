@@ -160,9 +160,6 @@ final class AppController {
     var switcherOpen = false
     /// The open switcher's filter, selection, rename and delete-confirm state.
     var switcherState = SwitcherKeys.State()
-    /// The rendered rows (pure view-model row + the board's thumbnail items),
-    /// rebuilt on open / filter change / `board_list`.
-    var switcherRows: [SwitcherRowVM] = []
 
     /// Shared HH:mm formatter (en_US_POSIX). DateFormatter construction is
     /// expensive (ICU / locale load), and `edgeLabel` runs per doc-edge per

@@ -18,14 +18,6 @@ extension AppController {
         boards[id] = nil
     }
 
-    /// Dims the traffic lights while the ⌘K switcher is open
-    /// (B5 `dim` titlebar), restoring them on close.
-    private func setTitlebarDim(_ dim: Bool) {
-        for button: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
-            window?.standardWindowButton(button)?.alphaValue = dim ? 0.4 : 1
-        }
-    }
-
     /// Mounts `board`'s view in RootView and (re)binds the controller-owned
     /// per-board callbacks to it: the provenance edge label (crib §8) and the
     /// committed-layout persist. The persist closure captures the board's id (by
@@ -57,20 +49,17 @@ extension AppController {
         guard !switcherOpen else { return }
         switcherOpen = true
         switcherState = SwitcherKeys.opened(summaries: boardSummaries(), active: activeBoardID)
-        rebuildSwitcherRows()
         // Laid out before it is rendered, so scrolling the selected row into
         // view runs against the panel's real bounds.
         rootView.setSwitcherVisible(true)
         rootView.layoutSubtreeIfNeeded()
         renderSwitcher()
         rootView.boardSwitcher.takeKeys()
-        setTitlebarDim(true)
     }
 
     /// Re-renders an open switcher after a board, bell or exit changed.
     func refreshSwitcherIfOpen() {
         guard switcherOpen else { return }
-        rebuildSwitcherRows()
         renderSwitcher()
     }
 
@@ -84,24 +73,16 @@ extension AppController {
         // to the window, and there would be nothing left to give back.
         rootView.boardSwitcher.returnKeys(fallback: rootView.board)
         rootView.setSwitcherVisible(false)
-        setTitlebarDim(false)
     }
 
-    func rebuildSwitcherRows() {
-        let rows = BoardSwitcher.rows(summaries: boardSummaries(), active: activeBoardID, filter: switcherState.filter)
-        switcherRows = rows.map { row in
-            SwitcherRowVM(row: row, thumb: boards[row.boardID]?.view.minimapItems ?? [])
-        }
+    /// The rows the switcher shows now: the boards its filter keeps.
+    private func switcherRows() -> [BoardSwitcher.BoardRow] {
+        BoardSwitcher.rows(summaries: boardSummaries(), active: activeBoardID, filter: switcherState.filter)
     }
 
-    func renderSwitcher() {
-        let state = switcherState
-        let deleteTarget = state.confirmingDelete && switcherRows.indices.contains(state.selected)
-            ? switcherRows[state.selected].row.display : nil
+    private func renderSwitcher() {
         rootView.boardSwitcher.render(
-            rows: switcherRows, selected: state.selected, query: state.filter,
-            editing: state.editing, editBuffer: state.editBuffer,
-            confirmingDelete: state.confirmingDelete, deleteTarget: deleteTarget
+            rows: switcherRows(), state: switcherState, nowMs: UInt64(Date().timeIntervalSince1970 * 1000)
         )
     }
 
@@ -173,8 +154,9 @@ extension AppController {
 
     /// A row was clicked.
     func switcherPickRow(_ index: Int) {
-        guard switcherRows.indices.contains(index) else { return }
-        let boardID = switcherRows[index].row.boardID
+        let rows = switcherRows()
+        guard rows.indices.contains(index) else { return }
+        let boardID = rows[index].boardID
         closeSwitcher()
         performSwitch(to: boardID)
     }
