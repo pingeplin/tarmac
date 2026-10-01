@@ -46,14 +46,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // P5.3: cancel the bounded reconnect loop + close the socket deterministically.
         controller?.shutdown()
     }
-
-    @objc func peekRecentDoc(_ sender: Any?) {
-        controller?.peekRecent()
-    }
-
-    @objc func pinPeekedDoc(_ sender: Any?) {
-        controller?.togglePinPeeked()
-    }
 }
 
 @MainActor
@@ -75,13 +67,6 @@ func buildMainMenu() -> NSMenu {
     editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
     editItem.submenu = editMenu
     main.addItem(editItem)
-
-    let viewItem = NSMenuItem()
-    let viewMenu = NSMenu(title: "View")
-    viewMenu.addItem(withTitle: "Peek Recent Doc", action: #selector(AppDelegate.peekRecentDoc(_:)), keyEquivalent: "p")
-    viewMenu.addItem(withTitle: "Pin Peeked Doc", action: #selector(AppDelegate.pinPeekedDoc(_:)), keyEquivalent: "\r")
-    viewItem.submenu = viewMenu
-    main.addItem(viewItem)
 
     let windowItem = NSMenuItem()
     let windowMenu = NSMenu(title: "Window")

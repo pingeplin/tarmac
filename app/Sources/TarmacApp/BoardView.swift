@@ -42,9 +42,9 @@ final class BoardView: NSView {
     /// offscreen hints). The board calls this after add / remove / reproject.
     var onCardsChanged: (() -> Void)?
 
-    /// Fires when a doc card's ✕ close button is clicked. The controller parks the
-    /// doc on the shelf — kept separate from `removeCard` (the mechanical teardown)
-    /// so the controller owns the shelf / persistence policy.
+    /// Fires when a doc card's ✕ close button is clicked. Kept separate from
+    /// `removeCard` (the mechanical teardown) so the controller owns the
+    /// persistence policy.
     var onCardClose: ((CardID) -> Void)?
 
     /// Current viewport (zoom + world center). Read for persistence; set by 2c
@@ -70,11 +70,6 @@ final class BoardView: NSView {
         if case .doc = id { docCardCount += 1 }
         cardLayer.addSubview(card)
         restack()
-        // Locards (semantic-zoom summaries) are off: in the infinite-canvas model
-        // a zoomed-out card shows its real content scaled down (the reference
-        // behavior), not a fixed-size name+status swap. `setLocard` stays wired so
-        // the feature can return as an explicit, counter-scaled overview later.
-        card.setLocard(false)
         reproject(card)
         card.applyContentScale(contentScale)       // in-process layers
         card.applyDocZoomScale(docDeviceScaleOverride)  // a fresh doc card starts at the right density
@@ -292,7 +287,7 @@ final class BoardView: NSView {
 
     /// esc drag-cancel priority (crib §5): cancels an in-flight move/resize and
     /// restores the pre-gesture world frame. Returns false when no card is
-    /// dragging so esc falls through to peek/toast dismissal.
+    /// dragging so esc falls through to the rest of the ladder.
     @discardableResult
     func cancelDrag() -> Bool {
         guard let id = gesturingID, let card = cards[id] else { return false }
@@ -312,38 +307,6 @@ final class BoardView: NSView {
         return restored
     }
 
-    // MARK: - Cockpit dock (crib §4): slot ghost at the docked term card's spot
-
-    /// While a card is docked into the cockpit pane its board card is hidden and
-    /// a dashed slot ghost (crib §4 `.tm-slotghost`) sits at its world frame so
-    /// the board still shows where it belongs; the ghost pans/zooms with the
-    /// board. nil when nothing is docked.
-    private var dockedID: CardID?
-    private let slotGhost = SlotGhostView()
-
-    /// Marks `id`'s card as docked: hide its board card and show the slot ghost
-    /// at its world frame (crib §4). The card stays in `cards` (its world frame
-    /// is preserved for undock + persistence) but is not displayed. Pass nil to
-    /// clear the dock (un-dock): the card reappears, the ghost is removed.
-    func setDocked(_ id: CardID?) {
-        // Restore any previously-docked card.
-        if let prev = dockedID, let card = cards[prev] {
-            card.isHidden = false
-        }
-        slotGhost.removeFromSuperview()
-        dockedID = id
-        guard let id, let card = cards[id] else { return }
-        card.isHidden = true
-        slotGhost.frame = worldToView(card.worldFrame.rect)
-        cardLayer.addSubview(slotGhost, positioned: .below, relativeTo: nil)
-    }
-
-    /// Keeps the slot ghost on the docked card's reprojected frame (pan/zoom).
-    private func reprojectSlotGhost() {
-        guard let id = dockedID, let card = cards[id] else { return }
-        slotGhost.frame = worldToView(card.worldFrame.rect)
-    }
-
     // MARK: - Internals
 
     private let cardLayer = FlippedColumnView()
@@ -355,7 +318,7 @@ final class BoardView: NSView {
     /// rides the card under the pure-transform zoom, so on a doc larger than the
     /// viewport (e.g. zoomed in to read) its top-right corner — and the ✕ with it —
     /// scrolls off-screen ("eaten by the window"). This fixed top-right ✕ surfaces
-    /// only then, so close-to-shelf stays reachable without breaking the
+    /// only then, so closing stays reachable without breaking the
     /// pure-transform model for the card itself. Routes to the same `onCardClose`.
     let floatingClose = CloseButton()
     private var floatingCloseTarget: CardID?
@@ -546,7 +509,6 @@ final class BoardView: NSView {
         PerfTrace.measure("reproject") {
             for card in cards.values { project(card) }
             updateContentScaleIfNeeded()
-            reprojectSlotGhost()
             recomputeEdges()
             refreshFloatingClose()
             // NB: no onCardsChanged?() here. reprojectAll runs on every pan/zoom,
@@ -661,7 +623,6 @@ final class BoardView: NSView {
 
     private func reproject(_ card: CardView) {
         project(card)
-        reprojectSlotGhost()
         recomputeEdges()
         refreshFloatingClose()
         onCardsChanged?()
@@ -692,11 +653,10 @@ final class BoardView: NSView {
     /// the window server stops compositing / tiling them each frame. The live
     /// region is the viewport grown by one viewport on every side, so a card is
     /// already un-hidden a full screen before it scrolls into view — no pop-in or
-    /// WKWebView repaint flash. The docked card's hidden state is owned by
-    /// `setDocked`, so it's never touched here. Skipped while bounds is empty
-    /// (pre-layout) so a transient never hides everything.
+    /// WKWebView repaint flash. Skipped while bounds is empty (pre-layout) so a
+    /// transient never hides everything.
     private func cull(_ card: CardView) {
-        guard card.id != dockedID, bounds.width > 0, bounds.height > 0 else { return }
+        guard bounds.width > 0, bounds.height > 0 else { return }
         let live = bounds.insetBy(dx: -bounds.width, dy: -bounds.height)
         let shouldHide = !card.frame.intersects(live)
         if card.isHidden != shouldHide { card.isHidden = shouldHide }
@@ -828,16 +788,6 @@ final class BoardView: NSView {
     private func updateGridDensity() {
         let lo = viewport.isSemanticZoom
         if lo != loZoom { loZoom = lo; needsDisplay = true }
-    }
-
-    /// No-op in the infinite-canvas model — cards always render their real
-    /// (zoom-scaled) content rather than swapping to a fixed-size locard at the
-    /// semantic-zoom threshold. See `addCard`. Fix #8 removed its per-frame calls
-    /// (setViewport / zoom / animateViewport) — it was looping every card to set a
-    /// flag the model never reads. Retained (uncalled) so the feature can return
-    /// as an explicit counter-scaled overview, gated to actual threshold crossings.
-    func updateLocards() {
-        for card in cards.values { card.setLocard(false) }
     }
 
     override func layout() {

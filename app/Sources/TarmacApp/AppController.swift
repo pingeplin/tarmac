@@ -87,8 +87,6 @@ final class TerminalSession {
     /// by SwiftTerm. Takes precedence over `procName`. Cleared to nil when the
     /// program emits an empty OSC title (`ESC ] 2 ; ST`).
     var oscTitle: String?
-    /// When the current non-shell foreground process started (locard duration).
-    var liveProcSince: Date?
     /// Last cols/rows sent to the daemon — debounces duplicate resizes.
     var lastSentCols = 0
     var lastSentRows = 0
@@ -150,8 +148,8 @@ final class AppController {
     // The app holds N boards keyed by `board_id`; `activeBoard` is the one the
     // user is looking at (its `view` is the mounted BoardView). board-0 wraps
     // today's single board losslessly. The board-scoped state — sessions, prime,
-    // dock, shelf, provenance, fresh card, restore latch — lives on `Board`; the
-    // shims below keep AppController's existing call sites compiling while that
+    // provenance, restore latch — lives on `Board`; the shims below keep
+    // AppController's existing call sites compiling while that
     // state delegates to whichever board is active, so once the real switch
     // lands every read/write automatically targets the right board.
     private var boards: [String: Board] = [:]
@@ -194,9 +192,9 @@ final class AppController {
         ownerBoard(ofTerm: termID)?.sessions[termID]
     }
 
-    /// The active board's doc registry (each board owns its own). The bulk of the
-    /// chrome (shelf, peek, locards, ⌘P, counts) reads the active board's docs;
-    /// the few cross-board mutations (a `tarmac open` / file event for a doc on a
+    /// The active board's doc registry (each board owns its own). The chrome
+    /// (card headers, counts) reads the active board's docs; the few
+    /// cross-board mutations (a `tarmac open` / file event for a doc on a
     /// backgrounded board) target that board's store explicitly.
     private var store: DocStore { activeBoard.store }
 
@@ -212,21 +210,9 @@ final class AppController {
         get { activeBoard.primeTermID }
         set { activeBoard.primeTermID = newValue }
     }
-    private var docked: Bool {
-        get { activeBoard.docked }
-        set { activeBoard.docked = newValue }
-    }
-    private var shelfPaths: [String] {
-        get { activeBoard.shelfPaths }
-        set { activeBoard.shelfPaths = newValue }
-    }
     private var docOwner: [String: String] {
         get { activeBoard.docOwner }
         set { activeBoard.docOwner = newValue }
-    }
-    private var freshCardPath: String? {
-        get { activeBoard.freshCardPath }
-        set { activeBoard.freshCardPath = newValue }
     }
     private var preFlightViewport: Viewport? {
         get { activeBoard.preFlightViewport }
@@ -247,7 +233,7 @@ final class AppController {
     // (P4 renders the ⌘K switcher from it).
     private var boardMetas: [BoardMeta] = []
     // True from a switch's leave until its arrive completes. Suppresses layout
-    // persistence across the transient (undock / unmount / re-mount / rebuild)
+    // persistence across the transient (unmount / re-mount / rebuild)
     // and tells the restore handler to mount the arriving board (crit B4).
     private var switching = false
 
@@ -296,14 +282,6 @@ final class AppController {
         rootView.attachTerminal(boot.view, termID: bootTermID, worldFrame: Place.termFrame)
 
         wireStore(board0)
-        rootView.peek.onPin = { [weak self] in self?.togglePinPeeked() }
-        rootView.peek.onClose = { [weak self] in self?.hidePeek() }
-        // Shelf chips: click → peek; drag onto the board → land a doc card at
-        // the drop point's world position (crib §6).
-        rootView.shelf.onChipClick = { [weak self] path in self?.openPeek(path) }
-        rootView.shelf.onChipDropped = { [weak self] path, windowPoint in
-            self?.landShelfDrop(path: path, windowPoint: windowPoint)
-        }
         // Phase 4 wayfinding: supply the per-card offscreen-hint models (label +
         // priority) the board can't derive on its own (doc metadata / recency).
         // Reads `activeBoard` dynamically, so it tracks the mounted board.
@@ -372,7 +350,7 @@ final class AppController {
         board.view.onLayoutChanged = { [weak self] _ in self?.schedulePersist(boardID: bid) }
         board.view.onCardClose = { [weak self] id in
             guard case .doc(let path) = id else { return }
-            self?.moveToShelf(path)
+            self?.closeDocCard(path)
         }
     }
 
@@ -428,8 +406,7 @@ final class AppController {
             // so the no-modifier / single-modifier checks below work with caps on.
             let mods = event.modifierFlags.intersection([.control, .command, .option, .shift])
             let isEsc = event.keyCode == 53
-            // Bare Return (no modifiers) toggles the dock / flies; ⌘⏎ is the
-            // peek-pin menu key equivalent and is consumed before this monitor.
+            // Bare Return (no modifiers) flies to an offscreen signal.
             let isReturn = event.keyCode == 36 && mods.isEmpty
             // ⌥tab (tab = keyCode 48 with the Option modifier, ignoring caps lock)
             // cycles the focused terminal among terminal cards + shows the HUD
@@ -478,24 +455,16 @@ final class AppController {
                     tv.send(bytes)
                     return true
                 }
-                // ⌘C for a doc reading surface: both the peek body and the on-board
-                // doc card host a non-focusable WKWebView (crib §9 — a doc click must
-                // not pull keyboard focus off the prime terminal), so the standard
-                // copy: never reaches them via the responder chain and ⌘C silently
-                // does nothing. Route it explicitly — the peek body when it's open
-                // (the topmost reading surface), else the focused doc card. When
-                // neither applies this is skipped, so ⌘C still reaches the prime
-                // terminal / responder chain unchanged.
-                if isCmdC {
-                    if self.rootView.peekVisible {
-                        self.rootView.peek.copySelectionToPasteboard()
-                        return true
-                    }
-                    if case .doc(let path)? = self.focusedCardID,
-                       let docView = self.activeBoard.view.card(.doc(path))?.docView {
-                        docView.copySelectionToPasteboard()
-                        return true
-                    }
+                // ⌘C for a doc card: it hosts a non-focusable WKWebView (crib §9 —
+                // a doc click must not pull keyboard focus off the prime terminal),
+                // so the standard copy: never reaches it via the responder chain and
+                // ⌘C silently does nothing. Route it explicitly to the focused doc
+                // card. When none is focused this is skipped, so ⌘C still reaches
+                // the prime terminal / responder chain unchanged.
+                if isCmdC, case .doc(let path)? = self.focusedCardID,
+                   let docView = self.activeBoard.view.card(.doc(path))?.docView {
+                    docView.copySelectionToPasteboard()
+                    return true
                 }
                 if isCmdK {
                     self.openSwitcher()
@@ -515,30 +484,19 @@ final class AppController {
                     self.cycleTerminals()
                     return true
                 }
-                // Return, when the board (not the terminal) holds focus and no
-                // card gesture / peek / toast is up (crib §4/§6): if an offscreen
-                // signal is waiting, fly the viewport to it (Phase 4); otherwise
-                // toggle the cockpit dock (Phase 5a). Gated on board focus so the
-                // shell's Enter key is never hijacked while typing.
-                if isReturn, self.boardHasFocus() {
-                    if !self.docked, let target = self.rootView.offscreenFlyTarget {
-                        self.preFlightViewport = self.activeBoard.view.viewport
-                        self.activeBoard.view.fly(to: target)
-                        return true
-                    }
-                    self.toggleDock()
+                // Return, when the board (not the terminal) holds focus and an
+                // offscreen signal is waiting, flies the viewport to it (crib §6).
+                // Gated on board focus so the shell's Enter key is never hijacked
+                // while typing.
+                if isReturn, self.boardHasFocus(), let target = self.rootView.offscreenFlyTarget {
+                    self.preFlightViewport = self.activeBoard.view.viewport
+                    self.activeBoard.view.fly(to: target)
                     return true
                 }
                 guard isEsc else { return false }
                 // An active board drag/resize swallows esc ahead of everything
-                // (crib §5 DECISION; was desk.cancelDrag()).
+                // (crib §5 DECISION).
                 if self.activeBoard.view.cancelDrag() {
-                    return true
-                }
-                // esc returns a docked terminal to its board card (crib §4),
-                // ahead of the flight/fresh/peek/toast order.
-                if self.docked {
-                    self.undock()
                     return true
                 }
                 // esc after a Return flight flies the viewport back (crib §6).
@@ -547,20 +505,12 @@ final class AppController {
                     self.activeBoard.view.flyTo(prev)
                     return true
                 }
-                // esc on a freshly-landed card sends it to the shelf (crib §5).
-                if self.sendFreshCardToShelf() {
-                    return true
-                }
-                if self.rootView.peekVisible {
-                    self.hidePeek()
-                    return true
-                }
                 if self.rootView.toasts.hasToasts {
                     self.rootView.toasts.clearAll()
                     return true
                 }
-                // With every transient overlay dismissed (peek, toasts), esc on a
-                // focused DOC card drops focus — the doc stays on the board; removal
+                // With the toasts dismissed, esc on a focused DOC card
+                // drops focus — the doc stays on the board; removal
                 // is the ✕ / ⌘W (issue #15). A focused TERMINAL is left for the
                 // responder chain so esc still reaches the program (agent-interrupt
                 // / vim). Routed through EscFocusAction so the rule is unit-tested.
@@ -694,15 +644,12 @@ final class AppController {
         case .fileEvent(let path, let mtimeMs):
             // The watcher is global; route the event to every board whose store
             // knows the path (a doc can live on a backgrounded board). Only the
-            // active board's card / peek re-renders.
+            // active board's card re-renders.
             for board in boards.values where board.store.doc(for: path) != nil {
                 board.store.applyFileEvent(path: path, mtimeMs: mtimeMs)
             }
             if isOnBoard(path) {
                 activeBoard.view.card(.doc(path))?.renderDoc(markdown: readMarkdown(path))
-            }
-            if rootView.peekVisible && peekPath == path {
-                refreshPeek(path)
             }
         case .termProc(let termID, let name, _):
             handleTermProc(termID: termID, name: name)
@@ -723,29 +670,25 @@ final class AppController {
     /// state lands in THAT board's store and a `tarmac open` lands a fresh card on
     /// THAT board — so an open from a backgrounded board's shell never lands a
     /// card on the active board (crit S4); read-on-open only applies to the
-    /// active board (peek + visible cards are the active board's).
+    /// active board (visible cards are the active board's).
     private func handleDocOpened(_ doc: RestoreDoc) {
         let board = doc.termID.flatMap { ownerBoard(ofTerm: $0) } ?? activeBoard
         let wasOnBoard = board.view.card(.doc(doc.path)) != nil
         board.store.applyDocOpened(doc)
         if let termID = doc.termID { board.docOwner[doc.path] = termID }
-        // crib §5 / migration-plan Phase 3: a doc arriving via `tarmac open` lands
-        // a FRESH card right of its caller term card (first free slot). A user
-        // open keeps prior behavior (no card).
-        if doc.via == "cli", !wasOnBoard, !board.shelfPaths.contains(doc.path) {
+        // A doc arriving via `tarmac open` lands a FRESH card right of its caller
+        // term card (first free slot). A user open keeps prior behavior (no card).
+        if doc.via == "cli", !wasOnBoard {
             landFreshCard(path: doc.path, on: board)
             persistLayout(for: board)
         }
-        // Read-on-open applies only when the doc is on / peeked over the ACTIVE
-        // board (a brand-new fresh card keeps its unread/fresh ring until touched).
+        // Read-on-open applies only when the doc is already on the ACTIVE board
+        // (a brand-new fresh card keeps its unread/fresh ring until touched).
         guard board === activeBoard else { return }
-        if (rootView.peekVisible && peekPath == doc.path) || wasOnBoard {
+        if wasOnBoard {
             board.store.markRead(doc.path)
             client.docRead(path: doc.path)
             clearFreshIfRead(doc.path)
-            if rootView.peekVisible && peekPath == doc.path {
-                refreshPeek(doc.path)
-            }
         }
     }
 
@@ -1184,7 +1127,6 @@ final class AppController {
         // (boardHasFocus false until a click). Target nil, not rootView.board,
         // which is about to be swapped (crit B3).
         reconcilePrimeToFocus()
-        if activeBoard.docked { undockForLeave() }
         window?.makeFirstResponder(nil)
         // Clear card focus so the arrived board starts in board-navigation mode
         // (point 2). Otherwise a stale focusedCardID could collide with a same-id
@@ -1222,22 +1164,8 @@ final class AppController {
         return board
     }
 
-    /// Undocks the leaving board's terminal on switch-away: reparent the docked
-    /// SwiftTerm view back into its card and hide the shared pane, WITHOUT
-    /// fly-back and WITHOUT a reflow/resize — the card is about to be detached,
-    /// so reflowing now would resize the pty to a doomed geometry (crit B2). The
-    /// board's `docked` intent is kept so switch-back re-docks.
-    private func undockForLeave() {
-        guard activeBoard.docked, let view = activeBoard.primeTerminalView else { return }
-        view.removeFromSuperview()
-        activeBoard.primeTermCard?.attachTerminal(view)
-        rootView.setDockVisible(false)
-        activeBoard.view.setDocked(nil)
-        // NB: activeBoard.docked stays true (intent); finishArrive re-docks.
-    }
-
     /// The ARRIVE half: the target's view is mounted and (on a first visit) its
-    /// cards/terminals built; now re-establish focus + dock on the arrived board,
+    /// cards/terminals built; now re-establish focus on the arrived board,
     /// AFTER its card tree is laid out (crit B3 / S1), and end the transient.
     private func finishArrive(on board: Board) {
         rootView.layoutSubtreeIfNeeded()
@@ -1246,29 +1174,16 @@ final class AppController {
         // whose docs were never suspended (e.g. its first arrive), since
         // DocWebView.resume guards on `suspended`.
         board.view.cards.values.forEach { $0.resumeDoc() }
-        // Re-dock only when there is a LIVE prime to dock; dock() itself guards on
-        // hasLivePrime, so gating here keeps the focus fallback reachable. Drop a
-        // stale dock intent for a board whose docked terminal died while
-        // backgrounded (its undock was isActive-gated, so docked stayed true) —
-        // otherwise focus, cleared to nil on leave, is never re-established.
-        if board.docked, board.hasLivePrime {
-            // Re-dock: reparent the prime terminal into the shared pane (dock()
-            // guards on !docked, reflows, and makes the view first responder).
-            board.docked = false
-            dock()
+        if let view = board.primeTerminalView {
+            window?.makeFirstResponder(view)
         } else {
-            board.docked = false
-            if let view = board.primeTerminalView {
-                window?.makeFirstResponder(view)
-            } else {
-                window?.makeFirstResponder(rootView.board)
-            }
+            window?.makeFirstResponder(rootView.board)
         }
         updatePrimacy()
         switching = false
         // Defensive: if an arrive ever lands while the ⌘K switcher is open, keep
         // the switcher as first responder so the veiled board can't steal the
-        // keyboard (the dock/reflow above still runs; only focus is re-asserted).
+        // keyboard.
         if switcherOpen { window?.makeFirstResponder(rootView.boardSwitcher) }
     }
 
@@ -1285,7 +1200,7 @@ final class AppController {
     }
 
     /// Walks up from a hit view to the `CardView` that contains it (header, clip,
-    /// terminal/doc body, locard, or a resize handle all live inside one), or nil
+    /// terminal/doc body, or a resize handle all live inside one), or nil
     /// if the point is on the bare board / an overlay.
     private func enclosingCard(_ view: NSView?) -> CardView? {
         var v = view
@@ -1298,7 +1213,7 @@ final class AppController {
 
     /// Point 3: a single click on a card focuses it. A click on the empty board
     /// background defocuses (board-navigation mode resumes). Clicks landing on the
-    /// overlays (peek / switcher / shelf / minimap / dock / status bar) are left
+    /// overlays (switcher / minimap / status bar) are left
     /// alone. Runs one tick after the click has dispatched.
     private func handleClickFocus(at point: NSPoint) {
         guard !switcherOpen, window?.isKeyWindow == true else { return }
@@ -1325,10 +1240,10 @@ final class AppController {
         if activeBoard.view.selectedID != id { activeBoard.view.select(nil) }
         focusedCardID = id
         activeBoard.view.bringToFront(id)
-        if case let .term(termID) = id, sessions[termID]?.live == true, !docked {
+        if case let .term(termID) = id, sessions[termID]?.live == true {
             setPrime(termID)   // re-primes AND recomputes the focus edge via updatePrimacy
         } else {
-            updatePrimacy()    // doc / dead / docked: no re-prime, but paint the focus edge
+            updatePrimacy()    // doc / dead: no re-prime, but paint the focus edge
         }
     }
 
@@ -1424,7 +1339,7 @@ final class AppController {
     /// window's keyboard focus — e.g. the user clicked a non-prime terminal,
     /// which AppKit made first responder (typing already routes there via its
     /// bridge). Called before any action that re-asserts focus to the prime
-    /// terminal (peek / dock / cycle), so focus is never yanked back to a stale
+    /// terminal (cycle / board switch), so focus is never yanked back to a stale
     /// prime. No-op when the focused responder isn't a live terminal view.
     private func reconcilePrimeToFocus() {
         guard let s = focusedLiveSession(), s.termID != primeTermID else { return }
@@ -1504,10 +1419,8 @@ final class AppController {
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         s.label = (shell as NSString).lastPathComponent
         s.shellName = s.label
-        s.liveProcSince = nil
         board.view.card(.term(s.termID))?.setTermLabel(s.label)
         board.view.card(.term(s.termID))?.setLive(false)
-        refreshTermLocard(s.termID)
         // Cards restored before the term spawned get their gravity owner +
         // chip resolved now.
         rebindOwners()
@@ -1519,9 +1432,6 @@ final class AppController {
     /// §6 decision 3), makes it prime + first responder, and persists it.
     private func spawnNewTerminal() {
         guard connected, viewReady else { return }
-        // Land the new terminal on the board, not behind the dock pane: undock
-        // the current terminal first so focus + the dock stay coherent.
-        if docked { undock() }
         let id = BootTerminal.mint()
         let session = makeSession(termID: id)
         sessions[id] = session
@@ -1538,7 +1448,7 @@ final class AppController {
         focusedCardID = .term(id)
         spawn(session: session)
         activeBoard.view.select(.term(id))
-        if !docked { window?.makeFirstResponder(session.view) }
+        window?.makeFirstResponder(session.view)
         // Persist so the new terminal card survives a restart.
         persistLayout()
     }
@@ -1579,14 +1489,6 @@ final class AppController {
         }
         // An exited terminal can't ring: clear any lingering bell.
         card.setBell(false)
-        // If the dying terminal was docked on the ACTIVE board, return its view to
-        // its card and hide the dock before prime advances, so the dock never
-        // holds a view that is no longer prime (risk: off-screen input routing).
-        // The dock pane is the active board's; a backgrounded board is never
-        // docked-into-the-pane (it was undocked on switch-away).
-        if isActive, board.docked, board.primeTermID == termID {
-            undock()
-        }
         // OTHER terminals on this board still backed by a live pty (this one is
         // now !live) — drives the last-terminal guarantee.
         let otherLive = board.sessions.values.filter(\.live).count
@@ -1644,8 +1546,6 @@ final class AppController {
     /// reuses the exited one).
     private func spawnTerminal(on board: Board, at frame: CardFrame) {
         let isActive = board === activeBoard
-        // Land the fresh terminal on the board, not behind the dock pane.
-        if isActive, board.docked { undock() }
         let id = BootTerminal.mint()
         let session = makeSession(termID: id)
         board.sessions[id] = session
@@ -1661,7 +1561,7 @@ final class AppController {
         }
         spawn(session: session, on: board)
         board.view.select(.term(id))
-        if isActive, !board.docked { window?.makeFirstResponder(session.view) }
+        if isActive { window?.makeFirstResponder(session.view) }
         persistLayout(for: board)
     }
 
@@ -1681,7 +1581,7 @@ final class AppController {
     }
 
     /// ⌘W closes the focused card (issue #15), routed through `FocusedClose`: a doc
-    /// goes to the shelf (recoverable); a terminal is terminated; nothing focused
+    /// card is removed from the board; a terminal is terminated; nothing focused
     /// is a no-op. The keyboard twin of the header ✕, scoped to the one card the
     /// user is looking at.
     private func closeFocusedCard() {
@@ -1700,7 +1600,7 @@ final class AppController {
         case .noop:
             break
         case .shelfDoc:
-            if case .doc(let path)? = focusedCardID { moveToShelf(path) }
+            if case .doc(let path)? = focusedCardID { closeDocCard(path) }
         case .closeTerminal(let replace):
             if case .term(let termID)? = focusedCardID { closeTerminal(termID, replace: replace) }
         }
@@ -1716,7 +1616,6 @@ final class AppController {
         let board = activeBoard
         guard let card = board.view.card(.term(termID)) else { return }
         let frame = card.worldFrame
-        if board.docked, board.primeTermID == termID { undock() }
         client.termClose(termID: termID)
         board.sessions[termID]?.live = false
         termIndex.remove(termID: termID)
@@ -1749,14 +1648,14 @@ final class AppController {
                 if board.sessions[id]?.live == true {
                     board.primeTermID = id
                     updatePrimacy(on: board)
-                    if isActive, !board.docked { window?.makeFirstResponder(board.sessions[id]?.view) }
+                    if isActive { window?.makeFirstResponder(board.sessions[id]?.view) }
                     return
                 }
             }
         }
         // No live terminal remains on this board: nothing is prime. On the active
         // board, move first responder off the dead terminal view to the board so
-        // Return/dock/fly stay reachable (boardHasFocus would otherwise never be
+        // the Return flight stays reachable (boardHasFocus would otherwise never be
         // true again until a board click).
         board.primeTermID = nil
         if isActive { window?.makeFirstResponder(rootView.board) }
@@ -1801,30 +1700,19 @@ final class AppController {
     /// Shared UI plumbing for both title sources (OSC + `term_proc`): recompute the
     /// displayed label and the "live"/cyan status from `oscTitle` / `procName` /
     /// `shellName` via the pure `TermTitle` rules, then push them everywhere the
-    /// honest label renders (card header, dock label, locard, owner chips,
-    /// switcher).
+    /// honest label renders (card header, owner chips, switcher).
     private func applyTermTitle(termID: String, on board: Board) {
         guard let s = board.sessions[termID] else { return }
-        let isActive = board === activeBoard
         let label = TermTitle.displayLabel(oscTitle: s.oscTitle, procName: s.procName, shellName: s.shellName)
         s.label = label
-        board.view.card(.term(termID))?.setTermLabel(label)
-        // Keep the dock header label honest while docked, but only for the docked
-        // (prime) terminal on the ACTIVE board (the dock pane is the active board's).
-        if isActive, board.docked, termID == board.primeTermID {
-            rootView.dockPane.setTermLabel(label.isEmpty ? "shell" : label)
-        }
+        let card = board.view.card(.term(termID))
+        card?.setTermLabel(label)
         // "Live" (agent-active) when a program set its own OSC title, or — absent
         // that — when the foreground process is no longer the bare shell (crib §6:
         // cyan = agent-active).
         let live = TermTitle.isLive(oscTitle: s.oscTitle, procName: s.procName, shellName: s.shellName)
-        let card = board.view.card(.term(termID))
-        let wasLive = card?.liveActive ?? false
-        if live, !wasLive { s.liveProcSince = Date() }
-        if !live { s.liveProcSince = nil }
         card?.setLive(live)
         board.view.signalsChanged()
-        refreshTermLocard(termID, on: board)
         // Re-render this board's attached doc cards' owner chips with the new label.
         for path in board.boardDocPaths {
             guard let docCard = board.view.card(.doc(path)) else { continue }
@@ -1833,31 +1721,7 @@ final class AppController {
         refreshSwitcherIfOpen()
     }
 
-    // MARK: - Phase 4 wayfinding (locard content, offscreen hints)
-
-    /// Feeds a terminal card's locard content (crib §7): the foreground process
-    /// name + a duration (`<proc> · Ns`) when live, else the shell name idle.
-    private func refreshTermLocard(_ termID: String, on board: Board? = nil) {
-        let b = board ?? activeBoard
-        guard let s = b.sessions[termID], let card = b.view.card(.term(termID)) else { return }
-        let status: String
-        if card.liveActive, let since = s.liveProcSince {
-            let secs = max(1, Int(Date().timeIntervalSince(since).rounded()))
-            status = "running · \(secs)s"
-        } else {
-            status = "idle"
-        }
-        card.setLocardContent(name: s.label.isEmpty ? "shell" : s.label, status: status, repoColor: nil)
-    }
-
-    /// Feeds a doc card's locard content (crib §7): basename + recency line.
-    private func refreshDocLocard(_ path: String, on board: Board? = nil) {
-        let b = board ?? activeBoard
-        guard let card = b.view.card(.doc(path)), let doc = b.store.doc(for: path) else { return }
-        let status = doc.read ? doc.displayPath : "unread · \(doc.displayPath)"
-        let color = Theme.repoColor(index: doc.repoColor, fallbackName: doc.displayRepoName)
-        card.setLocardContent(name: doc.fileName, status: status, repoColor: color)
-    }
+    // MARK: - Phase 4 wayfinding (offscreen hints)
 
     /// Builds the offscreen-hint models (crib §6) for every signalling card:
     /// bell → `basename · HH:MM`; live → the process name. The board decides
@@ -1931,75 +1795,14 @@ final class AppController {
     }
 
     /// Makes `termID` the prime (focused) terminal: re-applies primacy styling
-    /// and moves keyboard first responder to its view (unless docked). Typing
+    /// and moves keyboard first responder to its view. Typing
     /// always follows the prime terminal regardless of pointer (crib §6). Used by
     /// ⌥tab and ⌘T.
     private func setPrime(_ termID: String) {
         guard let s = sessions[termID] else { return }
         primeTermID = termID
         updatePrimacy()
-        if !docked { window?.makeFirstResponder(s.view) }
-    }
-
-    // MARK: - Cockpit dock (Phase 5a, crib §4)
-
-    /// Return (board-focused) toggles the dock; esc always undocks.
-    private func toggleDock() {
-        if docked { undock() } else { dock() }
-    }
-
-    /// Docks the focused terminal into the viewport-fixed bottom pane (crib §4):
-    /// REPARENT the SwiftTerm view from its board card body into the dock pane,
-    /// hide the board card + show its dashed slot ghost, then reflow + restore
-    /// first responder so the terminal keeps typing.
-    private func dock() {
-        guard !docked, hasLivePrime, let id = primeTermID, let view = primeTerminalView else { return }
-        docked = true
-        // Reparent the prime SwiftTerm view: card body → dock pane body.
-        view.removeFromSuperview()
-        rootView.dockPane.body.addSubview(view)
-        let label = primeSession?.label ?? ""
-        rootView.dockPane.setTermLabel(label.isEmpty ? "shell" : label)
-        rootView.setDockVisible(true)
-        activeBoard.view.setDocked(.term(id))
-        // Reflow into the dock body's geometry, then restore first responder so
-        // keystrokes still land in the terminal (the delegate is unchanged).
-        // Lay out RootView first so the dock pane has its (just-shown) frame,
-        // then the pane subtree positions the reparented terminal.
-        rootView.layoutSubtreeIfNeeded()
-        window?.makeFirstResponder(view)
-        forceTerminalReflow()
-        updatePrimacy()
-    }
-
-    /// Returns the docked terminal to its board card (crib §4): REPARENT the
-    /// SwiftTerm view dock pane body → card body, hide the dock pane + slot ghost,
-    /// reflow + restore first responder.
-    private func undock() {
-        guard docked else { return }
-        docked = false
-        if let view = primeTerminalView {
-            view.removeFromSuperview()
-            primeTermCard?.attachTerminal(view)
-        }
-        rootView.setDockVisible(false)
-        activeBoard.view.setDocked(nil)
-        // Reflow into the card body's geometry, then restore first responder.
-        rootView.layoutSubtreeIfNeeded()
-        if let view = primeTerminalView { window?.makeFirstResponder(view) }
-        forceTerminalReflow()
-        updatePrimacy()
-    }
-
-    /// Nudges the prime terminal to re-measure its cols/rows after a reparent so
-    /// the daemon pty resizes to the new geometry. SwiftTerm reflows on a frame
-    /// change; `terminalSizeChanged` then forwards the resize to the daemon.
-    private func forceTerminalReflow() {
-        guard let id = primeTermID, let view = primeTerminalView else { return }
-        // A layout pass already ran; re-assert the current size to the daemon in
-        // case the cols/rows are unchanged but the view was reparented.
-        let term = view.getTerminal()
-        terminalSizeChanged(termID: id, cols: term.cols, rows: term.rows)
+        window?.makeFirstResponder(s.view)
     }
 
     // MARK: - ⌥tab terminal cycle + HUD (Phase 5a scaffold, crib §6)
@@ -2009,9 +1812,6 @@ final class AppController {
     /// terminal's label, the new prime highlighted (crib §6). Dead terminals are
     /// skipped. With one terminal this re-asserts focus (a single-item HUD).
     private func cycleTerminals() {
-        // Cycling while docked would desync the dock (which holds one terminal's
-        // view) from prime; esc to undock first.
-        guard !docked else { return }
         let liveIDs = sessionOrder.filter { sessions[$0]?.live == true }
         guard !liveIDs.isEmpty else { return }
         let currentIdx = primeTermID.flatMap { liveIDs.firstIndex(of: $0) } ?? -1
@@ -2040,21 +1840,14 @@ final class AppController {
     }
 
     /// `.bell`: a BEL was seen on the terminal — give its card the amber bell
-    /// signal. Cleared on the next keystroke to that terminal or on focus
-    /// (see `terminalDidSend` / `clearBell`).
+    /// signal. Cleared on the next keystroke to that terminal
+    /// (see `terminalDidSend`).
     private func handleBell(termID: String) {
         // Route to the owning board (a backgrounded board can ring); its detached
         // card lights amber and shows the signal on switch-back.
         guard let board = ownerBoard(ofTerm: termID), board.sessions[termID]?.live == true else { return }
         board.view.card(.term(termID))?.setBell(true)
         board.view.signalsChanged()
-        refreshSwitcherIfOpen()
-    }
-
-    /// Clears the amber bell signal on the term card (next keystroke / focus).
-    private func clearBell() {
-        primeTermCard?.setBell(false)
-        activeBoard.view.signalsChanged()
         refreshSwitcherIfOpen()
     }
 
@@ -2108,13 +1901,13 @@ final class AppController {
         if switching { finishArrive(on: board) }
     }
 
-    /// `restore.tiles[]` → board cards + shelf chips (crib §6). A `shelf:true`
-    /// doc tile becomes a shelf chip; a geometry-bearing doc tile becomes a
+    /// `restore.tiles[]` → board cards. A geometry-bearing doc tile becomes a
     /// board card seeded from the doc's provenance owner (attached = !loose); a
-    /// geometry-less, non-shelf doc tile is an M1 layout → default scatter
-    /// migration. The terminal card always survives. Unknown kinds and
-    /// unregistered doc paths are skipped (protocol receiver rules). The board
-    /// viewport is applied when present, else the default.
+    /// geometry-less doc tile is an M1 layout → default scatter migration,
+    /// unless it is a legacy `shelf:true` tile, which is dropped. The terminal
+    /// card always survives. Unknown kinds and unregistered doc paths are
+    /// skipped (protocol receiver rules). The board viewport is applied when
+    /// present, else the default.
     private func applyRestoredLayout(tiles: [LayoutTile], board: BoardViewport?, liveTerms: Set<String>) {
         // Tear down any doc cards from a prior restore; the term card is kept and
         // re-placed (its embedded SwiftTerm view stays attached). Snapshot the ids
@@ -2122,7 +1915,6 @@ final class AppController {
         for id in Array(activeBoard.view.cards.keys) {
             if case .doc = id { activeBoard.view.removeCard(id: id) }
         }
-        shelfPaths = []
 
         let termTiles = tiles.filter { $0.kind == "term" }
         let docTiles = tiles.filter { $0.kind == "doc" }
@@ -2136,15 +1928,11 @@ final class AppController {
 
         var docSlot = 0
         for tile in docTiles {
-            guard let path = tile.path, store.doc(for: path) != nil else { continue }
-            if tile.shelf == true {
-                if !shelfPaths.contains(path) { shelfPaths.append(path) }
-                continue
-            }
+            guard let path = tile.path, store.doc(for: path) != nil, tile.shelf != true else { continue }
             if let stored = CardFrame(tile: tile) {
                 landDocCard(path: path, frame: stored, attached: tile.loose != true, fresh: false)
             } else {
-                // Geometry-less, non-shelf doc tile: M1 migration → scatter.
+                // Geometry-less doc tile: M1 migration → scatter.
                 migratedAny = true
                 landDocCard(path: path, frame: scatterFrame(docSlot: docSlot), attached: tile.loose != true, fresh: false)
             }
@@ -2296,8 +2084,8 @@ final class AppController {
         updatePrimacy(on: board)
         board.view.signalsChanged()
         // Re-establish focus on the (now-live) prime when this is the board the
-        // user is looking at and it is not docked.
-        if isActive, !board.docked, let view = board.primeTerminalView {
+        // user is looking at.
+        if isActive, let view = board.primeTerminalView {
             window?.makeFirstResponder(view)
         }
     }
@@ -2338,7 +2126,6 @@ final class AppController {
         if fresh { card.setFresh(true) }
         card.setOwnerChip(ownerChipLabel(for: card, on: b))
         card.renderDoc(markdown: readMarkdown(path))
-        refreshDocLocard(path, on: b)
         b.view.recomputeEdges()
         // A doc card is quiet while a terminal is prime (crib §4).
         if b.hasLivePrime { card.setQuiet(true) }
@@ -2391,9 +2178,6 @@ final class AppController {
     }
 
     // MARK: - Fresh card landing (crib §5)
-    //
-    // `freshCardPath` (the most-recent fresh card; esc → shelf) is board-scoped
-    // and lives on `Board`, reached here via the active-board shim.
 
     /// Lands a fresh doc card to the right of its CALLER term card (the terminal
     /// that ran `tarmac open`, not necessarily the prime one) via a first-free-
@@ -2403,7 +2187,6 @@ final class AppController {
         let caller = ownerCardID(for: path, on: b).flatMap { b.view.card($0) }
         let frame = firstFreeSlot(near: caller, on: b)
         landDocCard(path: path, frame: frame, attached: true, fresh: true, on: b)
-        b.freshCardPath = path
     }
 
     /// First-free-slot search (crib §5): start at the anchor term card's right
@@ -2441,53 +2224,18 @@ final class AppController {
     private func clearFreshIfRead(_ path: String) {
         guard let card = activeBoard.view.card(.doc(path)), card.fresh else { return }
         card.setFresh(false)
-        if freshCardPath == path { freshCardPath = nil }
     }
 
-    /// esc sends a still-fresh card to the shelf (crib §5): set its tile
-    /// shelf:true, remove the board card, persist. Returns false when there is
-    /// no fresh card so esc falls through to peek/toast dismissal.
-    @discardableResult
-    private func sendFreshCardToShelf() -> Bool {
-        guard let path = freshCardPath, let card = activeBoard.view.card(.doc(path)), card.fresh else {
-            freshCardPath = nil
-            return false
-        }
-        freshCardPath = nil
-        moveToShelf(path)
-        return true
-    }
-
-    /// Moves a doc from the board to the shelf, persists, refreshes.
-    /// Parks a doc card on the shelf — the canonical "closed but kept" home (the
-    /// doc never leaves DocStore). The single teardown choke point for the header
-    /// ✕, Esc on a focused doc, unpin-from-peek, and esc-on-fresh; clearing focus
-    /// here is what keeps `focusedCardID` from ever pointing at a shelved card
-    /// (a stale focus would mis-target the next ⌘P and desync scroll routing).
-    private func moveToShelf(_ path: String) {
+    /// Closes a doc card: removes it from the board and persists. The doc stays
+    /// in `DocStore`. The single teardown choke point for the header ✕ and ⌘W;
+    /// clearing focus here keeps `focusedCardID` from ever pointing at a removed
+    /// card (a stale focus would desync scroll routing).
+    private func closeDocCard(_ path: String) {
         if focusedCardID == .doc(path) { defocus() }
         activeBoard.view.removeCard(id: .doc(path))
-        if !shelfPaths.contains(path) { shelfPaths.append(path) }
         persistLayout()
         refreshStrips()
     }
-
-    /// Lands a shelf chip dragged onto the board at the drop point's world
-    /// position (crib §6). Removes it from the shelf and persists.
-    private func landShelfDrop(path: String, windowPoint: NSPoint) {
-        guard store.doc(for: path) != nil else { return }
-        shelfPaths.removeAll { $0 == path }
-        let viewPoint = activeBoard.view.convert(windowPoint, from: nil)
-        let world = activeBoard.view.viewToWorld(viewPoint)
-        let topZ = (activeBoard.view.cards.values.map(\.worldFrame.z).max() ?? 0) + 1
-        // Drop point is the card's top-left.
-        let frame = CardFrame(x: world.x, y: world.y, w: Place.docW, h: Place.docH, z: topZ)
-        // A shelf doc lands detached (it had no board placement / gravity tie).
-        landDocCard(path: path, frame: frame, attached: false, fresh: false)
-        persistLayout()
-        refreshStrips()
-    }
-
 
     private func isOnBoard(_ path: String) -> Bool {
         activeBoard.view.card(.doc(path)) != nil
@@ -2495,11 +2243,10 @@ final class AppController {
 
     /// Reports the full layout snapshot (docs/protocol.md `layout`;
     /// last-writer-wins): each terminal card's frame + its `term_id` (Phase 5b:
-    /// N terminal cards, live AND dead, persist distinct positions), each board
-    /// doc card's frame with its `loose` flag (shelf:false), and each shelf doc
-    /// as a geometry-less `shelf:true` tile. Plus the board viewport `{zoom,cx,
-    /// cy}`. Fired on every committed board move/resize/zoom/pan, and on
-    /// shelf/gravity changes.
+    /// N terminal cards, live AND dead, persist distinct positions) and each board
+    /// doc card's frame with its `loose` flag (shelf:false). Plus the board
+    /// viewport `{zoom,cx,cy}`. Fired on every committed board
+    /// move/resize/zoom/pan, and on card-set/gravity changes.
     private func persistLayout() {
         persistLayout(for: activeBoard)
     }
@@ -2508,7 +2255,7 @@ final class AppController {
 
     /// The board whose layout a settling pan still owes to disk, and the trailing
     /// timer that will flush it. Only the continuous `onLayoutChanged` path is
-    /// debounced; discrete `persistLayout()` calls (spawn / close / dock / …) stay
+    /// debounced; discrete `persistLayout()` calls (spawn / close / …) stay
     /// immediate.
     private var pendingPersistBoardID: String?
     private var persistDebounce: DispatchWorkItem?
@@ -2555,7 +2302,7 @@ final class AppController {
     /// teardown transient and is dropped (the per-board correctness guard that
     /// replaces the P2 renderedBoardID suppression).
     private func persistLayout(for board: Board) {
-        // Drop everything during a switch transient (undock / unmount / re-mount /
+        // Drop everything during a switch transient (unmount / re-mount /
         // rebuild fire layout passes whose geometry is mid-flight) and any
         // callback from a non-active board (input/gestures reach no detached view).
         guard !switching, board === activeBoard else { return }
@@ -2583,10 +2330,6 @@ final class AppController {
             for path in board.boardDocPaths.sorted() {
                 guard let card = board.view.card(.doc(path)) else { continue }
                 tiles.append(boardTile(kind: "doc", path: path, card: card))
-            }
-            // Shelf docs: kind "doc", shelf:true, loose:true, no geometry (crib §6).
-            for path in board.shelfPaths {
-                tiles.append(LayoutTile(kind: "doc", path: path, loose: true, shelf: true))
             }
             client.layout(
                 dock: store.docs.map(\.path),
@@ -2617,9 +2360,7 @@ final class AppController {
         )
     }
 
-    // MARK: - Docs / peek
-
-    private var peekPath: String? { rootView.peek.currentPath }
+    // MARK: - Docs
 
     /// Wires a board's doc store to refresh the chrome on change — but only while
     /// that board is active (a backgrounded board's store can mutate via a
@@ -2630,23 +2371,18 @@ final class AppController {
     }
 
     private func storeChanged(onBoardID bid: String) {
-        guard let board = boards[bid] else { return }
-        // Drop shelf entries for docs the board's registry no longer knows.
-        board.shelfPaths.removeAll { board.store.doc(for: $0) == nil }
         if bid == activeBoardID { refreshStrips() }
     }
 
-    /// Rebuilds the shelf chips, syncs on-board card headers (incl. owner chips)
-    /// with the registry, and updates the status-bar counts + cold-start hint.
+    /// Syncs on-board card headers (incl. owner chips) with the registry, and
+    /// updates the status-bar counts + cold-start hint.
     private func refreshStrips() {
-        rootView.shelf.update(items: shelfPaths.compactMap(shelfItem(for:)))
         for path in boardDocPaths {
             guard let card = activeBoard.view.card(.doc(path)) else { continue }
             if let doc = store.doc(for: path) { card.apply(doc: doc) }
             card.setOwnerChip(ownerChipLabel(for: card))
-            refreshDocLocard(path)
         }
-        rootView.statusBar.setCounts(board: boardDocPaths.count, shelf: shelfPaths.count)
+        rootView.statusBar.setCounts(board: boardDocPaths.count)
         // M3: show which board is active + how many exist (a switch is otherwise
         // invisible until P4's titlebar chip / ⌘K switcher).
         let count = max(boardMetas.count, boards.count)
@@ -2654,19 +2390,6 @@ final class AppController {
         updateTitleChip()
         updateSessionLiveness()
         rootView.coldStartHint.isHidden = !store.isEmpty
-    }
-
-    /// Builds a shelf chip model from the registry (repo dot + basename + an
-    /// agent unread dot when unread).
-    private func shelfItem(for path: String) -> ShelfItem? {
-        guard let doc = store.doc(for: path) else { return nil }
-        return ShelfItem(
-            path: path,
-            basename: doc.fileName,
-            repoColor: doc.repoColor,
-            fallbackName: doc.displayRepoName,
-            unread: !doc.read
-        )
     }
 
     /// `tarmac open · HH:MM` edge label (crib §8): HH:MM from the doc's
@@ -2677,92 +2400,6 @@ final class AppController {
         }
         let date = Date(timeIntervalSince1970: Double(ms) / 1000)
         return "tarmac open · \(Self.hhmmFormatter.string(from: date))"
-    }
-
-    /// ⌘P: open the right-side panel (Quick Look) for the doc you mean — a
-    /// deterministic focus ladder, never a toggle and never "just the last opened".
-    func peekRecent() {
-        // ⌘P is a menu key-equivalent dispatched ahead of the global key monitor,
-        // so it would fire under the ⌘K veil; block it while the switcher owns
-        // the screen.
-        guard !switcherOpen else { return }
-        guard let path = peekTarget() else {
-            NSSound.beep()
-            return
-        }
-        openPeek(path)
-    }
-
-    /// The doc ⌘P targets: the focused doc card → the most-recent doc produced by
-    /// the focused terminal → the global most-recent doc. A focused terminal that
-    /// has produced no doc falls through to the global winner. nil only when the
-    /// registry is empty. "Most recent" is a recency tick (bumped by open AND
-    /// on-disk change), not strictly last-opened.
-    private func peekTarget() -> String? {
-        // Guard the focused-doc branch on the card still existing: focus is cleared
-        // when a doc is shelved (see moveToShelf), but a restore/relayout can drop a
-        // focused card without routing through there — never target a gone card.
-        if case .doc(let path)? = focusedCardID, activeBoard.view.card(.doc(path)) != nil {
-            return path
-        }
-        if case .term(let termID)? = focusedCardID {
-            let owned = DocRouting.docsOwnedBy(termID: termID, owners: activeBoard.docOwner)
-            if let recent = store.mostRecentPath(among: owned) { return recent }
-        }
-        return store.mostRecentPath
-    }
-
-    func openPeek(_ path: String) {
-        // A peek (⌘P / shelf click) keeps focus on the terminal it was opened
-        // over — reconcile so that's the focused terminal, not a stale prime.
-        reconcilePrimeToFocus()
-        rootView.peek.present(path: path, doc: store.doc(for: path), markdown: readMarkdown(path))
-        rootView.setPeekVisible(true)
-        // Presentation marks read; doc_read is idempotent and sent every time.
-        store.markRead(path)
-        client.docRead(path: path)
-        clearFreshIfRead(path)
-        refreshStrips()
-        // Focus rule: opening a peek never moves keyboard focus off the terminal.
-        if let view = primeTerminalView { window?.makeFirstResponder(view) }
-    }
-
-    func hidePeek() {
-        rootView.setPeekVisible(false)
-        refreshStrips()
-        if let view = primeTerminalView { window?.makeFirstResponder(view) }
-        // Focus returns to the terminal: clear any amber bell signal (M2).
-        clearBell()
-    }
-
-    /// ⌘⏎ (key or peek-header chip): land the peeked doc as a card at the gravity
-    /// position (first free slot right of the caller term card), or remove it if
-    /// already placed, closing the peek either way. No 4-tile cap (the cap was a
-    /// grid-template constraint — removed per Phase 2).
-    func togglePinPeeked() {
-        guard !switcherOpen else { return }
-        guard rootView.peekVisible, let path = peekPath else { return }
-        if isOnBoard(path) {
-            // Unpin parks the doc on the shelf (same as the card's ✕ close), so a
-            // closed doc always leaves a chip rather than vanishing to recency-only.
-            // moveToShelf persists + refreshes itself.
-            moveToShelf(path)
-        } else {
-            shelfPaths.removeAll { $0 == path }
-            // Land at the gravity position beside the doc's owner terminal (the
-            // caller), falling back to the prime terminal; attach when the doc
-            // has a resolvable owner so it follows that card + shows the chip.
-            let owner = ownerCardID(for: path)
-            let ownerCard = owner.flatMap { activeBoard.view.card($0) }
-            landDocCard(path: path, frame: firstFreeSlot(near: ownerCard), attached: owner != nil, fresh: false)
-            persistLayout()
-            refreshStrips()
-        }
-        hidePeek()
-    }
-
-    private func refreshPeek(_ path: String) {
-        rootView.peek.present(path: path, doc: store.doc(for: path), markdown: readMarkdown(path))
     }
 
     private func readMarkdown(_ path: String) -> String {

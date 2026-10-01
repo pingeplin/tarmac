@@ -5,8 +5,8 @@ import TarmacKit
 /// One board (workspace) — the unit the app holds N of (M3 "strips = boards").
 /// It owns the board-scoped state that used to live directly on the 1300-line
 /// `AppController` god-object: its own `BoardView` (the infinite whiteboard),
-/// its terminal sessions, and the prime / dock / shelf / provenance / fresh-card
-/// state plus the per-board restore latch.
+/// its terminal sessions, and the prime / provenance state plus the per-board
+/// restore latch.
 ///
 /// This is a **state + view-ownership container, not a behavioral object**.
 /// `AppController` stays the coordinator — it owns the `DaemonClient`, the key
@@ -45,20 +45,8 @@ final class Board {
     /// The prime (focused) terminal card's id, or nil when no terminal is live.
     var primeTermID: String?
 
-    /// Whether this board's focused terminal is docked into the cockpit pane.
-    /// The dock *pane* is a `RootView` singleton shared across boards, so only
-    /// the active (mounted) board is ever docked-into-the-pane at once; this flag
-    /// records each board's intent so a switch can undock-on-leave / redock-on-
-    /// arrive (P3 §3).
-    var docked = false
-
-    /// Shelf membership in chip order (open-but-unplaced docs).
-    var shelfPaths: [String] = []
     /// Provenance: doc path → the `term_id` that opened it (from `DocEntry`).
     var docOwner: [String: String] = [:]
-    /// Path of the most-recent fresh (just-landed CLI) card while it is still
-    /// fresh; esc targets it for the shelf.
-    var freshCardPath: String?
     /// The viewport to fly back to when esc follows a Return flight.
     var preFlightViewport: Viewport?
 
@@ -91,7 +79,7 @@ final class Board {
     }
 
     /// Whether the prime terminal is backed by a live pty — drives doc-card
-    /// quieting and the dock/cycle guards.
+    /// quieting.
     var hasLivePrime: Bool { primeSession?.live == true }
 
     /// Doc paths currently on this board.

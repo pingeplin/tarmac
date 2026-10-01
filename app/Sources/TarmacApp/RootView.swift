@@ -1,41 +1,28 @@
 import AppKit
-import QuartzCore
 import SwiftTerm
 
 /// Content view: the infinite whiteboard (`BoardView`) fills the window above a
-/// 27px status bar, with the shelf overlay (top-left), the cold-start hint, the
-/// peek slide-over, and the toast overlay layered on top. The dock/index rails
-/// were retired in Phase 3 (the shelf replaces the dock).
+/// 27px status bar, with the cold-start hint, the wayfinding chrome, and the
+/// toast overlay layered on top.
 @MainActor
 final class RootView: NSView {
     /// The mounted whiteboard. M3: one `BoardView` per board; `mountBoard(_:)`
     /// swaps which one is shown on a board switch. RootView owns only *which*
     /// view is displayed — the controller owns each board's cards + viewport.
     private(set) var board = BoardView()
-    let shelf = ShelfView()
     let statusBar = StatusBar()
     let coldStartHint = ColdStartHintView()
-    let peek = PeekPanel()
     let toasts = ToastStackView()
     // Phase 4 wayfinding chrome (crib §6): zoom control (bottom-left), minimap
     // (bottom-right), and offscreen-signal hint pills (pinned to viewport edges).
     let zoomControl = ZoomControl()
     let minimap = Minimap()
     let offHints = OffscreenHints()
-    // Phase 5a terminal primacy: the cockpit dock pane (fixed to the board's
-    // bottom; hidden until a terminal docks) and the ⌥tab cycle HUD (top-center).
-    let dockPane = DockPaneView()
+    // The ⌥tab cycle HUD (top-center).
     let cycleHUD = CycleHUD()
     // M3 P4: the ⌘K boards switcher overlay (veil + centered panel), topmost and
     // modal; hidden until ⌘K. The controller drives its contents + key handling.
     let boardSwitcher = BoardSwitcherView()
-
-    /// Whether the cockpit dock is currently showing a docked terminal. The
-    /// controller drives the reparent; RootView only owns the layout.
-    private(set) var dockVisible = false
-
-    private(set) var peekVisible = false
-    private var peekAnimating = false
 
     /// Supplies the per-card offscreen-hint models (label + priority) — the
     /// controller knows the doc/term metadata the board doesn't. Set by
@@ -53,24 +40,16 @@ final class RootView: NSView {
         addSubview(statusBar)
         coldStartHint.isHidden = true
         addSubview(coldStartHint)
-        // Shelf floats over the board's top-left; hidden until non-empty.
-        addSubview(shelf)
-        // Wayfinding overlays sit above the board, below peek/toasts. The hint
+        // Wayfinding overlays sit above the board, below the toasts. The hint
         // overlay is click-through and spans the board.
         addSubview(offHints)
         addSubview(zoomControl)
         addSubview(minimap)
 
-        // Cockpit dock pane sits above the board chrome (it covers the board's
-        // bottom while docked) but below peek/toasts; hidden until a dock.
-        dockPane.isHidden = true
-        addSubview(dockPane)
-        // Cycle HUD floats above the dock, top-center; hidden until ⌥tab.
+        // Cycle HUD floats top-center; hidden until ⌥tab.
         cycleHUD.isHidden = true
         addSubview(cycleHUD)
 
-        peek.isHidden = true
-        addSubview(peek)
         addSubview(toasts)
         // The ⌘K switcher is the topmost overlay (modal veil over everything).
         boardSwitcher.isHidden = true
@@ -157,16 +136,6 @@ final class RootView: NSView {
         board.setTerminal(termID: termID, terminal, worldFrame: worldFrame)
     }
 
-    /// Shows / hides the cockpit dock pane. The controller does the SwiftTerm
-    /// reparent + board slot-ghost separately; this only flips visibility and
-    /// re-lays-out so the pane occupies the board's bottom 40%.
-    func setDockVisible(_ visible: Bool) {
-        guard visible != dockVisible else { return }
-        dockVisible = visible
-        dockPane.isHidden = !visible
-        needsLayout = true
-    }
-
     /// Shows / hides the ⌘K boards switcher overlay (the controller renders its
     /// rows + handles keys; this only flips visibility and re-lays-out).
     func setSwitcherVisible(_ visible: Bool) {
@@ -184,7 +153,6 @@ final class RootView: NSView {
         statusBar.frame = NSRect(x: 0, y: boardHeight, width: bounds.width, height: StatusBar.height)
         // Cold-start hint: one line just above the status bar, full width.
         coldStartHint.frame = NSRect(x: 0, y: boardHeight - 28, width: bounds.width, height: 20)
-        // The shelf sizes itself (top-left at 12,12); nothing to lay out here.
 
         // Offscreen-hint overlay spans the board (its hint coords are board-space).
         offHints.frame = NSRect(x: 0, y: 0, width: bounds.width, height: boardHeight)
@@ -200,12 +168,6 @@ final class RootView: NSView {
             height: Minimap.mapHeight
         )
 
-        // Cockpit dock pane: fixed to the bottom of the board area (left 0,
-        // right 0, bottom at boardHeight — above the status bar), height = 40%
-        // of the board height (crib §4).
-        let dockH = (boardHeight * DockPaneView.heightFraction).rounded()
-        dockPane.frame = NSRect(x: 0, y: boardHeight - dockH, width: bounds.width, height: dockH)
-
         // Cycle HUD: centered horizontally, top 12 in the board's coordinate
         // space (the board fills from y=0 to boardHeight).
         if !cycleHUD.isHidden {
@@ -219,9 +181,6 @@ final class RootView: NSView {
             )
         }
 
-        if !peekAnimating {
-            peek.frame = peekFrame(visible: peekVisible)
-        }
         toasts.frame = bounds
         // ⌘K switcher: covers the board area (the status bar stays legible below,
         // showing the board count); the panel centers itself within.
@@ -229,46 +188,5 @@ final class RootView: NSView {
             boardSwitcher.frame = NSRect(x: 0, y: 0, width: bounds.width, height: boardHeight)
         }
         refreshWayfinding(board.viewport)
-    }
-
-    func peekFrame(visible: Bool) -> NSRect {
-        let width = (bounds.width * 0.47).rounded()
-        // Hidden = translateX(102%) per the design.
-        let x = visible ? bounds.width - width : bounds.width + (width * 0.02).rounded()
-        return NSRect(x: x, y: 0, width: width, height: bounds.height)
-    }
-
-    func setPeekVisible(_ visible: Bool, completion: (@MainActor () -> Void)? = nil) {
-        guard visible != peekVisible else {
-            completion?()
-            return
-        }
-        peekVisible = visible
-        let target = peekFrame(visible: visible)
-
-        if Theme.reduceMotion {
-            peek.frame = target
-            peek.isHidden = !visible
-            completion?()
-            return
-        }
-
-        peek.isHidden = false
-        peek.frame = peekFrame(visible: !visible)
-        peek.needsLayout = true
-        peekAnimating = true
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.22
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.8, 0.2, 1.0)
-            peek.animator().frame = target
-        }, completionHandler: {
-            MainActor.assumeIsolated { [weak self] in
-                guard let self else { return }
-                self.peekAnimating = false
-                self.peek.isHidden = !self.peekVisible
-                self.needsLayout = true
-                completion?()
-            }
-        })
     }
 }

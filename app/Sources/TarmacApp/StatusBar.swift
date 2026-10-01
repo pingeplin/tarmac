@@ -3,8 +3,7 @@ import TarmacKit
 
 /// Bottom status bar (crib §6 / migration-plan Phase 3): a 27px strip, bg1, a
 /// 1px line-soft top border, 10.5px mono faint. Left shows `▞ board` with the
-/// `▞` glyph in agent cyan; right shows live counts
-/// `N cards on board · M in shelf`.
+/// `▞` glyph in agent cyan; right shows the live count `N cards on board`.
 @MainActor
 final class StatusBar: NSView {
     static let height: CGFloat = 27
@@ -52,7 +51,7 @@ final class StatusBar: NSView {
         rightLabel.alignment = .right
         addSubview(rightLabel)
 
-        setCounts(board: 0, shelf: 0)
+        setCounts(board: 0)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -66,9 +65,8 @@ final class StatusBar: NSView {
         needsLayout = true
     }
 
-    func setCounts(board: Int, shelf: Int) {
-        let cards = board == 1 ? "1 card on board" : "\(board) cards on board"
-        rightLabel.stringValue = "\(cards) · \(shelf) in shelf"
+    func setCounts(board: Int) {
+        rightLabel.stringValue = board == 1 ? "1 card on board" : "\(board) cards on board"
         needsLayout = true
     }
 

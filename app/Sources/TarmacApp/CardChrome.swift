@@ -4,7 +4,7 @@ import TarmacKit
 
 /// A top-down (flipped) container view. Was defined in the now-removed
 /// DockView.swift; relocated here as it backs `CardView.clip`, `BoardView`'s
-/// card layer, the shelf, and the edge layer.
+/// card layer, and the edge layer.
 @MainActor
 final class FlippedColumnView: NSView {
     override var isFlipped: Bool { true }
@@ -28,7 +28,7 @@ extension NSTextField {
 // Shared card/tile chrome (was TileView.swift). The v4 `CardView` (board cards)
 // reuses these components; the desk-grid `TileView`/`DashedBorderView` were
 // removed with `DeskGridView` in Phase 2c. `CloseButton` is the doc card's
-// header ✕ (close-to-shelf) affordance; term cards pass nil.
+// header ✕ affordance; term cards pass nil.
 
 /// `✎ Ns` honest meta (crib-desk-tiles §3): visible while the 30s recency
 /// window is open, ticking at 1Hz (display granularity is 1s). The tick is a
@@ -120,7 +120,7 @@ final class CloseButton: NSView {
         super.init(frame: NSRect(origin: .zero, size: size))
         wantsLayer = true
         layer?.cornerRadius = 4
-        toolTip = "close (to shelf)"
+        toolTip = "close"
         label.frame = NSRect(x: 5, y: 2, width: textSize.width, height: textSize.height)
         addSubview(label)
     }
