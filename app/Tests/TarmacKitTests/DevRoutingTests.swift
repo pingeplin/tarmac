@@ -259,6 +259,26 @@ final class DevRoutingTests: XCTestCase {
         XCTAssertEqual(refusal(.focus(card: "/a/c.html"), docs(html: below))?.code, .cardHidden)
     }
 
+    /// The kept region is the board's own: it widens as the board zooms out and
+    /// follows the viewport's centre, so `zoom` can bring a refused card back.
+    func testS8TheCullFollowsTheViewportsZoomAndCentre() {
+        let cards = [Card(id: "/a/c.html", kind: .doc, frame: CGRect(x: 2500, y: 0, width: 400, height: 300))]
+        func context(zoom: CGFloat, center: CGPoint) -> DevRouting.Context {
+            DevRouting.Context(
+                cards: cards, keyboardFocusCard: nil, borrowedCard: nil,
+                zoom: zoom, center: center, viewSize: CGSize(width: 1000, height: 800)
+            )
+        }
+        let focus = DevRequest.focus(card: "/a/c.html")
+        XCTAssertEqual(refusal(focus, context(zoom: 1, center: .zero))?.code, .cardHidden)
+        XCTAssertEqual(route(focus, context(zoom: 0.5, center: .zero)), .focusHTML(card: "/a/c.html", borrow: true))
+        XCTAssertEqual(
+            route(focus, context(zoom: 1, center: CGPoint(x: 2500, y: 0))),
+            .focusHTML(card: "/a/c.html", borrow: true)
+        )
+        XCTAssertEqual(refusal(focus, context(zoom: 1, center: CGPoint(x: 0, y: 2500)))?.code, .cardHidden)
+    }
+
     func testS8CardHiddenIsFocusOnAnHTMLCardAndNothingElse() {
         let far = CGRect(x: 10_000, y: 0, width: 400, height: 300)
         XCTAssertEqual(route(.focus(card: "/a/b.md"), docs(markdown: far)), .focusMarkdown(card: "/a/b.md"))

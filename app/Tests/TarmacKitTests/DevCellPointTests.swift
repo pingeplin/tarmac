@@ -39,7 +39,9 @@ final class DevCellPointTests: XCTestCase {
     /// written cells; counting code units would, for a combining mark or a flag.
     func testACharacterBuiltFromSeveralCodePointsIsOneCell() {
         XCTAssertEqual(DevCellPoint.lastWrittenCell(in: ["e\u{301}"]), Cell(col: 0, row: 0))
-        XCTAssertEqual(DevCellPoint.lastWrittenCell(in: ["a🇹🇼"]), Cell(col: 1, row: 0))
+        XCTAssertEqual(DevCellPoint.lastWrittenCell(in: ["e\u{301}x"]), Cell(col: 1, row: 0))
+        XCTAssertEqual(DevCellPoint.lastWrittenCell(in: ["🇹🇼a"]), Cell(col: 1, row: 0))
+        XCTAssertEqual(DevCellPoint.lastWrittenCell(in: ["😀😀 "]), Cell(col: 1, row: 0))
     }
 
     func testS17ThePointIsTheExactCellCentre() {
