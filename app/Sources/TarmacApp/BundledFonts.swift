@@ -6,9 +6,13 @@ import Foundation
 /// before the first terminal view resolves its font by name.
 enum BundledFonts {
     static func register() {
-        let fonts = Bundle.module.urls(forResourcesWithExtension: "ttf", subdirectory: "Fonts") ?? []
+        // A bundled app carries its resources in Contents/Resources, where
+        // `Bundle.module` finds no package bundle and traps.
+        let packaged = Bundle.main.urls(forResourcesWithExtension: "ttf", subdirectory: "Fonts") ?? []
+        let fonts = packaged.isEmpty
+            ? Bundle.module.urls(forResourcesWithExtension: "ttf", subdirectory: "Fonts") ?? []
+            : packaged
         for font in fonts {
-            // A failure is a copy the user already installed, which serves as well.
             CTFontManagerRegisterFontsForURL(font as CFURL, .process, nil)
         }
     }
