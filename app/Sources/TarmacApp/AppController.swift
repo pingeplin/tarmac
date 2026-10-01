@@ -1280,10 +1280,14 @@ final class AppController {
         return nil
     }
 
+    /// A terminal view reported new cols/rows or bytes for its pty. Either can
+    /// come from a backgrounded board — a program there still asks the terminal
+    /// about itself (DA1, cursor position) and blocks on the answer — so the
+    /// session is looked up on its owning board, not the active one.
     func terminalSizeChanged(termID: String, cols: Int, rows: Int) {
         viewReady = true
         maybeSpawn()
-        guard let s = sessions[termID], s.live, cols > 0, rows > 0,
+        guard let s = session(ofTerm: termID), s.live, cols > 0, rows > 0,
               cols != s.lastSentCols || rows != s.lastSentRows else { return }
         s.lastSentCols = cols
         s.lastSentRows = rows
@@ -1291,7 +1295,7 @@ final class AppController {
     }
 
     func terminalDidSend(termID: String, _ bytes: Data) {
-        guard let s = sessions[termID], s.live else { return }
+        guard let s = session(ofTerm: termID), s.live else { return }
         clearBell(termID: termID)
         client.input(termID: termID, bytes: bytes)
     }
