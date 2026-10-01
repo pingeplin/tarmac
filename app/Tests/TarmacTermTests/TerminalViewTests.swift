@@ -133,6 +133,21 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(seen, [true])
     }
 
+    func testKeyReleasesDuringCompositionStayWithTheIme() {
+        feed("\u{1b}[>3u")
+        let release = NSEvent.keyEvent(
+            with: .keyUp, location: .zero, modifierFlags: [], timestamp: 1, windowNumber: window.windowNumber,
+            context: nil, characters: "n", charactersIgnoringModifiers: "n", isARepeat: false, keyCode: 0x2d
+        )!
+        view.keyUp(with: release)
+        XCTAssertFalse(sent.isEmpty, "a kitty program that asked for releases gets them")
+
+        sent = []
+        view.setMarkedText("n", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+        view.keyUp(with: release)
+        XCTAssertEqual(sent, [])
+    }
+
     // MARK: clipboard
 
     func testPasteHonoursBracketedMode() {

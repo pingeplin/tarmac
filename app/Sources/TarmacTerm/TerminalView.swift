@@ -341,6 +341,7 @@ public final class TerminalView: NSView {
     }
 
     public override func keyUp(with event: NSEvent) {
+        guard !hasMarkedText() else { return }
         sendKey(event, action: .release, text: nil, composing: false)
     }
 

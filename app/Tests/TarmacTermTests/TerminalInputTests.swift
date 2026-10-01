@@ -64,6 +64,16 @@ final class TerminalInputTests: XCTestCase {
         )
     }
 
+    func testKeysTheImeConsumedSendNothing() throws {
+        let engine = try engine()
+        XCTAssertEqual(engine.encode(KeyInput(key: GHOSTTY_KEY_SPACE, text: " ", unshiftedCodepoint: 0x20, composing: true)), [])
+        XCTAssertEqual(engine.encode(KeyInput(key: GHOSTTY_KEY_BACKSPACE, composing: true)), [])
+        XCTAssertEqual(engine.encode(KeyInput(key: GHOSTTY_KEY_ENTER, composing: true)), [])
+        XCTAssertEqual(engine.encode(KeyInput(key: GHOSTTY_KEY_ARROW_LEFT, composing: true)), [])
+        feed(engine, "\u{1b}[>1u")
+        XCTAssertEqual(engine.encode(KeyInput(key: GHOSTTY_KEY_ESCAPE, composing: true)), [])
+    }
+
     func testKeyReleaseIsSilentInLegacyMode() throws {
         XCTAssertEqual(try engine().encode(KeyInput(action: .release, key: GHOSTTY_KEY_A)), [])
     }
