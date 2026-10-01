@@ -244,6 +244,7 @@ final class AppController {
         mount(board0)
 
         updateWindowTitle()
+        updateSessionLiveness()
     }
 
     /// Names the active board in the window title, which is what the Dock,

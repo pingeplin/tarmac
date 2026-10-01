@@ -33,7 +33,9 @@ extension AppController {
             // swallowed so it never reaches the window-close menu.
             let isCmdW = event.keyCode == 13 && mods == .command
             let swallowed = MainActor.assumeIsolated { () -> Bool in
-                guard let self else { return false }
+                // A window hidden by its close button still has a key monitor;
+                // a board nobody can see takes no shortcuts.
+                guard let self, self.window?.isVisible == true else { return false }
                 // While the ⌘K switcher is open it owns the keyboard: route every
                 // key to it (filter / move / open / create) before anything else,
                 // so the board behind stays inert.
