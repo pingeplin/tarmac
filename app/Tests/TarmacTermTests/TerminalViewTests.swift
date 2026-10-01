@@ -423,6 +423,18 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(view.fontGeneration, before)
     }
 
+    /// A card built off-window spawns its PTY from this grid; guessing the
+    /// density would spawn at one size and correct it on mount.
+    func testAnUnwindowedViewMeasuresItsGridAtTheGivenBackingScale() throws {
+        let frame = NSRect(x: 0, y: 0, width: 600, height: 400)
+        let cells = try [1, 2].map { scale -> CGSize? in
+            let view = try TerminalView(frame: frame, backingScale: scale)
+            XCTAssertEqual(view.gridLayout?.cell, TerminalFonts(size: 16, pixelsPerPoint: scale).metrics.cell)
+            return view.gridLayout?.cell
+        }
+        XCTAssertNotEqual(cells[0], cells[1])
+    }
+
     // MARK: program replies
 
     func testQueriesAreAnsweredThroughTheInputPath() {

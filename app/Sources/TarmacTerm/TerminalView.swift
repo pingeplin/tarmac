@@ -48,7 +48,7 @@ public final class TerminalView: NSView {
     private(set) var gridLayout: TerminalGridLayout?
     /// Counts font rebuilds; each one drops the glyph cache and redraws everything.
     private(set) var fontGeneration = 0
-    private var fontScale: CGFloat = 2
+    private var fontScale: CGFloat
     /// What the program was last told. AppKit can take first responder away
     /// without resigning it (a re-parent) and hand it back, which must not
     /// reach the program as a second focus-in.
@@ -86,7 +86,8 @@ public final class TerminalView: NSView {
     private var lastDragPoint: SurfacePoint?
 
     public init(
-        frame: NSRect = .zero, theme: TerminalTheme = .breeze, fontSize: CGFloat = 16, scrollbackLines: Int = 5000
+        frame: NSRect = .zero, theme: TerminalTheme = .breeze, fontSize: CGFloat = 16, scrollbackLines: Int = 5000,
+        backingScale: CGFloat = NSScreen.main?.backingScaleFactor ?? 2
     ) throws {
         engine = try TerminalEngine(cols: 80, rows: 24)
         try engine.apply(theme)
@@ -95,7 +96,8 @@ public final class TerminalView: NSView {
         selection.multiClickInterval = NSEvent.doubleClickInterval
         reader = try FrameReader()
         self.fontSize = fontSize
-        renderer = TerminalRenderer(fonts: TerminalFonts(size: fontSize, pixelsPerPoint: 2), theme: theme)
+        fontScale = backingScale
+        renderer = TerminalRenderer(fonts: TerminalFonts(size: fontSize, pixelsPerPoint: backingScale), theme: theme)
         frameSnapshot = reader.read(engine)
         super.init(frame: frame)
         wantsLayer = true
