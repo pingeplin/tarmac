@@ -4,7 +4,8 @@ import CoreGraphics
 /// #166): the last cell of the viewport that has a character in it, so the
 /// terminal's right-click selects a word. A click on blank space selects
 /// nothing, which would silently turn the Range scenario into a second copy of
-/// the caret one — hence a refusal rather than a best-effort point.
+/// the caret one — hence a refusal rather than a best-effort point, and a
+/// target read off the grid's cells rather than guessed from a row's text.
 public enum DevCellPoint {
     public struct Cell: Equatable, Sendable {
         public var col: Int
@@ -16,16 +17,23 @@ public enum DevCellPoint {
         }
     }
 
-    /// `rows` is the VIEWPORT, top-first, one string per grid row — not the
-    /// scrollback. Nil when no row holds anything but blanks.
+    /// `rows` is the VIEWPORT — not the scrollback — top-first, and each row is
+    /// the grid's own cells, left to right, by their text: empty for an unwritten
+    /// cell and for the spacer after a wide character. Nil when every cell is
+    /// blank.
     ///
-    /// The column is counted in graphemes: each occupies at least one cell, so
-    /// the count never runs past the written cells. A wide character makes it
-    /// land short of the last one, still on text.
-    public static func lastWrittenCell(in rows: [String]) -> Cell? {
-        for (row, text) in rows.enumerated().reversed() {
-            guard let last = text.lastIndex(where: { !$0.isWhitespace }) else { continue }
-            return Cell(col: text.distance(from: text.startIndex, to: last), row: row)
+    /// Cells rather than a string, because a column is a grid position: a wide
+    /// character holds two of them, and a count of characters lands one short
+    /// per wide character — on the blank beside the last word, where a
+    /// right-click selects nothing and the verb would still answer ok.
+    ///
+    /// Blank is empty or Unicode White_Space. The Tauri driver trims with JS
+    /// `\s`, which also counts U+FEFF and does not count U+0085; no terminal
+    /// writes either into a cell.
+    public static func lastWrittenCell(in rows: [[String]]) -> Cell? {
+        for (row, cells) in rows.enumerated().reversed() {
+            guard let col = cells.lastIndex(where: { !$0.allSatisfy(\.isWhitespace) }) else { continue }
+            return Cell(col: col, row: row)
         }
         return nil
     }
