@@ -25,27 +25,17 @@ public struct PendingPersists {
     }
 
     /// A timer ran out. True when the snapshot is due — false for a timer a
-    /// later change superseded, or one whose board was flushed or cancelled.
+    /// later change superseded, or one whose board was flushed meanwhile.
     public mutating func fire(_ boardID: String, token: UInt64) -> Bool {
         guard tokens[boardID] == token else { return false }
         tokens[boardID] = nil
         return true
     }
 
-    /// The board is being left. True when it owes a snapshot, to be sent now.
-    public mutating func flush(_ boardID: String) -> Bool {
-        tokens.removeValue(forKey: boardID) != nil
-    }
-
-    /// The app is going to the background or quitting: every board that owes a
-    /// snapshot, to be sent now.
+    /// A board is being left, or the app is going to the background or
+    /// quitting: every board that owes a snapshot, to be sent now.
     public mutating func flushAll() -> [String] {
         defer { tokens = [:] }
         return tokens.keys.sorted()
-    }
-
-    /// The board is gone; it owes nothing.
-    public mutating func cancel(_ boardID: String) {
-        tokens[boardID] = nil
     }
 }

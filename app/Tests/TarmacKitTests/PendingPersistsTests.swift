@@ -45,23 +45,6 @@ final class PendingPersistsTests: XCTestCase {
         XCTAssertFalse(pending.fire("board-1", token: background), "a token belongs to the board it was issued for")
     }
 
-    func testFlushingABoardThatOwesASnapshotSendsItNowAndDisarmsItsTimer() {
-        var pending = PendingPersists()
-        let token = pending.schedule("board-0")
-
-        XCTAssertTrue(pending.flush("board-0"))
-        XCTAssertFalse(pending.isPending("board-0"))
-        XCTAssertFalse(pending.fire("board-0", token: token))
-    }
-
-    func testFlushingABoardThatOwesNothingSendsNothing() {
-        var pending = PendingPersists()
-        _ = pending.schedule("board-1")
-
-        XCTAssertFalse(pending.flush("board-0"))
-        XCTAssertTrue(pending.isPending("board-1"))
-    }
-
     func testFlushAllReturnsEveryPendingBoardOnce() {
         var pending = PendingPersists()
         _ = pending.schedule("board-1")
@@ -72,15 +55,14 @@ final class PendingPersistsTests: XCTestCase {
         XCTAssertEqual(pending.flushAll(), [])
     }
 
-    /// A pruned board's timer must not send a snapshot for a board that is gone.
-    func testCancellingABoardDisarmsItsTimer() {
+    /// A flushed board's snapshot has gone out; its timer must not send it again.
+    func testFlushingDisarmsTheTimers() {
         var pending = PendingPersists()
         let token = pending.schedule("board-0")
 
-        pending.cancel("board-0")
+        _ = pending.flushAll()
 
         XCTAssertFalse(pending.isPending("board-0"))
         XCTAssertFalse(pending.fire("board-0", token: token))
-        XCTAssertEqual(pending.flushAll(), [])
     }
 }

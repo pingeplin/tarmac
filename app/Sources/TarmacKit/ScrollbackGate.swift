@@ -31,7 +31,7 @@ public struct ScrollbackGate {
         awaiting[termID] != nil
     }
 
-    public func heldBytes(_ termID: String) -> Int {
+    func heldBytes(_ termID: String) -> Int {
         held[termID, default: []].reduce(0) { $0 + $1.count }
     }
 
