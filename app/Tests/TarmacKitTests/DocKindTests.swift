@@ -63,11 +63,12 @@ final class DocKindTests: XCTestCase {
 
     /// Spec 2609.0001 S11 — a standing guard: the refresh control re-evaluates this
     /// on every click, so purity is what keeps an unchanged-mtime refresh from
-    /// reloading an HTML card and losing its JS state (#99). The two calls straddle
-    /// a clock tick so a time-derived nonce cannot hide inside one millisecond.
+    /// reloading an HTML card and losing its JS state (#99). The URL is pinned to
+    /// the exact string, so any time-derived nonce or counter in it fails at once —
+    /// which two back-to-back calls could not promise within one clock tick.
     func testIsAPureFunctionOfPathAndMtime() {
-        let first = CardURL.src(path: "/tmp/live.html", mtimeMs: 1_700_000_000_000)
-        Thread.sleep(forTimeInterval: 0.01)
-        XCTAssertEqual(CardURL.src(path: "/tmp/live.html", mtimeMs: 1_700_000_000_000), first)
+        let expected = "tarmac-card://doc/%2Ftmp%2Flive.html?v=1700000000000"
+        XCTAssertEqual(CardURL.src(path: "/tmp/live.html", mtimeMs: 1_700_000_000_000), expected)
+        XCTAssertEqual(CardURL.src(path: "/tmp/live.html", mtimeMs: 1_700_000_000_000), expected)
     }
 }
