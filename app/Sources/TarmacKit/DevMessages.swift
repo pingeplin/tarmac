@@ -73,7 +73,7 @@ public extension DevRequest {
         case "snapshot":
             return .snapshot(
                 until: try fields.opt("until", \.stringValue),
-                timeoutMs: try fields.opt("timeout_ms", \.intValue)
+                timeoutMs: try fields.milliseconds("timeout_ms")
             )
         case "zoom":
             return .zoom(z: try fields.req("z", \.doubleValue))
@@ -92,9 +92,9 @@ public extension DevRequest {
         case "press":
             return .press(
                 combo: try fields.req("combo", \.stringValue),
-                holdMs: try fields.opt("hold_ms", \.intValue),
-                ageMs: try fields.opt("age_ms", \.intValue),
-                busyMs: try fields.opt("busy_ms", \.intValue)
+                holdMs: try fields.milliseconds("hold_ms"),
+                ageMs: try fields.milliseconds("age_ms"),
+                busyMs: try fields.milliseconds("busy_ms")
             )
         default:
             return .unknown(type: t)
@@ -170,6 +170,13 @@ private struct DevFields {
     func opt<T>(_ key: String, _ extract: (MsgPackValue) -> T?) throws -> T? {
         guard let raw = map[key], !raw.isNil else { return nil }
         guard let value = extract(raw) else { throw MessageError.badField(key) }
+        return value
+    }
+
+    /// The Rust wire type is `u32`.
+    func milliseconds(_ key: String) throws -> Int? {
+        guard let value = try opt(key, \.intValue) else { return nil }
+        guard UInt32(exactly: value) != nil else { throw MessageError.badField(key) }
         return value
     }
 }

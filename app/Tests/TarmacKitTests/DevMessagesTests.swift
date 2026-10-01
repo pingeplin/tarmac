@@ -167,6 +167,25 @@ final class DevMessagesTests: XCTestCase {
         XCTAssertEqual(try DevRequest.decode(payload: hexData("82 a1 7a 01 a1 74 a4 7a 6f 6f 6d")), .zoom(z: 1.0))
     }
 
+    /// The wire type is `u32`; a wider or negative count is a malformed frame,
+    /// not a budget to add slack to.
+    func testAMillisecondCountOutsideTheWireTypeIsMalformed() {
+        let cases: [(String, String, Int64)] = [
+            ("snapshot", "timeout_ms", .max), ("snapshot", "timeout_ms", -1),
+            ("press", "hold_ms", Int64(UInt32.max) + 1), ("press", "age_ms", -1), ("press", "busy_ms", .max),
+        ]
+        for (t, key, value) in cases {
+            let request: MsgPackValue = .map(["t": .string(t), "combo": .string("cmd+q"), key: .int(value)])
+            XCTAssertThrowsError(try DevRequest.decode(request), "\(key)=\(value)") { error in
+                XCTAssertEqual(error as? MessageError, .badField(key))
+            }
+        }
+        XCTAssertEqual(
+            try DevRequest.decode(.map(["t": .string("snapshot"), "timeout_ms": .int(Int64(UInt32.max))])),
+            .snapshot(until: nil, timeoutMs: Int(UInt32.max))
+        )
+    }
+
     func testMalformedRequestsThrow() {
         XCTAssertThrowsError(try DevRequest.decode(.map(["z": .double(0.5)]))) { error in
             XCTAssertEqual(error as? MessageError, .missingField("t"))
