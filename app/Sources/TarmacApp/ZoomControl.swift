@@ -24,6 +24,7 @@ final class ZoomControl: NSView {
     private static let padX: CGFloat = 9
     private static let pctPadX: CGFloat = 10
     private static let height: CGFloat = 26
+    private static let line: CGFloat = 1
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
@@ -68,42 +69,46 @@ final class ZoomControl: NSView {
         sizeToContents()
     }
 
-    /// Wraps the control to its contents at the canonical 26px height.
+    /// The four segments' widths, left to right: each its text plus padding,
+    /// the readout over a 30px floor so it doesn't jitter between 36% and 100%.
+    private var segmentWidths: [CGFloat] {
+        [
+            minusBtn.textWidth + Self.padX * 2,
+            max(pct.attributedStringValue.size().width, 30) + Self.pctPadX * 2,
+            plusBtn.textWidth + Self.padX * 2,
+            fitBtn.textWidth + Self.padX * 2,
+        ]
+    }
+
+    /// Wraps the control to its contents at the canonical 26px height: the
+    /// segments, the 1px separators between them and the border around them.
     func sizeToContents() {
-        let h = Self.height
-        let minusW = minusBtn.fittedWidth + Self.padX * 2
-        let plusW = plusBtn.fittedWidth + Self.padX * 2
-        // pct keeps a stable min width so it doesn't jitter between 36% / 100%.
-        let pctW = max(pct.fittedSize.width, 30) + Self.pctPadX * 2
-        let fitW = fitBtn.fittedWidth + Self.padX * 2
-        let total = minusW + pctW + plusW + fitW
-        frame = NSRect(x: frame.minX, y: frame.minY, width: total.rounded(), height: h)
+        let total = 2 * Self.line + segmentWidths.reduce(0, +) + 3 * Self.line
+        frame = NSRect(x: frame.minX, y: frame.minY, width: total.rounded(.up), height: Self.height)
         needsLayout = true
     }
 
     override func layout() {
         super.layout()
-        let h = bounds.height
-        var x: CGFloat = 0
-
-        let minusW = minusBtn.fittedWidth + Self.padX * 2
-        minusBtn.frame = NSRect(x: x, y: 0, width: minusW, height: h)
-        x += minusW
-
-        let pctW = max(pct.fittedSize.width, 30) + Self.pctPadX * 2
-        pctLeftBorder.frame = NSRect(x: x, y: 0, width: 1, height: h)
-        let pctSize = pct.fittedSize
-        pct.frame = NSRect(x: x, y: ((h - pctSize.height) / 2).rounded(), width: pctW, height: pctSize.height)
-        x += pctW
-        pctRightBorder.frame = NSRect(x: x - 1, y: 0, width: 1, height: h)
-
-        let plusW = plusBtn.fittedWidth + Self.padX * 2
-        plusBtn.frame = NSRect(x: x, y: 0, width: plusW, height: h)
-        x += plusW
-
-        fitLeftBorder.frame = NSRect(x: x, y: 0, width: 1, height: h)
-        let fitW = fitBtn.fittedWidth + Self.padX * 2
-        fitBtn.frame = NSRect(x: x, y: 0, width: fitW, height: h)
+        let h = bounds.height - 2 * Self.line
+        let segments: [NSView] = [minusBtn, pct, plusBtn, fitBtn]
+        let separators = [pctLeftBorder, pctRightBorder, fitLeftBorder]
+        var x = Self.line
+        for (index, width) in segmentWidths.enumerated() {
+            let left = x.rounded()
+            x += width
+            let right = index == segments.count - 1 ? bounds.width - Self.line : x.rounded()
+            segments[index].frame = NSRect(x: left, y: Self.line, width: right - left, height: h)
+            guard index < separators.count else { continue }
+            separators[index].frame = NSRect(x: right, y: Self.line, width: Self.line, height: h)
+            x += Self.line
+        }
+        // A text field draws from its top, so the readout is centred by its frame.
+        let pctHeight = pct.fittedSize.height
+        pct.frame = NSRect(
+            x: pct.frame.minX, y: Self.line + ((h - pctHeight) / 2).rounded(),
+            width: pct.frame.width, height: pctHeight
+        )
     }
 }
 
@@ -129,7 +134,9 @@ final class ZoomSegmentButton: NSView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    var fittedWidth: CGFloat { label.fittedSize.width }
+    /// The text's advance. A centred label's fitted width is 8pt more than
+    /// that, which would make every segment 8pt wider than its stylesheet box.
+    var textWidth: CGFloat { label.attributedStringValue.size().width }
 
     override func layout() {
         super.layout()
