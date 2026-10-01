@@ -146,8 +146,7 @@ public enum BoardSwitcher {
 
     /// Whether the open switcher cancels a key it has no handler for. ⌘ presses
     /// pass, so AppKit's menu — not a character comparison — decides what the
-    /// Quit shortcut is. The switcher still stops propagation either way, so
-    /// nothing reaches the focused terminal.
+    /// Quit shortcut is. The caller still keeps the key from the focused terminal.
     public static func cancelsUnhandledKey(commandHeld: Bool) -> Bool {
         !commandHeld
     }

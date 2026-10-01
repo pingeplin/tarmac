@@ -21,7 +21,7 @@
 /// by an *exact* intent-modifier set: the raw bitfield is masked to
 /// command/control/option/shift — dropping CapsLock, function, and numericPad —
 /// and must equal exactly the one modifier shown. So ⌃⌘←, ⌥⌘←, ⇧⌘←, ⇧⌥↑, … all
-/// fall through to `super`, and a CJK user with CapsLock toggled (a routine state
+/// defer to the terminal's encoder, and a CJK user with CapsLock toggled (a routine state
 /// for input-method ASCII/中文 switching) gets the identical result.
 public enum TermKeyBinding {
     // Stable Cocoa `NSEvent.ModifierFlags` raw bits, mirrored here so the masking

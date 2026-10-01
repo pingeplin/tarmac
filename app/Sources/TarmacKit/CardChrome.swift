@@ -1,12 +1,13 @@
 /// Pure rule for a card's resting visual chrome — its border role and whether
-/// the resize handles show. Collapses `focused`/`selected` into one "active
-/// card" state (the teal ring + handles, always together) and keeps both
+/// it reads as the active card. Collapses `focused`/`selected` into one "active
+/// card" state (the teal ring) and keeps both
 /// `prime` (the keyboard target) and `fresh` (an agent-opened, unread card) out
 /// of the border entirely: prime is signalled by header tint + shadow, fresh by
 /// its halo + `✚ now` meta in the AppKit layer, never by a border here. So the
 /// border collapses to one axis — dead/active/plain — with `prime` and `fresh`
-/// both inert. Kept in TarmacKit so the priority and the "ring ⟺ handles"
-/// invariant are unit-tested away from AppKit (mirrors `EscFocusAction` /
+/// both inert. Resize hit-areas are live on every card; only the ring is
+/// focus-gated, so an idle card never shows it. Kept in TarmacKit so the
+/// priority is unit-tested away from AppKit (mirrors `EscFocusAction` /
 /// `FocusedClose`).
 public enum CardChrome {
     /// Visual-state inputs for one card.
@@ -46,9 +47,8 @@ public enum CardChrome {
     }
 
     /// True when the card is the user's active target — a single click
-    /// (`focused`) or an explicit header/handle grab (`selected`). NOT
-    /// suppressed by `dead`: a dead card stays resizable via a
-    /// header grab, so its handles can still show even though its border is muted.
+    /// (`focused`) or an explicit header/handle grab (`selected`). Gates the
+    /// ring only, never the resize hit-areas, and is NOT suppressed by `dead`.
     public static func showsHandles(_ s: State) -> Bool {
         s.focused || s.selected
     }

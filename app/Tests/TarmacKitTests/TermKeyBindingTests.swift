@@ -64,7 +64,7 @@ final class TermKeyBindingTests: XCTestCase {
         XCTAssertEqual(decide(right, option | arrow), optRight)
     }
 
-    // MARK: CapsLock invariance — all five rows (S6)
+    // MARK: CapsLock invariance — every row (S6)
 
     /// CapsLock-on (routine for CJK ASCII/中文 switching) must yield the identical
     /// result to CapsLock-off for every recognized shortcut.
@@ -101,9 +101,6 @@ final class TermKeyBindingTests: XCTestCase {
     }
 
     // MARK: IME gate (S9, S18) — paired bytes-off / nil-on on identical input
-    // There is no S10: the kitty gate was dropped (#153) — the rows pre-empt a
-    // kitty program's encoder like Ghostty's `text:` keybinds, so `bytes` takes no
-    // kitty input for a test to flip.
 
     func testComposingDefers() {                // S9
         XCTAssertEqual(decide(delete, command, composing: false), ctrlU)
@@ -119,10 +116,9 @@ final class TermKeyBindingTests: XCTestCase {
         XCTAssertNil(decide(right, option | arrow, composing: true))
     }
 
-    // MARK: No-regression — keys that must stay SwiftTerm's (S11–S14)
+    // MARK: No-regression — keys the terminal's own encoder keeps (S12–S14, S19)
 
     /// ⌃←/→ are claimed by macOS Mission Control — we must not steal them either.
-    /// (S11's ⌥←/→ half is superseded by S15/S16.)
     func testControlLeftRightDefer() {          // S19
         XCTAssertNil(decide(left, control | arrow))
         XCTAssertNil(decide(right, control | arrow))
