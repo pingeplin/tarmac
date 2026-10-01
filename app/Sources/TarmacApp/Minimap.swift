@@ -71,9 +71,8 @@ final class Minimap: NSView {
             OverlayPalette.minimapFill(item.signal).setFill()
             NSBezierPath(roundedRect: r, xRadius: 1.5, yRadius: 1.5).fill()
         }
-        // Inset by half the stroke, so the 1px line lands inside the box.
-        let vp = mapping.toMinimap(viewportWorldRect)
-        let vpPath = NSBezierPath(roundedRect: vp.insetBy(dx: 0.5, dy: 0.5), xRadius: 2, yRadius: 2)
+        guard let vp = mapping.strokeBox(viewportWorldRect, lineWidth: 1) else { return }
+        let vpPath = NSBezierPath(roundedRect: vp, xRadius: 2, yRadius: 2)
         Theme.agentDim.setFill()
         vpPath.fill()
         Theme.agent.setStroke()

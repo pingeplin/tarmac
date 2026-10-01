@@ -92,6 +92,17 @@ public enum BoardWayfinding {
             return CGRect(x: o.x, y: o.y, width: r.width * scale, height: r.height * scale)
         }
 
+        /// The path to stroke around `worldRect` with a line `lineWidth` wide,
+        /// so that the line falls inside the rect's minimap box. Nil for a box
+        /// no thicker than the line, which leaves nothing to outline: an SVG
+        /// rect of zero width or height is not rendered, and insetting a rect
+        /// past its own size gives the null rect.
+        public func strokeBox(_ worldRect: CGRect, lineWidth: CGFloat) -> CGRect? {
+            let box = toMinimap(worldRect)
+            guard box.width > lineWidth, box.height > lineWidth else { return nil }
+            return box.insetBy(dx: lineWidth / 2, dy: lineWidth / 2)
+        }
+
         /// minimap point → world point (inverse; used for click-to-jump).
         public func toWorld(_ p: CGPoint) -> CGPoint {
             guard scale != 0 else { return worldOrigin }

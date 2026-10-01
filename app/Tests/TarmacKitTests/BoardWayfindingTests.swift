@@ -164,6 +164,29 @@ final class BoardWayfindingTests: XCTestCase {
         XCTAssertEqual(mapping.scale, 0)
     }
 
+    /// The viewport's box is stroked with a 1px line, which is drawn inside the
+    /// rect it outlines: the path sits half a line in from each side.
+    func testStrokeBoxIsInsetByHalfTheLine() {
+        let mapping = BoardWayfinding.MinimapMapping(worldOrigin: .zero, scale: 0.1, offset: CGPoint(x: 6, y: 6))
+        XCTAssertEqual(
+            mapping.strokeBox(CGRect(x: 100, y: 100, width: 400, height: 200), lineWidth: 1),
+            CGRect(x: 16.5, y: 16.5, width: 39, height: 19)
+        )
+    }
+
+    /// Zoomed far in on a wide board the viewport maps to less than a pixel. A
+    /// rect inset past its own size is the null rect, at an infinite origin.
+    func testThereIsNoStrokeBoxForARectNoThickerThanTheLine() {
+        let mapping = BoardWayfinding.MinimapMapping(worldOrigin: .zero, scale: 0.1, offset: CGPoint(x: 6, y: 6))
+        XCTAssertNil(mapping.strokeBox(CGRect(x: 100, y: 100, width: 5, height: 200), lineWidth: 1))
+        XCTAssertNil(mapping.strokeBox(CGRect(x: 100, y: 100, width: 400, height: 5), lineWidth: 1))
+        XCTAssertNil(mapping.strokeBox(CGRect(x: 100, y: 100, width: 10, height: 200), lineWidth: 1), "exactly 1px wide")
+        XCTAssertEqual(
+            mapping.strokeBox(CGRect(x: 100, y: 100, width: 11, height: 200), lineWidth: 1)?.width ?? -1,
+            0.1, accuracy: 1e-9
+        )
+    }
+
     // MARK: - Offscreen-hint geometry
 
     func testHintPlacementInsideViewIsNil() {
