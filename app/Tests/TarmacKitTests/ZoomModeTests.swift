@@ -125,4 +125,11 @@ final class ZoomModeTests: XCTestCase {
     func testS7AndARevealCardsMetaLessRepeatTheLastCellOfTheTable() {
         XCTAssertEqual(ready(.reveal, nil), ZoomMode.ReadyActions(adopt: nil, logLine: nil, magnify: false))
     }
+
+    func testTrimsTabsNewlinesAndUnicodeSpacesNotJustSpaces() {
+        XCTAssertEqual(ZoomMode.declared(metaContent: "\treveal\n"), .reveal)
+        XCTAssertEqual(ZoomMode.declared(metaContent: "reveal\r\n"), .reveal)
+        XCTAssertEqual(ZoomMode.declared(metaContent: "\u{00A0}reveal\u{00A0}"), .reveal)
+        XCTAssertEqual(ZoomMode.declared(metaContent: "\u{2003}reveal"), .reveal)
+    }
 }

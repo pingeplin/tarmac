@@ -70,4 +70,27 @@ final class ExternalLinkTests: XCTestCase {
         XCTAssertTrue(ExternalLink.isHTTP(try XCTUnwrap(URL(string: "https://x.com/a?b=c#d"))))
         XCTAssertFalse(ExternalLink.isHTTP(try XCTUnwrap(URL(string: "mailto:a@b.com"))))
     }
+
+    func testTrimsTrailingSpacesAndControlCharacters() {
+        XCTAssertTrue(ExternalLink.isHTTP(href: "https://x.com "))
+        XCTAssertTrue(ExternalLink.isHTTP(href: "https://x.com\u{1F}"))
+        XCTAssertTrue(ExternalLink.isHTTP(href: "https://x.com \u{01} "))
+    }
+
+    func testTrimsLeadingControlCharactersNotJustSpaces() {
+        XCTAssertTrue(ExternalLink.isHTTP(href: "\u{01}https://x.com"))
+        XCTAssertTrue(ExternalLink.isHTTP(href: "\u{1F} \u{02}https://x.com"))
+    }
+
+    func testRemovesCarriageReturnsTabsAndNewlinesAnywhere() {
+        XCTAssertTrue(ExternalLink.isHTTP(href: "ht\rtps://x.com"))
+        XCTAssertTrue(ExternalLink.isHTTP(href: "ht\ttps://x.com"))
+        XCTAssertTrue(ExternalLink.isHTTP(href: "https://x.com/\rfoo"))
+    }
+
+    func testAcceptsEveryPortFromZeroToSixtyFiveThousandFiveHundredThirtyFive() {
+        for port in [0, 1, 80, 65535] {
+            XCTAssertTrue(ExternalLink.isHTTP(href: "https://x.com:\(port)"), "\(port)")
+        }
+    }
 }

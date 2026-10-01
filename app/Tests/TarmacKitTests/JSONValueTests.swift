@@ -151,4 +151,15 @@ final class JSONValueTests: XCTestCase {
             XCTAssertEqual(JSONValue.number(value).jsonString, text, "JSON.stringify writes the same digits")
         }
     }
+
+    func testJSONStringEscapesEveryControlCharacterAsAFourDigitLowercaseHexEscape() {
+        XCTAssertEqual(JSONValue.string("\u{00}").jsonString, #""\u0000""#)
+        XCTAssertEqual(JSONValue.string("\u{0B}").jsonString, #""\u000b""#)
+        XCTAssertEqual(JSONValue.string("\u{10}").jsonString, #""\u0010""#)
+        XCTAssertEqual(JSONValue.string("\u{1F}").jsonString, #""\u001f""#)
+    }
+
+    func testJSONStringLeavesSpaceAndDeleteUnescaped() {
+        XCTAssertEqual(JSONValue.string(" \u{7F}").jsonString, "\" \u{7F}\"")
+    }
 }

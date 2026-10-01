@@ -181,4 +181,11 @@ final class CardConsoleTests: XCTestCase {
     func testNoArgsFormatAsAnEmptyLine() {
         XCTAssertEqual(CardConsole.formatArgs([]), "")
     }
+
+    func testANegativeCapBehavesAsZero() {
+        var buffer = CardConsole.Buffer(cap: -5)
+        XCTAssertEqual(buffer.cap, 0)
+        buffer.push(CardConsole.Entry(level: .log, args: []))
+        XCTAssertEqual(buffer.entries, [])
+    }
 }

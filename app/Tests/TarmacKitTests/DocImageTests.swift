@@ -90,4 +90,18 @@ final class DocImageTests: XCTestCase {
         XCTAssertEqual(path("\r\nx.png\r\n"), "/r/x.png")
         XCTAssertEqual(path("a/\u{0301}b/../c.png"), "/r/a/c.png")
     }
+
+    /// `^[A-Za-z][A-Za-z0-9+.-]*:` — a scheme may carry digits, `+`, `.` and `-`
+    /// after its first letter, and a first character that is not a letter starts a
+    /// relative path, colon or not.
+    func testSchemeGrammar() {
+        for src in ["a+b:x.png", "a.b:x.png", "a-b:x.png", "x9:x.png", "A:x.png", "a:"] {
+            XCTAssertNil(path(src), src)
+        }
+        XCTAssertEqual(path("1a:x.png"), "/r/1a:x.png")
+        XCTAssertEqual(path("+a:x.png"), "/r/+a:x.png")
+        XCTAssertEqual(path(".a:x.png"), "/r/.a:x.png")
+        XCTAssertEqual(path("-a:x.png"), "/r/-a:x.png")
+        XCTAssertEqual(path("a_b:x.png"), "/r/a_b:x.png", "an underscore is not a scheme character")
+    }
 }

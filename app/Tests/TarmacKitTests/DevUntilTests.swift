@@ -250,4 +250,34 @@ final class DevUntilTests: XCTestCase {
     func testTheNumericToleranceIsOne() {
         XCTAssertEqual(DevUntil.numericTolerance, 1)
     }
+
+    /// `contains` is tried before the symbolic operators, so an operator-looking
+    /// string inside its value stays part of the value.
+    func testContainsIsTriedBeforeTheSymbolicOperators() throws {
+        XCTAssertEqual(
+            try DevUntil.parse(#"x contains "a == b""#),
+            DevUntil.Expression(path: "x", op: .contains, value: "a == b")
+        )
+        XCTAssertEqual(
+            try DevUntil.parse(#"x contains "a ~= b""#),
+            DevUntil.Expression(path: "x", op: .contains, value: "a ~= b")
+        )
+    }
+
+    func testApproximatelyIsFalseUnlessBothSidesAreNumbers() throws {
+        for source in [
+            #"cards[t-1].kind ~= "term""#,
+            "cards[t-1].focused ~= 1",
+            "cards[t-1].focused ~= true",
+            "cards[t-1].term.selection ~= 1",
+            "cards[t-1].term.selection ~= null",
+            "viewport.zoom ~= null",
+            "viewport.zoom ~= true",
+            #"viewport.zoom ~= "0.5""#,
+            "viewport ~= 1",
+        ] {
+            XCTAssertFalse(try holds(source), source)
+        }
+        XCTAssertTrue(try holds("viewport.zoom ~= 0.5"))
+    }
 }
