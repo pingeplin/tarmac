@@ -37,6 +37,11 @@ final class TerminalInputTests: XCTestCase {
         XCTAssertEqual(try engine().encode(letter(GHOSTTY_KEY_C, "c", mods: .control)), [0x03])
     }
 
+    func testControlSpaceSendsNul() throws {
+        let input = KeyInput(key: GHOSTTY_KEY_SPACE, mods: .control, text: " ", unshiftedCodepoint: 0x20)
+        XCTAssertEqual(try engine().encode(input), [0x00])
+    }
+
     func testFunctionalKeysUseLegacyEncodings() throws {
         let engine = try engine()
         XCTAssertEqual(engine.encode(KeyInput(key: GHOSTTY_KEY_ENTER)), [0x0d])
