@@ -103,4 +103,21 @@ final class JSONValueTests: XCTestCase {
         XCTAssertEqual(JSONValue.number(.infinity).displayString, "Infinity")
         XCTAssertEqual(JSONValue.number(-.infinity).displayString, "-Infinity")
     }
+
+    /// ECMAScript's Number::toString: the shortest round-trip digits, written out in
+    /// full up to 10^21 and down to 10^-6, in exponent form beyond — where Swift's
+    /// own `description` switches earlier and pads exponents to two digits.
+    func testNumbersUseECMAScriptNumberToStringLayout() {
+        let cases: [(Double, String)] = [
+            (100, "100"), (0.1, "0.1"), (0.1 + 0.2, "0.30000000000000004"), (12345678.9, "12345678.9"),
+            (9_007_199_254_740_992, "9007199254740992"), (1e16, "10000000000000000"),
+            (1.2345678901234568e20, "123456789012345680000"), (1e21, "1e+21"), (1.5e21, "1.5e+21"),
+            (0.000001, "0.000001"), (1e-7, "1e-7"), (1.5e-7, "1.5e-7"), (-1e-7, "-1e-7"),
+            (5e-324, "5e-324"), (1.7976931348623157e308, "1.7976931348623157e+308"), (1e100, "1e+100"),
+        ]
+        for (value, text) in cases {
+            XCTAssertEqual(JSONValue.number(value).displayString, text)
+            XCTAssertEqual(JSONValue.number(value).jsonString, text, "JSON.stringify writes the same digits")
+        }
+    }
 }
