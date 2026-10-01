@@ -42,6 +42,19 @@ final class DaemonSpawnerTests: XCTestCase {
         (try? String(contentsOfFile: path ?? log, encoding: .utf8)) ?? ""
     }
 
+    /// Sends `pid` SIGTERM and reaps it; a child that outlives that is killed.
+    private func assertSIGTERMKills(_ pid: pid_t, file: StaticString = #filePath, line: UInt = #line) {
+        kill(pid, SIGTERM)
+        let died = expectation(description: "the child died of SIGTERM")
+        DispatchQueue.global().async {
+            if terminatingSignal(reap(pid)) == SIGTERM { died.fulfill() }
+        }
+        if XCTWaiter().wait(for: [died], timeout: 2) != .completed {
+            kill(pid, SIGKILL)
+            XCTFail("the child never saw SIGTERM", file: file, line: line)
+        }
+    }
+
     /// The spawned daemon is its own session leader, so a session-wide SIGHUP
     /// aimed at the launching terminal cannot reach it.
     func testTheDaemonStartsItsOwnSession() throws {
@@ -114,17 +127,18 @@ final class DaemonSpawnerTests: XCTestCase {
         pthread_sigmask(SIG_BLOCK, &blocked, &previous)
         let spawned = DaemonSpawner.spawn(program: "/bin/sleep", arguments: ["30"], environment: [:], logPath: log)
         pthread_sigmask(SIG_SETMASK, &previous, nil)
-        let pid = try XCTUnwrap(spawned)
 
-        kill(pid, SIGTERM)
-        let died = expectation(description: "the child died of SIGTERM")
-        DispatchQueue.global().async {
-            if terminatingSignal(reap(pid)) == SIGTERM { died.fulfill() }
-        }
-        if XCTWaiter().wait(for: [died], timeout: 2) != .completed {
-            kill(pid, SIGKILL)
-            XCTFail("the child never saw SIGTERM")
-        }
+        assertSIGTERMKills(try XCTUnwrap(spawned))
+    }
+
+    /// An ignored signal survives exec too, and the app inherits those from
+    /// whatever launched it: a daemon ignoring SIGTERM could never be replaced.
+    func testTheDaemonDoesNotInheritAnIgnoredSignal() throws {
+        let previous = signal(SIGTERM, SIG_IGN)
+        let spawned = DaemonSpawner.spawn(program: "/bin/sleep", arguments: ["30"], environment: [:], logPath: log)
+        signal(SIGTERM, previous)
+
+        assertSIGTERMKills(try XCTUnwrap(spawned))
     }
 
     /// A spawn that produced no child reports none, so the caller never latches

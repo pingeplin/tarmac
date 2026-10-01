@@ -11,6 +11,8 @@ private final class FakeDaemon: @unchecked Sendable {
     private let state = NSCondition()
     private var connections: [Int32] = []
     private var frames: [[Data]] = []
+    private var ended: Set<Int> = []
+    private var frameBudgets: [Int: Int] = [:]
     private var stopped = false
 
     static func temporaryPath() -> String {
@@ -84,15 +86,42 @@ private final class FakeDaemon: @unchecked Sendable {
         var buffer = [UInt8](repeating: 0, count: 64 * 1024)
         while true {
             let n = read(fd, &buffer, buffer.count)
-            guard n > 0 else { return }
+            guard n > 0 else {
+                state.lock()
+                ended.insert(index)
+                state.broadcast()
+                state.unlock()
+                return
+            }
             decoder.append(Data(buffer[..<n]))
             while let frame = try? decoder.nextFrame() {
                 state.lock()
                 frames[index].append(frame)
+                let wedged = frames[index].count == frameBudgets[index]
                 state.broadcast()
                 state.unlock()
+                if wedged { return }
             }
         }
+    }
+
+    /// Connection `index` stops reading once it holds `count` frames, as a
+    /// daemon that has wedged does: its socket stays open and fills up. Set
+    /// before the connection is made.
+    func stopReading(after count: Int, on index: Int = 0) {
+        state.lock()
+        frameBudgets[index] = count
+        state.unlock()
+    }
+
+    /// Whether connection `index` read to the end of its stream within
+    /// `timeout`: the other side hung up.
+    func sawEnd(of index: Int = 0, timeout: TimeInterval = 3) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        state.lock()
+        defer { state.unlock() }
+        while !ended.contains(index), state.wait(until: deadline) {}
+        return ended.contains(index)
     }
 
     var connectionCount: Int {
@@ -126,12 +155,16 @@ private final class FakeDaemon: @unchecked Sendable {
     }
 
     func push(payload: Data, on index: Int = 0) throws {
-        let framed = try Framing.frame(payload)
+        try push(bytes: Framing.frame(payload), on: index)
+    }
+
+    /// `bytes` as they are, with no frame around them.
+    func push(bytes: Data, on index: Int = 0) throws {
         guard accepted(index + 1) else { throw POSIXError(.ETIMEDOUT) }
         state.lock()
         let fd = connections[index]
         state.unlock()
-        try framed.withUnsafeBytes { raw in
+        try bytes.withUnsafeBytes { raw in
             guard write(fd, raw.baseAddress, raw.count) == raw.count else {
                 throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
             }
@@ -145,6 +178,18 @@ private final class FakeDaemon: @unchecked Sendable {
         let fd = connections[index]
         state.unlock()
         shutdown(fd, SHUT_RDWR)
+    }
+
+    /// Close connection `index`, which must have stopped reading. Unlike
+    /// `drop`, this fails a write the client is blocked in: a peer's shutdown
+    /// leaves that writer asleep, a peer's close does not.
+    func closeWedged(_ index: Int = 0) {
+        guard accepted(index + 1) else { return }
+        state.lock()
+        let fd = connections[index]
+        connections[index] = -1
+        state.unlock()
+        close(fd)
     }
 }
 
@@ -252,6 +297,17 @@ private func eventually(timeout: TimeInterval = 3, _ condition: () -> Bool) -> B
     return condition()
 }
 
+/// A request too large for the socket's buffers: its write cannot finish until
+/// the daemon reads.
+private let megabyte = Message.input(termID: "t1", bytes: Data(count: 1 << 20))
+
+/// Bytes this process holds on the heap, over every malloc zone.
+private func heapBytesInUse() -> Int {
+    var statistics = malloc_statistics_t()
+    malloc_zone_statistics(nil, &statistics)
+    return statistics.size_in_use
+}
+
 extension DaemonClient.Timing {
     /// Short waits, and a reconnect that never runs out. The connect budget
     /// stays long: it only bounds a connect that is going to fail, and the first
@@ -339,6 +395,19 @@ final class DaemonClientTests: XCTestCase {
 
     private func messages(_ payloads: [Data]) throws -> [Message] {
         try payloads.map { try Message.decode(payload: $0) }
+    }
+
+    /// A queued request is only visible as the memory it holds: sixteen
+    /// megabytes of them must leave next to none of it behind.
+    private func assertRequestsAreDropped(
+        by client: DaemonClient, file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let before = heapBytesInUse()
+        for _ in 0..<16 { client.send(megabyte) }
+        XCTAssertTrue(
+            eventually { heapBytesInUse() - before < 4 << 20 },
+            "\(heapBytesInUse() - before) bytes are still held", file: file, line: line
+        )
     }
 
     // MARK: - Handshake
@@ -472,6 +541,29 @@ final class DaemonClientTests: XCTestCase {
         )
     }
 
+    /// A daemon that dies while the queue is being flushed costs the request
+    /// it was being sent, and no other: those behind it go to the next link.
+    func testAWriteThatFailsMidFlushKeepsTheRequestsBehindIt() throws {
+        let daemon = try FakeDaemon()
+        daemon.stopReading(after: 2)
+        let (client, _, _) = makeClient(daemon.path)
+        client.boardCreate()
+        client.send(megabyte)
+        client.boardSwitch(boardID: "board-1")
+        client.docClose(path: "/a.md")
+        client.start()
+
+        try daemon.push(.helloOK(v: 1))
+        XCTAssertEqual(try messages(daemon.received(2)), [.hello(role: "app", v: 1), .boardCreate])
+        daemon.closeWedged()
+
+        try daemon.push(.helloOK(v: 1), on: 1)
+        XCTAssertEqual(
+            try messages(daemon.received(3, on: 1)),
+            [.hello(role: "app", v: 1), .boardSwitch(boardID: "board-1"), .docClose(path: "/a.md")]
+        )
+    }
+
     // MARK: - Status
 
     /// The link reads as connected as soon as the socket is, before `hello_ok`.
@@ -508,6 +600,21 @@ final class DaemonClientTests: XCTestCase {
 
         XCTAssertEqual(inbox.first(2), [.helloOK(v: 1), .bell(termID: "t1")])
         XCTAssertEqual(statuses.all, [.connected])
+    }
+
+    /// A length past the 16 MiB cap is not a frame to wait for. The stream's
+    /// frame boundaries are lost with it, so the link is dropped and re-made.
+    func testAFrameLengthPastTheCapDropsTheLink() throws {
+        let daemon = try FakeDaemon()
+        let (client, statuses, inbox) = makeClient(daemon.path)
+        client.start()
+        try daemon.push(.helloOK(v: 1))
+        // One write: a second would race the client hanging up, and raise SIGPIPE.
+        let pastTheCap = withUnsafeBytes(of: UInt32(Framing.maxFrameLength + 1).bigEndian) { Data($0) }
+        try daemon.push(bytes: pastTheCap + Framing.frame(Message.bell(termID: "t1").encodedPayload()))
+
+        XCTAssertEqual(statuses.first(3), [.connected, .closed, .connected])
+        XCTAssertEqual(inbox.all, [.helloOK(v: 1)])
     }
 
     /// With no daemon and nothing to spawn, each attempt fails by naming the
@@ -549,7 +656,8 @@ final class DaemonClientTests: XCTestCase {
         )
     }
 
-    /// After `close` the client is silent: no status, no message, no reconnect.
+    /// After `close` the daemon is hung up on and the client is silent: no
+    /// status, no message, no reconnect.
     func testCloseEndsTheLinkForGood() throws {
         let daemon = try FakeDaemon()
         let (client, statuses, _) = makeClient(daemon.path)
@@ -557,9 +665,73 @@ final class DaemonClientTests: XCTestCase {
         XCTAssertEqual(statuses.first(1), [.connected])
 
         client.close()
-        usleep(300_000)
+        XCTAssertTrue(daemon.sawEnd(), "the socket is still open")
+        XCTAssertFalse(daemon.accepted(2, timeout: 0.3), "the client reconnected")
         XCTAssertEqual(statuses.all, [.connected])
-        XCTAssertEqual(daemon.connectionCount, 1)
+    }
+
+    /// What the daemon had already said when `close` was called, but the app
+    /// had not yet been handed, never reaches it.
+    func testNothingReadBeforeCloseIsDeliveredAfterIt() throws {
+        let daemon = try FakeDaemon()
+        let (client, statuses, inbox) = makeClient(daemon.path)
+        delivery.suspend()
+        do {
+            defer { delivery.resume() }
+            client.start()
+            XCTAssertEqual(daemon.received(1).count, 1, "the client is reading")
+            try daemon.push(.helloOK(v: 1))
+            try daemon.push(.bell(termID: "t1"))
+            daemon.drop()
+            XCTAssertTrue(daemon.accepted(2), "the client read both frames, then the hang-up, and is back")
+            client.close()
+        }
+        delivery.sync {}
+
+        XCTAssertEqual(inbox.all, [])
+        XCTAssertEqual(statuses.all, [])
+    }
+
+    /// A daemon that has stopped reading cannot hold up the app's exit: a
+    /// request stuck in its write is given a moment, then left behind.
+    func testCloseDoesNotWaitForADaemonThatStoppedReading() throws {
+        let daemon = try FakeDaemon()
+        daemon.stopReading(after: 2)
+        let (client, _, _) = makeClient(daemon.path)
+        client.start()
+        try daemon.push(.helloOK(v: 1))
+        client.boardCreate()
+        XCTAssertEqual(daemon.received(2).count, 2, "the link is up")
+        client.send(megabyte)
+
+        let returned = expectation(description: "close returned")
+        DispatchQueue.global().async {
+            client.close()
+            returned.fulfill()
+        }
+        wait(for: [returned], timeout: 2)
+        daemon.closeWedged()
+    }
+
+    /// A closed client has no link to flush to, ever: a request is dropped
+    /// rather than queued.
+    func testRequestsMadeAfterCloseAreDropped() {
+        let (client, _, _) = makeClient(FakeDaemon.temporaryPath())
+        client.close()
+
+        assertRequestsAreDropped(by: client)
+    }
+
+    /// A client that gave up has no link to flush to either, and the app goes
+    /// on making requests of it: each is dropped, not queued for good.
+    func testRequestsMadeAfterGivingUpAreDropped() {
+        let (client, statuses, _) = makeClient(
+            FakeDaemon.temporaryPath(), timing: .fast.givingUpConnectAfter(0.05).reconnecting { _ in nil }
+        )
+        client.start()
+        XCTAssertTrue(statuses.saw { $0 == .gaveUp })
+
+        assertRequestsAreDropped(by: client)
     }
 
     /// Requests made just before `close` — the layout flushed on quit — are
