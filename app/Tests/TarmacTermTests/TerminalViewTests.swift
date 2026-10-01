@@ -254,6 +254,19 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(sentText, "\u{1b}[<0;4;1M\u{1b}[<0;4;1m")
     }
 
+    /// A tracking area reports moves over the whole view, including where
+    /// another card lies on top of it.
+    func testPointerMovesOverAViewStackedAboveAreNotThisTerminals() throws {
+        feed("\u{1b}[?1003h\u{1b}[?1006h")
+        let content = try XCTUnwrap(view.superview)
+        let covered = try XCTUnwrap(view.gridLayout).rect(col: 0, row: 0, span: 10)
+        content.addSubview(NSView(frame: view.convert(covered, to: content)))
+        view.mouseMoved(with: try mouse(.mouseMoved, col: 3, row: 0))
+        XCTAssertEqual(sentText, "")
+        view.mouseMoved(with: try mouse(.mouseMoved, col: 20, row: 0))
+        XCTAssertEqual(sentText, "\u{1b}[<35;21;1M")
+    }
+
     // MARK: context menu
 
     func testRightClickSelectsTheWordAndOffersCopyPaste() throws {

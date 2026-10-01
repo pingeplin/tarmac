@@ -606,6 +606,12 @@ public final class TerminalView: NSView {
             .map { LinkHit(row: row, link: $0) }
     }
 
+    private func isTopmost(at event: NSEvent) -> Bool {
+        guard let content = window?.contentView else { return false }
+        let point = content.superview?.convert(event.locationInWindow, from: nil) ?? event.locationInWindow
+        return content.hitTest(point) === self
+    }
+
     private func updateHover(_ event: NSEvent) {
         let hit = programOwnsMouse(event) ? nil : surfacePoint(event).flatMap(link(at:))
         if hit != hoveredLink { hoveredLink = hit }
@@ -678,6 +684,12 @@ public final class TerminalView: NSView {
     /// Hover reports count as input to a selection-clearing program, so a shown
     /// selection holds them back; a click dismisses it and reports resume.
     public override func mouseMoved(with event: NSEvent) {
+        // A tracking area reports moves over the whole view, including where
+        // another view lies on top of it.
+        guard isTopmost(at: event) else {
+            hoveredLink = nil
+            return
+        }
         updateHover(event)
         guard isFocused, programOwnsMouse(event), !hasSelection else { return }
         report(event, action: .motion, button: nil)
