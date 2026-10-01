@@ -469,6 +469,14 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(bells, 1)
     }
 
+    /// The daemon keeps no title; after a re-bind the history is its only source.
+    func testReplayedHistoryStillNamesTheTerminal() {
+        var titles: [String?] = []
+        view.onTitleChanged = { titles.append($0) }
+        view.replay(Data("\u{1b}]2;build\u{07}".utf8))
+        XCTAssertEqual(titles, ["build"])
+    }
+
     func testTitleChangesReachTheHost() {
         var titles: [String?] = []
         view.onTitleChanged = { titles.append($0) }
