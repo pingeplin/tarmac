@@ -555,7 +555,7 @@ final class AppController {
             }
         case .restore(let docs, let tiles, let board, let restoredBoardID, let liveTerms):
             applyRestore(docs: docs, tiles: tiles, viewport: board, boardID: restoredBoardID, liveTerms: liveTerms)
-        case .output(let termID, let bytes), .scrollback(let termID, let bytes):
+        case .output(let termID, let bytes):
             // Route to the owning board's session (which may be backgrounded):
             // feeding a detached terminal view still advances its buffer, so a
             // background board's shell keeps progressing and shows fresh output
