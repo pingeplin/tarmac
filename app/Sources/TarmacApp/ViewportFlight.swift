@@ -36,4 +36,10 @@ final class ViewportFlight {
         timer?.invalidate()
         timer = nil
     }
+
+    /// The run loop holds the timer, so a flight released mid-fly would leave
+    /// it firing for good.
+    isolated deinit {
+        timer?.invalidate()
+    }
 }

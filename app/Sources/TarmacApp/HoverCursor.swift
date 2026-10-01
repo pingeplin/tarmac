@@ -5,7 +5,7 @@ import AppKit
 protocol HoverCursorProviding: NSView {
     func hoverCursor(at windowPoint: NSPoint) -> NSCursor
     /// True when a view underneath would answer the same pointer move with a
-    /// cursor of its own, so the move must not reach it.
+    /// cursor of its own, whatever lies above it, so the move must not reach it.
     var claimsPointerMoves: Bool { get }
 }
 
@@ -16,12 +16,14 @@ extension HoverCursorProviding {
 /// Sets the cursor over the board's chrome: card headers, header buttons, the
 /// resize handles and the zoom control.
 ///
-/// Cursor rects cannot do this. The terminal view sets the I-beam on every
-/// pointer move inside it, whatever is stacked above it, so a resize handle
-/// over a terminal body would flip back to the I-beam on the next move. The
-/// router sees each pointer move before it is dispatched, sets the cursor of
-/// the view the move would land on, and keeps a move over a resize handle from
-/// reaching the content beneath.
+/// The router sees each pointer move before it is dispatched and sets the
+/// cursor of the view the move would land on. A resize handle lies over its
+/// card's body, which sets a cursor of its own on a move. A terminal does so
+/// only when the move lands on it. A web view is handed every move over it,
+/// under a handle or not — WebKit hit-tests first only from bug 312923 on,
+/// which the system framework of macOS 26.7 does not have — and the page can
+/// answer with its own cursor after the handle's is set. So a move the
+/// provider claims stops here.
 @MainActor
 final class HoverCursorRouter {
     private var monitor: Any?

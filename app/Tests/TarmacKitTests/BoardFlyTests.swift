@@ -1,3 +1,4 @@
+import CoreGraphics
 import XCTest
 @testable import TarmacKit
 
@@ -18,6 +19,16 @@ final class BoardFlyTests: XCTestCase {
         XCTAssertEqual(BoardFly.easeInOutQuad(0.5), 0.5)
         XCTAssertEqual(BoardFly.easeInOutQuad(0.25), 0.125)
         XCTAssertEqual(BoardFly.easeInOutQuad(0.75), 0.875)
+    }
+
+    /// Either side of the midpoint the two halves give different values, which
+    /// pins where one hands over to the other.
+    func testShortOfTheMidpointTheEaseIsStillAccelerating() {
+        XCTAssertEqual(BoardFly.easeInOutQuad(0.4), 0.32, accuracy: 1e-12)
+    }
+
+    func testPastTheMidpointTheEaseIsAlreadyDecelerating() {
+        XCTAssertEqual(BoardFly.easeInOutQuad(0.6), 0.68, accuracy: 1e-12)
     }
 
     func testItStartsAtTheOrigin() {
@@ -50,5 +61,14 @@ final class BoardFlyTests: XCTestCase {
         XCTAssertFalse(fly.isFinished(atElapsedMs: 299.9))
         XCTAssertTrue(fly.isFinished(atElapsedMs: 300))
         XCTAssertTrue(fly.isFinished(atElapsedMs: 450))
+    }
+
+    // MARK: - Destinations
+
+    func testAFlyToACardLandsOnItsCenterAtFullSize() {
+        XCTAssertEqual(
+            BoardFly.destination(showing: CGRect(x: 100, y: 200, width: 300, height: 100)),
+            BoardViewport(zoom: 1, cx: 250, cy: 250)
+        )
     }
 }

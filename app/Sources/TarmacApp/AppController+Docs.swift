@@ -121,7 +121,7 @@ extension AppController {
         let stepX = Place.docW + Place.gapX
         let stepY = Place.docH + Place.gapY
         let existing = b.view.cards.values.map(\.worldFrame.rect)
-        let topZ = (b.view.cards.values.map(\.worldFrame.z).max() ?? 0) + 1
+        let topZ = ZOrder.raised(above: b.view.cards.values.map(\.worldFrame.z))
         for row in 0..<64 {
             for col in 0..<64 {
                 let candidate = CGRect(

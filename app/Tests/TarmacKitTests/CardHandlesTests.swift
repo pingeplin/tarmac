@@ -91,6 +91,10 @@ final class CardHandlesTests: XCTestCase {
         XCTAssertEqual(hit(180, 2), .topRight)
     }
 
+    func testAZoneStartsOnItsTopEdge() {
+        XCTAssertEqual(hit(100, 0), .top)
+    }
+
     func testBesideACloseButtonTheTopRightCornerAndTheReservedStripAreDead() {
         XCTAssertNil(hit(190, 3, hasClose: true))
         XCTAssertNil(hit(170, 3, hasClose: true))
@@ -106,6 +110,14 @@ final class CardHandlesTests: XCTestCase {
         XCTAssertEqual(hit(25, 12, size: tiny), .bottomRight)
         XCTAssertEqual(hit(25, 2, size: tiny), .topRight)
         XCTAssertEqual(hit(5, 2, size: tiny), .topLeft)
+    }
+
+    func testWhereTheTwoTopCornersOverlapTheRightOneIsOnTop() {
+        XCTAssertEqual(hit(15, 2, size: CGSize(width: 30, height: 24)), .topRight)
+    }
+
+    func testOnACardThinnerThanTwoStripsTheBottomStripIsOnTopOfTheTopOne() {
+        XCTAssertEqual(hit(100, 5, size: CGSize(width: 200, height: 10)), .bottom)
     }
 
     func testOnACardShorterThanTwoCornersTheSideEdgesAreAllCorner() {

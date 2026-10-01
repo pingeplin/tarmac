@@ -20,7 +20,10 @@ final class CardResizeGrip: NSView {
 
 /// There is no visible grip: the cursor is the only sign that a handle is there.
 extension CardResizeGrip: HoverCursorProviding {
-    var claimsPointerMoves: Bool { true }
+    /// Only over a doc. A terminal ignores a move that lands on a view above
+    /// it; a web view does not, and the page's cursor would replace the
+    /// handle's.
+    var claimsPointerMoves: Bool { (superview as? CardView)?.docView != nil }
 
     func hoverCursor(at windowPoint: NSPoint) -> NSCursor {
         guard let card = superview as? CardView, let board = card.superview,
@@ -36,20 +39,19 @@ extension CardResizeGrip: HoverCursorProviding {
 }
 
 /// Drives a card's move and resize from the pointer events of its header and
-/// its resize grip. The geometry, and whether a release is a click, a move or
-/// a resize, are `CardGesture`'s; this reads the pointer, applies the frame
-/// and tells the card's listeners.
+/// its resize grip. The geometry, whether a gesture is a click, a move or a
+/// resize, and which gesture is held are `CardGestureSlot`'s; this reads the
+/// pointer, applies the frame and tells the card's listeners.
 @MainActor
 final class CardGestureTracker {
     private unowned let card: CardView
-    private var gesture: CardGesture?
+    private var slot = CardGestureSlot()
 
     init(card: CardView) {
         self.card = card
     }
 
     func headerPressed(_ event: NSEvent) {
-        guard gesture == nil else { return }
         begin(.headerPress(at: pointer(event), frame: card.worldFrame.rect))
         card.onMoveBegan?(card)
     }
@@ -61,27 +63,27 @@ final class CardGestureTracker {
     }
 
     func dragged(_ event: NSEvent) {
-        guard var gesture else { return }
-        // The zoom is read on every step, so a pinch mid-drag keeps the card
-        // under the pointer.
-        let frame = gesture.frame(pointer: pointer(event), zoom: card.screenScale)
-        self.gesture = gesture
+        guard let frame = slot.drag(pointer: pointer(event), zoom: card.screenScale) else { return }
         card.worldFrame = CardFrame(rect: frame, z: card.worldFrame.z)
-        card.setLifted(gesture.isLifted)
+        card.setLifted(slot.isLifted)
         card.onFrameChanging?(card)
     }
 
-    func released() {
-        guard let gesture else { return }
-        self.gesture = nil
-        card.setLifted(false)
-        card.onGestureEnded?(card, gesture.outcome)
+    /// Ends the gesture, if one is held: on release, and when the release can
+    /// no longer arrive.
+    func end() {
+        guard let outcome = slot.end() else { return }
+        finish(outcome)
     }
 
     private func begin(_ gesture: CardGesture) {
-        guard self.gesture == nil else { return }
-        self.gesture = gesture
-        card.setLifted(gesture.isLifted)
+        if let unreleased = slot.press(gesture) { finish(unreleased) }
+        card.setLifted(slot.isLifted)
+    }
+
+    private func finish(_ outcome: CardGesture.Outcome) {
+        card.setLifted(false)
+        card.onGestureEnded?(card, outcome)
     }
 
     /// The pointer in the card's superview — screen points, y growing downward.

@@ -3,9 +3,11 @@ import QuartzCore
 import TarmacKit
 
 /// A card on the board: a 30-high header over a terminal or a doc, placed by
-/// a world frame. The board gives it an on-screen `frame` that carries the
-/// zoom while its `bounds` stay in world units, so the content never reflows
-/// under zoom. The header drags it and eight invisible handles resize it.
+/// a world frame. The board gives it an on-screen `frame` and the scale it is
+/// shown at. The chrome — border, header, shadow — is laid out at that size, so
+/// it is drawn sharp at every zoom. The body is not: it keeps its world size
+/// inside a container the zoom scales, so the content never reflows under zoom.
+/// The header drags the card and eight invisible handles resize it.
 @MainActor
 final class CardView: NSView {
     let id: CardID
@@ -16,6 +18,13 @@ final class CardView: NSView {
     /// Where the card is in the world. The board derives the on-screen `frame`
     /// from it, and a move or resize gesture changes it.
     var worldFrame: CardFrame
+
+    /// The card's turn among the cards added to its board.
+    var addedOrder = 0
+
+    var stackPlace: ZOrder.Place {
+        ZOrder.Place(z: worldFrame.z, added: addedOrder)
+    }
 
     /// A header press, which may become a move, went down on this card.
     var onMoveBegan: ((CardView) -> Void)?
@@ -40,6 +49,9 @@ final class CardView: NSView {
     var attached = true
 
     private let clip = FlippedColumnView()
+    /// Scales the body: its frame is the body's place on screen, its bounds
+    /// the body's world size.
+    private let bodyHost = FlippedColumnView()
     private let body: NSView
     private let grip = CardResizeGrip()
     private lazy var gestures = CardGestureTracker(card: self)
@@ -79,28 +91,27 @@ final class CardView: NSView {
         super.init(frame: NSRect(origin: .zero, size: CGSize(width: worldFrame.w, height: worldFrame.h)))
         wantsLayer = true
         layer?.backgroundColor = Theme.termBg.cgColor
-        layer?.cornerRadius = CardBox.cornerRadius
-        layer?.borderWidth = CardBox.borderWidth
         layer?.borderColor = Theme.line.cgColor
-        applyRestingShadow()
+        applyShadow()
 
-        // The content sits inside the border, so its corners follow the
-        // border's inner edge.
+        // The body's container can fall a fraction of a device pixel short of
+        // the room under the header; what shows there is the body's own colour.
         clip.wantsLayer = true
-        clip.layer?.cornerRadius = CardBox.cornerRadius - CardBox.borderWidth
+        clip.layer?.backgroundColor = (docView == nil ? Theme.termBg : Theme.bg1).cgColor
         clip.layer?.masksToBounds = true
         addSubview(clip)
         clip.addSubview(header)
-        clip.addSubview(body)
+        clip.addSubview(bodyHost)
+        bodyHost.addSubview(body)
 
         addSubview(grip)
         grip.onPress = { [weak self] event in self?.gestures.gripPressed(event) }
         grip.onDrag = { [weak self] event in self?.gestures.dragged(event) }
-        grip.onRelease = { [weak self] in self?.gestures.released() }
+        grip.onRelease = { [weak self] in self?.gestures.end() }
 
         header.onMouseDown = { [weak self] event in self?.gestures.headerPressed(event) }
         header.onMouseDragged = { [weak self] event in self?.gestures.dragged(event) }
-        header.onMouseUp = { [weak self] _ in self?.gestures.released() }
+        header.onMouseUp = { [weak self] _ in self?.gestures.end() }
 
         header.closeButton?.onClick = { [weak self] in
             guard let self else { return }
@@ -119,31 +130,36 @@ final class CardView: NSView {
     func attachTerminal(_ terminal: NSView) {
         termBody?.attach(terminal)
         // The subtree grew at an unchanged scale, which the walk would skip.
-        applyContentScale(appliedContentScale, force: true)
+        applyContentScale(appliedBodyScale, force: true)
     }
 
-    /// The scale last walked onto the layer tree. 0 until the first walk, so
+    /// The scales last walked onto the layer tree. 0 until the first walk, so
     /// that one always runs: a new layer starts at scale 1, not the backing scale.
-    private var appliedContentScale: CGFloat = 0
+    private var appliedBodyScale: CGFloat = 0
+    private var appliedChromeScale: CGFloat = 0
 
-    /// Sets `contentsScale` on every layer in the card, so the card's own
-    /// layers — the terminal and the chrome — are rasterised at the density
-    /// they are shown at instead of being stretched. A web view's tiles are
-    /// drawn in another process and ignore this; `applyDocZoomScale` reaches
-    /// them. An unchanged scale is skipped unless `force` says the subtree
-    /// itself changed.
-    func applyContentScale(_ scale: CGFloat, force: Bool = false) {
-        guard force || scale != appliedContentScale else { return }
-        appliedContentScale = scale
-        func walk(_ layer: CALayer) {
-            layer.contentsScale = scale
-            layer.sublayers?.forEach(walk)
+    /// Sets `contentsScale` on every layer in the card. The body is drawn at
+    /// its world size and scaled, so its layers take `bodyScale` — the density
+    /// they are shown at — instead of being stretched; the chrome is laid out
+    /// at its size on screen and takes the display's own. A web view's tiles
+    /// are drawn in another process and ignore this; `applyDocZoomScale`
+    /// reaches them. Unchanged scales are skipped unless `force` says the
+    /// subtree itself changed.
+    func applyContentScale(_ bodyScale: CGFloat, force: Bool = false) {
+        let chromeScale = scale.backing
+        guard force || bodyScale != appliedBodyScale || chromeScale != appliedChromeScale else { return }
+        appliedBodyScale = bodyScale
+        appliedChromeScale = chromeScale
+        func walk(_ layer: CALayer, _ contentsScale: CGFloat) {
+            layer.contentsScale = contentsScale
+            layer.sublayers?.forEach { walk($0, contentsScale) }
         }
-        func walkViews(_ view: NSView) {
-            if let layer = view.layer { walk(layer) }
-            view.subviews.forEach(walkViews)
+        func walkViews(_ view: NSView, _ inherited: CGFloat) {
+            let contentsScale = view === bodyHost ? bodyScale : inherited
+            if let layer = view.layer { walk(layer, contentsScale) }
+            view.subviews.forEach { walkViews($0, contentsScale) }
         }
-        walkViews(self)
+        walkViews(self, chromeScale)
         // The terminal draws only when asked; its raster must not wait for the
         // next output to pick up the new scale.
         termBody?.terminal?.needsDisplay = true
@@ -208,7 +224,6 @@ final class CardView: NSView {
         fresh = on
         if on {
             ringLayer.backgroundColor = Theme.agentDim.cgColor
-            ringLayer.cornerRadius = CardBox.cornerRadius + Self.ringWidth
             layer.insertSublayer(ringLayer, at: 0)
         } else {
             ringLayer.removeFromSuperlayer()
@@ -219,8 +234,14 @@ final class CardView: NSView {
 
     private func layoutRing() {
         guard fresh else { return }
-        let w = Self.ringWidth
-        ringLayer.frame = contentBox.insetBy(dx: -w, dy: -w)
+        let w = scale.length(Self.ringWidth)
+        // The ring is a bare layer, which would ease to its new frame a quarter
+        // of a second behind the card it surrounds.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        ringLayer.frame = bounds.insetBy(dx: -w, dy: -w)
+        ringLayer.cornerRadius = scale.length(CardBox.cornerRadius + Self.ringWidth)
+        CATransaction.commit()
     }
 
     // MARK: - Prime, quiet, dead
@@ -229,7 +250,7 @@ final class CardView: NSView {
         guard !dead, on != prime else { return }
         prime = on
         header.setPrime(on)
-        if !lifted { applyRestingShadow() }
+        applyShadow()
     }
 
     /// Whether the card steps back is the board's call (`CardDim.isQuiet`).
@@ -290,30 +311,51 @@ final class CardView: NSView {
 
     // MARK: - Layout
 
-    /// The box the content is laid out in. The board zooms a card by giving it
-    /// a frame that differs from its bounds, and `bounds` then reads back
-    /// through that scale a few ulps off the world size; laid out from it,
-    /// every zoom step would hand the terminal a new size.
-    private var contentBox: NSRect {
-        NSRect(x: 0, y: 0, width: worldFrame.w, height: worldFrame.h)
+    /// The board's zoom and the display's density, as the card was last put
+    /// on screen.
+    private(set) var scale = CardScale(zoom: 1, backing: 2)
+
+    /// The world size the body was last laid out at. Far zoomed out, a resize
+    /// can change it without moving the card's frame by a device pixel.
+    private var laidOutWorldSize: CGSize?
+
+    /// Puts the card on screen at `frame`, its chrome laid out for `scale`.
+    func project(to frame: CGRect, scale: CardScale) {
+        if frame.size != self.frame.size || scale != self.scale || worldFrame.rect.size != laidOutWorldSize {
+            needsLayout = true
+        }
+        self.frame = frame
+        guard scale != self.scale else { return }
+        self.scale = scale
+        header.apply(scale)
+        applyShadow()
     }
 
     override func layout() {
         super.layout()
-        let size = contentBox.size
-        clip.frame = CardBox.content(of: size)
-        header.frame = CardBox.header(of: size)
-        body.frame = CardBox.body(of: size)
+        let box = CardBox.screen(cardSize: bounds.size, worldSize: worldFrame.rect.size, scale: scale)
+        layer?.cornerRadius = box.cornerRadius
+        layer?.borderWidth = box.border
+        clip.frame = box.content
+        // The content sits inside the border, so its corners follow the
+        // border's inner edge.
+        clip.layer?.cornerRadius = max(0, box.cornerRadius - box.border)
+        header.frame = box.header
+        bodyHost.frame = box.body
+        // A new frame size drags the bounds along with it, so they are put back
+        // to the world size. The body is sized from the world frame and not
+        // from those bounds, which read back a few ulps off it: laid out from
+        // them, every zoom step would hand the terminal a new size.
+        bodyHost.setBoundsSize(box.bodySize)
+        body.frame = NSRect(origin: .zero, size: box.bodySize)
+        laidOutWorldSize = worldFrame.rect.size
         layoutRing()
     }
 
     // MARK: - Resize handles
 
-    /// Screen points per world unit: the frame carries the board zoom and the
-    /// world frame does not.
-    var screenScale: CGFloat {
-        worldFrame.w > 0 ? frame.width / worldFrame.w : 1
-    }
+    /// Screen points per world unit.
+    var screenScale: CGFloat { scale.zoom }
 
     /// The resize handle under `point`, given in the superview's coordinates —
     /// screen points, where the hit zones keep a fixed size at every zoom.
@@ -330,27 +372,30 @@ final class CardView: NSView {
         return resizeHandle(at: point) == nil ? hit : grip
     }
 
+    /// Ends a move or resize in flight as its release would. For when the card
+    /// goes away under the pointer and the release will never reach it.
+    func cancelGesture() {
+        gestures.end()
+    }
+
     /// Whether `view` is the card's body or inside it — not the header, and not
     /// a resize handle lying over the body's edge.
     func bodyContains(_ view: NSView) -> Bool {
-        view.isDescendant(of: body)
+        view.isDescendant(of: bodyHost)
     }
 
     // MARK: - Shadow and lift
 
-    /// Every card casts a shadow at rest, a prime terminal a deeper one. In
-    /// the card's own units, so it scales with the zoom like the rest of it.
-    private func applyRestingShadow() {
+    /// Every card casts a shadow: deeper for the prime terminal, and for a
+    /// card held by a gesture. Its metrics are world units, so they take the
+    /// zoom like the rest of the chrome.
+    private func applyShadow() {
+        let (alpha, drop, blur): (CGFloat, CGFloat, CGFloat) =
+            lifted ? (0.6, 18, 22) : prime ? (0.6, 22, 25) : (0.5, 16, 19)
         let shadow = NSShadow()
-        if prime {
-            shadow.shadowColor = NSColor.black.withAlphaComponent(0.6)
-            shadow.shadowOffset = NSSize(width: 0, height: -22)
-            shadow.shadowBlurRadius = 25
-        } else {
-            shadow.shadowColor = NSColor.black.withAlphaComponent(0.5)
-            shadow.shadowOffset = NSSize(width: 0, height: -16)
-            shadow.shadowBlurRadius = 19
-        }
+        shadow.shadowColor = NSColor.black.withAlphaComponent(alpha)
+        shadow.shadowOffset = NSSize(width: 0, height: -scale.length(drop))
+        shadow.shadowBlurRadius = scale.length(blur)
         self.shadow = shadow
     }
 
@@ -359,18 +404,13 @@ final class CardView: NSView {
     func setLifted(_ on: Bool) {
         guard on != lifted, let layer else { return }
         lifted = on
+        applyShadow()
         if on {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             layer.borderColor = Theme.liftBorder.cgColor
             CATransaction.commit()
-            let shadow = NSShadow()
-            shadow.shadowColor = NSColor.black.withAlphaComponent(0.6)
-            shadow.shadowOffset = NSSize(width: 0, height: -18)
-            shadow.shadowBlurRadius = 22
-            self.shadow = shadow
         } else {
-            applyRestingShadow()
             let ease = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1.0)
             let border = CABasicAnimation(keyPath: "borderColor")
             border.fromValue = Theme.liftBorder.cgColor
