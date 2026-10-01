@@ -123,6 +123,13 @@ final class DevUntilTests: XCTestCase {
         XCTAssertFalse(try holds("cards == null"))
     }
 
+    func testKeysAreFoundByUnicodeScalarsNotByCanonicalEquivalence() throws {
+        let decomposedKey: JSONValue = ["e\u{301}": 1]
+        XCTAssertTrue(try holds("e\u{301} == 1", against: decomposedKey))
+        XCTAssertFalse(try holds("\u{E9} == 1", against: decomposedKey))
+        XCTAssertFalse(try holds("\u{E9} != 1", against: decomposedKey), "unresolvable: neither polarity fires")
+    }
+
     // MARK: - S31 an unresolvable path is false, not an error
 
     func testS31KeepsPollingForACardThatHasNotRenderedYet() throws {
@@ -197,6 +204,27 @@ final class DevUntilTests: XCTestCase {
     func testANonFiniteOrJunkNumberIsNotAValue() {
         for junk in ["Infinity", "nan", "1e400", "1,5", "--1", "1 2"] {
             XCTAssertNotNil(parseError("x == \(junk)"), junk)
+        }
+    }
+
+    /// The spec grammar promises decimal and exponent literals, and no more.
+    func testNumbersAreDecimalOrExponentLiterals() throws {
+        let literals: [(String, Double)] = [
+            ("0", 0), ("007", 7), ("+5", 5), ("-2.5", -2.5), ("1e3", 1000), ("1E3", 1000),
+            ("-1.5e-2", -0.015), ("2e+2", 200), (".5", 0.5), ("5.", 5),
+        ]
+        for (text, number) in literals {
+            XCTAssertEqual(try DevUntil.parse("x == \(text)").value, .number(number), text)
+        }
+    }
+
+    func testOtherNumberSpellingsAreNotValues() {
+        let junk = [
+            "0x10", "0X10", "0x1p4", "0b11", "0o17", "1_000", "1e", "e3", "1e+", "+", "-", ".", "1.2.3", "+-1",
+            "\u{663}", "NaN", "inf", "0x",
+        ]
+        for text in junk {
+            XCTAssertEqual(parseError("x == \(text)"), "not a value: \(JSONValue.string(text).jsonString)", text)
         }
     }
 

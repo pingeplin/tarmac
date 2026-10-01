@@ -132,8 +132,18 @@ public enum DevUntil {
             }
             return nil
         }
-        guard let number = Double(source), number.isFinite else { return nil }
+        // `Double("0x10")` and `Double("0x1p4")` parse, and `Double("0b11")` does not;
+        // the spec grammar admits only a decimal or exponent literal.
+        guard source.wholeMatch(of: /[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?/) != nil,
+              let number = Double(source), number.isFinite
+        else { return nil }
         return .number(number)
+    }
+
+    /// A key looked up by Unicode scalars: a `Dictionary` subscript would find a
+    /// decomposed key from a precomposed spelling, which JavaScript does not.
+    private static func field(_ name: String, in fields: [String: JSONValue]) -> JSONValue? {
+        fields.first { $0.key.unicodeScalars.elementsEqual(name.unicodeScalars) }?.value
     }
 
     /// Walks the path. Returns nil — never throws — for anything that does not
@@ -148,10 +158,10 @@ public enum DevUntil {
                 // Everything up to the LAST `]` is the literal id.
                 guard let close = rest.lastIndex(of: "]") else { return nil }
                 let id = String(rest[rest.index(rest.startIndex, offsetBy: 6)..<close])
-                guard case .array(let cards)? = fields["cards"] else { return nil }
+                guard case .array(let cards)? = field("cards", in: fields) else { return nil }
                 guard let card = cards.first(where: { card in
                     guard case .object(let cardFields) = card else { return false }
-                    return cardFields["id"].map { identical($0, .string(id)) } ?? false
+                    return field("id", in: cardFields).map { identical($0, .string(id)) } ?? false
                 }) else { return nil }
                 node = card
                 rest = rest[rest.index(after: close)...]
@@ -161,7 +171,7 @@ public enum DevUntil {
             let dot = rest.firstIndex(of: ".")
             let key = String(rest[..<(dot ?? rest.endIndex)])
             rest = dot.map { rest[rest.index(after: $0)...] } ?? rest[rest.endIndex...]
-            guard let next = fields[key] else { return nil }
+            guard let next = field(key, in: fields) else { return nil }
             node = next
         }
         return node
