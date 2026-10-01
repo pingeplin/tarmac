@@ -247,15 +247,22 @@ private struct ScriptedDaemon {
         try? FileManager.default.removeItem(atPath: dir)
     }
 
-    /// A daemon that listens and answers with `reply`.
+    /// A daemon that listens, answers with `reply`, and keeps the link up until
+    /// the client drops it.
+    ///
+    /// `nc` exits once its stdin ends, so the reply reaches it through a FIFO
+    /// it holds open for writing as well, which never does. Its stdout is
+    /// discarded: it is what the client sent, and would land in the log.
     @discardableResult
     func install(named name: String = "fake-tarmacd", replying reply: Message) throws -> String {
         try Framing.frame(reply.encodedPayload()).write(to: URL(fileURLWithPath: dir + "/reply"))
         return try install(named: name, body: """
             echo started
             echo oops >&2
-            rm -f "$TARMAC_SOCKET"
-            exec nc -lU "$TARMAC_SOCKET" < "$dir/reply"
+            rm -f "$TARMAC_SOCKET" "$dir/stdin"
+            mkfifo "$dir/stdin"
+            cat "$dir/reply" > "$dir/stdin" &
+            exec nc -lU "$TARMAC_SOCKET" <> "$dir/stdin" > /dev/null
             """)
     }
 
