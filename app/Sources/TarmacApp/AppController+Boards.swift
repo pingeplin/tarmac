@@ -18,10 +18,9 @@ extension AppController {
         boards[id] = nil
     }
 
-    /// Dims the titlebar chip + the traffic lights while the ⌘K switcher is open
+    /// Dims the traffic lights while the ⌘K switcher is open
     /// (B5 `dim` titlebar), restoring them on close.
     private func setTitlebarDim(_ dim: Bool) {
-        titleChip.alphaValue = dim ? 0.4 : 1
         for button: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
             window?.standardWindowButton(button)?.alphaValue = dim ? 0.4 : 1
         }

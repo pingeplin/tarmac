@@ -59,25 +59,14 @@ final class AppController {
     let rootView: RootView
     weak var window: NSWindow?
 
+    /// The handshake has completed: requests may be made. Narrower than
+    /// `connectionStatus.connected`, which is already true while it is pending.
     var connected = false
     var viewReady = false
-
-    // MARK: - P5.3 bounded auto-reconnect
-    //
-    // On a dropped daemon connection the app flips the chip/status faint and
-    // retries `connect()` on the bounded `Reconnect` backoff. Cards are left as
-    // they are; the reconnect's `restore` reconciles them against `live_terms`.
-    /// Attempts made since the link last dropped (reset to 0 on `hello_ok`).
-    var reconnectAttempt = 0
-    /// A `connect()` is in flight on the background queue — guards double-connect.
-    var reconnecting = false
-    /// App teardown began — gates the scheduler so a pending backoff is a no-op.
-    var quitting = false
+    /// The daemon link as the status bar shows it.
+    var connectionStatus = ConnectionStatus.connecting
 
     var daemonSession = DaemonSession()
-    /// The version pair of a stale daemon this app replaced, for the first-visit
-    /// restart toast (`RestartNotice`). Set by whoever performs that restart.
-    var daemonReplaced: RestartNotice.Replacement?
 
     lazy var scrollback = ScrollbackRestore(
         request: { [weak self] termID in self?.client.scrollbackRequest(termID: termID) },
@@ -163,10 +152,6 @@ final class AppController {
     // and tells the restore handler to mount the arriving board (crit B4).
     var switching = false
 
-    // M3 P4: the titlebar session chip (`▞ <board>`), hosted in a leading
-    // titlebar accessory; shows the active board + dims with the ⌘K switcher.
-    let titleChip = TitleBarChip()
-
     // MARK: - Board placement rule (crib §4/§5)
     //
     // World-frame defaults for fresh placement and the M1→v4 restore scatter.
@@ -228,7 +213,7 @@ final class AppController {
     init(window: NSWindow, rootView: RootView) {
         self.window = window
         self.rootView = rootView
-        self.client = DaemonClient()
+        self.client = Self.daemonClient()
 
         // board-0 wraps the BoardView RootView was built with; it is the active,
         // mounted board until the daemon's board_list says otherwise.
@@ -260,34 +245,21 @@ final class AppController {
         // persistence). The same `mount(_:)` runs on every switch-arrive.
         mount(board0)
 
-        // M3 P4: host the session chip in the titlebar (hides the redundant
-        // native title) and seed it with board-0's name.
-        setupTitlebar()
+        updateWindowTitle()
     }
 
-    /// Installs the titlebar session chip as a leading accessory and hides the
-    /// native window title (the chip carries the board identity instead).
-    private func setupTitlebar() {
-        window?.titleVisibility = .hidden
-        let accessory = NSTitlebarAccessoryViewController()
-        accessory.layoutAttribute = .leading
-        accessory.view = titleChip
-        window?.addTitlebarAccessoryViewController(accessory)
-        updateTitleChip()
+    /// Names the active board in the window title, which is what the Dock,
+    /// Exposé and the window list show for the app.
+    func updateWindowTitle() {
+        window?.title = WindowTitle.text(
+            boardName: boardMetas.first { $0.boardID == activeBoardID }?.name,
+            boardID: activeBoardID,
+            devLabel: ProcessInfo.processInfo.environment["TARMAC_DEV_LABEL"]
+        )
     }
 
-    /// Refreshes the titlebar chip with the active board's display name.
-    func updateTitleChip() {
-        titleChip.setName(activeBoard.name ?? activeBoardID)
-    }
-
-    /// P5 (two honest signals): the app-local attached/detached signal. The chip
-    /// + status-bar word reflect whether we currently hold a live daemon
-    /// connection (the daemon cannot tell a gone app that it detached, so this is
-    /// driven locally by `connected`). Reconnect (P5.3) flips it back to attached.
     func updateSessionLiveness() {
-        titleChip.setAttached(connected)
-        rootView.statusBar.setSession(attached: connected)
+        rootView.statusBar.setConnection(connectionStatus)
     }
 
     /// Makes the prime terminal the window's first responder (initial focus): the
@@ -325,11 +297,9 @@ final class AppController {
         }
     }
 
-    /// P5.3: cancel the reconnect loop and close the socket on app teardown. Sets
-    /// `quitting` first so any in-flight backoff timer is a no-op, removes the key
-    /// monitor, and closes the client (so its disconnect path won't re-fire).
+    /// App teardown: removes the event monitors and closes the daemon link. The
+    /// daemon and its terminals are left running.
     func shutdown() {
-        quitting = true
         for monitor in [escMonitor, clickFocusMonitor, scrollRouteMonitor, magnifyRouteMonitor, mouseUpRestackMonitor] {
             if let monitor { NSEvent.removeMonitor(monitor) }
         }

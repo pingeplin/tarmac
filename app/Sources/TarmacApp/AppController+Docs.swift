@@ -189,7 +189,7 @@ extension AppController {
         // invisible until P4's titlebar chip / ⌘K switcher).
         let count = max(boardMetas.count, boards.count)
         rootView.statusBar.setBoard(activeBoard.name ?? activeBoardID, count: count)
-        updateTitleChip()
+        updateWindowTitle()
         updateSessionLiveness()
         rootView.coldStartHint.isHidden = !boardDocPaths.isEmpty
     }

@@ -70,12 +70,10 @@ final class StatusBar: NSView {
         needsLayout = true
     }
 
-    /// P5: the daemon-session word. `attached` (green) when the app holds a live
-    /// daemon connection bound to the active board; `detached` (faint) when the
-    /// link is down. App-local — the daemon cannot tell a gone app it detached.
-    func setSession(attached: Bool) {
-        sessionLabel.stringValue = attached ? "attached" : "detached"
-        sessionLabel.textColor = attached ? Theme.ok : Theme.faint
+    /// The daemon link: `attached` while connected, else why it is not.
+    func setConnection(_ status: ConnectionStatus) {
+        sessionLabel.stringValue = status.label
+        sessionLabel.textColor = status.connected ? Theme.ok : Theme.amber
         needsLayout = true
     }
 

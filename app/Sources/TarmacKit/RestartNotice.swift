@@ -12,17 +12,9 @@ public struct RestartNotice: Equatable, Sendable {
         self.body = body
     }
 
-    /// The daemon version pair of a replaced daemon. A nil version reads as
-    /// "unknown": the restart fired on `!=`, so the arrow claims no direction.
-    public struct Replacement: Equatable, Sendable {
-        public var from: String?
-        public var to: String?
-
-        public init(from: String?, to: String?) {
-            self.from = from
-            self.to = to
-        }
-    }
+    /// A nil version reads as "unknown": the restart fired on `!=`, so the
+    /// arrow claims no direction.
+    public typealias Replacement = DaemonLaunch.Replaced
 
     /// Non-nil iff a daemon was replaced, the restart wasn't already notified, and
     /// at least one tile carries a persisted id absent from `liveTerms`. A nil tile

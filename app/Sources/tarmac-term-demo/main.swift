@@ -61,14 +61,11 @@ final class Demo: NSObject, NSApplicationDelegate {
         client.onMessage = { [weak self] message in
             MainActor.assumeIsolated { self?.handle(message) }
         }
-        client.onDisconnect = { reason in
-            FileHandle.standardError.write(Data("demo: disconnected: \(reason)\n".utf8))
+        client.onStatus = { status in
+            guard !status.connected, let reason = status.reason else { return }
+            FileHandle.standardError.write(Data("demo: \(reason)\n".utf8))
         }
-        DispatchQueue.global().async { [client] in
-            do { try client.connect() } catch {
-                FileHandle.standardError.write(Data("demo: connect failed: \(error)\n".utf8))
-            }
-        }
+        client.start()
     }
 
     private var spawned = false

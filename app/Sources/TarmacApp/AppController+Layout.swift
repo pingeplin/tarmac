@@ -97,7 +97,7 @@ extension AppController {
     /// took with it (`RestartNotice`); once per connection.
     private func notifyDaemonReplaced(tiles: [LayoutTile], liveTerms: Set<String>) {
         guard let notice = RestartNotice.make(
-            replaced: daemonReplaced,
+            replaced: client.daemonReplaced,
             tileTermIDs: LayoutTiles.parse(tiles).terms.map(\.termID),
             liveTerms: liveTerms,
             alreadyNotified: daemonSession.restartNotified
