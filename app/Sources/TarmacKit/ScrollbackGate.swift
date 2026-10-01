@@ -64,10 +64,16 @@ public struct ScrollbackGate {
     /// What was held is discarded, not shown: it was already in the daemon's
     /// snapshot, and everything produced after the snapshot arrives after this
     /// reply on the same FIFO socket.
+    ///
+    /// An empty ring replaces nothing. It is also the daemon's answer for a
+    /// terminal that has exited, whose held-open card must keep its screen.
+    /// What was held for that terminal is in no snapshot and is dropped all the
+    /// same, as bridge.rs drops it: on a card that was re-mounted it repeats
+    /// the history the card already shows.
     public mutating func scrollback(_ termID: String, _ bytes: Data) -> Release? {
         guard awaiting.removeValue(forKey: termID) != nil else { return nil }
         held[termID] = nil
-        return .replace(bytes)
+        return bytes.isEmpty ? .append([]) : .replace(bytes)
     }
 
     /// No reply is coming: the held chunks, oldest first, or nil when

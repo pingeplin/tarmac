@@ -114,8 +114,20 @@ final class ScrollbackGateTests: XCTestCase {
         var (gate, _) = awaitingGate()
         XCTAssertNil(gate.output("t1", bytes("held")), "an awaiting terminal must not show output")
 
-        XCTAssertEqual(gate.scrollback("t1", Data()), .replace(Data()), "an empty ring is still the answer")
+        XCTAssertNotNil(gate.scrollback("t1", Data()), "an empty ring is still the answer")
         XCTAssertEqual(gate.output("t1", bytes("live")), .append([bytes("live")]))
+    }
+
+    /// The daemon answers for a terminal it no longer runs with an empty ring.
+    /// A card held open for that terminal keeps the screen it died with.
+    func testAnEmptyRingReplacesNothing() {
+        var (gate, _) = awaitingGate()
+        _ = gate.output("t1", bytes("held"))
+
+        XCTAssertEqual(gate.scrollback("t1", Data()), .append([]))
+
+        XCTAssertFalse(gate.isAwaiting("t1"))
+        XCTAssertEqual(gate.heldBytes("t1"), 0)
     }
 
     func testOutputForATerminalThatNeverAttachedIsShown() {
