@@ -20,7 +20,9 @@ import Foundation
 ///   once instead of spending the whole timeout on something that can never hold.
 ///
 /// Paths descend through objects only: an array is reached through `cards[<id>]`,
-/// never by a dotted index. Numbers are decimal or exponent literals.
+/// never by a dotted index. Numbers are decimal or exponent literals. Strings are
+/// equal only when their Unicode scalars are, as JavaScript's `===` has it —
+/// `String ==` would equate a precomposed and a decomposed spelling of one name.
 public enum DevUntil {
     /// How close `~=` counts as equal, in the value's own units.
     public static let numericTolerance = 1.0
@@ -82,9 +84,9 @@ public enum DevUntil {
         guard let actual = resolve(snapshot, expression.path) else { return false }
         switch (expression.op, actual, expression.value) {
         case (.equal, _, _):
-            return actual == expression.value
+            return identical(actual, expression.value)
         case (.notEqual, _, _):
-            return actual != expression.value
+            return !identical(actual, expression.value)
         case (.approximately, .number(let actual), .number(let expected)):
             return abs(actual - expected) <= numericTolerance
         case (.contains, .string(let actual), .string(let needle)):
@@ -94,6 +96,13 @@ public enum DevUntil {
         default:
             return false
         }
+    }
+
+    /// `===` for the scalars an expression can name; an array or object is never
+    /// identical to one.
+    private static func identical(_ lhs: JSONValue, _ rhs: JSONValue) -> Bool {
+        if case .string(let a) = lhs, case .string(let b) = rhs { return a.unicodeScalars.elementsEqual(b.unicodeScalars) }
+        return lhs == rhs
     }
 
     private static func parseValue(_ source: String) -> JSONValue? {
@@ -142,7 +151,7 @@ public enum DevUntil {
                 guard case .array(let cards)? = fields["cards"] else { return nil }
                 guard let card = cards.first(where: { card in
                     guard case .object(let cardFields) = card else { return false }
-                    return cardFields["id"] == .string(id)
+                    return cardFields["id"].map { identical($0, .string(id)) } ?? false
                 }) else { return nil }
                 node = card
                 rest = rest[rest.index(after: close)...]

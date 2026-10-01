@@ -94,6 +94,17 @@ final class DevUntilTests: XCTestCase {
         XCTAssertTrue(try holds(#"term.scrollback_tail contains "e""#, against: tail))
     }
 
+    /// JavaScript's `===` compares code units, so a precomposed and a decomposed
+    /// spelling of the same name are different ids; Swift's `String ==` would
+    /// equate them.
+    func testStringsAreEqualOnlyWhenTheirScalarsAre() throws {
+        let decomposed: JSONValue = ["cards": [["id": "e\u{301}", "s": "e\u{301}"]]]
+        XCTAssertTrue(try holds("cards[e\u{301}].s == \"e\u{301}\"", against: decomposed))
+        XCTAssertFalse(try holds("cards[e\u{301}].s == \"\u{E9}\"", against: decomposed))
+        XCTAssertTrue(try holds("cards[e\u{301}].s != \"\u{E9}\"", against: decomposed))
+        XCTAssertFalse(try holds("cards[\u{E9}].s != \"x\"", against: decomposed), "a different id does not resolve")
+    }
+
     // MARK: - S30 !=
 
     func testS30WorksAgainstAStringAndAgainstNull() throws {
