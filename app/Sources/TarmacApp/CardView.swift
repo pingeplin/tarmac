@@ -227,7 +227,12 @@ final class CardView: NSView {
     private func layoutRing() {
         guard fresh else { return }
         let w = Self.ringWidth
+        // The ring is a bare layer, which would ease to its new frame a quarter
+        // of a second behind the card it surrounds.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         ringLayer.frame = contentBox.insetBy(dx: -w, dy: -w)
+        CATransaction.commit()
     }
 
     // MARK: - Prime, quiet, dead
