@@ -38,7 +38,6 @@ final class EscLadderTests: XCTestCase {
         XCTAssertNil(EscLadder.rung(facts))
     }
 
-    /// The pair the old shell had backwards.
     func testToastsAreDismissedBeforeTheFlyBack() {
         XCTAssertEqual(EscLadder.rung(Facts(toastsShowing: true, hasPreFlightViewport: true)), .clearToasts)
     }

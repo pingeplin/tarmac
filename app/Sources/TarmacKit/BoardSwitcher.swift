@@ -1,16 +1,9 @@
 import Foundation
 
-/// Pure view-model for the ⌘K boards switcher (M3 P4, design ref board-v4.jsx
-/// B5). Kept in TarmacKit so the prefix filter, the ⌘1..9 / ⏎ ordinal map, the
-/// selection clamp, and the meta-line formatting are unit-tested away from
-/// AppKit. `AppController` gathers the per-board facts (counts derive app-side —
-/// `BoardMeta` carries none) into `BoardSummary`s, asks for `rows(...)`, and
-/// renders the result; the 86×54 thumbnail reuses `BoardWayfinding`'s world→box
-/// projection, so no geometry lives here.
-///
-/// This replaces the former `BoardRegistry` (next-in-order + ordinal): the ⌘K
-/// switcher does not cycle, and its ⌘1..9 jump must address the *visible*
-/// (filtered) rows, not the full board list.
+/// The ⌘K boards switcher's view-model: the prefix filter, the ⌘1..9 / ⏎
+/// ordinal map over the *visible* (filtered) rows, the selection clamp and the
+/// meta line. The app gathers each board's facts into a `BoardSummary`
+/// (`BoardMeta` carries no counts) and renders the rows it gets back.
 public enum BoardSwitcher {
     /// One board's live facts, gathered by the app for the switcher. The app can
     /// derive these locally for boards it has visited (their cards + signals stay
@@ -26,8 +19,7 @@ public enum BoardSwitcher {
         public let bell: Int
         /// Total cards on the board.
         public let cards: Int
-        /// Whether the board has any live pty — drives the cyan-vs-faint strip
-        /// glyph. (P4: attached ⇒ live; the honest detached signal is P5.)
+        /// Whether the board has any live pty — drives the cyan-vs-faint glyph.
         public let isLive: Bool
 
         public init(boardID: String, name: String?, running: Int, bell: Int, cards: Int, isLive: Bool) {
@@ -130,9 +122,9 @@ public enum BoardSwitcher {
     }
 
     /// Resolve a board's switcher liveness from the app's local card signals and
-    /// the daemon's reported live-pty count (`BoardMeta.running`, P5). For a board
+    /// the daemon's reported live-pty count (`BoardMeta.running`). For a board
     /// the app has **visited** this session the local signals are authoritative —
-    /// its cards + live SwiftTerm views stay alive while backgrounded, so they do
+    /// its cards and terminal views stay alive while backgrounded, so they do
     /// not flicker against the daemon's count. For a **never-visited** board (no
     /// local view yet — e.g. a board whose shells survived an app relaunch) the
     /// daemon's `running` count is the only honest source of liveness.
