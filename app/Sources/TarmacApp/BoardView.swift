@@ -518,6 +518,11 @@ final class BoardView: NSView {
 
     // MARK: - View
 
+    /// The board has no keys of its own. Left unanswered, a key pressed while
+    /// it holds keyboard focus would run off the end of the responder chain,
+    /// and the window beeps for that.
+    override func keyDown(with event: NSEvent) {}
+
     /// A new board size moves the visible region, so the cards are reprojected
     /// and the chrome that tracks the viewport is told.
     override func layout() {
