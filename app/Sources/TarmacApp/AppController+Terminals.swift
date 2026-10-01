@@ -254,13 +254,13 @@ extension AppController {
     }
 
     /// The card stays on the board as a dead placeholder: it keeps its label
-    /// and its screen, takes no input, and is never persisted.
+    /// and its screen, takes no input, and is never persisted. A scrollback
+    /// wait is left running, so history asked for before the exit still lands.
     func holdOpen(_ s: TerminalSession, code: Int?, on board: Board) {
         s.live = false
         s.needsSpawn = false
         s.procName = nil
         s.bellAt = nil
-        scrollback.unmount(s.termID)
         board.view.card(.term(s.termID))?.setExited(code)
         board.view.signalsChanged()
     }
