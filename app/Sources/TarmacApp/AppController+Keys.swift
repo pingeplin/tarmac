@@ -94,11 +94,6 @@ extension AppController {
                     return true
                 }
                 guard isEsc else { return false }
-                // An active board drag/resize swallows esc ahead of everything
-                // (crib §5 DECISION).
-                if self.activeBoard.view.cancelDrag() {
-                    return true
-                }
                 // esc after a Return flight flies the viewport back (crib §6).
                 if let prev = self.preFlightViewport {
                     self.preFlightViewport = nil

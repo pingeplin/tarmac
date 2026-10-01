@@ -2,32 +2,14 @@ import AppKit
 import QuartzCore
 import TarmacKit
 
-/// A free card on the board (crib §4) — the v4 successor to `TileView`. Same
-/// chrome family (reuses `TileHeaderView` / `RecentMetaLabel` / `TerminalBodyView`
-/// / `DocWebView`), but a card carries a *world frame* instead of a grid slot,
-/// drags to MOVE (no slot swap, no −0.5° rotation — keeps the lift shadow), and
-/// shows corner resize handles once focused (or selected via a header/handle grab).
-///
-/// Metrics differ from `TileView` per crib §4: header **30px**, radius **10**.
-/// `.tm-bcard` is `overflow:hidden`, so the selection handles live on the
-/// non-clipped outer view (`self`), above the inner rounded clip. Hosted inside
-/// `BoardView`.
+/// A card on the board: a 30-high header over a terminal or a doc, placed by
+/// a world frame. The board gives it an on-screen `frame` that carries the
+/// zoom while its `bounds` stay in world units, so the content never reflows
+/// under zoom. The header drags it and eight invisible handles resize it.
 @MainActor
 final class CardView: NSView {
     static let headerHeight: CGFloat = 30
     static let cornerRadius: CGFloat = 10
-    /// The visible handle stays 7×7, but its hit/cursor target is a larger
-    /// transparent box (`handleHitSize`) centered on the corner — so resizing
-    /// isn't a needle-thin 7px sliver (which shrinks further when zoomed out).
-    static let handleSize: CGFloat = 7
-    static let handleHitSize: CGFloat = 20
-    /// Inward nudge of the corner point so the square lands on the rounded
-    /// visual corner instead of floating off the sharp geometric corner.
-    static let handleCornerInset: CGFloat = 3
-    /// Below this card size a resize can't go (header + a sliver of body).
-    static let minWidth: CGFloat = 160
-    static let minHeight: CGFloat = 90
-
     let id: CardID
     let header: TileHeaderView
     private(set) var docView: DocWebView?
@@ -37,11 +19,12 @@ final class CardView: NSView {
     /// the on-screen `frame` is derived from this by the board's world→view map.
     var worldFrame: CardFrame
 
-    /// Fires the moment a MOVE or RESIZE commits (mouse-up), so the board can
-    /// persist the new world frame and reflow the terminal. The board sets this.
-    var onFrameCommitted: ((CardView) -> Void)?
-    /// Header mouse-down requesting selection/raise before a move begins.
-    var onSelectRequested: ((CardView) -> Void)?
+    /// A header press, which may become a move, went down on this card.
+    var onMoveBegan: ((CardView) -> Void)?
+    /// The gesture changed `worldFrame`; the board reprojects the card.
+    var onFrameChanging: ((CardView) -> Void)?
+    /// The pointer was released, with what the gesture amounted to.
+    var onGestureEnded: ((CardView, CardGesture.Outcome) -> Void)?
     /// The header ✕ (doc cards only) was clicked — the board routes it to the
     /// controller, which closes the doc card.
     var onClose: ((CardView) -> Void)?
@@ -59,7 +42,8 @@ final class CardView: NSView {
 
     private let clip = FlippedColumnView()
     private let body: NSView
-    private let handles: [HandleCorner: ResizeHandleView]
+    private let grip = CardResizeGrip()
+    private lazy var gestures = CardGestureTracker(card: self)
 
     private(set) var selected = false
     private(set) var fresh = false
@@ -75,20 +59,6 @@ final class CardView: NSView {
     /// (A clean exit removes the card outright, so it never becomes `dead`.) This
     /// flag is also the "exited" signal `persistLayout` uses to exclude the card.
     private(set) var dead = false
-
-    // Active move/resize gesture state (window-space anchors).
-    private enum Gesture {
-        case move(startWindow: NSPoint, startWorldX: CGFloat, startWorldY: CGFloat)
-        case resize(corner: HandleCorner, startWindow: NSPoint, startFrame: CardFrame)
-    }
-    private var gesture: Gesture?
-    /// The kind of the gesture that most recently committed — the board reads
-    /// it at `onFrameCommitted` to drive gravity (a term-card MOVE translates
-    /// satellites; a doc-card MOVE detaches it). Resize never touches gravity.
-    private(set) var lastCommittedGestureWasMove = false
-    /// World units per view point — the board's current zoom; set before a drag
-    /// so pointer deltas convert to world deltas. Defaults to 1.
-    var worldPerView: CGFloat = 1
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
@@ -108,10 +78,6 @@ final class CardView: NSView {
             docView = doc
             body = doc
         }
-        var built: [HandleCorner: ResizeHandleView] = [:]
-        for corner in HandleCorner.allCases { built[corner] = ResizeHandleView(corner: corner) }
-        handles = built
-
         super.init(frame: NSRect(origin: .zero, size: CGSize(width: worldFrame.w, height: worldFrame.h)))
         wantsLayer = true
         layer?.cornerRadius = Self.cornerRadius
@@ -127,22 +93,15 @@ final class CardView: NSView {
         clip.addSubview(header)
         clip.addSubview(body)
 
-        for corner in HandleCorner.allCases {
-            let h = handles[corner]!
-            h.isHidden = true
-            h.onMouseDown = { [weak self] event in self?.beginResize(corner: corner, event: event) }
-            h.onMouseDragged = { [weak self] event in self?.updateGesture(event) }
-            h.onMouseUp = { [weak self] _ in self?.endGesture(commit: true) }
-            addSubview(h)
-        }
+        addSubview(grip)
+        grip.onPress = { [weak self] event in self?.gestures.gripPressed(event) }
+        grip.onDrag = { [weak self] event in self?.gestures.dragged(event) }
+        grip.onRelease = { [weak self] in self?.gestures.released() }
 
-        header.onMouseDown = { [weak self] event in self?.beginMove(event: event) }
-        header.onMouseDragged = { [weak self] event in self?.updateGesture(event) }
-        header.onMouseUp = { [weak self] _ in self?.endGesture(commit: true) }
+        header.onMouseDown = { [weak self] event in self?.gestures.headerPressed(event) }
+        header.onMouseDragged = { [weak self] event in self?.gestures.dragged(event) }
+        header.onMouseUp = { [weak self] _ in self?.gestures.released() }
 
-        // The doc-card ✕ (no-op on a term card, whose header has none). It rides
-        // the same focused/selected visibility as the resize handles, so it stays
-        // hidden until the card is the user's active target.
         header.closeButton?.onClick = { [weak self] in
             guard let self else { return }
             self.onClose?(self)
@@ -152,7 +111,7 @@ final class CardView: NSView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    // MARK: - Content (mirrors TileView's surface so 2c wires it the same way)
+    // MARK: - Content
 
     func attachTerminal(_ terminal: NSView) {
         termBody?.attach(terminal)
@@ -234,32 +193,12 @@ final class CardView: NSView {
         guard on != selected else { return }
         selected = on
         if !lifted { layer?.borderColor = currentBorderColor.cgColor }
-        updateHandleVisibility()
+        header.closeButton?.isHidden = !on
     }
 
-    /// Resize handles surface whenever the card is the user's active target —
-    /// `focused` (a single click) OR `selected` (an explicit header/handle grab).
-    /// A plain focus now arms resizing, so the handles follow focus; keeping
-    /// `selected` in the condition still lets a dead card (never focusable) be
-    /// resized via a header grab.
-    private func updateHandleVisibility() {
-        let show = CardChrome.showsHandles(chromeState)
-        for (corner, h) in handles {
-            // The doc card's ✕ owns the top-right corner; suppress that one resize
-            // handle so the button and handle never collide. Resize stays available
-            // from the other three corners.
-            h.isHidden = !show || (corner == .topRight && header.closeButton != nil)
-        }
-        header.closeButton?.isHidden = !show
-    }
-
-    /// The resting border colour, derived from the pure `CardChrome.borderRole`
-    /// rule (unit-tested in TarmacKit): muted line for dead, the soft
-    /// teal `focusBorder` for an active card (focused OR selected — docs and
-    /// terminals alike), else line. `prime` and `fresh` deliberately draw NO
-    /// border — the keyboard target is signalled by header tint + shadow, a fresh
-    /// card by its halo + `✚ now` meta. The lift state overrides this border
-    /// transiently while a move/resize gesture is held.
+    /// The resting border: muted for a dead card, teal for the selected one,
+    /// else the plain line. Prime and fresh never change it, and the lift
+    /// border overrides it while a gesture holds the card.
     private var currentBorderColor: NSColor {
         switch CardChrome.borderRole(chromeState) {
         case .muted: return Theme.line.withAlphaComponent(0.6)
@@ -268,8 +207,6 @@ final class CardView: NSView {
         }
     }
 
-    /// The card's visual-state inputs, snapshot for the pure chrome rule so the
-    /// border and the resize handles derive from one source and cannot desync.
     private var chromeState: CardChrome.State {
         CardChrome.State(dead: dead, fresh: fresh, prime: prime, selected: selected)
     }
@@ -425,116 +362,30 @@ final class CardView: NSView {
             width: box.width,
             height: max(0, box.height - Self.headerHeight)
         )
-        layoutHandles()
         layoutRing()
     }
 
-    private func layoutHandles() {
-        let hit = Self.handleHitSize
-        let inset = Self.handleCornerInset
-        let box = contentBox
-        for (corner, h) in handles {
-            // Corner point nudged inward toward the card center (flipped view:
-            // top corners at y≈0), then the hit box is centered on that point.
-            let cx: CGFloat
-            let cy: CGFloat
-            switch corner {
-            case .topLeft: cx = inset; cy = inset
-            case .topRight: cx = box.width - inset; cy = inset
-            case .bottomLeft: cx = inset; cy = box.height - inset
-            case .bottomRight: cx = box.width - inset; cy = box.height - inset
-            }
-            h.frame = NSRect(x: cx - hit / 2, y: cy - hit / 2, width: hit, height: hit)
-        }
+    // MARK: - Resize handles
+
+    /// Screen points per world unit: the frame carries the board zoom and the
+    /// world frame does not.
+    var screenScale: CGFloat {
+        worldFrame.w > 0 ? frame.width / worldFrame.w : 1
     }
 
-    // MARK: - Move (crib §5: free drag-to-move; lift shadow, no rotation)
-
-    private func beginMove(event: NSEvent) {
-        guard gesture == nil else { return }
-        onSelectRequested?(self)
-        gesture = .move(
-            startWindow: event.locationInWindow,
-            startWorldX: worldFrame.x,
-            startWorldY: worldFrame.y
+    /// The resize handle under `point`, given in the superview's coordinates —
+    /// screen points, where the hit zones keep a fixed size at every zoom.
+    func resizeHandle(at point: NSPoint) -> CardResize.Handle? {
+        CardHandles.handle(
+            at: CGPoint(x: point.x - frame.minX, y: point.y - frame.minY),
+            cardSize: frame.size,
+            hasClose: header.closeButton != nil
         )
-        setLifted(true)
     }
 
-    private func beginResize(corner: HandleCorner, event: NSEvent) {
-        guard gesture == nil else { return }
-        onSelectRequested?(self)
-        gesture = .resize(corner: corner, startWindow: event.locationInWindow, startFrame: worldFrame)
-        setLifted(true)
-    }
-
-    private func updateGesture(_ event: NSEvent) {
-        guard let gesture else { return }
-        switch gesture {
-        case let .move(startWindow, startWorldX, startWorldY):
-            let dxView = event.locationInWindow.x - startWindow.x
-            let dyView = event.locationInWindow.y - startWindow.y
-            // Window y is bottom-up; the board is flipped (top-down), so invert dy.
-            worldFrame.x = startWorldX + dxView * worldPerView
-            worldFrame.y = startWorldY - dyView * worldPerView
-        case let .resize(corner, startWindow, startFrame):
-            let dxView = event.locationInWindow.x - startWindow.x
-            let dyView = event.locationInWindow.y - startWindow.y
-            let dxW = dxView * worldPerView
-            let dyW = -dyView * worldPerView
-            worldFrame = Self.resized(startFrame, corner: corner, dxWorld: dxW, dyWorld: dyW)
-        }
-        onWorldFrameChangedDuringGesture?(self)
-    }
-
-    /// Live callback while a move/resize is in flight (board reprojects to view
-    /// frame; terminal reflow is deferred to commit). Set by the board.
-    var onWorldFrameChangedDuringGesture: ((CardView) -> Void)?
-
-    private func endGesture(commit: Bool) {
-        guard let gesture else { return }
-        if case .move = gesture { lastCommittedGestureWasMove = true } else { lastCommittedGestureWasMove = false }
-        self.gesture = nil
-        setLifted(false)
-        if commit { onFrameCommitted?(self) }
-    }
-
-    /// esc cancels an in-flight move/resize (crib §5 drag-cancel priority);
-    /// returns false when no gesture is active so esc falls through. The board
-    /// snapshots the pre-gesture frame and restores it.
-    @discardableResult
-    func cancelGesture(restoringTo frame: CardFrame?) -> Bool {
-        guard gesture != nil else { return false }
-        gesture = nil
-        if let frame { worldFrame = frame }
-        setLifted(false)
-        return true
-    }
-
-    var hasActiveGesture: Bool { gesture != nil }
-
-    private static func resized(
-        _ start: CardFrame,
-        corner: HandleCorner,
-        dxWorld: CGFloat,
-        dyWorld: CGFloat
-    ) -> CardFrame {
-        var x = start.x, y = start.y, w = start.w, h = start.h
-        if corner.movesLeft {
-            let nx = min(start.x + dxWorld, start.x + start.w - minWidth)
-            w = start.w + (start.x - nx)
-            x = nx
-        } else {
-            w = max(minWidth, start.w + dxWorld)
-        }
-        if corner.movesTop {
-            let ny = min(start.y + dyWorld, start.y + start.h - minHeight)
-            h = start.h + (start.y - ny)
-            y = ny
-        } else {
-            h = max(minHeight, start.h + dyWorld)
-        }
-        return CardFrame(x: x, y: y, w: w, h: h, z: start.z)
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let hit = super.hitTest(point) else { return nil }
+        return resizeHandle(at: point) == nil ? hit : grip
     }
 
     // MARK: - Card shadow: resting base (crib §4) + deeper lift (crib §5)
@@ -557,23 +408,22 @@ final class CardView: NSView {
         self.shadow = shadow
     }
 
-    private func setLifted(_ on: Bool) {
+    /// Picked-up styling while a move or resize holds the card; on release the
+    /// border eases back to its resting colour.
+    func setLifted(_ on: Bool) {
         guard on != lifted, let layer else { return }
         lifted = on
         if on {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             layer.borderColor = Theme.liftBorder.cgColor
-            layer.zPosition = 1
             CATransaction.commit()
-            // Deeper than the resting base while a drag/resize is held.
             let shadow = NSShadow()
             shadow.shadowColor = NSColor.black.withAlphaComponent(0.6)
             shadow.shadowOffset = NSSize(width: 0, height: -18)
             shadow.shadowBlurRadius = 22
             self.shadow = shadow
         } else {
-            layer.zPosition = 0
             applyRestingShadow()
             let ease = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1.0)
             let border = CABasicAnimation(keyPath: "borderColor")
@@ -584,73 +434,6 @@ final class CardView: NSView {
             layer.borderColor = currentBorderColor.cgColor
             layer.add(border, forKey: "liftBorderOff")
         }
-    }
-}
-
-/// Which corner a resize handle drives.
-enum HandleCorner: CaseIterable {
-    case topLeft, topRight, bottomLeft, bottomRight
-
-    var movesLeft: Bool { self == .topLeft || self == .bottomLeft }
-    var movesTop: Bool { self == .topLeft || self == .topRight }
-
-    var cursor: NSCursor {
-        // AppKit ships no diagonal resize cursor publicly; crosshair reads as
-        // "grab to resize" without private API.
-        .crosshair
-    }
-}
-
-/// Selection resize handle (crib §4). The view itself is a larger transparent
-/// hit/cursor target (`CardView.handleHitSize`); the visible 7×7 square — fill
-/// bg0, 1.5px agent border, radius 2 — is drawn by `chip`, centered inside it.
-/// Owns its own mouse so a press on a handle resizes rather than moves the card.
-@MainActor
-final class ResizeHandleView: NSView {
-    var onMouseDown: ((NSEvent) -> Void)?
-    var onMouseDragged: ((NSEvent) -> Void)?
-    var onMouseUp: ((NSEvent) -> Void)?
-
-    private let corner: HandleCorner
-    private let chip = CALayer()
-
-    override var acceptsFirstResponder: Bool { false }
-
-    init(corner: HandleCorner) {
-        self.corner = corner
-        super.init(frame: .zero)
-        wantsLayer = true
-        chip.backgroundColor = Theme.bg0.cgColor
-        chip.borderColor = Theme.agent.cgColor
-        chip.borderWidth = 1.5
-        chip.cornerRadius = 2
-        layer?.addSublayer(chip)
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    override func layout() {
-        super.layout()
-        let s = CardView.handleSize
-        // Center the visible square in the larger transparent hit box; no
-        // implicit animation so it doesn't lag the card during a resize drag.
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        chip.frame = NSRect(
-            x: (bounds.width - s) / 2,
-            y: (bounds.height - s) / 2,
-            width: s,
-            height: s
-        )
-        CATransaction.commit()
-    }
-
-    override func mouseDown(with event: NSEvent) { onMouseDown?(event) }
-    override func mouseDragged(with event: NSEvent) { onMouseDragged?(event) }
-    override func mouseUp(with event: NSEvent) { onMouseUp?(event) }
-
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: corner.cursor)
     }
 }
 

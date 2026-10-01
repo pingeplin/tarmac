@@ -75,10 +75,6 @@ extension AppController {
     func routeMagnify(_ event: NSEvent) -> Bool {
         guard !switcherOpen else { return false }
         guard let hit = hitView(at: event.locationInWindow), hit.isDescendant(of: rootView.board) else { return false }
-        // Suppress board zoom while a card move/resize is in flight — changing the
-        // zoom mid-gesture would invalidate the card's snapshot pointer→world
-        // scale. Swallow it (do nothing) rather than let it fall through to a zoom.
-        if rootView.board.isGesturing { return true }
         rootView.board.magnify(with: event)
         return true
     }

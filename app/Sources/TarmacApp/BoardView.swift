@@ -281,39 +281,12 @@ final class BoardView: NSView {
         onLayoutChanged?(viewport)
     }
 
-    /// True while a card move/resize is in flight — the controller suppresses
-    /// board zoom during a gesture so the cached `worldPerView` (pointer→world
-    /// scale, snapshot at gesture start) can't go stale mid-drag.
-    var isGesturing: Bool { gesturingID != nil }
-
-    /// esc drag-cancel priority (crib §5): cancels an in-flight move/resize and
-    /// restores the pre-gesture world frame. Returns false when no card is
-    /// dragging so esc falls through to the rest of the ladder.
-    @discardableResult
-    func cancelDrag() -> Bool {
-        guard let id = gesturingID, let card = cards[id] else { return false }
-        let restored = card.cancelGesture(restoringTo: preGestureFrame)
-        if restored {
-            // Restore any satellites that were dragged along by gravity.
-            for (satID, anchor) in satelliteAnchors {
-                guard let sat = cards[satID] else { continue }
-                sat.worldFrame = anchor
-                sat.frame = worldToView(sat.worldFrame.rect)
-            }
-            satelliteAnchors = [:]
-            reproject(card)
-            gesturingID = nil
-            preGestureFrame = nil
-        }
-        return restored
-    }
-
     // MARK: - Internals
 
     private let cardLayer = CardLayerView()
     private let edgeLayer = EdgeLayerView()
-    private var gesturingID: CardID?
-    private var preGestureFrame: CardFrame?
+    /// Set while a terminal card is being moved by its header.
+    private var carry: SatelliteCarry?
 
     /// Viewport-pinned twin of the focused doc card's header ✕. The in-card ✕
     /// rides the card under the pure-transform zoom, so on a doc larger than the
@@ -374,68 +347,57 @@ final class BoardView: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     private func wire(_ card: CardView) {
-        card.worldPerView = 1 / viewport.zoom
         card.onClose = { [weak self] c in self?.onCardClose?(c.id) }
-        card.onSelectRequested = { [weak self] c in self?.beginGesture(on: c) }
-        card.onWorldFrameChangedDuringGesture = { [weak self] c in
-            // Live reproject; terminal reflow waits for commit (crib §4: reflow
-            // terminal once on resize end). A term-card move drags its attached
-            // satellites along (gravity, crib §5).
+        card.onMoveBegan = { [weak self] c in self?.beginCarry(for: c) }
+        card.onFrameChanging = { [weak self] c in
             guard let self else { return }
-            self.translateSatellitesDuringGesture(of: c)
+            self.carrySatellites(of: c)
             self.reproject(c)
         }
-        card.onFrameCommitted = { [weak self] c in
-            guard let self else { return }
-            self.commitGravity(for: c)
-            self.gesturingID = nil
-            self.preGestureFrame = nil
-            self.satelliteAnchors = [:]
-            self.reproject(c)
-            self.onLayoutChanged?(self.viewport)
-        }
+        card.onGestureEnded = { [weak self] c, outcome in self?.endGesture(on: c, outcome: outcome) }
     }
 
-    private func beginGesture(on card: CardView) {
-        card.worldPerView = 1 / viewport.zoom
-        gesturingID = card.id
-        preGestureFrame = card.worldFrame
-        // Snapshot the attached satellites of a term card so a move can
-        // translate them by the same world delta (gravity, crib §5).
-        satelliteAnchors = [:]
-        if case .term = card.id {
-            for (id, c) in cards where c.ownerTermID == card.id && c.attached {
-                satelliteAnchors[id] = c.worldFrame
+    /// Only a completed move commits anything beyond the frame itself: it
+    /// detaches a doc from its owner and drops its fresh mark. A click and a
+    /// resize leave both alone.
+    private func endGesture(on card: CardView, outcome: CardGesture.Outcome) {
+        if outcome == .move, case .doc = card.id {
+            card.setFresh(false)
+            if card.attached {
+                card.attached = false
+                card.setOwnerChip(nil)
             }
         }
+        carry = nil
+        reproject(card)
+        onLayoutChanged?(viewport)
     }
 
-    /// Pre-gesture world frames of the gesturing term card's attached satellites.
-    private var satelliteAnchors: [CardID: CardFrame] = [:]
+    // MARK: Gravity
 
-    /// Translates the gesturing term card's attached satellites by the same
-    /// world delta as the term card has moved so far (gravity; crib §5).
-    private func translateSatellitesDuringGesture(of card: CardView) {
-        guard case .term = card.id, let start = preGestureFrame, !satelliteAnchors.isEmpty else { return }
-        let dx = card.worldFrame.x - start.x
-        let dy = card.worldFrame.y - start.y
-        guard dx != 0 || dy != 0 else { return }
-        for (id, anchor) in satelliteAnchors {
-            guard let sat = cards[id] else { continue }
-            sat.worldFrame.x = anchor.x + dx
-            sat.worldFrame.y = anchor.y + dy
-            sat.frame = worldToView(sat.worldFrame.rect)
-        }
+    /// A terminal card's attached docs as they stood when its header was
+    /// pressed. Only a header move carries them: a resize from the left or top
+    /// also shifts the terminal's origin, and must leave its docs where they are.
+    private struct SatelliteCarry {
+        let ownerStart: CardFrame
+        let anchors: [CardID: CardFrame]
     }
 
-    /// Gravity bookkeeping at commit (crib §5): a USER move of a doc card
-    /// detaches it (loose); a term-card move's translated satellites are already
-    /// in place. Resizes never touch gravity.
-    private func commitGravity(for card: CardView) {
-        guard card.lastCommittedGestureWasMove else { return }
-        if case .doc = card.id, card.attached {
-            card.attached = false
-            card.setOwnerChip(nil)
+    private func beginCarry(for card: CardView) {
+        guard case .term = card.id else { return }
+        let attached = cards.filter { $0.value.ownerTermID == card.id && $0.value.attached }
+        carry = SatelliteCarry(ownerStart: card.worldFrame, anchors: attached.mapValues(\.worldFrame))
+    }
+
+    private func carrySatellites(of card: CardView) {
+        guard let carry else { return }
+        let dx = card.worldFrame.x - carry.ownerStart.x
+        let dy = card.worldFrame.y - carry.ownerStart.y
+        for (id, anchor) in carry.anchors {
+            guard let satellite = cards[id] else { continue }
+            satellite.worldFrame.x = anchor.x + dx
+            satellite.worldFrame.y = anchor.y + dy
+            satellite.frame = worldToView(satellite.worldFrame.rect)
         }
     }
 
