@@ -42,7 +42,9 @@ native-test: ghostty-vt
 # The native app against this worktree's dev daemon: the same per-worktree
 # socket/state/dev-socket pins as `run`, so it can never reach the installed
 # Tarmac. TARMAC_DEV_LABEL is the window-title suffix `run` bakes in through
-# VITE_TARMAC_DEV_LABEL.
+# VITE_TARMAC_DEV_LABEL. TARMAC_APP_VERSION stands in for the bundle's version:
+# an unbundled binary has no Info.plist, and the app must name the same version
+# as the daemon it just built or it would replace that daemon as stale.
 native-run: core native
 	mkdir -p "$(ROOT)/.dev"
 	cd $(ROOT)/app && \
@@ -50,6 +52,7 @@ native-run: core native
 	TARMAC_STATE="$(ROOT)/.dev/state.json" \
 	TARMAC_DEV_SOCKET="$(ROOT)/.dev/tarmac-dev.sock" \
 	TARMAC_DEV_LABEL="$(notdir $(ROOT))" \
+	TARMAC_APP_VERSION="$$(sed -n 's/^version = "\(.*\)"/\1/p' $(ROOT)/core/Cargo.toml | head -1)" \
 	TARMAC_DAEMON="$(ROOT)/core/target/debug/tarmacd" \
 	PATH="$(ROOT)/core/target/debug:$$PATH" \
 	"$$(swift build --show-bin-path)/TarmacApp"
