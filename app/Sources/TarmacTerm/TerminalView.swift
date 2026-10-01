@@ -36,7 +36,9 @@ public final class TerminalView: NSView {
     public var onOpenLink: ((String) -> Void)?
     /// A program asked to set the clipboard (OSC 52). Unset, the request is dropped:
     /// whether a program may overwrite the user's clipboard is the host's call.
-    public var onClipboardWrite: ((String) -> Void)?
+    public var onClipboardWrite: ((String) -> Void)? {
+        didSet { engine.effects.onClipboardWrite = onClipboardWrite }
+    }
     /// Host key policy consulted before the encoder; non-nil bytes are sent as-is.
     public var keyOverride: ((TerminalKeyChord) -> [UInt8]?)?
 
@@ -157,7 +159,6 @@ public final class TerminalView: NSView {
             guard let self else { return }
             self.onTitleChanged?(self.engine.title)
         }
-        engine.effects.onClipboardWrite = { [weak self] in self?.onClipboardWrite?($0) }
         engine.effects.onRenderHold = { [weak self] held in
             guard let self else { return }
             if held {

@@ -391,6 +391,19 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(offered, ["hello"])
     }
 
+    func testClipboardAccessIsAdvertisedOnlyWhenTheHostTakesWrites() {
+        feed("\u{1b}[c")
+        XCTAssertEqual(sentText, "\u{1b}[?62;22c")
+        sent = []
+        view.onClipboardWrite = { _ in }
+        feed("\u{1b}[c")
+        XCTAssertEqual(sentText, "\u{1b}[?62;22;52c")
+        sent = []
+        view.onClipboardWrite = nil
+        feed("\u{1b}[c")
+        XCTAssertEqual(sentText, "\u{1b}[?62;22c")
+    }
+
     // MARK: focus
 
     func testFocusChangesAreReportedWhenTheProgramAsks() {
