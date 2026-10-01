@@ -57,6 +57,7 @@ extension AppController {
         persistLayout()
         if case let .term(termID) = id, sessions[termID]?.live == true {
             setPrime(termID)   // re-primes AND recomputes the focus edge via updatePrimacy
+            clearBell(termID: termID)
         } else {
             updatePrimacy()    // doc / dead: no re-prime, but paint the focus edge
         }

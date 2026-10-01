@@ -75,8 +75,8 @@ final class CardView: NSView {
     /// stays prime (keyboard target). Set via `setFocused` from the focus model.
     private(set) var focused = false
     /// Dead = a terminal card whose shell exited with an error/signal and is held
-    /// open (2606.0001): the card stays on the board dimmed, labelled `exit N` /
-    /// `killed`, read-only, and never reads as prime/quiet. Set via `setExited`.
+    /// open (2606.0001): the card stays on the board dimmed, with the label it
+    /// had, read-only, and never reads as prime/quiet. Set via `setExited`.
     /// (A clean exit removes the card outright, so it never becomes `dead`.) This
     /// flag is also the "exited" signal `persistLayout` uses to exclude the card.
     private(set) var dead = false
@@ -202,7 +202,7 @@ final class CardView: NSView {
     }
 
     func setTermLabel(_ label: String) {
-        // An exited (held-open) card keeps its `exit N` / `killed` label.
+        // A dead card keeps the label it died with.
         guard !dead else { return }
         header.setLabel(label)
     }
@@ -356,9 +356,9 @@ final class CardView: NSView {
     // MARK: - Exited state (2606.0001: shell exited with an error/signal — held open)
 
     /// Marks a terminal card a read-only hold-open placeholder after its shell
-    /// exited with an error or was killed by a signal: dim it, mute the border,
-    /// drop any prime styling, and label the header `exit N` (or `killed` when
-    /// the exit code is nil). The card stays on the board at its world frame so
+    /// exited with an error or was killed by a signal: dim it, mute the border
+    /// and drop any prime styling. The header keeps its label; the exit code is
+    /// shown only in the toast. The card stays on the board at its world frame so
     /// the failure stays visible; a clean (code 0) exit removes the card instead
     /// and never reaches here. ⌘W closes the placeholder; it is session-local
     /// either way and clears on relaunch, since this `dead` state excludes it
@@ -376,8 +376,6 @@ final class CardView: NSView {
         alphaValue = 0.55
         layer?.borderColor = currentBorderColor.cgColor
         applyRestingShadow()
-        let label = code.map { "exit \($0)" } ?? "killed"
-        header.setLabel(label)
     }
 
     // MARK: - Owner chip bridge
@@ -409,9 +407,9 @@ final class CardView: NSView {
     }
 
     /// Amber bell signal in the header (a `●` dot + amber kind-glyph accent),
-    /// shown on a seen BEL and cleared on the next keystroke, paste or click in
-    /// that terminal. Display state only — no animation (stays under Reduce
-    /// Motion).
+    /// shown on a seen BEL and cleared by the next bytes that terminal sends to
+    /// its PTY, or when it becomes prime by a press on its card or by ⌥Tab.
+    /// Display state only — no animation (stays under Reduce Motion).
     func setBell(_ on: Bool) {
         guard !dead, on != bellActive else { return }
         bellActive = on
