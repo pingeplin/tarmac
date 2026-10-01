@@ -455,6 +455,20 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(sentText, "\u{1b}[1;1R")
     }
 
+    /// Whoever asked is no longer waiting: an answer would arrive at today's
+    /// prompt as typed text.
+    func testReplayedHistoryAnswersNothingAndRingsNothing() {
+        var bells = 0
+        view.onBell = { bells += 1 }
+        view.replay(Data("old\u{1b}[6n\u{1b}[c\u{07}".utf8))
+        XCTAssertEqual(sent, [])
+        XCTAssertEqual(bells, 0)
+        XCTAssertEqual(view.viewportCells()[0].prefix(3).joined(), "old")
+        feed("\u{1b}[6n\u{07}")
+        XCTAssertEqual(sentText, "\u{1b}[1;4R")
+        XCTAssertEqual(bells, 1)
+    }
+
     func testTitleChangesReachTheHost() {
         var titles: [String?] = []
         view.onTitleChanged = { titles.append($0) }

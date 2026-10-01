@@ -128,6 +128,16 @@ public final class TerminalView: NSView {
         scheduleRead()
     }
 
+    /// Feeds output recorded earlier. Its queries, bells and clipboard writes
+    /// were for a moment that has passed, so only the screen comes back.
+    public func replay(_ data: Data) {
+        let effects = engine.effects
+        let live = (effects.onWritePty, effects.onBell, effects.onClipboardWrite)
+        (effects.onWritePty, effects.onBell, effects.onClipboardWrite) = (nil, nil, nil)
+        defer { (effects.onWritePty, effects.onBell, effects.onClipboardWrite) = live }
+        feed(data)
+    }
+
     public func plainText() -> String { engine.plainText() }
 
     /// The viewport's cells by their text, row by row; an unwritten cell and the
