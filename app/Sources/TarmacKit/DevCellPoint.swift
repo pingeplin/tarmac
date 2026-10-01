@@ -27,12 +27,12 @@ public enum DevCellPoint {
     /// per wide character — on the blank beside the last word, where a
     /// right-click selects nothing and the verb would still answer ok.
     ///
-    /// Blank is empty or Unicode White_Space. The Tauri driver trims with JS
-    /// `\s`, which also counts U+FEFF and does not count U+0085; no terminal
-    /// writes either into a cell.
+    /// Blank is empty, or a cell whose first scalar is Unicode White_Space:
+    /// the terminal attaches a zero-width scalar (U+200B, U+FEFF) to the cell
+    /// before it, so a trailing space can carry one and still show nothing.
     public static func lastWrittenCell(in rows: [[String]]) -> Cell? {
         for (row, cells) in rows.enumerated().reversed() {
-            guard let col = cells.lastIndex(where: { !$0.allSatisfy(\.isWhitespace) }) else { continue }
+            guard let col = cells.lastIndex(where: { $0.unicodeScalars.first.map { !$0.properties.isWhitespace } ?? false }) else { continue }
             return Cell(col: col, row: row)
         }
         return nil

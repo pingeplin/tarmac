@@ -76,6 +76,14 @@ final class DevCellPointTests: XCTestCase {
         XCTAssertEqual(lastWritten(["x", "e\u{301}"]), Cell(col: 1, row: 0))
     }
 
+    /// The terminal attaches a zero-width scalar to the cell before it, so a
+    /// trailing blank can hold one and still show nothing to select.
+    func testABlankCarryingAZeroWidthScalarIsStillBlank() {
+        XCTAssertEqual(lastWritten(["a", " \u{200B}"]), Cell(col: 0, row: 0))
+        XCTAssertEqual(lastWritten(["a", " \u{FEFF}"]), Cell(col: 0, row: 0))
+        XCTAssertEqual(lastWritten(["a", "x\u{200B}"]), Cell(col: 1, row: 0))
+    }
+
     func testS17ThePointIsTheExactCellCentre() {
         XCTAssertEqual(
             DevCellPoint.centre(of: Cell(col: 8, row: 7), in: grid, cols: cols, rows: rows),
