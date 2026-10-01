@@ -66,19 +66,17 @@ final class Smoke {
         let client = DaemonClient(deliveryQueue: DispatchQueue(label: "tarmac.smoke.delivery"))
         let inbox = self.inbox
         client.onMessage = { inbox.push($0) }
-        client.onDisconnect = { inbox.closed($0) }
+        client.onStatus = { status in
+            if !status.connected { inbox.closed(status.reason ?? "disconnected") }
+        }
+        client.start()
 
-        do {
-            try client.connect()
-            check("connect + hello sent (\(client.socketPath))", true)
-        } catch {
-            check("connect + hello sent", false, "\(error)")
+        let gotHelloOK = waitFor(5) { if case .helloOK = $0 { return true } else { return nil } } ?? false
+        check("connected, hello_ok received (\(client.socketPath))", gotHelloOK)
+        guard gotHelloOK else {
             print("RESULT: FAIL (1 failure)")
             return 1
         }
-
-        let gotHelloOK = waitFor(5) { if case .helloOK = $0 { return true } else { return nil } } ?? false
-        check("hello_ok received", gotHelloOK)
 
         // 1. Spawn a term running /bin/echo and assert output then exit.
         let termID = UUID().uuidString

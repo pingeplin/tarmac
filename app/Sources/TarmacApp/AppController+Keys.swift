@@ -4,13 +4,6 @@ import TarmacTerm
 
 extension AppController {
     func start() {
-        client.onMessage = { [weak self] message in
-            MainActor.assumeIsolated { self?.handle(message) }
-        }
-        client.onDisconnect = { [weak self] reason in
-            MainActor.assumeIsolated { self?.handleDisconnect(reason) }
-        }
-
         escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             // Only the four "intent" modifiers. macOS sets .function + .numericPad
             // on arrow keys, so masking with the full .deviceIndependentFlagsMask
@@ -162,18 +155,7 @@ extension AppController {
             return event
         }
 
-        let client = self.client
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                try client.connect()
-            } catch {
-                let detail = "\(error)"
-                FileHandle.standardError.write(Data("tarmac: \(detail)\n".utf8))
-                DispatchQueue.main.async {
-                    MainActor.assumeIsolated { [weak self] in self?.showConnectFailure(detail) }
-                }
-            }
-        }
+        connectToDaemon()
 
         // Layout has happened by the next runloop turn; sizeChanged also flips
         // this, whichever lands first.

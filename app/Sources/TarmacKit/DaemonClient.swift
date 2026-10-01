@@ -1,69 +1,114 @@
 import Foundation
 
-public enum DaemonClientError: Error, CustomStringConvertible, Sendable {
-    case socketPathTooLong(String)
-    case connectFailed(path: String, detail: String)
-
-    public var description: String {
-        switch self {
-        case .socketPathTooLong(let p):
-            return "socket path too long for sockaddr_un (max 104 bytes): \(p)"
-        case .connectFailed(let path, let detail):
-            return "could not connect to tarmacd at \(path): \(detail)"
-        }
-    }
-}
-
-/// Long-lived app connection to tarmacd: connects, sends `hello` (role "app"),
-/// then a background read loop decodes frames and delivers `Message`s on
-/// `deliveryQueue` (main by default).
+/// The app's one long-lived connection to tarmacd — the Swift twin of
+/// `desktop/src-tauri/src/bridge.rs`'s connection loop. `start()` runs it on a
+/// thread of its own: connect (spawning the daemon on a miss), handshake,
+/// replace a daemon of another version, then read frames until the link drops
+/// and reconnect on the `Reconnect` backoff. `Message`s and `ConnectionStatus`
+/// changes are delivered on `deliveryQueue` (main by default), in the order
+/// they happened.
+///
+/// Requests are fire-and-forget (the protocol has no request ids). While no
+/// handshake has completed they are queued, unbounded and in order, and go out
+/// after the next one does; once the client has given up or been closed they
+/// are dropped.
 public final class DaemonClient: @unchecked Sendable {
+    /// Every wait the connection loop makes. `standard` is the app's; tests
+    /// shorten them.
+    public struct Timing: Sendable {
+        /// How long a connect pass keeps retrying the socket after a miss.
+        public var connectRetryBudget: TimeInterval
+        public var connectRetryInterval: TimeInterval
+        /// How long a restart waits for the dying daemon to remove its socket.
+        public var restartWaitBudget: TimeInterval
+        public var restartPollInterval: TimeInterval
+        /// Seconds to wait before reconnect attempt `n` (1-based); nil gives up.
+        public var reconnectDelay: @Sendable (Int) -> TimeInterval?
+
+        public init(
+            connectRetryBudget: TimeInterval = 3,
+            connectRetryInterval: TimeInterval = 0.1,
+            restartWaitBudget: TimeInterval = 2,
+            restartPollInterval: TimeInterval = 0.05,
+            reconnectDelay: @escaping @Sendable (Int) -> TimeInterval? = Reconnect.delay(forAttempt:)
+        ) {
+            self.connectRetryBudget = connectRetryBudget
+            self.connectRetryInterval = connectRetryInterval
+            self.restartWaitBudget = restartWaitBudget
+            self.restartPollInterval = restartPollInterval
+            self.reconnectDelay = reconnectDelay
+        }
+
+        public static let standard = Timing()
+    }
+
     public let socketPath: String
-    /// The build channel the socket was resolved for; named in the
-    /// connect-failure diagnostics.
     public let channel: ChannelPaths.Channel
-    /// Sent as `hello.app_version`. It must be the same string `tarmacd` reports
-    /// as `daemon_version` for a matching install (the daemon's
-    /// `CARGO_PKG_VERSION`), or `DaemonLaunch.shouldRestart` reads every daemon
-    /// as stale. nil names no version.
+    /// Sent as `hello.app_version`, and compared with `hello_ok.daemon_version`
+    /// to spot a stale daemon. nil names no version and restarts nothing — see
+    /// `AppVersion`.
     public let appVersion: String?
 
+    /// Set both before `start()`.
     public var onMessage: (@Sendable (Message) -> Void)?
-    public var onDisconnect: (@Sendable (String) -> Void)?
+    public var onStatus: (@Sendable (ConnectionStatus) -> Void)?
 
+    private let environment: [String: String]
+    private let executableDir: String
+    private let timing: Timing
     private let deliveryQueue: DispatchQueue
-    private let readQueue = DispatchQueue(label: "tarmac.daemon.read")
     private let writeQueue = DispatchQueue(label: "tarmac.daemon.write")
+    private let wake = DispatchSemaphore(value: 0)
+
     private let stateLock = NSLock()
-    private var fd: Int32 = -1
+    private var started = false
     private var closed = false
-    private var spawnedDaemon: Process?
+    /// The loop has ended, by `close()` or by running out of reconnect budget.
+    private var finished = false
+    /// The socket the loop is on, so `close()` can interrupt a blocked read.
+    private var activeFD: Int32 = -1
+    private var child: pid_t?
+    private var replaced: DaemonLaunch.Replaced?
+
+    /// Touched on `writeQueue` only. `link` is the socket requests may be
+    /// written to: set once a handshake has proceeded, cleared when it drops.
+    private var link: Int32 = -1
+    private var pending: [Data] = []
 
     /// `channel` defaults to the build configuration (`ChannelPaths.Channel.build`,
-    /// the one audited `#if DEBUG` mapping); pass it to override. An explicit
-    /// `socketPath` wins over both it and `TARMAC_SOCKET`.
+    /// the one audited `#if DEBUG` mapping). An explicit `socketPath` wins over
+    /// both it and `TARMAC_SOCKET`. `environment` is the app's own: it is where
+    /// `TARMAC_SOCKET` and `TARMAC_DAEMON` are read, and what a spawned daemon
+    /// inherits. `executableDir` is where a bundled `tarmacd` sits.
     public init(
         socketPath: String? = nil,
         channel: ChannelPaths.Channel = .build,
         appVersion: String? = nil,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        executableDir: String = DaemonClient.runningExecutableDir,
+        timing: Timing = .standard,
         deliveryQueue: DispatchQueue = .main
     ) {
-        self.socketPath = socketPath ?? Self.resolveSocketPath(channel: channel)
+        self.socketPath = socketPath ?? Self.resolveSocketPath(env: environment, channel: channel)
         self.channel = channel
         self.appVersion = appVersion
+        self.environment = environment
+        self.executableDir = executableDir
+        self.timing = timing
         self.deliveryQueue = deliveryQueue
     }
 
+    public static var runningExecutableDir: String {
+        Bundle.main.executableURL?.deletingLastPathComponent().path ?? ""
+    }
+
     /// `TARMAC_SOCKET` override (non-empty wins verbatim), else the per-channel
-    /// default under `$HOME` (spec 2606.0003). The impure shell over
-    /// `ChannelPaths`: the environment read happens here and nowhere else.
-    public static func resolveSocketPath(channel: ChannelPaths.Channel = .build) -> String {
-        let env = ProcessInfo.processInfo.environment
-        return ChannelPaths.socketPath(
-            override: env["TARMAC_SOCKET"],
-            home: ChannelPaths.home(env: env),
-            channel: channel
-        )
+    /// default under `$HOME` (spec 2606.0003).
+    public static func resolveSocketPath(
+        env: [String: String] = ProcessInfo.processInfo.environment,
+        channel: ChannelPaths.Channel = .build
+    ) -> String {
+        ChannelPaths.socketPath(override: env["TARMAC_SOCKET"], home: ChannelPaths.home(env: env), channel: channel)
     }
 
     /// The macOS `sockaddr_un.sun_path` capacity in bytes (incl. the NUL
@@ -72,79 +117,59 @@ public final class DaemonClient: @unchecked Sendable {
     public static let sunPathCapacity = 104
 
     /// PURE: does `path` fit a `sockaddr_un`? (byte length `< sunPathCapacity`).
-    /// This is the exact predicate `connectOnce` enforces before binding the
-    /// address (it throws `socketPathTooLong` when false), extracted so the
-    /// `sockaddr_un` byte budget (spec S8/S8b) is unit-testable without a live
-    /// socket.
+    /// A path that does not fails the connect with a reason rather than being
+    /// truncated into some other path (spec S8/S8b).
     public static func fitsUnixSocketPath(_ path: String) -> Bool {
         path.utf8.count < sunPathCapacity
     }
 
-    /// Blocking. Connects (auto-spawning `$TARMAC_DAEMON` with ~3 s of retries if
-    /// the first attempt fails), sends hello, and starts the read loop.
-    public func connect() throws {
-        func detail(of error: Error) -> String {
-            if case DaemonClientError.connectFailed(_, let d) = error { return d }
-            return "\(error)"
-        }
-        do {
-            try connectOnce()
-        } catch {
-            let daemon = DaemonLaunch.resolveDaemonPath(
-                env: ProcessInfo.processInfo.environment,
-                executableDir: Bundle.main.executableURL?.deletingLastPathComponent().path ?? "",
-                exists: FileManager.default.fileExists(atPath:)
-            )
-            guard let daemonBin = daemon else {
-                throw DaemonClientError.connectFailed(
-                    path: socketPath,
-                    detail: "\(detail(of: error)) — is tarmacd (\(ChannelPaths.channelLabel(channel)) channel) running? (set TARMAC_SOCKET to point elsewhere, or TARMAC_DAEMON to auto-spawn it)"
-                )
-            }
-            let child = spawnedChild()
-            if DaemonLaunch.maySpawn(alreadySpawned: child != nil, priorChildExited: !(child?.isRunning ?? false)) {
-                try spawnDaemon(at: daemonBin)
-            }
-            let deadline = Date().addingTimeInterval(3.0)
-            var lastError = error
-            var connected = false
-            while Date() < deadline {
-                Thread.sleep(forTimeInterval: 0.1)
-                do {
-                    try connectOnce()
-                    connected = true
-                    break
-                } catch {
-                    lastError = error
-                }
-            }
-            guard connected else {
-                throw DaemonClientError.connectFailed(
-                    path: socketPath,
-                    detail: "spawned \(daemonBin) (\(ChannelPaths.channelLabel(channel)) channel) but the socket did not accept a connection within 3 s (last error: \(detail(of: lastError)))"
-                )
-            }
-        }
-        try sendBlocking(.hello(role: "app", v: 1, appVersion: appVersion))
-        startReadLoop()
+    // MARK: - Lifecycle
+
+    private static let closeDrainBudget: TimeInterval = 0.5
+
+    /// Starts the connection loop. Later calls do nothing.
+    public func start() {
+        stateLock.lock()
+        let first = !started
+        started = true
+        stateLock.unlock()
+        guard first else { return }
+        let thread = Thread { [self] in run() }
+        thread.name = "tarmac.daemon.connection"
+        thread.start()
     }
 
-    /// The pid of the daemon this client spawned, if any — the fallback
-    /// `DaemonLaunch.restartTarget` takes when `hello_ok` reports no pid.
-    public var spawnedDaemonPid: Int? {
-        spawnedChild().map { Int($0.processIdentifier) }
-    }
-
+    /// Ends the link for good: no reconnect, and nothing more is delivered. The
+    /// daemon, and a daemon this client spawned, are left running.
+    ///
+    /// Requests already made are written first — the layout flushed on quit is
+    /// one — but only for `closeDrainBudget`: a daemon that has stopped reading
+    /// must not be able to hang the app's exit.
     public func close() {
+        let drained = DispatchSemaphore(value: 0)
+        writeQueue.async { drained.signal() }
+        _ = drained.wait(timeout: .now() + Self.closeDrainBudget)
         stateLock.lock()
         closed = true
-        let oldFD = fd
-        fd = -1
+        finished = true
+        if activeFD >= 0 { shutdown(activeFD, SHUT_RDWR) }
         stateLock.unlock()
-        if oldFD >= 0 {
-            shutdown(oldFD, SHUT_RDWR)
-            Darwin.close(oldFD)
-        }
+        wake.signal()
+    }
+
+    /// The daemon a version-mismatch restart replaced, once there was one. It
+    /// is never cleared: the restart happens at most once per process.
+    public var daemonReplaced: DaemonLaunch.Replaced? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return replaced
+    }
+
+    /// The pid of the daemon this client spawned, while that daemon is alive.
+    public var spawnedDaemonPid: Int? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return liveChild().map(Int.init)
     }
 
     // MARK: - Send
@@ -152,9 +177,12 @@ public final class DaemonClient: @unchecked Sendable {
     public func send(_ message: Message) {
         guard let framed = try? Framing.frame(message.encodedPayload()) else { return }
         writeQueue.async { [self] in
-            if !writeAll(framed) {
-                disconnect(reason: "write failed: \(String(cString: strerror(errno)))")
+            guard !isFinished else { return }
+            guard link >= 0 else {
+                pending.append(framed)
+                return
             }
+            if !DaemonSocket.write(framed, to: link) { dropLink() }
         }
     }
 
@@ -241,182 +269,234 @@ public final class DaemonClient: @unchecked Sendable {
         send(.scrollbackRequest(termID: termID))
     }
 
-    // MARK: - Internals
+    // MARK: - The connection loop
 
-    private func connectOnce() throws {
-        let sock = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard sock >= 0 else {
-            throw DaemonClientError.connectFailed(path: socketPath, detail: "socket(): \(String(cString: strerror(errno)))")
+    private func run() {
+        var spawned = false
+        var alreadyRestarted = false
+        var attempt = 0
+        while !isFinished {
+            switch establish(spawned: &spawned) {
+            case .success(let fd):
+                attempt = 0
+                emit(.connected)
+                let restarted = converse(over: fd, alreadyRestarted: alreadyRestarted)
+                release(fd)
+                if restarted {
+                    // No backoff, and spawning is allowed again: the daemon
+                    // this app may have started is the one it just terminated.
+                    spawned = false
+                    alreadyRestarted = true
+                    continue
+                }
+                emit(.closed)
+            case .failure(let failure):
+                emit(.connectFailed(failure.detail))
+            }
+            attempt += 1
+            guard let delay = timing.reconnectDelay(attempt) else {
+                emit(.gaveUp)
+                break
+            }
+            guard pause(delay) else { break }
         }
-        var yes: Int32 = 1
-        setsockopt(sock, SOL_SOCKET, SO_NOSIGPIPE, &yes, socklen_t(MemoryLayout<Int32>.size))
+        finish()
+    }
 
+    private struct ConnectFailure: Error {
+        var detail: String
+    }
+
+    /// One connect pass: the socket, else spawn the daemon — unless one this
+    /// client started is still alive — and retry until the budget is spent.
+    private func establish(spawned: inout Bool) -> Result<Int32, ConnectFailure> {
         guard Self.fitsUnixSocketPath(socketPath) else {
-            Darwin.close(sock)
-            throw DaemonClientError.socketPathTooLong(socketPath)
+            return .failure(ConnectFailure(detail: ConnectionStatus.socketPathTooLong(socketPath)))
         }
-        var addr = sockaddr_un()
-        addr.sun_family = sa_family_t(AF_UNIX)
-        socketPath.withCString { src in
-            withUnsafeMutableBytes(of: &addr.sun_path) { dst in
-                // Safe: fitsUnixSocketPath guaranteed strlen(src) < dst.count.
-                memcpy(dst.baseAddress!, src, strlen(src) + 1)
-            }
+        if let fd = connectOnce() { return .success(fd) }
+        if let launched = spawnIfAllowed(alreadySpawned: spawned) {
+            spawned = launched
         }
-
-        let result = withUnsafePointer(to: &addr) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                Darwin.connect(sock, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
-            }
+        let deadline = Date().addingTimeInterval(timing.connectRetryBudget)
+        while pause(timing.connectRetryInterval) {
+            if let fd = connectOnce() { return .success(fd) }
+            if Date() >= deadline { break }
         }
-        guard result == 0 else {
-            let detail = String(cString: strerror(errno))
-            Darwin.close(sock)
-            throw DaemonClientError.connectFailed(path: socketPath, detail: detail)
-        }
-
-        stateLock.lock()
-        fd = sock
-        closed = false
-        stateLock.unlock()
+        return .failure(ConnectFailure(detail: ConnectionStatus.noDaemon(at: socketPath)))
     }
 
-    private func spawnDaemon(at binPath: String) throws {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: binPath)
-        proc.standardInput = FileHandle.nullDevice
-        // A daemon that cannot log must still start, so a log that will not
-        // open leaves stdio inherited.
-        if let log = Self.openLog(at: DaemonLaunch.logPath(socketPath: socketPath)) {
-            proc.standardOutput = log
-            proc.standardError = log
+    /// The handshake, the version check, then frames until the link drops.
+    /// Returns true iff the daemon was told to exit and must be replaced.
+    private func converse(over fd: Int32, alreadyRestarted: Bool) -> Bool {
+        guard let hello = try? Framing.frame(Message.hello(role: "app", v: 1, appVersion: appVersion).encodedPayload()),
+            DaemonSocket.write(hello, to: fd),
+            let payload = DaemonSocket.readFrame(from: fd),
+            let first = try? Message.decode(payload: payload)
+        else { return false }
+
+        var reportedVersion: String?
+        var reportedPid: Int?
+        if case .helloOK(_, let daemonVersion, let daemonPid, _, _) = first {
+            reportedVersion = daemonVersion
+            reportedPid = daemonPid
         }
-        // Hand the daemon (and the PTYs it spawns) a PATH that resolves the
-        // `tarmac` CLI beside it, so `tarmac open` works inside the app's own
-        // terminals even under a Finder launch (minimal launchd PATH).
-        var environment = ProcessInfo.processInfo.environment
-        environment["PATH"] = DaemonLaunch.injectCLIPath(
-            base: environment["PATH"],
-            cliDir: DaemonLaunch.cliDir(forDaemon: binPath)
-        )
-        proc.environment = environment
-        do {
-            try proc.run()
-        } catch {
-            throw DaemonClientError.connectFailed(
-                path: socketPath,
-                detail: "failed to launch TARMAC_DAEMON (\(binPath)): \(error)"
-            )
-        }
-        stateLock.lock()
-        spawnedDaemon = proc
-        stateLock.unlock()
-    }
-
-    private func spawnedChild() -> Process? {
-        stateLock.lock()
-        defer { stateLock.unlock() }
-        return spawnedDaemon
-    }
-
-    /// Truncated per launch, so the file is bounded by one daemon session.
-    private static func openLog(at path: String) -> FileHandle? {
-        let dir = (path as NSString).deletingLastPathComponent
-        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-        guard FileManager.default.createFile(atPath: path, contents: nil) else { return nil }
-        return FileHandle(forWritingAtPath: path)
-    }
-
-    private func sendBlocking(_ message: Message) throws {
-        let framed = try Framing.frame(message.encodedPayload())
-        guard writeAll(framed) else {
-            throw DaemonClientError.connectFailed(
-                path: socketPath,
-                detail: "handshake write failed: \(String(cString: strerror(errno)))"
-            )
-        }
-    }
-
-    private func startReadLoop() {
-        let sock = currentFD()
-        readQueue.async { [self] in
-            var reason = "connection closed by daemon"
-            while true {
-                guard let header = readExact(4, from: sock) else { break }
-                let n = (UInt32(header[0]) << 24) | (UInt32(header[1]) << 16) | (UInt32(header[2]) << 8) | UInt32(header[3])
-                guard Int(n) <= Framing.maxFrameLength else {
-                    reason = "protocol error: \(n)-byte frame exceeds the 16 MiB cap"
-                    break
-                }
-                guard let payload = readExact(Int(n), from: sock) else { break }
-                do {
-                    let message = try Message.decode(payload: Data(payload))
-                    deliveryQueue.async { [self] in onMessage?(message) }
-                } catch {
-                    // Malformed frame: log and continue (only over-cap frames are fatal).
-                    FileHandle.standardError.write(Data("tarmac: dropping undecodable frame: \(error)\n".utf8))
-                }
-            }
-            disconnect(reason: reason)
-        }
-    }
-
-    private func readExact(_ n: Int, from sock: Int32) -> [UInt8]? {
-        if n == 0 { return [] }
-        var buf = [UInt8](repeating: 0, count: n)
-        var got = 0
-        while got < n {
-            let r = buf.withUnsafeMutableBytes { p in
-                read(sock, p.baseAddress!.advanced(by: got), n - got)
-            }
-            if r == 0 { return nil }
-            if r < 0 {
-                if errno == EINTR { continue }
-                return nil
-            }
-            got += r
-        }
-        return buf
-    }
-
-    private func writeAll(_ data: Data) -> Bool {
-        let sock = currentFD()
-        guard sock >= 0 else { return false }
-        return data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
-            var offset = 0
-            while offset < raw.count {
-                let r = write(sock, raw.baseAddress!.advanced(by: offset), raw.count - offset)
-                if r < 0 {
-                    if errno == EINTR { continue }
-                    return false
-                }
-                if r == 0 { return false }
-                offset += r
-            }
+        if DaemonLaunch.shouldRestart(
+            expected: appVersion, reported: reportedVersion, alreadyRestarted: alreadyRestarted
+        ) {
+            replaceDaemon(reportedVersion: reportedVersion, reportedPid: reportedPid)
             return true
         }
+
+        stateLock.lock()
+        DaemonLaunch.noteProceeding(&replaced, reported: reportedVersion)
+        stateLock.unlock()
+        deliver(first)
+        raiseLink(fd)
+        while let payload = DaemonSocket.readFrame(from: fd) {
+            // A frame that does not decode is skipped; only a stream that can
+            // no longer be read ends the connection.
+            if let message = try? Message.decode(payload: payload) { deliver(message) }
+        }
+        lowerLink()
+        return false
     }
 
-    private func currentFD() -> Int32 {
+    /// SIGTERM the stale daemon, then wait for it to remove its socket: a new
+    /// daemon that still finds a live one behind the socket quits instead of
+    /// taking over. Bounded, so a wedged daemon still lets the app proceed.
+    private func replaceDaemon(reportedVersion: String?, reportedPid: Int?) {
+        emit(.restarting)
+        stateLock.lock()
+        replaced = DaemonLaunch.Replaced(from: reportedVersion, to: nil)
+        let spawnedChild = liveChild().map(Int.init)
+        stateLock.unlock()
+        if let pid = DaemonLaunch.restartTarget(reportedPid: reportedPid, spawnedChildPid: spawnedChild) {
+            kill(pid_t(pid), SIGTERM)
+        }
+        let deadline = Date().addingTimeInterval(timing.restartWaitBudget)
+        while FileManager.default.fileExists(atPath: socketPath), Date() < deadline {
+            guard pause(timing.restartPollInterval) else { return }
+        }
+    }
+
+    // MARK: - Spawn
+
+    /// Whether the launch produced a daemon; nil when none was attempted. Under
+    /// `stateLock`, so `close()` — which takes it — is never followed by a spawn.
+    private func spawnIfAllowed(alreadySpawned: Bool) -> Bool? {
         stateLock.lock()
         defer { stateLock.unlock() }
-        return fd
+        guard !closed else { return nil }
+        let priorChildExited = liveChild() == nil
+        guard DaemonLaunch.maySpawn(alreadySpawned: alreadySpawned, priorChildExited: priorChildExited),
+            let daemon = DaemonLaunch.resolveDaemonPath(
+                env: environment, executableDir: executableDir, exists: FileManager.default.fileExists(atPath:)
+            )
+        else { return nil }
+        child = DaemonSpawner.spawn(
+            program: daemon,
+            environment: DaemonLaunch.childEnvironment(base: environment, daemonPath: daemon),
+            logPath: DaemonLaunch.logPath(socketPath: socketPath)
+        )
+        return child != nil
     }
 
-    private func disconnect(reason: String) {
+    /// The spawned daemon, if it is still running. One that has exited is
+    /// forgotten, so its pid — free to be reused by any process — is never
+    /// signalled. Caller holds `stateLock`.
+    private func liveChild() -> pid_t? {
+        guard let pid = child else { return nil }
+        if DaemonLaunch.priorChildExited(waitResult: DaemonSpawner.waitResult(of: pid)) {
+            child = nil
+        }
+        return child
+    }
+
+    // MARK: - Socket
+
+    private func connectOnce() -> Int32? {
+        guard let sock = DaemonSocket.connect(to: socketPath) else { return nil }
         stateLock.lock()
-        if closed {
-            stateLock.unlock()
-            return
+        defer { stateLock.unlock() }
+        guard !closed else {
+            Darwin.close(sock)
+            return nil
         }
-        closed = true
-        let oldFD = fd
-        fd = -1
+        activeFD = sock
+        return sock
+    }
+
+    /// Closing is the loop's alone, and only after `close()` can no longer
+    /// reach the descriptor — a number the kernel may hand out again at once.
+    private func release(_ fd: Int32) {
+        stateLock.lock()
+        activeFD = -1
         stateLock.unlock()
-        if oldFD >= 0 {
-            shutdown(oldFD, SHUT_RDWR)
-            Darwin.close(oldFD)
+        Darwin.close(fd)
+    }
+
+    private func raiseLink(_ fd: Int32) {
+        writeQueue.sync {
+            link = fd
+            let queued = pending
+            pending = []
+            for (index, framed) in queued.enumerated() {
+                if DaemonSocket.write(framed, to: fd) { continue }
+                pending = Array(queued[(index + 1)...])
+                dropLink()
+                break
+            }
         }
-        deliveryQueue.async { [self] in onDisconnect?(reason) }
+    }
+
+    private func lowerLink() {
+        writeQueue.sync { link = -1 }
+    }
+
+    /// A write failed: the request is lost, later ones queue, and the reader is
+    /// woken to find the link dead. On `writeQueue`.
+    private func dropLink() {
+        shutdown(link, SHUT_RDWR)
+        link = -1
+    }
+
+    // MARK: - State
+
+    private var isFinished: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return finished
+    }
+
+    private var isClosed: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return closed
+    }
+
+    private func finish() {
+        stateLock.lock()
+        finished = true
+        stateLock.unlock()
+        writeQueue.sync { pending = [] }
+    }
+
+    /// Sleeps `seconds`, or until `close()`. False once the loop must stop.
+    private func pause(_ seconds: TimeInterval) -> Bool {
+        if isFinished { return false }
+        _ = wake.wait(timeout: .now() + seconds)
+        return !isFinished
+    }
+
+    private func emit(_ status: ConnectionStatus) {
+        deliveryQueue.async { [self] in
+            if !isClosed { onStatus?(status) }
+        }
+    }
+
+    private func deliver(_ message: Message) {
+        deliveryQueue.async { [self] in
+            if !isClosed { onMessage?(message) }
+        }
     }
 }

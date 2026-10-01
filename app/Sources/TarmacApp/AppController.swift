@@ -42,22 +42,13 @@ final class AppController {
     let rootView: RootView
     weak var window: NSWindow?
 
+    /// The handshake has completed: requests may be made. Narrower than
+    /// `connectionStatus.connected`, which is already true while it is pending.
     var connected = false
     var viewReady = false
+    /// The daemon link as the status bar shows it.
+    var connectionStatus = ConnectionStatus.connecting
 
-    // MARK: - P5.3 bounded auto-reconnect
-    //
-    // On a dropped daemon connection the app marks its live sessions detached,
-    // flips the chip/status faint, and retries `connect()` on the bounded
-    // `Reconnect` backoff. A successful reconnect's `board_list` + `restore`
-    // revive the still-live shells (and cold-spawn the gone ones) via the boards
-    // queued in `boardsAwaitingRevive`.
-    /// Attempts made since the link last dropped (reset to 0 on `hello_ok`).
-    var reconnectAttempt = 0
-    /// A `connect()` is in flight on the background queue — guards double-connect.
-    var reconnecting = false
-    /// App teardown began — gates the scheduler so a pending backoff is a no-op.
-    var quitting = false
     /// Boards whose detached terminals await revive on the next restore for them.
     /// Populated on disconnect (every board that had a live session); a board is
     /// removed when its revive runs. Also gates `maybeSpawn` so a detached prime
@@ -213,7 +204,7 @@ final class AppController {
     init(window: NSWindow, rootView: RootView) {
         self.window = window
         self.rootView = rootView
-        self.client = DaemonClient()
+        self.client = Self.daemonClient()
 
         // board-0 wraps the BoardView RootView was built with; it is the active,
         // mounted board until the daemon's board_list says otherwise.
@@ -258,12 +249,8 @@ final class AppController {
         )
     }
 
-    /// P5 (two honest signals): the app-local attached/detached signal. The
-    /// status-bar word reflects whether we currently hold a live daemon
-    /// connection (the daemon cannot tell a gone app that it detached, so this is
-    /// driven locally by `connected`). Reconnect (P5.3) flips it back to attached.
     func updateSessionLiveness() {
-        rootView.statusBar.setSession(attached: connected)
+        rootView.statusBar.setConnection(connectionStatus)
     }
 
     /// Makes the prime terminal the window's first responder (initial focus): the
@@ -301,11 +288,9 @@ final class AppController {
         }
     }
 
-    /// P5.3: cancel the reconnect loop and close the socket on app teardown. Sets
-    /// `quitting` first so any in-flight backoff timer is a no-op, removes the key
-    /// monitor, and closes the client (so its disconnect path won't re-fire).
+    /// App teardown: removes the event monitors and closes the daemon link. The
+    /// daemon and its terminals are left running.
     func shutdown() {
-        quitting = true
         for monitor in [escMonitor, clickFocusMonitor, scrollRouteMonitor, magnifyRouteMonitor, mouseUpRestackMonitor] {
             if let monitor { NSEvent.removeMonitor(monitor) }
         }
