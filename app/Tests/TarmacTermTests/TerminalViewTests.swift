@@ -166,6 +166,29 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(sentText, "\u{1b}[<0;4;1M\u{1b}[<0;4;1m")
     }
 
+    // MARK: context menu
+
+    func testRightClickSelectsTheWordAndOffersCopyPaste() throws {
+        feed("hello world")
+        let menu = try XCTUnwrap(view.menu(for: try mouse(.rightMouseDown, col: 7, row: 0)))
+        XCTAssertEqual(menu.items.map(\.title), ["Copy", "Paste", "Select All"])
+        view.copy(nil)
+        XCTAssertEqual(NSPasteboard.general.string(forType: .string), "world")
+    }
+
+    func testRightClickInsideASelectionKeepsIt() throws {
+        feed("hello world")
+        view.selectAll(nil)
+        _ = view.menu(for: try mouse(.rightMouseDown, col: 7, row: 0))
+        view.copy(nil)
+        XCTAssertEqual(NSPasteboard.general.string(forType: .string), "hello world")
+    }
+
+    func testAProgramThatTracksTheMouseGetsNoContextMenu() throws {
+        feed("hello\u{1b}[?1000h")
+        XCTAssertNil(view.menu(for: try mouse(.rightMouseDown, col: 1, row: 0)))
+    }
+
     // MARK: wheel
 
     private func wheel(lines: Int32) throws -> NSEvent {

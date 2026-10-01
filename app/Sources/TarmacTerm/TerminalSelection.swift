@@ -122,6 +122,16 @@ final class TerminalSelection {
         ghostty_terminal_set(engine.terminal, GHOSTTY_TERMINAL_OPT_SELECTION, nil)
     }
 
+    func selectWord(at point: SurfacePoint, surface: SurfaceGeometry) {
+        guard let ref = ref(at: point, surface: surface) else { return }
+        var options = GhosttyTerminalSelectWordOptions()
+        options.size = MemoryLayout<GhosttyTerminalSelectWordOptions>.size
+        options.ref = ref
+        var selection = Self.emptySelection()
+        guard ghostty_terminal_select_word(engine.terminal, &options, &selection) == GHOSTTY_SUCCESS else { return }
+        ghostty_terminal_set(engine.terminal, GHOSTTY_TERMINAL_OPT_SELECTION, &selection)
+    }
+
     func selectAll() {
         var selection = Self.emptySelection()
         guard ghostty_terminal_select_all(engine.terminal, &selection) == GHOSTTY_SUCCESS else { return }

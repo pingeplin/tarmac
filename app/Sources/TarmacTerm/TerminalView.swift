@@ -541,6 +541,28 @@ public final class TerminalView: NSView {
         hoveredLink = nil
     }
 
+    /// Copy / Paste / Select All, after selecting the word under the pointer
+    /// unless the click landed inside an existing selection. A program that
+    /// tracks the mouse gets the right button as a report instead.
+    public override func menu(for event: NSEvent) -> NSMenu? {
+        guard !programOwnsMouse(event), let gridLayout, let point = surfacePoint(event) else { return nil }
+        if readScheduled { readIfNotHeld() }
+        let col = Int(point.x / gridLayout.cell.width)
+        let row = Int(point.y / gridLayout.cell.height)
+        let insideSelection = frameSnapshot.rows.indices.contains(row)
+            && frameSnapshot.rows[row].selection?.contains(col) == true
+        if !insideSelection {
+            selection.selectWord(at: point, surface: gridLayout.surface)
+            scheduleRead()
+        }
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Paste", action: #selector(paste(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Select All", action: #selector(selectAll(_:)), keyEquivalent: "")
+        menu.items.forEach { $0.target = self }
+        return menu
+    }
+
     public override func rightMouseDown(with event: NSEvent) {
         guard programOwnsMouse(event) else { return super.rightMouseDown(with: event) }
         pressedButtons += 1
