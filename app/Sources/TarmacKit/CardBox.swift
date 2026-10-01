@@ -29,4 +29,48 @@ public enum CardBox {
         let content = content(of: size)
         return CGRect(x: 0, y: headerHeight, width: content.width, height: max(0, content.height - headerHeight))
     }
+
+    /// The box as it is laid out on screen, in screen points. The border and
+    /// the header take their world metrics times the zoom, on whole device
+    /// pixels. The body alone is not laid out at the zoom: it keeps its world
+    /// size inside a container that scales it, so a terminal's grid — measured
+    /// from that size — never changes with the zoom.
+    public struct Screen: Equatable, Sendable {
+        public var border: CGFloat
+        public var cornerRadius: CGFloat
+        /// The area inside the border, in the card's coordinates.
+        public var content: CGRect
+        /// The header, in the content area's coordinates.
+        public var header: CGRect
+        /// The body's container, in the content area's coordinates: `bodySize`
+        /// times the zoom. It can differ from the room under the header by a
+        /// fraction of a device pixel, which the content area clips or shows
+        /// through.
+        public var body: CGRect
+        /// The size the body is laid out at inside its container.
+        public var bodySize: CGSize
+    }
+
+    /// `cardSize` is the card's size on screen and `worldSize` its world size.
+    public static func screen(cardSize: CGSize, worldSize: CGSize, scale: CardScale) -> Screen {
+        let border = scale.line(borderWidth)
+        let content = CGRect(
+            x: border,
+            y: border,
+            width: max(0, cardSize.width - 2 * border),
+            height: max(0, cardSize.height - 2 * border)
+        )
+        let header = CGRect(x: 0, y: 0, width: content.width, height: min(scale.snapped(headerHeight), content.height))
+        let bodySize = body(of: worldSize).size
+        return Screen(
+            border: border,
+            cornerRadius: scale.length(cornerRadius),
+            content: content,
+            header: header,
+            body: CGRect(
+                x: 0, y: header.height, width: scale.length(bodySize.width), height: scale.length(bodySize.height)
+            ),
+            bodySize: bodySize
+        )
+    }
 }
