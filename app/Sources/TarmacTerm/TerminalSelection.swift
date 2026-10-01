@@ -85,6 +85,13 @@ final class TerminalSelection {
         ghostty_selection_gesture_event(gesture, engine.terminal, releaseEvent, nil)
     }
 
+    /// Whether the current (or just-released) press turned into a drag.
+    var dragged: Bool {
+        var dragged = false
+        ghostty_selection_gesture_get(gesture, engine.terminal, GHOSTTY_SELECTION_GESTURE_DATA_DRAGGED, &dragged)
+        return dragged
+    }
+
     /// Which way a drag held past the grid's edge wants the viewport to scroll.
     var autoscroll: SelectionAutoscroll {
         var direction = GHOSTTY_SELECTION_GESTURE_AUTOSCROLL_NONE

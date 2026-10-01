@@ -54,6 +54,7 @@ final class TerminalRenderer {
         layout: TerminalGridLayout,
         cursor: CursorDisplay,
         preedit: String? = nil,
+        hoveredLink: (row: Int, cols: ClosedRange<Int>)? = nil,
         in context: CGContext
     ) {
         let pixels = PixelGrid(context)
@@ -63,6 +64,11 @@ final class TerminalRenderer {
         for row in rows.clamped(to: 0..<frame.rows.count) {
             drawBackgrounds(frame, row: row, layout: layout, pixels: pixels, in: context)
             drawText(frame, row: row, layout: layout, pixels: pixels, in: context)
+        }
+        if let hoveredLink, rows.contains(hoveredLink.row) {
+            let origin = layout.rect(col: hoveredLink.cols.lowerBound, row: hoveredLink.row).origin
+            drawRule(.single, y: origin.y + fonts.metrics.underlineOffset, x: origin.x,
+                     span: hoveredLink.cols.count, layout: layout, colour: frame.foreground, pixels: pixels, in: context)
         }
         if let position = frame.cursor, rows.contains(position.row) {
             drawCursor(position, frame: frame, layout: layout, display: cursor, pixels: pixels, in: context)

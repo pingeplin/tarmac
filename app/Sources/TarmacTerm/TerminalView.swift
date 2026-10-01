@@ -32,6 +32,8 @@ public final class TerminalView: NSView {
     public var onBell: (() -> Void)?
     /// The user typed or clicked here.
     public var onActivity: (() -> Void)?
+    /// The user clicked a URL in the output or an OSC 8 hyperlink.
+    public var onOpenLink: ((String) -> Void)?
     /// A program asked to set the clipboard (OSC 52). Unset, the request is dropped:
     /// whether a program may overwrite the user's clipboard is the host's call.
     public var onClipboardWrite: ((String) -> Void)?
@@ -59,6 +61,19 @@ public final class TerminalView: NSView {
     var markedText = NSMutableAttributedString()
     var keyTextAccumulator: [String]?
 
+    private struct LinkHit: Equatable {
+        var row: Int
+        var link: RowLink
+    }
+
+    private var hoveredLink: LinkHit? {
+        didSet {
+            guard let gridLayout else { return }
+            for row in [oldValue?.row, hoveredLink?.row] {
+                if let row { setNeedsDisplay(gridLayout.rowRect(row)) }
+            }
+        }
+    }
     private var pressedButtons = 0
     private var scrollRemainder: CGFloat = 0
     private var autoscrollTimer: Timer?
@@ -209,7 +224,8 @@ public final class TerminalView: NSView {
         let rows = max(first, 0)..<max(min(last, gridLayout.rows), max(first, 0))
         renderer.draw(
             frameSnapshot, rows: rows, layout: gridLayout, cursor: cursorDisplay,
-            preedit: markedText.length > 0 ? markedText.string : nil, in: context
+            preedit: markedText.length > 0 ? markedText.string : nil,
+            hoveredLink: hoveredLink.map { (row: $0.row, cols: $0.link.cols) }, in: context
         )
     }
 
@@ -484,6 +500,45 @@ public final class TerminalView: NSView {
         guard let gridLayout, let point = surfacePoint(event) else { return }
         selection.release(point, surface: gridLayout.surface)
         scheduleRead()
+        if event.clickCount == 1, !selection.dragged, let hit = link(at: point) {
+            onOpenLink?(hit.link.url)
+        }
+    }
+
+    // MARK: links
+
+    /// The link under a surface point: an OSC 8 hyperlink if the program set
+    /// one there, else a URL spelled out in the row's text.
+    private func link(at point: SurfacePoint) -> LinkHit? {
+        // Output that arrived this turn has not been read into the frame yet.
+        if readScheduled { readIfNotHeld() }
+        guard let gridLayout, point.x >= 0, point.y >= 0 else { return nil }
+        let col = Int(point.x / gridLayout.cell.width)
+        let row = Int(point.y / gridLayout.cell.height)
+        guard frameSnapshot.rows.indices.contains(row), col < gridLayout.cols else { return nil }
+        if let target = engine.hyperlink(col: col, row: row) {
+            var cols = col...col
+            while cols.lowerBound > 0, engine.hyperlink(col: cols.lowerBound - 1, row: row) == target {
+                cols = (cols.lowerBound - 1)...cols.upperBound
+            }
+            while cols.upperBound < gridLayout.cols - 1, engine.hyperlink(col: cols.upperBound + 1, row: row) == target {
+                cols = cols.lowerBound...(cols.upperBound + 1)
+            }
+            return LinkHit(row: row, link: RowLink(cols: cols, url: target))
+        }
+        return TerminalLinks.urls(in: frameSnapshot.rows[row])
+            .first { $0.cols.contains(col) }
+            .map { LinkHit(row: row, link: $0) }
+    }
+
+    private func updateHover(_ event: NSEvent) {
+        let hit = programOwnsMouse(event) ? nil : surfacePoint(event).flatMap(link(at:))
+        if hit != hoveredLink { hoveredLink = hit }
+        (hit == nil ? NSCursor.iBeam : NSCursor.pointingHand).set()
+    }
+
+    public override func mouseExited(with event: NSEvent) {
+        hoveredLink = nil
     }
 
     public override func rightMouseDown(with event: NSEvent) {
@@ -519,13 +574,14 @@ public final class TerminalView: NSView {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)
         addTrackingArea(NSTrackingArea(
-            rect: .zero, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self
+            rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self
         ))
     }
 
     /// Hover reports count as input to a selection-clearing program, so a shown
     /// selection holds them back; a click dismisses it and reports resume.
     public override func mouseMoved(with event: NSEvent) {
+        updateHover(event)
         guard isFocused, programOwnsMouse(event), !hasSelection else { return }
         report(event, action: .motion, button: nil)
     }

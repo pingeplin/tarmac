@@ -113,6 +113,59 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertTrue(view.engine.isViewportAtBottom)
     }
 
+    // MARK: links
+
+    private func mouse(_ type: NSEvent.EventType, col: Int, row: Int, flags: NSEvent.ModifierFlags = []) throws -> NSEvent {
+        let cell = try XCTUnwrap(view.gridLayout).rect(col: col, row: row)
+        return try XCTUnwrap(NSEvent.mouseEvent(
+            with: type, location: view.convert(CGPoint(x: cell.midX, y: cell.midY), to: nil), modifierFlags: flags,
+            timestamp: 1, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+    }
+
+    private func click(col: Int, row: Int) throws {
+        view.mouseDown(with: try mouse(.leftMouseDown, col: col, row: row))
+        view.mouseUp(with: try mouse(.leftMouseUp, col: col, row: row))
+    }
+
+    func testClickingAUrlOpensIt() throws {
+        var opened: [String] = []
+        view.onOpenLink = { opened.append($0) }
+        feed("see https://example.com/x now")
+        try click(col: 6, row: 0)
+        XCTAssertEqual(opened, ["https://example.com/x"])
+        try click(col: 1, row: 0)
+        XCTAssertEqual(opened.count, 1)
+    }
+
+    func testClickingAnOsc8HyperlinkOpensItsTarget() throws {
+        var opened: [String] = []
+        view.onOpenLink = { opened.append($0) }
+        feed("\u{1b}]8;;https://example.com/doc\u{1b}\\here\u{1b}]8;;\u{1b}\\")
+        try click(col: 1, row: 0)
+        XCTAssertEqual(opened, ["https://example.com/doc"])
+    }
+
+    func testDraggingAcrossAUrlSelectsInsteadOfOpening() throws {
+        var opened: [String] = []
+        view.onOpenLink = { opened.append($0) }
+        feed("see https://example.com/x now")
+        view.mouseDown(with: try mouse(.leftMouseDown, col: 4, row: 0))
+        view.mouseDragged(with: try mouse(.leftMouseDragged, col: 12, row: 0))
+        view.mouseUp(with: try mouse(.leftMouseUp, col: 12, row: 0))
+        XCTAssertEqual(opened, [])
+        XCTAssertTrue(view.hasSelection)
+    }
+
+    func testAProgramThatTracksTheMouseGetsTheClickInstead() throws {
+        var opened: [String] = []
+        view.onOpenLink = { opened.append($0) }
+        feed("https://example.com/x\u{1b}[?1000h\u{1b}[?1006h")
+        try click(col: 3, row: 0)
+        XCTAssertEqual(opened, [])
+        XCTAssertEqual(sentText, "\u{1b}[<0;4;1M\u{1b}[<0;4;1m")
+    }
+
     // MARK: wheel
 
     private func wheel(lines: Int32) throws -> NSEvent {
