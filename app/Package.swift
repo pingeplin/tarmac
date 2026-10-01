@@ -17,7 +17,7 @@ let package = Package(
         .executableTarget(
             name: "TarmacApp",
             dependencies: ["TarmacKit", "TarmacTerm"],
-            resources: [.copy("Resources/DocTemplate.html")]
+            resources: [.copy("Resources/DocTemplate.html"), .copy("Resources/Fonts")]
         ),
     ]
 )
