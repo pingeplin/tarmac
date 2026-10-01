@@ -194,13 +194,7 @@ final class AppController {
         return f
     }()
 
-    /// The board whose layout a settling pan still owes to disk, and the trailing
-    /// timer that will flush it. Only the continuous `onLayoutChanged` path is
-    /// debounced; discrete `persistLayout()` calls (spawn / close / …) stay
-    /// immediate.
-    var pendingPersistBoardID: String?
-    var persistDebounce: DispatchWorkItem?
-    static let persistDebounceInterval: TimeInterval = 0.2
+    lazy var layoutPersister = LayoutPersister { [weak self] boardID in self?.sendLayout(boardID: boardID) }
 
     /// The board that owns `termID` (via the term→board index), or nil if the
     /// term is unknown / already exited.

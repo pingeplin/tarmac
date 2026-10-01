@@ -264,113 +264,54 @@ extension AppController {
         return CardFrame(x: x, y: y, w: Place.docW, h: Place.docH, z: docSlot + 1)
     }
 
-    /// Reports the full layout snapshot (docs/protocol.md `layout`;
-    /// last-writer-wins): each terminal card's frame + its `term_id` (Phase 5b:
-    /// N terminal cards, live AND dead, persist distinct positions) and each board
-    /// doc card's frame with its `loose` flag. Plus the board
-    /// viewport `{zoom,cx,cy}`. Fired on every committed board
-    /// move/resize/zoom/pan, and on card-set/gravity changes.
+    // MARK: - Persistence
+
+    /// A board changed: its layout snapshot goes out once it has been still for
+    /// the debounce. The board need not be the active one.
+    func persistLayout(for board: Board) {
+        schedulePersist(boardID: board.boardID)
+    }
+
     func persistLayout() {
         persistLayout(for: activeBoard)
     }
 
-    // MARK: Debounced pan/zoom persistence (fix #2)
-
-    /// Coalesces an `onLayoutChanged` persist: remember the board, (re)arm a
-    /// trailing timer. A burst of scroll events collapses to one snapshot+IPC once
-    /// panning stops for `persistDebounceInterval`.
     func schedulePersist(boardID: String) {
-        pendingPersistBoardID = boardID
-        persistDebounce?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            self.persistDebounce = nil
-            self.flushPendingPersist()
-        }
-        persistDebounce = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.persistDebounceInterval, execute: work)
+        layoutPersister.schedule(boardID)
     }
 
-    /// Flushes any pending debounced persist immediately — called on switch-away
-    /// (while the leaving board is still active, so its guard passes), resign-active,
-    /// and terminate, so a settling pan's last position is never lost.
+    /// Sends every snapshot still owed, now — on a board switch, when the app
+    /// resigns active, and at quit.
     func flushPendingPersist() {
-        persistDebounce?.cancel()
-        persistDebounce = nil
-        guard let bid = pendingPersistBoardID else { return }
-        pendingPersistBoardID = nil
-        persistLayout(forBoardID: bid)
+        layoutPersister.flush()
     }
 
-    /// Persists `boardID`'s layout (the form `onLayoutChanged` calls, since its
-    /// closure captures the board's id by value).
-    private func persistLayout(forBoardID boardID: String) {
-        guard let board = boards[boardID] else { return }
-        persistLayout(for: board)
-    }
-
-    /// Builds the full layout snapshot for `board` and sends it stamped with its
-    /// `board_id`, so the daemon persists it to the right board regardless of
-    /// what it considers active. Only the active board is persisted: a committed
-    /// layout change can only originate from the mounted board (input + gestures
-    /// reach no detached view), so a callback from a non-active board is a
-    /// teardown transient and is dropped (the per-board correctness guard that
-    /// replaces the P2 renderedBoardID suppression).
-    func persistLayout(for board: Board) {
-        // Drop everything during a switch transient (unmount / re-mount /
-        // rebuild fire layout passes whose geometry is mid-flight) and any
-        // callback from a non-active board (input/gestures reach no detached view).
-        guard !switching, board === activeBoard else { return }
-        // perf/whiteboard-profiling: this whole snapshot + msgpack + IPC currently
-        // runs on every scroll delta (TODO(perf) at the onLayoutChanged wiring).
-        // `persist n=…` in the ⟦perf⟧ line is the per-window call count — the tax
-        // fix #2 (debounce-on-commit) is meant to collapse. See PerfTrace.swift.
+    /// The `layout` message for `boardID` (docs/protocol.md; last writer wins),
+    /// stamped with its `board_id` so the daemon files it under that board
+    /// whatever it considers active. A board is never persisted before its
+    /// first restore: until then it holds a placeholder, and the snapshot would
+    /// overwrite the layout the restore is about to deliver.
+    func sendLayout(boardID: String) {
+        guard let board = boards[boardID], board.didInitialRestore else { return }
         PerfTrace.measure("persist") {
-            var tiles: [LayoutTile] = []
-            // Terminal cards in spawn order, EXCLUDING exited ones (hold-open
-            // placeholders, whose card is `dead`) so they never reappear on relaunch
-            // (2606.0001). A detached survivor (card not `dead`, but session !live)
-            // is kept and re-binds on reconnect — so the partition keys off `dead`
-            // (exited), NOT `session.live`. Routed through the unit-tested
-            // `TermExit.persistedTermIDs`.
-            let survivingTermIDs = TermExit.persistedTermIDs(
-                board.sessionOrder.compactMap { tid in
-                    board.view.card(.term(tid)).map { (termID: tid, exited: $0.dead) }
-                }
-            )
-            for tid in survivingTermIDs {
-                guard let card = board.view.card(.term(tid)) else { continue }
-                tiles.append(boardTile(kind: "term", path: nil, termID: tid, card: card))
+            let terms = board.sessionOrder.compactMap { termID -> LayoutTiles.TermInput? in
+                guard let card = board.view.card(.term(termID)) else { return nil }
+                return LayoutTiles.TermInput(
+                    termID: termID, frame: card.worldFrame.rect, z: Double(card.worldFrame.z), dead: card.dead
+                )
             }
-            for path in board.boardDocPaths.sorted() {
-                guard let card = board.view.card(.doc(path)) else { continue }
-                tiles.append(boardTile(kind: "doc", path: path, card: card))
+            let docs = board.boardDocPaths.compactMap { path -> LayoutTiles.DocInput? in
+                guard let card = board.view.card(.doc(path)) else { return nil }
+                return LayoutTiles.DocInput(
+                    path: path, frame: card.worldFrame.rect, z: Double(card.worldFrame.z), attached: card.attached
+                )
             }
             client.layout(
-                dock: store.docs.map(\.path),
-                tiles: tiles,
+                dock: board.store.docs.map(\.path),
+                tiles: LayoutTiles.build(terms: terms, docs: docs),
                 board: board.view.viewport.wire,
                 boardID: board.boardID
             )
         }
-    }
-
-    /// A board card → tile: its world frame, `loose` = !attached (doc tiles), and
-    /// the owning `term_id` (terminal tiles, Phase 5b).
-    private func boardTile(kind: String, path: String?, termID: String? = nil, card: CardView) -> LayoutTile {
-        let f = card.worldFrame
-        return LayoutTile(
-            kind: kind,
-            path: path,
-            x: Double(f.x),
-            y: Double(f.y),
-            w: Double(f.w),
-            h: Double(f.h),
-            z: f.z,
-            // The term card has no gravity tie; doc cards carry their attached
-            // state as the loose flag.
-            loose: kind == "doc" ? !card.attached : nil,
-            termID: termID
-        )
     }
 }

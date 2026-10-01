@@ -54,6 +54,7 @@ extension AppController {
         if activeBoard.view.selectedID != id { activeBoard.view.select(nil) }
         focusedCardID = id
         activeBoard.view.bringToFront(id)
+        persistLayout()
         if case let .term(termID) = id, sessions[termID]?.live == true {
             setPrime(termID)   // re-primes AND recomputes the focus edge via updatePrimacy
         } else {
