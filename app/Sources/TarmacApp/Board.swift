@@ -1,6 +1,6 @@
 import AppKit
-import SwiftTerm
 import TarmacKit
+import TarmacTerm
 
 /// One board (workspace) — the unit the app holds N of (M3 "strips = boards").
 /// It owns the board-scoped state that used to live directly on the 1300-line
@@ -13,10 +13,10 @@ import TarmacKit
 /// monitor, the window, the shared chrome singletons, and the global `DocStore`
 /// — and drives the active board by reading/writing `activeBoard.<field>`. The
 /// `TerminalSession`s live here, but they are *created* by
-/// `AppController.makeSession` (the SwiftTerm delegate bridge holds a weak ref
+/// `AppController.makeSession` (each view's callbacks hold a weak ref
 /// back to the controller for input routing), so terminal I/O stays
 /// controller-centric. Only the active board's `view` is mounted in `RootView`;
-/// a backgrounded board keeps its cards + live SwiftTerm views detached so its
+/// a backgrounded board keeps its cards + live terminal views detached so its
 /// daemon ptys stay live (P3 §3).
 @MainActor
 final class Board {
@@ -69,7 +69,7 @@ final class Board {
         return sessions[id]
     }
 
-    /// The prime terminal's SwiftTerm view (the one that receives keyboard input).
+    /// The prime terminal's view (the one that receives keyboard input).
     var primeTerminalView: TerminalView? { primeSession?.view }
 
     /// The prime terminal's board card (the focused terminal), or nil.

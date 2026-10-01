@@ -447,7 +447,8 @@ final class TileHeaderView: NSView {
     }
 }
 
-/// Terminal card body: term-bg with the crib §4 card body padding (14px h / 10px v).
+/// Terminal card body: term-bg behind the terminal view, which fills it and
+/// pads its own grid.
 @MainActor
 final class TerminalBodyView: NSView {
     private(set) weak var terminal: NSView?
@@ -475,12 +476,7 @@ final class TerminalBodyView: NSView {
 
     override func layout() {
         super.layout()
-        terminal?.frame = NSRect(
-            x: 14,
-            y: 10,
-            width: max(0, bounds.width - 28),
-            height: max(0, bounds.height - 20)
-        )
+        terminal?.frame = bounds
     }
 }
 

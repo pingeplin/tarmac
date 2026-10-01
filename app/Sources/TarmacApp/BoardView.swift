@@ -97,7 +97,7 @@ final class BoardView: NSView {
     func card(_ id: CardID) -> CardView? { cards[id] }
 
     /// Ensures a terminal card for `termID` exists at `worldFrame` and attaches
-    /// the SwiftTerm view into its body (Phase 5b: one card per `term_id`). On
+    /// the terminal view into its body (Phase 5b: one card per `term_id`). On
     /// restore the card may already exist, so its world frame is *re-applied*
     /// here — otherwise persisted move/resize geometry is silently dropped and
     /// the terminal snaps back to its init frame.
@@ -459,11 +459,11 @@ final class BoardView: NSView {
         // The grabbed card already floats on top via its lift zPosition during
         // the drag; the z reorder is replayed once at gesture commit.
         guard !isGesturing else { return }
-        // A terminal text-selection drag is tracked entirely inside SwiftTerm and
-        // never sets `gesturingID`, so `isGesturing` misses it. But the hazard is
+        // A terminal text-selection drag is tracked entirely inside the terminal
+        // view and never sets `gesturingID`, so `isGesturing` misses it. But the hazard is
         // identical: click-to-focus calls this one runloop tick after the press,
         // i.e. as the drag begins, and `restack()` would removeFromSuperview the
-        // very view SwiftTerm is tracking — severing the selection. Whenever a
+        // very view that is tracking it — severing the selection. Whenever a
         // button is still down, defer the reorder to mouseUp. `z` is already
         // bumped, so the order is logically correct and just needs replaying.
         guard NSEvent.pressedMouseButtons == 0 else { pendingRestack = true; return }
@@ -632,7 +632,7 @@ final class BoardView: NSView {
     /// FRAME carries the world→view position *and* the zoom scale, but its
     /// internal BOUNDS stay the card's intrinsic *world* size. AppKit realizes
     /// the frame≠bounds size difference as a uniform scale on the card's layer
-    /// tree — so the card and everything it hosts (the SwiftTerm grid, the doc
+    /// tree — so the card and everything it hosts (the terminal grid, the doc
     /// webview, chrome) scale as a single unit and the content layout never
     /// re-flows from a zoom. Only a card RESIZE changes the world size (`bounds`),
     /// which is the one time the terminal re-measures its cols/rows. Zoom is thus
@@ -649,7 +649,7 @@ final class BoardView: NSView {
 
     /// Fix #5 — viewport culling. Keep every card ALIVE in the hierarchy (never
     /// removeFromSuperview: that would reset a doc card's WKWebView scroll and
-    /// detach the SwiftTerm pty) but hide cards more than a viewport off-screen so
+    /// detach the terminal view) but hide cards more than a viewport off-screen so
     /// the window server stops compositing / tiling them each frame. The live
     /// region is the viewport grown by one viewport on every side, so a card is
     /// already un-hidden a full screen before it scrolls into view — no pop-in or

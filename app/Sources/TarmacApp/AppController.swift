@@ -1,71 +1,15 @@
 import AppKit
-import SwiftTerm
 import TarmacKit
+import TarmacTerm
 
-/// Bridges SwiftTerm's non-isolated TerminalViewDelegate onto the MainActor
-/// controller (callbacks arrive on the main thread in practice). Phase 5b: each
-/// terminal view has its own bridge carrying its `term_id`, so size/input
-/// callbacks self-identify their pty (no global "current" terminal).
-final class TermDelegateBridge: NSObject, TerminalViewDelegate {
-    weak nonisolated(unsafe) var controller: AppController?
-    let termID: String
-
-    init(termID: String) {
-        self.termID = termID
-        super.init()
-    }
-
-    func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
-        guard let controller else { return }
-        let id = termID
-        MainActor.assumeIsolated { controller.terminalSizeChanged(termID: id, cols: newCols, rows: newRows) }
-    }
-
-    func send(source: TerminalView, data: ArraySlice<UInt8>) {
-        guard let controller else { return }
-        let bytes = Data(data)
-        let id = termID
-        MainActor.assumeIsolated { controller.terminalDidSend(termID: id, bytes) }
-    }
-
-    func setTerminalTitle(source: TerminalView, title: String) {
-        guard let controller else { return }
-        let id = termID
-        MainActor.assumeIsolated { controller.handleTermTitle(termID: id, title: title) }
-    }
-    func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
-    func scrolled(source: TerminalView, position: Double) {}
-    func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
-        if let url = URL(string: link) {
-            NSWorkspace.shared.open(url)
-        }
-    }
-
-    // The daemon is the authoritative BEL source (it reads the pty stream);
-    // ignore the view-side echo.
-    func bell(source: TerminalView) {}
-
-    func clipboardCopy(source: TerminalView, content: Data) {
-        if let text = String(data: content, encoding: .utf8) {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
-        }
-    }
-
-    func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {}
-    func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
-}
-
-/// One terminal card's live state (Phase 5b: the board holds N of these). Owns
-/// the SwiftTerm view + its delegate bridge and the per-terminal signal/process
-/// bookkeeping that used to be controller-global. `live` is whether the pty is
-/// running (false before first spawn and after exit). The exited/dead visual
-/// state lives on the board card (`CardView.dead`), not here.
+/// One terminal card's live state (the board holds N of these). Owns the
+/// terminal view and the per-terminal signal/process bookkeeping. `live` is
+/// whether the pty is running (false before first spawn and after exit). The
+/// exited/dead visual state lives on the board card (`CardView.dead`), not here.
 @MainActor
 final class TerminalSession {
     let termID: String
     let view: TerminalView
-    let bridge: TermDelegateBridge
     /// Whether the pty backing this card is currently running.
     var live = false
     /// P5.3: the daemon connection dropped while this shell was live — the pty may
@@ -83,18 +27,17 @@ final class TerminalSession {
     /// independently of `label` so the title can revert here when an OSC title is
     /// cleared. nil/"" before the first `term_proc`.
     var procName: String?
-    /// Latest non-empty OSC title (OSC 0/1/2) the running program emitted, parsed
-    /// by SwiftTerm. Takes precedence over `procName`. Cleared to nil when the
-    /// program emits an empty OSC title (`ESC ] 2 ; ST`).
+    /// Latest non-empty OSC title (OSC 0/1/2) the running program emitted. Takes
+    /// precedence over `procName`. Cleared to nil when the program emits an
+    /// empty OSC title (`ESC ] 2 ; ST`).
     var oscTitle: String?
     /// Last cols/rows sent to the daemon — debounces duplicate resizes.
     var lastSentCols = 0
     var lastSentRows = 0
 
-    init(termID: String, view: TerminalView, bridge: TermDelegateBridge) {
+    init(termID: String, view: TerminalView) {
         self.termID = termID
         self.view = view
-        self.bridge = bridge
     }
 }
 
@@ -226,7 +169,6 @@ final class AppController {
     private var primeSession: TerminalSession? { activeBoard.primeSession }
     private var primeTerminalView: TerminalView? { activeBoard.primeTerminalView }
     private var primeTermCard: CardView? { activeBoard.primeTermCard }
-    private var hasLivePrime: Bool { activeBoard.hasLivePrime }
     private var boardDocPaths: [String] { activeBoard.boardDocPaths }
 
     // M3: the app tracks the board list + the active board from `board_list`
@@ -438,23 +380,6 @@ final class AppController {
                 // (clicking a non-prime terminal made it first responder without
                 // updating primeTermID). Cheap: only re-styles on an actual change.
                 self.reconcilePrimeToFocus()
-                // issue #21: Ghostty-parity macOS line-editing keys (⌘⌫/⌘←/⌘→,
-                // ⌥↑/⌥↓) for the focused terminal. SwiftTerm seals its keyDown
-                // (public, not open), so the app injects these here — the one
-                // place every keyDown already passes. The decision is the pure,
-                // unit-tested `TermKeyBinding`; a nil result defers to SwiftTerm's
-                // own handling (kitty encoding, IME marked text, ⌥←/→ word move,
-                // ⌥⌫, plain keys), so nothing existing regresses. Gated on a
-                // focused terminal, so board / doc focus is unaffected.
-                if let tv = self.focusedTerminalView(),
-                   let bytes = TermKeyBinding.bytes(
-                       keyCode: event.keyCode,
-                       modifierFlags: event.modifierFlags.rawValue,
-                       composing: tv.hasMarkedText(),
-                       kittyActive: !tv.getTerminal().keyboardEnhancementFlags.isEmpty) {
-                    tv.send(bytes)
-                    return true
-                }
                 // ⌘C for a doc card: it hosts a non-focusable WKWebView (crib §9 —
                 // a doc click must not pull keyboard focus off the prime terminal),
                 // so the standard copy: never reaches it via the responder chain and
@@ -554,8 +479,8 @@ final class AppController {
         // Deferred to the NEXT runloop tick (not run inline): a local monitor fires
         // BEFORE the event is dispatched, so a synchronous restack here would
         // removeFromSuperview the content view before it receives this very mouseUp.
-        // SwiftTerm tolerates that, but a doc card's WKWebView never ends its
-        // selection drag without the mouseUp — the highlight runs away to the end of
+        // A doc card's WKWebView never ends its selection drag without the
+        // mouseUp — the highlight runs away to the end of
         // the doc. Replaying one tick later lets the mouseUp land on the content
         // first, then reorders z (the gesture's mouse-tracking is fully over by then,
         // mirroring how onFrameCommitted restacks post-gesture). Imperceptible.
@@ -632,11 +557,11 @@ final class AppController {
             applyRestore(docs: docs, tiles: tiles, viewport: board, boardID: restoredBoardID, liveTerms: liveTerms)
         case .output(let termID, let bytes):
             // Route to the owning board's session (which may be backgrounded):
-            // feeding a detached SwiftTerm view still advances its buffer, so a
+            // feeding a detached terminal view still advances its buffer, so a
             // background board's shell keeps progressing and shows fresh output
             // on switch-back. Never touches the active view unless it owns the term.
             guard let s = session(ofTerm: termID), s.live else { return }
-            s.view.feed(byteArray: [UInt8](bytes)[...])
+            s.view.feed(bytes)
         case .exit(let termID, let code):
             handleExit(termID: termID, code: code)
         case .docOpened(let doc):
@@ -708,10 +633,9 @@ final class AppController {
         // spawns the gone ones, and `maybeSpawn` stays gated off its detached prime).
         for board in boards.values {
             var hadLive = false
-            for (tid, s) in board.sessions where s.live {
+            for s in board.sessions.values where s.live {
                 s.live = false
                 s.detached = true
-                board.view.card(.term(tid))?.setDetached(true)
                 hadLive = true
             }
             if hadLive { boardsAwaitingRevive.insert(board.boardID) }
@@ -879,7 +803,7 @@ final class AppController {
 
     /// Per-board facts for the switcher. Counts derive from each board's own card
     /// signals (accurate for the active + any visited board — their cards + live
-    /// SwiftTerm views stay alive while backgrounded). A never-visited board has
+    /// terminal views stay alive while backgrounded). A never-visited board has
     /// no app-side view yet, so it reports 0 cards / not-live until first restore.
     /// If `board_list` has not arrived yet (the connect window), the active board
     /// — always minted + mounted locally — is synthesized so the switcher never
@@ -1213,8 +1137,8 @@ final class AppController {
 
     /// Point 3: a single click on a card focuses it. A click on the empty board
     /// background defocuses (board-navigation mode resumes). Clicks landing on the
-    /// overlays (switcher / minimap / status bar) are left
-    /// alone. Runs one tick after the click has dispatched.
+    /// overlays (switcher / minimap / status bar) are left alone. Runs one tick
+    /// after the click has dispatched.
     private func handleClickFocus(at point: NSPoint) {
         guard !switcherOpen, window?.isKeyWindow == true else { return }
         guard let hit = hitView(at: point), hit.isDescendant(of: rootView.board) else { return }
@@ -1290,55 +1214,54 @@ final class AppController {
         return true
     }
 
-    /// Ghostty / KDE "Breeze" 16-color ANSI palette (crib §3) installed into every
-    /// terminal so the interior matches the Breeze chrome. SwiftTerm's `Color` is
-    /// 16-bit per channel; the authored 8-bit values are widened ×257 (0xff→0xffff).
-    private static let breezeAnsiColors: [SwiftTerm.Color] = {
-        let hex: [(UInt8, UInt8, UInt8)] = [
-            (0x23, 0x26, 0x27), // 0  black
-            (0xed, 0x15, 0x15), // 1  red
-            (0x11, 0xd1, 0x16), // 2  green
-            (0xf6, 0x74, 0x00), // 3  yellow
-            (0x1d, 0x99, 0xf3), // 4  blue
-            (0x9b, 0x59, 0xb6), // 5  magenta
-            (0x1a, 0xbc, 0x9c), // 6  cyan
-            (0xfc, 0xfc, 0xfc), // 7  white
-            (0x7f, 0x8c, 0x8d), // 8  bright black
-            (0xc0, 0x39, 0x2b), // 9  bright red
-            (0x1c, 0xdc, 0x9a), // 10 bright green
-            (0xfd, 0xbc, 0x4b), // 11 bright yellow
-            (0x3d, 0xae, 0xe9), // 12 bright blue
-            (0x8e, 0x44, 0xad), // 13 bright magenta
-            (0x16, 0xa0, 0x85), // 14 bright cyan
-            (0xff, 0xff, 0xff), // 15 bright white
-        ]
-        return hex.map { SwiftTerm.Color(red: UInt16($0.0) * 257, green: UInt16($0.1) * 257, blue: UInt16($0.2) * 257) }
-    }()
-
-    /// Builds a configured terminal session (SwiftTerm view + a delegate bridge
-    /// carrying its `term_id`). The view is not yet on the board or spawned.
+    /// Builds a terminal session whose view reports to this controller under its
+    /// `term_id`. The view is not yet on the board or spawned. `onBell` stays
+    /// unset: the daemon's `bell` is the observed fact, and a view-side bell would
+    /// ring twice. `onClipboardWrite` stays unset so a program cannot overwrite
+    /// the user's clipboard (OSC 52).
     private func makeSession(termID: String) -> TerminalSession {
-        let view = TerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
-        view.font = Theme.termFont(Theme.termFontSize)
-        view.nativeBackgroundColor = Theme.termBg
-        view.nativeForegroundColor = Theme.termFg
-        view.caretColor = Theme.text
-        view.selectedTextBackgroundColor = Theme.agent.withAlphaComponent(0.3)
-        // The terminal interior wears the same Breeze scheme as the chrome (crib
-        // §3): the 16 ANSI colors come from Ghostty/KDE Breeze, not SwiftTerm's
-        // defaults. bg/fg/caret above are the Breeze term-bg / output / cursor.
-        view.installColors(Self.breezeAnsiColors)
-        view.optionAsMetaKey = true
-        let bridge = TermDelegateBridge(termID: termID)
-        bridge.controller = self
-        view.terminalDelegate = bridge
-        return TerminalSession(termID: termID, view: view, bridge: bridge)
+        let view: TerminalView
+        do {
+            view = try TerminalView(
+                frame: NSRect(x: 0, y: 0, width: 800, height: 600), theme: .breeze, fontSize: Theme.termFontSize
+            )
+        } catch {
+            fatalError("tarmac: could not create a terminal view: \(error)")
+        }
+        view.onInput = { [weak self] bytes in self?.terminalDidSend(termID: termID, Data(bytes)) }
+        view.onResize = { [weak self] cols, rows in
+            self?.terminalSizeChanged(termID: termID, cols: cols, rows: rows)
+        }
+        view.onTitleChanged = { [weak self] title in self?.handleTermTitle(termID: termID, title: title ?? "") }
+        view.onActivity = { [weak self] in self?.terminalActivity(termID: termID) }
+        view.onOpenLink = { link in
+            guard let url = URL(string: link), let scheme = url.scheme?.lowercased(),
+                  scheme == "http" || scheme == "https" else { return }
+            NSWorkspace.shared.open(url)
+        }
+        view.keyOverride = { chord in
+            TermKeyBinding.bytes(
+                keyCode: chord.keyCode, modifierFlags: Self.modifierFlags(chord.mods), composing: chord.isComposing
+            )
+        }
+        return TerminalSession(termID: termID, view: view)
+    }
+
+    /// The raw `NSEvent.ModifierFlags` bits `TermKeyBinding` matches on, rebuilt
+    /// from a terminal key chord's intent modifiers.
+    private static func modifierFlags(_ mods: KeyMods) -> UInt {
+        var flags: NSEvent.ModifierFlags = []
+        if mods.contains(.shift) { flags.insert(.shift) }
+        if mods.contains(.control) { flags.insert(.control) }
+        if mods.contains(.option) { flags.insert(.option) }
+        if mods.contains(.command) { flags.insert(.command) }
+        return flags.rawValue
     }
 
     /// Reconciles `primeTermID` to whichever LIVE terminal currently holds the
     /// window's keyboard focus — e.g. the user clicked a non-prime terminal,
     /// which AppKit made first responder (typing already routes there via its
-    /// bridge). Called before any action that re-asserts focus to the prime
+    /// `onInput`). Called before any action that re-asserts focus to the prime
     /// terminal (cycle / board switch), so focus is never yanked back to a stale
     /// prime. No-op when the focused responder isn't a live terminal view.
     private func reconcilePrimeToFocus() {
@@ -1348,10 +1271,7 @@ final class AppController {
     }
 
     /// The live terminal session on the active board whose view currently holds
-    /// keyboard focus (the first responder, or an ancestor of it), or nil — the one
-    /// firstResponder walk shared by `reconcilePrimeToFocus` and the escMonitor's
-    /// Ghostty-parity key routing (issue #21), so the focus predicate lives in one
-    /// place.
+    /// keyboard focus (the first responder, or an ancestor of it), or nil.
     private func focusedLiveSession() -> TerminalSession? {
         guard let responder = window?.firstResponder as? NSView else { return nil }
         for s in sessions.values where s.live {
@@ -1359,10 +1279,6 @@ final class AppController {
         }
         return nil
     }
-
-    /// The focused live terminal's view, or nil. Thin projection of
-    /// `focusedLiveSession()`, used by the escMonitor key routing.
-    private func focusedTerminalView() -> TerminalView? { focusedLiveSession()?.view }
 
     func terminalSizeChanged(termID: String, cols: Int, rows: Int) {
         viewReady = true
@@ -1376,10 +1292,20 @@ final class AppController {
 
     func terminalDidSend(termID: String, _ bytes: Data) {
         guard let s = sessions[termID], s.live else { return }
-        // A keystroke clears this terminal's amber bell signal (M2).
+        clearBell(termID: termID)
+        client.input(termID: termID, bytes: bytes)
+    }
+
+    /// The user typed or clicked in a live terminal.
+    private func terminalActivity(termID: String) {
+        guard let s = sessions[termID], s.live else { return }
+        clearBell(termID: termID)
+    }
+
+    /// Input to a terminal clears its amber bell signal (M2).
+    private func clearBell(termID: String) {
         activeBoard.view.card(.term(termID))?.setBell(false)
         activeBoard.view.signalsChanged()
-        client.input(termID: termID, bytes: bytes)
     }
 
     /// Ensures the prime terminal is spawned (the boot terminal on a cold start).
@@ -1407,9 +1333,8 @@ final class AppController {
     /// terminal on a possibly-backgrounded board).
     private func spawn(session s: TerminalSession, on board: Board? = nil) {
         let board = board ?? activeBoard
-        let term = s.view.getTerminal()
-        let cols = max(2, term.cols)
-        let rows = max(2, term.rows)
+        let cols = max(2, s.view.cols)
+        let rows = max(2, s.view.rows)
         s.live = true
         s.lastSentCols = cols
         s.lastSentRows = rows
@@ -1587,36 +1512,41 @@ final class AppController {
     private func closeFocusedCard() {
         let kind: FocusedClose.Kind
         var otherLive = 0
+        var dead = false
         switch focusedCardID {
         case .doc:
             kind = .doc
         case .term(let termID):
             kind = .term
             otherLive = activeBoard.sessions.filter { $0.key != termID && $0.value.live }.count
+            dead = activeBoard.view.card(.term(termID))?.dead ?? false
         case nil:
             kind = .none
         }
-        switch FocusedClose.decide(kind: kind, otherLiveTerminals: otherLive) {
+        switch FocusedClose.decide(kind: kind, otherLiveTerminals: otherLive, dead: dead) {
         case .noop:
             break
         case .shelfDoc:
             if case .doc(let path)? = focusedCardID { closeDocCard(path) }
-        case .closeTerminal(let replace):
-            if case .term(let termID)? = focusedCardID { closeTerminal(termID, replace: replace) }
+        case .closeTerminal(let replace, let signalClose):
+            if case .term(let termID)? = focusedCardID {
+                closeTerminal(termID, replace: replace, signalClose: signalClose)
+            }
         }
     }
 
-    /// Terminates a focused terminal on the active board: kills its pty (the daemon
-    /// SIGHUPs the group), then runs the clean-close teardown PROACTIVELY — not via
+    /// Terminates a focused terminal on the active board: kills its pty when
+    /// `signalClose` says it is still live (the daemon SIGHUPs the group), then
+    /// runs the clean-close teardown PROACTIVELY — not via
     /// the natural exit, since a SIGHUP exit reports as a signal and would hold the
     /// card open. Replaces it with a fresh shell when it was the last live terminal
     /// (≥1-terminal invariant), else offers undo. Mirrors `handleExit`'s clean arms;
     /// the late `Exit` is a no-op (the session is already gone).
-    private func closeTerminal(_ termID: String, replace: Bool) {
+    private func closeTerminal(_ termID: String, replace: Bool, signalClose: Bool) {
         let board = activeBoard
         guard let card = board.view.card(.term(termID)) else { return }
         let frame = card.worldFrame
-        client.termClose(termID: termID)
+        if signalClose { client.termClose(termID: termID) }
         board.sessions[termID]?.live = false
         termIndex.remove(termID: termID)
         advancePrime(on: board, after: termID)
@@ -1665,7 +1595,7 @@ final class AppController {
     /// Feeds a dim notice line into a terminal's scrollback — the given session,
     /// or the prime terminal when no session is named (e.g. a connect failure).
     private func feedNotice(_ text: String, to session: TerminalSession? = nil) {
-        (session?.view ?? primeTerminalView)?.feed(text: "\r\n\u{1b}[2m· \(text)\u{1b}[0m\r\n")
+        (session?.view ?? primeTerminalView)?.feed(Data("\r\n\u{1b}[2m· \(text)\u{1b}[0m\r\n".utf8))
     }
 
     // MARK: - M2 honest signals (Phase 3.5)
@@ -1686,11 +1616,10 @@ final class AppController {
         applyTermTitle(termID: termID, on: board)
     }
 
-    /// `setTerminalTitle`: a running program emitted an OSC 0/1/2 title (parsed by
-    /// SwiftTerm — like Ghostty). A non-empty title becomes the displayed label and
-    /// takes precedence over the foreground process name; an empty title (programs
-    /// clear with `ESC ] 2 ; ST`) clears the override and reverts to the
-    /// process/shell fallback.
+    /// A running program emitted an OSC 0/1/2 title. A non-empty title becomes
+    /// the displayed label and takes precedence over the foreground process
+    /// name; an empty title (programs clear with `ESC ] 2 ; ST`) clears the
+    /// override and reverts to the process/shell fallback.
     func handleTermTitle(termID: String, title: String) {
         guard let board = ownerBoard(ofTerm: termID), let s = board.sessions[termID], s.live else { return }
         s.oscTitle = title.isEmpty ? nil : title
@@ -1795,9 +1724,8 @@ final class AppController {
     }
 
     /// Makes `termID` the prime (focused) terminal: re-applies primacy styling
-    /// and moves keyboard first responder to its view. Typing
-    /// always follows the prime terminal regardless of pointer (crib §6). Used by
-    /// ⌥tab and ⌘T.
+    /// and moves keyboard first responder to its view. Typing always follows the
+    /// prime terminal regardless of pointer (crib §6). Used by ⌥tab and ⌘T.
     private func setPrime(_ termID: String) {
         guard let s = sessions[termID] else { return }
         primeTermID = termID
@@ -1840,8 +1768,8 @@ final class AppController {
     }
 
     /// `.bell`: a BEL was seen on the terminal — give its card the amber bell
-    /// signal. Cleared on the next keystroke to that terminal
-    /// (see `terminalDidSend`).
+    /// signal. Cleared on the next keystroke or click in that terminal
+    /// (see `clearBell(termID:)`).
     private func handleBell(termID: String) {
         // Route to the owning board (a backgrounded board can ring); its detached
         // card lights amber and shows the signal on switch-back.
@@ -1910,7 +1838,7 @@ final class AppController {
     /// present, else the default.
     private func applyRestoredLayout(tiles: [LayoutTile], board: BoardViewport?, liveTerms: Set<String>) {
         // Tear down any doc cards from a prior restore; the term card is kept and
-        // re-placed (its embedded SwiftTerm view stays attached). Snapshot the ids
+        // re-placed (its embedded terminal view stays attached). Snapshot the ids
         // first — removeCard mutates the board's `cards` dictionary.
         for id in Array(activeBoard.view.cards.keys) {
             if case .doc = id { activeBoard.view.removeCard(id: id) }
@@ -2044,7 +1972,7 @@ final class AppController {
     /// P5.3: re-bind a board's detached terminals after a reconnect, in place —
     /// keeping each card + its `term_id`, so doc cards and gravity are untouched
     /// (no full rebuild). Each detached (non-dead) session gets a FRESH empty
-    /// SwiftTerm view swapped into its existing card (so the daemon's replayed
+    /// terminal view swapped into its existing card (so the daemon's replayed
     /// scrollback repaints cleanly, never duplicating the pre-disconnect buffer);
     /// then it either revives (its shell survived — `term_id ∈ liveTerms`, no
     /// spawn) or cold-spawns a fresh shell under the same id (the shell is gone:
@@ -2059,7 +1987,6 @@ final class AppController {
             let fresh = makeSession(termID: tid)
             board.sessions[tid] = fresh
             board.view.setTerminal(termID: tid, fresh.view, worldFrame: frame)
-            card.setDetached(false)
             // term_id → board ownership survived the disconnect (only exit clears
             // it), so routing is already correct for both branches.
             if liveTerms.contains(tid) {

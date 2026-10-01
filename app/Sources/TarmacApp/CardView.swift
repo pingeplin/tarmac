@@ -80,11 +80,6 @@ final class CardView: NSView {
     /// (A clean exit removes the card outright, so it never becomes `dead`.) This
     /// flag is also the "exited" signal `persistLayout` uses to exclude the card.
     private(set) var dead = false
-    /// Detached = a terminal card whose daemon connection dropped (P5.3): faint
-    /// (alpha 0.5), distinct from dead (exit). The shell may still be alive on the
-    /// daemon, awaiting reconnect+rebind — so it is REVERSIBLE: the card keeps its
-    /// label + frame and is cleared (`setDetached(false)`) when the term re-binds.
-    private(set) var detached = false
 
     // Active move/resize gesture state (window-space anchors).
     private enum Gesture {
@@ -176,7 +171,7 @@ final class CardView: NSView {
     /// upscale real pixels. The board pushes the target scale here on zoom change;
     /// we remember it so content swapped in later (e.g. a revived terminal)
     /// inherits the same sharpness. NOTE: this only sharpens IN-PROCESS layers
-    /// (the SwiftTerm grid, chrome) — it no-ops on a WKWebView's out-of-process
+    /// (the terminal grid, chrome) — it no-ops on a WKWebView's out-of-process
     /// tiles, which the doc card sharpens separately via `applyDocZoomScale`.
     /// Last scale walked onto the layer tree. `0` = "never applied" sentinel, so
     /// the first real apply always runs (a fresh CALayer defaults to contentsScale
@@ -201,6 +196,8 @@ final class CardView: NSView {
             view.subviews.forEach(walkViews)
         }
         walkViews(self)
+        // The terminal redraws only on demand, so a new scale needs asking for.
+        termBody?.terminal?.needsDisplay = true
     }
 
     func setTermLabel(_ label: String) {
@@ -227,7 +224,7 @@ final class CardView: NSView {
     /// WebKit re-rasterizes its out-of-process tiles at the on-screen pixel
     /// density (no-op on a term card). This is deliberately separate from
     /// `applyContentScale`: that layer-tree walk sharpens in-process layers
-    /// (the SwiftTerm grid, chrome) but NO-OPS on WKWebView's proxy tile
+    /// (the terminal grid, chrome) but NO-OPS on WKWebView's proxy tile
     /// layers, which only obey the device-scale factor pushed here.
     func applyDocZoomScale(_ effectiveScale: CGFloat) {
         docView?.applyZoomScale(effectiveScale)
@@ -261,7 +258,7 @@ final class CardView: NSView {
     }
 
     /// The resting border colour, derived from the pure `CardChrome.borderRole`
-    /// rule (unit-tested in TarmacKit): muted line for dead/detached, the soft
+    /// rule (unit-tested in TarmacKit): muted line for dead, the soft
     /// teal `focusBorder` for an active card (focused OR selected — docs and
     /// terminals alike), else line. `prime` and `fresh` deliberately draw NO
     /// border — the keyboard target is signalled by header tint + shadow, a fresh
@@ -278,7 +275,7 @@ final class CardView: NSView {
     /// The card's visual-state inputs, snapshot for the pure chrome rule so the
     /// border and the resize handles derive from one source and cannot desync.
     private var chromeState: CardChrome.State {
-        CardChrome.State(dead: dead, detached: detached, fresh: fresh,
+        CardChrome.State(dead: dead, fresh: fresh,
                          prime: prime, focused: focused, selected: selected)
     }
 
@@ -380,18 +377,6 @@ final class CardView: NSView {
         applyRestingShadow()
         let label = code.map { "exit \($0)" } ?? "killed"
         header.setLabel(label)
-    }
-
-    /// P5.3: marks a terminal card detached (the daemon connection dropped) — dim
-    /// it (alpha 0.5) and mute its border, WITHOUT relabelling or going dead: the
-    /// shell may still be alive on the daemon and the card re-binds on reconnect.
-    /// A dead card ignores detach (its exit is terminal). Clearing it (`false`)
-    /// restores the resting alpha (quiet-aware) + the state border.
-    func setDetached(_ on: Bool) {
-        guard !dead, on != detached else { return }
-        detached = on
-        alphaValue = on ? 0.5 : (quiet ? 0.8 : 1.0)
-        layer?.borderColor = currentBorderColor.cgColor
     }
 
     // MARK: - Owner chip bridge

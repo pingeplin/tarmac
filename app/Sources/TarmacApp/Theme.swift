@@ -8,8 +8,6 @@ enum Theme {
     static let bg2 = srgb(0x353b41)
     static let bg3 = srgb(0x3e444b)
     static let termBg = srgb(0x31363b)
-    // Terminal-interior default fg (crib §3; scoped Breeze muted, NOT chrome muted).
-    static let termFg = srgb(0xced2d6)
     static let line = srgb(0x474e55)
     static let lineSoft = srgb(0x3d434a)
     static let text = srgb(0xeff0f1)
@@ -73,25 +71,6 @@ enum Theme {
         }
         return NSFont(name: plexName, size: size)
             ?? NSFont.monospacedSystemFont(ofSize: size, weight: weight)
-    }
-
-    /// Terminal-card interior face (crib §3): JetBrainsMono Nerd Font Mono if
-    /// installed, else the chrome `mono` stack (IBM Plex Mono → SF Mono). Scoped
-    /// to terminal cards so shell prompts render Nerd Font powerline/icon glyphs;
-    /// the chrome keeps `mono`. The "Mono" (NFM) spacing variant forces icon
-    /// glyphs to a single cell so they don't overflow SwiftTerm's character grid
-    /// — the variant Nerd Fonts recommends for terminals. Like `mono`, this is
-    /// name resolution against a system-installed font — NOT bundled, so it
-    /// degrades gracefully when absent. PostScript names per
-    /// `system_profiler SPFontsDataType`.
-    static func termFont(_ size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
-        let nerdName: String
-        switch weight {
-        case .medium: nerdName = "JetBrainsMonoNFM-Medium"
-        case .semibold: nerdName = "JetBrainsMonoNFM-SemiBold"
-        default: nerdName = "JetBrainsMonoNFM-Regular"
-        }
-        return NSFont(name: nerdName, size: size) ?? mono(size, weight: weight)
     }
 
     static var reduceMotion: Bool {

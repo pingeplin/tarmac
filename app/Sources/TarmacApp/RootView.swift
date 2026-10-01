@@ -1,5 +1,5 @@
 import AppKit
-import SwiftTerm
+import TarmacTerm
 
 /// Content view: the infinite whiteboard (`BoardView`) fills the window above a
 /// 27px status bar, with the cold-start hint, the wayfinding chrome, and the
@@ -93,7 +93,7 @@ final class RootView: NSView {
     /// inserts `bv` as the bottom-most subview (below the status bar and the
     /// click-through hint overlay), re-wiring its wayfinding callbacks. Used by
     /// the controller on every board switch-arrive (and to re-mount the same view
-    /// after `unmountBoard`). The detached board's cards + live SwiftTerm views
+    /// after `unmountBoard`). The detached board's cards + live terminal views
     /// stay parented to it off-window, so background ptys keep running.
     func mountBoard(_ bv: BoardView) {
         guard board !== bv || bv.superview == nil else { return }
@@ -107,7 +107,7 @@ final class RootView: NSView {
 
     /// Detaches the mounted board view (switch-away) without yet mounting another.
     /// Its callbacks are cleared so the off-window view never drives the active
-    /// chrome; its cards + live SwiftTerm views stay parented to it (ptys live).
+    /// chrome; its cards + live terminal views stay parented to it (ptys live).
     func unmountBoard() {
         board.onViewportChanged = nil
         board.onCardsChanged = nil
