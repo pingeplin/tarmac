@@ -175,7 +175,7 @@ final class CardConsoleTests: XCTestCase {
     }
 
     func testRendersNullLiterally() {
-        XCTAssertEqual(CardConsole.formatArgs([nil]), "null")
+        XCTAssertEqual(CardConsole.formatArgs([.null]), "null")
     }
 
     func testNoArgsFormatAsAnEmptyLine() {

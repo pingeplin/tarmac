@@ -8,7 +8,7 @@ final class DevUntilTests: XCTestCase {
     private func term(width: Double = 800) -> JSONValue {
         let rect: JSONValue = ["x": 0, "y": 0, "w": .number(width), "h": 600]
         let state: JSONValue = [
-            "cols": 80, "rows": 24, "proc": "sleep", "selection": nil, "scrollback_tail": "say hi\nhi",
+            "cols": 80, "rows": 24, "proc": "sleep", "selection": .null, "scrollback_tail": "say hi\nhi",
         ]
         return ["id": "t-1", "kind": "term", "board_rect": rect, "focused": true, "term": state]
     }
@@ -192,7 +192,7 @@ final class DevUntilTests: XCTestCase {
         XCTAssertEqual(try value("0.5"), 0.5)
         XCTAssertEqual(try value("-1"), -1)
         XCTAssertEqual(try value(#""a \"quoted\" \\ path""#), .string(#"a "quoted" \ path"#))
-        XCTAssertEqual(try value("null"), nil)
+        XCTAssertEqual(try value("null"), .null)
         XCTAssertEqual(try value("true"), true)
         XCTAssertEqual(try value("false"), false)
     }

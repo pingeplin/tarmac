@@ -107,10 +107,6 @@ public enum JSONValue: Equatable, Sendable {
     }
 }
 
-extension JSONValue: ExpressibleByNilLiteral {
-    public init(nilLiteral: ()) { self = .null }
-}
-
 extension JSONValue: ExpressibleByBooleanLiteral {
     public init(booleanLiteral value: Bool) { self = .bool(value) }
 }

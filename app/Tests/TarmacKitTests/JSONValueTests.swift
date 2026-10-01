@@ -10,7 +10,7 @@ final class JSONValueTests: XCTestCase {
     // MARK: - literals
 
     func testLiteralsBuildTheTree() {
-        let value: JSONValue = ["a": 1, "b": [true, nil, "s", 0.5]]
+        let value: JSONValue = ["a": 1, "b": [true, .null, "s", 0.5]]
         XCTAssertEqual(
             value,
             .object([
@@ -29,7 +29,7 @@ final class JSONValueTests: XCTestCase {
         ]
         XCTAssertEqual(
             JSONValue(foundation: body),
-            ["s": "text", "i": 3, "d": 2.5, "yes": true, "no": false, "nothing": nil,
+            ["s": "text", "i": 3, "d": 2.5, "yes": true, "no": false, "nothing": .null,
              "list": [1, "x"], "nested": ["k": "v"]]
         )
     }
@@ -48,7 +48,7 @@ final class JSONValueTests: XCTestCase {
         )
         XCTAssertEqual(
             JSONValue(foundation: object),
-            ["a": true, "b": 1, "c": nil, "d": [1, ["e": "f"]]]
+            ["a": true, "b": 1, "c": .null, "d": [1, ["e": "f"]]]
         )
     }
 
