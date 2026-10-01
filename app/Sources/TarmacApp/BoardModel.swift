@@ -2,23 +2,15 @@ import CoreGraphics
 import Foundation
 import TarmacKit
 
-/// Identity of a card on the board — the v4 successor to `TileKey`
-/// (DeskGridView.swift), kept as a separate type so Phase 2c can migrate the
-/// app off the desk grid without colliding with the still-live `TileKey`.
-/// `term(term_id)` is a terminal card keyed by its daemon `term_id` (Phase 5b:
-/// the board holds N terminal cards, one per live/dead pty); `doc(path)` is a
-/// doc card keyed by registry path.
+/// A card's identity on a board: a terminal card by its daemon `term_id`, a
+/// doc card by its registry path.
 enum CardID: Hashable {
     case term(String)
     case doc(String)
 }
 
-/// A card's world-space placement (crib §4/§5). `x,y,w,h` are world units; the
-/// card layer is scaled+translated by the board viewport on every pan/zoom.
-/// `z` is the stacking order (higher = front; select-to-front bumps it).
-///
-/// Maps 1:1 to the additive protocol keys `LayoutTile.x/y/w/h/z` (Phase 2a) —
-/// 2c reads/writes these to persist layout.
+/// Where a card is in the world: `x,y,w,h` in world units and `z` for
+/// stacking, higher in front. Persisted as `LayoutTile.x/y/w/h/z`.
 struct CardFrame: Equatable {
     var x: CGFloat
     var y: CGFloat
@@ -41,27 +33,19 @@ struct CardFrame: Equatable {
     }
 }
 
-/// The persisted board viewport (crib §5/§9): zoom factor + world-space center.
-/// Mirrors the protocol `board {zoom, cx, cy}` map (TarmacKit `BoardViewport`),
-/// kept as a view-layer struct in CGFloat so BoardView never imports the wire
-/// type. 2c bridges the two at the AppController boundary.
+/// A board's viewport: zoom and world-space center. The view layer's CGFloat
+/// twin of the wire `BoardViewport`, which it is persisted as.
 struct Viewport: Equatable {
     var zoom: CGFloat
     var cx: CGFloat
     var cy: CGFloat
 
-    /// crib §5: the dot grid tightens to 11px below ~50%.
-    static let semanticZoomThreshold: CGFloat = 0.5
-
-    /// No min/max bounds are authored in the design sources (crib §5 observes
-    /// 36%–100%); clamp loosely so pinch/⌘± stay usable without a hard cap.
+    /// The zoom is clamped to this range on every path that changes it.
     static let minZoom: CGFloat = 0.1
     static let maxZoom: CGFloat = 3.0
 
-    /// Default opening viewport when `restore.board` is nil (crib §9).
+    /// The viewport a board opens at when none was persisted.
     static let `default` = Viewport(zoom: 1.0, cx: 0, cy: 0)
-
-    var isSemanticZoom: Bool { zoom < Viewport.semanticZoomThreshold }
 }
 
 // MARK: - Wire bridging (AppController boundary)

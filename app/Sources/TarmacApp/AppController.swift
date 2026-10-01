@@ -82,16 +82,14 @@ final class AppController {
     var clickFocusMonitor: Any?
     var scrollRouteMonitor: Any?
     var magnifyRouteMonitor: Any?
-    /// Flushes a click-focus restack that was deferred while the button was held,
-    /// so a terminal selection drag isn't severed mid-track (see `raiseToFront`).
-    var mouseUpRestackMonitor: Any?
 
-    /// The card the user last clicked into. nil ⇒ board-navigation mode: pan,
-    /// pinch-zoom, and scroll drive the whiteboard even when the pointer is over a
-    /// card (point 2). A click on a card sets it (a live terminal also becomes
-    /// prime); a click on the empty board clears it. While set, scroll over *that*
-    /// card routes to its own content (terminal scrollback / doc scroll) instead.
-    var focusedCardID: CardID?
+    /// The selected card: the active board's one selection, which the board
+    /// view owns. A press on a card sets it and a press on the bare board clears
+    /// it; while set, a wheel over that card's body scrolls the card.
+    var focusedCardID: CardID? {
+        get { activeBoard.view.selectedID }
+        set { activeBoard.view.select(newValue) }
+    }
 
     // MARK: - Boards (M3 P3)
     //
@@ -268,46 +266,16 @@ final class AppController {
         if let view = primeTerminalView { window?.makeFirstResponder(view) }
     }
 
-    /// perf/whiteboard-profiling: when `TARMAC_PERF_BENCH=1`, run the scripted
-    /// zoom-sweep on the mounted board once the window has presented, print the
-    /// per-level baseline to stderr, then quit. The sweep drives `reprojectAll`
-    /// directly (never `onLayoutChanged`), and `shutdown()` doesn't persist, so
-    /// the real on-disk layout is never touched. Removable with PerfTrace.
-    func runPerfBenchmarkIfRequested() {
-        guard PerfTrace.benchmarkRequested else { return }
-        let iters = ProcessInfo.processInfo.environment["TARMAC_PERF_BENCH_ITERS"].flatMap { Int($0) } ?? 80
-        // Defer one beat so the window has presented + drawn before we force redraws.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            guard let self else { return }
-            FileHandle.standardError.write(Data("⟦perf⟧ benchmark start (iters=\(iters))\n".utf8))
-            self.activeBoard.view.runBenchmark(iterations: iters, levels: [1.0, 0.51, 0.49, 0.28])
-
-            // Fix #2 check: a burst of onLayoutChanged-equivalent schedulePersist
-            // calls (each = one scroll delta) must collapse to ONE pending persist;
-            // flushing it then runs persistLayout exactly once. Tests the coalescing
-            // invariant directly (no dependence on the debounce timer firing under a
-            // headless run loop). With the old per-event persist this would be 30.
-            let burst = 30
-            for _ in 0..<burst { self.schedulePersist(boardID: self.activeBoardID) }
-            self.flushPendingPersist()
-            PerfTrace.flush("persist-coalesce: \(burst) schedulePersist ->")
-
-            FileHandle.standardError.write(Data("⟦perf⟧ benchmark done\n".utf8))
-            NSApp.terminate(nil)
-        }
-    }
-
     /// App teardown: removes the event monitors and closes the daemon link. The
     /// daemon and its terminals are left running.
     func shutdown() {
-        for monitor in [escMonitor, clickFocusMonitor, scrollRouteMonitor, magnifyRouteMonitor, mouseUpRestackMonitor] {
+        for monitor in [escMonitor, clickFocusMonitor, scrollRouteMonitor, magnifyRouteMonitor] {
             if let monitor { NSEvent.removeMonitor(monitor) }
         }
         escMonitor = nil
         clickFocusMonitor = nil
         scrollRouteMonitor = nil
         magnifyRouteMonitor = nil
-        mouseUpRestackMonitor = nil
         client.close()
     }
 }

@@ -2,98 +2,59 @@ import AppKit
 import QuartzCore
 import TarmacKit
 
-/// A free card on the board (crib §4) — the v4 successor to `TileView`. Same
-/// chrome family (reuses `TileHeaderView` / `RecentMetaLabel` / `TerminalBodyView`
-/// / `DocWebView`), but a card carries a *world frame* instead of a grid slot,
-/// drags to MOVE (no slot swap, no −0.5° rotation — keeps the lift shadow), and
-/// shows corner resize handles once focused (or selected via a header/handle grab).
-///
-/// Metrics differ from `TileView` per crib §4: header **30px**, radius **10**.
-/// `.tm-bcard` is `overflow:hidden`, so the selection handles live on the
-/// non-clipped outer view (`self`), above the inner rounded clip. Hosted inside
-/// `BoardView`.
+/// A card on the board: a 30-high header over a terminal or a doc, placed by
+/// a world frame. The board gives it an on-screen `frame` that carries the
+/// zoom while its `bounds` stay in world units, so the content never reflows
+/// under zoom. The header drags it and eight invisible handles resize it.
 @MainActor
 final class CardView: NSView {
-    static let headerHeight: CGFloat = 30
-    static let cornerRadius: CGFloat = 10
-    /// The visible handle stays 7×7, but its hit/cursor target is a larger
-    /// transparent box (`handleHitSize`) centered on the corner — so resizing
-    /// isn't a needle-thin 7px sliver (which shrinks further when zoomed out).
-    static let handleSize: CGFloat = 7
-    static let handleHitSize: CGFloat = 20
-    /// Inward nudge of the corner point so the square lands on the rounded
-    /// visual corner instead of floating off the sharp geometric corner.
-    static let handleCornerInset: CGFloat = 3
-    /// Below this card size a resize can't go (header + a sliver of body).
-    static let minWidth: CGFloat = 160
-    static let minHeight: CGFloat = 90
-
     let id: CardID
-    let header: TileHeaderView
+    let header: CardHeaderView
     private(set) var docView: DocWebView?
     private(set) var termBody: TerminalBodyView?
 
-    /// World-space placement (crib §5). Set by `BoardView` on add / drag / resize;
-    /// the on-screen `frame` is derived from this by the board's world→view map.
+    /// Where the card is in the world. The board derives the on-screen `frame`
+    /// from it, and a move or resize gesture changes it.
     var worldFrame: CardFrame
 
-    /// Fires the moment a MOVE or RESIZE commits (mouse-up), so the board can
-    /// persist the new world frame and reflow the terminal. The board sets this.
-    var onFrameCommitted: ((CardView) -> Void)?
-    /// Header mouse-down requesting selection/raise before a move begins.
-    var onSelectRequested: ((CardView) -> Void)?
-    /// The header ✕ (doc cards only) was clicked — the board routes it to the
-    /// controller, which closes the doc card.
+    /// A header press, which may become a move, went down on this card.
+    var onMoveBegan: ((CardView) -> Void)?
+    /// The gesture changed `worldFrame`; the board reprojects the card.
+    var onFrameChanging: ((CardView) -> Void)?
+    /// The pointer was released, with what the gesture amounted to.
+    var onGestureEnded: ((CardView, CardGesture.Outcome) -> Void)?
+    /// The header `✕` of a doc card was clicked.
     var onClose: ((CardView) -> Void)?
+    /// The header `↻` of a doc card was clicked.
+    var onRefresh: ((CardView) -> Void)?
 
-    // MARK: - Gravity / provenance (crib §4, §8)
+    // MARK: - Provenance
 
-    /// The term card this doc card is a satellite of (provenance + gravity
-    /// owner). nil for the term card itself and for ownerless docs. The board
-    /// reads it to translate satellites on term-card moves and to draw edges.
+    /// The terminal card that opened this doc, or nil for a terminal card and
+    /// for a doc with no owner. The board draws an edge to it and, while the
+    /// doc is `attached`, carries the doc along when that terminal is moved.
     var ownerTermID: CardID?
 
-    /// While attached (true) the card follows its owner term card; a USER move
-    /// detaches it (loose = !attached). Persisted as the tile `loose` flag.
+    /// Whether the doc follows its owner terminal. Moving the doc by hand
+    /// detaches it; persisted inverted, as the tile's `loose` flag.
     var attached = true
 
     private let clip = FlippedColumnView()
     private let body: NSView
-    private let handles: [HandleCorner: ResizeHandleView]
+    private let grip = CardResizeGrip()
+    private lazy var gestures = CardGestureTracker(card: self)
 
     private(set) var selected = false
     private(set) var fresh = false
     private var lifted = false
-    /// Prime = the focused terminal card (crib §4): border `#5a626a`, header
-    /// `#3a4046` + text label, deeper shadow `0 22px 50px rgba(0,0,0,0.6)`.
+    /// The board's prime terminal: a tinted header and a deeper shadow.
     private(set) var prime = false
-    /// Quiet = a non-prime card while a terminal is prime (crib §4): opacity 0.8.
+    /// A live terminal stepping back beside the prime one.
     private(set) var quiet = false
-    /// Focused = the pointer/scroll-active card (`AppController.focusedCardID`):
-    /// scrolling over it scrolls its own content. Border-only (a soft teal edge),
-    /// independent of prime — a doc can be focused (scroll target) while a terminal
-    /// stays prime (keyboard target). Set via `setFocused` from the focus model.
-    private(set) var focused = false
-    /// Dead = a terminal card whose shell exited with an error/signal and is held
-    /// open (2606.0001): the card stays on the board dimmed, with the label it
-    /// had, read-only, and never reads as prime/quiet. Set via `setExited`.
-    /// (A clean exit removes the card outright, so it never becomes `dead`.) This
-    /// flag is also the "exited" signal `persistLayout` uses to exclude the card.
+    /// A terminal whose shell exited with an error or a signal and is held open
+    /// so the failure stays visible. A dead card is left out of the persisted
+    /// layout.
     private(set) var dead = false
-
-    // Active move/resize gesture state (window-space anchors).
-    private enum Gesture {
-        case move(startWindow: NSPoint, startWorldX: CGFloat, startWorldY: CGFloat)
-        case resize(corner: HandleCorner, startWindow: NSPoint, startFrame: CardFrame)
-    }
-    private var gesture: Gesture?
-    /// The kind of the gesture that most recently committed — the board reads
-    /// it at `onFrameCommitted` to drive gravity (a term-card MOVE translates
-    /// satellites; a doc-card MOVE detaches it). Resize never touches gravity.
-    private(set) var lastCommittedGestureWasMove = false
-    /// World units per view point — the board's current zoom; set before a drag
-    /// so pointer deltas convert to world deltas. Defaults to 1.
-    var worldPerView: CGFloat = 1
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
@@ -103,90 +64,77 @@ final class CardView: NSView {
         self.worldFrame = worldFrame
         switch id {
         case .term:
-            header = TileHeaderView(kindGlyph: "›_", showsRepoDot: false, closeButton: nil)
+            header = CardHeaderView(kind: .terminal)
             let term = TerminalBodyView()
             termBody = term
             body = term
-        case .doc:
-            header = TileHeaderView(kindGlyph: "¶", showsRepoDot: true, closeButton: CloseButton())
+        case .doc(let path):
+            header = CardHeaderView(kind: .doc(DocKind(path: path)))
             let doc = DocWebView()
+            doc.wantsLayer = true
+            doc.layer?.backgroundColor = Theme.bg1.cgColor
             docView = doc
             body = doc
         }
-        var built: [HandleCorner: ResizeHandleView] = [:]
-        for corner in HandleCorner.allCases { built[corner] = ResizeHandleView(corner: corner) }
-        handles = built
-
         super.init(frame: NSRect(origin: .zero, size: CGSize(width: worldFrame.w, height: worldFrame.h)))
         wantsLayer = true
-        layer?.cornerRadius = Self.cornerRadius
-        layer?.borderWidth = 1
+        layer?.backgroundColor = Theme.termBg.cgColor
+        layer?.cornerRadius = CardBox.cornerRadius
+        layer?.borderWidth = CardBox.borderWidth
         layer?.borderColor = Theme.line.cgColor
         applyRestingShadow()
 
+        // The content sits inside the border, so its corners follow the
+        // border's inner edge.
         clip.wantsLayer = true
-        clip.layer?.backgroundColor = Theme.bg1.cgColor
-        clip.layer?.cornerRadius = Self.cornerRadius
+        clip.layer?.cornerRadius = CardBox.cornerRadius - CardBox.borderWidth
         clip.layer?.masksToBounds = true
         addSubview(clip)
         clip.addSubview(header)
         clip.addSubview(body)
 
-        for corner in HandleCorner.allCases {
-            let h = handles[corner]!
-            h.isHidden = true
-            h.onMouseDown = { [weak self] event in self?.beginResize(corner: corner, event: event) }
-            h.onMouseDragged = { [weak self] event in self?.updateGesture(event) }
-            h.onMouseUp = { [weak self] _ in self?.endGesture(commit: true) }
-            addSubview(h)
-        }
+        addSubview(grip)
+        grip.onPress = { [weak self] event in self?.gestures.gripPressed(event) }
+        grip.onDrag = { [weak self] event in self?.gestures.dragged(event) }
+        grip.onRelease = { [weak self] in self?.gestures.released() }
 
-        header.onMouseDown = { [weak self] event in self?.beginMove(event: event) }
-        header.onMouseDragged = { [weak self] event in self?.updateGesture(event) }
-        header.onMouseUp = { [weak self] _ in self?.endGesture(commit: true) }
+        header.onMouseDown = { [weak self] event in self?.gestures.headerPressed(event) }
+        header.onMouseDragged = { [weak self] event in self?.gestures.dragged(event) }
+        header.onMouseUp = { [weak self] _ in self?.gestures.released() }
 
-        // The doc-card ✕ (no-op on a term card, whose header has none). It rides
-        // the same focused/selected visibility as the resize handles, so it stays
-        // hidden until the card is the user's active target.
         header.closeButton?.onClick = { [weak self] in
             guard let self else { return }
             self.onClose?(self)
         }
-        header.closeButton?.isHidden = true
+        header.refreshButton?.onClick = { [weak self] in
+            guard let self else { return }
+            self.onRefresh?(self)
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    // MARK: - Content (mirrors TileView's surface so 2c wires it the same way)
+    // MARK: - Content
 
     func attachTerminal(_ terminal: NSView) {
         termBody?.attach(terminal)
-        // Force: the subtree just grew a terminal at the current scale (#6).
-        applyContentScale(pendingContentScale, force: true)
+        // The subtree grew at an unchanged scale, which the walk would skip.
+        applyContentScale(appliedContentScale, force: true)
     }
 
-    /// The board scales each card as a bitmap (its `frame≠bounds` transform), so
-    /// zooming in past 100% upscales the rasterized content → blur. Rendering the
-    /// card's whole layer tree at `backingScale × zoom` resolution gives the
-    /// upscale real pixels. The board pushes the target scale here on zoom change;
-    /// we remember it so content swapped in later (e.g. a revived terminal)
-    /// inherits the same sharpness. NOTE: this only sharpens IN-PROCESS layers
-    /// (the terminal grid, chrome) — it no-ops on a WKWebView's out-of-process
-    /// tiles, which the doc card sharpens separately via `applyDocZoomScale`.
-    /// Last scale walked onto the layer tree. `0` = "never applied" sentinel, so
-    /// the first real apply always runs (a fresh CALayer defaults to contentsScale
-    /// 1, not the backing scale).
-    private var pendingContentScale: CGFloat = 0
+    /// The scale last walked onto the layer tree. 0 until the first walk, so
+    /// that one always runs: a new layer starts at scale 1, not the backing scale.
+    private var appliedContentScale: CGFloat = 0
 
-    /// Walks the whole view+layer subtree setting `contentsScale`. Fix #6: skip the
-    /// walk when `scale` is unchanged — at zoom < 1 the board's computed content
-    /// scale is constant (= backing scale), so without this every zoom step
-    /// re-walked every card's subtree to set the value it already had. Pass
-    /// `force: true` when the SUBTREE changed at an unchanged scale (a newly
-    /// attached terminal), so the new layers still get the current scale.
+    /// Sets `contentsScale` on every layer in the card, so the card's own
+    /// layers — the terminal and the chrome — are rasterised at the density
+    /// they are shown at instead of being stretched. A web view's tiles are
+    /// drawn in another process and ignore this; `applyDocZoomScale` reaches
+    /// them. An unchanged scale is skipped unless `force` says the subtree
+    /// itself changed.
     func applyContentScale(_ scale: CGFloat, force: Bool = false) {
-        guard force || scale != pendingContentScale else { return }
-        pendingContentScale = scale
+        guard force || scale != appliedContentScale else { return }
+        appliedContentScale = scale
         func walk(_ layer: CALayer) {
             layer.contentsScale = scale
             layer.sublayers?.forEach(walk)
@@ -215,56 +163,26 @@ final class CardView: NSView {
         docView?.render(markdown: markdown)
     }
 
-    /// P5.5: suspend / resume the doc card's web view (no-op on a term card).
-    /// Driven by the board switch lifecycle to free inactive boards' web content
-    /// processes; the cached markdown re-renders + scroll restores on resume.
     func suspendDoc() { docView?.suspend() }
     func resumeDoc() { docView?.resume() }
 
-    /// Routes the board's zoom-derived scale to the doc card's web view so
-    /// WebKit re-rasterizes its out-of-process tiles at the on-screen pixel
-    /// density (no-op on a term card). This is deliberately separate from
-    /// `applyContentScale`: that layer-tree walk sharpens in-process layers
-    /// (the terminal grid, chrome) but NO-OPS on WKWebView's proxy tile
-    /// layers, which only obey the device-scale factor pushed here.
     func applyDocZoomScale(_ effectiveScale: CGFloat) {
         docView?.applyZoomScale(effectiveScale)
     }
 
     // MARK: - Selection
 
+    /// Shows or drops the selection ring. The board owns which card is
+    /// selected; this is only how the card looks.
     func setSelected(_ on: Bool) {
-        // Selecting a fresh card clears the fresh ring (crib §5).
-        if on && fresh { setFresh(false) }
         guard on != selected else { return }
         selected = on
-        layer?.borderColor = currentBorderColor.cgColor
-        updateHandleVisibility()
+        if !lifted { layer?.borderColor = currentBorderColor.cgColor }
     }
 
-    /// Resize handles surface whenever the card is the user's active target —
-    /// `focused` (a single click) OR `selected` (an explicit header/handle grab).
-    /// A plain focus now arms resizing, so the handles follow focus; keeping
-    /// `selected` in the condition still lets a dead card (never focusable) be
-    /// resized via a header grab.
-    private func updateHandleVisibility() {
-        let show = CardChrome.showsHandles(chromeState)
-        for (corner, h) in handles {
-            // The doc card's ✕ owns the top-right corner; suppress that one resize
-            // handle so the button and handle never collide. Resize stays available
-            // from the other three corners.
-            h.isHidden = !show || (corner == .topRight && header.closeButton != nil)
-        }
-        header.closeButton?.isHidden = !show
-    }
-
-    /// The resting border colour, derived from the pure `CardChrome.borderRole`
-    /// rule (unit-tested in TarmacKit): muted line for dead, the soft
-    /// teal `focusBorder` for an active card (focused OR selected — docs and
-    /// terminals alike), else line. `prime` and `fresh` deliberately draw NO
-    /// border — the keyboard target is signalled by header tint + shadow, a fresh
-    /// card by its halo + `✚ now` meta. The lift state overrides this border
-    /// transiently while a move/resize gesture is held.
+    /// The resting border: muted for a dead card, teal for the selected one,
+    /// else the plain line. Prime and fresh never change it, and the lift
+    /// border overrides it while a gesture holds the card.
     private var currentBorderColor: NSColor {
         switch CardChrome.borderRole(chromeState) {
         case .muted: return Theme.line.withAlphaComponent(0.6)
@@ -273,20 +191,15 @@ final class CardView: NSView {
         }
     }
 
-    /// The card's visual-state inputs, snapshot for the pure chrome rule so the
-    /// border and the resize handles derive from one source and cannot desync.
     private var chromeState: CardChrome.State {
-        CardChrome.State(dead: dead, fresh: fresh,
-                         prime: prime, focused: focused, selected: selected)
+        CardChrome.State(dead: dead, fresh: fresh, prime: prime, selected: selected)
     }
 
-    // MARK: - Fresh state (crib §4/§5): 3px agent-dim halo + `✚ now` meta, no border.
+    // MARK: - Fresh
 
-    /// Cyan-dim halo just outside the border (`box-shadow 0 0 0 3px agent-dim`).
-    /// Sits behind the card's own (clipped) content on the non-clipped outer
-    /// layer; cleared when the card is selected or its doc is marked read. `fresh`
-    /// drives only this halo + the `✚ now` meta — never the border, which stays
-    /// on the `CardChrome.borderRole` axis so a non-active fresh card reads plain.
+    /// A doc an agent just opened wears a 3-wide teal ring outside its border
+    /// and `✚ now` in its header. Only ESC and a completed drag of the card take
+    /// it off; selecting the card does not.
     private let ringLayer = CALayer()
     private static let ringWidth: CGFloat = 3
 
@@ -295,7 +208,7 @@ final class CardView: NSView {
         fresh = on
         if on {
             ringLayer.backgroundColor = Theme.agentDim.cgColor
-            ringLayer.cornerRadius = Self.cornerRadius + Self.ringWidth
+            ringLayer.cornerRadius = CardBox.cornerRadius + Self.ringWidth
             layer.insertSublayer(ringLayer, at: 0)
         } else {
             ringLayer.removeFromSuperlayer()
@@ -310,114 +223,66 @@ final class CardView: NSView {
         ringLayer.frame = contentBox.insetBy(dx: -w, dy: -w)
     }
 
-    // MARK: - Prime / quiet states (crib §4: terminal primacy)
+    // MARK: - Prime, quiet, dead
 
-    /// Prime = the keyboard-target terminal (crib §4): header `#3a4046` + `text`
-    /// label and a deeper resting shadow `0 22px 50px rgba(0,0,0,0.6)`; every
-    /// non-prime card is `quiet` (opacity 0.8). Prime deliberately draws NO
-    /// border — the active ring belongs to focus/selection alone (`CardChrome`).
-    /// Set by the controller from the focus model; exactly one live terminal is
-    /// prime (the one ⌥tab / ⌘T / a click last focused).
     func setPrime(_ on: Bool) {
         guard !dead, on != prime else { return }
         prime = on
-        // A prime card is never simultaneously quiet.
-        if on { setQuiet(false) }
         header.setPrime(on)
-        // Only the resting shadow follows prime; the border does not (prime is
-        // not a border input). Skip while transiently lifted by a gesture.
         if !lifted { applyRestingShadow() }
     }
 
-    /// Quiet = a non-prime card while a terminal holds prime focus (crib §4):
-    /// opacity 0.8. Cleared when nothing is prime (every card back to full). A
-    /// dead terminal card keeps its own dim and ignores quiet.
+    /// Whether the card steps back is the board's call (`CardDim.isQuiet`).
     func setQuiet(_ on: Bool) {
-        guard !dead, on != quiet else { return }
+        guard on != quiet else { return }
         quiet = on
-        alphaValue = on ? 0.8 : 1.0
+        applyDim()
     }
 
-    /// Focused = the active card (`AppController.focusedCardID`): draws the unified
-    /// teal active ring (`CardChrome` `.focus`) and arms the resize handles.
-    /// Clears the `fresh` halo on activation, mirroring `setSelected`, so clicking
-    /// an agent-opened card dismisses its halo. Composes with `quiet` (a focused
-    /// doc beside a prime terminal is dimmed to 0.8 yet still rings teal). A dead
-    /// card is never a focus target.
-    func setFocused(_ on: Bool) {
-        // Activating a fresh card clears its agent halo (parity with setSelected).
-        if on && fresh { setFresh(false) }
-        guard !dead, on != focused else { return }
-        focused = on
-        if !lifted { layer?.borderColor = currentBorderColor.cgColor }
-        updateHandleVisibility()
-    }
-
-    // MARK: - Exited state (2606.0001: shell exited with an error/signal — held open)
-
-    /// Marks a terminal card a read-only hold-open placeholder after its shell
-    /// exited with an error or was killed by a signal: dim it, mute the border
-    /// and drop any prime styling. The header keeps its label; the exit code is
-    /// shown only in the toast. The card stays on the board at its world frame so
-    /// the failure stays visible; a clean (code 0) exit removes the card instead
-    /// and never reaches here. ⌘W closes the placeholder; it is session-local
-    /// either way and clears on relaunch, since this `dead` state excludes it
-    /// from the persisted layout (spec 2606.0001).
+    /// Holds an exited terminal's card open: dimmed, border muted, prime and
+    /// bell dropped, the label left as it was. The exit code is the toast's to
+    /// show, not the card's.
     func setExited(_ code: Int?) {
         guard !dead else { return }
-        // Clear any live/bell signal first (while still !dead so the guarded
-        // setters apply) — an exited card must not advertise a cyan/amber signal.
         setBell(false)
         setLive(false)
+        setPrime(false)
         dead = true
-        prime = false
-        quiet = false
-        header.setPrime(false)
-        alphaValue = 0.55
         layer?.borderColor = currentBorderColor.cgColor
-        applyRestingShadow()
+        applyDim()
     }
 
-    // MARK: - Owner chip bridge
+    private func applyDim() {
+        alphaValue = CardDim.opacity(dead: dead, quiet: quiet)
+    }
 
-    /// `← <termname>` chip in the header right cluster while attached; nil hides
-    /// it (a detached/loose card shows none). The board feeds the owner term's
-    /// current label.
+    // MARK: - Owner chip
+
+    /// Shows `← <name>` in the header, or hides the chip with nil.
     func setOwnerChip(_ termName: String?) {
         header.setOwnerChip(termName)
     }
 
-    // MARK: - Bell signal bridge (Phase 3.5 / M2 honest signals)
+    // MARK: - Signals
 
-    /// Whether the amber bell signal is currently shown on this card.
     private(set) var bellActive = false
-
-    /// Whether the card is "live" — an agent process is active on a terminal
-    /// card. Drives the cyan accents on the minimap / offscreen hint
-    /// (Phase 4 wayfinding). Display state only (no animation).
     private(set) var liveActive = false
 
-    /// The card's current signal, for the wayfinding chrome (crib §6–7). Bell
-    /// (amber) outranks live (cyan) when both are set, matching the design's
-    /// "the bell is the louder signal" intent.
+    /// What the minimap and the offscreen hints show for this card. A lit bell
+    /// outranks live.
     var signal: CardSignal {
         if bellActive { return .bell }
         if liveActive { return .live }
         return .none
     }
 
-    /// Amber bell signal in the header (a `●` dot + amber kind-glyph accent),
-    /// shown on a seen BEL and cleared by the next bytes that terminal sends to
-    /// its PTY, or when it becomes prime by a press on its card or by ⌥Tab.
-    /// Display state only — no animation (stays under Reduce Motion).
+    /// A lit bell shows as an amber glyph and dot in the header.
     func setBell(_ on: Bool) {
         guard !dead, on != bellActive else { return }
         bellActive = on
         header.setBell(on)
     }
 
-    /// Live (agent-active) signal: a foreground process is running on a terminal
-    /// card. Feeds the minimap / offscreen-hint cyan variant.
     func setLive(_ on: Bool) {
         guard !dead, on != liveActive else { return }
         liveActive = on
@@ -435,133 +300,46 @@ final class CardView: NSView {
 
     override func layout() {
         super.layout()
-        let box = contentBox
-        clip.frame = box
-        header.frame = NSRect(x: 0, y: 0, width: box.width, height: Self.headerHeight)
-        body.frame = NSRect(
-            x: 0,
-            y: Self.headerHeight,
-            width: box.width,
-            height: max(0, box.height - Self.headerHeight)
-        )
-        layoutHandles()
+        let size = contentBox.size
+        clip.frame = CardBox.content(of: size)
+        header.frame = CardBox.header(of: size)
+        body.frame = CardBox.body(of: size)
         layoutRing()
     }
 
-    private func layoutHandles() {
-        let hit = Self.handleHitSize
-        let inset = Self.handleCornerInset
-        let box = contentBox
-        for (corner, h) in handles {
-            // Corner point nudged inward toward the card center (flipped view:
-            // top corners at y≈0), then the hit box is centered on that point.
-            let cx: CGFloat
-            let cy: CGFloat
-            switch corner {
-            case .topLeft: cx = inset; cy = inset
-            case .topRight: cx = box.width - inset; cy = inset
-            case .bottomLeft: cx = inset; cy = box.height - inset
-            case .bottomRight: cx = box.width - inset; cy = box.height - inset
-            }
-            h.frame = NSRect(x: cx - hit / 2, y: cy - hit / 2, width: hit, height: hit)
-        }
+    // MARK: - Resize handles
+
+    /// Screen points per world unit: the frame carries the board zoom and the
+    /// world frame does not.
+    var screenScale: CGFloat {
+        worldFrame.w > 0 ? frame.width / worldFrame.w : 1
     }
 
-    // MARK: - Move (crib §5: free drag-to-move; lift shadow, no rotation)
-
-    private func beginMove(event: NSEvent) {
-        guard gesture == nil else { return }
-        onSelectRequested?(self)
-        gesture = .move(
-            startWindow: event.locationInWindow,
-            startWorldX: worldFrame.x,
-            startWorldY: worldFrame.y
+    /// The resize handle under `point`, given in the superview's coordinates —
+    /// screen points, where the hit zones keep a fixed size at every zoom.
+    func resizeHandle(at point: NSPoint) -> CardResize.Handle? {
+        CardHandles.handle(
+            at: CGPoint(x: point.x - frame.minX, y: point.y - frame.minY),
+            cardSize: frame.size,
+            hasClose: header.closeButton != nil
         )
-        setLifted(true)
     }
 
-    private func beginResize(corner: HandleCorner, event: NSEvent) {
-        guard gesture == nil else { return }
-        onSelectRequested?(self)
-        gesture = .resize(corner: corner, startWindow: event.locationInWindow, startFrame: worldFrame)
-        setLifted(true)
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let hit = super.hitTest(point) else { return nil }
+        return resizeHandle(at: point) == nil ? hit : grip
     }
 
-    private func updateGesture(_ event: NSEvent) {
-        guard let gesture else { return }
-        switch gesture {
-        case let .move(startWindow, startWorldX, startWorldY):
-            let dxView = event.locationInWindow.x - startWindow.x
-            let dyView = event.locationInWindow.y - startWindow.y
-            // Window y is bottom-up; the board is flipped (top-down), so invert dy.
-            worldFrame.x = startWorldX + dxView * worldPerView
-            worldFrame.y = startWorldY - dyView * worldPerView
-        case let .resize(corner, startWindow, startFrame):
-            let dxView = event.locationInWindow.x - startWindow.x
-            let dyView = event.locationInWindow.y - startWindow.y
-            let dxW = dxView * worldPerView
-            let dyW = -dyView * worldPerView
-            worldFrame = Self.resized(startFrame, corner: corner, dxWorld: dxW, dyWorld: dyW)
-        }
-        onWorldFrameChangedDuringGesture?(self)
+    /// Whether `view` is the card's body or inside it — not the header, and not
+    /// a resize handle lying over the body's edge.
+    func bodyContains(_ view: NSView) -> Bool {
+        view.isDescendant(of: body)
     }
 
-    /// Live callback while a move/resize is in flight (board reprojects to view
-    /// frame; terminal reflow is deferred to commit). Set by the board.
-    var onWorldFrameChangedDuringGesture: ((CardView) -> Void)?
+    // MARK: - Shadow and lift
 
-    private func endGesture(commit: Bool) {
-        guard let gesture else { return }
-        if case .move = gesture { lastCommittedGestureWasMove = true } else { lastCommittedGestureWasMove = false }
-        self.gesture = nil
-        setLifted(false)
-        if commit { onFrameCommitted?(self) }
-    }
-
-    /// esc cancels an in-flight move/resize (crib §5 drag-cancel priority);
-    /// returns false when no gesture is active so esc falls through. The board
-    /// snapshots the pre-gesture frame and restores it.
-    @discardableResult
-    func cancelGesture(restoringTo frame: CardFrame?) -> Bool {
-        guard gesture != nil else { return false }
-        gesture = nil
-        if let frame { worldFrame = frame }
-        setLifted(false)
-        return true
-    }
-
-    var hasActiveGesture: Bool { gesture != nil }
-
-    private static func resized(
-        _ start: CardFrame,
-        corner: HandleCorner,
-        dxWorld: CGFloat,
-        dyWorld: CGFloat
-    ) -> CardFrame {
-        var x = start.x, y = start.y, w = start.w, h = start.h
-        if corner.movesLeft {
-            let nx = min(start.x + dxWorld, start.x + start.w - minWidth)
-            w = start.w + (start.x - nx)
-            x = nx
-        } else {
-            w = max(minWidth, start.w + dxWorld)
-        }
-        if corner.movesTop {
-            let ny = min(start.y + dyWorld, start.y + start.h - minHeight)
-            h = start.h + (start.y - ny)
-            y = ny
-        } else {
-            h = max(minHeight, start.h + dyWorld)
-        }
-        return CardFrame(x: x, y: y, w: w, h: h, z: start.z)
-    }
-
-    // MARK: - Card shadow: resting base (crib §4) + deeper lift (crib §5)
-
-    /// Resting card shadow (crib §4): base `0 16px 38px rgba(0,0,0,0.5)` present
-    /// on every card at rest, so the board reads as floating cards over the dot
-    /// grid rather than flat panes. A prime card rests deeper (`0 22px 50px
-    /// rgba(0,0,0,0.6)`); the lift deepens it further, and un-lift returns here.
+    /// Every card casts a shadow at rest, a prime terminal a deeper one. In
+    /// the card's own units, so it scales with the zoom like the rest of it.
     private func applyRestingShadow() {
         let shadow = NSShadow()
         if prime {
@@ -576,23 +354,22 @@ final class CardView: NSView {
         self.shadow = shadow
     }
 
-    private func setLifted(_ on: Bool) {
+    /// Picked-up styling while a move or resize holds the card; on release the
+    /// border eases back to its resting colour.
+    func setLifted(_ on: Bool) {
         guard on != lifted, let layer else { return }
         lifted = on
         if on {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             layer.borderColor = Theme.liftBorder.cgColor
-            layer.zPosition = 1
             CATransaction.commit()
-            // Deeper than the resting base while a drag/resize is held.
             let shadow = NSShadow()
             shadow.shadowColor = NSColor.black.withAlphaComponent(0.6)
             shadow.shadowOffset = NSSize(width: 0, height: -18)
             shadow.shadowBlurRadius = 22
             self.shadow = shadow
         } else {
-            layer.zPosition = 0
             applyRestingShadow()
             let ease = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1.0)
             let border = CABasicAnimation(keyPath: "borderColor")
@@ -606,77 +383,20 @@ final class CardView: NSView {
     }
 }
 
-/// Which corner a resize handle drives.
-enum HandleCorner: CaseIterable {
-    case topLeft, topRight, bottomLeft, bottomRight
-
-    var movesLeft: Bool { self == .topLeft || self == .bottomLeft }
-    var movesTop: Bool { self == .topLeft || self == .topRight }
-
-    var cursor: NSCursor {
-        // AppKit ships no diagonal resize cursor publicly; crosshair reads as
-        // "grab to resize" without private API.
-        .crosshair
-    }
-}
-
-/// Selection resize handle (crib §4). The view itself is a larger transparent
-/// hit/cursor target (`CardView.handleHitSize`); the visible 7×7 square — fill
-/// bg0, 1.5px agent border, radius 2 — is drawn by `chip`, centered inside it.
-/// Owns its own mouse so a press on a handle resizes rather than moves the card.
-@MainActor
-final class ResizeHandleView: NSView {
-    var onMouseDown: ((NSEvent) -> Void)?
-    var onMouseDragged: ((NSEvent) -> Void)?
-    var onMouseUp: ((NSEvent) -> Void)?
-
-    private let corner: HandleCorner
-    private let chip = CALayer()
-
-    override var acceptsFirstResponder: Bool { false }
-
-    init(corner: HandleCorner) {
-        self.corner = corner
-        super.init(frame: .zero)
-        wantsLayer = true
-        chip.backgroundColor = Theme.bg0.cgColor
-        chip.borderColor = Theme.agent.cgColor
-        chip.borderWidth = 1.5
-        chip.cornerRadius = 2
-        layer?.addSublayer(chip)
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    override func layout() {
-        super.layout()
-        let s = CardView.handleSize
-        // Center the visible square in the larger transparent hit box; no
-        // implicit animation so it doesn't lag the card during a resize drag.
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        chip.frame = NSRect(
-            x: (bounds.width - s) / 2,
-            y: (bounds.height - s) / 2,
-            width: s,
-            height: s
-        )
-        CATransaction.commit()
-    }
-
-    override func mouseDown(with event: NSEvent) { onMouseDown?(event) }
-    override func mouseDragged(with event: NSEvent) { onMouseDragged?(event) }
-    override func mouseUp(with event: NSEvent) { onMouseUp?(event) }
-
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: corner.cursor)
-    }
-}
-
-/// A card's wayfinding signal (crib §6–7), shared by the minimap and the
-/// offscreen hints. `bell` (amber) outranks `live` (cyan) when both are set.
+/// What a card shows on the minimap and in the offscreen hints.
 enum CardSignal: Equatable {
     case none
     case live
     case bell
+}
+
+extension CardView: @MainActor ClearableFreshDoc {
+    var isFreshDoc: Bool {
+        if case .doc = id { return fresh }
+        return false
+    }
+
+    func clearFresh() {
+        setFresh(false)
+    }
 }

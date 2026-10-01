@@ -173,25 +173,23 @@ extension AppController {
     /// overwrite the layout the restore is about to deliver.
     func sendLayout(boardID: String) {
         guard let board = boards[boardID], board.didInitialRestore else { return }
-        PerfTrace.measure("persist") {
-            let terms = board.sessionOrder.compactMap { termID -> LayoutTiles.TermInput? in
-                guard let card = board.view.card(.term(termID)) else { return nil }
-                return LayoutTiles.TermInput(
-                    termID: termID, frame: card.worldFrame.rect, z: Double(card.worldFrame.z), dead: card.dead
-                )
-            }
-            let docs = board.boardDocPaths.compactMap { path -> LayoutTiles.DocInput? in
-                guard let card = board.view.card(.doc(path)) else { return nil }
-                return LayoutTiles.DocInput(
-                    path: path, frame: card.worldFrame.rect, z: Double(card.worldFrame.z), attached: card.attached
-                )
-            }
-            client.layout(
-                dock: board.store.docs.map(\.path),
-                tiles: LayoutTiles.build(terms: terms, docs: docs),
-                board: board.view.viewport.wire,
-                boardID: board.boardID
+        let terms = board.sessionOrder.compactMap { termID -> LayoutTiles.TermInput? in
+            guard let card = board.view.card(.term(termID)) else { return nil }
+            return LayoutTiles.TermInput(
+                termID: termID, frame: card.worldFrame.rect, z: Double(card.worldFrame.z), dead: card.dead
             )
         }
+        let docs = board.boardDocPaths.compactMap { path -> LayoutTiles.DocInput? in
+            guard let card = board.view.card(.doc(path)) else { return nil }
+            return LayoutTiles.DocInput(
+                path: path, frame: card.worldFrame.rect, z: Double(card.worldFrame.z), attached: card.attached
+            )
+        }
+        client.layout(
+            dock: board.store.docs.map(\.path),
+            tiles: LayoutTiles.build(terms: terms, docs: docs),
+            board: board.view.viewport.wire,
+            boardID: board.boardID
+        )
     }
 }

@@ -1,17 +1,12 @@
 import AppKit
 import TarmacKit
 
-/// Zoom control (crib §6, Phase 4): a bottom-left horizontal control —
-/// `− | [pct] | + | ⊡ fit`. bg2, 1px line border, radius 8, clipped; 10.5px mono
-/// faint, with the `.pct` readout in `text` and line-soft borders on its sides
-/// and on the fit span's left edge.
-///
-/// `−`/`+` zoom the board anchored at the viewport center; `⊡ fit` fits all card
-/// world frames into view. The readout updates on every viewport change via
-/// `setZoom(_:)`.
+/// The zoom control at the board's bottom left: `− | NN% | + | ⊡ fit`.
+/// `−` and `+` zoom about the viewport center, `⊡ fit` fits every card into
+/// view, and the readout follows the live zoom.
 @MainActor
 final class ZoomControl: NSView {
-    /// Multiplicative step for `−` / `+` (≈ a comfortable single tap).
+    /// What `−` and `+` divide and multiply the zoom by.
     static let zoomStep: CGFloat = 1.2
 
     var onZoomIn: (() -> Void)?
@@ -45,6 +40,9 @@ final class ZoomControl: NSView {
         minusBtn.onClick = { [weak self] in self?.onZoomOut?() }
         plusBtn.onClick = { [weak self] in self?.onZoomIn?() }
         fitBtn.onClick = { [weak self] in self?.onFit?() }
+        minusBtn.toolTip = "Zoom out"
+        plusBtn.toolTip = "Zoom in"
+        fitBtn.toolTip = "Fit to cards"
 
         pct.font = Theme.mono(10.5)
         pct.textColor = Theme.text
@@ -64,9 +62,8 @@ final class ZoomControl: NSView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    /// Updates the % readout from the live zoom (crib §6: round(zoom*100) %).
     func setZoom(_ zoom: CGFloat) {
-        pct.stringValue = "\(Int((zoom * 100).rounded()))%"
+        pct.stringValue = ChromeText.zoomPercent(Double(zoom))
         needsLayout = true
         sizeToContents()
     }
@@ -157,8 +154,8 @@ final class ZoomSegmentButton: NSView {
     override func mouseUp(with event: NSEvent) {
         if bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?() }
     }
+}
 
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .pointingHand)
-    }
+extension ZoomSegmentButton: HoverCursorProviding {
+    func hoverCursor(at windowPoint: NSPoint) -> NSCursor { .pointingHand }
 }
