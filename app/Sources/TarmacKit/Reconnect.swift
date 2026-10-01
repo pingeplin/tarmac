@@ -1,15 +1,9 @@
 import Foundation
 
-/// Pure backoff schedule for the app's bounded auto-reconnect (M3 P5.3). Kept in
-/// TarmacKit so the schedule is unit-tested away from AppKit (mirrors
-/// `TermRestore` / `BoardSwitcher`); `AppController` owns the AppKit timer +
-/// `DaemonClient` orchestration, which is reviewed not unit-tested.
-///
-/// On a dropped daemon connection the app retries `connect()` on this schedule.
-/// What a successful reconnect does to the cards is `ReconnectRestore`'s. The
-/// schedule is bounded twice over: a capped per-attempt delay AND a capped
-/// attempt count, so a daemon that never comes back surfaces a terminal "could
-/// not reconnect" notice rather than retrying forever.
+/// The backoff schedule `DaemonClient` retries a dropped daemon connection on.
+/// It is bounded twice over — a capped per-attempt delay and a capped attempt
+/// count — so a daemon that never comes back ends in a "could not reconnect"
+/// status rather than retrying forever.
 public enum Reconnect {
     /// How many attempts before giving up. Beyond this `delay` returns nil.
     public static let maxAttempts = 10

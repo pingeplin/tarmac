@@ -22,13 +22,10 @@ extension AppController {
     /// a cell measured at another scale is a different grid.
     private func makeTerminalView(termID: String) -> TerminalView {
         let frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         let view: TerminalView
         do {
-            if let scale = window?.backingScaleFactor {
-                view = try TerminalView(frame: frame, theme: .breeze, fontSize: Theme.termFontSize, backingScale: scale)
-            } else {
-                view = try TerminalView(frame: frame, theme: .breeze, fontSize: Theme.termFontSize)
-            }
+            view = try TerminalView(frame: frame, theme: .breeze, fontSize: Theme.termFontSize, backingScale: scale)
         } catch {
             fatalError("tarmac: could not create a terminal view: \(error)")
         }
@@ -114,8 +111,10 @@ extension AppController {
             s.view.reset()
             s.view.replay(ring)
         case .append(let chunks):
+            // With the link down an answer would queue and reach the program
+            // stale, after the reconnect.
             for chunk in chunks {
-                s.feed(chunk)
+                if connected { s.feed(chunk) } else { s.view.replay(chunk) }
             }
         }
     }
@@ -151,9 +150,9 @@ extension AppController {
         return s
     }
 
-    /// Sends the spawn of every card still waiting for one. Called when the
-    /// connection comes up and when the view first lays out: `spawnPending`
-    /// needs both, and either may be the later.
+    /// Sends the spawn of every card still waiting for one, once the view has
+    /// laid out: a spawn carries the card's grid. A board restored later spawns
+    /// from its own restore.
     func maybeSpawn() {
         for board in boards.values {
             spawnPending(on: board)
@@ -256,7 +255,8 @@ extension AppController {
 
     /// The card stays on the board as a dead placeholder: it keeps its label
     /// and its screen, takes no input, and is never persisted. A scrollback
-    /// wait is left running, so history asked for before the exit still lands.
+    /// wait is left running, so a reply already in flight, or the deadline,
+    /// still lands on the dead card.
     func holdOpen(_ s: TerminalSession, on board: Board) {
         s.live = false
         s.needsSpawn = false
@@ -298,12 +298,6 @@ extension AppController {
         updatePrimacy(on: board)
         persistLayout(for: board)
         refreshSwitcherIfOpen()
-    }
-
-    /// Feeds a dim notice line into a terminal's scrollback — the given session,
-    /// or the prime terminal when no session is named (e.g. a connect failure).
-    func feedNotice(_ text: String, to session: TerminalSession? = nil) {
-        (session ?? primeSession)?.feed(Data("\r\n\u{1b}[2m· \(text)\u{1b}[0m\r\n".utf8))
     }
 
     // MARK: - Connection
