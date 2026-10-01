@@ -86,6 +86,15 @@ public enum DevRouting {
     /// The verbs this build answers, for a newer CLI that sends another.
     public static let implementedVerbs = ["snapshot", "zoom", "focus", "resize", "type", "key", "press"]
 
+    /// Saying which verbs exist is more use to a newer CLI than naming the verb
+    /// it sent back at it.
+    public static func unsupportedVerb(_ type: String) -> DevError {
+        DevError(
+            .unsupportedVerb,
+            "this app does not implement `\(type)`; it has \(implementedVerbs.joined(separator: ", "))"
+        )
+    }
+
     public static func route(_ request: DevRequest, in context: Context) -> Route {
         switch request {
         case .snapshot(let until, let timeoutMs):
@@ -93,10 +102,7 @@ public enum DevRouting {
         case .press(let combo, let holdMs, let ageMs, let busyMs):
             return .press(combo: combo, holdMs: holdMs, ageMs: ageMs, busyMs: busyMs)
         case .unknown(let type):
-            return .refused(DevError(
-                .unsupportedVerb,
-                "this app does not implement `\(type)`; it has \(implementedVerbs.joined(separator: ", "))"
-            ))
+            return .refused(unsupportedVerb(type))
         case .zoom(let z):
             return .zoom(z)
         case .focus(nil):
