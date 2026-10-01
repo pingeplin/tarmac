@@ -11,7 +11,7 @@ private final class NonFocusableWebView: WKWebView {
     override func becomeFirstResponder() -> Bool { false }
 }
 
-/// The shared markdown viewer (peek body + pinned doc tiles): a WKWebView
+/// A doc card's markdown viewer: a WKWebView
 /// loading DocTemplate.html and rendering through window.tarmacRender, which
 /// preserves the reading position across re-renders.
 @MainActor

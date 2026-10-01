@@ -3,8 +3,7 @@ import QuartzCore
 
 /// Clickable toast kbd chip per the M0 crib chip spec (mono 500 10px muted,
 /// bg2, 1px line border with a 2px bottom edge, radius 4, padding 1px 5px;
-/// hover bg3 + text color). Lives here, not in PeekPanel: the peek's chip is
-/// display-only.
+/// hover bg3 + text color).
 @MainActor
 final class ToastChipView: NSView {
     var onClick: (() -> Void)?

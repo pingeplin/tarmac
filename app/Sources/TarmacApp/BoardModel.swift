@@ -50,8 +50,7 @@ struct Viewport: Equatable {
     var cx: CGFloat
     var cy: CGFloat
 
-    /// crib §5/§7: locards + denser 11px grid below ~50%. The board grows the
-    /// `.lo` class below this; this phase only flips the grid density.
+    /// crib §5: the dot grid tightens to 11px below ~50%.
     static let semanticZoomThreshold: CGFloat = 0.5
 
     /// No min/max bounds are authored in the design sources (crib §5 observes
