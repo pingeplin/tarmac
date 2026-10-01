@@ -383,30 +383,13 @@ final class BoardView: NSView {
 
     // MARK: Projection
 
+    /// Reprojects every card. It does not announce a card change: it runs on
+    /// every pan and zoom frame, where the card set is the same and the caller
+    /// already announces the viewport.
     private func reprojectAll() {
-        PerfTrace.measure("reproject") {
-            for card in cards.values { project(card) }
-            updateContentScaleIfNeeded()
-            recomputeEdges()
-            // NB: no onCardsChanged?() here. reprojectAll runs on every pan/zoom,
-            // where the card SET is unchanged and its callers already fire
-            // onViewportChanged (→ one wayfinding refresh/frame). onCardsChanged
-            // stays on the real set-mutation paths (add/remove/signals) and the
-            // single-card drag reproject. Fix #3: was a redundant 2nd refresh/frame.
-        }
-        PerfTrace.gauge("visibleCards", visibleCardCount)
-        PerfTrace.gauge("liveCards", cards.values.reduce(into: 0) { if !$1.isHidden { $0 += 1 } })
-        PerfTrace.gauge("totalCards", cards.count)
-    }
-
-    /// Cards whose projected view frame intersects the board bounds (and that are
-    /// actually shown). Instrumentation-only for now, but it doubles as the
-    /// baseline metric — and a prototype of the predicate — for fix #5 (viewport
-    /// culling): how many live subviews the compositor touches per frame.
-    private var visibleCardCount: Int {
-        cards.values.reduce(into: 0) { n, card in
-            if !card.isHidden, card.frame.intersects(bounds) { n += 1 }
-        }
+        for card in cards.values { project(card) }
+        updateContentScaleIfNeeded()
+        recomputeEdges()
     }
 
     /// The card layer is scaled as a bitmap by the `frame≠bounds` transform, so
@@ -509,91 +492,16 @@ final class BoardView: NSView {
     /// doc card whose owning term card is present. Called on every reproject so
     /// edges survive pan / zoom / drag.
     func recomputeEdges() {
-        PerfTrace.measure("edges") {
-            var built: [EdgeLayerView.Edge] = []
-            for (id, card) in cards {
-                guard case .doc = id, let owner = card.ownerTermID, let ownerCard = cards[owner] else { continue }
-                built.append(EdgeLayerView.Edge(
-                    callerRect: ownerCard.frame,
-                    docRect: card.frame,
-                    label: edgeLabelProvider?(id)
-                ))
-            }
-            edgeLayer.setEdges(built)
+        var built: [EdgeLayerView.Edge] = []
+        for (id, card) in cards {
+            guard case .doc = id, let owner = card.ownerTermID, let ownerCard = cards[owner] else { continue }
+            built.append(EdgeLayerView.Edge(
+                callerRect: ownerCard.frame,
+                docRect: card.frame,
+                label: edgeLabelProvider?(id)
+            ))
         }
-    }
-
-    // MARK: - Perf benchmark (perf/whiteboard-profiling; removable)
-
-    /// Deterministically sweeps the board through `levels` zoom factors, panning
-    /// `iterations` steps at each and forcing a synchronous dot-grid redraw, so
-    /// PerfTrace captures a per-level baseline with no GUI interaction (synthetic
-    /// trackpad/pinch events get dropped without an Accessibility grant). Drives
-    /// `reprojectAll()` directly, never `onLayoutChanged`, so the sweep persists
-    /// nothing (the persist-coalescing check lives in AppController, fix #2).
-    /// Removable with PerfTrace — see docs/perf-whiteboard-zoom.md.
-    func runBenchmark(iterations: Int, levels: [CGFloat]) {
-        populateBenchmarkCards()
-        // Warm up: the first draws allocate the layer backing store and the
-        // NSBezierPath machinery — discard those so they don't skew level 1.
-        viewport = Viewport(zoom: 1.0, cx: 0, cy: 0)
-        updateGridDensity()
-        for _ in 0..<12 { viewport.cx += 7; reprojectAll(); display() }
-        PerfTrace.flush("warmup(discard)")
-
-        for z in levels {
-            viewport = Viewport(zoom: z, cx: 0, cy: 0)
-            updateGridDensity()         // flip the 24↔11px grid at the 0.5 threshold
-            for _ in 0..<iterations {
-                viewport.cx += 7
-                viewport.cy += 3
-                // Mirror a real pan frame (scrollWheel): reproject, fire the
-                // viewport-changed wayfinding refresh, then redraw. onLayoutChanged
-                // (persist) is intentionally skipped so the sweep writes no layouts.
-                reprojectAll()
-                onViewportChanged?(viewport)
-                display()               // forces draw(_:) — the dot grid — synchronously
-            }
-            PerfTrace.flush(String(format: "zoom=%.2f", z))
-            captureBenchmarkSnapshot(zoom: z)
-        }
-    }
-
-    /// Writes the rendered board (grid + cards) to `/tmp/tarmac-grid-z<zz>.png`
-    /// so a rendering change (e.g. fix #1) can be visually regression-checked
-    /// against the prior run, not just trusted to be faster.
-    private func captureBenchmarkSnapshot(zoom: CGFloat) {
-        viewport = Viewport(zoom: zoom, cx: 0, cy: 0)
-        reprojectAll()
-        guard let rep = bitmapImageRepForCachingDisplay(in: bounds) else { return }
-        cacheDisplay(in: bounds, to: rep)
-        guard let data = rep.representation(using: .png, properties: [:]) else { return }
-        try? data.write(to: URL(fileURLWithPath: String(format: "/tmp/tarmac-grid-z%.2f.png", zoom)))
-    }
-
-    /// Bare synthetic cards spread across world space (some on-screen, most off)
-    /// so the benchmark's reproject / edge / visible-card costs are non-trivial
-    /// and reproducible. No content is attached (no terminal/WKWebView), so the
-    /// cards stay light; every other doc links to the term card so `recomputeEdges`
-    /// rebuilds real edge geometry each frame. No-op if the board already has cards.
-    private func populateBenchmarkCards() {
-        let termID = "perf-bench-term"
-        // Keyed on our own marker (not `cards.isEmpty`) — a daemon-less launch
-        // still mounts one prime-terminal card, which would otherwise suppress
-        // the whole synthetic set and leave totalCards == 1.
-        guard cards[.term(termID)] == nil else { return }
-        addCard(id: .term(termID), worldFrame: CardFrame(x: -400, y: -300, w: 360, h: 240, z: 0))
-        var i = 0
-        for ry in 0..<5 {
-            for rx in 0..<8 {
-                let card = addCard(
-                    id: .doc("perf-bench-\(i)"),
-                    worldFrame: CardFrame(x: CGFloat(rx) * 520 - 1400, y: CGFloat(ry) * 360 - 900, w: 360, h: 260, z: i + 1)
-                )
-                if i.isMultiple(of: 2) { card.ownerTermID = .term(termID) }
-                i += 1
-            }
-        }
+        edgeLayer.setEdges(built)
     }
 
     // MARK: - Pan and zoom
@@ -696,14 +604,8 @@ final class BoardView: NSView {
         // seating one tile's centered dot on this point lands every replica on a
         // lattice point (the tiling period equals `viewSpacing`).
         let topLeftWorld = viewToWorld(CGPoint(x: bounds.minX, y: bounds.minY))
-        let bottomRightWorld = viewToWorld(CGPoint(x: bounds.maxX, y: bounds.maxY))
         let startKX = floor((topLeftWorld.x - Self.gridPhase.x) / worldSpacing)
         let startKY = floor((topLeftWorld.y - Self.gridPhase.y) / worldSpacing)
-        let endKX = ceil((bottomRightWorld.x - Self.gridPhase.x) / worldSpacing)
-        let endKY = ceil((bottomRightWorld.y - Self.gridPhase.y) / worldSpacing)
-        // Lattice size the grid covers — the count the old loop drew, kept as the
-        // `gridDots` gauge so before/after baselines stay comparable.
-        PerfTrace.gauge("gridDots", max(0, Int(endKX - startKX) + 1) * max(0, Int(endKY - startKY) + 1))
 
         let anchor = worldToView(CGPoint(x: Self.gridPhase.x + startKX * worldSpacing,
                                          y: Self.gridPhase.y + startKY * worldSpacing))
@@ -711,12 +613,10 @@ final class BoardView: NSView {
         let tile = gridTile(viewSpacing: viewSpacing, scale: scale)
         let tileRect = CGRect(x: anchor.x - viewSpacing / 2, y: anchor.y - viewSpacing / 2,
                               width: viewSpacing, height: viewSpacing)
-        PerfTrace.measure("draw") {
-            ctx.saveGState()
-            ctx.clip(to: dirtyRect)
-            ctx.draw(tile, in: tileRect, byTiling: true)
-            ctx.restoreGState()
-        }
+        ctx.saveGState()
+        ctx.clip(to: dirtyRect)
+        ctx.draw(tile, in: tileRect, byTiling: true)
+        ctx.restoreGState()
     }
 
     /// Cached one-cell grid tile: a single centered dot on transparency, sized to

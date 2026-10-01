@@ -27,7 +27,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.focusPrimeTerminal()
 
         controller.start()
-        controller.runPerfBenchmarkIfRequested()
         #if DEBUG
         scheduleDevSnapshot()
         #endif

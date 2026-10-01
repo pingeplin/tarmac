@@ -283,35 +283,6 @@ final class AppController {
         if let view = primeTerminalView { window?.makeFirstResponder(view) }
     }
 
-    /// perf/whiteboard-profiling: when `TARMAC_PERF_BENCH=1`, run the scripted
-    /// zoom-sweep on the mounted board once the window has presented, print the
-    /// per-level baseline to stderr, then quit. The sweep drives `reprojectAll`
-    /// directly (never `onLayoutChanged`), and `shutdown()` doesn't persist, so
-    /// the real on-disk layout is never touched. Removable with PerfTrace.
-    func runPerfBenchmarkIfRequested() {
-        guard PerfTrace.benchmarkRequested else { return }
-        let iters = ProcessInfo.processInfo.environment["TARMAC_PERF_BENCH_ITERS"].flatMap { Int($0) } ?? 80
-        // Defer one beat so the window has presented + drawn before we force redraws.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            guard let self else { return }
-            FileHandle.standardError.write(Data("⟦perf⟧ benchmark start (iters=\(iters))\n".utf8))
-            self.activeBoard.view.runBenchmark(iterations: iters, levels: [1.0, 0.51, 0.49, 0.28])
-
-            // Fix #2 check: a burst of onLayoutChanged-equivalent schedulePersist
-            // calls (each = one scroll delta) must collapse to ONE pending persist;
-            // flushing it then runs persistLayout exactly once. Tests the coalescing
-            // invariant directly (no dependence on the debounce timer firing under a
-            // headless run loop). With the old per-event persist this would be 30.
-            let burst = 30
-            for _ in 0..<burst { self.schedulePersist(boardID: self.activeBoardID) }
-            self.flushPendingPersist()
-            PerfTrace.flush("persist-coalesce: \(burst) schedulePersist ->")
-
-            FileHandle.standardError.write(Data("⟦perf⟧ benchmark done\n".utf8))
-            NSApp.terminate(nil)
-        }
-    }
-
     /// P5.3: cancel the reconnect loop and close the socket on app teardown. Sets
     /// `quitting` first so any in-flight backoff timer is a no-op, removes the key
     /// monitor, and closes the client (so its disconnect path won't re-fire).
