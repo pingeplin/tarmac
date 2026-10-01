@@ -1,9 +1,12 @@
 import AppKit
+import TarmacKit
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var window: NSWindow!
     private(set) var controller: AppController!
+    /// The Quit item holds its target weakly; this is what keeps it alive.
+    private(set) var quitGuard: QuitGuardController!
     private let closeHider = WindowCloseHider()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -23,6 +26,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         controller = AppController(window: window, rootView: rootView)
         window.contentView = rootView
+
+        quitGuard = QuitGuardController(
+            window: window,
+            warning: WarnBeforeQuit(prefsPath: AppPrefs.path(besideSocket: controller.client.socketPath))
+        )
+        NSApp.mainMenu = MainMenu.build(quitGuard: quitGuard)
 
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
