@@ -200,6 +200,15 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(fields(DevSnapshot.build(input(visibility: .visible)))["visibility"], "visible")
     }
 
+    /// Hidden is a window nobody can see — ordered out or in the Dock — and not
+    /// one merely behind another app's, which still draws.
+    func testS74AWindowOrderedOutOrMiniaturizedIsHidden() {
+        XCTAssertEqual(DevSnapshot.Visibility(windowVisible: true, miniaturized: false), .visible)
+        XCTAssertEqual(DevSnapshot.Visibility(windowVisible: false, miniaturized: false), .hidden)
+        XCTAssertEqual(DevSnapshot.Visibility(windowVisible: true, miniaturized: true), .hidden)
+        XCTAssertEqual(DevSnapshot.Visibility(windowVisible: false, miniaturized: true), .hidden)
+    }
+
     // MARK: - S75 term.alive is live && !dead
 
     /// A dead card still draws and takes focus, then swallows every `type`.
@@ -336,6 +345,14 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(Guard.Phase(rawValue: QuitGuard.Phase.confirming.name), .confirming)
         XCTAssertEqual(Guard.Route(rawValue: QuitGuard.Route.guarded.name), .guard)
         XCTAssertEqual(Guard.Route(rawValue: QuitGuard.Route.terminateNow.name), .terminate)
+    }
+
+    func testTheGuardsPhasesAndRoutesMapOntoTheReportedOnes() {
+        XCTAssertEqual(Guard.Phase(QuitGuard.Phase.idle(lastStartMs: 7)), .idle)
+        XCTAssertEqual(Guard.Phase(QuitGuard.Phase.showing(startedMs: 7)), .showing)
+        XCTAssertEqual(Guard.Phase(QuitGuard.Phase.confirming), .confirming)
+        XCTAssertEqual(Guard.Route(QuitGuard.Route.guarded), .guard)
+        XCTAssertEqual(Guard.Route(QuitGuard.Route.terminateNow), .terminate)
     }
 
     /// Null rather than a missing key: `--until` reads a missing path as

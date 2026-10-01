@@ -122,4 +122,15 @@ final class DevCellPointTests: XCTestCase {
         XCTAssertEqual(error.extra, ["card": "t-1"])
         XCTAssertFalse(error.message.isEmpty)
     }
+
+    /// A program that tracks the mouse takes the right button as a report, so
+    /// nothing is selected there either — the same silent downgrade, refused
+    /// under the same code.
+    func testARightClickAProgramWouldTakeIsRefusedLikeABlankCell() {
+        let error = DevCellPoint.mouseTracked(card: "t-1")
+        XCTAssertEqual(error.code, .emptyBuffer)
+        XCTAssertEqual(error.extra, ["card": "t-1"])
+        XCTAssertTrue(error.message.contains("tracks the mouse"), error.message)
+        XCTAssertNotEqual(error.message, DevCellPoint.emptyBuffer(card: "t-1").message)
+    }
 }

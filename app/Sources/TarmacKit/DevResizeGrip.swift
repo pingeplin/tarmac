@@ -25,6 +25,13 @@ public enum DevResizeGrip {
         }
     }
 
+    /// Where the press goes: the middle of the bottom-right handle of a card
+    /// whose on-screen frame is `cardFrame`. The handle keeps its size on screen
+    /// at every zoom, so the point is measured back from the frame's corner.
+    public static func handle(of cardFrame: CGRect) -> CGPoint {
+        CGPoint(x: cardFrame.maxX - CardHandles.cornerSize / 2, y: cardFrame.maxY - CardHandles.cornerSize / 2)
+    }
+
     public static func delta(from: CGSize, to: CGSize, zoom: CGFloat) -> CGVector {
         CGVector(dx: (to.width - from.width) * zoom, dy: (to.height - from.height) * zoom)
     }

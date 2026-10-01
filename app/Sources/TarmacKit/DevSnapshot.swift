@@ -31,6 +31,12 @@ public enum DevSnapshot {
 
     public enum Visibility: String, Equatable, Sendable {
         case visible, hidden
+
+        /// Hidden is a window nobody can see: ordered out or miniaturized. One
+        /// merely behind another app's window still draws, and is visible.
+        public init(windowVisible: Bool, miniaturized: Bool) {
+            self = windowVisible && !miniaturized ? .visible : .hidden
+        }
     }
 
     public struct Viewport: Equatable, Sendable {
@@ -168,10 +174,25 @@ public enum DevSnapshot {
     public struct QuitGuard: Equatable, Sendable {
         public enum Phase: String, Equatable, Sendable {
             case idle, showing, confirming
+
+            public init(_ phase: TarmacKit.QuitGuard.Phase) {
+                switch phase {
+                case .idle: self = .idle
+                case .showing: self = .showing
+                case .confirming: self = .confirming
+                }
+            }
         }
 
         public enum Route: String, Equatable, Sendable {
             case `guard`, terminate
+
+            public init(_ route: TarmacKit.QuitGuard.Route) {
+                switch route {
+                case .guarded: self = .guard
+                case .terminateNow: self = .terminate
+                }
+            }
         }
 
         public struct Press: Equatable, Sendable {

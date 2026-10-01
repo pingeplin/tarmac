@@ -8,6 +8,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The Quit item holds its target weakly; this is what keeps it alive.
     private(set) var quitGuard: QuitGuardController!
     private let closeHider = WindowCloseHider()
+    #if DEBUG
+    private let devDriver = DevDriver()
+    #endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let rootView = RootView()
@@ -40,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.start()
         #if DEBUG
         scheduleDevSnapshot()
+        devDriver.start(DevVerbs(controller: controller, quitGuard: quitGuard, window: window))
         #endif
     }
 
@@ -88,5 +92,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         controller?.flushPendingPersist()
         controller?.shutdown()
+        #if DEBUG
+        devDriver.stop()
+        #endif
     }
 }

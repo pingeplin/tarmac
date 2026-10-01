@@ -36,6 +36,27 @@ final class DevResizeGripTests: XCTestCase {
         ])
     }
 
+    /// The press must land where the card's own hit test finds the bottom-right
+    /// handle, with or without a close button, at any size on screen.
+    func testThePressPointIsInsideTheBottomRightHandle() {
+        XCTAssertEqual(
+            DevResizeGrip.handle(of: CGRect(x: 100, y: 50, width: 400, height: 300)), CGPoint(x: 490, y: 340)
+        )
+        for frame in [
+            CGRect(x: 100, y: 50, width: 400, height: 300),
+            CGRect(x: -700, y: 900, width: 80, height: 45),
+            CGRect(x: 0, y: 0, width: 1410, height: 990),
+        ] {
+            let point = DevResizeGrip.handle(of: frame)
+            let local = CGPoint(x: point.x - frame.minX, y: point.y - frame.minY)
+            for hasClose in [true, false] {
+                XCTAssertEqual(
+                    CardHandles.handle(at: local, cardSize: frame.size, hasClose: hasClose), .bottomRight, "\(frame)"
+                )
+            }
+        }
+    }
+
     /// `smoke.mjs` D3 and D10(b) read `to.w` / `to.h`: the size the card landed
     /// at, clamp included, never an echo of the request.
     func testTheReplyReportsBothSizesAndTheDeltaDragged() {
