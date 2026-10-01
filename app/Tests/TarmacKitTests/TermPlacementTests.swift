@@ -32,18 +32,6 @@ final class TermPlacementTests: XCTestCase {
         XCTAssertEqual(frame.origin, CGPoint(x: 209, y: 200), "(166,160) is within 8 px of (170,164)")
     }
 
-    func testANewTerminalGoesOnTop() {
-        XCTAssertEqual(TermPlacement.newTerminalZ(existing: [0, 4, 2]), 5)
-    }
-
-    /// The top is never below zero, so a board of negative z values still gets 1.
-    func testTheTopIsFlooredAtZero() {
-        XCTAssertEqual(TermPlacement.newTerminalZ(existing: [-7, -2]), 1)
-        XCTAssertEqual(TermPlacement.newTerminalZ(existing: []), 1)
-    }
-
-    // MARK: - restore
-
     func testTheFirstGeometryLessTerminalTakesTheBootFrame() {
         XCTAssertEqual(TermPlacement.restoredFrame(index: 0), CGRect(x: 80, y: 80, width: 470, height: 330))
     }

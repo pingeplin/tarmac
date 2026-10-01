@@ -16,11 +16,6 @@ public enum TermPlacement {
         return CGRect(origin: origin, size: Placement.termFrame.size)
     }
 
-    /// One above the board's top card; the top is never taken to be below zero.
-    public static func newTerminalZ(existing: [Int]) -> Int {
-        existing.reduce(0, max) + 1
-    }
-
     /// The frame of the `index`-th restored terminal tile that carries no
     /// geometry: the boot frame, one cascade step per tile before it.
     public static func restoredFrame(index: Int) -> CGRect {
