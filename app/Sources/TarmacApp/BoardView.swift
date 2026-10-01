@@ -171,8 +171,7 @@ final class BoardView: NSView {
     /// Flies to `cardID`'s center at zoom 1.
     func fly(to cardID: CardID) {
         guard let card = cards[cardID] else { return }
-        let f = card.worldFrame
-        flyTo(Viewport(zoom: 1, cx: f.x + f.w / 2, cy: f.y + f.h / 2))
+        flyTo(Viewport(BoardFly.destination(showing: card.worldFrame.rect)))
     }
 
     /// Centers on the bounding box of every card with a 10 % margin a side.
@@ -193,17 +192,14 @@ final class BoardView: NSView {
     /// `anchorViewPoint` (the board's center by default) where it is on screen.
     func zoom(by factor: CGFloat, anchorViewPoint: CGPoint? = nil, commit: Bool) {
         flight.cancel()
-        let anchor = anchorViewPoint ?? viewportCenter
-        let worldAnchor = viewToWorld(anchor)
-        let newZoom = clampValue(viewport.zoom * factor)
-        if newZoom != viewport.zoom {
-            let c = viewportCenter
-            show(Viewport(
-                zoom: newZoom,
-                cx: worldAnchor.x - (anchor.x - c.x) / newZoom,
-                cy: worldAnchor.y - (anchor.y - c.y) / newZoom
-            ))
-        }
+        let zoomed = Viewport(BoardTransform.zoomed(
+            viewport.wire,
+            by: factor,
+            about: anchorViewPoint ?? viewportCenter,
+            viewportCenter: viewportCenter,
+            limits: Viewport.minZoom...Viewport.maxZoom
+        ))
+        if zoomed != viewport { show(zoomed) }
         if commit { onLayoutChanged?(viewport) }
     }
 
@@ -217,7 +213,7 @@ final class BoardView: NSView {
     /// Selects `id`, or clears the selection with nil. Selecting never
     /// reorders cards — `raise` does that.
     func select(_ id: CardID?) {
-        let id = window == nil ? nil : id.flatMap { cards[$0] == nil ? nil : $0 }
+        let id = CardSelection.resolve(id, onScreen: window != nil, isOnBoard: { cards[$0] != nil })
         guard id != selectedID else { return }
         if let previous = selectedID { cards[previous]?.setSelected(false) }
         selectedID = id
@@ -259,13 +255,9 @@ final class BoardView: NSView {
 
     private var viewportCenter: CGPoint { CGPoint(x: bounds.midX, y: bounds.midY) }
 
-    private func clampValue(_ z: CGFloat) -> CGFloat {
-        min(Viewport.maxZoom, max(Viewport.minZoom, z))
-    }
-
     private func clampZoom(_ vp: Viewport) -> Viewport {
         var vp = vp
-        vp.zoom = clampValue(vp.zoom)
+        vp.zoom = BoardTransform.clampedZoom(vp.zoom, limits: Viewport.minZoom...Viewport.maxZoom)
         return vp
     }
 
@@ -428,27 +420,19 @@ final class BoardView: NSView {
 
     // MARK: Content scale
 
-    /// A card is drawn at its world size and scaled to its frame, so above
-    /// 100 % its backing store would be stretched. Each card's layers are
-    /// rasterised at the backing scale times the zoom instead, capped at 3×; at
-    /// or below 100 % the backing scale alone is kept and the card is scaled
-    /// down. Re-applied only when the zoom changes, not on a pan.
+    /// A card is drawn at its world size and scaled to its frame, so its
+    /// layers are rasterised at `CardRaster`'s density for the zoom rather than
+    /// stretched. Re-applied only when the zoom changes, not on a pan.
     private var lastContentScaleZoom: CGFloat = 0
-    private static let maxContentScaleZoom: CGFloat = 3
     private var contentScale: CGFloat {
-        (window?.backingScaleFactor ?? 2) * max(1, min(viewport.zoom, Self.maxContentScaleZoom))
+        CardRaster.layerScale(backing: window?.backingScaleFactor ?? 2, zoom: viewport.zoom)
     }
 
-    /// The device scale pushed to doc cards' web views, never below 2: on a 1×
-    /// display WebKit's native-resolution text reads thin and feathered, and
-    /// rendering at 2× for the compositor to scale down gives cleaner edges.
-    /// Above 100 % it follows the zoom like `contentScale`. Being always
-    /// non-zero keeps WebKit from tracking the display by itself, so a move to
-    /// another display has to re-assert it.
+    /// The device scale pushed to doc cards' web views. Being always non-zero
+    /// keeps WebKit from tracking the display by itself, so a move to another
+    /// display has to re-assert it.
     private var docDeviceScaleOverride: CGFloat {
-        let backing = window?.backingScaleFactor ?? 2
-        let zoomFactor = min(max(viewport.zoom, 1), Self.maxContentScaleZoom)
-        return max(2, backing * zoomFactor)
+        CardRaster.webScale(backing: window?.backingScaleFactor ?? 2, zoom: viewport.zoom)
     }
 
     private func updateContentScaleIfNeeded() {
@@ -472,19 +456,19 @@ final class BoardView: NSView {
 
     // MARK: - Pan and zoom
 
-    /// A wheel pans by its delta in screen points; with control held it zooms
-    /// about the pointer instead. A notched wheel reports lines, scaled up here.
+    /// A wheel pans by its travel in screen points; with control held it zooms
+    /// about the pointer instead.
     override func scrollWheel(with event: NSEvent) {
-        let scale: CGFloat = event.hasPreciseScrollingDeltas ? 1 : 10
-        let dx = event.scrollingDeltaX * scale
-        let dy = event.scrollingDeltaY * scale
+        let travel = BoardWheel.travel(
+            scrollingDelta: CGVector(dx: event.scrollingDeltaX, dy: event.scrollingDeltaY),
+            precise: event.hasPreciseScrollingDeltas
+        )
         if event.modifierFlags.contains(.control) {
-            // AppKit's delta has the opposite sign to the web's `deltaY`.
-            zoom(by: BoardWheel.zoomFactor(deltaY: -dy), anchorViewPoint: convert(event.locationInWindow, from: nil), commit: true)
+            zoom(by: BoardWheel.zoomFactor(travel: travel), anchorViewPoint: convert(event.locationInWindow, from: nil), commit: true)
             return
         }
         flight.cancel()
-        show(Viewport(zoom: viewport.zoom, cx: viewport.cx - dx / viewport.zoom, cy: viewport.cy - dy / viewport.zoom))
+        show(Viewport(BoardTransform.panned(viewport.wire, by: travel)))
         onLayoutChanged?(viewport)
     }
 

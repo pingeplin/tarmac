@@ -28,4 +28,20 @@ public enum BoardWheel {
     public static func zoomFactor(magnification: CGFloat) -> CGFloat {
         1 + magnification
     }
+
+    /// Screen points per line of a notched wheel, which reports lines.
+    public static let lineTravel: CGFloat = 10
+
+    /// How far a wheel event moves the content, in screen points, from
+    /// AppKit's scrolling delta.
+    public static func travel(scrollingDelta: CGVector, precise: Bool) -> CGVector {
+        let scale = precise ? 1 : lineTravel
+        return CGVector(dx: scrollingDelta.dx * scale, dy: scrollingDelta.dy * scale)
+    }
+
+    /// The zoom multiplier for a wheel turned with control held. AppKit's
+    /// travel has the opposite sign to the web's `deltaY`.
+    public static func zoomFactor(travel: CGVector) -> CGFloat {
+        zoomFactor(deltaY: -travel.dy)
+    }
 }

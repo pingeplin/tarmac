@@ -1,3 +1,4 @@
+import CoreGraphics
 import XCTest
 @testable import TarmacKit
 
@@ -60,5 +61,14 @@ final class BoardFlyTests: XCTestCase {
         XCTAssertFalse(fly.isFinished(atElapsedMs: 299.9))
         XCTAssertTrue(fly.isFinished(atElapsedMs: 300))
         XCTAssertTrue(fly.isFinished(atElapsedMs: 450))
+    }
+
+    // MARK: - Destinations
+
+    func testAFlyToACardLandsOnItsCenterAtFullSize() {
+        XCTAssertEqual(
+            BoardFly.destination(showing: CGRect(x: 100, y: 200, width: 300, height: 100)),
+            BoardViewport(zoom: 1, cx: 250, cy: 250)
+        )
     }
 }

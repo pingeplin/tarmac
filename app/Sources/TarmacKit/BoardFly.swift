@@ -1,3 +1,5 @@
+import CoreGraphics
+
 /// A fly: the board's viewport eased from one place to another over a fixed
 /// time. The caller owns the clock and asks where the viewport is at a given
 /// elapsed time, so an interrupted fly simply stops being asked.
@@ -28,5 +30,10 @@ public struct BoardFly: Equatable, Sendable {
 
     public func isFinished(atElapsedMs elapsedMs: Double) -> Bool {
         elapsedMs >= Self.durationMs
+    }
+
+    /// Where a fly to a card lands: on the card's center, at 100 %.
+    public static func destination(showing card: CGRect) -> BoardViewport {
+        BoardViewport(zoom: 1, cx: card.midX, cy: card.midY)
     }
 }
