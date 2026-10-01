@@ -124,15 +124,15 @@ extension AppController {
             MainActor.assumeIsolated { self?.handlePress(at: point) }
             return event
         }
-        // Point 2 — pan/scroll routes to the whiteboard unless the pointer is
-        // inside the focused card (then its own content scrolls). The router
-        // returns a `Bool` (Sendable) and the event swap stays outside the
-        // isolated block (NSEvent isn't Sendable), mirroring `escMonitor`.
+        // The wheel is routed before it is dispatched: the board takes it
+        // unless it is over the selected card's body. The router returns a
+        // `Bool` (Sendable) and the event swap stays outside the isolated
+        // block (NSEvent isn't Sendable), mirroring `escMonitor`.
         scrollRouteMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             let routed = MainActor.assumeIsolated { self?.routeScroll(event) ?? false }
             return routed ? nil : event
         }
-        // Point 2 — pinch always zooms the whiteboard (a terminal can't pinch).
+        // A pinch always zooms the board.
         magnifyRouteMonitor = NSEvent.addLocalMonitorForEvents(matching: .magnify) { [weak self] event in
             let routed = MainActor.assumeIsolated { self?.routeMagnify(event) ?? false }
             return routed ? nil : event

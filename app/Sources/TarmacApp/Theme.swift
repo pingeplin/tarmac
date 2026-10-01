@@ -17,12 +17,7 @@ enum Theme {
     static let agentDim = srgb(0x1abc9c, alpha: 0.16)
     // Drag-lift border (crib §4 prime/lift; authored hex, not a :root token).
     static let liftBorder = srgb(0x5a626a)
-    // Scroll-focus border: the quiet sibling of `liftBorder`. A focused card (the
-    // pointer/scroll-active card — `focusedCardID`, incl. doc cards) wears this
-    // soft teal edge so scroll-capture is legible. Deliberately a different hue
-    // family from prime's neutral gray: when keyboard-active (prime, gray border +
-    // dark header) and scroll-active (focus, teal edge) are two different cards,
-    // the colors tell them apart at a glance. Sits below prime in the border stack.
+    // The selected card's border: the card whose body takes the wheel.
     static let focusBorder = srgb(0x1abc9c, alpha: 0.5)
     // Prime-card header bg (crib §1/§2/§4: `.tm-bcard.prime .bhd` background
     // `#3a4046` — near bg2 but distinct). New Breeze token Theme.swift lacked.
@@ -40,25 +35,6 @@ enum Theme {
         srgb(0x1d99f3), // repo-c — blue
         srgb(0x9b59b6), // repo-d — purple
     ]
-
-    static func repoColor(for name: String) -> NSColor {
-        // FNV-1a: stable across launches (hashValue is seeded per-process).
-        var hash: UInt64 = 0xcbf29ce484222325
-        for byte in name.utf8 {
-            hash ^= UInt64(byte)
-            hash = hash &* 0x100000001b3
-        }
-        return repoColors[Int(hash % UInt64(repoColors.count))]
-    }
-
-    /// Daemon-assigned index wins; the local hash is the repo==nil fallback
-    /// (same algorithm, per docs/protocol.md "repo_color").
-    static func repoColor(index: Int?, fallbackName: String) -> NSColor {
-        if let index, repoColors.indices.contains(index) {
-            return repoColors[index]
-        }
-        return repoColor(for: fallbackName)
-    }
 
     /// The chrome face: IBM Plex Mono, bundled in regular and bold only, so a
     /// weight takes the nearer of the two; the system's monospaced font if the
