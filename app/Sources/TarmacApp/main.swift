@@ -28,7 +28,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         controller.start()
         controller.runPerfBenchmarkIfRequested()
+        #if DEBUG
+        scheduleDevSnapshot()
+        #endif
     }
+
+    #if DEBUG
+    /// `TARMAC_DEV_SHOT=<path>` writes the window's content view to that PNG
+    /// `TARMAC_DEV_SHOT_AFTER` seconds after launch (default 4);
+    /// `TARMAC_DEV_SHOT_QUIT` then quits.
+    private func scheduleDevSnapshot() {
+        let environment = ProcessInfo.processInfo.environment
+        guard let path = environment["TARMAC_DEV_SHOT"] else { return }
+        let delay = environment["TARMAC_DEV_SHOT_AFTER"].flatMap(Double.init) ?? 4
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            if let view = self?.window.contentView, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+                view.cacheDisplay(in: view.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+            }
+            if environment["TARMAC_DEV_SHOT_QUIT"] != nil { NSApp.terminate(nil) }
+        }
+    }
+    #endif
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
