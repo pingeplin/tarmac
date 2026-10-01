@@ -179,4 +179,54 @@ final class BoardSwitcherTests: XCTestCase {
         XCTAssertFalse(BoardSwitcher.cancelsUnhandledKey(commandHeld: true))
         XCTAssertTrue(BoardSwitcher.cancelsUnhandledKey(commandHeld: false))
     }
+
+    // MARK: - summary() (S8)
+
+    private func term(running: Bool = false, bell: Bool = false) -> BoardSwitcher.TermFact {
+        BoardSwitcher.TermFact(running: running, bell: bell)
+    }
+
+    func testVisitedBoardCountsItsOwnCards() {
+        let s = BoardSwitcher.summary(
+            boardID: "board-1", name: "infra", visited: true,
+            terms: [term(running: true), term(running: true), term()], cards: 5, daemonRunning: 9
+        )
+        XCTAssertEqual(
+            s, BoardSwitcher.BoardSummary(boardID: "board-1", name: "infra", running: 2, bell: 0, cards: 5, isLive: true)
+        )
+    }
+
+    /// A running terminal whose bell is lit counts as running and as a bell.
+    func testALitBellDoesNotHideARunningTerminal() {
+        let s = BoardSwitcher.summary(
+            boardID: "b", name: nil, visited: true,
+            terms: [term(running: true, bell: true), term(running: true)], cards: 2, daemonRunning: nil
+        )
+        XCTAssertEqual(s.running, 2)
+        XCTAssertEqual(s.bell, 1)
+    }
+
+    func testVisitedBoardWithNothingRunningIsNotLive() {
+        let s = BoardSwitcher.summary(
+            boardID: "b", name: nil, visited: true, terms: [term(), term(bell: true)], cards: 3, daemonRunning: 4
+        )
+        XCTAssertEqual(s.running, 0)
+        XCTAssertEqual(s.bell, 1)
+        XCTAssertEqual(s.cards, 3)
+        XCTAssertFalse(s.isLive)
+    }
+
+    func testUnvisitedBoardShowsTheDaemonsCountAndNoCards() {
+        let s = BoardSwitcher.summary(
+            boardID: "b", name: nil, visited: false, terms: [term(running: true, bell: true)], cards: 1,
+            daemonRunning: 3
+        )
+        XCTAssertEqual(s, BoardSwitcher.BoardSummary(boardID: "b", name: nil, running: 3, bell: 0, cards: 0, isLive: true))
+    }
+
+    func testUnvisitedBoardWithNoDaemonCountIsNotLive() {
+        let s = BoardSwitcher.summary(boardID: "b", name: nil, visited: false, terms: [], cards: 0, daemonRunning: nil)
+        XCTAssertEqual(s.running, 0)
+        XCTAssertFalse(s.isLive)
+    }
 }

@@ -62,10 +62,7 @@ extension AppController {
             }
             refreshStrips()
             // Keep an open switcher in sync with board adds/removes/active-change.
-            if switcherOpen {
-                rebuildSwitcherRows()
-                renderSwitcher()
-            }
+            refreshSwitcherIfOpen()
         case .restore(let docs, let tiles, let board, let restoredBoardID, let liveTerms):
             applyRestore(docs: docs, tiles: tiles, viewport: board, boardID: restoredBoardID, liveTerms: liveTerms)
         case .output(let termID, let bytes):

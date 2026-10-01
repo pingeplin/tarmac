@@ -144,6 +144,36 @@ public enum BoardSwitcher {
         return (r, r > 0)
     }
 
+    /// One terminal card as a board's row counts it.
+    public struct TermFact: Equatable, Sendable {
+        /// Its shell is running: live and not dead.
+        public var running: Bool
+        /// Its bell is lit.
+        public var bell: Bool
+
+        public init(running: Bool, bell: Bool) {
+            self.running = running
+            self.bell = bell
+        }
+    }
+
+    /// A board's row facts. A board that has had its restore counts its own
+    /// cards: running shells, lit bells (a terminal can be both) and every
+    /// card. One that has not shows the daemon's running count and no cards,
+    /// whatever placeholder it holds meanwhile.
+    public static func summary(
+        boardID: String, name: String?, visited: Bool, terms: [TermFact], cards: Int, daemonRunning: Int?
+    ) -> BoardSummary {
+        let localRunning = terms.filter(\.running).count
+        let (running, isLive) = liveness(
+            visited: visited, localRunning: localRunning, localIsLive: localRunning > 0, daemonRunning: daemonRunning
+        )
+        return BoardSummary(
+            boardID: boardID, name: name, running: running, bell: visited ? terms.filter(\.bell).count : 0,
+            cards: visited ? cards : 0, isLive: isLive
+        )
+    }
+
     /// Whether the open switcher cancels a key it has no handler for. ⌘ presses
     /// pass, so AppKit's menu — not a character comparison — decides what the
     /// Quit shortcut is. The caller still keeps the key from the focused terminal.

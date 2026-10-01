@@ -1,68 +1,51 @@
 import AppKit
-import QuartzCore
 
-/// Terminal-only cycle HUD (crib §6 `.tm-cyclehud`, migration-plan Phase 5):
-/// a top-center HUD that appears briefly while ⌥tab cycles the focused terminal
-/// among terminal cards. bg2, 1px line border, radius 10, shadow
-/// `0 8px 22px rgba(0,0,0,0.5)`, padding 4, items gap 4. Each item: padding
-/// `5px 10px`, radius 7, 10.5px mono; the active item gets bg3 + `text` color +
-/// an inset 1px line border, inactive items are `muted`.
-///
-/// ⌥tab shows every live terminal with the prime highlighted and advances prime
-/// across them (Phase 5b); with one terminal it is a single highlighted item.
+/// The ⌥Tab readout: a row of chips at the top center of the board, one per
+/// live terminal in cycle order with the new prime highlighted. It hides a
+/// moment after the last ⌥Tab and never takes a click.
 @MainActor
 final class CycleHUD: NSView {
-    /// Top offset from the board top edge (crib §6: `top 12`).
+    /// Distance below the board's top edge.
     static let topInset: CGFloat = 12
 
-    private static let padding: CGFloat = 4
+    private static let holdMs = 1100
+    private static let border: CGFloat = 1
+    private static let padX: CGFloat = 8
+    private static let padY: CGFloat = 4
     private static let itemGap: CGFloat = 4
-    private static let itemPadX: CGFloat = 10
-    private static let itemPadY: CGFloat = 5
 
     private var items: [CycleHUDItem] = []
     private var hideWork: DispatchWorkItem?
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
-    // Click-through: the HUD is a transient readout, never a target.
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = Theme.bg2.cgColor
+        layer?.backgroundColor = Theme.bg3.withAlphaComponent(0.92).cgColor
         layer?.borderColor = Theme.line.cgColor
-        layer?.borderWidth = 1
-        layer?.cornerRadius = 10
-
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.5)
-        shadow.shadowOffset = NSSize(width: 0, height: -8)
-        shadow.shadowBlurRadius = 22
-        self.shadow = shadow
-
+        layer?.borderWidth = Self.border
+        layer?.cornerRadius = 8
         isHidden = true
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    /// Shows the HUD with `labels` (terminal names), highlighting `activeIndex`,
-    /// and auto-hides after a short hold (crib §6: "show the HUD briefly while
-    /// held"). Re-pressing ⌥tab before it hides resets the timer and advances the
-    /// highlight.
+    /// Shows `labels` with `activeIndex` highlighted and restarts the hide
+    /// timer.
     func show(labels: [String], activeIndex: Int) {
         for item in items { item.removeFromSuperview() }
-        items = labels.enumerated().map { idx, text in
-            let item = CycleHUDItem(text: text)
-            item.setActive(idx == activeIndex)
+        items = labels.enumerated().map { index, text in
+            let item = CycleHUDItem(text: text, active: index == activeIndex)
             addSubview(item)
             return item
         }
         isHidden = false
         sizeToContents()
-        // Center horizontally at the top inset immediately so the HUD never
-        // flashes at the corner before the host's next layout pass.
+        // Centered now, not at the host's next layout pass, so the HUD never
+        // flashes at the corner first.
         if let host = superview {
             frame = NSRect(
                 x: ((host.bounds.width - frame.width) / 2).rounded(),
@@ -71,13 +54,12 @@ final class CycleHUD: NSView {
                 height: frame.height
             )
         }
-        // Re-arm the auto-hide.
         hideWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated { self?.hide() }
         }
         hideWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(Self.holdMs), execute: work)
     }
 
     func hide() {
@@ -86,79 +68,67 @@ final class CycleHUD: NSView {
         isHidden = true
     }
 
-    /// Sizes the HUD to its items at the canonical paddings; the caller centers
-    /// it horizontally at `topInset`.
+    /// Sizes the HUD to its chips; the caller centers it at `topInset`.
     func sizeToContents() {
-        let h = Self.itemPadY * 2 + (items.map { $0.fittedSize.height }.max() ?? 0) + Self.padding * 2
-        var w = Self.padding * 2
-        for (idx, item) in items.enumerated() {
-            w += item.fittedSize.width + Self.itemPadX * 2
-            if idx < items.count - 1 { w += Self.itemGap }
-        }
-        frame = NSRect(x: frame.minX, y: frame.minY, width: w.rounded(), height: h.rounded())
+        let inset = Self.border * 2
+        let height = (items.map(\.size.height).max() ?? 0) + Self.padY * 2 + inset
+        let gaps = Self.itemGap * CGFloat(max(0, items.count - 1))
+        let width = items.reduce(0) { $0 + $1.size.width } + gaps + Self.padX * 2 + inset
+        frame = NSRect(x: frame.minX, y: frame.minY, width: width.rounded(), height: height.rounded())
         needsLayout = true
     }
 
     override func layout() {
         super.layout()
-        let h = bounds.height - Self.padding * 2
-        var x = Self.padding
-        for (idx, item) in items.enumerated() {
-            let iw = item.fittedSize.width + Self.itemPadX * 2
-            item.frame = NSRect(x: x, y: Self.padding, width: iw, height: h)
-            x += iw
-            if idx < items.count - 1 { x += Self.itemGap }
+        var x = Self.border + Self.padX
+        for item in items {
+            item.frame = NSRect(
+                x: x, y: ((bounds.height - item.size.height) / 2).rounded(),
+                width: item.size.width, height: item.size.height
+            )
+            x += item.size.width + Self.itemGap
         }
     }
 }
 
-/// One cycle-HUD item (crib §6 `.tm-cyclehud .c`): 10.5px mono. Active = bg3 +
-/// `text` color + inset 1px line border (radius 7); inactive = transparent +
-/// `muted`. Click-through (the HUD is a readout).
+/// One chip of the cycle HUD. The active chip has a fill and a border, which
+/// makes it a pixel larger on every side than the others.
 @MainActor
 final class CycleHUDItem: NSView {
+    private static let padX: CGFloat = 7
+    private static let padY: CGFloat = 2
+
     private let label: NSTextField
+    let size: NSSize
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    init(text: String) {
+    init(text: String, active: Bool) {
         label = NSTextField(labelWithString: text)
-        super.init(frame: .zero)
-        wantsLayer = true
-        layer?.cornerRadius = 7
         label.font = Theme.mono(10.5)
-        label.textColor = Theme.muted
-        label.alignment = .center
+        label.textColor = active ? Theme.text : Theme.faint
+        let border: CGFloat = active ? 1 : 0
+        let text = label.fittedSize
+        size = NSSize(
+            width: (text.width + (Self.padX + border) * 2).rounded(),
+            height: (text.height + (Self.padY + border) * 2).rounded()
+        )
+        super.init(frame: NSRect(origin: .zero, size: size))
+        wantsLayer = true
+        layer?.cornerRadius = 5
+        if active {
+            layer?.backgroundColor = Theme.bg3.cgColor
+            layer?.borderColor = Theme.line.cgColor
+            layer?.borderWidth = border
+        }
+        label.frame = NSRect(
+            x: ((size.width - text.width) / 2).rounded(), y: ((size.height - text.height) / 2).rounded(),
+            width: text.width, height: text.height
+        )
         addSubview(label)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
-
-    var fittedSize: NSSize { label.fittedSize }
-
-    func setActive(_ on: Bool) {
-        if on {
-            layer?.backgroundColor = Theme.bg3.cgColor
-            layer?.borderColor = Theme.line.cgColor
-            layer?.borderWidth = 1 // inset 1px line border
-            label.textColor = Theme.text
-        } else {
-            layer?.backgroundColor = NSColor.clear.cgColor
-            layer?.borderWidth = 0
-            label.textColor = Theme.muted
-        }
-    }
-
-    override func layout() {
-        super.layout()
-        let size = label.fittedSize
-        label.frame = NSRect(
-            x: ((bounds.width - size.width) / 2).rounded(),
-            y: ((bounds.height - size.height) / 2).rounded(),
-            width: size.width,
-            height: size.height
-        )
-    }
 }
