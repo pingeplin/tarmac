@@ -22,22 +22,10 @@ Everything goes through the root `Makefile`:
 - `make docs-check` — deterministic doc tripwires (`scripts/docs-check.mjs`, plain node, sub-second): status banners, link rot, ACTIVE docs citing paths that don't exist, and `Msg` variants missing from `architecture.md`/`protocol.md`. Runs on every PR as its own workflow (`.github/workflows/docs-check.yml`), kept separate from `test.yml` so it never queues behind a cargo build.
 - `make run` — launches the Tauri dev app with Vite HMR.
 - `make qa` — `scripts/qa/smoke.mjs`: the in-app QA driver's own scenario suite (#166), driven through `tarmac dev` against a **live `make run` app**. Deliberately **not** part of `make test` or CI — every scenario needs a window. It exits non-zero with a clear message if no app is listening.
-- `make bundle` — `scripts/bundle.sh`: unsigned arm64 `dist/Tarmac.app` via `tauri build`.
-- `make release` — `scripts/release.sh`: sign + `.dmg` + notarize + staple. Requires env `DEVID_IDENTITY` and `NOTARY_PROFILE` (both hard-asserted); `VERSION` optional (default `0.1.0`).
 
-**`make run` nuance**: it runs `desktop/` in Tauri dev mode with two env vars prefixed —
-- `TARMAC_DAEMON=core/target/debug/tarmacd` — tells the Tauri backend which daemon binary to auto-spawn (spawns it and retries ~3s). The Rust daemon itself never reads this var.
-- `PATH=core/target/debug:$PATH` — prepends the debug dir so the daemon (and the PTYs it spawns) resolve the fresh `tarmac` CLI. This is what makes `tarmac open <file>` work inside the app's xterm terminals.
+## Docs
 
-Build outputs (gitignored): Rust → `core/target/{debug,release}/`, Tauri → `desktop/src-tauri/target/`, bundle/dmg → `dist/`.
-
-## Repository layout
-
-- `desktop/` — Tauri 2 app. `src/` (React + xterm.js frontend), `src-tauri/` (Rust backend, path-deps `tarmac-protocol`), `src-tauri/icons/` (app icons).
-- `core/` — Cargo workspace. `crates/{tarmacd,tarmac-cli,tarmac-protocol}/`. Daemon source: `main.rs`, `conn.rs`, `docs.rs`, `state.rs`, `term.rs`, `persist.rs`. Daemon integration tests: `core/crates/tarmacd/tests/{m0,m1,m2,m3}_integration.rs` + `cjk_locale_integration.rs`.
 - `docs/` — **read [`docs/README.md`](docs/README.md) first**: it classifies every doc as ACTIVE / PROPOSED / HISTORICAL. ACTIVE (trust as current): `architecture.md`, `protocol.md` (wire contract + conformance vectors), `backlog.md` (the audited *unbuilt* list), `workflow.md`. PROPOSED (**zero lines implemented**): `proposed/`. HISTORICAL (frozen, mostly Swift-era): `archive/`, `designs/`.
-- `scripts/` — `bundle.sh`, `release.sh`.
-- `packaging/` — `Tarmac.entitlements` (hardened-runtime entitlements for signing), `Casks/tarmac.rb` (Homebrew cask — bump version+sha256 after release), `icon/`.
 
 ## Conventions
 
@@ -56,7 +44,6 @@ Build outputs (gitignored): Rust → `core/target/{debug,release}/`, Tauri → `
 - **Dev-channel work has a skill: `.claude/skills/dev-channel/SKILL.md`** — bringing the app up, driving it with `tarmac dev`, `make qa`, and what to check when it does not answer. The gotchas below are the short form.
 - **Never `pkill`/kill a daemon by name — the dev and installed apps now coexist on purpose.** `make run` pins `TARMAC_SOCKET`/`TARMAC_STATE` to a per-worktree `.dev/` path, so the dev app and an already-installed Tarmac use separate sockets and state and don't collide; there is no need to kill an installed daemon before testing daemon changes. To stop only the dev daemon, use `make kill-daemon` (resolves the pid via `lsof` on the dev socket, so it can only ever touch this worktree's daemon). A name-based kill (`pkill tarmacd`, `pkill -f tarmac-app`) can instead take down the user's real installed app and every terminal it owns. Dev and installed builds also share one process name (`tarmac-app`) and bundle id (`com.tarmac.desktop`), so when driving either app with a GUI/automation tool, address the specific window by PID, never by name.
 - **A fresh git worktree needs `make sidecars` before it builds.** `desktop/src-tauri/binaries/` (the Tauri externalBin sidecars) is gitignored; `make app` and the final desktop-cargo step of `make test` fail with a missing-resource-path error until `make sidecars` stages them, plus `cd desktop && npm ci` for JS deps. `make run` already depends on `sidecars`; `make app`/`make test` do not.
-- **`tauri dev` auto-relaunches on `src-tauri` edits.** While `make run` is live, any change under `desktop/src-tauri` triggers a rebuild and relaunches the app window; the previously spawned `tarmacd` keeps running and the new app window reconnects to it. Expect this if the Rust backend is being edited during a hand-test.
 - **Do NOT `cargo fmt` the Rust crates.** Local rustfmt disagrees with the whole committed repo and would create spurious churn.
 - **Wire protocol is additive-keys-only and conformance-gated.** Never change/remove a key or alter encoding without regenerating the hex conformance vectors (V1–V13), which are mandatory tests in `tarmac-protocol` (exercised by both `core` and the desktop backend, which path-deps it). The frontend consumes already-decoded data over Tauri IPC, so there is no second-language codec to keep in lockstep. Rust must encode with `rmp_serde::to_vec_named` (plain `to_vec` emits arrays and breaks the contract); binary payloads use msgpack `bin` via `serde_bytes`.
 - **Serde stack is pinned with `=`** (`serde =1.0.228`, `rmp-serde =1.3.1`, `serde_bytes =0.11.19`) — the tagged-enum + serde_bytes interaction is verified only on those versions.

@@ -37,7 +37,9 @@ build harmless:
 | `TARMAC_STATE` | `state.json` — boards and layout, never the user's |
 | `TARMAC_DEV_SOCKET` | the QA driver's socket (issue #166) |
 
-Two more things `make run` does: it prefixes `PATH` with
+Three more things `make run` does: it sets `TARMAC_DAEMON=core/target/debug/tarmacd`,
+which tells the Tauri backend which daemon binary to auto-spawn (the daemon itself
+never reads it); it prefixes `PATH` with
 `core/target/debug`, so `tarmac open` inside the app's own terminals resolves the
 freshly built CLI; and it suffixes the window title with the worktree name, which
 is the only way to tell two dev windows apart.
