@@ -87,8 +87,10 @@ final class Minimap: NSView {
         let world = mapping.toWorld(local)
         onJump?(world)
     }
+}
 
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .pointingHand)
-    }
+extension Minimap: HoverCursorProviding {
+    func hoverCursor(at windowPoint: NSPoint) -> NSCursor { .pointingHand }
+    /// A terminal under the minimap would answer the same move with its I-beam.
+    var claimsPointerMoves: Bool { true }
 }
