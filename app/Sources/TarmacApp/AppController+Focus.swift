@@ -107,7 +107,7 @@ extension AppController {
         return nil
     }
 
-    // MARK: - Terminal primacy: prime / quiet focus model (Phase 5a, crib §4)
+    // MARK: - Prime terminal
 
     /// Restyles a board's cards for its prime terminal: that card is prime and
     /// the other live terminals are quiet. Nothing is prime, and nothing quiet,
@@ -126,9 +126,8 @@ extension AppController {
         }
     }
 
-    /// Makes `termID` the prime (focused) terminal: re-applies primacy styling
-    /// and moves keyboard first responder to its view. Typing always follows the
-    /// prime terminal regardless of pointer (crib §6). Used by ⌥tab and ⌘T.
+    /// Makes `termID` the prime terminal: restyles the board for it and gives
+    /// its view keyboard focus.
     func setPrime(_ termID: String) {
         guard let s = sessions[termID] else { return }
         primeTermID = termID

@@ -13,8 +13,8 @@ final class CardView: NSView {
     private(set) var docView: DocWebView?
     private(set) var termBody: TerminalBodyView?
 
-    /// World-space placement (crib §5). Set by `BoardView` on add / drag / resize;
-    /// the on-screen `frame` is derived from this by the board's world→view map.
+    /// Where the card is in the world. The board derives the on-screen `frame`
+    /// from it, and a move or resize gesture changes it.
     var worldFrame: CardFrame
 
     /// A header press, which may become a move, went down on this card.
@@ -28,15 +28,15 @@ final class CardView: NSView {
     /// The header `↻` of a doc card was clicked.
     var onRefresh: ((CardView) -> Void)?
 
-    // MARK: - Gravity / provenance (crib §4, §8)
+    // MARK: - Provenance
 
-    /// The term card this doc card is a satellite of (provenance + gravity
-    /// owner). nil for the term card itself and for ownerless docs. The board
-    /// reads it to translate satellites on term-card moves and to draw edges.
+    /// The terminal card that opened this doc, or nil for a terminal card and
+    /// for a doc with no owner. The board draws an edge to it and, while the
+    /// doc is `attached`, carries the doc along when that terminal is moved.
     var ownerTermID: CardID?
 
-    /// While attached (true) the card follows its owner term card; a USER move
-    /// detaches it (loose = !attached). Persisted as the tile `loose` flag.
+    /// Whether the doc follows its owner terminal. Moving the doc by hand
+    /// detaches it; persisted inverted, as the tile's `loose` flag.
     var attached = true
 
     private let clip = FlippedColumnView()
@@ -118,32 +118,23 @@ final class CardView: NSView {
 
     func attachTerminal(_ terminal: NSView) {
         termBody?.attach(terminal)
-        // Force: the subtree just grew a terminal at the current scale (#6).
-        applyContentScale(pendingContentScale, force: true)
+        // The subtree grew at an unchanged scale, which the walk would skip.
+        applyContentScale(appliedContentScale, force: true)
     }
 
-    /// The board scales each card as a bitmap (its `frame≠bounds` transform), so
-    /// zooming in past 100% upscales the rasterized content → blur. Rendering the
-    /// card's whole layer tree at `backingScale × zoom` resolution gives the
-    /// upscale real pixels. The board pushes the target scale here on zoom change;
-    /// we remember it so content swapped in later (e.g. a revived terminal)
-    /// inherits the same sharpness. NOTE: this only sharpens IN-PROCESS layers
-    /// (the terminal grid, chrome) — it no-ops on a WKWebView's out-of-process
-    /// tiles, which the doc card sharpens separately via `applyDocZoomScale`.
-    /// Last scale walked onto the layer tree. `0` = "never applied" sentinel, so
-    /// the first real apply always runs (a fresh CALayer defaults to contentsScale
-    /// 1, not the backing scale).
-    private var pendingContentScale: CGFloat = 0
+    /// The scale last walked onto the layer tree. 0 until the first walk, so
+    /// that one always runs: a new layer starts at scale 1, not the backing scale.
+    private var appliedContentScale: CGFloat = 0
 
-    /// Walks the whole view+layer subtree setting `contentsScale`. Fix #6: skip the
-    /// walk when `scale` is unchanged — at zoom < 1 the board's computed content
-    /// scale is constant (= backing scale), so without this every zoom step
-    /// re-walked every card's subtree to set the value it already had. Pass
-    /// `force: true` when the SUBTREE changed at an unchanged scale (a newly
-    /// attached terminal), so the new layers still get the current scale.
+    /// Sets `contentsScale` on every layer in the card, so the card's own
+    /// layers — the terminal and the chrome — are rasterised at the density
+    /// they are shown at instead of being stretched. A web view's tiles are
+    /// drawn in another process and ignore this; `applyDocZoomScale` reaches
+    /// them. An unchanged scale is skipped unless `force` says the subtree
+    /// itself changed.
     func applyContentScale(_ scale: CGFloat, force: Bool = false) {
-        guard force || scale != pendingContentScale else { return }
-        pendingContentScale = scale
+        guard force || scale != appliedContentScale else { return }
+        appliedContentScale = scale
         func walk(_ layer: CALayer) {
             layer.contentsScale = scale
             layer.sublayers?.forEach(walk)
@@ -170,18 +161,9 @@ final class CardView: NSView {
         docView?.render(markdown: markdown)
     }
 
-    /// P5.5: suspend / resume the doc card's web view (no-op on a term card).
-    /// Driven by the board switch lifecycle to free inactive boards' web content
-    /// processes; the cached markdown re-renders + scroll restores on resume.
     func suspendDoc() { docView?.suspend() }
     func resumeDoc() { docView?.resume() }
 
-    /// Routes the board's zoom-derived scale to the doc card's web view so
-    /// WebKit re-rasterizes its out-of-process tiles at the on-screen pixel
-    /// density (no-op on a term card). This is deliberately separate from
-    /// `applyContentScale`: that layer-tree walk sharpens in-process layers
-    /// (the terminal grid, chrome) but NO-OPS on WKWebView's proxy tile
-    /// layers, which only obey the device-scale factor pushed here.
     func applyDocZoomScale(_ effectiveScale: CGFloat) {
         docView?.applyZoomScale(effectiveScale)
     }
@@ -272,46 +254,33 @@ final class CardView: NSView {
         alphaValue = CardDim.opacity(dead: dead, quiet: quiet)
     }
 
-    // MARK: - Owner chip bridge
+    // MARK: - Owner chip
 
-    /// `← <termname>` chip in the header right cluster while attached; nil hides
-    /// it (a detached/loose card shows none). The board feeds the owner term's
-    /// current label.
+    /// Shows `← <name>` in the header, or hides the chip with nil.
     func setOwnerChip(_ termName: String?) {
         header.setOwnerChip(termName)
     }
 
-    // MARK: - Bell signal bridge (Phase 3.5 / M2 honest signals)
+    // MARK: - Signals
 
-    /// Whether the amber bell signal is currently shown on this card.
     private(set) var bellActive = false
-
-    /// Whether the card is "live" — an agent process is active on a terminal
-    /// card. Drives the cyan accents on the minimap / offscreen hint
-    /// (Phase 4 wayfinding). Display state only (no animation).
     private(set) var liveActive = false
 
-    /// The card's current signal, for the wayfinding chrome (crib §6–7). Bell
-    /// (amber) outranks live (cyan) when both are set, matching the design's
-    /// "the bell is the louder signal" intent.
+    /// What the minimap and the offscreen hints show for this card. A lit bell
+    /// outranks live.
     var signal: CardSignal {
         if bellActive { return .bell }
         if liveActive { return .live }
         return .none
     }
 
-    /// Amber bell signal in the header (a `●` dot + amber kind-glyph accent),
-    /// shown on a seen BEL and cleared on the next keystroke, paste or click in
-    /// that terminal. Display state only — no animation (stays under Reduce
-    /// Motion).
+    /// A lit bell shows as an amber glyph and dot in the header.
     func setBell(_ on: Bool) {
         guard !dead, on != bellActive else { return }
         bellActive = on
         header.setBell(on)
     }
 
-    /// Live (agent-active) signal: a foreground process is running on a terminal
-    /// card. Feeds the minimap / offscreen-hint cyan variant.
     func setLive(_ on: Bool) {
         guard !dead, on != liveActive else { return }
         liveActive = on
@@ -365,12 +334,10 @@ final class CardView: NSView {
         view.isDescendant(of: body)
     }
 
-    // MARK: - Card shadow: resting base (crib §4) + deeper lift (crib §5)
+    // MARK: - Shadow and lift
 
-    /// Resting card shadow (crib §4): base `0 16px 38px rgba(0,0,0,0.5)` present
-    /// on every card at rest, so the board reads as floating cards over the dot
-    /// grid rather than flat panes. A prime card rests deeper (`0 22px 50px
-    /// rgba(0,0,0,0.6)`); the lift deepens it further, and un-lift returns here.
+    /// Every card casts a shadow at rest, a prime terminal a deeper one. In
+    /// the card's own units, so it scales with the zoom like the rest of it.
     private func applyRestingShadow() {
         let shadow = NSShadow()
         if prime {
@@ -414,8 +381,7 @@ final class CardView: NSView {
     }
 }
 
-/// A card's wayfinding signal (crib §6–7), shared by the minimap and the
-/// offscreen hints. `bell` (amber) outranks `live` (cyan) when both are set.
+/// What a card shows on the minimap and in the offscreen hints.
 enum CardSignal: Equatable {
     case none
     case live

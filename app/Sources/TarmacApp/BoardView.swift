@@ -11,30 +11,25 @@ import TarmacKit
 /// zoom and layout. The surface itself is a flat fill.
 @MainActor
 final class BoardView: NSView {
-    // MARK: - Public API (the exact surface Phase 2c calls)
+    // MARK: - Callbacks
 
-    /// Fires after a *committed* move / resize / zoom / pan, with the current
-    /// viewport. 2c persists card world frames + `board {zoom,cx,cy}` here and
-    /// reflows the just-resized terminal.
+    /// Fires when something that is persisted changed: a card's frame or
+    /// stacking, or the viewport. The listener debounces.
     var onLayoutChanged: ((Viewport) -> Void)?
 
-    /// Fires on EVERY viewport change (pan / zoom / restore / fit / fly), not
-    /// just commits — the wayfinding chrome (zoom readout, minimap, offscreen
-    /// hints) refreshes off this so it tracks the live viewport. Cheap; no
-    /// persistence here (that's `onLayoutChanged`).
+    /// Fires on every viewport change, including each frame of a fly, for the
+    /// chrome that tracks the viewport: zoom readout, minimap, offscreen hints.
     var onViewportChanged: ((Viewport) -> Void)?
 
-    /// Fires whenever the card set or any card's world frame / signal changes,
-    /// so the wayfinding chrome rebuilds its card-derived state (minimap rects,
-    /// offscreen hints). The board calls this after add / remove / reproject.
+    /// Fires when the card set, a card's frame or a card's signal changes, for
+    /// the chrome derived from the cards.
     var onCardsChanged: (() -> Void)?
 
-    /// Fires when a doc card's ✕ close button is clicked. Kept separate from
-    /// `removeCard` (the mechanical teardown) so the controller owns the
-    /// persistence policy.
+    /// Fires when a doc card's ✕ is clicked. Removing the card is the
+    /// listener's call, since it also owns what closing a doc means.
     var onCardClose: ((CardID) -> Void)?
 
-    /// Fires when a doc card's ↻ button is clicked.
+    /// Fires when a doc card's ↻ is clicked.
     var onCardRefresh: ((CardID) -> Void)?
 
     /// Fires when a card is culled or comes back, with whether it is now
@@ -43,20 +38,18 @@ final class BoardView: NSView {
     /// matters on screen.
     var onCullChanged: ((CardID, _ visible: Bool) -> Void)?
 
-    /// Current viewport (zoom + world center). Read for persistence; set by 2c
-    /// from `restore.board` to reproduce the saved viewport.
-    private(set) var viewport: Viewport = .default
-
-    /// All cards by id, in no particular order (z drives stacking).
-    private(set) var cards: [CardID: CardView] = [:]
-
-    /// Per-doc-card provenance edge label (crib §8: `tarmac open · HH:MM`).
-    /// AppController supplies it (HH:MM from the doc's lastOpenedMs, local) since
-    /// the board has no doc registry. Returning nil draws the edge without a chip.
+    /// The label drawn beside a doc card's provenance edge, or nil for none.
+    /// The board has no doc registry, so the controller supplies it.
     var edgeLabelProvider: ((CardID) -> String?)?
 
-    /// Adds a card at its world frame. If a card with the same id exists it is
-    /// replaced. Returns the live view so the caller can attach content.
+    // MARK: - Cards
+
+    private(set) var viewport: Viewport = .default
+
+    /// Every card by id. Stacking follows each card's `z`, not this order.
+    private(set) var cards: [CardID: CardView] = [:]
+
+    /// Adds a card at its world frame, replacing any card with the same id.
     @discardableResult
     func addCard(id: CardID, worldFrame: CardFrame) -> CardView {
         removeCard(id: id)
@@ -66,8 +59,8 @@ final class BoardView: NSView {
         cardLayer.addSubview(card)
         restack()
         reproject(card)
-        card.applyContentScale(contentScale)       // in-process layers
-        card.applyDocZoomScale(docDeviceScaleOverride)  // a fresh doc card starts at the right density
+        card.applyContentScale(contentScale)
+        card.applyDocZoomScale(docDeviceScaleOverride)
         onCardsChanged?()
         return card
     }
@@ -81,20 +74,16 @@ final class BoardView: NSView {
         onCardsChanged?()
     }
 
-    /// The board's signals changed on a card (Phase 3.5 bell / Phase 4 live);
-    /// callers route signal updates through here so the wayfinding chrome
-    /// refreshes (minimap colors, offscreen hints). Cheap.
+    /// A card's bell or live signal changed.
     func signalsChanged() {
         onCardsChanged?()
     }
 
     func card(_ id: CardID) -> CardView? { cards[id] }
 
-    /// Ensures a terminal card for `termID` exists at `worldFrame` and attaches
-    /// the terminal view into its body (Phase 5b: one card per `term_id`). On
-    /// restore the card may already exist, so its world frame is *re-applied*
-    /// here — otherwise persisted move/resize geometry is silently dropped and
-    /// the terminal snaps back to its init frame.
+    /// Puts `view` in the terminal card for `termID`, creating the card if
+    /// there is none. An existing card takes `worldFrame`, so a restore that
+    /// finds the card already built still applies its persisted geometry.
     func setTerminal(termID: String, _ view: NSView, worldFrame: CardFrame) {
         let card: CardView
         if let existing = cards[.term(termID)] {
@@ -108,8 +97,8 @@ final class BoardView: NSView {
         card.attachTerminal(view)
     }
 
-    /// world → view (point). Inverse of `viewToWorld`. Delegates to the pure
-    /// `BoardTransform` in TarmacKit (single source of truth, unit-tested there).
+    // MARK: - World and view
+
     func worldToView(_ p: CGPoint) -> CGPoint {
         BoardTransform.worldToView(
             p,
@@ -119,7 +108,6 @@ final class BoardView: NSView {
         )
     }
 
-    /// view → world (point). Inverse of `worldToView`.
     func viewToWorld(_ p: CGPoint) -> CGPoint {
         BoardTransform.viewToWorld(
             p,
@@ -129,11 +117,28 @@ final class BoardView: NSView {
         )
     }
 
-    /// world rect → view rect (origin = card top-left; this view is flipped).
     func worldToView(_ r: CGRect) -> CGRect {
         let origin = worldToView(CGPoint(x: r.minX, y: r.minY))
         return CGRect(x: origin.x, y: origin.y, width: r.width * viewport.zoom, height: r.height * viewport.zoom)
     }
+
+    /// The part of the world that is on screen.
+    var viewportWorldRect: CGRect {
+        let topLeft = viewToWorld(CGPoint(x: bounds.minX, y: bounds.minY))
+        let bottomRight = viewToWorld(CGPoint(x: bounds.maxX, y: bounds.maxY))
+        return CGRect(
+            x: topLeft.x,
+            y: topLeft.y,
+            width: bottomRight.x - topLeft.x,
+            height: bottomRight.y - topLeft.y
+        )
+    }
+
+    var minimapItems: [Minimap.Item] {
+        cards.values.map { Minimap.Item(worldRect: $0.worldFrame.rect, signal: $0.signal) }
+    }
+
+    // MARK: - Viewport
 
     /// Jumps the viewport to `vp`, clamping its zoom. Any fly in flight stops
     /// here. `commit` also reports the change for persistence.
@@ -170,8 +175,8 @@ final class BoardView: NSView {
         flyTo(Viewport(zoom: 1, cx: f.x + f.w / 2, cy: f.y + f.h / 2))
     }
 
-    /// Fit all card world frames into view with margin (crib §6 ⊡ fit), then
-    /// commit. No-op when there are no cards.
+    /// Centers on the bounding box of every card with a 10 % margin a side.
+    /// Does nothing on an empty board.
     func fitToCards(commit: Bool = true) {
         let rects = cards.values.map(\.worldFrame.rect)
         guard let fit = BoardWayfinding.fit(
@@ -182,24 +187,6 @@ final class BoardView: NSView {
             maxZoom: Viewport.maxZoom
         ) else { return }
         setViewport(Viewport(zoom: fit.zoom, cx: fit.center.x, cy: fit.center.y), commit: commit)
-    }
-
-    /// The currently-visible region in WORLD coordinates (the inverse-projected
-    /// view bounds) — fed to the minimap (viewport rect) and offscreen hints.
-    var viewportWorldRect: CGRect {
-        let topLeft = viewToWorld(CGPoint(x: bounds.minX, y: bounds.minY))
-        let bottomRight = viewToWorld(CGPoint(x: bounds.maxX, y: bounds.maxY))
-        return CGRect(
-            x: topLeft.x,
-            y: topLeft.y,
-            width: bottomRight.x - topLeft.x,
-            height: bottomRight.y - topLeft.y
-        )
-    }
-
-    /// All cards' world frames + signals, for the minimap.
-    var minimapItems: [Minimap.Item] {
-        cards.values.map { Minimap.Item(worldRect: $0.worldFrame.rect, signal: $0.signal) }
     }
 
     /// Multiplies the zoom by `factor`, keeping the world point under
@@ -219,6 +206,8 @@ final class BoardView: NSView {
         }
         if commit { onLayoutChanged?(viewport) }
     }
+
+    // MARK: - Selection and stacking
 
     /// The one selected card: it wears the ring and its body takes the wheel.
     /// Only a board that is on screen can hold a selection, so a card set
@@ -243,6 +232,20 @@ final class BoardView: NSView {
         onLayoutChanged?(viewport)
     }
 
+    /// Orders subviews by world z (low → high = back → front). Sorted in place:
+    /// taking a card out of the hierarchy to re-add it resigns the window's
+    /// first responder inside it, severs a press in flight, and reloads a web
+    /// view.
+    private func restack() {
+        cardLayer.sortSubviews({ a, b, _ in
+            MainActor.assumeIsolated {
+                let za = (a as? CardView)?.worldFrame.z ?? 0
+                let zb = (b as? CardView)?.worldFrame.z ?? 0
+                return za < zb ? .orderedAscending : za > zb ? .orderedDescending : .orderedSame
+            }
+        }, context: nil)
+    }
+
     // MARK: - Internals
 
     private let cardLayer = CardLayerView()
@@ -256,7 +259,6 @@ final class BoardView: NSView {
 
     private var viewportCenter: CGPoint { CGPoint(x: bounds.midX, y: bounds.midY) }
 
-    /// Loose zoom clamp (crib §5: no hard bounds authored; keep pinch/⌘± usable).
     private func clampValue(_ z: CGFloat) -> CGFloat {
         min(Viewport.maxZoom, max(Viewport.minZoom, z))
     }
@@ -282,14 +284,12 @@ final class BoardView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = Theme.bg0.cgColor
-        // Edge layer is backmost (crib §8: beneath the cards, z 0).
         edgeLayer.frame = bounds
         edgeLayer.autoresizingMask = [.width, .height]
         addSubview(edgeLayer)
         cardLayer.frame = bounds
         cardLayer.autoresizingMask = [.width, .height]
         addSubview(cardLayer)
-
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -350,22 +350,6 @@ final class BoardView: NSView {
         }
     }
 
-    // MARK: Stacking
-
-    /// Orders subviews by world z (low → high = back → front). Sorted in place:
-    /// taking a card out of the hierarchy to re-add it resigns the window's
-    /// first responder inside it, severs a press in flight, and reloads a web
-    /// view.
-    private func restack() {
-        cardLayer.sortSubviews({ a, b, _ in
-            MainActor.assumeIsolated {
-                let za = (a as? CardView)?.worldFrame.z ?? 0
-                let zb = (b as? CardView)?.worldFrame.z ?? 0
-                return za < zb ? .orderedAscending : za > zb ? .orderedDescending : .orderedSame
-            }
-        }, context: nil)
-    }
-
     // MARK: Projection
 
     /// Reprojects every card. It does not announce a card change: it runs on
@@ -375,52 +359,6 @@ final class BoardView: NSView {
         for card in cards.values { project(card) }
         updateContentScaleIfNeeded()
         recomputeEdges()
-    }
-
-    /// The card layer is scaled as a bitmap by the `frame≠bounds` transform, so
-    /// zooming IN past 100% would upscale a backing store rendered at the normal
-    /// screen resolution → blur. Counter it by rendering each card's content at
-    /// `backingScale × zoom` resolution (capped) when zoomed in, so the upscale
-    /// has real pixels. Zoom-out keeps the default scale (downscaling is already
-    /// crisp). Re-applied only when the zoom actually changes (not on every pan).
-    private var lastContentScaleZoom: CGFloat = 0
-    private var contentScale: CGFloat {
-        (window?.backingScaleFactor ?? 2) * max(1, min(viewport.zoom, Self.maxContentScaleZoom))
-    }
-    private static let maxContentScaleZoom: CGFloat = 3
-
-    /// The device-scale override pushed to doc cards' WKWebViews. We *always*
-    /// render the doc at ≥2× density. On a 1× external display, rendering at the
-    /// display's native 1× makes WebKit's grayscale sans text look thin and
-    /// feathered ("毛邊"); oversampling (render at 2×, the compositor downsamples
-    /// to the 1× panel) gives smoother edges than native 1× can. On a 2× Retina
-    /// display the floor is a no-op. Above 100% it tracks `backingScale × zoom`
-    /// (capped) so the frame≠bounds upscale stays crisp. Always non-zero, so
-    /// WebKit's own auto-tracking stays off — `viewDidChangeBackingProperties`
-    /// re-asserts the value when the window crosses to a different-density screen.
-    private var docDeviceScaleOverride: CGFloat {
-        let backing = window?.backingScaleFactor ?? 2
-        let zoomFactor = min(max(viewport.zoom, 1), Self.maxContentScaleZoom)
-        return max(2, backing * zoomFactor)
-    }
-
-    private func updateContentScaleIfNeeded() {
-        guard window != nil, abs(viewport.zoom - lastContentScaleZoom) > 0.0001 else { return }
-        lastContentScaleZoom = viewport.zoom
-        let scale = contentScale
-        let docOverride = docDeviceScaleOverride
-        for card in cards.values {
-            card.applyContentScale(scale)          // in-process layers: terminal grid, chrome
-            card.applyDocZoomScale(docOverride)     // out-of-process WebKit tiles (doc cards)
-        }
-    }
-
-    /// The window moved to a display of another density: the content scale and
-    /// the device-pixel grid the cards are snapped to have both changed.
-    override func viewDidChangeBackingProperties() {
-        super.viewDidChangeBackingProperties()
-        lastContentScaleZoom = 0
-        reprojectAll()
     }
 
     private func reproject(_ card: CardView) {
@@ -473,9 +411,8 @@ final class BoardView: NSView {
         onCullChanged?(card.id, visible)
     }
 
-    /// Rebuilds the provenance edge set in view space (crib §8): one edge per
-    /// doc card whose owning term card is present. Called on every reproject so
-    /// edges survive pan / zoom / drag.
+    /// One provenance edge per doc card whose owning terminal card is on the
+    /// board, rebuilt from the cards' on-screen frames.
     func recomputeEdges() {
         var built: [EdgeLayerView.Edge] = []
         for (id, card) in cards {
@@ -487,6 +424,50 @@ final class BoardView: NSView {
             ))
         }
         edgeLayer.setEdges(built)
+    }
+
+    // MARK: Content scale
+
+    /// A card is drawn at its world size and scaled to its frame, so above
+    /// 100 % its backing store would be stretched. Each card's layers are
+    /// rasterised at the backing scale times the zoom instead, capped at 3×; at
+    /// or below 100 % the backing scale alone is kept and the card is scaled
+    /// down. Re-applied only when the zoom changes, not on a pan.
+    private var lastContentScaleZoom: CGFloat = 0
+    private static let maxContentScaleZoom: CGFloat = 3
+    private var contentScale: CGFloat {
+        (window?.backingScaleFactor ?? 2) * max(1, min(viewport.zoom, Self.maxContentScaleZoom))
+    }
+
+    /// The device scale pushed to doc cards' web views, never below 2: on a 1×
+    /// display WebKit's native-resolution text reads thin and feathered, and
+    /// rendering at 2× for the compositor to scale down gives cleaner edges.
+    /// Above 100 % it follows the zoom like `contentScale`. Being always
+    /// non-zero keeps WebKit from tracking the display by itself, so a move to
+    /// another display has to re-assert it.
+    private var docDeviceScaleOverride: CGFloat {
+        let backing = window?.backingScaleFactor ?? 2
+        let zoomFactor = min(max(viewport.zoom, 1), Self.maxContentScaleZoom)
+        return max(2, backing * zoomFactor)
+    }
+
+    private func updateContentScaleIfNeeded() {
+        guard window != nil, abs(viewport.zoom - lastContentScaleZoom) > 0.0001 else { return }
+        lastContentScaleZoom = viewport.zoom
+        let scale = contentScale
+        let docOverride = docDeviceScaleOverride
+        for card in cards.values {
+            card.applyContentScale(scale)
+            card.applyDocZoomScale(docOverride)
+        }
+    }
+
+    /// The window moved to a display of another density: the content scale and
+    /// the device-pixel grid the cards are snapped to have both changed.
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        lastContentScaleZoom = 0
+        reprojectAll()
     }
 
     // MARK: - Pan and zoom
@@ -558,7 +539,6 @@ final class BoardView: NSView {
         lastContentScaleZoom = 0
         reprojectAll()
     }
-
 }
 
 /// Holds the cards. Between cards it is not there: a press on the bare board
