@@ -12,6 +12,9 @@ public final class TerminalEffects {
     public var onTitleChanged: (() -> Void)?
     public var onWorkingDirectoryChanged: (() -> Void)?
     public var onClipboardWrite: ((String) -> Void)?
+    /// Synchronized output (mode 2026) began or ended. While it holds, the
+    /// screen must keep showing the frame captured as the hold began.
+    public var onRenderHold: ((Bool) -> Void)?
 
     var reportedSize = GhosttySizeReportSize(rows: 0, columns: 0, cell_width: 0, cell_height: 0)
 
@@ -29,6 +32,7 @@ public final class TerminalEffects {
             (GHOSTTY_TERMINAL_OPT_SIZE, unsafeBitCast(sizeReport, to: UnsafeRawPointer.self)),
             (GHOSTTY_TERMINAL_OPT_COLOR_SCHEME, unsafeBitCast(colorScheme, to: UnsafeRawPointer.self)),
             (GHOSTTY_TERMINAL_OPT_CLIPBOARD_WRITE, unsafeBitCast(clipboardWrite, to: UnsafeRawPointer.self)),
+            (GHOSTTY_TERMINAL_OPT_RENDER_HOLD, unsafeBitCast(renderHold, to: UnsafeRawPointer.self)),
         ]
         for (option, callback) in callbacks {
             try check(ghostty_terminal_set(terminal, option, callback), "set callback \(option.rawValue)")
@@ -66,6 +70,10 @@ private let bell: GhosttyTerminalBellFn = { _, userdata in
 
 private let titleChanged: GhosttyTerminalTitleChangedFn = { _, userdata in
     effects(userdata) { $0.onTitleChanged?() }
+}
+
+private let renderHold: GhosttyTerminalRenderHoldFn = { _, userdata, held in
+    effects(userdata) { $0.onRenderHold?(held) }
 }
 
 private let pwdChanged: GhosttyTerminalPwdChangedFn = { _, userdata in

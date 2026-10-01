@@ -89,6 +89,29 @@ final class TerminalEngineTests: XCTestCase {
         XCTAssertEqual(copied, ["hello"])
     }
 
+    func testSynchronizedOutputAnnouncesItsHold() throws {
+        let engine = try engine()
+        var holds: [Bool] = []
+        engine.effects.onRenderHold = { holds.append($0) }
+        feed(engine, "\u{1b}[?2026hpartial")
+        XCTAssertEqual(holds, [true])
+        feed(engine, "\u{1b}[?2026l")
+        XCTAssertEqual(holds, [true, false])
+    }
+
+    func testAnOverlongHoldCanBeEndedByTheHost() throws {
+        let engine = try engine()
+        feed(engine, "\u{1b}[?2026h")
+        XCTAssertTrue(engine.isSynchronizedOutput)
+        engine.endSynchronizedOutput()
+        XCTAssertFalse(engine.isSynchronizedOutput)
+    }
+
+    func testCursorBlinksByDefault() throws {
+        let engine = try engine()
+        XCTAssertEqual(try FrameReader().read(engine).cursor?.blinks, true)
+    }
+
     // MARK: modes
 
     func testModesFollowTheProgram() throws {

@@ -55,6 +55,10 @@ public final class TerminalEngine {
         self.cols = cols
         self.rows = rows
         try effects.install(on: terminal)
+        var blink = true
+        try check(ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_DEFAULT_CURSOR_BLINK, &blink), "set cursor blink")
+        // The option only seeds what a DECSCUSR reset restores, so apply one.
+        feed(Array("\u{1b}[0 q".utf8))
     }
 
     isolated deinit {
@@ -93,6 +97,15 @@ public final class TerminalEngine {
     public var isViewportAtBottom: Bool { read(GHOSTTY_TERMINAL_DATA_VIEWPORT_ACTIVE, true) }
     public var isBracketedPaste: Bool { mode(ghostty_mode_new(2004, false)) }
     public var isFocusReporting: Bool { mode(ghostty_mode_new(1004, false)) }
+    /// Non-zero while the program has the kitty keyboard protocol on.
+    public var kittyKeyboardFlags: UInt8 { read(GHOSTTY_TERMINAL_DATA_KITTY_KEYBOARD_FLAGS, UInt8(0)) }
+    public var isSynchronizedOutput: Bool { mode(ghostty_mode_new(2026, false)) }
+
+    /// Ends a hold the program never released; the terminal has no clock of its own.
+    public func endSynchronizedOutput() {
+        var config = GhosttyTerminalModeConfig(mode: ghostty_mode_new(2026, false), value: false)
+        ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_MODE, &config)
+    }
 
     public var isAlternateScreen: Bool {
         read(GHOSTTY_TERMINAL_DATA_ACTIVE_SCREEN, GHOSTTY_TERMINAL_SCREEN_PRIMARY) == GHOSTTY_TERMINAL_SCREEN_ALTERNATE
