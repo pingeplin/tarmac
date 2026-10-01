@@ -28,8 +28,7 @@ public enum TermExit {
     /// A failure (error or signal) ALWAYS holds open: it wins over the last-
     /// terminal guarantee so the user can read what went wrong, rather than the
     /// card vanishing and being silently replaced. The guarantee re-applies only
-    /// when the user later removes the placeholder (a future iteration — there is
-    /// no close affordance yet).
+    /// when the user later removes the placeholder.
     public static func decide(code: Int?, otherLiveTerminals: Int) -> Action {
         guard code == 0 else { return .holdOpen }
         return otherLiveTerminals == 0 ? .removeAndReplace : .remove

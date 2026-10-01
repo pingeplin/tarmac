@@ -170,4 +170,13 @@ final class BoardSwitcherTests: XCTestCase {
         XCTAssertFalse(BoardSwitcher.isTypable(scalar: 0xF729), "NSHomeFunctionKey")
         XCTAssertFalse(BoardSwitcher.isTypable(scalar: 0xF8FF), "private-use top")
     }
+
+    // MARK: - Unhandled keys (S34, #171)
+
+    func testCancelsAnUnhandledKeyOnlyWhenCommandIsNotHeld() {
+        // An open switcher must not swallow a ⌘ chord, or AppKit's menu never
+        // sees the Quit shortcut — whatever the user remapped it to.
+        XCTAssertFalse(BoardSwitcher.cancelsUnhandledKey(commandHeld: true))
+        XCTAssertTrue(BoardSwitcher.cancelsUnhandledKey(commandHeld: false))
+    }
 }

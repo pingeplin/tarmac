@@ -27,10 +27,8 @@ final class TermKeyBindingTests: XCTestCase {
     /// The two bits macOS always rides on an arrow-key event.
     private var arrow: UInt { function | numericPad }
 
-    private func decide(_ keyCode: UInt16, _ mods: UInt,
-                        composing: Bool = false, kitty: Bool = false) -> [UInt8]? {
-        TermKeyBinding.bytes(keyCode: keyCode, modifierFlags: mods,
-                             composing: composing, kittyActive: kitty)
+    private func decide(_ keyCode: UInt16, _ mods: UInt, composing: Bool = false) -> [UInt8]? {
+        TermKeyBinding.bytes(keyCode: keyCode, modifierFlags: mods, composing: composing)
     }
 
     // Expected byte sequences.
@@ -39,6 +37,8 @@ final class TermKeyBindingTests: XCTestCase {
     private let ctrlE: [UInt8] = [0x05]
     private let optUp: [UInt8] = [0x1b, 0x5b, 0x31, 0x3b, 0x33, 0x41]   // ESC[1;3A
     private let optDown: [UInt8] = [0x1b, 0x5b, 0x31, 0x3b, 0x33, 0x42] // ESC[1;3B
+    private let optLeft: [UInt8] = [0x1b, 0x62]                          // ESC b (backward-word)
+    private let optRight: [UInt8] = [0x1b, 0x66]                         // ESC f (forward-word)
 
     // MARK: Happy path — Ghostty byte parity (S1–S5)
 
@@ -57,6 +57,12 @@ final class TermKeyBindingTests: XCTestCase {
     func testOptDownSendsEsc1Semi3B() {         // S5
         XCTAssertEqual(decide(down, option | arrow), optDown)
     }
+    func testOptLeftSendsEscB() {               // S15 — word-jump, as Terminal.app / iTerm2 send
+        XCTAssertEqual(decide(left, option | arrow), optLeft)
+    }
+    func testOptRightSendsEscF() {              // S16
+        XCTAssertEqual(decide(right, option | arrow), optRight)
+    }
 
     // MARK: CapsLock invariance — all five rows (S6)
 
@@ -68,6 +74,8 @@ final class TermKeyBindingTests: XCTestCase {
         XCTAssertEqual(decide(right, command | arrow | capsLock), ctrlE)
         XCTAssertEqual(decide(up, option | arrow | capsLock), optUp)
         XCTAssertEqual(decide(down, option | arrow | capsLock), optDown)
+        XCTAssertEqual(decide(left, option | arrow | capsLock), optLeft)
+        XCTAssertEqual(decide(right, option | arrow | capsLock), optRight)
     }
 
     // MARK: Exact-modifier gating (S7–S8)
@@ -87,8 +95,15 @@ final class TermKeyBindingTests: XCTestCase {
         XCTAssertNil(decide(up, option | shift | arrow))
         XCTAssertNil(decide(down, option | shift | arrow))
     }
+    func testShiftWithOptLeftRightDefers() {    // S17 — ⇧⌥← / ⇧⌥→
+        XCTAssertNil(decide(left, option | shift | arrow))
+        XCTAssertNil(decide(right, option | shift | arrow))
+    }
 
-    // MARK: IME & kitty gates (S9–S10) — paired bytes-off / nil-on on identical input
+    // MARK: IME gate (S9, S18) — paired bytes-off / nil-on on identical input
+    // There is no S10: the kitty gate was dropped (#153) — the rows pre-empt a
+    // kitty program's encoder like Ghostty's `text:` keybinds, so `bytes` takes no
+    // kitty input for a test to flip.
 
     func testComposingDefers() {                // S9
         XCTAssertEqual(decide(delete, command, composing: false), ctrlU)
@@ -97,21 +112,18 @@ final class TermKeyBindingTests: XCTestCase {
         XCTAssertEqual(decide(up, option | arrow, composing: false), optUp)
         XCTAssertNil(decide(up, option | arrow, composing: true))
     }
-    func testKittyActiveDefers() {              // S10
-        XCTAssertEqual(decide(delete, command, kitty: false), ctrlU)
-        XCTAssertNil(decide(delete, command, kitty: true))
-        XCTAssertEqual(decide(up, option | arrow, kitty: false), optUp)
-        XCTAssertNil(decide(up, option | arrow, kitty: true))
+    func testComposingDefersTheOptLeftRightRowsToo() {  // S18
+        XCTAssertEqual(decide(left, option | arrow, composing: false), optLeft)
+        XCTAssertNil(decide(left, option | arrow, composing: true))
+        XCTAssertEqual(decide(right, option | arrow, composing: false), optRight)
+        XCTAssertNil(decide(right, option | arrow, composing: true))
     }
 
     // MARK: No-regression — keys that must stay SwiftTerm's (S11–S14)
 
-    /// No-regression for arrows under a non-command modifier: ⌥←/→ (word move,
-    /// already correct) and ⌃←/→ (claimed by macOS Mission Control — we must not
-    /// steal them either). Both defer.
-    func testNonCommandArrowModifiersDefer() {  // S11 — ⌥←/→ and ⌃←/→
-        XCTAssertNil(decide(left, option | arrow))
-        XCTAssertNil(decide(right, option | arrow))
+    /// ⌃←/→ are claimed by macOS Mission Control — we must not steal them either.
+    /// (S11's ⌥←/→ half is superseded by S15/S16.)
+    func testControlLeftRightDefer() {          // S19
         XCTAssertNil(decide(left, control | arrow))
         XCTAssertNil(decide(right, control | arrow))
     }

@@ -144,6 +144,14 @@ public enum BoardSwitcher {
         return (r, r > 0)
     }
 
+    /// Whether the open switcher cancels a key it has no handler for. ⌘ presses
+    /// pass, so AppKit's menu — not a character comparison — decides what the
+    /// Quit shortcut is. The switcher still stops propagation either way, so
+    /// nothing reaches the focused terminal.
+    public static func cancelsUnhandledKey(commandHeld: Bool) -> Bool {
+        !commandHeld
+    }
+
     /// The row meta line: `"N running · M bell · K cards"`, dropping the running
     /// and bell segments when zero; the card count is always shown (singular
     /// "1 card"). Matches B5's faint meta text — the leading ⠧ spinner and the

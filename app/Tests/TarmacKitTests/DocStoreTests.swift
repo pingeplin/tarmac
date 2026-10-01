@@ -174,6 +174,22 @@ final class DocStoreTests: XCTestCase {
         XCTAssertEqual(d.groupKey, "/Users/x/notes")
     }
 
+    func testDisplayPathWithRepoAndMatchingRepoRootPrefix() {
+        XCTAssertEqual(doc("/a/b/c.md", repo: "myrepo", repoRoot: "/a/b").displayPath, "myrepo/c.md")
+    }
+
+    func testDisplayPathWithRepoButNoRepoRootUsesBasename() {
+        XCTAssertEqual(doc("/a/b/c.md", repo: "myrepo").displayPath, "myrepo/c.md")
+    }
+
+    func testDisplayPathWithNeitherRepoNorRepoRootUsesParentDirAndBasename() {
+        XCTAssertEqual(doc("/a/b/c.md").displayPath, "b/c.md")
+    }
+
+    func testDisplayPathFallsBackToBasenameWhenPathIsNotUnderRepoRoot() {
+        XCTAssertEqual(doc("/x/y/c.md", repo: "myrepo", repoRoot: "/a/b").displayPath, "myrepo/c.md")
+    }
+
     // MARK: - Index grouping
 
     func testGroupsByFirstAppearanceKeepingDockOrderWithin() {

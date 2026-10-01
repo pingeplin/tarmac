@@ -12,7 +12,6 @@ public enum CardChrome {
     /// Visual-state inputs for one card.
     public struct State: Equatable {
         public var dead: Bool
-        public var detached: Bool
         /// Agent-opened and unread — signalled by halo + `✚ now` meta in the
         /// AppKit layer, intentionally NOT a border input.
         public var fresh: Bool
@@ -23,14 +22,12 @@ public enum CardChrome {
 
         public init(
             dead: Bool = false,
-            detached: Bool = false,
             fresh: Bool = false,
             prime: Bool = false,
             focused: Bool = false,
             selected: Bool = false
         ) {
             self.dead = dead
-            self.detached = detached
             self.fresh = fresh
             self.prime = prime
             self.focused = focused
@@ -40,9 +37,9 @@ public enum CardChrome {
 
     /// The resting border role; `CardView` maps each case to a `Theme` colour.
     public enum BorderRole: Equatable {
-        /// Dead or detached — muted line.
+        /// Dead — muted line.
         case muted
-        /// The unified active ring (teal) — an active card that is not dead/detached.
+        /// The unified active ring (teal) — an active card that is not dead.
         case focus
         /// Nothing notable — the plain line.
         case plain
@@ -50,20 +47,20 @@ public enum CardChrome {
 
     /// True when the card is the user's active target — a single click
     /// (`focused`) or an explicit header/handle grab (`selected`). NOT
-    /// suppressed by `dead`/`detached`: a dead card stays resizable via a
+    /// suppressed by `dead`: a dead card stays resizable via a
     /// header grab, so its handles can still show even though its border is muted.
     public static func showsHandles(_ s: State) -> Bool {
         s.focused || s.selected
     }
 
     /// The resting border role, highest priority first:
-    ///   dead || detached    -> .muted   (handles may still show — resize)
+    ///   dead                 -> .muted   (handles may still show — resize)
     ///   active (focus/sel.)  -> .focus   (the unified ring)
     ///   else                 -> .plain
     /// Neither `prime` nor `fresh` appears — both are signalled outside the
     /// border (prime by header tint + shadow, fresh by its halo + `✚ now` meta).
     public static func borderRole(_ s: State) -> BorderRole {
-        if s.dead || s.detached { return .muted }
+        if s.dead { return .muted }
         if showsHandles(s) { return .focus }
         return .plain
     }

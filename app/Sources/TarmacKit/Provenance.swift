@@ -2,6 +2,15 @@
 /// TarmacKit so the best-effort cross-restart re-anchoring heuristic is a single
 /// unit-tested source of truth; `AppController` calls into it.
 public enum Provenance {
+    /// Whether the provenance edge from the owner terminal to this doc should be
+    /// shown. True only when the doc has an owner terminal and that terminal's
+    /// card is present on the board. Never gated on `attached` — that is the
+    /// gravity flag (does the card snap back beside its terminal), so dragging a
+    /// doc away must not hide the edge.
+    public static func edgeShown(ownerTermID: String?, ownerCardPresent: Bool) -> Bool {
+        ownerTermID != nil && ownerCardPresent
+    }
+
     /// Re-anchors persisted doc→terminal owners across a restart (decision 2,
     /// best-effort). `owners` maps doc path → its persisted owner `term_id` (from
     /// the prior run). `oldToNew` maps each restored terminal's persisted id to
