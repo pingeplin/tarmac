@@ -6,8 +6,10 @@ import XCTest
 final class ScrollbackGateTests: XCTestCase {
     private func bytes(_ text: String) -> Data { Data(text.utf8) }
 
-    private func joined(_ chunks: [Data]?) -> Data? {
-        chunks.map { $0.reduce(into: Data()) { $0.append($1) } }
+    /// The bytes of an `.append`, run together.
+    private func appended(_ release: ScrollbackGate.Release?) -> Data? {
+        guard case .append(let chunks) = release else { return nil }
+        return chunks.reduce(into: Data()) { $0.append($1) }
     }
 
     /// A gate holding `term`'s output behind an outstanding request.
@@ -26,7 +28,7 @@ final class ScrollbackGateTests: XCTestCase {
         XCTAssertNil(gate.output("t1", bytes("hello ")))
         XCTAssertNil(gate.output("t1", bytes("world")))
 
-        XCTAssertEqual(gate.expire("t1", generation: generation), [bytes("hello "), bytes("world")])
+        XCTAssertEqual(gate.expire("t1", generation: generation), .append([bytes("hello "), bytes("world")]))
         XCTAssertEqual(gate.heldBytes("t1"), 0)
     }
 
@@ -37,8 +39,8 @@ final class ScrollbackGateTests: XCTestCase {
         XCTAssertNil(gate.output("t1", bytes("for t1")))
         XCTAssertNil(gate.output("t2", bytes("for t2")))
 
-        XCTAssertEqual(gate.expire("t1", generation: first), [bytes("for t1")])
-        XCTAssertEqual(gate.expire("t2", generation: second), [bytes("for t2")])
+        XCTAssertEqual(gate.expire("t1", generation: first), .append([bytes("for t1")]))
+        XCTAssertEqual(gate.expire("t2", generation: second), .append([bytes("for t2")]))
     }
 
     func testCapEvictsTheOldestChunks() {
@@ -47,14 +49,14 @@ final class ScrollbackGateTests: XCTestCase {
         _ = gate.output("t1", bytes("BBBBB"))
         _ = gate.output("t1", bytes("CCCCC"))
 
-        XCTAssertEqual(joined(gate.expire("t1", generation: generation)), bytes("BBBBBCCCCC"))
+        XCTAssertEqual(appended(gate.expire("t1", generation: generation)), bytes("BBBBBCCCCC"))
     }
 
     func testAnOversizedChunkKeepsOnlyItsTail() {
         var (gate, generation) = awaitingGate(capBytes: 4)
         _ = gate.output("t1", bytes("ABCDEFGH"))
 
-        XCTAssertEqual(joined(gate.expire("t1", generation: generation)), bytes("EFGH"))
+        XCTAssertEqual(appended(gate.expire("t1", generation: generation)), bytes("EFGH"))
     }
 
     func testAnOversizedChunkEvictsEverythingHeldBeforeIt() {
@@ -62,7 +64,7 @@ final class ScrollbackGateTests: XCTestCase {
         _ = gate.output("t1", bytes("xy"))
         _ = gate.output("t1", bytes("ABCDEFGH"))
 
-        XCTAssertEqual(joined(gate.expire("t1", generation: generation)), bytes("EFGH"))
+        XCTAssertEqual(appended(gate.expire("t1", generation: generation)), bytes("EFGH"))
     }
 
     func testEmptyOutputIsNotHeld() {
@@ -70,7 +72,7 @@ final class ScrollbackGateTests: XCTestCase {
         XCTAssertNil(gate.output("t1", Data()))
 
         XCTAssertEqual(gate.heldBytes("t1"), 0)
-        XCTAssertEqual(gate.expire("t1", generation: generation), [])
+        XCTAssertEqual(gate.expire("t1", generation: generation), .append([]))
     }
 
     func testTheDefaultCapIs256KiBAndTheDeadline2000Ms() {
@@ -102,7 +104,7 @@ final class ScrollbackGateTests: XCTestCase {
         var (gate, _) = awaitingGate()
         _ = gate.output("t1", bytes("live"))
 
-        XCTAssertEqual(gate.scrollback("t1", bytes("history")), bytes("history"))
+        XCTAssertEqual(gate.scrollback("t1", bytes("history")), .replace(bytes("history")))
 
         XCTAssertFalse(gate.isAwaiting("t1"))
         XCTAssertEqual(gate.heldBytes("t1"), 0)
@@ -112,13 +114,13 @@ final class ScrollbackGateTests: XCTestCase {
         var (gate, _) = awaitingGate()
         XCTAssertNil(gate.output("t1", bytes("held")), "an awaiting terminal must not show output")
 
-        XCTAssertEqual(gate.scrollback("t1", Data()), Data(), "an empty ring is still the answer")
-        XCTAssertEqual(gate.output("t1", bytes("live")), bytes("live"))
+        XCTAssertEqual(gate.scrollback("t1", Data()), .replace(Data()), "an empty ring is still the answer")
+        XCTAssertEqual(gate.output("t1", bytes("live")), .append([bytes("live")]))
     }
 
     func testOutputForATerminalThatNeverAttachedIsShown() {
         var gate = ScrollbackGate()
-        XCTAssertEqual(gate.output("t1", bytes("live")), bytes("live"))
+        XCTAssertEqual(gate.output("t1", bytes("live")), .append([bytes("live")]))
     }
 
     /// A card removed mid-request leaves nothing behind, and its late reply is
@@ -146,16 +148,24 @@ final class ScrollbackGateTests: XCTestCase {
     // MARK: - deadline
 
     /// A daemon that never answers must not blank the card: at the deadline the
-    /// held bytes are released once, and a reply arriving later is dropped.
+    /// held bytes are released once, as live output after whatever the card
+    /// shows, and a reply arriving later is dropped.
     func testAnUnansweredRequestExpiresAndReleasesTheHeldBytes() {
         var (gate, generation) = awaitingGate()
         XCTAssertNil(gate.output("t1", bytes("live")))
 
-        XCTAssertEqual(gate.expire("t1", generation: generation), [bytes("live")])
+        XCTAssertEqual(gate.expire("t1", generation: generation), .append([bytes("live")]))
 
         XCTAssertFalse(gate.isAwaiting("t1"))
         XCTAssertNil(gate.scrollback("t1", bytes("history")), "a reply after the deadline is dropped")
         XCTAssertNil(gate.expire("t1", generation: generation), "a deadline fires once")
+    }
+
+    /// Nothing was held, so nothing reaches the card and what it shows stays.
+    func testADeadlineWithNothingHeldReleasesNothing() {
+        var (gate, generation) = awaitingGate()
+
+        XCTAssertEqual(gate.expire("t1", generation: generation), .append([]))
     }
 
     /// A card that unmounted and remounted inside the window must not lose its
@@ -171,7 +181,7 @@ final class ScrollbackGateTests: XCTestCase {
         XCTAssertNil(gate.expire("t1", generation: stale), "a stale deadline must not release the remount")
         XCTAssertTrue(gate.isAwaiting("t1"))
 
-        XCTAssertEqual(gate.scrollback("t1", bytes("history")), bytes("history"))
+        XCTAssertEqual(gate.scrollback("t1", bytes("history")), .replace(bytes("history")))
     }
 
     func testAReattachSupersedesTheEarlierDeadline() {
@@ -180,7 +190,7 @@ final class ScrollbackGateTests: XCTestCase {
         let second = gate.attach("t1")
 
         XCTAssertNil(gate.expire("t1", generation: first))
-        XCTAssertEqual(gate.expire("t1", generation: second), [])
+        XCTAssertEqual(gate.expire("t1", generation: second), .append([]))
     }
 
     func testAnAnsweredRequestDoesNotExpire() {
@@ -204,12 +214,13 @@ final class ScrollbackGateTests: XCTestCase {
 
         XCTAssertFalse(gate.isAwaiting("t1"))
         XCTAssertFalse(gate.isAwaiting("t2"))
-        XCTAssertEqual(gate.output("t1", bytes("live")), bytes("live"))
+        XCTAssertEqual(gate.output("t1", bytes("live")), .append([bytes("live")]))
         XCTAssertNil(gate.expire("t1", generation: generation))
     }
 
     /// bridge.rs leaves these bytes buffered, where a later mount's deadline
-    /// would deliver them ahead of that mount's own. Here they are handed back.
+    /// would deliver them ahead of that mount's own. Here they are handed back,
+    /// to follow what the card shows: a held fragment is not its history.
     func testSocketLossReleasesWhatWasHeld() {
         var gate = ScrollbackGate()
         _ = gate.attach("t1")
@@ -219,7 +230,7 @@ final class ScrollbackGateTests: XCTestCase {
 
         let released = gate.clearAwaiting()
 
-        XCTAssertEqual(released, ["t1": [bytes("one "), bytes("two")]])
+        XCTAssertEqual(released, ["t1": .append([bytes("one "), bytes("two")])])
         XCTAssertEqual(gate.heldBytes("t1"), 0)
         XCTAssertEqual(gate.clearAwaiting(), [:])
     }

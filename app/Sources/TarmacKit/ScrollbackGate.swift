@@ -15,6 +15,14 @@ public struct ScrollbackGate {
     /// instead. A daemon built before the request existed never answers.
     public static let awaitTimeoutMs = 2000
 
+    /// What a card does with bytes the gate lets through.
+    public enum Release: Equatable, Sendable {
+        /// The daemon's ring: the card's whole history, in place of what it shows.
+        case replace(Data)
+        /// Live output, after what the card already shows.
+        case append([Data])
+    }
+
     private let capBytes: Int
     /// Terminals whose request is outstanding, by the generation of the attach
     /// that sent it. The generation is what lets a deadline recognise that the
@@ -42,33 +50,36 @@ public struct ScrollbackGate {
         return lastGeneration
     }
 
-    /// One `output` chunk: the bytes to show now, or nil while they are held.
-    public mutating func output(_ termID: String, _ bytes: Data) -> Data? {
-        guard isAwaiting(termID) else { return bytes }
+    /// One `output` chunk: shown now, or nil while it is held.
+    public mutating func output(_ termID: String, _ bytes: Data) -> Release? {
+        guard isAwaiting(termID) else { return .append([bytes]) }
         hold(bytes, for: termID)
         return nil
     }
 
-    /// The daemon's answer: the ring to show, or nil for a terminal that is not
-    /// awaiting (a second reply, a card removed mid-request, a request that
-    /// already timed out).
+    /// The daemon's answer: the ring, which replaces what the card shows, or nil
+    /// for a terminal that is not awaiting (a second reply, a card removed
+    /// mid-request, a request that already timed out).
     ///
     /// What was held is discarded, not shown: it was already in the daemon's
     /// snapshot, and everything produced after the snapshot arrives after this
     /// reply on the same FIFO socket.
-    public mutating func scrollback(_ termID: String, _ bytes: Data) -> Data? {
+    public mutating func scrollback(_ termID: String, _ bytes: Data) -> Release? {
         guard awaiting.removeValue(forKey: termID) != nil else { return nil }
         held[termID] = nil
-        return bytes
+        return .replace(bytes)
     }
 
-    /// No reply is coming: the held chunks to show, oldest first, or nil when
+    /// No reply is coming: the held chunks, oldest first, or nil when
     /// `generation` is not the outstanding attach — the card was answered,
     /// removed, or remounted, and a remount's own deadline still stands.
-    public mutating func expire(_ termID: String, generation: UInt64) -> [Data]? {
+    ///
+    /// They are appended: what was held is a fragment of the output, and a card
+    /// that already shows its history must not lose it to one.
+    public mutating func expire(_ termID: String, generation: UInt64) -> Release? {
         guard awaiting[termID] == generation else { return nil }
         awaiting[termID] = nil
-        return held.removeValue(forKey: termID) ?? []
+        return .append(held.removeValue(forKey: termID) ?? [])
     }
 
     /// A card was removed for good.
@@ -78,11 +89,11 @@ public struct ScrollbackGate {
     }
 
     /// The socket died, so no outstanding request will be answered. Returns what
-    /// each terminal was holding, oldest first.
-    public mutating func clearAwaiting() -> [String: [Data]] {
+    /// each terminal was holding, oldest first, to append as `expire` does.
+    public mutating func clearAwaiting() -> [String: Release] {
         awaiting = [:]
         defer { held = [:] }
-        return held
+        return held.mapValues(Release.append)
     }
 
     /// Keeps the most recent `capBytes`: oldest chunks go first, and a chunk

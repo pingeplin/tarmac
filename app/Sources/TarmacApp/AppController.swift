@@ -81,9 +81,7 @@ final class AppController {
 
     lazy var scrollback = ScrollbackRestore(
         request: { [weak self] termID in self?.client.scrollbackRequest(termID: termID) },
-        deliver: { [weak self] termID, chunks, history in
-            self?.showOutput(termID: termID, chunks, replacingHistory: history)
-        }
+        deliver: { [weak self] termID, release in self?.showOutput(termID: termID, release) }
     )
     lazy var layoutPersister = LayoutPersister { [weak self] boardID in self?.sendLayout(boardID: boardID) }
 

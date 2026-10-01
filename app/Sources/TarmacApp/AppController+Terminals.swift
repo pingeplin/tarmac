@@ -111,15 +111,19 @@ extension AppController {
         clearBell(termID: termID)
     }
 
-    /// `output` and `scrollback` bytes the gate let through. `replacingHistory`
-    /// means the chunks are the card's whole history, so a card that already
-    /// shows output is blanked first — that is what keeps a reconnect's replay
-    /// from being appended to the history it repeats.
-    func showOutput(termID: String, _ chunks: [Data], replacingHistory: Bool) {
+    /// `output` and `scrollback` bytes the gate let through. A card that
+    /// already shows output is blanked before its ring — that is what keeps a
+    /// reconnect's replay from being appended to the history it repeats.
+    func showOutput(termID: String, _ release: ScrollbackGate.Release) {
         guard let (s, board) = anySession(termID) else { return }
-        if replacingHistory, s.hasOutput { blank(s, on: board) }
-        for chunk in chunks {
-            s.feed(chunk)
+        switch release {
+        case .replace(let ring):
+            if s.hasOutput { blank(s, on: board) }
+            s.feed(ring)
+        case .append(let chunks):
+            for chunk in chunks {
+                s.feed(chunk)
+            }
         }
     }
 
