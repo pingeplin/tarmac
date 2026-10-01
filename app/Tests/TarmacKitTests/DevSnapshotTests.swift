@@ -370,19 +370,37 @@ final class DevSnapshotTests: XCTestCase {
     // MARK: - the replies built off a snapshot
 
     func testTheFocusReplyIsTheSelectionAndTheKeyboardFocus() {
-        let snapshot = DevSnapshot.build(input(
-            selectedCard: "t-1", keyboardFocus: .terminal(card: "t-1", hasSelection: false)
-        ))
-        XCTAssertEqual(DevSnapshot.focusReply(from: snapshot), [
-            "focused_card": "t-1",
-            "active_element": [
-                "card": "t-1", "tag": "TEXTAREA", "classes": ["xterm-helper-textarea"], "selection_type": "Caret",
-            ],
-        ])
         XCTAssertEqual(
-            fields(DevSnapshot.focusReply(from: DevSnapshot.build(input())))["focused_card"],
-            .null
+            DevSnapshot.focusReply(selectedCard: "t-1", keyboardFocus: .terminal(card: "t-1", hasSelection: false)),
+            [
+                "focused_card": "t-1",
+                "active_element": [
+                    "card": "t-1", "tag": "TEXTAREA", "classes": ["xterm-helper-textarea"], "selection_type": "Caret",
+                ],
+            ]
         )
+        XCTAssertEqual(
+            DevSnapshot.focusReply(selectedCard: nil, keyboardFocus: .none).jsonString,
+            #"{"active_element":{"card":null,"classes":[],"selection_type":"None","tag":"BODY"},"focused_card":null}"#
+        )
+    }
+
+    /// The same two facts the snapshot reports, so a reply and the snapshot taken
+    /// after it cannot disagree.
+    func testTheFocusReplyIsTheSnapshotsOwnTwoFields() {
+        let source = input(selectedCard: "/Users/e/a.b.md", keyboardFocus: .htmlDocument(card: "/Users/e/a.b.md"))
+        let snapshot = fields(DevSnapshot.build(source))
+        XCTAssertEqual(
+            DevSnapshot.focusReply(selectedCard: source.selectedCard, keyboardFocus: source.keyboardFocus),
+            ["focused_card": snapshot["focused_card"] ?? "missing", "active_element": snapshot["active_element"] ?? "missing"]
+        )
+    }
+
+    /// Routing's `not_focused` reads the same card the snapshot reports.
+    func testTheCardHoldingKeyboardFocusIsTheOneActiveElementNames() {
+        XCTAssertEqual(DevSnapshot.KeyboardFocus.terminal(card: "t-1", hasSelection: true).card, "t-1")
+        XCTAssertEqual(DevSnapshot.KeyboardFocus.htmlDocument(card: "/a/c.html").card, "/a/c.html")
+        XCTAssertNil(DevSnapshot.KeyboardFocus.none.card)
     }
 
     func testTheZoomReplyIsTheObservedZoom() {

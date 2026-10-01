@@ -106,6 +106,14 @@ public enum DevSnapshot {
         case htmlDocument(card: String)
         /// The board, a markdown card, or anything that is not one of the above.
         case none
+
+        /// The card `type` and `key` require focus to already be on.
+        public var card: String? {
+            switch self {
+            case .terminal(let card, _), .htmlDocument(let card): card
+            case .none: nil
+            }
+        }
     }
 
     public enum SelectionType: String, Equatable, Sendable {
@@ -129,19 +137,17 @@ public enum DevSnapshot {
         public var selectionType: SelectionType
 
         public init(_ focus: KeyboardFocus) {
+            card = focus.card
             switch focus {
-            case .terminal(let card, let hasSelection):
-                self.card = card
+            case .terminal(_, let hasSelection):
                 tag = "TEXTAREA"
                 classes = ["xterm-helper-textarea"]
                 selectionType = hasSelection ? .range : .caret
-            case .htmlDocument(let card):
-                self.card = card
+            case .htmlDocument:
                 tag = "IFRAME"
                 classes = ["html-frame"]
                 selectionType = .none
             case .none:
-                card = nil
                 tag = "BODY"
                 classes = []
                 selectionType = .none
@@ -255,14 +261,9 @@ public enum DevSnapshot {
         ]
     }
 
-    /// `focus`'s reply: the two facts a focus changes, read off the snapshot taken
-    /// after the UI settled.
-    public static func focusReply(from snapshot: JSONValue) -> JSONValue {
-        guard case .object(let fields) = snapshot else { return ["focused_card": .null, "active_element": .null] }
-        return [
-            "focused_card": fields["focused_card"] ?? .null,
-            "active_element": fields["active_element"] ?? .null,
-        ]
+    /// `focus`'s reply: the two facts a focus changes, read after the UI settled.
+    public static func focusReply(selectedCard: String?, keyboardFocus: KeyboardFocus) -> JSONValue {
+        ["focused_card": optional(selectedCard), "active_element": ActiveElement(keyboardFocus).json]
     }
 
     /// `zoom`'s reply: the zoom the board ended at, which the clamp may have
