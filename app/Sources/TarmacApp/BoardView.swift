@@ -141,36 +141,39 @@ final class BoardView: NSView {
         return CGRect(x: origin.x, y: origin.y, width: r.width * viewport.zoom, height: r.height * viewport.zoom)
     }
 
-    /// Sets the viewport directly (no commit echo) — used by 2c on restore.
+    /// Jumps the viewport to `vp`, clamping its zoom. Any fly in flight stops
+    /// here. `commit` also reports the change for persistence.
     func setViewport(_ vp: Viewport, commit: Bool = false) {
-        viewport = clampZoom(vp)
-        reprojectAll()
-        updateGridDensity()
-        needsDisplay = true
-        onViewportChanged?(viewport)
+        flight.cancel()
+        show(vp)
         if commit { onLayoutChanged?(viewport) }
     }
 
-    /// Animates the viewport to `vp` (crib §6: ⏎ flies to a card near 100%, esc
-    /// flies back). Instant under Reduce Motion. Always commits at the end so
-    /// the flown-to viewport persists.
+    /// Flies the viewport to `vp` over 300 ms, or jumps there under Reduce
+    /// Motion. A pan, a zoom, a `setViewport` or another fly interrupts it and
+    /// leaves the viewport where it had got to; only a fly that lands is
+    /// reported for persistence.
     func flyTo(_ vp: Viewport) {
         let target = clampZoom(vp)
         if Theme.reduceMotion {
             setViewport(target, commit: true)
             return
         }
-        animateViewport(to: target) { [weak self] in
-            self?.onLayoutChanged?(target)
-        }
+        flight.start(
+            BoardFly(from: viewport.wire, to: target.wire),
+            onFrame: { [weak self] frame in self?.show(Viewport(frame)) },
+            onLanding: { [weak self] in
+                guard let self else { return }
+                self.onLayoutChanged?(self.viewport)
+            }
+        )
     }
 
-    /// Fly the viewport to center `cardID` near 100% (crib §6 Return flight).
+    /// Flies to `cardID`'s center at zoom 1.
     func fly(to cardID: CardID) {
         guard let card = cards[cardID] else { return }
         let f = card.worldFrame
-        let zoom = min(Viewport.maxZoom, max(Viewport.minZoom, 1.0))
-        flyTo(Viewport(zoom: zoom, cx: f.x + f.w / 2, cy: f.y + f.h / 2))
+        flyTo(Viewport(zoom: 1, cx: f.x + f.w / 2, cy: f.y + f.h / 2))
     }
 
     /// Fit all card world frames into view with margin (crib §6 ⊡ fit), then
@@ -205,55 +208,21 @@ final class BoardView: NSView {
         cards.values.map { Minimap.Item(worldRect: $0.worldFrame.rect, signal: $0.signal) }
     }
 
-    private func animateViewport(to target: Viewport, completion: @escaping () -> Void) {
-        let start = viewport
-        let steps = 18
-        var frame = 0
-        let ease = { (t: CGFloat) -> CGFloat in t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2 }
-        func tick() {
-            frame += 1
-            let t = ease(CGFloat(frame) / CGFloat(steps))
-            let vp = Viewport(
-                zoom: start.zoom + (target.zoom - start.zoom) * t,
-                cx: start.cx + (target.cx - start.cx) * t,
-                cy: start.cy + (target.cy - start.cy) * t
-            )
-            viewport = clampZoom(vp)
-            reprojectAll()
-            updateGridDensity()
-            needsDisplay = true
-            onViewportChanged?(viewport)
-            if frame < steps {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 60.0) {
-                    MainActor.assumeIsolated { tick() }
-                }
-            } else {
-                completion()
-            }
-        }
-        tick()
-    }
-
-    /// Zoom by a multiplicative factor, anchored so the world point under
-    /// `anchorViewPoint` stays put (crib §5: ⌘± / pinch anchored at the pointer).
-    /// Pass the pointer location in this view's coordinates; defaults to center.
+    /// Multiplies the zoom by `factor`, keeping the world point under
+    /// `anchorViewPoint` (the board's center by default) where it is on screen.
     func zoom(by factor: CGFloat, anchorViewPoint: CGPoint? = nil, commit: Bool) {
+        flight.cancel()
         let anchor = anchorViewPoint ?? viewportCenter
         let worldAnchor = viewToWorld(anchor)
         let newZoom = clampValue(viewport.zoom * factor)
-        guard newZoom != viewport.zoom else {
-            if commit { onLayoutChanged?(viewport) }
-            return
+        if newZoom != viewport.zoom {
+            let c = viewportCenter
+            show(Viewport(
+                zoom: newZoom,
+                cx: worldAnchor.x - (anchor.x - c.x) / newZoom,
+                cy: worldAnchor.y - (anchor.y - c.y) / newZoom
+            ))
         }
-        viewport.zoom = newZoom
-        // Solve for the center that keeps worldAnchor under `anchor`.
-        let c = viewportCenter
-        viewport.cx = worldAnchor.x - (anchor.x - c.x) / newZoom
-        viewport.cy = worldAnchor.y - (anchor.y - c.y) / newZoom
-        reprojectAll()
-        updateGridDensity()
-        needsDisplay = true
-        onViewportChanged?(viewport)
         if commit { onLayoutChanged?(viewport) }
     }
 
@@ -287,6 +256,7 @@ final class BoardView: NSView {
     /// Set while a terminal card is being moved by its header.
     private var carry: SatelliteCarry?
     private let cursors = HoverCursorRouter()
+    private let flight = ViewportFlight()
     private var pointerTracking: NSTrackingArea?
 
     private var viewportCenter: CGPoint { CGPoint(x: bounds.midX, y: bounds.midY) }
@@ -300,6 +270,16 @@ final class BoardView: NSView {
         var vp = vp
         vp.zoom = clampValue(vp.zoom)
         return vp
+    }
+
+    /// The one place the viewport changes: every card is reprojected and the
+    /// chrome that tracks the viewport is told.
+    private func show(_ vp: Viewport) {
+        viewport = clampZoom(vp)
+        reprojectAll()
+        updateGridDensity()
+        needsDisplay = true
+        onViewportChanged?(viewport)
     }
 
     override var isFlipped: Bool { true }
@@ -601,32 +581,31 @@ final class BoardView: NSView {
         }
     }
 
-    // MARK: - Pan / zoom gestures (crib §5)
+    // MARK: - Pan and zoom
 
-    /// Pan via scrollWheel / two-finger trackpad. Precise-delta (trackpad)
-    /// scrolls in pixels; legacy wheel lines are scaled up. Pan commits on
-    /// every event (cheap; persistence is debounced by the caller if needed).
+    /// A wheel pans by its delta in screen points; with control held it zooms
+    /// about the pointer instead. A notched wheel reports lines, scaled up here.
     override func scrollWheel(with event: NSEvent) {
         let scale: CGFloat = event.hasPreciseScrollingDeltas ? 1 : 10
-        let dxView = event.scrollingDeltaX * scale
-        let dyView = event.scrollingDeltaY * scale
-        // Dragging content right (positive deltaX) moves the world center left.
-        viewport.cx -= dxView / viewport.zoom
-        viewport.cy -= dyView / viewport.zoom
-        reprojectAll()
-        needsDisplay = true
-        onViewportChanged?(viewport)
+        let dx = event.scrollingDeltaX * scale
+        let dy = event.scrollingDeltaY * scale
+        if event.modifierFlags.contains(.control) {
+            // AppKit's delta has the opposite sign to the web's `deltaY`.
+            zoom(by: BoardWheel.zoomFactor(deltaY: -dy), anchorViewPoint: convert(event.locationInWindow, from: nil), commit: true)
+            return
+        }
+        flight.cancel()
+        show(Viewport(zoom: viewport.zoom, cx: viewport.cx - dx / viewport.zoom, cy: viewport.cy - dy / viewport.zoom))
         onLayoutChanged?(viewport)
     }
 
-    /// Pinch magnify, anchored at the pointer (crib §5).
+    /// A pinch zooms about the pointer.
     override func magnify(with event: NSEvent) {
-        let anchor = convert(event.locationInWindow, from: nil)
-        let factor = 1 + event.magnification
-        // Commit on gesture end only (phase == .ended); intermediate frames just
-        // reproject for a smooth pinch.
-        let commit = event.phase.contains(.ended) || event.momentumPhase.contains(.ended)
-        zoom(by: factor, anchorViewPoint: anchor, commit: commit)
+        zoom(
+            by: BoardWheel.zoomFactor(magnification: event.magnification),
+            anchorViewPoint: convert(event.locationInWindow, from: nil),
+            commit: true
+        )
     }
 
     // MARK: - Grid

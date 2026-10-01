@@ -359,6 +359,12 @@ final class CardView: NSView {
         return resizeHandle(at: point) == nil ? hit : grip
     }
 
+    /// Whether `view` is the card's body or inside it — not the header, and not
+    /// a resize handle lying over the body's edge.
+    func bodyContains(_ view: NSView) -> Bool {
+        view.isDescendant(of: body)
+    }
+
     // MARK: - Card shadow: resting base (crib §4) + deeper lift (crib §5)
 
     /// Resting card shadow (crib §4): base `0 16px 38px rgba(0,0,0,0.5)` present

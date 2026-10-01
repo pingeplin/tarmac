@@ -56,25 +56,28 @@ extension AppController {
         return true
     }
 
-    /// Point 2: a scroll/pan routes to the whiteboard — pans the board and returns
-    /// `true` to swallow the event — UNLESS the pointer is inside the focused card,
-    /// in which case it returns `false` so the event passes through to that card's
-    /// own content (terminal scrollback / doc scroll). Events over the overlays or
-    /// outside the board return `false` (left untouched).
+    // MARK: - Wheel and pinch
+
+    /// A wheel event, seen before it is dispatched. Over the body of the
+    /// selected card it is left for that card's own content; anywhere else on
+    /// the board it pans, and with control held it zooms. True means the board
+    /// took it. Overlays and the switcher keep their own wheel.
     func routeScroll(_ event: NSEvent) -> Bool {
         guard !switcherOpen else { return false }
         guard let hit = hitView(at: event.locationInWindow), hit.isDescendant(of: rootView.board) else { return false }
-        if let fid = focusedCardID, activeBoard.view.card(fid) != nil,
-           enclosingCard(hit)?.id == fid {
-            return false
-        }
+        let card = enclosingCard(hit)
+        let route = BoardWheel.route(
+            pinch: event.modifierFlags.contains(.control),
+            over: card?.id,
+            inBody: card?.bodyContains(hit) ?? false,
+            selected: focusedCardID
+        )
+        if route == .card { return false }
         rootView.board.scrollWheel(with: event)
         return true
     }
 
-    /// Point 2: pinch always zooms the whiteboard (anchored at the pointer) and
-    /// swallows the event, even over a focused terminal — a terminal has no pinch
-    /// behavior of its own. Over an overlay / outside the board it passes through.
+    /// A pinch over the board always zooms the board, even over the selected card.
     func routeMagnify(_ event: NSEvent) -> Bool {
         guard !switcherOpen else { return false }
         guard let hit = hitView(at: event.locationInWindow), hit.isDescendant(of: rootView.board) else { return false }
