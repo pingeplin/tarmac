@@ -37,7 +37,9 @@ build harmless:
 | `TARMAC_STATE` | `state.json` — boards and layout, never the user's |
 | `TARMAC_DEV_SOCKET` | the QA driver's socket (issue #166) |
 
-Two more things `make run` does: it prefixes `PATH` with
+Three more things `make run` does: it sets `TARMAC_DAEMON=core/target/debug/tarmacd`,
+which tells the Tauri backend which daemon binary to auto-spawn (the daemon itself
+never reads it); it prefixes `PATH` with
 `core/target/debug`, so `tarmac open` inside the app's own terminals resolves the
 freshly built CLI; and it suffixes the window title with the worktree name, which
 is the only way to tell two dev windows apart.
@@ -190,9 +192,10 @@ tarmac dev snapshot --until 'quit_guard.last_press.press_ms ~= <press_ms>' --tim
   toggle off a ⌘Q press quits at once, so check `quit_guard.enabled` first.
 - **Never `press cmd+w` while an HTML card's iframe has focus** — ⌘W typed
   inside the frame never reaches the page's handler; it hits the native Close
-  Window item and hides the window (Q14).
+  Window item and hides the window (Q14 in
+  `desktop/qa/hold-to-quit-qa.md`).
 - The chord's characters are supplied, so the input source and IME play no
-  part (Q11 stays a hand-run row), and a shifted digit carries the digit, not
+  part (Q11 in the same doc stays a hand-run row), and a shifted digit carries the digit, not
   its layout's symbol.
 
 ### Waiting for something to become true
@@ -273,9 +276,7 @@ Work down this list before suspecting the driver:
    frames. The snapshot's `visibility` reads `"hidden"` for exactly those two
    states and `"visible"` for a window merely sitting behind another app's —
    which does *not* stall frames and costs nothing. So the field is the tell; read
-   it before blaming the driver. (An earlier note here said `visibility` stays
-   `"visible"` for a hidden app. It does not — see Q5 in
-   `desktop/qa/qa-driver-qa.md`.)
+   it before blaming the driver (Q5 in `desktop/qa/qa-driver-qa.md`).
 6. **Did something reload the page mid-run?** `npm test` writes `dist-kit/`, which
    a live `make run` picks up as a **full page reload** — the driver re-installs
    and a verb in flight answers `app_unresponsive`. Don't run the unit suite and a

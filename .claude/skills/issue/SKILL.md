@@ -14,7 +14,7 @@ turns into a branch and worktree, so get the type and slug right.
 1. **Classify the type.** From the user's description pick one Conventional type:
    `fix` (something behaves wrong), `feat` (new/improved capability), `refactor`,
    `perf`, `docs`, `chore`. Add a `scope` if one is obvious (`board`, `terminal`,
-   `protocol`, `m3`, …) — scope is an area tag, not a path.
+   `protocol`, …) — scope is an area tag, not a path.
 
 2. **Write the title** as `type(scope): summary` — imperative, lowercase, no
    trailing period. This mirrors the commit convention so it carries through to
