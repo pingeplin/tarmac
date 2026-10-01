@@ -287,6 +287,8 @@ final class BoardView: NSView {
     private let edgeLayer = EdgeLayerView()
     /// Set while a terminal card is being moved by its header.
     private var carry: SatelliteCarry?
+    private let cursors = HoverCursorRouter()
+    private var pointerTracking: NSTrackingArea?
 
     /// Viewport-pinned twin of the focused doc card's header ✕. The in-card ✕
     /// rides the card under the pure-transform zoom, so on a doc larger than the
@@ -713,8 +715,27 @@ final class BoardView: NSView {
         onViewportChanged?(viewport)
     }
 
+    /// Asks for pointer moves over the whole board, which the cursor router
+    /// reads; without a tracking area the window sends none.
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let pointerTracking { removeTrackingArea(pointerTracking) }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self
+        )
+        addTrackingArea(area)
+        pointerTracking = area
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        cursors.release()
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        cursors.attach(to: window)
         if window == nil { select(nil) }
         // The real backing scale is only known once attached to a window; force
         // the content-scale to re-apply (the zoom-guard would otherwise skip it).

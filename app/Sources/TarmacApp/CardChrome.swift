@@ -156,10 +156,10 @@ final class CloseButton: NSView {
         addTrackingArea(area)
         trackingArea = area
     }
+}
 
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .pointingHand)
-    }
+extension CloseButton: HoverCursorProviding {
+    func hoverCursor(at windowPoint: NSPoint) -> NSCursor { .pointingHand }
 }
 
 /// `← <termname>` owner chip (crib §4): an attached doc card's header shows its
@@ -439,10 +439,10 @@ final class TileHeaderView: NSView {
     override func mouseUp(with event: NSEvent) {
         onMouseUp?(event)
     }
+}
 
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .pointingHand)
-    }
+extension TileHeaderView: HoverCursorProviding {
+    func hoverCursor(at windowPoint: NSPoint) -> NSCursor { .openHand }
 }
 
 /// Terminal card body: term-bg behind the terminal view, which fills it and

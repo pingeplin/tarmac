@@ -157,8 +157,8 @@ final class ZoomSegmentButton: NSView {
     override func mouseUp(with event: NSEvent) {
         if bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?() }
     }
+}
 
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .pointingHand)
-    }
+extension ZoomSegmentButton: HoverCursorProviding {
+    func hoverCursor(at windowPoint: NSPoint) -> NSCursor { .pointingHand }
 }

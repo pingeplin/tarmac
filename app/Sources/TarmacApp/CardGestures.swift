@@ -18,6 +18,23 @@ final class CardResizeGrip: NSView {
     override func mouseUp(with event: NSEvent) { onRelease?() }
 }
 
+/// There is no visible grip: the cursor is the only sign that a handle is there.
+extension CardResizeGrip: HoverCursorProviding {
+    var claimsPointerMoves: Bool { true }
+
+    func hoverCursor(at windowPoint: NSPoint) -> NSCursor {
+        guard let card = superview as? CardView, let board = card.superview,
+              let handle = card.resizeHandle(at: board.convert(windowPoint, from: nil))
+        else { return .arrow }
+        switch CardHandles.cursor(for: handle) {
+        case .diagonalDown: return .frameResize(position: .topLeft, directions: .all)
+        case .diagonalUp: return .frameResize(position: .topRight, directions: .all)
+        case .vertical: return .frameResize(position: .top, directions: .all)
+        case .horizontal: return .frameResize(position: .left, directions: .all)
+        }
+    }
+}
+
 /// Drives a card's move and resize from the pointer events of its header and
 /// its resize grip. The geometry, and whether a release is a click, a move or
 /// a resize, are `CardGesture`'s; this reads the pointer, applies the frame
