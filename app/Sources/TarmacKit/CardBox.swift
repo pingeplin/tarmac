@@ -29,4 +29,11 @@ public enum CardBox {
         let content = content(of: size)
         return CGRect(x: 0, y: headerHeight, width: content.width, height: max(0, content.height - headerHeight))
     }
+
+    /// The box an HTML card's document is laid out in: the card minus its
+    /// header. The borders are not taken off, so it overhangs the body by
+    /// them and is clipped there.
+    public static func documentBox(of size: CGSize) -> CGSize {
+        CGSize(width: size.width, height: max(0, size.height - headerHeight))
+    }
 }

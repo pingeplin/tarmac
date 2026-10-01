@@ -27,4 +27,11 @@ final class CardBoxTests: XCTestCase {
     func testTheCornerRadiusIsTen() {
         XCTAssertEqual(CardBox.cornerRadius, 10)
     }
+
+    /// The box an HTML card's document is laid out in: the card minus its
+    /// header, borders included.
+    func testTheDocumentBoxIsTheCardMinusItsHeader() {
+        XCTAssertEqual(CardBox.documentBox(of: CGSize(width: 392, height: 310)), CGSize(width: 392, height: 280))
+        XCTAssertEqual(CardBox.documentBox(of: CGSize(width: 10, height: 20)), CGSize(width: 10, height: 0))
+    }
 }

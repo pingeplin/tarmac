@@ -76,4 +76,10 @@ public enum CardConsole {
     public static func formatArgs(_ args: [JSONValue]) -> String {
         args.map(\.displayString).joined(separator: " ")
     }
+
+    /// The header badge of a card whose console holds `count` entries, or nil
+    /// while it holds none.
+    public static func badgeLabel(count: Int) -> String? {
+        count > 0 ? "⌥ \(count)" : nil
+    }
 }
