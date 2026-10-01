@@ -83,7 +83,7 @@ final class RootView: NSView {
     /// dynamically so they always target the mounted board.)
     private func wireBoardCallbacks(_ bv: BoardView) {
         bv.onViewportChanged = { [weak self] vp in self?.refreshWayfinding(vp) }
-        bv.onCardsChanged = { [weak self] in self?.refreshWayfinding(self?.board.viewport) }
+        bv.onCardsChanged = { [weak self] in self?.cardsChanged() }
     }
 
     /// Mounts `bv` as the shown whiteboard: detaches the current board view and
@@ -109,6 +109,12 @@ final class RootView: NSView {
         board.onViewportChanged = nil
         board.onCardsChanged = nil
         board.removeFromSuperview()
+    }
+
+    /// The mounted board's card set, a card's frame or a card's signal changed.
+    private func cardsChanged() {
+        statusBar.setCardCount(board.cards.count)
+        refreshWayfinding(board.viewport)
     }
 
     /// Rebuilds the wayfinding chrome from the current viewport + card set: the
@@ -180,6 +186,6 @@ final class RootView: NSView {
         if !boardSwitcher.isHidden {
             boardSwitcher.frame = NSRect(x: 0, y: 0, width: bounds.width, height: boardHeight)
         }
-        refreshWayfinding(board.viewport)
+        cardsChanged()
     }
 }

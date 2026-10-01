@@ -35,6 +35,13 @@ final class ChromeTextTests: XCTestCase {
         XCTAssertEqual(ChromeText.boardChipLabel(name: "", boardID: "b-3"), "b-3")
     }
 
+    func testCardCountIsSingularOnlyForExactlyOneCard() {
+        XCTAssertEqual(ChromeText.cardCount(1), "1 card")
+        XCTAssertEqual(ChromeText.cardCount(0), "0 cards")
+        XCTAssertEqual(ChromeText.cardCount(2), "2 cards")
+        XCTAssertEqual(ChromeText.cardCount(12), "12 cards")
+    }
+
     func testRecencyLabelIsNilWithoutAChangeTime() {
         XCTAssertNil(ChromeText.recencyLabel(lastChangedMs: nil, nowMs: 1000))
     }

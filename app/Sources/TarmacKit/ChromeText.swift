@@ -19,6 +19,11 @@ public enum ChromeText {
         return name
     }
 
+    /// The status bar's count of the cards on the active board.
+    public static func cardCount(_ count: Int) -> String {
+        "\(count) \(count == 1 ? "card" : "cards")"
+    }
+
     /// The on-card recency meta `✎ Ns`, or nil when the doc has no change time or
     /// the last change is at or past the window. The gate mirrors
     /// `DocStore.isRecent` exactly — a future-dated change time (mtime/clock skew)

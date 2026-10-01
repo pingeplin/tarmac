@@ -170,18 +170,13 @@ extension AppController {
     }
 
     /// Syncs on-board card headers (incl. owner chips) with the registry, and
-    /// updates the status-bar counts.
+    /// the window title and the status bar's link word with the app.
     func refreshStrips() {
         for path in boardDocPaths {
             guard let card = activeBoard.view.card(.doc(path)) else { continue }
             if let doc = store.doc(for: path) { card.apply(doc: doc) }
             card.setOwnerChip(ownerChipLabel(for: card))
         }
-        rootView.statusBar.setCounts(board: boardDocPaths.count)
-        // M3: show which board is active + how many exist (a switch is otherwise
-        // invisible until P4's titlebar chip / ⌘K switcher).
-        let count = max(boardMetas.count, boards.count)
-        rootView.statusBar.setBoard(activeBoard.name ?? activeBoardID, count: count)
         updateWindowTitle()
         updateSessionLiveness()
     }
