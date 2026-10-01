@@ -160,7 +160,7 @@ final class RootView: NSView {
         statusBar.frame = NSRect(x: 0, y: area.maxY, width: bounds.width, height: StatusBar.height)
 
         offHints.over.frame = area
-        toasts.frame = bounds
+        toasts.frame = area
         // Zoom control: bottom-left, left 12, 12 above the status bar.
         zoomControl.sizeToContents()
         let zc = zoomControl.frame.size
