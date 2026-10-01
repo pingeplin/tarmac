@@ -80,9 +80,11 @@ extension AppController {
         guard switcherOpen else { return }
         switcherOpen = false
         switcherState = SwitcherKeys.State()
+        // Before the view is hidden: hiding the first responder hands the keys
+        // to the window, and there would be nothing left to give back.
+        rootView.boardSwitcher.returnKeys(fallback: rootView.board)
         rootView.setSwitcherVisible(false)
         setTitlebarDim(false)
-        rootView.boardSwitcher.returnKeys(fallback: rootView.board)
     }
 
     func rebuildSwitcherRows() {
