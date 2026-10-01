@@ -214,7 +214,7 @@ extension AppController {
             primeOrigin: board.primeTermCard?.worldFrame.rect.origin,
             existingOrigins: cards.map(\.worldFrame.rect.origin)
         )
-        let z = TermPlacement.newTerminalZ(existing: cards.map(\.worldFrame.z))
+        let z = ZOrder.raised(above: cards.map(\.worldFrame.z))
         let candidates = board.sessionOrder.compactMap { id -> CwdInherit.Candidate? in
             guard let s = board.sessions[id] else { return nil }
             return CwdInherit.Candidate(

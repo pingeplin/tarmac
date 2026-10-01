@@ -48,12 +48,15 @@ final class BoardView: NSView {
 
     /// Every card by id. Stacking follows each card's `z`, not this order.
     private(set) var cards: [CardID: CardView] = [:]
+    private var cardsAdded = 0
 
     /// Adds a card at its world frame, replacing any card with the same id.
     @discardableResult
     func addCard(id: CardID, worldFrame: CardFrame) -> CardView {
         removeCard(id: id)
         let card = CardView(id: id, worldFrame: worldFrame)
+        card.addedOrder = cardsAdded
+        cardsAdded += 1
         wire(card)
         cards[id] = card
         cardLayer.addSubview(card)
@@ -233,16 +236,18 @@ final class BoardView: NSView {
         onLayoutChanged?(viewport)
     }
 
-    /// Orders subviews by world z (low → high = back → front). Sorted in place:
-    /// taking a card out of the hierarchy to re-add it resigns the window's
-    /// first responder inside it, severs a press in flight, and reloads a web
-    /// view.
+    /// Orders subviews back to front by `ZOrder.Place`, which leaves no two
+    /// cards tied: `sortSubviews` does not promise to keep ties in order. Sorted
+    /// in place: taking a card out of the hierarchy to re-add it resigns the
+    /// window's first responder inside it, severs a press in flight, and
+    /// reloads a web view.
     private func restack() {
         cardLayer.sortSubviews({ a, b, _ in
             MainActor.assumeIsolated {
-                let za = (a as? CardView)?.worldFrame.z ?? 0
-                let zb = (b as? CardView)?.worldFrame.z ?? 0
-                return za < zb ? .orderedAscending : za > zb ? .orderedDescending : .orderedSame
+                guard let a = (a as? CardView)?.stackPlace, let b = (b as? CardView)?.stackPlace else {
+                    return .orderedSame
+                }
+                return a < b ? .orderedAscending : b < a ? .orderedDescending : .orderedSame
             }
         }, context: nil)
     }

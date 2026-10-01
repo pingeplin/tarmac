@@ -17,6 +17,13 @@ final class CardView: NSView {
     /// from it, and a move or resize gesture changes it.
     var worldFrame: CardFrame
 
+    /// The card's turn among the cards added to its board.
+    var addedOrder = 0
+
+    var stackPlace: ZOrder.Place {
+        ZOrder.Place(z: worldFrame.z, added: addedOrder)
+    }
+
     /// A header press, which may become a move, went down on this card.
     var onMoveBegan: ((CardView) -> Void)?
     /// The gesture changed `worldFrame`; the board reprojects the card.
