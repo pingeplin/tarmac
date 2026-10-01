@@ -103,20 +103,14 @@ extension AppController {
         )
     }
 
-    /// Per-board facts for the switcher. Counts derive from each board's own card
-    /// signals (accurate for the active + any visited board — their cards + live
-    /// terminal views stay alive while backgrounded). A never-visited board has
-    /// no app-side view yet, so it reports 0 cards / not-live until first restore.
-    /// If `board_list` has not arrived yet (the connect window), the active board
-    /// — always minted + mounted locally — is synthesized so the switcher never
-    /// opens onto an empty list.
+    /// One summary per board in the daemon's order. Until the first
+    /// `board_list` arrives the active board stands alone, so the switcher
+    /// never opens onto an empty list.
     private func boardSummaries() -> [BoardSwitcher.BoardSummary] {
         var summaries = boardMetas.map {
             boardSummary(forBoardID: $0.boardID, name: $0.name, daemonRunning: $0.running)
         }
         if !summaries.contains(where: { $0.boardID == activeBoardID }) {
-            // The active board is always minted + mounted locally (visited), so
-            // its daemon running count is unused — pass nil.
             summaries.insert(
                 boardSummary(forBoardID: activeBoardID, name: activeBoard.name, daemonRunning: nil),
                 at: 0
@@ -128,27 +122,16 @@ extension AppController {
     private func boardSummary(
         forBoardID id: String, name: String?, daemonRunning: Int?
     ) -> BoardSwitcher.BoardSummary {
-        var localRunning = 0, bell = 0, cards = 0, localLive = false
-        let visited = boards[id] != nil
-        if let board = boards[id] {
-            for card in board.view.cards.values {
-                cards += 1
-                switch card.signal {
-                case .live: localRunning += 1
-                case .bell: bell += 1
-                case .none: break
-                }
-            }
-            localLive = board.sessions.values.contains { $0.live }
+        let board = boards[id]
+        let terms = board?.sessionOrder.compactMap { termID -> BoardSwitcher.TermFact? in
+            guard let session = board?.sessions[termID] else { return nil }
+            return BoardSwitcher.TermFact(
+                running: session.live, bell: board?.view.card(.term(termID))?.bellActive ?? false
+            )
         }
-        // P5: for a never-visited board the daemon's live-pty count is the only
-        // honest liveness; for a visited board the local signals win (no flicker).
-        let (running, live) = BoardSwitcher.liveness(
-            visited: visited, localRunning: localRunning, localIsLive: localLive,
-            daemonRunning: daemonRunning
-        )
-        return BoardSwitcher.BoardSummary(
-            boardID: id, name: name, running: running, bell: bell, cards: cards, isLive: live
+        return BoardSwitcher.summary(
+            boardID: id, name: name, visited: board?.didInitialRestore ?? false, terms: terms ?? [],
+            cards: board?.view.cards.count ?? 0, daemonRunning: daemonRunning
         )
     }
 
