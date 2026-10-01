@@ -103,6 +103,28 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(view.plainText(), "hello")
     }
 
+    /// A reconnect replays the daemon's scrollback ring into a card that may
+    /// already hold that history; the host resets first so nothing shows twice.
+    func testResetDropsTheScreenScrollbackAndSelection() {
+        feed((1...200).map { "line\($0)" }.joined(separator: "\r\n"))
+        view.selectAll(nil)
+        view.reset()
+        XCTAssertEqual(view.plainText(), "")
+        XCTAssertFalse(view.hasSelection)
+        XCTAssertEqual(view.engine.scrollbar.total, view.rows)
+        feed("fresh")
+        XCTAssertEqual(view.plainText(), "fresh")
+    }
+
+    func testResetKeepsTheGrid() throws {
+        let cols = view.cols, rows = view.rows
+        view.reset()
+        XCTAssertEqual(view.cols, cols)
+        XCTAssertEqual(view.rows, rows)
+        feed("\u{1b}[31mR")
+        XCTAssertEqual(resizes, [])
+    }
+
     // MARK: keys
 
     func testPlainKeySendsItsCharacter() {

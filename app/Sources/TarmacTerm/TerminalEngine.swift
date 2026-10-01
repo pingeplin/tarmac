@@ -88,6 +88,15 @@ public final class TerminalEngine {
         )
     }
 
+    /// Back to a blank terminal of the same size: screen, scrollback, modes and
+    /// selection are dropped; the theme and limits set by the host stay.
+    public func reset() {
+        ghostty_terminal_reset(terminal)
+        // A full reset restores the default cursor style, which only blinks
+        // after the DECSCUSR reset that init applies.
+        feed(Array("\u{1b}[0 q".utf8))
+    }
+
     /// Caps history by line count alone. An estimate: history is pruned a page at
     /// a time, so somewhat more is kept. The byte cap libghostty-vt starts with is
     /// lifted, since at ~1000 lines it would bind long before any useful limit.

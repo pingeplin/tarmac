@@ -70,6 +70,21 @@ final class TerminalFrameTests: XCTestCase {
         XCTAssertEqual(frame.foreground, theme.foreground)
     }
 
+    func testResetKeepsTheHostsThemeAndBlinkingCursor() throws {
+        let (engine, reader) = try make()
+        var theme = TerminalTheme.breeze
+        theme.ansi[1] = RGB(1, 2, 3)
+        try engine.apply(theme)
+        feed(engine, "\u{1b}[6 q\u{1b}]4;1;#ff0000\u{07}")
+        engine.reset()
+        feed(engine, "\u{1b}[31mR")
+        let frame = reader.read(engine)
+        XCTAssertEqual(frame.rows[0].cells[0].style.foreground, RGB(1, 2, 3))
+        XCTAssertEqual(frame.background, theme.background)
+        XCTAssertEqual(frame.cursor?.shape, .block)
+        XCTAssertEqual(frame.cursor?.blinks, true)
+    }
+
     func testWideCharacterOccupiesTwoCells() throws {
         let (engine, reader) = try make()
         feed(engine, "世a")

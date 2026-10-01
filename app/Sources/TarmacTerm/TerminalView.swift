@@ -126,6 +126,14 @@ public final class TerminalView: NSView {
 
     public func plainText() -> String { engine.plainText() }
 
+    /// Clears the terminal before the host replays history into it.
+    public func reset() {
+        selection.clear()
+        holdStarted = nil
+        engine.reset()
+        scheduleRead()
+    }
+
     private func wireEffects() {
         engine.effects.onWritePty = { [weak self] in self?.onInput?($0) }
         engine.effects.onBell = { [weak self] in self?.onBell?() }
