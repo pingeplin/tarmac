@@ -217,4 +217,13 @@ final class KeyLadderTests: XCTestCase {
             XCTAssertEqual(KeyLadder.decide(key, facts), .passThrough, "\(key)")
         }
     }
+
+    /// The web handler compares the key alone, ⌘ included.
+    func testCommandEscRunsTheLadder() {
+        XCTAssertEqual(KeyLadder.decide(esc(command), Facts(esc: toasts)), .esc(.clearToasts))
+    }
+
+    func testCapsLockDoesNotStopTheCycle() {
+        XCTAssertEqual(KeyLadder.decide(tab(option | 1 << 16), Facts()), .cycleTerminals)
+    }
 }

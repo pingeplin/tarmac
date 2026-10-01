@@ -149,4 +149,19 @@ final class KeyPressTests: XCTestCase {
         XCTAssertNil(press(0x00, "ab").typed, "more than one character")
         XCTAssertNil(press(0x00, "😀").typed, "more than one UTF-16 unit, as the web app counts")
     }
+
+    func testNoOtherKeyCodeIsNamed() {
+        let named: Set<UInt16> = [53, 36, 76, 48, 51, 126, 125]
+        for code in UInt16(0)...127 where !named.contains(code) {
+            XCTAssertNil(press(code, "x").named, "\(code)")
+        }
+    }
+
+    func testCapsLockIsNotShift() {
+        XCTAssertFalse(press(0x28, "k", capsLock).shift)
+    }
+
+    func testACommandDigitIsOneCharacter() {
+        XCTAssertNil(press(0x12, "12", command).commandDigit)
+    }
 }

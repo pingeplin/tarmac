@@ -314,4 +314,14 @@ final class SwitcherKeysTests: XCTestCase {
             XCTAssertEqual(r.state, state, "\(key)")
         }
     }
+
+    func testCommandBackspaceArmsUnderAnyOtherModifier() {
+        let r = handle(backspace(command | option), State(selected: 2))
+        XCTAssertEqual(r.state, State(selected: 2, confirmingDelete: true))
+    }
+
+    func testArrowsMoveUnderAnyModifier() {
+        XCTAssertEqual(handle(up(command), State(selected: 1)).state.selected, 0)
+        XCTAssertEqual(handle(down(shift), State(selected: 0)).state.selected, 1)
+    }
 }

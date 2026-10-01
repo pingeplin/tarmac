@@ -91,4 +91,8 @@ final class SwitcherChromeTests: XCTestCase {
         XCTAssertEqual(SwitcherChrome.footer(State(selected: 5, confirmingDelete: true), rows: rows), .hints)
         XCTAssertEqual(SwitcherChrome.footer(State(confirmingDelete: true), rows: []), .hints)
     }
+
+    func testTheConfirmFooterNamesTheLabelNotTheSlug() {
+        XCTAssertEqual(SwitcherChrome.footer(State(selected: 0, confirmingDelete: true), rows: rows), .confirmDelete("alpha"))
+    }
 }
