@@ -20,7 +20,10 @@ final class CardResizeGrip: NSView {
 
 /// There is no visible grip: the cursor is the only sign that a handle is there.
 extension CardResizeGrip: HoverCursorProviding {
-    var claimsPointerMoves: Bool { true }
+    /// Only over a doc. A terminal ignores a move that lands on a view above
+    /// it; a web view does not, and the page's cursor would replace the
+    /// handle's.
+    var claimsPointerMoves: Bool { (superview as? CardView)?.docView != nil }
 
     func hoverCursor(at windowPoint: NSPoint) -> NSCursor {
         guard let card = superview as? CardView, let board = card.superview,
