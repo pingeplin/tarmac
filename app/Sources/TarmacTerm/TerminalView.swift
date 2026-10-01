@@ -107,6 +107,7 @@ public final class TerminalView: NSView {
     public var cols: Int { engine.cols }
     public var rows: Int { engine.rows }
     public var hasSelection: Bool { selection.text != nil }
+    public var selectedText: String? { selection.text }
     public var isFocused: Bool { window?.firstResponder === self }
 
     // MARK: output

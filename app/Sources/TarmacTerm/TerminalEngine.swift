@@ -177,6 +177,42 @@ public final class TerminalEngine {
         return String(decoding: UnsafeBufferPointer(start: buffer, count: length), as: UTF8.self)
     }
 
+    /// The `lines` screen rows ending at the cursor's row, trailing blanks
+    /// trimmed, wherever the viewport is scrolled. Rows, not logical lines: a
+    /// soft-wrapped line is reported as the rows it occupies.
+    public func tail(lines: Int) -> String {
+        let cursorRow = read(GHOSTTY_TERMINAL_DATA_SCROLLBACK_ROWS, 0) + Int(read(GHOSTTY_TERMINAL_DATA_CURSOR_Y, UInt16(0)))
+        guard let start = screenRef(col: 0, row: max(cursorRow - lines + 1, 0)),
+              let end = screenRef(col: cols - 1, row: cursorRow) else { return "" }
+        var selection = GhosttySelection()
+        selection.size = MemoryLayout<GhosttySelection>.size
+        selection.start = start
+        selection.end = end
+        return withUnsafePointer(to: &selection) { selection in
+            var options = GhosttyTerminalSelectionFormatOptions()
+            options.size = MemoryLayout<GhosttyTerminalSelectionFormatOptions>.size
+            options.emit = GHOSTTY_FORMATTER_FORMAT_PLAIN
+            options.unwrap = false
+            options.trim = true
+            options.selection = selection
+            var buffer: UnsafeMutablePointer<UInt8>?
+            var length = 0
+            guard ghostty_terminal_selection_format_alloc(terminal, nil, options, &buffer, &length) == GHOSTTY_SUCCESS,
+                  let buffer else { return "" }
+            defer { ghostty_free(nil, buffer, length) }
+            return String(decoding: UnsafeBufferPointer(start: buffer, count: length), as: UTF8.self)
+        }
+    }
+
+    private func screenRef(col: Int, row: Int) -> GhosttyGridRef? {
+        var target = GhosttyPoint()
+        target.tag = GHOSTTY_POINT_TAG_SCREEN
+        target.value.coordinate = GhosttyPointCoordinate(x: UInt16(col), y: UInt32(row))
+        var ref = GhosttyGridRef()
+        ref.size = MemoryLayout<GhosttyGridRef>.size
+        return ghostty_terminal_grid_ref(terminal, target, &ref) == GHOSTTY_SUCCESS ? ref : nil
+    }
+
     // MARK: typed reads
 
     func read<Value>(_ data: GhosttyTerminalData, _ fallback: Value) -> Value {

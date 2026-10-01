@@ -153,6 +153,39 @@ final class TerminalEngineTests: XCTestCase {
         XCTAssertGreaterThan(engine.scrollbar.total, 4000)
     }
 
+    // MARK: tail
+
+    func testTailIsTheLinesEndingAtTheCursor() throws {
+        let engine = try engine(cols: 20, rows: 5)
+        feed(engine, "one  \r\n\r\nthree")
+        XCTAssertEqual(engine.tail(lines: 40), "one\n\nthree")
+    }
+
+    func testTailReachesBackIntoScrollback() throws {
+        let engine = try engine(cols: 20, rows: 3)
+        feed(engine, (1...50).map { "line\($0)" }.joined(separator: "\r\n"))
+        XCTAssertEqual(engine.tail(lines: 4), "line47\nline48\nline49\nline50")
+    }
+
+    func testTailStopsAtTheCursorNotAtTheLastLine() throws {
+        let engine = try engine(cols: 20, rows: 5)
+        feed(engine, "a\r\nb\r\nc\u{1b}[A")
+        XCTAssertEqual(engine.tail(lines: 40), "a\nb")
+    }
+
+    func testTailReportsRowsNotUnwrappedLines() throws {
+        let engine = try engine(cols: 5, rows: 4)
+        feed(engine, "abcdefgh")
+        XCTAssertEqual(engine.tail(lines: 40), "abcde\nfgh")
+    }
+
+    func testTailIgnoresWhereTheViewportIsScrolled() throws {
+        let engine = try engine(cols: 20, rows: 3)
+        feed(engine, (1...50).map { "line\($0)" }.joined(separator: "\r\n"))
+        engine.scrollViewport(.top)
+        XCTAssertEqual(engine.tail(lines: 2), "line49\nline50")
+    }
+
     // MARK: paste / focus
 
     func testPasteIsBracketedOnlyWhenTheProgramAskedForIt() throws {
