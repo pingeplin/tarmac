@@ -5,9 +5,11 @@ public enum ChromeText {
     /// `@MainActor` and so unreachable from a formatter that must run anywhere.
     public static let recentWindowMs: UInt64 = 30_000
 
-    /// Zoom readout, e.g. 1 → "100%", 0.125 → "13%" (rounds half away from zero).
+    /// Zoom readout, e.g. 1 → "100%", 0.125 → "13%". Written as `Math.round` and
+    /// `String(number)` did, so a NaN, an infinity or a huge zoom reads "NaN%",
+    /// "Infinity%" or in full rather than trapping an integer conversion.
     public static func zoomPercent(_ zoom: Double) -> String {
-        "\(Int((zoom * 100).rounded()))%"
+        "\((zoom * 100).roundedHalfUp.javaScriptString)%"
     }
 
     /// The board's display name, falling back to its id when the name is absent

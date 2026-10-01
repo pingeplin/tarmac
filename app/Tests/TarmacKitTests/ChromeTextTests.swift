@@ -3,11 +3,27 @@ import XCTest
 
 /// The small chrome formatters: zoom readout, titlebar chip fallback, recency meta.
 final class ChromeTextTests: XCTestCase {
-    func testZoomPercentRoundsToWholePercentHalfAwayFromZero() {
+    func testZoomPercentRoundsToWholePercentHalfUp() {
         XCTAssertEqual(ChromeText.zoomPercent(1), "100%")
-        XCTAssertEqual(ChromeText.zoomPercent(0.125), "13%", "12.5 is an exact half, rounded away from zero")
+        XCTAssertEqual(ChromeText.zoomPercent(0.125), "13%", "12.5 is an exact half, rounded up")
         XCTAssertEqual(ChromeText.zoomPercent(0.1), "10%")
         XCTAssertEqual(ChromeText.zoomPercent(3), "300%")
+    }
+
+    /// `Math.round` sends a negative half up, toward zero — where `rounded()` would
+    /// send it away.
+    func testZoomPercentRoundsANegativeHalfTowardPositiveInfinityLikeMathRound() {
+        XCTAssertEqual(ChromeText.zoomPercent(-0.125), "-12%")
+        XCTAssertEqual(ChromeText.zoomPercent(-0.126), "-13%")
+        XCTAssertEqual(ChromeText.zoomPercent(-0.001), "0%", "Math.round(-0.1) is -0, which reads 0")
+    }
+
+    func testZoomPercentOfNonFiniteOrHugeInputReadsLikeTheDesktopAppAndDoesNotTrap() {
+        XCTAssertEqual(ChromeText.zoomPercent(.nan), "NaN%")
+        XCTAssertEqual(ChromeText.zoomPercent(.infinity), "Infinity%")
+        XCTAssertEqual(ChromeText.zoomPercent(-.infinity), "-Infinity%")
+        XCTAssertEqual(ChromeText.zoomPercent(1e17), "10000000000000000000%")
+        XCTAssertEqual(ChromeText.zoomPercent(1e300), "1e+302%")
     }
 
     func testBoardChipLabelUsesTheNameWhenPresent() {
