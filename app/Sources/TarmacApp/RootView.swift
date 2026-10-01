@@ -7,7 +7,7 @@ import TarmacTerm
 /// top.
 @MainActor
 final class RootView: NSView {
-    /// The mounted whiteboard. M3: one `BoardView` per board; `mountBoard(_:)`
+    /// The mounted whiteboard. There is one `BoardView` per board; `mountBoard(_:)`
     /// swaps which one is shown on a board switch. RootView owns only *which*
     /// view is displayed — the controller owns each board's cards + viewport.
     private(set) var board = BoardView()
@@ -45,8 +45,7 @@ final class RootView: NSView {
         for layer in OverlayStack.backToFront { addSubview(overlay(layer)) }
         board.mountUnderCards(offHints.under)
 
-        // Zoom control actions (crib §6): −/+ anchored at the viewport center;
-        // fit = bounding box of all cards.
+        // −/+ zoom about the viewport center; fit frames every card.
         zoomControl.onZoomOut = { [weak self] in
             self?.board.zoom(by: 1 / ZoomControl.zoomStep, commit: true)
         }
@@ -92,10 +91,11 @@ final class RootView: NSView {
 
     /// Mounts `bv` as the shown whiteboard: detaches the current board view and
     /// inserts `bv` as the bottom-most subview (below the status bar and every
-    /// overlay), re-wiring its wayfinding callbacks. Used by
-    /// the controller on every board switch-arrive (and to re-mount the same view
-    /// after `unmountBoard`). The detached board's cards + live terminal views
-    /// stay parented to it off-window, so background ptys keep running.
+    /// overlay), re-wiring its wayfinding callbacks and moving the under-card
+    /// pill layer into it. Used by the controller on every board switch-arrive
+    /// (and to re-mount the same view after `unmountBoard`). The detached
+    /// board's cards + live terminal views stay parented to it off-window, so
+    /// background ptys keep running.
     func mountBoard(_ bv: BoardView) {
         guard board !== bv || bv.superview == nil else { return }
         if board !== bv { board.removeFromSuperview() }
