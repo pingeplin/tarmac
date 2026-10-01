@@ -85,6 +85,25 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertLessThan(inside.redComponent, 0.5)
     }
 
+    /// Layer display can hand over a strip just outside the bounds; the
+    /// intersection is then the null rect, whose origin is infinite.
+    func testADirtyRectThatMissesTheBoundsDrawsNothing() throws {
+        let rep = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: 700, pixelsHigh: 500, bitsPerSample: 8, samplesPerPixel: 4,
+            hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: rep))
+        NSColor.magenta.setFill()
+        NSRect(x: 0, y: 0, width: 700, height: 500).fill()
+        view.draw(NSRect(x: 0, y: -31.76, width: 468, height: 1.57))
+        NSGraphicsContext.restoreGraphicsState()
+
+        let untouched = try XCTUnwrap(rep.colorAt(x: 300, y: 200))
+        XCTAssertEqual(untouched.redComponent, 1, accuracy: 0.01)
+        XCTAssertEqual(untouched.greenComponent, 0, accuracy: 0.01)
+    }
+
     /// A redraw is clipped to the invalidated rect. At a fractional zoom a row's
     /// edge falls inside a device pixel, so the damage must reach past the row
     /// or that pixel keeps a blend of the old content.

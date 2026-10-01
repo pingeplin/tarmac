@@ -267,6 +267,7 @@ public final class TerminalView: NSView {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         // A layer-backed view can be asked to draw past its bounds.
         let dirtyRect = dirtyRect.intersection(bounds)
+        guard !dirtyRect.isEmpty else { return }
         context.saveGState()
         defer { context.restoreGState() }
         context.clip(to: bounds)
