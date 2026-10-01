@@ -412,10 +412,13 @@ final class AppController {
                 // Return, when the board (not the terminal) holds focus and an
                 // offscreen signal is waiting, flies the viewport to it (crib §6).
                 // Gated on board focus so the shell's Enter key is never hijacked
-                // while typing.
-                if isReturn, self.boardHasFocus(), let target = self.rootView.offscreenFlyTarget {
-                    self.preFlightViewport = self.activeBoard.view.viewport
-                    self.activeBoard.view.fly(to: target)
+                // while typing. Swallowed even with nowhere to fly: the board has
+                // no use for Return, and unhandled it beeps.
+                if isReturn, self.boardHasFocus() {
+                    if let target = self.rootView.offscreenFlyTarget {
+                        self.preFlightViewport = self.activeBoard.view.viewport
+                        self.activeBoard.view.fly(to: target)
+                    }
                     return true
                 }
                 guard isEsc else { return false }
