@@ -71,4 +71,11 @@ final class BoardFlyTests: XCTestCase {
             BoardViewport(zoom: 1, cx: 250, cy: 250)
         )
     }
+
+    func testAFlyToACardOffTheDiagonalKeepsItsAxesApart() {
+        XCTAssertEqual(
+            BoardFly.destination(showing: CGRect(x: 100, y: 200, width: 300, height: 200)),
+            BoardViewport(zoom: 1, cx: 250, cy: 300)
+        )
+    }
 }

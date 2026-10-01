@@ -53,4 +53,8 @@ final class ZOrderTests: XCTestCase {
         XCTAssertEqual([stacked[3], stacked[2], stacked[0], stacked[1]].sorted(), stacked)
         XCTAssertEqual([stacked[1], stacked[0], stacked[3], stacked[2]].sorted(), stacked)
     }
+
+    func testAPlaceIsNotInFrontOfItself() {
+        XCTAssertFalse(ZOrder.Place(z: 3, added: 1) < ZOrder.Place(z: 3, added: 1))
+    }
 }
