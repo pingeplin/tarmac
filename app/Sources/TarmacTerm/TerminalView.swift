@@ -126,6 +126,20 @@ public final class TerminalView: NSView {
 
     public func plainText() -> String { engine.plainText() }
 
+    /// The viewport's cells by their text, row by row; an unwritten cell and the
+    /// second column of a wide character are both empty.
+    public func viewportCells() -> [[String]] {
+        if readScheduled { readIfNotHeld() }
+        return frameSnapshot.rows.map { $0.cells.map(\.text) }
+    }
+
+    /// A cell's rect in this view's coordinates, or nil outside the grid.
+    public func cellRect(col: Int, row: Int) -> NSRect? {
+        guard let gridLayout, (0..<gridLayout.cols).contains(col), (0..<gridLayout.rows).contains(row)
+        else { return nil }
+        return gridLayout.rect(col: col, row: row)
+    }
+
     /// Clears the terminal before the host replays history into it.
     public func reset() {
         selection.clear()

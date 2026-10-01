@@ -125,6 +125,24 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(resizes, [])
     }
 
+    // MARK: grid access
+
+    func testTheViewportIsReadableCellByCell() throws {
+        feed("a世b\r\nx")
+        let cells = view.viewportCells()
+        XCTAssertEqual(cells.count, view.rows)
+        XCTAssertEqual(cells[0].count, view.cols)
+        XCTAssertEqual(Array(cells[0].prefix(5)), ["a", "世", "", "b", ""])
+        XCTAssertEqual(cells[1][0], "x")
+    }
+
+    func testACellsRectIsInViewCoordinates() throws {
+        let layout = try XCTUnwrap(view.gridLayout)
+        XCTAssertEqual(view.cellRect(col: 3, row: 2), layout.rect(col: 3, row: 2))
+        XCTAssertNil(view.cellRect(col: view.cols, row: 0))
+        XCTAssertNil(view.cellRect(col: 0, row: -1))
+    }
+
     // MARK: keys
 
     func testPlainKeySendsItsCharacter() {
