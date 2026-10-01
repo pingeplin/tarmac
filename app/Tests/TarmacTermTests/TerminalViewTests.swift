@@ -178,6 +178,18 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertTrue(view.validateUserInterfaceItem(item))
     }
 
+    func testProgramClipboardWritesAreTheHostsDecision() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString("mine", forType: .string)
+        feed("\u{1b}]52;c;aGVsbG8=\u{07}")
+        XCTAssertEqual(NSPasteboard.general.string(forType: .string), "mine")
+
+        var offered: [String] = []
+        view.onClipboardWrite = { offered.append($0) }
+        feed("\u{1b}]52;c;aGVsbG8=\u{07}")
+        XCTAssertEqual(offered, ["hello"])
+    }
+
     // MARK: focus
 
     func testFocusChangesAreReportedWhenTheProgramAsks() {

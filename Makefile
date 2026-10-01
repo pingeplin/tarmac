@@ -1,6 +1,6 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: core app app-deps sidecars test docs-check dco-check run qa qa-quit kill-daemon bundle release kit ghostty-vt native native-test
+.PHONY: core app app-deps sidecars test docs-check dco-check run qa qa-quit kill-daemon bundle release kit ghostty-vt native native-test native-run
 
 core:
 	cd $(ROOT)/core && cargo build
@@ -38,6 +38,21 @@ native: ghostty-vt
 
 native-test: ghostty-vt
 	cd $(ROOT)/app && swift test
+
+# The native app against this worktree's dev daemon: the same per-worktree
+# socket/state/dev-socket pins as `run`, so it can never reach the installed
+# Tarmac. TARMAC_DEV_LABEL is the window-title suffix `run` bakes in through
+# VITE_TARMAC_DEV_LABEL.
+native-run: core native
+	mkdir -p "$(ROOT)/.dev"
+	cd $(ROOT)/app && \
+	TARMAC_SOCKET="$(ROOT)/.dev/tarmacd.sock" \
+	TARMAC_STATE="$(ROOT)/.dev/state.json" \
+	TARMAC_DEV_SOCKET="$(ROOT)/.dev/tarmac-dev.sock" \
+	TARMAC_DEV_LABEL="$(notdir $(ROOT))" \
+	TARMAC_DAEMON="$(ROOT)/core/target/debug/tarmacd" \
+	PATH="$(ROOT)/core/target/debug:$$PATH" \
+	"$$(swift build --show-bin-path)/TarmacApp"
 
 # Builds the standalone design-sync kit (desktop/dist-kit/) via esbuild. NOT a
 # dependency of `app`/`core` — invoke directly when refreshing the kit for
