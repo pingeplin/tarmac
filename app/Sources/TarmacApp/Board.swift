@@ -37,12 +37,12 @@ final class Board {
     /// stays global daemon-side; per-board is only the app-side mirror.
     let store = DocStore()
 
-    /// Every terminal card's live state, keyed by `term_id` (Phase 5b: the board
-    /// holds N of these).
+    /// Every terminal card's state, keyed by `term_id`.
     var sessions: [String: TerminalSession] = [:]
-    /// Terminal ids in spawn order — the stable order ⌥tab cycles through.
+    /// Terminal ids in card order: restore order, then the order they were
+    /// added. ⌥Tab cycles through it and prime falls to its first live entry.
     var sessionOrder: [String] = []
-    /// The prime (focused) terminal card's id, or nil when no terminal is live.
+    /// The prime terminal card's id, or nil when no terminal is live.
     var primeTermID: String?
 
     /// Provenance: doc path → the `term_id` that opened it (from `DocEntry`).
@@ -81,6 +81,34 @@ final class Board {
     /// Whether the prime terminal is backed by a live pty — drives doc-card
     /// quieting.
     var hasLivePrime: Bool { primeSession?.live == true }
+
+    /// The terminals in card order, as the prime and ⌥Tab rules see them.
+    var cycleTerms: [TermCycle.Term] {
+        sessionOrder.compactMap { id in
+            sessions[id].map { TermCycle.Term(termID: id, isLive: $0.live) }
+        }
+    }
+
+    /// The terminals in card order, as a restore's `live_terms` is reconciled
+    /// against them.
+    var reconnectTerms: [ReconnectRestore.Term] {
+        sessionOrder.compactMap { id in
+            guard let session = sessions[id] else { return nil }
+            let pty: ReconnectRestore.Pty = session.needsSpawn ? .unspawned : session.live ? .live : .dead
+            return ReconnectRestore.Term(termID: id, pty: pty)
+        }
+    }
+
+    /// Live terminals other than `termID` — what decides whether an exit or a
+    /// close leaves the board without a terminal.
+    func otherLiveTerminals(than termID: String) -> Int {
+        sessions.values.filter { $0.termID != termID && $0.live }.count
+    }
+
+    /// Hands prime to the first live terminal when the prime is gone or dead.
+    func reassignPrime() {
+        primeTermID = TermPrime.reassign(cycleTerms, prime: primeTermID)
+    }
 
     /// Doc paths currently on this board.
     var boardDocPaths: [String] {

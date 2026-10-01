@@ -2,37 +2,54 @@ import AppKit
 import TarmacKit
 import TarmacTerm
 
-/// One terminal card's live state (the board holds N of these). Owns the
-/// terminal view and the per-terminal signal/process bookkeeping. `live` is
-/// whether the pty is running (false before first spawn and after exit). The
-/// exited/dead visual state lives on the board card (`CardView.dead`), not here.
+/// One terminal card's state (the board holds N of these): the terminal view
+/// and what the app knows about the PTY behind it. Whether the card is dead
+/// lives on the board card (`CardView.dead`), not here.
 @MainActor
 final class TerminalSession {
     let termID: String
-    let view: TerminalView
-    /// Whether the pty backing this card is currently running.
+    /// Replaced when replayed history has to take the place of what the card
+    /// already shows (`AppController.blank`).
+    private(set) var view: TerminalView
+    /// The card stands for a shell that is running or about to be spawned: true
+    /// from the card's creation until its exit is seen or the daemon stops
+    /// listing it. The placeholder a board shows before its first restore is
+    /// never live.
     var live = false
-    /// Header label: the displayed title — an OSC title if one is set, else the
-    /// foreground process name, else the shell basename. Recomputed from the
-    /// sources below via `TermTitle.displayLabel`; never written directly.
-    var label = ""
-    /// The shell basename resolved at spawn — idle ⇔ foreground == shellName.
-    var shellName = ""
-    /// Latest foreground process name pushed by the daemon (`term_proc`). Tracked
-    /// independently of `label` so the title can revert here when an OSC title is
-    /// cleared. nil/"" before the first `term_proc`.
+    /// The card's `spawn_term` has not been sent yet.
+    var needsSpawn = false
+    /// ⌘T: the terminal whose current directory the spawn inherits.
+    var inheritCwdFrom: String?
+    /// Header label; see `TermLabel`.
+    var label = TermLabel.initial
+    /// The daemon's last `term_proc` name, verbatim — `label` loses it to a
+    /// later OSC title. Dropped at exit.
     var procName: String?
-    /// Latest non-empty OSC title (OSC 0/1/2) the running program emitted. Takes
-    /// precedence over `procName`. Cleared to nil when the program emits an
-    /// empty OSC title (`ESC ] 2 ; ST`).
-    var oscTitle: String?
-    /// Last cols/rows sent to the daemon — debounces duplicate resizes.
-    var lastSentCols = 0
-    var lastSentRows = 0
+    /// When the lit bell rang.
+    var bellAt: Date?
+    /// The grid last sent to the daemon; nil until a spawn or resize went out.
+    var sentGrid: TermGrid.Size?
+    /// Whether `view` has been fed anything.
+    private(set) var hasOutput = false
+
+    /// The PTY exists daemon-side as far as the app knows, so input and
+    /// resizes may be sent for it.
+    var reachable: Bool { live && !needsSpawn }
 
     init(termID: String, view: TerminalView) {
         self.termID = termID
         self.view = view
+    }
+
+    func feed(_ bytes: Data) {
+        guard !bytes.isEmpty else { return }
+        hasOutput = true
+        view.feed(bytes)
+    }
+
+    func replaceView(_ fresh: TerminalView) {
+        view = fresh
+        hasOutput = false
     }
 }
 
@@ -47,22 +64,28 @@ final class AppController {
 
     // MARK: - P5.3 bounded auto-reconnect
     //
-    // On a dropped daemon connection the app marks its live sessions detached,
-    // flips the chip/status faint, and retries `connect()` on the bounded
-    // `Reconnect` backoff. A successful reconnect's `board_list` + `restore`
-    // revive the still-live shells (and cold-spawn the gone ones) via the boards
-    // queued in `boardsAwaitingRevive`.
+    // On a dropped daemon connection the app flips the chip/status faint and
+    // retries `connect()` on the bounded `Reconnect` backoff. Cards are left as
+    // they are; the reconnect's `restore` reconciles them against `live_terms`.
     /// Attempts made since the link last dropped (reset to 0 on `hello_ok`).
     var reconnectAttempt = 0
     /// A `connect()` is in flight on the background queue — guards double-connect.
     var reconnecting = false
     /// App teardown began — gates the scheduler so a pending backoff is a no-op.
     var quitting = false
-    /// Boards whose detached terminals await revive on the next restore for them.
-    /// Populated on disconnect (every board that had a live session); a board is
-    /// removed when its revive runs. Also gates `maybeSpawn` so a detached prime
-    /// is never cold-spawned over its surviving shell during the reconnect window.
-    var boardsAwaitingRevive: Set<String> = []
+
+    var daemonSession = DaemonSession()
+    /// The version pair of a stale daemon this app replaced, for the first-visit
+    /// restart toast (`RestartNotice`). Set by whoever performs that restart.
+    var daemonReplaced: RestartNotice.Replacement?
+
+    lazy var scrollback = ScrollbackRestore(
+        request: { [weak self] termID in self?.client.scrollbackRequest(termID: termID) },
+        deliver: { [weak self] termID, chunks, history in
+            self?.showOutput(termID: termID, chunks, replacingHistory: history)
+        }
+    )
+    lazy var layoutPersister = LayoutPersister { [weak self] boardID in self?.sendLayout(boardID: boardID) }
 
     var escMonitor: Any?
     /// Single-click-to-focus (point 3) + gesture routing (point 2) live in
@@ -125,10 +148,6 @@ final class AppController {
     var preFlightViewport: Viewport? {
         get { activeBoard.preFlightViewport }
         set { activeBoard.preFlightViewport = newValue }
-    }
-    private var didInitialRestore: Bool {
-        get { activeBoard.didInitialRestore }
-        set { activeBoard.didInitialRestore = newValue }
     }
     // Read-only computed accessors (pure functions of the active board's state).
     var primeSession: TerminalSession? { activeBoard.primeSession }
@@ -193,14 +212,6 @@ final class AppController {
         f.dateFormat = "HH:mm"
         return f
     }()
-
-    /// The board whose layout a settling pan still owes to disk, and the trailing
-    /// timer that will flush it. Only the continuous `onLayoutChanged` path is
-    /// debounced; discrete `persistLayout()` calls (spawn / close / …) stay
-    /// immediate.
-    var pendingPersistBoardID: String?
-    var persistDebounce: DispatchWorkItem?
-    static let persistDebounceInterval: TimeInterval = 0.2
 
     /// The board that owns `termID` (via the term→board index), or nil if the
     /// term is unknown / already exited.

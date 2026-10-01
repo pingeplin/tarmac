@@ -222,8 +222,8 @@ final class TileHeaderView: NSView {
     private let freshMeta = NSTextField(labelWithString: "✚ now")
     private let ownerChip = OwnerChipView()
     // Phase 3.5 (M2 honest signals): an amber `●` bell dot in the right cluster,
-    // shown when a BEL was seen, cleared on the next keystroke, paste or click
-    // in that terminal.
+    // shown when a BEL was seen, cleared by the next bytes that terminal sends
+    // to its PTY or when it becomes prime by a card press or ⌥Tab.
     private let bellDot = NSTextField(labelWithString: "●")
 
     override var isFlipped: Bool { true }
@@ -318,7 +318,8 @@ final class TileHeaderView: NSView {
 
     /// Phase 3.5 (M2 honest signals): an amber bell signal — a `●` dot in the
     /// right cluster plus an amber accent on the kind glyph — shown when a BEL
-    /// was seen, cleared on the next keystroke, paste or click in the terminal.
+    /// was seen, cleared by the next bytes the terminal sends to its PTY or when
+    /// it becomes prime by a card press or ⌥Tab.
     /// This is a state display (no animation; stays under Reduce Motion).
     func setBell(_ on: Bool) {
         guard on != !bellDot.isHidden else { return }

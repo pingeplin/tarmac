@@ -11,11 +11,10 @@ extension AppController {
     /// board's backgrounded view (never mounted) deallocates with the `Board`.
     func removeBoard(_ id: String) {
         guard id != activeBoardID, boards[id] != nil else { return }
+        for termID in termIndex.terms(of: id) {
+            scrollback.unmount(termID)
+        }
         termIndex.removeBoard(id)
-        // Clear any pending-revive entry: a board deleted while queued never gets
-        // its own restore, so a stale entry would keep `isReconnect` permanently
-        // true (suppressing a needed cold prime spawn on a later reconnect).
-        boardsAwaitingRevive.remove(id)
         boards[id] = nil
     }
 

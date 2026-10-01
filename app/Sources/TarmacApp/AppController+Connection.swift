@@ -8,17 +8,11 @@ extension AppController {
     func handle(_ message: Message) {
         switch message {
         case .helloOK:
-            // A reconnect is in flight iff boards are queued for revive (only
-            // disconnect populates that). On a cold first connect the set is
-            // empty, so the normal boot spawn runs; on a reconnect the imminent
-            // board_list + restore drive the revive (and would orphan a surviving
-            // shell if we cold-spawned the detached prime here), so skip maybeSpawn.
-            let isReconnect = !boardsAwaitingRevive.isEmpty
             connected = true
             reconnecting = false
             reconnectAttempt = 0
             updateSessionLiveness()
-            if !isReconnect { maybeSpawn() }
+            maybeSpawn()
         case .boardList(let metas, let active):
             boardMetas = metas
             // P5.4: sync each visited board's local display name from the daemon's
@@ -49,12 +43,11 @@ extension AppController {
         case .restore(let docs, let tiles, let board, let restoredBoardID, let liveTerms):
             applyRestore(docs: docs, tiles: tiles, viewport: board, boardID: restoredBoardID, liveTerms: liveTerms)
         case .output(let termID, let bytes):
-            // Route to the owning board's session (which may be backgrounded):
-            // feeding a detached terminal view still advances its buffer, so a
-            // background board's shell keeps progressing and shows fresh output
-            // on switch-back. Never touches the active view unless it owns the term.
-            guard let s = session(ofTerm: termID), s.live else { return }
-            s.view.feed(bytes)
+            // Shown whatever board the terminal is on: a backgrounded board's
+            // shell keeps progressing and is current on switch-back.
+            scrollback.output(termID, bytes)
+        case .scrollback(let termID, let bytes):
+            scrollback.reply(termID, bytes)
         case .exit(let termID, let code):
             handleExit(termID: termID, code: code)
         case .docOpened(let doc):
@@ -91,20 +84,7 @@ extension AppController {
         // !reconnecting guard would never pass again). Idempotent on the normal
         // path (hello_ok already cleared it before any later real drop).
         reconnecting = false
-        // The connection dropped for every board's ptys, not just the active one.
-        // P5.3: DETACH (not kill) each live session — the shell may still be alive
-        // daemon-side, to be re-bound on reconnect. Queue every board that had a
-        // live session for revive (so its next restore re-binds survivors / cold-
-        // spawns the gone ones, and `maybeSpawn` stays gated off its detached prime).
-        for board in boards.values {
-            var hadLive = false
-            for s in board.sessions.values where s.live {
-                s.live = false
-                hadLive = true
-            }
-            if hadLive { boardsAwaitingRevive.insert(board.boardID) }
-        }
-        activeBoard.view.signalsChanged()
+        terminalsLostConnection()
         feedNotice("lost connection to tarmacd — \(reason)")
         rootView.toasts.show(title: "tarmacd connection lost", body: reason)
         // P5: the chip + status word flip to detached (faint) immediately.
