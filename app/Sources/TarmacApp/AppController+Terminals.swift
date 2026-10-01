@@ -151,8 +151,9 @@ extension AppController {
         return s
     }
 
-    /// Sends the spawn of every card still waiting for one. Kept under this
-    /// name for the connect and first-layout triggers.
+    /// Sends the spawn of every card still waiting for one. Called when the
+    /// connection comes up and when the view first lays out: `spawnPending`
+    /// needs both, and either may be the later.
     func maybeSpawn() {
         for board in boards.values {
             spawnPending(on: board)
