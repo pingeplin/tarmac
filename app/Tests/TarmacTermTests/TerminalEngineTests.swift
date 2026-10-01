@@ -81,6 +81,22 @@ final class TerminalEngineTests: XCTestCase {
         XCTAssertEqual(changes, 1)
     }
 
+    /// With no host handler the write is denied, and the terminal must not
+    /// claim clipboard support — a program's own copy key would look like it
+    /// worked and copy nothing.
+    func testClipboardIsNotAdvertisedUntilTheHostHandlesIt() throws {
+        let engine = try engine()
+        var replies: [[UInt8]] = []
+        engine.effects.onWritePty = { replies.append($0) }
+        feed(engine, "\u{1b}[c")
+        XCTAssertEqual(String(decoding: replies.joined(), as: UTF8.self), "\u{1b}[?62;22c")
+
+        replies = []
+        engine.effects.onClipboardWrite = { _ in }
+        feed(engine, "\u{1b}[c")
+        XCTAssertEqual(String(decoding: replies.joined(), as: UTF8.self), "\u{1b}[?62;22;52c")
+    }
+
     func testOsc52WriteReachesTheClipboardCallback() throws {
         let engine = try engine()
         var copied: [String] = []

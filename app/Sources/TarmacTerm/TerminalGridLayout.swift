@@ -29,13 +29,20 @@ struct TerminalGridLayout: Equatable {
 
     init?(bounds: CGSize, cell: CGSize, padding: TerminalPadding) {
         guard cell.width > 0, cell.height > 0 else { return nil }
-        let cols = Int(((bounds.width - padding.left - padding.right) / cell.width).rounded(.down))
-        let rows = Int(((bounds.height - padding.top - padding.bottom) / cell.height).rounded(.down))
+        let cols = Self.wholeCells(bounds.width - padding.left - padding.right, cell.width)
+        let rows = Self.wholeCells(bounds.height - padding.top - padding.bottom, cell.height)
         guard cols >= 1, rows >= 1 else { return nil }
         self.cols = cols
         self.rows = rows
         self.cell = cell
         origin = CGPoint(x: padding.left, y: bounds.height - padding.bottom - CGFloat(rows) * cell.height)
+    }
+
+    /// How many whole cells fit. A host that scales this view reads its bounds
+    /// back through that scale, so an exact fit can arrive a few ulps short;
+    /// that must not cost a cell, or zooming would resize the PTY.
+    private static func wholeCells(_ extent: CGFloat, _ cell: CGFloat) -> Int {
+        Int((extent / cell + 1e-6).rounded(.down))
     }
 
     var gridSize: CGSize {

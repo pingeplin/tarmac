@@ -350,6 +350,29 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(sentText, "\u{1b}[O\u{1b}[I")
     }
 
+    /// AppKit can drop first responder without calling resign (a restack that
+    /// re-parents the view), then hand it back: the program must not see a
+    /// second focus-in with no focus-out between.
+    func testFocusIsReportedOnlyWhenItChanges() {
+        feed("\u{1b}[?1004h")
+        XCTAssertTrue(view.becomeFirstResponder())
+        XCTAssertTrue(view.becomeFirstResponder())
+        XCTAssertEqual(sentText, "")
+        XCTAssertTrue(view.resignFirstResponder())
+        XCTAssertTrue(view.resignFirstResponder())
+        XCTAssertEqual(sentText, "\u{1b}[O")
+    }
+
+    /// AppKit calls this on every frame-to-bounds scale change (each zoom step)
+    /// and the board re-parents cards on each click; neither changes the
+    /// display's backing scale, so the fonts and glyph cache must survive.
+    func testFontsAreRebuiltOnlyWhenTheBackingScaleChanges() {
+        let before = view.fontGeneration
+        view.viewDidChangeBackingProperties()
+        view.viewDidMoveToWindow()
+        XCTAssertEqual(view.fontGeneration, before)
+    }
+
     // MARK: program replies
 
     func testQueriesAreAnsweredThroughTheInputPath() {

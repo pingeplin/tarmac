@@ -80,14 +80,18 @@ private let pwdChanged: GhosttyTerminalPwdChangedFn = { _, userdata in
     effects(userdata) { $0.onWorkingDirectoryChanged?() }
 }
 
-/// A VT220 with ANSI colour and OSC 52 — what Ghostty itself answers. Shells and
-/// editors (fish, vim) block on DA1 at startup, so some answer is mandatory.
-private let deviceAttributes: GhosttyTerminalDeviceAttributesFn = { _, _, out in
+/// A VT220 with ANSI colour, plus OSC 52 only while the host handles clipboard
+/// writes. Shells and editors (fish, vim) block on DA1 at startup, so some
+/// answer is mandatory.
+private let deviceAttributes: GhosttyTerminalDeviceAttributesFn = { _, userdata, out in
     guard let out else { return false }
     out.pointee.primary.conformance_level = UInt16(GHOSTTY_DA_CONFORMANCE_VT220)
     out.pointee.primary.features.0 = UInt16(GHOSTTY_DA_FEATURE_ANSI_COLOR)
-    out.pointee.primary.features.1 = UInt16(GHOSTTY_DA_FEATURE_CLIPBOARD)
-    out.pointee.primary.num_features = 2
+    out.pointee.primary.num_features = 1
+    if read(userdata, false, { $0.onClipboardWrite != nil }) {
+        out.pointee.primary.features.1 = UInt16(GHOSTTY_DA_FEATURE_CLIPBOARD)
+        out.pointee.primary.num_features = 2
+    }
     out.pointee.secondary.device_type = UInt16(GHOSTTY_DA_DEVICE_TYPE_VT220)
     out.pointee.secondary.firmware_version = 10
     out.pointee.secondary.rom_cartridge = 0
@@ -113,13 +117,15 @@ private let clipboardWrite: GhosttyTerminalClipboardWriteFn = { _, userdata, wri
     let request = write.pointee
     let contents = UnsafeBufferPointer(start: request.contents, count: request.contents_len)
     let text = contents.first { string($0.mime).hasPrefix("text/plain") } ?? contents.first
+    let value = text.map { string($0.data) } ?? ""
+    let handled = read(userdata, false) { effects in
+        guard let handler = effects.onClipboardWrite else { return false }
+        handler(value)
+        return true
+    }
     var reply = GhosttyClipboardWriteReply()
     reply.size = MemoryLayout<GhosttyClipboardWriteReply>.size
-    reply.result = GHOSTTY_CLIPBOARD_WRITE_RESULT_SUCCESS
-    if let text {
-        let value = string(text.data)
-        effects(userdata) { $0.onClipboardWrite?(value) }
-    }
+    reply.result = handled ? GHOSTTY_CLIPBOARD_WRITE_RESULT_SUCCESS : GHOSTTY_CLIPBOARD_WRITE_RESULT_UNSUPPORTED
     request.reply?(write, &reply)
 }
 

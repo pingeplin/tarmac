@@ -15,6 +15,17 @@ final class TerminalGridLayoutTests: XCTestCase {
         XCTAssertEqual(layout.rows, 24)
     }
 
+    /// A zoomed card reads its bounds back through a frame-to-bounds scale, so
+    /// a 470pt width arrives as 469.99999999999994; a box that holds exactly N
+    /// cells must still hold N, or zooming would resize the PTY.
+    func testAWholeCellLostToFloatNoiseIsStillCounted() throws {
+        let exact = try XCTUnwrap(layout(470, 498))
+        let noisy = try XCTUnwrap(layout(469.99999999999994, 497.99999999999994))
+        XCTAssertEqual(exact.cols, 45)
+        XCTAssertEqual(noisy.cols, 45)
+        XCTAssertEqual(noisy.rows, exact.rows)
+    }
+
     func testPartialCellsAreNotCounted() throws {
         let layout = try XCTUnwrap(layout(10 + 80 * 10 + 9 + 10, 2 + 24 * 20 + 19 + 16))
         XCTAssertEqual(layout.cols, 80)

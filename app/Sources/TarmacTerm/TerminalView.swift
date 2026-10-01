@@ -46,6 +46,13 @@ public final class TerminalView: NSView {
     private var renderer: TerminalRenderer
     private var frameSnapshot: TerminalFrame
     private(set) var gridLayout: TerminalGridLayout?
+    /// Counts font rebuilds; each one drops the glyph cache and redraws everything.
+    private(set) var fontGeneration = 0
+    private var fontScale: CGFloat = 2
+    /// What the program was last told. AppKit can take first responder away
+    /// without resigning it (a re-parent) and hand it back, which must not
+    /// reach the program as a second focus-in.
+    private var reportedFocus = false
 
     public var padding = TerminalPadding.card { didSet { relayout() } }
     private let fontSize: CGFloat
@@ -196,8 +203,13 @@ public final class TerminalView: NSView {
 
     public override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
-        let scale = window?.backingScaleFactor ?? 2
+        // Also called on every frame-to-bounds scale change (each board zoom
+        // step) and after every re-parent; only a new display density matters.
+        let scale = window?.backingScaleFactor ?? fontScale
+        guard scale != fontScale else { return }
+        fontScale = scale
         renderer = TerminalRenderer(fonts: TerminalFonts(size: fontSize, pixelsPerPoint: scale), theme: renderer.theme)
+        fontGeneration += 1
         relayout()
     }
 
@@ -259,18 +271,24 @@ public final class TerminalView: NSView {
     // MARK: focus and blink
 
     public override func becomeFirstResponder() -> Bool {
-        send(engine.encodeFocus(gained: true))
+        reportFocus(true)
         restartBlink()
         invalidateCursor()
         return true
     }
 
     public override func resignFirstResponder() -> Bool {
-        send(engine.encodeFocus(gained: false))
+        reportFocus(false)
         unmarkText()
         stopBlink()
         invalidateCursor()
         return true
+    }
+
+    private func reportFocus(_ focused: Bool) {
+        guard focused != reportedFocus else { return }
+        reportedFocus = focused
+        send(engine.encodeFocus(gained: focused))
     }
 
     public override func viewDidMoveToWindow() {
