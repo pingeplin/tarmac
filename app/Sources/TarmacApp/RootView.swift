@@ -13,21 +13,23 @@ final class RootView: NSView {
     private(set) var board = BoardView()
     let statusBar = StatusBar()
     let toasts = ToastStackView()
-    // Phase 4 wayfinding chrome (crib §6): zoom control (bottom-left), minimap
-    // (bottom-right), and offscreen-signal hint pills (pinned to viewport edges).
+    // Wayfinding: zoom control (bottom-left), minimap (bottom-right) and the
+    // edge pills for signalling cards that are off screen.
     let zoomControl = ZoomControl()
     let minimap = Minimap()
-    let offHints = OffscreenHints()
+    private let offHints = OffscreenHints()
     // The ⌥tab cycle HUD (top-center).
     let cycleHUD = CycleHUD()
     // The ⌘K boards switcher (veil + centered panel), modal; hidden until ⌘K.
     // The controller drives its contents + key handling.
     let boardSwitcher = BoardSwitcherView()
 
-    /// Supplies the per-card offscreen-hint models (label + priority) — the
-    /// controller knows the doc/term metadata the board doesn't. Set by
-    /// AppController; nil yields no hints.
-    var offscreenHintProvider: (() -> [OffscreenHints.Hint])?
+    /// Supplies the mounted board's off-screen signalling cards, in card order.
+    /// The controller knows the labels and bell times the board does not.
+    var offscreenHintProvider: (() -> [OffscreenHintLayout.Hint])?
+
+    /// Where ⏎ flies: the off-screen signal that ranks highest, if there is one.
+    private(set) var offscreenFlyTarget: CardID?
 
     override var isFlipped: Bool { true }
 
@@ -41,6 +43,7 @@ final class RootView: NSView {
         cycleHUD.isHidden = true
         boardSwitcher.isHidden = true
         for layer in OverlayStack.backToFront { addSubview(overlay(layer)) }
+        board.mountUnderCards(offHints.under)
 
         // Zoom control actions (crib §6): −/+ anchored at the viewport center;
         // fit = bounding box of all cards.
@@ -68,7 +71,7 @@ final class RootView: NSView {
 
     private func overlay(_ layer: OverlayStack) -> NSView {
         switch layer {
-        case .hints: return offHints
+        case .hints: return offHints.over
         case .zoomControl: return zoomControl
         case .minimap: return minimap
         case .toasts: return toasts
@@ -88,8 +91,8 @@ final class RootView: NSView {
     }
 
     /// Mounts `bv` as the shown whiteboard: detaches the current board view and
-    /// inserts `bv` as the bottom-most subview (below the status bar and the
-    /// click-through hint overlay), re-wiring its wayfinding callbacks. Used by
+    /// inserts `bv` as the bottom-most subview (below the status bar and every
+    /// overlay), re-wiring its wayfinding callbacks. Used by
     /// the controller on every board switch-arrive (and to re-mount the same view
     /// after `unmountBoard`). The detached board's cards + live terminal views
     /// stay parented to it off-window, so background ptys keep running.
@@ -99,6 +102,7 @@ final class RootView: NSView {
         bv.removeFromSuperview()
         board = bv
         addSubview(bv, positioned: .below, relativeTo: statusBar)
+        bv.mountUnderCards(offHints.under)
         wireBoardCallbacks(bv)
         needsLayout = true
     }
@@ -119,20 +123,17 @@ final class RootView: NSView {
     }
 
     /// Rebuilds the wayfinding chrome from the current viewport + card set: the
-    /// zoom readout, the minimap rects + viewport box, and the offscreen-hint
-    /// pills. Cheap; called on every viewport / card change.
+    /// zoom readout, the minimap rects + viewport box, and the edge pills.
+    /// Cheap; called on every viewport / card change.
     func refreshWayfinding(_ viewport: Viewport?) {
         let vp = viewport ?? board.viewport
         zoomControl.setZoom(vp.zoom)
         minimap.update(items: board.minimapItems, viewportWorldRect: board.viewportWorldRect)
         let hints = offscreenHintProvider?() ?? []
-        // The hint overlay shares the board's coordinate space (same frame).
-        offHints.update(hints: hints, viewRect: board.bounds)
+        offHints.show(hints, in: board.bounds, around: board.cards.values.map(\.frame))
+        // Only terminals signal, so a hint's id is a terminal's.
+        offscreenFlyTarget = OffscreenHintLayout.flyTarget(hints).map(CardID.term)
     }
-
-    /// The card the Return flight should fly to (most-recent offscreen signal),
-    /// or nil. The controller reads this for the ⏎ key.
-    var offscreenFlyTarget: CardID? { offHints.targetCardID }
 
     func attachTerminal(_ terminal: TerminalView, termID: String, worldFrame: CardFrame) {
         board.setTerminal(termID: termID, terminal, worldFrame: worldFrame)
@@ -146,30 +147,33 @@ final class RootView: NSView {
         needsLayout = true
     }
 
-    /// Board height = window minus the 27px status bar (migration-plan Phase 3).
-    private var boardHeight: CGFloat { max(0, bounds.height - StatusBar.height) }
+    /// The window above the status bar: the board, and what every overlay is
+    /// measured from.
+    private var boardArea: NSRect {
+        NSRect(x: 0, y: 0, width: bounds.width, height: max(0, bounds.height - StatusBar.height))
+    }
 
     override func layout() {
         super.layout()
-        board.frame = NSRect(x: 0, y: 0, width: bounds.width, height: boardHeight)
-        statusBar.frame = NSRect(x: 0, y: boardHeight, width: bounds.width, height: StatusBar.height)
+        let area = boardArea
+        board.frame = area
+        statusBar.frame = NSRect(x: 0, y: area.maxY, width: bounds.width, height: StatusBar.height)
 
-        // Offscreen-hint overlay spans the board (its hint coords are board-space).
-        offHints.frame = NSRect(x: 0, y: 0, width: bounds.width, height: boardHeight)
+        offHints.over.frame = area
+        toasts.frame = bounds
         // Zoom control: bottom-left, left 12, 12 above the status bar.
         zoomControl.sizeToContents()
         let zc = zoomControl.frame.size
-        zoomControl.frame = NSRect(x: 12, y: boardHeight - 12 - zc.height, width: zc.width, height: zc.height)
+        zoomControl.frame = NSRect(x: 12, y: area.maxY - 12 - zc.height, width: zc.width, height: zc.height)
         // Minimap: bottom-right, right 12, 12 above the status bar.
         minimap.frame = NSRect(
-            x: bounds.width - 12 - Minimap.mapWidth,
-            y: boardHeight - 12 - Minimap.mapHeight,
+            x: area.maxX - 12 - Minimap.mapWidth,
+            y: area.maxY - 12 - Minimap.mapHeight,
             width: Minimap.mapWidth,
             height: Minimap.mapHeight
         )
 
-        // Cycle HUD: centered horizontally, top 12 in the board's coordinate
-        // space (the board fills from y=0 to boardHeight).
+        // Cycle HUD: centered horizontally, 12 below the board's top.
         if !cycleHUD.isHidden {
             cycleHUD.sizeToContents()
             let size = cycleHUD.frame.size
@@ -181,12 +185,20 @@ final class RootView: NSView {
             )
         }
 
-        toasts.frame = bounds
-        // ⌘K switcher: covers the board area (the status bar stays legible below,
-        // showing the board count); the panel centers itself within.
-        if !boardSwitcher.isHidden {
-            boardSwitcher.frame = NSRect(x: 0, y: 0, width: bounds.width, height: boardHeight)
-        }
+        // ⌘K switcher: covers the board area and leaves the status bar legible;
+        // the panel centers itself within.
+        if !boardSwitcher.isHidden { boardSwitcher.frame = area }
         cardsChanged()
+    }
+}
+
+private extension BoardView {
+    /// Puts `sheet` over the provenance edges and under every card. The board
+    /// keeps its two layers private, so the edge layer is found by its type.
+    func mountUnderCards(_ sheet: NSView) {
+        guard let edges = subviews.first(where: { $0 is EdgeLayerView }) else { return }
+        sheet.frame = bounds
+        sheet.autoresizingMask = [.width, .height]
+        addSubview(sheet, positioned: .above, relativeTo: edges)
     }
 }
