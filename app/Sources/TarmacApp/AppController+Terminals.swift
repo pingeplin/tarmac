@@ -238,7 +238,7 @@ extension AppController {
         let frame = card.worldFrame
         switch TermExit.decide(code: code, otherLiveTerminals: board.otherLiveTerminals(than: termID)) {
         case .holdOpen:
-            holdOpen(s, code: code, on: board)
+            holdOpen(s, on: board)
             board.reassignPrime()
         case .remove:
             removeTerminalCard(termID, on: board)
@@ -256,12 +256,12 @@ extension AppController {
     /// The card stays on the board as a dead placeholder: it keeps its label
     /// and its screen, takes no input, and is never persisted. A scrollback
     /// wait is left running, so history asked for before the exit still lands.
-    func holdOpen(_ s: TerminalSession, code: Int?, on board: Board) {
+    func holdOpen(_ s: TerminalSession, on board: Board) {
         s.live = false
         s.needsSpawn = false
         s.procName = nil
         s.bellAt = nil
-        board.view.card(.term(s.termID))?.setExited(code)
+        board.view.card(.term(s.termID))?.setExited()
         board.view.signalsChanged()
     }
 

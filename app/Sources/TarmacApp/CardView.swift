@@ -363,7 +363,7 @@ final class CardView: NSView {
     /// and never reaches here. ⌘W closes the placeholder; it is session-local
     /// either way and clears on relaunch, since this `dead` state excludes it
     /// from the persisted layout (spec 2606.0001).
-    func setExited(_ code: Int?) {
+    func setExited() {
         guard !dead else { return }
         // Clear any live/bell signal first (while still !dead so the guarded
         // setters apply) — an exited card must not advertise a cyan/amber signal.
