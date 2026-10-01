@@ -72,6 +72,16 @@ final class TerminalRendererTests: XCTestCase {
         XCTAssertEqual(canvas.colours(inCols: 2..<3, row: 0), [theme.background])
     }
 
+    /// A fallback-font cell is drawn through a CoreText line, which moves the
+    /// context's text position; the next plain glyph must not inherit it.
+    func testPlainGlyphsAfterAFallbackCellStayInTheirOwnCells() throws {
+        let canvas = try render("世M\r\nM")
+        XCTAssertGreaterThan(canvas.colours(inCols: 2..<3, row: 0).count, 1, "the M after 世")
+        XCTAssertGreaterThan(canvas.colours(inCols: 0..<1, row: 1).count, 1, "the M on the next row")
+        XCTAssertEqual(canvas.colours(inCols: 3..<8, row: 0), [theme.background])
+        XCTAssertEqual(canvas.colours(inCols: 1..<8, row: 1), [theme.background])
+    }
+
     func testUnderlineIsDrawnBelowTheGlyph() throws {
         let plain = try render("\u{1b}[32m ")
         let underlined = try render("\u{1b}[32;4m ")

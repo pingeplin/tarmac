@@ -59,7 +59,6 @@ final class TerminalRenderer {
         let pixels = PixelGrid(context)
         context.saveGState()
         defer { context.restoreGState() }
-        context.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
 
         for row in rows.clamped(to: 0..<frame.rows.count) {
             drawBackgrounds(frame, row: row, layout: layout, pixels: pixels, in: context)
@@ -146,6 +145,8 @@ final class TerminalRenderer {
         let font = fonts.font(for: flags)
         let baseline = CGPoint(x: pixels.snap(origin.x), y: pixels.snap(origin.y + fonts.metrics.baseline))
         context.setFillColor(colour.cgColor)
+        // Drawing a line leaves its position in the text matrix, so start from the bare flip.
+        context.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
         switch shape(text, font: font, style: flags.intersection([.bold, .italic]).rawValue) {
         case .glyph(var glyph):
             // Glyph positions are in text space, which the flipped text matrix mirrors.
@@ -267,6 +268,7 @@ final class TerminalRenderer {
         context.setFillColor(frame.background.cgColor)
         context.fill(box)
         context.setFillColor(frame.foreground.cgColor)
+        context.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
         context.textPosition = CGPoint(x: box.minX, y: pixels.snap(origin.y + fonts.metrics.baseline))
         CTLineDraw(line, context)
         let thickness = max(pixels.snap(fonts.metrics.lineThickness), pixels.pixel)

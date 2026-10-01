@@ -13,5 +13,6 @@ let package = Package(
         .target(name: "TarmacTerm", dependencies: ["GhosttyVt"]),
         .testTarget(name: "TarmacTermTests", dependencies: ["TarmacTerm", "GhosttyVt"]),
         .executableTarget(name: "tarmac-smoke", dependencies: ["TarmacKit"]),
+        .executableTarget(name: "tarmac-term-demo", dependencies: ["TarmacKit", "TarmacTerm"]),
     ]
 )
