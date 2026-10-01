@@ -4,9 +4,12 @@ import Foundation
 /// needs beyond where and when. The app posts it as a key-down then a key-up.
 ///
 /// `keyCode` is the load-bearing field: the app's key bindings and the terminal's
-/// encoder both read the physical key. The two character fields are what a US
-/// layout delivers for it, so a synthesized event is not distinguishable from a
-/// typed one by a handler that reads them.
+/// encoder both read the physical key. It and the modifier flags are exactly a
+/// real press's on a US layout, and so are the character fields — except for a
+/// chord with Option and no Control, where `characters` is the face without the
+/// Option layer: a real ⌥B carries `∫`, this carries `b`. The terminal view
+/// re-derives that text from the key code while it treats Option as Alt; a
+/// handler that reads `characters` of an Option chord sees the difference.
 public struct DevKeyStroke: Equatable, Sendable {
     /// `NSEvent.ModifierFlags` raw bits, restated so the kit stays AppKit-free.
     public struct ModifierFlags: OptionSet, Hashable, Sendable {
@@ -80,6 +83,13 @@ public enum DevKeyCombo {
     public static let strokeEvents = ["keydown", "keyup"]
     public static let contextMenuEvents = ["contextmenu"]
 
+    /// Two answers differ from the Tauri driver's:
+    ///   - a base named like an `Object.prototype` member (`toString`,
+    ///     `constructor`) is `bad_combo` here; its table is an object literal, so
+    ///     the lookup finds the inherited member and plans a key.
+    ///   - a combo with both a repeated and an unknown modifier
+    ///     (`ctrl+ctrl+foo+c`) is refused for whichever comes first; it reports the
+    ///     unknown one. The code is `bad_combo` either way.
     public static func parse(_ combo: String) -> Outcome {
         let parts = combo.split(separator: "+", omittingEmptySubsequences: false).map(String.init)
         let base = parts[parts.count - 1]

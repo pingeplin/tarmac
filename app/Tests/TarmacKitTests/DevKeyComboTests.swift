@@ -236,6 +236,19 @@ final class DevKeyComboTests: XCTestCase {
         XCTAssertEqual(refusal("CMD+c")?.code, .badCombo)
     }
 
+    /// The Tauri driver's key table is an object literal, so these resolve to an
+    /// inherited member there and plan a key. A closed grammar admits none.
+    func testANameJavaScriptObjectsInheritIsNotAKey() {
+        for combo in ["toString", "constructor", "__proto__", "valueOf", "ctrl+hasOwnProperty"] {
+            XCTAssertEqual(refusal(combo)?.code, .badCombo, combo)
+        }
+    }
+
+    func testModifiersAreCheckedInOrderSoTheFirstFaultIsTheOneNamed() {
+        XCTAssertEqual(refusal("ctrl+ctrl+foo+c")?.message.contains("repeated modifier"), true)
+        XCTAssertEqual(refusal("ctrl+foo+ctrl+c")?.message.contains("unknown modifier"), true)
+    }
+
     func testAnUnknownOrRepeatedModifierIsBadCombo() {
         XCTAssertEqual(refusal("hyper+c")?.code, .badCombo)
         XCTAssertEqual(refusal("ctrl+ctrl+c")?.code, .badCombo)
