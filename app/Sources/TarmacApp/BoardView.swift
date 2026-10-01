@@ -522,6 +522,7 @@ final class BoardView: NSView {
         cursors.attach(to: window)
         if window == nil {
             select(nil)
+            flight.cancel()
             // No release reaches a view that has left its window.
             cards.values.forEach { $0.cancelGesture() }
         }
