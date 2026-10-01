@@ -13,10 +13,20 @@ public enum JSONValue: Equatable, Sendable {
     case array([JSONValue])
     case object([String: JSONValue])
 
+    /// How deep arrays and objects may nest when bridged from Foundation. The
+    /// payloads come from an untrusted page, and walking them — or later
+    /// releasing them — recurses once per level, so an unbounded depth overflows
+    /// the stack. No console payload needs a tenth of this.
+    public static let maxDepth = 64
+
     /// Bridges what Foundation hands over — a `WKScriptMessage` body or
     /// `JSONSerialization` output. Nil for any value JSON cannot carry (a `Date`,
-    /// a custom object) anywhere in the tree.
+    /// a custom object) anywhere in the tree, and for nesting past `maxDepth`.
     public init?(foundation value: Any) {
+        self.init(foundation: value, containerDepth: 0)
+    }
+
+    private init?(foundation value: Any, containerDepth: Int) {
         switch value {
         case is NSNull:
             self = .null
@@ -26,16 +36,18 @@ public enum JSONValue: Equatable, Sendable {
             // An NSNumber 1 and the Boolean true both bridge to `Bool`; only the CF type tells them apart.
             self = CFGetTypeID(number) == CFBooleanGetTypeID() ? .bool(number.boolValue) : .number(number.doubleValue)
         case let array as [Any]:
+            guard containerDepth < Self.maxDepth else { return nil }
             var items: [JSONValue] = []
             for element in array {
-                guard let item = JSONValue(foundation: element) else { return nil }
+                guard let item = JSONValue(foundation: element, containerDepth: containerDepth + 1) else { return nil }
                 items.append(item)
             }
             self = .array(items)
         case let dictionary as [String: Any]:
+            guard containerDepth < Self.maxDepth else { return nil }
             var fields: [String: JSONValue] = [:]
             for (key, element) in dictionary {
-                guard let field = JSONValue(foundation: element) else { return nil }
+                guard let field = JSONValue(foundation: element, containerDepth: containerDepth + 1) else { return nil }
                 fields[key] = field
             }
             self = .object(fields)

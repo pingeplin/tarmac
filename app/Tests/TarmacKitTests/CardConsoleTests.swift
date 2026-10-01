@@ -86,6 +86,13 @@ final class CardConsoleTests: XCTestCase {
         XCTAssertNil(parse(["tarmac": "console", "level": "log", "args": [Date()] as [Any]]))
     }
 
+    /// The card is an untrusted page and can post a payload of any depth.
+    func testRejectsAConsolePayloadWhoseArgsNestPastTheLimitWithoutOverflowingTheStack() {
+        var deep: Any = 1
+        for _ in 0..<10_000 { deep = [deep] as [Any] }
+        XCTAssertNil(parse(["tarmac": "console", "level": "log", "args": [deep] as [Any]]))
+    }
+
     // MARK: - malformed ready (2607.0006 S14)
 
     func testRejectsAReadyPayloadWithNonStringNonNullMeta() {

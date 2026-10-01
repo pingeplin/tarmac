@@ -58,6 +58,37 @@ final class JSONValueTests: XCTestCase {
         XCTAssertNil(JSONValue(foundation: [Date()] as [Any]))
     }
 
+    // MARK: - nesting depth
+
+    private func nestedArrays(_ depth: Int) -> Any {
+        var value: Any = 1
+        for _ in 0..<depth { value = [value] as [Any] }
+        return value
+    }
+
+    private func nestedObjects(_ depth: Int) -> Any {
+        var value: Any = 1
+        for _ in 0..<depth { value = ["k": value] as [String: Any] }
+        return value
+    }
+
+    func testAcceptsNestingUpToTheLimit() {
+        XCTAssertEqual(JSONValue.maxDepth, 64)
+        XCTAssertNotNil(JSONValue(foundation: nestedArrays(JSONValue.maxDepth)))
+        XCTAssertNotNil(JSONValue(foundation: nestedObjects(JSONValue.maxDepth)))
+    }
+
+    func testRejectsNestingPastTheLimit() {
+        XCTAssertNil(JSONValue(foundation: nestedArrays(JSONValue.maxDepth + 1)))
+        XCTAssertNil(JSONValue(foundation: nestedObjects(JSONValue.maxDepth + 1)))
+    }
+
+    /// A card can post any payload; unbounded recursion on it overflows the stack.
+    func testRejectsAnAbsurdlyDeepPayloadWithoutOverflowingTheStack() {
+        XCTAssertNil(JSONValue(foundation: nestedArrays(10_000)))
+        XCTAssertNil(JSONValue(foundation: nestedObjects(10_000)))
+    }
+
     // MARK: - jsonString
 
     func testJSONStringIsCompactWithKeysSorted() {
