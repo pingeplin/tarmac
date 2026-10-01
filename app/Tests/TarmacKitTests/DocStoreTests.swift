@@ -223,4 +223,60 @@ final class DocStoreTests: XCTestCase {
             ["docs/plan.md", "archive/plan.md", "readme.md"]
         )
     }
+
+    // MARK: - Close
+
+    func testRemoveDropsTheDocAndItsDockSlot() {
+        let store = DocStore()
+        store.applyRestore([doc("/r/a.md"), doc("/r/b.md"), doc("/r/c.md")])
+        var changes = 0
+        store.onChange = { changes += 1 }
+        store.remove("/r/b.md")
+        XCTAssertEqual(store.docs.map(\.path), ["/r/a.md", "/r/c.md"])
+        XCTAssertNil(store.doc(for: "/r/b.md"))
+        XCTAssertEqual(store.doc(for: "/r/c.md")?.path, "/r/c.md")
+        XCTAssertEqual(changes, 1)
+    }
+
+    func testRemovingAnUnknownDocChangesNothing() {
+        let store = DocStore()
+        store.applyRestore([doc("/r/a.md")])
+        var changes = 0
+        store.onChange = { changes += 1 }
+        store.remove("/r/zzz.md")
+        XCTAssertEqual(store.docs.map(\.path), ["/r/a.md"])
+        XCTAssertEqual(changes, 0)
+    }
+
+    // MARK: - Re-open
+
+    /// A re-open that names no repo, owner or change time keeps what the doc had.
+    func testAReopenKeepsWhatTheNewEntryLeavesOut() {
+        let store = DocStore()
+        var first = doc("/r/a.md", repo: "api", repoRoot: "/r", repoColor: 2, lastChangedMs: 77)
+        first.termID = "t1"
+        store.applyDocOpened(first)
+        store.applyDocOpened(doc("/r/a.md", via: "user"))
+        let kept = store.doc(for: "/r/a.md")
+        XCTAssertEqual(kept?.repo, "api")
+        XCTAssertEqual(kept?.repoRoot, "/r")
+        XCTAssertEqual(kept?.repoColor, 2)
+        XCTAssertEqual(kept?.termID, "t1")
+        XCTAssertEqual(kept?.lastChangedMs, 77)
+        XCTAssertEqual(kept?.via, "user")
+    }
+
+    func testAReopenTakesWhatTheNewEntryCarries() {
+        let store = DocStore()
+        var first = doc("/r/a.md", repoColor: 2, lastChangedMs: 77)
+        first.termID = "t1"
+        store.applyDocOpened(first)
+        var second = doc("/r/a.md", repoColor: 3, lastChangedMs: 99)
+        second.termID = "t2"
+        store.applyDocOpened(second)
+        let kept = store.doc(for: "/r/a.md")
+        XCTAssertEqual(kept?.repoColor, 3)
+        XCTAssertEqual(kept?.termID, "t2")
+        XCTAssertEqual(kept?.lastChangedMs, 99)
+    }
 }

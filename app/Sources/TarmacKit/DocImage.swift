@@ -24,6 +24,14 @@ public enum DocImage {
         return normalize(ref.isRelative ? directory(of: docPath) + decoded : decoded)
     }
 
+    /// The `src` a doc-card `<img>` carries: a local file goes to the `img` host
+    /// of `tarmac-card://`, cache-busted by the doc's change time, and anything
+    /// else stays as written.
+    public static func src(_ src: String, docPath: String, mtimeMs: UInt64?) -> String {
+        guard let path = localPath(src: src, docPath: docPath) else { return src }
+        return CardURL.src(path: path, mtimeMs: mtimeMs, host: .img)
+    }
+
     private struct LocalRef {
         var path: String
         var isRelative: Bool
