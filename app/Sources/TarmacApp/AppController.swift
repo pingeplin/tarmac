@@ -120,10 +120,10 @@ final class AppController {
         get { activeBoard.docOwner }
         set { activeBoard.docOwner = newValue }
     }
-    var preFlightViewport: Viewport? {
-        get { activeBoard.preFlightViewport }
-        set { activeBoard.preFlightViewport = newValue }
-    }
+    /// The viewport to fly back to when ESC follows a Return flight. One slot
+    /// for the whole app, as in the web app: neither a board switch nor a pan
+    /// forgets it.
+    var preFlightViewport: Viewport?
     // Read-only computed accessors (pure functions of the active board's state).
     var primeSession: TerminalSession? { activeBoard.primeSession }
     var primeTerminalView: TerminalView? { activeBoard.primeTerminalView }

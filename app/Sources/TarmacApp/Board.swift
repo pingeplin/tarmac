@@ -47,8 +47,6 @@ final class Board {
 
     /// Provenance: doc path → the `term_id` that opened it (from `DocEntry`).
     var docOwner: [String: String] = [:]
-    /// The viewport to fly back to when esc follows a Return flight.
-    var preFlightViewport: Viewport?
 
     /// True once this board's first restore has been applied. Per-board because
     /// the daemon sends a restore for the active board on connect and again on
