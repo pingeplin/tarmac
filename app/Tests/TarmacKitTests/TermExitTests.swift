@@ -1,7 +1,7 @@
 import XCTest
 @testable import TarmacKit
 
-/// 2606.0001: the exit→action decision and the persisted-tile partition.
+/// 2606.0001: the exit→action decision.
 final class TermExitTests: XCTestCase {
     /// S10: the full decision grid. `code ∈ {0, 1, 130, nil}` × `otherLive ∈
     /// {0, 2}`. `130` (128 + SIGINT) guards "any non-zero → holdOpen" against a
@@ -34,27 +34,5 @@ final class TermExitTests: XCTestCase {
     func testCleanExitLastTerminalReplacesOnlyAtZero() {
         XCTAssertEqual(TermExit.decide(code: 0, otherLiveTerminals: 1), .remove)
         XCTAssertEqual(TermExit.decide(code: 0, otherLiveTerminals: 0), .removeAndReplace)
-    }
-
-    func testPersistsTileExcludesExited() {
-        XCTAssertTrue(TermExit.persistsTile(exited: false))
-        XCTAssertFalse(TermExit.persistsTile(exited: true))
-    }
-
-    /// S6 / S9: the partition keeps live AND detached survivors (both `exited ==
-    /// false`) and drops only exited tiles, preserving order. The "detached"
-    /// entry stands in for a reconnect survivor whose `live == false` — keying
-    /// the partition off liveness instead of `exited` would wrongly drop it.
-    func testPersistedTermIDsKeepsSurvivorsDropsExited() {
-        let tiles: [(termID: String, exited: Bool)] = [
-            ("live", false),
-            ("detached", false),   // reconnect survivor: live == false, but NOT exited
-            ("exited", true),      // clean-removed-or-held-open: dropped
-        ]
-        XCTAssertEqual(TermExit.persistedTermIDs(tiles), ["live", "detached"])
-    }
-
-    func testPersistedTermIDsEmpty() {
-        XCTAssertEqual(TermExit.persistedTermIDs([]), [])
     }
 }

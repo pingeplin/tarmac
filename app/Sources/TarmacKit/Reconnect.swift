@@ -5,14 +5,11 @@ import Foundation
 /// `TermRestore` / `BoardSwitcher`); `AppController` owns the AppKit timer +
 /// `DaemonClient` orchestration, which is reviewed not unit-tested.
 ///
-/// On a dropped daemon connection the app marks its sessions detached (faint, NOT
-/// dead) and retries `connect()` on this schedule. A successful reconnect drives
-/// the daemon's `board_list` + `restore` (with `liveTerms`), which re-binds the
-/// still-live shells (revive) and cold-spawns the gone ones — reusing the same
-/// rebind-vs-cold partition as [[TermRestore]]. The schedule is bounded twice
-/// over: a capped per-attempt delay AND a capped attempt count, so a daemon that
-/// never comes back surfaces a terminal "could not reconnect" notice rather than
-/// retrying forever.
+/// On a dropped daemon connection the app retries `connect()` on this schedule.
+/// What a successful reconnect does to the cards is `ReconnectRestore`'s. The
+/// schedule is bounded twice over: a capped per-attempt delay AND a capped
+/// attempt count, so a daemon that never comes back surfaces a terminal "could
+/// not reconnect" notice rather than retrying forever.
 public enum Reconnect {
     /// How many attempts before giving up. Beyond this `delay` returns nil.
     public static let maxAttempts = 10

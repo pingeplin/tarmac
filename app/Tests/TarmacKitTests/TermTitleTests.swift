@@ -1,7 +1,7 @@
 import XCTest
 @testable import TarmacKit
 
-/// The OSC-title vs process-name precedence rule and the "live" predicate.
+/// The OSC-title vs process-name precedence rule.
 final class TermTitleTests: XCTestCase {
     // MARK: displayLabel
 
@@ -46,31 +46,6 @@ final class TermTitleTests: XCTestCase {
             TermTitle.displayLabel(oscTitle: "build", procName: nil, shellName: "zsh"),
             "build"
         )
-    }
-
-    // MARK: isActive
-
-    func testIsActiveGrid() {
-        XCTAssertFalse(TermTitle.isActive(oscTitle: nil))
-        XCTAssertFalse(TermTitle.isActive(oscTitle: ""))
-        XCTAssertTrue(TermTitle.isActive(oscTitle: "anything"))
-    }
-
-    // MARK: isLive
-
-    /// A program that set its own OSC title reads as live (agent-active), even
-    /// when the foreground process is the bare shell.
-    func testOSCTitleCountsAsLive() {
-        XCTAssertTrue(TermTitle.isLive(oscTitle: "claude", procName: "zsh", shellName: "zsh"))
-    }
-
-    /// Without an OSC title, live falls back to the process heuristic: a
-    /// non-shell foreground process is live, the bare shell is idle.
-    func testProcHeuristicWhenNoOSC() {
-        XCTAssertTrue(TermTitle.isLive(oscTitle: nil, procName: "node", shellName: "zsh"))
-        XCTAssertFalse(TermTitle.isLive(oscTitle: nil, procName: "zsh", shellName: "zsh"))
-        XCTAssertFalse(TermTitle.isLive(oscTitle: nil, procName: nil, shellName: "zsh"))
-        XCTAssertFalse(TermTitle.isLive(oscTitle: nil, procName: "", shellName: "zsh"))
     }
 
     // MARK: precedence interaction (mirrors the AppController plumbing)
