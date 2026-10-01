@@ -6,7 +6,8 @@ import TarmacTerm
 // script and snapshotted to a PNG, so the terminal card can be checked on its
 // own. Environment:
 //   TERM_DEMO_SCRIPT   text typed into the shell once it is up ("\n" allowed)
-//   TERM_DEMO_SHOT     PNG path written after TERM_DEMO_WAIT seconds
+//   TERM_DEMO_SHOT     PNG path written after TERM_DEMO_WAIT seconds, and again
+//                      as <name>-b.png one cursor-blink interval later
 //   TERM_DEMO_WAIT     seconds between the script and the snapshot (default 2)
 //   TERM_DEMO_QUIT     quit after the snapshot when set
 //   TERM_DEMO_SCALE    scale the view like a zoomed board card (default 1)
@@ -40,6 +41,14 @@ final class Demo: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(terminal)
         NSApp.activate(ignoringOtherApps: true)
+        if let screen = window.screen {
+            // Top-left origin, the form `screencapture -R` takes.
+            let content = window.convertToScreen(window.contentLayoutRect)
+            let top = screen.frame.maxY - content.maxY
+            FileHandle.standardError.write(Data(
+                "demo: content \(Int(content.minX)),\(Int(top)),\(Int(content.width)),\(Int(content.height))\n".utf8
+            ))
+        }
 
         terminal.onInput = { [client, termID] in client.input(termID: termID, bytes: Data($0)) }
         terminal.onResize = { [client, termID] in client.resize(termID: termID, cols: $0, rows: $1) }
@@ -89,9 +98,13 @@ final class Demo: NSObject, NSApplicationDelegate {
             guard let path = environment["TERM_DEMO_SHOT"] else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [self] in
                 snapshot(to: path)
-                if environment["TERM_DEMO_QUIT"] != nil {
-                    client.termClose(termID: termID)
-                    NSApp.terminate(nil)
+                // A second shot one blink interval later catches the other cursor phase.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [self] in
+                    snapshot(to: path.replacingOccurrences(of: ".png", with: "-b.png"))
+                    if environment["TERM_DEMO_QUIT"] != nil {
+                        client.termClose(termID: termID)
+                        NSApp.terminate(nil)
+                    }
                 }
             }
         }
