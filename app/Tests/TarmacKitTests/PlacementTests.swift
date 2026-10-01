@@ -97,4 +97,56 @@ final class PlacementTests: XCTestCase {
         XCTAssertEqual(Placement.scanCols, 64)
         XCTAssertEqual(Placement.docColumns, 2)
     }
+
+    // MARK: - the collision inset and the scan extent
+
+    /// The neighbour starts 4 pt past the first slot's right edge, so only the 8 pt
+    /// inset makes it collide: with no inset, or one that shrinks, the slot is free.
+    func testACardJustPastTheSlotsRightEdgeStillCollidesThroughTheInset() {
+        let first = Placement.firstFreeSlot(owner: owner, existing: [])
+        let neighbour = CGRect(x: first.maxX + 4, y: first.minY, width: 100, height: Placement.docHeight)
+        XCTAssertEqual(
+            Placement.firstFreeSlot(owner: owner, existing: [neighbour]),
+            CGRect(x: anchorX + 2 * (Placement.docWidth + Placement.gapX), y: owner.minY,
+                   width: Placement.docWidth, height: Placement.docHeight),
+            "columns 0 and 1 are both within 8 pt of the neighbour"
+        )
+    }
+
+    func testACardJustBelowTheSlotStillCollidesThroughTheInset() {
+        let first = Placement.firstFreeSlot(owner: owner, existing: [])
+        let below = CGRect(x: first.minX, y: first.maxY + 4, width: Placement.docWidth, height: 20)
+        XCTAssertEqual(
+            Placement.firstFreeSlot(owner: owner, existing: [below]),
+            CGRect(x: anchorX + Placement.docWidth + Placement.gapX, y: owner.minY,
+                   width: Placement.docWidth, height: Placement.docHeight)
+        )
+    }
+
+    func testACardMoreThanTheInsetAwayDoesNotCollide() {
+        let first = Placement.firstFreeSlot(owner: owner, existing: [])
+        let clear = CGRect(x: first.maxX + 9, y: first.minY, width: 20, height: Placement.docHeight)
+        XCTAssertEqual(Placement.firstFreeSlot(owner: owner, existing: [clear]), first)
+    }
+
+    /// Columns 0…62 blocked in every row: the slot is column 63 of row 0, which a
+    /// scan of only 63 columns would never reach.
+    func testTheScanReachesTheSixtyFourthColumn() {
+        let pitch = Placement.docWidth + Placement.gapX
+        let blocked = CGRect(x: 0, y: -1e6, width: anchorX + 62 * pitch + Placement.docWidth, height: 2e6)
+        XCTAssertEqual(
+            Placement.firstFreeSlot(owner: owner, existing: [blocked]),
+            CGRect(x: anchorX + 63 * pitch, y: owner.minY, width: Placement.docWidth, height: Placement.docHeight)
+        )
+    }
+
+    /// Rows 0…62 blocked in every column: the slot is row 63, column 0.
+    func testTheScanReachesTheSixtyFourthRow() {
+        let pitch = Placement.docHeight + Placement.gapY
+        let blocked = CGRect(x: -1e6, y: 0, width: 2e6, height: owner.minY + 62 * pitch + Placement.docHeight)
+        XCTAssertEqual(
+            Placement.firstFreeSlot(owner: owner, existing: [blocked]),
+            CGRect(x: anchorX, y: owner.minY + 63 * pitch, width: Placement.docWidth, height: Placement.docHeight)
+        )
+    }
 }

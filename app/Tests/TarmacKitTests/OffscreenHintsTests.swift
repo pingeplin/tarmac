@@ -300,4 +300,74 @@ final class OffscreenHintLayoutTests: XCTestCase {
         XCTAssertFalse(Placement.rectsIntersect(rect(of: pill), far))
         XCTAssertTrue(pill.occluded)
     }
+
+    // MARK: - the pieces the first fixtures never reached
+
+    private func pill(
+        size: CGSize,
+        view: CGRect,
+        center: CGPoint,
+        obstacles: [CGRect] = []
+    ) throws -> Layout.PlacedPill {
+        let options = Layout.Options(
+            edgeInset: 18, edgeMargin: 10, stackGap: 8, pillSize: { _ in size }, obstacles: obstacles
+        )
+        let hint = Layout.Hint(cardID: "h", centerView: center, signal: .live, label: "h", z: 0)
+        return try XCTUnwrap(Layout.stackPills([hint], in: view, options: options).first)
+    }
+
+    /// 400 − 23 / 2 = 388.5, which rounds up to 389; unrounded it would stay 388.5.
+    func testAFractionalPositionRoundsHalfUp() throws {
+        let placed = try pill(size: CGSize(width: 80, height: 23), view: view, center: CGPoint(x: 2000, y: 400))
+        XCTAssertEqual(placed.top, 389)
+    }
+
+    /// Both positions land on a negative half: −411.5 rounds up to −411 and −55.5 to
+    /// −55, where `rounded()` would give −412 and −56.
+    func testANegativeHalfRoundsTowardPositiveInfinity() throws {
+        let negativeView = CGRect(x: -1000, y: -800, width: 1000, height: 800)
+        let placed = try pill(
+            size: CGSize(width: 45.5, height: 23), view: negativeView, center: CGPoint(x: 500, y: -400)
+        )
+        XCTAssertEqual(placed.left, -55)
+        XCTAssertEqual(placed.top, -411)
+    }
+
+    func testAnObstacleOutsideThePillsBandDoesNotMoveIt() throws {
+        let farSide = CGRect(x: 0, y: 380, width: 100, height: 40)
+        let placed = try pill(size: size, view: view, center: CGPoint(x: 2000, y: 400), obstacles: [farSide])
+        XCTAssertEqual(placed.top, 388)
+        XCTAssertFalse(placed.occluded)
+    }
+
+    func testPillsOnAllFourEdgesComeOutLeftRightTopBottom() {
+        let pills = stack([
+            hint("b", CGPoint(x: 500, y: 2000), .live, 0),
+            hint("t", CGPoint(x: 500, y: -300), .live, 0),
+            hint("r", CGPoint(x: 2000, y: 400), .live, 0),
+            hint("l", CGPoint(x: -500, y: 300), .live, 0),
+        ])
+        XCTAssertEqual(pills.map(\.cardID), ["l", "r", "t", "b"])
+    }
+
+    /// Fourteen pills share one spot on a band that holds twelve. Each starts a
+    /// `stackGap` past its sibling, so the last two overflow the viewport rather than
+    /// stack on a sibling or vanish.
+    func testAnOverSaturatedEdgeOverflowsForwardInsteadOfOverlappingOrVanishing() {
+        let hints = (0..<14).map { hint("h\($0)", CGPoint(x: 2000, y: 400), .live, 0) }
+        let tops = stack(hints).map(\.top)
+        XCTAssertEqual(tops, (0..<14).map { 388 + 32 * CGFloat($0) })
+        XCTAssertGreaterThan(tops[12], 800 - 24 - 10, "the overflow is past the viewport margin")
+    }
+
+    /// The overflow also steps past an obstacle in its way: 772 would sit on it, so
+    /// the pill moves to the obstacle's padded far edge.
+    func testAnOverflowingPillStepsPastAnObstacleInItsWay() {
+        let obstacle = CGRect(x: 900, y: 780, width: 100, height: 120)
+        let hints = (0..<14).map { hint("h\($0)", CGPoint(x: 2000, y: 400), .live, 0) }
+        let tops = stack(hints, obstacles: [obstacle]).map(\.top)
+        XCTAssertEqual(Array(tops[0..<12]), (0..<12).map { 388 + 32 * CGFloat($0) })
+        XCTAssertEqual(tops[12], 908, "obstacle.maxY + stackGap")
+        XCTAssertEqual(tops[13], 940, "one stackGap past the sibling")
+    }
 }
