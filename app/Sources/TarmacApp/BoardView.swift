@@ -370,31 +370,29 @@ final class BoardView: NSView {
         onCardsChanged?()
     }
 
-    /// Places a card on screen. Its frame carries the position and the zoom
-    /// while its bounds stay the card's world size, so AppKit scales the card and
-    /// everything in it as one and its content never reflows under zoom: only a
-    /// resize changes the world size, which is the one time a terminal
-    /// re-measures its grid.
+    /// Places a card on screen, at the frame and the scale its chrome is laid
+    /// out for. The card keeps its body at world size whatever the zoom: only a
+    /// resize changes that, which is the one time a terminal re-measures its
+    /// grid.
     private func project(_ card: CardView) {
-        let frame = screenFrame(of: card.worldFrame.rect)
-        let resized = card.frame.size != frame.size
-        card.frame = frame
-        // A new frame size drags the bounds along with it, so they are put back
-        // to the world size on a zoom step or a resize. A pan leaves them alone.
-        if resized { card.setBoundsSize(CGSize(width: card.worldFrame.w, height: card.worldFrame.h)) }
+        card.project(
+            to: screenFrame(of: card.worldFrame.rect),
+            scale: CardScale(zoom: viewport.zoom, backing: window?.backingScaleFactor ?? 2)
+        )
         cull(card)
     }
 
-    /// A world rect's place on screen, with its origin moved to the nearest
-    /// whole device pixel. An origin between pixels has the whole card
-    /// resampled, which softens every glyph and hairline in it — plainly so on a
-    /// 1× display. The size is left alone: it is what carries the zoom.
+    /// A world rect's place on screen, with its origin and its size each moved
+    /// to the nearest whole device pixel. An edge between pixels is drawn
+    /// across two, which softens the border and everything laid out from it —
+    /// plainly so on a 1× display. The size is rounded by itself, not as the
+    /// gap between two rounded edges, so a pan never changes it: a card whose
+    /// size flickered by a pixel would lay its chrome out again on every frame.
     private func screenFrame(of world: CGRect) -> CGRect {
-        let raw = worldToView(world)
-        let aligned = cardLayer.backingAlignedRect(
-            raw, options: [.alignMinXNearest, .alignMinYNearest, .alignWidthNearest, .alignHeightNearest]
+        cardLayer.backingAlignedRect(
+            worldToView(world),
+            options: [.alignMinXNearest, .alignMinYNearest, .alignWidthNearest, .alignHeightNearest]
         )
-        return CGRect(origin: aligned.origin, size: raw.size)
     }
 
     /// Hides a card that lies more than a viewport off screen and shows it
@@ -431,9 +429,9 @@ final class BoardView: NSView {
 
     // MARK: Content scale
 
-    /// A card is drawn at its world size and scaled to its frame, so its
-    /// layers are rasterised at `CardRaster`'s density for the zoom rather than
-    /// stretched. Re-applied only when the zoom changes, not on a pan.
+    /// A card's body is drawn at its world size and scaled, so its layers are
+    /// rasterised at `CardRaster`'s density for the zoom rather than stretched.
+    /// Re-applied only when the zoom changes, not on a pan.
     private var lastContentScaleZoom: CGFloat = 0
     private var contentScale: CGFloat {
         CardRaster.layerScale(backing: window?.backingScaleFactor ?? 2, zoom: viewport.zoom)

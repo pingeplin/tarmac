@@ -21,6 +21,26 @@ extension NSTextField {
         frame = saved
         return size
     }
+
+    /// The field's own size and the room it takes in a card header at `zoom`,
+    /// from one measurement of its text. `fittedSize` would give the size too,
+    /// but lays the text out again, and every header on the board is measured
+    /// on each frame of a zoom.
+    func headerMetrics(zoom: CGFloat) -> HeaderTextMetrics {
+        let text = attributedStringValue.size()
+        return HeaderTextMetrics(
+            room: CardHeaderLayout.textItemWidth(text: text.width, scale: zoom),
+            size: NSSize(width: CardHeaderLayout.textFieldWidth(text: text.width), height: text.height)
+        )
+    }
+}
+
+struct HeaderTextMetrics {
+    /// The room the field takes in the row.
+    let room: CGFloat
+    /// The field's own size, wider than its room by the padding the zoom does
+    /// not scale.
+    let size: NSSize
 }
 
 /// The `✎ Ns` meta on a doc card: shown while the doc's last change is inside
@@ -83,27 +103,47 @@ final class RecentMetaLabel: NSTextField {
 final class HeaderButton: NSView {
     var onClick: (() -> Void)?
 
+    private static let fontSize: CGFloat = 10.5
+    private static let padX: CGFloat = 5
+    private static let padY: CGFloat = 1
+    private static let cornerRadius: CGFloat = 4
+
     private let label: NSTextField
-    private let size: NSSize
+    private var size: NSSize = .zero
     private var trackingArea: NSTrackingArea?
 
     override var acceptsFirstResponder: Bool { false }
 
     init(glyph: String, toolTip: String) {
         label = NSTextField(labelWithString: glyph)
-        label.font = Theme.mono(10.5)
         label.textColor = Theme.faint
-        let textSize = label.fittedSize
-        size = NSSize(width: textSize.width + 10, height: textSize.height + 2)
-        super.init(frame: NSRect(origin: .zero, size: size))
+        super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = 4
         self.toolTip = toolTip
-        label.frame = NSRect(x: 5, y: 1, width: textSize.width, height: textSize.height)
         addSubview(label)
+        apply(CardScale(zoom: 1, backing: 2))
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// Sizes the button for the board's zoom: its glyph, padding and corners.
+    func apply(_ scale: CardScale) {
+        label.font = Theme.mono(scale.length(Self.fontSize))
+        let text = label.headerMetrics(zoom: scale.zoom)
+        let padX = scale.length(Self.padX)
+        let padY = scale.length(Self.padY)
+        // The height on whole device pixels: the label is placed from the
+        // bottom edge, which has to be on one for the text to be.
+        size = NSSize(width: text.room + 2 * padX, height: scale.aligned(text.size.height + 2 * padY))
+        label.frame = NSRect(
+            x: scale.aligned(padX - CardHeaderLayout.textOverhang(scale: scale.zoom)),
+            y: scale.aligned(padY),
+            width: text.size.width,
+            height: text.size.height
+        )
+        layer?.cornerRadius = scale.length(Self.cornerRadius)
+        invalidateIntrinsicContentSize()
+    }
 
     override var intrinsicContentSize: NSSize { size }
 
@@ -152,9 +192,12 @@ final class OwnerChipView: NSView {
     private static let maxWidth: CGFloat = 120
     private static let padX: CGFloat = 6
     private static let padY: CGFloat = 1
+    private static let fontSize: CGFloat = 9
+    private static let cornerRadius: CGFloat = 4
 
     private let label = NSTextField(labelWithString: "")
     private var size: NSSize = .zero
+    private var scale = CardScale(zoom: 1, backing: 2)
 
     override var acceptsFirstResponder: Bool { false }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -162,23 +205,45 @@ final class OwnerChipView: NSView {
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = 4
-        layer?.borderWidth = 1
         layer?.borderColor = Theme.lineSoft.cgColor
-        label.font = Theme.mono(9)
         label.textColor = Theme.faint
         label.lineBreakMode = .byTruncatingTail
         addSubview(label)
+        apply(scale)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
     func setLabel(_ text: String) {
         label.stringValue = text
-        let textSize = label.fittedSize
-        let width = min(Self.maxWidth, textSize.width + Self.padX * 2)
-        size = NSSize(width: width, height: textSize.height + Self.padY * 2)
-        label.frame = NSRect(x: Self.padX, y: Self.padY, width: width - Self.padX * 2, height: textSize.height)
+        measure()
+    }
+
+    /// Sizes the chip for the board's zoom: its text, padding, border and
+    /// corners. A hidden chip only notes the scale, and is sized when it is
+    /// next given a label to show.
+    func apply(_ scale: CardScale) {
+        self.scale = scale
+        if !isHidden { measure() }
+    }
+
+    private func measure() {
+        label.font = Theme.mono(scale.length(Self.fontSize))
+        layer?.cornerRadius = scale.length(Self.cornerRadius)
+        layer?.borderWidth = scale.line(1)
+        let text = label.headerMetrics(zoom: scale.zoom)
+        let padX = scale.length(Self.padX)
+        let padY = scale.length(Self.padY)
+        let overhang = CardHeaderLayout.textOverhang(scale: scale.zoom)
+        let natural = text.room + 2 * padX
+        let width = min(scale.length(Self.maxWidth), natural)
+        size = NSSize(width: width, height: scale.aligned(text.size.height + 2 * padY))
+        label.frame = NSRect(
+            x: scale.aligned(padX - overhang),
+            y: scale.aligned(padY),
+            width: width < natural ? width - 2 * padX + 2 * overhang : text.size.width,
+            height: text.size.height
+        )
         invalidateIntrinsicContentSize()
     }
 
@@ -191,6 +256,9 @@ final class OwnerChipView: NSView {
 /// A terminal header reads `›_ label … ●`; a doc header reads
 /// `¶ ● label … ← owner  ✚ now  ✎ Ns  ↻  ✕`. The buttons keep their own
 /// presses; everywhere else a press is the header's.
+///
+/// The header is laid out at its size on screen: every font and metric takes
+/// the board's zoom, and its items sit on whole device pixels.
 @MainActor
 final class CardHeaderView: NSView {
     enum Kind {
@@ -213,8 +281,11 @@ final class CardHeaderView: NSView {
     let closeButton: HeaderButton?
     let refreshButton: HeaderButton?
 
-    private static let font = Theme.mono(10.5)
+    private static let fontSize: CGFloat = 10.5
+    private static let recencyFontSize: CGFloat = 9.5
     private static let dotSize: CGFloat = 7
+
+    private var scale = CardScale(zoom: 1, backing: 2)
 
     private let hairline = NSView()
     private let kindGlyph: NSTextField
@@ -222,7 +293,7 @@ final class CardHeaderView: NSView {
     private let label = NSTextField(labelWithString: "")
     private let ownerChip = OwnerChipView()
     private let freshMeta = NSTextField(labelWithString: "✚ now")
-    private let recency = RecentMetaLabel(font: Theme.mono(9.5), color: Theme.agent)
+    private let recency = RecentMetaLabel(font: Theme.mono(recencyFontSize), color: Theme.agent)
     private let bellDot = NSTextField(labelWithString: "●")
     /// An extra control between `↻` and `✕`.
     private var accessory: NSView?
@@ -246,26 +317,21 @@ final class CardHeaderView: NSView {
         hairline.wantsLayer = true
         hairline.layer?.backgroundColor = Theme.lineSoft.cgColor
 
-        kindGlyph.font = Self.font
         kindGlyph.textColor = Theme.faint
 
         repoDot.wantsLayer = true
-        repoDot.layer?.cornerRadius = Self.dotSize / 2
         repoDot.isHidden = true
 
-        label.font = Self.font
         label.textColor = Theme.muted
         label.lineBreakMode = .byTruncatingTail
 
         ownerChip.isHidden = true
 
-        freshMeta.font = Self.font
         freshMeta.textColor = Theme.agent
         freshMeta.isHidden = true
 
         recency.onUpdate = { [weak self] in self?.needsLayout = true }
 
-        bellDot.font = Self.font
         bellDot.textColor = Theme.amber
         bellDot.isHidden = true
 
@@ -273,9 +339,36 @@ final class CardHeaderView: NSView {
         for view in [hairline, kindGlyph, repoDot, label, ownerChip, freshMeta, recency, bellDot] + controls.compactMap({ $0 }) {
             addSubview(view)
         }
+        applyScale()
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    // MARK: Scale
+
+    /// Sizes the header for the board's zoom and the display's density.
+    func apply(_ scale: CardScale) {
+        guard scale != self.scale else { return }
+        self.scale = scale
+        applyScale()
+    }
+
+    private func applyScale() {
+        font = Theme.mono(scale.length(Self.fontSize))
+        recency.font = Theme.mono(scale.length(Self.recencyFontSize))
+        repoDot.layer?.cornerRadius = scale.length(Self.dotSize) / 2
+        ownerChip.apply(scale)
+        refreshButton?.apply(scale)
+        closeButton?.apply(scale)
+        needsLayout = true
+    }
+
+    /// The face of the glyph, the label and the marks, at the current scale. A
+    /// field takes it when it is laid out, so a hidden one costs nothing while
+    /// the board zooms.
+    private var font = Theme.mono(fontSize)
+
+    private var hairlineWidth: CGFloat { scale.line(1) }
 
     // MARK: Content
 
@@ -304,8 +397,8 @@ final class CardHeaderView: NSView {
 
     /// Shows `← <name>`, or hides the chip with nil.
     func setOwnerChip(_ name: String?) {
-        if let name { ownerChip.setLabel("← \(name)") }
         ownerChip.isHidden = name == nil
+        if let name { ownerChip.setLabel("← \(name)") }
         needsLayout = true
     }
 
@@ -333,37 +426,56 @@ final class CardHeaderView: NSView {
 
     override func layout() {
         super.layout()
-        hairline.frame = NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1)
+        hairline.frame = NSRect(x: 0, y: bounds.height - hairlineWidth, width: bounds.width, height: hairlineWidth)
 
-        let leading = [(kindGlyph, kindGlyph.fittedSize), (repoDot, NSSize(width: Self.dotSize, height: Self.dotSize))]
-            .filter { !$0.0.isHidden }
+        let dot = scale.length(Self.dotSize)
+        let leading = [item(kindGlyph), Item(view: repoDot, room: dot, size: NSSize(width: dot, height: dot))]
+            .filter { !$0.view.isHidden }
         let trailingViews: [NSView?] = [ownerChip, freshMeta, recency, refreshButton, accessory, closeButton, bellDot]
-        let trailing = trailingViews.compactMap { $0 }.filter { !$0.isHidden }.map { ($0, size(of: $0)) }
-        let labelSize = label.fittedSize
+        let trailing = trailingViews.compactMap { $0 }.filter { !$0.isHidden }.map(item)
+        let title = item(label)
 
         let frames = CardHeaderLayout.frames(
             width: bounds.width,
-            leading: leading.map(\.1.width),
-            label: labelSize.width,
-            trailing: trailing.map(\.1.width)
+            leading: leading.map(\.room),
+            label: title.room,
+            trailing: trailing.map(\.room),
+            scale: scale.zoom
         )
-        for (item, span) in zip(leading, frames.leading) { place(item.0, span, height: item.1.height) }
-        for (item, span) in zip(trailing, frames.trailing) { place(item.0, span, height: item.1.height) }
-        place(label, frames.label, height: labelSize.height)
+        for (item, span) in zip(leading, frames.leading) { place(item, at: span.x) }
+        for (item, span) in zip(trailing, frames.trailing) { place(item, at: span.x) }
+        // The label alone can be given less room than it takes, and is cut to it.
+        place(title, at: frames.label.x, cutTo: frames.label.width < title.room ? frames.label.width : nil)
     }
 
-    private func size(of view: NSView) -> NSSize {
-        if let field = view as? NSTextField { return field.fittedSize }
-        return view.intrinsicContentSize
+    private struct Item {
+        let view: NSView
+        /// The room it takes in the row.
+        let room: CGFloat
+        /// Its own size: for text, wider than its room by the padding the zoom
+        /// did not scale.
+        let size: NSSize
     }
 
-    /// Centred in the header above its bottom hairline.
-    private func place(_ view: NSView, _ span: CardHeaderLayout.Span, height: CGFloat) {
-        view.frame = NSRect(
-            x: span.x,
-            y: ((bounds.height - 1 - height) / 2).rounded(),
-            width: span.width,
-            height: height
+    private func item(_ view: NSView) -> Item {
+        guard let field = view as? NSTextField else {
+            let size = view.intrinsicContentSize
+            return Item(view: view, room: size.width, size: size)
+        }
+        if field !== recency, field.font != font { field.font = font }
+        let text = field.headerMetrics(zoom: scale.zoom)
+        return Item(view: field, room: text.room, size: text.size)
+    }
+
+    /// Centred in the header above its bottom hairline, its origin on a whole
+    /// device pixel so its text is not drawn between two.
+    private func place(_ item: Item, at x: CGFloat, cutTo room: CGFloat? = nil) {
+        let overhang = item.view is NSTextField ? CardHeaderLayout.textOverhang(scale: scale.zoom) : 0
+        item.view.frame = NSRect(
+            x: scale.aligned(x - overhang),
+            y: scale.aligned((bounds.height - hairlineWidth - item.size.height) / 2),
+            width: room.map { $0 + 2 * overhang } ?? item.size.width,
+            height: item.size.height
         )
     }
 
