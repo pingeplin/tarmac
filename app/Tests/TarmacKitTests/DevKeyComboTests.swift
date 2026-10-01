@@ -227,6 +227,15 @@ final class DevKeyComboTests: XCTestCase {
         }
     }
 
+    /// Each part on its own: a modifier, a named key or `contextmenu` in another
+    /// case must not fold onto the lowercase one.
+    func testNoPartOfAComboIsCaseFolded() {
+        for combo in ["CTRL+c", "Ctrl+c", "SHIFT+enter", "Alt+left", "ENTER", "Enter", "ctrl+Enter", "ContextMenu"] {
+            XCTAssertEqual(refusal(combo)?.code, .badCombo, combo)
+        }
+        XCTAssertEqual(refusal("CMD+c")?.code, .badCombo)
+    }
+
     func testAnUnknownOrRepeatedModifierIsBadCombo() {
         XCTAssertEqual(refusal("hyper+c")?.code, .badCombo)
         XCTAssertEqual(refusal("ctrl+ctrl+c")?.code, .badCombo)
