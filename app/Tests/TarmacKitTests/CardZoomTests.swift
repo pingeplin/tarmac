@@ -42,6 +42,20 @@ final class CardZoomTests: XCTestCase {
         XCTAssertEqual(CardZoom.scrollDelta(60, zoom: 0, magnify: true), 60)
     }
 
+    // MARK: - wheelDelta
+
+    /// AppKit's scrolling delta has the opposite sign to a web wheel event's,
+    /// and a notched wheel reports lines.
+    func testAWheelEventsDeltaIsItsScrollingDeltaNegated() {
+        XCTAssertEqual(CardZoom.wheelDelta(scrollingDelta: 12.5, precise: true), -12.5)
+        XCTAssertEqual(CardZoom.wheelDelta(scrollingDelta: -3, precise: true), 3)
+    }
+
+    func testANotchedWheelsLinesAreScaledUp() {
+        XCTAssertEqual(CardZoom.wheelDelta(scrollingDelta: 1, precise: false), -10)
+        XCTAssertEqual(CardZoom.wheelDelta(scrollingDelta: -2, precise: false), 20)
+    }
+
     // MARK: - quantizeScrollDelta (2609.0013)
 
     func testS1PassesAWholeDeltaThroughUntouched() {

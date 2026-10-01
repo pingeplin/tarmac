@@ -38,6 +38,13 @@ public enum CardZoom {
         magnify && zoom > 0 ? deltaPx / zoom : deltaPx
     }
 
+    /// A wheel event's delta as a web page counts it. AppKit's scrolling delta
+    /// has the opposite sign, and a notched wheel reports lines, scaled up as
+    /// the board scales them when it pans.
+    public static func wheelDelta(scrollingDelta: CGFloat, precise: Bool) -> CGFloat {
+        -scrollingDelta * (precise ? 1 : 10)
+    }
+
     public struct Quantized: Equatable, Sendable {
         public var step: Int
         public var carry: Double
