@@ -275,6 +275,18 @@ final class QuitGuardTests: XCTestCase {
         XCTAssertEqual(held.phase, .confirming)
     }
 
+    /// A sample older than the press that started the gesture counts as no time
+    /// held (`saturating_sub` in the Rust): the gesture neither advances nor
+    /// traps on an underflowing subtraction.
+    func testASampleOlderThanThePressHasHeldForNoTime() {
+        var guardian = showing(10_000)
+        XCTAssertEqual(guardian.onPoll(sampledMs: 9_999, keyDown: true), [])
+        XCTAssertEqual(guardian.phase, .showing(startedMs: 10_000))
+        XCTAssertEqual(guardian.onPoll(sampledMs: 0, keyDown: true), [])
+        XCTAssertEqual(guardian.phase, .showing(startedMs: 10_000))
+        XCTAssertEqual(guardian.onPoll(sampledMs: 10_500, keyDown: true), [.hideWindows])
+    }
+
     /// S14 — Chromium's second tap, measured from the first PRESS.
     func testASecondTapWithinTheWindowCommitsTheQuit() {
         var guardian = tapped(0, 400)
