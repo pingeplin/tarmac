@@ -50,9 +50,6 @@ struct Viewport: Equatable {
     var cx: CGFloat
     var cy: CGFloat
 
-    /// crib §5: the dot grid tightens to 11px below ~50%.
-    static let semanticZoomThreshold: CGFloat = 0.5
-
     /// No min/max bounds are authored in the design sources (crib §5 observes
     /// 36%–100%); clamp loosely so pinch/⌘± stay usable without a hard cap.
     static let minZoom: CGFloat = 0.1
@@ -60,8 +57,6 @@ struct Viewport: Equatable {
 
     /// Default opening viewport when `restore.board` is nil (crib §9).
     static let `default` = Viewport(zoom: 1.0, cx: 0, cy: 0)
-
-    var isSemanticZoom: Bool { zoom < Viewport.semanticZoomThreshold }
 }
 
 // MARK: - Wire bridging (AppController boundary)

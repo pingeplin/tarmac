@@ -2,28 +2,15 @@ import AppKit
 import QuartzCore
 import TarmacKit
 
-/// The infinite whiteboard (crib §5) — the v4 successor to `DeskGridView`.
-/// Strip = board; terminal and docs are free `CardView`s placed by world frame.
+/// The board: an infinite, pannable, zoomable surface that places each card
+/// by its world frame.
 ///
-/// World↔view transform: `view = (world − center)·zoom + viewportCenter`, where
-/// `center = (viewport.cx, viewport.cy)` (world) and `viewportCenter` is the
-/// board's view-space midpoint. Both spaces are top-down (this view is flipped),
-/// so a card's world `top` maps to a smaller view `y`.
-///
-/// Background dot grid is drawn in board space (radial dots, 24px world spacing,
-/// denser 11px below the semantic-zoom threshold). The card layer is reprojected
-/// on every pan / zoom / layout. Hosted by `RootView` in place of the retired
-/// `DeskGridView`.
+/// `view = (world − center)·zoom + viewportCenter`, where `center` is the
+/// viewport's world-space center and `viewportCenter` the midpoint of this
+/// view. Both spaces are top-down, and every card is reprojected on each pan,
+/// zoom and layout. The surface itself is a flat fill.
 @MainActor
 final class BoardView: NSView {
-    // Dot grid (crib §5): color #32383e, ~2px dot, 24px world spacing (11px lo-zoom).
-    private static let dotColor = NSColor(srgbRed: 50 / 255, green: 56 / 255, blue: 62 / 255, alpha: 1)
-    private static let dotRadius: CGFloat = 1
-    private static let gridSpacing: CGFloat = 24
-    private static let gridSpacingLo: CGFloat = 11
-    // board.css background-position: -7px -9px (world-space phase of the lattice).
-    private static let gridPhase = CGPoint(x: -7, y: -9)
-
     // MARK: - Public API (the exact surface Phase 2c calls)
 
     /// Fires after a *committed* move / resize / zoom / pan, with the current
@@ -285,8 +272,6 @@ final class BoardView: NSView {
     private func show(_ vp: Viewport) {
         viewport = clampZoom(vp)
         reprojectAll()
-        updateGridDensity()
-        needsDisplay = true
         onViewportChanged?(viewport)
     }
 
@@ -531,21 +516,13 @@ final class BoardView: NSView {
         )
     }
 
-    // MARK: - Grid
+    // MARK: - View
 
-    private var loZoom = false
-
-    private func updateGridDensity() {
-        let lo = viewport.isSemanticZoom
-        if lo != loZoom { loZoom = lo; needsDisplay = true }
-    }
-
+    /// A new board size moves the visible region, so the cards are reprojected
+    /// and the chrome that tracks the viewport is told.
     override func layout() {
         super.layout()
         reprojectAll()
-        needsDisplay = true
-        // A board-size change moves the visible region; refresh wayfinding via the
-        // viewport channel (fix #3 removed reprojectAll's own onCardsChanged).
         onViewportChanged?(viewport)
     }
 
@@ -577,76 +554,6 @@ final class BoardView: NSView {
         reprojectAll()
     }
 
-    /// Dot grid drawn in board space: a world lattice at `spacing` (phased by
-    /// `gridPhase`), each lattice point a `~2px` dot, projected to view. Spacing
-    /// is the world step → view step is `spacing·zoom`. Below the semantic-zoom
-    /// threshold the world spacing tightens to 11px (denser grid).
-    ///
-    /// Fix #1 (perf): the lattice is painted as ONE tiled blit of a cached
-    /// single-dot tile — `CGContext.draw(_:in:byTiling:)` — rather than a fresh
-    /// `NSBezierPath(ovalIn:).fill()` per dot. The old loop was O(dots) and at the
-    /// 11px density (zoom < 0.5) rasterized 26k–79k anti-aliased circles per frame
-    /// (~40–130ms on the main thread — the "50% cliff"). The tile's *period* is the
-    /// exact (fractional) `viewSpacing` and its centered dot is anchored on a real
-    /// lattice point, so every replica lands where the per-dot loop drew — visually
-    /// identical, but the grid is now a single CoreGraphics tile fill.
-    override func draw(_ dirtyRect: NSRect) {
-        Theme.bg0.setFill()
-        dirtyRect.fill()
-
-        let worldSpacing = loZoom ? Self.gridSpacingLo : Self.gridSpacing
-        let viewSpacing = worldSpacing * viewport.zoom
-        // Skip when dots would be denser than ~3px on screen (unreadable / slow).
-        guard viewSpacing >= 3, let ctx = NSGraphicsContext.current?.cgContext else { return }
-
-        // The lattice point at or before the visible top-left — the phase anchor.
-        // CoreGraphics replicates the tile in BOTH directions from `tileRect`, so
-        // seating one tile's centered dot on this point lands every replica on a
-        // lattice point (the tiling period equals `viewSpacing`).
-        let topLeftWorld = viewToWorld(CGPoint(x: bounds.minX, y: bounds.minY))
-        let startKX = floor((topLeftWorld.x - Self.gridPhase.x) / worldSpacing)
-        let startKY = floor((topLeftWorld.y - Self.gridPhase.y) / worldSpacing)
-
-        let anchor = worldToView(CGPoint(x: Self.gridPhase.x + startKX * worldSpacing,
-                                         y: Self.gridPhase.y + startKY * worldSpacing))
-        let scale = window?.backingScaleFactor ?? 2
-        let tile = gridTile(viewSpacing: viewSpacing, scale: scale)
-        let tileRect = CGRect(x: anchor.x - viewSpacing / 2, y: anchor.y - viewSpacing / 2,
-                              width: viewSpacing, height: viewSpacing)
-        ctx.saveGState()
-        ctx.clip(to: dirtyRect)
-        ctx.draw(tile, in: tileRect, byTiling: true)
-        ctx.restoreGState()
-    }
-
-    /// Cached one-cell grid tile: a single centered dot on transparency, sized to
-    /// `viewSpacing` at the backing `scale`. Keyed by pixel size, so it's rebuilt
-    /// only when zoom or display density changes — never per pan frame. The image's
-    /// pixel size affects only dot sharpness; the lattice period is the exact
-    /// fractional `tileRect`, so rounding here never drifts the grid phase.
-    private var gridTileCache: (pixelSize: Int, image: CGImage)?
-
-    private func gridTile(viewSpacing: CGFloat, scale: CGFloat) -> CGImage {
-        let px = max(1, Int((viewSpacing * scale).rounded()))
-        if let cached = gridTileCache, cached.pixelSize == px { return cached.image }
-        let image = Self.makeGridTile(pixelSize: px, dotRadiusPx: Self.dotRadius * scale, color: Self.dotColor)
-        gridTileCache = (px, image)
-        return image
-    }
-
-    private static func makeGridTile(pixelSize: Int, dotRadiusPx: CGFloat, color: NSColor) -> CGImage {
-        let ctx = CGContext(
-            data: nil, width: pixelSize, height: pixelSize, bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        )!
-        if let rgb = color.usingColorSpace(.deviceRGB) {
-            ctx.setFillColor(red: rgb.redComponent, green: rgb.greenComponent,
-                             blue: rgb.blueComponent, alpha: rgb.alphaComponent)
-        }
-        let c = CGFloat(pixelSize) / 2
-        ctx.fillEllipse(in: CGRect(x: c - dotRadiusPx, y: c - dotRadiusPx, width: dotRadiusPx * 2, height: dotRadiusPx * 2))
-        return ctx.makeImage()!
-    }
 }
 
 /// Holds the cards. Between cards it is not there: a press on the bare board
