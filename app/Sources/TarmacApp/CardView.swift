@@ -196,7 +196,8 @@ final class CardView: NSView {
             view.subviews.forEach(walkViews)
         }
         walkViews(self)
-        // The terminal redraws only on demand, so a new scale needs asking for.
+        // The terminal draws only when asked; its raster must not wait for the
+        // next output to pick up the new scale.
         termBody?.terminal?.needsDisplay = true
     }
 
