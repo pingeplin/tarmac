@@ -66,8 +66,13 @@ final class BoardView: NSView {
     }
 
     func removeCard(id: CardID) {
-        guard let card = cards.removeValue(forKey: id) else { return }
         culls.forget(id)
+        guard let card = cards[id] else { return }
+        // While the card is still on the board, so what its gesture moved is
+        // committed like any other.
+        card.cancelGesture()
+        cards[id] = nil
+        if carry?.owner == id { carry = nil }
         if selectedID == id { selectedID = nil }
         card.removeFromSuperview()
         recomputeEdges()
@@ -246,8 +251,11 @@ final class BoardView: NSView {
 
     private let cardLayer = CardLayerView()
     private let edgeLayer = EdgeLayerView()
-    /// Set while a terminal card is being moved by its header.
-    private var carry: SatelliteCarry?
+    /// A terminal card's attached docs, held while that card is being moved by
+    /// its header. Only a header move carries them: a resize from the left or
+    /// top also shifts the terminal's origin, and must leave its docs where
+    /// they are.
+    private var carry: CardCarry<CardID>?
     private let cursors = HoverCursorRouter()
     private let flight = ViewportFlight()
     private var culls = CullLedger<CardID>()
@@ -316,28 +324,23 @@ final class BoardView: NSView {
 
     // MARK: Gravity
 
-    /// A terminal card's attached docs as they stood when its header was
-    /// pressed. Only a header move carries them: a resize from the left or top
-    /// also shifts the terminal's origin, and must leave its docs where they are.
-    private struct SatelliteCarry {
-        let ownerStart: CardFrame
-        let anchors: [CardID: CardFrame]
-    }
-
     private func beginCarry(for card: CardView) {
+        carry = nil
         guard case .term = card.id else { return }
         let attached = cards.filter { $0.value.ownerTermID == card.id && $0.value.attached }
-        carry = SatelliteCarry(ownerStart: card.worldFrame, anchors: attached.mapValues(\.worldFrame))
+        carry = CardCarry(
+            owner: card.id,
+            ownerOrigin: card.worldFrame.rect.origin,
+            satellites: attached.mapValues(\.worldFrame.rect.origin)
+        )
     }
 
     private func carrySatellites(of card: CardView) {
         guard let carry else { return }
-        let dx = card.worldFrame.x - carry.ownerStart.x
-        let dy = card.worldFrame.y - carry.ownerStart.y
-        for (id, anchor) in carry.anchors {
+        for (id, origin) in carry.origins(moving: card.id, to: card.worldFrame.rect.origin) {
             guard let satellite = cards[id] else { continue }
-            satellite.worldFrame.x = anchor.x + dx
-            satellite.worldFrame.y = anchor.y + dy
+            satellite.worldFrame.x = origin.x
+            satellite.worldFrame.y = origin.y
             project(satellite)
         }
     }
@@ -354,6 +357,9 @@ final class BoardView: NSView {
     }
 
     private func reproject(_ card: CardView) {
+        // A card's callbacks can outlive its place on the board, and a card
+        // that is gone must not be culled back into the ledger.
+        guard cards[card.id] === card else { return }
         project(card)
         recomputeEdges()
         onCardsChanged?()
@@ -517,7 +523,11 @@ final class BoardView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         cursors.attach(to: window)
-        if window == nil { select(nil) }
+        if window == nil {
+            select(nil)
+            // No release reaches a view that has left its window.
+            cards.values.forEach { $0.cancelGesture() }
+        }
         // The backing scale is only known in a window, so the content scale is
         // re-applied on arrival; and a board out of a window culls every card.
         lastContentScaleZoom = 0

@@ -96,11 +96,11 @@ final class CardView: NSView {
         addSubview(grip)
         grip.onPress = { [weak self] event in self?.gestures.gripPressed(event) }
         grip.onDrag = { [weak self] event in self?.gestures.dragged(event) }
-        grip.onRelease = { [weak self] in self?.gestures.released() }
+        grip.onRelease = { [weak self] in self?.gestures.end() }
 
         header.onMouseDown = { [weak self] event in self?.gestures.headerPressed(event) }
         header.onMouseDragged = { [weak self] event in self?.gestures.dragged(event) }
-        header.onMouseUp = { [weak self] _ in self?.gestures.released() }
+        header.onMouseUp = { [weak self] _ in self?.gestures.end() }
 
         header.closeButton?.onClick = { [weak self] in
             guard let self else { return }
@@ -328,6 +328,12 @@ final class CardView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let hit = super.hitTest(point) else { return nil }
         return resizeHandle(at: point) == nil ? hit : grip
+    }
+
+    /// Ends a move or resize in flight as its release would. For when the card
+    /// goes away under the pointer and the release will never reach it.
+    func cancelGesture() {
+        gestures.end()
     }
 
     /// Whether `view` is the card's body or inside it — not the header, and not

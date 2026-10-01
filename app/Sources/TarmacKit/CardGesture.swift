@@ -55,3 +55,36 @@ public struct CardGesture: Equatable, Sendable {
         }
     }
 }
+
+/// The one gesture a card can be in. A gesture ends on release, and the same
+/// way when it is cut short: the card is removed or leaves its window with the
+/// pointer still down, so the release never arrives.
+public struct CardGestureSlot: Equatable, Sendable {
+    private var held: CardGesture?
+
+    public init() {}
+
+    /// Holds `gesture`. A gesture still held from before never saw its
+    /// release; what it amounted to is returned, for the caller to end it first.
+    public mutating func press(_ gesture: CardGesture) -> CardGesture.Outcome? {
+        defer { held = gesture }
+        return held?.outcome
+    }
+
+    /// The card's world frame with the pointer at `pointer`, or nil with no
+    /// gesture held.
+    public mutating func drag(pointer: CGPoint, zoom: CGFloat) -> CGRect? {
+        held?.frame(pointer: pointer, zoom: zoom)
+    }
+
+    /// Lets go of the held gesture and returns what it amounted to, or nil
+    /// with none held.
+    public mutating func end() -> CardGesture.Outcome? {
+        defer { held = nil }
+        return held?.outcome
+    }
+
+    public var isLifted: Bool {
+        held?.isLifted ?? false
+    }
+}
