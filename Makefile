@@ -1,6 +1,6 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: core app app-deps sidecars test docs-check dco-check run qa qa-quit kill-daemon bundle release kit
+.PHONY: core app app-deps sidecars test docs-check dco-check run qa qa-quit kill-daemon bundle release kit ghostty-vt native native-test
 
 core:
 	cd $(ROOT)/core && cargo build
@@ -26,6 +26,18 @@ app-deps:
 app: app-deps
 	cd $(ROOT)/desktop && npm run build
 	cargo build --manifest-path $(ROOT)/desktop/src-tauri/Cargo.toml
+
+# Stage the pinned libghostty-vt XCFramework the native app's terminal cards
+# link (app/Vendor/, gitignored). A no-op once the pinned commit is staged.
+ghostty-vt:
+	$(ROOT)/scripts/fetch-ghostty-vt.sh
+
+# The native Swift app (app/), growing beside desktop/ until it replaces it.
+native: ghostty-vt
+	cd $(ROOT)/app && swift build
+
+native-test: ghostty-vt
+	cd $(ROOT)/app && swift test
 
 # Builds the standalone design-sync kit (desktop/dist-kit/) via esbuild. NOT a
 # dependency of `app`/`core` — invoke directly when refreshing the kit for

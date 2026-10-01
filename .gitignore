@@ -10,3 +10,4 @@
 .design-sync/.cache/
 .design-sync/learnings/
 .design-sync/node_modules
+/app/Vendor/
