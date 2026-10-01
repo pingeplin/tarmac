@@ -60,17 +60,12 @@ enum Theme {
         return repoColor(for: fallbackName)
     }
 
-    /// IBM Plex Mono else SF Mono (else Menlo, unreachable: monospacedSystemFont
-    /// always resolves).
+    /// The chrome face: IBM Plex Mono, bundled in regular and bold only, so a
+    /// weight takes the nearer of the two; the system's monospaced font if the
+    /// bundled faces did not register.
     static func mono(_ size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
-        let plexName: String
-        switch weight {
-        case .medium: plexName = "IBMPlexMono-Medium"
-        case .semibold: plexName = "IBMPlexMono-SemiBold"
-        default: plexName = "IBMPlexMono"
-        }
-        return NSFont(name: plexName, size: size)
-            ?? NSFont.monospacedSystemFont(ofSize: size, weight: weight)
+        let face = weight.rawValue >= NSFont.Weight.semibold.rawValue ? "IBMPlexMono-Bold" : "IBMPlexMono-Regular"
+        return NSFont(name: face, size: size) ?? NSFont.monospacedSystemFont(ofSize: size, weight: weight)
     }
 
     static var reduceMotion: Bool {

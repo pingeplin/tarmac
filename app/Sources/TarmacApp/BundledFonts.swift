@@ -1,19 +1,22 @@
 import CoreText
 import Foundation
 
-/// The terminal face ships with the app, so a terminal card looks the same on
-/// a machine that never installed it. Registered for this process only, and
-/// before the first terminal view resolves its font by name.
+/// The terminal and chrome faces ship with the app, so a card looks the same
+/// on a machine that never installed them. Registered for this process only,
+/// and before the first view resolves its font by name.
 enum BundledFonts {
+    private static let extensions = ["ttf", "woff2"]
+
     static func register() {
         // A bundled app carries its resources in Contents/Resources, where
         // `Bundle.module` finds no package bundle and traps.
-        let packaged = Bundle.main.urls(forResourcesWithExtension: "ttf", subdirectory: "Fonts") ?? []
-        let fonts = packaged.isEmpty
-            ? Bundle.module.urls(forResourcesWithExtension: "ttf", subdirectory: "Fonts") ?? []
-            : packaged
-        for font in fonts {
+        let packaged = fonts(in: .main)
+        for font in packaged.isEmpty ? fonts(in: .module) : packaged {
             CTFontManagerRegisterFontsForURL(font as CFURL, .process, nil)
         }
+    }
+
+    private static func fonts(in bundle: Bundle) -> [URL] {
+        extensions.flatMap { bundle.urls(forResourcesWithExtension: $0, subdirectory: "Fonts") ?? [] }
     }
 }
