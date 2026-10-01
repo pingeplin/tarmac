@@ -23,8 +23,8 @@ public enum ImageProtocol {
     }
 
     /// Whether `uri` addresses this host. Anything else belongs to `CardProtocol`,
-    /// which answers an unknown host 400.
-    public static func owns(uri: String) -> Bool {
+    /// which answers an unknown host 400; `CardSchemeRouter` makes that choice.
+    static func owns(uri: String) -> Bool {
         uri.utf8.starts(with: uriPrefix.utf8)
     }
 

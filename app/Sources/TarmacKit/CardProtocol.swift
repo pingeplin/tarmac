@@ -7,7 +7,10 @@ import Foundation
 ///
 /// The request URI is parsed as bytes, never through `URL` or `String`'s Unicode
 /// conveniences, so every input gets the answer the Rust gives (the parity tests
-/// pin the ones that differ). Feed it `request.url.absoluteString`, not `.path`.
+/// pin the ones that differ). It takes the URI as Rust's `respond` receives it, so
+/// a `#` is path text here. Tauri's `http::Uri` drops the fragment before that
+/// point and a WKURLSchemeTask URL does not: a host calls `CardSchemeRouter`, which
+/// cuts it first, rather than this type directly.
 ///
 /// Same filesystem trust model as `commands::read_doc`: the path is used as named,
 /// no canonicalization, no jail — there is no docs-root concept, so this is a

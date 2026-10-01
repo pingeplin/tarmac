@@ -1,14 +1,17 @@
 import Foundation
 
-/// Rows recorded from the Rust originals — `decode_scheme_path`, `Path::extension`
-/// and `image_content_type` run verbatim in a throwaway cargo program — so the
-/// Swift ports are held to Rust's answers, not to a reading of them.
+/// Rows recorded from the Rust originals — `decode_scheme_path`, `Path::extension`,
+/// `image_content_type` and `http::Request::builder().uri` run verbatim in a
+/// throwaway cargo program — so the Swift ports are held to Rust's answers, not to
+/// a reading of them.
 enum SchemeParityTables {
     enum Expected: Equatable {
         case ok(String)
         case err(String)
     }
 
+    /// What `decode_scheme_path` answers for a URI as given. A `#` row is that raw
+    /// function's answer only: Tauri never shows it a fragment (see `tauriURI`).
     static let decode: [(prefix: String, uri: String, expected: Expected)] = [
         ("tarmac-card://doc/", "tarmac-card://doc/%2Ftmp%2Fa.html?v=1", .ok("/tmp/a.html")),
         ("tarmac-card://doc/", "tarmac-card://doc/?v=1", .err("empty path")),
@@ -269,5 +272,24 @@ enum SchemeParityTables {
         ("xpm", "image/xpm"),
         ("xwd", "image/x-xwd"),
         ("xyze", "image/vnd.radiance"),
+    ]
+
+    /// wry hands Tauri's handler `Request::builder().uri(absoluteString)`, and
+    /// `http::Uri` drops everything from the first `#` — a `?` after it included.
+    /// Each row is the URL a WKURLSchemeTask carries and the URI Rust's `respond`
+    /// is then given.
+    static let tauriURI: [(url: String, seen: String)] = [
+        ("tarmac-card://doc/%2Ftmp%2Fa.html#frag", "tarmac-card://doc/%2Ftmp%2Fa.html"),
+        ("tarmac-card://doc/%2Ftmp%2Fa.html?v=1#frag", "tarmac-card://doc/%2Ftmp%2Fa.html?v=1"),
+        ("tarmac-card://doc/%2Ftmp%2Fa.html#frag?v=1", "tarmac-card://doc/%2Ftmp%2Fa.html"),
+        ("tarmac-card://img/%2Ftmp%2Fa.png#frag", "tarmac-card://img/%2Ftmp%2Fa.png"),
+        ("tarmac-card://img/%2Ftmp%2Fa.png?v=1#frag", "tarmac-card://img/%2Ftmp%2Fa.png?v=1"),
+        ("tarmac-card://doc/a#b?v=1", "tarmac-card://doc/a"),
+        ("tarmac-card://doc/a#b#c", "tarmac-card://doc/a"),
+        ("tarmac-card://doc/a#", "tarmac-card://doc/a"),
+        ("tarmac-card://doc/%2Ftmp%2Fa%23b.html#frag", "tarmac-card://doc/%2Ftmp%2Fa%23b.html"),
+        ("tarmac-card://doc/%2Ftmp%2Fa%23b.html", "tarmac-card://doc/%2Ftmp%2Fa%23b.html"),
+        ("tarmac-card://doc/?v=1#x", "tarmac-card://doc/?v=1"),
+        ("tarmac-card://doc/#x", "tarmac-card://doc/"),
     ]
 }

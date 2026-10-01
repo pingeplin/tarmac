@@ -169,33 +169,9 @@ final class ImageProtocolTests: XCTestCase {
         XCTAssertFalse(ImageProtocol.owns(uri: "tarmac-card://other/x"))
     }
 
-    /// S18
-    func testTheImgHostRoutesToTheImageHandler() {
-        let path = "/tmp/s18.png"
-        let uri = SchemeFixtures.imgURI(path)
-
-        XCTAssertTrue(ImageProtocol.owns(uri: uri))
-        let resp = serve(uri, disk: .init([path: Data([0x89, 0x50, 0x4E, 0x47, 0xFF])]))
-        XCTAssertEqual(resp.status, 200)
-        XCTAssertEqual(resp.headers["Content-Type"], "image/png")
-        XCTAssertEqual(resp.body, Data([0x89, 0x50, 0x4E, 0x47, 0xFF]))
-    }
-
-    /// S18
-    func testTheDocHostRoutesToTheCardHandler() {
-        let uri = SchemeFixtures.docURI("/tmp/s18.html")
-
-        XCTAssertFalse(ImageProtocol.owns(uri: uri))
-        XCTAssertEqual(CardProtocol.resolve(uri: uri), .read(path: "/tmp/s18.html"))
-    }
-
-    /// S18
-    func testAnUnknownHostIsAnsweredWith400ByTheCardHandler() {
-        let uri = "tarmac-card://other/x"
-
-        XCTAssertFalse(ImageProtocol.owns(uri: uri))
-        guard case .reject(let resp) = CardProtocol.resolve(uri: uri) else { return XCTFail("not rejected") }
-        XCTAssertEqual(resp.status, 400)
+    /// `String.hasPrefix` would not see the prefix's `/` once a combining mark follows it.
+    func testTheHostPrefixIsMatchedOnBytes() {
+        XCTAssertTrue(ImageProtocol.owns(uri: "tarmac-card://img/\u{301}x.png"))
     }
 
     func testImageHostURLsNeverResolveToTheCardHandler() {

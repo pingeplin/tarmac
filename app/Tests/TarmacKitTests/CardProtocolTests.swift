@@ -175,9 +175,13 @@ final class CardProtocolTests: XCTestCase {
         XCTAssertEqual(CardProtocol.resolve(uri: uri), .read(path: "/Users/me/my-doc_v1.2 (draft)!~*'.html"))
     }
 
-    func testAHashIsPartOfThePathAndOnlyTheFirstQuestionMarkEndsIt() throws {
-        XCTAssertEqual(CardProtocol.resolve(uri: "tarmac-card://doc/a#b?v=1?x"), .read(path: "a#b"))
+    /// `decode_scheme_path` itself keeps a bare `#` as path text. Tauri never shows
+    /// it one — `CardSchemeRouter` cuts the fragment first and the visible
+    /// behaviour is in `CardSchemeRouterTests` — so only `%23` names a `#` in a file.
+    func testOnlyTheFirstQuestionMarkEndsThePathAndEncodedMarksStayInIt() throws {
+        XCTAssertEqual(CardProtocol.resolve(uri: "tarmac-card://doc/a?b?c"), .read(path: "a"))
         XCTAssertEqual(CardProtocol.resolve(uri: "tarmac-card://doc/a%23b%3Fc?v=1"), .read(path: "a#b?c"))
+        XCTAssertEqual(CardProtocol.resolve(uri: "tarmac-card://doc/a#b?v=1"), .read(path: "a#b"))
     }
 
     /// The host feeds `request.url.absoluteString`; `URL(string:)` re-encodes what
