@@ -10,7 +10,7 @@ import TarmacKit
 final class CardView: NSView {
     let id: CardID
     let header: CardHeaderView
-    private(set) var docView: DocWebView?
+    private(set) var docBody: (any DocCardBody)?
     private(set) var termBody: TerminalBodyView?
 
     /// Where the card is in the world. The board derives the on-screen `frame`
@@ -70,10 +70,8 @@ final class CardView: NSView {
             body = term
         case .doc(let path):
             header = CardHeaderView(kind: .doc(DocKind(path: path)))
-            let doc = DocWebView()
-            doc.wantsLayer = true
-            doc.layer?.backgroundColor = Theme.bg1.cgColor
-            docView = doc
+            let doc = DocCardBodies.make(path: path)
+            docBody = doc
             body = doc
         }
         super.init(frame: NSRect(origin: .zero, size: CGSize(width: worldFrame.w, height: worldFrame.h)))
@@ -110,6 +108,7 @@ final class CardView: NSView {
             guard let self else { return }
             self.onRefresh?(self)
         }
+        wireHTMLBody()
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -118,7 +117,11 @@ final class CardView: NSView {
 
     func attachTerminal(_ terminal: NSView) {
         termBody?.attach(terminal)
-        // The subtree grew at an unchanged scale, which the walk would skip.
+        contentAdded()
+    }
+
+    /// The subtree grew at an unchanged scale, which the walk would skip.
+    func contentAdded() {
         applyContentScale(appliedContentScale, force: true)
     }
 
@@ -129,7 +132,7 @@ final class CardView: NSView {
     /// Sets `contentsScale` on every layer in the card, so the card's own
     /// layers — the terminal and the chrome — are rasterised at the density
     /// they are shown at instead of being stretched. A web view's tiles are
-    /// drawn in another process and ignore this; `applyDocZoomScale` reaches
+    /// drawn in another process and ignore this; `applyBoardZoom` reaches
     /// them. An unchanged scale is skipped unless `force` says the subtree
     /// itself changed.
     func applyContentScale(_ scale: CGFloat, force: Bool = false) {
@@ -159,15 +162,9 @@ final class CardView: NSView {
         header.apply(doc: doc)
     }
 
-    func renderDoc(markdown: String) {
-        docView?.render(markdown: markdown)
-    }
-
-    func suspendDoc() { docView?.suspend() }
-    func resumeDoc() { docView?.resume() }
-
-    func applyDocZoomScale(_ effectiveScale: CGFloat) {
-        docView?.applyZoomScale(effectiveScale)
+    /// The board's zoom, for a doc body, which sizes its web view by it.
+    func applyBoardZoom(_ zoom: CGFloat) {
+        docBody?.setBoardZoom(zoom)
     }
 
     // MARK: - Selection
@@ -184,6 +181,7 @@ final class CardView: NSView {
     /// else the plain line. Prime and fresh never change it, and the lift
     /// border overrides it while a gesture holds the card.
     private var currentBorderColor: NSColor {
+        if borrowed { return Theme.amber }
         switch CardChrome.borderRole(chromeState) {
         case .muted: return Theme.line.withAlphaComponent(0.6)
         case .focus: return Theme.focusBorder
@@ -204,21 +202,37 @@ final class CardView: NSView {
     private static let ringWidth: CGFloat = 3
 
     func setFresh(_ on: Bool) {
-        guard on != fresh, let layer else { return }
+        guard on != fresh else { return }
         fresh = on
-        if on {
-            ringLayer.backgroundColor = Theme.agentDim.cgColor
-            ringLayer.cornerRadius = CardBox.cornerRadius + Self.ringWidth
-            layer.insertSublayer(ringLayer, at: 0)
-        } else {
-            ringLayer.removeFromSuperlayer()
-        }
         header.setFreshMeta(on)
+        applyRing()
+    }
+
+    /// The borrowed HTML card holds the keyboard: an amber border and ring,
+    /// over whatever border and ring it wore.
+    private(set) var borrowed = false
+
+    func setBorrowed(_ on: Bool) {
+        guard on != borrowed else { return }
+        borrowed = on
+        if !lifted { layer?.borderColor = currentBorderColor.cgColor }
+        applyRing()
+    }
+
+    private func applyRing() {
+        guard let layer else { return }
+        guard let ring = CardRing.of(fresh: fresh, borrowed: borrowed) else {
+            ringLayer.removeFromSuperlayer()
+            return
+        }
+        ringLayer.backgroundColor = (ring == .borrowed ? Theme.amber.withAlphaComponent(0.16) : Theme.agentDim).cgColor
+        ringLayer.cornerRadius = CardBox.cornerRadius + Self.ringWidth
+        if ringLayer.superlayer == nil { layer.insertSublayer(ringLayer, at: 0) }
         layoutRing()
     }
 
     private func layoutRing() {
-        guard fresh else { return }
+        guard ringLayer.superlayer != nil else { return }
         let w = Self.ringWidth
         ringLayer.frame = contentBox.insetBy(dx: -w, dy: -w)
     }

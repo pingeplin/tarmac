@@ -79,15 +79,7 @@ extension AppController {
         case .docOpened(let doc):
             handleDocOpened(doc)
         case .fileEvent(let path, let mtimeMs):
-            // The watcher is global; route the event to every board whose store
-            // knows the path (a doc can live on a backgrounded board). Only the
-            // active board's card re-renders.
-            for board in boards.values where board.store.doc(for: path) != nil {
-                board.store.applyFileEvent(path: path, mtimeMs: mtimeMs)
-            }
-            if isOnBoard(path) {
-                activeBoard.view.card(.doc(path))?.renderDoc(markdown: readMarkdown(path))
-            }
+            handleFileEvent(path: path, mtimeMs: mtimeMs)
         case .termProc(let termID, let name, _):
             handleTermProc(termID: termID, name: name)
         case .bell(let termID):

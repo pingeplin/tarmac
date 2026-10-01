@@ -38,10 +38,6 @@ final class BoardView: NSView {
     /// matters on screen.
     var onCullChanged: ((CardID, _ visible: Bool) -> Void)?
 
-    /// The label drawn beside a doc card's provenance edge, or nil for none.
-    /// The board has no doc registry, so the controller supplies it.
-    var edgeLabelProvider: ((CardID) -> String?)?
-
     // MARK: - Cards
 
     private(set) var viewport: Viewport = .default
@@ -60,7 +56,7 @@ final class BoardView: NSView {
         restack()
         reproject(card)
         card.applyContentScale(contentScale)
-        card.applyDocZoomScale(docDeviceScaleOverride)
+        card.applyBoardZoom(viewport.zoom)
         onCardsChanged?()
         return card
     }
@@ -312,10 +308,7 @@ final class BoardView: NSView {
     private func endGesture(on card: CardView, outcome: CardGesture.Outcome) {
         if outcome == .move, case .doc = card.id {
             card.setFresh(false)
-            if card.attached {
-                card.attached = false
-                card.setOwnerChip(nil)
-            }
+            card.attached = false
         }
         carry = nil
         reproject(card)
@@ -414,14 +407,10 @@ final class BoardView: NSView {
     /// One provenance edge per doc card whose owning terminal card is on the
     /// board, rebuilt from the cards' on-screen frames.
     func recomputeEdges() {
-        var built: [EdgeLayerView.Edge] = []
+        var built: [Provenance.Segment] = []
         for (id, card) in cards {
             guard case .doc = id, let owner = card.ownerTermID, let ownerCard = cards[owner] else { continue }
-            built.append(EdgeLayerView.Edge(
-                callerRect: ownerCard.frame,
-                docRect: card.frame,
-                label: edgeLabelProvider?(id)
-            ))
+            built.append(Provenance.edge(owner: ownerCard.frame, doc: card.frame))
         }
         edgeLayer.setEdges(built)
     }
@@ -439,26 +428,13 @@ final class BoardView: NSView {
         (window?.backingScaleFactor ?? 2) * max(1, min(viewport.zoom, Self.maxContentScaleZoom))
     }
 
-    /// The device scale pushed to doc cards' web views, never below 2: on a 1×
-    /// display WebKit's native-resolution text reads thin and feathered, and
-    /// rendering at 2× for the compositor to scale down gives cleaner edges.
-    /// Above 100 % it follows the zoom like `contentScale`. Being always
-    /// non-zero keeps WebKit from tracking the display by itself, so a move to
-    /// another display has to re-assert it.
-    private var docDeviceScaleOverride: CGFloat {
-        let backing = window?.backingScaleFactor ?? 2
-        let zoomFactor = min(max(viewport.zoom, 1), Self.maxContentScaleZoom)
-        return max(2, backing * zoomFactor)
-    }
-
     private func updateContentScaleIfNeeded() {
         guard window != nil, abs(viewport.zoom - lastContentScaleZoom) > 0.0001 else { return }
         lastContentScaleZoom = viewport.zoom
         let scale = contentScale
-        let docOverride = docDeviceScaleOverride
         for card in cards.values {
             card.applyContentScale(scale)
-            card.applyDocZoomScale(docOverride)
+            card.applyBoardZoom(viewport.zoom)
         }
     }
 

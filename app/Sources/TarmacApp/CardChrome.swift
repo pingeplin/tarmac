@@ -84,26 +84,35 @@ final class HeaderButton: NSView {
     var onClick: (() -> Void)?
 
     private let label: NSTextField
-    private let size: NSSize
+    private var size: NSSize = .zero
     private var trackingArea: NSTrackingArea?
 
     override var acceptsFirstResponder: Bool { false }
 
-    init(glyph: String, toolTip: String) {
+    init(glyph: String, toolTip: String, fontSize: CGFloat = 10.5) {
         label = NSTextField(labelWithString: glyph)
-        label.font = Theme.mono(10.5)
+        label.font = Theme.mono(fontSize)
         label.textColor = Theme.faint
-        let textSize = label.fittedSize
-        size = NSSize(width: textSize.width + 10, height: textSize.height + 2)
-        super.init(frame: NSRect(origin: .zero, size: size))
+        super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 4
         self.toolTip = toolTip
-        label.frame = NSRect(x: 5, y: 1, width: textSize.width, height: textSize.height)
         addSubview(label)
+        setGlyph(glyph)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// Changes what the button reads, and its width with it.
+    func setGlyph(_ glyph: String) {
+        label.stringValue = glyph
+        let textSize = label.fittedSize
+        size = NSSize(width: textSize.width + 10, height: textSize.height + 2)
+        setFrameSize(size)
+        label.frame = NSRect(x: 5, y: 1, width: textSize.width, height: textSize.height)
+        invalidateIntrinsicContentSize()
+        superview?.needsLayout = true
+    }
 
     override var intrinsicContentSize: NSSize { size }
 

@@ -27,15 +27,14 @@ extension AppController {
     }
 
     /// Mounts `board`'s view in RootView and (re)binds the controller-owned
-    /// per-board callbacks to it: the provenance edge label (crib §8) and the
-    /// committed-layout persist. The persist closure captures the board's id (by
+    /// per-board callbacks to it: a doc card's close and refresh, the cull
+    /// report and the committed-layout persist. The persist closure captures the board's id (by
     /// value, no retain cycle), so a committed move/resize/zoom/pan persists THAT
     /// board — stamped with its `board_id` — even if a stray callback fires after
     /// it stops being active (it's then dropped by the active-board guard). Called
     /// at boot and on every switch-arrive.
     func mount(_ board: Board) {
         rootView.mountBoard(board.view)
-        board.view.edgeLabelProvider = { [weak self] id in self?.edgeLabel(for: id) }
         let bid = board.boardID
         // Pan fires onLayoutChanged per scroll event; coalesce the persist on a
         // short trailing timer (fix #2) so a continuous pan does one snapshot+IPC
@@ -45,6 +44,15 @@ extension AppController {
         board.view.onCardClose = { [weak self] id in
             guard case .doc(let path) = id else { return }
             self?.closeDocCard(path)
+        }
+        board.view.onCardRefresh = { [weak self] id in
+            guard case .doc(let path) = id else { return }
+            self?.refreshDocFromDisk(path)
+        }
+        // A culled HTML card's document is told, so that it stops its timers
+        // and frames; the board hides the card either way.
+        board.view.onCullChanged = { [weak view = board.view] id, visible in
+            view?.card(id)?.htmlBody?.setCulled(CardCull.isCulled(visible: visible))
         }
     }
 
@@ -370,11 +378,6 @@ extension AppController {
         // and wrongly capture its scroll.
         focusedCardID = nil
         rootView.unmountBoard()
-        // P5.5: suspend the leaving board's doc web views (free their web content
-        // processes) AFTER it is unmounted (so a still-visible view never flashes
-        // about:blank) and while it is still the active board. Terminals are
-        // untouched — they keep being fed live in the background (P5.2).
-        boards[activeBoardID]?.view.cards.values.forEach { $0.suspendDoc() }
         // The target must exist before it becomes active (`activeBoard` force-
         // unwraps); a first visit mints its BoardView + boot session here.
         if boards[targetID] == nil { _ = mintBoard(id: targetID, name: meta.name) }
@@ -405,11 +408,7 @@ extension AppController {
     /// AFTER its card tree is laid out (crit B3 / S1), and end the transient.
     func finishArrive(on board: Board) {
         rootView.layoutSubtreeIfNeeded()
-        // P5.5: resume the arriving board's doc web views AFTER layout (so the
-        // reloaded template lays out at card size, not 0×0). No-op for a board
-        // whose docs were never suspended (e.g. its first arrive), since
-        // DocWebView.resume guards on `suspended`.
-        board.view.cards.values.forEach { $0.resumeDoc() }
+        applyBorrow()
         if let view = board.primeTerminalView {
             window?.makeFirstResponder(view)
         } else {
