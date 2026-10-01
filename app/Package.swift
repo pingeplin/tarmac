@@ -11,7 +11,7 @@ let package = Package(
         // at a pinned Ghostty commit — its C API is declared unstable.
         .binaryTarget(name: "GhosttyVt", path: "Vendor/ghostty-vt.xcframework"),
         .target(name: "TarmacTerm", dependencies: ["GhosttyVt"]),
-        .testTarget(name: "TarmacTermTests", dependencies: ["TarmacTerm"]),
+        .testTarget(name: "TarmacTermTests", dependencies: ["TarmacTerm", "GhosttyVt"]),
         .executableTarget(name: "tarmac-smoke", dependencies: ["TarmacKit"]),
     ]
 )
