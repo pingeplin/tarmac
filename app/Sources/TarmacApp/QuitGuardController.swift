@@ -24,7 +24,8 @@ final class QuitGuardController: NSObject {
     private weak var window: NSWindow?
 
     #if DEBUG
-    private var lastPress: QuitGuardFacts.Press?
+    /// The most recent keyboard press the handler saw; a menu click leaves it.
+    private var lastPress: DevSnapshot.QuitGuard.Press?
     #endif
 
     init(window: NSWindow, warning: WarnBeforeQuit) {
@@ -50,7 +51,9 @@ final class QuitGuardController: NSObject {
         #if DEBUG
         Self.log(route: route, event: event, quitEvent: quitEvent, pressMs: pressMs)
         if isKeyDown {
-            lastPress = QuitGuardFacts.Press(pressMs: pressMs, route: route.name, ageMs: quitEvent.ageMs)
+            lastPress = DevSnapshot.QuitGuard.Press(
+                pressMs: pressMs, route: DevSnapshot.QuitGuard.Route(route), ageMs: quitEvent.ageMs
+            )
         }
         #endif
 
@@ -133,32 +136,17 @@ final class QuitGuardController: NSObject {
 }
 
 #if DEBUG
-/// What the QA driver's snapshot reports as `quit_guard` (spec 2609.0018).
-struct QuitGuardFacts {
-    struct Press {
-        var pressMs: UInt64
-        var route: String
-        var ageMs: Int64
-    }
-
-    /// The guard still owns every Quit item. Anything that replaces the main
-    /// menu silently drops that.
-    var retargeted: Bool
-    var enabled: Bool
-    var phase: String
-    /// nil until the notice has been shown once.
-    var notice: (visible: Bool, alpha: Double)?
-    /// The most recent keyboard press the handler saw; a menu click leaves it.
-    var lastPress: Press?
-}
-
 extension QuitGuardController {
-    var facts: QuitGuardFacts {
-        QuitGuardFacts(
+    /// What the QA driver's snapshot reports as `quit_guard` (spec 2609.0018).
+    /// `retargeted` is whether the guard still owns every Quit item: anything
+    /// that replaces the main menu silently drops that.
+    var facts: DevSnapshot.QuitGuard {
+        DevSnapshot.QuitGuard(
             retargeted: ownsQuit(in: NSApp.mainMenu),
             enabled: warning.enabled,
-            phase: machine.phase.name,
-            notice: notice.map { ($0.isVisible, $0.alpha) },
+            phase: DevSnapshot.QuitGuard.Phase(machine.phase),
+            noticeVisible: notice?.isVisible ?? false,
+            noticeAlpha: notice?.alpha ?? 0,
             lastPress: lastPress
         )
     }
