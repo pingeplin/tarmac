@@ -307,7 +307,7 @@ final class CardView: NSView {
     private func layoutRing() {
         guard fresh else { return }
         let w = Self.ringWidth
-        ringLayer.frame = bounds.insetBy(dx: -w, dy: -w)
+        ringLayer.frame = contentBox.insetBy(dx: -w, dy: -w)
     }
 
     // MARK: - Prime / quiet states (crib §4: terminal primacy)
@@ -426,15 +426,24 @@ final class CardView: NSView {
 
     // MARK: - Layout
 
+    /// The box the content is laid out in. The board zooms a card by giving it
+    /// a frame that differs from its bounds, and `bounds` then reads back
+    /// through that scale a few ulps off the world size; laid out from it,
+    /// every zoom step would hand the terminal a new size.
+    private var contentBox: NSRect {
+        NSRect(x: 0, y: 0, width: worldFrame.w, height: worldFrame.h)
+    }
+
     override func layout() {
         super.layout()
-        clip.frame = bounds
-        header.frame = NSRect(x: 0, y: 0, width: bounds.width, height: Self.headerHeight)
+        let box = contentBox
+        clip.frame = box
+        header.frame = NSRect(x: 0, y: 0, width: box.width, height: Self.headerHeight)
         body.frame = NSRect(
             x: 0,
             y: Self.headerHeight,
-            width: bounds.width,
-            height: max(0, bounds.height - Self.headerHeight)
+            width: box.width,
+            height: max(0, box.height - Self.headerHeight)
         )
         layoutHandles()
         layoutRing()
@@ -443,6 +452,7 @@ final class CardView: NSView {
     private func layoutHandles() {
         let hit = Self.handleHitSize
         let inset = Self.handleCornerInset
+        let box = contentBox
         for (corner, h) in handles {
             // Corner point nudged inward toward the card center (flipped view:
             // top corners at y≈0), then the hit box is centered on that point.
@@ -450,9 +460,9 @@ final class CardView: NSView {
             let cy: CGFloat
             switch corner {
             case .topLeft: cx = inset; cy = inset
-            case .topRight: cx = bounds.width - inset; cy = inset
-            case .bottomLeft: cx = inset; cy = bounds.height - inset
-            case .bottomRight: cx = bounds.width - inset; cy = bounds.height - inset
+            case .topRight: cx = box.width - inset; cy = inset
+            case .bottomLeft: cx = inset; cy = box.height - inset
+            case .bottomRight: cx = box.width - inset; cy = box.height - inset
             }
             h.frame = NSRect(x: cx - hit / 2, y: cy - hit / 2, width: hit, height: hit)
         }
