@@ -40,8 +40,13 @@ extension AppController {
         refreshStrips()
         if switching {
             finishArrive(on: board)
-        } else if firstVisit, !switcherOpen {
-            focusPrimeTerminal()
+        } else if firstVisit {
+            // An open switcher keeps the keys and hands them on when it closes.
+            if switcherOpen {
+                rootView.boardSwitcher.keysOwner = board.primeTerminalView ?? rootView.board
+            } else {
+                focusPrimeTerminal()
+            }
         }
     }
 
