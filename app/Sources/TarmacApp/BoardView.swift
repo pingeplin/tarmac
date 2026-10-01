@@ -395,8 +395,7 @@ final class BoardView: NSView {
             self.preGestureFrame = nil
             self.satelliteAnchors = [:]
             // Replay the z reorder deferred during the gesture (raiseToFront only
-            // bumped the z value; the subview order is still pre-gesture). Now that
-            // the mouse-tracking session is over, restructuring is safe again.
+            // bumped the z value; the subview order is still pre-gesture).
             self.restack()
             self.reproject(c)
             self.onLayoutChanged?(self.viewport)
@@ -451,21 +450,17 @@ final class BoardView: NSView {
     private func raiseToFront(_ card: CardView) {
         let maxZ = cards.values.map(\.worldFrame.z).max() ?? 0
         if card.worldFrame.z <= maxZ { card.worldFrame.z = maxZ + 1 }
-        // Never tear down the view hierarchy while a move/resize is tracking the
-        // mouse: `restack()` does removeFromSuperview + re-add on every card, and
-        // doing that mid-drag breaks AppKit's mouse-tracking session so the
-        // terminating mouseUp is lost (the gesture then never ends — see the
-        // click-to-focus path that fires one runloop tick after every mouseDown).
-        // The grabbed card already floats on top via its lift zPosition during
-        // the drag; the z reorder is replayed once at gesture commit.
+        // Leave the subview order alone while a move/resize is tracking the
+        // mouse (click-to-focus calls this one runloop tick after every
+        // mouseDown). The grabbed card already floats on top via its lift
+        // zPosition during the drag; the z reorder is replayed once at gesture
+        // commit.
         guard !isGesturing else { return }
         // A terminal text-selection drag is tracked entirely inside the terminal
-        // view and never sets `gesturingID`, so `isGesturing` misses it. But the hazard is
-        // identical: click-to-focus calls this one runloop tick after the press,
-        // i.e. as the drag begins, and `restack()` would removeFromSuperview the
-        // very view that is tracking it — severing the selection. Whenever a
-        // button is still down, defer the reorder to mouseUp. `z` is already
-        // bumped, so the order is logically correct and just needs replaying.
+        // view and never sets `gesturingID`, so `isGesturing` misses it.
+        // Whenever a button is still down, defer the reorder to mouseUp. `z` is
+        // already bumped, so the order is logically correct and just needs
+        // replaying.
         guard NSEvent.pressedMouseButtons == 0 else { pendingRestack = true; return }
         restack()
     }
@@ -480,27 +475,20 @@ final class BoardView: NSView {
     func flushPendingRestack() {
         guard pendingRestack else { return }
         pendingRestack = false
-        // `restack()` removeFromSuperviews every card. By now `focus()` has already
-        // made the selected terminal the first responder (it ran on the press, one
-        // tick before this mouseUp), so tearing its card out of the hierarchy would
-        // resign that first responder — stranding keyboard input and ⌘C copy on the
-        // text just selected. Preserve it across the churn. (The synchronous focus
-        // path doesn't need this: there `restack()` runs *before* setPrime re-asserts
-        // the responder, so makeFirstResponder is already the last word.)
-        let priorResponder = window?.firstResponder as? NSView
         restack()
-        if let priorResponder, priorResponder.window === window {
-            window?.makeFirstResponder(priorResponder)
-        }
     }
 
-    /// Orders subviews by world z (low → high = back → front).
+    /// Orders subviews by world z (low → high = back → front). Sorted in place:
+    /// taking a card out of the hierarchy to re-add it resigns the window's
+    /// first responder inside it, and typing stops reaching the terminal.
     private func restack() {
-        let ordered = cards.values.sorted { $0.worldFrame.z < $1.worldFrame.z }
-        for card in ordered {
-            card.removeFromSuperview()
-            cardLayer.addSubview(card)
-        }
+        cardLayer.sortSubviews({ a, b, _ in
+            MainActor.assumeIsolated {
+                let za = (a as? CardView)?.worldFrame.z ?? 0
+                let zb = (b as? CardView)?.worldFrame.z ?? 0
+                return za < zb ? .orderedAscending : za > zb ? .orderedDescending : .orderedSame
+            }
+        }, context: nil)
     }
 
     // MARK: Projection
