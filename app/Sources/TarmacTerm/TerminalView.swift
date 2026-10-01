@@ -68,9 +68,8 @@ public final class TerminalView: NSView {
 
     private var hoveredLink: LinkHit? {
         didSet {
-            guard let gridLayout else { return }
             for row in [oldValue?.row, hoveredLink?.row] {
-                if let row { setNeedsDisplay(gridLayout.rowRect(row)) }
+                if let row { setNeedsDisplay(damageRect(forRow: row)) }
             }
         }
     }
@@ -167,7 +166,7 @@ public final class TerminalView: NSView {
     private func readFrame() {
         let previousCursor = frameSnapshot.cursor
         frameSnapshot = reader.read(engine)
-        guard let gridLayout else { return }
+        guard gridLayout != nil else { return }
         if frameSnapshot.dirtyRows.count >= frameSnapshot.rows.count {
             needsDisplay = true
         } else {
@@ -177,7 +176,7 @@ public final class TerminalView: NSView {
                     if let cursor { rows.insert(cursor.row) }
                 }
             }
-            for row in rows { setNeedsDisplay(gridLayout.rowRect(row)) }
+            for row in rows { setNeedsDisplay(damageRect(forRow: row)) }
         }
         restartBlink()
     }
@@ -218,6 +217,11 @@ public final class TerminalView: NSView {
 
     public override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
+        // A layer-backed view can be asked to draw past its bounds.
+        let dirtyRect = dirtyRect.intersection(bounds)
+        context.saveGState()
+        defer { context.restoreGState() }
+        context.clip(to: bounds)
         context.setFillColor(frameSnapshot.background.cgColor)
         context.fill(dirtyRect)
         guard let gridLayout else { return }
@@ -232,14 +236,23 @@ public final class TerminalView: NSView {
         )
     }
 
+    /// What to invalidate to redraw a row. A redraw is clipped to the damaged
+    /// rect, and under a fractional zoom a row's edge falls inside a device
+    /// pixel, so the damage reaches a point past each edge; the rows it clips
+    /// into are redrawn with it.
+    func damageRect(forRow row: Int) -> NSRect {
+        guard let gridLayout else { return .zero }
+        return gridLayout.rowRect(row).insetBy(dx: 0, dy: -1).intersection(bounds)
+    }
+
     private var cursorDisplay: CursorDisplay {
         guard isFocused, window?.isKeyWindow == true else { return .unfocused }
         return blinkOn || frameSnapshot.cursor?.blinks == false ? .focused : .hidden
     }
 
     private func invalidateCursor() {
-        guard let gridLayout, let cursor = frameSnapshot.cursor else { return }
-        setNeedsDisplay(gridLayout.rowRect(cursor.row))
+        guard let cursor = frameSnapshot.cursor else { return }
+        setNeedsDisplay(damageRect(forRow: cursor.row))
     }
 
     // MARK: focus and blink
@@ -730,7 +743,7 @@ extension TerminalView: @preconcurrency NSTextInputClient {
     public override func doCommand(by selector: Selector) {}
 
     private func invalidatePreedit() {
-        guard let gridLayout, let cursor = frameSnapshot.cursor else { return needsDisplay = true }
-        setNeedsDisplay(gridLayout.rowRect(cursor.row))
+        guard let cursor = frameSnapshot.cursor else { return needsDisplay = true }
+        setNeedsDisplay(damageRect(forRow: cursor.row))
     }
 }

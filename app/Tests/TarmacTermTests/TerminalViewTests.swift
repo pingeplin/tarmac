@@ -60,6 +60,44 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(resizes, [])
     }
 
+    // MARK: drawing
+
+    /// AppKit can hand a view a dirty rect larger than its bounds; a card's
+    /// header sits right above the terminal and must not be painted over.
+    func testDrawingStaysInsideTheViewsBounds() throws {
+        let rep = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: 700, pixelsHigh: 500, bitsPerSample: 8, samplesPerPixel: 4,
+            hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ))
+        let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: rep))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        NSColor.magenta.setFill()
+        NSRect(x: 0, y: 0, width: 700, height: 500).fill()
+        context.cgContext.translateBy(x: 50, y: 50)
+        view.draw(NSRect(x: -50, y: -50, width: 700, height: 500))
+        NSGraphicsContext.restoreGraphicsState()
+
+        let outside = try XCTUnwrap(rep.colorAt(x: 10, y: 10))
+        XCTAssertEqual(outside.redComponent, 1, accuracy: 0.01)
+        XCTAssertEqual(outside.greenComponent, 0, accuracy: 0.01)
+        let inside = try XCTUnwrap(rep.colorAt(x: 350, y: 250))
+        XCTAssertLessThan(inside.redComponent, 0.5)
+    }
+
+    /// A redraw is clipped to the invalidated rect. At a fractional zoom a row's
+    /// edge falls inside a device pixel, so the damage must reach past the row
+    /// or that pixel keeps a blend of the old content.
+    func testARowsDamageReachesPastItsEdges() throws {
+        let layout = try XCTUnwrap(view.gridLayout)
+        let row = layout.rowRect(3)
+        let damage = view.damageRect(forRow: 3)
+        XCTAssertLessThan(damage.minY, row.minY)
+        XCTAssertGreaterThan(damage.maxY, row.maxY)
+        XCTAssertTrue(view.bounds.contains(damage))
+        XCTAssertEqual(view.damageRect(forRow: 0).minY, max(layout.rowRect(0).minY - 1, 0))
+    }
+
     func testOutputIsReadableBack() {
         feed("hello")
         XCTAssertEqual(view.plainText(), "hello")
