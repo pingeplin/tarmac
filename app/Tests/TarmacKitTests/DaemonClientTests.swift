@@ -52,20 +52,22 @@ private final class FakeDaemon: @unchecked Sendable {
         let wasStopped = stopped
         stopped = true
         let open = connections
+        if !wasStopped { close(listener) }
         state.unlock()
         guard !wasStopped else { return }
         open.forEach { shutdown($0, SHUT_RDWR) }
-        close(listener)
         unlink(path)
     }
 
     private func acceptLoop() {
         while true {
+            // Under the lock that `shutDown` closes the listener under: a
+            // closed listener's number is free at once to name the next
+            // test's socket, and must never be accepted on.
             state.lock()
-            let done = stopped
+            let accepted = stopped ? nil : accept(listener, nil, nil)
             state.unlock()
-            if done { return }
-            let fd = accept(listener, nil, nil)
+            guard let fd = accepted else { return }
             guard fd >= 0 else {
                 usleep(2_000)
                 continue
@@ -344,6 +346,7 @@ extension DaemonClient.Timing {
 final class DaemonClientTests: XCTestCase {
     private let delivery = DispatchQueue(label: "tarmac.test.delivery")
     private var clients: [DaemonClient] = []
+    private var daemons: [FakeDaemon] = []
     private var victims: [pid_t] = []
 
     override func tearDown() {
@@ -352,6 +355,8 @@ final class DaemonClientTests: XCTestCase {
             client.spawnedDaemonPid.map { _ = kill(pid_t($0), SIGKILL) }
         }
         clients = []
+        daemons.forEach { $0.shutDown() }
+        daemons = []
         for pid in victims {
             kill(pid, SIGKILL)
             var status: Int32 = 0
@@ -377,6 +382,13 @@ final class DaemonClientTests: XCTestCase {
         client.onMessage = { messages.record($0) }
         clients.append(client)
         return (client, statuses, messages)
+    }
+
+    /// A fake daemon that is shut down, and its socket removed, with the test.
+    private func makeDaemon(at path: String = FakeDaemon.temporaryPath()) throws -> FakeDaemon {
+        let daemon = try FakeDaemon(path: path)
+        daemons.append(daemon)
+        return daemon
     }
 
     /// A process standing in for a daemon the client may be told to terminate.
@@ -422,7 +434,7 @@ final class DaemonClientTests: XCTestCase {
     /// 2609.0012: the app names its version in `hello`; it is the only source of
     /// the app version `tarmac --version` reports.
     func testHelloNamesTheAppVersion() throws {
-        let daemon = try FakeDaemon()
+        let daemon = try makeDaemon()
         makeClient(daemon.path, appVersion: "9.9.9").client.start()
 
         XCTAssertEqual(try messages(daemon.received(1)), [.hello(role: "app", v: 1, appVersion: "9.9.9")])
@@ -430,7 +442,7 @@ final class DaemonClientTests: XCTestCase {
 
     /// A client that names no version sends conformance vector 2, byte for byte.
     func testHelloWithoutAVersionIsVector2() throws {
-        let daemon = try FakeDaemon()
+        let daemon = try makeDaemon()
         makeClient(daemon.path).client.start()
 
         XCTAssertEqual(
@@ -441,7 +453,7 @@ final class DaemonClientTests: XCTestCase {
 
     /// `hello_ok` reaches the app, and everything after it in order.
     func testMessagesReachTheAppInOrder() throws {
-        let daemon = try FakeDaemon()
+        let daemon = try makeDaemon()
         let (client, _, inbox) = makeClient(daemon.path, appVersion: "0.13.1")
         client.start()
 
@@ -459,7 +471,7 @@ final class DaemonClientTests: XCTestCase {
     /// One helper per app → daemon message, each writing exactly its frame, in
     /// the order sent.
     func testEverySendHelperWritesItsFrame() throws {
-        let daemon = try FakeDaemon()
+        let daemon = try makeDaemon()
         let (client, _, inbox) = makeClient(daemon.path)
         client.start()
         try daemon.push(.helloOK(v: 1))
@@ -512,7 +524,7 @@ final class DaemonClientTests: XCTestCase {
     /// decides whether this daemon is kept, and a request must not go to one
     /// that is about to be replaced.
     func testRequestsWaitForTheHandshake() throws {
-        let daemon = try FakeDaemon()
+        let daemon = try makeDaemon()
         let (client, _, _) = makeClient(daemon.path)
         client.boardCreate()
         client.start()
@@ -530,7 +542,7 @@ final class DaemonClientTests: XCTestCase {
     /// Requests made while the link is down are kept, and go out in order once
     /// the next connection has completed its handshake.
     func testRequestsMadeWhileDisconnectedAreSentAfterTheReconnect() throws {
-        let daemon = try FakeDaemon()
+        let daemon = try makeDaemon()
         let (client, statuses, _) = makeClient(daemon.path, timing: .fast.reconnecting { _ in 0.3 })
         client.start()
         try daemon.push(.helloOK(v: 1))
@@ -551,7 +563,7 @@ final class DaemonClientTests: XCTestCase {
     /// A daemon that dies while the queue is being flushed costs the request
     /// it was being sent, and no other: those behind it go to the next link.
     func testAWriteThatFailsMidFlushKeepsTheRequestsBehindIt() throws {
-        let daemon = try FakeDaemon()
+        let daemon = try makeDaemon()
         daemon.stopReading(after: 2)
         let (client, _, _) = makeClient(daemon.path)
         client.boardCreate()
@@ -575,7 +587,7 @@ final class DaemonClientTests: XCTestCase {
 
     /// The link reads as connected as soon as the socket is, before `hello_ok`.
     func testConnectedIsReportedBeforeTheHandshakeCompletes() throws {
-        let daemon = try FakeDaemon()
+        let daemon = try makeDaemon()
         let (client, statuses, inbox) = makeClient(daemon.path)
         client.start()
 
@@ -585,7 +597,7 @@ final class DaemonClientTests: XCTestCase {
 
     /// A dropped link is reported with the bridge's reason, then re-made.
     func testADroppedLinkIsReportedAndReconnected() throws {
-        let daemon = try FakeDaemon()
+        let daemon = try makeDaemon()
         let (client, statuses, _) = makeClient(daemon.path)
         client.start()
         try daemon.push(.helloOK(v: 1))
@@ -598,7 +610,7 @@ final class DaemonClientTests: XCTestCase {
 
     /// A frame that does not decode is skipped; the link stays up.
     func testAMalformedFrameIsSkipped() throws {
-        let daemon = try FakeDaemon()
+        let daemon = try makeDaemon()
         let (client, statuses, inbox) = makeClient(daemon.path)
         client.start()
         try daemon.push(.helloOK(v: 1))
@@ -612,7 +624,7 @@ final class DaemonClientTests: XCTestCase {
     /// A length past the 16 MiB cap is not a frame to wait for. The stream's
     /// frame boundaries are lost with it, so the link is dropped and re-made.
     func testAFrameLengthPastTheCapDropsTheLink() throws {
-        let daemon = try FakeDaemon()
+        let daemon = try makeDaemon()
         let (client, statuses, inbox) = makeClient(daemon.path)
         client.start()
         try daemon.push(.helloOK(v: 1))
@@ -641,7 +653,7 @@ final class DaemonClientTests: XCTestCase {
 
     /// The backoff counts attempts since the last success, not since launch.
     func testTheReconnectBudgetStartsOverAfterEachSuccessfulConnect() throws {
-        let daemon = try FakeDaemon()
+        let daemon = try makeDaemon()
         let (client, statuses, _) = makeClient(daemon.path, timing: .fast.reconnecting { $0 <= 1 ? 0.01 : nil })
         client.start()
         daemon.drop(0)
@@ -666,7 +678,7 @@ final class DaemonClientTests: XCTestCase {
     /// After `close` the daemon is hung up on and the client is silent: no
     /// status, no message, no reconnect.
     func testCloseEndsTheLinkForGood() throws {
-        let daemon = try FakeDaemon()
+        let daemon = try makeDaemon()
         let (client, statuses, _) = makeClient(daemon.path)
         client.start()
         XCTAssertEqual(statuses.first(1), [.connected])
@@ -680,7 +692,7 @@ final class DaemonClientTests: XCTestCase {
     /// What the daemon had already said when `close` was called, but the app
     /// had not yet been handed, never reaches it.
     func testNothingReadBeforeCloseIsDeliveredAfterIt() throws {
-        let daemon = try FakeDaemon()
+        let daemon = try makeDaemon()
         let (client, statuses, inbox) = makeClient(daemon.path)
         delivery.suspend()
         do {
@@ -702,7 +714,7 @@ final class DaemonClientTests: XCTestCase {
     /// A daemon that has stopped reading cannot hold up the app's exit: a
     /// request stuck in its write is given a moment, then left behind.
     func testCloseDoesNotWaitForADaemonThatStoppedReading() throws {
-        let daemon = try FakeDaemon()
+        let daemon = try makeDaemon()
         daemon.stopReading(after: 2)
         let (client, _, _) = makeClient(daemon.path)
         client.start()
@@ -744,7 +756,7 @@ final class DaemonClientTests: XCTestCase {
     /// Requests made just before `close` — the layout flushed on quit — are
     /// written before the link goes.
     func testRequestsMadeBeforeCloseAreStillWritten() throws {
-        let daemon = try FakeDaemon()
+        let daemon = try makeDaemon()
         let (client, _, _) = makeClient(daemon.path)
         client.start()
         try daemon.push(.helloOK(v: 1))
@@ -802,7 +814,7 @@ final class DaemonClientTests: XCTestCase {
         let fake = try ScriptedDaemon()
         defer { fake.remove() }
         let daemon = try fake.install(replying: .helloOK(v: 1))
-        let listening = try FakeDaemon(path: fake.socket)
+        let listening = try makeDaemon(at: fake.socket)
         let (client, statuses, _) = makeClient(environment: fake.environment(daemon: daemon))
         client.start()
 
@@ -865,7 +877,7 @@ final class DaemonClientTests: XCTestCase {
     /// the app reconnects at once — not on the backoff. That happens once: the
     /// next daemon is kept whatever it reports, and names the replacement.
     func testAStaleDaemonIsTerminatedOnceAndTheAppReconnectsAtOnce() throws {
-        let daemon = try FakeDaemon()
+        let daemon = try makeDaemon()
         let stale = try victim()
         let bystander = try victim()
         let (client, statuses, inbox) = makeClient(
@@ -898,7 +910,7 @@ final class DaemonClientTests: XCTestCase {
     /// The reconnect waits for the dying daemon to remove its socket, so the
     /// new one does not find a live daemon and quit — but only until it is gone.
     func testTheRestartWaitsForTheSocketFileToDisappear() throws {
-        let daemon = try FakeDaemon()
+        let daemon = try makeDaemon()
         let stale = try victim()
         var timing = DaemonClient.Timing.fast
         timing.restartWaitBudget = 10
@@ -914,7 +926,7 @@ final class DaemonClientTests: XCTestCase {
         daemon.shutDown()
         // Longer than a poll, so the client sees the path empty before it is taken again.
         usleep(200_000)
-        let next = try FakeDaemon(path: daemon.path)
+        let next = try makeDaemon(at: daemon.path)
         XCTAssertTrue(next.accepted(1))
         XCTAssertLessThan(Date().timeIntervalSince(gone), 3, "the wait ends when the file does")
         XCTAssertEqual(statuses.first(3), [.connected, .restarting, .connected])
@@ -940,7 +952,7 @@ final class DaemonClientTests: XCTestCase {
 
     /// A daemon of the app's own version is left alone.
     func testAMatchingDaemonIsKept() throws {
-        let daemon = try FakeDaemon()
+        let daemon = try makeDaemon()
         let running = try victim()
         let (client, statuses, inbox) = makeClient(daemon.path, appVersion: "0.2.0")
         client.start()
@@ -955,7 +967,7 @@ final class DaemonClientTests: XCTestCase {
 
     /// An app that names no version cannot call a daemon stale.
     func testAnAppWithoutAVersionRestartsNothing() throws {
-        let daemon = try FakeDaemon()
+        let daemon = try makeDaemon()
         let running = try victim()
         let (client, statuses, inbox) = makeClient(daemon.path)
         client.start()
