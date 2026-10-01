@@ -28,17 +28,20 @@ public enum AppPrefs {
     /// Whether ⌘Q is guarded, as the file says. Missing, unreadable, malformed
     /// or the wrong type all read as `true`.
     ///
-    /// "Malformed" is whatever serde_json rejects, so the Tauri app and this one
-    /// agree on every file. `JSONDecoder` is more forgiving, so `StrictJSON`
-    /// vets the bytes first: anything but UTF-8 (a BOM, UTF-16, UTF-32), a raw
+    /// "Malformed" is meant as what serde_json rejects, so the Tauri app and this
+    /// one agree on any file either of them wrote. `JSONDecoder` is more
+    /// forgiving, so `StrictJSON` vets the bytes first: anything but UTF-8 (a BOM, UTF-16, UTF-32), a raw
     /// control character in a string, a trailing comma, a leading zero, a number
     /// that overflows a `Double`, a lone surrogate or unknown escape, and nesting
     /// past 127 levels all read as damaged. Only then is the file decoded, and
     /// strictly: `JSONSerialization` would bridge a `0` to `false`, and only a
     /// real JSON boolean may turn the guard off.
     ///
-    /// The one known difference: given a duplicated `warn_before_quit` key,
-    /// serde_json keeps the last value and `JSONDecoder` the first.
+    /// Known differences, none reachable from a file the app writes: a duplicated
+    /// `warn_before_quit` key (serde_json keeps the last value, `JSONDecoder` the
+    /// first); a number within rounding distance of the largest `Double`, where
+    /// serde_json's own conversion is not correctly rounded; and an object whose
+    /// first key is serde_json's internal `$serde_json::private::RawValue`.
     public static func warnBeforeQuit(from contents: Data?) -> Bool {
         guard let contents, StrictJSON.isValid(contents),
             let stored = try? JSONDecoder().decode(Stored.self, from: contents)

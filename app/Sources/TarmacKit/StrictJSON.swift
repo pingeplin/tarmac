@@ -8,8 +8,12 @@ import Foundation
 ///
 /// The rules are serde_json's: UTF-8 only; whitespace is space, tab, LF and CR;
 /// strings hold no raw byte below U+0020 and only the RFC 8259 escapes, with
-/// surrogates paired; numbers follow the RFC grammar and must fit a finite
-/// `Double`; at most 127 nested arrays and objects, the document's own included.
+/// surrogates paired; numbers follow the RFC grammar and must not overflow;
+/// at most 127 nested arrays and objects, the document's own included.
+///
+/// Overflow is judged with a correctly rounded `Double`, which serde_json's
+/// conversion is not, so the two disagree on a few literals within rounding
+/// distance of the largest `Double`.
 enum StrictJSON {
     static let maxDepth = 127
 

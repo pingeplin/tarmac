@@ -1,12 +1,19 @@
 import Foundation
 
-/// The single entry a `WKURLSchemeHandler` for `tarmac-card` calls. It does what
-/// Tauri's stack does around `respond_card_scheme` (`lib.rs`): wry builds the
-/// request with `http::Uri`, which drops a `#fragment` — and a WKURLSchemeTask
-/// URL keeps it — and then the `img` host goes to the image handler while every
-/// other host is the card handler's to answer 400.
+/// The single entry a `WKURLSchemeHandler` for `tarmac-card` calls. It covers
+/// what Tauri's stack does around `respond_card_scheme` (`lib.rs`) for every URL
+/// the app builds: wry forms the request with `http::Uri`, which drops a
+/// `#fragment` — and a WKURLSchemeTask URL keeps it — and then the `img` host
+/// goes to the image handler while every other host is the card handler's to
+/// answer 400.
 ///
-/// Feed it `task.request.url!.absoluteString`, never `.path`, which percent-decodes.
+/// Two things `http::Uri` does are not reproduced, neither reachable from an
+/// app-built URL: it writes a missing path as `/` (so `tarmac-card://doc` is an
+/// "empty path" 400 there and a "malformed" 400 here), and it refuses some URLs
+/// outright (raw control characters, a 64 KiB URL), which wry answers with a
+/// bare 404 before any handler runs.
+///
+/// Feed it the task URL's `absoluteString`, never `.path`, which percent-decodes.
 /// `CardProtocol.decodeSchemePath` stays byte-identical to the Rust function and
 /// treats `#` as path text; only a `%23` can name a `#` in a file, here as in Rust.
 public enum CardSchemeRouter {

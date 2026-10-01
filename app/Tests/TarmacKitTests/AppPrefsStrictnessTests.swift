@@ -7,8 +7,7 @@ import XCTest
 /// (`serde_json::from_slice::<Value>`, as `app_prefs.rs` does), not off this
 /// implementation.
 ///
-/// The one known difference, left unpinned: with a duplicated `warn_before_quit`
-/// key serde_json keeps the last, this implementation the first.
+/// Known differences, left unpinned, are listed on `AppPrefs.warnBeforeQuit`.
 final class AppPrefsStrictnessTests: XCTestCase {
     private func bytes(_ json: String) -> Data { Data(json.utf8) }
 
