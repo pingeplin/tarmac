@@ -29,10 +29,10 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
 
     init(path: String) {
         self.path = path
-        webView = CardWebView.make(scripts: [
-            BundledResource.web("marked.umd.js").text,
-            BundledResource.web("doc-render.js").text,
-        ])
+        webView = CardWebView.make(
+            scripts: [BundledResource.web("marked.umd.js").text, BundledResource.web("doc-render.js").text],
+            served: .docImages
+        )
         host = ScreenSpaceHost(content: webView)
         super.init(frame: .zero)
         wantsLayer = true

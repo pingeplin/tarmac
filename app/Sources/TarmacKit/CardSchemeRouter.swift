@@ -29,8 +29,9 @@ public enum CardSchemeRouter {
 
     /// Resolves `url`, reads through `read` only when a file is to be served, and
     /// returns the response to hand to WebKit. `read` is the host's file I/O and
-    /// blocks, so call this off the main thread.
-    public static func respond(url: String, shim: String, read: (String) -> Result<Data, any Error>) -> CardProtocol.Response {
+    /// blocks, so call this off the main thread. This is the whole scheme, as
+    /// Tauri's one handler answers it; a web view is given `respond(…serving:…)`.
+    static func respond(url: String, shim: String, read: (String) -> Result<Data, any Error>) -> CardProtocol.Response {
         switch route(url: url) {
         case .doc(.reject(let response)), .image(.reject(let response)):
             return response
@@ -39,6 +40,25 @@ public enum CardSchemeRouter {
         case .image(.read(let path, let contentType)):
             return ImageProtocol.respond(path: path, contentType: contentType, contents: read(path))
         }
+    }
+
+    /// The response for a web view that is served `host` and nothing else: an
+    /// HTML card's loads its document, a markdown doc's its images. A markdown
+    /// doc that framed a card document would have it run unsandboxed at the
+    /// scheme's origin, where it reads any other file the doc framed. A URL of
+    /// the other host is refused before the disk is touched.
+    public static func respond(
+        url: String, shim: String, serving host: CardURL.Host, read: (String) -> Result<Data, any Error>
+    ) -> CardProtocol.Response {
+        let asked: CardURL.Host
+        switch route(url: url) {
+        case .doc: asked = .doc
+        case .image: asked = .img
+        }
+        guard asked == host else {
+            return CardProtocol.textResponse(status: 403, body: "the \(asked.rawValue) host is not served to this card")
+        }
+        return respond(url: url, shim: shim, read: read)
     }
 
     /// Cut at the first `#`, `?` after it included — what `http::Uri` keeps.

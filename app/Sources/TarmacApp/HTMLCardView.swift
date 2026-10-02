@@ -41,7 +41,7 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
 
     init(path: String) {
         self.path = path
-        webView = CardWebView.make(scripts: [BundledResource.web("card-host.js").text])
+        webView = CardWebView.make(scripts: [BundledResource.web("card-host.js").text], served: .cards)
         host = ScreenSpaceHost(content: webView)
         super.init(frame: .zero)
         wantsLayer = true
