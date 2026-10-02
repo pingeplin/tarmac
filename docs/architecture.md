@@ -499,7 +499,11 @@ runs, which is that program's own key.
 **IME.** `TerminalView` is an `NSTextInputClient`: the input context composes
 into marked text, drawn as a preedit at the cursor, and a commit goes out as one
 key event. Control chords and `⌥`-as-Alt skip the input method unless a
-composition is in flight.
+composition is in flight. The preedit carries the input method's own caret, and
+the candidate window is anchored at that caret whatever range the input method
+asks about — Zhuyin asks about the whole composition, which would leave the
+window at its start. A key is named to the program by the Latin letter on it
+(`KeyTranslation`), so `⌥B` is alt+b under a non-Latin input source too.
 
 **Mouse and selection.** While the program tracks the mouse it gets the reports
 (libghostty-vt's mouse encoder); `⌥` hands a drag back to selection. Otherwise
