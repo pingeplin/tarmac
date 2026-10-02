@@ -431,6 +431,116 @@ final class DevSnapshotTests: XCTestCase {
         ])
     }
 
+    // MARK: - which card holds the keys
+
+    private typealias Focus = DevSnapshot.KeyboardFocus
+
+    private func focus(_ responder: DevSnapshot.KeyHolder?) -> Focus {
+        Focus(responder: responder, switcherOwner: nil, switcherHoldsKeys: false)
+    }
+
+    func testATerminalHoldingFirstResponderHoldsTheKeys() {
+        XCTAssertEqual(
+            focus(.terminal(card: "t-1", hasSelection: true)), .terminal(card: "t-1", hasSelection: true)
+        )
+        XCTAssertEqual(
+            focus(.terminal(card: "t-1", hasSelection: false)), .terminal(card: "t-1", hasSelection: false)
+        )
+    }
+
+    /// Only an HTML card's document takes the keys; a markdown card is a
+    /// reading surface, and focus inside one reads as the page body.
+    func testADocCardHoldsTheKeysOnlyWhenItIsAnHTMLCard() {
+        XCTAssertEqual(focus(.doc(path: "/a/c.html")), .htmlDocument(card: "/a/c.html"))
+        XCTAssertEqual(focus(.doc(path: "/a/C.HTM")), .htmlDocument(card: "/a/C.HTM"))
+        XCTAssertEqual(focus(.doc(path: "/a/b.md")), Focus.none)
+        XCTAssertEqual(focus(nil), Focus.none)
+    }
+
+    /// The Tauri switcher never takes DOM focus — `activeElement` stays on the
+    /// terminal behind it. The native one holds first responder while it is
+    /// up, so the card reported is the one it hands the keys back to.
+    func testWhileTheSwitcherHoldsTheKeysTheirOwnerIsTheCardBehindIt() {
+        let terminal = DevSnapshot.KeyHolder.terminal(card: "t-1", hasSelection: false)
+        XCTAssertEqual(
+            Focus(responder: nil, switcherOwner: terminal, switcherHoldsKeys: true),
+            .terminal(card: "t-1", hasSelection: false)
+        )
+        XCTAssertEqual(Focus(responder: nil, switcherOwner: nil, switcherHoldsKeys: true), Focus.none)
+    }
+
+    /// An owner left over from an earlier opening says nothing once the
+    /// switcher has given the keys back.
+    func testAClosedSwitchersOwnerIsIgnored() {
+        let terminal = DevSnapshot.KeyHolder.terminal(card: "t-1", hasSelection: false)
+        XCTAssertEqual(Focus(responder: nil, switcherOwner: terminal, switcherHoldsKeys: false), Focus.none)
+        XCTAssertEqual(
+            Focus(responder: .doc(path: "/a/c.html"), switcherOwner: terminal, switcherHoldsKeys: false),
+            .htmlDocument(card: "/a/c.html")
+        )
+    }
+
+    // MARK: - the order cards are reported in
+
+    private typealias Ref = DevSnapshot.CardRef
+
+    func testCardsAreTerminalsInCardOrderThenDocsAsTheBoardListsThem() {
+        XCTAssertEqual(
+            DevSnapshot.cardOrder(
+                terminals: ["t-2", "t-1"], listedDocs: ["/z.md", "/a.md"],
+                onBoard: [
+                    Ref(kind: .doc, id: "/a.md"), Ref(kind: .term, id: "t-1"),
+                    Ref(kind: .doc, id: "/z.md"), Ref(kind: .term, id: "t-2"),
+                ]
+            ),
+            [
+                Ref(kind: .term, id: "t-2"), Ref(kind: .term, id: "t-1"),
+                Ref(kind: .doc, id: "/z.md"), Ref(kind: .doc, id: "/a.md"),
+            ]
+        )
+    }
+
+    /// The orders name cards from every source; only what has a card on the
+    /// active board is reported.
+    func testACardThatIsNotOnTheBoardIsLeftOut() {
+        XCTAssertEqual(
+            DevSnapshot.cardOrder(
+                terminals: ["t-1", "t-gone"], listedDocs: ["/shelved.md", "/a.md"],
+                onBoard: [Ref(kind: .term, id: "t-1"), Ref(kind: .doc, id: "/a.md")]
+            ),
+            [Ref(kind: .term, id: "t-1"), Ref(kind: .doc, id: "/a.md")]
+        )
+    }
+
+    /// A card neither order names is still on the board, and still reported —
+    /// last, terminals before docs, by id, so two snapshots agree.
+    func testACardNoOrderNamesIsReportedLastInAStableOrder() {
+        XCTAssertEqual(
+            DevSnapshot.cardOrder(
+                terminals: ["t-1"], listedDocs: ["/a.md"],
+                onBoard: [
+                    Ref(kind: .doc, id: "/y.md"), Ref(kind: .doc, id: "/a.md"), Ref(kind: .term, id: "t-9"),
+                    Ref(kind: .doc, id: "/b.md"), Ref(kind: .term, id: "t-1"), Ref(kind: .term, id: "t-3"),
+                ]
+            ),
+            [
+                Ref(kind: .term, id: "t-1"), Ref(kind: .doc, id: "/a.md"),
+                Ref(kind: .term, id: "t-3"), Ref(kind: .term, id: "t-9"),
+                Ref(kind: .doc, id: "/b.md"), Ref(kind: .doc, id: "/y.md"),
+            ]
+        )
+    }
+
+    /// A term id and a doc path that spell the same are two cards.
+    func testATerminalAndADocMayShareAnId() {
+        XCTAssertEqual(
+            DevSnapshot.cardOrder(
+                terminals: ["x"], listedDocs: ["x"], onBoard: [Ref(kind: .term, id: "x"), Ref(kind: .doc, id: "x")]
+            ),
+            [Ref(kind: .term, id: "x"), Ref(kind: .doc, id: "x")]
+        )
+    }
+
     // MARK: - the replies built off a snapshot
 
     func testTheFocusReplyIsTheSelectionAndTheKeyboardFocus() {

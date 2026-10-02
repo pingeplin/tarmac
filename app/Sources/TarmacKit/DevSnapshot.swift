@@ -120,6 +120,55 @@ public enum DevSnapshot {
             case .none: nil
             }
         }
+
+        /// Maps the window's first responder onto the card that holds the keys.
+        ///
+        /// The ⌘K switcher holds first responder while it is up. The Tauri
+        /// switcher never takes DOM focus — `activeElement` stays on the
+        /// terminal behind it — so while it holds the keys the card reported is
+        /// `switcherOwner`, the one it hands them back to.
+        public init(responder: KeyHolder?, switcherOwner: KeyHolder?, switcherHoldsKeys: Bool) {
+            switch switcherHoldsKeys ? switcherOwner : responder {
+            case .terminal(let card, let hasSelection):
+                self = .terminal(card: card, hasSelection: hasSelection)
+            case .doc(let path) where DocKind(path: path) == .html:
+                self = .htmlDocument(card: path)
+            case .doc, nil:
+                self = .none
+            }
+        }
+    }
+
+    /// The card whose view is, or contains, a responder.
+    public enum KeyHolder: Equatable, Sendable {
+        case terminal(card: String, hasSelection: Bool)
+        case doc(path: String)
+    }
+
+    /// A card by its wire id. The kind is part of it: a term id and a doc path
+    /// are different namespaces.
+    public struct CardRef: Hashable, Sendable {
+        public var kind: DevCardKind
+        public var id: String
+
+        public init(kind: DevCardKind, id: String) {
+            self.kind = kind
+            self.id = id
+        }
+    }
+
+    /// The order cards are reported in: terminals in the board's card order,
+    /// then docs in the order the board lists them. Both orders may name cards
+    /// that are not on the board; only `onBoard` is reported. A card neither
+    /// names comes last — terminals before docs, by id — so that two snapshots
+    /// of one board agree.
+    public static func cardOrder(terminals: [String], listedDocs: [String], onBoard: Set<CardRef>) -> [CardRef] {
+        let named = (terminals.map { CardRef(kind: .term, id: $0) } + listedDocs.map { CardRef(kind: .doc, id: $0) })
+            .filter(onBoard.contains)
+        let unnamed = onBoard.subtracting(named).sorted { a, b in
+            a.kind == b.kind ? a.id < b.id : a.kind == .term
+        }
+        return named + unnamed
     }
 
     public enum SelectionType: String, Equatable, Sendable {
