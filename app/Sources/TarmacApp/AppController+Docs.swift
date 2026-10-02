@@ -30,6 +30,7 @@ extension AppController {
         }
         persistLayout(for: board)
         if board === activeBoard { refreshStrips() }
+        refreshSwitcherIfOpen()
     }
 
     /// Puts a doc card on `board` and shows the doc in it.
@@ -119,6 +120,7 @@ extension AppController {
         client.docClose(path: path)
         persistLayout()
         refreshStrips()
+        refreshSwitcherIfOpen()
     }
 
     // MARK: - Chrome

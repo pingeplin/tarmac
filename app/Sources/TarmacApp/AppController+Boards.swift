@@ -65,7 +65,7 @@ extension AppController {
         rootView.boardSwitcher.takeKeys()
     }
 
-    /// Re-renders an open switcher after a board, bell or exit changed.
+    /// Re-renders an open switcher after a board, card, bell or exit changed.
     func refreshSwitcherIfOpen() {
         guard switcherOpen else { return }
         renderSwitcher()
