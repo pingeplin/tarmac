@@ -164,6 +164,57 @@ final class CardConsoleTests: XCTestCase {
         XCTAssertEqual(CardConsole.Buffer().cap, 500)
     }
 
+    // MARK: - line cap
+
+    func testALineIsCappedAtAThousandCharacters() {
+        XCTAssertEqual(CardConsole.lineCap, 1000)
+    }
+
+    /// A card is not trusted with how much it logs: one entry may be megabytes.
+    /// What is kept is the head of its line and how much was cut.
+    func testAnEntryLongerThanTheCapKeepsItsHeadAndSaysHowMuchWasCut() {
+        var buffer = CardConsole.Buffer()
+        buffer.push(CardConsole.Entry(level: .warn, args: [.string(String(repeating: "x", count: 1500)), 7]))
+
+        let kept = buffer.entries[0]
+        XCTAssertEqual(kept.level, .warn)
+        XCTAssertEqual(
+            CardConsole.formatArgs(kept.args),
+            String(repeating: "x", count: 1000) + "… (+502 characters)"
+        )
+    }
+
+    func testAnEntryAtTheCapIsKeptAsItCame() {
+        var buffer = CardConsole.Buffer()
+        let atCap = CardConsole.Entry(level: .log, args: [.string(String(repeating: "x", count: 998)), 7])
+        buffer.push(atCap)
+        XCTAssertEqual(buffer.entries, [atCap])
+    }
+
+    func testAShortEntryKeepsItsArgsUntouched() {
+        var buffer = CardConsole.Buffer()
+        let short = CardConsole.Entry(level: .log, args: ["a", ["k": 1], [1, 2]])
+        buffer.push(short)
+        XCTAssertEqual(buffer.entries, [short])
+    }
+
+    /// The cut never splits a character.
+    func testTheCutFallsBetweenCharacters() {
+        var buffer = CardConsole.Buffer()
+        buffer.push(CardConsole.Entry(level: .log, args: [.string(String(repeating: "👩‍👩‍👧", count: 1001))]))
+        XCTAssertEqual(
+            CardConsole.formatArgs(buffer.entries[0].args),
+            String(repeating: "👩‍👩‍👧", count: 1000) + "… (+1 characters)"
+        )
+    }
+
+    // MARK: - refresh
+
+    /// A flooding card costs the app at most ten console updates a second.
+    func testTheConsoleIsRefreshedAtMostTenTimesASecond() {
+        XCTAssertEqual(CardConsole.refreshInterval, 0.1)
+    }
+
     // MARK: - formatArgs
 
     func testJoinsPrimitivesWithSpaces() {

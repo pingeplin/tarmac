@@ -28,6 +28,7 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
     private let console = CardConsoleView()
 
     private var session = HTMLCardSession()
+    private var consoleUpdate = CoalescedUpdate()
     private var wheel = CardZoom.ScrollRelay()
     private var pageLoaded = false
     private var loadingPage = false
@@ -116,12 +117,25 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
 
     func toggleConsole() {
         console.isHidden.toggle()
-        needsLayout = true
+        showConsole()
     }
 
+    /// The console gained an entry. A card can log faster than its console
+    /// can be drawn, so the badge and the panel catch up at most once per
+    /// `CardConsole.refreshInterval`, and the panel only while it is open.
     private func consoleChanged() {
+        guard consoleUpdate.changed() else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + CardConsole.refreshInterval) { [weak self] in
+            guard let self else { return }
+            self.consoleUpdate.ran()
+            self.onConsoleChanged?(self.session.console.entries.count)
+            self.showConsole()
+        }
+    }
+
+    private func showConsole() {
+        guard !console.isHidden else { return }
         console.show(session.console.entries)
-        onConsoleChanged?(session.console.entries.count)
         needsLayout = true
     }
 
