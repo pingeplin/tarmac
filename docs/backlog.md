@@ -240,5 +240,13 @@ Verified against the code on 2026-10-02.
 - **No in-repo test drives `CardSchemeHandler` or compiles `DocFrameRule` with
   WebKit**; the address-reuse rule and the content rule were checked only with
   an off-screen harness.
-- **`NOTICE` has no licence notices for what the bundle ships**: the fonts (OFL)
-  and `marked` (MIT). `NOTICE`.
+- **`NOTICE` has no licence notices for what the bundle ships**: the fonts
+  (OFL), `marked` (MIT), and libghostty-vt (MIT), which is linked into the
+  executable. `NOTICE`.
+- **libghostty-vt is a download that only Ghostty keeps.** The build fetches one
+  pinned commit's prebuilt archive, its retention is undocumented, and the build
+  does not signature-check it. Kept as is by decision on 2026-10-02; the ways
+  out — mirror the zip, build it from source, or pin a tag once a Ghostty
+  release publishes the library — are in
+  [`architecture.md`](architecture.md#the-libghostty-vt-dependency).
+  `scripts/fetch-ghostty-vt.sh`.

@@ -334,14 +334,79 @@ the socket and asserts the M0 contract end to end, and `tarmac-term-demo` binds
 one `TerminalView` to a daemon PTY so the terminal card can be checked alone.
 
 `GhosttyVt` is libghostty-vt as a prebuilt XCFramework — a binary target at
-`app/Vendor/` (gitignored). `scripts/fetch-ghostty-vt.sh` (`make ghostty-vt`)
-stages it from one pinned Ghostty commit and checks a recorded SHA-256. The
-library's C API is declared unstable, so commit and hash move together and
-deliberately.
+`app/Vendor/` (gitignored), staged by `scripts/fetch-ghostty-vt.sh`
+(`make ghostty-vt`). Where it comes from and what pins it:
+[The libghostty-vt dependency](#the-libghostty-vt-dependency).
 
 `AppController` is the coordinator: it owns the `DaemonClient`, the event
 monitors and the `Board`s. It gathers facts, asks a `TarmacKit` rule, and
 applies the answer; the rule is where the test is.
+
+### The libghostty-vt dependency
+
+libghostty-vt is the terminal-emulation library of
+[Ghostty](https://github.com/ghostty-org/ghostty) (MIT), and the Swift
+package's only dependency outside the SDK. Tarmac does not build it: it
+downloads the archive Ghostty's own CI compiled.
+
+**What is linked.** The XCFramework holds static archives. The package links
+its macOS slice (`libghostty-vt.a`, arm64 and x86_64; the bundle is arm64-only)
+into the executable, so a built `Tarmac.app` has no `Contents/Frameworks` and no
+dynamic reference to the library; nothing is fetched at install or run time.
+Every build stages it through the one script — `make app`, `make test`, CI
+(`.github/workflows/test.yml`, cached on the script's hash) and
+`scripts/release.sh` by way of `scripts/bundle.sh` — so a released `.dmg`
+carries object code Ghostty compiled.
+
+**Where it comes from.** Ghostty's `release-tip.yml` workflow builds the
+XCFramework for each tip release and publishes it in two places, both named as
+consumer channels by the commit that added them
+([90b706b97](https://github.com/ghostty-org/ghostty/commit/90b706b97),
+[PR #12149](https://github.com/ghostty-org/ghostty/pull/12149)):
+
+- the `ghostty-vt.xcframework.zip` asset of the
+  [`tip` GitHub release](https://github.com/ghostty-org/ghostty/releases/tag/tip),
+  replaced on every tip build, so it cannot be pinned;
+- `https://tip.files.ghostty.org/<commit>/ghostty-vt.xcframework.zip`, keyed by
+  the full commit hash. The script downloads this one. A commit whose tip run
+  skipped the build — one that changed nothing that ships — has no file.
+
+**Why a commit and not a version.** Ghostty's README says libghostty has no
+version yet, and no tagged release publishes the library. The latest tag,
+`v1.3.1` (2026-03-13), predates the terminal, render-state, mouse and selection
+headers: of the 69 `ghostty_*` functions `TarmacTerm` calls, its headers declare
+13, all key encoding (counted 2026-10-02). The headers call the C API not yet
+stable, with breaking changes expected. So the pin is one commit on `main`:
+`GHOSTTY_COMMIT` and `GHOSTTY_VT_SHA256` in the script move together, a bump can
+break `TarmacTerm`, and one is to be followed by `make test` and a live
+`make qa`. No bump has happened yet.
+
+**What is checked.** The zip's SHA-256 against the value recorded in the
+script, at download time, and nothing else; an `app/Vendor/` that is already
+staged is trusted on its commit stamp. Ghostty signs the zip with minisign
+(public key in its `PACKAGING.md`), but publishes the `.minisig` only beside the
+`tip` release asset, not at the per-commit address. The signature is therefore
+reachable only while the pinned build is still the tip asset, and the script
+neither fetches nor keeps it. By itself the hash says the file is the one the
+pin was made against, not who built it. On 2026-10-02 the tip asset was still
+the pinned build — the same SHA-256 — and its signature verified against that
+key.
+
+**How long the file stays.** No retention period was found in Ghostty's README,
+`PACKAGING.md`, workflow or release notes. Observed on 2026-10-02: of 18
+sampled commits that got a tip build between 2026-04-06 and 2026-09-30, all 18
+still served the zip, the first one ever published among them. If the pinned
+file goes, a machine that already holds `app/Vendor/` keeps building; a fresh
+checkout does not, and CI only until its cache entry is evicted (seven days
+unused) or the script changes.
+
+**What would replace the download** — none of it done
+([`backlog.md`](backlog.md) §5): mirroring the same zip, which keeps the hash;
+building it, since Ghostty publishes `libghostty-vt-source.tar.gz` at the same
+per-commit address and its workflow runs
+`zig build -Demit-lib-vt -Doptimize=ReleaseFast` in its Nix dev shell (Zig
+0.16.0 at this pin) — Tarmac has never built it that way; or pinning a tag once
+a Ghostty release publishes libghostty-vt.
 
 ### The daemon link
 
