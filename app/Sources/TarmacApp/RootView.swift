@@ -47,10 +47,10 @@ final class RootView: NSView {
 
         // −/+ zoom about the viewport center; fit frames every card.
         zoomControl.onZoomOut = { [weak self] in
-            self?.board.zoom(by: 1 / ZoomControl.zoomStep, commit: true)
+            self?.board.zoom(by: 1 / ZoomControl.zoomStep)
         }
         zoomControl.onZoomIn = { [weak self] in
-            self?.board.zoom(by: ZoomControl.zoomStep, commit: true)
+            self?.board.zoom(by: ZoomControl.zoomStep)
         }
         zoomControl.onFit = { [weak self] in self?.board.fitToCards() }
         // Minimap click → re-center the viewport on the clicked world point.
@@ -125,18 +125,13 @@ final class RootView: NSView {
     /// Rebuilds the wayfinding chrome from the current viewport + card set: the
     /// zoom readout, the minimap rects + viewport box, and the edge pills.
     /// Cheap; called on every viewport / card change.
-    func refreshWayfinding(_ viewport: Viewport?) {
-        let vp = viewport ?? board.viewport
-        zoomControl.setZoom(vp.zoom)
+    func refreshWayfinding(_ viewport: Viewport) {
+        zoomControl.setZoom(viewport.zoom)
         minimap.update(items: board.minimapItems, viewportWorldRect: board.viewportWorldRect)
         let hints = offscreenHintProvider?() ?? []
         offHints.show(hints, in: board.bounds, around: board.cards.values.map(\.frame))
         // Only terminals signal, so a hint's id is a terminal's.
         offscreenFlyTarget = OffscreenHintLayout.flyTarget(hints).map(CardID.term)
-    }
-
-    func attachTerminal(_ terminal: TerminalView, termID: String, worldFrame: CardFrame) {
-        board.setTerminal(termID: termID, terminal, worldFrame: worldFrame)
     }
 
     /// Shows / hides the ⌘K boards switcher overlay (the controller renders its

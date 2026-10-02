@@ -184,7 +184,7 @@ final class BoardView: NSView {
 
     /// Centers on the bounding box of every card with a 10 % margin a side.
     /// Does nothing on an empty board.
-    func fitToCards(commit: Bool = true) {
+    func fitToCards() {
         let rects = cards.values.map(\.worldFrame.rect)
         guard let fit = BoardWayfinding.fit(
             cards: rects,
@@ -193,12 +193,12 @@ final class BoardView: NSView {
             minZoom: Viewport.minZoom,
             maxZoom: Viewport.maxZoom
         ) else { return }
-        setViewport(Viewport(zoom: fit.zoom, cx: fit.center.x, cy: fit.center.y), commit: commit)
+        setViewport(Viewport(zoom: fit.zoom, cx: fit.center.x, cy: fit.center.y), commit: true)
     }
 
     /// Multiplies the zoom by `factor`, keeping the world point under
     /// `anchorViewPoint` (the board's center by default) where it is on screen.
-    func zoom(by factor: CGFloat, anchorViewPoint: CGPoint? = nil, commit: Bool) {
+    func zoom(by factor: CGFloat, anchorViewPoint: CGPoint? = nil) {
         flight.cancel()
         let zoomed = Viewport(BoardTransform.zoomed(
             viewport.wire,
@@ -208,7 +208,7 @@ final class BoardView: NSView {
             limits: Viewport.minZoom...Viewport.maxZoom
         ))
         if zoomed != viewport { show(zoomed) }
-        if commit { onLayoutChanged?(viewport) }
+        onLayoutChanged?(viewport)
     }
 
     // MARK: - Selection and stacking
@@ -467,8 +467,7 @@ final class BoardView: NSView {
     override func magnify(with event: NSEvent) {
         zoom(
             by: BoardWheel.zoomFactor(magnification: event.magnification),
-            anchorViewPoint: convert(event.locationInWindow, from: nil),
-            commit: true
+            anchorViewPoint: convert(event.locationInWindow, from: nil)
         )
     }
 

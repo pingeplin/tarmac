@@ -2,89 +2,8 @@ import AppKit
 import QuartzCore
 import TarmacKit
 
-/// A toast's kbd chip: the one part of a toast that takes a click.
-@MainActor
-final class ToastChipView: NSView {
-    var onClick: (() -> Void)?
-
-    private static let padX: CGFloat = 5
-    private static let padY: CGFloat = 2
-    private static let border: CGFloat = 1
-    private static let bottomBorder: CGFloat = 2
-
-    private let label: ChromeLabel
-    let size: NSSize
-    private var trackingArea: NSTrackingArea?
-
-    override var isFlipped: Bool { true }
-    override var acceptsFirstResponder: Bool { false }
-
-    init(_ text: String) {
-        label = ChromeLabel(text, size: 10, color: Theme.muted, weight: .medium)
-        let textSize = label.textSize
-        size = NSSize(
-            width: (textSize.width + 2 * (Self.padX + Self.border)).rounded(.up),
-            height: textSize.height + 2 * Self.padY + Self.border + Self.bottomBorder
-        )
-        super.init(frame: NSRect(origin: .zero, size: size))
-        wantsLayer = true
-        layer?.backgroundColor = Theme.bg2.cgColor
-        layer?.borderColor = Theme.line.cgColor
-        layer?.borderWidth = Self.border
-        layer?.cornerRadius = 4
-
-        let bottomEdge = NSView(frame: NSRect(
-            x: Self.border, y: size.height - Self.bottomBorder,
-            width: size.width - 2 * Self.border, height: Self.bottomBorder - Self.border
-        ))
-        bottomEdge.wantsLayer = true
-        bottomEdge.layer?.backgroundColor = Theme.line.cgColor
-        addSubview(bottomEdge)
-
-        label.place(at: CGPoint(x: Self.border + Self.padX, y: Self.border + Self.padY))
-        addSubview(label)
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    // The label would otherwise swallow the press.
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        super.hitTest(point) == nil ? nil : self
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        onClick?()
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        layer?.backgroundColor = Theme.bg3.cgColor
-        label.textColor = Theme.text
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        layer?.backgroundColor = Theme.bg2.cgColor
-        label.textColor = Theme.muted
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let trackingArea { removeTrackingArea(trackingArea) }
-        let area = NSTrackingArea(
-            rect: bounds,
-            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
-            owner: self
-        )
-        addTrackingArea(area)
-        trackingArea = area
-    }
-
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .pointingHand)
-    }
-}
-
-/// One toast: a glyph, a title over an optional body, and its chips. Laid out
-/// as `.tm-toast` is, a border box of at most 320 px.
+/// One toast: a glyph and a title over an optional body. Laid out as
+/// `.tm-toast` is, a border box of at most 320 px.
 @MainActor
 final class ToastView: NSView {
     private static let maxWidth: CGFloat = 320
@@ -94,32 +13,23 @@ final class ToastView: NSView {
     private static let gap: CGFloat = 7
     private static let iconLineHeight: CGFloat = 13 * 1.2
     private static let bodyTop: CGFloat = 2
-    private static let chipGap: CGFloat = 5
-    private static let chipsLeft: CGFloat = 6
 
     let size: NSSize
 
-    init(_ toast: ToastQueue.Toast, onChip: @escaping () -> Void) {
+    init(_ toast: ToastQueue.Toast) {
         let icon = ChromeLabel(toast.icon, size: 13, color: Theme.agent)
         let title = ChromeLabel(toast.title, size: 11, color: Theme.text)
         let body = toast.body.map { ChromeLabel($0, size: 10, color: Theme.faint) }
-        let chips = toast.chips.map { ToastChipView($0.label) }
 
         let iconWidth = icon.textSize.width
-        let chipsWidth = chips.isEmpty
-            ? 0
-            : Self.gap + Self.chipsLeft + chips.map(\.size.width).reduce(0, +)
-                + CGFloat(chips.count - 1) * Self.chipGap
-        let textRoom = min(
-            Self.maxTextWidth, Self.maxWidth - 2 * Self.insetX - iconWidth - Self.gap - chipsWidth
-        )
+        let textRoom = min(Self.maxTextWidth, Self.maxWidth - 2 * Self.insetX - iconWidth - Self.gap)
         let titleWidth = min(title.textSize.width, textRoom)
         let bodyWidth = min(body?.textSize.width ?? 0, textRoom)
         let textWidth = max(titleWidth, bodyWidth)
         let textHeight = title.lineHeight + (body.map { Self.bodyTop + $0.lineHeight } ?? 0)
-        let contentHeight = max(Self.iconLineHeight, textHeight, chips.map(\.size.height).max() ?? 0)
+        let contentHeight = max(Self.iconLineHeight, textHeight)
         size = NSSize(
-            width: (2 * Self.insetX + iconWidth + Self.gap + textWidth + chipsWidth).rounded(.up),
+            width: (2 * Self.insetX + iconWidth + Self.gap + textWidth).rounded(.up),
             height: (2 * Self.insetY + contentHeight).rounded(.up)
         )
 
@@ -145,16 +55,6 @@ final class ToastView: NSView {
             body.place(at: CGPoint(x: textX, y: bodyY.rounded()), width: bodyWidth)
             addSubview(body)
         }
-
-        var chipX = textX + textWidth + Self.gap + Self.chipsLeft
-        for chip in chips {
-            chip.onClick = onChip
-            chip.frame.origin = CGPoint(
-                x: chipX.rounded(), y: (Self.insetY + (contentHeight - chip.size.height) / 2).rounded()
-            )
-            addSubview(chip)
-            chipX += chip.size.width + Self.chipGap
-        }
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -164,7 +64,7 @@ final class ToastView: NSView {
 
 /// The toast column over the board's bottom-right corner. `ToastQueue` decides
 /// which toasts there are and `ToastStackLayout` where they go; this draws
-/// them. Click-through except for the chips.
+/// them. Click-through.
 @MainActor
 final class ToastStackView: NSView {
     private static let pruneInterval: TimeInterval = 0.25
@@ -180,19 +80,12 @@ final class ToastStackView: NSView {
 
     override var isFlipped: Bool { true }
 
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        let hit = super.hitTest(point)
-        return hit is ToastChipView ? hit : nil
-    }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    /// Clicking any chip dismisses its own toast, never the whole stack.
-    func show(icon: String = "¶", title: String, body: String?, chips: [String] = []) {
+    func show(icon: String = "¶", title: String, body: String?) {
         minted += 1
         let id = "toast-\(minted)"
-        queue.add(
-            id: id, icon: icon, title: title, body: body, chips: chips.map(ToastQueue.Chip.init),
-            nowMs: Self.nowMs
-        )
+        queue.add(id: id, icon: icon, title: title, body: body, nowMs: Self.nowMs)
         render()
         if let view = views[id] { animateIn(view) }
     }
@@ -206,11 +99,6 @@ final class ToastStackView: NSView {
         Int(ProcessInfo.processInfo.systemUptime * 1000)
     }
 
-    private func dismiss(_ id: String) {
-        queue.dismiss(id: id)
-        render()
-    }
-
     private func render() {
         let showing = Set(queue.toasts.map(\.id))
         for (id, view) in views where !showing.contains(id) {
@@ -218,9 +106,8 @@ final class ToastStackView: NSView {
             views[id] = nil
         }
         for toast in queue.toasts where views[toast.id] == nil {
-            let id = toast.id
-            let view = ToastView(toast) { [weak self] in self?.dismiss(id) }
-            views[id] = view
+            let view = ToastView(toast)
+            views[toast.id] = view
             addSubview(view)
         }
         place()

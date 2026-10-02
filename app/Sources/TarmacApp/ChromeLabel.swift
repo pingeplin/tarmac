@@ -8,9 +8,9 @@ import AppKit
 final class ChromeLabel: NSTextField {
     private static let cellInset: CGFloat = 2
 
-    convenience init(_ text: String = "", size: CGFloat, color: NSColor, weight: NSFont.Weight = .regular) {
+    convenience init(_ text: String = "", size: CGFloat, color: NSColor) {
         self.init(labelWithString: text)
-        font = Theme.mono(size, weight: weight)
+        font = Theme.mono(size)
         textColor = color
         lineBreakMode = .byTruncatingTail
     }

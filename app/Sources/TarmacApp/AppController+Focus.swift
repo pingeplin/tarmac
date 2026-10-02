@@ -94,8 +94,7 @@ extension AppController {
         case .zoom:
             board.zoom(
                 by: BoardWheel.zoomFactor(travel: travel),
-                anchorViewPoint: board.convert(event.locationInWindow, from: nil),
-                commit: true
+                anchorViewPoint: board.convert(event.locationInWindow, from: nil)
             )
         }
         return true

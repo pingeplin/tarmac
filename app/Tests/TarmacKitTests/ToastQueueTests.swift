@@ -50,15 +50,11 @@ final class ToastQueueTests: XCTestCase {
         XCTAssertEqual(queue.toasts.count, 2)
     }
 
-    func testAddCarriesTheBodyAndChipsThrough() {
+    func testAddCarriesTheIconAndBodyThrough() {
         var queue = ToastQueue()
-        queue.add(
-            id: "a", icon: "›_", title: "exited", body: "code 1",
-            chips: [ToastQueue.Chip(label: "undo")], nowMs: 0
-        )
+        queue.add(id: "a", icon: "›_", title: "exited", body: "code 1", nowMs: 0)
         XCTAssertEqual(queue.toasts.first?.icon, "›_")
         XCTAssertEqual(queue.toasts.first?.body, "code 1")
-        XCTAssertEqual(queue.toasts.first?.chips, [ToastQueue.Chip(label: "undo")])
     }
 
     // MARK: - pruneExpired
@@ -69,23 +65,6 @@ final class ToastQueueTests: XCTestCase {
         XCTAssertEqual(queue.toasts.count, 1)
         queue.pruneExpired(nowMs: 1000 + ToastQueue.ttlMs)
         XCTAssertEqual(queue.toasts.count, 0)
-    }
-
-    // MARK: - dismiss
-
-    func testDismissRemovesOnlyTheTargetedIDLeavingTheRestAndTheirExpiry() {
-        var queue = ToastQueue()
-        queue.add(id: "a", icon: "¶", title: "a", nowMs: 0)
-        queue.add(id: "b", icon: "¶", title: "b", nowMs: 5)
-        queue.dismiss(id: "a")
-        XCTAssertEqual(ids(queue), ["b"])
-        XCTAssertEqual(queue.toasts.first?.expiresAtMs, 5 + ToastQueue.ttlMs)
-    }
-
-    func testDismissOfAnUnknownIDChangesNothing() {
-        var queue = queue(adding: ["a", "b"])
-        queue.dismiss(id: "z")
-        XCTAssertEqual(ids(queue), ["a", "b"])
     }
 
     // MARK: - clearAll

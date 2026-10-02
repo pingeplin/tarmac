@@ -15,7 +15,7 @@ struct DevSnapshotReader {
     /// The active board's cards, in the order they are reported.
     var cards: [CardView] {
         DevSnapshot.cardOrder(
-            terminals: controller.sessionOrder,
+            terminals: controller.activeBoard.sessionOrder,
             listedDocs: controller.store.docs.map(\.path),
             onBoard: Set(board.cards.keys.map(\.wireRef))
         ).compactMap { board.card(CardID($0)) }

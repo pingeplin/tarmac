@@ -61,12 +61,3 @@ extension Viewport {
         BoardViewport(zoom: Double(zoom), cx: Double(cx), cy: Double(cy))
     }
 }
-
-extension CardFrame {
-    /// Builds a world frame from a restored tile's geometry, or nil when the
-    /// tile carries no geometry (an M1 tile — caller applies the default scatter).
-    init?(tile: LayoutTile) {
-        guard let x = tile.x, let y = tile.y, let w = tile.w, let h = tile.h else { return nil }
-        self.init(x: CGFloat(x), y: CGFloat(y), w: CGFloat(w), h: CGFloat(h), z: tile.z ?? 0)
-    }
-}

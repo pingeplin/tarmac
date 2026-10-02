@@ -8,8 +8,7 @@
 public enum TermExit {
     /// What the app does with the exiting terminal's card.
     public enum Action: Equatable {
-        /// Clean exit while other live terminals remain — remove the card and
-        /// offer an undo.
+        /// Clean exit while other live terminals remain — remove the card.
         case remove
         /// Clean exit of the board's last live terminal — remove the card and
         /// spawn a fresh boot terminal in its place, so the board always keeps

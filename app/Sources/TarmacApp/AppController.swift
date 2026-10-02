@@ -108,27 +108,14 @@ final class AppController {
         get { activeBoard.sessions }
         set { activeBoard.sessions = newValue }
     }
-    var sessionOrder: [String] {
-        get { activeBoard.sessionOrder }
-        set { activeBoard.sessionOrder = newValue }
-    }
     var primeTermID: String? {
         get { activeBoard.primeTermID }
         set { activeBoard.primeTermID = newValue }
-    }
-    var docOwner: [String: String] {
-        get { activeBoard.docOwner }
-        set { activeBoard.docOwner = newValue }
     }
     /// The viewport to fly back to when ESC follows a Return flight. One slot
     /// for the whole app, as in the web app: neither a board switch nor a pan
     /// forgets it.
     var preFlightViewport: Viewport?
-    // Read-only computed accessors (pure functions of the active board's state).
-    var primeSession: TerminalSession? { activeBoard.primeSession }
-    var primeTerminalView: TerminalView? { activeBoard.primeTerminalView }
-    var primeTermCard: CardView? { activeBoard.primeTermCard }
-    var boardDocPaths: [String] { activeBoard.boardDocPaths }
 
     // M3: the app tracks the board list + the active board from `board_list`
     // (P4 renders the ⌘K switcher from it).
@@ -137,16 +124,6 @@ final class AppController {
     // persistence across the transient (unmount / re-mount / rebuild)
     // and tells the restore handler to mount the arriving board (crit B4).
     var switching = false
-
-    // MARK: - Board placement rule (crib §4/§5)
-    //
-    // The boot terminal's world frame. Where a doc lands is `Placement`'s.
-    enum Place {
-        static let termFrame = CardFrame(x: 80, y: 80, w: 470, h: 330, z: 0)
-        // ⌘T new-terminal cascade offset (down-right from the prime card).
-        static let cascadeDX: CGFloat = 43
-        static let cascadeDY: CGFloat = 40
-    }
 
     /// True while the ⌘K overlay is up; gates the key monitor (it owns the
     /// keyboard) and tells `board_list` updates to re-render the panel live.
@@ -186,23 +163,8 @@ final class AppController {
 
         // board-0 wraps the BoardView RootView was built with; it is the active,
         // mounted board until the daemon's board_list says otherwise.
-        let board0 = Board(boardID: Board.defaultID, view: rootView.board)
-        self.boards = [board0.boardID: board0]
-        self.activeBoardID = board0.boardID
+        let board0 = mintBoard(id: Board.defaultID, name: nil, view: rootView.board)
 
-        // Mint the boot terminal's id up front so its board card and its pty
-        // share an id from creation (Phase 5b keys cards by term_id). The
-        // terminal is a board card like any other (crib §4), reflowed on
-        // resize-commit.
-        let bootTermID = BootTerminal.mint()
-        let boot = makeSession(termID: bootTermID)
-        board0.sessions[bootTermID] = boot
-        board0.sessionOrder = [bootTermID]
-        board0.primeTermID = bootTermID
-        termIndex.assign(termID: bootTermID, to: board0.boardID)
-        rootView.attachTerminal(boot.view, termID: bootTermID, worldFrame: Place.termFrame)
-
-        wireStore(board0)
         // Reads `activeBoard` dynamically, so the hints track the mounted board.
         rootView.offscreenHintProvider = { [weak self] in self?.offscreenHints() ?? [] }
         // ⌘K switcher (P4): a row click opens that board; a veil click dismisses.
@@ -233,7 +195,7 @@ final class AppController {
     /// Makes the prime terminal the window's first responder (initial focus): the
     /// terminal is the default first responder so typing lands in the shell.
     func focusPrimeTerminal() {
-        if let view = primeTerminalView { window?.makeFirstResponder(view) }
+        if let view = activeBoard.primeTerminalView { window?.makeFirstResponder(view) }
     }
 
     /// App teardown: removes the event monitors and closes the daemon link. The

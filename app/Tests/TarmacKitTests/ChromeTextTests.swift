@@ -61,21 +61,9 @@ final class ChromeTextTests: XCTestCase {
         )
     }
 
-    /// A future-dated change time (mtime/clock skew) counts as recent, like
-    /// `DocStore.isRecent`, and clamps the elapsed time to zero.
+    /// A future-dated change time (mtime/clock skew) counts as recent and
+    /// clamps the elapsed time to zero.
     func testRecencyLabelTreatsAFutureChangeTimeAsRecent() {
         XCTAssertEqual(ChromeText.recencyLabel(lastChangedMs: 2000, nowMs: 1000), "✎ 1s")
-    }
-
-    @MainActor
-    func testTheRecencyGateAgreesWithDocStore() {
-        XCTAssertEqual(ChromeText.recentWindowMs, DocStore.recentWindowMs)
-        for nowMs: UInt64 in [500, 1000, 1500, 30_999, 31_000, 31_001, 60_000] {
-            XCTAssertEqual(
-                ChromeText.recencyLabel(lastChangedMs: 1000, nowMs: nowMs) != nil,
-                DocStore.isRecent(lastChangedMs: 1000, nowMs: nowMs),
-                "nowMs \(nowMs)"
-            )
-        }
     }
 }

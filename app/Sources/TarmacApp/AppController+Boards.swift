@@ -32,7 +32,7 @@ extension AppController {
         // short trailing timer (fix #2) so a continuous pan does one snapshot+IPC
         // when it settles, not one per delta. Flushed eagerly on switch-away /
         // resign-active / terminate so the last position is never dropped.
-        board.view.onLayoutChanged = { [weak self] _ in self?.schedulePersist(boardID: bid) }
+        board.view.onLayoutChanged = { [weak self] _ in self?.layoutPersister.schedule(bid) }
         board.view.onCardClose = { [weak self] id in
             guard case .doc(let path) = id else { return }
             self?.closeDocCard(path)
@@ -210,20 +210,21 @@ extension AppController {
         activeBoardID = targetID
     }
 
-    /// Lazily creates a board the daemon told us about, on first activation: its
-    /// own BoardView + a boot session (kept prime, registered in the term index,
-    /// store wired), mirroring board-0's boot. The view is mounted by the
-    /// arrive path, and the boot pty is spawned there (`maybeSpawn`).
+    /// Creates a board around `view` with a boot session: kept prime,
+    /// registered in the term index, store wired. Board-0 is minted at launch
+    /// around the root view's board; any other lazily, on first activation,
+    /// when the arrive path mounts its view and spawns the boot pty
+    /// (`maybeSpawn`).
     @discardableResult
-    private func mintBoard(id: String, name: String?) -> Board {
-        let board = Board(boardID: id, name: name, view: BoardView())
+    func mintBoard(id: String, name: String?, view: BoardView = BoardView()) -> Board {
+        let board = Board(boardID: id, name: name, view: view)
         let bootTermID = BootTerminal.mint()
         let boot = makeSession(termID: bootTermID)
         board.sessions[bootTermID] = boot
         board.sessionOrder = [bootTermID]
         board.primeTermID = bootTermID
         termIndex.assign(termID: bootTermID, to: id)
-        board.view.setTerminal(termID: bootTermID, boot.view, worldFrame: Place.termFrame)
+        board.view.setTerminal(termID: bootTermID, boot.view, worldFrame: CardFrame(rect: Placement.termFrame))
         wireStore(board)
         boards[id] = board
         return board

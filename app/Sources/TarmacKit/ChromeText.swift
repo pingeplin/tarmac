@@ -1,8 +1,7 @@
 /// Tiny pure formatters for the chrome overlays: the zoom-control percent
 /// readout, the titlebar-chip label fallback and the on-card recency meta.
 public enum ChromeText {
-    /// The 30 s recency window. Mirrors `DocStore.recentWindowMs`, which is
-    /// `@MainActor` and so unreachable from a formatter that must run anywhere.
+    /// How long after a change a doc card still says so.
     public static let recentWindowMs: UInt64 = 30_000
 
     /// Zoom readout, e.g. 1 → "100%", 0.125 → "13%". Written as `Math.round` and
@@ -25,9 +24,9 @@ public enum ChromeText {
     }
 
     /// The on-card recency meta `✎ Ns`, or nil when the doc has no change time or
-    /// the last change is at or past the window. The gate mirrors
-    /// `DocStore.isRecent` exactly — a future-dated change time (mtime/clock skew)
-    /// counts as recent and clamps the elapsed time to zero. Seconds are floored at 1.
+    /// the last change is at or past the window. A future-dated change time
+    /// (mtime/clock skew) counts as recent and clamps the elapsed time to zero.
+    /// Seconds are floored at 1.
     public static func recencyLabel(lastChangedMs: UInt64?, nowMs: UInt64) -> String? {
         guard let changed = lastChangedMs,
               nowMs < changed || nowMs - changed < recentWindowMs

@@ -154,15 +154,7 @@ extension AppController {
     /// A board changed: its layout snapshot goes out once it has been still for
     /// the debounce. The board need not be the active one.
     func persistLayout(for board: Board) {
-        schedulePersist(boardID: board.boardID)
-    }
-
-    func persistLayout() {
-        persistLayout(for: activeBoard)
-    }
-
-    func schedulePersist(boardID: String) {
-        layoutPersister.schedule(boardID)
+        layoutPersister.schedule(board.boardID)
     }
 
     /// Sends every snapshot still owed, now — on a board switch, when the app

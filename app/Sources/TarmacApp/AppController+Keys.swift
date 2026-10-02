@@ -193,7 +193,7 @@ extension AppController {
         switch FocusedClose.decide(kind: kind, otherLiveTerminals: otherLive, dead: dead) {
         case .noop:
             break
-        case .shelfDoc:
+        case .closeDoc:
             if case .doc(let path)? = focusedCardID { closeDocCard(path) }
         case .closeTerminal(let replace, let signalClose):
             if case .term(let termID)? = focusedCardID {

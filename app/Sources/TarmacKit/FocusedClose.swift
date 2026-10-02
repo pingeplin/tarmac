@@ -16,16 +16,16 @@ public enum FocusedClose {
         /// Nothing focused — no-op (the keystroke is still swallowed by the app,
         /// so ⌘W never closes the window).
         case noop
-        /// Focused doc — park it on the shelf (recoverable).
-        case shelfDoc
+        /// Focused doc — close its card.
+        case closeDoc
         /// Focused terminal — terminate it; `replace` ⇒ it was the board's last
-        /// live terminal, so spawn a fresh shell in its place (else offer undo).
+        /// live terminal, so spawn a fresh shell in its place.
         /// `signalClose` ⇒ the pty was still live, so the daemon needs telling.
         case closeTerminal(replace: Bool, signalClose: Bool)
     }
 
     /// `otherLiveTerminals` is the count of OTHER live terminals on the board; it
-    /// only affects the `.term` case (decides replace-vs-undo).
+    /// only affects the `.term` case (decides whether to replace it).
     ///
     /// `dead` (`.term` only): the focused terminal's pty has already exited. Then
     /// `signalClose` is false — there is nothing live to close, so the caller must
@@ -36,7 +36,7 @@ public enum FocusedClose {
         case .none:
             return .noop
         case .doc:
-            return .shelfDoc
+            return .closeDoc
         case .term:
             let replace = TermExit.decide(code: 0, otherLiveTerminals: otherLiveTerminals) == .removeAndReplace
             return .closeTerminal(replace: replace, signalClose: !dead)

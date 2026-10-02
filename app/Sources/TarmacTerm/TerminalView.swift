@@ -6,15 +6,11 @@ public struct TerminalKeyChord: Equatable, Sendable {
     public var keyCode: UInt16
     public var mods: KeyMods
     public var isComposing: Bool
-    public var kittyFlags: UInt8
-    public var hasSelection: Bool
 
-    public init(keyCode: UInt16, mods: KeyMods, isComposing: Bool, kittyFlags: UInt8, hasSelection: Bool) {
+    public init(keyCode: UInt16, mods: KeyMods, isComposing: Bool) {
         self.keyCode = keyCode
         self.mods = mods
         self.isComposing = isComposing
-        self.kittyFlags = kittyFlags
-        self.hasSelection = hasSelection
     }
 }
 
@@ -410,10 +406,7 @@ public final class TerminalView: NSView {
     public override func keyDown(with event: NSEvent) {
         onActivity?()
         let mods = KeyTranslation.mods(rawFlags: event.modifierFlags.rawValue)
-        let chord = TerminalKeyChord(
-            keyCode: event.keyCode, mods: mods, isComposing: hasMarkedText(),
-            kittyFlags: engine.kittyKeyboardFlags, hasSelection: hasSelection
-        )
+        let chord = TerminalKeyChord(keyCode: event.keyCode, mods: mods, isComposing: hasMarkedText())
         if let bytes = keyOverride?(chord) {
             sendTyped(bytes)
             return
@@ -424,8 +417,7 @@ public final class TerminalView: NSView {
         keyTextAccumulator = []
         defer { keyTextAccumulator = nil }
         let skipsTextInput = KeyTranslation.skipsTextInput(
-            mods: KeyTranslation.mods(rawFlags: event.modifierFlags.rawValue),
-            optionAsAlt: engine.optionAsAlt, composing: composingBefore
+            mods: mods, optionAsAlt: engine.optionAsAlt, composing: composingBefore
         )
         if !skipsTextInput { interpretKeyEvents([translationEvent]) }
 

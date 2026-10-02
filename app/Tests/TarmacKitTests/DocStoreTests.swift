@@ -19,9 +19,9 @@ final class DocStoreTests: XCTestCase {
         )
     }
 
-    // MARK: - Dock order
+    // MARK: - Order
 
-    func testRestoreOrderIsDockOrderAndDeduped() {
+    func testRestoreKeepsTheDaemonsOrderAndDedupes() {
         let store = DocStore()
         store.applyRestore([doc("/r/a.md"), doc("/r/b.md"), doc("/r/a.md"), doc("/r/c.md")])
         XCTAssertEqual(store.docs.map(\.path), ["/r/a.md", "/r/b.md", "/r/c.md"])
@@ -44,94 +44,13 @@ final class DocStoreTests: XCTestCase {
         let store = DocStore()
         store.applyRestore([doc("/r/a.md")])
         var fired = false
-        store.onFileChange = { _ in fired = true }
+        store.onChange = { fired = true }
         store.applyFileEvent(path: "/r/ghost.md", mtimeMs: 1)
         XCTAssertEqual(store.docs.map(\.path), ["/r/a.md"])
         XCTAssertFalse(fired)
     }
 
-    // MARK: - Recency (⌘P)
-
-    func testEmptyStoreHasNoRecentDoc() {
-        XCTAssertNil(DocStore().mostRecentPath)
-    }
-
-    func testRestoreSeedsRecencyFromOpenAndChangeTimes() {
-        let store = DocStore()
-        store.applyRestore([
-            doc("/r/a.md", lastChangedMs: 500, lastOpenedMs: 100), // key 500
-            doc("/r/b.md", lastOpenedMs: 900),                     // key 900
-            doc("/r/c.md", lastOpenedMs: 200),                     // key 200
-        ])
-        XCTAssertEqual(store.mostRecentPath, "/r/b.md")
-    }
-
-    func testRestoreRecencyTiesBreakByDockOrder() {
-        let store = DocStore()
-        store.applyRestore([doc("/r/a.md"), doc("/r/b.md"), doc("/r/c.md")])
-        // All keys 0 (M0-era entries): the last dock doc wins.
-        XCTAssertEqual(store.mostRecentPath, "/r/c.md")
-    }
-
-    func testDocOpenedAndFileEventBumpRecency() {
-        let store = DocStore()
-        store.applyRestore([doc("/r/a.md", lastOpenedMs: 100), doc("/r/b.md", lastOpenedMs: 200)])
-
-        store.applyDocOpened(doc("/r/a.md", lastOpenedMs: 300))
-        XCTAssertEqual(store.mostRecentPath, "/r/a.md")
-
-        store.applyFileEvent(path: "/r/b.md", mtimeMs: 400)
-        XCTAssertEqual(store.mostRecentPath, "/r/b.md")
-
-        // A live bump outranks any restored timestamp.
-        store.applyDocOpened(doc("/r/c.md"))
-        XCTAssertEqual(store.mostRecentPath, "/r/c.md")
-    }
-
-    func testMostRecentAmongRestrictsToCandidateSet() {
-        let store = DocStore()
-        store.applyRestore([
-            doc("/r/a.md", lastOpenedMs: 100),
-            doc("/r/b.md", lastOpenedMs: 900), // global winner
-            doc("/r/c.md", lastOpenedMs: 200),
-        ])
-        // b is the global most-recent, but it is not a candidate: among {a, c}, c wins.
-        XCTAssertEqual(store.mostRecentPath(among: ["/r/a.md", "/r/c.md"]), "/r/c.md")
-        // The global winner still wins when it is in the set.
-        XCTAssertEqual(store.mostRecentPath(among: ["/r/a.md", "/r/b.md"]), "/r/b.md")
-    }
-
-    func testMostRecentAmongFollowsLiveBumps() {
-        let store = DocStore()
-        store.applyRestore([doc("/r/a.md", lastOpenedMs: 100), doc("/r/c.md", lastOpenedMs: 200)])
-        XCTAssertEqual(store.mostRecentPath(among: ["/r/a.md", "/r/c.md"]), "/r/c.md")
-        store.applyDocOpened(doc("/r/a.md", lastOpenedMs: 300)) // live bump tops a
-        XCTAssertEqual(store.mostRecentPath(among: ["/r/a.md", "/r/c.md"]), "/r/a.md")
-    }
-
-    func testMostRecentAmongIsNilForEmptyOrUnregistered() {
-        let store = DocStore()
-        store.applyRestore([doc("/r/a.md")])
-        XCTAssertNil(store.mostRecentPath(among: []))
-        XCTAssertNil(store.mostRecentPath(among: ["/r/ghost.md"]))
-    }
-
-    // MARK: - Read transitions
-
-    func testMarkReadFlipsOnceAndNotifiesOnce() {
-        let store = DocStore()
-        store.applyRestore([doc("/r/a.md", read: false)])
-        var changes = 0
-        store.onChange = { changes += 1 }
-
-        store.markRead("/r/a.md")
-        XCTAssertEqual(store.doc(for: "/r/a.md")?.read, true)
-        XCTAssertEqual(changes, 1)
-
-        store.markRead("/r/a.md") // idempotent, no notification
-        store.markRead("/r/none.md")
-        XCTAssertEqual(changes, 1)
-    }
+    // MARK: - Read state
 
     func testReopenedDocCarriesDaemonReadState() {
         let store = DocStore()
@@ -149,84 +68,9 @@ final class DocStoreTests: XCTestCase {
         XCTAssertEqual(store.doc(for: "/r/a.md")?.lastChangedMs, 7)
     }
 
-    // MARK: - Recent window
-
-    func testIsRecentBoundary() {
-        XCTAssertFalse(DocStore.isRecent(lastChangedMs: nil, nowMs: 1000))
-        XCTAssertTrue(DocStore.isRecent(lastChangedMs: 1000, nowMs: 1000 + 29_999))
-        XCTAssertFalse(DocStore.isRecent(lastChangedMs: 1000, nowMs: 1000 + 30_000))
-    }
-
-    // MARK: - Display derivations
-
-    func testDisplayPathInsideRepo() {
-        let d = doc("/w/payments-api/docs/handoff.md", repo: "payments-api", repoRoot: "/w/payments-api")
-        XCTAssertEqual(d.displayRepoName, "payments-api")
-        XCTAssertEqual(d.repoRelativePath, "docs/handoff.md")
-        XCTAssertEqual(d.displayPath, "payments-api/docs/handoff.md")
-        XCTAssertEqual(d.groupKey, "/w/payments-api")
-    }
-
-    func testDisplayPathOutsideRepoFallsBackToParentDir() {
-        let d = doc("/Users/x/notes/todo.md")
-        XCTAssertEqual(d.displayRepoName, "notes")
-        XCTAssertEqual(d.displayPath, "notes/todo.md")
-        XCTAssertEqual(d.groupKey, "/Users/x/notes")
-    }
-
-    func testDisplayPathWithRepoAndMatchingRepoRootPrefix() {
-        XCTAssertEqual(doc("/a/b/c.md", repo: "myrepo", repoRoot: "/a/b").displayPath, "myrepo/c.md")
-    }
-
-    func testDisplayPathWithRepoButNoRepoRootUsesBasename() {
-        XCTAssertEqual(doc("/a/b/c.md", repo: "myrepo").displayPath, "myrepo/c.md")
-    }
-
-    func testDisplayPathWithNeitherRepoNorRepoRootUsesParentDirAndBasename() {
-        XCTAssertEqual(doc("/a/b/c.md").displayPath, "b/c.md")
-    }
-
-    func testDisplayPathFallsBackToBasenameWhenPathIsNotUnderRepoRoot() {
-        XCTAssertEqual(doc("/x/y/c.md", repo: "myrepo", repoRoot: "/a/b").displayPath, "myrepo/c.md")
-    }
-
-    // MARK: - Index grouping
-
-    func testGroupsByFirstAppearanceKeepingDockOrderWithin() {
-        let docs = [
-            doc("/w/api/docs/a.md", repo: "api", repoRoot: "/w/api", repoColor: 3),
-            doc("/w/infra/run.md", repo: "infra", repoRoot: "/w/infra", repoColor: 1),
-            doc("/w/api/docs/b.md", repo: "api", repoRoot: "/w/api", repoColor: 3),
-        ]
-        let groups = DocStore.groups(of: docs)
-        XCTAssertEqual(groups.map(\.name), ["api", "infra"])
-        XCTAssertEqual(groups[0].docs.map(\.path), ["/w/api/docs/a.md", "/w/api/docs/b.md"])
-        XCTAssertEqual(groups[0].colorIndex, 3)
-    }
-
-    func testTwoReposSharingANameGroupSeparately() {
-        let docs = [
-            doc("/w/one/api/a.md", repo: "api", repoRoot: "/w/one/api"),
-            doc("/w/two/api/b.md", repo: "api", repoRoot: "/w/two/api"),
-        ]
-        XCTAssertEqual(DocStore.groups(of: docs).count, 2)
-    }
-
-    func testItemLabelsFallBackToRelativePathOnBasenameCollision() {
-        let group = DocStore.groups(of: [
-            doc("/w/api/docs/plan.md", repo: "api", repoRoot: "/w/api"),
-            doc("/w/api/archive/plan.md", repo: "api", repoRoot: "/w/api"),
-            doc("/w/api/readme.md", repo: "api", repoRoot: "/w/api"),
-        ])[0]
-        XCTAssertEqual(
-            DocStore.itemLabels(for: group),
-            ["docs/plan.md", "archive/plan.md", "readme.md"]
-        )
-    }
-
     // MARK: - Close
 
-    func testRemoveDropsTheDocAndItsDockSlot() {
+    func testRemoveDropsTheDocAndItsSlot() {
         let store = DocStore()
         store.applyRestore([doc("/r/a.md"), doc("/r/b.md"), doc("/r/c.md")])
         var changes = 0
@@ -236,16 +80,6 @@ final class DocStoreTests: XCTestCase {
         XCTAssertNil(store.doc(for: "/r/b.md"))
         XCTAssertEqual(store.doc(for: "/r/c.md")?.path, "/r/c.md")
         XCTAssertEqual(changes, 1)
-    }
-
-    /// Nothing reads a closed doc's recency again, so only the store's own
-    /// state shows whether it was let go: a board that opens and closes docs
-    /// all day must not keep one entry for each.
-    func testRemoveLeavesNothingOfTheDocBehind() {
-        let store = DocStore()
-        store.applyRestore([doc("/r/a.md"), doc("/r/b.md")])
-        store.remove("/r/b.md")
-        XCTAssertEqual(Set(store.recencyTicks.keys), ["/r/a.md"])
     }
 
     func testRemovingAnUnknownDocChangesNothing() {

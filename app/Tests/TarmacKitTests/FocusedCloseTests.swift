@@ -11,8 +11,8 @@ final class FocusedCloseTests: XCTestCase {
 
     /// A focused doc always shelves (recoverable), independent of terminals.
     func testDocShelves() {
-        XCTAssertEqual(FocusedClose.decide(kind: .doc, otherLiveTerminals: 0), .shelfDoc)
-        XCTAssertEqual(FocusedClose.decide(kind: .doc, otherLiveTerminals: 3), .shelfDoc)
+        XCTAssertEqual(FocusedClose.decide(kind: .doc, otherLiveTerminals: 0), .closeDoc)
+        XCTAssertEqual(FocusedClose.decide(kind: .doc, otherLiveTerminals: 3), .closeDoc)
     }
 
     /// A focused terminal closes; `replace` is true ONLY when it was the last live
@@ -42,7 +42,7 @@ final class FocusedCloseTests: XCTestCase {
 
     /// `dead` means nothing for a doc or an empty focus — it must not regress them.
     func testDeadIsIgnoredForDocAndNone() {
-        XCTAssertEqual(FocusedClose.decide(kind: .doc, otherLiveTerminals: 0, dead: true), .shelfDoc)
+        XCTAssertEqual(FocusedClose.decide(kind: .doc, otherLiveTerminals: 0, dead: true), .closeDoc)
         XCTAssertEqual(FocusedClose.decide(kind: .none, otherLiveTerminals: 0, dead: true), .noop)
     }
 }

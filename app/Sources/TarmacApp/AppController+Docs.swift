@@ -118,7 +118,7 @@ extension AppController {
         activeBoard.docOwner[path] = nil
         activeBoard.store.remove(path)
         client.docClose(path: path)
-        persistLayout()
+        persistLayout(for: activeBoard)
         refreshStrips()
         refreshSwitcherIfOpen()
     }
@@ -140,7 +140,7 @@ extension AppController {
     /// Syncs on-board card headers (incl. owner chips) with the registry, and
     /// the window title and the status bar's link word with the app.
     func refreshStrips() {
-        for path in boardDocPaths {
+        for path in activeBoard.boardDocPaths {
             guard let card = activeBoard.view.card(.doc(path)) else { continue }
             if let doc = store.doc(for: path) { card.apply(doc: doc) }
         }

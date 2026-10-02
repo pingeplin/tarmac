@@ -10,7 +10,7 @@ final class BoardPersistenceTests: XCTestCase {
 
     /// A `layout` whose tiles carry full world frames (`x/y/w/h/z`) and a board
     /// `{zoom,cx,cy}` survives encode → decode byte-for-byte at the struct level.
-    /// This is the exact shape `AppController.persistLayout()` sends and the
+    /// This is the exact shape `AppController.sendLayout(boardID:)` sends and the
     /// daemon round-trips through `persist.rs`.
     func testLayoutWithCardFramesAndViewportRoundTrips() throws {
         let message = Message.layout(
