@@ -143,8 +143,10 @@ final class CardSchemeRouterTests: XCTestCase {
 
     // MARK: - One host per web view
 
-    private func respond(_ url: String, serving host: CardURL.Host, disk: SchemeFixtures.Disk) -> CardProtocol.Response {
-        CardSchemeRouter.respond(url: url, shim: shim, serving: host, read: disk.read)
+    private func respond(
+        _ url: String, headers: [String: String] = [:], serving host: CardURL.Host, disk: SchemeFixtures.Disk
+    ) -> CardProtocol.Response {
+        CardSchemeRouter.respond(url: url, headers: headers, shim: shim, serving: host, read: disk.read)
     }
 
     func testAWebViewIsServedItsOwnHost() {
@@ -182,5 +184,51 @@ final class CardSchemeRouterTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(respond("tarmac-card://other/x", serving: host, disk: disk).status, 400)
             XCTAssertEqual(disk.opened, [])
         }
+    }
+
+    // MARK: - A request a script made
+
+    private let framedPage = "http://127.0.0.1:8080"
+
+    /// A page loads its own images and frames without naming its origin; XHR
+    /// and fetch name it. A web page a markdown doc framed read local images
+    /// by synchronous XHR, which WebKit lets through with no CORS check.
+    func testARequestThatNamesItsOriginIsRefusedBeforeTheDiskIsTouched() {
+        let disk = SchemeFixtures.Disk(["/tmp/a.png": Data("PIXELS".utf8), "/tmp/a.html": Data("CONTENTS".utf8)])
+        let asked: [(String, CardURL.Host)] = [
+            (SchemeFixtures.imgURI("/tmp/a.png"), .img), (SchemeFixtures.docURI("/tmp/a.html"), .doc),
+        ]
+        for (url, host) in asked {
+            let resp = respond(url, headers: ["Origin": framedPage], serving: host, disk: disk)
+
+            XCTAssertEqual(resp.status, 403, url)
+            XCTAssertEqual(resp.headers, ["Content-Type": "text/plain; charset=utf-8"], url)
+            XCTAssertEqual(text(resp), "not served to a script", url)
+        }
+        XCTAssertEqual(disk.opened, [])
+    }
+
+    /// A sandboxed frame's origin is opaque, and it says so.
+    func testAnOpaqueOriginIsAnOriginToo() {
+        let disk = SchemeFixtures.Disk(["/tmp/a.png": Data([1])])
+        XCTAssertEqual(respond(SchemeFixtures.imgURI("/tmp/a.png"), headers: ["Origin": "null"], serving: .img, disk: disk).status, 403)
+        XCTAssertEqual(respond(SchemeFixtures.imgURI("/tmp/a.png"), headers: ["Origin": ""], serving: .img, disk: disk).status, 403)
+    }
+
+    func testTheOriginHeaderIsFoundWhateverItsCase() {
+        let disk = SchemeFixtures.Disk(["/tmp/a.png": Data([1])])
+        for name in ["origin", "ORIGIN", "oRiGiN"] {
+            let resp = respond(SchemeFixtures.imgURI("/tmp/a.png"), headers: [name: framedPage], serving: .img, disk: disk)
+            XCTAssertEqual(resp.status, 403, name)
+        }
+    }
+
+    func testAPagesOwnImageLoadIsServedWhateverElseItSays() {
+        let disk = SchemeFixtures.Disk(["/tmp/a.png": Data([1])])
+        let headers = [
+            "Accept": "image/webp,image/png,*/*;q=0.5", "Referer": framedPage + "/", "X-Origin": framedPage,
+            "Original": "x", "Sec-Fetch-Site": "cross-site",
+        ]
+        XCTAssertEqual(respond(SchemeFixtures.imgURI("/tmp/a.png"), headers: headers, serving: .img, disk: disk).status, 200)
     }
 }

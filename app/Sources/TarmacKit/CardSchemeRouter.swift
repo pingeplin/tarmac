@@ -47,9 +47,19 @@ public enum CardSchemeRouter {
     /// doc that framed a card document would have it run unsandboxed at the
     /// scheme's origin, where it reads any other file the doc framed. A URL of
     /// the other host is refused before the disk is touched.
+    ///
+    /// `headers` are the request's. A page loads its own frames and images
+    /// without an `Origin`; XHR and fetch carry one. No page the app loads
+    /// reads this scheme by script, and a web page a markdown doc frames would:
+    /// WebKit lets its synchronous XHR through with no CORS check. So a request
+    /// that names its origin is refused, also before the disk is touched.
     public static func respond(
-        url: String, shim: String, serving host: CardURL.Host, read: (String) -> Result<Data, any Error>
+        url: String, headers: [String: String], shim: String, serving host: CardURL.Host,
+        read: (String) -> Result<Data, any Error>
     ) -> CardProtocol.Response {
+        guard !namesItsOrigin(headers) else {
+            return CardProtocol.textResponse(status: 403, body: "not served to a script")
+        }
         let asked: CardURL.Host
         switch route(url: url) {
         case .doc: asked = .doc
@@ -59,6 +69,11 @@ public enum CardSchemeRouter {
             return CardProtocol.textResponse(status: 403, body: "the \(asked.rawValue) host is not served to this card")
         }
         return respond(url: url, shim: shim, read: read)
+    }
+
+    /// Header names are ASCII and matched without regard to case.
+    private static func namesItsOrigin(_ headers: [String: String]) -> Bool {
+        headers.keys.contains { $0.lowercased() == "origin" }
     }
 
     /// Cut at the first `#`, `?` after it included — what `http::Uri` keeps.
