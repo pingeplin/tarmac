@@ -15,6 +15,22 @@ final class CardZoomTests: XCTestCase {
         XCTAssertLessThanOrEqual(BoardZoom.max / CardZoom.magnifyK, 1)
     }
 
+    /// The factor is part of what a card's document sees: the shim sets its
+    /// root zoom to it, and its viewport is the card times it.
+    func testTheFrozenMagnificationIsThree() {
+        XCTAssertEqual(CardZoom.magnifyK, 3)
+    }
+
+    func testTheBoardZoomsFromATenthToThreeTimes() {
+        XCTAssertEqual(BoardZoom.min, 0.1)
+        XCTAssertEqual(BoardZoom.max, 3)
+    }
+
+    /// The web app's `RASTER_SCALE_SETTLE_MS`.
+    func testAZoomHasSettledAfterAHundredAndFiftyMilliseconds() {
+        XCTAssertEqual(CardZoom.settleDelay, 0.15)
+    }
+
     // MARK: - iframePx (2607.0004 S10)
 
     func testIframePxIsTheFrameTimesZoomRounded() {
@@ -166,6 +182,15 @@ final class CardZoomTests: XCTestCase {
         XCTAssertNil(relay.step(dx: 0.2, dy: 0.3))
         XCTAssertEqual(relay.step(dx: 0.2, dy: 0.3), CardZoom.ScrollStep(dx: 0, dy: 1))
         XCTAssertEqual(relay.step(dx: 0.2, dy: 0), CardZoom.ScrollStep(dx: 1, dy: 0))
+    }
+
+    /// S11: each axis carries its own residue. Sideways travel left over from
+    /// one event is not downward travel in the next.
+    func testS11TheResidueOfOneAxisIsNotTheOthers() {
+        var relay = CardZoom.ScrollRelay()
+        XCTAssertNil(relay.step(dx: 0.4, dy: 0))
+        XCTAssertNil(relay.step(dx: 0, dy: 0.3))
+        XCTAssertEqual(relay.step(dx: 0.2, dy: 0.2), CardZoom.ScrollStep(dx: 1, dy: 1))
     }
 
     func testEachRelayKeepsItsOwnCarry() {

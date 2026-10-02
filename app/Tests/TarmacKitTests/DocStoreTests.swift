@@ -238,6 +238,19 @@ final class DocStoreTests: XCTestCase {
         XCTAssertEqual(changes, 1)
     }
 
+    /// Nothing reads a closed doc's recency again, so only the store's own
+    /// state shows whether it was let go: a board that opens and closes docs
+    /// all day must not keep one entry for each.
+    func testRemoveLeavesNothingOfTheDocBehind() throws {
+        let store = DocStore()
+        store.applyRestore([doc("/r/a.md"), doc("/r/b.md")])
+        store.remove("/r/b.md")
+        let ticks = try XCTUnwrap(
+            Mirror(reflecting: store).children.first { $0.label == "recencyTicks" }?.value as? [String: UInt64]
+        )
+        XCTAssertEqual(Set(ticks.keys), ["/r/a.md"])
+    }
+
     func testRemovingAnUnknownDocChangesNothing() {
         let store = DocStore()
         store.applyRestore([doc("/r/a.md")])

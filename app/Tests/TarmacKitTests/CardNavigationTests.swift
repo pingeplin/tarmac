@@ -90,6 +90,14 @@ final class CardNavigationTests: XCTestCase {
         }
     }
 
+    /// The card scheme has to be where the URL starts, not somewhere in it.
+    func testAURLThatOnlyMentionsTheCardSchemeIsNotACardDocument() {
+        XCTAssertEqual(
+            CardNavigation.htmlCard(later("https://example.com/?u=tarmac-card://doc/%2Fa.html", target: .subframe)),
+            .cancel
+        )
+    }
+
     func testAnHTMLCardOpensNoWindow() {
         XCTAssertEqual(CardNavigation.htmlCard(later("tarmac-card://doc/%2Fa.html", target: .newWindow)), .cancel)
         XCTAssertEqual(CardNavigation.htmlCard(later("https://example.com", target: .newWindow)), .cancel)
