@@ -68,4 +68,15 @@ final class KeyTranslationTests: XCTestCase {
         XCTAssertEqual(KeyTranslation.latinCharacters(keyCode: 0x0b, shift: false)?.lowercased(), "b")
         XCTAssertEqual(KeyTranslation.latinCharacters(keyCode: 0x0b, shift: true), "B")
     }
+
+    /// A key's code point is its own letter when its layout types ASCII, and
+    /// the Latin layout's letter when it types anything else.
+    func testAKeysCodePointComesFromTheLatinLayoutWhenItsOwnIsNotASCII() {
+        XCTAssertEqual(KeyTranslation.unshiftedCodepoint(layout: "b", latin: "x"), 0x62)
+        XCTAssertEqual(KeyTranslation.unshiftedCodepoint(layout: "ㄖ", latin: "b"), 0x62)
+        XCTAssertEqual(KeyTranslation.unshiftedCodepoint(layout: "и", latin: "b"), 0x62)
+        XCTAssertEqual(KeyTranslation.unshiftedCodepoint(layout: "ㄖ", latin: nil), 0x3116)
+        XCTAssertEqual(KeyTranslation.unshiftedCodepoint(layout: nil, latin: "b"), 0x62)
+        XCTAssertEqual(KeyTranslation.unshiftedCodepoint(layout: nil, latin: nil), 0)
+    }
 }

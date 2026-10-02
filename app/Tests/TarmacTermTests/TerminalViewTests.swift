@@ -195,6 +195,14 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(sentText, "\u{1b}b")
     }
 
+    /// Under the kitty protocol a key is named by its code point, and a CJK
+    /// input source types a phonetic symbol where the Latin layout has a letter.
+    func testOptionKeyIsNamedByItsLatinLetterUnderTheKittyProtocol() {
+        feed("\u{1b}[>1u")
+        view.keyDown(with: key("∫", code: 0x0b, flags: .option, unmodified: "b"))
+        XCTAssertEqual(sentText, "\u{1b}[98;3u")
+    }
+
     func testHostKeyPolicyPreemptsTheEncoder() {
         view.keyOverride = { $0.keyCode == 0x33 && $0.mods == .command ? [0x15] : nil }
         view.keyDown(with: key("\u{7f}", code: 0x33, flags: .command))

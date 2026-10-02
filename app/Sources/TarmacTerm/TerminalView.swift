@@ -505,7 +505,10 @@ public final class TerminalView: NSView {
             mods: mods,
             consumedMods: KeyTranslation.consumedMods(mods, text: text, optionAsAlt: engine.optionAsAlt),
             text: text,
-            unshiftedCodepoint: event.characters(byApplyingModifiers: [])?.unicodeScalars.first?.value ?? 0,
+            unshiftedCodepoint: KeyTranslation.unshiftedCodepoint(
+                layout: event.characters(byApplyingModifiers: []),
+                latin: KeyTranslation.latinCharacters(keyCode: event.keyCode, shift: false)
+            ),
             composing: composing
         )
         let bytes = engine.encode(input)

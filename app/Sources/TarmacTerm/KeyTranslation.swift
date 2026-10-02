@@ -49,6 +49,16 @@ enum KeyTranslation {
         return String(utf16CodeUnits: units, count: length)
     }
 
+    /// The code point the kitty protocol names a key by: what it types with no
+    /// modifier. A layout that types ASCII speaks for itself; under a CJK input
+    /// source or a non-Latin layout the key is named by its Latin letter, which
+    /// is what a program's shortcuts are written in.
+    static func unshiftedCodepoint(layout: String?, latin: String?) -> UInt32 {
+        let own = layout?.unicodeScalars.first
+        if let own, own.isASCII { return own.value }
+        return (latin?.unicodeScalars.first ?? own)?.value ?? 0
+    }
+
     /// Whether a key goes to the encoder without passing the input method.
     /// The text system binds control chords to editing commands — ⌃Q
     /// (quotedInsert:) arms a state that swallows the next key — and ⌥ as Alt
