@@ -29,10 +29,15 @@ public enum CardNavigation {
     /// A frame embedded by raw HTML may load a web page, as in the Tauri app,
     /// and never the card scheme: a card document framed here is not
     /// sandboxed, and would read any other local file framed beside it.
-    public static func doc(_ request: Request) -> Verdict {
+    ///
+    /// `framesGuarded` says the web view carries `DocFrameRule`, which keeps a
+    /// framed page off the img host. Where WebKit would not compile the rule,
+    /// no web page is framed.
+    public static func doc(_ request: Request, framesGuarded: Bool) -> Verdict {
         if request.pageLoad { return .allow }
         guard request.target == .subframe else { return .cancel }
-        return ExternalLink.isHTTP(href: request.url) || inlineFrames.contains(request.url) ? .allow : .cancel
+        if inlineFrames.contains(request.url) { return .allow }
+        return framesGuarded && ExternalLink.isHTTP(href: request.url) ? .allow : .cancel
     }
 
     private static let inlineFrames: Set<String> = ["about:blank", "about:srcdoc"]

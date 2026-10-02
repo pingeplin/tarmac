@@ -28,6 +28,9 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
 
     private var pageLoaded = false
     private var loadingPage = false
+    /// The web view carries `DocFrameRule`, so a web page the doc frames is
+    /// kept off the img host.
+    private var framesGuarded = false
     private var markdown: String?
     private var lastChangedMs: UInt64?
     /// Reads are answered off the main thread; only the latest one is shown.
@@ -61,6 +64,15 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
         editing.onMessage = { [weak self] message in self?.isEditingText = message.body as? Bool ?? false }
         host.onResize = { [weak self] size in self?.layoutPage(viewport: size) }
         addSubview(host)
+        DocFrameRules.shared.whenSettled { [weak self] rules in self?.start(guardedBy: rules) }
+    }
+
+    /// Loads the page, once the web view has the rule its frames load under.
+    private func start(guardedBy rules: WKContentRuleList?) {
+        if let rules {
+            webView.configuration.userContentController.add(rules)
+            framesGuarded = true
+        }
         loadPage()
     }
 
@@ -153,6 +165,6 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
     ) {
         let request = navigationAction.cardRequest(pageLoad: loadingPage)
         loadingPage = false
-        decisionHandler(CardNavigation.doc(request) == .allow ? .allow : .cancel)
+        decisionHandler(CardNavigation.doc(request, framesGuarded: framesGuarded) == .allow ? .allow : .cancel)
     }
 }
