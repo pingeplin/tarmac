@@ -149,6 +149,17 @@ final class DevTypePlanTests: XCTestCase {
         ])
     }
 
+    /// A key stroke goes to the key window; an insertion goes straight to the
+    /// terminal. Only a plan that presses a key needs the app in front.
+    func testOnlyAPlanWithAKeyStrokePressesKeys() {
+        XCTAssertFalse(DevTypePlan.plan(text: "printf hi", kittyFlags: 0).pressesKeys)
+        XCTAssertFalse(DevTypePlan.plan(text: "", kittyFlags: 0).pressesKeys)
+        XCTAssertFalse(DevTypePlan.plan(text: "é", kittyFlags: 8).pressesKeys)
+        XCTAssertTrue(DevTypePlan.plan(text: "printf hi\n", kittyFlags: 0).pressesKeys)
+        XCTAssertTrue(DevTypePlan.plan(text: "\u{03}", kittyFlags: 0).pressesKeys)
+        XCTAssertTrue(DevTypePlan.plan(text: "a", kittyFlags: 8).pressesKeys)
+    }
+
     /// By code point, as the Tauri driver counts: `\r\n` is two Returns, and a
     /// combining mark is its own step. A grapheme walk would merge both.
     func testAStepIsOneCodePointNotOneGrapheme() {

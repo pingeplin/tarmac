@@ -99,6 +99,24 @@ final class DevPressTests: XCTestCase {
         )
     }
 
+    /// `--age 0` is the low end of the range, not outside it.
+    func testAnAgeOfZeroIsInRange() {
+        let chord = DevPress.Chord(flags: cmd, characters: "q", keyCode: 12)
+        XCTAssertEqual(
+            DevPress.plan(combo: "cmd+q", holdMs: nil, ageMs: 0, busyMs: nil),
+            .success(DevPress.Plan(chord: chord, holdMs: 100, ageMs: 0, busyMs: nil))
+        )
+    }
+
+    /// The press is stamped `age` before now on the uptime clock; an age older
+    /// than the boot stamps it at zero rather than wrapping into the future.
+    func testThePressIsStampedItsAgeBeforeNow() {
+        XCTAssertEqual(DevPress.pressMs(nowMs: 110_000_000, ageMs: 0), 110_000_000)
+        XCTAssertEqual(DevPress.pressMs(nowMs: 110_000_000, ageMs: 2_500), 109_997_500)
+        XCTAssertEqual(DevPress.pressMs(nowMs: 2_500, ageMs: 2_500), 0)
+        XCTAssertEqual(DevPress.pressMs(nowMs: 1_000, ageMs: 60_000), 0)
+    }
+
     /// The CLI has already refused these; this guards a hand-built frame.
     func testAFlagOutOfRangeIsABadRequest() {
         let outOfRange: [(hold: Int?, age: Int?, busy: Int?)] = [

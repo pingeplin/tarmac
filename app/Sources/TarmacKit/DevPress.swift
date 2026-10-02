@@ -100,6 +100,12 @@ public enum DevPress {
             && chord.flags == QuitShortcut.expectedModifiers(keyEquivalent: keyEquivalent, mask: mask)
     }
 
+    /// The posted event's timestamp: `ageMs` before `nowMs` on the uptime
+    /// clock, stopping at zero rather than wrapping into the future.
+    public static func pressMs(nowMs: UInt64, ageMs: UInt64) -> UInt64 {
+        nowMs > ageMs ? nowMs - ageMs : 0
+    }
+
     public static func reply(combo: String, pressMs: UInt64, plan: Plan, activated: Bool) -> JSONValue {
         [
             "combo": .string(combo),

@@ -42,6 +42,15 @@ public enum DevTypePlan {
             self.mode = mode
             self.steps = steps
         }
+
+        /// Whether any step is a key stroke. A stroke is delivered to the key
+        /// window; an insertion goes straight to the terminal and needs none.
+        public var pressesKeys: Bool {
+            steps.contains { step in
+                if case .key = step { return true }
+                return false
+            }
+        }
     }
 
     /// The one kitty keyboard flag under which a program receives plain
