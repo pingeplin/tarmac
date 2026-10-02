@@ -20,6 +20,7 @@ import {
   pressBody,
   matchPress,
   waitGone,
+  APP_TARGET,
 } from "./lib.mjs";
 
 const run = runner("make qa-quit");
@@ -78,7 +79,7 @@ const cases = {
       const gone = await waitGone(r.exitedAt + 1000 - Date.now());
       console.log(`       gone ${gone - r.exitedAt} ms after the CLI exited`);
       console.log(
-        "       record from the `make run` output: the last quit-key line should read route=terminate, age_ms >= 2500",
+        `       record from the \`${APP_TARGET}\` output: the last quit-key line should read route=terminate, age_ms >= 2500`,
       );
     });
   },

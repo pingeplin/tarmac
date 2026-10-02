@@ -35,21 +35,14 @@ public struct QuitGuard: Equatable, Sendable {
         case idle(lastStartMs: UInt64?)
         case showing(startedMs: UInt64)
         case confirming
-
-        /// The word the QA driver's snapshot reports (spec 2609.0018).
-        public var name: String {
-            switch self {
-            case .idle: return "idle"
-            case .showing: return "showing"
-            case .confirming: return "confirming"
-            }
-        }
     }
 
     public enum Route: Equatable, Sendable {
         case terminateNow
         case guarded
 
+        /// The word a debug build logs for the route, which is the one the QA
+        /// driver's snapshot reports (spec 2609.0018).
         public var name: String {
             switch self {
             case .guarded: return "guard"

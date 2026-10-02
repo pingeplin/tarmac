@@ -21,13 +21,18 @@ extension AppController {
         return nil
     }
 
-    /// A left-button press, seen before the view under it handles it. On a card
-    /// it selects and raises that card, and a live terminal also becomes prime;
-    /// on the bare board it clears the selection. A press on an overlay, or on a
-    /// header control that acts by itself, changes nothing here.
+    /// A left-button press, seen before the view under it handles it.
     func handlePress(at point: NSPoint) {
+        handlePress(on: hitView(at: point))
+    }
+
+    /// A left-button press that lands on `hit`. On a card it selects and raises
+    /// that card, and a live terminal also becomes prime; on the bare board it
+    /// clears the selection. A press on an overlay, or on a header control that
+    /// acts by itself, changes nothing here.
+    func handlePress(on hit: NSView?) {
         guard !switcherOpen, window?.isKeyWindow == true else { return }
-        guard let hit = hitView(at: point), hit.isDescendant(of: rootView.board) else { return }
+        guard let hit, hit.isDescendant(of: rootView.board) else { return }
         guard let card = enclosingCard(hit) else { return defocus() }
         if hit is HeaderButton { return }
         select(card.id)

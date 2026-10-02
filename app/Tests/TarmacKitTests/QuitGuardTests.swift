@@ -44,12 +44,8 @@ final class QuitGuardTests: XCTestCase {
 
     // MARK: - Routing
 
-    /// S4 (2609.0018) — the snapshot's names for each phase and route.
-    func testPhaseAndRouteNamesAreTheSnapshotsWords() {
-        XCTAssertEqual(QuitGuard.Phase.idle(lastStartMs: nil).name, "idle")
-        XCTAssertEqual(QuitGuard.Phase.idle(lastStartMs: 1).name, "idle")
-        XCTAssertEqual(QuitGuard.Phase.showing(startedMs: 1).name, "showing")
-        XCTAssertEqual(QuitGuard.Phase.confirming.name, "confirming")
+    /// S4 (2609.0018) — the words the `quit-key` log line names a route by.
+    func testRouteNamesAreTheLoggedWords() {
         XCTAssertEqual(QuitGuard.Route.guarded.name, "guard")
         XCTAssertEqual(QuitGuard.Route.terminateNow.name, "terminate")
     }

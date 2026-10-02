@@ -154,6 +154,11 @@ public final class TerminalView: NSView {
         return gridLayout.rect(col: col, row: row)
     }
 
+    /// Whether a click at `point`, in this view's coordinates, lands on a link.
+    public func hasLink(at point: NSPoint) -> Bool {
+        gridLayout.map { link(at: $0.surfacePoint(point)) != nil } ?? false
+    }
+
     /// Clears the terminal before the host replays history into it.
     public func reset() {
         selection.clear()

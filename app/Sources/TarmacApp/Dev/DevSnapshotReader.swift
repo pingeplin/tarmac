@@ -12,15 +12,13 @@ struct DevSnapshotReader {
 
     private var board: BoardView { controller.activeBoard.view }
 
-    /// The active board's cards: terminals in card order, then docs in the
-    /// order the board lists them.
+    /// The active board's cards, in the order they are reported.
     var cards: [CardView] {
-        let terms = controller.sessionOrder.compactMap { board.card(.term($0)) }
-        let listed = controller.store.docs.compactMap { board.card(.doc($0.path)) }
-        let unlisted = board.cards.values
-            .filter { card in card.id.wireKind == .doc && !listed.contains { $0 === card } }
-            .sorted { $0.id.wireID < $1.id.wireID }
-        return terms + listed + unlisted
+        DevSnapshot.cardOrder(
+            terminals: controller.sessionOrder,
+            listedDocs: controller.store.docs.map(\.path),
+            onBoard: Set(board.cards.keys.map(\.wireRef))
+        ).compactMap { board.card(CardID($0)) }
     }
 
     func snapshot() -> JSONValue {
@@ -45,7 +43,7 @@ struct DevSnapshotReader {
     var routingContext: DevRouting.Context {
         DevRouting.Context(
             cards: cards.map { card in
-                DevRouting.Card(id: card.id.wireID, kind: card.id.wireKind, frame: card.worldFrame.rect)
+                DevRouting.Card(id: card.id.wireID, kind: card.id.wireRef.kind, frame: card.worldFrame.rect)
             },
             keyboardFocusCard: keyboardFocus.card,
             borrowedCard: controller.borrow.id?.wireID,
@@ -55,20 +53,28 @@ struct DevSnapshotReader {
         )
     }
 
-    /// The card whose view holds the window's first responder, whether or not
-    /// the window is key: keyboard focus is the view's, as `activeElement` is
-    /// the document's.
+    /// Keyboard focus is the first responder's whether or not the window is
+    /// key, as `activeElement` is the document's.
     var keyboardFocus: DevSnapshot.KeyboardFocus {
-        guard let responder = controller.window?.firstResponder as? NSView else { return .none }
-        for (termID, session) in controller.sessions where responder.isDescendant(of: session.view) {
+        let switcher = controller.rootView.boardSwitcher
+        let responder = controller.window?.firstResponder
+        return DevSnapshot.KeyboardFocus(
+            responder: holder(of: responder),
+            switcherOwner: holder(of: switcher.keysOwner),
+            switcherHoldsKeys: responder === switcher
+        )
+    }
+
+    /// The card whose view is, or contains, `responder`.
+    private func holder(of responder: NSResponder?) -> DevSnapshot.KeyHolder? {
+        guard let view = responder as? NSView else { return nil }
+        for (termID, session) in controller.sessions where view.isDescendant(of: session.view) {
             return .terminal(card: termID, hasSelection: session.view.hasSelection)
         }
         for card in board.cards.values {
-            guard case .doc(let path) = card.id, DocKind(path: path) == .html, responder.isDescendant(of: card)
-            else { continue }
-            return .htmlDocument(card: path)
+            if case .doc(let path) = card.id, view.isDescendant(of: card) { return .doc(path: path) }
         }
-        return .none
+        return nil
     }
 
     private func fact(_ card: CardView) -> DevSnapshot.Card {
@@ -97,19 +103,21 @@ struct DevSnapshotReader {
 }
 
 extension CardID {
-    /// The bare id the driver's callers address a card by.
-    var wireID: String {
-        switch self {
-        case .term(let termID): termID
-        case .doc(let path): path
+    init(_ ref: DevSnapshot.CardRef) {
+        switch ref.kind {
+        case .term: self = .term(ref.id)
+        case .doc: self = .doc(ref.id)
         }
     }
 
-    var wireKind: DevCardKind {
+    /// The card as the driver's callers address it.
+    var wireRef: DevSnapshot.CardRef {
         switch self {
-        case .term: .term
-        case .doc: .doc
+        case .term(let termID): DevSnapshot.CardRef(kind: .term, id: termID)
+        case .doc(let path): DevSnapshot.CardRef(kind: .doc, id: path)
         }
     }
+
+    var wireID: String { wireRef.id }
 }
 #endif
