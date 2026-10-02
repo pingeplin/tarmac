@@ -48,4 +48,24 @@ final class KeyTranslationTests: XCTestCase {
         XCTAssertEqual(KeyTranslation.consumedMods([.option], text: "b", optionAsAlt: true), [])
         XCTAssertEqual(KeyTranslation.consumedMods([.shift], text: nil, optionAsAlt: true), [])
     }
+
+    /// An input method sees a key only when it could be composing with it.
+    /// A control chord is an editing command to the text system, and ⌥ as Alt
+    /// with its ⌥ stripped looks like a plain letter, which a CJK input method
+    /// would start composing from.
+    func testChordsThatAreNotTextSkipTheInputMethodUnlessItIsComposing() {
+        XCTAssertTrue(KeyTranslation.skipsTextInput(mods: .control, optionAsAlt: true, composing: false))
+        XCTAssertTrue(KeyTranslation.skipsTextInput(mods: .option, optionAsAlt: true, composing: false))
+        XCTAssertTrue(KeyTranslation.skipsTextInput(mods: [.option, .shift], optionAsAlt: true, composing: false))
+        XCTAssertFalse(KeyTranslation.skipsTextInput(mods: .option, optionAsAlt: false, composing: false))
+        XCTAssertFalse(KeyTranslation.skipsTextInput(mods: [], optionAsAlt: true, composing: false))
+        XCTAssertFalse(KeyTranslation.skipsTextInput(mods: .shift, optionAsAlt: true, composing: false))
+        XCTAssertFalse(KeyTranslation.skipsTextInput(mods: .control, optionAsAlt: true, composing: true))
+        XCTAssertFalse(KeyTranslation.skipsTextInput(mods: .option, optionAsAlt: true, composing: true))
+    }
+
+    func testAKeysLatinCharacterIsItsOwnLetter() {
+        XCTAssertEqual(KeyTranslation.latinCharacters(keyCode: 0x0b, shift: false)?.lowercased(), "b")
+        XCTAssertEqual(KeyTranslation.latinCharacters(keyCode: 0x0b, shift: true), "B")
+    }
 }

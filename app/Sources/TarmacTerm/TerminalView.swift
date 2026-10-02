@@ -414,12 +414,11 @@ public final class TerminalView: NSView {
         let composingBefore = hasMarkedText()
         keyTextAccumulator = []
         defer { keyTextAccumulator = nil }
-        // The text system binds control chords to editing commands, and one of
-        // them (⌃Q, quotedInsert:) arms a state that swallows the next key. A
-        // terminal wants none of it; only an IME mid-composition gets them.
-        if composingBefore || !event.modifierFlags.contains(.control) {
-            interpretKeyEvents([translationEvent])
-        }
+        let skipsTextInput = KeyTranslation.skipsTextInput(
+            mods: KeyTranslation.mods(rawFlags: event.modifierFlags.rawValue),
+            optionAsAlt: engine.optionAsAlt, composing: composingBefore
+        )
+        if !skipsTextInput { interpretKeyEvents([translationEvent]) }
 
         let action: KeyAction = event.isARepeat ? .repeat : .press
         if let texts = keyTextAccumulator, !texts.isEmpty {
@@ -477,7 +476,8 @@ public final class TerminalView: NSView {
         return NSEvent.keyEvent(
             with: event.type, location: event.locationInWindow, modifierFlags: flags,
             timestamp: event.timestamp, windowNumber: event.windowNumber, context: nil,
-            characters: event.characters(byApplyingModifiers: flags) ?? "",
+            characters: KeyTranslation.latinCharacters(keyCode: event.keyCode, shift: flags.contains(.shift))
+                ?? event.characters(byApplyingModifiers: flags) ?? "",
             charactersIgnoringModifiers: event.charactersIgnoringModifiers ?? "",
             isARepeat: event.isARepeat, keyCode: event.keyCode
         ) ?? event

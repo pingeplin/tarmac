@@ -1,3 +1,4 @@
+import Carbon.HIToolbox
 import GhosttyVt
 
 /// The AppKit-independent half of turning a key press into a `KeyInput`: which
@@ -25,6 +26,39 @@ enum KeyTranslation {
 
     /// The encoder derives control sequences from the key and mods itself, so C0
     /// controls and AppKit's function-key private-use scalars must not be passed as text.
+    /// What `keyCode` types on the Latin layout behind the current input
+    /// source. ⌥ as Alt sends `ESC` plus the key's own letter, and under a
+    /// CJK input source the key's "own" character would be its phonetic
+    /// symbol (ㄖ for B under Zhuyin).
+    static func latinCharacters(keyCode: UInt16, shift: Bool) -> String? {
+        guard let source = TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue(),
+              let property = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData)
+        else { return nil }
+        let layout = Unmanaged<CFData>.fromOpaque(property).takeUnretainedValue() as Data
+        var deadKeys: UInt32 = 0
+        var length = 0
+        var units = [UniChar](repeating: 0, count: 4)
+        let status = layout.withUnsafeBytes { bytes in
+            UCKeyTranslate(
+                bytes.bindMemory(to: UCKeyboardLayout.self).baseAddress, keyCode, UInt16(kUCKeyActionDown),
+                shift ? UInt32(shiftKey >> 8) : 0, UInt32(LMGetKbdType()),
+                OptionBits(kUCKeyTranslateNoDeadKeysMask), &deadKeys, units.count, &length, &units
+            )
+        }
+        guard status == noErr, length > 0 else { return nil }
+        return String(utf16CodeUnits: units, count: length)
+    }
+
+    /// Whether a key goes to the encoder without passing the input method.
+    /// The text system binds control chords to editing commands — ⌃Q
+    /// (quotedInsert:) arms a state that swallows the next key — and ⌥ as Alt
+    /// reaches it with ⌥ stripped, as a plain letter a CJK input method would
+    /// compose from. An input method mid-composition still gets every key.
+    static func skipsTextInput(mods: KeyMods, optionAsAlt: Bool, composing: Bool) -> Bool {
+        guard !composing else { return false }
+        return mods.contains(.control) || (optionAsAlt && mods.contains(.option))
+    }
+
     static func text(_ characters: String?) -> String? {
         guard let characters, let first = characters.unicodeScalars.first else { return nil }
         if first.value < 0x20 || first.value == 0x7f { return nil }
