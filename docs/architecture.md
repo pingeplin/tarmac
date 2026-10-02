@@ -773,16 +773,23 @@ without a driver.
 
 `DevRouting` decides what each verb acts on and every refusal;
 `app/Sources/TarmacApp/Dev/DevVerbs.swift` carries the route out and reads back
-what it observed. Verbs inject real input instead of calling the controller —
-`NSEvent`s through the application's event path (the key monitor, the hit test,
-first-responder handling) — so a scenario exercises the paths a user does. Two go
-to the terminal view directly: `type`'s printables through `insertText`, and
-`contextmenu` through the view's own menu request. A
-pointer press whose target the hit test cannot reach, off the window or under
-another view, is delivered to the target view after the app's own press
-handling. A reply says which, in a `delivery` key (`window` or `target`), and
-whether the app had to be activated to take the input (`activated`). `zoom` is
-the one exception: it goes through the board's own viewport commit. `press`
+what it observed. Where a verb can inject real input it does — `NSEvent`s
+through the application's event path (the key monitor, the hit test,
+first-responder handling) — so a scenario exercises the paths a user does. The
+rest go around that path, and a reply's `delivery` key says which way a pointer
+press went: `window` (the event path); `target` — a press whose target the hit
+test cannot reach, off the window or under another view, is handed to the
+target view after the app's own press handling; or `handling` — the app's press
+handling alone, with no click, where a click is unsafe: a markdown card and an
+already-borrowed HTML card (a click would land in the user's document; `focus`
+then moves the keys itself, to the board or to the document), a culled terminal
+(selected, but the keys stay where they were) and a terminal with a link under
+every point tried. Borrowing an HTML card is a real double-click on its shield.
+Two verbs go to the terminal view directly: `type`'s printables through
+`insertText`, and `contextmenu` through the view's own menu request. `zoom`
+goes through the board's own viewport commit. A reply also says whether the app
+had to be activated to take the input (`activated`). If `accept` fails the
+driver closes the socket and removes its file, so callers fail at once. `press`
 posts a native `⌘` chord to the application's event queue, with a debug-only
 "held" override for the ⌘Q guard's release poll.
 

@@ -55,10 +55,11 @@ public enum DevPointer {
     /// the two cells are margin against it gaining one.
     public static let clearCells: CGFloat = 2
 
-    /// The press on a body whose content is the user's — a doc. A click there
-    /// follows a link or presses a button, and the Tauri driver never clicks
-    /// inside a document: it dispatches on the wrapper around it. So the card
-    /// gets the app's press handling and no click, wherever it is on screen.
+    /// The press on a body that must not be clicked: a doc, whose content is
+    /// the user's — a click there follows a link or presses a button, and the
+    /// Tauri driver never clicked inside a document — or a culled terminal,
+    /// whose view is hidden. The card gets the app's press handling and no
+    /// click, wherever it is on screen.
     public static func contentPress(in bounds: CGRect) -> Press {
         Press(point: CGPoint(x: bounds.midX, y: bounds.midY), delivery: .handling)
     }

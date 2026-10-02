@@ -104,12 +104,24 @@ export function reset(term) {
 /** A pointer verb (`focus`, `resize`), with how its press was delivered printed
  *  under the scenario. A press goes through the `window` — hit test, event
  *  monitors and all — only where its target is on screen with nothing over it;
- *  off the window or covered it is handed to the `target`, and a doc gets the
- *  app's press `handling` with no click. All three answer ok with the same
- *  fields, so without this line a run cannot say which path it exercised. */
+ *  off the window or covered it is handed to the `target`, and where a click
+ *  is unsafe — a markdown doc, a borrowed HTML card, a culled terminal — the
+ *  card gets the app's press `handling` with no click. All three answer ok with
+ *  the same fields, so without this line a run cannot say which path it
+ *  exercised. */
+/** A failed verb's error code, or its text when the CLI itself failed and
+ *  printed no JSON (no app listening, a bad argument). */
+function refusal(err) {
+  try {
+    return JSON.parse(err).error;
+  } catch {
+    return err.trim();
+  }
+}
+
 export function pointer(...args) {
   const r = dev(...args);
-  const how = r.code === 0 ? JSON.parse(r.out).delivery : `refused (${JSON.parse(r.err).error})`;
+  const how = r.code === 0 ? JSON.parse(r.out).delivery : `refused (${refusal(r.err)})`;
   const [verb, card, ...rest] = args;
   // A card is a term id or an absolute path; its tail is enough to tell them apart.
   const name = card.includes("/") ? card.slice(card.lastIndexOf("/") + 1) : card.slice(0, 8);

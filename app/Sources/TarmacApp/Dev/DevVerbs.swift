@@ -12,8 +12,9 @@ import TarmacTerm
 /// go through the application's event path. The rest reach the app another
 /// way, and each says so where it does it:
 ///   - `zoom` goes through the board's own viewport commit;
-///   - a press on a target the hit test cannot reach, and every press on a
-///     doc, is delivered around the event path (`DevInput.deliver`);
+///   - a press on a target the hit test cannot reach, and a press where a
+///     click is unsafe — a markdown doc, a borrowed HTML card, a culled
+///     terminal — is delivered around the event path (`DevInput.deliver`);
 ///   - `type` commits text straight to the terminal, as an input method does;
 ///   - `key contextmenu` asks the terminal for its menu instead of popping it;
 ///   - `focus` on a doc moves first responder itself — to the board for a
@@ -154,7 +155,7 @@ final class DevVerbs {
     /// A press on a culled card. The card is hidden; the app's press handling
     /// still selects it and, for a terminal, hands its view the keys in passing.
     /// A hidden view is no place for them, so they go back where they were, or
-    /// to the board if that was a hidden view too (`DevRouting`).
+    /// to the board if that was a hidden view too.
     private func leavingKeys(_ press: () throws -> Void) rethrows {
         let keys = window.firstResponder
         try press()

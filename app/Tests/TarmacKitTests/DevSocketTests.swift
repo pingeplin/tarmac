@@ -100,6 +100,36 @@ final class DevSocketTests: XCTestCase {
 
     /// Copied into a `sockaddr_un`, a longer path would be truncated into some
     /// other path.
+    func testACloseWhileAcceptWaitsReadsAsClosedNotFailed() throws {
+        let socket = try claimed(directory + "/tarmac-dev.sock")
+        let accepted = expectation(description: "accept returned")
+        nonisolated(unsafe) var result: DevSocket.Accepted?
+        Thread.detachNewThread {
+            result = socket.accept()
+            accepted.fulfill()
+        }
+        // Long enough for the thread to be inside accept().
+        Thread.sleep(forTimeInterval: 0.2)
+        socket.close()
+        wait(for: [accepted], timeout: 3)
+        XCTAssertEqual(result, .closed)
+    }
+
+    /// After `close()` the descriptor's number is the next claimant's.
+    func testAnAcceptAfterCloseLeavesASuccessorsCallerAlone() throws {
+        let path = directory + "/tarmac-dev.sock"
+        let first = try claimed(path)
+        first.close()
+        let second = try claimed(path)
+        defer { second.close() }
+        try XCTSkipUnless(first.listener == second.listener, "the descriptor number was not reused")
+        let caller = try XCTUnwrap(DaemonSocket.connect(to: path))
+        defer { Darwin.close(caller) }
+        let accepted = first.accept()
+        if case .connection(let stolen) = accepted { Darwin.close(stolen) }
+        XCTAssertEqual(accepted, .closed)
+    }
+
     func testAPathTooLongForASocketAddressIsRefused() {
         let path = directory + "/" + String(repeating: "x", count: 104) + ".sock"
         XCTAssertEqual(failure(path), .pathTooLong)

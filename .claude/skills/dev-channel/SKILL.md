@@ -117,14 +117,18 @@ core/target/debug/tarmac dev snapshot | jq .
 - **Replies say how the input got in.** A verb that injects input adds
   `activated` (the app had to be brought forward to take it) and, for a pointer
   press, `delivery`: `window` when the press went through the application's
-  event path, hit test included, or `target` when the point was off the window
-  or under another view and the press was handed to the target view after the
-  app's own press handling. A `target` delivery is still a pass; it tells you
-  the hit test was not exercised.
+  event path, hit test included; `target` when the point was off the window or
+  under another view and the press was handed to the target view after the
+  app's own press handling; or `handling` when the app's press handling ran for
+  the card and **no click was sent** — every `focus` on a markdown card, on an
+  HTML card that is already borrowed, on a culled terminal, and on a terminal
+  with a link under every point the driver tries. `target` and `handling` are
+  still passes; they tell you the hit test (and, for `handling`, the view's own
+  mouse handlers) was not exercised.
 - **The app logs each verb.** Its stderr (the `make run` output) gets one line
-  per request, `tarmac: dev <request> -> <reply>` — `snapshot` excepted. The
-  scenario suite drops most of a reply; the log is where to read `delivery`
-  after a run.
+  per request, `tarmac: dev <request> -> <reply>` — `snapshot` excepted.
+  `make qa` prints the `delivery` of every `focus` and `resize` under its
+  scenario (`focus d17.md → handling`); the log has the whole reply.
 - A failure prints JSON on **stderr** and exits 1: `no_such_card`,
   `not_focused`, `unsupported_card_kind`, `card_hidden`, `unsupported_combo`,
   `bad_combo`, `empty_buffer`, `unsupported_verb`, `bad_expr`, `bad_request`,
@@ -148,7 +152,10 @@ session. `snapshot`, `zoom` and `key <term> contextmenu` never activate.
 `type` and `key` require the card to **already** hold keyboard focus — they
 answer `not_focused` rather than establishing it, so a passing verb proves focus
 was right. `focus <term>` establishes it (a press on the terminal's body:
-select, prime, keyboard); the suite's `reset` runs `zoom 1`, `focus board`,
+select, prime, keyboard). A **culled** terminal is the exception: `focus`
+selects it and makes it prime, but the keys stay where they were (its view is
+hidden; `delivery: handling`), so `type`/`key` on it still answer `not_focused`
+— `zoom` out first. The suite's `reset` runs `zoom 1`, `focus board`,
 `focus <term>` so every scenario starts from the same state.
 
 ```sh
@@ -189,10 +196,16 @@ tarmac dev key t-1 ctrl+c
 - `resize` drags the bottom-right handle in board units and reports where the
   card landed, clamped to the 160×90 minimum:
   `{"from": {...}, "to": {"w": 800, "h": 600}, "delta_px": {...}}`.
-- `focus <doc card>` works too (#183): a markdown card is selected and the keys
-  drop to the board (`active_element.tag` reads `BODY`); an HTML card is
-  selected, **borrowed** (a double-click: its shield lifted, `cards[].borrowed`
-  true) and its document focused (`IFRAME`). Two things to know:
+  The press on the handle selects the card like any press on it, so a visible
+  terminal card also takes the keys; a culled card is resized and the keys stay
+  where they were.
+- `focus <doc card>` works too (#183), and never clicks inside a document: a
+  markdown card is selected and the keys drop to the board (`BODY`,
+  `delivery: handling`); an HTML card is selected, **borrowed** by a
+  double-click on its shield (`delivery` `window` or `target`;
+  `cards[].borrowed` true) and its document focused (`IFRAME`). A card that is
+  already borrowed has no shield left, so it is handed the keys with no click
+  (`delivery: handling`). Two things to know:
   - a **culled** HTML card is refused with `card_hidden` — its web view is
     hidden and cannot take focus. `zoom` out, or pan by hand; no verb pans;
   - a borrowed card **stays borrowed** after focus moves away, and the next Esc
@@ -201,8 +214,10 @@ tarmac dev key t-1 ctrl+c
     it, as D18 does.
   `type` and `key` still refuse doc cards (`unsupported_card_kind`).
 - A `focus <term>` press never lands on a link (a click would open it) and
-  keeps two cells clear of the previous press (a second press on one cell
-  inside the double-click interval selects a word).
+  prefers a point two cells clear of the previous press (a second press on the
+  same point inside the double-click interval selects a word). When every point
+  the driver tries is on a link, the terminal is selected and focused with no
+  click at all (`delivery: handling`).
 
 ### Pressing a native ⌘ chord — `press`
 
@@ -271,8 +286,9 @@ timeout 5000 ms; `--timeout 0` means evaluate once.
   key did, and ⌘C / ⌘V have no snapshot field yet (the clipboard, the paste), so
   nothing can assert on them.
 - `type` and `key` refuse doc cards; only `focus` accepts them.
-- `focus <term>` is a real mouse press, so a program with mouse reporting on
-  (Claude Code, vim) also receives a button-press report.
+- `focus <term>` is a real mouse press unless its `delivery` reads `handling`,
+  so a program with mouse reporting on (Claude Code, vim) also receives a
+  button-press report.
 - No verb pans, switches boards, or creates a card.
 
 ## The scenario suite — `make qa`
@@ -294,6 +310,14 @@ and **your hands off other apps** while it runs. S21 — that a verb activates a
 non-frontmost app — is exercised only when another app is in front when D12
 runs (`open -a Finder` first); otherwise it is reported as skipped, never as
 passed.
+
+D4 and D5 — the #162 pair — **fail unless their resize press went through the
+window**. Before each resize the suite zooms to 0.4, which puts the boot
+terminal's bottom-right handle inside a default-size window at the default
+viewport; if the board was panned or the window shrunk they fail with `the
+resize press was delivered by "target"` — bring the terminal back inside the
+window and re-run. D18 zooms to 0.3 so its borrowing double-click can take the
+same path; that is printed (`focus d18.html → window`), not required.
 
 ```sh
 make qa-quit CASE=hold      # S15: a 2 s hold hides the window, then quits on release
@@ -323,6 +347,8 @@ Work down this list before suspecting the driver:
    stolen) or `dev driver disabled: …` (a path too long for a socket, or a
    failed bind). A killed app leaves the socket file behind; the next `make
    run` replaces it, since it only unlinks a socket nothing answers on.
+   `dev driver accept failed: …` means the listener died: the app has removed
+   its socket file, so every later verb fails at once — restart `make run`.
 5. **`app_not_ready`?** The board is out of the window for a moment during a
    board switch, or the driver has not attached yet. Retry.
 6. **`app_unresponsive`?** Requests are served strictly one at a time; a verb
@@ -344,6 +370,9 @@ then `focus <term>` — zoom persists to `state.json` between runs, and every
 scenario should start from the same selection and focus. Give each its own
 sentinel string: `scrollback_tail` spans 40 lines, so an earlier scenario's echo
 would satisfy a repeated `contains` and turn a later check green for free.
+Send `focus`/`resize` through `pointer()` so the run prints their delivery; call
+`showGrip()` before a `resize`, and wrap it in `windowPress()` when the scenario
+is about the press itself.
 
 **Then knock it out.** Change one thing that should break it, confirm it fails,
 revert. A `[D]` scenario that has never been observed failing is not yet known to

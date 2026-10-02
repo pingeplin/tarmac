@@ -142,15 +142,12 @@ function openFixture(path) {
   return path;
 }
 
-/** Un-borrow an HTML card: Esc while `borrowed` reads true, up to three times
- *  (a visible toast or a pending fly-back takes an Esc first). Escape is sent
- *  only while borrowed — otherwise the ladder's `fresh` branch takes it, or it
- *  reaches zsh. */
 /** D4 and D5 are about the press itself — what the window and the app's press
  *  handling do with it — so a resize whose press was handed to its target
  *  proves nothing there, and passes for it must not count. */
 function windowPress(r) {
   const body = json(r);
+  if (r.code !== 0) throw new Error(`the resize was refused: ${body.error ?? r.err.trim()}`);
   if (body.delivery !== "window") {
     throw new Error(
       `the resize press was delivered by "${body.delivery}", not through the window: the terminal's ` +
@@ -161,6 +158,10 @@ function windowPress(r) {
   return body;
 }
 
+/** Un-borrow an HTML card: Esc while `borrowed` reads true, up to three times
+ *  (a visible toast or a pending fly-back takes an Esc first). Escape is sent
+ *  only while borrowed — otherwise the ladder's `fresh` branch takes it, or it
+ *  reaches zsh. */
 function unborrow(term, id) {
   for (let i = 0; i < 3; i++) {
     if (termCard(snapshot(), id)?.borrowed !== true) return;
