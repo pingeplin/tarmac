@@ -8,7 +8,7 @@ final class CardSchemeRouterTests: XCTestCase {
     private let shim = "/*shim*/"
 
     private func respond(_ url: String, disk: SchemeFixtures.Disk = .init()) -> CardProtocol.Response {
-        CardSchemeRouter.respond(url: url, shim: shim, read: disk.read)
+        CardSchemeRouter.respond(url: url, shim: shim, read: disk.read, resolve: disk.resolve)
     }
 
     private func text(_ response: CardProtocol.Response) -> String {
@@ -143,8 +143,12 @@ final class CardSchemeRouterTests: XCTestCase {
 
     // MARK: - One host per web view
 
-    private func respond(_ url: String, serving host: CardURL.Host, disk: SchemeFixtures.Disk) -> CardProtocol.Response {
-        CardSchemeRouter.respond(url: url, shim: shim, serving: host, read: disk.read)
+    private func respond(
+        _ url: String, headers: [String: String] = [:], serving host: CardURL.Host, disk: SchemeFixtures.Disk
+    ) -> CardProtocol.Response {
+        CardSchemeRouter.respond(
+            url: url, headers: headers, shim: shim, serving: host, read: disk.read, resolve: disk.resolve
+        )
     }
 
     func testAWebViewIsServedItsOwnHost() {
@@ -182,5 +186,77 @@ final class CardSchemeRouterTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(respond("tarmac-card://other/x", serving: host, disk: disk).status, 400)
             XCTAssertEqual(disk.opened, [])
         }
+    }
+
+    // MARK: - A request a script made
+
+    private let framedPage = "http://127.0.0.1:8080"
+
+    /// A page loads its own images and frames without naming its origin; XHR
+    /// and fetch name it. A web page a markdown doc framed read local images
+    /// by synchronous XHR, which WebKit lets through with no CORS check.
+    func testARequestThatNamesItsOriginIsRefusedBeforeTheDiskIsTouched() {
+        let disk = SchemeFixtures.Disk(["/tmp/a.png": Data("PIXELS".utf8), "/tmp/a.html": Data("CONTENTS".utf8)])
+        let asked: [(String, CardURL.Host)] = [
+            (SchemeFixtures.imgURI("/tmp/a.png"), .img), (SchemeFixtures.docURI("/tmp/a.html"), .doc),
+        ]
+        for (url, host) in asked {
+            let resp = respond(url, headers: ["Origin": framedPage], serving: host, disk: disk)
+
+            XCTAssertEqual(resp.status, 403, url)
+            XCTAssertEqual(resp.headers, ["Content-Type": "text/plain; charset=utf-8"], url)
+            XCTAssertEqual(text(resp), "not served to a script", url)
+        }
+        XCTAssertEqual(disk.opened, [])
+    }
+
+    /// A sandboxed frame's origin is opaque, and it says so.
+    func testAnOpaqueOriginIsAnOriginToo() {
+        let disk = SchemeFixtures.Disk(["/tmp/a.png": Data([1])])
+        XCTAssertEqual(respond(SchemeFixtures.imgURI("/tmp/a.png"), headers: ["Origin": "null"], serving: .img, disk: disk).status, 403)
+        XCTAssertEqual(respond(SchemeFixtures.imgURI("/tmp/a.png"), headers: ["Origin": ""], serving: .img, disk: disk).status, 403)
+    }
+
+    func testTheOriginHeaderIsFoundWhateverItsCase() {
+        let disk = SchemeFixtures.Disk(["/tmp/a.png": Data([1])])
+        for name in ["origin", "ORIGIN", "oRiGiN"] {
+            let resp = respond(SchemeFixtures.imgURI("/tmp/a.png"), headers: [name: framedPage], serving: .img, disk: disk)
+            XCTAssertEqual(resp.status, 403, name)
+        }
+    }
+
+    func testAPagesOwnImageLoadIsServedWhateverElseItSays() {
+        let disk = SchemeFixtures.Disk(["/tmp/a.png": Data([1])])
+        let headers = [
+            "Accept": "image/webp,image/png,*/*;q=0.5", "Referer": framedPage + "/", "X-Origin": framedPage,
+            "Original": "x", "Sec-Fetch-Site": "cross-site",
+        ]
+        XCTAssertEqual(respond(SchemeFixtures.imgURI("/tmp/a.png"), headers: headers, serving: .img, disk: disk).status, 200)
+    }
+
+    // MARK: - Symlinks
+
+    func testAnImageIsJudgedByTheFileItsNameLeadsTo() {
+        let key = "/Users/me/.ssh/id_rsa"
+        let disk = SchemeFixtures.Disk(
+            [key: Data("PRIVATE KEY".utf8), "/repo/real.gif": Data([7])],
+            links: ["/repo/logo.png": key, "/repo/anim.png": "/repo/real.gif"]
+        )
+        let refused = respond(SchemeFixtures.imgURI("/repo/logo.png"), serving: .img, disk: disk)
+        XCTAssertEqual(refused.status, 403)
+        XCTAssertFalse(text(refused).contains("PRIVATE KEY"))
+        XCTAssertEqual(disk.opened, [])
+
+        let served = respond(SchemeFixtures.imgURI("/repo/anim.png"), serving: .img, disk: disk)
+        XCTAssertEqual(served.status, 200)
+        XCTAssertEqual(served.headers["Content-Type"], "image/gif")
+        XCTAssertEqual(disk.opened, ["/repo/real.gif"])
+    }
+
+    /// A card is whatever file was opened as one; only an image has a kind to keep.
+    func testACardDocumentIsReadAsNamed() {
+        let disk = SchemeFixtures.Disk(["/tmp/real.txt": Data("<p>x</p>".utf8)], links: ["/tmp/card.html": "/tmp/real.txt"])
+        XCTAssertEqual(respond(SchemeFixtures.docURI("/tmp/card.html"), serving: .doc, disk: disk).status, 200)
+        XCTAssertEqual(disk.opened, ["/tmp/card.html"])
     }
 }

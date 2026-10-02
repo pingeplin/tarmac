@@ -20,10 +20,15 @@ public enum CardConsole {
     public struct Entry: Equatable, Sendable {
         public var level: Level
         public var args: [JSONValue]
+        /// How many characters the host page cut from the args before they
+        /// crossed into the app, counted as the page counts a string's
+        /// length: in UTF-16 units.
+        public var dropped: Int
 
-        public init(level: Level, args: [JSONValue]) {
+        public init(level: Level, args: [JSONValue], dropped: Int = 0) {
             self.level = level
             self.args = args
+            self.dropped = dropped
         }
     }
 
@@ -38,6 +43,8 @@ public enum CardConsole {
     /// Validates a `WKScriptMessage` body. A `ready` must carry the `meta` key — a
     /// string or null; an absent key is neither — and unknown keys are ignored. A
     /// console payload whose args hold a value JSON cannot carry is rejected whole.
+    /// Its `dropped` is the host page's count of what it cut, never the card's:
+    /// the page writes the key itself.
     public static func parse(_ body: Any) -> Message? {
         guard let payload = body as? [String: Any], let kind = payload["tarmac"] as? String else { return nil }
         switch kind {
@@ -57,7 +64,8 @@ public enum CardConsole {
                 guard let arg = JSONValue(foundation: raw) else { return nil }
                 args.append(arg)
             }
-            return .console(Entry(level: level, args: args))
+            let dropped = (payload["dropped"] as? NSNumber).flatMap { Int(exactly: $0.doubleValue) } ?? 0
+            return .console(Entry(level: level, args: args, dropped: max(0, dropped)))
         default:
             return nil
         }
@@ -79,13 +87,14 @@ public enum CardConsole {
         }
     }
 
-    /// `entry`, or when its line runs past `lineCap` the head of that line as
-    /// its one arg, ending in how many characters were cut.
+    /// `entry`, or when its line runs past `lineCap` or the host page already
+    /// cut it, the head of that line as its one arg, ending in how many
+    /// characters were cut in all.
     static func capped(_ entry: Entry) -> Entry {
         let line = formatArgs(entry.args)
         let head = line.prefix(lineCap)
-        guard head.endIndex < line.endIndex else { return entry }
-        let cut = line.distance(from: head.endIndex, to: line.endIndex)
+        let cut = line.distance(from: head.endIndex, to: line.endIndex) + entry.dropped
+        guard cut > 0 else { return entry }
         return Entry(level: entry.level, args: [.string("\(head)… (+\(cut) characters)")])
     }
 

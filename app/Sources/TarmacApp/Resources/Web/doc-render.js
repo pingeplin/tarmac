@@ -2,10 +2,19 @@
 // after marked: the page's policy forbids script, so nothing a doc carries can
 // reach this or the message handler it posts to.
 (function () {
+  // Raw HTML in a doc can name an element after a property of the document
+  // (`<img name="createElement">`) or of its own form, and the name then
+  // hides the property. What this script calls on either comes from the
+  // prototypes, which no element reaches.
+  const elementById = Document.prototype.getElementById.bind(document);
+  const createElement = Document.prototype.createElement.bind(document);
+  const activeElement = Object.getOwnPropertyDescriptor(Document.prototype, "activeElement").get.bind(document);
+  const closest = Function.prototype.call.bind(Element.prototype.closest);
+
   const root = document.documentElement;
-  const scroll = document.getElementById("scroll");
-  const sizer = document.getElementById("sizer");
-  const prose = document.getElementById("prose");
+  const scroll = elementById("scroll");
+  const sizer = elementById("sizer");
+  const prose = elementById("prose");
   const K = Number(getComputedStyle(root).getPropertyValue("--oversample-k"));
 
   let zoom = 1;
@@ -54,7 +63,7 @@
   prose.addEventListener("error", remeasure, true);
 
   function anchorOf(event) {
-    return event.target instanceof Element ? event.target.closest("a") : null;
+    return event.target instanceof Element ? closest(event.target, "a") : null;
   }
 
   // The page never follows a link. The app opens it, judging the href as the
@@ -66,18 +75,26 @@
     webkit.messageHandlers.docLink.postMessage(anchor.getAttribute("href") || "");
   });
 
-  // A press on a link does not select the card, and the app decides that
-  // before the press reaches this page: so it is told when the pointer is on
-  // one.
+  // A press on a link does not select the card. The app decides that as it
+  // catches the press, before the press is dispatched: all it has then is the
+  // web view under the pointer, and it cannot ask this page what is there and
+  // wait for the answer. So the page says ahead of any press whether the
+  // pointer is on a link.
   let overLink = false;
   function pointerIs(onLink) {
     if (onLink === overLink) return;
     overLink = onLink;
     webkit.messageHandlers.docOverLink.postMessage(onLink);
   }
-  prose.addEventListener("mouseover", function (event) {
+  function pointerMoved(event) {
     pointerIs(anchorOf(event) !== null);
-  });
+  }
+  // Heard on the whole page: below a short doc the pointer is outside the
+  // prose, and off the link it came from.
+  document.addEventListener("mouseover", pointerMoved);
+  // A re-render puts new elements under a pointer at rest, and nothing says
+  // what they are until it moves.
+  document.addEventListener("mousemove", pointerMoved);
   root.addEventListener("mouseleave", function () {
     pointerIs(false);
   });
@@ -86,8 +103,8 @@
   // not the app's, so the app is told when one has the focus.
   let editing = false;
   function focusMoved() {
-    const active = document.activeElement;
-    const now = active !== null && active.closest("button, input, textarea, [contenteditable]") !== null;
+    const active = activeElement();
+    const now = active !== null && closest(active, "button, input, textarea, [contenteditable]") !== null;
     if (now === editing) return;
     editing = now;
     webkit.messageHandlers.docEditing.postMessage(now);
@@ -100,7 +117,7 @@
       const render = ++renders;
       // A template has no browsing context, so no image is fetched before its
       // src is re-addressed.
-      const template = document.createElement("template");
+      const template = createElement("template");
       template.innerHTML = marked.parse(markdown, { async: false });
       const images = Array.from(template.content.querySelectorAll("img[src]"));
       if (images.length > 0) {

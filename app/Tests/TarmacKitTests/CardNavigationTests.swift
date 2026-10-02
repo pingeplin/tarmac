@@ -17,8 +17,14 @@ final class CardNavigationTests: XCTestCase {
 
     // MARK: - markdown doc
 
+    /// A doc whose web view carries `DocFrameRule`, as every one does unless
+    /// WebKit could not compile the rule.
+    private func doc(_ request: CardNavigation.Request) -> CardNavigation.Verdict {
+        CardNavigation.doc(request, framesGuarded: true)
+    }
+
     func testTheDocPagesOwnLoadIsAllowed() {
-        XCTAssertEqual(CardNavigation.doc(load("about:blank")), .allow)
+        XCTAssertEqual(doc(load("about:blank")), .allow)
     }
 
     /// Whatever asks — a link, a form, a refresh, or a page the doc framed
@@ -28,25 +34,40 @@ final class CardNavigationTests: XCTestCase {
             "https://example.com/a", "http://example.com", "mailto:a@b.c", "file:///etc/passwd",
             "about:blank#top", "tarmac-card://doc/%2Fa.html", "javascript:alert(1)",
         ] {
-            XCTAssertEqual(CardNavigation.doc(later(url, target: .mainFrame)), .cancel, url)
+            XCTAssertEqual(doc(later(url, target: .mainFrame)), .cancel, url)
         }
     }
 
     func testADocOpensNoWindow() {
-        XCTAssertEqual(CardNavigation.doc(later("https://example.com", target: .newWindow)), .cancel)
-        XCTAssertEqual(CardNavigation.doc(later("about:blank", target: .newWindow)), .cancel)
+        XCTAssertEqual(doc(later("https://example.com", target: .newWindow)), .cancel)
+        XCTAssertEqual(doc(later("about:blank", target: .newWindow)), .cancel)
     }
 
     /// Raw HTML in a doc may embed a web page, as it may in the Tauri app.
     func testAFrameEmbeddedByADocMayLoadAWebPage() {
         for url in ["https://example.com/embed", "http://127.0.0.1:8080/x", "HTTPS://EXAMPLE.COM/UP"] {
-            XCTAssertEqual(CardNavigation.doc(later(url, target: .subframe)), .allow, url)
+            XCTAssertEqual(doc(later(url, target: .subframe)), .allow, url)
         }
     }
 
+    /// A framed page that could reach the img host would learn which local
+    /// images exist. With no rule to stop it, no web page is framed at all.
+    func testWithoutTheFrameRuleADocFramesNoWebPage() {
+        for url in ["https://example.com/embed", "http://127.0.0.1:8080/x"] {
+            XCTAssertEqual(CardNavigation.doc(later(url, target: .subframe), framesGuarded: false), .cancel, url)
+        }
+    }
+
+    func testWithoutTheFrameRuleTheDocItselfStillLoads() {
+        XCTAssertEqual(CardNavigation.doc(load("about:blank"), framesGuarded: false), .allow)
+        XCTAssertEqual(CardNavigation.doc(later("about:blank", target: .subframe), framesGuarded: false), .allow)
+        XCTAssertEqual(CardNavigation.doc(later("about:srcdoc", target: .subframe), framesGuarded: false), .allow)
+        XCTAssertEqual(CardNavigation.doc(later("https://example.com", target: .mainFrame), framesGuarded: false), .cancel)
+    }
+
     func testAnEmptyOrInlineFrameOfADocMayLoad() {
-        XCTAssertEqual(CardNavigation.doc(later("about:blank", target: .subframe)), .allow)
-        XCTAssertEqual(CardNavigation.doc(later("about:srcdoc", target: .subframe)), .allow)
+        XCTAssertEqual(doc(later("about:blank", target: .subframe)), .allow)
+        XCTAssertEqual(doc(later("about:srcdoc", target: .subframe)), .allow)
     }
 
     /// A card document framed by a markdown doc is not sandboxed: it would run
@@ -56,13 +77,13 @@ final class CardNavigationTests: XCTestCase {
             "tarmac-card://doc/%2Fr%2Fa.html?v=1", "tarmac-card://doc/%2Fetc%2Fpasswd",
             "tarmac-card://img/%2Fr%2Fa.svg", "TARMAC-CARD://DOC/%2Fr%2Fa.html", "tarmac-card:x",
         ] {
-            XCTAssertEqual(CardNavigation.doc(later(url, target: .subframe)), .cancel, url)
+            XCTAssertEqual(doc(later(url, target: .subframe)), .cancel, url)
         }
     }
 
     func testAFrameOfADocLoadsNothingElseEither() {
         for url in ["file:///etc/passwd", "data:text/html,<script>1</script>", "blob:null/1", "x-evil://do/thing", ""] {
-            XCTAssertEqual(CardNavigation.doc(later(url, target: .subframe)), .cancel, url)
+            XCTAssertEqual(doc(later(url, target: .subframe)), .cancel, url)
         }
     }
 
@@ -101,5 +122,17 @@ final class CardNavigationTests: XCTestCase {
     func testAnHTMLCardOpensNoWindow() {
         XCTAssertEqual(CardNavigation.htmlCard(later("tarmac-card://doc/%2Fa.html", target: .newWindow)), .cancel)
         XCTAssertEqual(CardNavigation.htmlCard(later("https://example.com", target: .newWindow)), .cancel)
+    }
+
+    func testOnlyTheTwoInlineFramesAreAboutURLsADocMayFrame() {
+        for url in ["about:blank#x", "about:blank?x", "about:config", "about:"] {
+            XCTAssertEqual(doc(.init(url: url, target: .subframe, pageLoad: false)), .cancel, url)
+        }
+    }
+
+    func testASchemeThatOnlyStartsWithHTTPIsNotAWebPage() {
+        for url in ["httpx://example.com/", "http-evil://a", "https+x://a", "http:evil", "https:"] {
+            XCTAssertEqual(doc(.init(url: url, target: .subframe, pageLoad: false)), .cancel, url)
+        }
     }
 }

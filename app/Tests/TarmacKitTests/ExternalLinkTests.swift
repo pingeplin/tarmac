@@ -115,4 +115,11 @@ final class ExternalLinkTests: XCTestCase {
             XCTAssertNil(ExternalLink.destination(href: href), href)
         }
     }
+
+    func testTheDestinationKeepsTheCaseTheDocWrote() {
+        XCTAssertEqual(
+            ExternalLink.destination(href: "HTTPS://Example.com/Path?Q=A#Frag")?.absoluteString,
+            "HTTPS://Example.com/Path?Q=A#Frag"
+        )
+    }
 }

@@ -91,6 +91,107 @@ final class FileBytesTests: XCTestCase {
         try FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: target)
         XCTAssertEqual(try FileBytes.read(path: link).get(), Data("through the link".utf8))
     }
+
+    // MARK: - A file's size
+
+    /// Well above any card, doc or image; a file is held in memory whole, and
+    /// again by WebKit.
+    func testAFileMayBeUpTo64MiB() {
+        XCTAssertEqual(FileBytes.sizeCap, 64 << 20)
+    }
+
+    func testAFileAtTheLimitIsReadAndOneByteLargerIsRefused() throws {
+        let fits = directory + "/fits.bin"
+        let over = directory + "/over.bin"
+        try Data(repeating: 7, count: 8).write(to: URL(fileURLWithPath: fits))
+        try Data(repeating: 7, count: 9).write(to: URL(fileURLWithPath: over))
+
+        XCTAssertEqual(try FileBytes.read(path: fits, limit: 8).get(), Data(repeating: 7, count: 8))
+        XCTAssertEqual(reason(FileBytes.read(path: over, limit: 8)), "too large: over 8 bytes")
+    }
+
+    /// A sparse file takes no disk and no time to make, and reading it whole
+    /// takes its full size in memory.
+    func testASparseFileOverTheCapIsRefused() throws {
+        let path = directory + "/sparse.html"
+        XCTAssertTrue(FileManager.default.createFile(atPath: path, contents: nil))
+        XCTAssertEqual(truncate(path, off_t(FileBytes.sizeCap) + 1), 0)
+
+        XCTAssertEqual(reason(FileBytes.read(path: path)), "too large: over 67108864 bytes")
+    }
+
+    /// The size is refused as the file is opened, before any of it is read.
+    func testAFileOverTheLimitIsNotOpenedForReading() throws {
+        let path = directory + "/over.bin"
+        try Data(repeating: 7, count: 9).write(to: URL(fileURLWithPath: path))
+
+        XCTAssertThrowsError(try FileBytes.openRegular(path: path, limit: 8).get()) { error in
+            XCTAssertEqual(error as? FileBytes.TooLarge, FileBytes.TooLarge(limit: 8))
+        }
+        close(try FileBytes.openRegular(path: path, limit: 9).get())
+    }
+
+    /// The size a file had when it was opened is not a promise: it can grow
+    /// while it is read.
+    func testBytesPastTheLimitAreRefusedWhateverTheSizeWas() throws {
+        func drain(_ count: Int) throws -> Result<Data, any Error> {
+            let pipe = Pipe()
+            try pipe.fileHandleForWriting.write(contentsOf: Data(repeating: 1, count: count))
+            try pipe.fileHandleForWriting.close()
+            return FileBytes.bytes(of: pipe.fileHandleForReading.fileDescriptor, atMost: 8)
+        }
+        XCTAssertEqual(try drain(8).get(), Data(repeating: 1, count: 8))
+        XCTAssertEqual(reason(try drain(9)), "too large: over 8 bytes")
+    }
+
+    /// The open does not wait, so that a pipe is refused at once; the reads of
+    /// a file that is one do.
+    func testARegularFileIsReadBlocking() throws {
+        let path = directory + "/a.txt"
+        try Data("x".utf8).write(to: URL(fileURLWithPath: path))
+        let descriptor = try FileBytes.openRegular(path: path).get()
+        defer { close(descriptor) }
+
+        XCTAssertEqual(fcntl(descriptor, F_GETFL) & O_NONBLOCK, 0)
+    }
+
+    // MARK: - The file a name leads to
+
+    private func why(_ result: Result<String, any Error>) -> String? {
+        if case .failure(let error) = result { return error.localizedDescription }
+        return nil
+    }
+
+    func testASymbolicLinkResolvesToTheFileItLeadsTo() throws {
+        let target = directory + "/id_rsa"
+        let link = directory + "/logo.png"
+        try Data("key".utf8).write(to: URL(fileURLWithPath: target))
+        try FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: "id_rsa")
+
+        let file = try FileBytes.resolved(path: link).get()
+        XCTAssertTrue(file.hasSuffix("/id_rsa"), file)
+        XCTAssertEqual(file, try FileBytes.resolved(path: target).get())
+    }
+
+    func testLinksAreFollowedToTheEndThroughALinkedDirectory() throws {
+        try FileManager.default.createDirectory(atPath: directory + "/real", withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: URL(fileURLWithPath: directory + "/real/secret.txt"))
+        try FileManager.default.createSymbolicLink(atPath: directory + "/real/second.png", withDestinationPath: "secret.txt")
+        try FileManager.default.createSymbolicLink(atPath: directory + "/real/first.png", withDestinationPath: "second.png")
+        try FileManager.default.createSymbolicLink(atPath: directory + "/assets", withDestinationPath: "real")
+
+        let file = try FileBytes.resolved(path: directory + "/assets/first.png").get()
+        XCTAssertTrue(file.hasSuffix("/real/secret.txt"), file)
+    }
+
+    func testANameThatLeadsNowhereFailsAsReadingItDoes() throws {
+        try FileManager.default.createSymbolicLink(atPath: directory + "/dangling.png", withDestinationPath: "nope")
+        try FileManager.default.createSymbolicLink(atPath: directory + "/loop.png", withDestinationPath: "loop.png")
+
+        XCTAssertEqual(why(FileBytes.resolved(path: directory + "/nope.png")), "No such file or directory (os error 2)")
+        XCTAssertEqual(why(FileBytes.resolved(path: directory + "/dangling.png")), "No such file or directory (os error 2)")
+        XCTAssertEqual(why(FileBytes.resolved(path: directory + "/loop.png")), "Too many levels of symbolic links (os error 62)")
+    }
 }
 
 private final class Locked<Value>: @unchecked Sendable {

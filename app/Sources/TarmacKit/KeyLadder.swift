@@ -11,6 +11,8 @@ public enum KeyLadder {
         case host
         /// The document of a borrowed HTML card.
         case document
+        /// The console of an HTML card: text to select and copy, not to type in.
+        case console
     }
 
     public struct Facts: Equatable, Sendable {
@@ -55,6 +57,9 @@ public enum KeyLadder {
         /// Return: remember the viewport and fly to the offscreen signal.
         case flyToSignal
         case esc(EscLadder.Rung)
+        /// The key is typing and the console holding the keyboard takes none:
+        /// the keyboard goes back to where typing goes, and this key after it.
+        case returnKeys
     }
 
     public static func decide(_ press: KeyPress, _ facts: Facts) -> Action {
@@ -69,10 +74,22 @@ public enum KeyLadder {
         }
         if press.isCommandChord("t") { return .newTerminal }
         let plain = !press.command && !press.option && !press.control
-        if press.named == .enter, plain, facts.keys == .host, !facts.editingText, facts.hasFlyTarget {
+        let offTerminal = facts.keys == .host || facts.keys == .console
+        if press.named == .enter, plain, offTerminal, !facts.editingText, facts.hasFlyTarget {
             return .flyToSignal
         }
         if press.named == .escape, let rung = EscLadder.rung(facts.esc) { return .esc(rung) }
+        if facts.keys == .console, !selectsText(press) { return .returnKeys }
         return .passThrough
     }
+
+    /// The keys a text that is only read still has a use for: a ⌘ chord —
+    /// copy and select all are the menu's, sent to the text — and a shifted
+    /// arrow, home, end or page key, which stretches the selection.
+    private static func selectsText(_ press: KeyPress) -> Bool {
+        press.command || (press.shift && movesTheCaret.contains(press.keyCode))
+    }
+
+    /// Left, right, down, up, home, end, page up, page down.
+    private static let movesTheCaret: Set<UInt16> = [123, 124, 125, 126, 115, 119, 116, 121]
 }

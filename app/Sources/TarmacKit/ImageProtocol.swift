@@ -10,9 +10,11 @@ import Foundation
 /// framed or navigated SVG runs no script, and `nosniff`, so a format WebKit cannot
 /// decode is never re-sniffed as HTML.
 ///
-/// Same filesystem trust model as `CardProtocol`: the path is used as named, no
-/// canonicalization, no jail. The extension is judged on that path's text — a
-/// symlink is followed on open, and its target's extension is never looked at.
+/// Same filesystem trust model as `CardProtocol`: any path, no jail. One step
+/// further than the Rust handler, which judges the extension on the name alone
+/// and then follows a symlink wherever it goes: here the name must be an image's
+/// and so must the file it leads to. A repo's `logo.png` that is a symlink to a
+/// private key is not served under an image's name, whoever asks.
 public enum ImageProtocol {
     public static let uriPrefix = "tarmac-card://img/"
 
@@ -44,11 +46,29 @@ public enum ImageProtocol {
         case .success(let decoded):
             path = decoded
         }
-        guard let contentType = contentType(forPath: path) else {
-            return .reject(CardProtocol.textResponse(status: 403, body: "\(path): not a supported image type"))
-        }
+        guard let contentType = contentType(forPath: path) else { return .reject(notAnImage(path: path)) }
         if let nul = CardProtocol.rejectingNul(path: path) { return .reject(nul) }
         return .read(path: path, contentType: contentType)
+    }
+
+    /// The answer for the image named `path`. `file` is where the host found
+    /// that name to lead once every symlink was followed, and it is the file
+    /// that is judged, read and typed: 404 if the name leads nowhere, 403 if it
+    /// leads to a file that is not an image, which is then never opened.
+    public static func respond(
+        path: String, file: Result<String, any Error>, read: (String) -> Result<Data, any Error>
+    ) -> CardProtocol.Response {
+        switch file {
+        case .failure(let error):
+            return CardProtocol.unreadable(path: path, reason: error.localizedDescription)
+        case .success(let file):
+            guard let contentType = contentType(forPath: file) else { return notAnImage(path: path) }
+            return respond(path: path, contentType: contentType, contents: read(file))
+        }
+    }
+
+    private static func notAnImage(path: String) -> CardProtocol.Response {
+        CardProtocol.textResponse(status: 403, body: "\(path): not a supported image type")
     }
 
     /// 404 if the file could not be read, otherwise 200 with its bytes untouched.

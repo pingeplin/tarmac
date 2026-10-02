@@ -41,10 +41,12 @@ final class DocTemplateTests: XCTestCase {
     }
 
     /// The prose is laid out once at this factor and scaled down to the zoom.
-    /// Below the board's max zoom the scale would be an upsample, and blur.
-    func testTheOversampleFactorIsAtLeastTheBoardsMaxZoom() throws {
-        let factor = try XCTUnwrap(Double(try firstMatch(#"--oversample-k:\s*([0-9.]+);"#, in: try template())))
-        XCTAssertGreaterThanOrEqual(factor, Double(BoardZoom.max))
-        XCTAssertLessThanOrEqual(Double(BoardZoom.max) / factor, 1)
+    /// Below the board's max zoom the scale would be an upsample, and blur; an
+    /// HTML card is magnified by the same factor.
+    func testTheOversampleFactorIsThreeAndCoversTheBoardsMaxZoom() throws {
+        let factor = try firstMatch(#"--oversample-k:\s*([^;]+);"#, in: try template())
+        XCTAssertEqual(factor, "3")
+        XCTAssertEqual(Double(factor), Double(CardZoom.magnifyK))
+        XCTAssertGreaterThanOrEqual(CardZoom.magnifyK, BoardZoom.max)
     }
 }

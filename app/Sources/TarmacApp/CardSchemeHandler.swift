@@ -32,12 +32,14 @@ final class CardSchemeHandler: NSObject, WKURLSchemeHandler {
             return
         }
         let ticket = pending.start(ObjectIdentifier(urlSchemeTask), for: urlSchemeTask)
+        let headers = urlSchemeTask.request.allHTTPHeaderFields ?? [:]
         let shim = self.shim
         let host = self.host
         reads.async { [weak self] in
             // The whole URL as text: `URL.path` would percent-decode it.
             let response = CardSchemeRouter.respond(
-                url: url.absoluteString, shim: shim, serving: host, read: FileBytes.read
+                url: url.absoluteString, headers: headers, shim: shim, serving: host,
+                read: FileBytes.read, resolve: FileBytes.resolved
             )
             DispatchQueue.main.async { [weak self] in
                 self?.finish(ticket, url: url, with: response)

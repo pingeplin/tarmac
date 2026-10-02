@@ -28,17 +28,21 @@ public enum CardSchemeRouter {
     }
 
     /// Resolves `url`, reads through `read` only when a file is to be served, and
-    /// returns the response to hand to WebKit. `read` is the host's file I/O and
-    /// blocks, so call this off the main thread. This is the whole scheme, as
+    /// returns the response to hand to WebKit. `read` and `resolve` are the host's
+    /// file I/O — a file's bytes, and the file a path's symlinks lead to — and
+    /// block, so call this off the main thread. This is the whole scheme, as
     /// Tauri's one handler answers it; a web view is given `respond(…serving:…)`.
-    static func respond(url: String, shim: String, read: (String) -> Result<Data, any Error>) -> CardProtocol.Response {
+    static func respond(
+        url: String, shim: String, read: (String) -> Result<Data, any Error>,
+        resolve: (String) -> Result<String, any Error>
+    ) -> CardProtocol.Response {
         switch route(url: url) {
         case .doc(.reject(let response)), .image(.reject(let response)):
             return response
         case .doc(.read(let path)):
             return CardProtocol.respond(path: path, contents: read(path), shim: shim)
-        case .image(.read(let path, let contentType)):
-            return ImageProtocol.respond(path: path, contentType: contentType, contents: read(path))
+        case .image(.read(let path, _)):
+            return ImageProtocol.respond(path: path, file: resolve(path), read: read)
         }
     }
 
@@ -47,9 +51,19 @@ public enum CardSchemeRouter {
     /// doc that framed a card document would have it run unsandboxed at the
     /// scheme's origin, where it reads any other file the doc framed. A URL of
     /// the other host is refused before the disk is touched.
+    ///
+    /// `headers` are the request's. A page loads its own frames and images
+    /// without an `Origin`; XHR and fetch carry one. No page the app loads
+    /// reads this scheme by script, and a web page a markdown doc frames would:
+    /// WebKit lets its synchronous XHR through with no CORS check. So a request
+    /// that names its origin is refused, also before the disk is touched.
     public static func respond(
-        url: String, shim: String, serving host: CardURL.Host, read: (String) -> Result<Data, any Error>
+        url: String, headers: [String: String], shim: String, serving host: CardURL.Host,
+        read: (String) -> Result<Data, any Error>, resolve: (String) -> Result<String, any Error>
     ) -> CardProtocol.Response {
+        guard !namesItsOrigin(headers) else {
+            return CardProtocol.textResponse(status: 403, body: "not served to a script")
+        }
         let asked: CardURL.Host
         switch route(url: url) {
         case .doc: asked = .doc
@@ -58,7 +72,12 @@ public enum CardSchemeRouter {
         guard asked == host else {
             return CardProtocol.textResponse(status: 403, body: "the \(asked.rawValue) host is not served to this card")
         }
-        return respond(url: url, shim: shim, read: read)
+        return respond(url: url, shim: shim, read: read, resolve: resolve)
+    }
+
+    /// Header names are ASCII and matched without regard to case.
+    private static func namesItsOrigin(_ headers: [String: String]) -> Bool {
+        headers.keys.contains { $0.lowercased() == "origin" }
     }
 
     /// Cut at the first `#`, `?` after it included — what `http::Uri` keeps.

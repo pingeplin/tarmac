@@ -208,6 +208,50 @@ final class CardConsoleTests: XCTestCase {
         )
     }
 
+    // MARK: - what the host page cut
+
+    /// A megabyte entry costs the app's main thread as it crosses from the
+    /// page, so the host page cuts it first and says how much it cut.
+    func testAConsolePayloadSaysHowMuchThePageCut() {
+        XCTAssertEqual(
+            parse(["tarmac": "console", "level": "log", "args": ["head"], "dropped": 4096] as [String: Any]),
+            .console(CardConsole.Entry(level: .log, args: ["head"], dropped: 4096))
+        )
+    }
+
+    func testAPayloadThatDoesNotSayHasNothingCut() {
+        for dropped in [nil, -3, 1.5, "12", NSNull()] as [Any?] {
+            var payload: [String: Any] = ["tarmac": "console", "level": "log", "args": ["a"]]
+            payload["dropped"] = dropped
+            XCTAssertEqual(parse(payload), .console(CardConsole.Entry(level: .log, args: ["a"])), "\(String(describing: dropped))")
+        }
+    }
+
+    func testWhatThePageCutIsCountedInTheMark() {
+        var buffer = CardConsole.Buffer()
+        buffer.push(CardConsole.Entry(level: .error, args: [.string(String(repeating: "x", count: 1000))], dropped: 500))
+
+        XCTAssertEqual(
+            buffer.entries,
+            [CardConsole.Entry(level: .error, args: [.string(String(repeating: "x", count: 1000) + "… (+500 characters)")])]
+        )
+    }
+
+    func testAShortLineThePageCutStillSaysSo() {
+        var buffer = CardConsole.Buffer()
+        buffer.push(CardConsole.Entry(level: .log, args: ["abc", 7], dropped: 5))
+        XCTAssertEqual(CardConsole.formatArgs(buffer.entries[0].args), "abc 7… (+5 characters)")
+    }
+
+    func testBothCutsAddUp() {
+        var buffer = CardConsole.Buffer()
+        buffer.push(CardConsole.Entry(level: .log, args: [.string(String(repeating: "x", count: 1200))], dropped: 300))
+        XCTAssertEqual(
+            CardConsole.formatArgs(buffer.entries[0].args),
+            String(repeating: "x", count: 1000) + "… (+500 characters)"
+        )
+    }
+
     // MARK: - refresh
 
     /// A flooding card costs the app at most ten console updates a second.

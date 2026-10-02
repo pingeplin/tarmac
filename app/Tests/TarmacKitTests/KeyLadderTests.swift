@@ -220,6 +220,71 @@ final class KeyLadderTests: XCTestCase {
         }
     }
 
+    // MARK: - the console of an HTML card
+
+    private let left: UInt16 = 123
+    private let right: UInt16 = 124
+    private let down: UInt16 = 125
+    private let up: UInt16 = 126
+    private let backspace: UInt16 = 51
+
+    /// A press in an HTML card's console gives its text the keyboard, so that
+    /// it can be selected and copied. It takes no typing, and what is typed
+    /// next is not lost: it goes back to where typing goes.
+    func testTypingWithTheConsoleFocusedGoesBackToWhereTypingGoes() {
+        let typed = [
+            letter("a"), letter("A", shift), letter(" "), letter("c", control), letter("å", option), enter(),
+            enter(shift), tab(), named(backspace), named(up), named(down), named(left), named(right),
+        ]
+        for press in typed {
+            XCTAssertEqual(KeyLadder.decide(press, Facts(keys: .console)), .returnKeys, "\(press)")
+        }
+    }
+
+    /// ⌘C and ⌘A are the menu's, sent to the text; a shifted arrow, home,
+    /// end or page key stretches the selection.
+    func testTheConsoleKeepsTheKeysThatCopyAndSelect() {
+        let kept = [
+            letter("c", command), letter("a", command), letter("f", command), named(left, shift), named(right, shift),
+            named(up, shift), named(down, shift), named(115, shift), named(119, shift), named(116, shift),
+            named(121, shift), named(right, shift | option), named(left, command | shift),
+        ]
+        for press in kept {
+            XCTAssertEqual(KeyLadder.decide(press, Facts(keys: .console)), .passThrough, "\(press)")
+        }
+    }
+
+    func testAShiftedKeyThatMovesNothingIsTyping() {
+        XCTAssertEqual(KeyLadder.decide(named(backspace, shift), Facts(keys: .console)), .returnKeys)
+        XCTAssertEqual(KeyLadder.decide(tab(shift), Facts(keys: .console)), .returnKeys)
+    }
+
+    func testTheAppsOwnKeysAreTakenFromTheConsoleAsFromAnywhere() {
+        let facts = Facts(keys: .console)
+        XCTAssertEqual(KeyLadder.decide(letter("k", command), facts), .toggleSwitcher)
+        XCTAssertEqual(KeyLadder.decide(letter("w", command), facts), .closeSelectedCard)
+        XCTAssertEqual(KeyLadder.decide(letter("t", command), facts), .newTerminal)
+        XCTAssertEqual(KeyLadder.decide(tab(option), facts), .cycleTerminals)
+        XCTAssertEqual(KeyLadder.decide(letter("a"), Facts(switcherOpen: true, keys: .console)), .switcherKey)
+    }
+
+    /// No terminal holds the keys, so Return flies as it does from the board.
+    func testReturnFliesFromTheConsoleWhenThereIsSomewhereToFly() {
+        XCTAssertEqual(KeyLadder.decide(enter(), Facts(keys: .console, hasFlyTarget: true)), .flyToSignal)
+    }
+
+    func testEscClimbsTheLadderFromTheConsoleAndIsTypingOnlyPastItsLastRung() {
+        let borrowed = Facts(keys: .console, esc: EscLadder.Facts(cardBorrowed: true))
+        XCTAssertEqual(KeyLadder.decide(esc(), borrowed), .esc(.unborrow))
+        XCTAssertEqual(KeyLadder.decide(esc(), Facts(keys: .console)), .returnKeys)
+    }
+
+    func testKeysAreReturnedFromNowhereElse() {
+        for keys in [KeyLadder.Keys.terminal, .host, .document] {
+            XCTAssertEqual(KeyLadder.decide(letter("a"), Facts(keys: keys)), .passThrough, "\(keys)")
+        }
+    }
+
     /// The web handler compares the key alone, ⌘ included.
     func testCommandEscRunsTheLadder() {
         XCTAssertEqual(KeyLadder.decide(esc(command), Facts(esc: toasts)), .esc(.clearToasts))
