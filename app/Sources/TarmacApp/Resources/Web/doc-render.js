@@ -66,6 +66,22 @@
     webkit.messageHandlers.docLink.postMessage(anchor.getAttribute("href") || "");
   });
 
+  // A press on a link does not select the card, and the app decides that
+  // before the press reaches this page: so it is told when the pointer is on
+  // one.
+  let overLink = false;
+  function pointerIs(onLink) {
+    if (onLink === overLink) return;
+    overLink = onLink;
+    webkit.messageHandlers.docOverLink.postMessage(onLink);
+  }
+  prose.addEventListener("mouseover", function (event) {
+    pointerIs(anchorOf(event) !== null);
+  });
+  root.addEventListener("mouseleave", function () {
+    pointerIs(false);
+  });
+
   window.tarmacDoc = {
     async render(markdown) {
       const render = ++renders;

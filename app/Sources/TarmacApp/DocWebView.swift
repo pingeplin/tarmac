@@ -11,11 +11,16 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
     /// Where a clicked http(s) link goes.
     var openExternal: (URL) -> Void = { NSWorkspace.shared.open($0) }
 
+    /// The pointer is on a link of the doc, as the page last reported it. A
+    /// press is judged before the page sees it, so this is known ahead of one.
+    private(set) var pointerIsOverLink = false
+
     private let path: String
     private let webView: WKWebView
     private let host: ScreenSpaceHost
     private let images = ScriptRequestRelay()
     private let links = ScriptMessageRelay()
+    private let hover = ScriptMessageRelay()
 
     private var pageLoaded = false
     private var loadingPage = false
@@ -46,6 +51,8 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
         images.onRequest = { [weak self] message in self?.imageSources(for: message.body) }
         webView.configuration.userContentController.add(links, contentWorld: CardWebView.world, name: "docLink")
         links.onMessage = { [weak self] message in self?.linkClicked(message) }
+        webView.configuration.userContentController.add(hover, contentWorld: CardWebView.world, name: "docOverLink")
+        hover.onMessage = { [weak self] message in self?.pointerIsOverLink = message.body as? Bool ?? false }
         host.onResize = { [weak self] size in self?.layoutPage(viewport: size) }
         addSubview(host)
         loadPage()
@@ -53,6 +60,7 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
 
     private func loadPage() {
         pageLoaded = false
+        pointerIsOverLink = false
         loadingPage = true
         webView.loadHTMLString(BundledResource.docTemplate.text, baseURL: nil)
     }
