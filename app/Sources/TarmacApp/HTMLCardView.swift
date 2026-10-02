@@ -24,7 +24,7 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
     private let webView: WKWebView
     private let host: ScreenSpaceHost
     private let messages = ScriptMessageRelay()
-    private let shield = CardShieldView()
+    let shield = CardShieldView()
     private let console = CardConsoleView()
 
     private var session = HTMLCardSession()

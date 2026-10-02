@@ -90,7 +90,37 @@ final class DevRoutingTests: XCTestCase {
     // MARK: - S35 focus <term>
 
     func testS35FocusOnATerminalIsThePressOnItsBody() {
-        XCTAssertEqual(route(.focus(card: "t-1")), .focusTerminal(card: "t-1"))
+        XCTAssertEqual(route(.focus(card: "t-1")), .focusTerminal(card: "t-1", takesKeys: true))
+    }
+
+    /// The Tauri driver does not refuse a culled terminal: the press selects
+    /// its card, and the terminal's hidden text area ignores `focus()`, so the
+    /// reply names the card as selected and the keys where they already were.
+    /// A culled card is hidden here too, and the keys stay off it.
+    func testACulledTerminalIsSelectedButDoesNotTakeTheKeys() {
+        let terminal = { (frame: CGRect) in [Card(id: "t-1", kind: .term, frame: frame)] }
+        let onScreen = CGRect(x: -200, y: -150, width: 400, height: 300)
+        let pastTheEdge = CGRect(x: 600, y: 0, width: 400, height: 300)
+        let aViewportAway = CGRect(x: 1_501, y: 0, width: 400, height: 300)
+        let focus = DevRequest.focus(card: "t-1")
+        XCTAssertEqual(route(focus, context(cards: terminal(onScreen))), .focusTerminal(card: "t-1", takesKeys: true))
+        XCTAssertEqual(route(focus, context(cards: terminal(pastTheEdge))), .focusTerminal(card: "t-1", takesKeys: true))
+        XCTAssertEqual(
+            route(focus, context(cards: terminal(aViewportAway))), .focusTerminal(card: "t-1", takesKeys: false)
+        )
+    }
+
+    /// A press on a terminal card's resize handle is a press on the card: the
+    /// app selects it and hands its terminal the keys. On a culled card the
+    /// drag still resizes, and the keys stay where they were.
+    func testAResizeOfACulledCardDoesNotGiveItTheKeys() {
+        let size = CGSize(width: 400, height: 300)
+        let to = CGSize(width: 500, height: 350)
+        let resize = DevRequest.resize(card: "t-1", w: 500, h: 350)
+        let near = [Card(id: "t-1", kind: .term, frame: CGRect(origin: CGPoint(x: 600, y: 0), size: size))]
+        let far = [Card(id: "t-1", kind: .term, frame: CGRect(origin: CGPoint(x: 1_501, y: 0), size: size))]
+        XCTAssertEqual(route(resize, context(cards: near)), .resize(card: "t-1", from: size, to: to, takesKeys: true))
+        XCTAssertEqual(route(resize, context(cards: far)), .resize(card: "t-1", from: size, to: to, takesKeys: false))
     }
 
     // MARK: - S37 type and key
@@ -118,7 +148,7 @@ final class DevRoutingTests: XCTestCase {
     func testS38ResizeDragsTheCardFromItsCurrentSizeToTheRequestedOne() {
         XCTAssertEqual(
             route(.resize(card: "t-1", w: 800, h: 600), docs()),
-            .resize(card: "t-1", from: CGSize(width: 400, height: 300), to: CGSize(width: 800, height: 600))
+            .resize(card: "t-1", from: CGSize(width: 400, height: 300), to: CGSize(width: 800, height: 600), takesKeys: true)
         )
     }
 
@@ -127,7 +157,7 @@ final class DevRoutingTests: XCTestCase {
     /// The Tauri app's internal `term:`/`doc:` prefix is not an alias here: an id
     /// is the term id or the doc's path, or it names no card.
     func testS76ABareIdResolvesAndAPrefixedOneDoesNot() {
-        XCTAssertEqual(route(.focus(card: "t-1")), .focusTerminal(card: "t-1"))
+        XCTAssertEqual(route(.focus(card: "t-1")), .focusTerminal(card: "t-1", takesKeys: true))
         XCTAssertEqual(refusal(.focus(card: "term:t-1"))?.code, .noSuchCard)
         XCTAssertEqual(refusal(.focus(card: "doc:/a/b.md"), docs())?.code, .noSuchCard)
     }
@@ -223,7 +253,7 @@ final class DevRoutingTests: XCTestCase {
     func testS41ADocCardStillResizes() {
         XCTAssertEqual(
             route(.resize(card: "/a/b.md", w: 1, h: 2)),
-            .resize(card: "/a/b.md", from: CGSize(width: 1, height: 1), to: CGSize(width: 1, height: 2))
+            .resize(card: "/a/b.md", from: CGSize(width: 1, height: 1), to: CGSize(width: 1, height: 2), takesKeys: true)
         )
     }
 
@@ -296,13 +326,13 @@ final class DevRoutingTests: XCTestCase {
         XCTAssertEqual(route(.focus(card: "/a/b.md"), docs(markdown: far)), .focusMarkdown(card: "/a/b.md"))
         XCTAssertEqual(
             route(.focus(card: "t-1"), context(cards: [Card(id: "t-1", kind: .term, frame: far)])),
-            .focusTerminal(card: "t-1")
+            .focusTerminal(card: "t-1", takesKeys: false)
         )
         XCTAssertEqual(refusal(.type(card: "/a/c.html", text: "x"), docs(html: far))?.code, .unsupportedCardKind)
         XCTAssertEqual(refusal(.key(card: "/a/c.html", combo: "enter"), docs(html: far))?.code, .unsupportedCardKind)
         XCTAssertEqual(
             route(.resize(card: "/a/c.html", w: 1, h: 1), docs(html: far)),
-            .resize(card: "/a/c.html", from: far.size, to: CGSize(width: 1, height: 1))
+            .resize(card: "/a/c.html", from: far.size, to: CGSize(width: 1, height: 1), takesKeys: false)
         )
     }
 

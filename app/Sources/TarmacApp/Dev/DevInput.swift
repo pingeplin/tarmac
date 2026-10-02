@@ -68,23 +68,29 @@ struct DevInput {
     ///
     /// `.window` is the path a real event takes once it is off the queue: local
     /// event monitors, the window's hit test and first-responder handling, then
-    /// the view. `.target` is for a target the hit test cannot reach — off the
-    /// window, or under another view — and skips only the hit test: the app's
-    /// press handling runs for the target, the target takes first responder if
-    /// a pressed view would, and the target gets the events.
+    /// the view.
+    ///
+    /// `.target` and `.handling` go around `NSApplication.sendEvent`, so of
+    /// what a real press runs they keep only what is restated here: the app's
+    /// press handling for the target, first responder for a target that
+    /// accepts it — what a window does for the view a press lands on — and,
+    /// for `.target`, the target's own mouse handlers. No other event monitor
+    /// sees the press, and the window does not track it.
     func deliver(_ events: [NSEvent], to target: NSView, by delivery: DevPointer.Delivery) {
         for event in events {
             switch (delivery, event.type) {
             case (.window, _):
                 NSApp.sendEvent(event)
-            case (.target, .leftMouseDown):
+            case (_, .leftMouseDown):
                 pressHandling(target)
                 if target.acceptsFirstResponder { window.makeFirstResponder(target) }
-                target.mouseDown(with: event)
+                if delivery == .target { target.mouseDown(with: event) }
             case (.target, .leftMouseDragged):
                 target.mouseDragged(with: event)
             case (.target, _):
                 target.mouseUp(with: event)
+            case (.handling, _):
+                break
             }
         }
     }

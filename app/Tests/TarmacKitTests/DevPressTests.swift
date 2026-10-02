@@ -113,6 +113,7 @@ final class DevPressTests: XCTestCase {
     func testThePressIsStampedItsAgeBeforeNow() {
         XCTAssertEqual(DevPress.pressMs(nowMs: 110_000_000, ageMs: 0), 110_000_000)
         XCTAssertEqual(DevPress.pressMs(nowMs: 110_000_000, ageMs: 2_500), 109_997_500)
+        XCTAssertEqual(DevPress.pressMs(nowMs: 2_501, ageMs: 2_500), 1)
         XCTAssertEqual(DevPress.pressMs(nowMs: 2_500, ageMs: 2_500), 0)
         XCTAssertEqual(DevPress.pressMs(nowMs: 1_000, ageMs: 60_000), 0)
     }

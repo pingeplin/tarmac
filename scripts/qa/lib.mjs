@@ -97,8 +97,36 @@ export function reset(term) {
   // `zoom` settles before it replies and reports the observed zoom, so asserting
   // the reply is both stronger and a subprocess cheaper than re-reading it.
   eq(json(dev("zoom", "1")).zoom, 1, "zoom after reset");
-  dev("focus", "board");
-  dev("focus", term);
+  pointer("focus", "board");
+  pointer("focus", term);
+}
+
+/** A pointer verb (`focus`, `resize`), with how its press was delivered printed
+ *  under the scenario. A press goes through the `window` — hit test, event
+ *  monitors and all — only where its target is on screen with nothing over it;
+ *  off the window or covered it is handed to the `target`, and a doc gets the
+ *  app's press `handling` with no click. All three answer ok with the same
+ *  fields, so without this line a run cannot say which path it exercised. */
+export function pointer(...args) {
+  const r = dev(...args);
+  const how = r.code === 0 ? JSON.parse(r.out).delivery : `refused (${JSON.parse(r.err).error})`;
+  const [verb, card, ...rest] = args;
+  // A card is a term id or an absolute path; its tail is enough to tell them apart.
+  const name = card.includes("/") ? card.slice(card.lastIndexOf("/") + 1) : card.slice(0, 8);
+  console.log(`       ${[verb, name, ...rest].join(" ")} → ${how}`);
+  return r;
+}
+
+/** The zoom at which a resize handle is on screen. At the default viewport the
+ *  boot terminal's bottom-right corner is below the window at zoom 1, and it
+ *  only moves further out as the card grows; at 0.4 the corner of a card up to
+ *  800×600 at the boot position is inside the window and clear of the minimap,
+ *  so the press on it takes the window's path. A resize is in board units, so
+ *  nothing a scenario asserts about one depends on the zoom. */
+export const GRIP_ZOOM = 0.4;
+
+export function showGrip() {
+  eq(json(dev("zoom", String(GRIP_ZOOM))).zoom, GRIP_ZOOM, "zoom that puts the resize handle on screen");
 }
 
 /** Type, and assert the driver dropped nothing — the #162 fact D4 and D5 turn on. */

@@ -16,6 +16,8 @@ public enum DevPointer {
         case window
         /// To the target view, with the app's press handling run for it.
         case target
+        /// The app's press handling for the target, and no click at all.
+        case handling
 
         public init(reachable: Bool) {
             self = reachable ? .window : .target
@@ -47,16 +49,28 @@ public enum DevPointer {
     }
 
     /// How many cells a press keeps clear of the one before it, on each axis. A
-    /// terminal counts a second press on the same cell inside the double-click
-    /// interval as a double click, which selects a word.
+    /// second press inside the double-click interval is a double click, which
+    /// selects a word. Measured, the terminal counts one only at the very same
+    /// point — it sets no repeat distance — so any other point would do today;
+    /// the two cells are margin against it gaining one.
     public static let clearCells: CGFloat = 2
 
-    /// The press on a card's body, or nil when every candidate is on a link.
+    /// The press on a body whose content is the user's — a doc. A click there
+    /// follows a link or presses a button, and the Tauri driver never clicks
+    /// inside a document: it dispatches on the wrapper around it. So the card
+    /// gets the app's press handling and no click, wherever it is on screen.
+    public static func contentPress(in bounds: CGRect) -> Press {
+        Press(point: CGPoint(x: bounds.midX, y: bounds.midY), delivery: .handling)
+    }
+
+    /// The press on a terminal's body, or on any view whose every point is
+    /// safe to click.
     ///
     /// A link is never pressed: a click on one opens it. Among the rest, points
     /// clear of the `last` press come first — they only rank, so a card with
-    /// nowhere else to press is still pressed — and among those a reachable one.
-    public static func press(among candidates: [Candidate], last: CGPoint? = nil, cell: CGSize = .zero) -> Press? {
+    /// nowhere else to press is still pressed — and among those a reachable
+    /// one. With nothing off a link the card gets the press handling alone.
+    public static func press(among candidates: [Candidate], last: CGPoint? = nil, cell: CGSize = .zero) -> Press {
         let offLinks = candidates.filter { !$0.onLink }
         let clear = offLinks.filter { candidate in
             guard let last else { return true }
@@ -64,7 +78,9 @@ public enum DevPointer {
                 || abs(candidate.point.y - last.y) >= clearCells * cell.height
         }
         let pool = clear.isEmpty ? offLinks : clear
-        guard let chosen = pool.first(where: \.reachable) ?? pool.first else { return nil }
+        guard let chosen = pool.first(where: \.reachable) ?? pool.first else {
+            return Press(point: candidates.first?.point ?? .zero, delivery: .handling)
+        }
         return Press(point: chosen.point, delivery: Delivery(reachable: chosen.reachable))
     }
 

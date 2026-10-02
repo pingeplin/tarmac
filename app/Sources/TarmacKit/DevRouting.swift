@@ -66,15 +66,20 @@ public enum DevRouting {
         case zoom(Double)
         /// A press on the empty board, which clears selection and keyboard focus.
         case focusBoard
-        /// A press on the card's body: select, prime, keyboard focus.
-        case focusTerminal(card: String)
+        /// A press on the card's body: select, prime, keyboard focus. A culled
+        /// terminal is selected and nothing more (`takesKeys` false): its view
+        /// is hidden, and the keys stay where they were. The Tauri driver does
+        /// not refuse it either — there the hidden text area ignores `focus()`.
+        case focusTerminal(card: String, takesKeys: Bool)
         /// Select the card and take keyboard focus off any terminal.
         case focusMarkdown(card: String)
         /// Select the card and focus its document, first borrowing it if `borrow`.
         case focusHTML(card: String, borrow: Bool)
         /// Drag the bottom-right handle (`DevResizeGrip`); `from` is the card's
-        /// world size now.
-        case resize(card: String, from: CGSize, to: CGSize)
+        /// world size now. The press on the handle selects the card like any
+        /// press on it, and on a culled card leaves the keys where they were
+        /// (`takesKeys` false), as `focusTerminal` does.
+        case resize(card: String, from: CGSize, to: CGSize, takesKeys: Bool)
         /// Deliver `text` to the terminal (`DevTypePlan`).
         case type(card: String, text: String)
         case key(card: String, combo: String, stroke: DevKeyStroke)
@@ -109,12 +114,17 @@ public enum DevRouting {
             return .focusBoard
         case .focus(let id?):
             return onCard(id, in: context) { card in
-                guard card.kind == .doc else { return .focusTerminal(card: id) }
+                guard card.kind == .doc else {
+                    return .focusTerminal(card: id, takesKeys: isVisible(card, in: context))
+                }
                 return focusDoc(card, in: context)
             }
         case .resize(let id, let w, let h):
             return onCard(id, in: context) { card in
-                .resize(card: id, from: card.frame.size, to: CGSize(width: w, height: h))
+                .resize(
+                    card: id, from: card.frame.size, to: CGSize(width: w, height: h),
+                    takesKeys: isVisible(card, in: context)
+                )
             }
         case .type(let id, let text):
             return onFocusedTerminal(id, in: context) { .type(card: id, text: text) }
@@ -152,8 +162,7 @@ public enum DevRouting {
 
     private static func focusDoc(_ card: Card, in context: Context) -> Route {
         guard DocKind(path: card.id) == .html else { return .focusMarkdown(card: card.id) }
-        guard Cull.isCardVisible(frame: card.frame, zoom: context.zoom, center: context.center, viewSize: context.viewSize)
-        else {
+        guard isVisible(card, in: context) else {
             return refused(
                 .cardHidden,
                 "that HTML card is culled off-screen and its document cannot take focus; "
@@ -162,6 +171,11 @@ public enum DevRouting {
             )
         }
         return .focusHTML(card: card.id, borrow: context.borrowedCard != card.id)
+    }
+
+    /// Not culled: the predicate the board hides cards with.
+    private static func isVisible(_ card: Card, in context: Context) -> Bool {
+        Cull.isCardVisible(frame: card.frame, zoom: context.zoom, center: context.center, viewSize: context.viewSize)
     }
 
     private static func refused(_ code: DevError.Code, _ message: String, card: String) -> Route {
