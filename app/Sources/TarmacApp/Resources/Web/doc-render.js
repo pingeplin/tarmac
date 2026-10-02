@@ -75,18 +75,26 @@
     webkit.messageHandlers.docLink.postMessage(anchor.getAttribute("href") || "");
   });
 
-  // A press on a link does not select the card, and the app decides that
-  // before the press reaches this page: so it is told when the pointer is on
-  // one.
+  // A press on a link does not select the card. The app decides that as it
+  // catches the press, before the press is dispatched: all it has then is the
+  // web view under the pointer, and it cannot ask this page what is there and
+  // wait for the answer. So the page says ahead of any press whether the
+  // pointer is on a link.
   let overLink = false;
   function pointerIs(onLink) {
     if (onLink === overLink) return;
     overLink = onLink;
     webkit.messageHandlers.docOverLink.postMessage(onLink);
   }
-  prose.addEventListener("mouseover", function (event) {
+  function pointerMoved(event) {
     pointerIs(anchorOf(event) !== null);
-  });
+  }
+  // Heard on the whole page: below a short doc the pointer is outside the
+  // prose, and off the link it came from.
+  document.addEventListener("mouseover", pointerMoved);
+  // A re-render puts new elements under a pointer at rest, and nothing says
+  // what they are until it moves.
+  document.addEventListener("mousemove", pointerMoved);
   root.addEventListener("mouseleave", function () {
     pointerIs(false);
   });
