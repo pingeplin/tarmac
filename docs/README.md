@@ -2,7 +2,7 @@
 
 > **Doc status: ACTIVE** — start here.
 
-Tarmac's docs accumulated across two UIs and five closed milestones, so a page's
+Tarmac's docs accumulated across three UIs and five closed milestones, so a page's
 *path* tells you nothing about whether it describes reality. Every doc therefore
 carries a status banner on its first line, and this table is the map.
 
@@ -34,14 +34,13 @@ file the PR deleted. Prose that is merely out of date is out of scope — that
 still needs a human or an agent reading the diff.
 
 The code is enforced by a second workflow, `.github/workflows/test.yml`: the
-`core` and app-backend cargo suites on macOS, the Vitest suite on Linux. A third,
+`core` cargo suite and the app's `swift test`, both on macOS. A third,
 `.github/workflows/dco.yml`, runs `scripts/dco-check.mjs` over the commits a pull
 request adds, requiring the DCO sign-off `CONTRIBUTING.md` asks for.
 
 All three are **gates**, not just reports: the `Protect main` ruleset requires
-`docs-check`, `dco-check`, `core (cargo test)`, `desktop (vitest)`, and
-`app backend (cargo test)` to pass, and requires the branch to be up to date with
-`main` before merging. `main` also refuses force-pushes and deletion, keeps a
+`docs-check`, `dco-check` and both `test.yml` jobs to pass, and requires the
+branch to be up to date with `main` before merging. `main` also refuses force-pushes and deletion, keeps a
 linear history, and takes changes only through a pull request. There are no
 bypass actors — if CI itself is broken, the way through is to relax the ruleset
 in the repo settings, not to push around it.
@@ -77,8 +76,14 @@ links.
 
 ## HISTORICAL
 
-Frozen. Much of it describes the **Swift/AppKit + SwiftTerm** app that was
-replaced by Tauri 2 + React + xterm.js in #27 (2026-06-29).
+Frozen. These pages describe two apps that no longer exist: the first
+**Swift/AppKit + SwiftTerm** app, replaced by **Tauri 2 + React + xterm.js** in
+#27 (2026-06-29), and that Tauri app, replaced by today's native Swift app in
+2026-10 — the change recorded in
+[`designs/2610.0001_native_swift_ui.md`](designs/2610.0001_native_swift_ui.md).
+Today's app is Swift again and shares `app/Sources/` and some file names with
+the first one, so a `.swift` path on a historical page says nothing about the
+present: go by the banner, and by which toolkit the page names.
 
 - [`archive/m0/`](archive/m0), [`archive/m1/`](archive/m1) — earliest visual cribs.
 - [`archive/m3/plan.md`](archive/m3/plan.md) — the "strips = boards" milestone record.

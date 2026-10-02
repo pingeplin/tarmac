@@ -6,8 +6,10 @@
 
 Authoritative contract between `tarmacd` (Rust daemon), the `tarmac` CLI, and the
 macOS app. Both sides implement exactly this; the conformance vectors at the bottom
-are mandatory tests in both codebases. Unknown message *types* received by any party
-are ignored (log and continue), not fatal.
+are mandatory tests in both codecs — Rust
+(`core/crates/tarmac-protocol/src/lib.rs`) and Swift
+(`app/Tests/TarmacKitTests/ConformanceTests.swift`). Unknown message *types*
+received by any party are ignored (log and continue), not fatal.
 
 The *M1 subset* section below is purely additive to M0: new optional keys on
 existing messages and new app→daemon types. The version stays `v:1`; M0 parties
@@ -49,6 +51,11 @@ Implementation note (Rust): serde internally-tagged enums combined with byte fie
 have known pitfalls; encoding via `rmpv::Value` or a hand-rolled codec is fine as
 long as the rules above hold.
 
+Implementation note (Swift): the app's codec is hand-written (`MsgPack` and
+`Message` in `TarmacKit`). Beyond these rules its encoder is pinned to the bytes
+the Rust encoder emits, key order included
+(`app/Tests/TarmacKitTests/RustEncoderParityTests.swift`).
+
 ## Handshake
 
 First frame from any client:
@@ -65,7 +72,7 @@ decodes to nil. Unsupported version or role: `{t:"err", msg:"..."}` then close.
 
 | key | on | missing ⇒ | semantics |
 |---|---|---|---|
-| `app_version` | `hello` | the client named no version | the client's own `CARGO_PKG_VERSION`. Only an `app` sets it; a `cli` client MUST NOT. |
+| `app_version` | `hello` | the client named no version | the app's own version: the `CARGO_PKG_VERSION` of the daemon it ships with, stamped into its bundle. Only an `app` sets it; a `cli` client MUST NOT. |
 | `daemon_version` | `hello_ok` | daemon version-unverified | the daemon's `CARGO_PKG_VERSION`. |
 | `daemon_pid` | `hello_ok` | pid unknown | the daemon's OS pid, so the app can SIGTERM a stale daemon it did not spawn. |
 | `app_version` | `hello_ok` | the app named no version, or no app is connected — `app_connected` disambiguates | the version the currently-connected app reported in its `hello`. |
@@ -80,10 +87,11 @@ The two `hello_ok` app keys are deliberately independent: `{app_connected:true,
 app_version:nil}` is an app that connected without naming a version, which a
 reader MUST NOT render as "no app". `tarmac --version` is the consumer.
 
-The app compares `daemon_version` against its own `CARGO_PKG_VERSION` on every
-connect. On mismatch (or absent key) the app SIGTERMs the stale daemon, waits
-for the socket file to disappear, spawns the newly-installed binary, and
-reconnects; a restart-once guard prevents thrashing on persistent mismatch.
+The app compares `daemon_version` against its own version on every connect. On
+mismatch (or absent key) the app SIGTERMs the stale daemon, waits for the socket
+file to disappear, spawns the newly-installed binary, and reconnects; a
+restart-once guard prevents thrashing on persistent mismatch. An app that knows
+no version of its own names none and restarts nothing.
 
 ## CLI session (short-lived)
 
@@ -163,7 +171,7 @@ decoders apply the defaults below, so every M0 frame still decodes.
 | `via` | `"cli"`\|`"user"` (required) | — | most recent opener |
 | `repo` | string \| nil | nil | repo display name = basename of `repo_root`; nil when the doc is not inside a git repo (the app then falls back to the parent directory's basename, exactly as in M0) |
 | `repo_root` | string \| nil | nil | absolute path of the enclosing git repo root; the grouping identity — two distinct repos both named `api` group separately |
-| `repo_color` | uint 0–3 \| nil | nil | daemon-computed palette index (algorithm below); nil iff `repo` is nil (the app hashes its fallback name locally with the same algorithm) |
+| `repo_color` | uint 0–3 \| nil | nil | daemon-computed palette index (algorithm below); nil iff `repo` is nil (the app then shows no repo dot) |
 | `read` | bool | true | false ⇔ unread (a cli open clears it; `doc_read` sets it). Not an optional: M1 encoders always write true/false, never nil; a missing key means true so entries from M0-era daemons never render an unread dot |
 | `last_changed_ms` | uint \| nil | nil | unchanged from M0: mtime_ms of the last observed file change |
 | `last_opened_ms` | uint \| nil | nil | wall-clock ms-epoch of the most recent open (cli or user); M1 daemons always send it (registration is an open) |
@@ -178,9 +186,9 @@ FNV-1a 64-bit over the UTF-8 bytes of `repo`, then mod 4:
         hash = (hash XOR b) * 0x100000001b3         # wrapping 64-bit multiply
     repo_color = hash mod 4                         # 0=repo-a 1=repo-b 2=repo-c 3=repo-d
 
-This matches the app's existing `Theme.repoColor(for:)` byte-for-byte; colors users
-saw in M0 peek headers must not change. (Reference values: `payments-api`→3,
-`search-svc`→2, `infra`→1.)
+The app hashes nothing: it maps this index onto its four-colour palette, so the
+algorithm must not change — colors users already saw would move. (Reference
+values: `payments-api`→3, `search-svc`→2, `infra`→1.)
 
 ### Tile
 
@@ -221,8 +229,8 @@ open arrives as `via:"cli", read:false` with a fresh `last_opened_ms`).
 
     {t:"doc_read", path}
 
-Sets the doc's `read := true`. Idempotent — the app may send it on every peek
-presentation. A path not in the registry is ignored.
+Sets the doc's `read := true`. Idempotent — a sender may repeat it freely. A path
+not in the registry is ignored.
 
     {t:"layout", dock:[<path>, ...], tiles:[<tile>, ...]}
 
@@ -477,11 +485,13 @@ all existing vectors decode unchanged.
     {t:"scrollback_request", term_id}               — app → daemon
     {t:"scrollback", term_id, bytes}                — daemon → app
 
-Re-send one terminal's scrollback ring now, so a card whose xterm was remounted
-from scratch — a webview reload, a first board visit, a fresh spawn — gets its
-history back. The connect-time replay (`restore` + `output` frames) cannot cover
-this: it fires at most once per board per **connection**, and a webview reload
-does not drop the socket.
+Re-send one terminal's scrollback ring now, so a terminal card built from
+scratch — a first board visit, a fresh spawn — gets its history as one frame,
+and a card that survived a reconnect can replace the history it already shows
+instead of having it appended a second time. The connect-time replay (`restore`
++ `output` frames) cannot cover this: it fires at most once per board per
+**connection**, and it arrives as a stream the card cannot tell from live
+output.
 
 The daemon snapshots that one term's ring and replies with **exactly one**
 `scrollback` frame on the requesting connection. It **always** replies, even when

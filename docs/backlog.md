@@ -2,14 +2,15 @@
 
 > **Doc status: ACTIVE — but everything below is UNBUILT.** This is the audited
 > list of things Tarmac does *not* do. Nothing in §1 exists in the code; §2 is
-> explicitly out of scope; §3 records surfaces that were replaced so they don't
-> get re-filed as bugs. For what Tarmac *does*, see
+> explicitly out of scope; §3 and §4 record surfaces that were replaced or
+> removed so they don't get re-filed as bugs; §5 lists known shortfalls of the
+> app as built. For what Tarmac *does*, see
 > [`architecture.md`](architecture.md). Docs index: [`README.md`](README.md).
 
-M0–M3 + the v4 whiteboard migration closed on 2026-06-15; the UI was then rebuilt
-on Tauri 2 + React + xterm.js (#27). The core experience (terminal-first cockpit,
-`tarmac open` docs, honest signals, infinite board with gravity/provenance,
-wayfinding, terminal primacy, multiple boards with ⌘K) is shipped.
+M0–M3 + the v4 whiteboard migration closed on 2026-06-15. The core experience
+(terminal-first cockpit, `tarmac open` docs, honest signals, infinite board with
+gravity/provenance, wayfinding, terminal primacy, multiple boards with ⌘K) is
+shipped.
 
 This file tracks what the **original v3 design handoff** (the v3 README — now in
 git history; the `design_handoff_tarmac/` bundle was removed once its content was
@@ -17,10 +18,8 @@ absorbed into `docs/`) specified that is **not yet built** — separated from th
 parts the v4 migration deliberately replaced. "README §…" below cites a section
 of that v3 handoff README.
 
-**Re-verified against the Tauri app on 2026-08-04.** The original 2026-06-15 pass
-cited Swift files (`app/Sources/`, `TitleBarChip.swift`, `DocTemplate.html`,
-SwiftTerm bridges); none of those exist any more, so every "State:" line below was
-re-checked against `desktop/src/` and `core/`. Each gap is still a gap.
+**Re-verified against the native app on 2026-10-02.** Every "State:" line below
+was re-checked against `app/` and `core/`. Each gap is still a gap.
 
 Two larger pending items are tracked in more detail elsewhere, not fully
 duplicated here:
@@ -32,7 +31,7 @@ duplicated here:
   nice-to-have after wayfinding (`docs/archive/v4/migration-plan.md` §Deferred).
   Geometry: `.tm-zonelab` = `font 600 10px mono`, `letter-spacing 0.18em`,
   `color --tm-faint`, `opacity 0.75`, `pointer-events: none`; `13px` in low-zoom.
-  (The class is named only in the archived cribs — it is not in `desktop/src/`.)
+  (The class is named only in the archived cribs — nothing in the app draws it.)
 
 ---
 
@@ -48,12 +47,13 @@ are confirmed absent in the code. Roughly ordered by value.
   idle 4 min` + `⌫ go back`. Never steals focus while typing.
 - **Source:** README §Interactions "Focus-stealing policy"; the
   "Implementation decisions" verb list (`open · focus · attach`).
-- **State:** CLI has **only** `open` (`core/crates/tarmac-cli/src/main.rs`); no
-  `Focus` message in the protocol (`core/crates/tarmac-protocol/src/lib.rs`); no
-  idle timer or banner in the app.
-- **Scope:** protocol `Focus{path}` + daemon route + app idle-timer + banner UI +
-  `⌫` go-back. Note the no-harness rule: focus is *requested* by any caller, never
-  agent-arbitrated.
+- **State:** the CLI's daemon verbs are `open` and `--version`
+  (`core/crates/tarmac-cli/src/main.rs`); there is no `Focus` variant in `Msg`
+  (`core/crates/tarmac-protocol/src/lib.rs` — the `focus` there is the QA
+  driver's `DevRequest`, an unrelated verb); no idle timer or banner in the app.
+- **Scope:** protocol `Focus{path}` in both codecs + daemon route + app
+  idle-timer + banner UI + `⌫` go-back. Note the no-harness rule: focus is
+  *requested* by any caller, never agent-arbitrated.
 
 ### 1.2 · Session restore card / overlay
 - **What:** on relaunch, the desk renders dimmed (35%) under a veil with a centered
@@ -66,9 +66,9 @@ are confirmed absent in the code. Roughly ordered by value.
   history intact` · `→ agent was waiting on you · since 13:47`; footer "any key to
   continue".
 - **Source:** README §Screens 8 "Session restore".
-- **State:** the app restores layout/viewport **silently** — no restore overlay
-  exists (2026-08-04: no "any key to continue" anywhere in `desktop/src/`; the
-  only restore machinery is `App.applyRestore` + `board/model.ts:didRestore`).
+- **State:** the app restores layout/viewport **silently** — `applyRestore` in
+  `app/Sources/TarmacApp/AppController+Layout.swift` builds the board and shows
+  no overlay.
 - **Scope:** a board-arrive overlay view + the restore-facts model. The detached
   empty-state depends on tmux/attach (see §2), so ship the attached-only card first.
 
@@ -77,25 +77,24 @@ are confirmed absent in the code. Roughly ordered by value.
   (cyan, dashed underline; hover = solid + tint; ⌘click → peek). Pure regex,
   iTerm-style semantic links.
 - **Source:** README §Screens 1 "Doc links in output".
-- **State:** only xterm.js's `WebLinksAddon` is wired
-  (`cards/TerminalCard.tsx` → `openExternal(uri)`), which matches **URLs** and
-  opens them in the OS browser; there is **no** match-against-open-docs path
-  linkifier.
-- **Scope:** a custom xterm.js link provider (`registerLinkProvider`) that matches
-  known doc paths against the app's `docStore` and routes ⌘click to the doc card.
-  Note the ⌘click destination in the v3 spec was *peek*, which was deliberately
-  dropped (§4) — target the existing card instead.
+- **State:** a terminal card links OSC 8 hyperlinks and spelled-out `http(s)`
+  URLs only (`app/Sources/TarmacTerm/TerminalLinks.swift`), and the host opens
+  only `http(s)` targets in the OS browser; there is **no**
+  match-against-open-docs path linkifier.
+- **Scope:** a second matcher beside `TerminalLinks` for known doc paths, fed
+  the board's `DocStore`, with the host's `onOpenLink` routing a hit to the doc
+  card. Note the ⌘click destination in the v3 spec was *peek*, which was
+  deliberately dropped (§4) — target the existing card instead.
 
 ### 1.4 · Status-bar right-aligned process chip
 - **What:** the chrome shows a right-aligned process chip (the active terminal's
   foreground process), alongside the left session chip.
 - **Source:** README §Screens 1 "Titlebar".
-- **State:** the Tauri app has no titlebar — the equivalent surface is the 27px
-  `ui/StatusBar.tsx`, whose right slot holds only the card count. `TitleBarChip`
-  was dropped as dead code in the UI-kit export
-  ([`designs/2607.0001_…`](designs/2607.0001_tarmac_ui_kit_design_sync_export.md)).
+- **State:** the equivalent surface is the 27-point status bar
+  (`app/Sources/TarmacApp/StatusBar.swift`), whose right slot holds only the
+  card count.
 - **Scope:** small — a right-slot chip in `StatusBar` fed by the prime terminal's
-  `TermProc`. The card-header process name already carries this signal, so this is
+  `TermProc`. The card-header label already carries this signal, so this is
   duplicate-surface polish; low priority.
 
 ### 1.5 · Doc-rewrite "your place kept" pill + changed-section highlight
@@ -103,11 +102,9 @@ are confirmed absent in the code. Roughly ordered by value.
   sections (2px cyan left border + gradient fade), and show a bottom pill
   `✎ rewritten · your place kept · changes above`.
 - **Source:** README §Interactions "Never move the user's scroll position".
-- **State:** scroll-preserve **is** done (`cards/DocCard.tsx` saves a
+- **State:** scroll-preserve **is** done (the doc page keeps a
   `scrollTop / scrollHeight` fraction and re-applies it after each re-render).
-  The `.tm-changed` class no longer exists anywhere in `desktop/src/theme/` — it
-  died with the Swift `DocTemplate.html`, so the changed-section highlight is now
-  a from-scratch build, not a wiring-up. No rewrite pill.
+  There is no changed-section highlight and no rewrite pill.
 - **Scope:** needs a diff between old/new markdown to mark changed sections — this
   is really part of the **v4c write-honesty model**. Defer to v4c rather than build
   standalone.
@@ -118,7 +115,8 @@ are confirmed absent in the code. Roughly ordered by value.
 - **Source:** README §Screens 5 (note); v4 migration-plan calls it "designed but
   unbuilt".
 - **State:** free move + full edge/corner resize ship; edge-split was never built
-  (noted optional in both plans). No `split` code in `desktop/src/board/`.
+  (noted optional in both plans). Nothing in `app/Sources/TarmacApp/` places a
+  card by a split.
 - **Scope:** drop-zone hit-testing + preview + placement. Lowest priority — the
   infinite board's free placement largely covers the need.
 
@@ -136,9 +134,11 @@ Tracked for completeness; these were explicit decisions, not omissions.
   3; manual naming (⌘E) ships first. Unresolved cross-repo collision questions.
 - **Daemon-restart PTY re-parenting** (true restart survival) — M3 decision 2;
   cold layout-only restore ships, reconnect-survival covers the common case.
-- **libghostty renderer upgrade** — moot as written: the fed-surface is now
-  **xterm.js with a WebGL renderer** (`kit/termRenderer.ts`), not SwiftTerm.
-  A native renderer swap would be a fresh decision, not this one.
+- **The full libghostty surface** (GhosttyKit: Ghostty's Metal renderer and its
+  input handling) — terminal cards take libghostty-vt for emulation only and
+  draw with CoreText, because the board has to scale, clip and composite a
+  terminal card like any other view and decide key routing itself
+  ([`designs/2610.0001_native_swift_ui.md`](designs/2610.0001_native_swift_ui.md)).
 
 ---
 
@@ -153,23 +153,59 @@ done-differently, not missing:
 - terminal tabs + horizontal splits → **multiple terminal cards** (⌘T)
 - strips = tmux sessions → **boards**
 
-## 4 · Removed after the Tauri rebuild (gone on purpose — do not re-file)
+## 4 · Removed on purpose (gone — do not re-file)
 
 These shipped once, are described in older docs, and were deliberately deleted.
 An agent finding them referenced in `docs/archive/` is reading history:
 
-- **The shelf** — parked/unplaced doc chips. Removed with the Tauri rebuild;
-  `⌘W` on a doc card now removes the card outright rather than parking it.
-  Residue: `Tile.shelf` survives on the wire as a **legacy field only** —
-  `kit/layoutTiles.ts` drops incoming `shelf:true` tiles and never emits them.
-- **The terminal dock pane** (dock/undock reparenting, `DockPane`, `DockContext`,
-  `dockedTermId`) — removed in #74.
-- **`TitleBarChip`** — dropped as dead code during the UI-kit export (#52).
-- **Peek (`⌘P`)** — the transient read-without-focus overlay. Deliberately not
-  carried into the Tauri UI: doc cards on an infinite board already give you the
-  content without moving focus, so the overlay was a second surface for the same
-  job. Residue: `Msg::DocRead` and its daemon route survive on the wire with **no
-  caller** in the app (`ipc/daemon.ts:docRead()` is unused), so the daemon's
-  per-doc `read` flag is never set by the Tauri UI. Either wire `docRead` into the
-  existing open/`ESC` path or retire the flag — but do not re-file peek itself as
-  a missing feature.
+- **The shelf** — parked/unplaced doc chips. `⌘W` on a doc card now removes the
+  card outright rather than parking it. Residue: `Tile.shelf` survives on the
+  wire as a **legacy field only** — `LayoutTiles`
+  (`app/Sources/TarmacKit/LayoutTiles.swift`) drops incoming `shelf:true` tiles
+  and never emits the key.
+- **The terminal dock pane** (dock/undock reparenting) — removed in #74.
+- **`TitleBarChip`** — dropped (#52); the window title carries the board name.
+- **Peek (`⌘P`)** — the transient read-without-focus overlay. Doc cards on an
+  infinite board already give you the content without moving focus, so the
+  overlay was a second surface for the same job. Residue: `Msg::DocRead` and its
+  daemon route survive on the wire with **no caller** in the app
+  (`DaemonClient.docRead` is never called), so the daemon's per-doc `read` flag
+  is never set. Either wire `docRead` into the existing open/`ESC` path or
+  retire the flag — but do not re-file peek itself as a missing feature.
+- **The design-sync UI-kit export** (`make kit`) — it bundled the web
+  frontend's components and went with them.
+
+## 5 · Open after the native rebuild
+
+Known shortfalls of the native app, each with the file a fix would start in.
+Verified against the code on 2026-10-02.
+
+- **OSC 52 clipboard writes are ignored.** `TerminalView.onClipboardWrite` is
+  left unset on purpose — a program may not overwrite the user's clipboard — so
+  there is no opt-in either. `app/Sources/TarmacApp/AppController+Terminals.swift`.
+- **Grapheme clustering (mode 2027) is not enabled by the app.** A program gets
+  it only by setting the mode itself. `app/Sources/TarmacTerm/TerminalEngine.swift`.
+- **Scrollback is fixed at 5000 lines**, the `scrollbackLines` default; there is
+  no setting. `app/Sources/TarmacTerm/TerminalView.swift`.
+- **A fresh board's default viewport cuts off the first terminal.**
+  `Viewport.default` centres the world origin, which at the default window size
+  leaves the lower part of the boot terminal below the board.
+  `app/Sources/TarmacApp/BoardModel.swift`.
+- **A focused terminal that gets culled loses the keys.** AppKit hands the
+  keyboard to the window, the board swallows the keys, and typing is dropped
+  until a click. `app/Sources/TarmacApp/AppController+Keys.swift`.
+- **Reconnect loses terminal modes older than the ring.** A surviving terminal's
+  history is replaced — reset, then replay — from the daemon's 256 KiB
+  scrollback ring, so a mode a program set before the ring's first byte is gone.
+  `showOutput` in `app/Sources/TarmacApp/AppController+Terminals.swift`.
+- **A terminal that dies inside the scrollback wait keeps a blank dead card.**
+  The output held for it is dropped when the daemon answers with an empty ring.
+  `app/Sources/TarmacKit/ScrollbackGate.swift`.
+- **A zoom step costs more with every visible card.** Chrome is laid out at
+  zoomed metrics, so each step re-lays out the header of every card on screen.
+  `project` in `app/Sources/TarmacApp/CardView.swift`.
+- **A press on a terminal card's header gives that terminal the keyboard.**
+  Prime and focus move together; a header press cannot make a terminal prime
+  without focusing it. `select` in `app/Sources/TarmacApp/AppController+Focus.swift`.
+- **`NOTICE` has no licence notices for what the bundle ships**: the fonts (OFL)
+  and `marked` (MIT). `NOTICE`.

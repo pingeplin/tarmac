@@ -9,53 +9,72 @@ A dev build and an installed Tarmac **coexist on purpose**. Everything below
 exists so a dev build can be driven and inspected without ever reaching the app
 the user actually works in.
 
-## The one rule that matters
+## The two rules that matter
 
 **Never `pkill tarmacd`, `pkill tarmac-app`, or `killall` anything by name.**
-Both builds share the process name `tarmac-app` and the bundle id
-`com.tarmac.desktop`, so a name-based kill takes down the user's real app and
-every terminal its daemon owns.
+Every daemon is called `tarmacd`, and a `make bundle` build has the installed
+app's executable name (`tarmac-app`) and bundle id (`com.tarmac.desktop`), so a
+name-based kill takes down the user's real app and every terminal its daemon
+owns.
 
 - Stop the dev **daemon**: `make kill-daemon` — it resolves the pid with `lsof`
   on *this worktree's* socket and cannot touch anything else.
-- Stop the dev **app**: kill the pid from `ps -eo pid,command | grep
-  "[t]arget/debug/tarmac-app"`, or stop the task running `make run`.
-- Addressing a window with a GUI tool: **always by pid**, never by name.
+- Stop the dev **app**: stop the task running `make run` (the app is its
+  foreground process), or kill the pid that owns this worktree's driver socket:
+  `lsof -t "$PWD/.dev/tarmac-dev.sock"` (the path must be absolute).
+- Addressing a window with a GUI tool: **always by pid**, never by name. The
+  `make run` binary is an unbundled `TarmacApp` with no bundle id at all; its
+  window title ends in ` · <worktree>`.
+
+**Never launch `dist/Tarmac.app`, or a release build of the app, without
+`TARMAC_SOCKET` and `TARMAC_STATE` pinned.** A release build resolves the
+*installed* channel: it attaches to the user's real daemon and, if its version
+differs, SIGTERMs and replaces it — every terminal the user has open dies with
+it. `make run` is the only launch that pins them for you.
 
 ## Bringing it up
 
 ```sh
-make run          # Tauri dev app + Vite HMR; needs `make sidecars` first in a fresh worktree
+make run          # builds core + the Swift package, then runs the debug app in the foreground
 ```
 
-`make run` pins three paths under `$(ROOT)/.dev/`, which is what makes a dev
-build harmless:
+In a fresh worktree the first build downloads the pinned libghostty-vt
+XCFramework into the gitignored `app/Vendor/` (`make ghostty-vt`); nothing else
+needs staging.
 
-| env | what it isolates |
+`make run` sets these, which is what makes a dev build harmless:
+
+| env | what it does |
 | --- | --- |
-| `TARMAC_SOCKET` | the daemon socket — a dev app never joins the installed daemon |
-| `TARMAC_STATE` | `state.json` — boards and layout, never the user's |
-| `TARMAC_DEV_SOCKET` | the QA driver's socket (issue #166) |
+| `TARMAC_SOCKET` | the daemon socket, under `.dev/` — a dev app never joins the installed daemon |
+| `TARMAC_STATE` | `state.json`, under `.dev/` — boards and layout, never the user's |
+| `TARMAC_DEV_SOCKET` | the QA driver's socket, under `.dev/` (issue #166) |
+| `TARMAC_DAEMON` | `core/target/debug/tarmacd`: the daemon binary the app auto-spawns (the daemon itself never reads it) |
+| `TARMAC_APP_VERSION` | the version in `core/Cargo.toml` — an unbundled binary has no `Info.plist`, and the app must name the daemon's own version or it would replace that daemon as stale |
+| `TARMAC_DEV_LABEL` | the worktree name, shown as the window-title suffix — the only way to tell two dev windows apart |
+| `PATH` | prefixed with `core/target/debug`, so `tarmac open` inside the app's own terminals resolves the freshly built CLI |
 
-Three more things `make run` does: it sets `TARMAC_DAEMON=core/target/debug/tarmacd`,
-which tells the Tauri backend which daemon binary to auto-spawn (the daemon itself
-never reads it); it prefixes `PATH` with
-`core/target/debug`, so `tarmac open` inside the app's own terminals resolves the
-freshly built CLI; and it suffixes the window title with the worktree name, which
-is the only way to tell two dev windows apart.
+The app's stderr is the `make run` output. The daemon's is `.dev/tarmacd.log`,
+truncated each time the app spawns one.
 
-**A fresh worktree needs `make sidecars` and `cd desktop && npm ci` before
-anything builds.** `make run` depends on `sidecars`; `make app` and `make test`
-do not, and fail with a missing-resource-path error until you run it.
+**There is no hot reload.** After a change, stop the app and `make run` again.
+The daemon is detached and survives; the new app reconnects and re-binds the
+terminals it finds alive.
 
-**Editing `desktop/src-tauri` while `make run` is live relaunches the app.** The
-daemon survives and the new window reconnects. Expect it mid-hand-test; `desktop/src`
-is HMR only and does not relaunch.
+**A rebuilt daemon is not picked up while the old one is alive.** The app
+replaces a daemon only when its *version string* differs, and a rebuild keeps
+the version. After changing anything under `core/crates/tarmacd`:
+`make kill-daemon`, then `make run`.
+
+**A screenshot without a GUI tool** (debug builds): `TARMAC_DEV_SHOT=<path.png>`
+writes the window's content view to that file `TARMAC_DEV_SHOT_AFTER` seconds
+after launch (default 4); `TARMAC_DEV_SHOT_QUIT=1` then quits.
 
 ## Driving it — `tarmac dev`
 
-Debug builds only. A release binary exits 1 with `driver unavailable in release
-builds` and does not document the family at all.
+Debug builds only. A release CLI exits 1 with `driver unavailable in release
+builds` and does not document the family at all; a release app binds no driver
+socket.
 
 ```sh
 tarmac dev snapshot [--until <expr>] [--timeout <ms>]
@@ -75,31 +94,62 @@ core/target/debug/tarmac dev snapshot | jq .
 ```
 
 - `<card>` is a terminal's **term id** or a doc's **absolute path** — the bare
-  wire ids, not the app-internal `term:`/`doc:` form.
+  wire ids.
 - `snapshot` prints the active board's live state: viewport, every card's
-  `board_rect` and measured `screen_rect`, `focused_card`, `active_element`,
-  per-terminal `cols`/`rows`/`proc`/`selection`/`scrollback_tail`, per-doc-card
-  `borrowed` (the HTML card whose shield is lifted), and `quit_guard` — the ⌘Q
-  guard's hold on the native Quit item (`retargeted`, `enabled`, which `make
-  qa`'s D11 asserts) plus what it last did: `phase` (`idle` | `showing` |
-  `confirming`), `notice` (`visible`, `alpha`; alpha reads 0 while not visible)
-  and `last_press` (`press_ms`, `route` of `guard` | `terminate`, `age_ms`, or
-  `null` before the first keyboard press).
+  `board_rect` and measured `screen_rect`, `focused_card` (the *selected* card),
+  `active_element` (keyboard focus), per-terminal
+  `cols`/`rows`/`proc`/`selection`/`scrollback_tail`, per-doc-card `borrowed`
+  (the HTML card whose shield is lifted), and `quit_guard` — the ⌘Q guard's hold
+  on the Quit item (`retargeted`, `enabled`, which `make qa`'s D11 asserts) plus
+  what it last did: `phase` (`idle` | `showing` | `confirming`), `notice`
+  (`visible`, `alpha`; alpha reads 0 while not visible) and `last_press`
+  (`press_ms`, `route` of `guard` | `terminate`, `age_ms`, or `null` before the
+  first keyboard press).
+- **`active_element` speaks DOM.** The scenario suite predates the native app,
+  so keyboard focus is reported in the vocabulary it reads: a focused terminal
+  is `tag: "TEXTAREA"`, `classes: ["xterm-helper-textarea"]`, `selection_type`
+  `Caret` (or `Range` when the terminal has a selection); a borrowed HTML
+  document is `IFRAME` / `html-frame`; anything else — the board, a markdown
+  card — is `BODY`. `active_element.card` is the card holding the keys.
 - Every other verb prints a small JSON object describing **what it observed**,
   not what you asked for — `zoom 99` answers `{"zoom": 3}` because the board
   clamps.
+- **Replies say how the input got in.** A verb that injects input adds
+  `activated` (the app had to be brought forward to take it) and, for a pointer
+  press, `delivery`: `window` when the press went through the application's
+  event path, hit test included, or `target` when the point was off the window
+  or under another view and the press was handed to the target view after the
+  app's own press handling. A `target` delivery is still a pass; it tells you
+  the hit test was not exercised.
+- **The app logs each verb.** Its stderr (the `make run` output) gets one line
+  per request, `tarmac: dev <request> -> <reply>` — `snapshot` excepted. The
+  scenario suite drops most of a reply; the log is where to read `delivery`
+  after a run.
 - A failure prints JSON on **stderr** and exits 1: `no_such_card`,
   `not_focused`, `unsupported_card_kind`, `card_hidden`, `unsupported_combo`,
-  `bad_combo`, `empty_buffer`, `unsupported_verb`, `bad_expr`, `timeout`,
-  `not_retargeted`, `not_key`, `app_not_ready`, `app_unresponsive`. CLI-side
-  failures (no app, a too-long socket path) stay one-line plain text.
+  `bad_combo`, `empty_buffer`, `unsupported_verb`, `bad_expr`, `bad_request`,
+  `timeout`, `not_retargeted`, `not_key`, `app_not_ready`, `app_unresponsive`,
+  `driver_threw`. CLI-side failures (no app, a too-long socket path) stay
+  one-line plain text.
+
+### Input verbs take the app forward
+
+`focus`, `resize`, `key` and `press` — and `type` when it has to press a key —
+first make the dev window key, calling `NSApp.activate(ignoringOtherApps:)` if
+it is not. That **steals focus** from whatever you were using, and the reply
+says `activated: true`. So **do not type in other apps while a run is in
+progress** — those keys land in the dev app's focused terminal. If activation is
+refused (a **locked screen** refuses every activation call) the verb answers
+`not_key` after 1 s and nothing is injected: the suites need an unlocked
+session. `snapshot` and `zoom` never activate.
 
 ### Typing and keying
 
 `type` and `key` require the card to **already** hold keyboard focus — they
 answer `not_focused` rather than establishing it, so a passing verb proves focus
-was right. `focus board` then `focus <term>` is the clean reset: per #162,
-`focus()` on an already-focused textarea does not restore the caret.
+was right. `focus <term>` establishes it (a press on the terminal's body:
+select, prime, keyboard); the suite's `reset` runs `zoom 1`, `focus board`,
+`focus <term>` so every scenario starts from the same state.
 
 ```sh
 tarmac dev focus board && tarmac dev focus t-1
@@ -107,54 +157,62 @@ tarmac dev type t-1 'printf hello\n'
 tarmac dev key t-1 ctrl+c
 ```
 
-- `type` sends printables through the editing path a real keystroke takes, and
-  control characters as key events: LF/CR → Enter, TAB → Tab, ESC/DEL → Escape
-  and Backspace, and `\x01`–`\x1a` → their ctrl chords, so `\x03` is ctrl+c.
-  (`\x00` and `\x1c`–`\x1f` have no spelling in the combo grammar and take the
-  editing path.) Its reply counts what landed:
-  `{"chars": 6, "inserted": 6, "dropped": [], "mode": "insert"}`. A non-empty
-  `dropped` is the #162 failure mode.
+- `type` commits printables one code point at a time through the terminal's
+  text-input path (`insertText`, where an input method's commit lands), and
+  sends control characters as key events: LF/CR → Enter, TAB → Tab, ESC/DEL →
+  Escape and Backspace, and `\x01`–`\x1a` → their ctrl chords, so `\x03` is
+  ctrl+c. (`\x00` and `\x1c`–`\x1f` have no spelling in the combo grammar and
+  take the insert path.) Its reply counts what landed:
+  `{"chars": 6, "inserted": 6, "dropped": [], "mode": "insert"}`. A character is
+  `dropped` when its insertion left no bytes for the PTY.
 - `key` takes a closed set: `enter`, `tab`, `escape`, `backspace`, the four
   arrows, a lowercase letter or digit **as the base of a ctrl/alt chord**, or
   `contextmenu`. Lowercase only. A bare printable is refused with
-  `unsupported_combo` — use `type`. So are ⌘ chords: they need WebKit's native
-  Edit menu, which a dispatched event never reaches.
-- Two combos move things: `alt+tab` cycles the prime terminal and **takes focus
-  away**, so every later verb in the scenario fails `not_focused`; `contextmenu`
-  right-clicks the last written cell and leaves xterm's helper textarea parked
-  under the cursor (which is what makes the selection real).
-- **Kitty flag 8 is a trap.** A program that pushes it (`ESC[>8u`) puts `type` on
-  the key path — the reply reads `"mode": "key"` — and while it is set, `key
-  ctrl+c` **cannot interrupt a program that does not speak kitty**: xterm encodes
-  it as an escape code instead of a raw `0x03`, so no SIGINT is raised. `ctrl+d`
-  likewise. The flags survive an app reload too, because the daemon replays the
-  scrollback that set them. If a program leaves them set there is no in-band
-  recovery; pop them from the program side against that terminal's tty:
+  `unsupported_combo` — use `type`. So are ⌘ chords: they are menu key
+  equivalents, and `press` is the verb that posts one.
+- A `key` goes through the app's key ladder like a real one: `key <t> escape`
+  climbs the ESC ladder, and `alt+tab` cycles the prime terminal and **takes
+  focus away**, so every later verb on the old card fails `not_focused`.
+- `contextmenu` right-clicks the last written cell of the viewport, which
+  selects the word under it (`selection_type` reads `Range`); no menu is popped.
+  It answers `empty_buffer` when the viewport holds no text, and also when the
+  program tracks the mouse and would take the right button as a report.
+- **Kitty flag 8 is a trap.** A program that pushes it (`ESC[>8u`) puts `type`
+  on the key path — the reply reads `"mode": "key"`, and a character no US key
+  types is dropped — and while it is set, `key ctrl+c` **cannot interrupt a
+  program that does not speak kitty**: the terminal encodes it as an escape code
+  instead of a raw `0x03`, so no SIGINT is raised. `ctrl+d` likewise. The flags
+  survive an app relaunch too, because the daemon replays the scrollback that
+  set them. If a program leaves them set there is no in-band recovery; pop them
+  from the program side against that terminal's tty:
   `printf '\033[>0u' > /dev/ttysNNN`.
-- `resize` drags the bottom-right grip in board units and reports where the card
-  landed, clamped to the 160×90 minimum:
+- `resize` drags the bottom-right handle in board units and reports where the
+  card landed, clamped to the 160×90 minimum:
   `{"from": {...}, "to": {"w": 800, "h": 600}, "delta_px": {...}}`.
-- `focus <doc card>` works too (#183), with DOM dispatch as for terminals: a
-  markdown card is selected and focus drops to the page body
-  (`active_element.tag` reads `BODY`); an HTML card is selected, **borrowed**
-  (its shield lifted, `cards[].borrowed` true) and its iframe focused
-  (`IFRAME`). Two things to know:
-  - a culled HTML card is refused with `card_hidden` — a `visibility: hidden`
-    iframe silently ignores `.focus()`. `zoom` out, or pan by hand; no verb pans;
+- `focus <doc card>` works too (#183): a markdown card is selected and the keys
+  drop to the board (`active_element.tag` reads `BODY`); an HTML card is
+  selected, **borrowed** (a double-click: its shield lifted, `cards[].borrowed`
+  true) and its document focused (`IFRAME`). Two things to know:
+  - a **culled** HTML card is refused with `card_hidden` — its web view is
+    hidden and cannot take focus. `zoom` out, or pan by hand; no verb pans;
   - a borrowed card **stays borrowed** after focus moves away, and the next Esc
     that no toast or fly-back claims is spent un-borrowing it (it never reaches
     the terminal). Send `key <term> escape` while `borrowed` reads true to undo
     it, as D18 does.
   `type` and `key` still refuse doc cards (`unsupported_card_kind`).
+- A `focus <term>` press never lands on a link (a click would open it) and
+  keeps two cells clear of the previous press (a second press on one cell
+  inside the double-click interval selects a word).
 
 ### Pressing a native ⌘ chord — `press`
 
-`press` (#183) is the one verb that reaches AppKit: it posts a constructed
-keyDown **in-process** to the main window, so the chord takes the same path a
-real one does (page first, then the menu). It is what `make qa` uses to drive
-the ⌘Q guard, and it presses any ⌘ chord: `cmd+q`, `cmd+shift+z`, `alt+cmd+q`,
-`cmd+1`. `cmd` plus any of `shift`, `alt`, `ctrl`, then one lowercase letter or
-digit; no named keys (⌘⌫, ⌘Enter) and no `meta`.
+`press` (#183) posts a constructed keyDown to the application's **event queue**,
+so the chord takes the path a typed one does — the app's key monitor, the first
+responder, then the menu — and the ⌘Q guard reads it off `NSApp.currentEvent`
+like any other. It is what `make qa` uses to drive the guard, and it presses any
+⌘ chord: `cmd+q`, `cmd+shift+z`, `alt+cmd+q`, `cmd+1`. `cmd` plus any of
+`shift`, `alt`, `ctrl`, then one lowercase letter or digit; no named keys (⌘⌫,
+⌘Enter) and no `meta`.
 
 ```sh
 tarmac dev press cmd+q --hold 300      # a tap: 300 < the 500 ms hold threshold
@@ -170,33 +228,25 @@ tarmac dev snapshot --until 'quit_guard.last_press.press_ms ~= <press_ms>' --tim
   debug-only override the guard's poller ORs into its physical key read, since
   no posted event can make `CGEventSourceKeyState` read a key as down. `--age
   <ms>` (0–60000) stamps the press that far in the past. `--busy <ms>`
-  (1–1800) freezes the page with a busy loop, then posts into it; the reply
-  arrives only once the freeze ends, and `age_ms` shows the freeze.
-- **`press` takes focus.** When the main window is not key it calls
-  `activateIgnoringOtherApps`, which steals focus from whatever you were
-  using, and the reply says `activated: true`. So **do not type in other apps
-  while `make qa` runs** — those keys land in the dev app's focused terminal.
-  If activation is refused (a **locked screen** refuses every activation call)
-  the reply is `not_key` and nothing is posted: `make qa` needs an unlocked
-  session; on `not_key`, click the dev window and re-run.
-- **A posted chord fires its native menu action.** `press alt+cmd+h` runs Hide
-  Others and hides your other apps; `press cmd+h` / `cmd+m` hide or minimise the
-  dev window. The one chord refused is a real quit: a chord that a native
+  (1–1800) blocks the app's main thread behind the posted key, which is read
+  only once the block ends; the reply arrives then, and `age_ms` shows it.
+  `--busy` cannot be combined with `--age`.
+- **A posted chord fires its menu action.** `press alt+cmd+h` runs Hide Others
+  and hides your other apps; `press cmd+h` / `cmd+m` hide or minimise the dev
+  window. The one chord refused is a real quit: a chord that a native
   `terminate:` item would take (or a Quit item whose guard target is gone)
   answers `not_retargeted` and posts nothing.
 - **These quit the app for real** — keep them to `make qa-quit`: a ⌘Q
   `--hold` of 500 or more; two ⌘Q presses within 1 s; `--age` past the 2000 ms
   freshness bound; `--age` plus `--hold` reaching ~500 ms; and a `--hold` of
-  500 or more that outlasts a `--busy` freeze. `--busy` cannot be combined
-  with `--age` for that reason. *Warn Before Quitting* is not read: with the
-  toggle off a ⌘Q press quits at once, so check `quit_guard.enabled` first.
-- **Never `press cmd+w` while an HTML card's iframe has focus** — ⌘W typed
-  inside the frame never reaches the page's handler; it hits the native Close
-  Window item and hides the window (Q14 in
-  `desktop/qa/hold-to-quit-qa.md`).
+  500 or more that outlasts a `--busy` block. *Warn Before Quitting* is not
+  read: with the toggle off a ⌘Q press quits at once, so check
+  `quit_guard.enabled` first.
+- **Never `press cmd+w` while a borrowed HTML card's document has the keys** —
+  the app's key ladder steps aside for a borrowed document, so ⌘W reaches the
+  menu's Close Window item and hides the window.
 - The chord's characters are supplied, so the input source and IME play no
-  part (Q11 in the same doc stays a hand-run row), and a shifted digit carries the digit, not
-  its layout's symbol.
+  part, and a shifted digit carries the digit, not its layout's symbol.
 
 ### Waiting for something to become true
 
@@ -215,14 +265,15 @@ timeout 5000 ms; `--timeout 0` means evaluate once.
 
 ### What it cannot do
 
-- **Not a release feature.** Three build gates, one predicate each.
-- `key` cannot send a ⌘ chord (a dispatched event never reaches the native
-  menu); `press` can, but its reply does not say what the key did, and ⌘C / ⌘V
-  have no snapshot field yet (the clipboard, the paste), so nothing can assert
-  on them.
+- **Not a release feature.** Two build gates: `#[cfg(debug_assertions)]` on the
+  CLI verb, `#if DEBUG` on the app's endpoint.
+- `key` cannot send a ⌘ chord; `press` can, but its reply does not say what the
+  key did, and ⌘C / ⌘V have no snapshot field yet (the clipboard, the paste), so
+  nothing can assert on them.
 - `type` and `key` refuse doc cards; only `focus` accepts them.
-- `focus`/`key` go through the real mouse path, so a program with mouse reporting
-  on (Claude Code, vim) also receives a button-press report.
+- `focus <term>` is a real mouse press, so a program with mouse reporting on
+  (Claude Code, vim) also receives a button-press report.
+- No verb pans, switches boards, or creates a card.
 
 ## The scenario suite — `make qa`
 
@@ -238,11 +289,11 @@ terminal and `visibility` it chose in its header.
 It needs **a live terminal card on the active board** — no verb creates one — and
 picks the first card with `term.alive`. A fresh board always boots one.
 
-D12–D19 press ⌘Q (and ⌘T/⌘W) natively, so the run also needs an **unlocked
-session** and **your hands off other apps** while it runs (see `press` above).
-S21 — that `press` activates a non-frontmost app — is exercised only when
-another app is in front when D12 runs (`open -a Finder` first); otherwise it is
-reported as skipped, never as passed.
+The run presses, keys and clicks natively, so it needs an **unlocked session**
+and **your hands off other apps** while it runs. S21 — that a verb activates a
+non-frontmost app — is exercised only when another app is in front when D12
+runs (`open -a Finder` first); otherwise it is reported as skipped, never as
+passed.
 
 ```sh
 make qa-quit CASE=hold      # S15: a 2 s hold hides the window, then quits on release
@@ -251,44 +302,48 @@ make qa-quit CASE=stale     # S17: a press stamped 2.5 s old quits at once
 ```
 
 `scripts/qa/quit.mjs` holds the three scenarios that **end the app**. One
-`CASE` per run, and `make run` again between cases: `tauri dev` exits with the
-app, the daemon survives, and the next app reconnects to it. `CASE=stale`'s
-route is only visible in the `make run` output (`quit-key route=terminate`);
-record it by hand.
-
-Results and the hand-run scenarios live in
-[`desktop/qa/qa-driver-qa.md`](../../desktop/qa/qa-driver-qa.md).
+`CASE` per run, and `make run` again between cases: the app exits and `make
+run` returns, the daemon survives, and the next app reconnects to it.
+`CASE=stale`'s route is only visible in the `make run` output
+(`tarmac: quit-key route=terminate …`); record it by hand.
 
 ## When it does not answer
 
 Work down this list before suspecting the driver:
 
-1. **Is the app up?** `ps -eo pid,command | grep "[t]arget/debug/tarmac-app"`.
+1. **Is the app up?** `lsof -t "$PWD/.dev/tarmac-dev.sock"` prints the pid that
+   owns the driver socket; nothing printed means no app is listening.
 2. **Did you pin the socket?** Without `TARMAC_DEV_SOCKET` the CLI resolves the
    channel default, not this worktree's `.dev/`.
-3. **Is the socket stale?** A killed app leaves the file behind. The next
-   `make run` replaces it (it only unlinks a socket nothing answers on); a *live*
-   sibling worktree's socket is never touched.
-4. **Did the app panic at startup?** Read the `make run` output — a backend
-   panic aborts before the endpoint binds.
-5. **Is the window hidden?** Verbs still work, but the settle falls back to a
-   100 ms cap because a hidden or minimised macOS app services no animation
-   frames. The snapshot's `visibility` reads `"hidden"` for exactly those two
-   states and `"visible"` for a window merely sitting behind another app's —
-   which does *not* stall frames and costs nothing. So the field is the tell; read
-   it before blaming the driver (Q5 in `desktop/qa/qa-driver-qa.md`).
-6. **Did something reload the page mid-run?** `npm test` writes `dist-kit/`, which
-   a live `make run` picks up as a **full page reload** — the driver re-installs
-   and a verb in flight answers `app_unresponsive`. Don't run the unit suite and a
-   `tarmac dev` session at the same time.
+3. **Is it a debug build?** A release app binds no driver, and a release CLI
+   refuses the verb.
+4. **Did the driver fail to bind?** Read the `make run` output for
+   `tarmac: dev driver listening on <path>`. Instead you may find `a dev driver
+   is already listening on …` (another app owns that socket — it is never
+   stolen) or `dev driver disabled: …` (a path too long for a socket, or a
+   failed bind). A killed app leaves the socket file behind; the next `make
+   run` replaces it, since it only unlinks a socket nothing answers on.
+5. **`app_not_ready`?** The board is out of the window for a moment during a
+   board switch, or the driver has not attached yet. Retry.
+6. **`app_unresponsive`?** Requests are served strictly one at a time; a verb
+   did not answer within its own budget plus 2 s. Look for a modal state — a
+   tracked menu, a stuck `--busy`.
+7. **`not_key`?** The screen is locked, or activation was refused. Unlock,
+   click the dev window, re-run.
+8. **Is the window hidden?** Verbs still work, but the settle falls back to a
+   100 ms cap because a hidden or minimised window services no display frames.
+   The snapshot's `visibility` reads `"hidden"` for exactly those two states
+   and `"visible"` for a window merely sitting behind another app's — which
+   does *not* stall frames. So the field is the tell; read it before blaming
+   the driver.
 
 ## Adding a scenario
 
 Each `[D]` scenario in `smoke.mjs` should start `zoom 1`, then `focus board`,
-then `focus <term>` — zoom persists to `state.json` between runs, and per #162 a
-blur is the only clean focus reset. Give each its own sentinel string:
-`scrollback_tail` spans 40 lines, so an earlier scenario's echo would satisfy a
-repeated `contains` and turn a later check green for free.
+then `focus <term>` — zoom persists to `state.json` between runs, and every
+scenario should start from the same selection and focus. Give each its own
+sentinel string: `scrollback_tail` spans 40 lines, so an earlier scenario's echo
+would satisfy a repeated `contains` and turn a later check green for free.
 
 **Then knock it out.** Change one thing that should break it, confirm it fails,
 revert. A `[D]` scenario that has never been observed failing is not yet known to
