@@ -31,5 +31,6 @@ final class DevTargetPointsTests: XCTestCase {
     func testAnEmptyRectHasNoPoints() {
         XCTAssertEqual(DevTargetPoints.candidates(in: .zero), [])
         XCTAssertEqual(DevTargetPoints.candidates(in: CGRect(x: 5, y: 5, width: 0, height: 40)), [])
+        XCTAssertEqual(DevTargetPoints.candidates(in: CGRect(x: 5, y: 5, width: 40, height: 0)), [])
     }
 }
