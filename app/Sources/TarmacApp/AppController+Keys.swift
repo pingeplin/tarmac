@@ -70,9 +70,6 @@ extension AppController {
             closeSelectedCard()
         case .switcherKey:
             return handleSwitcherKey(press)
-        case .copyDocSelection:
-            // A doc's web view holds its own selection and answers the menu's Copy.
-            return false
         case .cycleTerminals:
             cycleTerminals()
         case .newTerminal:

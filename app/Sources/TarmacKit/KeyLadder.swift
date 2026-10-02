@@ -44,10 +44,6 @@ public enum KeyLadder {
         case closeSelectedCard
         /// The open switcher owns the key (`SwitcherKeys`).
         case switcherKey
-        /// ⌘C with a doc card selected: copy that card's text selection. A doc's
-        /// web view never takes keyboard focus, so the menu's Copy, which
-        /// goes to the first responder, cannot reach it.
-        case copyDocSelection
         /// ⌥Tab.
         case cycleTerminals
         /// ⌘T.
@@ -64,7 +60,6 @@ public enum KeyLadder {
         if press.isCommandChord("k") { return .toggleSwitcher }
         if press.isCommandChord("w") { return .closeSelectedCard }
         if facts.switcherOpen { return .switcherKey }
-        if press.isCommandChord("c"), !press.shift, facts.esc.selectedIsDoc { return .copyDocSelection }
         if press.named == .tab, press.option, !press.command, !press.control, !press.shift {
             return .cycleTerminals
         }
