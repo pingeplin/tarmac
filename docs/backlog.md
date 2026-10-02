@@ -172,8 +172,8 @@ An agent finding them referenced in `docs/archive/` is reading history:
   (`DaemonClient.docRead` is never called), so the daemon's per-doc `read` flag
   is never set. Either wire `docRead` into the existing open/`ESC` path or
   retire the flag — but do not re-file peek itself as a missing feature.
-- **The design-sync UI-kit export** (`make kit`) — it bundled the web
-  frontend's components and went with them.
+- **The design-sync UI-kit export** (`make kit`, and the `.design-sync/` previews
+  it fed) — it bundled the web frontend's components and went with them.
 
 ## 5 · Open after the native rebuild
 
