@@ -236,3 +236,8 @@ such in [`docs/backlog.md`](docs/backlog.md).
 Tarmac is licensed under the [Apache License 2.0](LICENSE). Contributions are
 welcome under the project's [contribution guidelines](CONTRIBUTING.md), which
 require a Developer Certificate of Origin (DCO) sign-off.
+
+The app is distributed with third-party fonts, scripts and libraries, each
+under its own licence: [`NOTICE`](NOTICE) lists them and
+[`THIRD-PARTY-LICENSES`](THIRD-PARTY-LICENSES) holds the licence texts. Both
+ship inside `Tarmac.app`, in `Contents/Resources`.

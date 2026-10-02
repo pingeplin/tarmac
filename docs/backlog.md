@@ -240,14 +240,19 @@ Verified against the code on 2026-10-02.
 - **No in-repo test drives `CardSchemeHandler` or compiles `DocFrameRule` with
   WebKit**; the address-reuse rule and the content rule were checked only with
   an off-screen harness.
-- **`NOTICE` has no licence notices for what the bundle ships**: the fonts
-  (OFL), `marked` (MIT), and libghostty-vt (MIT), which is linked into the
-  executable. `NOTICE`.
+- **Nothing checks `NOTICE` against what the bundle ships.** Its lists — the
+  fonts and their icon sets, what Ghostty builds into libghostty-vt, the Rust
+  crates linked into the two binaries (`cargo tree -e normal,no-proc-macro`) —
+  were written by hand on 2026-10-02, so a new dependency, a font change or a
+  Ghostty bump needs them updated by hand. Two things it does not cover: the
+  copy of `tarmac` at the root of the `.dmg` has its notices only inside
+  `Tarmac.app`, and an x86_64 build would link simdutf's CPU detection, which
+  carries a BSD notice of its own. `NOTICE`, `THIRD-PARTY-LICENSES`.
 - **libghostty-vt is a download that only Ghostty keeps.** The build fetches one
   pinned commit's prebuilt archive, its retention is undocumented, and the build
   checks its hash but not Ghostty's signature, which the repo keeps for a check
-  by hand. Kept as is by decision on 2026-10-02; the ways
-  out — mirror the zip, build it from source, or pin a tag once a Ghostty
-  release publishes the library — are in
+  by hand. Kept as is by decision on 2026-10-02; the ways out — mirror the zip,
+  build it from source, or pin a tag once a Ghostty release publishes the
+  library — are in
   [`architecture.md`](architecture.md#the-libghostty-vt-dependency).
   `scripts/fetch-ghostty-vt.sh`.

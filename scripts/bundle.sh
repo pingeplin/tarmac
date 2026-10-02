@@ -79,6 +79,10 @@ cp "$ROOT/packaging/Info.plist" "$CONTENTS/Info.plist"
 
 iconutil -c icns "$ROOT/packaging/icon/AppIcon.iconset" -o "$RES/Tarmac.icns"
 
+# The bundle carries third-party fonts, scripts and linked libraries whose
+# licences ask for their notices to travel with every copy.
+cp "$ROOT/LICENSE" "$ROOT/NOTICE" "$ROOT/THIRD-PARTY-LICENSES" "$RES/"
+
 echo "==> assembled $APP"
 echo "    Contents/MacOS:     $(ls "$MACOS" | tr '\n' ' ')"
 echo "    Contents/Resources: $(ls "$RES" | tr '\n' ' ')"
