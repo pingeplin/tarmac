@@ -7,9 +7,17 @@ import TarmacTerm
 /// and every refusal, is `DevRouting`'s; each verb here only carries out its
 /// route and reads back what it observed.
 ///
-/// Verbs inject real input rather than calling the controller, so a scenario
-/// exercises the paths a user does. `zoom` is the one exception: it goes
-/// through the board's own viewport commit.
+/// Where a verb can inject real input it does, so a scenario exercises the
+/// paths a user does: key strokes, and presses that hit-test to their target,
+/// go through the application's event path. The rest reach the app another
+/// way, and each says so where it does it:
+///   - `zoom` goes through the board's own viewport commit;
+///   - a press on a target the hit test cannot reach, and every press on a
+///     doc, is delivered around the event path (`DevInput.deliver`);
+///   - `type` commits text straight to the terminal, as an input method does;
+///   - `key contextmenu` asks the terminal for its menu instead of popping it;
+///   - `focus` on a doc moves first responder itself — to the board for a
+///     markdown card, to the document for an HTML card already borrowed.
 @MainActor
 final class DevVerbs {
     let controller: AppController
@@ -70,12 +78,12 @@ final class DevVerbs {
             return ok(await zoom(to: z))
         case .focusBoard:
             return ok(try await focusBoard())
-        case .focusTerminal(let card):
-            return ok(try await focus(onTerminal: card))
+        case .focusTerminal(let card, let takesKeys):
+            return ok(try await focus(onTerminal: card, takesKeys: takesKeys))
         case .focusMarkdown(let card):
-            return ok(try await focus(onDoc: card, clicks: 1, thenDropKeys: true))
+            return ok(try await focus(onMarkdown: card))
         case .focusHTML(let card, let borrow):
-            return ok(try await focus(onDoc: card, clicks: borrow ? 2 : 1, thenDropKeys: false))
+            return ok(try await focus(onHTML: card, borrow: borrow))
         case .resize(let card, let from, let to):
             return ok(try await resize(try cardView(card), from: from, to: to))
         case .type(let card, let text):
@@ -126,35 +134,67 @@ final class DevVerbs {
         return await focusReply(DevInjection(activated: activated, delivery: press.delivery))
     }
 
-    private func focus(onTerminal termID: String) async throws -> JSONValue {
+    private func focus(onTerminal termID: String, takesKeys: Bool) async throws -> JSONValue {
         let activated = try await input.takeKey()
         let view = try terminal(termID)
+        lastPress = lastPress.filter { controller.sessions[$0.key] != nil }
+        guard takesKeys else { return try await select(culled: view, activated: activated) }
         let candidates = input.candidates(on: view, where: { $0 === view }, onLink: view.hasLink(at:))
         let cell = view.cellRect(col: 0, row: 0)?.size ?? .zero
-        guard let press = DevPointer.press(among: candidates, last: lastPress[termID], cell: cell) else {
-            throw DevError(
-                .driverThrew, "every point tried on that terminal is on a link, which a press would open",
-                extra: ["card": .string(termID)]
-            )
-        }
-        lastPress[termID] = press.point
+        let press = DevPointer.press(among: candidates, last: lastPress[termID], cell: cell)
+        if press.delivery != .handling { lastPress[termID] = press.point }
         try input.click(at: press.point, on: view, by: press.delivery)
         return await focusReply(DevInjection(activated: activated, delivery: press.delivery))
+    }
+
+    /// A culled card is hidden. The app's press handling still selects it, and
+    /// in passing hands its terminal the keys; a hidden view is no place for
+    /// them, so they go back where they were (`DevRouting`).
+    private func select(culled view: TerminalView, activated: Bool) async throws -> JSONValue {
+        let keys = window.firstResponder
+        try input.click(at: DevPointer.contentPress(in: view.bounds).point, on: view, by: .handling)
+        window.makeFirstResponder(keys === view ? board : keys)
+        return await focusReply(DevInjection(activated: activated, delivery: .handling))
     }
 
     /// A markdown card's own press leaves the keys where they were, so its
     /// route also takes them off the terminal — the board is what holds them
     /// when no card does.
-    private func focus(onDoc path: String, clicks: Int, thenDropKeys: Bool) async throws -> JSONValue {
+    private func focus(onMarkdown path: String) async throws -> JSONValue {
         let activated = try await input.takeKey()
+        let body = try docBody(path)
+        let press = DevPointer.contentPress(in: body.bounds)
+        try input.click(at: press.point, on: body, by: press.delivery)
+        window.makeFirstResponder(board)
+        return await focusReply(DevInjection(activated: activated, delivery: press.delivery))
+    }
+
+    /// Borrowing is the double-click on the card's shield, which also hands the
+    /// document the keys. A card already borrowed has no shield left: a click
+    /// would land in the user's document, so it gets the press handling and the
+    /// keys are given to the document directly.
+    private func focus(onHTML path: String, borrow: Bool) async throws -> JSONValue {
+        let activated = try await input.takeKey()
+        guard let html = try docBody(path) as? HTMLCardView else {
+            throw DevError(.driverThrew, "\(path) is not an HTML card")
+        }
+        guard borrow else {
+            let press = DevPointer.contentPress(in: html.bounds)
+            try input.click(at: press.point, on: html, by: press.delivery)
+            html.focusDocument()
+            return await focusReply(DevInjection(activated: activated, delivery: press.delivery))
+        }
+        let shield = html.shield
+        let press = DevPointer.press(among: input.candidates(on: shield, where: { $0 === shield }))
+        try input.click(at: press.point, on: shield, by: press.delivery, count: 2)
+        return await focusReply(DevInjection(activated: activated, delivery: press.delivery))
+    }
+
+    private func docBody(_ path: String) throws -> any DocCardBody {
         guard let body = board.card(.doc(path))?.docBody else {
             throw DevError(.driverThrew, "no document behind \(path)")
         }
-        guard let press = DevPointer.press(among: input.candidates(on: body, where: { $0.isDescendant(of: body) }))
-        else { throw DevError(.driverThrew, "\(path) has no body to press") }
-        try input.click(at: press.point, on: body, by: press.delivery, count: clicks)
-        if thenDropKeys { window.makeFirstResponder(board) }
-        return await focusReply(DevInjection(activated: activated, delivery: press.delivery))
+        return body
     }
 
     private func focusReply(_ injection: DevInjection) async -> JSONValue {

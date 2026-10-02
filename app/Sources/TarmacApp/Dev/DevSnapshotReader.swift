@@ -72,7 +72,11 @@ struct DevSnapshotReader {
             return .terminal(card: termID, hasSelection: session.view.hasSelection)
         }
         for card in board.cards.values {
-            if case .doc(let path) = card.id, view.isDescendant(of: card) { return .doc(path: path) }
+            guard case .doc(let path) = card.id else { continue }
+            // An HTML card's console can hold a selection, and so the keys,
+            // without its document having them.
+            let holds = card.htmlBody.map { $0.documentHoldsKeys(view) } ?? view.isDescendant(of: card)
+            if holds { return .doc(path: path) }
         }
         return nil
     }
