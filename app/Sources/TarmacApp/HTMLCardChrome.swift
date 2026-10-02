@@ -47,7 +47,7 @@ final class CardConsoleView: NSView {
         layer?.backgroundColor = Theme.bg0.withAlphaComponent(0.94).cgColor
 
         text.isEditable = false
-        text.isSelectable = false
+        text.isSelectable = true
         text.drawsBackground = false
         text.textContainerInset = Self.inset
         text.textContainer?.lineFragmentPadding = 0

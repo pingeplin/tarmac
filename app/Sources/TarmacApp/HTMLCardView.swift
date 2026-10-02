@@ -106,6 +106,12 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
         webView.runInCardWorld("tarmacCard.focus()")
     }
 
+    /// Whether `responder`, the view with keyboard focus, is the document —
+    /// not the console, whose text can be selected and so takes the focus too.
+    func documentHoldsKeys(_ responder: NSView) -> Bool {
+        responder.isDescendant(of: webView)
+    }
+
     // MARK: - Cull
 
     func setCulled(_ culled: Bool) {

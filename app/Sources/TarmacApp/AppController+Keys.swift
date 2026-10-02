@@ -127,7 +127,7 @@ extension AppController {
         guard let id = borrow.id else { return (false, false) }
         guard let body = activeBoard.view.card(id)?.htmlBody, let responder = window?.firstResponder as? NSView
         else { return (true, false) }
-        return (true, responder.isDescendant(of: body))
+        return (true, body.documentHoldsKeys(responder))
     }
 
     private func climb(_ rung: EscLadder.Rung) {
