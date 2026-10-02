@@ -14,11 +14,28 @@ public enum FileBytes {
         }
     }
 
+    /// The path names something with no end to read to: a device, a pipe, a
+    /// socket. `std::fs::read` would read it; a card that sends itself to
+    /// `/dev/zero` must not be able to make the app do so.
+    public struct NotAFile: LocalizedError, Equatable, Sendable {
+        public var errorDescription: String? { "not a regular file" }
+    }
+
     /// Blocks; call it off the main thread.
     public static func read(path: String) -> Result<Data, any Error> {
-        let fd = open(path, O_RDONLY | O_CLOEXEC)
+        // Non-blocking, so opening a pipe nobody writes to returns at once
+        // and is then refused. It changes nothing for a regular file.
+        let fd = open(path, O_RDONLY | O_CLOEXEC | O_NONBLOCK)
         guard fd >= 0 else { return .failure(ReadError(code: errno)) }
         defer { close(fd) }
+
+        var info = stat()
+        guard fstat(fd, &info) == 0 else { return .failure(ReadError(code: errno)) }
+        switch info.st_mode & S_IFMT {
+        case S_IFREG: break
+        case S_IFDIR: return .failure(ReadError(code: EISDIR))
+        default: return .failure(NotAFile())
+        }
 
         var data = Data()
         var chunk = [UInt8](repeating: 0, count: 64 * 1024)
