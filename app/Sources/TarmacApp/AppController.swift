@@ -140,16 +140,9 @@ final class AppController {
 
     // MARK: - Board placement rule (crib §4/§5)
     //
-    // World-frame defaults for fresh placement and the M1→v4 restore scatter.
-    // Sizes follow the crib's illustrative B2 frames (term 470×330, doc 392×310);
-    // gaps are the illustrative ~86px horizontal / 32px vertical.
+    // The boot terminal's world frame. Where a doc lands is `Placement`'s.
     enum Place {
         static let termFrame = CardFrame(x: 80, y: 80, w: 470, h: 330, z: 0)
-        static let docW: CGFloat = 392
-        static let docH: CGFloat = 310
-        static let gapX: CGFloat = 86
-        static let gapY: CGFloat = 40
-        static let docColumns = 2
         // ⌘T new-terminal cascade offset (down-right from the prime card).
         static let cascadeDX: CGFloat = 43
         static let cascadeDY: CGFloat = 40
@@ -161,10 +154,12 @@ final class AppController {
     /// The open switcher's filter, selection, rename and delete-confirm state.
     var switcherState = SwitcherKeys.State()
 
+    /// The one HTML card whose shield is down, across every board.
+    var borrow = CardBorrow<CardID>()
+
     /// Shared HH:mm formatter (en_US_POSIX). DateFormatter construction is
-    /// expensive (ICU / locale load), and `edgeLabel` runs per doc-edge per
-    /// reproject — i.e. per pan/zoom frame — so a fresh alloc each call was real
-    /// per-frame cost. One cached instance, reused (fix #4). MainActor-confined.
+    /// expensive (ICU / locale load), and the offscreen hints ask for one per
+    /// bell on every pan and zoom frame. MainActor-confined.
     static let hhmmFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")

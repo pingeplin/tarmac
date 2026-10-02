@@ -71,9 +71,8 @@ extension AppController {
         case .switcherKey:
             return handleSwitcherKey(press)
         case .copyDocSelection:
-            if case .doc(let path)? = focusedCardID {
-                activeBoard.view.card(.doc(path))?.docView?.copySelectionToPasteboard()
-            }
+            // A doc's web view holds its own selection and answers the menu's Copy.
+            return false
         case .cycleTerminals:
             cycleTerminals()
         case .newTerminal:
@@ -119,9 +118,12 @@ extension AppController {
     }
 
     /// Whether an HTML card is borrowed, and whether its document has keyboard
-    /// focus. Nothing can be borrowed until HTML cards exist.
+    /// focus.
     private var borrowedCard: (borrowed: Bool, documentHoldsKeys: Bool) {
-        (false, false)
+        guard let id = borrow.id else { return (false, false) }
+        guard let body = activeBoard.view.card(id)?.htmlBody, let responder = window?.firstResponder as? NSView
+        else { return (true, false) }
+        return (true, responder.isDescendant(of: body))
     }
 
     private func climb(_ rung: EscLadder.Rung) {
@@ -138,12 +140,6 @@ extension AppController {
         case .deselectDoc:
             defocus()
         }
-    }
-
-    /// Gives a borrowed HTML card back and puts keyboard focus on the prime
-    /// terminal.
-    func escapeHome() {
-        focusPrimeTerminal()
     }
 
     /// ⌘W (`FocusedClose`): a doc card is closed, a terminal is terminated,

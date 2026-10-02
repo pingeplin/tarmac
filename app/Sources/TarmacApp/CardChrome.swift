@@ -103,32 +103,42 @@ final class RecentMetaLabel: NSTextField {
 final class HeaderButton: NSView {
     var onClick: (() -> Void)?
 
-    private static let fontSize: CGFloat = 10.5
     private static let padX: CGFloat = 5
     private static let padY: CGFloat = 1
     private static let cornerRadius: CGFloat = 4
 
     private let label: NSTextField
+    private let fontSize: CGFloat
+    private var scale = CardScale(zoom: 1, backing: 2)
     private var size: NSSize = .zero
     private var trackingArea: NSTrackingArea?
 
     override var acceptsFirstResponder: Bool { false }
 
-    init(glyph: String, toolTip: String) {
+    init(glyph: String, toolTip: String, fontSize: CGFloat = 10.5) {
         label = NSTextField(labelWithString: glyph)
         label.textColor = Theme.faint
+        self.fontSize = fontSize
         super.init(frame: .zero)
         wantsLayer = true
         self.toolTip = toolTip
         addSubview(label)
-        apply(CardScale(zoom: 1, backing: 2))
+        apply(scale)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
+    /// Changes what the button reads, and its width with it.
+    func setGlyph(_ glyph: String) {
+        label.stringValue = glyph
+        apply(scale)
+        superview?.needsLayout = true
+    }
+
     /// Sizes the button for the board's zoom: its glyph, padding and corners.
     func apply(_ scale: CardScale) {
-        label.font = Theme.mono(scale.length(Self.fontSize))
+        self.scale = scale
+        label.font = Theme.mono(scale.length(fontSize))
         let text = label.headerMetrics(zoom: scale.zoom)
         let padX = scale.length(Self.padX)
         let padY = scale.length(Self.padY)
@@ -359,6 +369,7 @@ final class CardHeaderView: NSView {
         repoDot.layer?.cornerRadius = scale.length(Self.dotSize) / 2
         ownerChip.apply(scale)
         refreshButton?.apply(scale)
+        (accessory as? HeaderButton)?.apply(scale)
         closeButton?.apply(scale)
         needsLayout = true
     }
@@ -419,6 +430,7 @@ final class CardHeaderView: NSView {
         accessory?.removeFromSuperview()
         accessory = view
         if let view { addSubview(view) }
+        (view as? HeaderButton)?.apply(scale)
         needsLayout = true
     }
 

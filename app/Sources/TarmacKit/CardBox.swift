@@ -73,4 +73,16 @@ public enum CardBox {
             bodySize: bodySize
         )
     }
+
+    /// The card whose body is `body` across: the inverse of `body(of:)`.
+    public static func cardSize(ofBody body: CGSize) -> CGSize {
+        CGSize(width: body.width + 2 * borderWidth, height: body.height + headerHeight + 2 * borderWidth)
+    }
+
+    /// The box an HTML card's document is laid out in: the card minus its
+    /// header. The borders are not taken off, so it overhangs the body by
+    /// them and is clipped there.
+    public static func documentBox(of size: CGSize) -> CGSize {
+        CGSize(width: size.width, height: max(0, size.height - headerHeight))
+    }
 }

@@ -188,4 +188,15 @@ final class CardConsoleTests: XCTestCase {
         buffer.push(CardConsole.Entry(level: .log, args: []))
         XCTAssertEqual(buffer.entries, [])
     }
+
+    // MARK: - badge
+
+    func testTheBadgeCountsTheBufferedEntries() {
+        XCTAssertEqual(CardConsole.badgeLabel(count: 1), "⌥ 1")
+        XCTAssertEqual(CardConsole.badgeLabel(count: 500), "⌥ 500")
+    }
+
+    func testAnEmptyBufferHasNoBadge() {
+        XCTAssertNil(CardConsole.badgeLabel(count: 0))
+    }
 }

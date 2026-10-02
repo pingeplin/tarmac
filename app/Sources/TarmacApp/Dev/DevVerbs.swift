@@ -245,7 +245,7 @@ final class DevVerbs {
     }
 
     private func docBody(_ path: String) throws -> NSView {
-        guard let body = board.card(.doc(path))?.docView else {
+        guard let body = board.card(.doc(path))?.docBody else {
             throw DevError(.driverThrew, "no document behind \(path)")
         }
         return body

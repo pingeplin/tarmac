@@ -36,7 +36,7 @@ struct DevSnapshotReader {
             viewRect: controller.rootView.convert(board.bounds, from: board),
             cards: cards.map(fact),
             selectedCard: board.selectedID?.wireID,
-            borrowedCard: nil,
+            borrowedCard: controller.borrow.id?.wireID,
             keyboardFocus: keyboardFocus,
             quitGuard: quitGuard?.facts
         ))
@@ -48,7 +48,7 @@ struct DevSnapshotReader {
                 DevRouting.Card(id: card.id.wireID, kind: card.id.wireKind, frame: card.worldFrame.rect)
             },
             keyboardFocusCard: keyboardFocus.card,
-            borrowedCard: nil,
+            borrowedCard: controller.borrow.id?.wireID,
             zoom: board.viewport.zoom,
             center: CGPoint(x: board.viewport.cx, y: board.viewport.cy),
             viewSize: board.bounds.size

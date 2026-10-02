@@ -23,7 +23,7 @@ extension CardResizeGrip: HoverCursorProviding {
     /// Only over a doc. A terminal ignores a move that lands on a view above
     /// it; a web view does not, and the page's cursor would replace the
     /// handle's.
-    var claimsPointerMoves: Bool { (superview as? CardView)?.docView != nil }
+    var claimsPointerMoves: Bool { (superview as? CardView)?.docBody != nil }
 
     func hoverCursor(at windowPoint: NSPoint) -> NSCursor {
         guard let card = superview as? CardView, let board = card.superview,

@@ -264,6 +264,7 @@ extension AppController {
         s.bellAt = nil
         board.view.card(.term(s.termID))?.setExited()
         board.view.signalsChanged()
+        refreshOwnerChips(on: board)
     }
 
     /// Takes a terminal card off `board`, releasing its held output and any
@@ -279,6 +280,7 @@ extension AppController {
         termIndex.remove(termID: termID)
         board.view.removeCard(id: .term(termID))
         board.view.signalsChanged()
+        refreshOwnerChips(on: board)
         if heldFocus { window?.makeFirstResponder(rootView.board) }
     }
 
@@ -330,10 +332,7 @@ extension AppController {
         s.label = label
         board.view.card(.term(s.termID))?.setTermLabel(label)
         board.view.signalsChanged()
-        for path in board.boardDocPaths {
-            guard let docCard = board.view.card(.doc(path)) else { continue }
-            docCard.setOwnerChip(ownerChipLabel(for: docCard, on: board))
-        }
+        refreshOwnerChips(on: board)
         refreshSwitcherIfOpen()
     }
 

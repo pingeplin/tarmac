@@ -41,8 +41,8 @@ struct Viewport: Equatable {
     var cy: CGFloat
 
     /// The zoom is clamped to this range on every path that changes it.
-    static let minZoom: CGFloat = 0.1
-    static let maxZoom: CGFloat = 3.0
+    static let minZoom = BoardZoom.min
+    static let maxZoom = BoardZoom.max
 
     /// The viewport a board opens at when none was persisted.
     static let `default` = Viewport(zoom: 1.0, cx: 0, cy: 0)

@@ -118,12 +118,19 @@ public final class DocStore {
     }
 
     /// New docs append; re-opens update in place and never move the dock slot
-    /// (crib-dock-index §1.3). Returns true when the doc is new.
+    /// (crib-dock-index §1.3). A re-open keeps the repo, owner and change time
+    /// its entry leaves out. Returns true when the doc is new.
     @discardableResult
     public func applyDocOpened(_ doc: RestoreDoc) -> Bool {
         let isNew: Bool
         if let i = indexByPath[doc.path] {
+            let previous = docs[i]
             docs[i] = doc
+            docs[i].repo = doc.repo ?? previous.repo
+            docs[i].repoRoot = doc.repoRoot ?? previous.repoRoot
+            docs[i].repoColor = doc.repoColor ?? previous.repoColor
+            docs[i].termID = doc.termID ?? previous.termID
+            docs[i].lastChangedMs = doc.lastChangedMs ?? previous.lastChangedMs
             isNew = false
         } else {
             docs.append(doc)
@@ -133,6 +140,15 @@ public final class DocStore {
         bump(doc.path)
         onChange?()
         return isNew
+    }
+
+    /// A closed doc leaves the registry and the dock order.
+    public func remove(_ path: String) {
+        guard let i = indexByPath[path] else { return }
+        docs.remove(at: i)
+        recencyTicks[path] = nil
+        reindex()
+        onChange?()
     }
 
     public func applyFileEvent(path: String, mtimeMs: UInt64) {

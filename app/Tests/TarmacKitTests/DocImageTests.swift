@@ -104,4 +104,28 @@ final class DocImageTests: XCTestCase {
         XCTAssertEqual(path("-a:x.png"), "/r/-a:x.png")
         XCTAssertEqual(path("a_b:x.png"), "/r/a_b:x.png", "an underscore is not a scheme character")
     }
+
+    // MARK: - src (S4, S10–S11): the address a doc-card image is loaded from
+
+    func testS4ANonLocalSrcIsLeftAsWritten() {
+        for src in ["https://h/x.png", "data:image/png;base64,AAAA", "//h/x.png", "file://example.com/x.png", "", "#top"] {
+            XCTAssertEqual(DocImage.src(src, docPath: "/r/README.md", mtimeMs: 1234), src, src)
+        }
+    }
+
+    func testS10ALocalSrcIsTheImgHostWithOneEncodedSegmentThenTheChangeTime() {
+        let docPath = "/tmp/my docs 100%#?/圖表/README.md"
+        XCTAssertEqual(
+            DocImage.src("img/x.png", docPath: docPath, mtimeMs: 1234),
+            "tarmac-card://img/%2Ftmp%2Fmy%20docs%20100%25%23%3F%2F%E5%9C%96%E8%A1%A8%2Fimg%2Fx.png?v=1234"
+        )
+        XCTAssertTrue(DocImage.src("img/x.png", docPath: docPath, mtimeMs: nil).hasSuffix("?v=0"))
+    }
+
+    func testS11TheSameInputsGiveTheSameURL() {
+        XCTAssertEqual(
+            DocImage.src("img/x.png", docPath: "/r/README.md", mtimeMs: 1_700_000_000_000),
+            DocImage.src("img/x.png", docPath: "/r/README.md", mtimeMs: 1_700_000_000_000)
+        )
+    }
 }

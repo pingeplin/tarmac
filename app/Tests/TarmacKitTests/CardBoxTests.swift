@@ -99,4 +99,18 @@ final class CardBoxTests: XCTestCase {
         XCTAssertEqual(box.header.height, 18)
         XCTAssertEqual(box.bodySize, CGSize(width: 98, height: 0))
     }
+
+    /// The box an HTML card's document is laid out in: the card minus its
+    /// header, borders included.
+    func testTheDocumentBoxIsTheCardMinusItsHeader() {
+        XCTAssertEqual(CardBox.documentBox(of: CGSize(width: 392, height: 310)), CGSize(width: 392, height: 280))
+        XCTAssertEqual(CardBox.documentBox(of: CGSize(width: 10, height: 20)), CGSize(width: 10, height: 0))
+    }
+
+    /// A card's body knows only its own size; the card's is that plus the
+    /// header and both borders.
+    func testTheCardSizeIsRecoveredFromItsBody() {
+        XCTAssertEqual(CardBox.cardSize(ofBody: CardBox.body(of: size).size), size)
+        XCTAssertEqual(CardBox.cardSize(ofBody: CGSize(width: 390, height: 278)), CGSize(width: 392, height: 310))
+    }
 }
