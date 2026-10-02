@@ -53,4 +53,12 @@ final class PendingReadsTests: XCTestCase {
         XCTAssertEqual(reads.finish(b), "task B")
         XCTAssertNil(reads.finish(a))
     }
+
+    func testAnsweringOneRequestLeavesTheOthersOnTheBooks() {
+        var reads = PendingReads<String, String>()
+        let a = reads.start("a", for: "task A")
+        let b = reads.start("b", for: "task B")
+        XCTAssertEqual(reads.finish(a), "task A")
+        XCTAssertEqual(reads.finish(b), "task B")
+    }
 }

@@ -102,4 +102,16 @@ final class CardNavigationTests: XCTestCase {
         XCTAssertEqual(CardNavigation.htmlCard(later("tarmac-card://doc/%2Fa.html", target: .newWindow)), .cancel)
         XCTAssertEqual(CardNavigation.htmlCard(later("https://example.com", target: .newWindow)), .cancel)
     }
+
+    func testOnlyTheTwoInlineFramesAreAboutURLsADocMayFrame() {
+        for url in ["about:blank#x", "about:blank?x", "about:config", "about:"] {
+            XCTAssertEqual(CardNavigation.doc(.init(url: url, target: .subframe, pageLoad: false)), .cancel, url)
+        }
+    }
+
+    func testASchemeThatOnlyStartsWithHTTPIsNotAWebPage() {
+        for url in ["httpx://example.com/", "http-evil://a", "https+x://a", "http:evil", "https:"] {
+            XCTAssertEqual(CardNavigation.doc(.init(url: url, target: .subframe, pageLoad: false)), .cancel, url)
+        }
+    }
 }

@@ -61,7 +61,7 @@ public final class DocStore {
     /// Monotonic per-doc recency: bumped by doc_opened/file_event, seeded from
     /// restore by sorting on recencyKey (ties broken by dock order) so a live
     /// bump always outranks restored history.
-    private var recencyTicks: [String: UInt64] = [:]
+    private(set) var recencyTicks: [String: UInt64] = [:]
     private var nextTick: UInt64 = 1
 
     public init() {}

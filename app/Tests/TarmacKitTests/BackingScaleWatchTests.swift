@@ -34,4 +34,9 @@ final class BackingScaleWatchTests: XCTestCase {
         XCTAssertFalse(watch.changed(to: nil))
         XCTAssertFalse(watch.changed(to: 2))
     }
+
+    func testA1xDisplaySeenFirstIsAChange() {
+        var watch = BackingScaleWatch()
+        XCTAssertTrue(watch.changed(to: 1))
+    }
 }
