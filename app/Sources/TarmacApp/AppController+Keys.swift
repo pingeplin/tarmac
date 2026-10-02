@@ -93,6 +93,7 @@ extension AppController {
             composing: terminal?.hasMarkedText() == true,
             switcherOpen: switcherOpen,
             keys: borrow.documentHoldsKeys ? .document : terminal != nil ? .terminal : .host,
+            editingText: typingInDoc,
             hasFlyTarget: rootView.offscreenFlyTarget != nil,
             esc: EscLadder.Facts(
                 toastsShowing: rootView.toasts.hasToasts,
@@ -112,6 +113,12 @@ extension AppController {
             view = current.superview
         }
         return nil
+    }
+
+    /// Whether the keys go to a text control in a markdown doc's page.
+    private var typingInDoc: Bool {
+        guard let responder = window?.firstResponder as? NSView else { return false }
+        return activeBoard.view.cards.values.contains { $0.isTypedInto(through: responder) }
     }
 
     /// Whether an HTML card is borrowed, and whether its document has keyboard

@@ -15,12 +15,16 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
     /// press is judged before the page sees it, so this is known ahead of one.
     private(set) var pointerIsOverLink = false
 
+    /// A text control of the doc's raw HTML has the page's focus.
+    private(set) var isEditingText = false
+
     private let path: String
     private let webView: WKWebView
     private let host: ScreenSpaceHost
     private let images = ScriptRequestRelay()
     private let links = ScriptMessageRelay()
     private let hover = ScriptMessageRelay()
+    private let editing = ScriptMessageRelay()
 
     private var pageLoaded = false
     private var loadingPage = false
@@ -53,6 +57,8 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
         links.onMessage = { [weak self] message in self?.linkClicked(message) }
         webView.configuration.userContentController.add(hover, contentWorld: CardWebView.world, name: "docOverLink")
         hover.onMessage = { [weak self] message in self?.pointerIsOverLink = message.body as? Bool ?? false }
+        webView.configuration.userContentController.add(editing, contentWorld: CardWebView.world, name: "docEditing")
+        editing.onMessage = { [weak self] message in self?.isEditingText = message.body as? Bool ?? false }
         host.onResize = { [weak self] size in self?.layoutPage(viewport: size) }
         addSubview(host)
         loadPage()
@@ -61,6 +67,7 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
     private func loadPage() {
         pageLoaded = false
         pointerIsOverLink = false
+        isEditingText = false
         loadingPage = true
         webView.loadHTMLString(BundledResource.docTemplate.text, baseURL: nil)
     }

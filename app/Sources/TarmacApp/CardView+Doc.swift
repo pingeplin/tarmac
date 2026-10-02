@@ -11,4 +11,11 @@ extension CardView {
         if markdownBody?.pointerIsOverLink == true, bodyContains(hit) { return .link }
         return .elsewhere
     }
+
+    /// Whether `responder`, the view with keyboard focus, is this card's
+    /// markdown page with a text control of the doc's raw HTML focused in it.
+    func isTypedInto(through responder: NSView) -> Bool {
+        guard let body = markdownBody else { return false }
+        return body.isEditingText && responder.isDescendant(of: body)
+    }
 }

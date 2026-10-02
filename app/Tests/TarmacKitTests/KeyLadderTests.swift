@@ -146,6 +146,23 @@ final class KeyLadderTests: XCTestCase {
         XCTAssertEqual(KeyLadder.decide(enter(), Facts(keys: .terminal, hasFlyTarget: true)), .passThrough)
     }
 
+    /// A markdown doc's raw HTML can hold a textarea or an input. Return typed
+    /// there is the control's, as it is in the web app.
+    func testReturnBelongsToATextControlThatHoldsTheKeys() {
+        let typing = Facts(keys: .host, editingText: true, hasFlyTarget: true)
+        XCTAssertEqual(KeyLadder.decide(enter(), typing), .passThrough)
+        XCTAssertEqual(KeyLadder.decide(named(76, numericPad), typing), .passThrough)
+    }
+
+    /// Only Return is the control's: the app's other keys work from there.
+    func testEveryOtherAppKeyIsStillTakenFromATextControl() {
+        var facts = eager
+        facts.editingText = true
+        for key in [letter("k", command), letter("w", command), letter("t", command), tab(option), esc()] {
+            XCTAssertNotEqual(KeyLadder.decide(key, facts), .passThrough, "\(key)")
+        }
+    }
+
     func testReturnWithNowhereToFlyDoesNothing() {
         XCTAssertEqual(KeyLadder.decide(enter(), Facts(keys: .host, hasFlyTarget: false)), .passThrough)
     }

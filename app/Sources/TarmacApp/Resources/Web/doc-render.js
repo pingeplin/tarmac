@@ -82,6 +82,19 @@
     pointerIs(false);
   });
 
+  // Raw HTML can hold a text control. Return typed into one is the control's,
+  // not the app's, so the app is told when one has the focus.
+  let editing = false;
+  function focusMoved() {
+    const active = document.activeElement;
+    const now = active !== null && active.closest("button, input, textarea, [contenteditable]") !== null;
+    if (now === editing) return;
+    editing = now;
+    webkit.messageHandlers.docEditing.postMessage(now);
+  }
+  document.addEventListener("focusin", focusMoved);
+  document.addEventListener("focusout", focusMoved);
+
   window.tarmacDoc = {
     async render(markdown) {
       const render = ++renders;
@@ -103,6 +116,8 @@
       }
       prose.replaceChildren(template.content);
       remeasure();
+      // A focused control that was just replaced leaves without a focus event.
+      focusMoved();
     },
 
     // Called before the web view takes its new size.
