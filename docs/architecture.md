@@ -474,7 +474,9 @@ and placed by a world-space `CardFrame {x, y, w, h, z}`.
 - **`TerminalRenderer`** draws a frame with CoreText. Layout is in points and
   every fill is snapped to the context's device pixels, so the grid is seamless
   at any zoom. A character the terminal face lacks is shaped as a CoreText
-  line, which brings font fallback (CJK, emoji).
+  line, which brings font fallback (CJK, emoji). The app ships the terminal face in
+  regular and bold only, so italic is that face slanted (`TerminalFonts`)
+  unless the machine has a real italic of it installed.
 - **`TerminalView`** is the `NSView`. It owns no PTY: output comes in through
   `feed`, and everything the user does leaves through `onInput`. Policy stays
   out of it — key bindings, link opening and clipboard permission are closures
@@ -816,8 +818,8 @@ already-borrowed HTML card (a click would land in the user's document; `focus`
 then moves the keys itself, to the board or to the document), a culled terminal
 (selected, but the keys stay where they were) and a terminal with a link under
 every point tried. Borrowing an HTML card is a real double-click on its shield.
-Two verbs go to the terminal view directly: `type`'s printables through
-`insertText`, and `contextmenu` through the view's own menu request. `zoom`
+Two inputs go to the terminal view directly: `type`'s printables through
+`insertText`, and `key`'s `contextmenu` through the view's own menu request. `zoom`
 goes through the board's own viewport commit. A reply also says whether the app
 had to be activated to take the input (`activated`). If `accept` fails the
 driver closes the socket and removes its file, so callers fail at once. `press`

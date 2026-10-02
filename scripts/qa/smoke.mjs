@@ -272,8 +272,8 @@ async function main() {
     near(body.to.h, 600, 1e-6, "reply to.h");
 
     waitFor(term, `cards[${term}].board_rect.w ~= 800`);
-    // Separate waits on purpose: the frame settles before xterm refits and the
-    // daemon's Resize lands.
+    // Separate waits on purpose: the frame settles before the terminal refits
+    // and the daemon's Resize lands.
     const snap = waitFor(term, `cards[${term}].term.cols != ${cols0}`);
     const { rows, cols } = termCard(snap, term).term;
 
@@ -307,9 +307,9 @@ async function main() {
     eq(keyed.code, 0, "key contextmenu exit code");
     const selType = snapshot().active_element.selection_type;
     // A right-click on blank space degrades to a Caret and would silently re-run
-    // D4 under a different name. The Range comes from xterm's own
-    // rightClickSelectsWord default (isMac); if xterm ever changes it, this line
-    // fails loudly rather than quietly.
+    // D4 under a different name. The Range comes from the terminal selecting
+    // the word under a right-click; if that ever changes, this line fails loudly
+    // rather than quietly.
     eq(selType, "Range", "active_element.selection_type after contextmenu");
 
     // Stronger than the spec's bare `contains "ab"`, per the suite's own sentinel
@@ -348,7 +348,7 @@ async function main() {
     waitFor(term, `cards[${term}].term.proc == "sleep"`);
     const body = json(dev("key", term, "ctrl+c"));
     eq(body.combo, "ctrl+c", "reply combo");
-    // No keypress — the app produces none for a combo xterm owns (S10, measured).
+    // No keypress — the app produces none for a combo the terminal owns (S10).
     eq(JSON.stringify(body.events), '["keydown","keyup"]', "reply events");
     waitFor(term, `cards[${term}].term.proc != "sleep"`, "--timeout", "3000");
   });
@@ -505,7 +505,7 @@ async function quitGuardScenarios(term) {
       waitFor(term, `cards[${term}].term.scrollback_tail contains "${pushed}-42"`);
       assertGuarded(pressBody(await pressQuit()).press_ms);
     } finally {
-      // Under the knockout, xterm's `ESC[113;9u` sits at the prompt; Enter is
+      // Under the knockout, the terminal's `ESC[113;9u` sits at the prompt; Enter is
       // still a legacy CR under flags 5 and flushes it as its own failing
       // command. Pushed flags would otherwise leak into every later run,
       // because the daemon replays the scrollback.
@@ -562,7 +562,7 @@ async function quitGuardScenarios(term) {
       if (created === null) await sleep(100);
     }
     if (created === null) throw new Error("no new terminal card appeared within 3000 ms of ⌘T");
-    // The card enters `cards` before its xterm mounts; a `proc` means the
+    // The card enters `cards` before its terminal is up; a `proc` means the
     // daemon has spawned its shell, so ⌘W's close has a PTY to close.
     waitFor(term, `cards[${created}].term.proc != null`, "--timeout", "3000");
     eq(json(pointer("focus", created)).focused_card, created, "focus the new terminal");

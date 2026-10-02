@@ -2,7 +2,7 @@
   Cull-gate probe card (spec 2609.0002, issue #72, S37).
 
   A PERMANENT QA artifact, not a scratch file. Open it as a normal HTML doc card
-  (`tarmac open desktop/qa/cull-probe.html`) so it loads through the real
+  (`tarmac open qa/cull-probe.html`) so it loads through the real
   tarmac-card:// pipeline — shim prepended, CSP header, opaque origin, allow=""
   — exactly like an agent-authored card.
 
@@ -46,17 +46,17 @@
   already proven to survive this pipeline (it is how `tarmac-zoom` reaches the
   shim). Configure a cell by editing that tag in a scratch COPY:
 
-      cp desktop/qa/cull-probe.html /tmp/p1.html
+      cp qa/cull-probe.html /tmp/p1.html
       # then edit /tmp/p1.html's cull-probe meta, or do it in one step:
       sed 's/content="n=1 loops=all/content="n=6 loops=none/' \
-          desktop/qa/cull-probe.html > /tmp/p1.html
+          qa/cull-probe.html > /tmp/p1.html
       tarmac open /tmp/p1.html
 
   A six-card cell needs six copies anyway (one card per path), so:
 
       for i in 1 2 3 4 5 6; do
         sed 's/content="n=1 loops=all/content="n=6 loops=all/' \
-            desktop/qa/cull-probe.html > /tmp/cull$i.html
+            qa/cull-probe.html > /tmp/cull$i.html
         tarmac open /tmp/cull$i.html
       done
 
