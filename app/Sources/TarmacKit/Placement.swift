@@ -10,6 +10,9 @@ import CoreGraphics
 public enum Placement {
     /// The boot terminal frame and the doc size and gaps.
     public static let termFrame = CGRect(x: 80, y: 80, width: 470, height: 330)
+    /// The viewport a board opens at when none was persisted: on the boot
+    /// terminal, the one card such a board has.
+    public static let openingViewport = BoardFly.destination(showing: termFrame)
     public static let docWidth: CGFloat = 392
     public static let docHeight: CGFloat = 310
     public static let gapX: CGFloat = 86

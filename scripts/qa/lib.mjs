@@ -129,11 +129,12 @@ export function pointer(...args) {
   return r;
 }
 
-/** The zoom at which a resize handle is on screen. At the default viewport the
- *  boot terminal's bottom-right corner is below the window at zoom 1, and it
- *  only moves further out as the card grows; at 0.4 the corner of a card up to
- *  800×600 at the boot position is inside the window and clear of the minimap,
- *  so the press on it takes the window's path. A resize is in board units, so
+/** The zoom at which a resize handle is on screen. On a board whose viewport
+ *  is on the world origin — where boards opened before they were centred on
+ *  the boot terminal — that terminal's bottom-right corner is below the window
+ *  at zoom 1, and it only moves further out as the card grows; at 0.4 the
+ *  corner of a card up to 800×600 at the boot position is inside the window and
+ *  clear of the minimap, so the press on it takes the window's path. A resize is in board units, so
  *  nothing a scenario asserts about one depends on the zoom. */
 export const GRIP_ZOOM = 0.4;
 

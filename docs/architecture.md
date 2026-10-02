@@ -470,6 +470,8 @@ off-window, so its shells keep taking output and are current on switch-back.
 **Viewport.** `Viewport {zoom, cx, cy}` is a zoom and the world point at the
 middle of the view: `view = (world − center)·zoom + viewportCenter`, both spaces
 top-down. Zoom is clamped to 0.1…3.0 on every path. The surface is a flat fill.
+A board with no persisted viewport opens at 100 % on its boot terminal
+(`Placement.openingViewport`).
 
 **Zoom is a pure view transform.** A card's `frame` is its rect on screen. Its
 chrome — border, header, shadow, ring — is laid out at zoomed metrics

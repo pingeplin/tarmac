@@ -604,9 +604,10 @@ async function quitGuardScenarios(term) {
   await checkAsync("focus lands in the IFRAME, the card is borrowed, and the key routes guard", async () => {
     const id = openFixture(fixtures["d18.html"]);
     reset(term);
-    // 0.3, not D17's 0.5: the card lands two slots right of the terminal, and at
-    // the default viewport it is inside the window only this far out, so the
-    // borrowing double-click can take the window's path (printed below).
+    // 0.3, not D17's 0.5: the card lands two slots right of the terminal, and
+    // with the viewport on the world origin it is inside the window only this
+    // far out, so the borrowing double-click can take the window's path
+    // (printed below).
     eq(json(dev("zoom", "0.3")).zoom, 0.3, "zoom 0.3");
     eq(snapshot().active_element.tag, "TEXTAREA", "active_element.tag before focus");
     // Un-borrowed first, so every run really exercises the dblclick.

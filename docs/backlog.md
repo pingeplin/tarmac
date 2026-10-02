@@ -187,10 +187,6 @@ Verified against the code on 2026-10-02.
   it only by setting the mode itself. `app/Sources/TarmacTerm/TerminalEngine.swift`.
 - **Scrollback is fixed at 5000 lines**, the `scrollbackLines` default; there is
   no setting. `app/Sources/TarmacTerm/TerminalView.swift`.
-- **A fresh board's default viewport cuts off the first terminal.**
-  `Viewport.default` centres the world origin, which at the default window size
-  leaves the lower part of the boot terminal below the board.
-  `app/Sources/TarmacApp/BoardModel.swift`.
 - **Synthesised italic slants more than a real italic would.** Where no italic
   of the terminal face is installed, the slant also shears fallback characters
   (CJK, emoji), Braille and geometric shapes, and Latin ink overhangs its cell

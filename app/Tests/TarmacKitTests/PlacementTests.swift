@@ -9,6 +9,23 @@ final class PlacementTests: XCTestCase {
 
     private var anchorX: CGFloat { owner.maxX + Placement.gapX }
 
+    // MARK: - openingViewport
+
+    /// A board nobody has moved shows its boot terminal at 100 %, in the middle
+    /// of the board whatever the window's size.
+    func testTheOpeningViewportCentresTheBootTerminalAtFullZoom() {
+        let opening = Placement.openingViewport
+        XCTAssertEqual(opening.zoom, 1)
+        for board in [CGSize(width: 1100, height: 650), CGSize(width: 2200, height: 1300)] {
+            let middle = CGPoint(x: board.width / 2, y: board.height / 2)
+            let onScreen = BoardTransform.worldToView(
+                CGPoint(x: owner.midX, y: owner.midY),
+                zoom: opening.zoom, center: CGPoint(x: opening.cx, y: opening.cy), viewportCenter: middle
+            )
+            XCTAssertEqual(onScreen, middle, "board \(board)")
+        }
+    }
+
     // MARK: - rectsIntersect
 
     func testRectsIntersectIsTrueForOverlapAndFalseForTouchingEdges() {

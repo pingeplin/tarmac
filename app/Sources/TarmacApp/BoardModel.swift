@@ -45,7 +45,7 @@ struct Viewport: Equatable {
     static let maxZoom = BoardZoom.max
 
     /// The viewport a board opens at when none was persisted.
-    static let `default` = Viewport(zoom: 1.0, cx: 0, cy: 0)
+    static let `default` = Viewport(Placement.openingViewport)
 }
 
 // MARK: - Wire bridging (AppController boundary)
