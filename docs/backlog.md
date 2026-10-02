@@ -217,6 +217,11 @@ Verified against the code on 2026-10-02.
   link named like an image is served too, and so is an image named with a
   trailing slash. `resolved` and `openRegular` in
   `app/Sources/TarmacKit/FileBytes.swift`.
+- **The 64 MiB cap is per file.** A doc that names one large image by many
+  addresses has each read and held whole at once — about 0.5 GB for eight, for
+  the seconds WebKit keeps a served answer. Reading them one at a time does not
+  help: the answers are WebKit's by then. `reads` in
+  `app/Sources/TarmacApp/CardSchemeHandler.swift`.
 - **A console entry of many small args is costly.** The host page bounds an
   entry's characters, not its arg count. `cutArgs` in
   `app/Sources/TarmacApp/Resources/Web/card-host.js`.
@@ -227,7 +232,7 @@ Verified against the code on 2026-10-02.
   pointer**, until the pointer next moves.
   `app/Sources/TarmacApp/Resources/Web/doc-render.js`.
 - **No in-repo test drives `CardSchemeHandler` or compiles `DocFrameRule` with
-  WebKit**; the one-read-at-a-time rule, the address-reuse rule and the content
-  rule were checked only with an off-screen harness.
+  WebKit**; the address-reuse rule and the content rule were checked only with
+  an off-screen harness.
 - **`NOTICE` has no licence notices for what the bundle ships**: the fonts (OFL)
   and `marked` (MIT). `NOTICE`.

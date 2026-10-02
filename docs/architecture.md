@@ -594,7 +594,7 @@ no permission-policy feature, and no handle on the app.
 
 - **Scheme handler.** `CardSchemeHandler` answers `tarmac-card://`; what to
   serve is `CardSchemeRouter`'s decision, and the file is read off the main
-  thread, one at a time. The `doc` host serves the file as `text/html` with the shim prepended
+  thread. The `doc` host serves the file as `text/html` with the shim prepended
   before its first byte and a strict response CSP (`CardProtocol`:
   `default-src 'none'`, inline script and style only, `data:`/`blob:` media).
   A request that carries an `Origin` header — XHR, `fetch`, a `crossorigin`
