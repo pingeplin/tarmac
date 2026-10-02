@@ -253,6 +253,23 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(opened, ["https://example.com/doc"])
     }
 
+    /// A host that clicks on the view's behalf asks first, so its click only
+    /// focuses.
+    func testTheViewSaysWhereAClickWouldOpenALink() throws {
+        feed("see https://example.com/x now\r\n\u{1b}]8;;https://example.com/doc\u{1b}\\here\u{1b}]8;;\u{1b}\\ end")
+        let layout = try XCTUnwrap(view.gridLayout)
+        func centre(col: Int, row: Int) -> NSPoint {
+            let cell = layout.rect(col: col, row: row)
+            return NSPoint(x: cell.midX, y: cell.midY)
+        }
+        XCTAssertTrue(view.hasLink(at: centre(col: 6, row: 0)))
+        XCTAssertFalse(view.hasLink(at: centre(col: 1, row: 0)))
+        XCTAssertTrue(view.hasLink(at: centre(col: 1, row: 1)))
+        XCTAssertFalse(view.hasLink(at: centre(col: 6, row: 1)))
+        XCTAssertFalse(view.hasLink(at: NSPoint(x: -4, y: -4)))
+        XCTAssertFalse(view.hasLink(at: NSPoint(x: 5_000, y: 5_000)))
+    }
+
     func testDraggingAcrossAUrlSelectsInsteadOfOpening() throws {
         var opened: [String] = []
         view.onOpenLink = { opened.append($0) }
