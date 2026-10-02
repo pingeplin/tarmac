@@ -70,10 +70,10 @@ You need, as env vars for `make release`:
 3. **Update the cask sha256** in `packaging/Casks/tarmac.rb` with the printed value,
    then verify locally:
    - `shasum -a 256 dist/Tarmac-x.y.z.dmg` matches.
-   - `xcrun stapler validate dist/Tarmac-x.y.z.dmg` → "The validate action worked!"
-     (the ticket staples to the **dmg**, not the app).
-   - Mount and assess the actual app — this is the real Gatekeeper verdict; the dmg
-     itself is unsigned so `spctl -t install` on it says "no usable signature":
+   - Mount and assess the actual app — this is the real Gatekeeper verdict. The
+     ticket staples to the **dmg**, not the app (`release.sh` ends on "The staple
+     and validate action worked!"), and the dmg itself is unsigned, so
+     `spctl -t install` on it says "no usable signature":
      ```
      hdiutil attach dist/Tarmac-x.y.z.dmg -nobrowse -readonly
      spctl -a -t exec -vvv /Volumes/Tarmac/Tarmac.app   # expect: accepted, Notarized Developer ID
@@ -147,6 +147,15 @@ You need, as env vars for `make release`:
 - Squash-merge yields the repo's `<title> (#N)` convention. Commit subject is
   `release: x.y.z — <summary>` (bare `release:` type, per the repo's history).
 - The Rust workspace version tracks the release version (step 1); don't reset it.
+- **A pre-release version works as a plain string.** `VERSION=1.14.0-beta` went
+  through Cargo, the app↔daemon handshake, signing and notarization (2026-10-02,
+  "Ready for distribution", no issues) — although Apple documents both bundle
+  version keys as digits and periods only. Nothing in the repo parses the version.
+- **A 403 "required agreement is missing or has expired" from `notarytool`** means
+  the account holder has an agreement to accept at developer.apple.com. After
+  accepting, `notarytool history` recovered within minutes and `submit` some
+  minutes after that; retry the submit alone rather than the whole build:
+  `xcrun notarytool submit dist/Tarmac-x.y.z.dmg --keychain-profile … --wait && xcrun stapler staple dist/Tarmac-x.y.z.dmg`.
 - **The libghostty-vt pin is not a release-time decision.** `GHOSTTY_COMMIT` and
   `GHOSTTY_VT_SHA256` in `scripts/fetch-ghostty-vt.sh` move together, in their own
   change with `make test` green — its C API is unstable, so never bump it while
