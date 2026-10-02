@@ -151,19 +151,25 @@ final class TerminalRenderer {
     private func draw(
         _ text: String, flags: CellFlags, colour: RGB, at origin: CGPoint, pixels: PixelGrid, in context: CGContext
     ) {
-        let font = fonts.font(for: flags)
+        let font = fonts.font(for: flags, drawing: text)
         let baseline = CGPoint(x: pixels.snap(origin.x), y: pixels.snap(origin.y + fonts.metrics.baseline))
         context.setFillColor(colour.cgColor)
-        // Drawing a line leaves its position in the text matrix, so start from the bare flip.
-        context.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
         switch shape(text, font: font, style: flags.intersection([.bold, .italic]).rawValue) {
         case .glyph(var glyph):
             // Glyph positions are in text space, which the flipped text matrix mirrors.
+            context.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
             var position = CGPoint(x: baseline.x, y: -baseline.y)
             CTFontDrawGlyphs(font, &glyph, &position, 1, context)
         case .line(let line):
-            context.textPosition = baseline
+            // A line applies its font's slant on the far side of a flipped text
+            // matrix, which leans it backwards: flip the context instead.
+            context.saveGState()
+            context.translateBy(x: baseline.x, y: baseline.y)
+            context.scaleBy(x: 1, y: -1)
+            context.textMatrix = .identity
+            context.textPosition = .zero
             CTLineDraw(line, context)
+            context.restoreGState()
         }
     }
 

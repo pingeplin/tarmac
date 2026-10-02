@@ -295,10 +295,12 @@ public final class TerminalView: NSView {
     /// What to invalidate to redraw a row. A redraw is clipped to the damaged
     /// rect, and under a fractional zoom a row's edge falls inside a device
     /// pixel, so the damage reaches a point past each edge; the rows it clips
-    /// into are redrawn with it.
+    /// into are redrawn with it. It runs the width of the view: italic ink in
+    /// the last column overhangs into the padding.
     func damageRect(forRow row: Int) -> NSRect {
         guard let gridLayout else { return .zero }
-        return gridLayout.rowRect(row).insetBy(dx: 0, dy: -1).intersection(bounds)
+        let rows = gridLayout.rowRect(row).insetBy(dx: 0, dy: -1)
+        return NSRect(x: bounds.minX, y: rows.minY, width: bounds.width, height: rows.height).intersection(bounds)
     }
 
     private var cursorDisplay: CursorDisplay {

@@ -476,7 +476,8 @@ and placed by a world-space `CardFrame {x, y, w, h, z}`.
   at any zoom. A character the terminal face lacks is shaped as a CoreText
   line, which brings font fallback (CJK, emoji). The app ships the terminal face in
   regular and bold only, so italic is that face slanted (`TerminalFonts`)
-  unless the machine has a real italic of it installed.
+  unless the machine has a real italic of it installed; box-drawing, block and
+  Powerline characters are never set italic, so their rules still meet.
 - **`TerminalView`** is the `NSView`. It owns no PTY: output comes in through
   `feed`, and everything the user does leaves through `onInput`. Policy stays
   out of it — key bindings, link opening and clipboard permission are closures

@@ -394,6 +394,14 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(sentText, "\u{1b}[B")
     }
 
+    /// Italic ink overhangs its cell: what the last column leaves in the
+    /// padding has to go when its row is redrawn.
+    func testARowsDamageReachesBothEdgesOfTheView() {
+        let damage = view.damageRect(forRow: 2)
+        XCTAssertEqual(damage.minX, view.bounds.minX)
+        XCTAssertEqual(damage.maxX, view.bounds.maxX)
+    }
+
     // MARK: IME
 
     func testCompositionHoldsKeysBackUntilItCommits() {

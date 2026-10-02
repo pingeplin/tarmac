@@ -33,6 +33,18 @@ struct TerminalFonts {
         metrics = Self.metrics(of: regular, pixelsPerPoint: max(pixelsPerPoint, 1))
     }
 
+    /// The face `text` is set in. Line-drawing characters are never italic: a
+    /// rule that leans no longer meets the one in the row below.
+    func font(for flags: CellFlags, drawing text: String) -> CTFont {
+        font(for: Self.joinsItsNeighbours(text) ? flags.subtracting(.italic) : flags)
+    }
+
+    /// Box drawing, block elements and the Powerline separators.
+    static func joinsItsNeighbours(_ text: String) -> Bool {
+        guard let scalar = text.unicodeScalars.first else { return false }
+        return (0x2500...0x259f).contains(scalar.value) || (0xe0b0...0xe0d7).contains(scalar.value)
+    }
+
     func font(for flags: CellFlags) -> CTFont {
         switch (flags.contains(.bold), flags.contains(.italic)) {
         case (true, true): boldItalic

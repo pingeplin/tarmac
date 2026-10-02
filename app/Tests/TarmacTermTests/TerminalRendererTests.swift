@@ -17,10 +17,11 @@ final class TerminalRendererTests: XCTestCase {
         only drawn: Range<Int>? = nil,
         cursor: CursorDisplay = .hidden,
         preedit: TerminalPreedit? = nil,
+        face: String? = nil,
         select: ((TerminalSelection, SurfaceGeometry) -> Void)? = nil
     ) throws -> Canvas {
         ShippedFonts.registered
-        let fonts = TerminalFonts(size: 16, pixelsPerPoint: scale)
+        let fonts = TerminalFonts(size: 16, pixelsPerPoint: scale, names: face.map { [$0] } ?? TerminalFonts.preferredNames)
         let cell = fonts.metrics.cell
         let padding = TerminalPadding(top: 0, left: 0, bottom: 0, right: 0)
         let bounds = CGSize(width: cell.width * CGFloat(cols), height: cell.height * CGFloat(rows))
@@ -114,6 +115,31 @@ final class TerminalRendererTests: XCTestCase {
         XCTAssertGreaterThan(wavy.count, flat.count)
     }
 
+    // MARK: italic in a family that has none
+
+    /// How far the ink at the top of the first row starts to the right of the
+    /// ink at its foot, in pixels, for `output` set in Monaco.
+    private func lean(_ output: String) throws -> Int {
+        try render(output, face: "Monaco").lean(inCols: 0..<3, row: 0, on: theme.background)
+    }
+
+    func testItalicLeansRightWhereTheFamilyHasNone() throws {
+        XCTAssertEqual(try lean(" |"), 0)
+        XCTAssertGreaterThanOrEqual(try lean("\u{1b}[3m |"), 4)
+    }
+
+    /// A cluster is drawn as a CoreText line, not as one glyph.
+    func testAnItalicClusterLeansTheSameWay() throws {
+        XCTAssertGreaterThanOrEqual(try lean("\u{1b}[3m |\u{323}"), 4)
+    }
+
+    /// A rule that leans no longer meets the one in the row below.
+    func testLineDrawingCharactersNeverLean() throws {
+        for joiner in ["│", "█"] {
+            XCTAssertEqual(try lean("\u{1b}[3m " + joiner), try lean(" " + joiner), joiner)
+        }
+    }
+
     func testFocusedBlockCursorFillsItsCell() throws {
         let canvas = try render("ab", cursor: .focused)
         XCTAssertEqual(canvas.center(col: 2, row: 0), theme.cursor)
@@ -192,6 +218,17 @@ private struct Canvas {
             }
         }
         return found
+    }
+
+    /// The first pixel column with ink in the top inked pixel row of a span of
+    /// cells, less that of the bottom inked row: how far the ink leans right.
+    func lean(inCols cols: Range<Int>, row: Int, on background: RGB) throws -> Int {
+        let rect = layout.rect(col: cols.lowerBound, row: row, span: cols.count)
+        let columns = Int(rect.minX * scale)..<Int(rect.maxX * scale)
+        let starts = (Int(rect.minY * scale)..<Int(rect.maxY * scale)).compactMap { y in
+            columns.first { pixel($0, y) != background }
+        }
+        return try XCTUnwrap(starts.first) - XCTUnwrap(starts.last)
     }
 
     /// Every distinct colour inside a span of cells, inset by one pixel so a

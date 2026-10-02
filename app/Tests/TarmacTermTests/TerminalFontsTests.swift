@@ -56,6 +56,24 @@ final class TerminalFontsTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(try lean(of: monaco.boldItalic), 2)
     }
 
+    /// PT Mono has a bold and no italic, as the shipped face does on a
+    /// machine that has no italic of it installed.
+    func testASlantedBoldItalicIsTheBoldFace() throws {
+        let ptMono = fonts("PTMono-Regular")
+        try XCTSkipUnless(CTFontCopyPostScriptName(ptMono.regular) as String == "PTMono-Regular", "PT Mono is not installed")
+        XCTAssertTrue(CTFontGetSymbolicTraits(ptMono.boldItalic).contains(.traitBold))
+        XCTAssertFalse(CTFontGetSymbolicTraits(ptMono.italic).contains(.traitBold))
+        XCTAssertGreaterThanOrEqual(try lean(of: ptMono.boldItalic), 2)
+    }
+
+    func testLineDrawingCharactersAreSetUpright() {
+        let monaco = fonts("Monaco")
+        for joiner in ["─", "│", "╬", "█", "▒", "\u{e0b0}"] {
+            XCTAssertEqual(CTFontGetMatrix(monaco.font(for: [.italic], drawing: joiner)), .identity, joiner)
+        }
+        XCTAssertNotEqual(CTFontGetMatrix(monaco.font(for: [.italic], drawing: "|")), .identity)
+    }
+
     override func setUp() {
         ShippedFonts.registered
     }
