@@ -386,11 +386,22 @@ script, at download time, and nothing else; an `app/Vendor/` that is already
 staged is trusted on its commit stamp. Ghostty signs the zip with minisign
 (public key in its `PACKAGING.md`), but publishes the `.minisig` only beside the
 `tip` release asset, not at the per-commit address. The signature is therefore
-reachable only while the pinned build is still the tip asset, and the script
-neither fetches nor keeps it. By itself the hash says the file is the one the
-pin was made against, not who built it. On 2026-10-02 the tip asset was still
-the pinned build — the same SHA-256 — and its signature verified against that
-key.
+reachable only while the pinned build is still the tip asset, so the repo keeps
+it: `scripts/ghostty-vt-33da6848d63b.xcframework.zip.minisig`, taken from the
+tip release on 2026-10-02 while that asset was still the pinned build — the
+same SHA-256. The hash says the file is the one the pin was made against; the
+signature says Ghostty's key signed that file:
+
+```sh
+minisign -Vm ghostty-vt.xcframework.zip \
+  -x scripts/ghostty-vt-33da6848d63b.xcframework.zip.minisig \
+  -P RWQlAjJC23149WL2sEpT/l0QKy7hMIFhYdQOFy0Z7z7PbneUgvlsnYcV
+```
+
+The script does not run this — minisign is not a build requirement — and the
+signature here was checked with a plain Ed25519 verification, not with that
+command. A bump replaces the signature file, or removes it when the new pin's
+signature is no longer published.
 
 **How long the file stays.** No retention period was found in Ghostty's README,
 `PACKAGING.md`, workflow or release notes. Observed on 2026-10-02: of 18

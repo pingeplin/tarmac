@@ -245,7 +245,8 @@ Verified against the code on 2026-10-02.
   executable. `NOTICE`.
 - **libghostty-vt is a download that only Ghostty keeps.** The build fetches one
   pinned commit's prebuilt archive, its retention is undocumented, and the build
-  does not signature-check it. Kept as is by decision on 2026-10-02; the ways
+  checks its hash but not Ghostty's signature, which the repo keeps for a check
+  by hand. Kept as is by decision on 2026-10-02; the ways
   out — mirror the zip, build it from source, or pin a tag once a Ghostty
   release publishes the library — are in
   [`architecture.md`](architecture.md#the-libghostty-vt-dependency).

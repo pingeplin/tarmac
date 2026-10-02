@@ -5,9 +5,11 @@
 # publishes it, and Ghostty's `tip` release is replaced on every tip build —
 # so the pin is a COMMIT, fetched from the per-commit address Ghostty publishes
 # for consumers (ghostty-org/ghostty 90b706b97, PR #12149) and checked against
-# a SHA-256 recorded here. That is the only check: Ghostty's .minisig is not
-# published at this address. Bump GHOSTTY_COMMIT and GHOSTTY_VT_SHA256
-# together. The whole story: docs/architecture.md, "The libghostty-vt
+# a SHA-256 recorded here. That is the only check this script makes. Ghostty's
+# signature over the zip is published only while the build is the tip, so it
+# is kept beside this script as ghostty-vt-<commit>.xcframework.zip.minisig.
+# Bump GHOSTTY_COMMIT and GHOSTTY_VT_SHA256 together, and replace or remove
+# that signature. The whole story: docs/architecture.md, "The libghostty-vt
 # dependency".
 #
 #   scripts/fetch-ghostty-vt.sh   # -> app/Vendor/ghostty-vt.xcframework
