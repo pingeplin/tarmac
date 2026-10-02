@@ -1,5 +1,13 @@
 import AppKit
 
+extension NSFont {
+    /// What WebKit makes of `line-height: normal`: the font's ascent, descent
+    /// and line gap, each rounded to a whole pixel.
+    var normalLineHeight: CGFloat {
+        ascender.rounded() + (-descender).rounded() + leading.rounded()
+    }
+}
+
 /// A one-line overlay label that is measured and placed by its text, the way
 /// a stylesheet places an inline box. A text field's cell pads its text 2 pt on
 /// either side, which would put every overlay's text 2 pt off its CSS position
@@ -15,12 +23,7 @@ final class ChromeLabel: NSTextField {
         lineBreakMode = .byTruncatingTail
     }
 
-    /// What WebKit makes of `line-height: normal`: the font's ascent, descent
-    /// and line gap, each rounded to a whole pixel.
-    var lineHeight: CGFloat {
-        guard let font else { return 0 }
-        return font.ascender.rounded() + (-font.descender).rounded() + font.leading.rounded()
-    }
+    var lineHeight: CGFloat { font?.normalLineHeight ?? 0 }
 
     /// The untruncated text's line box: its advance width, not rounded, by
     /// `lineHeight`.

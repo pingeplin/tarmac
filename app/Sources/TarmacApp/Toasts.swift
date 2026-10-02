@@ -95,9 +95,7 @@ final class ToastStackView: NSView {
         render()
     }
 
-    private static var nowMs: Int {
-        Int(ProcessInfo.processInfo.systemUptime * 1000)
-    }
+    private static var nowMs: Int { Int(Uptime.nowMs) }
 
     private func render() {
         let showing = Set(queue.toasts.map(\.id))

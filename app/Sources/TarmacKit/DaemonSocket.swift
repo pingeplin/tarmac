@@ -4,21 +4,14 @@ import Foundation
 /// length-prefixed frame in, bytes out. No policy lives here — `DaemonClient`
 /// decides when to connect, what a dead socket means, and who may write.
 enum DaemonSocket {
-    /// A connected descriptor, or nil. `path` must fit a `sockaddr_un`
-    /// (`DaemonClient.fitsUnixSocketPath`): it is copied, never truncated.
+    /// A connected descriptor, or nil.
     static func connect(to path: String) -> Int32? {
         let sock = socket(AF_UNIX, SOCK_STREAM, 0)
         guard sock >= 0 else { return nil }
         var yes: Int32 = 1
         setsockopt(sock, SOL_SOCKET, SO_NOSIGPIPE, &yes, socklen_t(MemoryLayout<Int32>.size))
 
-        var addr = sockaddr_un()
-        addr.sun_family = sa_family_t(AF_UNIX)
-        path.withCString { src in
-            withUnsafeMutableBytes(of: &addr.sun_path) { dst in
-                _ = memcpy(dst.baseAddress!, src, strlen(src) + 1)
-            }
-        }
+        var addr = address(of: path)
         let result = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
                 Darwin.connect(sock, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
@@ -29,6 +22,19 @@ enum DaemonSocket {
             return nil
         }
         return sock
+    }
+
+    /// `path` as a socket address. It must fit a `sockaddr_un`
+    /// (`DaemonClient.fitsUnixSocketPath`): it is copied, never truncated.
+    static func address(of path: String) -> sockaddr_un {
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        path.withCString { src in
+            withUnsafeMutableBytes(of: &addr.sun_path) { dst in
+                _ = memcpy(dst.baseAddress!, src, strlen(src) + 1)
+            }
+        }
+        return addr
     }
 
     /// The next frame's payload, or nil once the stream is unusable: EOF, a

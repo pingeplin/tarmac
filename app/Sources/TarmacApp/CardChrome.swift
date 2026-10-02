@@ -2,6 +2,18 @@ import AppKit
 import QuartzCore
 import TarmacKit
 
+extension NSView {
+    /// This view if it is a `T`, else the nearest ancestor that is.
+    func enclosing<T: NSView>(_ type: T.Type) -> T? {
+        var view: NSView? = self
+        while let current = view {
+            if let match = current as? T { return match }
+            view = current.superview
+        }
+        return nil
+    }
+}
+
 /// A top-down (flipped) container view.
 @MainActor
 final class FlippedColumnView: NSView {

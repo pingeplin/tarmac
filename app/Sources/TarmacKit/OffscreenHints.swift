@@ -149,7 +149,7 @@ public enum OffscreenHintLayout {
                         ? Interval(lo: $0.minY - options.stackGap, hi: $0.maxY + options.stackGap)
                         : Interval(lo: $0.minX - options.stackGap, hi: $0.maxX + options.stackGap)
                     }
-                let desired = clamp(item.placement.along - length / 2, posLo, posHi)
+                let desired = BoardWayfinding.clamp(item.placement.along - length / 2, posLo, posHi)
                 let pos = resolveAlongPosition(
                     desired: desired, length: length, obstacles: obstacleIntervals,
                     siblingFloor: lastEnd + options.stackGap, posLo: posLo, posHi: posHi
@@ -179,10 +179,6 @@ public enum OffscreenHintLayout {
     private struct Interval {
         var lo: CGFloat
         var hi: CGFloat
-    }
-
-    private static func clamp(_ v: CGFloat, _ lo: CGFloat, _ hi: CGFloat) -> CGFloat {
-        min(hi, max(lo, v))
     }
 
     private static func merged(_ intervals: [Interval]) -> [Interval] {
@@ -233,7 +229,7 @@ public enum OffscreenHintLayout {
         let windowed = merged(obstacles)
             .map { Interval(lo: max($0.lo, lo), hi: min($0.hi, posHi)) }
             .filter { $0.hi > $0.lo }
-        let clampedDesired = clamp(desired, lo, posHi)
+        let clampedDesired = BoardWayfinding.clamp(desired, lo, posHi)
         if !windowed.contains(where: { clampedDesired < $0.hi && clampedDesired + length > $0.lo }) {
             return clampedDesired
         }
@@ -249,7 +245,7 @@ public enum OffscreenHintLayout {
         var best: CGFloat?
         var bestDistance = CGFloat.infinity
         for gap in gaps where gap.hi - gap.lo >= length {
-            let candidate = clamp(clampedDesired, gap.lo, gap.hi - length)
+            let candidate = BoardWayfinding.clamp(clampedDesired, gap.lo, gap.hi - length)
             let distance = abs(candidate - clampedDesired)
             if distance <= bestDistance {
                 bestDistance = distance

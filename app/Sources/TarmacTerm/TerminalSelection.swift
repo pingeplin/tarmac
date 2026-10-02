@@ -140,18 +140,7 @@ final class TerminalSelection {
 
     /// The selected text as a copy would take it: soft wraps joined, trailing blanks trimmed.
     var text: String? {
-        var options = GhosttyTerminalSelectionFormatOptions()
-        options.size = MemoryLayout<GhosttyTerminalSelectionFormatOptions>.size
-        options.emit = GHOSTTY_FORMATTER_FORMAT_PLAIN
-        options.unwrap = true
-        options.trim = true
-        var buffer: UnsafeMutablePointer<UInt8>?
-        var length = 0
-        guard ghostty_terminal_selection_format_alloc(engine.terminal, nil, options, &buffer, &length) == GHOSTTY_SUCCESS
-        else { return nil }
-        defer { ghostty_free(nil, buffer, length) }
-        guard let buffer, length > 0 else { return nil }
-        return String(decoding: UnsafeBufferPointer(start: buffer, count: length), as: UTF8.self)
+        engine.plainText(of: nil, unwrap: true).flatMap { $0.isEmpty ? nil : $0 }
     }
 
     // MARK: plumbing
@@ -177,13 +166,7 @@ final class TerminalSelection {
 
     private func ref(at point: SurfacePoint, surface: SurfaceGeometry) -> GhosttyGridRef? {
         let cell = cell(at: point, surface: surface)
-        var target = GhosttyPoint()
-        target.tag = GHOSTTY_POINT_TAG_VIEWPORT
-        target.value.coordinate = GhosttyPointCoordinate(x: UInt16(cell.col), y: UInt32(cell.row))
-        var ref = GhosttyGridRef()
-        ref.size = MemoryLayout<GhosttyGridRef>.size
-        guard ghostty_terminal_grid_ref(engine.terminal, target, &ref) == GHOSTTY_SUCCESS else { return nil }
-        return ref
+        return engine.gridRef(GHOSTTY_POINT_TAG_VIEWPORT, col: cell.col, row: cell.row)
     }
 
     private func gestureGeometry(_ surface: SurfaceGeometry) -> GhosttySelectionGestureGeometry {

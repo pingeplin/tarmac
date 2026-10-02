@@ -26,16 +26,16 @@ final class DevDriver {
         )
         switch DevSocket.claim(path: path) {
         case .failure(.liveOwner):
-            Self.log("a dev driver is already listening on \(path) — not starting a second one")
+            Log.stderr("a dev driver is already listening on \(path) — not starting a second one")
         case .failure(.pathTooLong):
-            Self.log("dev driver disabled: \(ConnectionStatus.socketPathTooLong(path))")
+            Log.stderr("dev driver disabled: \(ConnectionStatus.socketPathTooLong(path))")
         case .failure(.system(let code)):
-            Self.log("dev driver disabled: \(String(cString: strerror(code))) on \(path)")
+            Log.stderr("dev driver disabled: \(String(cString: strerror(code))) on \(path)")
         case .success(let socket):
             self.socket = socket
             relay.attach { request in await verbs.answer(request) }
             Thread.detachNewThread { [relay] in Self.serve(socket, through: relay) }
-            Self.log("dev driver listening on \(path)")
+            Log.stderr("dev driver listening on \(path)")
         }
     }
 
@@ -51,14 +51,11 @@ final class DevDriver {
             case .closed:
                 return
             case .failed(let code):
-                log("dev driver accept failed: \(String(cString: strerror(code))); the driver has stopped")
+                Log.stderr("dev driver accept failed: \(String(cString: strerror(code))); the driver has stopped")
                 return
             }
         }
     }
 
-    private nonisolated static func log(_ line: String) {
-        FileHandle.standardError.write(Data("tarmac: \(line)\n".utf8))
-    }
 }
 #endif

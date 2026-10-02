@@ -118,13 +118,7 @@ final class Smoke {
         // realpath, not URL.resolvingSymlinksInPath(): the latter strips /private
         // (so /var/... stays /var/...), which is not the canonical path the
         // protocol requires and not what the daemon will report back.
-        let canonical: String
-        if let resolved = realpath(docURL.path, nil) {
-            canonical = String(cString: resolved)
-            free(resolved)
-        } else {
-            canonical = docURL.path
-        }
+        let canonical = (try? FileBytes.resolved(path: docURL.path).get()) ?? docURL.path
         defer { try? FileManager.default.removeItem(atPath: canonical) }
 
         client.open(path: canonical)

@@ -64,7 +64,7 @@ final class DevVerbs {
     /// a read, and large.
     private func log(_ request: DevRequest, _ reply: DevReply) {
         if case .snapshot = request { return }
-        FileHandle.standardError.write(Data("tarmac: dev \(request) -> \(reply.body)\n".utf8))
+        Log.stderr("dev \(request) -> \(reply.body)")
     }
 
     private func run(_ route: DevRouting.Route) async throws -> DevReply {

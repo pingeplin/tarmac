@@ -40,13 +40,7 @@ public final class DevSocket: @unchecked Sendable {
 
         let listener = socket(AF_UNIX, SOCK_STREAM, 0)
         guard listener >= 0 else { return .failure(.system(errno)) }
-        var addr = sockaddr_un()
-        addr.sun_family = sa_family_t(AF_UNIX)
-        path.withCString { src in
-            withUnsafeMutableBytes(of: &addr.sun_path) { dst in
-                _ = memcpy(dst.baseAddress!, src, strlen(src) + 1)
-            }
-        }
+        var addr = DaemonSocket.address(of: path)
         let bound = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
                 bind(listener, $0, socklen_t(MemoryLayout<sockaddr_un>.size))

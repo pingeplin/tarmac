@@ -39,18 +39,18 @@ final class BoardSwitcherView: NSView {
         static let panel = Theme.mono(11)
     }
 
-    private let panel = FlippedBox()
-    private let content = FlippedBox()
-    private let queryBar = FlippedBox()
+    private let panel = FlippedColumnView()
+    private let content = FlippedColumnView()
+    private let queryBar = FlippedColumnView()
     private let queryRule = NSView()
     private let queryLabel = SwitcherLabel()
-    private let queryClip = FlippedBox()
+    private let queryClip = FlippedColumnView()
     private let queryText = SwitcherLabel()
     private let caret = SwitcherLabel()
     private let scroll = NSScrollView()
-    private let rowsDoc = FlippedBox()
+    private let rowsDoc = FlippedColumnView()
     private let emptyLabel = SwitcherLabel()
-    private let footer = FlippedBox()
+    private let footer = FlippedColumnView()
     private let footerRule = NSView()
     private let footerLabel = SwitcherLabel()
     private var rowViews: [BoardSwitcherRow] = []
@@ -64,12 +64,8 @@ final class BoardSwitcherView: NSView {
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.withAlphaComponent(0.45).cgColor
 
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.5)
-        shadow.shadowOffset = NSSize(width: 0, height: -16)
-        shadow.shadowBlurRadius = 38
         panel.wantsLayer = true
-        panel.shadow = shadow
+        panel.shadow = OverlayPalette.dropShadow(y: 16, blur: 76)
         addSubview(panel)
 
         // The border is the clipping layer's own, so it is drawn over the
@@ -208,19 +204,13 @@ final class BoardSwitcherView: NSView {
 
     // MARK: - Layout
 
-    /// A line of `font` as the web app's layout measures it: each of the
-    /// font's vertical metrics rounded to a whole pixel.
-    static func lineHeight(_ font: NSFont) -> CGFloat {
-        font.ascender.rounded() + (-font.descender).rounded() + font.leading.rounded()
-    }
-
     override func layout() {
         super.layout()
         let width = Metric.panelWidth - Metric.border * 2
-        let queryHeight = Metric.queryPadY * 2 + Self.lineHeight(Font.query) + 1
-        let footerHeight = 1 + Metric.footerPadY * 2 + Self.lineHeight(Font.panel)
+        let queryHeight = Metric.queryPadY * 2 + Font.query.normalLineHeight + 1
+        let footerHeight = 1 + Metric.footerPadY * 2 + Font.panel.normalLineHeight
         let rowHeight = BoardSwitcherRow.height
-        let emptyHeight = Metric.emptyPadY * 2 + Self.lineHeight(Font.empty)
+        let emptyHeight = Metric.emptyPadY * 2 + Font.empty.normalLineHeight
         let listContent = Metric.listPadY * 2 + (rowViews.isEmpty ? emptyHeight : CGFloat(rowViews.count) * rowHeight)
         let listHeight = min(listContent, Metric.panelMaxHeight - Metric.border * 2 - queryHeight - footerHeight)
         let height = Metric.border * 2 + queryHeight + listHeight + footerHeight
@@ -318,7 +308,7 @@ final class BoardSwitcherRow: NSView {
         static let ordinal = Theme.mono(9.5)
     }
 
-    static var height: CGFloat { Metric.padY * 2 + BoardSwitcherView.lineHeight(Font.name) }
+    static var height: CGFloat { Metric.padY * 2 + Font.name.normalLineHeight }
 
     private let glyphLabel = SwitcherLabel()
     private let nameLabel = SwitcherLabel()
@@ -438,10 +428,4 @@ private final class SwitcherLabel: NSTextField {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
-}
-
-/// A container whose y runs down, like the rest of the chrome.
-@MainActor
-private final class FlippedBox: NSView {
-    override var isFlipped: Bool { true }
 }

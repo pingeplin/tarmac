@@ -192,25 +192,34 @@ public final class TerminalEngine {
         selection.size = MemoryLayout<GhosttySelection>.size
         selection.start = start
         selection.end = end
-        return withUnsafePointer(to: &selection) { selection in
-            var options = GhosttyTerminalSelectionFormatOptions()
-            options.size = MemoryLayout<GhosttyTerminalSelectionFormatOptions>.size
-            options.emit = GHOSTTY_FORMATTER_FORMAT_PLAIN
-            options.unwrap = false
-            options.trim = true
-            options.selection = selection
-            var buffer: UnsafeMutablePointer<UInt8>?
-            var length = 0
-            guard ghostty_terminal_selection_format_alloc(terminal, nil, options, &buffer, &length) == GHOSTTY_SUCCESS,
-                  let buffer else { return "" }
-            defer { ghostty_free(nil, buffer, length) }
-            return String(decoding: UnsafeBufferPointer(start: buffer, count: length), as: UTF8.self)
-        }
+        return withUnsafePointer(to: &selection) { plainText(of: $0, unwrap: false) } ?? ""
+    }
+
+    /// The plain text of `selection`, or of the terminal's own selection when
+    /// nil, trailing blanks trimmed; `unwrap` joins soft-wrapped rows.
+    func plainText(of selection: UnsafePointer<GhosttySelection>?, unwrap: Bool) -> String? {
+        var options = GhosttyTerminalSelectionFormatOptions()
+        options.size = MemoryLayout<GhosttyTerminalSelectionFormatOptions>.size
+        options.emit = GHOSTTY_FORMATTER_FORMAT_PLAIN
+        options.unwrap = unwrap
+        options.trim = true
+        options.selection = selection
+        var buffer: UnsafeMutablePointer<UInt8>?
+        var length = 0
+        guard ghostty_terminal_selection_format_alloc(terminal, nil, options, &buffer, &length) == GHOSTTY_SUCCESS,
+              let buffer else { return nil }
+        defer { ghostty_free(nil, buffer, length) }
+        return String(decoding: UnsafeBufferPointer(start: buffer, count: length), as: UTF8.self)
     }
 
     private func screenRef(col: Int, row: Int) -> GhosttyGridRef? {
+        gridRef(GHOSTTY_POINT_TAG_SCREEN, col: col, row: row)
+    }
+
+    /// A reference to the cell at `col`, `row` of the `tag` coordinate space.
+    func gridRef(_ tag: GhosttyPointTag, col: Int, row: Int) -> GhosttyGridRef? {
         var target = GhosttyPoint()
-        target.tag = GHOSTTY_POINT_TAG_SCREEN
+        target.tag = tag
         target.value.coordinate = GhosttyPointCoordinate(x: UInt16(col), y: UInt32(row))
         var ref = GhosttyGridRef()
         ref.size = MemoryLayout<GhosttyGridRef>.size

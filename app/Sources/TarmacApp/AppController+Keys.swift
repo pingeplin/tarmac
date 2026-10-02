@@ -112,12 +112,7 @@ extension AppController {
 
     /// The terminal view with keyboard focus, live or dead.
     private var focusedTerminal: TerminalView? {
-        var view = window?.firstResponder as? NSView
-        while let current = view {
-            if let terminal = current as? TerminalView { return terminal }
-            view = current.superview
-        }
-        return nil
+        (window?.firstResponder as? NSView)?.enclosing(TerminalView.self)
     }
 
     /// Whether the keys go to a text control in a markdown doc's page.

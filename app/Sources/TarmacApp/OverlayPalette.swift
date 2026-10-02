@@ -44,7 +44,7 @@ enum OverlayPalette {
 
     /// `0 <y>px <blur>px rgba(0,0,0,0.5)`. A stylesheet's blur is twice the
     /// radius AppKit takes, which is how the card shadows are ported too.
-    private static func dropShadow(y: CGFloat, blur: CGFloat) -> NSShadow {
+    static func dropShadow(y: CGFloat, blur: CGFloat) -> NSShadow {
         let shadow = NSShadow()
         shadow.shadowColor = NSColor.black.withAlphaComponent(0.5)
         shadow.shadowOffset = NSSize(width: 0, height: -y)

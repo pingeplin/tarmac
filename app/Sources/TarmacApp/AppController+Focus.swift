@@ -13,12 +13,7 @@ extension AppController {
     /// The card a hit view belongs to — its header, body or a resize handle —
     /// or nil for the bare board and the overlays.
     private func enclosingCard(_ view: NSView?) -> CardView? {
-        var v = view
-        while let cur = v {
-            if let card = cur as? CardView { return card }
-            v = cur.superview
-        }
-        return nil
+        view?.enclosing(CardView.self)
     }
 
     /// A left-button press, seen before the view under it handles it.

@@ -87,8 +87,7 @@ extension AppController {
             )
         }
         for path in plan.droppedDocPaths {
-            let log = "tarmac: restore: doc tile \(path) absent from the registry — dropping\n"
-            FileHandle.standardError.write(Data(log.utf8))
+            Log.stderr("restore: doc tile \(path) absent from the registry — dropping")
         }
 
         board.view.setViewport(viewport.map(Viewport.init) ?? .default)

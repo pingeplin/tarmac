@@ -39,12 +39,7 @@ enum TerminalLinks {
 extension TerminalEngine {
     /// The OSC 8 hyperlink target of a viewport cell, if the program set one.
     func hyperlink(col: Int, row: Int) -> String? {
-        var target = GhosttyPoint()
-        target.tag = GHOSTTY_POINT_TAG_VIEWPORT
-        target.value.coordinate = GhosttyPointCoordinate(x: UInt16(col), y: UInt32(row))
-        var ref = GhosttyGridRef()
-        ref.size = MemoryLayout<GhosttyGridRef>.size
-        guard ghostty_terminal_grid_ref(terminal, target, &ref) == GHOSTTY_SUCCESS else { return nil }
+        guard var ref = gridRef(GHOSTTY_POINT_TAG_VIEWPORT, col: col, row: row) else { return nil }
 
         var buffer = [UInt8](repeating: 0, count: 512)
         var length = 0

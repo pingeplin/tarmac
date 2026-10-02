@@ -2,6 +2,13 @@ ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
 .PHONY: core ghostty-vt app test docs-check dco-check run qa qa-quit kill-daemon bundle release
 
+# The dev channel: this worktree's own daemon socket, state and driver socket.
+# Everything that launches or drives a dev build goes through these three.
+DEV_SOCKET := $(ROOT)/.dev/tarmacd.sock
+DEV_ENV := TARMAC_SOCKET="$(DEV_SOCKET)" \
+	TARMAC_STATE="$(ROOT)/.dev/state.json" \
+	TARMAC_DEV_SOCKET="$(ROOT)/.dev/tarmac-dev.sock"
+
 core:
 	cd $(ROOT)/core && cargo build
 
@@ -50,9 +57,7 @@ test: docs-check ghostty-vt
 run: core app
 	mkdir -p "$(ROOT)/.dev"
 	cd $(ROOT)/app && \
-	TARMAC_SOCKET="$(ROOT)/.dev/tarmacd.sock" \
-	TARMAC_STATE="$(ROOT)/.dev/state.json" \
-	TARMAC_DEV_SOCKET="$(ROOT)/.dev/tarmac-dev.sock" \
+	$(DEV_ENV) \
 	TARMAC_DEV_LABEL="$(notdir $(ROOT))" \
 	TARMAC_APP_VERSION="$$(sed -n 's/^version = "\(.*\)"/\1/p' $(ROOT)/core/Cargo.toml | head -1)" \
 	TARMAC_DAEMON="$(ROOT)/core/target/debug/tarmacd" \
@@ -65,18 +70,14 @@ run: core app
 # reach this worktree's app; TARMAC_SOCKET is pinned too, so the doc-card
 # scenarios can `tarmac open` their fixtures into that same app (#183).
 qa: core
-	TARMAC_DEV_SOCKET="$(ROOT)/.dev/tarmac-dev.sock" \
-	TARMAC_SOCKET="$(ROOT)/.dev/tarmacd.sock" \
-	TARMAC_STATE="$(ROOT)/.dev/state.json" \
+	$(DEV_ENV) \
 	node $(ROOT)/scripts/qa/smoke.mjs
 
 # The ⌘Q guard's QUITTING scenarios (spec 2609.0018): one CASE per run, and
 # each ends the app, so `make run` again between cases.
 CASE ?= hold
 qa-quit: core
-	TARMAC_DEV_SOCKET="$(ROOT)/.dev/tarmac-dev.sock" \
-	TARMAC_SOCKET="$(ROOT)/.dev/tarmacd.sock" \
-	TARMAC_STATE="$(ROOT)/.dev/state.json" \
+	$(DEV_ENV) \
 	CASE="$(CASE)" \
 	node $(ROOT)/scripts/qa/quit.mjs
 
@@ -87,7 +88,7 @@ qa-quit: core
 # reach `kill` as separate arguments. Quoting it makes the target fail outright
 # in exactly the case it exists for.
 kill-daemon:
-	sock="$(ROOT)/.dev/tarmacd.sock"; \
+	sock="$(DEV_SOCKET)"; \
 	pids=$$(lsof -t "$$sock" 2>/dev/null | tr '\n' ' '); \
 	if [ -n "$$pids" ]; then \
 		echo "killing tarmacd pid(s) $${pids% } on $$sock"; \

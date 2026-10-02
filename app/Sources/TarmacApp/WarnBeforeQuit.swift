@@ -33,7 +33,7 @@ final class WarnBeforeQuit: NSObject {
         } catch {
             // This session obeys the toggle either way; only the next launch
             // misses it.
-            FileHandle.standardError.write(Data("tarmac: could not save app prefs: \(error)\n".utf8))
+            Log.stderr("could not save app prefs: \(error)")
         }
     }
 }

@@ -183,10 +183,11 @@ extension QuitGuardController {
         func show(_ value: String?) -> String { value ?? "-" }
         let type = event.map { String($0.type.rawValue) }
         let isRepeat = quitEvent.isKeyDown ? event.map { String($0.isARepeat) } : nil
-        let line = "tarmac: quit-key route=\(route.name) type=\(show(type)) repeat=\(show(isRepeat))"
-            + " age_ms=\(show(event.map { _ in String(quitEvent.ageMs) }))"
-            + " press_ms=\(show(event.map { _ in String(pressMs) }))\n"
-        FileHandle.standardError.write(Data(line.utf8))
+        Log.stderr(
+            "quit-key route=\(route.name) type=\(show(type)) repeat=\(show(isRepeat))"
+                + " age_ms=\(show(event.map { _ in String(quitEvent.ageMs) }))"
+                + " press_ms=\(show(event.map { _ in String(pressMs) }))"
+        )
     }
 }
 #endif
