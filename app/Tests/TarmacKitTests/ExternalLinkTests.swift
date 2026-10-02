@@ -93,4 +93,26 @@ final class ExternalLinkTests: XCTestCase {
             XCTAssertTrue(ExternalLink.isHTTP(href: "https://x.com:\(port)"), "\(port)")
         }
     }
+
+    // MARK: - destination: what a doc's clicked link opens
+
+    func testAnHTTPLinkOpensAsWritten() {
+        XCTAssertEqual(
+            ExternalLink.destination(href: "https://example.com/a?b=1#c")?.absoluteString, "https://example.com/a?b=1#c"
+        )
+        XCTAssertEqual(ExternalLink.destination(href: "http://127.0.0.1:8080/x")?.absoluteString, "http://127.0.0.1:8080/x")
+    }
+
+    func testTheDestinationIsTheHrefAsABrowserWouldCleanIt() {
+        XCTAssertEqual(ExternalLink.destination(href: " \thttps://x.com\n")?.absoluteString, "https://x.com")
+    }
+
+    /// A link is judged by the `href` the doc wrote. Judged by the URL it
+    /// resolves to, a `<base href>` in the doc would turn every relative link
+    /// and every `#fragment` into a link to its own host.
+    func testAHrefThatIsNotAnAbsoluteHTTPURLOpensNothing() {
+        for href in ["docs/page", "#frag", "", "/abs", "//x.com", "mailto:a@b.c", "javascript:alert(1)", "file:///etc/passwd", "tarmac-card://doc/%2Fa.html", "https://"] {
+            XCTAssertNil(ExternalLink.destination(href: href), href)
+        }
+    }
 }

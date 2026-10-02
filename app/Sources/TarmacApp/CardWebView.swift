@@ -72,7 +72,6 @@ extension WKNavigationAction {
         } else {
             target = .newWindow
         }
-        let cause: CardNavigation.Cause = pageLoad ? .pageLoad : navigationType == .linkActivated ? .linkClick : .other
-        return CardNavigation.Request(url: request.url?.absoluteString ?? "", target: target, cause: cause)
+        return CardNavigation.Request(url: request.url?.absoluteString ?? "", target: target, pageLoad: pageLoad)
     }
 }

@@ -53,6 +53,19 @@
   prose.addEventListener("load", remeasure, true);
   prose.addEventListener("error", remeasure, true);
 
+  function anchorOf(event) {
+    return event.target instanceof Element ? event.target.closest("a") : null;
+  }
+
+  // The page never follows a link. The app opens it, judging the href as the
+  // doc wrote it: resolved, a <base> in the doc would point it anywhere.
+  prose.addEventListener("click", function (event) {
+    const anchor = anchorOf(event);
+    if (!anchor) return;
+    event.preventDefault();
+    webkit.messageHandlers.docLink.postMessage(anchor.getAttribute("href") || "");
+  });
+
   window.tarmacDoc = {
     async render(markdown) {
       const render = ++renders;

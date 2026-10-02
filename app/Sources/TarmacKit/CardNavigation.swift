@@ -6,39 +6,29 @@ public enum CardNavigation {
         case newWindow
     }
 
-    public enum Cause: Equatable, Sendable {
-        /// The app loading the card's own page.
-        case pageLoad
-        case linkClick
-        case other
-    }
-
     public enum Verdict: Equatable, Sendable {
         case allow, cancel
-        /// Cancel, and hand the URL to the system browser.
-        case openExternally
     }
 
     public struct Request: Equatable, Sendable {
         public var url: String
         public var target: Target
-        public var cause: Cause
+        /// The app loading the card's own page.
+        public var pageLoad: Bool
 
-        public init(url: String, target: Target, cause: Cause) {
+        public init(url: String, target: Target, pageLoad: Bool) {
             self.url = url
             self.target = target
-            self.cause = cause
+            self.pageLoad = pageLoad
         }
     }
 
-    /// A markdown doc: a clicked http(s) link opens in the browser and every
-    /// other href is inert (spec 2607.0005). Raw HTML can hold a refresh or a
-    /// form, so nothing but a click reaches the browser. A frame embedded by
-    /// raw HTML loads what it likes.
+    /// A markdown doc: its page loads once and stays. No navigation opens the
+    /// browser — a page the doc frames can ask for one with no click at all —
+    /// so a link is opened from the page's own click instead (`ExternalLink`).
+    /// A frame embedded by raw HTML loads what it likes.
     public static func doc(_ request: Request) -> Verdict {
-        if request.cause == .pageLoad { return .allow }
-        if request.target == .subframe { return .allow }
-        return request.cause == .linkClick && ExternalLink.isHTTP(href: request.url) ? .openExternally : .cancel
+        request.pageLoad || request.target == .subframe ? .allow : .cancel
     }
 
     /// An HTML card: the host page loads once, and the frame inside it only
@@ -46,7 +36,7 @@ public enum CardNavigation {
     public static func htmlCard(_ request: Request) -> Verdict {
         switch request.target {
         case .mainFrame:
-            return request.cause == .pageLoad ? .allow : .cancel
+            return request.pageLoad ? .allow : .cancel
         case .subframe:
             return request.url.hasPrefix(CardProtocol.uriPrefix) ? .allow : .cancel
         case .newWindow:
