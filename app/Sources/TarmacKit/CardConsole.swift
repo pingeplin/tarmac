@@ -88,14 +88,15 @@ public enum CardConsole {
     }
 
     /// `entry`, or when its line runs past `lineCap` or the host page already
-    /// cut it, the head of that line as its one arg, ending in how many
-    /// characters were cut in all.
+    /// cut it, the head of that line as its one arg, ending in how much was
+    /// cut in all. The mark names no unit: the page counts its cut in UTF-16
+    /// units, which for an emoji is twice the characters.
     static func capped(_ entry: Entry) -> Entry {
         let line = formatArgs(entry.args)
         let head = line.prefix(lineCap)
         let cut = line.distance(from: head.endIndex, to: line.endIndex) + entry.dropped
         guard cut > 0 else { return entry }
-        return Entry(level: entry.level, args: [.string("\(head)… (+\(cut) characters)")])
+        return Entry(level: entry.level, args: [.string("\(head)… (+\(cut) more)")])
     }
 
     /// One display line for an entry's args, space-joined, objects and arrays as JSON.

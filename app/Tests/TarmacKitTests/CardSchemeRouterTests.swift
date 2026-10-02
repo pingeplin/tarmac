@@ -259,4 +259,12 @@ final class CardSchemeRouterTests: XCTestCase {
         XCTAssertEqual(respond(SchemeFixtures.docURI("/tmp/card.html"), serving: .doc, disk: disk).status, 200)
         XCTAssertEqual(disk.opened, ["/tmp/card.html"])
     }
+
+    func testACardDocumentIsServedWithTheShimAheadOfIt() {
+        let response = CardSchemeRouter.respond(
+            url: CardURL.src(path: "/r/card.html", mtimeMs: 1), headers: [:], shim: "SHIM", serving: .doc,
+            read: { _ in .success(Data("<p>hi</p>".utf8)) }, resolve: { .success($0) }
+        )
+        XCTAssertEqual(String(decoding: response.body, as: UTF8.self), "<script>SHIM</script>\n<p>hi</p>")
+    }
 }

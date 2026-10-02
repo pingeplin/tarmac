@@ -135,4 +135,15 @@ final class CardNavigationTests: XCTestCase {
             XCTAssertEqual(doc(.init(url: url, target: .subframe, pageLoad: false)), .cancel, url)
         }
     }
+
+    func testWithoutTheFrameRuleTheMainFrameAndANewWindowStillGoNowhere() {
+        for url in ["about:blank", "about:srcdoc", "https://example.com/"] {
+            for target in [CardNavigation.Target.mainFrame, .newWindow] {
+                XCTAssertEqual(
+                    CardNavigation.doc(.init(url: url, target: target, pageLoad: false), framesGuarded: false), .cancel,
+                    "\(url) \(target)"
+                )
+            }
+        }
+    }
 }

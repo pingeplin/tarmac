@@ -16,7 +16,10 @@ final class CardSchemeHandler: NSObject, WKURLSchemeHandler {
 
     private let host: CardURL.Host
     private let shim = BundledResource.web("card_shim.js").text
-    private let reads = DispatchQueue(label: "tarmac.card-scheme", qos: .userInitiated, attributes: .concurrent)
+    /// One file at a time, the next not before this one's answer is WebKit's:
+    /// an answer is held whole, and a doc can name one large file by many
+    /// addresses.
+    private let reads = DispatchQueue(label: "tarmac.card-scheme", qos: .userInitiated)
     /// The tasks WebKit has started and not stopped. Answering a stopped task
     /// raises an exception, and a stopped task's address may by then belong to
     /// another.
@@ -41,9 +44,12 @@ final class CardSchemeHandler: NSObject, WKURLSchemeHandler {
                 url: url.absoluteString, headers: headers, shim: shim, serving: host,
                 read: FileBytes.read, resolve: FileBytes.resolved
             )
+            let handedOver = DispatchSemaphore(value: 0)
             DispatchQueue.main.async { [weak self] in
                 self?.finish(ticket, url: url, with: response)
+                handedOver.signal()
             }
+            handedOver.wait()
         }
     }
 

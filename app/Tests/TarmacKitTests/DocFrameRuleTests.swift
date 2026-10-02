@@ -30,4 +30,8 @@ final class DocFrameRuleTests: XCTestCase {
         XCTAssertFalse(matches(CardURL.src(path: "/Users/me/card.html", mtimeMs: 7)))
         XCTAssertFalse(matches("https://example.com/tarmac-card://img/x.png"))
     }
+
+    func testTheRuleIsStoredUnderItsOwnName() {
+        XCTAssertEqual(DocFrameRule.identifier, "tarmac-doc-frames")
+    }
 }

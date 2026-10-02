@@ -180,7 +180,7 @@ final class CardConsoleTests: XCTestCase {
         XCTAssertEqual(kept.level, .warn)
         XCTAssertEqual(
             CardConsole.formatArgs(kept.args),
-            String(repeating: "x", count: 1000) + "… (+502 characters)"
+            String(repeating: "x", count: 1000) + "… (+502 more)"
         )
     }
 
@@ -204,7 +204,7 @@ final class CardConsoleTests: XCTestCase {
         buffer.push(CardConsole.Entry(level: .log, args: [.string(String(repeating: "👩‍👩‍👧", count: 1001))]))
         XCTAssertEqual(
             CardConsole.formatArgs(buffer.entries[0].args),
-            String(repeating: "👩‍👩‍👧", count: 1000) + "… (+1 characters)"
+            String(repeating: "👩‍👩‍👧", count: 1000) + "… (+1 more)"
         )
     }
 
@@ -233,14 +233,14 @@ final class CardConsoleTests: XCTestCase {
 
         XCTAssertEqual(
             buffer.entries,
-            [CardConsole.Entry(level: .error, args: [.string(String(repeating: "x", count: 1000) + "… (+500 characters)")])]
+            [CardConsole.Entry(level: .error, args: [.string(String(repeating: "x", count: 1000) + "… (+500 more)")])]
         )
     }
 
     func testAShortLineThePageCutStillSaysSo() {
         var buffer = CardConsole.Buffer()
         buffer.push(CardConsole.Entry(level: .log, args: ["abc", 7], dropped: 5))
-        XCTAssertEqual(CardConsole.formatArgs(buffer.entries[0].args), "abc 7… (+5 characters)")
+        XCTAssertEqual(CardConsole.formatArgs(buffer.entries[0].args), "abc 7… (+5 more)")
     }
 
     func testBothCutsAddUp() {
@@ -248,7 +248,7 @@ final class CardConsoleTests: XCTestCase {
         buffer.push(CardConsole.Entry(level: .log, args: [.string(String(repeating: "x", count: 1200))], dropped: 300))
         XCTAssertEqual(
             CardConsole.formatArgs(buffer.entries[0].args),
-            String(repeating: "x", count: 1000) + "… (+500 characters)"
+            String(repeating: "x", count: 1000) + "… (+500 more)"
         )
     }
 

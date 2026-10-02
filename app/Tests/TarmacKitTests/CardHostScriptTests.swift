@@ -95,20 +95,20 @@ final class CardHostScriptTests: XCTestCase {
         XCTAssertEqual(cut.dropped, 4005)
         XCTAssertEqual(
             try line("{ tarmac: 'console', level: 'log', args: ['x'.repeat(5000), 'tail'] }"),
-            x(1000) + "… (+4005 characters)"
+            x(1000) + "… (+4005 more)"
         )
     }
 
     /// Kept characters and the count in the mark always add up to the line the
     /// card logged.
-    func testTheMarkCountsEveryCharacterThatWasCut() throws {
+    func testTheMarkCountsAllThatWasCut() throws {
         let cases: [(args: String, shown: String)] = [
-            ("['x'.repeat(998), 'yyyy']", x(998) + " y… (+3 characters)"),
-            ("['x'.repeat(999), 'yy']", x(999) + "… (+3 characters)"),
-            ("['x'.repeat(1000), 'y']", x(1000) + "… (+2 characters)"),
-            ("['x'.repeat(1001)]", x(1000) + "… (+1 characters)"),
+            ("['x'.repeat(998), 'yyyy']", x(998) + " y… (+3 more)"),
+            ("['x'.repeat(999), 'yy']", x(999) + "… (+3 more)"),
+            ("['x'.repeat(1000), 'y']", x(1000) + "… (+2 more)"),
+            ("['x'.repeat(1001)]", x(1000) + "… (+1 more)"),
             ("['x'.repeat(1000)]", x(1000)),
-            ("['x'.repeat(996), 12345, true]", x(996) + " 123… (+7 characters)"),
+            ("['x'.repeat(996), 12345, true]", x(996) + " 123… (+7 more)"),
         ]
         for (args, shown) in cases {
             XCTAssertEqual(try line("{ tarmac: 'console', level: 'log', args: \(args) }"), shown, args)
@@ -174,5 +174,25 @@ final class CardHostScriptTests: XCTestCase {
     func testAMessageThatCannotBeMeasuredIsNotCarried() {
         XCTAssertEqual(carried("{ tarmac: 'console', level: 'log', args: [1n] }").count, 0)
         XCTAssertEqual(carried("(function () { const a = { tarmac: 'ready' }; a.meta = a; return a; })()").count, 0)
+    }
+
+    /// What an uncut arg takes of the line is its length in UTF-16 units.
+    func testAnArgOfPairsThatFillsTheLineLeavesNoRoomForTheNext() throws {
+        let bodies = carried("{ tarmac: 'console', level: 'log', args: ['😀'.repeat(500), 'tail'] }")
+        guard case .console(let entry)? = CardConsole.parse(try XCTUnwrap(bodies.first)) else {
+            return XCTFail("not an entry")
+        }
+        XCTAssertEqual(entry.args, [.string(String(repeating: "😀", count: 500))])
+        XCTAssertEqual(entry.dropped, 5)
+    }
+
+    func testAnEntryWithAnUndefinedArgIsStillCarried() {
+        XCTAssertEqual(carried("{ tarmac: 'console', level: 'log', args: [undefined, 'a'] }").count, 1)
+    }
+
+    /// `{"tarmac":"ready","meta":""}` is 28 characters.
+    func testAMessageOfExactlyAThousandCharactersIsCarriedAndOneMoreIsNot() {
+        XCTAssertEqual(carried("{ tarmac: 'ready', meta: 'x'.repeat(972) }").count, 1)
+        XCTAssertEqual(carried("{ tarmac: 'ready', meta: 'x'.repeat(973) }").count, 0)
     }
 }

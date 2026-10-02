@@ -237,4 +237,15 @@ final class ImageProtocolTests: XCTestCase {
         XCTAssertEqual(text(resp), "/repo/loop.png: Too many levels of symbolic links (os error 62)")
         XCTAssertEqual(disk.opened, [])
     }
+
+    func testAReadErrorOnAResolvedImageNamesThePathThatWasAsked() {
+        let response = ImageProtocol.respond(
+            path: "/repo/logo.png", file: .success("/elsewhere/real.png"),
+            read: { _ in .failure(FileBytes.ReadError(code: EACCES)) }
+        )
+        XCTAssertEqual(response.status, 404)
+        XCTAssertEqual(
+            String(decoding: response.body, as: UTF8.self), "/repo/logo.png: Permission denied (os error 13)"
+        )
+    }
 }

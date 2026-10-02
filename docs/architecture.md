@@ -566,11 +566,18 @@ handlers they post to. No cookies, cache or storage outlive the app.
   survives a re-render, a zoom and a card resize.
 - **Images.** A local `<img src>` — doc-relative, absolute, or `file://` — is
   re-addressed (`DocImage`) to the `img` host of `tarmac-card://` before it is
-  fetched; other schemes are left as written.
+  fetched; other schemes are left as written. Only the doc's own top frame
+  loads from that host: every doc web view carries a content rule
+  (`DocFrameRule`, compiled once by `DocFrameRules`) that blocks
+  `tarmac-card://img/` in child frames, and the page is not loaded until the
+  rule is attached.
 - **Links.** Only an absolute `http(s)` link opens, in the system browser; the
   page itself never navigates (`CardNavigation`, `ExternalLink`). A frame the
   doc's raw HTML embeds may hold an `http(s)` page or inline content
-  (`about:blank`, `srcdoc`), never a local file or a `tarmac-card://` document.
+  (`about:blank`, `srcdoc`), never a local file or a `tarmac-card://` document,
+  and nothing in a frame loads a local image. If WebKit refuses the content
+  rule, no `http(s)` page is framed at all
+  (`CardNavigation.doc(_:framesGuarded:)`).
 - **Header.** `↻` sends `DocRefresh`; the daemon's `FileEvent` is what reloads.
   `✕`, or `⌘W` on the selected doc, removes the card, its registry entry and any
   borrow, and sends `DocClose`.
@@ -587,19 +594,29 @@ no permission-policy feature, and no handle on the app.
 
 - **Scheme handler.** `CardSchemeHandler` answers `tarmac-card://`; what to
   serve is `CardSchemeRouter`'s decision, and the file is read off the main
-  thread. The `doc` host serves the file as `text/html` with the shim prepended
+  thread, one at a time. The `doc` host serves the file as `text/html` with the shim prepended
   before its first byte and a strict response CSP (`CardProtocol`:
   `default-src 'none'`, inline script and style only, `data:`/`blob:` media).
-  The `img` host serves bytes for allow-listed image types only, never HTML
-  (`ImageProtocol`). Each web view is served only its own host — an HTML card's
+  A request that carries an `Origin` header — XHR, `fetch`, a `crossorigin`
+  load — is answered 403 on either host before the disk is touched: no page
+  the app loads reads the scheme by script. The `img` host serves bytes for
+  allow-listed image types only, never HTML (`ImageProtocol`); the path is
+  resolved with `realpath` and the file it leads to is the one judged, typed
+  and read, so a name that is an image's and leads to anything else is refused
+  unopened. A file over 64 MiB is refused on either host
+  (`FileBytes.sizeCap`), from its size at open and again while it is read.
+  Each web view is served only its own host — an HTML card's
   the `doc` host, a markdown doc's the `img` host — so a markdown doc cannot
   frame a local file as an unsandboxed card document.
 - **The shim** (`card_shim.js`) is everything a document can observe of its
   host: it relays `console.log`/`info`/`warn`/`error`, uncaught errors, unhandled
   rejections and `Escape` to its parent,
   applies the zoom, and gates the document's schedulers. Its parent is the host
-  page, whose script (`card-host.js`, in the app's content world) only carries
-  messages; what they mean is `HTMLCardSession`'s.
+  page, whose script (`card-host.js`, in the app's content world) carries
+  messages and bounds them: a console entry is cut to the 1000-character line
+  the app keeps and posted with the count of what was cut, and any other
+  message is carried only if its JSON is at most 1000 characters. What they
+  mean is `HTMLCardSession`'s.
 - **Shield and borrow.** A transparent shield covers the document: a press
   selects the card, a wheel over the selected card is relayed into the document
   as whole-pixel scroll steps (`CardZoom`), and nothing else reaches it. A
@@ -620,8 +637,11 @@ no permission-policy feature, and no handle on the app.
   its `requestAnimationFrame`, `setInterval` and `setTimeout` schedulers until
   the card is shown again.
 - **Console.** Relayed output collects in a per-card buffer of the last 500
-  entries (`CardConsole`); once it is non-empty the header shows a badge that
-  toggles a panel over the bottom of the body.
+  entries (`CardConsole`), each kept to a 1000-character line that ends in
+  `… (+N more)` when it was cut; the badge and the panel catch up at most every
+  0.1 s. Once the buffer is non-empty the header shows a badge that toggles a
+  panel over the bottom of the body, at most 40 % of it high; its text can be
+  selected and copied.
 
 ### Provenance edges
 
@@ -642,11 +662,14 @@ window's first responder).
   and gives it the keyboard. A press on a doc card selects it — except on a
   link or a header control (`CardPress`); a markdown doc's web view takes the
   keyboard, so its text can be selected and copied the usual
-  way. A press on the bare board clears the selection and leaves the keyboard
+  way. A press in an HTML card's console gives its text the keyboard for the
+  same reason; the next key that is typing hands it back (rung 7). A press on
+  the bare board clears the selection and leaves the keyboard
   with the board.
 - Keyboard focus is put on the board's prime terminal after the active board's
-  first restore, on arriving at a board, after `⌥Tab`, and after un-borrowing an
-  HTML card. `⌘T` makes the new terminal prime but moves neither focus nor
+  first restore, on arriving at a board, after `⌥Tab`, after un-borrowing an
+  HTML card, and when a key is typed while a console holds the keys and no card
+  is borrowed. `⌘T` makes the new terminal prime but moves neither focus nor
   selection.
 - Prime falls to the first live terminal in card order when the prime exits or
   dies (`TermPrime`).
@@ -670,6 +693,10 @@ view; `KeyLadder` says which ones the app takes, in this order:
    toasts → fly back to the remembered viewport → un-borrow → clear `fresh` on
    every doc of the board → deselect a selected doc. With none, `ESC` reaches
    the terminal.
+7. While an HTML card's console holds the keys, a `⌘` chord and a shifted
+   arrow, Home, End or Page key stay with its text. Any other key first returns
+   the keyboard — to the borrowed card's document, else the prime terminal —
+   and is then dispatched there.
 
 Everything else goes to the first responder and then the menu. AppKit's menu,
 not a character comparison, decides which chord is Quit, Copy or Paste.

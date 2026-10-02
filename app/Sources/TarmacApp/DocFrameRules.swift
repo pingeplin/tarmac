@@ -27,7 +27,10 @@ final class DocFrameRules {
         }
         store.compileContentRuleList(
             forIdentifier: DocFrameRule.identifier, encodedContentRuleList: DocFrameRule.json
-        ) { [weak self] rules, _ in
+        ) { [weak self] rules, error in
+            if let error {
+                FileHandle.standardError.write(Data("tarmac: doc frame rule refused: \(error)\n".utf8))
+            }
             self?.settle(rules)
         }
     }

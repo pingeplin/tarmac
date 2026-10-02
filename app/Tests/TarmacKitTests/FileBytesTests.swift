@@ -192,6 +192,22 @@ final class FileBytesTests: XCTestCase {
         XCTAssertEqual(why(FileBytes.resolved(path: directory + "/dangling.png")), "No such file or directory (os error 2)")
         XCTAssertEqual(why(FileBytes.resolved(path: directory + "/loop.png")), "Too many levels of symbolic links (os error 62)")
     }
+
+    func testARefusedFileLeavesNoDescriptorOpen() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("tarmac-fd-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let big = dir.appendingPathComponent("big").path
+        try Data(count: 64).write(to: URL(fileURLWithPath: big))
+        func openDescriptors() -> Int { (0..<getdtablesize()).filter { fcntl($0, F_GETFD) != -1 }.count }
+        let before = openDescriptors()
+        for _ in 0..<40 {
+            _ = FileBytes.read(path: big, limit: 10)
+            _ = FileBytes.read(path: dir.path, limit: 10)
+            _ = FileBytes.read(path: "/dev/null", limit: 10)
+        }
+        XCTAssertEqual(openDescriptors(), before)
+    }
 }
 
 private final class Locked<Value>: @unchecked Sendable {

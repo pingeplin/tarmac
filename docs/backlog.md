@@ -207,5 +207,27 @@ Verified against the code on 2026-10-02.
 - **A press on a terminal card's header gives that terminal the keyboard.**
   Prime and focus move together; a header press cannot make a terminal prime
   without focusing it. `select` in `app/Sources/TarmacApp/AppController+Focus.swift`.
+- **A markdown doc can tell a server about a local image it names.** With no
+  frame and no script, its own markup — a lazy remote image below a local one,
+  or container queries around it — reveals whether the image exists and how
+  wide it is; never its content.
+  `app/Sources/TarmacApp/Resources/DocTemplate.html`.
+- **The img host resolves a path, then opens it.** A local process that swaps
+  the path in between is served the swapped file under an image type; a hard
+  link named like an image is served too, and so is an image named with a
+  trailing slash. `resolved` and `openRegular` in
+  `app/Sources/TarmacKit/FileBytes.swift`.
+- **A console entry of many small args is costly.** The host page bounds an
+  entry's characters, not its arg count. `cutArgs` in
+  `app/Sources/TarmacApp/Resources/Web/card-host.js`.
+- **Closing the console while its text holds the keys drops typing until a
+  click.** Same path as the culled terminal above. `toggleConsole` in
+  `app/Sources/TarmacApp/HTMLCardView.swift`.
+- **The link-hover report goes stale when a card moves under a resting
+  pointer**, until the pointer next moves.
+  `app/Sources/TarmacApp/Resources/Web/doc-render.js`.
+- **No in-repo test drives `CardSchemeHandler` or compiles `DocFrameRule` with
+  WebKit**; the one-read-at-a-time rule, the address-reuse rule and the content
+  rule were checked only with an off-screen harness.
 - **`NOTICE` has no licence notices for what the bundle ships**: the fonts (OFL)
   and `marked` (MIT). `NOTICE`.
