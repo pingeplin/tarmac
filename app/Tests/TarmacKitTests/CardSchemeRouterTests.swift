@@ -140,4 +140,47 @@ final class CardSchemeRouterTests: XCTestCase {
             XCTAssertEqual(CardSchemeRouter.route(url: url), CardSchemeRouter.route(url: seen), url)
         }
     }
+
+    // MARK: - One host per web view
+
+    private func respond(_ url: String, serving host: CardURL.Host, disk: SchemeFixtures.Disk) -> CardProtocol.Response {
+        CardSchemeRouter.respond(url: url, shim: shim, serving: host, read: disk.read)
+    }
+
+    func testAWebViewIsServedItsOwnHost() {
+        let disk = SchemeFixtures.Disk(["/tmp/a.html": Data("<html/>".utf8), "/tmp/a.png": Data([1])])
+        XCTAssertEqual(respond(SchemeFixtures.docURI("/tmp/a.html"), serving: .doc, disk: disk).status, 200)
+        XCTAssertEqual(respond(SchemeFixtures.imgURI("/tmp/a.png"), serving: .img, disk: disk).status, 200)
+    }
+
+    /// A markdown doc's web view loads images and nothing else. A card document
+    /// it framed would run unsandboxed at the scheme's own origin, beside
+    /// whatever other file the doc framed.
+    func testAMarkdownDocsWebViewIsNeverServedACardDocument() {
+        let path = "/tmp/secret.html"
+        let disk = SchemeFixtures.Disk([path: Data("CONTENTS".utf8)])
+        let resp = respond(SchemeFixtures.docURI(path), serving: .img, disk: disk)
+
+        XCTAssertEqual(resp.status, 403)
+        XCTAssertFalse(text(resp).contains("CONTENTS"))
+        XCTAssertNil(resp.headers["Content-Security-Policy"])
+        XCTAssertEqual(disk.opened, [])
+    }
+
+    func testAnHTMLCardsWebViewIsNeverServedAnImage() {
+        let path = "/tmp/a.png"
+        let disk = SchemeFixtures.Disk([path: Data([1, 2])])
+        let resp = respond(SchemeFixtures.imgURI(path), serving: .doc, disk: disk)
+
+        XCTAssertEqual(resp.status, 403)
+        XCTAssertEqual(disk.opened, [])
+    }
+
+    func testAnUnknownHostIsServedToNoWebView() {
+        for host in [CardURL.Host.doc, .img] {
+            let disk = SchemeFixtures.Disk()
+            XCTAssertGreaterThanOrEqual(respond("tarmac-card://other/x", serving: host, disk: disk).status, 400)
+            XCTAssertEqual(disk.opened, [])
+        }
+    }
 }

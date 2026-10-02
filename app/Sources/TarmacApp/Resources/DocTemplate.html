@@ -3,8 +3,10 @@
 <head>
 <meta charset="utf-8">
 <!-- A doc's raw HTML is kept as written but never runs: the page's own script
-     is injected by the app outside this policy. -->
-<meta http-equiv="Content-Security-Policy" content="script-src 'none'; object-src 'none'">
+     is injected by the app outside this policy. It may frame a web page, as in
+     the Tauri app, and nothing else: a tarmac-card: document framed here would
+     not be sandboxed. -->
+<meta http-equiv="Content-Security-Policy" content="script-src 'none'; object-src 'none'; frame-src http: https:">
 <style>
   /* The prose rules are the Tauri doc card's (desktop/src/theme/card.css), with
      its tokens inlined. The web view is laid out at the card's on-screen size,

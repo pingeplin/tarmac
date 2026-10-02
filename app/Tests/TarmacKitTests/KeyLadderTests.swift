@@ -28,8 +28,7 @@ final class KeyLadderTests: XCTestCase {
     /// Every key the ladder would otherwise take.
     private var takenKeys: [KeyPress] {
         [
-            letter("k", command), letter("w", command), letter("t", command), letter("c", command), tab(option),
-            enter(), esc(),
+            letter("k", command), letter("w", command), letter("t", command), tab(option), enter(), esc(),
         ]
     }
 
@@ -107,28 +106,14 @@ final class KeyLadderTests: XCTestCase {
         }
     }
 
-    // MARK: D17 — ⌘C on a selected doc
+    // MARK: D17, X30 — ⌘C
 
-    private let docSelected = Facts(esc: EscLadder.Facts(selectedIsDoc: true))
-
-    func testCommandCCopiesFromTheSelectedDoc() {
-        XCTAssertEqual(KeyLadder.decide(letter("c", command), docSelected), .copyDocSelection)
-    }
-
-    func testCommandCIsTheFocusedViewsUnlessADocIsSelected() {
+    /// A doc's web view holds its own selection and answers the menu's Copy,
+    /// so ⌘C is the focused view's whatever is selected.
+    func testCommandCIsNeverTheLadders() {
+        let docSelected = Facts(keys: .host, esc: EscLadder.Facts(selectedIsDoc: true))
+        XCTAssertEqual(KeyLadder.decide(letter("c", command), docSelected), .passThrough)
         XCTAssertEqual(KeyLadder.decide(letter("c", command), Facts()), .passThrough)
-    }
-
-    func testOnlyPlainCommandCCopiesFromTheDoc() {
-        XCTAssertEqual(KeyLadder.decide(letter("C", command | shift), docSelected), .passThrough)
-        XCTAssertEqual(KeyLadder.decide(letter("c", command | option), docSelected), .passThrough)
-        XCTAssertEqual(KeyLadder.decide(letter("c"), docSelected), .passThrough)
-    }
-
-    func testCommandCUnderTheOpenSwitcherIsTheSwitchers() {
-        var facts = docSelected
-        facts.switcherOpen = true
-        XCTAssertEqual(KeyLadder.decide(letter("c", command), facts), .switcherKey)
     }
 
     // MARK: K9 — ⌥Tab
@@ -159,6 +144,23 @@ final class KeyLadderTests: XCTestCase {
 
     func testReturnBelongsToTheTerminalThatHoldsTheKeys() {
         XCTAssertEqual(KeyLadder.decide(enter(), Facts(keys: .terminal, hasFlyTarget: true)), .passThrough)
+    }
+
+    /// A markdown doc's raw HTML can hold a textarea or an input. Return typed
+    /// there is the control's, as it is in the web app.
+    func testReturnBelongsToATextControlThatHoldsTheKeys() {
+        let typing = Facts(keys: .host, editingText: true, hasFlyTarget: true)
+        XCTAssertEqual(KeyLadder.decide(enter(), typing), .passThrough)
+        XCTAssertEqual(KeyLadder.decide(named(76, numericPad), typing), .passThrough)
+    }
+
+    /// Only Return is the control's: the app's other keys work from there.
+    func testEveryOtherAppKeyIsStillTakenFromATextControl() {
+        var facts = eager
+        facts.editingText = true
+        for key in [letter("k", command), letter("w", command), letter("t", command), tab(option), esc()] {
+            XCTAssertNotEqual(KeyLadder.decide(key, facts), .passThrough, "\(key)")
+        }
     }
 
     func testReturnWithNowhereToFlyDoesNothing() {

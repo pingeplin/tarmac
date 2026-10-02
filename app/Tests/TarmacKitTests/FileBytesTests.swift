@@ -55,4 +55,59 @@ final class FileBytesTests: XCTestCase {
         try Data("x".utf8).write(to: URL(fileURLWithPath: path))
         XCTAssertEqual(reason(FileBytes.read(path: path + "/")), "Not a directory (os error 20)")
     }
+
+    // MARK: - Only regular files
+
+    /// A card names any path it likes, and can send itself to one. A device
+    /// has no end to read to: `/dev/zero` would fill memory.
+    func testADeviceIsNotRead() {
+        XCTAssertEqual(reason(FileBytes.read(path: "/dev/null")), "not a regular file")
+        XCTAssertEqual(reason(FileBytes.read(path: "/dev/zero")), "not a regular file")
+    }
+
+    /// A pipe with no writer blocks whoever opens it. It is refused at once.
+    func testAPipeIsRefusedWithoutWaitingForAWriter() {
+        let pipe = directory + "/pipe"
+        XCTAssertEqual(mkfifo(pipe, 0o600), 0)
+        let answered = expectation(description: "the read returned")
+        let result = Locked<Result<Data, any Error>?>(nil)
+        DispatchQueue.global().async {
+            result.set(FileBytes.read(path: pipe))
+            answered.fulfill()
+        }
+        let outcome = XCTWaiter().wait(for: [answered], timeout: 2)
+        // A reader stuck on the open is let go, so the test leaves no thread behind.
+        let writer = open(pipe, O_WRONLY | O_NONBLOCK)
+        if writer >= 0 { close(writer) }
+
+        XCTAssertEqual(outcome, .completed, "the read waited on the pipe")
+        XCTAssertEqual(result.get().flatMap(reason), "not a regular file")
+    }
+
+    func testASymbolicLinkToAFileReadsThatFile() throws {
+        let target = directory + "/target.txt"
+        let link = directory + "/link.txt"
+        try Data("through the link".utf8).write(to: URL(fileURLWithPath: target))
+        try FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: target)
+        XCTAssertEqual(try FileBytes.read(path: link).get(), Data("through the link".utf8))
+    }
+}
+
+private final class Locked<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Value
+
+    init(_ value: Value) { self.value = value }
+
+    func set(_ new: Value) {
+        lock.lock()
+        value = new
+        lock.unlock()
+    }
+
+    func get() -> Value {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
 }

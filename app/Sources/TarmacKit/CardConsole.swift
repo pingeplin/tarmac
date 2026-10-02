@@ -6,6 +6,12 @@ import Foundation
 /// silently ignored.
 public enum CardConsole {
     public static let bufferCap = 500
+    /// The most characters of one entry's line that are kept. A card is not
+    /// trusted with how much it logs: one entry may be megabytes.
+    public static let lineCap = 1000
+    /// The least time between two updates of what the card shows of its
+    /// console, however fast the card logs.
+    public static let refreshInterval: Double = 0.1
 
     public enum Level: String, Equatable, Sendable {
         case log, info, warn, error
@@ -57,7 +63,8 @@ public enum CardConsole {
         }
     }
 
-    /// An order-preserving buffer; beyond `cap` the oldest entries fall off.
+    /// An order-preserving buffer; beyond `cap` the oldest entries fall off,
+    /// and an entry is kept no longer than `lineCap`.
     public struct Buffer: Equatable, Sendable {
         public private(set) var entries: [Entry] = []
         public let cap: Int
@@ -67,9 +74,19 @@ public enum CardConsole {
         }
 
         public mutating func push(_ entry: Entry) {
-            entries.append(entry)
+            entries.append(CardConsole.capped(entry))
             if entries.count > cap { entries.removeFirst(entries.count - cap) }
         }
+    }
+
+    /// `entry`, or when its line runs past `lineCap` the head of that line as
+    /// its one arg, ending in how many characters were cut.
+    static func capped(_ entry: Entry) -> Entry {
+        let line = formatArgs(entry.args)
+        let head = line.prefix(lineCap)
+        guard head.endIndex < line.endIndex else { return entry }
+        let cut = line.distance(from: head.endIndex, to: line.endIndex)
+        return Entry(level: entry.level, args: [.string("\(head)… (+\(cut) characters)")])
     }
 
     /// One display line for an entry's args, space-joined, objects and arrays as JSON.

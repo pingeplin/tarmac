@@ -47,7 +47,7 @@ final class CardConsoleView: NSView {
         layer?.backgroundColor = Theme.bg0.withAlphaComponent(0.94).cgColor
 
         text.isEditable = false
-        text.isSelectable = false
+        text.isSelectable = true
         text.drawsBackground = false
         text.textContainerInset = Self.inset
         text.textContainer?.lineFragmentPadding = 0
@@ -82,12 +82,14 @@ final class CardConsoleView: NSView {
         text.textStorage?.setAttributedString(lines)
     }
 
-    /// The height the lines take at `width`, the insets included.
+    /// The height the lines take at `width`, the insets included. Measured
+    /// from the text itself: the text view has no width yet when the panel is
+    /// first opened, and would report no height at all.
     func height(forWidth width: CGFloat) -> CGFloat {
-        guard let container = text.textContainer, let layoutManager = text.layoutManager else { return 0 }
-        container.containerSize = NSSize(width: max(0, width - 2 * Self.inset.width), height: .greatestFiniteMagnitude)
-        layoutManager.ensureLayout(for: container)
-        return (layoutManager.usedRect(for: container).height + 2 * Self.inset.height).rounded(.up)
+        guard let lines = text.textStorage else { return 0 }
+        let room = NSSize(width: max(0, width - 2 * Self.inset.width), height: .greatestFiniteMagnitude)
+        let used = lines.boundingRect(with: room, options: [.usesLineFragmentOrigin])
+        return (used.height + 2 * Self.inset.height).rounded(.up)
     }
 
     override func layout() {

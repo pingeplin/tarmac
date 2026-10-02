@@ -70,9 +70,6 @@ extension AppController {
             closeSelectedCard()
         case .switcherKey:
             return handleSwitcherKey(press)
-        case .copyDocSelection:
-            // A doc's web view holds its own selection and answers the menu's Copy.
-            return false
         case .cycleTerminals:
             cycleTerminals()
         case .newTerminal:
@@ -96,6 +93,7 @@ extension AppController {
             composing: terminal?.hasMarkedText() == true,
             switcherOpen: switcherOpen,
             keys: borrow.documentHoldsKeys ? .document : terminal != nil ? .terminal : .host,
+            editingText: typingInDoc,
             hasFlyTarget: rootView.offscreenFlyTarget != nil,
             esc: EscLadder.Facts(
                 toastsShowing: rootView.toasts.hasToasts,
@@ -117,13 +115,19 @@ extension AppController {
         return nil
     }
 
+    /// Whether the keys go to a text control in a markdown doc's page.
+    private var typingInDoc: Bool {
+        guard let responder = window?.firstResponder as? NSView else { return false }
+        return activeBoard.view.cards.values.contains { $0.isTypedInto(through: responder) }
+    }
+
     /// Whether an HTML card is borrowed, and whether its document has keyboard
     /// focus.
     private var borrowedCard: (borrowed: Bool, documentHoldsKeys: Bool) {
         guard let id = borrow.id else { return (false, false) }
         guard let body = activeBoard.view.card(id)?.htmlBody, let responder = window?.firstResponder as? NSView
         else { return (true, false) }
-        return (true, responder.isDescendant(of: body))
+        return (true, body.documentHoldsKeys(responder))
     }
 
     private func climb(_ rung: EscLadder.Rung) {

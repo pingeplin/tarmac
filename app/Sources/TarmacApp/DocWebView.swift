@@ -11,10 +11,20 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
     /// Where a clicked http(s) link goes.
     var openExternal: (URL) -> Void = { NSWorkspace.shared.open($0) }
 
+    /// The pointer is on a link of the doc, as the page last reported it. A
+    /// press is judged before the page sees it, so this is known ahead of one.
+    private(set) var pointerIsOverLink = false
+
+    /// A text control of the doc's raw HTML has the page's focus.
+    private(set) var isEditingText = false
+
     private let path: String
     private let webView: WKWebView
     private let host: ScreenSpaceHost
     private let images = ScriptRequestRelay()
+    private let links = ScriptMessageRelay()
+    private let hover = ScriptMessageRelay()
+    private let editing = ScriptMessageRelay()
 
     private var pageLoaded = false
     private var loadingPage = false
@@ -28,10 +38,10 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
 
     init(path: String) {
         self.path = path
-        webView = CardWebView.make(scripts: [
-            BundledResource.web("marked.umd.js").text,
-            BundledResource.web("doc-render.js").text,
-        ])
+        webView = CardWebView.make(
+            scripts: [BundledResource.web("marked.umd.js").text, BundledResource.web("doc-render.js").text],
+            served: .docImages
+        )
         host = ScreenSpaceHost(content: webView)
         super.init(frame: .zero)
         wantsLayer = true
@@ -43,6 +53,12 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
             images, contentWorld: CardWebView.world, name: "docImages"
         )
         images.onRequest = { [weak self] message in self?.imageSources(for: message.body) }
+        webView.configuration.userContentController.add(links, contentWorld: CardWebView.world, name: "docLink")
+        links.onMessage = { [weak self] message in self?.linkClicked(message) }
+        webView.configuration.userContentController.add(hover, contentWorld: CardWebView.world, name: "docOverLink")
+        hover.onMessage = { [weak self] message in self?.pointerIsOverLink = message.body as? Bool ?? false }
+        webView.configuration.userContentController.add(editing, contentWorld: CardWebView.world, name: "docEditing")
+        editing.onMessage = { [weak self] message in self?.isEditingText = message.body as? Bool ?? false }
         host.onResize = { [weak self] size in self?.layoutPage(viewport: size) }
         addSubview(host)
         loadPage()
@@ -50,6 +66,8 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
 
     private func loadPage() {
         pageLoaded = false
+        pointerIsOverLink = false
+        isEditingText = false
         loadingPage = true
         webView.loadHTMLString(BundledResource.docTemplate.text, baseURL: nil)
     }
@@ -106,6 +124,15 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
         (body as? [String] ?? []).map { DocImage.src($0, docPath: path, mtimeMs: lastChangedMs) }
     }
 
+    /// A link in the doc was clicked; the message is its `href` as written.
+    /// Only an absolute http(s) one opens, and every other is inert.
+    private func linkClicked(_ message: WKScriptMessage) {
+        guard message.frameInfo.isMainFrame, let href = message.body as? String,
+              let url = ExternalLink.destination(href: href)
+        else { return }
+        openExternal(url)
+    }
+
     // MARK: - WKNavigationDelegate
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -126,14 +153,6 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
     ) {
         let request = navigationAction.cardRequest(pageLoad: loadingPage)
         loadingPage = false
-        switch CardNavigation.doc(request) {
-        case .allow:
-            decisionHandler(.allow)
-        case .cancel:
-            decisionHandler(.cancel)
-        case .openExternally:
-            if let url = navigationAction.request.url { openExternal(url) }
-            decisionHandler(.cancel)
-        }
+        decisionHandler(CardNavigation.doc(request) == .allow ? .allow : .cancel)
     }
 }

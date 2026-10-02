@@ -53,6 +53,48 @@
   prose.addEventListener("load", remeasure, true);
   prose.addEventListener("error", remeasure, true);
 
+  function anchorOf(event) {
+    return event.target instanceof Element ? event.target.closest("a") : null;
+  }
+
+  // The page never follows a link. The app opens it, judging the href as the
+  // doc wrote it: resolved, a <base> in the doc would point it anywhere.
+  prose.addEventListener("click", function (event) {
+    const anchor = anchorOf(event);
+    if (!anchor) return;
+    event.preventDefault();
+    webkit.messageHandlers.docLink.postMessage(anchor.getAttribute("href") || "");
+  });
+
+  // A press on a link does not select the card, and the app decides that
+  // before the press reaches this page: so it is told when the pointer is on
+  // one.
+  let overLink = false;
+  function pointerIs(onLink) {
+    if (onLink === overLink) return;
+    overLink = onLink;
+    webkit.messageHandlers.docOverLink.postMessage(onLink);
+  }
+  prose.addEventListener("mouseover", function (event) {
+    pointerIs(anchorOf(event) !== null);
+  });
+  root.addEventListener("mouseleave", function () {
+    pointerIs(false);
+  });
+
+  // Raw HTML can hold a text control. Return typed into one is the control's,
+  // not the app's, so the app is told when one has the focus.
+  let editing = false;
+  function focusMoved() {
+    const active = document.activeElement;
+    const now = active !== null && active.closest("button, input, textarea, [contenteditable]") !== null;
+    if (now === editing) return;
+    editing = now;
+    webkit.messageHandlers.docEditing.postMessage(now);
+  }
+  document.addEventListener("focusin", focusMoved);
+  document.addEventListener("focusout", focusMoved);
+
   window.tarmacDoc = {
     async render(markdown) {
       const render = ++renders;
@@ -74,6 +116,10 @@
       }
       prose.replaceChildren(template.content);
       remeasure();
+      // What was focused or under the pointer was just replaced, with no
+      // event to say so.
+      focusMoved();
+      pointerIs(false);
     },
 
     // Called before the web view takes its new size.

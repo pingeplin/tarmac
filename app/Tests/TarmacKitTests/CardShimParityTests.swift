@@ -9,7 +9,10 @@ final class CardShimParityTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let tauri = repo.appendingPathComponent("desktop/src-tauri/src/card_shim.js")
         let bundled = repo.appendingPathComponent("app/Sources/TarmacApp/Resources/Web/card_shim.js")
-        try XCTSkipUnless(FileManager.default.fileExists(atPath: tauri.path), "the Tauri app is gone; so is the copy's source")
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: tauri.path),
+            "desktop/src-tauri/src/card_shim.js is gone, so the app's copy is the shim now and there is nothing to hold it to; delete this test"
+        )
         let shim = try Data(contentsOf: bundled)
         XCTAssertFalse(shim.isEmpty)
         XCTAssertEqual(shim, try Data(contentsOf: tauri))

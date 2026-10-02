@@ -28,6 +28,7 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
     private let console = CardConsoleView()
 
     private var session = HTMLCardSession()
+    private var consoleUpdate = CoalescedUpdate()
     private var wheel = CardZoom.ScrollRelay()
     private var pageLoaded = false
     private var loadingPage = false
@@ -41,7 +42,7 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
 
     init(path: String) {
         self.path = path
-        webView = CardWebView.make(scripts: [BundledResource.web("card-host.js").text])
+        webView = CardWebView.make(scripts: [BundledResource.web("card-host.js").text], served: .cards)
         host = ScreenSpaceHost(content: webView)
         super.init(frame: .zero)
         wantsLayer = true
@@ -105,6 +106,12 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
         webView.runInCardWorld("tarmacCard.focus()")
     }
 
+    /// Whether `responder`, the view with keyboard focus, is the document —
+    /// not the console, whose text can be selected and so takes the focus too.
+    func documentHoldsKeys(_ responder: NSView) -> Bool {
+        responder.isDescendant(of: webView)
+    }
+
     // MARK: - Cull
 
     func setCulled(_ culled: Bool) {
@@ -116,12 +123,25 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
 
     func toggleConsole() {
         console.isHidden.toggle()
-        needsLayout = true
+        showConsole()
     }
 
+    /// The console gained an entry. A card can log faster than its console
+    /// can be drawn, so the badge and the panel catch up at most once per
+    /// `CardConsole.refreshInterval`, and the panel only while it is open.
     private func consoleChanged() {
+        guard consoleUpdate.changed() else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + CardConsole.refreshInterval) { [weak self] in
+            guard let self else { return }
+            self.consoleUpdate.ran()
+            self.onConsoleChanged?(self.session.console.entries.count)
+            self.showConsole()
+        }
+    }
+
+    private func showConsole() {
+        guard !console.isHidden else { return }
         console.show(session.console.entries)
-        onConsoleChanged?(session.console.entries.count)
         needsLayout = true
     }
 

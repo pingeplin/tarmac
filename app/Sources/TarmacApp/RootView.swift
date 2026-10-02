@@ -81,9 +81,9 @@ final class RootView: NSView {
 
     /// Wires a board view's wayfinding callbacks to this RootView — called for
     /// the initial board in `init` and for each board mounted by `mountBoard`.
-    /// (`onLayoutChanged` is owned by AppController and re-bound there on
-    /// mount; the zoom/minimap actions read `self.board` dynamically so they
-    /// always target the mounted board.)
+    /// (`onLayoutChanged` and the card callbacks are owned by AppController and
+    /// re-bound there on mount; the zoom/minimap actions read `self.board`
+    /// dynamically so they always target the mounted board.)
     private func wireBoardCallbacks(_ bv: BoardView) {
         bv.onViewportChanged = { [weak self] vp in self?.refreshWayfinding(vp) }
         bv.onCardsChanged = { [weak self] in self?.cardsChanged() }

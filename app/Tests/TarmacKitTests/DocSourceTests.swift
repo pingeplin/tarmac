@@ -22,6 +22,14 @@ final class DocSourceTests: XCTestCase {
         XCTAssertTrue(text.hasSuffix("\n```"), text)
     }
 
+    /// The reason is worded as the Tauri backend's `read_to_string` words it.
+    func testBytesThatAreNotUTF8SayWhy() {
+        XCTAssertEqual(
+            DocSource.markdown(path: "/r/a.md", contents: .success(Data([0xC3, 0x28]))),
+            "*could not read /r/a.md*\n\n```\nstream did not contain valid UTF-8\n```"
+        )
+    }
+
     func testAReadErrorIsUnreadable() {
         struct Failure: LocalizedError {
             var errorDescription: String? { "boom" }

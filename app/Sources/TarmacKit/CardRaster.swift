@@ -14,13 +14,4 @@ public enum CardRaster {
     public static func layerScale(backing: CGFloat, zoom: CGFloat) -> CGFloat {
         backing * min(max(zoom, 1), maxZoom)
     }
-
-    /// A web view is never drawn below this: at 1× its text reads thin and
-    /// feathered, and drawing at 2× to be scaled down gives cleaner edges.
-    public static let minWebScale: CGFloat = 2
-
-    /// The device scale for a doc card's web view.
-    public static func webScale(backing: CGFloat, zoom: CGFloat) -> CGFloat {
-        max(minWebScale, layerScale(backing: backing, zoom: zoom))
-    }
 }

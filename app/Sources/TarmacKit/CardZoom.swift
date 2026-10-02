@@ -12,8 +12,8 @@ public enum BoardZoom {
 /// A foreign document cannot be laid out ahead of time by the host, so it has
 /// two modes. Magnify lays it out once at root zoom `magnifyK` in a box
 /// `magnifyK` times the card's and shows that scaled by `zoom / magnifyK`.
-/// Reveal lays it out at real screen pixels, scales it by `gestureScale` while
-/// the zoom is changing, and sizes it again once the zoom has settled.
+/// Reveal lays it out at real screen pixels and sizes it again once the zoom
+/// has settled; while the zoom is changing the card's own stretch carries it.
 public enum CardZoom {
     /// Frozen: a root zoom that followed the board would lay the document out
     /// again at each value, and WebKit does not scale glyph advances linearly
@@ -26,10 +26,6 @@ public enum CardZoom {
 
     public static func iframePx(frame: CGSize, zoom: CGFloat) -> CGSize {
         CGSize(width: (frame.width * zoom).roundedHalfUp, height: (frame.height * zoom).roundedHalfUp)
-    }
-
-    public static func gestureScale(zoom: CGFloat, settledZoom: CGFloat) -> CGFloat {
-        zoom / settledZoom
     }
 
     /// A screen-point wheel delta in the document's own layout units: one

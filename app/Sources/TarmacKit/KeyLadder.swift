@@ -18,17 +18,21 @@ public enum KeyLadder {
         public var composing: Bool
         public var switcherOpen: Bool
         public var keys: Keys
+        /// The keys are being typed into a text control of a markdown doc's
+        /// page: its raw HTML can hold an input or a textarea.
+        public var editingText: Bool
         /// A signalling card is off screen, so Return has somewhere to fly.
         public var hasFlyTarget: Bool
         public var esc: EscLadder.Facts
 
         public init(
-            composing: Bool = false, switcherOpen: Bool = false, keys: Keys = .terminal, hasFlyTarget: Bool = false,
-            esc: EscLadder.Facts = EscLadder.Facts()
+            composing: Bool = false, switcherOpen: Bool = false, keys: Keys = .terminal, editingText: Bool = false,
+            hasFlyTarget: Bool = false, esc: EscLadder.Facts = EscLadder.Facts()
         ) {
             self.composing = composing
             self.switcherOpen = switcherOpen
             self.keys = keys
+            self.editingText = editingText
             self.hasFlyTarget = hasFlyTarget
             self.esc = esc
         }
@@ -44,10 +48,6 @@ public enum KeyLadder {
         case closeSelectedCard
         /// The open switcher owns the key (`SwitcherKeys`).
         case switcherKey
-        /// ⌘C with a doc card selected: copy that card's text selection. A doc's
-        /// web view never takes keyboard focus, so the menu's Copy, which
-        /// goes to the first responder, cannot reach it.
-        case copyDocSelection
         /// ⌥Tab.
         case cycleTerminals
         /// ⌘T.
@@ -64,13 +64,14 @@ public enum KeyLadder {
         if press.isCommandChord("k") { return .toggleSwitcher }
         if press.isCommandChord("w") { return .closeSelectedCard }
         if facts.switcherOpen { return .switcherKey }
-        if press.isCommandChord("c"), !press.shift, facts.esc.selectedIsDoc { return .copyDocSelection }
         if press.named == .tab, press.option, !press.command, !press.control, !press.shift {
             return .cycleTerminals
         }
         if press.isCommandChord("t") { return .newTerminal }
         let plain = !press.command && !press.option && !press.control
-        if press.named == .enter, plain, facts.keys == .host, facts.hasFlyTarget { return .flyToSignal }
+        if press.named == .enter, plain, facts.keys == .host, !facts.editingText, facts.hasFlyTarget {
+            return .flyToSignal
+        }
         if press.named == .escape, let rung = EscLadder.rung(facts.esc) { return .esc(rung) }
         return .passThrough
     }

@@ -13,12 +13,12 @@ enum CardWebView {
     /// Nothing a card loads is kept: no cookies, cache or storage outlive the app.
     private static let dataStore = WKWebsiteDataStore.nonPersistent()
 
-    /// A web view that serves `tarmac-card://` and runs `scripts`, in order,
-    /// in the app's world once its page has loaded.
-    static func make(scripts: [String]) -> WKWebView {
+    /// A web view that is served `tarmac-card://` by `handler` and runs
+    /// `scripts`, in order, in the app's world once its page has loaded.
+    static func make(scripts: [String], served handler: CardSchemeHandler) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = dataStore
-        configuration.setURLSchemeHandler(CardSchemeHandler.shared, forURLScheme: CardSchemeHandler.scheme)
+        configuration.setURLSchemeHandler(handler, forURLScheme: CardSchemeHandler.scheme)
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         for source in scripts {
             configuration.userContentController.addUserScript(WKUserScript(
@@ -72,7 +72,6 @@ extension WKNavigationAction {
         } else {
             target = .newWindow
         }
-        let cause: CardNavigation.Cause = pageLoad ? .pageLoad : navigationType == .linkActivated ? .linkClick : .other
-        return CardNavigation.Request(url: request.url?.absoluteString ?? "", target: target, cause: cause)
+        return CardNavigation.Request(url: request.url?.absoluteString ?? "", target: target, pageLoad: pageLoad)
     }
 }

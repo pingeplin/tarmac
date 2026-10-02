@@ -3,8 +3,8 @@ import XCTest
 @testable import TarmacKit
 
 /// HTML-card zoom geometry and the shielded-card wheel relay: specs 2607.0004
-/// S10 (the settled real-px box and the mid-gesture scale), 2607.0006 (the
-/// frozen magnification) and 2609.0013 (whole-px relayed scroll deltas).
+/// S10 (the settled real-px box), 2607.0006 (the frozen magnification) and
+/// 2609.0013 (whole-px relayed scroll deltas).
 final class CardZoomTests: XCTestCase {
     // MARK: - magnifyK never upsamples (2607.0006)
 
@@ -13,6 +13,22 @@ final class CardZoomTests: XCTestCase {
     func testMagnifyKIsAtLeastTheBoardsMaxZoom() {
         XCTAssertGreaterThanOrEqual(CardZoom.magnifyK, BoardZoom.max)
         XCTAssertLessThanOrEqual(BoardZoom.max / CardZoom.magnifyK, 1)
+    }
+
+    /// The factor is part of what a card's document sees: the shim sets its
+    /// root zoom to it, and its viewport is the card times it.
+    func testTheFrozenMagnificationIsThree() {
+        XCTAssertEqual(CardZoom.magnifyK, 3)
+    }
+
+    func testTheBoardZoomsFromATenthToThreeTimes() {
+        XCTAssertEqual(BoardZoom.min, 0.1)
+        XCTAssertEqual(BoardZoom.max, 3)
+    }
+
+    /// The web app's `RASTER_SCALE_SETTLE_MS`.
+    func testAZoomHasSettledAfterAHundredAndFiftyMilliseconds() {
+        XCTAssertEqual(CardZoom.settleDelay, 0.15)
     }
 
     // MARK: - iframePx (2607.0004 S10)
@@ -26,12 +42,6 @@ final class CardZoomTests: XCTestCase {
     func testIframePxRoundsNonIntegerProducts() {
         XCTAssertEqual(CardZoom.iframePx(frame: CGSize(width: 100, height: 100), zoom: 1.006), CGSize(width: 101, height: 101))
         XCTAssertEqual(CardZoom.iframePx(frame: CGSize(width: 100, height: 100), zoom: 0.994), CGSize(width: 99, height: 99))
-    }
-
-    func testGestureScaleIsLiveZoomOverSettledZoom() {
-        XCTAssertEqual(CardZoom.gestureScale(zoom: 2, settledZoom: 1), 2)
-        XCTAssertEqual(CardZoom.gestureScale(zoom: 0.5, settledZoom: 1), 0.5)
-        XCTAssertEqual(CardZoom.gestureScale(zoom: 1.5, settledZoom: 1.5), 1)
     }
 
     // MARK: - scrollDelta
@@ -166,6 +176,15 @@ final class CardZoomTests: XCTestCase {
         XCTAssertNil(relay.step(dx: 0.2, dy: 0.3))
         XCTAssertEqual(relay.step(dx: 0.2, dy: 0.3), CardZoom.ScrollStep(dx: 0, dy: 1))
         XCTAssertEqual(relay.step(dx: 0.2, dy: 0), CardZoom.ScrollStep(dx: 1, dy: 0))
+    }
+
+    /// S11: each axis carries its own residue. Sideways travel left over from
+    /// one event is not downward travel in the next.
+    func testS11TheResidueOfOneAxisIsNotTheOthers() {
+        var relay = CardZoom.ScrollRelay()
+        XCTAssertNil(relay.step(dx: 0.4, dy: 0))
+        XCTAssertNil(relay.step(dx: 0, dy: 0.3))
+        XCTAssertEqual(relay.step(dx: 0.2, dy: 0.2), CardZoom.ScrollStep(dx: 1, dy: 1))
     }
 
     func testEachRelayKeepsItsOwnCarry() {
