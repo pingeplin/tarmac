@@ -90,7 +90,24 @@ final class DevRoutingTests: XCTestCase {
     // MARK: - S35 focus <term>
 
     func testS35FocusOnATerminalIsThePressOnItsBody() {
-        XCTAssertEqual(route(.focus(card: "t-1")), .focusTerminal(card: "t-1"))
+        XCTAssertEqual(route(.focus(card: "t-1")), .focusTerminal(card: "t-1", takesKeys: true))
+    }
+
+    /// The Tauri driver does not refuse a culled terminal: the press selects
+    /// its card, and the terminal's hidden text area ignores `focus()`, so the
+    /// reply names the card as selected and the keys where they already were.
+    /// A culled card is hidden here too, and the keys stay off it.
+    func testACulledTerminalIsSelectedButDoesNotTakeTheKeys() {
+        let terminal = { (frame: CGRect) in [Card(id: "t-1", kind: .term, frame: frame)] }
+        let onScreen = CGRect(x: -200, y: -150, width: 400, height: 300)
+        let pastTheEdge = CGRect(x: 600, y: 0, width: 400, height: 300)
+        let aViewportAway = CGRect(x: 1_501, y: 0, width: 400, height: 300)
+        let focus = DevRequest.focus(card: "t-1")
+        XCTAssertEqual(route(focus, context(cards: terminal(onScreen))), .focusTerminal(card: "t-1", takesKeys: true))
+        XCTAssertEqual(route(focus, context(cards: terminal(pastTheEdge))), .focusTerminal(card: "t-1", takesKeys: true))
+        XCTAssertEqual(
+            route(focus, context(cards: terminal(aViewportAway))), .focusTerminal(card: "t-1", takesKeys: false)
+        )
     }
 
     // MARK: - S37 type and key
@@ -127,7 +144,7 @@ final class DevRoutingTests: XCTestCase {
     /// The Tauri app's internal `term:`/`doc:` prefix is not an alias here: an id
     /// is the term id or the doc's path, or it names no card.
     func testS76ABareIdResolvesAndAPrefixedOneDoesNot() {
-        XCTAssertEqual(route(.focus(card: "t-1")), .focusTerminal(card: "t-1"))
+        XCTAssertEqual(route(.focus(card: "t-1")), .focusTerminal(card: "t-1", takesKeys: true))
         XCTAssertEqual(refusal(.focus(card: "term:t-1"))?.code, .noSuchCard)
         XCTAssertEqual(refusal(.focus(card: "doc:/a/b.md"), docs())?.code, .noSuchCard)
     }
@@ -296,7 +313,7 @@ final class DevRoutingTests: XCTestCase {
         XCTAssertEqual(route(.focus(card: "/a/b.md"), docs(markdown: far)), .focusMarkdown(card: "/a/b.md"))
         XCTAssertEqual(
             route(.focus(card: "t-1"), context(cards: [Card(id: "t-1", kind: .term, frame: far)])),
-            .focusTerminal(card: "t-1")
+            .focusTerminal(card: "t-1", takesKeys: false)
         )
         XCTAssertEqual(refusal(.type(card: "/a/c.html", text: "x"), docs(html: far))?.code, .unsupportedCardKind)
         XCTAssertEqual(refusal(.key(card: "/a/c.html", combo: "enter"), docs(html: far))?.code, .unsupportedCardKind)
