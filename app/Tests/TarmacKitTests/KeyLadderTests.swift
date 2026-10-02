@@ -28,7 +28,7 @@ final class KeyLadderTests: XCTestCase {
     /// Every key the ladder would otherwise take.
     private var takenKeys: [KeyPress] {
         [
-            letter("k", command), letter("w", command), letter("t", command), tab(option), enter(), esc(),
+            letter("k", command), letter("w", command), letter("t", command), enter(), esc(),
         ]
     }
 
@@ -116,14 +116,11 @@ final class KeyLadderTests: XCTestCase {
         XCTAssertEqual(KeyLadder.decide(letter("c", command), Facts()), .passThrough)
     }
 
-    // MARK: K9 — ⌥Tab
+    // MARK: K9 — Tab
 
-    func testOptionTabCyclesTerminals() {
-        XCTAssertEqual(KeyLadder.decide(tab(option), Facts()), .cycleTerminals)
-    }
-
-    func testTabWithAnyOtherModifierIsNotTheCycle() {
-        for mods in [0, option | shift, option | command, option | control, command, control] {
+    /// Tab goes to whoever has the keyboard: ⌥Tab is a terminal's Meta-Tab.
+    func testTabIsNeverTheAppsKeyWhateverTheModifiers() {
+        for mods in [0, option, option | shift, option | command, option | control, command, control] {
             XCTAssertEqual(KeyLadder.decide(tab(mods), Facts()), .passThrough, "\(mods)")
         }
     }
@@ -158,7 +155,7 @@ final class KeyLadderTests: XCTestCase {
     func testEveryOtherAppKeyIsStillTakenFromATextControl() {
         var facts = eager
         facts.editingText = true
-        for key in [letter("k", command), letter("w", command), letter("t", command), tab(option), esc()] {
+        for key in [letter("k", command), letter("w", command), letter("t", command), esc()] {
             XCTAssertNotEqual(KeyLadder.decide(key, facts), .passThrough, "\(key)")
         }
     }
@@ -264,7 +261,6 @@ final class KeyLadderTests: XCTestCase {
         XCTAssertEqual(KeyLadder.decide(letter("k", command), facts), .toggleSwitcher)
         XCTAssertEqual(KeyLadder.decide(letter("w", command), facts), .closeSelectedCard)
         XCTAssertEqual(KeyLadder.decide(letter("t", command), facts), .newTerminal)
-        XCTAssertEqual(KeyLadder.decide(tab(option), facts), .cycleTerminals)
         XCTAssertEqual(KeyLadder.decide(letter("a"), Facts(switcherOpen: true, keys: .console)), .switcherKey)
     }
 
@@ -290,7 +286,7 @@ final class KeyLadderTests: XCTestCase {
         XCTAssertEqual(KeyLadder.decide(esc(command), Facts(esc: toasts)), .esc(.clearToasts))
     }
 
-    func testCapsLockDoesNotStopTheCycle() {
-        XCTAssertEqual(KeyLadder.decide(tab(option | 1 << 16), Facts()), .cycleTerminals)
+    func testCapsLockDoesNotStopAnAppKey() {
+        XCTAssertEqual(KeyLadder.decide(letter("t", command | 1 << 16), Facts()), .newTerminal)
     }
 }

@@ -50,8 +50,6 @@ public enum KeyLadder {
         case closeSelectedCard
         /// The open switcher owns the key (`SwitcherKeys`).
         case switcherKey
-        /// ⌥Tab.
-        case cycleTerminals
         /// ⌘T.
         case newTerminal
         /// Return: remember the viewport and fly to the offscreen signal.
@@ -69,9 +67,6 @@ public enum KeyLadder {
         if press.isCommandChord("k") { return .toggleSwitcher }
         if press.isCommandChord("w") { return .closeSelectedCard }
         if facts.switcherOpen { return .switcherKey }
-        if press.named == .tab, press.option, !press.command, !press.control, !press.shift {
-            return .cycleTerminals
-        }
         if press.isCommandChord("t") { return .newTerminal }
         let plain = !press.command && !press.option && !press.control
         let offTerminal = facts.keys == .host || facts.keys == .console

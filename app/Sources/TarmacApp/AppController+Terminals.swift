@@ -350,8 +350,7 @@ extension AppController {
     }
 
     /// Puts out a lit bell; a no-op when it is not lit. Called for any bytes
-    /// the terminal sends, and when it becomes prime by a press on its card or
-    /// by ⌥Tab.
+    /// the terminal sends, and when it becomes prime by a press on its card.
     func clearBell(termID: String) {
         guard let (s, board) = anySession(termID),
               let card = board.view.card(.term(termID)), card.bellActive else { return }
@@ -386,23 +385,5 @@ extension AppController {
 
     private func hhmm(_ date: Date) -> String {
         Self.hhmmFormatter.string(from: date)
-    }
-
-    // MARK: - ⌥Tab
-
-    /// Moves prime and keyboard focus to the next live terminal in card order
-    /// (wrapping), starting from the terminal that holds keyboard focus, and
-    /// shows the HUD. The terminal it lands on has its bell cleared.
-    func cycleTerminals() {
-        reconcilePrimeToFocus()
-        let order = TermCycle.order(activeBoard.cycleTerms)
-        guard let next = TermCycle.step(order: order, from: primeTermID, .next) else { return }
-        setPrime(next)
-        clearBell(termID: next)
-        let labels = order.map { id -> String in
-            let label = sessions[id]?.label ?? ""
-            return label.isEmpty ? TermLabel.initial : label
-        }
-        rootView.cycleHUD.show(labels: labels, activeIndex: order.firstIndex(of: next) ?? 0)
     }
 }

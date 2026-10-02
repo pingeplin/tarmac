@@ -8,14 +8,10 @@ final class OverlayStackTests: XCTestCase {
         XCTAssertEqual(OverlayStack.minimap.zIndex, 50)
         XCTAssertEqual(OverlayStack.toasts.zIndex, 70)
         XCTAssertEqual(OverlayStack.switcher.zIndex, 80)
-        XCTAssertEqual(OverlayStack.cycleHUD.zIndex, 90)
     }
 
-    func testThePillsAreUnderTheCornerControlsAndTheCycleHUDIsOverTheSwitcher() {
-        XCTAssertEqual(
-            OverlayStack.backToFront,
-            [.hints, .zoomControl, .minimap, .toasts, .switcher, .cycleHUD]
-        )
+    func testThePillsAreUnderTheCornerControlsAndTheSwitcherIsOverEverything() {
+        XCTAssertEqual(OverlayStack.backToFront, [.hints, .zoomControl, .minimap, .toasts, .switcher])
     }
 
     func testEveryOverlayIsStackedOnce() {

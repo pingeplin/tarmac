@@ -178,8 +178,7 @@ tarmac dev key t-1 ctrl+c
   `unsupported_combo` — use `type`. So are ⌘ chords: they are menu key
   equivalents, and `press` is the verb that posts one.
 - A `key` goes through the app's key ladder like a real one: `key <t> escape`
-  climbs the ESC ladder, and `alt+tab` cycles the prime terminal and **takes
-  focus away**, so every later verb on the old card fails `not_focused`.
+  climbs the ESC ladder.
 - `contextmenu` right-clicks the last written cell of the viewport, which
   selects the word under it (`selection_type` reads `Range`); no menu is popped.
   It answers `empty_buffer` when the viewport holds no text, and also when the

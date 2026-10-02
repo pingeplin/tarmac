@@ -18,8 +18,6 @@ final class RootView: NSView {
     let zoomControl = ZoomControl()
     let minimap = Minimap()
     private let offHints = OffscreenHints()
-    // The ⌥tab cycle HUD (top-center).
-    let cycleHUD = CycleHUD()
     // The ⌘K boards switcher (veil + centered panel), modal; hidden until ⌘K.
     // The controller drives its contents + key handling.
     let boardSwitcher = BoardSwitcherView()
@@ -40,7 +38,6 @@ final class RootView: NSView {
 
         addSubview(board)
         addSubview(statusBar)
-        cycleHUD.isHidden = true
         boardSwitcher.isHidden = true
         for layer in OverlayStack.backToFront { addSubview(overlay(layer)) }
         board.mountUnderCards(offHints.under)
@@ -75,7 +72,6 @@ final class RootView: NSView {
         case .minimap: return minimap
         case .toasts: return toasts
         case .switcher: return boardSwitcher
-        case .cycleHUD: return cycleHUD
         }
     }
 
@@ -167,18 +163,6 @@ final class RootView: NSView {
             width: Minimap.mapWidth,
             height: Minimap.mapHeight
         )
-
-        // Cycle HUD: centered horizontally, 12 below the board's top.
-        if !cycleHUD.isHidden {
-            cycleHUD.sizeToContents()
-            let size = cycleHUD.frame.size
-            cycleHUD.frame = NSRect(
-                x: ((bounds.width - size.width) / 2).rounded(),
-                y: CycleHUD.topInset,
-                width: size.width,
-                height: size.height
-            )
-        }
 
         // ⌘K switcher: covers the board area and leaves the status bar legible;
         // the panel centers itself within.

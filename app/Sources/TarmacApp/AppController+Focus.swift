@@ -103,28 +103,6 @@ extension AppController {
         return true
     }
 
-    /// Reconciles `primeTermID` to whichever LIVE terminal currently holds the
-    /// window's keyboard focus — e.g. the user clicked a non-prime terminal,
-    /// which AppKit made first responder (typing already routes there via its
-    /// `onInput`). Called before any action that re-asserts focus to the prime
-    /// terminal (cycle / board switch), so focus is never yanked back to a stale
-    /// prime. No-op when the focused responder isn't a live terminal view.
-    func reconcilePrimeToFocus() {
-        guard let s = focusedLiveSession(), s.termID != primeTermID else { return }
-        primeTermID = s.termID
-        updatePrimacy()
-    }
-
-    /// The live terminal session on the active board whose view currently holds
-    /// keyboard focus (the first responder, or an ancestor of it), or nil.
-    private func focusedLiveSession() -> TerminalSession? {
-        guard let responder = window?.firstResponder as? NSView else { return nil }
-        for s in sessions.values where s.live {
-            if responder === s.view || responder.isDescendant(of: s.view) { return s }
-        }
-        return nil
-    }
-
     // MARK: - Prime terminal
 
     /// Restyles a board's cards for its prime terminal: that card is prime and

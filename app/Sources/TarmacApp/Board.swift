@@ -38,7 +38,7 @@ final class Board {
     /// Every terminal card's state, keyed by `term_id`.
     var sessions: [String: TerminalSession] = [:]
     /// Terminal ids in card order: restore order, then the order they were
-    /// added. ⌥Tab cycles through it and prime falls to its first live entry.
+    /// added. Prime falls to its first live entry.
     var sessionOrder: [String] = []
     /// The prime terminal card's id, or nil when no terminal is live.
     var primeTermID: String?
@@ -78,10 +78,10 @@ final class Board {
     /// quieting.
     var hasLivePrime: Bool { primeSession?.live == true }
 
-    /// The terminals in card order, as the prime and ⌥Tab rules see them.
-    var cycleTerms: [TermCycle.Term] {
+    /// The terminals in card order, as the prime rule sees them.
+    var primeTerms: [TermPrime.Term] {
         sessionOrder.compactMap { id in
-            sessions[id].map { TermCycle.Term(termID: id, isLive: $0.live) }
+            sessions[id].map { TermPrime.Term(termID: id, isLive: $0.live) }
         }
     }
 
@@ -103,7 +103,7 @@ final class Board {
 
     /// Hands prime to the first live terminal when the prime is gone or dead.
     func reassignPrime() {
-        primeTermID = TermPrime.reassign(cycleTerms, prime: primeTermID)
+        primeTermID = TermPrime.reassign(primeTerms, prime: primeTermID)
     }
 
     /// Doc paths currently on this board.

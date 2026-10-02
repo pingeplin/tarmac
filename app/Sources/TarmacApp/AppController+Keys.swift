@@ -69,8 +69,6 @@ extension AppController {
             closeSelectedCard()
         case .switcherKey:
             return handleSwitcherKey(press)
-        case .cycleTerminals:
-            cycleTerminals()
         case .newTerminal:
             spawnNewTerminal()
         case .flyToSignal:

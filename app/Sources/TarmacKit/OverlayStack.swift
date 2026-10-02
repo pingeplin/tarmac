@@ -5,7 +5,7 @@
 /// are the pills that could not clear a card, which go inside the board, under
 /// its cards.
 public enum OverlayStack: CaseIterable, Sendable {
-    case zoomControl, minimap, hints, toasts, switcher, cycleHUD
+    case zoomControl, minimap, hints, toasts, switcher
 
     /// The overlay's `z-index` in `desktop/src/theme/chrome.css`. The switcher's
     /// veil (79) and panel (80) are one view here.
@@ -15,7 +15,6 @@ public enum OverlayStack: CaseIterable, Sendable {
         case .hints: return 40
         case .toasts: return 70
         case .switcher: return 80
-        case .cycleHUD: return 90
         }
     }
 

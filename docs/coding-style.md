@@ -67,11 +67,9 @@ it is the reason for this rule:
 > `TarmacKit` and TDD it there. What stays in the view or the controller is
 > wiring: read state, call the pure function, apply the result.
 
-`app/Sources/TarmacKit/ClearFreshDoc.swift`,
-`app/Sources/TarmacKit/ToastQueue.swift`, and
-`app/Sources/TarmacKit/TermCycle.swift` are that move applied to a reset rule,
-queue rules, and cycle order; the last two headers record what was left in the
-view layer. If you cannot name what you would extract, the change is genuinely
+`app/Sources/TarmacKit/ClearFreshDoc.swift` and
+`app/Sources/TarmacKit/ToastQueue.swift` are that move applied to a reset rule
+and queue rules; the second's header records what was left in the view layer. If you cannot name what you would extract, the change is genuinely
 wiring: take the exception below and say so.
 
 ### 1.3 Exceptions — the closed list

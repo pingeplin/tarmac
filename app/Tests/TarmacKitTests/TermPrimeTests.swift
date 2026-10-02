@@ -2,8 +2,8 @@ import XCTest
 @testable import TarmacKit
 
 final class TermPrimeTests: XCTestCase {
-    private func terms(_ pairs: (String, Bool)...) -> [TermCycle.Term] {
-        pairs.map { TermCycle.Term(termID: $0.0, isLive: $0.1) }
+    private func terms(_ pairs: (String, Bool)...) -> [TermPrime.Term] {
+        pairs.map { TermPrime.Term(termID: $0.0, isLive: $0.1) }
     }
 
     func testALivePrimeKeepsPrime() {

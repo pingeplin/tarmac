@@ -600,7 +600,7 @@ spelled-out URL opens it in the browser — `http(s)` only in both cases.
 **Honest signals.** The label starts as `shell`; each `TermProc` and each
 non-blank OSC title overwrites it, last writer wins (`TermLabel`). `Bell` turns
 the header's glyph amber and shows an amber `●` there until bytes leave for that PTY or the card becomes prime by a
-press or `⌥Tab`. The view's own bell and OSC 52 clipboard hooks are left unset
+press. The view's own bell and OSC 52 clipboard hooks are left unset
 on purpose: the daemon's `Bell` is the observed fact, and a program may not
 overwrite the user's clipboard.
 
@@ -752,7 +752,7 @@ window's first responder).
   the bare board clears the selection and leaves the keyboard
   with the board.
 - Keyboard focus is put on the board's prime terminal after the active board's
-  first restore, on arriving at a board, after `⌥Tab`, after un-borrowing an
+  first restore, on arriving at a board, after un-borrowing an
   HTML card, and when a key is typed while a console holds the keys and no card
   is borrowed. `⌘T` makes the new terminal prime but moves neither focus nor
   selection.
@@ -768,9 +768,8 @@ view; `KeyLadder` says which ones the app takes, in this order:
    open switcher — always consumed, so it never reaches Close Window.
 3. While the switcher is open it owns the keyboard (`SwitcherKeys`); an
    unhandled `⌘` chord is left for the menu.
-4. `⌥Tab` cycles prime and focus through the board's live terminals, with a HUD
-   (`TermCycle`). `⌘T` opens a terminal, cascaded from the prime one and
-   inheriting its current directory (`inherit_cwd_from`).
+4. `⌘T` opens a terminal, cascaded from the prime one and inheriting its
+   current directory (`inherit_cwd_from`).
 5. Plain `Return`, when no terminal holds the keys, no text control in a
    markdown doc's raw HTML is being typed into, and a signalling card is off
    screen, remembers the viewport and flies to that card.
@@ -812,7 +811,7 @@ overshoots; a pill that cannot clear a card is drawn under the cards), the zoom
 control (bottom-left: `−`, percent, `+`, fit — steps of ×1.2 about the viewport
 centre; fit frames every card with a 10 % margin), the minimap (bottom-right;
 cards coloured by signal, click to re-centre), toasts (at most three, 7 s
-each), the switcher, and the `⌥Tab` HUD. A 27-point status bar sits below
+each), and the switcher. A 27-point status bar sits below
 the board: `attached` or the link's reason, and the card count. The window
 title names the active board.
 

@@ -174,6 +174,10 @@ An agent finding them referenced in `docs/archive/` is reading history:
   retire the flag — but do not re-file peek itself as a missing feature.
 - **The design-sync UI-kit export** (`make kit`, and the `.design-sync/` previews
   it fed) — it bundled the web frontend's components and went with them.
+- **The `⌥Tab` terminal cycle and its HUD** — removed 2026-10-03: unused, and
+  what it did with a terminal that was off screen depended on whether that
+  card had been shown since launch. `⌥Tab` now reaches the terminal like any
+  other key. Prime still moves by a press on a terminal card.
 
 ## 5 · Open after the native rebuild
 
