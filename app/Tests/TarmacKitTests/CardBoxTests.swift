@@ -113,4 +113,24 @@ final class CardBoxTests: XCTestCase {
         XCTAssertEqual(CardBox.cardSize(ofBody: CardBox.body(of: size).size), size)
         XCTAssertEqual(CardBox.cardSize(ofBody: CGSize(width: 390, height: 278)), CGSize(width: 392, height: 310))
     }
+
+    func testACardThinnerThanItsBordersHasAnEmptyContentAreaNotANegativeOne() {
+        let scale = CardScale(zoom: 1, backing: 1)
+        let flat = CGSize(width: 100, height: 1)
+        let flatBox = CardBox.screen(cardSize: flat, worldSize: flat, scale: scale)
+        XCTAssertEqual(flatBox.content.size.height, 0)
+        XCTAssertEqual(flatBox.header.size.height, 0)
+        let thin = CGSize(width: 1, height: 100)
+        let thinBox = CardBox.screen(cardSize: thin, worldSize: thin, scale: scale)
+        XCTAssertEqual(thinBox.content.size.width, 0)
+        XCTAssertEqual(thinBox.header.size.width, 0)
+    }
+
+    func testTheCornerRadiusFollowsTheZoomWithoutSnapping() {
+        let box = CardBox.screen(
+            cardSize: CGSize(width: 174, height: 122), worldSize: CGSize(width: 470, height: 330),
+            scale: CardScale(zoom: 0.37, backing: 2)
+        )
+        XCTAssertEqual(box.cornerRadius, 3.7, accuracy: 1e-12)
+    }
 }

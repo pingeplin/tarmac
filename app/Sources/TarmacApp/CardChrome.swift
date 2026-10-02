@@ -534,9 +534,6 @@ final class TerminalBodyView: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     func attach(_ terminal: NSView) {
-        // `terminal` is weak, so reassigning it does not release a view swapped
-        // out of an already-attached card: it would stay a subview and keep drawing.
-        if let old = self.terminal, old !== terminal { old.removeFromSuperview() }
         self.terminal = terminal
         addSubview(terminal)
         needsLayout = true
