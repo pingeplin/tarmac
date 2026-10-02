@@ -33,10 +33,8 @@ extension AppController {
         for board in boards.values {
             let visible = board === activeBoard
             for card in board.view.cards.values {
-                guard let html = card.htmlBody else { continue }
-                let borrowed = borrow.shows(card.id, boardVisible: visible)
-                card.setBorrowed(borrowed)
-                html.setBorrowed(borrowed)
+                guard card.htmlBody != nil else { continue }
+                card.setBorrowed(borrow.shows(card.id, boardVisible: visible))
             }
         }
     }

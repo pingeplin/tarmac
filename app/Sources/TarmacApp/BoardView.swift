@@ -111,7 +111,7 @@ final class BoardView: NSView {
         BoardTransform.worldToView(
             p,
             zoom: viewport.zoom,
-            center: CGPoint(x: viewport.cx, y: viewport.cy),
+            center: viewport.center,
             viewportCenter: viewportCenter
         )
     }
@@ -120,7 +120,7 @@ final class BoardView: NSView {
         BoardTransform.viewToWorld(
             p,
             zoom: viewport.zoom,
-            center: CGPoint(x: viewport.cx, y: viewport.cy),
+            center: viewport.center,
             viewportCenter: viewportCenter
         )
     }
@@ -167,8 +167,8 @@ final class BoardView: NSView {
             return
         }
         flight.start(
-            BoardFly(from: viewport.wire, to: target.wire),
-            onFrame: { [weak self] frame in self?.show(Viewport(frame)) },
+            BoardFly(from: viewport, to: target),
+            onFrame: { [weak self] frame in self?.show(frame) },
             onLanding: { [weak self] in
                 guard let self else { return }
                 self.onLayoutChanged?(self.viewport)
@@ -179,7 +179,7 @@ final class BoardView: NSView {
     /// Flies to `cardID`'s center at zoom 1.
     func fly(to cardID: CardID) {
         guard let card = cards[cardID] else { return }
-        flyTo(Viewport(BoardFly.destination(showing: card.worldFrame.rect)))
+        flyTo(BoardFly.destination(showing: card.worldFrame.rect))
     }
 
     /// Centers on the bounding box of every card with a 10 % margin a side.
@@ -200,13 +200,13 @@ final class BoardView: NSView {
     /// `anchorViewPoint` (the board's center by default) where it is on screen.
     func zoom(by factor: CGFloat, anchorViewPoint: CGPoint? = nil) {
         flight.cancel()
-        let zoomed = Viewport(BoardTransform.zoomed(
-            viewport.wire,
+        let zoomed = BoardTransform.zoomed(
+            viewport,
             by: factor,
             about: anchorViewPoint ?? viewportCenter,
             viewportCenter: viewportCenter,
             limits: Viewport.minZoom...Viewport.maxZoom
-        ))
+        )
         if zoomed != viewport { show(zoomed) }
         onLayoutChanged?(viewport)
     }
@@ -401,7 +401,7 @@ final class BoardView: NSView {
         let visible = Cull.isCardVisible(
             frame: card.worldFrame.rect,
             zoom: viewport.zoom,
-            center: CGPoint(x: viewport.cx, y: viewport.cy),
+            center: viewport.center,
             viewSize: window == nil ? .zero : bounds.size
         )
         guard culls.record(card.id, visible: visible) else { return }
@@ -459,7 +459,7 @@ final class BoardView: NSView {
     /// Pans by a wheel's travel in screen points.
     func pan(by travel: CGVector) {
         flight.cancel()
-        show(Viewport(BoardTransform.panned(viewport.wire, by: travel)))
+        show(BoardTransform.panned(viewport, by: travel))
         onLayoutChanged?(viewport)
     }
 

@@ -35,7 +35,6 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
     /// The document's address; it changes, and the document reloads, only when
     /// the file's change time does.
     private var source: String?
-    private var borrowed = false
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
@@ -98,9 +97,9 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
 
     // MARK: - Borrow
 
-    /// Lifts or lowers the shield. Borrowing alone does not move the keyboard.
+    /// Lifts or lowers the shield, which is the card's record of being
+    /// borrowed. Borrowing alone does not move the keyboard.
     func setBorrowed(_ on: Bool) {
-        borrowed = on
         shield.isHidden = on
     }
 
@@ -196,7 +195,7 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
 
     private func received(_ message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame, let parsed = CardConsole.parse(message.body) else { return }
-        for effect in session.handle(parsed, borrowed: borrowed) {
+        for effect in session.handle(parsed, borrowed: shield.isHidden) {
             switch effect {
             case .post(let reply): post(reply)
             case .escapeHome: onEscapeHome?()

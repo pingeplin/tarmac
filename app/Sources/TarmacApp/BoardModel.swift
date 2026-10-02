@@ -33,31 +33,17 @@ struct CardFrame: Equatable {
     }
 }
 
-/// A board's viewport: zoom and world-space center. The view layer's CGFloat
-/// twin of the wire `BoardViewport`, which it is persisted as.
-struct Viewport: Equatable {
-    var zoom: CGFloat
-    var cx: CGFloat
-    var cy: CGFloat
+/// A board's viewport: zoom and world-space center. The view layer holds the
+/// wire type it is persisted as, which is also what the kit's board math takes.
+typealias Viewport = BoardViewport
 
+extension BoardViewport {
     /// The zoom is clamped to this range on every path that changes it.
     static let minZoom = BoardZoom.min
     static let maxZoom = BoardZoom.max
 
     /// The viewport a board opens at when none was persisted.
-    static let `default` = Viewport(Placement.openingViewport)
-}
+    static let `default` = Placement.openingViewport
 
-// MARK: - Wire bridging (AppController boundary)
-
-extension Viewport {
-    /// View-layer mirror of the wire `BoardViewport` (CGFloat ← Double).
-    init(_ wire: BoardViewport) {
-        self.init(zoom: CGFloat(wire.zoom), cx: CGFloat(wire.cx), cy: CGFloat(wire.cy))
-    }
-
-    /// The wire form persisted in `layout.board` / `restore.board`.
-    var wire: BoardViewport {
-        BoardViewport(zoom: Double(zoom), cx: Double(cx), cy: Double(cy))
-    }
+    var center: CGPoint { CGPoint(x: cx, y: cy) }
 }

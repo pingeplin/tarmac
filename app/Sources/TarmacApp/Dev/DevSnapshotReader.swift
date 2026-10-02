@@ -29,7 +29,7 @@ struct DevSnapshotReader {
                 miniaturized: controller.window?.isMiniaturized ?? false
             ),
             viewport: DevSnapshot.Viewport(
-                zoom: board.viewport.zoom, center: CGPoint(x: board.viewport.cx, y: board.viewport.cy)
+                zoom: board.viewport.zoom, center: board.viewport.center
             ),
             viewRect: controller.rootView.convert(board.bounds, from: board),
             cards: cards.map(fact),
@@ -48,7 +48,7 @@ struct DevSnapshotReader {
             keyboardFocusCard: keyboardFocus.card,
             borrowedCard: controller.borrow.id?.wireID,
             zoom: board.viewport.zoom,
-            center: CGPoint(x: board.viewport.cx, y: board.viewport.cy),
+            center: board.viewport.center,
             viewSize: board.bounds.size
         )
     }

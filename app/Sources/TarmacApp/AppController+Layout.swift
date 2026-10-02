@@ -90,7 +90,7 @@ extension AppController {
             Log.stderr("restore: doc tile \(path) absent from the registry — dropping")
         }
 
-        board.view.setViewport(viewport.map(Viewport.init) ?? .default)
+        board.view.setViewport(viewport ?? .default)
         updatePrimacy(on: board)
         // The ids minted for cold spawns are not on disk yet, and a relaunch
         // can only re-bind a shell whose id its tile carries.
@@ -184,7 +184,7 @@ extension AppController {
         client.layout(
             dock: board.store.docs.map(\.path),
             tiles: LayoutTiles.build(terms: terms, docs: docs),
-            board: board.view.viewport.wire,
+            board: board.view.viewport,
             boardID: board.boardID
         )
     }

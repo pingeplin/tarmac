@@ -229,6 +229,7 @@ final class CardView: NSView {
     private(set) var borrowed = false
 
     func setBorrowed(_ on: Bool) {
+        htmlBody?.setBorrowed(on)
         guard on != borrowed else { return }
         borrowed = on
         if !lifted { layer?.borderColor = currentBorderColor.cgColor }
