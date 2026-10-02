@@ -413,15 +413,28 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(view.selectedRange(), NSRange(location: 0, length: 0))
     }
 
-    /// The candidate window opens under the clause being converted, not at the
-    /// start of the composing text.
-    func testTheCandidateWindowFollowsTheRangeItIsAskedFor() throws {
+    /// Zhuyin asks where the whole composing text is, then where its last
+    /// character is, wherever its caret stands: the answer is the caret.
+    func testTheCandidateWindowFollowsTheInputMethodsCaret() throws {
         let cell = try XCTUnwrap(view.gridLayout).cell
-        view.setMarkedText("abcd", selectedRange: NSRange(location: 4, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
-        let start = view.firstRect(forCharacterRange: NSRange(location: 0, length: 0), actualRange: nil)
-        let later = view.firstRect(forCharacterRange: NSRange(location: 2, length: 0), actualRange: nil)
+        let nowhere = NSRange(location: NSNotFound, length: 0)
+        let whole = NSRange(location: 0, length: 4), last = NSRange(location: 3, length: 1)
+        view.setMarkedText("abcd", selectedRange: NSRange(location: 0, length: 0), replacementRange: nowhere)
+        let start = view.firstRect(forCharacterRange: whole, actualRange: nil)
+        view.setMarkedText("abcd", selectedRange: NSRange(location: 2, length: 0), replacementRange: nowhere)
         // The composing text is set at the font's own advance, a little off the grid's.
-        XCTAssertEqual(later.minX - start.minX, 2 * cell.width, accuracy: 1)
+        XCTAssertEqual(view.firstRect(forCharacterRange: whole, actualRange: nil).minX - start.minX, 2 * cell.width, accuracy: 1)
+        XCTAssertEqual(view.firstRect(forCharacterRange: last, actualRange: nil).minX - start.minX, 2 * cell.width, accuracy: 1)
+    }
+
+    func testTheCandidateWindowOpensUnderTheClauseBeingConverted() throws {
+        let cell = try XCTUnwrap(view.gridLayout).cell
+        let nowhere = NSRange(location: NSNotFound, length: 0)
+        let whole = NSRange(location: 0, length: 4)
+        view.setMarkedText("abcd", selectedRange: NSRange(location: 0, length: 0), replacementRange: nowhere)
+        let start = view.firstRect(forCharacterRange: whole, actualRange: nil)
+        view.setMarkedText("abcd", selectedRange: NSRange(location: 1, length: 2), replacementRange: nowhere)
+        XCTAssertEqual(view.firstRect(forCharacterRange: whole, actualRange: nil).minX - start.minX, cell.width, accuracy: 1)
     }
 
     func testChordSeenDuringCompositionSaysSo() {

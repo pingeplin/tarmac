@@ -821,13 +821,15 @@ extension TerminalView: @preconcurrency NSTextInputClient {
     public func characterIndex(for point: NSPoint) -> Int { 0 }
 
     /// Where the candidate window anchors, in screen coordinates: the cursor's
-    /// cell, moved along the composing text to the range asked for.
+    /// cell, moved along the composing text to the selection the input method
+    /// last reported. The range asked for is no guide: Zhuyin asks about the
+    /// whole composing text, then its last character, wherever its caret is.
     public func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
         guard let gridLayout, let window else { return .zero }
         let cursor = frameSnapshot.cursor
         var cell = gridLayout.rect(col: cursor?.col ?? 0, row: cursor?.row ?? 0)
-        if markedText.length > 0, range.location != NSNotFound {
-            cell.origin.x += renderer.preeditOffset(markedText.string, utf16Index: range.location)
+        if markedText.length > 0 {
+            cell.origin.x += renderer.preeditOffset(markedText.string, utf16Index: markedSelection.location)
         }
         return window.convertToScreen(convert(cell, to: nil))
     }
