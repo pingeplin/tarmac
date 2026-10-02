@@ -181,6 +181,7 @@ final class BoardWayfindingTests: XCTestCase {
         XCTAssertNil(mapping.strokeBox(CGRect(x: 100, y: 100, width: 5, height: 200), lineWidth: 1))
         XCTAssertNil(mapping.strokeBox(CGRect(x: 100, y: 100, width: 400, height: 5), lineWidth: 1))
         XCTAssertNil(mapping.strokeBox(CGRect(x: 100, y: 100, width: 10, height: 200), lineWidth: 1), "exactly 1px wide")
+        XCTAssertNil(mapping.strokeBox(CGRect(x: 100, y: 100, width: 400, height: 10), lineWidth: 1), "exactly 1px high")
         XCTAssertEqual(
             mapping.strokeBox(CGRect(x: 100, y: 100, width: 11, height: 200), lineWidth: 1)?.width ?? -1,
             0.1, accuracy: 1e-9

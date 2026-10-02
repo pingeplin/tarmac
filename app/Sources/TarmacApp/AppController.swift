@@ -203,9 +203,7 @@ final class AppController {
         rootView.attachTerminal(boot.view, termID: bootTermID, worldFrame: Place.termFrame)
 
         wireStore(board0)
-        // Phase 4 wayfinding: supply the per-card offscreen-hint models (label +
-        // priority) the board can't derive on its own (doc metadata / recency).
-        // Reads `activeBoard` dynamically, so it tracks the mounted board.
+        // Reads `activeBoard` dynamically, so the hints track the mounted board.
         rootView.offscreenHintProvider = { [weak self] in self?.offscreenHints() ?? [] }
         // ⌘K switcher (P4): a row click opens that board; a veil click dismisses.
         rootView.boardSwitcher.onPickRow = { [weak self] index in self?.switcherPickRow(index) }

@@ -39,6 +39,7 @@ final class ChromeTextTests: XCTestCase {
         XCTAssertEqual(ChromeText.cardCount(1), "1 card")
         XCTAssertEqual(ChromeText.cardCount(0), "0 cards")
         XCTAssertEqual(ChromeText.cardCount(2), "2 cards")
+        XCTAssertEqual(ChromeText.cardCount(11), "11 cards")
         XCTAssertEqual(ChromeText.cardCount(12), "12 cards")
     }
 
