@@ -91,6 +91,44 @@ final class FileBytesTests: XCTestCase {
         try FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: target)
         XCTAssertEqual(try FileBytes.read(path: link).get(), Data("through the link".utf8))
     }
+
+    // MARK: - The file a name leads to
+
+    private func why(_ result: Result<String, any Error>) -> String? {
+        if case .failure(let error) = result { return error.localizedDescription }
+        return nil
+    }
+
+    func testASymbolicLinkResolvesToTheFileItLeadsTo() throws {
+        let target = directory + "/id_rsa"
+        let link = directory + "/logo.png"
+        try Data("key".utf8).write(to: URL(fileURLWithPath: target))
+        try FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: "id_rsa")
+
+        let file = try FileBytes.resolved(path: link).get()
+        XCTAssertTrue(file.hasSuffix("/id_rsa"), file)
+        XCTAssertEqual(file, try FileBytes.resolved(path: target).get())
+    }
+
+    func testLinksAreFollowedToTheEndThroughALinkedDirectory() throws {
+        try FileManager.default.createDirectory(atPath: directory + "/real", withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: URL(fileURLWithPath: directory + "/real/secret.txt"))
+        try FileManager.default.createSymbolicLink(atPath: directory + "/real/second.png", withDestinationPath: "secret.txt")
+        try FileManager.default.createSymbolicLink(atPath: directory + "/real/first.png", withDestinationPath: "second.png")
+        try FileManager.default.createSymbolicLink(atPath: directory + "/assets", withDestinationPath: "real")
+
+        let file = try FileBytes.resolved(path: directory + "/assets/first.png").get()
+        XCTAssertTrue(file.hasSuffix("/real/secret.txt"), file)
+    }
+
+    func testANameThatLeadsNowhereFailsAsReadingItDoes() throws {
+        try FileManager.default.createSymbolicLink(atPath: directory + "/dangling.png", withDestinationPath: "nope")
+        try FileManager.default.createSymbolicLink(atPath: directory + "/loop.png", withDestinationPath: "loop.png")
+
+        XCTAssertEqual(why(FileBytes.resolved(path: directory + "/nope.png")), "No such file or directory (os error 2)")
+        XCTAssertEqual(why(FileBytes.resolved(path: directory + "/dangling.png")), "No such file or directory (os error 2)")
+        XCTAssertEqual(why(FileBytes.resolved(path: directory + "/loop.png")), "Too many levels of symbolic links (os error 62)")
+    }
 }
 
 private final class Locked<Value>: @unchecked Sendable {

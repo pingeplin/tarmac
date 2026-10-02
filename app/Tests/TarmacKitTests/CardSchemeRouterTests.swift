@@ -8,7 +8,7 @@ final class CardSchemeRouterTests: XCTestCase {
     private let shim = "/*shim*/"
 
     private func respond(_ url: String, disk: SchemeFixtures.Disk = .init()) -> CardProtocol.Response {
-        CardSchemeRouter.respond(url: url, shim: shim, read: disk.read)
+        CardSchemeRouter.respond(url: url, shim: shim, read: disk.read, resolve: disk.resolve)
     }
 
     private func text(_ response: CardProtocol.Response) -> String {
@@ -146,7 +146,9 @@ final class CardSchemeRouterTests: XCTestCase {
     private func respond(
         _ url: String, headers: [String: String] = [:], serving host: CardURL.Host, disk: SchemeFixtures.Disk
     ) -> CardProtocol.Response {
-        CardSchemeRouter.respond(url: url, headers: headers, shim: shim, serving: host, read: disk.read)
+        CardSchemeRouter.respond(
+            url: url, headers: headers, shim: shim, serving: host, read: disk.read, resolve: disk.resolve
+        )
     }
 
     func testAWebViewIsServedItsOwnHost() {
@@ -230,5 +232,31 @@ final class CardSchemeRouterTests: XCTestCase {
             "Original": "x", "Sec-Fetch-Site": "cross-site",
         ]
         XCTAssertEqual(respond(SchemeFixtures.imgURI("/tmp/a.png"), headers: headers, serving: .img, disk: disk).status, 200)
+    }
+
+    // MARK: - Symlinks
+
+    func testAnImageIsJudgedByTheFileItsNameLeadsTo() {
+        let key = "/Users/me/.ssh/id_rsa"
+        let disk = SchemeFixtures.Disk(
+            [key: Data("PRIVATE KEY".utf8), "/repo/real.gif": Data([7])],
+            links: ["/repo/logo.png": key, "/repo/anim.png": "/repo/real.gif"]
+        )
+        let refused = respond(SchemeFixtures.imgURI("/repo/logo.png"), serving: .img, disk: disk)
+        XCTAssertEqual(refused.status, 403)
+        XCTAssertFalse(text(refused).contains("PRIVATE KEY"))
+        XCTAssertEqual(disk.opened, [])
+
+        let served = respond(SchemeFixtures.imgURI("/repo/anim.png"), serving: .img, disk: disk)
+        XCTAssertEqual(served.status, 200)
+        XCTAssertEqual(served.headers["Content-Type"], "image/gif")
+        XCTAssertEqual(disk.opened, ["/repo/real.gif"])
+    }
+
+    /// A card is whatever file was opened as one; only an image has a kind to keep.
+    func testACardDocumentIsReadAsNamed() {
+        let disk = SchemeFixtures.Disk(["/tmp/real.txt": Data("<p>x</p>".utf8)], links: ["/tmp/card.html": "/tmp/real.txt"])
+        XCTAssertEqual(respond(SchemeFixtures.docURI("/tmp/card.html"), serving: .doc, disk: disk).status, 200)
+        XCTAssertEqual(disk.opened, ["/tmp/card.html"])
     }
 }

@@ -180,4 +180,61 @@ final class ImageProtocolTests: XCTestCase {
         }
         XCTAssertEqual(resp.status, 400)
     }
+
+    // MARK: - The file a name leads to
+
+    private func serveFollowingLinks(_ path: String, disk: SchemeFixtures.Disk) -> CardProtocol.Response {
+        ImageProtocol.respond(path: path, file: disk.resolve(path), read: disk.read)
+    }
+
+    /// A repo can hold `logo.png`, a symlink to a private key outside it. The
+    /// name is an image's; the file is not, and it is never opened.
+    func testASymlinkNamedLikeAnImageThatLeadsToAnotherKindOfFileIsRefused() {
+        let key = "/Users/me/.ssh/id_rsa"
+        let disk = SchemeFixtures.Disk([key: Data("PRIVATE KEY".utf8)], links: ["/repo/logo.png": key])
+        let resp = serveFollowingLinks("/repo/logo.png", disk: disk)
+
+        XCTAssertEqual(resp.status, 403)
+        XCTAssertEqual(resp.headers, ["Content-Type": "text/plain; charset=utf-8"])
+        XCTAssertEqual(text(resp), "/repo/logo.png: not a supported image type")
+        XCTAssertEqual(disk.opened, [])
+    }
+
+    func testASymlinkToAFileWithNoExtensionIsRefused() {
+        let disk = SchemeFixtures.Disk(["/etc/passwd": Data("root".utf8)], links: ["/repo/a.svg": "/etc/passwd"])
+
+        XCTAssertEqual(serveFollowingLinks("/repo/a.svg", disk: disk).status, 403)
+        XCTAssertEqual(disk.opened, [])
+    }
+
+    /// The file is what is read and typed, not the name that led to it.
+    func testAnImageReachedThroughASymlinkIsServedAsTheFileItIs() {
+        let photo = "/repo/assets/photo.jpg"
+        let bytes = Data([0xFF, 0xD8, 0xFF])
+        let disk = SchemeFixtures.Disk([photo: bytes], links: ["/repo/logo.png": photo])
+        let resp = serveFollowingLinks("/repo/logo.png", disk: disk)
+
+        XCTAssertEqual(resp.status, 200)
+        XCTAssertEqual(resp.body, bytes)
+        XCTAssertEqual(resp.headers["Content-Type"], "image/jpeg")
+        XCTAssertEqual(disk.opened, [photo])
+    }
+
+    func testAnImageThatIsNoSymlinkIsServedAsBefore() {
+        let disk = SchemeFixtures.Disk(["/repo/a.png": Data([1])])
+        let resp = serveFollowingLinks("/repo/a.png", disk: disk)
+
+        XCTAssertEqual(resp.status, 200)
+        XCTAssertEqual(resp.headers, imageOnlyHeaders.merging(["Content-Type": "image/png"]) { $1 })
+    }
+
+    func testANameThatLeadsNowhereIs404NamingThePathAndWhy() {
+        struct Loop: LocalizedError { var errorDescription: String? { "Too many levels of symbolic links (os error 62)" } }
+        let disk = SchemeFixtures.Disk()
+        let resp = ImageProtocol.respond(path: "/repo/loop.png", file: .failure(Loop()), read: disk.read)
+
+        XCTAssertEqual(resp.status, 404)
+        XCTAssertEqual(text(resp), "/repo/loop.png: Too many levels of symbolic links (os error 62)")
+        XCTAssertEqual(disk.opened, [])
+    }
 }

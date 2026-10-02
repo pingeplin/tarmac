@@ -24,16 +24,26 @@ enum SchemeFixtures {
     struct NoSuchFile: Error {}
 
     /// A filesystem of fixed contents that records every open, so a test can say
-    /// a file was never touched.
+    /// a file was never touched. `links` are its symlinks, each to the file it
+    /// leads to.
     final class Disk {
         let files: [String: Data]
+        let links: [String: String]
         private(set) var opened: [String] = []
 
-        init(_ files: [String: Data] = [:]) { self.files = files }
+        init(_ files: [String: Data] = [:], links: [String: String] = [:]) {
+            self.files = files
+            self.links = links
+        }
 
         func read(_ path: String) -> Result<Data, any Error> {
             opened.append(path)
-            return files[path].map { .success($0) } ?? .failure(NoSuchFile())
+            return files[links[path] ?? path].map { .success($0) } ?? .failure(NoSuchFile())
+        }
+
+        func resolve(_ path: String) -> Result<String, any Error> {
+            let file = links[path] ?? path
+            return files[file] == nil ? .failure(NoSuchFile()) : .success(file)
         }
     }
 }

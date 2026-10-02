@@ -38,7 +38,8 @@ final class CardSchemeHandler: NSObject, WKURLSchemeHandler {
         reads.async { [weak self] in
             // The whole URL as text: `URL.path` would percent-decode it.
             let response = CardSchemeRouter.respond(
-                url: url.absoluteString, headers: headers, shim: shim, serving: host, read: FileBytes.read
+                url: url.absoluteString, headers: headers, shim: shim, serving: host,
+                read: FileBytes.read, resolve: FileBytes.resolved
             )
             DispatchQueue.main.async { [weak self] in
                 self?.finish(ticket, url: url, with: response)

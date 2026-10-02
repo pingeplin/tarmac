@@ -21,6 +21,14 @@ public enum FileBytes {
         public var errorDescription: String? { "not a regular file" }
     }
 
+    /// The path of the file `path` leads to, every symlink followed. It fails
+    /// as reading `path` would when it leads nowhere.
+    public static func resolved(path: String) -> Result<String, any Error> {
+        guard let file = realpath(path, nil) else { return .failure(ReadError(code: errno)) }
+        defer { free(file) }
+        return .success(String(cString: file))
+    }
+
     /// Blocks; call it off the main thread.
     public static func read(path: String) -> Result<Data, any Error> {
         // Non-blocking, so opening a pipe nobody writes to returns at once
