@@ -139,6 +139,13 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
         }
     }
 
+    /// Whether `responder`, the view with keyboard focus, is the console's
+    /// text: a press there gives it the keyboard so that it can be selected
+    /// and copied, and it takes no typing.
+    func consoleHoldsKeys(_ responder: NSView) -> Bool {
+        responder.isDescendant(of: console)
+    }
+
     private func showConsole() {
         guard !console.isHidden else { return }
         console.show(session.console.entries)

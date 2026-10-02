@@ -80,6 +80,11 @@ extension AppController {
             activeBoard.view.fly(to: target)
         case .esc(let rung):
             climb(rung)
+        case .returnKeys:
+            // The key is not taken: it is dispatched next, to whoever has
+            // the keyboard by then.
+            returnKeys()
+            return false
         }
         return true
     }
@@ -92,7 +97,7 @@ extension AppController {
         return KeyLadder.Facts(
             composing: terminal?.hasMarkedText() == true,
             switcherOpen: switcherOpen,
-            keys: borrow.documentHoldsKeys ? .document : terminal != nil ? .terminal : .host,
+            keys: keyHolder(terminal: terminal, documentHoldsKeys: borrow.documentHoldsKeys),
             editingText: typingInDoc,
             hasFlyTarget: rootView.offscreenFlyTarget != nil,
             esc: EscLadder.Facts(
@@ -128,6 +133,29 @@ extension AppController {
         guard let body = activeBoard.view.card(id)?.htmlBody, let responder = window?.firstResponder as? NSView
         else { return (true, false) }
         return (true, body.documentHoldsKeys(responder))
+    }
+
+    /// Who holds keyboard focus.
+    private func keyHolder(terminal: TerminalView?, documentHoldsKeys: Bool) -> KeyLadder.Keys {
+        if documentHoldsKeys { return .document }
+        if terminal != nil { return .terminal }
+        return consoleHoldsKeys ? .console : .host
+    }
+
+    /// Whether the keys are with the console of an HTML card.
+    private var consoleHoldsKeys: Bool {
+        guard let responder = window?.firstResponder as? NSView else { return false }
+        return activeBoard.view.cards.values.contains { $0.htmlBody?.consoleHoldsKeys(responder) == true }
+    }
+
+    /// Puts the keyboard back where typing goes: the document of the borrowed
+    /// card, or the prime terminal.
+    private func returnKeys() {
+        if let id = borrow.id, let html = activeBoard.view.card(id)?.htmlBody {
+            html.focusDocument()
+        } else {
+            focusPrimeTerminal()
+        }
     }
 
     private func climb(_ rung: EscLadder.Rung) {
