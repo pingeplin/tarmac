@@ -26,10 +26,16 @@ public enum CardNavigation {
     /// A markdown doc: its page loads once and stays. No navigation opens the
     /// browser — a page the doc frames can ask for one with no click at all —
     /// so a link is opened from the page's own click instead (`ExternalLink`).
-    /// A frame embedded by raw HTML loads what it likes.
+    /// A frame embedded by raw HTML may load a web page, as in the Tauri app,
+    /// and never the card scheme: a card document framed here is not
+    /// sandboxed, and would read any other local file framed beside it.
     public static func doc(_ request: Request) -> Verdict {
-        request.pageLoad || request.target == .subframe ? .allow : .cancel
+        if request.pageLoad { return .allow }
+        guard request.target == .subframe else { return .cancel }
+        return ExternalLink.isHTTP(href: request.url) || inlineFrames.contains(request.url) ? .allow : .cancel
     }
+
+    private static let inlineFrames: Set<String> = ["about:blank", "about:srcdoc"]
 
     /// An HTML card: the host page loads once, and the frame inside it only
     /// ever holds a card document.

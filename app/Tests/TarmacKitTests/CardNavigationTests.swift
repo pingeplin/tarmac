@@ -44,6 +44,28 @@ final class CardNavigationTests: XCTestCase {
         }
     }
 
+    func testAnEmptyOrInlineFrameOfADocMayLoad() {
+        XCTAssertEqual(CardNavigation.doc(later("about:blank", target: .subframe)), .allow)
+        XCTAssertEqual(CardNavigation.doc(later("about:srcdoc", target: .subframe)), .allow)
+    }
+
+    /// A card document framed by a markdown doc is not sandboxed: it would run
+    /// at the scheme's own origin and read any other local file framed beside it.
+    func testAFrameOfADocNeverLoadsTheCardScheme() {
+        for url in [
+            "tarmac-card://doc/%2Fr%2Fa.html?v=1", "tarmac-card://doc/%2Fetc%2Fpasswd",
+            "tarmac-card://img/%2Fr%2Fa.svg", "TARMAC-CARD://DOC/%2Fr%2Fa.html", "tarmac-card:x",
+        ] {
+            XCTAssertEqual(CardNavigation.doc(later(url, target: .subframe)), .cancel, url)
+        }
+    }
+
+    func testAFrameOfADocLoadsNothingElseEither() {
+        for url in ["file:///etc/passwd", "data:text/html,<script>1</script>", "blob:null/1", "x-evil://do/thing", ""] {
+            XCTAssertEqual(CardNavigation.doc(later(url, target: .subframe)), .cancel, url)
+        }
+    }
+
     // MARK: - HTML card
 
     func testTheHostPagesOwnLoadIsAllowed() {
