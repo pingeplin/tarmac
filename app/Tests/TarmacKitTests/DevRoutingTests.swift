@@ -110,6 +110,19 @@ final class DevRoutingTests: XCTestCase {
         )
     }
 
+    /// A press on a terminal card's resize handle is a press on the card: the
+    /// app selects it and hands its terminal the keys. On a culled card the
+    /// drag still resizes, and the keys stay where they were.
+    func testAResizeOfACulledCardDoesNotGiveItTheKeys() {
+        let size = CGSize(width: 400, height: 300)
+        let to = CGSize(width: 500, height: 350)
+        let resize = DevRequest.resize(card: "t-1", w: 500, h: 350)
+        let near = [Card(id: "t-1", kind: .term, frame: CGRect(origin: CGPoint(x: 600, y: 0), size: size))]
+        let far = [Card(id: "t-1", kind: .term, frame: CGRect(origin: CGPoint(x: 1_501, y: 0), size: size))]
+        XCTAssertEqual(route(resize, context(cards: near)), .resize(card: "t-1", from: size, to: to, takesKeys: true))
+        XCTAssertEqual(route(resize, context(cards: far)), .resize(card: "t-1", from: size, to: to, takesKeys: false))
+    }
+
     // MARK: - S37 type and key
 
     func testS37TypeAndKeyGoToTheFocusedTerminal() {
@@ -135,7 +148,7 @@ final class DevRoutingTests: XCTestCase {
     func testS38ResizeDragsTheCardFromItsCurrentSizeToTheRequestedOne() {
         XCTAssertEqual(
             route(.resize(card: "t-1", w: 800, h: 600), docs()),
-            .resize(card: "t-1", from: CGSize(width: 400, height: 300), to: CGSize(width: 800, height: 600))
+            .resize(card: "t-1", from: CGSize(width: 400, height: 300), to: CGSize(width: 800, height: 600), takesKeys: true)
         )
     }
 
@@ -240,7 +253,7 @@ final class DevRoutingTests: XCTestCase {
     func testS41ADocCardStillResizes() {
         XCTAssertEqual(
             route(.resize(card: "/a/b.md", w: 1, h: 2)),
-            .resize(card: "/a/b.md", from: CGSize(width: 1, height: 1), to: CGSize(width: 1, height: 2))
+            .resize(card: "/a/b.md", from: CGSize(width: 1, height: 1), to: CGSize(width: 1, height: 2), takesKeys: true)
         )
     }
 
@@ -319,7 +332,7 @@ final class DevRoutingTests: XCTestCase {
         XCTAssertEqual(refusal(.key(card: "/a/c.html", combo: "enter"), docs(html: far))?.code, .unsupportedCardKind)
         XCTAssertEqual(
             route(.resize(card: "/a/c.html", w: 1, h: 1), docs(html: far)),
-            .resize(card: "/a/c.html", from: far.size, to: CGSize(width: 1, height: 1))
+            .resize(card: "/a/c.html", from: far.size, to: CGSize(width: 1, height: 1), takesKeys: false)
         )
     }
 

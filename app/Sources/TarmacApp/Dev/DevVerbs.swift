@@ -84,8 +84,8 @@ final class DevVerbs {
             return ok(try await focus(onMarkdown: card))
         case .focusHTML(let card, let borrow):
             return ok(try await focus(onHTML: card, borrow: borrow))
-        case .resize(let card, let from, let to):
-            return ok(try await resize(try cardView(card), from: from, to: to))
+        case .resize(let card, let from, let to, let takesKeys):
+            return ok(try await resize(try cardView(card), from: from, to: to, takesKeys: takesKeys))
         case .type(let card, let text):
             return ok(try await type(text, into: try terminal(card)))
         case .key(_, let combo, let stroke):
@@ -138,7 +138,11 @@ final class DevVerbs {
         let activated = try await input.takeKey()
         let view = try terminal(termID)
         lastPress = lastPress.filter { controller.sessions[$0.key] != nil }
-        guard takesKeys else { return try await select(culled: view, activated: activated) }
+        guard takesKeys else {
+            let press = DevPointer.contentPress(in: view.bounds)
+            try leavingKeys { try input.click(at: press.point, on: view, by: press.delivery) }
+            return await focusReply(DevInjection(activated: activated, delivery: press.delivery))
+        }
         let candidates = input.candidates(on: view, where: { $0 === view }, onLink: view.hasLink(at:))
         let cell = view.cellRect(col: 0, row: 0)?.size ?? .zero
         let press = DevPointer.press(among: candidates, last: lastPress[termID], cell: cell)
@@ -147,14 +151,15 @@ final class DevVerbs {
         return await focusReply(DevInjection(activated: activated, delivery: press.delivery))
     }
 
-    /// A culled card is hidden. The app's press handling still selects it, and
-    /// in passing hands its terminal the keys; a hidden view is no place for
-    /// them, so they go back where they were (`DevRouting`).
-    private func select(culled view: TerminalView, activated: Bool) async throws -> JSONValue {
+    /// A press on a culled card. The card is hidden; the app's press handling
+    /// still selects it and, for a terminal, hands its view the keys in passing.
+    /// A hidden view is no place for them, so they go back where they were, or
+    /// to the board if that was a hidden view too (`DevRouting`).
+    private func leavingKeys(_ press: () throws -> Void) rethrows {
         let keys = window.firstResponder
-        try input.click(at: DevPointer.contentPress(in: view.bounds).point, on: view, by: .handling)
-        window.makeFirstResponder(keys === view ? board : keys)
-        return await focusReply(DevInjection(activated: activated, delivery: .handling))
+        try press()
+        let hidden = (keys as? NSView)?.isHiddenOrHasHiddenAncestor ?? false
+        window.makeFirstResponder(hidden ? board : keys)
     }
 
     /// A markdown card's own press leaves the keys where they were, so its
@@ -206,7 +211,7 @@ final class DevVerbs {
 
     // MARK: - resize
 
-    private func resize(_ card: CardView, from: CGSize, to: CGSize) async throws -> JSONValue {
+    private func resize(_ card: CardView, from: CGSize, to: CGSize, takesKeys: Bool) async throws -> JSONValue {
         let activated = try await input.takeKey()
         guard let cards = card.superview, let grip = card.subviews.lazy.compactMap({ $0 as? CardResizeGrip }).first
         else { throw DevError(.driverThrew, "the card has no resize handle to drag") }
@@ -217,7 +222,11 @@ final class DevVerbs {
         let delivery = DevPointer.Delivery(
             reachable: events.first.map { input.hitView(at: $0.locationInWindow) === grip } ?? false
         )
-        input.deliver(events, to: grip, by: delivery)
+        if takesKeys {
+            input.deliver(events, to: grip, by: delivery)
+        } else {
+            leavingKeys { input.deliver(events, to: grip, by: delivery) }
+        }
         await input.settle()
         return DevInjection(activated: activated, delivery: delivery).annotate(
             DevResizeGrip.reply(from: from, to: card.worldFrame.rect.size, delta: delta)

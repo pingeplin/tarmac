@@ -76,8 +76,10 @@ public enum DevRouting {
         /// Select the card and focus its document, first borrowing it if `borrow`.
         case focusHTML(card: String, borrow: Bool)
         /// Drag the bottom-right handle (`DevResizeGrip`); `from` is the card's
-        /// world size now.
-        case resize(card: String, from: CGSize, to: CGSize)
+        /// world size now. The press on the handle selects the card like any
+        /// press on it, and on a culled card leaves the keys where they were
+        /// (`takesKeys` false), as `focusTerminal` does.
+        case resize(card: String, from: CGSize, to: CGSize, takesKeys: Bool)
         /// Deliver `text` to the terminal (`DevTypePlan`).
         case type(card: String, text: String)
         case key(card: String, combo: String, stroke: DevKeyStroke)
@@ -119,7 +121,10 @@ public enum DevRouting {
             }
         case .resize(let id, let w, let h):
             return onCard(id, in: context) { card in
-                .resize(card: id, from: card.frame.size, to: CGSize(width: w, height: h))
+                .resize(
+                    card: id, from: card.frame.size, to: CGSize(width: w, height: h),
+                    takesKeys: isVisible(card, in: context)
+                )
             }
         case .type(let id, let text):
             return onFocusedTerminal(id, in: context) { .type(card: id, text: text) }
