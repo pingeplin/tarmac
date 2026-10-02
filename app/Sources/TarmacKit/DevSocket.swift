@@ -20,7 +20,7 @@ public final class DevSocket: @unchecked Sendable {
     }
 
     public let path: String
-    private let listener: Int32
+    let listener: Int32
     private let lock = NSLock()
     private var closed = false
 
@@ -73,7 +73,7 @@ public final class DevSocket: @unchecked Sendable {
         case connection(Int32)
         /// `close()` was called: there is nothing more to serve.
         case closed
-        /// `accept` failed, with its `errno`. The socket serves nothing more.
+        /// `accept` failed, with its `errno`. The socket has closed itself.
         case failed(Int32)
     }
 
@@ -86,7 +86,11 @@ public final class DevSocket: @unchecked Sendable {
             if connection < 0, errno == EINTR { continue }
             guard connection >= 0 else {
                 let code = errno
-                return lock.withLock { closed } ? .closed : .failed(code)
+                if lock.withLock({ closed }) { return .closed }
+                // Dead from here on: left bound, callers would connect to it
+                // and wait out their timeouts instead of failing at once.
+                close()
+                return .failed(code)
             }
             // A caller that gave up waiting has closed its end; the reply to it
             // must fail the write, not kill the app.

@@ -71,6 +71,19 @@ final class DevSocketTests: XCTestCase {
         XCTAssertEqual(socket.accept(), .closed)
     }
 
+    /// A socket that can no longer accept is dead, and a file left behind
+    /// would keep callers connecting to it and waiting out their timeouts
+    /// instead of failing at once (`dev_driver.rs` drops its listener the same
+    /// way). The descriptor is closed under it here to make `accept` fail.
+    func testAFailedAcceptClosesTheSocketAndRemovesItsFile() throws {
+        let path = directory + "/tarmac-dev.sock"
+        let socket = try claimed(path)
+        Darwin.close(socket.listener)
+        XCTAssertEqual(socket.accept(), .failed(EBADF))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path), "a dead socket's file was left behind")
+        XCTAssertEqual(socket.accept(), .closed)
+    }
+
     /// The path, and very likely the descriptor number, belong to whoever
     /// claimed next: a repeated close must touch neither.
     func testASecondCloseLeavesASuccessorAlone() throws {
