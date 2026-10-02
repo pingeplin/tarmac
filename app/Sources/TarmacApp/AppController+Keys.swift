@@ -32,8 +32,7 @@ extension AppController {
         }
         connectToDaemon()
 
-        // Layout has happened by the next runloop turn; sizeChanged also flips
-        // this, whichever lands first.
+        // Layout has happened by the next runloop turn.
         DispatchQueue.main.async { [weak self] in
             self?.viewReady = true
             self?.maybeSpawn()

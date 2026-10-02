@@ -2,22 +2,20 @@ import AppKit
 import TarmacKit
 import TarmacTerm
 
-/// One board (workspace) — the unit the app holds N of (M3 "strips = boards").
-/// It owns the board-scoped state that used to live directly on the 1300-line
-/// `AppController` god-object: its own `BoardView` (the infinite whiteboard),
-/// its terminal sessions, and the prime / provenance state plus the per-board
-/// restore latch.
+/// One board (workspace) — the unit the app holds N of. It owns the
+/// board-scoped state: its own `BoardView` (the infinite whiteboard), its doc
+/// registry, its terminal sessions, and the prime / provenance state plus the
+/// per-board restore latch.
 ///
 /// This is a **state + view-ownership container, not a behavioral object**.
 /// `AppController` stays the coordinator — it owns the `DaemonClient`, the key
-/// monitor, the window, the shared chrome singletons, and the global `DocStore`
-/// — and drives the active board by reading/writing `activeBoard.<field>`. The
-/// `TerminalSession`s live here, but they are *created* by
-/// `AppController.makeSession` (each view's callbacks hold a weak ref
-/// back to the controller for input routing), so terminal I/O stays
-/// controller-centric. Only the active board's `view` is mounted in `RootView`;
-/// a backgrounded board keeps its cards + live terminal views detached so its
-/// daemon ptys stay live (P3 §3).
+/// monitor, the window and the shared chrome — and drives the active board by
+/// reading/writing `activeBoard.<field>`. The `TerminalSession`s live here,
+/// but they are *created* by `AppController.makeSession` (each view's
+/// callbacks hold a weak ref back to the controller for input routing), so
+/// terminal I/O stays controller-centric. Only the active board's `view` is
+/// mounted in `RootView`; a backgrounded board keeps its cards + live terminal
+/// views detached so its daemon ptys stay live.
 @MainActor
 final class Board {
     /// The single implicit board's id — today's desk migrates to this losslessly
@@ -25,12 +23,12 @@ final class Board {
     static let defaultID = "board-0"
 
     let boardID: String
-    /// User-given display name (nil until named — manual naming only, M3
-    /// decision 3); the switcher falls back to the slug `boardID`.
+    /// User-given display name (nil until named — naming is manual only); the
+    /// switcher falls back to the slug `boardID`.
     var name: String?
     /// This board's whiteboard. One `BoardView` per board.
     let view: BoardView
-    /// This board's doc registry (dock order, per-doc read/recency state). A
+    /// This board's doc registry (the daemon's order, per-doc state). A
     /// board is a workspace with its OWN docs — the daemon keeps a Registry per
     /// board and sends each board's docs in its own restore, so the store is
     /// per-board (a switch swaps which store drives the chrome). The file watcher
@@ -50,7 +48,7 @@ final class Board {
 
     /// True once this board's first restore has been applied. Per-board because
     /// the daemon sends a restore for the active board on connect and again on
-    /// every `board_switch` — each board latches independently (P3 §7).
+    /// every `board_switch` — each board latches independently.
     var didInitialRestore = false
 
     init(boardID: String, name: String? = nil, view: BoardView) {

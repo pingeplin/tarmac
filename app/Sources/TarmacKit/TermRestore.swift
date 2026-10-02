@@ -2,9 +2,8 @@
 /// whether the app re-binds the card to a daemon-owned live pty (consuming the
 /// replayed scrollback that follows the restore) or cold-spawns a fresh shell.
 ///
-/// Kept in TarmacKit so the partition is unit-tested away from AppKit; the app
-/// (`AppController.restoreTerminals`) orchestrates the prime/extra-card wiring
-/// around these decisions. A tile re-binds iff its persisted `term_id` is among
+/// Kept in TarmacKit so the partition is unit-tested away from AppKit;
+/// `BoardRestore` builds the restore plan around these decisions. A tile re-binds iff its persisted `term_id` is among
 /// the daemon's reported live terms (`Restore.liveTerms`); everything else cold-
 /// spawns — a tile with no persisted id, a shell that exited while detached, or a
 /// daemon that restarted (all shells gone ⇒ `liveTerms` empty ⇒ all cold-spawn,

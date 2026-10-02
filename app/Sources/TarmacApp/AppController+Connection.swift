@@ -29,7 +29,7 @@ extension AppController {
     func handle(_ status: ConnectionStatus) {
         let dropped = connectionStatus.connected && !status.connected
         connectionStatus = status
-        updateSessionLiveness()
+        showConnectionStatus()
         if dropped { handleDisconnect(status.reason) }
     }
 
@@ -41,7 +41,7 @@ extension AppController {
             connected = true
         case .boardList(let metas, let active):
             boardMetas = metas
-            // P5.4: sync each visited board's local display name from the daemon's
+            // Sync each visited board's local display name from the daemon's
             // authoritative list, so a rename reflects in the window title +
             // status bar (which read `activeBoard.name`), not just the switcher rows.
             for meta in metas { boards[meta.boardID]?.name = meta.name }
@@ -52,7 +52,7 @@ extension AppController {
             if active != activeBoardID, !switching {
                 beginArrivingSwitch(to: active)
             }
-            // P5.4: a board the daemon's list no longer carries (deleted here or by
+            // A board the daemon's list no longer carries (deleted here or by
             // another app) is dropped locally — its detached cards/sessions go and
             // routing to it stops. Never the active board: the daemon fixes active
             // before sending this, so `activeBoardID` always names a live board.
@@ -60,7 +60,7 @@ extension AppController {
             for id in Array(boards.keys) where id != activeBoardID && !liveBoardIDs.contains(id) {
                 removeBoard(id)
             }
-            refreshStrips()
+            refreshChrome()
             // Keep an open switcher in sync with board adds/removes/active-change.
             refreshSwitcherIfOpen()
         case .restore(let docs, let tiles, let board, let restoredBoardID, let liveTerms):

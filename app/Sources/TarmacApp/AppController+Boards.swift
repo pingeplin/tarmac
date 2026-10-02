@@ -3,7 +3,7 @@ import TarmacKit
 import TarmacTerm
 
 extension AppController {
-    /// P5.4: drop a deleted board locally — its `Board` (cards + detached/live
+    /// Drops a deleted board locally — its `Board` (cards + detached/live
     /// sessions + view) and every term→board routing entry. Never the active
     /// board (which must always exist; the daemon fixes active before a delete's
     /// board_list arrives). Its ptys were already killed daemon-side; any in-flight
@@ -29,7 +29,7 @@ extension AppController {
         rootView.mountBoard(board.view)
         let bid = board.boardID
         // Pan fires onLayoutChanged per scroll event; coalesce the persist on a
-        // short trailing timer (fix #2) so a continuous pan does one snapshot+IPC
+        // short trailing timer so a continuous pan does one snapshot+IPC
         // when it settles, not one per delta. Flushed eagerly on switch-away /
         // resign-active / terminate so the last position is never dropped.
         board.view.onLayoutChanged = { [weak self] _ in self?.layoutPersister.schedule(bid) }
@@ -169,7 +169,7 @@ extension AppController {
         performSwitch(to: boardID)
     }
 
-    // MARK: - Board switching (M3 P3)
+    // MARK: - Board switching
 
     /// App-initiated switch to `targetID`: detach the current board and tell the
     /// daemon, which replies with `board_list` + the target's `restore`; the
@@ -188,9 +188,7 @@ extension AppController {
     /// send `board_switch` (the caller does, or the daemon already switched).
     func beginArrivingSwitch(to targetID: String) {
         guard let meta = boardMetas.first(where: { $0.boardID == targetID }) else { return }
-        // Flush a settling pan's debounced persist while the leaving board is still
-        // active (`switching` false, still `activeBoard`), or its guard would drop
-        // it once we switch (fix #2).
+        // A settling pan's debounced persist goes out before the switch.
         flushPendingPersist()
         closeSwitcher()
         switching = true
@@ -198,8 +196,8 @@ extension AppController {
         // is swapped; a stale one would leave the arrived board unfocused.
         // Target nil, not rootView.board, which is about to be swapped.
         window?.makeFirstResponder(nil)
-        // Clear card focus so the arrived board starts in board-navigation mode
-        // (point 2). Otherwise a stale focusedCardID could collide with a same-id
+        // Clear card focus so the arrived board starts in board-navigation mode.
+        // Otherwise a stale focusedCardID could collide with a same-id
         // card on the target board (doc cards key on path, shared across boards)
         // and wrongly capture its scroll.
         focusedCardID = nil
@@ -232,7 +230,7 @@ extension AppController {
 
     /// The ARRIVE half: the target's view is mounted and (on a first visit) its
     /// cards/terminals built; now re-establish focus on the arrived board,
-    /// AFTER its card tree is laid out (crit B3 / S1), and end the transient.
+    /// AFTER its card tree is laid out, and end the transient.
     func finishArrive(on board: Board) {
         rootView.layoutSubtreeIfNeeded()
         applyBorrow()

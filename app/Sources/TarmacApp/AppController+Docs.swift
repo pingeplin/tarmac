@@ -29,7 +29,7 @@ extension AppController {
             board.view.recomputeEdges()
         }
         persistLayout(for: board)
-        if board === activeBoard { refreshStrips() }
+        if board === activeBoard { refreshChrome() }
         refreshSwitcherIfOpen()
     }
 
@@ -119,7 +119,7 @@ extension AppController {
         activeBoard.store.remove(path)
         client.docClose(path: path)
         persistLayout(for: activeBoard)
-        refreshStrips()
+        refreshChrome()
         refreshSwitcherIfOpen()
     }
 
@@ -134,18 +134,18 @@ extension AppController {
     }
 
     private func storeChanged(onBoardID bid: String) {
-        if bid == activeBoardID { refreshStrips() }
+        if bid == activeBoardID { refreshChrome() }
     }
 
     /// Syncs on-board card headers (incl. owner chips) with the registry, and
     /// the window title and the status bar's link word with the app.
-    func refreshStrips() {
+    func refreshChrome() {
         for path in activeBoard.boardDocPaths {
             guard let card = activeBoard.view.card(.doc(path)) else { continue }
             if let doc = store.doc(for: path) { card.apply(doc: doc) }
         }
         refreshOwnerChips(on: activeBoard)
         updateWindowTitle()
-        updateSessionLiveness()
+        showConnectionStatus()
     }
 }

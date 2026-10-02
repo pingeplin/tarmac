@@ -65,7 +65,7 @@ final class AppController {
     lazy var layoutPersister = LayoutPersister { [weak self] boardID in self?.sendLayout(boardID: boardID) }
 
     var escMonitor: Any?
-    /// Single-click-to-focus (point 3) + gesture routing (point 2) live in
+    /// Single-click-to-focus and gesture routing live in
     /// local event monitors armed in `start()` and torn down in `shutdown()`.
     var clickFocusMonitor: Any?
     var scrollRouteMonitor: Any?
@@ -79,7 +79,7 @@ final class AppController {
         set { activeBoard.view.select(newValue) }
     }
 
-    // MARK: - Boards (M3 P3)
+    // MARK: - Boards
     //
     // The app holds N boards keyed by `board_id`; `activeBoard` is the one the
     // user is looking at (its `view` is the mounted BoardView). The board-scoped
@@ -117,12 +117,12 @@ final class AppController {
     /// forgets it.
     var preFlightViewport: Viewport?
 
-    // M3: the app tracks the board list + the active board from `board_list`
-    // (P4 renders the ⌘K switcher from it).
+    // The board list and the active board, as `board_list` last gave them;
+    // the ⌘K switcher renders from it.
     var boardMetas: [BoardMeta] = []
-    // True from a switch's leave until its arrive completes. Suppresses layout
-    // persistence across the transient (unmount / re-mount / rebuild)
-    // and tells the restore handler to mount the arriving board (crit B4).
+    // True from a switch's leave until its arrive completes: it tells the
+    // restore handler to mount the arriving board, and `board_list` not to
+    // start a second switch meanwhile.
     var switching = false
 
     /// True while the ⌘K overlay is up; gates the key monitor (it owns the
@@ -167,7 +167,7 @@ final class AppController {
 
         // Reads `activeBoard` dynamically, so the hints track the mounted board.
         rootView.offscreenHintProvider = { [weak self] in self?.offscreenHints() ?? [] }
-        // ⌘K switcher (P4): a row click opens that board; a veil click dismisses.
+        // ⌘K switcher: a row click opens that board; a veil click dismisses.
         rootView.boardSwitcher.onPickRow = { [weak self] index in self?.switcherPickRow(index) }
         rootView.boardSwitcher.onDismiss = { [weak self] in self?.closeSwitcher() }
         // Mount board-0 and bind its per-board callbacks (edge labels + layout
@@ -175,7 +175,7 @@ final class AppController {
         mount(board0)
 
         updateWindowTitle()
-        updateSessionLiveness()
+        showConnectionStatus()
     }
 
     /// Names the active board in the window title, which is what the Dock,
@@ -188,7 +188,7 @@ final class AppController {
         )
     }
 
-    func updateSessionLiveness() {
+    func showConnectionStatus() {
         rootView.statusBar.setConnection(connectionStatus)
     }
 
