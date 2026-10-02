@@ -15,6 +15,9 @@ final class DevVerbs {
     let controller: AppController
     let quitGuard: QuitGuardController
     let window: NSWindow
+    /// Where the last `focus` pressed each terminal, in that terminal's own
+    /// coordinates: the next press keeps clear of it (`DevPointer.press`).
+    private var lastPress: [String: CGPoint] = [:]
 
     init(controller: AppController, quitGuard: QuitGuardController, window: NSWindow) {
         self.controller = controller
@@ -22,7 +25,10 @@ final class DevVerbs {
         self.window = window
     }
 
-    var input: DevInput { DevInput(window: window) }
+    var input: DevInput {
+        DevInput(window: window) { [controller] target in controller.handlePress(on: target) }
+    }
+
     private var reader: DevSnapshotReader { DevSnapshotReader(controller: controller, quitGuard: quitGuard) }
     private var board: BoardView { controller.activeBoard.view }
 
@@ -31,13 +37,25 @@ final class DevVerbs {
         guard board.window === window else {
             return DevError(.appNotReady, "no board is on screen yet").reply
         }
+        let reply: DevReply
         do {
-            return try await run(DevRouting.route(request, in: reader.routingContext))
+            reply = try await run(DevRouting.route(request, in: reader.routingContext))
         } catch let error as DevError {
-            return error.reply
+            reply = error.reply
         } catch {
-            return DevError(.driverThrew, "\(error)").reply
+            reply = DevError(.driverThrew, "\(error)").reply
         }
+        log(request, reply)
+        return reply
+    }
+
+    /// The scenario suite reads a few fields off a reply and drops the rest,
+    /// so what each verb did — which way a press was delivered, whether the
+    /// app was activated — is also left in the app's own output. A snapshot is
+    /// a read, and large.
+    private func log(_ request: DevRequest, _ reply: DevReply) {
+        if case .snapshot = request { return }
+        FileHandle.standardError.write(Data("tarmac: dev \(request) -> \(reply.body)\n".utf8))
     }
 
     private func run(_ route: DevRouting.Route) async throws -> DevReply {
@@ -53,11 +71,11 @@ final class DevVerbs {
         case .focusBoard:
             return ok(try await focusBoard())
         case .focusTerminal(let card):
-            return ok(try await focus(on: try terminal(card), card: card))
+            return ok(try await focus(onTerminal: card))
         case .focusMarkdown(let card):
-            return ok(try await focus(on: try docBody(card), card: card, thenDropKeys: true))
+            return ok(try await focus(onDoc: card, clicks: 1, thenDropKeys: true))
         case .focusHTML(let card, let borrow):
-            return ok(try await focus(on: try docBody(card), card: card, clicks: borrow ? 2 : 1))
+            return ok(try await focus(onDoc: card, clicks: borrow ? 2 : 1, thenDropKeys: false))
         case .resize(let card, let from, let to):
             return ok(try await resize(try cardView(card), from: from, to: to))
         case .type(let card, let text):
@@ -99,85 +117,78 @@ final class DevVerbs {
     // MARK: - focus
 
     private func focusBoard() async throws -> JSONValue {
-        _ = try await input.takeKey()
+        let activated = try await input.takeKey()
         let board = self.board
-        guard let point = input.point(on: board, where: { $0 === board }) else {
-            throw DevError(.driverThrew, "no empty board space is on screen to press")
-        }
-        try input.click(at: point)
-        return await focusReply()
+        let press = DevPointer.boardPress(
+            among: input.candidates(on: board, where: { $0 === board }), cards: board.cards.values.map(\.frame)
+        )
+        try input.click(at: press.point, on: board, by: press.delivery)
+        return await focusReply(DevInjection(activated: activated, delivery: press.delivery))
     }
 
-    /// A press on the card's body. A markdown card's own press leaves the keys
-    /// where they were, so its route also takes them off the terminal — the
-    /// board is what holds them when no card does.
-    private func focus(
-        on body: NSView, card: String, clicks: Int = 1, thenDropKeys: Bool = false
-    ) async throws -> JSONValue {
-        _ = try await input.takeKey()
-        guard let point = input.point(on: body, where: { $0.isDescendant(of: body) }) else {
+    private func focus(onTerminal termID: String) async throws -> JSONValue {
+        let activated = try await input.takeKey()
+        let view = try terminal(termID)
+        let candidates = input.candidates(on: view, where: { $0 === view }, onLink: view.hasLink(at:))
+        let cell = view.cellRect(col: 0, row: 0)?.size ?? .zero
+        guard let press = DevPointer.press(among: candidates, last: lastPress[termID], cell: cell) else {
             throw DevError(
-                .cardHidden,
-                "that card's body is off screen or under another view, where a press cannot reach it; "
-                    + "zoom out (or pan by hand — no verb pans)",
-                extra: ["card": .string(card)]
+                .driverThrew, "every point tried on that terminal is on a link, which a press would open",
+                extra: ["card": .string(termID)]
             )
         }
-        try input.click(at: point, count: clicks)
-        if thenDropKeys { window.makeFirstResponder(board) }
-        return await focusReply()
+        lastPress[termID] = press.point
+        try input.click(at: press.point, on: view, by: press.delivery)
+        return await focusReply(DevInjection(activated: activated, delivery: press.delivery))
     }
 
-    private func focusReply() async -> JSONValue {
+    /// A markdown card's own press leaves the keys where they were, so its
+    /// route also takes them off the terminal — the board is what holds them
+    /// when no card does.
+    private func focus(onDoc path: String, clicks: Int, thenDropKeys: Bool) async throws -> JSONValue {
+        let activated = try await input.takeKey()
+        guard let body = board.card(.doc(path))?.docView else {
+            throw DevError(.driverThrew, "no document behind \(path)")
+        }
+        guard let press = DevPointer.press(among: input.candidates(on: body, where: { $0.isDescendant(of: body) }))
+        else { throw DevError(.driverThrew, "\(path) has no body to press") }
+        try input.click(at: press.point, on: body, by: press.delivery, count: clicks)
+        if thenDropKeys { window.makeFirstResponder(board) }
+        return await focusReply(DevInjection(activated: activated, delivery: press.delivery))
+    }
+
+    private func focusReply(_ injection: DevInjection) async -> JSONValue {
         await input.settle()
-        return DevSnapshot.focusReply(selectedCard: board.selectedID?.wireID, keyboardFocus: reader.keyboardFocus)
+        return injection.annotate(
+            DevSnapshot.focusReply(selectedCard: board.selectedID?.wireID, keyboardFocus: reader.keyboardFocus)
+        )
     }
 
     // MARK: - resize
 
     private func resize(_ card: CardView, from: CGSize, to: CGSize) async throws -> JSONValue {
-        _ = try await input.takeKey()
-        guard let cards = card.superview else { throw DevError(.driverThrew, "the card left the board mid-verb") }
+        let activated = try await input.takeKey()
+        guard let cards = card.superview, let grip = card.subviews.lazy.compactMap({ $0 as? CardResizeGrip }).first
+        else { throw DevError(.driverThrew, "the card has no resize handle to drag") }
         let delta = DevResizeGrip.delta(from: from, to: to, zoom: board.viewport.zoom)
         let events = try DevResizeGrip.drag(at: DevResizeGrip.handle(of: card.frame), by: delta).map { step in
             try input.mouse(step.phase.eventType, at: cards.convert(step.location, to: nil))
         }
-        try drag(events, onGripOf: card)
+        let delivery = DevPointer.Delivery(
+            reachable: events.first.map { input.hitView(at: $0.locationInWindow) === grip } ?? false
+        )
+        input.deliver(events, to: grip, by: delivery)
         await input.settle()
-        return DevResizeGrip.reply(from: from, to: card.worldFrame.rect.size, delta: delta)
-    }
-
-    /// A press is hit-tested, so it reaches the handle only where the handle is
-    /// on screen with nothing over it. A card is often larger than the window
-    /// leaves room for, and its corner is then outside it; the same events are
-    /// handed to the handle itself there, which runs the whole gesture but not
-    /// the window's own handling of a press.
-    private func drag(_ events: [NSEvent], onGripOf card: CardView) throws {
-        guard let press = events.first else { return }
-        if let hit = input.hitView(at: press.locationInWindow) as? CardResizeGrip, hit.superview === card {
-            events.forEach(input.send)
-            return
-        }
-        guard let grip = card.subviews.lazy.compactMap({ $0 as? CardResizeGrip }).first else {
-            throw DevError(.driverThrew, "the card has no resize handle")
-        }
-        FileHandle.standardError.write(Data(
-            "tarmac: dev resize: \(card.id.wireID)'s handle is off screen or covered; dragging it directly\n".utf8
-        ))
-        for event in events {
-            switch event.type {
-            case .leftMouseDown: grip.mouseDown(with: event)
-            case .leftMouseDragged: grip.mouseDragged(with: event)
-            default: grip.mouseUp(with: event)
-            }
-        }
+        return DevInjection(activated: activated, delivery: delivery).annotate(
+            DevResizeGrip.reply(from: from, to: card.worldFrame.rect.size, delta: delta)
+        )
     }
 
     // MARK: - type and key
 
     private func type(_ text: String, into view: TerminalView) async throws -> JSONValue {
-        _ = try await input.takeKey()
         let plan = DevTypePlan.plan(text: text, kittyFlags: view.engine.kittyKeyboardFlags)
+        let activated = plan.pressesKeys ? try await input.takeKey() : false
         var inserted: [Bool] = []
         for step in plan.steps {
             switch step {
@@ -187,7 +198,7 @@ final class DevVerbs {
             }
         }
         await input.settle()
-        return DevTypePlan.summary(of: plan, inserted: inserted)
+        return DevInjection(activated: activated).annotate(DevTypePlan.summary(of: plan, inserted: inserted))
     }
 
     /// Commits `char` the way an input method does, and says whether the view
@@ -206,17 +217,19 @@ final class DevVerbs {
     }
 
     private func key(_ combo: String, _ stroke: DevKeyStroke) async throws -> JSONValue {
-        _ = try await input.takeKey()
+        let activated = try await input.takeKey()
         try input.press(stroke)
         await input.settle()
-        return DevKeyCombo.reply(combo: combo, events: DevKeyCombo.strokeEvents)
+        return DevInjection(activated: activated).annotate(
+            DevKeyCombo.reply(combo: combo, events: DevKeyCombo.strokeEvents)
+        )
     }
 
     /// The right-click's own work — selecting the word under it — is done by
     /// `menu(for:)`, which is asked directly: sent as an event, the menu it
     /// returns would be popped up and tracked modally, and nothing could answer.
+    /// Asked directly it needs no key window, so the app is not activated.
     private func contextMenu(in view: TerminalView, card: String) async throws -> JSONValue {
-        _ = try await input.takeKey()
         guard let cell = DevCellPoint.lastWrittenCell(in: view.viewportCells()),
               let rect = view.cellRect(col: cell.col, row: cell.row)
         else { throw DevCellPoint.emptyBuffer(card: card) }
@@ -225,7 +238,9 @@ final class DevVerbs {
             throw DevCellPoint.mouseTracked(card: card)
         }
         await input.settle()
-        return DevKeyCombo.reply(combo: DevKeyCombo.contextMenu, events: DevKeyCombo.contextMenuEvents)
+        return DevInjection(activated: false).annotate(
+            DevKeyCombo.reply(combo: DevKeyCombo.contextMenu, events: DevKeyCombo.contextMenuEvents)
+        )
     }
 
     // MARK: - targets
@@ -242,13 +257,6 @@ final class DevVerbs {
             throw DevError(.driverThrew, "no terminal behind \(termID)")
         }
         return view
-    }
-
-    private func docBody(_ path: String) throws -> NSView {
-        guard let body = board.card(.doc(path))?.docView else {
-            throw DevError(.driverThrew, "no document behind \(path)")
-        }
-        return body
     }
 }
 

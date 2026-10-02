@@ -18,7 +18,7 @@ extension DevVerbs {
         // No posted event makes the keyboard read a key as down, so the guard's
         // release poll is told how long this one is held.
         quitGuard.hold(keyCode: plan.chord.keyCode, untilMs: now + plan.holdMs)
-        let pressMs = now > plan.ageMs ? now - plan.ageMs : 0
+        let pressMs = DevPress.pressMs(nowMs: now, ageMs: plan.ageMs)
         try post(.keyDown, plan.chord, stampMs: pressMs)
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(Int(plan.holdMs))) { [weak self] in
             MainActor.assumeIsolated { try? self?.post(.keyUp, plan.chord, stampMs: Uptime.nowMs) }

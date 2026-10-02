@@ -4,22 +4,23 @@ import QuartzCore
 import TarmacKit
 
 /// The input half of the QA driver: builds the `NSEvent`s a verb names and
-/// sends them through `NSApplication.sendEvent`, the path a real event takes
-/// once it is off the queue — local event monitors, the window's hit test and
-/// first-responder handling, then the view. What a verb presses, and where, is
-/// decided in `TarmacKit`.
+/// delivers them. What a verb presses, where, and by which delivery is decided
+/// in `TarmacKit` (`DevPointer`); this only carries it out.
 @MainActor
 struct DevInput {
     let window: NSWindow
+    /// The app's own handling of a left press that lands on a view — the entry
+    /// point its press monitor calls with the view under the pointer.
+    let pressHandling: (NSView) -> Void
 
     // MARK: - Key window
 
     private var holdsKeys: Bool { NSApp.isActive && window.isKeyWindow }
 
     /// Makes the window key, activating the app if it has to, and says whether
-    /// it had to. Key events go to the key window and the board's press
-    /// handling ignores any other, so nothing a verb injects lands without it.
-    /// A locked screen refuses every activation.
+    /// it had to. Key events go to the key window and the app's press handling
+    /// ignores any other, so no key or pointer press lands without it. A locked
+    /// screen refuses every activation.
     func takeKey() async throws -> Bool {
         if holdsKeys { return false }
         NSApp.activate(ignoringOtherApps: true)
@@ -33,13 +34,18 @@ struct DevInput {
 
     // MARK: - Pointer
 
-    /// A point on `target`, in window coordinates, where a press is hit-tested
-    /// to a view `accepts` takes — nil when every candidate is off screen or
-    /// under something else.
-    func point(on target: NSView, where accepts: (NSView) -> Bool) -> NSPoint? {
-        DevTargetPoints.candidates(in: target.bounds)
-            .map { target.convert($0, to: nil) }
-            .first { hitView(at: $0).map(accepts) ?? false }
+    /// The points a press on `target` may land at, in its own coordinates, with
+    /// whether a press there is hit-tested to a view `accepts` takes.
+    func candidates(
+        on target: NSView, where accepts: (NSView) -> Bool, onLink: (NSPoint) -> Bool = { _ in false }
+    ) -> [DevPointer.Candidate] {
+        DevTargetPoints.candidates(in: target.bounds).map { point in
+            DevPointer.Candidate(
+                point: point,
+                reachable: hitView(at: target.convert(point, to: nil)).map(accepts) ?? false,
+                onLink: onLink(point)
+            )
+        }
     }
 
     func hitView(at windowPoint: NSPoint) -> NSView? {
@@ -47,10 +53,39 @@ struct DevInput {
         return content.hitTest(content.superview?.convert(windowPoint, from: nil) ?? windowPoint)
     }
 
-    func click(at windowPoint: NSPoint, count: Int = 1) throws {
+    /// `count` clicks at `point`, given in `target`'s coordinates.
+    func click(at point: NSPoint, on target: NSView, by delivery: DevPointer.Delivery, count: Int = 1) throws {
+        let location = target.convert(point, to: nil)
         for clicks in 1...count {
-            send(try mouse(.leftMouseDown, at: windowPoint, clickCount: clicks))
-            send(try mouse(.leftMouseUp, at: windowPoint, clickCount: clicks))
+            let events = try [NSEvent.EventType.leftMouseDown, .leftMouseUp].map {
+                try mouse($0, at: location, clickCount: clicks)
+            }
+            deliver(events, to: target, by: delivery)
+        }
+    }
+
+    /// One gesture: a press, any drags, the release.
+    ///
+    /// `.window` is the path a real event takes once it is off the queue: local
+    /// event monitors, the window's hit test and first-responder handling, then
+    /// the view. `.target` is for a target the hit test cannot reach — off the
+    /// window, or under another view — and skips only the hit test: the app's
+    /// press handling runs for the target, the target takes first responder if
+    /// a pressed view would, and the target gets the events.
+    func deliver(_ events: [NSEvent], to target: NSView, by delivery: DevPointer.Delivery) {
+        for event in events {
+            switch (delivery, event.type) {
+            case (.window, _):
+                NSApp.sendEvent(event)
+            case (.target, .leftMouseDown):
+                pressHandling(target)
+                if target.acceptsFirstResponder { window.makeFirstResponder(target) }
+                target.mouseDown(with: event)
+            case (.target, .leftMouseDragged):
+                target.mouseDragged(with: event)
+            case (.target, _):
+                target.mouseUp(with: event)
+            }
         }
     }
 
@@ -64,6 +99,8 @@ struct DevInput {
 
     // MARK: - Keys
 
+    /// A key-down and its key-up, through the application's event path: the
+    /// app's key monitor first, then the key window's first responder.
     func press(_ stroke: DevKeyStroke) throws {
         for type in [NSEvent.EventType.keyDown, .keyUp] {
             guard let event = NSEvent.keyEvent(
@@ -73,12 +110,8 @@ struct DevInput {
                 characters: stroke.characters, charactersIgnoringModifiers: stroke.charactersIgnoringModifiers,
                 isARepeat: false, keyCode: stroke.keyCode
             ) else { throw DevError(.driverThrew, "could not build a key event") }
-            send(event)
+            NSApp.sendEvent(event)
         }
-    }
-
-    func send(_ event: NSEvent) {
-        NSApp.sendEvent(event)
     }
 
     // MARK: - Settle
