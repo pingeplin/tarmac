@@ -147,7 +147,9 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
 
     private func layoutConsole() {
         guard !console.isHidden else { return }
-        let height = min(console.height(forWidth: bounds.width), (bounds.height * CardConsoleView.maxFraction).rounded(.down))
+        let height = console.height(
+            forWidth: bounds.width, atMost: (bounds.height * CardConsoleView.maxFraction).rounded(.down)
+        )
         console.frame = NSRect(x: 0, y: bounds.height - height, width: bounds.width, height: height)
     }
 

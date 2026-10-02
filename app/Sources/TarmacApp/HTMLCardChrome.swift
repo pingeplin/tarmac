@@ -37,6 +37,7 @@ final class CardConsoleView: NSView {
     private let scroll = NSScrollView()
     private let text = NSTextView()
     private let hairline = NSView()
+    private var measured = LastResult<NSSize, CGFloat>()
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
@@ -80,16 +81,23 @@ final class CardConsoleView: NSView {
             ))
         }
         text.textStorage?.setAttributedString(lines)
+        measured.forget()
     }
 
-    /// The height the lines take at `width`, the insets included. Measured
-    /// from the text itself: the text view has no width yet when the panel is
-    /// first opened, and would report no height at all.
-    func height(forWidth width: CGFloat) -> CGFloat {
-        guard let lines = text.textStorage else { return 0 }
-        let room = NSSize(width: max(0, width - 2 * Self.inset.width), height: .greatestFiniteMagnitude)
-        let used = lines.boundingRect(with: room, options: [.usesLineFragmentOrigin])
-        return (used.height + 2 * Self.inset.height).rounded(.up)
+    /// The height the lines take at `width`, the insets included, and no more
+    /// than `limit`. A full console is half a megabyte of text and typesetting
+    /// all of it takes a tenth of a second: so only as much as fills `limit`
+    /// is typeset, and once per text, width and limit, not once per layout.
+    func height(forWidth width: CGFloat, atMost limit: CGFloat = .greatestFiniteMagnitude) -> CGFloat {
+        measured.value(for: NSSize(width: width, height: limit)) { room in
+            guard let container = text.textContainer, let layoutManager = text.layoutManager else { return 0 }
+            // The text wraps at the text view's width, and the text view has
+            // none until the panel is first laid out.
+            scroll.setFrameSize(NSSize(width: room.width, height: scroll.frame.height))
+            layoutManager.ensureLayout(forBoundingRect: NSRect(origin: .zero, size: room), in: container)
+            let lines = layoutManager.usedRect(for: container).height + 2 * Self.inset.height
+            return min(room.height, lines.rounded(.up))
+        }
     }
 
     override func layout() {
