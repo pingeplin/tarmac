@@ -141,7 +141,7 @@ says `activated: true`. So **do not type in other apps while a run is in
 progress** — those keys land in the dev app's focused terminal. If activation is
 refused (a **locked screen** refuses every activation call) the verb answers
 `not_key` after 1 s and nothing is injected: the suites need an unlocked
-session. `snapshot` and `zoom` never activate.
+session. `snapshot`, `zoom` and `key <term> contextmenu` never activate.
 
 ### Typing and keying
 
@@ -153,7 +153,7 @@ select, prime, keyboard); the suite's `reset` runs `zoom 1`, `focus board`,
 
 ```sh
 tarmac dev focus board && tarmac dev focus t-1
-tarmac dev type t-1 'printf hello\n'
+tarmac dev type t-1 $'printf hello\n'    # $'…': the CLI sends the text verbatim, so the shell must make the newline
 tarmac dev key t-1 ctrl+c
 ```
 

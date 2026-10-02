@@ -424,8 +424,9 @@ byte-identical wire:
     {t:"restore", ..., live_terms:[term_id, ...]}
 
 The term_ids the daemon currently owns a **live** pty for on the restored board.
-The app re-binds those cards to the running shells — consuming the scrollback
-replayed as `output` frames right after the restore — instead of cold-spawning.
+The app re-binds those cards to the running shells instead of cold-spawning.
+Their history comes from a `scrollback` reply; the `output` replay that follows
+the restore is held and discarded in its favour.
 Missing or empty means cold-spawn: the pre-P5 behaviour, and the daemon-restart
 case where the shells really are gone. This is what makes an app reconnect
 survive with live terminals while a daemon restart does not.

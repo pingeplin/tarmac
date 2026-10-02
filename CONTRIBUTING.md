@@ -89,7 +89,8 @@ By making a contribution to this project, I certify that:
 ## Development setup
 
 Tarmac builds on macOS 26+ with a Rust toolchain and a Swift 6.2+ toolchain
-(Xcode). Build the daemon, the CLI and the app with:
+(Xcode); `make test` and `make dco-check` also need Node.js (plain `node`, no
+packages). Build the daemon, the CLI and the app with:
 
 ```sh
 make core app
@@ -111,7 +112,8 @@ editor/IDE may show stale SourceKit diagnostics — `make` is the source of trut
    table (which layer a given test belongs in), the rule for the AppKit shell —
    which is not unit-tested by design — and the closed list of exceptions are
    all in [`docs/coding-style.md`](docs/coding-style.md). Ensure all suites pass
-   (`make test`). On a fresh checkout, run `make ghostty-vt` once first.
+   (`make test` — it stages libghostty-vt itself; only a bare `swift build` /
+   `swift test` or an editor needs `make ghostty-vt` first).
 4. Commit with a clear message, a DCO sign-off (`git commit -s`), and the
    `Co-Authored-By:` trailer if someone or something co-wrote the change. Verify
    with `make dco-check`.

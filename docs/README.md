@@ -4,7 +4,7 @@
 
 Tarmac's docs accumulated across three UIs and five closed milestones, so a page's
 *path* tells you nothing about whether it describes reality. Every doc therefore
-carries a status banner on its first line, and this table is the map.
+carries a status banner under its title, and this table is the map.
 
 ## The three statuses
 
@@ -39,7 +39,7 @@ The code is enforced by a second workflow, `.github/workflows/test.yml`: the
 request adds, requiring the DCO sign-off `CONTRIBUTING.md` asks for.
 
 All three are **gates**, not just reports: the `Protect main` ruleset requires
-`docs-check`, `dco-check` and both `test.yml` jobs to pass, and requires the
+`docs-check`, `dco-check`, `core (cargo test)` and `app (swift test)` to pass, and requires the
 branch to be up to date with `main` before merging. `main` also refuses force-pushes and deletion, keeps a
 linear history, and takes changes only through a pull request. There are no
 bypass actors — if CI itself is broken, the way through is to relax the ruleset
@@ -86,7 +86,7 @@ the first one, so a `.swift` path on a historical page says nothing about the
 present: go by the banner, and by which toolkit the page names.
 
 - [`archive/m0/`](archive/m0), [`archive/m1/`](archive/m1) — earliest visual cribs.
-- [`archive/m3/plan.md`](archive/m3/plan.md) — the "strips = boards" milestone record.
+- [`archive/m3/`](archive/m3) — the "strips = boards" milestone record (`plan.md`) and its P4 design spec.
 - [`archive/v4/`](archive/v4) — the v3-grid → v4-whiteboard migration plan + visual crib.
 - [`designs/`](designs) — one record per shipped change (numbered `YYMM.NNNN_*` plus a few named ones). These are *change* records: accurate about the change they accompanied, not about today. A design record for a change that was investigated but **not** built lives here too and carries a PROPOSED banner — read the banner, not the directory.
 - `.blueprint/specs/` (repo root) — the per-issue implementation specs the design records are derived from. Same rule: historical.

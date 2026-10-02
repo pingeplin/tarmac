@@ -205,7 +205,7 @@ pinned byte-for-byte to the Rust one's output.
 ## Docs
 
 **Start at [`docs/README.md`](docs/README.md)** — the index. Every doc carries a
-status banner on its first line, because the doc set spans three UIs and five
+status banner under its title, because the doc set spans three UIs and five
 closed milestones and a page's path does not tell you whether it is current:
 
 - **ACTIVE** — describes `main` today; safe to cite as behaviour.

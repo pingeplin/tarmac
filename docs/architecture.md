@@ -18,7 +18,8 @@ Unix socket:
   and persists everything to disk.
 - **`TarmacApp`** — a native Swift/AppKit application (`app/`, a SwiftPM
   package). The *cockpit glass*: it renders the boards and cards, hosts terminal
-  cards (libghostty-vt for emulation; drawing and input are Tarmac's own) and
+  cards (libghostty-vt for emulation and key/mouse encoding; drawing, IME and
+   event handling are Tarmac's own) and
   doc cards, and turns human input into requests to the daemon.
 
 A third tiny binary, the **`tarmac` CLI**, is the universal doorbell: `tarmac
@@ -161,7 +162,7 @@ reports.
 | | `DocOpened(DocEntry)` | D→app | a doc was opened/updated |
 | | `FileEvent {path, mtime_ms}` | D→app | a watched doc changed on disk |
 | | `DocRefresh {path}` | app→D | re-stat a doc now and push its `file_event` |
-| Terminal I/O | `SpawnTerm {term_id, cols, rows, cwd?, cmd?, board_id?}` | app→D | create a PTY card |
+| Terminal I/O | `SpawnTerm {term_id, cols, rows, cwd?, cmd?, board_id?, inherit_cwd_from?}` | app→D | create a PTY card |
 | | `Input {term_id, bytes}` | app→D | keystrokes and mouse reports |
 | | `Output {term_id, bytes}` | D→app | raw PTY output (≤64 KiB chunks) |
 | | `Resize {term_id, cols, rows}` | app→D | resize the PTY |
@@ -431,14 +432,16 @@ A card (`CardView`) is a 30-high header over a body inside a 1-wide border
 and placed by a world-space `CardFrame {x, y, w, h, z}`.
 
 - **Selection.** One card per board can be selected: it wears the teal border
-  and its body takes the wheel. A press on a card selects and raises it; a press
-  on the bare board clears the selection. Raising sets `z` above every other
+  and its body takes the wheel. A press on a card selects and raises it —
+  except on a header control or a doc's link, which act by themselves
+  (`CardPress`); a press on the bare board clears the selection. Raising sets `z` above every other
   card and re-sorts the card views in place — a card is never taken out of the
   hierarchy to restack, which would resign its first responder, sever a press in
   flight and reload a web view.
-- **Move.** Dragging the header moves the card. The move commits only once the
-  pointer has travelled more than 3 points (`CardDrag`), so a click is just a
-  select. **Gravity:** moving a terminal carries its attached docs (`CardCarry`);
+- **Move.** Dragging the header moves the card: it follows the pointer from the
+  first point of travel. The press counts as a *move* — the card lifts, and on
+  release a doc detaches — only once the pointer has gone more than 3 points on
+  either axis (`CardDrag`); short of that it is a click, which selects. **Gravity:** moving a terminal carries its attached docs (`CardCarry`);
   a completed move of a doc detaches it (persisted as `loose`) and clears its
   fresh mark. A resize never detaches.
 - **Resize.** Eight invisible handles — corners and edges — that keep a fixed
@@ -507,11 +510,11 @@ autoscrolls. Copy, Paste and Select All are the Edit menu's; a right-click
 selects the word under it and offers the same three. The wheel scrolls the
 scrollback (5000 lines), walks the alternate screen as arrow keys, or is
 reported to a mouse-tracking program. A click on an OSC 8 hyperlink or a
-spelled-out `http(s)` URL opens it in the browser.
+spelled-out URL opens it in the browser — `http(s)` only in both cases.
 
 **Honest signals.** The label starts as `shell`; each `TermProc` and each
-non-blank OSC title overwrites it, last writer wins (`TermLabel`). `Bell` lights
-the header amber until bytes leave for that PTY or the card becomes prime by a
+non-blank OSC title overwrites it, last writer wins (`TermLabel`). `Bell` turns
+the header's glyph amber and shows an amber `●` there until bytes leave for that PTY or the card becomes prime by a
 press or `⌥Tab`. The view's own bell and OSC 52 clipboard hooks are left unset
 on purpose: the daemon's `Bell` is the observed fact, and a program may not
 overwrite the user's clipboard.
@@ -520,8 +523,9 @@ overwrite the user's clipboard.
 card open *dead* — dimmed, taking no input, never persisted; a clean exit
 removes the card; a clean exit of the board's last live terminal replaces it
 with a fresh shell at the same frame. Nothing is respawned after a failure.
-`⌘W` on a terminal removes the card at once, sending `TermClose` unless the
-shell had already exited (`FocusedClose`).
+`⌘W` on the selected terminal card removes it at once, sending `TermClose`
+unless the shell had already exited, and — as with a clean exit — replaces the
+board's last live terminal with a fresh shell (`FocusedClose`).
 
 **Scrollback restore.** Every terminal card, when it is created, sends
 `ScrollbackRequest` and holds that terminal's live `Output` — up to 256 KiB —
@@ -529,11 +533,14 @@ until the `Scrollback` reply arrives (`ScrollbackGate`, run by
 `app/Sources/TarmacApp/ScrollbackRestore.swift`). The ring *replaces* what the
 card shows: the view is reset, then the ring is *replayed* — fed with the PTY
 reply, bell and clipboard hooks muted, since its queries were answered when
-they were live. What was held is discarded, because the ring is a superset. No
+they were live. What was held is discarded, because the ring is a superset. An empty ring —
+the daemon's answer for a terminal that has exited — replaces nothing, so a dead
+card keeps its screen. No
 reply within 2 s (a daemon that predates the request) releases the held bytes
-in order instead. On a reconnect the gate is armed again for every surviving
-terminal, so the daemon's one-time `Output` replay is never appended to history
-the card already shows.
+in order instead. On a board's first `Restore` on a new connection — the active
+board at the reconnect, any other when it is next switched to — the gate is
+armed again for each of its surviving terminals, so the daemon's one-time
+`Output` replay is never appended to history the card already shows.
 
 ### Doc cards (markdown)
 
@@ -562,7 +569,8 @@ handlers they post to. No cookies, cache or storage outlive the app.
   fetched; other schemes are left as written.
 - **Links.** Only an absolute `http(s)` link opens, in the system browser; the
   page itself never navigates (`CardNavigation`, `ExternalLink`). A frame the
-  doc's raw HTML embeds may hold a web page and nothing else.
+  doc's raw HTML embeds may hold an `http(s)` page or inline content
+  (`about:blank`, `srcdoc`), never a local file or a `tarmac-card://` document.
 - **Header.** `↻` sends `DocRefresh`; the daemon's `FileEvent` is what reloads.
   `✕`, or `⌘W` on the selected doc, removes the card, its registry entry and any
   borrow, and sends `DocClose`.
@@ -587,7 +595,8 @@ no permission-policy feature, and no handle on the app.
   the `doc` host, a markdown doc's the `img` host — so a markdown doc cannot
   frame a local file as an unsandboxed card document.
 - **The shim** (`card_shim.js`) is everything a document can observe of its
-  host: it relays `console.*`, uncaught errors and `Escape` to its parent,
+  host: it relays `console.log`/`info`/`warn`/`error`, uncaught errors, unhandled
+  rejections and `Escape` to its parent,
   applies the zoom, and gates the document's schedulers. Its parent is the host
   page, whose script (`card-host.js`, in the app's content world) only carries
   messages; what they mean is `HTMLCardSession`'s.
@@ -630,8 +639,9 @@ inheritance and doc placement), and the view that holds **keyboard focus** (the
 window's first responder).
 
 - A press on a live terminal card — body or header — selects it, makes it prime
-  and gives it the keyboard. A press on a doc card selects it; a markdown doc's
-  web view takes the keyboard, so its text can be selected and copied the usual
+  and gives it the keyboard. A press on a doc card selects it — except on a
+  link or a header control (`CardPress`); a markdown doc's web view takes the
+  keyboard, so its text can be selected and copied the usual
   way. A press on the bare board clears the selection and leaves the keyboard
   with the board.
 - Keyboard focus is put on the board's prime terminal after the active board's
@@ -653,8 +663,9 @@ view; `KeyLadder` says which ones the app takes, in this order:
 4. `⌥Tab` cycles prime and focus through the board's live terminals, with a HUD
    (`TermCycle`). `⌘T` opens a terminal, cascaded from the prime one and
    inheriting its current directory (`inherit_cwd_from`).
-5. `Return`, when the board — not a terminal — holds the keys and a signalling
-   card is off screen, remembers the viewport and flies to that card.
+5. Plain `Return`, when no terminal holds the keys, no text control in a
+   markdown doc's raw HTML is being typed into, and a signalling card is off
+   screen, remembers the viewport and flies to that card.
 6. `ESC` climbs `EscLadder`; the first rung that applies consumes it: dismiss
    toasts → fly back to the remembered viewport → un-borrow → clear `fresh` on
    every doc of the board → deselect a selected doc. With none, `ESC` reaches
@@ -683,13 +694,13 @@ land in the terminal behind it.
 
 ### Wayfinding and overlays
 
-Layered over the board in a fixed order (`OverlayStack`): the zoom control
-(bottom-left: `−`, percent, `+`, fit — steps of ×1.2 about the viewport centre;
-fit frames every card with a 10 % margin), the minimap (bottom-right; cards
-coloured by signal, click to re-centre), offscreen hint pills (one per
-signalling terminal whose centre is off screen, on the edge it overshoots; a
-pill that cannot clear a card is drawn under the cards), toasts (at most three,
-7 s each), the switcher, and the `⌥Tab` HUD. A 27-point status bar sits below
+Layered over the board, back to front (`OverlayStack`): offscreen hint pills
+(one per signalling terminal whose centre is off screen, on the edge it
+overshoots; a pill that cannot clear a card is drawn under the cards), the zoom
+control (bottom-left: `−`, percent, `+`, fit — steps of ×1.2 about the viewport
+centre; fit frames every card with a 10 % margin), the minimap (bottom-right;
+cards coloured by signal, click to re-centre), toasts (at most three, 7 s
+each), the switcher, and the `⌥Tab` HUD. A 27-point status bar sits below
 the board: `attached` or the link's reason, and the card count. The window
 title names the active board.
 
@@ -701,8 +712,9 @@ is alive — whatever runs in it.
 **The ⌘Q guard** (`QuitGuard`, wired by `QuitGuardController`). The Quit menu
 item's target is the guard, so only the Quit *shortcut* is held: a mouse click
 on Quit, Dock ▸ Quit and logout terminate at once. A keyboard `⌘Q` shows a
-centred "Hold ⌘Q to Quit" notice and quits when the key is held 500 ms or
-pressed twice within 1 s. Release is detected by polling the triggering key's
+centred "Hold ⌘Q to Quit" notice. Holding the key 500 ms, or pressing it
+again within 1 s, commits the quit: the window hides at once and the app exits
+when the key is released. Release is detected by polling the triggering key's
 state every 50 ms, since its keyUp never arrives while `⌘` is held. The app
 menu carries *Warn Before Quitting (⌘Q)*, on by default and saved in
 `app-prefs.json` beside the daemon socket (`AppPrefs`); a file that cannot be
@@ -728,8 +740,8 @@ tiles with `loose` = not attached, the live viewport, and `board_id`.
 
 ### Restore and reconnect
 
-The daemon sends `Restore` for its active board on connect and on every
-`BoardSwitch`.
+The daemon sends `Restore` for its active board on connect, and after every
+`BoardSwitch`, `BoardCreate` and successful `BoardDelete`.
 
 - **First visit** (`BoardRestore`). A terminal tile whose `term_id` is in
   `live_terms` is re-bound to that PTY; any other gets a freshly minted id and a
@@ -737,7 +749,8 @@ The daemon sends `Restore` for its active board on connect and on every
   new shell. A board always ends up with at least one terminal. Doc tiles are
   joined with `restore.docs`; a doc follows its recorded owner to whatever that
   terminal was restored as, and an owner that was not restored leaves it
-  ownerless. The newly minted ids are persisted at once.
+  ownerless. The newly minted ids are persisted by that restore,
+  through the usual debounce.
 - **Later restores** — a switch back, or a reconnect (`ReconnectRestore`).
   Terminals still in `live_terms` stay as they are; the rest become dead cards;
   nothing is respawned. An empty `live_terms` for a board that had a live
@@ -762,7 +775,9 @@ without a driver.
 `app/Sources/TarmacApp/Dev/DevVerbs.swift` carries the route out and reads back
 what it observed. Verbs inject real input instead of calling the controller —
 `NSEvent`s through the application's event path (the key monitor, the hit test,
-first-responder handling) — so a scenario exercises the paths a user does. A
+first-responder handling) — so a scenario exercises the paths a user does. Two go
+to the terminal view directly: `type`'s printables through `insertText`, and
+`contextmenu` through the view's own menu request. A
 pointer press whose target the hit test cannot reach, off the window or under
 another view, is delivered to the target view after the app's own press
 handling. A reply says which, in a `delivery` key (`window` or `target`), and

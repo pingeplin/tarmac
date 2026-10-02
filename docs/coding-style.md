@@ -95,8 +95,9 @@ verification statement — what you exercised by hand and what you observed. **5
 owes the tests that cover the moved code, green before and after; **6** owes the
 green suite alone. **3** owes the build it touches: `make bundle` for the bundle
 path, a green CI run for a workflow change, `make test` otherwise — the
-entitlements and the cask in `packaging/` are reached only by `make release`, so
-say what you verified there by hand. **4** owes `make docs-check` for docs,
+entitlements in `packaging/` are reached only by `make release`, and the cask by
+no target at all — it is bumped by hand at release time — so say what you
+verified there by hand. **4** owes `make docs-check` for docs,
 `make test` for generated or vendored code.
 
 Work driven by a spec in `.blueprint/specs/` owes that statement per manual
@@ -201,7 +202,10 @@ back from a rendered bitmap.
   methods (`ScrollbackGate`, `QuitGuard`, `CardBorrow`). One main type per file,
   the file named for it; a slice of the controller is an
   `AppController+<Area>.swift` extension. **Every new kit module ships with its
-  paired `<Module>Tests.swift`.**
+  paired `<Module>Tests.swift`.** The tree predates this for `CardCull`,
+  `DaemonSocket`, `JavaScriptNumber`, `Messages` and `StrictJSON`; a suite that
+  spans modules is named for its subject (`ConformanceTests`,
+  `RustEncoderParityTests`, `BoardPersistenceTests`).
 - **Access and isolation.** `public` is what the shell calls; tests reach the
   rest with `@testable import`. The package builds in Swift 6 language mode:
   views and controllers are `@MainActor`, a kit value type is `Sendable`, and
@@ -223,7 +227,7 @@ back from a rendered bitmap.
   state with a small private factory inside the class; `setUp`/`tearDown` are for
   a test that owns a real resource — a socket, a temp directory, a child process
   — as `app/Tests/TarmacKitTests/DevSocketTests.swift` does. A `TarmacTerm` test
-  class is `@MainActor`, like the types it drives. Pin a cross-language contract
+  class that drives a main-actor type (engine, renderer, view) is `@MainActor`. Pin a cross-language contract
   with bytes captured from the other side, never hand-written, as
   `app/Tests/TarmacKitTests/RustEncoderParityTests.swift` does.
 
