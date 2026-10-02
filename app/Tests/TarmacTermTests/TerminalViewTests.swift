@@ -405,6 +405,25 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(sentText, "你")
     }
 
+    func testTheInputMethodsCaretIsKeptWithTheComposingText() {
+        let nowhere = NSRange(location: NSNotFound, length: 0)
+        view.setMarkedText("中文", selectedRange: NSRange(location: 1, length: 0), replacementRange: nowhere)
+        XCTAssertEqual(view.selectedRange(), NSRange(location: 1, length: 0))
+        view.insertText("中文", replacementRange: nowhere)
+        XCTAssertEqual(view.selectedRange(), NSRange(location: 0, length: 0))
+    }
+
+    /// The candidate window opens under the clause being converted, not at the
+    /// start of the composing text.
+    func testTheCandidateWindowFollowsTheRangeItIsAskedFor() throws {
+        let cell = try XCTUnwrap(view.gridLayout).cell
+        view.setMarkedText("abcd", selectedRange: NSRange(location: 4, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+        let start = view.firstRect(forCharacterRange: NSRange(location: 0, length: 0), actualRange: nil)
+        let later = view.firstRect(forCharacterRange: NSRange(location: 2, length: 0), actualRange: nil)
+        // The composing text is set at the font's own advance, a little off the grid's.
+        XCTAssertEqual(later.minX - start.minX, 2 * cell.width, accuracy: 1)
+    }
+
     func testChordSeenDuringCompositionSaysSo() {
         var seen: [Bool] = []
         view.keyOverride = { seen.append($0.isComposing); return nil }

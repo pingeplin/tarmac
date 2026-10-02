@@ -16,6 +16,7 @@ final class TerminalRendererTests: XCTestCase {
         scale: CGFloat = 2,
         only drawn: Range<Int>? = nil,
         cursor: CursorDisplay = .hidden,
+        preedit: TerminalPreedit? = nil,
         select: ((TerminalSelection, SurfaceGeometry) -> Void)? = nil
     ) throws -> Canvas {
         let fonts = TerminalFonts(size: 16, pixelsPerPoint: scale)
@@ -32,8 +33,22 @@ final class TerminalRendererTests: XCTestCase {
 
         let canvas = try Canvas(size: bounds, scale: scale, fill: untouched, layout: layout)
         TerminalRenderer(fonts: fonts, theme: theme)
-            .draw(frame, rows: drawn ?? 0..<rows, layout: layout, cursor: cursor, in: canvas.context)
+            .draw(frame, rows: drawn ?? 0..<rows, layout: layout, cursor: cursor, preedit: preedit, in: canvas.context)
         return canvas
+    }
+
+    /// The composing text covers the terminal's cursor, so without a caret of
+    /// its own nothing shows where the next symbol will go.
+    func testComposingTextShowsTheInputMethodsCaret() throws {
+        let atEnd = try render("", cursor: .focused, preedit: TerminalPreedit(text: "ab", caret: 2))
+        XCTAssertFalse(atEnd.rows(containing: theme.cursor, inCols: 2..<3, row: 0).isEmpty)
+        let atStart = try render("", cursor: .focused, preedit: TerminalPreedit(text: "ab", caret: 0))
+        XCTAssertTrue(atStart.rows(containing: theme.cursor, inCols: 2..<3, row: 0).isEmpty)
+    }
+
+    func testTheComposingCaretBlinksWithTheCursor() throws {
+        let off = try render("", cursor: .hidden, preedit: TerminalPreedit(text: "ab", caret: 2))
+        XCTAssertTrue(off.rows(containing: theme.cursor, inCols: 2..<3, row: 0).isEmpty)
     }
 
     func testEmptyCellsShowTheThemeBackground() throws {

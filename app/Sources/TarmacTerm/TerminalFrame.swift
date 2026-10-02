@@ -82,3 +82,10 @@ public struct TerminalFrame: Equatable, Sendable {
     public var cursor: FrameCursor?
     public var dirtyRows: IndexSet
 }
+
+/// The input method's uncommitted text, and where its caret is in it.
+struct TerminalPreedit: Equatable {
+    var text: String
+    /// A UTF-16 offset into `text`, as the input method counts.
+    var caret: Int
+}

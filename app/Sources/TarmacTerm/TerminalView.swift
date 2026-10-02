@@ -68,6 +68,8 @@ public final class TerminalView: NSView {
     private static let blinkInterval: TimeInterval = 0.6
 
     var markedText = NSMutableAttributedString()
+    /// The input method's caret or selected clause inside `markedText`.
+    var markedSelection = NSRange(location: 0, length: 0)
     var keyTextAccumulator: [String]?
 
     private struct LinkHit: Equatable {
@@ -285,7 +287,7 @@ public final class TerminalView: NSView {
         let rows = max(first, 0)..<max(min(last, gridLayout.rows), max(first, 0))
         renderer.draw(
             frameSnapshot, rows: rows, layout: gridLayout, cursor: cursorDisplay,
-            preedit: markedText.length > 0 ? markedText.string : nil,
+            preedit: preedit,
             hoveredLink: hoveredLink.map { (row: $0.row, cols: $0.link.cols) }, in: context
         )
     }
@@ -787,6 +789,7 @@ extension TerminalView: @preconcurrency NSTextInputClient {
         case let plain as String: markedText = NSMutableAttributedString(string: plain)
         default: return
         }
+        markedSelection = selectedRange
         invalidatePreedit()
     }
 
@@ -802,7 +805,14 @@ extension TerminalView: @preconcurrency NSTextInputClient {
         markedText.length > 0 ? NSRange(location: 0, length: markedText.length) : NSRange(location: NSNotFound, length: 0)
     }
 
-    public func selectedRange() -> NSRange { NSRange(location: 0, length: 0) }
+    public func selectedRange() -> NSRange {
+        markedText.length > 0 ? markedSelection : NSRange(location: 0, length: 0)
+    }
+
+    var preedit: TerminalPreedit? {
+        guard markedText.length > 0 else { return nil }
+        return TerminalPreedit(text: markedText.string, caret: min(NSMaxRange(markedSelection), markedText.length))
+    }
 
     public func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? { nil }
 
@@ -810,11 +820,15 @@ extension TerminalView: @preconcurrency NSTextInputClient {
 
     public func characterIndex(for point: NSPoint) -> Int { 0 }
 
-    /// Where the candidate window anchors: the cursor's cell, in screen coordinates.
+    /// Where the candidate window anchors, in screen coordinates: the cursor's
+    /// cell, moved along the composing text to the range asked for.
     public func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
         guard let gridLayout, let window else { return .zero }
         let cursor = frameSnapshot.cursor
-        let cell = gridLayout.rect(col: cursor?.col ?? 0, row: cursor?.row ?? 0)
+        var cell = gridLayout.rect(col: cursor?.col ?? 0, row: cursor?.row ?? 0)
+        if markedText.length > 0, range.location != NSNotFound {
+            cell.origin.x += renderer.preeditOffset(markedText.string, utf16Index: range.location)
+        }
         return window.convertToScreen(convert(cell, to: nil))
     }
 

@@ -53,7 +53,7 @@ final class TerminalRenderer {
         rows: Range<Int>,
         layout: TerminalGridLayout,
         cursor: CursorDisplay,
-        preedit: String? = nil,
+        preedit: TerminalPreedit? = nil,
         hoveredLink: (row: Int, cols: ClosedRange<Int>)? = nil,
         in context: CGContext
     ) {
@@ -72,8 +72,11 @@ final class TerminalRenderer {
         }
         if let position = frame.cursor, rows.contains(position.row) {
             drawCursor(position, frame: frame, layout: layout, display: cursor, pixels: pixels, in: context)
-            if let preedit, !preedit.isEmpty {
-                drawPreedit(preedit, at: position, frame: frame, layout: layout, pixels: pixels, in: context)
+            if let preedit, !preedit.text.isEmpty {
+                drawPreedit(
+                    preedit, at: position, frame: frame, layout: layout, caret: cursor == .focused,
+                    pixels: pixels, in: context
+                )
             }
         }
     }
@@ -275,18 +278,14 @@ final class TerminalRenderer {
         }
     }
 
-    /// The IME's uncommitted text, drawn over the grid from the cursor and underlined.
+    /// The IME's uncommitted text, drawn over the grid from the cursor and
+    /// underlined. It covers the terminal's cursor, so it carries the input
+    /// method's own caret, which blinks as the cursor would.
     private func drawPreedit(
-        _ text: String, at cursor: FrameCursor, frame: TerminalFrame, layout: TerminalGridLayout,
-        pixels: PixelGrid, in context: CGContext
+        _ preedit: TerminalPreedit, at cursor: FrameCursor, frame: TerminalFrame, layout: TerminalGridLayout,
+        caret: Bool, pixels: PixelGrid, in context: CGContext
     ) {
-        let attributes: [CFString: Any] = [
-            kCTFontAttributeName: fonts.regular,
-            kCTForegroundColorFromContextAttributeName: true,
-        ]
-        let line = CTLineCreateWithAttributedString(
-            CFAttributedStringCreate(nil, text as CFString, attributes as CFDictionary)!
-        )
+        let line = preeditLine(preedit.text)
         let origin = layout.rect(col: cursor.col, row: cursor.row).origin
         let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
         let box = pixels.snap(CGRect(x: origin.x, y: origin.y, width: width, height: layout.cell.height))
@@ -298,6 +297,27 @@ final class TerminalRenderer {
         CTLineDraw(line, context)
         let thickness = max(pixels.snap(fonts.metrics.lineThickness), pixels.pixel)
         context.fill(CGRect(x: box.minX, y: box.maxY - thickness, width: box.width, height: thickness))
+        guard caret else { return }
+        context.setFillColor((frame.cursorColor ?? theme.cursor).cgColor)
+        context.fill(CGRect(
+            x: pixels.snap(box.minX + preeditOffset(preedit.text, utf16Index: preedit.caret)), y: box.minY,
+            width: max(pixels.snap(1.5), pixels.pixel), height: box.height
+        ))
+    }
+
+    /// How far into the composing text a UTF-16 offset lies, in points.
+    func preeditOffset(_ text: String, utf16Index: Int) -> CGFloat {
+        CTLineGetOffsetForStringIndex(preeditLine(text), min(max(utf16Index, 0), text.utf16.count), nil)
+    }
+
+    private func preeditLine(_ text: String) -> CTLine {
+        let attributes: [CFString: Any] = [
+            kCTFontAttributeName: fonts.regular,
+            kCTForegroundColorFromContextAttributeName: true,
+        ]
+        return CTLineCreateWithAttributedString(
+            CFAttributedStringCreate(nil, text as CFString, attributes as CFDictionary)!
+        )
     }
 }
 
