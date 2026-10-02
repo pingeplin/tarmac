@@ -33,9 +33,7 @@ final class DevDriver {
             log("dev driver disabled: \(String(cString: strerror(code))) on \(path)")
         case .success(let socket):
             self.socket = socket
-            relay.attach { request, completion in
-                Task { @MainActor in completion(await verbs.answer(request)) }
-            }
+            relay.attach { request in await verbs.answer(request) }
             Thread.detachNewThread { [relay] in
                 while let connection = socket.accept() {
                     DevSocket.serve(connection, answer: relay.answer)
