@@ -23,7 +23,7 @@ Everything goes through the root `Makefile`:
 - `make docs-check` — deterministic doc tripwires (`scripts/docs-check.mjs`, plain node, sub-second): status banners, link rot, ACTIVE docs citing paths that don't exist, and `Msg` variants missing from `architecture.md`/`protocol.md`. Runs on every PR as its own workflow (`.github/workflows/docs-check.yml`), kept separate from `test.yml` so it never queues behind a cargo build.
 - `make run` — launches the native dev app with `TARMAC_SOCKET`/`TARMAC_STATE`/`TARMAC_DEV_SOCKET` pinned to this worktree's `.dev/`.
 - `make qa` — `scripts/qa/smoke.mjs`: the in-app QA driver's own scenario suite (#166), driven through `tarmac dev` against a **live `make run` app**. Deliberately **not** part of `make test` or CI — every scenario needs a window. It exits non-zero with a clear message if no app is listening. `make qa-quit` (`scripts/qa/quit.mjs`) holds the cases that end the app.
-- `make bundle` — `scripts/bundle.sh`: an unsigned `dist/Tarmac.app` from the Swift release build plus the two Rust binaries. `make release` (`scripts/release.sh`; needs `VERSION`, `DEVID_IDENTITY`, `NOTARY_PROFILE`) stamps `core/Cargo.toml`, rebuilds the bundle, signs it, builds the `.dmg`, notarizes and staples.
+- `make bundle` — `scripts/bundle.sh`: an unsigned `dist/Tarmac.app` from the Swift release build plus the two Rust binaries. `make release` (`scripts/release.sh`; needs `VERSION`, `DEVID_IDENTITY`, `NOTARY_PROFILE`) stamps `core/Cargo.toml` and its lockfile, rebuilds the bundle, signs it, builds the `.dmg`, notarizes and staples.
 
 ## Docs
 

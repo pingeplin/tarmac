@@ -24,38 +24,38 @@ VERSION="${VERSION:?set VERSION to the version being released}"
 
 DIST="$ROOT/dist"
 APP="$DIST/Tarmac.app"
-ENT="$ROOT/packaging/Tarmac.entitlements"
 DMG="$DIST/Tarmac-$VERSION.dmg"
 
 # 0. Stamp the Cargo version so CARGO_PKG_VERSION is the shipped version: the
 #    app's bundle version is stamped from the same $VERSION (scripts/bundle.sh),
 #    and the app replaces a daemon whose version differs from its own. Matches
 #    only `^version = "..."` — dependency pins like `serde = { version = ...}`
-#    start with the crate name and are never touched.
+#    start with the crate name and are never touched. The lockfile names the
+#    workspace crates' version too, and the release build is --locked.
 sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" "$ROOT/core/Cargo.toml"
+cargo update --workspace --manifest-path "$ROOT/core/Cargo.toml"
 
 # 1. (re)assemble the unsigned bundle
 VERSION="$VERSION" "$ROOT/scripts/bundle.sh"
 
-# 2. sign INSIDE-OUT, no --deep. Embedded Mach-Os first, no entitlements; the
-#    main app last, WITH the hardened-runtime entitlements. --timestamp needs
-#    network access (Apple's TSA).
+# 2. sign INSIDE-OUT, no --deep: the embedded Mach-Os first, the app last.
+#    Hardened runtime with no entitlements — nothing in the app generates code;
+#    the JIT behind doc cards runs in WebKit's own content process. --timestamp
+#    needs network access (Apple's TSA).
 echo "==> signing (identity: $DEVID_IDENTITY)"
 codesign --force --options runtime --timestamp --sign "$DEVID_IDENTITY" "$APP/Contents/MacOS/tarmacd"
 codesign --force --options runtime --timestamp --sign "$DEVID_IDENTITY" "$APP/Contents/MacOS/tarmac"
-codesign --force --options runtime --timestamp \
-  --entitlements "$ENT" --sign "$DEVID_IDENTITY" "$APP"
+codesign --force --options runtime --timestamp --sign "$DEVID_IDENTITY" "$APP"
 codesign --verify --strict --verbose=2 "$APP"
 
 # 3. stage the .dmg: the app, a drag-target symlink to /Applications, and the
 #    standalone `tarmac` CLI at the root (the cask's `binary` stanza links it).
-#    Sign that standalone copy too.
+#    The copy carries the signature step 2 embedded in the binary.
 echo "==> staging .dmg layout"
 STAGE="$(mktemp -d "${TMPDIR:-/tmp}/tarmac-dmg.XXXXXX")"
 trap 'rm -rf "$STAGE"' EXIT
 cp -R "$APP" "$STAGE/Tarmac.app"
 cp "$APP/Contents/MacOS/tarmac" "$STAGE/tarmac"
-codesign --force --options runtime --timestamp --sign "$DEVID_IDENTITY" "$STAGE/tarmac"
 ln -s /Applications "$STAGE/Applications"
 
 echo "==> building $DMG"

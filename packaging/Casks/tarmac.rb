@@ -35,7 +35,7 @@ cask "tarmac" do
   depends_on macos: :tahoe
 
   app "Tarmac.app"
-  # The standalone universal CLI shipped at the .dmg root (NOT a path inside the
+  # The standalone CLI shipped at the .dmg root (NOT a path inside the
   # bundle — in-bundle symlink targets can need a shim). Symlinked onto PATH so
   # `tarmac open` works from any shell.
   binary "tarmac"

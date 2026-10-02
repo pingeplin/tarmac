@@ -187,7 +187,7 @@ sandbox and zoom model.
 | `docs/` | Engineering docs — see the [docs map](#docs) below. |
 | `scripts/` | `fetch-ghostty-vt.sh` (stage the pinned XCFramework), `bundle.sh` (unsigned `.app`), `release.sh` (sign + notarized `.dmg`), `docs-check.mjs`, and the QA driver's scenario suites in `scripts/qa/`. |
 | `qa/` | Hand-run QA records and the probe pages they use. Those dated before 2026-10 were run against the Tauri app. |
-| `packaging/` | The bundle's `Info.plist`, entitlements, icon, and the Homebrew cask. |
+| `packaging/` | The bundle's `Info.plist`, icon, and the Homebrew cask. |
 | `Makefile` | The build / test / run entrypoint. |
 
 ## Tests

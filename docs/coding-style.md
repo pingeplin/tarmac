@@ -95,8 +95,8 @@ verification statement — what you exercised by hand and what you observed. **5
 owes the tests that cover the moved code, green before and after; **6** owes the
 green suite alone. **3** owes the build it touches: `make bundle` for the bundle
 path, a green CI run for a workflow change, `make test` otherwise — the
-entitlements in `packaging/` are reached only by `make release`, and the cask by
-no target at all — it is bumped by hand at release time — so say what you
+signing in `scripts/release.sh` is reached only by `make release`, and the cask
+by no target at all — it is bumped by hand at release time — so say what you
 verified there by hand. **4** owes `make docs-check` for docs,
 `make test` for generated or vendored code.
 
