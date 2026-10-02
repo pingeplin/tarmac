@@ -3,11 +3,15 @@
 # Rust binaries. arm64-only. Needs no Apple certificate; signing, the .dmg and
 # notarization are scripts/release.sh.
 #
-#   VERSION=0.1.0 scripts/bundle-native.sh   # -> dist/Tarmac.app
+#   scripts/bundle-native.sh                  # -> dist/Tarmac.app
+#   VERSION=1.2.3 scripts/bundle-native.sh    # stamp another version
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${VERSION:-0.1.0}"
+# The app replaces a daemon whose version differs from its own, so the bundle
+# is stamped with the version of the daemon it carries unless told otherwise.
+VERSION="${VERSION:-$(sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT/core/Cargo.toml" | head -1)}"
+[ -n "$VERSION" ] || { echo "FATAL: no version in core/Cargo.toml and no VERSION given" >&2; exit 1; }
 
 DIST="$ROOT/dist"
 APP="$DIST/Tarmac.app"
@@ -54,15 +58,20 @@ cp "$RUST_BIN/tarmac" "$MACOS/tarmac"
 
 # The app's SwiftPM resource bundle, flattened into Contents/Resources: codesign
 # rejects loose content at the bundle root, where SwiftPM's own accessor would
-# look. Found by content so a package rename fails here, not at first launch.
+# look, so the app asks its main bundle first. Found by content so a package
+# rename fails here, not at first launch; SwiftPM lays the bundle out flat or
+# as Contents/Resources depending on the build system.
 app_res=""
 shopt -s nullglob
-for b in "$SWIFT_BIN"/*.bundle; do
-  [ -f "$b/DocTemplate.html" ] && { app_res="$b"; break; }
+for dir in "$SWIFT_BIN"/*.bundle "$SWIFT_BIN"/*.bundle/Contents/Resources; do
+  [ -f "$dir/DocTemplate.html" ] && { app_res="$dir"; break; }
 done
 shopt -u nullglob
 [ -n "$app_res" ] || { echo "FATAL: no *.bundle containing DocTemplate.html under $SWIFT_BIN" >&2; exit 1; }
 cp -R "$app_res"/. "$RES/"
+for need in DocTemplate.html Web/card_shim.js Web/marked.umd.js Fonts; do
+  [ -e "$RES/$need" ] || { echo "FATAL: $need missing from the app's resources" >&2; exit 1; }
+done
 
 cp "$ROOT/packaging/Info.plist" "$CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$CONTENTS/Info.plist"
