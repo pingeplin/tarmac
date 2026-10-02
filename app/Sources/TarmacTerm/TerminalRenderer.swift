@@ -42,6 +42,16 @@ final class TerminalRenderer {
     }
 
     private var shapes: [ShapeKey: Shape] = [:]
+    /// The last colour drawn with: neighbouring cells usually share theirs, so
+    /// one remembered `CGColor` spares building one per glyph and rule.
+    private var lastColour: (rgb: RGB, cgColor: CGColor)?
+
+    private func cgColor(_ colour: RGB) -> CGColor {
+        if let lastColour, lastColour.rgb == colour { return lastColour.cgColor }
+        let made = colour.cgColor
+        lastColour = (colour, made)
+        return made
+    }
 
     init(fonts: TerminalFonts, theme: TerminalTheme) {
         self.fonts = fonts
@@ -153,7 +163,7 @@ final class TerminalRenderer {
     ) {
         let font = fonts.font(for: flags, drawing: text)
         let baseline = CGPoint(x: pixels.snap(origin.x), y: pixels.snap(origin.y + fonts.metrics.baseline))
-        context.setFillColor(colour.cgColor)
+        context.setFillColor(cgColor(colour))
         switch shape(text, font: font, style: flags.intersection([.bold, .italic]).rawValue) {
         case .glyph(var glyph):
             // Glyph positions are in text space, which the flipped text matrix mirrors.
@@ -203,7 +213,7 @@ final class TerminalRenderer {
         let thickness = max(pixels.snap(fonts.metrics.lineThickness), pixels.pixel)
         let width = layout.cell.width * CGFloat(span)
         let top = pixels.snap(y)
-        context.setFillColor(colour.cgColor)
+        context.setFillColor(cgColor(colour))
         func rule(_ offset: CGFloat) {
             context.fill(CGRect(x: pixels.snap(x), y: top + offset, width: pixels.snap(x + width) - pixels.snap(x), height: thickness))
         }

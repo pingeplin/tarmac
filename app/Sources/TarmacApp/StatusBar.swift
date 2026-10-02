@@ -36,7 +36,9 @@ final class StatusBar: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     func setCardCount(_ cards: Int) {
-        count.stringValue = ChromeText.cardCount(cards)
+        let text = ChromeText.cardCount(cards)
+        guard text != count.stringValue else { return }
+        count.stringValue = text
         needsLayout = true
     }
 

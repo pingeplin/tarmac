@@ -63,8 +63,15 @@ final class ZoomControl: NSView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
+    /// The readout last sized for: a pan reports the viewport on every event
+    /// with the zoom unchanged, and measuring the segments is not free.
+    private var shownPercent: String?
+
     func setZoom(_ zoom: CGFloat) {
-        pct.stringValue = ChromeText.zoomPercent(Double(zoom))
+        let percent = ChromeText.zoomPercent(Double(zoom))
+        guard percent != shownPercent else { return }
+        shownPercent = percent
+        pct.stringValue = percent
         needsLayout = true
         sizeToContents()
     }

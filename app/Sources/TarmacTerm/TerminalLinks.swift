@@ -21,7 +21,7 @@ enum TerminalLinks {
         for (col, cell) in row.cells.enumerated() where cell.width != .spacer {
             let piece = cell.text.isEmpty ? " " : cell.text
             text += piece
-            columns += Array(repeating: col, count: piece.utf16.count)
+            columns.append(contentsOf: repeatElement(col, count: piece.utf16.count))
         }
         let whole = NSRange(location: 0, length: columns.count)
         return pattern.matches(in: text, range: whole).map { match in

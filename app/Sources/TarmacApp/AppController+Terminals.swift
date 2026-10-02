@@ -60,6 +60,9 @@ extension AppController {
     /// The session for `termID` wherever its card is. The index forgets a
     /// terminal at exit while its dead card stays, so this looks at the boards.
     private func anySession(_ termID: String) -> (session: TerminalSession, board: Board)? {
+        if let board = ownerBoard(ofTerm: termID), let session = board.sessions[termID] {
+            return (session, board)
+        }
         for board in boards.values {
             if let session = board.sessions[termID] { return (session, board) }
         }

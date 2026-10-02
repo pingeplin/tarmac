@@ -39,12 +39,13 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
 
+    // Read once: every doc card loads the same page and scripts.
+    private static let scripts = [BundledResource.web("marked.umd.js").text, BundledResource.web("doc-render.js").text]
+    private static let page = BundledResource.docTemplate.text
+
     init(path: String) {
         self.path = path
-        webView = CardWebView.make(
-            scripts: [BundledResource.web("marked.umd.js").text, BundledResource.web("doc-render.js").text],
-            served: .docImages
-        )
+        webView = CardWebView.make(scripts: Self.scripts, served: .docImages)
         host = ScreenSpaceHost(content: webView)
         super.init(frame: .zero)
         wantsLayer = true
@@ -81,7 +82,7 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
         pointerIsOverLink = false
         isEditingText = false
         loadingPage = true
-        webView.loadHTMLString(BundledResource.docTemplate.text, baseURL: nil)
+        webView.loadHTMLString(Self.page, baseURL: nil)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }

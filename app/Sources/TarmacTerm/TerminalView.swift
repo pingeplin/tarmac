@@ -352,9 +352,17 @@ public final class TerminalView: NSView {
 
     private func restartBlink() {
         blinkOn = true
-        blinkTimer?.invalidate()
-        blinkTimer = nil
-        guard isFocused, window?.isKeyWindow == true, !isHiddenOrHasHiddenAncestor else { return }
+        guard isFocused, window?.isKeyWindow == true, !isHiddenOrHasHiddenAncestor else {
+            blinkTimer?.invalidate()
+            blinkTimer = nil
+            return
+        }
+        // Every output frame restarts the blink: push the running timer's
+        // next beat out instead of building a new one.
+        if let blinkTimer {
+            blinkTimer.fireDate = Date(timeIntervalSinceNow: Self.blinkInterval)
+            return
+        }
         blinkTimer = Timer.scheduledTimer(withTimeInterval: Self.blinkInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }

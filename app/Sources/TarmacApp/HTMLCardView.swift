@@ -40,9 +40,13 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
 
+    // Read once: every HTML card loads the same host page and script.
+    private static let scripts = [BundledResource.web("card-host.js").text]
+    private static let page = BundledResource.web("card-host.html").text
+
     init(path: String) {
         self.path = path
-        webView = CardWebView.make(scripts: [BundledResource.web("card-host.js").text], served: .cards)
+        webView = CardWebView.make(scripts: Self.scripts, served: .cards)
         host = ScreenSpaceHost(content: webView)
         super.init(frame: .zero)
         wantsLayer = true
@@ -69,7 +73,7 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
     private func loadPage() {
         pageLoaded = false
         loadingPage = true
-        webView.loadHTMLString(BundledResource.web("card-host.html").text, baseURL: nil)
+        webView.loadHTMLString(Self.page, baseURL: nil)
     }
 
     override func layout() {
