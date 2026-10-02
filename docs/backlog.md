@@ -191,6 +191,12 @@ Verified against the code on 2026-10-02.
   `Viewport.default` centres the world origin, which at the default window size
   leaves the lower part of the boot terminal below the board.
   `app/Sources/TarmacApp/BoardModel.swift`.
+- **Synthesised italic slants more than a real italic would.** Where no italic
+  of the terminal face is installed, the slant also shears fallback characters
+  (CJK, emoji), Braille and geometric shapes, and Latin ink overhangs its cell
+  by up to 2.5 pt. Only box drawing, blocks and the Powerline separators are
+  kept upright. `variant` and `joinsItsNeighbours` in
+  `app/Sources/TarmacTerm/TerminalFonts.swift`.
 - **A focused terminal that gets culled loses the keys.** AppKit hands the
   keyboard to the window, the board swallows the keys, and typing is dropped
   until a click. `app/Sources/TarmacApp/AppController+Keys.swift`.
