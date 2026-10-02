@@ -141,6 +141,27 @@ final class DevRelayTests: XCTestCase {
         XCTAssertEqual(app.events, ["first starts", "first ends", "second starts", "second ends"])
     }
 
+    /// Every verb the wait gave up on still runs, in the order it arrived:
+    /// each was a request to change the app, and dropping one in the queue
+    /// would leave it half-driven with nothing said.
+    func testEveryVerbGivenUpOnStillRunsInOrder() {
+        let app = App()
+        let relay = DevRelay(slackMs: 60)
+        relay.attach { request in
+            if request == .zoom(z: 1) { await app.gate() }
+            app.note("\(request)")
+            return DevReply(ok: true, body: "{}")
+        }
+        let givenUpOn: [DevRequest] = [.zoom(z: 1), .zoom(z: 2), .zoom(z: 3)]
+        for request in givenUpOn {
+            XCTAssertEqual(code(relay.answer(request)), "app_unresponsive")
+        }
+        app.openGate()
+        let last = DevRequest.snapshot(until: nil, timeoutMs: 20_000)
+        XCTAssertTrue(relay.answer(last).ok)
+        XCTAssertEqual(app.events, (givenUpOn + [last]).map { "\($0)" })
+    }
+
     private final class Reply: @unchecked Sendable {
         private let lock = NSLock()
         private var reply: DevReply?

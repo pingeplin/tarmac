@@ -270,6 +270,28 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertFalse(view.hasLink(at: NSPoint(x: 5_000, y: 5_000)))
     }
 
+    /// The point is in the view's coordinates, not the grid's: the padding
+    /// around the grid shifts every cell, so the answer changes exactly at the
+    /// link's first and last cells.
+    func testALinkEndsAtItsFirstAndLastCells() throws {
+        feed("see https://example.com/x now")
+        let layout = try XCTUnwrap(view.gridLayout)
+        func centre(_ col: Int) -> NSPoint {
+            let cell = layout.rect(col: col, row: 0)
+            return NSPoint(x: cell.midX, y: cell.midY)
+        }
+        XCTAssertFalse(view.hasLink(at: centre(3)))
+        XCTAssertTrue(view.hasLink(at: centre(4)))
+        XCTAssertTrue(view.hasLink(at: centre(24)))
+        XCTAssertFalse(view.hasLink(at: centre(25)))
+    }
+
+    func testAViewTooSmallForAGridHasNoLinks() throws {
+        let empty = try TerminalView(frame: .zero)
+        XCTAssertNil(empty.gridLayout)
+        XCTAssertFalse(empty.hasLink(at: .zero))
+    }
+
     func testDraggingAcrossAUrlSelectsInsteadOfOpening() throws {
         var opened: [String] = []
         view.onOpenLink = { opened.append($0) }
