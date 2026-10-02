@@ -23,6 +23,18 @@ final class DevPointerTests: XCTestCase {
         XCTAssertEqual(DevPointer.Delivery(reachable: false), .target)
         XCTAssertEqual(DevPointer.Delivery.window.rawValue, "window")
         XCTAssertEqual(DevPointer.Delivery.target.rawValue, "target")
+        XCTAssertEqual(DevPointer.Delivery.handling.rawValue, "handling")
+    }
+
+    /// A doc card's body is the user's content: a click there follows a link or
+    /// presses a button. The Tauri driver dispatches on the wrapper around the
+    /// document and never inside it, so a doc is given the app's press handling
+    /// and no click, wherever it is on screen.
+    func testADocBodyGetsThePressHandlingAndNoClick() {
+        XCTAssertEqual(
+            DevPointer.contentPress(in: CGRect(x: 0, y: 0, width: 390, height: 278)),
+            Press(point: CGPoint(x: 195, y: 139), delivery: .handling)
+        )
     }
 
     // MARK: - a card's body
@@ -59,12 +71,23 @@ final class DevPointerTests: XCTestCase {
             ]),
             Press(point: b, delivery: .target)
         )
-        XCTAssertNil(DevPointer.press(among: [Candidate(point: a, reachable: true, onLink: true)]))
-        XCTAssertNil(DevPointer.press(among: []))
     }
 
-    /// Two presses on one cell inside the double-click interval select a word,
-    /// so the next press keeps two cells clear of the last one.
+    /// With nowhere to click that is not a link, the card still gets the app's
+    /// press handling — select, raise, prime, the keys — and no click at all.
+    func testWithEveryPointOnALinkTheCardIsFocusedWithoutAClick() {
+        XCTAssertEqual(
+            DevPointer.press(among: [
+                Candidate(point: a, reachable: true, onLink: true), Candidate(point: b, reachable: false, onLink: true),
+            ]),
+            Press(point: a, delivery: .handling)
+        )
+        XCTAssertEqual(DevPointer.press(among: []), Press(point: .zero, delivery: .handling))
+    }
+
+    /// A second press at the same point inside the double-click interval is a
+    /// double click, which selects a word; the next press keeps two cells
+    /// clear of the last one.
     func testAPointBesideTheLastPressIsPassedOver() {
         let candidates = [
             Candidate(point: a, reachable: true), Candidate(point: b, reachable: true),
@@ -87,6 +110,10 @@ final class DevPointerTests: XCTestCase {
         XCTAssertEqual(
             DevPointer.press(among: candidates, last: CGPoint(x: 300, y: 240), cell: cell),
             Press(point: a, delivery: .window)
+        )
+        XCTAssertEqual(
+            DevPointer.press(among: candidates, last: CGPoint(x: 300, y: 239), cell: cell),
+            Press(point: b, delivery: .window)
         )
     }
 
@@ -132,7 +159,20 @@ final class DevPointerTests: XCTestCase {
         for card in cards {
             XCTAssertFalse(card.insetBy(dx: -1, dy: -1).contains(press.point), "\(press.point) is on \(card)")
         }
-        XCTAssertEqual(DevPointer.boardPress(among: [], cards: []).delivery, .target)
+    }
+
+    /// Past the FAR corner: measured from the near one the point is on a card.
+    func testThePointClearOfACardIsPastItsFarCorner() {
+        let card = CGRect(x: 100, y: 50, width: 400, height: 300)
+        XCTAssertEqual(
+            DevPointer.boardPress(among: [Candidate(point: a, reachable: false)], cards: [card]),
+            Press(point: CGPoint(x: 508, y: 358), delivery: .target)
+        )
+    }
+
+    /// The union of no cards is the null rect, whose corners are infinite.
+    func testABoardWithNoCardsIsPressedAtAFinitePoint() {
+        XCTAssertEqual(DevPointer.boardPress(among: [], cards: []), Press(point: CGPoint(x: 8, y: 8), delivery: .target))
     }
 
     // MARK: - what the reply says
