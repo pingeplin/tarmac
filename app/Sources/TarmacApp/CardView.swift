@@ -333,20 +333,46 @@ final class CardView: NSView {
     /// can change it without moving the card's frame by a device pixel.
     private var laidOutWorldSize: CGSize?
 
-    /// Puts the card on screen at `frame`, its chrome laid out for `scale`.
+    /// The scale the card was last projected at. A culled card is not laid
+    /// out for it until it is shown.
+    private var projectedScale = CardScale(zoom: 1, backing: 2)
+
+    /// Puts the card on screen at `frame`, its chrome laid out for `scale`. A
+    /// culled card takes only its place, which the edges ending on it read,
+    /// and its body's size, which a terminal measures its grid from: on a
+    /// board of many cards, laying out chrome nobody sees is most of what a
+    /// zoom step costs.
     func project(to frame: CGRect, scale: CardScale) {
-        if frame.size != self.frame.size || scale != self.scale || worldFrame.rect.size != laidOutWorldSize {
-            needsLayout = true
-        }
+        let resized = worldFrame.rect.size != laidOutWorldSize
+        let reshaped = frame.size != self.frame.size || scale != self.scale
         self.frame = frame
-        guard scale != self.scale else { return }
-        self.scale = scale
+        projectedScale = scale
+        if isHidden {
+            if resized { needsLayout = true }
+            return
+        }
+        if resized || reshaped { needsLayout = true }
+        applyProjectedScale()
+    }
+
+    override func viewDidUnhide() {
+        super.viewDidUnhide()
+        needsLayout = true
+        applyProjectedScale()
+    }
+
+    private func applyProjectedScale() {
+        guard projectedScale != scale else { return }
+        scale = projectedScale
         header.apply(scale)
         applyShadow()
     }
 
     override func layout() {
         super.layout()
+        // AppKit asks for a layout whenever the frame's size changes, which
+        // for a culled card is every zoom step.
+        if isHidden, worldFrame.rect.size == laidOutWorldSize { return }
         let box = CardBox.screen(cardSize: bounds.size, worldSize: worldFrame.rect.size, scale: scale)
         layer?.cornerRadius = box.cornerRadius
         layer?.borderWidth = box.border
