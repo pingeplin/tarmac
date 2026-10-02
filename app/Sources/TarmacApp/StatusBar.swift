@@ -1,26 +1,21 @@
 import AppKit
 import TarmacKit
 
-/// Bottom status bar (crib §6 / migration-plan Phase 3): a 27px strip, bg1, a
-/// 1px line-soft top border, 10.5px mono faint. Left shows `▞ board` with the
-/// `▞` glyph in agent cyan; right shows the live count `N cards on board`.
+/// The strip under the board: `▞ tarmac`, the daemon link, and on the right the
+/// active board's card count.
 @MainActor
 final class StatusBar: NSView {
     static let height: CGFloat = 27
 
+    private static let padX: CGFloat = 12
+    private static let gap: CGFloat = 8
+    private static let borderWidth: CGFloat = 1
+
     private let topBorder = NSView()
-    // Left cluster is two labels so the ▞ glyph can be agent cyan while the
-    // rest stays faint.
-    private let leftGlyph = NSTextField(labelWithString: "▞")
-    private let leftLabel = NSTextField(labelWithString: " board")
-    // P5 (two honest signals): the daemon-session word (B1–B4 mocks), a second
-    // left-cluster span — `attached` in `ok` green when the app holds a live
-    // daemon connection, `detached` faint when the link is down. (No tmux — the
-    // mock's literal "tmux" word is dropped; daemon-native sessions only.)
-    private let sessionLabel = NSTextField(labelWithString: "")
-    private let rightLabel = NSTextField(labelWithString: "")
-    /// Gap before the session word (CSS `.tm-status` gap:14px).
-    private static let sessionGap: CGFloat = 14
+    private let glyph = ChromeLabel("▞", size: 10.5, color: Theme.agent)
+    private let brand = ChromeLabel("tarmac", size: 10.5, color: Theme.faint)
+    private let link = ChromeLabel(size: 10.5, color: Theme.faint)
+    private let count = ChromeLabel(size: 10.5, color: Theme.faint)
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
@@ -33,128 +28,47 @@ final class StatusBar: NSView {
         topBorder.wantsLayer = true
         topBorder.layer?.backgroundColor = Theme.lineSoft.cgColor
         addSubview(topBorder)
+        for label in [glyph, brand, link, count] { addSubview(label) }
 
-        leftGlyph.font = Theme.mono(10.5)
-        leftGlyph.textColor = Theme.agent
-        addSubview(leftGlyph)
-
-        leftLabel.font = Theme.mono(10.5)
-        leftLabel.textColor = Theme.faint
-        addSubview(leftLabel)
-
-        sessionLabel.font = Theme.mono(10.5)
-        sessionLabel.textColor = Theme.faint
-        addSubview(sessionLabel)
-
-        rightLabel.font = Theme.mono(10.5)
-        rightLabel.textColor = Theme.faint
-        rightLabel.alignment = .right
-        addSubview(rightLabel)
-
-        setCounts(board: 0)
+        setCardCount(0)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    /// M3: the active board's display name + the board count (`▞ board-3 · 4
-    /// boards`). The count is dropped when there is only one board (`▞ board-0`).
-    /// A minimal stand-in for P4's full titlebar chip / ⌘K switcher so a switch
-    /// is visible.
-    func setBoard(_ name: String, count: Int) {
-        leftLabel.stringValue = count > 1 ? " \(name) · \(count) boards" : " \(name)"
-        needsLayout = true
-    }
-
-    func setCounts(board: Int) {
-        rightLabel.stringValue = board == 1 ? "1 card on board" : "\(board) cards on board"
+    func setCardCount(_ cards: Int) {
+        count.stringValue = ChromeText.cardCount(cards)
         needsLayout = true
     }
 
     /// The daemon link: `attached` while connected, else why it is not.
     func setConnection(_ status: ConnectionStatus) {
-        sessionLabel.stringValue = status.label
-        sessionLabel.textColor = status.connected ? Theme.ok : Theme.amber
+        link.stringValue = status.label
+        link.textColor = status.connected ? Theme.ok : Theme.amber
         needsLayout = true
     }
 
     override func layout() {
         super.layout()
-        topBorder.frame = NSRect(x: 0, y: 0, width: bounds.width, height: 1)
+        topBorder.frame = NSRect(x: 0, y: 0, width: bounds.width, height: Self.borderWidth)
 
-        let h = bounds.height
-        let glyphSize = leftGlyph.fittedSize
-        leftGlyph.frame = NSRect(
-            x: 12,
-            y: ((h - glyphSize.height) / 2).rounded(),
-            width: glyphSize.width,
-            height: glyphSize.height
-        )
-        let labelSize = leftLabel.fittedSize
-        leftLabel.frame = NSRect(
-            x: leftGlyph.frame.maxX,
-            y: ((h - labelSize.height) / 2).rounded(),
-            width: labelSize.width,
-            height: labelSize.height
-        )
+        let countSize = count.textSize
+        let countX = bounds.width - Self.padX - countSize.width
+        count.place(at: CGPoint(x: countX, y: rowY(countSize)))
 
-        let sessionSize = sessionLabel.fittedSize
-        sessionLabel.frame = NSRect(
-            x: leftLabel.frame.maxX + Self.sessionGap,
-            y: ((h - sessionSize.height) / 2).rounded(),
-            width: sessionSize.width,
-            height: sessionSize.height
-        )
-
-        let rightSize = rightLabel.fittedSize
-        rightLabel.frame = NSRect(
-            x: bounds.width - 12 - rightSize.width,
-            y: ((h - rightSize.height) / 2).rounded(),
-            width: rightSize.width,
-            height: rightSize.height
-        )
-    }
-}
-
-/// Cold-start hint (migration-plan Phase 3 / DECISION 2026-06-13): a single
-/// centered line shown only while the board has no doc card — `docs appear when
-/// anything runs  tarmac open <path>  — you or your tools`, faint 10.5px mono,
-/// with the `tarmac open <path>` span in muted. No empty-board placeholder;
-/// hidden once the first doc card lands. Click-through.
-@MainActor
-final class ColdStartHintView: NSView {
-    private let textField = NSTextField(labelWithString: "")
-
-    override var isFlipped: Bool { true }
-    override var acceptsFirstResponder: Bool { false }
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    init() {
-        super.init(frame: .zero)
-        let attr = NSMutableAttributedString()
-        let faint: [NSAttributedString.Key: Any] = [.font: Theme.mono(10.5), .foregroundColor: Theme.faint]
-        let muted: [NSAttributedString.Key: Any] = [.font: Theme.mono(10.5), .foregroundColor: Theme.muted]
-        attr.append(NSAttributedString(string: "docs appear when anything runs  ", attributes: faint))
-        attr.append(NSAttributedString(string: "tarmac open <path>", attributes: muted))
-        attr.append(NSAttributedString(string: "  — you or your tools", attributes: faint))
-        textField.attributedStringValue = attr
-        textField.isEditable = false
-        textField.isSelectable = false
-        textField.isBezeled = false
-        textField.drawsBackground = false
-        textField.alignment = .center
-        addSubview(textField)
+        var x = Self.padX
+        for label in [glyph, brand] {
+            let size = label.textSize
+            label.place(at: CGPoint(x: x, y: rowY(size)))
+            x += size.width + Self.gap
+        }
+        // A long reason gives way to the count instead of running under it.
+        let linkSize = link.textSize
+        let room = max(0, countX - Self.gap - x)
+        link.place(at: CGPoint(x: x, y: rowY(linkSize)), width: min(linkSize.width, room))
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    override func layout() {
-        super.layout()
-        let size = textField.fittedSize
-        textField.frame = NSRect(
-            x: ((bounds.width - size.width) / 2).rounded(),
-            y: ((bounds.height - size.height) / 2).rounded(),
-            width: size.width,
-            height: size.height
-        )
+    /// Centres a label in the strip below its top border.
+    private func rowY(_ size: NSSize) -> CGFloat {
+        (Self.borderWidth + (bounds.height - Self.borderWidth - size.height) / 2).rounded()
     }
 }

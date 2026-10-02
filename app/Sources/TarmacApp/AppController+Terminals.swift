@@ -360,29 +360,25 @@ extension AppController {
 
     // MARK: - Offscreen hints
 
-    /// Builds the offscreen-hint models for every signalling card: bell →
-    /// `label · HH:MM` (when it rang); live → the label. The board decides which
-    /// are actually offscreen and where they pin. Priority orders the Return
-    /// target (bell outranks live; among same, most-recent wins by z).
-    func offscreenHints() -> [OffscreenHints.Hint] {
-        var hints: [OffscreenHints.Hint] = []
-        for (id, card) in activeBoard.view.cards {
-            let signal = card.signal
-            guard signal != .none else { continue }
-            let viewCenter = CGPoint(x: card.frame.midX, y: card.frame.midY)
-            let label: String
-            switch id {
-            case .term(let tid):
-                let name = sessions[tid]?.label ?? ""
-                label = signal == .bell ? "\(name) · \(hhmm(sessions[tid]?.bellAt ?? Date()))" : name
-            case .doc(let path):
-                let base = store.doc(for: path)?.fileName ?? (path as NSString).lastPathComponent
-                label = signal == .bell ? "\(base) · \(hhmm(Date()))" : base
-            }
-            let priority = (signal == .bell ? 1000 : 0) + card.worldFrame.z
-            hints.append(OffscreenHints.Hint(cardID: id, centerView: viewCenter, signal: signal, label: label, priority: priority))
+    /// The active board's signalling terminals whose centre is off screen, in
+    /// card order — the order that settles which of two equal signals ⏎ flies
+    /// to. A live one reads its label; a lit bell adds when it rang.
+    func offscreenHints() -> [OffscreenHintLayout.Hint] {
+        let board = activeBoard
+        let visible = board.view.viewportWorldRect
+        return board.sessionOrder.compactMap { termID in
+            guard let s = board.sessions[termID], let card = board.view.card(.term(termID)),
+                  let signal = card.signal.wayfinding else { return nil }
+            let center = CGPoint(x: card.worldFrame.rect.midX, y: card.worldFrame.rect.midY)
+            guard BoardWayfinding.isOffscreen(cardCenterWorld: center, viewportWorldRect: visible) else { return nil }
+            return OffscreenHintLayout.Hint(
+                cardID: termID,
+                centerView: board.view.worldToView(center),
+                signal: signal,
+                label: OffscreenHintLayout.pillLabel(signal: signal, name: s.label, hhmm: hhmm(s.bellAt ?? Date())),
+                z: card.worldFrame.z
+            )
         }
-        return hints
     }
 
     private func hhmm(_ date: Date) -> String {
