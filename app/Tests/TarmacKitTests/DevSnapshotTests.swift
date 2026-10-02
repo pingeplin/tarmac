@@ -337,14 +337,12 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(dropped["enabled"], true)
     }
 
-    /// `QuitGuard` names its phases and routes for this snapshot. The app maps
-    /// one onto the other by that name, so the two spellings must stay one.
-    func testTheGuardsOwnNamesAreThePhasesAndRoutesReportedHere() {
-        XCTAssertEqual(Guard.Phase(rawValue: QuitGuard.Phase.idle(lastStartMs: nil).name), .idle)
-        XCTAssertEqual(Guard.Phase(rawValue: QuitGuard.Phase.showing(startedMs: 0).name), .showing)
-        XCTAssertEqual(Guard.Phase(rawValue: QuitGuard.Phase.confirming.name), .confirming)
-        XCTAssertEqual(Guard.Route(rawValue: QuitGuard.Route.guarded.name), .guard)
-        XCTAssertEqual(Guard.Route(rawValue: QuitGuard.Route.terminateNow.name), .terminate)
+    /// `quit.mjs`'s stale case reads the route off the app's `quit-key` log
+    /// line, so the logged word and the reported one must stay one spelling.
+    func testTheRouteTheGuardLogsIsTheOneReportedHere() {
+        for route in [QuitGuard.Route.guarded, .terminateNow] {
+            XCTAssertEqual(Guard.Route(route).rawValue, route.name)
+        }
     }
 
     func testTheGuardsPhasesAndRoutesMapOntoTheReportedOnes() {
