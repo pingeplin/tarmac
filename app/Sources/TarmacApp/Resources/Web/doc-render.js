@@ -116,8 +116,10 @@
       }
       prose.replaceChildren(template.content);
       remeasure();
-      // A focused control that was just replaced leaves without a focus event.
+      // What was focused or under the pointer was just replaced, with no
+      // event to say so.
       focusMoved();
+      pointerIs(false);
     },
 
     // Called before the web view takes its new size.
