@@ -853,4 +853,91 @@ final class CardShimTests: XCTestCase {
         shim.run("h.send({ tarmac: 'zoom', z: 40 }, { nested: 'iframe' })")
         XCTAssertEqual(shim.number("h.style.zoom"), 3, "2609.0003 S10")
     }
+
+    // MARK: - the host's relayed wheel delta scrolls the document
+
+    func testAScrollFromTheHostReachesScrollByWithItsOwnDeltas() throws {
+        let shim = try loadShim()
+        shim.run("var scrolled = []; window.scrollBy = (dx, dy) => scrolled.push([dx, dy]);")
+
+        shim.run("h.send({ tarmac: 'scroll', dx: 4, dy: -9 })")
+        XCTAssertEqual(shim.run("scrolled").toArray() as NSArray?, [[4, -9]], "scroll: the deltas")
+
+        shim.run("h.send({ tarmac: 'scroll', dx: 1, dy: 1 }, { nested: 'iframe' })")
+        XCTAssertEqual(try shim.count("scrolled"), 1, "scroll: from a source that is not the host")
+    }
+
+    // MARK: - the never-paused path, beyond the cancels
+
+    func testALiveFrameCallbackReceivesTheNativeTimestamp() throws {
+        let shim = try loadShim()
+        shim.run("var seen = []; window.requestAnimationFrame((ts) => seen.push(ts)); h.driveFrame(321);")
+        XCTAssertEqual(shim.number("seen[0]"), 321)
+    }
+
+    func testALiveTimeoutKeepsItsExtraArguments() throws {
+        let shim = try loadShim()
+        shim.run("var seen = []; var id = window.setTimeout((...args) => seen.push(args), 16, 'a', 7); h.fireTimeout(id);")
+        XCTAssertEqual(shim.run("seen").toArray() as NSArray?, [["a", 7]])
+    }
+
+    func testAnIntervalKeepsItsDelayAndItsExtraArguments() throws {
+        let shim = try loadShim()
+        shim.run("var seen = []; window.setInterval((...args) => seen.push(args), 250, 'a', 7);")
+        XCTAssertEqual(shim.number("h.calls.setInterval[0].delay"), 250, "delay")
+
+        shim.run("h.tickInterval(h.calls.setInterval[0].id)")
+        XCTAssertEqual(shim.run("seen").toArray() as NSArray?, [["a", 7]], "arguments")
+    }
+
+    func testATimeoutIssuedWhilePausedRunsWhenItFiresAfterTheResume() throws {
+        let shim = try loadShim()
+        shim.pause()
+        shim.run("var runs = 0; var id = window.setTimeout(() => { runs++; }, 16);")
+        shim.resumeAndDrain()
+        XCTAssertEqual(shim.number("runs"), 1)
+    }
+
+    func testCancellingASpentOrHeldFrameIdReachesNoNative() throws {
+        let shim = try loadShim()
+        shim.run("var spent = window.requestAnimationFrame(() => {}); h.driveFrame(1); window.cancelAnimationFrame(spent);")
+        XCTAssertEqual(try shim.ids("h.calls.cancelAnimationFrame"), [], "a spent id")
+
+        shim.pause()
+        shim.run("var held = window.requestAnimationFrame(() => {}); window.cancelAnimationFrame(held);")
+        XCTAssertEqual(try shim.count("h.calls.cancelAnimationFrame"), 0, "a held id")
+    }
+
+    func testAClearBetweenTheResumeAndItsFlushStillDropsTheCallback() throws {
+        let shim = try loadShim()
+        shim.run("var ran = []; var t = window.setTimeout(() => ran.push('timeout'), 16);")
+        shim.pause()
+        shim.run("h.fireTimeout(t); var f = window.requestAnimationFrame(() => ran.push('frame'));")
+        shim.resume()
+        shim.run("window.clearTimeout(t); window.cancelAnimationFrame(f); h.drainTimeouts(); h.driveFrame(1);")
+        XCTAssertEqual(try shim.strings("ran"), [])
+    }
+
+    func testReadyIsPostedOncePerDocumentAndAnUnknownMessageLeavesTheZoomAlone() throws {
+        let shim = try loadShim()
+        shim.run("h.domReady(); h.domReady(); h.send({ tarmac: 'zoom', z: 3 });")
+        shim.pause()
+        shim.resume()
+        shim.run("h.send({ tarmac: 'later-protocol', z: 9 })")
+
+        XCTAssertEqual(try shim.posted().filter { $0["tarmac"] as? String == "ready" }.count, 1, "ready")
+        XCTAssertEqual(shim.number("h.style.zoom"), 3, "zoom")
+    }
+
+    /// The host pins a real boolean (`CardHostMessageTests`); this is the shim's half.
+    func testS28ANumberIsNoBooleanToTheGateFromEitherState() throws {
+        let running = try loadShim()
+        running.run("h.send({ tarmac: 'cull', culled: 1 })")
+        XCTAssertTrue(try running.stillRunning(), "S28: running, culled 1")
+
+        let paused = try loadShim()
+        paused.pause()
+        paused.run("h.send({ tarmac: 'cull', culled: 0 })")
+        XCTAssertFalse(try paused.stillRunning(), "S28: paused, culled 0")
+    }
 }
