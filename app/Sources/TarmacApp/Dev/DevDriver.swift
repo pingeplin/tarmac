@@ -26,20 +26,16 @@ final class DevDriver {
         )
         switch DevSocket.claim(path: path) {
         case .failure(.liveOwner):
-            log("a dev driver is already listening on \(path) — not starting a second one")
+            Self.log("a dev driver is already listening on \(path) — not starting a second one")
         case .failure(.pathTooLong):
-            log("dev driver disabled: \(ConnectionStatus.socketPathTooLong(path))")
+            Self.log("dev driver disabled: \(ConnectionStatus.socketPathTooLong(path))")
         case .failure(.system(let code)):
-            log("dev driver disabled: \(String(cString: strerror(code))) on \(path)")
+            Self.log("dev driver disabled: \(String(cString: strerror(code))) on \(path)")
         case .success(let socket):
             self.socket = socket
             relay.attach { request in await verbs.answer(request) }
-            Thread.detachNewThread { [relay] in
-                while let connection = socket.accept() {
-                    DevSocket.serve(connection, answer: relay.answer)
-                }
-            }
-            log("dev driver listening on \(path)")
+            Thread.detachNewThread { [relay] in Self.serve(socket, through: relay) }
+            Self.log("dev driver listening on \(path)")
         }
     }
 
@@ -47,7 +43,21 @@ final class DevDriver {
         socket?.close()
     }
 
-    private func log(_ line: String) {
+    private nonisolated static func serve(_ socket: DevSocket, through relay: DevRelay) {
+        while true {
+            switch socket.accept() {
+            case .connection(let connection):
+                DevSocket.serve(connection, answer: relay.answer)
+            case .closed:
+                return
+            case .failed(let code):
+                log("dev driver accept failed: \(String(cString: strerror(code))); the driver has stopped")
+                return
+            }
+        }
+    }
+
+    private nonisolated static func log(_ line: String) {
         FileHandle.standardError.write(Data("tarmac: \(line)\n".utf8))
     }
 }

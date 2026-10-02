@@ -68,7 +68,21 @@ final class DevSocketTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: path))
         socket.close()
         XCTAssertFalse(FileManager.default.fileExists(atPath: path), "the socket file outlived the listener")
-        socket.close()
+        XCTAssertEqual(socket.accept(), .closed)
+    }
+
+    /// The path, and very likely the descriptor number, belong to whoever
+    /// claimed next: a repeated close must touch neither.
+    func testASecondCloseLeavesASuccessorAlone() throws {
+        let path = directory + "/tarmac-dev.sock"
+        let first = try claimed(path)
+        first.close()
+        let second = try claimed(path)
+        defer { second.close() }
+        first.close()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path), "a repeated close unlinked the successor's socket")
+        let probe = try XCTUnwrap(DaemonSocket.connect(to: path), "a repeated close closed the successor's listener")
+        Darwin.close(probe)
     }
 
     /// Copied into a `sockaddr_un`, a longer path would be truncated into some
@@ -90,9 +104,32 @@ final class DevSocketTests: XCTestCase {
         let client = try XCTUnwrap(DaemonSocket.connect(to: path))
         defer { Darwin.close(client) }
         send(client)
-        DevSocket.serve(try XCTUnwrap(socket.accept()), answer: answer)
+        DevSocket.serve(try connection(to: socket), answer: answer)
         let reply = try DaemonSocket.readFrame(from: client).map(DevReply.decode(payload:))
         return (reply, DaemonSocket.readFrame(from: client) == nil)
+    }
+
+    private func connection(to socket: DevSocket, file: StaticString = #filePath, line: UInt = #line) throws -> Int32 {
+        guard case .connection(let connection) = socket.accept() else {
+            XCTFail("nothing was accepted", file: file, line: line)
+            throw POSIXError(.ECONNABORTED)
+        }
+        return connection
+    }
+
+    /// The CLI gives up a second after the app's own bound, so a reply can be
+    /// written to a caller that has hung up. That write must fail, not raise
+    /// SIGPIPE, which would end the app; the megabyte is what makes the write
+    /// outlast the socket's buffer.
+    func testAReplyToACallerThatHungUpDoesNotEndTheProcess() throws {
+        let path = directory + "/tarmac-dev.sock"
+        let socket = try claimed(path)
+        defer { socket.close() }
+        let client = try XCTUnwrap(DaemonSocket.connect(to: path))
+        write(.zoom(z: 1), to: client)
+        let connection = try connection(to: socket)
+        Darwin.close(client)
+        DevSocket.serve(connection) { _ in DevReply(ok: true, body: String(repeating: "x", count: 1 << 20)) }
     }
 
     private func write(_ request: DevRequest, to client: Int32) {

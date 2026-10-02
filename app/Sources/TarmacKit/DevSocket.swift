@@ -69,17 +69,30 @@ public final class DevSocket: @unchecked Sendable {
 
     deinit { close() }
 
-    /// The next connection, or nil once the socket is closed or broken.
-    public func accept() -> Int32? {
+    public enum Accepted: Equatable, Sendable {
+        case connection(Int32)
+        /// `close()` was called: there is nothing more to serve.
+        case closed
+        /// `accept` failed, with its `errno`. The socket serves nothing more.
+        case failed(Int32)
+    }
+
+    /// Blocks for the next connection.
+    public func accept() -> Accepted {
         while true {
+            // After `close()` the descriptor number may be someone else's.
+            if lock.withLock({ closed }) { return .closed }
             let connection = Darwin.accept(listener, nil, nil)
             if connection < 0, errno == EINTR { continue }
-            guard connection >= 0 else { return nil }
+            guard connection >= 0 else {
+                let code = errno
+                return lock.withLock { closed } ? .closed : .failed(code)
+            }
             // A caller that gave up waiting has closed its end; the reply to it
             // must fail the write, not kill the app.
             var yes: Int32 = 1
             setsockopt(connection, SOL_SOCKET, SO_NOSIGPIPE, &yes, socklen_t(MemoryLayout<Int32>.size))
-            return connection
+            return .connection(connection)
         }
     }
 
