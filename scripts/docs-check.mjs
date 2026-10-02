@@ -79,7 +79,7 @@ for (const p of [...docs, ...rootDocs]) {
 // A backticked token that looks like a concrete file in this repo must resolve.
 // Deliberately narrow so it never guesses:
 //   - directory-shaped tokens (trailing "/") are skipped — build outputs like
-//     desktop/src-tauri/target/ are gitignored and legitimately absent;
+//     core/target/ are gitignored and legitimately absent;
 //   - glob/placeholder tokens ({a,b}, *, <id>) are skipped;
 //   - a token rooted at a top-level dir must exist verbatim;
 //   - a token with a source extension may be written relative (kit/foo.ts), so it
@@ -87,7 +87,7 @@ for (const p of [...docs, ...rootDocs]) {
 
 // Keep in sync with the repo-path denylist in core/crates/tarmac-cli/src/skill.rs:
 // that file asserts the inverse rule (a shipped artifact may name none of these).
-const TOP = ["core/", "desktop/", "docs/", "scripts/", "packaging/", ".github/", ".blueprint/"];
+const TOP = ["core/", "app/", "docs/", "scripts/", "packaging/", ".github/", ".blueprint/"];
 const SRC_EXT = /\.(ts|tsx|rs|mjs|js|css|html|json|swift|sh|toml|rb)$/;
 const CODE = /`([^`\n]+)`/g;
 const suffixHit = (t) => tracked.some((f) => f === t || f.endsWith("/" + t));

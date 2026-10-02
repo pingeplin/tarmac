@@ -112,13 +112,7 @@ export function typeAll(term, text) {
 
 // ------------------------------------------------------------------ the runner
 
-/** The make target that starts the app, for the hints below. The suite also
- *  drives the native app (`make native-qa`), whose Makefile target names
- *  itself and its app here. */
-export const APP_TARGET = process.env.TARMAC_QA_APP ?? "make run";
-
-export function runner(name) {
-  const prog = process.env.TARMAC_QA_TARGET ?? name;
+export function runner(prog) {
   const failures = [];
   let checks = 0;
   const pass = (name) => console.log(`  ok   ${name}`);
@@ -170,14 +164,14 @@ export function preflight(run) {
     run.die(`no debug CLI at ${CLI} — run \`make core\` first`);
   }
   if (!existsSync(SOCK)) {
-    run.die(`no dev driver socket at ${SOCK} — start the app with \`${APP_TARGET}\` first`);
+    run.die(`no dev driver socket at ${SOCK} — start the app with \`make run\` first`);
   }
   const probe = dev("snapshot");
   if (probe.code !== 0) {
     // A leftover socket file from a killed app lands here rather than in the
     // branch above, so this message names the remedy too.
     run.die(
-      `the dev driver did not answer — start the app with \`${APP_TARGET}\` first ` +
+      `the dev driver did not answer — start the app with \`make run\` first ` +
         `(a stale socket file is left behind when the app is killed). ` +
         `Reply: ${probe.err.trim() || probe.out.trim()}`,
     );

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Bundle identity for the native Tarmac.app. scripts/bundle-native.sh copies
+  Bundle identity for the native Tarmac.app. scripts/bundle.sh copies
   this into Contents/Info.plist and stamps both version keys from $VERSION.
 
   - CFBundleIdentifier is the one the Tauri bundle shipped with. Gatekeeper and

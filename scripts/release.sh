@@ -13,15 +13,12 @@
 # Usage:
 #   DEVID_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 #   NOTARY_PROFILE="tarmac-notary" \
-#   VERSION=0.1.0 \
+#   VERSION=1.2.3 \
 #   scripts/release.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${VERSION:-0.1.0}"
-TAURI_VERSION=$(grep '"version"' "$ROOT/desktop/src-tauri/tauri.conf.json" | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-[ "$VERSION" = "$TAURI_VERSION" ] || \
-  echo "WARNING: VERSION=$VERSION but tauri.conf.json version=$TAURI_VERSION — DMG name differs from embedded bundle version" >&2
+VERSION="${VERSION:?set VERSION to the version being released}"
 : "${DEVID_IDENTITY:?set DEVID_IDENTITY to 'Developer ID Application: NAME (TEAMID)'}"
 : "${NOTARY_PROFILE:?set NOTARY_PROFILE to your notarytool keychain profile name}"
 
@@ -30,13 +27,12 @@ APP="$DIST/Tarmac.app"
 ENT="$ROOT/packaging/Tarmac.entitlements"
 DMG="$DIST/Tarmac-$VERSION.dmg"
 
-# 0. Stamp the Cargo versions so CARGO_PKG_VERSION tracks the shipped version.
-#    tauri.conf.json is the human-edited source of truth; these two files are
-#    aligned to it here so the daemon-restart version check works across upgrades.
-#    Matches only `^version = "..."` — dependency pins like `serde = { version = ...}`
+# 0. Stamp the Cargo version so CARGO_PKG_VERSION is the shipped version: the
+#    app's bundle version is stamped from the same $VERSION (scripts/bundle.sh),
+#    and the app replaces a daemon whose version differs from its own. Matches
+#    only `^version = "..."` — dependency pins like `serde = { version = ...}`
 #    start with the crate name and are never touched.
 sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" "$ROOT/core/Cargo.toml"
-sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" "$ROOT/desktop/src-tauri/Cargo.toml"
 
 # 1. (re)assemble the unsigned bundle
 VERSION="$VERSION" "$ROOT/scripts/bundle.sh"

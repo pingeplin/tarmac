@@ -298,7 +298,7 @@ mod tests {
         }
         // Keep in sync with TOP in scripts/docs-check.mjs.
         for repo_path in
-            ["core/", "desktop/", "docs/", "scripts/", "packaging/", ".github/", ".blueprint/"]
+            ["core/", "app/", "docs/", "scripts/", "packaging/", ".github/", ".blueprint/"]
         {
             assert!(!SKILL_DOC.contains(repo_path), "leaks a repo path: {repo_path}");
         }
