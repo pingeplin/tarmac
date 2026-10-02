@@ -26,7 +26,7 @@ final class ScreenSpaceHost: NSView {
     private let content: NSView
     private var settle: DispatchWorkItem?
     private var knowsZoom = false
-    private var fitting = false
+    private var backing = BackingScaleWatch()
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
@@ -72,21 +72,21 @@ final class ScreenSpaceHost: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        _ = backing.changed(to: window?.backingScaleFactor)
         fit()
     }
 
+    /// Sent for a new display, and also whenever an ancestor's scale moves:
+    /// on every step of a board zoom, and by this view's own `setBoundsSize`.
+    /// Only the first is a reason to fit again.
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
-        fit()
+        if backing.changed(to: window?.backingScaleFactor) { fit() }
     }
 
     private func fit() {
         let size = CGSize(width: frame.width * settledZoom, height: frame.height * settledZoom)
-        guard size.width > 0, size.height > 0, !fitting else { return }
-        // A bounds scale counts as a change of backing properties, which comes
-        // straight back here.
-        fitting = true
-        defer { fitting = false }
+        guard size.width > 0, size.height > 0 else { return }
         if bounds.size != size { setBoundsSize(size) }
         let target = alignedContentFrame(size)
         guard !Self.same(target, content.frame) else { return }
