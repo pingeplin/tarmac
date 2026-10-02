@@ -9,8 +9,8 @@ final class FocusedCloseTests: XCTestCase {
         XCTAssertEqual(FocusedClose.decide(kind: .none, otherLiveTerminals: 3), .noop)
     }
 
-    /// A focused doc always shelves (recoverable), independent of terminals.
-    func testDocShelves() {
+    /// A focused doc always closes, independent of terminals.
+    func testDocCloses() {
         XCTAssertEqual(FocusedClose.decide(kind: .doc, otherLiveTerminals: 0), .closeDoc)
         XCTAssertEqual(FocusedClose.decide(kind: .doc, otherLiveTerminals: 3), .closeDoc)
     }

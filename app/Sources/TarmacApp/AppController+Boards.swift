@@ -20,11 +20,11 @@ extension AppController {
 
     /// Mounts `board`'s view in RootView and (re)binds the controller-owned
     /// per-board callbacks to it: a doc card's close and refresh, the cull
-    /// report and the committed-layout persist. The persist closure captures the board's id (by
-    /// value, no retain cycle), so a committed move/resize/zoom/pan persists THAT
-    /// board — stamped with its `board_id` — even if a stray callback fires after
-    /// it stops being active (it's then dropped by the active-board guard). Called
-    /// at boot and on every switch-arrive.
+    /// report and the committed-layout persist. The persist closure captures
+    /// the board's id (by value, no retain cycle), so a committed
+    /// move/resize/zoom/pan persists THAT board — stamped with its `board_id` —
+    /// even if the callback fires after it stops being active. Called at boot
+    /// and on every switch-arrive.
     func mount(_ board: Board) {
         rootView.mountBoard(board.view)
         let bid = board.boardID
@@ -174,7 +174,7 @@ extension AppController {
     /// App-initiated switch to `targetID`: detach the current board and tell the
     /// daemon, which replies with `board_list` + the target's `restore`; the
     /// arrive path (`applyRestore`) mounts + (first visit) builds it. No-op if
-    /// already there or the target is unknown. (P4's ⌘K routes here too.)
+    /// already there or the target is unknown. ⌘K routes here too.
     private func performSwitch(to targetID: String) {
         guard targetID != activeBoardID, boardMetas.contains(where: { $0.boardID == targetID }) else { return }
         beginArrivingSwitch(to: targetID)
@@ -210,9 +210,9 @@ extension AppController {
 
     /// Creates a board around `view` with a boot session: kept prime,
     /// registered in the term index, store wired. Board-0 is minted at launch
-    /// around the root view's board; any other lazily, on first activation,
-    /// when the arrive path mounts its view and spawns the boot pty
-    /// (`maybeSpawn`).
+    /// around the root view's board; any other lazily, on first activation.
+    /// The boot session is a placeholder until the board's first restore
+    /// builds its cards.
     @discardableResult
     func mintBoard(id: String, name: String?, view: BoardView = BoardView()) -> Board {
         let board = Board(boardID: id, name: name, view: view)
