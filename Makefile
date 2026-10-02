@@ -1,6 +1,6 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: core app app-deps sidecars test docs-check dco-check run qa qa-quit kill-daemon bundle release kit ghostty-vt native native-test native-run native-qa
+.PHONY: core app app-deps sidecars test docs-check dco-check run qa qa-quit kill-daemon bundle release kit ghostty-vt native native-test native-run native-qa native-qa-quit
 
 core:
 	cd $(ROOT)/core && cargo build
@@ -129,13 +129,27 @@ qa-quit: core
 # The same scenario suite against the NATIVE app: it needs `make native-run` up
 # in another shell, and the pins are that target's, so it reaches this
 # worktree's app and no other. The suite is the parity gate between the two
-# apps, which is why it is one script and not a copy. `qa-quit` needs no twin:
-# it drives whichever app is listening on the pinned socket.
+# apps, which is why it is one script and not a copy. TARMAC_QA_TARGET and
+# TARMAC_QA_APP are what the scripts name in their messages, so a run that
+# finds no app says to start `make native-run`, not `make run`.
 native-qa: core
 	TARMAC_DEV_SOCKET="$(ROOT)/.dev/tarmac-dev.sock" \
 	TARMAC_SOCKET="$(ROOT)/.dev/tarmacd.sock" \
 	TARMAC_STATE="$(ROOT)/.dev/state.json" \
+	TARMAC_QA_TARGET="make native-qa" \
+	TARMAC_QA_APP="make native-run" \
 	node $(ROOT)/scripts/qa/smoke.mjs
+
+# `qa-quit` against the native app: one CASE per run, `make native-run` again
+# between cases.
+native-qa-quit: core
+	TARMAC_DEV_SOCKET="$(ROOT)/.dev/tarmac-dev.sock" \
+	TARMAC_SOCKET="$(ROOT)/.dev/tarmacd.sock" \
+	TARMAC_STATE="$(ROOT)/.dev/state.json" \
+	TARMAC_QA_TARGET="make native-qa-quit" \
+	TARMAC_QA_APP="make native-run" \
+	CASE="$(CASE)" \
+	node $(ROOT)/scripts/qa/quit.mjs
 
 # Kill the dev tarmacd for this worktree (same socket path as `make run`).
 # Sends SIGKILL (kill -9); exits 0 whether or not it was running.
