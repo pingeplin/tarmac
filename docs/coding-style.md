@@ -102,7 +102,9 @@ verified there by hand. **4** owes `make docs-check` for docs,
 
 Work driven by a spec in `.blueprint/specs/` owes that statement per manual
 scenario, in one shape: the scenario, the build it ran against, the observed
-values.
+values. A record that should outlive its PR — a checklist, or a probe page
+it needs — goes in `qa/` at the repo root; the ones there from before 2026-10
+were run against the Tauri app.
 
 A spike — throwaway code proving something is possible — is exempt because it is
 not shipped. Delete it and redo the work test-first.
