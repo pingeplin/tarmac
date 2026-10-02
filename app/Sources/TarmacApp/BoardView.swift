@@ -65,12 +65,16 @@ final class BoardView: NSView {
     }
 
     func removeCard(id: CardID) {
-        culls.forget(id)
-        guard let card = cards[id] else { return }
+        guard let card = cards[id] else {
+            culls.forget(id)
+            return
+        }
         // While the card is still on the board, so what its gesture moved is
-        // committed like any other.
+        // committed like any other. Settling it reprojects the card, which
+        // records it in the cull ledger again: forget it after.
         card.cancelGesture()
         cards[id] = nil
+        culls.forget(id)
         if carry?.owner == id { carry = nil }
         if selectedID == id { selectedID = nil }
         card.removeFromSuperview()
