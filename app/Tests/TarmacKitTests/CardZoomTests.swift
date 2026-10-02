@@ -3,8 +3,8 @@ import XCTest
 @testable import TarmacKit
 
 /// HTML-card zoom geometry and the shielded-card wheel relay: specs 2607.0004
-/// S10 (the settled real-px box and the mid-gesture scale), 2607.0006 (the
-/// frozen magnification) and 2609.0013 (whole-px relayed scroll deltas).
+/// S10 (the settled real-px box), 2607.0006 (the frozen magnification) and
+/// 2609.0013 (whole-px relayed scroll deltas).
 final class CardZoomTests: XCTestCase {
     // MARK: - magnifyK never upsamples (2607.0006)
 
@@ -42,12 +42,6 @@ final class CardZoomTests: XCTestCase {
     func testIframePxRoundsNonIntegerProducts() {
         XCTAssertEqual(CardZoom.iframePx(frame: CGSize(width: 100, height: 100), zoom: 1.006), CGSize(width: 101, height: 101))
         XCTAssertEqual(CardZoom.iframePx(frame: CGSize(width: 100, height: 100), zoom: 0.994), CGSize(width: 99, height: 99))
-    }
-
-    func testGestureScaleIsLiveZoomOverSettledZoom() {
-        XCTAssertEqual(CardZoom.gestureScale(zoom: 2, settledZoom: 1), 2)
-        XCTAssertEqual(CardZoom.gestureScale(zoom: 0.5, settledZoom: 1), 0.5)
-        XCTAssertEqual(CardZoom.gestureScale(zoom: 1.5, settledZoom: 1.5), 1)
     }
 
     // MARK: - scrollDelta

@@ -81,7 +81,7 @@ final class RootView: NSView {
 
     /// Wires a board view's wayfinding callbacks to this RootView — called for
     /// the initial board in `init` and for each board mounted by `mountBoard`.
-    /// (`edgeLabelProvider` / `onLayoutChanged` are owned by AppController and
+    /// (`onLayoutChanged` and the card callbacks are owned by AppController and
     /// re-bound there on mount; the zoom/minimap actions read `self.board`
     /// dynamically so they always target the mounted board.)
     private func wireBoardCallbacks(_ bv: BoardView) {
