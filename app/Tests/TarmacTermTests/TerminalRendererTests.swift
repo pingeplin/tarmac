@@ -19,6 +19,7 @@ final class TerminalRendererTests: XCTestCase {
         preedit: TerminalPreedit? = nil,
         select: ((TerminalSelection, SurfaceGeometry) -> Void)? = nil
     ) throws -> Canvas {
+        ShippedFonts.registered
         let fonts = TerminalFonts(size: 16, pixelsPerPoint: scale)
         let cell = fonts.metrics.cell
         let padding = TerminalPadding(top: 0, left: 0, bottom: 0, right: 0)

@@ -52,9 +52,17 @@ struct TerminalFonts {
             ?? CTFontCreateWithName("Menlo-Regular" as CFString, size, nil)
     }
 
+    /// The family's face in `traits`. A family with no italic — the app ships
+    /// regular and bold only — gives its upright face, slanted.
     private static func variant(of font: CTFont, _ traits: CTFontSymbolicTraits) -> CTFont {
-        CTFontCreateCopyWithSymbolicTraits(font, 0, nil, traits, traits) ?? font
+        if let face = CTFontCreateCopyWithSymbolicTraits(font, 0, nil, traits, traits) { return face }
+        guard traits.contains(.traitItalic) else { return font }
+        var slant = CGAffineTransform(a: 1, b: 0, c: syntheticSlant, d: 1, tx: 0, ty: 0)
+        return CTFontCreateCopyWithAttributes(variant(of: font, traits.subtracting(.traitItalic)), 0, &slant, nil)
     }
+
+    /// The tangent of 11.5°, the lean of a typical oblique.
+    private static let syntheticSlant: CGFloat = 0.2
 
     private static func metrics(of font: CTFont, pixelsPerPoint scale: CGFloat) -> CellMetrics {
         var glyph = CGGlyph(0)

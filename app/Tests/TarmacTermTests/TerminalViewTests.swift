@@ -12,6 +12,7 @@ final class TerminalViewTests: XCTestCase {
     private var sentText: String { String(decoding: sent, as: UTF8.self) }
 
     override func setUp() async throws {
+        ShippedFonts.registered
         view = try TerminalView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
         view.onInput = { [unowned self] in self.sent.append(contentsOf: $0) }
         view.onResize = { [unowned self] in self.resizes.append([$0, $1]) }
