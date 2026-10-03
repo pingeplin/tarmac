@@ -77,6 +77,16 @@ final class CardHostScriptTests: XCTestCase {
         XCTAssertEqual(carried("{ tarmac: 'ready', meta: null }").first.flatMap(CardConsole.parse), .ready(meta: nil))
     }
 
+    /// 2610.0003 S38: a scroll report is small, and crosses as it came.
+    func test2610S38AScrollReportIsCarriedAsItCame() throws {
+        let bodies = carried("{ tarmac: 'scrolled', offset: 120, visible: 840, total: 4800 }")
+        XCTAssertEqual(bodies.count, 1)
+        XCTAssertEqual(
+            CardConsole.parse(try XCTUnwrap(bodies.first)),
+            .scrolled(try XCTUnwrap(ScrollMetrics(offset: 120, visible: 840, total: 4800)))
+        )
+    }
+
     // MARK: - the cut
 
     func testTheScriptCutsAtTheLineCapTheAppKeeps() throws {

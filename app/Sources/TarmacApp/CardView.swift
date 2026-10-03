@@ -53,6 +53,11 @@ final class CardView: NSView {
     /// the body's world size.
     private let bodyHost = FlippedColumnView()
     private let body: NSView
+    /// Chrome over the body's right edge, laid out on screen like the header.
+    let scrollThumb = ScrollThumbView()
+    var scrollMetrics: ScrollMetrics?
+    var scrollVisibility = ScrollIndicator.Visibility()
+    var scrollFade: DispatchWorkItem?
     private let grip = CardResizeGrip()
     private lazy var gestures = CardGestureTracker(card: self)
 
@@ -92,14 +97,15 @@ final class CardView: NSView {
         layer?.borderColor = Theme.line.cgColor
         applyShadow()
 
-        // The body's container can fall a fraction of a device pixel short of
-        // the room under the header; what shows there is the body's own colour.
+        // The body's container can fall short of the room under the header;
+        // what shows there is the body's own colour.
         clip.wantsLayer = true
         clip.layer?.backgroundColor = (docBody == nil ? Theme.termBg : Theme.bg1).cgColor
         clip.layer?.masksToBounds = true
         addSubview(clip)
         clip.addSubview(header)
         clip.addSubview(bodyHost)
+        clip.addSubview(scrollThumb)
         bodyHost.addSubview(body)
 
         addSubview(grip)
@@ -120,6 +126,8 @@ final class CardView: NSView {
             self.onRefresh?(self)
         }
         wireHTMLBody()
+        docBody?.onScrollChanged = { [weak self] metrics in self?.scrollChanged(metrics) }
+        docBody?.onScrollCoverChanged = { [weak self] in self?.needsLayout = true }
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -191,6 +199,7 @@ final class CardView: NSView {
         guard on != selected else { return }
         selected = on
         if !lifted { layer?.borderColor = currentBorderColor.cgColor }
+        if !on { hideScrollThumb() }
     }
 
     /// The resting border: muted for a dead card, teal for the selected one,
@@ -389,6 +398,7 @@ final class CardView: NSView {
         // them, every zoom step would hand the terminal a new size.
         bodyHost.setBoundsSize(box.bodySize)
         body.frame = NSRect(origin: .zero, size: box.bodySize)
+        layoutScrollThumb(body: box.shownBody)
         laidOutWorldSize = worldFrame.rect.size
         layoutRing()
     }

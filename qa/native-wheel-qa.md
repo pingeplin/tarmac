@@ -13,8 +13,8 @@ It is also the §1.3 exception-2 discharge for the shell wiring the change adds 
 
 - `qa/wheel-travel-probe.html` — paints its own `scrollX`, `scrollY`,
   `innerHeight`, `scrollHeight`, `#inner`'s `scrollTop`, the last scroll
-  `target`, and its `wheel` and `mousedown` counts, one word and one number a
-  line. `qa/wheel-travel-probe-reveal.html` is the same in reveal mode.
+  `target`, its `wheel` and `mousedown` counts and `document.compatMode`, one
+  word and one value a line. `qa/wheel-travel-probe-reveal.html` is the same in reveal mode.
 - `qa/scroll-band-control.html` — the same page scrolling itself by a
   fractional `scrollBy`: the positive control of the band check.
 - `scripts/qa/wheel-gesture.swift` — posts one real gesture at a card. **It

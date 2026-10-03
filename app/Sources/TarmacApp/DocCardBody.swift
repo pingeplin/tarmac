@@ -9,6 +9,15 @@ protocol DocCardBody: NSView {
     func refresh(lastChangedMs: UInt64?)
 
     func setBoardZoom(_ zoom: CGFloat)
+
+    /// Where the doc is scrolled to, or nil once what it reported is gone: a
+    /// reload, a web process that terminated.
+    var onScrollChanged: ((ScrollMetrics?) -> Void)? { get set }
+
+    /// The height, in the body's own units, that an overlay of its own hides
+    /// at its bottom; the scroll thumb's track ends above it.
+    var scrollCover: CGFloat { get }
+    var onScrollCoverChanged: (() -> Void)? { get set }
 }
 
 @MainActor

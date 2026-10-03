@@ -30,6 +30,9 @@ public final class TerminalView: NSView {
     public var onActivity: (() -> Void)?
     /// The user clicked a URL in the output or an OSC 8 hyperlink.
     public var onOpenLink: ((String) -> Void)?
+    /// Where the viewport is in the scrollback, whenever that is not what it
+    /// was last told.
+    public var onScrollChanged: ((TerminalScrollbar) -> Void)?
     /// A program asked to set the clipboard (OSC 52). Unset, the request is dropped:
     /// whether a program may overwrite the user's clipboard is the host's call.
     public var onClipboardWrite: ((String) -> Void)? {
@@ -82,6 +85,7 @@ public final class TerminalView: NSView {
     }
     private var pressedButtons = 0
     private var scrollRemainder: CGFloat = 0
+    private var reportedScrollbar: TerminalScrollbar?
     private var autoscrollTimer: Timer?
     private var lastDragPoint: SurfacePoint?
 
@@ -212,6 +216,7 @@ public final class TerminalView: NSView {
     private func readFrame() {
         let previousCursor = frameSnapshot.cursor
         frameSnapshot = reader.read(engine)
+        reportScrollbar()
         guard gridLayout != nil else { return }
         if frameSnapshot.dirtyRows.count >= frameSnapshot.rows.count {
             needsDisplay = true
@@ -225,6 +230,17 @@ public final class TerminalView: NSView {
             for row in rows { setNeedsDisplay(damageRect(forRow: row)) }
         }
         restartBlink()
+    }
+
+    /// Tells the host the scrollbar when it is not the one last told. Nothing
+    /// is told while there is no one to tell, so the first check after the
+    /// callback is set reports.
+    private func reportScrollbar() {
+        guard let onScrollChanged else { return }
+        let scrollbar = engine.scrollbar
+        guard scrollbar != reportedScrollbar else { return }
+        reportedScrollbar = scrollbar
+        onScrollChanged(scrollbar)
     }
 
     // MARK: layout
@@ -253,7 +269,7 @@ public final class TerminalView: NSView {
 
     private func relayout() {
         let layout = TerminalGridLayout(bounds: bounds.size, cell: renderer.fonts.metrics.cell, padding: padding)
-        defer { gridLayout = layout; needsDisplay = true }
+        defer { gridLayout = layout; needsDisplay = true; reportScrollbar() }
         guard let layout, layout.cols != engine.cols || layout.rows != engine.rows || gridLayout?.cell != layout.cell
         else { return }
         let surface = layout.surface

@@ -1,0 +1,15 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>scroll indicator: a white page</title>
+<style>
+  body { margin: 0; background: #fff; color: #222; font: 16px/1.5 -apple-system, sans-serif; }
+  p { margin: 0; padding: 8px 16px; }
+</style>
+<body>
+<script>
+  for (let i = 1; i <= 300; i++) {
+    const p = document.createElement("p");
+    p.textContent = `Row ${i} of 300.`;
+    document.body.appendChild(p);
+  }
+</script>

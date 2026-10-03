@@ -99,7 +99,8 @@ struct DevSnapshotReader {
             id: card.id.wireID,
             content: content(of: card),
             frame: card.worldFrame.rect,
-            screenRect: card.superview.map { controller.rootView.convert(card.frame, from: $0) }
+            screenRect: card.superview.map { controller.rootView.convert(card.frame, from: $0) },
+            scroll: card.scrollFacts
         )
     }
 

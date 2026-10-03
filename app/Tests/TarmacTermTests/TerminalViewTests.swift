@@ -388,6 +388,126 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertTrue(sentText.hasPrefix("\u{1b}[<64;"), sentText.debugDescription)
     }
 
+    // MARK: scroll position (2610.0003 S14, S26)
+
+    private let tenLines = (1...10).map { "line\($0)" }.joined(separator: "\r\n")
+
+    /// Sizes the view to exactly `rows` rows, keeping its width.
+    private func resize(rows: Int) throws {
+        let cell = try XCTUnwrap(view.gridLayout).cell
+        let height = view.padding.top + view.padding.bottom + cell.height * CGFloat(rows)
+        view.setFrameSize(NSSize(width: view.frame.width, height: height))
+        XCTAssertEqual(view.rows, rows)
+    }
+
+    /// The frame read a feed schedules, run now.
+    private func read() {
+        _ = view.viewportCells()
+    }
+
+    func test2610S14TheHostIsToldWhereTheViewportIsWheneverThatChanges() throws {
+        try resize(rows: 3)
+        var told: [TerminalScrollbar] = []
+        view.onScrollChanged = { told.append($0) }
+
+        feed(tenLines)
+        read()
+        XCTAssertEqual(told.last, TerminalScrollbar(total: 10, offset: 7, visible: 3))
+
+        view.scrollWheel(with: try wheel(lines: 2))
+        read()
+        XCTAssertEqual(told.last, TerminalScrollbar(total: 10, offset: 5, visible: 3))
+
+        try resize(rows: 5)
+        XCTAssertEqual(told.last, view.engine.scrollbar)
+        XCTAssertEqual(told.last?.visible, 5)
+    }
+
+    /// Nothing was told while there was no one to tell, so the first check
+    /// after the callback is set reports, though the scrollbar has not moved.
+    func test2610S14ACallbackSetLateIsToldAtTheNextFrameRead() throws {
+        try resize(rows: 3)
+        feed(tenLines)
+        read()
+        let scrollbar = view.engine.scrollbar
+
+        var told: [TerminalScrollbar] = []
+        view.onScrollChanged = { told.append($0) }
+        feed("x")
+        read()
+        XCTAssertEqual(view.engine.scrollbar, scrollbar)
+        XCTAssertEqual(told, [scrollbar])
+    }
+
+    /// A relayout checks whether or not it resizes the engine.
+    func test2610S14ACallbackSetLateIsToldByARelayoutThatKeepsTheGrid() throws {
+        try resize(rows: 3)
+        feed(tenLines)
+        read()
+
+        var told: [TerminalScrollbar] = []
+        view.onScrollChanged = { told.append($0) }
+        resizes = []
+        view.setFrameSize(NSSize(width: view.frame.width + 1, height: view.frame.height))
+        XCTAssertEqual(resizes, [])
+        XCTAssertEqual(told, [view.engine.scrollbar])
+    }
+
+    /// A view too small for a grid draws nothing, and its history still grows.
+    func test2610S14AFrameReadIsToldThoughTheViewHasNoGrid() throws {
+        try resize(rows: 3)
+        var told: [TerminalScrollbar] = []
+        view.onScrollChanged = { told.append($0) }
+        view.setFrameSize(.zero)
+        XCTAssertNil(view.gridLayout)
+
+        feed(tenLines)
+        read()
+        XCTAssertEqual(told.last, TerminalScrollbar(total: 10, offset: 7, visible: 3))
+    }
+
+    func test2610S26OutputThatLeavesTheScrollbarAsItWasIsNotToldAgain() throws {
+        try resize(rows: 3)
+        var told: [TerminalScrollbar] = []
+        view.onScrollChanged = { told.append($0) }
+        feed(tenLines)
+        read()
+        let before = told
+        XCTAssertEqual(before, [TerminalScrollbar(total: 10, offset: 7, visible: 3)])
+
+        feed("x")
+        read()
+        XCTAssertEqual(view.viewportCells().last?.joined().hasSuffix("line10x"), true)
+        XCTAssertEqual(told, before)
+    }
+
+    func test2610S26ARelayoutThatLeavesTheScrollbarAsItWasIsNotToldAgain() throws {
+        try resize(rows: 3)
+        var told: [TerminalScrollbar] = []
+        view.onScrollChanged = { told.append($0) }
+        feed(tenLines)
+        read()
+        let before = told
+        XCTAssertEqual(before, [TerminalScrollbar(total: 10, offset: 7, visible: 3)])
+
+        resizes = []
+        view.setFrameSize(NSSize(width: view.frame.width + 1, height: view.frame.height))
+        XCTAssertEqual(resizes, [])
+        XCTAssertEqual(told, before)
+    }
+
+    func test2610S26TheAlternateScreenHasNothingToScroll() throws {
+        try resize(rows: 3)
+        var told: [TerminalScrollbar] = []
+        view.onScrollChanged = { told.append($0) }
+        feed(tenLines)
+        read()
+
+        feed("\u{1b}[?1049h")
+        read()
+        XCTAssertEqual(told.last, TerminalScrollbar(total: 3, offset: 0, visible: 3))
+    }
+
     func testWheelOnTheAlternateScreenSendsArrowKeys() throws {
         feed("\u{1b}[?1049h")
         view.scrollWheel(with: try wheel(lines: -1))

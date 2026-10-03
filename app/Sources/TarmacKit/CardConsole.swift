@@ -38,6 +38,8 @@ public enum CardConsole {
         case console(Entry)
         case escape
         case ready(meta: String?)
+        /// Where the document's root is scrolled to.
+        case scrolled(ScrollMetrics)
     }
 
     /// Validates a `WKScriptMessage` body. A `ready` must carry the `meta` key — a
@@ -50,6 +52,8 @@ public enum CardConsole {
         switch kind {
         case "escape":
             return .escape
+        case "scrolled":
+            return ScrollMetrics(report: payload).map(Message.scrolled)
         case "ready":
             guard let meta = payload["meta"] else { return nil }
             if meta is NSNull { return .ready(meta: nil) }

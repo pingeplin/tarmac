@@ -109,7 +109,9 @@ need data in the chart, serialize it into a `const` at the top of the script.
   back. Scroll works through the shield without borrowing: a wheel over the
   selected card reaches the document as ordinary `wheel` events and scrolls
   whatever is under the pointer, so a handler that zooms or pans on wheel runs
-  on a card that is selected and not borrowed.
+  on a card that is selected and not borrowed. Tarmac draws the scroll
+  position itself, for the document's root: let the page itself scroll, not a
+  full-height inner element, or the card has no scroll thumb.
 - Cards scrolled far off-viewport are **paused**: `requestAnimationFrame`,
   `setTimeout`, and `setInterval` stop firing. On return, held timeouts and
   frames flush once — an animation gets a **single** catch-up frame, not one per

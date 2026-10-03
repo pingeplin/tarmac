@@ -76,6 +76,21 @@ public enum DevSnapshot {
         }
     }
 
+    /// A card's scroll position and the two facts its thumb's showing rests on.
+    public struct Scroll: Equatable, Sendable {
+        public var metrics: ScrollMetrics
+        /// The card has a thumb frame and is not culled.
+        public var laidOut: Bool
+        /// The thumb's `Visibility` alpha at the time of the snapshot.
+        public var alpha: CGFloat
+
+        public init(metrics: ScrollMetrics, laidOut: Bool, alpha: CGFloat) {
+            self.metrics = metrics
+            self.laidOut = laidOut
+            self.alpha = alpha
+        }
+    }
+
     public struct Card: Equatable, Sendable {
         public enum Content: Equatable, Sendable {
             case doc
@@ -88,12 +103,15 @@ public enum DevSnapshot {
         public var frame: CGRect
         /// Where the card's view is on screen, as measured; nil when it has none.
         public var screenRect: CGRect?
+        /// Nil until the card's content has reported.
+        public var scroll: Scroll?
 
-        public init(id: String, content: Content, frame: CGRect, screenRect: CGRect?) {
+        public init(id: String, content: Content, frame: CGRect, screenRect: CGRect?, scroll: Scroll?) {
             self.id = id
             self.content = content
             self.frame = frame
             self.screenRect = screenRect
+            self.scroll = scroll
         }
 
         public var kind: DevCardKind {
@@ -375,6 +393,7 @@ public enum DevSnapshot {
             "board_rect": rect(card.frame),
             "screen_rect": card.screenRect.map(rect) ?? .null,
             "focused": .bool(card.id == input.selectedCard),
+            "scroll": card.scroll.map(scroll) ?? .null,
         ]
         switch card.content {
         case .doc:
@@ -411,6 +430,15 @@ public enum DevSnapshot {
                     "age_ms": .number(Double(press.ageMs)),
                 ]
             } ?? .null,
+        ]
+    }
+
+    private static func scroll(_ scroll: Scroll) -> JSONValue {
+        [
+            "offset": .number(scroll.metrics.offset),
+            "visible": .number(scroll.metrics.visible),
+            "total": .number(scroll.metrics.total),
+            "shown": .bool(scroll.laidOut && scroll.alpha > 0),
         ]
     }
 

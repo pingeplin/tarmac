@@ -7,6 +7,18 @@ final class HTMLCardSessionTests: XCTestCase {
     private typealias Effect = HTMLCardSession.Effect
     private let magnify = CardHostMessage.zoom(Double(CardZoom.magnifyK))
 
+    // MARK: - scrolled (2610.0003 S11)
+
+    /// The session passes the document's report on and keeps nothing of it.
+    func test2610S11AScrollReportIsPassedOnWhateverTheCardIsDoing() throws {
+        let metrics = try XCTUnwrap(ScrollMetrics(offset: 30, visible: 100, total: 400))
+        var session = HTMLCardSession()
+        let before = session
+        XCTAssertEqual(session.handle(.scrolled(metrics), borrowed: false), [.scrollChanged(metrics)])
+        XCTAssertEqual(session.handle(.scrolled(metrics), borrowed: true), [.scrollChanged(metrics)])
+        XCTAssertEqual(session, before)
+    }
+
     // MARK: - ready
 
     /// The cull state goes first on every ready: each generation of a

@@ -27,11 +27,21 @@
   let viewportHeight = null;
   let renders = 0;
 
+  // Where the doc is scrolled to, for the card's scroll thumb.
+  function reportScroll() {
+    webkit.messageHandlers.docScroll.postMessage({
+      offset: scroll.scrollTop,
+      visible: scroll.clientHeight,
+      total: scroll.scrollHeight,
+    });
+  }
+
   function relayout() {
     sizer.style.height = Math.ceil((proseHeight * zoom) / K) + "px";
     if (scroll.scrollHeight > scroll.clientHeight) {
       scroll.scrollTop = scrollFraction * scroll.scrollHeight;
     }
+    reportScroll();
   }
 
   // The zoom and the new viewport size arrive one after the other. In between,
@@ -42,6 +52,7 @@
   }
 
   scroll.addEventListener("scroll", function () {
+    reportScroll();
     if (!viewportSettled()) return;
     scrollFraction = scroll.scrollHeight > scroll.clientHeight ? scroll.scrollTop / scroll.scrollHeight : 0;
   });

@@ -19,6 +19,12 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
     var onEscapeHome: (() -> Void)?
     /// The console gained an entry; the count is the header badge's.
     var onConsoleChanged: ((Int) -> Void)?
+    var onScrollChanged: ((ScrollMetrics?) -> Void)?
+    var onScrollCoverChanged: (() -> Void)?
+
+    /// The open console lies over the bottom of the document.
+    var scrollCover: CGFloat { console.isHidden ? 0 : console.frame.height }
+    private var reportedScrollCover: CGFloat = 0
 
     private let path: String
     private let webView: HTMLCardWebView
@@ -80,6 +86,13 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
         host.frame = bounds
         shield.frame = bounds
         layoutConsole()
+        reportScrollCover()
+    }
+
+    private func reportScrollCover() {
+        guard scrollCover != reportedScrollCover else { return }
+        reportedScrollCover = scrollCover
+        onScrollCoverChanged?()
     }
 
     // MARK: - DocCardBody
@@ -127,6 +140,7 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
     func toggleConsole() {
         console.isHidden.toggle()
         showConsole()
+        reportScrollCover()
     }
 
     /// The console gained an entry. A card can log faster than its console
@@ -169,6 +183,7 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
         guard pageLoaded, let source else { return }
         session.reloaded()
         webView.resetWheel()
+        onScrollChanged?(nil)
         layoutDocument()
         webView.callAsyncJavaScript(
             "tarmacCard.load(source)", arguments: ["source": source],
@@ -201,6 +216,7 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
             case .escapeHome: onEscapeHome?()
             case .consoleChanged: consoleChanged()
             case .modeChanged: layoutDocument()
+            case .scrollChanged(let metrics): onScrollChanged?(metrics)
             }
         }
     }
@@ -220,6 +236,7 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        onScrollChanged?(nil)
         loadPage()
     }
 

@@ -1,9 +1,9 @@
-// Console-capture + escape-hatch + zoom shim for sandboxed HTML doc cards
-// (specs 2607.0004, 2607.0006). Prepended by card_protocol.rs to every
-// tarmac-card:// response, strictly before the file's own bytes, so it
-// observes console/error/escape activity from the very first line of card
-// script. Must never throw or break the host page — every path here is
-// defensive.
+// Console-capture + escape-hatch + zoom + scroll-report shim for sandboxed
+// HTML doc cards (specs 2607.0004, 2607.0006, 2610.0003). Prepended by
+// CardProtocol.respond to every tarmac-card:// response, strictly before the
+// file's own bytes, so it observes console/error/escape activity from the
+// very first line of card script. Must never throw or break the host page —
+// every path here is defensive.
 (function () {
   function safeSerialize(args) {
     return Array.prototype.map.call(args, serializeOne);
@@ -294,6 +294,39 @@
     }
   });
 
+  // Where the root is scrolled to, for the card's scroll thumb. Posted as the
+  // event happens: no frame is asked for and no timer set, so a culled card
+  // schedules nothing for it. Before the body exists this document — in quirks
+  // mode, the shim coming before its doctype — has no scrolling element, and
+  // there is nothing to say.
+  function postScroll() {
+    try {
+      var root = document.scrollingElement;
+      if (!root) return;
+      window.parent.postMessage(
+        { tarmac: "scrolled", offset: window.scrollY, visible: root.clientHeight, total: root.scrollHeight },
+        "*"
+      );
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // Captured: a nested scroller's event does not bubble, and is not the root's.
+  document.addEventListener("scroll", function (e) {
+    if (e.target === document) postScroll();
+  }, true);
+  window.addEventListener("resize", postScroll);
+  // The root's size changes when the zoom lands and when content grows, with
+  // no scroll to say so.
+  if (typeof ResizeObserver === "function") {
+    try {
+      new ResizeObserver(postScroll).observe(document.documentElement);
+    } catch (e) {
+      // ignore
+    }
+  }
+
   // Publish the declaration, exactly once per document load. Nothing is
   // measured first: the macOS 26 floor decides zoom capability, so there is no
   // layout to wait for and a card loading inside a display:none board posts
@@ -306,6 +339,8 @@
     // flight.
     if (pendingZoom !== null) applyZoom(pendingZoom);
     try {
+      // The card draws the root's scroll position itself.
+      document.documentElement.style.scrollbarWidth = "none";
       window.parent.postMessage({ tarmac: "ready", meta: readMeta() }, "*");
     } catch (e) {
       // ignore
