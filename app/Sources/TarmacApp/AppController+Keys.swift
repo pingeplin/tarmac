@@ -1,0 +1,196 @@
+import AppKit
+import TarmacKit
+import TarmacTerm
+
+extension AppController {
+    func start() {
+        escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let taken = MainActor.assumeIsolated { self?.takeKey(event) ?? false }
+            return taken ? nil : event
+        }
+
+        // A press selects and raises the card under it before the press is
+        // dispatched, so the card is already on top when its content starts
+        // tracking the mouse.
+        clickFocusMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            let point = event.locationInWindow
+            MainActor.assumeIsolated { self?.handlePress(at: point) }
+            return event
+        }
+        // The wheel is routed before it is dispatched: the board takes it
+        // unless it is over the selected card's body. The router returns a
+        // `Bool` (Sendable) and the event swap stays outside the isolated
+        // block (NSEvent isn't Sendable), mirroring `escMonitor`.
+        scrollRouteMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            let routed = MainActor.assumeIsolated { self?.routeScroll(event) ?? false }
+            return routed ? nil : event
+        }
+        // A pinch always zooms the board.
+        magnifyRouteMonitor = NSEvent.addLocalMonitorForEvents(matching: .magnify) { [weak self] event in
+            let routed = MainActor.assumeIsolated { self?.routeMagnify(event) ?? false }
+            return routed ? nil : event
+        }
+        connectToDaemon()
+
+        // Layout has happened by the next runloop turn.
+        DispatchQueue.main.async { [weak self] in
+            self?.viewReady = true
+            self?.maybeSpawn()
+        }
+    }
+
+    // MARK: - Keys
+
+    /// A key-down, seen before the view with keyboard focus gets it
+    /// (`KeyLadder`). True means the app took it.
+    private func takeKey(_ event: NSEvent) -> Bool {
+        // The monitor sees every window's keys, and the board window keeps
+        // receiving them after its close button hid it.
+        guard let window, event.window === window, window.isVisible else { return false }
+        // When the view with keyboard focus is hidden — a culled card's
+        // terminal — AppKit makes the window its own first responder, and a
+        // window beeps at every key it is left with. The board takes them
+        // silently.
+        if window.firstResponder === window, rootView.board.window === window {
+            window.makeFirstResponder(rootView.board)
+        }
+        let press = KeyPress(
+            keyCode: event.keyCode, characters: event.characters ?? "",
+            charactersIgnoringModifiers: event.charactersIgnoringModifiers ?? "",
+            modifierFlags: event.modifierFlags.rawValue
+        )
+        switch KeyLadder.decide(press, keyFacts()) {
+        case .passThrough:
+            return false
+        case .toggleSwitcher:
+            if switcherOpen { closeSwitcher() } else { openSwitcher() }
+        case .closeSelectedCard:
+            closeSwitcher()
+            closeSelectedCard()
+        case .switcherKey:
+            return handleSwitcherKey(press)
+        case .newTerminal:
+            spawnNewTerminal()
+        case .flyToSignal:
+            guard let target = rootView.offscreenFlyTarget else { return false }
+            preFlightViewport = activeBoard.view.viewport
+            activeBoard.view.fly(to: target)
+        case .esc(let rung):
+            climb(rung)
+        case .returnKeys:
+            // The key is not taken: it is dispatched next, to whoever has
+            // the keyboard by then.
+            returnKeys()
+            return false
+        }
+        return true
+    }
+
+    private func keyFacts() -> KeyLadder.Facts {
+        let terminal = focusedTerminal
+        let borrow = borrowedCard
+        let selectedIsDoc: Bool
+        if case .doc = focusedCardID { selectedIsDoc = true } else { selectedIsDoc = false }
+        return KeyLadder.Facts(
+            composing: terminal?.hasMarkedText() == true,
+            switcherOpen: switcherOpen,
+            keys: keyHolder(terminal: terminal, documentHoldsKeys: borrow.documentHoldsKeys),
+            editingText: typingInDoc,
+            hasFlyTarget: rootView.offscreenFlyTarget != nil,
+            esc: EscLadder.Facts(
+                toastsShowing: rootView.toasts.hasToasts,
+                hasPreFlightViewport: preFlightViewport != nil,
+                cardBorrowed: borrow.borrowed,
+                hasFreshDoc: activeBoard.view.cards.values.contains(where: \.isFreshDoc),
+                selectedIsDoc: selectedIsDoc
+            )
+        )
+    }
+
+    /// The terminal view with keyboard focus, live or dead.
+    private var focusedTerminal: TerminalView? {
+        (window?.firstResponder as? NSView)?.enclosing(TerminalView.self)
+    }
+
+    /// Whether the keys go to a text control in a markdown doc's page.
+    private var typingInDoc: Bool {
+        guard let responder = window?.firstResponder as? NSView else { return false }
+        return activeBoard.view.cards.values.contains { $0.isTypedInto(through: responder) }
+    }
+
+    /// Whether an HTML card is borrowed, and whether its document has keyboard
+    /// focus.
+    private var borrowedCard: (borrowed: Bool, documentHoldsKeys: Bool) {
+        guard let id = borrow.id else { return (false, false) }
+        guard let body = activeBoard.view.card(id)?.htmlBody, let responder = window?.firstResponder as? NSView
+        else { return (true, false) }
+        return (true, body.documentHoldsKeys(responder))
+    }
+
+    /// Who holds keyboard focus.
+    private func keyHolder(terminal: TerminalView?, documentHoldsKeys: Bool) -> KeyLadder.Keys {
+        if documentHoldsKeys { return .document }
+        if terminal != nil { return .terminal }
+        return consoleHoldsKeys ? .console : .host
+    }
+
+    /// Whether the keys are with the console of an HTML card.
+    private var consoleHoldsKeys: Bool {
+        guard let responder = window?.firstResponder as? NSView else { return false }
+        return activeBoard.view.cards.values.contains { $0.htmlBody?.consoleHoldsKeys(responder) == true }
+    }
+
+    /// Puts the keyboard back where typing goes: the document of the borrowed
+    /// card, or the prime terminal.
+    private func returnKeys() {
+        if let id = borrow.id, let html = activeBoard.view.card(id)?.htmlBody {
+            html.focusDocument()
+        } else {
+            focusPrimeTerminal()
+        }
+    }
+
+    private func climb(_ rung: EscLadder.Rung) {
+        switch rung {
+        case .clearToasts:
+            rootView.toasts.clearAll()
+        case .flyBack:
+            if let viewport = preFlightViewport { activeBoard.view.flyTo(viewport) }
+            preFlightViewport = nil
+        case .unborrow:
+            escapeHome()
+        case .clearFreshDocs:
+            _ = clearFreshDocs()
+        case .deselectDoc:
+            defocus()
+        }
+    }
+
+    /// ⌘W (`FocusedClose`): a doc card is closed, a terminal is terminated,
+    /// and with nothing selected nothing happens.
+    private func closeSelectedCard() {
+        let kind: FocusedClose.Kind
+        var otherLive = 0
+        var dead = false
+        switch focusedCardID {
+        case .doc:
+            kind = .doc
+        case .term(let termID):
+            kind = .term
+            otherLive = activeBoard.otherLiveTerminals(than: termID)
+            dead = activeBoard.view.card(.term(termID))?.dead ?? false
+        case nil:
+            kind = .none
+        }
+        switch FocusedClose.decide(kind: kind, otherLiveTerminals: otherLive, dead: dead) {
+        case .noop:
+            break
+        case .closeDoc:
+            if case .doc(let path)? = focusedCardID { closeDocCard(path) }
+        case .closeTerminal(let replace, let signalClose):
+            if case .term(let termID)? = focusedCardID {
+                closeTerminal(termID, replace: replace, signalClose: signalClose)
+            }
+        }
+    }
+}

@@ -24,9 +24,8 @@ workspace grows out of facts, not configuration: there is no welcome screen, no
 import step, no setup. Surfaces appear the moment a real event produces them.
 
 > Status: **working prototype.** Milestones M0–M3 and the v4 whiteboard
-> migration are complete on `main`, and the UI has since been rebuilt on
-> Tauri 2 + React + xterm.js (replacing the original Swift/AppKit app).
-> See [Status](#status).
+> migration are complete on `main`. The UI is a native Swift/AppKit app whose
+> terminal cards are built on libghostty-vt. See [Status](#status).
 
 ---
 
@@ -42,19 +41,20 @@ import step, no setup. Surfaces appear the moment a real event produces them.
   exactly on relaunch. There is no grid, no slot cap.
 
 - **`tarmac open` is a universal doorbell.** Any caller can ring it — the agent,
-  you, a Makefile, a hook, CI. The cyan dot *means* "someone ran `tarmac open`,"
-  full stop. That universality is why the integration is a plain CLI over a Unix
-  socket and not MCP, which would re-couple Tarmac to one agent runtime.
+  you, a Makefile, a hook, CI. A doc card's fresh mark *means* "someone ran
+  `tarmac open`," full stop. That universality is why the integration is a plain
+  CLI over a Unix socket and not MCP, which would re-couple Tarmac to one agent
+  runtime.
 
 - **Honest signals, never a harness.** Four marks, each one observable fact: a
-  spinner + foreground process name + elapsed time (the process table), a cyan
-  dot (`tarmac open` was called), a cyan halo pulse (the file changed on disk), an
-  amber dot (the terminal rang its bell). Copy is temporal — `✎ 5s · during
-  claude` — never causal. Tarmac reports; it does not arbitrate.
+  terminal card's label is its foreground process name (the process table), a
+  teal ring and `✚ now` on a doc card (`tarmac open` was called), `✎ 5s` in its
+  header (the file changed on disk), an amber dot (the terminal rang its bell).
+  Copy is temporal, never causal. Tarmac reports; it does not arbitrate.
 
-- **The terminal keeps focus.** Typing always goes to the focused ("prime")
-  terminal regardless of where the pointer is. Selecting a card, opening the
-  switcher, an agent firing an event — none of them steal your keystrokes.
+- **The terminal keeps focus.** Typing goes to the terminal you last put it in.
+  An agent firing an event — a doc opening, a file changing, a bell — only marks
+  the board; it never switches your view or takes your keystrokes.
 
 ## What it feels like
 
@@ -62,7 +62,7 @@ import step, no setup. Surfaces appear the moment a real event produces them.
   board: api                                       [ attached ]
   -------------------------------------------------------------
 
-   +- claude  4m12s ----+         +- plan.md ---------+
+   +- claude -----------+         +- plan.md ---------+
    | $ claude           |   open  | # Migration plan  |
    | > writing plan...  | ------> | ## Phase 1 ...    |
    | * opened plan.md   |  edge   | * edited 5s ago   |
@@ -72,7 +72,8 @@ import step, no setup. Surfaces appear the moment a real event produces them.
 ```
 
 Run an agent. It writes a plan and calls `tarmac open plan.md`. The doc lands
-beside it with a provenance edge. The agent edits the file; the card halos cyan.
+beside it with a provenance edge. The agent edits the file; the card re-renders
+and its header shows `✎ 5s`.
 You drag the terminal somewhere quieter and the plan follows it (gravity). You
 press `⌘T` for a second shell and `⌘K` to flip to another board, all without
 leaving the keyboard.
@@ -93,9 +94,12 @@ Built and shipped on `main`:
 - **Multiple boards**: a `⌘K` switcher with live per-board running / bell / card
   counts, `⌘1`–`9` jump to the filtered rows, create (`⌘N`) / rename (`⌘E`) /
   delete (`⌘⌫`, refuses the last board).
-- **Session liveness**: an honest attached/detached chip, bounded
-  auto-reconnect, and in-place re-bind to surviving shells with scrollback
-  replay (no respawn) when the app reconnects to a still-running daemon.
+- **HTML cards**: a `.html` doc runs as a sandboxed, zoom-stable card with its
+  own console badge; look-don't-touch until a double-click borrows it.
+- **Session liveness**: an honest `attached` / reason readout in the status bar,
+  bounded auto-reconnect, and surviving shells kept in place — history restored
+  from the daemon's scrollback ring, no respawn — when the app reconnects to a
+  still-running daemon.
 
 Not built yet — see [`docs/backlog.md`](docs/backlog.md) for the full audit:
 the `tarmac focus` verb + idle-switch banner, the session-restore overlay,
@@ -104,7 +108,7 @@ in-terminal doc-path linkification, the status-bar process chip, the doc-rewrite
 *proposal*, not scheduled work — nothing of it exists in the code. Real
 tmux/bare-attach, auto board-naming, and daemon-restart PTY re-parenting are
 deferred by decision; the shelf, the terminal dock pane, and peek (`⌘P`) were
-deliberately dropped after the Tauri rebuild.
+deliberately dropped.
 
 ## Architecture at a glance
 
@@ -112,12 +116,12 @@ Two processes over one Unix socket, length-prefixed MessagePack:
 
 ```
    +--------------------------+       +------------------------------+
-   |TarmacApp (Tauri 2 +React)|       |tarmacd (Rust/Tokio)          |
+   |TarmacApp (Swift / AppKit)|       |tarmacd (Rust/Tokio)          |
    |the cockpit glass         | <---> |the observatory + PTY owner   |
    | - boards / cards         | unix  | - boards, docs, terminals    |
-   | - xterm.js surfaces      |socket | - fswatch, process polling   |
-   | - DOM doc cards (marked) |msgpack| - persistence (state.json)   |
-   | - Rust bridge (socket)   |frames |                              |
+   | - terminal cards         |socket | - fswatch, process polling   |
+   |   (libghostty-vt)        |msgpack| - persistence (state.json)   |
+   | - doc cards (marked)     |frames |                              |
    +--------------------------+       +------------------------------+
                                                   |
                                                   |  spawns ptys
@@ -136,19 +140,24 @@ Full design: **[`docs/architecture.md`](docs/architecture.md)**. Wire contract:
 
 ## Build & run
 
-Requires macOS 26+, a Rust toolchain with edition 2024, and Node.js (for the
-Tauri 2 + Vite + React frontend). Everything goes through the `Makefile`:
+Requires macOS 26+, a Rust toolchain with edition 2024, and a Swift 6.2+
+toolchain (Xcode). Node.js is needed only for the repo's own checks
+(`make docs-check`, `make dco-check`) and the QA scripts. Everything goes
+through the `Makefile`:
 
 ```sh
 make core    # cargo build the daemon, CLI, and protocol crate
-make app     # npm build the frontend + cargo build the Tauri Rust backend
-make test    # cargo test (core) + npm test (frontend) + cargo test (Tauri backend)
-make run     # launch the Tauri dev app (Vite HMR + the Rust backend)
+make app     # stage the pinned libghostty-vt, then swift build the native app
+make test    # docs-check + cargo test (core) + swift test (app)
+make run     # build and launch the dev app against this worktree's own daemon
 ```
 
-`make run` sets `TARMAC_DAEMON` (so the app auto-spawns the freshly built
-daemon) and prefixes `PATH` with the debug build dir (so `tarmac open` inside
-the app's own terminals resolves the freshly built CLI). The CLI itself is just:
+The first `make app` downloads the pinned libghostty-vt XCFramework into the
+gitignored `app/Vendor/`. `make run` pins the daemon socket and state to this
+worktree's `.dev/` (so a dev build never touches an installed Tarmac), sets
+`TARMAC_DAEMON` (so the app auto-spawns the freshly built daemon) and prefixes
+`PATH` with the debug build dir (so `tarmac open` inside the app's own terminals
+resolves the freshly built CLI). The CLI itself is just:
 
 ```sh
 tarmac open <path>     # surface a markdown file as a card on the active board
@@ -174,28 +183,30 @@ sandbox and zoom model.
 | Path | What it is |
 | --- | --- |
 | `core/` | Rust cargo workspace (edition 2024): `tarmac-protocol` (wire types + codec + conformance vectors), `tarmacd` (the daemon), `tarmac-cli` (the `tarmac` CLI). |
-| `desktop/` | Tauri 2 app (macOS 26+): `src/` (the React + xterm.js frontend, with pure unit-tested logic in `src/kit/`), `src-tauri/` (the Rust backend, which path-deps the `tarmac-protocol` crate). |
+| `app/` | SwiftPM package (Swift 6, macOS 26+): `TarmacKit` (the Swift wire codec, the daemon client and every pure decision — where the tests are), `TarmacTerm` (the terminal card, on libghostty-vt), `TarmacApp` (the AppKit shell). |
 | `docs/` | Engineering docs — see the [docs map](#docs) below. |
-| `scripts/` | `bundle.sh` (unsigned `.app`) and `release.sh` (sign + notarized `.dmg`). |
+| `scripts/` | `fetch-ghostty-vt.sh` (stage the pinned XCFramework), `bundle.sh` (unsigned `.app`), `release.sh` (sign + notarized `.dmg`), `docs-check.mjs`, and the QA driver's scenario suites in `scripts/qa/`. |
+| `qa/` | Hand-run QA records and the probe pages they use. Those dated before 2026-10 were run against the Tauri app. |
+| `packaging/` | The bundle's `Info.plist`, icon, and the Homebrew cask. |
 | `Makefile` | The build / test / run entrypoint. |
 
 ## Tests
 
-Three suites, all run by `make test`: **Rust** in `core/` (protocol roundtrip +
+Two suites, both run by `make test`: **Rust** in `core/` (protocol roundtrip +
 frozen conformance vectors, daemon-lib, daemon integration over real sockets,
-CLI), **Vitest** over the frontend's pure logic in `desktop/src/kit/`, and a
-**Rust** suite in the Tauri backend (`desktop/src-tauri/`). The React/Tauri GUI
-layer is not unit-tested by design — pure logic is extracted into
-`desktop/src/kit/` and tested there; the UI behaviors are GUI-verified. The
-conformance vectors live in `tarmac-protocol` and are exercised by both the
-`core/` daemon and the Tauri backend (which path-deps the crate), pinning the
-wire contract. The frontend consumes already-decoded data over Tauri IPC, so
-there is no second-language codec to keep in lockstep.
+CLI), and **XCTest** in `app/` — `TarmacKitTests` over the app's pure logic and
+its codec, `TarmacTermTests` over the terminal card. The AppKit shell
+(`TarmacApp`) is not unit-tested by design — a decision is extracted into
+`TarmacKit` and tested there; the UI is verified through the QA driver
+(`make qa`, against a live `make run` app) and by hand. The wire contract has
+two codecs, `tarmac-protocol` in Rust and `TarmacKit`'s in Swift; the same
+conformance vectors are mandatory tests in both, and the Swift encoder is
+pinned byte-for-byte to the Rust one's output.
 
 ## Docs
 
 **Start at [`docs/README.md`](docs/README.md)** — the index. Every doc carries a
-status banner on its first line, because the doc set spans two UIs and five
+status banner under its title, because the doc set spans three UIs and five
 closed milestones and a page's path does not tell you whether it is current:
 
 - **ACTIVE** — describes `main` today; safe to cite as behaviour.
@@ -207,9 +218,10 @@ closed milestones and a page's path does not tell you whether it is current:
 - **PROPOSED** — designed, zero lines implemented.
   [`docs/proposed/`](docs/proposed) — currently just the editable-docs (v4c)
   crib.
-- **HISTORICAL** — frozen records, mostly of the Swift/AppKit app that no longer
-  exists. [`docs/archive/`](docs/archive) (closed milestone plans + visual cribs)
-  and [`docs/designs/`](docs/designs) (one record per shipped change).
+- **HISTORICAL** — frozen records of two earlier apps that no longer exist: the
+  first Swift/AppKit app and the Tauri app that replaced it.
+  [`docs/archive/`](docs/archive) (closed milestone plans + visual cribs) and
+  [`docs/designs/`](docs/designs) (one record per shipped change).
 
 `M0`–`M3` and `v4` are closed milestone names; `v4c` is an unstarted proposal.
 There is no `M4`. Work since M3 is tracked per GitHub issue.
@@ -224,3 +236,8 @@ such in [`docs/backlog.md`](docs/backlog.md).
 Tarmac is licensed under the [Apache License 2.0](LICENSE). Contributions are
 welcome under the project's [contribution guidelines](CONTRIBUTING.md), which
 require a Developer Certificate of Origin (DCO) sign-off.
+
+The app is distributed with third-party fonts, scripts and libraries, each
+under its own licence: [`NOTICE`](NOTICE) lists them and
+[`THIRD-PARTY-LICENSES`](THIRD-PARTY-LICENSES) holds the licence texts. Both
+ship inside `Tarmac.app`, in `Contents/Resources`.

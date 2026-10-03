@@ -6,7 +6,4 @@
 .dev/
 .playwright-mcp/
 
-# design-sync machine state (config.json, NOTES.md, previews/, overrides/ ARE committed)
-.design-sync/.cache/
-.design-sync/learnings/
-.design-sync/node_modules
+/app/Vendor/

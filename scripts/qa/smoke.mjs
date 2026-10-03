@@ -43,6 +43,9 @@ import {
   between,
   waitFor,
   reset,
+  pointer,
+  showGrip,
+  GRIP_ZOOM,
   typeAll,
   runner,
   preflight,
@@ -137,6 +140,22 @@ function openFixture(path) {
   open(path);
   waitFor(null, `cards[${path}].screen_rect != null`, "--timeout", "3000");
   return path;
+}
+
+/** D4 and D5 are about the press itself — what the window and the app's press
+ *  handling do with it — so a resize whose press was handed to its target
+ *  proves nothing there, and passes for it must not count. */
+function windowPress(r) {
+  const body = json(r);
+  if (r.code !== 0) throw new Error(`the resize was refused: ${body.error ?? r.err.trim()}`);
+  if (body.delivery !== "window") {
+    throw new Error(
+      `the resize press was delivered by "${body.delivery}", not through the window: the terminal's ` +
+        `bottom-right handle is off screen or covered at zoom ${GRIP_ZOOM}. ` +
+        `Pan the board until the terminal is inside the window and re-run`,
+    );
+  }
+  return body;
 }
 
 /** Un-borrow an HTML card: Esc while `borrowed` reads true, up to three times
@@ -240,20 +259,21 @@ async function main() {
   console.log("\nD3 — a resize reaches the PTY's winsize");
   check("the grip drag lands the card, and stty sees the new grid", () => {
     reset(term);
+    showGrip();
     // Pin the start size too, so the grip delta below is exact.
-    dev("resize", term, "600x400");
+    pointer("resize", term, "600x400");
     const started = waitFor(term, `cards[${term}].board_rect.w ~= 600`);
     const cols0 = termCard(started, term).term.cols;
 
-    const body = json(dev("resize", term, "800x600"));
+    const body = json(pointer("resize", term, "800x600"));
     // The card's stored frame can be a float from an earlier gesture, so
     // `w0 + (800 − w0)` need not be bit-identical to 800 — `===` would flake.
     near(body.to.w, 800, 1e-6, "reply to.w");
     near(body.to.h, 600, 1e-6, "reply to.h");
 
     waitFor(term, `cards[${term}].board_rect.w ~= 800`);
-    // Separate waits on purpose: the frame settles before xterm refits and the
-    // daemon's Resize lands.
+    // Separate waits on purpose: the frame settles before the terminal refits
+    // and the daemon's Resize lands.
     const snap = waitFor(term, `cards[${term}].term.cols != ${cols0}`);
     const { rows, cols } = termCard(snap, term).term;
 
@@ -266,9 +286,10 @@ async function main() {
   check("a resize press between two types drops nothing", () => {
     const s4 = sentinel("d4");
     reset(term);
+    showGrip();
     // This is issue #162's own repro: NO focus round-trip anywhere between.
     typeAll(term, `${s4}a`);
-    dev("resize", term, "700x500");
+    windowPress(pointer("resize", term, "700x500"));
     typeAll(term, "b\n");
     waitFor(term, `cards[${term}].term.scrollback_tail contains "${s4}ab"`);
   });
@@ -278,6 +299,7 @@ async function main() {
     const seed = sentinel("d5a");
     const s5 = sentinel("d5b");
     reset(term);
+    showGrip();
     dev("type", term, `echo ${seed}\n`);
     waitFor(term, `cards[${term}].term.scrollback_tail contains "${seed}"`);
 
@@ -285,15 +307,15 @@ async function main() {
     eq(keyed.code, 0, "key contextmenu exit code");
     const selType = snapshot().active_element.selection_type;
     // A right-click on blank space degrades to a Caret and would silently re-run
-    // D4 under a different name. The Range comes from xterm's own
-    // rightClickSelectsWord default (isMac); if xterm ever changes it, this line
-    // fails loudly rather than quietly.
+    // D4 under a different name. The Range comes from the terminal selecting
+    // the word under a right-click; if that ever changes, this line fails loudly
+    // rather than quietly.
     eq(selType, "Range", "active_element.selection_type after contextmenu");
 
     // Stronger than the spec's bare `contains "ab"`, per the suite's own sentinel
     // hygiene: D4's echo is still inside the 40-line tail and would satisfy it.
     typeAll(term, `${s5}a`);
-    dev("resize", term, "720x520");
+    windowPress(pointer("resize", term, "720x520"));
     typeAll(term, "b\n");
     waitFor(term, `cards[${term}].term.scrollback_tail contains "${s5}ab"`);
   });
@@ -326,14 +348,14 @@ async function main() {
     waitFor(term, `cards[${term}].term.proc == "sleep"`);
     const body = json(dev("key", term, "ctrl+c"));
     eq(body.combo, "ctrl+c", "reply combo");
-    // No keypress — the app produces none for a combo xterm owns (S10, measured).
+    // No keypress — the app produces none for a combo the terminal owns (S10).
     eq(JSON.stringify(body.events), '["keydown","keyup"]', "reply events");
     waitFor(term, `cards[${term}].term.proc != "sleep"`, "--timeout", "3000");
   });
 
   console.log("\nD8 — focus and blur are two separate facts");
   check("focus <term> selects the card AND moves keyboard focus", () => {
-    const body = json(dev("focus", term));
+    const body = json(pointer("focus", term));
     eq(body.focused_card, term, "reply focused_card");
     eq(body.active_element.card, term, "reply active_element.card");
     eq(body.active_element.tag, "TEXTAREA", "reply active_element.tag");
@@ -342,7 +364,7 @@ async function main() {
     eq(snap.active_element.card, term, "snapshot active_element.card");
   });
   check("focus board clears BOTH", () => {
-    dev("focus", "board");
+    pointer("focus", "board");
     const snap = snapshot();
     // A blur that moved only one of these is exactly what this catches.
     eq(snap.active_element.card, null, "active_element.card");
@@ -351,7 +373,7 @@ async function main() {
 
   console.log("\nD9 — the failure paths are reachable");
   check("(a) an unknown card is no_such_card, exit 1", () => {
-    const r = dev("focus", "definitely-not-a-card");
+    const r = pointer("focus", "definitely-not-a-card");
     eq(r.code, 1, "exit code");
     eq(JSON.parse(r.err).error, "no_such_card", "error code");
     eq(r.out, "", "stdout must stay clean");
@@ -373,7 +395,7 @@ async function main() {
     const s9 = sentinel("d9c");
     // Deliberately unfocused — that is the condition under test, so this is the
     // one scenario that does not reset focus.
-    dev("focus", "board");
+    pointer("focus", "board");
     const r = dev("type", term, s9);
     eq(r.code, 1, "exit code");
     eq(JSON.parse(r.err).error, "not_focused", "error code");
@@ -397,7 +419,8 @@ async function main() {
   });
   check("(b) resize below the minimum clamps to 160x90 and says so", () => {
     reset(term);
-    const body = json(dev("resize", term, "10x10"));
+    showGrip();
+    const body = json(pointer("resize", term, "10x10"));
     eq(body.to.w, 160, "reply to.w");
     eq(body.to.h, 90, "reply to.h");
     const snap = waitFor(term, `cards[${term}].board_rect.w ~= 160`);
@@ -405,7 +428,7 @@ async function main() {
     // Restore: a card left at 160x90 is ~15 columns wide and would wrap every
     // later sentinel across lines, breaking `contains` for reasons that have
     // nothing to do with the bug under test.
-    dev("resize", term, "600x400");
+    pointer("resize", term, "600x400");
     waitFor(term, `cards[${term}].board_rect.w ~= 600`);
   });
 
@@ -482,7 +505,7 @@ async function quitGuardScenarios(term) {
       waitFor(term, `cards[${term}].term.scrollback_tail contains "${pushed}-42"`);
       assertGuarded(pressBody(await pressQuit()).press_ms);
     } finally {
-      // Under the knockout, xterm's `ESC[113;9u` sits at the prompt; Enter is
+      // Under the knockout, the terminal's `ESC[113;9u` sits at the prompt; Enter is
       // still a legacy CR under flags 5 and flushes it as its own failing
       // command. Pushed flags would otherwise leak into every later run,
       // because the daemon replays the scrollback.
@@ -495,7 +518,7 @@ async function quitGuardScenarios(term) {
   console.log("\nD14 — ⌘Q tap from the board (S12)");
   await checkAsync("with nothing focused, the key routes guard", async () => {
     reset(term);
-    dev("focus", "board");
+    pointer("focus", "board");
     assertGuarded(pressBody(await pressQuit()).press_ms);
   });
 
@@ -539,10 +562,10 @@ async function quitGuardScenarios(term) {
       if (created === null) await sleep(100);
     }
     if (created === null) throw new Error("no new terminal card appeared within 3000 ms of ⌘T");
-    // The card enters `cards` before its xterm mounts; a `proc` means the
+    // The card enters `cards` before its terminal is up; a `proc` means the
     // daemon has spawned its shell, so ⌘W's close has a PTY to close.
     waitFor(term, `cards[${created}].term.proc != null`, "--timeout", "3000");
-    eq(json(dev("focus", created)).focused_card, created, "focus the new terminal");
+    eq(json(pointer("focus", created)).focused_card, created, "focus the new terminal");
     // ⌘W inside an HTML card's frame would hide the window (Q14).
     eq(snapshot().active_element.tag, "TEXTAREA", "active_element.tag before ⌘W");
 
@@ -571,7 +594,7 @@ async function quitGuardScenarios(term) {
     eq(json(dev("zoom", "0.5")).zoom, 0.5, "zoom 0.5");
     // If focus were already on BODY, the page-body knockout would pass vacuously.
     eq(snapshot().active_element.tag, "TEXTAREA", "active_element.tag before focus");
-    const focused = json(dev("focus", id));
+    const focused = json(pointer("focus", id));
     eq(focused.focused_card, id, "reply focused_card");
     eq(focused.active_element.tag, "BODY", "reply active_element.tag");
     assertGuarded(pressBody(await pressQuit()).press_ms);
@@ -581,12 +604,16 @@ async function quitGuardScenarios(term) {
   await checkAsync("focus lands in the IFRAME, the card is borrowed, and the key routes guard", async () => {
     const id = openFixture(fixtures["d18.html"]);
     reset(term);
-    eq(json(dev("zoom", "0.5")).zoom, 0.5, "zoom 0.5");
+    // 0.3, not D17's 0.5: the card lands two slots right of the terminal, and
+    // with the viewport on the world origin it is inside the window only this
+    // far out, so the borrowing double-click can take the window's path
+    // (printed below).
+    eq(json(dev("zoom", "0.3")).zoom, 0.3, "zoom 0.3");
     eq(snapshot().active_element.tag, "TEXTAREA", "active_element.tag before focus");
     // Un-borrowed first, so every run really exercises the dblclick.
     unborrow(term, id);
     try {
-      const r = dev("focus", id);
+      const r = pointer("focus", id);
       if (r.code !== 0 && json(r).error === "card_hidden") {
         const snap = snapshot();
         throw new Error(
@@ -602,7 +629,7 @@ async function quitGuardScenarios(term) {
       assertGuarded(pressBody(await pressQuit()).press_ms);
     } finally {
       // Never press ⌘W while the IFRAME has focus: it hides the window (Q14).
-      dev("focus", term);
+      pointer("focus", term);
       unborrow(term, id);
     }
   });

@@ -43,7 +43,9 @@ accept a bare number or `#N`).
    ```
    Then tell the user to `cd ../tarmac-worktrees/<N>-<slug>` (you cannot persist a
    cd; mention it explicitly). Keep worktrees out of the repo so the daemon's
-   `notify` watcher and cargo/Vite don't pick up sibling copies.
+   `notify` watcher and cargo don't pick up sibling copies. A new worktree has
+   no `app/Vendor/`: `make app`, `make test` and `make run` stage it; a bare
+   `swift build`/`swift test` needs `make ghostty-vt` first.
 
 4. **Sanity check** you're on the new branch (`git status`), branched from latest
    `origin/main`, and the tree is clean. Surface the issue's acceptance criteria /

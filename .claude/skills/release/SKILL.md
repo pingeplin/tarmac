@@ -26,58 +26,28 @@ You need, as env vars for `make release`:
 
 ## Steps
 
-**Pre-flight — sync `main` before you build.** A tree behind `origin/main` ships
-stale bits while git history still looks complete. Make sure local HEAD contains
-`origin/main` first:
+1. **Bump the version — three files end up in the release commit.**
+   Hand-edit `version` to `x.y.z` in **one** file:
+   - `packaging/Casks/tarmac.rb` — version now; the `sha256` is filled in at step 3.
 
-```
-git fetch origin && git merge-base --is-ancestor origin/main HEAD \
-  || { echo "HEAD is behind origin/main — rebase before releasing" >&2; exit 1; }
-```
+   The rest is stamped for you:
+   - **`core/Cargo.toml` and `core/Cargo.lock`** — `release.sh` step 0 `sed`s
+     `VERSION` into the workspace version and refreshes the lock to match,
+     idempotently, so the daemon's `CARGO_PKG_VERSION` is the shipped version.
+     `make release` leaves both modified in the working tree — they **MUST go in
+     the release commit**, else HEAD keeps the previous version and the committed
+     tree won't match what shipped.
+   - **The bundle's `Info.plist`** — `scripts/bundle.sh` copies
+     `packaging/Info.plist` into the bundle and stamps `CFBundleShortVersionString`
+     and `CFBundleVersion` from `VERSION`. The committed plist keeps its `0.0.0`
+     placeholders; never edit it for a release.
 
-`scripts/bundle.sh` enforces the same check at build time, so a stale release
-can't ship — but sync here to catch it up front.
+   The app sends its bundle version as `hello.app_version` and replaces any daemon
+   whose `CARGO_PKG_VERSION` differs. Both come from the one `VERSION`, which is
+   what makes the daemon auto-restart-on-version-mismatch check fire across
+   upgrades — and only across upgrades.
 
-1. **Bump the version — eight files end up in the release commit.**
-   Hand-edit `version` to `x.y.z` in **three** files:
-   - `desktop/src-tauri/tauri.conf.json` — Tauri stamps this into the bundle; the
-     authoritative embedded version. (Tauri generates Info.plist from this.)
-   - `desktop/package.json` — then regenerate the lockfile:
-     `(cd desktop && npm install --package-lock-only)`.
-   - `packaging/Casks/tarmac.rb` — version now; the `sha256` is filled in at step 4.
-
-   The **two Rust crate versions are stamped by `release.sh`, idempotently** — step 0
-   `sed`s `VERSION` into `core/Cargo.toml` and `desktop/src-tauri/Cargo.toml`
-   so `CARGO_PKG_VERSION` matches the shipped version (this is what makes the daemon
-   auto-restart-on-version-mismatch check fire across upgrades). `make release`
-   leaves them modified in the working tree — they **MUST go in the release commit**,
-   else HEAD keeps the previous version, the committed tree won't match what shipped, and
-   the version check silently breaks.
-
-2. **Pre-build fixups (both are easy to forget and fail the build):**
-   - **Refresh the Cargo lockfiles — but stamp the `Cargo.toml`s first.** The release
-     build passes `--locked`, and `release.sh` step 0 bumps the Cargo.toml versions
-     without touching the locks → build dies with
-     `cannot update the lock file ... --locked was passed`. A `cargo build` only
-     rewrites a lock to whatever the toml *currently* says, so refreshing before the
-     stamp just re-writes the **old** version and the build still dies. Apply step 0's
-     own sed yourself, then build:
-     ```
-     for f in core/Cargo.toml desktop/src-tauri/Cargo.toml; do
-       sed -i '' "s/^version = \".*\"/version = \"x.y.z\"/" "$f"
-     done
-     (cd core && cargo build --offline) && (cd desktop/src-tauri && cargo build --offline)
-     ```
-     `release.sh` re-applies the same sed later, so pre-stamping is a no-op for it.
-     Verify with `grep -A1 'name = "tarmacd"' core/Cargo.lock` before `make release`.
-     Commit both locks. *(If `release.sh` ever learns to stamp the locks itself, drop
-     this.)*
-   - **Full `npm install` if a release added a frontend dep.** `--package-lock-only`
-     rewrites the lockfile but NOT `node_modules`; a missing dep (e.g.
-     `@xterm/addon-webgl`) makes the Tauri `npm run build` fail with
-     `Cannot find module …`. Run a full `(cd desktop && npm install)`.
-
-3. **Build, sign, notarize, staple.** Don't kill any daemon first — the build only
+2. **Build, sign, notarize, staple.** Don't kill any daemon first — the build only
    compiles binaries, it never binds the socket, and `pkill -f tarmacd` would take
    down the user's *installed* Tarmac. (If a dev daemon ever genuinely needs to go,
    `make kill-daemon` is socket-scoped to this worktree.)
@@ -87,53 +57,66 @@ can't ship — but sync here to catch it up front.
    Run from the **repo root** (Bash cwd persists between calls — a prior `cd` into a
    crate dir will make `make` say "No rule to make target `release`"). Notarization
    pushes this well past a 2-minute command timeout — run it **in the background**,
-   teeing to a log you can grep the sha256 out of. This builds
-   (Tauri + Rust sidecars), signs inside-out, notarizes, staples
-   `dist/Tarmac-x.y.z.dmg`, and **prints the sha256**. `release.sh` warns if
-   `$VERSION` ≠ `tauri.conf.json` version — keep them in sync.
+   teeing to a log you can grep the sha256 out of. `scripts/release.sh` calls
+   `scripts/bundle.sh` — which refuses a tree behind `origin/main`, builds the
+   Rust release binaries, stages the pinned libghostty-vt, builds the Swift
+   release build of the app, and assembles `dist/Tarmac.app` from them with the
+   app's resources flattened into `Contents/Resources` — then signs inside-out,
+   builds and notarizes `dist/Tarmac-x.y.z.dmg`, staples it, and **prints the
+   sha256**. If the log says `could not fetch origin`, the freshness check was
+   **skipped**, not passed: stop, fetch over HTTPS (see the SSH gotcha) and
+   check `git merge-base --is-ancestor origin/main HEAD` before going on.
 
-4. **Update the cask sha256** in `packaging/Casks/tarmac.rb` with the printed value,
+3. **Update the cask sha256** in `packaging/Casks/tarmac.rb` with the printed value,
    then verify locally:
    - `shasum -a 256 dist/Tarmac-x.y.z.dmg` matches.
-   - `xcrun stapler validate dist/Tarmac-x.y.z.dmg` → "The validate action worked!"
-     (the ticket staples to the **dmg**, not the app).
-   - Mount and assess the actual app — this is the real Gatekeeper verdict; the dmg
-     itself is unsigned so `spctl -t install` on it says "no usable signature":
+   - Mount and assess the actual app — this is the real Gatekeeper verdict. The
+     ticket staples to the **dmg**, not the app (`release.sh` ends on "The staple
+     and validate action worked!"), and the dmg itself is unsigned, so
+     `spctl -t install` on it says "no usable signature":
      ```
      hdiutil attach dist/Tarmac-x.y.z.dmg -nobrowse -readonly
      spctl -a -t exec -vvv /Volumes/Tarmac/Tarmac.app   # expect: accepted, Notarized Developer ID
      hdiutil detach /Volumes/Tarmac
      ```
+   - **Do not launch it to "see if it runs".** `dist/Tarmac.app` and the mounted
+     copy are release builds: unpinned they attach to your *installed* Tarmac's
+     daemon and, the version being new, SIGTERM and replace it — every terminal
+     you have open dies. If a launch check is wanted, pin a scratch channel:
+     ```
+     d=$(mktemp -d) && TARMAC_SOCKET="$d/tarmacd.sock" TARMAC_STATE="$d/state.json" \
+       dist/Tarmac.app/Contents/MacOS/tarmac-app
+     ```
+     then stop that daemon by its socket (`lsof -t "$d/tarmacd.sock"`), never by name.
 
-5. **Commit + PR the main repo** (8 files: `tauri.conf.json`, `package.json`,
-   `package-lock.json`, `packaging/Casks/tarmac.rb`, `core/Cargo.toml`,
-   `core/Cargo.lock`, `desktop/src-tauri/Cargo.toml`, `desktop/src-tauri/Cargo.lock`).
+4. **Commit + PR the main repo** (3 files: `packaging/Casks/tarmac.rb`,
+   `core/Cargo.toml`, `core/Cargo.lock`).
    `main` is protected (PR-only, 0 approvals → self-merge; no direct/force push):
    ```
    git switch -c release-x.y.z
-   git add <the 8 files>
+   git add <the 3 files>
    git commit -s -F <msg>            # subject: "release: x.y.z — <summary>"
    git push https://github.com/pingeplin/tarmac.git release-x.y.z   # HTTPS, see SSH note
    gh pr create --base main --head release-x.y.z --title '…' --body-file <f>
    gh pr merge release-x.y.z --squash --delete-branch
    ```
 
-6. **Publish the GitHub release** (sync local `main` first):
+5. **Publish the GitHub release** (sync local `main` first):
    ```
    git switch main && git pull https://github.com/pingeplin/tarmac.git main
    gh release create vx.y.z dist/Tarmac-x.y.z.dmg --target main --title vx.y.z --notes-file <f>
    ```
 
-7. **PR the cask into the tap repo** `pingeplin/homebrew-tarmac` (also protected):
+6. **PR the cask into the tap repo** `pingeplin/homebrew-tarmac` (also protected):
    clone it, copy the repo's source-of-truth cask over the tap's
    (`git show main:packaging/Casks/tarmac.rb > <tap>/Casks/tarmac.rb` — they should
    differ only in version + sha256), branch → commit → HTTPS push →
    `gh pr create --repo pingeplin/homebrew-tarmac …` → `gh pr merge … --repo pingeplin/homebrew-tarmac --squash --delete-branch`.
 
-8. **Verify end-to-end.** Download the published artifact and re-check it:
+7. **Verify end-to-end.** Download the published artifact and re-check it:
    ```
    curl -sL -o /tmp/pub.dmg https://github.com/pingeplin/tarmac/releases/download/vx.y.z/Tarmac-x.y.z.dmg
-   shasum -a 256 /tmp/pub.dmg     # must equal the step-3 sha256
+   shasum -a 256 /tmp/pub.dmg     # must equal the step-2 sha256
    curl -sL https://raw.githubusercontent.com/pingeplin/homebrew-tarmac/main/Casks/tarmac.rb | grep -E 'version|sha256'
    ```
    `brew upgrade pingeplin/tarmac/tarmac` now serves the new version.
@@ -141,8 +124,9 @@ can't ship — but sync here to catch it up front.
 ## Gotchas
 
 - **An Xcode update resets its license acceptance**, and then every Rust link fails
-  at step 2's `cargo build`: `linking with cc failed: exit status: 69` / "You have
-  not agreed to the Xcode license agreements". The fix is
+  at the release's `cargo build` (and `swift build` with it): `linking with cc failed:
+  exit status: 69` / "You have not agreed to the Xcode license agreements". The
+  fix is
   `sudo xcodebuild -license accept`, run by the user in their **own** terminal
   (Terminal.app or a Tarmac terminal). The `!` prompt has no TTY, so sudo there
   fails with "a terminal is required to read the password".
@@ -162,4 +146,17 @@ can't ship — but sync here to catch it up front.
   `OPEN`, retry the merge yourself once before reporting a block.
 - Squash-merge yields the repo's `<title> (#N)` convention. Commit subject is
   `release: x.y.z — <summary>` (bare `release:` type, per the repo's history).
-- The Rust crate versions track the release version (step 1); don't reset them.
+- The Rust workspace version tracks the release version (step 1); don't reset it.
+- **A pre-release version works as a plain string.** `VERSION=1.14.0-beta` went
+  through Cargo, the app↔daemon handshake, signing and notarization (2026-10-02,
+  "Ready for distribution", no issues) — although Apple documents both bundle
+  version keys as digits and periods only. Nothing in the repo parses the version.
+- **A 403 "required agreement is missing or has expired" from `notarytool`** means
+  the account holder has an agreement to accept at developer.apple.com. After
+  accepting, `notarytool history` recovered within minutes and `submit` some
+  minutes after that; retry the submit alone rather than the whole build:
+  `xcrun notarytool submit dist/Tarmac-x.y.z.dmg --keychain-profile … --wait && xcrun stapler staple dist/Tarmac-x.y.z.dmg`.
+- **The libghostty-vt pin is not a release-time decision.** `GHOSTTY_COMMIT` and
+  `GHOSTTY_VT_SHA256` in `scripts/fetch-ghostty-vt.sh` move together, in their own
+  change with `make test` green — its C API is unstable, so never bump it while
+  cutting a release.

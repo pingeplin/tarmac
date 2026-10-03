@@ -88,11 +88,17 @@ By making a contribution to this project, I certify that:
 
 ## Development setup
 
-Build the project with:
+Tarmac builds on macOS 26+ with a Rust toolchain and a Swift 6.2+ toolchain
+(Xcode); `make test` and `make dco-check` also need Node.js (plain `node`, no
+packages). Build the daemon, the CLI and the app with:
 
 ```sh
-make
+make core app
 ```
+
+`make app` first stages the pinned libghostty-vt XCFramework into the gitignored
+`app/Vendor/` (a one-time download; `make ghostty-vt` does only that). Until it
+is there the Swift package does not resolve, in a terminal or in an editor.
 
 Please make sure `make test` succeeds before opening a pull request. Note that the
 editor/IDE may show stale SourceKit diagnostics — `make` is the source of truth.
@@ -103,12 +109,11 @@ editor/IDE may show stale SourceKit diagnostics — `make` is the source of trut
 2. Make your change, keeping it focused and matching the surrounding code style.
 3. **Work test-first.** Tarmac requires TDD: write the failing test, watch it
    fail on the unmodified tree, then make it pass. The house style, the placement
-   table (which layer a given test belongs in), the rule for the React/Tauri
-   shell — which is not unit-tested by design — and the closed list of exceptions
-   are all in [`docs/coding-style.md`](docs/coding-style.md). Ensure all suites
-   pass (`make test`). On a fresh checkout, run `make sidecars` and, in
-   `desktop/`, `npm ci && npm run build` first — `make test` does not stage them
-   for you.
+   table (which layer a given test belongs in), the rule for the AppKit shell —
+   which is not unit-tested by design — and the closed list of exceptions are
+   all in [`docs/coding-style.md`](docs/coding-style.md). Ensure all suites pass
+   (`make test` — it stages libghostty-vt itself; only a bare `swift build` /
+   `swift test` or an editor needs `make ghostty-vt` first).
 4. Commit with a clear message, a DCO sign-off (`git commit -s`), and the
    `Co-Authored-By:` trailer if someone or something co-wrote the change. Verify
    with `make dco-check`.

@@ -58,11 +58,8 @@ Three things `dev key` cannot do, by design rather than by omission:
     mouse reporting on (Claude Code, vim) also receives a button-press report
     when a card is focused.
 
-Two combos leave the cockpit somewhere else, which is worth knowing before a
+One combo leaves the cockpit somewhere else, which is worth knowing before a
 scenario blames the next verb:
-  - `alt+tab` cycles the prime terminal. The app catches it at the window capture
-    phase, so it never reaches the PTY AND IT MOVES FOCUS — every later verb in
-    the same scenario then fails not_focused.
   - `contextmenu` right-clicks the last written cell to make a selection. xterm
     moves its helper textarea to 20x20 px under the cursor and refocuses it, and
     leaves it there; that is what makes the selection real, and a following

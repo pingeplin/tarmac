@@ -44,8 +44,12 @@ stays clean — this is the parallel-agent workflow Tarmac is built for.
 
 - **Location:** sibling to the repo, **outside** the working tree:
   `../tarmac-worktrees/34-doc-card-close/`. Keeping them outside avoids the
-  daemon's `notify` watcher and cargo/Vite discovering sibling copies.
+  daemon's `notify` watcher and cargo discovering sibling copies.
 - **Branch name == dir slug.** Created together.
+- **A new worktree has no `app/Vendor/`.** It is gitignored; `make app` (or
+  `make ghostty-vt` alone) stages the pinned libghostty-vt XCFramework before
+  the Swift package can build. `make run` in a worktree pins its own socket and
+  state under that worktree's `.dev/`, so worktrees never share a daemon.
 - **Lifecycle:** `git worktree add` on start; `git worktree remove` after the PR
   merges. Run `git worktree prune` if a dir was deleted manually.
 - Worktrees are optional for small fixes — a plain branch is fine. Reach for a

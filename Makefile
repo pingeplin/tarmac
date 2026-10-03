@@ -1,37 +1,25 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: core app app-deps sidecars test docs-check dco-check run qa qa-quit kill-daemon bundle release kit
+.PHONY: core ghostty-vt app test docs-check dco-check run qa qa-quit kill-daemon bundle release
+
+# The dev channel: this worktree's own daemon socket, state and driver socket.
+# Everything that launches or drives a dev build goes through these three.
+DEV_SOCKET := $(ROOT)/.dev/tarmacd.sock
+DEV_ENV := TARMAC_SOCKET="$(DEV_SOCKET)" \
+	TARMAC_STATE="$(ROOT)/.dev/state.json" \
+	TARMAC_DEV_SOCKET="$(ROOT)/.dev/tarmac-dev.sock"
 
 core:
 	cd $(ROOT)/core && cargo build
 
-# Stage the debug daemon + CLI as Tauri externalBin sidecars. tauri.conf.json
-# declares binaries/{tarmacd,tarmac}, which Tauri resolves to the arch-suffixed
-# binaries/<name>-<triple> even in `tauri dev` — so they must exist before `run`,
-# not just at bundle time (scripts/bundle.sh stages the *release* builds).
-sidecars: core
-	triple=$$(rustc -vV | sed -n 's/host: //p'); \
-	dir="$(ROOT)/desktop/src-tauri/binaries"; \
-	mkdir -p "$$dir"; \
-	cp "$(ROOT)/core/target/debug/tarmacd" "$$dir/tarmacd-$$triple"; \
-	cp "$(ROOT)/core/target/debug/tarmac"  "$$dir/tarmac-$$triple"
+# Stage the pinned libghostty-vt XCFramework the terminal cards link
+# (app/Vendor/, gitignored). A no-op once the pinned commit is staged.
+ghostty-vt:
+	$(ROOT)/scripts/fetch-ghostty-vt.sh
 
-# Install the app (Tauri 2 + Vite + React) JS deps. Separate so build/test
-# targets stay fast once node_modules exists.
-app-deps:
-	cd $(ROOT)/desktop && npm install
-
-# Build the app: frontend bundle + the Rust backend (which path-deps the
-# untouched tarmac-protocol crate). Does NOT touch core/.
-app: app-deps
-	cd $(ROOT)/desktop && npm run build
-	cargo build --manifest-path $(ROOT)/desktop/src-tauri/Cargo.toml
-
-# Builds the standalone design-sync kit (desktop/dist-kit/) via esbuild. NOT a
-# dependency of `app`/`core` — invoke directly when refreshing the kit for
-# /design-sync. See docs/designs/2607.0001_tarmac_ui_kit_design_sync_export.md.
-kit: app-deps
-	cd $(ROOT)/desktop && npm run build:kit
+# Build the app (the SwiftPM package in app/). Does NOT touch core/.
+app: ghostty-vt
+	cd $(ROOT)/app && swift build
 
 # Deterministic doc tripwires: status banners, link rot, ACTIVE docs citing
 # source paths that don't exist, and wire messages missing from the docs. No
@@ -47,33 +35,34 @@ BASE ?= origin/main
 dco-check:
 	node $(ROOT)/scripts/dco-check.mjs --base $(BASE)
 
-test: docs-check
+test: docs-check ghostty-vt
 	cd $(ROOT)/core && cargo test
-	cd $(ROOT)/desktop && npm test
-	cargo test --manifest-path $(ROOT)/desktop/src-tauri/Cargo.toml
+	cd $(ROOT)/app && swift test
 
-# `make run` launches the Tauri dev app (Vite HMR + Rust backend). TARMAC_DAEMON
-# lets it auto-spawn the debug daemon; the PATH prefix flows through the daemon
-# into spawned ptys so `tarmac open <file>` works inside xterm terminals.
-# TARMAC_SOCKET/TARMAC_STATE pin a stable per-worktree dev path so simultaneous
-# `make run`s from different worktrees don't share a socket or state file.
-# TARMAC_DEV_SOCKET pins the QA driver's own socket (issue #166) for the same
-# reason — unpinned, `make qa` from one worktree would drive another's window.
-# VITE_TARMAC_DEV_LABEL suffixes the window title with ` · <worktree>` for the
-# same reason: the dev binary is not a .app, so Launch Services reports no bundle
-# id for it and the title is the only tell separating one dev app from another
-# (and from the installed one). The VITE_ prefix is load-bearing — it is what
-# makes Vite bake the value into the bundle, so the title needs no IPC hop.
-# `bundle`/`release` never set it, so a shipped Tarmac's title is unchanged.
-run: core app-deps sidecars
-	cd $(ROOT)/desktop && \
-	TARMAC_SOCKET="$(ROOT)/.dev/tarmacd.sock" \
-	TARMAC_STATE="$(ROOT)/.dev/state.json" \
-	TARMAC_DEV_SOCKET="$(ROOT)/.dev/tarmac-dev.sock" \
-	VITE_TARMAC_DEV_LABEL="$(notdir $(ROOT))" \
+# `make run` launches the dev app against this worktree's own daemon.
+# TARMAC_DAEMON lets it auto-spawn the debug daemon; the PATH prefix flows
+# through the daemon into spawned ptys so `tarmac open <file>` works inside its
+# terminals. TARMAC_SOCKET/TARMAC_STATE pin a stable per-worktree dev path so
+# simultaneous `make run`s from different worktrees don't share a socket or
+# state file, and none of them can reach the installed Tarmac. TARMAC_DEV_SOCKET
+# pins the QA driver's own socket (issue #166) for the same reason — unpinned,
+# `make qa` from one worktree would drive another's window. TARMAC_DEV_LABEL
+# suffixes the window title with ` · <worktree>`: the dev binary is not a .app,
+# so Launch Services reports no bundle id for it and the title is the only tell
+# separating one dev app from another (and from the installed one).
+# TARMAC_APP_VERSION stands in for the bundle's version: an unbundled binary has
+# no Info.plist, and the app must name the same version as the daemon it just
+# built or it would replace that daemon as stale. `bundle`/`release` set none of
+# these, so a shipped Tarmac is unchanged.
+run: core app
+	mkdir -p "$(ROOT)/.dev"
+	cd $(ROOT)/app && \
+	$(DEV_ENV) \
+	TARMAC_DEV_LABEL="$(notdir $(ROOT))" \
+	TARMAC_APP_VERSION="$$(sed -n 's/^version = "\(.*\)"/\1/p' $(ROOT)/core/Cargo.toml | head -1)" \
 	TARMAC_DAEMON="$(ROOT)/core/target/debug/tarmacd" \
 	PATH="$(ROOT)/core/target/debug:$$PATH" \
-	npm run tauri dev
+	"$$(swift build --show-bin-path)/TarmacApp"
 
 # The QA driver's scenario suite (spec 2609.0015). NOT part of `make test` and
 # not on CI: every scenario drives a LIVE window, so it needs `make run` up in
@@ -81,18 +70,14 @@ run: core app-deps sidecars
 # reach this worktree's app; TARMAC_SOCKET is pinned too, so the doc-card
 # scenarios can `tarmac open` their fixtures into that same app (#183).
 qa: core
-	TARMAC_DEV_SOCKET="$(ROOT)/.dev/tarmac-dev.sock" \
-	TARMAC_SOCKET="$(ROOT)/.dev/tarmacd.sock" \
-	TARMAC_STATE="$(ROOT)/.dev/state.json" \
+	$(DEV_ENV) \
 	node $(ROOT)/scripts/qa/smoke.mjs
 
 # The ⌘Q guard's QUITTING scenarios (spec 2609.0018): one CASE per run, and
 # each ends the app, so `make run` again between cases.
 CASE ?= hold
 qa-quit: core
-	TARMAC_DEV_SOCKET="$(ROOT)/.dev/tarmac-dev.sock" \
-	TARMAC_SOCKET="$(ROOT)/.dev/tarmacd.sock" \
-	TARMAC_STATE="$(ROOT)/.dev/state.json" \
+	$(DEV_ENV) \
 	CASE="$(CASE)" \
 	node $(ROOT)/scripts/qa/quit.mjs
 
@@ -103,7 +88,7 @@ qa-quit: core
 # reach `kill` as separate arguments. Quoting it makes the target fail outright
 # in exactly the case it exists for.
 kill-daemon:
-	sock="$(ROOT)/.dev/tarmacd.sock"; \
+	sock="$(DEV_SOCKET)"; \
 	pids=$$(lsof -t "$$sock" 2>/dev/null | tr '\n' ' '); \
 	if [ -n "$$pids" ]; then \
 		echo "killing tarmacd pid(s) $${pids% } on $$sock"; \
@@ -112,8 +97,9 @@ kill-daemon:
 		echo "no tarmacd on $$sock"; \
 	fi
 
-# Assemble an unsigned dist/Tarmac.app (arm64). No Apple cert needed; launches
-# locally so you can validate bundle-relative daemon/CLI/resource resolution.
+# Assemble an unsigned dist/Tarmac.app (arm64). No Apple cert needed. To try
+# it, run Contents/MacOS/tarmac-app with TARMAC_SOCKET and TARMAC_STATE set to
+# scratch paths: launched bare it attaches to the installed Tarmac's daemon.
 bundle:
 	$(ROOT)/scripts/bundle.sh
 

@@ -1,0 +1,82 @@
+import GhosttyVt
+import XCTest
+@testable import TarmacTerm
+
+final class KeyTranslationTests: XCTestCase {
+    func testVirtualKeyCodesMapToPhysicalKeys() {
+        XCTAssertEqual(KeyTranslation.key(forKeyCode: 0x00), GHOSTTY_KEY_A)
+        XCTAssertEqual(KeyTranslation.key(forKeyCode: 0x0b), GHOSTTY_KEY_B)
+        XCTAssertEqual(KeyTranslation.key(forKeyCode: 0x12), GHOSTTY_KEY_DIGIT_1)
+        XCTAssertEqual(KeyTranslation.key(forKeyCode: 0x24), GHOSTTY_KEY_ENTER)
+        XCTAssertEqual(KeyTranslation.key(forKeyCode: 0x30), GHOSTTY_KEY_TAB)
+        XCTAssertEqual(KeyTranslation.key(forKeyCode: 0x31), GHOSTTY_KEY_SPACE)
+        XCTAssertEqual(KeyTranslation.key(forKeyCode: 0x33), GHOSTTY_KEY_BACKSPACE)
+        XCTAssertEqual(KeyTranslation.key(forKeyCode: 0x35), GHOSTTY_KEY_ESCAPE)
+        XCTAssertEqual(KeyTranslation.key(forKeyCode: 0x75), GHOSTTY_KEY_DELETE)
+        XCTAssertEqual(KeyTranslation.key(forKeyCode: 0x7b), GHOSTTY_KEY_ARROW_LEFT)
+        XCTAssertEqual(KeyTranslation.key(forKeyCode: 0x7c), GHOSTTY_KEY_ARROW_RIGHT)
+        XCTAssertEqual(KeyTranslation.key(forKeyCode: 0x7d), GHOSTTY_KEY_ARROW_DOWN)
+        XCTAssertEqual(KeyTranslation.key(forKeyCode: 0x7e), GHOSTTY_KEY_ARROW_UP)
+        XCTAssertEqual(KeyTranslation.key(forKeyCode: 0x7a), GHOSTTY_KEY_F1)
+        XCTAssertEqual(KeyTranslation.key(forKeyCode: 0x4c), GHOSTTY_KEY_NUMPAD_ENTER)
+        XCTAssertEqual(KeyTranslation.key(forKeyCode: 0xff), GHOSTTY_KEY_UNIDENTIFIED)
+    }
+
+    func testModifierFlagsBecomeModsWithSides() {
+        let leftShift: UInt = 1 << 17 | 0x02
+        let rightShift: UInt = 1 << 17 | 0x04
+        let rightOption: UInt = 1 << 19 | 0x40
+        XCTAssertEqual(KeyTranslation.mods(rawFlags: leftShift), [.shift])
+        XCTAssertEqual(KeyTranslation.mods(rawFlags: rightShift), [.shift, .rightShift])
+        XCTAssertEqual(KeyTranslation.mods(rawFlags: rightOption), [.option, .rightOption])
+        XCTAssertEqual(KeyTranslation.mods(rawFlags: 1 << 18 | 1 << 20 | 1 << 16), [.control, .command, .capsLock])
+    }
+
+    func testControlCharactersAndFunctionKeyScalarsAreNotText() {
+        XCTAssertNil(KeyTranslation.text("\u{03}"))
+        XCTAssertNil(KeyTranslation.text("\u{7f}"))
+        XCTAssertNil(KeyTranslation.text("\u{f700}"))
+        XCTAssertNil(KeyTranslation.text(""))
+        XCTAssertNil(KeyTranslation.text(nil))
+        XCTAssertEqual(KeyTranslation.text("a"), "a")
+        XCTAssertEqual(KeyTranslation.text("世"), "世")
+    }
+
+    func testTextConsumesShiftAndOptionOnlyWhenItProducedTheCharacter() {
+        XCTAssertEqual(KeyTranslation.consumedMods([.shift, .control], text: "A", optionAsAlt: true), [.shift])
+        XCTAssertEqual(KeyTranslation.consumedMods([.option], text: "∫", optionAsAlt: false), [.option])
+        XCTAssertEqual(KeyTranslation.consumedMods([.option], text: "b", optionAsAlt: true), [])
+        XCTAssertEqual(KeyTranslation.consumedMods([.shift], text: nil, optionAsAlt: true), [])
+    }
+
+    /// An input method sees a key only when it could be composing with it.
+    /// A control chord is an editing command to the text system, and ⌥ as Alt
+    /// with its ⌥ stripped looks like a plain letter, which a CJK input method
+    /// would start composing from.
+    func testChordsThatAreNotTextSkipTheInputMethodUnlessItIsComposing() {
+        XCTAssertTrue(KeyTranslation.skipsTextInput(mods: .control, optionAsAlt: true, composing: false))
+        XCTAssertTrue(KeyTranslation.skipsTextInput(mods: .option, optionAsAlt: true, composing: false))
+        XCTAssertTrue(KeyTranslation.skipsTextInput(mods: [.option, .shift], optionAsAlt: true, composing: false))
+        XCTAssertFalse(KeyTranslation.skipsTextInput(mods: .option, optionAsAlt: false, composing: false))
+        XCTAssertFalse(KeyTranslation.skipsTextInput(mods: [], optionAsAlt: true, composing: false))
+        XCTAssertFalse(KeyTranslation.skipsTextInput(mods: .shift, optionAsAlt: true, composing: false))
+        XCTAssertFalse(KeyTranslation.skipsTextInput(mods: .control, optionAsAlt: true, composing: true))
+        XCTAssertFalse(KeyTranslation.skipsTextInput(mods: .option, optionAsAlt: true, composing: true))
+    }
+
+    func testAKeysLatinCharacterIsItsOwnLetter() {
+        XCTAssertEqual(KeyTranslation.latinCharacters(keyCode: 0x0b, shift: false)?.lowercased(), "b")
+        XCTAssertEqual(KeyTranslation.latinCharacters(keyCode: 0x0b, shift: true), "B")
+    }
+
+    /// A key's code point is its own letter when its layout types ASCII, and
+    /// the Latin layout's letter when it types anything else.
+    func testAKeysCodePointComesFromTheLatinLayoutWhenItsOwnIsNotASCII() {
+        XCTAssertEqual(KeyTranslation.unshiftedCodepoint(layout: "b", latin: "x"), 0x62)
+        XCTAssertEqual(KeyTranslation.unshiftedCodepoint(layout: "ㄖ", latin: "b"), 0x62)
+        XCTAssertEqual(KeyTranslation.unshiftedCodepoint(layout: "и", latin: "b"), 0x62)
+        XCTAssertEqual(KeyTranslation.unshiftedCodepoint(layout: "ㄖ", latin: nil), 0x3116)
+        XCTAssertEqual(KeyTranslation.unshiftedCodepoint(layout: nil, latin: "b"), 0x62)
+        XCTAssertEqual(KeyTranslation.unshiftedCodepoint(layout: nil, latin: nil), 0)
+    }
+}

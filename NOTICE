@@ -8,3 +8,189 @@ this software except in compliance with the License. You may obtain a copy of
 the License in the LICENSE file in this repository, or at:
 
     http://www.apache.org/licenses/LICENSE-2.0
+
+==============================================================================
+Third-party components
+==============================================================================
+
+Tarmac.app is distributed with the components below. Each stays under its own
+licence. The licence texts are in THIRD-PARTY-LICENSES; the Apache License 2.0
+is in LICENSE.
+
+
+Fonts
+-----
+
+  JetBrains Mono 2.304, patched by Nerd Fonts 3.4.0
+  (JetBrainsMonoNerdFontMono-Regular.ttf, JetBrainsMonoNerdFontMono-Bold.ttf)
+
+    Copyright 2020 The JetBrains Mono Project Authors
+    (https://github.com/JetBrains/JetBrainsMono)
+    SIL Open Font License 1.1
+
+    Nerd Fonts (https://github.com/ryanoasis/nerd-fonts)
+    Copyright (c) 2014, Ryan L McIntyre (https://ryanlmcintyre.com)
+    SIL Open Font License 1.1
+
+    The patched font carries glyphs from these icon sets. The licences are
+    those Nerd Fonts records (license-audit.md at v3.4.0) and each set's own
+    licence file:
+
+      Codicons                 CC BY 4.0     https://github.com/microsoft/vscode-codicons
+      Devicons                 MIT           https://github.com/devicons/devicon
+        Copyright (c) 2015 konpa
+      Font Awesome             CC BY 4.0     https://github.com/FortAwesome/Font-Awesome
+        Copyright (c) 2022 Fonticons, Inc. (https://fontawesome.com)
+        Its own licence puts the icons under CC BY 4.0 and the font files under
+        the SIL OFL 1.1.
+      Font Awesome Extension   MIT           https://github.com/AndreLZGava/font-awesome-extension
+        Copyright (c) 2017 André Luiz Gava
+      Font Logos               Unlicense     https://github.com/Lukas-W/font-logos
+      IEC Power Symbols        MIT           https://github.com/jloughry/Unicode
+        Copyright (c) 2013 Joe Loughry
+      Material Design Icons    Apache 2.0    https://github.com/Templarian/MaterialDesign
+      Seti-UI (modified)       MIT           https://github.com/jesseweed/seti-ui
+        Copyright (c) 2014 Jesse Weed
+      Octicons                 MIT           https://github.com/primer/octicons
+        Copyright (c) 2023 GitHub Inc.
+      Pomicons                 SIL OFL 1.1   https://github.com/gabrielelana/pomicons
+        Copyright (c) 2021, Gabriele Lana gabriele.lana@gmail.com
+        with Reserved Font Name Pomicons.
+      Powerline Extra Symbols  MIT           https://github.com/ryanoasis/powerline-extra-symbols
+        Copyright (c) 2016 Ryan L McIntyre
+      Powerline Symbols        MIT           https://github.com/powerline/powerline
+        Copyright 2013 Kim Silkebækken and other contributors
+      Weather Icons            SIL OFL 1.1   https://github.com/erikflowers/weather-icons
+        By Erik Flowers; the licence file Nerd Fonts ships for it names no dates.
+
+  IBM Plex Mono 2.3, Latin subset, regular and bold
+  (ibm-plex-mono-regular.woff2, ibm-plex-mono-bold.woff2, as packaged by
+  @fontsource/ibm-plex-mono 5.2.7)
+
+    Copyright © 2017 IBM Corp. with Reserved Font Name "Plex"
+    SIL Open Font License 1.1
+
+
+Markdown rendering
+------------------
+
+  marked 18.0.5 (marked.umd.js)
+
+    Copyright (c) 2018+, MarkedJS (https://github.com/markedjs/)
+    Copyright (c) 2011-2018, Christopher Jeffrey (https://github.com/chjj/)
+    MIT License
+
+    Its licence also covers Markdown:
+    Copyright © 2004, John Gruber (http://daringfireball.net/)
+    under the terms reproduced in THIRD-PARTY-LICENSES.
+
+
+Terminal emulation (linked into tarmac-app)
+-------------------------------------------
+
+  libghostty-vt, prebuilt by Ghostty (https://github.com/ghostty-org/ghostty)
+  at commit 33da6848d63b3bba2b4f31ab1531d618f2795192
+
+    Copyright (c) 2024 Mitchell Hashimoto, Ghostty contributors
+    MIT License
+
+    Ghostty's build at that commit puts these into the library:
+
+    simdutf 9.0.0
+      Copyright 2021 The simdutf authors
+      Apache License 2.0 or MIT License; taken under the Apache License 2.0
+
+    Highway 1.2.0 (commit 66486a10623fa0d72fe91260f96c892e41aceb06)
+      Copyright (c) The Highway Project Authors
+      Apache License 2.0 or BSD 3-Clause; taken under the Apache License 2.0
+
+    Wuffs 0.4.0-alpha.10+3966.20260623
+      Copyright 2017 The Wuffs Authors
+      Apache License 2.0 or MIT License; taken under the Apache License 2.0
+
+    uucode 0.2.0
+      Copyright (c) 2026 Jacob Sandlund
+      MIT License
+      Its licence names two more works:
+      a UTF-8 decoder, Copyright (c) 2008-2009 Bjoern Hoehrmann
+      <bjoern@hoehrmann.de>, MIT License; and Unicode data,
+      Copyright © 1991-2025 Unicode, Inc., Unicode License V3
+
+    The Zig standard library and compiler runtime (Zig 0.16)
+      Copyright (c) Zig contributors
+      MIT License
+
+    X11 colour names (rgb.txt, https://gitlab.freedesktop.org/xorg/app/rgb)
+      Copyright 1985, 1989, 1998  The Open Group
+      Copyright (c) 1994, 2008, Oracle and/or its affiliates.
+      under the terms reproduced in THIRD-PARTY-LICENSES.
+
+
+Rust crates (linked into tarmacd and tarmac)
+--------------------------------------------
+
+  At the versions locked in core/Cargo.lock.
+
+  Offered under the MIT License or the Apache License 2.0 (serial2: BSD
+  2-Clause or Apache License 2.0); taken under the Apache License 2.0:
+
+    anyhow, bitflags, cfg-if, downcast-rs, errno, file-id, futures-core,
+    futures-sink, itoa, lazy_static, libc, log, notify-debouncer-full,
+    notify-types, num-traits, once_cell, pin-project-lite, regex-automata,
+    regex-syntax, serde, serde_bytes, serde_core, serde_json, serial2,
+    shell-words, signal-hook-registry, smallvec, socket2, thiserror,
+    thread_local
+
+  Offered under the Unlicense or the MIT License; taken under the Unlicense:
+
+    memchr, same-file, walkdir
+
+  CC0 1.0:
+
+    notify
+
+  MIT License:
+
+    bytes
+      Copyright (c) 2018 Carl Lerche
+    filedescriptor
+      Copyright (c) 2018 Wez Furlong
+    fsevent-sys
+      Copyright (c) 2015 Pierre Baillet
+    matchers
+      Copyright (c) 2019 Eliza Weisman
+    mio
+      Copyright (c) 2014 Carl Lerche and other MIO contributors
+    nix
+      Copyright (c) 2015 Carl Lerche + nix-rust Authors
+    nu-ansi-term
+      Copyright (c) 2014 Benjamin Sago
+      Copyright (c) 2021-2022 The Nushell Project Developers
+    portable-pty
+      Copyright (c) 2018 Wez Furlong
+    rmp
+      Copyright (c) 2017 Evgeny Safronov
+    rmp-serde
+      Copyright (c) 2017 Evgeny Safronov
+    sharded-slab
+      Copyright (c) 2019 Eliza Weisman
+    tokio
+      Copyright (c) Tokio Contributors
+    tokio-util
+      Copyright (c) Tokio Contributors
+    tracing
+      Copyright (c) 2019 Tokio Contributors
+    tracing-core
+      Copyright (c) 2019 Tokio Contributors
+    tracing-log
+      Copyright (c) 2019 Tokio Contributors
+    tracing-subscriber
+      Copyright (c) 2019 Tokio Contributors
+    zmij
+      David Tolnay (its licence file carries no copyright line); a port of
+      https://github.com/vitaut/zmij, Copyright (c) 2025 Victor Zverovich
+
+  The Rust standard library
+    Copyright (c) The Rust Project Contributors
+    MIT License or Apache License 2.0; taken under the Apache License 2.0
+    It carries Unicode data: 1991-2024 Unicode, Inc, Unicode License V3
