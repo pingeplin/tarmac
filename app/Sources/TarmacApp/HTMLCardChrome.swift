@@ -1,10 +1,10 @@
 import AppKit
 import TarmacKit
 
-/// The shield over an HTML card's document. It takes every press and wheel
-/// meant for the document, so the card is looked at and not touched: a press
-/// only selects the card, and the document sees nothing until a double-click
-/// borrows it.
+/// The shield over an HTML card's document. It takes every press meant for
+/// the document, so the card is looked at and not touched: a press only
+/// selects the card, until a double-click borrows it. A wheel is the one
+/// thing it hands on: reading is not the touch it is there to stop.
 @MainActor
 final class CardShieldView: NSView {
     var onBorrow: (() -> Void)?

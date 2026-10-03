@@ -96,7 +96,11 @@ core/target/debug/tarmac dev snapshot | jq .
 - `<card>` is a terminal's **term id** or a doc's **absolute path** — the bare
   wire ids.
 - `snapshot` prints the active board's live state: viewport, every card's
-  `board_rect` and measured `screen_rect`, `focused_card` (the *selected* card),
+  `board_rect` and measured `screen_rect`, `content_origin` (where the content
+  coordinates `screen_rect` is in start on the display, in global top-left
+  points, or `null` with no window — `content_origin` plus a point of a
+  `screen_rect` is where a tool outside the app finds it, as
+  `scripts/qa/wheel-gesture.swift` does), `focused_card` (the *selected* card),
   `active_element` (keyboard focus), per-terminal
   `cols`/`rows`/`proc`/`selection`/`scrollback_tail`, per-doc-card `borrowed`
   (the HTML card whose shield is lifted), and `quit_guard` — the ⌘Q guard's hold

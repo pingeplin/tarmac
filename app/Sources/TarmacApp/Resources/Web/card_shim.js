@@ -278,13 +278,6 @@
       if (e.source !== window.parent) return;
       var d = e.data;
       if (!d) return;
-      // The shield swallows wheel before it can reach this document, so the host
-      // relays the delta instead — reading is not the "touch" the shield exists
-      // to block. Deltas arrive already converted to this document's own units.
-      if (d.tarmac === "scroll") {
-        window.scrollBy(d.dx, d.dy);
-        return;
-      }
       // A state, not a toggle — the host re-asserts it on every ready, and must
       // not have to know whether that is redundant. Anything but a real boolean
       // leaves the gate exactly where it was.

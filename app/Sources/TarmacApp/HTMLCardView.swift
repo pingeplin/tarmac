@@ -9,8 +9,8 @@ import WebKit
 /// the card's content policy. The shim talks to its parent, the host page,
 /// which only carries messages; what they mean is `HTMLCardSession`'s.
 ///
-/// The document is shielded until it is borrowed: a press selects the card
-/// and a wheel is relayed, and nothing else reaches it.
+/// The document is shielded until it is borrowed: a press selects the card,
+/// a wheel is handed on to the web view, and nothing else reaches it.
 @MainActor
 final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
     /// A double-click on the shield.
@@ -21,7 +21,7 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
     var onConsoleChanged: ((Int) -> Void)?
 
     private let path: String
-    private let webView: WKWebView
+    private let webView: HTMLCardWebView
     private let host: ScreenSpaceHost
     private let messages = ScriptMessageRelay()
     let shield = CardShieldView()
@@ -29,7 +29,6 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
 
     private var session = HTMLCardSession()
     private var consoleUpdate = CoalescedUpdate()
-    private var wheel = CardZoom.ScrollRelay()
     private var pageLoaded = false
     private var loadingPage = false
     /// The document's address; it changes, and the document reloads, only when
@@ -45,7 +44,7 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
 
     init(path: String) {
         self.path = path
-        webView = CardWebView.make(scripts: Self.scripts, served: .cards)
+        webView = CardWebView.make(scripts: Self.scripts, served: .cards, kind: HTMLCardWebView.self)
         host = ScreenSpaceHost(content: webView)
         super.init(frame: .zero)
         wantsLayer = true
@@ -58,7 +57,8 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
         messages.onMessage = { [weak self] message in self?.received(message) }
         host.onResize = { [weak self] _ in self?.layoutDocument() }
         shield.onBorrow = { [weak self] in self?.onBorrow?() }
-        shield.onScroll = { [weak self] event in self?.relayWheel(event) }
+        shield.onScroll = { [weak self] event in self?.webView.scrollWheel(with: event) }
+        webView.wheelScale = { [weak self] in self?.wheelScale ?? 1 }
         console.isHidden = true
 
         addSubview(host)
@@ -168,7 +168,7 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
     private func loadDocument() {
         guard pageLoaded, let source else { return }
         session.reloaded()
-        wheel = CardZoom.ScrollRelay()
+        webView.resetWheel()
         layoutDocument()
         webView.callAsyncJavaScript(
             "tarmacCard.load(source)", arguments: ["source": source],
@@ -205,18 +205,11 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
         }
     }
 
-    /// A wheel over the shield scrolls the document: reading is not the touch
-    /// the shield is there to stop.
-    private func relayWheel(_ event: NSEvent) {
-        let magnified = session.mode == .magnify
-        func delta(_ scrolling: CGFloat) -> Double {
-            Double(CardZoom.scrollDelta(
-                CardZoom.wheelDelta(scrollingDelta: scrolling, precise: event.hasPreciseScrollingDeltas),
-                zoom: host.zoom, magnify: magnified
-            ))
-        }
-        guard let step = wheel.step(dx: delta(event.scrollingDeltaX), dy: delta(event.scrollingDeltaY)) else { return }
-        post(.scroll(dx: step.dx, dy: step.dy))
+    /// The zoom is the live one: while it settles, the card's stretch carries
+    /// the difference, so a document unit is `zoom / magnifyK` of a point
+    /// throughout.
+    private var wheelScale: CGFloat {
+        CardZoom.wheelScale(zoom: host.zoom, magnify: session.mode == .magnify)
     }
 
     // MARK: - WKNavigationDelegate

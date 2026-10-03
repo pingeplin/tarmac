@@ -13,9 +13,11 @@ enum CardWebView {
     /// Nothing a card loads is kept: no cookies, cache or storage outlive the app.
     private static let dataStore = WKWebsiteDataStore.nonPersistent()
 
-    /// A web view that is served `tarmac-card://` by `handler` and runs
-    /// `scripts`, in order, in the app's world once its page has loaded.
-    static func make(scripts: [String], served handler: CardSchemeHandler) -> WKWebView {
+    /// A web view of class `kind` that is served `tarmac-card://` by `handler`
+    /// and runs `scripts`, in order, in the app's world once its page has loaded.
+    static func make<View: WKWebView>(
+        scripts: [String], served handler: CardSchemeHandler, kind: View.Type = WKWebView.self
+    ) -> View {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = dataStore
         configuration.setURLSchemeHandler(handler, forURLScheme: CardSchemeHandler.scheme)
@@ -25,7 +27,7 @@ enum CardWebView {
                 source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: world
             ))
         }
-        return WKWebView(frame: .zero, configuration: configuration)
+        return kind.init(frame: .zero, configuration: configuration)
     }
 }
 

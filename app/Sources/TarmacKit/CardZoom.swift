@@ -6,8 +6,9 @@ public enum BoardZoom {
     public static let max: CGFloat = 3.0
 }
 
-/// How an HTML card's document is sized against the board zoom, and how a
-/// wheel over its shield reaches it (specs 2607.0004, 2607.0006, 2609.0013).
+/// How an HTML card's document is sized against the board zoom, and what a
+/// wheel's travel is in its units (specs 2607.0004, 2607.0006, 2609.0013,
+/// 2610.0002).
 ///
 /// A foreign document cannot be laid out ahead of time by the host, so it has
 /// two modes. Magnify lays it out once at root zoom `magnifyK` in a box
@@ -28,17 +29,10 @@ public enum CardZoom {
         CGSize(width: (frame.width * zoom).roundedHalfUp, height: (frame.height * zoom).roundedHalfUp)
     }
 
-    /// A screen-point wheel delta in the document's own layout units: one
-    /// screen point is `1 / zoom` of a unit under magnify and one unit in reveal.
-    public static func scrollDelta(_ deltaPx: CGFloat, zoom: CGFloat, magnify: Bool) -> CGFloat {
-        magnify && zoom > 0 ? deltaPx / zoom : deltaPx
-    }
-
-    /// A wheel event's delta as a web page counts it. AppKit's scrolling delta
-    /// has the opposite sign, and a notched wheel reports lines, scaled up as
-    /// the board scales them when it pans.
-    public static func wheelDelta(scrollingDelta: CGFloat, precise: Bool) -> CGFloat {
-        -scrollingDelta * (precise ? 1 : 10)
+    /// Document units per screen point of wheel travel: `magnifyK / zoom`
+    /// under magnify, 1 in reveal and for a zoom that is not finite and positive.
+    public static func wheelScale(zoom: CGFloat, magnify: Bool) -> CGFloat {
+        magnify && zoom.isFinite && zoom > 0 ? magnifyK / zoom : 1
     }
 
     public struct Quantized: Equatable, Sendable {
@@ -51,41 +45,12 @@ public enum CardZoom {
         }
     }
 
-    /// A relayed delta as a whole-pixel step plus the residue for the next
-    /// event. A fractional `scrollBy` leaves an unpainted band; rounding alone
-    /// would stall a slow trackpad, whose every delta rounds to zero.
+    /// A delta as a whole-unit step plus the residue for the next event. A
+    /// wheel event's point delta is an integer field; rounding alone would
+    /// stall a slow trackpad, whose every delta rounds to zero.
     public static func quantizeScrollDelta(_ delta: Double, carry: Double) -> Quantized {
         let total = delta + carry
         let step = total.roundedHalfUp
         return Quantized(step: Int(step), carry: total - step)
-    }
-
-    public struct ScrollStep: Equatable, Sendable {
-        public var dx: Int
-        public var dy: Int
-
-        public init(dx: Int, dy: Int) {
-            self.dx = dx
-            self.dy = dy
-        }
-    }
-
-    /// One shielded card's wheel relay: it holds each axis's residue between
-    /// events.
-    public struct ScrollRelay: Sendable {
-        private var carryX = 0.0
-        private var carryY = 0.0
-
-        public init() {}
-
-        /// The whole-pixel step to send, or nil when neither axis moved one.
-        /// The residues are kept either way.
-        public mutating func step(dx: Double, dy: Double) -> ScrollStep? {
-            let x = CardZoom.quantizeScrollDelta(dx, carry: carryX)
-            let y = CardZoom.quantizeScrollDelta(dy, carry: carryY)
-            carryX = x.carry
-            carryY = y.carry
-            return x.step == 0 && y.step == 0 ? nil : ScrollStep(dx: x.step, dy: y.step)
-        }
     }
 }

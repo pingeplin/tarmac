@@ -1,0 +1,79 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>scroll band control</title>
+<!-- QA probe for spec 2610.0002 (the band control: it scrolls itself). It paints what the document
+     itself sees, so a scenario reads the numbers off the card. Nothing on it
+     is white: a white row in a capture is unpainted. -->
+<style>
+  html { color-scheme: dark; }
+  html, body { background: #10151a; }
+  body { margin: 0; color: #7fd6c2; font: 14px/20px ui-monospace, Menlo, monospace; }
+  #wide { width: 3000px; height: 24px; padding-left: 8px; background: #18222a; }
+  .row { height: 40px; box-sizing: border-box; padding-left: 8px; border-bottom: 1px solid #2a343d; }
+  .row:nth-child(odd) { background: #151c22; }
+  #inner { height: 200px; overflow: auto; margin: 8px; background: #1d2a33; }
+  #hud { position: fixed; right: 8px; top: 8px; padding: 6px 10px; background: #22303a; color: #e0b050;
+         font-size: 16px; line-height: 20px; white-space: pre; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="wide">3000 wide: the document scrolls across</div>
+<div id="rows"></div>
+<div id="hud"></div>
+<script>
+  var rows = document.getElementById("rows");
+  var hud = document.getElementById("hud");
+  var inner = document.createElement("div");
+  inner.id = "inner";
+  for (var j = 0; j < 50; j++) inner.appendChild(row("inner " + j));
+  for (var i = 0; i < 400; i++) {
+    rows.appendChild(row("row " + i));
+    if (i === 60) rows.appendChild(inner);
+  }
+
+  function row(text) {
+    var d = document.createElement("div");
+    d.className = "row";
+    d.textContent = text;
+    return d;
+  }
+
+  var wheels = 0;
+  var presses = 0;
+  var target = "-";
+
+  function paint() {
+    // One whole word and one number a line: read by eye, or by OCR off a capture.
+    hud.textContent =
+      "scrollX " + window.scrollX +
+      "\nscrollY " + window.scrollY +
+      "\ninnerHeight " + window.innerHeight +
+      "\nscrollHeight " + document.scrollingElement.scrollHeight +
+      "\ninner " + inner.scrollTop +
+      "\ntarget " + target +
+      "\nwheel " + wheels +
+      "\nmousedown " + presses;
+  }
+
+  document.addEventListener("wheel", function () { wheels++; paint(); }, { capture: true, passive: true });
+  document.addEventListener("mousedown", function () { presses++; paint(); }, true);
+  document.addEventListener("scroll", function (e) {
+    target = e.target === document ? "document" : "inner";
+    paint();
+  }, true);
+  window.addEventListener("resize", paint);
+  paint();
+
+  // The positive control of the band check: a fractional scrollBy, which
+  // leaves an unpainted band where a whole one does not (spec 2609.0013).
+  var direction = 1;
+  setInterval(function () {
+    if (window.scrollY > 3000) direction = -1;
+    if (window.scrollY < 10) direction = 1;
+    window.scrollBy(0, direction * 7.5);
+  }, 16);
+</script>
+</body>
+</html>
