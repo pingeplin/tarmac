@@ -232,6 +232,15 @@ public final class TerminalView: NSView {
         restartBlink()
     }
 
+    /// Scrolls the viewport to start at `offset`, a row of the scrollback as
+    /// the scrollbar counts them: the nearest whole row, and the nearest end
+    /// for one out of range.
+    public func scroll(to offset: Double) {
+        guard offset.isFinite else { return }
+        engine.scrollViewport(.row(Int(exactly: offset.rounded()) ?? (offset < 0 ? 0 : .max)))
+        scheduleRead()
+    }
+
     /// Tells the host the scrollbar when it is not the one last told. Nothing
     /// is told while there is no one to tell, so the first check after the
     /// callback is set reports.

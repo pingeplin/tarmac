@@ -100,10 +100,15 @@ core/target/debug/tarmac dev snapshot | jq .
   coordinates `screen_rect` is in start on the display, in global top-left
   points, or `null` with no window — `content_origin` plus a point of a
   `screen_rect` is where a tool outside the app finds it, as
-  `scripts/qa/wheel-gesture.swift` does), every card's `scroll` (`offset`,
+  `scripts/qa/wheel-gesture.swift` does; that script posts a wheel at a card
+  and, after it, can move the pointer to the card's scroll thumb, press, drag
+  in steps, sample the snapshot, release and type Escape —
+  `--then`, `--press`, `--drag`, `--sample`, `--release`, `--stay`,
+  `--key escape`: see its header), every card's `scroll` (`offset`,
   `visible` and `total` in the content's own unit — a terminal's rows, a page's
-  pixels — and `shown`, whether its scroll thumb is up; `null` until the
-  content has reported, so wait with
+  pixels — `shown`, whether its scroll thumb is up, and `thumb`, the thumb's
+  rect in `screen_rect`'s coordinates or `null` when none is laid out; the
+  whole `scroll` is `null` until the content has reported, so wait with
   `--until 'cards[<id>].scroll.shown == true'`), `focused_card` (the *selected* card),
   `active_element` (keyboard focus), per-terminal
   `cols`/`rows`/`proc`/`selection`/`scrollback_tail`, per-doc-card `borrowed`

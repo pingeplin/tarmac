@@ -538,11 +538,20 @@ and placed by a world-space `CardFrame {x, y, w, h, z}`.
   same on all three (`ScrollIndicator`). It is chrome, laid out on screen like
   the header: 10 wide and 2 in from the body's right edge, never shorter than
   24, clear of the rounded bottom corner; a dark fill with a light hairline,
-  both opaque, so it is the same on every page. It shows when the wheel router gives
-  the card a wheel and fades a second after the last
-  (`ScrollIndicator.Visibility`); deselecting the card hides it at once, and a
-  card whose content fits has none. It is looked at, not touched: it answers no
-  hit test.
+  both opaque, so it is the same on every page. It shows when the wheel router
+  gives the card a wheel and fades a second after the last; a pointer over it,
+  or a press on it, holds it, and the hold starts again when the last of the
+  two lets go (`ScrollIndicator.Visibility`). Hover alone shows nothing,
+  deselecting the card hides it at once, and a card whose content fits has
+  none. While it shows it can be dragged: a point on it is the thumb's ahead
+  of the resize strip (`CardHit`), and a faded thumb is not there at all. A
+  drag keeps how far below the thumb's top the press landed and asks the
+  content for the offset that holds the thumb there (`ScrollDrag`, the
+  inverse of the thumb's place); the content scrolls and reports, and the
+  thumb is drawn from the report, as for a wheel. A wheel over the thumb is
+  still the card's (`BoardWheel.route`), and the thumb hands it to the body
+  under it. A press on it reaches nothing under it and takes no keyboard
+  focus.
 - **Doc header.** Glyph, repo dot (only when the daemon gave a `repo_color`),
   the file's basename, `← <owner>` chip, `✚ now`, `✎ Ns` recency (for 30 s after
   a change), `↻`, the console badge (HTML cards), `✕`. A terminal header has a
@@ -607,7 +616,9 @@ selects the word under it and offers the same three. The wheel scrolls the
 scrollback (5000 lines), walks the alternate screen as arrow keys, or is
 reported to a mouse-tracking program. The view tells its card where the
 viewport is in the scrollback whenever that changes (`onScrollChanged`), for
-the scroll thumb; the alternate screen has no history, so no thumb. A click on an OSC 8 hyperlink or a
+the scroll thumb; the alternate screen has no history, so no thumb. A dragged
+thumb sends the viewport to a row (`scroll(to:)`, the engine's absolute-row
+scroll); at the last row it can start at, the viewport follows output again. A click on an OSC 8 hyperlink or a
 spelled-out URL opens it in the browser — `http(s)` only in both cases.
 
 **Honest signals.** The label starts as `shell`; each `TermProc` and each
@@ -663,7 +674,8 @@ handlers they post to. No cookies, cache or storage outlive the app.
 - **Scroll.** The reading position is kept as `scrollTop / scrollHeight`, so it
   survives a re-render, a zoom and a card resize. The page reports the
   scroller's position to the card on every scroll and layout, for the scroll
-  thumb, and its own scrollbar is hidden.
+  thumb, and its own scrollbar is hidden. A dragged thumb sets the scroller's
+  position (`tarmacDoc.scrollTo`).
 - **Images.** A local `<img src>` — doc-relative, absolute, or `file://` — is
   re-addressed (`DocImage`) to the `img` host of `tarmac-card://` before it is
   fetched; other schemes are left as written. Only the doc's own top frame
@@ -711,7 +723,9 @@ no permission-policy feature, and no handle on the app.
 - **The shim** (`card_shim.js`) is everything a document can observe of its
   host: it relays `console.log`/`info`/`warn`/`error`, uncaught errors, unhandled
   rejections and `Escape` to its parent,
-  applies the zoom, gates the document's schedulers, and reports where the
+  applies the zoom, gates the document's schedulers, scrolls the root where
+  the host says while the card's scroll thumb is dragged (`scrollTo`, a
+  finite number, from the parent only), and reports where the
   document's root is scrolled to — as the event happens, with no frame or
   timer asked for — while hiding the root's own scrollbar. A document can
   forge that report as it can a console line; `ScrollMetrics` refuses what
@@ -935,8 +949,9 @@ posts a native `⌘` chord to the application's event queue, with a debug-only
 `snapshot` reports the active board (`DevSnapshot`): the viewport, each card's
 world `board_rect` and measured `screen_rect`, `content_origin` — where those
 window-content coordinates start on the display — each card's `scroll`
-(`{offset, visible, total, shown}`, or `null` before its content has
-reported), the selected card, keyboard
+(`{offset, visible, total, shown, thumb}`, or `null` before its content has
+reported; `thumb` is the scroll thumb's rect beside `screen_rect`, or `null`
+when none is laid out), the selected card, keyboard
 focus, per-terminal `cols`/`rows`/`proc`/`selection`/`scrollback_tail`, and the
 quit guard's state. `--until` re-evaluates an expression every 50 ms
 (`DevUntil`). The scenario suites are `scripts/qa/smoke.mjs` (`make qa`) and

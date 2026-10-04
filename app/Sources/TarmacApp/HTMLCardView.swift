@@ -208,6 +208,10 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
         webView.runInCardWorld("tarmacCard.post(\(message.json))")
     }
 
+    func scroll(to offset: Double) {
+        post(.scrollTo(offset))
+    }
+
     private func received(_ message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame, let parsed = CardConsole.parse(message.body) else { return }
         for effect in session.handle(parsed, borrowed: shield.isHidden) {

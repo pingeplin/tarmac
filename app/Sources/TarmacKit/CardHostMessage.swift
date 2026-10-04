@@ -5,6 +5,9 @@ public enum CardHostMessage: Equatable, Sendable {
     case zoom(Double)
     /// Whether the card is culled. Re-sending the same value changes nothing.
     case cull(Bool)
+    /// Where the root is scrolled to, in the document's own units: the scroll
+    /// thumb is being dragged.
+    case scrollTo(Double)
 
     /// The message as a JSON object, which is also a JavaScript literal.
     public var json: String {
@@ -13,6 +16,8 @@ public enum CardHostMessage: Equatable, Sendable {
             return #"{"tarmac":"zoom","z":\#(z.javaScriptString)}"#
         case .cull(let culled):
             return #"{"tarmac":"cull","culled":\#(culled)}"#
+        case .scrollTo(let y):
+            return #"{"tarmac":"scrollTo","y":\#(y.javaScriptString)}"#
         }
     }
 }

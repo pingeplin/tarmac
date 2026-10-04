@@ -18,6 +18,9 @@ protocol DocCardBody: NSView {
     /// at its bottom; the scroll thumb's track ends above it.
     var scrollCover: CGFloat { get }
     var onScrollCoverChanged: (() -> Void)? { get set }
+
+    /// Scrolls the doc to `offset`, in the unit of the metrics it reports.
+    func scroll(to offset: Double)
 }
 
 @MainActor

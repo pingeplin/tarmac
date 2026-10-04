@@ -508,6 +508,76 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(told.last, TerminalScrollbar(total: 3, offset: 0, visible: 3))
     }
 
+    // MARK: scroll to a row (spec 2610.0004)
+
+    /// Runs what the main queue holds, so that no frame read is left
+    /// scheduled: `read()` then reads only one that was scheduled since.
+    private func settle() {
+        let settled = expectation(description: "the main queue ran")
+        DispatchQueue.main.async { settled.fulfill() }
+        wait(for: [settled], timeout: 1)
+    }
+
+    /// A 3-row view holding ten lines, with someone to tell.
+    private func scrolledBack() throws -> () -> [TerminalScrollbar] {
+        try resize(rows: 3)
+        var told: [TerminalScrollbar] = []
+        view.onScrollChanged = { told.append($0) }
+        feed(tenLines)
+        read()
+        XCTAssertEqual(told.last, TerminalScrollbar(total: 10, offset: 7, visible: 3))
+        settle()
+        return { told }
+    }
+
+    /// `scroll(to:)` schedules its own frame read: none is pending when it is
+    /// asked.
+    func test2610_0004S13ScrollToGoesToTheNearestRowAndTheHostIsTold() throws {
+        let told = try scrolledBack()
+        let rows: [(Double, Int)] = [(2.4, 2), (2.5, 3), (99, 7), (-4, 0)]
+        for (asked, row) in rows {
+            view.scroll(to: asked)
+            read()
+            XCTAssertEqual(told().last, TerminalScrollbar(total: 10, offset: row, visible: 3), "asked \(asked)")
+            settle()
+        }
+    }
+
+    func test2610_0004S34ScrollToANumberThatIsNoRowScrollsNothing() throws {
+        let told = try scrolledBack()
+        view.scroll(to: 2)
+        read()
+        let before = told()
+        XCTAssertEqual(before.last?.offset, 2)
+
+        for asked in [Double.nan, .infinity, -.infinity] {
+            view.scroll(to: asked)
+            read()
+            XCTAssertEqual(told(), before, "asked \(asked)")
+        }
+    }
+
+    func test2610_0004S34ScrollToFarPastEitherEndIsThatEnd() throws {
+        let told = try scrolledBack()
+        view.scroll(to: -1e300)
+        read()
+        XCTAssertEqual(told().last?.offset, 0)
+        view.scroll(to: 1e300)
+        read()
+        XCTAssertEqual(told().last?.offset, 7)
+    }
+
+    func test2610_0004S34ScrollToOnTheAlternateScreenScrollsNothing() throws {
+        _ = try scrolledBack()
+        feed("\u{1b}[?1049h")
+        read()
+        XCTAssertEqual(view.engine.scrollbar, TerminalScrollbar(total: 3, offset: 0, visible: 3))
+
+        view.scroll(to: 2)
+        read()
+        XCTAssertEqual(view.engine.scrollbar, TerminalScrollbar(total: 3, offset: 0, visible: 3))
+    }
+
     func testWheelOnTheAlternateScreenSendsArrowKeys() throws {
         feed("\u{1b}[?1049h")
         view.scrollWheel(with: try wheel(lines: -1))

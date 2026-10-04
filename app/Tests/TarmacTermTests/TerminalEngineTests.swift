@@ -143,6 +143,39 @@ final class TerminalEngineTests: XCTestCase {
 
     // MARK: scrollback
 
+    /// The row a dragged scroll thumb asks for. At the last row the viewport
+    /// can start at, or past it, the viewport is the live one again and
+    /// follows what is printed next.
+    func test2610_0004S12AnAbsoluteRowIsWhereTheViewportStarts() throws {
+        let engine = try engine(cols: 10, rows: 3)
+        feed(engine, (1...10).map { "line\($0)" }.joined(separator: "\r\n"))
+        XCTAssertEqual(engine.scrollbar, TerminalScrollbar(total: 10, offset: 7, visible: 3))
+
+        engine.scrollViewport(.row(2))
+        XCTAssertEqual(engine.scrollbar.offset, 2)
+        XCTAssertFalse(engine.isViewportAtBottom)
+
+        engine.scrollViewport(.row(7))
+        XCTAssertEqual(engine.scrollbar.offset, 7)
+        XCTAssertTrue(engine.isViewportAtBottom)
+        feed(engine, "\r\nline11\r\nline12")
+        XCTAssertEqual(engine.scrollbar, TerminalScrollbar(total: 12, offset: 9, visible: 3))
+
+        engine.scrollViewport(.row(5))
+        feed(engine, "\r\nline13")
+        XCTAssertEqual(engine.scrollbar, TerminalScrollbar(total: 13, offset: 5, visible: 3))
+        XCTAssertFalse(engine.isViewportAtBottom)
+
+        engine.scrollViewport(.row(999))
+        XCTAssertEqual(engine.scrollbar, TerminalScrollbar(total: 13, offset: 10, visible: 3))
+        XCTAssertTrue(engine.isViewportAtBottom)
+        feed(engine, "\r\nline14")
+        XCTAssertEqual(engine.scrollbar, TerminalScrollbar(total: 14, offset: 11, visible: 3))
+
+        engine.scrollViewport(.row(-4))
+        XCTAssertEqual(engine.scrollbar.offset, 0)
+    }
+
     func testViewportScrollsIntoHistoryAndBack() throws {
         let engine = try engine(cols: 10, rows: 3)
         feed(engine, (1...10).map { "line\($0)" }.joined(separator: "\r\n"))

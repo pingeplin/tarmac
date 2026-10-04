@@ -149,6 +149,7 @@ extension AppController {
         termIndex.assign(termID: termID, to: board.boardID)
         board.view.setTerminal(termID: termID, s.view, worldFrame: frame)
         let card = board.view.card(.term(termID))
+        card?.onScrollTo = { [weak view = s.view] offset in view?.scroll(to: offset) }
         card?.setTermLabel(s.label)
         card?.setLive(true)
         // The view enters the window at its default frame and measures a grid

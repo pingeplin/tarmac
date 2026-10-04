@@ -10,11 +10,14 @@ public enum BoardWheel {
     }
 
     /// A pinch always zooms the board. A plain wheel scrolls a card only when
-    /// it is over the BODY of the selected card; anywhere else — another card,
-    /// the selected card's header, the bare board — it pans.
-    public static func route<ID: Equatable>(pinch: Bool, over card: ID?, inBody: Bool, selected: ID?) -> Route {
+    /// it is over the BODY of the selected card, or over its scroll thumb,
+    /// which lies on the body's edge; anywhere else — another card, the
+    /// selected card's header, the bare board — it pans.
+    public static func route<ID: Equatable>(
+        pinch: Bool, over card: ID?, inBody: Bool, onThumb: Bool, selected: ID?
+    ) -> Route {
         if pinch { return .zoom }
-        if let card, card == selected, inBody { return .card }
+        if let card, card == selected, inBody || onThumb { return .card }
         return .pan
     }
 

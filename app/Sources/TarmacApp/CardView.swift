@@ -58,6 +58,13 @@ final class CardView: NSView {
     var scrollMetrics: ScrollMetrics?
     var scrollVisibility = ScrollIndicator.Visibility()
     var scrollFade: DispatchWorkItem?
+    /// The drag of the thumb in flight, the watch for its release, and the
+    /// body the thumb was last laid out against.
+    var scrollDrag: ScrollDrag?
+    var scrollRelease: Any?
+    var scrollTrackBody = CGRect.zero
+    /// Scrolls a terminal card's content; a doc card's body scrolls itself.
+    var onScrollTo: ((Double) -> Void)?
     private let grip = CardResizeGrip()
     private lazy var gestures = CardGestureTracker(card: self)
 
@@ -128,6 +135,10 @@ final class CardView: NSView {
         wireHTMLBody()
         docBody?.onScrollChanged = { [weak self] metrics in self?.scrollChanged(metrics) }
         docBody?.onScrollCoverChanged = { [weak self] in self?.needsLayout = true }
+        scrollThumb.liesOverADoc = docBody != nil
+        scrollThumb.onPress = { [weak self] event in self?.thumbPressed(event) }
+        scrollThumb.onDrag = { [weak self] event in self?.thumbDragged(event) }
+        scrollThumb.onWheel = { [weak self] event in self?.bodyView(at: event.locationInWindow)?.scrollWheel(with: event) }
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -420,13 +431,25 @@ final class CardView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let hit = super.hitTest(point) else { return nil }
-        return resizeHandle(at: point) == nil ? hit : grip
+        let thumb = scrollThumb.isHidden ? nil : superview.map { clip.convert(scrollThumb.frame, to: $0) }
+        switch CardHit.at(point, thumb: thumb, grabbable: scrollThumbCanBeGrabbed, handle: resizeHandle(at: point)) {
+        case .thumb: return scrollThumb
+        case .handle: return grip
+        case .content: return hit
+        }
     }
 
-    /// Ends a move or resize in flight as its release would. For when the card
-    /// goes away under the pointer and the release will never reach it.
+    /// Ends a move, a resize or a drag of the scroll thumb in flight as its
+    /// release would. For when the card goes away under the pointer and the
+    /// release will never reach it.
     func cancelGesture() {
         gestures.end()
+        endScrollDrag()
+    }
+
+    /// The view of the body under a point of the window, whatever lies over it.
+    func bodyView(at windowPoint: NSPoint) -> NSView? {
+        bodyHost.hitTest(clip.convert(windowPoint, from: nil))
     }
 
     /// Whether `view` is the card's body or inside it — not the header, and not
