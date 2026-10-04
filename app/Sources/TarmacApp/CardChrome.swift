@@ -528,6 +528,38 @@ extension CardHeaderView: HoverCursorProviding {
     func hoverCursor(at windowPoint: NSPoint) -> NSCursor { .openHand }
 }
 
+/// A card's scroll thumb: where its content is scrolled to. It is looked at,
+/// not touched: an event over it is the body's, or the resize strip's.
+@MainActor
+final class ScrollThumbView: NSView {
+    override var isFlipped: Bool { true }
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.backgroundColor = Theme.scrollThumb.cgColor
+        layer?.borderColor = Theme.scrollThumbLine.cgColor
+        alphaValue = 0
+        isHidden = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func layout() {
+        super.layout()
+        layer?.cornerRadius = min(bounds.width, bounds.height) / 2
+        layer?.borderWidth = 1 / (window?.backingScaleFactor ?? 2)
+    }
+
+    /// The hairline is one device pixel, on whichever display.
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        needsLayout = true
+    }
+}
+
 /// Terminal card body: term-bg behind the terminal view, which fills it and
 /// pads its own grid.
 @MainActor

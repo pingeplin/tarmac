@@ -160,6 +160,20 @@ final class TerminalEngineTests: XCTestCase {
         XCTAssertTrue(engine.isViewportAtBottom)
     }
 
+    /// 2610.0003 S27, a pin: a full-screen program has nothing to scroll, which
+    /// is what keeps a scroll thumb off it. It guards a `GHOSTTY_COMMIT` bump.
+    func test2610S27TheAlternateScreenReportsNoHistory() throws {
+        let engine = try engine(cols: 10, rows: 3)
+        feed(engine, (1...10).map { "line\($0)" }.joined(separator: "\r\n"))
+        XCTAssertEqual(engine.scrollbar, TerminalScrollbar(total: 10, offset: 7, visible: 3))
+
+        feed(engine, "\u{1b}[?1049h")
+        XCTAssertEqual(engine.scrollbar, TerminalScrollbar(total: 3, offset: 0, visible: 3))
+
+        feed(engine, "\u{1b}[?1049l")
+        XCTAssertEqual(engine.scrollbar, TerminalScrollbar(total: 10, offset: 7, visible: 3))
+    }
+
     func testScrollbackIsCappedNearItsLineLimit() throws {
         let engine = try engine(cols: 80, rows: 24)
         try engine.setScrollbackLimit(lines: 5000)

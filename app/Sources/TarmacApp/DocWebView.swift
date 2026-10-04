@@ -18,6 +18,10 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
     /// A text control of the doc's raw HTML has the page's focus.
     private(set) var isEditingText = false
 
+    var onScrollChanged: ((ScrollMetrics?) -> Void)?
+    let scrollCover: CGFloat = 0
+    var onScrollCoverChanged: (() -> Void)?
+
     private let path: String
     private let webView: WKWebView
     private let host: ScreenSpaceHost
@@ -25,6 +29,7 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
     private let links = ScriptMessageRelay()
     private let hover = ScriptMessageRelay()
     private let editing = ScriptMessageRelay()
+    private let scrolled = ScriptMessageRelay()
 
     private var pageLoaded = false
     private var loadingPage = false
@@ -63,6 +68,8 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
         hover.onMessage = { [weak self] message in self?.pointerIsOverLink = message.body as? Bool ?? false }
         webView.configuration.userContentController.add(editing, contentWorld: CardWebView.world, name: "docEditing")
         editing.onMessage = { [weak self] message in self?.isEditingText = message.body as? Bool ?? false }
+        webView.configuration.userContentController.add(scrolled, contentWorld: CardWebView.world, name: "docScroll")
+        scrolled.onMessage = { [weak self] message in self?.scrollReported(message) }
         host.onResize = { [weak self] size in self?.layoutPage(viewport: size) }
         addSubview(host)
         DocFrameRules.shared.whenSettled { [weak self] rules in self?.start(guardedBy: rules) }
@@ -82,6 +89,7 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
         pointerIsOverLink = false
         isEditingText = false
         loadingPage = true
+        onScrollChanged?(nil)
         webView.loadHTMLString(Self.page, baseURL: nil)
     }
 
@@ -135,6 +143,12 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
     /// the card scheme, anything else as written.
     private func imageSources(for body: Any) -> [String] {
         (body as? [String] ?? []).map { DocImage.src($0, docPath: path, mtimeMs: lastChangedMs) }
+    }
+
+    /// A report the page cannot have meant is dropped: the card keeps what it had.
+    private func scrollReported(_ message: WKScriptMessage) {
+        guard message.frameInfo.isMainFrame, let metrics = ScrollMetrics(report: message.body) else { return }
+        onScrollChanged?(metrics)
     }
 
     /// A link in the doc was clicked; the message is its `href` as written.

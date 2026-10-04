@@ -13,8 +13,8 @@ It is also the §1.3 exception-2 discharge for the shell wiring the change adds 
 
 - `qa/wheel-travel-probe.html` — paints its own `scrollX`, `scrollY`,
   `innerHeight`, `scrollHeight`, `#inner`'s `scrollTop`, the last scroll
-  `target`, and its `wheel` and `mousedown` counts, one word and one number a
-  line. `qa/wheel-travel-probe-reveal.html` is the same in reveal mode.
+  `target`, its `wheel` and `mousedown` counts and `document.compatMode`, one
+  word and one value a line. `qa/wheel-travel-probe-reveal.html` is the same in reveal mode.
 - `qa/scroll-band-control.html` — the same page scrolling itself by a
   fractional `scrollBy`: the positive control of the band check.
 - `scripts/qa/wheel-gesture.swift` — posts one real gesture at a card. **It
@@ -101,7 +101,7 @@ evening, after a review found the first short of what the spec names.
 | S32 | **pass** — `wheel` 10 → 10, `scrollY` 0 → 0, `cy` +100.0 | `scrollY` +300, `wheel` +10, `cy` unchanged |
 | S25 | **pass** — 340 region captures over 34.4 s of precise gestures and 340 over 36.2 s of notched ones, with reversals: none with a white row (225 and 175 caught the content moving). The control, in the same session: 30 of 30 captures unpainted | — |
 | S26 | **pass** — another process's window over the card (a 240 × 160 window centred on the aim): exit 1, "the dev app's window is not the top one at 1270,573", cursor (1832, 668) before and after. The aim off every window (a card outside the dev window): the same refusal. An unknown card, an unset socket, a socket nothing answers on and a tree with no debug CLI built: exit 1 with one line each. A success prints the card, the point and one entry per event | — |
-| S27 | **outstanding** — needs a hand on a trackpad | — |
+| S27 | **pass, by hand and informally** — on 2026-10-04 the user scrolled cards with a trackpad in the dev app (`feat/191-card-scroll-indicator` @ `41ea952`, which carries this change) and found it right. The two zooms and the cut flick were not each recorded | — |
 | S28 | **outstanding** — no notched mouse on the machine; S10 posted real line events | — |
 
 Two things the run found and fixed in the assets, not the app:

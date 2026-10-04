@@ -17,6 +17,10 @@ enum Theme {
     static let agentDim = srgb(0x1abc9c, alpha: 0.16)
     // Drag-lift border (crib §4 prime/lift; authored hex, not a :root token).
     static let liftBorder = srgb(0x5a626a)
+    // The scroll thumb: dark with a light hairline, and opaque, so it is the
+    // same thumb on a terminal, on the doc page and on a white HTML document.
+    static let scrollThumb = srgb(0x181b1d)
+    static let scrollThumbLine = srgb(0x696b6c)
     // The selected card's border: the card whose body takes the wheel.
     static let focusBorder = srgb(0x1abc9c, alpha: 0.5)
     // Prime-card header bg (crib §1/§2/§4: `.tm-bcard.prime .bhd` background

@@ -8,6 +8,7 @@ public struct HTMLCardSession: Equatable, Sendable {
         case escapeHome
         case consoleChanged
         case modeChanged
+        case scrollChanged(ScrollMetrics)
     }
 
     public private(set) var console = CardConsole.Buffer()
@@ -24,6 +25,8 @@ public struct HTMLCardSession: Equatable, Sendable {
         case .console(let entry):
             console.push(entry)
             return [.consoleChanged]
+        case .scrolled(let metrics):
+            return [.scrollChanged(metrics)]
         case .ready(let meta):
             // A document is born not knowing whether its card is culled, and a
             // message sent before it committed went to the page it replaced.

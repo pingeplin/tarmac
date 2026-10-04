@@ -55,7 +55,8 @@
       "\ninner " + inner.scrollTop +
       "\ntarget " + target +
       "\nwheel " + wheels +
-      "\nmousedown " + presses;
+      "\nmousedown " + presses +
+      "\ncompat " + document.compatMode;
   }
 
   document.addEventListener("wheel", function () { wheels++; paint(); }, { capture: true, passive: true });

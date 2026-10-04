@@ -43,12 +43,23 @@ public enum CardBox {
         /// The header, in the content area's coordinates.
         public var header: CGRect
         /// The body's container, in the content area's coordinates: `bodySize`
-        /// times the zoom. It can differ from the room under the header by a
-        /// fraction of a device pixel, which the content area clips or shows
-        /// through.
+        /// times the zoom. The border and the header are whole device pixels,
+        /// so the container can overhang the room under the header — most
+        /// where the border is held at one pixel — or fall short of it; the
+        /// content area clips the one and shows through the other.
         public var body: CGRect
         /// The size the body is laid out at inside its container.
         public var bodySize: CGSize
+
+        /// The part of the body's container the content area shows. A border
+        /// held at one device pixel leaves the body less room than its
+        /// container takes.
+        public var shownBody: CGRect {
+            CGRect(
+                x: 0, y: body.minY,
+                width: min(body.width, content.width), height: min(body.height, content.height - body.minY)
+            )
+        }
     }
 
     /// `cardSize` is the card's size on screen and `worldSize` its world size.

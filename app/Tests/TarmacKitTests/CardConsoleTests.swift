@@ -33,6 +33,21 @@ final class CardConsoleTests: XCTestCase {
         XCTAssertEqual(parse(["tarmac": "escape"]), .escape)
     }
 
+    // MARK: - scrolled payload (2610.0003 S10, S34)
+
+    func test2610S10AcceptsAScrolledPayload() {
+        XCTAssertEqual(
+            parse(["tarmac": "scrolled", "offset": 30, "visible": 100, "total": 400]),
+            ScrollMetrics(offset: 30, visible: 100, total: 400).map(CardConsole.Message.scrolled)
+        )
+        XCTAssertNotNil(parse(["tarmac": "scrolled", "offset": 30, "visible": 100, "total": 400]))
+    }
+
+    func test2610S34RejectsAScrolledPayloadThatDescribesNoScroller() {
+        XCTAssertNil(parse(["tarmac": "scrolled", "offset": 30, "visible": 0, "total": 400]))
+        XCTAssertNil(parse(["tarmac": "scrolled", "visible": 100, "total": 400]))
+    }
+
     // MARK: - ready payload (2607.0006 S4)
 
     func testAcceptsAReadyPayloadWithStringMeta() {

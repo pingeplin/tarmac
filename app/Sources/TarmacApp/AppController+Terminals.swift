@@ -32,6 +32,7 @@ extension AppController {
         view.onInput = { [weak self] bytes in self?.terminalDidSend(termID: termID, Data(bytes)) }
         view.onResize = { [weak self] _, _ in self?.terminalSizeChanged(termID: termID) }
         view.onTitleChanged = { [weak self] title in self?.handleTermTitle(termID: termID, title: title) }
+        view.onScrollChanged = { [weak self] scrollbar in self?.terminalScrolled(termID: termID, scrollbar) }
         view.onOpenLink = { link in
             guard ExternalLink.isHTTP(href: link), let url = URL(string: link) else { return }
             NSWorkspace.shared.open(url)
@@ -47,6 +48,15 @@ extension AppController {
             )
         }
         return view
+    }
+
+    /// A terminal's place in its scrollback, for its card's scroll thumb, on
+    /// whichever board holds it.
+    private func terminalScrolled(termID: String, _ scrollbar: TerminalScrollbar) {
+        guard let (_, board) = anySession(termID) else { return }
+        board.view.card(.term(termID))?.scrollChanged(ScrollMetrics(
+            offset: Double(scrollbar.offset), visible: Double(scrollbar.visible), total: Double(scrollbar.total)
+        ))
     }
 
     // MARK: - Routing

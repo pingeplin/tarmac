@@ -34,6 +34,7 @@ final class CardShimTests: XCTestCase {
       const docListeners = new Map();
       const posted = [];
       const style = {};
+      const observers = [];
 
       const frames = new Map();
       const timeouts = new Map();
@@ -96,6 +97,15 @@ final class CardShimTests: XCTestCase {
 
         console: { log() {}, info() {}, warn() {}, error() {} },
 
+        ResizeObserver: class {
+          constructor(callback) {
+            this.callback = callback;
+            this.observed = [];
+            observers.push(this);
+          }
+          observe(target) { this.observed.push(target); }
+        },
+
         document: {
           documentElement: { style },
           addEventListener: (type, fn) => add(docListeners, type, fn),
@@ -113,6 +123,13 @@ final class CardShimTests: XCTestCase {
         calls,
         send: (data, source = parent) => emit(listeners, "message", { source, data }),
         fire: (type, event) => emit(listeners, type, event),
+        // Where the shim listens for a scroll is its own business, so the
+        // event goes to both; the document is the root's own target.
+        scroll(target = document) {
+          emit(docListeners, "scroll", { target });
+          emit(listeners, "scroll", { target });
+        },
+        observers,
         domReady: () => emit(docListeners, "DOMContentLoaded", {}),
         driveFrame(ts) {
           const due = [...frames.entries()].sort((a, b) => a[0] - b[0]);
@@ -232,8 +249,8 @@ final class CardShimTests: XCTestCase {
         return context
     }
 
-    private func loadShim(meta: String? = "magnify") throws -> Shim {
-        let context = try window(meta: meta)
+    private func loadShim(meta: String? = "magnify", omitting native: String? = nil) throws -> Shim {
+        let context = try window(meta: meta, omitting: native)
         context.evaluateScript(try source())
         return Shim(context: context)
     }
@@ -869,6 +886,95 @@ final class CardShimTests: XCTestCase {
         shim.pause()
         shim.run("window.requestAnimationFrame(() => {});")
         XCTAssertEqual(try shim.ids("h.pendingFrameIds()"), [], "2610.0002 S23: a cull after it still pauses")
+    }
+
+    // MARK: - the root's scroll position is reported (2610.0003 S12, S13, S23–S25)
+
+    /// A shim loaded into a window whose root is scrolled to 120 of 4800, 840
+    /// of it showing: set once the shim has loaded, so what it posts is read
+    /// as it posts.
+    private func loadScrolledShim(omitting native: String? = nil) throws -> Shim {
+        let shim = try loadShim(omitting: native)
+        shim.run("window.scrollY = 120; document.scrollingElement = { clientHeight: 840, scrollHeight: 4800 };")
+        return shim
+    }
+
+    private func reports(_ shim: Shim) throws -> [NSDictionary] {
+        try shim.posted().filter { $0["tarmac"] as? String == "scrolled" }
+    }
+
+    private static let triggers = ["h.scroll()", "h.fire('resize', {})", "h.observers[0].callback([])"]
+
+    func test2610S12EachTriggerPostsWhereTheRootIsScrolledTo() throws {
+        let shim = try loadScrolledShim()
+        let report: NSDictionary = ["tarmac": "scrolled", "offset": 120, "visible": 840, "total": 4800]
+
+        shim.run("h.scroll()")
+        XCTAssertEqual(try reports(shim), [report], "a root scroll")
+        shim.run("h.scroll()")
+        XCTAssertEqual(try reports(shim), [report, report], "a second one, the same numbers")
+
+        shim.run("h.fire('resize', {})")
+        XCTAssertEqual(try reports(shim).count, 3, "a resize")
+
+        XCTAssertEqual(try shim.count("h.observers"), 1)
+        XCTAssertEqual(shim.flag("h.observers[0].observed[0] === document.documentElement"), true)
+        shim.run("h.observers[0].callback([])")
+        XCTAssertEqual(try reports(shim).count, 4, "a size observation")
+        XCTAssertEqual(try reports(shim).last, report)
+
+        shim.run("window.scrollY = 360; h.scroll();")
+        XCTAssertEqual(try reports(shim).last?["offset"] as? Int, 360, "read as it posts")
+    }
+
+    func test2610S13TheRootsOwnScrollbarIsHiddenByReady() throws {
+        let shim = try loadShim()
+        shim.run("h.domReady()")
+        XCTAssertEqual(shim.run("h.style.scrollbarWidth").toString(), "none")
+    }
+
+    func test2610S23ANestedElementsScrollPostsNothing() throws {
+        let shim = try loadScrolledShim()
+        shim.run("h.scroll({ id: 'inner' })")
+        XCTAssertEqual(try reports(shim), [])
+    }
+
+    /// A culled card must leave no native frame pending (2609.0002): a report
+    /// asks for none, and for no timer either, paused or not.
+    func test2610S24AReportCostsNoScheduling() throws {
+        let shim = try loadScrolledShim()
+        func natives() throws -> [Int] {
+            try ["requestAnimationFrame", "setTimeout", "setInterval"].map { try shim.count("h.calls.\($0)") }
+        }
+        let live = try natives()
+        for trigger in Self.triggers { shim.run(trigger) }
+        XCTAssertEqual(try natives(), live, "live")
+        XCTAssertEqual(try reports(shim).count, 3)
+
+        shim.pause()
+        let culled = try natives()
+        for trigger in Self.triggers { shim.run(trigger) }
+        XCTAssertEqual(try natives(), culled, "culled")
+        XCTAssertEqual(try reports(shim).count, 6, "a culled card still reports")
+    }
+
+    func test2610S25AWindowWithNoResizeObserverStillReports() throws {
+        let shim = try loadScrolledShim(omitting: "ResizeObserver")
+        shim.run("h.scroll(); h.fire('resize', {});")
+        XCTAssertEqual(try reports(shim).count, 2)
+    }
+
+    /// Before the body exists a quirks-mode document has no scrolling
+    /// element. A throw here would land in the card's own console.
+    func test2610S25ADocumentWithNoScrollingElementPostsNothing() throws {
+        for missing in ["document.scrollingElement = null;", "delete document.scrollingElement;"] {
+            let shim = try loadScrolledShim()
+            shim.run(missing)
+            for trigger in Self.triggers {
+                XCTAssertNil(shim.thrown(trigger), "\(missing) \(trigger)")
+            }
+            XCTAssertEqual(try reports(shim), [], missing)
+        }
     }
 
     // MARK: - the never-paused path, beyond the cancels

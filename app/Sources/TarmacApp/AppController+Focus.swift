@@ -83,6 +83,7 @@ extension AppController {
         )
         switch route {
         case .card:
+            card?.tookWheel()
             return false
         case .pan:
             board.pan(by: travel)

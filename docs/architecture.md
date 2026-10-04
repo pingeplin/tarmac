@@ -532,6 +532,17 @@ and placed by a world-space `CardFrame {x, y, w, h, z}`.
   an agent just opened: a teal ring and `✚ now`), `selected`, and `borrowed` (an
   HTML card holding the keyboard: amber border and ring). `CardChrome`,
   `CardDim` and `CardRing` decide how they combine.
+- **Scroll thumb.** Every card kind says where its content is scrolled to as
+  one value, `ScrollMetrics {offset, visible, total}`, in its own unit — a
+  terminal's rows, a page's pixels — and the card draws one thumb from it, the
+  same on all three (`ScrollIndicator`). It is chrome, laid out on screen like
+  the header: 10 wide and 2 in from the body's right edge, never shorter than
+  24, clear of the rounded bottom corner; a dark fill with a light hairline,
+  both opaque, so it is the same on every page. It shows when the wheel router gives
+  the card a wheel and fades a second after the last
+  (`ScrollIndicator.Visibility`); deselecting the card hides it at once, and a
+  card whose content fits has none. It is looked at, not touched: it answers no
+  hit test.
 - **Doc header.** Glyph, repo dot (only when the daemon gave a `repo_color`),
   the file's basename, `← <owner>` chip, `✚ now`, `✎ Ns` recency (for 30 s after
   a change), `↻`, the console badge (HTML cards), `✕`. A terminal header has a
@@ -594,7 +605,9 @@ terminal's own, so it tracks its text through scrolling. A drag past the edge
 autoscrolls. Copy, Paste and Select All are the Edit menu's; a right-click
 selects the word under it and offers the same three. The wheel scrolls the
 scrollback (5000 lines), walks the alternate screen as arrow keys, or is
-reported to a mouse-tracking program. A click on an OSC 8 hyperlink or a
+reported to a mouse-tracking program. The view tells its card where the
+viewport is in the scrollback whenever that changes (`onScrollChanged`), for
+the scroll thumb; the alternate screen has no history, so no thumb. A click on an OSC 8 hyperlink or a
 spelled-out URL opens it in the browser — `http(s)` only in both cases.
 
 **Honest signals.** The label starts as `shell`; each `TermProc` and each
@@ -648,7 +661,9 @@ handlers they post to. No cookies, cache or storage outlive the app.
   is changing the web view is left alone; it takes its new size once the zoom
   has held still for 150 ms.
 - **Scroll.** The reading position is kept as `scrollTop / scrollHeight`, so it
-  survives a re-render, a zoom and a card resize.
+  survives a re-render, a zoom and a card resize. The page reports the
+  scroller's position to the card on every scroll and layout, for the scroll
+  thumb, and its own scrollbar is hidden.
 - **Images.** A local `<img src>` — doc-relative, absolute, or `file://` — is
   re-addressed (`DocImage`) to the `img` host of `tarmac-card://` before it is
   fetched; other schemes are left as written. Only the doc's own top frame
@@ -696,7 +711,11 @@ no permission-policy feature, and no handle on the app.
 - **The shim** (`card_shim.js`) is everything a document can observe of its
   host: it relays `console.log`/`info`/`warn`/`error`, uncaught errors, unhandled
   rejections and `Escape` to its parent,
-  applies the zoom, and gates the document's schedulers. Its parent is the host
+  applies the zoom, gates the document's schedulers, and reports where the
+  document's root is scrolled to — as the event happens, with no frame or
+  timer asked for — while hiding the root's own scrollbar. A document can
+  forge that report as it can a console line; `ScrollMetrics` refuses what
+  describes no scroller. Its parent is the host
   page, whose script (`card-host.js`, in the app's content world) carries
   messages and bounds them: a console entry is cut to the 1000-character line
   the app keeps and posted with the count of what was cut, and any other
@@ -915,7 +934,9 @@ posts a native `⌘` chord to the application's event queue, with a debug-only
 
 `snapshot` reports the active board (`DevSnapshot`): the viewport, each card's
 world `board_rect` and measured `screen_rect`, `content_origin` — where those
-window-content coordinates start on the display — the selected card, keyboard
+window-content coordinates start on the display — each card's `scroll`
+(`{offset, visible, total, shown}`, or `null` before its content has
+reported), the selected card, keyboard
 focus, per-terminal `cols`/`rows`/`proc`/`selection`/`scrollback_tail`, and the
 quit guard's state. `--until` re-evaluates an expression every 50 ms
 (`DevUntil`). The scenario suites are `scripts/qa/smoke.mjs` (`make qa`) and

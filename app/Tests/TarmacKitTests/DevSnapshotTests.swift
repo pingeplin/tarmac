@@ -19,15 +19,21 @@ final class DevSnapshotTests: XCTestCase {
         Terminal(live: live, dead: dead, cols: 80, rows: 24, proc: proc, selection: selection, scrollbackTail: tail)
     }
 
-    private func term(_ terminal: Terminal? = nil, screenRect: CGRect? = nil) -> Card {
+    private func term(_ terminal: Terminal? = nil, screenRect: CGRect? = nil, scroll: DevSnapshot.Scroll? = nil) -> Card {
         Card(
             id: "t-1", content: .term(terminal ?? self.terminal()),
-            frame: CGRect(x: 10, y: 20, width: 400, height: 300), screenRect: screenRect
+            frame: CGRect(x: 10, y: 20, width: 400, height: 300), screenRect: screenRect, scroll: scroll
         )
     }
 
-    private func doc(_ id: String = "/Users/e/a.b.md") -> Card {
-        Card(id: id, content: .doc, frame: CGRect(x: 500, y: 20, width: 300, height: 200), screenRect: nil)
+    private func doc(_ id: String = "/Users/e/a.b.md", scroll: DevSnapshot.Scroll? = nil) -> Card {
+        Card(id: id, content: .doc, frame: CGRect(x: 500, y: 20, width: 300, height: 200), screenRect: nil, scroll: scroll)
+    }
+
+    private func scroll(laidOut: Bool = true, alpha: CGFloat = 1) throws -> DevSnapshot.Scroll {
+        DevSnapshot.Scroll(
+            metrics: try XCTUnwrap(ScrollMetrics(offset: 30, visible: 100, total: 400)), laidOut: laidOut, alpha: alpha
+        )
     }
 
     private func input(
@@ -132,11 +138,48 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(card(snapshot, "t-1")["kind"], "term")
         XCTAssertEqual(card(snapshot, "/Users/e/a.b.md")["kind"], "doc")
         XCTAssertEqual(card(snapshot, "/Users/e/a.b.md")["board_rect"], ["x": 500, "y": 20, "w": 300, "h": 200])
-        XCTAssertEqual(card(snapshot, "t-1").keys.sorted(), ["board_rect", "focused", "id", "kind", "screen_rect", "term"])
+        XCTAssertEqual(
+            card(snapshot, "t-1").keys.sorted(), ["board_rect", "focused", "id", "kind", "screen_rect", "scroll", "term"]
+        )
         XCTAssertEqual(
             card(snapshot, "/Users/e/a.b.md").keys.sorted(),
-            ["board_rect", "borrowed", "focused", "id", "kind", "screen_rect"]
+            ["board_rect", "borrowed", "focused", "id", "kind", "screen_rect", "scroll"]
         )
+    }
+
+    // MARK: - scroll (2610.0003 S15)
+
+    func test2610S15ACardSaysWhereItsContentIsScrolledTo() throws {
+        let snapshot = DevSnapshot.build(input(cards: [term(scroll: try scroll()), doc(scroll: try scroll())]))
+        let expected: JSONValue = ["offset": 30, "visible": 100, "total": 400, "shown": true]
+        XCTAssertEqual(card(snapshot, "t-1")["scroll"], expected)
+        XCTAssertEqual(card(snapshot, "/Users/e/a.b.md")["scroll"], expected)
+    }
+
+    /// Shown is both facts: a thumb laid out, and an alpha above nothing.
+    func test2610S15ShownNeedsAThumbLaidOutAndAnAlphaAboveZero() throws {
+        func shown(_ scroll: DevSnapshot.Scroll) -> JSONValue? {
+            fields(card(DevSnapshot.build(input(cards: [term(scroll: scroll)])), "t-1")["scroll"])["shown"]
+        }
+        XCTAssertEqual(shown(try scroll(alpha: 0.25)), true)
+        XCTAssertEqual(shown(try scroll(laidOut: false, alpha: 1)), false)
+        XCTAssertEqual(shown(try scroll(laidOut: true, alpha: 0)), false)
+    }
+
+    func test2610S15ACardWithNoMetricsSaysNull() {
+        let snapshot = DevSnapshot.build(input())
+        XCTAssertEqual(card(snapshot, "t-1")["scroll"], .null)
+        XCTAssertEqual(card(snapshot, "/Users/e/a.b.md")["scroll"], .null)
+    }
+
+    /// The paths a scenario waits on: a null `scroll` resolves no `shown`.
+    func test2610S15UntilCanWaitOnACardsScroll() throws {
+        let snapshot = DevSnapshot.build(input(cards: [term(scroll: try scroll()), doc()]))
+        func holds(_ source: String) throws -> Bool { DevUntil.evaluate(try DevUntil.parse(source), against: snapshot) }
+        XCTAssertTrue(try holds("cards[t-1].scroll.shown == true"))
+        XCTAssertTrue(try holds("cards[t-1].scroll.offset == 30"))
+        XCTAssertTrue(try holds("cards[/Users/e/a.b.md].scroll == null"))
+        XCTAssertFalse(try holds("cards[/Users/e/a.b.md].scroll.shown == false"))
     }
 
     // MARK: - S2 a doc card has no `term` key at all
@@ -663,7 +706,7 @@ final class DevSnapshotTests: XCTestCase {
             #"{"active_element":{"card":null,"classes":[],"selection_type":"None","tag":"BODY"},"#
                 + #""board_id":"board-0","#
                 + #""cards":[{"board_rect":{"h":200,"w":300,"x":500,"y":20},"borrowed":false,"focused":false,"#
-                + #""id":"/a/b.md","kind":"doc","screen_rect":null}],"#
+                + #""id":"/a/b.md","kind":"doc","screen_rect":null,"scroll":null}],"#
                 + #""content_origin":null,"focused_card":null,"quit_guard":null,"v":1,"#
                 + #""viewport":{"cx":500,"cy":350,"view_rect":{"h":700,"w":1000,"x":24,"y":40},"zoom":1},"#
                 + #""visibility":"visible"}"#
