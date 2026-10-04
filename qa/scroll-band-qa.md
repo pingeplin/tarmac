@@ -1,5 +1,10 @@
 # QA — white band while scrolling an HTML card (#142, spec 2609.0013)
 
+> **Closed record.** The wheel relay this sheet measured was removed by spec
+> 2610.0002: an HTML card's document now takes the wheel itself, and
+> `scroll-band-probe.html`, which listens for the relay's message, no longer
+> hears one. The band check lives on in [`native-wheel-qa.md`](native-wheel-qa.md).
+
 Manual checklist for **S10 [Q]** and the `docs/coding-style.md` §1.3 exception-2
 discharge owed by the `HtmlCard` wheel-relay wiring. The kit scenarios (S1–S7,
 S9) are covered by `desktop/src/kit/cardZoom.test.ts`; this file covers what a

@@ -21,6 +21,18 @@ struct DevSnapshotReader {
         ).compactMap { board.card(CardID($0)) }
     }
 
+    /// Where the root view's origin — its top-left: it is flipped — lies on
+    /// the display. The primary screen is the one Cocoa's screen coordinates
+    /// are measured from, which is not always the one the window is on.
+    private var contentOrigin: CGPoint? {
+        guard let window = controller.window, let primary = NSScreen.screens.first else { return nil }
+        let root = controller.rootView
+        return DevSnapshot.displayPoint(
+            cocoa: window.convertPoint(toScreen: root.convert(root.bounds.origin, to: nil)),
+            primaryScreenHeight: primary.frame.height
+        )
+    }
+
     func snapshot() -> JSONValue {
         DevSnapshot.build(DevSnapshot.Input(
             boardID: controller.activeBoardID,
@@ -32,6 +44,7 @@ struct DevSnapshotReader {
                 zoom: board.viewport.zoom, center: board.viewport.center
             ),
             viewRect: controller.rootView.convert(board.bounds, from: board),
+            contentOrigin: contentOrigin,
             cards: cards.map(fact),
             selectedCard: board.selectedID?.wireID,
             borrowedCard: controller.borrow.id?.wireID,

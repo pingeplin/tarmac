@@ -281,6 +281,9 @@ public enum DevSnapshot {
         public var viewport: Viewport
         /// The board view's own rect — what turns board-local into window points.
         public var viewRect: CGRect
+        /// Where the origin of the window's content coordinates lies on the
+        /// display, in global top-left points; nil when there is no window.
+        public var contentOrigin: CGPoint?
         /// The ACTIVE board's cards, in the order they should be reported.
         public var cards: [Card]
         public var selectedCard: String?
@@ -295,6 +298,7 @@ public enum DevSnapshot {
             visibility: Visibility,
             viewport: Viewport,
             viewRect: CGRect,
+            contentOrigin: CGPoint?,
             cards: [Card],
             selectedCard: String?,
             borrowedCard: String?,
@@ -305,6 +309,7 @@ public enum DevSnapshot {
             self.visibility = visibility
             self.viewport = viewport
             self.viewRect = viewRect
+            self.contentOrigin = contentOrigin
             self.cards = cards
             self.selectedCard = selectedCard
             self.borrowedCard = borrowedCard
@@ -325,10 +330,17 @@ public enum DevSnapshot {
                 "view_rect": rect(input.viewRect),
             ],
             "cards": .array(input.cards.map { card(for: $0, in: input) }),
+            "content_origin": input.contentOrigin.map { ["x": .number($0.x), "y": .number($0.y)] } ?? .null,
             "focused_card": optional(input.selectedCard),
             "active_element": ActiveElement(input.keyboardFocus).json,
             "quit_guard": input.quitGuard.map(quitGuard) ?? .null,
         ]
+    }
+
+    /// A Cocoa screen point (bottom-left origin) as a global display point
+    /// (top-left origin), given the primary screen's height.
+    public static func displayPoint(cocoa: CGPoint, primaryScreenHeight: CGFloat) -> CGPoint {
+        CGPoint(x: cocoa.x, y: primaryScreenHeight - cocoa.y)
     }
 
     /// `focus`'s reply: the two facts a focus changes, read after the UI settled.

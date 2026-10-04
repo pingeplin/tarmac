@@ -2,9 +2,10 @@ import CoreGraphics
 import XCTest
 @testable import TarmacKit
 
-/// HTML-card zoom geometry and the shielded-card wheel relay: specs 2607.0004
-/// S10 (the settled real-px box), 2607.0006 (the frozen magnification) and
-/// 2609.0013 (whole-px relayed scroll deltas).
+/// HTML-card zoom geometry and the wheel's travel in a document's units:
+/// specs 2607.0004 S10 (the settled real-px box), 2607.0006 (the frozen
+/// magnification), 2609.0013 (whole-unit steps with a carry) and 2610.0002
+/// (the wheel scale). Scenario ids are per spec and collide.
 final class CardZoomTests: XCTestCase {
     // MARK: - magnifyK never upsamples (2607.0006)
 
@@ -44,26 +45,26 @@ final class CardZoomTests: XCTestCase {
         XCTAssertEqual(CardZoom.iframePx(frame: CGSize(width: 100, height: 100), zoom: 0.994), CGSize(width: 99, height: 99))
     }
 
-    // MARK: - scrollDelta
+    // MARK: - wheelScale (2610.0002)
 
-    func testScrollDeltaDividesByZoomOnlyInMagnify() {
-        XCTAssertEqual(CardZoom.scrollDelta(60, zoom: 2, magnify: true), 30)
-        XCTAssertEqual(CardZoom.scrollDelta(60, zoom: 2, magnify: false), 60)
-        XCTAssertEqual(CardZoom.scrollDelta(60, zoom: 0, magnify: true), 60)
+    /// One unit of a magnified document is `zoom / magnifyK` of a screen point.
+    func test2610S1AMagnifiedDocumentTakesMagnifyKOverZoomUnitsAPoint() {
+        XCTAssertEqual(CardZoom.wheelScale(zoom: 0.5, magnify: true), 6)
+        XCTAssertEqual(CardZoom.wheelScale(zoom: 1, magnify: true), 3)
+        XCTAssertEqual(CardZoom.wheelScale(zoom: 2, magnify: true), 1.5)
+        XCTAssertEqual(CardZoom.wheelScale(zoom: 3, magnify: true), 1)
+        XCTAssertEqual(CardZoom.wheelScale(zoom: 1.728, magnify: true), 3 / 1.728, accuracy: 1e-9)
     }
 
-    // MARK: - wheelDelta
-
-    /// AppKit's scrolling delta has the opposite sign to a web wheel event's,
-    /// and a notched wheel reports lines.
-    func testAWheelEventsDeltaIsItsScrollingDeltaNegated() {
-        XCTAssertEqual(CardZoom.wheelDelta(scrollingDelta: 12.5, precise: true), -12.5)
-        XCTAssertEqual(CardZoom.wheelDelta(scrollingDelta: -3, precise: true), 3)
+    func test2610S1ARevealDocumentTakesOneUnitAPoint() {
+        XCTAssertEqual(CardZoom.wheelScale(zoom: 0.5, magnify: false), 1)
+        XCTAssertEqual(CardZoom.wheelScale(zoom: 2, magnify: false), 1)
     }
 
-    func testANotchedWheelsLinesAreScaledUp() {
-        XCTAssertEqual(CardZoom.wheelDelta(scrollingDelta: 1, precise: false), -10)
-        XCTAssertEqual(CardZoom.wheelDelta(scrollingDelta: -2, precise: false), 20)
+    func test2610S14AZoomThatIsNoZoomScalesNothing() {
+        for zoom in [0, -1, CGFloat.nan, .infinity] {
+            XCTAssertEqual(CardZoom.wheelScale(zoom: zoom, magnify: true), 1, "\(zoom)")
+        }
     }
 
     // MARK: - quantizeScrollDelta (2609.0013)
@@ -73,8 +74,8 @@ final class CardZoomTests: XCTestCase {
         XCTAssertEqual(CardZoom.quantizeScrollDelta(0, carry: 0), CardZoom.Quantized(step: 0, carry: 0))
     }
 
-    /// Ties are reachable (zoom 2.0, a 35 px notch → 17.5) and resolve as
-    /// `Math.round` does, negative asymmetry included.
+    /// Ties are reachable (a 1 pt delta at zoom 2 is 1.5 units) and resolve
+    /// as `Math.round` does, negative asymmetry included.
     func testResolvesTiesHalfUp() {
         XCTAssertEqual(CardZoom.quantizeScrollDelta(2.5, carry: 0).step, 3)
         XCTAssertEqual(CardZoom.quantizeScrollDelta(-2.5, carry: 0).step, -2)
@@ -153,55 +154,5 @@ final class CardZoomTests: XCTestCase {
                 XCTAssertLessThan(abs(CardZoom.quantizeScrollDelta(d, carry: c).carry), 1)
             }
         }
-    }
-
-    // MARK: - ScrollRelay (2609.0013 S11–S15)
-
-    func testS12StillPostsWhenOnlyOneAxisQuantizesToZero() {
-        var a = CardZoom.ScrollRelay()
-        XCTAssertNotNil(a.step(dx: 0.2, dy: 34.72))
-        var b = CardZoom.ScrollRelay()
-        XCTAssertNotNil(b.step(dx: 34.72, dy: 0.2))
-    }
-
-    func testS14KeepsEachAxisOnItsOwnDelta() {
-        var relay = CardZoom.ScrollRelay()
-        XCTAssertEqual(relay.step(dx: 30.4, dy: -12.6), CardZoom.ScrollStep(dx: 30, dy: -13))
-    }
-
-    /// Both carries are written back even when nothing is posted, or a slow
-    /// drag never accumulates (S11, S13, S15).
-    func testS15AccumulatesAcrossSuppressedPostsUntilItCrossesAPixel() {
-        var relay = CardZoom.ScrollRelay()
-        XCTAssertNil(relay.step(dx: 0.2, dy: 0.3))
-        XCTAssertEqual(relay.step(dx: 0.2, dy: 0.3), CardZoom.ScrollStep(dx: 0, dy: 1))
-        XCTAssertEqual(relay.step(dx: 0.2, dy: 0), CardZoom.ScrollStep(dx: 1, dy: 0))
-    }
-
-    /// S11: each axis carries its own residue. Sideways travel left over from
-    /// one event is not downward travel in the next.
-    func testS11TheResidueOfOneAxisIsNotTheOthers() {
-        var relay = CardZoom.ScrollRelay()
-        XCTAssertNil(relay.step(dx: 0.4, dy: 0))
-        XCTAssertNil(relay.step(dx: 0, dy: 0.3))
-        XCTAssertEqual(relay.step(dx: 0.2, dy: 0.2), CardZoom.ScrollStep(dx: 1, dy: 1))
-    }
-
-    func testEachRelayKeepsItsOwnCarry() {
-        var a = CardZoom.ScrollRelay()
-        var b = CardZoom.ScrollRelay()
-        let first = a.step(dx: 0, dy: 0.6)
-        _ = a.step(dx: 0, dy: 0.6)
-        _ = a.step(dx: 0, dy: 0.6)
-        XCTAssertEqual(b.step(dx: 0, dy: 0.6), first)
-    }
-
-    /// At a non-integer board zoom the unit conversion alone yields a fraction,
-    /// and the relay must absorb it.
-    func testARealWheelNotchBecomesWholeDocumentPxAtZoom1728() {
-        let delta = CardZoom.scrollDelta(60, zoom: 1.728, magnify: true)
-        XCTAssertNotEqual(delta, delta.rounded())
-        var relay = CardZoom.ScrollRelay()
-        XCTAssertEqual(relay.step(dx: 0, dy: delta), CardZoom.ScrollStep(dx: 0, dy: 35))
     }
 }

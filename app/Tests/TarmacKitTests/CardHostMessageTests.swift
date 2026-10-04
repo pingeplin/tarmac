@@ -15,8 +15,17 @@ final class CardHostMessageTests: XCTestCase {
         XCTAssertEqual(CardHostMessage.cull(false).json, #"{"tarmac":"cull","culled":false}"#)
     }
 
-    func testScrollCarriesWholePixelsPerAxis() {
-        XCTAssertEqual(CardHostMessage.scroll(dx: 35, dy: -2).json, #"{"tarmac":"scroll","dx":35,"dy":-2}"#)
+    /// 2610.0002 S24: the wheel is the web view's, not a message. A third
+    /// case does not compile here.
+    func test2610S24TheHostSaysOnlyAZoomOrACull() {
+        func names(_ message: CardHostMessage) -> String {
+            switch message {
+            case .zoom: "zoom"
+            case .cull: "cull"
+            }
+        }
+        XCTAssertEqual(names(.zoom(3)), "zoom")
+        XCTAssertEqual(names(.cull(true)), "cull")
     }
 
     // MARK: - cull polarity (2609.0002 S1, S2)

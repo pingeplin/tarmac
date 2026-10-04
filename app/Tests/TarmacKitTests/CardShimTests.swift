@@ -854,17 +854,21 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(shim.number("h.style.zoom"), 3, "2609.0003 S10")
     }
 
-    // MARK: - the host's relayed wheel delta scrolls the document
+    // MARK: - the wheel is not a message (2610.0002 S23)
 
-    func testAScrollFromTheHostReachesScrollByWithItsOwnDeltas() throws {
+    /// The web view takes the wheel itself, so a `scroll` from the host is one
+    /// more message the shim does not know: it scrolls nothing, and the
+    /// listener is still there for the next one.
+    func test2610S23AScrollFromTheHostScrollsNothing() throws {
         let shim = try loadShim()
         shim.run("var scrolled = []; window.scrollBy = (dx, dy) => scrolled.push([dx, dy]);")
 
         shim.run("h.send({ tarmac: 'scroll', dx: 4, dy: -9 })")
-        XCTAssertEqual(shim.run("scrolled").toArray() as NSArray?, [[4, -9]], "scroll: the deltas")
+        XCTAssertEqual(try shim.count("scrolled"), 0, "2610.0002 S23: scrollBy")
 
-        shim.run("h.send({ tarmac: 'scroll', dx: 1, dy: 1 }, { nested: 'iframe' })")
-        XCTAssertEqual(try shim.count("scrolled"), 1, "scroll: from a source that is not the host")
+        shim.pause()
+        shim.run("window.requestAnimationFrame(() => {});")
+        XCTAssertEqual(try shim.ids("h.pendingFrameIds()"), [], "2610.0002 S23: a cull after it still pauses")
     }
 
     // MARK: - the never-paused path, beyond the cancels

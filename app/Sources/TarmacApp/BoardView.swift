@@ -451,9 +451,9 @@ final class BoardView: NSView {
     // MARK: - Pan and zoom
 
     /// The wheel moves the board only where the wheel router says so, through
-    /// `pan(by:)` and `zoom(by:)`. A wheel the selected card's content leaves
-    /// unconsumed — a doc at its scroll limit — climbs the responder chain to
-    /// here, and must not pan the board from under that card.
+    /// `pan(by:)` and `zoom(by:)`. A wheel that climbs the responder chain to
+    /// here was the selected card's and went unused, and must not pan the
+    /// board from under that card.
     override func scrollWheel(with event: NSEvent) {}
 
     /// Pans by a wheel's travel in screen points.

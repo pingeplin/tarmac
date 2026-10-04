@@ -106,7 +106,10 @@ need data in the chart, serialize it into a `const` at the top of the script.
 - The card is **look-don't-touch** by default: a transparent shield keeps
   pointer input out so clicking a card never steals the user's keystrokes. The
   user double-clicks to borrow interactivity and presses `Esc` to hand focus
-  back. Scroll works through the shield without borrowing.
+  back. Scroll works through the shield without borrowing: a wheel over the
+  selected card reaches the document as ordinary `wheel` events and scrolls
+  whatever is under the pointer, so a handler that zooms or pans on wheel runs
+  on a card that is selected and not borrowed.
 - Cards scrolled far off-viewport are **paused**: `requestAnimationFrame`,
   `setTimeout`, and `setInterval` stop firing. On return, held timeouts and
   frames flush once — an animation gets a **single** catch-up frame, not one per

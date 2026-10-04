@@ -703,12 +703,21 @@ no permission-policy feature, and no handle on the app.
   message is carried only if its JSON is at most 1000 characters. What they
   mean is `HTMLCardSession`'s.
 - **Shield and borrow.** A transparent shield covers the document: a press
-  selects the card, a wheel over the selected card is relayed into the document
-  as whole-pixel scroll steps (`CardZoom`), and nothing else reaches it. A
-  double-click *borrows* the card — app-wide, one at a time (`CardBorrow`): the
-  shield comes off and the document takes the keyboard. `ESC` un-borrows and
+  selects the card, a wheel over the selected card is handed on to the web
+  view, and nothing else reaches it. A double-click *borrows* the card —
+  app-wide, one at a time (`CardBorrow`): the shield comes off and the document
+  takes the keyboard. `ESC` un-borrows and
   returns the keyboard to the prime terminal, whether the document (through the
   shim's relay) or the app saw the key.
+- **Wheel.** The document scrolls natively, shielded or borrowed. The card's
+  web view (`HTMLCardWebView`) rewrites each wheel event's delta into the
+  document's own units before WebKit sees it (`CardWheel`): `3 / zoom` units a
+  screen point under magnify, whole units with the residue carried for a
+  trackpad, scaled lines for a notched wheel; in reveal the event passes as it
+  is. So the content moves with the finger at every zoom, and what scrolls is
+  what is under the pointer, a nested scroller included. A selected card's
+  document therefore sees `wheel` events; it sees no press and no key until it
+  is borrowed.
 - **Zoom.** Two modes, chosen per document load from
   `<meta name="tarmac-zoom">` (`ZoomMode`). **Magnify**, the default: the
   document is laid out once at root zoom 3 in a box 3× the card's and shown
@@ -905,7 +914,8 @@ posts a native `⌘` chord to the application's event queue, with a debug-only
 "held" override for the ⌘Q guard's release poll.
 
 `snapshot` reports the active board (`DevSnapshot`): the viewport, each card's
-world `board_rect` and measured `screen_rect`, the selected card, keyboard
+world `board_rect` and measured `screen_rect`, `content_origin` — where those
+window-content coordinates start on the display — the selected card, keyboard
 focus, per-terminal `cols`/`rows`/`proc`/`selection`/`scrollback_tail`, and the
 quit guard's state. `--until` re-evaluates an expression every 50 ms
 (`DevUntil`). The scenario suites are `scripts/qa/smoke.mjs` (`make qa`) and

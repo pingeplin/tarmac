@@ -37,13 +37,15 @@ final class DevSnapshotTests: XCTestCase {
         selectedCard: String? = nil,
         borrowedCard: String? = nil,
         keyboardFocus: DevSnapshot.KeyboardFocus = .none,
-        quitGuard: Guard? = nil
+        quitGuard: Guard? = nil,
+        contentOrigin: CGPoint? = nil
     ) -> Input {
         Input(
             boardID: "board-0",
             visibility: visibility,
             viewport: viewport,
             viewRect: view,
+            contentOrigin: contentOrigin,
             cards: cards ?? [term(), doc()],
             selectedCard: selectedCard,
             borrowedCard: borrowedCard,
@@ -78,7 +80,10 @@ final class DevSnapshotTests: XCTestCase {
         let snapshot = fields(DevSnapshot.build(input()))
         XCTAssertEqual(
             snapshot.keys.sorted(),
-            ["active_element", "board_id", "cards", "focused_card", "quit_guard", "v", "viewport", "visibility"]
+            [
+                "active_element", "board_id", "cards", "content_origin", "focused_card", "quit_guard", "v", "viewport",
+                "visibility",
+            ]
         )
         XCTAssertEqual(snapshot["v"], 1)
         XCTAssertEqual(snapshot["board_id"], "board-0")
@@ -86,6 +91,30 @@ final class DevSnapshotTests: XCTestCase {
             snapshot["viewport"],
             ["zoom": 1, "cx": 500, "cy": 350, "view_rect": ["x": 24, "y": 40, "w": 1000, "h": 700]]
         )
+    }
+
+    // MARK: - content_origin (2610.0002 S6)
+
+    /// Cocoa's screen points have their origin at the primary screen's
+    /// bottom-left; a display point is measured from its top-left. Nothing is
+    /// clamped: a screen above and left of the primary one is negative in both.
+    func testS6ACocoaScreenPointBecomesADisplayPoint() {
+        XCTAssertEqual(
+            DevSnapshot.displayPoint(cocoa: CGPoint(x: 730, y: 1218), primaryScreenHeight: 1440),
+            CGPoint(x: 730, y: 222)
+        )
+        XCTAssertEqual(
+            DevSnapshot.displayPoint(cocoa: CGPoint(x: -500, y: 1600), primaryScreenHeight: 1440),
+            CGPoint(x: -500, y: -160)
+        )
+    }
+
+    func testS6TheSnapshotSaysWhereItsContentCoordinatesStartOnTheDisplay() {
+        let shown = fields(DevSnapshot.build(input(contentOrigin: CGPoint(x: 730, y: 222))))
+        XCTAssertEqual(shown["content_origin"], ["x": 730, "y": 222])
+
+        let windowless = fields(DevSnapshot.build(input()))
+        XCTAssertEqual(windowless["content_origin"], .null)
     }
 
     /// The board's own viewport, away from the defaults: `smoke.mjs` waits on
@@ -635,7 +664,7 @@ final class DevSnapshotTests: XCTestCase {
                 + #""board_id":"board-0","#
                 + #""cards":[{"board_rect":{"h":200,"w":300,"x":500,"y":20},"borrowed":false,"focused":false,"#
                 + #""id":"/a/b.md","kind":"doc","screen_rect":null}],"#
-                + #""focused_card":null,"quit_guard":null,"v":1,"#
+                + #""content_origin":null,"focused_card":null,"quit_guard":null,"v":1,"#
                 + #""viewport":{"cx":500,"cy":350,"view_rect":{"h":700,"w":1000,"x":24,"y":40},"zoom":1},"#
                 + #""visibility":"visible"}"#
         )
