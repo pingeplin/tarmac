@@ -4,7 +4,7 @@ import CoreGraphics
 /// its frame on screen, and when it shows (spec 2610.0003). Lengths are world
 /// units, as the header's 30 is, unless a frame says otherwise.
 public enum ScrollIndicator {
-    public static let width: CGFloat = 6
+    public static let width: CGFloat = 10
     /// From the body's right edge, and from its top.
     public static let inset: CGFloat = 2
     public static let minLength: CGFloat = 24

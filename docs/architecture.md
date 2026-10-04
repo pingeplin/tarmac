@@ -536,7 +536,7 @@ and placed by a world-space `CardFrame {x, y, w, h, z}`.
   one value, `ScrollMetrics {offset, visible, total}`, in its own unit — a
   terminal's rows, a page's pixels — and the card draws one thumb from it, the
   same on all three (`ScrollIndicator`). It is chrome, laid out on screen like
-  the header: 6 wide and 2 in from the body's right edge, never shorter than
+  the header: 10 wide and 2 in from the body's right edge, never shorter than
   24, clear of the rounded bottom corner; a dark fill with a light hairline,
   both opaque, so it is the same on every page. It shows when the wheel router gives
   the card a wheel and fades a second after the last
