@@ -46,7 +46,8 @@ the PR's CI push it well past a 2-minute command timeout. `NOTES_FILE=<path>`
 replaces the generated release notes (the commit subjects since the last tag).
 
 The `tee` is what the `release-progress` mod reads (`.claude/skills/release-progress/`):
-it follows the log and draws the release's steps in a band above the prompt.
+it follows the log and draws the release's steps in a band above the prompt, for
+as long as the release runs.
 `/release-progress <log>` follows a log by hand, `/release-progress off` hides it.
 
 What it does, in order — each step is skipped when GitHub shows it already landed:

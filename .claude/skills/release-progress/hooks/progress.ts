@@ -71,3 +71,9 @@ export function logOf(command: string): string | null {
 export function teeTarget(processes: string): string | null {
   return /^\d+ tee (?:-a )?(.+)$/m.exec(processes)?.[1] ?? null
 }
+
+export function isTeeing(processes: string, log: string): boolean {
+  return processes
+    .split('\n')
+    .some(line => /^\d+ tee (-a )?/.test(line) && line.endsWith(` ${log}`))
+}

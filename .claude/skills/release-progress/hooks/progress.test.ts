@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { logOf, parseLog, teeTarget } from './progress'
+import { isTeeing, logOf, parseLog, teeTarget } from './progress'
 
 const BUILT = [
   '==> freshness guard: HEAD must contain origin/main',
@@ -102,4 +102,13 @@ test('a running tee is found among the processes, its shell skipped', async () =
 
   expect(teeTarget(processes)).toBe('/tmp/release-1.log')
   expect(teeTarget('')).toBe(null)
+})
+
+test('a log is live while a tee still writes it', async () => {
+  const processes = '69576 tee /tmp/release-1.log\n70001 tee -a out.log\n'
+
+  expect(isTeeing(processes, '/tmp/release-1.log')).toBe(true)
+  expect(isTeeing(processes, 'out.log')).toBe(true)
+  expect(isTeeing(processes, '/tmp/release-2.log')).toBe(false)
+  expect(isTeeing('', '/tmp/release-1.log')).toBe(false)
 })

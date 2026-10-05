@@ -1,13 +1,22 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import { logOf, parseLog, STEPS, teeTarget } from './progress'
+import { isTeeing, logOf, parseLog, STEPS, teeTarget } from './progress'
 
 const run = atom({ plugin: 'release-progress', key: 'run' } as const, null)
 const isHidden = atom(
   { plugin: 'release-progress', key: 'isHidden' } as const,
   false,
 )
+
+const ENDED = 'the release ended without finishing'
+
+// A killed release leaves no marker in its log: only its tee going away says so.
+const isAlive = async ($: EngineInterface, log: string) => {
+  const found = await $.process.run(['pgrep', '-fl', 'tee ']).catch(() => null)
+
+  return found === null || isTeeing(found.stdout, log)
+}
 
 const poll = async ($: EngineInterface) => {
   const now = await read($, run)
@@ -16,13 +25,19 @@ const poll = async ($: EngineInterface) => {
     return
   }
 
+  // Asked before the read: a tee already gone has written all it ever will.
+  const isOver = !(await isAlive($, now.log))
   const text = await $.fs.read(now.log).catch(() => null)
 
   if (text === null) {
     return
   }
 
-  const seen = parseLog(text)
+  const parsed = parseLog(text)
+  const seen =
+    parsed.status === 'running' && isOver
+      ? { ...parsed, status: 'failed' as const, line: ENDED }
+      : parsed
   const isSame =
     seen.step === now.step &&
     seen.status === now.status &&
@@ -47,7 +62,16 @@ const poll = async ($: EngineInterface) => {
 const track = async ($: EngineInterface, log: string) => {
   await update($, run, () => ({ ...parseLog(''), log }))
   await update($, isHidden, () => false)
+}
+
+const follow = async ($: EngineInterface, log: string) => {
+  await track($, log)
   await poll($)
+  const now = await read($, run)
+
+  return now === null || now.status === 'running'
+    ? `Following ${log}`
+    : `That release is over: ${now.line}`
 }
 
 const discover = async ($: EngineInterface) => {
@@ -72,7 +96,7 @@ export const register: Register = on => {
       const log = await discover($)
 
       if (log !== null) {
-        await track($, log)
+        await follow($, log)
       }
     }
 
@@ -87,6 +111,8 @@ export const register: Register = on => {
 
     if (ran.deny === undefined && log !== null) {
       await track($, log)
+      // A resumed release tees over its last log: read it once the tee has cut it.
+      $.clock.after(1000, () => void poll($))
     }
 
     return ran
@@ -103,33 +129,24 @@ export const register: Register = on => {
 
     const log = asked === '' ? await discover($) : asked
 
-    if (log !== null) {
-      await track($, log)
-
-      return { text: `Following ${log}` }
-    }
-
-    await update($, isHidden, () => false)
-    const now = await read($, run)
-
     return {
-      text:
-        now === null
-          ? 'No release is running. Pass its log path: /release-progress <log>'
-          : `No release is running. Showing the last one: ${now.log}`,
+      text: log === null ? 'No release is running.' : await follow($, log),
     }
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const now = await read($, run)
 
-    if (e.props.hasSurvey || now === null || (await read($, isHidden))) {
+    if (
+      now === null ||
+      now.status !== 'running' ||
+      e.props.hasSurvey ||
+      (await read($, isHidden))
+    ) {
       return next(e)
     }
 
     const { Box, Button, Text } = $.ui.resolve(e)
-    const isFailed = now.status === 'failed'
-    const current = STEPS[now.step]
     const isWide = e.props.bodyColumns >= 96
 
     return (
@@ -143,16 +160,14 @@ export const register: Register = on => {
               ) : at > now.step ? (
                 <Text dimColor>· {name} </Text>
               ) : (
-                <Text bold color={isFailed ? 'red' : 'yellow'}>
-                  {isFailed ? '✗' : '▸'} {name}{' '}
+                <Text bold color="yellow">
+                  ▸ {name}{' '}
                 </Text>
               ),
             )}
           {!isWide && (
-            <Text color={isFailed ? 'red' : current ? 'yellow' : 'green'}>
-              {current === undefined
-                ? '✓ published '
-                : `${isFailed ? '✗' : '▸'} ${current} ${now.step + 1}/${STEPS.length} `}
+            <Text color="yellow">
+              ▸ {STEPS[now.step]} {now.step + 1}/{STEPS.length}{' '}
             </Text>
           )}
           <Button
@@ -162,7 +177,7 @@ export const register: Register = on => {
             onPress={() => update($, isHidden, () => true)}
           />
         </Box>
-        <Text dimColor={!isFailed} color={isFailed ? 'red' : undefined} wrap="truncate-end">
+        <Text dimColor wrap="truncate-end">
           {now.line}
         </Text>
       </Box>

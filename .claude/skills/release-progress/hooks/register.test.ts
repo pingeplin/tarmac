@@ -1,4 +1,4 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 import type { On, RenderElement } from 'claude-code'
 
 const BAND = {
@@ -65,14 +65,59 @@ test('a narrow band names only the current step', async ($, on) => {
 })
 
 test('a release command with a tee is followed by itself', async ($, on) => {
-  on('fs.read', () => ({ value: '==> released v9.9.9\n' }))
+  const clock = mock.clock(on)
+  on('fs.read', () => ({ value: '==> Homebrew tap\n' }))
   on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '' } }) as never)
   await $.tool.call({
     tool: 'Bash',
     command: 'VERSION=9.9.9 make release 2>&1 | tee /tmp/r.log',
   } as never)
+  await clock.advance(1000)
   const ui = await $.ui.mount({ ...BAND, props: { ...BAND.props, bodyColumns: 60 } })
 
-  expect(await ui.find({ type: 'Text', text: '✓ published' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: 'released v9.9.9' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '▸ tap 7/8' })).toBeDefined()
+})
+
+test('the band leaves once the release is published', async ($, on) => {
+  engineBand(on)
+  on('fs.read', () => ({ value: '==> released v9.9.9\n' }))
+  const ran = await $.command.run({
+    ...follow,
+    origin: { kind: 'composer' },
+    presentation: { isFullscreen: false, columns: 120 },
+  })
+  const ui = await $.ui.mount(BAND)
+
+  expect(ran.text).toContain('released v9.9.9')
+  expect(await ui.find({ text: 'engine band' })).toBeDefined()
+})
+
+test('the band leaves once the release fails', async ($, on) => {
+  engineBand(on)
+  on('fs.read', () => ({ value: '==> release PR\nFATAL: did not merge\n' }))
+  await $.command.run({
+    ...follow,
+    origin: { kind: 'composer' },
+    presentation: { isFullscreen: false, columns: 120 },
+  })
+  const ui = await $.ui.mount(BAND)
+
+  expect(await ui.find({ text: 'engine band' })).toBeDefined()
+})
+
+test('a release whose process is gone is over, and the band leaves', async ($, on) => {
+  engineBand(on)
+  on('fs.read', () => ({ value: '==> notarizing\n' }))
+  on('process.run', () => ({
+    value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
+  }) as never)
+  const ran = await $.command.run({
+    ...follow,
+    origin: { kind: 'composer' },
+    presentation: { isFullscreen: false, columns: 120 },
+  })
+  const ui = await $.ui.mount(BAND)
+
+  expect(ran.text).toContain('ended without finishing')
+  expect(await ui.find({ text: 'engine band' })).toBeDefined()
 })
