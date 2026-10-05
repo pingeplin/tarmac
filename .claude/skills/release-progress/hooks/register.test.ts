@@ -1,0 +1,112 @@
+import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
+import type { On, RenderElement } from 'claude-code'
+
+const BAND = {
+  plugin: 'release-progress',
+  surface: 'terminal',
+  component: 'AbovePrompt',
+  props: {
+    hasSurvey: false,
+    isWorking: false,
+    maxRows: 10,
+    bodyColumns: 120,
+    scroll: { offset: 0, bodyRows: 10 },
+    view: {},
+  },
+} as const
+
+const engineBand = (on: On) =>
+  on(
+    'ui.render',
+    { component: 'AbovePrompt' },
+    ($, e) => h($.ui.resolve(e).Text, null, 'engine band') as RenderElement,
+  )
+
+const NARROW = { ...BAND, props: { ...BAND.props, bodyColumns: 60 } }
+
+const follow = ($: Engine) =>
+  $.command.run({
+    command: 'release-progress',
+    args: '/tmp/release.log',
+    origin: { kind: 'composer' },
+    presentation: { isFullscreen: false, columns: 120 },
+  })
+
+test('the band is quiet until a release is followed', async ($, on) => {
+  engineBand(on)
+  const ui = await $.ui.mount(BAND)
+
+  expect(await ui.find({ text: 'engine band' })).toBeDefined()
+})
+
+test('a followed log draws the step it reached and its last line', async ($, on) => {
+  engineBand(on)
+  on('fs.read', () => ({
+    value: ['==> signing (identity: X)', '==> notarizing', '  status: In Progress'].join('\n'),
+  }))
+  await follow($)
+  const ui = await $.ui.mount(BAND)
+
+  expect(await ui.find({ type: 'Text', text: '✓ sign' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '▸ notarize' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '· verify' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'status: In Progress' })).toBeDefined()
+
+  await ui.press({ key: 'hide' })
+  expect(await ui.find({ text: 'engine band' })).toBeDefined()
+})
+
+test('a narrow band names only the current step', async ($, on) => {
+  on('fs.read', () => ({ value: '==> Homebrew tap\n' }))
+  await follow($)
+  const ui = await $.ui.mount(NARROW)
+
+  expect(await ui.find({ type: 'Text', text: '▸ tap 7/8' })).toBeDefined()
+})
+
+test('a release command with a tee is followed by itself', async ($, on) => {
+  const clock = mock.clock(on)
+  on('fs.read', () => ({ value: '==> Homebrew tap\n' }))
+  on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '' } }) as never)
+  await $.tool.call({
+    tool: 'Bash',
+    command: 'VERSION=9.9.9 make release 2>&1 | tee /tmp/r.log',
+  } as never)
+  await clock.advance(1000)
+  const ui = await $.ui.mount(NARROW)
+
+  expect(await ui.find({ type: 'Text', text: '▸ tap 7/8' })).toBeDefined()
+})
+
+test('the band leaves once the release is published', async ($, on) => {
+  engineBand(on)
+  on('fs.read', () => ({ value: '==> released v9.9.9\n' }))
+  const ran = await follow($)
+  const ui = await $.ui.mount(BAND)
+
+  expect(ran.text).toContain('released v9.9.9')
+  expect(await ui.find({ text: 'engine band' })).toBeDefined()
+})
+
+test('the band leaves once the release fails', async ($, on) => {
+  engineBand(on)
+  on('fs.read', () => ({ value: '==> release PR\nFATAL: did not merge\n' }))
+  await follow($)
+  const ui = await $.ui.mount(BAND)
+
+  expect(await ui.find({ text: 'engine band' })).toBeDefined()
+})
+
+test('a release whose process is gone is over, and the band leaves', async ($, on) => {
+  engineBand(on)
+  on('fs.read', () => ({ value: '==> notarizing\n' }))
+  on('process.run', () => ({
+    value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
+  }) as never)
+  const ran = await follow($)
+  const ui = await $.ui.mount(BAND)
+
+  expect(ran.text).toContain('ended without finishing')
+  expect(await ui.find({ text: 'engine band' })).toBeDefined()
+})
