@@ -1,8 +1,9 @@
 import XCTest
 @testable import TarmacKit
 
-/// 2609.0016: the app's own `app-prefs.json`. Ported from the Rust
-/// `app_prefs.rs` tests; S-numbers are the spec's.
+/// The app's own `app-prefs.json`. The first part is spec 2609.0016's, ported
+/// from the Rust `app_prefs.rs` tests; the part under the 2610.0005 mark is
+/// that spec's. S-numbers are those of the part's own spec.
 final class AppPrefsTests: XCTestCase {
     private func data(_ json: String) -> Data { Data(json.utf8) }
 
@@ -39,10 +40,11 @@ final class AppPrefsTests: XCTestCase {
 
     /// S26 — the bytes QA reads in `.dev/app-prefs.json`, and the round trip.
     func testTheSavedBytesAreExactAndReadBack() {
-        XCTAssertEqual(AppPrefs.encode(warnBeforeQuit: false), data(#"{"warn_before_quit":false}"#))
-        XCTAssertEqual(AppPrefs.encode(warnBeforeQuit: true), data(#"{"warn_before_quit":true}"#))
-        XCTAssertFalse(AppPrefs.warnBeforeQuit(from: AppPrefs.encode(warnBeforeQuit: false)))
-        XCTAssertTrue(AppPrefs.warnBeforeQuit(from: AppPrefs.encode(warnBeforeQuit: true)))
+        let off = AppPrefs.Values(warnBeforeQuit: false), on = AppPrefs.Values(warnBeforeQuit: true)
+        XCTAssertEqual(AppPrefs.encode(off), data(#"{"warn_before_quit":false}"#))
+        XCTAssertEqual(AppPrefs.encode(on), data(#"{"warn_before_quit":true}"#))
+        XCTAssertFalse(AppPrefs.warnBeforeQuit(from: AppPrefs.encode(off)))
+        XCTAssertTrue(AppPrefs.warnBeforeQuit(from: AppPrefs.encode(on)))
     }
 
     /// A JSON number is not a boolean. `JSONSerialization` would bridge `0` to
@@ -73,18 +75,18 @@ final class AppPrefsTests: XCTestCase {
     /// Anything unreadable is the same answer as an absent file.
     func testLoadingAMissingOrUnreadableFileLeavesTheGuardOn() throws {
         let dir = try scratchDirectory()
-        XCTAssertTrue(AppPrefs.load(from: dir + "/app-prefs.json"))
-        XCTAssertTrue(AppPrefs.load(from: dir), "a directory in the file's place cannot be read")
+        XCTAssertTrue(AppPrefs.load(from: dir + "/app-prefs.json").warnBeforeQuit)
+        XCTAssertTrue(AppPrefs.load(from: dir).warnBeforeQuit, "a directory in the file's place cannot be read")
     }
 
     func testASavedToggleReadsBackFromDisk() throws {
         let path = try scratchDirectory() + "/app-prefs.json"
-        try AppPrefs.save(warnBeforeQuit: false, to: path)
-        XCTAssertFalse(AppPrefs.load(from: path))
+        try AppPrefs.save(AppPrefs.Values(warnBeforeQuit: false), to: path)
+        XCTAssertFalse(AppPrefs.load(from: path).warnBeforeQuit)
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: path)), data(#"{"warn_before_quit":false}"#))
 
-        try AppPrefs.save(warnBeforeQuit: true, to: path)
-        XCTAssertTrue(AppPrefs.load(from: path))
+        try AppPrefs.save(AppPrefs.Values(warnBeforeQuit: true), to: path)
+        XCTAssertTrue(AppPrefs.load(from: path).warnBeforeQuit)
     }
 
     /// The save goes through a temp file and renames over the old one, which
@@ -93,14 +95,132 @@ final class AppPrefsTests: XCTestCase {
     func testSavingReplacesTheFileAndLeavesNoTempBehind() throws {
         let dir = try scratchDirectory()
         let path = dir + "/app-prefs.json"
-        try AppPrefs.save(warnBeforeQuit: false, to: path)
-        try AppPrefs.save(warnBeforeQuit: false, to: path)
-        try AppPrefs.save(warnBeforeQuit: true, to: path)
+        try AppPrefs.save(AppPrefs.Values(warnBeforeQuit: false), to: path)
+        try AppPrefs.save(AppPrefs.Values(warnBeforeQuit: false), to: path)
+        try AppPrefs.save(AppPrefs.Values(warnBeforeQuit: true), to: path)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir), ["app-prefs.json"])
     }
 
     func testSavingIntoAMissingDirectoryThrows() throws {
         let path = try scratchDirectory() + "/missing/app-prefs.json"
-        XCTAssertThrowsError(try AppPrefs.save(warnBeforeQuit: false, to: path))
+        XCTAssertThrowsError(try AppPrefs.save(AppPrefs.Values(warnBeforeQuit: false), to: path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+    }
+
+    // MARK: 2610.0005 — the font choices share the file
+
+    private typealias Values = AppPrefs.Values
+
+    /// S1 — the roles are written after the guard, in a fixed order.
+    func testTheFontChoicesAreWrittenAfterTheGuardInRoleOrder() {
+        let values = Values(warnBeforeQuit: false, fonts: [.document: "Helvetica Neue", .terminal: "Menlo"])
+        XCTAssertEqual(
+            AppPrefs.encode(values),
+            data(#"{"warn_before_quit":false,"terminal_font":"Menlo","document_font":"Helvetica Neue"}"#)
+        )
+        let all = Values(fonts: [.interface: "Monaco", .document: "Georgia", .terminal: "Menlo"])
+        XCTAssertEqual(
+            AppPrefs.encode(all),
+            data(#"{"warn_before_quit":true,"terminal_font":"Menlo","interface_font":"Monaco","document_font":"Georgia"}"#)
+        )
+    }
+
+    /// S3
+    func testAFontKeyReadsAsThatRolesChoice() {
+        let values = AppPrefs.decode(data(#"{"warn_before_quit":false,"interface_font":"Monaco"}"#))
+        XCTAssertEqual(values, Values(warnBeforeQuit: false, fonts: [.interface: "Monaco"]))
+    }
+
+    /// S4
+    func testSavedFontChoicesReadBackFromDisk() throws {
+        let dir = try scratchDirectory()
+        let path = dir + "/app-prefs.json"
+        let values = Values(warnBeforeQuit: false, fonts: [.terminal: "Menlo", .interface: "Monaco", .document: "Georgia"])
+        try AppPrefs.save(values, to: path)
+        XCTAssertEqual(AppPrefs.load(from: path), values)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir), ["app-prefs.json"])
+    }
+
+    /// S5 — one preference saved must not drop another.
+    func testChangingOnePreferenceKeepsTheOthers() throws {
+        let path = try scratchDirectory() + "/app-prefs.json"
+        try data(#"{"warn_before_quit":true,"terminal_font":"Menlo"}"#).write(to: URL(fileURLWithPath: path))
+
+        var values = AppPrefs.load(from: path)
+        values.warnBeforeQuit = false
+        try AppPrefs.save(values, to: path)
+        XCTAssertEqual(AppPrefs.load(from: path), Values(warnBeforeQuit: false, fonts: [.terminal: "Menlo"]))
+
+        values = AppPrefs.load(from: path)
+        values.fonts[.document] = "Georgia"
+        try AppPrefs.save(values, to: path)
+        XCTAssertEqual(
+            try Data(contentsOf: URL(fileURLWithPath: path)),
+            data(#"{"warn_before_quit":false,"terminal_font":"Menlo","document_font":"Georgia"}"#)
+        )
+    }
+
+    /// S20 — each key is read on its own.
+    func testAKeyOfTheWrongTypeDoesNotChangeHowTheOthersRead() {
+        XCTAssertEqual(
+            AppPrefs.decode(data(#"{"warn_before_quit":false,"terminal_font":7,"interface_font":"Monaco"}"#)),
+            Values(warnBeforeQuit: false, fonts: [.interface: "Monaco"])
+        )
+        XCTAssertEqual(
+            AppPrefs.decode(data(#"{"warn_before_quit":"no","terminal_font":"Menlo"}"#)),
+            Values(warnBeforeQuit: true, fonts: [.terminal: "Menlo"])
+        )
+    }
+
+    /// S21 — the files are valid JSON, so it is the key's own rule that drops
+    /// the value.
+    func testAFontValueThatIsNotAUsableNameIsNoChoice() {
+        let unusable = [#""""#, "null", #"["Menlo"]"#, #""a\nb""#, #""a\u001fb""#, "\"a\u{7f}b\""]
+        for value in unusable {
+            let file = data(#"{"warn_before_quit":false,"terminal_font":"# + value + #","interface_font":"Monaco"}"#)
+            XCTAssertTrue(StrictJSON.isValid(file), value)
+            XCTAssertEqual(AppPrefs.decode(file), Values(warnBeforeQuit: false, fonts: [.interface: "Monaco"]), value)
+        }
+    }
+
+    /// S22
+    func testAwkwardFamilyNamesSurviveTheRoundTrip() {
+        for name in [#"He said "hi""#, #"back\slash"#, "蘋方-繁"] {
+            let values = Values(warnBeforeQuit: false, fonts: [.terminal: name, .document: name])
+            let bytes = AppPrefs.encode(values)
+            XCTAssertTrue(StrictJSON.isValid(bytes), name)
+            XCTAssertEqual(AppPrefs.decode(bytes), values, name)
+        }
+        XCTAssertEqual(
+            AppPrefs.encode(Values(fonts: [.terminal: #"a"b\c"#])),
+            data(#"{"warn_before_quit":true,"terminal_font":"a\"b\\c"}"#)
+        )
+    }
+
+    /// S38 — a damaged file gives up its font choices with its guard.
+    func testADamagedFileReadsAsAllDefaults() {
+        let whole = #"{"warn_before_quit":false,"terminal_font":"Menlo"}"#
+        XCTAssertEqual(AppPrefs.decode(data(whole)), Values(warnBeforeQuit: false, fonts: [.terminal: "Menlo"]))
+        let damaged: [String?] = [nil, "", "[]", String(whole.dropLast()), String(whole.dropLast()) + ",}"]
+        for contents in damaged {
+            XCTAssertEqual(AppPrefs.decode(contents.map(data)), Values(), contents ?? "no file")
+        }
+    }
+
+    /// S49 — a name the reader would refuse is never written, so it cannot
+    /// damage the file and turn the guard back on.
+    func testANameTheReaderRefusesIsNotWritten() {
+        let values = Values(fonts: [.terminal: "", .interface: "a\nb", .document: "Georgia"])
+        let bytes = AppPrefs.encode(values)
+        XCTAssertEqual(bytes, data(#"{"warn_before_quit":true,"document_font":"Georgia"}"#))
+        XCTAssertTrue(StrictJSON.isValid(bytes))
+
+        // U+001F is the last character JSON forbids raw in a string; U+0020 is a space.
+        for refused in ["a\u{1f}b", "a\u{7f}b"] {
+            let bytes = AppPrefs.encode(Values(fonts: [.terminal: refused]))
+            XCTAssertEqual(bytes, data(#"{"warn_before_quit":true}"#), refused.debugDescription)
+        }
+        let spaced = AppPrefs.encode(Values(fonts: [.terminal: "a b"]))
+        XCTAssertEqual(spaced, data(#"{"warn_before_quit":true,"terminal_font":"a b"}"#))
     }
 }

@@ -26,10 +26,10 @@ final class CardShieldView: NSView {
 /// An HTML card's console: what its document logged, one line per entry, over
 /// the bottom of the body and at most `maxFraction` of it high.
 @MainActor
-final class CardConsoleView: NSView {
+final class CardConsoleView: NSView, FontFollowing {
     static let maxFraction: CGFloat = 0.4
 
-    private static let font = Theme.mono(10)
+    private static var font: NSFont { Theme.mono(10) }
     private static let lineHeight: CGFloat = 15
     private static let errorColor = NSColor(srgbRed: 0xf2 / 255, green: 0x8b / 255, blue: 0x82 / 255, alpha: 1)
     private static let inset = NSSize(width: 8, height: 4)
@@ -82,6 +82,13 @@ final class CardConsoleView: NSView {
         }
         text.textStorage?.setAttributedString(lines)
         measured.forget()
+    }
+
+    func fontsChanged() {
+        guard let storage = text.textStorage else { return }
+        storage.addAttribute(.font, value: Self.font, range: NSRange(location: 0, length: storage.length))
+        measured.forget()
+        superview?.needsLayout = true
     }
 
     /// The height the lines take at `width`, the insets included, and no more

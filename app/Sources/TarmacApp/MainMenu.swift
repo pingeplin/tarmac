@@ -1,11 +1,11 @@
 import AppKit
 
 /// The menu bar: the standard set the Tauri app shows (its `Menu::default`),
-/// plus *Warn Before Quitting* directly above Quit. Tarmac's own commands are
-/// keys on the board, not menu items.
+/// plus *Settings…* and, directly above Quit, *Warn Before Quitting*. Tarmac's
+/// own commands are keys on the board, not menu items.
 @MainActor
 enum MainMenu {
-    static func build(quitGuard: QuitGuardController) -> NSMenu {
+    static func build(quitGuard: QuitGuardController, settings: SettingsWindowController) -> NSMenu {
         let name = NSRunningApplication.current.localizedName ?? "Tarmac"
         let main = NSMenu()
 
@@ -14,8 +14,12 @@ enum MainMenu {
         let quit = item("Quit \(name)", QuitGuardController.quitAction, "q")
         // Held weakly by the item: the app delegate keeps the guard alive.
         quit.target = quitGuard
+        let openSettings = item("Settings…", SettingsWindowController.showAction, ",")
+        openSettings.target = settings
         main.addItem(submenu(name, [
             item("About \(name)", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+            .separator(),
+            openSettings,
             .separator(),
             submenuItem("Services", services),
             .separator(),

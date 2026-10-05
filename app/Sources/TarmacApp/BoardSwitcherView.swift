@@ -6,7 +6,7 @@ import TarmacKit
 /// is given, with `SwitcherChrome`'s words, and reports clicks; the controller
 /// owns the state and every key.
 @MainActor
-final class BoardSwitcherView: NSView {
+final class BoardSwitcherView: NSView, FontFollowing {
     /// A row was clicked (its index among the visible rows).
     var onPickRow: ((Int) -> Void)?
     /// The veil outside the panel was clicked.
@@ -30,13 +30,13 @@ final class BoardSwitcherView: NSView {
 
     @MainActor
     private enum Font {
-        static let queryLabel = Theme.mono(10)
-        static let query = Theme.mono(12)
-        static let empty = Theme.mono(10.5)
-        static let footer = Theme.mono(10)
-        static let footerStrong = Theme.mono(10, weight: .semibold)
+        static var queryLabel: NSFont { Theme.mono(10) }
+        static var query: NSFont { Theme.mono(12) }
+        static var empty: NSFont { Theme.mono(10.5) }
+        static var footer: NSFont { Theme.mono(10) }
+        static var footerStrong: NSFont { Theme.mono(10, weight: .semibold) }
         /// The footer's own text size, which sets its line height.
-        static let panel = Theme.mono(11)
+        static var panel: NSFont { Theme.mono(11) }
     }
 
     private let panel = FlippedColumnView()
@@ -95,9 +95,7 @@ final class BoardSwitcherView: NSView {
         queryClip.layer?.masksToBounds = true
         queryBar.addSubview(queryClip)
         queryClip.addSubview(queryText)
-        caret.attributedStringValue = NSAttributedString(
-            string: SwitcherChrome.caret, attributes: [.font: Font.query, .foregroundColor: Theme.agent]
-        )
+        setFixedText()
         queryClip.addSubview(caret)
 
         scroll.drawsBackground = false
@@ -107,9 +105,6 @@ final class BoardSwitcherView: NSView {
         scroll.documentView = rowsDoc
         content.addSubview(scroll)
 
-        emptyLabel.attributedStringValue = NSAttributedString(
-            string: SwitcherChrome.emptyList, attributes: [.font: Font.empty, .foregroundColor: Theme.faint]
-        )
         rowsDoc.addSubview(emptyLabel)
 
         footer.addSubview(footerLabel)
@@ -146,6 +141,22 @@ final class BoardSwitcherView: NSView {
     override func keyDown(with event: NSEvent) {}
 
     // MARK: - Rendering
+
+    /// The two texts no `render` sets again.
+    private func setFixedText() {
+        caret.attributedStringValue = NSAttributedString(
+            string: SwitcherChrome.caret, attributes: [.font: Font.query, .foregroundColor: Theme.agent]
+        )
+        emptyLabel.attributedStringValue = NSAttributedString(
+            string: SwitcherChrome.emptyList, attributes: [.font: Font.empty, .foregroundColor: Theme.faint]
+        )
+    }
+
+    /// The rows and the query are set again by the next `render`.
+    func fontsChanged() {
+        setFixedText()
+        needsLayout = true
+    }
 
     /// `nowMs` is the wall clock, which picks a live board's glyph.
     func render(rows: [BoardSwitcher.BoardRow], state: SwitcherKeys.State, nowMs: UInt64) {
@@ -301,11 +312,11 @@ final class BoardSwitcherRow: NSView {
 
     @MainActor
     private enum Font {
-        static let glyph = Theme.mono(11)
-        static let name = Theme.mono(11.5)
-        static let mark = Theme.mono(8)
-        static let meta = Theme.mono(10)
-        static let ordinal = Theme.mono(9.5)
+        static var glyph: NSFont { Theme.mono(11) }
+        static var name: NSFont { Theme.mono(11.5) }
+        static var mark: NSFont { Theme.mono(8) }
+        static var meta: NSFont { Theme.mono(10) }
+        static var ordinal: NSFont { Theme.mono(9.5) }
     }
 
     static var height: CGFloat { Metric.padY * 2 + Font.name.normalLineHeight }

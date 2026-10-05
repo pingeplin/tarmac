@@ -191,6 +191,23 @@ Verified against the code on 2026-10-02.
   it only by setting the mode itself. `app/Sources/TarmacTerm/TerminalEngine.swift`.
 - **Scrollback is fixed at 5000 lines**, the `scrollbackLines` default; there is
   no setting. `app/Sources/TarmacTerm/TerminalView.swift`.
+- **`tarmac dev key` loses ⌃C, ⌃F and ⌃R once the app has shown a second
+  window.** The system's tiling items in the Window menu then claim those
+  chords from the driver's constructed events; a real keyboard is not
+  affected. Found with the Settings window (spec 2610.0005); the same
+  happens on a build without it once the Window menu is read through
+  Accessibility. `app/Sources/TarmacApp/Dev/DevInput.swift`.
+- **Font size has no setting.** The Settings window chooses a family for each
+  role and nothing else: the terminal stays at 16 pt (`Theme.termFontSize`)
+  and the chrome sizes are fixed. A role takes a family's regular face, so one
+  weight of a family cannot be chosen over another.
+  `app/Sources/TarmacApp/SettingsWindowController.swift`.
+- **Prompt and Powerline icons need a Nerd Font chosen in Settings.** The app
+  ships no font, and no system font has those glyphs.
+- **The Settings window's font list is read when the window opens**, about
+  190 ms on the main thread, and no test covers that it is read again: a font
+  installed while the window is open shows the next time it opens.
+  `app/Sources/TarmacApp/InstalledFonts.swift`.
 - **Synthesised italic slants more than a real italic would.** Where no italic
   of the terminal face is installed, the slant also shears fallback characters
   (CJK, emoji), Braille and geometric shapes, and Latin ink overhangs its cell
@@ -240,11 +257,11 @@ Verified against the code on 2026-10-02.
 - **No in-repo test drives `CardSchemeHandler` or compiles `DocFrameRule` with
   WebKit**; the address-reuse rule and the content rule were checked only with
   an off-screen harness.
-- **Nothing checks `NOTICE` against what the bundle ships.** Its lists — the
-  fonts and their icon sets, what Ghostty builds into libghostty-vt, the Rust
-  crates linked into the two binaries (`cargo tree -e normal,no-proc-macro`) —
-  were written by hand on 2026-10-02, so a new dependency, a font change or a
-  Ghostty bump needs them updated by hand. Two things it does not cover: the
+- **Nothing checks `NOTICE` against what the bundle ships.** Its lists — what
+  Ghostty builds into libghostty-vt, the Rust crates linked into the two
+  binaries (`cargo tree -e normal,no-proc-macro`) — were written by hand on
+  2026-10-02, so a new dependency or a Ghostty bump needs them updated by
+  hand. Two things it does not cover: the
   copy of `tarmac` at the root of the `.dmg` has its notices only inside
   `Tarmac.app`, and an x86_64 build would link simdutf's CPU detection, which
   carries a BSD notice of its own. `NOTICE`, `THIRD-PARTY-LICENSES`.

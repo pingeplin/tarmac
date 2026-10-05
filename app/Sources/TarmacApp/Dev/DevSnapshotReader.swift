@@ -49,8 +49,21 @@ struct DevSnapshotReader {
             selectedCard: board.selectedID?.wireID,
             borrowedCard: controller.borrow.id?.wireID,
             keyboardFocus: keyboardFocus,
-            quitGuard: quitGuard?.facts
+            quitGuard: quitGuard?.facts,
+            fonts: fonts
         ))
+    }
+
+    /// What the roles resolve to now, read the way the views read them.
+    private var fonts: DevSnapshot.Fonts {
+        DevSnapshot.Fonts(
+            saved: Dictionary(uniqueKeysWithValues: FontRole.allCases.compactMap { role in
+                controller.fonts.saved(role).map { (role, $0) }
+            }),
+            terminalFace: TerminalFace.name(family: Theme.fontFamilies[.terminal]),
+            interfaceFace: Theme.mono(10.5).fontName,
+            documentCSS: FontCSS.document(Theme.fontFamilies[.document])
+        )
     }
 
     var routingContext: DevRouting.Context {

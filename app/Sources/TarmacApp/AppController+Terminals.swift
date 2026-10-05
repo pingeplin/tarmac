@@ -25,7 +25,10 @@ extension AppController {
         let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         let view: TerminalView
         do {
-            view = try TerminalView(frame: frame, theme: .breeze, fontSize: Theme.termFontSize, backingScale: scale)
+            view = try TerminalView(
+                frame: frame, theme: .breeze, fontSize: Theme.termFontSize,
+                fontFamily: Theme.fontFamilies[.terminal], backingScale: scale
+            )
         } catch {
             fatalError("tarmac: could not create a terminal view: \(error)")
         }

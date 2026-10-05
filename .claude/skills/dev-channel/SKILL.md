@@ -110,7 +110,10 @@ core/target/debug/tarmac dev snapshot | jq .
   rect in `screen_rect`'s coordinates or `null` when none is laid out; the
   whole `scroll` is `null` until the content has reported, so wait with
   `--until 'cards[<id>].scroll.shown == true'`), `focused_card` (the *selected* card),
-  `active_element` (keyboard focus), per-terminal
+  `active_element` (keyboard focus), `fonts` (for `terminal`, `interface` and
+  `document`: `saved`, the family in `app-prefs.json` or `null`, and what the
+  role resolved to — the PostScript `face`, or for `document` the `css`
+  value its prose is given), per-terminal
   `cols`/`rows`/`proc`/`selection`/`scrollback_tail`, per-doc-card `borrowed`
   (the HTML card whose shield is lifted), and `quit_guard` — the ⌘Q guard's hold
   on the Quit item (`retargeted`, `enabled`, which `make qa`'s D11 asserts) plus
@@ -205,6 +208,15 @@ tarmac dev key t-1 ctrl+c
   set them. If a program leaves them set there is no in-band recovery; pop them
   from the program side against that terminal's tty:
   `printf '\033[>0u' > /dev/ttysNNN`.
+- **⌃C, ⌃F and ⌃R stop working through `key` once the Window menu is filled
+  in.** macOS adds tiling items to it (Fill ⌃F, Center ⌃C, Return to Previous
+  Size ⌃R, each with the 🌐 key). They are filled in when a second window is
+  shown — the Settings window, ⌘, — or when the Window menu is read through
+  Accessibility. From then on, in that app process, a `key <term> ctrl+c`
+  runs *Center* and never reaches the PTY, and `ctrl+f` resizes the window to
+  the screen. A real keyboard is not affected, and neither are other chords.
+  So drive the Settings window (`scripts/qa/settings-window.swift`) after
+  `make qa`, or relaunch between them.
 - `resize` drags the bottom-right handle in board units and reports where the
   card landed, clamped to the 160×90 minimum:
   `{"from": {...}, "to": {"w": 800, "h": 600}, "delta_px": {...}}`.

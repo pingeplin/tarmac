@@ -316,8 +316,9 @@ shape — lossless and one-way.
 
 The cockpit glass is a native AppKit application built from the SwiftPM package
 in `app/` (Swift 6, macOS 26). There is no storyboard and no nib: `main.swift`
-registers the bundled fonts, and `AppDelegate` builds one window (1100×700, also
-its minimum content size), the menu bar, and an `AppController`.
+starts the application, and `AppDelegate` reads the preferences and builds one
+window (1100×700, also its minimum content size), the menu bar, and an
+`AppController`. The app carries no font file: every face is one the Mac has.
 
 ### Layering
 
@@ -572,10 +573,12 @@ and placed by a world-space `CardFrame {x, y, w, h, z}`.
 - **`TerminalRenderer`** draws a frame with CoreText. Layout is in points and
   every fill is snapped to the context's device pixels, so the grid is seamless
   at any zoom. A character the terminal face lacks is shaped as a CoreText
-  line, which brings font fallback (CJK, emoji). The app ships the terminal face in
-  regular and bold only, so italic is that face slanted (`TerminalFonts`)
-  unless the machine has a real italic of it installed; box-drawing, block and
-  Powerline characters are never set italic, so their rules still meet.
+  line, which brings font fallback (CJK, emoji). The terminal face is the
+  family the user chose, or the system's monospaced font (`TerminalFonts`). A
+  family with no italic has its upright face slanted, and one with no bold
+  gives its regular face; box-drawing, block and Powerline characters are
+  never set italic, so their rules still meet. Setting `fontFamily` rebuilds
+  the renderer, and the new cell size reaches the program as a resize.
 - **`TerminalView`** is the `NSView`. It owns no PTY: output comes in through
   `feed`, and everything the user does leaves through `onInput`. Policy stays
   out of it — key bindings, link opening and clipboard permission are closures
@@ -884,6 +887,31 @@ menu carries *Warn Before Quitting (⌘Q)*, on by default and saved in
 `app-prefs.json` beside the daemon socket (`AppPrefs`); a file that cannot be
 read means the guard is on.
 
+**Fonts and the Settings window** (`FontSettings`, `SettingsWindowController`).
+*Settings…* (`⌘,`) in the app menu opens one window with a row for each
+`FontRole`:
+
+| Role | What it sets | With nothing chosen |
+| --- | --- | --- |
+| `terminal` | terminal cards | the system's monospaced font |
+| `interface` | card headers, status bar, switcher, zoom control, toasts, hints, the HTML card console; the chrome and code of doc cards | the system's monospaced font |
+| `document` | the prose of markdown doc cards | the system UI font |
+
+Each row lists the Mac's font families, *System Default* first; Terminal and
+Interface list only fixed-pitch ones (`FontMenu`). A choice is saved as a
+family name in `app-prefs.json`, whose four keys are `warn_before_quit`,
+`terminal_font`, `interface_font` and `document_font`. `AppPrefsStore` is the
+one owner of the file and saves all of it each time, so no preference drops
+another's key. A saved family the Mac does not have, or one a fixed-pitch role
+cannot take, is not used: the role falls back to its default and the file is
+left as it is (`FontRole.familyInEffect`). The families in effect sit in
+`Theme.fontFamilies`, which every view reads. A change is broadcast down the
+view tree of the window and of every board that is not mounted
+(`FontFollowing`): terminals rebuild their renderer, chrome takes
+`Theme.mono` again, and doc cards are handed two `font-family` values
+(`FontCSS`) as script arguments. The whole font list is read only when the
+window opens; launch reads the saved families alone.
+
 **The red button hides the window** (`WindowCloseHider`): terminals keep
 running, and the window returns on the next activation or Dock click, once per
 close. `⌘Q` stays guarded while it is hidden.
@@ -963,8 +991,10 @@ window-content coordinates start on the display — each card's `scroll`
 (`{offset, visible, total, shown, thumb}`, or `null` before its content has
 reported; `thumb` is the scroll thumb's rect beside `screen_rect`, or `null`
 when none is laid out), the selected card, keyboard
-focus, per-terminal `cols`/`rows`/`proc`/`selection`/`scrollback_tail`, and the
-quit guard's state. `--until` re-evaluates an expression every 50 ms
+focus, per-terminal `cols`/`rows`/`proc`/`selection`/`scrollback_tail`, the
+quit guard's state, and `fonts`: for each font role the family saved in
+`app-prefs.json` and what the role resolved to (a PostScript `face`, or the
+`css` value for doc prose). `--until` re-evaluates an expression every 50 ms
 (`DevUntil`). The scenario suites are `scripts/qa/smoke.mjs` (`make qa`) and
 `scripts/qa/quit.mjs` (`make qa-quit`).
 

@@ -13,8 +13,13 @@ extension AppController {
         // dispatched, so the card is already on top when its content starts
         // tracking the mouse.
         clickFocusMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-            let point = event.locationInWindow
-            MainActor.assumeIsolated { self?.handlePress(at: point) }
+            let point = event.locationInWindow, windowNumber = event.windowNumber
+            MainActor.assumeIsolated {
+                // The monitor sees every window's presses, and a point in
+                // another window is not a point on the board.
+                guard let self, windowNumber == self.window?.windowNumber else { return }
+                self.handlePress(at: point)
+            }
             return event
         }
         // The wheel is routed before it is dispatched: the board takes it

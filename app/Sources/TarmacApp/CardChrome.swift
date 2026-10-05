@@ -282,7 +282,7 @@ final class OwnerChipView: NSView {
 /// The header is laid out at its size on screen: every font and metric takes
 /// the board's zoom, and its items sit on whole device pixels.
 @MainActor
-final class CardHeaderView: NSView {
+final class CardHeaderView: NSView, FontFollowing {
     enum Kind {
         case terminal
         case doc(DocKind)
@@ -384,6 +384,10 @@ final class CardHeaderView: NSView {
         (accessory as? HeaderButton)?.apply(scale)
         closeButton?.apply(scale)
         needsLayout = true
+    }
+
+    func fontsChanged() {
+        applyScale()
     }
 
     /// The face of the glyph, the label and the marks, at the current scale. A

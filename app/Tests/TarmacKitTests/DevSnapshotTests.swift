@@ -45,7 +45,8 @@ final class DevSnapshotTests: XCTestCase {
         borrowedCard: String? = nil,
         keyboardFocus: DevSnapshot.KeyboardFocus = .none,
         quitGuard: Guard? = nil,
-        contentOrigin: CGPoint? = nil
+        contentOrigin: CGPoint? = nil,
+        fonts: DevSnapshot.Fonts? = nil
     ) -> Input {
         Input(
             boardID: "board-0",
@@ -57,7 +58,11 @@ final class DevSnapshotTests: XCTestCase {
             selectedCard: selectedCard,
             borrowedCard: borrowedCard,
             keyboardFocus: keyboardFocus,
-            quitGuard: quitGuard
+            quitGuard: quitGuard,
+            fonts: fonts ?? DevSnapshot.Fonts(
+                saved: [:], terminalFace: "SystemMono-Regular", interfaceFace: "SystemMono-Regular",
+                documentCSS: "system-ui"
+            )
         )
     }
 
@@ -88,8 +93,8 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(
             snapshot.keys.sorted(),
             [
-                "active_element", "board_id", "cards", "content_origin", "focused_card", "quit_guard", "v", "viewport",
-                "visibility",
+                "active_element", "board_id", "cards", "content_origin", "focused_card", "fonts", "quit_guard", "v",
+                "viewport", "visibility",
             ]
         )
         XCTAssertEqual(snapshot["v"], 1)
@@ -718,6 +723,35 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(DevSnapshot.scrollbackTailLines, 40)
     }
 
+    /// 2610.0005 S13 — a role with nothing saved says `null`, so a reader can
+    /// tell "the system default" from a key it failed to find.
+    func testTheSnapshotReportsEachRolesSavedFamilyAndWhatItResolvedTo() {
+        let fonts = DevSnapshot.Fonts(
+            saved: [.terminal: "Menlo"], terminalFace: "Menlo-Regular",
+            interfaceFace: ".AppleSystemUIFontMonospaced-Regular", documentCSS: FontCSS.document(nil)
+        )
+        XCTAssertEqual(
+            fields(DevSnapshot.build(input(fonts: fonts)))["fonts"],
+            [
+                "terminal": ["saved": "Menlo", "face": "Menlo-Regular"],
+                "interface": ["saved": .null, "face": ".AppleSystemUIFontMonospaced-Regular"],
+                "document": ["saved": .null, "css": #"-apple-system, "SF Pro Text", system-ui, sans-serif"#],
+            ]
+        )
+        let all = DevSnapshot.Fonts(
+            saved: [.terminal: "Monaco", .interface: "Menlo", .document: "Georgia"], terminalFace: "Monaco",
+            interfaceFace: "Menlo-Regular", documentCSS: FontCSS.document("Georgia")
+        )
+        XCTAssertEqual(
+            fields(DevSnapshot.build(input(fonts: all)))["fonts"],
+            [
+                "terminal": ["saved": "Monaco", "face": "Monaco"],
+                "interface": ["saved": "Menlo", "face": "Menlo-Regular"],
+                "document": ["saved": "Georgia", "css": #""Georgia", -apple-system, "SF Pro Text", system-ui, sans-serif"#],
+            ]
+        )
+    }
+
     func testTheSnapshotSerialisesAsCompactJSON() {
         let snapshot = DevSnapshot.build(input(cards: [doc("/a/b.md")]))
         XCTAssertEqual(
@@ -726,7 +760,11 @@ final class DevSnapshotTests: XCTestCase {
                 + #""board_id":"board-0","#
                 + #""cards":[{"board_rect":{"h":200,"w":300,"x":500,"y":20},"borrowed":false,"focused":false,"#
                 + #""id":"/a/b.md","kind":"doc","screen_rect":null,"scroll":null}],"#
-                + #""content_origin":null,"focused_card":null,"quit_guard":null,"v":1,"#
+                + #""content_origin":null,"focused_card":null,"#
+                + #""fonts":{"document":{"css":"system-ui","saved":null},"#
+                + #""interface":{"face":"SystemMono-Regular","saved":null},"#
+                + #""terminal":{"face":"SystemMono-Regular","saved":null}},"#
+                + #""quit_guard":null,"v":1,"#
                 + #""viewport":{"cx":500,"cy":350,"view_rect":{"h":700,"w":1000,"x":24,"y":40},"zoom":1},"#
                 + #""visibility":"visible"}"#
         )

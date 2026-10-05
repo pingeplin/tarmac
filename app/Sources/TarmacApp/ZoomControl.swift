@@ -5,7 +5,7 @@ import TarmacKit
 /// `−` and `+` zoom about the viewport center, `⊡ fit` fits every card into
 /// view, and the readout follows the live zoom.
 @MainActor
-final class ZoomControl: NSView {
+final class ZoomControl: NSView, FontFollowing {
     /// What `−` and `+` divide and multiply the zoom by.
     static let zoomStep: CGFloat = 1.2
 
@@ -66,6 +66,13 @@ final class ZoomControl: NSView {
     /// The readout last sized for: a pan reports the viewport on every event
     /// with the zoom unchanged, and measuring the segments is not free.
     private var shownPercent: String?
+
+    func fontsChanged() {
+        pct.font = Theme.mono(10.5)
+        for segment in [minusBtn, plusBtn, fitBtn] { segment.fontsChanged() }
+        sizeToContents()
+        superview?.needsLayout = true
+    }
 
     func setZoom(_ zoom: CGFloat) {
         let percent = ChromeText.zoomPercent(Double(zoom))
@@ -140,6 +147,11 @@ final class ZoomSegmentButton: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    func fontsChanged() {
+        label.font = Theme.mono(10.5)
+        needsLayout = true
+    }
 
     /// The text's advance. A centred label's fitted width is 8pt more than
     /// that, which would make every segment 8pt wider than its stylesheet box.

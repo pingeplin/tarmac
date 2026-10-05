@@ -69,7 +69,7 @@ done
 shopt -u nullglob
 [ -n "$app_res" ] || { echo "FATAL: no *.bundle containing DocTemplate.html under $SWIFT_BIN" >&2; exit 1; }
 cp -R "$app_res"/. "$RES/"
-for need in DocTemplate.html Web/card_shim.js Web/marked.umd.js Fonts; do
+for need in DocTemplate.html Web/card_shim.js Web/marked.umd.js; do
   [ -e "$RES/$need" ] || { echo "FATAL: $need missing from the app's resources" >&2; exit 1; }
 done
 
@@ -79,7 +79,7 @@ cp "$ROOT/packaging/Info.plist" "$CONTENTS/Info.plist"
 
 iconutil -c icns "$ROOT/packaging/icon/AppIcon.iconset" -o "$RES/Tarmac.icns"
 
-# The bundle carries third-party fonts, scripts and linked libraries whose
+# The bundle carries third-party scripts and linked libraries whose
 # licences ask for their notices to travel with every copy.
 cp "$ROOT/LICENSE" "$ROOT/NOTICE" "$ROOT/THIRD-PARTY-LICENSES" "$RES/"
 

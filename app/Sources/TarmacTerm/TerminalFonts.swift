@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import CoreText
 import Foundation
@@ -15,17 +16,14 @@ struct CellMetrics: Equatable {
 
 /// The terminal face in its four styles, plus the cell box they define.
 struct TerminalFonts {
-    /// The Nerd Font "Mono" variant keeps every icon glyph one cell wide.
-    static let preferredNames = ["JetBrainsMonoNFM-Regular", "IBMPlexMono", "SFMono-Regular", "Menlo-Regular"]
-
     let regular: CTFont
     let bold: CTFont
     let italic: CTFont
     let boldItalic: CTFont
     let metrics: CellMetrics
 
-    init(size: CGFloat, pixelsPerPoint: CGFloat, names: [String] = TerminalFonts.preferredNames) {
-        let regular = Self.resolve(names, size: size)
+    init(size: CGFloat, pixelsPerPoint: CGFloat, family: String? = nil) {
+        let regular = Self.resolve(family, size: size)
         self.regular = regular
         bold = Self.variant(of: regular, .traitBold)
         italic = Self.variant(of: regular, .traitItalic)
@@ -54,18 +52,17 @@ struct TerminalFonts {
         }
     }
 
-    private static func resolve(_ names: [String], size: CGFloat) -> CTFont {
-        for name in names {
-            let font = CTFontCreateWithName(name as CFString, size, nil)
-            // CoreText substitutes a default face for an unknown name instead of failing.
-            if CTFontCopyPostScriptName(font) as String == name { return font }
-        }
-        return CTFontCreateUIFontForLanguage(.userFixedPitch, size, nil)
-            ?? CTFontCreateWithName("Menlo-Regular" as CFString, size, nil)
+    /// The regular upright face of `family`, or the system's monospaced font
+    /// for none and for a family this Mac does not have. The font manager is
+    /// asked, not a CoreText descriptor: a family-only descriptor gives
+    /// Helvetica for a name it does not know, and a Light face for some it does.
+    fileprivate static func resolve(_ family: String?, size: CGFloat) -> CTFont {
+        let named = family.flatMap { NSFontManager.shared.font(withFamily: $0, traits: [], weight: 5, size: size) }
+        return named ?? NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
     }
 
-    /// The family's face in `traits`. A family with no italic — the app ships
-    /// regular and bold only — gives its upright face, slanted.
+    /// The family's face in `traits`. A family with no italic gives its
+    /// upright face, slanted; one with no bold gives its regular face.
     private static func variant(of font: CTFont, _ traits: CTFontSymbolicTraits) -> CTFont {
         if let face = CTFontCreateCopyWithSymbolicTraits(font, 0, nil, traits, traits) { return face }
         guard traits.contains(.traitItalic) else { return font }
@@ -96,5 +93,13 @@ struct TerminalFonts {
             strikethroughOffset: baseline - CTFontGetXHeight(font) / 2,
             lineThickness: thickness
         )
+    }
+}
+
+public enum TerminalFace {
+    /// The PostScript name of the regular face a terminal set in `family`
+    /// draws with; nil asks for the system default's.
+    public static func name(family: String?) -> String {
+        CTFontCopyPostScriptName(TerminalFonts.resolve(family, size: 16)) as String
     }
 }

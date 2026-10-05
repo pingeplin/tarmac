@@ -7,17 +7,50 @@ import Foundation
 /// otherwise. Anything unreadable means the guard is ON: a preference file is
 /// never a reason to quit the cockpit by accident.
 ///
-/// The format, `{"warn_before_quit": <bool>}`, is the Tauri app's `app-prefs.json`
-/// byte for byte, so either app reads the other's file. The parse and encode
-/// decisions are pure; `load` and `save` are the two thin file operations.
+/// With no font chosen the format, `{"warn_before_quit": <bool>}`, is the Tauri
+/// app's `app-prefs.json` byte for byte. A chosen font adds its role's key
+/// (spec 2610.0005). The parse and encode decisions are pure; `load` and `save`
+/// are the two thin file operations.
 public enum AppPrefs {
     public static let fileName = "app-prefs.json"
 
-    private struct Stored: Decodable {
-        let warnBeforeQuit: Bool?
+    /// The whole file. Every writer saves all of it, so no preference can drop
+    /// another's key.
+    public struct Values: Equatable, Sendable {
+        public var warnBeforeQuit: Bool
+        /// The family chosen for a role; no entry is the system default.
+        public var fonts: [FontRole: String]
 
-        enum CodingKeys: String, CodingKey {
-            case warnBeforeQuit = "warn_before_quit"
+        public init(warnBeforeQuit: Bool = true, fonts: [FontRole: String] = [:]) {
+            self.warnBeforeQuit = warnBeforeQuit
+            self.fonts = fonts
+        }
+    }
+
+    /// Each key is read on its own: one of the wrong type is that key's
+    /// default and nothing more.
+    private struct Stored: Decodable {
+        let values: Values
+
+        private struct Key: CodingKey {
+            let stringValue: String
+            var intValue: Int? { nil }
+
+            init(_ name: String) { stringValue = name }
+            init?(stringValue: String) { self.init(stringValue) }
+            init?(intValue: Int) { nil }
+        }
+
+        init(from decoder: Decoder) throws {
+            let object = try decoder.container(keyedBy: Key.self)
+            var values = Values(warnBeforeQuit: (try? object.decode(Bool.self, forKey: Key("warn_before_quit"))) ?? true)
+            for role in FontRole.allCases {
+                guard let name = try? object.decode(String.self, forKey: Key(role.prefsKey)),
+                    FontRole.isFamilyName(name)
+                else { continue }
+                values.fonts[role] = name
+            }
+            self.values = values
         }
     }
 
@@ -43,29 +76,43 @@ public enum AppPrefs {
     /// serde_json's own conversion is not correctly rounded; and an object whose
     /// first key is serde_json's internal `$serde_json::private::RawValue`.
     public static func warnBeforeQuit(from contents: Data?) -> Bool {
+        decode(contents).warnBeforeQuit
+    }
+
+    /// The file's values. Missing, unreadable, malformed or not an object all
+    /// read as the defaults.
+    public static func decode(_ contents: Data?) -> Values {
         guard let contents, StrictJSON.isValid(contents),
             let stored = try? JSONDecoder().decode(Stored.self, from: contents)
-        else { return true }
-        return stored.warnBeforeQuit ?? true
+        else { return Values() }
+        return stored.values
     }
 
     /// Written as a literal, not through an encoder: QA reads these exact bytes.
-    public static func encode(warnBeforeQuit: Bool) -> Data {
-        Data(#"{"warn_before_quit":\#(warnBeforeQuit)}"#.utf8)
+    /// A name `decode` would refuse is left out, because written raw it would
+    /// damage the file, and a damaged file turns the guard back on.
+    public static func encode(_ values: Values) -> Data {
+        var json = #"{"warn_before_quit":\#(values.warnBeforeQuit)"#
+        for role in FontRole.allCases {
+            guard let name = values.fonts[role], FontRole.isFamilyName(name) else { continue }
+            let escaped = name.replacingOccurrences(of: #"\"#, with: #"\\"#).replacingOccurrences(of: #"""#, with: #"\""#)
+            json += #","\#(role.prefsKey)":"\#(escaped)""#
+        }
+        return Data((json + "}").utf8)
     }
 
-    /// Read the toggle. Any IO failure is the same answer as an absent file.
-    public static func load(from path: String) -> Bool {
-        warnBeforeQuit(from: try? Data(contentsOf: URL(fileURLWithPath: path)))
+    /// Read the file. Any IO failure is the same answer as an absent file.
+    public static func load(from path: String) -> Values {
+        decode(try? Data(contentsOf: URL(fileURLWithPath: path)))
     }
 
-    /// Save the toggle through a temp file, so a crash mid-write cannot leave a
+    /// Save through a temp file, so a crash mid-write cannot leave a
     /// half-written file that would then read as "guard on" forever. The rename
     /// replaces an existing file, which `FileManager.moveItem` refuses to do.
-    /// Best effort: the in-memory toggle is what this session obeys either way.
-    public static func save(warnBeforeQuit: Bool, to path: String) throws {
+    /// Best effort: the in-memory values are what this session obeys either way.
+    public static func save(_ values: Values, to path: String) throws {
         let temporary = path + ".tmp"
-        try encode(warnBeforeQuit: warnBeforeQuit).write(to: URL(fileURLWithPath: temporary))
+        try encode(values).write(to: URL(fileURLWithPath: temporary))
         guard rename(temporary, path) == 0 else {
             throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }

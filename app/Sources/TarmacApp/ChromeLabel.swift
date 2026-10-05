@@ -13,14 +13,22 @@ extension NSFont {
 /// either side, which would put every overlay's text 2 pt off its CSS position
 /// and make every box 4 pt too wide.
 @MainActor
-final class ChromeLabel: NSTextField {
+final class ChromeLabel: NSTextField, FontFollowing {
     private static let cellInset: CGFloat = 2
+
+    private var size: CGFloat = NSFont.systemFontSize
 
     convenience init(_ text: String = "", size: CGFloat, color: NSColor) {
         self.init(labelWithString: text)
+        self.size = size
         font = Theme.mono(size)
         textColor = color
         lineBreakMode = .byTruncatingTail
+    }
+
+    func fontsChanged() {
+        font = Theme.mono(size)
+        superview?.needsLayout = true
     }
 
     var lineHeight: CGFloat { font?.normalLineHeight ?? 0 }

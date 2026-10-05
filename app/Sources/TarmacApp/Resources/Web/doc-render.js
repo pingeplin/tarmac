@@ -159,6 +159,14 @@
       relayout();
     },
 
+    // The chosen fonts, each a font-family value. A new face moves the
+    // prose's line breaks.
+    fonts(chromeFamily, proseFamily) {
+      root.style.setProperty("--chrome-font", chromeFamily);
+      root.style.setProperty("--prose-font", proseFamily);
+      remeasure();
+    },
+
     // The card's scroll thumb is being dragged; the scroll listener reports
     // where this lands.
     scrollTo(y) {

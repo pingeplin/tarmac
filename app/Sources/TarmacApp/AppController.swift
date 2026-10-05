@@ -47,6 +47,7 @@ final class TerminalSession {
 final class AppController {
     let client: DaemonClient
     let rootView: RootView
+    let fonts: FontSettings
     weak var window: NSWindow?
 
     /// The handshake has completed: requests may be made. Narrower than
@@ -156,9 +157,10 @@ final class AppController {
         ownerBoard(ofTerm: termID)?.sessions[termID]
     }
 
-    init(window: NSWindow, rootView: RootView) {
+    init(window: NSWindow, rootView: RootView, fonts: FontSettings) {
         self.window = window
         self.rootView = rootView
+        self.fonts = fonts
         self.client = Self.daemonClient()
 
         // board-0 wraps the BoardView RootView was built with; it is the active,
@@ -174,8 +176,19 @@ final class AppController {
         // persistence). The same `mount(_:)` runs on every switch-arrive.
         mount(board0)
 
+        fonts.onChange = { [weak self] in self?.fontsChanged() }
         updateWindowTitle()
         showConnectionStatus()
+    }
+
+    /// A chosen font changed. A board that is not mounted keeps its cards in
+    /// its own detached view, so each is told apart from the window's tree.
+    private func fontsChanged() {
+        rootView.broadcastFontsChanged()
+        for board in boards.values where !board.view.isDescendant(of: rootView) {
+            board.view.broadcastFontsChanged()
+        }
+        refreshSwitcherIfOpen()
     }
 
     /// Names the active board in the window title, which is what the Dock,
