@@ -74,10 +74,11 @@ final class CardConsoleView: NSView, FontFollowing {
         paragraph.maximumLineHeight = Self.lineHeight
         paragraph.lineBreakMode = .byCharWrapping
         let lines = NSMutableAttributedString()
+        let font = Self.font
         for (index, entry) in entries.enumerated() {
             lines.append(NSAttributedString(
                 string: (index == 0 ? "" : "\n") + CardConsole.formatArgs(entry.args),
-                attributes: [.font: Self.font, .foregroundColor: Self.color(of: entry.level), .paragraphStyle: paragraph]
+                attributes: [.font: font, .foregroundColor: Self.color(of: entry.level), .paragraphStyle: paragraph]
             ))
         }
         text.textStorage?.setAttributedString(lines)

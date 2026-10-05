@@ -16,13 +16,23 @@ final class SettingsWindowController: NSObject {
 
     @MainActor
     private final class Row {
+        let role: FontRole
         let popup = NSPopUpButton()
         let sample = NSTextField(labelWithString: SettingsWindowController.sampleText)
-        var menu = FontMenu(role: .terminal, installed: [], saved: nil)
+        var menu: FontMenu
+
+        init(_ role: FontRole) {
+            self.role = role
+            menu = FontMenu(role: role, installed: [], saved: nil)
+        }
+
+        func showSample() {
+            sample.font = Theme.sample(role)
+        }
     }
 
     private let fonts: FontSettings
-    private let rows = Dictionary(uniqueKeysWithValues: FontRole.allCases.map { ($0, Row()) })
+    private let rows = FontRole.allCases.map { Row($0) }
     private lazy var window = makeWindow()
 
     init(fonts: FontSettings) {
@@ -38,31 +48,24 @@ final class SettingsWindowController: NSObject {
 
     private func reload() {
         let installed = InstalledFonts.all()
-        for (role, row) in rows {
-            row.menu = FontMenu(role: role, installed: installed, saved: fonts.saved(role))
+        for row in rows {
+            row.menu = FontMenu(role: row.role, installed: installed, saved: fonts.saved[row.role])
             row.popup.removeAllItems()
             row.popup.addItems(withTitles: row.menu.titles)
             row.popup.selectItem(at: row.menu.selected)
-        }
-        showSamples()
-    }
-
-    private func showSamples() {
-        for (role, row) in rows {
-            row.sample.font = Theme.sample(role, size: NSFont.systemFontSize)
+            row.showSample()
         }
     }
 
     @objc private func choose(_ sender: NSPopUpButton) {
-        guard let (role, row) = rows.first(where: { $0.value.popup === sender }) else { return }
-        fonts.choose(row.menu.choice(at: sender.indexOfSelectedItem), for: role)
-        showSamples()
+        guard let row = rows.first(where: { $0.popup === sender }) else { return }
+        fonts.choose(row.menu.choice(at: sender.indexOfSelectedItem), for: row.role)
+        row.showSample()
     }
 
     private func makeWindow() -> NSWindow {
-        let grid = NSGridView(views: FontRole.allCases.map { role in
-            let label = NSTextField(labelWithString: role.title + ":")
-            return [label, controls(for: role)]
+        let grid = NSGridView(views: rows.map { row in
+            [NSTextField(labelWithString: row.role.title + ":"), controls(for: row)]
         })
         grid.column(at: 0).xPlacement = .trailing
         grid.rowAlignment = .firstBaseline
@@ -84,24 +87,22 @@ final class SettingsWindowController: NSObject {
             styleMask: [.titled, .closable], backing: .buffered, defer: false
         )
         window.title = "Settings"
-        window.appearance = NSAppearance(named: .darkAqua)
         window.isReleasedWhenClosed = false
         window.contentView = content
         window.center()
         return window
     }
 
-    /// A role's pop-up over its sample line, and under the terminal's the one
+    /// A row's pop-up over its sample line, and under the terminal's the one
     /// thing the system fonts cannot do.
-    private func controls(for role: FontRole) -> NSView {
-        guard let row = rows[role] else { return NSView() }
+    private func controls(for row: Row) -> NSView {
         row.popup.target = self
         row.popup.action = #selector(choose(_:))
         row.sample.textColor = .secondaryLabelColor
         row.sample.lineBreakMode = .byTruncatingTail
 
         var lines: [NSView] = [row.popup, row.sample]
-        if role == .terminal {
+        if row.role == .terminal {
             let note = NSTextField(labelWithString: Self.nerdFontNote)
             note.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
             note.textColor = .tertiaryLabelColor

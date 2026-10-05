@@ -146,6 +146,21 @@ Run again on the tree with its fixes, same day, same machine.
 - **The switcher's empty list.** ⌘K, a filter that matches nothing,
   Interface → Monaco: `no boards match` is in Monaco with no restart.
 
+## After the simplification pass
+
+Run again on the tree after it, same day, fresh board.
+
+- `make qa`: 27 of 27.
+- The Settings window is dark with no appearance set on it (it takes the
+  app's), three rows, not resizable.
+- With the terminal selected and the Settings window beside the main one: a
+  click, a wheel and a Control wheel at a point of the Settings window leave
+  `focused_card`, `cx`, `cy` and `zoom` as they were.
+- Interface → Monaco: the zoom control is laid out for the new face (no
+  clipped segment), the status bar is in Monaco. Terminal → Monaco: 18 rows
+  become 15.
+- Choosing Monaco again for Terminal does not rewrite `app-prefs.json`.
+
 ## Not covered
 
 - That the font list is read again each time the window opens. A check

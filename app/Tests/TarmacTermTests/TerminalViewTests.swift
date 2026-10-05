@@ -867,9 +867,7 @@ final class TerminalViewTests: XCTestCase {
         let frame = NSRect(x: 0, y: 0, width: 600, height: 400)
         let cells = try [1, 2].map { scale -> CGSize? in
             let view = try TerminalView(frame: frame, fontFamily: "Menlo", backingScale: scale)
-            XCTAssertEqual(
-                view.gridLayout?.cell, TerminalFonts(size: 16, pixelsPerPoint: scale, family: "Menlo").metrics.cell
-            )
+            XCTAssertEqual(view.gridLayout?.cell, cell("Menlo", scale: scale))
             return view.gridLayout?.cell
         }
         XCTAssertNotEqual(cells[0], cells[1])

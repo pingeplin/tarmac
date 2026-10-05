@@ -57,9 +57,7 @@ struct DevSnapshotReader {
     /// What the roles resolve to now, read the way the views read them.
     private var fonts: DevSnapshot.Fonts {
         DevSnapshot.Fonts(
-            saved: Dictionary(uniqueKeysWithValues: FontRole.allCases.compactMap { role in
-                controller.fonts.saved(role).map { (role, $0) }
-            }),
+            saved: controller.fonts.saved,
             terminalFace: TerminalFace.name(family: Theme.fontFamilies[.terminal]),
             interfaceFace: Theme.mono(10.5).fontName,
             documentCSS: FontCSS.document(Theme.fontFamilies[.document])

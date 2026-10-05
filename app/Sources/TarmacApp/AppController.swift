@@ -157,11 +157,11 @@ final class AppController {
         ownerBoard(ofTerm: termID)?.sessions[termID]
     }
 
-    init(window: NSWindow, rootView: RootView, fonts: FontSettings) {
+    init(window: NSWindow, rootView: RootView, client: DaemonClient, fonts: FontSettings) {
         self.window = window
         self.rootView = rootView
         self.fonts = fonts
-        self.client = Self.daemonClient()
+        self.client = client
 
         // board-0 wraps the BoardView RootView was built with; it is the active,
         // mounted board until the daemon's board_list says otherwise.

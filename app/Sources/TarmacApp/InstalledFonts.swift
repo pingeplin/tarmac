@@ -13,8 +13,13 @@ enum InstalledFonts {
     /// One family, under the Mac's own spelling of its name: the lookup is
     /// not case-sensitive, and a saved `menlo` must not pass for `Menlo`.
     static func family(named name: String) -> InstalledFamily? {
-        NSFontManager.shared.font(withFamily: name, traits: [], weight: 5, size: NSFont.systemFontSize)?
-            .familyName.flatMap(facts)
+        face(of: name, size: NSFont.systemFontSize)?.familyName.flatMap(facts)
+    }
+
+    /// A family's regular face, or its bold one; nil when the Mac has no such
+    /// family. One with no bold gives its regular face.
+    static func face(of family: String, bold: Bool = false, size: CGFloat) -> NSFont? {
+        NSFontManager.shared.font(withFamily: family, traits: bold ? .boldFontMask : [], weight: bold ? 9 : 5, size: size)
     }
 
     /// A member is `[PostScript name, style, weight, traits]`. Which of them

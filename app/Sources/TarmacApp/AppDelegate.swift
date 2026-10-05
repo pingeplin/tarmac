@@ -16,7 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Before the first view is built: chrome takes its font at `init`.
-        let prefs = AppPrefsStore(path: AppPrefs.path(besideSocket: DaemonClient.resolveSocketPath()))
+        let client = AppController.daemonClient()
+        let prefs = AppPrefsStore(path: AppPrefs.path(besideSocket: client.socketPath))
         let fonts = FontSettings(prefs: prefs)
         let rootView = RootView()
         window = NSWindow(
@@ -32,7 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.center()
         closeHider.attach(to: window)
 
-        controller = AppController(window: window, rootView: rootView, fonts: fonts)
+        controller = AppController(window: window, rootView: rootView, client: client, fonts: fonts)
         window.contentView = rootView
 
         quitGuard = QuitGuardController(window: window, warning: WarnBeforeQuit(prefs: prefs))

@@ -55,15 +55,14 @@ enum Theme {
 
     /// The regular face a role's text is set in, for the Settings window's
     /// sample line.
-    static func sample(_ role: FontRole, size: CGFloat) -> NSFont {
-        chosen(role, size: size)
+    static func sample(_ role: FontRole) -> NSFont {
+        let size = NSFont.systemFontSize
+        return chosen(role, size: size)
             ?? (role.fixedPitchOnly ? .monospacedSystemFont(ofSize: size, weight: .regular) : .systemFont(ofSize: size))
     }
 
     private static func chosen(_ role: FontRole, size: CGFloat, bold: Bool = false) -> NSFont? {
-        fontFamilies[role].flatMap {
-            NSFontManager.shared.font(withFamily: $0, traits: bold ? .boldFontMask : [], weight: bold ? 9 : 5, size: size)
-        }
+        fontFamilies[role].flatMap { InstalledFonts.face(of: $0, bold: bold, size: size) }
     }
 
     static var reduceMotion: Bool {

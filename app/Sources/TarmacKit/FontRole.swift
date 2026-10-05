@@ -20,12 +20,9 @@ public enum FontRole: String, CaseIterable, Sendable {
 
     /// The saved family when this role can use it, or nil for the system
     /// default. `installed` is what the Mac says of that family, nil when it
-    /// has none. A name that begins with a dot is a hidden system family,
-    /// which resolves but which no list shows.
+    /// has none.
     public func familyInEffect(saved: String?, installed: InstalledFamily?) -> String? {
-        guard let saved, !saved.hasPrefix("."), let installed, installed.name == saved,
-            installed.fixedPitch || !fixedPitchOnly
-        else { return nil }
+        guard let saved, let installed, installed.name == saved, installed.isChoosable(for: self) else { return nil }
         return saved
     }
 

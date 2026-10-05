@@ -45,7 +45,7 @@ final class ZoomControl: NSView, FontFollowing {
         plusBtn.toolTip = "Zoom in"
         fitBtn.toolTip = "Fit to cards"
 
-        pct.font = Theme.mono(10.5)
+        pct.font = Self.font
         pct.textColor = Theme.text
         pct.alignment = .center
 
@@ -67,9 +67,10 @@ final class ZoomControl: NSView, FontFollowing {
     /// with the zoom unchanged, and measuring the segments is not free.
     private var shownPercent: String?
 
+    fileprivate static var font: NSFont { Theme.mono(10.5) }
+
     func fontsChanged() {
-        pct.font = Theme.mono(10.5)
-        for segment in [minusBtn, plusBtn, fitBtn] { segment.fontsChanged() }
+        pct.font = Self.font
         sizeToContents()
         superview?.needsLayout = true
     }
@@ -129,7 +130,7 @@ final class ZoomControl: NSView, FontFollowing {
 /// One tappable segment of the zoom control (`− + ⊡ fit`). Faint 10.5px mono;
 /// owns its mouse so a click never starts a board gesture.
 @MainActor
-final class ZoomSegmentButton: NSView {
+final class ZoomSegmentButton: NSView, FontFollowing {
     var onClick: (() -> Void)?
 
     private let label: NSTextField
@@ -140,7 +141,7 @@ final class ZoomSegmentButton: NSView {
     init(title: String) {
         label = NSTextField(labelWithString: title)
         super.init(frame: .zero)
-        label.font = Theme.mono(10.5)
+        label.font = ZoomControl.font
         label.textColor = Theme.faint
         label.alignment = .center
         addSubview(label)
@@ -149,7 +150,7 @@ final class ZoomSegmentButton: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     func fontsChanged() {
-        label.font = Theme.mono(10.5)
+        label.font = ZoomControl.font
         needsLayout = true
     }
 
