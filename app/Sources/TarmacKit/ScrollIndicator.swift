@@ -36,8 +36,7 @@ public enum ScrollIndicator {
     /// is higher. Each term lands on a whole device pixel, and `x` leaves room
     /// for the width as it is snapped.
     public static func frame(_ metrics: ScrollMetrics?, body: CGRect, covered: CGFloat, scale: CardScale) -> CGRect? {
-        let track = body.height / scale.zoom - inset - max(CardBox.cornerRadius, covered + inset)
-        guard let thumb = thumb(metrics, track: track) else { return nil }
+        guard let thumb = thumb(metrics, track: track(body: body, covered: covered, scale: scale)) else { return nil }
         let width = scale.snapped(width)
         return CGRect(
             x: scale.aligned(body.maxX - scale.length(inset) - width),
@@ -47,30 +46,77 @@ public enum ScrollIndicator {
         )
     }
 
+    /// The track's length, in world units.
+    static func track(body: CGRect, covered: CGFloat, scale: CardScale) -> CGFloat {
+        body.height / scale.zoom - inset - max(CardBox.cornerRadius, covered + inset)
+    }
+
     /// When the thumb shows: from a wheel on the card until `holdMs` after the
-    /// last one, then a fade of `fadeMs`.
+    /// last one, then a fade of `fadeMs`. A pointer over the showing thumb, or
+    /// a press on it, holds it at full; when the last of the two lets go the
+    /// hold starts again.
     public struct Visibility: Equatable, Sendable {
         public static let holdMs: UInt64 = 1000
         public static let fadeMs: UInt64 = 200
 
-        private var wheeledAtMs: UInt64?
+        private var heldFromMs: UInt64?
+        private var pointerOver = false
+        private var isPressed = false
 
         public init() {}
 
         public mutating func wheeled(atMs now: UInt64) {
-            wheeledAtMs = now
+            heldFromMs = now
+        }
+
+        /// A pointer over a thumb that is not showing is not over it: hover
+        /// alone shows nothing.
+        public mutating func pointer(over: Bool, atMs now: UInt64) {
+            guard over != pointerOver else { return }
+            if over {
+                guard grabbable(atMs: now) else { return }
+                pointerOver = true
+            } else {
+                pointerOver = false
+                if !isPressed { heldFromMs = now }
+            }
+        }
+
+        /// Taken whatever the alpha: the hit rule is the gate.
+        public mutating func pressed(atMs now: UInt64) {
+            isPressed = true
+        }
+
+        public mutating func released(atMs now: UInt64) {
+            guard isPressed else { return }
+            isPressed = false
+            if !pointerOver { heldFromMs = now }
         }
 
         /// The card was deselected: the thumb goes at once, with no fade.
         public mutating func reset() {
-            wheeledAtMs = nil
+            self = Visibility()
         }
 
         public func alpha(atMs now: UInt64) -> CGFloat {
-            guard let wheeledAtMs else { return 0 }
-            guard now > wheeledAtMs, now - wheeledAtMs > Self.holdMs else { return 1 }
-            let fadedMs = now - wheeledAtMs - Self.holdMs
+            if pointerOver || isPressed { return 1 }
+            guard let heldFromMs else { return 0 }
+            guard now > heldFromMs, now - heldFromMs > Self.holdMs else { return 1 }
+            let fadedMs = now - heldFromMs - Self.holdMs
             return fadedMs < Self.fadeMs ? 1 - CGFloat(fadedMs) / CGFloat(Self.fadeMs) : 0
+        }
+
+        /// A fading thumb can still be caught.
+        public func grabbable(atMs now: UInt64) -> Bool {
+            alpha(atMs: now) > 0
+        }
+
+        /// The instant the hold ends, which is past once the fade has begun;
+        /// nil while the thumb is held, and when it does not show.
+        public func fadeStartsAtMs(atMs now: UInt64) -> UInt64? {
+            guard !pointerOver, !isPressed, let heldFromMs, grabbable(atMs: now) else { return nil }
+            let (end, overflowed) = heldFromMs.addingReportingOverflow(Self.holdMs)
+            return overflowed ? .max : end
         }
     }
 }

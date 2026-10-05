@@ -501,12 +501,18 @@ final class BoardView: NSView {
     }
 
     override func mouseExited(with event: NSEvent) {
-        cursors.release()
+        cursors.pointerLeft()
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         cursors.attach(to: window)
+        // Only the selected card's scroll thumb can show, so only it is told
+        // whether the pointer is over its thumb: at every move.
+        cursors.onMove = { [weak self] hit in
+            guard let self, let selectedID, let card = cards[selectedID] else { return }
+            card.pointerIsOverScrollThumb(hit === card.scrollThumb)
+        }
         if window == nil {
             select(nil)
             flight.cancel()

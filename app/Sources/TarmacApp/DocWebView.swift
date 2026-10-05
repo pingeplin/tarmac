@@ -131,6 +131,11 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
         )
     }
 
+    func scroll(to offset: Double) {
+        guard pageLoaded, offset.isFinite else { return }
+        webView.runInCardWorld("tarmacDoc.scrollTo(\(offset))")
+    }
+
     /// Tells the page the zoom and the card width it is laid out for, and the
     /// viewport height it is about to have.
     private func layoutPage(viewport: CGSize) {

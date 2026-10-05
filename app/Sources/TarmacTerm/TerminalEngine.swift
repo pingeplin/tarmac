@@ -29,6 +29,9 @@ public enum ViewportScroll: Equatable, Sendable {
     case bottom
     /// Negative scrolls into history.
     case rows(Int)
+    /// The row of the scrollback the viewport starts at: the scrollbar's
+    /// `offset`. A row past the last the viewport can start at is that one.
+    case row(Int)
 }
 
 /// One terminal's emulator state: libghostty-vt parses the PTY byte stream and
@@ -137,6 +140,9 @@ public final class TerminalEngine {
         case .rows(let delta):
             behavior.tag = GHOSTTY_SCROLL_VIEWPORT_DELTA
             behavior.value.delta = delta
+        case .row(let row):
+            behavior.tag = GHOSTTY_SCROLL_VIEWPORT_ROW
+            behavior.value.row = max(0, row)
         }
         ghostty_terminal_scroll_viewport(terminal, behavior)
     }

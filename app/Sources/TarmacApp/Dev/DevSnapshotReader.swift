@@ -100,7 +100,7 @@ struct DevSnapshotReader {
             content: content(of: card),
             frame: card.worldFrame.rect,
             screenRect: card.superview.map { controller.rootView.convert(card.frame, from: $0) },
-            scroll: card.scrollFacts
+            scroll: card.scrollFacts(in: controller.rootView)
         )
     }
 

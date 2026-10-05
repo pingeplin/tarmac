@@ -19,7 +19,8 @@ It is also the §1.3 exception-2 discharge for the shell wiring the change adds 
   fractional `scrollBy`: the positive control of the band check.
 - `scripts/qa/wheel-gesture.swift` — posts one real gesture at a card. **It
   moves the cursor** for about half a second a call, and refuses unless the dev
-  app's window is the top one under its aim.
+  app's window is the top one under its aim. It also moves, presses and drags
+  the pointer, for [`scroll-thumb-drag-qa.md`](scroll-thumb-drag-qa.md).
 
 "Units" are the probe's numbers. Under magnify one unit is `zoom/3` pt on
 screen, so 100 pt of wheel is `300/zoom` units; in reveal a unit is a point.

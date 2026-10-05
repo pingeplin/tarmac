@@ -528,11 +528,20 @@ extension CardHeaderView: HoverCursorProviding {
     func hoverCursor(at windowPoint: NSPoint) -> NSCursor { .openHand }
 }
 
-/// A card's scroll thumb: where its content is scrolled to. It is looked at,
-/// not touched: an event over it is the body's, or the resize strip's.
+/// A card's scroll thumb: where its content is scrolled to, and a handle on
+/// it. It answers no hit test of its own: the card hands it a press while it
+/// can be grabbed (`CardHit`), so a thumb that has faded is not there.
 @MainActor
 final class ScrollThumbView: NSView {
+    var onPress: ((NSEvent) -> Void)?
+    var onDrag: ((NSEvent) -> Void)?
+    var onWheel: ((NSEvent) -> Void)?
+    /// Whether the body under the thumb is a web view, which sets a cursor of
+    /// its own on a move it is handed.
+    var liesOverADoc = false
+
     override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { false }
 
     init() {
         super.init(frame: .zero)
@@ -547,6 +556,13 @@ final class ScrollThumbView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
+    override func mouseDown(with event: NSEvent) { onPress?(event) }
+    override func mouseDragged(with event: NSEvent) { onDrag?(event) }
+    /// The card reads the release off the application's events: a thumb
+    /// hidden under its press is sent none.
+    override func mouseUp(with event: NSEvent) {}
+    override func scrollWheel(with event: NSEvent) { onWheel?(event) }
+
     override func layout() {
         super.layout()
         layer?.cornerRadius = min(bounds.width, bounds.height) / 2
@@ -558,6 +574,12 @@ final class ScrollThumbView: NSView {
         super.viewDidChangeBackingProperties()
         needsLayout = true
     }
+}
+
+extension ScrollThumbView: HoverCursorProviding {
+    var claimsPointerMoves: Bool { liesOverADoc }
+
+    func hoverCursor(at windowPoint: NSPoint) -> NSCursor { .arrow }
 }
 
 /// Terminal card body: term-bg behind the terminal view, which fills it and

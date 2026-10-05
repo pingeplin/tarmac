@@ -62,10 +62,10 @@ extension AppController {
     // MARK: - Wheel and pinch
 
     /// A wheel event, seen before it is dispatched. Over the body of the
-    /// selected card it is left for that card's own content; anywhere else on
-    /// the board it pans, and with control held it zooms about the pointer.
-    /// True means the board took it. Overlays and the switcher keep their own
-    /// wheel.
+    /// selected card, or over its scroll thumb, it is left for that card's own
+    /// content; anywhere else on the board it pans, and with control held it
+    /// zooms about the pointer. True means the board took it. Overlays and the
+    /// switcher keep their own wheel.
     func routeScroll(_ event: NSEvent) -> Bool {
         guard !switcherOpen else { return false }
         let board = rootView.board
@@ -75,6 +75,7 @@ extension AppController {
             pinch: event.modifierFlags.contains(.control),
             over: card?.id,
             inBody: card?.bodyContains(hit) ?? false,
+            onThumb: card.map { hit === $0.scrollThumb } ?? false,
             selected: focusedCardID
         )
         let travel = BoardWheel.travel(

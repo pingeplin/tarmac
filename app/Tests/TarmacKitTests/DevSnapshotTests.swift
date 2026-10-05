@@ -30,9 +30,10 @@ final class DevSnapshotTests: XCTestCase {
         Card(id: id, content: .doc, frame: CGRect(x: 500, y: 20, width: 300, height: 200), screenRect: nil, scroll: scroll)
     }
 
-    private func scroll(laidOut: Bool = true, alpha: CGFloat = 1) throws -> DevSnapshot.Scroll {
+    private func scroll(laidOut: Bool = true, alpha: CGFloat = 1, thumb: CGRect? = nil) throws -> DevSnapshot.Scroll {
         DevSnapshot.Scroll(
-            metrics: try XCTUnwrap(ScrollMetrics(offset: 30, visible: 100, total: 400)), laidOut: laidOut, alpha: alpha
+            metrics: try XCTUnwrap(ScrollMetrics(offset: 30, visible: 100, total: 400)),
+            laidOut: laidOut, alpha: alpha, thumb: thumb
         )
     }
 
@@ -151,7 +152,7 @@ final class DevSnapshotTests: XCTestCase {
 
     func test2610S15ACardSaysWhereItsContentIsScrolledTo() throws {
         let snapshot = DevSnapshot.build(input(cards: [term(scroll: try scroll()), doc(scroll: try scroll())]))
-        let expected: JSONValue = ["offset": 30, "visible": 100, "total": 400, "shown": true]
+        let expected: JSONValue = ["offset": 30, "visible": 100, "total": 400, "shown": true, "thumb": .null]
         XCTAssertEqual(card(snapshot, "t-1")["scroll"], expected)
         XCTAssertEqual(card(snapshot, "/Users/e/a.b.md")["scroll"], expected)
     }
@@ -164,6 +165,24 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(shown(try scroll(alpha: 0.25)), true)
         XCTAssertEqual(shown(try scroll(laidOut: false, alpha: 1)), false)
         XCTAssertEqual(shown(try scroll(laidOut: true, alpha: 0)), false)
+    }
+
+    /// Where the thumb is, for a tool that aims at it; a stale frame of a
+    /// thumb that is not laid out is no thumb.
+    func test2610_0004S14ACardSaysWhereItsThumbIs() throws {
+        func thumb(_ scroll: DevSnapshot.Scroll) -> JSONValue? {
+            fields(card(DevSnapshot.build(input(cards: [term(scroll: scroll)])), "t-1")["scroll"])["thumb"]
+        }
+        let rect = CGRect(x: 379, y: 33, width: 10, height: 24)
+        XCTAssertEqual(thumb(try scroll(thumb: rect)), ["x": 379, "y": 33, "w": 10, "h": 24])
+        XCTAssertEqual(thumb(try scroll(thumb: nil)), .null)
+        XCTAssertEqual(thumb(try scroll(laidOut: false, thumb: rect)), .null)
+        XCTAssertEqual(thumb(try scroll(alpha: 0, thumb: rect)), ["x": 379, "y": 33, "w": 10, "h": 24], "a faded thumb")
+    }
+
+    func test2610_0004S14ShownDoesNotLookAtTheThumbsRect() throws {
+        let snapshot = DevSnapshot.build(input(cards: [term(scroll: try scroll(alpha: 1, thumb: nil))]))
+        XCTAssertEqual(fields(card(snapshot, "t-1")["scroll"])["shown"], true)
     }
 
     func test2610S15ACardWithNoMetricsSaysNull() {

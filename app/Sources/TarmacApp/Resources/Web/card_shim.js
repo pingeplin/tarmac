@@ -272,9 +272,10 @@
 
   window.addEventListener("message", function (e) {
     try {
-      // Only the host drives zoom: a nested iframe or the card posting at its
-      // own window must not. Origin is never asserted — this document is
-      // opaque-origin, so the host's origin string is not stable.
+      // Only the host drives zoom, the cull and the scroll: a nested iframe or
+      // the card posting at its own window must not. Origin is never asserted
+      // — this document is opaque-origin, so the host's origin string is not
+      // stable.
       if (e.source !== window.parent) return;
       var d = e.data;
       if (!d) return;
@@ -284,6 +285,14 @@
       if (d.tarmac === "cull") {
         if (d.culled === true) pauseSchedulers();
         else if (d.culled === false) resumeSchedulers();
+        return;
+      }
+      // The scroll thumb is being dragged: the root goes where the host says,
+      // at once. Nothing but a finite number is a position.
+      if (d.tarmac === "scrollTo") {
+        if (typeof d.y === "number" && isFinite(d.y)) {
+          window.scrollTo({ left: window.scrollX, top: d.y, behavior: "instant" });
+        }
         return;
       }
       if (d.tarmac !== "zoom") return;

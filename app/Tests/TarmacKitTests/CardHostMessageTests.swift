@@ -15,17 +15,25 @@ final class CardHostMessageTests: XCTestCase {
         XCTAssertEqual(CardHostMessage.cull(false).json, #"{"tarmac":"cull","culled":false}"#)
     }
 
-    /// 2610.0002 S24: the wheel is the web view's, not a message. A third
+    func test2610_0004S10ScrollToCarriesThePositionAsY() {
+        XCTAssertEqual(CardHostMessage.scrollTo(300).json, #"{"tarmac":"scrollTo","y":300}"#)
+        XCTAssertEqual(CardHostMessage.scrollTo(132.5).json, #"{"tarmac":"scrollTo","y":132.5}"#)
+    }
+
+    /// 2610.0002 S24, as 2610.0004 leaves it: the wheel is the web view's,
+    /// not a message, and a held thumb says where the root goes. A fourth
     /// case does not compile here.
-    func test2610S24TheHostSaysOnlyAZoomOrACull() {
+    func test2610_0004S10TheHostSaysAZoomACullOrAScrollTo() {
         func names(_ message: CardHostMessage) -> String {
             switch message {
             case .zoom: "zoom"
             case .cull: "cull"
+            case .scrollTo: "scrollTo"
             }
         }
         XCTAssertEqual(names(.zoom(3)), "zoom")
         XCTAssertEqual(names(.cull(true)), "cull")
+        XCTAssertEqual(names(.scrollTo(0)), "scrollTo")
     }
 
     // MARK: - cull polarity (2609.0002 S1, S2)

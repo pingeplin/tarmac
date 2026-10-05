@@ -83,11 +83,15 @@ public enum DevSnapshot {
         public var laidOut: Bool
         /// The thumb's `Visibility` alpha at the time of the snapshot.
         public var alpha: CGFloat
+        /// The thumb view's frame, in the coordinates of the card's
+        /// `screenRect`; nil when it has none.
+        public var thumb: CGRect?
 
-        public init(metrics: ScrollMetrics, laidOut: Bool, alpha: CGFloat) {
+        public init(metrics: ScrollMetrics, laidOut: Bool, alpha: CGFloat, thumb: CGRect?) {
             self.metrics = metrics
             self.laidOut = laidOut
             self.alpha = alpha
+            self.thumb = thumb
         }
     }
 
@@ -439,6 +443,7 @@ public enum DevSnapshot {
             "visible": .number(scroll.metrics.visible),
             "total": .number(scroll.metrics.total),
             "shown": .bool(scroll.laidOut && scroll.alpha > 0),
+            "thumb": scroll.laidOut ? scroll.thumb.map(rect) ?? .null : .null,
         ]
     }
 

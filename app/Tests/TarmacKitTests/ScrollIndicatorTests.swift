@@ -131,4 +131,161 @@ final class ScrollIndicatorTests: XCTestCase {
         XCTAssertEqual(visibility.alpha(atMs: .max), 1)
         XCTAssertEqual(visibility.alpha(atMs: 0), 1)
     }
+
+    // MARK: - visibility: what holds the thumb (spec 2610.0004)
+
+    private func wheeled(atMs now: UInt64) -> ScrollIndicator.Visibility {
+        var visibility = ScrollIndicator.Visibility()
+        visibility.wheeled(atMs: now)
+        return visibility
+    }
+
+    private func assertAlpha(
+        _ visibility: ScrollIndicator.Visibility, _ expected: [(UInt64, CGFloat)],
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        for (now, alpha) in expected {
+            XCTAssertEqual(visibility.alpha(atMs: now), alpha, "at \(now)", file: file, line: line)
+        }
+    }
+
+    func test2610_0004S1ThePointerOverTheThumbHoldsIt() {
+        var visibility = wheeled(atMs: 5000)
+        visibility.pointer(over: true, atMs: 5500)
+        assertAlpha(visibility, [(5500, 1), (6000, 1), (10000, 1)])
+
+        visibility.pointer(over: false, atMs: 10000)
+        assertAlpha(visibility, [(10000, 1), (11000, 1), (11100, 0.5), (11200, 0)])
+    }
+
+    func test2610_0004S2APressHoldsIt() {
+        var visibility = wheeled(atMs: 1000)
+        visibility.pressed(atMs: 1500)
+        assertAlpha(visibility, [(9000, 1)])
+
+        visibility.released(atMs: 9000)
+        assertAlpha(visibility, [(10000, 1), (10100, 0.5), (10200, 0)])
+    }
+
+    func test2610_0004S3APointerThatArrivesInTheFadeRestoresIt() {
+        var visibility = wheeled(atMs: 1000)
+        assertAlpha(visibility, [(2100, 0.5)])
+
+        visibility.pointer(over: true, atMs: 2100)
+        assertAlpha(visibility, [(2100, 1), (60000, 1)])
+    }
+
+    func test2610_0004S4AThumbThatShowsAtAllCanBeGrabbed() {
+        XCTAssertFalse(ScrollIndicator.Visibility().grabbable(atMs: 0))
+
+        var visibility = wheeled(atMs: 1000)
+        XCTAssertTrue(visibility.grabbable(atMs: 1000))
+        XCTAssertTrue(visibility.grabbable(atMs: 2199))
+        XCTAssertFalse(visibility.grabbable(atMs: 2200))
+
+        visibility.pressed(atMs: 2500)
+        XCTAssertTrue(visibility.grabbable(atMs: 2500))
+        XCTAssertTrue(visibility.grabbable(atMs: 99999))
+    }
+
+    func test2610_0004S5TheFadeStartsWhenTheHoldEndsAndNotWhileHeld() {
+        XCTAssertNil(ScrollIndicator.Visibility().fadeStartsAtMs(atMs: 0))
+
+        let shown = wheeled(atMs: 5000)
+        for now in [5000, 5999, 6100] as [UInt64] {
+            XCTAssertEqual(shown.fadeStartsAtMs(atMs: now), 6000, "asked at \(now)")
+        }
+        XCTAssertNil(shown.fadeStartsAtMs(atMs: 6200))
+
+        var hovered = wheeled(atMs: 5000)
+        hovered.pointer(over: true, atMs: 5500)
+        XCTAssertNil(hovered.fadeStartsAtMs(atMs: 5500))
+        XCTAssertNil(hovered.fadeStartsAtMs(atMs: 7000))
+        hovered.pointer(over: false, atMs: 8000)
+        XCTAssertEqual(hovered.fadeStartsAtMs(atMs: 8000), 9000)
+
+        var held = wheeled(atMs: 5000)
+        held.pressed(atMs: 5500)
+        XCTAssertNil(held.fadeStartsAtMs(atMs: 5500))
+        XCTAssertNil(held.fadeStartsAtMs(atMs: 99999))
+        held.released(atMs: 8000)
+        XCTAssertEqual(held.fadeStartsAtMs(atMs: 8000), 9000)
+
+        XCTAssertEqual(wheeled(atMs: .max).fadeStartsAtMs(atMs: .max), .max)
+    }
+
+    func test2610_0004S20HoverAloneShowsNothing() {
+        var fresh = ScrollIndicator.Visibility()
+        fresh.pointer(over: true, atMs: 100)
+        assertAlpha(fresh, [(100, 0), (5000, 0)])
+        fresh.wheeled(atMs: 6000)
+        assertAlpha(fresh, [(7100, 0.5)])
+
+        var faded = wheeled(atMs: 1000)
+        faded.pointer(over: true, atMs: 2200)
+        assertAlpha(faded, [(2200, 0), (3000, 0)])
+    }
+
+    func test2610_0004S21TheLastOfThePointerAndThePressLetsGo() {
+        var pointerFirst = wheeled(atMs: 1000)
+        pointerFirst.pointer(over: true, atMs: 1200)
+        pointerFirst.pressed(atMs: 1300)
+        pointerFirst.pointer(over: false, atMs: 4000)
+        assertAlpha(pointerFirst, [(8000, 1)])
+        pointerFirst.released(atMs: 9000)
+        assertAlpha(pointerFirst, [(10000, 1), (10100, 0.5)])
+
+        var pressFirst = wheeled(atMs: 1000)
+        pressFirst.pointer(over: true, atMs: 1200)
+        pressFirst.pressed(atMs: 1300)
+        pressFirst.released(atMs: 4000)
+        assertAlpha(pressFirst, [(8000, 1)])
+        pressFirst.pointer(over: false, atMs: 9000)
+        assertAlpha(pressFirst, [(10000, 1), (10100, 0.5)])
+    }
+
+    func test2610_0004S22ToldTheSameAgainNothingMoves() {
+        var notOver = wheeled(atMs: 1000)
+        notOver.pointer(over: false, atMs: 1900)
+        assertAlpha(notOver, [(2100, 0.5)])
+
+        var notPressed = wheeled(atMs: 1000)
+        notPressed.released(atMs: 1900)
+        assertAlpha(notPressed, [(2100, 0.5)])
+
+        var over = wheeled(atMs: 1000)
+        over.pointer(over: true, atMs: 1200)
+        let once = over
+        over.pointer(over: true, atMs: 5000)
+        XCTAssertEqual(over, once)
+        over.pointer(over: false, atMs: 6000)
+        assertAlpha(over, [(7000, 1), (7100, 0.5)])
+    }
+
+    func test2610_0004S23AResetDropsThePointerAndThePress() {
+        var visibility = wheeled(atMs: 1000)
+        visibility.pointer(over: true, atMs: 1200)
+        visibility.pressed(atMs: 1300)
+        XCTAssertNotEqual(visibility, ScrollIndicator.Visibility())
+
+        visibility.reset()
+        XCTAssertEqual(visibility, ScrollIndicator.Visibility())
+        assertAlpha(visibility, [(1300, 0)])
+        XCTAssertFalse(visibility.grabbable(atMs: 1300))
+        XCTAssertNil(visibility.fadeStartsAtMs(atMs: 1300))
+
+        visibility.released(atMs: 1400)
+        visibility.pointer(over: false, atMs: 1500)
+        XCTAssertEqual(visibility, ScrollIndicator.Visibility())
+        assertAlpha(visibility, [(1500, 0)])
+    }
+
+    func test2610_0004S35APressIsTakenWhateverTheAlpha() {
+        var visibility = ScrollIndicator.Visibility()
+        visibility.pressed(atMs: 100)
+        assertAlpha(visibility, [(100, 1), (9000, 1)])
+
+        visibility.released(atMs: 9000)
+        assertAlpha(visibility, [(10000, 1), (10200, 0)])
+    }
 }

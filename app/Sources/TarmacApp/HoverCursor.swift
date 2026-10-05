@@ -14,7 +14,9 @@ extension HoverCursorProviding {
 }
 
 /// Sets the cursor over the board's chrome: card headers, header buttons, the
-/// resize handles and the zoom control.
+/// resize handles, a showing scroll thumb and the zoom control. It also says
+/// which view each pointer move lands on (`onMove`), which is how a card
+/// learns that the pointer is over its scroll thumb.
 ///
 /// The router sees each pointer move before it is dispatched and sets the
 /// cursor of the view the move would land on. A resize handle lies over its
@@ -30,6 +32,9 @@ final class HoverCursorRouter {
     private weak var window: NSWindow?
     /// The last move was over a view that provides its cursor.
     private var showing = false
+    /// Told the view each pointer move lands on; nil when it lands on none,
+    /// and when the pointer leaves.
+    var onMove: ((NSView?) -> Void)?
 
     /// Routes the pointer in `window`, or stops with nil.
     func attach(to window: NSWindow?) {
@@ -46,8 +51,14 @@ final class HoverCursorRouter {
         }
     }
 
+    /// The pointer left the board.
+    func pointerLeft() {
+        onMove?(nil)
+        release()
+    }
+
     /// Hands the cursor back once the pointer has left the views that provide one.
-    func release() {
+    private func release() {
         guard showing else { return }
         showing = false
         NSCursor.arrow.set()
@@ -55,9 +66,9 @@ final class HoverCursorRouter {
 
     /// Returns whether the move is claimed and must go no further.
     private func route(_ event: NSEvent) -> Bool {
-        guard let window, event.window === window,
-              let provider = window.contentView?.hitTest(event.locationInWindow) as? HoverCursorProviding
-        else {
+        let hit = window.flatMap { event.window === $0 ? $0.contentView?.hitTest(event.locationInWindow) : nil }
+        onMove?(hit)
+        guard let provider = hit as? HoverCursorProviding else {
             release()
             return false
         }

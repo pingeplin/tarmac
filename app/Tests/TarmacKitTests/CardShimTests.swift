@@ -958,6 +958,60 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(try reports(shim).count, 6, "a culled card still reports")
     }
 
+    // MARK: - the host scrolls the root to a position (2610.0004 S11, S32, S33)
+
+    /// A shim in a window scrolled 12 across, which records what `scrollTo`
+    /// is asked for as "left top behavior".
+    private func loadScrollableShim() throws -> Shim {
+        let shim = try loadShim()
+        shim.run("""
+        var scrolledTo = []; window.scrollX = 12;
+        window.scrollTo = (to) => scrolledTo.push([to.left, to.top, to.behavior].join(' '));
+        """)
+        return shim
+    }
+
+    func test2610_0004S11AScrollToFromTheHostScrollsTheRootAtOnce() throws {
+        let shim = try loadScrollableShim()
+        shim.run("h.send({ tarmac: 'scrollTo', y: 300 })")
+        XCTAssertEqual(try shim.strings("scrolledTo"), ["12 300 instant"])
+
+        shim.run("h.send({ tarmac: 'scrollTo', y: 0 })")
+        XCTAssertEqual(try shim.strings("scrolledTo"), ["12 300 instant", "12 0 instant"])
+    }
+
+    func test2610_0004S32AScrollToTheShimCannotTrustScrollsNothing() throws {
+        let shim = try loadScrollableShim()
+        shim.run("h.send({ tarmac: 'scrollTo' })")
+        for y in ["'300'", "true", "null", "NaN", "Infinity"] {
+            shim.run("h.send({ tarmac: 'scrollTo', y: \(y) })")
+            XCTAssertEqual(try shim.count("scrolledTo"), 0, "y: \(y)")
+        }
+        shim.run("h.send({ tarmac: 'scrollTo', y: 300 }, {})")
+        XCTAssertEqual(try shim.count("scrolledTo"), 0, "not from the parent")
+        shim.run("h.send({ tarmac: 'scroll', y: 300 })")
+        XCTAssertEqual(try shim.count("scrolledTo"), 0, "the shim knows no scroll")
+
+        shim.run("h.send({ tarmac: 'scrollTo', y: 300 })")
+        XCTAssertEqual(try shim.count("scrolledTo"), 1, "the window does record one it trusts")
+    }
+
+    func test2610_0004S33AScrollToCostsNoScheduling() throws {
+        let shim = try loadScrollableShim()
+        func natives() throws -> [Int] {
+            try ["requestAnimationFrame", "setTimeout", "setInterval"].map { try shim.count("h.calls.\($0)") }
+        }
+        let live = try natives()
+        shim.run("h.send({ tarmac: 'scrollTo', y: 300 })")
+        XCTAssertEqual(try natives(), live, "live")
+
+        shim.pause()
+        let culled = try natives()
+        shim.run("h.send({ tarmac: 'scrollTo', y: 600 })")
+        XCTAssertEqual(try natives(), culled, "culled")
+        XCTAssertEqual(try shim.strings("scrolledTo"), ["12 300 instant", "12 600 instant"], "a culled card still scrolls")
+    }
+
     func test2610S25AWindowWithNoResizeObserverStillReports() throws {
         let shim = try loadScrolledShim(omitting: "ResizeObserver")
         shim.run("h.scroll(); h.fire('resize', {});")

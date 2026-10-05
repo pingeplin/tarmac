@@ -158,5 +158,11 @@
       root.style.setProperty("--card-w", cardWidth + "px");
       relayout();
     },
+
+    // The card's scroll thumb is being dragged; the scroll listener reports
+    // where this lands.
+    scrollTo(y) {
+      if (typeof y === "number" && isFinite(y)) scroll.scrollTop = y;
+    },
   };
 })();

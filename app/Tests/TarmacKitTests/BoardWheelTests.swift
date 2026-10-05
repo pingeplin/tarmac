@@ -4,8 +4,19 @@ import XCTest
 
 /// Wheel routing is keyed on the one selected card; a pinch always zooms.
 final class BoardWheelTests: XCTestCase {
-    private func route(pinch: Bool = false, over: String?, inBody: Bool = true, selected: String?) -> BoardWheel.Route {
-        BoardWheel.route(pinch: pinch, over: over, inBody: inBody, selected: selected)
+    private func route(
+        pinch: Bool = false, over: String?, inBody: Bool = true, onThumb: Bool = false, selected: String?
+    ) -> BoardWheel.Route {
+        BoardWheel.route(pinch: pinch, over: over, inBody: inBody, onThumb: onThumb, selected: selected)
+    }
+
+    /// The thumb lies over the body: a wheel on it is the card's (spec
+    /// 2610.0004).
+    func test2610_0004S7AWheelOverTheSelectedCardsThumbIsThatCards() {
+        XCTAssertEqual(route(over: "a", inBody: false, onThumb: true, selected: "a"), .card)
+        XCTAssertEqual(route(over: "a", inBody: false, onThumb: true, selected: "b"), .pan)
+        XCTAssertEqual(route(over: "a", inBody: false, onThumb: true, selected: nil), .pan)
+        XCTAssertEqual(route(pinch: true, over: "a", inBody: false, onThumb: true, selected: "a"), .zoom)
     }
 
     // MARK: - Routing
