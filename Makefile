@@ -1,6 +1,6 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: core ghostty-vt app test docs-check dco-check run qa qa-quit kill-daemon bundle release
+.PHONY: core ghostty-vt app test docs-check dco-check run qa qa-quit kill-daemon bundle dmg release
 
 # The dev channel: this worktree's own daemon socket, state and driver socket.
 # Everything that launches or drives a dev build goes through these three.
@@ -103,6 +103,12 @@ kill-daemon:
 bundle:
 	$(ROOT)/scripts/bundle.sh
 
-# Sign + .dmg + notarize + staple. Needs DEVID_IDENTITY + NOTARY_PROFILE.
+# Sign + .dmg + notarize + staple; publishes nothing. Needs VERSION,
+# DEVID_IDENTITY + NOTARY_PROFILE.
+dmg:
+	$(ROOT)/scripts/dmg.sh
+
+# The whole release, from this Mac: `dmg`, then the version-bump PR, the GitHub
+# release, the Homebrew tap and a check of what was published. Re-run to resume.
 release:
 	$(ROOT)/scripts/release.sh

@@ -8,8 +8,8 @@
 #
 #     brew install pingeplin/tarmac/tarmac
 #
-# Per release, bump `version` and `sha256` (the .dmg's shasum -a 256, printed by
-# scripts/release.sh). arm64-only for the first ship — the arch guard gives
+# scripts/release.sh stamps `version` and `sha256` (the .dmg's shasum -a 256) per
+# release — never by hand. arm64-only for the first ship — the arch guard gives
 # Intel users a clear message instead of a broken install.
 cask "tarmac" do
   arch arm: "arm64"

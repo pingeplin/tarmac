@@ -1,7 +1,7 @@
 #!/bin/bash
 # Assemble an UNSIGNED dist/Tarmac.app from the native Swift app plus the two
 # Rust binaries. arm64-only. Needs no Apple certificate; signing, the .dmg and
-# notarization are scripts/release.sh.
+# notarization are scripts/dmg.sh.
 #
 #   scripts/bundle.sh                  # -> dist/Tarmac.app
 #   VERSION=1.2.3 scripts/bundle.sh    # stamp another version

@@ -185,7 +185,7 @@ sandbox and zoom model.
 | `core/` | Rust cargo workspace (edition 2024): `tarmac-protocol` (wire types + codec + conformance vectors), `tarmacd` (the daemon), `tarmac-cli` (the `tarmac` CLI). |
 | `app/` | SwiftPM package (Swift 6, macOS 26+): `TarmacKit` (the Swift wire codec, the daemon client and every pure decision — where the tests are), `TarmacTerm` (the terminal card, on libghostty-vt), `TarmacApp` (the AppKit shell). |
 | `docs/` | Engineering docs — see the [docs map](#docs) below. |
-| `scripts/` | `fetch-ghostty-vt.sh` (stage the pinned XCFramework), `bundle.sh` (unsigned `.app`), `release.sh` (sign + notarized `.dmg`), `docs-check.mjs`, and the QA driver's scenario suites in `scripts/qa/`. |
+| `scripts/` | `fetch-ghostty-vt.sh` (stage the pinned XCFramework), `bundle.sh` (unsigned `.app`), `dmg.sh` (sign + notarized `.dmg`), `release.sh` (the whole release: `dmg.sh`, then the bump PR, the GitHub release and the Homebrew tap), `docs-check.mjs`, and the QA driver's scenario suites in `scripts/qa/`. |
 | `qa/` | Hand-run QA records and the probe pages they use. Those dated before 2026-10 were run against the Tauri app. |
 | `packaging/` | The bundle's `Info.plist`, icon, and the Homebrew cask. |
 | `Makefile` | The build / test / run entrypoint. |
