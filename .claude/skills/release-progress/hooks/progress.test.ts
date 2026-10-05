@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { isTeeing, logOf, parseLog, teeTarget } from './progress'
+import { logOf, parseLog, STEPS, teeTargets } from './progress'
 
 const BUILT = [
   '==> freshness guard: HEAD must contain origin/main',
@@ -52,7 +52,7 @@ test('each release.sh marker advances one step', async () => {
 
   tail.forEach((_, at) => {
     const text = [...NOTARIZED, ...tail.slice(0, at + 1)].join('\n')
-    expect(parseLog(text).step).toBe(3 + at)
+    expect(parseLog(text).step).toBe(STEPS.indexOf('gatekeeper') + at)
   })
 })
 
@@ -61,10 +61,9 @@ test('a reused dmg skips to past notarization', async () => {
   expect(parseLog(text)).toMatchObject({ step: 2, version: '0.15.1' })
 })
 
-test('released ends the run past the last step', async () => {
+test('released ends the run', async () => {
   const text = [...NOTARIZED, '==> released v0.15.1', ''].join('\n')
   expect(parseLog(text)).toMatchObject({
-    step: 8,
     status: 'done',
     line: 'released v0.15.1',
   })
@@ -94,21 +93,13 @@ test('a release command names its tee target', async () => {
   expect(logOf('make release')).toBe(null)
 })
 
-test('a running tee is found among the processes, its shell skipped', async () => {
+test('the logs being teed are read from the processes, their shell skipped', async () => {
   const processes = [
     "69574 /bin/zsh -c eval 'make release 2>&1 | tee \"/tmp/release-1.log\"'",
     '69576 tee /tmp/release-1.log',
+    '70001 tee -a out.log',
   ].join('\n')
 
-  expect(teeTarget(processes)).toBe('/tmp/release-1.log')
-  expect(teeTarget('')).toBe(null)
-})
-
-test('a log is live while a tee still writes it', async () => {
-  const processes = '69576 tee /tmp/release-1.log\n70001 tee -a out.log\n'
-
-  expect(isTeeing(processes, '/tmp/release-1.log')).toBe(true)
-  expect(isTeeing(processes, 'out.log')).toBe(true)
-  expect(isTeeing(processes, '/tmp/release-2.log')).toBe(false)
-  expect(isTeeing('', '/tmp/release-1.log')).toBe(false)
+  expect(teeTargets(processes)).toEqual(['/tmp/release-1.log', 'out.log'])
+  expect(teeTargets('')).toEqual([])
 })

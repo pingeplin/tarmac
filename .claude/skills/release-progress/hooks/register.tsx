@@ -1,7 +1,9 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import { isTeeing, logOf, parseLog, STEPS, teeTarget } from './progress'
+import type { Run } from '../types'
+
+import { logOf, parseLog, STEPS, teeTargets } from './progress'
 
 const run = atom({ plugin: 'release-progress', key: 'run' } as const, null)
 const isHidden = atom(
@@ -11,44 +13,44 @@ const isHidden = atom(
 
 const ENDED = 'the release ended without finishing'
 
-// A killed release leaves no marker in its log: only its tee going away says so.
-const isAlive = async ($: EngineInterface, log: string) => {
+const teeing = async ($: EngineInterface) => {
   const found = await $.process.run(['pgrep', '-fl', 'tee ']).catch(() => null)
 
-  return found === null || isTeeing(found.stdout, log)
+  return found === null ? null : teeTargets(found.stdout)
 }
 
-const poll = async ($: EngineInterface) => {
+const poll = async ($: EngineInterface): Promise<Run | null> => {
   const now = await read($, run)
 
   if (now === null || now.status !== 'running') {
-    return
+    return now
   }
 
-  // Asked before the read: a tee already gone has written all it ever will.
-  const isOver = !(await isAlive($, now.log))
+  // A killed release leaves no marker in its log: only its tee going away says
+  // so. Asked before the read: a tee already gone has written all it ever will.
+  const targets = await teeing($)
   const text = await $.fs.read(now.log).catch(() => null)
 
   if (text === null) {
-    return
+    return now
   }
 
   const parsed = parseLog(text)
-  const seen =
+  const isOver = targets !== null && !targets.includes(now.log)
+  const seen: Run =
     parsed.status === 'running' && isOver
-      ? { ...parsed, status: 'failed' as const, line: ENDED }
-      : parsed
-  const isSame =
+      ? { ...parsed, log: now.log, status: 'failed', line: ENDED }
+      : { ...parsed, log: now.log }
+
+  if (
     seen.step === now.step &&
     seen.status === now.status &&
-    seen.line === now.line &&
-    seen.version === now.version
-
-  if (isSame) {
-    return
+    seen.line === now.line
+  ) {
+    return now
   }
 
-  await update($, run, () => ({ ...seen, log: now.log }))
+  await update($, run, () => seen)
 
   if (seen.status === 'done') {
     $.ui.toast(`Release ${seen.version ?? ''} is published`)
@@ -57,6 +59,8 @@ const poll = async ($: EngineInterface) => {
   if (seen.status === 'failed') {
     $.ui.toast(`Release failed at ${STEPS[seen.step]}: ${seen.line}`)
   }
+
+  return seen
 }
 
 const track = async ($: EngineInterface, log: string) => {
@@ -66,21 +70,15 @@ const track = async ($: EngineInterface, log: string) => {
 
 const follow = async ($: EngineInterface, log: string) => {
   await track($, log)
-  await poll($)
-  const now = await read($, run)
+  const now = await poll($)
 
   return now === null || now.status === 'running'
     ? `Following ${log}`
     : `That release is over: ${now.line}`
 }
 
-const discover = async ($: EngineInterface) => {
-  const found = await $.process
-    .run(['pgrep', '-fl', 'tee .*release'])
-    .catch(() => null)
-
-  return found === null ? null : teeTarget(found.stdout)
-}
+const discover = async ($: EngineInterface) =>
+  (await teeing($))?.find(target => /release/.test(target)) ?? null
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
@@ -153,19 +151,17 @@ export const register: Register = on => {
       <Box flexDirection="column">
         <Box>
           <Text bold>release {now.version ?? ''} </Text>
-          {isWide &&
-            STEPS.map((name, at) =>
-              at < now.step ? (
-                <Text color="green">✓ {name} </Text>
-              ) : at > now.step ? (
-                <Text dimColor>· {name} </Text>
-              ) : (
-                <Text bold color="yellow">
-                  ▸ {name}{' '}
-                </Text>
-              ),
-            )}
-          {!isWide && (
+          {isWide ? (
+            STEPS.map((name, at) => (
+              <Text
+                color={at < now.step ? 'green' : at > now.step ? undefined : 'yellow'}
+                dimColor={at > now.step}
+                bold={at === now.step}
+              >
+                {at < now.step ? '✓' : at > now.step ? '·' : '▸'} {name}{' '}
+              </Text>
+            ))
+          ) : (
             <Text color="yellow">
               ▸ {STEPS[now.step]} {now.step + 1}/{STEPS.length}{' '}
             </Text>

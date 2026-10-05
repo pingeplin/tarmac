@@ -30,14 +30,16 @@ const VERSION = /Tarmac-(\d[^\s/]*)\.dmg|\(version ([^)]+)\)|^==> released v(\S+
 const RELEASE = /\bmake release\b|scripts\/release\.sh/
 const TEE = /\|\s*tee\s+(?:-a\s+)?(?:"([^"]+)"|'([^']+)'|(\S+))/
 
+const firstGroup = (match: RegExpExecArray | null) =>
+  match?.slice(1).find(Boolean) ?? null
+
 export function parseLog(text: string): Progress {
   const lines = text.split(/\r\n|\n|\r/).map(line => line.trim())
-  const found = VERSION.exec(text)
   const progress: Progress = {
     step: 0,
     status: 'running',
     line: lines.findLast(line => line !== '') ?? '',
-    version: found?.[1] ?? found?.[2] ?? found?.[3] ?? null,
+    version: firstGroup(VERSION.exec(text)),
   }
 
   for (const line of lines) {
@@ -52,7 +54,7 @@ export function parseLog(text: string): Progress {
     const said = line.slice(4)
 
     if (DONE.test(said)) {
-      return { ...progress, step: STEPS.length, status: 'done', line: said }
+      return { ...progress, status: 'done', line: said }
     }
 
     const mark = MARKS.find(([pattern]) => pattern.test(said))
@@ -63,17 +65,11 @@ export function parseLog(text: string): Progress {
 }
 
 export function logOf(command: string): string | null {
-  const tee = RELEASE.test(command) ? TEE.exec(command) : null
-
-  return tee?.[1] ?? tee?.[2] ?? tee?.[3] ?? null
+  return RELEASE.test(command) ? firstGroup(TEE.exec(command)) : null
 }
 
-export function teeTarget(processes: string): string | null {
-  return /^\d+ tee (?:-a )?(.+)$/m.exec(processes)?.[1] ?? null
-}
-
-export function isTeeing(processes: string, log: string): boolean {
-  return processes
-    .split('\n')
-    .some(line => /^\d+ tee (-a )?/.test(line) && line.endsWith(` ${log}`))
+export function teeTargets(processes: string): string[] {
+  return [...processes.matchAll(/^\d+ tee (?:-a )?(.+)$/gm)].flatMap(
+    match => match[1] ?? [],
+  )
 }
