@@ -135,10 +135,10 @@ daemon→app frame funnels through one bounded mpsc channel drained FIFO by one
 writer task; with no app attached, `Daemon::push` drops the frame silently — so
 the PTY pump keeps running and filling scrollback even with the UI gone.
 `HelloOk.daemon_version` carries `env!("CARGO_PKG_VERSION")` — the workspace
-version in `core/Cargo.toml`, which `scripts/release.sh` stamps before the build —
+version in `core/Cargo.toml`, which `scripts/dmg.sh` stamps before the build —
 so the app can detect a stale daemon after a brew upgrade and restart it.
-(`make release` is the only path that stamps this version; ad-hoc builds stay at
-the committed dev value.) The app names the same string in `Hello.app_version`
+(`make dmg`, and `make release` through it, is the only path that stamps this
+version; ad-hoc builds stay at the committed dev value.) The app names the same string in `Hello.app_version`
 (`AppVersion`, `app/Sources/TarmacKit/AppVersion.swift`): a bundle reads its
 `CFBundleShortVersionString`, which `scripts/bundle.sh` stamps with the version
 of the daemon it carries; `make run` passes `TARMAC_APP_VERSION` to the unbundled
@@ -355,7 +355,7 @@ into the executable, so a built `Tarmac.app` has no `Contents/Frameworks` and no
 dynamic reference to the library; nothing is fetched at install or run time.
 Every build stages it through the one script — `make app`, `make test`, CI
 (`.github/workflows/test.yml`, cached on the script's hash) and
-`scripts/release.sh` by way of `scripts/bundle.sh` — so a released `.dmg`
+`scripts/dmg.sh` by way of `scripts/bundle.sh` — so a released `.dmg`
 carries object code Ghostty compiled.
 
 **Where it comes from.** Ghostty's `release-tip.yml` workflow builds the
