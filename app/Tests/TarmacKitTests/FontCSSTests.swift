@@ -11,6 +11,12 @@ final class FontCSSTests: XCTestCase {
         XCTAssertEqual(FontCSS.document("Georgia"), #""Georgia", -apple-system, "SF Pro Text", system-ui, sans-serif"#)
     }
 
+    /// 2610.0006 S9
+    func testAProseSizeIsALengthInPixels() {
+        XCTAssertEqual(FontCSS.proseSize(14), "14px")
+        XCTAssertEqual(FontCSS.proseSize(13.5), "13.5px")
+    }
+
     /// S29 — a name cannot close its own string.
     func testQuotesAndBackslashesInANameAreEscaped() {
         XCTAssertEqual(FontCSS.interface(#"A"B\C"#), #""A\"B\\C", ui-monospace, monospace"#)

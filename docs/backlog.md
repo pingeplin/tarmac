@@ -197,11 +197,15 @@ Verified against the code on 2026-10-02.
   affected. Found with the Settings window (spec 2610.0005); the same
   happens on a build without it once the Window menu is read through
   Accessibility. `app/Sources/TarmacApp/Dev/DevInput.swift`.
-- **Font size has no setting.** The Settings window chooses a family for each
-  role and nothing else: the terminal stays at 16 pt (`Theme.termFontSize`)
-  and the chrome sizes are fixed. A role takes a family's regular face, so one
-  weight of a family cannot be chosen over another.
-  `app/Sources/TarmacApp/SettingsWindowController.swift`.
+- **The Interface font has no size setting.** The Settings window sets a size
+  for Terminal and for Document; the chrome is set at many fixed sizes (8 to
+  13 pt), so one size does not fit it and a scale factor is not built. A role
+  takes a family's regular face, so one weight of a family cannot be chosen
+  over another. `app/Sources/TarmacApp/SettingsWindowController.swift`.
+- **The size field of the Settings window reads `.` as the decimal mark** in
+  every locale, and Escape does not cancel a typed text: it is applied, or
+  dropped, when the field's editing ends.
+  `app/Sources/TarmacKit/FontSizeRule.swift`.
 - **Prompt and Powerline icons need a Nerd Font chosen in Settings.** The app
   ships no font, and no system font has those glyphs.
 - **The Settings window's font list is read when the window opens**, about

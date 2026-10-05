@@ -9,8 +9,9 @@ import Foundation
 ///
 /// With no font chosen the format, `{"warn_before_quit": <bool>}`, is the Tauri
 /// app's `app-prefs.json` byte for byte. A chosen font adds its role's key
-/// (spec 2610.0005). The parse and encode decisions are pure; `load` and `save`
-/// are the two thin file operations.
+/// (spec 2610.0005), and a chosen size its own (spec 2610.0006). The parse and
+/// encode decisions are pure; `load` and `save` are the two thin file
+/// operations.
 public enum AppPrefs {
     public static let fileName = "app-prefs.json"
 
@@ -20,10 +21,15 @@ public enum AppPrefs {
         public var warnBeforeQuit: Bool
         /// The family chosen for a role; no entry is the system default.
         public var fonts: [FontRole: String]
+        /// The size chosen for a role; no entry is the role's standard.
+        public var fontSizes: [FontRole: Double]
 
-        public init(warnBeforeQuit: Bool = true, fonts: [FontRole: String] = [:]) {
+        public init(
+            warnBeforeQuit: Bool = true, fonts: [FontRole: String] = [:], fontSizes: [FontRole: Double] = [:]
+        ) {
             self.warnBeforeQuit = warnBeforeQuit
             self.fonts = fonts
+            self.fontSizes = fontSizes
         }
     }
 
@@ -49,6 +55,12 @@ public enum AppPrefs {
                     FontRole.isFamilyName(name)
                 else { continue }
                 values.fonts[role] = name
+            }
+            for role in FontRole.allCases {
+                guard let rule = role.sizeRule,
+                    let size = try? object.decode(Double.self, forKey: Key(role.sizePrefsKey)), rule.accepts(size)
+                else { continue }
+                values.fontSizes[role] = size
             }
             self.values = values
         }
@@ -89,12 +101,17 @@ public enum AppPrefs {
 
     /// Written as a literal, not through an encoder: QA reads these exact bytes.
     /// A name `decode` would refuse is left out, because written raw it would
-    /// damage the file, and a damaged file turns the guard back on.
+    /// damage the file, and a damaged file turns the guard back on. So is a
+    /// size it would refuse. Every family is written before every size.
     public static func encode(_ values: Values) -> Data {
         var json = #"{"warn_before_quit":\#(values.warnBeforeQuit)"#
         for role in FontRole.allCases {
             guard let name = values.fonts[role], FontRole.isFamilyName(name) else { continue }
             json += #","\#(role.prefsKey)":\#(JSONValue.string(name).jsonString)"#
+        }
+        for role in FontRole.allCases {
+            guard let rule = role.sizeRule, let size = values.fontSizes[role], rule.accepts(size) else { continue }
+            json += #","\#(role.sizePrefsKey)":\#(JSONValue.number(size).jsonString)"#
         }
         return Data((json + "}").utf8)
     }

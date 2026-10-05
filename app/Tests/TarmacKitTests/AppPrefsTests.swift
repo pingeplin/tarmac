@@ -223,4 +223,149 @@ final class AppPrefsTests: XCTestCase {
         let spaced = AppPrefs.encode(Values(fonts: [.terminal: "a b"]))
         XCTAssertEqual(spaced, data(#"{"warn_before_quit":true,"terminal_font":"a b"}"#))
     }
+
+    // MARK: 2610.0006 — a size beside the Terminal and the Document family
+
+    /// S4 — every family is written before every size.
+    func testTheSizesAreWrittenAfterTheFamiliesInRoleOrder() {
+        let values = Values(
+            warnBeforeQuit: false, fonts: [.terminal: "Menlo", .document: "Georgia"],
+            fontSizes: [.document: 18, .terminal: 13.5]
+        )
+        XCTAssertEqual(
+            AppPrefs.encode(values),
+            data(
+                #"{"warn_before_quit":false,"terminal_font":"Menlo","document_font":"Georgia","#
+                    + #""terminal_font_size":13.5,"document_font_size":18}"#
+            )
+        )
+    }
+
+    /// S5
+    func testWithNoSizeTheBytesAreThoseOfBefore() {
+        XCTAssertEqual(AppPrefs.encode(Values(fontSizes: [:])), data(#"{"warn_before_quit":true}"#))
+        XCTAssertEqual(
+            AppPrefs.encode(Values(fonts: [.terminal: "Menlo"], fontSizes: [:])),
+            data(#"{"warn_before_quit":true,"terminal_font":"Menlo"}"#)
+        )
+    }
+
+    /// A size equal to the role's standard is a choice the user made: it is
+    /// written like any other, and reads back.
+    func testASizeEqualToTheStandardIsWritten() {
+        let values = Values(fontSizes: [.terminal: 16, .document: 14])
+        XCTAssertEqual(
+            AppPrefs.encode(values),
+            data(#"{"warn_before_quit":true,"terminal_font_size":16,"document_font_size":14}"#)
+        )
+        XCTAssertEqual(AppPrefs.decode(AppPrefs.encode(values)), values)
+    }
+
+    /// S6 — one number, however the file spells it.
+    func testASizeKeyReadsAsThatRolesSize() {
+        XCTAssertEqual(
+            AppPrefs.decode(data(#"{"warn_before_quit":false,"terminal_font_size":13.5,"document_font_size":18}"#)),
+            Values(warnBeforeQuit: false, fontSizes: [.terminal: 13.5, .document: 18])
+        )
+        for spelling in ["16.0", "1.6e1"] {
+            XCTAssertEqual(
+                AppPrefs.decode(data(#"{"terminal_font_size":"# + spelling + "}")).fontSizes, [.terminal: 16], spelling
+            )
+        }
+    }
+
+    /// S7
+    func testSavedSizesReadBackFromDisk() throws {
+        let dir = try scratchDirectory()
+        let path = dir + "/app-prefs.json"
+        let values = Values(
+            warnBeforeQuit: false, fonts: [.terminal: "Menlo", .interface: "Monaco", .document: "Georgia"],
+            fontSizes: [.terminal: 20, .document: 11.5]
+        )
+        try AppPrefs.save(values, to: path)
+        XCTAssertEqual(AppPrefs.load(from: path), values)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir), ["app-prefs.json"])
+    }
+
+    /// S8 — a role's family and its size are two choices, and the guard a third.
+    func testTheFamilyTheSizeAndTheGuardAreSavedApart() throws {
+        let path = try scratchDirectory() + "/app-prefs.json"
+        let saved = Values(warnBeforeQuit: false, fonts: [.terminal: "Menlo"], fontSizes: [.terminal: 20])
+        let changes: [(String, (inout Values) -> Void, Values)] = [
+            ("family", { $0.fonts[.terminal] = nil }, Values(warnBeforeQuit: false, fontSizes: [.terminal: 20])),
+            (
+                "size", { $0.fontSizes[.terminal] = 13.5 },
+                Values(warnBeforeQuit: false, fonts: [.terminal: "Menlo"], fontSizes: [.terminal: 13.5])
+            ),
+            ("guard", { $0.warnBeforeQuit = true }, Values(fonts: [.terminal: "Menlo"], fontSizes: [.terminal: 20])),
+        ]
+        for (name, change, expected) in changes {
+            try AppPrefs.save(saved, to: path)
+            var values = AppPrefs.load(from: path)
+            change(&values)
+            try AppPrefs.save(values, to: path)
+            XCTAssertEqual(AppPrefs.load(from: path), expected, name)
+        }
+    }
+
+    private func file(terminalSize value: String) -> Data {
+        data(
+            #"{"warn_before_quit":false,"terminal_font_size":"# + value
+                + #","document_font_size":18,"terminal_font":"Menlo"}"#
+        )
+    }
+
+    private let withoutATerminalSize = Values(
+        warnBeforeQuit: false, fonts: [.terminal: "Menlo"], fontSizes: [.document: 18]
+    )
+
+    /// S23 — the files are valid JSON, so it is the key's own rule that drops
+    /// the value. A lenient reader takes `true` for 1.
+    func testASizeThatIsNotANumberIsNoSize() {
+        for value in ["true", #""16""#, "null", "[16]", "{}"] {
+            let file = file(terminalSize: value)
+            XCTAssertTrue(StrictJSON.isValid(file), value)
+            XCTAssertEqual(AppPrefs.decode(file), withoutATerminalSize, value)
+        }
+    }
+
+    /// S24 — a number the app could not have written is not moved into the
+    /// range: it is not used.
+    func testASizeOutOfItsRolesRangeOrOffTheStepIsNoSize() {
+        for value in ["7.5", "32.5", "0", "-16", "1e9", "16.25", "13.3"] {
+            let file = file(terminalSize: value)
+            XCTAssertTrue(StrictJSON.isValid(file), value)
+            XCTAssertEqual(AppPrefs.decode(file), withoutATerminalSize, value)
+        }
+        XCTAssertEqual(AppPrefs.decode(file(terminalSize: "8")).fontSizes, [.terminal: 8, .document: 18])
+        XCTAssertEqual(AppPrefs.decode(file(terminalSize: "32")).fontSizes, [.terminal: 32, .document: 18])
+        XCTAssertEqual(
+            AppPrefs.decode(data(#"{"terminal_font_size":28,"document_font_size":28}"#)).fontSizes, [.terminal: 28]
+        )
+    }
+
+    /// S25 — Interface has no size, and a size the reader would refuse is
+    /// never written.
+    func testASizeTheReaderRefusesIsNotWritten() {
+        XCTAssertEqual(AppPrefs.decode(data(#"{"interface_font_size":12}"#)).fontSizes, [:])
+        let refused: [[FontRole: Double]] = [
+            [.interface: 12, .terminal: 64, .document: 13.3], [.terminal: .infinity, .document: .nan],
+        ]
+        for sizes in refused {
+            let bytes = AppPrefs.encode(Values(fontSizes: sizes))
+            XCTAssertEqual(bytes, data(#"{"warn_before_quit":true}"#), "\(sizes)")
+            XCTAssertTrue(StrictJSON.isValid(bytes))
+        }
+    }
+
+    /// S36 — a damaged file gives up its sizes with its guard.
+    func testADamagedFileHasNoSize() {
+        let whole = #"{"warn_before_quit":false,"terminal_font_size":20}"#
+        XCTAssertEqual(AppPrefs.decode(data(whole)), Values(warnBeforeQuit: false, fontSizes: [.terminal: 20]))
+        let damaged = [
+            String(whole.dropLast()), String(whole.dropLast()) + ",}",
+            #"{"warn_before_quit":false,"terminal_font_size":1e400}"#,
+        ]
+        for contents in damaged { XCTAssertEqual(AppPrefs.decode(data(contents)), Values(), contents) }
+    }
 }

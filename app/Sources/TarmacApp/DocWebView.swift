@@ -32,6 +32,9 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, WKNavigationDelegate
     private let scrolled = ScriptMessageRelay()
 
     private var pageLoaded = false
+    /// What the page was last given: a font change that is not this card's
+    /// sends it nothing. A new page has been given nothing.
+    private var fontsGiven: [String: String]?
     private var loadingPage = false
     /// The web view carries `DocFrameRule`, so a web page the doc frames is
     /// kept off the img host.
@@ -86,6 +89,7 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, WKNavigationDelegate
 
     private func loadPage() {
         pageLoaded = false
+        fontsGiven = nil
         pointerIsOverLink = false
         isEditingText = false
         loadingPage = true
@@ -134,13 +138,15 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, WKNavigationDelegate
     /// Passed as arguments, never spliced into the script: a family name is
     /// the user's text.
     func fontsChanged() {
-        guard pageLoaded else { return }
+        let fonts = [
+            "chrome": FontCSS.interface(Theme.fontFamilies[.interface]),
+            "prose": FontCSS.document(Theme.fontFamilies[.document]),
+            "size": FontCSS.proseSize(Theme.proseFontSize),
+        ]
+        guard pageLoaded, fonts != fontsGiven else { return }
+        fontsGiven = fonts
         webView.callAsyncJavaScript(
-            "tarmacDoc.fonts(chrome, prose)",
-            arguments: [
-                "chrome": FontCSS.interface(Theme.fontFamilies[.interface]),
-                "prose": FontCSS.document(Theme.fontFamilies[.document]),
-            ],
+            "tarmacDoc.fonts(chrome, prose, size)", arguments: fonts,
             in: nil, in: CardWebView.world, completionHandler: nil
         )
     }

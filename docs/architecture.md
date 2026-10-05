@@ -577,8 +577,9 @@ and placed by a world-space `CardFrame {x, y, w, h, z}`.
   family the user chose, or the system's monospaced font (`TerminalFonts`). A
   family with no italic has its upright face slanted, and one with no bold
   gives its regular face; box-drawing, block and Powerline characters are
-  never set italic, so their rules still meet. Setting `fontFamily` rebuilds
-  the renderer, and the new cell size reaches the program as a resize.
+  never set italic, so their rules still meet. Setting `fontFamily` or
+  `fontSize` rebuilds the renderer, and the new cell size reaches the program
+  as a resize.
 - **`TerminalView`** is the `NSView`. It owns no PTY: output comes in through
   `feed`, and everything the user does leaves through `onInput`. Policy stays
   out of it — key bindings, link opening and clipboard permission are closures
@@ -898,19 +899,27 @@ read means the guard is on.
 | `document` | the prose of markdown doc cards | the system UI font |
 
 Each row lists the Mac's font families, *System Default* first; Terminal and
-Interface list only fixed-pitch ones (`FontMenu`). A choice is saved as a
-family name in `app-prefs.json`, whose four keys are `warn_before_quit`,
-`terminal_font`, `interface_font` and `document_font`. `AppPrefsStore` is the
+Interface list only fixed-pitch ones (`FontMenu`). The Terminal and Document
+rows also have a size, a number field with a stepper, in half steps: 8 to 32
+for Terminal (16 with nothing chosen) and 10 to 24 for Document (14).
+Interface has none. A size and a family are independent: a change of one
+keeps the other. A typed number goes to the nearest size the role has, and
+text that is no number puts the field back (`FontSizeRule`). A choice is
+saved in `app-prefs.json`, whose keys are `warn_before_quit`, a family name
+in `terminal_font`, `interface_font` and `document_font`, and a number in
+`terminal_font_size` and `document_font_size`; a size the role does not have
+reads as nothing chosen. `AppPrefsStore` is the
 one owner of the file and saves all of it each time, so no preference drops
 another's key. A saved family the Mac does not have, or one a fixed-pitch role
 cannot take, is not used: the role falls back to its default and the file is
-left as it is (`FontRole.familyInEffect`). The families in effect sit in
-`Theme.fontFamilies`, which every view reads. A change is broadcast down the
-view tree of the window and of every board that is not mounted
-(`FontFollowing`): terminals rebuild their renderer, chrome takes
-`Theme.mono` again, and doc cards are handed two `font-family` values
-(`FontCSS`) as script arguments. The whole font list is read only when the
-window opens; launch reads the saved families alone.
+left as it is (`FontRole.familyInEffect`). The families and the sizes in
+effect sit in `Theme.fontFamilies` and `Theme.fontSizes`, which every view
+reads. A change is broadcast down the view tree of the window and of every
+board that is not mounted (`FontFollowing`): terminals rebuild their
+renderer, chrome takes `Theme.mono` again, and doc cards are handed their
+chrome and prose families and their prose size (`FontCSS`) as script
+arguments. The whole font list is read only when the window opens; launch
+asks the Mac for the saved families alone.
 
 **The red button hides the window** (`WindowCloseHider`): terminals keep
 running, and the window returns on the next activation or Dock click, once per
@@ -994,7 +1003,8 @@ when none is laid out), the selected card, keyboard
 focus, per-terminal `cols`/`rows`/`proc`/`selection`/`scrollback_tail`, the
 quit guard's state, and `fonts`: for each font role the family saved in
 `app-prefs.json` and what the role resolved to (a PostScript `face`, or the
-`css` value for doc prose). `--until` re-evaluates an expression every 50 ms
+`css` value for doc prose), and for `terminal` and `document` the `size` in
+effect. `--until` re-evaluates an expression every 50 ms
 (`DevUntil`). The scenario suites are `scripts/qa/smoke.mjs` (`make qa`) and
 `scripts/qa/quit.mjs` (`make qa-quit`).
 

@@ -113,7 +113,8 @@ core/target/debug/tarmac dev snapshot | jq .
   `active_element` (keyboard focus), `fonts` (for `terminal`, `interface` and
   `document`: `saved`, the family in `app-prefs.json` or `null`, and what the
   role resolved to — the PostScript `face`, or for `document` the `css`
-  value its prose is given), per-terminal
+  value its prose is given; `terminal` and `document` also have `size`, the
+  size in effect), per-terminal
   `cols`/`rows`/`proc`/`selection`/`scrollback_tail`, per-doc-card `borrowed`
   (the HTML card whose shield is lifted), and `quit_guard` — the ⌘Q guard's hold
   on the Quit item (`retargeted`, `enabled`, which `make qa`'s D11 asserts) plus

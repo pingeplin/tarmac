@@ -1,17 +1,27 @@
-// Operates the Settings window of the live dev app with no pointer (spec
-// 2610.0005), through the Accessibility API, and posts a click or a wheel at
-// a screen point for the one scenario that needs real pointer events.
+// Operates the Settings window of the live dev app with no pointer (specs
+// 2610.0005, 2610.0006), through the Accessibility API, and posts a click or
+// a wheel at a screen point for the one scenario that needs real pointer
+// events.
 //
 //   swift scripts/qa/settings-window.swift <pid> <verb> ...
 //
 //   open                     posts ⌘, to the app
-//   rows                     prints each row's selected title, and the window's labels
+//   rows                     prints each row's selected title, each size, and the window's labels, with frames
 //   pick <row> <title>       row 0, 1, 2 = Terminal, Interface, Document
+//   size <n> <text>          sets a size field's text and confirms it, as Return does; n 0, 1 = Terminal, Document
+//   step <n> up|down [count] presses a size's stepper
+//   focus <n>                gives a size field the keyboard focus, its text selected
+//   type <text>              posts the text to the app as plain keys
+//   press <key code>         posts one plain key to the app: 36 is Return, 48 Tab, 53 Escape
 //   menu <item title>        chooses an item of the app menu, e.g. "Warn Before Quitting (⌘Q)"
 //   move <x> <y>             puts the window's top-left there, in global points
 //   key <key code>           posts ⌘ and that key to the app: 43 is `,`, 13 `w`, 12 `q`
 //   click <x> <y>            a left click at a global point
 //   wheel <x> <y> <dy> [ctrl]  eight wheel events at a global point
+//
+// `type` posts each character on a key code no layout has, with the
+// character in the event: a real digit key goes through the input source,
+// and under Zhuyin `20` arrives as `ㄉㄢ`.
 //
 // <pid> is the app's: `lsof -t "$PWD/.dev/tarmac-dev.sock"`. The process that
 // runs this needs the Accessibility permission.
@@ -68,10 +78,12 @@ func descendants(of element: AXUIElement, depth: Int = 0) -> [AXUIElement] {
     return children.flatMap { [$0] + descendants(of: $0, depth: depth + 1) }
 }
 
-func press(_ element: AXUIElement, _ what: String) {
-    let result = AXUIElementPerformAction(element, kAXPressAction as CFString)
-    guard result == .success else { fail("\(what): press failed (\(result.rawValue))") }
+func perform(_ action: String, on element: AXUIElement, _ what: String) {
+    let result = AXUIElementPerformAction(element, action as CFString)
+    guard result == .success else { fail("\(what): \(action) failed (\(result.rawValue))") }
 }
+
+func press(_ element: AXUIElement, _ what: String) { perform(kAXPressAction, on: element, what) }
 
 func settingsWindow() -> AXUIElement {
     let windows: [AXUIElement] = attribute(app, kAXWindowsAttribute) ?? []
@@ -79,8 +91,8 @@ func settingsWindow() -> AXUIElement {
     return window
 }
 
-func popUps() -> [AXUIElement] {
-    descendants(of: settingsWindow()).filter { role($0) == kAXPopUpButtonRole }
+func controls(_ wanted: String) -> [AXUIElement] {
+    descendants(of: settingsWindow()).filter { role($0) == wanted }
 }
 
 /// An item of the app menu, the bar's second: the Apple menu is its first.
@@ -93,15 +105,34 @@ func appMenuItem(_ name: String) -> AXUIElement {
     return item
 }
 
-func postCommand(_ code: CGKeyCode) {
+func frame(_ element: AXUIElement) -> String {
+    var rect = CGRect.zero
+    guard let value: AXValue = attribute(element, "AXFrame"), AXValueGetValue(value, .cgRect, &rect) else { return "?" }
+    return "\(rect.minX),\(rect.minY) \(rect.width)x\(rect.height)"
+}
+
+/// The control of role `wanted` that the verb's first argument counts to.
+func control(_ wanted: String, _ what: String) -> AXUIElement {
+    let found = controls(wanted)
+    guard let index = rest.first.flatMap(Int.init), found.indices.contains(index) else {
+        fail("\(verb) <n> ...: the window has \(found.count) \(what)")
+    }
+    return found[index]
+}
+
+func post(_ code: CGKeyCode, flags: CGEventFlags = [], character: Character? = nil) {
     let session = CGEventSource(stateID: .combinedSessionState)
+    let units = character.map { Array(String($0).utf16) }
     for down in [true, false] {
         let event = CGEvent(keyboardEventSource: session, virtualKey: code, keyDown: down)
-        event?.flags = .maskCommand
+        event?.flags = flags
+        if let units { event?.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units) }
         event?.postToPid(pid)
         usleep(60_000)
     }
 }
+
+func postCommand(_ code: CGKeyCode) { post(code, flags: .maskCommand) }
 
 // MARK: - Pointer
 
@@ -138,23 +169,56 @@ case "open":
 case "rows":
     let window = settingsWindow(), views = descendants(of: window)
     for (index, popUp) in views.filter({ role($0) == kAXPopUpButtonRole }).enumerated() {
-        print("\(index) selected=\(value(popUp))")
+        print("\(index) selected=\(value(popUp)) frame=\(frame(popUp))")
     }
-    print("labels=\(views.filter { role($0) == kAXStaticTextRole }.map(value))")
+    for (index, field) in views.filter({ role($0) == kAXTextFieldRole }).enumerated() {
+        let label: String = attribute(field, kAXDescriptionAttribute) ?? ""
+        print("size \(index) value=\(value(field)) label=\(label) frame=\(frame(field))")
+    }
+    for stepper in views.filter({ role($0) == kAXIncrementorRole }) { print("stepper frame=\(frame(stepper))") }
+    let texts = views.filter { role($0) == kAXStaticTextRole }
+    for text in texts { print("label \(value(text)) frame=\(frame(text))") }
+    print("labels=\(texts.map(value))")
     print("resizable=\((attribute(window, "AXGrowArea") as AXUIElement?) != nil)")
 case "pick":
-    let rows = popUps()
-    guard rest.count == 2, let row = Int(rest[0]), rows.indices.contains(row) else { fail("pick <row> <title>") }
-    let popUp = rows[row]
+    guard rest.count == 2 else { fail("pick <row> <title>") }
+    let popUp = control(kAXPopUpButtonRole, "pop-ups")
     press(popUp, "the pop-up")
     usleep(400_000)
     let items = descendants(of: popUp).filter { role($0) == kAXMenuItemRole }
     guard let item = items.first(where: { title($0) == rest[1] }) else {
         AXUIElementPerformAction(popUp, kAXCancelAction as CFString)
-        fail("row \(row) lists \(items.count) entries and none is \(rest[1])")
+        fail("row \(rest[0]) lists \(items.count) entries and none is \(rest[1])")
     }
     press(item, rest[1])
     print("picked \(rest[1]) of \(items.count)")
+case "size":
+    guard rest.count == 2 else { fail("size <n> <text>") }
+    let field = control(kAXTextFieldRole, "size fields")
+    guard AXUIElementSetAttributeValue(field, kAXValueAttribute as CFString, rest[1] as CFString) == .success else {
+        fail("the field did not take the text")
+    }
+    perform(kAXConfirmAction, on: field, "the size field")
+    usleep(200_000)
+    print("size \(rest[0]) value=\(value(field))")
+case "step":
+    guard rest.count >= 2, ["up", "down"].contains(rest[1]) else { fail("step <n> up|down [count]") }
+    let stepper = control(kAXIncrementorRole, "steppers")
+    for _ in 0..<(rest.count > 2 ? Int(number(2)) : 1) {
+        perform(rest[1] == "up" ? kAXIncrementAction : kAXDecrementAction, on: stepper, "the stepper")
+        usleep(150_000)
+    }
+case "focus":
+    let field = control(kAXTextFieldRole, "size fields")
+    guard AXUIElementSetAttributeValue(field, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success else {
+        fail("the field did not take the focus")
+    }
+case "type":
+    guard rest.count == 1 else { fail("type <text>") }
+    for character in rest[0] { post(255, character: character) }
+case "press":
+    guard rest.count == 1, let code = CGKeyCode(rest[0]) else { fail("press <key code>") }
+    post(code)
 case "menu":
     guard rest.count == 1 else { fail("menu <item title>") }
     let item = appMenuItem(rest[0])

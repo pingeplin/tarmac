@@ -56,7 +56,10 @@ public final class TerminalView: NSView {
     private var reportedFocus = false
 
     public var padding = TerminalPadding.card { didSet { relayout() } }
-    private let fontSize: CGFloat
+    /// In points; the cell it gives is rounded to whole device pixels.
+    public var fontSize: CGFloat {
+        didSet { if fontSize != oldValue { rebuildFonts() } }
+    }
     /// The family the terminal is set in; nil is the system's monospaced font.
     public var fontFamily: String? {
         didSet { if fontFamily != oldValue { rebuildFonts() } }
