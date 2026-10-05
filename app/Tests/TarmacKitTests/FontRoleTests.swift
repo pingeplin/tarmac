@@ -11,6 +11,17 @@ final class FontRoleTests: XCTestCase {
         XCTAssertEqual(FontRole.allCases.map(\.prefsKey), ["terminal_font", "interface_font", "document_font"])
     }
 
+    /// 2610.0006 S1 — Interface has no size: its chrome is set at many.
+    func testTheTerminalAndTheDocumentHaveASizeRule() {
+        XCTAssertEqual(FontRole.terminal.sizeRule, FontSizeRule(range: 8...32, standard: 16))
+        XCTAssertEqual(FontRole.document.sizeRule, FontSizeRule(range: 10...24, standard: 14))
+        XCTAssertNil(FontRole.interface.sizeRule)
+        XCTAssertEqual(FontSizeRule.step, 0.5)
+        XCTAssertEqual(
+            FontRole.allCases.map(\.sizePrefsKey), ["terminal_font_size", "interface_font_size", "document_font_size"]
+        )
+    }
+
     /// S14 — the Settings rows, in their order.
     func testTheRolesAreTitledInRowOrder() {
         XCTAssertEqual(FontRole.allCases.map(\.title), ["Terminal", "Interface", "Document"])

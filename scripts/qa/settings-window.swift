@@ -1,17 +1,27 @@
-// Operates the Settings window of the live dev app with no pointer (spec
-// 2610.0005), through the Accessibility API, and posts a click or a wheel at
-// a screen point for the one scenario that needs real pointer events.
+// Operates the Settings window of the live dev app with no pointer (specs
+// 2610.0005, 2610.0006), through the Accessibility API, and posts a click or
+// a wheel at a screen point for the one scenario that needs real pointer
+// events.
 //
 //   swift scripts/qa/settings-window.swift <pid> <verb> ...
 //
 //   open                     posts ⌘, to the app
-//   rows                     prints each row's selected title, and the window's labels
+//   rows                     prints each row's selected title, each size, and the window's labels, with frames
 //   pick <row> <title>       row 0, 1, 2 = Terminal, Interface, Document
+//   size <n> <text>          sets a size field's text and confirms it, as Return does; n 0, 1 = Terminal, Document
+//   step <n> up|down [count] presses a size's stepper
+//   focus <n>                gives a size field the keyboard focus, its text selected
+//   type <text>              posts the text to the app as plain keys
+//   press <key code>         posts one plain key to the app: 36 is Return, 48 Tab, 53 Escape
 //   menu <item title>        chooses an item of the app menu, e.g. "Warn Before Quitting (⌘Q)"
 //   move <x> <y>             puts the window's top-left there, in global points
 //   key <key code>           posts ⌘ and that key to the app: 43 is `,`, 13 `w`, 12 `q`
 //   click <x> <y>            a left click at a global point
 //   wheel <x> <y> <dy> [ctrl]  eight wheel events at a global point
+//
+// `type` posts each character on a key code no layout has, with the
+// character in the event: a real digit key goes through the input source,
+// and under Zhuyin `20` arrives as `ㄉㄢ`.
 //
 // <pid> is the app's: `lsof -t "$PWD/.dev/tarmac-dev.sock"`. The process that
 // runs this needs the Accessibility permission.
@@ -93,15 +103,38 @@ func appMenuItem(_ name: String) -> AXUIElement {
     return item
 }
 
-func postCommand(_ code: CGKeyCode) {
+func frame(_ element: AXUIElement) -> String {
+    var rect = CGRect.zero
+    guard let value: AXValue = attribute(element, "AXFrame"), AXValueGetValue(value, .cgRect, &rect) else { return "?" }
+    return "\(rect.minX),\(rect.minY) \(rect.width)x\(rect.height)"
+}
+
+func sizeControl(_ wanted: String, _ what: String) -> AXUIElement {
+    let controls = descendants(of: settingsWindow()).filter { role($0) == wanted }
+    guard let index = rest.first.flatMap(Int.init), controls.indices.contains(index) else {
+        fail("\(verb) <n> ...: the window has \(controls.count) \(what)")
+    }
+    return controls[index]
+}
+
+func perform(_ action: String, on element: AXUIElement) {
+    let result = AXUIElementPerformAction(element, action as CFString)
+    guard result == .success else { fail("\(verb): \(action) failed (\(result.rawValue))") }
+}
+
+func post(_ code: CGKeyCode, flags: CGEventFlags = [], character: Character? = nil) {
     let session = CGEventSource(stateID: .combinedSessionState)
+    let units = character.map { Array(String($0).utf16) }
     for down in [true, false] {
         let event = CGEvent(keyboardEventSource: session, virtualKey: code, keyDown: down)
-        event?.flags = .maskCommand
+        event?.flags = flags
+        if let units { event?.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units) }
         event?.postToPid(pid)
         usleep(60_000)
     }
 }
+
+func postCommand(_ code: CGKeyCode) { post(code, flags: .maskCommand) }
 
 // MARK: - Pointer
 
@@ -138,8 +171,14 @@ case "open":
 case "rows":
     let window = settingsWindow(), views = descendants(of: window)
     for (index, popUp) in views.filter({ role($0) == kAXPopUpButtonRole }).enumerated() {
-        print("\(index) selected=\(value(popUp))")
+        print("\(index) selected=\(value(popUp)) frame=\(frame(popUp))")
     }
+    for (index, field) in views.filter({ role($0) == kAXTextFieldRole }).enumerated() {
+        let label: String = attribute(field, kAXDescriptionAttribute) ?? ""
+        print("size \(index) value=\(value(field)) label=\(label) frame=\(frame(field))")
+    }
+    for stepper in views.filter({ role($0) == kAXIncrementorRole }) { print("stepper frame=\(frame(stepper))") }
+    for text in views.filter({ role($0) == kAXStaticTextRole }) { print("label \(value(text)) frame=\(frame(text))") }
     print("labels=\(views.filter { role($0) == kAXStaticTextRole }.map(value))")
     print("resizable=\((attribute(window, "AXGrowArea") as AXUIElement?) != nil)")
 case "pick":
@@ -155,6 +194,33 @@ case "pick":
     }
     press(item, rest[1])
     print("picked \(rest[1]) of \(items.count)")
+case "size":
+    guard rest.count == 2 else { fail("size <n> <text>") }
+    let field = sizeControl(kAXTextFieldRole, "size fields")
+    guard AXUIElementSetAttributeValue(field, kAXValueAttribute as CFString, rest[1] as CFString) == .success else {
+        fail("the field did not take the text")
+    }
+    perform(kAXConfirmAction, on: field)
+    usleep(200_000)
+    print("size \(rest[0]) value=\(value(field))")
+case "step":
+    guard rest.count >= 2, ["up", "down"].contains(rest[1]) else { fail("step <n> up|down [count]") }
+    let stepper = sizeControl(kAXIncrementorRole, "steppers")
+    for _ in 0..<(rest.count > 2 ? Int(number(2)) : 1) {
+        perform(rest[1] == "up" ? kAXIncrementAction : kAXDecrementAction, on: stepper)
+        usleep(150_000)
+    }
+case "focus":
+    let field = sizeControl(kAXTextFieldRole, "size fields")
+    guard AXUIElementSetAttributeValue(field, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success else {
+        fail("the field did not take the focus")
+    }
+case "type":
+    guard rest.count == 1 else { fail("type <text>") }
+    for character in rest[0] { post(255, character: character) }
+case "press":
+    guard rest.count == 1, let code = CGKeyCode(rest[0]) else { fail("press <key code>") }
+    post(code)
 case "menu":
     guard rest.count == 1 else { fail("menu <item title>") }
     let item = appMenuItem(rest[0])

@@ -60,8 +60,8 @@ final class DevSnapshotTests: XCTestCase {
             keyboardFocus: keyboardFocus,
             quitGuard: quitGuard,
             fonts: fonts ?? DevSnapshot.Fonts(
-                saved: [:], terminalFace: "SystemMono-Regular", interfaceFace: "SystemMono-Regular",
-                documentCSS: "system-ui"
+                saved: [:], terminalFace: "SystemMono-Regular", terminalSize: 16,
+                interfaceFace: "SystemMono-Regular", documentCSS: "system-ui", documentSize: 14
             )
         )
     }
@@ -724,30 +724,35 @@ final class DevSnapshotTests: XCTestCase {
     }
 
     /// 2610.0005 S13 — a role with nothing saved says `null`, so a reader can
-    /// tell "the system default" from a key it failed to find.
+    /// tell "the system default" from a key it failed to find. 2610.0006 S12 —
+    /// Terminal and Document say their size; Interface has none.
     func testTheSnapshotReportsEachRolesSavedFamilyAndWhatItResolvedTo() {
         let fonts = DevSnapshot.Fonts(
-            saved: [.terminal: "Menlo"], terminalFace: "Menlo-Regular",
-            interfaceFace: ".AppleSystemUIFontMonospaced-Regular", documentCSS: FontCSS.document(nil)
+            saved: [.terminal: "Menlo"], terminalFace: "Menlo-Regular", terminalSize: 16,
+            interfaceFace: ".AppleSystemUIFontMonospaced-Regular", documentCSS: FontCSS.document(nil), documentSize: 14
         )
         XCTAssertEqual(
             fields(DevSnapshot.build(input(fonts: fonts)))["fonts"],
             [
-                "terminal": ["saved": "Menlo", "face": "Menlo-Regular"],
+                "terminal": ["saved": "Menlo", "face": "Menlo-Regular", "size": 16],
                 "interface": ["saved": .null, "face": ".AppleSystemUIFontMonospaced-Regular"],
-                "document": ["saved": .null, "css": #"-apple-system, "SF Pro Text", system-ui, sans-serif"#],
+                "document": ["saved": .null, "css": #"-apple-system, "SF Pro Text", system-ui, sans-serif"#, "size": 14],
             ]
         )
         let all = DevSnapshot.Fonts(
             saved: [.terminal: "Monaco", .interface: "Menlo", .document: "Georgia"], terminalFace: "Monaco",
-            interfaceFace: "Menlo-Regular", documentCSS: FontCSS.document("Georgia")
+            terminalSize: 13.5, interfaceFace: "Menlo-Regular", documentCSS: FontCSS.document("Georgia"),
+            documentSize: 18
         )
         XCTAssertEqual(
             fields(DevSnapshot.build(input(fonts: all)))["fonts"],
             [
-                "terminal": ["saved": "Monaco", "face": "Monaco"],
+                "terminal": ["saved": "Monaco", "face": "Monaco", "size": 13.5],
                 "interface": ["saved": "Menlo", "face": "Menlo-Regular"],
-                "document": ["saved": "Georgia", "css": #""Georgia", -apple-system, "SF Pro Text", system-ui, sans-serif"#],
+                "document": [
+                    "saved": "Georgia", "css": #""Georgia", -apple-system, "SF Pro Text", system-ui, sans-serif"#,
+                    "size": 18,
+                ],
             ]
         )
     }
@@ -761,9 +766,9 @@ final class DevSnapshotTests: XCTestCase {
                 + #""cards":[{"board_rect":{"h":200,"w":300,"x":500,"y":20},"borrowed":false,"focused":false,"#
                 + #""id":"/a/b.md","kind":"doc","screen_rect":null,"scroll":null}],"#
                 + #""content_origin":null,"focused_card":null,"#
-                + #""fonts":{"document":{"css":"system-ui","saved":null},"#
+                + #""fonts":{"document":{"css":"system-ui","saved":null,"size":14},"#
                 + #""interface":{"face":"SystemMono-Regular","saved":null},"#
-                + #""terminal":{"face":"SystemMono-Regular","saved":null}},"#
+                + #""terminal":{"face":"SystemMono-Regular","saved":null,"size":16}},"#
                 + #""quit_guard":null,"v":1,"#
                 + #""viewport":{"cx":500,"cy":350,"view_rect":{"h":700,"w":1000,"x":24,"y":40},"zoom":1},"#
                 + #""visibility":"visible"}"#

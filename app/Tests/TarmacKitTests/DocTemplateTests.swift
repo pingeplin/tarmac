@@ -49,4 +49,19 @@ final class DocTemplateTests: XCTestCase {
         XCTAssertEqual(Double(factor), Double(CardZoom.magnifyK))
         XCTAssertGreaterThanOrEqual(CardZoom.magnifyK, BoardZoom.max)
     }
+
+    /// 2610.0006 S10 — the page's own prose size, before the app sets one, is
+    /// the kit's standard, and the prose reads it from the property.
+    func testTheProseSizeIsAPropertyThatStartsAtTheStandard() throws {
+        let text = try template()
+        XCTAssertEqual(
+            try firstMatch(#"--prose-size:\s*([^;]+);"#, in: text),
+            FontCSS.proseSize(try XCTUnwrap(FontRole.document.sizeRule).standard)
+        )
+        let prose = try firstMatch(#"\n  \.doc-prose \{([^}]*)\}"#, in: text)
+        XCTAssertEqual(
+            try firstMatch(#"font-size:\s*([^;]+);"#, in: prose), "calc(var(--prose-size) * var(--oversample-k))"
+        )
+        XCTAssertFalse(prose.contains("14px"))
+    }
 }

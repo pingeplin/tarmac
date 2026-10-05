@@ -30,10 +30,6 @@ enum Theme {
     static let amber = srgb(0xfdbc4b)
     static let ok = srgb(0x1cdc9a)
 
-    /// Terminal interior font size in world points (crib §3). The board zoom
-    /// scales each card as a single unit, so this is the on-screen size at 100%.
-    static let termFontSize: CGFloat = 16
-
     static let repoColors: [NSColor] = [
         srgb(0xf67400), // repo-a — orange
         srgb(0x11d116), // repo-b — green
@@ -44,6 +40,16 @@ enum Theme {
     /// The family in effect for each role, as `FontSettings` last resolved
     /// it; no entry is the system default.
     static var fontFamilies: [FontRole: String] = [:]
+
+    /// The size in effect for each role that has one, as `FontSettings` last
+    /// resolved it.
+    static var fontSizes: [FontRole: Double] = [:]
+
+    /// In world points: the board zoom scales each card as a single unit, so
+    /// this is the on-screen size at 100%.
+    static var terminalFontSize: CGFloat { fontSizes[.terminal] ?? FontSizeRule.terminal.standard }
+
+    static var proseFontSize: Double { fontSizes[.document] ?? FontSizeRule.document.standard }
 
     /// The chrome face: the Interface family, or the system's monospaced
     /// font. A family has a regular and at most a bold, so a weight takes the

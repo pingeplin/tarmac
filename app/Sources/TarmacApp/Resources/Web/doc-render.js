@@ -159,11 +159,12 @@
       relayout();
     },
 
-    // The chosen fonts, each a font-family value. A new face moves the
-    // prose's line breaks.
-    fonts(chromeFamily, proseFamily) {
+    // The chosen fonts: two font-family values and the prose's size, a
+    // length. A new face or size moves the prose's line breaks.
+    fonts(chromeFamily, proseFamily, proseSize) {
       root.style.setProperty("--chrome-font", chromeFamily);
       root.style.setProperty("--prose-font", proseFamily);
+      root.style.setProperty("--prose-size", proseSize);
       remeasure();
     },
 

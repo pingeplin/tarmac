@@ -136,10 +136,11 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, WKNavigationDelegate
     func fontsChanged() {
         guard pageLoaded else { return }
         webView.callAsyncJavaScript(
-            "tarmacDoc.fonts(chrome, prose)",
+            "tarmacDoc.fonts(chrome, prose, size)",
             arguments: [
                 "chrome": FontCSS.interface(Theme.fontFamilies[.interface]),
                 "prose": FontCSS.document(Theme.fontFamilies[.document]),
+                "size": FontCSS.proseSize(Theme.proseFontSize),
             ],
             in: nil, in: CardWebView.world, completionHandler: nil
         )

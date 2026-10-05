@@ -181,7 +181,7 @@ final class AppController {
         showConnectionStatus()
     }
 
-    /// A chosen font changed. A board that is not mounted keeps its cards in
+    /// A chosen font or size changed. A board that is not mounted keeps its cards in
     /// its own detached view, so each is told apart from the window's tree.
     private func fontsChanged() {
         rootView.broadcastFontsChanged()

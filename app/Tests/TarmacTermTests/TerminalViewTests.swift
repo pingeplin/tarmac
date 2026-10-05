@@ -875,8 +875,8 @@ final class TerminalViewTests: XCTestCase {
 
     // MARK: the chosen family (2610.0005)
 
-    private func cell(_ family: String?, scale: CGFloat? = nil) -> CGSize {
-        TerminalFonts(size: 16, pixelsPerPoint: scale ?? window.backingScaleFactor, family: family).metrics.cell
+    private func cell(_ family: String?, size: CGFloat = 16, scale: CGFloat? = nil) -> CGSize {
+        TerminalFonts(size: size, pixelsPerPoint: scale ?? window.backingScaleFactor, family: family).metrics.cell
     }
 
     /// S12 — a new family is a new cell: the grid is laid out again and the
@@ -927,6 +927,99 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(view.fontGeneration, before + 1)
         XCTAssertEqual(view.gridLayout?.cell, cell("Monaco", scale: mounted))
         XCTAssertNotEqual(view.gridLayout?.cell, cell(nil, scale: mounted))
+    }
+
+    // MARK: the chosen size (2610.0006)
+
+    /// S11 — a new size is a new cell: the grid is laid out again in the same
+    /// view and the program is told its new size, once.
+    func testANewSizeRebuildsTheFontsAndReportsTheNewGrid() throws {
+        XCTAssertNotEqual(cell(nil, size: 20), cell(nil))
+        let before = view.fontGeneration
+
+        view.fontSize = 20
+
+        XCTAssertEqual(view.fontGeneration, before + 1)
+        XCTAssertEqual(view.gridLayout?.cell, cell(nil, size: 20))
+        let layout = try XCTUnwrap(TerminalGridLayout(
+            bounds: view.bounds.size, cell: cell(nil, size: 20), padding: view.padding
+        ))
+        XCTAssertEqual(resizes, [[layout.cols, layout.rows]])
+        XCTAssertEqual([view.engine.cols, view.engine.rows], [layout.cols, layout.rows])
+    }
+
+    /// S11 — a smaller size is a new cell too.
+    func testASmallerSizeRebuildsTheFonts() {
+        XCTAssertNotEqual(cell(nil), cell(nil, size: 20))
+        view.fontSize = 20
+        let before = view.fontGeneration
+
+        view.fontSize = 16
+
+        XCTAssertEqual(view.fontGeneration, before + 1)
+        XCTAssertEqual(view.gridLayout?.cell, cell(nil))
+    }
+
+    /// S26
+    func testTheSameSizeAgainDoesNothing() {
+        view.fontSize = 20
+        let before = view.fontGeneration
+        resizes = []
+
+        view.fontSize = 20
+
+        XCTAssertEqual(view.fontGeneration, before)
+        XCTAssertEqual(resizes, [])
+    }
+
+    /// S27 — the size and the family are two choices: a change of one keeps
+    /// the other.
+    func testANewSizeKeepsTheFamilyAndANewFamilyKeepsTheSize() {
+        let monacoAt20 = cell("Monaco", size: 20)
+        XCTAssertNotEqual(monacoAt20, cell("Monaco"))
+        XCTAssertNotEqual(monacoAt20, cell(nil, size: 20))
+
+        view.fontFamily = "Monaco"
+        view.fontSize = 20
+        XCTAssertEqual(view.gridLayout?.cell, monacoAt20)
+
+        view.fontFamily = nil
+        XCTAssertEqual(view.gridLayout?.cell, cell(nil, size: 20))
+        view.fontFamily = "Monaco"
+        XCTAssertEqual(view.gridLayout?.cell, monacoAt20)
+    }
+
+    /// S28 — a rebuild for a new display density keeps the chosen size. The
+    /// system face is used because Monaco's cell at 20 is one at both
+    /// densities.
+    func testARebuildForANewBackingScaleKeepsTheSize() throws {
+        let mounted = window.backingScaleFactor
+        let other: CGFloat = mounted == 1 ? 2 : 1
+        XCTAssertNotEqual(cell(nil, size: 20, scale: mounted), cell(nil, size: 20, scale: other))
+        XCTAssertNotEqual(cell(nil, size: 20, scale: mounted), cell(nil, scale: mounted))
+        let view = try TerminalView(
+            frame: NSRect(x: 0, y: 0, width: 600, height: 400), fontSize: 20, backingScale: other
+        )
+        XCTAssertEqual(view.gridLayout?.cell, cell(nil, size: 20, scale: other))
+        let before = view.fontGeneration
+
+        window.contentView?.addSubview(view)
+
+        XCTAssertEqual(view.fontGeneration, before + 1)
+        XCTAssertEqual(view.gridLayout?.cell, cell(nil, size: 20, scale: mounted))
+    }
+
+    /// A rebuild for a new size keeps the display density the view was built
+    /// at. The view is in no window, so that density is not the mounted one.
+    func testANewSizeKeepsTheBackingScale() throws {
+        let mounted = window.backingScaleFactor
+        let other: CGFloat = mounted == 1 ? 2 : 1
+        XCTAssertNotEqual(cell(nil, size: 20, scale: other), cell(nil, size: 20, scale: mounted))
+        let view = try TerminalView(frame: NSRect(x: 0, y: 0, width: 600, height: 400), backingScale: other)
+
+        view.fontSize = 20
+
+        XCTAssertEqual(view.gridLayout?.cell, cell(nil, size: 20, scale: other))
     }
 
     // MARK: program replies

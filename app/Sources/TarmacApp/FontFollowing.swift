@@ -1,8 +1,9 @@
 import AppKit
 import TarmacTerm
 
-/// A view that draws with a chosen font (`Theme.fontFamilies`) and holds on to
-/// it: it takes the font again when the choice changes.
+/// A view that draws with a chosen font (`Theme.fontFamilies`,
+/// `Theme.fontSizes`) and holds on to it: it takes the font again when the
+/// choice changes.
 @MainActor
 protocol FontFollowing: NSView {
     func fontsChanged()
@@ -21,5 +22,6 @@ extension NSView {
 extension TerminalView: FontFollowing {
     func fontsChanged() {
         fontFamily = Theme.fontFamilies[.terminal]
+        fontSize = Theme.terminalFontSize
     }
 }

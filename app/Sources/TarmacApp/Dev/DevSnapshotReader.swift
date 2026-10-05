@@ -59,8 +59,10 @@ struct DevSnapshotReader {
         DevSnapshot.Fonts(
             saved: controller.fonts.saved,
             terminalFace: TerminalFace.name(family: Theme.fontFamilies[.terminal]),
+            terminalSize: Theme.terminalFontSize,
             interfaceFace: Theme.mono(10.5).fontName,
-            documentCSS: FontCSS.document(Theme.fontFamilies[.document])
+            documentCSS: FontCSS.document(Theme.fontFamilies[.document]),
+            documentSize: Theme.proseFontSize
         )
     }
 

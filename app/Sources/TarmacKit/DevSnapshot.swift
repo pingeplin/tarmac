@@ -297,22 +297,30 @@ public enum DevSnapshot {
         }
     }
 
-    /// The chosen fonts (spec 2610.0005): what is saved for each role, and
-    /// what each role resolved to on this Mac.
+    /// The chosen fonts (specs 2610.0005, 2610.0006): what is saved for each
+    /// role, what each role resolved to on this Mac, and the size in effect
+    /// of the two roles that have one.
     public struct Fonts: Equatable, Sendable {
         public var saved: [FontRole: String]
         /// The PostScript name of the regular face terminals are set in.
         public var terminalFace: String
+        public var terminalSize: Double
         /// The PostScript name of the regular face the chrome is set in.
         public var interfaceFace: String
         /// The `font-family` value doc-card prose is given.
         public var documentCSS: String
+        public var documentSize: Double
 
-        public init(saved: [FontRole: String], terminalFace: String, interfaceFace: String, documentCSS: String) {
+        public init(
+            saved: [FontRole: String], terminalFace: String, terminalSize: Double, interfaceFace: String,
+            documentCSS: String, documentSize: Double
+        ) {
             self.saved = saved
             self.terminalFace = terminalFace
+            self.terminalSize = terminalSize
             self.interfaceFace = interfaceFace
             self.documentCSS = documentCSS
+            self.documentSize = documentSize
         }
     }
 
@@ -384,9 +392,15 @@ public enum DevSnapshot {
 
     private static func fonts(_ fonts: Fonts) -> JSONValue {
         [
-            "terminal": ["saved": optional(fonts.saved[.terminal]), "face": .string(fonts.terminalFace)],
+            "terminal": [
+                "saved": optional(fonts.saved[.terminal]), "face": .string(fonts.terminalFace),
+                "size": .number(fonts.terminalSize),
+            ],
             "interface": ["saved": optional(fonts.saved[.interface]), "face": .string(fonts.interfaceFace)],
-            "document": ["saved": optional(fonts.saved[.document]), "css": .string(fonts.documentCSS)],
+            "document": [
+                "saved": optional(fonts.saved[.document]), "css": .string(fonts.documentCSS),
+                "size": .number(fonts.documentSize),
+            ],
         ]
     }
 
