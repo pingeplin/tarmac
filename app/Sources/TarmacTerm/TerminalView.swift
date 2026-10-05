@@ -71,19 +71,17 @@ public final class TerminalView: NSView {
     var markedSelection = NSRange(location: 0, length: 0)
     var keyTextAccumulator: [String]?
 
-    private struct LinkHit: Equatable {
-        var row: Int
-        var link: RowLink
-    }
-
-    private var hoveredLink: LinkHit? {
+    private var hoveredLink: TerminalLink? {
         didSet {
-            for row in [oldValue?.row, hoveredLink?.row] {
-                if let row { setNeedsDisplay(damageRect(forRow: row)) }
+            for span in (oldValue?.spans ?? []) + (hoveredLink?.spans ?? []) {
+                setNeedsDisplay(damageRect(forRow: span.row))
             }
         }
     }
     private var pressedButtons = 0
+    /// A press on a link that was reported to the program, until the pointer
+    /// leaves its cell: a release there is a click on that link.
+    private var reportedLinkPress: LinkPress?
     private var scrollRemainder: CGFloat = 0
     private var reportedScrollbar: TerminalScrollbar?
     private var autoscrollTimer: Timer?
@@ -309,7 +307,7 @@ public final class TerminalView: NSView {
         renderer.draw(
             frameSnapshot, rows: rows, layout: gridLayout, cursor: cursorDisplay,
             preedit: preedit,
-            hoveredLink: hoveredLink.map { (row: $0.row, cols: $0.link.cols) }, in: context
+            hoveredLink: hoveredLink?.spans ?? [], in: context
         )
     }
 
@@ -591,13 +589,18 @@ public final class TerminalView: NSView {
         window?.makeFirstResponder(self)
         onActivity?()
         pressedButtons += 1
-        if programOwnsMouse(event) { return report(event, action: .press, button: .left) }
+        reportedLinkPress = nil
+        if programOwnsMouse(event) {
+            if opensLinks(event) { reportedLinkPress = surfacePoint(event).flatMap(linkPress(at:)) }
+            return report(event, action: .press, button: .left)
+        }
         guard let gridLayout, let point = surfacePoint(event) else { return }
         selection.press(point, time: event.timestamp, surface: gridLayout.surface)
         scheduleRead()
     }
 
     public override func mouseDragged(with event: NSEvent) {
+        if surfacePoint(event).flatMap(cell(at:)) != reportedLinkPress?.cell { reportedLinkPress = nil }
         if programOwnsMouse(event) { return report(event, action: .motion, button: .left) }
         guard let gridLayout, let point = surfacePoint(event) else { return }
         lastDragPoint = point
@@ -609,25 +612,64 @@ public final class TerminalView: NSView {
     public override func mouseUp(with event: NSEvent) {
         pressedButtons = max(pressedButtons - 1, 0)
         stopAutoscroll()
-        if programOwnsMouse(event) { return report(event, action: .release, button: .left) }
+        if programOwnsMouse(event) {
+            report(event, action: .release, button: .left)
+            return openLinkUnderReportedClick(event)
+        }
         guard let gridLayout, let point = surfacePoint(event) else { return }
         selection.release(point, surface: gridLayout.surface)
         scheduleRead()
-        if event.clickCount == 1, !selection.dragged, let hit = link(at: point) {
-            onOpenLink?(hit.link.url)
+        if event.clickCount == 1, !selection.dragged, let link = link(at: point) {
+            onOpenLink?(link.url)
         }
     }
 
     // MARK: links
 
+    private struct GridCell: Equatable {
+        var col: Int
+        var row: Int
+    }
+
+    private struct LinkPress: Equatable {
+        var cell: GridCell
+        var link: TerminalLink
+    }
+
+    private func linkPress(at point: SurfacePoint) -> LinkPress? {
+        guard let cell = cell(at: point), let link = link(at: point) else { return nil }
+        return LinkPress(cell: cell, link: link)
+    }
+
+    private func cell(at point: SurfacePoint) -> GridCell? {
+        guard let gridLayout, point.x >= 0, point.y >= 0 else { return nil }
+        return GridCell(col: Int(point.x / gridLayout.cell.width), row: Int(point.y / gridLayout.cell.height))
+    }
+
+    /// A link opens under a program that tracks the mouse as it does at a
+    /// prompt, the way xterm.js opened it. ⌃ and ⇧ leave the click to the
+    /// program alone: Claude Code opens a ⌃-clicked URL itself.
+    private func opensLinks(_ event: NSEvent) -> Bool {
+        !programOwnsMouse(event) || event.modifierFlags.isDisjoint(with: [.control, .shift])
+    }
+
+    /// The program may have redrawn on the press, so the link has to be under
+    /// the release as it was under the press.
+    private func openLinkUnderReportedClick(_ event: NSEvent) {
+        defer { reportedLinkPress = nil }
+        guard event.clickCount == 1, opensLinks(event), let pressed = reportedLinkPress,
+              surfacePoint(event).flatMap(linkPress(at:)) == pressed
+        else { return }
+        onOpenLink?(pressed.link.url)
+    }
+
     /// The link under a surface point: an OSC 8 hyperlink if the program set
     /// one there, else a URL spelled out in the row's text.
-    private func link(at point: SurfacePoint) -> LinkHit? {
+    private func link(at point: SurfacePoint) -> TerminalLink? {
         // Output that arrived this turn has not been read into the frame yet.
         if readScheduled { readIfNotHeld() }
-        guard let gridLayout, point.x >= 0, point.y >= 0 else { return nil }
-        let col = Int(point.x / gridLayout.cell.width)
-        let row = Int(point.y / gridLayout.cell.height)
+        guard let gridLayout, let cell = cell(at: point) else { return nil }
+        let (col, row) = (cell.col, cell.row)
         guard frameSnapshot.rows.indices.contains(row), col < gridLayout.cols else { return nil }
         if let target = engine.hyperlink(col: col, row: row) {
             var cols = col...col
@@ -637,11 +679,9 @@ public final class TerminalView: NSView {
             while cols.upperBound < gridLayout.cols - 1, engine.hyperlink(col: cols.upperBound + 1, row: row) == target {
                 cols = cols.lowerBound...(cols.upperBound + 1)
             }
-            return LinkHit(row: row, link: RowLink(cols: cols, url: target))
+            return TerminalLink(url: target, spans: [LinkSpan(row: row, cols: cols)])
         }
-        return TerminalLinks.urls(in: frameSnapshot.rows[row])
-            .first { $0.cols.contains(col) }
-            .map { LinkHit(row: row, link: $0) }
+        return TerminalLinks.link(in: frameSnapshot.rows, atCol: col, row: row, wraps: engine.isSoftWrapped(row:))
     }
 
     private func isTopmost(at event: NSEvent) -> Bool {
@@ -651,7 +691,7 @@ public final class TerminalView: NSView {
     }
 
     private func updateHover(_ event: NSEvent) {
-        let hit = programOwnsMouse(event) ? nil : surfacePoint(event).flatMap(link(at:))
+        let hit = opensLinks(event) ? surfacePoint(event).flatMap(link(at:)) : nil
         if hit != hoveredLink { hoveredLink = hit }
         (hit == nil ? NSCursor.iBeam : NSCursor.pointingHand).set()
     }
