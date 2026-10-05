@@ -60,7 +60,6 @@ cp "$APP/Contents/MacOS/tarmac" "$STAGE/tarmac"
 ln -s /Applications "$STAGE/Applications"
 
 echo "==> building $DMG"
-# The .src marker is release.sh's record of what a dmg was built from.
 rm -f "$DMG" "$DMG.src"
 hdiutil create -volname "Tarmac" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
 
@@ -69,6 +68,9 @@ hdiutil create -volname "Tarmac" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
 echo "==> notarizing (this can take a few minutes)"
 xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
 xcrun stapler staple "$DMG"
+# What this dmg was built from: scripts/release.sh reuses a stapled dmg only
+# while the sources still match.
+git -C "$ROOT" rev-parse HEAD > "$DMG.src"
 
 echo
 echo "==> done: $DMG"
