@@ -9,11 +9,12 @@ protocol FontFollowing: NSView {
 }
 
 extension NSView {
-    /// Tells this view and every view under it. A culled card is hidden but
-    /// still in the tree, so it is told too.
+    /// Tells every view under this one, then this one: a view that measures
+    /// its subviews finds them already in the new font. A culled card is
+    /// hidden but still in the tree, so it is told too.
     func broadcastFontsChanged() {
-        (self as? FontFollowing)?.fontsChanged()
         subviews.forEach { $0.broadcastFontsChanged() }
+        (self as? FontFollowing)?.fontsChanged()
     }
 }
 

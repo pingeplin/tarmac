@@ -25,7 +25,8 @@
 // that has not shown the Settings window.
 //
 // `click` and `wheel` move the cursor there, post at the HID tap, and put the
-// cursor back. A wheel that carries only the Control flag leaves Control
+// cursor back, as `wheel-gesture.swift` does for a card: the two are
+// single-file scripts and cannot share code. A wheel that carries only the Control flag leaves Control
 // latched in the system's modifier state, and every later wheel then zooms in
 // every app: so `ctrl` presses and releases the Control key around the wheel,
 // and the script fails if the flag is still set when it ends.
@@ -73,7 +74,6 @@ func press(_ element: AXUIElement, _ what: String) {
 }
 
 func settingsWindow() -> AXUIElement {
-    guard AXIsProcessTrusted() else { fail("this process does not have the Accessibility permission") }
     let windows: [AXUIElement] = attribute(app, kAXWindowsAttribute) ?? []
     guard let window = windows.first(where: { title($0) == "Settings" }) else { fail("the app has no Settings window; run `open`") }
     return window
@@ -85,7 +85,6 @@ func popUps() -> [AXUIElement] {
 
 /// An item of the app menu, the bar's second: the Apple menu is its first.
 func appMenuItem(_ name: String) -> AXUIElement {
-    guard AXIsProcessTrusted() else { fail("this process does not have the Accessibility permission") }
     let menus: [AXUIElement] = (attribute(app, kAXMenuBarAttribute) as AXUIElement?)
         .flatMap { attribute($0, kAXChildrenAttribute) } ?? []
     guard menus.count > 1,
@@ -131,17 +130,22 @@ func at(_ point: CGPoint, _ body: () -> Void) {
 
 // MARK: - Verbs
 
+guard AXIsProcessTrusted() else { fail("this process does not have the Accessibility permission") }
+
 switch verb {
 case "open":
     postCommand(43)
 case "rows":
-    for (index, popUp) in popUps().enumerated() { print("\(index) selected=\(value(popUp))") }
-    let labels = descendants(of: settingsWindow()).filter { role($0) == kAXStaticTextRole }.map(value)
-    print("labels=\(labels)")
-    print("resizable=\((attribute(settingsWindow(), "AXGrowArea") as AXUIElement?) != nil)")
+    let window = settingsWindow(), views = descendants(of: window)
+    for (index, popUp) in views.filter({ role($0) == kAXPopUpButtonRole }).enumerated() {
+        print("\(index) selected=\(value(popUp))")
+    }
+    print("labels=\(views.filter { role($0) == kAXStaticTextRole }.map(value))")
+    print("resizable=\((attribute(window, "AXGrowArea") as AXUIElement?) != nil)")
 case "pick":
-    guard rest.count == 2, let row = Int(rest[0]), popUps().indices.contains(row) else { fail("pick <row> <title>") }
-    let popUp = popUps()[row]
+    let rows = popUps()
+    guard rest.count == 2, let row = Int(rest[0]), rows.indices.contains(row) else { fail("pick <row> <title>") }
+    let popUp = rows[row]
     press(popUp, "the pop-up")
     usleep(400_000)
     let items = descendants(of: popUp).filter { role($0) == kAXMenuItemRole }

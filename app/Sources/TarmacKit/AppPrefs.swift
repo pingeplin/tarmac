@@ -58,8 +58,13 @@ public enum AppPrefs {
         ((socket as NSString).deletingLastPathComponent as NSString).appendingPathComponent(fileName)
     }
 
-    /// Whether ⌘Q is guarded, as the file says. Missing, unreadable, malformed
-    /// or the wrong type all read as `true`.
+    /// Whether ⌘Q is guarded, as the file says: `decode`'s answer for that key.
+    public static func warnBeforeQuit(from contents: Data?) -> Bool {
+        decode(contents).warnBeforeQuit
+    }
+
+    /// The file's values. Missing, unreadable, malformed or not an object all
+    /// read as the defaults, so the guard is on.
     ///
     /// "Malformed" is meant as what serde_json rejects, so the Tauri app and this
     /// one agree on any file either of them wrote. `JSONDecoder` is more
@@ -75,12 +80,6 @@ public enum AppPrefs {
     /// first); a number within rounding distance of the largest `Double`, where
     /// serde_json's own conversion is not correctly rounded; and an object whose
     /// first key is serde_json's internal `$serde_json::private::RawValue`.
-    public static func warnBeforeQuit(from contents: Data?) -> Bool {
-        decode(contents).warnBeforeQuit
-    }
-
-    /// The file's values. Missing, unreadable, malformed or not an object all
-    /// read as the defaults.
     public static func decode(_ contents: Data?) -> Values {
         guard let contents, StrictJSON.isValid(contents),
             let stored = try? JSONDecoder().decode(Stored.self, from: contents)
@@ -95,8 +94,7 @@ public enum AppPrefs {
         var json = #"{"warn_before_quit":\#(values.warnBeforeQuit)"#
         for role in FontRole.allCases {
             guard let name = values.fonts[role], FontRole.isFamilyName(name) else { continue }
-            let escaped = name.replacingOccurrences(of: #"\"#, with: #"\\"#).replacingOccurrences(of: #"""#, with: #"\""#)
-            json += #","\#(role.prefsKey)":"\#(escaped)""#
+            json += #","\#(role.prefsKey)":\#(JSONValue.string(name).jsonString)"#
         }
         return Data((json + "}").utf8)
     }

@@ -5,9 +5,12 @@ import TarmacTerm
 extension AppController {
     // MARK: - Presses and selection
 
-    /// The deepest view under a window-space point, or nil.
-    private func hitView(at point: NSPoint) -> NSView? {
-        window?.contentView?.hitTest(point)
+    /// The deepest view under a point of the event's window, or nil. The
+    /// monitors see every window's events, and a point in another window is
+    /// not a point on the board.
+    private func hitView(at point: NSPoint, windowNumber: Int) -> NSView? {
+        guard let window, windowNumber == window.windowNumber else { return nil }
+        return window.contentView?.hitTest(point)
     }
 
     /// The card a hit view belongs to — its header, body or a resize handle —
@@ -17,8 +20,8 @@ extension AppController {
     }
 
     /// A left-button press, seen before the view under it handles it.
-    func handlePress(at point: NSPoint) {
-        handlePress(on: hitView(at: point))
+    func handlePress(at point: NSPoint, windowNumber: Int) {
+        handlePress(on: hitView(at: point, windowNumber: windowNumber))
     }
 
     /// A left-button press that lands on `hit`. On a card it selects and raises
@@ -64,12 +67,14 @@ extension AppController {
     /// A wheel event, seen before it is dispatched. Over the body of the
     /// selected card, or over its scroll thumb, it is left for that card's own
     /// content; anywhere else on the board it pans, and with control held it
-    /// zooms about the pointer. True means the board took it. Overlays, the
-    /// switcher and every other window keep their own wheel.
+    /// zooms about the pointer. True means the board took it. Overlays and the
+    /// switcher keep their own wheel.
     func routeScroll(_ event: NSEvent) -> Bool {
-        guard !switcherOpen, event.window === window else { return false }
+        guard !switcherOpen else { return false }
         let board = rootView.board
-        guard let hit = hitView(at: event.locationInWindow), hit.isDescendant(of: board) else { return false }
+        guard let hit = hitView(at: event.locationInWindow, windowNumber: event.windowNumber),
+            hit.isDescendant(of: board)
+        else { return false }
         let card = enclosingCard(hit)
         let route = BoardWheel.route(
             pinch: event.modifierFlags.contains(.control),
@@ -99,8 +104,10 @@ extension AppController {
 
     /// A pinch over the board always zooms the board, even over the selected card.
     func routeMagnify(_ event: NSEvent) -> Bool {
-        guard !switcherOpen, event.window === window else { return false }
-        guard let hit = hitView(at: event.locationInWindow), hit.isDescendant(of: rootView.board) else { return false }
+        guard !switcherOpen else { return false }
+        guard let hit = hitView(at: event.locationInWindow, windowNumber: event.windowNumber),
+            hit.isDescendant(of: rootView.board)
+        else { return false }
         rootView.board.magnify(with: event)
         return true
     }

@@ -14,12 +14,7 @@ extension AppController {
         // tracking the mouse.
         clickFocusMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             let point = event.locationInWindow, windowNumber = event.windowNumber
-            MainActor.assumeIsolated {
-                // The monitor sees every window's presses, and a point in
-                // another window is not a point on the board.
-                guard let self, windowNumber == self.window?.windowNumber else { return }
-                self.handlePress(at: point)
-            }
+            MainActor.assumeIsolated { self?.handlePress(at: point, windowNumber: windowNumber) }
             return event
         }
         // The wheel is routed before it is dispatched: the board takes it

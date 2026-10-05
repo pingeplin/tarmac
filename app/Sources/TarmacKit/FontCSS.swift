@@ -1,5 +1,3 @@
-import Foundation
-
 /// The `font-family` values a doc card is given (spec 2610.0005): the chosen
 /// family, as a CSS string, before the stack the role falls back to.
 public enum FontCSS {
@@ -14,7 +12,8 @@ public enum FontCSS {
 
     private static func stack(_ family: String?, before fallback: String) -> String {
         guard let family, FontRole.isFamilyName(family) else { return fallback }
-        let escaped = family.replacingOccurrences(of: #"\"#, with: #"\\"#).replacingOccurrences(of: #"""#, with: #"\""#)
-        return #""\#(escaped)", \#(fallback)"#
+        // A JSON string is a CSS string for a name with no control character,
+        // which `isFamilyName` has just refused.
+        return "\(JSONValue.string(family).jsonString), \(fallback)"
     }
 }
