@@ -619,7 +619,18 @@ viewport is in the scrollback whenever that changes (`onScrollChanged`), for
 the scroll thumb; the alternate screen has no history, so no thumb. A dragged
 thumb sends the viewport to a row (`scroll(to:)`, the engine's absolute-row
 scroll); at the last row it can start at, the viewport follows output again. A click on an OSC 8 hyperlink or a
-spelled-out URL opens it in the browser — `http(s)` only in both cases.
+spelled-out URL opens it in the browser — `http(s)` only in both cases; a URL the
+terminal wrapped over several rows is one link, from any of them. So is one the
+program broke over rows itself, which nothing marks and Claude Code always does:
+the one place the terminal reads layout rather than a fact (`TerminalLinks`) — a
+row that ends in a word at its last column goes on with the next row's first
+word when the two are too long to have fitted on one row. Two words that happen
+to lie that way are taken for one, so a URL nearly as wide as its row that ends
+at the edge can take the word below it; a row that stops short of the edge is
+never joined. A link opens
+under a program that tracks the mouse too, which is still reported the click;
+a `⌃` or `⇧` click is that program's alone (Claude Code opens a `⌃`-clicked URL
+itself), and so is a drag.
 
 **Honest signals.** The label starts as `shell`; each `TermProc` and each
 non-blank OSC title overwrites it, last writer wins (`TermLabel`). `Bell` turns

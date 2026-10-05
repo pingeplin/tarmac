@@ -231,17 +231,19 @@ final class TerminalViewTests: XCTestCase {
 
     // MARK: links
 
-    private func mouse(_ type: NSEvent.EventType, col: Int, row: Int, flags: NSEvent.ModifierFlags = []) throws -> NSEvent {
+    private func mouse(
+        _ type: NSEvent.EventType, col: Int, row: Int, flags: NSEvent.ModifierFlags = [], clicks: Int = 1
+    ) throws -> NSEvent {
         let cell = try XCTUnwrap(view.gridLayout).rect(col: col, row: row)
         return try XCTUnwrap(NSEvent.mouseEvent(
             with: type, location: view.convert(CGPoint(x: cell.midX, y: cell.midY), to: nil), modifierFlags: flags,
-            timestamp: 1, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+            timestamp: 1, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: clicks, pressure: 1
         ))
     }
 
-    private func click(col: Int, row: Int) throws {
-        view.mouseDown(with: try mouse(.leftMouseDown, col: col, row: row))
-        view.mouseUp(with: try mouse(.leftMouseUp, col: col, row: row))
+    private func click(col: Int, row: Int, flags: NSEvent.ModifierFlags = []) throws {
+        view.mouseDown(with: try mouse(.leftMouseDown, col: col, row: row, flags: flags))
+        view.mouseUp(with: try mouse(.leftMouseUp, col: col, row: row, flags: flags))
     }
 
     func testClickingAUrlOpensIt() throws {
@@ -312,13 +314,126 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertTrue(view.hasSelection)
     }
 
-    func testAProgramThatTracksTheMouseGetsTheClickInstead() throws {
+    /// xterm.js opened a link whatever the program did with the mouse, and
+    /// Claude Code's full-screen mode tracks it the whole time.
+    func testAClickReportedToAProgramStillOpensTheLink() throws {
+        var opened: [String] = []
+        view.onOpenLink = { opened.append($0) }
+        feed("https://example.com/x now\u{1b}[?1000h\u{1b}[?1006h")
+        try click(col: 3, row: 0)
+        XCTAssertEqual(opened, ["https://example.com/x"])
+        XCTAssertEqual(sentText, "\u{1b}[<0;4;1M\u{1b}[<0;4;1m")
+        try click(col: 23, row: 0)
+        XCTAssertEqual(opened.count, 1)
+    }
+
+    func testClickingEitherRowOfAUrlTheTerminalWrappedOpensAllOfIt() throws {
+        var opened: [String] = []
+        view.onOpenLink = { opened.append($0) }
+        let url = "https://example.com/" + String(repeating: "a", count: view.cols)
+        feed("see \(url) now")
+        try click(col: 6, row: 0)
+        try click(col: 2, row: 1)
+        XCTAssertEqual(opened, [url, url])
+    }
+
+    /// What the fix is for: Claude Code tracks the mouse and breaks a long
+    /// URL over rows itself.
+    func testClickingARowOfAUrlAProgramBrokeOpensAllOfIt() throws {
+        var opened: [String] = []
+        view.onOpenLink = { opened.append($0) }
+        let url = "https://example.com/" + String(repeating: "a", count: view.cols)
+        let head = String(url.prefix(view.cols - 6))
+        feed("\u{1b}[?1000h\u{1b}[?1006h⏺ see \(head)\r\u{1b}[1B  \(url.dropFirst(head.count)) now")
+        try click(col: 4, row: 1)
+        XCTAssertEqual(opened, [url])
+    }
+
+    func testADragReportedToAProgramOpensNoLink() throws {
+        var opened: [String] = []
+        view.onOpenLink = { opened.append($0) }
+        feed("https://example.com/x\u{1b}[?1002h\u{1b}[?1006h")
+        view.mouseDown(with: try mouse(.leftMouseDown, col: 3, row: 0))
+        view.mouseDragged(with: try mouse(.leftMouseDragged, col: 9, row: 0))
+        view.mouseUp(with: try mouse(.leftMouseUp, col: 9, row: 0))
+        XCTAssertEqual(opened, [])
+
+        view.mouseDown(with: try mouse(.leftMouseDown, col: 3, row: 0))
+        view.mouseDragged(with: try mouse(.leftMouseDragged, col: 9, row: 0))
+        view.mouseDragged(with: try mouse(.leftMouseDragged, col: 3, row: 0))
+        view.mouseUp(with: try mouse(.leftMouseUp, col: 3, row: 0))
+        XCTAssertEqual(opened, [])
+
+        view.mouseDown(with: try mouse(.leftMouseDown, col: 3, row: 0))
+        view.mouseUp(with: try mouse(.leftMouseUp, col: 9, row: 0))
+        XCTAssertEqual(opened, [])
+
+        view.mouseDown(with: try mouse(.leftMouseDown, col: 3, row: 0))
+        view.mouseDragged(with: try mouse(.leftMouseDragged, col: 9, row: 0, flags: .option))
+        view.mouseDragged(with: try mouse(.leftMouseDragged, col: 3, row: 0, flags: .option))
+        view.mouseUp(with: try mouse(.leftMouseUp, col: 3, row: 0))
+        XCTAssertEqual(opened, [])
+    }
+
+    func testADoubleClickReportedToAProgramOpensTheLinkOnce() throws {
         var opened: [String] = []
         view.onOpenLink = { opened.append($0) }
         feed("https://example.com/x\u{1b}[?1000h\u{1b}[?1006h")
         try click(col: 3, row: 0)
+        view.mouseDown(with: try mouse(.leftMouseDown, col: 3, row: 0, clicks: 2))
+        view.mouseUp(with: try mouse(.leftMouseUp, col: 3, row: 0, clicks: 2))
+        XCTAssertEqual(opened, ["https://example.com/x"])
+    }
+
+    /// The program may redraw on the press, and what is under the pointer at
+    /// the release is then not what was clicked.
+    func testALinkDrawnUnderAHeldPressIsNotOpened() throws {
+        var opened: [String] = []
+        view.onOpenLink = { opened.append($0) }
+        feed("https://example.com/x\u{1b}[?1000h\u{1b}[?1006h")
+        view.mouseDown(with: try mouse(.leftMouseDown, col: 3, row: 0))
+        feed("\r\u{1b}[2Khttps://example.com/other")
+        view.mouseUp(with: try mouse(.leftMouseUp, col: 3, row: 0))
         XCTAssertEqual(opened, [])
-        XCTAssertEqual(sentText, "\u{1b}[<0;4;1M\u{1b}[<0;4;1m")
+
+        feed("\r\u{1b}[2Kplain text, no link")
+        view.mouseDown(with: try mouse(.leftMouseDown, col: 3, row: 0))
+        feed("\r\u{1b}[2Khttps://example.com/x")
+        view.mouseUp(with: try mouse(.leftMouseUp, col: 3, row: 0))
+        XCTAssertEqual(opened, [])
+    }
+
+    /// Claude Code opens a URL itself when the click reports ⌃, so the terminal
+    /// opening it too would open it twice.
+    func testAControlOrShiftClickReportedToAProgramIsItsAlone() throws {
+        var opened: [String] = []
+        view.onOpenLink = { opened.append($0) }
+        feed("https://example.com/x\u{1b}[?1000h\u{1b}[?1006h")
+        try click(col: 3, row: 0, flags: .control)
+        try click(col: 3, row: 0, flags: .shift)
+        XCTAssertEqual(opened, [])
+        XCTAssertEqual(sentText, "\u{1b}[<16;4;1M\u{1b}[<16;4;1m\u{1b}[<4;4;1M\u{1b}[<4;4;1m")
+
+        view.mouseDown(with: try mouse(.leftMouseDown, col: 3, row: 0, flags: .control))
+        view.mouseUp(with: try mouse(.leftMouseUp, col: 3, row: 0))
+        XCTAssertEqual(opened, [])
+        view.mouseDown(with: try mouse(.leftMouseDown, col: 3, row: 0))
+        view.mouseUp(with: try mouse(.leftMouseUp, col: 3, row: 0, flags: .control))
+        XCTAssertEqual(opened, [])
+    }
+
+    func testTheHandShowsOverALinkWhoeverGetsTheClick() throws {
+        feed("see https://example.com/x now")
+        view.mouseMoved(with: try mouse(.mouseMoved, col: 6, row: 0))
+        XCTAssertEqual(NSCursor.current, .pointingHand)
+        view.mouseMoved(with: try mouse(.mouseMoved, col: 1, row: 0))
+        XCTAssertEqual(NSCursor.current, .iBeam)
+
+        feed("\u{1b}[?1000h\u{1b}[?1006h")
+        view.mouseMoved(with: try mouse(.mouseMoved, col: 6, row: 0))
+        XCTAssertEqual(NSCursor.current, .pointingHand)
+        view.mouseMoved(with: try mouse(.mouseMoved, col: 6, row: 0, flags: .control))
+        XCTAssertEqual(NSCursor.current, .iBeam)
     }
 
     /// A tracking area reports moves over the whole view, including where

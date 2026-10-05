@@ -17,6 +17,7 @@ final class TerminalRendererTests: XCTestCase {
         only drawn: Range<Int>? = nil,
         cursor: CursorDisplay = .hidden,
         preedit: TerminalPreedit? = nil,
+        hovering: [LinkSpan] = [],
         face: String? = nil,
         select: ((TerminalSelection, SurfaceGeometry) -> Void)? = nil
     ) throws -> Canvas {
@@ -35,7 +36,10 @@ final class TerminalRendererTests: XCTestCase {
 
         let canvas = try Canvas(size: bounds, scale: scale, fill: untouched, layout: layout)
         TerminalRenderer(fonts: fonts, theme: theme)
-            .draw(frame, rows: drawn ?? 0..<rows, layout: layout, cursor: cursor, preedit: preedit, in: canvas.context)
+            .draw(
+                frame, rows: drawn ?? 0..<rows, layout: layout, cursor: cursor, preedit: preedit,
+                hoveredLink: hovering, in: canvas.context
+            )
         return canvas
     }
 
@@ -104,6 +108,15 @@ final class TerminalRendererTests: XCTestCase {
         let underlined = try render("\u{1b}[32;4m ")
         XCTAssertEqual(plain.colours(inCols: 0..<1, row: 0), [theme.background])
         XCTAssertTrue(underlined.colours(inCols: 0..<1, row: 0).contains(theme.ansi[2]))
+    }
+
+    func testAHoveredLinkIsUnderlinedOnEveryRowItRunsOver() throws {
+        let canvas = try render("", hovering: [LinkSpan(row: 0, cols: 2...7), LinkSpan(row: 1, cols: 0...3)])
+        XCTAssertEqual(canvas.colours(inCols: 0..<2, row: 0), [theme.background])
+        XCTAssertTrue(canvas.colours(inCols: 2..<8, row: 0).contains(theme.foreground))
+        XCTAssertTrue(canvas.colours(inCols: 0..<4, row: 1).contains(theme.foreground))
+        XCTAssertEqual(canvas.colours(inCols: 4..<8, row: 1), [theme.background])
+        XCTAssertEqual(canvas.colours(inCols: 0..<8, row: 2), [theme.background])
     }
 
     func testCurlyUnderlineUndulatesWhereASingleOneIsFlat() throws {
