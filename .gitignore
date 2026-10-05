@@ -7,3 +7,7 @@
 .playwright-mcp/
 
 /app/Vendor/
+
+# Laid by Claude Code beside a mod it loads from .claude/skills/
+/.claude/skills/*/.claude-plugin/types/
+/.claude/skills/*/tsconfig.json

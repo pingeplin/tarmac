@@ -1,0 +1,6 @@
+{
+  "name": "release-progress",
+  "version": "0.1.0",
+  "description": "A band above the prompt that follows a `make release` run step by step, read from its tee'd log.",
+  "types": "./types/index.d.ts"
+}
