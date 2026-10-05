@@ -8,9 +8,9 @@
 use std::io::Read;
 use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -18,6 +18,19 @@ use tarmac_protocol::{dev, frame};
 
 fn tarmac() -> Command {
     Command::new(env!("CARGO_BIN_EXE_tarmac"))
+}
+
+static SPAWN: Mutex<()> = Mutex::new(());
+
+/// `Command::output`, spawning one child at a time. On macOS std marks a child's
+/// output pipes close-on-exec in a second step, so a sibling test spawning in
+/// between hands them to its own child and EOF waits for THAT child's exit (#190).
+fn output(cmd: &mut Command) -> Output {
+    let child = {
+        let _spawning = SPAWN.lock().unwrap_or_else(PoisonError::into_inner);
+        cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap()
+    };
+    child.wait_with_output().unwrap()
 }
 
 static DIR_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -92,8 +105,8 @@ impl Fake {
         Fake { sock, received, server: Mutex::new(Some(server)), _dir: dir }
     }
 
-    fn run(&self, args: &[&str]) -> std::process::Output {
-        tarmac().env("TARMAC_DEV_SOCKET", &self.sock).arg("dev").args(args).output().unwrap()
+    fn run(&self, args: &[&str]) -> Output {
+        output(tarmac().env("TARMAC_DEV_SOCKET", &self.sock).arg("dev").args(args))
     }
 
     /// Wait for the server thread, so `received` is complete rather than whatever
@@ -155,11 +168,7 @@ fn the_body_is_never_parsed() {
 fn no_listener_is_a_clear_one_line_error() {
     let dir = scratch();
     let sock = dir.join("absent.sock");
-    let out = tarmac()
-        .env("TARMAC_DEV_SOCKET", &sock)
-        .args(["dev", "snapshot"])
-        .output()
-        .unwrap();
+    let out = output(tarmac().env("TARMAC_DEV_SOCKET", &sock).args(["dev", "snapshot"]));
     assert_eq!(out.status.code(), Some(1));
     let err = String::from_utf8_lossy(&out.stderr);
     assert_eq!(err.lines().count(), 1, "expected one line, got: {err}");
@@ -187,11 +196,7 @@ fn an_over_long_socket_path_is_refused_before_dialling() {
     let fake = Fake::start(Reply::Now(ok_reply("{}")));
     let long = PathBuf::from(format!("/tmp/{}.sock", "x".repeat(110)));
     assert!(long.as_os_str().len() >= 104);
-    let out = tarmac()
-        .env("TARMAC_DEV_SOCKET", &long)
-        .args(["dev", "snapshot"])
-        .output()
-        .unwrap();
+    let out = output(tarmac().env("TARMAC_DEV_SOCKET", &long).args(["dev", "snapshot"]));
     assert_eq!(out.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&out.stderr).contains("104"));
     // The fake at the short path was never dialled.
@@ -239,7 +244,7 @@ fn a_silent_app_is_given_up_on_within_the_deadline() {
 /// `make test` would stay green.
 #[test]
 fn help_documents_the_dev_family_and_its_limits() {
-    let out = tarmac().arg("--help").output().unwrap();
+    let out = output(tarmac().arg("--help"));
     assert!(out.status.success());
     let text = String::from_utf8_lossy(&out.stdout);
     for needle in [
