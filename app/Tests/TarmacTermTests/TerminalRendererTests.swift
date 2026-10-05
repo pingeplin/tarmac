@@ -21,8 +21,7 @@ final class TerminalRendererTests: XCTestCase {
         face: String? = nil,
         select: ((TerminalSelection, SurfaceGeometry) -> Void)? = nil
     ) throws -> Canvas {
-        ShippedFonts.registered
-        let fonts = TerminalFonts(size: 16, pixelsPerPoint: scale, names: face.map { [$0] } ?? TerminalFonts.preferredNames)
+        let fonts = TerminalFonts(size: 16, pixelsPerPoint: scale, family: face)
         let cell = fonts.metrics.cell
         let padding = TerminalPadding(top: 0, left: 0, bottom: 0, right: 0)
         let bounds = CGSize(width: cell.width * CGFloat(cols), height: cell.height * CGFloat(rows))

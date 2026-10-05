@@ -6,7 +6,7 @@ import TarmacTerm
 /// 27px status bar, with the wayfinding chrome and the toast overlay layered on
 /// top.
 @MainActor
-final class RootView: NSView {
+final class RootView: NSView, FontFollowing {
     /// The mounted whiteboard. There is one `BoardView` per board; `mountBoard(_:)`
     /// swaps which one is shown on a board switch. RootView owns only *which*
     /// view is displayed — the controller owns each board's cards + viewport.
@@ -115,6 +115,11 @@ final class RootView: NSView {
     /// The mounted board's card set, a card's frame or a card's signal changed.
     private func cardsChanged() {
         statusBar.setCardCount(board.cards.count)
+        refreshWayfinding(board.viewport)
+    }
+
+    func fontsChanged() {
+        offHints.forget()
         refreshWayfinding(board.viewport)
     }
 

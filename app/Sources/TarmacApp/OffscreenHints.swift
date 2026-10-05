@@ -19,6 +19,13 @@ final class OffscreenHints {
 
     private var pills: [String: OffscreenHintPill] = [:]
 
+    /// A pill is measured once, for the font it was built with: after a font
+    /// change the next `show` builds every pill again.
+    func forget() {
+        pills.values.forEach { $0.removeFromSuperview() }
+        pills = [:]
+    }
+
     /// Shows a pill for each of `hints`. `viewRect` is the board's bounds and
     /// `obstacles` its cards' on-screen rects; both layers share that space.
     func show(_ hints: [OffscreenHintLayout.Hint], in viewRect: CGRect, around obstacles: [CGRect]) {

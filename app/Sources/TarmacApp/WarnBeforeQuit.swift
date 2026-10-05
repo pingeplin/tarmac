@@ -3,19 +3,18 @@ import TarmacKit
 
 /// The *Warn Before Quitting* toggle: whether ⌘Q is guarded. One value, read by
 /// the guard on every Quit, flipped by its menu item, and kept in
-/// `app-prefs.json` beside the daemon socket — the one location that already
-/// separates a dev app from the installed one, which share a bundle id.
+/// `app-prefs.json` (`AppPrefsStore`).
 @MainActor
 final class WarnBeforeQuit: NSObject {
     /// Chromium's wording. The shortcut in it is literal, as in the Tauri app.
     static let title = "Warn Before Quitting (⌘Q)"
 
-    private(set) var enabled: Bool
-    private let prefsPath: String
+    private let prefs: AppPrefsStore
 
-    init(prefsPath: String) {
-        self.prefsPath = prefsPath
-        enabled = AppPrefs.load(from: prefsPath)
+    var enabled: Bool { prefs.values.warnBeforeQuit }
+
+    init(prefs: AppPrefsStore) {
+        self.prefs = prefs
     }
 
     func menuItem() -> NSMenuItem {
@@ -26,14 +25,7 @@ final class WarnBeforeQuit: NSObject {
     }
 
     @objc private func toggle(_ sender: NSMenuItem) {
-        enabled.toggle()
+        prefs.update { $0.warnBeforeQuit.toggle() }
         sender.state = enabled ? .on : .off
-        do {
-            try AppPrefs.save(warnBeforeQuit: enabled, to: prefsPath)
-        } catch {
-            // This session obeys the toggle either way; only the next launch
-            // misses it.
-            Log.stderr("could not save app prefs: \(error)")
-        }
     }
 }

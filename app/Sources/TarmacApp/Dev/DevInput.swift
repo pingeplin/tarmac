@@ -24,6 +24,9 @@ struct DevInput {
     func takeKey() async throws -> Bool {
         if holdsKeys { return false }
         NSApp.activate(ignoringOtherApps: true)
+        // Another of the app's windows — Settings — may hold the keys, and
+        // activation alone leaves them there.
+        window.makeKeyAndOrderFront(nil)
         let deadline = Uptime.nowMs + UInt64(DevPress.keyWaitMs)
         while !holdsKeys {
             guard Uptime.nowMs < deadline else { throw DevPress.notKey }

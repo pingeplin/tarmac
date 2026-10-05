@@ -12,7 +12,6 @@ final class TerminalViewTests: XCTestCase {
     private var sentText: String { String(decoding: sent, as: UTF8.self) }
 
     override func setUp() async throws {
-        ShippedFonts.registered
         view = try TerminalView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
         view.onInput = { [unowned self] in self.sent.append(contentsOf: $0) }
         view.onResize = { [unowned self] in self.resizes.append([$0, $1]) }
@@ -862,15 +861,74 @@ final class TerminalViewTests: XCTestCase {
     }
 
     /// A card built off-window spawns its PTY from this grid; guessing the
-    /// density would spawn at one size and correct it on mount.
+    /// density would spawn at one size and correct it on mount. Menlo is
+    /// named because the system face has one cell at both densities.
     func testAnUnwindowedViewMeasuresItsGridAtTheGivenBackingScale() throws {
         let frame = NSRect(x: 0, y: 0, width: 600, height: 400)
         let cells = try [1, 2].map { scale -> CGSize? in
-            let view = try TerminalView(frame: frame, backingScale: scale)
-            XCTAssertEqual(view.gridLayout?.cell, TerminalFonts(size: 16, pixelsPerPoint: scale).metrics.cell)
+            let view = try TerminalView(frame: frame, fontFamily: "Menlo", backingScale: scale)
+            XCTAssertEqual(
+                view.gridLayout?.cell, TerminalFonts(size: 16, pixelsPerPoint: scale, family: "Menlo").metrics.cell
+            )
             return view.gridLayout?.cell
         }
         XCTAssertNotEqual(cells[0], cells[1])
+    }
+
+    // MARK: the chosen family (2610.0005)
+
+    private func cell(_ family: String?, scale: CGFloat? = nil) -> CGSize {
+        TerminalFonts(size: 16, pixelsPerPoint: scale ?? window.backingScaleFactor, family: family).metrics.cell
+    }
+
+    /// S12 — a new family is a new cell: the grid is laid out again and the
+    /// program is told its new size, once.
+    func testANewFamilyRebuildsTheFontsAndReportsTheNewGrid() throws {
+        XCTAssertNotEqual(cell("Monaco"), cell(nil))
+        let before = view.fontGeneration
+
+        view.fontFamily = "Monaco"
+
+        XCTAssertEqual(view.fontGeneration, before + 1)
+        XCTAssertEqual(view.gridLayout?.cell, cell("Monaco"))
+        let layout = try XCTUnwrap(TerminalGridLayout(
+            bounds: view.bounds.size, cell: cell("Monaco"), padding: view.padding
+        ))
+        XCTAssertEqual(resizes, [[layout.cols, layout.rows]])
+        XCTAssertEqual([view.engine.cols, view.engine.rows], [layout.cols, layout.rows])
+    }
+
+    /// S32
+    func testTheSameFamilyAgainDoesNothingAndNoFamilyIsTheSystemFace() {
+        view.fontFamily = "Monaco"
+        let before = view.fontGeneration
+        resizes = []
+
+        view.fontFamily = "Monaco"
+        XCTAssertEqual(view.fontGeneration, before)
+        XCTAssertEqual(resizes, [])
+
+        view.fontFamily = nil
+        XCTAssertEqual(view.fontGeneration, before + 1)
+        XCTAssertEqual(view.gridLayout?.cell, cell(nil))
+        XCTAssertEqual(resizes.count, 1)
+    }
+
+    /// S33 — a rebuild for a new display density keeps the chosen family.
+    func testARebuildForANewBackingScaleKeepsTheFamily() throws {
+        let mounted = window.backingScaleFactor
+        let other: CGFloat = mounted == 1 ? 2 : 1
+        let view = try TerminalView(
+            frame: NSRect(x: 0, y: 0, width: 600, height: 400), fontFamily: "Monaco", backingScale: other
+        )
+        XCTAssertEqual(view.gridLayout?.cell, cell("Monaco", scale: other))
+        let before = view.fontGeneration
+
+        window.contentView?.addSubview(view)
+
+        XCTAssertEqual(view.fontGeneration, before + 1)
+        XCTAssertEqual(view.gridLayout?.cell, cell("Monaco", scale: mounted))
+        XCTAssertNotEqual(view.gridLayout?.cell, cell(nil, scale: mounted))
     }
 
     // MARK: program replies

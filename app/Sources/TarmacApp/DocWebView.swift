@@ -7,7 +7,7 @@ import WebKit
 /// runs it. The text can be selected and copied the usual way, so the web view
 /// takes keyboard focus when it is pressed.
 @MainActor
-final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
+final class DocWebView: NSView, DocCardBody, FontFollowing, WKNavigationDelegate {
     /// Where a clicked http(s) link goes.
     var openExternal: (URL) -> Void = { NSWorkspace.shared.open($0) }
 
@@ -131,6 +131,20 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
         )
     }
 
+    /// Passed as arguments, never spliced into the script: a family name is
+    /// the user's text.
+    func fontsChanged() {
+        guard pageLoaded else { return }
+        webView.callAsyncJavaScript(
+            "tarmacDoc.fonts(chrome, prose)",
+            arguments: [
+                "chrome": FontCSS.interface(Theme.fontFamilies[.interface]),
+                "prose": FontCSS.document(Theme.fontFamilies[.document]),
+            ],
+            in: nil, in: CardWebView.world, completionHandler: nil
+        )
+    }
+
     func scroll(to offset: Double) {
         guard pageLoaded, offset.isFinite else { return }
         webView.runInCardWorld("tarmacDoc.scrollTo(\(offset))")
@@ -169,6 +183,7 @@ final class DocWebView: NSView, DocCardBody, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         pageLoaded = true
+        fontsChanged()
         layoutPage(viewport: webView.frame.size)
         render()
     }

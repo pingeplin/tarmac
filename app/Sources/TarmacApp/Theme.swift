@@ -1,4 +1,5 @@
 import AppKit
+import TarmacKit
 
 // Tokens from docs/archive/v4/visual-crib.md §2 (Ghostty Breeze; authored sRGB hex).
 @MainActor
@@ -40,12 +41,29 @@ enum Theme {
         srgb(0x9b59b6), // repo-d — purple
     ]
 
-    /// The chrome face: IBM Plex Mono, bundled in regular and bold only, so a
-    /// weight takes the nearer of the two; the system's monospaced font if the
-    /// bundled faces did not register.
+    /// The family in effect for each role, as `FontSettings` last resolved
+    /// it; no entry is the system default.
+    static var fontFamilies: [FontRole: String] = [:]
+
+    /// The chrome face: the Interface family, or the system's monospaced
+    /// font. A family has a regular and at most a bold, so a weight takes the
+    /// nearer of the two, and a family with no bold gives its regular face.
     static func mono(_ size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
-        let face = weight.rawValue >= NSFont.Weight.semibold.rawValue ? "IBMPlexMono-Bold" : "IBMPlexMono-Regular"
-        return NSFont(name: face, size: size) ?? NSFont.monospacedSystemFont(ofSize: size, weight: weight)
+        let bold = weight.rawValue >= NSFont.Weight.semibold.rawValue
+        return chosen(.interface, size: size, bold: bold) ?? NSFont.monospacedSystemFont(ofSize: size, weight: weight)
+    }
+
+    /// The regular face a role's text is set in, for the Settings window's
+    /// sample line.
+    static func sample(_ role: FontRole, size: CGFloat) -> NSFont {
+        chosen(role, size: size)
+            ?? (role.fixedPitchOnly ? .monospacedSystemFont(ofSize: size, weight: .regular) : .systemFont(ofSize: size))
+    }
+
+    private static func chosen(_ role: FontRole, size: CGFloat, bold: Bool = false) -> NSFont? {
+        fontFamilies[role].flatMap {
+            NSFontManager.shared.font(withFamily: $0, traits: bold ? .boldFontMask : [], weight: bold ? 9 : 5, size: size)
+        }
     }
 
     static var reduceMotion: Bool {

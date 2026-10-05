@@ -64,10 +64,10 @@ extension AppController {
     /// A wheel event, seen before it is dispatched. Over the body of the
     /// selected card, or over its scroll thumb, it is left for that card's own
     /// content; anywhere else on the board it pans, and with control held it
-    /// zooms about the pointer. True means the board took it. Overlays and the
-    /// switcher keep their own wheel.
+    /// zooms about the pointer. True means the board took it. Overlays, the
+    /// switcher and every other window keep their own wheel.
     func routeScroll(_ event: NSEvent) -> Bool {
-        guard !switcherOpen else { return false }
+        guard !switcherOpen, event.window === window else { return false }
         let board = rootView.board
         guard let hit = hitView(at: event.locationInWindow), hit.isDescendant(of: board) else { return false }
         let card = enclosingCard(hit)
@@ -99,7 +99,7 @@ extension AppController {
 
     /// A pinch over the board always zooms the board, even over the selected card.
     func routeMagnify(_ event: NSEvent) -> Bool {
-        guard !switcherOpen else { return false }
+        guard !switcherOpen, event.window === window else { return false }
         guard let hit = hitView(at: event.locationInWindow), hit.isDescendant(of: rootView.board) else { return false }
         rootView.board.magnify(with: event)
         return true

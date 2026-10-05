@@ -297,6 +297,25 @@ public enum DevSnapshot {
         }
     }
 
+    /// The chosen fonts (spec 2610.0005): what is saved for each role, and
+    /// what each role resolved to on this Mac.
+    public struct Fonts: Equatable, Sendable {
+        public var saved: [FontRole: String]
+        /// The PostScript name of the regular face terminals are set in.
+        public var terminalFace: String
+        /// The PostScript name of the regular face the chrome is set in.
+        public var interfaceFace: String
+        /// The `font-family` value doc-card prose is given.
+        public var documentCSS: String
+
+        public init(saved: [FontRole: String], terminalFace: String, interfaceFace: String, documentCSS: String) {
+            self.saved = saved
+            self.terminalFace = terminalFace
+            self.interfaceFace = interfaceFace
+            self.documentCSS = documentCSS
+        }
+    }
+
     public struct Input: Equatable, Sendable {
         public var boardID: String
         public var visibility: Visibility
@@ -314,6 +333,7 @@ public enum DevSnapshot {
         public var keyboardFocus: KeyboardFocus
         /// Nil when the guard could not be read.
         public var quitGuard: QuitGuard?
+        public var fonts: Fonts
 
         public init(
             boardID: String,
@@ -325,7 +345,8 @@ public enum DevSnapshot {
             selectedCard: String?,
             borrowedCard: String?,
             keyboardFocus: KeyboardFocus,
-            quitGuard: QuitGuard?
+            quitGuard: QuitGuard?,
+            fonts: Fonts
         ) {
             self.boardID = boardID
             self.visibility = visibility
@@ -337,6 +358,7 @@ public enum DevSnapshot {
             self.borrowedCard = borrowedCard
             self.keyboardFocus = keyboardFocus
             self.quitGuard = quitGuard
+            self.fonts = fonts
         }
     }
 
@@ -356,6 +378,15 @@ public enum DevSnapshot {
             "focused_card": optional(input.selectedCard),
             "active_element": ActiveElement(input.keyboardFocus).json,
             "quit_guard": input.quitGuard.map(quitGuard) ?? .null,
+            "fonts": fonts(input.fonts),
+        ]
+    }
+
+    private static func fonts(_ fonts: Fonts) -> JSONValue {
+        [
+            "terminal": ["saved": optional(fonts.saved[.terminal]), "face": .string(fonts.terminalFace)],
+            "interface": ["saved": optional(fonts.saved[.interface]), "face": .string(fonts.interfaceFace)],
+            "document": ["saved": optional(fonts.saved[.document]), "css": .string(fonts.documentCSS)],
         ]
     }
 

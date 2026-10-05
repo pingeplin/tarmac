@@ -18,7 +18,9 @@
     --text: #eff0f1;
     --agent: #1abc9c;
     --agent-dim: rgba(26, 188, 156, 0.16);
-    --chrome-font: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+    /* The app sets both to the chosen fonts once the page has loaded. */
+    --chrome-font: ui-monospace, monospace;
+    --prose-font: -apple-system, "SF Pro Text", system-ui, sans-serif;
     --oversample-k: 3;
     --zoom: 1;
     --card-w: 392px;
@@ -62,7 +64,7 @@
     max-width: calc(720px * var(--oversample-k));
     padding: calc(18px * var(--oversample-k)) calc(22px * var(--oversample-k));
     color: #ced3d7;
-    font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+    font-family: var(--prose-font);
     font-size: calc(14px * var(--oversample-k));
     line-height: 1.7;
   }

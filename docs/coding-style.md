@@ -81,8 +81,8 @@ TDD is waived only where there is no *new* decision to test:
    function; a closure threaded through a view.
 3. **Build, packaging, and CI** — `Makefile`, `scripts/`, `packaging/`,
    `.github/workflows/`.
-4. **Generated or vendored code** — the staged XCFramework, the bundled `marked`
-   and fonts — and the doc set itself.
+4. **Generated or vendored code** — the staged XCFramework and the bundled
+   `marked` — and the doc set itself.
 5. **A behaviour-preserving refactor** — no new test; the suite must be green
    before and after. If the refactor needs a *new* test to be safe, it is not
    behaviour-preserving: write that test first.

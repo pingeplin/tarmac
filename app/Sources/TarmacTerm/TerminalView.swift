@@ -57,6 +57,10 @@ public final class TerminalView: NSView {
 
     public var padding = TerminalPadding.card { didSet { relayout() } }
     private let fontSize: CGFloat
+    /// The family the terminal is set in; nil is the system's monospaced font.
+    public var fontFamily: String? {
+        didSet { if fontFamily != oldValue { rebuildFonts() } }
+    }
 
     private var readScheduled = false
     private var holdStarted: Date?
@@ -88,7 +92,8 @@ public final class TerminalView: NSView {
     private var lastDragPoint: SurfacePoint?
 
     public init(
-        frame: NSRect = .zero, theme: TerminalTheme = .breeze, fontSize: CGFloat = 16, scrollbackLines: Int = 5000,
+        frame: NSRect = .zero, theme: TerminalTheme = .breeze, fontSize: CGFloat = 16, fontFamily: String? = nil,
+        scrollbackLines: Int = 5000,
         backingScale: CGFloat = NSScreen.main?.backingScaleFactor ?? 2
     ) throws {
         engine = try TerminalEngine(cols: 80, rows: 24)
@@ -98,8 +103,11 @@ public final class TerminalView: NSView {
         selection.multiClickInterval = NSEvent.doubleClickInterval
         reader = try FrameReader()
         self.fontSize = fontSize
+        self.fontFamily = fontFamily
         fontScale = backingScale
-        renderer = TerminalRenderer(fonts: TerminalFonts(size: fontSize, pixelsPerPoint: backingScale), theme: theme)
+        renderer = TerminalRenderer(
+            fonts: TerminalFonts(size: fontSize, pixelsPerPoint: backingScale, family: fontFamily), theme: theme
+        )
         frameSnapshot = reader.read(engine)
         super.init(frame: frame)
         wantsLayer = true
@@ -269,7 +277,13 @@ public final class TerminalView: NSView {
         let scale = window?.backingScaleFactor ?? fontScale
         guard scale != fontScale else { return }
         fontScale = scale
-        renderer = TerminalRenderer(fonts: TerminalFonts(size: fontSize, pixelsPerPoint: scale), theme: renderer.theme)
+        rebuildFonts()
+    }
+
+    private func rebuildFonts() {
+        renderer = TerminalRenderer(
+            fonts: TerminalFonts(size: fontSize, pixelsPerPoint: fontScale, family: fontFamily), theme: renderer.theme
+        )
         fontGeneration += 1
         relayout()
     }
