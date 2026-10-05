@@ -38,12 +38,10 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     /// A size as a text and as a stepper, which show one number.
     @MainActor
     private final class SizeControls {
-        let rule: FontSizeRule
         let field = NSTextField(string: "")
         let stepper = NSStepper()
 
         init(_ rule: FontSizeRule) {
-            self.rule = rule
             field.alignment = .right
             stepper.minValue = rule.range.lowerBound
             stepper.maxValue = rule.range.upperBound
@@ -108,9 +106,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     /// Text that is no size puts the field back; so does a size already in
     /// effect, typed another way (`13.50`).
     @objc private func typeSize(_ sender: NSTextField) {
-        guard let row = rows.first(where: { $0.sizeControls?.field === sender }), let controls = row.sizeControls
-        else { return }
-        if let typed = controls.rule.typed(sender.stringValue) { fonts.chooseSize(typed, for: row.role) }
+        guard let row = rows.first(where: { $0.sizeControls?.field === sender }) else { return }
+        if let typed = row.role.sizeRule?.typed(sender.stringValue) { fonts.chooseSize(typed, for: row.role) }
         showSize(of: row)
     }
 

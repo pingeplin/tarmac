@@ -3,8 +3,8 @@ import XCTest
 
 /// 2610.0006: which size a role uses, from the file and from typed text.
 final class FontSizeRuleTests: XCTestCase {
-    private let terminal = FontRole.terminal.sizeRule!
-    private let document = FontRole.document.sizeRule!
+    private let terminal = FontSizeRule.terminal
+    private let document = FontSizeRule.document
 
     /// S2
     func testASavedSizeIsInEffectAndNoneIsTheStandard() {

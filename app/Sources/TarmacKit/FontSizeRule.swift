@@ -12,7 +12,7 @@ public struct FontSizeRule: Equatable, Sendable {
     public let standard: Double
 
     public func accepts(_ size: Double) -> Bool {
-        range.contains(size) && (size / Self.step).rounded() == size / Self.step
+        range.contains(size) && nearest(to: size) == size
     }
 
     public func inEffect(saved: Double?) -> Double {
@@ -28,7 +28,7 @@ public struct FontSizeRule: Equatable, Sendable {
 
     /// A tie between two sizes goes to the larger: 13.25 is 13.5.
     public func nearest(to size: Double) -> Double {
-        min(max((size / Self.step).rounded() * Self.step, range.lowerBound), range.upperBound)
+        min(max((size / Self.step).roundedHalfUp * Self.step, range.lowerBound), range.upperBound)
     }
 
     /// The size a typed text asks for, or nil for text that is not a finite

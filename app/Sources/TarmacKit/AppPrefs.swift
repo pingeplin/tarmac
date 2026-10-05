@@ -57,8 +57,8 @@ public enum AppPrefs {
                 values.fonts[role] = name
             }
             for role in FontRole.allCases {
-                guard let size = try? object.decode(Double.self, forKey: Key(role.sizePrefsKey)),
-                    role.sizeRule?.accepts(size) == true
+                guard let rule = role.sizeRule,
+                    let size = try? object.decode(Double.self, forKey: Key(role.sizePrefsKey)), rule.accepts(size)
                 else { continue }
                 values.fontSizes[role] = size
             }
@@ -110,8 +110,8 @@ public enum AppPrefs {
             json += #","\#(role.prefsKey)":\#(JSONValue.string(name).jsonString)"#
         }
         for role in FontRole.allCases {
-            guard let size = values.fontSizes[role], role.sizeRule?.accepts(size) == true else { continue }
-            json += #","\#(role.sizePrefsKey)":\#(FontSizeRule.text(size))"#
+            guard let rule = role.sizeRule, let size = values.fontSizes[role], rule.accepts(size) else { continue }
+            json += #","\#(role.sizePrefsKey)":\#(JSONValue.number(size).jsonString)"#
         }
         return Data((json + "}").utf8)
     }

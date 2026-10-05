@@ -78,10 +78,12 @@ func descendants(of element: AXUIElement, depth: Int = 0) -> [AXUIElement] {
     return children.flatMap { [$0] + descendants(of: $0, depth: depth + 1) }
 }
 
-func press(_ element: AXUIElement, _ what: String) {
-    let result = AXUIElementPerformAction(element, kAXPressAction as CFString)
-    guard result == .success else { fail("\(what): press failed (\(result.rawValue))") }
+func perform(_ action: String, on element: AXUIElement, _ what: String) {
+    let result = AXUIElementPerformAction(element, action as CFString)
+    guard result == .success else { fail("\(what): \(action) failed (\(result.rawValue))") }
 }
+
+func press(_ element: AXUIElement, _ what: String) { perform(kAXPressAction, on: element, what) }
 
 func settingsWindow() -> AXUIElement {
     let windows: [AXUIElement] = attribute(app, kAXWindowsAttribute) ?? []
@@ -89,8 +91,8 @@ func settingsWindow() -> AXUIElement {
     return window
 }
 
-func popUps() -> [AXUIElement] {
-    descendants(of: settingsWindow()).filter { role($0) == kAXPopUpButtonRole }
+func controls(_ wanted: String) -> [AXUIElement] {
+    descendants(of: settingsWindow()).filter { role($0) == wanted }
 }
 
 /// An item of the app menu, the bar's second: the Apple menu is its first.
@@ -109,17 +111,13 @@ func frame(_ element: AXUIElement) -> String {
     return "\(rect.minX),\(rect.minY) \(rect.width)x\(rect.height)"
 }
 
-func sizeControl(_ wanted: String, _ what: String) -> AXUIElement {
-    let controls = descendants(of: settingsWindow()).filter { role($0) == wanted }
-    guard let index = rest.first.flatMap(Int.init), controls.indices.contains(index) else {
-        fail("\(verb) <n> ...: the window has \(controls.count) \(what)")
+/// The control of role `wanted` that the verb's first argument counts to.
+func control(_ wanted: String, _ what: String) -> AXUIElement {
+    let found = controls(wanted)
+    guard let index = rest.first.flatMap(Int.init), found.indices.contains(index) else {
+        fail("\(verb) <n> ...: the window has \(found.count) \(what)")
     }
-    return controls[index]
-}
-
-func perform(_ action: String, on element: AXUIElement) {
-    let result = AXUIElementPerformAction(element, action as CFString)
-    guard result == .success else { fail("\(verb): \(action) failed (\(result.rawValue))") }
+    return found[index]
 }
 
 func post(_ code: CGKeyCode, flags: CGEventFlags = [], character: Character? = nil) {
@@ -178,40 +176,40 @@ case "rows":
         print("size \(index) value=\(value(field)) label=\(label) frame=\(frame(field))")
     }
     for stepper in views.filter({ role($0) == kAXIncrementorRole }) { print("stepper frame=\(frame(stepper))") }
-    for text in views.filter({ role($0) == kAXStaticTextRole }) { print("label \(value(text)) frame=\(frame(text))") }
-    print("labels=\(views.filter { role($0) == kAXStaticTextRole }.map(value))")
+    let texts = views.filter { role($0) == kAXStaticTextRole }
+    for text in texts { print("label \(value(text)) frame=\(frame(text))") }
+    print("labels=\(texts.map(value))")
     print("resizable=\((attribute(window, "AXGrowArea") as AXUIElement?) != nil)")
 case "pick":
-    let rows = popUps()
-    guard rest.count == 2, let row = Int(rest[0]), rows.indices.contains(row) else { fail("pick <row> <title>") }
-    let popUp = rows[row]
+    guard rest.count == 2 else { fail("pick <row> <title>") }
+    let popUp = control(kAXPopUpButtonRole, "pop-ups")
     press(popUp, "the pop-up")
     usleep(400_000)
     let items = descendants(of: popUp).filter { role($0) == kAXMenuItemRole }
     guard let item = items.first(where: { title($0) == rest[1] }) else {
         AXUIElementPerformAction(popUp, kAXCancelAction as CFString)
-        fail("row \(row) lists \(items.count) entries and none is \(rest[1])")
+        fail("row \(rest[0]) lists \(items.count) entries and none is \(rest[1])")
     }
     press(item, rest[1])
     print("picked \(rest[1]) of \(items.count)")
 case "size":
     guard rest.count == 2 else { fail("size <n> <text>") }
-    let field = sizeControl(kAXTextFieldRole, "size fields")
+    let field = control(kAXTextFieldRole, "size fields")
     guard AXUIElementSetAttributeValue(field, kAXValueAttribute as CFString, rest[1] as CFString) == .success else {
         fail("the field did not take the text")
     }
-    perform(kAXConfirmAction, on: field)
+    perform(kAXConfirmAction, on: field, "the size field")
     usleep(200_000)
     print("size \(rest[0]) value=\(value(field))")
 case "step":
     guard rest.count >= 2, ["up", "down"].contains(rest[1]) else { fail("step <n> up|down [count]") }
-    let stepper = sizeControl(kAXIncrementorRole, "steppers")
+    let stepper = control(kAXIncrementorRole, "steppers")
     for _ in 0..<(rest.count > 2 ? Int(number(2)) : 1) {
-        perform(rest[1] == "up" ? kAXIncrementAction : kAXDecrementAction, on: stepper)
+        perform(rest[1] == "up" ? kAXIncrementAction : kAXDecrementAction, on: stepper, "the stepper")
         usleep(150_000)
     }
 case "focus":
-    let field = sizeControl(kAXTextFieldRole, "size fields")
+    let field = control(kAXTextFieldRole, "size fields")
     guard AXUIElementSetAttributeValue(field, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success else {
         fail("the field did not take the focus")
     }

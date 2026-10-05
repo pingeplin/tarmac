@@ -56,7 +56,7 @@ final class DocTemplateTests: XCTestCase {
         let text = try template()
         XCTAssertEqual(
             try firstMatch(#"--prose-size:\s*([^;]+);"#, in: text),
-            FontCSS.proseSize(try XCTUnwrap(FontRole.document.sizeRule).standard)
+            FontCSS.proseSize(FontSizeRule.document.standard)
         )
         let prose = try firstMatch(#"\n  \.doc-prose \{([^}]*)\}"#, in: text)
         XCTAssertEqual(
