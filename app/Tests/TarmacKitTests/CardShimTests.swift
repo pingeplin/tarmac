@@ -25,11 +25,17 @@ final class CardShimTests: XCTestCase {
     private static let timeoutIdBase = 2000
     private static let intervalIdBase = 3000
 
-    /// The stand-in window, taking the document's `tarmac-zoom` meta and the
-    /// one native to leave out. The window is the global object, as it is in
-    /// a page; `h` is what a test drives it with and reads back from.
+    /// The stand-in window, taking the document's `tarmac-zoom` meta, the one
+    /// native to leave out, and whether the document has a head. The window is
+    /// the global object, as it is in a page; `h` is what a test drives it
+    /// with and reads back from.
+    ///
+    /// A document with a head is one that elements are added to: it has a
+    /// `createElement`, a `MutationObserver` that `h.parse` tells of each
+    /// element, and the one query the default colour scheme asks. Without it
+    /// the document is the one every test before spec 2610.0007 runs in.
     private static let page = """
-    (function (meta, omitNative) {
+    (function (meta, omitNative, withHead) {
       const listeners = new Map();
       const docListeners = new Map();
       const posted = [];
@@ -115,6 +121,81 @@ final class CardShimTests: XCTestCase {
           },
         },
       });
+      const watchers = [];
+      let parse;
+      if (withHead) {
+        const stockLog = console.log;
+        // What the window had seen of the shim when the head got its first
+        // child. It is read from what the stand-in already keeps, so the
+        // document without a head is not changed to record an order.
+        const seen = () => [
+          ...(console.log === stockLog ? [] : ["console"]),
+          ...[...listeners.keys()].map((type) => `window ${type}`),
+          ...[...docListeners.keys()].map((type) => `document ${type}`),
+          ...observers.map(() => "ResizeObserver"),
+          ...watchers.map(() => "MutationObserver"),
+        ];
+        // `changes` is the head's history in order: an `append` is a script's
+        // (the shim's), a `parse` is the test's.
+        const head = {
+          children: [],
+          changes: [],
+          before: null,
+          appendChild(el) {
+            head.before ??= seen();
+            head.children.push(el);
+            head.changes.push(`append ${el.localName}`);
+            return el;
+          },
+        };
+        const element = (localName, attributes) => ({
+          localName,
+          ...attributes,
+          remove() {
+            const at = head.children.indexOf(this);
+            if (at < 0) return;
+            head.children.splice(at, 1);
+            head.changes.push(`remove ${localName}`);
+          },
+        });
+
+        document.head = head;
+        document.createElement = (localName) => element(localName);
+        // `meta[name="x"]` and `meta[name="x" i]`, told apart as an engine
+        // tells them: a name matches in any letter case only with the `i`.
+        document.querySelectorAll = (selector) => {
+          const [, name, anyCase] = /^meta\\[name="([^"]*)"( i)?\\]$/.exec(selector) ?? [];
+          if (name === undefined) return [];
+          const fold = (text) => (anyCase ? text.toLowerCase() : text);
+          return head.children.filter(
+            (el) => el.localName === "meta" && typeof el.name === "string" && fold(el.name) === fold(name)
+          );
+        };
+        globalThis.MutationObserver = class {
+          constructor(callback) {
+            this.callback = callback;
+            this.observed = [];
+            this.connected = false;
+            watchers.push(this);
+          }
+          observe(target, options) {
+            this.observed.push({ target, options });
+            this.connected = true;
+          }
+          disconnect() { this.connected = false; }
+        };
+        // The parser, or a script of the author, puts an element in the head.
+        // An observer hears of it only while it is connected.
+        parse = (localName, attributes) => {
+          const el = element(localName, attributes);
+          head.children.push(el);
+          head.changes.push(`parse ${localName}`);
+          for (const watcher of watchers.filter((each) => each.connected)) {
+            watcher.callback([{ type: "childList", target: head, addedNodes: [el] }], watcher);
+          }
+          return el;
+        };
+      }
       if (omitNative) delete globalThis[omitNative];
 
       globalThis.h = {
@@ -130,6 +211,8 @@ final class CardShimTests: XCTestCase {
           emit(listeners, "scroll", { target });
         },
         observers,
+        watchers,
+        parse,
         domReady: () => emit(docListeners, "DOMContentLoaded", {}),
         driveFrame(ts) {
           const due = [...frames.entries()].sort((a, b) => a[0] - b[0]);
@@ -242,15 +325,16 @@ final class CardShimTests: XCTestCase {
         )
     }
 
-    private func window(meta: String?, omitting native: String? = nil) throws -> JSContext {
+    private func window(meta: String?, omitting native: String? = nil, head: Bool = false) throws -> JSContext {
         let context = try XCTUnwrap(JSContext())
         context.exceptionHandler = { _, error in XCTFail("the script threw: \(String(describing: error))") }
-        context.evaluateScript(Self.page).call(withArguments: [meta as Any? ?? NSNull(), native as Any? ?? NSNull()])
+        context.evaluateScript(Self.page)
+            .call(withArguments: [meta as Any? ?? NSNull(), native as Any? ?? NSNull(), head])
         return context
     }
 
-    private func loadShim(meta: String? = "magnify", omitting native: String? = nil) throws -> Shim {
-        let context = try window(meta: meta, omitting: native)
+    private func loadShim(meta: String? = "magnify", omitting native: String? = nil, head: Bool = false) throws -> Shim {
+        let context = try window(meta: meta, omitting: native, head: head)
         context.evaluateScript(try source())
         return Shim(context: context)
     }
@@ -1029,6 +1113,106 @@ final class CardShimTests: XCTestCase {
             }
             XCTAssertEqual(try reports(shim), [], missing)
         }
+    }
+
+    // MARK: - a document follows the appearance unless it states a scheme (2610.0007 S67–S70)
+
+    // What the engine does with the meta is QA (2610.0007 S62–S66):
+    // JavaScriptCore has no CSS.
+
+    private static let headElements = "document.head.children.map((el) => [el.localName, el.name, el.content].join(' '))"
+    private static let defaultScheme = "meta color-scheme light dark"
+
+    /// A shim in a document with a head, and `scheme`: the head's first child
+    /// once the shim has loaded.
+    private func loadShimInADocumentWithAHead() throws -> Shim {
+        let shim = try loadShim(head: true)
+        shim.run("var scheme = document.head.children[0];")
+        return shim
+    }
+
+    func test2610_0007S67TheShimsFirstActIsOneDefaultSchemeMetaInTheHead() throws {
+        let shim = try loadShim(head: true)
+
+        XCTAssertEqual(try shim.strings(Self.headElements), [Self.defaultScheme], "2610.0007 S67: the head")
+        XCTAssertEqual(try shim.strings("document.head.before"), [], "2610.0007 S67: what the shim did first")
+    }
+
+    /// The watch is on the root with its subtree: a meta is a child of the
+    /// head, not of the root.
+    func test2610_0007S68AnElementThatIsNoSchemeMetaLeavesTheDefaultInPlace() throws {
+        let shim = try loadShimInADocumentWithAHead()
+        XCTAssertEqual(try shim.count("h.watchers"), 1, "2610.0007 S68: one observer")
+        XCTAssertEqual(shim.flag("h.watchers[0].observed[0].target === document.documentElement"), true, "the root")
+        XCTAssertEqual(shim.flag("h.watchers[0].observed[0].options.childList"), true, "childList")
+        XCTAssertEqual(shim.flag("h.watchers[0].observed[0].options.subtree"), true, "subtree")
+
+        shim.run("""
+        h.parse("meta", { charset: "utf-8" });
+        h.parse("title");
+        h.parse("meta", { name: "viewport", content: "width=device-width" });
+        h.parse("meta", { name: "tarmac-zoom", content: "reveal" });
+        h.parse("style");
+        """)
+
+        XCTAssertEqual(shim.flag("document.head.children[0] === scheme"), true, "2610.0007 S68: the default")
+        XCTAssertEqual(try shim.count("document.head.children"), 6, "2610.0007 S68: the head")
+        XCTAssertEqual(shim.flag("h.watchers[0].connected"), true, "2610.0007 S68: still watching")
+
+        shim.run("h.parse('meta', { name: 'color-scheme', content: 'dark' })")
+        XCTAssertEqual(shim.flag("document.head.children.includes(scheme)"), false, "2610.0007 S68: then the author's")
+    }
+
+    func test2610_0007S68AnAuthorsSchemeMetaInAnyLetterCaseRemovesTheDefaultAndEndsTheWatch() throws {
+        for name in ["color-scheme", "Color-Scheme", "COLOR-SCHEME"] {
+            let shim = try loadShimInADocumentWithAHead()
+            XCTAssertEqual(shim.flag("h.watchers[0].connected"), true, "2610.0007 S68: watching, \(name)")
+
+            shim.run("h.parse('meta', { name: '\(name)', content: 'light' })")
+
+            XCTAssertEqual(try shim.strings(Self.headElements), ["meta \(name) light"], "2610.0007 S68: the head")
+            XCTAssertEqual(
+                try shim.strings("document.head.changes"), ["append meta", "parse meta", "remove meta"],
+                "2610.0007 S68: \(name)"
+            )
+            XCTAssertEqual(shim.flag("h.watchers[0].connected"), false, "2610.0007 S68: still watching, \(name)")
+        }
+    }
+
+    /// The last part is the contract's "a meta that an author's script adds
+    /// after the document is parsed is not a statement the default gives way
+    /// to": an observer that is still connected would take the default away.
+    func test2610_0007S69DOMContentLoadedEndsTheWatchAndKeepsTheDefault() throws {
+        let shim = try loadShimInADocumentWithAHead()
+        XCTAssertEqual(shim.flag("h.watchers[0].connected"), true, "2610.0007 S69: watching while the document is parsed")
+
+        shim.run("h.domReady()")
+        XCTAssertEqual(shim.flag("h.watchers[0].connected"), false, "2610.0007 S69: still watching")
+        XCTAssertEqual(try shim.strings(Self.headElements), [Self.defaultScheme], "2610.0007 S69: the default")
+
+        shim.run("h.parse('meta', { name: 'color-scheme', content: 'light' })")
+        XCTAssertEqual(shim.flag("document.head.children[0] === scheme"), true, "2610.0007 S69: a late meta")
+    }
+
+    /// The document every test outside this section runs in. A throw at load
+    /// fails the test through the context's exception handler.
+    func test2610_0007S70ADocumentWithNoHeadLoadsTheShimAsItDidBefore() throws {
+        let shim = try loadShim()
+        XCTAssertEqual(
+            try shim.strings("[typeof document.head, typeof document.createElement, typeof MutationObserver]"),
+            ["undefined", "undefined", "undefined"], "2610.0007 S70: the stand-in of today"
+        )
+
+        shim.run("h.domReady()")
+        XCTAssertTrue(try shim.hasPosted(["tarmac": "ready", "meta": "magnify"]), "2610.0007 S70: the rest of the shim")
+    }
+
+    func test2610_0007S70AWindowWithNoMutationObserverKeepsTheDefaultAndLoads() throws {
+        let shim = try loadShim(omitting: "MutationObserver", head: true)
+        XCTAssertEqual(try shim.strings(Self.headElements), [Self.defaultScheme], "2610.0007 S70: the head")
+
+        shim.run("h.domReady()")
+        XCTAssertTrue(try shim.hasPosted(["tarmac": "ready", "meta": "magnify"]), "2610.0007 S70: the rest of the shim")
     }
 
     // MARK: - the never-paused path, beyond the cancels

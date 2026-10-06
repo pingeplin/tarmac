@@ -1,0 +1,34 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>html-card-scheme P3</title>
+<!-- A probe page of spec 2610.0007 (S62 to S66). See README.md in this folder. -->
+<style>
+  html { color-scheme: dark }
+</style>
+<style>
+  /* Layout only: no rule here names a colour or a background. What this page
+     states about colour is the line its label quotes, and nothing else. The
+     label has a fixed height, so the block and the empty area are at the same
+     place on every page. A border with no colour of its own is drawn in
+     currentColor. */
+  #label { height: 54px; overflow: hidden; padding: 4px 4px 8px; font: 13px/18px ui-monospace, Menlo, monospace; }
+  #ink { width: 120px; margin: 0 4px; border-top: 60px solid; }
+  #canvas { height: 150px; }
+</style>
+<div id="label">
+  <div>P3 <span id="id"></span></div>
+  <div>states <code>html { color-scheme: dark }</code></div>
+</div>
+<div id="ink"></div>
+<div id="canvas"></div>
+<script>
+  const id = Math.random().toString(36).slice(2, 10);
+  document.getElementById("id").textContent = "id " + id;
+  const dark = matchMedia("(prefers-color-scheme: dark)");
+  const report = () => {
+    const scheme = getComputedStyle(document.documentElement).colorScheme;
+    console.log("[scheme] P3 id=" + id + " color-scheme=" + scheme + " matches=" + dark.matches);
+  };
+  report();
+  dark.addEventListener("change", report);
+</script>
