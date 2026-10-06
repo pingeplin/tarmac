@@ -85,6 +85,21 @@ final class TerminalFrameTests: XCTestCase {
         XCTAssertEqual(frame.cursor?.blinks, true)
     }
 
+    /// S20 — by WCAG relative luminance: the blue is the darker of its pair,
+    /// though its largest channel and the mean of its channels are the higher.
+    func test2610_0007S20AThemeIsDarkWhenItsBackgroundHasTheLowerLuminance() {
+        func theme(background: UInt32, foreground: UInt32) -> TerminalTheme {
+            var theme = TerminalTheme.breeze
+            theme.background = RGB(hex: background)
+            theme.foreground = RGB(hex: foreground)
+            return theme
+        }
+        XCTAssertTrue(theme(background: 0x31363b, foreground: 0xced2d6).isDark)
+        XCTAssertFalse(theme(background: 0xfcfcfc, foreground: 0x232629).isDark)
+        XCTAssertTrue(theme(background: 0x0000ff, foreground: 0x00a000).isDark)
+        XCTAssertFalse(theme(background: 0x808080, foreground: 0x808080).isDark)
+    }
+
     func testWideCharacterOccupiesTwoCells() throws {
         let (engine, reader) = try make()
         feed(engine, "世a")

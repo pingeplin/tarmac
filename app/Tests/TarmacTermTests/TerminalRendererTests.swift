@@ -187,7 +187,7 @@ final class TerminalRendererTests: XCTestCase {
 }
 
 /// A top-down bitmap the renderer draws into, read back in grid coordinates.
-private struct Canvas {
+struct Canvas {
     let context: CGContext
     let layout: TerminalGridLayout
     let scale: CGFloat

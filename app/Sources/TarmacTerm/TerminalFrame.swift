@@ -25,7 +25,8 @@ public struct CellFlags: OptionSet, Equatable, Sendable {
     public static let blink = CellFlags(rawValue: 1 << 7)
 }
 
-/// nil colours mean "the frame's default", so a theme change needs no re-read.
+/// nil colours mean "the frame's default"; a colour of the palette is already
+/// resolved, so a new theme reaches it only through a new frame.
 public struct CellStyle: Equatable, Sendable {
     public var foreground: RGB?
     public var background: RGB?
