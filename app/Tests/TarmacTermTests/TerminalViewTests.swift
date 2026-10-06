@@ -1272,6 +1272,73 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(try drawn(view).center(col: 10, row: 5), light.background)
     }
 
+    // MARK: a default colour a program sets, on screen (2610.0007 S50)
+
+    /// S50 — a default colour changes no row, so the frame read names none
+    /// dirty, and an empty cell has no colour of its own: it shows the new
+    /// background only if the view asked for every row to be drawn again.
+    /// The cursor is on row 0.
+    func test2610_0007S50AProgramsOwnBackgroundReachesTheRowsItDidNotWrite() throws {
+        feed("ab")
+        settle()
+        let screen = try Screen(showing: view)
+        XCTAssertEqual(screen.shown().center(col: 10, row: 5), dark.background)
+
+        feed("\u{1b}]11;rgb:10/20/30\u{1b}\\")
+        settle()
+        XCTAssertEqual(screen.shown().center(col: 10, row: 5), RGB(hex: 0x102030))
+
+        feed("\u{1b}]111\u{1b}\\")
+        settle()
+        XCTAssertEqual(screen.shown().center(col: 10, row: 5), dark.background)
+    }
+
+    /// S50, for the foreground: text with no colour of its own. The cursor is
+    /// on row 2.
+    func test2610_0007S50AProgramsOwnForegroundReachesTheTextAlreadyOnScreen() throws {
+        let own = RGB(hex: 0xaabbcc)
+        feed("MMMM\r\n\r\n")
+        settle()
+        let screen = try Screen(showing: view)
+        XCTAssertTrue(screen.shown().colours(inCols: 0..<4, row: 0).contains(dark.foreground))
+
+        feed("\u{1b}]10;rgb:aa/bb/cc\u{1b}\\")
+        settle()
+        let set = screen.shown().colours(inCols: 0..<4, row: 0)
+        XCTAssertTrue(set.contains(own))
+        XCTAssertFalse(set.contains(dark.foreground))
+
+        feed("\u{1b}]110\u{1b}\\")
+        settle()
+        let reset = screen.shown().colours(inCols: 0..<4, row: 0)
+        XCTAssertTrue(reset.contains(dark.foreground))
+        XCTAssertFalse(reset.contains(own))
+    }
+
+    /// The cost: a frame that changes no default colour draws its own rows
+    /// and no more.
+    func test2610_0007S50AnOrdinaryFrameDrawsOnlyItsRows() throws {
+        feed("ab\r\n")
+        settle()
+        let screen = try Screen(showing: view)
+        _ = screen.shown()
+
+        feed("x")
+        settle()
+        _ = screen.shown()
+        XCTAssertEqual(screen.asked, [view.damageRect(forRow: 1)])
+
+        feed("\u{1b}]11;rgb:10/20/30\u{1b}\\")
+        settle()
+        _ = screen.shown()
+        XCTAssertEqual(screen.asked.map { $0.intersection(view.bounds) }, [view.bounds])
+
+        feed("y")
+        settle()
+        _ = screen.shown()
+        XCTAssertEqual(screen.asked, [view.damageRect(forRow: 1)])
+    }
+
     // MARK: program replies
 
     func testQueriesAreAnsweredThroughTheInputPath() {
@@ -1306,5 +1373,58 @@ final class TerminalViewTests: XCTestCase {
         view.onTitleChanged = { titles.append($0) }
         feed("\u{1b}]2;vim\u{07}")
         XCTAssertEqual(titles, ["vim"])
+    }
+}
+
+/// A stand-in for the screen, which `drawn(_:)` is not: that draws every row,
+/// whatever the view asked for. This keeps what was drawn before and, when
+/// the view is displayed, draws again only the rects AppKit then asks it to
+/// draw: the ones the view marked. `TerminalView` is final, so those rects
+/// are seen from a subclass made at run time, which draws as it does.
+@MainActor
+private final class Screen {
+    private let view: TerminalView
+    private let canvas: Canvas
+    /// What AppKit asked the view to draw when it was last shown.
+    private(set) var asked: [NSRect] = []
+    private var recorded: [NSRect] = []
+
+    init(showing view: TerminalView) throws {
+        self.view = view
+        canvas = try Canvas(
+            size: view.bounds.size, scale: 2, fill: RGB(255, 0, 255), layout: try XCTUnwrap(view.gridLayout)
+        )
+        let draw = #selector(NSView.draw(_:))
+        let method = try XCTUnwrap(class_getInstanceMethod(TerminalView.self, draw))
+        let inherited = unsafeBitCast(
+            method_getImplementation(method), to: (@convention(c) (NSView, Selector, NSRect) -> Void).self
+        )
+        let recording: @convention(block) (NSView, NSRect) -> Void = { [unowned self] view, rect in
+            self.recorded.append(rect)
+            inherited(view, draw, rect)
+        }
+        let subclass: AnyClass = try XCTUnwrap(
+            objc_allocateClassPair(TerminalView.self, "TerminalViewOnScreen\(UUID().uuidString)", 0)
+        )
+        class_addMethod(subclass, draw, imp_implementationWithBlock(recording), method_getTypeEncoding(method))
+        objc_registerClassPair(subclass)
+        object_setClass(view, subclass)
+    }
+
+    /// Displays the view, and gives what the screen holds then.
+    func shown() -> Canvas {
+        recorded = []
+        view.displayIfNeeded()
+        asked = recorded
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: canvas.context, flipped: true)
+        for rect in asked {
+            canvas.context.saveGState()
+            canvas.context.clip(to: rect)
+            view.draw(rect)
+            canvas.context.restoreGState()
+        }
+        return canvas
     }
 }

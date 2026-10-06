@@ -239,16 +239,20 @@ public final class TerminalView: NSView {
     }
 
     private func readFrame() {
-        let previousCursor = frameSnapshot.cursor
+        let shown = frameSnapshot
         frameSnapshot = reader.read(engine)
         reportScrollbar()
         guard gridLayout != nil else { return }
-        if frameSnapshot.dirtyRows.count >= frameSnapshot.rows.count {
+        // A default colour a program sets (OSC 10, OSC 11) makes no row
+        // dirty, and a cell with no colour of its own is drawn in it.
+        let defaultsChanged =
+            frameSnapshot.background != shown.background || frameSnapshot.foreground != shown.foreground
+        if defaultsChanged || frameSnapshot.dirtyRows.count >= frameSnapshot.rows.count {
             needsDisplay = true
         } else {
             var rows = frameSnapshot.dirtyRows
-            if previousCursor != frameSnapshot.cursor {
-                for cursor in [previousCursor, frameSnapshot.cursor] {
+            if shown.cursor != frameSnapshot.cursor {
+                for cursor in [shown.cursor, frameSnapshot.cursor] {
                     if let cursor { rows.insert(cursor.row) }
                 }
             }
