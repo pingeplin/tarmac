@@ -184,22 +184,24 @@ final class AppController {
         showConnectionStatus()
     }
 
-    /// A chosen font or size changed. A board that is not mounted keeps its cards in
-    /// its own detached view, so each is told apart from the window's tree.
+    /// A chosen font or size changed.
     private func fontsChanged() {
-        rootView.broadcastFontsChanged()
-        for board in boards.values where !board.view.isDescendant(of: rootView) {
-            board.view.broadcastFontsChanged()
-        }
-        refreshSwitcherIfOpen()
+        tellEveryView { $0.broadcastFontsChanged() }
     }
 
     /// The theme in effect changed: the same reach as a font change.
     private func themeChanged() {
         window?.backgroundColor = Theme.bg0
-        rootView.broadcastThemeChanged()
+        tellEveryView { $0.broadcastThemeChanged() }
+    }
+
+    /// Runs `broadcast` on the window's tree, then on each board that is not
+    /// mounted, which keeps its cards in its own detached view, and brings
+    /// the switcher up to date if it is open.
+    private func tellEveryView(_ broadcast: (NSView) -> Void) {
+        broadcast(rootView)
         for board in boards.values where !board.view.isDescendant(of: rootView) {
-            board.view.broadcastThemeChanged()
+            broadcast(board.view)
         }
         refreshSwitcherIfOpen()
     }

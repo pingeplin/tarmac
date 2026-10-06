@@ -96,10 +96,9 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, WKNavigationDeleg
         guard pageLoaded, Theme.variant != backdropGiven else { return }
         backdropGiven = Theme.variant
         let backdrop = ThemeCSS.backdrop(Theme.variant)
-        webView.callAsyncJavaScript(
+        webView.runInCardWorld(
             "document.documentElement.style.setProperty(name, value)",
-            arguments: ["name": backdrop.name, "value": backdrop.value],
-            in: nil, in: CardWebView.world, completionHandler: nil
+            arguments: ["name": backdrop.name, "value": backdrop.value]
         )
     }
 
@@ -218,10 +217,7 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, WKNavigationDeleg
         webView.resetWheel()
         onScrollChanged?(nil)
         layoutDocument()
-        webView.callAsyncJavaScript(
-            "tarmacCard.load(source)", arguments: ["source": source],
-            in: nil, in: CardWebView.world, completionHandler: nil
-        )
+        webView.runInCardWorld("tarmacCard.load(source)", arguments: ["source": source])
     }
 
     /// Sizes the frame the document is laid out in. Magnified, it is laid out

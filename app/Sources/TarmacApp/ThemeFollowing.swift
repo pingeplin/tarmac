@@ -11,11 +11,8 @@ protocol ThemeFollowing: NSView {
 }
 
 extension NSView {
-    /// Tells every view under this one, then this one, as
-    /// `broadcastFontsChanged` does: a culled card is told too.
     func broadcastThemeChanged() {
-        subviews.forEach { $0.broadcastThemeChanged() }
-        (self as? ThemeFollowing)?.themeChanged()
+        tellTree { ($0 as? ThemeFollowing)?.themeChanged() }
     }
 }
 

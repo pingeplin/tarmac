@@ -101,13 +101,13 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             heading.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: Self.margin),
         ])
         for pane in SettingsPane.allCases {
-            let view = view(of: pane)
-            content.addSubview(view)
+            let paneView = view(of: pane)
+            content.addSubview(paneView)
             NSLayoutConstraint.activate([
-                view.topAnchor.constraint(equalTo: heading.bottomAnchor, constant: Self.margin),
-                view.bottomAnchor.constraint(lessThanOrEqualTo: content.bottomAnchor, constant: -Self.margin),
-                view.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: Self.margin),
-                view.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -Self.margin),
+                paneView.topAnchor.constraint(equalTo: heading.bottomAnchor, constant: Self.margin),
+                paneView.bottomAnchor.constraint(lessThanOrEqualTo: content.bottomAnchor, constant: -Self.margin),
+                paneView.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: Self.margin),
+                paneView.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -Self.margin),
             ])
         }
         return content

@@ -133,10 +133,7 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
 
     private func render() {
         guard pageLoaded, let markdown else { return }
-        webView.callAsyncJavaScript(
-            "await tarmacDoc.render(markdown)", arguments: ["markdown": markdown],
-            in: nil, in: CardWebView.world, completionHandler: nil
-        )
+        webView.runInCardWorld("await tarmacDoc.render(markdown)", arguments: ["markdown": markdown])
     }
 
     /// Passed as arguments, never spliced into the script: a family name is
@@ -149,10 +146,7 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
         ]
         guard pageLoaded, fonts != fontsGiven else { return }
         fontsGiven = fonts
-        webView.callAsyncJavaScript(
-            "tarmacDoc.fonts(chrome, prose, size)", arguments: fonts,
-            in: nil, in: CardWebView.world, completionHandler: nil
-        )
+        webView.runInCardWorld("tarmacDoc.fonts(chrome, prose, size)", arguments: fonts)
     }
 
     /// The page is given the declarations and is not loaded again, so it
@@ -162,10 +156,9 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
         webView.underPageBackgroundColor = Theme.bg1
         guard pageLoaded, Theme.variant != themeGiven else { return }
         themeGiven = Theme.variant
-        webView.callAsyncJavaScript(
+        webView.runInCardWorld(
             "tarmacDoc.theme(properties)",
-            arguments: ["properties": ThemeCSS.properties(Theme.variant).map { [$0.name, $0.value] }],
-            in: nil, in: CardWebView.world, completionHandler: nil
+            arguments: ["properties": ThemeCSS.properties(Theme.variant).map { [$0.name, $0.value] }]
         )
     }
 

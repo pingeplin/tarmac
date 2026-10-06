@@ -105,11 +105,13 @@ final class FontsPane: NSObject {
     }
 
     private func makeView() -> NSView {
-        let controls = rows.map { self.controls(for: $0) }
-        let box = SettingsGroup.box(zip(rows, controls).map { ($0.role.title, $1, .firstBaseline) })
+        let rowControls = rows.map { controls(for: $0) }
+        let box = SettingsGroup.box(zip(rows, rowControls).map { ($0.role.title, $1, .firstBaseline) })
         // One width for the three: a row with no size keeps its pop-up under
         // the others'.
-        NSLayoutConstraint.activate(controls.dropFirst().map { $0.widthAnchor.constraint(equalTo: controls[0].widthAnchor) })
+        NSLayoutConstraint.activate(rowControls.dropFirst().map {
+            $0.widthAnchor.constraint(equalTo: rowControls[0].widthAnchor)
+        })
         return box
     }
 
@@ -140,14 +142,14 @@ final class FontsPane: NSObject {
     }
 
     private func choices(for row: Row) -> NSView {
-        guard let controls = row.sizeControls else { return row.popup }
-        controls.field.target = self
-        controls.field.action = #selector(typeSize(_:))
-        controls.field.setAccessibilityLabel("\(row.role.title) font size")
-        controls.field.widthAnchor.constraint(equalToConstant: Self.sizeFieldWidth).isActive = true
-        controls.stepper.target = self
-        controls.stepper.action = #selector(step(_:))
-        let line = NSStackView(views: [row.popup, controls.field, controls.stepper])
+        guard let size = row.sizeControls else { return row.popup }
+        size.field.target = self
+        size.field.action = #selector(typeSize(_:))
+        size.field.setAccessibilityLabel("\(row.role.title) font size")
+        size.field.widthAnchor.constraint(equalToConstant: Self.sizeFieldWidth).isActive = true
+        size.stepper.target = self
+        size.stepper.action = #selector(step(_:))
+        let line = NSStackView(views: [row.popup, size.field, size.stepper])
         line.spacing = 6
         return line
     }

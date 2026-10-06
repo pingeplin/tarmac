@@ -354,7 +354,6 @@ public enum DevSnapshot {
         /// Nil when the guard could not be read.
         public var quitGuard: QuitGuard?
         public var fonts: Fonts
-        /// With nothing said, the theme of a file with no `theme` key.
         public var theme: Theme
 
         public init(
@@ -369,7 +368,7 @@ public enum DevSnapshot {
             keyboardFocus: KeyboardFocus,
             quitGuard: QuitGuard?,
             fonts: Fonts,
-            theme: Theme = Theme(choice: .standard, inEffect: .dark)
+            theme: Theme
         ) {
             self.boardID = boardID
             self.visibility = visibility

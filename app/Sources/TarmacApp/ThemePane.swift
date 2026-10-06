@@ -8,7 +8,6 @@ import TarmacKit
 @MainActor
 final class ThemePane: NSObject {
     private let theme: ThemeSettings
-    private let choices = ThemeChoice.allCases
     private let tiles = ThemeChoice.allCases.map { ThemeTile.button($0) }
     private(set) lazy var view = makeView()
 
@@ -17,12 +16,12 @@ final class ThemePane: NSObject {
     }
 
     func reload() {
-        for (choice, tile) in zip(choices, tiles) { tile.state = choice == theme.choice ? .on : .off }
+        for (choice, tile) in zip(ThemeChoice.allCases, tiles) { tile.state = choice == theme.choice ? .on : .off }
     }
 
     @objc private func choose(_ sender: NSButton) {
         guard let index = tiles.firstIndex(of: sender) else { return }
-        theme.choose(choices[index])
+        theme.choose(ThemeChoice.allCases[index])
         reload()
     }
 

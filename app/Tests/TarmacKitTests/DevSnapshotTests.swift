@@ -49,7 +49,7 @@ final class DevSnapshotTests: XCTestCase {
         fonts: DevSnapshot.Fonts? = nil,
         theme: DevSnapshot.Theme? = nil
     ) -> Input {
-        var input = Input(
+        Input(
             boardID: "board-0",
             visibility: visibility,
             viewport: viewport,
@@ -63,10 +63,9 @@ final class DevSnapshotTests: XCTestCase {
             fonts: fonts ?? DevSnapshot.Fonts(
                 saved: [:], terminalFace: "SystemMono-Regular", terminalSize: 16,
                 interfaceFace: "SystemMono-Regular", documentCSS: "system-ui", documentSize: 14
-            )
+            ),
+            theme: theme ?? DevSnapshot.Theme(choice: .standard, inEffect: .dark)
         )
-        if let theme { input.theme = theme }
-        return input
     }
 
     private func fields(_ value: JSONValue?, file: StaticString = #filePath, line: UInt = #line) -> [String: JSONValue] {
@@ -770,12 +769,6 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(theme(.auto, .light), ["choice": "auto", "in_effect": "light"])
         XCTAssertEqual(theme(.auto, .dark), ["choice": "auto", "in_effect": "dark"])
         XCTAssertEqual(theme(.light, .light), ["choice": "light", "in_effect": "light"])
-    }
-
-    /// 2610.0007 — with nothing said the theme is the one of a file with no
-    /// `theme` key: still an object with its two members.
-    func test2610_0007AnInputGivenNoThemeReportsTheDarkOne() {
-        XCTAssertEqual(fields(DevSnapshot.build(input()))["theme"], ["choice": "dark", "in_effect": "dark"])
     }
 
     func testTheSnapshotSerialisesAsCompactJSON() {
