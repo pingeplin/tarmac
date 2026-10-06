@@ -105,7 +105,7 @@ final class FontsPane: NSObject {
     }
 
     private func makeView() -> NSView {
-        let controls = rows.map { controls(for: $0) }
+        let controls = rows.map { self.controls(for: $0) }
         let box = SettingsGroup.box(zip(rows, controls).map { ($0.role.title, $1, .firstBaseline) })
         // One width for the three: a row with no size keeps its pop-up under
         // the others'.
