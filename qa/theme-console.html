@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>theme console probe</title>
+<!-- A probe page of spec 2610.0007 (S29 and S35): one console line of each
+     level, so that the open console of the card shows the three colours.
+     The page states `color-scheme: light dark`, so it follows the theme. -->
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 13px/18px ui-monospace, Menlo, monospace; margin: 8px; }
+</style>
+<p>Console probe: one log line, one warning, one error.</p>
+<script>
+  console.log("[theme] a log line MMMMMMMM");
+  console.warn("[theme] a warning MMMMMMMM");
+  console.error("[theme] an error MMMMMMMM");
+</script>
