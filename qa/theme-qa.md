@@ -4,7 +4,9 @@ The live half of [spec 2610.0007](../.blueprint/specs/2610.0007_theme_setting.md
 its 33 `[QA]` scenarios, with the values observed. The unit scenarios are
 `ThemeChoiceTests`, `AppPrefsTests`, `PaletteTests`, `ContrastTests`,
 `ThemeCSSTests`, `DocTemplateTests`, `DevSnapshotTests`, `SettingsPaneTests`,
-`TerminalViewTests`, `TerminalRendererTests` and `CardShimTests`.
+`TerminalViewTests`, `TerminalFrameTests`, `TerminalEngineTests` and
+`CardShimTests`. The tests of the cards fix are in `CardHostScriptTests`,
+`CardConsoleTests`, `HTMLCardSessionTests` and `CardShimTests`.
 
 It is also the §1.3 exception-1 and exception-2 discharge for the shell of
 this change: `ThemeSettings`, `Theme`, `ThemeFollowing` and every view that
@@ -39,6 +41,14 @@ removed after the run. S50 on `ab71600` (the terminal fix). S62, S63, S65,
 S66, *No card stays out of sight* and `make qa` on the cards fix: the commit
 that carries this record, whose parent is `ab71600`. The rows say which run a
 value is from.
+
+**Third run:** the same day and machine, a fresh dev channel `.dev/qa209r`,
+removed after the run, on `9ffd2e8` (the commit before the one that carries
+this pass of the record). S31 with the cursor, the rule of S33, S45, the
+fresh ring of S46, and S64. S31, S45, S46's ring and S64 pass. The rule of
+S33 fails as it is worded: under dark its upper line is not lighter than
+the page (its row has the values). The Mac's appearance was Light and was
+not changed.
 
 ## The capture tolerance
 
@@ -88,6 +98,11 @@ Each 7 × 7 square round a point held one colour.
 - S65 is a 60 fps `ffmpeg` recording of the card's place on the screen. The
   second run records the whole main window (the screen device by its name,
   `Capture screen 0`) and reads the card's place from the snapshot afterwards.
+- The third run records each step of S45 and S64 in the same way, and makes
+  two captures in each: one at once, and one 1 s after the step was asked.
+  Its colour script sends `OSC 12 ; ?` too. Its far cards are opened from a
+  terminal that was moved far to the right: a doc lands beside the terminal
+  that opened it.
 
 ## Checks
 
@@ -124,9 +139,9 @@ the dark theme, then *Light* pressed once.
 | **S28** Dark to Light | `theme` `{"choice":"light","in_effect":"light"}`; file `{"warn_before_quit":true,"theme":"light"}`; light five; values 0, 1, 0. Each tile's picture, 58 × 36 pixels 4 in from its edge: largest difference 0 between the two captures. Mean of the *Light* picture `dee4e4`, of the *Dark* one `323d40`. The *Auto* picture holds `31363b`, `24282c`, `353b41` and `fcfcfc`, `e3e5e7`, `dee0e2`. | pass |
 | **S29** Each part | The table below. No capture of the main window under Light holds a 4 × 4 flat area of a dark-only fill (10 captures scanned). | pass |
 | **S30** Text already drawn | No key in the terminal after the press. Full block `232629` (the dark capture has `ced2d6`). ANSI 2 background `0b8a0f`; the other fifteen backgrounds are the light column too. Body `fcfcfc`. Selected empty cell `b6d8d1`; `fcfcfc` with `12846e` at 0.3 computes `b6d8d1`. Grid 44 × 14 before and after. One pixel column in ten of the block row, where two cells meet, reads `25282b`: see *Found on the way*. | pass |
-| **S31** The answers | `rgb:2323/2626/2929`, `rgb:fcfc/fcfc/fcfc`, `rgb:0b0b/8a8a/0f0f`, `CSI ? 997 ; 2 n`. | pass |
+| **S31** The answers | `rgb:2323/2626/2929`, `rgb:fcfc/fcfc/fcfc`, `rgb:0b0b/8a8a/0f0f`, `CSI ? 997 ; 2 n`. Third run, `9ffd2e8`, with `OSC 12 ; ?` (the cursor) sent after `OSC 11 ; ?`. Under light: `rgb:2323/2626/2929`, `rgb:fcfc/fcfc/fcfc`, cursor `rgb:2323/2626/2929`, `rgb:0b0b/8a8a/0f0f`, `CSI ? 997 ; 2 n`. Under dark: `rgb:cece/d2d2/d6d6`, `rgb:3131/3636/3b3b`, cursor `rgb:efef/f0f0/f1f1`, `rgb:1111/d1d1/1616`, `CSI ? 997 ; 1 n`. | pass (both runs) |
 | **S32** Mode 2031 | The log after dark → light → dark: `mode 2031 set`, one `\x1b[?997;2n`, one `\x1b[?997;1n`. Over the whole run it holds one line for each later change made while the app ran, and no other byte. | pass |
-| **S33** A doc keeps its place | Card made 392 × 500 so that all the parts show. `scroll.offset` 710 under light, dark, light. Page `eff0f1` / `2b3036`; code block `fcfcfc` / `31363b`; inline code `dee0e2` / `353b41`. Text of prose, blockquote and table `31363b` under light, `ced3d7` under dark; link `12846e`, `1abc9c`. The rule is two lines: `aeafb0` and `e6e7e8` under light, both darker than the page; `64676b` and `2c2f33` under dark, the first lighter than the page and the second close to it (the page is `2b3036`). The selected word's fill is `ccdfdc` under light and `284646` under dark. | pass |
+| **S33** A doc keeps its place | Card made 392 × 500 so that all the parts show. `scroll.offset` 710 under light, dark, light. Page `eff0f1` / `2b3036`; code block `fcfcfc` / `31363b`; inline code `dee0e2` / `353b41`. Text of prose, blockquote and table `31363b` under light, `ced3d7` under dark; link `12846e`, `1abc9c`. The selected word's fill is `ccdfdc` under light and `284646` under dark. **The rule,** third run, `9ffd2e8`: it is two lines, one on the other, with the page above and below them. Each line is one third of a point thick, so at zoom 3 each is one row of pixels, and there the two lines have the same values under the two themes: the upper line `2c2c2c`, the lower line `d4d4d4`. The page beside them is `2b3036` under dark and `eff0f1` under light. So under light the two lines are darker than the page. Under dark the lower line is lighter than the page, and the upper line is not: it is a little darker (luminance 0.025; the page 0.029). At zoom 1 each line is one row of pixels at one third of its strength over the page: `2c2f33` (upper) and `64676b` (lower) under dark, `aeafb0` and `e6e7e8` under light, as in the first run. At zoom 2, two thirds: `2b2d2f` and `9b9d9f` under dark, `6d6d6d` and `dddddd` under light. In this run `scroll.offset` was 591 before and after a change from light to dark. | pass for every part but the rule. The rule: **fail** as worded for its upper line under dark, which is not lighter than the page; its lower line passes. See *Found on the way* |
 | **S34** A doc opened under Light | The card is in the snapshot 0.07 s after `tarmac open`; the first capture, 0.47 s after it, has the page `eff0f1` at three points, with its text drawn. | pass |
 | **S35** The HTML card | Header `353b41` under dark, `dee0e2` under light. Console fill `24272b` under dark (bg0 at 0.94 over the page's `1e1e1e` computes `24272b`) with text `b9bfc4`, `fdbc4b`, `f28b82`; `e5e7e8` under light (over `ffffff`: `e5e7e8`) with text `535d66`, `a36802`, `da4453`. | pass |
 | **S37** Cards made under Light | A new terminal (⌘T): body `fcfcfc`, prime header `d0d4d8`. The doc of S34: page `eff0f1`. | pass |
@@ -161,19 +176,24 @@ The switcher's veil is black in both themes, as the spec says.
 
 | Scenario | Observed | Result |
 | --- | --- | --- |
-| **S45** Two boards, a culled card | The active board: a terminal, a doc, a P0 card, and a P0 card 1981 points past the window's right edge. The cull margin is one viewport (1830 points), so that card is culled. The other board is not mounted. *Light*, then the first capture: terminal body `fcfcfc`, its prime header `d0d4d8`, doc header `dee0e2`, doc page `eff0f1`, P0 `ffffff` with a `000000` block. `zoom 0.25` brings the far card in; the capture 0.47 s after: P0 `ffffff`, block `000000`, header `dee0e2`. The other board, in the capture 0.45 s after the switch was asked: terminal body `fcfcfc`, prime header `d0d4d8`, doc header `dee0e2`, doc page `eff0f1`, P0 `ffffff`; no dark-only flat area. | pass |
-| **S46** States set under Dark | All in one capture, 0.4 s after the press, with no change of a card. Bell dot `b08130`, 22 pixels: `a36802` under the 0.8 dim computes `b08130`. The glyph's strokes are thinner than a pixel; its strongest pixel `ba9656` is 0.79 of the way from the header's fill to `b08130`. Prime header `d0d4d8`. Selected border `87c0b5` (`12846e` at 0.5 over `fcfcfc`). Fresh ring `96a9a7`, `94a7a6`, `91a5a3`: with `12846e` at 0.16 taken out they are `afb0b2`, `adaeb1`, `a9abad`, greys that go on from the card's shadow beside the ring (`b6b7b9`, `b4b5b7`, `b1b3b4`). Exited card: body `f1f2f3` (`fcfcfc` under the 0.55 dim computes `f1f2f3`); border `d9dcde` (computes `dadcdf`). | pass |
+| **S45** Two boards, a culled card | The active board: a terminal, a doc, a P0 card, and a P0 card 1981 points past the window's right edge. The cull margin is one viewport (1830 points), so that card is culled. The other board is not mounted. *Light*, then the first capture: terminal body `fcfcfc`, its prime header `d0d4d8`, doc header `dee0e2`, doc page `eff0f1`, P0 `ffffff` with a `000000` block. `zoom 0.25` brings the far card in; the capture 0.47 s after: P0 `ffffff`, block `000000`, header `dee0e2`. The other board, in the capture 0.45 s after the switch was asked: terminal body `fcfcfc`, prime header `d0d4d8`, doc header `dee0e2`, doc page `eff0f1`, P0 `ffffff`; no dark-only flat area. (That was the first run, `6e54cda`.) **Third run, `9ffd2e8`.** Board 1: the prime terminal, `theme-doc.md` and a P0 card in the window; a second terminal and two P0 cards far to the right, the two cards 1851 and 2329 points past the window's right edge. The first far card showed its page under dark at zoom 0.25 and was culled after that. The second was opened while it was culled and was never on screen. `tarmac dev focus` answers `card_hidden` for both. Board 2 (a terminal, a doc, a P0 card) was not shown from before the press. *Light*; the first capture, done 0.13 s after the press came back: terminal body `fcfcfc`, prime header `d0d4d8`, doc header `dee0e2`, doc page `eff0f1`, P0 `ffffff` with a `000000` block and header `dee0e2`; no dark-only flat area. `zoom 0.25`; the first capture, done 0.34 s after it was asked: each far P0 card `ffffff` with a `000000` block and header `dee0e2`. The far terminal is not prime: body `f7f7f8`, header `dfe1e3` (`fcfcfc` and `dee0e2` under the 0.8 dim over the board compute the same two). Board 2, in the first capture, done 0.37 s after the switch was asked: terminal body `fcfcfc`, prime header `d0d4d8`, doc header `dee0e2`, doc page `eff0f1`, P0 `ffffff` with a `000000` block. The capture 1 s after each step has the same values, so no HTML card is at `bg1` then. In the 60 fps recordings: the first far card has its page in the frame in which the card shows; the second shows `bg1` for 1 frame (17 ms) and then its page; the P0 card of board 2 is white from the frame in which the card shows, and its text and its block come 2 frames (33 ms) later. | pass (both runs) |
+| **S46** States set under Dark | All in one capture, 0.4 s after the press, with no change of a card. Bell dot `b08130`, 22 pixels: `a36802` under the 0.8 dim computes `b08130`. The glyph's strokes are thinner than a pixel; its strongest pixel `ba9656` is 0.79 of the way from the header's fill to `b08130`. Prime header `d0d4d8`. Selected border `87c0b5` (`12846e` at 0.5 over `fcfcfc`). Fresh ring, third run, `9ffd2e8`, in the first capture after *Light*, on a doc card and a P0 card that were opened under dark. The ring is 3 pixels wide. Its pixels beside the left border, from the outside in: `96a9a7`, `94a7a6`, `91a5a3` (the first run's values). Above the top border: `788b8a`, `778a88`, `758886`. Below the bottom border: `b1c5c3`, `b1c4c3`, `afc2c1`. Then Escape took the fresh mark off and nothing else changed. The same pixels, which are the board under the card's shadow: `b0b2b3`, `aeafb1`, `acadaf`; `8d8e8f`, `8b8c8d`, `898a8b`; `d0d2d4`, `ced0d2`, `cecfd1`. `12846e` at 0.16 over those computes `97aba8`, `95a8a6`, `93a6a5`; `798c8a`, `788b88`, `768986`; `b2c6c4`, `b0c4c2`, `b0c3c1`. So the ring is 1 from the blend at the top and at the bottom, and 1 or 2 at the left and at the right (the right is the same as the left). The pixels outside the ring are also 0 or 1 lighter with the ring off (`bbbdbe` goes to `bcbdbf`): the shadow there is a little weaker without the ring. Exited card: body `f1f2f3` (`fcfcfc` under the 0.55 dim computes `f1f2f3`); border `d9dcde` (computes `dadcdf`). | pass |
 | **S47** A toast and a hint on screen | Under dark both are `353b41`. In the capture 0.9 s later, after *Light*: toast `dee0e2` with title `232629`; the three hints `dee0e2` with text `535d66` and `232629`. | pass |
 
 ### System appearance
 
 Run on `57153fc`, not on the final tree, so that the Mac's appearance was
-changed one time only. `git diff 57153fc..HEAD` does not touch
-`ThemeSettings.swift`, `ThemeFollowing.swift` or `AppController.swift`; it
-changes one line of `AppDelegate.swift` (the Settings window is given the
-theme) and one of `Theme.swift` (`srgb` is no longer private). The change was
-made with System Events (`set dark mode`), not by hand in System Settings; it
-is the same preference. The Mac was Light before and after.
+changed one time only. `git diff 57153fc..9ffd2e8 --stat -- app/Sources/TarmacApp`
+names 12 files, 542 lines added and 154 removed. `ThemeSettings.swift`,
+`ThemeFollowing.swift` and `AppController.swift` are not among them: they
+are not changed. One line of `AppDelegate.swift` changes (the Settings
+window is given the theme) and one of `Theme.swift` (`srgb` is no longer
+private). The other ten are the Settings window (`SettingsWindowController`,
+`SettingsSidebar`, `SettingsGroup`, `FontsPane`, `ThemePane`, `ThemeTile`)
+and the HTML card of the cards fix (`HTMLCardView`, `card-host.html`,
+`card-host.js`, `card_shim.js`). The change of the appearance was made with
+System Events (`set dark mode`), not by hand in System Settings; it is the
+same preference. The Mac was Light before and after.
 
 | Scenario | Observed | Result |
 | --- | --- | --- |
@@ -195,7 +215,7 @@ area, *block* the middle of the `currentColor` block.
 | --- | --- | --- |
 | **S62** The table | Loaded under dark: P0, P1, P3, P7, P11 canvas `1e1e1e`, block `ffffff`; P2, P4, P5, P6, P10 canvas `ffffff`, block `000000`; every console line ends `matches=true`. After a live change to light: P0, P1, P2, P4, P5, P6, P10 `ffffff` / `000000`; P3, P7, P11 `1e1e1e` / `ffffff`; every console's last line ends `matches=false`. After a relaunch under light (a fresh load): the same pairs, one line each, `matches=false`. Second run, at zoom 0.25: the same pairs in all three states, with no mismatch in 30 pages; `matches=true` under dark, `matches=false` after the live change and after the relaunch (one line each there). | pass (both runs) |
 | **S63** No reload | Ids at the start: P0 `aryiwqi2`, P1 `d0xpswfr`, P2 `rg8kp5qt`, P7 `mkynuekz`. Dark: P0, P1, P7 `1e1e1e` / `ffffff`, P2 `ffffff` / `000000`. Light: P0, P1, P2 `ffffff` / `000000`, P7 `1e1e1e` / `ffffff`. Dark again: as at the start. The four ids are the same in all three. Second run: P0 `ccd6pn7y`, P1 `n5sx1dkt`, P2 `n6kyysij`, P7 `a465p6th`, the same under dark, light and dark again, with the same pairs; the ids of the other eight pages did not change either. | pass (both runs) |
-| **S64** A card not on screen | P0 past the cull margin under light; theme to dark; `zoom 0.25` 1 s later; the capture 0.43 s after: canvas `1e1e1e`, block `ffffff`, header `353b41`. And P0 opened under dark with `tarmac open` from a terminal that far away (the card lands 1981 points past the window's edge); brought in the same way: `1e1e1e`, `ffffff`. | pass |
+| **S64** A card not on screen | P0 past the cull margin under light; theme to dark; `zoom 0.25` 1 s later; the capture 0.43 s after: canvas `1e1e1e`, block `ffffff`, header `353b41`. And P0 opened under dark with `tarmac open` from a terminal that far away (the card lands 1981 points past the window's edge); brought in the same way: `1e1e1e`, `ffffff`. (That was the first run, `6e54cda`.) **Third run, `9ffd2e8`.** The two far P0 cards of S45, culled under light after each had shown its light page (`card_hidden` for both); theme to dark; `zoom 0.25` 3.6 s later; the first capture, done 0.40 s after the zoom was asked: canvas `1e1e1e`, block `ffffff`, header `353b41`, for both. In the recording each card has the dark canvas in the frame in which it shows. And a third P0 opened under dark with `tarmac open` from the far terminal while its place was 2297 points past the window's right edge (`card_hidden`); `zoom 0.25` 3.8 s later; the first capture, done 0.36 s after: canvas `1e1e1e`, block `ffffff`. In the recording it shows `bg1` for 2 frames (33 ms) and then the dark canvas. The captures 1 s after are the same. No frame of the two recordings is white or light at a canvas point. | pass (both runs) |
 | **S65** No white at open | First run, `6e54cda`: 8 runs of 5.5 s, 5 on a board of 17 cards and 3 on a board with one terminal. At two points of the body with no text, every run: the board's colour, then the dark canvas for 3 or 4 frames, then **white for 1 frame (2 frames in 2 of the 8 runs)**, then the dark canvas to the last frame. In the recording's own colours: `202327` × 91 to 106, `1b1b1b` × 3 or 4, `ffffff` × 1 or 2, `1b1b1b` × 218 to 235. In the white frame the whole body is white, the block too. Second run, the cards fix: 10 runs of 5.5 s on a board with one terminal. At the same two points, every run: `202327` × 97 to 101, then **`262a2f` × 3 to 13** (5 or 6 frames in 7 of the 10), then `1b1b1b` × 217 to 228 to the last frame. `262a2f` is `bg1`: the status bar reads it in every frame of the same recordings. No frame is white at those points. The 3 or 4 dark frames of the first run are gone with the white: they were the web view before its page was drawn, and had the dark canvas's colour by chance. | **fail** as worded at the gate (three colours: the card's own `bg1` is between the two); pass as changed. No white frame; the last frame is the dark canvas. |
 | **S65**, the other pairs | Light theme, P3 (states `dark`), 5 runs at zoom 0.25: the board `dfe1e4`, then `edeeef` × 5 to 7 (`bg1`, the status bar's value there), then `1b1b1b` to the last frame; no white before the dark page. Dark theme, P2 (states `light`), 3 runs: `202327`, then `262a2f` × 5, then `ffffff` to the last frame: the card goes from `bg1` to white one time. | no white before a dark page |
 | **S66** Half of the colours | P8: canvas `1e1e1e`, block `222222`. P9: canvas `ffffff`, block `ffffff`. Second run: the same four values. | pass (both runs) |
@@ -275,6 +295,30 @@ run, dark theme unless the row says another.
   colour of its own. Now a frame whose default background or foreground is
   not the one on screen draws every row. The suite's S44 test could not see
   it: its `drawn()` draws every row, whatever the view asked for.
+- **S33: the rule has the same two greys under the two themes.** The
+  template does not style `<hr>`, and the engine draws its border as two
+  lines, `2c2c2c` on `d4d4d4`, whatever the theme. Under dark the upper line
+  is at the page's own lightness and cannot be told from the page; the lower
+  line is what shows. Each line is one third of a point thick at every zoom,
+  so below zoom 3 a capture has a mix of the line and the page. Not changed.
+- **A card that comes back with its board is blank for 2 frames.** Third
+  run. When a board is shown again, an HTML card whose theme changed while
+  the board was away shows its canvas with no text and no block for 2
+  frames: white under light, the dark canvas under dark (one switch under
+  each). It is the canvas of the theme in effect each time, never `bg1` and
+  never the other theme's canvas. A switch back to a board with no change of
+  the theme between had no such frame (one switch).
+- **One frame without the block, 9 frames after a zoom.** Third run. In two
+  of the three recordings of `zoom 0.25` from zoom 1 (S45, and the first
+  half of S64), each of the three P0 cards shows, for one frame, the
+  canvas's colour at the block's point, 9 frames (0.15 s) after the zoom.
+  In the third recording the two cards that were read do not. The canvas's
+  colour is the theme's own, so it is no white frame under dark. It was not
+  looked for on `289d208`.
+- **A doc's `scroll.offset` moves with the zoom, not with the theme.** Third
+  run: 600, then 595 and 591 after zooms to 3 and to 0.25 and back to 1; 591
+  before and after a change of the theme. S33 compares offsets with no zoom
+  between them.
 - **A program that set mode 2031 gets no report across a relaunch.** Seen
   once: the app was quit under light, the file was edited by hand, the app
   came up dark, and the script's log holds no line for it. In normal use it
@@ -300,6 +344,13 @@ run, dark theme unless the row says another.
     number moved when an iPhone camera came into range, and the recorder
     then opened the camera and did not end.
   - A header drag at zoom 0.25 takes the resize handle. Drag at 0.5.
+  - While a terminal has the keyboard, the app has one more small window
+    (the input source's mark, 84 × 77). A capture by window id holds it, and
+    is wider when the mark is past the main window's edge: the third run
+    had captures 1836 wide, with every point 6 pixels to the right. Read
+    the window list at each capture and take the main window's part.
+  - A tool that sets the main window's frame through Accessibility must
+    choose it by its title: the mark's window can be first in the list.
 
 ## Regression: `make qa`
 
@@ -313,8 +364,23 @@ Each ran before the Settings window was shown in that process.
 
 ## Not covered
 
-- A Mac whose appearance is Dark: the dark halves of S38, S39 and S48.
+- A Mac whose appearance is Dark: the dark halves of S38 (*Auto* on a dark
+  Mac), S39 (*Light* on a dark Mac) and S48 (the tile that names the Mac's
+  appearance is *Dark*, and the file holds no `theme` member).
 - S57 and S58 on the final tree (see *System appearance*).
+- On `9ffd2e8`: every row but S31, the rule of S33, S45, the ring of S46
+  and S64. `make qa` was not run on it. `9ffd2e8` changes the terminal's
+  theme setter for an engine that refuses a theme, one constant of
+  `Contrast`, where the rule of a tile's picture is, and comments.
+- A terminal engine that refuses a theme. No way was found to make it
+  refuse one, in a test or in the app.
+- A far card brought into view by a pan. S45 and S64 use `zoom`, which
+  shows the card in one step; a pan shows it while it is still out of the
+  window.
+- An HTML card that is culled on a board that is not shown, and the cards
+  of S45 and S64 on a board that was never shown in that launch.
+- The blank frames of a board that is shown again, under dark, for a page
+  that states `light` (it would be white, which is right for it).
 - A 2× display, and a display with another colour profile.
 - The app menu and the white frame on `289d208`: the tree was built for the
   tolerance and for `make qa` only.
