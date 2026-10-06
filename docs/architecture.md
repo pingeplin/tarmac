@@ -736,7 +736,11 @@ no permission-policy feature, and no handle on the app.
   the `doc` host, a markdown doc's the `img` host — so a markdown doc cannot
   frame a local file as an unsandboxed card document.
 - **The shim** (`card_shim.js`) is everything a document can observe of its
-  host: it relays `console.log`/`info`/`warn`/`error`, uncaught errors, unhandled
+  host: it gives the document a default colour scheme, so that a document
+  that states none follows the app's appearance (one
+  `<meta name="color-scheme" content="light dark">`, which any `color-scheme`
+  in the author's CSS beats, and which the shim removes when the author's own
+  meta is parsed); it relays `console.log`/`info`/`warn`/`error`, uncaught errors, unhandled
   rejections and `Escape` to its parent,
   applies the zoom, gates the document's schedulers, scrolls the root where
   the host says while the card's scroll thumb is dragged (`scrollTo`, a
@@ -889,8 +893,10 @@ menu carries *Warn Before Quitting (⌘Q)*, on by default and saved in
 read means the guard is on.
 
 **Fonts and the Settings window** (`FontSettings`, `SettingsWindowController`).
-*Settings…* (`⌘,`) in the app menu opens one window with a row for each
-`FontRole`:
+*Settings…* (`⌘,`) in the app menu opens one window. A sidebar lists its
+panes (`SettingsPane`): *Fonts* and *Theme*. The window opens on *Fonts* the
+first time in a session and later on the pane it last showed. The *Fonts*
+pane has a row for each `FontRole`:
 
 | Role | What it sets | With nothing chosen |
 | --- | --- | --- |
@@ -906,9 +912,9 @@ Interface has none. A size and a family are independent: a change of one
 keeps the other. A typed number goes to the nearest size the role has, and
 text that is no number puts the field back (`FontSizeRule`). A choice is
 saved in `app-prefs.json`, whose keys are `warn_before_quit`, a family name
-in `terminal_font`, `interface_font` and `document_font`, and a number in
-`terminal_font_size` and `document_font_size`; a size the role does not have
-reads as nothing chosen. `AppPrefsStore` is the
+in `terminal_font`, `interface_font` and `document_font`, a number in
+`terminal_font_size` and `document_font_size`, and `theme` (below); a size
+the role does not have reads as nothing chosen. `AppPrefsStore` is the
 one owner of the file and saves all of it each time, so no preference drops
 another's key. A saved family the Mac does not have, or one a fixed-pitch role
 cannot take, is not used: the role falls back to its default and the file is
@@ -920,6 +926,42 @@ renderer, chrome takes `Theme.mono` again, and doc cards are handed their
 chrome and prose families and their prose size (`FontCSS`) as script
 arguments. The whole font list is read only when the window opens; launch
 asks the Mac for the saved families alone.
+
+**Theme** (`ThemeSettings`, `Palette`). The *Theme* pane has one row,
+*Appearance*, with three tiles in the order of `ThemeChoice`: *Auto*, *Light*
+and *Dark*. *Light* is Breeze Light and *Dark* is Breeze Dark; *Auto* is the
+one of the two that fits the macOS appearance, and changes when macOS does
+(`ThemeChoice.inEffect`). The choice is the key `theme` of `app-prefs.json`:
+`"auto"`, `"light"` or `"dark"`. No key, and any other value, is `dark`, and
+`dark` is not written.
+
+Every colour of a theme is in one value, `Palette`, in `TarmacKit`: the chrome
+tokens, the four repo colours and the terminal's colours. `Palette.of` gives
+the palette of a `ThemeVariant`, and each colour token of `Theme` reads the
+palette in effect. `ThemeSettings` sets `NSApp.appearance` (`nil` for *Auto*,
+so that the app follows the Mac), resolves the variant, and, when the variant
+changed, tells the views by the same walk a font change uses
+(`ThemeFollowing`): the window's view tree, then every board that is not
+mounted. Each view takes its colours again, with the colours of the state it
+is in.
+
+- A terminal card sets `TerminalView.theme`. The text on screen is drawn in
+  the new palette with nothing fed, the grid does not change, and a program
+  is answered from the new theme: `OSC 10`, `OSC 11` and `OSC 4` queries by
+  libghostty-vt, and `CSI ? 996 n` as light or dark. A program that set mode
+  2031 is sent one report when dark and light change. A colour a program set
+  itself stays until the program resets it, and indices 16 to 255 are the
+  same in both themes.
+- A doc card's page is loaded with the theme's CSS declarations in place
+  (`ThemeCSS.page` fills a marker in `DocTemplate.html`), and a change hands
+  a loaded page the new declarations as script arguments, with no reload.
+  The page also states its `color-scheme`.
+- An HTML card's native chrome follows the theme. Its document follows it
+  too, unless the author states a colour scheme (see the shim, above): the
+  app sends the document nothing.
+
+The shadows, the board switcher's veil and the quit notice are the same in
+both themes.
 
 **The red button hides the window** (`WindowCloseHider`): terminals keep
 running, and the window returns on the next activation or Dock click, once per
@@ -1001,10 +1043,10 @@ window-content coordinates start on the display — each card's `scroll`
 reported; `thumb` is the scroll thumb's rect beside `screen_rect`, or `null`
 when none is laid out), the selected card, keyboard
 focus, per-terminal `cols`/`rows`/`proc`/`selection`/`scrollback_tail`, the
-quit guard's state, and `fonts`: for each font role the family saved in
+quit guard's state, `fonts`: for each font role the family saved in
 `app-prefs.json` and what the role resolved to (a PostScript `face`, or the
 `css` value for doc prose), and for `terminal` and `document` the `size` in
-effect. `--until` re-evaluates an expression every 50 ms
+effect; and `theme`: the `choice` and the variant `in_effect`. `--until` re-evaluates an expression every 50 ms
 (`DevUntil`). The scenario suites are `scripts/qa/smoke.mjs` (`make qa`) and
 `scripts/qa/quit.mjs` (`make qa-quit`).
 
