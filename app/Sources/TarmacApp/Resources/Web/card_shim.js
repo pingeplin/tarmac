@@ -1,10 +1,48 @@
-// Console-capture + escape-hatch + zoom + scroll-report shim for sandboxed
-// HTML doc cards (specs 2607.0004, 2607.0006, 2610.0003). Prepended by
-// CardProtocol.respond to every tarmac-card:// response, strictly before the
-// file's own bytes, so it observes console/error/escape activity from the
-// very first line of card script. Must never throw or break the host page —
-// every path here is defensive.
+// Console-capture + escape-hatch + zoom + scroll-report + default-scheme shim
+// for sandboxed HTML doc cards (specs 2607.0004, 2607.0006, 2610.0003,
+// 2610.0007). Prepended by CardProtocol.respond to every tarmac-card://
+// response, strictly before the file's own bytes, so it observes
+// console/error/escape activity from the very first line of card script. Must
+// never throw or break the host page — every path here is defensive.
 (function () {
+  // The default colour scheme (spec 2610.0007): a card follows the appearance
+  // unless its author states a scheme. A meta is the weakest statement there
+  // is, so a color-scheme in the author's CSS wins with no code here. But the
+  // first such meta in the tree is the one read, so this one leaves when the
+  // author's is parsed: the observer's callback runs before the next paint.
+  try {
+    var defaultScheme = document.createElement("meta");
+    defaultScheme.name = "color-scheme";
+    defaultScheme.content = "light dark";
+    document.head.appendChild(defaultScheme);
+    var authorScheme = new MutationObserver(function () {
+      var stated = document.querySelectorAll('meta[name="color-scheme" i]');
+      for (var i = 0; i < stated.length; i++) {
+        if (stated[i] !== defaultScheme) {
+          defaultScheme.remove();
+          authorScheme.disconnect();
+          return;
+        }
+      }
+    });
+    authorScheme.observe(document.documentElement, { childList: true, subtree: true });
+    document.addEventListener("DOMContentLoaded", function () {
+      authorScheme.disconnect();
+    });
+  } catch (e) {
+    // A document with no default scheme is the one it was before.
+  }
+
+  // The card is kept out of sight until its document has started, which is
+  // now: what there is to see before that is white, and this document
+  // may be dark. Said here, and not at the end of the load: a document that
+  // stops its own load never ends it.
+  try {
+    window.parent.postMessage({ tarmac: "started" }, "*");
+  } catch (e) {
+    // The host page counts a frame that has loaded as started.
+  }
+
   function safeSerialize(args) {
     return Array.prototype.map.call(args, serializeOne);
   }

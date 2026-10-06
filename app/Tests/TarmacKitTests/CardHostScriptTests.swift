@@ -25,7 +25,16 @@ final class CardHostScriptTests: XCTestCase {
         var cardWindow = {};
         var listener = null;
         var window = { addEventListener(type, heard) { if (type === "message") listener = heard; } };
-        var document = { getElementById() { return { contentWindow: cardWindow, style: {} }; } };
+        var heardOfTheFrame = {};
+        var card = {
+          contentWindow: cardWindow,
+          style: {},
+          addEventListener(type, heard) { heardOfTheFrame[type] = heard; },
+        };
+        var document = { getElementById() { return card; } };
+        var askedFrames = [];
+        function requestAnimationFrame(drawn) { askedFrames.push(drawn); }
+        function drawFrame() { for (const drawn of askedFrames.splice(0)) drawn(); }
         var webkit = { messageHandlers: { card: { postMessage(message) { posted.push(message); } } } };
         """)
         context.evaluateScript(try script())
@@ -85,6 +94,114 @@ final class CardHostScriptTests: XCTestCase {
             CardConsole.parse(try XCTUnwrap(bodies.first)),
             .scrolled(try XCTUnwrap(ScrollMetrics(offset: 120, visible: 840, total: 4800)))
         )
+    }
+
+    // MARK: - the app is told when the document is on screen (#213)
+
+    private func load(_ source: String = "tarmac-card://doc/a.html?v=1") {
+        context.evaluateScript("window.tarmacCard.load('\(source)')")
+    }
+
+    private func hear(_ data: String, from source: String = "cardWindow") {
+        context.evaluateScript("listener({ source: \(source), data: \(data) })")
+    }
+
+    /// The frame's own `load` event.
+    private func frameLoaded() {
+        context.evaluateScript("heardOfTheFrame.load && heardOfTheFrame.load({})")
+    }
+
+    /// Lets the page draw `count` frames, and gives what it has posted to the
+    /// app since the page was made.
+    @discardableResult
+    private func frames(_ count: Int) -> [NSDictionary] {
+        context.evaluateScript("for (let i = 0; i < \(count); i++) drawFrame(); posted").toArray() as? [NSDictionary] ?? []
+    }
+
+    private let shown: NSDictionary = ["tarmac": "shown"]
+
+    /// The app keeps the web view out of sight until this. Two frames: the
+    /// first is drawn with the document in it, and the word posted in the
+    /// second reaches the app after that drawing has.
+    func testTheAppIsToldTwoFramesAfterTheDocumentSaysItHasStarted() {
+        load()
+        hear("{ tarmac: 'started' }")
+        XCTAssertEqual(frames(1), [])
+        XCTAssertEqual(frames(1), [shown])
+        XCTAssertEqual(frames(3), [shown])
+    }
+
+    func testOnlyTheFramesOwnDocumentStartsIt() {
+        load()
+        hear("{ tarmac: 'started' }", from: "{}")
+        hear("{ tarmac: 'started' }", from: "window")
+        XCTAssertEqual(frames(3), [])
+    }
+
+    /// What is served for a file that cannot be read carries no shim, and
+    /// says nothing: no card stays out of sight.
+    func testAFrameThatLoadedIsOnScreenThoughItsDocumentSaidNothing() {
+        load()
+        frameLoaded()
+        XCTAssertEqual(frames(1), [])
+        XCTAssertEqual(frames(1), [shown])
+    }
+
+    func testTheAppIsToldOnceForASource() {
+        load()
+        frameLoaded()
+        hear("{ tarmac: 'started' }")
+        frames(2)
+        hear("{ tarmac: 'started' }")
+        frameLoaded()
+        XCTAssertEqual(frames(3), [shown])
+    }
+
+    func testNothingIsToldBeforeTheFrameIsGivenASource() {
+        frameLoaded()
+        hear("{ tarmac: 'started' }")
+        XCTAssertEqual(frames(3), [])
+    }
+
+    /// A file that changed is a new source. The document it replaces is still
+    /// in the frame, and what it posts is not the new one's start.
+    func testANewSourceIsToldOfAgainWhenItsOwnDocumentStarts() {
+        load("tarmac-card://doc/a.html?v=1")
+        hear("{ tarmac: 'started' }")
+        frames(2)
+
+        load("tarmac-card://doc/a.html?v=2")
+        hear("{ tarmac: 'ready', meta: null }")
+        hear("{ tarmac: 'scrolled', offset: 0, visible: 10, total: 20 }")
+        XCTAssertEqual(frames(3).filter { $0 == shown }, [shown])
+
+        hear("{ tarmac: 'started' }")
+        XCTAssertEqual(frames(2).filter { $0 == shown }, [shown, shown])
+    }
+
+    /// The app has covered the web view again for the new source: a word for
+    /// the one it replaced would uncover a frame with no document in it.
+    func testASourceReplacedBeforeItWasOnScreenIsNotToldOf() {
+        load("tarmac-card://doc/a.html?v=1")
+        hear("{ tarmac: 'started' }")
+        frames(1)
+
+        load("tarmac-card://doc/a.html?v=2")
+        XCTAssertEqual(frames(3), [])
+
+        hear("{ tarmac: 'started' }")
+        XCTAssertEqual(frames(2), [shown])
+    }
+
+    /// The start is for the host page alone, and that the document is on
+    /// screen is the host page's to say: neither crosses from the card.
+    func testACardsStartIsNotCarriedAndItCannotSayItIsOnScreen() {
+        XCTAssertEqual(carried("{ tarmac: 'started' }").count, 0)
+        XCTAssertEqual(carried("{ tarmac: 'started', more: 'x' }").count, 0)
+        XCTAssertEqual(carried("{ tarmac: 'shown' }").count, 0)
+        load()
+        hear("{ tarmac: 'shown' }")
+        XCTAssertEqual(frames(3), [])
     }
 
     // MARK: - the cut

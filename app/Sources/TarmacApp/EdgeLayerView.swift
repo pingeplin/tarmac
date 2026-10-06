@@ -10,7 +10,7 @@ import TarmacKit
 /// the size of the board, redrawn on every one of those events, cost about
 /// 5 ms an event in a full-screen window.
 @MainActor
-final class EdgeLayerView: NSView {
+final class EdgeLayerView: NSView, ThemeFollowing {
     private var edges: [Provenance.Segment] = []
 
     override var isFlipped: Bool { true }
@@ -20,7 +20,6 @@ final class EdgeLayerView: NSView {
     override func makeBackingLayer() -> CALayer {
         let shape = CAShapeLayer()
         shape.fillColor = nil
-        shape.strokeColor = Theme.agent.withAlphaComponent(0.7).cgColor
         shape.lineWidth = 1.5
         shape.lineDashPattern = [5, 5]
         return shape
@@ -29,9 +28,14 @@ final class EdgeLayerView: NSView {
     init() {
         super.init(frame: .zero)
         wantsLayer = true
+        themeChanged()
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    func themeChanged() {
+        (layer as? CAShapeLayer)?.strokeColor = Theme.agent.withAlphaComponent(0.7).cgColor
+    }
 
     /// AppKit leaves a backing layer it did not make at 1×, where the dashes
     /// would be rasterised at half a Retina display's density.

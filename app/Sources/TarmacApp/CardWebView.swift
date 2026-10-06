@@ -36,6 +36,13 @@ extension WKWebView {
     func runInCardWorld(_ script: String) {
         evaluateJavaScript(script, in: nil, in: CardWebView.world, completionHandler: nil)
     }
+
+    /// Runs `body`, the body of an async function, in the app's world with
+    /// each of `arguments` as a variable: a text that is not the app's own
+    /// is passed this way, never spliced into a script.
+    func runInCardWorld(_ body: String, arguments: [String: Any]) {
+        callAsyncJavaScript(body, arguments: arguments, in: nil, in: CardWebView.world, completionHandler: nil)
+    }
 }
 
 /// Carries a page's messages to a closure. A content controller holds its

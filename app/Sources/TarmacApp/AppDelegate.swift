@@ -15,10 +15,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     #endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Before the first view is built: chrome takes its font at `init`.
+        // Before the first view is built: chrome takes its font and its
+        // colours at `init`.
         let client = AppController.daemonClient()
         let prefs = AppPrefsStore(path: AppPrefs.path(besideSocket: client.socketPath))
         let fonts = FontSettings(prefs: prefs)
+        let theme = ThemeSettings(prefs: prefs)
         let rootView = RootView()
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
@@ -27,17 +29,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             defer: false
         )
         window.title = "tarmac"
-        window.appearance = NSAppearance(named: .darkAqua)
         window.backgroundColor = Theme.bg0
         window.contentMinSize = NSSize(width: 1100, height: 700)
         window.center()
         closeHider.attach(to: window)
 
-        controller = AppController(window: window, rootView: rootView, client: client, fonts: fonts)
+        controller = AppController(window: window, rootView: rootView, client: client, fonts: fonts, theme: theme)
         window.contentView = rootView
 
         quitGuard = QuitGuardController(window: window, warning: WarnBeforeQuit(prefs: prefs))
-        settings = SettingsWindowController(fonts: fonts)
+        settings = SettingsWindowController(fonts: fonts, theme: theme)
         NSApp.mainMenu = MainMenu.build(quitGuard: quitGuard, settings: settings)
 
         window.makeKeyAndOrderFront(nil)

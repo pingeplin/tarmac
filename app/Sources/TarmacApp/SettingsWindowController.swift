@@ -1,114 +1,51 @@
 import AppKit
 import TarmacKit
 
-/// The Settings window (specs 2610.0005, 2610.0006): one row for each font
-/// role, a list of the Mac's families, a size for the roles that have one,
-/// and a sample line in the face in effect. What a row lists and selects is
-/// `FontMenu`'s decision and which size a text means is `FontSizeRule`'s; this
-/// builds the controls and forwards a choice to `FontSettings`.
+/// The Settings window (specs 2610.0005, 2610.0007): a sidebar of the panes
+/// and, beside it, the pane that is selected. Both panes are laid out in the
+/// window at all times and one is hidden, so the window has one size. The
+/// pane it shows is kept for the session: the window is closed, not
+/// released.
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     static let showAction = #selector(show(_:))
 
-    private static let sampleText = "The quick brown fox 0123456789"
-    private static let nerdFontNote = "Prompt and Powerline icons need a Nerd Font."
-    private static let controlWidth: CGFloat = 280
-    private static let sizeFieldWidth: CGFloat = 48
+    private static let sidebarWidth: CGFloat = 180
     private static let margin: CGFloat = 20
+    /// The pane's title is level with the window's buttons, where System
+    /// Settings has it.
+    private static let headingTop: CGFloat = 16
 
-    @MainActor
-    private final class Row {
-        let role: FontRole
-        let popup = NSPopUpButton()
-        let sample = NSTextField(labelWithString: SettingsWindowController.sampleText)
-        let sizeControls: SizeControls?
-        var menu: FontMenu
-
-        init(_ role: FontRole) {
-            self.role = role
-            sizeControls = role.sizeRule.map(SizeControls.init)
-            menu = FontMenu(role: role, installed: [], saved: nil)
-        }
-
-        func showSample() {
-            sample.font = Theme.sample(role)
-        }
-    }
-
-    /// A size as a text and as a stepper, which show one number.
-    @MainActor
-    private final class SizeControls {
-        let field = NSTextField(string: "")
-        let stepper = NSStepper()
-
-        init(_ rule: FontSizeRule) {
-            field.alignment = .right
-            stepper.minValue = rule.range.lowerBound
-            stepper.maxValue = rule.range.upperBound
-            stepper.increment = FontSizeRule.step
-            // An `NSStepper` wraps by default: a step up at the top end would
-            // give the bottom one.
-            stepper.valueWraps = false
-        }
-
-        /// Also drops a text that is being typed: a step is made from the
-        /// size in effect.
-        func show(_ size: Double) {
-            field.stringValue = FontSizeRule.text(size)
-            stepper.doubleValue = size
-        }
-    }
-
-    private let fonts: FontSettings
-    private let rows = FontRole.allCases.map { Row($0) }
+    private let fonts: FontsPane
+    private let theme: ThemePane
+    private let sidebar = SettingsSidebar()
+    private let heading = NSTextField(labelWithString: "")
     private lazy var window = makeWindow()
 
-    init(fonts: FontSettings) {
-        self.fonts = fonts
+    init(fonts: FontSettings, theme: ThemeSettings) {
+        self.fonts = FontsPane(fonts: fonts)
+        self.theme = ThemePane(theme: theme)
     }
 
-    /// The families are read each time the window opens: a font installed
-    /// since the last time is in the lists.
     @objc func show(_ sender: Any?) {
-        if !window.isVisible { reload() }
+        if !window.isVisible {
+            fonts.reload()
+            theme.reload()
+        }
         window.makeKeyAndOrderFront(nil)
     }
 
-    private func reload() {
-        let installed = InstalledFonts.all()
-        for row in rows {
-            row.menu = FontMenu(role: row.role, installed: installed, saved: fonts.saved[row.role])
-            row.popup.removeAllItems()
-            row.popup.addItems(withTitles: row.menu.titles)
-            row.popup.selectItem(at: row.menu.selected)
-            row.showSample()
-            showSize(of: row)
+    private func view(of pane: SettingsPane) -> NSView {
+        switch pane {
+        case .fonts: fonts.view
+        case .theme: theme.view
         }
     }
 
-    private func showSize(of row: Row) {
-        guard let size = fonts.size(for: row.role) else { return }
-        row.sizeControls?.show(size)
-    }
-
-    @objc private func choose(_ sender: NSPopUpButton) {
-        guard let row = rows.first(where: { $0.popup === sender }) else { return }
-        fonts.choose(row.menu.choice(at: sender.indexOfSelectedItem), for: row.role)
-        row.showSample()
-    }
-
-    @objc private func step(_ sender: NSStepper) {
-        guard let row = rows.first(where: { $0.sizeControls?.stepper === sender }) else { return }
-        fonts.chooseSize(sender.doubleValue, for: row.role)
-        showSize(of: row)
-    }
-
-    /// Text that is no size puts the field back; so does a size already in
-    /// effect, typed another way (`13.50`).
-    @objc private func typeSize(_ sender: NSTextField) {
-        guard let row = rows.first(where: { $0.sizeControls?.field === sender }) else { return }
-        if let typed = row.role.sizeRule?.typed(sender.stringValue) { fonts.chooseSize(typed, for: row.role) }
-        showSize(of: row)
+    private func display(_ pane: SettingsPane) {
+        sidebar.select(pane)
+        heading.stringValue = pane.title
+        for other in SettingsPane.allCases { view(of: other).isHidden = other != pane }
     }
 
     /// AppKit does not end a field's editing when its window closes: the
@@ -118,72 +55,61 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     }
 
     private func makeWindow() -> NSWindow {
-        let grid = NSGridView(views: rows.map { row in
-            [NSTextField(labelWithString: row.role.title + ":"), controls(for: row)]
-        })
-        grid.column(at: 0).xPlacement = .trailing
-        grid.rowAlignment = .firstBaseline
-        grid.rowSpacing = 16
-        grid.columnSpacing = 10
-        grid.translatesAutoresizingMaskIntoConstraints = false
-
-        let content = NSView()
-        content.addSubview(grid)
-        NSLayoutConstraint.activate([
-            grid.topAnchor.constraint(equalTo: content.topAnchor, constant: Self.margin),
-            grid.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -Self.margin),
-            grid.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: Self.margin),
-            grid.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -Self.margin),
-        ])
+        let content = makeContent()
+        let detail = NSViewController()
+        detail.view = content
+        let side = NSSplitViewItem(sidebarWithViewController: sidebar)
+        // The window has one size, so the sidebar has one too.
+        side.canCollapse = false
+        side.minimumThickness = Self.sidebarWidth
+        side.maximumThickness = Self.sidebarWidth
+        let split = NSSplitViewController()
+        split.addSplitViewItem(side)
+        split.addSplitViewItem(NSSplitViewItem(viewController: detail))
 
         let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: content.fittingSize),
-            styleMask: [.titled, .closable], backing: .buffered, defer: false
+            contentRect: .zero, styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false
         )
         window.title = "Settings"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        // With a toolbar, though it is empty, the sidebar has the window's
+        // whole height and holds its buttons, as in System Settings.
+        let toolbar = NSToolbar()
+        toolbar.allowsDisplayModeCustomization = false
+        window.toolbar = toolbar
+        window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.contentView = content
+        window.contentViewController = split
+        let size = content.fittingSize
+        window.setContentSize(NSSize(width: Self.sidebarWidth + size.width, height: size.height))
         window.center()
+
+        sidebar.onSelect = { [weak self] in self?.display($0) }
+        display(.fonts)
         return window
     }
 
-    /// A row's pop-up, with its size beside it, over its sample line, and
-    /// under the terminal's the one thing the system fonts cannot do.
-    private func controls(for row: Row) -> NSView {
-        row.popup.target = self
-        row.popup.action = #selector(choose(_:))
-        row.sample.textColor = .secondaryLabelColor
-        row.sample.lineBreakMode = .byTruncatingTail
-
-        var lines: [NSView] = [choices(for: row), row.sample]
-        if row.role == .terminal {
-            let note = NSTextField(labelWithString: Self.nerdFontNote)
-            note.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-            note.textColor = .tertiaryLabelColor
-            lines.append(note)
-        }
-        let stack = NSStackView(views: lines)
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 6
+    private func makeContent() -> NSView {
+        let content = NSView()
+        heading.font = .systemFont(ofSize: 15, weight: .semibold)
+        heading.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(heading)
         NSLayoutConstraint.activate([
-            row.popup.widthAnchor.constraint(equalToConstant: Self.controlWidth),
-            row.sample.widthAnchor.constraint(equalToConstant: Self.controlWidth),
+            heading.topAnchor.constraint(equalTo: content.topAnchor, constant: Self.headingTop),
+            heading.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: Self.margin),
         ])
-        return stack
-    }
-
-    private func choices(for row: Row) -> NSView {
-        guard let controls = row.sizeControls else { return row.popup }
-        controls.field.target = self
-        controls.field.action = #selector(typeSize(_:))
-        controls.field.setAccessibilityLabel("\(row.role.title) font size")
-        controls.field.widthAnchor.constraint(equalToConstant: Self.sizeFieldWidth).isActive = true
-        controls.stepper.target = self
-        controls.stepper.action = #selector(step(_:))
-        let line = NSStackView(views: [row.popup, controls.field, controls.stepper])
-        line.spacing = 6
-        return line
+        for pane in SettingsPane.allCases {
+            let paneView = view(of: pane)
+            content.addSubview(paneView)
+            NSLayoutConstraint.activate([
+                paneView.topAnchor.constraint(equalTo: heading.bottomAnchor, constant: Self.margin),
+                paneView.bottomAnchor.constraint(lessThanOrEqualTo: content.bottomAnchor, constant: -Self.margin),
+                paneView.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: Self.margin),
+                paneView.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -Self.margin),
+            ])
+        }
+        return content
     }
 }

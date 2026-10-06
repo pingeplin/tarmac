@@ -85,6 +85,21 @@ final class TerminalFrameTests: XCTestCase {
         XCTAssertEqual(frame.cursor?.blinks, true)
     }
 
+    /// S20 — by WCAG relative luminance: the blue is the darker of its pair,
+    /// though its largest channel and the mean of its channels are the higher.
+    func test2610_0007S20AThemeIsDarkWhenItsBackgroundHasTheLowerLuminance() {
+        func theme(background: UInt32, foreground: UInt32) -> TerminalTheme {
+            var theme = TerminalTheme.breeze
+            theme.background = RGB(hex: background)
+            theme.foreground = RGB(hex: foreground)
+            return theme
+        }
+        XCTAssertTrue(theme(background: 0x31363b, foreground: 0xced2d6).isDark)
+        XCTAssertFalse(theme(background: 0xfcfcfc, foreground: 0x232629).isDark)
+        XCTAssertTrue(theme(background: 0x0000ff, foreground: 0x00a000).isDark)
+        XCTAssertFalse(theme(background: 0x808080, foreground: 0x808080).isDark)
+    }
+
     func testWideCharacterOccupiesTwoCells() throws {
         let (engine, reader) = try make()
         feed(engine, "世a")
@@ -115,6 +130,79 @@ final class TerminalFrameTests: XCTestCase {
         XCTAssertEqual(frame.dirtyRows, IndexSet(integer: 1))
         XCTAssertEqual(frame.rows[0].text, "one")
         XCTAssertEqual(frame.rows[1].text, "two!")
+    }
+
+    /// A default colour changes no row, and a cell with no colour of its own
+    /// is drawn in it: the row is not the one of the frame before.
+    func testAProgramsOwnBackgroundMakesEveryRowDirty() throws {
+        let (engine, reader) = try make()
+        try engine.apply(.breeze)
+        feed(engine, "one\r\ntwo")
+        _ = reader.read(engine)
+
+        feed(engine, "\u{1b}]11;rgb:10/20/30\u{1b}\\")
+        let set = reader.read(engine)
+        XCTAssertEqual(set.background, RGB(hex: 0x102030))
+        XCTAssertEqual(set.dirtyRows, IndexSet(0..<3))
+        XCTAssertEqual(set.rows.map(\.text), ["one", "two", ""])
+
+        feed(engine, "\u{1b}]111\u{1b}\\")
+        let reset = reader.read(engine)
+        XCTAssertEqual(reset.background, TerminalTheme.breeze.background)
+        XCTAssertEqual(reset.dirtyRows, IndexSet(0..<3))
+    }
+
+    func testAProgramsOwnForegroundMakesEveryRowDirty() throws {
+        let (engine, reader) = try make()
+        try engine.apply(.breeze)
+        feed(engine, "one\r\ntwo")
+        _ = reader.read(engine)
+
+        feed(engine, "\u{1b}]10;rgb:aa/bb/cc\u{1b}\\")
+        let set = reader.read(engine)
+        XCTAssertEqual(set.foreground, RGB(hex: 0xaabbcc))
+        XCTAssertEqual(set.dirtyRows, IndexSet(0..<3))
+        XCTAssertEqual(set.rows.map(\.text), ["one", "two", ""])
+
+        feed(engine, "\u{1b}]110\u{1b}\\")
+        let reset = reader.read(engine)
+        XCTAssertEqual(reset.foreground, TerminalTheme.breeze.foreground)
+        XCTAssertEqual(reset.dirtyRows, IndexSet(0..<3))
+    }
+
+    /// A cell holds the colour its palette index had when its row was read,
+    /// and a new entry (OSC 4) changes no row.
+    func testANewPaletteEntryReachesTheCellsAlreadyWritten() throws {
+        let (engine, reader) = try make()
+        try engine.apply(.breeze)
+        feed(engine, "\u{1b}[31mR\u{1b}[0m\r\ntwo")
+        XCTAssertEqual(reader.read(engine).rows[0].cells[0].style.foreground, TerminalTheme.breeze.ansi[1])
+
+        feed(engine, "\u{1b}]4;1;rgb:aa/00/01\u{1b}\\")
+        let set = reader.read(engine)
+        XCTAssertEqual(set.rows[0].cells[0].style.foreground, RGB(hex: 0xaa0001))
+        XCTAssertEqual(set.dirtyRows, IndexSet(0..<3))
+
+        feed(engine, "\u{1b}]104;1\u{1b}\\")
+        let reset = reader.read(engine)
+        XCTAssertEqual(reset.rows[0].cells[0].style.foreground, TerminalTheme.breeze.ansi[1])
+        XCTAssertEqual(reset.dirtyRows, IndexSet(0..<3))
+    }
+
+    /// The cost: the frames after a new colour, which change none, name the
+    /// rows that changed and no more.
+    func testAFrameThatChangesNoColourNamesOnlyItsOwnRows() throws {
+        let (engine, reader) = try make()
+        try engine.apply(.breeze)
+        feed(engine, "one\r\ntwo")
+        _ = reader.read(engine)
+        feed(engine, "\u{1b}]11;rgb:10/20/30\u{1b}\\\u{1b}]4;1;rgb:aa/00/01\u{1b}\\")
+        _ = reader.read(engine)
+
+        XCTAssertEqual(reader.read(engine).dirtyRows, IndexSet())
+        feed(engine, "!")
+        XCTAssertEqual(reader.read(engine).dirtyRows, IndexSet(integer: 1))
+        XCTAssertEqual(reader.read(engine).dirtyRows, IndexSet())
     }
 
     func testResizeRedrawsEverything() throws {

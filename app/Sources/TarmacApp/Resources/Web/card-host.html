@@ -5,15 +5,23 @@
 <!-- The host page holds one thing: the card's frame. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src tarmac-card:; style-src 'unsafe-inline'">
 <style>
+  /* The app puts the theme's backdrop here before the page is loaded, and
+     sets it again when the theme changes. The page states no scheme of its
+     own: the card's document chooses one, and was measured under a host
+     with none. */
+  :root {
+    /*tarmac-backdrop*/
+  }
   html,
   body {
     margin: 0;
     width: 100%;
     height: 100%;
     overflow: hidden;
-    background: #2b3036;
+    background: var(--bg1);
   }
-  /* White, so an unstyled document reads like a browser default. */
+  /* White: what shows under a document whose scheme is light, stated or
+     taken from the light theme. A dark one paints its own canvas over it. */
   #card {
     display: block;
     border: 0;

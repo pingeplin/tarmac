@@ -13,17 +13,30 @@ extension NSFont {
 /// either side, which would put every overlay's text 2 pt off its CSS position
 /// and make every box 4 pt too wide.
 @MainActor
-final class ChromeLabel: NSTextField, FontFollowing {
+final class ChromeLabel: NSTextField, FontFollowing, ThemeFollowing {
     private static let cellInset: CGFloat = 2
 
     private var size: CGFloat = NSFont.systemFontSize
+    private var color: () -> NSColor = { .labelColor }
 
-    convenience init(_ text: String = "", size: CGFloat, color: NSColor) {
+    convenience init(_ text: String = "", size: CGFloat, color: @escaping @autoclosure () -> NSColor) {
         self.init(labelWithString: text)
         self.size = size
         font = Theme.mono(size)
-        textColor = color
+        self.color = color
+        textColor = color()
         lineBreakMode = .byTruncatingTail
+    }
+
+    /// The colour is kept as the token it is read from, not as its value, so
+    /// that it can be read again when the theme changes.
+    func setColor(_ color: @escaping @autoclosure () -> NSColor) {
+        self.color = color
+        textColor = color()
+    }
+
+    func themeChanged() {
+        textColor = color()
     }
 
     func fontsChanged() {

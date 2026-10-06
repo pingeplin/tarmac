@@ -1,5 +1,6 @@
 // The HTML card host page's script. It carries, and bounds the size of what
-// it carries: what a message means is the app's to decide. It runs in the
+// it carries: what a message means is the app's to decide. Its own word to
+// the app is that the card's document is on screen. It runs in the
 // app's own content world, so the card's document has no handle on the
 // message handler it posts to.
 (function () {
@@ -53,15 +54,52 @@
   // count of what was cut is this page's and not the card's.
   function carried(data) {
     if (data === null || typeof data !== "object") return undefined;
+    // This page's own word: a card cannot say that it is on screen.
+    if (data.tarmac === "shown") return undefined;
     if (data.tarmac !== "console" || !Array.isArray(data.args)) return small(data) ? data : undefined;
     if (!small(data.level)) return undefined;
     return { tarmac: "console", level: data.level, ...cutArgs(data.args) };
   }
 
+  // The app keeps this page out of sight from the moment it gives the frame
+  // a source until it is told that the document is on screen. Before
+  // that there is white to see, while the document may be dark: this page
+  // for a frame or two before it is first drawn, then the frame with no
+  // document in it. `asked` counts the sources given and `started` is the
+  // last one whose document has started.
+  let asked = 0;
+  let started = 0;
+
+  // Two frames, measured: the first is drawn with the document in it, and a
+  // word posted in the second reaches the app after that drawing has. Told
+  // at once, 4 opens of 5 still showed one white frame; one frame later, 2
+  // of 5; two frames later, none of 15. A source that was replaced while its
+  // frames were awaited is not told of: the app waits for the new one.
+  function documentStarted() {
+    if (started === asked) return;
+    started = asked;
+    const source = asked;
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        if (source === asked) webkit.messageHandlers.card.postMessage({ tarmac: "shown" });
+      });
+    });
+  }
+
+  // What is served for a file that cannot be read carries no shim and says
+  // nothing, so a frame that has loaded counts as started. A document that
+  // stops its own load never fires this, and its shim has spoken.
+  card.addEventListener("load", documentStarted);
+
   window.addEventListener("message", function (event) {
     // Only this card's own document is heard.
     if (event.source !== card.contentWindow) return;
     try {
+      // The shim's first word is for this page alone.
+      if (event.data !== null && typeof event.data === "object" && event.data.tarmac === "started") {
+        documentStarted();
+        return;
+      }
       const message = carried(event.data);
       if (message !== undefined) webkit.messageHandlers.card.postMessage(message);
     } catch (error) {
@@ -71,6 +109,7 @@
 
   window.tarmacCard = {
     load(src) {
+      asked += 1;
       card.src = src;
     },
     post(message) {

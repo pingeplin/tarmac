@@ -1022,6 +1022,337 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(view.gridLayout?.cell, cell(nil, size: 20, scale: other))
     }
 
+    // MARK: the theme of a live view (2610.0007)
+
+    private let dark = TerminalTheme.breeze
+
+    /// No colour of it is Breeze's, ANSI 1 too, which Breeze Light keeps.
+    private let light = TerminalTheme(
+        foreground: RGB(hex: 0x232629), background: RGB(hex: 0xfcfcfc), cursor: RGB(hex: 0x7a3e9d),
+        selection: RGB(hex: 0x12846e), selectionAlpha: 0.5,
+        ansi: [
+            0x1b1e20, 0xa01010, 0x0b8a0f, 0xbe5a00, 0x2980b9, 0x7d3c98, 0x12846e, 0x63686d,
+            0x5f6b6c, 0x922b21, 0x11865e, 0xa36802, 0x147db3, 0x6c3483, 0x117864, 0x232629,
+        ].map(RGB.init(hex:))
+    )
+
+    /// What `view` draws now, to sample by cell. A draw reads no frame.
+    private func drawn(_ view: TerminalView) throws -> Canvas {
+        let canvas = try Canvas(
+            size: view.bounds.size, scale: 2, fill: RGB(255, 0, 255), layout: try XCTUnwrap(view.gridLayout)
+        )
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: canvas.context, flipped: true)
+        view.draw(view.bounds)
+        return canvas
+    }
+
+    /// S21 — the frame is not read again after the change, and a draw reads
+    /// none: the second bitmap has the new colours only if the setter read one.
+    func test2610_0007S21ANewThemeRecoloursTheTextOnScreenWithNothingFed() throws {
+        feed("MMMM\r\n\u{1b}[31mMMMM\u{1b}[0m\r\n\u{1b}[44m    \u{1b}[0m")
+        read()
+        let before = try drawn(view)
+        XCTAssertTrue(before.colours(inCols: 0..<4, row: 0).contains(dark.foreground))
+        XCTAssertTrue(before.colours(inCols: 0..<4, row: 1).contains(dark.ansi[1]))
+        XCTAssertEqual(before.colours(inCols: 0..<4, row: 2), [dark.ansi[4]])
+        let grid = [view.cols, view.rows]
+
+        view.theme = light
+
+        let after = try drawn(view)
+        XCTAssertTrue(after.colours(inCols: 0..<4, row: 0).contains(light.foreground))
+        let red = after.colours(inCols: 0..<4, row: 1)
+        XCTAssertTrue(red.contains(light.ansi[1]))
+        XCTAssertFalse(red.contains(dark.ansi[1]))
+        XCTAssertEqual(after.colours(inCols: 0..<4, row: 2), [light.ansi[4]])
+        XCTAssertEqual([view.cols, view.rows], grid)
+        XCTAssertEqual(resizes, [])
+    }
+
+    /// S21, on the screen — `drawn(_:)` draws every row, so it cannot tell a
+    /// setter that reads the frame and asks for no display from one that asks.
+    func test2610_0007S21ANewThemeAsksForTheWholeViewToBeDrawn() throws {
+        feed("MMMM")
+        settle()
+        let screen = try Screen(showing: view)
+        XCTAssertEqual(screen.shown().center(col: 10, row: 5), dark.background)
+
+        view.theme = light
+
+        XCTAssertEqual(screen.shown().center(col: 10, row: 5), light.background)
+        XCTAssertEqual(screen.asked.map { $0.intersection(view.bounds) }, [view.bounds])
+    }
+
+    /// The exception of S21: while a program holds its output (mode 2026) the
+    /// frame on screen stays, and the new colours come when the hold ends.
+    func test2610_0007ANewThemeWaitsForAHeldFrame() throws {
+        feed("\u{1b}[?2026h")
+
+        view.theme = light
+
+        XCTAssertEqual(try drawn(view).center(col: 10, row: 5), dark.background)
+        feed("\u{1b}[?2026l")
+        read()
+        XCTAssertEqual(try drawn(view).center(col: 10, row: 5), light.background)
+    }
+
+    /// S22 — the window is not key, so the cursor is an outline.
+    func test2610_0007S22ANewThemeRecoloursTheBackgroundAndTheCursor() throws {
+        feed("ab")
+        read()
+        XCTAssertTrue(try drawn(view).colours(inCols: 2..<3, row: 0).contains(dark.cursor))
+
+        view.theme = light
+
+        let canvas = try drawn(view)
+        XCTAssertEqual(canvas.center(col: 10, row: 5), light.background)
+        let cursor = canvas.colours(inCols: 2..<3, row: 0)
+        XCTAssertTrue(cursor.contains(light.cursor))
+        XCTAssertFalse(cursor.contains(dark.cursor))
+    }
+
+    /// S22
+    func test2610_0007S22ASelectionMadeBeforeTheChangeTakesTheNewTint() throws {
+        view.mouseDown(with: try mouse(.leftMouseDown, col: 2, row: 3))
+        view.mouseDragged(with: try mouse(.leftMouseDragged, col: 8, row: 3))
+        view.mouseUp(with: try mouse(.leftMouseUp, col: 8, row: 3))
+        read()
+        XCTAssertEqual(
+            try drawn(view).center(col: 5, row: 3),
+            dark.background.blended(with: dark.selection, alpha: dark.selectionAlpha)
+        )
+
+        view.theme = light
+
+        XCTAssertEqual(
+            try drawn(view).center(col: 5, row: 3),
+            light.background.blended(with: light.selection, alpha: light.selectionAlpha)
+        )
+    }
+
+    private let colourQueries = "\u{1b}]11;?\u{1b}\\\u{1b}]10;?\u{1b}\\\u{1b}]4;2;?\u{1b}\\\u{1b}[?996n"
+    private let lightAnswers = "\u{1b}]11;rgb:fcfc/fcfc/fcfc\u{1b}\\\u{1b}]10;rgb:2323/2626/2929\u{1b}\\"
+        + "\u{1b}]4;2;rgb:0b0b/8a8a/0f0f\u{1b}\\\u{1b}[?997;2n"
+
+    /// S23
+    func test2610_0007S23ColourQueriesAreAnsweredFromTheThemeSetLater() {
+        view.theme = light
+
+        feed(colourQueries)
+
+        XCTAssertEqual(sentText, lightAnswers)
+    }
+
+    /// S23 — and each terminal answers for its own theme: the suite's view,
+    /// made before this one, is still dark.
+    func test2610_0007S23ColourQueriesAreAnsweredFromTheThemeGivenAtInit() throws {
+        let view = try TerminalView(frame: NSRect(x: 0, y: 0, width: 600, height: 400), theme: light)
+        var sent: [UInt8] = []
+        view.onInput = { sent.append(contentsOf: $0) }
+
+        view.feed(Data(colourQueries.utf8))
+        feed("\u{1b}[?996n")
+
+        XCTAssertEqual(String(decoding: sent, as: UTF8.self), lightAnswers)
+        XCTAssertEqual(sentText, "\u{1b}[?997;1n")
+    }
+
+    /// S23
+    func test2610_0007S23ADarkThemeAnswersTheColourSchemeQueryAsDark() {
+        feed("\u{1b}[?996n")
+
+        XCTAssertEqual(sentText, "\u{1b}[?997;1n")
+    }
+
+    /// S24
+    func test2610_0007S24AProgramThatAskedIsToldOnceEachTimeTheSchemeChanges() {
+        feed("\u{1b}[?2031h")
+
+        view.theme = light
+        XCTAssertEqual(sentText, "\u{1b}[?997;2n")
+
+        sent = []
+        view.theme = dark
+        XCTAssertEqual(sentText, "\u{1b}[?997;1n")
+    }
+
+    /// S43
+    func test2610_0007S43AProgramThatDidNotAskIsToldNothing() {
+        view.theme = light
+
+        XCTAssertEqual(view.theme, light)
+        XCTAssertEqual(sent, [])
+    }
+
+    /// S43
+    func test2610_0007S43AnotherThemeOfTheSameSchemeIsNotReported() {
+        var darker = dark
+        darker.background = RGB(hex: 0x101214)
+        feed("\u{1b}[?2031h")
+
+        view.theme = darker
+
+        XCTAssertEqual(view.theme, darker)
+        XCTAssertEqual(sent, [])
+    }
+
+    /// S43
+    func test2610_0007S43TheThemeTheViewAlreadyHasIsNotReported() {
+        feed("\u{1b}[?2031h")
+
+        view.theme = dark
+
+        XCTAssertEqual(sent, [])
+    }
+
+    /// A draw reads no frame: output that was fed and not read yet shows only
+    /// if the setter read one.
+    func test2610_0007TheThemeTheViewAlreadyHasReadsNoFrame() throws {
+        feed("\r\nMMMM")
+
+        view.theme = dark
+
+        XCTAssertEqual(try drawn(view).colours(inCols: 0..<4, row: 1), [dark.background])
+    }
+
+    /// S43
+    func test2610_0007S43AProgramThatStoppedAskingIsToldNothing() {
+        feed("\u{1b}[?2031h\u{1b}[?2031l")
+
+        view.theme = light
+
+        XCTAssertEqual(view.theme, light)
+        XCTAssertEqual(sent, [])
+    }
+
+    /// S25 — a rebuild of the fonts makes a new renderer.
+    func test2610_0007S25TheThemeSetLaterSurvivesANewFamilyAndANewSize() throws {
+        view.theme = light
+        let before = view.fontGeneration
+
+        view.fontFamily = "Monaco"
+        view.fontSize = 20
+
+        XCTAssertEqual(view.fontGeneration, before + 2)
+        XCTAssertEqual(view.theme, light)
+        XCTAssertEqual(try drawn(view).center(col: 10, row: 5), light.background)
+    }
+
+    /// S25
+    func test2610_0007S25TheThemeSetLaterSurvivesARebuildForANewBackingScale() throws {
+        let mounted = window.backingScaleFactor
+        let other: CGFloat = mounted == 1 ? 2 : 1
+        let view = try TerminalView(frame: NSRect(x: 0, y: 0, width: 600, height: 400), backingScale: other)
+        view.theme = light
+        let before = view.fontGeneration
+
+        window.contentView?.addSubview(view)
+
+        XCTAssertEqual(view.fontGeneration, before + 1)
+        XCTAssertEqual(view.theme, light)
+        XCTAssertEqual(try drawn(view).center(col: 10, row: 5), light.background)
+    }
+
+    /// S44 — a 256-colour index above 15 and an RGB colour are not the
+    /// theme's to change.
+    func test2610_0007S44ANewThemeLeavesIndexedAndRgbTextAsItWas() throws {
+        let indexed = RGB(255, 0, 0), direct = RGB(10, 20, 30)
+        feed("\u{1b}[38;5;196mMMMM\u{1b}[0m\r\n\u{1b}[38;2;10;20;30mMMMM\u{1b}[0m")
+        read()
+        let before = try drawn(view)
+        XCTAssertTrue(before.colours(inCols: 0..<4, row: 0).contains(indexed))
+        XCTAssertTrue(before.colours(inCols: 0..<4, row: 1).contains(direct))
+
+        view.theme = light
+
+        let after = try drawn(view)
+        XCTAssertEqual(after.center(col: 10, row: 5), light.background)
+        XCTAssertTrue(after.colours(inCols: 0..<4, row: 0).contains(indexed))
+        XCTAssertTrue(after.colours(inCols: 0..<4, row: 1).contains(direct))
+    }
+
+    /// S44 — a colour the program set is its own until it gives it back.
+    func test2610_0007S44AProgramsOwnBackgroundOutlivesANewThemeUntilItIsReset() throws {
+        feed("\u{1b}]11;rgb:10/20/30\u{1b}\\")
+        read()
+
+        view.theme = light
+
+        XCTAssertEqual(try drawn(view).center(col: 10, row: 5), RGB(hex: 0x102030))
+        feed("\u{1b}]111\u{1b}\\")
+        read()
+        XCTAssertEqual(try drawn(view).center(col: 10, row: 5), light.background)
+    }
+
+    // MARK: a default colour a program sets, on screen (2610.0007 S50)
+
+    /// S50 — a default colour changes no row, so the frame read names none
+    /// dirty, and an empty cell has no colour of its own: it shows the new
+    /// background only if the view asked for every row to be drawn again.
+    /// The cursor is on row 0.
+    func test2610_0007S50AProgramsOwnBackgroundReachesTheRowsItDidNotWrite() throws {
+        feed("ab")
+        settle()
+        let screen = try Screen(showing: view)
+        XCTAssertEqual(screen.shown().center(col: 10, row: 5), dark.background)
+
+        feed("\u{1b}]11;rgb:10/20/30\u{1b}\\")
+        settle()
+        XCTAssertEqual(screen.shown().center(col: 10, row: 5), RGB(hex: 0x102030))
+
+        feed("\u{1b}]111\u{1b}\\")
+        settle()
+        XCTAssertEqual(screen.shown().center(col: 10, row: 5), dark.background)
+    }
+
+    /// S50, for the foreground: text with no colour of its own. The cursor is
+    /// on row 2.
+    func test2610_0007S50AProgramsOwnForegroundReachesTheTextAlreadyOnScreen() throws {
+        let own = RGB(hex: 0xaabbcc)
+        feed("MMMM\r\n\r\n")
+        settle()
+        let screen = try Screen(showing: view)
+        XCTAssertTrue(screen.shown().colours(inCols: 0..<4, row: 0).contains(dark.foreground))
+
+        feed("\u{1b}]10;rgb:aa/bb/cc\u{1b}\\")
+        settle()
+        let set = screen.shown().colours(inCols: 0..<4, row: 0)
+        XCTAssertTrue(set.contains(own))
+        XCTAssertFalse(set.contains(dark.foreground))
+
+        feed("\u{1b}]110\u{1b}\\")
+        settle()
+        let reset = screen.shown().colours(inCols: 0..<4, row: 0)
+        XCTAssertTrue(reset.contains(dark.foreground))
+        XCTAssertFalse(reset.contains(own))
+    }
+
+    /// The cost: a frame that changes no default colour draws its own rows
+    /// and no more.
+    func test2610_0007S50AnOrdinaryFrameDrawsOnlyItsRows() throws {
+        feed("ab\r\n")
+        settle()
+        let screen = try Screen(showing: view)
+        _ = screen.shown()
+
+        feed("x")
+        settle()
+        _ = screen.shown()
+        XCTAssertEqual(screen.asked, [view.damageRect(forRow: 1)])
+
+        feed("\u{1b}]11;rgb:10/20/30\u{1b}\\")
+        settle()
+        _ = screen.shown()
+        XCTAssertEqual(screen.asked.map { $0.intersection(view.bounds) }, [view.bounds])
+
+        feed("y")
+        settle()
+        _ = screen.shown()
+        XCTAssertEqual(screen.asked, [view.damageRect(forRow: 1)])
+    }
+
     // MARK: program replies
 
     func testQueriesAreAnsweredThroughTheInputPath() {
@@ -1056,5 +1387,58 @@ final class TerminalViewTests: XCTestCase {
         view.onTitleChanged = { titles.append($0) }
         feed("\u{1b}]2;vim\u{07}")
         XCTAssertEqual(titles, ["vim"])
+    }
+}
+
+/// A stand-in for the screen, which `drawn(_:)` is not: that draws every row,
+/// whatever the view asked for. This keeps what was drawn before and, when
+/// the view is displayed, draws again only the rects AppKit then asks it to
+/// draw: the ones the view marked. `TerminalView` is final, so those rects
+/// are seen from a subclass made at run time, which draws as it does.
+@MainActor
+private final class Screen {
+    private let view: TerminalView
+    private let canvas: Canvas
+    /// What AppKit asked the view to draw when it was last shown.
+    private(set) var asked: [NSRect] = []
+    private var recorded: [NSRect] = []
+
+    init(showing view: TerminalView) throws {
+        self.view = view
+        canvas = try Canvas(
+            size: view.bounds.size, scale: 2, fill: RGB(255, 0, 255), layout: try XCTUnwrap(view.gridLayout)
+        )
+        let draw = #selector(NSView.draw(_:))
+        let method = try XCTUnwrap(class_getInstanceMethod(TerminalView.self, draw))
+        let inherited = unsafeBitCast(
+            method_getImplementation(method), to: (@convention(c) (NSView, Selector, NSRect) -> Void).self
+        )
+        let recording: @convention(block) (NSView, NSRect) -> Void = { [unowned self] view, rect in
+            self.recorded.append(rect)
+            inherited(view, draw, rect)
+        }
+        let subclass: AnyClass = try XCTUnwrap(
+            objc_allocateClassPair(TerminalView.self, "TerminalViewOnScreen\(UUID().uuidString)", 0)
+        )
+        class_addMethod(subclass, draw, imp_implementationWithBlock(recording), method_getTypeEncoding(method))
+        objc_registerClassPair(subclass)
+        object_setClass(view, subclass)
+    }
+
+    /// Displays the view, and gives what the screen holds then.
+    func shown() -> Canvas {
+        recorded = []
+        view.displayIfNeeded()
+        asked = recorded
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: canvas.context, flipped: true)
+        for rect in asked {
+            canvas.context.saveGState()
+            canvas.context.clip(to: rect)
+            view.draw(rect)
+            canvas.context.restoreGState()
+        }
+        return canvas
     }
 }

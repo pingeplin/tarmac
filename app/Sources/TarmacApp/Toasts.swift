@@ -5,7 +5,7 @@ import TarmacKit
 /// One toast: a glyph and a title over an optional body. Laid out as
 /// `.tm-toast` is, a border box of at most 320 px.
 @MainActor
-final class ToastView: NSView {
+final class ToastView: NSView, ThemeFollowing {
     private static let maxWidth: CGFloat = 320
     private static let maxTextWidth: CGFloat = 280
     private static let insetX: CGFloat = 1 + 12
@@ -35,8 +35,7 @@ final class ToastView: NSView {
 
         super.init(frame: NSRect(origin: .zero, size: size))
         wantsLayer = true
-        layer?.backgroundColor = Theme.bg2.cgColor
-        layer?.borderColor = Theme.line.cgColor
+        themeChanged()
         layer?.borderWidth = 1
         layer?.cornerRadius = 9
         shadow = OverlayPalette.toastShadow
@@ -60,6 +59,12 @@ final class ToastView: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override var isFlipped: Bool { true }
+
+    /// Its labels take their own colours again.
+    func themeChanged() {
+        layer?.backgroundColor = Theme.bg2.cgColor
+        layer?.borderColor = Theme.line.cgColor
+    }
 }
 
 /// The toast column over the board's bottom-right corner. `ToastQueue` decides

@@ -13,6 +13,18 @@ final class DocTemplateTests: XCTestCase {
         )
     }
 
+    private func host() throws -> String {
+        let app = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        return try String(
+            contentsOf: app.appendingPathComponent("Sources/TarmacApp/Resources/Web/card-host.html"), encoding: .utf8
+        )
+    }
+
+    private func count(of part: String, in text: String) -> Int {
+        text.components(separatedBy: part).count - 1
+    }
+
     private func firstMatch(_ pattern: String, in text: String) throws -> String {
         let regex = try NSRegularExpression(pattern: pattern)
         let match = try XCTUnwrap(
@@ -63,5 +75,38 @@ final class DocTemplateTests: XCTestCase {
             try firstMatch(#"font-size:\s*([^;]+);"#, in: prose), "calc(var(--prose-size) * var(--oversample-k))"
         )
         XCTAssertFalse(prose.contains("14px"))
+    }
+
+    /// 2610.0007 S17 — the doc page's colours are the theme's and nothing
+    /// else: one marker in `:root`, and no colour written into the page.
+    func testS17TheDocPageTakesEveryColourFromTheTheme() throws {
+        let text = try template()
+        XCTAssertEqual(count(of: ThemeCSS.marker, in: text), 1)
+        let root = try firstMatch(#":root \{([^}]*)\}"#, in: text)
+        XCTAssertTrue(root.contains(ThemeCSS.marker))
+        for literal in [#"#[0-9a-fA-F]{3,8}\b"#, #"rgba?\("#] {
+            XCTAssertNil(text.range(of: literal, options: .regularExpression), "a colour literal: \(literal)")
+        }
+        let prose = try firstMatch(#"\n  \.doc-prose \{([^}]*)\}"#, in: text)
+        XCTAssertTrue(prose.contains("color: var(--prose-text);"))
+        XCTAssertTrue(ThemeCSS.page(text, .dark).contains("--term-bg: #31363b;"))
+    }
+
+    /// 2610.0007 S17 — the HTML card's host page takes its backdrop from the
+    /// theme and states no scheme of its own: an author's page was measured
+    /// under a host page with none.
+    func testS17TheHostPageTakesItsBackdropFromTheThemeAndStatesNoScheme() throws {
+        let text = try host()
+        XCTAssertEqual(count(of: ThemeCSS.backdropMarker, in: text), 1)
+        XCTAssertFalse(text.contains(ThemeCSS.marker))
+        XCTAssertFalse(text.contains("#2b3036"))
+        XCTAssertFalse(text.contains("color-scheme"))
+        let root = try firstMatch(#":root \{([^}]*)\}"#, in: text)
+        XCTAssertTrue(root.contains(ThemeCSS.backdropMarker))
+        let backdrop = try firstMatch(#"html,\s*body \{([^}]*)\}"#, in: text)
+        XCTAssertTrue(backdrop.contains("background: var(--bg1);"))
+        let page = ThemeCSS.page(text, .light)
+        XCTAssertTrue(page.contains("--bg1: #eff0f1;"))
+        XCTAssertFalse(page.contains("color-scheme"))
     }
 }

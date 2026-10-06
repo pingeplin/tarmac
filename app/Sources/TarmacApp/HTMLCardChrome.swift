@@ -26,12 +26,11 @@ final class CardShieldView: NSView {
 /// An HTML card's console: what its document logged, one line per entry, over
 /// the bottom of the body and at most `maxFraction` of it high.
 @MainActor
-final class CardConsoleView: NSView, FontFollowing {
+final class CardConsoleView: NSView, FontFollowing, ThemeFollowing {
     static let maxFraction: CGFloat = 0.4
 
     private static var font: NSFont { Theme.mono(10) }
     private static let lineHeight: CGFloat = 15
-    private static let errorColor = NSColor(srgbRed: 0xf2 / 255, green: 0x8b / 255, blue: 0x82 / 255, alpha: 1)
     private static let inset = NSSize(width: 8, height: 4)
 
     private let scroll = NSScrollView()
@@ -45,7 +44,6 @@ final class CardConsoleView: NSView, FontFollowing {
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = Theme.bg0.withAlphaComponent(0.94).cgColor
 
         text.isEditable = false
         text.isSelectable = true
@@ -62,11 +60,18 @@ final class CardConsoleView: NSView, FontFollowing {
         addSubview(scroll)
 
         hairline.wantsLayer = true
-        hairline.layer?.backgroundColor = Theme.lineSoft.cgColor
         addSubview(hairline)
+        themeChanged()
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// The lines keep the colours they were shown in: the card shows them
+    /// again.
+    func themeChanged() {
+        layer?.backgroundColor = Theme.bg0.withAlphaComponent(0.94).cgColor
+        hairline.layer?.backgroundColor = Theme.lineSoft.cgColor
+    }
 
     func show(_ entries: [CardConsole.Entry]) {
         let paragraph = NSMutableParagraphStyle()
@@ -117,7 +122,7 @@ final class CardConsoleView: NSView, FontFollowing {
     private static func color(of level: CardConsole.Level) -> NSColor {
         switch level {
         case .warn: return Theme.amber
-        case .error: return errorColor
+        case .error: return Theme.consoleError
         case .log, .info: return Theme.muted
         }
     }

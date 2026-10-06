@@ -112,6 +112,14 @@ need data in the chart, serialize it into a `const` at the top of the script.
   on a card that is selected and not borrowed. Tarmac draws the scroll
   position itself, for the document's root: let the page itself scroll, not a
   full-height inner element, or the card has no scroll thumb.
+- The card **follows Tarmac's theme** unless you state a scheme. A document
+  that says nothing about colour gets the system's dark page with light text
+  under the dark theme, and a white page with dark text under the light one;
+  `prefers-color-scheme` reports the theme, and a change reaches a loaded
+  card with no reload. So set **both** the background and the text colour,
+  or **neither**: a page with only `color: #222` is dark text on a dark
+  page. To keep one look in both themes, state it:
+  `:root { color-scheme: light; }` (or `dark`).
 - Cards scrolled far off-viewport are **paused**: `requestAnimationFrame`,
   `setTimeout`, and `setInterval` stop firing. On return, held timeouts and
   frames flush once — an animation gets a **single** catch-up frame, not one per
@@ -137,7 +145,8 @@ What follows from that:
   about 1176px on a 392px-wide card and overflows it badly, and
   `@media (min-width: 1000px)` matches on a card barely wider than a phone.
   **Lay out with percentages; never size anything in `vw`/`vh`, and do not write
-  breakpoints.** If you need the card's width as a number, measure a full-width
+  breakpoints.** This is about queries of size: a
+  `@media (prefers-color-scheme: dark)` query is safe. If you need the card's width as a number, measure a full-width
   block element's `offsetWidth`: a plain `<div>` reports the card, while
   `innerWidth` reports the reference.
 - **Layout runs once, so nothing about the viewport changes.** `resize` and
@@ -165,7 +174,9 @@ a table, a diagram, or a static chart.
 - [ ] All CSS in a `<style>` block; system font stack.
 - [ ] All data embedded as literals; no `fetch`.
 - [ ] Images inline as `data:` URIs, or drawn as SVG.
-- [ ] Sizes use `%`, `px`, `rem` — no `vw`/`vh`, no media queries.
+- [ ] Sizes use `%`, `px`, `rem` — no `vw`/`vh`, no media queries of size.
+- [ ] Colours: both a background and a text colour, or neither; a
+      `color-scheme` if the card must keep one look.
 - [ ] Layout does not depend on resize events (or you set `reveal` deliberately).
 - [ ] Animation reads the frame timestamp rather than counting frames.
 

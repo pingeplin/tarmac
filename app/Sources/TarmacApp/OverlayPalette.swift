@@ -7,7 +7,7 @@ import TarmacKit
 /// read live and bell from here, so the two cannot drift apart.
 @MainActor
 enum OverlayPalette {
-    static let minimapBackground = Theme.bg0.withAlphaComponent(0.92)
+    static var minimapBackground: NSColor { Theme.bg0.withAlphaComponent(0.92) }
 
     /// A card's rect in the minimap.
     static func minimapFill(_ signal: CardSignal) -> NSColor {

@@ -368,4 +368,128 @@ final class AppPrefsTests: XCTestCase {
         ]
         for contents in damaged { XCTAssertEqual(AppPrefs.decode(data(contents)), Values(), contents) }
     }
+
+    // MARK: 2610.0007 — the theme shares the file
+
+    /// S3 — the theme is the last member, after every size.
+    func testTheThemeIsWrittenLast() {
+        XCTAssertEqual(
+            AppPrefs.encode(Values(warnBeforeQuit: false, fonts: [.terminal: "Menlo"], theme: .auto)),
+            data(#"{"warn_before_quit":false,"terminal_font":"Menlo","theme":"auto"}"#)
+        )
+        XCTAssertEqual(AppPrefs.encode(Values(theme: .light)), data(#"{"warn_before_quit":true,"theme":"light"}"#))
+        XCTAssertEqual(
+            AppPrefs.encode(
+                Values(fonts: [.terminal: "Menlo"], fontSizes: [.terminal: 13.5, .document: 18], theme: .light)
+            ),
+            data(
+                #"{"warn_before_quit":true,"terminal_font":"Menlo","terminal_font_size":13.5,"#
+                    + #""document_font_size":18,"theme":"light"}"#
+            )
+        )
+    }
+
+    /// S4 — so the bytes of every file that exists today do not change.
+    func testTheDarkThemeIsNotWritten() {
+        XCTAssertEqual(AppPrefs.encode(Values(theme: .dark)), data(#"{"warn_before_quit":true}"#))
+    }
+
+    /// S5
+    func testAThemeKeyReadsAsThatChoice() {
+        XCTAssertEqual(AppPrefs.decode(data(#"{"warn_before_quit":true,"theme":"light"}"#)).theme, .light)
+        XCTAssertEqual(AppPrefs.decode(data(#"{"warn_before_quit":true,"theme":"auto"}"#)).theme, .auto)
+        XCTAssertEqual(AppPrefs.decode(data(#"{"warn_before_quit":true,"theme":"dark"}"#)).theme, .dark)
+    }
+
+    /// S6
+    func testASavedThemeReadsBackFromDisk() throws {
+        let path = try scratchDirectory() + "/app-prefs.json"
+        let values = Values(fonts: [.terminal: "Menlo"], fontSizes: [.terminal: 20], theme: .light)
+
+        try AppPrefs.save(values, to: path)
+
+        XCTAssertEqual(AppPrefs.load(from: path), values)
+        XCTAssertEqual(AppPrefs.load(from: path).theme, .light)
+    }
+
+    /// S6
+    func testEveryChoiceSurvivesTheRoundTrip() {
+        for choice in [ThemeChoice.auto, .light, .dark] {
+            let values = Values(warnBeforeQuit: false, fonts: [.document: "Georgia"], theme: choice)
+            XCTAssertEqual(AppPrefs.decode(AppPrefs.encode(values)), values, choice.rawValue)
+            XCTAssertEqual(AppPrefs.decode(AppPrefs.encode(values)).theme, choice, choice.rawValue)
+        }
+    }
+
+    /// S7 — another preference saved must not drop the theme.
+    func testChangingTheGuardKeepsTheTheme() throws {
+        let path = try scratchDirectory() + "/app-prefs.json"
+        try data(#"{"warn_before_quit":true,"theme":"light"}"#).write(to: URL(fileURLWithPath: path))
+
+        var values = AppPrefs.load(from: path)
+        values.warnBeforeQuit = false
+        try AppPrefs.save(values, to: path)
+
+        XCTAssertEqual(AppPrefs.load(from: path), Values(warnBeforeQuit: false, theme: .light))
+    }
+
+    /// S7 — and the theme saved must not drop another preference.
+    func testChangingTheThemeKeepsTheGuardAFontAndASize() throws {
+        let path = try scratchDirectory() + "/app-prefs.json"
+        try data(#"{"warn_before_quit":false,"terminal_font":"Menlo","terminal_font_size":20}"#)
+            .write(to: URL(fileURLWithPath: path))
+
+        var values = AppPrefs.load(from: path)
+        values.theme = .auto
+        try AppPrefs.save(values, to: path)
+
+        XCTAssertEqual(
+            AppPrefs.load(from: path),
+            Values(warnBeforeQuit: false, fonts: [.terminal: "Menlo"], fontSizes: [.terminal: 20], theme: .auto)
+        )
+    }
+
+    private func file(theme value: String) -> Data {
+        data(#"{"warn_before_quit":false,"terminal_font":"Menlo","theme":"# + value + "}")
+    }
+
+    /// S40 — the files are valid JSON and hold the theme where `"light"`
+    /// reads as one, so it is the key's own rule that drops the value. The
+    /// raw values are compared exactly.
+    func testAThemeThatIsNotOneOfTheThreeIsTheDarkOne() {
+        let withoutATheme = Values(warnBeforeQuit: false, fonts: [.terminal: "Menlo"])
+        XCTAssertEqual(
+            AppPrefs.decode(file(theme: #""light""#)),
+            Values(warnBeforeQuit: false, fonts: [.terminal: "Menlo"], theme: .light)
+        )
+
+        for value in [#""sepia""#, #""Light""#, #""""#, "3", "true", "null", #"["light"]"#] {
+            let file = file(theme: value)
+            XCTAssertTrue(StrictJSON.isValid(file), value)
+            XCTAssertEqual(AppPrefs.decode(file), withoutATheme, value)
+            XCTAssertEqual(AppPrefs.decode(file).theme, .dark, value)
+        }
+    }
+
+    /// S41 — a bad key beside the theme does not change the theme.
+    func testTheThemeIsReadBesideKeysOfTheWrongType() {
+        let values = AppPrefs.decode(data(#"{"warn_before_quit":"yes","terminal_font":7,"theme":"light"}"#))
+
+        XCTAssertEqual(values.theme, .light)
+        XCTAssertTrue(values.warnBeforeQuit)
+        XCTAssertNil(values.fonts[.terminal])
+    }
+
+    /// S54 — a damaged file gives up its theme with its guard. Whole, the file
+    /// reads as light with the guard off, so a lenient parser fails here.
+    func testADamagedFileHasTheDarkTheme() {
+        let whole = #"{"warn_before_quit":false,"theme":"light"}"#
+        XCTAssertEqual(AppPrefs.decode(data(whole)), Values(warnBeforeQuit: false, theme: .light))
+
+        let damaged = AppPrefs.decode(data(String(whole.dropLast())))
+
+        XCTAssertEqual(damaged, Values())
+        XCTAssertEqual(damaged.theme, .dark)
+        XCTAssertTrue(damaged.warnBeforeQuit)
+    }
 }

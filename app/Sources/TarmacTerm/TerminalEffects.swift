@@ -17,6 +17,9 @@ public final class TerminalEffects {
     public var onRenderHold: ((Bool) -> Void)?
 
     var reportedSize = GhosttySizeReportSize(rows: 0, columns: 0, cell_width: 0, cell_height: 0)
+    /// The colour scheme a program is told (`CSI ? 996 n`): that of the theme
+    /// the host last applied.
+    var isDark = true
 
     nonisolated init() {}
 
@@ -106,9 +109,9 @@ private let sizeReport: GhosttyTerminalSizeFn = { _, userdata, out in
     return true
 }
 
-private let colorScheme: GhosttyTerminalColorSchemeFn = { _, _, out in
+private let colorScheme: GhosttyTerminalColorSchemeFn = { _, userdata, out in
     guard let out else { return false }
-    out.pointee = GHOSTTY_COLOR_SCHEME_DARK
+    out.pointee = read(userdata, true) { $0.isDark } ? GHOSTTY_COLOR_SCHEME_DARK : GHOSTTY_COLOR_SCHEME_LIGHT
     return true
 }
 

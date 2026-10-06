@@ -170,6 +170,17 @@ public final class TerminalEngine {
         return buffer.prefix(written).map { UInt8(bitPattern: $0) }
     }
 
+    /// Empty unless the program asked to be told (mode 2031).
+    func encodeColorScheme(dark: Bool) -> [UInt8] {
+        guard mode(ghostty_mode_new(2031, false)) else { return [] }
+        var buffer = [CChar](repeating: 0, count: 16)
+        var written = 0
+        let scheme = dark ? GHOSTTY_COLOR_SCHEME_DARK : GHOSTTY_COLOR_SCHEME_LIGHT
+        guard ghostty_color_scheme_report_encode(scheme, &buffer, buffer.count, &written) == GHOSTTY_SUCCESS
+        else { return [] }
+        return buffer.prefix(written).map { UInt8(bitPattern: $0) }
+    }
+
     public func plainText() -> String {
         var options = GhosttyFormatterTerminalOptions()
         options.size = MemoryLayout<GhosttyFormatterTerminalOptions>.size

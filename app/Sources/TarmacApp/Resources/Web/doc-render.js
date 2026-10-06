@@ -168,6 +168,14 @@
       remeasure();
     },
 
+    // The theme's declarations, as [name, value] pairs: the colours and the
+    // colour scheme. No line break moves.
+    theme(properties) {
+      properties.forEach(function (pair) {
+        root.style.setProperty(pair[0], pair[1]);
+      });
+    },
+
     // The card's scroll thumb is being dragged; the scroll listener reports
     // where this lands.
     scrollTo(y) {

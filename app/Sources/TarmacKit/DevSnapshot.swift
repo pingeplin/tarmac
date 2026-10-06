@@ -324,6 +324,18 @@ public enum DevSnapshot {
         }
     }
 
+    /// The theme (spec 2610.0007): the choice the app holds, and the variant
+    /// whose palette it holds.
+    public struct Theme: Equatable, Sendable {
+        public var choice: ThemeChoice
+        public var inEffect: ThemeVariant
+
+        public init(choice: ThemeChoice, inEffect: ThemeVariant) {
+            self.choice = choice
+            self.inEffect = inEffect
+        }
+    }
+
     public struct Input: Equatable, Sendable {
         public var boardID: String
         public var visibility: Visibility
@@ -342,6 +354,7 @@ public enum DevSnapshot {
         /// Nil when the guard could not be read.
         public var quitGuard: QuitGuard?
         public var fonts: Fonts
+        public var theme: Theme
 
         public init(
             boardID: String,
@@ -354,7 +367,8 @@ public enum DevSnapshot {
             borrowedCard: String?,
             keyboardFocus: KeyboardFocus,
             quitGuard: QuitGuard?,
-            fonts: Fonts
+            fonts: Fonts,
+            theme: Theme
         ) {
             self.boardID = boardID
             self.visibility = visibility
@@ -367,6 +381,7 @@ public enum DevSnapshot {
             self.keyboardFocus = keyboardFocus
             self.quitGuard = quitGuard
             self.fonts = fonts
+            self.theme = theme
         }
     }
 
@@ -387,6 +402,9 @@ public enum DevSnapshot {
             "active_element": ActiveElement(input.keyboardFocus).json,
             "quit_guard": input.quitGuard.map(quitGuard) ?? .null,
             "fonts": fonts(input.fonts),
+            "theme": [
+                "choice": .string(input.theme.choice.rawValue), "in_effect": .string(input.theme.inEffect.rawValue),
+            ],
         ]
     }
 

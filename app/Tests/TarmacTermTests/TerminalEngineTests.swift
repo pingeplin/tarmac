@@ -54,6 +54,16 @@ final class TerminalEngineTests: XCTestCase {
         XCTAssertEqual(String(decoding: replies.joined(), as: UTF8.self), "\u{1b}[1;3R")
     }
 
+    /// The answer follows the theme the host applies (2610.0007 S23); with
+    /// none applied it is what it always was.
+    func testAnEngineNobodyThemedAnswersTheColourSchemeQueryAsDark() throws {
+        let engine = try engine()
+        var replies: [[UInt8]] = []
+        engine.effects.onWritePty = { replies.append($0) }
+        feed(engine, "\u{1b}[?996n")
+        XCTAssertEqual(String(decoding: replies.joined(), as: UTF8.self), "\u{1b}[?997;1n")
+    }
+
     func testBellRingsOncePerBel() throws {
         let engine = try engine()
         var bells = 0

@@ -48,6 +48,7 @@ final class AppController {
     let client: DaemonClient
     let rootView: RootView
     let fonts: FontSettings
+    let theme: ThemeSettings
     weak var window: NSWindow?
 
     /// The handshake has completed: requests may be made. Narrower than
@@ -157,10 +158,11 @@ final class AppController {
         ownerBoard(ofTerm: termID)?.sessions[termID]
     }
 
-    init(window: NSWindow, rootView: RootView, client: DaemonClient, fonts: FontSettings) {
+    init(window: NSWindow, rootView: RootView, client: DaemonClient, fonts: FontSettings, theme: ThemeSettings) {
         self.window = window
         self.rootView = rootView
         self.fonts = fonts
+        self.theme = theme
         self.client = client
 
         // board-0 wraps the BoardView RootView was built with; it is the active,
@@ -177,16 +179,29 @@ final class AppController {
         mount(board0)
 
         fonts.onChange = { [weak self] in self?.fontsChanged() }
+        theme.onChange = { [weak self] in self?.themeChanged() }
         updateWindowTitle()
         showConnectionStatus()
     }
 
-    /// A chosen font or size changed. A board that is not mounted keeps its cards in
-    /// its own detached view, so each is told apart from the window's tree.
+    /// A chosen font or size changed.
     private func fontsChanged() {
-        rootView.broadcastFontsChanged()
+        tellEveryView { $0.broadcastFontsChanged() }
+    }
+
+    /// The theme in effect changed: the same reach as a font change.
+    private func themeChanged() {
+        window?.backgroundColor = Theme.bg0
+        tellEveryView { $0.broadcastThemeChanged() }
+    }
+
+    /// Runs `broadcast` on the window's tree, then on each board that is not
+    /// mounted, which keeps its cards in its own detached view, and brings
+    /// the switcher up to date if it is open.
+    private func tellEveryView(_ broadcast: (NSView) -> Void) {
+        broadcast(rootView)
         for board in boards.values where !board.view.isDescendant(of: rootView) {
-            board.view.broadcastFontsChanged()
+            broadcast(board.view)
         }
         refreshSwitcherIfOpen()
     }

@@ -7,7 +7,7 @@ import TarmacKit
 /// far the board is panned. A click re-centers the viewport on the world point
 /// under it.
 @MainActor
-final class Minimap: NSView {
+final class Minimap: NSView, ThemeFollowing {
     /// One card in the minimap: its world frame + signal (for the rect color).
     struct Item {
         var worldRect: CGRect
@@ -31,14 +31,20 @@ final class Minimap: NSView {
     init() {
         super.init(frame: NSRect(x: 0, y: 0, width: Self.mapWidth, height: Self.mapHeight))
         wantsLayer = true
-        layer?.backgroundColor = OverlayPalette.minimapBackground.cgColor
-        layer?.borderColor = Theme.line.cgColor
+        themeChanged()
         layer?.borderWidth = 1
         layer?.cornerRadius = 8
         layer?.masksToBounds = true
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// The rects and the viewport box read their colours as they are drawn.
+    func themeChanged() {
+        layer?.backgroundColor = OverlayPalette.minimapBackground.cgColor
+        layer?.borderColor = Theme.line.cgColor
+        needsDisplay = true
+    }
 
     /// Updates the minimap from the current card frames + viewport world rect.
     /// The world bbox unions the cards and the viewport so the viewport rect is

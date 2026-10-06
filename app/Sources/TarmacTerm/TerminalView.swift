@@ -64,6 +64,21 @@ public final class TerminalView: NSView {
     public var fontFamily: String? {
         didSet { if fontFamily != oldValue { rebuildFonts() } }
     }
+    /// A new theme reaches the text already on screen with nothing fed, and a
+    /// program that asked (mode 2031) is told when it turns the terminal from
+    /// dark to light or back.
+    public var theme: TerminalTheme {
+        get { renderer.theme }
+        set {
+            let previous = renderer.theme
+            guard newValue != previous, (try? engine.apply(newValue)) != nil else { return }
+            renderer.theme = newValue
+            if newValue.isDark != previous.isDark { send(engine.encodeColorScheme(dark: newValue.isDark)) }
+            // Every row of the frame after a theme is applied is dirty,
+            // whichever colour changed, so reading it redraws the whole view.
+            readIfNotHeld()
+        }
+    }
 
     private var readScheduled = false
     private var holdStarted: Date?

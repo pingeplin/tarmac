@@ -6,7 +6,7 @@ import TarmacTerm
 /// 27px status bar, with the wayfinding chrome and the toast overlay layered on
 /// top.
 @MainActor
-final class RootView: NSView, FontFollowing {
+final class RootView: NSView, FontFollowing, ThemeFollowing {
     /// The mounted whiteboard. There is one `BoardView` per board; `mountBoard(_:)`
     /// swaps which one is shown on a board switch. RootView owns only *which*
     /// view is displayed — the controller owns each board's cards + viewport.
@@ -119,6 +119,14 @@ final class RootView: NSView, FontFollowing {
     }
 
     func fontsChanged() {
+        offHints.forget()
+        refreshWayfinding(board.viewport)
+    }
+
+    /// A pill is reused while what it says is the same, which a new colour
+    /// does not change.
+    func themeChanged() {
+        layer?.backgroundColor = Theme.bg0.cgColor
         offHints.forget()
         refreshWayfinding(board.viewport)
     }

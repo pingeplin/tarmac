@@ -9,7 +9,7 @@ import TarmacKit
 /// inside a container the zoom scales, so the content never reflows under zoom.
 /// The header drags the card and eight invisible handles resize it.
 @MainActor
-final class CardView: NSView {
+final class CardView: NSView, ThemeFollowing {
     let id: CardID
     let header: CardHeaderView
     private(set) var docBody: (any DocCardBody)?
@@ -100,14 +100,10 @@ final class CardView: NSView {
         }
         super.init(frame: NSRect(origin: .zero, size: CGSize(width: worldFrame.w, height: worldFrame.h)))
         wantsLayer = true
-        layer?.backgroundColor = Theme.termBg.cgColor
-        layer?.borderColor = Theme.line.cgColor
         applyShadow()
 
-        // The body's container can fall short of the room under the header;
-        // what shows there is the body's own colour.
         clip.wantsLayer = true
-        clip.layer?.backgroundColor = (docBody == nil ? Theme.termBg : Theme.bg1).cgColor
+        themeChanged()
         clip.layer?.masksToBounds = true
         addSubview(clip)
         clip.addSubview(header)
@@ -227,6 +223,16 @@ final class CardView: NSView {
 
     private var chromeState: CardChrome.State {
         CardChrome.State(dead: dead, fresh: fresh, prime: prime, selected: selected)
+    }
+
+    /// Every colour of the card's own, for the state it is in now.
+    func themeChanged() {
+        layer?.backgroundColor = Theme.termBg.cgColor
+        layer?.borderColor = (lifted ? Theme.liftBorder : currentBorderColor).cgColor
+        // The body's container can fall short of the room under the header;
+        // what shows there is the body's own colour.
+        clip.layer?.backgroundColor = (docBody == nil ? Theme.termBg : Theme.bg1).cgColor
+        applyRing()
     }
 
     // MARK: - Fresh
