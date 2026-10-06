@@ -129,6 +129,7 @@ final class CardShimTests: XCTestCase {
         // child. It is read from what the stand-in already keeps, so the
         // document without a head is not changed to record an order.
         const seen = () => [
+          ...(posted.length === 0 ? [] : ["parent postMessage"]),
           ...(console.log === stockLog ? [] : ["console"]),
           ...[...listeners.keys()].map((type) => `window ${type}`),
           ...[...docListeners.keys()].map((type) => `document ${type}`),
@@ -1213,6 +1214,27 @@ final class CardShimTests: XCTestCase {
 
         shim.run("h.domReady()")
         XCTAssertTrue(try shim.hasPosted(["tarmac": "ready", "meta": "magnify"]), "2610.0007 S70: the rest of the shim")
+    }
+
+    // MARK: - the document tells its host that it has started (#213)
+
+    /// The host page keeps the frame hidden until this message: it is posted
+    /// as the shim loads, before any byte of the author is parsed, and waits
+    /// for nothing. In the document every older test runs in, the default
+    /// scheme's block throws, and the message is posted all the same.
+    func testTheShimTellsItsParentThatTheDocumentHasStartedAsItLoads() throws {
+        for head in [false, true] {
+            let shim = try loadShim(head: head)
+            XCTAssertEqual(try shim.posted(), [["tarmac": "started"]], "head: \(head)")
+        }
+    }
+
+    func testTheStartIsPostedOnceForADocument() throws {
+        let shim = try loadShim(head: true)
+
+        shim.run("h.parse('meta', { name: 'color-scheme', content: 'light' }); h.domReady(); h.scroll()")
+
+        XCTAssertEqual(try shim.posted().filter { $0["tarmac"] as? String == "started" }.count, 1)
     }
 
     // MARK: - the never-paused path, beyond the cancels

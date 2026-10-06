@@ -16,9 +16,13 @@ the theme paths of `DocWebView` and `HTMLCardView`, `tarmacDoc.theme`,
 The captures were read during the run and are not kept in the repository.
 Where a row differs from its scenario's wording, the row says what was done.
 
-**Result:** 30 scenarios pass. 3 fail as they are worded: S39 (the app menu),
-S50 (its last clause) and S65. Each is in *Found on the way*. No code was
-changed.
+**Result:** 31 scenarios pass. 2 fail as they are worded: S39 (the app menu)
+and S65 (a third colour, the card's own `bg1`; no white frame). Each is in
+*Found on the way*.
+
+The first run changed no code and had 3 failures: S39, S50 (its last clause)
+and S65 (a white frame). Two fixes followed, and a second run of S50, S62,
+S63, S65 and S66: see **Second run**.
 
 **Run:** 2026-10-06, macOS 26.7 (25G229), a `make run` debug build of the
 branch `feat/209-theme-setting-settings-window` on `6e54cda`. Main display:
@@ -26,6 +30,12 @@ BenQ EW2770QZ at 1×, with its own colour profile (`BenQ EW2770QZ`). The Mac's
 appearance was Light and was not changed in this run. A fresh dev channel,
 `.dev/qa209q`, removed after the run. S57 and S58 are the one exception: they
 were run on `57153fc` (see their rows).
+
+**Second run:** the same day and machine, a fresh dev channel `.dev/qa209f`,
+removed after the run. S50 on `ab71600` (the terminal fix). S62, S63, S65,
+S66, *No card stays out of sight* and `make qa` on the cards fix: the commit
+that carries this record, whose parent is `ab71600`. The rows say which run a
+value is from.
 
 ## The capture tolerance
 
@@ -72,7 +82,9 @@ Each 7 × 7 square round a point held one colour.
 - Scratch scripts in a terminal card: one sends the colour queries and logs
   the answers; one sets mode 2031 and logs every byte it reads, with a time;
   one sends `OSC 11` and later `OSC 111`.
-- S65 is a 60 fps `ffmpeg` recording of the card's place on the screen.
+- S65 is a 60 fps `ffmpeg` recording of the card's place on the screen. The
+  second run records the whole main window (the screen device by its name,
+  `Capture screen 0`) and reads the card's place from the snapshot afterwards.
 
 ## Checks
 
@@ -116,7 +128,7 @@ the dark theme, then *Light* pressed once.
 | **S35** The HTML card | Header `353b41` under dark, `dee0e2` under light. Console fill `24272b` under dark (bg0 at 0.94 over the page's `1e1e1e` computes `24272b`) with text `b9bfc4`, `fdbc4b`, `f28b82`; `e5e7e8` under light (over `ffffff`: `e5e7e8`) with text `535d66`, `a36802`, `da4453`. | pass |
 | **S37** Cards made under Light | A new terminal (⌘T): body `fcfcfc`, prime header `d0d4d8`. The doc of S34: page `eff0f1`. | pass |
 | **S49** The repo dots | `repo-d` (palette entry 0) `f67400` → `be5a00`. `repo-c` (entry 1) `11d116` → `0b8a0f`. A doc of this repository (entry 3) `9b59b6` → `9b59b6`. | pass |
-| **S50** A colour a program set | After the change every empty cell is `102030` (card made prime, so not dimmed). After `OSC 111` **only the row of the cursor is `fcfcfc`; the other rows stay `102030`** until they are drawn again. A resize of the card by 20 points made every empty cell `fcfcfc`. | **fail** (the last clause, as worded) |
+| **S50** A colour a program set | First run, `6e54cda`: after the change every empty cell was `102030`; after `OSC 111` only the row of the cursor was `fcfcfc`, and the other rows stayed `102030` until they were drawn again. Second run, `ab71600`: a new terminal, prime, 44 × 14. Six rows sampled, three points each, right of any text; rows 8, 10, 12 and 13 are rows the shell never wrote to. Dark, before: all `31363b`. Dark, after `OSC 11 ; rgb:10/20/30`: all 18 points `102030`, and `102030` is the most frequent colour of the body. After the change to light: all `102030`. After `OSC 111`: all `fcfcfc`. | pass (`ab71600`; failed on `6e54cda`) |
 
 S29, part by part. Every value is from a capture under the light theme.
 
@@ -178,11 +190,30 @@ area, *block* the middle of the `currentColor` block.
 
 | Scenario | Observed | Result |
 | --- | --- | --- |
-| **S62** The table | Loaded under dark: P0, P1, P3, P7, P11 canvas `1e1e1e`, block `ffffff`; P2, P4, P5, P6, P10 canvas `ffffff`, block `000000`; every console line ends `matches=true`. After a live change to light: P0, P1, P2, P4, P5, P6, P10 `ffffff` / `000000`; P3, P7, P11 `1e1e1e` / `ffffff`; every console's last line ends `matches=false`. After a relaunch under light (a fresh load): the same pairs, one line each, `matches=false`. | pass |
-| **S63** No reload | Ids at the start: P0 `aryiwqi2`, P1 `d0xpswfr`, P2 `rg8kp5qt`, P7 `mkynuekz`. Dark: P0, P1, P7 `1e1e1e` / `ffffff`, P2 `ffffff` / `000000`. Light: P0, P1, P2 `ffffff` / `000000`, P7 `1e1e1e` / `ffffff`. Dark again: as at the start. The four ids are the same in all three. | pass |
+| **S62** The table | Loaded under dark: P0, P1, P3, P7, P11 canvas `1e1e1e`, block `ffffff`; P2, P4, P5, P6, P10 canvas `ffffff`, block `000000`; every console line ends `matches=true`. After a live change to light: P0, P1, P2, P4, P5, P6, P10 `ffffff` / `000000`; P3, P7, P11 `1e1e1e` / `ffffff`; every console's last line ends `matches=false`. After a relaunch under light (a fresh load): the same pairs, one line each, `matches=false`. Second run, at zoom 0.25: the same pairs in all three states, with no mismatch in 30 pages; `matches=true` under dark, `matches=false` after the live change and after the relaunch (one line each there). | pass (both runs) |
+| **S63** No reload | Ids at the start: P0 `aryiwqi2`, P1 `d0xpswfr`, P2 `rg8kp5qt`, P7 `mkynuekz`. Dark: P0, P1, P7 `1e1e1e` / `ffffff`, P2 `ffffff` / `000000`. Light: P0, P1, P2 `ffffff` / `000000`, P7 `1e1e1e` / `ffffff`. Dark again: as at the start. The four ids are the same in all three. Second run: P0 `ccd6pn7y`, P1 `n5sx1dkt`, P2 `n6kyysij`, P7 `a465p6th`, the same under dark, light and dark again, with the same pairs; the ids of the other eight pages did not change either. | pass (both runs) |
 | **S64** A card not on screen | P0 past the cull margin under light; theme to dark; `zoom 0.25` 1 s later; the capture 0.43 s after: canvas `1e1e1e`, block `ffffff`, header `353b41`. And P0 opened under dark with `tarmac open` from a terminal that far away (the card lands 1981 points past the window's edge); brought in the same way: `1e1e1e`, `ffffff`. | pass |
-| **S65** No white at open | 8 runs of 5.5 s, 5 on a board of 17 cards and 3 on a board with one terminal. At two points of the body with no text, every run: the board's colour, then the dark canvas for 3 or 4 frames, then **white for 1 frame (2 frames in 2 of the 8 runs)**, then the dark canvas to the last frame. In the recording's own colours: `202327` × 91 to 106, `1b1b1b` × 3 or 4, `ffffff` × 1 or 2, `1b1b1b` × 218 to 235. In the white frame the whole body is white, the block too. | **fail** (a third colour; the last frame is dark) |
-| **S66** Half of the colours | P8: canvas `1e1e1e`, block `222222`. P9: canvas `ffffff`, block `ffffff`. | pass |
+| **S65** No white at open | First run, `6e54cda`: 8 runs of 5.5 s, 5 on a board of 17 cards and 3 on a board with one terminal. At two points of the body with no text, every run: the board's colour, then the dark canvas for 3 or 4 frames, then **white for 1 frame (2 frames in 2 of the 8 runs)**, then the dark canvas to the last frame. In the recording's own colours: `202327` × 91 to 106, `1b1b1b` × 3 or 4, `ffffff` × 1 or 2, `1b1b1b` × 218 to 235. In the white frame the whole body is white, the block too. Second run, the cards fix: 10 runs of 5.5 s on a board with one terminal. At the same two points, every run: `202327` × 97 to 101, then **`262a2f` × 3 to 13** (5 or 6 frames in 7 of the 10), then `1b1b1b` × 217 to 228 to the last frame. `262a2f` is `bg1`: the status bar reads it in every frame of the same recordings. No frame is white at those points. The 3 or 4 dark frames of the first run are gone with the white: they were the web view before its page was drawn, and had the dark canvas's colour by chance. | **fail as worded** (three colours: the card's own `bg1` is between the two). No white frame; the last frame is the dark canvas. |
+| **S65**, the other pairs | Light theme, P3 (states `dark`), 5 runs at zoom 0.25: the board `dfe1e4`, then `edeeef` × 5 to 7 (`bg1`, the status bar's value there), then `1b1b1b` to the last frame; no white before the dark page. Dark theme, P2 (states `light`), 3 runs: `202327`, then `262a2f` × 5, then `ffffff` to the last frame: the card goes from `bg1` to white one time. | no white before a dark page |
+| **S66** Half of the colours | P8: canvas `1e1e1e`, block `222222`. P9: canvas `ffffff`, block `ffffff`. Second run: the same four values. | pass (both runs) |
+
+### No card stays out of sight
+
+The cards fix keeps an HTML card's web view out of sight until its document
+is on screen. Each row is a way the word for that could fail to come. Second
+run, dark theme unless the row says another.
+
+| Case | Observed |
+| --- | --- |
+| A path with no file | `tarmac open` refuses it (`No such file or directory`): no card is made. |
+| A file that cannot be read | A card's file made mode 000 and given a new change time: `bg1` × 3, then the served text (`…/reload.html: Permission denied (os error 13)`) on the dark canvas. Readable again: `bg1` × 2, then the page. This body carries no shim; the frame's `load` shows it. |
+| The file changes | 3 rewrites, 1.2 s apart: each time the page, then `bg1` × 3 or 4, then the page with a new id. |
+| A card born culled | The sixth of seven P0 cards opened in a row, 4104 points from the window's left edge at zoom 1 (the cull margin ends at 3660). `zoom 0.25`: `bg1` for 1 frame at its place, then the page. |
+| A relaunch | 17 HTML cards on the board, light theme: every one shows its page in the first capture (the 12 of S62 are the check). |
+| A page of 6.7 MB | Board, then `bg1` × 38, then the page: no white. |
+| A page that stops its own load (`window.stop()` in a script) | The page shows. The frame's `load` never fires for it: the shim's message is what shows it. |
+| The console | `theme-console.html`: its three lines and no other; no line for the two new messages. |
+| A borrowed card | Double click (the driver's `focus`): `borrowed` is true and the keyboard focus is the frame. A key posted to the app reaches the page (`key k`, and the console line `[keys] keydown k`). Escape gives the keyboard back to the terminal. |
 
 ## Found on the way
 
@@ -196,19 +227,51 @@ area, *block* the middle of the `currentColor` block.
   `289d208` sets the same property, so it is most likely the same there; that
   tree was not measured. The other half (*Light* on a dark Mac) was not run:
   the Mac was Light.
-- **S65: one white frame when an HTML card opens under the dark theme.** It
-  is in 8 of 8 runs, with many cards and with one. The spec's measurement
-  before the change saw none in 5 runs. The frame of the card is white in
-  `card-host.html` while it holds no document, which is what the spec keeps
-  and what #213 is about; that this is the cause is inferred, not measured.
-  The host page's own backdrop (`2b3036`) is in no frame of the recordings.
+- **S65: one white frame when an HTML card opens under the dark theme.
+  Fixed; what shows before the page is now `bg1`.** On `6e54cda` it is in 8
+  of 8 runs, with many cards and with one. The first run inferred that the
+  white was the card's frame (`#card { background: #fff }`) while it held no
+  document. Measured in the second run, with that fill made magenta for the
+  measurement, the white has two sources:
+  - **The web view before its host page is first drawn.** The host page
+    states no colour scheme, so for 1 or 2 frames the web view is white. With
+    the frame hidden until the shim's first message (what #213 tried), 5 of 5
+    opens still had 1 or 2 white frames. With the fill magenta, 2 of 3 did,
+    and those frames were white, not magenta.
+  - **The frame with no document in it.** With the frame not hidden, 2 of 3
+    opens had 2 magenta frames.
+
+  So hiding the frame cannot remove the white. Now the app keeps the whole
+  web view out of sight until the host page says that the document is on
+  screen, and the card shows its own `bg1` until then. The host page says it
+  two of its own frames after the document started. Measured: said at once, 4
+  opens of 5 still had one white or magenta frame; one frame later, 2 of 5;
+  two frames later, none of 15.
+  - A web view that draws no background of its own was tried too. It removes
+    the white and breaks S62: P0 under dark then has the frame's colour, not
+    the dark canvas.
+  - The shim's message and the frame's `load` event come 1 ms apart for P0
+    (the `load` first) and 17 ms apart for a page of 6.7 MB (the message
+    first, 530 ms after the page was asked for). Both are needed: what is
+    served for a file that cannot be read has no shim, and a page that stops
+    its own load never fires `load` (with `load` alone its card stayed at
+    `bg1` to the end of the recording).
+  - S65 still fails as it is worded: `bg1` is a third colour. It is what #213
+    expects of a card with no document yet.
+  - A change of the file now shows `bg1` for 3 or 4 frames where it showed
+    the white frame for 1 or 2. For a light page under the dark theme that is
+    a dark blink where the white one could not be seen.
 - **S50: a colour set with `OSC 11` or `OSC 111` reaches only the rows that
-  are drawn again.** Under the dark theme, before any change of the theme,
-  `OSC 11 ; rgb:10/20/30` alone turned only the cursor's row `102030`. The
-  change of the theme then drew every row in `102030`, which is right.
-  `OSC 111` alone again turned one row. `FrameReader.swift` reads only the
-  rows the engine reports dirty, and it is not changed since `289d208`. A
-  program that redraws after it sets a colour does not show this.
+  are drawn again. Fixed in `ab71600`.** Under the dark theme, before any
+  change of the theme, `OSC 11 ; rgb:10/20/30` alone turned only the cursor's
+  row `102030`. The change of the theme then drew every row in `102030`, which
+  is right. `OSC 111` alone again turned one row. A default colour changes no
+  row, so the engine reports no row dirty (measured: 0 of 20), and
+  `TerminalView` drew again only the dirty rows; the cursor's row came from
+  the blink. `OSC 10` and `OSC 110` had the same defect for text with no
+  colour of its own. Now a frame whose default background or foreground is
+  not the one on screen draws every row. The suite's S44 test could not see
+  it: its `drawn()` draws every row, whatever the view asked for.
 - **A program that set mode 2031 gets no report across a relaunch.** Seen
   once: the app was quit under light, the file was edited by hand, the app
   came up dark, and the script's log holds no line for it. In normal use it
@@ -241,8 +304,9 @@ area, *block* the middle of the `currentColor` block.
 | --- | --- | --- |
 | `289d208`, in a worktree of its own | fresh, one doc card | 27 of 27, S21 skipped |
 | this change, `6e54cda` | fresh, one doc card, default theme | 27 of 27, S21 skipped |
+| the cards fix, on `ab71600` | fresh, default theme | 27 of 27, S21 skipped; the same list of checks, line for line |
 
-Both ran before the Settings window was shown in that process.
+Each ran before the Settings window was shown in that process.
 
 ## Not covered
 
@@ -251,4 +315,10 @@ Both ran before the Settings window was shown in that process.
 - A 2× display, and a display with another colour profile.
 - The app menu and the white frame on `289d208`: the tree was built for the
   tolerance and for `make qa` only.
+- A web content process that dies while a card is up. The card then loads
+  its host page again, as a new card does; this was not run.
+- Two changes of a file a few milliseconds apart. The host page drops the
+  word for a source that was replaced; a word already on its way to the app
+  is not told apart from the new one's, and neither is a start that the
+  replaced page had posted and the host page had not yet heard.
 - `make qa` under the light theme.

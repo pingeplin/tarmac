@@ -9,6 +9,8 @@ public struct HTMLCardSession: Equatable, Sendable {
         case consoleChanged
         case modeChanged
         case scrollChanged(ScrollMetrics)
+        /// The document is on screen: the web view can be seen.
+        case documentShown
     }
 
     public private(set) var console = CardConsole.Buffer()
@@ -27,6 +29,8 @@ public struct HTMLCardSession: Equatable, Sendable {
             return [.consoleChanged]
         case .scrolled(let metrics):
             return [.scrollChanged(metrics)]
+        case .shown:
+            return [.documentShown]
         case .ready(let meta):
             // A document is born not knowing whether its card is culled, and a
             // message sent before it committed went to the page it replaced.

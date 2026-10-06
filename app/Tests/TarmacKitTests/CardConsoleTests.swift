@@ -33,6 +33,16 @@ final class CardConsoleTests: XCTestCase {
         XCTAssertEqual(parse(["tarmac": "escape"]), .escape)
     }
 
+    /// #213: the host page says that the card's document is on screen.
+    func testAcceptsTheShownPayload() {
+        XCTAssertEqual(parse(["tarmac": "shown"]), .shown)
+    }
+
+    /// The document's own first word stops at the host page.
+    func testRejectsAStartedPayload() {
+        XCTAssertNil(parse(["tarmac": "started"]))
+    }
+
     // MARK: - scrolled payload (2610.0003 S10, S34)
 
     func test2610S10AcceptsAScrolledPayload() {

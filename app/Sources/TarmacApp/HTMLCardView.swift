@@ -7,7 +7,8 @@ import WebKit
 /// page whose one element is `<iframe sandbox="allow-scripts">` pointed at
 /// `tarmac-card://doc/<path>`; the scheme handler prepends the shim and sets
 /// the card's content policy. The shim talks to its parent, the host page,
-/// which only carries messages; what they mean is `HTMLCardSession`'s.
+/// which carries messages and says when the document is on screen; what
+/// they mean is `HTMLCardSession`'s.
 ///
 /// The document is shielded until it is borrowed: a press selects the card,
 /// a wheel is handed on to the web view, and nothing else reaches it.
@@ -81,6 +82,7 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, WKNavigationDeleg
         pageLoaded = false
         loadingPage = true
         backdropGiven = Theme.variant
+        coverDocument()
         webView.loadHTMLString(ThemeCSS.page(Self.host, Theme.variant), baseURL: nil)
     }
 
@@ -199,9 +201,20 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, WKNavigationDeleg
 
     // MARK: - Document
 
+    /// Before its document is on screen the web view has white to show: the
+    /// host page for a frame or two before it is first drawn, then the frame
+    /// with no document in it. The document may be dark, so the web view is
+    /// out of sight from the moment a page or a document is asked for until
+    /// the host page says the document is on screen, and what shows is this
+    /// view's own backdrop (#213).
+    private func coverDocument() {
+        webView.alphaValue = 0
+    }
+
     private func loadDocument() {
         guard pageLoaded, let source else { return }
         session.reloaded()
+        coverDocument()
         webView.resetWheel()
         onScrollChanged?(nil)
         layoutDocument()
@@ -241,6 +254,7 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, WKNavigationDeleg
             case .consoleChanged: consoleChanged()
             case .modeChanged: layoutDocument()
             case .scrollChanged(let metrics): onScrollChanged?(metrics)
+            case .documentShown: webView.alphaValue = 1
             }
         }
     }

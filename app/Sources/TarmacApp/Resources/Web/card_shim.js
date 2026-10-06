@@ -33,6 +33,16 @@
     // A document with no default scheme is the one it was before.
   }
 
+  // The card is kept out of sight until its document has started, which is
+  // now (#213): what there is to see before that is white, and this document
+  // may be dark. Said here, and not at the end of the load: a document that
+  // stops its own load never ends it.
+  try {
+    window.parent.postMessage({ tarmac: "started" }, "*");
+  } catch (e) {
+    // The host page counts a frame that has loaded as started.
+  }
+
   function safeSerialize(args) {
     return Array.prototype.map.call(args, serializeOne);
   }

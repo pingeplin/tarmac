@@ -740,7 +740,9 @@ no permission-policy feature, and no handle on the app.
   that states none follows the app's appearance (one
   `<meta name="color-scheme" content="light dark">`, which any `color-scheme`
   in the author's CSS beats, and which the shim removes when the author's own
-  meta is parsed); it relays `console.log`/`info`/`warn`/`error`, uncaught errors, unhandled
+  meta is parsed); it tells its parent that the document has started
+  (`started`, its second act, before any byte of the author is parsed); it
+  relays `console.log`/`info`/`warn`/`error`, uncaught errors, unhandled
   rejections and `Escape` to its parent,
   applies the zoom, gates the document's schedulers, scrolls the root where
   the host says while the card's scroll thumb is dragged (`scrollTo`, a
@@ -753,7 +755,20 @@ no permission-policy feature, and no handle on the app.
   messages and bounds them: a console entry is cut to the 1000-character line
   the app keeps and posted with the count of what was cut, and any other
   message is carried only if its JSON is at most 1000 characters. What they
-  mean is `HTMLCardSession`'s.
+  mean is `HTMLCardSession`'s. Two messages are the host page's own business:
+  `started` stops there, and `shown` is carried from no card.
+- **First paint.** Before its document is on screen a card's web view has
+  white to show, whatever the theme: the host page for a frame or two before
+  it is first drawn, then the frame with no document in it. So `HTMLCardView`
+  keeps the web view out of sight, and the card shows its own `bg1`, from the
+  moment the host page or a document is asked for (a first load, a live
+  reload, a web process that died) until the host page says `shown`. The host
+  page says it two of its own frames after the document started — the
+  shim's `started`, or the frame's `load` for what is served with no shim (a
+  file that cannot be read) — and not for a source that was replaced in
+  between. A culled card's page draws no frames, so its word comes when the
+  card is in view again. A request that is never answered leaves the card at
+  `bg1`.
 - **Shield and borrow.** A transparent shield covers the document: a press
   selects the card, a wheel over the selected card is handed on to the web
   view, and nothing else reaches it. A double-click *borrows* the card —

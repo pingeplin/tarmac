@@ -93,6 +93,21 @@ final class HTMLCardSessionTests: XCTestCase {
         )
     }
 
+    // MARK: - shown (#213)
+
+    /// The view keeps the web view out of sight from each load until this.
+    /// The session keeps nothing of it: a reload covers the view again.
+    func testADocumentOnScreenIsPassedOnWhateverTheCardIsDoing() {
+        var session = HTMLCardSession()
+        let before = session
+        XCTAssertEqual(session.handle(.shown, borrowed: false), [.documentShown])
+        XCTAssertEqual(session.handle(.shown, borrowed: true), [.documentShown])
+        session.culled = true
+        XCTAssertEqual(session.handle(.shown, borrowed: false), [.documentShown])
+        session.culled = false
+        XCTAssertEqual(session, before)
+    }
+
     // MARK: - escape and console
 
     func testEscapeGoesHomeOnlyWhileTheCardIsBorrowed() {
