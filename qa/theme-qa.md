@@ -25,7 +25,7 @@ was then changed for those three (its *Changed after the gate*): S33 asks
 for one line of the rule that differs from the page in each theme, S39 no
 longer holds the menu of the menu
 bar to a value, and S65 allows `bg1` between the board and the document. The
-values below pass both as changed.
+values below pass all three as changed.
 
 The first run changed no code and had 3 failures: S39, S50 (its last clause)
 and S65 (a white frame). Two fixes followed, and a second run of S50, S62,
