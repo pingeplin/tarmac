@@ -9,7 +9,8 @@ import Foundation
 ///
 /// With no font chosen the format, `{"warn_before_quit": <bool>}`, is the Tauri
 /// app's `app-prefs.json` byte for byte. A chosen font adds its role's key
-/// (spec 2610.0005), and a chosen size its own (spec 2610.0006). The parse and
+/// (spec 2610.0005), a chosen size its own (spec 2610.0006), and a theme that
+/// is not the standard one the key `theme` (spec 2610.0007). The parse and
 /// encode decisions are pure; `load` and `save` are the two thin file
 /// operations.
 public enum AppPrefs {
@@ -23,13 +24,17 @@ public enum AppPrefs {
         public var fonts: [FontRole: String]
         /// The size chosen for a role; no entry is the role's standard.
         public var fontSizes: [FontRole: Double]
+        /// The theme chosen; no key in the file is the standard one.
+        public var theme: ThemeChoice
 
         public init(
-            warnBeforeQuit: Bool = true, fonts: [FontRole: String] = [:], fontSizes: [FontRole: Double] = [:]
+            warnBeforeQuit: Bool = true, fonts: [FontRole: String] = [:], fontSizes: [FontRole: Double] = [:],
+            theme: ThemeChoice = .standard
         ) {
             self.warnBeforeQuit = warnBeforeQuit
             self.fonts = fonts
             self.fontSizes = fontSizes
+            self.theme = theme
         }
     }
 
@@ -61,6 +66,9 @@ public enum AppPrefs {
                     let size = try? object.decode(Double.self, forKey: Key(role.sizePrefsKey)), rule.accepts(size)
                 else { continue }
                 values.fontSizes[role] = size
+            }
+            if let name = try? object.decode(String.self, forKey: Key(ThemeChoice.prefsKey)) {
+                values.theme = ThemeChoice(rawValue: name) ?? .standard
             }
             self.values = values
         }
@@ -102,7 +110,9 @@ public enum AppPrefs {
     /// Written as a literal, not through an encoder: QA reads these exact bytes.
     /// A name `decode` would refuse is left out, because written raw it would
     /// damage the file, and a damaged file turns the guard back on. So is a
-    /// size it would refuse. Every family is written before every size.
+    /// size it would refuse. Every family is written before every size, and the
+    /// theme last. The standard theme is not written, so a file with no theme
+    /// chosen keeps the bytes it had before there was one.
     public static func encode(_ values: Values) -> Data {
         var json = #"{"warn_before_quit":\#(values.warnBeforeQuit)"#
         for role in FontRole.allCases {
@@ -112,6 +122,9 @@ public enum AppPrefs {
         for role in FontRole.allCases {
             guard let rule = role.sizeRule, let size = values.fontSizes[role], rule.accepts(size) else { continue }
             json += #","\#(role.sizePrefsKey)":\#(JSONValue.number(size).jsonString)"#
+        }
+        if values.theme != .standard {
+            json += #","\#(ThemeChoice.prefsKey)":"\#(values.theme.rawValue)""#
         }
         return Data((json + "}").utf8)
     }

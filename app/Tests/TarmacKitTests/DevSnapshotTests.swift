@@ -46,9 +46,10 @@ final class DevSnapshotTests: XCTestCase {
         keyboardFocus: DevSnapshot.KeyboardFocus = .none,
         quitGuard: Guard? = nil,
         contentOrigin: CGPoint? = nil,
-        fonts: DevSnapshot.Fonts? = nil
+        fonts: DevSnapshot.Fonts? = nil,
+        theme: DevSnapshot.Theme? = nil
     ) -> Input {
-        Input(
+        var input = Input(
             boardID: "board-0",
             visibility: visibility,
             viewport: viewport,
@@ -64,6 +65,8 @@ final class DevSnapshotTests: XCTestCase {
                 interfaceFace: "SystemMono-Regular", documentCSS: "system-ui", documentSize: 14
             )
         )
+        if let theme { input.theme = theme }
+        return input
     }
 
     private func fields(_ value: JSONValue?, file: StaticString = #filePath, line: UInt = #line) -> [String: JSONValue] {
@@ -93,8 +96,8 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(
             snapshot.keys.sorted(),
             [
-                "active_element", "board_id", "cards", "content_origin", "focused_card", "fonts", "quit_guard", "v",
-                "viewport", "visibility",
+                "active_element", "board_id", "cards", "content_origin", "focused_card", "fonts", "quit_guard", "theme",
+                "v", "viewport", "visibility",
             ]
         )
         XCTAssertEqual(snapshot["v"], 1)
@@ -757,6 +760,24 @@ final class DevSnapshotTests: XCTestCase {
         )
     }
 
+    /// 2610.0007 S18 — the choice the app holds and the variant whose palette
+    /// it holds are two facts: under Auto they are spelled apart. The key
+    /// itself is in the list of `testS1TheSnapshotCarriesExactlyTheDocumentedTopLevelKeys`.
+    func test2610_0007S18TheSnapshotReportsTheThemeChosenAndTheOneInEffect() {
+        func theme(_ choice: ThemeChoice, _ inEffect: ThemeVariant) -> JSONValue? {
+            fields(DevSnapshot.build(input(theme: DevSnapshot.Theme(choice: choice, inEffect: inEffect))))["theme"]
+        }
+        XCTAssertEqual(theme(.auto, .light), ["choice": "auto", "in_effect": "light"])
+        XCTAssertEqual(theme(.auto, .dark), ["choice": "auto", "in_effect": "dark"])
+        XCTAssertEqual(theme(.light, .light), ["choice": "light", "in_effect": "light"])
+    }
+
+    /// 2610.0007 — with nothing said the theme is the one of a file with no
+    /// `theme` key: still an object with its two members.
+    func test2610_0007AnInputGivenNoThemeReportsTheDarkOne() {
+        XCTAssertEqual(fields(DevSnapshot.build(input()))["theme"], ["choice": "dark", "in_effect": "dark"])
+    }
+
     func testTheSnapshotSerialisesAsCompactJSON() {
         let snapshot = DevSnapshot.build(input(cards: [doc("/a/b.md")]))
         XCTAssertEqual(
@@ -769,7 +790,7 @@ final class DevSnapshotTests: XCTestCase {
                 + #""fonts":{"document":{"css":"system-ui","saved":null,"size":14},"#
                 + #""interface":{"face":"SystemMono-Regular","saved":null},"#
                 + #""terminal":{"face":"SystemMono-Regular","saved":null,"size":16}},"#
-                + #""quit_guard":null,"v":1,"#
+                + #""quit_guard":null,"theme":{"choice":"dark","in_effect":"dark"},"v":1,"#
                 + #""viewport":{"cx":500,"cy":350,"view_rect":{"h":700,"w":1000,"x":24,"y":40},"zoom":1},"#
                 + #""visibility":"visible"}"#
         )
