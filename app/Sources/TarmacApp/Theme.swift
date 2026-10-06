@@ -77,7 +77,7 @@ enum Theme {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
-    private static func srgb(_ rgb: UInt32, alpha: CGFloat = 1) -> NSColor {
+    static func srgb(_ rgb: UInt32, alpha: CGFloat = 1) -> NSColor {
         NSColor(
             srgbRed: CGFloat((rgb >> 16) & 0xff) / 255,
             green: CGFloat((rgb >> 8) & 0xff) / 255,

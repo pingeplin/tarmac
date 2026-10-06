@@ -38,7 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.contentView = rootView
 
         quitGuard = QuitGuardController(window: window, warning: WarnBeforeQuit(prefs: prefs))
-        settings = SettingsWindowController(fonts: fonts)
+        settings = SettingsWindowController(fonts: fonts, theme: theme)
         NSApp.mainMenu = MainMenu.build(quitGuard: quitGuard, settings: settings)
 
         window.makeKeyAndOrderFront(nil)

@@ -1,12 +1,14 @@
 // Operates the Settings window of the live dev app with no pointer (specs
-// 2610.0005, 2610.0006), through the Accessibility API, and posts a click or
-// a wheel at a screen point for the one scenario that needs real pointer
-// events.
+// 2610.0005, 2610.0006, 2610.0007), through the Accessibility API, and posts
+// a click or a wheel at a screen point for the one scenario that needs real
+// pointer events.
 //
 //   swift scripts/qa/settings-window.swift <pid> <verb> ...
 //
 //   open                     posts ⌘, to the app
-//   rows                     prints each row's selected title, each size, and the window's labels, with frames
+//   rows                     prints the selected pane, each row's selected title, each size, each theme tile with its value (1 = selected), and the window's labels, with frames
+//   pane <title>             selects a sidebar entry: Fonts, Theme
+//   theme <title>            presses a tile of the Theme pane: Auto, Light, Dark
 //   pick <row> <title>       row 0, 1, 2 = Terminal, Interface, Document
 //   size <n> <text>          sets a size field's text and confirms it, as Return does; n 0, 1 = Terminal, Document
 //   step <n> up|down [count] presses a size's stepper
@@ -22,6 +24,9 @@
 // `type` posts each character on a key code no layout has, with the
 // character in the event: a real digit key goes through the input source,
 // and under Zhuyin `20` arrives as `ㄉㄢ`.
+//
+// `pick`, `size`, `step` and `focus` count the controls of the pane that
+// shows: they need the Fonts pane, and `theme` needs the Theme pane.
 //
 // <pid> is the app's: `lsof -t "$PWD/.dev/tarmac-dev.sock"`. The process that
 // runs this needs the Accessibility permission.
@@ -93,6 +98,16 @@ func settingsWindow() -> AXUIElement {
 
 func controls(_ wanted: String) -> [AXUIElement] {
     descendants(of: settingsWindow()).filter { role($0) == wanted }
+}
+
+/// A sidebar entry's title: the text of the row's cell.
+func paneTitle(_ row: AXUIElement) -> String {
+    descendants(of: row).first { role($0) == kAXStaticTextRole }.map(value) ?? ""
+}
+
+/// 1 for the selected radio button, 0 for another.
+func state(_ element: AXUIElement) -> Int {
+    (attribute(element, kAXValueAttribute) as NSNumber?)?.intValue ?? -1
 }
 
 /// An item of the app menu, the bar's second: the Apple menu is its first.
@@ -168,6 +183,11 @@ case "open":
     postCommand(43)
 case "rows":
     let window = settingsWindow(), views = descendants(of: window)
+    let selected = views.filter { role($0) == kAXRowRole && (attribute($0, kAXSelectedAttribute) as Bool?) == true }
+    print("pane=\(selected.map(paneTitle).joined(separator: ","))")
+    for tile in views.filter({ role($0) == kAXRadioButtonRole }) {
+        print("tile \(title(tile)) value=\(state(tile)) frame=\(frame(tile))")
+    }
     for (index, popUp) in views.filter({ role($0) == kAXPopUpButtonRole }).enumerated() {
         print("\(index) selected=\(value(popUp)) frame=\(frame(popUp))")
     }
@@ -180,6 +200,24 @@ case "rows":
     for text in texts { print("label \(value(text)) frame=\(frame(text))") }
     print("labels=\(texts.map(value))")
     print("resizable=\((attribute(window, "AXGrowArea") as AXUIElement?) != nil)")
+case "pane":
+    guard rest.count == 1 else { fail("pane <title>") }
+    let entries = controls(kAXRowRole)
+    guard let entry = entries.first(where: { paneTitle($0) == rest[0] }) else {
+        fail("the sidebar lists \(entries.map(paneTitle)) and none is \(rest[0])")
+    }
+    guard AXUIElementSetAttributeValue(entry, kAXSelectedAttribute as CFString, kCFBooleanTrue) == .success else {
+        fail("the sidebar did not select \(rest[0])")
+    }
+case "theme":
+    guard rest.count == 1 else { fail("theme <title>") }
+    let tiles = controls(kAXRadioButtonRole)
+    guard let tile = tiles.first(where: { title($0) == rest[0] }) else {
+        fail("the window shows the tiles \(tiles.map(title)) and none is \(rest[0]); run `pane Theme`")
+    }
+    press(tile, rest[0])
+    usleep(200_000)
+    print("tile \(rest[0]) value=\(state(tile))")
 case "pick":
     guard rest.count == 2 else { fail("pick <row> <title>") }
     let popUp = control(kAXPopUpButtonRole, "pop-ups")
