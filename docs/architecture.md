@@ -569,7 +569,9 @@ and placed by a world-space `CardFrame {x, y, w, h, z}`.
   colour-scheme reports, title, working directory, bell, clipboard writes and
   the synchronized-output hold. Shells block on some of those replies.
 - **`FrameReader`** copies the render state into a value `TerminalFrame`,
-  re-reading only the rows the library marks dirty.
+  re-reading only the rows the library marks dirty, and every row when a
+  default colour changed: a program that sets one (`OSC 10`, `OSC 11`) makes
+  no row dirty.
 - **`TerminalRenderer`** draws a frame with CoreText. Layout is in points and
   every fill is snapped to the context's device pixels, so the grid is seamless
   at any zoom. A character the terminal face lacks is shaped as a CoreText

@@ -71,8 +71,9 @@ public struct FrameCursor: Equatable, Sendable {
 }
 
 /// Everything one draw needs, copied out of libghostty-vt so drawing never
-/// touches the emulator. `dirtyRows` names the rows that differ from the
-/// previous frame this reader produced.
+/// touches the emulator. `dirtyRows` names the rows that a draw shows
+/// differently from the previous frame this reader produced: every row when
+/// a default colour changed.
 public struct TerminalFrame: Equatable, Sendable {
     public var cols: Int
     public var rows: [FrameRow]

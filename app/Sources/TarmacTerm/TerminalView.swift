@@ -74,8 +74,8 @@ public final class TerminalView: NSView {
             guard newValue != previous, (try? engine.apply(newValue)) != nil else { return }
             renderer.theme = newValue
             if newValue.isDark != previous.isDark { send(engine.encodeColorScheme(dark: newValue.isDark)) }
-            // The new defaults make every row of the next frame dirty, so
-            // reading it redraws the whole view.
+            // Every row of the frame after a theme is applied is dirty,
+            // whichever colour changed, so reading it redraws the whole view.
             readIfNotHeld()
         }
     }
@@ -238,20 +238,16 @@ public final class TerminalView: NSView {
     }
 
     private func readFrame() {
-        let shown = frameSnapshot
+        let previousCursor = frameSnapshot.cursor
         frameSnapshot = reader.read(engine)
         reportScrollbar()
         guard gridLayout != nil else { return }
-        // A default colour a program sets (OSC 10, OSC 11) makes no row
-        // dirty, and a cell with no colour of its own is drawn in it.
-        let defaultsChanged =
-            frameSnapshot.background != shown.background || frameSnapshot.foreground != shown.foreground
-        if defaultsChanged || frameSnapshot.dirtyRows.count >= frameSnapshot.rows.count {
+        if frameSnapshot.dirtyRows.count >= frameSnapshot.rows.count {
             needsDisplay = true
         } else {
             var rows = frameSnapshot.dirtyRows
-            if shown.cursor != frameSnapshot.cursor {
-                for cursor in [shown.cursor, frameSnapshot.cursor] {
+            if previousCursor != frameSnapshot.cursor {
+                for cursor in [previousCursor, frameSnapshot.cursor] {
                     if let cursor { rows.insert(cursor.row) }
                 }
             }

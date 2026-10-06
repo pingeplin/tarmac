@@ -11,6 +11,11 @@ final class FrameReader {
     private let rowCells: GhosttyRenderStateRowCells
     private var rows: [FrameRow] = []
     private var cols = 0
+    /// The default colours of the last frame. A program that sets one or
+    /// gives it back (OSC 10, 11, 110, 111) makes no row dirty, and a cell
+    /// with no colour of its own is drawn in it. A palette entry needs no
+    /// such watch: the library marks every row dirty for a new one.
+    private var defaults = (foreground: RGB(0, 0, 0), background: RGB(0, 0, 0))
     private var scalars = [UInt32](repeating: 0, count: 16)
 
     init() throws {
@@ -41,7 +46,10 @@ final class FrameReader {
         let newCols = Int(get(GHOSTTY_RENDER_STATE_DATA_COLS, UInt16(0)))
         let newRows = Int(get(GHOSTTY_RENDER_STATE_DATA_ROWS, UInt16(0)))
         let dirty = get(GHOSTTY_RENDER_STATE_DATA_DIRTY, GHOSTTY_RENDER_STATE_DIRTY_FULL)
+        let newDefaults = (foreground: RGB(colors.foreground), background: RGB(colors.background))
         let redrawAll = dirty == GHOSTTY_RENDER_STATE_DIRTY_FULL || newCols != cols || newRows != rows.count
+            || newDefaults != defaults
+        defaults = newDefaults
         if redrawAll {
             cols = newCols
             rows = Array(repeating: FrameRow(cells: [], selection: nil), count: newRows)
@@ -67,8 +75,8 @@ final class FrameReader {
         return TerminalFrame(
             cols: cols,
             rows: rows,
-            foreground: RGB(colors.foreground),
-            background: RGB(colors.background),
+            foreground: defaults.foreground,
+            background: defaults.background,
             cursorColor: colors.cursor_has_value ? RGB(colors.cursor) : nil,
             cursor: readCursor(),
             dirtyRows: dirtyRows
