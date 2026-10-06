@@ -206,7 +206,7 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, WKNavigationDeleg
     /// with no document in it. The document may be dark, so the web view is
     /// out of sight from the moment a page or a document is asked for until
     /// the host page says the document is on screen, and what shows is this
-    /// view's own backdrop (#213).
+    /// view's own backdrop (spec 2610.0007).
     private func coverDocument() {
         webView.alphaValue = 0
     }

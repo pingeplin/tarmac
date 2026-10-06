@@ -13,7 +13,7 @@ public enum Contrast {
     private static func luminance(_ rgb: UInt32) -> Double {
         func linear(_ shift: UInt32) -> Double {
             let value = Double(rgb >> shift & 0xff) / 255
-            return value <= 0.03928 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+            return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
         }
         return 0.2126 * linear(16) + 0.7152 * linear(8) + 0.0722 * linear(0)
     }

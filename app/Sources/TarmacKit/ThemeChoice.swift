@@ -25,4 +25,10 @@ public enum ThemeChoice: String, CaseIterable, Sendable {
         case .dark: .dark
         }
     }
+
+    /// The variants the choice's tile pictures, from the left: each one it can
+    /// put in effect, light first.
+    public var pictured: [ThemeVariant] {
+        [ThemeVariant.light, .dark].filter { inEffect(systemIsDark: $0 == .dark) == $0 }
+    }
 }

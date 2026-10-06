@@ -26,4 +26,12 @@ final class ThemeChoiceTests: XCTestCase {
         XCTAssertEqual(ThemeChoice.auto.inEffect(systemIsDark: true), .dark)
         XCTAssertEqual(ThemeChoice.auto.inEffect(systemIsDark: false), .light)
     }
+
+    /// A tile's picture shows each variant its choice can put in effect, light
+    /// first.
+    func testATilePicturesEachVariantItsChoiceCanGiveLightFirst() {
+        XCTAssertEqual(ThemeChoice.auto.pictured, [.light, .dark])
+        XCTAssertEqual(ThemeChoice.light.pictured, [.light])
+        XCTAssertEqual(ThemeChoice.dark.pictured, [.dark])
+    }
 }

@@ -51,9 +51,7 @@ enum ThemeTile {
             }
             let rect = bounds.insetBy(dx: ringRoom, dy: ringRoom)
             NSBezierPath(roundedRect: rect, xRadius: corner, yRadius: corner).addClip()
-            // Each variant the choice can give has an equal strip, light at
-            // the left: Auto is half and half.
-            let variants = [ThemeVariant.light, .dark].filter { choice.inEffect(systemIsDark: $0 == .dark) == $0 }
+            let variants = choice.pictured
             let strip = rect.width / CGFloat(variants.count)
             for (index, variant) in variants.enumerated() {
                 NSGraphicsContext.saveGraphicsState()

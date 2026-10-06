@@ -62,7 +62,7 @@
   }
 
   // The app keeps this page out of sight from the moment it gives the frame
-  // a source until it is told that the document is on screen (#213). Before
+  // a source until it is told that the document is on screen. Before
   // that there is white to see, while the document may be dark: this page
   // for a frame or two before it is first drawn, then the frame with no
   // document in it. `asked` counts the sources given and `started` is the

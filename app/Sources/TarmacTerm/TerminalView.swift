@@ -71,8 +71,7 @@ public final class TerminalView: NSView {
         get { renderer.theme }
         set {
             let previous = renderer.theme
-            guard newValue != previous else { return }
-            try? engine.apply(newValue)
+            guard newValue != previous, (try? engine.apply(newValue)) != nil else { return }
             renderer.theme = newValue
             if newValue.isDark != previous.isDark { send(engine.encodeColorScheme(dark: newValue.isDark)) }
             // The new defaults make every row of the next frame dirty, so

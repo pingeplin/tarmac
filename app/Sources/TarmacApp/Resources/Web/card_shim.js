@@ -34,7 +34,7 @@
   }
 
   // The card is kept out of sight until its document has started, which is
-  // now (#213): what there is to see before that is white, and this document
+  // now: what there is to see before that is white, and this document
   // may be dark. Said here, and not at the end of the load: a document that
   // stops its own load never ends it.
   try {

@@ -1071,6 +1071,20 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(resizes, [])
     }
 
+    /// S21, on the screen — `drawn(_:)` draws every row, so it cannot tell a
+    /// setter that reads the frame and asks for no display from one that asks.
+    func test2610_0007S21ANewThemeAsksForTheWholeViewToBeDrawn() throws {
+        feed("MMMM")
+        settle()
+        let screen = try Screen(showing: view)
+        XCTAssertEqual(screen.shown().center(col: 10, row: 5), dark.background)
+
+        view.theme = light
+
+        XCTAssertEqual(screen.shown().center(col: 10, row: 5), light.background)
+        XCTAssertEqual(screen.asked.map { $0.intersection(view.bounds) }, [view.bounds])
+    }
+
     /// The exception of S21: while a program holds its output (mode 2026) the
     /// frame on screen stays, and the new colours come when the hold ends.
     func test2610_0007ANewThemeWaitsForAHeldFrame() throws {

@@ -1218,9 +1218,10 @@ final class CardShimTests: XCTestCase {
 
     // MARK: - the document tells its host that it has started (#213)
 
-    /// The host page keeps the frame hidden until this message: it is posted
-    /// as the shim loads, before any byte of the author is parsed, and waits
-    /// for nothing. In the document every older test runs in, the default
+    /// The app keeps the card's web view out of sight until the host page
+    /// says `shown`, and this message is what the host page waits for: it is
+    /// posted as the shim loads, before any byte of the author is parsed, and
+    /// waits for nothing. In the document every older test runs in, the default
     /// scheme's block throws, and the message is posted all the same.
     func testTheShimTellsItsParentThatTheDocumentHasStartedAsItLoads() throws {
         for head in [false, true] {
