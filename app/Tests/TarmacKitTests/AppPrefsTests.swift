@@ -515,6 +515,17 @@ final class AppPrefsTests: XCTestCase {
         )
     }
 
+    /// S20 — a dark theme for the light appearance, and one theme for both.
+    func testOneDarkThemeIsWrittenForBothAppearances() {
+        XCTAssertEqual(
+            AppPrefs.encode(Values(theme: .light, themes: [.light: "catppuccin-mocha", .dark: "catppuccin-mocha"])),
+            data(
+                #"{"warn_before_quit":true,"theme":"light","theme_light":"catppuccin-mocha","#
+                    + #""theme_dark":"catppuccin-mocha"}"#
+            )
+        )
+    }
+
     /// S21 — so the bytes of every file that exists today do not change.
     func testTheStandardThemesAreNotWritten() {
         XCTAssertEqual(
@@ -523,11 +534,28 @@ final class AppPrefsTests: XCTestCase {
         )
     }
 
+    /// S21 — a Breeze id is left out only where it is the standard theme of
+    /// that key's appearance.
+    func testABreezeThemeIsWrittenForTheOtherAppearance() {
+        XCTAssertEqual(
+            AppPrefs.encode(Values(themes: [.light: "breeze-dark", .dark: "breeze-light"])),
+            data(#"{"warn_before_quit":true,"theme_light":"breeze-dark","theme_dark":"breeze-light"}"#)
+        )
+    }
+
     /// S22
-    func testAThemeTheAppearanceIsNotOfferedIsNotWritten() {
+    func testAnIdNoThemeHasIsNotWritten() {
+        XCTAssertEqual(
+            AppPrefs.encode(Values(themes: [.light: "sepia", .dark: "GitHub-Dark"])),
+            data(#"{"warn_before_quit":true}"#)
+        )
+    }
+
+    /// S22 — the dark theme for Light is written beside an id that is not.
+    func testAThemeOfTheOtherVariantIsWrittenBesideAnIdNoThemeHas() {
         XCTAssertEqual(
             AppPrefs.encode(Values(themes: [.light: "catppuccin-mocha", .dark: "sepia"])),
-            data(#"{"warn_before_quit":true}"#)
+            data(#"{"warn_before_quit":true,"theme_light":"catppuccin-mocha"}"#)
         )
     }
 
@@ -542,27 +570,47 @@ final class AppPrefsTests: XCTestCase {
         )
     }
 
+    private func fileWithALightTheme(_ value: String) -> Data {
+        data(
+            #"{"warn_before_quit":true,"terminal_font":"Menlo","theme":"light","theme_light":"#
+                + value + #","theme_dark":"github-dark"}"#
+        )
+    }
+
     /// S24 — the files are valid JSON and hold the key where `"github-light"`
     /// reads as one, so it is the key's own rule that drops the value.
-    func testAThemeTheLightAppearanceIsNotOfferedGivesNoEntry() {
-        func file(_ value: String) -> Data {
-            data(
-                #"{"warn_before_quit":true,"terminal_font":"Menlo","theme":"light","theme_light":"#
-                    + value + #","theme_dark":"github-dark"}"#
-            )
-        }
+    func testAValueThatIsNoThemeOrTheStandardOneGivesNoEntry() {
         let withoutALightTheme = Values(fonts: [.terminal: "Menlo"], theme: .light, themes: [.dark: "github-dark"])
         XCTAssertEqual(
-            AppPrefs.decode(file(#""github-light""#)).themes, [.light: "github-light", .dark: "github-dark"]
+            AppPrefs.decode(fileWithALightTheme(#""github-light""#)).themes,
+            [.light: "github-light", .dark: "github-dark"]
         )
 
-        for value in [
-            #""sepia""#, #""catppuccin-mocha""#, #""GitHub-Light""#, #""breeze-light""#, "7", "null",
-            #"["github-light"]"#,
-        ] {
-            XCTAssertTrue(StrictJSON.isValid(file(value)), value)
-            XCTAssertEqual(AppPrefs.decode(file(value)), withoutALightTheme, value)
+        for value in [#""sepia""#, #""GitHub-Light""#, #""breeze-light""#, "7", "null", #"["github-light"]"#] {
+            let file = fileWithALightTheme(value)
+            XCTAssertTrue(StrictJSON.isValid(file), value)
+            XCTAssertEqual(AppPrefs.decode(file), withoutALightTheme, value)
         }
+    }
+
+    /// S24 — a dark theme, the standard theme of the dark appearance, and the
+    /// theme the dark appearance has too.
+    func testAThemeOfTheOtherVariantReadsAsTheThemeOfTheLightAppearance() {
+        for id in ["catppuccin-mocha", "breeze-dark", "github-dark"] {
+            XCTAssertEqual(
+                AppPrefs.decode(fileWithALightTheme(#""\#(id)""#)),
+                Values(fonts: [.terminal: "Menlo"], theme: .light, themes: [.light: id, .dark: "github-dark"]),
+                id
+            )
+        }
+    }
+
+    /// S24
+    func testBreezeLightReadsAsTheThemeOfTheDarkAppearance() {
+        XCTAssertEqual(
+            AppPrefs.decode(data(#"{"warn_before_quit":true,"theme_dark":"breeze-light"}"#)).themes,
+            [.dark: "breeze-light"]
+        )
     }
 
     /// S24 — bad keys beside a theme do not change the theme.
@@ -576,11 +624,11 @@ final class AppPrefsTests: XCTestCase {
         XCTAssertTrue(values.warnBeforeQuit)
     }
 
-    /// S25 — each choice, with none or one of the three other themes for each
-    /// appearance: 3 × 4 × 4.
+    /// S25 — each choice, with none or one of the seven other themes for each
+    /// appearance: 3 × 8 × 8.
     func testEveryChoiceOfThemesSurvivesTheRoundTrip() {
         func themes(for variant: ThemeVariant) -> [String?] {
-            [nil] + ThemeCatalog.offered(for: variant).map(\.id).filter { $0 != ThemeCatalog.standard(for: variant).id }
+            [nil] + ThemeCatalog.all.map(\.id).filter { $0 != ThemeCatalog.standard(for: variant).id }
         }
         var count = 0
         for choice in ThemeChoice.allCases {
@@ -597,21 +645,21 @@ final class AppPrefsTests: XCTestCase {
                 }
             }
         }
-        XCTAssertEqual(count, 48)
+        XCTAssertEqual(count, 192)
     }
 
     /// S25
     func testSavedThemesReadBackFromDisk() throws {
         let path = try scratchDirectory() + "/app-prefs.json"
         let values = Values(
-            fonts: [.terminal: "Menlo"], fontSizes: [.terminal: 20], theme: .auto,
-            themes: [.light: "solarized-light", .dark: "catppuccin-mocha"]
+            fonts: [.terminal: "Menlo"], fontSizes: [.terminal: 20], theme: .light,
+            themes: [.light: "catppuccin-mocha", .dark: "solarized-light"]
         )
 
         try AppPrefs.save(values, to: path)
 
         XCTAssertEqual(AppPrefs.load(from: path), values)
-        XCTAssertEqual(AppPrefs.load(from: path).themes, [.light: "solarized-light", .dark: "catppuccin-mocha"])
+        XCTAssertEqual(AppPrefs.load(from: path).themes, [.light: "catppuccin-mocha", .dark: "solarized-light"])
     }
 
     /// S26 — another preference saved must not drop a theme.

@@ -1,11 +1,11 @@
 import XCTest
 @testable import TarmacKit
 
-/// 2610.0008: the themes Tarmac has, which of them an appearance is offered,
+/// 2610.0008: the themes Tarmac has, the theme an id names for an appearance,
 /// and the one in effect.
 final class ThemeCatalogTests: XCTestCase {
-    /// S1 — the order of the pop-ups: Breeze first, then by name.
-    func testS1TheCatalogueHasTheEightThemesInPopUpOrder() {
+    /// S1 — the order of the list: Breeze first, then by name.
+    func testS1TheCatalogueHasTheEightThemesInListOrder() {
         XCTAssertEqual(
             ThemeCatalog.all.map(\.id),
             [
@@ -24,15 +24,16 @@ final class ThemeCatalogTests: XCTestCase {
         XCTAssertEqual(Set(ThemeCatalog.all.map(\.title)).count, 8)
     }
 
-    /// S2 — a light theme is offered for the light appearance alone.
-    func testS2AnAppearanceIsOfferedTheThemesOfItsVariant() {
-        let light = ThemeCatalog.offered(for: .light).map(\.id)
-        let dark = ThemeCatalog.offered(for: .dark).map(\.id)
-
-        XCTAssertEqual(light, ["breeze-light", "catppuccin-latte", "github-light", "solarized-light"])
-        XCTAssertEqual(dark, ["breeze-dark", "catppuccin-mocha", "github-dark", "solarized-dark"])
-        XCTAssertEqual(Set(light + dark), Set(ThemeCatalog.all.map(\.id)))
-        XCTAssertTrue(Set(light).isDisjoint(with: dark))
+    /// S2 — any theme for any appearance: the sixteen pairs.
+    func testS2EachThemeCanBeChosenForEachAppearance() {
+        var pairs = 0
+        for theme in ThemeCatalog.all {
+            for variant in ThemeVariant.allCases {
+                XCTAssertEqual(ThemeCatalog.entry(theme.id, for: variant), theme, "\(theme.id) \(variant.rawValue)")
+                pairs += 1
+            }
+        }
+        XCTAssertEqual(pairs, 16)
     }
 
     /// S3 — nothing changes for a user who chooses nothing.
@@ -41,40 +42,53 @@ final class ThemeCatalogTests: XCTestCase {
         XCTAssertEqual(ThemeCatalog.standard(for: .dark).id, "breeze-dark")
     }
 
-    /// S4
-    func testS4AnOfferedIdNamesItsTheme() {
-        XCTAssertEqual(ThemeCatalog.entry("solarized-light", for: .light).id, "solarized-light")
-        XCTAssertEqual(ThemeCatalog.entry("github-dark", for: .dark).id, "github-dark")
+    /// S4 — a theme of the other variant, and the standard theme of the
+    /// other appearance.
+    func testS4AnIdNamesItsThemeWhateverTheAppearance() {
+        XCTAssertEqual(ThemeCatalog.entry("catppuccin-mocha", for: .light).id, "catppuccin-mocha")
+        XCTAssertEqual(ThemeCatalog.entry("solarized-light", for: .dark).id, "solarized-light")
+        XCTAssertEqual(ThemeCatalog.entry("breeze-dark", for: .light).id, "breeze-dark")
     }
 
-    /// S4 — no id, an unknown one, one of the other appearance and one in
-    /// another letter case.
-    func testS4AnyOtherIdNamesTheStandardTheme() {
-        for id in [nil, "sepia", "catppuccin-mocha", "GitHub-Light"] {
+    /// S4 — no id, an unknown one, one in another letter case and an empty
+    /// one.
+    func testS4AnIdNoThemeHasNamesTheStandardThemeOfTheAppearance() {
+        for id in [nil, "sepia", "GitHub-Light", ""] {
             XCTAssertEqual(ThemeCatalog.entry(id, for: .light).id, "breeze-light", id ?? "nil")
+            XCTAssertEqual(ThemeCatalog.entry(id, for: .dark).id, "breeze-dark", id ?? "nil")
         }
-        XCTAssertEqual(ThemeCatalog.entry("solarized-light", for: .dark).id, "breeze-dark")
     }
 
     private func inEffect(_ choice: ThemeChoice, _ themes: [ThemeVariant: String], systemIsDark: Bool) -> String {
         ThemeCatalog.inEffect(choice: choice, themes: themes, systemIsDark: systemIsDark).id
     }
 
+    /// A dark theme for Light and a light theme for Dark, so that a rule
+    /// which gives an appearance a theme of its own variant fails.
+    private let crossed: [ThemeVariant: String] = [.light: "catppuccin-mocha", .dark: "solarized-light"]
+
     /// S5
     func testS5AutoIsTheThemeChosenForTheSystemsAppearance() {
-        let themes: [ThemeVariant: String] = [.light: "solarized-light", .dark: "catppuccin-mocha"]
-
-        XCTAssertEqual(inEffect(.auto, themes, systemIsDark: true), "catppuccin-mocha")
-        XCTAssertEqual(inEffect(.auto, themes, systemIsDark: false), "solarized-light")
+        XCTAssertEqual(inEffect(.auto, crossed, systemIsDark: true), "solarized-light")
+        XCTAssertEqual(inEffect(.auto, crossed, systemIsDark: false), "catppuccin-mocha")
     }
 
     /// S5
     func testS5LightAndDarkAreTheirOwnThemeWhateverTheSystem() {
-        let themes: [ThemeVariant: String] = [.light: "solarized-light", .dark: "catppuccin-mocha"]
-
         for systemIsDark in [true, false] {
-            XCTAssertEqual(inEffect(.light, themes, systemIsDark: systemIsDark), "solarized-light")
-            XCTAssertEqual(inEffect(.dark, themes, systemIsDark: systemIsDark), "catppuccin-mocha")
+            XCTAssertEqual(inEffect(.light, crossed, systemIsDark: systemIsDark), "catppuccin-mocha")
+            XCTAssertEqual(inEffect(.dark, crossed, systemIsDark: systemIsDark), "solarized-light")
+        }
+    }
+
+    /// S5
+    func testS5OneThemeForBothAppearancesIsInEffectUnderEveryChoice() {
+        let both: [ThemeVariant: String] = [.light: "github-dark", .dark: "github-dark"]
+
+        for choice in ThemeChoice.allCases {
+            for systemIsDark in [true, false] {
+                XCTAssertEqual(inEffect(choice, both, systemIsDark: systemIsDark), "github-dark", choice.rawValue)
+            }
         }
     }
 

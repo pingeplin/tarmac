@@ -115,8 +115,9 @@ core/target/debug/tarmac dev snapshot | jq .
   role resolved to — the PostScript `face`, or for `document` the `css`
   value its prose is given; `terminal` and `document` also have `size`, the
   size in effect), `theme` (`choice`: `auto`, `light` or `dark`, and
-  `in_effect`: `light` or `dark`, and `name`: the id of the theme in
-  effect, as `catppuccin-mocha`), per-terminal
+  `in_effect`: `light` or `dark`, the variant of the theme in effect and
+  not the choice, and `name`: the id of the theme in effect, as
+  `catppuccin-mocha`), per-terminal
   `cols`/`rows`/`proc`/`selection`/`scrollback_tail`, per-doc-card `borrowed`
   (the HTML card whose shield is lifted), and `quit_guard` — the ⌘Q guard's hold
   on the Quit item (`retargeted`, `enabled`, which `make qa`'s D11 asserts) plus

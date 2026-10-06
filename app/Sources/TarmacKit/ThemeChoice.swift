@@ -1,16 +1,16 @@
-/// An appearance, and which of the two a theme is for (specs 2610.0007,
-/// 2610.0008).
+/// An appearance, and which of the two a theme is (specs 2610.0007,
+/// 2610.0008): a light theme can be chosen for the dark appearance.
 public enum ThemeVariant: String, CaseIterable, Sendable {
     case light, dark
 
     /// The key the theme chosen for this appearance is saved under.
     public var prefsKey: String { "theme_\(rawValue)" }
 
-    /// The label of this appearance's row in the Theme pane.
-    public var rowTitle: String {
+    /// The appearance's name in a mark of the list and in the title of a box.
+    public var title: String {
         switch self {
-        case .light: "Light theme"
-        case .dark: "Dark theme"
+        case .light: "Light"
+        case .dark: "Dark"
         }
     }
 }
@@ -30,6 +30,13 @@ public enum ThemeChoice: String, CaseIterable, Sendable {
         case .light: "Light"
         case .dark: "Dark"
         }
+    }
+
+    /// Whether the Mac's appearance is dark, from the value of the global
+    /// preference `AppleInterfaceStyle`: the Mac writes exactly `"Dark"`, and
+    /// no value when it is light.
+    public static func systemIsDark(interfaceStyle: String?) -> Bool {
+        interfaceStyle == "Dark"
     }
 
     public func inEffect(systemIsDark: Bool) -> ThemeVariant {

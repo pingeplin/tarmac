@@ -1,10 +1,11 @@
-/// The themes Tarmac has (spec 2610.0008), in the order of the pop-ups, and
-/// the pure rules over them.
+/// The themes Tarmac has (spec 2610.0008), in the order of the Theme pane's
+/// list, and the pure rules over them. Any theme can be chosen for either
+/// appearance: a theme's variant says what it is, not where it can be chosen.
 public enum ThemeCatalog {
     public struct Entry: Equatable, Sendable {
         /// What the file and the snapshot hold.
         public let id: String
-        /// What a pop-up shows.
+        /// What the list and the showcase show.
         public let title: String
         public let palette: Palette
 
@@ -22,20 +23,18 @@ public enum ThemeCatalog {
         Entry(id: "solarized-dark", title: "Solarized Dark", palette: .solarizedDark),
     ]
 
-    /// The themes an appearance can have, in the order of its pop-up.
-    public static func offered(for variant: ThemeVariant) -> [Entry] {
-        all.filter { $0.variant == variant }
-    }
-
-    /// The theme of an appearance with nothing chosen: Breeze, the first one
-    /// it is offered.
+    /// The theme of an appearance with nothing chosen: Breeze.
     public static func standard(for variant: ThemeVariant) -> Entry {
-        offered(for: variant)[0]
+        switch variant {
+        case .light: all[0]
+        case .dark: all[1]
+        }
     }
 
-    /// The offered theme with that id, compared exactly, or the standard one.
+    /// The theme with that id, compared exactly and whatever its variant, or
+    /// the standard one of `variant`.
     public static func entry(_ id: String?, for variant: ThemeVariant) -> Entry {
-        offered(for: variant).first { $0.id == id } ?? standard(for: variant)
+        all.first { $0.id == id } ?? standard(for: variant)
     }
 
     public static func inEffect(

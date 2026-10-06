@@ -946,38 +946,62 @@ arguments. The whole font list is read only when the window opens; launch
 asks the Mac for the saved families alone.
 
 **Theme** (`ThemeSettings`, `ThemeCatalog`, `Palette`). The *Theme* pane has
-three rows. *Appearance* has three tiles in the order of `ThemeChoice`:
-*Auto*, *Light* and *Dark*. *Light theme* and *Dark theme* are each a pop-up
-of the themes that appearance is offered. *Light* is the theme chosen for the
-light appearance and *Dark* the one chosen for the dark appearance; *Auto* is
-the one of the two that fits the macOS appearance, and changes when macOS
-does (`ThemeCatalog.inEffect`). The *Light* and *Dark* tiles draw the theme
-chosen for them. The appearance is the key `theme` of `app-prefs.json`:
-`"auto"`, `"light"` or `"dark"`. No key, and any other value, is `dark`, and
-`dark` is not written. The theme of each appearance is the key `theme_light`
-or `theme_dark`: the id of a theme that appearance is offered. No key, and
-any other value, is Breeze Light or Breeze Dark, and those two are not
-written.
+two groups. *Appearance* has three tiles in the order of `ThemeChoice`:
+*Auto*, *Light* and *Dark*. Under it is a list of all the themes and, beside
+it, a showcase of the theme that is selected in the list (`ThemeList`,
+`ThemePicture`). A row of the list has a swatch, the theme's title and a mark
+*Light* or *Dark*, or both, when the theme is the one chosen for that
+appearance. A selected row changes the showcase and nothing else. The
+showcase has the theme's title, the words "light theme" or "dark theme", a
+picture of a board drawn from the theme's palette, two boxes and one line
+about contrast. The boxes, *Apply to Light* and *Apply to Dark*, choose the
+shown theme for an appearance; a cleared box gives the appearance its
+standard theme back. Any theme can be chosen for either appearance, and one
+theme for both. The state of a box, the theme it gives, the marks of a row
+and the words are the pure rules of `ThemeBrowser`. The theme that is shown
+is the pane's own state: it is not saved, and it is the theme in effect each
+time the window opens.
+
+*Light* is the theme chosen for the light appearance and *Dark* the one
+chosen for the dark appearance; *Auto* is the one of the two that fits the
+macOS appearance, and changes when macOS does (`ThemeCatalog.inEffect`). The
+*Light* and *Dark* tiles draw the theme chosen for them. The appearance is
+the key `theme` of `app-prefs.json`: `"auto"`, `"light"` or `"dark"`. No key,
+and any other value, is `dark`, and `dark` is not written. The theme of each
+appearance is the key `theme_light` or `theme_dark`: the id of any theme of
+the catalogue. No key, and any other value, is the standard theme of that
+appearance, Breeze Light or Breeze Dark, and a standard theme is not written
+under its own key.
 
 The themes are the entries of `ThemeCatalog`, in `TarmacKit`, in the order of
-the pop-ups: Breeze, Catppuccin (Latte, Mocha), GitHub and Solarized, a light
+the list: Breeze, Catppuccin (Latte, Mocha), GitHub and Solarized, a light
 and a dark one of each. An entry is an id, a title and a `Palette`. Every
 colour of a theme is in that one value: the chrome tokens, the four repo
-colours and the terminal's colours. A theme is offered for the appearance its
+colours and the terminal's colours. A theme is light or dark by what its
 terminal reports to a program (`Palette.variant`, the rule of
-`TerminalTheme.isDark`). The terminal colours of a theme that is not Breeze
-are the upstream values, with no change for contrast; its chrome tokens are
-Tarmac's choice. `PaletteCheck.findings` is the detector that lists the pairs
-of a palette with less contrast than their floor: the tests hold every theme
-to no finding in its chrome, and nothing else calls it.
+`TerminalTheme.isDark`). That variant says what a theme is, not where it can
+be chosen. The terminal colours of a theme that is not Breeze are the
+upstream values, with no change for contrast; its chrome tokens are Tarmac's
+choice. `PaletteCheck.findings` is the detector that lists the pairs
+of a palette with less contrast than their floor. The tests hold every theme
+to no finding in its chrome, and the showcase's contrast note
+(`ThemeBrowser.contrastNote`) gives the number of terminal findings of the
+shown theme. The note warns and blocks nothing.
 
 Each colour token of `Theme` reads the palette in effect. `ThemeSettings`
-sets `NSApp.appearance` (`nil` for *Auto*, so that the app follows the Mac),
-resolves the entry in effect, and, when the entry changed, tells the views by
-the same walk a font change uses (`ThemeFollowing`): the window's view tree,
-then every board that is not mounted. Each view takes its colours again, with
+resolves the entry in effect and sets `NSApp.appearance` from that entry's
+variant, under *Auto* too. So the Settings window, a menu opened in a window
+and what a page sees as `prefers-color-scheme` follow the theme in effect:
+with a dark theme chosen for the light appearance, the choice *Light* gives a
+dark app. No window sets an appearance of its own. With an appearance set on
+the app, the app no longer reports the Mac's, so the Mac's appearance is read
+from the global preference `AppleInterfaceStyle`
+(`ThemeChoice.systemIsDark`), and `ThemeSettings` observes that key of
+`UserDefaults.standard`. When the entry changed, `ThemeSettings` tells the
+views by the same walk a font change uses (`ThemeFollowing`): the window's
+view tree, then every board that is not mounted. Each view takes its colours again, with
 the colours of the state it is in. A theme chosen for the appearance that is
-not in effect is saved and changes its tile, and no view.
+not in effect is saved and changes its tile and its mark, and no view.
 
 - A terminal card sets `TerminalView.theme`. The text on screen is drawn in
   the new palette with nothing fed, the grid does not change, and a program

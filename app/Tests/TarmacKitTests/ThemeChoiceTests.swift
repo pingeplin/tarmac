@@ -27,11 +27,21 @@ final class ThemeChoiceTests: XCTestCase {
         XCTAssertEqual(ThemeChoice.auto.inEffect(systemIsDark: false), .light)
     }
 
-    /// 2610.0008 S6 — the key and the row of the theme chosen for an appearance.
-    func testAnAppearanceHasAKeyAndARowForItsTheme() {
+    /// 2610.0008 S6 — the key of the theme chosen for an appearance, and the
+    /// word a mark and a box name the appearance with.
+    func testAnAppearanceHasAKeyForItsThemeAndATitle() {
         XCTAssertEqual(ThemeVariant.allCases, [.light, .dark])
         XCTAssertEqual(ThemeVariant.allCases.map(\.prefsKey), ["theme_light", "theme_dark"])
-        XCTAssertEqual(ThemeVariant.allCases.map(\.rowTitle), ["Light theme", "Dark theme"])
+        XCTAssertEqual(ThemeVariant.allCases.map(\.title), ["Light", "Dark"])
+    }
+
+    /// 2610.0008 S63 — `"Light"` fails a rule that tests "there is a value",
+    /// and `"dark"` one that ignores the letter case.
+    func testTheMacIsDarkOnlyForTheExactInterfaceStyleDark() {
+        XCTAssertTrue(ThemeChoice.systemIsDark(interfaceStyle: "Dark"))
+        for style in [nil, "", "Light", "dark"] {
+            XCTAssertFalse(ThemeChoice.systemIsDark(interfaceStyle: style), style ?? "nil")
+        }
     }
 
     /// A tile's picture shows each variant its choice can put in effect, light

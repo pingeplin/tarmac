@@ -761,8 +761,9 @@ final class DevSnapshotTests: XCTestCase {
 
     /// 2610.0008 S30 — the choice the app holds, the variant in effect and
     /// the theme's id are three facts, and the snapshot writes each as it is
-    /// given: the name is not made from the variant. The key itself is in the
-    /// list of `testS1TheSnapshotCarriesExactlyTheDocumentedTopLevelKeys`.
+    /// given: the name is not made from the variant, and the variant is not
+    /// made from the choice. The key itself is in the list of
+    /// `testS1TheSnapshotCarriesExactlyTheDocumentedTopLevelKeys`.
     func test2610_0008S30TheSnapshotReportsTheThemeChosenTheVariantAndTheName() {
         func theme(_ choice: ThemeChoice, _ inEffect: ThemeVariant, _ name: String) -> JSONValue? {
             let theme = DevSnapshot.Theme(choice: choice, inEffect: inEffect, name: name)
@@ -776,7 +777,8 @@ final class DevSnapshotTests: XCTestCase {
             theme(.auto, .dark, "breeze-dark"), ["choice": "auto", "in_effect": "dark", "name": "breeze-dark"]
         )
         XCTAssertEqual(
-            theme(.light, .light, "github-light"), ["choice": "light", "in_effect": "light", "name": "github-light"]
+            theme(.light, .dark, "catppuccin-mocha"),
+            ["choice": "light", "in_effect": "dark", "name": "catppuccin-mocha"]
         )
     }
 

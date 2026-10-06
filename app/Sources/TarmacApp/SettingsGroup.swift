@@ -22,19 +22,24 @@ enum SettingsGroup {
         grid.yPlacement = .top
         grid.rowSpacing = padding.height
         grid.columnSpacing = 16
-        grid.translatesAutoresizingMaskIntoConstraints = false
+        return box(holding: grid)
+    }
+
+    /// The box alone, around a view that lays out its own rows.
+    static func box(holding view: NSView, margins: NSSize = padding) -> NSBox {
+        view.translatesAutoresizingMaskIntoConstraints = false
 
         let box = NSBox()
         box.titlePosition = .noTitle
-        box.contentViewMargins = padding
+        box.contentViewMargins = margins
         box.translatesAutoresizingMaskIntoConstraints = false
         guard let content = box.contentView else { return box }
-        content.addSubview(grid)
+        content.addSubview(view)
         NSLayoutConstraint.activate([
-            grid.topAnchor.constraint(equalTo: content.topAnchor),
-            grid.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            grid.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            grid.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            view.topAnchor.constraint(equalTo: content.topAnchor),
+            view.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            view.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: content.trailingAnchor),
         ])
         return box
     }

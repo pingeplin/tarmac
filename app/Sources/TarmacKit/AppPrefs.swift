@@ -28,8 +28,9 @@ public enum AppPrefs {
         public var fontSizes: [FontRole: Double]
         /// The appearance chosen; no key in the file is the standard one.
         public var theme: ThemeChoice
-        /// The id of the theme chosen for an appearance. No entry is the
-        /// standard one, and the standard id is not written.
+        /// The id of the theme chosen for an appearance. No entry, and the id
+        /// of the appearance's standard theme, both mean the standard one;
+        /// neither is written.
         public var themes: [ThemeVariant: String]
 
         public init(
@@ -84,8 +85,8 @@ public enum AppPrefs {
         }
     }
 
-    /// The id as the file holds it: that of a theme the appearance is offered
-    /// and that is not its standard one. Any other id is no key.
+    /// The id as the file holds it: that of a theme of the catalogue that is
+    /// not the appearance's standard one. Any other id is no key.
     private static func written(_ id: String?, for variant: ThemeVariant) -> String? {
         let theme = ThemeCatalog.entry(id, for: variant)
         return theme.id == id && theme != ThemeCatalog.standard(for: variant) ? id : nil
