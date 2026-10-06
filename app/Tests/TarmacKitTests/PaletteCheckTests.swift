@@ -95,10 +95,9 @@ final class PaletteCheckTests: XCTestCase {
     }
 
     /// S18
-    func testS18BreezeLightAndGitHubLightHaveNoFinding() throws {
+    func testS18BreezeLightAndGitHubLightHaveNoFinding() {
         for id in ["breeze-light", "github-light"] {
-            let entry = try XCTUnwrap(ThemeCatalog.all.first { $0.id == id }, id)
-            XCTAssertEqual(pairs(PaletteCheck.findings(entry.palette)), [], id)
+            XCTAssertEqual(pairs(PaletteCheck.findings(ThemeCatalog.theme(id).palette)), [], id)
         }
     }
 
@@ -129,7 +128,7 @@ final class PaletteCheckTests: XCTestCase {
 
     /// S19
     func testS19SolarizedLightsBrightWhiteIsItsBackground() throws {
-        let findings = PaletteCheck.findings(ThemeCatalog.entry("solarized-light", for: .light).palette)
+        let findings = PaletteCheck.findings(ThemeCatalog.theme("solarized-light").palette)
 
         XCTAssertEqual(try XCTUnwrap(findings.first { $0.subject == "ansi 15" }).ratio, 1)
     }

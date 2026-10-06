@@ -32,7 +32,7 @@ enum ThemeTile {
 
     /// Draws the tile's two pictures again, from the palette chosen for each
     /// appearance.
-    static func picture(_ choice: ThemeChoice, on button: NSButton, palette: @escaping (ThemeVariant) -> Palette) {
+    static func picture(_ choice: ThemeChoice, on button: NSButton, palette: (ThemeVariant) -> Palette) {
         let palettes = choice.pictured.map(palette)
         button.image = image(palettes, selected: false)
         button.alternateImage = image(palettes, selected: true)

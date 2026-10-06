@@ -59,7 +59,7 @@ final class ThemePane: NSObject {
     /// The tiles and the marks: what is chosen, whatever theme is shown.
     private func showChosen() {
         for (choice, tile) in zip(ThemeChoice.allCases, tiles) {
-            ThemeTile.picture(choice, on: tile) { [theme] in theme.theme(for: $0).palette }
+            ThemeTile.picture(choice, on: tile) { theme.theme(for: $0).palette }
             tile.state = choice == theme.choice ? .on : .off
         }
         list.show { ThemeBrowser.marks(of: $0, themes: theme.themes) }
@@ -128,15 +128,15 @@ final class ThemePane: NSObject {
     private func showcase() -> NSView {
         title.font = .boldSystemFont(ofSize: 14)
         title.setAccessibilityIdentifier("theme-showcase-title")
-        caption.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-        caption.textColor = .secondaryLabelColor
+        for label in [caption, note] {
+            label.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+            label.textColor = .secondaryLabelColor
+        }
         caption.setAccessibilityIdentifier("theme-showcase-caption")
         picture.setAccessibilityElement(true)
         picture.setAccessibilityRole(.image)
         picture.setAccessibilityLabel("Preview")
         picture.setAccessibilityIdentifier("theme-showcase-picture")
-        note.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-        note.textColor = .secondaryLabelColor
         note.setAccessibilityIdentifier("theme-contrast-note")
 
         let heading = NSStackView(views: [title, caption])

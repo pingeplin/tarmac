@@ -7,10 +7,6 @@ final class ThemeCSSTests: XCTestCase {
     private let light = ThemeCatalog.standard(for: .light).palette
     private let dark = ThemeCatalog.standard(for: .dark).palette
 
-    private func palette(_ id: String) throws -> Palette {
-        try XCTUnwrap(ThemeCatalog.all.first { $0.id == id }).palette
-    }
-
     private let names = ["--bg1", "--bg2", "--term-bg", "--text", "--prose-text", "--agent", "--agent-dim", "color-scheme"]
 
     /// S15
@@ -72,8 +68,8 @@ final class ThemeCSSTests: XCTestCase {
 
     /// 2610.0008 S28 — the pairs are those of the palette given, whatever
     /// theme it is.
-    func test2610_0008S28TheDeclarationsAreThoseOfThePaletteGiven() throws {
-        let latte = ThemeCSS.properties(try palette("catppuccin-latte"))
+    func test2610_0008S28TheDeclarationsAreThoseOfThePaletteGiven() {
+        let latte = ThemeCSS.properties(ThemeCatalog.theme("catppuccin-latte").palette)
 
         XCTAssertEqual(latte.map(\.name), names)
         XCTAssertEqual(
@@ -81,15 +77,15 @@ final class ThemeCSSTests: XCTestCase {
             ["#e6e9ef", "#ccd0da", "#eff1f5", "#4c4f69", "#4c4f69", "#148187", "rgba(20, 129, 135, 0.16)", "light"]
         )
 
-        let mocha = ThemeCSS.properties(try palette("catppuccin-mocha"))
+        let mocha = ThemeCSS.properties(ThemeCatalog.theme("catppuccin-mocha").palette)
         XCTAssertEqual(mocha.first?.value, "#181825")
         XCTAssertEqual(mocha.last?.value, "dark")
     }
 
     /// 2610.0008 S29 — the first template holds no theme marker, so its
     /// `--bg1` comes from the backdrop marker alone.
-    func test2610_0008S29TheBackdropAndThePageAreThoseOfThePaletteGiven() throws {
-        let palette = try palette("github-dark")
+    func test2610_0008S29TheBackdropAndThePageAreThoseOfThePaletteGiven() {
+        let palette = ThemeCatalog.theme("github-dark").palette
 
         XCTAssertEqual(ThemeCSS.backdrop(palette).name, "--bg1")
         XCTAssertEqual(ThemeCSS.backdrop(palette).value, "#070a10")

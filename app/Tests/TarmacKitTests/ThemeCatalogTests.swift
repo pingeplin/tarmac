@@ -59,6 +59,19 @@ final class ThemeCatalogTests: XCTestCase {
         }
     }
 
+    /// S21, S22 — the rule of the file's two keys: Breeze Dark is saved for
+    /// Light, and Breeze Light is not.
+    func testS21AnIdIsSavedOnlyForAThemeThatIsNotTheStandardOfItsAppearance() {
+        XCTAssertEqual(ThemeCatalog.saved("catppuccin-mocha", for: .light), "catppuccin-mocha")
+        XCTAssertEqual(ThemeCatalog.saved("breeze-dark", for: .light), "breeze-dark")
+        XCTAssertEqual(ThemeCatalog.saved("breeze-light", for: .dark), "breeze-light")
+        XCTAssertNil(ThemeCatalog.saved("breeze-light", for: .light))
+        XCTAssertNil(ThemeCatalog.saved("breeze-dark", for: .dark))
+        for id in [nil, "sepia", "GitHub-Light", ""] {
+            XCTAssertNil(ThemeCatalog.saved(id, for: .light), id ?? "nil")
+        }
+    }
+
     private func inEffect(_ choice: ThemeChoice, _ themes: [ThemeVariant: String], systemIsDark: Bool) -> String {
         ThemeCatalog.inEffect(choice: choice, themes: themes, systemIsDark: systemIsDark).id
     }

@@ -26,8 +26,7 @@ enum ThemePicture {
             fill(card, palette.terminal.background, radius: 2)
             fill(NSRect(x: 7, y: 8, width: 8, height: 2), palette.agent, radius: 1)
             // A board as light or as dark as the list would have no edge.
-            Theme.srgb(palette.line).setStroke()
-            NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 3, yRadius: 3).stroke()
+            stroke(bounds, Theme.srgb(palette.line), radius: 3)
             return true
         }
     }
@@ -76,7 +75,7 @@ enum ThemePicture {
             if index % 8 == 0 { line = NSPoint(x: body.minX + 7, y: line.y + lineHeight) }
             line.x = text(String(format: "%02d", index), color, at: line) + cell
         }
-        border(rect, Theme.srgb(palette.line))
+        stroke(rect, Theme.srgb(palette.line), radius: 6, width: 1.5)
     }
 
     private static func drawDoc(_ palette: Palette, in rect: NSRect) {
@@ -97,14 +96,12 @@ enum ThemePicture {
         let code = NSRect(x: line.x, y: line.y, width: page.maxX - 7 - line.x, height: lineHeight + 12)
         fill(code, palette.terminal.background, radius: 3)
         text("code", palette.terminal.foreground, at: NSPoint(x: code.minX + 7, y: code.minY + 6))
-        border(rect, Theme.srgb(palette.agent, alpha: 0.5))
+        stroke(rect, Theme.srgb(palette.agent, alpha: 0.5), radius: 6, width: 1.5)
     }
 
     private static func drawStrip(_ palette: Palette, in rect: NSRect) {
         fill(rect, palette.bg1, radius: 5)
-        let line = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5)
-        Theme.srgb(palette.lineSoft).setStroke()
-        line.stroke()
+        stroke(rect, Theme.srgb(palette.lineSoft), radius: 5)
 
         var point = NSPoint(x: rect.minX + 7, y: rect.minY + (rect.height - lineHeight) / 2)
         for (word, color) in [
@@ -114,9 +111,7 @@ enum ThemePicture {
             point.x = text(word, color, at: point) + 10
         }
         for (index, color) in palette.repoColors.reversed().enumerated() {
-            let x = rect.maxX - 7 - dot - CGFloat(index) * (dot + 4)
-            Theme.srgb(color).setFill()
-            NSBezierPath(ovalIn: NSRect(x: x, y: rect.midY - dot / 2, width: dot, height: dot)).fill()
+            drawDot(color, x: rect.maxX - 7 - dot - CGFloat(index) * (dot + 4), midY: rect.midY)
         }
     }
 
@@ -133,15 +128,22 @@ enum ThemePicture {
         fill(NSRect(x: rect.minX, y: head.maxY, width: rect.width, height: 1), rule)
         NSGraphicsContext.restoreGraphicsState()
 
-        Theme.srgb(color).setFill()
-        NSBezierPath(ovalIn: NSRect(x: head.minX + 8, y: head.midY - dot / 2, width: dot, height: dot)).fill()
+        drawDot(color, x: head.minX + 8, midY: head.midY)
         text(title, titleColor, at: NSPoint(x: head.minX + 8 + dot + 5, y: head.minY + (headerHeight - lineHeight) / 2))
         return NSRect(x: rect.minX, y: head.maxY + 1, width: rect.width, height: rect.height - headerHeight - 1)
     }
 
-    private static func border(_ rect: NSRect, _ color: NSColor) {
-        let path = NSBezierPath(roundedRect: rect.insetBy(dx: 0.75, dy: 0.75), xRadius: 6, yRadius: 6)
-        path.lineWidth = 1.5
+    private static func drawDot(_ color: UInt32, x: CGFloat, midY: CGFloat) {
+        Theme.srgb(color).setFill()
+        NSBezierPath(ovalIn: NSRect(x: x, y: midY - dot / 2, width: dot, height: dot)).fill()
+    }
+
+    /// A line of `width` whose outer edge is the edge of `rect`.
+    private static func stroke(_ rect: NSRect, _ color: NSColor, radius: CGFloat, width: CGFloat = 1) {
+        let path = NSBezierPath(
+            roundedRect: rect.insetBy(dx: width / 2, dy: width / 2), xRadius: radius, yRadius: radius
+        )
+        path.lineWidth = width
         color.setStroke()
         path.stroke()
     }

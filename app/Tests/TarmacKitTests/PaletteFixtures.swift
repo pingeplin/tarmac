@@ -1,4 +1,17 @@
+import XCTest
 @testable import TarmacKit
+
+extension ThemeCatalog {
+    /// The theme with that id. An id no theme has fails the test:
+    /// `entry(_:for:)` would give Breeze for it, and the test would go on.
+    static func theme(_ id: String, file: StaticString = #filePath, line: UInt = #line) -> Entry {
+        guard let entry = all.first(where: { $0.id == id }) else {
+            XCTFail("no theme \(id)", file: file, line: line)
+            return all[0]
+        }
+        return entry
+    }
+}
 
 extension Palette {
     /// A copy with the named members changed: what a case that breaks one

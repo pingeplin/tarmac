@@ -5,14 +5,6 @@ import XCTest
 /// specs, which are the contract for them: 2610.0007 for the two Breeze
 /// palettes (its S-numbers are marked), 2610.0008 for the rest.
 final class PaletteTests: XCTestCase {
-    private func palette(_ id: String) -> Palette {
-        guard let entry = ThemeCatalog.all.first(where: { $0.id == id }) else {
-            XCTFail("no theme \(id)")
-            return ThemeCatalog.all[0].palette
-        }
-        return entry.palette
-    }
-
     /// S7
     func testS7EveryPaletteHasFourRepoColoursAndSixteenANSIColours() {
         for entry in ThemeCatalog.all {
@@ -112,7 +104,7 @@ final class PaletteTests: XCTestCase {
 
     /// S11 — the rule of `TerminalTheme.isDark`: luminance, and a tie is light.
     func testS11APaletteIsDarkWhenItsTerminalBackgroundHasLessLuminanceThanItsForeground() {
-        let base = palette("breeze-light")
+        let base = ThemeCatalog.theme("breeze-light").palette
 
         XCTAssertEqual(base.changed(terminalForeground: 0x232629, terminalBackground: 0xfcfcfc).variant, .light)
         XCTAssertEqual(base.changed(terminalForeground: 0xfcfcfc, terminalBackground: 0x232629).variant, .dark)
@@ -129,7 +121,7 @@ final class PaletteTests: XCTestCase {
 
     /// S9
     func testS9CatppuccinLatteHasTheValuesOfItsTable() {
-        let palette = palette("catppuccin-latte")
+        let palette = ThemeCatalog.theme("catppuccin-latte").palette
 
         XCTAssertEqual(palette.bg0, 0xdce0e8)
         XCTAssertEqual(palette.bg1, 0xe6e9ef)
@@ -159,7 +151,7 @@ final class PaletteTests: XCTestCase {
 
     /// S9
     func testS9CatppuccinMochaHasTheValuesOfItsTable() {
-        let palette = palette("catppuccin-mocha")
+        let palette = ThemeCatalog.theme("catppuccin-mocha").palette
 
         XCTAssertEqual(palette.bg0, 0x11111b)
         XCTAssertEqual(palette.bg1, 0x181825)
@@ -189,7 +181,7 @@ final class PaletteTests: XCTestCase {
 
     /// S9
     func testS9GithubLightHasTheValuesOfItsTable() {
-        let palette = palette("github-light")
+        let palette = ThemeCatalog.theme("github-light").palette
 
         XCTAssertEqual(palette.bg0, 0xeaeef2)
         XCTAssertEqual(palette.bg1, 0xf6f8fa)
@@ -219,7 +211,7 @@ final class PaletteTests: XCTestCase {
 
     /// S9
     func testS9GithubDarkHasTheValuesOfItsTable() {
-        let palette = palette("github-dark")
+        let palette = ThemeCatalog.theme("github-dark").palette
 
         XCTAssertEqual(palette.bg0, 0x010409)
         XCTAssertEqual(palette.bg1, 0x070a10)
@@ -249,7 +241,7 @@ final class PaletteTests: XCTestCase {
 
     /// S9
     func testS9SolarizedLightHasTheValuesOfItsTable() {
-        let palette = palette("solarized-light")
+        let palette = ThemeCatalog.theme("solarized-light").palette
 
         XCTAssertEqual(palette.bg0, 0xeee8d5)
         XCTAssertEqual(palette.bg1, 0xf6efdc)
@@ -279,7 +271,7 @@ final class PaletteTests: XCTestCase {
 
     /// S9
     func testS9SolarizedDarkHasTheValuesOfItsTable() {
-        let palette = palette("solarized-dark")
+        let palette = ThemeCatalog.theme("solarized-dark").palette
 
         XCTAssertEqual(palette.bg0, 0x001e26)
         XCTAssertEqual(palette.bg1, 0x00252e)

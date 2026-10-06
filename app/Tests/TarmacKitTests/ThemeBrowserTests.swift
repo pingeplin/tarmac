@@ -3,13 +3,8 @@ import XCTest
 
 /// 2610.0008: the rules of the Theme pane's list and showcase.
 final class ThemeBrowserTests: XCTestCase {
-    private func theme(_ id: String) -> ThemeCatalog.Entry {
-        guard let entry = ThemeCatalog.all.first(where: { $0.id == id }) else { fatalError("no theme \(id)") }
-        return entry
-    }
-
     private func box(_ shown: String, chosen: String, for variant: ThemeVariant) -> ThemeBrowser.Box {
-        ThemeBrowser.box(shown: theme(shown), chosen: theme(chosen), for: variant)
+        ThemeBrowser.box(shown: ThemeCatalog.theme(shown), chosen: ThemeCatalog.theme(chosen), for: variant)
     }
 
     /// S58
@@ -53,7 +48,7 @@ final class ThemeBrowserTests: XCTestCase {
     }
 
     private func toggled(_ shown: String, on: Bool, for variant: ThemeVariant) -> String {
-        ThemeBrowser.toggled(shown: theme(shown), on: on, for: variant).id
+        ThemeBrowser.toggled(shown: ThemeCatalog.theme(shown), on: on, for: variant).id
     }
 
     /// S59
@@ -141,19 +136,19 @@ final class ThemeBrowserTests: XCTestCase {
     /// findings and its foreground.
     func testS61TheNoteCountsTheTerminalColoursWithLowContrast() {
         XCTAssertEqual(
-            ThemeBrowser.contrastNote(theme("github-light").palette),
+            ThemeBrowser.contrastNote(ThemeCatalog.theme("github-light").palette),
             "Every terminal colour passes the contrast floors."
         )
         XCTAssertEqual(
-            ThemeBrowser.contrastNote(theme("github-dark").palette),
+            ThemeBrowser.contrastNote(ThemeCatalog.theme("github-dark").palette),
             "1 terminal colour has low contrast on the background."
         )
         XCTAssertEqual(
-            ThemeBrowser.contrastNote(theme("catppuccin-latte").palette),
+            ThemeBrowser.contrastNote(ThemeCatalog.theme("catppuccin-latte").palette),
             "9 terminal colours have low contrast on the background."
         )
         XCTAssertEqual(
-            ThemeBrowser.contrastNote(theme("solarized-light").palette),
+            ThemeBrowser.contrastNote(ThemeCatalog.theme("solarized-light").palette),
             "8 terminal colours have low contrast on the background."
         )
     }
@@ -178,7 +173,7 @@ final class ThemeBrowserTests: XCTestCase {
 
     /// S61 — a note that counts every finding fails here.
     func testS61AChromeFindingIsNotCounted() {
-        let breeze = theme("breeze-light").palette
+        let breeze = ThemeCatalog.theme("breeze-light").palette
         let palette = breeze.changed(agent: breeze.bg0)
         let findings = PaletteCheck.findings(palette)
         XCTAssertEqual(findings.map(\.part), [.chrome, .chrome, .chrome])
@@ -196,8 +191,8 @@ final class ThemeBrowserTests: XCTestCase {
 
     /// S62 — the variants of the spec's table.
     func testS62TheCaptionSaysWhatTheThemeIs() {
-        XCTAssertEqual(ThemeBrowser.caption(of: theme("catppuccin-latte")), "light theme")
-        XCTAssertEqual(ThemeBrowser.caption(of: theme("catppuccin-mocha")), "dark theme")
+        XCTAssertEqual(ThemeBrowser.caption(of: ThemeCatalog.theme("catppuccin-latte")), "light theme")
+        XCTAssertEqual(ThemeBrowser.caption(of: ThemeCatalog.theme("catppuccin-mocha")), "dark theme")
 
         let variants = ["light", "dark", "light", "dark", "light", "dark", "light", "dark"]
         for (entry, variant) in zip(ThemeCatalog.all, variants) {

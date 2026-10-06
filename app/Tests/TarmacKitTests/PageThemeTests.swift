@@ -3,7 +3,7 @@ import XCTest
 
 /// 2610.0008: whether a palette is news to a page that is already loaded.
 final class PageThemeTests: XCTestCase {
-    private func palette(_ id: String) -> Palette { ThemeCatalog.entry(id, for: .dark).palette }
+    private func palette(_ id: String) -> Palette { ThemeCatalog.theme(id).palette }
 
     /// S57 — from a dark theme to a dark theme is a change.
     func testS57APaletteIsNewsOnlyWhenItDiffersFromTheOneThePageHas() {

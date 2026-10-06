@@ -12,9 +12,12 @@ public enum ThemeCatalog {
         public var variant: ThemeVariant { palette.variant }
     }
 
+    private static let breezeLight = Entry(id: "breeze-light", title: "Breeze Light", palette: .breezeLight)
+    private static let breezeDark = Entry(id: "breeze-dark", title: "Breeze Dark", palette: .breezeDark)
+
     public static let all = [
-        Entry(id: "breeze-light", title: "Breeze Light", palette: .breezeLight),
-        Entry(id: "breeze-dark", title: "Breeze Dark", palette: .breezeDark),
+        breezeLight,
+        breezeDark,
         Entry(id: "catppuccin-latte", title: "Catppuccin Latte", palette: .catppuccinLatte),
         Entry(id: "catppuccin-mocha", title: "Catppuccin Mocha", palette: .catppuccinMocha),
         Entry(id: "github-light", title: "GitHub Light", palette: .githubLight),
@@ -26,8 +29,8 @@ public enum ThemeCatalog {
     /// The theme of an appearance with nothing chosen: Breeze.
     public static func standard(for variant: ThemeVariant) -> Entry {
         switch variant {
-        case .light: all[0]
-        case .dark: all[1]
+        case .light: breezeLight
+        case .dark: breezeDark
         }
     }
 
@@ -35,6 +38,12 @@ public enum ThemeCatalog {
     /// the standard one of `variant`.
     public static func entry(_ id: String?, for variant: ThemeVariant) -> Entry {
         all.first { $0.id == id } ?? standard(for: variant)
+    }
+
+    /// The id the file holds for `variant`: that of a theme of the catalogue
+    /// that is not the appearance's standard one. Any other id is no key.
+    public static func saved(_ id: String?, for variant: ThemeVariant) -> String? {
+        all.contains { $0.id == id } && id != standard(for: variant).id ? id : nil
     }
 
     public static func inEffect(

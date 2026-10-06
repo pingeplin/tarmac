@@ -79,17 +79,10 @@ public enum AppPrefs {
             }
             for variant in ThemeVariant.allCases {
                 let id = try? object.decode(String.self, forKey: Key(variant.prefsKey))
-                values.themes[variant] = written(id, for: variant)
+                values.themes[variant] = ThemeCatalog.saved(id, for: variant)
             }
             self.values = values
         }
-    }
-
-    /// The id as the file holds it: that of a theme of the catalogue that is
-    /// not the appearance's standard one. Any other id is no key.
-    private static func written(_ id: String?, for variant: ThemeVariant) -> String? {
-        let theme = ThemeCatalog.entry(id, for: variant)
-        return theme.id == id && theme != ThemeCatalog.standard(for: variant) ? id : nil
     }
 
     public static func path(besideSocket socket: String) -> String {
@@ -131,8 +124,8 @@ public enum AppPrefs {
     /// size it would refuse. Every family is written before every size, then
     /// the appearance, then the theme of each appearance. A standard one is not
     /// written, so a file with nothing chosen keeps the bytes it had before
-    /// there was a choice. A theme id is written raw: `written` lets through
-    /// only an id of the catalogue.
+    /// there was a choice. A theme id is written raw: `ThemeCatalog.saved` lets
+    /// through only an id of the catalogue.
     public static func encode(_ values: Values) -> Data {
         var json = #"{"warn_before_quit":\#(values.warnBeforeQuit)"#
         for role in FontRole.allCases {
@@ -147,7 +140,7 @@ public enum AppPrefs {
             json += #","\#(ThemeChoice.prefsKey)":"\#(values.theme.rawValue)""#
         }
         for variant in ThemeVariant.allCases {
-            guard let id = written(values.themes[variant], for: variant) else { continue }
+            guard let id = ThemeCatalog.saved(values.themes[variant], for: variant) else { continue }
             json += #","\#(variant.prefsKey)":"\#(id)""#
         }
         return Data((json + "}").utf8)

@@ -134,6 +134,18 @@ func texts(_ row: AXUIElement) -> [String] {
 
 func rowName(_ row: AXUIElement) -> String { texts(row).first ?? "" }
 
+/// Selects the row with that name, as a click on it does. `found` starts the
+/// line that tells of a name no row has.
+func select(_ name: String, in table: String, _ found: String, hint: String = "") {
+    let entries = rows(of: table)
+    guard let row = entries.first(where: { rowName($0) == name }) else {
+        fail("\(found) \(entries.map(rowName)) and none is \(name)\(hint)")
+    }
+    guard AXUIElementSetAttributeValue(row, kAXSelectedAttribute as CFString, kCFBooleanTrue) == .success else {
+        fail("the row \(name) was not selected")
+    }
+}
+
 /// 1 for the selected radio button and for a box that is set, 0 for another.
 func state(_ element: AXUIElement) -> Int {
     (attribute(element, kAXValueAttribute) as NSNumber?)?.intValue ?? -1
@@ -169,24 +181,6 @@ func control(_ wanted: String, _ what: String) -> AXUIElement {
         fail("\(verb) <n> ...: the window has \(found.count) \(what)")
     }
     return found[index]
-}
-
-/// Opens a pop-up and gives the items of its menu, in their order.
-func open(_ popUp: AXUIElement) -> [AXUIElement] {
-    press(popUp, "the pop-up")
-    usleep(400_000)
-    return descendants(of: popUp).filter { role($0) == kAXMenuItemRole }
-}
-
-/// Chooses the item with that title in an open pop-up, or closes the menu
-/// and fails.
-func choose(_ name: String, of items: [AXUIElement], in popUp: AXUIElement, _ what: String) {
-    guard let item = items.first(where: { title($0) == name }) else {
-        AXUIElementPerformAction(popUp, kAXCancelAction as CFString)
-        fail("\(what) lists \(items.count) entries and none is \(name)")
-    }
-    press(item, name)
-    print("picked \(name) of \(items.count)")
 }
 
 func post(_ code: CGKeyCode, flags: CGEventFlags = [], character: Character? = nil) {
@@ -266,13 +260,7 @@ case "rows":
     print("resizable=\((attribute(window, "AXGrowArea") as AXUIElement?) != nil)")
 case "pane":
     guard rest.count == 1 else { fail("pane <title>") }
-    let entries = rows(of: sidebar)
-    guard let entry = entries.first(where: { rowName($0) == rest[0] }) else {
-        fail("the sidebar lists \(entries.map(rowName)) and none is \(rest[0])")
-    }
-    guard AXUIElementSetAttributeValue(entry, kAXSelectedAttribute as CFString, kCFBooleanTrue) == .success else {
-        fail("the sidebar did not select \(rest[0])")
-    }
+    select(rest[0], in: sidebar, "the sidebar lists")
 case "theme":
     guard rest.count == 1 else { fail("theme <title>") }
     let tiles = controls(kAXRadioButtonRole)
@@ -284,13 +272,7 @@ case "theme":
     print("tile \(rest[0]) value=\(state(tile))")
 case "show":
     guard rest.count == 1 else { fail("show <theme title>") }
-    let themes = rows(of: themeList)
-    guard let row = themes.first(where: { rowName($0) == rest[0] }) else {
-        fail("the list of themes holds \(themes.map(rowName)) and none is \(rest[0]); run `pane Theme`")
-    }
-    guard AXUIElementSetAttributeValue(row, kAXSelectedAttribute as CFString, kCFBooleanTrue) == .success else {
-        fail("the list did not select \(rest[0])")
-    }
+    select(rest[0], in: themeList, "the list of themes holds", hint: "; run `pane Theme`")
     usleep(200_000)
     print("shown \(named(showcaseTitle).map(value) ?? "")")
 case "apply":
@@ -312,7 +294,15 @@ case "apply":
 case "pick":
     guard rest.count == 2 else { fail("pick <row> <title>") }
     let popUp = control(kAXPopUpButtonRole, "pop-ups")
-    choose(rest[1], of: open(popUp), in: popUp, "row \(rest[0])")
+    press(popUp, "the pop-up")
+    usleep(400_000)
+    let items = descendants(of: popUp).filter { role($0) == kAXMenuItemRole }
+    guard let item = items.first(where: { title($0) == rest[1] }) else {
+        AXUIElementPerformAction(popUp, kAXCancelAction as CFString)
+        fail("row \(rest[0]) lists \(items.count) entries and none is \(rest[1])")
+    }
+    press(item, rest[1])
+    print("picked \(rest[1]) of \(items.count)")
 case "size":
     guard rest.count == 2 else { fail("size <n> <text>") }
     let field = control(kAXTextFieldRole, "size fields")
