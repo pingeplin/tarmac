@@ -18,10 +18,12 @@ the theme paths of `DocWebView` and `HTMLCardView`, `tarmacDoc.theme`,
 The captures were read during the run and are not kept in the repository.
 Where a row differs from its scenario's wording, the row says what was done.
 
-**Result:** 31 scenarios pass as they were worded at the gate. 2 did not: S39
-(the app menu) and S65 (a third colour, the card's own `bg1`; no white
-frame). Each is in *Found on the way*. The spec was then changed for those
-two (its *Changed after the gate*): S39 no longer holds the menu of the menu
+**Result:** 30 scenarios pass as they were worded at the gate. 3 did not: S33
+(one line of the rule), S39 (the app menu) and S65 (a third colour, the
+card's own `bg1`; no white frame). Each is in *Found on the way*. The spec
+was then changed for those three (its *Changed after the gate*): S33 asks
+for one line of the rule that differs from the page in each theme, S39 no
+longer holds the menu of the menu
 bar to a value, and S65 allows `bg1` between the board and the document. The
 values below pass both as changed.
 
@@ -46,8 +48,8 @@ value is from.
 removed after the run, on `9ffd2e8` (the commit before the one that carries
 this pass of the record). S31 with the cursor, the rule of S33, S45, the
 fresh ring of S46, and S64. S31, S45, S46's ring and S64 pass. The rule of
-S33 fails as it is worded: under dark its upper line is not lighter than
-the page (its row has the values). The Mac's appearance was Light and was
+S33 fails as it was worded at the gate: under dark its upper line is not
+lighter than the page (its row has the values); it passes as changed. The Mac's appearance was Light and was
 not changed.
 
 ## The capture tolerance
@@ -141,7 +143,7 @@ the dark theme, then *Light* pressed once.
 | **S30** Text already drawn | No key in the terminal after the press. Full block `232629` (the dark capture has `ced2d6`). ANSI 2 background `0b8a0f`; the other fifteen backgrounds are the light column too. Body `fcfcfc`. Selected empty cell `b6d8d1`; `fcfcfc` with `12846e` at 0.3 computes `b6d8d1`. Grid 44 × 14 before and after. One pixel column in ten of the block row, where two cells meet, reads `25282b`: see *Found on the way*. | pass |
 | **S31** The answers | `rgb:2323/2626/2929`, `rgb:fcfc/fcfc/fcfc`, `rgb:0b0b/8a8a/0f0f`, `CSI ? 997 ; 2 n`. Third run, `9ffd2e8`, with `OSC 12 ; ?` (the cursor) sent after `OSC 11 ; ?`. Under light: `rgb:2323/2626/2929`, `rgb:fcfc/fcfc/fcfc`, cursor `rgb:2323/2626/2929`, `rgb:0b0b/8a8a/0f0f`, `CSI ? 997 ; 2 n`. Under dark: `rgb:cece/d2d2/d6d6`, `rgb:3131/3636/3b3b`, cursor `rgb:efef/f0f0/f1f1`, `rgb:1111/d1d1/1616`, `CSI ? 997 ; 1 n`. | pass (both runs) |
 | **S32** Mode 2031 | The log after dark → light → dark: `mode 2031 set`, one `\x1b[?997;2n`, one `\x1b[?997;1n`. Over the whole run it holds one line for each later change made while the app ran, and no other byte. | pass |
-| **S33** A doc keeps its place | Card made 392 × 500 so that all the parts show. `scroll.offset` 710 under light, dark, light. Page `eff0f1` / `2b3036`; code block `fcfcfc` / `31363b`; inline code `dee0e2` / `353b41`. Text of prose, blockquote and table `31363b` under light, `ced3d7` under dark; link `12846e`, `1abc9c`. The selected word's fill is `ccdfdc` under light and `284646` under dark. **The rule,** third run, `9ffd2e8`: it is two lines, one on the other, with the page above and below them. Each line is one third of a point thick, so at zoom 3 each is one row of pixels, and there the two lines have the same values under the two themes: the upper line `2c2c2c`, the lower line `d4d4d4`. The page beside them is `2b3036` under dark and `eff0f1` under light. So under light the two lines are darker than the page. Under dark the lower line is lighter than the page, and the upper line is not: it is a little darker (luminance 0.025; the page 0.029). At zoom 1 each line is one row of pixels at one third of its strength over the page: `2c2f33` (upper) and `64676b` (lower) under dark, `aeafb0` and `e6e7e8` under light, as in the first run. At zoom 2, two thirds: `2b2d2f` and `9b9d9f` under dark, `6d6d6d` and `dddddd` under light. In this run `scroll.offset` was 591 before and after a change from light to dark. | pass for every part but the rule. The rule: **fail** as worded for its upper line under dark, which is not lighter than the page; its lower line passes. See *Found on the way* |
+| **S33** A doc keeps its place | Card made 392 × 500 so that all the parts show. `scroll.offset` 710 under light, dark, light. Page `eff0f1` / `2b3036`; code block `fcfcfc` / `31363b`; inline code `dee0e2` / `353b41`. Text of prose, blockquote and table `31363b` under light, `ced3d7` under dark; link `12846e`, `1abc9c`. The selected word's fill is `ccdfdc` under light and `284646` under dark. **The rule,** third run, `9ffd2e8`: it is two lines, one on the other, with the page above and below them. Each line is one third of a point thick, so at zoom 3 each is one row of pixels, and there the two lines have the same values under the two themes: the upper line `2c2c2c`, the lower line `d4d4d4`. The page beside them is `2b3036` under dark and `eff0f1` under light. So under light the two lines are darker than the page. Under dark the lower line is lighter than the page, and the upper line is not: it is a little darker (luminance 0.025; the page 0.029). At zoom 1 each line is one row of pixels at one third of its strength over the page: `2c2f33` (upper) and `64676b` (lower) under dark, `aeafb0` and `e6e7e8` under light, as in the first run. At zoom 2, two thirds: `2b2d2f` and `9b9d9f` under dark, `6d6d6d` and `dddddd` under light. In this run `scroll.offset` was 591 before and after a change from light to dark. | pass for every part but the rule. The rule: **fail** as worded at the gate for its upper line under dark, which is not lighter than the page; pass as changed (one line differs from the page in each theme). See *Found on the way* |
 | **S34** A doc opened under Light | The card is in the snapshot 0.07 s after `tarmac open`; the first capture, 0.47 s after it, has the page `eff0f1` at three points, with its text drawn. | pass |
 | **S35** The HTML card | Header `353b41` under dark, `dee0e2` under light. Console fill `24272b` under dark (bg0 at 0.94 over the page's `1e1e1e` computes `24272b`) with text `b9bfc4`, `fdbc4b`, `f28b82`; `e5e7e8` under light (over `ffffff`: `e5e7e8`) with text `535d66`, `a36802`, `da4453`. | pass |
 | **S37** Cards made under Light | A new terminal (⌘T): body `fcfcfc`, prime header `d0d4d8`. The doc of S34: page `eff0f1`. | pass |
