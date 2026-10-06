@@ -1,41 +1,43 @@
 import AppKit
 import TarmacKit
 
-// Tokens from docs/archive/v4/visual-crib.md §2 (Ghostty Breeze; authored sRGB hex).
+/// The colours of the theme in effect (spec 2610.0007), and the fonts. A
+/// colour is read from `palette` each time it is asked for, so a view that
+/// keeps one takes it again when the theme changes (`ThemeFollowing`).
 @MainActor
 enum Theme {
-    static let bg0 = srgb(0x24282c)
-    static let bg1 = srgb(0x2b3036)
-    static let bg2 = srgb(0x353b41)
-    static let bg3 = srgb(0x3e444b)
-    static let termBg = srgb(0x31363b)
-    static let line = srgb(0x474e55)
-    static let lineSoft = srgb(0x3d434a)
-    static let text = srgb(0xeff0f1)
-    static let muted = srgb(0xb9bfc4)
-    static let faint = srgb(0x7f8c8d)
-    static let agent = srgb(0x1abc9c)
-    static let agentDim = srgb(0x1abc9c, alpha: 0.16)
-    // Drag-lift border (crib §4 prime/lift; authored hex, not a :root token).
-    static let liftBorder = srgb(0x5a626a)
-    // The scroll thumb: dark with a light hairline, and opaque, so it is the
-    // same thumb on a terminal, on the doc page and on a white HTML document.
-    static let scrollThumb = srgb(0x181b1d)
-    static let scrollThumbLine = srgb(0x696b6c)
-    // The selected card's border: the card whose body takes the wheel.
-    static let focusBorder = srgb(0x1abc9c, alpha: 0.5)
-    // Prime-card header bg (crib §1/§2/§4: `.tm-bcard.prime .bhd` background
-    // `#3a4046` — near bg2 but distinct). New Breeze token Theme.swift lacked.
-    static let primeHeaderBg = srgb(0x3a4046)
-    static let amber = srgb(0xfdbc4b)
-    static let ok = srgb(0x1cdc9a)
+    /// The theme in effect, as `ThemeSettings` last resolved it.
+    static var variant = ThemeVariant.dark
 
-    static let repoColors: [NSColor] = [
-        srgb(0xf67400), // repo-a — orange
-        srgb(0x11d116), // repo-b — green
-        srgb(0x1d99f3), // repo-c — blue
-        srgb(0x9b59b6), // repo-d — purple
-    ]
+    static var palette: Palette { Palette.of(variant) }
+
+    static var bg0: NSColor { srgb(palette.bg0) }
+    static var bg1: NSColor { srgb(palette.bg1) }
+    static var bg2: NSColor { srgb(palette.bg2) }
+    static var bg3: NSColor { srgb(palette.bg3) }
+    static var termBg: NSColor { srgb(palette.terminal.background) }
+    static var line: NSColor { srgb(palette.line) }
+    static var lineSoft: NSColor { srgb(palette.lineSoft) }
+    static var text: NSColor { srgb(palette.text) }
+    static var muted: NSColor { srgb(palette.muted) }
+    static var faint: NSColor { srgb(palette.faint) }
+    static var agent: NSColor { srgb(palette.agent) }
+    static var agentDim: NSColor { srgb(palette.agent, alpha: 0.16) }
+    static var liftBorder: NSColor { srgb(palette.liftBorder) }
+    // The scroll thumb: dark with a light hairline in both themes, and
+    // opaque, so it is the same thumb on a terminal, on the doc page and on a
+    // white HTML document.
+    static var scrollThumb: NSColor { srgb(palette.scrollThumb) }
+    static var scrollThumbLine: NSColor { srgb(palette.scrollThumbLine) }
+    // The selected card's border: the card whose body takes the wheel.
+    static var focusBorder: NSColor { srgb(palette.agent, alpha: 0.5) }
+    static var primeHeaderBg: NSColor { srgb(palette.primeHeaderBg) }
+    static var amber: NSColor { srgb(palette.amber) }
+    static var ok: NSColor { srgb(palette.ok) }
+    static var consoleError: NSColor { srgb(palette.consoleError) }
+
+    /// One colour for each index `RepoDot.paletteIndex` gives.
+    static var repoColors: [NSColor] { palette.repoColors.map { srgb($0) } }
 
     /// The family in effect for each role, as `FontSettings` last resolved
     /// it; no entry is the system default.

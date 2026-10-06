@@ -49,6 +49,20 @@ final class ThemeCSSTests: XCTestCase {
         XCTAssertEqual(ThemeCSS.page(":root { /*tarmac-backdrop*/ }", .dark), ":root { --bg1: #2b3036; }")
     }
 
+    /// The pair a loaded host page is given on a change is the one `page`
+    /// writes into it.
+    func testTheBackdropIsThePairTheBackdropMarkerBecomes() {
+        for variant in [ThemeVariant.light, .dark] {
+            let backdrop = ThemeCSS.backdrop(variant)
+            XCTAssertEqual(
+                ThemeCSS.page("/*tarmac-backdrop*/", variant), "\(backdrop.name): \(backdrop.value);"
+            )
+        }
+        XCTAssertEqual(ThemeCSS.backdrop(.light).name, "--bg1")
+        XCTAssertEqual(ThemeCSS.backdrop(.light).value, "#eff0f1")
+        XCTAssertEqual(ThemeCSS.backdrop(.dark).value, "#2b3036")
+    }
+
     /// S42 — a marker is a place only when the template holds it once.
     func testS42ATemplateWithNoMarkerOrOneTwiceComesBackUnchanged() {
         let templates = [

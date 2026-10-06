@@ -5,7 +5,7 @@ import TarmacKit
 /// `−` and `+` zoom about the viewport center, `⊡ fit` fits every card into
 /// view, and the readout follows the live zoom.
 @MainActor
-final class ZoomControl: NSView, FontFollowing {
+final class ZoomControl: NSView, FontFollowing, ThemeFollowing {
     /// What `−` and `+` divide and multiply the zoom by.
     static let zoomStep: CGFloat = 1.2
 
@@ -20,6 +20,7 @@ final class ZoomControl: NSView, FontFollowing {
     private let pctLeftBorder = NSView()
     private let pctRightBorder = NSView()
     private let fitLeftBorder = NSView()
+    private var separators: [NSView] { [pctLeftBorder, pctRightBorder, fitLeftBorder] }
 
     private static let padX: CGFloat = 9
     private static let pctPadX: CGFloat = 10
@@ -32,8 +33,6 @@ final class ZoomControl: NSView, FontFollowing {
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = Theme.bg2.cgColor
-        layer?.borderColor = Theme.line.cgColor
         layer?.borderWidth = 1
         layer?.cornerRadius = 8
         layer?.masksToBounds = true // clipped (overflow hidden)
@@ -46,14 +45,13 @@ final class ZoomControl: NSView, FontFollowing {
         fitBtn.toolTip = "Fit to cards"
 
         pct.font = Self.font
-        pct.textColor = Theme.text
         pct.alignment = .center
 
-        for border in [pctLeftBorder, pctRightBorder, fitLeftBorder] {
+        for border in separators {
             border.wantsLayer = true
-            border.layer?.backgroundColor = Theme.lineSoft.cgColor
             addSubview(border)
         }
+        themeChanged()
 
         addSubview(minusBtn)
         addSubview(pct)
@@ -73,6 +71,13 @@ final class ZoomControl: NSView, FontFollowing {
         pct.font = Self.font
         sizeToContents()
         superview?.needsLayout = true
+    }
+
+    func themeChanged() {
+        layer?.backgroundColor = Theme.bg2.cgColor
+        layer?.borderColor = Theme.line.cgColor
+        pct.textColor = Theme.text
+        for border in separators { border.layer?.backgroundColor = Theme.lineSoft.cgColor }
     }
 
     func setZoom(_ zoom: CGFloat) {
@@ -107,7 +112,6 @@ final class ZoomControl: NSView, FontFollowing {
         super.layout()
         let h = bounds.height - 2 * Self.line
         let segments: [NSView] = [minusBtn, pct, plusBtn, fitBtn]
-        let separators = [pctLeftBorder, pctRightBorder, fitLeftBorder]
         var x = Self.line
         for (index, width) in segmentWidths.enumerated() {
             let left = x.rounded()
@@ -130,7 +134,7 @@ final class ZoomControl: NSView, FontFollowing {
 /// One tappable segment of the zoom control (`− + ⊡ fit`). Faint 10.5px mono;
 /// owns its mouse so a click never starts a board gesture.
 @MainActor
-final class ZoomSegmentButton: NSView, FontFollowing {
+final class ZoomSegmentButton: NSView, FontFollowing, ThemeFollowing {
     var onClick: (() -> Void)?
 
     private let label: NSTextField
@@ -142,12 +146,16 @@ final class ZoomSegmentButton: NSView, FontFollowing {
         label = NSTextField(labelWithString: title)
         super.init(frame: .zero)
         label.font = ZoomControl.font
-        label.textColor = Theme.faint
         label.alignment = .center
         addSubview(label)
+        themeChanged()
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    func themeChanged() {
+        label.textColor = Theme.faint
+    }
 
     func fontsChanged() {
         label.font = ZoomControl.font

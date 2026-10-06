@@ -7,7 +7,7 @@ import WebKit
 /// runs it. The text can be selected and copied the usual way, so the web view
 /// takes keyboard focus when it is pressed.
 @MainActor
-final class DocWebView: NSView, DocCardBody, FontFollowing, WKNavigationDelegate {
+final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNavigationDelegate {
     /// Where a clicked http(s) link goes.
     var openExternal: (URL) -> Void = { NSWorkspace.shared.open($0) }
 
@@ -35,6 +35,9 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, WKNavigationDelegate
     /// What the page was last given: a font change that is not this card's
     /// sends it nothing. A new page has been given nothing.
     private var fontsGiven: [String: String]?
+    /// The theme the page holds: the one it was loaded with, or was given
+    /// since.
+    private var themeGiven: ThemeVariant?
     private var loadingPage = false
     /// The web view carries `DocFrameRule`, so a web page the doc frames is
     /// kept off the img host.
@@ -49,7 +52,7 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, WKNavigationDelegate
 
     // Read once: every doc card loads the same page and scripts.
     private static let scripts = [BundledResource.web("marked.umd.js").text, BundledResource.web("doc-render.js").text]
-    private static let page = BundledResource.docTemplate.text
+    private static let template = BundledResource.docTemplate.text
 
     init(path: String) {
         self.path = path
@@ -57,10 +60,9 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, WKNavigationDelegate
         host = ScreenSpaceHost(content: webView)
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = Theme.bg1.cgColor
+        themeChanged()
 
         webView.navigationDelegate = self
-        webView.underPageBackgroundColor = Theme.bg1
         webView.configuration.userContentController.addScriptMessageHandler(
             images, contentWorld: CardWebView.world, name: "docImages"
         )
@@ -94,7 +96,9 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, WKNavigationDelegate
         isEditingText = false
         loadingPage = true
         onScrollChanged?(nil)
-        webView.loadHTMLString(Self.page, baseURL: nil)
+        // The page holds its colours from its first paint.
+        themeGiven = Theme.variant
+        webView.loadHTMLString(ThemeCSS.page(Self.template, Theme.variant), baseURL: nil)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -151,6 +155,20 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, WKNavigationDelegate
         )
     }
 
+    /// The page is given the declarations and is not loaded again, so it
+    /// keeps its place. A hidden page does not restyle itself.
+    func themeChanged() {
+        layer?.backgroundColor = Theme.bg1.cgColor
+        webView.underPageBackgroundColor = Theme.bg1
+        guard pageLoaded, Theme.variant != themeGiven else { return }
+        themeGiven = Theme.variant
+        webView.callAsyncJavaScript(
+            "tarmacDoc.theme(properties)",
+            arguments: ["properties": ThemeCSS.properties(Theme.variant).map { [$0.name, $0.value] }],
+            in: nil, in: CardWebView.world, completionHandler: nil
+        )
+    }
+
     func scroll(to offset: Double) {
         guard pageLoaded, offset.isFinite else { return }
         webView.runInCardWorld("tarmacDoc.scrollTo(\(offset))")
@@ -190,6 +208,7 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, WKNavigationDelegate
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         pageLoaded = true
         fontsChanged()
+        themeChanged()
         layoutPage(viewport: webView.frame.size)
         render()
     }

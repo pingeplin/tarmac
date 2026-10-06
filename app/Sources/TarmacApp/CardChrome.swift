@@ -64,14 +64,13 @@ final class RecentMetaLabel: NSTextField {
     private var lastChangedMs: UInt64?
     private var tickWork: DispatchWorkItem?
 
-    init(font: NSFont, color: NSColor) {
+    init(font: NSFont) {
         super.init(frame: .zero)
         isEditable = false
         isSelectable = false
         isBezeled = false
         drawsBackground = false
         self.font = font
-        textColor = color
         isHidden = true
     }
 
@@ -112,7 +111,7 @@ final class RecentMetaLabel: NSTextField {
 /// click on it never selects the card or starts a drag, and acts on release
 /// inside it.
 @MainActor
-final class HeaderButton: NSView {
+final class HeaderButton: NSView, ThemeFollowing {
     var onClick: (() -> Void)?
 
     private static let padX: CGFloat = 5
@@ -123,18 +122,19 @@ final class HeaderButton: NSView {
     private let fontSize: CGFloat
     private var scale = CardScale(zoom: 1, backing: 2)
     private var size: NSSize = .zero
+    private var hovered = false
     private var trackingArea: NSTrackingArea?
 
     override var acceptsFirstResponder: Bool { false }
 
     init(glyph: String, toolTip: String, fontSize: CGFloat = 10.5) {
         label = NSTextField(labelWithString: glyph)
-        label.textColor = Theme.faint
         self.fontSize = fontSize
         super.init(frame: .zero)
         wantsLayer = true
         self.toolTip = toolTip
         addSubview(label)
+        paint()
         apply(scale)
     }
 
@@ -181,13 +181,22 @@ final class HeaderButton: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        layer?.backgroundColor = Theme.bg3.cgColor
-        label.textColor = Theme.text
+        hovered = true
+        paint()
     }
 
     override func mouseExited(with event: NSEvent) {
-        layer?.backgroundColor = nil
-        label.textColor = Theme.faint
+        hovered = false
+        paint()
+    }
+
+    private func paint() {
+        layer?.backgroundColor = hovered ? Theme.bg3.cgColor : nil
+        label.textColor = hovered ? Theme.text : Theme.faint
+    }
+
+    func themeChanged() {
+        paint()
     }
 
     override func updateTrackingAreas() {
@@ -210,7 +219,7 @@ extension HeaderButton: HoverCursorProviding {
 /// The `← <terminal>` chip on a doc card: at most 120 wide, the name cut at
 /// the tail. Display only.
 @MainActor
-final class OwnerChipView: NSView {
+final class OwnerChipView: NSView, ThemeFollowing {
     private static let maxWidth: CGFloat = 120
     private static let padX: CGFloat = 6
     private static let padY: CGFloat = 1
@@ -227,14 +236,18 @@ final class OwnerChipView: NSView {
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.borderColor = Theme.lineSoft.cgColor
-        label.textColor = Theme.faint
+        themeChanged()
         label.lineBreakMode = .byTruncatingTail
         addSubview(label)
         apply(scale)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    func themeChanged() {
+        layer?.borderColor = Theme.lineSoft.cgColor
+        label.textColor = Theme.faint
+    }
 
     func setLabel(_ text: String) {
         label.stringValue = text
@@ -282,7 +295,7 @@ final class OwnerChipView: NSView {
 /// The header is laid out at its size on screen: every font and metric takes
 /// the board's zoom, and its items sit on whole device pixels.
 @MainActor
-final class CardHeaderView: NSView, FontFollowing {
+final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
     enum Kind {
         case terminal
         case doc(DocKind)
@@ -308,6 +321,9 @@ final class CardHeaderView: NSView, FontFollowing {
     private static let dotSize: CGFloat = 7
 
     private var scale = CardScale(zoom: 1, backing: 2)
+    private var prime = false
+    /// The doc's place in `Theme.repoColors`, or nil for no dot.
+    private var repoColor: Int?
 
     private let hairline = NSView()
     private let kindGlyph: NSTextField
@@ -315,7 +331,7 @@ final class CardHeaderView: NSView, FontFollowing {
     private let label = NSTextField(labelWithString: "")
     private let ownerChip = OwnerChipView()
     private let freshMeta = NSTextField(labelWithString: "✚ now")
-    private let recency = RecentMetaLabel(font: Theme.mono(recencyFontSize), color: Theme.agent)
+    private let recency = RecentMetaLabel(font: Theme.mono(recencyFontSize))
     private let bellDot = NSTextField(labelWithString: "●")
     /// An extra control between `↻` and `✕`.
     private var accessory: NSView?
@@ -334,28 +350,15 @@ final class CardHeaderView: NSView, FontFollowing {
         }
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = Theme.bg2.cgColor
-
         hairline.wantsLayer = true
-        hairline.layer?.backgroundColor = Theme.lineSoft.cgColor
-
-        kindGlyph.textColor = Theme.faint
-
         repoDot.wantsLayer = true
         repoDot.isHidden = true
-
-        label.textColor = Theme.muted
         label.lineBreakMode = .byTruncatingTail
-
         ownerChip.isHidden = true
-
-        freshMeta.textColor = Theme.agent
         freshMeta.isHidden = true
-
         recency.onUpdate = { [weak self] in self?.needsLayout = true }
-
-        bellDot.textColor = Theme.amber
         bellDot.isHidden = true
+        paint()
 
         let controls: [NSView?] = [refreshButton, closeButton]
         for view in [hairline, kindGlyph, repoDot, label, ownerChip, freshMeta, recency, bellDot] + controls.compactMap({ $0 }) {
@@ -390,6 +393,22 @@ final class CardHeaderView: NSView, FontFollowing {
         applyScale()
     }
 
+    func themeChanged() {
+        paint()
+    }
+
+    /// Every colour of the header, for the prime, bell and repo it has now.
+    private func paint() {
+        layer?.backgroundColor = (prime ? Theme.primeHeaderBg : Theme.bg2).cgColor
+        label.textColor = prime ? Theme.text : Theme.muted
+        hairline.layer?.backgroundColor = Theme.lineSoft.cgColor
+        kindGlyph.textColor = bellDot.isHidden ? Theme.faint : Theme.amber
+        bellDot.textColor = Theme.amber
+        freshMeta.textColor = Theme.agent
+        recency.textColor = Theme.agent
+        repoDot.layer?.backgroundColor = repoColor.map { Theme.repoColors[$0].cgColor }
+    }
+
     /// The face of the glyph, the label and the marks, at the current scale. A
     /// field takes it when it is laid out, so a hidden one costs nothing while
     /// the board zooms.
@@ -401,12 +420,9 @@ final class CardHeaderView: NSView, FontFollowing {
 
     func apply(doc: RestoreDoc) {
         label.stringValue = doc.fileName
-        if let index = RepoDot.paletteIndex(repoColor: doc.repoColor, paletteSize: Theme.repoColors.count) {
-            repoDot.layer?.backgroundColor = Theme.repoColors[index].cgColor
-            repoDot.isHidden = false
-        } else {
-            repoDot.isHidden = true
-        }
+        repoColor = RepoDot.paletteIndex(repoColor: doc.repoColor, paletteSize: Theme.repoColors.count)
+        repoDot.isHidden = repoColor == nil
+        paint()
         recency.setChanged(doc.lastChangedMs)
         needsLayout = true
     }
@@ -433,13 +449,13 @@ final class CardHeaderView: NSView, FontFollowing {
     func setBell(_ on: Bool) {
         guard on == bellDot.isHidden else { return }
         bellDot.isHidden = !on
-        kindGlyph.textColor = on ? Theme.amber : Theme.faint
+        paint()
         needsLayout = true
     }
 
     func setPrime(_ on: Bool) {
-        layer?.backgroundColor = (on ? Theme.primeHeaderBg : Theme.bg2).cgColor
-        label.textColor = on ? Theme.text : Theme.muted
+        prime = on
+        paint()
     }
 
     func setAccessory(_ view: NSView?) {
@@ -536,7 +552,7 @@ extension CardHeaderView: HoverCursorProviding {
 /// it. It answers no hit test of its own: the card hands it a press while it
 /// can be grabbed (`CardHit`), so a thumb that has faded is not there.
 @MainActor
-final class ScrollThumbView: NSView {
+final class ScrollThumbView: NSView, ThemeFollowing {
     var onPress: ((NSEvent) -> Void)?
     var onDrag: ((NSEvent) -> Void)?
     var onWheel: ((NSEvent) -> Void)?
@@ -550,13 +566,17 @@ final class ScrollThumbView: NSView {
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = Theme.scrollThumb.cgColor
-        layer?.borderColor = Theme.scrollThumbLine.cgColor
+        themeChanged()
         alphaValue = 0
         isHidden = true
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    func themeChanged() {
+        layer?.backgroundColor = Theme.scrollThumb.cgColor
+        layer?.borderColor = Theme.scrollThumbLine.cgColor
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
@@ -589,7 +609,7 @@ extension ScrollThumbView: HoverCursorProviding {
 /// Terminal card body: term-bg behind the terminal view, which fills it and
 /// pads its own grid.
 @MainActor
-final class TerminalBodyView: NSView {
+final class TerminalBodyView: NSView, ThemeFollowing {
     private(set) weak var terminal: NSView?
 
     override var isFlipped: Bool { true }
@@ -598,10 +618,14 @@ final class TerminalBodyView: NSView {
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = Theme.termBg.cgColor
+        themeChanged()
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    func themeChanged() {
+        layer?.backgroundColor = Theme.termBg.cgColor
+    }
 
     func attach(_ terminal: NSView) {
         self.terminal = terminal

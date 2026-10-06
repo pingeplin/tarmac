@@ -6,7 +6,7 @@ import TarmacKit
 /// is given, with `SwitcherChrome`'s words, and reports clicks; the controller
 /// owns the state and every key.
 @MainActor
-final class BoardSwitcherView: NSView, FontFollowing {
+final class BoardSwitcherView: NSView, FontFollowing, ThemeFollowing {
     /// A row was clicked (its index among the visible rows).
     var onPickRow: ((Int) -> Void)?
     /// The veil outside the panel was clicked.
@@ -71,8 +71,6 @@ final class BoardSwitcherView: NSView, FontFollowing {
         // The border is the clipping layer's own, so it is drawn over the
         // bars' fills, and the shadow stays on the unclipped panel behind it.
         content.wantsLayer = true
-        content.layer?.backgroundColor = Theme.bg2.cgColor
-        content.layer?.borderColor = Theme.line.cgColor
         content.layer?.borderWidth = Metric.border
         content.layer?.cornerRadius = 12
         content.layer?.masksToBounds = true
@@ -80,13 +78,9 @@ final class BoardSwitcherView: NSView, FontFollowing {
 
         for bar in [queryBar, footer] {
             bar.wantsLayer = true
-            bar.layer?.backgroundColor = Theme.bg1.cgColor
             content.addSubview(bar)
         }
-        for rule in [queryRule, footerRule] {
-            rule.wantsLayer = true
-            rule.layer?.backgroundColor = Theme.lineSoft.cgColor
-        }
+        for rule in [queryRule, footerRule] { rule.wantsLayer = true }
         queryBar.addSubview(queryRule)
         footer.addSubview(footerRule)
 
@@ -95,7 +89,7 @@ final class BoardSwitcherView: NSView, FontFollowing {
         queryClip.layer?.masksToBounds = true
         queryBar.addSubview(queryClip)
         queryClip.addSubview(queryText)
-        setFixedText()
+        themeChanged()
         queryClip.addSubview(caret)
 
         scroll.drawsBackground = false
@@ -156,6 +150,16 @@ final class BoardSwitcherView: NSView, FontFollowing {
     func fontsChanged() {
         setFixedText()
         needsLayout = true
+    }
+
+    /// The rows, the query and the footer take their colours at the next
+    /// `render`, which an open switcher is given at once.
+    func themeChanged() {
+        content.layer?.backgroundColor = Theme.bg2.cgColor
+        content.layer?.borderColor = Theme.line.cgColor
+        for bar in [queryBar, footer] { bar.layer?.backgroundColor = Theme.bg1.cgColor }
+        for rule in [queryRule, footerRule] { rule.layer?.backgroundColor = Theme.lineSoft.cgColor }
+        setFixedText()
     }
 
     /// `nowMs` is the wall clock, which picks a live board's glyph.

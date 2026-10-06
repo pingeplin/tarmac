@@ -10,7 +10,7 @@ import TarmacKit
 /// view. Both spaces are top-down, and every card is reprojected on each pan,
 /// zoom and layout. The surface itself is a flat fill.
 @MainActor
-final class BoardView: NSView {
+final class BoardView: NSView, ThemeFollowing {
     // MARK: - Callbacks
 
     /// Fires when something that is persisted changed: a card's frame or
@@ -288,7 +288,7 @@ final class BoardView: NSView {
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = Theme.bg0.cgColor
+        themeChanged()
         edgeLayer.frame = bounds
         edgeLayer.autoresizingMask = [.width, .height]
         addSubview(edgeLayer)
@@ -298,6 +298,10 @@ final class BoardView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    func themeChanged() {
+        layer?.backgroundColor = Theme.bg0.cgColor
+    }
 
     private func wire(_ card: CardView) {
         card.onClose = { [weak self] c in self?.onCardClose?(c.id) }

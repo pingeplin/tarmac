@@ -48,6 +48,7 @@ final class AppController {
     let client: DaemonClient
     let rootView: RootView
     let fonts: FontSettings
+    let theme: ThemeSettings
     weak var window: NSWindow?
 
     /// The handshake has completed: requests may be made. Narrower than
@@ -157,10 +158,11 @@ final class AppController {
         ownerBoard(ofTerm: termID)?.sessions[termID]
     }
 
-    init(window: NSWindow, rootView: RootView, client: DaemonClient, fonts: FontSettings) {
+    init(window: NSWindow, rootView: RootView, client: DaemonClient, fonts: FontSettings, theme: ThemeSettings) {
         self.window = window
         self.rootView = rootView
         self.fonts = fonts
+        self.theme = theme
         self.client = client
 
         // board-0 wraps the BoardView RootView was built with; it is the active,
@@ -177,6 +179,7 @@ final class AppController {
         mount(board0)
 
         fonts.onChange = { [weak self] in self?.fontsChanged() }
+        theme.onChange = { [weak self] in self?.themeChanged() }
         updateWindowTitle()
         showConnectionStatus()
     }
@@ -187,6 +190,16 @@ final class AppController {
         rootView.broadcastFontsChanged()
         for board in boards.values where !board.view.isDescendant(of: rootView) {
             board.view.broadcastFontsChanged()
+        }
+        refreshSwitcherIfOpen()
+    }
+
+    /// The theme in effect changed: the same reach as a font change.
+    private func themeChanged() {
+        window?.backgroundColor = Theme.bg0
+        rootView.broadcastThemeChanged()
+        for board in boards.values where !board.view.isDescendant(of: rootView) {
+            board.view.broadcastThemeChanged()
         }
         refreshSwitcherIfOpen()
     }

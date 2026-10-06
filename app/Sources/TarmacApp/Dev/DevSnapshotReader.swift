@@ -50,7 +50,8 @@ struct DevSnapshotReader {
             borrowedCard: controller.borrow.id?.wireID,
             keyboardFocus: keyboardFocus,
             quitGuard: quitGuard?.facts,
-            fonts: fonts
+            fonts: fonts,
+            theme: DevSnapshot.Theme(choice: controller.theme.choice, inEffect: controller.theme.inEffect)
         ))
     }
 

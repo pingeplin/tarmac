@@ -26,7 +26,7 @@ extension AppController {
         let view: TerminalView
         do {
             view = try TerminalView(
-                frame: frame, theme: .breeze, fontSize: Theme.terminalFontSize,
+                frame: frame, theme: TerminalTheme(Theme.palette.terminal), fontSize: Theme.terminalFontSize,
                 fontFamily: Theme.fontFamilies[.terminal], backingScale: scale
             )
         } catch {

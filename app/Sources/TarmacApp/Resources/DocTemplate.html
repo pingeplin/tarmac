@@ -8,16 +8,13 @@
      not be sandboxed. -->
 <meta http-equiv="Content-Security-Policy" content="script-src 'none'; object-src 'none'; frame-src http: https:">
 <style>
-  /* The prose rules are the Tauri doc card's (desktop/src/theme/card.css), with
-     its tokens inlined. The web view is laid out at the card's on-screen size,
-     so --zoom is the board zoom and --card-w the card's world width. */
+  /* The prose rules are the Tauri doc card's (desktop/src/theme/card.css). The
+     web view is laid out at the card's on-screen size, so --zoom is the board
+     zoom and --card-w the card's world width. */
   :root {
-    --bg1: #2b3036;
-    --bg2: #353b41;
-    --term-bg: #31363b;
-    --text: #eff0f1;
-    --agent: #1abc9c;
-    --agent-dim: rgba(26, 188, 156, 0.16);
+    /* The app puts the theme's colours and its colour scheme here before the
+       page is loaded, and sets them again when the theme changes. */
+    /*tarmac-theme*/
     /* The app sets the three to the chosen fonts once the page has loaded. */
     --chrome-font: ui-monospace, monospace;
     --prose-font: -apple-system, "SF Pro Text", system-ui, sans-serif;
@@ -64,7 +61,7 @@
     width: calc(var(--card-w) * var(--oversample-k));
     max-width: calc(720px * var(--oversample-k));
     padding: calc(18px * var(--oversample-k)) calc(22px * var(--oversample-k));
-    color: #ced3d7;
+    color: var(--prose-text);
     font-family: var(--prose-font);
     font-size: calc(var(--prose-size) * var(--oversample-k));
     line-height: 1.7;

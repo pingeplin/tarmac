@@ -4,7 +4,7 @@ import TarmacKit
 /// The strip under the board: `▞ tarmac`, the daemon link, and on the right the
 /// active board's card count.
 @MainActor
-final class StatusBar: NSView {
+final class StatusBar: NSView, ThemeFollowing {
     static let height: CGFloat = 27
 
     private static let padX: CGFloat = 12
@@ -23,14 +23,17 @@ final class StatusBar: NSView {
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = Theme.bg1.cgColor
-
         topBorder.wantsLayer = true
-        topBorder.layer?.backgroundColor = Theme.lineSoft.cgColor
+        themeChanged()
         addSubview(topBorder)
         for label in [glyph, brand, link, count] { addSubview(label) }
 
         setCardCount(0)
+    }
+
+    func themeChanged() {
+        layer?.backgroundColor = Theme.bg1.cgColor
+        topBorder.layer?.backgroundColor = Theme.lineSoft.cgColor
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -45,7 +48,7 @@ final class StatusBar: NSView {
     /// The daemon link: `attached` while connected, else why it is not.
     func setConnection(_ status: ConnectionStatus) {
         link.stringValue = status.label
-        link.textColor = status.connected ? Theme.ok : Theme.amber
+        link.setColor(status.connected ? Theme.ok : Theme.amber)
         needsLayout = true
     }
 

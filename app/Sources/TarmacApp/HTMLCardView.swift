@@ -12,7 +12,7 @@ import WebKit
 /// The document is shielded until it is borrowed: a press selects the card,
 /// a wheel is handed on to the web view, and nothing else reaches it.
 @MainActor
-final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
+final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, WKNavigationDelegate {
     /// A double-click on the shield.
     var onBorrow: (() -> Void)?
     /// The borrowed document saw Escape.
@@ -36,6 +36,9 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
     private var session = HTMLCardSession()
     private var consoleUpdate = CoalescedUpdate()
     private var pageLoaded = false
+    /// The theme whose backdrop the host page holds: the one it was loaded
+    /// with, or was given since.
+    private var backdropGiven: ThemeVariant?
     private var loadingPage = false
     /// The document's address; it changes, and the document reloads, only when
     /// the file's change time does.
@@ -46,7 +49,7 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
 
     // Read once: every HTML card loads the same host page and script.
     private static let scripts = [BundledResource.web("card-host.js").text]
-    private static let page = BundledResource.web("card-host.html").text
+    private static let host = BundledResource.web("card-host.html").text
 
     init(path: String) {
         self.path = path
@@ -54,11 +57,9 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
         host = ScreenSpaceHost(content: webView)
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = Theme.bg1.cgColor
         layer?.masksToBounds = true
 
         webView.navigationDelegate = self
-        webView.underPageBackgroundColor = Theme.bg1
         webView.configuration.userContentController.add(messages, contentWorld: CardWebView.world, name: "card")
         messages.onMessage = { [weak self] message in self?.received(message) }
         host.onResize = { [weak self] _ in self?.layoutDocument() }
@@ -70,6 +71,7 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
         addSubview(host)
         addSubview(shield)
         addSubview(console)
+        themeChanged()
         loadPage()
     }
 
@@ -78,7 +80,25 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
     private func loadPage() {
         pageLoaded = false
         loadingPage = true
-        webView.loadHTMLString(Self.page, baseURL: nil)
+        backdropGiven = Theme.variant
+        webView.loadHTMLString(ThemeCSS.page(Self.host, Theme.variant), baseURL: nil)
+    }
+
+    /// The host page is given its backdrop and is not loaded again. The
+    /// card's own document is sent nothing: one that follows the appearance
+    /// restyles itself.
+    func themeChanged() {
+        layer?.backgroundColor = Theme.bg1.cgColor
+        webView.underPageBackgroundColor = Theme.bg1
+        showConsole()
+        guard pageLoaded, Theme.variant != backdropGiven else { return }
+        backdropGiven = Theme.variant
+        let backdrop = ThemeCSS.backdrop(Theme.variant)
+        webView.callAsyncJavaScript(
+            "document.documentElement.style.setProperty(name, value)",
+            arguments: ["name": backdrop.name, "value": backdrop.value],
+            in: nil, in: CardWebView.world, completionHandler: nil
+        )
     }
 
     override func layout() {
@@ -236,6 +256,7 @@ final class HTMLCardView: NSView, DocCardBody, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         pageLoaded = true
+        themeChanged()
         loadDocument()
     }
 
