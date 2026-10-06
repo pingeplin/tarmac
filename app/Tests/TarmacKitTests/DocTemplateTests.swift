@@ -89,7 +89,7 @@ final class DocTemplateTests: XCTestCase {
         }
         let prose = try firstMatch(#"\n  \.doc-prose \{([^}]*)\}"#, in: text)
         XCTAssertTrue(prose.contains("color: var(--prose-text);"))
-        XCTAssertTrue(ThemeCSS.page(text, .dark).contains("--term-bg: #31363b;"))
+        XCTAssertTrue(ThemeCSS.page(text, ThemeCatalog.standard(for: .dark).palette).contains("--term-bg: #31363b;"))
     }
 
     /// 2610.0007 S17 — the HTML card's host page takes its backdrop from the
@@ -105,7 +105,7 @@ final class DocTemplateTests: XCTestCase {
         XCTAssertTrue(root.contains(ThemeCSS.backdropMarker))
         let backdrop = try firstMatch(#"html,\s*body \{([^}]*)\}"#, in: text)
         XCTAssertTrue(backdrop.contains("background: var(--bg1);"))
-        let page = ThemeCSS.page(text, .light)
+        let page = ThemeCSS.page(text, ThemeCatalog.standard(for: .light).palette)
         XCTAssertTrue(page.contains("--bg1: #eff0f1;"))
         XCTAssertFalse(page.contains("color-scheme"))
     }

@@ -1,8 +1,8 @@
 import XCTest
 @testable import TarmacKit
 
-/// 2610.0007: what the user can choose, and the theme each choice puts in
-/// effect.
+/// 2610.0007: the appearance the user can choose, and the variant each choice
+/// puts in effect.
 final class ThemeChoiceTests: XCTestCase {
     /// S1 — the tiles, in their order, and the key the choice is saved under.
     func testS1TheChoicesAreAutoLightAndDarkInTileOrder() {
@@ -25,6 +25,13 @@ final class ThemeChoiceTests: XCTestCase {
     func testS2AutoIsTheVariantOfTheSystem() {
         XCTAssertEqual(ThemeChoice.auto.inEffect(systemIsDark: true), .dark)
         XCTAssertEqual(ThemeChoice.auto.inEffect(systemIsDark: false), .light)
+    }
+
+    /// 2610.0008 S6 — the key and the row of the theme chosen for an appearance.
+    func testAnAppearanceHasAKeyAndARowForItsTheme() {
+        XCTAssertEqual(ThemeVariant.allCases, [.light, .dark])
+        XCTAssertEqual(ThemeVariant.allCases.map(\.prefsKey), ["theme_light", "theme_dark"])
+        XCTAssertEqual(ThemeVariant.allCases.map(\.rowTitle), ["Light theme", "Dark theme"])
     }
 
     /// A tile's picture shows each variant its choice can put in effect, light

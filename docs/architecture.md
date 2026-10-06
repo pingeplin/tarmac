@@ -930,7 +930,8 @@ keeps the other. A typed number goes to the nearest size the role has, and
 text that is no number puts the field back (`FontSizeRule`). A choice is
 saved in `app-prefs.json`, whose keys are `warn_before_quit`, a family name
 in `terminal_font`, `interface_font` and `document_font`, a number in
-`terminal_font_size` and `document_font_size`, and `theme` (below); a size
+`terminal_font_size` and `document_font_size`, and `theme`, `theme_light` and
+`theme_dark` (below); a size
 the role does not have reads as nothing chosen. `AppPrefsStore` is the
 one owner of the file and saves all of it each time, so no preference drops
 another's key. A saved family the Mac does not have, or one a fixed-pitch role
@@ -944,23 +945,39 @@ chrome and prose families and their prose size (`FontCSS`) as script
 arguments. The whole font list is read only when the window opens; launch
 asks the Mac for the saved families alone.
 
-**Theme** (`ThemeSettings`, `Palette`). The *Theme* pane has one row,
-*Appearance*, with three tiles in the order of `ThemeChoice`: *Auto*, *Light*
-and *Dark*. *Light* is Breeze Light and *Dark* is Breeze Dark; *Auto* is the
-one of the two that fits the macOS appearance, and changes when macOS does
-(`ThemeChoice.inEffect`). The choice is the key `theme` of `app-prefs.json`:
+**Theme** (`ThemeSettings`, `ThemeCatalog`, `Palette`). The *Theme* pane has
+three rows. *Appearance* has three tiles in the order of `ThemeChoice`:
+*Auto*, *Light* and *Dark*. *Light theme* and *Dark theme* are each a pop-up
+of the themes that appearance is offered. *Light* is the theme chosen for the
+light appearance and *Dark* the one chosen for the dark appearance; *Auto* is
+the one of the two that fits the macOS appearance, and changes when macOS
+does (`ThemeCatalog.inEffect`). The *Light* and *Dark* tiles draw the theme
+chosen for them. The appearance is the key `theme` of `app-prefs.json`:
 `"auto"`, `"light"` or `"dark"`. No key, and any other value, is `dark`, and
-`dark` is not written.
+`dark` is not written. The theme of each appearance is the key `theme_light`
+or `theme_dark`: the id of a theme that appearance is offered. No key, and
+any other value, is Breeze Light or Breeze Dark, and those two are not
+written.
 
-Every colour of a theme is in one value, `Palette`, in `TarmacKit`: the chrome
-tokens, the four repo colours and the terminal's colours. `Palette.of` gives
-the palette of a `ThemeVariant`, and each colour token of `Theme` reads the
-palette in effect. `ThemeSettings` sets `NSApp.appearance` (`nil` for *Auto*,
-so that the app follows the Mac), resolves the variant, and, when the variant
-changed, tells the views by the same walk a font change uses
-(`ThemeFollowing`): the window's view tree, then every board that is not
-mounted. Each view takes its colours again, with the colours of the state it
-is in.
+The themes are the entries of `ThemeCatalog`, in `TarmacKit`, in the order of
+the pop-ups: Breeze, Catppuccin (Latte, Mocha), GitHub and Solarized, a light
+and a dark one of each. An entry is an id, a title and a `Palette`. Every
+colour of a theme is in that one value: the chrome tokens, the four repo
+colours and the terminal's colours. A theme is offered for the appearance its
+terminal reports to a program (`Palette.variant`, the rule of
+`TerminalTheme.isDark`). The terminal colours of a theme that is not Breeze
+are the upstream values, with no change for contrast; its chrome tokens are
+Tarmac's choice. `PaletteCheck.findings` is the detector that lists the pairs
+of a palette with less contrast than their floor: the tests hold every theme
+to no finding in its chrome, and nothing else calls it.
+
+Each colour token of `Theme` reads the palette in effect. `ThemeSettings`
+sets `NSApp.appearance` (`nil` for *Auto*, so that the app follows the Mac),
+resolves the entry in effect, and, when the entry changed, tells the views by
+the same walk a font change uses (`ThemeFollowing`): the window's view tree,
+then every board that is not mounted. Each view takes its colours again, with
+the colours of the state it is in. A theme chosen for the appearance that is
+not in effect is saved and changes its tile, and no view.
 
 - A terminal card sets `TerminalView.theme`. The text on screen is drawn in
   the new palette with nothing fed, the grid does not change, and a program
@@ -968,17 +985,18 @@ is in.
   libghostty-vt, and `CSI ? 996 n` as light or dark. A program that set mode
   2031 is sent one report when dark and light change. A colour a program set
   itself stays until the program resets it, and indices 16 to 255 are the
-  same in both themes.
+  same in every theme.
 - A doc card's page is loaded with the theme's CSS declarations in place
   (`ThemeCSS.page` fills a marker in `DocTemplate.html`), and a change hands
-  a loaded page the new declarations as script arguments, with no reload.
+  a loaded page the new declarations as script arguments, with no reload,
+  when the palette is not the one the page has (`PageTheme`).
   The page also states its `color-scheme`.
 - An HTML card's native chrome follows the theme. Its document follows it
   too, unless the author states a colour scheme (see the shim, above): the
   app sends the document nothing.
 
-The shadows, the board switcher's veil and the quit notice are the same in
-both themes.
+The shadows, the board switcher's veil, the scroll thumb and the quit notice
+are the same in every theme.
 
 **The red button hides the window** (`WindowCloseHider`): terminals keep
 running, and the window returns on the next activation or Dock click, once per
@@ -1063,7 +1081,7 @@ focus, per-terminal `cols`/`rows`/`proc`/`selection`/`scrollback_tail`, the
 quit guard's state, `fonts`: for each font role the family saved in
 `app-prefs.json` and what the role resolved to (a PostScript `face`, or the
 `css` value for doc prose), and for `terminal` and `document` the `size` in
-effect; and `theme`: the `choice` and the variant `in_effect`. `--until` re-evaluates an expression every 50 ms
+effect; and `theme`: the `choice`, the variant `in_effect` and the `name` (the id) of the theme in effect. `--until` re-evaluates an expression every 50 ms
 (`DevUntil`). The scenario suites are `scripts/qa/smoke.mjs` (`make qa`) and
 `scripts/qa/quit.mjs` (`make qa-quit`).
 

@@ -1,8 +1,22 @@
-/// The theme whose palette the app holds (spec 2610.0007).
-public enum ThemeVariant: String, Sendable { case light, dark }
+/// An appearance, and which of the two a theme is for (specs 2610.0007,
+/// 2610.0008).
+public enum ThemeVariant: String, CaseIterable, Sendable {
+    case light, dark
 
-/// The theme the user chose, in the order of the Settings tiles (spec
-/// 2610.0007). `auto` is the variant that fits the macOS appearance.
+    /// The key the theme chosen for this appearance is saved under.
+    public var prefsKey: String { "theme_\(rawValue)" }
+
+    /// The label of this appearance's row in the Theme pane.
+    public var rowTitle: String {
+        switch self {
+        case .light: "Light theme"
+        case .dark: "Dark theme"
+        }
+    }
+}
+
+/// The appearance the user chose, in the order of the Settings tiles (spec
+/// 2610.0007). `auto` is the one that fits the macOS appearance.
 public enum ThemeChoice: String, CaseIterable, Sendable {
     case auto, light, dark
 

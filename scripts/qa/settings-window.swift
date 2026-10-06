@@ -1,5 +1,5 @@
 // Operates the Settings window of the live dev app with no pointer (specs
-// 2610.0005, 2610.0006, 2610.0007), through the Accessibility API, and posts
+// 2610.0005, 2610.0006, 2610.0007, 2610.0008), through the Accessibility API, and posts
 // a click or a wheel at a screen point for the one scenario that needs real
 // pointer events.
 //
@@ -9,6 +9,7 @@
 //   rows                     prints the selected pane, each row's selected title, each size, each theme tile with its value (1 = selected), and the window's labels, with frames
 //   pane <title>             selects a sidebar entry: Fonts, Theme
 //   theme <title>            presses a tile of the Theme pane: Auto, Light, Dark
+//   theme-of <Light|Dark> <title>  prints the themes that appearance's pop-up lists, then chooses one
 //   pick <row> <title>       row 0, 1, 2 = Terminal, Interface, Document
 //   size <n> <text>          sets a size field's text and confirms it, as Return does; n 0, 1 = Terminal, Document
 //   step <n> up|down [count] presses a size's stepper
@@ -26,7 +27,8 @@
 // and under Zhuyin `20` arrives as `ㄉㄢ`.
 //
 // `pick`, `size`, `step` and `focus` count the controls of the pane that
-// shows: they need the Fonts pane, and `theme` needs the Theme pane.
+// shows: they need the Fonts pane, and `theme` and `theme-of` need the Theme
+// pane.
 //
 // <pid> is the app's: `lsof -t "$PWD/.dev/tarmac-dev.sock"`. The process that
 // runs this needs the Accessibility permission.
@@ -135,6 +137,24 @@ func control(_ wanted: String, _ what: String) -> AXUIElement {
     return found[index]
 }
 
+/// Opens a pop-up and gives the items of its menu, in their order.
+func open(_ popUp: AXUIElement) -> [AXUIElement] {
+    press(popUp, "the pop-up")
+    usleep(400_000)
+    return descendants(of: popUp).filter { role($0) == kAXMenuItemRole }
+}
+
+/// Chooses the item with that title in an open pop-up, or closes the menu
+/// and fails.
+func choose(_ name: String, of items: [AXUIElement], in popUp: AXUIElement, _ what: String) {
+    guard let item = items.first(where: { title($0) == name }) else {
+        AXUIElementPerformAction(popUp, kAXCancelAction as CFString)
+        fail("\(what) lists \(items.count) entries and none is \(name)")
+    }
+    press(item, name)
+    print("picked \(name) of \(items.count)")
+}
+
 func post(_ code: CGKeyCode, flags: CGEventFlags = [], character: Character? = nil) {
     let session = CGEventSource(stateID: .combinedSessionState)
     let units = character.map { Array(String($0).utf16) }
@@ -218,18 +238,19 @@ case "theme":
     press(tile, rest[0])
     usleep(200_000)
     print("tile \(rest[0]) value=\(state(tile))")
+case "theme-of":
+    let appearances = ["Light", "Dark"], popUps = controls(kAXPopUpButtonRole)
+    guard rest.count == 2, let index = appearances.firstIndex(of: rest[0]) else { fail("theme-of <Light|Dark> <title>") }
+    guard popUps.count == appearances.count else {
+        fail("the window shows \(popUps.count) pop-ups, not one for each appearance; run `pane Theme`")
+    }
+    let items = open(popUps[index])
+    print("lists \(items.map(title))")
+    choose(rest[1], of: items, in: popUps[index], "the \(rest[0]) theme")
 case "pick":
     guard rest.count == 2 else { fail("pick <row> <title>") }
     let popUp = control(kAXPopUpButtonRole, "pop-ups")
-    press(popUp, "the pop-up")
-    usleep(400_000)
-    let items = descendants(of: popUp).filter { role($0) == kAXMenuItemRole }
-    guard let item = items.first(where: { title($0) == rest[1] }) else {
-        AXUIElementPerformAction(popUp, kAXCancelAction as CFString)
-        fail("row \(rest[0]) lists \(items.count) entries and none is \(rest[1])")
-    }
-    press(item, rest[1])
-    print("picked \(rest[1]) of \(items.count)")
+    choose(rest[1], of: open(popUp), in: popUp, "row \(rest[0])")
 case "size":
     guard rest.count == 2 else { fail("size <n> <text>") }
     let field = control(kAXTextFieldRole, "size fields")

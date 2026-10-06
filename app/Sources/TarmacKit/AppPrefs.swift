@@ -9,8 +9,10 @@ import Foundation
 ///
 /// With no font chosen the format, `{"warn_before_quit": <bool>}`, is the Tauri
 /// app's `app-prefs.json` byte for byte. A chosen font adds its role's key
-/// (spec 2610.0005), a chosen size its own (spec 2610.0006), and a theme that
-/// is not the standard one the key `theme` (spec 2610.0007). The parse and
+/// (spec 2610.0005), a chosen size its own (spec 2610.0006), an appearance
+/// that is not the standard one the key `theme` (spec 2610.0007), and a theme
+/// that is not the standard one of its appearance that appearance's key (spec
+/// 2610.0008). The parse and
 /// encode decisions are pure; `load` and `save` are the two thin file
 /// operations.
 public enum AppPrefs {
@@ -24,17 +26,21 @@ public enum AppPrefs {
         public var fonts: [FontRole: String]
         /// The size chosen for a role; no entry is the role's standard.
         public var fontSizes: [FontRole: Double]
-        /// The theme chosen; no key in the file is the standard one.
+        /// The appearance chosen; no key in the file is the standard one.
         public var theme: ThemeChoice
+        /// The id of the theme chosen for an appearance. No entry is the
+        /// standard one, and the standard id is not written.
+        public var themes: [ThemeVariant: String]
 
         public init(
             warnBeforeQuit: Bool = true, fonts: [FontRole: String] = [:], fontSizes: [FontRole: Double] = [:],
-            theme: ThemeChoice = .standard
+            theme: ThemeChoice = .standard, themes: [ThemeVariant: String] = [:]
         ) {
             self.warnBeforeQuit = warnBeforeQuit
             self.fonts = fonts
             self.fontSizes = fontSizes
             self.theme = theme
+            self.themes = themes
         }
     }
 
@@ -70,8 +76,19 @@ public enum AppPrefs {
             if let name = try? object.decode(String.self, forKey: Key(ThemeChoice.prefsKey)) {
                 values.theme = ThemeChoice(rawValue: name) ?? .standard
             }
+            for variant in ThemeVariant.allCases {
+                let id = try? object.decode(String.self, forKey: Key(variant.prefsKey))
+                values.themes[variant] = written(id, for: variant)
+            }
             self.values = values
         }
+    }
+
+    /// The id as the file holds it: that of a theme the appearance is offered
+    /// and that is not its standard one. Any other id is no key.
+    private static func written(_ id: String?, for variant: ThemeVariant) -> String? {
+        let theme = ThemeCatalog.entry(id, for: variant)
+        return theme.id == id && theme != ThemeCatalog.standard(for: variant) ? id : nil
     }
 
     public static func path(besideSocket socket: String) -> String {
@@ -110,9 +127,11 @@ public enum AppPrefs {
     /// Written as a literal, not through an encoder: QA reads these exact bytes.
     /// A name `decode` would refuse is left out, because written raw it would
     /// damage the file, and a damaged file turns the guard back on. So is a
-    /// size it would refuse. Every family is written before every size, and the
-    /// theme last. The standard theme is not written, so a file with no theme
-    /// chosen keeps the bytes it had before there was one.
+    /// size it would refuse. Every family is written before every size, then
+    /// the appearance, then the theme of each appearance. A standard one is not
+    /// written, so a file with nothing chosen keeps the bytes it had before
+    /// there was a choice. A theme id is written raw: `written` lets through
+    /// only an id of the catalogue.
     public static func encode(_ values: Values) -> Data {
         var json = #"{"warn_before_quit":\#(values.warnBeforeQuit)"#
         for role in FontRole.allCases {
@@ -125,6 +144,10 @@ public enum AppPrefs {
         }
         if values.theme != .standard {
             json += #","\#(ThemeChoice.prefsKey)":"\#(values.theme.rawValue)""#
+        }
+        for variant in ThemeVariant.allCases {
+            guard let id = written(values.themes[variant], for: variant) else { continue }
+            json += #","\#(variant.prefsKey)":"\#(id)""#
         }
         return Data((json + "}").utf8)
     }

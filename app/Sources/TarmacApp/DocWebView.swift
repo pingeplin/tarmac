@@ -37,7 +37,7 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
     private var fontsGiven: [String: String]?
     /// The theme the page holds: the one it was loaded with, or was given
     /// since.
-    private var themeGiven: ThemeVariant?
+    private var themeGiven: PageTheme?
     private var loadingPage = false
     /// The web view carries `DocFrameRule`, so a web page the doc frames is
     /// kept off the img host.
@@ -97,8 +97,8 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
         loadingPage = true
         onScrollChanged?(nil)
         // The page holds its colours from its first paint.
-        themeGiven = Theme.variant
-        webView.loadHTMLString(ThemeCSS.page(Self.template, Theme.variant), baseURL: nil)
+        themeGiven = PageTheme(Theme.palette)
+        webView.loadHTMLString(ThemeCSS.page(Self.template, Theme.palette), baseURL: nil)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -154,11 +154,10 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
     func themeChanged() {
         layer?.backgroundColor = Theme.bg1.cgColor
         webView.underPageBackgroundColor = Theme.bg1
-        guard pageLoaded, Theme.variant != themeGiven else { return }
-        themeGiven = Theme.variant
+        guard pageLoaded, themeGiven?.take(Theme.palette) == true else { return }
         webView.runInCardWorld(
             "tarmacDoc.theme(properties)",
-            arguments: ["properties": ThemeCSS.properties(Theme.variant).map { [$0.name, $0.value] }]
+            arguments: ["properties": ThemeCSS.properties(Theme.palette).map { [$0.name, $0.value] }]
         )
     }
 

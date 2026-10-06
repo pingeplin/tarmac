@@ -9,29 +9,28 @@ public enum ThemeCSS {
     public static let backdropMarker = "/*tarmac-backdrop*/"
 
     /// The declarations, in the order they are written.
-    public static func properties(_ variant: ThemeVariant) -> [(name: String, value: String)] {
-        let palette = Palette.of(variant)
-        return [
-            backdrop(variant),
+    public static func properties(_ palette: Palette) -> [(name: String, value: String)] {
+        [
+            backdrop(palette),
             ("--bg2", hex(palette.bg2)),
             ("--term-bg", hex(palette.terminal.background)),
             ("--text", hex(palette.text)),
             ("--prose-text", hex(palette.prose)),
             ("--agent", hex(palette.agent)),
             ("--agent-dim", rgba(palette.agent, alpha: "0.16")),
-            ("color-scheme", variant.rawValue),
+            ("color-scheme", palette.variant.rawValue),
         ]
     }
 
     /// The host page's one declaration.
-    public static func backdrop(_ variant: ThemeVariant) -> (name: String, value: String) {
-        ("--bg1", hex(Palette.of(variant).bg1))
+    public static func backdrop(_ palette: Palette) -> (name: String, value: String) {
+        ("--bg1", hex(palette.bg1))
     }
 
     /// `template` with `marker` replaced by every declaration, and
     /// `backdropMarker` by the `--bg1` declaration alone.
-    public static func page(_ template: String, _ variant: ThemeVariant) -> String {
-        put([backdrop(variant)], at: backdropMarker, in: put(properties(variant), at: marker, in: template))
+    public static func page(_ template: String, _ palette: Palette) -> String {
+        put([backdrop(palette)], at: backdropMarker, in: put(properties(palette), at: marker, in: template))
     }
 
     /// A marker is a place only when the template holds it exactly once.

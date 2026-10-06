@@ -10,7 +10,7 @@ public enum Contrast {
     }
 
     /// The WCAG 2 relative luminance of `0xRRGGBB`, 0 to 1.
-    private static func luminance(_ rgb: UInt32) -> Double {
+    static func luminance(_ rgb: UInt32) -> Double {
         func linear(_ shift: UInt32) -> Double {
             let value = Double(rgb >> shift & 0xff) / 255
             return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)

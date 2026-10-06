@@ -51,7 +51,10 @@ struct DevSnapshotReader {
             keyboardFocus: keyboardFocus,
             quitGuard: quitGuard?.facts,
             fonts: fonts,
-            theme: DevSnapshot.Theme(choice: controller.theme.choice, inEffect: controller.theme.inEffect)
+            theme: DevSnapshot.Theme(
+                choice: controller.theme.choice, inEffect: controller.theme.inEffect.variant,
+                name: controller.theme.inEffect.id
+            )
         ))
     }
 

@@ -324,15 +324,17 @@ public enum DevSnapshot {
         }
     }
 
-    /// The theme (spec 2610.0007): the choice the app holds, and the variant
-    /// whose palette it holds.
+    /// The theme (specs 2610.0007, 2610.0008): the choice the app holds, and
+    /// the variant and the id of the theme whose palette it holds.
     public struct Theme: Equatable, Sendable {
         public var choice: ThemeChoice
         public var inEffect: ThemeVariant
+        public var name: String
 
-        public init(choice: ThemeChoice, inEffect: ThemeVariant) {
+        public init(choice: ThemeChoice, inEffect: ThemeVariant, name: String) {
             self.choice = choice
             self.inEffect = inEffect
+            self.name = name
         }
     }
 
@@ -404,6 +406,7 @@ public enum DevSnapshot {
             "fonts": fonts(input.fonts),
             "theme": [
                 "choice": .string(input.theme.choice.rawValue), "in_effect": .string(input.theme.inEffect.rawValue),
+                "name": .string(input.theme.name),
             ],
         ]
     }
