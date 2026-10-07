@@ -57,6 +57,13 @@ enum ThemeFixture {
         ]
     )
 
+    /// Latte with one fill given: the last column of the spec's table.
+    static let latteWithBg2Colours: ThemeFile.Colours = {
+        var colours = latteColours
+        colours.chrome = [.bg2: 0x9ca0b0]
+        return colours
+    }()
+
     static let black = colours(background: 0x000000, foreground: 0xffffff)
     static let white = colours(background: 0xffffff, foreground: 0x000000)
 
@@ -69,6 +76,16 @@ enum ThemeFixture {
             ansi: Dictionary(uniqueKeysWithValues: ansi.enumerated().map { ($0.offset, $0.element) }),
             chrome: chrome, repo: repo
         )
+    }
+
+    /// The Dracula text with another `background`.
+    static func dracula(background: String) -> String {
+        dracula.replacingOccurrences(of: "background = #282a36", with: "background = \(background)")
+    }
+
+    /// A file of the themes folder, read whole.
+    static func file(_ name: String, _ text: String = dracula) -> ThemeLibrary.File {
+        ThemeLibrary.File(name: name, contents: .success(Data(text.utf8)))
     }
 
     /// A text with a valid background and foreground as its lines 1 and 2,

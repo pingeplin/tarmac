@@ -25,6 +25,8 @@ public struct ThemeLibrary: Equatable, Sendable {
 
     public let fileThemes: [ThemeCatalog.Entry]
     public let refused: [Refused]
+    /// The built-in themes and then `fileThemes`: the order of the list.
+    public let all: [ThemeCatalog.Entry]
 
     /// Whether a file of that name is read at all: not a hidden file, not an
     /// editor's backup, and a name that can be an id.
@@ -35,7 +37,7 @@ public struct ThemeLibrary: Equatable, Sendable {
     public init(files: [File]) {
         var themes: [ThemeCatalog.Entry] = []
         var refused: [Refused] = []
-        for file in files {
+        for file in files.sorted(by: { Self.precedes($0.name, $1.name) }) {
             switch file.contents.flatMap(ThemeFile.palette(of:)) {
             case .success(let palette):
                 themes.append(ThemeCatalog.Entry(id: Self.filePrefix + file.name, title: file.name, palette: palette))
@@ -43,12 +45,10 @@ public struct ThemeLibrary: Equatable, Sendable {
                 refused.append(Refused(file: file.name, refusal: refusal))
             }
         }
-        fileThemes = themes.sorted { Self.precedes($0.title, $1.title) }
-        self.refused = refused.sorted { Self.precedes($0.file, $1.file) }
+        fileThemes = themes
+        self.refused = refused
+        all = ThemeCatalog.all + themes
     }
-
-    /// The order of the list.
-    public var all: [ThemeCatalog.Entry] { ThemeCatalog.all + fileThemes }
 
     /// The theme with that id, compared exactly, if there is one.
     public func theme(_ id: String?) -> ThemeCatalog.Entry? {

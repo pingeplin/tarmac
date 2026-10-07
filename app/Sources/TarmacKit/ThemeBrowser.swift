@@ -44,19 +44,17 @@ public enum ThemeBrowser {
     /// colour is counted once, on however many fills it is found.
     public static func contrastNote(_ palette: Palette) -> String {
         let findings = PaletteCheck.findings(palette)
-        let terminal =
-            switch findings.filter({ $0.part == .terminal }).count {
-            case 0: "Every terminal colour passes the contrast floors."
-            case 1: "1 terminal colour has low contrast on the background."
-            case let count: "\(count) terminal colours have low contrast on the background."
-            }
-        let chrome: String? =
-            switch Set(findings.filter { $0.part == .chrome }.map(\.subject)).count {
-            case 0: nil
-            case 1: "1 chrome colour has low contrast."
-            case let count: "\(count) chrome colours have low contrast."
-            }
-        return [terminal, chrome].compactMap { $0 }.joined(separator: " ")
+        let terminal = count(
+            findings.filter { $0.part == .terminal }.count,
+            one: "1 terminal colour has low contrast on the background.",
+            many: "terminal colours have low contrast on the background."
+        )
+        let chrome = count(
+            Set(findings.filter { $0.part == .chrome }.map(\.subject)).count,
+            one: "1 chrome colour has low contrast.", many: "chrome colours have low contrast."
+        )
+        return [terminal ?? "Every terminal colour passes the contrast floors.", chrome].compactMap { $0 }
+            .joined(separator: " ")
     }
 
     /// One line for each finding, in the detector's order: what the note

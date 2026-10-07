@@ -80,9 +80,7 @@ final class ThemeBrowserTests: XCTestCase {
         XCTAssertEqual(pairs, 16)
     }
 
-    private let withDracula = ThemeLibrary(
-        files: [ThemeLibrary.File(name: "Dracula", contents: .success(Data(ThemeFixture.dracula.utf8)))]
-    )
+    private let withDracula = ThemeLibrary(files: [ThemeFixture.file("Dracula")])
 
     private var dracula: ThemeCatalog.Entry { withDracula.entry("file:Dracula", for: .dark) }
 
@@ -366,12 +364,7 @@ final class ThemeBrowserTests: XCTestCase {
 
     /// S40 — a file that changed is shown with its new colours.
     func testS40AShownThemeKeepsItsIdWhenTheThemesChange() {
-        let changed = ThemeLibrary(files: [
-            ThemeLibrary.File(
-                name: "Dracula",
-                contents: .success(Data(ThemeFixture.dracula.replacingOccurrences(of: "#282a36\nforeground", with: "#1e1f29\nforeground").utf8))
-            ),
-        ])
+        let changed = ThemeLibrary(files: [ThemeFixture.file("Dracula", ThemeFixture.dracula(background: "#1e1f29"))])
         let inEffect = ThemeCatalog.standard(for: .dark)
 
         let shown = ThemeBrowser.shown(dracula, in: changed, inEffect: inEffect)

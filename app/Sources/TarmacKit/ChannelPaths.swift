@@ -43,7 +43,7 @@ public enum ChannelPaths {
     /// slash yields a single separator and an empty `home` stays relative.
     public static func channelDir(home: String, channel: Channel) -> String {
         let base = join(home, "Library/Application Support/tarmac")
-        return channel == .dev ? base + "/dev" : base
+        return channel == .dev ? join(base, "dev") : base
     }
 
     /// Tarmac's config directory (spec 2610.0009), where the user's own files

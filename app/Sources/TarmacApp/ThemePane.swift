@@ -42,19 +42,20 @@ final class ThemePane: NSObject {
 
     /// The window opens: the showcase has the theme in effect.
     func reload() {
-        showChosen()
-        list.select(theme.inEffect)
-        show(theme.inEffect)
+        present(theme.inEffect)
     }
 
-    /// A theme file was added, changed or removed. The shown theme is found
-    /// before the list takes its rows: a list that lost its selected row
-    /// reports another one.
+    /// A theme file was added, changed or removed.
     private func themesChanged() {
-        let next = ThemeBrowser.shown(shown, in: theme.library, inEffect: theme.inEffect)
+        present(ThemeBrowser.shown(shown, in: theme.library, inEffect: theme.inEffect))
+    }
+
+    /// `entry` is found before the list takes its rows: a list that lost
+    /// its selected row reports another one, which would be shown.
+    private func present(_ entry: ThemeCatalog.Entry) {
         showChosen()
-        list.select(next)
-        show(next)
+        list.select(entry)
+        show(entry)
     }
 
     private func show(_ entry: ThemeCatalog.Entry) {
@@ -83,7 +84,10 @@ final class ThemePane: NSObject {
             tile.state = choice == theme.choice ? .on : .off
         }
         let library = theme.library
-        list.show(library.all) { ThemeBrowser.marks(of: $0, chosen: theme.theme(for:)) }
+        let chosen = Dictionary(uniqueKeysWithValues: ThemeVariant.allCases.map { ($0, theme.theme(for: $0)) })
+        list.show(library.all) { entry in
+            ThemeBrowser.marks(of: entry) { chosen[$0] ?? theme.theme(for: $0) }
+        }
         filesNote.stringValue = ThemeBrowser.filesNote(
             themes: library.fileThemes.count, refused: library.refused.count
         )

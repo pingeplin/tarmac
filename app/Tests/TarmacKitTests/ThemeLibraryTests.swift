@@ -6,18 +6,6 @@ import XCTest
 final class ThemeLibraryTests: XCTestCase {
     private let draculaPalette = ThemeFile.palette(from: ThemeFixture.draculaColours)
 
-    private func file(_ name: String, _ text: String = ThemeFixture.dracula) -> ThemeLibrary.File {
-        ThemeLibrary.File(name: name, contents: .success(Data(text.utf8)))
-    }
-
-    private func dracula(in library: ThemeLibrary, file: StaticString = #filePath, line: UInt = #line) -> ThemeCatalog.Entry {
-        guard let entry = library.fileThemes.first(where: { $0.id == "file:Dracula" }) else {
-            XCTFail("no file:Dracula", file: file, line: line)
-            return ThemeCatalog.all[0]
-        }
-        return entry
-    }
-
     /// S20
     func testS20ALibraryWithNoFileIsTheCatalogue() {
         XCTAssertEqual(ThemeLibrary.shipped, ThemeLibrary(files: []))
@@ -27,8 +15,8 @@ final class ThemeLibraryTests: XCTestCase {
 
     /// S21
     func testS21TheFileThemesFollowTheCatalogueByTitle() {
-        let files = [
-            file("beta"), file("Alpha"), file("alpha"), file("Zed"), file("broken", "foreground = #fff"),
+        let files = ["beta", "Alpha", "alpha", "Zed"].map { ThemeFixture.file($0) } + [
+            ThemeFixture.file("broken", "foreground = #fff"),
             ThemeLibrary.File(name: "big", contents: .failure(.tooLarge)),
         ]
 
@@ -60,9 +48,9 @@ final class ThemeLibraryTests: XCTestCase {
     }
 
     /// S22
-    func testS22AnIdNamesItsEntryForEitherAppearance() {
-        let library = ThemeLibrary(files: [file("Dracula")])
-        let entry = dracula(in: library)
+    func testS22AnIdNamesItsEntryForEitherAppearance() throws {
+        let library = ThemeLibrary(files: [ThemeFixture.file("Dracula")])
+        let entry = try XCTUnwrap(library.theme("file:Dracula"))
 
         XCTAssertEqual(library.entry("file:Dracula", for: .light), entry)
         XCTAssertEqual(library.entry("file:Dracula", for: .dark), entry)
@@ -72,7 +60,7 @@ final class ThemeLibraryTests: XCTestCase {
 
     /// S22 — the id is compared exactly.
     func testS22AnIdNoThemeHasGivesTheStandardTheme() {
-        let library = ThemeLibrary(files: [file("Dracula")])
+        let library = ThemeLibrary(files: [ThemeFixture.file("Dracula")])
 
         for id in ["file:Gone", "Dracula", "file:dracula", nil] {
             XCTAssertEqual(library.entry(id, for: .light).id, "breeze-light", id ?? "nil")
@@ -82,7 +70,7 @@ final class ThemeLibraryTests: XCTestCase {
 
     /// S23
     func testS23AFileWithTheTitleOfABuiltInThemeIsAThemeOfItsOwn() {
-        let library = ThemeLibrary(files: [file("Catppuccin Mocha")])
+        let library = ThemeLibrary(files: [ThemeFixture.file("Catppuccin Mocha")])
 
         let pair = library.all.filter { $0.title == "Catppuccin Mocha" }
 
@@ -95,9 +83,9 @@ final class ThemeLibraryTests: XCTestCase {
     }
 
     /// S24
-    func testS24TheThemeInEffectCanBeAFileTheme() {
-        let library = ThemeLibrary(files: [file("Dracula")])
-        let entry = dracula(in: library)
+    func testS24TheThemeInEffectCanBeAFileTheme() throws {
+        let library = ThemeLibrary(files: [ThemeFixture.file("Dracula")])
+        let entry = try XCTUnwrap(library.theme("file:Dracula"))
 
         XCTAssertEqual(entry.variant, .dark)
         XCTAssertEqual(library.inEffect(choice: .light, themes: [.light: "file:Dracula"], systemIsDark: false), entry)
@@ -122,13 +110,11 @@ final class ThemeLibraryTests: XCTestCase {
 
     /// S26
     func testS26LibrariesAreEqualWhenTheirThemesAre() {
-        let library = ThemeLibrary(files: [file("Dracula")])
-        let changed = ThemeLibrary(
-            files: [file("Dracula", ThemeFixture.dracula.replacingOccurrences(of: "#282a36\nforeground", with: "#282a37\nforeground"))]
-        )
+        let library = ThemeLibrary(files: [ThemeFixture.file("Dracula")])
+        let changed = ThemeLibrary(files: [ThemeFixture.file("Dracula", ThemeFixture.dracula(background: "#282a37"))])
 
-        XCTAssertEqual(ThemeLibrary(files: [file("Dracula", "# note\n" + ThemeFixture.dracula)]), library)
+        XCTAssertEqual(ThemeLibrary(files: [ThemeFixture.file("Dracula", "# note\n" + ThemeFixture.dracula)]), library)
         XCTAssertNotEqual(changed, library)
-        XCTAssertEqual(dracula(in: changed).palette.terminal.background, 0x282a37)
+        XCTAssertEqual(changed.theme("file:Dracula")?.palette.terminal.background, 0x282a37)
     }
 }

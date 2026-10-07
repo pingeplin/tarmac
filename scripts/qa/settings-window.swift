@@ -142,15 +142,19 @@ func selected(_ row: AXUIElement) -> Bool { (attribute(row, kAXSelectedAttribute
 
 /// The texts of a row's cell: its title and then, in the list of themes, its
 /// marks.
-func texts(_ row: AXUIElement) -> [String] {
-    descendants(of: row).filter { role($0) == kAXStaticTextRole }.map(value)
+func texts(_ row: AXUIElement) -> [String] { texts(in: descendants(of: row)) }
+
+/// The same of a row that was walked already: a walk is a round trip to the
+/// app for each element, and a list can have some hundreds of rows.
+func texts(in parts: [AXUIElement]) -> [String] {
+    parts.filter { role($0) == kAXStaticTextRole }.map(value)
 }
 
 func rowName(_ row: AXUIElement) -> String { texts(row).first ?? "" }
 
 /// The id the app gives a row of the list of themes, on the row's title.
-func rowID(_ row: AXUIElement) -> String {
-    descendants(of: row).map(identifier).first { !$0.isEmpty } ?? ""
+func rowID(in parts: [AXUIElement]) -> String {
+    parts.map(identifier).first { !$0.isEmpty } ?? ""
 }
 
 /// A tooltip on one line, or nothing when the element has none.
@@ -162,10 +166,11 @@ func help(_ element: AXUIElement) -> String {
 /// themes the row with that id, or else the first row with that title.
 /// `found` starts the line that tells of a name no row has.
 func select(_ name: String, in table: String, _ found: String, hint: String = "") {
-    let entries = rows(of: table)
-    guard let row = entries.first(where: { rowID($0) == name }) ?? entries.first(where: { rowName($0) == name })
+    let entries = rows(of: table).map { (row: $0, parts: descendants(of: $0)) }
+    guard
+        let row = (entries.first { rowID(in: $0.parts) == name } ?? entries.first { texts(in: $0.parts).first == name })?.row
     else {
-        fail("\(found) \(entries.map(rowName)) and none is \(name)\(hint)")
+        fail("\(found) \(entries.map { texts(in: $0.parts).first ?? "" }) and none is \(name)\(hint)")
     }
     guard AXUIElementSetAttributeValue(row, kAXSelectedAttribute as CFString, kCFBooleanTrue) == .success else {
         fail("the row \(name) was not selected")
@@ -271,9 +276,10 @@ case "rows":
     }
     for stepper in views.filter({ role($0) == kAXIncrementorRole }) { print("stepper frame=\(frame(stepper))") }
     for row in rows(of: themeList) {
-        let marks = texts(row).dropFirst().joined(separator: ",")
+        let parts = descendants(of: row), texts = texts(in: parts)
+        let marks = texts.dropFirst().joined(separator: ",")
         print(
-            "theme \(rowName(row)) marks=\(marks) selected=\(selected(row) ? 1 : 0) frame=\(frame(row)) id=\(rowID(row))"
+            "theme \(texts.first ?? "") marks=\(marks) selected=\(selected(row) ? 1 : 0) frame=\(frame(row)) id=\(rowID(in: parts))"
         )
     }
     if let list = named(themeList), let scroll: AXUIElement = attribute(list, kAXParentAttribute) {
@@ -295,9 +301,9 @@ case "rows":
     for button in views.filter({ role($0) == kAXButtonRole && title($0) == openThemes }) {
         print("button \(openThemes) frame=\(frame(button))")
     }
-    let texts = views.filter { role($0) == kAXStaticTextRole }
-    for text in texts { print("label \(value(text)) frame=\(frame(text))") }
-    print("labels=\(texts.map(value))")
+    let labels = views.filter { role($0) == kAXStaticTextRole }.map { (text: value($0), element: $0) }
+    for label in labels { print("label \(label.text) frame=\(frame(label.element))") }
+    print("labels=\(labels.map(\.text))")
     print("resizable=\((attribute(window, "AXGrowArea") as AXUIElement?) != nil)")
 case "pane":
     guard rest.count == 1 else { fail("pane <title>") }

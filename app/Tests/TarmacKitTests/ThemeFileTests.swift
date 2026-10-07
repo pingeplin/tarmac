@@ -327,10 +327,7 @@ final class ThemeFileTests: XCTestCase {
 
     /// S17 — the lift measures against the fills of the result.
     func testS17AGivenFillMovesEveryLift() {
-        var colours = ThemeFixture.latteColours
-        colours.chrome = [.bg2: 0x9ca0b0]
-
-        XCTAssertEqual(ThemeFile.palette(from: colours), Self.latteWithBg2)
+        XCTAssertEqual(ThemeFile.palette(from: ThemeFixture.latteWithBg2Colours), Self.latteWithBg2)
     }
 
     /// S17
@@ -353,11 +350,9 @@ final class ThemeFileTests: XCTestCase {
 
     /// S18
     func testS18TheFixedPartsFollowOneRuleInEveryDerivedTheme() {
-        var latteWithBg2 = ThemeFixture.latteColours
-        latteWithBg2.chrome = [.bg2: 0x9ca0b0]
         let columns: [(ThemeFile.Colours, ThemeVariant)] = [
             (ThemeFixture.draculaColours, .dark), (ThemeFixture.latteColours, .light), (ThemeFixture.black, .dark),
-            (ThemeFixture.white, .light), (latteWithBg2, .light),
+            (ThemeFixture.white, .light), (ThemeFixture.latteWithBg2Colours, .light),
         ]
         for (colours, variant) in columns {
             let palette = ThemeFile.palette(from: colours)

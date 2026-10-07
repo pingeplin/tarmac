@@ -92,7 +92,7 @@ final class ThemeFolderTests: XCTestCase {
             [ThemeCatalog.Entry(id: "file:Dracula", title: "Dracula", palette: ThemeFile.palette(from: ThemeFixture.draculaColours))]
         )
 
-        try write(Data(ThemeFixture.dracula.replacingOccurrences(of: "#282a36\nforeground", with: "#1e1f29\nforeground").utf8), "Dracula")
+        try write(Data(ThemeFixture.dracula(background: "#1e1f29").utf8), "Dracula")
 
         XCTAssertNotEqual(ThemeLibrary(files: ThemeFolder.files(at: folder)), first)
     }

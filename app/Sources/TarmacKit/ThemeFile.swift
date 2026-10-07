@@ -79,7 +79,7 @@ public enum ThemeFile {
     private typealias Scalars = ArraySlice<Unicode.Scalar>
 
     private static let blanks: Set<Unicode.Scalar> = [" ", "\t"]
-    private static let lineEnds: Set<Unicode.Scalar> = [" ", "\t", "\r"]
+    private static let lineEnds = blanks.union(["\r"])
     private static let ansiCount = 16
     private static let repoCount = 4
 
@@ -211,34 +211,36 @@ extension ThemeFile {
     public static func palette(from colours: Colours) -> Palette {
         let (ground, ink) = (colours.background, colours.foreground)
         let variant = Palette.variant(background: ground, foreground: ink)
-        let standard = ThemeCatalog.standard(for: variant).palette.terminal.ansi
-        let ansi = standard.indices.map { colours.ansi[$0] ?? standard[$0] }
+        let standard = ThemeCatalog.standard(for: variant).palette
+        let ansi = standard.terminal.ansi.indices.map { colours.ansi[$0] ?? standard.terminal.ansi[$0] }
 
-        func fill(_ key: ChromeKey, _ dark: Double, _ light: Double) -> UInt32 {
-            colours.chrome[key] ?? mix(ground, ink, variant == .dark ? dark : light)
+        func given(_ key: ChromeKey, _ derived: @autoclosure () -> UInt32) -> UInt32 {
+            colours.chrome[key] ?? derived()
         }
-        let (bg0, bg1, bg2) = (fill(.bg0, -0.08, 0.10), fill(.bg1, -0.04, 0.05), fill(.bg2, 0.07, 0.15))
+        func fill(_ key: ChromeKey, _ dark: Double, _ light: Double) -> UInt32 {
+            given(key, mix(ground, ink, variant == .dark ? dark : light))
+        }
+        let fills = [fill(.bg0, -0.08, 0.10), fill(.bg1, -0.04, 0.05), fill(.bg2, 0.07, 0.15)]
         let pole: UInt32 = variant == .dark ? 0xffffff : 0x000000
         func lift(_ colour: UInt32, _ floor: Double) -> UInt32 {
             (0...liftSteps).lazy.map { mix(colour, pole, Double($0) / Double(liftSteps)) }
-                .first { lifted in [bg0, bg1, bg2].allSatisfy { Contrast.ratio(lifted, $0) >= floor } } ?? pole
+                .first { lifted in fills.allSatisfy { Contrast.ratio(lifted, $0) >= floor } } ?? pole
         }
-        func mark(_ key: ChromeKey, _ index: Int) -> UInt32 {
-            colours.chrome[key] ?? lift(ansi[index], 3)
-        }
-        let agent = mark(.agent, 6)
+        func mark(_ index: Int) -> UInt32 { lift(ansi[index], PaletteCheck.markFloor) }
+        let agent = given(.agent, mark(6))
 
         return Palette(
-            bg0: bg0, bg1: bg1, bg2: bg2, bg3: fill(.bg3, 0.15, 0.23),
+            bg0: fills[0], bg1: fills[1], bg2: fills[2], bg3: fill(.bg3, 0.15, 0.23),
             line: fill(.line, 0.24, 0.36), lineSoft: fill(.lineSoft, 0.15, 0.25),
             liftBorder: fill(.liftBorder, 0.40, 0.55), primeHeaderBg: fill(.primeHeaderBg, 0.11, 0.20),
-            text: colours.chrome[.text] ?? lift(ink, 4.5),
-            muted: colours.chrome[.muted] ?? lift(mix(ink, ground, 0.25), 4.5),
-            faint: colours.chrome[.faint] ?? mix(ink, ground, 0.45),
-            prose: colours.chrome[.prose] ?? ink,
-            agent: agent, amber: mark(.amber, 3), ok: mark(.ok, 2), consoleError: mark(.consoleError, 1),
-            scrollThumb: 0x181b1d, scrollThumbLine: 0x696b6c,
-            repoColors: repoSources.enumerated().map { colours.repo[$0.offset] ?? lift(ansi[$0.element], 3) },
+            text: given(.text, lift(ink, PaletteCheck.textFloor)),
+            muted: given(.muted, lift(mix(ink, ground, 0.25), PaletteCheck.textFloor)),
+            faint: given(.faint, mix(ink, ground, 0.45)), prose: given(.prose, ink),
+            agent: agent, amber: given(.amber, mark(3)), ok: given(.ok, mark(2)),
+            consoleError: given(.consoleError, mark(1)),
+            // The same thumb in every theme.
+            scrollThumb: standard.scrollThumb, scrollThumbLine: standard.scrollThumbLine,
+            repoColors: repoSources.enumerated().map { colours.repo[$0.offset] ?? mark($0.element) },
             terminal: Palette.Terminal(
                 foreground: ink, background: ground, cursor: colours.cursor ?? ink,
                 selection: agent, selectionAlpha: 0.3, ansi: ansi

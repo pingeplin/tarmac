@@ -371,6 +371,29 @@ stopped by the pid of its driver socket and its daemon with
 `make kill-daemon`, and the channel was removed. Nothing was made under
 `~/.config/tarmac`.
 
+## After the cleanup pass
+
+A cleanup pass after the first commit (`e978a79`) changed no behaviour.
+What a live app can show of it: `ThemeFolder` now reads through
+`FileBytes.read(path:limit:)`, which replaces the file handle of the
+section above; `ThemeFolderWatch` is a main-actor class; the pane has one
+sequence for "the window opens" and "the themes changed"; and the QA
+script walks each row once. One short check was made on that tree, on a
+fresh channel, by the session that made the pass. It is not a run of a
+scenario.
+
+| Step | Observed |
+| --- | --- |
+| Launch with no config directory | `name` is `breeze-dark`, `available` has 8 ids, `refused` is `[]` |
+| The folder is made with `Dracula`, `Nord` (a link to the Ghostty 1.3.1 file), `broken` (`foreground = #fff` only), `Big` (65,537 bytes), `Pipe` (a named pipe), `sub` (a folder) and `Dangling` (a link to nothing) | `available` ends with `file:Dracula`, `file:Nord`; `refused` is `["Big: is larger than 64 KiB","broken: has no background","Dangling: cannot be read"]`; the pipe and the folder give nothing, and the app goes on answering |
+| `open`, `pane Theme`, `show file:Dracula`, `apply Dark on` | `shown Dracula`; `box Apply to Dark value=1 enabled=1`; the snapshot's `name` is `file:Dracula` |
+| The file's `background` is changed in place to `#1e1f29`, then `rows` | `theme Dracula marks=Dark selected=1 … id=file:Dracula`; `showcase title=Dracula caption=dark theme, from a file`; `note-help ansi 0 on background: 1.04 (floor 3)` (it was 1.11); `files 2 themes from files. 3 files were not read.`; `files-help Big: is larger than 64 KiB \| broken: has no background \| Dangling: cannot be read`; `window frame=… 873.0x530.0`; `list frame=… 260.0x327.0`; `app-prefs.json` is `{"warn_before_quit":true,"theme_dark":"file:Dracula"}` |
+| The file `Dracula` is removed | `name` is `breeze-dark`, `available` ends with `file:Nord`; the mark *Dark* and the selected row are on Breeze Dark; `showcase title=Breeze Dark`; `files 1 theme from a file. 3 files were not read.` |
+
+The app's stderr held no line but the driver's. The app was stopped by the
+pid of its driver socket, its daemon with `make kill-daemon`, and then the
+channel was removed. Nothing was made under `~/.config/tarmac`.
+
 ## Not covered
 
 - A bundled app, and the installed channel (`~/.config/tarmac`). The run

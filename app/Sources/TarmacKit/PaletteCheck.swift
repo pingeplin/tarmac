@@ -15,6 +15,11 @@ public enum PaletteCheck {
         public let floor: Double
     }
 
+    /// The floor of a chrome text and of a chrome mark on a fill. A theme
+    /// from a file derives its chrome to these (`ThemeFile.palette(from:)`).
+    static let textFloor = 4.5
+    static let markFloor = 3.0
+
     private struct Subject {
         let name: String
         let colour: UInt32
@@ -29,12 +34,12 @@ public enum PaletteCheck {
             terminal.ansi.enumerated().map { Subject(name: "ansi \($0.offset)", colour: $0.element, floor: 3) }
             + [Subject(name: "foreground", colour: terminal.foreground, floor: 7)]
         let chrome = [
-            Subject(name: "text", colour: palette.text, floor: 4.5),
-            Subject(name: "muted", colour: palette.muted, floor: 4.5),
-            Subject(name: "agent", colour: palette.agent, floor: 3),
-            Subject(name: "amber", colour: palette.amber, floor: 3),
-            Subject(name: "ok", colour: palette.ok, floor: 3),
-            Subject(name: "consoleError", colour: palette.consoleError, floor: 3),
+            Subject(name: "text", colour: palette.text, floor: textFloor),
+            Subject(name: "muted", colour: palette.muted, floor: textFloor),
+            Subject(name: "agent", colour: palette.agent, floor: markFloor),
+            Subject(name: "amber", colour: palette.amber, floor: markFloor),
+            Subject(name: "ok", colour: palette.ok, floor: markFloor),
+            Subject(name: "consoleError", colour: palette.consoleError, floor: markFloor),
         ]
         let fills = [("bg0", palette.bg0), ("bg1", palette.bg1), ("bg2", palette.bg2)]
         return under(.terminal, printed, on: "background", terminal.background)
