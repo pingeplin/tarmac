@@ -9,7 +9,10 @@ final class ThemeFolderTests: XCTestCase {
     private let text = Data(ThemeFixture.dracula.utf8)
 
     override func setUpWithError() throws {
-        root = FileManager.default.temporaryDirectory.appendingPathComponent("tarmac-themes-\(UUID().uuidString)")
+        // Short: a test binds a socket in the folder, and a socket's path has
+        // 104 bytes at most.
+        root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tarmac-themes-\(UUID().uuidString.prefix(8))")
         try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
     }
 
@@ -27,7 +30,7 @@ final class ThemeFolderTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: path)
     }
 
-    /// S27 — the call returns: the pipe is not opened.
+    /// S27 — the call returns: the pipe is not read or waited on.
     func testS27OnlyTheRegularFilesOfTheFolderAreRead() throws {
         let outside = root.appendingPathComponent("outside").path
         try text.write(to: URL(fileURLWithPath: outside))
@@ -42,6 +45,7 @@ final class ThemeFolderTests: XCTestCase {
         let exact = Data(repeating: 0x23, count: ThemeFile.sizeLimit)
         try write(exact, "Exact")
         try write(exact + [0x23], "Big")
+        try write(Data(), "Empty")
         try write(text, "Locked")
         try permissions(0o000, path("Locked"))
         defer { try? permissions(0o644, path("Locked")) }
@@ -52,10 +56,25 @@ final class ThemeFolderTests: XCTestCase {
             Dictionary(uniqueKeysWithValues: files.map { ($0.name, $0.contents) }),
             [
                 "Dracula": .success(text), "Linked": .success(text), "Exact": .success(exact),
-                "Big": .failure(.tooLarge), "Dangling": .failure(.unreadable), "Locked": .failure(.unreadable),
+                "Empty": .success(Data()), "Big": .failure(.tooLarge), "Dangling": .failure(.unreadable),
+                "Locked": .failure(.unreadable),
             ]
         )
-        XCTAssertEqual(files.count, 6)
+        XCTAssertEqual(files.count, 7)
+    }
+
+    /// S27 — what cannot be opened and is no file gives nothing either: it
+    /// is not a theme file that cannot be read.
+    func testS27WhatIsNoFileGivesNothingAlsoWhenItCannotBeOpened() throws {
+        try write(text, "Dracula")
+        let socket = try DevSocket.claim(path: path("Socket")).get()
+        defer { socket.close() }
+        try FileManager.default.createDirectory(atPath: path("Closed"), withIntermediateDirectories: false)
+        try permissions(0o000, path("Closed"))
+        defer { try? permissions(0o755, path("Closed")) }
+        XCTAssertEqual(mkfifo(path("ClosedPipe"), 0o000), 0)
+
+        XCTAssertEqual(ThemeFolder.files(at: folder), [ThemeLibrary.File(name: "Dracula", contents: .success(text))])
     }
 
     /// S28

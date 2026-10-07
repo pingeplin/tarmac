@@ -373,8 +373,12 @@ stopped by the pid of its driver socket and its daemon with
 
 ## After the cleanup pass
 
-A cleanup pass after the first commit (`e978a79`) changed no behaviour.
-What a live app can show of it: `ThemeFolder` now reads through
+A cleanup pass after the first commit (`e978a79`) was meant to change no
+behaviour. An independent check of it found one change, in the commit
+`dfa3d40`: a socket, and a folder or a pipe with no permission, were told
+as "cannot be read". The next commit took that back. The check below was
+made on `dfa3d40`, and has none of those three in its folder.
+What a live app can show of the pass: `ThemeFolder` now reads through
 `FileBytes.read(path:limit:)`, which replaces the file handle of the
 section above; `ThemeFolderWatch` is a main-actor class; the pane has one
 sequence for "the window opens" and "the themes changed"; and the QA

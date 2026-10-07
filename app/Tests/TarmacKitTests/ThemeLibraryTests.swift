@@ -50,7 +50,7 @@ final class ThemeLibraryTests: XCTestCase {
     /// S22
     func testS22AnIdNamesItsEntryForEitherAppearance() throws {
         let library = ThemeLibrary(files: [ThemeFixture.file("Dracula")])
-        let entry = try XCTUnwrap(library.theme("file:Dracula"))
+        let entry = try XCTUnwrap(library.fileThemes.first)
 
         XCTAssertEqual(library.entry("file:Dracula", for: .light), entry)
         XCTAssertEqual(library.entry("file:Dracula", for: .dark), entry)
@@ -85,7 +85,7 @@ final class ThemeLibraryTests: XCTestCase {
     /// S24
     func testS24TheThemeInEffectCanBeAFileTheme() throws {
         let library = ThemeLibrary(files: [ThemeFixture.file("Dracula")])
-        let entry = try XCTUnwrap(library.theme("file:Dracula"))
+        let entry = try XCTUnwrap(library.fileThemes.first)
 
         XCTAssertEqual(entry.variant, .dark)
         XCTAssertEqual(library.inEffect(choice: .light, themes: [.light: "file:Dracula"], systemIsDark: false), entry)

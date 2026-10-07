@@ -166,12 +166,14 @@ func help(_ element: AXUIElement) -> String {
 /// themes the row with that id, or else the first row with that title.
 /// `found` starts the line that tells of a name no row has.
 func select(_ name: String, in table: String, _ found: String, hint: String = "") {
-    let entries = rows(of: table).map { (row: $0, parts: descendants(of: $0)) }
-    guard
-        let row = (entries.first { rowID(in: $0.parts) == name } ?? entries.first { texts(in: $0.parts).first == name })?.row
-    else {
-        fail("\(found) \(entries.map { texts(in: $0.parts).first ?? "" }) and none is \(name)\(hint)")
+    var titled: AXUIElement?, withID: AXUIElement?, titles: [String] = []
+    for row in rows(of: table) where withID == nil {
+        let parts = descendants(of: row), title = texts(in: parts).first ?? ""
+        if rowID(in: parts) == name { withID = row }
+        if titled == nil, title == name { titled = row }
+        titles.append(title)
     }
+    guard let row = withID ?? titled else { fail("\(found) \(titles) and none is \(name)\(hint)") }
     guard AXUIElementSetAttributeValue(row, kAXSelectedAttribute as CFString, kCFBooleanTrue) == .success else {
         fail("the row \(name) was not selected")
     }

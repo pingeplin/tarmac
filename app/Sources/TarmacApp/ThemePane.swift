@@ -84,10 +84,9 @@ final class ThemePane: NSObject {
             tile.state = choice == theme.choice ? .on : .off
         }
         let library = theme.library
-        let chosen = Dictionary(uniqueKeysWithValues: ThemeVariant.allCases.map { ($0, theme.theme(for: $0)) })
-        list.show(library.all) { entry in
-            ThemeBrowser.marks(of: entry) { chosen[$0] ?? theme.theme(for: $0) }
-        }
+        // Found once, and not for each row.
+        let (light, dark) = (theme.theme(for: .light), theme.theme(for: .dark))
+        list.show(library.all) { ThemeBrowser.marks(of: $0) { $0 == .light ? light : dark } }
         filesNote.stringValue = ThemeBrowser.filesNote(
             themes: library.fileThemes.count, refused: library.refused.count
         )
