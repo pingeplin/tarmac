@@ -21,7 +21,11 @@ public struct Palette: Equatable, Sendable {
 
     /// The appearance the palette is for, by the rule of `TerminalTheme.isDark`.
     public var variant: ThemeVariant {
-        Contrast.luminance(terminal.background) < Contrast.luminance(terminal.foreground) ? .dark : .light
+        Self.variant(background: terminal.background, foreground: terminal.foreground)
+    }
+
+    static func variant(background: UInt32, foreground: UInt32) -> ThemeVariant {
+        Contrast.luminance(background) < Contrast.luminance(foreground) ? .dark : .light
     }
 
     /// Ghostty Breeze: the look before there was a choice.

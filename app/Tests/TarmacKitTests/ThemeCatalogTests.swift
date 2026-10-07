@@ -29,7 +29,7 @@ final class ThemeCatalogTests: XCTestCase {
         var pairs = 0
         for theme in ThemeCatalog.all {
             for variant in ThemeVariant.allCases {
-                XCTAssertEqual(ThemeCatalog.entry(theme.id, for: variant), theme, "\(theme.id) \(variant.rawValue)")
+                XCTAssertEqual(ThemeLibrary.shipped.entry(theme.id, for: variant), theme, "\(theme.id) \(variant.rawValue)")
                 pairs += 1
             }
         }
@@ -45,35 +45,44 @@ final class ThemeCatalogTests: XCTestCase {
     /// S4 — a theme of the other variant, and the standard theme of the
     /// other appearance.
     func testS4AnIdNamesItsThemeWhateverTheAppearance() {
-        XCTAssertEqual(ThemeCatalog.entry("catppuccin-mocha", for: .light).id, "catppuccin-mocha")
-        XCTAssertEqual(ThemeCatalog.entry("solarized-light", for: .dark).id, "solarized-light")
-        XCTAssertEqual(ThemeCatalog.entry("breeze-dark", for: .light).id, "breeze-dark")
+        XCTAssertEqual(ThemeLibrary.shipped.entry("catppuccin-mocha", for: .light).id, "catppuccin-mocha")
+        XCTAssertEqual(ThemeLibrary.shipped.entry("solarized-light", for: .dark).id, "solarized-light")
+        XCTAssertEqual(ThemeLibrary.shipped.entry("breeze-dark", for: .light).id, "breeze-dark")
     }
 
     /// S4 — no id, an unknown one, one in another letter case and an empty
     /// one.
     func testS4AnIdNoThemeHasNamesTheStandardThemeOfTheAppearance() {
         for id in [nil, "sepia", "GitHub-Light", ""] {
-            XCTAssertEqual(ThemeCatalog.entry(id, for: .light).id, "breeze-light", id ?? "nil")
-            XCTAssertEqual(ThemeCatalog.entry(id, for: .dark).id, "breeze-dark", id ?? "nil")
+            XCTAssertEqual(ThemeLibrary.shipped.entry(id, for: .light).id, "breeze-light", id ?? "nil")
+            XCTAssertEqual(ThemeLibrary.shipped.entry(id, for: .dark).id, "breeze-dark", id ?? "nil")
         }
     }
 
-    /// S21, S22 — the rule of the file's two keys: Breeze Dark is saved for
-    /// Light, and Breeze Light is not.
-    func testS21AnIdIsSavedOnlyForAThemeThatIsNotTheStandardOfItsAppearance() {
-        XCTAssertEqual(ThemeCatalog.saved("catppuccin-mocha", for: .light), "catppuccin-mocha")
+    /// S21, and 2610.0009 S30 — the rule of the file's two keys: any
+    /// well-formed id is kept, whether a theme has it or not, but the id of
+    /// the appearance's own standard theme.
+    func testS21AnIdIsSavedUnlessItIsTheStandardThemeOfItsAppearance() {
+        for id in ["file:Dracula", "sepia", "GitHub-Light", "catppuccin-mocha"] {
+            XCTAssertEqual(ThemeCatalog.saved(id, for: .light), id)
+            XCTAssertEqual(ThemeCatalog.saved(id, for: .dark), id)
+        }
         XCTAssertEqual(ThemeCatalog.saved("breeze-dark", for: .light), "breeze-dark")
         XCTAssertEqual(ThemeCatalog.saved("breeze-light", for: .dark), "breeze-light")
         XCTAssertNil(ThemeCatalog.saved("breeze-light", for: .light))
         XCTAssertNil(ThemeCatalog.saved("breeze-dark", for: .dark))
-        for id in [nil, "sepia", "GitHub-Light", ""] {
-            XCTAssertNil(ThemeCatalog.saved(id, for: .light), id ?? "nil")
+    }
+
+    /// 2610.0009 S30 — an id that is not well-formed is no key.
+    func testS30AnIdThatIsNotWellFormedIsNotSaved() {
+        for id in [nil, "", "a\u{1}b", "a\u{7f}"] {
+            XCTAssertNil(ThemeCatalog.saved(id, for: .light), id?.debugDescription ?? "nil")
+            XCTAssertNil(ThemeCatalog.saved(id, for: .dark), id?.debugDescription ?? "nil")
         }
     }
 
     private func inEffect(_ choice: ThemeChoice, _ themes: [ThemeVariant: String], systemIsDark: Bool) -> String {
-        ThemeCatalog.inEffect(choice: choice, themes: themes, systemIsDark: systemIsDark).id
+        ThemeLibrary.shipped.inEffect(choice: choice, themes: themes, systemIsDark: systemIsDark).id
     }
 
     /// A dark theme for Light and a light theme for Dark, so that a rule

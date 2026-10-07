@@ -49,6 +49,7 @@ needs staging.
 | `TARMAC_SOCKET` | the daemon socket, under `.dev/` — a dev app never joins the installed daemon |
 | `TARMAC_STATE` | `state.json`, under `.dev/` — boards and layout, never the user's |
 | `TARMAC_DEV_SOCKET` | the QA driver's socket, under `.dev/` (issue #166) |
+| `TARMAC_CONFIG_DIR` | the config directory, `.dev/config` — its `themes/` holds the theme files a dev build reads, never the user's `~/.config/tarmac` (issue #218). A fresh channel that replaces `DEV_ENV` must set it too |
 | `TARMAC_DAEMON` | `core/target/debug/tarmacd`: the daemon binary the app auto-spawns (the daemon itself never reads it) |
 | `TARMAC_APP_VERSION` | the version in `core/Cargo.toml` — an unbundled binary has no `Info.plist`, and the app must name the daemon's own version or it would replace that daemon as stale |
 | `TARMAC_DEV_LABEL` | the worktree name, shown as the window-title suffix — the only way to tell two dev windows apart |
@@ -116,8 +117,12 @@ core/target/debug/tarmac dev snapshot | jq .
   value its prose is given; `terminal` and `document` also have `size`, the
   size in effect), `theme` (`choice`: `auto`, `light` or `dark`, and
   `in_effect`: `light` or `dark`, the variant of the theme in effect and
-  not the choice, and `name`: the id of the theme in effect, as
-  `catppuccin-mocha`), per-terminal
+  not the choice, `name`: the id of the theme in effect, as
+  `catppuccin-mocha`, or `file:<name>` for a theme from a file of the
+  themes folder, `folder`: where the theme files are read from, `available`:
+  the id of every theme, `refused`: each file that is no theme, with the
+  reason, and `findings`: what the contrast detector found in the theme in
+  effect), per-terminal
   `cols`/`rows`/`proc`/`selection`/`scrollback_tail`, per-doc-card `borrowed`
   (the HTML card whose shield is lifted), and `quit_guard` — the ⌘Q guard's hold
   on the Quit item (`retargeted`, `enabled`, which `make qa`'s D11 asserts) plus
@@ -302,7 +307,9 @@ tarmac dev snapshot --until 'viewport.zoom == 0.5'
 
 Grammar is `<path> <op> <value>` with `==`, `!=`, `~=` (numeric, |Δ| ≤ 1) and
 `contains`. `cards[<id>]` indexes by card id and the id runs to the **last** `]`,
-so doc paths with dots and slashes work. An unresolvable path is `false` (so
+so doc paths with dots and slashes work. A string value takes its own double quotes inside the
+expression — `--until 'theme.name == "file:Dracula"'` — and a bare word is a
+`bad_expr` (`not a value`). An unresolvable path is `false` (so
 polling continues); a malformed expression is an immediate `bad_expr`. Default
 timeout 5000 ms; `--timeout 0` means evaluate once.
 

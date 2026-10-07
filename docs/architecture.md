@@ -946,15 +946,16 @@ arguments. The whole font list is read only when the window opens; launch
 asks the Mac for the saved families alone.
 
 **Theme** (`ThemeSettings`, `ThemeCatalog`, `Palette`). The *Theme* pane has
-two groups. *Appearance* has three tiles in the order of `ThemeChoice`:
+three groups. *Appearance* has three tiles in the order of `ThemeChoice`:
 *Auto*, *Light* and *Dark*. Under it is a list of all the themes and, beside
 it, a showcase of the theme that is selected in the list (`ThemeList`,
-`ThemePicture`). A row of the list has a swatch, the theme's title and a mark
+`ThemePicture`). Under that is one line about the user's theme files. A row of the list has a swatch, the theme's title and a mark
 *Light* or *Dark*, or both, when the theme is the one chosen for that
 appearance. A selected row changes the showcase and nothing else. The
-showcase has the theme's title, the words "light theme" or "dark theme", a
-picture of a board drawn from the theme's palette, two boxes and one line
-about contrast. The boxes, *Apply to Light* and *Apply to Dark*, choose the
+showcase has the theme's title, the words "light theme" or "dark theme" (and
+then ", from a file" for a theme of the user), a picture of a board drawn from
+the theme's palette, two boxes and a note about contrast, which has the room
+of two lines. The boxes, *Apply to Light* and *Apply to Dark*, choose the
 shown theme for an appearance; a cleared box gives the appearance its
 standard theme back. Any theme can be chosen for either appearance, and one
 theme for both. The state of a box, the theme it gives, the marks of a row
@@ -964,18 +965,20 @@ time the window opens.
 
 *Light* is the theme chosen for the light appearance and *Dark* the one
 chosen for the dark appearance; *Auto* is the one of the two that fits the
-macOS appearance, and changes when macOS does (`ThemeCatalog.inEffect`). The
+macOS appearance, and changes when macOS does (`ThemeLibrary.inEffect`). The
 *Light* and *Dark* tiles draw the theme chosen for them. The appearance is
 the key `theme` of `app-prefs.json`: `"auto"`, `"light"` or `"dark"`. No key,
 and any other value, is `dark`, and `dark` is not written. The theme of each
-appearance is the key `theme_light` or `theme_dark`: the id of any theme of
-the catalogue. No key, and any other value, is the standard theme of that
-appearance, Breeze Light or Breeze Dark, and a standard theme is not written
-under its own key.
+appearance is the key `theme_light` or `theme_dark`: the id of a theme. No
+key is the standard theme of that appearance, Breeze Light or Breeze Dark,
+and a standard theme is not written under its own key. An id that no theme
+has also gives the standard theme, and it stays in the file: an id is
+resolved when it is used (`ThemeLibrary.entry`), so a theme whose file is
+away for a time keeps its key.
 
-The themes are the entries of `ThemeCatalog`, in `TarmacKit`, in the order of
-the list: Breeze, Catppuccin (Latte, Mocha), GitHub and Solarized, a light
-and a dark one of each. An entry is an id, a title and a `Palette`. Every
+The built-in themes are the entries of `ThemeCatalog`, in `TarmacKit`, in the
+order of the list: Breeze, Catppuccin (Latte, Mocha), GitHub and Solarized, a
+light and a dark one of each. An entry is an id, a title and a `Palette`. Every
 colour of a theme is in that one value: the chrome tokens, the four repo
 colours and the terminal's colours. A theme is light or dark by what its
 terminal reports to a program (`Palette.variant`, the rule of
@@ -983,10 +986,64 @@ terminal reports to a program (`Palette.variant`, the rule of
 be chosen. The terminal colours of a theme that is not Breeze are the
 upstream values, with no change for contrast; its chrome tokens are Tarmac's
 choice. `PaletteCheck.findings` is the detector that lists the pairs
-of a palette with less contrast than their floor. The tests hold every theme
+of a palette with less contrast than their floor. The tests hold every built-in theme
 to no finding in its chrome, and the showcase's contrast note
-(`ThemeBrowser.contrastNote`) gives the number of terminal findings of the
-shown theme. The note warns and blocks nothing.
+(`ThemeBrowser.contrastNote`) gives the number of terminal colours of the
+shown theme that have a finding, and then the number of chrome colours when
+there is one. Its tooltip names each finding (`ThemeBrowser.contrastDetail`).
+The note warns and blocks nothing.
+
+**A theme from a file** (`ThemeFile`, `ThemeLibrary`, `ThemeFolder`). Tarmac
+ships no theme file. It reads the files the user put in `themes/` of its
+config directory, and each file that can be read is one more theme, in the
+list after the built-in ones, by title. The config directory is
+`TARMAC_CONFIG_DIR`, or else `$XDG_CONFIG_HOME/tarmac` when that variable is
+an absolute path, or else `~/.config/tarmac`; a debug build adds `/dev` to
+the last two, and never to `TARMAC_CONFIG_DIR` (`ChannelPaths.configDir`).
+`make run` pins it to `<worktree>/.dev/config`.
+Only the app reads it. `app-prefs.json` is not there: it stays beside the
+daemon socket.
+
+A theme file is a Ghostty theme file. The keys that are read:
+
+| Key | Gives |
+| --- | --- |
+| `background`, `foreground` | The terminal's two colours. A file must have both |
+| `cursor-color` | The cursor; not set, it is the foreground |
+| `palette = N=colour` | ANSI colour `N`, 0 to 15; an entry for 16 to 255 is read and not used |
+| `tarmac-bg0`, `tarmac-bg1`, `tarmac-bg2`, `tarmac-bg3`, `tarmac-line`, `tarmac-line-soft`, `tarmac-lift-border`, `tarmac-prime-header-bg`, `tarmac-text`, `tarmac-muted`, `tarmac-faint`, `tarmac-prose`, `tarmac-agent`, `tarmac-amber`, `tarmac-ok`, `tarmac-console-error` | That chrome token |
+| `tarmac-repo = N=colour` | Repo colour `N`, 0 to 3 |
+
+A colour is `#rrggbb`, `rrggbb`, `#rgb` or `rgb`. Every other key is ignored,
+the file's selection colours among them: the selection is the theme's `agent`
+at 0.3, as in a built-in theme. The lines are read as Ghostty 1.3.1 reads
+them (`ThemeFile.parse`). A used key with a value that is not read refuses
+the whole file, and so does a file with no `background` or no `foreground`, a
+file of more than 64 KiB and one that is not UTF-8 text. A file whose name
+starts with `.` or ends with `~` is not read at all, and neither is a
+subfolder.
+
+A colour that the file does not give is derived (`ThemeFile.palette(from:)`):
+a missing ANSI colour is Breeze's, each fill and line is a fixed mix of the
+terminal background and foreground, and each text and mark that has a floor
+in `PaletteCheck` (`text`, `muted`, the four marks, and the repo colours with
+the marks' floor) starts from the foreground or from an ANSI colour and is
+moved towards white (a dark theme) or black (a light one) until it has that
+floor on the three fills. A colour the file gave is never changed. The detector warns about a
+theme and never refuses one. The scroll thumb and the terminal colours 16 to
+255 do not come from a file.
+
+The id of a file theme is `file:` and then the file's name, and its title is
+the name, so a file with the title of a built-in theme is a second row with
+an id of its own. `ThemeSettings` reads the folder before the first view is
+made, and again at each change in it (`ThemeFolderWatch`, an `FSEventStream`
+on the folder's path): a file that is added shows in the list, a file that is
+changed draws every view again when its palette differs, and a file that is
+removed or refused gives its appearance the standard theme while
+`app-prefs.json` keeps the id. Nothing is saved when the folder changes. A
+line under the list says how many themes came from files and how many files
+were not read, with the reason for each in its tooltip, and *Open Themes
+Folder* makes the folder and shows it in the Finder: the launch makes none.
 
 Each colour token of `Theme` reads the palette in effect. `ThemeSettings`
 resolves the entry in effect and sets `NSApp.appearance` from that entry's
@@ -1105,7 +1162,7 @@ focus, per-terminal `cols`/`rows`/`proc`/`selection`/`scrollback_tail`, the
 quit guard's state, `fonts`: for each font role the family saved in
 `app-prefs.json` and what the role resolved to (a PostScript `face`, or the
 `css` value for doc prose), and for `terminal` and `document` the `size` in
-effect; and `theme`: the `choice`, the variant `in_effect` and the `name` (the id) of the theme in effect. `--until` re-evaluates an expression every 50 ms
+effect; and `theme`: the `choice`, the variant `in_effect` and the `name` (the id) of the theme in effect, the `folder` the theme files are read from, the ids of the themes that are `available`, each file that was `refused` with its reason, and the detector's `findings` for the theme in effect. `--until` re-evaluates an expression every 50 ms
 (`DevUntil`). The scenario suites are `scripts/qa/smoke.mjs` (`make qa`) and
 `scripts/qa/quit.mjs` (`make qa-quit`).
 

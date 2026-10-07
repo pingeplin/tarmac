@@ -2,12 +2,14 @@ ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
 .PHONY: core ghostty-vt app test docs-check dco-check run qa qa-quit kill-daemon bundle dmg release
 
-# The dev channel: this worktree's own daemon socket, state and driver socket.
-# Everything that launches or drives a dev build goes through these three.
+# The dev channel: this worktree's own daemon socket, state, driver socket and
+# config directory. Everything that launches or drives a dev build goes through
+# these four.
 DEV_SOCKET := $(ROOT)/.dev/tarmacd.sock
 DEV_ENV := TARMAC_SOCKET="$(DEV_SOCKET)" \
 	TARMAC_STATE="$(ROOT)/.dev/state.json" \
-	TARMAC_DEV_SOCKET="$(ROOT)/.dev/tarmac-dev.sock"
+	TARMAC_DEV_SOCKET="$(ROOT)/.dev/tarmac-dev.sock" \
+	TARMAC_CONFIG_DIR="$(ROOT)/.dev/config"
 
 core:
 	cd $(ROOT)/core && cargo build

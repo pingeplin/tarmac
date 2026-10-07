@@ -1,6 +1,8 @@
-/// The themes Tarmac has (spec 2610.0008), in the order of the Theme pane's
+/// The themes Tarmac ships (spec 2610.0008), in the order of the Theme pane's
 /// list, and the pure rules over them. Any theme can be chosen for either
 /// appearance: a theme's variant says what it is, not where it can be chosen.
+/// Which theme an id names is `ThemeLibrary`'s rule: a file of the user can
+/// give a theme too (spec 2610.0009).
 public enum ThemeCatalog {
     public struct Entry: Equatable, Sendable {
         /// What the file and the snapshot hold.
@@ -10,6 +12,14 @@ public enum ThemeCatalog {
         public let palette: Palette
 
         public var variant: ThemeVariant { palette.variant }
+        /// Whether a file of the user gave it (spec 2610.0009).
+        public var isFromFile: Bool { id.hasPrefix(ThemeLibrary.filePrefix) }
+    }
+
+    /// Whether `id` can be the id of a theme: a text the file can hold, by
+    /// the rule of a family name.
+    static func isID(_ id: String) -> Bool {
+        FontRole.isFamilyName(id)
     }
 
     private static let breezeLight = Entry(id: "breeze-light", title: "Breeze Light", palette: .breezeLight)
@@ -34,22 +44,12 @@ public enum ThemeCatalog {
         }
     }
 
-    /// The theme with that id, compared exactly and whatever its variant, or
-    /// the standard one of `variant`.
-    public static func entry(_ id: String?, for variant: ThemeVariant) -> Entry {
-        all.first { $0.id == id } ?? standard(for: variant)
-    }
-
-    /// The id the file holds for `variant`: that of a theme of the catalogue
-    /// that is not the appearance's standard one. Any other id is no key.
+    /// The id the file holds for `variant`: any well-formed id that is not
+    /// that of the appearance's standard theme. Whether a theme has the id is
+    /// not asked: a file theme whose file is away for a time keeps its key
+    /// (spec 2610.0009), as a font that is not installed keeps its own.
     public static func saved(_ id: String?, for variant: ThemeVariant) -> String? {
-        all.contains { $0.id == id } && id != standard(for: variant).id ? id : nil
-    }
-
-    public static func inEffect(
-        choice: ThemeChoice, themes: [ThemeVariant: String], systemIsDark: Bool
-    ) -> Entry {
-        let variant = choice.inEffect(systemIsDark: systemIsDark)
-        return entry(themes[variant], for: variant)
+        guard let id, isID(id), id != standard(for: variant).id else { return nil }
+        return id
     }
 }

@@ -543,20 +543,38 @@ final class AppPrefsTests: XCTestCase {
         )
     }
 
-    /// S22
-    func testAnIdNoThemeHasIsNotWritten() {
+    /// 2610.0009 S31 — an id is resolved when it is used, so one that no
+    /// theme has is written as it is.
+    func testAnIdNoThemeHasIsWritten() {
         XCTAssertEqual(
-            AppPrefs.encode(Values(themes: [.light: "sepia", .dark: "GitHub-Dark"])),
-            data(#"{"warn_before_quit":true}"#)
+            AppPrefs.encode(Values(themes: [.light: "sepia", .dark: "file:Gone"])),
+            data(#"{"warn_before_quit":true,"theme_light":"sepia","theme_dark":"file:Gone"}"#)
         )
     }
 
-    /// S22 — the dark theme for Light is written beside an id that is not.
-    func testAThemeOfTheOtherVariantIsWrittenBesideAnIdNoThemeHas() {
-        XCTAssertEqual(
-            AppPrefs.encode(Values(themes: [.light: "catppuccin-mocha", .dark: "sepia"])),
-            data(#"{"warn_before_quit":true,"theme_light":"catppuccin-mocha"}"#)
-        )
+    /// 2610.0009 S31 — a file's name can hold a quote and a backslash.
+    func testAThemeIdIsWrittenAsAJSONString() {
+        let values = Values(themes: [.dark: #"file:a"b\c"#])
+
+        let bytes = AppPrefs.encode(values)
+
+        XCTAssertEqual(bytes, data(#"{"warn_before_quit":true,"theme_dark":"file:a\"b\\c"}"#))
+        XCTAssertTrue(StrictJSON.isValid(bytes))
+        XCTAssertEqual(AppPrefs.decode(bytes), values)
+    }
+
+    /// 2610.0009 S31
+    func testAThemeIdThatIsNotASCIISurvivesTheRoundTrip() {
+        let values = Values(themes: [.light: "file:日本"])
+
+        XCTAssertEqual(AppPrefs.decode(AppPrefs.encode(values)), values)
+    }
+
+    /// 2610.0009 S32 — a save keeps an id that no theme has.
+    func testAnIdNoThemeHasSurvivesASave() {
+        let bytes = data(#"{"warn_before_quit":true,"theme_dark":"file:Gone"}"#)
+
+        XCTAssertEqual(AppPrefs.encode(AppPrefs.decode(bytes)), bytes)
     }
 
     /// S23
@@ -577,16 +595,22 @@ final class AppPrefsTests: XCTestCase {
         )
     }
 
-    /// S24 — the files are valid JSON and hold the key where `"github-light"`
-    /// reads as one, so it is the key's own rule that drops the value.
-    func testAValueThatIsNoThemeOrTheStandardOneGivesNoEntry() {
-        let withoutALightTheme = Values(fonts: [.terminal: "Menlo"], theme: .light, themes: [.dark: "github-dark"])
-        XCTAssertEqual(
-            AppPrefs.decode(fileWithALightTheme(#""github-light""#)).themes,
-            [.light: "github-light", .dark: "github-dark"]
-        )
+    /// 2610.0009 S32 — any well-formed id is an entry, whether a theme has
+    /// it or not.
+    func testAnyWellFormedIdIsTheThemeOfTheLightAppearance() {
+        for id in ["sepia", "GitHub-Light", "file:Gone", "catppuccin-mocha"] {
+            XCTAssertEqual(
+                AppPrefs.decode(fileWithALightTheme("\"\(id)\"")).themes, [.light: id, .dark: "github-dark"], id
+            )
+        }
+    }
 
-        for value in [#""sepia""#, #""GitHub-Light""#, #""breeze-light""#, "7", "null", #"["github-light"]"#] {
+    /// S24, and 2610.0009 S32 — the files are valid JSON, so it is the key's
+    /// own rule that drops the value.
+    func testAValueThatIsNoIdOrTheStandardOneGivesNoEntry() {
+        let withoutALightTheme = Values(fonts: [.terminal: "Menlo"], theme: .light, themes: [.dark: "github-dark"])
+
+        for value in [#""breeze-light""#, #""""#, "7", "null", #"["github-light"]"#] {
             let file = fileWithALightTheme(value)
             XCTAssertTrue(StrictJSON.isValid(file), value)
             XCTAssertEqual(AppPrefs.decode(file), withoutALightTheme, value)

@@ -769,16 +769,43 @@ final class DevSnapshotTests: XCTestCase {
             let theme = DevSnapshot.Theme(choice: choice, inEffect: inEffect, name: name)
             return fields(DevSnapshot.build(input(theme: theme)))["theme"]
         }
-        XCTAssertEqual(
-            theme(.auto, .dark, "catppuccin-mocha"),
-            ["choice": "auto", "in_effect": "dark", "name": "catppuccin-mocha"]
+        func facts(_ theme: JSONValue?) -> [JSONValue?] {
+            ["choice", "in_effect", "name"].map { fields(theme)[$0] }
+        }
+        XCTAssertEqual(facts(theme(.auto, .dark, "catppuccin-mocha")), ["auto", "dark", "catppuccin-mocha"])
+        XCTAssertEqual(facts(theme(.auto, .dark, "breeze-dark")), ["auto", "dark", "breeze-dark"])
+        XCTAssertEqual(facts(theme(.light, .dark, "catppuccin-mocha")), ["light", "dark", "catppuccin-mocha"])
+    }
+
+    /// 2610.0009 S41 — where the theme files are, what they gave, and what
+    /// the detector found in the theme in effect.
+    func test2610_0009S41TheSnapshotReportsTheThemeFiles() {
+        let theme = DevSnapshot.Theme(
+            choice: .dark, inEffect: .dark, name: "file:Dracula", folder: "/w/.dev/config/themes",
+            available: ["breeze-light", "file:Dracula"], refused: ["broken: has no background"],
+            findings: ["ansi 0 on background: 1.11 (floor 3)"]
         )
+
         XCTAssertEqual(
-            theme(.auto, .dark, "breeze-dark"), ["choice": "auto", "in_effect": "dark", "name": "breeze-dark"]
+            fields(DevSnapshot.build(input(theme: theme)))["theme"],
+            [
+                "choice": "dark", "in_effect": "dark", "name": "file:Dracula", "folder": "/w/.dev/config/themes",
+                "available": ["breeze-light", "file:Dracula"], "refused": ["broken: has no background"],
+                "findings": ["ansi 0 on background: 1.11 (floor 3)"],
+            ]
         )
+    }
+
+    /// 2610.0009 S41
+    func test2610_0009S41AThemeWithNoFilesHasEmptyMembers() {
+        let theme = DevSnapshot.Theme(choice: .dark, inEffect: .dark, name: "breeze-dark")
+
         XCTAssertEqual(
-            theme(.light, .dark, "catppuccin-mocha"),
-            ["choice": "light", "in_effect": "dark", "name": "catppuccin-mocha"]
+            fields(DevSnapshot.build(input(theme: theme)))["theme"],
+            [
+                "choice": "dark", "in_effect": "dark", "name": "breeze-dark", "folder": "", "available": [],
+                "refused": [], "findings": [],
+            ]
         )
     }
 
@@ -794,7 +821,9 @@ final class DevSnapshotTests: XCTestCase {
                 + #""fonts":{"document":{"css":"system-ui","saved":null,"size":14},"#
                 + #""interface":{"face":"SystemMono-Regular","saved":null},"#
                 + #""terminal":{"face":"SystemMono-Regular","saved":null,"size":16}},"#
-                + #""quit_guard":null,"theme":{"choice":"dark","in_effect":"dark","name":"breeze-dark"},"v":1,"#
+                + #""quit_guard":null,"#
+                + #""theme":{"available":[],"choice":"dark","findings":[],"folder":"","in_effect":"dark","#
+                + #""name":"breeze-dark","refused":[]},"v":1,"#
                 + #""viewport":{"cx":500,"cy":350,"view_rect":{"h":700,"w":1000,"x":24,"y":40},"zoom":1},"#
                 + #""visibility":"visible"}"#
         )

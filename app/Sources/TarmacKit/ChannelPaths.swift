@@ -42,9 +42,32 @@ public enum ChannelPaths {
     /// Joined like a Rust `Path`, so a `home` of `/` or one with a trailing
     /// slash yields a single separator and an empty `home` stays relative.
     public static func channelDir(home: String, channel: Channel) -> String {
-        let separator = home.isEmpty || home.hasSuffix("/") ? "" : "/"
-        let base = home + separator + "Library/Application Support/tarmac"
+        let base = join(home, "Library/Application Support/tarmac")
         return channel == .dev ? base + "/dev" : base
+    }
+
+    /// Tarmac's config directory (spec 2610.0009), where the user's own files
+    /// are: `TARMAC_CONFIG_DIR` verbatim iff non-nil AND `!isEmpty`, in both
+    /// channels; else `XDG_CONFIG_HOME` when it is absolute (the XDG
+    /// specification has an empty or a relative one ignored), else
+    /// `home/.config`; then `/tarmac`, and for `.dev` then `/dev`. It has no
+    /// Rust twin: only the app reads it.
+    public static func configDir(
+        override: String?, xdgConfigHome: String?, home: String, channel: Channel
+    ) -> String {
+        if let override, !override.isEmpty { return override }
+        let base = xdgConfigHome.flatMap { $0.hasPrefix("/") ? $0 : nil } ?? join(home, ".config")
+        let directory = join(base, "tarmac")
+        return channel == .dev ? join(directory, "dev") : directory
+    }
+
+    /// The folder of the user's theme files.
+    public static func themesDir(configDir: String) -> String {
+        join(configDir, "themes")
+    }
+
+    private static func join(_ base: String, _ part: String) -> String {
+        base + (base.isEmpty || base.hasSuffix("/") ? "" : "/") + part
     }
 
     /// The daemon socket. `override` is `TARMAC_SOCKET` (`nil` if unset): it wins

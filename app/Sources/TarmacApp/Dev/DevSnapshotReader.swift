@@ -53,7 +53,10 @@ struct DevSnapshotReader {
             fonts: fonts,
             theme: DevSnapshot.Theme(
                 choice: controller.theme.choice, inEffect: controller.theme.inEffect.variant,
-                name: controller.theme.inEffect.id
+                name: controller.theme.inEffect.id, folder: controller.theme.folder,
+                available: controller.theme.library.all.map(\.id),
+                refused: controller.theme.library.refused.map(\.detail),
+                findings: ThemeBrowser.contrastDetail(controller.theme.inEffect.palette)
             )
         ))
     }
