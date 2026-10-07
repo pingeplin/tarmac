@@ -166,14 +166,21 @@ func help(_ element: AXUIElement) -> String {
 /// themes the row with that id, or else the first row with that title.
 /// `found` starts the line that tells of a name no row has.
 func select(_ name: String, in table: String, _ found: String, hint: String = "") {
-    var titled: AXUIElement?, withID: AXUIElement?, titles: [String] = []
-    for row in rows(of: table) where withID == nil {
-        let parts = descendants(of: row), title = texts(in: parts).first ?? ""
-        if rowID(in: parts) == name { withID = row }
-        if titled == nil, title == name { titled = row }
-        titles.append(title)
+    // Each row is walked once, and only as far as the search goes: the ids
+    // first, which need no text read, and then the titles.
+    let entries = rows(of: table)
+    var walked: [[AXUIElement]] = []
+    func parts(_ index: Int) -> [AXUIElement] {
+        while walked.count <= index { walked.append(descendants(of: entries[walked.count])) }
+        return walked[index]
     }
-    guard let row = withID ?? titled else { fail("\(found) \(titles) and none is \(name)\(hint)") }
+    func title(_ index: Int) -> String { texts(in: parts(index)).first ?? "" }
+    guard let index = entries.indices.first(where: { rowID(in: parts($0)) == name })
+        ?? entries.indices.first(where: { title($0) == name })
+    else {
+        fail("\(found) \(entries.indices.map(title)) and none is \(name)\(hint)")
+    }
+    let row = entries[index]
     guard AXUIElementSetAttributeValue(row, kAXSelectedAttribute as CFString, kCFBooleanTrue) == .success else {
         fail("the row \(name) was not selected")
     }
