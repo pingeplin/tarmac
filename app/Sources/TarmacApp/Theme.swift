@@ -7,9 +7,9 @@ import TarmacKit
 @MainActor
 enum Theme {
     /// The theme in effect, as `ThemeSettings` last resolved it.
-    static var variant = ThemeVariant.dark
+    static var entry = ThemeCatalog.standard(for: .dark)
 
-    static var palette: Palette { Palette.of(variant) }
+    static var palette: Palette { entry.palette }
 
     static var bg0: NSColor { srgb(palette.bg0) }
     static var bg1: NSColor { srgb(palette.bg1) }
@@ -24,7 +24,7 @@ enum Theme {
     static var agent: NSColor { srgb(palette.agent) }
     static var agentDim: NSColor { srgb(palette.agent, alpha: 0.16) }
     static var liftBorder: NSColor { srgb(palette.liftBorder) }
-    // The scroll thumb: dark with a light hairline in both themes, and
+    // The scroll thumb: dark with a light hairline in every theme, and
     // opaque, so it is the same thumb on a terminal, on the doc page and on a
     // white HTML document.
     static var scrollThumb: NSColor { srgb(palette.scrollThumb) }

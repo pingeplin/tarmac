@@ -14,6 +14,9 @@ final class SettingsSidebar: NSViewController, NSTableViewDataSource, NSTableVie
         table.style = .sourceList
         table.headerView = nil
         table.allowsEmptySelection = false
+        // The Theme pane has a table too: a QA script tells the two apart
+        // by this.
+        table.setAccessibilityIdentifier("settings-sidebar")
         table.addTableColumn(NSTableColumn(identifier: NSUserInterfaceItemIdentifier("pane")))
         table.dataSource = self
         table.delegate = self

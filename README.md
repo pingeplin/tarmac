@@ -82,7 +82,8 @@ leaving the keyboard.
 
 Built and shipped on `main`:
 
-- **Infinite board** with a Breeze theme, dark or light, world-space card frames, pan/zoom, and
+- **Infinite board** with a choice of four pairs of themes (Breeze, Catppuccin, GitHub, Solarized),
+  each light and dark, world-space card frames, pan/zoom, and
   per-board persisted layout + viewport.
 - **`tarmac open` → cards** with gravity (docs follow their terminal) and dashed
   **provenance edges**.

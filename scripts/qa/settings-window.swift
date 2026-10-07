@@ -1,14 +1,16 @@
 // Operates the Settings window of the live dev app with no pointer (specs
-// 2610.0005, 2610.0006, 2610.0007), through the Accessibility API, and posts
+// 2610.0005, 2610.0006, 2610.0007, 2610.0008), through the Accessibility API, and posts
 // a click or a wheel at a screen point for the one scenario that needs real
 // pointer events.
 //
 //   swift scripts/qa/settings-window.swift <pid> <verb> ...
 //
 //   open                     posts ⌘, to the app
-//   rows                     prints the selected pane, each row's selected title, each size, each theme tile with its value (1 = selected), and the window's labels, with frames
+//   rows                     prints the window's frame, the selected pane, each row's selected title, each size, each theme tile with its value (1 = selected), and the window's labels, with frames; on the Theme pane also each row of the list of themes with its marks, the showcase's title and caption, its picture, its two boxes and its note
 //   pane <title>             selects a sidebar entry: Fonts, Theme
 //   theme <title>            presses a tile of the Theme pane: Auto, Light, Dark
+//   show <theme title>       selects a row of the Theme pane's list, which puts that theme in the showcase and changes nothing else
+//   apply <Light|Dark> on|off  sets or clears that box of the showcase; its last line is the box as it is then
 //   pick <row> <title>       row 0, 1, 2 = Terminal, Interface, Document
 //   size <n> <text>          sets a size field's text and confirms it, as Return does; n 0, 1 = Terminal, Document
 //   step <n> up|down [count] presses a size's stepper
@@ -26,7 +28,13 @@
 // and under Zhuyin `20` arrives as `ㄉㄢ`.
 //
 // `pick`, `size`, `step` and `focus` count the controls of the pane that
-// shows: they need the Fonts pane, and `theme` needs the Theme pane.
+// shows: they need the Fonts pane, and `theme`, `show` and `apply` need the
+// Theme pane.
+//
+// `apply` presses nothing and exits 1 when the box is disabled, and when it
+// is already in the state that was asked for. `show` and `pane` exit 1 for a
+// title their own table does not hold: the sidebar and the list of themes are
+// two tables, and the app names each for the Accessibility API.
 //
 // <pid> is the app's: `lsof -t "$PWD/.dev/tarmac-dev.sock"`. The process that
 // runs this needs the Accessibility permission.
@@ -100,14 +108,54 @@ func controls(_ wanted: String) -> [AXUIElement] {
     descendants(of: settingsWindow()).filter { role($0) == wanted }
 }
 
-/// A sidebar entry's title: the text of the row's cell.
-func paneTitle(_ row: AXUIElement) -> String {
-    descendants(of: row).first { role($0) == kAXStaticTextRole }.map(value) ?? ""
+func identifier(_ element: AXUIElement) -> String { attribute(element, kAXIdentifierAttribute) ?? "" }
+
+/// The names the app gives the two tables and the parts of the showcase.
+let sidebar = "settings-sidebar", themeList = "theme-list"
+let showcaseTitle = "theme-showcase-title", showcaseCaption = "theme-showcase-caption"
+let showcasePicture = "theme-showcase-picture", contrastNote = "theme-contrast-note"
+
+func named(_ name: String) -> AXUIElement? {
+    descendants(of: settingsWindow()).first { identifier($0) == name }
 }
 
-/// 1 for the selected radio button, 0 for another.
+/// The rows of one table, or none while its pane does not show.
+func rows(of table: String) -> [AXUIElement] {
+    named(table).map { descendants(of: $0).filter { role($0) == kAXRowRole } } ?? []
+}
+
+func selected(_ row: AXUIElement) -> Bool { (attribute(row, kAXSelectedAttribute) as Bool?) == true }
+
+/// The texts of a row's cell: its title and then, in the list of themes, its
+/// marks.
+func texts(_ row: AXUIElement) -> [String] {
+    descendants(of: row).filter { role($0) == kAXStaticTextRole }.map(value)
+}
+
+func rowName(_ row: AXUIElement) -> String { texts(row).first ?? "" }
+
+/// Selects the row with that name, as a click on it does. `found` starts the
+/// line that tells of a name no row has.
+func select(_ name: String, in table: String, _ found: String, hint: String = "") {
+    let entries = rows(of: table)
+    guard let row = entries.first(where: { rowName($0) == name }) else {
+        fail("\(found) \(entries.map(rowName)) and none is \(name)\(hint)")
+    }
+    guard AXUIElementSetAttributeValue(row, kAXSelectedAttribute as CFString, kCFBooleanTrue) == .success else {
+        fail("the row \(name) was not selected")
+    }
+}
+
+/// 1 for the selected radio button and for a box that is set, 0 for another.
 func state(_ element: AXUIElement) -> Int {
     (attribute(element, kAXValueAttribute) as NSNumber?)?.intValue ?? -1
+}
+
+func enabled(_ element: AXUIElement) -> Bool { (attribute(element, kAXEnabledAttribute) as Bool?) == true }
+
+/// A box of the showcase, as `rows` and `apply` print it.
+func box(_ element: AXUIElement) -> String {
+    "box \(title(element)) value=\(state(element)) enabled=\(enabled(element) ? 1 : 0)"
 }
 
 /// An item of the app menu, the bar's second: the Apple menu is its first.
@@ -183,8 +231,8 @@ case "open":
     postCommand(43)
 case "rows":
     let window = settingsWindow(), views = descendants(of: window)
-    let selected = views.filter { role($0) == kAXRowRole && (attribute($0, kAXSelectedAttribute) as Bool?) == true }
-    print("pane=\(selected.map(paneTitle).joined(separator: ","))")
+    print("window frame=\(frame(window))")
+    print("pane=\(rows(of: sidebar).filter(selected).map(rowName).joined(separator: ","))")
     for tile in views.filter({ role($0) == kAXRadioButtonRole }) {
         print("tile \(title(tile)) value=\(state(tile)) frame=\(frame(tile))")
     }
@@ -196,19 +244,23 @@ case "rows":
         print("size \(index) value=\(value(field)) label=\(label) frame=\(frame(field))")
     }
     for stepper in views.filter({ role($0) == kAXIncrementorRole }) { print("stepper frame=\(frame(stepper))") }
+    for row in rows(of: themeList) {
+        let marks = texts(row).dropFirst().joined(separator: ",")
+        print("theme \(rowName(row)) marks=\(marks) selected=\(selected(row) ? 1 : 0) frame=\(frame(row))")
+    }
+    if let shown = named(showcaseTitle) {
+        print("showcase title=\(value(shown)) caption=\(named(showcaseCaption).map(value) ?? "")")
+    }
+    if let picture = named(showcasePicture) { print("picture frame=\(frame(picture))") }
+    for element in views.filter({ role($0) == kAXCheckBoxRole }) { print("\(box(element)) frame=\(frame(element))") }
+    if let note = named(contrastNote) { print("note \(value(note))") }
     let texts = views.filter { role($0) == kAXStaticTextRole }
     for text in texts { print("label \(value(text)) frame=\(frame(text))") }
     print("labels=\(texts.map(value))")
     print("resizable=\((attribute(window, "AXGrowArea") as AXUIElement?) != nil)")
 case "pane":
     guard rest.count == 1 else { fail("pane <title>") }
-    let entries = controls(kAXRowRole)
-    guard let entry = entries.first(where: { paneTitle($0) == rest[0] }) else {
-        fail("the sidebar lists \(entries.map(paneTitle)) and none is \(rest[0])")
-    }
-    guard AXUIElementSetAttributeValue(entry, kAXSelectedAttribute as CFString, kCFBooleanTrue) == .success else {
-        fail("the sidebar did not select \(rest[0])")
-    }
+    select(rest[0], in: sidebar, "the sidebar lists")
 case "theme":
     guard rest.count == 1 else { fail("theme <title>") }
     let tiles = controls(kAXRadioButtonRole)
@@ -218,6 +270,27 @@ case "theme":
     press(tile, rest[0])
     usleep(200_000)
     print("tile \(rest[0]) value=\(state(tile))")
+case "show":
+    guard rest.count == 1 else { fail("show <theme title>") }
+    select(rest[0], in: themeList, "the list of themes holds", hint: "; run `pane Theme`")
+    usleep(200_000)
+    print("shown \(named(showcaseTitle).map(value) ?? "")")
+case "apply":
+    guard rest.count == 2, ["Light", "Dark"].contains(rest[0]), ["on", "off"].contains(rest[1]) else {
+        fail("apply <Light|Dark> on|off")
+    }
+    let name = "Apply to \(rest[0])"
+    guard let element = controls(kAXCheckBoxRole).first(where: { title($0) == name }) else {
+        fail("the window shows no box titled \(name); run `pane Theme`")
+    }
+    let wanted = rest[1] == "on" ? 1 : 0
+    let refusal = !enabled(element) ? "is disabled" : state(element) == wanted ? "is already \(rest[1])" : nil
+    if refusal == nil {
+        press(element, name)
+        usleep(200_000)
+    }
+    print(box(element))
+    if let refusal { fail("the box \(name) \(refusal)") }
 case "pick":
     guard rest.count == 2 else { fail("pick <row> <title>") }
     let popUp = control(kAXPopUpButtonRole, "pop-ups")

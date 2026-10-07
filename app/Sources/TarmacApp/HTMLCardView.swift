@@ -39,7 +39,7 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, WKNavigationDeleg
     private var pageLoaded = false
     /// The theme whose backdrop the host page holds: the one it was loaded
     /// with, or was given since.
-    private var backdropGiven: ThemeVariant?
+    private var backdropGiven: PageTheme?
     private var loadingPage = false
     /// The document's address; it changes, and the document reloads, only when
     /// the file's change time does.
@@ -81,9 +81,9 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, WKNavigationDeleg
     private func loadPage() {
         pageLoaded = false
         loadingPage = true
-        backdropGiven = Theme.variant
+        backdropGiven = PageTheme(Theme.palette)
         coverDocument()
-        webView.loadHTMLString(ThemeCSS.page(Self.host, Theme.variant), baseURL: nil)
+        webView.loadHTMLString(ThemeCSS.page(Self.host, Theme.palette), baseURL: nil)
     }
 
     /// The host page is given its backdrop and is not loaded again. The
@@ -93,9 +93,8 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, WKNavigationDeleg
         layer?.backgroundColor = Theme.bg1.cgColor
         webView.underPageBackgroundColor = Theme.bg1
         showConsole()
-        guard pageLoaded, Theme.variant != backdropGiven else { return }
-        backdropGiven = Theme.variant
-        let backdrop = ThemeCSS.backdrop(Theme.variant)
+        guard pageLoaded, backdropGiven?.take(Theme.palette) == true else { return }
+        let backdrop = ThemeCSS.backdrop(Theme.palette)
         webView.runInCardWorld(
             "document.documentElement.style.setProperty(name, value)",
             arguments: ["name": backdrop.name, "value": backdrop.value]

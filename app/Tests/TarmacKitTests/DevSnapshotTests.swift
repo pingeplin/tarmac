@@ -64,7 +64,7 @@ final class DevSnapshotTests: XCTestCase {
                 saved: [:], terminalFace: "SystemMono-Regular", terminalSize: 16,
                 interfaceFace: "SystemMono-Regular", documentCSS: "system-ui", documentSize: 14
             ),
-            theme: theme ?? DevSnapshot.Theme(choice: .standard, inEffect: .dark)
+            theme: theme ?? DevSnapshot.Theme(choice: .standard, inEffect: .dark, name: "breeze-dark")
         )
     }
 
@@ -759,16 +759,27 @@ final class DevSnapshotTests: XCTestCase {
         )
     }
 
-    /// 2610.0007 S18 — the choice the app holds and the variant whose palette
-    /// it holds are two facts: under Auto they are spelled apart. The key
-    /// itself is in the list of `testS1TheSnapshotCarriesExactlyTheDocumentedTopLevelKeys`.
-    func test2610_0007S18TheSnapshotReportsTheThemeChosenAndTheOneInEffect() {
-        func theme(_ choice: ThemeChoice, _ inEffect: ThemeVariant) -> JSONValue? {
-            fields(DevSnapshot.build(input(theme: DevSnapshot.Theme(choice: choice, inEffect: inEffect))))["theme"]
+    /// 2610.0008 S30 — the choice the app holds, the variant in effect and
+    /// the theme's id are three facts, and the snapshot writes each as it is
+    /// given: the name is not made from the variant, and the variant is not
+    /// made from the choice. The key itself is in the list of
+    /// `testS1TheSnapshotCarriesExactlyTheDocumentedTopLevelKeys`.
+    func test2610_0008S30TheSnapshotReportsTheThemeChosenTheVariantAndTheName() {
+        func theme(_ choice: ThemeChoice, _ inEffect: ThemeVariant, _ name: String) -> JSONValue? {
+            let theme = DevSnapshot.Theme(choice: choice, inEffect: inEffect, name: name)
+            return fields(DevSnapshot.build(input(theme: theme)))["theme"]
         }
-        XCTAssertEqual(theme(.auto, .light), ["choice": "auto", "in_effect": "light"])
-        XCTAssertEqual(theme(.auto, .dark), ["choice": "auto", "in_effect": "dark"])
-        XCTAssertEqual(theme(.light, .light), ["choice": "light", "in_effect": "light"])
+        XCTAssertEqual(
+            theme(.auto, .dark, "catppuccin-mocha"),
+            ["choice": "auto", "in_effect": "dark", "name": "catppuccin-mocha"]
+        )
+        XCTAssertEqual(
+            theme(.auto, .dark, "breeze-dark"), ["choice": "auto", "in_effect": "dark", "name": "breeze-dark"]
+        )
+        XCTAssertEqual(
+            theme(.light, .dark, "catppuccin-mocha"),
+            ["choice": "light", "in_effect": "dark", "name": "catppuccin-mocha"]
+        )
     }
 
     func testTheSnapshotSerialisesAsCompactJSON() {
@@ -783,7 +794,7 @@ final class DevSnapshotTests: XCTestCase {
                 + #""fonts":{"document":{"css":"system-ui","saved":null,"size":14},"#
                 + #""interface":{"face":"SystemMono-Regular","saved":null},"#
                 + #""terminal":{"face":"SystemMono-Regular","saved":null,"size":16}},"#
-                + #""quit_guard":null,"theme":{"choice":"dark","in_effect":"dark"},"v":1,"#
+                + #""quit_guard":null,"theme":{"choice":"dark","in_effect":"dark","name":"breeze-dark"},"v":1,"#
                 + #""viewport":{"cx":500,"cy":350,"view_rect":{"h":700,"w":1000,"x":24,"y":40},"zoom":1},"#
                 + #""visibility":"visible"}"#
         )
