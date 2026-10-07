@@ -20,7 +20,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let client = AppController.daemonClient()
         let prefs = AppPrefsStore(path: AppPrefs.path(besideSocket: client.socketPath))
         let fonts = FontSettings(prefs: prefs)
-        let theme = ThemeSettings(prefs: prefs)
+        let environment = ProcessInfo.processInfo.environment
+        let configDir = ChannelPaths.configDir(
+            override: environment["TARMAC_CONFIG_DIR"], xdgConfigHome: environment["XDG_CONFIG_HOME"],
+            home: ChannelPaths.home(env: environment), channel: .build
+        )
+        let theme = ThemeSettings(prefs: prefs, folder: ChannelPaths.themesDir(configDir: configDir))
         let rootView = RootView()
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),

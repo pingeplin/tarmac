@@ -3,7 +3,7 @@ import XCTest
 
 extension ThemeCatalog {
     /// The theme with that id. An id no theme has fails the test:
-    /// `entry(_:for:)` would give Breeze for it, and the test would go on.
+    /// `ThemeLibrary.entry` would give Breeze for it, and the test would go on.
     static func theme(_ id: String, file: StaticString = #filePath, line: UInt = #line) -> Entry {
         guard let entry = all.first(where: { $0.id == id }) else {
             XCTFail("no theme \(id)", file: file, line: line)
@@ -19,7 +19,7 @@ extension Palette {
     func changed(
         bg0: UInt32? = nil, bg1: UInt32? = nil, bg2: UInt32? = nil, text: UInt32? = nil, muted: UInt32? = nil,
         agent: UInt32? = nil, terminalForeground: UInt32? = nil, terminalBackground: UInt32? = nil,
-        ansi: [Int: UInt32] = [:]
+        terminalSelection: UInt32? = nil, ansi: [Int: UInt32] = [:]
     ) -> Palette {
         Palette(
             bg0: bg0 ?? self.bg0, bg1: bg1 ?? self.bg1, bg2: bg2 ?? self.bg2, bg3: bg3,
@@ -30,7 +30,8 @@ extension Palette {
             terminal: Terminal(
                 foreground: terminalForeground ?? terminal.foreground,
                 background: terminalBackground ?? terminal.background,
-                cursor: terminal.cursor, selection: terminal.selection, selectionAlpha: terminal.selectionAlpha,
+                cursor: terminal.cursor, selection: terminalSelection ?? terminal.selection,
+                selectionAlpha: terminal.selectionAlpha,
                 ansi: terminal.ansi.enumerated().map { ansi[$0.offset] ?? $0.element }
             )
         )

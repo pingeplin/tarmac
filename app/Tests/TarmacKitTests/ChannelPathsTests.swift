@@ -204,4 +204,38 @@ final class ChannelPathsTests: XCTestCase {
         XCTAssertEqual(ChannelPaths.channelLabel(.release), "release")
         XCTAssertEqual(ChannelPaths.channelLabel(.dev), "dev")
     }
+
+    // MARK: - configDir (spec 2610.0009)
+
+    /// 2610.0009 S1: the override wins verbatim in both channels; an absolute
+    /// `XDG_CONFIG_HOME` is the base, and an empty or a relative one is not;
+    /// a debug build adds `/dev`, but never to an override.
+    func testConfigDirGrid() {
+        typealias Case = (override: String?, xdg: String?, home: String, channel: ChannelPaths.Channel, expected: String)
+        let cases: [Case] = [
+            (nil, nil, "/Users/u", .release, "/Users/u/.config/tarmac"),
+            (nil, nil, "/Users/u", .dev, "/Users/u/.config/tarmac/dev"),
+            (nil, "/x/cfg", "/Users/u", .release, "/x/cfg/tarmac"),
+            (nil, "/x/cfg/", "/Users/u", .dev, "/x/cfg/tarmac/dev"),
+            (nil, "", "/Users/u", .release, "/Users/u/.config/tarmac"),
+            (nil, "cfg", "/Users/u", .release, "/Users/u/.config/tarmac"),
+            ("", nil, "/", .release, "/.config/tarmac"),
+            ("/w/.dev/config", "/x/cfg", "/Users/u", .release, "/w/.dev/config"),
+            ("/w/.dev/config", "/x/cfg", "/Users/u", .dev, "/w/.dev/config"),
+            (nil, nil, "", .release, ".config/tarmac"),
+        ]
+        for c in cases {
+            XCTAssertEqual(
+                ChannelPaths.configDir(override: c.override, xdgConfigHome: c.xdg, home: c.home, channel: c.channel),
+                c.expected,
+                "configDir(override: \(c.override ?? "nil"), xdg: \(c.xdg ?? "nil"), home: \(c.home), \(c.channel))"
+            )
+        }
+    }
+
+    /// 2610.0009 S2
+    func testThemesDirIsTheConfigDirAndThenThemes() {
+        XCTAssertEqual(ChannelPaths.themesDir(configDir: "/a/b"), "/a/b/themes")
+        XCTAssertEqual(ChannelPaths.themesDir(configDir: "/a/b/"), "/a/b/themes")
+    }
 }

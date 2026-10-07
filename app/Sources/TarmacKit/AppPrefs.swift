@@ -30,7 +30,8 @@ public enum AppPrefs {
         public var theme: ThemeChoice
         /// The id of the theme chosen for an appearance. No entry, and the id
         /// of the appearance's standard theme, both mean the standard one;
-        /// neither is written.
+        /// neither is written. An id that no theme has is kept: it is
+        /// resolved when it is used (`ThemeLibrary.entry`).
         public var themes: [ThemeVariant: String]
 
         public init(
@@ -124,8 +125,8 @@ public enum AppPrefs {
     /// size it would refuse. Every family is written before every size, then
     /// the appearance, then the theme of each appearance. A standard one is not
     /// written, so a file with nothing chosen keeps the bytes it had before
-    /// there was a choice. A theme id is written raw: `ThemeCatalog.saved` lets
-    /// through only an id of the catalogue.
+    /// there was a choice. A theme id can come from a file's name, so it is
+    /// written as a JSON string, as a family is.
     public static func encode(_ values: Values) -> Data {
         var json = #"{"warn_before_quit":\#(values.warnBeforeQuit)"#
         for role in FontRole.allCases {
@@ -141,7 +142,7 @@ public enum AppPrefs {
         }
         for variant in ThemeVariant.allCases {
             guard let id = ThemeCatalog.saved(values.themes[variant], for: variant) else { continue }
-            json += #","\#(variant.prefsKey)":"\#(id)""#
+            json += #","\#(variant.prefsKey)":\#(JSONValue.string(id).jsonString)"#
         }
         return Data((json + "}").utf8)
     }

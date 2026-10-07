@@ -324,17 +324,33 @@ public enum DevSnapshot {
         }
     }
 
-    /// The theme (specs 2610.0007, 2610.0008): the choice the app holds, and
-    /// the variant and the id of the theme whose palette it holds.
+    /// The theme (specs 2610.0007, 2610.0008, 2610.0009): the choice the app
+    /// holds, the variant and the id of the theme whose palette it holds, and
+    /// what the user's theme files gave.
     public struct Theme: Equatable, Sendable {
         public var choice: ThemeChoice
         public var inEffect: ThemeVariant
         public var name: String
+        /// Where the theme files are read from.
+        public var folder: String
+        /// The id of every theme, in the order of the list.
+        public var available: [String]
+        /// Each file that is no theme, with the reason.
+        public var refused: [String]
+        /// What the detector found in the theme in effect.
+        public var findings: [String]
 
-        public init(choice: ThemeChoice, inEffect: ThemeVariant, name: String) {
+        public init(
+            choice: ThemeChoice, inEffect: ThemeVariant, name: String, folder: String = "",
+            available: [String] = [], refused: [String] = [], findings: [String] = []
+        ) {
             self.choice = choice
             self.inEffect = inEffect
             self.name = name
+            self.folder = folder
+            self.available = available
+            self.refused = refused
+            self.findings = findings
         }
     }
 
@@ -404,10 +420,17 @@ public enum DevSnapshot {
             "active_element": ActiveElement(input.keyboardFocus).json,
             "quit_guard": input.quitGuard.map(quitGuard) ?? .null,
             "fonts": fonts(input.fonts),
-            "theme": [
-                "choice": .string(input.theme.choice.rawValue), "in_effect": .string(input.theme.inEffect.rawValue),
-                "name": .string(input.theme.name),
-            ],
+            "theme": theme(input.theme),
+        ]
+    }
+
+    private static func theme(_ theme: Theme) -> JSONValue {
+        [
+            "choice": .string(theme.choice.rawValue), "in_effect": .string(theme.inEffect.rawValue),
+            "name": .string(theme.name), "folder": .string(theme.folder),
+            "available": .array(theme.available.map(JSONValue.string)),
+            "refused": .array(theme.refused.map(JSONValue.string)),
+            "findings": .array(theme.findings.map(JSONValue.string)),
         ]
     }
 

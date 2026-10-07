@@ -1,15 +1,16 @@
 // Operates the Settings window of the live dev app with no pointer (specs
-// 2610.0005, 2610.0006, 2610.0007, 2610.0008), through the Accessibility API, and posts
+// 2610.0005, 2610.0006, 2610.0007, 2610.0008, 2610.0009), through the Accessibility API, and posts
 // a click or a wheel at a screen point for the one scenario that needs real
 // pointer events.
 //
 //   swift scripts/qa/settings-window.swift <pid> <verb> ...
 //
 //   open                     posts ⌘, to the app
-//   rows                     prints the window's frame, the selected pane, each row's selected title, each size, each theme tile with its value (1 = selected), and the window's labels, with frames; on the Theme pane also each row of the list of themes with its marks, the showcase's title and caption, its picture, its two boxes and its note
+//   rows                     prints the window's frame, the selected pane, each row's selected title, each size, each theme tile with its value (1 = selected), and the window's labels, with frames; on the Theme pane also each row of the list of themes with its marks and, last on the line, its id; the frame of the list as it shows; the showcase's title and caption, its picture, its two boxes, its note and the note's tooltip; and the line about the theme files, its tooltip and the button. A tooltip's line breaks print as " | "
 //   pane <title>             selects a sidebar entry: Fonts, Theme
 //   theme <title>            presses a tile of the Theme pane: Auto, Light, Dark
-//   show <theme title>       selects a row of the Theme pane's list, which puts that theme in the showcase and changes nothing else
+//   show <title or id>       selects a row of the Theme pane's list, which puts that theme in the showcase and changes nothing else; an id names one row, and a title the first row that has it
+//   open-themes              presses Open Themes Folder
 //   apply <Light|Dark> on|off  sets or clears that box of the showcase; its last line is the box as it is then
 //   pick <row> <title>       row 0, 1, 2 = Terminal, Interface, Document
 //   size <n> <text>          sets a size field's text and confirms it, as Return does; n 0, 1 = Terminal, Document
@@ -28,12 +29,12 @@
 // and under Zhuyin `20` arrives as `ㄉㄢ`.
 //
 // `pick`, `size`, `step` and `focus` count the controls of the pane that
-// shows: they need the Fonts pane, and `theme`, `show` and `apply` need the
-// Theme pane.
+// shows: they need the Fonts pane, and `theme`, `show`, `apply` and
+// `open-themes` need the Theme pane.
 //
 // `apply` presses nothing and exits 1 when the box is disabled, and when it
 // is already in the state that was asked for. `show` and `pane` exit 1 for a
-// title their own table does not hold: the sidebar and the list of themes are
+// title, or for `show` an id, their own table does not hold: the sidebar and the list of themes are
 // two tables, and the app names each for the Accessibility API.
 //
 // <pid> is the app's: `lsof -t "$PWD/.dev/tarmac-dev.sock"`. The process that
@@ -104,8 +105,20 @@ func settingsWindow() -> AXUIElement {
     return window
 }
 
+/// Every element of the Settings window, read once for a run: with some
+/// hundreds of theme files a walk of the window takes seconds. An element
+/// stays good after a press, and its value is read again each time.
+var windowViews: [AXUIElement]?
+
+func views() -> [AXUIElement] {
+    if let windowViews { return windowViews }
+    let read = descendants(of: settingsWindow())
+    windowViews = read
+    return read
+}
+
 func controls(_ wanted: String) -> [AXUIElement] {
-    descendants(of: settingsWindow()).filter { role($0) == wanted }
+    views().filter { role($0) == wanted }
 }
 
 func identifier(_ element: AXUIElement) -> String { attribute(element, kAXIdentifierAttribute) ?? "" }
@@ -114,9 +127,10 @@ func identifier(_ element: AXUIElement) -> String { attribute(element, kAXIdenti
 let sidebar = "settings-sidebar", themeList = "theme-list"
 let showcaseTitle = "theme-showcase-title", showcaseCaption = "theme-showcase-caption"
 let showcasePicture = "theme-showcase-picture", contrastNote = "theme-contrast-note"
+let filesNote = "theme-files-note", openThemes = "Open Themes Folder"
 
 func named(_ name: String) -> AXUIElement? {
-    descendants(of: settingsWindow()).first { identifier($0) == name }
+    views().first { identifier($0) == name }
 }
 
 /// The rows of one table, or none while its pane does not show.
@@ -128,19 +142,45 @@ func selected(_ row: AXUIElement) -> Bool { (attribute(row, kAXSelectedAttribute
 
 /// The texts of a row's cell: its title and then, in the list of themes, its
 /// marks.
-func texts(_ row: AXUIElement) -> [String] {
-    descendants(of: row).filter { role($0) == kAXStaticTextRole }.map(value)
+func texts(_ row: AXUIElement) -> [String] { texts(in: descendants(of: row)) }
+
+/// The same of a row that was walked already: a walk is a round trip to the
+/// app for each element, and a list can have some hundreds of rows.
+func texts(in parts: [AXUIElement]) -> [String] {
+    parts.filter { role($0) == kAXStaticTextRole }.map(value)
 }
 
 func rowName(_ row: AXUIElement) -> String { texts(row).first ?? "" }
 
-/// Selects the row with that name, as a click on it does. `found` starts the
-/// line that tells of a name no row has.
+/// The id the app gives a row of the list of themes, on the row's title.
+func rowID(in parts: [AXUIElement]) -> String {
+    parts.map(identifier).first { !$0.isEmpty } ?? ""
+}
+
+/// A tooltip on one line, or nothing when the element has none.
+func help(_ element: AXUIElement) -> String {
+    ((attribute(element, kAXHelpAttribute) as String?) ?? "").replacingOccurrences(of: "\n", with: " | ")
+}
+
+/// Selects the row with that name, as a click on it does: in the list of
+/// themes the row with that id, or else the first row with that title.
+/// `found` starts the line that tells of a name no row has.
 func select(_ name: String, in table: String, _ found: String, hint: String = "") {
+    // Each row is walked once, and only as far as the search goes: the ids
+    // first, which need no text read, and then the titles.
     let entries = rows(of: table)
-    guard let row = entries.first(where: { rowName($0) == name }) else {
-        fail("\(found) \(entries.map(rowName)) and none is \(name)\(hint)")
+    var walked: [[AXUIElement]] = []
+    func parts(_ index: Int) -> [AXUIElement] {
+        while walked.count <= index { walked.append(descendants(of: entries[walked.count])) }
+        return walked[index]
     }
+    func title(_ index: Int) -> String { texts(in: parts(index)).first ?? "" }
+    guard let index = entries.indices.first(where: { rowID(in: parts($0)) == name })
+        ?? entries.indices.first(where: { title($0) == name })
+    else {
+        fail("\(found) \(entries.indices.map(title)) and none is \(name)\(hint)")
+    }
+    let row = entries[index]
     guard AXUIElementSetAttributeValue(row, kAXSelectedAttribute as CFString, kCFBooleanTrue) == .success else {
         fail("the row \(name) was not selected")
     }
@@ -230,7 +270,7 @@ switch verb {
 case "open":
     postCommand(43)
 case "rows":
-    let window = settingsWindow(), views = descendants(of: window)
+    let window = settingsWindow(), views = views()
     print("window frame=\(frame(window))")
     print("pane=\(rows(of: sidebar).filter(selected).map(rowName).joined(separator: ","))")
     for tile in views.filter({ role($0) == kAXRadioButtonRole }) {
@@ -245,18 +285,34 @@ case "rows":
     }
     for stepper in views.filter({ role($0) == kAXIncrementorRole }) { print("stepper frame=\(frame(stepper))") }
     for row in rows(of: themeList) {
-        let marks = texts(row).dropFirst().joined(separator: ",")
-        print("theme \(rowName(row)) marks=\(marks) selected=\(selected(row) ? 1 : 0) frame=\(frame(row))")
+        let parts = descendants(of: row), texts = texts(in: parts)
+        let marks = texts.dropFirst().joined(separator: ",")
+        print(
+            "theme \(texts.first ?? "") marks=\(marks) selected=\(selected(row) ? 1 : 0) frame=\(frame(row)) id=\(rowID(in: parts))"
+        )
+    }
+    if let list = named(themeList), let scroll: AXUIElement = attribute(list, kAXParentAttribute) {
+        print("list frame=\(frame(scroll))")
     }
     if let shown = named(showcaseTitle) {
         print("showcase title=\(value(shown)) caption=\(named(showcaseCaption).map(value) ?? "")")
     }
     if let picture = named(showcasePicture) { print("picture frame=\(frame(picture))") }
     for element in views.filter({ role($0) == kAXCheckBoxRole }) { print("\(box(element)) frame=\(frame(element))") }
-    if let note = named(contrastNote) { print("note \(value(note))") }
-    let texts = views.filter { role($0) == kAXStaticTextRole }
-    for text in texts { print("label \(value(text)) frame=\(frame(text))") }
-    print("labels=\(texts.map(value))")
+    if let note = named(contrastNote) {
+        print("note \(value(note))")
+        print("note-help \(help(note))")
+    }
+    if let files = named(filesNote) {
+        print("files \(value(files))")
+        print("files-help \(help(files))")
+    }
+    for button in views.filter({ role($0) == kAXButtonRole && title($0) == openThemes }) {
+        print("button \(openThemes) frame=\(frame(button))")
+    }
+    let labels = views.filter { role($0) == kAXStaticTextRole }.map { (text: value($0), element: $0) }
+    for label in labels { print("label \(label.text) frame=\(frame(label.element))") }
+    print("labels=\(labels.map(\.text))")
     print("resizable=\((attribute(window, "AXGrowArea") as AXUIElement?) != nil)")
 case "pane":
     guard rest.count == 1 else { fail("pane <title>") }
@@ -271,10 +327,15 @@ case "theme":
     usleep(200_000)
     print("tile \(rest[0]) value=\(state(tile))")
 case "show":
-    guard rest.count == 1 else { fail("show <theme title>") }
+    guard rest.count == 1 else { fail("show <title or id>") }
     select(rest[0], in: themeList, "the list of themes holds", hint: "; run `pane Theme`")
     usleep(200_000)
     print("shown \(named(showcaseTitle).map(value) ?? "")")
+case "open-themes":
+    guard let button = controls(kAXButtonRole).first(where: { title($0) == openThemes }) else {
+        fail("the window shows no button titled \(openThemes); run `pane Theme`")
+    }
+    press(button, openThemes)
 case "apply":
     guard rest.count == 2, ["Light", "Dark"].contains(rest[0]), ["on", "off"].contains(rest[1]) else {
         fail("apply <Light|Dark> on|off")

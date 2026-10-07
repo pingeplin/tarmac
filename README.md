@@ -83,7 +83,8 @@ leaving the keyboard.
 Built and shipped on `main`:
 
 - **Infinite board** with a choice of four pairs of themes (Breeze, Catppuccin, GitHub, Solarized),
-  each light and dark, world-space card frames, pan/zoom, and
+  each light and dark, and the Ghostty theme files you put in `~/.config/tarmac/themes/`,
+  world-space card frames, pan/zoom, and
   per-board persisted layout + viewport.
 - **`tarmac open` → cards** with gravity (docs follow their terminal) and dashed
   **provenance edges**.
