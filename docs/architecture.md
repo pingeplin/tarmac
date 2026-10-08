@@ -1006,29 +1006,25 @@ Only the app uses it.
 `app-prefs.json` is there too (issue #220). Up to release 0.16.0 that file
 was beside the daemon socket. At launch, when the config directory has no
 `app-prefs.json` and there is one beside the socket, its bytes are copied
-(`AppPrefs.migrate`), and the config directory is made for it. When both
-exist, the one in the config directory is read, also when it is damaged. The
-old file is not removed and is not written again. A copy that fails is
-logged: the standard settings are then in effect, and the old file is not
-read.
+(`AppPrefs.migrate`), and the config directory is made for it. The file in
+the config directory wins when both exist, also when it is damaged. A copy
+that fails is logged: the standard settings are then in effect, and the old
+file is not read.
 
-An older build reads and writes only the old file. Started again, it has the
-settings as they were at the first launch of a build with the move, and not a
-later change. A change that is made in the older build stays in the old file:
-a build with the move that has its own file does not read it. Nothing is
-removed in either direction.
+The old file is not removed and is not written again, so an older build that
+is started again has the settings as they were at the first launch of a
+build with the move. A change that is made in the older build stays in the
+old file: a build with the move that has its own file does not read it.
 
 One launch keeps the file beside the socket: one that pins `TARMAC_SOCKET`
-and not `TARMAC_CONFIG_DIR` (`AppPrefs.path`). It is taken as a scratch
-launch. Its config directory is the installed app's, or the one that all
-debug builds share, and it must not write its preferences there. For that
-launch nothing moves: the file beside the socket is the one it reads and
-writes, and it reads the theme files of that config directory, as before.
-A pin can be inherited: a terminal of an app that was started with
-`TARMAC_SOCKET`, `TARMAC_STATE` and `TARMAC_CONFIG_DIR`, as a `make run` app
-is, carries them. So a scratch launch from such a terminal that does not set
-`TARMAC_CONFIG_DIR` itself uses that app's file: the launch recipes set all
-three.
+and not `TARMAC_CONFIG_DIR` (`ChannelPaths.prefsDir`). It is taken as a
+scratch launch. Its config directory is the installed app's, or the one that
+all debug builds share, and it must not write its preferences there; it
+reads the theme files of that directory, as before. A pin can be inherited:
+a terminal of an app that was started with these variables, as a `make run`
+app is, carries them. So a scratch launch from such a terminal that does not
+set `TARMAC_CONFIG_DIR` itself uses that app's file: the launch recipes set
+all three.
 
 A theme file is a Ghostty theme file. The keys that are read:
 

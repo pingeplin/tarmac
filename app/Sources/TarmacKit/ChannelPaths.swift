@@ -55,7 +55,7 @@ public enum ChannelPaths {
     public static func configDir(
         override: String?, xdgConfigHome: String?, home: String, channel: Channel
     ) -> String {
-        if let override, !override.isEmpty { return override }
+        if let override = pinned(override) { return override }
         let base = xdgConfigHome.flatMap { $0.hasPrefix("/") ? $0 : nil } ?? join(home, ".config")
         let directory = join(base, "tarmac")
         return channel == .dev ? join(directory, "dev") : directory
@@ -64,6 +64,24 @@ public enum ChannelPaths {
     /// The folder of the user's theme files.
     public static func themesDir(configDir: String) -> String {
         join(configDir, "themes")
+    }
+
+    /// The directory of `app-prefs.json` (issue #220): the config directory,
+    /// with one exception. A launch that pins the socket and not the config
+    /// directory is taken as a scratch one, whose config directory is not its
+    /// own (the installed app's, or the one all debug builds share): its file
+    /// stays beside the socket, where it was before the move. A pin can be
+    /// inherited: a terminal of an app that was started with these variables,
+    /// as a `make run` app is, carries them.
+    public static func prefsDir(configDir: String, configOverride: String?, socketOverride: String?) -> String {
+        guard let socket = pinned(socketOverride), pinned(configOverride) == nil else { return configDir }
+        return (socket as NSString).deletingLastPathComponent
+    }
+
+    /// The one rule of an override: it pins its path when it is set and not
+    /// empty, with no trimming.
+    private static func pinned(_ override: String?) -> String? {
+        override.flatMap { $0.isEmpty ? nil : $0 }
     }
 
     private static func join(_ base: String, _ part: String) -> String {
@@ -93,7 +111,7 @@ public enum ChannelPaths {
     }
 
     private static func resolve(_ override: String?, home: String, channel: Channel, file: String) -> String {
-        if let override, !override.isEmpty { return override }
+        if let override = pinned(override) { return override }
         return channelDir(home: home, channel: channel) + "/" + file
     }
 

@@ -24,19 +24,16 @@ owns.
   `lsof -t "$PWD/.dev/tarmac-dev.sock"` (the path must be absolute).
 - Addressing a window with a GUI tool: **always by pid**, never by name. The
   `make run` binary is an unbundled `TarmacApp` with no bundle id at all; its
-  window title ends in ` · <worktree>`, or for a `DEV_DIR` channel in
-  ` · <worktree>/<its directory>`.
+  window title ends in ` · ` and `TARMAC_DEV_LABEL` (below).
 
 **Never launch `dist/Tarmac.app`, or a release build of the app, without
 `TARMAC_SOCKET` and `TARMAC_STATE` pinned, and pin `TARMAC_CONFIG_DIR` with
 them.** A release build resolves the *installed* channel: it attaches to the
 user's real daemon and, if its version differs, SIGTERMs and replaces it —
-every terminal the user has open dies with it. With those two pinned and no
-`TARMAC_CONFIG_DIR`, its `app-prefs.json` stays beside the pinned socket
-(issue #220), and it reads the user's theme files. But a terminal of an app
-that was started with `TARMAC_CONFIG_DIR`, as a `make run` app is, carries
-it: a launch from there that does not set its own uses that app's
-`app-prefs.json`. `make run` is the only launch that pins them for you.
+every terminal the user has open dies with it. Without its own
+`TARMAC_CONFIG_DIR` it reads the user's theme files, or uses the config
+directory that its shell inherited (`docs/architecture.md`, *A theme from a
+file*). `make run` is the only launch that pins them for you.
 
 ## Bringing it up
 
@@ -55,7 +52,7 @@ needs staging.
 | `TARMAC_SOCKET` | the daemon socket, under `.dev/` — a dev app never joins the installed daemon |
 | `TARMAC_STATE` | `state.json`, under `.dev/` — boards and layout, never the user's |
 | `TARMAC_DEV_SOCKET` | the QA driver's socket, under `.dev/` (issue #166) |
-| `TARMAC_CONFIG_DIR` | the config directory, `.dev/config` — it holds `app-prefs.json` (issue #220) and `themes/`, the theme files a dev build reads (issue #218); never the user's `~/.config/tarmac`. A fresh channel (`DEV_DIR`, below) has its own. A prepared `app-prefs.json` for a QA run goes into that folder; one beside the socket is copied there at launch when the folder has none |
+| `TARMAC_CONFIG_DIR` | the config directory, `.dev/config` — it holds `app-prefs.json` (issue #220) and `themes/`, the theme files a dev build reads (issue #218); never the user's `~/.config/tarmac`. A fresh channel (`DEV_DIR`, below) has its own, and a prepared `app-prefs.json` for a QA run goes into it |
 | `TARMAC_DAEMON` | `core/target/debug/tarmacd`: the daemon binary the app auto-spawns (the daemon itself never reads it) |
 | `TARMAC_APP_VERSION` | the version in `core/Cargo.toml` — an unbundled binary has no `Info.plist`, and the app must name the daemon's own version or it would replace that daemon as stale |
 | `TARMAC_DEV_LABEL` | the worktree name, and for a `DEV_DIR` channel `<worktree>/<its directory>`, shown as the window-title suffix — how to tell two dev windows apart by eye (two `DEV_DIR` directories with the same name read the same: go by pid) |
@@ -77,16 +74,12 @@ make run DEV_DIR="$QA"                     # makes the directory; its own socket
 make qa DEV_DIR="$QA"                      # drives that app
 TARMAC_DEV_SOCKET="$QA/tarmac-dev.sock" core/target/debug/tarmac dev snapshot
 kill "$(lsof -t "$QA/tarmac-dev.sock")"    # the app, by its driver socket
-make kill-daemon DEV_DIR="$QA"             # BEFORE the directory is removed
+make kill-daemon DEV_DIR="$QA"             # BEFORE the rm: it finds the daemon by its socket file
 rm -rf "$QA"
 ```
 
-Stop the daemon before the directory is removed: with its socket file gone,
-`make kill-daemon` cannot find it. Replacing `DEV_SOCKET` and `DEV_ENV` by hand
-still works, but a `DEV_ENV` without `TARMAC_CONFIG_DIR` loses that pin: the
-channel then keeps `app-prefs.json` beside its socket and reads the theme
-files of `~/.config/tarmac/dev`, or uses the config directory of the `make
-run` app whose terminal the shell is in.
+Replacing `DEV_SOCKET` and `DEV_ENV` by hand still works, but a `DEV_ENV`
+without `TARMAC_CONFIG_DIR` loses that pin.
 
 **There is no hot reload.** After a change, stop the app and `make run` again.
 The daemon is detached and survives; the new app reconnects and re-binds the

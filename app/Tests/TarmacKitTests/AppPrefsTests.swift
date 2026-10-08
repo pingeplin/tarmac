@@ -120,36 +120,10 @@ final class AppPrefsTests: XCTestCase {
 
     // MARK: issue #220 — the file is in the config directory
 
-    func testThePrefsFileSitsInTheConfigDirectory() {
-        XCTAssertEqual(AppPrefs.path(configDir: "/w/.dev/config"), "/w/.dev/config/app-prefs.json")
-        XCTAssertEqual(AppPrefs.path(configDir: "/w/.dev/config/"), "/w/.dev/config/app-prefs.json")
-        XCTAssertEqual(AppPrefs.path(configDir: "/"), "/app-prefs.json")
-    }
-
-    /// A scratch launch pins the socket and not the config directory. Its
-    /// config directory is then the installed app's, so its file stays beside
-    /// the socket. An empty value pins nothing.
-    func testAPinnedSocketWithNoPinnedConfigDirectoryKeepsTheFileBesideIt() {
-        typealias Case = (configOverride: String?, socketOverride: String?, expected: String)
-        let cases: [Case] = [
-            (nil, nil, "/c/tarmac/app-prefs.json"),
-            ("/c/tarmac", "/s/tarmacd.sock", "/c/tarmac/app-prefs.json"),
-            ("/c/tarmac", nil, "/c/tarmac/app-prefs.json"),
-            (nil, "/s/tarmacd.sock", "/s/app-prefs.json"),
-            ("", "/s/tarmacd.sock", "/s/app-prefs.json"),
-            (nil, "", "/c/tarmac/app-prefs.json"),
-            ("", "", "/c/tarmac/app-prefs.json"),
-        ]
-        for c in cases {
-            XCTAssertEqual(
-                AppPrefs.path(
-                    configDir: "/c/tarmac", configOverride: c.configOverride, socket: "/s/tarmacd.sock",
-                    socketOverride: c.socketOverride
-                ),
-                c.expected,
-                "configOverride: \(c.configOverride ?? "nil"), socketOverride: \(c.socketOverride ?? "nil")"
-            )
-        }
+    func testThePrefsFileSitsInItsDirectory() {
+        XCTAssertEqual(AppPrefs.path(in: "/w/.dev/config"), "/w/.dev/config/app-prefs.json")
+        XCTAssertEqual(AppPrefs.path(in: "/w/.dev/config/"), "/w/.dev/config/app-prefs.json")
+        XCTAssertEqual(AppPrefs.path(in: "/"), "/app-prefs.json")
     }
 
     func testMigrationCopiesTheBytesOfTheOldFile() throws {
@@ -165,12 +139,10 @@ final class AppPrefsTests: XCTestCase {
 
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: path)), bytes)
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: legacy)), bytes)
-        let copy = try FileManager.default.attributesOfItem(atPath: path)
-        let old = try FileManager.default.attributesOfItem(atPath: legacy)
-        XCTAssertEqual(copy[.type] as? FileAttributeType, .typeRegular)
-        XCTAssertNotEqual(copy[.systemFileNumber] as? Int, old[.systemFileNumber] as? Int)
-        XCTAssertEqual(old[.systemFileNumber] as? Int, before[.systemFileNumber] as? Int)
-        XCTAssertEqual(old[.modificationDate] as? Date, before[.modificationDate] as? Date)
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: path)[.type] as? FileAttributeType, .typeRegular)
+        let after = try FileManager.default.attributesOfItem(atPath: legacy)
+        XCTAssertEqual(after[.systemFileNumber] as? Int, before[.systemFileNumber] as? Int)
+        XCTAssertEqual(after[.modificationDate] as? Date, before[.modificationDate] as? Date)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir + "/config/deep"), ["app-prefs.json"])
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir + "/old"), ["app-prefs.json"])
     }

@@ -2,12 +2,11 @@ import Foundation
 
 /// The app's own tiny preference file (spec 2609.0016).
 ///
-/// It lives in Tarmac's config directory (`ChannelPaths.configDir`). `make run`
-/// pins that to `<worktree>/.dev/config`, and a debug build with no pin has a
-/// `/dev` of its own, so neither shares the installed app's file. A launch
-/// that pins the socket and not the config directory keeps the file beside the
-/// socket (`path`). Anything unreadable means the guard is ON: a preference
-/// file is never a reason to quit the cockpit by accident.
+/// It lives in Tarmac's config directory (`ChannelPaths.prefsDir` has the one
+/// exception). `make run` pins that to `<worktree>/.dev/config`, and a debug
+/// build with no pin has a `/dev` of its own, so neither shares the installed
+/// app's file. Anything unreadable means the guard is ON: a preference file is
+/// never a reason to quit the cockpit by accident.
 ///
 /// With no font chosen the format, `{"warn_before_quit": <bool>}`, is the Tauri
 /// app's `app-prefs.json` byte for byte. A chosen font adds its role's key
@@ -88,31 +87,14 @@ public enum AppPrefs {
         }
     }
 
-    /// Where the file is for this launch: the config directory (issue #220),
-    /// with one exception. A launch that pins the socket and not the config
-    /// directory is taken as a scratch one, whose config directory is not its
-    /// own (the installed app's, or the one all debug builds share): its file
-    /// stays beside the socket, where it was before the move. Each override is
-    /// its variable's value, and an empty one is not a pin. A pin can be
-    /// inherited: a terminal of an app that was started with these variables,
-    /// as a `make run` app is, carries them.
-    public static func path(
-        configDir: String, configOverride: String?, socket: String, socketOverride: String?
-    ) -> String {
-        let pinned = { (override: String?) in override.map { !$0.isEmpty } ?? false }
-        return pinned(socketOverride) && !pinned(configOverride)
-            ? path(besideSocket: socket) : path(configDir: configDir)
-    }
-
-    /// Beside the daemon socket: where the file was up to release 0.16.0, which
-    /// `migrate` reads, and where a launch that pins only the socket keeps it.
+    /// Where the file was up to release 0.16.0, which `migrate` reads.
     public static func path(besideSocket socket: String) -> String {
-        ((socket as NSString).deletingLastPathComponent as NSString).appendingPathComponent(fileName)
+        path(in: (socket as NSString).deletingLastPathComponent)
     }
 
-    /// In Tarmac's config directory (issue #220).
-    public static func path(configDir: String) -> String {
-        (configDir as NSString).appendingPathComponent(fileName)
+    /// The file in its directory, which is `ChannelPaths.prefsDir`'s.
+    public static func path(in directory: String) -> String {
+        (directory as NSString).appendingPathComponent(fileName)
     }
 
     /// Bring the file of an older build to its place of today: a copy of its
@@ -198,10 +180,9 @@ public enum AppPrefs {
     }
 
     private static func write(_ data: Data, to path: String) throws {
-        let directory = (path as NSString).deletingLastPathComponent
-        if !directory.isEmpty {
-            try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
-        }
+        try FileManager.default.createDirectory(
+            at: URL(fileURLWithPath: path).deletingLastPathComponent(), withIntermediateDirectories: true
+        )
         let temporary = path + ".tmp"
         try data.write(to: URL(fileURLWithPath: temporary))
         guard rename(temporary, path) == 0 else {

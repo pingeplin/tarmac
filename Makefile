@@ -20,6 +20,9 @@ $(error DEV_DIR starts with ~, which make does not expand: "$(DEV_DIR)")
 endif
 override DEV_DIR := $(abspath $(DEV_DIR))
 endif
+# make hands a command-line variable to every child in MAKEFLAGS. The app's
+# terminals would carry DEV_DIR, and a make run in one would take it as its own.
+MAKEOVERRIDES =
 DEV_LABEL := $(notdir $(ROOT))$(if $(filter-out $(ROOT)/.dev,$(DEV_DIR)),/$(notdir $(DEV_DIR)))
 DEV_SOCKET := $(DEV_DIR)/tarmacd.sock
 DEV_ENV := TARMAC_SOCKET="$(DEV_SOCKET)" \
@@ -60,24 +63,19 @@ test: docs-check ghostty-vt
 # `make run` launches the dev app against this worktree's own daemon.
 # TARMAC_DAEMON lets it auto-spawn the debug daemon; the PATH prefix flows
 # through the daemon into spawned ptys so `tarmac open <file>` works inside its
-# terminals. TARMAC_SOCKET/TARMAC_STATE pin a stable per-worktree dev path so
-# simultaneous `make run`s from different worktrees don't share a socket or
-# state file, and none of them can reach the installed Tarmac. TARMAC_CONFIG_DIR
-# pins the config directory, where the preferences and the theme files are, for
-# the same reason. TARMAC_DEV_SOCKET pins the QA driver's own socket (issue
-# #166) for the same reason — unpinned,
-# `make qa` from one worktree would drive another's window. TARMAC_DEV_LABEL
-# suffixes the window title with ` · <worktree>`, and for a DEV_DIR channel
-# with ` · <worktree>/<its directory>`: the dev binary is not a .app,
-# so Launch Services reports no bundle id for it and the title is the only tell
-# separating one dev app from another (and from the installed one).
+# terminals. TARMAC_SOCKET/TARMAC_STATE/TARMAC_CONFIG_DIR pin a stable
+# per-worktree dev path so simultaneous `make run`s from different worktrees
+# don't share a socket, a state file or a config directory, and none of them can
+# reach the installed Tarmac. TARMAC_DEV_SOCKET pins the QA driver's own socket
+# (issue #166) for the same reason — unpinned, `make qa` from one worktree would
+# drive another's window. TARMAC_DEV_LABEL suffixes the window title with
+# ` · $(DEV_LABEL)`: the dev binary is not a .app, so Launch Services reports no
+# bundle id for it and the title is the only tell separating one dev app from
+# another (and from the installed one).
 # TARMAC_APP_VERSION stands in for the bundle's version: an unbundled binary has
 # no Info.plist, and the app must name the same version as the daemon it just
 # built or it would replace that daemon as stale. `bundle`/`release` set none of
-# these, so a shipped Tarmac is unchanged. MAKEFLAGS, MFLAGS and MAKELEVEL are
-# taken out of the app's environment: MAKEFLAGS carries a command-line DEV_DIR,
-# and a make that is run later in one of the app's terminals would take it as
-# its own.
+# these, so a shipped Tarmac is unchanged.
 run: core app
 	mkdir -p "$(DEV_DIR)"
 	cd $(ROOT)/app && \
@@ -86,7 +84,7 @@ run: core app
 	TARMAC_APP_VERSION="$$(sed -n 's/^version = "\(.*\)"/\1/p' $(ROOT)/core/Cargo.toml | head -1)" \
 	TARMAC_DAEMON="$(ROOT)/core/target/debug/tarmacd" \
 	PATH="$(ROOT)/core/target/debug:$$PATH" \
-	env -u MAKEFLAGS -u MFLAGS -u MAKELEVEL "$$(swift build --show-bin-path)/TarmacApp"
+	"$$(swift build --show-bin-path)/TarmacApp"
 
 # The QA driver's scenario suite (spec 2609.0015). NOT part of `make test` and
 # not on CI: every scenario drives a LIVE window, so it needs `make run` up in
