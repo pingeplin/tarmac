@@ -2,9 +2,10 @@ import Foundation
 
 /// The app's own tiny preference file (spec 2609.0016).
 ///
-/// It lives beside the daemon socket, so the dev and installed apps cannot share
-/// one: `<worktree>/.dev/` under `make run`, the per-channel support dir
-/// otherwise. Anything unreadable means the guard is ON: a preference file is
+/// It lives in Tarmac's config directory (`ChannelPaths.prefsDir` has the one
+/// exception). `make run` pins that to `<worktree>/.dev/config`, and a debug
+/// build with no pin has a `/dev` of its own, so neither shares the installed
+/// app's file. Anything unreadable means the guard is ON: a preference file is
 /// never a reason to quit the cockpit by accident.
 ///
 /// With no font chosen the format, `{"warn_before_quit": <bool>}`, is the Tauri
@@ -86,8 +87,24 @@ public enum AppPrefs {
         }
     }
 
+    /// Where the file was up to release 0.16.0, which `migrate` reads.
     public static func path(besideSocket socket: String) -> String {
-        ((socket as NSString).deletingLastPathComponent as NSString).appendingPathComponent(fileName)
+        path(in: (socket as NSString).deletingLastPathComponent)
+    }
+
+    /// The file in its directory, which is `ChannelPaths.prefsDir`'s.
+    public static func path(in directory: String) -> String {
+        (directory as NSString).appendingPathComponent(fileName)
+    }
+
+    /// Bring the file of an older build to its place of today: a copy of its
+    /// bytes, so a key this build does not know is kept. Nothing is done when
+    /// `path` has a file, which wins, or when `legacy` has none. The old file
+    /// stays as it is: a build that still reads it finds what it wrote.
+    public static func migrate(from legacy: String, to path: String) throws {
+        let files = FileManager.default
+        guard !files.fileExists(atPath: path), files.fileExists(atPath: legacy) else { return }
+        try write(Data(contentsOf: URL(fileURLWithPath: legacy)), to: path)
     }
 
     /// Whether ⌘Q is guarded, as the file says: `decode`'s answer for that key.
@@ -155,10 +172,19 @@ public enum AppPrefs {
     /// Save through a temp file, so a crash mid-write cannot leave a
     /// half-written file that would then read as "guard on" forever. The rename
     /// replaces an existing file, which `FileManager.moveItem` refuses to do.
-    /// Best effort: the in-memory values are what this session obeys either way.
+    /// The file's directory is made when it is missing: the config directory
+    /// need not be there yet. Best effort: the in-memory values are what this
+    /// session obeys either way.
     public static func save(_ values: Values, to path: String) throws {
+        try write(encode(values), to: path)
+    }
+
+    private static func write(_ data: Data, to path: String) throws {
+        try FileManager.default.createDirectory(
+            at: URL(fileURLWithPath: path).deletingLastPathComponent(), withIntermediateDirectories: true
+        )
         let temporary = path + ".tmp"
-        try encode(values).write(to: URL(fileURLWithPath: temporary))
+        try data.write(to: URL(fileURLWithPath: temporary))
         guard rename(temporary, path) == 0 else {
             throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }

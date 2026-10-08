@@ -17,14 +17,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Before the first view is built: chrome takes its font and its
         // colours at `init`.
-        let client = AppController.daemonClient()
-        let prefs = AppPrefsStore(path: AppPrefs.path(besideSocket: client.socketPath))
-        let fonts = FontSettings(prefs: prefs)
         let environment = ProcessInfo.processInfo.environment
+        let configOverride = environment["TARMAC_CONFIG_DIR"]
         let configDir = ChannelPaths.configDir(
-            override: environment["TARMAC_CONFIG_DIR"], xdgConfigHome: environment["XDG_CONFIG_HOME"],
+            override: configOverride, xdgConfigHome: environment["XDG_CONFIG_HOME"],
             home: ChannelPaths.home(env: environment), channel: .build
         )
+        let prefsDir = ChannelPaths.prefsDir(
+            configDir: configDir, configOverride: configOverride, socketOverride: environment["TARMAC_SOCKET"]
+        )
+        let client = AppController.daemonClient()
+        let prefs = AppPrefsStore(
+            path: AppPrefs.path(in: prefsDir), legacy: AppPrefs.path(besideSocket: client.socketPath)
+        )
+        let fonts = FontSettings(prefs: prefs)
         let theme = ThemeSettings(prefs: prefs, folder: ChannelPaths.themesDir(configDir: configDir))
         let rootView = RootView()
         window = NSWindow(

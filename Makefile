@@ -2,14 +2,33 @@ ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
 .PHONY: core ghostty-vt app test docs-check dco-check run qa qa-quit kill-daemon bundle dmg release
 
-# The dev channel: this worktree's own daemon socket, state, driver socket and
-# config directory. Everything that launches or drives a dev build goes through
-# these four.
-DEV_SOCKET := $(ROOT)/.dev/tarmacd.sock
+# The dev channel: one directory that holds this worktree's own daemon socket,
+# state, driver socket and config directory. Everything that launches or drives
+# a dev build goes through these, so `make run DEV_DIR=<dir>` is a second, whole
+# channel: none of the four can be left out. DEV_DIR is taken from the command
+# line only: one in the environment is ignored (unless `make -e`). A relative
+# one is taken from the directory make runs in, because the recipes run in
+# other directories. `abspath` splits at a space and expands no `~`, so a value
+# the caller gives with one of those is refused.
+DEV_DIR := $(ROOT)/.dev
+ifneq ($(origin DEV_DIR),file)
+ifneq ($(words $(DEV_DIR)),1)
+$(error DEV_DIR must be one path, not empty and with no space: "$(DEV_DIR)")
+endif
+ifneq ($(filter ~%,$(DEV_DIR)),)
+$(error DEV_DIR starts with ~, which make does not expand: "$(DEV_DIR)")
+endif
+override DEV_DIR := $(abspath $(DEV_DIR))
+endif
+# make hands a command-line variable to every child in MAKEFLAGS. The app's
+# terminals would carry DEV_DIR, and a make run in one would take it as its own.
+MAKEOVERRIDES =
+DEV_LABEL := $(notdir $(ROOT))$(if $(filter-out $(ROOT)/.dev,$(DEV_DIR)),/$(notdir $(DEV_DIR)))
+DEV_SOCKET := $(DEV_DIR)/tarmacd.sock
 DEV_ENV := TARMAC_SOCKET="$(DEV_SOCKET)" \
-	TARMAC_STATE="$(ROOT)/.dev/state.json" \
-	TARMAC_DEV_SOCKET="$(ROOT)/.dev/tarmac-dev.sock" \
-	TARMAC_CONFIG_DIR="$(ROOT)/.dev/config"
+	TARMAC_STATE="$(DEV_DIR)/state.json" \
+	TARMAC_DEV_SOCKET="$(DEV_DIR)/tarmac-dev.sock" \
+	TARMAC_CONFIG_DIR="$(DEV_DIR)/config"
 
 core:
 	cd $(ROOT)/core && cargo build
@@ -44,23 +63,24 @@ test: docs-check ghostty-vt
 # `make run` launches the dev app against this worktree's own daemon.
 # TARMAC_DAEMON lets it auto-spawn the debug daemon; the PATH prefix flows
 # through the daemon into spawned ptys so `tarmac open <file>` works inside its
-# terminals. TARMAC_SOCKET/TARMAC_STATE pin a stable per-worktree dev path so
-# simultaneous `make run`s from different worktrees don't share a socket or
-# state file, and none of them can reach the installed Tarmac. TARMAC_DEV_SOCKET
-# pins the QA driver's own socket (issue #166) for the same reason — unpinned,
-# `make qa` from one worktree would drive another's window. TARMAC_DEV_LABEL
-# suffixes the window title with ` · <worktree>`: the dev binary is not a .app,
-# so Launch Services reports no bundle id for it and the title is the only tell
-# separating one dev app from another (and from the installed one).
+# terminals. TARMAC_SOCKET/TARMAC_STATE/TARMAC_CONFIG_DIR pin a stable
+# per-worktree dev path so simultaneous `make run`s from different worktrees
+# don't share a socket, a state file or a config directory, and none of them can
+# reach the installed Tarmac. TARMAC_DEV_SOCKET pins the QA driver's own socket
+# (issue #166) for the same reason — unpinned, `make qa` from one worktree would
+# drive another's window. TARMAC_DEV_LABEL suffixes the window title with
+# ` · $(DEV_LABEL)`: the dev binary is not a .app, so Launch Services reports no
+# bundle id for it and the title is the only tell separating one dev app from
+# another (and from the installed one).
 # TARMAC_APP_VERSION stands in for the bundle's version: an unbundled binary has
 # no Info.plist, and the app must name the same version as the daemon it just
 # built or it would replace that daemon as stale. `bundle`/`release` set none of
 # these, so a shipped Tarmac is unchanged.
 run: core app
-	mkdir -p "$(ROOT)/.dev"
+	mkdir -p "$(DEV_DIR)"
 	cd $(ROOT)/app && \
 	$(DEV_ENV) \
-	TARMAC_DEV_LABEL="$(notdir $(ROOT))" \
+	TARMAC_DEV_LABEL="$(DEV_LABEL)" \
 	TARMAC_APP_VERSION="$$(sed -n 's/^version = "\(.*\)"/\1/p' $(ROOT)/core/Cargo.toml | head -1)" \
 	TARMAC_DAEMON="$(ROOT)/core/target/debug/tarmacd" \
 	PATH="$(ROOT)/core/target/debug:$$PATH" \
@@ -100,8 +120,9 @@ kill-daemon:
 	fi
 
 # Assemble an unsigned dist/Tarmac.app (arm64). No Apple cert needed. To try
-# it, run Contents/MacOS/tarmac-app with TARMAC_SOCKET and TARMAC_STATE set to
-# scratch paths: launched bare it attaches to the installed Tarmac's daemon.
+# it, run Contents/MacOS/tarmac-app with TARMAC_SOCKET, TARMAC_STATE and
+# TARMAC_CONFIG_DIR set to scratch paths: launched bare it attaches to the
+# installed Tarmac's daemon.
 bundle:
 	$(ROOT)/scripts/bundle.sh
 

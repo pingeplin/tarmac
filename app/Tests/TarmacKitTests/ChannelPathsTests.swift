@@ -238,4 +238,32 @@ final class ChannelPathsTests: XCTestCase {
         XCTAssertEqual(ChannelPaths.themesDir(configDir: "/a/b"), "/a/b/themes")
         XCTAssertEqual(ChannelPaths.themesDir(configDir: "/a/b/"), "/a/b/themes")
     }
+
+    // MARK: - prefsDir (issue #220)
+
+    /// A scratch launch pins the socket and not the config directory. Its
+    /// config directory is then not its own, so its preferences stay beside
+    /// the socket. An empty value pins nothing.
+    func testPrefsDirGrid() {
+        typealias Case = (configOverride: String?, socketOverride: String?, expected: String)
+        let cases: [Case] = [
+            (nil, nil, "/c/tarmac"),
+            ("/c/tarmac", "/s/tarmacd.sock", "/c/tarmac"),
+            ("/c/tarmac", nil, "/c/tarmac"),
+            (nil, "/s/tarmacd.sock", "/s"),
+            (nil, "tarmacd.sock", ""),
+            ("", "/s/tarmacd.sock", "/s"),
+            (nil, "", "/c/tarmac"),
+            ("", "", "/c/tarmac"),
+        ]
+        for c in cases {
+            XCTAssertEqual(
+                ChannelPaths.prefsDir(
+                    configDir: "/c/tarmac", configOverride: c.configOverride, socketOverride: c.socketOverride
+                ),
+                c.expected,
+                "prefsDir(configOverride: \(c.configOverride ?? "nil"), socketOverride: \(c.socketOverride ?? "nil"))"
+            )
+        }
+    }
 }

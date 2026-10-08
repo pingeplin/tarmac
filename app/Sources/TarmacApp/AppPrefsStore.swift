@@ -1,16 +1,21 @@
 import TarmacKit
 
 /// The one owner of `app-prefs.json`: every preference is read from here and
-/// saved through here, whole, so no writer can drop another's key. The file
-/// sits beside the daemon socket — the one location that already separates a
-/// dev app from the installed one, which share a bundle id.
+/// saved through here, whole, so no writer can drop another's key. A file an
+/// older build left beside the daemon socket is copied in first; when the copy
+/// fails the old file is not read, and the standard values are in effect.
 @MainActor
 final class AppPrefsStore {
     private(set) var values: AppPrefs.Values
     private let path: String
 
-    init(path: String) {
+    init(path: String, legacy: String) {
         self.path = path
+        do {
+            try AppPrefs.migrate(from: legacy, to: path)
+        } catch {
+            Log.stderr("could not bring app prefs from \(legacy): \(error)")
+        }
         values = AppPrefs.load(from: path)
     }
 

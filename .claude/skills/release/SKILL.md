@@ -89,7 +89,7 @@ un-stamps `core/Cargo.toml`, so the dmg is rebuilt and notarized again.
   Tarmac's daemon and, the version being new, SIGTERM and replace it — every
   open terminal dies. If a launch check is wanted, pin a scratch channel:
   ```
-  d=$(mktemp -d) && TARMAC_SOCKET="$d/tarmacd.sock" TARMAC_STATE="$d/state.json" \
+  d=$(mktemp -d) && TARMAC_SOCKET="$d/tarmacd.sock" TARMAC_STATE="$d/state.json" TARMAC_CONFIG_DIR="$d/config" \
     dist/Tarmac.app/Contents/MacOS/tarmac-app
   ```
   then stop that daemon by its socket (`lsof -t "$d/tarmacd.sock"`), never by name.
