@@ -27,10 +27,15 @@ owns.
   window title ends in ` · <worktree>`.
 
 **Never launch `dist/Tarmac.app`, or a release build of the app, without
-`TARMAC_SOCKET` and `TARMAC_STATE` pinned.** A release build resolves the
-*installed* channel: it attaches to the user's real daemon and, if its version
-differs, SIGTERMs and replaces it — every terminal the user has open dies with
-it. `make run` is the only launch that pins them for you.
+`TARMAC_SOCKET` and `TARMAC_STATE` pinned, and pin `TARMAC_CONFIG_DIR` with
+them.** A release build resolves the *installed* channel: it attaches to the
+user's real daemon and, if its version differs, SIGTERMs and replaces it —
+every terminal the user has open dies with it. With those two pinned and no
+`TARMAC_CONFIG_DIR`, its `app-prefs.json` stays beside the pinned socket
+(issue #220), and it reads the user's theme files. But a terminal of an app
+that was started with `TARMAC_CONFIG_DIR`, as a `make run` app is, carries
+it: a launch from there that does not set its own uses that app's
+`app-prefs.json`. `make run` is the only launch that pins them for you.
 
 ## Bringing it up
 
@@ -49,7 +54,7 @@ needs staging.
 | `TARMAC_SOCKET` | the daemon socket, under `.dev/` — a dev app never joins the installed daemon |
 | `TARMAC_STATE` | `state.json`, under `.dev/` — boards and layout, never the user's |
 | `TARMAC_DEV_SOCKET` | the QA driver's socket, under `.dev/` (issue #166) |
-| `TARMAC_CONFIG_DIR` | the config directory, `.dev/config` — its `themes/` holds the theme files a dev build reads, never the user's `~/.config/tarmac` (issue #218). A fresh channel that replaces `DEV_ENV` must set it too |
+| `TARMAC_CONFIG_DIR` | the config directory, `.dev/config` — it holds `app-prefs.json` (issue #220) and `themes/`, the theme files a dev build reads (issue #218); never the user's `~/.config/tarmac`. A fresh channel that replaces `DEV_ENV` must set it too, to a folder of its own. Then a prepared `app-prefs.json` for a QA run goes into that folder; one beside the socket is copied there at launch when the folder has none. A channel that pins the socket and not this variable keeps `app-prefs.json` beside its socket, and reads the theme files of `~/.config/tarmac/dev` — unless its shell carries the variable already, as a terminal of a `make run` app does: then it uses that app's folder |
 | `TARMAC_DAEMON` | `core/target/debug/tarmacd`: the daemon binary the app auto-spawns (the daemon itself never reads it) |
 | `TARMAC_APP_VERSION` | the version in `core/Cargo.toml` — an unbundled binary has no `Info.plist`, and the app must name the daemon's own version or it would replace that daemon as stale |
 | `TARMAC_DEV_LABEL` | the worktree name, shown as the window-title suffix — the only way to tell two dev windows apart |

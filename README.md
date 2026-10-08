@@ -155,8 +155,9 @@ make run     # build and launch the dev app against this worktree's own daemon
 ```
 
 The first `make app` downloads the pinned libghostty-vt XCFramework into the
-gitignored `app/Vendor/`. `make run` pins the daemon socket and state to this
-worktree's `.dev/` (so a dev build never touches an installed Tarmac), sets
+gitignored `app/Vendor/`. `make run` pins the daemon socket, the state and the
+config directory to this worktree's `.dev/` (so a dev build never touches an
+installed Tarmac), sets
 `TARMAC_DAEMON` (so the app auto-spawns the freshly built daemon) and prefixes
 `PATH` with the debug build dir (so `tarmac open` inside the app's own terminals
 resolves the freshly built CLI). The CLI itself is just:

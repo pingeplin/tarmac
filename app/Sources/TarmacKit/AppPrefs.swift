@@ -2,10 +2,12 @@ import Foundation
 
 /// The app's own tiny preference file (spec 2609.0016).
 ///
-/// It lives beside the daemon socket, so the dev and installed apps cannot share
-/// one: `<worktree>/.dev/` under `make run`, the per-channel support dir
-/// otherwise. Anything unreadable means the guard is ON: a preference file is
-/// never a reason to quit the cockpit by accident.
+/// It lives in Tarmac's config directory (`ChannelPaths.configDir`). `make run`
+/// pins that to `<worktree>/.dev/config`, and a debug build with no pin has a
+/// `/dev` of its own, so neither shares the installed app's file. A launch
+/// that pins the socket and not the config directory keeps the file beside the
+/// socket (`path`). Anything unreadable means the guard is ON: a preference
+/// file is never a reason to quit the cockpit by accident.
 ///
 /// With no font chosen the format, `{"warn_before_quit": <bool>}`, is the Tauri
 /// app's `app-prefs.json` byte for byte. A chosen font adds its role's key
@@ -86,8 +88,41 @@ public enum AppPrefs {
         }
     }
 
+    /// Where the file is for this launch: the config directory (issue #220),
+    /// with one exception. A launch that pins the socket and not the config
+    /// directory is taken as a scratch one, whose config directory is not its
+    /// own (the installed app's, or the one all debug builds share): its file
+    /// stays beside the socket, where it was before the move. Each override is
+    /// its variable's value, and an empty one is not a pin. A pin can be
+    /// inherited: a terminal of an app that was started with these variables,
+    /// as a `make run` app is, carries them.
+    public static func path(
+        configDir: String, configOverride: String?, socket: String, socketOverride: String?
+    ) -> String {
+        let pinned = { (override: String?) in override.map { !$0.isEmpty } ?? false }
+        return pinned(socketOverride) && !pinned(configOverride)
+            ? path(besideSocket: socket) : path(configDir: configDir)
+    }
+
+    /// Beside the daemon socket: where the file was up to release 0.16.0, which
+    /// `migrate` reads, and where a launch that pins only the socket keeps it.
     public static func path(besideSocket socket: String) -> String {
         ((socket as NSString).deletingLastPathComponent as NSString).appendingPathComponent(fileName)
+    }
+
+    /// In Tarmac's config directory (issue #220).
+    public static func path(configDir: String) -> String {
+        (configDir as NSString).appendingPathComponent(fileName)
+    }
+
+    /// Bring the file of an older build to its place of today: a copy of its
+    /// bytes, so a key this build does not know is kept. Nothing is done when
+    /// `path` has a file, which wins, or when `legacy` has none. The old file
+    /// stays as it is: a build that still reads it finds what it wrote.
+    public static func migrate(from legacy: String, to path: String) throws {
+        let files = FileManager.default
+        guard !files.fileExists(atPath: path), files.fileExists(atPath: legacy) else { return }
+        try write(Data(contentsOf: URL(fileURLWithPath: legacy)), to: path)
     }
 
     /// Whether ⌘Q is guarded, as the file says: `decode`'s answer for that key.
@@ -155,10 +190,20 @@ public enum AppPrefs {
     /// Save through a temp file, so a crash mid-write cannot leave a
     /// half-written file that would then read as "guard on" forever. The rename
     /// replaces an existing file, which `FileManager.moveItem` refuses to do.
-    /// Best effort: the in-memory values are what this session obeys either way.
+    /// The file's directory is made when it is missing: the config directory
+    /// need not be there yet. Best effort: the in-memory values are what this
+    /// session obeys either way.
     public static func save(_ values: Values, to path: String) throws {
+        try write(encode(values), to: path)
+    }
+
+    private static func write(_ data: Data, to path: String) throws {
+        let directory = (path as NSString).deletingLastPathComponent
+        if !directory.isEmpty {
+            try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        }
         let temporary = path + ".tmp"
-        try encode(values).write(to: URL(fileURLWithPath: temporary))
+        try data.write(to: URL(fileURLWithPath: temporary))
         guard rename(temporary, path) == 0 else {
             throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }

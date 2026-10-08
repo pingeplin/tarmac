@@ -14,7 +14,8 @@ final class AppPrefsTests: XCTestCase {
         return dir
     }
 
-    /// S24 — beside the socket, so `make run` keeps every worktree apart.
+    /// S24 — the place of release 0.16.0 and older, beside the socket, which
+    /// `migrate` reads. It kept `make run` worktrees apart.
     func testThePrefsFileSitsBesideTheDaemonSocket() {
         XCTAssertEqual(AppPrefs.path(besideSocket: "/w/.dev/tarmacd.sock"), "/w/.dev/app-prefs.json")
         XCTAssertEqual(AppPrefs.path(besideSocket: "/tarmacd.sock"), "/app-prefs.json")
@@ -38,7 +39,7 @@ final class AppPrefsTests: XCTestCase {
         XCTAssertFalse(AppPrefs.warnBeforeQuit(from: data(#"{"warn_before_quit":false,"later":1}"#)))
     }
 
-    /// S26 — the bytes QA reads in `.dev/app-prefs.json`, and the round trip.
+    /// S26 — the bytes QA reads in `.dev/config/app-prefs.json`, and the round trip.
     func testTheSavedBytesAreExactAndReadBack() {
         let off = AppPrefs.Values(warnBeforeQuit: false), on = AppPrefs.Values(warnBeforeQuit: true)
         XCTAssertEqual(AppPrefs.encode(off), data(#"{"warn_before_quit":false}"#))
@@ -101,10 +102,110 @@ final class AppPrefsTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir), ["app-prefs.json"])
     }
 
-    func testSavingIntoAMissingDirectoryThrows() throws {
-        let path = try scratchDirectory() + "/missing/app-prefs.json"
+    func testSavingIntoAMissingDirectoryMakesIt() throws {
+        let dir = try scratchDirectory()
+        let path = dir + "/missing/deep/app-prefs.json"
+        try AppPrefs.save(AppPrefs.Values(warnBeforeQuit: false), to: path)
+        XCTAssertFalse(AppPrefs.load(from: path).warnBeforeQuit)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir + "/missing/deep"), ["app-prefs.json"])
+    }
+
+    func testSavingUnderARegularFileThrows() throws {
+        let dir = try scratchDirectory()
+        try data("x").write(to: URL(fileURLWithPath: dir + "/blocker"))
+        let path = dir + "/blocker/app-prefs.json"
         XCTAssertThrowsError(try AppPrefs.save(AppPrefs.Values(warnBeforeQuit: false), to: path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+    }
+
+    // MARK: issue #220 — the file is in the config directory
+
+    func testThePrefsFileSitsInTheConfigDirectory() {
+        XCTAssertEqual(AppPrefs.path(configDir: "/w/.dev/config"), "/w/.dev/config/app-prefs.json")
+        XCTAssertEqual(AppPrefs.path(configDir: "/w/.dev/config/"), "/w/.dev/config/app-prefs.json")
+        XCTAssertEqual(AppPrefs.path(configDir: "/"), "/app-prefs.json")
+    }
+
+    /// A scratch launch pins the socket and not the config directory. Its
+    /// config directory is then the installed app's, so its file stays beside
+    /// the socket. An empty value pins nothing.
+    func testAPinnedSocketWithNoPinnedConfigDirectoryKeepsTheFileBesideIt() {
+        typealias Case = (configOverride: String?, socketOverride: String?, expected: String)
+        let cases: [Case] = [
+            (nil, nil, "/c/tarmac/app-prefs.json"),
+            ("/c/tarmac", "/s/tarmacd.sock", "/c/tarmac/app-prefs.json"),
+            ("/c/tarmac", nil, "/c/tarmac/app-prefs.json"),
+            (nil, "/s/tarmacd.sock", "/s/app-prefs.json"),
+            ("", "/s/tarmacd.sock", "/s/app-prefs.json"),
+            (nil, "", "/c/tarmac/app-prefs.json"),
+            ("", "", "/c/tarmac/app-prefs.json"),
+        ]
+        for c in cases {
+            XCTAssertEqual(
+                AppPrefs.path(
+                    configDir: "/c/tarmac", configOverride: c.configOverride, socket: "/s/tarmacd.sock",
+                    socketOverride: c.socketOverride
+                ),
+                c.expected,
+                "configOverride: \(c.configOverride ?? "nil"), socketOverride: \(c.socketOverride ?? "nil")"
+            )
+        }
+    }
+
+    func testMigrationCopiesTheBytesOfTheOldFile() throws {
+        let dir = try scratchDirectory()
+        let legacy = dir + "/old/app-prefs.json"
+        let path = dir + "/config/deep/app-prefs.json"
+        let bytes = data(#"{"warn_before_quit":false,"a_later_key":[1,2]}"# + "\n")
+        try FileManager.default.createDirectory(atPath: dir + "/old", withIntermediateDirectories: true)
+        try bytes.write(to: URL(fileURLWithPath: legacy))
+        let before = try FileManager.default.attributesOfItem(atPath: legacy)
+
+        try AppPrefs.migrate(from: legacy, to: path)
+
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: path)), bytes)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: legacy)), bytes)
+        let copy = try FileManager.default.attributesOfItem(atPath: path)
+        let old = try FileManager.default.attributesOfItem(atPath: legacy)
+        XCTAssertEqual(copy[.type] as? FileAttributeType, .typeRegular)
+        XCTAssertNotEqual(copy[.systemFileNumber] as? Int, old[.systemFileNumber] as? Int)
+        XCTAssertEqual(old[.systemFileNumber] as? Int, before[.systemFileNumber] as? Int)
+        XCTAssertEqual(old[.modificationDate] as? Date, before[.modificationDate] as? Date)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir + "/config/deep"), ["app-prefs.json"])
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir + "/old"), ["app-prefs.json"])
+    }
+
+    func testTheFileInTheConfigDirectoryWinsOverTheOldOne() throws {
+        let dir = try scratchDirectory()
+        let legacy = dir + "/old/app-prefs.json", path = dir + "/config/app-prefs.json"
+        try FileManager.default.createDirectory(atPath: dir + "/old", withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(atPath: dir + "/config", withIntermediateDirectories: true)
+        let oldBytes = data(#"{"warn_before_quit":false}"#), newBytes = data(#"{"warn_before_quit":true}"#)
+        try newBytes.write(to: URL(fileURLWithPath: path))
+        try oldBytes.write(to: URL(fileURLWithPath: legacy))
+
+        try AppPrefs.migrate(from: legacy, to: path)
+
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: path)), newBytes)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: legacy)), oldBytes)
+    }
+
+    func testWithNoFileNothingIsMade() throws {
+        let dir = try scratchDirectory()
+        let path = dir + "/config/app-prefs.json"
+        try AppPrefs.migrate(from: dir + "/old/app-prefs.json", to: path)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dir + "/config"))
+    }
+
+    func testAnUnreadableOldFileMakesNothing() throws {
+        let dir = try scratchDirectory()
+        let legacy = dir + "/old/app-prefs.json"
+        let path = dir + "/config/app-prefs.json"
+        try FileManager.default.createDirectory(atPath: legacy, withIntermediateDirectories: true)
+        XCTAssertThrowsError(try AppPrefs.migrate(from: legacy, to: path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dir + "/config"))
     }
 
     // MARK: 2610.0005 — the font choices share the file

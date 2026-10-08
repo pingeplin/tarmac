@@ -51,7 +51,7 @@ public enum ChannelPaths {
     /// channels; else `XDG_CONFIG_HOME` when it is absolute (the XDG
     /// specification has an empty or a relative one ignored), else
     /// `home/.config`; then `/tarmac`, and for `.dev` then `/dev`. It has no
-    /// Rust twin: only the app reads it.
+    /// Rust twin: only the app reads and writes it.
     public static func configDir(
         override: String?, xdgConfigHome: String?, home: String, channel: Channel
     ) -> String {

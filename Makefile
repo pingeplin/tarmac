@@ -46,8 +46,10 @@ test: docs-check ghostty-vt
 # through the daemon into spawned ptys so `tarmac open <file>` works inside its
 # terminals. TARMAC_SOCKET/TARMAC_STATE pin a stable per-worktree dev path so
 # simultaneous `make run`s from different worktrees don't share a socket or
-# state file, and none of them can reach the installed Tarmac. TARMAC_DEV_SOCKET
-# pins the QA driver's own socket (issue #166) for the same reason — unpinned,
+# state file, and none of them can reach the installed Tarmac. TARMAC_CONFIG_DIR
+# pins the config directory, where the preferences and the theme files are, for
+# the same reason. TARMAC_DEV_SOCKET pins the QA driver's own socket (issue
+# #166) for the same reason — unpinned,
 # `make qa` from one worktree would drive another's window. TARMAC_DEV_LABEL
 # suffixes the window title with ` · <worktree>`: the dev binary is not a .app,
 # so Launch Services reports no bundle id for it and the title is the only tell
@@ -100,8 +102,9 @@ kill-daemon:
 	fi
 
 # Assemble an unsigned dist/Tarmac.app (arm64). No Apple cert needed. To try
-# it, run Contents/MacOS/tarmac-app with TARMAC_SOCKET and TARMAC_STATE set to
-# scratch paths: launched bare it attaches to the installed Tarmac's daemon.
+# it, run Contents/MacOS/tarmac-app with TARMAC_SOCKET, TARMAC_STATE and
+# TARMAC_CONFIG_DIR set to scratch paths: launched bare it attaches to the
+# installed Tarmac's daemon.
 bundle:
 	$(ROOT)/scripts/bundle.sh
 

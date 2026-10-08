@@ -906,8 +906,8 @@ again within 1 s, commits the quit: the window hides at once and the app exits
 when the key is released. Release is detected by polling the triggering key's
 state every 50 ms, since its keyUp never arrives while `⌘` is held. The app
 menu carries *Warn Before Quitting (⌘Q)*, on by default and saved in
-`app-prefs.json` beside the daemon socket (`AppPrefs`); a file that cannot be
-read means the guard is on.
+`app-prefs.json` in the config directory (`AppPrefs`, below); a file that
+cannot be read means the guard is on.
 
 **Fonts and the Settings window** (`FontSettings`, `SettingsWindowController`).
 *Settings…* (`⌘,`) in the app menu opens one window. A sidebar lists its
@@ -1001,8 +1001,34 @@ list after the built-in ones, by title. The config directory is
 an absolute path, or else `~/.config/tarmac`; a debug build adds `/dev` to
 the last two, and never to `TARMAC_CONFIG_DIR` (`ChannelPaths.configDir`).
 `make run` pins it to `<worktree>/.dev/config`.
-Only the app reads it. `app-prefs.json` is not there: it stays beside the
-daemon socket.
+Only the app uses it.
+
+`app-prefs.json` is there too (issue #220). Up to release 0.16.0 that file
+was beside the daemon socket. At launch, when the config directory has no
+`app-prefs.json` and there is one beside the socket, its bytes are copied
+(`AppPrefs.migrate`), and the config directory is made for it. When both
+exist, the one in the config directory is read, also when it is damaged. The
+old file is not removed and is not written again. A copy that fails is
+logged: the standard settings are then in effect, and the old file is not
+read.
+
+An older build reads and writes only the old file. Started again, it has the
+settings as they were at the first launch of a build with the move, and not a
+later change. A change that is made in the older build stays in the old file:
+a build with the move that has its own file does not read it. Nothing is
+removed in either direction.
+
+One launch keeps the file beside the socket: one that pins `TARMAC_SOCKET`
+and not `TARMAC_CONFIG_DIR` (`AppPrefs.path`). It is taken as a scratch
+launch. Its config directory is the installed app's, or the one that all
+debug builds share, and it must not write its preferences there. For that
+launch nothing moves: the file beside the socket is the one it reads and
+writes, and it reads the theme files of that config directory, as before.
+A pin can be inherited: a terminal of an app that was started with
+`TARMAC_SOCKET`, `TARMAC_STATE` and `TARMAC_CONFIG_DIR`, as a `make run` app
+is, carries them. So a scratch launch from such a terminal that does not set
+`TARMAC_CONFIG_DIR` itself uses that app's file: the launch recipes set all
+three.
 
 A theme file is a Ghostty theme file. The keys that are read:
 
