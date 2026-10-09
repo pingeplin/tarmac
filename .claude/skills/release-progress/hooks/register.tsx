@@ -31,12 +31,13 @@ const poll = async ($: EngineInterface): Promise<Run | null> => {
   const targets = await teeing($)
   const text = await $.fs.read(now.log).catch(() => null)
 
-  if (text === null) {
+  const isOver = targets !== null && !targets.includes(now.log)
+
+  if (text === null && !isOver) {
     return now
   }
 
-  const parsed = parseLog(text)
-  const isOver = targets !== null && !targets.includes(now.log)
+  const parsed = parseLog(text ?? '')
   const seen: Run =
     parsed.status === 'running' && isOver
       ? { ...parsed, log: now.log, status: 'failed', line: ENDED }

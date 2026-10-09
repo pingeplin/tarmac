@@ -28,7 +28,7 @@ const FAILED = /^(FATAL: |make: \*\*\* )/
 const VERSION = /Tarmac-(\d[^\s/]*)\.dmg|\(version ([^)]+)\)|^==> released v(\S+)/m
 
 const RELEASE = /\bmake release\b|scripts\/release\.sh/
-const TEE = /\|\s*tee\s+(?:-a\s+)?(?:"([^"]+)"|'([^']+)'|(\S+))/
+const TEE = /\|\s*tee\s+(?:-a\s+)?(?:"([^"]+)"|'([^']+)'|([^\s;|&)]+))/
 
 const firstGroup = (match: RegExpExecArray | null) =>
   match?.slice(1).find(Boolean) ?? null
