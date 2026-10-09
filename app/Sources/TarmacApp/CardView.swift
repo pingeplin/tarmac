@@ -205,21 +205,22 @@ final class CardView: NSView, ThemeFollowing {
     func setSelected(_ on: Bool) {
         guard on != selected else { return }
         selected = on
-        if !lifted { layer?.borderColor = currentBorderColor.cgColor }
+        paintBorder()
         if !on { hideScrollThumb() }
     }
 
-    /// The resting border: muted for a dead card, teal for the selected one,
-    /// else the plain line. Prime and fresh never change it, and the lift
-    /// border overrides it while a gesture holds the card.
+    /// The border's colour for the card's state now (`CardChrome.border`).
     private var currentBorderColor: NSColor {
-        if borrowed { return Theme.amber }
-        switch CardChrome.borderRole(chromeState) {
-        case .muted: return Theme.line.withAlphaComponent(0.6)
-        case .focus: return Theme.focusBorder
-        case .plain: return Theme.line
+        switch CardChrome.border(chromeState, lifted: lifted, borrowed: borrowed) {
+        case .lift: return Theme.liftBorder
+        case .borrowed: return Theme.amber
+        case .resting(.muted): return Theme.line.withAlphaComponent(0.6)
+        case .resting(.focus): return Theme.focusBorder
+        case .resting(.plain): return Theme.line
         }
     }
+
+    private func paintBorder() { layer?.borderColor = currentBorderColor.cgColor }
 
     private var chromeState: CardChrome.State {
         CardChrome.State(dead: dead, fresh: fresh, prime: prime, selected: selected)
@@ -228,7 +229,7 @@ final class CardView: NSView, ThemeFollowing {
     /// Every colour of the card's own, for the state it is in now.
     func themeChanged() {
         layer?.backgroundColor = Theme.termBg.cgColor
-        layer?.borderColor = (lifted ? Theme.liftBorder : currentBorderColor).cgColor
+        paintBorder()
         // The body's container can fall short of the room under the header;
         // what shows there is the body's own colour.
         clip.layer?.backgroundColor = (docBody == nil ? Theme.termBg : Theme.bg1).cgColor
@@ -258,7 +259,7 @@ final class CardView: NSView, ThemeFollowing {
         htmlBody?.setBorrowed(on)
         guard on != borrowed else { return }
         borrowed = on
-        if !lifted { layer?.borderColor = currentBorderColor.cgColor }
+        paintBorder()
         applyRing()
     }
 
@@ -310,7 +311,7 @@ final class CardView: NSView, ThemeFollowing {
         setLive(false)
         setPrime(false)
         dead = true
-        layer?.borderColor = currentBorderColor.cgColor
+        paintBorder()
         applyDim()
     }
 
@@ -488,16 +489,17 @@ final class CardView: NSView, ThemeFollowing {
         if on {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            layer.borderColor = Theme.liftBorder.cgColor
+            paintBorder()
             CATransaction.commit()
         } else {
             let ease = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1.0)
             let border = CABasicAnimation(keyPath: "borderColor")
-            border.fromValue = Theme.liftBorder.cgColor
-            border.toValue = currentBorderColor.cgColor
+            // Still the lift colour: no paint of a lifted card gives another.
+            border.fromValue = layer.borderColor
+            paintBorder()
+            border.toValue = layer.borderColor
             border.duration = 0.15
             border.timingFunction = ease
-            layer.borderColor = currentBorderColor.cgColor
             layer.add(border, forKey: "liftBorderOff")
         }
     }

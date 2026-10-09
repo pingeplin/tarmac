@@ -1,10 +1,11 @@
-/// Pure rule for a card's resting border. It keeps both `prime` (the keyboard
-/// target) and `fresh` (an agent-opened, unread card) out of the border
-/// entirely: prime is signalled by header tint + shadow, fresh by its halo +
-/// `✚ now` meta in the AppKit layer, never by a border here. So the border
-/// collapses to one axis — dead/selected/plain — with `prime` and `fresh` both
-/// inert. Kept in TarmacKit so the priority is unit-tested away from AppKit
-/// (mirrors `EscFocusAction` / `FocusedClose`).
+/// Pure rule for a card's border. The lift of a move or resize and the borrow
+/// of an HTML card each override the resting border. The resting border keeps
+/// both `prime` (the keyboard target) and `fresh` (an agent-opened, unread
+/// card) out entirely: prime is signalled by header tint + shadow, fresh by its
+/// halo + `✚ now` meta in the AppKit layer, never by a border here. So that
+/// border collapses to one axis — dead/selected/plain — with `prime` and
+/// `fresh` both inert. Kept in TarmacKit so the priority is unit-tested away
+/// from AppKit (mirrors `EscFocusAction` / `FocusedClose`).
 public enum CardChrome {
     /// Visual-state inputs for one card.
     public struct State: Equatable {
@@ -48,5 +49,20 @@ public enum CardChrome {
     public static func borderRole(_ s: State) -> BorderRole {
         if s.dead { return .muted }
         return s.selected ? .focus : .plain
+    }
+
+    /// The border a card draws.
+    public enum Border: Equatable {
+        /// A move or a resize holds the card.
+        case lift
+        /// The borrowed HTML card, which holds the keyboard.
+        case borrowed
+        case resting(BorderRole)
+    }
+
+    /// The whole border rule: lift, then borrowed, then the resting role.
+    public static func border(_ s: State, lifted: Bool, borrowed: Bool) -> Border {
+        if lifted { return .lift }
+        return borrowed ? .borrowed : .resting(borderRole(s))
     }
 }
