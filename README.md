@@ -6,7 +6,9 @@
 
 **A terminal-first cockpit for working alongside CLI coding agents.**
 
-![A Tarmac board: a Claude Code agent (left) ran `tarmac open` on several project docs, which surface as live cards on the right — each tied back to the terminal that opened it by a dashed provenance edge.](docs/images/board.png)
+![A Tarmac board: a terminal (centre) ran `tarmac open` on six project docs, which surface as live cards — here dragged into place around it — each tied back to the terminal that opened it by a dashed provenance edge.](docs/images/board.png)
+
+https://github.com/user-attachments/assets/0cf7d574-c86b-4f36-897d-c4dad23cf585
 
 You run `claude` (or any agent) in a real terminal inside Tarmac. When that
 agent — or you, or a Makefile, a git hook, CI — runs `tarmac open <path>`, the
