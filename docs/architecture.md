@@ -27,8 +27,10 @@ open <path>` connects to the daemon, names a doc, and exits. `open` and
 `--version` are its two verbs that talk to the daemon (`--version` only completes
 the handshake, to report the daemon's and the connected app's versions);
 `tarmac skill` is a purely local third verb that
-prints the agent-facing guide (`core/crates/tarmac-cli/src/SKILL.md`, embedded in
-the binary) and copies it verbatim into each supported agent's skills directory.
+prints the agent-facing guide (`core/crates/tarmac-cli/src/GUIDE.md`, embedded in
+the binary); `tarmac skill install` copies a shim (`SKILL.md` beside it) into
+each supported agent's skills directory, which tells the agent to run
+`tarmac skill` and so cannot go stale with the guide.
 A fourth family, `tarmac dev <verb>`, talks to the **app** rather than the daemon,
 over a second socket the app owns (`tarmac-dev.sock`, beside the daemon's in the
 same per-channel dir; override `TARMAC_DEV_SOCKET`). It is the in-app QA driver

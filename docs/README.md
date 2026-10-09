@@ -57,16 +57,21 @@ in the repo settings, not to push around it.
 | [`coding-style.md`](coding-style.md) | Coding style and the mandatory TDD workflow. What new code is held to. |
 | [`backlog.md`](backlog.md) | The audited list of what is **not** built, and what was removed on purpose. Active *as a list*; its contents are unbuilt by definition. |
 
-### Not a doc — the agent guide
+### Not a doc — the agent guide and its shim
 
-[`../core/crates/tarmac-cli/src/SKILL.md`](../core/crates/tarmac-cli/src/SKILL.md) explains
-`tarmac open` and HTML-card authoring to a coding agent. It carries no status
-banner and is not classified here because it is **not a repo doc**: it is the
-literal artifact `tarmac skill install` copies into an agent's skills directory,
-frontmatter and all, embedded verbatim in the CLI. Edit it as a product asset —
-what you write there is byte-for-byte what an agent reads, on a machine with no
-checkout, so it must stay self-contained: no repo-internal paths, no relative
-links.
+[`../core/crates/tarmac-cli/src/GUIDE.md`](../core/crates/tarmac-cli/src/GUIDE.md) explains
+`tarmac open` and HTML-card authoring to a coding agent: it is what
+`tarmac skill` prints.
+[`../core/crates/tarmac-cli/src/SKILL.md`](../core/crates/tarmac-cli/src/SKILL.md) is the
+shim `tarmac skill install` copies into an agent's skills directory, frontmatter
+and all. An installed copy is never refreshed, so the shim holds no rule: it
+tells the agent to run `tarmac skill`. A new rule goes in the guide.
+
+They carry no status banner and are not classified here because they are
+**not repo docs**: both are embedded verbatim in the CLI. Edit them as product
+assets — what you write there is byte-for-byte what an agent reads, on a
+machine with no checkout, so both must stay self-contained: no repo-internal
+paths, no relative links.
 
 ## PROPOSED — not implemented
 

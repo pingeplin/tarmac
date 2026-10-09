@@ -80,18 +80,16 @@ fn skill_in(home: &std::path::Path) -> Command {
 }
 
 #[test]
-fn skill_prints_the_installable_document_verbatim() {
+fn skill_prints_the_guide_with_no_frontmatter() {
     let home = scratch("print");
     let out = skill_in(&home).output().unwrap();
     assert!(out.status.success());
     let text = String::from_utf8_lossy(&out.stdout);
-    // What is printed IS the artifact: frontmatter first, guide below.
     assert!(
-        text.starts_with("---\nname: tarmac\ndescription: "),
+        text.starts_with("# Tarmac for coding agents\n"),
         "got: {:?}",
         &text[..40.min(text.len())]
     );
-    assert!(text.contains("\n---\n\n# Tarmac for coding agents\n"));
     assert!(text.contains("tarmac open <path>"));
     assert!(text.contains("tarmac-zoom"));
 }
@@ -110,25 +108,23 @@ fn skill_never_talks_to_the_daemon() {
 }
 
 #[test]
-fn install_copies_that_same_document_to_every_target() {
+fn install_writes_the_shim_to_every_target() {
     let home = scratch("install");
     let out = skill_in(&home).arg("install").output().unwrap();
     assert!(out.status.success());
 
-    let printed = String::from_utf8_lossy(&skill_in(&home).output().unwrap().stdout).into_owned();
     let claude = claude_skill(&home);
     let codex = codex_skill(&home);
     let stdout = String::from_utf8_lossy(&out.stdout);
     for path in [&claude, &codex] {
         assert!(path.exists(), "{} was not written", path.display());
         assert!(stdout.contains(&path.display().to_string()), "install must report {}", path.display());
-        // The load-bearing invariant: no transformation between emit and install.
-        assert_eq!(
-            std::fs::read_to_string(path).unwrap(),
-            printed,
-            "{} must be byte-identical to `tarmac skill`",
-            path.display()
-        );
+        let written = std::fs::read_to_string(path).unwrap();
+        assert!(written.starts_with("---\nname: tarmac\ndescription: "), "{} has no frontmatter", path.display());
+        // The shim points at the guide and carries none of it: a rule copied
+        // here goes stale with the installed file.
+        assert!(written.contains("`tarmac skill`"), "{} must name the verb that prints the guide", path.display());
+        assert!(!written.contains("tarmac-zoom"), "{} carries the guide", path.display());
     }
 }
 

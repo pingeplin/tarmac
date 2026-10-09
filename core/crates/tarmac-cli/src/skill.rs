@@ -1,21 +1,25 @@
-//! `tarmac skill` — emit the agent-facing guide, and install it as a `SKILL.md`
-//! into a coding agent's own skills directory.
+//! `tarmac skill` — emit the agent-facing guide, and install a `SKILL.md` that
+//! points at it into a coding agent's own skills directory.
 //!
 //! This verb never touches the daemon socket: it is a pure local file operation,
-//! so it works with nothing running. The guide ships inside the binary because
-//! the cask-installed CLI has no repo checkout to read it from.
+//! so it works with nothing running. Both documents ship inside the binary
+//! because the cask-installed CLI has no repo checkout to read them from.
 //!
-//! `SKILL.md` beside this file IS the artifact — frontmatter and all. It is
-//! printed verbatim and copied verbatim, so what a reviewer reads in the repo is
-//! byte-for-byte what an agent reads after `install`. Nothing here rewrites it;
-//! keep it self-contained (no repo-internal paths, no relative links), because
-//! it is read from a machine that has no checkout.
+//! There are two, on purpose. `GUIDE.md` is printed verbatim, so it is always
+//! the guide of the binary that ran. `SKILL.md` is copied verbatim, and nothing
+//! refreshes a copy after an update: it is a shim that names the verb and
+//! carries no rule that could go stale. Nothing here rewrites either; keep both
+//! self-contained (no repo-internal paths, no relative links), because they are
+//! read from a machine that has no checkout.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// The installable document, verbatim. Editing it is the whole authoring story.
-const SKILL_DOC: &str = include_str!("SKILL.md");
+/// What `tarmac skill` prints, verbatim. Editing it is the whole authoring story.
+const GUIDE: &str = include_str!("GUIDE.md");
+
+/// What `install` writes, verbatim: frontmatter and all.
+const SHIM: &str = include_str!("SKILL.md");
 
 const SKILL_NAME: &str = "tarmac";
 
@@ -160,7 +164,7 @@ fn parse_install(args: &[String]) -> Result<InstallArgs, String> {
 pub fn run(args: &[String]) -> i32 {
     match args.first().map(String::as_str) {
         None => {
-            print!("{SKILL_DOC}");
+            print!("{GUIDE}");
             0
         }
         Some("install") => install(&args[1..]),
@@ -195,7 +199,7 @@ fn install(args: &[String]) -> i32 {
             println!("would install {}", path.display());
             continue;
         }
-        match write_skill(&path, SKILL_DOC) {
+        match write_skill(&path, SHIM) {
             Ok(()) => println!("installed {}", path.display()),
             Err(e) => {
                 eprintln!("tarmac: {e}");
@@ -265,7 +269,7 @@ mod tests {
     /// The frontmatter as key → value, so the contract can be asserted without
     /// pinning key order or forbidding a future third key.
     fn frontmatter() -> Vec<(&'static str, &'static str)> {
-        let rest = SKILL_DOC.strip_prefix("---\n").expect("frontmatter must open on line 1");
+        let rest = SHIM.strip_prefix("---\n").expect("frontmatter must open on line 1");
         let block = rest.split_once("\n---\n").expect("frontmatter must be closed").0;
         block.lines().filter_map(|l| l.split_once(": ")).collect()
     }
@@ -274,33 +278,46 @@ mod tests {
         frontmatter().into_iter().find(|(k, _)| *k == key).unwrap_or_else(|| panic!("missing `{key}`")).1
     }
 
-    // The embedded file is shipped as-is, so its frontmatter is the contract with
+    // The shim is shipped as-is, so its frontmatter is the contract with
     // both agents: Claude Code treats every field as optional, Codex requires a
     // non-empty `name` (<= 64 chars) and `description`. One envelope serves both.
     #[test]
-    fn the_embedded_document_is_a_valid_skill_for_both_agents() {
+    fn the_shim_is_a_valid_skill_for_both_agents() {
         assert_eq!(field("name"), SKILL_NAME);
         assert!(SKILL_NAME.len() <= 64, "Codex caps `name` at 64 chars");
         assert!(!field("description").trim_matches('"').trim().is_empty());
     }
 
     #[test]
-    fn the_document_body_follows_the_frontmatter_and_carries_the_guide() {
-        assert!(SKILL_DOC.contains("\n---\n\n# Tarmac for coding agents\n"));
-        assert!(SKILL_DOC.contains("## Surfacing a file"));
-        assert!(SKILL_DOC.contains("tarmac-zoom"));
-        // It is read on a machine with no checkout, so nothing repo-internal may
-        // leak in — docs-check's ACTIVE rules do not reach this file.
-        assert!(!SKILL_DOC.contains("Doc status"));
-        for link in SKILL_DOC.split("](").skip(1) {
-            let target = link.split(')').next().unwrap_or_default();
-            assert!(target.starts_with("http"), "link resolves nowhere off-checkout: {target}");
-        }
-        // Keep in sync with TOP in scripts/docs-check.mjs.
-        for repo_path in
-            ["core/", "app/", "docs/", "scripts/", "packaging/", ".github/", ".blueprint/"]
-        {
-            assert!(!SKILL_DOC.contains(repo_path), "leaks a repo path: {repo_path}");
+    fn the_shim_names_the_verb_and_carries_no_guide() {
+        assert!(SHIM.contains("`tarmac skill`"));
+        assert!(SHIM.contains("tarmac open <path>"));
+        assert!(!SHIM.contains("tarmac-zoom"));
+    }
+
+    #[test]
+    fn the_guide_opens_on_its_title_with_no_frontmatter() {
+        assert!(GUIDE.starts_with("# Tarmac for coding agents\n"));
+        assert!(GUIDE.contains("## Surfacing a file"));
+        assert!(GUIDE.contains("tarmac-zoom"));
+    }
+
+    // Both are read on a machine with no checkout, so nothing repo-internal may
+    // leak in — docs-check's ACTIVE rules do not reach these files.
+    #[test]
+    fn neither_document_leaks_the_repo() {
+        for doc in [SHIM, GUIDE] {
+            assert!(!doc.contains("Doc status"));
+            for link in doc.split("](").skip(1) {
+                let target = link.split(')').next().unwrap_or_default();
+                assert!(target.starts_with("http"), "link resolves nowhere off-checkout: {target}");
+            }
+            // Keep in sync with TOP in scripts/docs-check.mjs.
+            for repo_path in
+                ["core/", "app/", "docs/", "scripts/", "packaging/", ".github/", ".blueprint/"]
+            {
+                assert!(!doc.contains(repo_path), "leaks a repo path: {repo_path}");
+            }
         }
     }
 

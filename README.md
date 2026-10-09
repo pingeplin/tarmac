@@ -166,7 +166,7 @@ resolves the freshly built CLI). The CLI itself is just:
 tarmac open <path>     # surface a markdown file as a card on the active board
 tarmac --version       # report the cli, daemon, and app versions
 tarmac skill           # print the agent-facing guide to writing Tarmac cards
-tarmac skill install   # install that guide as a SKILL.md for coding agents
+tarmac skill install   # install a SKILL.md that points coding agents at that guide
 ```
 
 `open` and `--version` are the two verbs that talk to the daemon. Inside a Tarmac
@@ -176,10 +176,13 @@ versions that drift independently after an upgrade — this CLI, the running
 daemon, and the app connected to it — plus the channel and socket it resolved; it
 exits 0 whether or not a daemon is running.
 `tarmac skill` never opens the socket: it emits
-[`core/crates/tarmac-cli/src/SKILL.md`](core/crates/tarmac-cli/src/SKILL.md) and copies it
-into Claude Code (`~/.claude/skills`) and Codex (`~/.agents/skills`), so an agent
-knows how to surface files and how to author HTML cards that satisfy the board's
-sandbox and zoom model.
+[`core/crates/tarmac-cli/src/GUIDE.md`](core/crates/tarmac-cli/src/GUIDE.md), which tells an
+agent how to surface files and how to author HTML cards that satisfy the board's
+sandbox and zoom model. `tarmac skill install` copies a short shim,
+[`core/crates/tarmac-cli/src/SKILL.md`](core/crates/tarmac-cli/src/SKILL.md), into Claude
+Code (`~/.claude/skills`) and Codex (`~/.agents/skills`). The shim holds no
+rule: it tells the agent to run `tarmac skill`, so the guide an agent reads is
+always the one of the installed CLI.
 
 ## Repo layout
 
