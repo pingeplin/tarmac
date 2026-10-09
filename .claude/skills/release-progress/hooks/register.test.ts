@@ -110,3 +110,18 @@ test('a release whose process is gone is over, and the band leaves', async ($, o
   expect(ran.text).toContain('ended without finishing')
   expect(await ui.find({ text: 'engine band' })).toBeDefined()
 })
+
+test('a log that cannot be read and has no tee is over, and the band leaves', async ($, on) => {
+  engineBand(on)
+  on('fs.read', () => {
+    throw new Error('ENOENT')
+  })
+  on('process.run', () => ({
+    value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
+  }) as never)
+  const ran = await follow($)
+  const ui = await $.ui.mount(BAND)
+
+  expect(ran.text).toContain('ended without finishing')
+  expect(await ui.find({ text: 'engine band' })).toBeDefined()
+})

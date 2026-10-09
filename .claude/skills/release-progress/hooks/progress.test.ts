@@ -89,6 +89,10 @@ test('a release command names its tee target', async () => {
     '/tmp/a b/r.log',
   )
   expect(logOf('scripts/release.sh | tee -a out.log')).toBe('out.log')
+  expect(logOf('make release 2>&1 | tee /tmp/r.log; exit ${pipestatus[1]}')).toBe(
+    '/tmp/r.log',
+  )
+  expect(logOf('(make release | tee /tmp/r.log) && echo ok')).toBe('/tmp/r.log')
   expect(logOf('make test | tee out.log')).toBe(null)
   expect(logOf('make release')).toBe(null)
 })
