@@ -20,20 +20,30 @@ final class CardHostMessageTests: XCTestCase {
         XCTAssertEqual(CardHostMessage.scrollTo(132.5).json, #"{"tarmac":"scrollTo","y":132.5}"#)
     }
 
-    /// 2610.0002 S24, as 2610.0004 leaves it: the wheel is the web view's,
-    /// not a message, and a held thumb says where the root goes. A fourth
-    /// case does not compile here.
+    func test2610_0010S15FontsCarriesTheVariablesUnderVars() throws {
+        let fonts = CardFontVariables(interfaceFamily: nil, documentFamily: nil, documentSize: 14)
+        let json = CardHostMessage.fonts(fonts).json
+        XCTAssertEqual(json, #"{"tarmac":"fonts","vars":"# + fonts.json + "}")
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+        XCTAssertEqual(object["tarmac"] as? String, "fonts")
+    }
+
+    /// 2610.0002 S24, as 2610.0004 and 2610.0010 leave it: the wheel is the
+    /// web view's, not a message, and a held thumb says where the root goes.
+    /// A fifth case does not compile here.
     func test2610_0004S10TheHostSaysAZoomACullOrAScrollTo() {
         func names(_ message: CardHostMessage) -> String {
             switch message {
             case .zoom: "zoom"
             case .cull: "cull"
             case .scrollTo: "scrollTo"
+            case .fonts: "fonts"
             }
         }
         XCTAssertEqual(names(.zoom(3)), "zoom")
         XCTAssertEqual(names(.cull(true)), "cull")
         XCTAssertEqual(names(.scrollTo(0)), "scrollTo")
+        XCTAssertEqual(names(.fonts(CardFontVariables(interfaceFamily: nil, documentFamily: nil, documentSize: 14))), "fonts")
     }
 
     // MARK: - cull polarity (2609.0002 S1, S2)

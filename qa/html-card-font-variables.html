@@ -1,0 +1,27 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>HTML card font variables</title>
+<style>
+  html, body { margin: 0; }
+  #size { height: calc(var(--tarmac-prose-size, 14px) * 100); background: #2f81f7; }
+  #prose { background: #3fb950; }
+  #mono { background: #d29922; }
+  #load { background: #a371f7; }
+</style>
+<div id="size"></div>
+<div id="prose"></div>
+<div id="mono"></div>
+<div id="load"></div>
+<script>
+  const root = document.documentElement;
+  const length = (name) => getComputedStyle(root).getPropertyValue(name).trim().length;
+  const prose = () => length("--tarmac-prose-font");
+  const mono = () => length("--tarmac-mono-font");
+  document.getElementById("load").style.height = prose() + mono() + "px";
+  const follow = () => {
+    document.getElementById("prose").style.height = prose() + "px";
+    document.getElementById("mono").style.height = mono() + "px";
+  };
+  follow();
+  setInterval(follow, 100);
+</script>

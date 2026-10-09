@@ -8,6 +8,8 @@ public enum CardHostMessage: Equatable, Sendable {
     /// Where the root is scrolled to, in the document's own units: the scroll
     /// thumb is being dragged.
     case scrollTo(Double)
+    /// The CSS properties for the user's fonts, which the root takes as given.
+    case fonts(CardFontVariables)
 
     /// The message as a JSON object, which is also a JavaScript literal.
     public var json: String {
@@ -18,6 +20,8 @@ public enum CardHostMessage: Equatable, Sendable {
             return #"{"tarmac":"cull","culled":\#(culled)}"#
         case .scrollTo(let y):
             return #"{"tarmac":"scrollTo","y":\#(y.javaScriptString)}"#
+        case .fonts(let fonts):
+            return #"{"tarmac":"fonts","vars":\#(fonts.json)}"#
         }
     }
 }

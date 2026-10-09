@@ -748,6 +748,11 @@ no permission-policy feature, and no handle on the app.
   (`started`, its second act, before any byte of the author is parsed); it
   relays `console.log`/`info`/`warn`/`error`, uncaught errors, unhandled
   rejections and `Escape` to its parent,
+  declares `--tarmac-prose-size`, `--tarmac-prose-font` and
+  `--tarmac-mono-font` on the root, in one `:root` rule of a constructed
+  stylesheet (so that the author's `<html style>` is kept and the author's own
+  `:root` rule does not win), from values filled in at load and from `fonts`
+  messages (from the parent only; `started` stays its second act),
   applies the zoom, gates the document's schedulers, scrolls the root where
   the host says while the card's scroll thumb is dragged (`scrollTo`, a
   finite number, from the parent only), and reports where the
@@ -920,8 +925,8 @@ pane has a row for each `FontRole`:
 | Role | What it sets | With nothing chosen |
 | --- | --- | --- |
 | `terminal` | terminal cards | the system's monospaced font |
-| `interface` | card headers, status bar, switcher, zoom control, toasts, hints, the HTML card console; the chrome and code of doc cards | the system's monospaced font |
-| `document` | the prose of markdown doc cards | the system UI font |
+| `interface` | card headers, status bar, switcher, zoom control, toasts, hints, the HTML card console; the chrome and code of doc cards; `--tarmac-mono-font` of HTML cards | the system's monospaced font |
+| `document` | the prose of markdown doc cards; `--tarmac-prose-font` and, with the Document size, `--tarmac-prose-size` of HTML cards | the system UI font |
 
 Each row lists the Mac's font families, *System Default* first; Terminal and
 Interface list only fixed-pitch ones (`FontMenu`). The Terminal and Document
@@ -944,8 +949,13 @@ reads. A change is broadcast down the view tree of the window and of every
 board that is not mounted (`FontFollowing`): terminals rebuild their
 renderer, chrome takes `Theme.mono` again, and doc cards are handed their
 chrome and prose families and their prose size (`FontCSS`) as script
-arguments. The whole font list is read only when the window opens; launch
-asks the Mac for the saved families alone.
+arguments. An HTML card is given the same three values as CSS custom
+properties (`--tarmac-mono-font`, `--tarmac-prose-font`,
+`--tarmac-prose-size`; `CardFontVariables`): the scheme handler fills them
+into the shim for each request, and a `fonts` message carries a change, which
+the card's session sends only when the values differ, so a Terminal size step
+sends an HTML card nothing. The whole font list is read only when the window
+opens; launch asks the Mac for the saved families alone.
 
 **Theme** (`ThemeSettings`, `ThemeCatalog`, `Palette`). The *Theme* pane has
 three groups. *Appearance* has three tiles in the order of `ThemeChoice`:

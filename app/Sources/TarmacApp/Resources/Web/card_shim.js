@@ -1,10 +1,15 @@
-// Console-capture + escape-hatch + zoom + scroll-report + default-scheme shim
-// for sandboxed HTML doc cards (specs 2607.0004, 2607.0006, 2610.0003,
-// 2610.0007). Prepended by CardProtocol.respond to every tarmac-card://
-// response, strictly before the file's own bytes, so it observes
-// console/error/escape activity from the very first line of card script. Must
-// never throw or break the host page — every path here is defensive.
+// Console-capture + escape-hatch + zoom + scroll-report + default-scheme +
+// font-properties shim for sandboxed HTML doc cards (specs 2607.0004,
+// 2607.0006, 2610.0003, 2610.0007, 2610.0010). Prepended by
+// CardProtocol.respond to every tarmac-card:// response, strictly before the
+// file's own bytes, so it observes console/error/escape activity from the very
+// first line of card script. Must never throw or break the host page — every
+// path here is defensive.
 (function () {
+  // Filled with the user's fonts per request (CardFontVariables.filling); the
+  // file as it stands is valid JavaScript and holds none.
+  var bootFonts = [/*tarmac-fonts*/][0];
+
   // The default colour scheme (spec 2610.0007): a card follows the appearance
   // unless its author states a scheme. A meta is the weakest statement there
   // is, so a color-scheme in the author's CSS wins with no code here. But the
@@ -42,6 +47,33 @@
   } catch (e) {
     // The host page counts a frame that has loaded as started.
   }
+
+  // The user's fonts (spec 2610.0010) are custom properties of one rule in a
+  // constructed stylesheet. The inline style of the root would drop an
+  // author's <html style>, and a <style> element would come before the
+  // author's own, whose :root rule would then win.
+  var fontStyle = null;
+
+  function applyFonts(vars) {
+    try {
+      if (!vars || typeof vars !== "object" || Array.isArray(vars)) return;
+      if (!fontStyle) {
+        var sheet = new CSSStyleSheet();
+        sheet.replaceSync(":root{}");
+        document.adoptedStyleSheets = document.adoptedStyleSheets.concat(sheet);
+        fontStyle = sheet.cssRules[0].style;
+      }
+      Object.keys(vars).forEach(function (name) {
+        if (name.indexOf("--tarmac-") === 0 && typeof vars[name] === "string") {
+          fontStyle.setProperty(name, vars[name]);
+        }
+      });
+    } catch (e) {
+      // A page without the properties is the page it was.
+    }
+  }
+
+  applyFonts(bootFonts);
 
   function safeSerialize(args) {
     return Array.prototype.map.call(args, serializeOne);
@@ -310,10 +342,10 @@
 
   window.addEventListener("message", function (e) {
     try {
-      // Only the host drives zoom, the cull and the scroll: a nested iframe or
-      // the card posting at its own window must not. Origin is never asserted
-      // — this document is opaque-origin, so the host's origin string is not
-      // stable.
+      // Only the host drives zoom, the cull, the scroll and the fonts: a nested
+      // iframe or the card posting at its own window must not. Origin is never
+      // asserted — this document is opaque-origin, so the host's origin string
+      // is not stable.
       if (e.source !== window.parent) return;
       var d = e.data;
       if (!d) return;
@@ -323,6 +355,12 @@
       if (d.tarmac === "cull") {
         if (d.culled === true) pauseSchedulers();
         else if (d.culled === false) resumeSchedulers();
+        return;
+      }
+      // Applied at once, even before the document is parsed: unlike the zoom
+      // it waits for nothing, and it sets no timer a culled card would hold.
+      if (d.tarmac === "fonts") {
+        applyFonts(d.vars);
         return;
       }
       // The scroll thumb is being dragged: the root goes where the host says,

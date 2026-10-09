@@ -17,6 +17,9 @@ public struct HTMLCardSession: Equatable, Sendable {
     /// The mode adopted for the current load; nil until its first ready.
     public private(set) var mode: ZoomMode?
     public var culled = false
+    /// The fonts last given. A reload keeps them: the next document is born
+    /// with the values of its request, which a change since then missed.
+    private var fonts: CardFontVariables?
 
     public init() {}
 
@@ -35,6 +38,7 @@ public struct HTMLCardSession: Equatable, Sendable {
             // A document is born not knowing whether its card is culled, and a
             // message sent before it committed went to the page it replaced.
             var effects: [Effect] = [.post(.cull(culled))]
+            if let fonts { effects.append(.post(.fonts(fonts))) }
             let actions = ZoomMode.ready(inForce: mode, meta: meta)
             if actions.magnify { effects.append(.post(.zoom(Double(CardZoom.magnifyK)))) }
             if let line = actions.logLine {
@@ -47,6 +51,13 @@ public struct HTMLCardSession: Equatable, Sendable {
             }
             return effects
         }
+    }
+
+    /// The message to post, or nil when `fonts` is what the document has.
+    public mutating func fontsChanged(_ fonts: CardFontVariables) -> CardHostMessage? {
+        guard fonts != self.fonts else { return nil }
+        self.fonts = fonts
+        return .fonts(fonts)
     }
 
     /// The document was loaded again from disk: its mode is decided afresh, so
