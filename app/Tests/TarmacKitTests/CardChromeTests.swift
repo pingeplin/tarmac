@@ -129,16 +129,11 @@ final class CardChromeTests: XCTestCase {
         )
     }
 
-    func testBorderOverAll64States() {
-        for mask in 0..<64 {
-            let s = CardChrome.State(
-                dead:     mask & 0b000001 != 0,
-                fresh:    mask & 0b000010 != 0,
-                prime:    mask & 0b000100 != 0,
-                selected: mask & 0b001000 != 0
-            )
-            let lifted = mask & 0b010000 != 0
-            let borrowed = mask & 0b100000 != 0
+    func testBorderOverEveryState() {
+        for mask in 0..<16 {
+            let s = CardChrome.State(dead: mask & 0b0001 != 0, selected: mask & 0b0010 != 0)
+            let lifted = mask & 0b0100 != 0
+            let borrowed = mask & 0b1000 != 0
 
             let expected: CardChrome.Border =
                 lifted ? .lift

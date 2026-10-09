@@ -2,10 +2,10 @@
 /// of an HTML card each override the resting border. The resting border keeps
 /// both `prime` (the keyboard target) and `fresh` (an agent-opened, unread
 /// card) out entirely: prime is signalled by header tint + shadow, fresh by its
-/// halo + `✚ now` meta in the AppKit layer, never by a border here. So it
-/// collapses to one axis — dead/selected/plain — with `prime` and `fresh` both
-/// inert. Kept in TarmacKit so the priority is unit-tested away from AppKit
-/// (mirrors `EscFocusAction` / `FocusedClose`).
+/// halo + `✚ now` meta in the AppKit layer, never by a border here. So that
+/// border collapses to one axis — dead/selected/plain — with `prime` and
+/// `fresh` both inert. Kept in TarmacKit so the priority is unit-tested away
+/// from AppKit (mirrors `EscFocusAction` / `FocusedClose`).
 public enum CardChrome {
     /// Visual-state inputs for one card.
     public struct State: Equatable {

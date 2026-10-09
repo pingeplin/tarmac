@@ -209,9 +209,7 @@ final class CardView: NSView, ThemeFollowing {
         if !on { hideScrollThumb() }
     }
 
-    /// The lift border while a gesture holds the card, amber for the borrowed
-    /// one; if not, muted for a dead card, teal for the selected one, else the
-    /// plain line. Prime and fresh never change it.
+    /// The border's colour for the card's state now (`CardChrome.border`).
     private var currentBorderColor: NSColor {
         switch CardChrome.border(chromeState, lifted: lifted, borrowed: borrowed) {
         case .lift: return Theme.liftBorder
@@ -496,11 +494,12 @@ final class CardView: NSView, ThemeFollowing {
         } else {
             let ease = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1.0)
             let border = CABasicAnimation(keyPath: "borderColor")
-            border.fromValue = Theme.liftBorder.cgColor
-            border.toValue = currentBorderColor.cgColor
+            // Still the lift colour: no paint of a lifted card gives another.
+            border.fromValue = layer.borderColor
+            paintBorder()
+            border.toValue = layer.borderColor
             border.duration = 0.15
             border.timingFunction = ease
-            paintBorder()
             layer.add(border, forKey: "liftBorderOff")
         }
     }
