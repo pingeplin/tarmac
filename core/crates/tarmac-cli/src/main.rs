@@ -8,7 +8,7 @@ mod skill;
 
 
 // The `dev` family is a debug-build affordance, so a release binary does not
-// document it: `README.md` and `SKILL.md` leave it out for the same reason, and
+// document it: `README.md` and `GUIDE.md` leave it out for the same reason, and
 // `--help` is at least as user-facing as either. A release `tarmac dev` still
 // exits 1 with DEV_UNAVAILABLE — the verb is recognised, it is just not
 // advertised to someone who can never run it.
@@ -93,7 +93,7 @@ USAGE:
     tarmac open <path>      register a file with the running tarmac app
     tarmac --version        report the cli, daemon, and app versions
     tarmac skill            print the agent-facing Tarmac guide
-    tarmac skill install    install that guide as a SKILL.md for coding agents
+    tarmac skill install    install a SKILL.md that points coding agents at it
 {DEV_USAGE}    tarmac --help           show this help
 
 `tarmac open` is fire-and-forget: anything (you, an agent, a Makefile, a git
