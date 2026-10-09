@@ -1279,7 +1279,7 @@ final class CardShimTests: XCTestCase {
 
     func test2610_0010S11TheFontsGoToTheSheetAndNeverToTheRootsStyleOrAttributes() throws {
         let shim = try loadShim(head: true, fonts: Self.fonts)
-        sendFonts(shim, try XCTUnwrap(String(data: JSONSerialization.data(withJSONObject: vars(Self.otherFonts)), encoding: .utf8)))
+        sendFonts(shim, Self.otherFonts.json)
 
         XCTAssertEqual(try declared(shim), try vars(Self.otherFonts), "S11: the rule holds the message")
         XCTAssertEqual(try shim.strings("Object.keys(h.style)"), ["setProperty"], "S11: the root's style holds no value")
@@ -1296,11 +1296,7 @@ final class CardShimTests: XCTestCase {
     }
 
     func test2610_0010S13AWindowWithNoConstructedStylesheetsLoadsAndStillWorks() throws {
-        let context = try window(meta: "magnify", omitting: "CSSStyleSheet")
-        context.evaluateScript(
-            try source().replacingOccurrences(of: "/*tarmac-fonts*/", with: #"{"--tarmac-prose-size":"16px"}"#)
-        )
-        let shim = Shim(context: context)
+        let shim = try loadShim(omitting: "CSSStyleSheet", fonts: Self.fonts)
         XCTAssertNil(shim.thrown("h.send({ tarmac: 'fonts', vars: { '--tarmac-prose-size': '20px' } })"), "S13: a message")
         shim.run("h.domReady()")
         XCTAssertTrue(try shim.hasPosted(["tarmac": "ready", "meta": "magnify"]), "S13: ready")
@@ -1329,7 +1325,7 @@ final class CardShimTests: XCTestCase {
         expected["--tarmac-prose-size"] = "20px"
         XCTAssertEqual(try declared(shim), expected, "S17: one property named")
 
-        sendFonts(shim, "\(Self.otherFonts.json)")
+        sendFonts(shim, Self.otherFonts.json)
         XCTAssertEqual(try declared(shim), try vars(Self.otherFonts), "S17: all three named")
         XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 1, "S17: still one sheet")
     }
@@ -1366,7 +1362,7 @@ final class CardShimTests: XCTestCase {
     func test2610_0010S19AMessageIsAppliedAtOnceAndTheLoadChangesNothingAfterIt() throws {
         for (shim, pageSheets) in [(try loadShim(fonts: Self.fonts), 0), (try loadShim(), 1)] {
             if pageSheets > 0 { shim.run("document.adoptedStyleSheets = [{ page: true }]") }
-            sendFonts(shim, "\(Self.otherFonts.json)")
+            sendFonts(shim, Self.otherFonts.json)
             XCTAssertEqual(try declared(shim, sheet: pageSheets), try vars(Self.otherFonts), "S19: before DOMContentLoaded")
 
             shim.run("h.domReady()")
@@ -1378,9 +1374,10 @@ final class CardShimTests: XCTestCase {
 
     func test2610_0010S20AMessageSchedulesNothingLeavesTheZoomAloneAndIsAppliedWhilePaused() throws {
         let shim = try loadShim(fonts: Self.fonts)
-        let before = shim.run("JSON.stringify([h.calls, h.pendingFrameIds(), h.pendingTimeoutIds()])").toString()
-        sendFonts(shim, "\(Self.otherFonts.json)")
-        XCTAssertEqual(shim.run("JSON.stringify([h.calls, h.pendingFrameIds(), h.pendingTimeoutIds()])").toString(), before)
+        let scheduled = "JSON.stringify([h.calls, h.pendingFrameIds(), h.pendingTimeoutIds()])"
+        let before = shim.run(scheduled).toString()
+        sendFonts(shim, Self.otherFonts.json)
+        XCTAssertEqual(shim.run(scheduled).toString(), before)
         XCTAssertEqual(shim.flag("'zoom' in h.style"), false, "S20: no zoom")
         XCTAssertEqual(try declared(shim), try vars(Self.otherFonts), "S20: live")
 
