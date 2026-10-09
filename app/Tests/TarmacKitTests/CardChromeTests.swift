@@ -111,4 +111,43 @@ final class CardChromeTests: XCTestCase {
     func testIdleCardIsPlain() {
         XCTAssertEqual(CardChrome.borderRole(CardChrome.State()), .plain)
     }
+
+    // MARK: - The whole border: lift, then borrowed, then the resting role
+
+    /// A terminal that exits while its card is dragged keeps the lift border.
+    func testLiftWinsOverBorrowedDeadAndSelected() {
+        XCTAssertEqual(
+            CardChrome.border(CardChrome.State(dead: true, selected: true), lifted: true, borrowed: true),
+            .lift
+        )
+    }
+
+    func testBorrowedWinsOverDeadAndSelected() {
+        XCTAssertEqual(
+            CardChrome.border(CardChrome.State(dead: true, selected: true), lifted: false, borrowed: true),
+            .borrowed
+        )
+    }
+
+    func testBorderOverAll64States() {
+        for mask in 0..<64 {
+            let s = CardChrome.State(
+                dead:     mask & 0b000001 != 0,
+                fresh:    mask & 0b000010 != 0,
+                prime:    mask & 0b000100 != 0,
+                selected: mask & 0b001000 != 0
+            )
+            let lifted = mask & 0b010000 != 0
+            let borrowed = mask & 0b100000 != 0
+
+            let expected: CardChrome.Border =
+                lifted ? .lift
+                : borrowed ? .borrowed
+                : .resting(s.dead ? .muted : s.selected ? .focus : .plain)
+            XCTAssertEqual(
+                CardChrome.border(s, lifted: lifted, borrowed: borrowed), expected,
+                "state \(s), lifted \(lifted), borrowed \(borrowed)"
+            )
+        }
+    }
 }
