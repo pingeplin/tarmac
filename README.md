@@ -8,6 +8,8 @@
 
 ![A Tarmac board: a terminal (centre) ran `tarmac open` on six project docs, which surface as live cards — here dragged into place around it — each tied back to the terminal that opened it by a dashed provenance edge.](docs/images/board.png)
 
+https://github.com/user-attachments/assets/0cf7d574-c86b-4f36-897d-c4dad23cf585
+
 You run `claude` (or any agent) in a real terminal inside Tarmac. When that
 agent — or you, or a Makefile, a git hook, CI — runs `tarmac open <path>`, the
 referenced markdown doc appears as a card on an infinite, pannable, zoomable
