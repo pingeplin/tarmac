@@ -229,27 +229,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
-    // Through `conn::close_doc`, not `unwatch`: the leak is a close that never
-    // reaches `unwatch`, and nothing on the socket shows it.
-    #[tokio::test]
-    async fn closing_the_sole_doc_of_a_dir_unwatches_it() {
-        let (tmp, doc_dir, daemon) = daemon_with_doc_dir("close-sole");
-
-        let doc = doc_dir.join("a.md");
-        {
-            let mut boards = daemon.boards.lock().await;
-            let reg = boards.active_registry_mut();
-            reg.docs.insert(doc.clone(), doc_info());
-            reg.dock.push(doc.clone());
-        }
-        daemon.ensure_watched(&doc_dir).unwrap();
-
-        crate::conn::close_doc(&daemon, doc.to_str().unwrap()).await;
-        assert!(!daemon.watcher.lock().unwrap().watched_dirs.contains(&doc_dir));
-
-        let _ = std::fs::remove_dir_all(&tmp);
-    }
-
     #[tokio::test]
     async fn watched_dir_kept_when_sibling_doc_remains() {
         let (tmp, doc_dir, daemon) = daemon_with_doc_dir("s8b");

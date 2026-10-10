@@ -411,7 +411,7 @@ async fn delete_board(daemon: &Arc<Daemon>, conn: &mut AppConn, board_id: &str) 
     }
 }
 
-pub async fn close_doc(daemon: &Daemon, path: &str) {
+async fn close_doc(daemon: &Daemon, path: &str) {
     let path = Path::new(path);
     // The lock is released at the end of this statement, before any unwatch.
     let (removed, should_unwatch) = daemon.boards.lock().await.active_registry_mut().close_doc(path);
