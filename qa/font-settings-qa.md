@@ -114,6 +114,14 @@ click, a wheel and a Control wheel at P change none of `focused_card`, `cx`,
   Accessibility, the same `key ctrl+c` fails. Recorded in `docs/backlog.md`
   and in the dev-channel skill; the driver is not changed here.
 
+  **2026-10-10, #207: the driver is changed.** A press with Control is now
+  built as a `CGEvent`. Measured after the Settings window was shown, under
+  the ABC and the Zhuyin input source: `key <term> ctrl+c` ends `sleep` and
+  `cat`, `ctrl+f` and `ctrl+r` reach the tty (it echoes `^F^R`), the window's
+  frame stays 730, 189, 1100 × 732, and `make qa` passes 27 of 27 checks in
+  that process (run under ABC). One real ⌃C from the keyboard, under ABC with
+  Settings shown, also reached the PTY. The backlog entry is removed.
+
 ## Regression: `make qa`
 
 The scenario suite of the QA driver, which covers the paths this change
