@@ -4,9 +4,9 @@
 
 mod common;
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use common::{LONG, Spawn, TestDaemon, cli_open, write_doc};
+use common::{LONG, Spawn, TestDaemon, cli_open, mtime_ms, none_within, settle, touch, write_doc};
 use tarmac_protocol::{BoardMeta, BoardViewport, DocEntry, Msg, Tile};
 
 fn term_tile(term_id: &str, x: f64) -> Tile {
@@ -343,3 +343,92 @@ fn reconnect_rebinds_live_terms_and_replays_scrollback() {
     );
     app2.recv_output_containing("t0", "scrollmark");
 }
+
+// Dropping the deleted board's watches restarts the FSEvents stream once for
+// each directory, and the stream reports nothing from those gaps (#249). A doc
+// of a board that is left changes in one: the daemon must still say so.
+#[test]
+fn board_delete_reports_a_change_made_while_it_dropped_the_watches() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+
+    let kept = write_doc(&daemon.dir.join("kept/x.md"), "x\n");
+    cli_open(&daemon.sock, &kept);
+    app.recv_doc_opened_for(&kept);
+
+    app.send(&Msg::BoardCreate);
+    app.recv_restore_for("board-1");
+    for i in 0..100 {
+        let doc = write_doc(&daemon.dir.join(format!("gone/{i}/b.md")), "b\n");
+        cli_open(&daemon.sock, &doc);
+        app.recv_doc_opened_for(&doc);
+    }
+    app.send(&Msg::BoardSwitch { board_id: "board-0".into() });
+    app.recv_restore_for("board-0");
+    settle();
+
+    // 100 directories take about 100 ms to drop; the edit is inside that time.
+    app.send(&Msg::BoardDelete { board_id: "board-1".into() });
+    std::thread::sleep(Duration::from_millis(20));
+    touch(&kept);
+    let changed = app.recv_file_event_since(&kept, mtime_ms(&kept));
+    // The restore that follows the delete already has the change.
+    let restored = app.recv_restore_for("board-0");
+    assert_eq!(restored.docs.iter().find(|d| d.path == kept).unwrap().last_changed_ms, Some(changed));
+}
+
+// The check after a delete compares each file with what it was before the
+// delete. A doc that did not change gets no event, whatever its mtime is: one
+// in the future, and one the daemon never reported.
+#[test]
+fn board_delete_sends_no_file_event_for_a_doc_that_did_not_change() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+
+    let plain = write_doc(&daemon.dir.join("docs/plain.md"), "p\n");
+    let future = write_doc(&daemon.dir.join("docs/future.md"), "f\n");
+    std::fs::File::options()
+        .write(true)
+        .open(&future)
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() + Duration::from_secs(3600))
+        .unwrap();
+    // A watch that is attached at once replays these writes as events, and
+    // the docs would then have a reported change.
+    std::thread::sleep(Duration::from_millis(1500));
+    for doc in [&plain, &future] {
+        cli_open(&daemon.sock, doc);
+        app.recv_doc_opened_for(doc);
+    }
+    app.send(&Msg::BoardCreate);
+    app.recv_restore_for("board-1");
+    app.send(&Msg::BoardSwitch { board_id: "board-0".into() });
+    app.recv_restore_for("board-0");
+    // Events from before the delete are not this test's.
+    none_within(&mut app, Duration::from_millis(600), |_| false);
+
+    app.send(&Msg::BoardDelete { board_id: "board-1".into() });
+    assert!(
+        none_within(&mut app, Duration::from_millis(800), |m| matches!(m, Msg::FileEvent { .. })),
+        "no file changed during the delete"
+    );
+}
+
+// The delete itself schedules the save. The test first waits for the save of
+// the create and lets the debounce pass, so no earlier save can drop the board.
+#[test]
+fn board_delete_persists() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let saved_boards = |v: &serde_json::Value| v["boards"].as_array().map_or(0, Vec::len);
+
+    app.send(&Msg::BoardCreate);
+    app.recv_restore_for("board-1");
+    daemon.wait_for_state("board-1 saved", |v| saved_boards(v) == 2);
+    settle();
+
+    app.send(&Msg::BoardDelete { board_id: "board-1".into() });
+    assert_eq!(board_ids(&app.recv_board_list().0), vec!["board-0"]);
+    daemon.wait_for_state("board-1 gone from the saved state", |v| saved_boards(v) == 1);
+}
+

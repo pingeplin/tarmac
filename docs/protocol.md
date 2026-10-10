@@ -395,6 +395,9 @@ slug id, so there is no id on the request. `board_rename` with an empty `name`
 clears the name back to the slug fallback. `board_delete` kills the board's ptys
 and is a **no-op when it targets the last board**; if the deleted board was
 active, the daemon fixes `active` and sends the new active board's `restore`.
+A doc of the active board whose file changed during the delete gets a
+`file_event` before that `board_list`: the delete drops the board's directory
+watches, and the watcher reports nothing while it does.
 
 ### Board meta
 

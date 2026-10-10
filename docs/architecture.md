@@ -179,7 +179,7 @@ reports.
 | | `BoardSwitch {board_id}` | app→D | make a board active |
 | | `BoardCreate` | app→D | mint a fresh board |
 | | `BoardRename {board_id, name}` | app→D | set/clear display name |
-| | `BoardDelete {board_id}` | app→D | remove a board (refuses the last) |
+| | `BoardDelete {board_id}` | app→D | remove a board (refuses the last); a directory that only its docs were in is no longer watched, and a doc of the active board whose file changed during the delete gets its `file_event` before the board list |
 | Teardown | `TermClose {term_id}` | app→D | kill a terminal's pty and forget it |
 | | `DocClose {path}` | app→D | drop a doc from the active board; its directory stays watched while any board has a doc there |
 
@@ -228,7 +228,7 @@ Daemon
  │                     └─ Registry { docs, dock, tiles, board: viewport }
  ├─ terms:       Mutex<HashMap<term_id, Arc<TermHandle>>>   all live PTYs, global
  ├─ term_boards: Mutex<HashMap<term_id, BoardId>>           which board owns a term
- └─ watcher:     std::sync::Mutex<WatcherState>             notify debouncer
+ └─ watcher:     std::sync::Mutex<WatcherState>             notify debouncer + docs per directory
 ```
 
 A board is the unit that became N in M3. The N boards sit behind **one coarse
@@ -244,9 +244,13 @@ fixes `active` to the board now at the clamped deleted index.
 statement at a time, dropped before the next — never nested**. The clearest
 example is `BoardDelete`: snapshot the board's term_ids under `term_boards` and
 drop; clone their `Arc<TermHandle>`s under `terms` and drop; **kill with no lock
-held**; then `boards.delete()`; then recompute counts and re-push. The
+held**; then `docs::doc_mtimes`, `Daemon::delete_board` and
+`docs::push_changes_since`; then recompute counts and re-push. The
 per-terminal scrollback ring uses a `std::sync::Mutex` that is **never held
-across an `.await`** — locked only for a synchronous push/snapshot.
+across an `.await`** — locked only for a synchronous push/snapshot. The watcher's
+mutex is a `std::sync::Mutex` too and is never held across an `.await`, but it
+is held for the notify call that starts or drops a watch. The `boards` lock is
+never held during a watcher call.
 
 ### Terminal sessions
 
@@ -285,11 +289,34 @@ directly misses rewrites. Events are filtered by *path only, never by event
 kind*. On a hit the daemon stats the file, records `last_changed_ms` **before**
 pushing (so a crash never loses the fact), and pushes `FileEvent`.
 
+The watch set is one per daemon, not per board. The watcher counts the
+registered docs in each directory (`WatcherState.doc_counts`), one for each
+board that has the doc, and a directory is watched from its first doc to its
+last. `Daemon::new` counts each restored doc. After that, three `Daemon`
+methods are the only code that changes the count, each
+under the watcher's own lock and with the `boards` lock released:
+`open_doc` adds one **before** it registers the doc (and takes it off again
+when the doc was already on that board), `close_doc` and `delete_board` take
+one off for each doc **after** they removed it. So the count is never below
+the number of registered docs, and an open and a close in one directory end
+with the same watch in each order. A count stands when the watch itself
+fails at startup (the directory is gone): the doc is still registered, and it
+must hold the watch that a later open in that directory starts.
+
+Each `watch` and `unwatch` restarts the FSEvents stream, and the stream
+reports nothing from the gap. A board delete can drop many watches in a row,
+so the delete arm reads each registered doc's mtime before it
+(`docs::doc_mtimes`) and compares after it (`docs::push_changes_since`): a doc
+of the active board whose file is not what it was, and whose new mtime the
+watcher has not reported, gets a `file_event`. Nothing older than the delete
+is reported this way. A `doc_close` and an open in a new directory have the
+same gap for one restart and run no such check (#253).
+
 `tarmac open` end-to-end: the CLI canonicalizes the path, connects, reads
 `TARMAC_TERM_ID` from its env, and sends `Open`. The daemon re-canonicalizes
-(FSEvents reports resolved paths), validates it's a regular file, ensures the
-parent dir is watched, **resolves the target board** (explicit `board_id` →
-caller term's board → active), upserts the doc into that board's registry,
+(FSEvents reports resolved paths), validates it's a regular file, **resolves
+the target board** (explicit `board_id` → caller term's board → active), counts
+the doc toward its parent dir's watch, upserts the doc into that board's registry,
 derives repo metadata (walks parents for `.git`; an FNV-1a color index, which
 the app maps onto its palette without hashing anything itself), and pushes
 `DocOpened`.
@@ -1208,7 +1235,7 @@ effect; and `theme`: the `choice`, the variant `in_effect` and the `name` (the i
 
 **`tarmac open` → a card.** Agent runs `tarmac open plan.md` inside a tarmac pty
 → CLI canonicalizes + reads `TARMAC_TERM_ID` + sends `Open` → daemon resolves the
-caller's board, upserts the doc, ensures the parent dir is watched, derives repo
+caller's board, counts the doc toward its parent dir's watch, upserts the doc, derives repo
 metadata, pushes `DocOpened` → app lands a `fresh` card in the first free slot
 right of the caller terminal, with a provenance edge → agent edits the file →
 daemon `FileEvent` → the card re-renders and its header shows `✎ Ns`.

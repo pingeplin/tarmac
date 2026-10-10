@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -8,7 +8,7 @@ use tarmac_protocol::Msg;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::{debug, warn};
 
-use crate::boards::DocInfo;
+use crate::boards::{DocInfo, Registry};
 use crate::state::Daemon;
 
 pub struct RepoInfo {
@@ -62,62 +62,58 @@ pub async fn handle_open(
     if !meta.is_file() {
         return Err(format!("not a regular file: {}", canon.display()));
     }
-    let parent = canon
-        .parent()
-        .ok_or_else(|| format!("path has no parent directory: {}", canon.display()))?;
-    daemon
-        .ensure_watched(parent)
-        .map_err(|e| format!("cannot watch {}: {e}", parent.display()))?;
-
     // `None` resolves to the active board inside `registry_mut`.
     let target = match (board_id, &term_id) {
         (Some(id), _) => Some(id),
         (None, Some(t)) => daemon.term_boards.lock().await.get(t).cloned(),
         (None, None) => None,
     };
-
-    // Upsert before pushing so the doc_opened entry reflects the post-open state.
-    let entry = {
-        let mut boards = daemon.boards.lock().await;
-        let reg = boards.registry_mut(target.as_deref());
-        match reg.docs.get_mut(&canon) {
-            Some(info) => {
-                info.via = via.to_owned();
-                info.last_opened_ms = epoch_ms(SystemTime::now());
-                // Only cli opens may clear read; a user re-open leaves it. The
-                // dock slot never moves on re-open. A re-open carrying a term_id
-                // updates the provenance owner; one without keeps the prior owner.
-                if via == "cli" {
-                    info.read = false;
-                }
-                if term_id.is_some() {
-                    info.term_id = term_id.clone();
-                }
-            }
-            None => {
-                let repo = derive_repo(&canon);
-                reg.docs.insert(
-                    canon.clone(),
-                    DocInfo {
-                        via: via.to_owned(),
-                        read: via != "cli",
-                        repo: repo.as_ref().map(|r| r.name.clone()),
-                        repo_root: repo.as_ref().map(|r| r.root.clone()),
-                        repo_color: repo.as_ref().map(|r| r.color),
-                        last_changed_ms: None,
-                        last_opened_ms: epoch_ms(SystemTime::now()),
-                        term_id: term_id.clone(),
-                    },
-                );
-                reg.dock.push(canon.clone());
-            }
-        }
-        reg.entry(&canon).expect("doc just upserted")
-    };
-    daemon.mark_dirty();
+    let entry = daemon
+        .open_doc(target.as_deref(), &canon, via, term_id)
+        .await
+        .map_err(|e| e.to_string())?;
     debug!("doc opened via {via}: {}", canon.display());
     daemon.push(Msg::DocOpened(entry)).await;
     Ok(())
+}
+
+/// Registers `path` in `reg`, or refreshes the doc already there. True when
+/// the doc is new to `reg`.
+pub fn upsert_doc(reg: &mut Registry, path: &Path, via: &str, term_id: Option<String>) -> bool {
+    match reg.docs.get_mut(path) {
+        Some(info) => {
+            info.via = via.to_owned();
+            info.last_opened_ms = epoch_ms(SystemTime::now());
+            // Only cli opens may clear read; a user re-open leaves it. The
+            // dock slot never moves on re-open. A re-open carrying a term_id
+            // updates the provenance owner; one without keeps the prior owner.
+            if via == "cli" {
+                info.read = false;
+            }
+            if term_id.is_some() {
+                info.term_id = term_id;
+            }
+            false
+        }
+        None => {
+            let repo = derive_repo(path);
+            reg.docs.insert(
+                path.to_owned(),
+                DocInfo {
+                    via: via.to_owned(),
+                    read: via != "cli",
+                    repo: repo.as_ref().map(|r| r.name.clone()),
+                    repo_root: repo.as_ref().map(|r| r.root.clone()),
+                    repo_color: repo.as_ref().map(|r| r.color),
+                    last_changed_ms: None,
+                    last_opened_ms: epoch_ms(SystemTime::now()),
+                    term_id,
+                },
+            );
+            reg.dock.push(path.to_owned());
+            true
+        }
+    }
 }
 
 pub async fn watch_loop(daemon: Arc<Daemon>, mut rx: UnboundedReceiver<DebounceEventResult>) {
@@ -149,11 +145,49 @@ pub async fn watch_loop(daemon: Arc<Daemon>, mut rx: UnboundedReceiver<DebounceE
     }
 }
 
+/// The mtime of each registered doc's file, `None` for a file that is not
+/// there: what `push_changes_since` compares with.
+pub async fn doc_mtimes(daemon: &Arc<Daemon>) -> HashMap<PathBuf, Option<u64>> {
+    let paths: HashSet<PathBuf> = {
+        let boards = daemon.boards.lock().await;
+        boards.iter().flat_map(|b| b.registry.docs.keys().cloned()).collect()
+    };
+    paths.into_iter().map(|path| { let mtime = mtime_ms(&path); (path, mtime) }).collect()
+}
+
+/// Reports each doc of the active board whose file is not what it was when
+/// `before` was taken. The FSEvents stream restarts on every change of the
+/// watch set and reports nothing from the gap, so a caller that drops many
+/// watches takes `doc_mtimes` first and runs this after.
+pub async fn push_changes_since(daemon: &Arc<Daemon>, before: &HashMap<PathBuf, Option<u64>>) {
+    for (path, &was) in before {
+        let Some(now) = mtime_ms(path) else { continue };
+        let reported = {
+            let boards = daemon.boards.lock().await;
+            let Some(info) = boards.active_registry().docs.get(path) else { continue };
+            info.last_changed_ms
+        };
+        if changed_unreported(was, now, reported) {
+            stat_and_push(daemon, path).await;
+        }
+    }
+}
+
+/// True for a file whose mtime `now` is not the one it had (`was`), unless
+/// the watcher has reported that mtime already.
+fn changed_unreported(was: Option<u64>, now: u64, reported: Option<u64>) -> bool {
+    was != Some(now) && reported != Some(now)
+}
+
+fn mtime_ms(path: &Path) -> Option<u64> {
+    std::fs::metadata(path).and_then(|meta| meta.modified()).map(epoch_ms).ok()
+}
+
 /// Stat `path` and, if it is a doc on the ACTIVE board, record the real mtime and
 /// push `file_event`. Returns whether it pushed.
 ///
-/// The sole producer of `Msg::FileEvent`: the notify watcher and the on-demand
-/// `doc_refresh` share it, so the always-push rule (the mtime goes out changed
+/// The sole producer of `Msg::FileEvent`: the notify watcher, the on-demand
+/// `doc_refresh` and `push_changes_since` share it, so the always-push rule (the mtime goes out changed
 /// or not — "did anything change" is answered app-side by value) and the
 /// active-board scoping are defined once. The registry lookup doubles as that
 /// scoping check, which is why an unknown path costs one lock and no push.
@@ -174,4 +208,21 @@ pub async fn stat_and_push(daemon: &Arc<Daemon>, path: &Path) -> bool {
         .push(Msg::FileEvent { path: path.to_string_lossy().into_owned(), mtime_ms })
         .await;
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_file_that_is_not_what_it_was_and_was_not_reported_is_a_change() {
+        assert!(changed_unreported(Some(100), 150, None));
+        assert!(changed_unreported(Some(100), 150, Some(100)));
+        assert!(changed_unreported(Some(100), 40, None), "a replaced file can have an older mtime");
+        assert!(changed_unreported(None, 150, None), "the file was not there before");
+
+        assert!(!changed_unreported(Some(100), 100, None), "the same file");
+        assert!(!changed_unreported(Some(100), 100, Some(60)));
+        assert!(!changed_unreported(Some(100), 150, Some(150)), "the watcher reported it already");
+    }
 }

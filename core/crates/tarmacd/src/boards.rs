@@ -202,12 +202,6 @@ impl Boards {
         self.index_of(id).is_some()
     }
 
-    /// Whether any board has a doc directly in `dir`. The watch set is shared by
-    /// every board, so one board's registry cannot answer this.
-    pub fn dir_in_use(&self, dir: &Path) -> bool {
-        self.boards.iter().any(|b| b.registry.docs.keys().any(|p| p.parent() == Some(dir)))
-    }
-
     /// Each board's identity plus its live-pty count, taken from `live` (the
     /// terms live on `Daemon`, not here); a board missing from the map has none.
     pub fn board_list_msg(&self, live: &HashMap<BoardId, Vec<String>>) -> Msg {
@@ -276,22 +270,21 @@ impl Boards {
         }
     }
 
-    /// Refused (false) for the last board or an unknown id. Deleting the active
-    /// board activates the board now at its index (clamped to the new last).
-    pub fn delete(&mut self, id: &str) -> bool {
+    /// Returns the removed board. Refused (`None`) for the last board or an
+    /// unknown id. Deleting the active board activates the board now at its
+    /// index (clamped to the new last).
+    pub fn delete(&mut self, id: &str) -> Option<Board> {
         if self.boards.len() <= 1 {
-            return false;
+            return None;
         }
-        let Some(idx) = self.index_of(id) else {
-            return false;
-        };
+        let idx = self.index_of(id)?;
         let was_active = self.active == id;
-        self.boards.remove(idx);
+        let board = self.boards.remove(idx);
         if was_active {
             let new_idx = idx.min(self.boards.len() - 1);
             self.active = self.boards[new_idx].id.clone();
         }
-        true
+        Some(board)
     }
 }
 
@@ -363,7 +356,7 @@ mod tests {
     #[test]
     fn delete_refuses_last_board() {
         let mut boards = Boards::single();
-        assert!(!boards.delete("board-0"), "the last board can't be deleted");
+        assert!(boards.delete("board-0").is_none(), "the last board can't be deleted");
         assert_eq!(boards.iter().count(), 1, "board-0 is still present");
         assert_eq!(boards.active_id(), "board-0");
     }
@@ -373,7 +366,7 @@ mod tests {
         let mut boards = Boards::single();
         boards.create(); // board-1, now active
         boards.set_active("board-0");
-        assert!(boards.delete("board-1"));
+        assert!(boards.delete("board-1").is_some());
         let ids: Vec<&str> = boards.iter().map(|b| b.id.as_str()).collect();
         assert_eq!(ids, vec!["board-0"]);
         assert_eq!(boards.active_id(), "board-0", "active is untouched by a non-active delete");
@@ -384,7 +377,7 @@ mod tests {
         let mut boards = Boards::single();
         boards.create(); // board-1, active
         assert_eq!(boards.active_id(), "board-1");
-        assert!(boards.delete("board-1"));
+        assert!(boards.delete("board-1").is_some());
         // active falls back to the board now at the deleted index (board-0).
         assert_eq!(boards.active_id(), "board-0");
         assert_eq!(boards.iter().count(), 1);
@@ -394,7 +387,7 @@ mod tests {
     fn delete_unknown_id_is_noop() {
         let mut boards = Boards::single();
         boards.create(); // board-1
-        assert!(!boards.delete("board-404"));
+        assert!(boards.delete("board-404").is_none());
         assert_eq!(boards.iter().count(), 2);
     }
 
@@ -411,17 +404,5 @@ mod tests {
         assert!(reg.dock.contains(&doc));
         assert!(reg.close_doc(&doc));
         assert!(!reg.dock.contains(&doc));
-    }
-
-    #[test]
-    fn dir_in_use_sees_a_doc_on_any_board() {
-        let mut boards = Boards::single();
-        let other = boards.create();
-        boards.registry_mut(Some(DEFAULT_BOARD_ID)).docs.insert(PathBuf::from("/tmp/d/a.md"), doc_info());
-        assert_eq!(boards.active_id(), other);
-
-        assert!(boards.dir_in_use(Path::new("/tmp/d")));
-        assert!(!boards.dir_in_use(Path::new("/tmp")), "a doc in a subdirectory does not count");
-        assert!(!boards.dir_in_use(Path::new("/tmp/e")));
     }
 }
