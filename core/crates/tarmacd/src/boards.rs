@@ -18,6 +18,17 @@ pub struct DocInfo {
     pub term_id: Option<String>,
 }
 
+impl DocInfo {
+    /// True when a file with this mtime changed and no `file_event` said so.
+    /// A doc with no reported change is compared with the time it was opened.
+    pub fn changed_unseen(&self, mtime_ms: u64) -> bool {
+        match self.last_changed_ms {
+            Some(reported) => mtime_ms != reported,
+            None => mtime_ms > self.last_opened_ms,
+        }
+    }
+}
+
 pub fn term_tile() -> Tile {
     Tile { kind: "term".into(), ..Default::default() }
 }
@@ -389,6 +400,19 @@ mod tests {
         boards.create(); // board-1
         assert!(boards.delete("board-404").is_none());
         assert_eq!(boards.iter().count(), 2);
+    }
+
+    #[test]
+    fn a_file_newer_than_the_last_reported_change_is_unseen() {
+        let never_changed = DocInfo { last_opened_ms: 100, ..doc_info() };
+        assert!(never_changed.changed_unseen(101), "changed after it was opened");
+        assert!(!never_changed.changed_unseen(100));
+        assert!(!never_changed.changed_unseen(40), "last changed before it was opened");
+
+        let reported = DocInfo { last_changed_ms: Some(150), ..never_changed };
+        assert!(!reported.changed_unseen(150), "the change that was reported");
+        assert!(reported.changed_unseen(151));
+        assert!(reported.changed_unseen(120), "a replaced file can have an older mtime");
     }
 
     fn doc_info() -> DocInfo {

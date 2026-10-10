@@ -145,6 +145,23 @@ pub async fn watch_loop(daemon: Arc<Daemon>, mut rx: UnboundedReceiver<DebounceE
     }
 }
 
+/// Reports each doc of the active board whose file changed with no event.
+/// The FSEvents stream restarts on every change of the watch set and reports
+/// nothing from the gap, so a caller that changed the set runs this after it.
+pub async fn push_missed_changes(daemon: &Arc<Daemon>) {
+    let paths: Vec<PathBuf> = daemon.boards.lock().await.active_registry().docs.keys().cloned().collect();
+    for path in paths {
+        let Ok(mtime_ms) = std::fs::metadata(&path).and_then(|meta| meta.modified()).map(epoch_ms) else { continue };
+        let unseen = {
+            let boards = daemon.boards.lock().await;
+            boards.active_registry().docs.get(&path).is_some_and(|info| info.changed_unseen(mtime_ms))
+        };
+        if unseen {
+            stat_and_push(daemon, &path).await;
+        }
+    }
+}
+
 /// Stat `path` and, if it is a doc on the ACTIVE board, record the real mtime and
 /// push `file_event`. Returns whether it pushed.
 ///

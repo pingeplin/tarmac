@@ -4,9 +4,9 @@
 
 mod common;
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use common::{LONG, Spawn, TestDaemon, cli_open, write_doc};
+use common::{LONG, Spawn, TestDaemon, cli_open, mtime_ms, settle, touch, write_doc};
 use tarmac_protocol::{BoardMeta, BoardViewport, DocEntry, Msg, Tile};
 
 fn term_tile(term_id: &str, x: f64) -> Tile {
@@ -342,4 +342,34 @@ fn reconnect_rebinds_live_terms_and_replays_scrollback() {
         "reconnect restore lists the live term, got {live_terms:?}"
     );
     app2.recv_output_containing("t0", "scrollmark");
+}
+
+// Dropping the deleted board's watches restarts the FSEvents stream once for
+// each directory, and the stream reports nothing from those gaps (#249). A doc
+// of a board that is left changes in one: the daemon must still say so.
+#[test]
+fn board_delete_reports_a_change_made_while_it_dropped_the_watches() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+
+    let kept = write_doc(&daemon.dir.join("kept/x.md"), "x\n");
+    cli_open(&daemon.sock, &kept);
+    app.recv_doc_opened_for(&kept);
+
+    app.send(&Msg::BoardCreate);
+    app.recv_restore_for("board-1");
+    for i in 0..100 {
+        let doc = write_doc(&daemon.dir.join(format!("gone/{i}/b.md")), "b\n");
+        cli_open(&daemon.sock, &doc);
+        app.recv_doc_opened_for(&doc);
+    }
+    app.send(&Msg::BoardSwitch { board_id: "board-0".into() });
+    app.recv_restore_for("board-0");
+    settle();
+
+    // 100 directories take about 100 ms to drop; the edit is inside that time.
+    app.send(&Msg::BoardDelete { board_id: "board-1".into() });
+    std::thread::sleep(Duration::from_millis(20));
+    touch(&kept);
+    app.recv_file_event_since(&kept, mtime_ms(&kept));
 }

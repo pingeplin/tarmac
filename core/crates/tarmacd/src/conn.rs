@@ -407,7 +407,10 @@ async fn delete_board(daemon: &Arc<Daemon>, conn: &mut AppConn, board_id: &str) 
     }
     // 4) remove the board (active is fixed if it was the active one).
     if daemon.delete_board(board_id).await {
-        // 5) re-push board_list + the now-active board's restore: the app needs
+        // 5) a doc that changed while the board's watches were dropped got no
+        //    event: report it before the restore, which then has its new time.
+        docs::push_missed_changes(daemon).await;
+        // 6) re-push board_list + the now-active board's restore: the app needs
         //    the list either way, and a restore when the active board changed.
         send_active_board(daemon, conn).await;
     }

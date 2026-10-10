@@ -179,7 +179,7 @@ reports.
 | | `BoardSwitch {board_id}` | app→D | make a board active |
 | | `BoardCreate` | app→D | mint a fresh board |
 | | `BoardRename {board_id, name}` | app→D | set/clear display name |
-| | `BoardDelete {board_id}` | app→D | remove a board (refuses the last); a directory that only its docs were in is no longer watched |
+| | `BoardDelete {board_id}` | app→D | remove a board (refuses the last); a directory that only its docs were in is no longer watched, and a doc of the active board that changed while the watches were dropped gets its `file_event` then |
 | Teardown | `TermClose {term_id}` | app→D | kill a terminal's pty and forget it |
 | | `DocClose {path}` | app→D | drop a doc from the active board; its directory stays watched while any board has a doc there |
 
@@ -244,11 +244,13 @@ fixes `active` to the board now at the clamped deleted index.
 statement at a time, dropped before the next — never nested**. The clearest
 example is `BoardDelete`: snapshot the board's term_ids under `term_boards` and
 drop; clone their `Arc<TermHandle>`s under `terms` and drop; **kill with no lock
-held**; then `Daemon::delete_board`; then recompute counts and re-push. The
+held**; then `Daemon::delete_board`; then `docs::push_missed_changes`; then
+recompute counts and re-push. The
 per-terminal scrollback ring uses a `std::sync::Mutex` that is **never held
 across an `.await`** — locked only for a synchronous push/snapshot. The watcher's
-mutex is the same kind, and the `boards` lock is never held during a watcher
-call.
+mutex is a `std::sync::Mutex` too and is never held across an `.await`, but it
+is held for the notify call that starts or drops a watch. The `boards` lock is
+never held during a watcher call.
 
 ### Terminal sessions
 
@@ -290,7 +292,8 @@ pushing (so a crash never loses the fact), and pushes `FileEvent`.
 The watch set is one per daemon, not per board. The watcher counts the
 registered docs in each directory (`WatcherState.doc_counts`), one for each
 board that has the doc, and a directory is watched from its first doc to its
-last. Three `Daemon` methods are the only code that changes the count, each
+last. `Daemon::new` counts each restored doc. After that, three `Daemon`
+methods are the only code that changes the count, each
 under the watcher's own lock and with the `boards` lock released:
 `open_doc` adds one **before** it registers the doc (and takes it off again
 when the doc was already on that board), `close_doc` and `delete_board` take
@@ -299,6 +302,13 @@ the number of registered docs, and an open and a close in one directory end
 with the same watch in each order. A count stands when the watch itself
 fails at startup (the directory is gone): the doc is still registered, and it
 must hold the watch that a later open in that directory starts.
+
+Each `watch` and `unwatch` restarts the FSEvents stream, and the stream
+reports nothing from the gap. A board delete can drop many watches in a row,
+so it then runs `docs::push_missed_changes`: each doc of the active board
+whose file is newer than its last reported change (or, with none reported,
+than its open) gets a `file_event`. A `doc_close` and an open in a new
+directory have the same gap for one restart and run no such check.
 
 `tarmac open` end-to-end: the CLI canonicalizes the path, connects, reads
 `TARMAC_TERM_ID` from its env, and sends `Open`. The daemon re-canonicalizes
