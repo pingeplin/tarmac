@@ -6,7 +6,7 @@ mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{LONG, Spawn, TestDaemon, cli_open, mtime_ms, settle, touch, write_doc};
+use common::{LONG, Spawn, TestDaemon, cli_open, mtime_ms, none_within, settle, touch, write_doc};
 use tarmac_protocol::{BoardMeta, BoardViewport, DocEntry, Msg, Tile};
 
 fn term_tile(term_id: &str, x: f64) -> Tile {
@@ -371,7 +371,47 @@ fn board_delete_reports_a_change_made_while_it_dropped_the_watches() {
     app.send(&Msg::BoardDelete { board_id: "board-1".into() });
     std::thread::sleep(Duration::from_millis(20));
     touch(&kept);
-    app.recv_file_event_since(&kept, mtime_ms(&kept));
+    let changed = app.recv_file_event_since(&kept, mtime_ms(&kept));
+    // The restore that follows the delete already has the change.
+    let restored = app.recv_restore_for("board-0");
+    assert_eq!(restored.docs.iter().find(|d| d.path == kept).unwrap().last_changed_ms, Some(changed));
+}
+
+// The check after a delete compares each file with what it was before the
+// delete. A doc that did not change gets no event, whatever its mtime is: one
+// in the future, and one the daemon never reported.
+#[test]
+fn board_delete_sends_no_file_event_for_a_doc_that_did_not_change() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+
+    let plain = write_doc(&daemon.dir.join("docs/plain.md"), "p\n");
+    let future = write_doc(&daemon.dir.join("docs/future.md"), "f\n");
+    std::fs::File::options()
+        .write(true)
+        .open(&future)
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() + Duration::from_secs(3600))
+        .unwrap();
+    // A watch that is attached at once replays these writes as events, and
+    // the docs would then have a reported change.
+    std::thread::sleep(Duration::from_millis(1500));
+    for doc in [&plain, &future] {
+        cli_open(&daemon.sock, doc);
+        app.recv_doc_opened_for(doc);
+    }
+    app.send(&Msg::BoardCreate);
+    app.recv_restore_for("board-1");
+    app.send(&Msg::BoardSwitch { board_id: "board-0".into() });
+    app.recv_restore_for("board-0");
+    // Events from before the delete are not this test's.
+    none_within(&mut app, Duration::from_millis(600), |_| false);
+
+    app.send(&Msg::BoardDelete { board_id: "board-1".into() });
+    assert!(
+        none_within(&mut app, Duration::from_millis(800), |m| matches!(m, Msg::FileEvent { .. })),
+        "no file changed during the delete"
+    );
 }
 
 // The delete itself schedules the save. The test first waits for the save of

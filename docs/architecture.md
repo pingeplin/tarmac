@@ -179,7 +179,7 @@ reports.
 | | `BoardSwitch {board_id}` | app→D | make a board active |
 | | `BoardCreate` | app→D | mint a fresh board |
 | | `BoardRename {board_id, name}` | app→D | set/clear display name |
-| | `BoardDelete {board_id}` | app→D | remove a board (refuses the last); a directory that only its docs were in is no longer watched, and a doc of the active board that changed while the watches were dropped gets its `file_event` then |
+| | `BoardDelete {board_id}` | app→D | remove a board (refuses the last); a directory that only its docs were in is no longer watched, and a doc of the active board whose file changed during the delete gets its `file_event` before the board list |
 | Teardown | `TermClose {term_id}` | app→D | kill a terminal's pty and forget it |
 | | `DocClose {path}` | app→D | drop a doc from the active board; its directory stays watched while any board has a doc there |
 
@@ -244,8 +244,8 @@ fixes `active` to the board now at the clamped deleted index.
 statement at a time, dropped before the next — never nested**. The clearest
 example is `BoardDelete`: snapshot the board's term_ids under `term_boards` and
 drop; clone their `Arc<TermHandle>`s under `terms` and drop; **kill with no lock
-held**; then `Daemon::delete_board`; then `docs::push_missed_changes`; then
-recompute counts and re-push. The
+held**; then `docs::doc_mtimes`, `Daemon::delete_board` and
+`docs::push_changes_since`; then recompute counts and re-push. The
 per-terminal scrollback ring uses a `std::sync::Mutex` that is **never held
 across an `.await`** — locked only for a synchronous push/snapshot. The watcher's
 mutex is a `std::sync::Mutex` too and is never held across an `.await`, but it
@@ -305,10 +305,12 @@ must hold the watch that a later open in that directory starts.
 
 Each `watch` and `unwatch` restarts the FSEvents stream, and the stream
 reports nothing from the gap. A board delete can drop many watches in a row,
-so it then runs `docs::push_missed_changes`: each doc of the active board
-whose file is newer than its last reported change (or, with none reported,
-than its open) gets a `file_event`. A `doc_close` and an open in a new
-directory have the same gap for one restart and run no such check.
+so the delete arm reads each registered doc's mtime before it
+(`docs::doc_mtimes`) and compares after it (`docs::push_changes_since`): a doc
+of the active board whose file is not what it was, and whose new mtime the
+watcher has not reported, gets a `file_event`. Nothing older than the delete
+is reported this way. A `doc_close` and an open in a new directory have the
+same gap for one restart and run no such check (#253).
 
 `tarmac open` end-to-end: the CLI canonicalizes the path, connects, reads
 `TARMAC_TERM_ID` from its env, and sends `Open`. The daemon re-canonicalizes
