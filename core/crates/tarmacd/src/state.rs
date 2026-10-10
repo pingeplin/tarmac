@@ -234,7 +234,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unwatch_removes_dir_when_sole_occupant_closed() {
+    async fn unwatch_removes_a_watched_dir() {
         let (tmp, doc_dir, daemon) = daemon_with_doc_dir("s8a");
 
         daemon.ensure_watched(&doc_dir).unwrap();
