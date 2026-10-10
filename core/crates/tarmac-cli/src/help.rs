@@ -19,14 +19,14 @@ const DEV_USAGE: &str = "";
 const DEV_HELP: &str = "`tarmac dev` talks to the app, not the daemon, over its own socket
 (TARMAC_DEV_SOCKET). It exists so an agent or a script can drive and read the
 cockpit without a keyboard, and it is available in dev builds only — a release
-binary exits 1 with \\\"driver unavailable in release builds\\\".
+binary exits 1 with \"driver unavailable in release builds\".
 
     tarmac dev snapshot [--until <expr>] [--timeout <ms>]
     tarmac dev zoom <z>
     tarmac dev resize <card> <w>x<h>
     tarmac dev focus <card>|board
-    tarmac dev type <card> \\\"<text>\\\"
-    tarmac dev key <card> \\\"<combo>\\\"
+    tarmac dev type <card> \"<text>\"
+    tarmac dev key <card> \"<combo>\"
     tarmac dev press <combo> [--hold <ms>] [--age <ms>] [--busy <ms>]
 
 <card> is a terminal's term id or a doc's absolute path. snapshot prints JSON on
