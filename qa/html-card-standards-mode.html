@@ -1,0 +1,27 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>HTML card standards mode</title>
+<style>
+  html, body { margin: 0; font-size: var(--tarmac-prose-size, 14px); }
+  #base { height: 1000px; background: #2f81f7; }
+  #mode, #cell, #shim, #scheme { background: #3fb950; }
+  #bare { height: 30; background: #d29922; }
+  #probe { position: fixed; visibility: hidden; }
+</style>
+<div id="base"></div>
+<div id="mode"></div>
+<div id="cell"></div>
+<div id="shim"></div>
+<div id="scheme"></div>
+<div id="bare"></div>
+<table id="probe"><tr><td id="td">x</td></tr></table>
+<script>
+  const size = (id, px) => (document.getElementById(id).style.height = px + "px");
+  size("mode", document.compatMode === "CSS1Compat" ? 500 : 0);
+  size("shim", getComputedStyle(document.documentElement).getPropertyValue("--tarmac-prose-font").trim().length);
+  size("scheme", document.querySelectorAll('meta[name="color-scheme"]').length * 7);
+  const follow = () => size("cell", parseFloat(getComputedStyle(document.getElementById("td")).fontSize) * 10);
+  follow();
+  setInterval(follow, 100);
+  console.log("compatMode", document.compatMode);
+</script>

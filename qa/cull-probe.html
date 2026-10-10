@@ -3,7 +3,7 @@
 
   A PERMANENT QA artifact, not a scratch file. Open it as a normal HTML doc card
   (`tarmac open qa/cull-probe.html`) so it loads through the real
-  tarmac-card:// pipeline — shim prepended, CSP header, opaque origin, allow=""
+  tarmac-card:// pipeline — shim injected, CSP header, opaque origin, allow=""
   — exactly like an agent-authored card.
 
   It runs an rAF loop, a setInterval and a re-arming setTimeout chain, keeps
@@ -13,8 +13,8 @@
   evidence: read the rates off these counters, never off CPU.
 
   HOW TO READ IT. The reporter is a timer, so the gate pauses it too -- a card
-  cannot hold an un-gated timer (the shim wraps setInterval before this file's
-  first byte), and an un-gated MessageChannel reporter would contaminate the CPU
+  cannot hold an un-gated timer (the shim wraps setInterval before any script
+  of this file), and an un-gated MessageChannel reporter would contaminate the CPU
   cells this same probe serves. So a paused card emits NO lines, and the first
   line after un-cull covers the pre-pause remainder + the whole cull + the gap
   from resume to the next reporter tick.
@@ -68,7 +68,7 @@
     loops=all     (default) rAF + interval + timeout
          =rafonly | timersonly | none
     (There is deliberately NO card-side "gate off" switch. The shim owns the
-     gate and is prepended before this file's first byte, so nothing a card can
+     gate and runs before any script of this file, so nothing a card can
      do bypasses it — any reference this document captures is already the shim's
      wrapper. An un-gated baseline is obtained by measuring a BUILD with the gate
      reverted. An earlier draft of this file claimed otherwise; it was wrong.)
@@ -127,7 +127,7 @@
 // FIRST STATEMENT OF THIS DOCUMENT'S SCRIPT — the earliest a card can run.
 // It cannot precede the shim: card_protocol.rs's compose_body writes the opening
 // <script> tag, the whole shim, and the closing tag (spelled <\/script> here so
-// the HTML parser does not end THIS element) before this file's first byte, so
+// the HTML parser does not end THIS element) ahead of this file's script, so
 // once the gate
 // ships these wrap the SHIM's wrappers rather than the raw natives. That is
 // what makes the count meaningful here — it is this card's outstanding

@@ -16,7 +16,8 @@
   step while window.innerWidth and the two measured box widths double.
   documentElement.clientWidth and body.clientWidth are recorded below as
   EVIDENCE only — not gate criteria — and are expected to disagree with
-  each other about which one halved (quirks mode; see spec). Only a reading
+  each other about which one halved, in a way that depends on the document's
+  mode (see spec). Only a reading
   whose "root zoom (applied)" label matches the current board zoom counts —
   the resize listener refreshes the panel the instant board zoom changes,
   before the matching button is clicked, and that intermediate reading (board
@@ -140,9 +141,8 @@
   // no positioned ancestor resolves against the initial containing block,
   // in local layout units — the same read card_shim.js performs. Unlike
   // documentElement.clientWidth, which returns the <html> element's own
-  // padding box (not the ICB) in quirks mode — and every tarmac-card://
-  // document, this file included, is quirks mode, since card_protocol.rs
-  // writes the shim's <script> ahead of the doctype — this read is
+  // padding box (not the ICB) in the older compatibility mode, which is
+  // where a card file with no doctype is — this read is
   // compat-mode-independent. overflow is forced via a saved/restored
   // cssText round-trip (not the overflow property alone — restoring ""
   // would removeProperty a shorthand and could drop the button-applied

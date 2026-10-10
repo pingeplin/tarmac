@@ -42,6 +42,14 @@ committing any other change.
       `innerWidth`, or the line count changes, the assumption is false —
       stop and report immediately.
 
+> Note 2026-10-10 (spec 2610.0011): a card file that starts with a doctype is
+> no longer in quirks mode. Its `compatMode` reads `CSS1Compat`, and
+> `magnify-probe.html` prints `scrolled=true` (it printed `false`) and
+> `clientWidth=1176 bodyClientWidth=376` (it printed `392` and `1176`): the
+> two `clientWidth` readings change places. The ICB probe stays the criterion
+> in both modes. These readings are from the spec's standalone WebKit probe,
+> not from a live run. The run above is the quirks-mode run and is not changed.
+
 ## S6 — Magnify wraps freeze, glyphs crisp across zooms
 
 Magnify is now the DEFAULT (`declaredZoomMode`), and its root zoom is frozen at
@@ -64,6 +72,11 @@ check is exact again rather than the ICB-only claim S6 was weakened to.
 - [ ] Card console strip logs the `zoom-mode` line only when the document
       declares a mode. A default (meta-less) document logs nothing; that is the
       quiet common case, not a missing line.
+
+> Note 2026-10-10 (spec 2610.0011): `wrap-probe.html` now labels its line
+> `ICB 1176px` at zoom 3 (it labelled it `ICB 392px`). The break offsets are
+> the same. The reading is from the spec's standalone WebKit probe, not from a
+> live run.
 
 ## S8 — Reveal-more when the document deliberately opts out
 

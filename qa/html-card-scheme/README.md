@@ -7,7 +7,7 @@ here states one thing about colour, or nothing, so that the rule can be
 checked one case at a time.
 
 These are permanent QA files. Open a page as a card, so that it loads through
-the real card pipeline with the shim before its first byte:
+the real card pipeline with the shim ahead of its script:
 
 ```sh
 tarmac open qa/html-card-scheme/p0.html

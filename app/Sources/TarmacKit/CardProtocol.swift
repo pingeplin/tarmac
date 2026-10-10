@@ -88,18 +88,19 @@ public enum CardProtocol {
         }
     }
 
-    /// 404 if the file could not be read, otherwise 200: the shim, in its own
-    /// `<script>`, strictly before the first file byte — no content sniffing, so a
-    /// `<!DOCTYPE>` or a BOM changes nothing.
+    /// 404 if the file could not be read, otherwise 200: the file with the shim, in
+    /// its own `<script>`, at `ShimPlacement.offset` — after a leading doctype (or
+    /// a BOM, with none) and before the rest, so the doctype keeps its say on the mode.
     public static func respond(path: String, contents: Result<Data, any Error>, shim: String) -> Response {
         switch contents {
         case .failure(let error):
             return unreadable(path: path, reason: error.localizedDescription)
         case .success(let file):
+            let at = file.startIndex + ShimPlacement.offset(in: file)
             return Response(
                 status: 200,
                 headers: ["Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": csp],
-                body: Data("<script>\(shim)</script>\n".utf8) + file
+                body: file[..<at] + Data("<script>\(shim)</script>\n".utf8) + file[at...]
             )
         }
     }

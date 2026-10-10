@@ -725,9 +725,11 @@ no permission-policy feature, and no handle on the app.
 
 - **Scheme handler.** `CardSchemeHandler` answers `tarmac-card://`; what to
   serve is `CardSchemeRouter`'s decision, and the file is read off the main
-  thread. The `doc` host serves the file as `text/html` with the shim prepended
-  before its first byte and a strict response CSP (`CardProtocol`:
-  `default-src 'none'`, inline script and style only, `data:`/`blob:` media).
+  thread. The `doc` host serves the file as `text/html` with a strict response CSP
+  (`CardProtocol`: `default-src 'none'`, inline script and style only,
+  `data:`/`blob:` media) and the shim's `<script>` at `ShimPlacement`'s offset,
+  after the file's leading doctype. A file with a doctype is in the mode that
+  doctype gives, and one with none is in quirks mode, as in a browser.
   A request that carries an `Origin` header — XHR, `fetch`, a `crossorigin`
   load — is answered 403 on either host before the disk is touched: no page
   the app loads reads the scheme by script. The `img` host serves bytes for
@@ -745,7 +747,7 @@ no permission-policy feature, and no handle on the app.
   `<meta name="color-scheme" content="light dark">`, which any `color-scheme`
   in the author's CSS beats, and which the shim removes when the author's own
   meta is parsed); it tells its parent that the document has started
-  (`started`, its second act, before any byte of the author is parsed); it
+  (`started`, its second act, before any author script runs); it
   relays `console.log`/`info`/`warn`/`error`, uncaught errors, unhandled
   rejections and `Escape` to its parent,
   declares `--tarmac-prose-size`, `--tarmac-prose-font` and

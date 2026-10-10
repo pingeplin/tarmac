@@ -302,6 +302,15 @@ mod tests {
         assert!(GUIDE.contains("tarmac-zoom"));
     }
 
+    #[test]
+    fn the_guide_says_which_files_get_which_mode() {
+        for phrase in
+            ["standards mode", "quirks mode", "document.scrollingElement", "body.scrollTop", "<head>"]
+        {
+            assert!(GUIDE.contains(phrase), "the guide never says `{phrase}`");
+        }
+    }
+
     // Both are read on a machine with no checkout, so nothing repo-internal may
     // leak in — docs-check's ACTIVE rules do not reach these files.
     #[test]

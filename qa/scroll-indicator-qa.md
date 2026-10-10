@@ -84,6 +84,11 @@ tree: 27 of 27.
 | S37 | **pass** — markdown, probe and white page, each at its top: zoom 2, x 758–778, y 66–114 (20 × 48); zoom 1, x 379–389, y 33–57 (10 × 24); zoom 0.5, x 189–194, y 17–29 (5 × 12). The terminal, at its live bottom: the same x, and y 550–598, 275–299, 137–149. In all twelve captures, taken 81 to 131 ms after the script's return, the fill reads `#181b1d` and the hairline `#696b6c`, over pages of `#2b3036`, `#22303a`, `#ffffff` and `#31363b`. The white page far out: zoom 0.25, x 94–97 (3 wide); 0.2, x 75–77 of a card 78 wide, all hairline; 0.125, one pixel wide | zoom 2: x 770–780, y 64–88 (10 × 24). Fill at alpha 0.5 (the second run): `#8b8d8e` on the white page, `#24282c` on the terminal. The whole container: no thumb at zoom 0.2; at 0.5, x 190–195 |
 | S39 | **pass** — `offset` 0 → 30, viewport unchanged, the probe's `wheel` count +10 | `offset` 0 → 0, `cy` +10, `wheel` +0 |
 
+> Note 2026-10-10 (spec 2610.0011): the `compat BackCompat` reading of S16 is
+> the reading before standards mode. A card file that starts with a doctype
+> now reads `compat CSS1Compat`; the numbers of S16 do not change. This is from
+> the spec's standalone WebKit probe, not from a live run.
+
 S19's captures in the hold were not timed: the thumb in each is what says it
 was inside. S37's, by the same two commands, were. Not run: the hairline's
 width after a move to a display of another density — there is one display

@@ -16,8 +16,8 @@ final class CardProtocolTests: XCTestCase {
         }
     }
 
-    private func range(of needle: [UInt8], in body: Data) -> Int? {
-        body.range(of: Data(needle))?.lowerBound
+    private func text(_ response: CardProtocol.Response) -> String {
+        String(decoding: response.body, as: UTF8.self)
     }
 
     /// S3
@@ -29,29 +29,60 @@ final class CardProtocolTests: XCTestCase {
     }
 
     /// S9
-    func testShimPrecedesDoctypeContent() throws {
+    func testTheShimFollowsALeadingDoctype() {
         let path = "/tmp/doctype.html"
-        let file = Data("<!DOCTYPE html><html></html>".utf8)
-        let resp = serve(SchemeFixtures.docURI(path), disk: .init([path: file]))
+        let resp = serve(SchemeFixtures.docURI(path), disk: .init([path: Data("<!DOCTYPE html><html></html>".utf8)]))
 
         XCTAssertEqual(resp.status, 200)
-        let shimPos = try XCTUnwrap(range(of: Array("<script>".utf8), in: resp.body))
-        let doctypePos = try XCTUnwrap(range(of: Array("<!DOCTYPE html>".utf8), in: resp.body))
-        XCTAssertLessThan(shimPos, doctypePos)
+        XCTAssertEqual(text(resp), "<!DOCTYPE html><script>/*shim*/</script>\n<html></html>")
     }
 
-    /// S9
-    func testShimPrecedesBomContent() throws {
+    /// S10
+    func testTheShimFollowsTheBomCommentAndDoctypeAheadOfTheContent() {
+        let path = "/tmp/lead.html"
+        let lead = Data([0xEF, 0xBB, 0xBF] + Array("<!-- n -->\n<!doctype html>".utf8))
+        let resp = serve(SchemeFixtures.docURI(path), disk: .init([path: lead + Data("<p>x</p>".utf8)]))
+
+        XCTAssertEqual(text(resp), "\u{FEFF}<!-- n -->\n<!doctype html><script>/*shim*/</script>\n<p>x</p>")
+        XCTAssertEqual(Array(resp.body.prefix(3)), [0xEF, 0xBB, 0xBF])
+    }
+
+    /// S11
+    func testTheShimFollowsALeadingBomWhenThereIsNoDoctype() {
         let path = "/tmp/bom.html"
         let file = Data([0xEF, 0xBB, 0xBF] + Array("<html>bom</html>".utf8))
         let resp = serve(SchemeFixtures.docURI(path), disk: .init([path: file]))
 
         XCTAssertEqual(resp.status, 200)
-        let shimPos = try XCTUnwrap(range(of: Array("<script>".utf8), in: resp.body))
-        let bomPos = try XCTUnwrap(range(of: [0xEF, 0xBB, 0xBF], in: resp.body))
-        XCTAssertLessThan(shimPos, bomPos)
+        XCTAssertEqual(text(resp), "\u{FEFF}<script>/*shim*/</script>\n<html>bom</html>")
         XCTAssertEqual(resp.headers["Content-Security-Policy"], CardProtocol.csp)
         XCTAssertEqual(resp.headers["Content-Type"], "text/html; charset=utf-8")
+    }
+
+    func testTheOffsetIsCountedFromTheStartOfASliceOfFile() {
+        let file = Data("zz<!doctype html><p>x</p>".utf8)[2...]
+        let resp = CardProtocol.respond(path: "/tmp/a.html", contents: .success(file), shim: "S")
+
+        XCTAssertEqual(text(resp), "<!doctype html><script>S</script>\n<p>x</p>")
+    }
+
+    /// S14
+    func testTheFilledFontValuesSitInsideTheScriptAfterTheDoctype() throws {
+        let fonts = CardFontVariables(interfaceFamily: nil, documentFamily: nil, documentSize: 20)
+        let filled = fonts.filling("const f=[\(CardFontVariables.marker)][0];")
+        let file = Data("<!doctype html><p>x</p>".utf8)
+        let resp = CardProtocol.respond(path: "/tmp/a.html", contents: .success(file), shim: filled)
+        let body = String(decoding: resp.body, as: UTF8.self)
+
+        XCTAssertEqual(body.components(separatedBy: fonts.json).count - 1, 1)
+        let doctypeEnd = try XCTUnwrap(body.range(of: "<!doctype html>")).upperBound
+        let open = try XCTUnwrap(body.range(of: "<script>"))
+        let values = try XCTUnwrap(body.range(of: fonts.json))
+        let close = try XCTUnwrap(body.range(of: "</script>"))
+        XCTAssertEqual(open.lowerBound, doctypeEnd)
+        XCTAssertTrue(open.upperBound <= values.lowerBound && values.upperBound <= close.lowerBound)
+        XCTAssertEqual(body.components(separatedBy: "</script>").count - 1, 1)
+        XCTAssertTrue(body.hasSuffix("</script>\n<p>x</p>"))
     }
 
     func testBodyIsTheShimInAScriptTagThenTheFileBytesUntouched() {
