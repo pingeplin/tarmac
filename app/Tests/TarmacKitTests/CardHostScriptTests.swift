@@ -98,8 +98,8 @@ final class CardHostScriptTests: XCTestCase {
 
     // MARK: - the app is told when the document is on screen (#213)
 
-    private func load(_ source: String = "tarmac-card://doc/a.html?v=1") {
-        context.evaluateScript("window.tarmacCard.load('\(source)')")
+    private func load(_ source: String = "tarmac-card://doc/a.html?v=1", number: Int = 1) {
+        context.evaluateScript("window.tarmacCard.load('\(source)', \(number))")
     }
 
     private func hear(_ data: String, from source: String = "cardWindow") {
@@ -118,7 +118,9 @@ final class CardHostScriptTests: XCTestCase {
         context.evaluateScript("for (let i = 0; i < \(count); i++) drawFrame(); posted").toArray() as? [NSDictionary] ?? []
     }
 
-    private let shown: NSDictionary = ["tarmac": "shown"]
+    private let shown = shown(1)
+
+    private static func shown(_ load: Int) -> NSDictionary { ["tarmac": "shown", "load": load] }
 
     /// The app keeps the web view out of sight until this. Two frames: the
     /// first is drawn with the document in it, and the word posted in the
@@ -170,13 +172,13 @@ final class CardHostScriptTests: XCTestCase {
         hear("{ tarmac: 'started' }")
         frames(2)
 
-        load("tarmac-card://doc/a.html?v=2")
+        load("tarmac-card://doc/a.html?v=2", number: 2)
         hear("{ tarmac: 'ready', meta: null }")
         hear("{ tarmac: 'scrolled', offset: 0, visible: 10, total: 20 }")
-        XCTAssertEqual(frames(3).filter { $0 == shown }, [shown])
+        XCTAssertEqual(frames(3).filter { $0["tarmac"] as? String == "shown" }, [shown])
 
         hear("{ tarmac: 'started' }")
-        XCTAssertEqual(frames(2).filter { $0 == shown }, [shown, shown])
+        XCTAssertEqual(frames(2).filter { $0["tarmac"] as? String == "shown" }, [shown, Self.shown(2)])
     }
 
     /// The app has covered the web view again for the new source: a word for
@@ -186,11 +188,40 @@ final class CardHostScriptTests: XCTestCase {
         hear("{ tarmac: 'started' }")
         frames(1)
 
-        load("tarmac-card://doc/a.html?v=2")
+        load("tarmac-card://doc/a.html?v=2", number: 2)
         XCTAssertEqual(frames(3), [])
 
         hear("{ tarmac: 'started' }")
-        XCTAssertEqual(frames(2), [shown])
+        XCTAssertEqual(frames(2), [Self.shown(2)])
+    }
+
+    /// The app can have asked for a newer source than this page knows of, so
+    /// the word carries the app's own number for the load and the app decides.
+    func testTheWordNamesTheLoadWithTheAppsNumber() throws {
+        load(number: 7)
+        hear("{ tarmac: 'started' }")
+        XCTAssertEqual(CardConsole.parse(try XCTUnwrap(frames(2).last)), .shown(load: 7))
+    }
+
+    /// The document a source replaced is still in the frame for a moment, and
+    /// its shim can say `started` after the frame was given the new source.
+    func testTheStartOfTheDocumentThatWasReplacedIsNotTheNewOnes() {
+        load("tarmac-card://doc/a.html?v=1")
+        load("tarmac-card://doc/a.html?v=2", number: 2)
+        hear("{ tarmac: 'started', source: 'tarmac-card://doc/a.html?v=1' }")
+        XCTAssertEqual(frames(3), [])
+
+        hear("{ tarmac: 'started', source: 'tarmac-card://doc/a.html?v=2' }")
+        XCTAssertEqual(frames(2), [Self.shown(2)])
+    }
+
+    /// Only the source that was replaced is refused: a start that names
+    /// another address, or none, still counts, so no card stays out of sight.
+    func testAStartThatNamesAnAddressThePageDoesNotKnowStillCounts() {
+        load("tarmac-card://doc/a.html?v=1")
+        load("tarmac-card://doc/a.html?v=2", number: 2)
+        hear("{ tarmac: 'started', source: 'tarmac-card://doc/A.HTML?v=2' }")
+        XCTAssertEqual(frames(2), [Self.shown(2)])
     }
 
     /// The start is for the host page alone, and that the document is on
