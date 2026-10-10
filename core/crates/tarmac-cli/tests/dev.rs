@@ -172,6 +172,25 @@ fn an_over_long_socket_path_is_refused_before_dialling() {
     assert!(fake.received.lock().unwrap().is_empty());
 }
 
+/// A usage error is the CLI's own: exit 2 like `skill` and `--version`, the reason
+/// and the usage text on stderr, and nothing dialled.
+#[test]
+fn a_usage_error_exits_two_before_dialling() {
+    let fake = Fake::start(Reply::Now(ok_reply("{}")));
+    for (args, reason) in [
+        (&["teleport"][..], "tarmac dev: unknown verb 'teleport'"),
+        (&["zoom"][..], "tarmac dev zoom: expected exactly one argument"),
+    ] {
+        let out = fake.run(args);
+        assert_eq!(out.code(), Some(2), "{args:?}");
+        assert_eq!(out.stdout, "", "{args:?}");
+        assert!(out.stderr.starts_with(&format!("{reason}\n")), "{args:?}: {}", out.stderr);
+        assert!(out.stderr.contains("tarmac dev snapshot"), "{args:?} prints no usage: {}", out.stderr);
+    }
+    // Not `frames()`: it joins a server thread that is still in `accept`.
+    assert!(fake.received.lock().unwrap().is_empty());
+}
+
 /// S73(b) — the load-bearing half. The CLI's read deadline is the app's budget
 /// plus 3 s, so a healthy app that takes 5.5 s to answer `--timeout 10000` is
 /// still heard. An implementation that reuses the handshake path's fixed 5 s
