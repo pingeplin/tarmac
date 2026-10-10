@@ -49,8 +49,9 @@ are confirmed absent in the code. Roughly ordered by value.
   "Implementation decisions" verb list (`open · focus · attach`).
 - **State:** the CLI's daemon verbs are `open` and `--version`
   (`core/crates/tarmac-cli/src/main.rs`); there is no `Focus` variant in `Msg`
-  (`core/crates/tarmac-protocol/src/lib.rs` — the `focus` there is the QA
-  driver's `DevRequest`, an unrelated verb); no idle timer or banner in the app.
+  (`core/crates/tarmac-protocol/src/lib.rs`; the `focus` in
+  `core/crates/tarmac-protocol/src/dev.rs` is the QA driver's `DevRequest`, an
+  unrelated verb); no idle timer or banner in the app.
 - **Scope:** protocol `Focus{path}` in both codecs + daemon route + app
   idle-timer + banner UI + `⌫` go-back. Note the no-harness rule: focus is
   *requested* by any caller, never agent-arbitrated.

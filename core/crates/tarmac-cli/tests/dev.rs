@@ -267,3 +267,19 @@ fn help_documents_the_dev_family_and_its_limits() {
         assert!(text.contains(needle), "--help does not mention {needle:?}");
     }
 }
+
+/// A quote escaped twice in the source reaches the terminal as `\"`, and the
+/// usage lines then no longer match what a caller has to type.
+#[test]
+fn help_prints_its_quotes_without_a_backslash() {
+    let out = output(tarmac().arg("--help"));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(!text.contains("\\\""), "--help prints a backslash before a quote");
+    for needle in [
+        "tarmac dev type <card> \"<text>\"",
+        "tarmac dev key <card> \"<combo>\"",
+        "\"driver unavailable in release builds\"",
+    ] {
+        assert!(text.contains(needle), "--help does not print {needle:?}");
+    }
+}

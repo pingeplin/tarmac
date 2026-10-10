@@ -1,24 +1,18 @@
-//! `tarmac skill` — emit the agent-facing guide, and install a `SKILL.md` that
-//! points at it into a coding agent's own skills directory.
+//! `tarmac skill` — print the agent-facing guide, or install a `SKILL.md` that
+//! points at it into a coding agent's skills directory. Never touches the daemon.
 //!
-//! This verb never touches the daemon socket: it is a pure local file operation,
-//! so it works with nothing running. Both documents ship inside the binary
-//! because the cask-installed CLI has no repo checkout to read them from.
-//!
-//! There are two, on purpose. `GUIDE.md` is printed verbatim, so it is always
-//! the guide of the binary that ran. `SKILL.md` is copied verbatim, and nothing
-//! refreshes a copy after an update: it is a shim that names the verb and
-//! carries no rule that could go stale. Nothing here rewrites either; keep both
-//! self-contained (no repo-internal paths, no relative links), because they are
-//! read from a machine that has no checkout.
+//! Two documents ship inside the binary because the cask-installed CLI has no
+//! checkout to read them from. `GUIDE.md` is printed verbatim, so it is always
+//! the guide of the binary that ran. `SKILL.md` is copied verbatim and nothing
+//! refreshes a copy after an update, so it is a shim that names the verb and
+//! carries no rule that could go stale. Keep both self-contained (no repo paths,
+//! no relative links): they are read on a machine with no checkout.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// What `tarmac skill` prints, verbatim. Editing it is the whole authoring story.
 const GUIDE: &str = include_str!("GUIDE.md");
 
-/// What `install` writes, verbatim: frontmatter and all.
 const SHIM: &str = include_str!("SKILL.md");
 
 const SKILL_NAME: &str = "tarmac";
@@ -53,9 +47,8 @@ impl Target {
         }
     }
 
-    /// The config dir each agent roots its skills at, relative to the scope root.
-    /// Claude Code reads `.claude/skills`; Codex reads the cross-agent
-    /// `.agents/skills` (its `$CODEX_HOME/skills` is deprecated back-compat).
+    /// Codex reads the cross-agent `.agents/skills`; its `$CODEX_HOME/skills` is
+    /// deprecated back-compat.
     fn config_dir(self) -> &'static str {
         match self {
             Target::ClaudeCode => ".claude",
@@ -159,8 +152,7 @@ fn parse_install(args: &[String]) -> Result<InstallArgs, String> {
     Ok(InstallArgs { targets, scope, dry_run })
 }
 
-/// `tarmac skill [install …]`. Returns the process exit code: 0 ok, 1 a target
-/// failed, 2 usage.
+/// Returns the exit code: 0 ok, 1 a target failed, 2 usage.
 pub fn run(args: &[String]) -> i32 {
     match args.first().map(String::as_str) {
         None => {
@@ -207,7 +199,7 @@ fn install(args: &[String]) -> i32 {
             }
         }
     }
-    if failed { 1 } else { 0 }
+    i32::from(failed)
 }
 
 #[cfg(test)]
@@ -278,9 +270,9 @@ mod tests {
         frontmatter().into_iter().find(|(k, _)| *k == key).unwrap_or_else(|| panic!("missing `{key}`")).1
     }
 
-    // The shim is shipped as-is, so its frontmatter is the contract with
-    // both agents: Claude Code treats every field as optional, Codex requires a
-    // non-empty `name` (<= 64 chars) and `description`. One envelope serves both.
+    // The shim ships as-is, so its frontmatter is the contract with both agents:
+    // Claude Code treats every field as optional, Codex requires a non-empty
+    // `name` (<= 64 chars) and `description`.
     #[test]
     fn the_shim_is_a_valid_skill_for_both_agents() {
         assert_eq!(field("name"), SKILL_NAME);

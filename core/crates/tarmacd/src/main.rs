@@ -1,6 +1,8 @@
+mod boards;
 mod conn;
 mod docs;
 mod persist;
+mod proc;
 mod state;
 mod term;
 
@@ -11,8 +13,8 @@ use tokio::net::UnixListener;
 use tokio::signal::unix::{SignalKind, signal};
 use tracing::{error, info, warn};
 
-/// The ONE audited build-config → Channel mapping for this binary (spec
-/// 2606.0003): a debug build is the `dev` channel, a release build `release`.
+/// The ONE audited build-config → Channel mapping for this binary: a debug
+/// build is the `dev` channel, a release build `release`.
 /// Centralised so `cfg!(debug_assertions)` is never sprinkled through the path
 /// code — see the `core/Cargo.toml` note forbidding `debug-assertions` profile
 /// overrides, which would silently flip this without touching path code.

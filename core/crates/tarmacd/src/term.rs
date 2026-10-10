@@ -8,21 +8,18 @@ use tarmac_protocol::Msg;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, warn};
 
+use crate::proc;
 use crate::state::Daemon;
 
 pub const OUTPUT_CHUNK: usize = 64 * 1024; // protocol: output chunks <= 64 KiB
-// M2 honest signals: poll the foreground process group ~every 750 ms; debounce
-// bells to at most one per ~250 ms (docs/protocol.md "M2 honest signals").
 const PROC_POLL_INTERVAL: Duration = Duration::from_millis(750);
 const BELL_DEBOUNCE: Duration = Duration::from_millis(250);
 const BEL: u8 = 0x07;
-// P5: per-term scrollback ring cap. A (re)connecting app replays this so it can
-// re-bind to a live shell instead of cold-spawning. Bounded so N boards × M
-// terms stay cheap; ~one screenful of history at typical widths.
+// A (re)connecting app replays this to re-bind to a live shell instead of
+// cold-spawning. Bounded so N boards x M terms stay cheap.
 const SCROLLBACK_CAP: usize = 256 * 1024;
 
-// A fixed-byte-cap ring of a term's recent pty output. Append-only with
-// front-eviction; `snapshot` copies the current contents for replay.
+/// A fixed-byte-cap ring of a term's recent pty output, front-evicting.
 struct ScrollbackRing {
     buf: VecDeque<u8>,
 }
@@ -54,13 +51,12 @@ impl ScrollbackRing {
 pub struct TermHandle {
     pub input_tx: mpsc::Sender<Vec<u8>>,
     master: std::sync::Mutex<Box<dyn MasterPty + Send>>,
-    // P5: recent pty output, replayed to a (re)connecting app so it re-binds to
-    // this live shell instead of cold-spawning. A std::sync::Mutex (not tokio):
-    // it is only ever locked for a synchronous push/snapshot, never across .await.
+    // A std::sync::Mutex (not tokio): it is only ever locked for a synchronous
+    // push/snapshot, never across .await.
     scrollback: std::sync::Mutex<ScrollbackRing>,
-    // P5.4: the child's pid, captured at spawn BEFORE the wait thread consumes
-    // `child` (process_id() is only valid while we own it). The child is its own
-    // process-group leader, so `kill(-pid, …)` (board delete) signals the group.
+    // Captured at spawn BEFORE the wait thread consumes `child` (process_id() is
+    // only valid while we own it). The child is its own process-group leader, so
+    // `kill(-pid, ..)` signals the group.
     pid: Option<libc::pid_t>,
 }
 
@@ -73,18 +69,13 @@ impl TermHandle {
             .map_err(|e| format!("resize failed: {e}"))
     }
 
-    // P5: a copy of the term's recent output for replay on (re)connect. Locked
-    // only for the copy — never held across an await.
     pub fn scrollback_snapshot(&self) -> Vec<u8> {
         self.scrollback.lock().expect("scrollback lock").snapshot()
     }
 
-    // P5.4: kill the term's process group (the child is its group leader) on
-    // board delete. SIGHUP lets a shell exit cleanly (as on a terminal close);
-    // the existing wait thread + pump then run the NORMAL exit cleanup (remove
-    // from terms/term_boards, push Exit + board_list) — kill never touches those
-    // maps itself. A no-op when the pid is unknown; an already-dead group returns
-    // ESRCH, which we ignore.
+    // SIGHUP lets a shell exit cleanly, as on a terminal close. The wait thread
+    // and pump then run the normal exit cleanup; kill never touches the daemon's
+    // maps itself. A no-op when the pid is unknown.
     pub fn kill(&self) {
         if let Some(pid) = self.pid {
             // SAFETY: kill(2) with a negative pid signals the process group; the
@@ -94,10 +85,22 @@ impl TermHandle {
             }
         }
     }
+
+    /// The foreground process-group leader. A poisoned lock yields `None`.
+    fn foreground_pid(&self) -> Option<libc::pid_t> {
+        self.master.lock().ok()?.process_group_leader()
+    }
+
+    /// The CURRENT working directory of the foreground job's leader (never the
+    /// spawn-time cwd): at a bare prompt that leader is the shell, and while a
+    /// job runs it is the job — the same pid whose name the card title shows.
+    /// `master` is locked only for the pid read, so this is safe in an async
+    /// handler. `None` when the pty or the OS lookup does not resolve.
+    pub fn live_cwd(&self) -> Option<String> {
+        proc::pid_cwd(self.foreground_pid()?)
+    }
 }
 
-/// Whether to inject `LC_CTYPE=en_US.UTF-8` into a spawned shell, read from the
-/// daemon's own environment. Thin wrapper over [`force_utf8_ctype_decision`].
 fn should_force_utf8_ctype() -> bool {
     force_utf8_ctype_decision(|k| std::env::var_os(k).map(|v| v.to_string_lossy().into_owned()))
 }
@@ -152,17 +155,12 @@ pub async fn spawn(
     let mut builder = CommandBuilder::new(&argv[0]);
     builder.args(&argv[1..]);
     builder.cwd(cwd);
-    builder.env("TERM", "xterm-256color"); // rest of env inherited
-    // v4 Phase 3 provenance: a `tarmac open` run inside this pty reads
-    // TARMAC_TERM_ID to attribute the open to its calling terminal card.
+    builder.env("TERM", "xterm-256color");
+    // `tarmac open` inside this pty reads it to attribute the open to its terminal card.
     builder.env("TARMAC_TERM_ID", &term_id);
-    // CJK/IME: the shell's line editor decodes keyboard input via mbrtowc
-    // against its locale. A Finder/launchd-launched daemon inherits no
-    // LANG/LC_*, so zsh lands in the C/POSIX locale and mbrtowc returns WEOF
-    // (printed as `<ffffffff>`) for the valid UTF-8 bytes SwiftTerm sends on a
-    // candidate commit, then renders every following multibyte char as `??`.
-    // Force a UTF-8 character locale only when none is already in effect, so an
-    // explicit UTF-8 LANG/LC_CTYPE/LC_ALL from the environment is preserved.
+    // A launchd-launched daemon inherits no LANG/LC_*, so zsh lands in the C
+    // locale and its line editor (mbrtowc) mangles the UTF-8 bytes of a CJK/IME
+    // commit. Force a UTF-8 character locale only when none is already in effect.
     if should_force_utf8_ctype() {
         builder.env("LC_CTYPE", "en_US.UTF-8");
     }
@@ -171,9 +169,7 @@ pub async fn spawn(
         .slave
         .spawn_command(builder)
         .map_err(|e| format!("spawn failed: {e}"))?;
-    // P5.4: capture the child's pid now, while we still own `child` — the wait
-    // thread below consumes it (`let mut child = child`), after which
-    // process_id() is unavailable. Used by TermHandle::kill on board delete.
+    // Before the wait thread below consumes `child`; see TermHandle::pid.
     let child_pid = child.process_id().map(|p| p as libc::pid_t);
     // Drop the slave or the master reader never sees EOF.
     drop(pty.slave);
@@ -196,9 +192,6 @@ pub async fn spawn(
     });
     daemon.terms.lock().await.insert(term_id.clone(), handle.clone());
 
-    // M2 honest signals: poll the foreground process-group leader and push a
-    // term_proc whenever the name changes (the honest "card title = process
-    // name"). The loop stops when the term leaves daemon.terms (after exit).
     tokio::spawn(proc_name_loop(daemon.clone(), term_id.clone(), handle.clone()));
 
     let (out_tx, out_rx) = mpsc::channel::<Vec<u8>>(256);
@@ -229,8 +222,8 @@ pub async fn spawn(
     let (exit_tx, exit_rx) = oneshot::channel::<Option<i64>>();
     let mut child = child;
     tokio::task::spawn_blocking(move || {
-        // signal() is the protocol's nil marker; the code is forced to 1
-        // for signal deaths and must not be trusted.
+        // A signal death is the protocol's nil exit code; portable-pty forces
+        // its code to 1, which must not be trusted.
         let code = match child.wait() {
             Ok(status) => {
                 if status.signal().is_some() {
@@ -248,12 +241,46 @@ pub async fn spawn(
     Ok(())
 }
 
-// Forwards output to the app, then sends exit after output is drained so the
-// app always sees output frames before the exit frame. This task holds the
-// daemon handle, so it is also where BEL (0x07) detection lives (the blocking
-// reader thread has no daemon handle and must not scan). P5: it also appends
-// every chunk to the term's scrollback ring (via `handle`) — unconditionally,
-// even while no app is connected — so a (re)connecting app can replay it.
+/// Pushes at most one bell per `BELL_DEBOUNCE` window.
+struct BellDebounce {
+    last: Option<Instant>,
+}
+
+impl BellDebounce {
+    fn rings(&mut self, chunk: &[u8]) -> bool {
+        if !chunk.contains(&BEL) {
+            return false;
+        }
+        let now = Instant::now();
+        if self.last.is_none_or(|t| now.duration_since(t) >= BELL_DEBOUNCE) {
+            self.last = Some(now);
+            return true;
+        }
+        false
+    }
+}
+
+// Scanning for BEL here, not in the blocking reader thread, keeps the reader
+// free of a daemon handle. Every chunk lands in the scrollback ring even while
+// no app is connected.
+async fn forward_chunk(
+    daemon: &Daemon,
+    term_id: &str,
+    handle: &TermHandle,
+    bells: &mut BellDebounce,
+    chunk: Vec<u8>,
+) {
+    let bell = bells.rings(&chunk);
+    // The guard drops at the `;`, before any .await.
+    handle.scrollback.lock().expect("scrollback lock").push(&chunk);
+    daemon.push(Msg::Output { term_id: term_id.to_owned(), bytes: chunk }).await;
+    if bell {
+        daemon.push(Msg::Bell { term_id: term_id.to_owned() }).await;
+    }
+}
+
+// Sends exit only after output is drained, so the app always sees output frames
+// before the exit frame.
 async fn pump(
     daemon: Arc<Daemon>,
     term_id: String,
@@ -261,55 +288,20 @@ async fn pump(
     mut exit_rx: oneshot::Receiver<Option<i64>>,
     handle: Arc<TermHandle>,
 ) {
-    // M2 honest signals: push at most one bell per BELL_DEBOUNCE window.
-    let mut last_bell: Option<Instant> = None;
-    let mut maybe_bell = |chunk: &[u8]| -> bool {
-        if !chunk.contains(&BEL) {
-            return false;
-        }
-        let now = Instant::now();
-        if last_bell.is_none_or(|t| now.duration_since(t) >= BELL_DEBOUNCE) {
-            last_bell = Some(now);
-            return true;
-        }
-        false
-    };
-
+    let mut bells = BellDebounce { last: None };
     let mut exit_code: Option<Option<i64>> = None;
     loop {
         if exit_code.is_some() {
             // Child is gone; drain whatever output remains, with a grace cap
             // in case a grandchild still holds the pty open.
             match tokio::time::timeout(Duration::from_secs(2), out_rx.recv()).await {
-                Ok(Some(chunk)) => {
-                    let bell = maybe_bell(&chunk);
-                    // P5: retain in the scrollback ring before the bytes move into
-                    // the push (lock dropped at the `;`, never held across .await).
-                    handle.scrollback.lock().expect("scrollback lock").push(&chunk);
-                    daemon
-                        .push(Msg::Output { term_id: term_id.clone(), bytes: chunk })
-                        .await;
-                    if bell {
-                        daemon.push(Msg::Bell { term_id: term_id.clone() }).await;
-                    }
-                }
+                Ok(Some(chunk)) => forward_chunk(&daemon, &term_id, &handle, &mut bells, chunk).await,
                 _ => break,
             }
         } else {
             tokio::select! {
                 maybe = out_rx.recv() => match maybe {
-                    Some(chunk) => {
-                        let bell = maybe_bell(&chunk);
-                        // P5: retain in the scrollback ring before the bytes move
-                        // into the push (lock dropped at the `;`, never across .await).
-                        handle.scrollback.lock().expect("scrollback lock").push(&chunk);
-                        daemon
-                            .push(Msg::Output { term_id: term_id.clone(), bytes: chunk })
-                            .await;
-                        if bell {
-                            daemon.push(Msg::Bell { term_id: term_id.clone() }).await;
-                        }
-                    }
+                    Some(chunk) => forward_chunk(&daemon, &term_id, &handle, &mut bells, chunk).await,
                     None => {
                         exit_code = Some((&mut exit_rx).await.unwrap_or(None));
                         break;
@@ -326,37 +318,27 @@ async fn pump(
     if daemon.terms.lock().await.remove(&term_id).is_none() {
         warn!("term {term_id} missing from registry at exit");
     }
-    // M3: drop the term -> board ownership entry (board-scoped provenance ends
-    // with the term). The app turns the exit into a dead card per its own state.
     daemon.term_boards.lock().await.remove(&term_id);
     daemon.push(Msg::Exit { term_id, code }).await;
-    // P5: the exited pty lowered this board's running count — re-push board_list
-    // so a switcher row (even for a board the app has not rebuilt) drops it.
+    // The exited pty lowered its board's running count; re-push so a switcher
+    // row, even for a board the app has not rebuilt, drops it.
     daemon.push(daemon.board_list_msg().await).await;
 }
 
-// M2 honest signals: poll the foreground process-group leader of the pty every
-// PROC_POLL_INTERVAL and push a `term_proc` whenever the name changes (pushing
-// once on the first resolve). Stops when the term_id leaves daemon.terms (after
-// exit). Any FFI/lock failure just skips the tick — this loop never panics.
+// Pushes a `term_proc` whenever the foreground process name changes (and once
+// on the first resolve). Stops when the pump removes the term after exit. Any
+// lookup or lock failure skips the tick; this loop never panics.
 async fn proc_name_loop(daemon: Arc<Daemon>, term_id: String, handle: Arc<TermHandle>) {
     let mut last_name: Option<String> = None;
     let mut ticker = tokio::time::interval(PROC_POLL_INTERVAL);
     loop {
         ticker.tick().await;
-        // Stop once the term has exited (pump removes it from the registry).
         if !daemon.terms.lock().await.contains_key(&term_id) {
             break;
         }
 
-        // Lock the master only long enough to read the pgrp leader pid; the
-        // FFI path resolution happens after the lock is released.
-        let pid = {
-            let Ok(master) = handle.master.lock() else { continue };
-            master.process_group_leader()
-        };
-        let Some(pid) = pid else { continue };
-        let Some(name) = process_name(pid) else { continue };
+        let Some(pid) = handle.foreground_pid() else { continue };
+        let Some(name) = proc::process_name(pid) else { continue };
 
         if last_name.as_deref() != Some(name.as_str()) {
             last_name = Some(name.clone());
@@ -365,89 +347,6 @@ async fn proc_name_loop(daemon: Arc<Daemon>, term_id: String, handle: Arc<TermHa
                 .await;
         }
     }
-}
-
-// Resolve a pid's executable path via proc_pidpath (macOS) and return the file
-// basename. All unsafe FFI is guarded; any failure returns None (skip the tick).
-#[cfg(target_os = "macos")]
-fn process_name(pid: libc::pid_t) -> Option<String> {
-    let mut buf = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
-    // SAFETY: buf is a valid, sized allocation; proc_pidpath writes at most
-    // `buffersize` bytes and returns the number written (<= buffersize) or <= 0
-    // on error. We never read past `len`.
-    let len = unsafe {
-        libc::proc_pidpath(pid, buf.as_mut_ptr() as *mut libc::c_void, buf.len() as u32)
-    };
-    if len <= 0 {
-        return None;
-    }
-    buf.truncate(len as usize);
-    let path = String::from_utf8_lossy(&buf);
-    let base = std::path::Path::new(path.as_ref()).file_name()?.to_string_lossy().into_owned();
-    if base.is_empty() { None } else { Some(base) }
-}
-
-// Non-macOS fallback (the daemon ships on macOS; keep the crate buildable
-// elsewhere): no process-name resolution, so no term_proc is pushed.
-#[cfg(not(target_os = "macos"))]
-fn process_name(_pid: libc::pid_t) -> Option<String> {
-    None
-}
-
-// issue #77: resolve a pid's CURRENT working directory via
-// proc_pidinfo(PROC_PIDVNODEPATHINFO) — the same fact `lsof -p <pid> -d cwd`
-// reports. Mirrors process_name's FFI pattern: all unsafe is guarded, any
-// failure (dead pid, permission) returns None.
-#[cfg(target_os = "macos")]
-fn pid_cwd(pid: libc::pid_t) -> Option<String> {
-    let mut info: libc::proc_vnodepathinfo = unsafe { std::mem::zeroed() };
-    let size = std::mem::size_of::<libc::proc_vnodepathinfo>() as libc::c_int;
-    // SAFETY: `info` is a valid, zeroed, exactly-sized buffer; proc_pidinfo
-    // writes at most `size` bytes and returns <=0 on error.
-    let ret = unsafe {
-        libc::proc_pidinfo(
-            pid,
-            libc::PROC_PIDVNODEPATHINFO,
-            0,
-            &mut info as *mut _ as *mut libc::c_void,
-            size,
-        )
-    };
-    if ret <= 0 {
-        return None;
-    }
-    // vip_path is a NUL-terminated cwd string packed as [[c_char; 32]; 32]
-    // (MAXPATHLEN split across a fixed 2D array for an old-rustc const-generic
-    // limit in libc) — read it as one flat byte buffer.
-    let vip_path = &info.pvi_cdir.vip_path;
-    // SAFETY: vip_path is a field of `info`, alive for this call; the length is
-    // its exact byte size (path is c_char == u8-sized on this target).
-    let bytes = unsafe {
-        std::slice::from_raw_parts(vip_path.as_ptr() as *const u8, std::mem::size_of_val(vip_path))
-    };
-    let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
-    let cwd = String::from_utf8_lossy(&bytes[..end]).into_owned();
-    (!cwd.is_empty()).then_some(cwd)
-}
-
-#[cfg(not(target_os = "macos"))]
-fn pid_cwd(_pid: libc::pid_t) -> Option<String> {
-    None
-}
-
-/// The CURRENT working directory of a term's foreground process, resolved live
-/// (never its spawn-time cwd) via the same process-group-leader pid
-/// `proc_name_loop` already polls for the card title. This is deliberately the
-/// FOREGROUND job's leader, not the shell/session leader: at a bare prompt (the
-/// common ⌘T case) that leader IS the shell, and when a job is running we
-/// inherit *its* cwd — where the user visually is, and the same pid whose name
-/// the card already shows. Locks `master` only for the pid read (never across an
-/// await), so this is safe to call from an async dispatch handler. None if the
-/// pty or the OS lookup doesn't resolve — callers fall back to the daemon's
-/// default cwd.
-pub fn live_cwd(handle: &TermHandle) -> Option<String> {
-    let pid = handle.master.lock().ok()?.process_group_leader()?;
-    pid_cwd(pid)
 }
 
 #[cfg(test)]
@@ -462,8 +361,7 @@ mod tests {
 
     #[test]
     fn forces_utf8_when_nothing_is_set() {
-        // The launchd-launched daemon case: no locale vars at all → force, so
-        // the shell can decode the UTF-8 bytes SwiftTerm sends on a CJK commit.
+        // The launchd-launched daemon case: no locale vars at all.
         assert!(decide(&[]));
     }
 
@@ -494,24 +392,5 @@ mod tests {
         // An empty higher-precedence var is ignored; the next decides.
         assert!(!decide(&[("LC_ALL", ""), ("LANG", "en_US.UTF-8")]));
         assert!(decide(&[("LC_CTYPE", ""), ("LANG", "C")]));
-    }
-
-    // issue #77: pid_cwd resolves a live pid's real cwd — proven here on our own
-    // test process, which cargo always launches with a real (non-tmp) cwd.
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn pid_cwd_resolves_own_process_cwd() {
-        use super::pid_cwd;
-        let pid = std::process::id() as libc::pid_t;
-        let cwd = pid_cwd(pid).expect("cwd resolves for our own live pid");
-        let expected = std::env::current_dir().unwrap().canonicalize().unwrap();
-        assert_eq!(std::path::Path::new(&cwd).canonicalize().unwrap(), expected);
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn pid_cwd_returns_none_for_an_invalid_pid() {
-        use super::pid_cwd;
-        assert_eq!(pid_cwd(-1), None);
     }
 }
