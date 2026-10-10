@@ -456,7 +456,9 @@ fn p5_board_meta_running_roundtrips() {
         boards: vec![BoardMeta { board_id: "board-0".into(), name: None, running: Some(0) }],
         active: "board-0".into(),
     };
-    assert_ne!(encode(&none_keyed).unwrap(), encode(&zero_keyed).unwrap());
+    let none_bytes = encode(&none_keyed).unwrap();
+    assert!(!has(&none_bytes, b"running"), "None must omit the running key on the wire");
+    assert_ne!(none_bytes, encode(&zero_keyed).unwrap());
 }
 
 // A restore carrying `live_terms` round-trips; one without omits the key, so
@@ -481,6 +483,7 @@ fn p5_restore_live_terms_roundtrips() {
         docs: vec![], tiles: vec![], board: None, board_id: None, live_terms: vec!["t1".into()],
     };
     let empty_bytes = encode(&empty).unwrap();
+    assert!(!has(&empty_bytes, b"live_terms"), "an empty list must omit the live_terms key on the wire");
     let Msg::Restore { live_terms, .. } = decode(&empty_bytes).unwrap() else { panic!("not restore") };
     assert!(live_terms.is_empty(), "absent live_terms decodes empty");
     assert_ne!(encode(&one).unwrap(), empty_bytes);
@@ -827,6 +830,11 @@ fn hello_ok_daemon_version_additive() {
     assert_eq!(daemon_pid, None);
     let with_vals = hello_ok(Some("0.1.0"), Some(4242), None, None);
     assert_eq!(roundtrip(&with_vals), with_vals);
+    // The round trip uses one codec for both directions, so it cannot see a
+    // renamed key; the bytes can.
+    let bytes = encode(&with_vals).unwrap();
+    assert!(has(&bytes, b"daemon_version"), "a value must use the daemon_version key on the wire");
+    assert!(has(&bytes, b"daemon_pid"), "a value must use the daemon_pid key on the wire");
 }
 
 // A None `app_version` on `hello` must leave conformance vector 2's *encoded
