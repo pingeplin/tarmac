@@ -1,12 +1,13 @@
 // issue #34: `doc_close` removes a doc from the daemon registry, persists
-// state.json, and unwatches the parent dir iff no sibling doc remains in it.
+// state.json, and unwatches the parent dir. Since #235 the dir stays watched while
+// any board has a doc in it.
 // An unknown path is a benign no-op; the handler is idempotent under repeat.
 
 mod common;
 
 use std::time::Duration;
 
-use common::{TestDaemon, cli_open, has_doc, is_file_event_for, none_within, settle, touch, write_doc};
+use common::{TestDaemon, cli_open, has_doc, is_file_event_for, mtime_ms, none_within, settle, touch, write_doc};
 use tarmac_protocol::Msg;
 
 // DocClose removes path from Registry.docs + dock; state.json no longer
@@ -99,6 +100,41 @@ fn doc_close_keeps_dir_watched_when_sibling_remains() {
         none_within(&mut app, Duration::from_millis(800), |m| is_file_event_for(m, &a)),
         "FileEvent must not fire for a path removed from the registry"
     );
+}
+
+// The watch set is one per daemon, not one per board. A board that closes its
+// last doc in a directory must not take the watch from a doc that another board
+// has there (#235).
+//
+// Each wait matches the mtime of its own touch. A path-only wait takes an older
+// event for `a` (the replayed creation, or the first touch's event that arrives
+// after the switch back), and the test then passes with no watch on the dir.
+#[test]
+fn doc_close_keeps_dir_watched_for_a_doc_on_another_board() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+
+    let a = write_doc(&daemon.dir.join("shared/a.md"), "a\n");
+    let b = write_doc(&daemon.dir.join("shared/b.md"), "b\n");
+    cli_open(&daemon.sock, &a);
+    app.recv_doc_opened_for(&a);
+    settle();
+    touch(&a);
+    app.recv_file_event_since(&a, mtime_ms(&a));
+
+    // The close and the switch go down one connection, so the daemon handles
+    // them in this order.
+    app.send(&Msg::BoardCreate);
+    app.recv_restore_for("board-1");
+    cli_open(&daemon.sock, &b);
+    app.recv_doc_opened_for(&b);
+    app.send(&Msg::DocClose { path: b.clone() });
+    app.send(&Msg::BoardSwitch { board_id: "board-0".into() });
+    app.recv_restore_for("board-0");
+
+    settle();
+    touch(&a);
+    app.recv_file_event_since(&a, mtime_ms(&a));
 }
 
 // DocClose for an unknown path is a no-op. An unrelated open doc still
