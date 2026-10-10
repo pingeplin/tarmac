@@ -40,9 +40,9 @@ public enum CardConsole {
         case ready(meta: String?)
         /// Where the document's root is scrolled to.
         case scrolled(ScrollMetrics)
-        /// The document the frame was last given is on screen. The host page
-        /// says this itself, and carries no such word from the card.
-        case shown
+        /// The document of the frame's load number `load` is on screen. The
+        /// host page says this itself, and carries no such word from the card.
+        case shown(load: Int)
     }
 
     /// Validates a `WKScriptMessage` body. A `ready` must carry the `meta` key — a
@@ -56,7 +56,7 @@ public enum CardConsole {
         case "escape":
             return .escape
         case "shown":
-            return .shown
+            return (payload["load"] as? Int).map(Message.shown)
         case "scrolled":
             return ScrollMetrics(report: payload).map(Message.scrolled)
         case "ready":

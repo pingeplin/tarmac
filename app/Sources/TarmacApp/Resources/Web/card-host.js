@@ -65,23 +65,28 @@
   // a source until it is told that the document is on screen. Before
   // that there is white to see, while the document may be dark: this page
   // for a frame or two before it is first drawn, then the frame with no
-  // document in it. `asked` counts the sources given and `started` is the
-  // last one whose document has started.
+  // document in it. `asked` is the app's number for the source the frame
+  // was last given, `started` the last one whose document has started, and
+  // `replaced` the source the frame had before this one.
   let asked = 0;
   let started = 0;
+  let source = null;
+  let replaced = null;
 
   // Two frames, measured: the first is drawn with the document in it, and a
   // word posted in the second reaches the app after that drawing has. Told
   // at once, 4 opens of 5 still showed one white frame; one frame later, 2
   // of 5; two frames later, none of 15. A source that was replaced while its
-  // frames were awaited is not told of: the app waits for the new one.
+  // frames were awaited is not told of: the app waits for the new one. The
+  // app can know of a newer source than this page does, so the word names
+  // its load and the app decides.
   function documentStarted() {
     if (started === asked) return;
     started = asked;
-    const source = asked;
+    const load = asked;
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
-        if (source === asked) webkit.messageHandlers.card.postMessage({ tarmac: "shown" });
+        if (load === asked) webkit.messageHandlers.card.postMessage({ tarmac: "shown", load: load });
       });
     });
   }
@@ -95,9 +100,10 @@
     // Only this card's own document is heard.
     if (event.source !== card.contentWindow) return;
     try {
-      // The shim's first word is for this page alone.
+      // The shim's first word is for this page alone. The document that the
+      // frame had before can say it after the frame was given the next one.
       if (event.data !== null && typeof event.data === "object" && event.data.tarmac === "started") {
-        documentStarted();
+        if (event.data.source !== replaced) documentStarted();
         return;
       }
       const message = carried(event.data);
@@ -108,8 +114,10 @@
   });
 
   window.tarmacCard = {
-    load(src) {
-      asked += 1;
+    load(src, number) {
+      asked = number;
+      replaced = source;
+      source = src;
       card.src = src;
     },
     post(message) {
