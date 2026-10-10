@@ -1,21 +1,31 @@
 //! Wire types, codec, and framing for the tarmac unix-socket protocol.
-//! Authoritative contract: docs/protocol.md (v1, M0 + M1 subsets).
+//! Authoritative contract: docs/protocol.md.
+
+mod channel;
+pub mod dev;
+pub mod frame;
+
+pub use channel::{
+    channel_dir, channel_label, check_socket_path_len, resolve_socket_path, resolve_state_path,
+    Channel,
+};
 
 use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const MAX_FRAME_LEN: u32 = 16 * 1024 * 1024;
 
-// Eq is dropped from Msg/Tile/BoardViewport because the v4 board geometry
-// fields are f64 (no Eq); PartialEq still backs the conformance assert_eq!s.
+// No `Eq` on Msg, Tile or BoardViewport: their geometry fields are f64.
+//
+// Optional keys are additive: a missing key decodes to `None`, and `None` is
+// omitted on encode, so frames from senders that predate a key stay byte-identical.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(tag = "t", rename_all = "snake_case")]
 pub enum Msg {
     Hello {
         role: String,
         v: u32,
-        // 2609.0012 additive key (optional; missing => nil): the client's own
-        // version. Only the app sets it; the CLI never does.
+        /// Set by the app only; the CLI never sends it.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         app_version: Option<String>,
     },
@@ -25,10 +35,10 @@ pub enum Msg {
         daemon_version: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         daemon_pid: Option<u32>,
-        // 2609.0012 additive keys (optional; missing => nil), sent to `cli`
-        // clients only. They are separate because presence and version are
-        // separate facts: `app_connected: true` with no `app_version` is an app
-        // that named no version, which must not be reported as no app.
+        /// `app_version` and `app_connected` go to `cli` clients only. They are
+        /// separate because presence and version are separate facts:
+        /// `app_connected: true` with no `app_version` is an app that named no
+        /// version, which must not be reported as no app.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         app_version: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -40,14 +50,12 @@ pub enum Msg {
     },
     Open {
         path: String,
-        // v4 Phase 3 additive key (optional; missing => nil): the term_id that
-        // ran `tarmac open` (provenance + gravity owner). The CLI reads it from
-        // TARMAC_TERM_ID in its pty env; the app open arm passes None for now.
+        /// The terminal that ran `tarmac open`, which the CLI reads from
+        /// `TARMAC_TERM_ID`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         term_id: Option<String>,
-        // M3 additive key (optional; missing => the caller term's board, else
-        // active): the board the opened doc should land on. Usually derived from
-        // term_id daemon-side, but allowed on the wire for an explicit target.
+        /// Explicit target board. Missing => the caller terminal's board, else
+        /// the active one.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         board_id: Option<String>,
     },
@@ -57,12 +65,9 @@ pub enum Msg {
     Layout {
         dock: Vec<String>,
         tiles: Vec<Tile>,
-        // v4 board additive key (optional; missing => nil): persisted viewport.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         board: Option<BoardViewport>,
-        // M3 additive key (optional; missing => board-0): which board this layout
-        // belongs to. The daemon applies an absent id to the active board, so a
-        // single-board sender that never sets it keeps the byte-identical wire.
+        /// Missing => the active board.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         board_id: Option<String>,
     },
@@ -70,20 +75,14 @@ pub enum Msg {
         docs: Vec<DocEntry>,
         #[serde(default)]
         tiles: Vec<Tile>,
-        // v4 board additive key (optional; missing => nil): persisted viewport.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         board: Option<BoardViewport>,
-        // M3 additive key (optional; missing => board-0): which board is being
-        // restored. The daemon stamps the restored board's id (incl. board-0) so
-        // the app binds the restore unambiguously across rapid switches; restore
-        // is not one of the byte-pinned conformance vectors, so additivity holds.
+        /// The daemon stamps the restored board's id so the app binds a restore
+        /// unambiguously across rapid board switches.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         board_id: Option<String>,
-        // P5 additive key (missing => empty): the term_ids the daemon currently
-        // owns a *live* pty for on this board. The app re-binds these cards to the
-        // running shells (and consumes their replayed scrollback that follows the
-        // restore) instead of cold-spawning fresh ones. Empty => cold-spawn — the
-        // pre-P5 behaviour, and the daemon-restart case where the shells are gone.
+        /// Terminals with a live pty on this board; the app re-binds their cards
+        /// to the running shells. Empty => cold-spawn.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         live_terms: Vec<String>,
     },
@@ -93,19 +92,12 @@ pub enum Msg {
         rows: u16,
         cwd: Option<String>,
         cmd: Option<Vec<String>>,
-        // M3 additive key (optional; missing => board-0 / active): the board the
-        // new terminal card belongs to. The daemon records term_id -> board_id
-        // at spawn so restore, teardown and `tarmac open` provenance scope per
-        // board even when the target board is not the active one.
+        /// Missing or unknown => the active board.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         board_id: Option<String>,
-        // issue #77 additive key (optional; missing => nil): the term_id whose
-        // LIVE cwd (not its spawn cwd) this new terminal should start in, e.g.
-        // ⌘T inheriting the prime terminal's current directory. Ignored when
-        // `cwd` is already set; resolved daemon-side at spawn time so it always
-        // reflects where that terminal is *now*, including after it has `cd`'d
-        // away. An unknown/dead source term silently falls through to
-        // term::spawn's own default.
+        /// The terminal whose live cwd (not its spawn cwd) the new one starts in.
+        /// Ignored when `cwd` is set; an unknown or dead source falls through to
+        /// the daemon's default.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         inherit_cwd_from: Option<String>,
     },
@@ -133,8 +125,6 @@ pub enum Msg {
         path: String,
         mtime_ms: u64,
     },
-    // M2 honest signals (daemon -> app; additive message types). A receiver
-    // that does not know them ignores them (Unknown), so they are safe.
     TermProc {
         term_id: String,
         name: String,
@@ -144,89 +134,64 @@ pub enum Msg {
     Bell {
         term_id: String,
     },
-    // M3 ("strips = boards"; additive message types). A receiver that does not
-    // know them ignores them (Unknown), so they are safe on the wire.
-    //
-    // BoardList (daemon -> app): the full set of boards in display order plus
-    // the active one. Pushed right after hello_ok and on every board change.
+    /// Daemon -> app: every board in display order, plus the active one.
     BoardList {
         boards: Vec<BoardMeta>,
         active: String,
     },
-    // BoardSwitch (app -> daemon): make `board_id` active; the daemon replies
-    // with that board's restore.
+    /// App -> daemon: make `board_id` active; the daemon replies with its restore.
     BoardSwitch {
         board_id: String,
     },
-    // BoardCreate (app -> daemon): mint a fresh board (the daemon assigns the
-    // slug id) and re-emit board_list. P5 adds rename/delete.
+    /// App -> daemon: mint a board; the daemon assigns the slug id.
     BoardCreate,
-    // BoardRename (app -> daemon, P5.4): set `board_id`'s display name. An empty
-    // `name` clears it back to the slug fallback. The daemon re-emits board_list.
+    /// App -> daemon: an empty `name` clears the display name back to the slug.
     BoardRename {
         board_id: String,
         name: String,
     },
-    // BoardDelete (app -> daemon, P5.4): remove `board_id`, kill its ptys, and
-    // re-emit board_list (+ the now-active board's restore when the deleted board
-    // was active). Refused (no-op) when it is the last board; the daemon fixes the
-    // active board if the deleted one was active.
+    /// App -> daemon: refused when it is the last board.
     BoardDelete {
         board_id: String,
     },
-    // TermClose (app -> daemon, issue #15): kill one terminal's pty (SIGHUP to its
-    // process group, reusing TermHandle::kill) so ⌘W can close a single terminal
-    // card. The pump's wait thread then runs the normal exit cleanup (terms/
-    // term_boards removal, Exit + board_list). An unknown term_id is a no-op.
+    /// App -> daemon: kill one terminal's pty. An unknown `term_id` is a no-op.
     TermClose {
         term_id: String,
     },
-    // DocClose (app -> daemon, issue #34): forget a doc — prune Registry.docs +
-    // dock, persist state.json, unwatch the parent dir iff no remaining doc in
-    // the registry shares it. Idempotent: an unknown path is a silent no-op.
+    /// App -> daemon: forget a doc. Idempotent: an unknown path is a no-op.
     DocClose {
         path: String,
     },
-    // DocRefresh (app -> daemon, issue #89): re-stat a doc on demand and push the
-    // usual file_event, so a card refreshes without waiting for the notify watcher.
-    // Semantics in docs/protocol.md; the handler is docs::stat_and_push.
+    /// App -> daemon: re-stat a doc now and push the usual `file_event`.
     DocRefresh {
         path: String,
     },
-    // ScrollbackRequest (app -> daemon, issue #41): re-emit one term's scrollback
-    // ring now, so a terminal card remounted by a webview reload gets its history
-    // back. An unknown term_id is NOT an error — see Scrollback.
+    /// App -> daemon: re-emit one terminal's scrollback. An unknown `term_id` is
+    /// not an error; see `Scrollback`.
     ScrollbackRequest {
         term_id: String,
     },
-    // Scrollback (daemon -> app, issue #41): the answer to exactly one
-    // ScrollbackRequest, one frame per request. Always sent, even when the ring is
-    // empty or the term is unknown, so the app never waits forever.
+    /// Daemon -> app: the answer to exactly one `ScrollbackRequest`. Always sent,
+    /// even for an empty ring or an unknown terminal, so the app never waits forever.
     Scrollback {
         term_id: String,
         #[serde(with = "serde_bytes")]
         bytes: Vec<u8>,
     },
-    // Unknown message types are ignored, not fatal (protocol rule).
+    /// A receiver ignores message types it does not know instead of failing.
     #[serde(other)]
     Unknown,
 }
 
-/// M3: one board's identity for the boards switcher (`board_list`). `name` is
-/// the user-given display name (absent until named — manual naming only); the
-/// switcher falls back to the slug `board_id`. Display order is the vec order.
+/// One board's identity for the switcher. Display order is the vec order.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct BoardMeta {
     pub board_id: String,
+    /// User-given display name; the switcher falls back to the slug `board_id`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    // P5 additive key (optional; missing => unknown): the count of *live* ptys
-    // the daemon owns for this board (term_boards ∩ terms). This is the honest
-    // per-board liveness the app cannot derive for a never-visited board (it has
-    // no cards yet); the daemon re-pushes board_list when this crosses on spawn
-    // /exit. A board with zero live terms still emits Some(0); only a pre-P5
-    // sender omits the key, so existing board_list vectors decode None and
-    // re-encode byte-identically.
+    /// Count of live ptys on the board, which the app cannot derive for a board
+    /// it never opened. Missing => unknown, which is distinct from `Some(0)`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub running: Option<u32>,
 }
@@ -238,14 +203,12 @@ pub struct DocEntry {
     pub repo: Option<String>,
     pub repo_root: Option<String>,
     pub repo_color: Option<u8>,
-    // Wire default is true: an entry without the key (M0 sender) never renders
-    // an unread dot.
+    /// The wire default is true: an entry without the key never shows an unread dot.
     #[serde(default = "read_default")]
     pub read: bool,
     pub last_changed_ms: Option<u64>,
     pub last_opened_ms: Option<u64>,
-    // v4 Phase 3 additive key (optional; missing => nil): the term that opened
-    // the doc (provenance + gravity owner). Carried through restore/doc_opened.
+    /// The terminal that opened the doc.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub term_id: Option<String>,
 }
@@ -254,14 +217,13 @@ fn read_default() -> bool {
     true
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct Tile {
     pub kind: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
-    // v4 board additive keys (optional; missing => nil): the world-space card
-    // frame and stacking order. A tile without these behaves as an M1 tile
-    // (the app falls back to grid placement), so M1 frames decode identically.
+    /// World-space card frame and stacking order. The app places a tile that has
+    /// none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub x: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -272,24 +234,19 @@ pub struct Tile {
     pub h: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub z: Option<i64>,
-    // v4 Phase 3 additive keys (optional; missing => nil): `loose` is the
-    // gravity-detached flag (missing => attached); `shelf` true => the doc is
-    // parked on the shelf rather than placed on the board (a shelf doc tile has
-    // kind "doc", shelf:true, and no x/y/w/h).
+    /// Detached from its terminal's gravity; missing => attached.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub loose: Option<bool>,
+    /// From the removed shelf; the app drops such tiles. Kept for wire compatibility.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shelf: Option<bool>,
-    // v4 Phase 5b additive key (optional; missing => nil): the `term_id` a
-    // terminal tile belongs to, so N terminal cards persist distinct positions.
-    // Absent on doc tiles and on legacy single-terminal layouts (the daemon
-    // keeps exactly one `None`-keyed term tile; see `Registry::set_tiles`).
+    /// The terminal a term tile belongs to. Absent on doc tiles and on legacy
+    /// single-terminal layouts, which the daemon keeps as one `None`-keyed tile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub term_id: Option<String>,
 }
 
-/// The persisted board viewport for a strip: zoom factor + world-space center.
-/// v4 additive (`restore.board` / `layout.board`); whole map missing => nil.
+/// The persisted board viewport: zoom factor and world-space center.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct BoardViewport {
     pub zoom: f64,
@@ -297,9 +254,9 @@ pub struct BoardViewport {
     pub cy: f64,
 }
 
-/// FNV-1a 64-bit over the repo name, mod 4 → palette index 0..=3.
-/// Must stay byte-for-byte identical to the app's Theme.repoColor(for:):
-/// M0 peek-header colors must not change when the daemon takes over hashing.
+/// FNV-1a 64-bit over the repo name, mod 4 => palette index 0..=3.
+/// The only source of a doc's repo color: the app hashes nothing and maps the
+/// index onto its palette, so changing the hash alters colors users already saw.
 pub fn repo_color_index(repo: &str) -> u8 {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for byte in repo.as_bytes() {
@@ -307,95 +264,6 @@ pub fn repo_color_index(repo: &str) -> u8 {
         hash = hash.wrapping_mul(0x100_0000_01b3);
     }
     (hash % 4) as u8
-}
-
-// ---------------------------------------------------------------------------
-// 2606.0003: per-channel daemon socket + state path derivation.
-//
-// The daemon and CLI both depend on this crate, so the path logic — and the
-// `dev` literal — live here ONCE, shared by construction. Each binary keeps
-// only a thin shell that maps its own build configuration to a `Channel` and
-// joins the filename it needs. The Swift app mirrors this in `ChannelPaths`
-// across the language boundary (the only place the literal is duplicated).
-// ---------------------------------------------------------------------------
-
-use std::ffi::{OsStr, OsString};
-use std::path::{Path, PathBuf};
-
-/// Build channel. `Release` == the shipped, signed bundle
-/// (`cfg!(debug_assertions) == false`); `Dev` == any debug build
-/// (`cfg!(debug_assertions) == true`). The channel is each binary's own
-/// immutable build configuration, mapped to this enum at exactly one audited
-/// line per binary.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Channel {
-    Release,
-    Dev,
-}
-
-/// PURE per-channel directory. Both path resolvers SHARE this for their
-/// default branch, so the `dev` literal exists once and the socket and state
-/// files always carry the SAME channel segment (spec S7). Takes NO override —
-/// it only produces the directory.
-/// Default = `home`/Library/Application Support/tarmac` + [`Dev` => `/dev`].
-pub fn channel_dir(home: &Path, channel: Channel) -> PathBuf {
-    let base = home.join("Library/Application Support/tarmac");
-    match channel {
-        Channel::Release => base,
-        Channel::Dev => base.join("dev"),
-    }
-}
-
-/// PURE socket resolver. `over` is the `TARMAC_SOCKET` value read by the shell;
-/// a present **and non-empty** value wins VERBATIM (empty is treated as unset —
-/// unified with Swift, spec S9). Otherwise the default is
-/// `channel_dir(home, channel)/tarmacd.sock`; `Release` is byte-for-byte
-/// today's flat path, so existing users are never migrated (spec S1).
-pub fn resolve_socket_path(over: Option<OsString>, home: &OsStr, channel: Channel) -> PathBuf {
-    if let Some(p) = over.filter(|v| !v.is_empty()) {
-        return PathBuf::from(p);
-    }
-    channel_dir(Path::new(home), channel).join("tarmacd.sock")
-}
-
-/// PURE state resolver (used by `tarmacd` only — the CLI and app hold no state).
-/// Same shape as `resolve_socket_path` with `state.json`, so dev state lands
-/// beside the dev socket under one per-channel dir (spec S6/S7).
-pub fn resolve_state_path(over: Option<OsString>, home: &OsStr, channel: Channel) -> PathBuf {
-    if let Some(p) = over.filter(|v| !v.is_empty()) {
-        return PathBuf::from(p);
-    }
-    channel_dir(Path::new(home), channel).join("state.json")
-}
-
-/// PURE length guard for a Unix-domain socket path. macOS caps
-/// sockaddr_un.sun_path at 104 bytes; bind/connect fail opaquely past it.
-/// Ok(())  iff path.as_os_str().len() < 104  (103 = OK).
-/// Err(msg) iff len >= 104 (104 = rejected); msg names the byte length,
-/// the 104-byte cap, AND the remedy (set TARMAC_SOCKET shorter, e.g. /tmp).
-/// SEPARATE from resolve_socket_path: resolution vs validation (SRP).
-pub fn check_socket_path_len(path: &std::path::Path) -> Result<(), String> {
-    let len = path.as_os_str().len();
-    if len < 104 {
-        Ok(())
-    } else {
-        Err(format!(
-            "socket path is {} bytes, over the 104-byte macOS sockaddr_un.sun_path cap: {}; \
-             set TARMAC_SOCKET to a shorter path, e.g. under /tmp",
-            len,
-            path.display()
-        ))
-    }
-}
-
-/// Human channel label for diagnostics: `Release` => `"release"`,
-/// `Dev` => `"dev"`. Mirrors Swift `ChannelPaths.channelLabel`; the impure
-/// "no daemon" / startup messages format it in (spec S10).
-pub fn channel_label(channel: Channel) -> &'static str {
-    match channel {
-        Channel::Release => "release",
-        Channel::Dev => "dev",
-    }
 }
 
 // to_vec_named is load-bearing: plain to_vec emits structs as msgpack arrays,
@@ -406,376 +274,6 @@ pub fn encode(msg: &Msg) -> Result<Vec<u8>, rmp_serde::encode::Error> {
 
 pub fn decode(bytes: &[u8]) -> Result<Msg, rmp_serde::decode::Error> {
     rmp_serde::from_slice(bytes)
-}
-
-pub mod frame {
-    use super::MAX_FRAME_LEN;
-    use std::io::{self, Read, Write};
-
-    fn too_large(n: u64) -> io::Error {
-        io::Error::new(io::ErrorKind::InvalidData, format!("frame too large: {n}"))
-    }
-
-    pub fn read_sync(r: &mut impl Read) -> io::Result<Vec<u8>> {
-        let mut len = [0u8; 4];
-        r.read_exact(&mut len)?;
-        let n = u32::from_be_bytes(len);
-        if n > MAX_FRAME_LEN {
-            return Err(too_large(n as u64));
-        }
-        let mut buf = vec![0u8; n as usize];
-        r.read_exact(&mut buf)?;
-        Ok(buf)
-    }
-
-    pub fn write_sync(w: &mut impl Write, payload: &[u8]) -> io::Result<()> {
-        if payload.len() as u64 > MAX_FRAME_LEN as u64 {
-            return Err(too_large(payload.len() as u64));
-        }
-        w.write_all(&(payload.len() as u32).to_be_bytes())?;
-        w.write_all(payload)
-    }
-
-    #[cfg(feature = "async")]
-    pub async fn read_async(r: &mut (impl tokio::io::AsyncRead + Unpin)) -> io::Result<Vec<u8>> {
-        use tokio::io::AsyncReadExt;
-        let mut len = [0u8; 4];
-        r.read_exact(&mut len).await?;
-        let n = u32::from_be_bytes(len);
-        if n > MAX_FRAME_LEN {
-            return Err(too_large(n as u64));
-        }
-        let mut buf = vec![0u8; n as usize];
-        r.read_exact(&mut buf).await?;
-        Ok(buf)
-    }
-
-    #[cfg(feature = "async")]
-    pub async fn write_async(
-        w: &mut (impl tokio::io::AsyncWrite + Unpin),
-        payload: &[u8],
-    ) -> io::Result<()> {
-        use tokio::io::AsyncWriteExt;
-        if payload.len() as u64 > MAX_FRAME_LEN as u64 {
-            return Err(too_large(payload.len() as u64));
-        }
-        w.write_all(&(payload.len() as u32).to_be_bytes()).await?;
-        w.write_all(payload).await
-    }
-}
-
-
-// ---------------------------------------------------------------- dev driver
-// The in-app QA driver's wire types (spec 2609.0015, issue #166). Deliberately
-// NOT `Msg` variants: this socket is a debug-build-only side channel, and the
-// main protocol's additive-only rule would make anything added there permanent.
-// `Msg`, docs/protocol.md and the V1-V13 conformance vectors are untouched.
-pub mod dev {
-    use super::{channel_dir, Channel};
-    use serde::{Deserialize, Serialize};
-    use std::ffi::{OsStr, OsString};
-    use std::path::{Path, PathBuf};
-
-    /// One verb, one variant. Tagged exactly like `Msg` so a reader that knows one
-    /// socket knows the other: `"t"` names the verb in snake_case.
-    #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-    #[serde(tag = "t", rename_all = "snake_case")]
-    pub enum DevRequest {
-        Snapshot {
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            until: Option<String>,
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            timeout_ms: Option<u32>,
-        },
-        Zoom {
-            z: f64,
-        },
-        /// `card: None` is the board background, which is what blurs a focused
-        /// terminal. Card ids are never the literal "board" (they are term ids or
-        /// absolute paths), so the absence carries the meaning with no sentinel.
-        Focus {
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            card: Option<String>,
-        },
-        Resize {
-            card: String,
-            w: f64,
-            h: f64,
-        },
-        Type {
-            card: String,
-            text: String,
-        },
-        Key {
-            card: String,
-            combo: String,
-        },
-        /// A native ⌘ chord, posted in-process (spec 2609.0018, #183). The
-        /// app parses `combo`; the CLI only checks the flags' ranges.
-        Press {
-            combo: String,
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            hold_ms: Option<u32>,
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            age_ms: Option<u32>,
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            busy_ms: Option<u32>,
-        },
-        /// A verb this build does not know. Decoding to a value rather than an error
-        /// lets the app answer "unsupported" instead of dropping the frame.
-        #[serde(other)]
-        Unknown,
-    }
-
-    /// `press --hold` is `1..=HOLD_MS_MAX`, `--age` is `0..=AGE_MS_MAX`, and
-    /// `--busy` is `1..=BUSY_MS_MAX` — the only definition of the verb's
-    /// ranges. `BUSY_MS_MAX` sits below the guard's 2000 ms freshness bound:
-    /// past it a frozen page's ⌘Q routes `terminate` and really quits.
-    pub const HOLD_MS_MAX: u32 = 10_000;
-    pub const AGE_MS_MAX: u32 = 60_000;
-    pub const BUSY_MS_MAX: u32 = 1_800;
-
-    impl DevRequest {
-        /// The caller's own budget, where the verb has one: `snapshot` carries
-        /// its `--timeout`, `press` its `--busy` (the page answers only once the
-        /// freeze ends). Every other wait, `press`'s activation included, fits in
-        /// the backend's fixed slack. Both ends of the socket need that rule,
-        /// which is why it lives on the type rather than being re-matched in
-        /// each crate.
-        pub fn timeout_ms(&self) -> Option<u32> {
-            match self {
-                DevRequest::Snapshot { timeout_ms, .. } => *timeout_ms,
-                DevRequest::Press { busy_ms, .. } => *busy_ms,
-                _ => None,
-            }
-        }
-    }
-
-    /// `body` is an opaque string the CLI prints verbatim and never parses — which
-    /// is what keeps `tarmac-cli` std-only.
-    #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-    pub struct DevReply {
-        pub ok: bool,
-        pub body: String,
-    }
-
-    // to_vec_named for the same reason the main codec uses it: plain to_vec emits
-    // structs as msgpack arrays and breaks the map-with-string-keys rule.
-    pub fn encode_request(req: &DevRequest) -> Result<Vec<u8>, rmp_serde::encode::Error> {
-        rmp_serde::to_vec_named(req)
-    }
-
-    pub fn decode_request(bytes: &[u8]) -> Result<DevRequest, rmp_serde::decode::Error> {
-        rmp_serde::from_slice(bytes)
-    }
-
-    pub fn encode_reply(reply: &DevReply) -> Result<Vec<u8>, rmp_serde::encode::Error> {
-        rmp_serde::to_vec_named(reply)
-    }
-
-    pub fn decode_reply(bytes: &[u8]) -> Result<DevReply, rmp_serde::decode::Error> {
-        rmp_serde::from_slice(bytes)
-    }
-
-    /// PURE dev-socket resolver — the sibling of [`super::resolve_socket_path`],
-    /// sharing its `channel_dir` so the `dev` path segment exists in exactly one
-    /// place. `over` is `TARMAC_DEV_SOCKET`; present-and-non-empty wins verbatim,
-    /// empty is unset, matching every other resolver here.
-    pub fn resolve_dev_socket_path(over: Option<OsString>, home: &OsStr, channel: Channel) -> PathBuf {
-        if let Some(p) = over.filter(|v| !v.is_empty()) {
-            return PathBuf::from(p);
-        }
-        channel_dir(Path::new(home), channel).join("tarmac-dev.sock")
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-        use crate::{channel_dir, resolve_socket_path, Channel};
-        use std::ffi::OsString;
-        use std::path::Path;
-
-        fn roundtrip(req: &DevRequest) -> DevRequest {
-            decode_request(&encode_request(req).unwrap()).unwrap()
-        }
-
-        /// S45 - every variant survives encode -> the dev module's own decode.
-        #[test]
-        fn every_dev_request_variant_roundtrips() {
-            let all = [
-                DevRequest::Snapshot { until: None, timeout_ms: None },
-                DevRequest::Snapshot {
-                    until: Some("cards[t-1].term.cols != 80".into()),
-                    timeout_ms: Some(1500),
-                },
-                DevRequest::Zoom { z: 0.5 },
-                DevRequest::Focus { card: Some("t-1".into()) },
-                DevRequest::Focus { card: None },
-                DevRequest::Resize { card: "t-1".into(), w: 800.0, h: 600.0 },
-                DevRequest::Type { card: "t-1".into(), text: "a\nb".into() },
-                DevRequest::Key { card: "t-1".into(), combo: "ctrl+c".into() },
-            ];
-            for req in all {
-                assert_eq!(roundtrip(&req), req, "roundtrip changed {req:?}");
-            }
-        }
-
-        /// S46 - the encoding is a msgpack MAP, not an array. This is the one
-        /// assertion that catches plain `to_vec`, which the wire contract forbids.
-        #[test]
-        fn dev_frames_encode_as_maps_not_arrays() {
-            for bytes in [
-                encode_request(&DevRequest::Zoom { z: 1.0 }).unwrap(),
-                encode_request(&DevRequest::Focus { card: None }).unwrap(),
-                encode_reply(&DevReply { ok: true, body: "{}".into() }).unwrap(),
-            ] {
-                let head = bytes[0];
-                let is_map = (0x80..=0x8f).contains(&head) || head == 0xde || head == 0xdf;
-                assert!(is_map, "expected a msgpack map, first byte was {head:#04x}");
-            }
-        }
-
-        /// S45 (tagging) - the tag key is "t" and the tag value is snake_case,
-        /// mirroring `Msg`, so one reader convention covers both sockets.
-        #[test]
-        fn dev_requests_are_tagged_like_msg() {
-            // Read the tag by KEY NAME. A substring check for "t" would be
-            // satisfied by the tag *value* ("snapsho-t-") and could never fail;
-            // this deserialize fails if the key is named anything but `t`.
-            #[derive(serde::Deserialize)]
-            struct Tag {
-                t: String,
-            }
-            let tag_of = |req| rmp_serde::from_slice::<Tag>(&encode_request(&req).unwrap()).unwrap().t;
-            assert_eq!(tag_of(DevRequest::Snapshot { until: None, timeout_ms: None }), "snapshot");
-            assert_eq!(tag_of(DevRequest::Type { card: "t-1".into(), text: "x".into() }), "type");
-            assert_eq!(tag_of(DevRequest::Focus { card: None }), "focus");
-        }
-
-        /// S47 - additive-only: an unknown key on a known request is ignored.
-        #[test]
-        fn unknown_keys_are_ignored() {
-            // A `zoom` request from a newer CLI that also sends an `anchor` key.
-            #[derive(serde::Serialize)]
-            struct Future<'a> { t: &'a str, z: f64, anchor: &'a str }
-            let bytes = rmp_serde::to_vec_named(&Future { t: "zoom", z: 0.5, anchor: "pointer" }).unwrap();
-            assert_eq!(decode_request(&bytes).unwrap(), DevRequest::Zoom { z: 0.5 });
-        }
-
-        /// S47 - an unknown request TYPE decodes to `Unknown` rather than failing,
-        /// so an older app can refuse a newer verb instead of dropping the frame.
-        #[test]
-        fn unknown_request_types_decode_to_unknown() {
-            #[derive(serde::Serialize)]
-            struct Future<'a> { t: &'a str }
-            let bytes = rmp_serde::to_vec_named(&Future { t: "teleport" }).unwrap();
-            assert_eq!(decode_request(&bytes).unwrap(), DevRequest::Unknown);
-        }
-
-        /// S2 (2609.0018) - every `Press` shape round-trips under the `press`
-        /// tag, and absent flags are absent keys, not nils.
-        #[test]
-        fn press_roundtrips_and_skips_absent_flags() {
-            let bare = DevRequest::Press { combo: "cmd+q".into(), hold_ms: None, age_ms: None, busy_ms: None };
-            let all = [
-                bare.clone(),
-                DevRequest::Press { combo: "cmd+q".into(), hold_ms: Some(1000), age_ms: None, busy_ms: None },
-                DevRequest::Press { combo: "cmd+q".into(), hold_ms: None, age_ms: Some(2500), busy_ms: None },
-                DevRequest::Press { combo: "alt+cmd+q".into(), hold_ms: Some(10000), age_ms: Some(0), busy_ms: None },
-                DevRequest::Press { combo: "nonsense".into(), hold_ms: None, age_ms: None, busy_ms: None },
-                DevRequest::Press { combo: "cmd+q".into(), hold_ms: None, age_ms: None, busy_ms: Some(1000) },
-            ];
-            for req in all {
-                assert_eq!(roundtrip(&req), req, "roundtrip changed {req:?}");
-            }
-            #[derive(serde::Deserialize)]
-            struct Tag {
-                t: String,
-            }
-            let bytes = encode_request(&bare).unwrap();
-            assert_eq!(rmp_serde::from_slice::<Tag>(&bytes).unwrap().t, "press");
-            let keys: std::collections::BTreeMap<String, serde::de::IgnoredAny> =
-                rmp_serde::from_slice(&bytes).unwrap();
-            assert_eq!(keys.keys().cloned().collect::<Vec<_>>(), ["combo", "t"]);
-        }
-
-        /// S23 (2609.0018) - `press` carries its `--busy` as its budget, so both
-        /// ends of the socket wait out the freeze.
-        #[test]
-        fn press_budget_is_its_busy_ms() {
-            let press = |busy_ms| DevRequest::Press { combo: "cmd+q".into(), hold_ms: None, age_ms: None, busy_ms };
-            assert_eq!(press(Some(1000)).timeout_ms(), Some(1000));
-            assert_eq!(press(None).timeout_ms(), None);
-        }
-
-        /// S31 (2609.0018) - additive-only holds for `press` too.
-        #[test]
-        fn unknown_keys_on_press_are_ignored() {
-            #[derive(serde::Serialize)]
-            struct Future<'a> { t: &'a str, combo: &'a str, hold_ms: u32, pressure: u32 }
-            let bytes = rmp_serde::to_vec_named(&Future { t: "press", combo: "cmd+q", hold_ms: 1, pressure: 5 }).unwrap();
-            assert_eq!(
-                decode_request(&bytes).unwrap(),
-                DevRequest::Press { combo: "cmd+q".into(), hold_ms: Some(1), age_ms: None, busy_ms: None },
-            );
-        }
-
-        /// S48 - `body` is opaque: it survives byte-for-byte, JSON or not.
-        #[test]
-        fn reply_body_survives_verbatim() {
-            for body in ["{\"v\":1}", "not json at all", "two\nlines", ""] {
-                let reply = DevReply { ok: false, body: body.into() };
-                let back = decode_reply(&encode_reply(&reply).unwrap()).unwrap();
-                assert_eq!(back, reply);
-            }
-        }
-
-        /// S50 - the default path per channel.
-        #[test]
-        fn dev_socket_defaults_per_channel() {
-            let home = Path::new("/Users/x");
-            assert_eq!(
-                resolve_dev_socket_path(None, home.as_os_str(), Channel::Dev),
-                Path::new("/Users/x/Library/Application Support/tarmac/dev/tarmac-dev.sock"),
-            );
-            assert_eq!(
-                resolve_dev_socket_path(None, home.as_os_str(), Channel::Release),
-                Path::new("/Users/x/Library/Application Support/tarmac/tarmac-dev.sock"),
-            );
-        }
-
-        /// S51 - TARMAC_DEV_SOCKET wins verbatim in both channels; empty means unset.
-        #[test]
-        fn dev_socket_override_wins_and_empty_means_unset() {
-            let home = std::ffi::OsStr::new("/Users/x");
-            for channel in [Channel::Release, Channel::Dev] {
-                assert_eq!(
-                    resolve_dev_socket_path(Some(OsString::from("/tmp/x.sock")), home, channel),
-                    Path::new("/tmp/x.sock"),
-                );
-                assert_eq!(
-                    resolve_dev_socket_path(Some(OsString::new()), home, channel),
-                    resolve_dev_socket_path(None, home, channel),
-                );
-            }
-        }
-
-        /// S52 - the dev socket shares `channel_dir` with the daemon socket, so the
-        /// `dev` path literal cannot drift into a second definition.
-        #[test]
-        fn dev_socket_shares_the_channel_dir() {
-            let home = std::ffi::OsStr::new("/Users/x");
-            for channel in [Channel::Release, Channel::Dev] {
-                let dev = resolve_dev_socket_path(None, home, channel);
-                assert_eq!(dev.parent().unwrap(), channel_dir(Path::new(home), channel));
-                assert_eq!(
-                    dev.parent(),
-                    resolve_socket_path(None, home, channel).parent(),
-                );
-                assert_eq!(dev.file_name().unwrap(), "tarmac-dev.sock");
-            }
-        }
-    }
 }
 
 #[cfg(test)]
@@ -806,21 +304,8 @@ mod tests {
         }
     }
 
-    // Geometry-less tiles (M1 shape): v4 x/y/w/h/z (and Phase 3 loose/shelf)
-    // default to None, so these encode/decode exactly as M1 frames did.
     fn term_tile() -> Tile {
-        Tile {
-            kind: "term".into(),
-            path: None,
-            x: None,
-            y: None,
-            w: None,
-            h: None,
-            z: None,
-            loose: None,
-            shelf: None,
-            term_id: None,
-        }
+        Tile { kind: "term".into(), ..Default::default() }
     }
 
     fn doc_tile(path: &str) -> Tile {
@@ -957,8 +442,6 @@ mod tests {
 
     #[test]
     fn conformance_vector_9_term_close() {
-        // issue #15: a new additive app -> daemon type. Decodes by tag and
-        // round-trips; existing vectors are unaffected (unknown-type rule).
         assert_vector(
             "82 a1 74 aa 74 65 72 6d 5f 63 6c 6f 73 65 \
              a7 74 65 72 6d 5f 69 64 a2 74 31",
@@ -968,8 +451,6 @@ mod tests {
 
     #[test]
     fn conformance_vector_10_doc_close() {
-        // issue #34: a new additive app -> daemon type. Decodes by tag and
-        // round-trips; existing vectors V1-V9 are unaffected (unknown-type rule).
         assert_vector(
             "82 a1 74 a9 64 6f 63 5f 63 6c 6f 73 65 \
              a4 70 61 74 68 a5 2f 61 2e 6d 64",
@@ -979,8 +460,6 @@ mod tests {
 
     #[test]
     fn conformance_vector_11_doc_refresh() {
-        // issue #89: a new additive app -> daemon type. Decodes by tag and
-        // round-trips; existing vectors V1-V10 are unaffected (unknown-type rule).
         assert_vector(
             "82 a1 74 ab 64 6f 63 5f 72 65 66 72 65 73 68 \
              a4 70 61 74 68 a5 2f 61 2e 6d 64",
@@ -990,8 +469,6 @@ mod tests {
 
     #[test]
     fn conformance_vector_12_scrollback_request() {
-        // issue #41: a new additive app -> daemon type. Decodes by tag and
-        // round-trips; existing vectors V1-V11 are unaffected (unknown-type rule).
         assert_vector(
             "82 a1 74 b2 73 63 72 6f 6c 6c 62 61 63 6b 5f 72 65 71 75 65 73 74 \
              a7 74 65 72 6d 5f 69 64 a2 74 31",
@@ -1001,8 +478,7 @@ mod tests {
 
     #[test]
     fn conformance_vector_13_scrollback() {
-        // issue #41: the daemon -> app reply. `bytes` rides the msgpack bin
-        // family (c4), exactly like input/output.
+        // `bytes` rides the msgpack bin family (c4), like input/output.
         assert_vector(
             "83 a1 74 aa 73 63 72 6f 6c 6c 62 61 63 6b \
              a7 74 65 72 6d 5f 69 64 a2 74 31 \
@@ -1021,7 +497,7 @@ mod tests {
 
     #[test]
     fn m0_shaped_doc_opened_decodes_with_defaults() {
-        // {t:"doc_opened", path:"/a.md", via:"cli"} — exactly what an M0 daemon sends
+        // {t:"doc_opened", path:"/a.md", via:"cli"} — a daemon that predates the optional keys
         let bytes = unhex(
             "83 a1 74 aa 64 6f 63 5f 6f 70 65 6e 65 64 \
              a4 70 61 74 68 a5 2f 61 2e 6d 64 a3 76 69 61 a3 63 6c 69",
@@ -1045,9 +521,8 @@ mod tests {
 
     #[test]
     fn m1_shaped_layout_decodes_with_nil_board_and_tile_geometry() {
-        // Conformance vector 6 verbatim — an M1 layout with no `board` key and
-        // geometry-less tiles. Decoding it under v4 must still produce all-None
-        // geometry + board None (additive guarantee).
+        // Conformance vector 6 verbatim: no `board` key and geometry-less tiles
+        // must decode to all-None geometry and board None.
         let bytes = unhex(
             "83 a1 74 a6 6c 61 79 6f 75 74 \
              a4 64 6f 63 6b 91 a5 2f 61 2e 6d 64 \
@@ -1090,8 +565,8 @@ mod tests {
         assert_eq!(roundtrip(&msg), msg);
     }
 
-    // v4 Phase 3 (additive): a tile carrying loose + shelf round-trips; an
-    // entry carrying term_id round-trips; an open carrying term_id round-trips.
+    // A tile carrying loose + shelf, an entry carrying term_id and an open
+    // carrying term_id all round-trip.
     #[test]
     fn phase3_loose_shelf_and_term_id_roundtrip() {
         // A shelf-parked, gravity-detached doc tile (no geometry).
@@ -1136,8 +611,8 @@ mod tests {
         assert_eq!(roundtrip(&open), open);
     }
 
-    // v4 Phase 5b (additive): a terminal tile carrying its `term_id` round-trips,
-    // and a multi-terminal layout preserves two distinct term tile ids + order.
+    // A terminal tile's `term_id` round-trips, and a multi-terminal layout
+    // preserves two distinct term tile ids in order.
     #[test]
     fn phase5b_term_tile_term_id_roundtrip() {
         let t1 = Tile { kind: "term".into(), term_id: Some("t1".into()), ..term_tile() };
@@ -1167,7 +642,7 @@ mod tests {
     }
 
     // A keyless term tile (legacy single-terminal layout) decodes term_id == None
-    // and is byte-identical to the pre-5b encoding (additive guarantee).
+    // and encodes to the same bytes as before the key existed.
     #[test]
     fn phase5b_keyless_term_tile_decodes_to_none() {
         let rt = roundtrip(&Msg::Layout {
@@ -1181,14 +656,13 @@ mod tests {
         } else {
             panic!("expected layout");
         }
-        // A bare term tile (all-None) still serializes to the same 11 bytes it
-        // did pre-5b — `skip_serializing_if` omits term_id, so {kind:"term"}.
+        // A bare term tile serializes to {kind:"term"}: `skip_serializing_if`
+        // omits every None.
         let bytes = unhex("81 a4 6b 69 6e 64 a4 74 65 72 6d");
         assert_eq!(rmp_serde::to_vec_named(&term_tile()).unwrap(), bytes);
     }
 
-    // M3 (additive): a layout / restore carrying a `board_id` round-trips, and a
-    // distinct id survives — the wire half of "strips = boards".
+    // A layout / restore carrying a `board_id` round-trips with the id intact.
     #[test]
     fn m3_board_id_roundtrip() {
         let layout = Msg::Layout {
@@ -1216,8 +690,8 @@ mod tests {
     }
 
     // A board_id-less layout (conformance vector 6 verbatim) decodes board_id ==
-    // None, and a None-keyed layout re-encodes without a `board_id` key — so a
-    // single-board sender's wire is byte-identical to the pre-M3 frame.
+    // None, and a None-keyed layout re-encodes without a `board_id` key, so a
+    // single-board sender's frame is unchanged.
     #[test]
     fn m3_keyless_layout_decodes_board_id_none() {
         let bytes = unhex(
@@ -1240,8 +714,8 @@ mod tests {
         assert_eq!(encode(&none_keyed).unwrap(), bytes);
     }
 
-    // M3 P2: a board_list decodes from the wire (a board with no name omits the
-    // key and decodes None); board_switch / board_create round-trip.
+    // A board_list decodes from the wire (a board with no name omits the key and
+    // decodes None); board_switch / board_create round-trip.
     #[test]
     fn m3_board_list_decodes_from_wire() {
         // {t:"board_list", boards:[{board_id:"board-0"},{board_id:"board-1",
@@ -1270,9 +744,8 @@ mod tests {
         assert_eq!(roundtrip(&Msg::BoardCreate), Msg::BoardCreate);
     }
 
-    // P5 (additive): BoardMeta.running carries the daemon's live-pty count per
-    // board. A board_list with running set round-trips; running:None (a pre-P5
-    // sender) omits the key on the wire, distinct from an explicit running:0.
+    // BoardMeta.running round-trips; None omits the key, distinct from an
+    // explicit running:0.
     #[test]
     fn p5_board_meta_running_roundtrips() {
         let list = Msg::BoardList {
@@ -1284,8 +757,8 @@ mod tests {
         };
         assert_eq!(roundtrip(&list), list);
 
-        // running:None omits the key (byte-identical to the pre-P5 wire); an
-        // explicit running:0 is a real key — the two encodings differ.
+        // running:None omits the key; an explicit running:0 is a real key, so
+        // the two encodings differ.
         let none_keyed = Msg::BoardList {
             boards: vec![BoardMeta { board_id: "board-0".into(), name: None, running: None }],
             active: "board-0".into(),
@@ -1297,10 +770,8 @@ mod tests {
         assert_ne!(encode(&none_keyed).unwrap(), encode(&zero_keyed).unwrap());
     }
 
-    // P5 (additive; the plan's "V11" session-bearing restore): a restore carrying
-    // `live_terms` round-trips, and a live_terms-less restore (the pre-P5 wire)
-    // omits the key entirely — so every earlier restore decodes an empty list and
-    // re-encodes byte-identically.
+    // A restore carrying `live_terms` round-trips; one without omits the key, so
+    // earlier restores decode an empty list and re-encode byte-identically.
     #[test]
     fn p5_restore_live_terms_roundtrips() {
         let restore = Msg::Restore {
@@ -1312,8 +783,8 @@ mod tests {
         };
         assert_eq!(roundtrip(&restore), restore);
 
-        // An empty live_terms omits the key (byte-identical to the pre-P5 wire);
-        // a non-empty list is a real key, so the encodings differ.
+        // An empty live_terms omits the key; a non-empty list is a real key, so
+        // the encodings differ.
         let empty = Msg::Restore {
             docs: vec![], tiles: vec![], board: None, board_id: None, live_terms: vec![],
         };
@@ -1326,8 +797,8 @@ mod tests {
         assert_ne!(encode(&one).unwrap(), empty_bytes);
     }
 
-    // P5.4 (additive app -> daemon types): board_rename / board_delete round-trip
-    // (named + empty-name rename), and a hand-built wire frame decodes by tag.
+    // board_rename / board_delete round-trip (named and empty-name rename), and
+    // a hand-built wire frame decodes by tag.
     #[test]
     fn p5_board_rename_and_delete_roundtrip() {
         let rename = Msg::BoardRename { board_id: "board-1".into(), name: "infra".into() };
@@ -1353,7 +824,7 @@ mod tests {
         assert_eq!(decode(&del_bytes).unwrap(), delete);
     }
 
-    // M3 P2: a keyless spawn_term / open (pre-M3 sender) decodes board_id None.
+    // A keyless spawn_term / open decodes board_id None.
     #[test]
     fn m3_keyless_spawn_and_open_decode_board_id_none() {
         // {t:"spawn_term", term_id:"t1", cols:80, rows:24} — no board_id key.
@@ -1374,9 +845,8 @@ mod tests {
         );
     }
 
-    // issue #77: inherit_cwd_from round-trips and — unlike cwd/cmd/board_id —
-    // is present on the wire only when Some (skip_serializing_if), so a spawn
-    // that never sets it stays byte-identical to a pre-#77 sender.
+    // inherit_cwd_from round-trips and, unlike cwd/cmd, is on the wire only when
+    // Some, so a spawn that never sets it keeps its earlier bytes.
     #[test]
     fn inherit_cwd_from_roundtrips_and_omits_when_none() {
         let with_hint = Msg::SpawnTerm {
@@ -1412,12 +882,11 @@ mod tests {
         );
     }
 
-    // Key-less M1 shapes still decode to None for the Phase 3 fields (additive
-    // guarantee): a tile with no loose/shelf, an entry with no term_id, an open
-    // with no term_id.
+    // Key-less shapes still decode to None: a tile with no loose/shelf, an entry
+    // with no term_id, an open with no term_id.
     #[test]
     fn phase3_keyless_shapes_decode_to_none() {
-        // {t:"open", path:"/a.md"} — an M0/M1 open with no term_id key.
+        // {t:"open", path:"/a.md"} — an open with no term_id key.
         let open_bytes = unhex("82 a1 74 a4 6f 70 65 6e a4 70 61 74 68 a5 2f 61 2e 6d 64");
         assert_eq!(
             decode(&open_bytes).unwrap(),
@@ -1432,7 +901,7 @@ mod tests {
         let Msg::DocOpened(entry) = decode(&opened_bytes).unwrap() else { panic!("not doc_opened") };
         assert_eq!(entry.term_id, None);
 
-        // Conformance vector 6 (M1 layout) decodes with loose/shelf == None.
+        // Conformance vector 6 decodes with loose/shelf == None.
         let layout_bytes = unhex(
             "83 a1 74 a6 6c 61 79 6f 75 74 \
              a4 64 6f 63 6b 91 a5 2f 61 2e 6d 64 \
@@ -1449,7 +918,7 @@ mod tests {
 
     #[test]
     fn repo_color_index_matches_theme_hash() {
-        // Reference values from docs/archive/m1/crib-state.md §1.2 (app's Theme.swift FNV-1a).
+        // Pinned: a changed hash recolors docs users already saw.
         assert_eq!(repo_color_index("payments-api"), 3);
         assert_eq!(repo_color_index("search-svc"), 2);
         assert_eq!(repo_color_index("infra"), 1);
@@ -1557,7 +1026,7 @@ mod tests {
                 board_id: None,
             },
             Msg::Layout { dock: vec![], tiles: vec![], board: None, board_id: None },
-            // v4 layout carrying world-frame tiles + a board viewport.
+            // world-frame tiles + a board viewport
             Msg::Layout {
                 dock: vec!["/b.md".into()],
                 tiles: vec![
@@ -1620,7 +1089,6 @@ mod tests {
                 tiles: vec![term_tile()],
                 board: Some(BoardViewport { zoom: 1.0, cx: 0.0, cy: 0.0 }),
                 board_id: None,
-                // P5: exercise live_terms in the catch-all roundtrip.
                 live_terms: vec!["t1".into()],
             },
             Msg::SpawnTerm {
@@ -1633,7 +1101,7 @@ mod tests {
                 inherit_cwd_from: None,
             },
             Msg::SpawnTerm { term_id: "t2".into(), cols: 80, rows: 24, cwd: None, cmd: None, board_id: None, inherit_cwd_from: None },
-            // issue #77: cwd absent but an inherit-cwd-from hint present.
+            // cwd absent but an inherit-cwd-from hint present
             Msg::SpawnTerm {
                 term_id: "t3".into(),
                 cols: 80,
@@ -1660,11 +1128,10 @@ mod tests {
                 term_id: None,
             }),
             Msg::FileEvent { path: "/a.md".into(), mtime_ms: 1_765_432_100_123 },
-            // M2 honest signals (additive daemon -> app types).
             Msg::TermProc { term_id: "t1".into(), name: "zsh".into(), pid: Some(4242) },
             Msg::TermProc { term_id: "t1".into(), name: "vim".into(), pid: None },
             Msg::Bell { term_id: "t1".into() },
-            // M3 board CRUD/list types.
+            // board CRUD/list
             Msg::BoardList {
                 boards: vec![
                     BoardMeta { board_id: "board-0".into(), name: None, running: None },
@@ -1674,13 +1141,12 @@ mod tests {
             },
             Msg::BoardSwitch { board_id: "board-1".into() },
             Msg::BoardCreate,
-            // P5.4 board rename (named + cleared) / delete.
+            // board rename (named + cleared) / delete
             Msg::BoardRename { board_id: "board-1".into(), name: "infra".into() },
             Msg::BoardRename { board_id: "board-1".into(), name: String::new() },
             Msg::BoardDelete { board_id: "board-1".into() },
-            // issue #15: close one terminal.
             Msg::TermClose { term_id: "t1".into() },
-            // M3 board_id on spawn/open.
+            // board_id on spawn/open
             Msg::SpawnTerm {
                 term_id: "t9".into(),
                 cols: 80,
@@ -1691,9 +1157,7 @@ mod tests {
                 inherit_cwd_from: None,
             },
             Msg::Open { path: "/a.md".into(), term_id: Some("t9".into()), board_id: Some("board-1".into()) },
-            // issue #34: close a doc card (app -> daemon).
             Msg::DocClose { path: "/tmp/a.md".into() },
-            // issue #89: refresh a doc card on demand (app -> daemon).
             Msg::DocRefresh { path: "/tmp/a.md".into() },
         ];
         for m in msgs {
@@ -1701,8 +1165,8 @@ mod tests {
         }
     }
 
-    // M2 honest signals (additive): term_proc round-trips with and without
-    // pid, and a pid-less wire shape decodes to None; bell round-trips.
+    // term_proc round-trips with and without pid, a pid-less wire shape decodes
+    // to None, and bell round-trips.
     #[test]
     fn m2_term_proc_and_bell_roundtrip() {
         let with_pid = Msg::TermProc { term_id: "t1".into(), name: "claude".into(), pid: Some(99) };
@@ -1741,190 +1205,8 @@ mod tests {
         assert_eq!(roundtrip(&m), m);
     }
 
-    #[test]
-    fn frame_roundtrip_and_oversize_rejection() {
-        let payload = encode(&Msg::Ack).unwrap();
-        let mut buf = Vec::new();
-        frame::write_sync(&mut buf, &payload).unwrap();
-        assert_eq!(&buf[..4], &(payload.len() as u32).to_be_bytes());
-        let mut cursor = std::io::Cursor::new(buf);
-        assert_eq!(frame::read_sync(&mut cursor).unwrap(), payload);
-
-        let mut oversize = Vec::new();
-        oversize.extend_from_slice(&(MAX_FRAME_LEN + 1).to_be_bytes());
-        let mut cursor = std::io::Cursor::new(oversize);
-        let err = frame::read_sync(&mut cursor).unwrap_err();
-        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
-    }
-
-    // -- 2606.0003: per-channel socket/state path derivation ----------------
-    //
-    // The resolvers both binaries call live here, so they are unit-tested ONCE.
-    // Behavioral (assert returned path strings), deterministic (pure fns, no
-    // env), table-driven, S-numbers in comments.
-
-    fn os(s: &str) -> OsString {
-        OsString::from(s)
-    }
-
-    // S1/S2/S3/S4/S9 for the socket resolver.
-    #[test]
-    fn resolve_socket_path_cases() {
-        let cases: &[(Option<&str>, &str, Channel, &str)] = &[
-            // S1: release == legacy flat path, byte-for-byte (backward compat).
-            (None, "/Users/eplin", Channel::Release,
-             "/Users/eplin/Library/Application Support/tarmac/tarmacd.sock"),
-            // S2: dev inserts exactly the `dev/` segment.
-            (None, "/Users/eplin", Channel::Dev,
-             "/Users/eplin/Library/Application Support/tarmac/dev/tarmacd.sock"),
-            // S3: an explicit override wins verbatim in the release channel.
-            (Some("/tmp/x.sock"), "/Users/eplin", Channel::Release, "/tmp/x.sock"),
-            // S4: the override wins verbatim EVEN in dev — the load-bearing
-            // guard: the integration harness injects TARMAC_SOCKET into debug
-            // builds and must bypass the `dev/` insertion.
-            (Some("/tmp/x.sock"), "/Users/eplin", Channel::Dev, "/tmp/x.sock"),
-            // S9: an empty override is treated as unset → falls to the default.
-            (Some(""), "/Users/eplin", Channel::Dev,
-             "/Users/eplin/Library/Application Support/tarmac/dev/tarmacd.sock"),
-        ];
-        for (over, home, channel, expected) in cases {
-            assert_eq!(
-                resolve_socket_path(over.map(os), OsStr::new(home), *channel),
-                PathBuf::from(expected),
-                "resolve_socket_path(over={over:?}, home={home:?}, {channel:?})"
-            );
-        }
-    }
-
-    // S5: dev differs from release only by the inserted `/dev` segment — nothing
-    // else moves. Pins the token name and that release is otherwise unchanged.
-    #[test]
-    fn dev_differs_from_release_only_by_segment() {
-        let home = OsStr::new("/Users/eplin");
-        let release = resolve_socket_path(None, home, Channel::Release);
-        let dev = resolve_socket_path(None, home, Channel::Dev);
-        let expected = release
-            .to_str()
-            .unwrap()
-            .replace("/tarmacd.sock", "/dev/tarmacd.sock");
-        assert_eq!(dev.to_str().unwrap(), expected);
-    }
-
-    // S6/S7/S9 for the state resolver.
-    #[test]
-    fn resolve_state_path_cases() {
-        let cases: &[(Option<&str>, &str, Channel, &str)] = &[
-            // S6: state, release == legacy flat path.
-            (None, "/Users/eplin", Channel::Release,
-             "/Users/eplin/Library/Application Support/tarmac/state.json"),
-            // S7: state, dev carries the SAME `dev/` segment as the socket.
-            (None, "/Users/eplin", Channel::Dev,
-             "/Users/eplin/Library/Application Support/tarmac/dev/state.json"),
-            // override wins verbatim for state too (parity with socket S3/S4).
-            (Some("/tmp/s.json"), "/Users/eplin", Channel::Dev, "/tmp/s.json"),
-            // empty override → dev default (S9 for state).
-            (Some(""), "/Users/eplin", Channel::Dev,
-             "/Users/eplin/Library/Application Support/tarmac/dev/state.json"),
-        ];
-        for (over, home, channel, expected) in cases {
-            assert_eq!(
-                resolve_state_path(over.map(os), OsStr::new(home), *channel),
-                PathBuf::from(expected),
-                "resolve_state_path(over={over:?}, home={home:?}, {channel:?})"
-            );
-        }
-    }
-
-    // S7 by construction: socket and state share the per-channel directory, so a
-    // dev daemon can never bind a dev socket while reading release state.
-    #[test]
-    fn state_and_socket_share_channel_dir() {
-        let home = OsStr::new("/Users/eplin");
-        for channel in [Channel::Release, Channel::Dev] {
-            let sock = resolve_socket_path(None, home, channel);
-            let state = resolve_state_path(None, home, channel);
-            assert_eq!(
-                sock.parent(),
-                state.parent(),
-                "socket and state must share the per-channel dir ({channel:?})"
-            );
-        }
-    }
-
-    // S8: the dev default appends a fixed 52-byte suffix to `home`
-    // (/Library/Application Support/tarmac/dev/tarmacd.sock). So a 51-byte home
-    // is 103 bytes (accepted at the `len < 104` cap) and a 52-byte home is 104
-    // (rejected). The pure resolver only emits the string, so the Rust test
-    // asserts the exact byte counts (the cap itself is enforced at `bind`).
-    #[test]
-    fn dev_socket_byte_boundary() {
-        let home51 = format!("/{}", "a".repeat(50)); // 51 bytes
-        assert_eq!(home51.len(), 51);
-        assert_eq!(
-            resolve_socket_path(None, OsStr::new(&home51), Channel::Dev).as_os_str().len(),
-            103,
-        );
-
-        let home52 = format!("/{}", "a".repeat(51)); // 52 bytes
-        assert_eq!(home52.len(), 52);
-        assert_eq!(
-            resolve_socket_path(None, OsStr::new(&home52), Channel::Dev).as_os_str().len(),
-            104,
-        );
-    }
-
-    // 103 bytes is the last accepted length; 104 (the sun_path cap) is rejected
-    // with a message naming the cap and the TARMAC_SOCKET remedy.
-    #[test]
-    fn check_socket_path_len_boundary() {
-        let path103 = PathBuf::from(format!("/{}", "a".repeat(102))); // "/" + 102 = 103
-        assert_eq!(path103.as_os_str().len(), 103);
-        assert!(
-            check_socket_path_len(&path103).is_ok(),
-            "103-byte path must be accepted"
-        );
-
-        let path104 = PathBuf::from(format!("/{}", "a".repeat(103))); // "/" + 103 = 104
-        assert_eq!(path104.as_os_str().len(), 104);
-        let err = check_socket_path_len(&path104);
-        assert!(err.is_err(), "104-byte path must be rejected");
-
-        let msg = err.unwrap_err();
-        assert!(
-            msg.contains("104"),
-            "error message must contain \"104\", got: {msg}"
-        );
-        assert!(
-            msg.contains("TARMAC_SOCKET"),
-            "error message must contain \"TARMAC_SOCKET\", got: {msg}"
-        );
-
-        // over-cap: 150-byte path — cap literal "104" must still appear independently
-        // of the interpolated length ("150").
-        let path150 = PathBuf::from(format!("/{}", "a".repeat(149))); // "/" + 149 = 150
-        assert_eq!(path150.as_os_str().len(), 150);
-        let err150 = check_socket_path_len(&path150);
-        assert!(err150.is_err(), "150-byte path must be rejected");
-        let msg150 = err150.unwrap_err();
-        assert!(
-            msg150.contains("104"),
-            "error message for 150-byte path must still contain \"104\", got: {msg150}"
-        );
-        assert!(
-            msg150.contains("TARMAC_SOCKET"),
-            "error message for 150-byte path must contain \"TARMAC_SOCKET\", got: {msg150}"
-        );
-    }
-
-    // S10: the channel label maps both arms (a swapped or constant label fails).
-    #[test]
-    fn channel_label_maps_both() {
-        assert_eq!(channel_label(Channel::Release), "release");
-        assert_eq!(channel_label(Channel::Dev), "dev");
-    }
-
-    // HelloOk.daemon_version / daemon_pid are additive: None omits the key on the
-    // wire; a key-less HelloOk decodes both as None; Some values round-trip.
+    // HelloOk.daemon_version / daemon_pid: None omits the key on the wire, a
+    // key-less HelloOk decodes both as None, Some values round-trip.
     #[test]
     fn hello_ok_daemon_version_additive() {
         let none_keyed = Msg::HelloOk {
@@ -1963,8 +1245,8 @@ mod tests {
         assert_eq!(roundtrip(&with_vals), with_vals);
     }
 
-    // S1: the app_version key is additive on `hello` — a None-valued field must
-    // leave conformance vector 2's *encoded bytes* untouched (map size included),
+    // A None `app_version` on `hello` must leave conformance vector 2's *encoded
+    // bytes* untouched (map size included),
     // not merely omit the key string. `assert_vector` only decodes, so byte
     // equality is asserted here or nowhere. Deliberately stricter than
     // protocol.md's "byte-exact output is not required": the claim being pinned
@@ -1975,13 +1257,13 @@ mod tests {
         let none_keyed = Msg::Hello { role: "app".into(), v: 1, app_version: None };
         assert_eq!(encode(&none_keyed).unwrap(), vector_2);
         assert_eq!(decode(&vector_2).unwrap(), none_keyed);
-        // S2: a value round-trips on `hello`.
+        // a value round-trips on `hello`
         let with_val = Msg::Hello { role: "app".into(), v: 1, app_version: Some("9.9.9".into()) };
         assert_eq!(roundtrip(&with_val), with_val);
     }
 
-    // S2/S3: hello_ok's app_version + app_connected are additive — None omits
-    // both keys, a key-less frame decodes both to None, and values round-trip.
+    // hello_ok's app_version + app_connected: None omits both keys, a key-less
+    // frame decodes both to None, and values round-trip.
     #[test]
     fn hello_ok_app_keys_additive() {
         let none_keyed = Msg::HelloOk {

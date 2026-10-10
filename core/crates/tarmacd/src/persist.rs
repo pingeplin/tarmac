@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 use tarmac_protocol::{BoardViewport, Tile};
 use tracing::warn;
 
-use crate::state::{Board, Boards, DEFAULT_BOARD_ID, Daemon, DocInfo, Registry};
+use crate::boards::{Board, Boards, DEFAULT_BOARD_ID, DocInfo, Registry};
+use crate::state::Daemon;
 
 const SAVE_DEBOUNCE: Duration = Duration::from_millis(150);
 
@@ -23,19 +24,16 @@ struct PersistedDoc {
     last_changed_ms: Option<u64>,
     #[serde(default)]
     last_opened_ms: u64,
-    // Written for inspectability but recomputed at load (crib §1.1: a .git
-    // appearing or vanishing between runs is an observed fact).
+    // Written for inspectability but recomputed at load: a .git appearing or
+    // vanishing between runs is an observed fact.
     repo: Option<String>,
     repo_root: Option<String>,
     repo_color: Option<u8>,
-    // v4 Phase 3: the term that opened the doc (provenance + gravity owner).
-    // serde default => None for pre-Phase-3 state files.
+    // Absent in older state files.
     #[serde(default)]
     term_id: Option<String>,
 }
 
-// One persisted board: its id, optional display name, and the per-board
-// registry state (docs in dock order, tiles with v4 geometry, board viewport).
 #[derive(Serialize, Deserialize)]
 struct PersistedBoard {
     board_id: String,
@@ -49,17 +47,14 @@ struct PersistedBoard {
     board: Option<BoardViewport>,
 }
 
-// M3 nested shape: `boards[]` + the `active` board id. The pre-M3 flat fields
-// (`docs`/`tiles`/`board` at top level) are read once for the board-0 migration
-// and never written again (snapshot always emits `boards`), so a pre-M3 file
-// upgrades losslessly to board-0 on first load.
+// The legacy flat fields (`docs`/`tiles`/`board` at top level) are migration
+// input only: read once into board-0 and never written again.
 #[derive(Serialize, Deserialize, Default)]
 struct PersistedState {
     #[serde(default)]
     boards: Vec<PersistedBoard>,
     #[serde(default = "default_active")]
     active: String,
-    // Legacy pre-M3 flat fields: migration input only, never serialized.
     #[serde(default, skip_serializing)]
     docs: Vec<PersistedDoc>,
     #[serde(default, skip_serializing)]
@@ -72,26 +67,21 @@ fn default_active() -> String {
     DEFAULT_BOARD_ID.to_string()
 }
 
-// Missing or unreadable/corrupt state is never fatal: log and start empty.
+// Missing or unreadable/corrupt state is never fatal: a missing file is silent,
+// anything else warns, and the daemon starts empty.
 pub fn load(path: &Path) -> Boards {
     let state = match std::fs::read(path) {
-        Ok(bytes) => match serde_json::from_slice::<PersistedState>(&bytes) {
-            Ok(s) => s,
-            Err(e) => {
-                warn!("corrupt state file {} ({e}); starting empty", path.display());
-                PersistedState::default()
-            }
-        },
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => PersistedState::default(),
-        Err(e) => {
-            warn!("cannot read state file {} ({e}); starting empty", path.display());
-            PersistedState::default()
-        }
-    };
+        Ok(bytes) => serde_json::from_slice::<PersistedState>(&bytes)
+            .map_err(|e| format!("corrupt state file {} ({e})", path.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(PersistedState::default()),
+        Err(e) => Err(format!("cannot read state file {} ({e})", path.display())),
+    }
+    .unwrap_or_else(|msg| {
+        warn!("{msg}; starting empty");
+        PersistedState::default()
+    });
     let boards: Vec<Board> = if state.boards.is_empty() {
-        // Pre-M3 flat file (or the empty default): migrate the legacy top-level
-        // docs/tiles/board into board-0 verbatim — byte-for-byte the registry
-        // the old flat `load` produced, so an upgrade is invisible.
+        // A legacy flat file (or the empty default) migrates verbatim into board-0.
         vec![hydrate(PersistedBoard {
             board_id: DEFAULT_BOARD_ID.to_string(),
             name: None,
@@ -105,9 +95,7 @@ pub fn load(path: &Path) -> Boards {
     Boards::from_boards(boards, state.active)
 }
 
-// Rebuild one board's in-memory registry from its persisted form. Repo metadata
-// is recomputed at load (crib §1.1: a .git appearing/vanishing between runs is
-// an observed fact), exactly as the pre-M3 flat loader did.
+// Repo metadata is recomputed here rather than trusted from disk.
 fn hydrate(pb: PersistedBoard) -> Board {
     let mut reg = Registry::empty();
     for d in pb.docs {
@@ -164,7 +152,6 @@ fn snapshot(boards: &Boards) -> PersistedState {
             })
             .collect(),
         active: boards.active_id().to_string(),
-        // Legacy flat fields are never written (skip_serializing).
         docs: Vec::new(),
         tiles: Vec::new(),
         board: None,
@@ -215,9 +202,9 @@ mod tests {
         dir.join("state.json")
     }
 
-    // A realistic pre-M3 flat state file: top-level docs/tiles/board, no
-    // `boards` key. (repo fields are written for inspectability but recomputed
-    // at load — they are None here because the fake paths have no .git.)
+    // A legacy flat state file: top-level docs/tiles/board, no `boards` key. The
+    // repo fields are recomputed at load, so they come back None for these
+    // fake paths.
     const LEGACY_FLAT: &str = r#"{
         "docs": [
             {"path":"/nx-tarmac/plan.md","via":"cli","read":false,"last_changed_ms":1718000000000,"last_opened_ms":1718000000001,"repo":"proj","repo_root":"/nx-tarmac","repo_color":2,"term_id":"t1"},
@@ -230,8 +217,8 @@ mod tests {
         "board": {"zoom":0.82,"cx":640.0,"cy":360.0}
     }"#;
 
-    // The load-bearing P1 acceptance: a pre-M3 flat file migrates to exactly one
-    // board-0 carrying the legacy docs/dock/tiles/viewport verbatim.
+    // A legacy flat file migrates to exactly one board-0 carrying the docs,
+    // dock, tiles and viewport verbatim.
     #[test]
     fn legacy_flat_file_migrates_to_board_0() {
         let path = tmp_state("migrate");
@@ -264,10 +251,10 @@ mod tests {
         assert_eq!(reg.tiles[1].path.as_deref(), Some("/nx-tarmac/plan.md"));
         assert_eq!(reg.board, Some(BoardViewport { zoom: 0.82, cx: 640.0, cy: 360.0 }));
 
-        // The active board's restore frame stays the legacy shape: board_id None.
-        match reg.restore_msg() {
+        // The active board's restore carries the migrated state, stamped board-0.
+        match boards.active_restore_msg(vec![]) {
             tarmac_protocol::Msg::Restore { board_id, docs, tiles, board, .. } => {
-                assert_eq!(board_id, None);
+                assert_eq!(board_id.as_deref(), Some(DEFAULT_BOARD_ID));
                 assert_eq!(docs.len(), 2);
                 assert_eq!(tiles.len(), 2);
                 assert_eq!(board, Some(BoardViewport { zoom: 0.82, cx: 640.0, cy: 360.0 }));

@@ -45,7 +45,7 @@ Pick the innermost layer that can express the failure.
 
 | The change is… | The failing test goes… |
 | --- | --- |
-| A pure decision, transform, or rule in Rust | `#[cfg(test)] mod tests` at the **bottom of the same file** — `core/crates/tarmacd/src/state.rs`, `core/crates/tarmacd/src/term.rs` |
+| A pure decision, transform, or rule in Rust | `#[cfg(test)] mod tests` at the **bottom of the same file** — `core/crates/tarmacd/src/boards.rs`, `core/crates/tarmacd/src/term.rs` |
 | Daemon behaviour observable over the socket | a suite in `core/crates/tarmacd/tests/` (`boards_integration.rs`, `restore_integration.rs`, …), built on the real-daemon harness in `core/crates/tarmacd/tests/common/mod.rs` |
 | The wire contract | `core/crates/tarmac-protocol/src/lib.rs` — a new inline conformance vector, byte-exact — **and** the same vector in `app/Tests/TarmacKitTests/ConformanceTests.swift`, with the Rust encoder's bytes for the new frame in `app/Tests/TarmacKitTests/RustEncoderParityTests.swift`. Never edit an existing one; see the additive-only rule in [`protocol.md`](protocol.md) |
 | CLI surface (exit codes, stderr, `--help`) | `core/crates/tarmac-cli/tests/cli.rs` — spawn the real binary |
@@ -163,7 +163,7 @@ back from a rendered bitmap.
 - **`let _ =` only for best-effort work** — a channel send whose receiver may be
   gone, cleanup on the way out. Never to silence a failure that matters.
 - **Ids are `String` aliases, not newtypes** — `pub type BoardId = String;` in
-  `core/crates/tarmacd/src/state.rs`. Do not add a trait to get a seam for
+  `core/crates/tarmacd/src/boards.rs`. Do not add a trait to get a seam for
   mocking either: the integration harness spawns the real daemon instead.
 - **Getters read as nouns** (`active_board`, `state_path`) — no `get_` prefix.
   Mutators read as verbs (`apply_layout`, `ensure_watched`, `mark_dirty`).

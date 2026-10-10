@@ -1,14 +1,15 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::UNIX_EPOCH;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use notify_debouncer_full::DebounceEventResult;
 use tarmac_protocol::Msg;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::{debug, warn};
 
-use crate::state::{Daemon, DocInfo};
+use crate::boards::DocInfo;
+use crate::state::Daemon;
 
 pub struct RepoInfo {
     pub name: String,
@@ -17,8 +18,7 @@ pub struct RepoInfo {
 }
 
 // Walk parents toward / looking for a .git entry; a plain file counts too
-// (worktrees and submodules use a gitfile). None ⇒ not in a repo; the wire
-// carries nil and the app falls back to the parent-dir basename as in M0.
+// (worktrees and submodules use a gitfile). None means not in a repo.
 pub fn derive_repo(doc: &Path) -> Option<RepoInfo> {
     let mut dir = doc.parent();
     while let Some(d) = dir {
@@ -35,17 +35,13 @@ pub fn derive_repo(doc: &Path) -> Option<RepoInfo> {
     None
 }
 
-fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
+fn epoch_ms(t: SystemTime) -> u64 {
+    t.duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
 // Single code path for CLI ("cli") and app ("user") opens. `term_id` is the
-// calling terminal card (v4 Phase 3 provenance); None when unknown. `board_id`
-// (M3) targets a specific board; absent ⇒ the board owning the calling term,
-// else the active board.
+// calling terminal card, None when unknown. The doc lands on `board_id`, else
+// the board owning the calling term, else the active board.
 pub async fn handle_open(
     daemon: &Arc<Daemon>,
     raw_path: &str,
@@ -57,8 +53,8 @@ pub async fn handle_open(
     if !p.is_absolute() {
         return Err(format!("path is not absolute: {raw_path}"));
     }
-    // Canonicalize daemon-side too: FSEvents reports resolved paths and the
-    // registry key must match them (e.g. /tmp -> /private/tmp).
+    // FSEvents reports resolved paths and the registry key must match them
+    // (e.g. /tmp -> /private/tmp), so canonicalize daemon-side too.
     let canon =
         std::fs::canonicalize(p).map_err(|e| format!("cannot open {raw_path}: {e}"))?;
     let meta =
@@ -73,35 +69,24 @@ pub async fn handle_open(
         .ensure_watched(parent)
         .map_err(|e| format!("cannot watch {}: {e}", parent.display()))?;
 
-    // Resolve the board the doc lands on: an explicit board_id wins, else the
-    // board owning the calling term, else the active board.
-    let target = match board_id {
-        Some(id) => id,
-        None => {
-            let by_term = match &term_id {
-                Some(t) => daemon.term_boards.lock().await.get(t).cloned(),
-                None => None,
-            };
-            match by_term {
-                Some(b) => b,
-                None => daemon.boards.lock().await.active_id().to_string(),
-            }
-        }
+    // `None` resolves to the active board inside `registry_mut`.
+    let target = match (board_id, &term_id) {
+        (Some(id), _) => Some(id),
+        (None, Some(t)) => daemon.term_boards.lock().await.get(t).cloned(),
+        (None, None) => None,
     };
 
-    // Upsert before pushing so the doc_opened entry reflects the post-open
-    // state (docs/protocol.md "doc_opened").
+    // Upsert before pushing so the doc_opened entry reflects the post-open state.
     let entry = {
         let mut boards = daemon.boards.lock().await;
-        let reg = boards.registry_for_mut(&target);
+        let reg = boards.registry_mut(target.as_deref());
         match reg.docs.get_mut(&canon) {
             Some(info) => {
                 info.via = via.to_owned();
-                info.last_opened_ms = now_ms();
-                // Only cli opens may clear read; a user re-open leaves it
-                // (crib §2.1). The dock slot never moves on re-open. A re-open
-                // that carries a term_id updates the provenance owner; one
-                // without leaves the prior owner untouched.
+                info.last_opened_ms = epoch_ms(SystemTime::now());
+                // Only cli opens may clear read; a user re-open leaves it. The
+                // dock slot never moves on re-open. A re-open carrying a term_id
+                // updates the provenance owner; one without keeps the prior owner.
                 if via == "cli" {
                     info.read = false;
                 }
@@ -120,7 +105,7 @@ pub async fn handle_open(
                         repo_root: repo.as_ref().map(|r| r.root.clone()),
                         repo_color: repo.as_ref().map(|r| r.color),
                         last_changed_ms: None,
-                        last_opened_ms: now_ms(),
+                        last_opened_ms: epoch_ms(SystemTime::now()),
                         term_id: term_id.clone(),
                     },
                 );
@@ -148,7 +133,6 @@ pub async fn watch_loop(daemon: Arc<Daemon>, mut rx: UnboundedReceiver<DebounceE
         // as Create/Rename and must still count.
         let mut hits: HashSet<PathBuf> = HashSet::new();
         {
-            // P1: the active board owns every doc; P2 unions across boards.
             let boards = daemon.boards.lock().await;
             let reg = boards.active_registry();
             for ev in &events {
@@ -169,20 +153,17 @@ pub async fn watch_loop(daemon: Arc<Daemon>, mut rx: UnboundedReceiver<DebounceE
 /// push `file_event`. Returns whether it pushed.
 ///
 /// The sole producer of `Msg::FileEvent`: the notify watcher and the on-demand
-/// `doc_refresh` (issue #89) share it, so the always-push rule (the mtime goes out
-/// changed or not — "did anything change" is answered app-side by value) and the
+/// `doc_refresh` share it, so the always-push rule (the mtime goes out changed
+/// or not — "did anything change" is answered app-side by value) and the
 /// active-board scoping are defined once. The registry lookup doubles as that
 /// scoping check, which is why an unknown path costs one lock and no push.
 pub async fn stat_and_push(daemon: &Arc<Daemon>, path: &Path) -> bool {
     // Deleted files emit nothing until the path exists again.
     let Ok(meta) = std::fs::metadata(path) else { return false };
     let Ok(modified) = meta.modified() else { return false };
-    let mtime_ms = modified
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
+    let mtime_ms = epoch_ms(modified);
     // Registry update lands before the push so a crash between the two never
-    // loses the fact (crib §8 req 6).
+    // loses the fact.
     {
         let mut boards = daemon.boards.lock().await;
         let Some(info) = boards.active_registry_mut().docs.get_mut(path) else { return false };
