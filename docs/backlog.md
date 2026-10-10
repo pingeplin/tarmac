@@ -192,12 +192,6 @@ Verified against the code on 2026-10-02.
   it only by setting the mode itself. `app/Sources/TarmacTerm/TerminalEngine.swift`.
 - **Scrollback is fixed at 5000 lines**, the `scrollbackLines` default; there is
   no setting. `app/Sources/TarmacTerm/TerminalView.swift`.
-- **`tarmac dev key` loses ⌃C, ⌃F and ⌃R once the app has shown a second
-  window.** The system's tiling items in the Window menu then claim those
-  chords from the driver's constructed events; a real keyboard is not
-  affected. Found with the Settings window (spec 2610.0005); the same
-  happens on a build without it once the Window menu is read through
-  Accessibility. `app/Sources/TarmacApp/Dev/DevInput.swift`.
 - **The Interface font has no size setting.** The Settings window sets a size
   for Terminal and for Document; the chrome is set at many fixed sizes (8 to
   13 pt), so one size does not fit it and a scale factor is not built. A role

@@ -112,15 +112,35 @@ struct DevInput {
     /// app's key monitor first, then the key window's first responder.
     func press(_ stroke: DevKeyStroke) throws {
         for type in [NSEvent.EventType.keyDown, .keyUp] {
-            guard let event = NSEvent.keyEvent(
-                with: type, location: .zero,
-                modifierFlags: NSEvent.ModifierFlags(rawValue: stroke.modifierFlags.rawValue),
-                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
-                characters: stroke.characters, charactersIgnoringModifiers: stroke.charactersIgnoringModifiers,
-                isARepeat: false, keyCode: stroke.keyCode
-            ) else { throw DevError(.driverThrew, "could not build a key event") }
+            let event = stroke.isKeyEquivalentCandidate ? controlKey(type, stroke) : key(type, stroke)
+            guard let event else { throw DevError(.driverThrew, "could not build a key event") }
             NSApp.sendEvent(event)
         }
+    }
+
+    private func key(_ type: NSEvent.EventType, _ stroke: DevKeyStroke) -> NSEvent? {
+        NSEvent.keyEvent(
+            with: type, location: .zero,
+            modifierFlags: NSEvent.ModifierFlags(rawValue: stroke.modifierFlags.rawValue),
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+            characters: stroke.characters, charactersIgnoringModifiers: stroke.charactersIgnoringModifiers,
+            isARepeat: false, keyCode: stroke.keyCode
+        )
+    }
+
+    /// A press with Control, built as a `CGEvent`. The menu takes an
+    /// `NSEvent.keyEvent` ⌃C for the system's 🌐⌃C tiling item once the Window
+    /// menu has one, and the press never reaches the first responder (#207); it
+    /// does not take a `CGEvent` ⌃C, nor a typed one. The price: the event
+    /// names no window, so the app's key monitor passes it by, and it has one
+    /// string, so `charactersIgnoringModifiers` reads as `characters`.
+    private func controlKey(_ type: NSEvent.EventType, _ stroke: DevKeyStroke) -> NSEvent? {
+        guard let event = CGEvent(keyboardEventSource: nil, virtualKey: stroke.keyCode, keyDown: type == .keyDown)
+        else { return nil }
+        event.flags = CGEventFlags(rawValue: UInt64(stroke.modifierFlags.rawValue))
+        let characters = Array(stroke.characters.utf16)
+        event.keyboardSetUnicodeString(stringLength: characters.count, unicodeString: characters)
+        return NSEvent(cgEvent: event)
     }
 
     // MARK: - Settle

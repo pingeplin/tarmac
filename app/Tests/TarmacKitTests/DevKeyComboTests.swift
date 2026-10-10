@@ -130,6 +130,18 @@ final class DevKeyComboTests: XCTestCase {
         }
     }
 
+    /// #207: AppKit offers a press with Control to the menu before `keyDown`,
+    /// whatever key it is on; without Control it does not.
+    func testAPressWithControlIsAKeyEquivalentCandidate() {
+        for combo in ["ctrl+c", "ctrl+f", "ctrl+r", "ctrl+shift+c", "ctrl+alt+b", "ctrl+7", "ctrl+left", "ctrl+enter"] {
+            XCTAssertEqual(stroke(combo)?.isKeyEquivalentCandidate, true, combo)
+        }
+        for combo in ["alt+b", "alt+shift+b", "enter", "shift+enter", "escape", "shift+tab", "left", "alt+left"] {
+            XCTAssertEqual(stroke(combo)?.isKeyEquivalentCandidate, false, combo)
+        }
+        XCTAssertEqual(DevKeyCombo.printableStroke("c")?.isKeyEquivalentCandidate, false)
+    }
+
     /// AppKit delivers Shift-Tab as the back-tab character in both fields.
     func testAShiftedTabIsTheBackTabCharacter() {
         for combo in ["shift+tab", "ctrl+shift+tab", "alt+shift+tab"] {

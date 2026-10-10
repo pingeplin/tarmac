@@ -240,15 +240,15 @@ tarmac dev key t-1 ctrl+c
   set them. If a program leaves them set there is no in-band recovery; pop them
   from the program side against that terminal's tty:
   `printf '\033[>0u' > /dev/ttysNNN`.
-- **⌃C, ⌃F and ⌃R stop working through `key` once the Window menu is filled
-  in.** macOS adds tiling items to it (Fill ⌃F, Center ⌃C, Return to Previous
-  Size ⌃R, each with the 🌐 key). They are filled in when a second window is
-  shown — the Settings window, ⌘, — or when the Window menu is read through
-  Accessibility. From then on, in that app process, a `key <term> ctrl+c`
-  runs *Center* and never reaches the PTY, and `ctrl+f` resizes the window to
-  the screen. A real keyboard is not affected, and neither are other chords.
-  So drive the Settings window (`scripts/qa/settings-window.swift`) after
-  `make qa`, or relaunch between them.
+- **A `key` with Control is built another way than the other keys** (#207).
+  macOS adds tiling items to the Window menu (Fill ⌃F, Center ⌃C, Return to
+  Previous Size ⌃R, each with the 🌐 key) when a second window is shown — the
+  Settings window, ⌘, — or when that menu is read through Accessibility, and
+  the menu takes an `NSEvent.keyEvent` ⌃C for one of them. So a press with
+  Control is built as a `CGEvent`, which the menu leaves alone, as it does a
+  typed key. Two things follow: the app's key monitor does not see that press
+  (`ctrl+escape` does not climb the ESC ladder; `escape` does), and its
+  `charactersIgnoringModifiers` is the control character, not the letter.
 - `resize` drags the bottom-right handle in board units and reports where the
   card landed, clamped to the 160×90 minimum:
   `{"from": {...}, "to": {"w": 800, "h": 600}, "delta_px": {...}}`.
