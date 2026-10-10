@@ -339,7 +339,6 @@ mod tests {
         boards.iter().find(|b| b.id == id).and_then(|b| b.name.as_deref())
     }
 
-    // Sets a name, clears it (None), and is a no-op for an unknown id.
     #[test]
     fn rename_sets_and_clears_name() {
         let mut boards = Boards::single();
@@ -392,7 +391,6 @@ mod tests {
         DocInfo { via: "t".into(), read: false, repo: None, repo_root: None, repo_color: None, last_changed_ms: None, last_opened_ms: 0, term_id: None }
     }
 
-    // close_doc removes the closed path from Registry.dock and reports it existed.
     #[test]
     fn doc_close_prunes_closed_path_from_dock() {
         let mut reg = Registry::empty();

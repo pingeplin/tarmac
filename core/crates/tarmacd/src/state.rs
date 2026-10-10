@@ -208,13 +208,17 @@ mod tests {
         DocInfo { via: "t".into(), read: false, repo: None, repo_root: None, repo_color: None, last_changed_ms: None, last_opened_ms: 0, term_id: None }
     }
 
-    // unwatch() removes the dir from watched_dirs when the sole doc is closed.
-    #[tokio::test]
-    async fn unwatch_removes_dir_when_sole_occupant_closed() {
-        let tmp = tmp_dir("s8a");
+    fn daemon_with_doc_dir(tag: &str) -> (PathBuf, PathBuf, Arc<Daemon>) {
+        let tmp = tmp_dir(tag);
         let doc_dir = tmp.join("d");
         std::fs::create_dir_all(&doc_dir).unwrap();
         let daemon = Daemon::new(tmp.join("state.json")).unwrap();
+        (tmp, doc_dir, daemon)
+    }
+
+    #[tokio::test]
+    async fn unwatch_removes_dir_when_sole_occupant_closed() {
+        let (tmp, doc_dir, daemon) = daemon_with_doc_dir("s8a");
 
         daemon.ensure_watched(&doc_dir).unwrap();
         assert!(daemon.watcher.lock().unwrap().watched_dirs.contains(&doc_dir));
@@ -225,13 +229,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
-    // When a sibling doc shares the dir, unwatch is skipped and watched_dirs retains it.
     #[tokio::test]
     async fn watched_dir_kept_when_sibling_doc_remains() {
-        let tmp = tmp_dir("s8b");
-        let doc_dir = tmp.join("d");
-        std::fs::create_dir_all(&doc_dir).unwrap();
-        let daemon = Daemon::new(tmp.join("state.json")).unwrap();
+        let (tmp, doc_dir, daemon) = daemon_with_doc_dir("s8b");
 
         let doc_a = doc_dir.join("a.md");
         let doc_b = doc_dir.join("b.md");

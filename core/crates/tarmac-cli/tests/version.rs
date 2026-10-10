@@ -6,37 +6,20 @@
 
 use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
-use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tarmac_protocol::{self as proto, Msg, frame};
 
-fn tarmac() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_tarmac"))
-}
-
-static DIR_SEQ: AtomicU64 = AtomicU64::new(0);
-
-fn scratch() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "tarmac-version-{}-{}",
-        std::process::id(),
-        DIR_SEQ.fetch_add(1, Ordering::Relaxed)
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
-}
+mod common;
+use common::{Report, scratch, tarmac};
 
 /// What the fake daemon does after reading the client's `hello`.
 enum Reply {
     /// Frame this message back, then keep reading so the test can observe
     /// whether the client sends anything else.
     Frame(Msg),
-    /// Accept, then drop the connection without replying.
     CloseWithoutReply,
     /// Accept and hold the connection open, never replying — the only way to
     /// exercise the client's read timeout.
@@ -100,23 +83,7 @@ impl Fake {
     }
 }
 
-/// The captured result of one `tarmac --version` run.
-struct Report {
-    code: Option<i32>,
-    stdout: String,
-    stderr: String,
-}
-
 impl Report {
-    fn of(cmd: &mut Command) -> Self {
-        let out = cmd.output().unwrap();
-        Report {
-            code: out.status.code(),
-            stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
-        }
-    }
-
     /// The value after the 8-column label field, for one label.
     fn line(&self, label: &str) -> String {
         let prefix = format!("{label:<8} ");
@@ -163,7 +130,7 @@ fn the_report_is_five_exact_lines() {
     let fake = Fake::start(Reply::Frame(full_reply()));
     let report = fake.version();
 
-    assert_eq!(report.code, Some(0));
+    assert_eq!(report.code(), Some(0));
     assert_eq!(report.stderr, "", "the report goes to stdout only");
     assert_eq!(
         report.stdout,
@@ -188,7 +155,7 @@ fn an_absent_app_is_reported_as_not_connected() {
     let fake = Fake::start(Reply::Frame(hello_ok(Some("9.9.9"), Some(4242), None, Some(false))));
     let report = fake.version();
 
-    assert_eq!(report.code, Some(0));
+    assert_eq!(report.code(), Some(0));
     assert_eq!(report.line("app"), "not connected");
 }
 
@@ -201,7 +168,7 @@ fn a_connected_app_that_reported_no_version_is_not_called_absent() {
     let fake = Fake::start(Reply::Frame(hello_ok(Some("9.9.9"), Some(4242), None, Some(true))));
     let report = fake.version();
 
-    assert_eq!(report.code, Some(0));
+    assert_eq!(report.code(), Some(0));
     assert_eq!(report.line("app"), "connected (version not reported)");
 }
 
@@ -213,7 +180,7 @@ fn a_pre_key_daemon_yields_an_unknown_app_not_an_absent_one() {
     let fake = Fake::start(Reply::Frame(hello_ok(Some("0.10.0"), Some(8275), None, None)));
     let report = fake.version();
 
-    assert_eq!(report.code, Some(0));
+    assert_eq!(report.code(), Some(0));
     assert_eq!(report.line("daemon"), "0.10.0 (pid 8275)");
     assert_eq!(report.line("app"), "unknown (daemon predates this key)");
 }
@@ -224,7 +191,7 @@ fn a_version_less_daemon_still_reports_its_app() {
     let fake = Fake::start(Reply::Frame(hello_ok(None, Some(4242), Some("8.8.8"), Some(true))));
     let report = fake.version();
 
-    assert_eq!(report.code, Some(0));
+    assert_eq!(report.code(), Some(0));
     assert_eq!(report.line("daemon"), "connected (version not reported)");
     assert_eq!(report.line("app"), "8.8.8 (running)");
 }
@@ -244,7 +211,7 @@ fn a_rejected_handshake_is_reported_not_fatal() {
     let fake = Fake::start(Reply::Frame(Msg::Err { msg: "go away\nnow".into() }));
     let report = fake.version();
 
-    assert_eq!(report.code, Some(0));
+    assert_eq!(report.code(), Some(0));
     assert_eq!(report.stdout.lines().count(), 5, "got:\n{}", report.stdout);
     let daemon = report.line("daemon");
     assert!(daemon.starts_with("unreachable ("), "got: {daemon}");
@@ -259,7 +226,7 @@ fn a_peer_that_closes_without_replying_is_unreachable() {
     let fake = Fake::start(Reply::CloseWithoutReply);
     let report = fake.version();
 
-    assert_eq!(report.code, Some(0));
+    assert_eq!(report.code(), Some(0));
     assert!(report.line("daemon").starts_with("unreachable ("));
     assert_eq!(report.line("app"), "unknown (daemon unreachable)");
 }
@@ -269,10 +236,10 @@ fn a_peer_that_closes_without_replying_is_unreachable() {
 #[test]
 fn a_silent_peer_times_out_instead_of_hanging() {
     let fake = Fake::start(Reply::Silence);
-    let started = std::time::Instant::now();
+    let started = Instant::now();
     let report = fake.version();
 
-    assert_eq!(report.code, Some(0));
+    assert_eq!(report.code(), Some(0));
     assert!(report.line("daemon").starts_with("unreachable ("));
     assert!(started.elapsed() < Duration::from_secs(15), "must not hang: {:?}", started.elapsed());
 }
@@ -282,7 +249,7 @@ fn a_silent_peer_times_out_instead_of_hanging() {
 #[test]
 fn the_cli_sends_exactly_one_version_less_hello() {
     let fake = Fake::start(Reply::Frame(full_reply()));
-    assert_eq!(fake.version().code, Some(0));
+    assert_eq!(fake.version().code(), Some(0));
 
     let received = fake.received_frames();
     assert_eq!(received.len(), 1, "--version must send exactly one frame");
@@ -305,7 +272,7 @@ fn no_daemon_still_reports_the_cli_channel_and_socket() {
     let sock = dir.join("absent.sock");
     let report = Report::of(tarmac().env("TARMAC_SOCKET", &sock).arg("--version"));
 
-    assert_eq!(report.code, Some(0));
+    assert_eq!(report.code(), Some(0));
     assert_eq!(report.stderr, "");
     assert_eq!(report.line("cli"), env!("CARGO_PKG_VERSION"));
     assert_eq!(report.line("daemon"), "not running");
@@ -324,7 +291,7 @@ fn an_over_long_socket_path_is_unreachable_not_absent() {
     assert!(sock.as_os_str().len() >= 104, "fixture must exceed the sun_path cap");
     let report = Report::of(tarmac().env("TARMAC_SOCKET", &sock).arg("--version"));
 
-    assert_eq!(report.code, Some(0));
+    assert_eq!(report.code(), Some(0));
     assert!(report.line("daemon").starts_with("unreachable ("), "got: {}", report.line("daemon"));
     assert_eq!(report.line("app"), "unknown (daemon unreachable)");
     assert_eq!(report.line("socket"), sock.display().to_string());
@@ -333,12 +300,12 @@ fn an_over_long_socket_path_is_unreachable_not_absent() {
 // S26: wrong arity stays a usage error, like every other verb.
 #[test]
 fn extra_arguments_are_a_usage_error() {
-    let out = tarmac().args(["--version", "extra"]).output().unwrap();
+    let out = Report::of(tarmac().args(["--version", "extra"]));
 
-    assert_eq!(out.status.code(), Some(2));
-    assert_eq!(String::from_utf8_lossy(&out.stdout), "", "a usage error prints no report");
+    assert_eq!(out.code(), Some(2));
+    assert_eq!(out.stdout, "", "a usage error prints no report");
     assert!(
-        String::from_utf8_lossy(&out.stderr).contains("usage"),
+        out.stderr.contains("usage"),
         "a usage error must say so on stderr, like every other verb"
     );
 }
@@ -346,8 +313,8 @@ fn extra_arguments_are_a_usage_error() {
 // S18: --help carries the verb and its exit-status exception.
 #[test]
 fn help_lists_the_version_verb_and_its_exit_status() {
-    let out = tarmac().arg("--help").output().unwrap();
-    let text = String::from_utf8_lossy(&out.stdout);
+    let out = Report::of(tarmac().arg("--help"));
+    let text = &out.stdout;
 
     assert!(out.status.success());
     assert!(text.contains("tarmac --version"));
@@ -365,14 +332,9 @@ fn open_still_fails_on_a_rejected_handshake() {
     let doc = fake.dir.join("doc.md");
     std::fs::write(&doc, "# hi\n").unwrap();
 
-    let out = tarmac()
-        .env("TARMAC_SOCKET", &fake.sock)
-        .args(["open", doc.to_str().unwrap()])
-        .output()
-        .unwrap();
+    let out = Report::of(tarmac().env("TARMAC_SOCKET", &fake.sock).args(["open", doc.to_str().unwrap()]));
 
-    assert_eq!(out.status.code(), Some(1));
-    let err = String::from_utf8_lossy(&out.stderr);
-    assert_eq!(err.lines().count(), 1, "expected one line, got: {err}");
+    assert_eq!(out.code(), Some(1));
+    let err = out.one_stderr_line();
     assert!(err.contains("daemon rejected handshake: nope"), "got: {err}");
 }

@@ -45,9 +45,9 @@ Pick the innermost layer that can express the failure.
 
 | The change is… | The failing test goes… |
 | --- | --- |
-| A pure decision, transform, or rule in Rust | `#[cfg(test)] mod tests` at the **bottom of the same file** — `core/crates/tarmacd/src/boards.rs`, `core/crates/tarmacd/src/term.rs` |
+| A pure decision, transform, or rule in Rust | `#[cfg(test)] mod tests` at the **bottom of the same file** — `core/crates/tarmacd/src/boards.rs`, `core/crates/tarmacd/src/term.rs`. One exception: the tests of `core/crates/tarmac-protocol/src/lib.rs` are in `core/crates/tarmac-protocol/src/tests.rs` |
 | Daemon behaviour observable over the socket | a suite in `core/crates/tarmacd/tests/` (`boards_integration.rs`, `restore_integration.rs`, …), built on the real-daemon harness in `core/crates/tarmacd/tests/common/mod.rs` |
-| The wire contract | `core/crates/tarmac-protocol/src/lib.rs` — a new inline conformance vector, byte-exact — **and** the same vector in `app/Tests/TarmacKitTests/ConformanceTests.swift`, with the Rust encoder's bytes for the new frame in `app/Tests/TarmacKitTests/RustEncoderParityTests.swift`. Never edit an existing one; see the additive-only rule in [`protocol.md`](protocol.md) |
+| The wire contract | `core/crates/tarmac-protocol/src/tests.rs` — a new conformance vector, byte-exact — **and** the same vector in `app/Tests/TarmacKitTests/ConformanceTests.swift`, with the Rust encoder's bytes for the new frame in `app/Tests/TarmacKitTests/RustEncoderParityTests.swift`. Never edit an existing one; see the additive-only rule in [`protocol.md`](protocol.md) |
 | CLI surface (exit codes, stderr, `--help`) | `core/crates/tarmac-cli/tests/cli.rs` — spawn the real binary |
 | App logic — a rule, a threshold, an ordering, a state transition, a coordinate | a module in `app/Sources/TarmacKit/` plus its paired test in `app/Tests/TarmacKitTests/` — `app/Sources/TarmacKit/ToastQueue.swift` and `app/Tests/TarmacKitTests/ToastQueueTests.swift` |
 | The daemon link | `app/Tests/TarmacKitTests/DaemonClientTests.swift` — the real client against a stand-in daemon on a real Unix socket |

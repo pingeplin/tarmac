@@ -389,7 +389,6 @@ mod tests {
 
     #[test]
     fn empty_value_falls_through_to_next_key() {
-        // An empty higher-precedence var is ignored; the next decides.
         assert!(!decide(&[("LC_ALL", ""), ("LANG", "en_US.UTF-8")]));
         assert!(decide(&[("LC_CTYPE", ""), ("LANG", "C")]));
     }

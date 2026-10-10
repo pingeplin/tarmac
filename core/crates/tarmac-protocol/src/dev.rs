@@ -120,6 +120,11 @@ mod tests {
         decode_request(&encode_request(req).unwrap()).unwrap()
     }
 
+    #[derive(serde::Deserialize)]
+    struct Tag {
+        t: String,
+    }
+
     /// Every variant survives encode -> decode.
     #[test]
     fn every_dev_request_variant_roundtrips() {
@@ -163,10 +168,6 @@ mod tests {
         // Read the tag by KEY NAME. A substring check for "t" would be
         // satisfied by the tag *value* ("snapsho-t-") and could never fail;
         // this deserialize fails if the key is named anything but `t`.
-        #[derive(serde::Deserialize)]
-        struct Tag {
-            t: String,
-        }
         let tag_of = |req| rmp_serde::from_slice::<Tag>(&encode_request(&req).unwrap()).unwrap().t;
         assert_eq!(tag_of(DevRequest::Snapshot { until: None, timeout_ms: None }), "snapshot");
         assert_eq!(tag_of(DevRequest::Type { card: "t-1".into(), text: "x".into() }), "type");
@@ -208,10 +209,6 @@ mod tests {
         ];
         for req in all {
             assert_eq!(roundtrip(&req), req, "roundtrip changed {req:?}");
-        }
-        #[derive(serde::Deserialize)]
-        struct Tag {
-            t: String,
         }
         let bytes = encode_request(&bare).unwrap();
         assert_eq!(rmp_serde::from_slice::<Tag>(&bytes).unwrap().t, "press");

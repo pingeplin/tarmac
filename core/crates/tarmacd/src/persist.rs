@@ -232,7 +232,6 @@ mod tests {
         assert_eq!(b.name, None);
 
         let reg = boards.active_registry();
-        // Dock order preserved.
         assert_eq!(
             reg.dock,
             vec![PathBuf::from("/nx-tarmac/plan.md"), PathBuf::from("/nx-tarmac/notes.md")]
@@ -244,14 +243,12 @@ mod tests {
         assert_eq!(plan.last_changed_ms, Some(1718000000000));
         assert_eq!(plan.term_id.as_deref(), Some("t1"));
         assert!(reg.docs.get(Path::new("/nx-tarmac/notes.md")).unwrap().read);
-        // Tile geometry + viewport preserved.
         assert_eq!(reg.tiles.len(), 2);
         assert_eq!(reg.tiles[0].kind, "term");
         assert_eq!(reg.tiles[0].x, Some(80.0));
         assert_eq!(reg.tiles[1].path.as_deref(), Some("/nx-tarmac/plan.md"));
         assert_eq!(reg.board, Some(BoardViewport { zoom: 0.82, cx: 640.0, cy: 360.0 }));
 
-        // The active board's restore carries the migrated state, stamped board-0.
         match boards.active_restore_msg(vec![]) {
             tarmac_protocol::Msg::Restore { board_id, docs, tiles, board, .. } => {
                 assert_eq!(board_id.as_deref(), Some(DEFAULT_BOARD_ID));
@@ -276,12 +273,10 @@ mod tests {
         assert!(v.get("boards").and_then(|b| b.as_array()).is_some_and(|a| a.len() == 1));
         assert_eq!(v["boards"][0]["board_id"], serde_json::json!(DEFAULT_BOARD_ID));
         assert_eq!(v["active"], serde_json::json!(DEFAULT_BOARD_ID));
-        // Legacy flat keys are never written.
         assert!(v.get("docs").is_none(), "top-level docs must not be serialized");
         assert!(v.get("tiles").is_none(), "top-level tiles must not be serialized");
         assert!(v.get("board").is_none(), "top-level board must not be serialized");
 
-        // Write the nested shape and reload: identical board-0 state.
         write_atomic(&path, &state).unwrap();
         let reloaded = load(&path);
         assert_eq!(reloaded.iter().count(), 1);
@@ -310,7 +305,6 @@ mod tests {
         let ids: Vec<&str> = boards.iter().map(|b| b.id.as_str()).collect();
         assert_eq!(ids, vec!["board-0", "board-1"]);
         assert_eq!(boards.iter().nth(1).unwrap().name.as_deref(), Some("infra"));
-        // Unknown active id → first board.
         assert_eq!(boards.active_id(), "board-0");
     }
 
@@ -318,7 +312,7 @@ mod tests {
     #[test]
     fn missing_and_corrupt_files_yield_default_board() {
         let missing = tmp_state("missing");
-        let boards = load(&missing); // never written
+        let boards = load(&missing);
         assert_eq!(boards.iter().count(), 1);
         assert_eq!(boards.active_id(), DEFAULT_BOARD_ID);
         // A default board is never term-less.
