@@ -181,7 +181,7 @@ reports.
 | | `BoardRename {board_id, name}` | app→D | set/clear display name |
 | | `BoardDelete {board_id}` | app→D | remove a board (refuses the last) |
 | Teardown | `TermClose {term_id}` | app→D | kill a terminal's pty and forget it |
-| | `DocClose {path}` | app→D | drop a doc from its board + unwatch it |
+| | `DocClose {path}` | app→D | drop a doc from the active board; its directory stays watched while any board has a doc there |
 
 Supporting structs: `DocEntry`, `Tile` (kind + optional `path,x,y,w,h,z,loose,
 shelf,term_id`), `BoardMeta {board_id, name?, running?}`, `BoardViewport {zoom,

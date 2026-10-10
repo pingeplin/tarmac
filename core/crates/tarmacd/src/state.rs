@@ -92,8 +92,25 @@ impl Daemon {
         Ok(())
     }
 
-    /// Only called when no remaining doc on the active board shares the directory.
-    pub fn unwatch(&self, dir: &Path) {
+    /// Forgets a doc of the active board, and drops its directory's watch when
+    /// no board has a doc left there. False for an unknown path.
+    pub async fn close_doc(&self, path: &Path) -> bool {
+        // The block releases the boards lock before any unwatch.
+        let unused_dir = {
+            let mut boards = self.boards.lock().await;
+            if !boards.active_registry_mut().close_doc(path) {
+                return false;
+            }
+            path.parent().filter(|dir| !boards.dir_in_use(dir))
+        };
+        self.mark_dirty();
+        if let Some(dir) = unused_dir {
+            self.unwatch(dir);
+        }
+        true
+    }
+
+    fn unwatch(&self, dir: &Path) {
         let mut w = self.watcher.lock().expect("watcher lock");
         if !w.watched_dirs.contains(dir) {
             return;
@@ -217,7 +234,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unwatch_removes_dir_when_sole_occupant_closed() {
+    async fn unwatch_removes_a_watched_dir() {
         let (tmp, doc_dir, daemon) = daemon_with_doc_dir("s8a");
 
         daemon.ensure_watched(&doc_dir).unwrap();
@@ -229,32 +246,61 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
+    /// Watches the directory of `doc` and registers it on board `board`, as an
+    /// open does.
+    async fn open_doc(daemon: &Daemon, board: Option<&str>, doc: &Path) {
+        daemon.ensure_watched(doc.parent().unwrap()).unwrap();
+        let mut boards = daemon.boards.lock().await;
+        let reg = boards.registry_mut(board);
+        reg.docs.insert(doc.to_owned(), doc_info());
+        reg.dock.push(doc.to_owned());
+    }
+
+    fn watched(daemon: &Daemon, dir: &Path) -> bool {
+        daemon.watcher.lock().unwrap().watched_dirs.contains(dir)
+    }
+
+    #[tokio::test]
+    async fn closing_the_sole_doc_of_a_dir_unwatches_it() {
+        let (tmp, doc_dir, daemon) = daemon_with_doc_dir("close-sole");
+        let doc = doc_dir.join("a.md");
+        open_doc(&daemon, None, &doc).await;
+        assert!(watched(&daemon, &doc_dir));
+
+        assert!(daemon.close_doc(&doc).await);
+        assert!(!watched(&daemon, &doc_dir));
+        assert!(!daemon.close_doc(&doc).await, "a second close finds no doc");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
     #[tokio::test]
     async fn watched_dir_kept_when_sibling_doc_remains() {
         let (tmp, doc_dir, daemon) = daemon_with_doc_dir("s8b");
-
         let doc_a = doc_dir.join("a.md");
-        let doc_b = doc_dir.join("b.md");
-        {
-            let mut boards = daemon.boards.lock().await;
-            let reg = boards.active_registry_mut();
-            for d in [&doc_a, &doc_b] {
-                reg.docs.insert(d.clone(), doc_info());
-                reg.dock.push(d.clone());
-            }
-        }
-        daemon.ensure_watched(&doc_dir).unwrap();
+        open_doc(&daemon, None, &doc_a).await;
+        open_doc(&daemon, None, &doc_dir.join("b.md")).await;
 
-        let (_, should_unwatch) = {
-            let mut boards = daemon.boards.lock().await;
-            boards.active_registry_mut().close_doc(&doc_a)
-        };
-        assert!(!should_unwatch, "must not unwatch when sibling doc remains");
-        // Mirror production: only unwatch when no sibling remains.
-        if should_unwatch {
-            daemon.unwatch(&doc_dir);
-        }
-        assert!(daemon.watcher.lock().unwrap().watched_dirs.contains(&doc_dir));
+        assert!(daemon.close_doc(&doc_a).await);
+        assert!(watched(&daemon, &doc_dir));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test]
+    async fn watched_dir_kept_while_another_board_has_a_doc_there() {
+        let (tmp, doc_dir, daemon) = daemon_with_doc_dir("close-cross-board");
+        let (doc_a, doc_b) = (doc_dir.join("a.md"), doc_dir.join("b.md"));
+        open_doc(&daemon, None, &doc_a).await;
+        let other = daemon.boards.lock().await.create();
+        open_doc(&daemon, Some(&other), &doc_b).await;
+
+        assert!(daemon.close_doc(&doc_b).await);
+        assert!(watched(&daemon, &doc_dir), "board-0 still has a doc in the directory");
+
+        daemon.boards.lock().await.set_active(crate::boards::DEFAULT_BOARD_ID);
+        assert!(daemon.close_doc(&doc_a).await);
+        assert!(!watched(&daemon, &doc_dir), "no board has a doc in the directory");
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

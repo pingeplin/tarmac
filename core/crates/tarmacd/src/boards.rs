@@ -85,17 +85,13 @@ impl Registry {
         }
     }
 
-    /// Returns `(existed, should_unwatch)`; `should_unwatch` is true iff no
-    /// sibling doc in the same parent dir remains.
-    pub fn close_doc(&mut self, path: &Path) -> (bool, bool) {
-        if self.docs.remove(path).is_some() {
+    /// False when the path is unknown.
+    pub fn close_doc(&mut self, path: &Path) -> bool {
+        let existed = self.docs.remove(path).is_some();
+        if existed {
             self.dock.retain(|p| p != path);
-            let has_sibling =
-                path.parent().map(|par| self.docs.keys().any(|k| k.parent() == Some(par))).unwrap_or(false);
-            (true, !has_sibling)
-        } else {
-            (false, false)
         }
+        existed
     }
 
     pub fn set_tiles(&mut self, tiles: Vec<Tile>) {
@@ -204,6 +200,12 @@ impl Boards {
 
     pub fn contains(&self, id: &str) -> bool {
         self.index_of(id).is_some()
+    }
+
+    /// Whether any board has a doc directly in `dir`. The watch set is shared by
+    /// every board, so one board's registry cannot answer this.
+    pub fn dir_in_use(&self, dir: &Path) -> bool {
+        self.boards.iter().any(|b| b.registry.docs.keys().any(|p| p.parent() == Some(dir)))
     }
 
     /// Each board's identity plus its live-pty count, taken from `live` (the
@@ -407,8 +409,19 @@ mod tests {
         reg.docs.insert(doc.clone(), doc_info());
         reg.dock.push(doc.clone());
         assert!(reg.dock.contains(&doc));
-        let (existed, _) = reg.close_doc(&doc);
-        assert!(existed);
+        assert!(reg.close_doc(&doc));
         assert!(!reg.dock.contains(&doc));
+    }
+
+    #[test]
+    fn dir_in_use_sees_a_doc_on_any_board() {
+        let mut boards = Boards::single();
+        let other = boards.create();
+        boards.registry_mut(Some(DEFAULT_BOARD_ID)).docs.insert(PathBuf::from("/tmp/d/a.md"), doc_info());
+        assert_eq!(boards.active_id(), other);
+
+        assert!(boards.dir_in_use(Path::new("/tmp/d")));
+        assert!(!boards.dir_in_use(Path::new("/tmp")), "a doc in a subdirectory does not count");
+        assert!(!boards.dir_in_use(Path::new("/tmp/e")));
     }
 }

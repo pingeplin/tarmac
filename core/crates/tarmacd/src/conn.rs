@@ -306,7 +306,11 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
             }
         }
         Msg::BoardDelete { board_id } => delete_board(daemon, conn, &board_id).await,
-        Msg::DocClose { path } => close_doc(daemon, &path).await,
+        Msg::DocClose { path } => {
+            if !daemon.close_doc(Path::new(&path)).await {
+                debug!("doc_close for unknown path {path}");
+            }
+        }
         Msg::DocRefresh { path } => {
             if !docs::stat_and_push(daemon, Path::new(&path)).await {
                 debug!("doc_refresh no-op for {path} (not on the active board, or unreadable)");
@@ -408,21 +412,5 @@ async fn delete_board(daemon: &Arc<Daemon>, conn: &mut AppConn, board_id: &str) 
         // 5) re-push board_list + the now-active board's restore: the app needs
         //    the list either way, and a restore when the active board changed.
         send_active_board(daemon, conn).await;
-    }
-}
-
-async fn close_doc(daemon: &Daemon, path: &str) {
-    let path = Path::new(path);
-    // The lock is released at the end of this statement, before any unwatch.
-    let (removed, should_unwatch) = daemon.boards.lock().await.active_registry_mut().close_doc(path);
-    if !removed {
-        debug!("doc_close for unknown path {}", path.display());
-        return;
-    }
-    daemon.mark_dirty();
-    if should_unwatch {
-        if let Some(dir) = path.parent() {
-            daemon.unwatch(dir);
-        }
     }
 }
