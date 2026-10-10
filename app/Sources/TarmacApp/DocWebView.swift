@@ -46,6 +46,9 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
     private var lastChangedMs: UInt64?
     /// Reads are answered off the main thread; only the latest one is shown.
     private var reads = 0
+    /// Counts the page loads: a word that a page is drawn can come for a page
+    /// that was replaced.
+    private var pageLoads = 0
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
@@ -61,6 +64,7 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
         super.init(frame: .zero)
         wantsLayer = true
         themeChanged()
+        coverPage()
 
         webView.navigationDelegate = self
         webView.configuration.userContentController.addScriptMessageHandler(
@@ -98,7 +102,31 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
         onScrollChanged?(nil)
         // The page holds its colours from its first paint.
         themeGiven = PageTheme(Theme.palette)
+        pageLoads += 1
+        coverPage()
         webView.loadHTMLString(ThemeCSS.page(Self.template, Theme.palette), baseURL: nil)
+    }
+
+    /// Until its page is drawn the web view shows the system's canvas, which
+    /// is not the theme's and can be white. So the web view is out of sight
+    /// from the moment it is made, and again when a page is asked for, until
+    /// the page has been drawn; what shows is this view's own backdrop (#213).
+    private func coverPage() {
+        webView.alphaValue = 0
+    }
+
+    /// Two frames, as the HTML card's host page waits: the first is drawn with
+    /// the page in it. A script that fails still uncovers, so no card stays
+    /// out of sight.
+    private func uncoverWhenDrawn() {
+        let load = pageLoads
+        webView.callAsyncJavaScript(
+            "await new Promise(drawn => requestAnimationFrame(() => requestAnimationFrame(drawn)))",
+            arguments: [:], in: nil, in: CardWebView.world
+        ) { [weak self] _ in
+            guard let self, load == self.pageLoads else { return }
+            self.webView.alphaValue = 1
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -203,6 +231,7 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
         themeChanged()
         layoutPage(viewport: webView.frame.size)
         render()
+        uncoverWhenDrawn()
     }
 
     /// The system reclaimed the page's process; the page is gone with it.
