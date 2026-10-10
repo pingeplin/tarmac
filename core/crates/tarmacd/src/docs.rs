@@ -8,7 +8,7 @@ use tarmac_protocol::Msg;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::{debug, warn};
 
-use crate::boards::DocInfo;
+use crate::boards::{DocInfo, Registry};
 use crate::state::Daemon;
 
 pub struct RepoInfo {
@@ -62,62 +62,55 @@ pub async fn handle_open(
     if !meta.is_file() {
         return Err(format!("not a regular file: {}", canon.display()));
     }
-    let parent = canon
-        .parent()
-        .ok_or_else(|| format!("path has no parent directory: {}", canon.display()))?;
-    daemon
-        .ensure_watched(parent)
-        .map_err(|e| format!("cannot watch {}: {e}", parent.display()))?;
-
     // `None` resolves to the active board inside `registry_mut`.
     let target = match (board_id, &term_id) {
         (Some(id), _) => Some(id),
         (None, Some(t)) => daemon.term_boards.lock().await.get(t).cloned(),
         (None, None) => None,
     };
-
-    // Upsert before pushing so the doc_opened entry reflects the post-open state.
-    let entry = {
-        let mut boards = daemon.boards.lock().await;
-        let reg = boards.registry_mut(target.as_deref());
-        match reg.docs.get_mut(&canon) {
-            Some(info) => {
-                info.via = via.to_owned();
-                info.last_opened_ms = epoch_ms(SystemTime::now());
-                // Only cli opens may clear read; a user re-open leaves it. The
-                // dock slot never moves on re-open. A re-open carrying a term_id
-                // updates the provenance owner; one without keeps the prior owner.
-                if via == "cli" {
-                    info.read = false;
-                }
-                if term_id.is_some() {
-                    info.term_id = term_id.clone();
-                }
-            }
-            None => {
-                let repo = derive_repo(&canon);
-                reg.docs.insert(
-                    canon.clone(),
-                    DocInfo {
-                        via: via.to_owned(),
-                        read: via != "cli",
-                        repo: repo.as_ref().map(|r| r.name.clone()),
-                        repo_root: repo.as_ref().map(|r| r.root.clone()),
-                        repo_color: repo.as_ref().map(|r| r.color),
-                        last_changed_ms: None,
-                        last_opened_ms: epoch_ms(SystemTime::now()),
-                        term_id: term_id.clone(),
-                    },
-                );
-                reg.dock.push(canon.clone());
-            }
-        }
-        reg.entry(&canon).expect("doc just upserted")
-    };
-    daemon.mark_dirty();
+    let entry = daemon
+        .open_doc(target.as_deref(), &canon, via, term_id)
+        .await
+        .map_err(|e| e.to_string())?;
     debug!("doc opened via {via}: {}", canon.display());
     daemon.push(Msg::DocOpened(entry)).await;
     Ok(())
+}
+
+/// Registers `path` in `reg`, or refreshes the doc already there.
+pub fn upsert_doc(reg: &mut Registry, path: &Path, via: &str, term_id: Option<String>) {
+    match reg.docs.get_mut(path) {
+        Some(info) => {
+            info.via = via.to_owned();
+            info.last_opened_ms = epoch_ms(SystemTime::now());
+            // Only cli opens may clear read; a user re-open leaves it. The
+            // dock slot never moves on re-open. A re-open carrying a term_id
+            // updates the provenance owner; one without keeps the prior owner.
+            if via == "cli" {
+                info.read = false;
+            }
+            if term_id.is_some() {
+                info.term_id = term_id;
+            }
+        }
+        None => {
+            let repo = derive_repo(path);
+            reg.docs.insert(
+                path.to_owned(),
+                DocInfo {
+                    via: via.to_owned(),
+                    read: via != "cli",
+                    repo: repo.as_ref().map(|r| r.name.clone()),
+                    repo_root: repo.as_ref().map(|r| r.root.clone()),
+                    repo_color: repo.as_ref().map(|r| r.color),
+                    last_changed_ms: None,
+                    last_opened_ms: epoch_ms(SystemTime::now()),
+                    term_id,
+                },
+            );
+            reg.dock.push(path.to_owned());
+        }
+    }
 }
 
 pub async fn watch_loop(daemon: Arc<Daemon>, mut rx: UnboundedReceiver<DebounceEventResult>) {

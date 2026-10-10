@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache, new_debouncer};
-use tarmac_protocol::Msg;
+use tarmac_protocol::{DocEntry, Msg};
 use tokio::sync::{Mutex, Notify, mpsc};
 use tokio_util::sync::CancellationToken;
 
@@ -82,7 +82,7 @@ impl Daemon {
         Ok(daemon)
     }
 
-    pub fn ensure_watched(&self, dir: &Path) -> anyhow::Result<()> {
+    fn ensure_watched(&self, dir: &Path) -> anyhow::Result<()> {
         let mut w = self.watcher.lock().expect("watcher lock");
         if w.watched_dirs.contains(dir) {
             return Ok(());
@@ -90,6 +90,32 @@ impl Daemon {
         w.debouncer.watch(dir, RecursiveMode::NonRecursive)?;
         w.watched_dirs.insert(dir.to_owned());
         Ok(())
+    }
+
+    /// Registers a doc on `board` (the active one for `None`), or refreshes the
+    /// one already there. Fails, with nothing registered, when its directory
+    /// cannot be watched.
+    pub async fn open_doc(
+        &self,
+        board: Option<&str>,
+        path: &Path,
+        via: &str,
+        term_id: Option<String>,
+    ) -> anyhow::Result<DocEntry> {
+        let Some(dir) = path.parent() else {
+            anyhow::bail!("path has no parent directory: {}", path.display());
+        };
+        self.ensure_watched(dir)
+            .map_err(|e| anyhow::anyhow!("cannot watch {}: {e}", dir.display()))?;
+        // Upsert before the entry is read so it reflects the post-open state.
+        let entry = {
+            let mut boards = self.boards.lock().await;
+            let reg = boards.registry_mut(board);
+            crate::docs::upsert_doc(reg, path, via, term_id);
+            reg.entry(path).expect("doc just upserted")
+        };
+        self.mark_dirty();
+        Ok(entry)
     }
 
     /// Forgets a doc of the active board, and drops its directory's watch when
@@ -108,6 +134,15 @@ impl Daemon {
             self.unwatch(dir);
         }
         true
+    }
+
+    /// Removes a board. False for the last board or an unknown id.
+    pub async fn delete_board(&self, id: &str) -> bool {
+        let deleted = self.boards.lock().await.delete(id);
+        if deleted {
+            self.mark_dirty();
+        }
+        deleted
     }
 
     fn unwatch(&self, dir: &Path) {
@@ -208,7 +243,6 @@ impl Daemon {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::boards::DocInfo;
     use std::sync::atomic::{AtomicU32, Ordering};
 
     // Per-test unique temp dir (process id + counter avoids collisions across
@@ -219,10 +253,6 @@ mod tests {
         let d = std::env::temp_dir().join(format!("tarmac-state-{}-{}-{n}", std::process::id(), tag));
         std::fs::create_dir_all(&d).unwrap();
         d
-    }
-
-    fn doc_info() -> DocInfo {
-        DocInfo { via: "t".into(), read: false, repo: None, repo_root: None, repo_color: None, last_changed_ms: None, last_opened_ms: 0, term_id: None }
     }
 
     fn daemon_with_doc_dir(tag: &str) -> (PathBuf, PathBuf, Arc<Daemon>) {
@@ -246,14 +276,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
-    /// Watches the directory of `doc` and registers it on board `board`, as an
-    /// open does.
     async fn open_doc(daemon: &Daemon, board: Option<&str>, doc: &Path) {
-        daemon.ensure_watched(doc.parent().unwrap()).unwrap();
-        let mut boards = daemon.boards.lock().await;
-        let reg = boards.registry_mut(board);
-        reg.docs.insert(doc.to_owned(), doc_info());
-        reg.dock.push(doc.to_owned());
+        daemon.open_doc(board, doc, "t", None).await.unwrap();
     }
 
     fn watched(daemon: &Daemon, dir: &Path) -> bool {

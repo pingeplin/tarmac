@@ -406,9 +406,7 @@ async fn delete_board(daemon: &Arc<Daemon>, conn: &mut AppConn, board_id: &str) 
         h.kill();
     }
     // 4) remove the board (active is fixed if it was the active one).
-    let deleted = daemon.boards.lock().await.delete(board_id);
-    if deleted {
-        daemon.mark_dirty();
+    if daemon.delete_board(board_id).await {
         // 5) re-push board_list + the now-active board's restore: the app needs
         //    the list either way, and a restore when the active board changed.
         send_active_board(daemon, conn).await;
