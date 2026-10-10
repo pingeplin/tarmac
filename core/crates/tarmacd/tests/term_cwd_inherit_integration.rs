@@ -1,65 +1,41 @@
 // issue #77: a spawn_term carrying inherit_cwd_from resolves the SOURCE term's
-// LIVE cwd (not its spawn cwd) at spawn time. Harness lives in common/.
+// LIVE cwd (not its spawn cwd) at spawn time.
 
 mod common;
 
 use std::time::Instant;
 
-use common::{Conn, LONG, TestDaemon, contains};
+use common::{Conn, LONG, Spawn, TestDaemon, contains};
 use tarmac_protocol::Msg;
 
-// A new terminal spawned with inherit_cwd_from starts in the source term's
-// CURRENT directory, including after the source has `cd`'d away from where it
-// was originally spawned — proving this reflects live state, not spawn cwd.
-#[test]
-fn spawn_term_inherits_source_terms_live_cwd_after_cd() {
-    let daemon = TestDaemon::start();
-    let mut app = Conn::hello(&daemon.sock, "app");
-    app.recv_until("restore", |m| matches!(m, Msg::Restore { .. }));
-
+fn create_moved_dir(daemon: &TestDaemon) -> String {
     let moved_dir = daemon.dir.join("moved");
     std::fs::create_dir_all(&moved_dir).unwrap();
-    let moved = std::fs::canonicalize(&moved_dir).unwrap().to_string_lossy().into_owned();
+    std::fs::canonicalize(&moved_dir).unwrap().to_string_lossy().into_owned()
+}
 
-    // The prime term spawns in daemon.dir, blocks for an input line, `cd`s away
-    // to `moved` and echoes a marker (only once the cd has actually completed —
-    // shell commands run sequentially in one process, no fork/exec in between),
-    // then blocks again so it stays alive as the inherit source.
-    app.send(&Msg::SpawnTerm {
-        term_id: "prime".into(),
-        cols: 80,
-        rows: 24,
-        cwd: Some(daemon.dir.to_string_lossy().into_owned()),
-        cmd: Some(vec![
-            "/bin/sh".into(),
-            "-c".into(),
-            format!("read _; cd '{moved}' && echo CWD_MOVED; read _"),
-        ]),
-        board_id: None,
-        inherit_cwd_from: None,
-    });
+// Spawns "prime" in daemon.dir; on a "go" line it `cd`s into `moved`, echoes
+// CWD_MOVED, then runs `then`. Returns once the marker has been seen.
+fn spawn_prime_and_wait_for_cd(app: &mut Conn, daemon: &TestDaemon, moved: &str, then: &str) {
+    app.spawn_term_with(
+        "prime",
+        &["/bin/sh", "-c", &format!("read _; cd '{moved}' && echo CWD_MOVED; {then}")],
+        Spawn { cwd: Some(daemon.dir.to_string_lossy().into_owned()), ..Default::default() },
+    );
     app.send(&Msg::Input { term_id: "prime".into(), bytes: b"go\n".to_vec() });
 
     let mut collected = Vec::new();
-    let deadline = Instant::now() + LONG;
-    while !contains(&collected, b"CWD_MOVED") {
-        if let Msg::Output { term_id, bytes } = app.recv(deadline, "prime cd marker")
-            && term_id == "prime"
-        {
-            collected.extend_from_slice(&bytes);
-        }
-    }
+    app.collect_output_into(&mut collected, "prime", "prime cd marker", b"CWD_MOVED");
+}
 
-    // Spawn a second term inheriting prime's cwd; no explicit cwd of its own.
-    app.send(&Msg::SpawnTerm {
-        term_id: "t2".into(),
-        cols: 80,
-        rows: 24,
-        cwd: None,
-        cmd: Some(vec!["/bin/sh".into(), "-c".into(), "pwd".into()]),
-        board_id: None,
-        inherit_cwd_from: Some("prime".into()),
-    });
+// Spawns "t2" inheriting prime's cwd, with no explicit cwd of its own, and waits
+// for its `pwd` output to show `moved`.
+fn expect_t2_to_inherit_prime_cwd(app: &mut Conn, moved: &str) {
+    app.spawn_term_with(
+        "t2",
+        &["/bin/sh", "-c", "pwd"],
+        Spawn { inherit_cwd_from: Some("prime".into()), ..Default::default() },
+    );
 
     let mut collected = Vec::new();
     let deadline = Instant::now() + LONG;
@@ -75,24 +51,37 @@ fn spawn_term_inherits_source_terms_live_cwd_after_cd() {
     }
 }
 
+// A new terminal spawned with inherit_cwd_from starts in the source term's
+// CURRENT directory, including after the source has `cd`'d away from where it
+// was originally spawned — proving this reflects live state, not spawn cwd.
+#[test]
+fn spawn_term_inherits_source_terms_live_cwd_after_cd() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let moved = create_moved_dir(&daemon);
+
+    // The prime term blocks for an input line, `cd`s away and echoes a marker
+    // (only once the cd has actually completed — shell commands run sequentially
+    // in one process, no fork/exec in between), then blocks again so it stays
+    // alive as the inherit source.
+    spawn_prime_and_wait_for_cd(&mut app, &daemon, &moved, "read _");
+
+    expect_t2_to_inherit_prime_cwd(&mut app, &moved);
+}
+
 // An inherit_cwd_from pointing at an unknown term_id (never spawned, or already
 // exited) is not an error: the daemon silently falls back to term::spawn's own
 // default cwd, exactly like a spawn_term that never set the hint at all.
 #[test]
 fn spawn_term_falls_back_when_inherit_source_is_unknown() {
     let daemon = TestDaemon::start();
-    let mut app = Conn::hello(&daemon.sock, "app");
-    app.recv_until("restore", |m| matches!(m, Msg::Restore { .. }));
+    let mut app = daemon.connect_app_drained();
 
-    app.send(&Msg::SpawnTerm {
-        term_id: "t1".into(),
-        cols: 80,
-        rows: 24,
-        cwd: None,
-        cmd: Some(vec!["/bin/sh".into(), "-c".into(), "pwd".into()]),
-        board_id: None,
-        inherit_cwd_from: Some("no-such-term".into()),
-    });
+    app.spawn_term_with(
+        "t1",
+        &["/bin/sh", "-c", "pwd"],
+        Spawn { inherit_cwd_from: Some("no-such-term".into()), ..Default::default() },
+    );
 
     let mut collected = Vec::new();
     let deadline = Instant::now() + LONG;
@@ -118,61 +107,12 @@ fn spawn_term_falls_back_when_inherit_source_is_unknown() {
 #[test]
 fn spawn_term_inherits_live_cwd_while_source_runs_a_foreground_child() {
     let daemon = TestDaemon::start();
-    let mut app = Conn::hello(&daemon.sock, "app");
-    app.recv_until("restore", |m| matches!(m, Msg::Restore { .. }));
+    let mut app = daemon.connect_app_drained();
+    let moved = create_moved_dir(&daemon);
 
-    let moved_dir = daemon.dir.join("moved");
-    std::fs::create_dir_all(&moved_dir).unwrap();
-    let moved = std::fs::canonicalize(&moved_dir).unwrap().to_string_lossy().into_owned();
+    // Prime runs `cat` as a foreground child that blocks on stdin after the cd —
+    // so at inherit time it has a live foreground job, not a bare prompt.
+    spawn_prime_and_wait_for_cd(&mut app, &daemon, &moved, "cat");
 
-    // Prime spawns in daemon.dir, `cd`s into `moved`, echoes a marker, then runs
-    // `cat` as a foreground child that blocks on stdin — so at inherit time the
-    // prime has a live foreground job, not a bare prompt.
-    app.send(&Msg::SpawnTerm {
-        term_id: "prime".into(),
-        cols: 80,
-        rows: 24,
-        cwd: Some(daemon.dir.to_string_lossy().into_owned()),
-        cmd: Some(vec![
-            "/bin/sh".into(),
-            "-c".into(),
-            format!("read _; cd '{moved}' && echo CWD_MOVED; cat"),
-        ]),
-        board_id: None,
-        inherit_cwd_from: None,
-    });
-    app.send(&Msg::Input { term_id: "prime".into(), bytes: b"go\n".to_vec() });
-
-    let mut collected = Vec::new();
-    let deadline = Instant::now() + LONG;
-    while !contains(&collected, b"CWD_MOVED") {
-        if let Msg::Output { term_id, bytes } = app.recv(deadline, "prime cd marker")
-            && term_id == "prime"
-        {
-            collected.extend_from_slice(&bytes);
-        }
-    }
-
-    app.send(&Msg::SpawnTerm {
-        term_id: "t2".into(),
-        cols: 80,
-        rows: 24,
-        cwd: None,
-        cmd: Some(vec!["/bin/sh".into(), "-c".into(), "pwd".into()]),
-        board_id: None,
-        inherit_cwd_from: Some("prime".into()),
-    });
-
-    let mut collected = Vec::new();
-    let deadline = Instant::now() + LONG;
-    while !contains(&collected, moved.as_bytes()) {
-        match app.recv(deadline, "t2 pwd output") {
-            Msg::Output { term_id, bytes } if term_id == "t2" => collected.extend_from_slice(&bytes),
-            Msg::Exit { term_id, .. } if term_id == "t2" => panic!(
-                "t2 exited before its pwd output showed the inherited dir; collected: {:?}",
-                String::from_utf8_lossy(&collected)
-            ),
-            _ => {}
-        }
-    }
+    expect_t2_to_inherit_prime_cwd(&mut app, &moved);
 }

@@ -7,7 +7,7 @@
 Authoritative contract between `tarmacd` (Rust daemon), the `tarmac` CLI, and the
 macOS app. Both sides implement exactly this; the conformance vectors at the bottom
 are mandatory tests in both codecs — Rust
-(`core/crates/tarmac-protocol/src/lib.rs`) and Swift
+(`core/crates/tarmac-protocol/src/tests.rs`) and Swift
 (`app/Tests/TarmacKitTests/ConformanceTests.swift`). Unknown message *types*
 received by any party are ignored (log and continue), not fatal.
 

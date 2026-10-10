@@ -222,23 +222,22 @@ mod tests {
         parse_verb(&owned)
     }
 
+    #[track_caller]
+    fn parses_to(args: &[&str], want: DevRequest) {
+        assert_eq!(parse(args).unwrap(), want);
+    }
+
     /// The 5000 ms default is pinned here, not read back from the source.
     #[test]
     fn snapshot_defaults_to_a_five_second_budget() {
-        assert_eq!(
-            parse(&["snapshot"]).unwrap(),
-            DevRequest::Snapshot { until: None, timeout_ms: Some(5000) },
-        );
+        parses_to(&["snapshot"], DevRequest::Snapshot { until: None, timeout_ms: Some(5000) });
     }
 
     #[test]
     fn snapshot_flags_parse_and_reject() {
-        assert_eq!(
-            parse(&["snapshot", "--until", "viewport.zoom == 0.5", "--timeout", "1500"]).unwrap(),
-            DevRequest::Snapshot {
-                until: Some("viewport.zoom == 0.5".into()),
-                timeout_ms: Some(1500),
-            },
+        parses_to(
+            &["snapshot", "--until", "viewport.zoom == 0.5", "--timeout", "1500"],
+            DevRequest::Snapshot { until: Some("viewport.zoom == 0.5".into()), timeout_ms: Some(1500) },
         );
         for bad in [
             vec!["snapshot", "--timeout", "abc"],
@@ -255,28 +254,16 @@ mod tests {
     /// that catches one.
     #[test]
     fn a_zero_timeout_is_valid_and_means_evaluate_once() {
-        assert_eq!(
-            parse(&["snapshot", "--timeout", "0"]).unwrap(),
-            DevRequest::Snapshot { until: None, timeout_ms: Some(0) },
-        );
+        parses_to(&["snapshot", "--timeout", "0"], DevRequest::Snapshot { until: None, timeout_ms: Some(0) });
     }
 
     #[test]
     fn each_verb_parses_to_its_variant() {
-        assert_eq!(parse(&["zoom", "0.5"]).unwrap(), DevRequest::Zoom { z: 0.5 });
-        assert_eq!(parse(&["focus", "board"]).unwrap(), DevRequest::Focus { card: None });
-        assert_eq!(
-            parse(&["focus", "t-1"]).unwrap(),
-            DevRequest::Focus { card: Some("t-1".into()) },
-        );
-        assert_eq!(
-            parse(&["type", "t-1", "hi"]).unwrap(),
-            DevRequest::Type { card: "t-1".into(), text: "hi".into() },
-        );
-        assert_eq!(
-            parse(&["key", "t-1", "ctrl+c"]).unwrap(),
-            DevRequest::Key { card: "t-1".into(), combo: "ctrl+c".into() },
-        );
+        parses_to(&["zoom", "0.5"], DevRequest::Zoom { z: 0.5 });
+        parses_to(&["focus", "board"], DevRequest::Focus { card: None });
+        parses_to(&["focus", "t-1"], DevRequest::Focus { card: Some("t-1".into()) });
+        parses_to(&["type", "t-1", "hi"], DevRequest::Type { card: "t-1".into(), text: "hi".into() });
+        parses_to(&["key", "t-1", "ctrl+c"], DevRequest::Key { card: "t-1".into(), combo: "ctrl+c".into() });
     }
 
     /// An out-of-range zoom is not an error: the app clamps it, and a range check
@@ -284,25 +271,19 @@ mod tests {
     #[test]
     fn zoom_rejects_non_numbers_but_not_out_of_range_values() {
         assert!(parse(&["zoom", "abc"]).is_err());
-        assert_eq!(parse(&["zoom", "99"]).unwrap(), DevRequest::Zoom { z: 99.0 });
-        assert_eq!(parse(&["zoom", "0.001"]).unwrap(), DevRequest::Zoom { z: 0.001 });
+        parses_to(&["zoom", "99"], DevRequest::Zoom { z: 99.0 });
+        parses_to(&["zoom", "0.001"], DevRequest::Zoom { z: 0.001 });
     }
 
     /// An empty text is a present argument, so it parses; the app answers it.
     #[test]
     fn an_empty_type_text_parses() {
-        assert_eq!(
-            parse(&["type", "t-1", ""]).unwrap(),
-            DevRequest::Type { card: "t-1".into(), text: String::new() },
-        );
+        parses_to(&["type", "t-1", ""], DevRequest::Type { card: "t-1".into(), text: String::new() });
     }
 
     #[test]
     fn resize_parses_wxh_and_rejects_every_other_spelling() {
-        assert_eq!(
-            parse(&["resize", "t-1", "800x600"]).unwrap(),
-            DevRequest::Resize { card: "t-1".into(), w: 800.0, h: 600.0 },
-        );
+        parses_to(&["resize", "t-1", "800x600"], DevRequest::Resize { card: "t-1".into(), w: 800.0, h: 600.0 });
         for bad in ["800", "800x", "x600", "800X600", "800x600x2", "axb", ""] {
             assert!(parse(&["resize", "t-1", bad]).is_err(), "expected a usage error for {bad:?}");
         }
@@ -353,38 +334,23 @@ mod tests {
     /// The combo itself is not checked here; the app parses it.
     #[test]
     fn press_parses_its_combo_and_flags() {
-        assert_eq!(parse(&["press", "cmd+q"]).unwrap(), press("cmd+q", None, None, None));
-        assert_eq!(
-            parse(&["press", "cmd+q", "--hold", "1000"]).unwrap(),
-            press("cmd+q", Some(1000), None, None),
-        );
-        assert_eq!(
-            parse(&["press", "cmd+q", "--age", "2500"]).unwrap(),
-            press("cmd+q", None, Some(2500), None),
-        );
-        assert_eq!(
-            parse(&["press", "alt+cmd+q", "--age", "0", "--hold", "10000"]).unwrap(),
+        parses_to(&["press", "cmd+q"], press("cmd+q", None, None, None));
+        parses_to(&["press", "cmd+q", "--hold", "1000"], press("cmd+q", Some(1000), None, None));
+        parses_to(&["press", "cmd+q", "--age", "2500"], press("cmd+q", None, Some(2500), None));
+        parses_to(
+            &["press", "alt+cmd+q", "--age", "0", "--hold", "10000"],
             press("alt+cmd+q", Some(10000), Some(0), None),
         );
-        assert_eq!(parse(&["press", "nonsense"]).unwrap(), press("nonsense", None, None, None));
-        assert_eq!(
-            parse(&["press", "cmd+q", "--busy", "1000"]).unwrap(),
-            press("cmd+q", None, None, Some(1000)),
-        );
+        parses_to(&["press", "nonsense"], press("nonsense", None, None, None));
+        parses_to(&["press", "cmd+q", "--busy", "1000"], press("cmd+q", None, None, Some(1000)));
     }
 
     #[test]
     fn press_flag_bounds_parse() {
-        assert_eq!(parse(&["press", "cmd+q", "--hold", "1"]).unwrap(), press("cmd+q", Some(1), None, None));
-        assert_eq!(
-            parse(&["press", "cmd+q", "--age", "60000"]).unwrap(),
-            press("cmd+q", None, Some(60000), None),
-        );
-        assert_eq!(parse(&["press", "cmd+q", "--busy", "1"]).unwrap(), press("cmd+q", None, None, Some(1)));
-        assert_eq!(
-            parse(&["press", "cmd+q", "--busy", "1800"]).unwrap(),
-            press("cmd+q", None, None, Some(1800)),
-        );
+        parses_to(&["press", "cmd+q", "--hold", "1"], press("cmd+q", Some(1), None, None));
+        parses_to(&["press", "cmd+q", "--age", "60000"], press("cmd+q", None, Some(60000), None));
+        parses_to(&["press", "cmd+q", "--busy", "1"], press("cmd+q", None, None, Some(1)));
+        parses_to(&["press", "cmd+q", "--busy", "1800"], press("cmd+q", None, None, Some(1800)));
     }
 
     /// Only the first line can name the offending flag: `usage()` appends the

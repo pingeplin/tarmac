@@ -214,48 +214,32 @@ mod tests {
         }
     }
 
+    #[track_caller]
+    fn assert_skill_path(e: &Env, target: Target, scope: Scope, want: &str) {
+        assert_eq!(skill_path(target, scope, e), PathBuf::from(want));
+    }
+
     #[test]
     fn user_scope_paths_match_each_agents_own_convention() {
         let e = env();
-        assert_eq!(
-            skill_path(Target::ClaudeCode, Scope::User, &e),
-            PathBuf::from("/home/u/.claude/skills/tarmac/SKILL.md")
-        );
-        assert_eq!(
-            skill_path(Target::Codex, Scope::User, &e),
-            PathBuf::from("/home/u/.agents/skills/tarmac/SKILL.md")
-        );
+        assert_skill_path(&e, Target::ClaudeCode, Scope::User, "/home/u/.claude/skills/tarmac/SKILL.md");
+        assert_skill_path(&e, Target::Codex, Scope::User, "/home/u/.agents/skills/tarmac/SKILL.md");
     }
 
     #[test]
     fn project_scope_is_rooted_at_cwd() {
         let e = env();
-        assert_eq!(
-            skill_path(Target::ClaudeCode, Scope::Project, &e),
-            PathBuf::from("/work/repo/.claude/skills/tarmac/SKILL.md")
-        );
-        assert_eq!(
-            skill_path(Target::Codex, Scope::Project, &e),
-            PathBuf::from("/work/repo/.agents/skills/tarmac/SKILL.md")
-        );
+        assert_skill_path(&e, Target::ClaudeCode, Scope::Project, "/work/repo/.claude/skills/tarmac/SKILL.md");
+        assert_skill_path(&e, Target::Codex, Scope::Project, "/work/repo/.agents/skills/tarmac/SKILL.md");
     }
 
     #[test]
     fn claude_config_dir_displaces_home_but_only_for_user_scope() {
         let e = Env { claude_config_dir: Some(PathBuf::from("/xdg/claude")), ..env() };
-        assert_eq!(
-            skill_path(Target::ClaudeCode, Scope::User, &e),
-            PathBuf::from("/xdg/claude/skills/tarmac/SKILL.md")
-        );
-        assert_eq!(
-            skill_path(Target::ClaudeCode, Scope::Project, &e),
-            PathBuf::from("/work/repo/.claude/skills/tarmac/SKILL.md")
-        );
+        assert_skill_path(&e, Target::ClaudeCode, Scope::User, "/xdg/claude/skills/tarmac/SKILL.md");
+        assert_skill_path(&e, Target::ClaudeCode, Scope::Project, "/work/repo/.claude/skills/tarmac/SKILL.md");
         // Codex has no such override — its user root is keyed on $HOME.
-        assert_eq!(
-            skill_path(Target::Codex, Scope::User, &e),
-            PathBuf::from("/home/u/.agents/skills/tarmac/SKILL.md")
-        );
+        assert_skill_path(&e, Target::Codex, Scope::User, "/home/u/.agents/skills/tarmac/SKILL.md");
     }
 
     /// The frontmatter as key → value, so the contract can be asserted without
@@ -322,9 +306,14 @@ mod tests {
         }
     }
 
+    fn install_args(args: &[&str]) -> Result<InstallArgs, String> {
+        let owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        parse_install(&owned)
+    }
+
     #[test]
     fn install_defaults_to_every_target_at_user_scope() {
-        let a = parse_install(&[]).unwrap();
+        let a = install_args(&[]).unwrap();
         assert_eq!(a.targets, Target::ALL.to_vec());
         assert_eq!(a.scope, Scope::User);
         assert!(!a.dry_run);
@@ -332,9 +321,7 @@ mod tests {
 
     #[test]
     fn install_flags_narrow_target_and_scope() {
-        let args: Vec<String> =
-            ["--target", "codex", "--scope", "project", "--dry-run"].iter().map(|s| s.to_string()).collect();
-        let a = parse_install(&args).unwrap();
+        let a = install_args(&["--target", "codex", "--scope", "project", "--dry-run"]).unwrap();
         assert_eq!(a.targets, vec![Target::Codex]);
         assert_eq!(a.scope, Scope::Project);
         assert!(a.dry_run);
@@ -349,12 +336,9 @@ mod tests {
 
     #[test]
     fn install_rejects_unknown_values_and_stray_arguments() {
-        let bad = |v: &[&str]| {
-            parse_install(&v.iter().map(|s| s.to_string()).collect::<Vec<_>>()).is_err()
-        };
-        assert!(bad(&["--target", "cursor"]));
-        assert!(bad(&["--scope", "system"]));
-        assert!(bad(&["--target"]));
-        assert!(bad(&["extra"]));
+        assert!(install_args(&["--target", "cursor"]).is_err());
+        assert!(install_args(&["--scope", "system"]).is_err());
+        assert!(install_args(&["--target"]).is_err());
+        assert!(install_args(&["extra"]).is_err());
     }
 }

@@ -3,37 +3,17 @@
 // watcher. It always pushes on a successful stat (changed mtime or not), records the
 // mtime in the ACTIVE board's registry before pushing, and is a silent no-op for an
 // unknown path, a background-board doc, or an unreadable file.
-// Harness lives in common/; the helpers below are specific to this suite.
 
 mod common;
 
-use std::io::Write;
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::Duration;
 
-use common::{Conn, TestDaemon, cli_open, drain_connect, none_within, wait_for_state, write_doc};
+use common::{
+    Conn, TestDaemon, cli_open, doc_entry, dock_index, has_doc, is_file_event_for, mtime_ms, none_within, touch,
+    write_doc,
+};
+use serde_json::json;
 use tarmac_protocol::Msg;
-
-// Append to a file: bumps mtime AND produces a watcher event.
-fn touch(path: &str) {
-    let mut f = std::fs::OpenOptions::new().append(true).open(path).unwrap();
-    f.write_all(b"\n").unwrap();
-    f.sync_all().unwrap();
-}
-
-// The file's real mtime, truncated exactly as docs::stat_and_push truncates it.
-fn mtime_ms(path: &str) -> u64 {
-    std::fs::metadata(path)
-        .unwrap()
-        .modified()
-        .unwrap()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64
-}
-
-fn is_file_event_for(msg: &Msg, want: &str) -> bool {
-    matches!(msg, Msg::FileEvent { path, .. } if path == want)
-}
 
 // Settle the watcher after an open. FSEvents replays the file's own creation to the
 // freshly-attached dir watch, so without this a test that edits and then waits for
@@ -61,31 +41,15 @@ fn recv_refresh_event(app: &mut Conn, path: &str) -> u64 {
 // (BoardCreate makes it active), switch back to board-0, then open onto board-1.
 fn open_on_background_board(app: &mut Conn, path: &str) {
     app.send(&Msg::BoardCreate);
-    app.recv_until("restore for the new board", |m| matches!(m, Msg::Restore { .. }));
+    app.recv_restore();
     app.send(&Msg::BoardSwitch { board_id: "board-0".into() });
-    app.recv_until("restore for board-0", |m| matches!(m, Msg::Restore { .. }));
+    app.recv_restore();
     app.send(&Msg::Open { path: path.into(), term_id: None, board_id: Some("board-1".into()) });
-    app.recv_until("doc_opened on board-1", |m| matches!(m, Msg::DocOpened(e) if e.path == path));
+    app.recv_doc_opened_for(path);
 }
 
-fn state_json(daemon: &TestDaemon) -> serde_json::Value {
-    serde_json::from_slice(&std::fs::read(daemon.state_file()).unwrap()).unwrap()
-}
-
-// persist.rs writes `docs` in dock order, so a doc's index is its dock slot.
-fn dock_index(v: &serde_json::Value, board: usize, path: &str) -> Option<usize> {
-    v["boards"][board]["docs"]
-        .as_array()?
-        .iter()
-        .position(|e| e["path"] == serde_json::json!(path))
-}
-
-fn doc_entry(v: &serde_json::Value, board: usize, path: &str) -> serde_json::Value {
-    v["boards"][board]["docs"]
-        .as_array()
-        .and_then(|docs| docs.iter().find(|e| e["path"] == serde_json::json!(path)))
-        .cloned()
-        .unwrap_or(serde_json::Value::Null)
+fn wait_for_last_changed(daemon: &TestDaemon, what: &str, board: usize, path: &str, want: serde_json::Value) {
+    daemon.wait_for_state(what, |v| doc_entry(v, board, path)["last_changed_ms"] == want);
 }
 
 // S3: a refresh after a real edit pushes the file's CURRENT mtime, and no
@@ -95,17 +59,16 @@ fn doc_entry(v: &serde_json::Value, board: usize, path: &str) -> serde_json::Val
 #[test]
 fn doc_refresh_pushes_the_files_current_mtime() {
     let daemon = TestDaemon::start();
-    let mut app = Conn::hello(&daemon.sock, "app");
-    drain_connect(&mut app);
+    let mut app = daemon.connect_app_drained();
 
     let a = write_doc(&daemon.dir.join("docs/a.md"), "a\n");
     cli_open(&daemon.sock, &a);
-    app.recv_until("doc_opened", |m| matches!(m, Msg::DocOpened(_)));
+    app.recv_doc_opened();
 
     // Settle the open, then edit and consume the watcher's own event for that edit.
     settle_watcher(&mut app, &a);
     touch(&a);
-    app.recv_until("watcher file_event", |m| is_file_event_for(m, &a));
+    app.recv_file_event_for(&a);
 
     app.send(&Msg::DocRefresh { path: a.clone() });
 
@@ -128,44 +91,33 @@ fn doc_refresh_pushes_the_files_current_mtime() {
 #[test]
 fn doc_refresh_records_the_mtime_durably_and_changes_nothing_else() {
     let mut daemon = TestDaemon::start();
-    let mut app = Conn::hello(&daemon.sock, "app");
-    drain_connect(&mut app);
+    let mut app = daemon.connect_app_drained();
 
     // Two docs, so the dock-order assertion below can actually fail: `position()`
     // on a one-element dock is Some(0) no matter what, which pins nothing.
     let a = write_doc(&daemon.dir.join("docs/a.md"), "a\n");
     let z = write_doc(&daemon.dir.join("docs/z.md"), "z\n");
     cli_open(&daemon.sock, &a);
-    app.recv_until("doc_opened a", |m| matches!(m, Msg::DocOpened(e) if e.path == a));
+    app.recv_doc_opened_for(&a);
     cli_open(&daemon.sock, &z);
-    app.recv_until("doc_opened z", |m| matches!(m, Msg::DocOpened(e) if e.path == z));
-    wait_for_state(&daemon.state_file(), "both docs persisted", |v| {
-        !doc_entry(v, 0, &a).is_null() && !doc_entry(v, 0, &z).is_null()
-    });
-    let before = {
-        let bytes = std::fs::read(daemon.state_file()).unwrap();
-        doc_entry(&serde_json::from_slice(&bytes).unwrap(), 0, &a)
-    };
+    app.recv_doc_opened_for(&z);
+    daemon.wait_for_state("both docs persisted", |v| has_doc(v, 0, &a) && has_doc(v, 0, &z));
+    let before = doc_entry(&daemon.state_json(), 0, &a);
 
     settle_watcher(&mut app, &a);
     touch(&a);
-    app.recv_until("watcher file_event", |m| is_file_event_for(m, &a));
+    app.recv_file_event_for(&a);
     app.send(&Msg::DocRefresh { path: a.clone() });
     let pushed = recv_refresh_event(&mut app, &a);
 
-    wait_for_state(&daemon.state_file(), "last_changed_ms recorded", |v| {
-        doc_entry(v, 0, &a)["last_changed_ms"] == serde_json::json!(pushed)
-    });
-    let after = {
-        let bytes = std::fs::read(daemon.state_file()).unwrap();
-        doc_entry(&serde_json::from_slice(&bytes).unwrap(), 0, &a)
-    };
+    wait_for_last_changed(&daemon, "last_changed_ms recorded", 0, &a, json!(pushed));
+    let after = doc_entry(&daemon.state_json(), 0, &a);
     for key in ["read", "via", "last_opened_ms"] {
         assert_eq!(after[key], before[key], "doc_refresh must not touch `{key}`");
     }
     // persist.rs emits `docs` in dock order, so the index IS the dock position.
     // Refreshing `a` must not reorder it past `z`.
-    let st = state_json(&daemon);
+    let st = daemon.state_json();
     assert_eq!(
         (dock_index(&st, 0, &a), dock_index(&st, 0, &z)),
         (Some(0), Some(1)),
@@ -175,16 +127,15 @@ fn doc_refresh_records_the_mtime_durably_and_changes_nothing_else() {
     // this the pair is self-consistent even if both are `now` rather than the mtime.
     assert_eq!(
         after["last_changed_ms"],
-        serde_json::json!(mtime_ms(&a)),
+        json!(mtime_ms(&a)),
         "the persisted change time must be the file's mtime"
     );
 
     // Durable: the value comes back out of a cold restart.
     drop(app);
     daemon.restart();
-    let mut app2 = Conn::hello(&daemon.sock, "app");
-    let restore = app2.recv_until("restore", |m| matches!(m, Msg::Restore { .. }));
-    let Msg::Restore { docs, .. } = restore else { unreachable!() };
+    let mut app2 = daemon.connect_app();
+    let docs = app2.recv_restore().docs;
     let entry = docs.iter().find(|d| d.path == a).expect("doc a survives restart");
     assert_eq!(
         entry.last_changed_ms,
@@ -199,14 +150,11 @@ fn doc_refresh_records_the_mtime_durably_and_changes_nothing_else() {
 #[test]
 fn doc_refresh_is_scoped_to_the_active_board() {
     let daemon = TestDaemon::start();
-    let mut app = Conn::hello(&daemon.sock, "app");
-    drain_connect(&mut app);
+    let mut app = daemon.connect_app_drained();
 
     let a = write_doc(&daemon.dir.join("docs/a.md"), "a\n");
     open_on_background_board(&mut app, &a);
-    wait_for_state(&daemon.state_file(), "doc a on board-1", |v| {
-        !doc_entry(v, 1, &a).is_null()
-    });
+    daemon.wait_for_state("doc a on board-1", |v| has_doc(v, 1, &a));
 
     // board-0 is active; board-1 owns the doc.
     app.send(&Msg::DocRefresh { path: a.clone() });
@@ -214,17 +162,15 @@ fn doc_refresh_is_scoped_to_the_active_board() {
         none_within(&mut app, Duration::from_millis(800), |m| is_file_event_for(m, &a)),
         "a background-board doc must not be refreshable"
     );
-    let bytes = std::fs::read(daemon.state_file()).unwrap();
-    let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(
-        doc_entry(&v, 1, &a)["last_changed_ms"],
-        serde_json::json!(null),
+        doc_entry(&daemon.state_json(), 1, &a)["last_changed_ms"],
+        json!(null),
         "the scoped-out refresh must not have recorded an mtime"
     );
 
     // Same message, now that its board is active.
     app.send(&Msg::BoardSwitch { board_id: "board-1".into() });
-    app.recv_until("restore for board-1", |m| matches!(m, Msg::Restore { .. }));
+    app.recv_restore();
     app.send(&Msg::DocRefresh { path: a.clone() });
     assert_eq!(
         recv_refresh_event(&mut app, &a),
@@ -239,17 +185,15 @@ fn doc_refresh_is_scoped_to_the_active_board() {
 #[test]
 fn doc_refresh_pushes_even_when_the_mtime_is_unchanged() {
     let daemon = TestDaemon::start();
-    let mut app = Conn::hello(&daemon.sock, "app");
-    drain_connect(&mut app);
+    let mut app = daemon.connect_app_drained();
 
     let a = write_doc(&daemon.dir.join("docs/a.md"), "a\n");
     cli_open(&daemon.sock, &a);
-    app.recv_until("doc_opened", |m| matches!(m, Msg::DocOpened(_)));
+    app.recv_doc_opened();
 
     settle_watcher(&mut app, &a);
     touch(&a);
-    let watcher_msg = app.recv_until("watcher file_event", |m| is_file_event_for(m, &a));
-    let Msg::FileEvent { mtime_ms: reported, .. } = watcher_msg else { unreachable!() };
+    let reported = app.recv_file_event_for(&a);
     assert_eq!(reported, mtime_ms(&a), "the watcher must have reported the edit, not an earlier event");
 
     // Nothing touches the file from here on; settle so the next event is the refresh's.
@@ -274,12 +218,11 @@ fn doc_refresh_pushes_even_when_the_mtime_is_unchanged() {
 #[test]
 fn doc_refresh_works_on_a_doc_nothing_has_written_since_open() {
     let daemon = TestDaemon::start();
-    let mut app = Conn::hello(&daemon.sock, "app");
-    drain_connect(&mut app);
+    let mut app = daemon.connect_app_drained();
 
     let a = write_doc(&daemon.dir.join("docs/a.md"), "a\n");
     cli_open(&daemon.sock, &a);
-    app.recv_until("doc_opened", |m| matches!(m, Msg::DocOpened(_)));
+    app.recv_doc_opened();
 
     settle_watcher(&mut app, &a);
 
@@ -287,21 +230,18 @@ fn doc_refresh_works_on_a_doc_nothing_has_written_since_open() {
     let pushed = recv_refresh_event(&mut app, &a);
     assert_eq!(pushed, mtime_ms(&a), "the push must carry the file's real mtime");
 
-    wait_for_state(&daemon.state_file(), "last_changed_ms recorded", |v| {
-        doc_entry(v, 0, &a)["last_changed_ms"] == serde_json::json!(pushed)
-    });
+    wait_for_last_changed(&daemon, "last_changed_ms recorded", 0, &a, json!(pushed));
 }
 
 // S8: repeat refreshes of an unchanged file are identical, not cumulative.
 #[test]
 fn doc_refresh_is_idempotent_on_repeat() {
     let daemon = TestDaemon::start();
-    let mut app = Conn::hello(&daemon.sock, "app");
-    drain_connect(&mut app);
+    let mut app = daemon.connect_app_drained();
 
     let a = write_doc(&daemon.dir.join("docs/a.md"), "a\n");
     cli_open(&daemon.sock, &a);
-    app.recv_until("doc_opened", |m| matches!(m, Msg::DocOpened(_)));
+    app.recv_doc_opened();
     settle_watcher(&mut app, &a);
 
     app.send(&Msg::DocRefresh { path: a.clone() });
@@ -318,12 +258,11 @@ fn doc_refresh_is_idempotent_on_repeat() {
 #[test]
 fn doc_refresh_unknown_path_is_a_silent_noop() {
     let daemon = TestDaemon::start();
-    let mut app = Conn::hello(&daemon.sock, "app");
-    drain_connect(&mut app);
+    let mut app = daemon.connect_app_drained();
 
     let a = write_doc(&daemon.dir.join("docs/a.md"), "a\n");
     cli_open(&daemon.sock, &a);
-    app.recv_until("doc_opened", |m| matches!(m, Msg::DocOpened(_)));
+    app.recv_doc_opened();
 
     // A real file, canonicalized, that was never opened: the stat SUCCEEDS, so this
     // exercises the registry-miss branch rather than the deleted-file branch S10
@@ -352,15 +291,14 @@ fn doc_refresh_unknown_path_is_a_silent_noop() {
 #[test]
 fn doc_refresh_on_a_deleted_file_emits_nothing() {
     let daemon = TestDaemon::start();
-    let mut app = Conn::hello(&daemon.sock, "app");
-    drain_connect(&mut app);
+    let mut app = daemon.connect_app_drained();
 
     let a = write_doc(&daemon.dir.join("docs/a.md"), "a\n");
     let b = write_doc(&daemon.dir.join("docs/b.md"), "b\n");
     cli_open(&daemon.sock, &a);
-    app.recv_until("doc_opened a", |m| matches!(m, Msg::DocOpened(e) if e.path == a));
+    app.recv_doc_opened_for(&a);
     cli_open(&daemon.sock, &b);
-    app.recv_until("doc_opened b", |m| matches!(m, Msg::DocOpened(e) if e.path == b));
+    app.recv_doc_opened_for(&b);
 
     std::fs::remove_file(&a).unwrap();
     // The deletion itself is a watch event; the watcher is silent for it too.
@@ -390,14 +328,11 @@ fn doc_refresh_on_a_deleted_file_emits_nothing() {
 #[test]
 fn doc_refresh_delivers_an_edit_the_watcher_never_announced() {
     let daemon = TestDaemon::start();
-    let mut app = Conn::hello(&daemon.sock, "app");
-    drain_connect(&mut app);
+    let mut app = daemon.connect_app_drained();
 
     let a = write_doc(&daemon.dir.join("docs/a.md"), "a\n");
     open_on_background_board(&mut app, &a);
-    wait_for_state(&daemon.state_file(), "doc a on board-1", |v| {
-        !doc_entry(v, 1, &a).is_null()
-    });
+    daemon.wait_for_state("doc a on board-1", |v| has_doc(v, 1, &a));
     let before_edit = mtime_ms(&a);
 
     // Edit while board-0 is active. Sleep first so the new mtime is distinguishable
@@ -413,20 +348,16 @@ fn doc_refresh_delivers_an_edit_the_watcher_never_announced() {
     assert_ne!(after_edit, before_edit, "the edit must move the mtime for this test to mean anything");
 
     app.send(&Msg::BoardSwitch { board_id: "board-1".into() });
-    app.recv_until("restore for board-1", |m| matches!(m, Msg::Restore { .. }));
+    app.recv_restore();
     // The switch heals nothing: the registry still has no record of the edit.
-    wait_for_state(&daemon.state_file(), "board-1 doc still unchanged", |v| {
-        doc_entry(v, 1, &a)["last_changed_ms"] == serde_json::json!(null)
-    });
+    wait_for_last_changed(&daemon, "board-1 doc still unchanged", 1, &a, json!(null));
 
     app.send(&Msg::DocRefresh { path: a.clone() });
     let pushed = recv_refresh_event(&mut app, &a);
     assert_eq!(pushed, after_edit, "the refresh must deliver the post-edit mtime");
     assert_ne!(pushed, before_edit, "and it must not be the pre-edit mtime");
 
-    wait_for_state(&daemon.state_file(), "board-1 doc now carries the edit", |v| {
-        doc_entry(v, 1, &a)["last_changed_ms"] == serde_json::json!(pushed)
-    });
+    wait_for_last_changed(&daemon, "board-1 doc now carries the edit", 1, &a, json!(pushed));
 }
 
 // S22: the refresh RE-STATS; it never re-announces what the registry already
@@ -444,27 +375,24 @@ fn doc_refresh_delivers_an_edit_the_watcher_never_announced() {
 #[test]
 fn doc_refresh_restats_rather_than_replaying_a_populated_registry() {
     let daemon = TestDaemon::start();
-    let mut app = Conn::hello(&daemon.sock, "app");
-    drain_connect(&mut app);
+    let mut app = daemon.connect_app_drained();
 
     let a = write_doc(&daemon.dir.join("docs/a.md"), "a\n");
     cli_open(&daemon.sock, &a);
-    app.recv_until("doc_opened", |m| matches!(m, Msg::DocOpened(_)));
+    app.recv_doc_opened();
     settle_watcher(&mut app, &a);
 
     // First edit, seen by the watcher: board-0's registry is now POPULATED.
     touch(&a);
-    app.recv_until("watcher file_event", |m| is_file_event_for(m, &a));
+    app.recv_file_event_for(&a);
     let first_edit = mtime_ms(&a);
-    wait_for_state(&daemon.state_file(), "board-0 registry populated", |v| {
-        doc_entry(v, 0, &a)["last_changed_ms"] == serde_json::json!(first_edit)
-    });
+    wait_for_last_changed(&daemon, "board-0 registry populated", 0, &a, json!(first_edit));
 
     // Background board-0 (BoardCreate makes the new board active), then edit again.
     // watch_loop matches against the ACTIVE board's registry, so this edit is
     // dropped and the registry's populated value goes stale.
     app.send(&Msg::BoardCreate);
-    app.recv_until("restore for the new board", |m| matches!(m, Msg::Restore { .. }));
+    app.recv_restore();
     std::thread::sleep(Duration::from_millis(300));
     touch(&a);
     assert!(
@@ -476,14 +404,12 @@ fn doc_refresh_restats_rather_than_replaying_a_populated_registry() {
 
     // Back to board-0, where the registry still carries the FIRST edit's mtime.
     app.send(&Msg::BoardSwitch { board_id: "board-0".into() });
-    app.recv_until("restore for board-0", |m| matches!(m, Msg::Restore { .. }));
+    app.recv_restore();
     // Settle before attributing anything to the refresh, as every other test here
     // does: board-0 is active again, so a late watcher event could otherwise arrive
     // carrying the second edit and be mistaken for the refresh's push.
     settle_watcher(&mut app, &a);
-    wait_for_state(&daemon.state_file(), "board-0 registry still stale", |v| {
-        doc_entry(v, 0, &a)["last_changed_ms"] == serde_json::json!(first_edit)
-    });
+    wait_for_last_changed(&daemon, "board-0 registry still stale", 0, &a, json!(first_edit));
 
     app.send(&Msg::DocRefresh { path: a.clone() });
     let pushed = recv_refresh_event(&mut app, &a);
@@ -496,7 +422,5 @@ fn doc_refresh_restats_rather_than_replaying_a_populated_registry() {
     // the same value moments earlier, so an arm that skips its registry write is
     // invisible. Here the stored value is stale, so only the refresh's own write
     // can move it.
-    wait_for_state(&daemon.state_file(), "board-0 registry caught up", |v| {
-        doc_entry(v, 0, &a)["last_changed_ms"] == serde_json::json!(second_edit)
-    });
+    wait_for_last_changed(&daemon, "board-0 registry caught up", 0, &a, json!(second_edit));
 }

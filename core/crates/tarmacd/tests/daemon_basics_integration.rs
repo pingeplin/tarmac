@@ -1,13 +1,14 @@
-// End-to-end daemon basics (the closed M0 suite): a real daemon process on a
-// temp socket, app + cli clients speaking the wire protocol over std unix
-// sockets. Harness lives in common/.
+// End-to-end daemon basics: a real daemon process on a temp socket, app + cli
+// clients speaking the wire protocol over std unix sockets.
 
 mod common;
 
-use std::io::Write;
 use std::time::{Duration, Instant};
 
-use common::{Conn, LONG, TestDaemon, contains, signal_and_wait, spawn_daemon, temp_dir, wait_for_socket};
+use common::{
+    Conn, LONG, Spawn, TestDaemon, append_to, contains, settle, signal_and_wait, spawn_daemon, temp_dir,
+    wait_for_socket,
+};
 use tarmac_protocol::Msg;
 
 #[test]
@@ -15,21 +16,12 @@ fn m0_end_to_end() {
     let daemon = TestDaemon::start();
 
     // --- app connect: hello_ok then restore (empty registry) ---
-    let mut app = Conn::hello(&daemon.sock, "app");
-    let restore = app.recv_until("restore", |m| matches!(m, Msg::Restore { .. }));
-    let Msg::Restore { docs, .. } = restore else { unreachable!() };
+    let mut app = daemon.connect_app();
+    let docs = app.recv_restore().docs;
     assert!(docs.is_empty(), "fresh daemon should restore zero docs, got {docs:?}");
 
     // --- spawn a term, expect output then exit 0 ---
-    app.send(&Msg::SpawnTerm {
-        term_id: "t1".into(),
-        cols: 80,
-        rows: 24,
-        cwd: None,
-        cmd: Some(vec!["/bin/echo".into(), "tarmac-test-ok".into()]),
-        board_id: None,
-        inherit_cwd_from: None,
-    });
+    app.spawn_term("t1", &["/bin/echo", "tarmac-test-ok"]);
     let mut collected = Vec::new();
     let deadline = Instant::now() + LONG;
     loop {
@@ -47,8 +39,7 @@ fn m0_end_to_end() {
             _ => {}
         }
     }
-    let exit = app.recv_until("exit", |m| matches!(m, Msg::Exit { .. }));
-    let Msg::Exit { term_id, code } = exit else { unreachable!() };
+    let (term_id, code) = app.recv_exit();
     assert_eq!(term_id, "t1");
     assert_eq!(code, Some(0));
 
@@ -64,17 +55,13 @@ fn m0_end_to_end() {
     assert!(matches!(reply, Msg::Ack), "expected ack, got {reply:?}");
     drop(cli);
 
-    let doc = app.recv_until("doc_opened", |m| matches!(m, Msg::DocOpened { .. }));
-    let Msg::DocOpened(entry) = doc else { unreachable!() };
+    let entry = app.recv_doc_opened();
     assert_eq!(entry.path, canon_str);
     assert_eq!(entry.via, "cli");
 
     // --- append to the file: file_event with mtime arrives ---
-    std::thread::sleep(Duration::from_millis(300)); // let the watch settle
-    let mut f = std::fs::OpenOptions::new().append(true).open(&canon).unwrap();
-    f.write_all(b"\nmore\n").unwrap();
-    f.sync_all().unwrap();
-    drop(f);
+    settle();
+    append_to(&canon, b"\nmore\n");
 
     let event = app.recv_until("file_event", |m| matches!(m, Msg::FileEvent { .. }));
     let Msg::FileEvent { path, mtime_ms } = event else { unreachable!() };
@@ -82,9 +69,8 @@ fn m0_end_to_end() {
     assert!(mtime_ms > 0);
 
     // --- a second app connection replaces the first and restores the doc ---
-    let mut app2 = Conn::hello(&daemon.sock, "app");
-    let restore = app2.recv_until("restore", |m| matches!(m, Msg::Restore { .. }));
-    let Msg::Restore { docs, .. } = restore else { unreachable!() };
+    let mut app2 = daemon.connect_app();
+    let docs = app2.recv_restore().docs;
     assert_eq!(docs.len(), 1);
     assert_eq!(docs[0].path, canon_str);
     assert_eq!(docs[0].via, "cli");
@@ -115,45 +101,21 @@ fn hello_ok_reports_daemon_version_and_pid() {
 #[test]
 fn term_input_pty_size_and_exit_code() {
     let daemon = TestDaemon::start();
-    let mut app = Conn::hello(&daemon.sock, "app");
-    app.recv_until("restore", |m| matches!(m, Msg::Restore { .. }));
+    let mut app = daemon.connect_app_drained();
 
-    app.send(&Msg::SpawnTerm {
-        term_id: "t2".into(),
-        cols: 100,
-        rows: 30,
-        cwd: Some(daemon.dir.to_string_lossy().into_owned()),
-        cmd: Some(vec![
-            "/bin/sh".into(),
-            "-c".into(),
-            "stty size; read line; echo got-$line; exit 7".into(),
-        ]),
-        board_id: None,
-        inherit_cwd_from: None,
-    });
+    app.spawn_term_with(
+        "t2",
+        &["/bin/sh", "-c", "stty size; read line; echo got-$line; exit 7"],
+        Spawn { cols: 100, rows: 30, cwd: Some(daemon.dir.to_string_lossy().into_owned()), ..Default::default() },
+    );
 
     let mut collected = Vec::new();
-    let deadline = Instant::now() + LONG;
-    while !contains(&collected, b"30 100") {
-        if let Msg::Output { term_id, bytes } = app.recv(deadline, "stty size output")
-            && term_id == "t2"
-        {
-            collected.extend_from_slice(&bytes);
-        }
-    }
+    app.collect_output_into(&mut collected, "t2", "stty size output", b"30 100");
 
     app.send(&Msg::Input { term_id: "t2".into(), bytes: b"ping\n".to_vec() });
-    let deadline = Instant::now() + LONG;
-    while !contains(&collected, b"got-ping") {
-        if let Msg::Output { term_id, bytes } = app.recv(deadline, "echoed input")
-            && term_id == "t2"
-        {
-            collected.extend_from_slice(&bytes);
-        }
-    }
+    app.collect_output_into(&mut collected, "t2", "echoed input", b"got-ping");
 
-    let exit = app.recv_until("exit", |m| matches!(m, Msg::Exit { .. }));
-    let Msg::Exit { term_id, code } = exit else { unreachable!() };
+    let (term_id, code) = app.recv_exit();
     assert_eq!(term_id, "t2");
     assert_eq!(code, Some(7));
 }
@@ -239,15 +201,14 @@ fn sighup_shuts_down_cleanly() {
 // app, and must never render as "no app".
 //
 // Timing note: the daemon writes `hello_ok` BEFORE `install_app` fills the slot,
-// so an app's own reply is not proof the slot is populated. `drain_connect`
+// so an app's own reply is not proof the slot is populated. `connect_app_drained_as`
 // waits for board_list+restore, which are sent after the install — that is the
 // signal these tests synchronise on.
 
 #[test]
 fn cli_hello_ok_reports_the_connected_apps_version() {
     let daemon = TestDaemon::start();
-    let (mut app, _) = Conn::hello_as(&daemon.sock, "app", Some("9.9.9"));
-    common::drain_connect(&mut app);
+    let _app = daemon.connect_app_drained_as(Some("9.9.9"));
 
     let (connected, version) = Conn::probe_app_slot(&daemon.sock);
     assert_eq!(connected, Some(true));
@@ -267,8 +228,7 @@ fn cli_hello_ok_reports_an_absent_app_as_observed_absence() {
 fn cli_hello_ok_separates_app_presence_from_app_version() {
     let daemon = TestDaemon::start();
     // A pre-key app: connected, but naming no version.
-    let (mut app, _) = Conn::hello_as(&daemon.sock, "app", None);
-    common::drain_connect(&mut app);
+    let _app = daemon.connect_app_drained_as(None);
 
     let (connected, version) = Conn::probe_app_slot(&daemon.sock);
     assert_eq!(connected, Some(true), "a version-less app is still a connected app");
@@ -278,8 +238,7 @@ fn cli_hello_ok_separates_app_presence_from_app_version() {
 #[test]
 fn a_disconnected_app_is_never_reported_as_connected() {
     let daemon = TestDaemon::start();
-    let (mut app, _) = Conn::hello_as(&daemon.sock, "app", Some("9.9.9"));
-    common::drain_connect(&mut app);
+    let app = daemon.connect_app_drained_as(Some("9.9.9"));
     assert_eq!(Conn::probe_app_slot(&daemon.sock).0, Some(true));
 
     drop(app);
@@ -311,8 +270,7 @@ fn a_cli_hello_never_fills_the_app_slot() {
 #[test]
 fn the_daemon_makes_no_app_claim_to_an_app() {
     let daemon = TestDaemon::start();
-    let (mut first, _) = Conn::hello_as(&daemon.sock, "app", Some("9.9.9"));
-    common::drain_connect(&mut first);
+    let _first = daemon.connect_app_drained_as(Some("9.9.9"));
 
     // The second app's own hello_ok must carry neither key: `false` would be an
     // observably wrong claim while the first app still holds the slot. The reply
@@ -329,8 +287,7 @@ fn the_daemon_makes_no_app_claim_to_an_app() {
 #[test]
 fn cli_hello_ok_reports_daemon_version_and_pid_alongside_the_app() {
     let daemon = TestDaemon::start();
-    let (mut app, _) = Conn::hello_as(&daemon.sock, "app", Some("9.9.9"));
-    common::drain_connect(&mut app);
+    let _app = daemon.connect_app_drained_as(Some("9.9.9"));
 
     let (_cli, reply) = Conn::hello_as(&daemon.sock, "cli", None);
     let Msg::HelloOk { daemon_version, daemon_pid, app_version, .. } = reply else {

@@ -1,65 +1,24 @@
-// End-to-end restore (the closed M1 suite): doc states (repo, read, recency),
-// layout snapshots, and durable state across a daemon restart. Harness lives in
-// common/.
+// End-to-end restore: doc states (repo, read, recency), layout snapshots, and
+// durable state across a daemon restart.
 
 mod common;
 
-use std::io::Write;
-use std::time::Duration;
-
-use common::{Conn, TestDaemon, cli_open, wait_for_state, write_doc};
+use common::{Restore, TestDaemon, append_to, cli_open, mtime_ms, settle, write_doc};
 use tarmac_protocol::{BoardViewport, Msg, Tile, repo_color_index};
 
-// Geometry-less tiles (M1 shape): the v4 x/y/w/h/z (+ Phase 3 loose/shelf)
-// keys default to None.
+// Geometry-less tiles: every optional key is None.
 fn term_tile() -> Tile {
-    Tile {
-        kind: "term".into(),
-        path: None,
-        x: None,
-        y: None,
-        w: None,
-        h: None,
-        z: None,
-        loose: None,
-        shelf: None,
-        term_id: None,
-    }
+    Tile { kind: "term".into(), ..Default::default() }
 }
 
 fn doc_tile(path: &str) -> Tile {
     Tile { kind: "doc".into(), path: Some(path.into()), ..term_tile() }
 }
 
-// The daemon derives a file_event's mtime_ms exactly this way (docs.rs), so a
-// test can wait on the specific write it just made rather than on "any event
-// for this path".
-fn mtime_ms(path: &str) -> u64 {
-    std::fs::metadata(path)
-        .and_then(|m| m.modified())
-        .unwrap()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64
-}
-
-fn recv_doc_opened(app: &mut Conn) -> tarmac_protocol::DocEntry {
-    let msg = app.recv_until("doc_opened", |m| matches!(m, Msg::DocOpened(_)));
-    let Msg::DocOpened(entry) = msg else { unreachable!() };
-    entry
-}
-
-fn recv_restore(app: &mut Conn) -> (Vec<tarmac_protocol::DocEntry>, Vec<Tile>) {
-    let msg = app.recv_until("restore", |m| matches!(m, Msg::Restore { .. }));
-    let Msg::Restore { docs, tiles, .. } = msg else { unreachable!() };
-    (docs, tiles)
-}
-
 #[test]
 fn open_carries_repo_read_and_recency() {
     let daemon = TestDaemon::start();
-    let mut app = Conn::hello(&daemon.sock, "app");
-    recv_restore(&mut app);
+    let mut app = daemon.connect_app_drained();
 
     // --- doc inside a repo marked by a .git directory ---
     let repo_dir = daemon.dir.join("payments-api");
@@ -68,7 +27,7 @@ fn open_carries_repo_read_and_recency() {
     let repo_root = std::fs::canonicalize(&repo_dir).unwrap().to_string_lossy().into_owned();
 
     cli_open(&daemon.sock, &in_repo);
-    let entry = recv_doc_opened(&mut app);
+    let entry = app.recv_doc_opened();
     assert_eq!(entry.path, in_repo);
     assert_eq!(entry.via, "cli");
     assert_eq!(entry.repo.as_deref(), Some("payments-api"));
@@ -86,14 +45,14 @@ fn open_carries_repo_read_and_recency() {
     let in_wt = write_doc(&wt_dir.join("note.md"), "wt\n");
 
     cli_open(&daemon.sock, &in_wt);
-    let entry = recv_doc_opened(&mut app);
+    let entry = app.recv_doc_opened();
     assert_eq!(entry.repo.as_deref(), Some("wt"));
     assert_eq!(entry.repo_color, Some(repo_color_index("wt")));
 
     // --- doc outside any repo: repo fields nil ---
     let stray = write_doc(&daemon.dir.join("plain/readme.md"), "hi\n");
     cli_open(&daemon.sock, &stray);
-    let entry = recv_doc_opened(&mut app);
+    let entry = app.recv_doc_opened();
     assert_eq!(entry.repo, None);
     assert_eq!(entry.repo_root, None);
     assert_eq!(entry.repo_color, None);
@@ -101,7 +60,7 @@ fn open_carries_repo_read_and_recency() {
     // --- user open of a new doc never marks it unread ---
     let user_doc = write_doc(&daemon.dir.join("plain/mine.md"), "me\n");
     app.send(&Msg::Open { path: user_doc.clone(), term_id: None, board_id: None });
-    let entry = recv_doc_opened(&mut app);
+    let entry = app.recv_doc_opened();
     assert_eq!(entry.via, "user");
     assert!(entry.read, "user opens never clear read");
 }
@@ -109,12 +68,11 @@ fn open_carries_repo_read_and_recency() {
 #[test]
 fn doc_read_flips_flag_and_shows_in_fresh_restore() {
     let daemon = TestDaemon::start();
-    let mut app = Conn::hello(&daemon.sock, "app");
-    recv_restore(&mut app);
+    let mut app = daemon.connect_app_drained();
 
     let a = write_doc(&daemon.dir.join("a.md"), "a\n");
     cli_open(&daemon.sock, &a);
-    assert!(!recv_doc_opened(&mut app).read);
+    assert!(!app.recv_doc_opened().read);
 
     // Unknown path: ignored, no error frame; then the real one, twice
     // (idempotent). A trailing user open sequences past the fire-and-forget
@@ -124,12 +82,12 @@ fn doc_read_flips_flag_and_shows_in_fresh_restore() {
     app.send(&Msg::DocRead { path: a.clone() });
     let b = write_doc(&daemon.dir.join("b.md"), "b\n");
     app.send(&Msg::Open { path: b.clone(), term_id: None, board_id: None });
-    let entry = recv_doc_opened(&mut app);
+    let entry = app.recv_doc_opened();
     assert_eq!(entry.path, b);
 
     // Fresh app connection: read survives, dock order is insertion order.
-    let mut app2 = Conn::hello(&daemon.sock, "app");
-    let (docs, tiles) = recv_restore(&mut app2);
+    let mut app2 = daemon.connect_app();
+    let Restore { docs, tiles, .. } = app2.recv_restore();
     assert_eq!(docs.len(), 2);
     assert_eq!(docs[0].path, a);
     assert!(docs[0].read, "doc_read must persist into restore");
@@ -138,12 +96,12 @@ fn doc_read_flips_flag_and_shows_in_fresh_restore() {
 
     // cli re-open re-marks unread and never moves the dock slot.
     cli_open(&daemon.sock, &a);
-    let entry = recv_doc_opened(&mut app2);
+    let entry = app2.recv_doc_opened();
     assert_eq!(entry.path, a);
     assert!(!entry.read, "cli re-open must re-mark unread");
 
-    let mut app3 = Conn::hello(&daemon.sock, "app");
-    let (docs, _) = recv_restore(&mut app3);
+    let mut app3 = daemon.connect_app();
+    let docs = app3.recv_restore().docs;
     assert_eq!(docs[0].path, a, "re-open must not move the dock slot");
     assert!(!docs[0].read);
 }
@@ -151,17 +109,16 @@ fn doc_read_flips_flag_and_shows_in_fresh_restore() {
 #[test]
 fn layout_and_state_survive_daemon_restart() {
     let mut daemon = TestDaemon::start();
-    let mut app = Conn::hello(&daemon.sock, "app");
-    recv_restore(&mut app);
+    let mut app = daemon.connect_app_drained();
 
     let repo_dir = daemon.dir.join("search-svc");
     std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
     let a = write_doc(&repo_dir.join("a.md"), "a\n");
     let b = write_doc(&repo_dir.join("b.md"), "b\n");
     cli_open(&daemon.sock, &a);
-    recv_doc_opened(&mut app);
+    app.recv_doc_opened();
     cli_open(&daemon.sock, &b);
-    recv_doc_opened(&mut app);
+    app.recv_doc_opened();
 
     app.send(&Msg::DocRead { path: a.clone() });
     // Snapshot puts b first and omits a (must append after, per merge rules);
@@ -179,20 +136,15 @@ fn layout_and_state_survive_daemon_restart() {
     });
 
     // A file change before the restart: last_changed_ms must survive too.
-    std::thread::sleep(Duration::from_millis(300)); // let the watch settle
-    let mut f = std::fs::OpenOptions::new().append(true).open(&a).unwrap();
-    f.write_all(b"\nmore\n").unwrap();
-    f.sync_all().unwrap();
-    drop(f);
+    settle();
+    append_to(&a, b"\nmore\n");
     // Match the append's own mtime, not merely the path: a.md's earlier creation
     // event can still be in flight, and a path-only predicate lets it satisfy
     // this wait, so the restart below races the append it is meant to observe.
     let appended_ms = mtime_ms(&a);
-    app.recv_until("file_event", |m| {
-        matches!(m, Msg::FileEvent { path, mtime_ms } if *path == a && *mtime_ms >= appended_ms)
-    });
+    app.recv_file_event_since(&a, appended_ms);
 
-    wait_for_state(&daemon.state_file(), "merged layout + read + change", |v| {
+    daemon.wait_for_state("merged layout + read + change", |v| {
         let docs = v["boards"][0]["docs"].as_array();
         docs.is_some_and(|d| {
             d.len() == 2
@@ -203,18 +155,22 @@ fn layout_and_state_survive_daemon_restart() {
         }) && v["boards"][0]["tiles"].as_array().is_some_and(|t| t.len() == 2)
     });
 
-    let mut app2 = Conn::hello(&daemon.sock, "app");
-    let before = recv_restore(&mut app2);
+    let mut app2 = daemon.connect_app();
+    let before = app2.recv_restore();
     drop(app2);
     drop(app);
 
     daemon.restart();
 
-    let mut app3 = Conn::hello(&daemon.sock, "app");
-    let after = recv_restore(&mut app3);
-    assert_eq!(before, after, "restore after restart must be indistinguishable");
+    let mut app3 = daemon.connect_app();
+    let after = app3.recv_restore();
+    assert_eq!(
+        (&before.docs, &before.tiles),
+        (&after.docs, &after.tiles),
+        "restore after restart must be indistinguishable"
+    );
 
-    let (docs, tiles) = after;
+    let Restore { docs, tiles, .. } = after;
     assert_eq!(docs.len(), 2);
     assert_eq!(docs[0].path, b);
     assert!(!docs[0].read);
@@ -227,14 +183,9 @@ fn layout_and_state_survive_daemon_restart() {
     assert_eq!(tiles, vec![term_tile(), doc_tile(&b)]);
 
     // Watches were re-established at load: a change to a restored doc emits.
-    std::thread::sleep(Duration::from_millis(300)); // let the watch settle
-    let mut f = std::fs::OpenOptions::new().append(true).open(&b).unwrap();
-    f.write_all(b"\nagain\n").unwrap();
-    f.sync_all().unwrap();
-    drop(f);
-    app3.recv_until("file_event after restart", |m| {
-        matches!(m, Msg::FileEvent { path, .. } if *path == b)
-    });
+    settle();
+    append_to(&b, b"\nagain\n");
+    app3.recv_file_event_for(&b);
 }
 
 // issue #123: a webview reload re-syncs by switching to the ALREADY-active board.
@@ -243,22 +194,13 @@ fn layout_and_state_survive_daemon_restart() {
 #[test]
 fn board_switch_to_the_active_board_returns_the_latest_layout() {
     let daemon = TestDaemon::start();
-    let mut app = Conn::hello(&daemon.sock, "app");
-    recv_restore(&mut app);
+    let mut app = daemon.connect_app_drained();
 
     let a = write_doc(&daemon.dir.join("a.md"), "a\n");
     cli_open(&daemon.sock, &a);
-    recv_doc_opened(&mut app);
+    app.recv_doc_opened();
 
-    app.send(&Msg::SpawnTerm {
-        term_id: "tlive".into(),
-        cols: 80,
-        rows: 24,
-        cwd: None,
-        cmd: Some(vec!["/bin/cat".into()]),
-        board_id: None,
-        inherit_cwd_from: None,
-    });
+    app.spawn_term("tlive", &["/bin/cat"]);
     // The two-tile layout a ⌘T would produce: it reaches the daemon but is never
     // echoed back, so only a fresh restore can carry it.
     app.send(&Msg::Layout {
@@ -269,30 +211,45 @@ fn board_switch_to_the_active_board_returns_the_latest_layout() {
     });
 
     app.send(&Msg::BoardSwitch { board_id: "board-0".into() });
-    let restore = app.recv_until("restore", |m| matches!(m, Msg::Restore { .. }));
-    let Msg::Restore { tiles, live_terms, .. } = restore else { unreachable!() };
+    let Restore { tiles, live_terms, .. } = app.recv_restore();
 
     assert_eq!(tiles, vec![term_tile(), doc_tile(&a)], "restore must carry the latest layout");
     assert_eq!(live_terms, vec!["tlive".to_string()], "and the board's live shells");
 }
 
-// v4 Phase 2 (additive): the board viewport + per-tile world frame round-trip
-// through a layout snapshot, persist to disk, and reproduce after a restart.
+// The board viewport + per-tile world frame round-trip through a layout
+// snapshot, persist to disk, and reproduce after a restart.
 #[test]
 fn board_geometry_and_viewport_survive_daemon_restart() {
     let mut daemon = TestDaemon::start();
-    let mut app = Conn::hello(&daemon.sock, "app");
-    recv_restore(&mut app);
+    let mut app = daemon.connect_app_drained();
 
     let repo_dir = daemon.dir.join("board");
     std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
     let a = write_doc(&repo_dir.join("a.md"), "a\n");
     cli_open(&daemon.sock, &a);
-    recv_doc_opened(&mut app);
+    app.recv_doc_opened();
 
     let board = BoardViewport { zoom: 0.82, cx: 640.0, cy: 360.0 };
-    let term = Tile { kind: "term".into(), x: Some(92.0), y: Some(108.0), w: Some(470.0), h: Some(330.0), z: Some(0), path: None, loose: None, shelf: None, term_id: None };
-    let doc = Tile { kind: "doc".into(), path: Some(a.clone()), x: Some(648.0), y: Some(140.0), w: Some(392.0), h: Some(310.0), z: Some(1), loose: None, shelf: None, term_id: None };
+    let term = Tile {
+        kind: "term".into(),
+        x: Some(92.0),
+        y: Some(108.0),
+        w: Some(470.0),
+        h: Some(330.0),
+        z: Some(0),
+        ..Default::default()
+    };
+    let doc = Tile {
+        kind: "doc".into(),
+        path: Some(a.clone()),
+        x: Some(648.0),
+        y: Some(140.0),
+        w: Some(392.0),
+        h: Some(310.0),
+        z: Some(1),
+        ..Default::default()
+    };
     app.send(&Msg::Layout {
         dock: vec![a.clone()],
         tiles: vec![term.clone(), doc.clone()],
@@ -300,7 +257,7 @@ fn board_geometry_and_viewport_survive_daemon_restart() {
         board_id: None,
     });
 
-    wait_for_state(&daemon.state_file(), "board + tile geometry", |v| {
+    daemon.wait_for_state("board + tile geometry", |v| {
         let tiles = v["boards"][0]["tiles"].as_array();
         let geom_ok = tiles.is_some_and(|t| {
             t.len() == 2
@@ -317,21 +274,19 @@ fn board_geometry_and_viewport_survive_daemon_restart() {
 
     daemon.restart();
 
-    let mut app2 = Conn::hello(&daemon.sock, "app");
-    let restore = app2.recv_until("restore", |m| matches!(m, Msg::Restore { .. }));
-    let Msg::Restore { tiles, board: restored_board, .. } = restore else { unreachable!() };
+    let mut app2 = daemon.connect_app();
+    let Restore { tiles, board: restored_board, .. } = app2.recv_restore();
     assert_eq!(tiles, vec![term, doc], "tile world frames must reproduce after restart");
     assert_eq!(restored_board, Some(board), "board viewport must reproduce after restart");
 }
 
-// v4 Phase 3 (additive): a shelf-parked, gravity-detached doc tile survives a
-// restart (sent via layout, reappears in restore); a doc's provenance term_id
-// is preserved through the restart.
+// A shelf-parked, gravity-detached doc tile survives a restart (sent via layout,
+// reappears in restore); a doc's provenance term_id is preserved through the
+// restart.
 #[test]
 fn shelf_loose_and_term_id_survive_daemon_restart() {
     let mut daemon = TestDaemon::start();
-    let mut app = Conn::hello(&daemon.sock, "app");
-    recv_restore(&mut app);
+    let mut app = daemon.connect_app_drained();
 
     let repo_dir = daemon.dir.join("shelf");
     std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
@@ -339,21 +294,16 @@ fn shelf_loose_and_term_id_survive_daemon_restart() {
 
     // Open the doc with a calling term_id (provenance owner).
     app.send(&Msg::Open { path: a.clone(), term_id: Some("term-7".into()), board_id: None });
-    let opened = recv_doc_opened(&mut app);
+    let opened = app.recv_doc_opened();
     assert_eq!(opened.term_id.as_deref(), Some("term-7"), "open must carry the term_id");
 
     // Park the doc on the shelf: kind "doc", shelf:true, loose:true, no geometry.
     let shelf_tile = Tile {
         kind: "doc".into(),
         path: Some(a.clone()),
-        x: None,
-        y: None,
-        w: None,
-        h: None,
-        z: None,
         loose: Some(true),
         shelf: Some(true),
-        term_id: None,
+        ..Default::default()
     };
     app.send(&Msg::Layout {
         dock: vec![a.clone()],
@@ -362,7 +312,7 @@ fn shelf_loose_and_term_id_survive_daemon_restart() {
         board_id: None,
     });
 
-    wait_for_state(&daemon.state_file(), "shelf tile + term_id", |v| {
+    daemon.wait_for_state("shelf tile + term_id", |v| {
         let tile_ok = v["boards"][0]["tiles"].as_array().is_some_and(|t| {
             t.iter().any(|tile| {
                 tile["kind"] == serde_json::json!("doc")
@@ -380,9 +330,8 @@ fn shelf_loose_and_term_id_survive_daemon_restart() {
     drop(app);
     daemon.restart();
 
-    let mut app2 = Conn::hello(&daemon.sock, "app");
-    let restore = app2.recv_until("restore", |m| matches!(m, Msg::Restore { .. }));
-    let Msg::Restore { docs, tiles, .. } = restore else { unreachable!() };
+    let mut app2 = daemon.connect_app();
+    let Restore { docs, tiles, .. } = app2.recv_restore();
 
     assert!(
         tiles.contains(&shelf_tile),

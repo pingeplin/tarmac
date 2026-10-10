@@ -8,46 +8,16 @@
 use std::io::Read;
 use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
-use std::process::{Command, Output, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use tarmac_protocol::{dev, frame};
 
-fn tarmac() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_tarmac"))
-}
-
-static SPAWN: Mutex<()> = Mutex::new(());
-
-/// `Command::output`, spawning one child at a time. On macOS std marks a child's
-/// output pipes close-on-exec in a second step, so a sibling test spawning in
-/// between hands them to its own child and EOF waits for THAT child's exit (#190).
-fn output(cmd: &mut Command) -> Output {
-    let child = {
-        let _spawning = SPAWN.lock().unwrap_or_else(PoisonError::into_inner);
-        cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap()
-    };
-    child.wait_with_output().unwrap()
-}
-
-static DIR_SEQ: AtomicU64 = AtomicU64::new(0);
-
-fn scratch() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "tarmac-dev-{}-{}",
-        std::process::id(),
-        DIR_SEQ.fetch_add(1, Ordering::Relaxed)
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
-}
+mod common;
+use common::{Report, scratch, tarmac};
 
 enum Reply {
-    /// Frame this reply back immediately.
     Now(dev::DevReply),
     /// Read the request, wait, then reply — the only way to exercise the CLI's
     /// read deadline from the slow-but-healthy side.
@@ -105,8 +75,8 @@ impl Fake {
         Fake { sock, received, server: Mutex::new(Some(server)), _dir: dir }
     }
 
-    fn run(&self, args: &[&str]) -> Output {
-        output(tarmac().env("TARMAC_DEV_SOCKET", &self.sock).arg("dev").args(args))
+    fn run(&self, args: &[&str]) -> Report {
+        Report::of(tarmac().env("TARMAC_DEV_SOCKET", &self.sock).arg("dev").args(args))
     }
 
     /// Wait for the server thread, so `received` is complete rather than whatever
@@ -129,9 +99,9 @@ fn ok_reply(body: &str) -> dev::DevReply {
 fn a_successful_reply_goes_to_stdout_and_exits_zero() {
     let fake = Fake::start(Reply::Now(ok_reply("{\"v\":1}")));
     let out = fake.run(&["snapshot"]);
-    assert_eq!(out.status.code(), Some(0));
-    assert_eq!(String::from_utf8_lossy(&out.stdout), "{\"v\":1}\n");
-    assert_eq!(String::from_utf8_lossy(&out.stderr), "");
+    assert_eq!(out.code(), Some(0));
+    assert_eq!(out.stdout, "{\"v\":1}\n");
+    assert_eq!(out.stderr, "");
 }
 
 /// S60 — a failing reply: exit 1, body on STDERR, stdout untouched, so
@@ -141,9 +111,9 @@ fn a_failing_reply_goes_to_stderr_and_exits_one() {
     let body = "{\"error\":\"no_such_card\",\"card\":\"t-9\"}";
     let fake = Fake::start(Reply::Now(dev::DevReply { ok: false, body: body.into() }));
     let out = fake.run(&["focus", "t-9"]);
-    assert_eq!(out.status.code(), Some(1));
-    assert_eq!(String::from_utf8_lossy(&out.stdout), "");
-    assert_eq!(String::from_utf8_lossy(&out.stderr), format!("{body}\n"));
+    assert_eq!(out.code(), Some(1));
+    assert_eq!(out.stdout, "");
+    assert_eq!(out.stderr, format!("{body}\n"));
 }
 
 /// S61 — `body` is opaque. A body that is not JSON prints verbatim and the exit
@@ -153,13 +123,13 @@ fn a_failing_reply_goes_to_stderr_and_exits_one() {
 fn the_body_is_never_parsed() {
     let fake = Fake::start(Reply::Now(ok_reply("not json at all")));
     let out = fake.run(&["snapshot"]);
-    assert_eq!(out.status.code(), Some(0));
-    assert_eq!(String::from_utf8_lossy(&out.stdout), "not json at all\n");
+    assert_eq!(out.code(), Some(0));
+    assert_eq!(out.stdout, "not json at all\n");
 
     let fake = Fake::start(Reply::Now(dev::DevReply { ok: false, body: "also not json".into() }));
     let out = fake.run(&["snapshot"]);
-    assert_eq!(out.status.code(), Some(1));
-    assert_eq!(String::from_utf8_lossy(&out.stderr), "also not json\n");
+    assert_eq!(out.code(), Some(1));
+    assert_eq!(out.stderr, "also not json\n");
 }
 
 /// S62 — no listener: exit 1 and ONE line of plain text naming the path. This is
@@ -168,10 +138,9 @@ fn the_body_is_never_parsed() {
 fn no_listener_is_a_clear_one_line_error() {
     let dir = scratch();
     let sock = dir.join("absent.sock");
-    let out = output(tarmac().env("TARMAC_DEV_SOCKET", &sock).args(["dev", "snapshot"]));
-    assert_eq!(out.status.code(), Some(1));
-    let err = String::from_utf8_lossy(&out.stderr);
-    assert_eq!(err.lines().count(), 1, "expected one line, got: {err}");
+    let out = Report::of(tarmac().env("TARMAC_DEV_SOCKET", &sock).args(["dev", "snapshot"]));
+    assert_eq!(out.code(), Some(1));
+    let err = out.one_stderr_line();
     assert!(err.contains(sock.to_str().unwrap()), "error does not name the path: {err}");
     assert!(!err.contains('{'), "CLI-side errors are plain text, got: {err}");
 }
@@ -181,7 +150,7 @@ fn no_listener_is_a_clear_one_line_error() {
 fn exactly_one_request_frame_is_sent() {
     let fake = Fake::start(Reply::Now(ok_reply("{}")));
     let out = fake.run(&["focus", "t-1"]);
-    assert_eq!(out.status.code(), Some(0));
+    assert_eq!(out.code(), Some(0));
     let frames = fake.frames();
     assert_eq!(frames.len(), 1, "expected exactly one frame, got {}", frames.len());
     assert_eq!(
@@ -196,9 +165,9 @@ fn an_over_long_socket_path_is_refused_before_dialling() {
     let fake = Fake::start(Reply::Now(ok_reply("{}")));
     let long = PathBuf::from(format!("/tmp/{}.sock", "x".repeat(110)));
     assert!(long.as_os_str().len() >= 104);
-    let out = output(tarmac().env("TARMAC_DEV_SOCKET", &long).args(["dev", "snapshot"]));
-    assert_eq!(out.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("104"));
+    let out = Report::of(tarmac().env("TARMAC_DEV_SOCKET", &long).args(["dev", "snapshot"]));
+    assert_eq!(out.code(), Some(1));
+    assert!(out.stderr.contains("104"));
     // The fake at the short path was never dialled.
     assert!(fake.received.lock().unwrap().is_empty());
 }
@@ -211,8 +180,8 @@ fn an_over_long_socket_path_is_refused_before_dialling() {
 fn a_slow_but_healthy_app_is_still_heard() {
     let fake = Fake::start(Reply::After(Duration::from_millis(5_500), ok_reply("{\"v\":1}")));
     let out = fake.run(&["snapshot", "--timeout", "10000"]);
-    assert_eq!(out.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&out.stderr));
-    assert_eq!(String::from_utf8_lossy(&out.stdout), "{\"v\":1}\n");
+    assert_eq!(out.code(), Some(0), "stderr: {}", out.stderr);
+    assert_eq!(out.stdout, "{\"v\":1}\n");
 }
 
 /// S73(b) — and the deadline really is a deadline. With `--timeout 100` the CLI
@@ -224,10 +193,9 @@ fn a_silent_app_is_given_up_on_within_the_deadline() {
     let started = Instant::now();
     let out = fake.run(&["snapshot", "--timeout", "100"]);
     let elapsed = started.elapsed();
-    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(out.code(), Some(1));
     assert!(elapsed < Duration::from_secs(4), "took {elapsed:?}");
-    let err = String::from_utf8_lossy(&out.stderr);
-    assert_eq!(err.lines().count(), 1, "expected one line, got: {err}");
+    let err = out.one_stderr_line();
     assert!(!err.contains('{'), "CLI-side errors are plain text, got: {err}");
 }
 
@@ -244,9 +212,9 @@ fn a_silent_app_is_given_up_on_within_the_deadline() {
 /// `make test` would stay green.
 #[test]
 fn help_documents_the_dev_family_and_its_limits() {
-    let out = output(tarmac().arg("--help"));
+    let out = Report::of(tarmac().arg("--help"));
     assert!(out.status.success());
-    let text = String::from_utf8_lossy(&out.stdout);
+    let text = &out.stdout;
     for needle in [
         "tarmac dev snapshot",
         "tarmac dev zoom",
@@ -272,8 +240,8 @@ fn help_documents_the_dev_family_and_its_limits() {
 /// usage lines then no longer match what a caller has to type.
 #[test]
 fn help_prints_its_quotes_without_a_backslash() {
-    let out = output(tarmac().arg("--help"));
-    let text = String::from_utf8_lossy(&out.stdout);
+    let out = Report::of(tarmac().arg("--help"));
+    let text = &out.stdout;
     assert!(!text.contains("\\\""), "--help prints a backslash before a quote");
     for needle in [
         "tarmac dev type <card> \"<text>\"",
