@@ -77,8 +77,9 @@ pub async fn handle_open(
     Ok(())
 }
 
-/// Registers `path` in `reg`, or refreshes the doc already there.
-pub fn upsert_doc(reg: &mut Registry, path: &Path, via: &str, term_id: Option<String>) {
+/// Registers `path` in `reg`, or refreshes the doc already there. True when
+/// the doc is new to `reg`.
+pub fn upsert_doc(reg: &mut Registry, path: &Path, via: &str, term_id: Option<String>) -> bool {
     match reg.docs.get_mut(path) {
         Some(info) => {
             info.via = via.to_owned();
@@ -92,6 +93,7 @@ pub fn upsert_doc(reg: &mut Registry, path: &Path, via: &str, term_id: Option<St
             if term_id.is_some() {
                 info.term_id = term_id;
             }
+            false
         }
         None => {
             let repo = derive_repo(path);
@@ -109,6 +111,7 @@ pub fn upsert_doc(reg: &mut Registry, path: &Path, via: &str, term_id: Option<St
                 },
             );
             reg.dock.push(path.to_owned());
+            true
         }
     }
 }

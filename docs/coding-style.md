@@ -166,7 +166,7 @@ back from a rendered bitmap.
   `core/crates/tarmacd/src/boards.rs`. Do not add a trait to get a seam for
   mocking either: the integration harness spawns the real daemon instead.
 - **Getters read as nouns** (`active_board`, `state_path`) — no `get_` prefix.
-  Mutators read as verbs (`apply_layout`, `ensure_watched`, `mark_dirty`).
+  Mutators read as verbs (`apply_layout`, `acquire_watch`, `mark_dirty`).
 - **`std::sync::Mutex` must never span an `.await`** — lock, do the synchronous
   thing, drop; clone what the slow call needs first. `tokio::sync::Mutex` may be
   held across `.await`. The full rule, and why it is load-bearing, is in
