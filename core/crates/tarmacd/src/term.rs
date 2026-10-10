@@ -351,7 +351,7 @@ async fn proc_name_loop(daemon: Arc<Daemon>, term_id: String, handle: Arc<TermHa
 
 #[cfg(test)]
 mod tests {
-    use super::force_utf8_ctype_decision;
+    use super::*;
     use std::collections::HashMap;
 
     fn decide(pairs: &[(&str, &str)]) -> bool {
@@ -391,5 +391,40 @@ mod tests {
     fn empty_value_falls_through_to_next_key() {
         assert!(!decide(&[("LC_ALL", ""), ("LANG", "en_US.UTF-8")]));
         assert!(decide(&[("LC_CTYPE", ""), ("LANG", "C")]));
+    }
+
+    // The exit goes first and the pump takes it before any chunk exists, so the
+    // chunks can leave only through the drain branch. With both queued up front,
+    // `select!` picks at random and the drain branch can stay unused.
+    #[tokio::test]
+    async fn output_queued_behind_the_exit_precedes_the_exit_frame() {
+        let state = std::env::temp_dir().join(format!("tarmac-term-pump-{}", std::process::id())).join("state.json");
+        let daemon = Daemon::new(state).unwrap();
+        let (app_tx, mut app_rx) = mpsc::channel(8);
+        daemon.install_app(app_tx, None).await;
+        let (input_tx, _input_rx) = mpsc::channel(1);
+        let handle = Arc::new(TermHandle {
+            input_tx,
+            master: std::sync::Mutex::new(native_pty_system().openpty(PtySize::default()).unwrap().master),
+            scrollback: std::sync::Mutex::new(ScrollbackRing::new()),
+            pid: None,
+        });
+        let (out_tx, out_rx) = mpsc::channel(2);
+        let (exit_tx, exit_rx) = oneshot::channel();
+        let pump = tokio::spawn(pump(daemon, "t1".into(), out_rx, exit_rx, handle));
+
+        exit_tx.send(Some(0)).unwrap();
+        tokio::task::yield_now().await;
+        out_tx.send(b"last ".to_vec()).await.unwrap();
+        out_tx.send(b"words".to_vec()).await.unwrap();
+        drop(out_tx);
+        pump.await.unwrap();
+
+        let frames: Vec<Msg> = std::iter::from_fn(|| app_rx.try_recv().ok()).take(3).collect();
+        assert_eq!(frames, vec![
+            Msg::Output { term_id: "t1".into(), bytes: b"last ".to_vec() },
+            Msg::Output { term_id: "t1".into(), bytes: b"words".to_vec() },
+            Msg::Exit { term_id: "t1".into(), code: Some(0) },
+        ]);
     }
 }

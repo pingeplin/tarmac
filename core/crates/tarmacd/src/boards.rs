@@ -335,6 +335,15 @@ mod tests {
         assert_eq!(r.tiles, vec![term_tile()]);
     }
 
+    #[test]
+    fn layout_without_a_viewport_keeps_the_stored_one() {
+        let mut r = Registry::empty();
+        let viewport = BoardViewport { zoom: 1.5, cx: 120.0, cy: -40.0 };
+        r.apply_layout(vec![], vec![term_tile()], Some(viewport.clone()));
+        r.apply_layout(vec![], vec![term_tile()], None);
+        assert_eq!(r.board, Some(viewport));
+    }
+
     fn name_of<'a>(boards: &'a Boards, id: &str) -> Option<&'a str> {
         boards.iter().find(|b| b.id == id).and_then(|b| b.name.as_deref())
     }

@@ -112,9 +112,11 @@ fn doc_refresh_records_the_mtime_durably_and_changes_nothing_else() {
 
     wait_for_last_changed(&daemon, "last_changed_ms recorded", 0, &a, json!(pushed));
     let after = doc_entry(&daemon.state_json(), 0, &a);
-    for key in ["read", "via", "last_opened_ms"] {
-        assert_eq!(after[key], before[key], "doc_refresh must not touch `{key}`");
-    }
+    // Fixed values, not `before`'s: the watcher can reach the doc before `before`
+    // is read, and a refresh that sets one of these then leaves the two equal.
+    assert_eq!(after["read"], json!(false), "doc_refresh must not mark the doc read");
+    assert_eq!(after["via"], json!("cli"), "doc_refresh must not touch `via`");
+    assert_eq!(after["last_opened_ms"], before["last_opened_ms"], "doc_refresh must not touch `last_opened_ms`");
     // persist.rs emits `docs` in dock order, so the index IS the dock position.
     // Refreshing `a` must not reorder it past `z`.
     let st = daemon.state_json();
