@@ -56,8 +56,8 @@ impl Daemon {
             let _ = tx.send(res);
         })?;
         let boards = crate::persist::load(&state_path);
-        // Every board's docs, so a backgrounded board's docs still report file
-        // events.
+        // Every board's docs, not the active board's only: a switch adds no
+        // watch.
         let doc_dirs: Vec<PathBuf> = boards
             .iter()
             .flat_map(|b| b.registry.docs.keys())
@@ -315,6 +315,7 @@ mod tests {
         let doc = doc_dir.join("a.md");
         open_doc(&daemon, None, &doc).await;
         assert!(watched(&daemon, &doc_dir));
+        assert!(!watched(&daemon, &tmp), "a doc in a subdirectory does not count");
 
         assert!(daemon.close_doc(&doc).await);
         assert!(!watched(&daemon, &doc_dir));

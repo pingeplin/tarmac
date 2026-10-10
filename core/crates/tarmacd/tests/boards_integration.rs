@@ -373,3 +373,22 @@ fn board_delete_reports_a_change_made_while_it_dropped_the_watches() {
     touch(&kept);
     app.recv_file_event_since(&kept, mtime_ms(&kept));
 }
+
+// The delete itself schedules the save. The test first waits for the save of
+// the create and lets the debounce pass, so no earlier save can drop the board.
+#[test]
+fn board_delete_persists() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let saved_boards = |v: &serde_json::Value| v["boards"].as_array().map_or(0, Vec::len);
+
+    app.send(&Msg::BoardCreate);
+    app.recv_restore_for("board-1");
+    daemon.wait_for_state("board-1 saved", |v| saved_boards(v) == 2);
+    settle();
+
+    app.send(&Msg::BoardDelete { board_id: "board-1".into() });
+    assert_eq!(board_ids(&app.recv_board_list().0), vec!["board-0"]);
+    daemon.wait_for_state("board-1 gone from the saved state", |v| saved_boards(v) == 1);
+}
+
