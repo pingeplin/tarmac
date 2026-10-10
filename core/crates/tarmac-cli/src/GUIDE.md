@@ -123,11 +123,31 @@ need data in the chart, serialize it into a `const` at the top of the script.
   from the timestamp the frame callback receives, never from a counter you
   increment yourself, or a paused card will fall behind and stay behind.
 
+### Standards mode or quirks mode
+
+Tarmac gives your file the mode a browser gives it. A file that starts with a
+doctype is in **standards mode**. A file with no doctype is in **quirks mode**.
+So start the file with `<!doctype html>`. A comment, white space or a byte order
+mark before the doctype is fine.
+
+In standards mode:
+
+- `body` is as tall as its content. `height: 100%` on a child of `body` needs
+  `html { height: 100% }`.
+- A table cell inherits the font size of the page.
+- A unitless length, such as `width: 100`, is ignored.
+- `document.body.scrollTop` does not scroll. Use `window.scrollTo`, or scroll
+  `document.scrollingElement`.
+
+Tarmac adds its own script before your first element, and the browser makes a
+`<head>` for it. So attributes on your own `<head>` tag are dropped.
+Attributes on `<html>` and `<body>` are kept.
+
 ### The user's fonts
 
 The user picks a reading font, a code font and a reading size in Tarmac's
 Settings. A card can follow them. Tarmac sets three CSS custom properties on
-the document's root before the first byte of your file is parsed, and changes
+the document's root before any of your script runs, and changes
 them in place, with no reload, when the user changes a setting:
 
 | Property | Holds |
@@ -204,6 +224,7 @@ a table, a diagram, or a static chart.
 ## Checklist before `tarmac open` on an HTML file
 
 - [ ] One file. No external `src`, `href`, or `url()` that leaves the document.
+- [ ] The file starts with `<!doctype html>`.
 - [ ] All JS inline; no `eval` or `new Function`.
 - [ ] Fonts: `var(--tarmac-prose-font, <system stack>)` to follow the user's, or
       a system stack. Every use has a fallback; you never set a `--tarmac-` name.

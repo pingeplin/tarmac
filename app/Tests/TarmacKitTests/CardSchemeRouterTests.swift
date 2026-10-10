@@ -42,6 +42,15 @@ final class CardSchemeRouterTests: XCTestCase {
         XCTAssertEqual(CardSchemeRouter.route(url: SchemeFixtures.docURI(path)), .doc(.read(path: path)))
     }
 
+    /// S15
+    func testTheDocHostPlacesTheShimAfterALeadingDoctype() {
+        let path = "/tmp/s15.html"
+        let disk = SchemeFixtures.Disk([path: Data("<!doctype html><p>hi</p>".utf8)])
+        let resp = CardSchemeRouter.respond(url: SchemeFixtures.docURI(path), shim: "SHIM", read: disk.read, resolve: disk.resolve)
+
+        XCTAssertEqual(text(resp), "<!doctype html><script>SHIM</script>\n<p>hi</p>")
+    }
+
     /// S18
     func testAnUnknownHostIsAnsweredWith400ByTheCardHandler() {
         let resp = respond("tarmac-card://other/x")

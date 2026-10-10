@@ -1,10 +1,10 @@
 // Console-capture + escape-hatch + zoom + scroll-report + default-scheme +
 // font-properties shim for sandboxed HTML doc cards (specs 2607.0004,
-// 2607.0006, 2610.0003, 2610.0007, 2610.0010). Prepended by
-// CardProtocol.respond to every tarmac-card:// response, strictly before the
-// file's own bytes, so it observes console/error/escape activity from the very
-// first line of card script. Must never throw or break the host page — every
-// path here is defensive.
+// 2607.0006, 2610.0003, 2610.0007, 2610.0010, 2610.0011). Placed
+// by CardProtocol.respond in every tarmac-card:// response after the file's
+// leading doctype, so it runs before any author script and observes
+// console/error/escape activity from the very first line of card script. Must
+// never throw or break the host page — every path here is defensive.
 (function () {
   // Filled with the user's fonts per request (CardFontVariables.filling); the
   // file as it stands is valid JavaScript and holds none.
@@ -381,9 +381,9 @@
 
   // Where the root is scrolled to, for the card's scroll thumb. Posted as the
   // event happens: no frame is asked for and no timer set, so a culled card
-  // schedules nothing for it. Before the body exists this document — in quirks
-  // mode, the shim coming before its doctype — has no scrolling element, and
-  // there is nothing to say.
+  // schedules nothing for it. In quirks mode there is no scrolling element before
+  // the body exists, or while the body is itself scrollable, and there is nothing
+  // to say.
   function postScroll() {
     try {
       var root = document.scrollingElement;

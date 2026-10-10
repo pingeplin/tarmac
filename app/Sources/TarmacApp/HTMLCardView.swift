@@ -5,7 +5,7 @@ import WebKit
 /// An HTML card's body: the file running as real JavaScript in a sandboxed
 /// frame, exactly as the Tauri app hosts it. The web view holds a small host
 /// page whose one element is `<iframe sandbox="allow-scripts">` pointed at
-/// `tarmac-card://doc/<path>`; the scheme handler prepends the shim and sets
+/// `tarmac-card://doc/<path>`; the scheme handler adds the shim and sets
 /// the card's content policy. The shim talks to its parent, the host page,
 /// which carries messages and says when the document is on screen; what
 /// they mean is `HTMLCardSession`'s.
