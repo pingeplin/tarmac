@@ -1,0 +1,13 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>HTML card font variables, cascade</title>
+<style>
+  html, body { margin: 0; }
+  :root { --tarmac-prose-size: 99px; }
+  html[data-x] { --tarmac-prose-size: 55px; }
+  #under-root { height: calc(var(--tarmac-prose-size) * 10); background: #2f81f7; }
+  #parent { --tarmac-prose-size: 77px; }
+  #under-parent { height: calc(var(--tarmac-prose-size) * 10); background: #3fb950; }
+</style>
+<div id="under-root"></div>
+<div id="parent"><div id="under-parent"></div></div>

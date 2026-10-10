@@ -77,6 +77,54 @@ final class HTMLCardSessionTests: XCTestCase {
         XCTAssertEqual(session.mode, .reveal)
     }
 
+    // MARK: - fonts (2610.0010 S21–S24)
+
+    private let fontsA = CardFontVariables(interfaceFamily: nil, documentFamily: nil, documentSize: 14)
+    private let fontsB = CardFontVariables(interfaceFamily: "Menlo", documentFamily: "Georgia", documentSize: 20)
+
+    func test2610_0010S21AReadyBringsTheFontsAfterTheCullStateAndBeforeTheZoom() {
+        var session = HTMLCardSession()
+        _ = session.fontsChanged(fontsA)
+        XCTAssertEqual(
+            session.handle(.ready(meta: nil), borrowed: false),
+            [.post(.cull(false)), .post(.fonts(fontsA)), .post(magnify), .modeChanged]
+        )
+
+        var culled = HTMLCardSession()
+        culled.culled = true
+        _ = culled.fontsChanged(fontsA)
+        XCTAssertEqual(culled.handle(.ready(meta: nil), borrowed: false).first, .post(.cull(true)))
+    }
+
+    func test2610_0010S22ASessionNeverToldAnyFontsPostsNone() {
+        var session = HTMLCardSession()
+        let effects = session.handle(.ready(meta: nil), borrowed: false)
+        XCTAssertEqual(effects, [.post(.cull(false)), .post(magnify), .modeChanged])
+    }
+
+    func test2610_0010S23AChangeIsPostedAndTheSameValuesAreNot() {
+        for culled in [false, true] {
+            var session = HTMLCardSession()
+            session.culled = culled
+            XCTAssertEqual(session.fontsChanged(fontsA), .fonts(fontsA), "culled \(culled)")
+            XCTAssertNil(session.fontsChanged(fontsA), "culled \(culled)")
+            XCTAssertEqual(session.fontsChanged(fontsB), .fonts(fontsB), "culled \(culled)")
+            XCTAssertNil(session.fontsChanged(fontsB), "culled \(culled)")
+        }
+    }
+
+    func test2610_0010S24AReadyBringsTheNewestFontsAndAReloadKeepsThem() {
+        var session = HTMLCardSession()
+        _ = session.fontsChanged(fontsA)
+        session.reloaded()
+        XCTAssertTrue(session.handle(.ready(meta: nil), borrowed: false).contains(.post(.fonts(fontsA))))
+
+        session.reloaded()
+        _ = session.fontsChanged(fontsB)
+        XCTAssertTrue(session.handle(.ready(meta: nil), borrowed: false).contains(.post(.fonts(fontsB))))
+        XCTAssertTrue(session.handle(.ready(meta: nil), borrowed: false).contains(.post(.fonts(fontsB))))
+    }
+
     // MARK: - reload
 
     /// A reload drops the per-load mode — a removed meta tag must not leak the

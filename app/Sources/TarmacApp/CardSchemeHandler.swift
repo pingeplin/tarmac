@@ -33,8 +33,9 @@ final class CardSchemeHandler: NSObject, WKURLSchemeHandler {
         }
         let ticket = pending.start(ObjectIdentifier(urlSchemeTask), for: urlSchemeTask)
         let headers = urlSchemeTask.request.allHTTPHeaderFields ?? [:]
-        let shim = self.shim
         let host = self.host
+        // Read here, on the main actor and for each request: the fonts change.
+        let shim = host == .doc ? Theme.cardFonts.filling(self.shim) : self.shim
         reads.async { [weak self] in
             // The whole URL as text: `URL.path` would percent-decode it.
             let response = CardSchemeRouter.respond(

@@ -80,8 +80,9 @@ Everything below fails **silently** — no error, just a blank or broken card.
   `'unsafe-eval'`. Any library that compiles templates or expressions at runtime
   will not work.
 - **No external stylesheets or web fonts.** `<link rel="stylesheet">` is blocked,
-  including Google Fonts. Use an inline `<style>` and a system font stack. A
-  custom font must be a `data:` URI.
+  including Google Fonts. Put the CSS in an inline `<style>`, and take the
+  text font from the user's (below) or from a system font stack. A custom font
+  must be a `data:` URI.
 - **No network of any kind.** `fetch`, `XMLHttpRequest`, `WebSocket`, and
   `sendBeacon` are all blocked. Embed your data in the file as a literal.
 - **No storage.** `localStorage`, `sessionStorage`, cookies, and IndexedDB are
@@ -121,6 +122,44 @@ need data in the chart, serialize it into a `const` at the top of the script.
   frame missed, and missed interval ticks are dropped entirely. Drive animation
   from the timestamp the frame callback receives, never from a counter you
   increment yourself, or a paused card will fall behind and stay behind.
+
+### The user's fonts
+
+The user picks a reading font, a code font and a reading size in Tarmac's
+Settings. A card can follow them. Tarmac sets three CSS custom properties on
+the document's root before the first byte of your file is parsed, and changes
+them in place, with no reload, when the user changes a setting:
+
+| Property | Holds |
+| --- | --- |
+| `--tarmac-prose-size` | The reading size (Settings: Document size), a length in px (`14px` with nothing chosen). |
+| `--tarmac-prose-font` | The reading font (Settings: Document), a `font-family` list that ends in the system sans-serif stack. |
+| `--tarmac-mono-font` | The code font (Settings: Interface), a `font-family` list that ends in the system monospace stack. |
+
+This is opt-in. A page that does not use the properties is not changed.
+
+```html
+<style>
+  body {
+    font-family: var(--tarmac-prose-font, ui-sans-serif, system-ui, sans-serif);
+    font-size: var(--tarmac-prose-size, 14px);
+  }
+  code, pre { font-family: var(--tarmac-mono-font, ui-monospace, monospace); }
+</style>
+```
+
+- **Give every use a fallback**, as above. Outside Tarmac (a browser, a
+  preview) the properties are not set, and a use without a fallback is invalid.
+- **Do not set these three names yourself.** Tarmac's value comes last, so a
+  `:root { --tarmac-prose-size: ... }` or `html { ... }` rule of yours is
+  ignored. To keep a value of your own, give it a name of your own.
+- **A size in `rem` follows the reading size** if you set
+  `:root { font-size: var(--tarmac-prose-size, 14px); }`. A layout with fixed
+  `px` widths does not reflow when the size changes.
+- A script can read a value at any time:
+  `getComputedStyle(document.documentElement).getPropertyValue("--tarmac-mono-font")`.
+- Tarmac adds one stylesheet, last in `document.styleSheets`, and it has no
+  `ownerNode`. A script that loops over the sheets must check for that.
 
 ### Zoom: design for magnify
 
@@ -166,7 +205,9 @@ a table, a diagram, or a static chart.
 
 - [ ] One file. No external `src`, `href`, or `url()` that leaves the document.
 - [ ] All JS inline; no `eval` or `new Function`.
-- [ ] All CSS in a `<style>` block; system font stack.
+- [ ] Fonts: `var(--tarmac-prose-font, <system stack>)` to follow the user's, or
+      a system stack. Every use has a fallback; you never set a `--tarmac-` name.
+- [ ] All CSS in a `<style>` block.
 - [ ] All data embedded as literals; no `fetch`.
 - [ ] Images inline as `data:` URIs, or drawn as SVG.
 - [ ] Sizes use `%`, `px`, `rem` — no `vw`/`vh`, no media queries of size.

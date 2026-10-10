@@ -53,6 +53,14 @@ enum Theme {
 
     static var proseFontSize: Double { fontSizes[.document] ?? FontSizeRule.document.standard }
 
+    /// What an HTML card is given for the fonts in effect.
+    static var cardFonts: CardFontVariables {
+        CardFontVariables(
+            interfaceFamily: fontFamilies[.interface], documentFamily: fontFamilies[.document],
+            documentSize: proseFontSize
+        )
+    }
+
     /// The chrome face: the Interface family, or the system's monospaced
     /// font. A family has a regular and at most a bold, so a weight takes the
     /// nearer of the two, and a family with no bold gives its regular face.

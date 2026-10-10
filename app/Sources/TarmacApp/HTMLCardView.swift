@@ -13,7 +13,7 @@ import WebKit
 /// The document is shielded until it is borrowed: a press selects the card,
 /// a wheel is handed on to the web view, and nothing else reaches it.
 @MainActor
-final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, WKNavigationDelegate {
+final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WKNavigationDelegate {
     /// A double-click on the shield.
     var onBorrow: (() -> Void)?
     /// The borrowed document saw Escape.
@@ -73,6 +73,7 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, WKNavigationDeleg
         addSubview(shield)
         addSubview(console)
         themeChanged()
+        fontsChanged()
         loadPage()
     }
 
@@ -99,6 +100,13 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, WKNavigationDeleg
             "document.documentElement.style.setProperty(name, value)",
             arguments: ["name": backdrop.name, "value": backdrop.value]
         )
+    }
+
+    /// The document is sent the properties and is not loaded or laid out
+    /// again; the session sends nothing when the values are the same.
+    func fontsChanged() {
+        guard let message = session.fontsChanged(Theme.cardFonts) else { return }
+        post(message)
     }
 
     override func layout() {

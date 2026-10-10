@@ -1,11 +1,13 @@
 import JavaScriptCore
 import XCTest
+@testable import TarmacKit
 
 /// The HTML card shim as it ships (`TarmacApp/Resources/Web/card_shim.js`),
 /// run in a stand-in window with stand-in schedulers: the scheduler gate of
-/// spec 2609.0002 (S5–S28, S40–S42) and the zoom handshake of spec 2609.0003
-/// (S8–S10). Scenario ids are per spec and collide — both specs have an S8,
-/// an S9 and an S10 — so a 2609.0003 test names its spec.
+/// spec 2609.0002 (S5–S28, S40–S42), the zoom handshake of spec 2609.0003
+/// (S8–S10) and the font properties of spec 2610.0010 (S8–S20). Scenario ids
+/// are per spec and collide — both specs have an S8, an S9 and an S10 — so a
+/// 2609.0003 or 2610.0010 test names its spec.
 ///
 /// Two rules of the stand-in window make the assertions mean anything:
 ///
@@ -39,8 +41,10 @@ final class CardShimTests: XCTestCase {
       const listeners = new Map();
       const docListeners = new Map();
       const posted = [];
-      const style = {};
+      const rootWrites = [];
+      const style = { setProperty(...args) { rootWrites.push(["setProperty", ...args]); } };
       const observers = [];
+      const sheets = [];
 
       const frames = new Map();
       const timeouts = new Map();
@@ -113,7 +117,7 @@ final class CardShimTests: XCTestCase {
         },
 
         document: {
-          documentElement: { style },
+          documentElement: { style, setAttribute(...args) { rootWrites.push(["setAttribute", ...args]); } },
           addEventListener: (type, fn) => add(docListeners, type, fn),
           querySelector(sel) {
             if (sel === 'meta[name="tarmac-zoom"]' && meta !== null) return { content: meta };
@@ -121,6 +125,22 @@ final class CardShimTests: XCTestCase {
           },
         },
       });
+      // A constructed stylesheet with the rules it was given, and the shim as
+      // far as it had come when the sheet was made. Left out, as in an engine
+      // without them, when `omitNative` is CSSStyleSheet.
+      if (omitNative !== "CSSStyleSheet") {
+        document.adoptedStyleSheets = [];
+        globalThis.CSSStyleSheet = class {
+          constructor() {
+            this.cssRules = [];
+            this.atConstruction = { posted: [...posted], listeners: [...listeners.keys()] };
+            sheets.push(this);
+          }
+          replaceSync(text) {
+            this.cssRules = text === ":root{}" ? [{ selectorText: ":root", style: { values: {}, setProperty(name, value) { this.values[name] = value; } } }] : [];
+          }
+        };
+      }
       const watchers = [];
       let parse;
       if (withHead) {
@@ -135,6 +155,7 @@ final class CardShimTests: XCTestCase {
           ...[...docListeners.keys()].map((type) => `document ${type}`),
           ...observers.map(() => "ResizeObserver"),
           ...watchers.map(() => "MutationObserver"),
+          ...sheets.map(() => "CSSStyleSheet"),
         ];
         // `changes` is the head's history in order: an `append` is a script's
         // (the shim's), a `parse` is the test's.
@@ -202,6 +223,8 @@ final class CardShimTests: XCTestCase {
       globalThis.h = {
         posted,
         style,
+        rootWrites,
+        sheets,
         calls,
         send: (data, source = parent) => emit(listeners, "message", { source, data }),
         fire: (type, event) => emit(listeners, type, event),
@@ -334,9 +357,12 @@ final class CardShimTests: XCTestCase {
         return context
     }
 
-    private func loadShim(meta: String? = "magnify", omitting native: String? = nil, head: Bool = false) throws -> Shim {
+    private func loadShim(
+        meta: String? = "magnify", omitting native: String? = nil, head: Bool = false, fonts: CardFontVariables? = nil
+    ) throws -> Shim {
         let context = try window(meta: meta, omitting: native, head: head)
-        context.evaluateScript(try source())
+        let raw = try source()
+        context.evaluateScript(fonts?.filling(raw) ?? raw)
         return Shim(context: context)
     }
 
@@ -1214,6 +1240,151 @@ final class CardShimTests: XCTestCase {
 
         shim.run("h.domReady()")
         XCTAssertTrue(try shim.hasPosted(["tarmac": "ready", "meta": "magnify"]), "2610.0007 S70: the rest of the shim")
+    }
+
+    // MARK: - the user's fonts as CSS properties (2610.0010 S8–S20)
+
+    private static let fonts = CardFontVariables(interfaceFamily: "Menlo", documentFamily: "Georgia", documentSize: 16)
+    private static let otherFonts = CardFontVariables(interfaceFamily: nil, documentFamily: nil, documentSize: 20)
+
+    /// The properties of the one `:root` rule of the constructed sheet.
+    private func declared(_ shim: Shim, sheet: Int = 0) throws -> [String: String] {
+        let json = shim.run("JSON.stringify(document.adoptedStyleSheets[\(sheet)].cssRules[0].style.values)")
+        let text = try XCTUnwrap(json.isString ? json.toString() : nil, "no rule is declared")
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: String])
+    }
+
+    private func vars(_ fonts: CardFontVariables) throws -> [String: String] {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: Data(fonts.json.utf8)) as? [String: String])
+    }
+
+    private func sendFonts(_ shim: Shim, _ vars: String) {
+        shim.run("h.send({ tarmac: 'fonts', vars: \(vars) })")
+    }
+
+    func test2610_0010S8TheShimHoldsTheMarkerOnceAsAComment() throws {
+        let shim = try source()
+        XCTAssertEqual(shim.components(separatedBy: CardFontVariables.marker).count, 2, "S8: once")
+        XCTAssertTrue(shim.contains("[\(CardFontVariables.marker)][0]"), "S8: alone in the array")
+        XCTAssertTrue(CardFontVariables.marker.hasPrefix("/*"), "S8: a comment")
+    }
+
+    func test2610_0010S10AFilledShimDeclaresTheThreePropertiesBeforeTheDocumentIsParsed() throws {
+        let shim = try loadShim(fonts: Self.fonts)
+        XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 1, "S10: one sheet")
+        XCTAssertEqual(try shim.count("document.adoptedStyleSheets[0].cssRules"), 1, "S10: one rule")
+        XCTAssertEqual(shim.run("document.adoptedStyleSheets[0].cssRules[0].selectorText").toString(), ":root")
+        XCTAssertEqual(try declared(shim), try vars(Self.fonts))
+    }
+
+    func test2610_0010S11TheFontsGoToTheSheetAndNeverToTheRootsStyleOrAttributes() throws {
+        let shim = try loadShim(head: true, fonts: Self.fonts)
+        sendFonts(shim, Self.otherFonts.json)
+
+        XCTAssertEqual(try declared(shim), try vars(Self.otherFonts), "S11: the rule holds the message")
+        XCTAssertEqual(try shim.strings("Object.keys(h.style)"), ["setProperty"], "S11: the root's style holds no value")
+        XCTAssertEqual(try shim.count("h.rootWrites"), 0, "S11: no write on the root")
+        XCTAssertEqual(try shim.strings(Self.headElements), [Self.defaultScheme], "S11: the head")
+    }
+
+    func test2610_0010S12ARawShimDeclaresNothing() throws {
+        let shim = try loadShim(head: true)
+        XCTAssertEqual(try shim.count("h.sheets"), 0, "S12: no sheet is made")
+        XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 0, "S12: none is adopted")
+        shim.run("h.domReady()")
+        XCTAssertTrue(try shim.hasPosted(["tarmac": "ready", "meta": "magnify"]), "S12: the rest of the shim")
+    }
+
+    func test2610_0010S13AWindowWithNoConstructedStylesheetsLoadsAndStillWorks() throws {
+        let shim = try loadShim(omitting: "CSSStyleSheet", fonts: Self.fonts)
+        XCTAssertNil(shim.thrown("h.send({ tarmac: 'fonts', vars: { '--tarmac-prose-size': '20px' } })"), "S13: a message")
+        shim.run("h.domReady()")
+        XCTAssertTrue(try shim.hasPosted(["tarmac": "ready", "meta": "magnify"]), "S13: ready")
+        shim.run("h.send({ tarmac: 'zoom', z: 3 })")
+        XCTAssertEqual(shim.number("h.style.zoom"), 3, "S13: zoom")
+        shim.pause()
+        XCTAssertFalse(try shim.stillRunning(), "S13: cull")
+    }
+
+    func test2610_0010S14TheFontsBlockRunsAfterTheStartedPostAndBeforeTheFirstListener() throws {
+        let shim = try loadShim(head: true, fonts: Self.fonts)
+        XCTAssertEqual(try shim.count("h.sheets"), 1, "S14: one construction")
+        XCTAssertEqual(try shim.strings(Self.headElements), [Self.defaultScheme], "S14: the block added no head element")
+        XCTAssertEqual(try shim.posted().count, 1, "S14: one message by now")
+        XCTAssertEqual(
+            shim.run("JSON.stringify(h.sheets[0].atConstruction.posted)").toString(), #"[{"tarmac":"started"}]"#,
+            "S14: after started"
+        )
+        XCTAssertEqual(try shim.strings("h.sheets[0].atConstruction.listeners"), [], "S14: before the first listener")
+    }
+
+    func test2610_0010S17AMessageSetsTheNewValuesAndALaterOneReplacesThem() throws {
+        let shim = try loadShim(fonts: Self.fonts)
+        sendFonts(shim, "{ '--tarmac-prose-size': '20px' }")
+        var expected = try vars(Self.fonts)
+        expected["--tarmac-prose-size"] = "20px"
+        XCTAssertEqual(try declared(shim), expected, "S17: one property named")
+
+        sendFonts(shim, Self.otherFonts.json)
+        XCTAssertEqual(try declared(shim), try vars(Self.otherFonts), "S17: all three named")
+        XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 1, "S17: still one sheet")
+    }
+
+    func test2610_0010S18AMessageWithNoObjectOfVarsChangesNothing() throws {
+        let shim = try loadShim(fonts: Self.fonts)
+        for bad in ["undefined", "null", "['--tarmac-prose-size']", "'--tarmac-prose-size'", "7"] {
+            sendFonts(shim, bad)
+            XCTAssertEqual(try declared(shim), try vars(Self.fonts), bad)
+        }
+    }
+
+    func test2610_0010S18AnEntryIsSkippedUnlessItsNameStartsWithTarmacAndItsValueIsAString() throws {
+        let shim = try loadShim(fonts: Self.fonts)
+        sendFonts(shim, """
+        { 'color': 'red', '--other': 'x', '--tarmac-prose-size': 20, '--tarmac-mono-font': null,
+          '--tarmac-prose-font': 'serif' }
+        """)
+        var expected = try vars(Self.fonts)
+        expected["--tarmac-prose-font"] = "serif"
+        XCTAssertEqual(try declared(shim), expected)
+    }
+
+    func test2610_0010S18AMessageNotFromTheParentIsIgnored() throws {
+        let shim = try loadShim(fonts: Self.fonts)
+        shim.run("h.send({ tarmac: 'fonts', vars: { '--tarmac-prose-size': '99px' } }, {})")
+        XCTAssertEqual(try declared(shim), try vars(Self.fonts))
+
+        let raw = try loadShim()
+        raw.run("h.send({ tarmac: 'fonts', vars: { '--tarmac-prose-size': '99px' } }, {})")
+        XCTAssertEqual(try raw.count("h.sheets"), 0, "no sheet is made for it")
+    }
+
+    func test2610_0010S19AMessageIsAppliedAtOnceAndTheLoadChangesNothingAfterIt() throws {
+        for (shim, pageSheets) in [(try loadShim(fonts: Self.fonts), 0), (try loadShim(), 1)] {
+            if pageSheets > 0 { shim.run("document.adoptedStyleSheets = [{ page: true }]") }
+            sendFonts(shim, Self.otherFonts.json)
+            XCTAssertEqual(try declared(shim, sheet: pageSheets), try vars(Self.otherFonts), "S19: before DOMContentLoaded")
+
+            shim.run("h.domReady()")
+            XCTAssertEqual(try declared(shim, sheet: pageSheets), try vars(Self.otherFonts), "S19: after it")
+            XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 1 + pageSheets, "S19: the sheets")
+            XCTAssertEqual(shim.flag("document.adoptedStyleSheets[0].page === true"), pageSheets > 0, "S19: the page's own sheet first")
+        }
+    }
+
+    func test2610_0010S20AMessageSchedulesNothingLeavesTheZoomAloneAndIsAppliedWhilePaused() throws {
+        let shim = try loadShim(fonts: Self.fonts)
+        let scheduled = "JSON.stringify([h.calls, h.pendingFrameIds(), h.pendingTimeoutIds()])"
+        let before = shim.run(scheduled).toString()
+        sendFonts(shim, Self.otherFonts.json)
+        XCTAssertEqual(shim.run(scheduled).toString(), before)
+        XCTAssertEqual(shim.flag("'zoom' in h.style"), false, "S20: no zoom")
+        XCTAssertEqual(try declared(shim), try vars(Self.otherFonts), "S20: live")
+
+        shim.pause()
+        sendFonts(shim, "{ '--tarmac-prose-size': '18px' }")
+        XCTAssertEqual(try declared(shim)["--tarmac-prose-size"], "18px", "S20: paused")
+        XCTAssertFalse(try shim.stillRunning(), "S20: still paused")
     }
 
     // MARK: - the document tells its host that it has started (#213)
