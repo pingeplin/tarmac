@@ -5,13 +5,14 @@
 use std::path::Path;
 use std::time::Duration;
 
-/// The burst window docs/protocol.md gives a `file_event`: the watcher wakes
-/// the daemon one time for a burst, and `docs::watch_loop` leaves this long
-/// between two looks.
-pub const BURST: Duration = Duration::from_millis(100);
-
 use notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache, new_debouncer};
+
+/// The burst window docs/protocol.md gives a `file_event`. `docs::watch_loop`
+/// leaves this long between two looks. The debouncer of `NotifySource` wakes
+/// the daemon when a path has had no event of one kind for this long, so for
+/// a file that is written with no such gap: when the writes stop (#258).
+pub const BURST: Duration = Duration::from_millis(100);
 
 pub trait WakeSource: Send {
     fn watch(&mut self, dir: &Path) -> anyhow::Result<()>;
@@ -24,7 +25,7 @@ pub trait WakeSource: Send {
 pub struct NotifySource(Debouncer<RecommendedWatcher, RecommendedCache>);
 
 impl NotifySource {
-    /// `wake` runs on the watcher's thread, one time for each burst of events.
+    /// `wake` runs on the watcher's thread, for each batch of the debouncer.
     pub fn new(wake: impl Fn() + Send + 'static) -> anyhow::Result<Self> {
         let debouncer = new_debouncer(BURST, None, move |res: DebounceEventResult| {
             if let Err(errors) = res {

@@ -328,7 +328,12 @@ another file of a watched directory wakes the daemon: the app then reads the
 file as it is at that moment, and the next look corrects it. And the files are
 read on the task that looks, under `looking`: a stat that does not return (a
 network volume that is gone) holds every later look, and a board switch with
-it.
+it (#259).
+
+One limit of the watcher itself, older than the look: the debouncer wakes the
+daemon for a path only when its events have stopped for `BURST`. A file that
+is written with no such gap gets no `FileEvent` until the writes stop, unless
+something else makes the daemon look (#258).
 
 The watcher is behind `WakeSource` (`watch.rs`): `watch(dir)`, `unwatch(dir)`,
 and a wake that carries no detail. So a change whose wake was lost is reported
