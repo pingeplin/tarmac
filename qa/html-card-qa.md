@@ -66,3 +66,29 @@ execution and on a timer), then `tarmac open <file>`.
       in card JS: the entry lands as string placeholders (`function…`,
       `[BODY]`, `{"self":"[circular]"}`), no error, and subsequent
       `console.log("still alive")` still arrives.
+
+## S18 — the sandbox probe
+
+- [ ] `tarmac open qa/sandbox-probe.html`: the card reads
+      `VERDICT: SEALED (0/11 escapes)`.
+- [ ] A listener on `127.0.0.1:8737` that is up before the card opens gets no
+      connection while the card loads.
+
+**Run:** 2026-10-10 (#234), macOS 26.7, debug builds of `72b4c43` from
+`make run DEV_DIR=<new dir under .dev/>`. The listener logged each TCP
+connection, also one with no bytes. A new load of the card was made by a write
+of the file, with a run number in the heading.
+
+| Build | Probe | Loads | Verdict on the card | Connections |
+| --- | --- | --- | --- | --- |
+| `72b4c43` | before #234 | 6 | `LEAKY (1/11 escapes)`, the one is `navigator.sendBeacon`; read on loads 1, 3 and 6 | 0 |
+| `72b4c43` | after #234 | 4 | `SEALED (0/11 escapes)`; read on loads 1 and 4 | 0 |
+| `72b4c43` + `connect-src http://127.0.0.1:8737` in `CardProtocol.csp` | after #234 | 2 | `LEAKY (3/11 escapes)`: fetch, XMLHttpRequest, sendBeacon; read on load 2 | 3 on each load: `GET /probe-fetch`, `GET /probe-xhr`, `POST /probe-beacon` |
+| the same | before #234 | 1 | `LEAKY (3/11 escapes)`, the same three | the same 3 |
+
+So no request left the card, and the old verdict was wrong: WebKit's
+`sendBeacon` returns `true` also when the content policy refuses the request.
+The probe now reads the refusal from the `securitypolicyviolation` event
+(`connect-src`). The third row is the control: with the policy opened for that
+one origin the listener gets the beacon, and the probe still calls it an escape.
+The policy change was local and was taken out again.
