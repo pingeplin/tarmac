@@ -9,21 +9,11 @@ mod common;
 use std::time::Duration;
 
 use common::{
-    Conn, TestDaemon, cli_open, doc_entry, dock_index, has_doc, is_file_event_for, mtime_ms, none_within, touch,
-    write_doc,
+    Conn, TestDaemon, cli_open, doc_entry, dock_index, has_doc, is_file_event_for, mtime_ms, none_within, quiet,
+    touch, wait_for_last_changed, write_doc,
 };
 use serde_json::json;
 use tarmac_protocol::Msg;
-
-// Lets the watcher go quiet before an event is attributed to the refresh: the
-// file_event of an earlier edit that is still on its way would be mistaken for the
-// refresh's. That is the vacuity this suite is arranged to avoid, so every test
-// that later attributes an event to the refresh settles first. (FSEvents also
-// replays the file's creation to a watch that was just attached. Since #256 that
-// pushes nothing: the file is as the daemon saw it at the open.)
-fn settle_watcher(app: &mut Conn, path: &str) {
-    let _ = none_within(app, Duration::from_millis(800), |m| is_file_event_for(m, path));
-}
 
 // The refresh's own file_event. Fails loudly if a doc_opened or an err arrives
 // instead — a refresh is not a re-open, and a no-op is silent, not an error.
@@ -37,19 +27,11 @@ fn recv_refresh_event(app: &mut Conn, path: &str) -> u64 {
     mtime_ms
 }
 
-// Park a doc on a freshly created board that is NOT the active one: create board-1
-// (BoardCreate makes it active), switch back to board-0, then open onto board-1.
+// Park a doc on a freshly created board that is NOT the active one.
 fn open_on_background_board(app: &mut Conn, path: &str) {
-    app.send(&Msg::BoardCreate);
-    app.recv_restore();
-    app.send(&Msg::BoardSwitch { board_id: "board-0".into() });
-    app.recv_restore();
-    app.send(&Msg::Open { path: path.into(), term_id: None, board_id: Some("board-1".into()) });
-    app.recv_doc_opened_for(path);
-}
-
-fn wait_for_last_changed(daemon: &TestDaemon, what: &str, board: usize, path: &str, want: serde_json::Value) {
-    daemon.wait_for_state(what, |v| doc_entry(v, board, path)["last_changed_ms"] == want);
+    app.create_board("board-1");
+    app.switch_to("board-0");
+    app.open_on("board-1", path);
 }
 
 // S3: a refresh after a real edit pushes the file's CURRENT mtime, and no
@@ -66,7 +48,7 @@ fn doc_refresh_pushes_the_files_current_mtime() {
     app.recv_doc_opened();
 
     // Settle the open, then edit and consume the watcher's own event for that edit.
-    settle_watcher(&mut app, &a);
+    quiet(&mut app, &a);
     touch(&a);
     app.recv_file_event_for(&a);
 
@@ -104,7 +86,7 @@ fn doc_refresh_records_the_mtime_durably_and_changes_nothing_else() {
     daemon.wait_for_state("both docs persisted", |v| has_doc(v, 0, &a) && has_doc(v, 0, &z));
     let before = doc_entry(&daemon.state_json(), 0, &a);
 
-    settle_watcher(&mut app, &a);
+    quiet(&mut app, &a);
     touch(&a);
     app.recv_file_event_for(&a);
     app.send(&Msg::DocRefresh { path: a.clone() });
@@ -193,13 +175,13 @@ fn doc_refresh_pushes_even_when_the_mtime_is_unchanged() {
     cli_open(&daemon.sock, &a);
     app.recv_doc_opened();
 
-    settle_watcher(&mut app, &a);
+    quiet(&mut app, &a);
     touch(&a);
     let reported = app.recv_file_event_for(&a);
     assert_eq!(reported, mtime_ms(&a), "the watcher must have reported the edit, not an earlier event");
 
     // Nothing touches the file from here on; settle so the next event is the refresh's.
-    settle_watcher(&mut app, &a);
+    quiet(&mut app, &a);
     app.send(&Msg::DocRefresh { path: a.clone() });
 
     assert_eq!(
@@ -223,7 +205,7 @@ fn doc_refresh_works_on_a_doc_nothing_has_written_since_open() {
     cli_open(&daemon.sock, &a);
     app.recv_doc_opened();
 
-    settle_watcher(&mut app, &a);
+    quiet(&mut app, &a);
 
     app.send(&Msg::DocRefresh { path: a.clone() });
     let pushed = recv_refresh_event(&mut app, &a);
@@ -241,7 +223,7 @@ fn doc_refresh_is_idempotent_on_repeat() {
     let a = write_doc(&daemon.dir.join("docs/a.md"), "a\n");
     cli_open(&daemon.sock, &a);
     app.recv_doc_opened();
-    settle_watcher(&mut app, &a);
+    quiet(&mut app, &a);
 
     app.send(&Msg::DocRefresh { path: a.clone() });
     let first = recv_refresh_event(&mut app, &a);
@@ -317,9 +299,6 @@ fn doc_refresh_on_a_deleted_file_emits_nothing() {
     );
 }
 
-// S21 and S22 — a refresh delivers a change that the daemon has not seen, and it
-// stats the file, it does not replay what the registry has — are unit tests of
-// `Daemon` with a watcher that never wakes it (`state.rs`). They were built here on
-// an edit made while the doc's board was in the background, which a switch left
-// unseen. Since #256 the switch to the board reports that edit itself
-// (`doc_changes_integration.rs`), so over the socket nothing is left unseen.
+// S21 and S22 are `a_refresh_reports_a_change_that_no_wake_told_of` and
+// `a_refresh_stats_the_file_and_does_not_replay_what_is_recorded` in `src/state.rs`:
+// over the socket no change stays unseen long enough to refresh it.

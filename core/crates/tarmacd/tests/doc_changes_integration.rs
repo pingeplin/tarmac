@@ -7,53 +7,24 @@ mod common;
 
 use std::time::{Duration, SystemTime};
 
-use common::{
-    Conn, Restore, TestDaemon, doc_entry, has_doc, is_file_event_for, mtime_ms, none_within, touch, write_doc,
-};
+use common::{TestDaemon, edit, has_doc, mtime_ms, none_within, quiet, wait_for_last_changed, write_doc};
 use serde_json::json;
 use tarmac_protocol::Msg;
-
-fn quiet(app: &mut Conn, path: &str) -> bool {
-    none_within(app, Duration::from_millis(800), |m| is_file_event_for(m, path))
-}
-
-fn open_on(app: &mut Conn, board: &str, path: &str) {
-    app.send(&Msg::Open { path: path.into(), term_id: None, board_id: Some(board.into()) });
-    app.recv_doc_opened_for(path);
-}
-
-fn switch_to(app: &mut Conn, board: &str) -> Restore {
-    app.send(&Msg::BoardSwitch { board_id: board.into() });
-    app.recv_restore_for(board)
-}
-
-fn last_changed(restore: &Restore, path: &str) -> Option<u64> {
-    restore.docs.iter().find(|d| d.path == path).expect("the doc is on the board").last_changed_ms
-}
-
-// board-1 is made and left active.
-fn two_boards(app: &mut Conn) {
-    app.send(&Msg::BoardCreate);
-    app.recv_restore_for("board-1");
-}
 
 #[test]
 fn a_change_in_the_background_is_reported_when_its_board_is_shown() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     let y = write_doc(&daemon.dir.join("docs/y.md"), "y\n");
-    two_boards(&mut app);
-    open_on(&mut app, "board-1", &y);
-    // FSEvents replays the file's creation to a watch that was just attached.
-    quiet(&mut app, &y);
+    app.create_board("board-1");
+    app.open_on("board-1", &y);
 
-    switch_to(&mut app, "board-0");
-    touch(&y);
-    let edited = mtime_ms(&y);
+    app.switch_to("board-0");
+    let edited = edit(&y);
     assert!(quiet(&mut app, &y), "board-0 is active and does not have the doc");
 
-    let restore = switch_to(&mut app, "board-1");
-    assert_eq!(last_changed(&restore, &y), Some(edited), "the restore carries the change");
+    let restore = app.switch_to("board-1");
+    assert_eq!(restore.last_changed(&y), Some(edited), "the restore carries the change");
     assert_eq!(app.recv_file_event_for(&y), edited, "and a file_event follows it");
     // Another file of the directory wakes the daemon for one more look.
     write_doc(&daemon.dir.join("docs/other.txt"), "other\n");
@@ -66,17 +37,15 @@ fn deleting_the_active_board_reports_the_changes_of_the_board_that_is_shown() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     let y = write_doc(&daemon.dir.join("docs/y.md"), "y\n");
-    open_on(&mut app, "board-0", &y);
-    quiet(&mut app, &y);
-    two_boards(&mut app);
+    app.open_on("board-0", &y);
+    app.create_board("board-1");
 
-    touch(&y);
-    let edited = mtime_ms(&y);
+    let edited = edit(&y);
     assert!(quiet(&mut app, &y), "board-1 is active and does not have the doc");
 
     app.send(&Msg::BoardDelete { board_id: "board-1".into() });
     let restore = app.recv_restore_for("board-0");
-    assert_eq!(last_changed(&restore, &y), Some(edited));
+    assert_eq!(restore.last_changed(&y), Some(edited));
     assert_eq!(app.recv_file_event_for(&y), edited);
 }
 
@@ -88,20 +57,18 @@ fn a_change_made_with_no_app_connected_is_reported_at_the_connect() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     let y = write_doc(&daemon.dir.join("docs/y.md"), "y\n");
-    open_on(&mut app, "board-0", &y);
-    quiet(&mut app, &y);
+    app.open_on("board-0", &y);
     drop(app);
     // The daemon sees the disconnect, then the watcher's wake for the edit passes.
     std::thread::sleep(Duration::from_millis(300));
-    touch(&y);
-    let edited = mtime_ms(&y);
+    let edited = edit(&y);
     // Saved with no app, so a daemon that stops here keeps the time of the change.
-    daemon.wait_for_state("the change in the state file", |v| doc_entry(v, 0, &y)["last_changed_ms"] == json!(edited));
+    wait_for_last_changed(&daemon, "the change in the state file", 0, &y, json!(edited));
     std::thread::sleep(Duration::from_millis(300));
 
     let mut app = daemon.connect_app();
     let restore = app.recv_restore_for("board-0");
-    assert_eq!(last_changed(&restore, &y), Some(edited));
+    assert_eq!(restore.last_changed(&y), Some(edited));
     assert_eq!(app.recv_file_event_for(&y), edited);
 }
 
@@ -111,8 +78,7 @@ fn a_change_that_keeps_the_mtime_is_reported() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     let y = write_doc(&daemon.dir.join("docs/y.md"), "y\n");
-    open_on(&mut app, "board-0", &y);
-    quiet(&mut app, &y);
+    app.open_on("board-0", &y);
 
     let kept = std::fs::metadata(&y).unwrap().modified().unwrap();
     let kept_ms = mtime_ms(&y);
@@ -131,22 +97,20 @@ fn a_doc_on_two_boards_is_reported_to_each_board() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     let y = write_doc(&daemon.dir.join("docs/y.md"), "y\n");
-    open_on(&mut app, "board-0", &y);
-    two_boards(&mut app);
-    open_on(&mut app, "board-1", &y);
-    switch_to(&mut app, "board-0");
-    quiet(&mut app, &y);
+    app.open_on("board-0", &y);
+    app.create_board("board-1");
+    app.open_on("board-1", &y);
+    app.switch_to("board-0");
 
-    touch(&y);
-    let edited = mtime_ms(&y);
+    let edited = edit(&y);
     assert_eq!(app.recv_file_event_since(&y, edited), edited, "board-0 is active and has the doc");
 
-    let restore = switch_to(&mut app, "board-1");
-    assert_eq!(last_changed(&restore, &y), Some(edited), "board-1 has its own record of the change");
+    let restore = app.switch_to("board-1");
+    assert_eq!(restore.last_changed(&y), Some(edited), "board-1 has its own record of the change");
     assert_eq!(app.recv_file_event_for(&y), edited);
 
-    let restore = switch_to(&mut app, "board-0");
-    assert_eq!(last_changed(&restore, &y), Some(edited));
+    let restore = app.switch_to("board-0");
+    assert_eq!(restore.last_changed(&y), Some(edited));
     assert!(quiet(&mut app, &y), "board-0 was told when the file changed");
 }
 
@@ -157,18 +121,16 @@ fn a_restart_keeps_the_time_of_a_change_and_reports_nothing() {
     let mut daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     let doc = write_doc(&daemon.dir.join("docs/a.md"), "a\n");
-    open_on(&mut app, "board-0", &doc);
-    quiet(&mut app, &doc);
-    touch(&doc);
-    let edited = mtime_ms(&doc);
+    app.open_on("board-0", &doc);
+    let edited = edit(&doc);
     assert_eq!(app.recv_file_event_since(&doc, edited), edited);
-    daemon.wait_for_state("the change in the state file", |v| doc_entry(v, 0, &doc)["last_changed_ms"] == json!(edited));
+    wait_for_last_changed(&daemon, "the change in the state file", 0, &doc, json!(edited));
     drop(app);
 
     daemon.restart();
     let mut app = daemon.connect_app();
     let restore = app.recv_restore_for("board-0");
-    assert_eq!(last_changed(&restore, &doc), Some(edited));
+    assert_eq!(restore.last_changed(&doc), Some(edited));
     assert!(quiet(&mut app, &doc), "the app that built its cards from this restore needs no file_event");
 }
 
@@ -186,15 +148,14 @@ fn a_switch_reports_nothing_for_a_doc_that_did_not_change() {
         .unwrap()
         .set_modified(SystemTime::now() + Duration::from_secs(3600))
         .unwrap();
-    two_boards(&mut app);
-    open_on(&mut app, "board-1", &same);
-    open_on(&mut app, "board-1", &future);
-    none_within(&mut app, Duration::from_millis(800), |m| matches!(m, Msg::FileEvent { .. }));
+    app.create_board("board-1");
+    app.open_on("board-1", &same);
+    app.open_on("board-1", &future);
 
-    switch_to(&mut app, "board-0");
-    let restore = switch_to(&mut app, "board-1");
-    assert_eq!(last_changed(&restore, &same), None);
-    assert_eq!(last_changed(&restore, &future), None);
+    app.switch_to("board-0");
+    let restore = app.switch_to("board-1");
+    assert_eq!(restore.last_changed(&same), None);
+    assert_eq!(restore.last_changed(&future), None);
     assert!(
         none_within(&mut app, Duration::from_millis(800), |m| matches!(m, Msg::FileEvent { .. })),
         "no doc changed"
@@ -208,18 +169,18 @@ fn a_restart_reports_nothing_for_a_doc_that_did_not_change() {
     let mut daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     let doc = write_doc(&daemon.dir.join("docs/a.md"), "a\n");
-    open_on(&mut app, "board-0", &doc);
+    app.open_on("board-0", &doc);
     daemon.wait_for_state("the doc in the state file", |v| has_doc(v, 0, &doc));
+    // A file_event that the open must not send would reach the state file here.
     quiet(&mut app, &doc);
     drop(app);
 
     daemon.restart();
     let mut app = daemon.connect_app();
     let restore = app.recv_restore_for("board-0");
-    assert_eq!(last_changed(&restore, &doc), None);
+    assert_eq!(restore.last_changed(&doc), None);
     assert!(quiet(&mut app, &doc), "the file is as it was");
 
-    touch(&doc);
-    let edited = mtime_ms(&doc);
+    let edited = edit(&doc);
     assert_eq!(app.recv_file_event_since(&doc, edited), edited, "and a change after the start is reported");
 }

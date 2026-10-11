@@ -215,6 +215,23 @@ impl Conn {
         }))
     }
 
+    /// `board_create`: the daemon names the new board `id` and makes it active.
+    pub fn create_board(&mut self, id: &str) -> Restore {
+        self.send(&Msg::BoardCreate);
+        self.recv_restore_for(id)
+    }
+
+    pub fn switch_to(&mut self, board: &str) -> Restore {
+        self.send(&Msg::BoardSwitch { board_id: board.into() });
+        self.recv_restore_for(board)
+    }
+
+    /// An app open of `path` onto `board`, whatever board is active.
+    pub fn open_on(&mut self, board: &str, path: &str) {
+        self.send(&Msg::Open { path: path.into(), term_id: None, board_id: Some(board.into()) });
+        self.recv_doc_opened_for(path);
+    }
+
     pub fn recv_doc_opened(&mut self) -> DocEntry {
         let msg = self.recv_until("doc_opened", |m| matches!(m, Msg::DocOpened(_)));
         let Msg::DocOpened(entry) = msg else { unreachable!() };
@@ -326,6 +343,12 @@ pub struct Restore {
     pub live_terms: Vec<String>,
 }
 
+impl Restore {
+    pub fn last_changed(&self, path: &str) -> Option<u64> {
+        self.docs.iter().find(|d| d.path == path).expect("the doc is on the board").last_changed_ms
+    }
+}
+
 impl From<Msg> for Restore {
     fn from(msg: Msg) -> Self {
         let Msg::Restore { board_id, docs, tiles, board, live_terms } = msg else {
@@ -377,6 +400,13 @@ pub fn is_file_event_for(msg: &Msg, want: &str) -> bool {
     matches!(msg, Msg::FileEvent { path, .. } if path == want)
 }
 
+/// True when no `file_event` for `path` comes for 800 ms. With the result
+/// dropped it lets the watcher go quiet: a `file_event` of an earlier edit that
+/// is still on its way would be taken for the one a test waits for next.
+pub fn quiet(conn: &mut Conn, path: &str) -> bool {
+    none_within(conn, Duration::from_millis(800), |m| is_file_event_for(m, path))
+}
+
 /// Appends `bytes`, which bumps the mtime and produces a watcher event.
 pub fn append_to(path: impl AsRef<Path>, bytes: &[u8]) {
     let mut f = std::fs::OpenOptions::new().append(true).open(path).unwrap();
@@ -386,6 +416,12 @@ pub fn append_to(path: impl AsRef<Path>, bytes: &[u8]) {
 
 pub fn touch(path: impl AsRef<Path>) {
     append_to(path, b"\n");
+}
+
+/// `touch`, and the mtime the file has after it.
+pub fn edit(path: impl AsRef<Path>) -> u64 {
+    touch(&path);
+    mtime_ms(path)
 }
 
 /// The file's mtime, truncated exactly as the daemon truncates it for a file_event.
@@ -411,6 +447,10 @@ pub fn doc_entry(v: &serde_json::Value, board: usize, path: &str) -> serde_json:
         .and_then(|docs| docs.iter().find(|e| e["path"] == serde_json::json!(path)))
         .cloned()
         .unwrap_or(serde_json::Value::Null)
+}
+
+pub fn wait_for_last_changed(daemon: &TestDaemon, what: &str, board: usize, path: &str, want: serde_json::Value) {
+    daemon.wait_for_state(what, |v| doc_entry(v, board, path)["last_changed_ms"] == want);
 }
 
 pub fn has_doc(v: &serde_json::Value, board: usize, path: &str) -> bool {

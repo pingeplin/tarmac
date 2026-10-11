@@ -38,6 +38,18 @@ pub struct FileStamp {
     pub inode: u64,
 }
 
+impl DocInfo {
+    /// Takes the file as it is: what was seen, the time of its change, and
+    /// nothing left to tell. Returns that time in ms.
+    fn see(&mut self, stamp: FileStamp) -> u64 {
+        self.seen = Some(stamp);
+        self.untold = false;
+        let ms = epoch_ms(stamp.mtime);
+        self.last_changed_ms = Some(ms);
+        ms
+    }
+}
+
 pub fn epoch_ms(t: SystemTime) -> u64 {
     t.duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
@@ -121,21 +133,27 @@ impl Registry {
             if info.seen == *stamp {
                 continue;
             }
-            info.seen = *stamp;
-            // What was held is out of date: the file changed again, and is
-            // told now, or it is gone, and a file that is gone is not told.
-            info.untold = false;
-            if let Some(stamp) = stamp {
-                let ms = epoch_ms(stamp.mtime);
-                info.last_changed_ms = Some(ms);
-                changes.push((path.clone(), ms));
+            match stamp {
+                Some(stamp) => changes.push((path.clone(), info.see(*stamp))),
+                // A file that is gone is not told, also when its last change
+                // was held.
+                None => {
+                    info.seen = None;
+                    info.untold = false;
+                }
             }
         }
         changes
     }
 
+    /// `doc_refresh`: takes the file as seen whether or not it differs, and
+    /// returns its mtime in ms. `None` for an unknown path.
+    pub fn refresh(&mut self, path: &Path, stamp: FileStamp) -> Option<u64> {
+        Some(self.docs.get_mut(path)?.see(stamp))
+    }
+
     /// The `file_event` for `path` reached no app.
-    pub fn hold(&mut self, path: &Path) {
+    fn hold(&mut self, path: &Path) {
         if let Some(info) = self.docs.get_mut(path) {
             info.untold = true;
         }
@@ -548,6 +566,20 @@ mod tests {
         let mut reg = Registry::empty();
         reg.hold(Path::new("/d/gone.md"));
         assert_eq!(reg.take_untold(), vec![]);
+    }
+
+    #[test]
+    fn a_refresh_takes_the_file_as_seen_and_as_told() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut reg = registry_that_saw(&doc, at(10));
+        reg.take_changes(&now(&doc, at(20)));
+        reg.hold(&doc);
+
+        assert_eq!(reg.refresh(&doc, at(30).unwrap()), Some(30_000));
+        assert_eq!(reg.docs[&doc].last_changed_ms, Some(30_000));
+        assert_eq!(reg.take_changes(&now(&doc, at(30))), vec![], "the file is as the refresh saw it");
+        assert_eq!(reg.take_untold(), vec![], "the refresh told it");
+        assert_eq!(reg.refresh(Path::new("/d/other.md"), at(30).unwrap()), None);
     }
 
     // "If the file is deleted, stop emitting until the path exists again."

@@ -154,7 +154,7 @@ async fn change_and_send_active_board(
             // What changed while this board was in the background, taken
             // before the restore is built so that it carries each new
             // `last_changed_ms`.
-            let (tell, recorded) = docs::take_to_tell(boards.active_registry_mut(), now);
+            let tell = docs::take_to_tell(daemon, boards.active_registry_mut(), now);
             let active_id = boards.active_id().to_string();
             let live_terms = by_board.get(&active_id).cloned().unwrap_or_default();
             Some((
@@ -163,14 +163,10 @@ async fn change_and_send_active_board(
                 active_id,
                 live_terms,
                 tell,
-                recorded,
             ))
         })
         .await;
-    let Some((board_list, restore, active_id, live_terms, tell, recorded)) = sent else { return false };
-    if recorded {
-        daemon.mark_dirty();
-    }
+    let Some((board_list, restore, active_id, live_terms, tell)) = sent else { return false };
     let first = conn.replayed.insert(active_id.clone());
     // Snapshot before sending the restore: a chunk produced after this is
     // delivered live and arrives before the restore (FIFO) while the term is
@@ -181,8 +177,7 @@ async fn change_and_send_active_board(
     // After the restore: the app reads a doc of a board it has already built
     // again on a `file_event` only.
     for (path, mtime_ms) in tell {
-        let event = Msg::FileEvent { path: path.to_string_lossy().into_owned(), mtime_ms };
-        if conn.tx.send(event).await.is_err() {
+        if conn.tx.send(docs::file_event(&path, mtime_ms)).await.is_err() {
             daemon.boards.lock().await.hold(&active_id, &path);
         }
     }

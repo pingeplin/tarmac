@@ -8,10 +8,10 @@ use std::time::Duration;
 use notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache, new_debouncer};
 
-/// The burst window docs/protocol.md gives a `file_event`. `docs::watch_loop`
-/// leaves this long between two looks. The debouncer of `NotifySource` wakes
-/// the daemon when a path has had no event of one kind for this long, so for
-/// a file that is written with no such gap: when the writes stop (#258).
+/// The burst window docs/protocol.md gives a `file_event`: the time between
+/// two looks of `docs::watch_loop`, and the quiet time after which the
+/// debouncer of `NotifySource` wakes the daemon for a path. A file that is
+/// written with no such gap wakes it when the writes stop (#258).
 pub const BURST: Duration = Duration::from_millis(100);
 
 pub trait WakeSource: Send {
