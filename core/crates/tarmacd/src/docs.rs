@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -145,49 +145,11 @@ pub async fn watch_loop(daemon: Arc<Daemon>, mut rx: UnboundedReceiver<DebounceE
     }
 }
 
-/// The mtime of each registered doc's file, `None` for a file that is not
-/// there: what `push_changes_since` compares with.
-pub async fn doc_mtimes(daemon: &Arc<Daemon>) -> HashMap<PathBuf, Option<u64>> {
-    let paths: HashSet<PathBuf> = {
-        let boards = daemon.boards.lock().await;
-        boards.iter().flat_map(|b| b.registry.docs.keys().cloned()).collect()
-    };
-    paths.into_iter().map(|path| { let mtime = mtime_ms(&path); (path, mtime) }).collect()
-}
-
-/// Reports each doc of the active board whose file is not what it was when
-/// `before` was taken. The FSEvents stream restarts on every change of the
-/// watch set and reports nothing from the gap, so a caller that drops many
-/// watches takes `doc_mtimes` first and runs this after.
-pub async fn push_changes_since(daemon: &Arc<Daemon>, before: &HashMap<PathBuf, Option<u64>>) {
-    for (path, &was) in before {
-        let Some(now) = mtime_ms(path) else { continue };
-        let reported = {
-            let boards = daemon.boards.lock().await;
-            let Some(info) = boards.active_registry().docs.get(path) else { continue };
-            info.last_changed_ms
-        };
-        if changed_unreported(was, now, reported) {
-            stat_and_push(daemon, path).await;
-        }
-    }
-}
-
-/// True for a file whose mtime `now` is not the one it had (`was`), unless
-/// the watcher has reported that mtime already.
-fn changed_unreported(was: Option<u64>, now: u64, reported: Option<u64>) -> bool {
-    was != Some(now) && reported != Some(now)
-}
-
-fn mtime_ms(path: &Path) -> Option<u64> {
-    std::fs::metadata(path).and_then(|meta| meta.modified()).map(epoch_ms).ok()
-}
-
 /// Stat `path` and, if it is a doc on the ACTIVE board, record the real mtime and
 /// push `file_event`. Returns whether it pushed.
 ///
-/// The sole producer of `Msg::FileEvent`: the notify watcher, the on-demand
-/// `doc_refresh` and `push_changes_since` share it, so the always-push rule (the mtime goes out changed
+/// The sole producer of `Msg::FileEvent`: the notify watcher and the on-demand
+/// `doc_refresh` share it, so the always-push rule (the mtime goes out changed
 /// or not — "did anything change" is answered app-side by value) and the
 /// active-board scoping are defined once. The registry lookup doubles as that
 /// scoping check, which is why an unknown path costs one lock and no push.
@@ -208,21 +170,4 @@ pub async fn stat_and_push(daemon: &Arc<Daemon>, path: &Path) -> bool {
         .push(Msg::FileEvent { path: path.to_string_lossy().into_owned(), mtime_ms })
         .await;
     true
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_file_that_is_not_what_it_was_and_was_not_reported_is_a_change() {
-        assert!(changed_unreported(Some(100), 150, None));
-        assert!(changed_unreported(Some(100), 150, Some(100)));
-        assert!(changed_unreported(Some(100), 40, None), "a replaced file can have an older mtime");
-        assert!(changed_unreported(None, 150, None), "the file was not there before");
-
-        assert!(!changed_unreported(Some(100), 100, None), "the same file");
-        assert!(!changed_unreported(Some(100), 100, Some(60)));
-        assert!(!changed_unreported(Some(100), 150, Some(150)), "the watcher reported it already");
-    }
 }

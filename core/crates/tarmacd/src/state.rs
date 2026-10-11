@@ -26,11 +26,25 @@ pub struct AppSlot {
 pub struct WatcherState {
     debouncer: Debouncer<RecommendedWatcher, RecommendedCache>,
     /// The registered docs in each directory, one for each board that has the
-    /// doc. A directory is watched from its first doc to its last.
+    /// doc. A directory is watched from its first doc on.
     doc_counts: HashMap<PathBuf, usize>,
-    /// Not every counted directory: one that could not be watched has a count
-    /// and no watch.
+    /// Not the counted directories exactly: one that could not be watched has
+    /// a count and no watch, and one that a board delete emptied has a watch
+    /// and no count.
     watched_dirs: HashSet<PathBuf>,
+}
+
+impl WatcherState {
+    /// True when that was the last registered doc in `dir`.
+    fn uncount(&mut self, dir: &Path) -> bool {
+        let Some(count) = self.doc_counts.get_mut(dir) else { return false };
+        *count -= 1;
+        if *count > 0 {
+            return false;
+        }
+        self.doc_counts.remove(dir);
+        true
+    }
 }
 
 pub struct Daemon {
@@ -106,17 +120,19 @@ impl Daemon {
     /// with the last one.
     fn release_watch(&self, dir: &Path) {
         let mut w = self.watcher.lock().expect("watcher lock");
-        let Some(count) = w.doc_counts.get_mut(dir) else { return };
-        *count -= 1;
-        if *count > 0 {
-            return;
-        }
-        w.doc_counts.remove(dir);
-        if w.watched_dirs.remove(dir) {
+        if w.uncount(dir) && w.watched_dirs.remove(dir) {
             if let Err(e) = w.debouncer.unwatch(dir) {
                 tracing::warn!("unwatch {}: {e}", dir.display());
             }
         }
+    }
+
+    /// Takes one registered doc off the count of `dir` and leaves the watch.
+    /// For a board delete: an unwatch restarts the FSEvents stream, and the
+    /// restart loses a change of a doc that is left (#249, #253). The next
+    /// `release_watch` that empties the directory drops the watch.
+    fn release_count(&self, dir: &Path) {
+        self.watcher.lock().expect("watcher lock").uncount(dir);
     }
 
     /// Registers a doc on `board` (the active one for `None`), or refreshes the
@@ -166,14 +182,15 @@ impl Daemon {
         true
     }
 
-    /// Removes a board and takes its docs off their directories' counts. False
-    /// for the last board or an unknown id.
+    /// Removes a board and takes its docs off their directories' counts. It
+    /// drops no watch (`release_count`). False for the last board or an
+    /// unknown id.
     pub async fn delete_board(&self, id: &str) -> bool {
         let deleted = self.boards.lock().await.delete(id);
         let Some(board) = deleted else { return false };
         self.mark_dirty();
         for dir in board.registry.docs.keys().filter_map(|p| p.parent()) {
-            self.release_watch(dir);
+            self.release_count(dir);
         }
         true
     }
@@ -355,8 +372,12 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
+    /// Each unwatch restarts the FSEvents stream, and a change of a doc that
+    /// is left is lost in the restart (#249, #253). So a delete drops no
+    /// watch. It takes the board's docs off the counts, and the next close in
+    /// a directory then drops that directory's watch as usual.
     #[tokio::test]
-    async fn deleting_a_board_unwatches_the_dirs_only_it_used() {
+    async fn deleting_a_board_drops_no_watch_and_gives_back_its_counts() {
         let (tmp, shared, daemon) = daemon_with_doc_dir("delete-board");
         let own = tmp.join("own");
         std::fs::create_dir_all(&own).unwrap();
@@ -367,9 +388,17 @@ mod tests {
         open_doc(&daemon, Some(&other), &own.join("d.md")).await;
 
         assert!(daemon.delete_board(&other).await);
-        assert!(!watched(&daemon, &own), "no board has a doc in the directory");
-        assert!(watched(&daemon, &shared), "board-0 still has a doc in the directory");
+        assert!(watched(&daemon, &own), "the delete drops no watch");
+        assert!(watched(&daemon, &shared));
         assert!(!daemon.delete_board(&other).await, "a second delete finds no board");
+
+        let later = own.join("e.md");
+        open_doc(&daemon, None, &later).await;
+        assert!(daemon.close_doc(&later).await);
+        assert!(!watched(&daemon, &own), "the deleted board's two docs are off the count");
+
+        assert!(daemon.close_doc(&shared.join("a.md")).await);
+        assert!(!watched(&daemon, &shared), "and its doc in the shared directory");
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
