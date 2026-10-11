@@ -1,14 +1,12 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 
-use notify_debouncer_full::DebounceEventResult;
 use tarmac_protocol::Msg;
-use tokio::sync::mpsc::UnboundedReceiver;
-use tracing::{debug, warn};
+use tracing::debug;
 
-use crate::boards::{DocInfo, Registry};
+use crate::boards::{DocInfo, Registry, epoch_ms};
 use crate::state::Daemon;
 
 pub struct RepoInfo {
@@ -35,8 +33,9 @@ pub fn derive_repo(doc: &Path) -> Option<RepoInfo> {
     None
 }
 
-fn epoch_ms(t: SystemTime) -> u64 {
-    t.duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+/// `None` for a file that is not there or cannot be read.
+pub fn mtime(path: &Path) -> Option<SystemTime> {
+    std::fs::metadata(path).and_then(|meta| meta.modified()).ok()
 }
 
 // Single code path for CLI ("cli") and app ("user") opens. `term_id` is the
@@ -106,6 +105,7 @@ pub fn upsert_doc(reg: &mut Registry, path: &Path, via: &str, term_id: Option<St
                     repo_root: repo.as_ref().map(|r| r.root.clone()),
                     repo_color: repo.as_ref().map(|r| r.color),
                     last_changed_ms: None,
+                    seen_mtime: mtime(path),
                     last_opened_ms: epoch_ms(SystemTime::now()),
                     term_id,
                 },
@@ -116,53 +116,58 @@ pub fn upsert_doc(reg: &mut Registry, path: &Path, via: &str, term_id: Option<St
     }
 }
 
-pub async fn watch_loop(daemon: Arc<Daemon>, mut rx: UnboundedReceiver<DebounceEventResult>) {
-    while let Some(res) = rx.recv().await {
-        let events = match res {
-            Ok(events) => events,
-            Err(errors) => {
-                warn!("watch errors: {errors:?}");
-                continue;
-            }
-        };
-        // Filter by path only, never by event kind: atomic replaces show up
-        // as Create/Rename and must still count.
-        let mut hits: HashSet<PathBuf> = HashSet::new();
-        {
-            let boards = daemon.boards.lock().await;
-            let reg = boards.active_registry();
-            for ev in &events {
-                for p in &ev.paths {
-                    if reg.docs.contains_key(p.as_path()) {
-                        hits.insert(p.clone());
-                    }
-                }
-            }
-        }
-        for path in hits {
-            stat_and_push(&daemon, &path).await;
-        }
+pub fn mtimes(paths: impl IntoIterator<Item = PathBuf>) -> HashMap<PathBuf, Option<SystemTime>> {
+    paths
+        .into_iter()
+        .map(|path| {
+            let mtime = mtime(&path);
+            (path, mtime)
+        })
+        .collect()
+}
+
+pub async fn watch_loop(daemon: Arc<Daemon>) {
+    loop {
+        daemon.woken().await;
+        report_changes(&daemon).await;
     }
 }
 
-/// Stat `path` and, if it is a doc on the ACTIVE board, record the real mtime and
-/// push `file_event`. Returns whether it pushed.
+/// Compares each doc of the active board with its file, and pushes a
+/// `file_event` for each that changed (`Registry::take_changes`). The files are
+/// read with no lock held. A doc of another board is compared when its board
+/// is sent (`conn::change_and_send_active_board`).
+pub async fn report_changes(daemon: &Daemon) {
+    let paths: Vec<PathBuf> = daemon.boards.lock().await.active_registry().docs.keys().cloned().collect();
+    let now = mtimes(paths);
+    let changes = daemon.boards.lock().await.active_registry_mut().take_changes(&now);
+    if changes.is_empty() {
+        return;
+    }
+    // Recorded before the push, as in `stat_and_push`.
+    daemon.mark_dirty();
+    for (path, mtime_ms) in changes {
+        daemon.push(Msg::FileEvent { path: path.to_string_lossy().into_owned(), mtime_ms }).await;
+    }
+}
+
+/// `doc_refresh`: stat `path` and, if it is a doc on the ACTIVE board, record
+/// the mtime and push `file_event`. Returns whether it pushed.
 ///
-/// The sole producer of `Msg::FileEvent`: the notify watcher and the on-demand
-/// `doc_refresh` share it, so the always-push rule (the mtime goes out changed
-/// or not — "did anything change" is answered app-side by value) and the
-/// active-board scoping are defined once. The registry lookup doubles as that
-/// scoping check, which is why an unknown path costs one lock and no push.
+/// It pushes always, with the mtime changed or not ("did anything change" is
+/// answered app-side by value); `report_changes` pushes only for a file that
+/// differs from what was seen. The registry lookup is also the active-board
+/// check, which is why an unknown path costs one lock and no push.
 pub async fn stat_and_push(daemon: &Arc<Daemon>, path: &Path) -> bool {
     // Deleted files emit nothing until the path exists again.
-    let Ok(meta) = std::fs::metadata(path) else { return false };
-    let Ok(modified) = meta.modified() else { return false };
+    let Some(modified) = mtime(path) else { return false };
     let mtime_ms = epoch_ms(modified);
     // Registry update lands before the push so a crash between the two never
     // loses the fact.
     {
         let mut boards = daemon.boards.lock().await;
         let Some(info) = boards.active_registry_mut().docs.get_mut(path) else { return false };
+        info.seen_mtime = Some(modified);
         info.last_changed_ms = Some(mtime_ms);
     }
     daemon.mark_dirty();

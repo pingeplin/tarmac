@@ -5,6 +5,7 @@ mod persist;
 mod proc;
 mod state;
 mod term;
+mod watch;
 
 use std::ffi::OsString;
 use std::path::PathBuf;

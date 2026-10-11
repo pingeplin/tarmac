@@ -143,11 +143,17 @@ async fn change_and_send_active_board(
     change: impl FnOnce(&mut Boards) -> bool,
 ) -> bool {
     let by_board = daemon.live_terms_by_board().await;
-    let (board_list, restore, active_id, live_terms) = {
+    // Every board's docs, since `change` decides which board is shown. Read
+    // with no lock held.
+    let now = docs::mtimes(daemon.doc_paths().await);
+    let (board_list, restore, active_id, live_terms, changes) = {
         let mut boards = daemon.boards.lock().await;
         if !change(&mut boards) {
             return false;
         }
+        // What changed while this board was in the background, taken before
+        // the restore is built so that it carries each new `last_changed_ms`.
+        let changes = boards.active_registry_mut().take_changes(&now);
         let active_id = boards.active_id().to_string();
         let live_terms = by_board.get(&active_id).cloned().unwrap_or_default();
         (
@@ -155,8 +161,12 @@ async fn change_and_send_active_board(
             boards.active_restore_msg(live_terms.clone()),
             active_id,
             live_terms,
+            changes,
         )
     };
+    if !changes.is_empty() {
+        daemon.mark_dirty();
+    }
     let first = conn.replayed.insert(active_id);
     // Snapshot before sending the restore: a chunk produced after this is
     // delivered live and arrives before the restore (FIFO) while the term is
@@ -164,6 +174,11 @@ async fn change_and_send_active_board(
     let replay = if first { snapshot_scrollback(daemon, &live_terms).await } else { Vec::new() };
     let _ = conn.tx.send(board_list).await;
     let _ = conn.tx.send(restore).await;
+    // After the restore: the app reads a doc of a board it has already built
+    // again on a `file_event` only.
+    for (path, mtime_ms) in changes {
+        let _ = conn.tx.send(Msg::FileEvent { path: path.to_string_lossy().into_owned(), mtime_ms }).await;
+    }
     for (tid, data) in replay {
         for chunk in data.chunks(term::OUTPUT_CHUNK) {
             let _ = conn.tx.send(Msg::Output { term_id: tid.clone(), bytes: chunk.to_vec() }).await;

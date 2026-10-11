@@ -2,16 +2,14 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
 
-use notify::{RecommendedWatcher, RecursiveMode};
-use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache, new_debouncer};
 use tarmac_protocol::{DocEntry, Msg};
 use tokio::sync::{Mutex, Notify, mpsc};
 use tokio_util::sync::CancellationToken;
 
 use crate::boards::{BoardId, Boards};
 use crate::term::TermHandle;
+use crate::watch::{NotifySource, WakeSource};
 
 pub struct AppSlot {
     pub generation: u64,
@@ -24,7 +22,7 @@ pub struct AppSlot {
 }
 
 pub struct WatcherState {
-    debouncer: Debouncer<RecommendedWatcher, RecommendedCache>,
+    source: Box<dyn WakeSource>,
     /// The registered docs in each directory, one for each board that has the
     /// doc. A directory is watched from its first doc on.
     doc_counts: HashMap<PathBuf, usize>,
@@ -57,6 +55,8 @@ pub struct Daemon {
     pub term_boards: Mutex<HashMap<String, BoardId>>,
     /// A `std::sync::Mutex`, never held across an `.await`.
     watcher: std::sync::Mutex<WatcherState>,
+    /// Set by the watcher; `docs::watch_loop` waits on it.
+    wake: Arc<Notify>,
     next_generation: AtomicU64,
     dirty: Notify,
     state_path: PathBuf,
@@ -64,11 +64,17 @@ pub struct Daemon {
 
 impl Daemon {
     pub fn new(state_path: PathBuf) -> anyhow::Result<Arc<Self>> {
-        let (tx, rx) = mpsc::unbounded_channel::<DebounceEventResult>();
-        // 100 ms: the burst window docs/protocol.md gives a `file_event`.
-        let debouncer = new_debouncer(Duration::from_millis(100), None, move |res| {
-            let _ = tx.send(res);
+        let wake = Arc::new(Notify::new());
+        let source = NotifySource::new({
+            let wake = wake.clone();
+            move || wake.notify_one()
         })?;
+        Ok(Self::with_source(state_path, Box::new(source), wake))
+    }
+
+    /// `source` is told which directories have a doc, and sets `wake` when a
+    /// file in one of them may have changed.
+    pub fn with_source(state_path: PathBuf, source: Box<dyn WakeSource>, wake: Arc<Notify>) -> Arc<Self> {
         let boards = crate::persist::load(&state_path);
         // Every board's docs, not the active board's only: a switch adds no
         // watch.
@@ -83,10 +89,11 @@ impl Daemon {
             terms: Mutex::new(HashMap::new()),
             term_boards: Mutex::new(HashMap::new()),
             watcher: std::sync::Mutex::new(WatcherState {
-                debouncer,
+                source,
                 doc_counts: HashMap::new(),
                 watched_dirs: HashSet::new(),
             }),
+            wake,
             next_generation: AtomicU64::new(1),
             dirty: Notify::new(),
             state_path,
@@ -97,34 +104,50 @@ impl Daemon {
                 tracing::warn!("cannot rewatch {}: {e}", dir.display());
             }
         }
-        tokio::spawn(crate::docs::watch_loop(daemon.clone(), rx));
+        tokio::spawn(crate::docs::watch_loop(daemon.clone()));
         tokio::spawn(crate::persist::save_loop(daemon.clone()));
-        Ok(daemon)
+        daemon
+    }
+
+    pub async fn woken(&self) {
+        self.wake.notified().await;
+    }
+
+    /// The path of each registered doc, of every board.
+    pub async fn doc_paths(&self) -> HashSet<PathBuf> {
+        self.boards.lock().await.iter().flat_map(|b| b.registry.docs.keys().cloned()).collect()
     }
 
     /// Counts one more registered doc in `dir` and watches the directory if it
-    /// is not watched yet. The count stands when the watch fails, so each call
-    /// is paired with one `release_watch` or `release_count`.
-    fn acquire_watch(&self, dir: &Path) -> anyhow::Result<()> {
+    /// is not watched yet: true when it did. The count stands when the watch
+    /// fails, so each call is paired with one `release_watch` or
+    /// `release_count`.
+    ///
+    /// A watch and an unwatch each restart the FSEvents stream, and the restart
+    /// loses the events that the stream has not delivered yet (#253). So a
+    /// caller that gets true looks at the docs itself (`docs::report_changes`).
+    fn acquire_watch(&self, dir: &Path) -> anyhow::Result<bool> {
         let mut w = self.watcher.lock().expect("watcher lock");
         *w.doc_counts.entry(dir.to_owned()).or_default() += 1;
         if w.watched_dirs.contains(dir) {
-            return Ok(());
+            return Ok(false);
         }
-        w.debouncer.watch(dir, RecursiveMode::NonRecursive)?;
+        w.source.watch(dir)?;
         w.watched_dirs.insert(dir.to_owned());
-        Ok(())
+        Ok(true)
     }
 
     /// Takes one registered doc off the count of `dir`, and drops the watch
-    /// with the last one.
-    fn release_watch(&self, dir: &Path) {
+    /// with the last one: true when it did (see `acquire_watch`).
+    fn release_watch(&self, dir: &Path) -> bool {
         let mut w = self.watcher.lock().expect("watcher lock");
-        if w.uncount(dir) && w.watched_dirs.remove(dir) {
-            if let Err(e) = w.debouncer.unwatch(dir) {
+        let unwatch = w.uncount(dir) && w.watched_dirs.remove(dir);
+        if unwatch {
+            if let Err(e) = w.source.unwatch(dir) {
                 tracing::warn!("unwatch {}: {e}", dir.display());
             }
         }
+        unwatch
     }
 
     /// Takes one registered doc off the count of `dir` and leaves the watch.
@@ -150,10 +173,13 @@ impl Daemon {
         };
         // Counted before the doc is registered: a close that runs between the
         // two steps then finds a count above zero and keeps the watch.
-        if let Err(e) = self.acquire_watch(dir) {
-            self.release_watch(dir);
-            anyhow::bail!("cannot watch {}: {e}", dir.display());
-        }
+        let watched = match self.acquire_watch(dir) {
+            Ok(watched) => watched,
+            Err(e) => {
+                self.release_watch(dir);
+                anyhow::bail!("cannot watch {}: {e}", dir.display());
+            }
+        };
         // Upsert before the entry is read so it reflects the post-open state.
         let (entry, is_new) = {
             let mut boards = self.boards.lock().await;
@@ -165,6 +191,9 @@ impl Daemon {
             self.release_watch(dir);
         }
         self.mark_dirty();
+        if watched {
+            crate::docs::report_changes(self).await;
+        }
         Ok(entry)
     }
 
@@ -176,8 +205,8 @@ impl Daemon {
             return false;
         }
         self.mark_dirty();
-        if let Some(dir) = path.parent() {
-            self.release_watch(dir);
+        if path.parent().is_some_and(|dir| self.release_watch(dir)) {
+            crate::docs::report_changes(self).await;
         }
         true
     }
@@ -283,6 +312,7 @@ impl Daemon {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU32, Ordering};
+    use std::time::{Duration, SystemTime};
 
     // Per-test unique temp dir (process id + counter avoids collisions across
     // parallel test threads or reused PIDs).
@@ -478,6 +508,101 @@ mod tests {
         assert!(watched(&daemon, &doc_dir), "a.md is left");
         assert!(daemon.close_doc(&a).await);
         assert!(!watched(&daemon, &doc_dir));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    struct Silent;
+
+    impl WakeSource for Silent {
+        fn watch(&mut self, _: &Path) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn unwatch(&mut self, _: &Path) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// A daemon that its watcher never wakes, and the pushes to its app.
+    async fn silent_daemon(tag: &str) -> (PathBuf, Arc<Daemon>, Arc<Notify>, mpsc::Receiver<Msg>) {
+        let tmp = tmp_dir(tag);
+        let wake = Arc::new(Notify::new());
+        let daemon = Daemon::with_source(tmp.join("state.json"), Box::new(Silent), wake.clone());
+        let (tx, rx) = mpsc::channel(16);
+        daemon.install_app(tx, None).await;
+        (tmp, daemon, wake, rx)
+    }
+
+    fn write_doc(path: PathBuf) -> PathBuf {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "doc").unwrap();
+        path
+    }
+
+    /// Gives the file an mtime that it did not have, and returns it in ms.
+    fn change(path: &Path) -> u64 {
+        let later = SystemTime::now() + Duration::from_secs(60);
+        std::fs::File::options().write(true).open(path).unwrap().set_modified(later).unwrap();
+        crate::boards::epoch_ms(later)
+    }
+
+    fn file_events(app: &mut mpsc::Receiver<Msg>) -> Vec<(PathBuf, u64)> {
+        let mut events = Vec::new();
+        while let Ok(msg) = app.try_recv() {
+            if let Msg::FileEvent { path, mtime_ms } = msg {
+                events.push((PathBuf::from(path), mtime_ms));
+            }
+        }
+        events
+    }
+
+    // #253: an unwatch restarts the FSEvents stream, and the restart loses the
+    // events that the stream has not delivered yet. So the close looks at the
+    // docs itself; here no wake comes at all.
+    #[tokio::test]
+    async fn a_close_reports_a_change_that_no_wake_told_of() {
+        let (tmp, daemon, _wake, mut app) = silent_daemon("close-reports").await;
+        let kept = write_doc(tmp.join("kept/a.md"));
+        let gone = write_doc(tmp.join("gone/b.md"));
+        open_doc(&daemon, None, &kept).await;
+        open_doc(&daemon, None, &gone).await;
+
+        let changed = change(&kept);
+        assert!(daemon.close_doc(&gone).await);
+        assert_eq!(file_events(&mut app), vec![(kept, changed)]);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // The same for a watch: the first doc of a directory.
+    #[tokio::test]
+    async fn an_open_reports_a_change_that_no_wake_told_of() {
+        let (tmp, daemon, _wake, mut app) = silent_daemon("open-reports").await;
+        let kept = write_doc(tmp.join("kept/a.md"));
+        let new = write_doc(tmp.join("new/b.md"));
+        open_doc(&daemon, None, &kept).await;
+
+        let changed = change(&kept);
+        open_doc(&daemon, None, &new).await;
+        assert_eq!(file_events(&mut app), vec![(kept, changed)], "and nothing for the doc that was opened");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test]
+    async fn a_wake_reports_a_change() {
+        let (tmp, daemon, wake, mut app) = silent_daemon("wake-reports").await;
+        let doc = write_doc(tmp.join("d/a.md"));
+        open_doc(&daemon, None, &doc).await;
+
+        let changed = change(&doc);
+        tokio::task::yield_now().await;
+        assert_eq!(file_events(&mut app), vec![], "nothing looked at the doc yet");
+
+        wake.notify_one();
+        let msg = tokio::time::timeout(Duration::from_secs(5), app.recv()).await.expect("a push");
+        assert!(matches!(msg, Some(Msg::FileEvent { mtime_ms, .. }) if mtime_ms == changed));
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
