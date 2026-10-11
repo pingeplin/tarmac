@@ -566,6 +566,22 @@ mod tests {
         daemon.boards.lock().await.active_registry().docs[doc].last_changed_ms
     }
 
+    /// Waits until the state file has `want` as the doc's `last_changed_ms`.
+    async fn wait_for_saved(tmp: &Path, doc: &Path, want: u64) {
+        let saved = || {
+            let state: serde_json::Value = serde_json::from_slice(&std::fs::read(tmp.join("state.json")).ok()?).ok()?;
+            let docs = state["boards"][0]["docs"].as_array()?;
+            docs.iter().find(|d| d["path"] == doc.to_str().unwrap())?["last_changed_ms"].as_u64()
+        };
+        for _ in 0..200 {
+            if saved() == Some(want) {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        panic!("the state file never had {want}, it has {:?}", saved());
+    }
+
     fn write_doc(path: PathBuf) -> PathBuf {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, "doc").unwrap();
@@ -647,23 +663,25 @@ mod tests {
         let doc = write_doc(tmp.join("d/a.md"));
         open_doc(&daemon, None, &doc).await;
 
+        // Taken before the first look: the wait starts when that look ends.
+        let before = std::time::Instant::now();
         let first = change(&doc);
         wake.notify_one();
         assert_eq!(next_file_event(&mut app).await, first);
-        let told = std::time::Instant::now();
 
         let second = change(&doc);
         wake.notify_one();
         assert_eq!(next_file_event(&mut app).await, second);
-        assert!(told.elapsed() >= crate::watch::BURST, "the second look came after {:?}", told.elapsed());
+        assert!(before.elapsed() >= crate::watch::BURST, "the second look came after {:?}", before.elapsed());
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
-    // What was seen is what an app was told. A look with no app would take the
-    // change and tell nobody; the connect then would find nothing.
+    // What was seen is what an app was told. A look with no app records the
+    // change, so a restart keeps its time, and leaves it for the look that has
+    // an app to tell.
     #[tokio::test]
-    async fn a_look_takes_nothing_while_no_app_is_connected() {
+    async fn a_look_with_no_app_records_the_change_and_leaves_it_to_be_told() {
         let tmp = tmp_dir("no-app");
         let daemon = Daemon::with_source(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new()));
         let doc = write_doc(tmp.join("d/a.md"));
@@ -671,11 +689,40 @@ mod tests {
 
         let changed = change(&doc);
         crate::docs::report_changes(&daemon).await;
-        assert_eq!(last_changed(&daemon, &doc).await, None);
+        assert_eq!(last_changed(&daemon, &doc).await, Some(changed));
+        wait_for_saved(&tmp, &doc, changed).await;
 
         let mut app = connect_app(&daemon).await;
         crate::docs::report_changes(&daemon).await;
         assert_eq!(file_events(&mut app), vec![(doc, changed)]);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // The files are read with no `boards` lock held. Without `Daemon::looking`
+    // a look that read a doc before its change takes that reading after the
+    // refresh recorded the change, about three rounds in a hundred. The doc
+    // goes round because its place in the read order is fixed for a process.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn an_older_reading_is_never_taken_after_a_newer_one() {
+        let (tmp, daemon, _wake, mut app) = silent_daemon("one-look").await;
+        let docs: Vec<PathBuf> = (0..200).map(|i| write_doc(tmp.join(format!("d/{i}.md")))).collect();
+        for doc in &docs {
+            open_doc(&daemon, None, doc).await;
+        }
+
+        for round in 0..600 {
+            let doc = &docs[round % docs.len()];
+            let look = tokio::spawn({
+                let daemon = daemon.clone();
+                async move { crate::docs::report_changes(&daemon).await }
+            });
+            let changed = change(doc);
+            assert!(crate::docs::stat_and_push(&daemon, doc).await);
+            look.await.unwrap();
+            assert_eq!(last_changed(&daemon, doc).await, Some(changed), "round {round}");
+            while app.try_recv().is_ok() {}
+        }
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -713,6 +760,7 @@ mod tests {
         assert!(crate::docs::stat_and_push(&daemon, &doc).await);
         assert_eq!(file_events(&mut app), vec![(doc.clone(), second)], "what the file says now");
         assert_eq!(last_changed(&daemon, &doc).await, Some(second), "recorded, not only announced");
+        wait_for_saved(&tmp, &doc, second).await;
 
         // The refresh took the file as seen: a look after it has nothing to tell.
         wake.notify_one();

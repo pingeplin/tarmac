@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -37,7 +36,7 @@ pub fn derive_repo(doc: &Path) -> Option<RepoInfo> {
 /// `None` for a file that is not there or cannot be read.
 pub fn stamp(path: &Path) -> Option<FileStamp> {
     let meta = std::fs::metadata(path).ok()?;
-    Some(FileStamp { mtime: meta.modified().ok()?, len: meta.len(), inode: meta.ino() })
+    Some(FileStamp { mtime: meta.modified().ok()?, len: meta.len() })
 }
 
 // Single code path for CLI ("cli") and app ("user") opens. `term_id` is the
@@ -149,17 +148,25 @@ pub async fn watch_loop(daemon: Arc<Daemon>) {
 /// read with no `boards` lock held. A doc of another board is compared when
 /// its board is sent (`conn::change_and_send_active_board`).
 ///
-/// With no app connected it takes nothing: what was seen is what an app was
-/// told, so the connect finds the change and reports it.
+/// With no app connected it only notes the change (`Registry::note_changes`):
+/// what was seen is what an app was told, so the connect still finds the
+/// change and reports it, and a restart before that keeps its time.
 pub async fn report_changes(daemon: &Daemon) {
-    if !daemon.app_connected().await {
-        return;
-    }
+    let told = daemon.app_connected().await;
     let changes = {
         let _one_look = daemon.looking().await;
         let paths: Vec<PathBuf> = daemon.boards.lock().await.active_registry().docs.keys().cloned().collect();
         let now = stamps(paths);
-        daemon.boards.lock().await.active_registry_mut().take_changes(&now)
+        let mut boards = daemon.boards.lock().await;
+        let reg = boards.active_registry_mut();
+        if told {
+            reg.take_changes(&now)
+        } else {
+            if reg.note_changes(&now) {
+                daemon.mark_dirty();
+            }
+            Vec::new()
+        }
     };
     if changes.is_empty() {
         return;

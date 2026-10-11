@@ -24,13 +24,14 @@ pub struct DocInfo {
 }
 
 /// What the daemon reads of a doc's file to know that it changed. The length
-/// and the inode are there for a change that keeps the mtime: a writer that
-/// puts the mtime back, or two writes in one tick of a coarse clock.
+/// is there for a change that keeps the mtime: a writer that puts the mtime
+/// back, or two writes in one tick of a coarse clock. The inode is left out on
+/// purpose: on a volume whose inode numbers are not stable, each look would be
+/// a change.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct FileStamp {
     pub mtime: SystemTime,
     pub len: u64,
-    pub inode: u64,
 }
 
 pub fn epoch_ms(t: SystemTime) -> u64 {
@@ -124,6 +125,24 @@ impl Registry {
             }
         }
         changes
+    }
+
+    /// For a look with no app to tell: records `last_changed_ms` for each doc
+    /// whose file differs from what was seen, and leaves what was seen, so the
+    /// look at the connect still takes the change and reports it. True when a
+    /// record changed.
+    pub fn note_changes(&mut self, now: &HashMap<PathBuf, Option<FileStamp>>) -> bool {
+        let mut noted = false;
+        for (path, stamp) in now {
+            let (Some(info), Some(stamp)) = (self.docs.get_mut(path), stamp) else { continue };
+            if info.seen == Some(*stamp) {
+                continue;
+            }
+            let ms = Some(epoch_ms(stamp.mtime));
+            noted |= info.last_changed_ms != ms;
+            info.last_changed_ms = ms;
+        }
+        noted
     }
 
     /// False when the path is unknown.
@@ -448,12 +467,12 @@ mod tests {
         assert!(!reg.dock.contains(&doc));
     }
 
-    fn stamp(secs: u64, len: u64, inode: u64) -> Option<FileStamp> {
-        Some(FileStamp { mtime: UNIX_EPOCH + Duration::from_secs(secs), len, inode })
+    fn stamp(secs: u64, len: u64) -> Option<FileStamp> {
+        Some(FileStamp { mtime: UNIX_EPOCH + Duration::from_secs(secs), len })
     }
 
     fn at(secs: u64) -> Option<FileStamp> {
-        stamp(secs, 4, 1)
+        stamp(secs, 4)
     }
 
     fn registry_that_saw(path: &Path, seen: Option<FileStamp>) -> Registry {
@@ -467,15 +486,36 @@ mod tests {
     }
 
     // A writer that puts the mtime back, or two writes in one tick of a coarse
-    // clock: the length or the inode still tells.
+    // clock: the length still tells.
     #[test]
-    fn a_file_with_the_same_mtime_and_another_length_or_inode_is_a_change() {
+    fn a_file_with_the_same_mtime_and_another_length_is_a_change() {
         let doc = PathBuf::from("/d/a.md");
-        let mut reg = registry_that_saw(&doc, stamp(10, 4, 1));
+        let mut reg = registry_that_saw(&doc, stamp(10, 4));
 
-        assert_eq!(reg.take_changes(&now(&doc, stamp(10, 9, 1))), vec![(doc.clone(), 10_000)], "another length");
-        assert_eq!(reg.take_changes(&now(&doc, stamp(10, 9, 2))), vec![(doc.clone(), 10_000)], "another inode");
-        assert_eq!(reg.take_changes(&now(&doc, stamp(10, 9, 2))), vec![]);
+        assert_eq!(reg.take_changes(&now(&doc, stamp(10, 9))), vec![(doc.clone(), 10_000)]);
+        assert_eq!(reg.take_changes(&now(&doc, stamp(10, 9))), vec![]);
+    }
+
+    // A look with no app to tell.
+    #[test]
+    fn a_noted_change_is_recorded_and_is_still_a_change_to_take() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut reg = registry_that_saw(&doc, at(10));
+
+        assert!(reg.note_changes(&now(&doc, at(20))));
+        assert_eq!(reg.docs[&doc].last_changed_ms, Some(20_000));
+        assert!(!reg.note_changes(&now(&doc, at(20))), "the record is as it was");
+        assert_eq!(reg.take_changes(&now(&doc, at(20))), vec![(doc, 20_000)], "nobody was told yet");
+    }
+
+    #[test]
+    fn nothing_is_noted_for_a_file_as_it_was_seen_or_one_that_is_gone() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut reg = registry_that_saw(&doc, at(10));
+
+        assert!(!reg.note_changes(&now(&doc, at(10))));
+        assert!(!reg.note_changes(&now(&doc, None)));
+        assert_eq!(reg.docs[&doc].last_changed_ms, None);
     }
 
     #[test]

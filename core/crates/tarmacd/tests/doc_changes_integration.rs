@@ -93,14 +93,14 @@ fn a_change_made_with_no_app_connected_is_reported_at_the_connect() {
     std::thread::sleep(Duration::from_millis(300));
     touch(&y);
     let edited = mtime_ms(&y);
-    std::thread::sleep(Duration::from_millis(600));
+    // Saved with no app, so a daemon that stops here keeps the time of the change.
+    daemon.wait_for_state("the change in the state file", |v| doc_entry(v, 0, &y)["last_changed_ms"] == json!(edited));
+    std::thread::sleep(Duration::from_millis(300));
 
     let mut app = daemon.connect_app();
     let restore = app.recv_restore_for("board-0");
     assert_eq!(last_changed(&restore, &y), Some(edited));
     assert_eq!(app.recv_file_event_for(&y), edited);
-    // A connect changes nothing else, so only the look can have asked for the save.
-    daemon.wait_for_state("the change in the state file", |v| doc_entry(v, 0, &y)["last_changed_ms"] == json!(edited));
 }
 
 // A writer that puts the mtime back. The length tells.
