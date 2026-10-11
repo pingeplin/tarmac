@@ -104,7 +104,7 @@ impl Daemon {
 
     /// Counts one more registered doc in `dir` and watches the directory if it
     /// is not watched yet. The count stands when the watch fails, so each call
-    /// is paired with one `release_watch`.
+    /// is paired with one `release_watch` or `release_count`.
     fn acquire_watch(&self, dir: &Path) -> anyhow::Result<()> {
         let mut w = self.watcher.lock().expect("watcher lock");
         *w.doc_counts.entry(dir.to_owned()).or_default() += 1;
@@ -399,6 +399,7 @@ mod tests {
 
         assert!(daemon.close_doc(&shared.join("a.md")).await);
         assert!(!watched(&daemon, &shared), "and its doc in the shared directory");
+        assert!(daemon.watcher.lock().unwrap().doc_counts.is_empty(), "no count is left at zero");
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

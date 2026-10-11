@@ -291,7 +291,7 @@ pushing (so a crash never loses the fact), and pushes `FileEvent`.
 The watch set is one per daemon, not per board. The watcher counts the
 registered docs in each directory (`WatcherState.doc_counts`), one for each
 board that has the doc, and a directory is watched from its first doc on;
-the close of its last doc drops the watch. `Daemon::new` counts each restored doc. After that, three `Daemon`
+a close that takes the count to zero drops the watch. `Daemon::new` counts each restored doc. After that, three `Daemon`
 methods are the only code that changes the count, each
 under the watcher's own lock and with the `boards` lock released:
 `open_doc` adds one **before** it registers the doc (and takes it off again
@@ -306,8 +306,8 @@ Each `watch` and `unwatch` restarts the FSEvents stream, and the restart
 loses a change that the stream has not delivered yet, of any watched file.
 So `delete_board` drops no watch: it takes the board's docs off the counts
 and leaves the directories watched (#249). A directory with a watch and no
-count is harmless, since `watch_loop` drops an event for a path that no
-board has. Its watch goes with the next close that empties the directory,
+count is harmless, since `watch_loop` drops an event for a path that the
+active board does not have. Its watch goes with the next close that empties the directory,
 or with the daemon. A `doc_close` and an open in a new directory still make
 one restart each (#253).
 
