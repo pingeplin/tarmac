@@ -215,6 +215,18 @@ final class CardHostScriptTests: XCTestCase {
         XCTAssertEqual(frames(2), [Self.shown(2)])
     }
 
+    /// A frame that is given the address it has again: the new document's
+    /// start names that address, and it is this load's.
+    func testTheSameAddressGivenAgainStillStarts() {
+        load("tarmac-card://doc/a.html?v=1")
+        hear("{ tarmac: 'started', source: 'tarmac-card://doc/a.html?v=1' }")
+        frames(2)
+
+        load("tarmac-card://doc/a.html?v=1", number: 2)
+        hear("{ tarmac: 'started', source: 'tarmac-card://doc/a.html?v=1' }")
+        XCTAssertEqual(frames(2).filter { $0["tarmac"] as? String == "shown" }, [shown, Self.shown(2)])
+    }
+
     /// Only the source that was replaced is refused: a start that names
     /// another address, or none, still counts, so no card stays out of sight.
     func testAStartThatNamesAnAddressThePageDoesNotKnowStillCounts() {

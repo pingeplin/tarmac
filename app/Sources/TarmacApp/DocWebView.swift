@@ -46,9 +46,9 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
     private var lastChangedMs: UInt64?
     /// Reads are answered off the main thread; only the latest one is shown.
     private var reads = 0
-    /// Counts the page loads: a word that a page is drawn can come for a page
-    /// that was replaced.
-    private var pageLoads = 0
+    /// A word that a page is drawn can come for a page that was replaced.
+    private var pageLoads = LoadCount()
+    private var pageLoad = 0
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
@@ -102,7 +102,7 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
         onScrollChanged?(nil)
         // The page holds its colours from its first paint.
         themeGiven = PageTheme(Theme.palette)
-        pageLoads += 1
+        pageLoad = pageLoads.next()
         coverPage()
         webView.loadHTMLString(ThemeCSS.page(Self.template, Theme.palette), baseURL: nil)
     }
@@ -116,15 +116,16 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
     }
 
     /// Two frames, as the HTML card's host page waits: the first is drawn with
-    /// the page in it. A script that fails still uncovers, so no card stays
-    /// out of sight.
+    /// the page in it. A script that fails still uncovers. A page that is
+    /// hidden or culled draws no frame, and is uncovered two frames after it
+    /// is in view again.
     private func uncoverWhenDrawn() {
-        let load = pageLoads
+        let load = pageLoad
         webView.callAsyncJavaScript(
             "await new Promise(drawn => requestAnimationFrame(() => requestAnimationFrame(drawn)))",
             arguments: [:], in: nil, in: CardWebView.world
         ) { [weak self] _ in
-            guard let self, load == self.pageLoads else { return }
+            guard let self, self.pageLoads.isCurrent(load) else { return }
             self.webView.alphaValue = 1
         }
     }

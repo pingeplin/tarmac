@@ -157,6 +157,12 @@ final class HTMLCardSessionTests: XCTestCase {
         XCTAssertEqual(session, before)
     }
 
+    /// The view is covered from the start, and nothing was loaded yet.
+    func testAShownBeforeAnyLoadIsDropped() {
+        var session = HTMLCardSession()
+        XCTAssertEqual(session.handle(.shown(load: 0), borrowed: false), [])
+    }
+
     /// The file changed again while the word for the load before was on its
     /// way. The view is covered for the new load, and that word is not for it.
     func testAShownOfALoadThatWasReplacedIsDropped() {

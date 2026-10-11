@@ -116,7 +116,8 @@
   window.tarmacCard = {
     load(src, number) {
       asked = number;
-      replaced = source;
+      // The same address again: its start cannot be told from the old one's.
+      replaced = source === src ? null : source;
       source = src;
       card.src = src;
     },
