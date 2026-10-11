@@ -249,8 +249,8 @@ per-terminal scrollback ring uses a `std::sync::Mutex` that is **never held
 across an `.await`** — locked only for a synchronous push/snapshot. The watcher's
 mutex is a `std::sync::Mutex` too and is never held across an `.await`, but it
 is held for the notify call that starts or drops a watch. The `boards` lock is
-never held during a watcher call. `Daemon::looking` is taken before `boards`,
-never while `boards` is held, and is released before a push.
+never held during a watcher call. `Daemon::look` takes its own lock before
+`boards`, never while `boards` is held, and releases it before any push.
 
 ### Terminal sessions
 
@@ -284,18 +284,20 @@ replays it so the app can re-bind to the live shell instead of cold-spawning.
 
 The daemon finds a change by **state, not by event**. Each (board, doc) keeps
 the file as the daemon last saw it for that board (`DocInfo.seen`, a
-`FileStamp`: mtime and length; in memory only, taken when the doc is
+`FileStamp`: mtime, length and inode; in memory only, taken when the doc is
 registered, when the state file is loaded, and by a `DocRefresh`). A change is
 a file that *differs* from it (`Registry::take_changes`). "Differs", not "is
 newer": a file put back from a backup is a change, and a file with an mtime in
-the future is not. The length is there for a change that keeps the mtime — a
-writer that puts the mtime back, or two writes in one tick of a coarse clock;
-its `FileEvent` has the mtime of the one before, so a markdown card reads the
-file again and an HTML card, whose address is the mtime, does not reload. The
-inode is left out on purpose: on a volume whose inode numbers are not stable,
-each look would be a change. For a change the daemon records `last_changed_ms`
-**before** it pushes (so a crash never loses the fact), and pushes `FileEvent`.
-A file that is gone pushes nothing, and is a change when it is back.
+the future is not. The length and the inode are there for a change that keeps
+the mtime — a writer that puts the mtime back, two writes in one tick of a
+coarse clock, a save that replaces the file by one of the same length. Its
+`FileEvent` has the mtime of the one before, so a markdown card reads the file
+again and an HTML card, whose address is the mtime, does not reload. (On a
+volume whose inode numbers were not stable, each look would be a change. APFS,
+FAT and exFAT keep them; a network volume was not tried.) For a change the
+daemon records `last_changed_ms` **before** it pushes (so a crash never loses
+the fact), and pushes `FileEvent`. A file that is gone pushes nothing, and is a
+change when it is back.
 
 A **look** compares the docs of the active board (`docs::report_changes`). The
 daemon looks:
@@ -315,20 +317,26 @@ daemon looks:
 
 There is no timer. A board in the background is not looked at until it is
 shown: a change of its doc is reported at the switch, to that board, whether
-or not another board was told of the same change before. A look with no app
-connected only notes the change (`Registry::note_changes`): it records
-`last_changed_ms`, which is saved, and leaves what was seen. What was seen is
-what an app was told, so the connect still finds the change and reports it,
-and a daemon that stops before that keeps the time of the change. One look
-runs at a time (`Daemon::looking`): the files are read with no `boards` lock
-held, and an older reading must not be taken after a newer one.
+or not another board was told of the same change before.
+
+A change is recorded, and saved, with or without an app. When its `FileEvent`
+reaches no app — none is connected, or it went away — the doc is held
+(`DocInfo.untold`, in memory), and the next look of its board tells it: at the
+connect, as a rule. After a daemon restart the `Restore` still carries the
+time, and no `FileEvent` comes, since what was held is gone and the first look
+takes each file as it is.
+
+`Daemon::look` is the one place that reads a doc's file for a change. It reads
+with no `boards` lock held, gives the reading to its caller under that lock,
+and runs one at a time: an older reading must not be applied after a newer
+one. Nothing is pushed from inside it.
 
 Two limits of a look. It can come in the middle of a doc's own save, when
 another file of a watched directory wakes the daemon: the app then reads the
 file as it is at that moment, and the next look corrects it. And the files are
-read on the task that looks, under `looking`: a stat that does not return (a
-network volume that is gone) holds every later look, and a board switch with
-it (#259).
+read on the task that looks, inside `Daemon::look`: a stat that does not return
+(a network volume that is gone) holds every later look, and with it a connect,
+a board switch and a `DocRefresh` (#259).
 
 One limit of the watcher itself, older than the look: the debouncer wakes the
 daemon for a path only when its events have stopped for `BURST`. A file that

@@ -799,22 +799,28 @@ mod tests {
 
     // `Daemon::look` reads the files with no `boards` lock held. If two looks
     // ran at once, one that read a doc before its change would apply that
-    // reading after the other recorded the change. The doc goes round because
-    // its place in the read order is fixed for a process.
+    // reading after the other recorded the change. Each round starts a look
+    // at every doc, waits a part of the time that its reads take, then
+    // changes one doc and records the change with a second look. The doc goes
+    // round because its place in the read order is fixed for a process.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn an_older_reading_is_never_taken_after_a_newer_one() {
         let (tmp, daemon, _wake, mut app) = silent_daemon("one-look").await;
-        let docs: Vec<PathBuf> = (0..1000).map(|i| write_doc(tmp.join(format!("d/{i}.md")))).collect();
+        let docs: Vec<PathBuf> = (0..200).map(|i| write_doc(tmp.join(format!("d/{i}.md")))).collect();
         for doc in &docs {
             open_doc(&daemon, None, doc).await;
         }
 
-        for round in 0..600 {
+        for round in 0..400 {
             let doc = &docs[round % docs.len()];
             let look = tokio::spawn({
                 let daemon = daemon.clone();
                 async move { crate::docs::report_changes(&daemon).await }
             });
+            let into_the_reads = std::time::Instant::now() + Duration::from_micros(round as u64 % 40 * 10);
+            while std::time::Instant::now() < into_the_reads {
+                std::hint::spin_loop();
+            }
             let changed = change(doc);
             assert!(crate::docs::stat_and_push(&daemon, doc).await);
             look.await.unwrap();
