@@ -14,13 +14,23 @@ pub struct DocInfo {
     pub repo_root: Option<String>,
     pub repo_color: Option<u8>,
     pub last_changed_ms: Option<u64>,
-    /// The file's mtime when the daemon last looked at it for this board;
-    /// `None` when there was no file to read. In memory only. A change is a
-    /// file that differs from this (`Registry::take_changes`).
-    pub seen_mtime: Option<SystemTime>,
+    /// The file as the daemon last saw it for this board; `None` when there
+    /// was no file to read. In memory only. A change is a file that differs
+    /// from this (`Registry::take_changes`).
+    pub seen: Option<FileStamp>,
     pub last_opened_ms: u64,
     /// The term that opened this doc; `None` when opened without a `TARMAC_TERM_ID`.
     pub term_id: Option<String>,
+}
+
+/// What the daemon reads of a doc's file to know that it changed. The length
+/// and the inode are there for a change that keeps the mtime: a writer that
+/// puts the mtime back, or two writes in one tick of a coarse clock.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct FileStamp {
+    pub mtime: SystemTime,
+    pub len: u64,
+    pub inode: u64,
 }
 
 pub fn epoch_ms(t: SystemTime) -> u64 {
@@ -94,21 +104,21 @@ impl Registry {
         }
     }
 
-    /// Takes `now` as each file's mtime at this moment and returns the docs
-    /// whose file differs from what was seen, with the new mtime in ms.
-    /// "Differs", not "is newer": a file put back from a backup is a change,
-    /// and one with an mtime in the future is not. A file that is gone is
-    /// taken and not returned, so it is a change when it is back.
-    pub fn take_changes(&mut self, now: &HashMap<PathBuf, Option<SystemTime>>) -> Vec<(PathBuf, u64)> {
+    /// Takes `now` as each file at this moment and returns the docs whose file
+    /// differs from what was seen, with the file's mtime in ms. "Differs", not
+    /// "is newer": a file put back from a backup is a change, and one with an
+    /// mtime in the future is not. A file that is gone is taken and not
+    /// returned, so it is a change when it is back.
+    pub fn take_changes(&mut self, now: &HashMap<PathBuf, Option<FileStamp>>) -> Vec<(PathBuf, u64)> {
         let mut changes = Vec::new();
-        for (path, mtime) in now {
+        for (path, stamp) in now {
             let Some(info) = self.docs.get_mut(path) else { continue };
-            if info.seen_mtime == *mtime {
+            if info.seen == *stamp {
                 continue;
             }
-            info.seen_mtime = *mtime;
-            if let Some(mtime) = mtime {
-                let ms = epoch_ms(*mtime);
+            info.seen = *stamp;
+            if let Some(stamp) = stamp {
+                let ms = epoch_ms(stamp.mtime);
                 info.last_changed_ms = Some(ms);
                 changes.push((path.clone(), ms));
             }
@@ -424,7 +434,7 @@ mod tests {
     }
 
     fn doc_info() -> DocInfo {
-        DocInfo { via: "t".into(), read: false, repo: None, repo_root: None, repo_color: None, last_changed_ms: None, seen_mtime: None, last_opened_ms: 0, term_id: None }
+        DocInfo { via: "t".into(), read: false, repo: None, repo_root: None, repo_color: None, last_changed_ms: None, seen: None, last_opened_ms: 0, term_id: None }
     }
 
     #[test]
@@ -438,18 +448,34 @@ mod tests {
         assert!(!reg.dock.contains(&doc));
     }
 
-    fn at(secs: u64) -> Option<SystemTime> {
-        Some(UNIX_EPOCH + Duration::from_secs(secs))
+    fn stamp(secs: u64, len: u64, inode: u64) -> Option<FileStamp> {
+        Some(FileStamp { mtime: UNIX_EPOCH + Duration::from_secs(secs), len, inode })
     }
 
-    fn registry_that_saw(path: &Path, seen: Option<SystemTime>) -> Registry {
+    fn at(secs: u64) -> Option<FileStamp> {
+        stamp(secs, 4, 1)
+    }
+
+    fn registry_that_saw(path: &Path, seen: Option<FileStamp>) -> Registry {
         let mut reg = Registry::empty();
-        reg.docs.insert(path.to_owned(), DocInfo { seen_mtime: seen, ..doc_info() });
+        reg.docs.insert(path.to_owned(), DocInfo { seen, ..doc_info() });
         reg
     }
 
-    fn now(path: &Path, mtime: Option<SystemTime>) -> HashMap<PathBuf, Option<SystemTime>> {
-        HashMap::from([(path.to_owned(), mtime)])
+    fn now(path: &Path, stamp: Option<FileStamp>) -> HashMap<PathBuf, Option<FileStamp>> {
+        HashMap::from([(path.to_owned(), stamp)])
+    }
+
+    // A writer that puts the mtime back, or two writes in one tick of a coarse
+    // clock: the length or the inode still tells.
+    #[test]
+    fn a_file_with_the_same_mtime_and_another_length_or_inode_is_a_change() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut reg = registry_that_saw(&doc, stamp(10, 4, 1));
+
+        assert_eq!(reg.take_changes(&now(&doc, stamp(10, 9, 1))), vec![(doc.clone(), 10_000)], "another length");
+        assert_eq!(reg.take_changes(&now(&doc, stamp(10, 9, 2))), vec![(doc.clone(), 10_000)], "another inode");
+        assert_eq!(reg.take_changes(&now(&doc, stamp(10, 9, 2))), vec![]);
     }
 
     #[test]

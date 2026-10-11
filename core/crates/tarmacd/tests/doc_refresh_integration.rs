@@ -15,12 +15,12 @@ use common::{
 use serde_json::json;
 use tarmac_protocol::Msg;
 
-// Settle the watcher after an open. FSEvents replays the file's own creation to the
-// freshly-attached dir watch, so without this a test that edits and then waits for
-// "the watcher's event" can consume the CREATE instead — leaving the edit's event
-// queued to be mistaken for the refresh's. That is precisely the vacuity this suite
-// is arranged to avoid, so every test that later attributes an event to the refresh
-// settles first.
+// Lets the watcher go quiet before an event is attributed to the refresh: the
+// file_event of an earlier edit that is still on its way would be mistaken for the
+// refresh's. That is the vacuity this suite is arranged to avoid, so every test
+// that later attributes an event to the refresh settles first. (FSEvents also
+// replays the file's creation to a watch that was just attached. Since #256 that
+// pushes nothing: the file is as the daemon saw it at the open.)
 fn settle_watcher(app: &mut Conn, path: &str) {
     let _ = none_within(app, Duration::from_millis(800), |m| is_file_event_for(m, path));
 }
@@ -210,13 +210,10 @@ fn doc_refresh_pushes_even_when_the_mtime_is_unchanged() {
 }
 
 // S7: a doc that nothing has written since it was opened still refreshes. The
-// baseline is QUIESCENCE, not a null registry: opening a just-written doc makes
-// FSEvents replay the file's own creation to the freshly-attached dir watch, so
-// last_changed_ms is populated within milliseconds of the open (observed on this
-// harness: a last_changed_ms 3ms BEFORE last_opened_ms). The drain below settles
-// that event; nothing can touch the file afterwards, so the file_event that follows
-// is attributable to the refresh alone. This is the unconditional kill for a
-// do-nothing handler — with no edit to ride on, only the refresh can push.
+// file is as the daemon saw it at the open, so no look of the watcher pushes for
+// it; the drain below also lets the watcher go quiet. The file_event that follows
+// is the refresh's alone. This is the unconditional kill for a do-nothing handler
+// — with no edit to ride on, only the refresh can push.
 #[test]
 fn doc_refresh_works_on_a_doc_nothing_has_written_since_open() {
     let daemon = TestDaemon::start();
@@ -320,109 +317,9 @@ fn doc_refresh_on_a_deleted_file_emits_nothing() {
     );
 }
 
-// S21: the watcher-missed-it case — #89's reason to exist. An edit made while the
-// doc's board is in the background is dropped by watch_loop (it matches events
-// against the ACTIVE board's registry when the debounced batch is processed), so
-// only a refresh can deliver it. The sequence below is load-bearing: the
-// none_within both proves the silence and lets the 100ms debounce window expire
-// BEFORE the board switch, otherwise the watcher would deliver the edit itself
-// against the newly-active board and an empty handler would pass.
-#[test]
-fn doc_refresh_delivers_an_edit_the_watcher_never_announced() {
-    let daemon = TestDaemon::start();
-    let mut app = daemon.connect_app_drained();
-
-    let a = write_doc(&daemon.dir.join("docs/a.md"), "a\n");
-    open_on_background_board(&mut app, &a);
-    daemon.wait_for_state("doc a on board-1", |v| has_doc(v, 1, &a));
-    let before_edit = mtime_ms(&a);
-
-    // Edit while board-0 is active. Sleep first so the new mtime is distinguishable
-    // at ms resolution — without that, a handler replaying an open-time snapshot
-    // would survive this test.
-    std::thread::sleep(Duration::from_millis(300));
-    touch(&a);
-    assert!(
-        none_within(&mut app, Duration::from_millis(500), |m| is_file_event_for(m, &a)),
-        "an edit to a background-board doc must not be announced"
-    );
-    let after_edit = mtime_ms(&a);
-    assert_ne!(after_edit, before_edit, "the edit must move the mtime for this test to mean anything");
-
-    app.send(&Msg::BoardSwitch { board_id: "board-1".into() });
-    app.recv_restore();
-    // The switch heals nothing: the registry still has no record of the edit.
-    wait_for_last_changed(&daemon, "board-1 doc still unchanged", 1, &a, json!(null));
-
-    app.send(&Msg::DocRefresh { path: a.clone() });
-    let pushed = recv_refresh_event(&mut app, &a);
-    assert_eq!(pushed, after_edit, "the refresh must deliver the post-edit mtime");
-    assert_ne!(pushed, before_edit, "and it must not be the pre-edit mtime");
-
-    wait_for_last_changed(&daemon, "board-1 doc now carries the edit", 1, &a, json!(pushed));
-}
-
-// S22: the refresh RE-STATS; it never re-announces what the registry already
-// believes. This is S21's shape with a POPULATED baseline instead of a null one,
-// and it is the only test that distinguishes the two. A handler that answers from
-// `last_changed_ms` and stats only when that is `None`
-//
-//     let v = info.last_changed_ms.unwrap_or(stat_derived_mtime);
-//
-// passes every other test in this file — S3/S6 drain the watcher so registry and
-// file already agree, S7/S8 never write the file, and S5/S21 have a null registry
-// so the fallback fires. Only here is the registry populated AND stale, which is
-// exactly the state #89 exists to repair (the spec's "Asymmetric across boards"
-// limitation, and every watcher-miss cause in its Context).
-#[test]
-fn doc_refresh_restats_rather_than_replaying_a_populated_registry() {
-    let daemon = TestDaemon::start();
-    let mut app = daemon.connect_app_drained();
-
-    let a = write_doc(&daemon.dir.join("docs/a.md"), "a\n");
-    cli_open(&daemon.sock, &a);
-    app.recv_doc_opened();
-    settle_watcher(&mut app, &a);
-
-    // First edit, seen by the watcher: board-0's registry is now POPULATED.
-    touch(&a);
-    app.recv_file_event_for(&a);
-    let first_edit = mtime_ms(&a);
-    wait_for_last_changed(&daemon, "board-0 registry populated", 0, &a, json!(first_edit));
-
-    // Background board-0 (BoardCreate makes the new board active), then edit again.
-    // watch_loop matches against the ACTIVE board's registry, so this edit is
-    // dropped and the registry's populated value goes stale.
-    app.send(&Msg::BoardCreate);
-    app.recv_restore();
-    std::thread::sleep(Duration::from_millis(300));
-    touch(&a);
-    assert!(
-        none_within(&mut app, Duration::from_millis(500), |m| is_file_event_for(m, &a)),
-        "an edit made while the doc's board is backgrounded must not be announced"
-    );
-    let second_edit = mtime_ms(&a);
-    assert_ne!(second_edit, first_edit, "the second edit must move the mtime");
-
-    // Back to board-0, where the registry still carries the FIRST edit's mtime.
-    app.send(&Msg::BoardSwitch { board_id: "board-0".into() });
-    app.recv_restore();
-    // Settle before attributing anything to the refresh, as every other test here
-    // does: board-0 is active again, so a late watcher event could otherwise arrive
-    // carrying the second edit and be mistaken for the refresh's push.
-    settle_watcher(&mut app, &a);
-    wait_for_last_changed(&daemon, "board-0 registry still stale", 0, &a, json!(first_edit));
-
-    app.send(&Msg::DocRefresh { path: a.clone() });
-    let pushed = recv_refresh_event(&mut app, &a);
-    assert_eq!(pushed, second_edit, "the refresh must report what the file says now");
-    assert_ne!(
-        pushed, first_edit,
-        "replaying the registry's stored last_changed_ms is the bug this pins"
-    );
-    // Recorded, not merely announced. S4 cannot pin this: there the watcher wrote
-    // the same value moments earlier, so an arm that skips its registry write is
-    // invisible. Here the stored value is stale, so only the refresh's own write
-    // can move it.
-    wait_for_last_changed(&daemon, "board-0 registry caught up", 0, &a, json!(second_edit));
-}
+// S21 and S22 — a refresh delivers a change that the daemon has not seen, and it
+// stats the file, it does not replay what the registry has — are unit tests of
+// `Daemon` with a watcher that never wakes it (`state.rs`). They were built here on
+// an edit made while the doc's board was in the background, which a switch left
+// unseen. Since #256 the switch to the board reports that edit itself
+// (`doc_changes_integration.rs`), so over the socket nothing is left unseen.

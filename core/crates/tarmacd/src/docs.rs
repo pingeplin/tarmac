@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -6,7 +7,7 @@ use std::time::SystemTime;
 use tarmac_protocol::Msg;
 use tracing::debug;
 
-use crate::boards::{DocInfo, Registry, epoch_ms};
+use crate::boards::{DocInfo, FileStamp, Registry, epoch_ms};
 use crate::state::Daemon;
 
 pub struct RepoInfo {
@@ -34,8 +35,9 @@ pub fn derive_repo(doc: &Path) -> Option<RepoInfo> {
 }
 
 /// `None` for a file that is not there or cannot be read.
-pub fn mtime(path: &Path) -> Option<SystemTime> {
-    std::fs::metadata(path).and_then(|meta| meta.modified()).ok()
+pub fn stamp(path: &Path) -> Option<FileStamp> {
+    let meta = std::fs::metadata(path).ok()?;
+    Some(FileStamp { mtime: meta.modified().ok()?, len: meta.len(), inode: meta.ino() })
 }
 
 // Single code path for CLI ("cli") and app ("user") opens. `term_id` is the
@@ -77,8 +79,14 @@ pub async fn handle_open(
 }
 
 /// Registers `path` in `reg`, or refreshes the doc already there. True when
-/// the doc is new to `reg`.
-pub fn upsert_doc(reg: &mut Registry, path: &Path, via: &str, term_id: Option<String>) -> bool {
+/// the doc is new to `reg`; `seen` is then its file as it is now.
+pub fn upsert_doc(
+    reg: &mut Registry,
+    path: &Path,
+    via: &str,
+    term_id: Option<String>,
+    seen: Option<FileStamp>,
+) -> bool {
     match reg.docs.get_mut(path) {
         Some(info) => {
             info.via = via.to_owned();
@@ -105,7 +113,7 @@ pub fn upsert_doc(reg: &mut Registry, path: &Path, via: &str, term_id: Option<St
                     repo_root: repo.as_ref().map(|r| r.root.clone()),
                     repo_color: repo.as_ref().map(|r| r.color),
                     last_changed_ms: None,
-                    seen_mtime: mtime(path),
+                    seen,
                     last_opened_ms: epoch_ms(SystemTime::now()),
                     term_id,
                 },
@@ -116,31 +124,43 @@ pub fn upsert_doc(reg: &mut Registry, path: &Path, via: &str, term_id: Option<St
     }
 }
 
-pub fn mtimes(paths: impl IntoIterator<Item = PathBuf>) -> HashMap<PathBuf, Option<SystemTime>> {
+pub fn stamps(paths: impl IntoIterator<Item = PathBuf>) -> HashMap<PathBuf, Option<FileStamp>> {
     paths
         .into_iter()
         .map(|path| {
-            let mtime = mtime(&path);
-            (path, mtime)
+            let stamp = stamp(&path);
+            (path, stamp)
         })
         .collect()
 }
 
+/// One look for each wake, and `BURST` between two looks: a wake can come
+/// from any file of a watched directory, in the middle of a doc's own burst.
 pub async fn watch_loop(daemon: Arc<Daemon>) {
     loop {
         daemon.woken().await;
         report_changes(&daemon).await;
+        tokio::time::sleep(crate::watch::BURST).await;
     }
 }
 
 /// Compares each doc of the active board with its file, and pushes a
 /// `file_event` for each that changed (`Registry::take_changes`). The files are
-/// read with no lock held. A doc of another board is compared when its board
-/// is sent (`conn::change_and_send_active_board`).
+/// read with no `boards` lock held. A doc of another board is compared when
+/// its board is sent (`conn::change_and_send_active_board`).
+///
+/// With no app connected it takes nothing: what was seen is what an app was
+/// told, so the connect finds the change and reports it.
 pub async fn report_changes(daemon: &Daemon) {
-    let paths: Vec<PathBuf> = daemon.boards.lock().await.active_registry().docs.keys().cloned().collect();
-    let now = mtimes(paths);
-    let changes = daemon.boards.lock().await.active_registry_mut().take_changes(&now);
+    if !daemon.app_connected().await {
+        return;
+    }
+    let changes = {
+        let _one_look = daemon.looking().await;
+        let paths: Vec<PathBuf> = daemon.boards.lock().await.active_registry().docs.keys().cloned().collect();
+        let now = stamps(paths);
+        daemon.boards.lock().await.active_registry_mut().take_changes(&now)
+    };
     if changes.is_empty() {
         return;
     }
@@ -159,17 +179,19 @@ pub async fn report_changes(daemon: &Daemon) {
 /// differs from what was seen. The registry lookup is also the active-board
 /// check, which is why an unknown path costs one lock and no push.
 pub async fn stat_and_push(daemon: &Arc<Daemon>, path: &Path) -> bool {
-    // Deleted files emit nothing until the path exists again.
-    let Some(modified) = mtime(path) else { return false };
-    let mtime_ms = epoch_ms(modified);
-    // Registry update lands before the push so a crash between the two never
-    // loses the fact.
-    {
+    let mtime_ms = {
+        let _one_look = daemon.looking().await;
+        // Deleted files emit nothing until the path exists again.
+        let Some(stamp) = stamp(path) else { return false };
+        // Registry update lands before the push so a crash between the two
+        // never loses the fact.
         let mut boards = daemon.boards.lock().await;
         let Some(info) = boards.active_registry_mut().docs.get_mut(path) else { return false };
-        info.seen_mtime = Some(modified);
+        info.seen = Some(stamp);
+        let mtime_ms = epoch_ms(stamp.mtime);
         info.last_changed_ms = Some(mtime_ms);
-    }
+        mtime_ms
+    };
     daemon.mark_dirty();
     daemon
         .push(Msg::FileEvent { path: path.to_string_lossy().into_owned(), mtime_ms })

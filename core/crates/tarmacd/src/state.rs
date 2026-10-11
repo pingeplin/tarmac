@@ -57,6 +57,10 @@ pub struct Daemon {
     watcher: std::sync::Mutex<WatcherState>,
     /// Set by the watcher; `docs::watch_loop` waits on it.
     wake: Arc<Notify>,
+    /// Held from the read of the files to the `take_changes` that uses it, so
+    /// that an older reading is never taken after a newer one. Taken before
+    /// `boards`, never while `boards` is held.
+    looking: Mutex<()>,
     next_generation: AtomicU64,
     dirty: Notify,
     state_path: PathBuf,
@@ -94,6 +98,7 @@ impl Daemon {
                 watched_dirs: HashSet::new(),
             }),
             wake,
+            looking: Mutex::new(()),
             next_generation: AtomicU64::new(1),
             dirty: Notify::new(),
             state_path,
@@ -111,6 +116,14 @@ impl Daemon {
 
     pub async fn woken(&self) {
         self.wake.notified().await;
+    }
+
+    pub async fn looking(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.looking.lock().await
+    }
+
+    pub async fn app_connected(&self) -> bool {
+        self.app.lock().await.is_some()
     }
 
     /// The path of each registered doc, of every board.
@@ -177,14 +190,18 @@ impl Daemon {
             Ok(watched) => watched,
             Err(e) => {
                 self.release_watch(dir);
+                // A watch that fails has restarted the stream too.
+                crate::docs::report_changes(self).await;
                 anyhow::bail!("cannot watch {}: {e}", dir.display());
             }
         };
+        // Read with no lock held.
+        let seen = crate::docs::stamp(path);
         // Upsert before the entry is read so it reflects the post-open state.
         let (entry, is_new) = {
             let mut boards = self.boards.lock().await;
             let reg = boards.registry_mut(board);
-            let is_new = crate::docs::upsert_doc(reg, path, via, term_id);
+            let is_new = crate::docs::upsert_doc(reg, path, via, term_id, seen);
             (reg.entry(path).expect("doc just upserted"), is_new)
         };
         if !is_new {
@@ -529,9 +546,24 @@ mod tests {
         let tmp = tmp_dir(tag);
         let wake = Arc::new(Notify::new());
         let daemon = Daemon::with_source(tmp.join("state.json"), Box::new(Silent), wake.clone());
+        let app = connect_app(&daemon).await;
+        (tmp, daemon, wake, app)
+    }
+
+    async fn connect_app(daemon: &Daemon) -> mpsc::Receiver<Msg> {
         let (tx, rx) = mpsc::channel(16);
         daemon.install_app(tx, None).await;
-        (tmp, daemon, wake, rx)
+        rx
+    }
+
+    async fn next_file_event(app: &mut mpsc::Receiver<Msg>) -> u64 {
+        let msg = tokio::time::timeout(Duration::from_secs(5), app.recv()).await.expect("a push");
+        let Some(Msg::FileEvent { mtime_ms, .. }) = msg else { panic!("expected a file_event, got {msg:?}") };
+        mtime_ms
+    }
+
+    async fn last_changed(daemon: &Daemon, doc: &Path) -> Option<u64> {
+        daemon.boards.lock().await.active_registry().docs[doc].last_changed_ms
     }
 
     fn write_doc(path: PathBuf) -> PathBuf {
@@ -542,7 +574,8 @@ mod tests {
 
     /// Gives the file an mtime that it did not have, and returns it in ms.
     fn change(path: &Path) -> u64 {
-        let later = SystemTime::now() + Duration::from_secs(60);
+        static MINUTES: AtomicU32 = AtomicU32::new(1);
+        let later = SystemTime::now() + Duration::from_secs(60 * u64::from(MINUTES.fetch_add(1, Ordering::Relaxed)));
         std::fs::File::options().write(true).open(path).unwrap().set_modified(later).unwrap();
         crate::boards::epoch_ms(later)
     }
@@ -601,8 +634,121 @@ mod tests {
         assert_eq!(file_events(&mut app), vec![], "nothing looked at the doc yet");
 
         wake.notify_one();
-        let msg = tokio::time::timeout(Duration::from_secs(5), app.recv()).await.expect("a push");
-        assert!(matches!(msg, Some(Msg::FileEvent { mtime_ms, .. }) if mtime_ms == changed));
+        assert_eq!(next_file_event(&mut app).await, changed);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // A wake can come from any file of a watched directory, in the middle of a
+    // doc's own burst. docs/protocol.md gives a doc one file_event for a burst.
+    #[tokio::test]
+    async fn a_look_comes_no_sooner_than_the_burst_window_after_the_one_before() {
+        let (tmp, daemon, wake, mut app) = silent_daemon("burst").await;
+        let doc = write_doc(tmp.join("d/a.md"));
+        open_doc(&daemon, None, &doc).await;
+
+        let first = change(&doc);
+        wake.notify_one();
+        assert_eq!(next_file_event(&mut app).await, first);
+        let told = std::time::Instant::now();
+
+        let second = change(&doc);
+        wake.notify_one();
+        assert_eq!(next_file_event(&mut app).await, second);
+        assert!(told.elapsed() >= crate::watch::BURST, "the second look came after {:?}", told.elapsed());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // What was seen is what an app was told. A look with no app would take the
+    // change and tell nobody; the connect then would find nothing.
+    #[tokio::test]
+    async fn a_look_takes_nothing_while_no_app_is_connected() {
+        let tmp = tmp_dir("no-app");
+        let daemon = Daemon::with_source(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new()));
+        let doc = write_doc(tmp.join("d/a.md"));
+        open_doc(&daemon, None, &doc).await;
+
+        let changed = change(&doc);
+        crate::docs::report_changes(&daemon).await;
+        assert_eq!(last_changed(&daemon, &doc).await, None);
+
+        let mut app = connect_app(&daemon).await;
+        crate::docs::report_changes(&daemon).await;
+        assert_eq!(file_events(&mut app), vec![(doc, changed)]);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // doc_refresh, S21: it delivers a change that the daemon has not seen.
+    #[tokio::test]
+    async fn a_refresh_reports_a_change_that_no_wake_told_of() {
+        let (tmp, daemon, _wake, mut app) = silent_daemon("refresh-unseen").await;
+        let doc = write_doc(tmp.join("d/a.md"));
+        open_doc(&daemon, None, &doc).await;
+
+        let changed = change(&doc);
+        assert!(crate::docs::stat_and_push(&daemon, &doc).await);
+        assert_eq!(file_events(&mut app), vec![(doc.clone(), changed)]);
+        assert_eq!(last_changed(&daemon, &doc).await, Some(changed));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // doc_refresh, S22: it stats the file. A handler that answers from the
+    // recorded `last_changed_ms`, and stats only when there is none, passes
+    // every test whose record is empty or agrees with the file. Here the record
+    // is there and is old.
+    #[tokio::test]
+    async fn a_refresh_stats_the_file_and_does_not_replay_what_is_recorded() {
+        let (tmp, daemon, wake, mut app) = silent_daemon("refresh-restats").await;
+        let doc = write_doc(tmp.join("d/a.md"));
+        open_doc(&daemon, None, &doc).await;
+        let first = change(&doc);
+        assert!(crate::docs::stat_and_push(&daemon, &doc).await);
+        assert_eq!(file_events(&mut app), vec![(doc.clone(), first)]);
+
+        let second = change(&doc);
+        assert_ne!(second, first);
+        assert!(crate::docs::stat_and_push(&daemon, &doc).await);
+        assert_eq!(file_events(&mut app), vec![(doc.clone(), second)], "what the file says now");
+        assert_eq!(last_changed(&daemon, &doc).await, Some(second), "recorded, not only announced");
+
+        // The refresh took the file as seen: a look after it has nothing to tell.
+        wake.notify_one();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(file_events(&mut app), vec![]);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    struct RefusesDir(PathBuf);
+
+    impl WakeSource for RefusesDir {
+        fn watch(&mut self, dir: &Path) -> anyhow::Result<()> {
+            anyhow::ensure!(dir != self.0, "refused");
+            Ok(())
+        }
+
+        fn unwatch(&mut self, _: &Path) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+
+    // notify restarts its stream also for a watch that fails.
+    #[tokio::test]
+    async fn an_open_that_cannot_watch_reports_a_change_too() {
+        let tmp = tmp_dir("refused-reports");
+        let refused = tmp.join("refused");
+        let daemon =
+            Daemon::with_source(tmp.join("state.json"), Box::new(RefusesDir(refused.clone())), Arc::new(Notify::new()));
+        let mut app = connect_app(&daemon).await;
+        let kept = write_doc(tmp.join("kept/a.md"));
+        open_doc(&daemon, None, &kept).await;
+
+        let changed = change(&kept);
+        assert!(daemon.open_doc(None, &write_doc(refused.join("b.md")), "t", None).await.is_err());
+        assert_eq!(file_events(&mut app), vec![(kept, changed)]);
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

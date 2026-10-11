@@ -7,7 +7,10 @@ mod common;
 
 use std::time::{Duration, SystemTime};
 
-use common::{Conn, Restore, TestDaemon, has_doc, is_file_event_for, mtime_ms, none_within, touch, write_doc};
+use common::{
+    Conn, Restore, TestDaemon, doc_entry, has_doc, is_file_event_for, mtime_ms, none_within, touch, write_doc,
+};
+use serde_json::json;
 use tarmac_protocol::Msg;
 
 fn quiet(app: &mut Conn, path: &str) -> bool {
@@ -53,6 +56,71 @@ fn a_change_in_the_background_is_reported_when_its_board_is_shown() {
     assert_eq!(last_changed(&restore, &y), Some(edited), "the restore carries the change");
     assert_eq!(app.recv_file_event_for(&y), edited, "and a file_event follows it");
     assert!(quiet(&mut app, &y), "the change is reported one time");
+    daemon.wait_for_state("the change in the state file", |v| doc_entry(v, 1, &y)["last_changed_ms"] == json!(edited));
+}
+
+// The board that a delete leaves active is sent like any other.
+#[test]
+fn deleting_the_active_board_reports_the_changes_of_the_board_that_is_shown() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let y = write_doc(&daemon.dir.join("docs/y.md"), "y\n");
+    open_on(&mut app, "board-0", &y);
+    quiet(&mut app, &y);
+    two_boards(&mut app);
+
+    touch(&y);
+    let edited = mtime_ms(&y);
+    assert!(quiet(&mut app, &y), "board-1 is active and does not have the doc");
+
+    app.send(&Msg::BoardDelete { board_id: "board-1".into() });
+    let restore = app.recv_restore_for("board-0");
+    assert_eq!(last_changed(&restore, &y), Some(edited));
+    assert_eq!(app.recv_file_event_for(&y), edited);
+}
+
+// What the daemon saw is what an app was told. A change made with no app is
+// told to the app that connects: the app of a reconnect keeps its cards, and
+// reads a doc again on a file_event only.
+#[test]
+fn a_change_made_with_no_app_connected_is_reported_at_the_connect() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let y = write_doc(&daemon.dir.join("docs/y.md"), "y\n");
+    open_on(&mut app, "board-0", &y);
+    quiet(&mut app, &y);
+    drop(app);
+    // The daemon sees the disconnect, then the watcher's wake for the edit passes.
+    std::thread::sleep(Duration::from_millis(300));
+    touch(&y);
+    let edited = mtime_ms(&y);
+    std::thread::sleep(Duration::from_millis(600));
+
+    let mut app = daemon.connect_app();
+    let restore = app.recv_restore_for("board-0");
+    assert_eq!(last_changed(&restore, &y), Some(edited));
+    assert_eq!(app.recv_file_event_for(&y), edited);
+}
+
+// A writer that puts the mtime back. The length tells.
+#[test]
+fn a_change_that_keeps_the_mtime_is_reported() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let y = write_doc(&daemon.dir.join("docs/y.md"), "y\n");
+    open_on(&mut app, "board-0", &y);
+    quiet(&mut app, &y);
+
+    let kept = std::fs::metadata(&y).unwrap().modified().unwrap();
+    let kept_ms = mtime_ms(&y);
+    let file = std::fs::File::options().append(true).open(&y).unwrap();
+    std::io::Write::write_all(&mut &file, b"more\n").unwrap();
+    file.set_modified(kept).unwrap();
+    drop(file);
+
+    app.recv_until("a file_event with the mtime that was kept", |m| {
+        matches!(m, Msg::FileEvent { path, mtime_ms } if *path == y && *mtime_ms == kept_ms)
+    });
 }
 
 #[test]

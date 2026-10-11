@@ -135,18 +135,20 @@ async fn send_active_board(daemon: &Daemon, conn: &mut AppConn) {
 // describes the board it made active whatever another connection does next.
 // When it returns false nothing is sent.
 //
-// Lock sequence: terms, term_boards, boards (each released before the next),
-// then terms once per live term (the scrollback snapshot).
+// Lock sequence: terms, term_boards (each released before the next), then
+// `looking` held over two holds of boards, then terms once per live term (the
+// scrollback snapshot).
 async fn change_and_send_active_board(
     daemon: &Daemon,
     conn: &mut AppConn,
     change: impl FnOnce(&mut Boards) -> bool,
 ) -> bool {
     let by_board = daemon.live_terms_by_board().await;
-    // Every board's docs, since `change` decides which board is shown. Read
-    // with no lock held.
-    let now = docs::mtimes(daemon.doc_paths().await);
     let (board_list, restore, active_id, live_terms, changes) = {
+        let _one_look = daemon.looking().await;
+        // Every board's docs, since `change` decides which board is shown.
+        // Read with no `boards` lock held.
+        let now = docs::stamps(daemon.doc_paths().await);
         let mut boards = daemon.boards.lock().await;
         if !change(&mut boards) {
             return false;
