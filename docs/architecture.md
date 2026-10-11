@@ -162,7 +162,7 @@ reports.
 | Docs | `Open {path, term_id?, board_id?}` | cli/app→D | surface a doc |
 | | `DocRead {path}` | app→D | mark a doc read |
 | | `DocOpened(DocEntry)` | D→app | a doc was opened/updated |
-| | `FileEvent {path, mtime_ms}` | D→app | a watched doc changed on disk |
+| | `FileEvent {path, mtime_ms}` | D→app | a doc of the active board changed on disk |
 | | `DocRefresh {path}` | app→D | re-stat a doc now and push its `file_event` |
 | Terminal I/O | `SpawnTerm {term_id, cols, rows, cwd?, cmd?, board_id?, inherit_cwd_from?}` | app→D | create a PTY card |
 | | `Input {term_id, bytes}` | app→D | keystrokes and mouse reports |
@@ -228,7 +228,7 @@ Daemon
  │                     └─ Registry { docs, dock, tiles, board: viewport }
  ├─ terms:       Mutex<HashMap<term_id, Arc<TermHandle>>>   all live PTYs, global
  ├─ term_boards: Mutex<HashMap<term_id, BoardId>>           which board owns a term
- └─ watcher:     std::sync::Mutex<WatcherState>             notify debouncer + docs per directory
+ └─ watcher:     std::sync::Mutex<WatcherState>             wake source + docs per directory
 ```
 
 A board is the unit that became N in M3. The N boards sit behind **one coarse
@@ -249,7 +249,8 @@ per-terminal scrollback ring uses a `std::sync::Mutex` that is **never held
 across an `.await`** — locked only for a synchronous push/snapshot. The watcher's
 mutex is a `std::sync::Mutex` too and is never held across an `.await`, but it
 is held for the notify call that starts or drops a watch. The `boards` lock is
-never held during a watcher call.
+never held during a watcher call. `Daemon::look` takes its own lock before
+`boards`, never while `boards` is held, and releases it before any push.
 
 ### Terminal sessions
 
@@ -281,12 +282,79 @@ replays it so the app can re-bind to the live shell instead of cold-spawning.
 
 ### Docs & file watching
 
-`Daemon::new` builds a `notify` debouncer (100 ms) and watches the **parent
-directory** (non-recursive) of every docked doc, filtering events to known doc
-paths — editors and agents replace files atomically, so watching the inode
-directly misses rewrites. Events are filtered by *path only, never by event
-kind*. On a hit the daemon stats the file, records `last_changed_ms` **before**
-pushing (so a crash never loses the fact), and pushes `FileEvent`.
+The daemon finds a change by **state, not by event**. Each (board, doc) keeps
+the file as the daemon last saw it for that board (`DocInfo.seen`, a
+`FileStamp`: mtime, length and inode; in memory only, taken when the doc is
+registered, when the state file is loaded, and by a `DocRefresh`). A change is
+a file that *differs* from it (`Registry::take_changes`). "Differs", not "is
+newer": a file put back from a backup is a change, and a file with an mtime in
+the future is not. The length and the inode are there for a change that keeps
+the mtime — a writer that puts the mtime back, two writes in one tick of a
+coarse clock, a save that replaces the file by one of the same length. Its
+`FileEvent` has the mtime of the one before, so a markdown card reads the file
+again and an HTML card, whose address is the mtime, does not reload. (On a
+volume whose inode numbers were not stable, each look would be a change. APFS,
+FAT and exFAT keep them; a network volume was not tried.) For a change the
+daemon records `last_changed_ms` **before** it pushes (so a crash never loses
+the fact), and pushes `FileEvent`. A file that is gone pushes nothing, and is a
+change when it is back.
+
+A **look** compares the docs of the active board (`docs::report_changes`). The
+daemon looks:
+
+- on each wake of the watcher (`docs::watch_loop`), with `BURST` (100 ms)
+  between two looks: a wake can come from any file of a watched directory, in
+  the middle of a doc's own burst;
+- after an open or a close that changed the watch set, and after an open whose
+  watch failed (see #253 below);
+- when the active board is sent — connect, `BoardSwitch`, `BoardCreate`,
+  `BoardDelete` (`conn::change_and_send_active_board`): before the `Restore` is
+  built, so that it carries each new `last_changed_ms`, with a `FileEvent` for
+  each change after it. The app reads a doc of a board it has already built
+  again on a `FileEvent` only. (A look of the watcher that runs just before
+  can send a `FileEvent` ahead of the `Restore`. The app takes it for every
+  board it has built that has the doc. For a board it has not built yet it
+  drops it, and builds the card from the `Restore` and the file: the content
+  is current, and the change time can be one change old.)
+
+There is no timer. A board in the background is not looked at until it is
+shown: a change of its doc is reported at the switch, to that board, whether
+or not another board was told of the same change before.
+
+A change is recorded, and saved, with or without an app. When its `FileEvent`
+reaches no app — none is connected, or the daemon already knows that it is
+gone — the doc is held for its board (`DocInfo.untold`, in memory), and the
+next look of that board tells it: at the connect, as a rule. A held change is
+dropped when the file changes again (that change is told) or is gone. After a
+daemon restart the `Restore` still carries the time, and no `FileEvent` comes,
+since what was held is gone and the first look takes each file as it is. Not
+covered: a `FileEvent` that was queued for an app whose connection then
+closed before it was written. It is not held, and an app that connects again
+with its cards in place keeps the old content until the next change or `↻`.
+
+`Daemon::look` is the one place that reads a doc's file for a change. It reads
+with no `boards` lock held, gives the reading to its caller under that lock,
+and runs one at a time: an older reading must not be applied after a newer
+one. Nothing is pushed from inside it.
+
+Two limits of a look. It can come in the middle of a doc's own save, when
+another file of a watched directory wakes the daemon: the app then reads the
+file as it is at that moment, and the next look corrects it. And the files are
+read on the task that looks, inside `Daemon::look`: a stat that does not return
+(a network volume that is gone) holds every later look, and with it a connect,
+a board switch and a `DocRefresh` (#259).
+
+One limit of the watcher itself, older than the look: the debouncer wakes the
+daemon for a path only when its events have stopped for `BURST`. A file that
+is written with no such gap gets no `FileEvent` until the writes stop, unless
+something else makes the daemon look (#258).
+
+The watcher is behind `WakeSource` (`watch.rs`): `watch(dir)`, `unwatch(dir)`,
+and a wake that carries no detail. So a change whose wake was lost is reported
+at the next look, not never. `NotifySource` is its one implementation: a
+`notify` debouncer (`BURST`) on the **parent directory** (non-recursive) of
+every registered doc — editors and agents replace files atomically, so a watch
+on the inode misses rewrites.
 
 The watch set is one per daemon, not per board. The watcher counts the
 registered docs in each directory (`WatcherState.doc_counts`), one for each
@@ -303,13 +371,16 @@ fails at startup (the directory is gone): the doc is still registered, and it
 must hold the watch that a later open in that directory starts.
 
 Each `watch` and `unwatch` restarts the FSEvents stream, and the restart
-loses a change that the stream has not delivered yet, of any watched file.
-So `delete_board` drops no watch: it takes the board's docs off the counts
-and leaves the directories watched (#249). A directory with a watch and no
-count is harmless, since `watch_loop` drops an event for a path that the
-active board does not have. Its watch goes with the next close that empties the directory,
-or with the daemon. A `doc_close` and an open in a new directory still make
-one restart each (#253).
+loses the events that the stream has not delivered yet, of any watched file
+(#253). So `acquire_watch` and `release_watch` say whether they changed the
+watch set, and `open_doc` and `close_doc` then look at the docs themselves.
+What is left of the gap: a change made after that look and before the new
+stream delivers is seen at the next look.
+
+`delete_board` drops no watch: it takes the board's docs off the counts and
+leaves the directories watched (#249). A directory with a watch and no count
+only wakes the daemon for nothing. Its watch goes with the next close that
+empties the directory, or with the daemon.
 
 `tarmac open` end-to-end: the CLI canonicalizes the path, connects, reads
 `TARMAC_TERM_ID` from its env, and sends `Open`. The daemon re-canonicalizes
@@ -1251,16 +1322,20 @@ daemon `FileEvent` → the card re-renders and its header shows `✎ Ns`.
 scrollback. The app toasts, the status bar prints the reason, and the client
 ramps its reconnect; the cards are left as they are. On reconnect the daemon
 sends `BoardList` + the active board's `Restore` (stamped with `live_terms`) +
-each live term's scrollback as `Output` frames. The app leaves each surviving
+a `FileEvent` for each of its docs that changed with no app connected + each
+live term's scrollback as `Output` frames. The app leaves each surviving
 card in place, arms its scrollback gate again so the ring replaces — rather than
 repeats — the history it shows, marks any terminal the daemon no longer lists
-dead, and the status bar reads `attached` again.
+dead, and the status bar reads `attached` again. A doc card is read again for
+its `FileEvent`.
 
 **Board switch (`⌘K` → Enter).** App flushes the leaving board's layout, takes
 its view out of the window and sends `BoardSwitch` → daemon sets active and
-replies `BoardList` + that board's `Restore` (+ scrollback for its live terms,
-the first time on a connection) → app mounts the target board, builds it on a
-first visit, and re-binds the chrome to its viewport.
+replies `BoardList` + that board's `Restore` + a `FileEvent` for each of its
+docs that changed while it was in the background (+ scrollback for its live
+terms, the first time on a connection) → app mounts the target board, builds it
+on a first visit, reads the changed docs again, and re-binds the chrome to its
+viewport.
 
 ---
 

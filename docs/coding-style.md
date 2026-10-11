@@ -164,7 +164,11 @@ back from a rendered bitmap.
   gone, cleanup on the way out. Never to silence a failure that matters.
 - **Ids are `String` aliases, not newtypes** — `pub type BoardId = String;` in
   `core/crates/tarmacd/src/boards.rs`. Do not add a trait to get a seam for
-  mocking either: the integration harness spawns the real daemon instead.
+  mocking either: the integration harness spawns the real daemon instead. A
+  trait is for a part that the design means to replace. `WakeSource` in
+  `core/crates/tarmacd/src/watch.rs` is the one there is: what wakes the daemon
+  can change with no change to the rest (#258). Its tests use an implementation
+  that never wakes; that follows from the seam and is not the reason for it.
 - **Getters read as nouns** (`active_board`, `state_path`) — no `get_` prefix.
   Mutators read as verbs (`apply_layout`, `acquire_watch`, `mark_dirty`).
 - **`std::sync::Mutex` must never span an `.await`** — lock, do the synchronous

@@ -3,6 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use tarmac_protocol::{BoardMeta, BoardViewport, DocEntry, Msg, Tile};
 
@@ -13,9 +14,44 @@ pub struct DocInfo {
     pub repo_root: Option<String>,
     pub repo_color: Option<u8>,
     pub last_changed_ms: Option<u64>,
+    /// The file as the daemon last saw it for this board; `None` when there
+    /// was no file to read. In memory only. A change is a file that differs
+    /// from this (`Registry::take_changes`).
+    pub seen: Option<FileStamp>,
+    /// The `file_event` of the last change reached no app: none was connected,
+    /// or it went away. In memory only. The next look tells it
+    /// (`Registry::take_untold`).
+    pub untold: bool,
     pub last_opened_ms: u64,
     /// The term that opened this doc; `None` when opened without a `TARMAC_TERM_ID`.
     pub term_id: Option<String>,
+}
+
+/// What the daemon reads of a doc's file to know that it changed. The length
+/// and the inode are there for a change that keeps the mtime: a writer that
+/// puts the mtime back, two writes in one tick of a coarse clock, a save that
+/// replaces the file by one of the same length.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct FileStamp {
+    pub mtime: SystemTime,
+    pub len: u64,
+    pub inode: u64,
+}
+
+impl DocInfo {
+    /// Takes the file as it is: what was seen, the time of its change, and
+    /// nothing left to tell. Returns that time in ms.
+    fn see(&mut self, stamp: FileStamp) -> u64 {
+        self.seen = Some(stamp);
+        self.untold = false;
+        let ms = epoch_ms(stamp.mtime);
+        self.last_changed_ms = Some(ms);
+        ms
+    }
+}
+
+pub fn epoch_ms(t: SystemTime) -> u64 {
+    t.duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
 pub fn term_tile() -> Tile {
@@ -83,6 +119,56 @@ impl Registry {
         if board.is_some() {
             self.board = board;
         }
+    }
+
+    /// Takes `now` as each file at this moment and returns the docs whose file
+    /// differs from what was seen, with the file's mtime in ms. "Differs", not
+    /// "is newer": a file put back from a backup is a change, and one with an
+    /// mtime in the future is not. A file that is gone is taken and not
+    /// returned, so it is a change when it is back.
+    pub fn take_changes(&mut self, now: &HashMap<PathBuf, Option<FileStamp>>) -> Vec<(PathBuf, u64)> {
+        let mut changes = Vec::new();
+        for (path, stamp) in now {
+            let Some(info) = self.docs.get_mut(path) else { continue };
+            if info.seen == *stamp {
+                continue;
+            }
+            match stamp {
+                Some(stamp) => changes.push((path.clone(), info.see(*stamp))),
+                // A file that is gone is not told, also when its last change
+                // was held.
+                None => {
+                    info.seen = None;
+                    info.untold = false;
+                }
+            }
+        }
+        changes
+    }
+
+    /// `doc_refresh`: takes the file as seen whether or not it differs, and
+    /// returns its mtime in ms. `None` for an unknown path.
+    pub fn refresh(&mut self, path: &Path, stamp: FileStamp) -> Option<u64> {
+        Some(self.docs.get_mut(path)?.see(stamp))
+    }
+
+    /// The `file_event` for `path` reached no app.
+    fn hold(&mut self, path: &Path) {
+        if let Some(info) = self.docs.get_mut(path) {
+            info.untold = true;
+        }
+    }
+
+    /// The docs whose last change reached no app, with its time. They count as
+    /// told from here on; the caller holds one again when it cannot send it.
+    pub fn take_untold(&mut self) -> Vec<(PathBuf, u64)> {
+        let mut untold = Vec::new();
+        for (path, info) in &mut self.docs {
+            if let (true, Some(ms)) = (std::mem::take(&mut info.untold), info.last_changed_ms) {
+                untold.push((path.clone(), ms));
+            }
+        }
+        untold
     }
 
     /// False when the path is unknown.
@@ -198,6 +284,19 @@ impl Boards {
         self.boards.iter()
     }
 
+    /// Holds the doc of board `id` (`Registry::hold`). Nothing for a board that
+    /// is gone: the change was that board's, and not the active board's.
+    pub fn hold(&mut self, id: &str, path: &Path) {
+        if let Some(idx) = self.index_of(id) {
+            self.boards[idx].registry.hold(path);
+        }
+    }
+
+    /// The path of each registered doc, of every board.
+    pub fn doc_paths(&self) -> HashSet<PathBuf> {
+        self.boards.iter().flat_map(|b| b.registry.docs.keys().cloned()).collect()
+    }
+
     pub fn contains(&self, id: &str) -> bool {
         self.index_of(id).is_some()
     }
@@ -291,6 +390,7 @@ impl Boards {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     fn term(id: Option<&str>) -> Tile {
         Tile { kind: "term".into(), term_id: id.map(str::to_string), ..term_tile() }
@@ -392,7 +492,7 @@ mod tests {
     }
 
     fn doc_info() -> DocInfo {
-        DocInfo { via: "t".into(), read: false, repo: None, repo_root: None, repo_color: None, last_changed_ms: None, last_opened_ms: 0, term_id: None }
+        DocInfo { via: "t".into(), read: false, repo: None, repo_root: None, repo_color: None, last_changed_ms: None, seen: None, untold: false, last_opened_ms: 0, term_id: None }
     }
 
     #[test]
@@ -404,5 +504,176 @@ mod tests {
         assert!(reg.dock.contains(&doc));
         assert!(reg.close_doc(&doc));
         assert!(!reg.dock.contains(&doc));
+    }
+
+    fn stamp(secs: u64, len: u64, inode: u64) -> Option<FileStamp> {
+        Some(FileStamp { mtime: UNIX_EPOCH + Duration::from_secs(secs), len, inode })
+    }
+
+    fn at(secs: u64) -> Option<FileStamp> {
+        stamp(secs, 4, 1)
+    }
+
+    fn registry_that_saw(path: &Path, seen: Option<FileStamp>) -> Registry {
+        let mut reg = Registry::empty();
+        reg.docs.insert(path.to_owned(), DocInfo { seen, ..doc_info() });
+        reg
+    }
+
+    fn now(path: &Path, stamp: Option<FileStamp>) -> HashMap<PathBuf, Option<FileStamp>> {
+        HashMap::from([(path.to_owned(), stamp)])
+    }
+
+    // A writer that puts the mtime back, two writes in one tick of a coarse
+    // clock, a save that replaces the file: the length or the inode still tells.
+    #[test]
+    fn a_file_with_the_same_mtime_and_another_length_or_inode_is_a_change() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut reg = registry_that_saw(&doc, stamp(10, 4, 1));
+
+        assert_eq!(reg.take_changes(&now(&doc, stamp(10, 9, 1))), vec![(doc.clone(), 10_000)], "another length");
+        assert_eq!(reg.take_changes(&now(&doc, stamp(10, 9, 2))), vec![(doc.clone(), 10_000)], "another inode");
+        assert_eq!(reg.take_changes(&now(&doc, stamp(10, 9, 2))), vec![]);
+    }
+
+    #[test]
+    fn a_change_that_reached_no_app_is_told_one_time_later() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut reg = registry_that_saw(&doc, at(10));
+        assert_eq!(reg.take_untold(), vec![], "nothing is held at the start");
+
+        assert_eq!(reg.take_changes(&now(&doc, at(20))), vec![(doc.clone(), 20_000)]);
+        reg.hold(&doc);
+        assert_eq!(reg.take_changes(&now(&doc, at(20))), vec![], "the file is as it was seen");
+        assert_eq!(reg.take_untold(), vec![(doc.clone(), 20_000)]);
+        assert_eq!(reg.take_untold(), vec![]);
+    }
+
+    // A file that changed again is told by `take_changes`, with its new time.
+    #[test]
+    fn a_held_change_that_a_newer_one_follows_is_told_as_the_newer_one_only() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut reg = registry_that_saw(&doc, at(10));
+        reg.take_changes(&now(&doc, at(20)));
+        reg.hold(&doc);
+
+        assert_eq!(reg.take_changes(&now(&doc, at(30))), vec![(doc.clone(), 30_000)]);
+        assert_eq!(reg.take_untold(), vec![]);
+    }
+
+    #[test]
+    fn holding_a_doc_that_is_not_there_does_nothing() {
+        let mut reg = Registry::empty();
+        reg.hold(Path::new("/d/gone.md"));
+        assert_eq!(reg.take_untold(), vec![]);
+    }
+
+    #[test]
+    fn a_refresh_takes_the_file_as_seen_and_as_told() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut reg = registry_that_saw(&doc, at(10));
+        reg.take_changes(&now(&doc, at(20)));
+        reg.hold(&doc);
+
+        assert_eq!(reg.refresh(&doc, at(30).unwrap()), Some(30_000));
+        assert_eq!(reg.docs[&doc].last_changed_ms, Some(30_000));
+        assert_eq!(reg.take_changes(&now(&doc, at(30))), vec![], "the file is as the refresh saw it");
+        assert_eq!(reg.take_untold(), vec![], "the refresh told it");
+        assert_eq!(reg.refresh(Path::new("/d/other.md"), at(30).unwrap()), None);
+    }
+
+    // "If the file is deleted, stop emitting until the path exists again."
+    #[test]
+    fn a_held_change_of_a_file_that_is_gone_is_not_told() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut reg = registry_that_saw(&doc, at(10));
+        reg.take_changes(&now(&doc, at(20)));
+        reg.hold(&doc);
+
+        assert_eq!(reg.take_changes(&now(&doc, None)), vec![]);
+        assert_eq!(reg.take_untold(), vec![]);
+        assert_eq!(reg.take_changes(&now(&doc, at(20))), vec![(doc, 20_000)], "it is a change when it is back");
+    }
+
+    // A doc that was held before it had a change has no time to tell.
+    #[test]
+    fn a_held_doc_with_no_recorded_change_is_not_told() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut reg = registry_that_saw(&doc, at(10));
+        reg.hold(&doc);
+        assert_eq!(reg.take_untold(), vec![]);
+    }
+
+    #[test]
+    fn a_hold_is_for_the_board_that_is_named() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut boards = Boards::single();
+        let other = boards.create();
+        for id in [DEFAULT_BOARD_ID, other.as_str()] {
+            let info = DocInfo { last_changed_ms: Some(20_000), ..doc_info() };
+            boards.registry_mut(Some(id)).docs.insert(doc.clone(), info);
+        }
+
+        boards.hold(DEFAULT_BOARD_ID, &doc);
+        boards.hold("board-404", &doc);
+        assert_eq!(boards.active_id(), other);
+        assert_eq!(boards.active_registry_mut().take_untold(), vec![], "the active board is not the one named");
+        assert_eq!(boards.registry_mut(Some(DEFAULT_BOARD_ID)).take_untold(), vec![(doc, 20_000)]);
+    }
+
+    #[test]
+    fn a_file_that_differs_from_what_was_seen_is_a_change_one_time() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut reg = registry_that_saw(&doc, at(10));
+
+        assert_eq!(reg.take_changes(&now(&doc, at(20))), vec![(doc.clone(), 20_000)]);
+        assert_eq!(reg.docs[&doc].last_changed_ms, Some(20_000));
+        assert_eq!(reg.take_changes(&now(&doc, at(20))), vec![], "it was taken");
+    }
+
+    #[test]
+    fn a_file_as_it_was_seen_is_no_change() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut reg = registry_that_saw(&doc, at(10));
+
+        assert_eq!(reg.take_changes(&now(&doc, at(10))), vec![]);
+        assert_eq!(reg.docs[&doc].last_changed_ms, None);
+    }
+
+    // A restored backup has an older mtime. "Newer" would miss it.
+    #[test]
+    fn an_older_file_is_a_change_too() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut reg = registry_that_saw(&doc, at(10));
+
+        assert_eq!(reg.take_changes(&now(&doc, at(5))), vec![(doc, 5_000)]);
+    }
+
+    #[test]
+    fn a_file_that_is_gone_is_no_change_until_it_is_back() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut reg = registry_that_saw(&doc, at(10));
+
+        assert_eq!(reg.take_changes(&now(&doc, None)), vec![]);
+        assert_eq!(reg.docs[&doc].last_changed_ms, None);
+        assert_eq!(reg.take_changes(&now(&doc, at(10))), vec![(doc, 10_000)], "also with its old mtime");
+    }
+
+    #[test]
+    fn a_file_that_was_not_there_at_the_open_is_a_change_when_it_comes() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut reg = registry_that_saw(&doc, None);
+
+        assert_eq!(reg.take_changes(&now(&doc, None)), vec![]);
+        assert_eq!(reg.take_changes(&now(&doc, at(10))), vec![(doc, 10_000)]);
+    }
+
+    #[test]
+    fn a_doc_that_was_not_looked_at_keeps_what_was_seen() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut reg = registry_that_saw(&doc, at(10));
+
+        assert_eq!(reg.take_changes(&now(Path::new("/d/other.md"), at(20))), vec![]);
+        assert_eq!(reg.take_changes(&now(&doc, at(20))), vec![(doc, 20_000)]);
     }
 }

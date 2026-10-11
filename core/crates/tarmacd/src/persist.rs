@@ -113,6 +113,8 @@ fn hydrate(pb: PersistedBoard) -> Board {
                 repo_root: repo.as_ref().map(|r| r.root.clone()),
                 repo_color: repo.as_ref().map(|r| r.color),
                 last_changed_ms: d.last_changed_ms,
+                seen: crate::docs::stamp(&path),
+                untold: false,
                 last_opened_ms: d.last_opened_ms,
                 term_id: d.term_id,
             },
