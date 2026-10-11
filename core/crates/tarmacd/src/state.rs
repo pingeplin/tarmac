@@ -566,12 +566,15 @@ mod tests {
         daemon.boards.lock().await.active_registry().docs[doc].last_changed_ms
     }
 
-    /// Waits until the state file has `want` as the doc's `last_changed_ms`.
-    async fn wait_for_saved(tmp: &Path, doc: &Path, want: u64) {
+    /// Waits until the state file has the doc with `want` as its
+    /// `last_changed_ms`. A test waits for the save of the open (`None`)
+    /// first: a save comes 150 ms after it was asked for, so the one that the
+    /// open asked for would carry a later record too.
+    async fn wait_for_saved(tmp: &Path, doc: &Path, want: Option<u64>) {
         let saved = || {
             let state: serde_json::Value = serde_json::from_slice(&std::fs::read(tmp.join("state.json")).ok()?).ok()?;
             let docs = state["boards"][0]["docs"].as_array()?;
-            docs.iter().find(|d| d["path"] == doc.to_str().unwrap())?["last_changed_ms"].as_u64()
+            Some(docs.iter().find(|d| d["path"] == doc.to_str().unwrap())?["last_changed_ms"].as_u64())
         };
         for _ in 0..200 {
             if saved() == Some(want) {
@@ -579,7 +582,7 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(25)).await;
         }
-        panic!("the state file never had {want}, it has {:?}", saved());
+        panic!("the state file never had {want:?}, it has {:?}", saved());
     }
 
     fn write_doc(path: PathBuf) -> PathBuf {
@@ -686,11 +689,12 @@ mod tests {
         let daemon = Daemon::with_source(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new()));
         let doc = write_doc(tmp.join("d/a.md"));
         open_doc(&daemon, None, &doc).await;
+        wait_for_saved(&tmp, &doc, None).await;
 
         let changed = change(&doc);
         crate::docs::report_changes(&daemon).await;
         assert_eq!(last_changed(&daemon, &doc).await, Some(changed));
-        wait_for_saved(&tmp, &doc, changed).await;
+        wait_for_saved(&tmp, &doc, Some(changed)).await;
 
         let mut app = connect_app(&daemon).await;
         crate::docs::report_changes(&daemon).await;
@@ -751,16 +755,18 @@ mod tests {
         let (tmp, daemon, wake, mut app) = silent_daemon("refresh-restats").await;
         let doc = write_doc(tmp.join("d/a.md"));
         open_doc(&daemon, None, &doc).await;
+        wait_for_saved(&tmp, &doc, None).await;
         let first = change(&doc);
         assert!(crate::docs::stat_and_push(&daemon, &doc).await);
         assert_eq!(file_events(&mut app), vec![(doc.clone(), first)]);
+        wait_for_saved(&tmp, &doc, Some(first)).await;
 
         let second = change(&doc);
         assert_ne!(second, first);
         assert!(crate::docs::stat_and_push(&daemon, &doc).await);
         assert_eq!(file_events(&mut app), vec![(doc.clone(), second)], "what the file says now");
         assert_eq!(last_changed(&daemon, &doc).await, Some(second), "recorded, not only announced");
-        wait_for_saved(&tmp, &doc, second).await;
+        wait_for_saved(&tmp, &doc, Some(second)).await;
 
         // The refresh took the file as seen: a look after it has nothing to tell.
         wake.notify_one();
