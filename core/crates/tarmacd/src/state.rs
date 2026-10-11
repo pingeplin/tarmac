@@ -7,7 +7,7 @@ use tarmac_protocol::{DocEntry, Msg};
 use tokio::sync::{Mutex, Notify, mpsc};
 use tokio_util::sync::CancellationToken;
 
-use crate::boards::{BoardId, Boards};
+use crate::boards::{BoardId, Boards, FileStamp};
 use crate::term::TermHandle;
 use crate::watch::{NotifySource, WakeSource};
 
@@ -57,9 +57,8 @@ pub struct Daemon {
     watcher: std::sync::Mutex<WatcherState>,
     /// Set by the watcher; `docs::watch_loop` waits on it.
     wake: Arc<Notify>,
-    /// Held from the read of the files to the `take_changes` that uses it, so
-    /// that an older reading is never taken after a newer one. Taken before
-    /// `boards`, never while `boards` is held.
+    /// One `look` at a time. Taken before `boards`, never while `boards` is
+    /// held.
     looking: Mutex<()>,
     next_generation: AtomicU64,
     dirty: Notify,
@@ -118,17 +117,23 @@ impl Daemon {
         self.wake.notified().await;
     }
 
-    pub async fn looking(&self) -> tokio::sync::MutexGuard<'_, ()> {
-        self.looking.lock().await
-    }
-
-    pub async fn app_connected(&self) -> bool {
-        self.app.lock().await.is_some()
-    }
-
-    /// The path of each registered doc, of every board.
-    pub async fn doc_paths(&self) -> HashSet<PathBuf> {
-        self.boards.lock().await.iter().flat_map(|b| b.registry.docs.keys().cloned()).collect()
+    /// One look: reads the files of `paths` with no `boards` lock held, then
+    /// gives the reading to `apply` under that lock. It is the one place that
+    /// reads a doc's file for a change, and it runs one at a time, so that an
+    /// older reading is never applied after a newer one. Nothing is pushed
+    /// from inside it.
+    pub async fn look<P, T>(
+        &self,
+        paths: impl FnOnce(&Boards) -> P,
+        apply: impl FnOnce(&mut Boards, &HashMap<PathBuf, Option<FileStamp>>) -> T,
+    ) -> T
+    where
+        P: IntoIterator<Item = PathBuf>,
+    {
+        let _one_at_a_time = self.looking.lock().await;
+        let paths = paths(&*self.boards.lock().await);
+        let now = crate::docs::stamps(paths);
+        apply(&mut *self.boards.lock().await, &now)
     }
 
     /// Counts one more registered doc in `dir` and watches the directory if it
@@ -316,11 +321,13 @@ impl Daemon {
         by_board
     }
 
-    /// Pushes to the connected app; dropped silently when there is none.
-    pub async fn push(&self, msg: Msg) {
+    /// Pushes to the connected app. False when there is none, or it went
+    /// away: the frame is dropped.
+    pub async fn push(&self, msg: Msg) -> bool {
         let tx = self.app.lock().await.as_ref().map(|s| s.tx.clone());
-        if let Some(tx) = tx {
-            let _ = tx.send(msg).await;
+        match tx {
+            Some(tx) => tx.send(msg).await.is_ok(),
+            None => false,
         }
     }
 }
@@ -680,11 +687,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
-    // What was seen is what an app was told. A look with no app records the
-    // change, so a restart keeps its time, and leaves it for the look that has
-    // an app to tell.
+    // A look with no app records the change, so a restart keeps its time, and
+    // holds it for the look that has an app to tell.
     #[tokio::test]
-    async fn a_look_with_no_app_records_the_change_and_leaves_it_to_be_told() {
+    async fn a_look_with_no_app_records_the_change_and_holds_it_to_be_told() {
         let tmp = tmp_dir("no-app");
         let daemon = Daemon::with_source(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new()));
         let doc = write_doc(tmp.join("d/a.md"));
@@ -698,19 +704,107 @@ mod tests {
 
         let mut app = connect_app(&daemon).await;
         crate::docs::report_changes(&daemon).await;
+        assert_eq!(file_events(&mut app), vec![(doc.clone(), changed)]);
+        crate::docs::report_changes(&daemon).await;
+        assert_eq!(file_events(&mut app), vec![], "it is told one time");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // A save writes the state file. With a doc in that directory, a look that
+    // asked for a save each time would wake itself for ever.
+    #[tokio::test]
+    async fn a_look_that_records_nothing_asks_for_no_save() {
+        let tmp = tmp_dir("no-save");
+        let daemon = Daemon::with_source(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new()));
+        let doc = write_doc(tmp.join("d/a.md"));
+        open_doc(&daemon, None, &doc).await;
+        wait_for_saved(&tmp, &doc, None).await;
+
+        let changed = change(&doc);
+        crate::docs::report_changes(&daemon).await;
+        wait_for_saved(&tmp, &doc, Some(changed)).await;
+        let saved_at = std::fs::metadata(tmp.join("state.json")).unwrap().modified().unwrap();
+
+        // The change is held, since there is no app, and is tried at each look.
+        crate::docs::report_changes(&daemon).await;
+        crate::docs::report_changes(&daemon).await;
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        assert_eq!(std::fs::metadata(tmp.join("state.json")).unwrap().modified().unwrap(), saved_at);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // The record follows the file also while nobody is told: a file that is
+    // changed and put back is recorded as it is.
+    #[tokio::test]
+    async fn a_change_that_went_back_with_no_app_is_recorded_as_the_file_is() {
+        let tmp = tmp_dir("no-app-back");
+        let daemon = Daemon::with_source(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new()));
+        let doc = write_doc(tmp.join("d/a.md"));
+        let first = std::fs::metadata(&doc).unwrap().modified().unwrap();
+        open_doc(&daemon, None, &doc).await;
+
+        let changed = change(&doc);
+        crate::docs::report_changes(&daemon).await;
+        assert_eq!(last_changed(&daemon, &doc).await, Some(changed));
+
+        std::fs::File::options().write(true).open(&doc).unwrap().set_modified(first).unwrap();
+        crate::docs::report_changes(&daemon).await;
+        assert_eq!(last_changed(&daemon, &doc).await, Some(crate::boards::epoch_ms(first)));
+
+        let mut app = connect_app(&daemon).await;
+        crate::docs::report_changes(&daemon).await;
+        assert_eq!(file_events(&mut app), vec![(doc, crate::boards::epoch_ms(first))]);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // An app that goes away between the look and the push: its frame is
+    // dropped, and the change is held for the next app.
+    #[tokio::test]
+    async fn a_change_whose_app_went_away_is_told_to_the_next_app() {
+        let (tmp, daemon, _wake, app) = silent_daemon("app-gone").await;
+        let doc = write_doc(tmp.join("d/a.md"));
+        open_doc(&daemon, None, &doc).await;
+
+        drop(app);
+        let changed = change(&doc);
+        crate::docs::report_changes(&daemon).await;
+
+        let mut app = connect_app(&daemon).await;
+        crate::docs::report_changes(&daemon).await;
         assert_eq!(file_events(&mut app), vec![(doc, changed)]);
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
-    // The files are read with no `boards` lock held. Without `Daemon::looking`
-    // a look that read a doc before its change takes that reading after the
-    // refresh recorded the change, about three rounds in a hundred. The doc
-    // goes round because its place in the read order is fixed for a process.
+    // A save that replaces the file by one with the same mtime and length.
+    #[tokio::test]
+    async fn a_file_that_is_replaced_with_the_same_mtime_and_length_is_a_change() {
+        let (tmp, daemon, _wake, mut app) = silent_daemon("replaced").await;
+        let doc = write_doc(tmp.join("d/a.md"));
+        let kept = std::fs::metadata(&doc).unwrap().modified().unwrap();
+        open_doc(&daemon, None, &doc).await;
+
+        let new = tmp.join("d/a.md.new");
+        std::fs::write(&new, "cod").unwrap();
+        std::fs::File::options().write(true).open(&new).unwrap().set_modified(kept).unwrap();
+        std::fs::rename(&new, &doc).unwrap();
+        crate::docs::report_changes(&daemon).await;
+        assert_eq!(file_events(&mut app), vec![(doc, crate::boards::epoch_ms(kept))]);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // `Daemon::look` reads the files with no `boards` lock held. If two looks
+    // ran at once, one that read a doc before its change would apply that
+    // reading after the other recorded the change. The doc goes round because
+    // its place in the read order is fixed for a process.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn an_older_reading_is_never_taken_after_a_newer_one() {
         let (tmp, daemon, _wake, mut app) = silent_daemon("one-look").await;
-        let docs: Vec<PathBuf> = (0..200).map(|i| write_doc(tmp.join(format!("d/{i}.md")))).collect();
+        let docs: Vec<PathBuf> = (0..1000).map(|i| write_doc(tmp.join(format!("d/{i}.md")))).collect();
         for doc in &docs {
             open_doc(&daemon, None, doc).await;
         }

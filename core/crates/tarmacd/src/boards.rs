@@ -18,20 +18,24 @@ pub struct DocInfo {
     /// was no file to read. In memory only. A change is a file that differs
     /// from this (`Registry::take_changes`).
     pub seen: Option<FileStamp>,
+    /// The `file_event` of the last change reached no app: none was connected,
+    /// or it went away. In memory only. The next look tells it
+    /// (`Registry::take_untold`).
+    pub untold: bool,
     pub last_opened_ms: u64,
     /// The term that opened this doc; `None` when opened without a `TARMAC_TERM_ID`.
     pub term_id: Option<String>,
 }
 
 /// What the daemon reads of a doc's file to know that it changed. The length
-/// is there for a change that keeps the mtime: a writer that puts the mtime
-/// back, or two writes in one tick of a coarse clock. The inode is left out on
-/// purpose: on a volume whose inode numbers are not stable, each look would be
-/// a change.
+/// and the inode are there for a change that keeps the mtime: a writer that
+/// puts the mtime back, two writes in one tick of a coarse clock, a save that
+/// replaces the file by one of the same length.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct FileStamp {
     pub mtime: SystemTime,
     pub len: u64,
+    pub inode: u64,
 }
 
 pub fn epoch_ms(t: SystemTime) -> u64 {
@@ -121,28 +125,30 @@ impl Registry {
             if let Some(stamp) = stamp {
                 let ms = epoch_ms(stamp.mtime);
                 info.last_changed_ms = Some(ms);
+                info.untold = false;
                 changes.push((path.clone(), ms));
             }
         }
         changes
     }
 
-    /// For a look with no app to tell: records `last_changed_ms` for each doc
-    /// whose file differs from what was seen, and leaves what was seen, so the
-    /// look at the connect still takes the change and reports it. True when a
-    /// record changed.
-    pub fn note_changes(&mut self, now: &HashMap<PathBuf, Option<FileStamp>>) -> bool {
-        let mut noted = false;
-        for (path, stamp) in now {
-            let (Some(info), Some(stamp)) = (self.docs.get_mut(path), stamp) else { continue };
-            if info.seen == Some(*stamp) {
-                continue;
-            }
-            let ms = Some(epoch_ms(stamp.mtime));
-            noted |= info.last_changed_ms != ms;
-            info.last_changed_ms = ms;
+    /// The `file_event` for `path` reached no app.
+    pub fn hold(&mut self, path: &Path) {
+        if let Some(info) = self.docs.get_mut(path) {
+            info.untold = true;
         }
-        noted
+    }
+
+    /// The docs whose last change reached no app, with its time. They count as
+    /// told from here on; the caller holds one again when it cannot send it.
+    pub fn take_untold(&mut self) -> Vec<(PathBuf, u64)> {
+        let mut untold = Vec::new();
+        for (path, info) in &mut self.docs {
+            if let (true, Some(ms)) = (std::mem::take(&mut info.untold), info.last_changed_ms) {
+                untold.push((path.clone(), ms));
+            }
+        }
+        untold
     }
 
     /// False when the path is unknown.
@@ -256,6 +262,11 @@ impl Boards {
 
     pub fn iter(&self) -> impl Iterator<Item = &Board> {
         self.boards.iter()
+    }
+
+    /// The path of each registered doc, of every board.
+    pub fn doc_paths(&self) -> HashSet<PathBuf> {
+        self.boards.iter().flat_map(|b| b.registry.docs.keys().cloned()).collect()
     }
 
     pub fn contains(&self, id: &str) -> bool {
@@ -453,7 +464,7 @@ mod tests {
     }
 
     fn doc_info() -> DocInfo {
-        DocInfo { via: "t".into(), read: false, repo: None, repo_root: None, repo_color: None, last_changed_ms: None, seen: None, last_opened_ms: 0, term_id: None }
+        DocInfo { via: "t".into(), read: false, repo: None, repo_root: None, repo_color: None, last_changed_ms: None, seen: None, untold: false, last_opened_ms: 0, term_id: None }
     }
 
     #[test]
@@ -467,12 +478,12 @@ mod tests {
         assert!(!reg.dock.contains(&doc));
     }
 
-    fn stamp(secs: u64, len: u64) -> Option<FileStamp> {
-        Some(FileStamp { mtime: UNIX_EPOCH + Duration::from_secs(secs), len })
+    fn stamp(secs: u64, len: u64, inode: u64) -> Option<FileStamp> {
+        Some(FileStamp { mtime: UNIX_EPOCH + Duration::from_secs(secs), len, inode })
     }
 
     fn at(secs: u64) -> Option<FileStamp> {
-        stamp(secs, 4)
+        stamp(secs, 4, 1)
     }
 
     fn registry_that_saw(path: &Path, seen: Option<FileStamp>) -> Registry {
@@ -485,37 +496,48 @@ mod tests {
         HashMap::from([(path.to_owned(), stamp)])
     }
 
-    // A writer that puts the mtime back, or two writes in one tick of a coarse
-    // clock: the length still tells.
+    // A writer that puts the mtime back, two writes in one tick of a coarse
+    // clock, a save that replaces the file: the length or the inode still tells.
     #[test]
-    fn a_file_with_the_same_mtime_and_another_length_is_a_change() {
+    fn a_file_with_the_same_mtime_and_another_length_or_inode_is_a_change() {
         let doc = PathBuf::from("/d/a.md");
-        let mut reg = registry_that_saw(&doc, stamp(10, 4));
+        let mut reg = registry_that_saw(&doc, stamp(10, 4, 1));
 
-        assert_eq!(reg.take_changes(&now(&doc, stamp(10, 9))), vec![(doc.clone(), 10_000)]);
-        assert_eq!(reg.take_changes(&now(&doc, stamp(10, 9))), vec![]);
-    }
-
-    // A look with no app to tell.
-    #[test]
-    fn a_noted_change_is_recorded_and_is_still_a_change_to_take() {
-        let doc = PathBuf::from("/d/a.md");
-        let mut reg = registry_that_saw(&doc, at(10));
-
-        assert!(reg.note_changes(&now(&doc, at(20))));
-        assert_eq!(reg.docs[&doc].last_changed_ms, Some(20_000));
-        assert!(!reg.note_changes(&now(&doc, at(20))), "the record is as it was");
-        assert_eq!(reg.take_changes(&now(&doc, at(20))), vec![(doc, 20_000)], "nobody was told yet");
+        assert_eq!(reg.take_changes(&now(&doc, stamp(10, 9, 1))), vec![(doc.clone(), 10_000)], "another length");
+        assert_eq!(reg.take_changes(&now(&doc, stamp(10, 9, 2))), vec![(doc.clone(), 10_000)], "another inode");
+        assert_eq!(reg.take_changes(&now(&doc, stamp(10, 9, 2))), vec![]);
     }
 
     #[test]
-    fn nothing_is_noted_for_a_file_as_it_was_seen_or_one_that_is_gone() {
+    fn a_change_that_reached_no_app_is_told_one_time_later() {
         let doc = PathBuf::from("/d/a.md");
         let mut reg = registry_that_saw(&doc, at(10));
+        assert_eq!(reg.take_untold(), vec![], "nothing is held at the start");
 
-        assert!(!reg.note_changes(&now(&doc, at(10))));
-        assert!(!reg.note_changes(&now(&doc, None)));
-        assert_eq!(reg.docs[&doc].last_changed_ms, None);
+        assert_eq!(reg.take_changes(&now(&doc, at(20))), vec![(doc.clone(), 20_000)]);
+        reg.hold(&doc);
+        assert_eq!(reg.take_changes(&now(&doc, at(20))), vec![], "the file is as it was seen");
+        assert_eq!(reg.take_untold(), vec![(doc.clone(), 20_000)]);
+        assert_eq!(reg.take_untold(), vec![]);
+    }
+
+    // A file that changed again is told by `take_changes`, with its new time.
+    #[test]
+    fn a_held_change_that_a_newer_one_follows_is_told_as_the_newer_one_only() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut reg = registry_that_saw(&doc, at(10));
+        reg.take_changes(&now(&doc, at(20)));
+        reg.hold(&doc);
+
+        assert_eq!(reg.take_changes(&now(&doc, at(30))), vec![(doc.clone(), 30_000)]);
+        assert_eq!(reg.take_untold(), vec![]);
+    }
+
+    #[test]
+    fn holding_a_doc_that_is_not_there_does_nothing() {
+        let mut reg = Registry::empty();
+        reg.hold(Path::new("/d/gone.md"));
+        assert_eq!(reg.take_untold(), vec![]);
     }
 
     #[test]

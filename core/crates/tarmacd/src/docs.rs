@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -36,7 +37,7 @@ pub fn derive_repo(doc: &Path) -> Option<RepoInfo> {
 /// `None` for a file that is not there or cannot be read.
 pub fn stamp(path: &Path) -> Option<FileStamp> {
     let meta = std::fs::metadata(path).ok()?;
-    Some(FileStamp { mtime: meta.modified().ok()?, len: meta.len() })
+    Some(FileStamp { mtime: meta.modified().ok()?, len: meta.len(), inode: meta.ino() })
 }
 
 // Single code path for CLI ("cli") and app ("user") opens. `term_id` is the
@@ -113,6 +114,7 @@ pub fn upsert_doc(
                     repo_color: repo.as_ref().map(|r| r.color),
                     last_changed_ms: None,
                     seen,
+                    untold: false,
                     last_opened_ms: epoch_ms(SystemTime::now()),
                     term_id,
                 },
@@ -143,38 +145,42 @@ pub async fn watch_loop(daemon: Arc<Daemon>) {
     }
 }
 
+/// What a look has for the app: the docs of `reg` whose file changed
+/// (`Registry::take_changes`), then those whose last change reached no app.
+/// True when a change was recorded, which the caller has saved.
+pub fn take_to_tell(reg: &mut Registry, now: &HashMap<PathBuf, Option<FileStamp>>) -> (Vec<(PathBuf, u64)>, bool) {
+    let mut tell = reg.take_changes(now);
+    let recorded = !tell.is_empty();
+    tell.extend(reg.take_untold());
+    (tell, recorded)
+}
+
 /// Compares each doc of the active board with its file, and pushes a
-/// `file_event` for each that changed (`Registry::take_changes`). The files are
-/// read with no `boards` lock held. A doc of another board is compared when
+/// `file_event` for each that changed. A doc of another board is compared when
 /// its board is sent (`conn::change_and_send_active_board`).
 ///
-/// With no app connected it only notes the change (`Registry::note_changes`):
-/// what was seen is what an app was told, so the connect still finds the
-/// change and reports it, and a restart before that keeps its time.
+/// A change is recorded with or without an app. One that reaches no app is
+/// held (`Registry::hold`) and told by the next look that has one.
 pub async fn report_changes(daemon: &Daemon) {
-    let told = daemon.app_connected().await;
-    let changes = {
-        let _one_look = daemon.looking().await;
-        let paths: Vec<PathBuf> = daemon.boards.lock().await.active_registry().docs.keys().cloned().collect();
-        let now = stamps(paths);
-        let mut boards = daemon.boards.lock().await;
-        let reg = boards.active_registry_mut();
-        if told {
-            reg.take_changes(&now)
-        } else {
-            if reg.note_changes(&now) {
-                daemon.mark_dirty();
-            }
-            Vec::new()
-        }
-    };
-    if changes.is_empty() {
-        return;
-    }
+    let (tell, recorded) = daemon
+        .look(
+            |boards| boards.active_registry().docs.keys().cloned().collect::<Vec<_>>(),
+            |boards, now| take_to_tell(boards.active_registry_mut(), now),
+        )
+        .await;
     // Recorded before the push, as in `stat_and_push`.
-    daemon.mark_dirty();
-    for (path, mtime_ms) in changes {
-        daemon.push(Msg::FileEvent { path: path.to_string_lossy().into_owned(), mtime_ms }).await;
+    if recorded {
+        daemon.mark_dirty();
+    }
+    for (path, mtime_ms) in tell {
+        push_file_event(daemon, &path, mtime_ms).await;
+    }
+}
+
+/// Pushes the `file_event`, and holds the doc when it reached no app.
+async fn push_file_event(daemon: &Daemon, path: &Path, mtime_ms: u64) {
+    if !daemon.push(Msg::FileEvent { path: path.to_string_lossy().into_owned(), mtime_ms }).await {
+        daemon.boards.lock().await.active_registry_mut().hold(path);
     }
 }
 
@@ -186,22 +192,24 @@ pub async fn report_changes(daemon: &Daemon) {
 /// differs from what was seen. The registry lookup is also the active-board
 /// check, which is why an unknown path costs one lock and no push.
 pub async fn stat_and_push(daemon: &Arc<Daemon>, path: &Path) -> bool {
-    let mtime_ms = {
-        let _one_look = daemon.looking().await;
-        // Deleted files emit nothing until the path exists again.
-        let Some(stamp) = stamp(path) else { return false };
-        // Registry update lands before the push so a crash between the two
-        // never loses the fact.
-        let mut boards = daemon.boards.lock().await;
-        let Some(info) = boards.active_registry_mut().docs.get_mut(path) else { return false };
-        info.seen = Some(stamp);
-        let mtime_ms = epoch_ms(stamp.mtime);
-        info.last_changed_ms = Some(mtime_ms);
-        mtime_ms
-    };
-    daemon.mark_dirty();
-    daemon
-        .push(Msg::FileEvent { path: path.to_string_lossy().into_owned(), mtime_ms })
+    let recorded = daemon
+        .look(
+            |_| vec![path.to_owned()],
+            |boards, now| {
+                // Deleted files emit nothing until the path exists again.
+                let stamp = now.get(path).copied().flatten()?;
+                let info = boards.active_registry_mut().docs.get_mut(path)?;
+                info.seen = Some(stamp);
+                let mtime_ms = epoch_ms(stamp.mtime);
+                info.last_changed_ms = Some(mtime_ms);
+                Some(mtime_ms)
+            },
+        )
         .await;
+    let Some(mtime_ms) = recorded else { return false };
+    // Registry update lands before the push so a crash between the two never
+    // loses the fact.
+    daemon.mark_dirty();
+    push_file_event(daemon, path, mtime_ms).await;
     true
 }
