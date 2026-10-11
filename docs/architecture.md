@@ -781,12 +781,13 @@ no permission-policy feature, and no handle on the app.
   so the app numbers each load (`LoadCount`), the page returns the number in
   `shown`, and `HTMLCardSession` obeys only the word for the current load.
   The shim's `started` names its document's address, and the page does not
-  count a start that names the source the frame had before. A culled card's
+  count a start that names the source the frame had before, when that was
+  another address. A culled card's
   page draws no frames, so its word comes when the card is in view again. A
   request that is never answered leaves the card at `bg1`. A markdown card's
   web view (`DocWebView`) is kept out of sight the same way, from the moment
-  it is made until two frames after its page has loaded: before that it
-  shows the system's canvas, not the theme's.
+  it is made until two frames after its page has loaded: in view before
+  that, it would show the system's canvas, not the theme's.
 - **Shield and borrow.** A transparent shield covers the document: a press
   selects the card, a wheel over the selected card is handed on to the web
   view, and nothing else reaches it. A double-click *borrows* the card —

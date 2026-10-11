@@ -227,6 +227,14 @@ final class CardHostScriptTests: XCTestCase {
         XCTAssertEqual(frames(2).filter { $0["tarmac"] as? String == "shown" }, [shown, Self.shown(2)])
     }
 
+    /// A start that names no address, by leaving the key out or by null, is
+    /// refused for no source: the frame's first source replaced nothing.
+    func testAStartWithNoAddressCounts() {
+        load()
+        hear("{ tarmac: 'started', source: null }")
+        XCTAssertEqual(frames(2), [shown])
+    }
+
     /// Only the source that was replaced is refused: a start that names
     /// another address, or none, still counts, so no card stays out of sight.
     func testAStartThatNamesAnAddressThePageDoesNotKnowStillCounts() {

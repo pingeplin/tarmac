@@ -103,7 +103,7 @@
       // The shim's first word is for this page alone. The document that the
       // frame had before can say it after the frame was given the next one.
       if (event.data !== null && typeof event.data === "object" && event.data.tarmac === "started") {
-        if (event.data.source !== replaced) documentStarted();
+        if (replaced === null || event.data.source !== replaced) documentStarted();
         return;
       }
       const message = carried(event.data);
