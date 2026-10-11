@@ -151,8 +151,8 @@ daemon → app:
 Watch the doc's **parent directory** (non-recursive) — editors and agents replace
 files atomically, so watching the file inode directly misses rewrites. An event of
 the watcher only wakes the daemon. The daemon then stats each doc of the active
-board and sends a `file_event` for each file that differs — in mtime, length or
-inode — from what the daemon last saw for that board and doc. So `mtime_ms` can be
+board and sends a `file_event` for each file that differs — in mtime or length —
+from what the daemon last saw for that board and doc. So `mtime_ms` can be
 the one of the `file_event` before. From the watcher: at most one `file_event` for
 a doc per 100 ms. If the file is deleted, stop emitting until the path exists again
 (M0 has no doc_removed message).
@@ -162,7 +162,9 @@ the doc's board is in the background is reported when that board becomes active:
 its `restore` carries the new `last_changed_ms`, and a `file_event` for the doc
 follows the `restore` (#256). Each board has its own record, so a doc on two boards
 is reported to each. A change made while no app is connected is reported the same
-way at the connect. A change made while the daemon is not running is not reported.
+way at the connect; its `last_changed_ms` is saved at once, so a daemon restart
+before the connect keeps it. A change made while the daemon is not running is not
+reported.
 
 ## M1 subset (doc states & layout)
 

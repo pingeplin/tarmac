@@ -284,15 +284,18 @@ replays it so the app can re-bind to the live shell instead of cold-spawning.
 
 The daemon finds a change by **state, not by event**. Each (board, doc) keeps
 the file as the daemon last saw it for that board (`DocInfo.seen`, a
-`FileStamp`: mtime, length and inode; in memory only, taken when the doc is
-registered and when the state file is loaded). A change is a file that
-*differs* from it (`Registry::take_changes`). "Differs", not "is newer": a file
-put back from a backup is a change, and a file with an mtime in the future is
-not. The length and the inode are there for a change that keeps the mtime — a
-writer that puts the mtime back, or two writes in one tick of a coarse clock.
-For a change the daemon records `last_changed_ms` **before** it pushes (so a
-crash never loses the fact), and pushes `FileEvent`. A file that is gone pushes
-nothing, and is a change when it is back.
+`FileStamp`: mtime and length; in memory only, taken when the doc is
+registered, when the state file is loaded, and by a `DocRefresh`). A change is
+a file that *differs* from it (`Registry::take_changes`). "Differs", not "is
+newer": a file put back from a backup is a change, and a file with an mtime in
+the future is not. The length is there for a change that keeps the mtime — a
+writer that puts the mtime back, or two writes in one tick of a coarse clock;
+its `FileEvent` has the mtime of the one before, so a markdown card reads the
+file again and an HTML card, whose address is the mtime, does not reload. The
+inode is left out on purpose: on a volume whose inode numbers are not stable,
+each look would be a change. For a change the daemon records `last_changed_ms`
+**before** it pushes (so a crash never loses the fact), and pushes `FileEvent`.
+A file that is gone pushes nothing, and is a change when it is back.
 
 A **look** compares the docs of the active board (`docs::report_changes`). The
 daemon looks:
@@ -306,15 +309,26 @@ daemon looks:
   `BoardDelete` (`conn::change_and_send_active_board`): before the `Restore` is
   built, so that it carries each new `last_changed_ms`, with a `FileEvent` for
   each change after it. The app reads a doc of a board it has already built
-  again on a `FileEvent` only.
+  again on a `FileEvent` only. (A look of the watcher that runs just before
+  can send that `FileEvent` ahead of the `Restore`; the app takes it for every
+  board that has the doc, so the order does not matter to it.)
 
 There is no timer. A board in the background is not looked at until it is
 shown: a change of its doc is reported at the switch, to that board, whether
-or not another board was told of the same change before. A look takes nothing
-while no app is connected: what was seen is what an app was told, so the
-connect finds the change and reports it. One look runs at a time
-(`Daemon::looking`): the files are read with no `boards` lock held, and an
-older reading must not be taken after a newer one.
+or not another board was told of the same change before. A look with no app
+connected only notes the change (`Registry::note_changes`): it records
+`last_changed_ms`, which is saved, and leaves what was seen. What was seen is
+what an app was told, so the connect still finds the change and reports it,
+and a daemon that stops before that keeps the time of the change. One look
+runs at a time (`Daemon::looking`): the files are read with no `boards` lock
+held, and an older reading must not be taken after a newer one.
+
+Two limits of a look. It can come in the middle of a doc's own save, when
+another file of a watched directory wakes the daemon: the app then reads the
+file as it is at that moment, and the next look corrects it. And the files are
+read on the task that looks, under `looking`: a stat that does not return (a
+network volume that is gone) holds every later look, and a board switch with
+it.
 
 The watcher is behind `WakeSource` (`watch.rs`): `watch(dir)`, `unwatch(dir)`,
 and a wake that carries no detail. So a change whose wake was lost is reported
