@@ -6,7 +6,7 @@ mod common;
 
 use std::time::Instant;
 
-use common::{LONG, Spawn, TestDaemon, cli_open, write_doc};
+use common::{LONG, Spawn, TestDaemon, cli_open, mtime_ms, settle, touch, write_doc};
 use tarmac_protocol::{BoardMeta, BoardViewport, DocEntry, Msg, Tile};
 
 fn term_tile(term_id: &str, x: f64) -> Tile {
@@ -343,3 +343,52 @@ fn reconnect_rebinds_live_terms_and_replays_scrollback() {
     );
     app2.recv_output_containing("t0", "scrollmark");
 }
+
+// A board delete must not cost a doc of a board that is left its `file_event`.
+// Each unwatch restarts the FSEvents stream, and the restart loses a change that
+// the stream has not delivered yet: so the delete drops no watch (#249, #253).
+#[test]
+fn board_delete_loses_no_change_of_a_doc_that_is_left() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+
+    let kept = write_doc(&daemon.dir.join("kept/x.md"), "x\n");
+    cli_open(&daemon.sock, &kept);
+    app.recv_doc_opened_for(&kept);
+
+    app.send(&Msg::BoardCreate);
+    app.recv_restore_for("board-1");
+    for i in 0..20 {
+        let doc = write_doc(&daemon.dir.join(format!("gone/{i}/b.md")), "b\n");
+        cli_open(&daemon.sock, &doc);
+        app.recv_doc_opened_for(&doc);
+    }
+    app.send(&Msg::BoardSwitch { board_id: "board-0".into() });
+    app.recv_restore_for("board-0");
+    settle();
+
+    // The change is made just before the delete is sent: the stream has it,
+    // and has not delivered it.
+    touch(&kept);
+    app.send(&Msg::BoardDelete { board_id: "board-1".into() });
+    app.recv_file_event_since(&kept, mtime_ms(&kept));
+}
+
+// The delete itself schedules the save. The test first waits for the save of
+// the create and lets the debounce pass, so no earlier save can drop the board.
+#[test]
+fn board_delete_persists() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let saved_boards = |v: &serde_json::Value| v["boards"].as_array().map_or(0, Vec::len);
+
+    app.send(&Msg::BoardCreate);
+    app.recv_restore_for("board-1");
+    daemon.wait_for_state("board-1 saved", |v| saved_boards(v) == 2);
+    settle();
+
+    app.send(&Msg::BoardDelete { board_id: "board-1".into() });
+    assert_eq!(board_ids(&app.recv_board_list().0), vec!["board-0"]);
+    daemon.wait_for_state("board-1 gone from the saved state", |v| saved_boards(v) == 1);
+}
+
