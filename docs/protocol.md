@@ -148,11 +148,19 @@ daemon → app:
 
 ## File watching semantics
 
-Watch the doc's **parent directory** (non-recursive) and filter events to the doc
-path — editors and agents replace files atomically, so watching the file inode
-directly misses rewrites. On a hit, stat the file for mtime. Debounce per path: at
-most one `file_event` per 100 ms burst. If the file is deleted, stop emitting until
-the path exists again (M0 has no doc_removed message).
+Watch the doc's **parent directory** (non-recursive) — editors and agents replace
+files atomically, so watching the file inode directly misses rewrites. An event of
+the watcher only wakes the daemon. The daemon then stats each doc of the active
+board and sends a `file_event` for each file whose mtime differs from what the
+daemon last saw for that board and doc. At most one `file_event` per 100 ms burst.
+If the file is deleted, stop emitting until the path exists again (M0 has no
+doc_removed message).
+
+A `file_event` is sent for a doc of the **active** board only. A change made while
+the doc's board is in the background is reported when that board becomes active:
+its `restore` carries the new `last_changed_ms`, and a `file_event` for the doc
+follows the `restore` (#256). Each board has its own record, so a doc on two boards
+is reported to each. A change made while the daemon is not running is not reported.
 
 ## M1 subset (doc states & layout)
 
@@ -461,10 +469,8 @@ so all existing vectors decode unchanged.
     {t:"doc_refresh", path}                         — app → daemon
 
 Re-stat a doc now and push the usual `file_event`, so a doc card can be refreshed
-without waiting for the watcher. This is the fallback for the case the watcher
-cannot cover: `watch_loop` matches events against the **active** board's registry
-at processing time, so an edit made while the doc's board is in the background is
-dropped and never re-emitted.
+without waiting for the watcher. This is the fallback for a change that the daemon
+has not seen yet: an event of the watcher can be late or lost.
 
 The daemon stats the file and, if the path is a doc on the active board, records the
 real mtime in the registry (before pushing, as the watcher does) and pushes

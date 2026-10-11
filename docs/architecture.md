@@ -162,7 +162,7 @@ reports.
 | Docs | `Open {path, term_id?, board_id?}` | cli/app→D | surface a doc |
 | | `DocRead {path}` | app→D | mark a doc read |
 | | `DocOpened(DocEntry)` | D→app | a doc was opened/updated |
-| | `FileEvent {path, mtime_ms}` | D→app | a watched doc changed on disk |
+| | `FileEvent {path, mtime_ms}` | D→app | a doc of the active board changed on disk |
 | | `DocRefresh {path}` | app→D | re-stat a doc now and push its `file_event` |
 | Terminal I/O | `SpawnTerm {term_id, cols, rows, cwd?, cmd?, board_id?, inherit_cwd_from?}` | app→D | create a PTY card |
 | | `Input {term_id, bytes}` | app→D | keystrokes and mouse reports |
@@ -228,7 +228,7 @@ Daemon
  │                     └─ Registry { docs, dock, tiles, board: viewport }
  ├─ terms:       Mutex<HashMap<term_id, Arc<TermHandle>>>   all live PTYs, global
  ├─ term_boards: Mutex<HashMap<term_id, BoardId>>           which board owns a term
- └─ watcher:     std::sync::Mutex<WatcherState>             notify debouncer + docs per directory
+ └─ watcher:     std::sync::Mutex<WatcherState>             wake source + docs per directory
 ```
 
 A board is the unit that became N in M3. The N boards sit behind **one coarse
@@ -281,12 +281,35 @@ replays it so the app can re-bind to the live shell instead of cold-spawning.
 
 ### Docs & file watching
 
-`Daemon::new` builds a `notify` debouncer (100 ms) and watches the **parent
-directory** (non-recursive) of every docked doc, filtering events to known doc
-paths — editors and agents replace files atomically, so watching the inode
-directly misses rewrites. Events are filtered by *path only, never by event
-kind*. On a hit the daemon stats the file, records `last_changed_ms` **before**
-pushing (so a crash never loses the fact), and pushes `FileEvent`.
+The daemon finds a change by **state, not by event**. Each (board, doc) keeps
+the mtime the daemon last saw for it (`DocInfo.seen_mtime`: in memory only,
+taken when the doc is registered and when the state file is loaded). A change
+is a file that *differs* from it (`Registry::take_changes`). "Differs", not "is
+newer": a file put back from a backup is a change, and a file with an mtime in
+the future is not. For a change the daemon records `last_changed_ms` **before**
+it pushes (so a crash never loses the fact), and pushes `FileEvent`. A file
+that is gone pushes nothing, and is a change when it is back.
+
+The docs of the **active** board are compared (`docs::report_changes`):
+
+- on each wake of the watcher (`docs::watch_loop`);
+- after an open or a close that changed the watch set (see #253 below);
+- when the active board is sent — connect, `BoardSwitch`, `BoardCreate`,
+  `BoardDelete` (`conn::change_and_send_active_board`): before the `Restore` is
+  built, so that it carries each new `last_changed_ms`, with a `FileEvent` for
+  each change after it. The app reads a doc of a board it has already built
+  again on a `FileEvent` only.
+
+There is no timer. A board in the background is not compared until it is
+shown: a change of its doc is reported at the switch, to that board, whether
+or not another board was told of the same change before.
+
+The watcher is behind `WakeSource` (`watch.rs`): `watch(dir)`, `unwatch(dir)`,
+and a wake that carries no detail. So a wake that is late or lost delays a
+`FileEvent` and does not lose the change. `NotifySource` is its one
+implementation: a `notify` debouncer (100 ms) on the **parent directory**
+(non-recursive) of every registered doc — editors and agents replace files
+atomically, so a watch on the inode misses rewrites.
 
 The watch set is one per daemon, not per board. The watcher counts the
 registered docs in each directory (`WatcherState.doc_counts`), one for each
@@ -303,13 +326,16 @@ fails at startup (the directory is gone): the doc is still registered, and it
 must hold the watch that a later open in that directory starts.
 
 Each `watch` and `unwatch` restarts the FSEvents stream, and the restart
-loses a change that the stream has not delivered yet, of any watched file.
-So `delete_board` drops no watch: it takes the board's docs off the counts
-and leaves the directories watched (#249). A directory with a watch and no
-count is harmless, since `watch_loop` drops an event for a path that the
-active board does not have. Its watch goes with the next close that empties the directory,
-or with the daemon. A `doc_close` and an open in a new directory still make
-one restart each (#253).
+loses the events that the stream has not delivered yet, of any watched file
+(#253). So `acquire_watch` and `release_watch` say whether they changed the
+watch set, and `open_doc` and `close_doc` then compare the docs themselves.
+What is left of the gap: a change made after that comparison and before the
+new stream delivers is seen at the next wake, switch or connect.
+
+`delete_board` drops no watch: it takes the board's docs off the counts and
+leaves the directories watched (#249). A directory with a watch and no count
+only wakes the daemon for nothing. Its watch goes with the next close that
+empties the directory, or with the daemon.
 
 `tarmac open` end-to-end: the CLI canonicalizes the path, connects, reads
 `TARMAC_TERM_ID` from its env, and sends `Open`. The daemon re-canonicalizes
