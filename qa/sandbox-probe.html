@@ -111,19 +111,36 @@
     );
   }
 
-  function probeSendBeacon() {
+  // WebKit's sendBeacon returns true also when the content policy refuses the
+  // request, so the return value decides nothing. The refusal is reported as a
+  // securitypolicyviolation event, one task later. The first wait lets the
+  // events of the attempts before this one go by.
+  async function probeSendBeacon() {
+    if (!navigator.sendBeacon) return { escaped: false, detail: "sendBeacon unavailable" };
+    const origin = "http://127.0.0.1:8737";
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    let refusal = null;
+    const onViolation = (e) => {
+      if (String(e.blockedURI).indexOf(origin) === 0) refusal = e;
+    };
+    document.addEventListener("securitypolicyviolation", onViolation);
     try {
-      if (!navigator.sendBeacon) return { escaped: false, detail: "sendBeacon unavailable" };
-      const ok = navigator.sendBeacon("http://127.0.0.1:8737/probe-beacon", "x");
+      const ok = navigator.sendBeacon(origin + "/probe-beacon", "x");
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      if (refusal) {
+        return {
+          escaped: false,
+          detail: "sendBeacon returned " + ok + "; refused by the content policy (" + refusal.effectiveDirective + ")",
+        };
+      }
       return {
         escaped: ok === true,
-        detail:
-          "sendBeacon returned " +
-          ok +
-          " — return value alone does not confirm delivery; cross-check the out-of-band listener log",
+        detail: "sendBeacon returned " + ok + " and the content policy reported no refusal",
       };
     } catch (e) {
       return { escaped: false, detail: "blocked: " + describeError(e) };
+    } finally {
+      document.removeEventListener("securitypolicyviolation", onViolation);
     }
   }
 
@@ -217,7 +234,7 @@
     { name: "fetch(tarmac-card://)", fn: () => probeFetch("tarmac-card://doc/probe", "custom-scheme") },
     { name: "XMLHttpRequest", fn: probeXhr },
     { name: "WebSocket", fn: probeWebSocket },
-    { name: "navigator.sendBeacon", fn: async () => probeSendBeacon() },
+    { name: "navigator.sendBeacon", fn: probeSendBeacon },
     { name: "import() data:", fn: probeDynamicImport },
     { name: "__TAURI__ globals", fn: async () => probeTauriGlobals() },
     { name: "window.ipc.postMessage", fn: async () => probeIpc() },

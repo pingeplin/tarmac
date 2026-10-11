@@ -21,6 +21,12 @@ fn doc_close_removes_from_registry_and_persists() {
     cli_open(&daemon.sock, &a);
     app.recv_doc_opened();
 
+    // The open's save is on disk, and no save that was scheduled before the
+    // close is left to run: only a save that the close schedules can take the
+    // doc out of the file (#250).
+    daemon.wait_for_state("path present", |v| has_doc(v, 0, &a));
+    settle();
+
     app.send(&Msg::DocClose { path: a.clone() });
 
     daemon.wait_for_state("path absent", |v| !has_doc(v, 0, &a));
