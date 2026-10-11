@@ -147,13 +147,30 @@ final class HTMLCardSessionTests: XCTestCase {
     /// The session keeps nothing of it: a reload covers the view again.
     func testADocumentOnScreenIsPassedOnWhateverTheCardIsDoing() {
         var session = HTMLCardSession()
+        let load = session.reloaded()
         let before = session
-        XCTAssertEqual(session.handle(.shown, borrowed: false), [.documentShown])
-        XCTAssertEqual(session.handle(.shown, borrowed: true), [.documentShown])
+        XCTAssertEqual(session.handle(.shown(load: load), borrowed: false), [.documentShown])
+        XCTAssertEqual(session.handle(.shown(load: load), borrowed: true), [.documentShown])
         session.culled = true
-        XCTAssertEqual(session.handle(.shown, borrowed: false), [.documentShown])
+        XCTAssertEqual(session.handle(.shown(load: load), borrowed: false), [.documentShown])
         session.culled = false
         XCTAssertEqual(session, before)
+    }
+
+    /// The view is covered from the start, and nothing was loaded yet.
+    func testAShownBeforeAnyLoadIsDropped() {
+        var session = HTMLCardSession()
+        XCTAssertEqual(session.handle(.shown(load: 0), borrowed: false), [])
+    }
+
+    /// The file changed again while the word for the load before was on its
+    /// way. The view is covered for the new load, and that word is not for it.
+    func testAShownOfALoadThatWasReplacedIsDropped() {
+        var session = HTMLCardSession()
+        let first = session.reloaded()
+        let second = session.reloaded()
+        XCTAssertEqual(session.handle(.shown(load: first), borrowed: false), [])
+        XCTAssertEqual(session.handle(.shown(load: second), borrowed: false), [.documentShown])
     }
 
     // MARK: - escape and console

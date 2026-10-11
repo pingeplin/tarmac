@@ -219,12 +219,12 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
 
     private func loadDocument() {
         guard pageLoaded, let source else { return }
-        session.reloaded()
+        let load = session.reloaded()
         coverDocument()
         webView.resetWheel()
         onScrollChanged?(nil)
         layoutDocument()
-        webView.runInCardWorld("tarmacCard.load(source)", arguments: ["source": source])
+        webView.runInCardWorld("tarmacCard.load(source, load)", arguments: ["source": source, "load": load])
     }
 
     /// Sizes the frame the document is laid out in. Magnified, it is laid out

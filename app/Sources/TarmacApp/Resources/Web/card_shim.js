@@ -43,7 +43,7 @@
   // may be dark. Said here, and not at the end of the load: a document that
   // stops its own load never ends it.
   try {
-    window.parent.postMessage({ tarmac: "started" }, "*");
+    window.parent.postMessage({ tarmac: "started", source: location.href }, "*");
   } catch (e) {
     // The host page counts a frame that has loaded as started.
   }

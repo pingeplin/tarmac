@@ -33,9 +33,16 @@ final class CardConsoleTests: XCTestCase {
         XCTAssertEqual(parse(["tarmac": "escape"]), .escape)
     }
 
-    /// #213: the host page says that the card's document is on screen.
+    /// #213: the host page says that the card's document is on screen, and
+    /// which load of the frame it is of.
     func testAcceptsTheShownPayload() {
-        XCTAssertEqual(parse(["tarmac": "shown"]), .shown)
+        XCTAssertEqual(parse(["tarmac": "shown", "load": 3]), .shown(load: 3))
+    }
+
+    func testRejectsAShownPayloadThatNamesNoLoad() {
+        XCTAssertNil(parse(["tarmac": "shown"]))
+        XCTAssertNil(parse(["tarmac": "shown", "load": "3"]))
+        XCTAssertNil(parse(["tarmac": "shown", "load": 1.5]))
     }
 
     /// The document's own first word stops at the host page.

@@ -240,6 +240,53 @@ run, dark theme unless the row says another.
 | The console | `theme-console.html`: its three lines and no other; no line for the two new messages. |
 | A borrowed card | Double click (the driver's `focus`): `borrowed` is true and the keyboard focus is the frame. A key posted to the app reaches the page (`key k`, and the console line `[keys] keydown k`). Escape gives the keyboard back to the terminal. |
 
+### Cards before their document is drawn (#213, 2026-10-11)
+
+After #215 three things were left: the held file read was not measured again;
+a `shown` for a load that the app had replaced could uncover the card; and a
+markdown card was seen white for 1 or 2 frames at a first open. This run is
+for the change that closes them: the app numbers each load of an HTML card
+and drops a `shown` with another number, and a markdown card's web view is
+out of sight until its page is drawn.
+
+Debug builds of the branch, each from `make run DEV_DIR=<new dir under
+.dev/>` (the two rows *before the change* are from the branch's first commit,
+which does not touch the markdown card); the Mac Light, the theme *Dark* (`breeze-dark`), the window on the
+built-in display (2 pixels a point). Each row is a 60 fps `ffmpeg` recording
+of the window (`Capture screen 1`, 58 to 60 frames a second in the files),
+read at two points of the card's body with no text. `202326` is the board,
+`262a2f` is `bg1`, `1b1b1b` is the system's dark canvas, which is also the
+page of an HTML card that states no colour.
+
+| Case | Runs | Observed, in frames |
+| --- | --- | --- |
+| HTML card, opened | 4 | board, `bg1` × 4 to 11, the page. No white. |
+| HTML card, 3 rewrites 1.2 s apart | 1 | the page, `bg1` × 3, the page, `bg1` × 2, the page: two of the three rewrites show in the recording. No white. |
+| HTML card, two writes 3 ms apart, 4 pairs | 1 | 4 times: the page, `bg1` × 1 to 3, the page. No white. |
+| The same, 16 ms apart | 1 | 4 times `bg1` × 2 or 3. No white. |
+| The same, 120 ms apart (past the daemon's 100 ms debounce) | 1 | 6 runs of `bg1` × 2 or 3 for the 8 writes; why 2 writes show no run was not looked into. No white. |
+| HTML card, the response held 1.5 s (a sleep added to `CardSchemeHandler` for the run, then taken out), opened | 3 | board, `bg1` × 94 to 102, the page. No white. |
+| The same card, rewritten | 1 | the page, `bg1` × 92, the page. No white. |
+| Markdown card, first open of a new file, **before** the change, zoom 1, a new channel for each | 13 | board, the system's canvas × 9 to 29, `bg1`. No white. |
+| The same at zoom 0.1, one channel | 8 | board, the system's canvas × 2 to 8, `bg1`. No white. |
+| Markdown card, first open, **after** the change, zoom 1, a new channel for each | 12 | board, `bg1`. No system canvas, no white. |
+| Markdown cards after the change, 9 opened in a row, the later ones past the cull margin; then `zoom 0.2` | 1 | a capture of the window: all 9 show their heading and text. |
+| A markdown card and an HTML card on the board, the app quit and launched again | 1 | a capture 3 s after the launch: both show their content. |
+| HTML card whose file is made mode 000 and given a new change time | 1 | the page, `bg1` × 3, then the served text (the frame's `load`, no shim). Readable again: `bg1` × 1, the page. No white. |
+| HTML card whose page calls `window.stop()` in its head, opened | 1 | board, `bg1` × 6, the page: the shim's `started` is what shows it. |
+| HTML card of 6.4 MB, opened | 1 | board, `bg1` × 33, the page's canvas × 2, then its text (the two points are on white text; a capture shows the dark page). |
+| 6 HTML cards opened at zoom 1 past the cull margin (3739 to 4695 points from the window's left edge), then `zoom 0.1` | 1 | at the place of the last two: `bg1` × 2, the page. A capture shows all of them. |
+
+- **The white frames of the markdown card were not seen** in these 21
+  recordings before the change (3 of 10 in the record of #217). What was seen in every one is the system's canvas before `bg1`:
+  the same thing, a web view in view before its first themed draw. The change
+  takes that away; that it also takes the white away is by construction and
+  was not measured.
+- **The late `shown` was not seen before the change either.** It was found by
+  reading. Its tests are `HTMLCardSessionTests`, `CardHostScriptTests` and
+  `CardShimTests`; the recordings here show that the numbered loads broke
+  nothing.
+
 ## Found on the way
 
 - **S39: the app menu does not take the app's appearance.** With *Dark*

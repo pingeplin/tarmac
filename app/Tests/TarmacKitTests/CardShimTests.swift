@@ -69,6 +69,7 @@ final class CardShimTests: XCTestCase {
 
       Object.assign(globalThis, {
         window: globalThis,
+        location: { href: "tarmac-card://doc/card.html?v=1" },
         parent,
         addEventListener: (type, fn) => add(listeners, type, fn),
         removeEventListener() {},
@@ -1312,7 +1313,8 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(try shim.strings(Self.headElements), [Self.defaultScheme], "S14: the block added no head element")
         XCTAssertEqual(try shim.posted().count, 1, "S14: one message by now")
         XCTAssertEqual(
-            shim.run("JSON.stringify(h.sheets[0].atConstruction.posted)").toString(), #"[{"tarmac":"started"}]"#,
+            shim.run("JSON.stringify(h.sheets[0].atConstruction.posted)").toString(),
+            #"[{"tarmac":"started","source":"tarmac-card://doc/card.html?v=1"}]"#,
             "S14: after started"
         )
         XCTAssertEqual(try shim.strings("h.sheets[0].atConstruction.listeners"), [], "S14: before the first listener")
@@ -1393,11 +1395,15 @@ final class CardShimTests: XCTestCase {
     /// says `shown`, and this message is what the host page waits for: it is
     /// posted as the shim loads, before any author script runs, and
     /// waits for nothing. In the document every older test runs in, the default
-    /// scheme's block throws, and the message is posted all the same.
+    /// scheme's block throws, and the message is posted all the same. It names
+    /// the document's address: the host page can have given the frame a newer
+    /// source by the time it hears this.
     func testTheShimTellsItsParentThatTheDocumentHasStartedAsItLoads() throws {
         for head in [false, true] {
             let shim = try loadShim(head: head)
-            XCTAssertEqual(try shim.posted(), [["tarmac": "started"]], "head: \(head)")
+            XCTAssertEqual(
+                try shim.posted(), [["tarmac": "started", "source": "tarmac-card://doc/card.html?v=1"]], "head: \(head)"
+            )
         }
     }
 

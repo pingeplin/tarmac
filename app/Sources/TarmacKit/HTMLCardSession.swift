@@ -17,6 +17,7 @@ public struct HTMLCardSession: Equatable, Sendable {
     /// The mode adopted for the current load; nil until its first ready.
     public private(set) var mode: ZoomMode?
     public var culled = false
+    private var loads = LoadCount()
     /// The fonts last given. A reload keeps them: the next document is born
     /// with the values of its request, which a change since then missed.
     private var fonts: CardFontVariables?
@@ -32,8 +33,10 @@ public struct HTMLCardSession: Equatable, Sendable {
             return [.consoleChanged]
         case .scrolled(let metrics):
             return [.scrollChanged(metrics)]
-        case .shown:
-            return [.documentShown]
+        case .shown(let load):
+            // The word for a load that was replaced on its way here: the view
+            // is covered again, for a document that is not on screen yet.
+            return loads.isCurrent(load) ? [.documentShown] : []
         case .ready(let meta):
             // A document is born not knowing whether its card is culled, and a
             // message sent before it committed went to the page it replaced.
@@ -62,7 +65,10 @@ public struct HTMLCardSession: Equatable, Sendable {
 
     /// The document was loaded again from disk: its mode is decided afresh, so
     /// a meta tag that was removed does not carry over. The console is kept.
-    public mutating func reloaded() {
+    /// The result numbers the load, for the host page to name in its `shown`.
+    @discardableResult
+    public mutating func reloaded() -> Int {
         mode = nil
+        return loads.next()
     }
 }
