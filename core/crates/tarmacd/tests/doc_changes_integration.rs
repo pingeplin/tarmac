@@ -56,7 +56,6 @@ fn a_change_in_the_background_is_reported_when_its_board_is_shown() {
     assert_eq!(last_changed(&restore, &y), Some(edited), "the restore carries the change");
     assert_eq!(app.recv_file_event_for(&y), edited, "and a file_event follows it");
     assert!(quiet(&mut app, &y), "the change is reported one time");
-    daemon.wait_for_state("the change in the state file", |v| doc_entry(v, 1, &y)["last_changed_ms"] == json!(edited));
 }
 
 // The board that a delete leaves active is sent like any other.
@@ -100,6 +99,8 @@ fn a_change_made_with_no_app_connected_is_reported_at_the_connect() {
     let restore = app.recv_restore_for("board-0");
     assert_eq!(last_changed(&restore, &y), Some(edited));
     assert_eq!(app.recv_file_event_for(&y), edited);
+    // A connect changes nothing else, so only the look can have asked for the save.
+    daemon.wait_for_state("the change in the state file", |v| doc_entry(v, 0, &y)["last_changed_ms"] == json!(edited));
 }
 
 // A writer that puts the mtime back. The length tells.
