@@ -162,10 +162,13 @@ pub fn take_to_tell(reg: &mut Registry, now: &HashMap<PathBuf, Option<FileStamp>
 /// A change is recorded with or without an app. One that reaches no app is
 /// held (`Registry::hold`) and told by the next look that has one.
 pub async fn report_changes(daemon: &Daemon) {
-    let (tell, recorded) = daemon
+    let (board, tell, recorded) = daemon
         .look(
             |boards| boards.active_registry().docs.keys().cloned().collect::<Vec<_>>(),
-            |boards, now| take_to_tell(boards.active_registry_mut(), now),
+            |boards, now| {
+                let (tell, recorded) = take_to_tell(boards.active_registry_mut(), now);
+                (boards.active_id().to_string(), tell, recorded)
+            },
         )
         .await;
     // Recorded before the push, as in `stat_and_push`.
@@ -173,14 +176,15 @@ pub async fn report_changes(daemon: &Daemon) {
         daemon.mark_dirty();
     }
     for (path, mtime_ms) in tell {
-        push_file_event(daemon, &path, mtime_ms).await;
+        push_file_event(daemon, &board, &path, mtime_ms).await;
     }
 }
 
-/// Pushes the `file_event`, and holds the doc when it reached no app.
-async fn push_file_event(daemon: &Daemon, path: &Path, mtime_ms: u64) {
+/// Pushes the `file_event`, and holds the doc when it reached no app. `board`
+/// is the board the change was taken for, which need not be active any more.
+pub async fn push_file_event(daemon: &Daemon, board: &str, path: &Path, mtime_ms: u64) {
     if !daemon.push(Msg::FileEvent { path: path.to_string_lossy().into_owned(), mtime_ms }).await {
-        daemon.boards.lock().await.active_registry_mut().hold(path);
+        daemon.boards.lock().await.hold(board, path);
     }
 }
 
@@ -198,18 +202,20 @@ pub async fn stat_and_push(daemon: &Arc<Daemon>, path: &Path) -> bool {
             |boards, now| {
                 // Deleted files emit nothing until the path exists again.
                 let stamp = now.get(path).copied().flatten()?;
+                let board = boards.active_id().to_string();
                 let info = boards.active_registry_mut().docs.get_mut(path)?;
                 info.seen = Some(stamp);
+                info.untold = false;
                 let mtime_ms = epoch_ms(stamp.mtime);
                 info.last_changed_ms = Some(mtime_ms);
-                Some(mtime_ms)
+                Some((board, mtime_ms))
             },
         )
         .await;
-    let Some(mtime_ms) = recorded else { return false };
+    let Some((board, mtime_ms)) = recorded else { return false };
     // Registry update lands before the push so a crash between the two never
     // loses the fact.
     daemon.mark_dirty();
-    push_file_event(daemon, path, mtime_ms).await;
+    push_file_event(daemon, &board, path, mtime_ms).await;
     true
 }

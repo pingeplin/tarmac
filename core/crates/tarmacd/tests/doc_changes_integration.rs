@@ -55,6 +55,8 @@ fn a_change_in_the_background_is_reported_when_its_board_is_shown() {
     let restore = switch_to(&mut app, "board-1");
     assert_eq!(last_changed(&restore, &y), Some(edited), "the restore carries the change");
     assert_eq!(app.recv_file_event_for(&y), edited, "and a file_event follows it");
+    // Another file of the directory wakes the daemon for one more look.
+    write_doc(&daemon.dir.join("docs/other.txt"), "other\n");
     assert!(quiet(&mut app, &y), "the change is reported one time");
 }
 
@@ -146,6 +148,28 @@ fn a_doc_on_two_boards_is_reported_to_each_board() {
     let restore = switch_to(&mut app, "board-0");
     assert_eq!(last_changed(&restore, &y), Some(edited));
     assert!(quiet(&mut app, &y), "board-0 was told when the file changed");
+}
+
+// What is held for an app is in memory only. After a restart the restore has
+// the time of the change, and the first look takes the file as it is.
+#[test]
+fn a_restart_keeps_the_time_of_a_change_and_reports_nothing() {
+    let mut daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let doc = write_doc(&daemon.dir.join("docs/a.md"), "a\n");
+    open_on(&mut app, "board-0", &doc);
+    quiet(&mut app, &doc);
+    touch(&doc);
+    let edited = mtime_ms(&doc);
+    assert_eq!(app.recv_file_event_since(&doc, edited), edited);
+    daemon.wait_for_state("the change in the state file", |v| doc_entry(v, 0, &doc)["last_changed_ms"] == json!(edited));
+    drop(app);
+
+    daemon.restart();
+    let mut app = daemon.connect_app();
+    let restore = app.recv_restore_for("board-0");
+    assert_eq!(last_changed(&restore, &doc), Some(edited));
+    assert!(quiet(&mut app, &doc), "the app that built its cards from this restore needs no file_event");
 }
 
 // The comparison is "different", not "newer than the open": a file whose mtime

@@ -171,7 +171,7 @@ async fn change_and_send_active_board(
     if recorded {
         daemon.mark_dirty();
     }
-    let first = conn.replayed.insert(active_id);
+    let first = conn.replayed.insert(active_id.clone());
     // Snapshot before sending the restore: a chunk produced after this is
     // delivered live and arrives before the restore (FIFO) while the term is
     // still unbound app-side, so the app drops it — replay + live never dup.
@@ -183,7 +183,7 @@ async fn change_and_send_active_board(
     for (path, mtime_ms) in tell {
         let event = Msg::FileEvent { path: path.to_string_lossy().into_owned(), mtime_ms };
         if conn.tx.send(event).await.is_err() {
-            daemon.boards.lock().await.active_registry_mut().hold(&path);
+            daemon.boards.lock().await.hold(&active_id, &path);
         }
     }
     for (tid, data) in replay {

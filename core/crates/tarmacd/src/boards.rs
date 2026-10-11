@@ -122,10 +122,12 @@ impl Registry {
                 continue;
             }
             info.seen = *stamp;
+            // What was held is out of date: the file changed again, and is
+            // told now, or it is gone, and a file that is gone is not told.
+            info.untold = false;
             if let Some(stamp) = stamp {
                 let ms = epoch_ms(stamp.mtime);
                 info.last_changed_ms = Some(ms);
-                info.untold = false;
                 changes.push((path.clone(), ms));
             }
         }
@@ -262,6 +264,14 @@ impl Boards {
 
     pub fn iter(&self) -> impl Iterator<Item = &Board> {
         self.boards.iter()
+    }
+
+    /// Holds the doc of board `id` (`Registry::hold`). Nothing for a board that
+    /// is gone: the change was that board's, and not the active board's.
+    pub fn hold(&mut self, id: &str, path: &Path) {
+        if let Some(idx) = self.index_of(id) {
+            self.boards[idx].registry.hold(path);
+        }
     }
 
     /// The path of each registered doc, of every board.
@@ -538,6 +548,45 @@ mod tests {
         let mut reg = Registry::empty();
         reg.hold(Path::new("/d/gone.md"));
         assert_eq!(reg.take_untold(), vec![]);
+    }
+
+    // "If the file is deleted, stop emitting until the path exists again."
+    #[test]
+    fn a_held_change_of_a_file_that_is_gone_is_not_told() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut reg = registry_that_saw(&doc, at(10));
+        reg.take_changes(&now(&doc, at(20)));
+        reg.hold(&doc);
+
+        assert_eq!(reg.take_changes(&now(&doc, None)), vec![]);
+        assert_eq!(reg.take_untold(), vec![]);
+        assert_eq!(reg.take_changes(&now(&doc, at(20))), vec![(doc, 20_000)], "it is a change when it is back");
+    }
+
+    // A doc that was held before it had a change has no time to tell.
+    #[test]
+    fn a_held_doc_with_no_recorded_change_is_not_told() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut reg = registry_that_saw(&doc, at(10));
+        reg.hold(&doc);
+        assert_eq!(reg.take_untold(), vec![]);
+    }
+
+    #[test]
+    fn a_hold_is_for_the_board_that_is_named() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut boards = Boards::single();
+        let other = boards.create();
+        for id in [DEFAULT_BOARD_ID, other.as_str()] {
+            let info = DocInfo { last_changed_ms: Some(20_000), ..doc_info() };
+            boards.registry_mut(Some(id)).docs.insert(doc.clone(), info);
+        }
+
+        boards.hold(DEFAULT_BOARD_ID, &doc);
+        boards.hold("board-404", &doc);
+        assert_eq!(boards.active_id(), other);
+        assert_eq!(boards.active_registry_mut().take_untold(), vec![], "the active board is not the one named");
+        assert_eq!(boards.registry_mut(Some(DEFAULT_BOARD_ID)).take_untold(), vec![(doc, 20_000)]);
     }
 
     #[test]

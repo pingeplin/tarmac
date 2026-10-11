@@ -779,6 +779,58 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
+    // The hold is for the board whose look took the change. The active board
+    // can be another one by the time the push fails.
+    #[tokio::test]
+    async fn a_change_is_held_for_its_board_when_another_board_is_active() {
+        let tmp = tmp_dir("held-board");
+        let daemon = Daemon::with_source(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new()));
+        let doc = write_doc(tmp.join("d/a.md"));
+        open_doc(&daemon, None, &doc).await;
+        let changed = change(&doc);
+        daemon.look(|_| vec![doc.clone()], |boards, now| boards.active_registry_mut().take_changes(now)).await;
+
+        let other = daemon.boards.lock().await.create();
+        open_doc(&daemon, Some(&other), &doc).await;
+        crate::docs::push_file_event(&daemon, crate::boards::DEFAULT_BOARD_ID, &doc, changed).await;
+
+        let mut app = connect_app(&daemon).await;
+        crate::docs::report_changes(&daemon).await;
+        assert_eq!(file_events(&mut app), vec![], "the board that is active was not the one");
+        daemon.boards.lock().await.set_active(crate::boards::DEFAULT_BOARD_ID);
+        crate::docs::report_changes(&daemon).await;
+        assert_eq!(file_events(&mut app), vec![(doc, changed)]);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // A refresh with no app is held like a look's change, and a refresh tells
+    // what was held: the look after it has nothing left.
+    #[tokio::test]
+    async fn a_refresh_holds_what_reached_no_app_and_tells_what_was_held() {
+        let tmp = tmp_dir("refresh-held");
+        let daemon = Daemon::with_source(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new()));
+        let doc = write_doc(tmp.join("d/a.md"));
+        open_doc(&daemon, None, &doc).await;
+
+        let changed = change(&doc);
+        assert!(crate::docs::stat_and_push(&daemon, &doc).await);
+        let mut app = connect_app(&daemon).await;
+        crate::docs::report_changes(&daemon).await;
+        assert_eq!(file_events(&mut app), vec![(doc.clone(), changed)], "the refresh was held");
+
+        drop(app);
+        let again = change(&doc);
+        crate::docs::report_changes(&daemon).await;
+        let mut app = connect_app(&daemon).await;
+        assert!(crate::docs::stat_and_push(&daemon, &doc).await);
+        assert_eq!(file_events(&mut app), vec![(doc.clone(), again)]);
+        crate::docs::report_changes(&daemon).await;
+        assert_eq!(file_events(&mut app), vec![], "the refresh told it");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
     // A save that replaces the file by one with the same mtime and length.
     #[tokio::test]
     async fn a_file_that_is_replaced_with_the_same_mtime_and_length_is_a_change() {
@@ -806,6 +858,8 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn an_older_reading_is_never_taken_after_a_newer_one() {
         let (tmp, daemon, _wake, mut app) = silent_daemon("one-look").await;
+        // Its pushes are not what is under test, and a push waits when 16 are unread.
+        tokio::spawn(async move { while app.recv().await.is_some() {} });
         let docs: Vec<PathBuf> = (0..200).map(|i| write_doc(tmp.join(format!("d/{i}.md")))).collect();
         for doc in &docs {
             open_doc(&daemon, None, doc).await;
@@ -825,7 +879,6 @@ mod tests {
             assert!(crate::docs::stat_and_push(&daemon, doc).await);
             look.await.unwrap();
             assert_eq!(last_changed(&daemon, doc).await, Some(changed), "round {round}");
-            while app.try_recv().is_ok() {}
         }
 
         let _ = std::fs::remove_dir_all(&tmp);

@@ -312,19 +312,25 @@ daemon looks:
   built, so that it carries each new `last_changed_ms`, with a `FileEvent` for
   each change after it. The app reads a doc of a board it has already built
   again on a `FileEvent` only. (A look of the watcher that runs just before
-  can send that `FileEvent` ahead of the `Restore`; the app takes it for every
-  board that has the doc, so the order does not matter to it.)
+  can send a `FileEvent` ahead of the `Restore`. The app takes it for every
+  board it has built that has the doc. For a board it has not built yet it
+  drops it, and builds the card from the `Restore` and the file: the content
+  is current, and the change time can be one change old.)
 
 There is no timer. A board in the background is not looked at until it is
 shown: a change of its doc is reported at the switch, to that board, whether
 or not another board was told of the same change before.
 
 A change is recorded, and saved, with or without an app. When its `FileEvent`
-reaches no app — none is connected, or it went away — the doc is held
-(`DocInfo.untold`, in memory), and the next look of its board tells it: at the
-connect, as a rule. After a daemon restart the `Restore` still carries the
-time, and no `FileEvent` comes, since what was held is gone and the first look
-takes each file as it is.
+reaches no app — none is connected, or the daemon already knows that it is
+gone — the doc is held for its board (`DocInfo.untold`, in memory), and the
+next look of that board tells it: at the connect, as a rule. A held change is
+dropped when the file changes again (that change is told) or is gone. After a
+daemon restart the `Restore` still carries the time, and no `FileEvent` comes,
+since what was held is gone and the first look takes each file as it is. Not
+covered: a `FileEvent` that was queued for an app whose connection then
+closed before it was written. It is not held, and an app that connects again
+with its cards in place keeps the old content until the next change or `↻`.
 
 `Daemon::look` is the one place that reads a doc's file for a change. It reads
 with no `boards` lock held, gives the reading to its caller under that lock,
