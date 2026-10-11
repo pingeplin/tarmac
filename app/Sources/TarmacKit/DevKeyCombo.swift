@@ -2,8 +2,8 @@ import Foundation
 
 /// One key press as AppKit describes it — the four facts `NSEvent.keyEvent(with:…)`
 /// needs beyond where and when. The app posts it as a key-down then a key-up.
-/// A press with Control is not built by `NSEvent.keyEvent`, and of the two
-/// character fields it delivers `characters` only (`isKeyEquivalentCandidate`).
+/// A press with Control is delivered with `characters` in both character
+/// fields (`deliveredCharactersIgnoringModifiers`).
 ///
 /// `keyCode` is the load-bearing field: the app's key bindings and the terminal's
 /// encoder both read the physical key. It and the modifier flags are exactly a
@@ -40,10 +40,14 @@ public struct DevKeyStroke: Equatable, Sendable {
         self.charactersIgnoringModifiers = charactersIgnoringModifiers
     }
 
-    /// AppKit offers a press with Control to key equivalents — the menu —
-    /// before `keyDown` (⌘ too, which `key` refuses). The driver builds such a
-    /// press another way (`DevInput.press`, #207).
-    public var isKeyEquivalentCandidate: Bool { modifierFlags.contains(.control) }
+    /// What the driver's event carries as `charactersIgnoringModifiers`.
+    /// AppKit offers a press with Control to the menu before `keyDown`, and the
+    /// menu matches an `NSEvent.keyEvent` press on this string alone: with `c`
+    /// here a ⌃C runs the system's 🌐⌃C tiling item and never reaches the first
+    /// responder (#207). So such a press carries `characters` in this place too.
+    public var deliveredCharactersIgnoringModifiers: String {
+        modifierFlags.contains(.control) ? characters : charactersIgnoringModifiers
+    }
 }
 
 /// What `tarmac dev key <card> "<combo>"` presses (spec 2609.0015, issue #166).

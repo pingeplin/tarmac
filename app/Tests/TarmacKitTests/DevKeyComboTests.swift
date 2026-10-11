@@ -131,15 +131,28 @@ final class DevKeyComboTests: XCTestCase {
     }
 
     /// #207: AppKit offers a press with Control to the menu before `keyDown`,
-    /// whatever key it is on; without Control it does not.
-    func testAPressWithControlIsAKeyEquivalentCandidate() {
-        for combo in ["ctrl+c", "ctrl+f", "ctrl+r", "ctrl+shift+c", "ctrl+alt+b", "ctrl+7", "ctrl+left", "ctrl+enter"] {
-            XCTAssertEqual(stroke(combo)?.isKeyEquivalentCandidate, true, combo)
-        }
+    /// and the menu matches the driver's event on the string without its
+    /// modifiers alone: a ⌃C with `c` there runs the system's 🌐⌃C item. So
+    /// the event of a press with Control carries `characters` in that place.
+    func testThePressOfAControlChordIsDeliveredWithItsCharactersInBothFields() {
+        XCTAssertEqual(stroke("ctrl+c")?.deliveredCharactersIgnoringModifiers, "\u{03}")
+        XCTAssertEqual(stroke("ctrl+shift+c")?.deliveredCharactersIgnoringModifiers, "\u{03}")
+        XCTAssertEqual(stroke("ctrl+alt+b")?.deliveredCharactersIgnoringModifiers, "\u{02}")
+        XCTAssertEqual(stroke("ctrl+7")?.deliveredCharactersIgnoringModifiers, "7")
+        XCTAssertEqual(stroke("ctrl+left")?.deliveredCharactersIgnoringModifiers, "\u{F702}")
+        XCTAssertEqual(stroke("ctrl+enter")?.deliveredCharactersIgnoringModifiers, "\r")
+    }
+
+    /// Without Control the menu is not asked, and the event is the planned
+    /// stroke: an Option chord keeps its plain face.
+    func testAPressWithNoControlIsDeliveredAsPlanned() {
         for combo in ["alt+b", "alt+shift+b", "enter", "shift+enter", "escape", "shift+tab", "left", "alt+left"] {
-            XCTAssertEqual(stroke(combo)?.isKeyEquivalentCandidate, false, combo)
+            XCTAssertEqual(
+                stroke(combo)?.deliveredCharactersIgnoringModifiers, stroke(combo)?.charactersIgnoringModifiers, combo
+            )
         }
-        XCTAssertEqual(DevKeyCombo.printableStroke("c")?.isKeyEquivalentCandidate, false)
+        XCTAssertEqual(stroke("alt+shift+b")?.deliveredCharactersIgnoringModifiers, "B")
+        XCTAssertEqual(DevKeyCombo.printableStroke("c")?.deliveredCharactersIgnoringModifiers, "c")
     }
 
     /// AppKit delivers Shift-Tab as the back-tab character in both fields.
