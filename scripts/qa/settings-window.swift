@@ -40,14 +40,6 @@
 // <pid> is the app's: `lsof -t "$PWD/.dev/tarmac-dev.sock"`. The process that
 // runs this needs the Accessibility permission.
 //
-// After a second window has been shown — so after `open` — the system's
-// tiling items in the Window menu (Fill ⌃F, Center ⌃C, Return to Previous
-// Size ⌃R) claim those chords when `tarmac dev key` sends them: `key <term>
-// ctrl+c` no longer interrupts, and `ctrl+f` resizes the window. A real
-// keyboard is not affected. Reading the Window menu through Accessibility
-// does the same, so only the app menu is read here. Run `make qa` in an app
-// that has not shown the Settings window.
-//
 // `click` and `wheel` move the cursor there, post at the HID tap, and put the
 // cursor back, as `wheel-gesture.swift` does for a card: the two are
 // single-file scripts and cannot share code. A wheel that carries only the Control flag leaves Control

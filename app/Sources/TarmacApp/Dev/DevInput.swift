@@ -116,7 +116,8 @@ struct DevInput {
                 with: type, location: .zero,
                 modifierFlags: NSEvent.ModifierFlags(rawValue: stroke.modifierFlags.rawValue),
                 timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
-                characters: stroke.characters, charactersIgnoringModifiers: stroke.charactersIgnoringModifiers,
+                characters: stroke.characters,
+                charactersIgnoringModifiers: stroke.deliveredCharactersIgnoringModifiers,
                 isARepeat: false, keyCode: stroke.keyCode
             ) else { throw DevError(.driverThrew, "could not build a key event") }
             NSApp.sendEvent(event)

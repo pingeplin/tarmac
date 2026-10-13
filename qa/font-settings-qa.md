@@ -114,6 +114,17 @@ click, a wheel and a Control wheel at P change none of `focused_card`, `cx`,
   Accessibility, the same `key ctrl+c` fails. Recorded in `docs/backlog.md`
   and in the dev-channel skill; the driver is not changed here.
 
+  **2026-10-11, #207: the driver is changed.** The event of a press with
+  Control now carries its control character as `charactersIgnoringModifiers`
+  too, so no menu item's key matches it. Measured after the Settings window
+  was shown, under the Zhuyin and the ABC input source: `key <term> ctrl+c`
+  ends `sleep` and `cat`, `ctrl+f` and `ctrl+r` reach the tty (it echoes
+  `^F^R`), and the window's frame stays 730, 189, 1100 × 732. `make qa`
+  passes 27 of 27 checks in that process (run under Zhuyin), and
+  `key <term> ctrl+escape` un-borrows an HTML card, so the key ladder still
+  gets such a press. One real ⌃C from the keyboard, under ABC with Settings
+  shown, also reached the PTY. The backlog entry is removed.
+
 ## Regression: `make qa`
 
 The scenario suite of the QA driver, which covers the paths this change
