@@ -135,10 +135,7 @@ pub fn stamps(paths: impl IntoIterator<Item = PathBuf>) -> HashMap<PathBuf, Opti
         .collect()
 }
 
-/// One look for each wake, `BURST` after it: a save shorter than that is read
-/// when it is done, and a file that keeps changing is read each `BURST` while
-/// it does (#258). A wake that comes during the wait or the look is kept for
-/// the next one.
+/// One look for each wake, `BURST` after it (#258, docs/architecture.md).
 pub async fn watch_loop(daemon: Arc<Daemon>) {
     loop {
         daemon.woken().await;
