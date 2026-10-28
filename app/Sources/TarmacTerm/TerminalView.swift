@@ -307,7 +307,9 @@ public final class TerminalView: NSView {
     }
 
     private func relayout() {
-        let layout = TerminalGridLayout(bounds: bounds.size, cell: renderer.fonts.metrics.cell, padding: padding)
+        let layout = TerminalGridLayout(
+            bounds: bounds.size, cell: renderer.fonts.metrics.cell, padding: padding, pixelsPerPoint: fontScale
+        )
         defer { gridLayout = layout; needsDisplay = true; reportScrollbar() }
         guard let layout, layout.cols != engine.cols || layout.rows != engine.rows || gridLayout?.cell != layout.cell
         else { return }

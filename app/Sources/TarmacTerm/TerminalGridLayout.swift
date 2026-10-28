@@ -26,8 +26,9 @@ struct TerminalGridLayout: Equatable {
     let rows: Int
     let cell: CGSize
     let origin: CGPoint
+    let pixelsPerPoint: CGFloat
 
-    init?(bounds: CGSize, cell: CGSize, padding: TerminalPadding) {
+    init?(bounds: CGSize, cell: CGSize, padding: TerminalPadding, pixelsPerPoint: CGFloat) {
         guard cell.width > 0, cell.height > 0 else { return nil }
         let cols = Self.wholeCells(bounds.width - padding.left - padding.right, cell.width)
         let rows = Self.wholeCells(bounds.height - padding.top - padding.bottom, cell.height)
@@ -35,6 +36,7 @@ struct TerminalGridLayout: Equatable {
         self.cols = cols
         self.rows = rows
         self.cell = cell
+        self.pixelsPerPoint = pixelsPerPoint
         origin = CGPoint(x: padding.left, y: bounds.height - padding.bottom - CGFloat(rows) * cell.height)
     }
 
@@ -66,10 +68,13 @@ struct TerminalGridLayout: Equatable {
         SurfacePoint(x: point.x - origin.x, y: point.y - origin.y)
     }
 
+    /// The grid in device pixels: a cell is a whole number of them, but not
+    /// always of points.
     var surface: SurfaceGeometry {
-        SurfaceGeometry(
-            width: Int(gridSize.width.rounded()), height: Int(gridSize.height.rounded()),
-            cellWidth: Int(cell.width.rounded()), cellHeight: Int(cell.height.rounded())
+        let pixels = { (points: CGFloat) in Int((points * pixelsPerPoint).rounded()) }
+        return SurfaceGeometry(
+            width: pixels(gridSize.width), height: pixels(gridSize.height),
+            cellWidth: pixels(cell.width), cellHeight: pixels(cell.height), pixelsPerPoint: pixelsPerPoint
         )
     }
 }

@@ -54,7 +54,7 @@ final class TerminalSelection {
 
     func press(_ point: SurfacePoint, time: TimeInterval, surface: SurfaceGeometry) {
         guard var ref = ref(at: point, surface: surface) else { return }
-        var position = GhosttySurfacePosition(x: point.x, y: point.y)
+        var position = ghosttyPosition(point, surface)
         var timeNs = UInt64(max(time, 0) * 1_000_000_000)
         var intervalNs = UInt64(multiClickInterval * 1_000_000_000)
         set(pressEvent, GHOSTTY_SELECTION_GESTURE_EVENT_OPT_REF, &ref)
@@ -66,7 +66,7 @@ final class TerminalSelection {
 
     func drag(_ point: SurfacePoint, surface: SurfaceGeometry, rectangle: Bool = false) {
         guard var ref = ref(at: point, surface: surface) else { return }
-        var position = GhosttySurfacePosition(x: point.x, y: point.y)
+        var position = ghosttyPosition(point, surface)
         var geometry = gestureGeometry(surface)
         var rectangle = rectangle
         set(dragEvent, GHOSTTY_SELECTION_GESTURE_EVENT_OPT_REF, &ref)
@@ -107,7 +107,7 @@ final class TerminalSelection {
     func autoscrollTick(_ point: SurfacePoint, surface: SurfaceGeometry) {
         let cell = cell(at: point, surface: surface)
         var viewport = GhosttyPointCoordinate(x: UInt16(cell.col), y: UInt32(cell.row))
-        var position = GhosttySurfacePosition(x: point.x, y: point.y)
+        var position = ghosttyPosition(point, surface)
         var geometry = gestureGeometry(surface)
         set(tickEvent, GHOSTTY_SELECTION_GESTURE_EVENT_OPT_VIEWPORT, &viewport)
         set(tickEvent, GHOSTTY_SELECTION_GESTURE_EVENT_OPT_POSITION, &position)
@@ -158,7 +158,13 @@ final class TerminalSelection {
         ghostty_selection_gesture_event_set(event, option, &value)
     }
 
+    private func ghosttyPosition(_ point: SurfacePoint, _ surface: SurfaceGeometry) -> GhosttySurfacePosition {
+        let pixels = surface.pixels(point)
+        return GhosttySurfacePosition(x: pixels.x, y: pixels.y)
+    }
+
     private func cell(at point: SurfacePoint, surface: SurfaceGeometry) -> (col: Int, row: Int) {
+        let point = surface.pixels(point)
         let col = Int((point.x / Double(max(surface.cellWidth, 1))).rounded(.down))
         let row = Int((point.y / Double(max(surface.cellHeight, 1))).rounded(.down))
         return (min(max(col, 0), engine.cols - 1), min(max(row, 0), engine.rows - 1))
