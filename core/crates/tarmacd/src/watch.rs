@@ -5,13 +5,11 @@
 use std::path::Path;
 use std::time::Duration;
 
-use notify::{RecommendedWatcher, RecursiveMode};
-use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache, new_debouncer};
+use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
-/// The burst window docs/protocol.md gives a `file_event`: the time between
-/// two looks of `docs::watch_loop`, and the quiet time after which the
-/// debouncer of `NotifySource` wakes the daemon for a path. A file that is
-/// written with no such gap wakes it when the writes stop (#258).
+/// The burst window docs/protocol.md gives a `file_event`: how long
+/// `docs::watch_loop` waits after a wake before it looks, and so the least
+/// time between two of its looks.
 pub const BURST: Duration = Duration::from_millis(100);
 
 pub trait WakeSource: Send {
@@ -21,19 +19,19 @@ pub trait WakeSource: Send {
 
 /// FSEvents through `notify`. Each `watch` and `unwatch` restarts its one
 /// stream, and the restart loses the events that the stream has not delivered
-/// yet (#253): the caller looks at its docs after either.
-pub struct NotifySource(Debouncer<RecommendedWatcher, RecommendedCache>);
+/// yet (#253): the caller looks at its docs after either. No debouncer (#258).
+pub struct NotifySource(RecommendedWatcher);
 
 impl NotifySource {
-    /// `wake` runs on the watcher's thread, for each batch of the debouncer.
+    /// `wake` runs on the watcher's thread, for each event.
     pub fn new(wake: impl Fn() + Send + 'static) -> anyhow::Result<Self> {
-        let debouncer = new_debouncer(BURST, None, move |res: DebounceEventResult| {
-            if let Err(errors) = res {
-                tracing::warn!("watch errors: {errors:?}");
+        let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+            if let Err(error) = res {
+                tracing::warn!("watch error: {error:?}");
             }
             wake();
         })?;
-        Ok(NotifySource(debouncer))
+        Ok(NotifySource(watcher))
     }
 }
 

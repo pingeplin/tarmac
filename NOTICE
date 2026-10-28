@@ -81,8 +81,8 @@ Rust crates (linked into tarmacd and tarmac)
   Offered under the MIT License or the Apache License 2.0 (serial2: BSD
   2-Clause or Apache License 2.0); taken under the Apache License 2.0:
 
-    anyhow, bitflags, cfg-if, downcast-rs, errno, file-id, futures-core,
-    futures-sink, itoa, lazy_static, libc, log, notify-debouncer-full,
+    anyhow, bitflags, cfg-if, downcast-rs, errno, futures-core,
+    futures-sink, itoa, lazy_static, libc, log,
     notify-types, num-traits, once_cell, pin-project-lite, regex-automata,
     regex-syntax, serde, serde_bytes, serde_core, serde_json, serial2,
     shell-words, signal-hook-registry, smallvec, socket2, thiserror,
