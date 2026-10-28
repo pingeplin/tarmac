@@ -346,7 +346,8 @@ fn reconnect_rebinds_live_terms_and_replays_scrollback() {
 
 // A board delete must not cost a doc of a board that is left its `file_event`.
 // Each unwatch restarts the FSEvents stream, and the restart loses a change that
-// the stream has not delivered yet: the delete looks at the docs itself (#249, #253).
+// the stream has not delivered yet. The look that sends the board left active
+// after the delete finds it (#249, #253).
 #[test]
 fn board_delete_loses_no_change_of_a_doc_that_is_left() {
     let daemon = TestDaemon::start();
