@@ -27,8 +27,7 @@ pub struct WatcherState {
     /// doc. A directory is watched from its first doc on.
     doc_counts: HashMap<PathBuf, usize>,
     /// Not the counted directories exactly: one that could not be watched has
-    /// a count and no watch, and one that a board delete emptied has a watch
-    /// and no count.
+    /// a count and no watch.
     watched_dirs: HashSet<PathBuf>,
 }
 
