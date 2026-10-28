@@ -377,10 +377,9 @@ watch set, and `open_doc` and `close_doc` then look at the docs themselves.
 What is left of the gap: a change made after that look and before the new
 stream delivers is seen at the next look.
 
-`delete_board` drops no watch: it takes the board's docs off the counts and
-leaves the directories watched (#249). A directory with a watch and no count
-only wakes the daemon for nothing. Its watch goes with the next close that
-empties the directory, or with the daemon.
+`delete_board` takes the board's docs off the counts, drops the watch of each
+directory that is left with none (#249), and then looks at the docs like
+`close_doc`.
 
 `tarmac open` end-to-end: the CLI canonicalizes the path, connects, reads
 `TARMAC_TERM_ID` from its env, and sends `Open`. The daemon re-canonicalizes
