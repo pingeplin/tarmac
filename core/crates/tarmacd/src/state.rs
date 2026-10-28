@@ -8,7 +8,7 @@ use tokio::sync::{Mutex, Notify, mpsc};
 use tokio_util::sync::CancellationToken;
 
 use crate::boards::{BoardId, Boards, FileStamp};
-use crate::docs::FileReader;
+use crate::reader::FileReader;
 use crate::term::TermHandle;
 use crate::watch::{NotifySource, WakeSource};
 
@@ -204,7 +204,7 @@ impl Daemon {
             }
         };
         // Read with no lock held.
-        let seen = crate::docs::stamp(path);
+        let seen = crate::reader::stamp(path);
         // Upsert before the entry is read so it reflects the post-open state.
         let (entry, is_new) = {
             let mut boards = self.boards.lock().await;
@@ -600,7 +600,7 @@ mod tests {
     }
 
     fn mtime(path: &Path) -> SystemTime {
-        crate::docs::stamp(path).unwrap().mtime
+        crate::reader::stamp(path).unwrap().mtime
     }
 
     fn set_mtime(path: &Path, mtime: SystemTime) {
@@ -1019,7 +1019,7 @@ mod tests {
                 self.reads.fetch_add(1, Ordering::SeqCst);
                 let _ = self.until_released.lock().unwrap().recv();
             }
-            crate::docs::stamp(path)
+            crate::reader::stamp(path)
         }
 
         fn get_stuck(&self) {
@@ -1099,7 +1099,7 @@ mod tests {
 
         let paths = vec![write_doc(tmp.join("gone/a.md")), write_doc(tmp.join("gone/b.md")), doc.clone()];
         let now = answers(async move { reader.stamps(paths).await }).await;
-        assert_eq!(now, HashMap::from([(doc.clone(), crate::docs::stamp(&doc))]));
+        assert_eq!(now, HashMap::from([(doc.clone(), crate::reader::stamp(&doc))]));
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

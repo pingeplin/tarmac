@@ -339,7 +339,7 @@ with no `boards` lock held, gives the reading to its caller under that lock,
 and runs one at a time: an older reading must not be applied after a newer
 one. Nothing is pushed from inside it.
 
-A file that is not read in time (`docs::FileReader`, #259) — a stat on a
+A file that is not read in time (`reader::FileReader`, #259) — a stat on a
 network volume that is gone — is not in the reading: that doc gets no
 `FileEvent` from that look, and the other docs, a connect, a board switch and a
 `DocRefresh` still answer. The look waits at most twice `READ_LIMIT` (1 s),
