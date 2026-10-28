@@ -311,9 +311,9 @@ public final class TerminalView: NSView {
             bounds: bounds.size, cell: renderer.fonts.metrics.cell, padding: padding, pixelsPerPoint: fontScale
         )
         defer { gridLayout = layout; needsDisplay = true; reportScrollbar() }
-        guard let layout, layout.cols != engine.cols || layout.rows != engine.rows || gridLayout?.surface != layout.surface
-        else { return }
+        guard let layout else { return }
         let surface = layout.surface
+        guard layout.cols != engine.cols || layout.rows != engine.rows || gridLayout?.surface != surface else { return }
         try? engine.resize(
             cols: layout.cols, rows: layout.rows, cellWidthPx: surface.cellWidth, cellHeightPx: surface.cellHeight
         )

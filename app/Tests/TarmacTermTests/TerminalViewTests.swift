@@ -1021,16 +1021,13 @@ final class TerminalViewTests: XCTestCase {
             frame: NSRect(x: 0, y: 0, width: 600, height: 400), fontSize: 20, fontFamily: "Monaco",
             backingScale: other
         )
-        var reply: [UInt8] = []
-        view.onInput = { reply.append(contentsOf: $0) }
+        view.onInput = { [unowned self] in self.sent.append(contentsOf: $0) }
         window.contentView?.addSubview(view)
 
         view.feed(Data("\u{1b}[14t".utf8))
 
         let surface = try XCTUnwrap(view.gridLayout).surface
-        XCTAssertEqual(
-            String(decoding: reply, as: UTF8.self), "\u{1b}[4;\(surface.height);\(surface.width)t"
-        )
+        XCTAssertEqual(sentText, "\u{1b}[4;\(surface.height);\(surface.width)t")
         XCTAssertEqual(surface.pixelsPerPoint, mounted)
     }
 
