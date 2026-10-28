@@ -135,13 +135,15 @@ pub fn stamps(paths: impl IntoIterator<Item = PathBuf>) -> HashMap<PathBuf, Opti
         .collect()
 }
 
-/// One look for each wake, and `BURST` between two looks: a wake can come
-/// from any file of a watched directory, in the middle of a doc's own burst.
+/// One look for each wake, `BURST` after it: a save shorter than that is read
+/// when it is done, and a file that keeps changing is read each `BURST` while
+/// it does (#258). A wake that comes during the wait or the look is kept for
+/// the next one.
 pub async fn watch_loop(daemon: Arc<Daemon>) {
     loop {
         daemon.woken().await;
-        report_changes(&daemon).await;
         tokio::time::sleep(crate::watch::BURST).await;
+        report_changes(&daemon).await;
     }
 }
 
