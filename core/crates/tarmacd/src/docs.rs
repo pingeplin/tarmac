@@ -1,14 +1,17 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use tarmac_protocol::Msg;
 use tracing::debug;
 
 use crate::boards::{DocInfo, FileStamp, Registry, epoch_ms};
 use crate::state::Daemon;
+
+/// How long a look waits for the read of one file (`FileReader`).
+pub const READ_LIMIT: Duration = Duration::from_secs(1);
 
 pub struct RepoInfo {
     pub name: String,
@@ -125,14 +128,93 @@ pub fn upsert_doc(
     }
 }
 
-pub fn stamps(paths: impl IntoIterator<Item = PathBuf>) -> HashMap<PathBuf, Option<FileStamp>> {
-    paths
-        .into_iter()
-        .map(|path| {
-            let stamp = stamp(&path);
-            (path, stamp)
-        })
-        .collect()
+pub type ReadFile = dyn Fn(&Path) -> Option<FileStamp> + Send + Sync;
+
+/// Reads the files of a look on a blocking thread, one after the other. A
+/// read that does not return within `limit` (a volume that is gone) is left
+/// on its thread, and the reads after it go on on a new one. A stat cannot be
+/// stopped, so a path whose read is out is not read again until it returns:
+/// it holds one thread, not one for each look.
+pub struct FileReader {
+    read: Arc<ReadFile>,
+    limit: Duration,
+    out: Arc<std::sync::Mutex<HashSet<PathBuf>>>,
+}
+
+/// What one thread of a look has read, in the order of its paths: the path it
+/// reads now is the one after the last.
+#[derive(Default)]
+struct Run {
+    read: Vec<(PathBuf, Option<FileStamp>)>,
+    left: bool,
+}
+
+impl FileReader {
+    pub fn new(read: Arc<ReadFile>, limit: Duration) -> Self {
+        FileReader { read, limit, out: Arc::default() }
+    }
+
+    /// Each file as it is now. A path whose read is out has no entry: it is
+    /// not known, which is not `None` (gone).
+    pub async fn stamps(&self, paths: impl IntoIterator<Item = PathBuf>) -> HashMap<PathBuf, Option<FileStamp>> {
+        let mut todo: Vec<PathBuf> = {
+            let out = self.out.lock().expect("out lock");
+            paths.into_iter().filter(|p| !out.contains(p)).collect()
+        };
+        let mut now = HashMap::with_capacity(todo.len());
+        while !todo.is_empty() {
+            let run = Arc::new(std::sync::Mutex::new(Run::default()));
+            let mut reading = tokio::task::spawn_blocking({
+                let (read, out, run, paths) = (self.read.clone(), self.out.clone(), run.clone(), todo.clone());
+                move || read_each(&*read, &out, &run, paths)
+            });
+            // Woken once for the whole run, not once for each file.
+            let mut seen = 0;
+            loop {
+                let finished = tokio::time::timeout(self.limit, &mut reading).await.is_ok();
+                let mut run = run.lock().expect("run lock");
+                let read = run.read.len();
+                if finished || read == todo.len() {
+                    now.extend(run.read.drain(..));
+                    todo.clear();
+                    break;
+                }
+                if read > seen {
+                    seen = read;
+                    continue;
+                }
+                run.left = true;
+                self.out.lock().expect("out lock").insert(todo[read].clone());
+                now.extend(run.read.drain(..));
+                todo.drain(..=read);
+                break;
+            }
+        }
+        now
+    }
+}
+
+fn read_each(
+    read: &ReadFile,
+    out: &std::sync::Mutex<HashSet<PathBuf>>,
+    run: &std::sync::Mutex<Run>,
+    paths: Vec<PathBuf>,
+) {
+    for path in paths {
+        let stamp = read(&path);
+        let mut run = run.lock().expect("run lock");
+        if run.left {
+            out.lock().expect("out lock").remove(&path);
+            return;
+        }
+        run.read.push((path, stamp));
+    }
+}
+
+impl Default for FileReader {
+    fn default() -> Self {
+        FileReader::new(Arc::new(stamp), READ_LIMIT)
+    }
 }
 
 /// One look for each wake, and `BURST` between two looks: a wake can come

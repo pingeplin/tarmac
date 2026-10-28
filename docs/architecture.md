@@ -337,12 +337,22 @@ with no `boards` lock held, gives the reading to its caller under that lock,
 and runs one at a time: an older reading must not be applied after a newer
 one. Nothing is pushed from inside it.
 
+The files are read on a blocking thread, one after the other
+(`docs::FileReader`). A read that does not return within `READ_LIMIT` (1 s) —
+a stat of a file on a network volume that is gone — is left on its thread, and
+the reads after it go on on a new one (#259). That doc is not in the reading:
+it gets no `FileEvent` from that look, and the other docs, a connect, a board
+switch and a `DocRefresh` still answer. A stat cannot be stopped, so a doc
+whose read is still out is not read again until it returns; then the next look
+compares it as usual. A look waits at most twice `READ_LIMIT` for each doc
+whose read gets stuck in it, and a later look does not wait for that doc.
+
 Two limits of a look. It can come in the middle of a doc's own save, when
 another file of a watched directory wakes the daemon: the app then reads the
-file as it is at that moment, and the next look corrects it. And the files are
-read on the task that looks, inside `Daemon::look`: a stat that does not return
-(a network volume that is gone) holds every later look, and with it a connect,
-a board switch and a `DocRefresh` (#259).
+file as it is at that moment, and the next look corrects it. And a file that
+takes longer than `READ_LIMIT` to read each time is never reported by a look.
+The open of a doc and the load of the state file still read the file on their
+own task, as before #257.
 
 One limit of the watcher itself, older than the look: the debouncer wakes the
 daemon for a path only when its events have stopped for `BURST`. A file that
