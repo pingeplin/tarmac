@@ -1011,6 +1011,26 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(view.gridLayout?.cell, cell(nil, size: 20, scale: mounted))
     }
 
+    /// Monaco at 20 has one cell in points at both densities, so only its
+    /// pixels change: the size a program is told must follow them.
+    func testANewBackingScaleTellsTheTerminalItsPixelSize() throws {
+        let mounted = window.backingScaleFactor
+        let other: CGFloat = mounted == 1 ? 2 : 1
+        XCTAssertEqual(cell("Monaco", size: 20, scale: mounted), cell("Monaco", size: 20, scale: other))
+        let view = try TerminalView(
+            frame: NSRect(x: 0, y: 0, width: 600, height: 400), fontSize: 20, fontFamily: "Monaco",
+            backingScale: other
+        )
+        view.onInput = { [unowned self] in self.sent.append(contentsOf: $0) }
+        window.contentView?.addSubview(view)
+
+        view.feed(Data("\u{1b}[14t".utf8))
+
+        let surface = try XCTUnwrap(view.gridLayout).surface
+        XCTAssertEqual(sentText, "\u{1b}[4;\(surface.height);\(surface.width)t")
+        XCTAssertEqual(surface.pixelsPerPoint, mounted)
+    }
+
     /// A rebuild for a new size keeps the display density the view was built
     /// at. The view is in no window, so that density is not the mounted one.
     func testANewSizeKeepsTheBackingScale() throws {
