@@ -28,8 +28,7 @@ pub struct WatcherState {
     /// doc. A directory is watched from its first doc on.
     doc_counts: HashMap<PathBuf, usize>,
     /// Not the counted directories exactly: one that could not be watched has
-    /// a count and no watch, and one that a board delete emptied has a watch
-    /// and no count.
+    /// a count and no watch.
     watched_dirs: HashSet<PathBuf>,
 }
 
@@ -152,7 +151,7 @@ impl Daemon {
 
     /// Counts one more registered doc in `dir` and watches the directory if it
     /// is not watched yet. The count stands when the watch fails, so each call
-    /// is paired with one `release_watch` or `release_count`.
+    /// is paired with one `release_watch`.
     ///
     /// True when it watched: the stream restarted (`NotifySource`), and the
     /// caller looks at the docs itself (`docs::report_changes`).
@@ -178,14 +177,6 @@ impl Daemon {
             }
         }
         unwatch
-    }
-
-    /// Takes one registered doc off the count of `dir` and leaves the watch.
-    /// For a board delete: an unwatch restarts the FSEvents stream, and the
-    /// restart loses a change of a doc that is left (#249, #253). The next
-    /// `release_watch` that empties the directory drops the watch.
-    fn release_count(&self, dir: &Path) {
-        self.watcher.lock().expect("watcher lock").uncount(dir);
     }
 
     /// Registers a doc on `board` (the active one for `None`), or refreshes the
@@ -245,15 +236,19 @@ impl Daemon {
         true
     }
 
-    /// Removes a board and takes its docs off their directories' counts. It
-    /// drops no watch (`release_count`). False for the last board or an
-    /// unknown id.
+    /// Removes a board and takes its docs off their directories' counts,
+    /// dropping the watch of each directory that is left empty. False for the
+    /// last board or an unknown id.
     pub async fn delete_board(&self, id: &str) -> bool {
         let deleted = self.boards.lock().await.delete(id);
         let Some(board) = deleted else { return false };
         self.mark_dirty();
+        let mut unwatched = false;
         for dir in board.registry.docs.keys().filter_map(|p| p.parent()) {
-            self.release_count(dir);
+            unwatched |= self.release_watch(dir);
+        }
+        if unwatched {
+            crate::docs::report_changes(self).await;
         }
         true
     }
@@ -438,12 +433,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
-    /// Each unwatch restarts the FSEvents stream, and a change of a doc that
-    /// is left is lost in the restart (#249, #253). So a delete drops no
-    /// watch. It takes the board's docs off the counts, and the next close in
-    /// a directory then drops that directory's watch as usual.
     #[tokio::test]
-    async fn deleting_a_board_drops_no_watch_and_gives_back_its_counts() {
+    async fn deleting_a_board_unwatches_the_dirs_no_board_is_left_in() {
         let (tmp, shared, daemon) = daemon_with_doc_dir("delete-board");
         let own = tmp.join("own");
         std::fs::create_dir_all(&own).unwrap();
@@ -454,17 +445,12 @@ mod tests {
         open_doc(&daemon, Some(&other), &own.join("d.md")).await;
 
         assert!(daemon.delete_board(&other).await);
-        assert!(watched(&daemon, &own), "the delete drops no watch");
-        assert!(watched(&daemon, &shared));
+        assert!(!watched(&daemon, &own), "no board is left with a doc there");
+        assert!(watched(&daemon, &shared), "board-0 still has a doc there");
         assert!(!daemon.delete_board(&other).await, "a second delete finds no board");
 
-        let later = own.join("e.md");
-        open_doc(&daemon, None, &later).await;
-        assert!(daemon.close_doc(&later).await);
-        assert!(!watched(&daemon, &own), "the deleted board's two docs are off the count");
-
         assert!(daemon.close_doc(&shared.join("a.md")).await);
-        assert!(!watched(&daemon, &shared), "and its doc in the shared directory");
+        assert!(!watched(&daemon, &shared));
         assert!(daemon.watcher.lock().unwrap().doc_counts.is_empty(), "no count is left at zero");
 
         let _ = std::fs::remove_dir_all(&tmp);

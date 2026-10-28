@@ -237,13 +237,12 @@ fn read_each(read: &ReadFile, out: &Mutex<HashSet<PathBuf>>, run: &Mutex<Run>, p
     }
 }
 
-/// One look for each wake, and `BURST` between two looks: a wake can come
-/// from any file of a watched directory, in the middle of a doc's own burst.
+/// One look for each wake, `BURST` after it (#258, docs/architecture.md).
 pub async fn watch_loop(daemon: Arc<Daemon>) {
     loop {
         daemon.woken().await;
-        report_changes(&daemon).await;
         tokio::time::sleep(crate::watch::BURST).await;
+        report_changes(&daemon).await;
     }
 }
 

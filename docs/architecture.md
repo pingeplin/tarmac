@@ -302,9 +302,10 @@ change when it is back.
 A **look** compares the docs of the active board (`docs::report_changes`). The
 daemon looks:
 
-- on each wake of the watcher (`docs::watch_loop`), with `BURST` (100 ms)
-  between two looks: a wake can come from any file of a watched directory, in
-  the middle of a doc's own burst;
+- `BURST` (100 ms) after a wake of the watcher (`docs::watch_loop`), and
+  again `BURST` after it while wakes keep coming: a save shorter than `BURST`
+  is read when it is done, and a file that keeps changing is read each
+  `BURST` while it does (#258);
 - after an open or a close that changed the watch set, and after an open whose
   watch failed (see #253 below);
 - when the active board is sent — connect, `BoardSwitch`, `BoardCreate`,
@@ -344,27 +345,26 @@ network volume that is gone — is not in the reading: that doc gets no
 whatever the number of such docs, and a later look skips a doc whose read has
 not returned yet.
 
-Two limits of a look. It can come in the middle of a doc's own save, when
-another file of a watched directory wakes the daemon: the app then reads the
-file as it is at that moment, and the next look corrects it. And a file that
-takes longer than `READ_LIMIT` to read each time is never reported by a look.
+Two limits of a look. It can come in the middle of a doc's own save: a save
+that takes longer than `BURST`, or one that another file of a watched
+directory woke the daemon for just before. The app then reads the file as it
+is at that moment, and the next look corrects it. And a file that takes longer
+than `READ_LIMIT` to read each time is never reported by a look.
 
 Only `Daemon::look` has the time limit. An open (`docs::handle_open`,
 `Daemon::open_doc`) and the load of the state file at startup
 (`persist::load`, which stats each persisted doc) still read on their own task
 (a follow-up).
 
-One limit of the watcher itself, older than the look: the debouncer wakes the
-daemon for a path only when its events have stopped for `BURST`. A file that
-is written with no such gap gets no `FileEvent` until the writes stop, unless
-something else makes the daemon look (#258).
-
 The watcher is behind `WakeSource` (`watch.rs`): `watch(dir)`, `unwatch(dir)`,
 and a wake that carries no detail. So a change whose wake was lost is reported
 at the next look, not never. `NotifySource` is its one implementation: a
-`notify` debouncer (`BURST`) on the **parent directory** (non-recursive) of
-every registered doc — editors and agents replace files atomically, so a watch
-on the inode misses rewrites.
+`notify` watcher that wakes the daemon on each event, on the **parent
+directory** (non-recursive) of every registered doc — editors and agents
+replace files atomically, so a watch on the inode misses rewrites. It has no
+debouncer: `notify-debouncer-full` 0.7 gives a path's events only when they
+have stopped for its timeout, so a file written with shorter gaps got no
+`FileEvent` until the writes stopped (#258). `watch_loop` spaces the looks.
 
 The watch set is one per daemon, not per board. The watcher counts the
 registered docs in each directory (`WatcherState.doc_counts`), one for each
@@ -387,10 +387,9 @@ watch set, and `open_doc` and `close_doc` then look at the docs themselves.
 What is left of the gap: a change made after that look and before the new
 stream delivers is seen at the next look.
 
-`delete_board` drops no watch: it takes the board's docs off the counts and
-leaves the directories watched (#249). A directory with a watch and no count
-only wakes the daemon for nothing. Its watch goes with the next close that
-empties the directory, or with the daemon.
+`delete_board` takes the board's docs off the counts, drops the watch of each
+directory that is left with none (#249), and then looks at the docs like
+`close_doc`.
 
 `tarmac open` end-to-end: the CLI canonicalizes the path, connects, reads
 `TARMAC_TERM_ID` from its env, and sends `Open`. The daemon re-canonicalizes
