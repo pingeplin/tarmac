@@ -118,6 +118,14 @@ final class TerminalInputTests: XCTestCase {
         )
     }
 
+    func testSgrMouseOnA2xSurfaceReportsTheCellUnderThePointer() throws {
+        let engine = try engine()
+        feed(engine, "\u{1b}[?1000h\u{1b}[?1006h")
+        let retina = SurfaceGeometry(width: 380, height: 172, cellWidth: 19, cellHeight: 43, pixelsPerPoint: 2)
+        let press = MouseInput(action: .press, button: .left, x: 7 * 9.5 + 1, y: 21.5 + 10)
+        XCTAssertEqual(sent(engine.encode(press, surface: retina)), "\u{1b}[<0;8;2M")
+    }
+
     func testWheelIsReportedAsButtonsFourAndFive() throws {
         let engine = try engine()
         feed(engine, "\u{1b}[?1000h\u{1b}[?1006h")

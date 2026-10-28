@@ -78,12 +78,18 @@ struct MouseInput {
     var anyButtonPressed = false
 }
 
-/// The rendered grid in the same unit as `MouseInput` positions.
+/// The rendered grid in device pixels, `pixelsPerPoint` to a point of a
+/// `MouseInput` or `SurfacePoint` position.
 struct SurfaceGeometry: Equatable {
     var width: Int
     var height: Int
     var cellWidth: Int
     var cellHeight: Int
+    var pixelsPerPoint: Double = 1
+
+    func pixels(_ point: SurfacePoint) -> SurfacePoint {
+        SurfacePoint(x: point.x * pixelsPerPoint, y: point.y * pixelsPerPoint)
+    }
 }
 
 @MainActor
@@ -168,7 +174,8 @@ final class MouseEncoder {
             ghostty_mouse_event_clear_button(event)
         }
         ghostty_mouse_event_set_mods(event, input.mods.rawValue)
-        ghostty_mouse_event_set_position(event, GhosttyMousePosition(x: Float(input.x), y: Float(input.y)))
+        let position = surface.pixels(SurfacePoint(x: input.x, y: input.y))
+        ghostty_mouse_event_set_position(event, GhosttyMousePosition(x: Float(position.x), y: Float(position.y)))
         return encoded { ghostty_mouse_encoder_encode(encoder, event, $0, $1, $2) }
     }
 }

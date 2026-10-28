@@ -6,7 +6,7 @@ final class TerminalGridLayoutTests: XCTestCase {
     private let padding = TerminalPadding(top: 2, left: 10, bottom: 16, right: 10)
 
     private func layout(_ width: CGFloat, _ height: CGFloat) -> TerminalGridLayout? {
-        TerminalGridLayout(bounds: CGSize(width: width, height: height), cell: cell, padding: padding)
+        TerminalGridLayout(bounds: CGSize(width: width, height: height), cell: cell, padding: padding, pixelsPerPoint: 1)
     }
 
     func testGridIsTheWholeCellsTheContentBoxHolds() throws {
@@ -58,5 +58,17 @@ final class TerminalGridLayoutTests: XCTestCase {
     func testSurfaceGeometryDescribesTheGrid() throws {
         let layout = try XCTUnwrap(layout(820, 498))
         XCTAssertEqual(layout.surface, SurfaceGeometry(width: 800, height: 480, cellWidth: 10, cellHeight: 20))
+    }
+
+    /// On a 2× display a cell can be half a point wide, which no whole number
+    /// of points describes; libghostty-vt is told the grid in device pixels.
+    func testSurfaceGeometryIsInDevicePixels() throws {
+        let layout = try XCTUnwrap(TerminalGridLayout(
+            bounds: CGSize(width: 10 + 4 * 9.5 + 10, height: 2 + 3 * 21.5 + 16),
+            cell: CGSize(width: 9.5, height: 21.5), padding: padding, pixelsPerPoint: 2
+        ))
+        XCTAssertEqual(
+            layout.surface, SurfaceGeometry(width: 76, height: 129, cellWidth: 19, cellHeight: 43, pixelsPerPoint: 2)
+        )
     }
 }

@@ -46,6 +46,26 @@ final class TerminalSelectionTests: XCTestCase {
         XCTAssertEqual(reader.read(engine).rows[0].selection, 0...4)
     }
 
+    /// A 2× surface whose cells are 9.5 × 21.5 points: a point far along a row
+    /// or down the grid is still in the cell drawn under it.
+    private let retina = SurfaceGeometry(width: 380, height: 172, cellWidth: 19, cellHeight: 43, pixelsPerPoint: 2)
+
+    private func retinaPoint(_ col: Int, _ row: Int, past: Bool = false) -> SurfacePoint {
+        SurfacePoint(x: Double(col) * 9.5 + (past ? 7.5 : 1), y: Double(row) * 21.5 + 10)
+    }
+
+    func testDraggingOnA2xSurfaceSelectsTheCellsUnderThePointer() {
+        selection.press(retinaPoint(6, 0), time: 1, surface: retina)
+        selection.drag(retinaPoint(10, 0, past: true), surface: retina)
+        XCTAssertEqual(selection.text, "world")
+    }
+
+    func testDraggingOnA2xSurfaceSelectsTheRowUnderThePointer() {
+        selection.press(retinaPoint(0, 1), time: 1, surface: retina)
+        selection.drag(retinaPoint(5, 1, past: true), surface: retina)
+        XCTAssertEqual(selection.text, "second")
+    }
+
     func testDraggingAcrossRowsSelectsToTheLineEnds() {
         selection.press(point(6, 0), time: 1, surface: surface)
         selection.drag(point(5, 1, past: true), surface: surface)

@@ -890,7 +890,8 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(view.fontGeneration, before + 1)
         XCTAssertEqual(view.gridLayout?.cell, cell("Monaco"))
         let layout = try XCTUnwrap(TerminalGridLayout(
-            bounds: view.bounds.size, cell: cell("Monaco"), padding: view.padding
+            bounds: view.bounds.size, cell: cell("Monaco"), padding: view.padding,
+            pixelsPerPoint: window.backingScaleFactor
         ))
         XCTAssertEqual(resizes, [[layout.cols, layout.rows]])
         XCTAssertEqual([view.engine.cols, view.engine.rows], [layout.cols, layout.rows])
@@ -942,7 +943,8 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(view.fontGeneration, before + 1)
         XCTAssertEqual(view.gridLayout?.cell, cell(nil, size: 20))
         let layout = try XCTUnwrap(TerminalGridLayout(
-            bounds: view.bounds.size, cell: cell(nil, size: 20), padding: view.padding
+            bounds: view.bounds.size, cell: cell(nil, size: 20), padding: view.padding,
+            pixelsPerPoint: window.backingScaleFactor
         ))
         XCTAssertEqual(resizes, [[layout.cols, layout.rows]])
         XCTAssertEqual([view.engine.cols, view.engine.rows], [layout.cols, layout.rows])
