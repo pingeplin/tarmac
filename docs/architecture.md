@@ -307,7 +307,8 @@ daemon looks:
   is read when it is done, and a file that keeps changing is read each
   `BURST` while it does (#258);
 - after an open or a close that changed the watch set, and after an open whose
-  watch failed (see #253 below);
+  watch failed (see #253 below). A `BoardDelete` changes the watch set too;
+  its look is the send of the active board in the next item;
 - when the active board is sent — connect, `BoardSwitch`, `BoardCreate`,
   `BoardDelete` (`conn::change_and_send_active_board`): before the `Restore` is
   built, so that it carries each new `last_changed_ms`, with a `FileEvent` for
@@ -388,8 +389,10 @@ What is left of the gap: a change made after that look and before the new
 stream delivers is seen at the next look.
 
 `delete_board` takes the board's docs off the counts, drops the watch of each
-directory that is left with none (#249), and then looks at the docs like
-`close_doc`.
+directory that is left with none (#249). It does not look at the docs
+itself: its one caller, the `BoardDelete` handler, sends the active board
+next, and that send looks at the docs of every board
+(`conn::change_and_send_active_board`).
 
 `tarmac open` end-to-end: the CLI canonicalizes the path, connects, reads
 `TARMAC_TERM_ID` from its env, and sends `Open`. The daemon re-canonicalizes

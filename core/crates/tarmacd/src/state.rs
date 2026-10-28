@@ -238,17 +238,15 @@ impl Daemon {
 
     /// Removes a board and takes its docs off their directories' counts,
     /// dropping the watch of each directory that is left empty. False for the
-    /// last board or an unknown id.
+    /// last board or an unknown id. It does not look at the docs: its caller
+    /// sends the active board next, and that send looks
+    /// (`conn::change_and_send_active_board`).
     pub async fn delete_board(&self, id: &str) -> bool {
         let deleted = self.boards.lock().await.delete(id);
         let Some(board) = deleted else { return false };
         self.mark_dirty();
-        let mut unwatched = false;
         for dir in board.registry.docs.keys().filter_map(|p| p.parent()) {
-            unwatched |= self.release_watch(dir);
-        }
-        if unwatched {
-            crate::docs::report_changes(self).await;
+            self.release_watch(dir);
         }
         true
     }
@@ -1118,6 +1116,25 @@ mod tests {
         let now = answers(async move { reader.stamps(docs).await }).await;
         assert!(before.elapsed() < 3 * LIMIT, "it waited {:?}", before.elapsed());
         assert_eq!(now, HashMap::new());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // The second stuck read is on a thread of its own (`read_apart`), and the
+    // next look must not start it again either.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn no_stuck_read_of_a_look_is_read_again_by_the_next() {
+        let tmp = tmp_dir("stuck-apart");
+        let docs: Vec<PathBuf> = (0..2).map(|i| write_doc(tmp.join(format!("gone/{i}.md")))).collect();
+        let (reader, stuck, _release) = stuck_reader(&tmp.join("gone"));
+        let reader = Arc::new(reader);
+        stuck.get_stuck();
+
+        for _ in 0..2 {
+            let (reader, docs) = (reader.clone(), docs.clone());
+            answers(async move { reader.stamps(docs).await }).await;
+        }
+        assert_eq!(stuck.reads(), 2);
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
