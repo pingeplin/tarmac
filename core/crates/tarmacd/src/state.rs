@@ -74,12 +74,17 @@ impl Daemon {
             let wake = wake.clone();
             move || wake.notify_one()
         })?;
-        Ok(Self::with_source(state_path, Box::new(source), wake, FileReader::default()))
+        Ok(Self::with_source(state_path, Box::new(source), wake))
     }
 
     /// `source` is told which directories have a doc, and sets `wake` when a
     /// file in one of them may have changed.
-    fn with_source(
+    fn with_source(state_path: PathBuf, source: Box<dyn WakeSource>, wake: Arc<Notify>) -> Arc<Self> {
+        Self::with_reader(state_path, source, wake, FileReader::default())
+    }
+
+    /// `with_source`, whose looks read the files with `reader`.
+    fn with_reader(
         state_path: PathBuf,
         source: Box<dyn WakeSource>,
         wake: Arc<Notify>,
@@ -559,7 +564,7 @@ mod tests {
     fn silent(tag: &str) -> (PathBuf, Arc<Daemon>) {
         let tmp = tmp_dir(tag);
         let daemon =
-            Daemon::with_source(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new()), FileReader::default());
+            Daemon::with_source(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new()));
         (tmp, daemon)
     }
 
@@ -962,12 +967,8 @@ mod tests {
     async fn an_open_that_cannot_watch_reports_a_change_too() {
         let tmp = tmp_dir("refused-reports");
         let refused = tmp.join("refused");
-        let daemon = Daemon::with_source(
-            tmp.join("state.json"),
-            Box::new(RefusesDir(refused.clone())),
-            Arc::new(Notify::new()),
-            FileReader::default(),
-        );
+        let daemon =
+            Daemon::with_source(tmp.join("state.json"), Box::new(RefusesDir(refused.clone())), Arc::new(Notify::new()));
         let mut app = connect_app(&daemon).await;
         let kept = write_doc(tmp.join("kept/a.md"));
         open_doc(&daemon, None, &kept).await;
@@ -1016,69 +1017,65 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
-    /// A read of `doc` that, once `stuck` is set, does not return until it is
-    /// released: a stat of a file on a volume that is gone.
-    struct StuckRead {
-        doc: PathBuf,
+    const LIMIT: Duration = Duration::from_millis(200);
+
+    /// Reads that, once `stuck` is set, do not return for a file in `dir`
+    /// until the sender of `until_released` is dropped: a stat of a file on a
+    /// volume that is gone.
+    struct StuckReads {
+        dir: PathBuf,
         stuck: AtomicBool,
-        released: std::sync::Mutex<bool>,
-        release: std::sync::Condvar,
+        until_released: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
         reads: AtomicU32,
     }
 
-    impl StuckRead {
+    impl StuckReads {
         fn read(&self, path: &Path) -> Option<FileStamp> {
-            if path == self.doc && self.stuck.load(Ordering::SeqCst) {
+            if path.starts_with(&self.dir) && self.stuck.load(Ordering::SeqCst) {
                 self.reads.fetch_add(1, Ordering::SeqCst);
-                let released = self.released.lock().unwrap();
-                drop(self.release.wait_while(released, |released| !*released).unwrap());
+                let _ = self.until_released.lock().unwrap().recv();
             }
             crate::docs::stamp(path)
         }
 
-        fn release(&self) {
-            *self.released.lock().unwrap() = true;
-            self.release.notify_all();
+        fn get_stuck(&self) {
+            self.stuck.store(true, Ordering::SeqCst);
+        }
+
+        fn reads(&self) -> u32 {
+            self.reads.load(Ordering::SeqCst)
         }
     }
 
-    /// Releases the read when the test ends, on a panic too: the runtime waits
-    /// for its blocking threads when it is dropped.
-    struct ReleasedAtEnd(Arc<StuckRead>);
-
-    impl Drop for ReleasedAtEnd {
-        fn drop(&mut self) {
-            self.0.release();
-        }
-    }
-
-    const READ_LIMIT: Duration = Duration::from_millis(100);
-
-    /// `silent_daemon`, whose reads of `gone/a.md` (opened on the active
-    /// board) get stuck once the test sets `stuck`.
-    fn stuck_reader(doc: &Path) -> (FileReader, ReleasedAtEnd) {
-        let stuck = Arc::new(StuckRead {
-            doc: doc.to_owned(),
+    /// The test holds the sender to its end, a panic included: a runtime
+    /// waits for its blocking threads when it is dropped.
+    fn stuck_reader(dir: &Path) -> (FileReader, Arc<StuckReads>, std::sync::mpsc::Sender<()>) {
+        let (release, until_released) = std::sync::mpsc::channel();
+        let stuck = Arc::new(StuckReads {
+            dir: dir.to_owned(),
             stuck: AtomicBool::new(false),
-            released: std::sync::Mutex::new(false),
-            release: std::sync::Condvar::new(),
+            until_released: std::sync::Mutex::new(until_released),
             reads: AtomicU32::new(0),
         });
         let read = {
             let stuck = stuck.clone();
             Arc::new(move |path: &Path| stuck.read(path))
         };
-        (FileReader::new(read, READ_LIMIT), ReleasedAtEnd(stuck))
+        (FileReader::new(read, LIMIT), stuck, release)
     }
 
-    async fn stuck_daemon(tag: &str) -> (PathBuf, Arc<Daemon>, mpsc::Receiver<Msg>, ReleasedAtEnd) {
+    /// `silent_daemon` with `gone/a.md` open on the active board, whose reads
+    /// get stuck once the test says so.
+    async fn stuck_daemon(
+        tag: &str,
+    ) -> (PathBuf, Arc<Daemon>, mpsc::Receiver<Msg>, Arc<StuckReads>, std::sync::mpsc::Sender<()>) {
         let tmp = tmp_dir(tag);
         let doc = write_doc(tmp.join("gone/a.md"));
-        let (reader, stuck) = stuck_reader(&doc);
-        let daemon = Daemon::with_source(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new()), reader);
+        let (reader, stuck, release) = stuck_reader(&tmp.join("gone"));
+        let daemon = Daemon::with_reader(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new()), reader);
         let app = connect_app(&daemon).await;
         open_doc(&daemon, None, &doc).await;
-        (tmp, daemon, app, stuck)
+        (tmp, daemon, app, stuck, release)
     }
 
     /// Runs `look` on a task of its own: a read that blocks the test's task
@@ -1095,11 +1092,11 @@ mod tests {
     // #259
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_read_that_does_not_return_costs_only_its_own_doc() {
-        let (tmp, daemon, mut app, stuck) = stuck_daemon("stuck-wake").await;
+        let (tmp, daemon, mut app, stuck, _release) = stuck_daemon("stuck-wake").await;
         let doc = write_doc(tmp.join("d/b.md"));
         open_doc(&daemon, None, &doc).await;
 
-        stuck.0.stuck.store(true, Ordering::SeqCst);
+        stuck.get_stuck();
         let changed = change(&doc);
         look_at(&daemon).await;
         assert_eq!(file_events(&mut app), vec![(doc, changed)]);
@@ -1108,17 +1105,33 @@ mod tests {
     }
 
     // In a look, the order of the docs is the order of a hash map: here the
-    // stuck read comes first.
+    // stuck reads come first.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn the_reads_after_one_that_does_not_return_go_on() {
         let tmp = tmp_dir("stuck-first");
-        let (stuck_doc, doc) = (write_doc(tmp.join("gone/a.md")), write_doc(tmp.join("d/b.md")));
-        let (reader, stuck) = stuck_reader(&stuck_doc);
-        stuck.0.stuck.store(true, Ordering::SeqCst);
+        let doc = write_doc(tmp.join("d/b.md"));
+        let (reader, stuck, _release) = stuck_reader(&tmp.join("gone"));
+        stuck.get_stuck();
 
-        let paths = vec![stuck_doc, doc.clone()];
+        let paths = vec![write_doc(tmp.join("gone/a.md")), write_doc(tmp.join("gone/b.md")), doc.clone()];
         let now = answers(async move { reader.stamps(paths).await }).await;
         assert_eq!(now, HashMap::from([(doc.clone(), crate::docs::stamp(&doc))]));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // A volume that is gone takes each of its docs.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_look_waits_two_limits_at_most_for_all_its_stuck_reads() {
+        let tmp = tmp_dir("stuck-many");
+        let docs: Vec<PathBuf> = (0..4).map(|i| write_doc(tmp.join(format!("gone/{i}.md")))).collect();
+        let (reader, stuck, _release) = stuck_reader(&tmp.join("gone"));
+        stuck.get_stuck();
+
+        let before = std::time::Instant::now();
+        let now = answers(async move { reader.stamps(docs).await }).await;
+        assert!(before.elapsed() < 3 * LIMIT, "it waited {:?}", before.elapsed());
+        assert_eq!(now, HashMap::new());
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -1126,13 +1139,13 @@ mod tests {
     // A switch looks at the docs of every board, the board it shows among them.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_switch_answers_while_a_read_does_not_return() {
-        let (tmp, daemon, _app, stuck) = stuck_daemon("stuck-switch").await;
+        let (tmp, daemon, _app, stuck, _release) = stuck_daemon("stuck-switch").await;
         let other = daemon.boards.lock().await.create();
         let doc = write_doc(tmp.join("d/b.md"));
         open_doc(&daemon, Some(&other), &doc).await;
         daemon.boards.lock().await.set_active(crate::boards::DEFAULT_BOARD_ID);
 
-        stuck.0.stuck.store(true, Ordering::SeqCst);
+        stuck.get_stuck();
         let changed = change(&doc);
         let switch = {
             let daemon = daemon.clone();
@@ -1153,23 +1166,23 @@ mod tests {
     // Each look would otherwise leave one more thread stuck on the same file.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_doc_whose_read_is_out_is_read_again_only_when_it_returned() {
-        let (tmp, daemon, mut app, stuck) = stuck_daemon("stuck-again").await;
+        let (tmp, daemon, mut app, stuck, release) = stuck_daemon("stuck-again").await;
         let doc = write_doc(tmp.join("d/b.md"));
         open_doc(&daemon, None, &doc).await;
-        stuck.0.stuck.store(true, Ordering::SeqCst);
+        stuck.get_stuck();
         look_at(&daemon).await;
-        assert_eq!(stuck.0.reads.load(Ordering::SeqCst), 1);
+        assert_eq!(stuck.reads(), 1);
 
         let changed = change(&doc);
         let before = std::time::Instant::now();
         look_at(&daemon).await;
-        assert!(before.elapsed() < READ_LIMIT, "it waited {:?} for a read that is out", before.elapsed());
-        assert_eq!(stuck.0.reads.load(Ordering::SeqCst), 1);
+        assert!(before.elapsed() < LIMIT, "it waited {:?} for a read that is out", before.elapsed());
+        assert_eq!(stuck.reads(), 1);
         assert_eq!(file_events(&mut app), vec![(doc, changed)]);
 
-        stuck.0.release();
+        drop(release);
         let deadline = std::time::Instant::now() + Duration::from_secs(2);
-        while stuck.0.reads.load(Ordering::SeqCst) < 2 {
+        while stuck.reads() < 2 {
             assert!(std::time::Instant::now() < deadline, "the doc is never read again");
             tokio::time::sleep(Duration::from_millis(10)).await;
             look_at(&daemon).await;
