@@ -12,6 +12,10 @@ use notify::{RecursiveMode, Watcher};
 
 const WRITES_FOR: Duration = Duration::from_secs(2);
 const WRITE_GAP: Duration = Duration::from_millis(3);
+/// Half of `watch::BURST`: a save whose pieces are further apart may be
+/// reported in two, as it should.
+const HALF_BURST_MS: u64 = 50;
+const TRIES: usize = 5;
 
 // FSEvents repeats `ItemCreated` on each write to a new file until enough other
 // creates on the volume clear it, and the old debouncer gave each such event:
@@ -102,21 +106,20 @@ fn a_save_in_two_pieces_is_reported_once_when_it_is_done() {
     let doc = write_doc(&daemon.dir.join("docs/y.md"), "y\n");
     let mut app = opened(&daemon, &doc);
 
-    for _ in 0..5 {
+    for _ in 0..TRIES {
         append_to(&doc, b"first half\n");
         let started = mtime_ms(&doc);
         std::thread::sleep(Duration::from_millis(20));
         append_to(&doc, b"second half\n");
         let saved = mtime_ms(&doc);
-        // A stalled runner can stretch the 20 ms past the burst window
-        // (`watch::BURST`, 100 ms); then the first half is a save of its own.
-        if saved - started >= 50 {
-            while !quiet(&mut app, &doc) {}
-            continue;
+        if saved - started < HALF_BURST_MS {
+            assert_eq!(app.recv_file_event_for(&doc), saved, "the first file_event is of the whole save");
+            assert!(quiet(&mut app, &doc), "and it is the only one");
+            return;
         }
-        assert_eq!(app.recv_file_event_for(&doc), saved, "the first file_event is of the whole save");
-        assert!(quiet(&mut app, &doc), "and it is the only one");
-        return;
+        // A stalled runner stretched the 20 ms past the burst window: the
+        // first half was a save of its own.
+        app.recv_file_event_since(&doc, saved);
     }
-    panic!("no save of two pieces came within half the burst window in 5 tries");
+    panic!("no save of two pieces came within half the burst window in {TRIES} tries");
 }
