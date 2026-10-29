@@ -92,7 +92,7 @@ async fn main() -> anyhow::Result<()> {
     let listener = UnixListener::bind(&sock)?;
     info!("tarmacd ({}) listening on {}", channel_label(current_channel()), sock.display());
 
-    let daemon = state::Daemon::new(state_path())?;
+    let daemon = state::Daemon::new(state_path()).await?;
 
     let sock_for_signal = sock.clone();
     tokio::spawn(async move {
