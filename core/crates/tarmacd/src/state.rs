@@ -1094,6 +1094,7 @@ mod tests {
         /// Each method's calls, and how many of them it held.
         counts: std::sync::Mutex<HashMap<Call, (u32, u32)>>,
         repos: std::sync::Mutex<Vec<(PathBuf, String)>>,
+        panics: std::sync::Mutex<Vec<PathBuf>>,
     }
 
     impl StuckFs {
@@ -1107,6 +1108,11 @@ mod tests {
         /// held for every pid under `""`.
         fn hold(&self, call: Call, under: &Path) {
             self.holds.lock().unwrap().push((call, under.to_owned()));
+        }
+
+        /// Each later `stamp` of `path` panics.
+        fn panic_on(&self, path: &Path) {
+            self.panics.lock().unwrap().push(path.to_owned());
         }
 
         fn wait_if_held(&self, call: Call, path: &Path) {
@@ -1138,6 +1144,9 @@ mod tests {
 
         fn stamp(&self, path: &Path) -> Option<FileStamp> {
             self.wait_if_held(Call::Stamp, path);
+            if self.panics.lock().unwrap().iter().any(|p| p == path) {
+                panic!("the stamp of {} panics", path.display());
+            }
             RealFs.stamp(path)
         }
 
@@ -1168,6 +1177,7 @@ mod tests {
             until_released: std::sync::Mutex::new(until_released),
             counts: std::sync::Mutex::default(),
             repos: std::sync::Mutex::default(),
+            panics: std::sync::Mutex::default(),
         });
         (fs, release)
     }
@@ -1223,6 +1233,40 @@ mod tests {
         let changed = change(&doc);
         look_at(&daemon).await;
         assert_eq!(file_events(&mut app), vec![(doc, changed)]);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // #280: a panic is not a reason to stop the looks of the watch loop.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_read_that_panics_costs_only_its_own_doc() {
+        let (tmp, daemon, mut app, stuck, _release) = stuck_daemon("stamp-panics").await;
+        let doc = write_doc(tmp.join("d/b.md"));
+        open_doc(&daemon, None, &doc).await;
+
+        stuck.panic_on(&tmp.join("gone/a.md"));
+        for _ in 0..2 {
+            let changed = change(&doc);
+            look_at(&daemon).await;
+            assert_eq!(file_events(&mut app), vec![(doc.clone(), changed)]);
+        }
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // The doc that panics first, so the rest is read apart. It has no entry:
+    // not known, which is not gone.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_stamp_that_panics_gives_its_doc_no_entry_and_the_rest_is_read() {
+        let tmp = tmp_dir("stamp-panics-first");
+        let (reader, stuck, _release) = stuck_reader();
+        let paths: Vec<PathBuf> = ["a", "b", "c"].iter().map(|n| write_doc(tmp.join(format!("d/{n}.md")))).collect();
+        stuck.panic_on(&paths[0]);
+
+        let read = paths.clone();
+        let now = answers(async move { reader.stamps(read).await }).await;
+        let others = paths[1..].iter().map(|p| (p.clone(), crate::reader::stamp(p)));
+        assert_eq!(now, HashMap::from_iter(others));
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -1697,6 +1741,49 @@ mod tests {
         assert_eq!(first.await.unwrap(), Ok(()));
         assert_eq!(second.await.unwrap(), Ok(()));
         assert_eq!(fs.calls(Call::Resolve), 2);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // #280: the waiter's own call starts with little of its limit left. It is
+    // slow, not stuck, so the caller after it waits for it as for any call.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_call_left_before_a_full_limit_does_not_fail_the_next_caller_at_once() {
+        let tmp = tmp_dir("left-early");
+        let doc = write_doc(tmp.join("d/a.md"));
+        let (stuck, release) = stuck_fs();
+        let returned = Arc::new(AtomicU32::new(0));
+        // Long enough that a loaded runner reaches each step in its time.
+        let limit = Duration::from_secs(1);
+        let reader = Arc::new(PathGate::new(stuck.clone(), limit, {
+            let returned = returned.clone();
+            Arc::new(move || {
+                returned.fetch_add(1, Ordering::SeqCst);
+            })
+        }));
+        stuck.hold(Call::Stamp, &tmp.join("d"));
+        let run = || {
+            let (reader, doc) = (reader.clone(), doc.clone());
+            tokio::spawn(async move { reader.run(&doc.clone(), move |fs| fs.stamp(&doc)).await })
+        };
+
+        let first = run();
+        eventually("the first call", || stuck.held(Call::Stamp) == 1).await;
+        let waiter = run();
+        tokio::time::sleep(limit * 7 / 10).await;
+        release.send(()).unwrap();
+        eventually("the waiter's own call", || stuck.held(Call::Stamp) == 2).await;
+        assert!(first.await.unwrap().is_ok());
+        assert!(waiter.await.unwrap().is_err());
+
+        let after = run();
+        // Time for it to reach the waiter's call, well before that call has
+        // had a full limit.
+        tokio::time::sleep(limit / 5).await;
+        release.send(()).unwrap();
+        release.send(()).unwrap();
+        assert_eq!(within(after).await.ok(), Some(crate::reader::stamp(&doc)));
+        eventually("the return of the call the waiter left", || returned.load(Ordering::SeqCst) == 1).await;
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
