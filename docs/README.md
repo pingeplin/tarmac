@@ -78,7 +78,6 @@ paths, no relative links.
 | Doc | What it is |
 | --- | --- |
 | [`proposed/v4c-editable-docs.md`](proposed/v4c-editable-docs.md) | Editable doc cards, borrowed focus, write-conflict banner. Captured from mocks; never started. Doc cards are read-only today. |
-| [`designs/2610.0012_doc_path_reads_off_the_runtime.md`](designs/2610.0012_doc_path_reads_off_the_runtime.md) | #267: every read of a doc's path through one time-limited gate off the tokio runtime, so a dead volume costs its doc and not the daemon. Approved, not built. |
 
 ## HISTORICAL
 
