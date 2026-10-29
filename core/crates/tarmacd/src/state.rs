@@ -1168,7 +1168,7 @@ mod tests {
     /// A daemon that its watcher never wakes, whose gate calls `fs`, with no
     /// app.
     async fn gated(tmp: &Path, fs: Arc<StuckFs>) -> Arc<Daemon> {
-        Daemon::with_fs(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new()), fs, LIMIT).await
+        held(tmp, Box::new(Silent), fs).await
     }
 
     /// `silent_daemon` with `gone/a.md` open on the active board, whose reads
@@ -2293,11 +2293,16 @@ mod tests {
         let _ = std::fs::remove_dir_all(&r.tmp);
     }
 
-    /// Releases the held calls, waits until none under `gone/` is out, then
-    /// looks: every doc has been read since the release.
-    async fn look_after_the_release(r: &mut Restart) {
+    /// Releases the held calls, and waits until none under `gone/` is out.
+    async fn release_reads(r: &mut Restart) {
         drop(r.release.take());
         eventually("the return of the reads", || !r.daemon.gate().is_out_dir(&r.gone)).await;
+    }
+
+    /// `release_reads`, then a look: every doc has been read since the
+    /// release.
+    async fn look_after_the_release(r: &mut Restart) {
+        release_reads(r).await;
         let reads = r.fs.calls(Call::Stamp);
         look_at(&r.daemon).await;
         assert!(r.fs.calls(Call::Stamp) >= reads + 3, "the look read every doc");
@@ -2346,8 +2351,7 @@ mod tests {
     async fn a_refresh_of_a_restored_doc_that_was_not_read_pushes_as_before() {
         let mut r = restart_with_gone("restart-unread-refresh").await;
         let mut app = connect_app(&r.daemon).await;
-        drop(r.release.take());
-        eventually("the return of the reads", || !r.daemon.gate().is_out_dir(&r.gone)).await;
+        release_reads(&mut r).await;
 
         assert!(crate::docs::stat_and_push(&r.daemon, &r.stuck).await);
         let now = crate::boards::epoch_ms(mtime(&r.stuck));

@@ -153,8 +153,8 @@ pub async fn read_restored(gate: &Arc<PathGate>, boards: &mut Boards) {
     }
     let now = gate.stamps(docs.iter().cloned()).await;
     let repos: HashMap<PathBuf, Option<RepoInfo>> = walks.join_all().await.into_iter().collect();
+    boards.take_first_readings(&now);
     for reg in boards.registries_mut() {
-        reg.take_first_readings(&now);
         for (path, info) in &mut reg.docs {
             let repo = path.parent().and_then(|dir| repos.get(dir)).and_then(Option::as_ref);
             info.repo = repo.map(|r| r.name.clone());
@@ -203,9 +203,7 @@ pub async fn report_changes(daemon: &Daemon) {
                 active.chain(boards.unread_doc_paths()).cloned().collect::<HashSet<_>>()
             },
             |boards, now| {
-                for reg in boards.registries_mut() {
-                    reg.take_first_readings(now);
-                }
+                boards.take_first_readings(now);
                 let tell = take_to_tell(daemon, boards.active_registry_mut(), now);
                 (boards.active_id().to_string(), tell)
             },

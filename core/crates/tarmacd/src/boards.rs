@@ -23,7 +23,7 @@ pub struct DocInfo {
     /// (`Registry::take_untold`).
     pub untold: bool,
     /// Restored, and its file not read yet. In memory only. Its first reading
-    /// is taken as it is, with no change (`Registry::take_first_reading`), as a
+    /// is taken as it is, with no change (`Registry::take_first_readings`), as a
     /// restart takes each file.
     pub unread: bool,
     pub last_opened_ms: u64,
@@ -54,14 +54,11 @@ impl DocInfo {
         ms
     }
 
-    /// Takes the first reading of an unread doc, with no change. False for a
-    /// doc that is not unread.
-    fn take_first_reading(&mut self, stamp: Option<FileStamp>) -> bool {
-        if !std::mem::take(&mut self.unread) {
-            return false;
+    /// Takes the first reading of an unread doc, with no change.
+    fn take_first_reading(&mut self, stamp: Option<FileStamp>) {
+        if std::mem::take(&mut self.unread) {
+            self.seen = stamp;
         }
-        self.seen = stamp;
-        true
     }
 }
 
@@ -143,10 +140,11 @@ impl Registry {
     /// returned, so it is a change when it is back. The first reading of an
     /// unread doc is taken and not returned.
     pub fn take_changes(&mut self, now: &HashMap<PathBuf, Option<FileStamp>>) -> Vec<(PathBuf, u64)> {
+        self.take_first_readings(now);
         let mut changes = Vec::new();
         for (path, stamp) in now {
             let Some(info) = self.docs.get_mut(path) else { continue };
-            if info.take_first_reading(*stamp) || info.seen == *stamp {
+            if info.seen == *stamp {
                 continue;
             }
             match stamp {
@@ -312,6 +310,13 @@ impl Boards {
 
     pub fn registries_mut(&mut self) -> impl Iterator<Item = &mut Registry> {
         self.boards.iter_mut().map(|b| &mut b.registry)
+    }
+
+    /// `Registry::take_first_readings` on every board.
+    pub fn take_first_readings(&mut self, now: &HashMap<PathBuf, Option<FileStamp>>) {
+        for reg in self.registries_mut() {
+            reg.take_first_readings(now);
+        }
     }
 
     /// Holds the doc of board `id` (`Registry::hold`). Nothing for a board that
