@@ -8,7 +8,8 @@ use tokio::sync::{Mutex, Notify, mpsc};
 use tokio_util::sync::CancellationToken;
 
 use crate::boards::{BoardId, Boards, FileStamp};
-use crate::reader::FileReader;
+use crate::docs::RepoInfo;
+use crate::reader::{PathFs, PathGate, RealFs};
 use crate::term::TermHandle;
 use crate::watch::{NotifySource, WakeSource};
 
@@ -60,7 +61,7 @@ pub struct Daemon {
     /// One `look` at a time. Taken before `boards`, never while `boards` is
     /// held.
     looking: Mutex<()>,
-    reader: FileReader,
+    gate: PathGate,
     next_generation: AtomicU64,
     dirty: Notify,
     state_path: PathBuf,
@@ -79,16 +80,22 @@ impl Daemon {
     /// `source` is told which directories have a doc, and sets `wake` when a
     /// file in one of them may have changed.
     fn with_source(state_path: PathBuf, source: Box<dyn WakeSource>, wake: Arc<Notify>) -> Arc<Self> {
-        Self::with_reader(state_path, source, wake, FileReader::default())
+        Self::with_fs(state_path, source, wake, Arc::new(RealFs), crate::reader::READ_LIMIT)
     }
 
-    /// `with_source`, whose looks read the files with `reader`.
-    fn with_reader(
+    /// `with_source`, whose gate makes its calls on `fs` and waits `limit`
+    /// for each.
+    fn with_fs(
         state_path: PathBuf,
         source: Box<dyn WakeSource>,
         wake: Arc<Notify>,
-        reader: FileReader,
+        fs: Arc<dyn PathFs>,
+        limit: std::time::Duration,
     ) -> Arc<Self> {
+        let gate = PathGate::new(fs, limit, {
+            let wake = wake.clone();
+            Arc::new(move || wake.notify_one())
+        });
         let boards = crate::persist::load(&state_path);
         // Every board's docs, not the active board's only: a switch adds no
         // watch.
@@ -109,7 +116,7 @@ impl Daemon {
             }),
             wake,
             looking: Mutex::new(()),
-            reader,
+            gate,
             next_generation: AtomicU64::new(1),
             dirty: Notify::new(),
             state_path,
@@ -125,6 +132,10 @@ impl Daemon {
         daemon
     }
 
+    pub fn gate(&self) -> &PathGate {
+        &self.gate
+    }
+
     pub async fn woken(&self) {
         self.wake.notified().await;
     }
@@ -134,7 +145,7 @@ impl Daemon {
     /// reads a doc's file for a change, and it runs one at a time, so that an
     /// older reading is never applied after a newer one. Nothing is pushed
     /// from inside it. A doc whose file could not be read in time
-    /// (`FileReader`) is not in the reading.
+    /// (`PathGate`) is not in the reading.
     pub async fn look<P, T>(
         &self,
         paths: impl FnOnce(&Boards) -> P,
@@ -145,7 +156,7 @@ impl Daemon {
     {
         let _one_at_a_time = self.looking.lock().await;
         let paths = paths(&*self.boards.lock().await);
-        let now = self.reader.stamps(paths).await;
+        let now = self.gate.stamps(paths).await;
         apply(&mut *self.boards.lock().await, &now)
     }
 
@@ -180,14 +191,17 @@ impl Daemon {
     }
 
     /// Registers a doc on `board` (the active one for `None`), or refreshes the
-    /// one already there. Fails, with nothing registered, when its directory
-    /// cannot be watched.
+    /// one already there. `seen` and `repo` are the doc's file and repo, read
+    /// by the caller, for a doc that is new to `board`. Fails, with nothing
+    /// registered, when its directory cannot be watched.
     pub async fn open_doc(
         &self,
         board: Option<&str>,
         path: &Path,
         via: &str,
         term_id: Option<String>,
+        seen: Option<FileStamp>,
+        repo: Option<RepoInfo>,
     ) -> anyhow::Result<DocEntry> {
         let Some(dir) = path.parent() else {
             anyhow::bail!("path has no parent directory: {}", path.display());
@@ -203,13 +217,11 @@ impl Daemon {
                 anyhow::bail!("cannot watch {}: {e}", dir.display());
             }
         };
-        // Read with no lock held.
-        let seen = crate::reader::stamp(path);
         // Upsert before the entry is read so it reflects the post-open state.
         let (entry, is_new) = {
             let mut boards = self.boards.lock().await;
             let reg = boards.registry_mut(board);
-            let is_new = crate::docs::upsert_doc(reg, path, via, term_id, seen);
+            let is_new = crate::docs::upsert_doc(reg, path, via, term_id, seen, repo);
             (reg.entry(path).expect("doc just upserted"), is_new)
         };
         if !is_new {
@@ -340,7 +352,7 @@ impl Daemon {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+    use std::sync::atomic::{AtomicU32, Ordering};
     use std::time::{Duration, SystemTime};
 
     // Per-test unique temp dir (process id + counter avoids collisions across
@@ -362,7 +374,7 @@ mod tests {
     }
 
     async fn open_doc(daemon: &Daemon, board: Option<&str>, doc: &Path) {
-        daemon.open_doc(board, doc, "t", None).await.unwrap();
+        daemon.open_doc(board, doc, "t", None, crate::reader::stamp(doc), None).await.unwrap();
     }
 
     fn watched(daemon: &Daemon, dir: &Path) -> bool {
@@ -473,7 +485,7 @@ mod tests {
         let late_dir = tmp.join("late");
         let doc = late_dir.join("a.md");
 
-        assert!(daemon.open_doc(None, &doc, "t", None).await.is_err(), "the directory does not exist");
+        assert!(daemon.open_doc(None, &doc, "t", None, None, None).await.is_err(), "the directory does not exist");
         assert!(!daemon.close_doc(&doc).await, "nothing was registered");
 
         std::fs::create_dir_all(&late_dir).unwrap();
@@ -958,7 +970,7 @@ mod tests {
         open_doc(&daemon, None, &kept).await;
 
         let changed = change(&kept);
-        assert!(daemon.open_doc(None, &write_doc(refused.join("b.md")), "t", None).await.is_err());
+        assert!(daemon.open_doc(None, &write_doc(refused.join("b.md")), "t", None, None, None).await.is_err());
         assert_eq!(file_events(&mut app), vec![(kept, changed)]);
 
         let _ = std::fs::remove_dir_all(&tmp);
@@ -1003,63 +1015,100 @@ mod tests {
 
     const LIMIT: Duration = Duration::from_millis(200);
 
-    /// Reads that, once `stuck` is set, do not return for a file in `dir`
-    /// until the sender of `until_released` is dropped: a stat of a file on a
-    /// volume that is gone.
-    struct StuckReads {
-        dir: PathBuf,
-        stuck: AtomicBool,
-        until_released: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
-        reads: AtomicU32,
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    enum Call {
+        Resolve,
+        Stamp,
+        RepoOf,
     }
 
-    impl StuckReads {
-        fn read(&self, path: &Path) -> Option<FileStamp> {
-            if path.starts_with(&self.dir) && self.stuck.load(Ordering::SeqCst) {
-                self.reads.fetch_add(1, Ordering::SeqCst);
+    /// `RealFs`, whose calls that the test holds do not return until the
+    /// sender of `until_released` is dropped: a volume that is gone. It counts
+    /// every call of each method, and those it held.
+    struct StuckFs {
+        holds: std::sync::Mutex<Vec<(Call, PathBuf)>>,
+        until_released: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+        calls: std::sync::Mutex<HashMap<Call, u32>>,
+        held: std::sync::Mutex<HashMap<Call, u32>>,
+    }
+
+    impl StuckFs {
+        /// Holds each later `call` on a path under `under`.
+        fn hold(&self, call: Call, under: &Path) {
+            self.holds.lock().unwrap().push((call, under.to_owned()));
+        }
+
+        fn wait_if_held(&self, call: Call, path: &Path) {
+            *self.calls.lock().unwrap().entry(call).or_default() += 1;
+            let held = self.holds.lock().unwrap().iter().any(|(c, under)| *c == call && path.starts_with(under));
+            if held {
+                *self.held.lock().unwrap().entry(call).or_default() += 1;
                 let _ = self.until_released.lock().unwrap().recv();
             }
-            crate::reader::stamp(path)
         }
 
-        fn get_stuck(&self) {
-            self.stuck.store(true, Ordering::SeqCst);
+        fn calls(&self, call: Call) -> u32 {
+            self.calls.lock().unwrap().get(&call).copied().unwrap_or(0)
         }
 
-        fn reads(&self) -> u32 {
-            self.reads.load(Ordering::SeqCst)
+        fn held(&self, call: Call) -> u32 {
+            self.held.lock().unwrap().get(&call).copied().unwrap_or(0)
+        }
+    }
+
+    impl PathFs for StuckFs {
+        fn resolve(&self, raw: &Path) -> Result<(PathBuf, FileStamp), String> {
+            self.wait_if_held(Call::Resolve, raw);
+            RealFs.resolve(raw)
+        }
+
+        fn stamp(&self, path: &Path) -> Option<FileStamp> {
+            self.wait_if_held(Call::Stamp, path);
+            RealFs.stamp(path)
+        }
+
+        fn repo_of(&self, doc: &Path) -> Option<crate::docs::RepoInfo> {
+            self.wait_if_held(Call::RepoOf, doc);
+            RealFs.repo_of(doc)
         }
     }
 
     /// The test holds the sender to its end, a panic included: a runtime
     /// waits for its blocking threads when it is dropped.
-    fn stuck_reader(dir: &Path) -> (FileReader, Arc<StuckReads>, std::sync::mpsc::Sender<()>) {
+    fn stuck_fs() -> (Arc<StuckFs>, std::sync::mpsc::Sender<()>) {
         let (release, until_released) = std::sync::mpsc::channel();
-        let stuck = Arc::new(StuckReads {
-            dir: dir.to_owned(),
-            stuck: AtomicBool::new(false),
+        let fs = Arc::new(StuckFs {
+            holds: std::sync::Mutex::default(),
             until_released: std::sync::Mutex::new(until_released),
-            reads: AtomicU32::new(0),
+            calls: std::sync::Mutex::default(),
+            held: std::sync::Mutex::default(),
         });
-        let read = {
-            let stuck = stuck.clone();
-            Arc::new(move |path: &Path| stuck.read(path))
-        };
-        (FileReader::new(read, LIMIT), stuck, release)
+        (fs, release)
+    }
+
+    fn stuck_reader() -> (PathGate, Arc<StuckFs>, std::sync::mpsc::Sender<()>) {
+        let (fs, release) = stuck_fs();
+        (PathGate::new(fs.clone(), LIMIT, Arc::new(|| {})), fs, release)
+    }
+
+    /// A daemon that its watcher never wakes, whose gate calls `fs`, with no
+    /// app.
+    fn gated(tmp: &Path, fs: Arc<StuckFs>) -> Arc<Daemon> {
+        Daemon::with_fs(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new()), fs, LIMIT)
     }
 
     /// `silent_daemon` with `gone/a.md` open on the active board, whose reads
     /// get stuck once the test says so.
     async fn stuck_daemon(
         tag: &str,
-    ) -> (PathBuf, Arc<Daemon>, mpsc::Receiver<Msg>, Arc<StuckReads>, std::sync::mpsc::Sender<()>) {
+    ) -> (PathBuf, Arc<Daemon>, mpsc::Receiver<Msg>, Arc<StuckFs>, std::sync::mpsc::Sender<()>) {
         let tmp = tmp_dir(tag);
         let doc = write_doc(tmp.join("gone/a.md"));
-        let (reader, stuck, release) = stuck_reader(&tmp.join("gone"));
-        let daemon = Daemon::with_reader(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new()), reader);
+        let (fs, release) = stuck_fs();
+        let daemon = gated(&tmp, fs.clone());
         let app = connect_app(&daemon).await;
         open_doc(&daemon, None, &doc).await;
-        (tmp, daemon, app, stuck, release)
+        (tmp, daemon, app, fs, release)
     }
 
     /// Runs `look` on a task of its own: a read that blocks the test's task
@@ -1080,7 +1129,7 @@ mod tests {
         let doc = write_doc(tmp.join("d/b.md"));
         open_doc(&daemon, None, &doc).await;
 
-        stuck.get_stuck();
+        stuck.hold(Call::Stamp, &tmp.join("gone"));
         let changed = change(&doc);
         look_at(&daemon).await;
         assert_eq!(file_events(&mut app), vec![(doc, changed)]);
@@ -1094,8 +1143,8 @@ mod tests {
     async fn the_reads_after_one_that_does_not_return_go_on() {
         let tmp = tmp_dir("stuck-first");
         let doc = write_doc(tmp.join("d/b.md"));
-        let (reader, stuck, _release) = stuck_reader(&tmp.join("gone"));
-        stuck.get_stuck();
+        let (reader, stuck, _release) = stuck_reader();
+        stuck.hold(Call::Stamp, &tmp.join("gone"));
 
         let paths = vec![write_doc(tmp.join("gone/a.md")), write_doc(tmp.join("gone/b.md")), doc.clone()];
         let now = answers(async move { reader.stamps(paths).await }).await;
@@ -1109,8 +1158,8 @@ mod tests {
     async fn a_look_waits_two_limits_at_most_for_all_its_stuck_reads() {
         let tmp = tmp_dir("stuck-many");
         let docs: Vec<PathBuf> = (0..4).map(|i| write_doc(tmp.join(format!("gone/{i}.md")))).collect();
-        let (reader, stuck, _release) = stuck_reader(&tmp.join("gone"));
-        stuck.get_stuck();
+        let (reader, stuck, _release) = stuck_reader();
+        stuck.hold(Call::Stamp, &tmp.join("gone"));
 
         let before = std::time::Instant::now();
         let now = answers(async move { reader.stamps(docs).await }).await;
@@ -1126,15 +1175,15 @@ mod tests {
     async fn no_stuck_read_of_a_look_is_read_again_by_the_next() {
         let tmp = tmp_dir("stuck-apart");
         let docs: Vec<PathBuf> = (0..2).map(|i| write_doc(tmp.join(format!("gone/{i}.md")))).collect();
-        let (reader, stuck, _release) = stuck_reader(&tmp.join("gone"));
+        let (reader, stuck, _release) = stuck_reader();
         let reader = Arc::new(reader);
-        stuck.get_stuck();
+        stuck.hold(Call::Stamp, &tmp.join("gone"));
 
         for _ in 0..2 {
             let (reader, docs) = (reader.clone(), docs.clone());
             answers(async move { reader.stamps(docs).await }).await;
         }
-        assert_eq!(stuck.reads(), 2);
+        assert_eq!(stuck.held(Call::Stamp), 2);
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -1148,7 +1197,7 @@ mod tests {
         open_doc(&daemon, Some(&other), &doc).await;
         daemon.boards.lock().await.set_active(crate::boards::DEFAULT_BOARD_ID);
 
-        stuck.get_stuck();
+        stuck.hold(Call::Stamp, &tmp.join("gone"));
         let changed = change(&doc);
         let switch = {
             let daemon = daemon.clone();
@@ -1172,24 +1221,319 @@ mod tests {
         let (tmp, daemon, mut app, stuck, release) = stuck_daemon("stuck-again").await;
         let doc = write_doc(tmp.join("d/b.md"));
         open_doc(&daemon, None, &doc).await;
-        stuck.get_stuck();
+        stuck.hold(Call::Stamp, &tmp.join("gone"));
         look_at(&daemon).await;
-        assert_eq!(stuck.reads(), 1);
+        assert_eq!(stuck.held(Call::Stamp), 1);
 
         let changed = change(&doc);
         let before = std::time::Instant::now();
         look_at(&daemon).await;
         assert!(before.elapsed() < LIMIT, "it waited {:?} for a read that is out", before.elapsed());
-        assert_eq!(stuck.reads(), 1);
+        assert_eq!(stuck.held(Call::Stamp), 1);
         assert_eq!(file_events(&mut app), vec![(doc, changed)]);
 
         drop(release);
         let deadline = std::time::Instant::now() + Duration::from_secs(2);
-        while stuck.reads() < 2 {
+        while stuck.held(Call::Stamp) < 2 {
             assert!(std::time::Instant::now() < deadline, "the doc is never read again");
             tokio::time::sleep(Duration::from_millis(10)).await;
             look_at(&daemon).await;
         }
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// An open registers the canonical path, and a hold on a resolve matches
+    /// the path as given: here they are one (/var -> /private/var).
+    fn canon_tmp(tag: &str) -> PathBuf {
+        std::fs::canonicalize(tmp_dir(tag)).unwrap()
+    }
+
+    async fn try_open(daemon: &Arc<Daemon>, doc: &Path) -> Result<(), String> {
+        let (daemon, doc) = (daemon.clone(), doc.to_str().unwrap().to_owned());
+        answers(async move { crate::docs::handle_open(&daemon, &doc, "cli", None, None).await }).await
+    }
+
+    fn did_not_answer(doc: &Path) -> Result<(), String> {
+        Err(format!("cannot open {}: did not answer in {LIMIT:?}", doc.display()))
+    }
+
+    async fn registered(daemon: &Daemon, doc: &Path) -> bool {
+        daemon.boards.lock().await.doc_paths().contains(doc)
+    }
+
+    fn docs_opened(app: &mut mpsc::Receiver<Msg>) -> Vec<PathBuf> {
+        let mut opened = Vec::new();
+        while let Ok(msg) = app.try_recv() {
+            if let Msg::DocOpened(entry) = msg {
+                opened.push(PathBuf::from(entry.path));
+            }
+        }
+        opened
+    }
+
+    async fn eventually(what: &str, done: impl Fn() -> bool) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while !done() {
+            assert!(std::time::Instant::now() < deadline, "{what} never happened");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    /// The reading of one look at `doc`.
+    async fn look_at_doc(daemon: &Arc<Daemon>, doc: &Path) -> HashMap<PathBuf, Option<FileStamp>> {
+        let (daemon, doc) = (daemon.clone(), doc.to_owned());
+        answers(async move { daemon.look(|_| vec![doc], |_, now| now.clone()).await }).await
+    }
+
+    // 2610.0012 S1
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn an_open_whose_path_does_not_answer_fails_in_its_limit() {
+        let tmp = canon_tmp("open-stuck");
+        let doc = write_doc(tmp.join("gone/a.md"));
+        let (fs, _release) = stuck_fs();
+        fs.hold(Call::Resolve, &tmp.join("gone"));
+        let daemon = gated(&tmp, fs.clone());
+
+        let before = std::time::Instant::now();
+        assert_eq!(try_open(&daemon, &doc).await, did_not_answer(&doc));
+        assert!(before.elapsed() < 3 * LIMIT, "it waited {:?}", before.elapsed());
+        assert!(!registered(&daemon, &doc).await);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // 2610.0012 S2
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_second_open_of_a_path_that_is_out_fails_at_once_with_no_call() {
+        let tmp = canon_tmp("open-stuck-again");
+        let doc = write_doc(tmp.join("gone/a.md"));
+        let (fs, _release) = stuck_fs();
+        fs.hold(Call::Resolve, &tmp.join("gone"));
+        let daemon = gated(&tmp, fs.clone());
+        assert_eq!(try_open(&daemon, &doc).await, did_not_answer(&doc));
+
+        let before = std::time::Instant::now();
+        assert_eq!(try_open(&daemon, &doc).await, did_not_answer(&doc));
+        assert!(before.elapsed() < LIMIT, "it waited {:?} for a call that is out", before.elapsed());
+        assert_eq!(fs.calls(Call::Resolve), 1);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // 2610.0012 S3
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn an_open_answers_while_another_open_waits_for_its_path() {
+        let tmp = canon_tmp("open-beside-stuck");
+        let stuck = write_doc(tmp.join("gone/a.md"));
+        let doc = write_doc(tmp.join("d/b.md"));
+        let (fs, _release) = stuck_fs();
+        fs.hold(Call::Resolve, &tmp.join("gone"));
+        let daemon = gated(&tmp, fs.clone());
+        let mut app = connect_app(&daemon).await;
+
+        let stuck_open = tokio::spawn({
+            let (daemon, stuck) = (daemon.clone(), stuck.to_str().unwrap().to_owned());
+            async move { crate::docs::handle_open(&daemon, &stuck, "cli", None, None).await }
+        });
+        eventually("the held resolve", || fs.held(Call::Resolve) == 1).await;
+        assert_eq!(try_open(&daemon, &doc).await, Ok(()));
+        assert_eq!(docs_opened(&mut app), vec![doc]);
+        assert!(!stuck_open.is_finished(), "the other open has answered already");
+        assert_eq!(stuck_open.await.unwrap(), did_not_answer(&stuck));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // 2610.0012 S4: the caller has had its error, and runs the open again.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn an_open_that_did_not_answer_is_not_finished_when_its_call_returns() {
+        let tmp = canon_tmp("open-not-late");
+        let doc = write_doc(tmp.join("gone/a.md"));
+        let (fs, release) = stuck_fs();
+        fs.hold(Call::Resolve, &tmp.join("gone"));
+        let daemon = gated(&tmp, fs.clone());
+        let mut app = connect_app(&daemon).await;
+        assert_eq!(try_open(&daemon, &doc).await, did_not_answer(&doc));
+
+        drop(release);
+        eventually("the return of the resolve", || !daemon.gate().is_out_dir(&tmp.join("gone"))).await;
+        assert!(!registered(&daemon, &doc).await);
+        assert_eq!(docs_opened(&mut app), Vec::<PathBuf>::new());
+
+        assert_eq!(try_open(&daemon, &doc).await, Ok(()));
+        assert_eq!(fs.calls(Call::Resolve), 2);
+        assert!(registered(&daemon, &doc).await);
+        assert_eq!(docs_opened(&mut app), vec![doc]);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // 2610.0012 S7
+    #[tokio::test]
+    async fn an_open_answers_a_missing_path_a_directory_and_a_file_as_before() {
+        let tmp = canon_tmp("open-texts");
+        let daemon = Daemon::with_source(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new()));
+        let missing = tmp.join("missing.md");
+        let dir = tmp.join("dir");
+        std::fs::create_dir_all(&dir).unwrap();
+        let doc = write_doc(tmp.join("d/a.md"));
+
+        assert_eq!(
+            try_open(&daemon, &missing).await,
+            Err(format!("cannot open {}: No such file or directory (os error 2)", missing.display()))
+        );
+        assert_eq!(try_open(&daemon, &dir).await, Err(format!("not a regular file: {}", dir.display())));
+        assert_eq!(try_open(&daemon, &doc).await, Ok(()));
+        assert!(registered(&daemon, &doc).await);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // 2610.0012 S8: an open and a look of one path share the call that is
+    // out, the open first.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_look_does_not_read_a_path_whose_open_is_out() {
+        let tmp = canon_tmp("open-then-look");
+        let doc = write_doc(tmp.join("gone/a.md"));
+        let (fs, _release) = stuck_fs();
+        let daemon = gated(&tmp, fs.clone());
+        assert_eq!(try_open(&daemon, &doc).await, Ok(()));
+        fs.hold(Call::Resolve, &tmp.join("gone"));
+        fs.hold(Call::Stamp, &tmp.join("gone"));
+
+        assert_eq!(try_open(&daemon, &doc).await, did_not_answer(&doc));
+        let before = std::time::Instant::now();
+        assert_eq!(look_at_doc(&daemon, &doc).await, HashMap::new());
+        assert!(before.elapsed() < LIMIT, "it waited {:?} for a call that is out", before.elapsed());
+        assert_eq!(fs.held(Call::Resolve) + fs.held(Call::Stamp), 1);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // 2610.0012 S8: the look first.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn an_open_does_not_resolve_a_path_whose_look_is_out() {
+        let tmp = canon_tmp("look-then-open");
+        let doc = write_doc(tmp.join("gone/a.md"));
+        let (fs, _release) = stuck_fs();
+        let daemon = gated(&tmp, fs.clone());
+        assert_eq!(try_open(&daemon, &doc).await, Ok(()));
+        fs.hold(Call::Resolve, &tmp.join("gone"));
+        fs.hold(Call::Stamp, &tmp.join("gone"));
+        assert_eq!(look_at_doc(&daemon, &doc).await, HashMap::new());
+        let resolves = fs.calls(Call::Resolve);
+
+        let before = std::time::Instant::now();
+        assert_eq!(try_open(&daemon, &doc).await, did_not_answer(&doc));
+        assert!(before.elapsed() < LIMIT, "it waited {:?} for a call that is out", before.elapsed());
+        assert_eq!(fs.calls(Call::Resolve), resolves);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    async fn repo_of(daemon: &Daemon, doc: &Path) -> (Option<String>, Option<String>, Option<u8>) {
+        let entry = daemon.boards.lock().await.active_registry().entry(doc).unwrap();
+        (entry.repo, entry.repo_root, entry.repo_color)
+    }
+
+    /// A temp dir in a repo, with a doc whose open had its dir watched.
+    async fn in_a_repo(tag: &str) -> (PathBuf, PathBuf, Arc<Daemon>, Arc<StuckFs>, std::sync::mpsc::Sender<()>) {
+        let tmp = canon_tmp(tag);
+        std::fs::create_dir_all(tmp.join(".git")).unwrap();
+        let open = write_doc(tmp.join("d/a.md"));
+        let (fs, release) = stuck_fs();
+        let daemon = gated(&tmp, fs.clone());
+        assert_eq!(try_open(&daemon, &open).await, Ok(()));
+        assert!(repo_of(&daemon, &open).await.0.is_some(), "the doc is in a repo");
+        (tmp, open, daemon, fs, release)
+    }
+
+    // 2610.0012 S5
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_new_doc_whose_repo_does_not_answer_opens_with_no_repo() {
+        let (tmp, _, daemon, fs, _release) = in_a_repo("walk-stuck").await;
+        let doc = write_doc(tmp.join("d/b.md"));
+        fs.hold(Call::RepoOf, &doc);
+
+        let before = std::time::Instant::now();
+        assert_eq!(try_open(&daemon, &doc).await, Ok(()));
+        assert!(before.elapsed() < 3 * LIMIT, "it waited {:?}", before.elapsed());
+        assert_eq!(repo_of(&daemon, &doc).await, (None, None, None));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // 2610.0012 S6: the next startup fills a missing repo in, not a re-open.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_reopen_does_not_look_for_the_repo_again() {
+        let (tmp, open, daemon, fs, release) = in_a_repo("walk-once").await;
+        let repo = repo_of(&daemon, &open).await;
+        let walks = fs.calls(Call::RepoOf);
+        assert_eq!(try_open(&daemon, &open).await, Ok(()));
+        assert_eq!(fs.calls(Call::RepoOf), walks);
+        assert_eq!(repo_of(&daemon, &open).await, repo);
+
+        let doc = write_doc(tmp.join("d/b.md"));
+        fs.hold(Call::RepoOf, &doc);
+        assert_eq!(try_open(&daemon, &doc).await, Ok(()));
+        drop(release);
+        eventually("the return of the walk", || !daemon.gate().is_out_dir(&tmp.join("d"))).await;
+        let walks = fs.calls(Call::RepoOf);
+        assert_eq!(try_open(&daemon, &doc).await, Ok(()));
+        assert_eq!(fs.calls(Call::RepoOf), walks);
+        assert_eq!(repo_of(&daemon, &doc).await, (None, None, None));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // 2610.0012 S8b: `returned` wakes the daemon, and the look reads what no
+    // wake told of.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_read_that_returns_after_its_limit_wakes_a_look() {
+        let (tmp, daemon, mut app, stuck, release) = stuck_daemon("returned-wakes").await;
+        let doc = write_doc(tmp.join("d/b.md"));
+        open_doc(&daemon, None, &doc).await;
+        stuck.hold(Call::Stamp, &tmp.join("gone"));
+        look_at(&daemon).await;
+        assert_eq!(stuck.held(Call::Stamp), 1);
+
+        let changed = change(&doc);
+        drop(release);
+        assert_eq!(next_file_event(&mut app).await, changed);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // An open's call, and a look's on each of its two steps.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn each_call_that_returns_after_its_limit_calls_returned() {
+        let tmp = tmp_dir("returned-each");
+        let docs: Vec<PathBuf> = (0..3).map(|i| write_doc(tmp.join(format!("gone/{i}.md")))).collect();
+        let (fs, release) = stuck_fs();
+        fs.hold(Call::Resolve, &tmp.join("gone"));
+        fs.hold(Call::Stamp, &tmp.join("gone"));
+        let returned = Arc::new(AtomicU32::new(0));
+        let gate = Arc::new(PathGate::new(fs, LIMIT, {
+            let returned = returned.clone();
+            Arc::new(move || {
+                returned.fetch_add(1, Ordering::SeqCst);
+            })
+        }));
+
+        let (resolving, key) = (gate.clone(), docs[0].clone());
+        let resolved = answers(async move {
+            let raw = key.clone();
+            resolving.run(&key, move |fs| fs.resolve(&raw)).await
+        });
+        assert!(resolved.await.is_err());
+        let (reading, paths) = (gate.clone(), docs[1..].to_vec());
+        assert_eq!(answers(async move { reading.stamps(paths).await }).await, HashMap::new());
+        assert_eq!(returned.load(Ordering::SeqCst), 0);
+
+        drop(release);
+        eventually("three returns", || returned.load(Ordering::SeqCst) == 3).await;
+        assert!(!gate.is_out_dir(&tmp.join("gone")));
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
