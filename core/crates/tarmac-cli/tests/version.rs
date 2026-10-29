@@ -4,16 +4,13 @@
 // renders from a `hello_ok`, and a fake is the only way to drive the states a
 // real daemon reaches rarely (a version-less app, a pre-key daemon, silence).
 
-use std::os::unix::net::UnixListener;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use std::thread::JoinHandle;
+use std::ops::Deref;
 use std::time::{Duration, Instant};
 
-use tarmac_protocol::{self as proto, Msg, frame};
+use tarmac_protocol::{self as proto, Msg};
 
 mod common;
-use common::{Report, hello_ok, scratch, tarmac};
+use common::{Double, Report, hello_ok, scratch, tarmac};
 
 /// What the fake daemon does after reading the client's `hello`.
 enum Reply {
@@ -26,60 +23,34 @@ enum Reply {
     Silence,
 }
 
-struct Fake {
-    sock: PathBuf,
-    /// Raw payloads received, in order. Raw (not decoded) so a test can assert
-    /// which keys were on the wire, not just what they decoded to.
-    received: Arc<Mutex<Vec<Vec<u8>>>>,
-    server: Mutex<Option<JoinHandle<()>>>,
-    dir: PathBuf,
-}
+struct Fake(Double);
 
 impl Fake {
     fn start(reply: Reply) -> Self {
-        let dir = scratch();
-        let sock = dir.join("tarmacd.sock");
-        let listener = UnixListener::bind(&sock).unwrap();
-        let received = Arc::new(Mutex::new(Vec::new()));
-
-        let rx = received.clone();
-        let server = std::thread::spawn(move || {
-            let Ok((mut stream, _)) = listener.accept() else { return };
-            if let Ok(payload) = frame::read_sync(&mut stream) {
-                rx.lock().unwrap().push(payload);
-            }
+        Fake(Double::start("tarmacd.sock", move |peer| {
+            peer.read();
             match reply {
-                Reply::CloseWithoutReply => return,
-                // Outlives the client's 5s read timeout without ever replying.
-                // Never joined (that is the point); the thread dies with the
-                // test process.
-                Reply::Silence => std::thread::sleep(Duration::from_secs(30)),
+                Reply::CloseWithoutReply => {}
+                Reply::Silence => peer.hold(),
                 Reply::Frame(msg) => {
-                    let payload = proto::encode(&msg).unwrap();
-                    if frame::write_sync(&mut stream, &payload).is_err() {
-                        return;
-                    }
-                    stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
-                    while let Ok(p) = frame::read_sync(&mut stream) {
-                        rx.lock().unwrap().push(p);
+                    if peer.write(&proto::encode(&msg).unwrap()) {
+                        peer.drain();
                     }
                 }
             }
-        });
-        Fake { sock, received, server: Mutex::new(Some(server)), dir }
-    }
-
-    /// Wait for the server thread to finish reading, so `received` is complete
-    /// rather than whatever had arrived by the time the client exited.
-    fn received_frames(&self) -> Vec<Vec<u8>> {
-        if let Some(handle) = self.server.lock().unwrap().take() {
-            handle.join().unwrap();
-        }
-        self.received.lock().unwrap().clone()
+        }))
     }
 
     fn version(&self) -> Report {
         Report::of(tarmac().env("TARMAC_SOCKET", &self.sock).arg("--version"))
+    }
+}
+
+impl Deref for Fake {
+    type Target = Double;
+
+    fn deref(&self) -> &Double {
+        &self.0
     }
 }
 
@@ -236,7 +207,7 @@ fn the_cli_sends_exactly_one_version_less_hello() {
     let fake = Fake::start(Reply::Frame(full_reply()));
     assert_eq!(fake.version().code(), Some(0));
 
-    let received = fake.received_frames();
+    let received = fake.frames();
     assert_eq!(received.len(), 1, "--version must send exactly one frame");
     assert_eq!(
         proto::decode(&received[0]).unwrap(),
