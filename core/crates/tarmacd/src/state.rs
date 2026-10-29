@@ -127,10 +127,13 @@ impl Daemon {
                 move || wake.notify_one()
             },
         );
-        let boards = crate::persist::load(&state_path);
+        let mut boards = crate::persist::load(&state_path);
+        crate::docs::read_restored(&gate, &mut boards).await;
         // Every board's docs, not the active board's only: a switch adds no
         // watch. A dir that cannot be watched only loses file events; its docs
         // keep their counts, and the next open there asks for the watch again.
+        // Sent after the reads, so that a dir whose read is out is not asked
+        // of notify.
         for dir in boards.iter().flat_map(|b| b.registry.docs.keys()).filter_map(|p| p.parent()) {
             if doc_counts.count(dir) {
                 watcher.reconcile(dir);
@@ -1081,15 +1084,23 @@ mod tests {
 
     /// `RealFs`, whose calls that the test holds do not return until the
     /// sender of `until_released` is dropped: a volume that is gone. It counts
-    /// every call of each method, and those it held.
+    /// every call of each method, and those it held. A `repo_of` that the
+    /// test names answers the repo the test names.
     struct StuckFs {
         holds: std::sync::Mutex<Vec<(Call, PathBuf)>>,
         until_released: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
         /// Each method's calls, and how many of them it held.
         counts: std::sync::Mutex<HashMap<Call, (u32, u32)>>,
+        repos: std::sync::Mutex<Vec<(PathBuf, String)>>,
     }
 
     impl StuckFs {
+        /// Each later `repo_of` of a doc in `dir` answers a repo `name` at
+        /// `dir`, with no `.git` on disk.
+        fn answer_repo(&self, dir: &Path, name: &str) {
+            self.repos.lock().unwrap().push((dir.to_owned(), name.to_owned()));
+        }
+
         /// Holds each later `call` on a path under `under`.
         fn hold(&self, call: Call, under: &Path) {
             self.holds.lock().unwrap().push((call, under.to_owned()));
@@ -1129,7 +1140,10 @@ mod tests {
 
         fn repo_of(&self, doc: &Path) -> Option<crate::docs::RepoInfo> {
             self.wait_if_held(Call::RepoOf, doc);
-            RealFs.repo_of(doc)
+            let answer = self.repos.lock().unwrap().iter().find(|(dir, _)| doc.parent() == Some(dir)).cloned();
+            let Some((dir, name)) = answer else { return RealFs.repo_of(doc) };
+            let color = tarmac_protocol::repo_color_index(&name);
+            Some(crate::docs::RepoInfo { name, root: dir.to_string_lossy().into_owned(), color })
         }
     }
 
@@ -1141,6 +1155,7 @@ mod tests {
             holds: std::sync::Mutex::default(),
             until_released: std::sync::Mutex::new(until_released),
             counts: std::sync::Mutex::default(),
+            repos: std::sync::Mutex::default(),
         });
         (fs, release)
     }
@@ -2205,6 +2220,186 @@ mod tests {
         assert!(try_open(&daemon, &doc).await.is_err());
         let logged = || String::from_utf8_lossy(&log.0.lock().unwrap()).contains("the watcher thread panicked");
         eventually("the error", logged).await;
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    const RESTORED: u64 = 1_718_000_000_000;
+
+    /// A state file with `docs` on board-0, each changed at `RESTORED`.
+    fn state_changed_at_restored(docs: &[&Path]) -> String {
+        let docs: Vec<_> = docs
+            .iter()
+            .map(|p| serde_json::json!({"path": p, "via": "cli", "read": false, "last_changed_ms": RESTORED}))
+            .collect();
+        serde_json::json!({"boards": [{"board_id": "board-0", "docs": docs}]}).to_string()
+    }
+
+    /// A restart in a repo, with `gone/a.md` and `gone/c.md`, whose calls are
+    /// held from the start, and `d/b.md`. Two held docs, so that the stamps
+    /// of the restart take their two limits: with the walks after them, and
+    /// not beside them, the restart would take three.
+    struct Restart {
+        tmp: PathBuf,
+        gone: PathBuf,
+        stuck: PathBuf,
+        doc: PathBuf,
+        daemon: Arc<Daemon>,
+        fs: Arc<StuckFs>,
+        calls: Arc<SourceCalls>,
+        release: Option<std::sync::mpsc::Sender<()>>,
+        took: Duration,
+    }
+
+    async fn restart_with_gone(tag: &str) -> Restart {
+        let tmp = canon_tmp(tag);
+        std::fs::create_dir_all(tmp.join(".git")).unwrap();
+        let gone = tmp.join("gone");
+        let (stuck, other) = (write_doc(gone.join("a.md")), write_doc(gone.join("c.md")));
+        let doc = write_doc(tmp.join("d/b.md"));
+        std::fs::write(tmp.join("state.json"), state_changed_at_restored(&[&stuck, &other, &doc])).unwrap();
+        let (fs, release) = stuck_fs();
+        fs.hold(Call::Stamp, &gone);
+        fs.hold(Call::RepoOf, &gone);
+        let (source, calls, _unheld) = held_source(&[]);
+
+        let before = std::time::Instant::now();
+        let daemon = answers({
+            let (tmp, fs) = (tmp.clone(), fs.clone());
+            async move { held(&tmp, source, fs).await }
+        })
+        .await;
+        let took = before.elapsed();
+        Restart { tmp, gone, stuck, doc, daemon, fs, calls, release: Some(release), took }
+    }
+
+    // 2610.0012 S17
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_restart_waits_two_limits_at_most_for_the_docs_that_do_not_answer() {
+        let r = restart_with_gone("restart-gone").await;
+        assert!(r.took < 3 * LIMIT, "it waited {:?}", r.took);
+        assert!(registered(&r.daemon, &r.stuck).await && registered(&r.daemon, &r.doc).await);
+        let repo = r.tmp.file_name().unwrap().to_string_lossy().into_owned();
+        assert_eq!(repo_of(&r.daemon, &r.doc).await.0, Some(repo));
+        assert_eq!(repo_of(&r.daemon, &r.stuck).await, (None, None, None));
+
+        let mut app = connect_app(&r.daemon).await;
+        look_at(&r.daemon).await;
+        assert_eq!(file_events(&mut app), vec![]);
+        let changed = change(&r.doc);
+        look_at(&r.daemon).await;
+        assert_eq!(next_change(&mut app).await, (r.doc.clone(), changed));
+
+        let _ = std::fs::remove_dir_all(&r.tmp);
+    }
+
+    /// Releases the held calls, waits until none under `gone/` is out, then
+    /// looks: every doc has been read since the release.
+    async fn look_after_the_release(r: &mut Restart) {
+        drop(r.release.take());
+        eventually("the return of the reads", || !r.daemon.gate().is_out_dir(&r.gone)).await;
+        let reads = r.fs.calls(Call::Stamp);
+        look_at(&r.daemon).await;
+        assert!(r.fs.calls(Call::Stamp) >= reads + 3, "the look read every doc");
+    }
+
+    // 2610.0012 S18
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_restored_doc_that_was_not_read_is_taken_as_it_is_when_it_answers() {
+        let mut r = restart_with_gone("restart-unread").await;
+        let mut app = connect_app(&r.daemon).await;
+
+        look_after_the_release(&mut r).await;
+        assert_eq!(last_changed(&r.daemon, &r.stuck).await, Some(RESTORED));
+        let changed = change(&r.doc);
+        look_at(&r.daemon).await;
+        assert_eq!(next_change(&mut app).await, (r.doc.clone(), changed), "nothing for the doc that was read");
+
+        let changed = change(&r.stuck);
+        look_at(&r.daemon).await;
+        assert_eq!(next_change(&mut app).await, (r.stuck.clone(), changed));
+        eventually("the watch", || r.calls.of(Change::Watch, &r.gone) == 1).await;
+        assert!(watched(&r.daemon, &r.gone).await);
+        assert_eq!(r.calls.of(Change::Watch, &r.gone), 1);
+
+        let _ = std::fs::remove_dir_all(&r.tmp);
+    }
+
+    // 2610.0012 S19 (D10): a first reading of no file ends `unread` too.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_restored_doc_whose_file_went_while_it_was_not_read_is_gone() {
+        let mut r = restart_with_gone("restart-unread-gone").await;
+        let mut app = connect_app(&r.daemon).await;
+        std::fs::remove_file(&r.stuck).unwrap();
+
+        look_after_the_release(&mut r).await;
+        write_doc(r.stuck.clone());
+        let back = crate::boards::epoch_ms(mtime(&r.stuck));
+        look_at(&r.daemon).await;
+        assert_eq!(next_change(&mut app).await, (r.stuck.clone(), back));
+
+        let _ = std::fs::remove_dir_all(&r.tmp);
+    }
+
+    // 2610.0012 S19 (D10): a refresh ends `unread`.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_refresh_of_a_restored_doc_that_was_not_read_pushes_as_before() {
+        let mut r = restart_with_gone("restart-unread-refresh").await;
+        let mut app = connect_app(&r.daemon).await;
+        drop(r.release.take());
+        eventually("the return of the reads", || !r.daemon.gate().is_out_dir(&r.gone)).await;
+
+        assert!(crate::docs::stat_and_push(&r.daemon, &r.stuck).await);
+        let now = crate::boards::epoch_ms(mtime(&r.stuck));
+        assert_eq!(next_change(&mut app).await, (r.stuck.clone(), now));
+        let changed = change(&r.stuck);
+        look_at(&r.daemon).await;
+        assert_eq!(next_change(&mut app).await, (r.stuck.clone(), changed));
+
+        let _ = std::fs::remove_dir_all(&r.tmp);
+    }
+
+    // 2610.0012 S19: a file that is missing at the start is read, and gone.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_restored_doc_whose_file_is_missing_is_told_when_it_comes() {
+        let tmp = canon_tmp("restart-missing-file");
+        let doc = tmp.join("d/a.md");
+        std::fs::create_dir_all(tmp.join("d")).unwrap();
+        std::fs::write(tmp.join("state.json"), state_changed_at_restored(&[&doc])).unwrap();
+        let (fs, _unheld) = stuck_fs();
+        let daemon = gated(&tmp, fs).await;
+        let mut app = connect_app(&daemon).await;
+
+        write_doc(doc.clone());
+        let come = crate::boards::epoch_ms(mtime(&doc));
+        look_at(&daemon).await;
+        assert_eq!(next_change(&mut app).await, (doc, come));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // 2610.0012 S20: the repo comes through the gate, one walk per dir.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_restart_walks_once_for_the_repo_of_each_dir() {
+        let tmp = canon_tmp("restart-walks");
+        let (one, two) = (tmp.join("one"), tmp.join("two"));
+        let docs: Vec<PathBuf> = (0..5)
+            .map(|i| write_doc(one.join(format!("{i}.md"))))
+            .chain((0..2).map(|i| write_doc(two.join(format!("{i}.md")))))
+            .collect();
+        let state = state_changed_at_restored(&docs.iter().map(PathBuf::as_path).collect::<Vec<_>>());
+        std::fs::write(tmp.join("state.json"), state).unwrap();
+        let (fs, _unheld) = stuck_fs();
+        fs.answer_repo(&one, "first");
+        fs.answer_repo(&two, "second");
+
+        let daemon = gated(&tmp, fs.clone()).await;
+        assert_eq!(fs.calls(Call::RepoOf), 2);
+        for doc in &docs {
+            let (dir, name) = if doc.starts_with(&one) { (&one, "first") } else { (&two, "second") };
+            let repo = (Some(name.to_owned()), Some(dir.to_string_lossy().into_owned()), Some(tarmac_protocol::repo_color_index(name)));
+            assert_eq!(repo_of(&daemon, doc).await, repo, "{}", doc.display());
+        }
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

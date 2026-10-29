@@ -286,7 +286,7 @@ replays it so the app can re-bind to the live shell instead of cold-spawning.
 The daemon finds a change by **state, not by event**. Each (board, doc) keeps
 the file as the daemon last saw it for that board (`DocInfo.seen`, a
 `FileStamp`: mtime, length and inode; in memory only, taken when the doc is
-registered, when the state file is loaded, and by a `DocRefresh`). A change is
+registered, at startup, and by a `DocRefresh`). A change is
 a file that *differs* from it (`Registry::take_changes`). "Differs", not "is
 newer": a file put back from a backup is a change, and a file with an mtime in
 the future is not. The length and the inode are there for a change that keeps
@@ -335,7 +335,12 @@ gone — the doc is held for its board (`DocInfo.untold`, in memory), and the
 next look of that board tells it: at the connect, as a rule. A held change is
 dropped when the file changes again (that change is told) or is gone. After a
 daemon restart the `Restore` still carries the time, and no `FileEvent` comes,
-since what was held is gone and the first look takes each file as it is. Not
+since what was held is gone and startup takes each file as it is. A restored
+doc whose file did not answer in time at startup is **unread**
+(`DocInfo.unread`, in memory): the first reading of it, by a look, is taken
+the same way, with no `FileEvent` and `last_changed_ms` as restored. A reading
+of no file ends `unread` too (the doc is then like one whose file is gone), and
+so does a `DocRefresh`, which pushes as for any doc. Not
 covered: a `FileEvent` that was queued for an app whose connection then
 closed before it was written. It is not held, and an app that connects again
 with its cards in place keeps the old content until the next change or `↻`.
@@ -378,10 +383,17 @@ walk of a doc that is new to its board (keyed by the canonical path), before
 the `boards` lock is taken. An open whose resolve does not answer in time
 fails with `cannot open {path}: did not answer in 1s`, and is not finished
 later. A walk that does not answer gives the doc no repo, and a re-open does
-not walk again. The doc's `seen` is the stamp of the resolve. Still with no
-time limit, before the daemon accepts: the load of the state file at startup
-(`persist::load`, which stats each persisted doc and walks for its repo) — a
-follow-up of #267.
+not walk again. The doc's `seen` is the stamp of the resolve.
+
+Startup (`Daemon::new`, before the daemon accepts) reads through the gate too.
+`persist::load` builds the boards with no file-system call; then, all at once,
+one stamp batch for every restored doc and one `.git` walk for each directory
+that has a doc (keyed by the directory, and made from one of its docs, since
+the walk starts at a doc's parent): at most twice `READ_LIMIT` in all. A doc
+whose stamp is out is restored unread (above), and a directory whose walk is
+out leaves its docs with no repo until the next startup. Only then is each
+directory sent its `Reconcile`, so that a directory whose read is out is not
+asked of notify.
 
 The watcher is behind `WakeSource` (`watch.rs`): `watch(dir)`, `unwatch(dir)`,
 and a wake that carries no detail. So a change whose wake was lost is reported
@@ -427,8 +439,8 @@ in 1s`, or the error of the watch) and takes its count off again. Any other
 open does not wait, so a directory whose watch failed at startup (it was
 gone) is watched by the next open in it. A close or a `BoardDelete` that
 takes a count to zero sends `Reconcile` and answers at once. At startup the
-restored docs are counted and each directory gets a `Reconcile` that nobody
-waits for. If notify does not return, only this thread waits: the opens that
+restored docs are counted and, after their reads, each directory gets a
+`Reconcile` that nobody waits for. If notify does not return, only this thread waits: the opens that
 need a new watch fail at their limit, and every other open, close and look
 goes on.
 
@@ -464,9 +476,9 @@ State is atomic JSON at `~/Library/Application Support/tarmac/state.json`
 docs, tiles, board? }], active }`. Durable: the board set + active id + names;
 each board's docs in dock order with read flags / timestamps / `term_id`
 provenance; the tile layout (v4 geometry + per-term tile ids); the viewport.
-Repo metadata is written for inspectability but **recomputed at load** — a `.git`
-appearing or vanishing between runs is treated as an observed fact, not trusted
-from disk.
+Repo metadata is written for inspectability but **recomputed at startup**, on
+the gate (*Docs & file watching*) — a `.git` appearing or vanishing between
+runs is treated as an observed fact, not trusted from disk.
 
 The save loop waits on a `dirty` notify, sleeps 150 ms to coalesce a burst,
 snapshots under the lock, and writes via a temp file + fsync + rename so a crash

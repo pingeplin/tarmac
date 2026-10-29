@@ -4,10 +4,11 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use tarmac_protocol::Msg;
+use tokio::task::JoinSet;
 use tracing::debug;
 
-use crate::boards::{DocInfo, FileStamp, Registry, epoch_ms};
-use crate::reader::{Out, PathFs};
+use crate::boards::{Boards, DocInfo, FileStamp, Registry, epoch_ms};
+use crate::reader::{Out, PathFs, PathGate};
 use crate::state::Daemon;
 
 pub struct RepoInfo {
@@ -123,12 +124,43 @@ pub fn upsert_doc(
                     last_changed_ms: None,
                     seen,
                     untold: false,
+                    unread: false,
                     last_opened_ms: epoch_ms(SystemTime::now()),
                     term_id,
                 },
             );
             reg.dock.push(path.to_owned());
             true
+        }
+    }
+}
+
+/// The restored docs' files and repos, read on the gate all at once: one
+/// stamp batch for every doc, and one `.git` walk per dir, keyed by the dir
+/// and made from one of its docs (`derive_repo` starts at the doc's parent).
+/// It waits at most two limits in all. A doc whose file is not read in time
+/// stays unread, and a dir whose walk is out leaves its docs with no repo.
+pub async fn read_restored(gate: &Arc<PathGate>, boards: &mut Boards) {
+    let docs = boards.doc_paths();
+    let dirs: HashMap<&Path, &Path> = docs.iter().filter_map(|doc| Some((doc.parent()?, doc.as_path()))).collect();
+    let mut walks = JoinSet::new();
+    for (dir, doc) in dirs {
+        let (gate, dir, doc) = (gate.clone(), dir.to_owned(), doc.to_owned());
+        walks.spawn(async move {
+            let repo = gate.run(&dir, move |fs: &dyn PathFs| fs.repo_of(&doc)).await.ok().flatten();
+            (dir, repo)
+        });
+    }
+    let now = gate.stamps(docs.iter().cloned()).await;
+    let repos: HashMap<PathBuf, Option<RepoInfo>> = walks.join_all().await.into_iter().collect();
+    for reg in boards.registries_mut() {
+        // Every restored doc is unread: this takes its reading with no change.
+        reg.take_changes(&now);
+        for (path, info) in &mut reg.docs {
+            let repo = path.parent().and_then(|dir| repos.get(dir)).and_then(Option::as_ref);
+            info.repo = repo.map(|r| r.name.clone());
+            info.repo_root = repo.map(|r| r.root.clone());
+            info.repo_color = repo.map(|r| r.color);
         }
     }
 }

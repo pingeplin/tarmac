@@ -22,6 +22,10 @@ pub struct DocInfo {
     /// or it went away. In memory only. The next look tells it
     /// (`Registry::take_untold`).
     pub untold: bool,
+    /// Restored, and its file not read yet. In memory only. Its first reading
+    /// is taken as it is, with no change (`Registry::take_changes`), as a
+    /// restart takes each file.
+    pub unread: bool,
     pub last_opened_ms: u64,
     /// The term that opened this doc; `None` when opened without a `TARMAC_TERM_ID`.
     pub term_id: Option<String>,
@@ -44,6 +48,7 @@ impl DocInfo {
     fn see(&mut self, stamp: FileStamp) -> u64 {
         self.seen = Some(stamp);
         self.untold = false;
+        self.unread = false;
         let ms = epoch_ms(stamp.mtime);
         self.last_changed_ms = Some(ms);
         ms
@@ -125,11 +130,16 @@ impl Registry {
     /// differs from what was seen, with the file's mtime in ms. "Differs", not
     /// "is newer": a file put back from a backup is a change, and one with an
     /// mtime in the future is not. A file that is gone is taken and not
-    /// returned, so it is a change when it is back.
+    /// returned, so it is a change when it is back. The first reading of an
+    /// unread doc is taken and not returned.
     pub fn take_changes(&mut self, now: &HashMap<PathBuf, Option<FileStamp>>) -> Vec<(PathBuf, u64)> {
         let mut changes = Vec::new();
         for (path, stamp) in now {
             let Some(info) = self.docs.get_mut(path) else { continue };
+            if std::mem::take(&mut info.unread) {
+                info.seen = *stamp;
+                continue;
+            }
             if info.seen == *stamp {
                 continue;
             }
@@ -282,6 +292,10 @@ impl Boards {
 
     pub fn iter(&self) -> impl Iterator<Item = &Board> {
         self.boards.iter()
+    }
+
+    pub fn registries_mut(&mut self) -> impl Iterator<Item = &mut Registry> {
+        self.boards.iter_mut().map(|b| &mut b.registry)
     }
 
     /// Holds the doc of board `id` (`Registry::hold`). Nothing for a board that
@@ -492,7 +506,7 @@ mod tests {
     }
 
     fn doc_info() -> DocInfo {
-        DocInfo { via: "t".into(), read: false, repo: None, repo_root: None, repo_color: None, last_changed_ms: None, seen: None, untold: false, last_opened_ms: 0, term_id: None }
+        DocInfo { via: "t".into(), read: false, repo: None, repo_root: None, repo_color: None, last_changed_ms: None, seen: None, untold: false, unread: false, last_opened_ms: 0, term_id: None }
     }
 
     #[test]
@@ -666,6 +680,31 @@ mod tests {
 
         assert_eq!(reg.take_changes(&now(&doc, None)), vec![]);
         assert_eq!(reg.take_changes(&now(&doc, at(10))), vec![(doc, 10_000)]);
+    }
+
+    fn unread_registry(path: &Path) -> Registry {
+        let mut reg = Registry::empty();
+        reg.docs.insert(path.to_owned(), DocInfo { unread: true, last_changed_ms: Some(5_000), ..doc_info() });
+        reg
+    }
+
+    // 2610.0012 D10: a reading of a file and a reading of none end `unread`
+    // alike, and so does a refresh.
+    #[test]
+    fn the_first_reading_of_an_unread_doc_is_no_change() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut reg = unread_registry(&doc);
+        assert_eq!(reg.take_changes(&now(&doc, at(10))), vec![]);
+        assert_eq!(reg.docs[&doc].last_changed_ms, Some(5_000), "as restored");
+        assert_eq!(reg.take_changes(&now(&doc, at(20))), vec![(doc.clone(), 20_000)]);
+
+        let mut reg = unread_registry(&doc);
+        assert_eq!(reg.take_changes(&now(&doc, None)), vec![]);
+        assert_eq!(reg.take_changes(&now(&doc, at(10))), vec![(doc.clone(), 10_000)], "it was gone");
+
+        let mut reg = unread_registry(&doc);
+        assert_eq!(reg.refresh(&doc, at(10).unwrap()), Some(10_000));
+        assert_eq!(reg.take_changes(&now(&doc, at(20))), vec![(doc, 20_000)]);
     }
 
     #[test]
