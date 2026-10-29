@@ -313,7 +313,8 @@ daemon looks:
   itself once it has registered the doc. Any other open of a doc that is new
   to its board wakes the watcher once it has registered the doc: its stamp
   was read before that, and a change in between may have woken the watcher
-  too early. A re-open of a doc already on its board causes no look;
+  too early. A re-open of a doc already on its board causes no look of its
+  own;
 - when the active board is sent — connect, `BoardSwitch`, `BoardCreate`,
   `BoardDelete` (`conn::change_and_send_active_board`): before the `Restore` is
   built, so that it carries each new `last_changed_ms`, with a `FileEvent` for
@@ -413,7 +414,11 @@ that comes before the unwatch of its close was run keeps the watch. A
 directory with an out call of the gate (`PathGate::is_out_dir`: the
 directory itself or a file in it) is not asked of notify; it waits in the
 thread's `retry` set, and the gate's `returned` sends the thread `Retry`,
-which reconciles each such directory again.
+which reconciles each such directory again. A directory whose `unwatch`
+fails still leaves the set: notify takes the path out of the stream before it
+can fail, so keeping it would mean it is never watched again. If the thread
+panics, it logs an error and is not restarted; every open that needs a new
+watch then fails at its limit.
 
 Every open sends `Reconcile`. Only the first doc of a directory waits for
 the answer, within `READ_LIMIT`: no answer, a directory that is out, or a
