@@ -124,5 +124,10 @@ fn a_save_in_two_pieces_is_reported_once_when_it_is_done() {
     // A runner this slow cannot make the save the rule is about, which says
     // nothing of the daemon (#283). The skip reads only the test's own mtimes,
     // so any run where one try comes in time still holds the daemon to it.
-    eprintln!("not measurable on this runner: no save of two pieces came within half the burst window in {TRIES} tries");
+    // Written past libtest's capture, as a GitHub Actions annotation, so a CI
+    // run that always skips shows on the run instead of passing in silence.
+    let _ = std::io::Write::write_all(
+        &mut std::io::stderr(),
+        format!("::warning title=not measurable::{}: no save of two pieces came within half the burst window in {TRIES} tries\n", file!()).as_bytes(),
+    );
 }
