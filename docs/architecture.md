@@ -228,7 +228,8 @@ Daemon
  │                     └─ Registry { docs, dock, tiles, board: viewport }
  ├─ terms:       Mutex<HashMap<term_id, Arc<TermHandle>>>   all live PTYs, global
  ├─ term_boards: Mutex<HashMap<term_id, BoardId>>           which board owns a term
- └─ watcher:     std::sync::Mutex<WatcherState>             wake source + docs per directory
+ ├─ doc_counts:  std::sync::Mutex<HashMap<dir, usize>>      docs per directory
+ └─ watcher:     watch::Watcher                             asks of the watcher thread, which owns the wake source
 ```
 
 A board is the unit that became N in M3. The N boards sit behind **one coarse
@@ -246,10 +247,10 @@ example is `BoardDelete`: snapshot the board's term_ids under `term_boards` and
 drop; clone their `Arc<TermHandle>`s under `terms` and drop; **kill with no lock
 held**; then `Daemon::delete_board`; then recompute counts and re-push. The
 per-terminal scrollback ring uses a `std::sync::Mutex` that is **never held
-across an `.await`** — locked only for a synchronous push/snapshot. The watcher's
-mutex is a `std::sync::Mutex` too and is never held across an `.await`, but it
-is held for the notify call that starts or drops a watch. The `boards` lock is
-never held during a watcher call. `Daemon::look` takes its own lock before
+across an `.await`** — locked only for a synchronous push/snapshot. The
+`doc_counts` mutex is a `std::sync::Mutex` too, held for a map update only:
+no notify call and no file-system call is made under it, or under any other
+lock. notify is called on the watcher thread alone. `Daemon::look` takes its own lock before
 `boards`, never while `boards` is held, and releases it before any push.
 
 ### Terminal sessions
@@ -306,11 +307,12 @@ daemon looks:
   again `BURST` after it while wakes keep coming: a save shorter than `BURST`
   is read when it is done, and a file that keeps changing is read each
   `BURST` while it does (#258);
-- after an open or a close that changed the watch set, and after an open whose
-  watch failed (see #253 below). A `BoardDelete` changes the watch set too;
-  its look is the send of the active board in the next item. Any other open
-  wakes the watcher once it has registered the doc: its stamp was read before
-  that, and a change in between may have woken the watcher too early;
+- after each call of the watcher thread to notify, which wakes `watch_loop`
+  whether the call succeeded or not (see #253 below): the watch of an open,
+  the unwatch of a close or a `BoardDelete`. An open that watched also looks
+  itself once it has registered the doc. Any other open wakes the watcher once
+  it has registered the doc: its stamp was read before that, and a change in
+  between may have woken the watcher too early;
 - when the active board is sent — connect, `BoardSwitch`, `BoardCreate`,
   `BoardDelete` (`conn::change_and_send_active_board`): before the `Restore` is
   built, so that it carries each new `last_changed_ms`, with a `FileEvent` for
@@ -375,9 +377,9 @@ the `boards` lock is taken. An open whose resolve does not answer in time
 fails with `cannot open {path}: did not answer in 1s`, and is not finished
 later. A walk that does not answer gives the doc no repo, and a re-open does
 not walk again. The doc's `seen` is the stamp of the resolve. Still with no
-time limit, on their own task: notify's `watch` and `unwatch` (under the
-watcher's lock), and the load of the state file at startup (`persist::load`,
-which stats each persisted doc and walks for its repo) — follow-ups of #267.
+time limit, before the daemon accepts: the load of the state file at startup
+(`persist::load`, which stats each persisted doc and walks for its repo) — a
+follow-up of #267.
 
 The watcher is behind `WakeSource` (`watch.rs`): `watch(dir)`, `unwatch(dir)`,
 and a wake that carries no detail. So a change whose wake was lost is reported
@@ -389,30 +391,53 @@ debouncer: `notify-debouncer-full` 0.7 gives a path's events only when they
 have stopped for its timeout, so a file written with shorter gaps got no
 `FileEvent` until the writes stopped (#258). `watch_loop` spaces the looks.
 
-The watch set is one per daemon, not per board. The watcher counts the
-registered docs in each directory (`WatcherState.doc_counts`), one for each
-board that has the doc, and a directory is watched from its first doc on;
-a close that takes the count to zero drops the watch. `Daemon::new` counts each restored doc. After that, three `Daemon`
-methods are the only code that changes the count, each
-under the watcher's own lock and with the `boards` lock released:
+The watch set is one per daemon, not per board. The daemon counts the
+registered docs in each directory (`Daemon.doc_counts`), one for each board
+that has the doc, and a directory is watched while it has a count.
+`Daemon::new` counts each restored doc. After that, three `Daemon` methods
+are the only code that changes the count, with the `boards` lock released:
 `open_doc` adds one **before** it registers the doc (and takes it off again
 when the doc was already on that board), `close_doc` and `delete_board` take
 one off for each doc **after** they removed it. So the count is never below
-the number of registered docs, and an open and a close in one directory end
-with the same watch in each order. A count stands when the watch itself
-fails at startup (the directory is gone): the doc is still registered, and it
-must hold the watch that a later open in that directory starts.
+the number of registered docs.
+
+notify's `watch` and `unwatch` read the directory themselves, so they are
+called on one thread of their own, the **watcher thread** (`watch::Asks`),
+which owns the `WakeSource` and the set of the directories in the stream.
+It takes one request, `Reconcile(dir)`, which is level-triggered: it compares
+"`dir` has a count" with "`dir` is in the stream" when it comes to it, not
+when it was sent, and calls the source only when they differ. So an open and
+a close in one directory end with the same watch in each order, and a re-open
+that comes before the unwatch of its close was run keeps the watch. A
+directory with an out call of the gate (`PathGate::is_out_dir`: the
+directory itself or a file in it) is not asked of notify; it waits in the
+thread's `retry` set, and the gate's `returned` sends the thread `Retry`,
+which reconciles each such directory again.
+
+Every open sends `Reconcile`. Only the first doc of a directory waits for
+the answer, within `READ_LIMIT`: no answer, a directory that is out, or a
+watch that fails makes the open fail (`cannot watch {dir}: did not answer
+in 1s`, or the error of the watch) and takes its count off again. Any other
+open does not wait, so a directory whose watch failed at startup (it was
+gone) is watched by the next open in it. A close or a `BoardDelete` that
+takes a count to zero sends `Reconcile` and answers at once. At startup the
+restored docs are counted and each directory gets a `Reconcile` that nobody
+waits for. If notify does not return, only this thread waits: the opens that
+need a new watch fail at their limit, and every other open, close and look
+goes on.
 
 Each `watch` and `unwatch` restarts the FSEvents stream, and the restart
 loses the events that the stream has not delivered yet, of any watched file
-(#253). So `acquire_watch` and `release_watch` say whether they changed the
-watch set, and `open_doc` and `close_doc` then look at the docs themselves.
+(#253). So the watcher thread wakes `watch_loop` after each call of the
+source, whether it succeeded or not. `open_doc` also looks itself when its
+watch ran, since only that look is sure to come after the doc is registered.
 What is left of the gap: a change made after that look and before the new
 stream delivers is seen at the next look.
 
-`delete_board` takes the board's docs off the counts, drops the watch of each
-directory that is left with none (#249). It does not look at the docs
-itself: its one caller, the `BoardDelete` handler, sends the active board
+`delete_board` takes the board's docs off the counts; the thread drops the
+watch of each directory that is left with none (#249) and wakes a look.
+`watch_loop`'s one permit folds the wakes of many unwatches into one look, or
+two. Its one caller, the `BoardDelete` handler, also sends the active board
 next, and that send looks at the docs of every board
 (`conn::change_and_send_active_board`).
 
