@@ -82,7 +82,9 @@ impl PathFs for RealFs {
 /// that call within its own limit, then makes its own; a look gives a busy key
 /// no entry. A call cannot be stopped, so a caller that stops waiting leaves
 /// it on its thread, and the gate calls `returned` when it returns. A call
-/// that is left is out: a caller that comes after that gets `Out` at once
+/// that is left is out once it has had a full limit: its caller's, or for a
+/// caller that waited first, one from the call's start, since a slow call is
+/// not a dead one (#280). A caller that comes to an out key gets `Out` at once
 /// until the call returns, and one that was waiting already waits to its own
 /// limit. A dead path holds one thread, however many callers ask for it.
 ///
@@ -268,14 +270,18 @@ impl PathGate {
         op: impl FnOnce(&dyn PathFs) -> T + Send + 'static,
     ) -> Result<T, Out> {
         let deadline = Instant::now() + self.limit;
+        let mut out_at = deadline;
         let (takeoff, landing) = loop {
-            match self.keys.claim(&key, OnBusy::Wait, deadline) {
+            match self.keys.claim(&key, OnBusy::Wait, out_at) {
                 Claim::Flight(takeoff, landing) => break (takeoff, landing),
                 Claim::Out => return Err(Out),
                 Claim::Wait(mut ended) => {
                     if tokio::time::timeout_at(deadline, ended.changed()).await.is_err() {
                         return Err(Out);
                     }
+                    // Its own call has what is left of its limit: when it
+                    // leaves that call sooner, the call is busy, not out.
+                    out_at = Instant::now() + self.limit;
                 }
             }
         };

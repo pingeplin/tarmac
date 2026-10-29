@@ -1701,6 +1701,47 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
+    // #280: the waiter's own call starts with little of its limit left. It is
+    // slow, not stuck, so the caller after it waits for it as for any call.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_call_left_before_a_full_limit_does_not_fail_the_next_caller_at_once() {
+        let tmp = tmp_dir("left-early");
+        let doc = write_doc(tmp.join("d/a.md"));
+        let (stuck, release) = stuck_fs();
+        let returned = Arc::new(AtomicU32::new(0));
+        let reader = Arc::new(PathGate::new(stuck.clone(), LIMIT, {
+            let returned = returned.clone();
+            Arc::new(move || {
+                returned.fetch_add(1, Ordering::SeqCst);
+            })
+        }));
+        stuck.hold(Call::Stamp, &tmp.join("d"));
+        let run = || {
+            let (reader, doc) = (reader.clone(), doc.clone());
+            tokio::spawn(async move { reader.run(&doc.clone(), move |fs| fs.stamp(&doc)).await })
+        };
+
+        let first = run();
+        eventually("the first call", || stuck.held(Call::Stamp) == 1).await;
+        let waiter = run();
+        tokio::time::sleep(LIMIT * 7 / 10).await;
+        release.send(()).unwrap();
+        eventually("the waiter's own call", || stuck.held(Call::Stamp) == 2).await;
+        assert!(first.await.unwrap().is_ok());
+        assert!(waiter.await.unwrap().is_err());
+
+        let after = run();
+        // Time for it to reach the waiter's call, well before that call has
+        // had a full limit.
+        tokio::time::sleep(LIMIT / 5).await;
+        release.send(()).unwrap();
+        release.send(()).unwrap();
+        assert_eq!(within(after).await.ok(), Some(crate::reader::stamp(&doc)));
+        eventually("the return of the call the waiter left", || returned.load(Ordering::SeqCst) == 1).await;
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_call_that_panics_after_its_limit_ends_its_key() {
         let tmp = tmp_dir("panics");
