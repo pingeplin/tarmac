@@ -1832,6 +1832,10 @@ mod tests {
         Err(answer)
     }
 
+    async fn within<T>(task: tokio::task::JoinHandle<T>) -> T {
+        tokio::time::timeout(Duration::from_secs(2), task).await.expect("an answer").unwrap()
+    }
+
     async fn try_close(daemon: &Arc<Daemon>, doc: &Path) -> bool {
         let (daemon, doc) = (daemon.clone(), doc.to_owned());
         answers(async move { daemon.close_doc(&doc).await }).await
@@ -1906,7 +1910,7 @@ mod tests {
         look_at(&daemon).await;
         assert!(before.elapsed() < LIMIT, "the close and the look waited {:?}", before.elapsed());
 
-        assert_eq!(opening.await.unwrap(), cannot_watch(&daemon, &new));
+        assert_eq!(within(opening).await, cannot_watch(&daemon, &new));
         assert!(opened.elapsed() < 3 * LIMIT, "the open waited {:?}", opened.elapsed());
         assert!(!registered(&daemon, &doc).await);
 
@@ -1981,7 +1985,8 @@ mod tests {
         let (busy, doc) = (write_doc(x.join("a.md")), write_doc(d.join("a.md")));
         let (fs, _unheld) = stuck_fs();
         let (source, calls, release) = held_source(&[(Change::Unwatch, &x)]);
-        let daemon = held(&tmp, source, fs);
+        // A limit that the release after the poll below cannot miss.
+        let daemon = Daemon::with_fs(tmp.join("state.json"), source, Arc::new(Notify::new()), fs, Duration::from_secs(30));
         assert_eq!(try_open(&daemon, &busy).await, Ok(()));
         assert_eq!(try_open(&daemon, &doc).await, Ok(()));
         assert!(try_close(&daemon, &busy).await);
@@ -1991,7 +1996,7 @@ mod tests {
         let reopening = spawn_open(&daemon, &doc);
         eventually("the count of the re-open", || count(&daemon, &d) == 1).await;
         drop(release);
-        assert_eq!(reopening.await.unwrap(), Ok(()));
+        assert_eq!(within(reopening).await, Ok(()));
         assert!(watched(&daemon, &d).await);
         assert_eq!(calls.of(Change::Unwatch, &d), 0);
 
@@ -2083,6 +2088,125 @@ mod tests {
         drop(release);
         assert!(watched(&daemon, &d).await);
         assert_eq!(calls.of(Change::Watch, &d), 1);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // One `Retry` reconciles every dir that waits for it. A key that is a
+    // dir (here the resolve of an open of a dir) makes it and its parent out
+    // at once, and so its return sends one `Retry` for the two.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_retry_unwatches_every_dir_that_was_skipped() {
+        let tmp = canon_tmp("retry-both");
+        let (outer, inner) = (tmp.join("p"), tmp.join("p/q"));
+        let docs = [write_doc(outer.join("a.md")), write_doc(inner.join("b.md"))];
+        let (fs, release) = stuck_fs();
+        let (source, calls, _unheld) = held_source(&[]);
+        let daemon = held(&tmp, source, fs.clone());
+        for doc in &docs {
+            assert_eq!(try_open(&daemon, doc).await, Ok(()));
+        }
+        fs.hold(Call::Resolve, &inner);
+        assert!(try_open(&daemon, &inner).await.is_err());
+        assert!(daemon.gate().is_out_dir(&outer) && daemon.gate().is_out_dir(&inner));
+
+        for doc in &docs {
+            assert!(try_close(&daemon, doc).await);
+        }
+        assert!(watched(&daemon, &outer).await && watched(&daemon, &inner).await, "both are skipped");
+
+        drop(release);
+        eventually("both unwatches", || {
+            calls.of(Change::Unwatch, &outer) == 1 && calls.of(Change::Unwatch, &inner) == 1
+        })
+        .await;
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// Records each call; each unwatch fails.
+    struct UnwatchFails(Arc<SourceCalls>);
+
+    impl WakeSource for UnwatchFails {
+        fn watch(&mut self, dir: &Path) -> anyhow::Result<()> {
+            self.0.0.lock().unwrap().push((Change::Watch, dir.to_owned()));
+            Ok(())
+        }
+
+        fn unwatch(&mut self, dir: &Path) -> anyhow::Result<()> {
+            self.0.0.lock().unwrap().push((Change::Unwatch, dir.to_owned()));
+            anyhow::bail!("watch not found")
+        }
+    }
+
+    // notify takes the dir out of its stream before it fails most unwatches
+    // (`FsEventWatcher::remove_path`): a dir that is kept as watched would
+    // never be watched again.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_dir_whose_unwatch_failed_is_watched_by_the_next_open() {
+        let tmp = canon_tmp("unwatch-fails");
+        let d = tmp.join("d");
+        let doc = write_doc(d.join("a.md"));
+        let calls = Arc::new(SourceCalls::default());
+        let (fs, _unheld) = stuck_fs();
+        let daemon = held(&tmp, Box::new(UnwatchFails(calls.clone())), fs);
+        assert_eq!(try_open(&daemon, &doc).await, Ok(()));
+        assert!(try_close(&daemon, &doc).await);
+        assert!(!watched(&daemon, &d).await);
+        assert_eq!(calls.of(Change::Unwatch, &d), 1);
+
+        assert_eq!(try_open(&daemon, &doc).await, Ok(()));
+        assert_eq!(calls.of(Change::Watch, &d), 2);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    struct Panics;
+
+    impl WakeSource for Panics {
+        fn watch(&mut self, _: &Path) -> anyhow::Result<()> {
+            panic!("the source panics")
+        }
+
+        fn unwatch(&mut self, _: &Path) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[derive(Clone, Default)]
+    struct Log(Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl std::io::Write for Log {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    // After a panic every first open fails: the log is the one place that
+    // says why. The watcher thread has no subscriber of its own, so this test
+    // sets the global one; no other test of this binary sets one.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_watcher_thread_that_panics_logs_an_error() {
+        let log = Log::default();
+        let writer = log.clone();
+        tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_writer(move || writer.clone())
+            .with_max_level(tracing::Level::ERROR)
+            .init();
+        let tmp = canon_tmp("watcher-panics");
+        let doc = write_doc(tmp.join("d/a.md"));
+        let (fs, _unheld) = stuck_fs();
+        let daemon = held(&tmp, Box::new(Panics), fs);
+
+        assert!(try_open(&daemon, &doc).await.is_err());
+        let logged = || String::from_utf8_lossy(&log.0.lock().unwrap()).contains("the watcher thread panicked");
+        eventually("the error", logged).await;
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

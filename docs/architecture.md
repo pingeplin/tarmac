@@ -179,7 +179,7 @@ reports.
 | | `BoardSwitch {board_id}` | app→D | make a board active |
 | | `BoardCreate` | app→D | mint a fresh board |
 | | `BoardRename {board_id, name}` | app→D | set/clear display name |
-| | `BoardDelete {board_id}` | app→D | remove a board (refuses the last); the watches of its directories stay |
+| | `BoardDelete {board_id}` | app→D | remove a board (refuses the last); a directory of its docs stays watched while any board has a doc there |
 | Teardown | `TermClose {term_id}` | app→D | kill a terminal's pty and forget it |
 | | `DocClose {path}` | app→D | drop a doc from the active board; its directory stays watched while any board has a doc there |
 
@@ -310,9 +310,10 @@ daemon looks:
 - after each call of the watcher thread to notify, which wakes `watch_loop`
   whether the call succeeded or not (see #253 below): the watch of an open,
   the unwatch of a close or a `BoardDelete`. An open that watched also looks
-  itself once it has registered the doc. Any other open wakes the watcher once
-  it has registered the doc: its stamp was read before that, and a change in
-  between may have woken the watcher too early;
+  itself once it has registered the doc. Any other open of a doc that is new
+  to its board wakes the watcher once it has registered the doc: its stamp
+  was read before that, and a change in between may have woken the watcher
+  too early. A re-open of a doc already on its board causes no look;
 - when the active board is sent — connect, `BoardSwitch`, `BoardCreate`,
   `BoardDelete` (`conn::change_and_send_active_board`): before the `Restore` is
   built, so that it carries each new `last_changed_ms`, with a `FileEvent` for

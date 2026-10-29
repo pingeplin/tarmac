@@ -129,11 +129,24 @@ impl Asks {
         std::thread::Builder::new()
             .name("tarmacd-watcher".into())
             .spawn(move || {
+                let _said = SaysAPanic;
                 while let Ok(ask) = self.0.recv() {
                     thread.take(ask);
                 }
             })
             .expect("spawn the watcher thread");
+    }
+}
+
+/// The thread is not started again: after a panic every open that needs a
+/// new watch fails, and this is what says why.
+struct SaysAPanic;
+
+impl Drop for SaysAPanic {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            tracing::error!("the watcher thread panicked: no directory is watched or unwatched until a restart");
+        }
     }
 }
 
@@ -181,14 +194,19 @@ impl<W: Fn(&Path) -> bool, O: Fn(&Path) -> bool, F: Fn()> Thread<W, O, F> {
         }
         let called = if want { self.source.watch(dir) } else { self.source.unwatch(dir) };
         (self.woke)();
-        match called {
-            Ok(()) if want => self.watched.insert(dir.to_owned()),
-            Ok(()) => self.watched.remove(dir),
-            Err(e) => {
-                tracing::warn!("cannot {} {}: {e}", if want { "watch" } else { "unwatch" }, dir.display());
-                return Err(NotWatched::Refused(e));
-            }
-        };
+        // notify 8.2.0 takes the dir out of its stream before it fails most
+        // unwatches (`FsEventWatcher::remove_path`), so a failed one counts
+        // as done: a dir kept here would never be watched again.
+        if !want {
+            self.watched.remove(dir);
+        }
+        if let Err(e) = called {
+            tracing::warn!("cannot {} {}: {e}", if want { "watch" } else { "unwatch" }, dir.display());
+            return Err(NotWatched::Refused(e));
+        }
+        if want {
+            self.watched.insert(dir.to_owned());
+        }
         Ok(true)
     }
 }
