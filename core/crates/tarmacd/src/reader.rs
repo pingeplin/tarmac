@@ -9,14 +9,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use tokio::sync::{mpsc, oneshot, watch};
+use tokio::sync::{oneshot, watch};
 use tokio::time::Instant;
 
 use crate::boards::FileStamp;
 use crate::docs::RepoInfo;
 
-/// How long a caller waits for a call of the gate, and a look for its files in
-/// each of its two steps (`PathGate`).
+/// How long a caller waits for a call of the gate. A look waits for its files
+/// at most twice that: once on one thread, once on a thread each (`stamps`).
 pub const READ_LIMIT: Duration = Duration::from_secs(1);
 
 /// The call did not return within the limit, or an earlier call on its key is
@@ -151,13 +151,11 @@ struct Flight {
     call: u64,
 }
 
-/// The thread's end of a flight.
 struct Takeoff<T> {
     flight: Flight,
     answer: oneshot::Sender<T>,
 }
 
-/// The caller's end of a flight.
 struct Landing<T> {
     keys: Arc<Keys>,
     key: Key,
@@ -230,15 +228,6 @@ impl<T> Landing<T> {
         match tokio::time::timeout_at(deadline, &mut self.answer).await {
             Ok(answer) => Ok(answer.ok()),
             Err(_) => self.leave().await,
-        }
-    }
-
-    /// The answer when it is there, else `land` at a deadline that passed.
-    async fn take(mut self) -> Result<Option<T>, Out> {
-        match self.answer.try_recv() {
-            Ok(answer) => Ok(Some(answer)),
-            Err(oneshot::error::TryRecvError::Closed) => Ok(None),
-            Err(oneshot::error::TryRecvError::Empty) => self.leave().await,
         }
     }
 
@@ -324,20 +313,22 @@ impl PathGate {
     /// it is not known, which is not `None` (gone).
     pub async fn stamps(&self, paths: impl IntoIterator<Item = PathBuf>) -> HashMap<PathBuf, Option<FileStamp>> {
         let deadline = Instant::now() + self.limit;
-        let rest = Arc::new(Mutex::new(paths.into_iter().collect::<VecDeque<_>>()));
-        let (landed, mut landings) = mpsc::unbounded_channel();
+        let batch = Arc::new(Mutex::new(Batch { rest: paths.into_iter().collect(), landed: Vec::new() }));
         let reading = tokio::task::spawn_blocking({
-            let (fs, keys, rest) = (self.fs.clone(), self.keys.clone(), rest.clone());
-            move || read_each(&*fs, &keys, &rest, deadline, &landed)
+            let (fs, keys, batch) = (self.fs.clone(), self.keys.clone(), batch.clone());
+            move || read_each(&*fs, &keys, &batch, deadline)
         });
         // A thread that panicked has ended too.
         let _ = tokio::time::timeout_at(deadline, reading).await;
-        let rest: Vec<_> = rest.lock().expect("rest lock").drain(..).collect();
-        // The thread starts no call after the drain, and has sent the landing
-        // of each call it started. Only the last can be in flight: it is left.
+        // Both are taken under one lock: the thread starts no read after it.
+        // Only the last read can be in flight: it is left.
+        let (rest, landed) = {
+            let mut batch = batch.lock().expect("batch lock");
+            (batch.rest.drain(..).collect::<Vec<_>>(), std::mem::take(&mut batch.landed))
+        };
         let mut now = HashMap::new();
-        while let Ok((path, landing)) = landings.try_recv() {
-            if let Ok(Some(stamp)) = landing.take().await {
+        for (path, landing) in landed {
+            if let Ok(Some(stamp)) = landing.land(Instant::now()).await {
                 now.insert(path, stamp);
             }
         }
@@ -366,26 +357,22 @@ impl PathGate {
     }
 }
 
-type Landed = (PathBuf, Landing<Option<FileStamp>>);
+/// A look's paths not started yet, and the reads it started.
+struct Batch {
+    rest: VecDeque<PathBuf>,
+    landed: Vec<(PathBuf, Landing<Option<FileStamp>>)>,
+}
 
-fn read_each(
-    fs: &dyn PathFs,
-    keys: &Arc<Keys>,
-    rest: &Mutex<VecDeque<PathBuf>>,
-    out_at: Instant,
-    landed: &mpsc::UnboundedSender<Landed>,
-) {
+fn read_each(fs: &dyn PathFs, keys: &Arc<Keys>, batch: &Mutex<Batch>, out_at: Instant) {
     loop {
-        // Under the lock that `stamps` drains `rest` with: each path is in
-        // `rest`, skipped, or its landing is sent. A path popped but not yet
-        // sent at the drain would be neither read apart nor landed.
+        // Both are taken under one lock (`stamps`).
         let (takeoff, path) = {
-            let mut rest = rest.lock().expect("rest lock");
-            let Some(path) = rest.pop_front() else { return };
+            let mut batch = batch.lock().expect("batch lock");
+            let Some(path) = batch.rest.pop_front() else { return };
             let Claim::Flight(takeoff, landing) = keys.claim(&Key::Path(path.clone()), OnBusy::Skip, out_at) else {
                 continue;
             };
-            let _ = landed.send((path.clone(), landing));
+            batch.landed.push((path.clone(), landing));
             (takeoff, path)
         };
         takeoff.fly(fs, |fs| fs.stamp(&path));
