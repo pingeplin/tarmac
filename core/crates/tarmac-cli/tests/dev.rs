@@ -5,17 +5,13 @@
 // app, and several of which a real app reaches only rarely (a body that is not
 // JSON, a reply that takes 5.5 s, silence).
 
-use std::io::Read;
-use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use tarmac_protocol::{dev, frame};
+use tarmac_protocol::dev;
 
 mod common;
-use common::{Report, scratch, tarmac};
+use common::{Double, Report, scratch, tarmac};
 
 enum Reply {
     Now(dev::DevReply),
@@ -26,66 +22,28 @@ enum Reply {
     Silence,
 }
 
-struct Fake {
-    sock: PathBuf,
-    received: Arc<Mutex<Vec<Vec<u8>>>>,
-    server: Mutex<Option<JoinHandle<()>>>,
-    _dir: PathBuf,
-}
+struct Fake(Double);
 
 impl Fake {
     fn start(reply: Reply) -> Self {
-        let dir = scratch();
-        let sock = dir.join("tarmac-dev.sock");
-        let listener = UnixListener::bind(&sock).unwrap();
-        let received = Arc::new(Mutex::new(Vec::new()));
-
-        let rx = received.clone();
-        let server = std::thread::spawn(move || {
-            let Ok((mut stream, _)) = listener.accept() else { return };
-            if let Ok(payload) = frame::read_sync(&mut stream) {
-                rx.lock().unwrap().push(payload);
-            }
+        Fake(Double::start("tarmac-dev.sock", move |peer| {
+            peer.read();
             let reply = match reply {
-                // Never joined (that is the point); the thread dies with the
-                // test process.
-                Reply::Silence => {
-                    std::thread::sleep(Duration::from_secs(30));
-                    return;
-                }
+                Reply::Silence => return peer.hold(),
                 Reply::After(d, reply) => {
                     std::thread::sleep(d);
                     reply
                 }
                 Reply::Now(reply) => reply,
             };
-            let payload = dev::encode_reply(&reply).unwrap();
-            if frame::write_sync(&mut stream, &payload).is_err() {
-                return;
+            if peer.write(&dev::encode_reply(&reply).unwrap()) {
+                peer.drain_bytes();
             }
-            // Keep reading so the test can observe whether the CLI sends anything
-            // after its one request. EOF (the CLI exiting) ends the loop.
-            stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
-            let mut sink = Vec::new();
-            let _ = stream.read_to_end(&mut sink);
-            if !sink.is_empty() {
-                rx.lock().unwrap().push(sink);
-            }
-        });
-        Fake { sock, received, server: Mutex::new(Some(server)), _dir: dir }
+        }))
     }
 
     fn run(&self, args: &[&str]) -> Report {
-        Report::of(tarmac().env("TARMAC_DEV_SOCKET", &self.sock).arg("dev").args(args))
-    }
-
-    /// Wait for the server thread, so `received` is complete rather than whatever
-    /// had arrived by the time the client exited.
-    fn frames(&self) -> Vec<Vec<u8>> {
-        if let Some(h) = self.server.lock().unwrap().take() {
-            let _ = h.join();
-        }
-        self.received.lock().unwrap().clone()
+        Report::of(tarmac().env("TARMAC_DEV_SOCKET", &self.0.sock).arg("dev").args(args))
     }
 }
 
@@ -151,7 +109,7 @@ fn exactly_one_request_frame_is_sent() {
     let fake = Fake::start(Reply::Now(ok_reply("{}")));
     let out = fake.run(&["focus", "t-1"]);
     assert_eq!(out.code(), Some(0));
-    let frames = fake.frames();
+    let frames = fake.0.frames();
     assert_eq!(frames.len(), 1, "expected exactly one frame, got {}", frames.len());
     assert_eq!(
         dev::decode_request(&frames[0]).unwrap(),
@@ -169,7 +127,7 @@ fn an_over_long_socket_path_is_refused_before_dialling() {
     assert_eq!(out.code(), Some(1));
     assert!(out.stderr.contains("104"));
     // The fake at the short path was never dialled.
-    assert!(fake.received.lock().unwrap().is_empty());
+    assert!(fake.0.received.lock().unwrap().is_empty());
 }
 
 /// A usage error is the CLI's own: exit 2 like `skill` and `--version`, the reason
@@ -188,7 +146,7 @@ fn a_usage_error_exits_two_before_dialling() {
         assert!(out.stderr.contains("tarmac dev snapshot"), "{args:?} prints no usage: {}", out.stderr);
     }
     // Not `frames()`: it joins a server thread that is still in `accept`.
-    assert!(fake.received.lock().unwrap().is_empty());
+    assert!(fake.0.received.lock().unwrap().is_empty());
 }
 
 /// S73(b) — the load-bearing half. The CLI's read deadline is the app's budget

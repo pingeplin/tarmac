@@ -1,59 +1,41 @@
-use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::mpsc::{self, Receiver};
-use std::time::Duration;
 
-use tarmac_protocol::{self as proto, Msg, frame};
+use tarmac_protocol::{self as proto, Msg};
 
 mod common;
-use common::{Report, hello_ok, scratch, tarmac};
+use common::{Double, Report, hello_ok, scratch, tarmac};
 
 /// A daemon double for `open`: it does the handshake, records the `Open` path,
 /// then answers `reply`.
-struct OpenDaemon {
-    dir: PathBuf,
-    sock: PathBuf,
-    opened: Receiver<String>,
-}
+struct OpenDaemon(Double);
 
 impl OpenDaemon {
     fn start(reply: Msg) -> Self {
-        let dir = scratch();
-        let sock = dir.join("tarmacd.sock");
-        let listener = UnixListener::bind(&sock).unwrap();
-        let (record, opened) = mpsc::channel();
-        std::thread::spawn(move || {
-            let Ok((mut stream, _)) = listener.accept() else { return };
+        OpenDaemon(Double::start("tarmacd.sock", move |peer| {
             let hello_ok = proto::encode(&hello_ok(None, None, None, None)).unwrap();
-            if frame::read_sync(&mut stream).is_err() || frame::write_sync(&mut stream, &hello_ok).is_err() {
+            if peer.read().is_none() || !peer.write(&hello_ok) {
                 return;
             }
-            let Ok(payload) = frame::read_sync(&mut stream) else { return };
-            if let Ok(Msg::Open { path, .. }) = proto::decode(&payload) {
-                let _ = record.send(path);
+            if peer.read().is_some() {
+                peer.write(&proto::encode(&reply).unwrap());
             }
-            let _ = frame::write_sync(&mut stream, &proto::encode(&reply).unwrap());
-        });
-        OpenDaemon { dir, sock, opened }
+        }))
     }
 
     fn open(&self, path: &str) -> Report {
-        Report::of(tarmac().env("TARMAC_SOCKET", &self.sock).args(["open", path]))
+        Report::of(tarmac().env("TARMAC_SOCKET", &self.0.sock).args(["open", path]))
     }
 
     fn open_in(&self, cwd: &Path, path: &str) -> Report {
-        Report::of(tarmac().current_dir(cwd).env("TARMAC_SOCKET", &self.sock).args(["open", path]))
+        Report::of(tarmac().current_dir(cwd).env("TARMAC_SOCKET", &self.0.sock).args(["open", path]))
     }
 
     fn opened(&self) -> Option<String> {
-        self.opened.recv_timeout(Duration::from_secs(5)).ok()
-    }
-}
-
-impl Drop for OpenDaemon {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
+        self.0.frames().iter().find_map(|p| match proto::decode(p) {
+            Ok(Msg::Open { path, .. }) => Some(path),
+            _ => None,
+        })
     }
 }
 
