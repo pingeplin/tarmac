@@ -381,12 +381,18 @@ new terminal's cwd), and its
 caller waits at most `READ_LIMIT`. A key (a path) has one call at a time,
 for the opens and the looks alike. An open that finds its key busy waits for
 that call within its own limit, then makes its own; a look gives a busy key no
-entry and does not wait. A stat cannot be stopped, so a key whose caller
-stopped waiting is out: an open or a look that comes after that gets `Out`
+entry and does not wait. A stat cannot be stopped, so a caller that stops
+waiting leaves its call on its thread. A call that is left is out once it has
+had a full limit: its caller's, or, for an open that waited for an earlier
+call first, a limit from the call's own start, so a slow call is not taken
+for a dead one (#280). An open or a look that comes to an out key gets `Out`
 at once until the call returns, and an open that was waiting for the call
 already waits to its own limit. A dead path so holds one blocking thread,
-however many opens and looks ask for it. When an out call returns, the gate
-notifies the watcher's wake, so a look runs and reads the doc. An open's
+however many opens and looks ask for it. When a call that was left returns,
+the gate notifies the watcher's wake, so a look runs and reads the doc. Each
+call is one flight: a claim (wait for a busy key, or skip it), the call on a
+blocking thread, and a landing that leaves the call at its caller's deadline.
+A look's batch runs its flights one after the other on one thread. An open's
 resolve is keyed by the path as given and a look by the canonical path, so a
 doc opened through a symlink can hold two calls.
 
