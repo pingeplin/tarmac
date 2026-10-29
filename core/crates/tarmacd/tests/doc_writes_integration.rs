@@ -102,11 +102,21 @@ fn a_save_in_two_pieces_is_reported_once_when_it_is_done() {
     let doc = write_doc(&daemon.dir.join("docs/y.md"), "y\n");
     let mut app = opened(&daemon, &doc);
 
-    append_to(&doc, b"first half\n");
-    std::thread::sleep(Duration::from_millis(20));
-    append_to(&doc, b"second half\n");
-    let saved = mtime_ms(&doc);
-
-    assert_eq!(app.recv_file_event_for(&doc), saved, "the first file_event is of the whole save");
-    assert!(quiet(&mut app, &doc), "and it is the only one");
+    for _ in 0..5 {
+        append_to(&doc, b"first half\n");
+        let started = mtime_ms(&doc);
+        std::thread::sleep(Duration::from_millis(20));
+        append_to(&doc, b"second half\n");
+        let saved = mtime_ms(&doc);
+        // A stalled runner can stretch the 20 ms past the burst window
+        // (`watch::BURST`, 100 ms); then the first half is a save of its own.
+        if saved - started >= 50 {
+            while !quiet(&mut app, &doc) {}
+            continue;
+        }
+        assert_eq!(app.recv_file_event_for(&doc), saved, "the first file_event is of the whole save");
+        assert!(quiet(&mut app, &doc), "and it is the only one");
+        return;
+    }
+    panic!("no save of two pieces came within half the burst window in 5 tries");
 }
