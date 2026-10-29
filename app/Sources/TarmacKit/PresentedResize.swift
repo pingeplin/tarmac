@@ -65,19 +65,11 @@ public struct PresentedResize: Sendable {
     public struct Presented: Equatable, Sendable {
         public let steps: [Step]
         public let awaiting: UInt64?
-
-        public init(steps: [Step], awaiting: UInt64?) {
-            self.steps = steps
-            self.awaiting = awaiting
-        }
     }
 
     private var fitted: CGSize?
-    /// The size the page was last told it would have.
-    private var laidOut: CGSize?
-    /// The resize in flight: whether it grows, and the content's frame size
-    /// while it waits.
-    private var waiting: (generation: UInt64, target: CGSize, grows: Bool, reach: CGSize)?
+    /// The resize in flight, and the size of the frame shown while it waits.
+    private var waiting: (generation: UInt64, target: CGSize, presented: CGSize)?
     /// The latest size asked for while a resize was waiting.
     private var next: CGSize?
     private var lastGeneration: UInt64 = 0
@@ -92,14 +84,13 @@ public struct PresentedResize: Sendable {
             next = Self.same(waiting.target, target) ? nil : target
             // The dragged bounds crop what is presented at its own scale; past
             // it they would show what WebKit has not drawn, so they are held.
-            let presented = waiting.grows ? fitted : waiting.reach
-            return .pending(steps: Self.exceeds(target, presented) ? [.bounds(fitted)] : [])
+            return .pending(steps: Self.exceeds(target, waiting.presented) ? [.bounds(fitted)] : [])
         }
         // The content's frame is moved onto whole device pixels, so it is up
         // to a pixel off the size it was fitted to; only `fitted` says that
         // this is no resize. A grip drag's step can be smaller than that pixel.
         guard !Self.same(fitted, target) else { return applyNow(target) }
-        let steps = stage(content: content, target: target, fitted: fitted)
+        let steps = stage(content: content, target: target)
         return .staged(generation: lastGeneration, steps: steps)
     }
 
@@ -118,30 +109,28 @@ public struct PresentedResize: Sendable {
         // own scale, as one from rest does; under the presented size's bounds
         // the whole page would show squeezed for a round.
         let bounds = Self.exceeds(target, waiting.target) ? waiting.target : target
-        let steps = stage(content: waiting.target, target: target, fitted: waiting.target)
+        let steps = stage(content: waiting.target, target: target)
         return Presented(steps: [.bounds(bounds), .fit(waiting.target)] + steps, awaiting: lastGeneration)
     }
 
-    private mutating func stage(content: CGSize, target: CGSize, fitted: CGSize) -> [Step] {
+    private mutating func stage(content: CGSize, target: CGSize) -> [Step] {
         lastGeneration += 1
-        laidOut = target
-        guard Self.exceeds(target, content) else {
-            waiting = (lastGeneration, target, false, content)
+        guard Self.exceeds(target, content), let fitted else {
+            waiting = (lastGeneration, target, content)
             return [.layout(target)]
         }
         let reach = CGSize(width: max(content.width, target.width), height: max(content.height, target.height))
-        waiting = (lastGeneration, target, true, reach)
+        waiting = (lastGeneration, target, fitted)
         return [.bounds(fitted), .contentFrame(reach), .layout(target)]
     }
 
     /// `relayout` when the page was last told another size: a shrink tells it
     /// before the frame follows, so the frame alone does not say it is stale.
     private mutating func applyNow(_ target: CGSize) -> Plan {
-        let relayout = laidOut.map { !Self.same($0, target) } ?? false
+        let relayout = (waiting?.target ?? fitted).map { !Self.same($0, target) } ?? false
         waiting = nil
         next = nil
         fitted = target
-        laidOut = target
         return .now(relayout: relayout)
     }
 

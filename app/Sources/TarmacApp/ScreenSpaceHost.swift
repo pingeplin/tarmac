@@ -102,8 +102,7 @@ final class ScreenSpaceHost: NSView {
     }
 
     private func fitNow(_ size: CGSize, relayout: Bool) {
-        fallback?.cancel()
-        fallback = nil
+        cancelFallback()
         if bounds.size != size { setBoundsSize(size) }
         let target = alignedContentFrame(size)
         let moved = !Self.same(target, content.frame)
@@ -131,24 +130,26 @@ final class ScreenSpaceHost: NSView {
     /// The timer is armed before the call: WebKit runs the block at once,
     /// inside `perform`, when the page has no process to draw it.
     private func awaitPresentation(_ generation: UInt64) {
-        fallback?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            MainActor.assumeIsolated { self?.presented(generation) }
-        }
-        fallback = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(PresentedResize.fallbackMs), execute: work)
         let presented: @convention(block) () -> Void = { [weak self] in
             MainActor.assumeIsolated { self?.presented(generation) }
         }
+        cancelFallback()
+        let work = DispatchWorkItem(block: presented)
+        fallback = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(PresentedResize.fallbackMs), execute: work)
         content.perform(Self.afterPresentation, with: presented)
     }
 
     private func presented(_ generation: UInt64) {
         guard let round = resize.presented(generation) else { return }
-        fallback?.cancel()
-        fallback = nil
+        cancelFallback()
         run(round.steps)
         if let next = round.awaiting { awaitPresentation(next) }
+    }
+
+    private func cancelFallback() {
+        fallback?.cancel()
+        fallback = nil
     }
 
     /// A rect taken to the window and back comes home a few ulps off.
