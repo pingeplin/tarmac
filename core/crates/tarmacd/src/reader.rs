@@ -124,6 +124,9 @@ struct Busy {
     call: u64,
     /// Its caller stopped waiting for it.
     left: bool,
+    /// When the call is out once it is left: a full limit from its start, or
+    /// for a read of a look's batch, the batch's deadline, so a read that the
+    /// batch started late is out as soon as the batch leaves it.
     out_at: Instant,
     /// Dropped when the call returns, which wakes the callers waiting for it.
     ended: watch::Sender<()>,
@@ -230,6 +233,15 @@ impl<T> Landing<T> {
         }
     }
 
+    /// The answer when it is there, else `land` at a deadline that passed.
+    async fn take(mut self) -> Result<Option<T>, Out> {
+        match self.answer.try_recv() {
+            Ok(answer) => Ok(Some(answer)),
+            Err(oneshot::error::TryRecvError::Closed) => Ok(None),
+            Err(oneshot::error::TryRecvError::Empty) => self.leave().await,
+        }
+    }
+
     async fn leave(self) -> Result<Option<T>, Out> {
         if self.keys.leave(&self.key, self.call) {
             return Err(Out);
@@ -306,43 +318,37 @@ impl PathGate {
 
     /// Each file as it is now, for a look: on one blocking thread, one after
     /// the other, since one thread each would cost a 300-doc switch five times
-    /// as much. When they are not read within `limit`, the read that is out is
-    /// left on its thread, and the files after it are read on a thread each,
-    /// within one more `limit`. A path whose key is busy has no entry: it is
-    /// not known, which is not `None` (gone).
+    /// as much. When they are not read within `limit`, the read in flight is
+    /// left on its thread, and the files not started are read on a thread
+    /// each, within one more `limit`. A path whose key is busy has no entry:
+    /// it is not known, which is not `None` (gone).
     pub async fn stamps(&self, paths: impl IntoIterator<Item = PathBuf>) -> HashMap<PathBuf, Option<FileStamp>> {
         let deadline = Instant::now() + self.limit;
         let rest = Arc::new(Mutex::new(paths.into_iter().collect::<VecDeque<_>>()));
         let (landed, mut landings) = mpsc::unbounded_channel();
-        tokio::task::spawn_blocking({
+        let reading = tokio::task::spawn_blocking({
             let (fs, keys, rest) = (self.fs.clone(), self.keys.clone(), rest.clone());
             move || read_each(&*fs, &keys, &rest, deadline, &landed)
         });
-        let mut now = HashMap::new();
-        while let Ok(Some((path, landing))) = tokio::time::timeout_at(deadline, landings.recv()).await {
-            match landing.land(deadline).await {
-                Ok(Some(stamp)) => now.insert(path, stamp),
-                Ok(None) => None,
-                Err(Out) => break,
-            };
-        }
+        // A thread that panicked has ended too.
+        let _ = tokio::time::timeout_at(deadline, reading).await;
         let rest: Vec<_> = rest.lock().expect("rest lock").drain(..).collect();
         // The thread starts no call after the drain, and has sent the landing
-        // of each call it started: one it started after the deadline is
-        // landed with the rest.
-        let mut started = Vec::new();
-        while let Ok(landed) = landings.try_recv() {
-            started.push(landed);
+        // of each call it started. Only the last can be in flight: it is left.
+        let mut now = HashMap::new();
+        while let Ok((path, landing)) = landings.try_recv() {
+            if let Ok(Some(stamp)) = landing.take().await {
+                now.insert(path, stamp);
+            }
         }
-        now.extend(self.read_apart(rest, started).await);
+        now.extend(self.read_apart(rest).await);
         now
     }
 
-    /// `paths`, each on a thread of its own, and the calls `started`, within
-    /// one `limit`.
-    async fn read_apart(&self, paths: Vec<PathBuf>, started: Vec<Landed>) -> Vec<(PathBuf, Option<FileStamp>)> {
+    /// `paths`, each on a thread of its own, within one `limit`.
+    async fn read_apart(&self, paths: Vec<PathBuf>) -> Vec<(PathBuf, Option<FileStamp>)> {
         let deadline = Instant::now() + self.limit;
-        let mut landings = started;
+        let mut landings = Vec::new();
         for path in paths {
             if let Claim::Flight(takeoff, landing) = self.keys.claim(&Key::Path(path.clone()), OnBusy::Skip, deadline) {
                 let read = path.clone();
@@ -371,7 +377,8 @@ fn read_each(
 ) {
     loop {
         // Under the lock that `stamps` drains `rest` with: each path is in
-        // `rest`, skipped, or its landing is sent.
+        // `rest`, skipped, or its landing is sent. A path popped but not yet
+        // sent at the drain would be neither read apart nor landed.
         let (takeoff, path) = {
             let mut rest = rest.lock().expect("rest lock");
             let Some(path) = rest.pop_front() else { return };
