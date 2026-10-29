@@ -230,9 +230,10 @@ impl Daemon {
         self.mark_dirty();
         if watched {
             crate::docs::report_changes(self).await;
-        } else {
-            // `seen` was read before the doc was registered, and the wake of
-            // a change in between could come before it too.
+        } else if is_new {
+            // A repair, on purpose: `seen` was read before the doc was
+            // registered, and the wake of a change in between could come
+            // before it too. A re-open keeps what was seen and needs none.
             self.wake.notify_one();
         }
         Ok(entry)
@@ -631,14 +632,17 @@ mod tests {
         crate::boards::epoch_ms(later)
     }
 
+    /// The pushes the app has now.
+    fn pushed(app: &mut mpsc::Receiver<Msg>) -> Vec<Msg> {
+        std::iter::from_fn(|| app.try_recv().ok()).collect()
+    }
+
     fn file_events(app: &mut mpsc::Receiver<Msg>) -> Vec<(PathBuf, u64)> {
-        let mut events = Vec::new();
-        while let Ok(msg) = app.try_recv() {
-            if let Msg::FileEvent { path, mtime_ms } = msg {
-                events.push((PathBuf::from(path), mtime_ms));
-            }
-        }
-        events
+        let event = |msg| match msg {
+            Msg::FileEvent { path, mtime_ms } => Some((PathBuf::from(path), mtime_ms)),
+            _ => None,
+        };
+        pushed(app).into_iter().filter_map(event).collect()
     }
 
     // #253: an unwatch restarts the FSEvents stream, and the restart loses the
@@ -1032,8 +1036,8 @@ mod tests {
     struct StuckFs {
         holds: std::sync::Mutex<Vec<(Call, PathBuf)>>,
         until_released: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
-        calls: std::sync::Mutex<HashMap<Call, u32>>,
-        held: std::sync::Mutex<HashMap<Call, u32>>,
+        /// Each method's calls, and how many of them it held.
+        counts: std::sync::Mutex<HashMap<Call, (u32, u32)>>,
     }
 
     impl StuckFs {
@@ -1043,20 +1047,23 @@ mod tests {
         }
 
         fn wait_if_held(&self, call: Call, path: &Path) {
-            *self.calls.lock().unwrap().entry(call).or_default() += 1;
             let held = self.holds.lock().unwrap().iter().any(|(c, under)| *c == call && path.starts_with(under));
+            let mut counts = self.counts.lock().unwrap();
+            let count = counts.entry(call).or_default();
+            count.0 += 1;
+            count.1 += u32::from(held);
+            drop(counts);
             if held {
-                *self.held.lock().unwrap().entry(call).or_default() += 1;
                 let _ = self.until_released.lock().unwrap().recv();
             }
         }
 
         fn calls(&self, call: Call) -> u32 {
-            self.calls.lock().unwrap().get(&call).copied().unwrap_or(0)
+            self.counts.lock().unwrap().get(&call).map_or(0, |count| count.0)
         }
 
         fn held(&self, call: Call) -> u32 {
-            self.held.lock().unwrap().get(&call).copied().unwrap_or(0)
+            self.counts.lock().unwrap().get(&call).map_or(0, |count| count.1)
         }
     }
 
@@ -1084,8 +1091,7 @@ mod tests {
         let fs = Arc::new(StuckFs {
             holds: std::sync::Mutex::default(),
             until_released: std::sync::Mutex::new(until_released),
-            calls: std::sync::Mutex::default(),
-            held: std::sync::Mutex::default(),
+            counts: std::sync::Mutex::default(),
         });
         (fs, release)
     }
@@ -1269,13 +1275,11 @@ mod tests {
     }
 
     fn docs_opened(app: &mut mpsc::Receiver<Msg>) -> Vec<PathBuf> {
-        let mut opened = Vec::new();
-        while let Ok(msg) = app.try_recv() {
-            if let Msg::DocOpened(entry) = msg {
-                opened.push(PathBuf::from(entry.path));
-            }
-        }
-        opened
+        let opened = |msg| match msg {
+            Msg::DocOpened(entry) => Some(PathBuf::from(entry.path)),
+            _ => None,
+        };
+        pushed(app).into_iter().filter_map(opened).collect()
     }
 
     async fn eventually(what: &str, done: impl Fn() -> bool) {
@@ -1689,6 +1693,24 @@ mod tests {
             }
         });
         assert_eq!(event.await.expect("a file_event"), (doc, changed));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // A re-open keeps what was seen (`upsert_doc`): a look after it would
+    // read every doc of the board for nothing.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_reopen_in_a_watched_dir_wakes_no_look() {
+        let tmp = canon_tmp("reopen-no-look");
+        let doc = write_doc(tmp.join("d/a.md"));
+        let (fs, _release) = stuck_fs();
+        let daemon = gated(&tmp, fs.clone());
+        assert_eq!(try_open(&daemon, &doc).await, Ok(()));
+        let reads = fs.calls(Call::Stamp);
+
+        assert_eq!(try_open(&daemon, &doc).await, Ok(()));
+        tokio::time::sleep(3 * crate::watch::BURST).await;
+        assert_eq!(fs.calls(Call::Stamp), reads, "a look read the docs");
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

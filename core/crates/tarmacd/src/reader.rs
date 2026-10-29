@@ -25,8 +25,11 @@ pub struct Out;
 
 /// `None` for a file that is not there or cannot be read.
 pub fn stamp(path: &Path) -> Option<FileStamp> {
-    let meta = std::fs::metadata(path).ok()?;
-    Some(FileStamp { mtime: meta.modified().ok()?, len: meta.len(), inode: meta.ino() })
+    stamp_of(&std::fs::metadata(path).ok()?).ok()
+}
+
+fn stamp_of(meta: &std::fs::Metadata) -> std::io::Result<FileStamp> {
+    Ok(FileStamp { mtime: meta.modified()?, len: meta.len(), inode: meta.ino() })
 }
 
 /// The file-system calls the gate makes.
@@ -50,7 +53,7 @@ impl PathFs for RealFs {
         if !meta.is_file() {
             return Err(format!("not a regular file: {}", canon.display()));
         }
-        let stamp = FileStamp { mtime: meta.modified().map_err(cannot_stat)?, len: meta.len(), inode: meta.ino() };
+        let stamp = stamp_of(&meta).map_err(cannot_stat)?;
         Ok((canon, stamp))
     }
 
@@ -149,13 +152,13 @@ impl Drop for Flight {
     }
 }
 
-/// What the thread of a look has done, in the order of its paths: each path
-/// before `at` is read or skipped, and `reading` is the call on `paths[at]`
+/// What the thread of a look has done, in the order of its paths: the first
+/// `done` are read or skipped, and `reading` is the call on `paths[done]`
 /// while it is read.
 #[derive(Default)]
 struct Run {
     read: Vec<(PathBuf, Option<FileStamp>)>,
-    at: usize,
+    done: usize,
     reading: Option<u64>,
     left: bool,
 }
@@ -236,10 +239,10 @@ impl PathGate {
                     // Its thread ends the call only under this lock, so the
                     // call is still there to leave.
                     Some(call) => {
-                        self.keys.leave(&paths[run.at], call);
-                        run.at + 1
+                        self.keys.leave(&paths[run.done], call);
+                        run.done + 1
                     }
-                    None => run.at,
+                    None => run.done,
                 }
             };
             (rest, run.read.drain(..).collect::<HashMap<_, _>>())
@@ -257,7 +260,7 @@ impl PathGate {
             .filter_map(|path| {
                 let Start::Flight(flight) = self.keys.start(path) else { return None };
                 let (fs, call) = (self.fs.clone(), flight.call);
-                let read = tokio::task::spawn_blocking(move || (flight.key.clone(), fs.stamp(&flight.key)));
+                let read = tokio::task::spawn_blocking(move || fs.stamp(&flight.key));
                 Some((path.clone(), call, read))
             })
             .collect();
@@ -265,7 +268,9 @@ impl PathGate {
         let mut next = 0;
         let _ = tokio::time::timeout(self.limit, async {
             while next < reads.len() {
-                now.extend((&mut reads[next].2).await);
+                if let Ok(stamp) = (&mut reads[next].2).await {
+                    now.push((reads[next].0.clone(), stamp));
+                }
                 next += 1;
             }
         })
@@ -274,7 +279,7 @@ impl PathGate {
         // in its handle. A handle that is dropped leaves its thread to finish.
         for (path, call, read) in reads.into_iter().skip(next) {
             if read.is_finished() || !self.keys.leave(&path, call) {
-                now.extend(read.await);
+                now.extend(read.await.map(|stamp| (path, stamp)));
             }
         }
         now
@@ -288,9 +293,8 @@ fn read_each(fs: &dyn PathFs, keys: &Arc<Keys>, run: &Mutex<Run>, paths: &[PathB
             if run.left {
                 return;
             }
-            run.at = at;
             let Start::Flight(flight) = keys.start(path) else {
-                run.at = at + 1;
+                run.done = at + 1;
                 continue;
             };
             run.reading = Some(flight.call);
@@ -302,7 +306,7 @@ fn read_each(fs: &dyn PathFs, keys: &Arc<Keys>, run: &Mutex<Run>, paths: &[PathB
         // is out when it ends and runs `returned`.
         let mut run = run.lock().expect("run lock");
         run.reading = None;
-        run.at = at + 1;
+        run.done = at + 1;
         if run.left {
             return;
         }
