@@ -67,9 +67,13 @@ impl PathFs for RealFs {
 /// A key has one call at a time: a `run` that finds its key busy waits for
 /// that call within its own limit, then makes its own; a look gives a busy key
 /// no entry. A call cannot be stopped, so a key whose caller stopped waiting
-/// (out: a volume that is gone) answers `Out` at once until its call returns.
-/// A dead path holds one thread, however many callers ask for it. When an out
-/// call returns, the gate calls `returned`.
+/// is out (a volume that is gone): a caller that comes after that gets `Out`
+/// at once until the call returns, and one that was waiting already waits to
+/// its own limit. A dead path holds one thread, however many callers ask for
+/// it. When an out call returns, the gate calls `returned`.
+///
+/// An open's resolve is keyed by the path as given, a look's stamp by the
+/// canonical one: a doc opened through a symlink can hold two calls.
 pub struct PathGate {
     fs: Arc<dyn PathFs>,
     limit: Duration,
@@ -229,6 +233,8 @@ impl PathGate {
             } else {
                 run.left = true;
                 match run.reading {
+                    // Its thread ends the call only under this lock, so the
+                    // call is still there to leave.
                     Some(call) => {
                         self.keys.leave(&paths[run.at], call);
                         run.at + 1
@@ -264,12 +270,11 @@ impl PathGate {
             }
         })
         .await;
-        // A handle that is dropped leaves its thread to finish.
+        // A call that cannot be left has ended, and its answer is about to be
+        // in its handle. A handle that is dropped leaves its thread to finish.
         for (path, call, read) in reads.into_iter().skip(next) {
-            if read.is_finished() {
+            if read.is_finished() || !self.keys.leave(&path, call) {
                 now.extend(read.await);
-            } else {
-                self.keys.leave(&path, call);
             }
         }
         now
@@ -278,7 +283,7 @@ impl PathGate {
 
 fn read_each(fs: &dyn PathFs, keys: &Arc<Keys>, run: &Mutex<Run>, paths: &[PathBuf]) {
     for (at, path) in paths.iter().enumerate() {
-        let flight = {
+        let _flight = {
             let mut run = run.lock().expect("run lock");
             if run.left {
                 return;
@@ -292,7 +297,9 @@ fn read_each(fs: &dyn PathFs, keys: &Arc<Keys>, run: &Mutex<Run>, paths: &[PathB
             flight
         };
         let stamp = fs.stamp(path);
-        drop(flight);
+        // The call ends (`_flight` is dropped) after this lock, never between a
+        // caller that left and its look: the reading is pushed, or the call
+        // is out when it ends and runs `returned`.
         let mut run = run.lock().expect("run lock");
         run.reading = None;
         run.at = at + 1;

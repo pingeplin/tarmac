@@ -354,10 +354,13 @@ caller waits at most `READ_LIMIT`. A key (a path) has one call at a time,
 for the opens and the looks alike. An open that finds its key busy waits for
 that call within its own limit, then makes its own; a look gives a busy key no
 entry and does not wait. A stat cannot be stopped, so a key whose caller
-stopped waiting is out: it answers `Out` at once until its call returns. A
-dead path so holds one blocking thread, however many opens and looks ask for
-it. When an out call returns, the gate notifies the watcher's wake, so a look
-runs and reads the doc.
+stopped waiting is out: an open or a look that comes after that gets `Out`
+at once until the call returns, and an open that was waiting for the call
+already waits to its own limit. A dead path so holds one blocking thread,
+however many opens and looks ask for it. When an out call returns, the gate
+notifies the watcher's wake, so a look runs and reads the doc. An open's
+resolve is keyed by the path as given and a look by the canonical path, so a
+doc opened through a symlink can hold two calls.
 
 Two limits of a look. It can come in the middle of a doc's own save: a save
 that takes longer than `BURST`, or one that another file of a watched

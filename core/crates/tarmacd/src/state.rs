@@ -1605,9 +1605,10 @@ mod tests {
         let first = spawn_open(&daemon, &doc);
         eventually("the held resolve", || fs.held(Call::Resolve) == 1).await;
         let second = spawn_open(&daemon, &doc);
-        // Time for the second open to reach the call of the first. It passes
-        // either way; the wait is what it is there to try.
+        // Time for the second open to reach the call of the first, and less
+        // than the limit that it waits for it.
         tokio::time::sleep(LIMIT / 4).await;
+        assert!(!second.is_finished(), "the second open did not wait for the first");
         drop(release);
         assert_eq!(first.await.unwrap(), Ok(()));
         assert_eq!(second.await.unwrap(), Ok(()));
@@ -1660,7 +1661,15 @@ mod tests {
     // change can come before the doc is registered.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_change_between_the_stamp_and_the_upsert_of_an_open_is_pushed() {
-        let (tmp, _, daemon, fs, release) = in_a_repo("open-window").await;
+        let tmp = canon_tmp("open-window");
+        std::fs::create_dir_all(tmp.join(".git")).unwrap();
+        let open = write_doc(tmp.join("d/a.md"));
+        let (fs, release) = stuck_fs();
+        // A limit that the held walk cannot reach: a walk that is out wakes a
+        // look of its own when it returns.
+        let daemon =
+            Daemon::with_fs(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new()), fs.clone(), Duration::from_secs(30));
+        assert_eq!(try_open(&daemon, &open).await, Ok(()));
         let mut app = connect_app(&daemon).await;
         let doc = write_doc(tmp.join("d/b.md"));
         fs.hold(Call::RepoOf, &doc);
