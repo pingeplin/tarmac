@@ -323,20 +323,21 @@ impl PathGate {
         }
         let rest: Vec<_> = rest.lock().expect("rest lock").drain(..).collect();
         // The thread starts no call after the drain, and has sent the landing
-        // of each call it started.
-        while let Ok((path, landing)) = landings.try_recv() {
-            if let Ok(stamp) = landing.land(deadline).await {
-                now.insert(path, stamp);
-            }
+        // of each call it started: one it started after the deadline is
+        // landed with the rest.
+        let mut started = Vec::new();
+        while let Ok(landed) = landings.try_recv() {
+            started.push(landed);
         }
-        now.extend(self.read_apart(rest).await);
+        now.extend(self.read_apart(rest, started).await);
         now
     }
 
-    /// `paths`, each on a thread of its own, within one `limit`.
-    async fn read_apart(&self, paths: Vec<PathBuf>) -> Vec<(PathBuf, Option<FileStamp>)> {
+    /// `paths`, each on a thread of its own, and the calls `started`, within
+    /// one `limit`.
+    async fn read_apart(&self, paths: Vec<PathBuf>, started: Vec<Landed>) -> Vec<(PathBuf, Option<FileStamp>)> {
         let deadline = Instant::now() + self.limit;
-        let mut landings = Vec::new();
+        let mut landings = started;
         for path in paths {
             if let Claim::Flight(takeoff, landing) = self.keys.claim(&Key::Path(path.clone()), OnBusy::Skip, deadline) {
                 let read = path.clone();
