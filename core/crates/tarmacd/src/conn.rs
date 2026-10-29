@@ -342,7 +342,6 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
     }
 }
 
-/// The step of a `SpawnTerm`.
 pub(crate) async fn spawn_requested(
     daemon: &Arc<Daemon>,
     term_id: String,

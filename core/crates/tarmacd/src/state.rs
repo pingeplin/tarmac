@@ -2508,12 +2508,40 @@ mod tests {
         std::fs::canonicalize(std::env::var("HOME").unwrap()).unwrap().to_string_lossy().into_owned()
     }
 
-    /// A dir in a temp dir of its own, which is not under `$HOME`.
-    fn spawn_dir(tag: &str) -> (PathBuf, PathBuf) {
+    /// A daemon on `StuckFs`, its app, and a dir in a temp dir of its own,
+    /// which is not under `$HOME`. The test keeps `release` to its end.
+    struct Rig {
+        tmp: PathBuf,
+        dir: PathBuf,
+        daemon: Arc<Daemon>,
+        app: mpsc::Receiver<Msg>,
+        fs: Arc<StuckFs>,
+        release: std::sync::mpsc::Sender<()>,
+    }
+
+    async fn rig(tag: &str) -> Rig {
         let tmp = canon_tmp(tag);
         let dir = tmp.join("d");
         std::fs::create_dir_all(&dir).unwrap();
-        (tmp, dir)
+        let (fs, release) = stuck_fs();
+        let daemon = gated(&tmp, fs.clone()).await;
+        let app = connect_app(&daemon).await;
+        Rig { tmp, dir, daemon, app, fs, release }
+    }
+
+    /// A rig whose `is_dir` of its dir does not return.
+    async fn cwd_out(tag: &str) -> Rig {
+        let r = rig(tag).await;
+        r.fs.hold(Call::IsDir, &r.dir);
+        r
+    }
+
+    /// A rig with a terminal `src` in its dir, whose `pid_cwd` does not return.
+    async fn inherit_out(tag: &str) -> Rig {
+        let mut r = rig(tag).await;
+        source_in(&r.daemon, &mut r.app, &r.dir).await;
+        r.fs.hold(Call::PidCwd, Path::new(""));
+        r
     }
 
     /// The step of a `SpawnTerm` of `argv`, on a task of its own, and how long
@@ -2575,177 +2603,154 @@ mod tests {
         printed(app, "src", None).await;
     }
 
-    /// A daemon whose `is_dir` of `dir` does not return, after a first spawn
-    /// in `dir` that ran in `$HOME`.
-    async fn after_a_cwd_out(
-        tag: &str,
-    ) -> (PathBuf, PathBuf, Arc<Daemon>, mpsc::Receiver<Msg>, Arc<StuckFs>, std::sync::mpsc::Sender<()>) {
-        let (tmp, dir) = spawn_dir(tag);
-        let (fs, release) = stuck_fs();
-        fs.hold(Call::IsDir, &dir);
-        let daemon = gated(&tmp, fs.clone()).await;
-        let mut app = connect_app(&daemon).await;
-
-        let took = spawn_pwd(&daemon, "t1", Some(&dir), None).await;
-        assert!(took < 3 * LIMIT, "the spawn took {took:?}");
-        assert_eq!(printed(&mut app, "t1", None).await, home());
-        assert_eq!(fs.held(Call::IsDir), 1);
-        (tmp, dir, daemon, app, fs, release)
+    /// `cwd_out`, after a first spawn `t1` in its dir (S1).
+    async fn after_a_cwd_out(tag: &str) -> Rig {
+        let mut r = cwd_out(tag).await;
+        spawn_pwd(&r.daemon, "t1", Some(&r.dir), None).await;
+        printed(&mut r.app, "t1", None).await;
+        r
     }
 
-    /// A daemon with a terminal `src` in a dir, whose `pid_cwd` does not
-    /// return, after a first spawn from `src` that ran in `$HOME`.
-    async fn after_an_inherit_out(
-        tag: &str,
-    ) -> (PathBuf, Arc<Daemon>, mpsc::Receiver<Msg>, Arc<StuckFs>, std::sync::mpsc::Sender<()>) {
-        let (tmp, dir) = spawn_dir(tag);
-        let (fs, release) = stuck_fs();
-        let daemon = gated(&tmp, fs.clone()).await;
-        let mut app = connect_app(&daemon).await;
-        source_in(&daemon, &mut app, &dir).await;
-        fs.hold(Call::PidCwd, Path::new(""));
-
-        let took = spawn_pwd(&daemon, "t1", None, Some("src")).await;
-        assert!(took < 3 * LIMIT, "the spawn took {took:?}");
-        assert_eq!(printed(&mut app, "t1", None).await, home());
-        assert_eq!(fs.held(Call::PidCwd), 1);
-        (tmp, daemon, app, fs, release)
+    /// `inherit_out`, after a first spawn `t1` from `src` (S4).
+    async fn after_an_inherit_out(tag: &str) -> Rig {
+        let mut r = inherit_out(tag).await;
+        spawn_pwd(&r.daemon, "t1", None, Some("src")).await;
+        printed(&mut r.app, "t1", None).await;
+        r
     }
 
     // 2610.0013 S1
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_spawn_whose_cwd_does_not_answer_runs_in_home() {
-        let (tmp, _dir, _daemon, _app, _fs, _release) = after_a_cwd_out("cwd-out").await;
+        let mut r = cwd_out("cwd-out").await;
 
-        let _ = std::fs::remove_dir_all(&tmp);
+        let took = spawn_pwd(&r.daemon, "t1", Some(&r.dir), None).await;
+
+        assert!(took < 3 * LIMIT, "the spawn took {took:?}");
+        assert_eq!(printed(&mut r.app, "t1", None).await, home());
+        assert_eq!(r.fs.held(Call::IsDir), 1);
+        let _ = std::fs::remove_dir_all(&r.tmp);
     }
 
     // 2610.0013 S2: and a spawn with no cwd makes no `is_dir` call.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_spawn_whose_cwd_is_not_there_runs_in_home_at_once() {
-        let tmp = canon_tmp("cwd-missing");
-        let (fs, _release) = stuck_fs();
-        let daemon = gated(&tmp, fs.clone()).await;
-        let mut app = connect_app(&daemon).await;
+        let mut r = rig("cwd-missing").await;
 
-        let took = spawn_pwd(&daemon, "t1", Some(&tmp.join("missing")), None).await;
+        let took = spawn_pwd(&r.daemon, "t1", Some(&r.tmp.join("missing")), None).await;
         assert!(took < LIMIT, "the spawn took {took:?}");
-        assert_eq!(printed(&mut app, "t1", None).await, home());
-        assert_eq!(fs.calls(Call::IsDir), 1);
+        assert_eq!(printed(&mut r.app, "t1", None).await, home());
+        assert_eq!(r.fs.calls(Call::IsDir), 1);
 
-        let took = spawn_pwd(&daemon, "t2", None, None).await;
+        let took = spawn_pwd(&r.daemon, "t2", None, None).await;
         assert!(took < LIMIT, "the spawn took {took:?}");
-        assert_eq!(printed(&mut app, "t2", None).await, home());
-        assert_eq!(fs.calls(Call::IsDir), 1);
+        assert_eq!(printed(&mut r.app, "t2", None).await, home());
+        assert_eq!(r.fs.calls(Call::IsDir), 1);
 
-        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_dir_all(&r.tmp);
     }
 
     // 2610.0013 S3
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_spawn_runs_in_its_cwd_that_answers() {
-        let (tmp, dir) = spawn_dir("cwd-live");
-        let (fs, _release) = stuck_fs();
-        let daemon = gated(&tmp, fs.clone()).await;
-        let mut app = connect_app(&daemon).await;
+        let mut r = rig("cwd-live").await;
 
-        spawn_pwd(&daemon, "t1", Some(&dir), None).await;
-        assert_eq!(printed(&mut app, "t1", None).await, dir.to_string_lossy());
-        assert_eq!(fs.calls(Call::IsDir), 1);
+        spawn_pwd(&r.daemon, "t1", Some(&r.dir), None).await;
 
-        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(printed(&mut r.app, "t1", None).await, r.dir.to_string_lossy());
+        assert_eq!(r.fs.calls(Call::IsDir), 1);
+        let _ = std::fs::remove_dir_all(&r.tmp);
     }
 
     // 2610.0013 S4
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_spawn_whose_source_cwd_does_not_answer_runs_in_home() {
-        let (tmp, daemon, mut app, _fs, _release) = after_an_inherit_out("inherit-out").await;
+        let mut r = inherit_out("inherit-out").await;
 
-        end_source(&daemon, &mut app).await;
-        let _ = std::fs::remove_dir_all(&tmp);
+        let took = spawn_pwd(&r.daemon, "t1", None, Some("src")).await;
+
+        assert!(took < 3 * LIMIT, "the spawn took {took:?}");
+        assert_eq!(printed(&mut r.app, "t1", None).await, home());
+        assert_eq!(r.fs.held(Call::PidCwd), 1);
+        end_source(&r.daemon, &mut r.app).await;
+        let _ = std::fs::remove_dir_all(&r.tmp);
     }
 
     // 2610.0013 S4b
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_spawn_whose_inherited_cwd_does_not_answer_runs_in_home() {
-        let (tmp, dir) = spawn_dir("inherit-dir-out");
-        let (fs, _release) = stuck_fs();
-        let daemon = gated(&tmp, fs.clone()).await;
-        let mut app = connect_app(&daemon).await;
-        source_in(&daemon, &mut app, &dir).await;
-        fs.hold(Call::IsDir, &dir);
+        let mut r = rig("inherit-dir-out").await;
+        source_in(&r.daemon, &mut r.app, &r.dir).await;
+        r.fs.hold(Call::IsDir, &r.dir);
 
-        let took = spawn_pwd(&daemon, "t1", None, Some("src")).await;
+        let took = spawn_pwd(&r.daemon, "t1", None, Some("src")).await;
+
         assert!(took < 3 * LIMIT, "the spawn took {took:?}");
-        assert_eq!(printed(&mut app, "t1", None).await, home());
-        assert_eq!((fs.calls(Call::PidCwd), fs.held(Call::IsDir)), (1, 1));
-
-        end_source(&daemon, &mut app).await;
-        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(printed(&mut r.app, "t1", None).await, home());
+        assert_eq!((r.fs.calls(Call::PidCwd), r.fs.held(Call::IsDir)), (1, 1));
+        end_source(&r.daemon, &mut r.app).await;
+        let _ = std::fs::remove_dir_all(&r.tmp);
     }
 
     // 2610.0013 S5
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_spawn_in_a_cwd_that_is_out_runs_in_home_at_once() {
-        let (tmp, dir, daemon, mut app, fs, _release) = after_a_cwd_out("cwd-out-again").await;
+        let mut r = after_a_cwd_out("cwd-out-again").await;
 
-        let took = spawn_pwd(&daemon, "t2", Some(&dir), None).await;
+        let took = spawn_pwd(&r.daemon, "t2", Some(&r.dir), None).await;
+
         assert!(took < LIMIT, "the spawn took {took:?}");
-        assert_eq!(printed(&mut app, "t2", None).await, home());
-        assert_eq!(fs.calls(Call::IsDir), 1);
-
-        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(printed(&mut r.app, "t2", None).await, home());
+        assert_eq!(r.fs.calls(Call::IsDir), 1);
+        let _ = std::fs::remove_dir_all(&r.tmp);
     }
 
     // 2610.0013 S5, from the same source terminal.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_spawn_from_a_source_whose_cwd_is_out_runs_in_home_at_once() {
-        let (tmp, daemon, mut app, fs, _release) = after_an_inherit_out("inherit-out-again").await;
+        let mut r = after_an_inherit_out("inherit-out-again").await;
 
-        let took = spawn_pwd(&daemon, "t2", None, Some("src")).await;
+        let took = spawn_pwd(&r.daemon, "t2", None, Some("src")).await;
+
         assert!(took < LIMIT, "the spawn took {took:?}");
-        assert_eq!(printed(&mut app, "t2", None).await, home());
-        assert_eq!(fs.calls(Call::PidCwd), 1);
-
-        end_source(&daemon, &mut app).await;
-        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(printed(&mut r.app, "t2", None).await, home());
+        assert_eq!(r.fs.calls(Call::PidCwd), 1);
+        end_source(&r.daemon, &mut r.app).await;
+        let _ = std::fs::remove_dir_all(&r.tmp);
     }
 
     // 2610.0013 S6
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_spawn_runs_in_its_cwd_again_once_the_call_returned() {
-        let (tmp, dir, daemon, mut app, _fs, release) = after_a_cwd_out("cwd-back").await;
+        let mut r = after_a_cwd_out("cwd-back").await;
+        drop(r.release);
+        eventually("the return of the is_dir", || !r.daemon.gate().is_out_dir(&r.dir)).await;
 
-        drop(release);
-        eventually("the return of the is_dir", || !daemon.gate().is_out_dir(&dir)).await;
-        spawn_pwd(&daemon, "t2", Some(&dir), None).await;
-        assert_eq!(printed(&mut app, "t2", None).await, dir.to_string_lossy());
+        spawn_pwd(&r.daemon, "t2", Some(&r.dir), None).await;
 
-        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(printed(&mut r.app, "t2", None).await, r.dir.to_string_lossy());
+        let _ = std::fs::remove_dir_all(&r.tmp);
     }
 
     // #279: a duplicate term_id is refused before its cwd is read.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_duplicate_term_id_is_refused_at_once_while_its_cwd_does_not_answer() {
-        let (tmp, dir) = spawn_dir("dup-cwd-out");
-        let (fs, _release) = stuck_fs();
-        let daemon = gated(&tmp, fs.clone()).await;
-        let mut app = connect_app(&daemon).await;
-        source_in(&daemon, &mut app, &dir).await;
-        fs.hold(Call::IsDir, &dir);
+        let mut r = rig("dup-cwd-out").await;
+        source_in(&r.daemon, &mut r.app, &r.dir).await;
+        r.fs.hold(Call::IsDir, &r.dir);
 
-        let took = spawn_pwd(&daemon, "src", Some(&dir), None).await;
+        let took = spawn_pwd(&r.daemon, "src", Some(&r.dir), None).await;
+
         assert!(took < LIMIT, "the refusal took {took:?}");
         let refused = tokio::time::timeout(Duration::from_secs(5), async {
             loop {
-                if let Msg::Err { msg } = app.recv().await.expect("the app is connected") {
+                if let Msg::Err { msg } = r.app.recv().await.expect("the app is connected") {
                     return msg;
                 }
             }
         });
         assert_eq!(refused.await.expect("an err frame"), "term_id already in use: src");
-
-        end_source(&daemon, &mut app).await;
-        let _ = std::fs::remove_dir_all(&tmp);
+        end_source(&r.daemon, &mut r.app).await;
+        let _ = std::fs::remove_dir_all(&r.tmp);
     }
 }
