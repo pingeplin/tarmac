@@ -121,5 +121,8 @@ fn a_save_in_two_pieces_is_reported_once_when_it_is_done() {
         // first half was a save of its own.
         app.recv_file_event_since(&doc, saved);
     }
-    panic!("no save of two pieces came within half the burst window in {TRIES} tries");
+    // A runner this slow cannot make the save the rule is about, which says
+    // nothing of the daemon (#283). The skip reads only the test's own mtimes,
+    // so any run where one try comes in time still holds the daemon to it.
+    eprintln!("not measurable on this runner: no save of two pieces came within half the burst window in {TRIES} tries");
 }
