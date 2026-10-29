@@ -8,6 +8,9 @@ use std::sync::{Mutex, PoisonError};
 
 use tarmac_protocol::{self as proto, Msg};
 
+mod double;
+pub use double::Double;
+
 pub fn hello_ok(
     daemon_version: Option<&str>,
     daemon_pid: Option<u32>,
