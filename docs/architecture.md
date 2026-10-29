@@ -308,7 +308,9 @@ daemon looks:
   `BURST` while it does (#258);
 - after an open or a close that changed the watch set, and after an open whose
   watch failed (see #253 below). A `BoardDelete` changes the watch set too;
-  its look is the send of the active board in the next item;
+  its look is the send of the active board in the next item. Any other open
+  wakes the watcher once it has registered the doc: its stamp was read before
+  that, and a change in between may have woken the watcher too early;
 - when the active board is sent — connect, `BoardSwitch`, `BoardCreate`,
   `BoardDelete` (`conn::change_and_send_active_board`): before the `Restore` is
   built, so that it carries each new `last_changed_ms`, with a `FileEvent` for
@@ -339,12 +341,26 @@ with no `boards` lock held, gives the reading to its caller under that lock,
 and runs one at a time: an older reading must not be applied after a newer
 one. Nothing is pushed from inside it.
 
-A file that is not read in time (`reader::FileReader`, #259) — a stat on a
+A file that is not read in time (`reader::PathGate`, #259) — a stat on a
 network volume that is gone — is not in the reading: that doc gets no
 `FileEvent` from that look, and the other docs, a connect, a board switch and a
 `DocRefresh` still answer. The look waits at most twice `READ_LIMIT` (1 s),
 whatever the number of such docs, and a later look skips a doc whose read has
 not returned yet.
+
+`PathGate` runs every file-system call that it is given on a blocking thread
+(`PathFs`: the resolve of an opened path, a stamp, the `.git` walk), and its
+caller waits at most `READ_LIMIT`. A key (a path) has one call at a time,
+for the opens and the looks alike. An open that finds its key busy waits for
+that call within its own limit, then makes its own; a look gives a busy key no
+entry and does not wait. A stat cannot be stopped, so a key whose caller
+stopped waiting is out: an open or a look that comes after that gets `Out`
+at once until the call returns, and an open that was waiting for the call
+already waits to its own limit. A dead path so holds one blocking thread,
+however many opens and looks ask for it. When an out call returns, the gate
+notifies the watcher's wake, so a look runs and reads the doc. An open's
+resolve is keyed by the path as given and a look by the canonical path, so a
+doc opened through a symlink can hold two calls.
 
 Two limits of a look. It can come in the middle of a doc's own save: a save
 that takes longer than `BURST`, or one that another file of a watched
@@ -352,10 +368,16 @@ directory woke the daemon for just before. The app then reads the file as it
 is at that moment, and the next look corrects it. And a file that takes longer
 than `READ_LIMIT` to read each time is never reported by a look.
 
-Only `Daemon::look` has the time limit. An open (`docs::handle_open`,
-`Daemon::open_doc`) and the load of the state file at startup
-(`persist::load`, which stats each persisted doc) still read on their own task
-(a follow-up).
+An open (`docs::handle_open`) reads through the gate too: the resolve of
+its path (canonicalize and stat, keyed by the path as given), and the `.git`
+walk of a doc that is new to its board (keyed by the canonical path), before
+the `boards` lock is taken. An open whose resolve does not answer in time
+fails with `cannot open {path}: did not answer in 1s`, and is not finished
+later. A walk that does not answer gives the doc no repo, and a re-open does
+not walk again. The doc's `seen` is the stamp of the resolve. Still with no
+time limit, on their own task: notify's `watch` and `unwatch` (under the
+watcher's lock), and the load of the state file at startup (`persist::load`,
+which stats each persisted doc and walks for its repo) — follow-ups of #267.
 
 The watcher is behind `WakeSource` (`watch.rs`): `watch(dir)`, `unwatch(dir)`,
 and a wake that carries no detail. So a change whose wake was lost is reported
@@ -396,11 +418,12 @@ next, and that send looks at the docs of every board
 
 `tarmac open` end-to-end: the CLI canonicalizes the path, connects, reads
 `TARMAC_TERM_ID` from its env, and sends `Open`. The daemon re-canonicalizes
-(FSEvents reports resolved paths), validates it's a regular file, **resolves
-the target board** (explicit `board_id` → caller term's board → active), counts
-the doc toward its parent dir's watch, upserts the doc into that board's registry,
-derives repo metadata (walks parents for `.git`; an FNV-1a color index, which
-the app maps onto its palette without hashing anything itself), and pushes
+(FSEvents reports resolved paths) and validates it's a regular file, through
+the gate, **resolves the target board** (explicit `board_id` → caller term's
+board → active), derives repo metadata for a doc new to that board (walks
+parents for `.git`, through the gate; an FNV-1a color index, which the app maps
+onto its palette without hashing anything itself), counts the doc toward its
+parent dir's watch, upserts the doc into that board's registry, and pushes
 `DocOpened`.
 
 ### Persistence

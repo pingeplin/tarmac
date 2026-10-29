@@ -7,6 +7,7 @@ use tarmac_protocol::Msg;
 use tracing::debug;
 
 use crate::boards::{DocInfo, FileStamp, Registry, epoch_ms};
+use crate::reader::{Out, PathFs};
 use crate::state::Daemon;
 
 pub struct RepoInfo {
@@ -48,23 +49,35 @@ pub async fn handle_open(
     if !p.is_absolute() {
         return Err(format!("path is not absolute: {raw_path}"));
     }
-    // FSEvents reports resolved paths and the registry key must match them
-    // (e.g. /tmp -> /private/tmp), so canonicalize daemon-side too.
-    let canon =
-        std::fs::canonicalize(p).map_err(|e| format!("cannot open {raw_path}: {e}"))?;
-    let meta =
-        std::fs::metadata(&canon).map_err(|e| format!("cannot stat {}: {e}", canon.display()))?;
-    if !meta.is_file() {
-        return Err(format!("not a regular file: {}", canon.display()));
-    }
+    let gate = daemon.gate();
+    let resolve = {
+        let p = p.to_owned();
+        move |fs: &dyn PathFs| fs.resolve(&p)
+    };
+    let (canon, seen) = gate
+        .run(p, resolve)
+        .await
+        .map_err(|Out| gate.did_not_answer(&format!("cannot open {raw_path}")))??;
     // `None` resolves to the active board inside `registry_mut`.
     let target = match (board_id, &term_id) {
         (Some(id), _) => Some(id),
         (None, Some(t)) => daemon.term_boards.lock().await.get(t).cloned(),
         (None, None) => None,
     };
+    // A doc already on the board keeps its repo (`upsert_doc`), so only a new
+    // one is walked, with no lock held. A walk that is out gives no repo.
+    let registered = daemon.boards.lock().await.registry_mut(target.as_deref()).docs.contains_key(&canon);
+    let repo = if registered {
+        None
+    } else {
+        let walk = {
+            let canon = canon.clone();
+            move |fs: &dyn PathFs| fs.repo_of(&canon)
+        };
+        gate.run(&canon, walk).await.ok().flatten()
+    };
     let entry = daemon
-        .open_doc(target.as_deref(), &canon, via, term_id)
+        .open_doc(target.as_deref(), &canon, via, term_id, Some(seen), repo)
         .await
         .map_err(|e| e.to_string())?;
     debug!("doc opened via {via}: {}", canon.display());
@@ -73,13 +86,15 @@ pub async fn handle_open(
 }
 
 /// Registers `path` in `reg`, or refreshes the doc already there. True when
-/// the doc is new to `reg`; `seen` is then its file as it is now.
+/// the doc is new to `reg`; `seen` is then its file as it is now, and `repo`
+/// its repo. A doc already there keeps its own.
 pub fn upsert_doc(
     reg: &mut Registry,
     path: &Path,
     via: &str,
     term_id: Option<String>,
     seen: Option<FileStamp>,
+    repo: Option<RepoInfo>,
 ) -> bool {
     match reg.docs.get_mut(path) {
         Some(info) => {
@@ -97,7 +112,6 @@ pub fn upsert_doc(
             false
         }
         None => {
-            let repo = derive_repo(path);
             reg.docs.insert(
                 path.to_owned(),
                 DocInfo {
