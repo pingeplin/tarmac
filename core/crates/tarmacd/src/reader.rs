@@ -169,6 +169,10 @@ impl PathGate {
         PathGate { fs, limit, keys: Arc::new(keys) }
     }
 
+    pub fn limit(&self) -> Duration {
+        self.limit
+    }
+
     /// The answer to a caller of `what` that got `Out`.
     pub fn did_not_answer(&self, what: &str) -> String {
         format!("{what}: did not answer in {:?}", self.limit)
@@ -209,7 +213,6 @@ impl PathGate {
     }
 
     /// True while an out key is `dir` or a file in it.
-    #[cfg_attr(not(test), expect(dead_code, reason = "for the watcher thread of #267"))]
     pub fn is_out_dir(&self, dir: &Path) -> bool {
         let busy = self.keys.busy.lock().expect("keys lock");
         busy.iter().any(|(key, b)| b.out && (key == dir || key.parent() == Some(dir)))
