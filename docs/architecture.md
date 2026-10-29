@@ -798,7 +798,15 @@ handlers they post to. No cookies, cache or storage outlive the app.
   prose is laid out once at a fixed 3× and scaled by `zoom/3`, so a board zoom
   never moves a wrap point and the scale is never an upsample. While the zoom
   is changing the web view is left alone; it takes its new size once the zoom
-  has held still for 150 ms.
+  has held still for 150 ms. WebKit draws a resized web view in its own
+  process and presents that frame a few display frames later, so the host's
+  bounds wait for it (`PresentedResize`, through WebKit's private
+  `_doAfterNextPresentationUpdate:`, with a 250 ms fallback): a shrink sends
+  the layout first, a grow takes the new frame under the bounds it was last
+  fitted under. So after a zoom the old frame stays stretched, as it was while
+  the zoom moved, until the new one is drawn, and a web view that grows never
+  shows WebKit's default colour beside its old frame. The same host and the
+  same wait carry an HTML card's web view, on a card resize as on a zoom.
 - **Scroll.** The reading position is kept as `scrollTop / scrollHeight`, so it
   survives a re-render, a zoom and a card resize. The page reports the
   scroller's position to the card on every scroll and layout, for the scroll
@@ -918,7 +926,9 @@ no permission-policy feature, and no handle on the app.
   document is laid out once at root zoom 3 in a box 3× the card's and shown
   scaled by `zoom/3`, so a board zoom never re-wraps it. **Reveal**
   (`content="reveal"`): the document is laid out at the card's real on-screen
-  pixels and sized again once the zoom has settled.
+  pixels and sized again once the zoom has settled. Either way the web view
+  takes a new size as a doc card's does (*Zoom* above): it keeps its old frame
+  until WebKit has presented one at the new size.
 - **Live reload.** A `FileEvent` with a new mtime changes `?v=` and reloads the
   document — its JS state is lost, its console kept; an unchanged mtime reloads
   nothing.
