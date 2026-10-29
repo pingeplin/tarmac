@@ -1736,7 +1736,9 @@ mod tests {
         let doc = write_doc(tmp.join("d/a.md"));
         let (stuck, release) = stuck_fs();
         let returned = Arc::new(AtomicU32::new(0));
-        let reader = Arc::new(PathGate::new(stuck.clone(), LIMIT, {
+        // Long enough that a loaded runner reaches each step in its time.
+        let limit = Duration::from_secs(1);
+        let reader = Arc::new(PathGate::new(stuck.clone(), limit, {
             let returned = returned.clone();
             Arc::new(move || {
                 returned.fetch_add(1, Ordering::SeqCst);
@@ -1751,7 +1753,7 @@ mod tests {
         let first = run();
         eventually("the first call", || stuck.held(Call::Stamp) == 1).await;
         let waiter = run();
-        tokio::time::sleep(LIMIT * 7 / 10).await;
+        tokio::time::sleep(limit * 7 / 10).await;
         release.send(()).unwrap();
         eventually("the waiter's own call", || stuck.held(Call::Stamp) == 2).await;
         assert!(first.await.unwrap().is_ok());
@@ -1760,7 +1762,7 @@ mod tests {
         let after = run();
         // Time for it to reach the waiter's call, well before that call has
         // had a full limit.
-        tokio::time::sleep(LIMIT / 5).await;
+        tokio::time::sleep(limit / 5).await;
         release.send(()).unwrap();
         release.send(()).unwrap();
         assert_eq!(within(after).await.ok(), Some(crate::reader::stamp(&doc)));
