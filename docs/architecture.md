@@ -385,14 +385,18 @@ entry and does not wait. A stat cannot be stopped, so a caller that stops
 waiting leaves its call on its thread. A call that is left is out once it has
 had a full limit: its caller's, or, for an open that waited for an earlier
 call first, a limit from the call's own start, so a slow call is not taken
-for a dead one (#280). An open or a look that comes to an out key gets `Out`
+for a dead one (#280). A read of a look's batch has the batch's limit: one
+that the batch started just before its deadline is out as soon as the batch
+leaves it, as before. An open or a look that comes to an out key gets `Out`
 at once until the call returns, and an open that was waiting for the call
 already waits to its own limit. A dead path so holds one blocking thread,
 however many opens and looks ask for it. When a call that was left returns,
 the gate notifies the watcher's wake, so a look runs and reads the doc. Each
 call is one flight: a claim (wait for a busy key, or skip it), the call on a
 blocking thread, and a landing that leaves the call at its caller's deadline.
-A look's batch runs its flights one after the other on one thread. An open's
+A look's batch runs its flights one after the other on one thread, waits
+once for that thread or its deadline, then takes each answer that is there
+and leaves the read in flight. An open's
 resolve is keyed by the path as given and a look by the canonical path, so a
 doc opened through a symlink can hold two calls.
 
