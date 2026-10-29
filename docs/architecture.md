@@ -260,6 +260,18 @@ argv, else `$SHELL -il`), sets `cwd`, `TERM=xterm-256color`, and
 `TARMAC_TERM_ID=<term_id>` in the child env — which is exactly what the CLI reads
 back for `open` attribution.
 
+The cwd is read before that, through the gate (`conn::spawn_cwd`; the gate is
+in *Docs & file watching*), because a cwd on a volume that is gone would block
+the spawn (#279). An `inherit_cwd_from` reads the source terminal's live cwd
+(`PathFs::pid_cwd` of its foreground process-group leader, keyed by the pid),
+and an explicit `cwd` wins over it. Then that cwd is checked with
+`PathFs::is_dir`, keyed by the cwd path. A cwd that is not a directory, or a
+call that is out, starts the shell in `$HOME` with no error; `$HOME` itself is
+not checked. Each call waits at most `READ_LIMIT`, so a spawn with
+`inherit_cwd_from` waits at most twice that. Not closed: a volume that dies
+after `is_dir` answered and before the child's `chdir` still blocks the spawn,
+in portable-pty's own `is_dir` or the `chdir`.
+
 Each terminal fans out into blocking threads (reader → 64 KiB chunks, writer,
 `child.wait()` → exit code via oneshot, a 750 ms process-name poll) plus one
 async **pump** that owns the daemon handle. The pump is the only place with a
@@ -362,7 +374,8 @@ whatever the number of such docs, and a later look skips a doc whose read has
 not returned yet.
 
 `PathGate` runs every file-system call that it is given on a blocking thread
-(`PathFs`: the resolve of an opened path, a stamp, the `.git` walk), and its
+(`PathFs`: the resolve of an opened path, a stamp, the `.git` walk, and a
+new terminal's cwd), and its
 caller waits at most `READ_LIMIT`. A key (a path) has one call at a time,
 for the opens and the looks alike. An open that finds its key busy waits for
 that call within its own limit, then makes its own; a look gives a busy key no
