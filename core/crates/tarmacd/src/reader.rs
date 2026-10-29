@@ -39,6 +39,8 @@ pub trait PathFs: Send + Sync {
     fn resolve(&self, raw: &Path) -> Result<(PathBuf, FileStamp), String>;
     fn stamp(&self, path: &Path) -> Option<FileStamp>;
     fn repo_of(&self, doc: &Path) -> Option<RepoInfo>;
+    fn is_dir(&self, path: &Path) -> bool;
+    fn pid_cwd(&self, pid: libc::pid_t) -> Option<String>;
 }
 
 pub struct RealFs;
@@ -64,6 +66,14 @@ impl PathFs for RealFs {
     fn repo_of(&self, doc: &Path) -> Option<RepoInfo> {
         crate::docs::derive_repo(doc)
     }
+
+    fn is_dir(&self, path: &Path) -> bool {
+        path.is_dir()
+    }
+
+    fn pid_cwd(&self, pid: libc::pid_t) -> Option<String> {
+        crate::proc::pid_cwd(pid)
+    }
 }
 
 /// Runs each call on a blocking thread, and its caller waits at most `limit`.
@@ -77,7 +87,8 @@ impl PathFs for RealFs {
 ///
 /// An open's resolve is keyed by the path as given, a look's stamp by the
 /// canonical one: a doc opened through a symlink can hold two calls. A
-/// startup walk is keyed by its directory.
+/// startup walk is keyed by its directory. A spawn's `is_dir` is keyed by its
+/// cwd, and a `pid_cwd` by `\0pid/<pid>`: no path holds a NUL byte.
 pub struct PathGate {
     fs: Arc<dyn PathFs>,
     limit: Duration,
@@ -211,6 +222,11 @@ impl PathGate {
             // It returned as the limit came: its answer is there.
             Err(_) => Ok(task.await.expect("a gate call does not panic")),
         }
+    }
+
+    /// The cwd of `pid`, one call per pid at a time.
+    pub async fn pid_cwd(&self, pid: libc::pid_t) -> Result<Option<String>, Out> {
+        self.run(&PathBuf::from(format!("\0pid/{pid}")), move |fs| fs.pid_cwd(pid)).await
     }
 
     /// True while an out key is `dir` or a file in it.

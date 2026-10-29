@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tarmac_protocol::{self as proto, Msg, PROTOCOL_VERSION, frame};
@@ -237,9 +237,7 @@ async fn app_session(
 async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
     match msg {
         Msg::SpawnTerm { term_id, cols, rows, cwd, cmd, board_id, inherit_cwd_from } => {
-            let board = owning_board(daemon, board_id).await;
-            let cwd = spawn_cwd(daemon, cwd, inherit_cwd_from).await;
-            spawn_term(daemon, term_id, cols, rows, cwd, cmd, board).await;
+            spawn_requested(daemon, term_id, (cols, rows), cwd, cmd, board_id, inherit_cwd_from).await;
         }
         Msg::Input { term_id, bytes } => match daemon.term(&term_id).await {
             Some(h) => {
@@ -344,6 +342,25 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
     }
 }
 
+pub(crate) async fn spawn_requested(
+    daemon: &Arc<Daemon>,
+    term_id: String,
+    (cols, rows): (u16, u16),
+    cwd: Option<String>,
+    cmd: Option<Vec<String>>,
+    board_id: Option<String>,
+    inherit_cwd_from: Option<String>,
+) {
+    // Before the cwd, whose read can take the gate's limit. term::spawn checks
+    // again, for a spawn of the same id in that time.
+    if let Err(e) = term::check_free(daemon, &term_id).await {
+        return spawn_failed(daemon, e).await;
+    }
+    let board = owning_board(daemon, board_id).await;
+    let cwd = spawn_cwd(daemon, cwd, inherit_cwd_from).await;
+    spawn_term(daemon, term_id, cols, rows, cwd, cmd, board).await;
+}
+
 // An explicit, known board_id wins, else the active board.
 async fn owning_board(daemon: &Daemon, board_id: Option<String>) -> BoardId {
     let boards = daemon.boards.lock().await;
@@ -353,17 +370,25 @@ async fn owning_board(daemon: &Daemon, board_id: Option<String>) -> BoardId {
 }
 
 // A new terminal inherits its source's LIVE cwd, not its spawn cwd. An explicit
-// `cwd` always wins; an unknown/dead source (or an OS lookup failure) falls
-// through to term::spawn's own $HOME default — never an error.
+// `cwd` always wins. Both reads go through the gate, since a cwd on a volume
+// that is gone does not answer: an unknown/dead source, a cwd that is not a
+// directory, or a read that is out falls through to term::spawn's own $HOME
+// default — never an error. $HOME itself is not checked.
 async fn spawn_cwd(
     daemon: &Daemon,
     cwd: Option<String>,
     inherit_cwd_from: Option<String>,
 ) -> Option<String> {
-    if cwd.is_some() {
-        return cwd;
-    }
-    daemon.term(&inherit_cwd_from?).await?.live_cwd()
+    let cwd = match cwd {
+        Some(cwd) => cwd,
+        None => {
+            let pid = daemon.term(&inherit_cwd_from?).await?.foreground_pid()?;
+            daemon.gate().pid_cwd(pid).await.ok()??
+        }
+    };
+    let path = PathBuf::from(&cwd);
+    let is_dir = daemon.gate().run(&path.clone(), move |fs| fs.is_dir(&path)).await;
+    matches!(is_dir, Ok(true)).then_some(cwd)
 }
 
 // No board_list re-push on a successful spawn: the app initiated it for a board
@@ -382,11 +407,13 @@ async fn spawn_term(
         Ok(()) => {
             daemon.term_boards.lock().await.insert(term_id, board);
         }
-        Err(e) => {
-            warn!("spawn_term failed: {e}");
-            daemon.push(Msg::Err { msg: e }).await;
-        }
+        Err(e) => spawn_failed(daemon, e).await,
     }
+}
+
+async fn spawn_failed(daemon: &Daemon, e: String) {
+    warn!("spawn_term failed: {e}");
+    daemon.push(Msg::Err { msg: e }).await;
 }
 
 async fn delete_board(daemon: &Arc<Daemon>, conn: &mut AppConn, board_id: &str) {

@@ -86,18 +86,11 @@ impl TermHandle {
         }
     }
 
-    /// The foreground process-group leader. A poisoned lock yields `None`.
-    fn foreground_pid(&self) -> Option<libc::pid_t> {
+    /// The foreground process-group leader: at a bare prompt the shell, and
+    /// while a job runs the job — the pid whose name the card title shows and
+    /// whose cwd a new terminal inherits. A poisoned lock yields `None`.
+    pub fn foreground_pid(&self) -> Option<libc::pid_t> {
         self.master.lock().ok()?.process_group_leader()
-    }
-
-    /// The CURRENT working directory of the foreground job's leader (never the
-    /// spawn-time cwd): at a bare prompt that leader is the shell, and while a
-    /// job runs it is the job — the same pid whose name the card title shows.
-    /// `master` is locked only for the pid read, so this is safe in an async
-    /// handler. `None` when the pty or the OS lookup does not resolve.
-    pub fn live_cwd(&self) -> Option<String> {
-        proc::pid_cwd(self.foreground_pid()?)
     }
 }
 
@@ -125,6 +118,13 @@ fn force_utf8_ctype_decision(lookup: impl Fn(&str) -> Option<String>) -> bool {
     true
 }
 
+pub async fn check_free(daemon: &Daemon, term_id: &str) -> Result<(), String> {
+    if daemon.terms.lock().await.contains_key(term_id) {
+        return Err(format!("term_id already in use: {term_id}"));
+    }
+    Ok(())
+}
+
 pub async fn spawn(
     daemon: Arc<Daemon>,
     term_id: String,
@@ -133,9 +133,7 @@ pub async fn spawn(
     cwd: Option<String>,
     cmd: Option<Vec<String>>,
 ) -> Result<(), String> {
-    if daemon.terms.lock().await.contains_key(&term_id) {
-        return Err(format!("term_id already in use: {term_id}"));
-    }
+    check_free(&daemon, &term_id).await?;
 
     let argv = match cmd {
         Some(v) if !v.is_empty() => v,
