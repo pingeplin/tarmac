@@ -11,7 +11,9 @@ import TarmacKit
 /// rasterised at real screen points. The page inside carries the zoom itself.
 ///
 /// While the zoom is changing the bounds are left alone, so the card's stretch
-/// shows for those frames; once it has held still they take the new size.
+/// shows for those frames; once it has held still they take the new size, and
+/// on screen they wait for the web view to present a frame at it
+/// (`PresentedResize`).
 @MainActor
 final class ScreenSpaceHost: NSView {
     /// The zoom the content is sized for.
@@ -25,6 +27,8 @@ final class ScreenSpaceHost: NSView {
 
     private let content: NSView
     private var settle: DispatchWorkItem?
+    private var resize = PresentedResize()
+    private var fallback: DispatchWorkItem?
     private var knowsZoom = false
     private var backing = BackingScaleWatch()
 
@@ -87,11 +91,65 @@ final class ScreenSpaceHost: NSView {
     private func fit() {
         let size = CGSize(width: frame.width * settledZoom, height: frame.height * settledZoom)
         guard size.width > 0, size.height > 0 else { return }
+        let deferrable = window != nil && !isHiddenOrHasHiddenAncestor && content.responds(to: Self.afterPresentation)
+        switch resize.plan(content: content.frame.size, target: size, deferrable: deferrable) {
+        case .now(let relayout): fitNow(size, relayout: relayout)
+        case .pending(let steps): run(steps)
+        case .staged(let generation, let steps):
+            run(steps)
+            awaitPresentation(generation)
+        }
+    }
+
+    private func fitNow(_ size: CGSize, relayout: Bool) {
+        cancelFallback()
         if bounds.size != size { setBoundsSize(size) }
         let target = alignedContentFrame(size)
-        guard !Self.same(target, content.frame) else { return }
-        onResize?(target.size)
-        content.frame = target
+        let moved = !Self.same(target, content.frame)
+        if moved || relayout { onResize?(target.size) }
+        if moved { content.frame = target }
+    }
+
+    private func run(_ steps: [PresentedResize.Step]) {
+        for step in steps {
+            switch step {
+            case .bounds(let size): if bounds.size != size { setBoundsSize(size) }
+            case .contentFrame(let size): content.frame = CGRect(origin: .zero, size: size)
+            case .layout(let size): onResize?(size)
+            case .fit(let size): content.frame = alignedContentFrame(size)
+            }
+        }
+    }
+
+    /// WebKit presents a resized web view's first frame asynchronously, in its
+    /// own process, and says so only through this private call (macOS 10.12+),
+    /// which WebKit's own `setFrameSize:` waits on. Its block runs in the
+    /// transaction that shows that frame. It has no timeout, so a timer stands in.
+    private static let afterPresentation = NSSelectorFromString("_doAfterNextPresentationUpdate:")
+
+    /// The timer is armed before the call: WebKit runs the block at once,
+    /// inside `perform`, when the page has no process to draw it.
+    private func awaitPresentation(_ generation: UInt64) {
+        let presented: @convention(block) () -> Void = { [weak self] in
+            MainActor.assumeIsolated { self?.presented(generation) }
+        }
+        cancelFallback()
+        let work = DispatchWorkItem(block: presented)
+        fallback = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(PresentedResize.fallbackMs), execute: work)
+        content.perform(Self.afterPresentation, with: presented)
+    }
+
+    private func presented(_ generation: UInt64) {
+        guard let round = resize.presented(generation) else { return }
+        cancelFallback()
+        run(round.steps)
+        if let next = round.awaiting { awaitPresentation(next) }
+    }
+
+    private func cancelFallback() {
+        fallback?.cancel()
+        fallback = nil
     }
 
     /// A rect taken to the window and back comes home a few ulps off.
