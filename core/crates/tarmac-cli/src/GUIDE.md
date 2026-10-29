@@ -20,8 +20,8 @@ tarmac open <path>
 
 Fire-and-forget: it connects, names the doc, and exits. Rules:
 
-- The path must be an **existing regular file**. It is canonicalized, so
-  relative paths work.
+- The path must be an **existing regular file**; Tarmac checks it. Relative
+  paths work: they are made absolute against your working directory.
 - Exit status: `0` the card was created, `1` rejected or no Tarmac running,
   `2` bad usage. A non-zero exit is never fatal to your work — Tarmac may simply
   not be running. Do not abort a task because `tarmac open` failed.

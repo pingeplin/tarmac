@@ -463,8 +463,10 @@ two. Its one caller, the `BoardDelete` handler, also sends the active board
 next, and that send looks at the docs of every board
 (`conn::change_and_send_active_board`).
 
-`tarmac open` end-to-end: the CLI canonicalizes the path, connects, reads
-`TARMAC_TERM_ID` from its env, and sends `Open`. The daemon re-canonicalizes
+`tarmac open` end-to-end: the CLI makes the path absolute with
+`std::path::absolute` (no file-system call on the path, so a hung volume cannot
+hang it), connects, reads `TARMAC_TERM_ID` from its env, and sends `Open`; on
+`Ack` it prints `opened` with the path it sent. The daemon canonicalizes
 (FSEvents reports resolved paths) and validates it's a regular file, through
 the gate, **resolves the target board** (explicit `board_id` → caller term's
 board → active), derives repo metadata for a doc new to that board (walks
@@ -1407,7 +1409,7 @@ effect; and `theme`: the `choice`, the variant `in_effect` and the `name` (the i
 ## 5 · Key data flows
 
 **`tarmac open` → a card.** Agent runs `tarmac open plan.md` inside a tarmac pty
-→ CLI canonicalizes + reads `TARMAC_TERM_ID` + sends `Open` → daemon resolves the
+→ CLI makes the path absolute + reads `TARMAC_TERM_ID` + sends `Open` → daemon resolves the
 caller's board, counts the doc toward its parent dir's watch, upserts the doc, derives repo
 metadata, pushes `DocOpened` → app lands a `fresh` card in the first free slot
 right of the caller terminal, with a provenance edge → agent edits the file →

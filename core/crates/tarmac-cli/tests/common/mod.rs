@@ -6,8 +6,12 @@ use std::process::{Command, ExitStatus, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
 
+/// Pinned to an absent socket so no test can reach a real daemon; a test that
+/// needs one sets its own `TARMAC_SOCKET`.
 pub fn tarmac() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_tarmac"))
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_tarmac"));
+    cmd.env("TARMAC_SOCKET", scratch().join("absent.sock"));
+    cmd
 }
 
 static SPAWN: Mutex<()> = Mutex::new(());
