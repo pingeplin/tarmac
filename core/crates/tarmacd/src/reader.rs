@@ -2,11 +2,14 @@
 //! limit (`PathGate`). It compares nothing and knows no doc or board: it gives
 //! each call its answer, or `Out` when the call did not return in time.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+use tokio::sync::watch;
 
 use crate::boards::FileStamp;
 use crate::docs::RepoInfo;
@@ -61,35 +64,102 @@ impl PathFs for RealFs {
 }
 
 /// Runs each call on a blocking thread, and its caller waits at most `limit`.
-/// A call cannot be stopped, so a key whose call is out (a volume that is
-/// gone) is not tried again until that call returns: it holds one thread, not
-/// one for each caller. When it returns, the gate calls `returned`.
+/// A key has one call at a time: a `run` that finds its key busy waits for
+/// that call within its own limit, then makes its own; a look gives a busy key
+/// no entry. A call cannot be stopped, so a key whose caller stopped waiting
+/// (out: a volume that is gone) answers `Out` at once until its call returns.
+/// A dead path holds one thread, however many callers ask for it. When an out
+/// call returns, the gate calls `returned`.
 pub struct PathGate {
     fs: Arc<dyn PathFs>,
     limit: Duration,
-    out: Arc<Mutex<HashSet<PathBuf>>>,
+    keys: Arc<Keys>,
+}
+
+/// The keys whose call has not returned.
+struct Keys {
+    busy: Mutex<HashMap<PathBuf, Busy>>,
+    next_call: AtomicU64,
     returned: Arc<dyn Fn() + Send + Sync>,
 }
 
-/// What the thread of a look has read, in the order of its paths: the path it
-/// reads now is the one after the last.
+struct Busy {
+    call: u64,
+    out: bool,
+    /// Dropped when the call returns, which wakes the callers waiting for it.
+    ended: watch::Sender<()>,
+}
+
+enum Start {
+    Flight(Flight),
+    Wait(watch::Receiver<()>),
+    Out,
+}
+
+/// One call on a key. Its drop, also in a panic, ends the call.
+struct Flight {
+    keys: Arc<Keys>,
+    key: PathBuf,
+    call: u64,
+}
+
+impl Keys {
+    fn start(self: &Arc<Self>, key: &Path) -> Start {
+        let mut busy = self.busy.lock().expect("keys lock");
+        match busy.get(key) {
+            Some(b) if b.out => Start::Out,
+            // Subscribed under the lock: an end after it is not missed.
+            Some(b) => Start::Wait(b.ended.subscribe()),
+            None => {
+                let call = self.next_call.fetch_add(1, Ordering::Relaxed);
+                busy.insert(key.to_owned(), Busy { call, out: false, ended: watch::channel(()).0 });
+                Start::Flight(Flight { keys: self.clone(), key: key.to_owned(), call })
+            }
+        }
+    }
+
+    /// Marks `call` out. False when it has returned already.
+    fn leave(&self, key: &Path, call: u64) -> bool {
+        match self.busy.lock().expect("keys lock").get_mut(key) {
+            Some(b) if b.call == call => {
+                b.out = true;
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Drop for Flight {
+    fn drop(&mut self) {
+        let ended = {
+            let mut busy = self.keys.busy.lock().expect("keys lock");
+            match busy.get(&self.key) {
+                Some(b) if b.call == self.call => busy.remove(&self.key),
+                _ => None,
+            }
+        };
+        if ended.is_some_and(|b| b.out) {
+            (self.keys.returned)();
+        }
+    }
+}
+
+/// What the thread of a look has done, in the order of its paths: each path
+/// before `at` is read or skipped, and `reading` is the call on `paths[at]`
+/// while it is read.
 #[derive(Default)]
 struct Run {
     read: Vec<(PathBuf, Option<FileStamp>)>,
+    at: usize,
+    reading: Option<u64>,
     left: bool,
-}
-
-/// One call of `PathGate::run`, as its thread and its caller agree on it.
-#[derive(PartialEq)]
-enum Call {
-    Running,
-    Done,
-    Left,
 }
 
 impl PathGate {
     pub fn new(fs: Arc<dyn PathFs>, limit: Duration, returned: Arc<dyn Fn() + Send + Sync>) -> Self {
-        PathGate { fs, limit, out: Arc::default(), returned }
+        let keys = Keys { busy: Mutex::default(), next_call: AtomicU64::new(0), returned };
+        PathGate { fs, limit, keys: Arc::new(keys) }
     }
 
     /// The answer to a caller of `what` that got `Out`.
@@ -103,131 +173,130 @@ impl PathGate {
         key: &Path,
         op: impl FnOnce(&dyn PathFs) -> T + Send + 'static,
     ) -> Result<T, Out> {
-        if self.out.lock().expect("out lock").contains(key) {
-            return Err(Out);
-        }
-        let call = Arc::new(Mutex::new(Call::Running));
-        let mut task = tokio::task::spawn_blocking({
-            let (fs, out, returned, call, key) =
-                (self.fs.clone(), self.out.clone(), self.returned.clone(), call.clone(), key.to_owned());
-            move || {
-                let value = op(&*fs);
-                let mut call = call.lock().expect("call lock");
-                if *call == Call::Left {
-                    out.lock().expect("out lock").remove(&key);
-                    drop(call);
-                    returned();
-                } else {
-                    *call = Call::Done;
+        let deadline = tokio::time::Instant::now() + self.limit;
+        let flight = loop {
+            match self.keys.start(key) {
+                Start::Flight(flight) => break flight,
+                Start::Out => return Err(Out),
+                Start::Wait(mut ended) => {
+                    if tokio::time::timeout_at(deadline, ended.changed()).await.is_err() {
+                        return Err(Out);
+                    }
                 }
-                value
+            }
+        };
+        let call = flight.call;
+        let mut task = tokio::task::spawn_blocking({
+            let fs = self.fs.clone();
+            move || {
+                let _flight = flight;
+                op(&*fs)
             }
         });
-        if let Ok(joined) = tokio::time::timeout(self.limit, &mut task).await {
-            return Ok(joined.expect("a gate call does not panic"));
+        match tokio::time::timeout_at(deadline, &mut task).await {
+            Ok(joined) => Ok(joined.expect("a gate call does not panic")),
+            Err(_) if self.keys.leave(key, call) => Err(Out),
+            // It returned as the limit came: its answer is there.
+            Err(_) => Ok(task.await.expect("a gate call does not panic")),
         }
-        {
-            // Under the call's lock, so that its thread finds the key in `out`
-            // when it returns, or has returned already.
-            let mut call = call.lock().expect("call lock");
-            if *call == Call::Running {
-                *call = Call::Left;
-                self.out.lock().expect("out lock").insert(key.to_owned());
-                return Err(Out);
-            }
-        }
-        Ok(task.await.expect("a gate call does not panic"))
     }
 
     /// True while an out key is `dir` or a file in it.
     #[cfg_attr(not(test), expect(dead_code, reason = "for the watcher thread of #267"))]
     pub fn is_out_dir(&self, dir: &Path) -> bool {
-        self.out.lock().expect("out lock").iter().any(|key| key == dir || key.parent() == Some(dir))
+        let busy = self.keys.busy.lock().expect("keys lock");
+        busy.iter().any(|(key, b)| b.out && (key == dir || key.parent() == Some(dir)))
     }
 
     /// Each file as it is now, for a look: on one blocking thread, one after
     /// the other, since one thread each would cost a 300-doc switch five times
     /// as much. When they are not read within `limit`, the read that is out is
     /// left on its thread, and the files after it are read on a thread each,
-    /// within one more `limit`. A path whose read is out has no entry: it is
+    /// within one more `limit`. A path whose key is busy has no entry: it is
     /// not known, which is not `None` (gone).
     pub async fn stamps(&self, paths: impl IntoIterator<Item = PathBuf>) -> HashMap<PathBuf, Option<FileStamp>> {
-        let paths: Arc<[PathBuf]> = {
-            let out = self.out.lock().expect("out lock");
-            paths.into_iter().filter(|p| !out.contains(p)).collect()
-        };
+        let paths: Arc<[PathBuf]> = paths.into_iter().collect();
         let run = Arc::new(Mutex::new(Run::default()));
         let reading = tokio::task::spawn_blocking({
-            let (fs, out, returned, run, paths) =
-                (self.fs.clone(), self.out.clone(), self.returned.clone(), run.clone(), paths.clone());
-            move || read_each(&*fs, &out, &*returned, &run, &paths)
+            let (fs, keys, run, paths) = (self.fs.clone(), self.keys.clone(), run.clone(), paths.clone());
+            move || read_each(&*fs, &keys, &run, &paths)
         });
         let finished = tokio::time::timeout(self.limit, reading).await.is_ok();
-        let (done, mut now) = {
+        let (rest, mut now) = {
             let mut run = run.lock().expect("run lock");
-            let done = run.read.len();
-            if !finished && done < paths.len() {
+            let rest = if finished {
+                paths.len()
+            } else {
                 run.left = true;
-                self.out.lock().expect("out lock").insert(paths[done].clone());
-            }
-            (done, run.read.drain(..).collect::<HashMap<_, _>>())
+                match run.reading {
+                    Some(call) => {
+                        self.keys.leave(&paths[run.at], call);
+                        run.at + 1
+                    }
+                    None => run.at,
+                }
+            };
+            (rest, run.read.drain(..).collect::<HashMap<_, _>>())
         };
-        if done < paths.len() {
-            now.extend(self.read_apart(&paths[done + 1..]).await);
+        if rest < paths.len() {
+            now.extend(self.read_apart(&paths[rest..]).await);
         }
         now
     }
 
     /// `paths`, each on a thread of its own, within one `limit`.
     async fn read_apart(&self, paths: &[PathBuf]) -> Vec<(PathBuf, Option<FileStamp>)> {
-        let paths: Vec<PathBuf> = {
-            let mut out = self.out.lock().expect("out lock");
-            paths.iter().filter(|p| out.insert((*p).clone())).cloned().collect()
-        };
-        let left = Arc::new(Mutex::new(false));
-        let reads: Vec<_> = paths
-            .into_iter()
-            .map(|path| {
-                let (fs, out, returned, left) =
-                    (self.fs.clone(), self.out.clone(), self.returned.clone(), left.clone());
-                tokio::task::spawn_blocking(move || {
-                    let stamp = fs.stamp(&path);
-                    let left = left.lock().expect("left lock");
-                    out.lock().expect("out lock").remove(&path);
-                    if *left {
-                        drop(left);
-                        returned();
-                    }
-                    (path, stamp)
-                })
+        let mut reads: Vec<_> = paths
+            .iter()
+            .filter_map(|path| {
+                let Start::Flight(flight) = self.keys.start(path) else { return None };
+                let (fs, call) = (self.fs.clone(), flight.call);
+                let read = tokio::task::spawn_blocking(move || (flight.key.clone(), fs.stamp(&flight.key)));
+                Some((path.clone(), call, read))
             })
             .collect();
-        let mut reads = reads.into_iter();
         let mut now = Vec::new();
+        let mut next = 0;
         let _ = tokio::time::timeout(self.limit, async {
-            for read in reads.by_ref() {
-                now.extend(read.await);
+            while next < reads.len() {
+                now.extend((&mut reads[next].2).await);
+                next += 1;
             }
         })
         .await;
-        *left.lock().expect("left lock") = true;
-        // Taken in order, so a read that is out hides the ones after it that
-        // are done. A handle that is dropped leaves its thread to finish.
-        for read in reads.filter(|read| read.is_finished()) {
-            now.extend(read.await);
+        // A handle that is dropped leaves its thread to finish.
+        for (path, call, read) in reads.into_iter().skip(next) {
+            if read.is_finished() {
+                now.extend(read.await);
+            } else {
+                self.keys.leave(&path, call);
+            }
         }
         now
     }
 }
 
-fn read_each(fs: &dyn PathFs, out: &Mutex<HashSet<PathBuf>>, returned: &(dyn Fn() + Send + Sync), run: &Mutex<Run>, paths: &[PathBuf]) {
-    for path in paths {
+fn read_each(fs: &dyn PathFs, keys: &Arc<Keys>, run: &Mutex<Run>, paths: &[PathBuf]) {
+    for (at, path) in paths.iter().enumerate() {
+        let flight = {
+            let mut run = run.lock().expect("run lock");
+            if run.left {
+                return;
+            }
+            run.at = at;
+            let Start::Flight(flight) = keys.start(path) else {
+                run.at = at + 1;
+                continue;
+            };
+            run.reading = Some(flight.call);
+            flight
+        };
         let stamp = fs.stamp(path);
+        drop(flight);
         let mut run = run.lock().expect("run lock");
+        run.reading = None;
+        run.at = at + 1;
         if run.left {
-            out.lock().expect("out lock").remove(path);
-            drop(run);
-            returned();
             return;
         }
         run.read.push((path.clone(), stamp));

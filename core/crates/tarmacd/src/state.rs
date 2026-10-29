@@ -230,6 +230,10 @@ impl Daemon {
         self.mark_dirty();
         if watched {
             crate::docs::report_changes(self).await;
+        } else {
+            // `seen` was read before the doc was registered, and the wake of
+            // a change in between could come before it too.
+            self.wake.notify_one();
         }
         Ok(entry)
     }
@@ -1535,6 +1539,147 @@ mod tests {
         drop(release);
         eventually("three returns", || returned.load(Ordering::SeqCst) == 3).await;
         assert!(!gate.is_out_dir(&tmp.join("gone")));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    fn spawn_open(daemon: &Arc<Daemon>, doc: &Path) -> tokio::task::JoinHandle<Result<(), String>> {
+        let (daemon, doc) = (daemon.clone(), doc.to_str().unwrap().to_owned());
+        tokio::spawn(async move { crate::docs::handle_open(&daemon, &doc, "cli", None, None).await })
+    }
+
+    // One call on a key at a time: a second caller does not start a thread
+    // of its own on a path that does not answer.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn two_opens_of_a_path_that_does_not_answer_make_one_call() {
+        let tmp = canon_tmp("open-twice-at-once");
+        let doc = write_doc(tmp.join("gone/a.md"));
+        let (fs, _release) = stuck_fs();
+        fs.hold(Call::Resolve, &tmp.join("gone"));
+        let daemon = gated(&tmp, fs.clone());
+
+        let before = std::time::Instant::now();
+        let opens = [spawn_open(&daemon, &doc), spawn_open(&daemon, &doc)];
+        for open in opens {
+            assert_eq!(open.await.unwrap(), did_not_answer(&daemon, &doc));
+        }
+        assert!(before.elapsed() < 3 * LIMIT, "it waited {:?}", before.elapsed());
+        assert_eq!(fs.calls(Call::Resolve), 1);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn an_open_during_a_look_at_its_path_makes_no_call_of_its_own() {
+        let tmp = canon_tmp("open-during-look");
+        let doc = write_doc(tmp.join("gone/a.md"));
+        let (fs, _release) = stuck_fs();
+        let daemon = gated(&tmp, fs.clone());
+        assert_eq!(try_open(&daemon, &doc).await, Ok(()));
+        fs.hold(Call::Resolve, &tmp.join("gone"));
+        fs.hold(Call::Stamp, &tmp.join("gone"));
+
+        let look = tokio::spawn({
+            let (daemon, doc) = (daemon.clone(), doc.clone());
+            async move { daemon.look(|_| vec![doc], |_, now| now.clone()).await }
+        });
+        eventually("the held read", || fs.held(Call::Stamp) == 1).await;
+        let before = std::time::Instant::now();
+        assert_eq!(try_open(&daemon, &doc).await, did_not_answer(&daemon, &doc));
+        assert!(before.elapsed() < 3 * LIMIT, "it waited {:?}", before.elapsed());
+        assert_eq!(look.await.unwrap(), HashMap::new());
+        assert_eq!(fs.held(Call::Resolve) + fs.held(Call::Stamp), 1);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // The second caller waits for the call there, then makes its own.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_second_open_of_a_path_that_answers_in_time_succeeds_too() {
+        let tmp = canon_tmp("open-twice-healthy");
+        let doc = write_doc(tmp.join("d/a.md"));
+        let (fs, release) = stuck_fs();
+        fs.hold(Call::Resolve, &tmp.join("d"));
+        let daemon = gated(&tmp, fs.clone());
+
+        let first = spawn_open(&daemon, &doc);
+        eventually("the held resolve", || fs.held(Call::Resolve) == 1).await;
+        let second = spawn_open(&daemon, &doc);
+        // Time for the second open to reach the call of the first. It passes
+        // either way; the wait is what it is there to try.
+        tokio::time::sleep(LIMIT / 4).await;
+        drop(release);
+        assert_eq!(first.await.unwrap(), Ok(()));
+        assert_eq!(second.await.unwrap(), Ok(()));
+        assert_eq!(fs.calls(Call::Resolve), 2);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_call_that_panics_after_its_limit_ends_its_key() {
+        let tmp = tmp_dir("panics");
+        let doc = write_doc(tmp.join("gone/a.md"));
+        let (fs, release) = stuck_fs();
+        fs.hold(Call::Stamp, &tmp.join("gone"));
+        let returned = Arc::new(AtomicU32::new(0));
+        let gate = Arc::new(PathGate::new(fs, LIMIT, {
+            let returned = returned.clone();
+            Arc::new(move || {
+                returned.fetch_add(1, Ordering::SeqCst);
+            })
+        }));
+
+        let (calling, key) = (gate.clone(), doc.clone());
+        let ran = answers(async move {
+            let path = key.clone();
+            calling
+                .run(&key, move |fs: &dyn PathFs| -> Option<FileStamp> {
+                    fs.stamp(&path);
+                    panic!("the call panics")
+                })
+                .await
+        });
+        assert!(ran.await.is_err());
+
+        drop(release);
+        eventually("the end of the call", || returned.load(Ordering::SeqCst) == 1).await;
+        assert!(!gate.is_out_dir(&tmp.join("gone")));
+        let (calling, key) = (gate.clone(), doc.clone());
+        let again = answers(async move {
+            let path = key.clone();
+            calling.run(&key, move |fs| fs.stamp(&path)).await
+        });
+        assert_eq!(again.await.unwrap(), crate::reader::stamp(&doc));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // The open reads the doc's stamp before it registers the doc. In a dir
+    // that is already watched no look follows the open, and the wake of the
+    // change can come before the doc is registered.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_change_between_the_stamp_and_the_upsert_of_an_open_is_pushed() {
+        let (tmp, _, daemon, fs, release) = in_a_repo("open-window").await;
+        let mut app = connect_app(&daemon).await;
+        let doc = write_doc(tmp.join("d/b.md"));
+        fs.hold(Call::RepoOf, &doc);
+
+        let opening = spawn_open(&daemon, &doc);
+        eventually("the held walk", || fs.held(Call::RepoOf) == 1).await;
+        let changed = change(&doc);
+        drop(release);
+        assert_eq!(opening.await.unwrap(), Ok(()));
+        let event = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                match app.recv().await {
+                    Some(Msg::FileEvent { path, mtime_ms }) => return (PathBuf::from(path), mtime_ms),
+                    Some(_) => {}
+                    None => panic!("the app went away"),
+                }
+            }
+        });
+        assert_eq!(event.await.expect("a file_event"), (doc, changed));
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

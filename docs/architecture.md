@@ -308,7 +308,9 @@ daemon looks:
   `BURST` while it does (#258);
 - after an open or a close that changed the watch set, and after an open whose
   watch failed (see #253 below). A `BoardDelete` changes the watch set too;
-  its look is the send of the active board in the next item;
+  its look is the send of the active board in the next item. Any other open
+  wakes the watcher once it has registered the doc: its stamp was read before
+  that, and a change in between may have woken the watcher too early;
 - when the active board is sent — connect, `BoardSwitch`, `BoardCreate`,
   `BoardDelete` (`conn::change_and_send_active_board`): before the `Restore` is
   built, so that it carries each new `last_changed_ms`, with a `FileEvent` for
@@ -348,11 +350,14 @@ not returned yet.
 
 `PathGate` runs every file-system call that it is given on a blocking thread
 (`PathFs`: the resolve of an opened path, a stamp, the `.git` walk), and its
-caller waits at most `READ_LIMIT`. A stat cannot be stopped, so a key whose
-call is still out is not tried again until that call returns: it answers
-`Out` at once and holds one thread, however many opens and looks ask for it.
-The opens and the looks share that set of keys. When an out call returns, the
-gate notifies the watcher's wake, so a look runs and reads the doc.
+caller waits at most `READ_LIMIT`. A key (a path) has one call at a time,
+for the opens and the looks alike. An open that finds its key busy waits for
+that call within its own limit, then makes its own; a look gives a busy key no
+entry and does not wait. A stat cannot be stopped, so a key whose caller
+stopped waiting is out: it answers `Out` at once until its call returns. A
+dead path so holds one blocking thread, however many opens and looks ask for
+it. When an out call returns, the gate notifies the watcher's wake, so a look
+runs and reads the doc.
 
 Two limits of a look. It can come in the middle of a doc's own save: a save
 that takes longer than `BURST`, or one that another file of a watched
