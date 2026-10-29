@@ -77,24 +77,24 @@ pub struct Daemon {
 }
 
 impl Daemon {
-    pub fn new(state_path: PathBuf) -> anyhow::Result<Arc<Self>> {
+    pub async fn new(state_path: PathBuf) -> anyhow::Result<Arc<Self>> {
         let wake = Arc::new(Notify::new());
         let source = NotifySource::new({
             let wake = wake.clone();
             move || wake.notify_one()
         })?;
-        Ok(Self::with_source(state_path, Box::new(source), wake))
+        Ok(Self::with_source(state_path, Box::new(source), wake).await)
     }
 
     /// `source` is told which directories have a doc, and sets `wake` when a
     /// file in one of them may have changed.
-    fn with_source(state_path: PathBuf, source: Box<dyn WakeSource>, wake: Arc<Notify>) -> Arc<Self> {
-        Self::with_fs(state_path, source, wake, Arc::new(RealFs), crate::reader::READ_LIMIT)
+    async fn with_source(state_path: PathBuf, source: Box<dyn WakeSource>, wake: Arc<Notify>) -> Arc<Self> {
+        Self::with_fs(state_path, source, wake, Arc::new(RealFs), crate::reader::READ_LIMIT).await
     }
 
     /// `with_source`, whose gate makes its calls on `fs` and waits `limit`
     /// for each.
-    fn with_fs(
+    async fn with_fs(
         state_path: PathBuf,
         source: Box<dyn WakeSource>,
         wake: Arc<Notify>,
@@ -127,10 +127,13 @@ impl Daemon {
                 move || wake.notify_one()
             },
         );
-        let boards = crate::persist::load(&state_path);
+        let mut boards = crate::persist::load(&state_path);
+        crate::docs::read_restored(&gate, &mut boards).await;
         // Every board's docs, not the active board's only: a switch adds no
         // watch. A dir that cannot be watched only loses file events; its docs
         // keep their counts, and the next open there asks for the watch again.
+        // Sent after the reads, so that a dir whose read is out is not asked
+        // of notify.
         for dir in boards.iter().flat_map(|b| b.registry.docs.keys()).filter_map(|p| p.parent()) {
             if doc_counts.count(dir) {
                 watcher.reconcile(dir);
@@ -392,11 +395,11 @@ mod tests {
         d
     }
 
-    fn daemon_with_doc_dir(tag: &str) -> (PathBuf, PathBuf, Arc<Daemon>) {
+    async fn daemon_with_doc_dir(tag: &str) -> (PathBuf, PathBuf, Arc<Daemon>) {
         let tmp = tmp_dir(tag);
         let doc_dir = tmp.join("d");
         std::fs::create_dir_all(&doc_dir).unwrap();
-        let daemon = Daemon::new(tmp.join("state.json")).unwrap();
+        let daemon = Daemon::new(tmp.join("state.json")).await.unwrap();
         (tmp, doc_dir, daemon)
     }
 
@@ -414,7 +417,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_dir_is_watched_from_its_first_count_to_its_last() {
-        let (tmp, doc_dir, daemon) = daemon_with_doc_dir("count");
+        let (tmp, doc_dir, daemon) = daemon_with_doc_dir("count").await;
 
         daemon.acquire_watch(&doc_dir).await.unwrap();
         daemon.acquire_watch(&doc_dir).await.unwrap();
@@ -430,7 +433,7 @@ mod tests {
 
     #[tokio::test]
     async fn closing_the_sole_doc_of_a_dir_unwatches_it() {
-        let (tmp, doc_dir, daemon) = daemon_with_doc_dir("close-sole");
+        let (tmp, doc_dir, daemon) = daemon_with_doc_dir("close-sole").await;
         let doc = doc_dir.join("a.md");
         open_doc(&daemon, None, &doc).await;
         assert!(watched(&daemon, &doc_dir).await);
@@ -445,7 +448,7 @@ mod tests {
 
     #[tokio::test]
     async fn watched_dir_kept_when_sibling_doc_remains() {
-        let (tmp, doc_dir, daemon) = daemon_with_doc_dir("s8b");
+        let (tmp, doc_dir, daemon) = daemon_with_doc_dir("s8b").await;
         let doc_a = doc_dir.join("a.md");
         open_doc(&daemon, None, &doc_a).await;
         open_doc(&daemon, None, &doc_dir.join("b.md")).await;
@@ -458,7 +461,7 @@ mod tests {
 
     #[tokio::test]
     async fn watched_dir_kept_while_another_board_has_a_doc_there() {
-        let (tmp, doc_dir, daemon) = daemon_with_doc_dir("close-cross-board");
+        let (tmp, doc_dir, daemon) = daemon_with_doc_dir("close-cross-board").await;
         let (doc_a, doc_b) = (doc_dir.join("a.md"), doc_dir.join("b.md"));
         open_doc(&daemon, None, &doc_a).await;
         let other = daemon.boards.lock().await.create();
@@ -476,7 +479,7 @@ mod tests {
 
     #[tokio::test]
     async fn deleting_a_board_unwatches_the_dirs_no_board_is_left_in() {
-        let (tmp, shared, daemon) = daemon_with_doc_dir("delete-board");
+        let (tmp, shared, daemon) = daemon_with_doc_dir("delete-board").await;
         let own = tmp.join("own");
         std::fs::create_dir_all(&own).unwrap();
         open_doc(&daemon, None, &shared.join("a.md")).await;
@@ -499,7 +502,7 @@ mod tests {
 
     #[tokio::test]
     async fn reopening_a_doc_counts_it_once() {
-        let (tmp, doc_dir, daemon) = daemon_with_doc_dir("reopen");
+        let (tmp, doc_dir, daemon) = daemon_with_doc_dir("reopen").await;
         let doc = doc_dir.join("a.md");
         open_doc(&daemon, None, &doc).await;
         open_doc(&daemon, None, &doc).await;
@@ -512,7 +515,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_open_that_cannot_watch_registers_and_counts_nothing() {
-        let (tmp, _, daemon) = daemon_with_doc_dir("open-fails");
+        let (tmp, _, daemon) = daemon_with_doc_dir("open-fails").await;
         let late_dir = tmp.join("late");
         let doc = late_dir.join("a.md");
 
@@ -542,7 +545,7 @@ mod tests {
         std::fs::create_dir_all(&doc_dir).unwrap();
         let (a, b) = (doc_dir.join("a.md"), doc_dir.join("b.md"));
         std::fs::write(tmp.join("state.json"), state_with_docs(&[&a, &b])).unwrap();
-        let daemon = Daemon::new(tmp.join("state.json")).unwrap();
+        let daemon = Daemon::new(tmp.join("state.json")).await.unwrap();
         assert!(watched(&daemon, &doc_dir).await);
 
         assert!(daemon.close_doc(&a).await);
@@ -561,7 +564,7 @@ mod tests {
         let doc_dir = tmp.join("d");
         let (a, b) = (doc_dir.join("a.md"), doc_dir.join("b.md"));
         std::fs::write(tmp.join("state.json"), state_with_docs(&[&a])).unwrap();
-        let daemon = Daemon::new(tmp.join("state.json")).unwrap();
+        let daemon = Daemon::new(tmp.join("state.json")).await.unwrap();
         assert!(!watched(&daemon, &doc_dir).await);
 
         std::fs::create_dir_all(&doc_dir).unwrap();
@@ -588,16 +591,16 @@ mod tests {
     }
 
     /// A daemon that its watcher never wakes, with no app.
-    fn silent(tag: &str) -> (PathBuf, Arc<Daemon>) {
+    async fn silent(tag: &str) -> (PathBuf, Arc<Daemon>) {
         let tmp = tmp_dir(tag);
         let daemon =
-            Daemon::with_source(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new()));
+            Daemon::with_source(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new())).await;
         (tmp, daemon)
     }
 
     /// `silent`, and the pushes to its app.
     async fn silent_daemon(tag: &str) -> (PathBuf, Arc<Daemon>, mpsc::Receiver<Msg>) {
-        let (tmp, daemon) = silent(tag);
+        let (tmp, daemon) = silent(tag).await;
         let app = connect_app(&daemon).await;
         (tmp, daemon, app)
     }
@@ -768,7 +771,7 @@ mod tests {
     // holds it for the look that has an app to tell.
     #[tokio::test]
     async fn a_look_with_no_app_records_the_change_and_holds_it_to_be_told() {
-        let (tmp, daemon) = silent("no-app");
+        let (tmp, daemon) = silent("no-app").await;
         let doc = write_doc(tmp.join("d/a.md"));
         open_doc(&daemon, None, &doc).await;
         wait_for_saved(&tmp, &doc, None).await;
@@ -791,7 +794,7 @@ mod tests {
     // asked for a save each time would wake itself for ever.
     #[tokio::test]
     async fn a_look_that_records_nothing_asks_for_no_save() {
-        let (tmp, daemon) = silent("no-save");
+        let (tmp, daemon) = silent("no-save").await;
         let doc = write_doc(tmp.join("d/a.md"));
         open_doc(&daemon, None, &doc).await;
         wait_for_saved(&tmp, &doc, None).await;
@@ -814,7 +817,7 @@ mod tests {
     // changed and put back is recorded as it is.
     #[tokio::test]
     async fn a_change_that_went_back_with_no_app_is_recorded_as_the_file_is() {
-        let (tmp, daemon) = silent("no-app-back");
+        let (tmp, daemon) = silent("no-app-back").await;
         let doc = write_doc(tmp.join("d/a.md"));
         let first = mtime(&doc);
         open_doc(&daemon, None, &doc).await;
@@ -857,7 +860,7 @@ mod tests {
     // can be another one by the time the push fails.
     #[tokio::test]
     async fn a_change_is_held_for_its_board_when_another_board_is_active() {
-        let (tmp, daemon) = silent("held-board");
+        let (tmp, daemon) = silent("held-board").await;
         let doc = write_doc(tmp.join("d/a.md"));
         open_doc(&daemon, None, &doc).await;
         let changed = change(&doc);
@@ -881,7 +884,7 @@ mod tests {
     // what was held: the look after it has nothing left.
     #[tokio::test]
     async fn a_refresh_holds_what_reached_no_app_and_tells_what_was_held() {
-        let (tmp, daemon) = silent("refresh-held");
+        let (tmp, daemon) = silent("refresh-held").await;
         let doc = write_doc(tmp.join("d/a.md"));
         open_doc(&daemon, None, &doc).await;
 
@@ -1020,7 +1023,7 @@ mod tests {
         let tmp = tmp_dir("refused-reports");
         let refused = tmp.join("refused");
         let daemon =
-            Daemon::with_source(tmp.join("state.json"), Box::new(RefusesDir(refused.clone())), Arc::new(Notify::new()));
+            Daemon::with_source(tmp.join("state.json"), Box::new(RefusesDir(refused.clone())), Arc::new(Notify::new())).await;
         let mut app = connect_app(&daemon).await;
         let kept = write_doc(tmp.join("kept/a.md"));
         open_doc(&daemon, None, &kept).await;
@@ -1042,7 +1045,7 @@ mod tests {
     // seven left the new doc registered and its directory unwatched.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn dir_stays_watched_when_an_open_races_a_close() {
-        let (tmp, doc_dir, daemon) = daemon_with_doc_dir("open-races-close");
+        let (tmp, doc_dir, daemon) = daemon_with_doc_dir("open-races-close").await;
         // An open registers the canonical path (/tmp -> /private/tmp).
         let doc_dir = std::fs::canonicalize(&doc_dir).unwrap();
         let (a, b) = (doc_dir.join("a.md"), doc_dir.join("b.md"));
@@ -1081,15 +1084,23 @@ mod tests {
 
     /// `RealFs`, whose calls that the test holds do not return until the
     /// sender of `until_released` is dropped: a volume that is gone. It counts
-    /// every call of each method, and those it held.
+    /// every call of each method, and those it held. A `repo_of` that the
+    /// test names answers the repo the test names.
     struct StuckFs {
         holds: std::sync::Mutex<Vec<(Call, PathBuf)>>,
         until_released: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
         /// Each method's calls, and how many of them it held.
         counts: std::sync::Mutex<HashMap<Call, (u32, u32)>>,
+        repos: std::sync::Mutex<Vec<(PathBuf, String)>>,
     }
 
     impl StuckFs {
+        /// Each later `repo_of` of a doc in `dir` answers a repo `name` at
+        /// `dir`, with no `.git` on disk.
+        fn answer_repo(&self, dir: &Path, name: &str) {
+            self.repos.lock().unwrap().push((dir.to_owned(), name.to_owned()));
+        }
+
         /// Holds each later `call` on a path under `under`.
         fn hold(&self, call: Call, under: &Path) {
             self.holds.lock().unwrap().push((call, under.to_owned()));
@@ -1129,7 +1140,10 @@ mod tests {
 
         fn repo_of(&self, doc: &Path) -> Option<crate::docs::RepoInfo> {
             self.wait_if_held(Call::RepoOf, doc);
-            RealFs.repo_of(doc)
+            let answer = self.repos.lock().unwrap().iter().find(|(dir, _)| doc.parent() == Some(dir)).cloned();
+            let Some((dir, name)) = answer else { return RealFs.repo_of(doc) };
+            let color = tarmac_protocol::repo_color_index(&name);
+            Some(crate::docs::RepoInfo { name, root: dir.to_string_lossy().into_owned(), color })
         }
     }
 
@@ -1141,6 +1155,7 @@ mod tests {
             holds: std::sync::Mutex::default(),
             until_released: std::sync::Mutex::new(until_released),
             counts: std::sync::Mutex::default(),
+            repos: std::sync::Mutex::default(),
         });
         (fs, release)
     }
@@ -1152,8 +1167,8 @@ mod tests {
 
     /// A daemon that its watcher never wakes, whose gate calls `fs`, with no
     /// app.
-    fn gated(tmp: &Path, fs: Arc<StuckFs>) -> Arc<Daemon> {
-        Daemon::with_fs(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new()), fs, LIMIT)
+    async fn gated(tmp: &Path, fs: Arc<StuckFs>) -> Arc<Daemon> {
+        held(tmp, Box::new(Silent), fs).await
     }
 
     /// `silent_daemon` with `gone/a.md` open on the active board, whose reads
@@ -1164,7 +1179,7 @@ mod tests {
         let tmp = tmp_dir(tag);
         let doc = write_doc(tmp.join("gone/a.md"));
         let (fs, release) = stuck_fs();
-        let daemon = gated(&tmp, fs.clone());
+        let daemon = gated(&tmp, fs.clone()).await;
         let app = connect_app(&daemon).await;
         open_doc(&daemon, None, &doc).await;
         (tmp, daemon, app, fs, release)
@@ -1356,7 +1371,7 @@ mod tests {
         let doc = write_doc(tmp.join("gone/a.md"));
         let (fs, _release) = stuck_fs();
         fs.hold(Call::Resolve, &tmp.join("gone"));
-        let daemon = gated(&tmp, fs.clone());
+        let daemon = gated(&tmp, fs.clone()).await;
 
         let before = std::time::Instant::now();
         assert_eq!(try_open(&daemon, &doc).await, did_not_answer(&daemon, &doc));
@@ -1373,7 +1388,7 @@ mod tests {
         let doc = write_doc(tmp.join("gone/a.md"));
         let (fs, _release) = stuck_fs();
         fs.hold(Call::Resolve, &tmp.join("gone"));
-        let daemon = gated(&tmp, fs.clone());
+        let daemon = gated(&tmp, fs.clone()).await;
         assert_eq!(try_open(&daemon, &doc).await, did_not_answer(&daemon, &doc));
 
         let before = std::time::Instant::now();
@@ -1392,7 +1407,7 @@ mod tests {
         let doc = write_doc(tmp.join("d/b.md"));
         let (fs, _release) = stuck_fs();
         fs.hold(Call::Resolve, &tmp.join("gone"));
-        let daemon = gated(&tmp, fs.clone());
+        let daemon = gated(&tmp, fs.clone()).await;
         let mut app = connect_app(&daemon).await;
 
         let stuck_open = tokio::spawn({
@@ -1414,7 +1429,7 @@ mod tests {
         let doc = write_doc(tmp.join("gone/a.md"));
         let (fs, release) = stuck_fs();
         fs.hold(Call::Resolve, &tmp.join("gone"));
-        let daemon = gated(&tmp, fs.clone());
+        let daemon = gated(&tmp, fs.clone()).await;
         let mut app = connect_app(&daemon).await;
         assert_eq!(try_open(&daemon, &doc).await, did_not_answer(&daemon, &doc));
 
@@ -1435,7 +1450,7 @@ mod tests {
     #[tokio::test]
     async fn an_open_answers_a_missing_path_a_directory_and_a_file_as_before() {
         let tmp = canon_tmp("open-texts");
-        let daemon = Daemon::with_source(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new()));
+        let daemon = Daemon::with_source(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new())).await;
         let missing = tmp.join("missing.md");
         let dir = tmp.join("dir");
         std::fs::create_dir_all(&dir).unwrap();
@@ -1459,7 +1474,7 @@ mod tests {
         let tmp = canon_tmp("open-then-look");
         let doc = write_doc(tmp.join("gone/a.md"));
         let (fs, _release) = stuck_fs();
-        let daemon = gated(&tmp, fs.clone());
+        let daemon = gated(&tmp, fs.clone()).await;
         assert_eq!(try_open(&daemon, &doc).await, Ok(()));
         fs.hold(Call::Resolve, &tmp.join("gone"));
         fs.hold(Call::Stamp, &tmp.join("gone"));
@@ -1479,7 +1494,7 @@ mod tests {
         let tmp = canon_tmp("look-then-open");
         let doc = write_doc(tmp.join("gone/a.md"));
         let (fs, _release) = stuck_fs();
-        let daemon = gated(&tmp, fs.clone());
+        let daemon = gated(&tmp, fs.clone()).await;
         assert_eq!(try_open(&daemon, &doc).await, Ok(()));
         fs.hold(Call::Resolve, &tmp.join("gone"));
         fs.hold(Call::Stamp, &tmp.join("gone"));
@@ -1505,7 +1520,7 @@ mod tests {
         std::fs::create_dir_all(tmp.join(".git")).unwrap();
         let open = write_doc(tmp.join("d/a.md"));
         let (fs, release) = stuck_fs();
-        let daemon = gated(&tmp, fs.clone());
+        let daemon = gated(&tmp, fs.clone()).await;
         assert_eq!(try_open(&daemon, &open).await, Ok(()));
         assert!(repo_of(&daemon, &open).await.0.is_some(), "the doc is in a repo");
         (tmp, open, daemon, fs, release)
@@ -1613,7 +1628,7 @@ mod tests {
         let doc = write_doc(tmp.join("gone/a.md"));
         let (fs, _release) = stuck_fs();
         fs.hold(Call::Resolve, &tmp.join("gone"));
-        let daemon = gated(&tmp, fs.clone());
+        let daemon = gated(&tmp, fs.clone()).await;
 
         let before = std::time::Instant::now();
         let opens = [spawn_open(&daemon, &doc), spawn_open(&daemon, &doc)];
@@ -1631,7 +1646,7 @@ mod tests {
         let tmp = canon_tmp("open-during-look");
         let doc = write_doc(tmp.join("gone/a.md"));
         let (fs, _release) = stuck_fs();
-        let daemon = gated(&tmp, fs.clone());
+        let daemon = gated(&tmp, fs.clone()).await;
         assert_eq!(try_open(&daemon, &doc).await, Ok(()));
         fs.hold(Call::Resolve, &tmp.join("gone"));
         fs.hold(Call::Stamp, &tmp.join("gone"));
@@ -1657,7 +1672,7 @@ mod tests {
         let doc = write_doc(tmp.join("d/a.md"));
         let (fs, release) = stuck_fs();
         fs.hold(Call::Resolve, &tmp.join("d"));
-        let daemon = gated(&tmp, fs.clone());
+        let daemon = gated(&tmp, fs.clone()).await;
 
         let first = spawn_open(&daemon, &doc);
         eventually("the held resolve", || fs.held(Call::Resolve) == 1).await;
@@ -1725,7 +1740,7 @@ mod tests {
         // A limit that the held walk cannot reach: a walk that is out wakes a
         // look of its own when it returns.
         let daemon =
-            Daemon::with_fs(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new()), fs.clone(), Duration::from_secs(30));
+            Daemon::with_fs(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new()), fs.clone(), Duration::from_secs(30)).await;
         assert_eq!(try_open(&daemon, &open).await, Ok(()));
         let mut app = connect_app(&daemon).await;
         let doc = write_doc(tmp.join("d/b.md"));
@@ -1757,7 +1772,7 @@ mod tests {
         let tmp = canon_tmp("reopen-no-look");
         let doc = write_doc(tmp.join("d/a.md"));
         let (fs, _release) = stuck_fs();
-        let daemon = gated(&tmp, fs.clone());
+        let daemon = gated(&tmp, fs.clone()).await;
         let mut app = connect_app(&daemon).await;
         assert_eq!(try_open(&daemon, &doc).await, Ok(()));
         flushed(&mut app, &doc).await;
@@ -1824,8 +1839,8 @@ mod tests {
     }
 
     /// A daemon whose watcher is `source` and whose gate calls `fs`.
-    fn held(tmp: &Path, source: Box<dyn WakeSource>, fs: Arc<StuckFs>) -> Arc<Daemon> {
-        Daemon::with_fs(tmp.join("state.json"), source, Arc::new(Notify::new()), fs, LIMIT)
+    async fn held(tmp: &Path, source: Box<dyn WakeSource>, fs: Arc<StuckFs>) -> Arc<Daemon> {
+        Daemon::with_fs(tmp.join("state.json"), source, Arc::new(Notify::new()), fs, LIMIT).await
     }
 
     /// What an open whose watch did not answer gets, from a daemon whose limit
@@ -1849,7 +1864,7 @@ mod tests {
         let (fs, _release) = stuck_fs();
         fs.hold(Call::RepoOf, &gone);
         let (source, calls, _unheld) = held_source(&[]);
-        let daemon = held(&tmp, source, fs);
+        let daemon = held(&tmp, source, fs).await;
 
         let before = std::time::Instant::now();
         assert_eq!(try_open(&daemon, &doc).await, cannot_watch(&gone));
@@ -1871,7 +1886,7 @@ mod tests {
         let doc = write_doc(d.join("b.md"));
         let (fs, _unheld) = stuck_fs();
         let (source, calls, _release) = held_source(&[(Change::Unwatch, &gone)]);
-        let daemon = held(&tmp, source, fs);
+        let daemon = held(&tmp, source, fs).await;
         assert_eq!(try_open(&daemon, &stuck).await, Ok(()));
         assert_eq!(try_open(&daemon, &open).await, Ok(()));
 
@@ -1896,7 +1911,7 @@ mod tests {
         let (kept, other) = (write_doc(tmp.join("kept/a.md")), write_doc(tmp.join("other/c.md")));
         let (fs, _unheld) = stuck_fs();
         let (source, calls, release) = held_source(&[(Change::Watch, &new)]);
-        let daemon = held(&tmp, source, fs);
+        let daemon = held(&tmp, source, fs).await;
         assert_eq!(try_open(&daemon, &kept).await, Ok(()));
         assert_eq!(try_open(&daemon, &other).await, Ok(()));
 
@@ -1927,7 +1942,7 @@ mod tests {
         let (stuck, doc) = (write_doc(gone.join("a.md")), write_doc(tmp.join("d/b.md")));
         let (fs, release) = stuck_fs();
         let (source, calls, _unheld) = held_source(&[]);
-        let daemon = held(&tmp, source, fs.clone());
+        let daemon = held(&tmp, source, fs.clone()).await;
         let mut app = connect_app(&daemon).await;
         assert_eq!(try_open(&daemon, &stuck).await, Ok(()));
         flushed(&mut app, &stuck).await;
@@ -1960,7 +1975,7 @@ mod tests {
         let (fs, _release) = stuck_fs();
         fs.hold(Call::Resolve, &stuck);
         let (source, calls, _unheld) = held_source(&[]);
-        let daemon = held(&tmp, source, fs.clone());
+        let daemon = held(&tmp, source, fs.clone()).await;
         assert_eq!(try_open(&daemon, &stuck).await, did_not_answer(&daemon, &stuck));
 
         let before = std::time::Instant::now();
@@ -1984,7 +1999,7 @@ mod tests {
         let (fs, _unheld) = stuck_fs();
         let (source, calls, release) = held_source(&[(Change::Unwatch, &x)]);
         // A limit that the release after the poll below cannot miss.
-        let daemon = Daemon::with_fs(tmp.join("state.json"), source, Arc::new(Notify::new()), fs, Duration::from_secs(30));
+        let daemon = Daemon::with_fs(tmp.join("state.json"), source, Arc::new(Notify::new()), fs, Duration::from_secs(30)).await;
         assert_eq!(try_open(&daemon, &busy).await, Ok(()));
         assert_eq!(try_open(&daemon, &doc).await, Ok(()));
         assert!(try_close(&daemon, &busy).await);
@@ -2008,7 +2023,7 @@ mod tests {
         let tmp = tmp_dir("refused-twice");
         let refused = tmp.join("refused");
         let daemon =
-            Daemon::with_source(tmp.join("state.json"), Box::new(RefusesDir(refused.clone())), Arc::new(Notify::new()));
+            Daemon::with_source(tmp.join("state.json"), Box::new(RefusesDir(refused.clone())), Arc::new(Notify::new())).await;
         let mut app = connect_app(&daemon).await;
         let kept = write_doc(tmp.join("kept/a.md"));
         open_doc(&daemon, None, &kept).await;
@@ -2037,7 +2052,7 @@ mod tests {
         let dirs: Vec<PathBuf> = ["a", "b", "c"].iter().map(|d| tmp.join(d)).collect();
         let (fs, _unheld) = stuck_fs();
         let (source, calls, _release) = held_source(&[]);
-        let daemon = held(&tmp, source, fs.clone());
+        let daemon = held(&tmp, source, fs.clone()).await;
         let mut app = connect_app(&daemon).await;
         assert_eq!(try_open(&daemon, &sentinel).await, Ok(()));
         flushed(&mut app, &sentinel).await;
@@ -2063,8 +2078,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
-    // 2610.0012 S21: `Daemon::new` is still sync, so it sends the startup
-    // watches and does not wait for them.
+    // 2610.0012 S21: `Daemon::new` sends the startup watches and does not
+    // wait for them.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn a_restart_does_not_wait_for_its_watches() {
         let tmp = canon_tmp("restart-held");
@@ -2075,9 +2090,9 @@ mod tests {
         let (source, calls, release) = held_source(&[(Change::Watch, &d)]);
 
         let before = std::time::Instant::now();
-        let building = tokio::task::spawn_blocking({
+        let building = tokio::spawn({
             let tmp = tmp.clone();
-            move || held(&tmp, source, fs)
+            async move { held(&tmp, source, fs).await }
         });
         let daemon = tokio::time::timeout(Duration::from_secs(2), building).await.expect("a daemon").unwrap();
         assert!(before.elapsed() < LIMIT, "it waited {:?}", before.elapsed());
@@ -2100,7 +2115,7 @@ mod tests {
         let docs = [write_doc(outer.join("a.md")), write_doc(inner.join("b.md"))];
         let (fs, release) = stuck_fs();
         let (source, calls, _unheld) = held_source(&[]);
-        let daemon = held(&tmp, source, fs.clone());
+        let daemon = held(&tmp, source, fs.clone()).await;
         for doc in &docs {
             assert_eq!(try_open(&daemon, doc).await, Ok(()));
         }
@@ -2147,7 +2162,7 @@ mod tests {
         let doc = write_doc(d.join("a.md"));
         let calls = Arc::new(SourceCalls::default());
         let (fs, _unheld) = stuck_fs();
-        let daemon = held(&tmp, Box::new(UnwatchFails(calls.clone())), fs);
+        let daemon = held(&tmp, Box::new(UnwatchFails(calls.clone())), fs).await;
         assert_eq!(try_open(&daemon, &doc).await, Ok(()));
         assert!(try_close(&daemon, &doc).await);
         assert!(!watched(&daemon, &d).await);
@@ -2200,11 +2215,278 @@ mod tests {
         let tmp = canon_tmp("watcher-panics");
         let doc = write_doc(tmp.join("d/a.md"));
         let (fs, _unheld) = stuck_fs();
-        let daemon = held(&tmp, Box::new(Panics), fs);
+        let daemon = held(&tmp, Box::new(Panics), fs).await;
 
         assert!(try_open(&daemon, &doc).await.is_err());
         let logged = || String::from_utf8_lossy(&log.0.lock().unwrap()).contains("the watcher thread panicked");
         eventually("the error", logged).await;
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    const RESTORED: u64 = 1_718_000_000_000;
+
+    /// A state file with `docs` on board-0, each changed at `RESTORED`.
+    fn state_changed_at_restored(docs: &[&Path]) -> String {
+        let docs: Vec<_> = docs
+            .iter()
+            .map(|p| serde_json::json!({"path": p, "via": "cli", "read": false, "last_changed_ms": RESTORED}))
+            .collect();
+        serde_json::json!({"boards": [{"board_id": "board-0", "docs": docs}]}).to_string()
+    }
+
+    /// A restart in a repo, with `gone/a.md` and `gone/c.md`, whose calls are
+    /// held from the start, and `d/b.md`. Two held docs, so that the stamps
+    /// of the restart take their two limits: with the walks after them, and
+    /// not beside them, the restart would take three.
+    struct Restart {
+        tmp: PathBuf,
+        gone: PathBuf,
+        stuck: PathBuf,
+        doc: PathBuf,
+        daemon: Arc<Daemon>,
+        fs: Arc<StuckFs>,
+        calls: Arc<SourceCalls>,
+        release: Option<std::sync::mpsc::Sender<()>>,
+        took: Duration,
+    }
+
+    async fn restart_with_gone(tag: &str) -> Restart {
+        let tmp = canon_tmp(tag);
+        std::fs::create_dir_all(tmp.join(".git")).unwrap();
+        let gone = tmp.join("gone");
+        let (stuck, other) = (write_doc(gone.join("a.md")), write_doc(gone.join("c.md")));
+        let doc = write_doc(tmp.join("d/b.md"));
+        std::fs::write(tmp.join("state.json"), state_changed_at_restored(&[&stuck, &other, &doc])).unwrap();
+        let (fs, release) = stuck_fs();
+        fs.hold(Call::Stamp, &gone);
+        fs.hold(Call::RepoOf, &gone);
+        let (source, calls, _unheld) = held_source(&[]);
+
+        let before = std::time::Instant::now();
+        let daemon = answers({
+            let (tmp, fs) = (tmp.clone(), fs.clone());
+            async move { held(&tmp, source, fs).await }
+        })
+        .await;
+        let took = before.elapsed();
+        Restart { tmp, gone, stuck, doc, daemon, fs, calls, release: Some(release), took }
+    }
+
+    // 2610.0012 S17
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_restart_waits_two_limits_at_most_for_the_docs_that_do_not_answer() {
+        let r = restart_with_gone("restart-gone").await;
+        assert!(r.took < 3 * LIMIT, "it waited {:?}", r.took);
+        assert!(registered(&r.daemon, &r.stuck).await && registered(&r.daemon, &r.doc).await);
+        let repo = r.tmp.file_name().unwrap().to_string_lossy().into_owned();
+        assert_eq!(repo_of(&r.daemon, &r.doc).await.0, Some(repo));
+        assert_eq!(repo_of(&r.daemon, &r.stuck).await, (None, None, None));
+
+        let mut app = connect_app(&r.daemon).await;
+        look_at(&r.daemon).await;
+        assert_eq!(file_events(&mut app), vec![]);
+        let changed = change(&r.doc);
+        look_at(&r.daemon).await;
+        assert_eq!(next_change(&mut app).await, (r.doc.clone(), changed));
+
+        let _ = std::fs::remove_dir_all(&r.tmp);
+    }
+
+    /// Releases the held calls, and waits until none under `gone/` is out.
+    async fn release_reads(r: &mut Restart) {
+        drop(r.release.take());
+        eventually("the return of the reads", || !r.daemon.gate().is_out_dir(&r.gone)).await;
+    }
+
+    /// `release_reads`, then a look: every doc has been read since the
+    /// release.
+    async fn look_after_the_release(r: &mut Restart) {
+        release_reads(r).await;
+        let reads = r.fs.calls(Call::Stamp);
+        look_at(&r.daemon).await;
+        assert!(r.fs.calls(Call::Stamp) >= reads + 3, "the look read every doc");
+    }
+
+    // 2610.0012 S18
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_restored_doc_that_was_not_read_is_taken_as_it_is_when_it_answers() {
+        let mut r = restart_with_gone("restart-unread").await;
+        let mut app = connect_app(&r.daemon).await;
+
+        look_after_the_release(&mut r).await;
+        assert_eq!(last_changed(&r.daemon, &r.stuck).await, Some(RESTORED));
+        let changed = change(&r.doc);
+        look_at(&r.daemon).await;
+        assert_eq!(next_change(&mut app).await, (r.doc.clone(), changed), "nothing for the doc that was read");
+
+        let changed = change(&r.stuck);
+        look_at(&r.daemon).await;
+        assert_eq!(next_change(&mut app).await, (r.stuck.clone(), changed));
+        eventually("the watch", || r.calls.of(Change::Watch, &r.gone) == 1).await;
+        assert!(watched(&r.daemon, &r.gone).await);
+        assert_eq!(r.calls.of(Change::Watch, &r.gone), 1);
+
+        let _ = std::fs::remove_dir_all(&r.tmp);
+    }
+
+    // 2610.0012 S19 (D10): a first reading of no file ends `unread` too.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_restored_doc_whose_file_went_while_it_was_not_read_is_gone() {
+        let mut r = restart_with_gone("restart-unread-gone").await;
+        let mut app = connect_app(&r.daemon).await;
+        std::fs::remove_file(&r.stuck).unwrap();
+
+        look_after_the_release(&mut r).await;
+        write_doc(r.stuck.clone());
+        let back = crate::boards::epoch_ms(mtime(&r.stuck));
+        look_at(&r.daemon).await;
+        assert_eq!(next_change(&mut app).await, (r.stuck.clone(), back));
+
+        let _ = std::fs::remove_dir_all(&r.tmp);
+    }
+
+    // 2610.0012 S19 (D10): a refresh ends `unread`.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_refresh_of_a_restored_doc_that_was_not_read_pushes_as_before() {
+        let mut r = restart_with_gone("restart-unread-refresh").await;
+        let mut app = connect_app(&r.daemon).await;
+        release_reads(&mut r).await;
+
+        assert!(crate::docs::stat_and_push(&r.daemon, &r.stuck).await);
+        let now = crate::boards::epoch_ms(mtime(&r.stuck));
+        assert_eq!(next_change(&mut app).await, (r.stuck.clone(), now));
+        let changed = change(&r.stuck);
+        look_at(&r.daemon).await;
+        assert_eq!(next_change(&mut app).await, (r.stuck.clone(), changed));
+
+        let _ = std::fs::remove_dir_all(&r.tmp);
+    }
+
+    // 2610.0012 S19: a file that is missing at the start is read, and gone.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_restored_doc_whose_file_is_missing_is_told_when_it_comes() {
+        let tmp = canon_tmp("restart-missing-file");
+        let doc = tmp.join("d/a.md");
+        std::fs::create_dir_all(tmp.join("d")).unwrap();
+        std::fs::write(tmp.join("state.json"), state_changed_at_restored(&[&doc])).unwrap();
+        let (fs, _unheld) = stuck_fs();
+        let daemon = gated(&tmp, fs).await;
+        let mut app = connect_app(&daemon).await;
+
+        write_doc(doc.clone());
+        let come = crate::boards::epoch_ms(mtime(&doc));
+        look_at(&daemon).await;
+        assert_eq!(next_change(&mut app).await, (doc, come));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // 2610.0012 S20: the repo comes through the gate, one walk per dir.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_restart_walks_once_for_the_repo_of_each_dir() {
+        let tmp = canon_tmp("restart-walks");
+        let (one, two) = (tmp.join("one"), tmp.join("two"));
+        let docs: Vec<PathBuf> = (0..5)
+            .map(|i| write_doc(one.join(format!("{i}.md"))))
+            .chain((0..2).map(|i| write_doc(two.join(format!("{i}.md")))))
+            .collect();
+        let state = state_changed_at_restored(&docs.iter().map(PathBuf::as_path).collect::<Vec<_>>());
+        std::fs::write(tmp.join("state.json"), state).unwrap();
+        let (fs, _unheld) = stuck_fs();
+        fs.answer_repo(&one, "first");
+        fs.answer_repo(&two, "second");
+
+        let daemon = gated(&tmp, fs.clone()).await;
+        assert_eq!(fs.calls(Call::RepoOf), 2);
+        for doc in &docs {
+            let (dir, name) = if doc.starts_with(&one) { (&one, "first") } else { (&two, "second") };
+            let repo = (Some(name.to_owned()), Some(dir.to_string_lossy().into_owned()), Some(tarmac_protocol::repo_color_index(name)));
+            assert_eq!(repo_of(&daemon, doc).await, repo, "{}", doc.display());
+        }
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// A state file with `docs` on board-1, behind an empty active board-0.
+    fn state_on_a_background_board(docs: &[&Path]) -> String {
+        let docs: Vec<_> = docs
+            .iter()
+            .map(|p| serde_json::json!({"path": p, "via": "cli", "read": false, "last_changed_ms": RESTORED}))
+            .collect();
+        serde_json::json!({
+            "boards": [{"board_id": "board-0"}, {"board_id": "board-1", "docs": docs}],
+            "active": "board-0",
+        })
+        .to_string()
+    }
+
+    /// Switches to board-1, and what its switch tells.
+    async fn switch_to_board_1(daemon: &Arc<Daemon>) -> Vec<(PathBuf, u64)> {
+        let daemon = daemon.clone();
+        answers(async move {
+            daemon
+                .look(Boards::doc_paths, |boards, now| {
+                    boards.set_active("board-1");
+                    crate::docs::take_to_tell(&daemon, boards.active_registry_mut(), now)
+                })
+                .await
+        })
+        .await
+    }
+
+    // The startup reading is taken on every board, not on the active one
+    // only: a change after it is told at the switch. The change comes before
+    // the look that the startup watch wakes, `BURST` later.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_restart_reads_the_docs_of_a_background_board() {
+        let tmp = canon_tmp("restart-background");
+        let doc = write_doc(tmp.join("d/a.md"));
+        std::fs::write(tmp.join("state.json"), state_on_a_background_board(&[&doc])).unwrap();
+        let (fs, _unheld) = stuck_fs();
+        let daemon = gated(&tmp, fs).await;
+
+        let changed = change(&doc);
+        assert_eq!(switch_to_board_1(&daemon).await, vec![(doc, changed)]);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // D10: the first reading after the volume answers is the one taken with
+    // no change, on a background board too, not the first one at its switch.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_background_doc_that_was_not_read_is_read_when_it_answers() {
+        let tmp = canon_tmp("restart-background-unread");
+        let gone = tmp.join("gone");
+        let doc = write_doc(gone.join("a.md"));
+        std::fs::write(tmp.join("state.json"), state_on_a_background_board(&[&doc])).unwrap();
+        let (fs, release) = stuck_fs();
+        fs.hold(Call::Stamp, &gone);
+        let daemon = gated(&tmp, fs).await;
+
+        drop(release);
+        eventually("the return of the read", || !daemon.gate().is_out_dir(&gone)).await;
+        look_at(&daemon).await;
+        let changed = change(&doc);
+        assert_eq!(switch_to_board_1(&daemon).await, vec![(doc, changed)]);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // 2610.0012 S20, on a board in the background.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_restart_gives_a_background_board_s_docs_their_repo() {
+        let tmp = canon_tmp("restart-background-repo");
+        let one = tmp.join("one");
+        let doc = write_doc(one.join("a.md"));
+        std::fs::write(tmp.join("state.json"), state_on_a_background_board(&[&doc])).unwrap();
+        let (fs, _unheld) = stuck_fs();
+        fs.answer_repo(&one, "first");
+        let daemon = gated(&tmp, fs).await;
+
+        let entry = daemon.boards.lock().await.registry_mut(Some("board-1")).entry(&doc).unwrap();
+        let repo = (Some("first".to_owned()), Some(one.to_string_lossy().into_owned()), Some(tarmac_protocol::repo_color_index("first")));
+        assert_eq!((entry.repo, entry.repo_root, entry.repo_color), repo);
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

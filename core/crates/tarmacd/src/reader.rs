@@ -76,7 +76,8 @@ impl PathFs for RealFs {
 /// it. When an out call returns, the gate calls `returned`.
 ///
 /// An open's resolve is keyed by the path as given, a look's stamp by the
-/// canonical one: a doc opened through a symlink can hold two calls.
+/// canonical one: a doc opened through a symlink can hold two calls. A
+/// startup walk is keyed by its directory.
 pub struct PathGate {
     fs: Arc<dyn PathFs>,
     limit: Duration,

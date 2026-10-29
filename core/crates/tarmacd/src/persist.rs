@@ -24,8 +24,9 @@ struct PersistedDoc {
     last_changed_ms: Option<u64>,
     #[serde(default)]
     last_opened_ms: u64,
-    // Written for inspectability but recomputed at load: a .git appearing or
-    // vanishing between runs is an observed fact.
+    // Written for inspectability but recomputed at startup
+    // (`docs::read_restored`): a .git appearing or vanishing between runs is
+    // an observed fact.
     repo: Option<String>,
     repo_root: Option<String>,
     repo_color: Option<u8>,
@@ -95,7 +96,9 @@ pub fn load(path: &Path) -> Boards {
     Boards::from_boards(boards, state.active)
 }
 
-// Repo metadata is recomputed here rather than trusted from disk.
+// No file-system call: the daemon reads each doc's file and repo after the
+// load, with a time limit (`docs::read_restored`). Until then a doc is unread
+// and has no repo.
 fn hydrate(pb: PersistedBoard) -> Board {
     let mut reg = Registry::empty();
     for d in pb.docs {
@@ -103,18 +106,18 @@ fn hydrate(pb: PersistedBoard) -> Board {
         if reg.docs.contains_key(&path) {
             continue;
         }
-        let repo = crate::docs::derive_repo(&path);
         reg.docs.insert(
             path.clone(),
             DocInfo {
                 via: d.via,
                 read: d.read,
-                repo: repo.as_ref().map(|r| r.name.clone()),
-                repo_root: repo.as_ref().map(|r| r.root.clone()),
-                repo_color: repo.as_ref().map(|r| r.color),
+                repo: None,
+                repo_root: None,
+                repo_color: None,
                 last_changed_ms: d.last_changed_ms,
-                seen: crate::reader::stamp(&path),
+                seen: None,
                 untold: false,
+                unread: true,
                 last_opened_ms: d.last_opened_ms,
                 term_id: d.term_id,
             },
@@ -194,8 +197,7 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU32, Ordering};
 
-    // Per-test unique state path under the OS temp dir (no .git anywhere on the
-    // walk, so derive_repo deterministically yields None for these fake paths).
+    // Per-test unique state path under the OS temp dir.
     fn tmp_state(tag: &str) -> PathBuf {
         static N: AtomicU32 = AtomicU32::new(0);
         let n = N.fetch_add(1, Ordering::Relaxed);
@@ -205,8 +207,7 @@ mod tests {
     }
 
     // A legacy flat state file: top-level docs/tiles/board, no `boards` key. The
-    // repo fields are recomputed at load, so they come back None for these
-    // fake paths.
+    // repo fields are not trusted from disk, so they come back None.
     const LEGACY_FLAT: &str = r#"{
         "docs": [
             {"path":"/nx-tarmac/plan.md","via":"cli","read":false,"last_changed_ms":1718000000000,"last_opened_ms":1718000000001,"repo":"proj","repo_root":"/nx-tarmac","repo_color":2,"term_id":"t1"},
@@ -238,10 +239,10 @@ mod tests {
             reg.dock,
             vec![PathBuf::from("/nx-tarmac/plan.md"), PathBuf::from("/nx-tarmac/notes.md")]
         );
-        // read flags preserved; repo recomputed (None for a non-.git path).
+        // read flags preserved; repo not taken from disk.
         let plan = reg.docs.get(Path::new("/nx-tarmac/plan.md")).unwrap();
         assert!(!plan.read);
-        assert_eq!(plan.repo, None, "repo is recomputed at load, not trusted from disk");
+        assert_eq!(plan.repo, None, "repo is not trusted from disk");
         assert_eq!(plan.last_changed_ms, Some(1718000000000));
         assert_eq!(plan.term_id.as_deref(), Some("t1"));
         assert!(reg.docs.get(Path::new("/nx-tarmac/notes.md")).unwrap().read);

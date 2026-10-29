@@ -399,7 +399,7 @@ mod tests {
     #[tokio::test]
     async fn output_queued_behind_the_exit_precedes_the_exit_frame() {
         let state = std::env::temp_dir().join(format!("tarmac-term-pump-{}", std::process::id())).join("state.json");
-        let daemon = Daemon::new(state).unwrap();
+        let daemon = Daemon::new(state).await.unwrap();
         let (app_tx, mut app_rx) = mpsc::channel(8);
         daemon.install_app(app_tx, None).await;
         let (input_tx, _input_rx) = mpsc::channel(1);

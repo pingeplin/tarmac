@@ -22,6 +22,10 @@ pub struct DocInfo {
     /// or it went away. In memory only. The next look tells it
     /// (`Registry::take_untold`).
     pub untold: bool,
+    /// Restored, and its file not read yet. In memory only. Its first reading
+    /// is taken as it is, with no change (`Registry::take_first_readings`), as a
+    /// restart takes each file.
+    pub unread: bool,
     pub last_opened_ms: u64,
     /// The term that opened this doc; `None` when opened without a `TARMAC_TERM_ID`.
     pub term_id: Option<String>,
@@ -44,9 +48,17 @@ impl DocInfo {
     fn see(&mut self, stamp: FileStamp) -> u64 {
         self.seen = Some(stamp);
         self.untold = false;
+        self.unread = false;
         let ms = epoch_ms(stamp.mtime);
         self.last_changed_ms = Some(ms);
         ms
+    }
+
+    /// Takes the first reading of an unread doc, with no change.
+    fn take_first_reading(&mut self, stamp: Option<FileStamp>) {
+        if std::mem::take(&mut self.unread) {
+            self.seen = stamp;
+        }
     }
 }
 
@@ -125,8 +137,10 @@ impl Registry {
     /// differs from what was seen, with the file's mtime in ms. "Differs", not
     /// "is newer": a file put back from a backup is a change, and one with an
     /// mtime in the future is not. A file that is gone is taken and not
-    /// returned, so it is a change when it is back.
+    /// returned, so it is a change when it is back. The first reading of an
+    /// unread doc is taken and not returned.
     pub fn take_changes(&mut self, now: &HashMap<PathBuf, Option<FileStamp>>) -> Vec<(PathBuf, u64)> {
+        self.take_first_readings(now);
         let mut changes = Vec::new();
         for (path, stamp) in now {
             let Some(info) = self.docs.get_mut(path) else { continue };
@@ -146,10 +160,20 @@ impl Registry {
         changes
     }
 
+    /// The first reading of each unread doc in `now`, with no change.
+    pub fn take_first_readings(&mut self, now: &HashMap<PathBuf, Option<FileStamp>>) {
+        for (path, stamp) in now {
+            if let Some(info) = self.docs.get_mut(path) {
+                info.take_first_reading(*stamp);
+            }
+        }
+    }
+
     /// `doc_refresh`: takes the file as seen whether or not it differs, and
-    /// returns its mtime in ms. `None` for an unknown path.
-    pub fn refresh(&mut self, path: &Path, stamp: FileStamp) -> Option<u64> {
-        Some(self.docs.get_mut(path)?.see(stamp))
+    /// returns its mtime in ms. `None`, with nothing taken, for an unknown
+    /// path or no file: a file that is gone emits nothing until it is back.
+    pub fn refresh(&mut self, path: &Path, stamp: Option<FileStamp>) -> Option<u64> {
+        Some(self.docs.get_mut(path)?.see(stamp?))
     }
 
     /// The `file_event` for `path` reached no app.
@@ -284,12 +308,28 @@ impl Boards {
         self.boards.iter()
     }
 
+    pub fn registries_mut(&mut self) -> impl Iterator<Item = &mut Registry> {
+        self.boards.iter_mut().map(|b| &mut b.registry)
+    }
+
+    /// `Registry::take_first_readings` on every board.
+    pub fn take_first_readings(&mut self, now: &HashMap<PathBuf, Option<FileStamp>>) {
+        for reg in self.registries_mut() {
+            reg.take_first_readings(now);
+        }
+    }
+
     /// Holds the doc of board `id` (`Registry::hold`). Nothing for a board that
     /// is gone: the change was that board's, and not the active board's.
     pub fn hold(&mut self, id: &str, path: &Path) {
         if let Some(idx) = self.index_of(id) {
             self.boards[idx].registry.hold(path);
         }
+    }
+
+    /// The path of each unread doc, of every board.
+    pub fn unread_doc_paths(&self) -> impl Iterator<Item = &PathBuf> {
+        self.boards.iter().flat_map(|b| b.registry.docs.iter().filter(|(_, info)| info.unread).map(|(path, _)| path))
     }
 
     /// The path of each registered doc, of every board.
@@ -492,7 +532,7 @@ mod tests {
     }
 
     fn doc_info() -> DocInfo {
-        DocInfo { via: "t".into(), read: false, repo: None, repo_root: None, repo_color: None, last_changed_ms: None, seen: None, untold: false, last_opened_ms: 0, term_id: None }
+        DocInfo { via: "t".into(), read: false, repo: None, repo_root: None, repo_color: None, last_changed_ms: None, seen: None, untold: false, unread: false, last_opened_ms: 0, term_id: None }
     }
 
     #[test]
@@ -575,11 +615,11 @@ mod tests {
         reg.take_changes(&now(&doc, at(20)));
         reg.hold(&doc);
 
-        assert_eq!(reg.refresh(&doc, at(30).unwrap()), Some(30_000));
+        assert_eq!(reg.refresh(&doc, at(30)), Some(30_000));
         assert_eq!(reg.docs[&doc].last_changed_ms, Some(30_000));
         assert_eq!(reg.take_changes(&now(&doc, at(30))), vec![], "the file is as the refresh saw it");
         assert_eq!(reg.take_untold(), vec![], "the refresh told it");
-        assert_eq!(reg.refresh(Path::new("/d/other.md"), at(30).unwrap()), None);
+        assert_eq!(reg.refresh(Path::new("/d/other.md"), at(30)), None);
     }
 
     // "If the file is deleted, stop emitting until the path exists again."
@@ -666,6 +706,42 @@ mod tests {
 
         assert_eq!(reg.take_changes(&now(&doc, None)), vec![]);
         assert_eq!(reg.take_changes(&now(&doc, at(10))), vec![(doc, 10_000)]);
+    }
+
+    fn unread_registry(path: &Path) -> Registry {
+        let mut reg = Registry::empty();
+        reg.docs.insert(path.to_owned(), DocInfo { unread: true, last_changed_ms: Some(5_000), ..doc_info() });
+        reg
+    }
+
+    // 2610.0012 D10: a reading of a file and a reading of none end `unread`
+    // alike, and so does a refresh.
+    #[test]
+    fn the_first_reading_of_an_unread_doc_is_no_change() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut reg = unread_registry(&doc);
+        assert_eq!(reg.take_changes(&now(&doc, at(10))), vec![]);
+        assert_eq!(reg.docs[&doc].last_changed_ms, Some(5_000), "as restored");
+        assert_eq!(reg.take_changes(&now(&doc, at(20))), vec![(doc.clone(), 20_000)]);
+
+        let mut reg = unread_registry(&doc);
+        assert_eq!(reg.take_changes(&now(&doc, None)), vec![]);
+        assert_eq!(reg.take_changes(&now(&doc, at(10))), vec![(doc.clone(), 10_000)], "it was gone");
+
+        let mut reg = unread_registry(&doc);
+        assert_eq!(reg.refresh(&doc, at(10)), Some(10_000));
+        assert_eq!(reg.take_changes(&now(&doc, at(20))), vec![(doc, 20_000)]);
+    }
+
+    // A refresh that finds no file pushes nothing and takes nothing: the doc
+    // stays unread, and the first reading of a file is still no change.
+    #[test]
+    fn a_refresh_of_an_unread_doc_with_no_file_leaves_it_unread() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut reg = unread_registry(&doc);
+        assert_eq!(reg.refresh(&doc, None), None);
+        assert_eq!(reg.take_changes(&now(&doc, at(10))), vec![]);
+        assert_eq!(reg.docs[&doc].last_changed_ms, Some(5_000));
     }
 
     #[test]

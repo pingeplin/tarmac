@@ -1,13 +1,14 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
 use tarmac_protocol::Msg;
+use tokio::task::JoinSet;
 use tracing::debug;
 
-use crate::boards::{DocInfo, FileStamp, Registry, epoch_ms};
-use crate::reader::{Out, PathFs};
+use crate::boards::{Boards, DocInfo, FileStamp, Registry, epoch_ms};
+use crate::reader::{Out, PathFs, PathGate};
 use crate::state::Daemon;
 
 pub struct RepoInfo {
@@ -123,12 +124,42 @@ pub fn upsert_doc(
                     last_changed_ms: None,
                     seen,
                     untold: false,
+                    unread: false,
                     last_opened_ms: epoch_ms(SystemTime::now()),
                     term_id,
                 },
             );
             reg.dock.push(path.to_owned());
             true
+        }
+    }
+}
+
+/// The restored docs' files and repos, read on the gate all at once: one
+/// stamp batch for every doc, and one `.git` walk per dir, keyed by the dir
+/// and made from one of its docs (`derive_repo` starts at the doc's parent).
+/// It waits at most two limits in all. A doc whose file is not read in time
+/// stays unread, and a dir whose walk is out leaves its docs with no repo.
+pub async fn read_restored(gate: &Arc<PathGate>, boards: &mut Boards) {
+    let docs = boards.doc_paths();
+    let dirs: HashMap<&Path, &Path> = docs.iter().filter_map(|doc| Some((doc.parent()?, doc.as_path()))).collect();
+    let mut walks = JoinSet::new();
+    for (dir, doc) in dirs {
+        let (gate, dir, doc) = (gate.clone(), dir.to_owned(), doc.to_owned());
+        walks.spawn(async move {
+            let repo = gate.run(&dir, move |fs: &dyn PathFs| fs.repo_of(&doc)).await.ok().flatten();
+            (dir, repo)
+        });
+    }
+    let now = gate.stamps(docs.iter().cloned()).await;
+    let repos: HashMap<PathBuf, Option<RepoInfo>> = walks.join_all().await.into_iter().collect();
+    boards.take_first_readings(&now);
+    for reg in boards.registries_mut() {
+        for (path, info) in &mut reg.docs {
+            let repo = path.parent().and_then(|dir| repos.get(dir)).and_then(Option::as_ref);
+            info.repo = repo.map(|r| r.name.clone());
+            info.repo_root = repo.map(|r| r.root.clone());
+            info.repo_color = repo.map(|r| r.color);
         }
     }
 }
@@ -161,12 +192,18 @@ pub fn take_to_tell(
 
 /// Compares each doc of the active board with its file, and pushes a
 /// `file_event` for each that changed. A doc of another board is compared when
-/// its board is sent (`conn::change_and_send_active_board`).
+/// its board is sent (`conn::change_and_send_active_board`). An unread doc of
+/// any board is read too, and its first reading taken with no change: a
+/// change after its volume answers is then told at its switch.
 pub async fn report_changes(daemon: &Daemon) {
     let (board, tell) = daemon
         .look(
-            |boards| boards.active_registry().docs.keys().cloned().collect::<Vec<_>>(),
+            |boards| {
+                let active = boards.active_registry().docs.keys();
+                active.chain(boards.unread_doc_paths()).cloned().collect::<HashSet<_>>()
+            },
             |boards, now| {
+                boards.take_first_readings(now);
                 let tell = take_to_tell(daemon, boards.active_registry_mut(), now);
                 (boards.active_id().to_string(), tell)
             },
@@ -201,9 +238,7 @@ pub async fn stat_and_push(daemon: &Arc<Daemon>, path: &Path) -> bool {
         .look(
             |_| vec![path.to_owned()],
             |boards, now| {
-                // Deleted files emit nothing until the path exists again.
-                let stamp = now.get(path).copied().flatten()?;
-                let mtime_ms = boards.active_registry_mut().refresh(path, stamp)?;
+                let mtime_ms = boards.active_registry_mut().refresh(path, now.get(path).copied().flatten())?;
                 // Before the push, as in `take_to_tell`.
                 daemon.mark_dirty();
                 Some((boards.active_id().to_string(), mtime_ms))
