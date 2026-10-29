@@ -92,8 +92,9 @@ impl PathGate {
         PathGate { fs, limit, out: Arc::default(), returned }
     }
 
-    pub fn limit(&self) -> Duration {
-        self.limit
+    /// The answer to a caller of `what` that got `Out`.
+    pub fn did_not_answer(&self, what: &str) -> String {
+        format!("{what}: did not answer in {:?}", self.limit)
     }
 
     /// `op` on a blocking thread, keyed by `key`.

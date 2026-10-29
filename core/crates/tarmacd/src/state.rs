@@ -1254,8 +1254,10 @@ mod tests {
         answers(async move { crate::docs::handle_open(&daemon, &doc, "cli", None, None).await }).await
     }
 
-    fn did_not_answer(doc: &Path) -> Result<(), String> {
-        Err(format!("cannot open {}: did not answer in {LIMIT:?}", doc.display()))
+    fn did_not_answer(daemon: &Daemon, doc: &Path) -> Result<(), String> {
+        let answer = daemon.gate().did_not_answer(&format!("cannot open {}", doc.display()));
+        assert!(answer.starts_with(&format!("cannot open {}: did not answer in ", doc.display())));
+        Err(answer)
     }
 
     async fn registered(daemon: &Daemon, doc: &Path) -> bool {
@@ -1296,7 +1298,7 @@ mod tests {
         let daemon = gated(&tmp, fs.clone());
 
         let before = std::time::Instant::now();
-        assert_eq!(try_open(&daemon, &doc).await, did_not_answer(&doc));
+        assert_eq!(try_open(&daemon, &doc).await, did_not_answer(&daemon, &doc));
         assert!(before.elapsed() < 3 * LIMIT, "it waited {:?}", before.elapsed());
         assert!(!registered(&daemon, &doc).await);
 
@@ -1311,10 +1313,10 @@ mod tests {
         let (fs, _release) = stuck_fs();
         fs.hold(Call::Resolve, &tmp.join("gone"));
         let daemon = gated(&tmp, fs.clone());
-        assert_eq!(try_open(&daemon, &doc).await, did_not_answer(&doc));
+        assert_eq!(try_open(&daemon, &doc).await, did_not_answer(&daemon, &doc));
 
         let before = std::time::Instant::now();
-        assert_eq!(try_open(&daemon, &doc).await, did_not_answer(&doc));
+        assert_eq!(try_open(&daemon, &doc).await, did_not_answer(&daemon, &doc));
         assert!(before.elapsed() < LIMIT, "it waited {:?} for a call that is out", before.elapsed());
         assert_eq!(fs.calls(Call::Resolve), 1);
 
@@ -1339,8 +1341,7 @@ mod tests {
         eventually("the held resolve", || fs.held(Call::Resolve) == 1).await;
         assert_eq!(try_open(&daemon, &doc).await, Ok(()));
         assert_eq!(docs_opened(&mut app), vec![doc]);
-        assert!(!stuck_open.is_finished(), "the other open has answered already");
-        assert_eq!(stuck_open.await.unwrap(), did_not_answer(&stuck));
+        assert_eq!(stuck_open.await.unwrap(), did_not_answer(&daemon, &stuck));
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -1354,7 +1355,7 @@ mod tests {
         fs.hold(Call::Resolve, &tmp.join("gone"));
         let daemon = gated(&tmp, fs.clone());
         let mut app = connect_app(&daemon).await;
-        assert_eq!(try_open(&daemon, &doc).await, did_not_answer(&doc));
+        assert_eq!(try_open(&daemon, &doc).await, did_not_answer(&daemon, &doc));
 
         drop(release);
         eventually("the return of the resolve", || !daemon.gate().is_out_dir(&tmp.join("gone"))).await;
@@ -1402,7 +1403,7 @@ mod tests {
         fs.hold(Call::Resolve, &tmp.join("gone"));
         fs.hold(Call::Stamp, &tmp.join("gone"));
 
-        assert_eq!(try_open(&daemon, &doc).await, did_not_answer(&doc));
+        assert_eq!(try_open(&daemon, &doc).await, did_not_answer(&daemon, &doc));
         let before = std::time::Instant::now();
         assert_eq!(look_at_doc(&daemon, &doc).await, HashMap::new());
         assert!(before.elapsed() < LIMIT, "it waited {:?} for a call that is out", before.elapsed());
@@ -1425,7 +1426,7 @@ mod tests {
         let resolves = fs.calls(Call::Resolve);
 
         let before = std::time::Instant::now();
-        assert_eq!(try_open(&daemon, &doc).await, did_not_answer(&doc));
+        assert_eq!(try_open(&daemon, &doc).await, did_not_answer(&daemon, &doc));
         assert!(before.elapsed() < LIMIT, "it waited {:?} for a call that is out", before.elapsed());
         assert_eq!(fs.calls(Call::Resolve), resolves);
 

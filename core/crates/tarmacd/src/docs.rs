@@ -57,7 +57,7 @@ pub async fn handle_open(
     let (canon, seen) = gate
         .run(p, resolve)
         .await
-        .map_err(|Out| format!("cannot open {raw_path}: did not answer in {:?}", gate.limit()))??;
+        .map_err(|Out| gate.did_not_answer(&format!("cannot open {raw_path}")))??;
     // `None` resolves to the active board inside `registry_mut`.
     let target = match (board_id, &term_id) {
         (Some(id), _) => Some(id),
