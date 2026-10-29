@@ -6,6 +6,23 @@ use std::process::{Command, ExitStatus, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
 
+use tarmac_protocol::{self as proto, Msg};
+
+pub fn hello_ok(
+    daemon_version: Option<&str>,
+    daemon_pid: Option<u32>,
+    app_version: Option<&str>,
+    app_connected: Option<bool>,
+) -> Msg {
+    Msg::HelloOk {
+        v: proto::PROTOCOL_VERSION,
+        daemon_version: daemon_version.map(str::to_string),
+        daemon_pid,
+        app_version: app_version.map(str::to_string),
+        app_connected,
+    }
+}
+
 /// Pinned to an absent socket so no test can reach a real daemon; a test that
 /// needs one sets its own `TARMAC_SOCKET`.
 pub fn tarmac() -> Command {

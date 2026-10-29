@@ -188,8 +188,8 @@ fn app_line(info: &DaemonInfo) -> String {
 }
 
 fn open(raw_path: &str) -> Result<String, String> {
-    // No file-system call on the path: a hung volume would hang the cli with no
-    // time limit. The daemon resolves and checks it on its gate (#267).
+    // No file-system call on the path: on a hung volume it would hang the cli,
+    // and Ctrl-C could not end it (#267).
     let path = std::path::absolute(raw_path).map_err(|e| format!("cannot open {raw_path}: {e}"))?;
 
     let sock = socket_path();

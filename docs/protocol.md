@@ -103,8 +103,10 @@ handshake, renders `hello_ok`'s daemon and app keys, and closes without sending 
 second frame.
 
 - `path` MUST be absolute. The CLI makes it absolute against its working
-  directory (`std::path::absolute`) and makes no file-system call on it; the
-  daemon canonicalizes it and refuses a non-absolute path.
+  directory (`std::path::absolute`) and makes no file-system call on it, so a
+  hung volume cannot hang it. The daemon refuses a non-absolute path,
+  canonicalizes it, and owns every error text, which the CLI prints as
+  `tarmac: {msg}`. On `ack` the CLI prints `opened` with the path it sent.
 - v4 Phase 3 adds an OPTIONAL `term_id` to `open` (see *v4 Phase 3 additive
   keys*); the CLI sets it from `TARMAC_TERM_ID` when run inside a tarmac pty.
 - The file must exist; otherwise `err`.
