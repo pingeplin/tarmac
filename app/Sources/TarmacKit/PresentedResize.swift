@@ -14,9 +14,8 @@ import CoreGraphics
 /// - Grow: the bounds go back to the size last presented, which stretches the
 ///   old frame over the card, and the content takes its new frame under them,
 ///   so the area it gained is clipped; then the layout. A card resize drags
-///   the bounds along with the host's frame, so they are put back at each
-///   step while the grow waits, and whenever a waiting size passes the
-///   content's frame.
+///   the bounds along with the host's frame, so while a resize waits they
+///   are put back whenever a new size passes what is presented.
 ///
 /// Grow or shrink is read from the content's frame, never the bounds: a card
 /// resize drags the bounds along with the host's frame before the host sees it.
@@ -91,8 +90,10 @@ public struct PresentedResize: Sendable {
         guard deferrable, let fitted, content.width > 0, content.height > 0 else { return applyNow(target) }
         if let waiting {
             next = Self.same(waiting.target, target) ? nil : target
-            let holds = waiting.grows || Self.exceeds(target, waiting.reach)
-            return .pending(steps: holds ? [.bounds(fitted)] : [])
+            // The dragged bounds crop what is presented at its own scale; past
+            // it they would show what WebKit has not drawn, so they are held.
+            let presented = waiting.grows ? fitted : waiting.reach
+            return .pending(steps: Self.exceeds(target, presented) ? [.bounds(fitted)] : [])
         }
         // The content's frame is moved onto whole device pixels, so it is up
         // to a pixel off the size it was fitted to; only `fitted` says that
@@ -109,11 +110,16 @@ public struct PresentedResize: Sendable {
         guard let waiting, waiting.generation == generation else { return nil }
         self.waiting = nil
         fitted = waiting.target
-        let applied: [Step] = [.bounds(waiting.target), .fit(waiting.target)]
-        guard let target = next else { return Presented(steps: applied, awaiting: nil) }
+        guard let target = next else {
+            return Presented(steps: [.bounds(waiting.target), .fit(waiting.target)], awaiting: nil)
+        }
         next = nil
+        // A shrink that follows crops the frame just presented at the card's
+        // own scale, as one from rest does; under the presented size's bounds
+        // the whole page would show squeezed for a round.
+        let bounds = Self.exceeds(target, waiting.target) ? waiting.target : target
         let steps = stage(content: waiting.target, target: target, fitted: waiting.target)
-        return Presented(steps: applied + steps, awaiting: lastGeneration)
+        return Presented(steps: [.bounds(bounds), .fit(waiting.target)] + steps, awaiting: lastGeneration)
     }
 
     private mutating func stage(content: CGSize, target: CGSize, fitted: CGSize) -> [Step] {

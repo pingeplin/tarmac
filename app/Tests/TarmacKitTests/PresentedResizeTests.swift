@@ -50,7 +50,7 @@ final class PresentedResizeTests: XCTestCase {
         XCTAssertEqual(resize.plan(content: large, target: between, deferrable: true), .pending(steps: [.bounds(small)]))
         XCTAssertEqual(
             resize.presented(1),
-            .init(steps: [.bounds(large), .fit(large), .layout(between)], awaiting: 2)
+            .init(steps: [.bounds(between), .fit(large), .layout(between)], awaiting: 2)
         )
     }
 
@@ -64,6 +64,10 @@ final class PresentedResizeTests: XCTestCase {
         XCTAssertEqual(resize.presented(1), .init(steps: [.bounds(wideShort), .fit(wideShort)], awaiting: nil))
     }
 
+    /// A shrink that follows a presentation crops the presented frame at its
+    /// own scale, as a shrink from rest does, rather than squeezing the page
+    /// under the bounds of the size just presented.
+    ///
     /// A grip drag sends a size every few milliseconds, faster than WebKit
     /// presents; superseding the waiting resize each time would leave the
     /// card stretched for the whole drag. So it follows at presentation pace.
@@ -74,7 +78,7 @@ final class PresentedResizeTests: XCTestCase {
         XCTAssertEqual(resize.plan(content: large, target: smaller, deferrable: true), .pending(steps: []))
         XCTAssertEqual(
             resize.presented(1),
-            .init(steps: [.bounds(small), .fit(small), .layout(smaller)], awaiting: 2)
+            .init(steps: [.bounds(smaller), .fit(small), .layout(smaller)], awaiting: 2)
         )
         XCTAssertEqual(resize.presented(2), .init(steps: [.bounds(smaller), .fit(smaller)], awaiting: nil))
     }
@@ -129,6 +133,18 @@ final class PresentedResizeTests: XCTestCase {
         )
     }
 
+    /// A drag that turns back while a grow waits: below the size last
+    /// presented the dragged bounds crop that frame at its own scale, and
+    /// held there they would squeeze it.
+    func testWhileAGrowWaitsASizeBelowThePresentedOneLeavesTheBounds() {
+        var resize = fitted(at: small)
+        _ = resize.plan(content: small, target: large, deferrable: true)
+        XCTAssertEqual(
+            resize.plan(content: large, target: CGSize(width: 500, height: 350), deferrable: true),
+            .pending(steps: [])
+        )
+    }
+
     /// While a shrink waits the content keeps its old frame, so the dragged
     /// bounds crop it as before; past that frame they would show the card's
     /// backdrop, so they are held.
@@ -166,6 +182,7 @@ final class PresentedResizeTests: XCTestCase {
         XCTAssertNil(resize.presented(1))
         XCTAssertEqual(resize.plan(content: smaller, target: large, deferrable: true),
                        .staged(generation: 2, steps: [.bounds(smaller), .contentFrame(large), .layout(large)]))
+        XCTAssertEqual(resize.presented(2), .init(steps: [.bounds(large), .fit(large)], awaiting: nil))
     }
 
     /// A frame moved onto whole device pixels is a few tenths of a point off
