@@ -396,7 +396,8 @@ call is one flight: a claim (wait for a busy key, or skip it), the call on a
 blocking thread, and a landing that leaves the call at its caller's deadline.
 A look's batch runs its flights one after the other on one thread, waits
 once for that thread or its deadline, then takes each answer that is there
-and leaves the read in flight. An open's
+and leaves the read in flight. A stamp that panics gives its doc no entry
+(not known, which is not gone), and the rest of the batch is read apart. An open's
 resolve is keyed by the path as given and a look by the canonical path, so a
 doc opened through a symlink can hold two calls.
 

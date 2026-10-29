@@ -1254,6 +1254,23 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
+    // The doc that panics first, so the rest is read apart. It has no entry:
+    // not known, which is not gone.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_stamp_that_panics_gives_its_doc_no_entry_and_the_rest_is_read() {
+        let tmp = tmp_dir("stamp-panics-first");
+        let (reader, stuck, _release) = stuck_reader();
+        let paths: Vec<PathBuf> = ["a", "b", "c"].iter().map(|n| write_doc(tmp.join(format!("d/{n}.md")))).collect();
+        stuck.panic_on(&paths[0]);
+
+        let read = paths.clone();
+        let now = answers(async move { reader.stamps(read).await }).await;
+        let others = paths[1..].iter().map(|p| (p.clone(), crate::reader::stamp(p)));
+        assert_eq!(now, HashMap::from_iter(others));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
     // In a look, the order of the docs is the order of a hash map: here the
     // stuck reads come first.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
