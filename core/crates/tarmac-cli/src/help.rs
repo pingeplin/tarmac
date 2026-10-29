@@ -90,8 +90,8 @@ USAGE:
 {DEV_USAGE}    tarmac --help           show this help
 
 `tarmac open` is fire-and-forget: anything (you, an agent, a Makefile, a git
-hook) can run it to surface a doc in the cockpit. The path is canonicalized
-and must point to an existing file.
+hook) can run it to surface a doc in the cockpit. A relative path works;
+Tarmac checks the file.
 
 {DEV_HELP}`tarmac skill` never talks to the daemon. `install` writes one SKILL.md per
 target — claude-code (~/.claude/skills) and codex (~/.agents/skills) — and

@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use tarmac_protocol::{self as proto, Msg, frame};
 
 mod common;
-use common::{Report, scratch, tarmac};
+use common::{Report, hello_ok, scratch, tarmac};
 
 /// What the fake daemon does after reading the client's `hello`.
 enum Reply {
@@ -99,21 +99,6 @@ impl Report {
 /// CLI uses, so `cargo test --release` cannot make these tests lie.
 fn expected_channel() -> &'static str {
     if cfg!(debug_assertions) { "dev" } else { "release" }
-}
-
-fn hello_ok(
-    daemon_version: Option<&str>,
-    daemon_pid: Option<u32>,
-    app_version: Option<&str>,
-    app_connected: Option<bool>,
-) -> Msg {
-    Msg::HelloOk {
-        v: proto::PROTOCOL_VERSION,
-        daemon_version: daemon_version.map(str::to_string),
-        daemon_pid,
-        app_version: app_version.map(str::to_string),
-        app_connected,
-    }
 }
 
 /// A daemon reporting sentinel values unlike any real release, so no assertion

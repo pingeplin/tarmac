@@ -188,13 +188,9 @@ fn app_line(info: &DaemonInfo) -> String {
 }
 
 fn open(raw_path: &str) -> Result<String, String> {
-    let canon = std::fs::canonicalize(raw_path)
-        .map_err(|e| format!("cannot open {raw_path}: {e}"))?;
-    let meta = std::fs::metadata(&canon)
-        .map_err(|e| format!("cannot stat {}: {e}", canon.display()))?;
-    if !meta.is_file() {
-        return Err(format!("not a regular file: {}", canon.display()));
-    }
+    // No file-system call on the path: on a hung volume it would hang the cli,
+    // and Ctrl-C could not end it (#267).
+    let path = std::path::absolute(raw_path).map_err(|e| format!("cannot open {raw_path}: {e}"))?;
 
     let sock = socket_path();
     let (mut stream, _) = handshake(&sock).map_err(|e| match e {
@@ -209,10 +205,10 @@ fn open(raw_path: &str) -> Result<String, String> {
     let term_id = std::env::var("TARMAC_TERM_ID").ok().filter(|s| !s.is_empty());
     // board_id stays None: the daemon resolves the board from term_id, falling
     // back to the active one.
-    send(&mut stream, &Msg::Open { path: canon.to_string_lossy().into_owned(), term_id, board_id: None })?;
+    send(&mut stream, &Msg::Open { path: path.to_string_lossy().into_owned(), term_id, board_id: None })?;
     loop {
         match recv(&mut stream)? {
-            Msg::Ack => return Ok(format!("opened {}", canon.display())),
+            Msg::Ack => return Ok(format!("opened {}", path.display())),
             Msg::Err { msg } => return Err(msg),
             _ => continue,
         }

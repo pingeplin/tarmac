@@ -95,14 +95,18 @@ no version of its own names none and restarts nothing.
 
 ## CLI session (short-lived)
 
-    → {t:"open", path:"/abs/canonical/path.md"}
+    → {t:"open", path:"/abs/path.md"}
     ← {t:"ack"}  |  {t:"err", msg}
 
 `tarmac --version` is the other CLI verb that opens the socket. It completes the
 handshake, renders `hello_ok`'s daemon and app keys, and closes without sending a
 second frame.
 
-- `path` MUST be absolute and canonicalized by the CLI before sending.
+- `path` MUST be absolute. The CLI makes it absolute against its working
+  directory (`std::path::absolute`) and makes no file-system call on it, so a
+  hung volume cannot hang it. The daemon refuses a non-absolute path,
+  canonicalizes it, and owns every error text, which the CLI prints as
+  `tarmac: {msg}`. On `ack` the CLI prints `opened` with the path it sent.
 - v4 Phase 3 adds an OPTIONAL `term_id` to `open` (see *v4 Phase 3 additive
   keys*); the CLI sets it from `TARMAC_TERM_ID` when run inside a tarmac pty.
 - The file must exist; otherwise `err`.

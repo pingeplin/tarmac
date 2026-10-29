@@ -1,8 +1,61 @@
+use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::mpsc::{self, Receiver};
+use std::time::Duration;
+
+use tarmac_protocol::{self as proto, Msg, frame};
 
 mod common;
-use common::{Report, scratch, tarmac};
+use common::{Report, hello_ok, scratch, tarmac};
+
+/// A daemon double for `open`: it does the handshake, records the `Open` path,
+/// then answers `reply`.
+struct OpenDaemon {
+    dir: PathBuf,
+    sock: PathBuf,
+    opened: Receiver<String>,
+}
+
+impl OpenDaemon {
+    fn start(reply: Msg) -> Self {
+        let dir = scratch();
+        let sock = dir.join("tarmacd.sock");
+        let listener = UnixListener::bind(&sock).unwrap();
+        let (record, opened) = mpsc::channel();
+        std::thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else { return };
+            let hello_ok = proto::encode(&hello_ok(None, None, None, None)).unwrap();
+            if frame::read_sync(&mut stream).is_err() || frame::write_sync(&mut stream, &hello_ok).is_err() {
+                return;
+            }
+            let Ok(payload) = frame::read_sync(&mut stream) else { return };
+            if let Ok(Msg::Open { path, .. }) = proto::decode(&payload) {
+                let _ = record.send(path);
+            }
+            let _ = frame::write_sync(&mut stream, &proto::encode(&reply).unwrap());
+        });
+        OpenDaemon { dir, sock, opened }
+    }
+
+    fn open(&self, path: &str) -> Report {
+        Report::of(tarmac().env("TARMAC_SOCKET", &self.sock).args(["open", path]))
+    }
+
+    fn open_in(&self, cwd: &Path, path: &str) -> Report {
+        Report::of(tarmac().current_dir(cwd).env("TARMAC_SOCKET", &self.sock).args(["open", path]))
+    }
+
+    fn opened(&self) -> Option<String> {
+        self.opened.recv_timeout(Duration::from_secs(5)).ok()
+    }
+}
+
+impl Drop for OpenDaemon {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
 
 #[test]
 fn help_exits_zero_and_documents_open() {
@@ -25,11 +78,64 @@ fn unknown_command_exits_with_usage_error() {
     assert!(out.stderr.contains("unknown command"));
 }
 
+// S25: the daemon owns the missing-file text; the cli relays it.
 #[test]
 fn missing_file_is_a_clear_one_line_error() {
-    let out = Report::of(tarmac().args(["open", "/definitely/not/here.md"]));
+    let daemon = OpenDaemon::start(Msg::Err {
+        msg: "cannot open /definitely/not/here.md: No such file or directory (os error 2)".into(),
+    });
+    let out = daemon.open("/definitely/not/here.md");
     assert_eq!(out.code(), Some(1));
     assert!(out.one_stderr_line().contains("cannot open"));
+    assert_eq!(daemon.opened().as_deref(), Some("/definitely/not/here.md"));
+}
+
+// S25: with no file-system call in the cli, no daemon is what it reports.
+#[test]
+fn missing_file_with_no_daemon_says_no_daemon() {
+    let out = Report::of(tarmac().args(["open", "/definitely/not/here.md"]));
+    assert_eq!(out.code(), Some(1));
+    assert!(out.one_stderr_line().contains("no tarmac daemon running"), "got: {}", out.stderr);
+}
+
+// S22: the path is sent as given, not resolved through the symlink.
+#[test]
+fn open_sends_a_symlinked_path_as_given() {
+    let dir = scratch();
+    std::fs::create_dir(dir.join("real")).unwrap();
+    std::fs::write(dir.join("real/a.md"), "# hi\n").unwrap();
+    std::os::unix::fs::symlink(dir.join("real"), dir.join("link")).unwrap();
+    let given = dir.join("link/a.md").to_str().unwrap().to_string();
+
+    let daemon = OpenDaemon::start(Msg::Ack);
+    let out = daemon.open(&given);
+
+    assert_eq!(out.code(), Some(0), "stderr: {}", out.stderr);
+    assert_eq!(daemon.opened().as_deref(), Some(given.as_str()));
+    assert_eq!(out.stdout, format!("opened {given}\n"));
+}
+
+// S23: getcwd gives /private/var for /var.
+#[test]
+fn open_makes_a_relative_path_absolute_against_the_cwd() {
+    let dir = scratch();
+    let expected = std::fs::canonicalize(&dir).unwrap().join("rel/a.md").to_str().unwrap().to_string();
+
+    let daemon = OpenDaemon::start(Msg::Ack);
+    let out = daemon.open_in(&dir, "rel/a.md");
+
+    assert_eq!(out.code(), Some(0), "stderr: {}", out.stderr);
+    assert_eq!(daemon.opened().as_deref(), Some(expected.as_str()));
+    assert_eq!(out.stdout, format!("opened {expected}\n"));
+}
+
+// S24: the daemon's error text is relayed as one line, exit 1.
+#[test]
+fn open_relays_the_daemons_error_text() {
+    let daemon = OpenDaemon::start(Msg::Err { msg: "cannot open /x: did not answer in 1s".into() });
+    let out = daemon.open("/x");
+    assert_eq!(out.code(), Some(1));
+    assert_eq!(out.one_stderr_line(), "tarmac: cannot open /x: did not answer in 1s\n");
 }
 
 #[test]
