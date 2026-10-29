@@ -805,8 +805,11 @@ handlers they post to. No cookies, cache or storage outlive the app.
   the layout first, a grow takes the new frame under the bounds it was last
   fitted under. So after a zoom the old frame stays stretched, as it was while
   the zoom moved, until the new one is drawn, and a web view that grows never
-  shows WebKit's default colour beside its old frame. The same host and the
-  same wait carry an HTML card's web view, on a card resize as on a zoom.
+  shows WebKit's default colour beside its old frame. One resize waits at a
+  time: a size asked for meanwhile (the latest only) is staged when it is
+  presented, so a grip drag follows at WebKit's presentation pace. The same
+  host and the same wait carry an HTML card's web view, on a card resize as
+  on a zoom.
 - **Scroll.** The reading position is kept as `scrollTop / scrollHeight`, so it
   survives a re-render, a zoom and a card resize. The page reports the
   scroller's position to the card on every scroll and layout, for the scroll

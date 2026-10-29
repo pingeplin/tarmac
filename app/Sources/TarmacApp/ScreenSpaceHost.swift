@@ -93,21 +93,22 @@ final class ScreenSpaceHost: NSView {
         guard size.width > 0, size.height > 0 else { return }
         let deferrable = window != nil && !isHiddenOrHasHiddenAncestor && content.responds(to: Self.afterPresentation)
         switch resize.plan(content: content.frame.size, target: size, deferrable: deferrable) {
-        case .now: fitNow(size)
-        case .pending: break
+        case .now(let relayout): fitNow(size, relayout: relayout)
+        case .pending(let steps): run(steps)
         case .staged(let generation, let steps):
             run(steps)
             awaitPresentation(generation)
         }
     }
 
-    private func fitNow(_ size: CGSize) {
+    private func fitNow(_ size: CGSize, relayout: Bool) {
         fallback?.cancel()
+        fallback = nil
         if bounds.size != size { setBoundsSize(size) }
         let target = alignedContentFrame(size)
-        guard !Self.same(target, content.frame) else { return }
-        onResize?(target.size)
-        content.frame = target
+        let moved = !Self.same(target, content.frame)
+        if moved || relayout { onResize?(target.size) }
+        if moved { content.frame = target }
     }
 
     private func run(_ steps: [PresentedResize.Step]) {
@@ -127,24 +128,27 @@ final class ScreenSpaceHost: NSView {
     /// transaction that shows that frame. It has no timeout, so a timer stands in.
     private static let afterPresentation = NSSelectorFromString("_doAfterNextPresentationUpdate:")
 
+    /// The timer is armed before the call: WebKit runs the block at once,
+    /// inside `perform`, when the page has no process to draw it.
     private func awaitPresentation(_ generation: UInt64) {
-        let presented: @convention(block) () -> Void = { [weak self] in
-            MainActor.assumeIsolated { self?.presented(generation) }
-        }
-        content.perform(Self.afterPresentation, with: presented)
         fallback?.cancel()
         let work = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated { self?.presented(generation) }
         }
         fallback = work
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(PresentedResize.fallbackMs), execute: work)
+        let presented: @convention(block) () -> Void = { [weak self] in
+            MainActor.assumeIsolated { self?.presented(generation) }
+        }
+        content.perform(Self.afterPresentation, with: presented)
     }
 
     private func presented(_ generation: UInt64) {
-        guard let steps = resize.presented(generation) else { return }
+        guard let round = resize.presented(generation) else { return }
         fallback?.cancel()
         fallback = nil
-        run(steps)
+        run(round.steps)
+        if let next = round.awaiting { awaitPresentation(next) }
     }
 
     /// A rect taken to the window and back comes home a few ulps off.
