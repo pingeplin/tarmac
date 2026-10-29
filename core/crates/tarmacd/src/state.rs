@@ -2723,4 +2723,29 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
+
+    // #279: a duplicate term_id is refused before its cwd is read.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_duplicate_term_id_is_refused_at_once_while_its_cwd_does_not_answer() {
+        let (tmp, dir) = spawn_dir("dup-cwd-out");
+        let (fs, _release) = stuck_fs();
+        let daemon = gated(&tmp, fs.clone()).await;
+        let mut app = connect_app(&daemon).await;
+        source_in(&daemon, &mut app, &dir).await;
+        fs.hold(Call::IsDir, &dir);
+
+        let took = spawn_pwd(&daemon, "src", Some(&dir), None).await;
+        assert!(took < LIMIT, "the refusal took {took:?}");
+        let refused = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if let Msg::Err { msg } = app.recv().await.expect("the app is connected") {
+                    return msg;
+                }
+            }
+        });
+        assert_eq!(refused.await.expect("an err frame"), "term_id already in use: src");
+
+        end_source(&daemon, &mut app).await;
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 }

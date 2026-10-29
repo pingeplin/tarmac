@@ -270,7 +270,9 @@ call that is out, starts the shell in `$HOME` with no error; `$HOME` itself is
 not checked. Each call waits at most `READ_LIMIT`, so a spawn with
 `inherit_cwd_from` waits at most twice that. Not closed: a volume that dies
 after `is_dir` answered and before the child's `chdir` still blocks the spawn,
-in portable-pty's own `is_dir` or the `chdir`.
+in portable-pty's own `is_dir`, its `search_path` (which reads the cwd only for
+a `./x` cmd or a relative `PATH` entry), or the `chdir`. A duplicate `term_id`
+is refused before the cwd is read, at once.
 
 Each terminal fans out into blocking threads (reader → 64 KiB chunks, writer,
 `child.wait()` → exit code via oneshot, a 750 ms process-name poll) plus one

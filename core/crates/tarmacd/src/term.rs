@@ -118,6 +118,14 @@ fn force_utf8_ctype_decision(lookup: impl Fn(&str) -> Option<String>) -> bool {
     true
 }
 
+/// Err when a live term has `term_id`.
+pub async fn check_free(daemon: &Daemon, term_id: &str) -> Result<(), String> {
+    if daemon.terms.lock().await.contains_key(term_id) {
+        return Err(format!("term_id already in use: {term_id}"));
+    }
+    Ok(())
+}
+
 pub async fn spawn(
     daemon: Arc<Daemon>,
     term_id: String,
@@ -126,9 +134,7 @@ pub async fn spawn(
     cwd: Option<String>,
     cmd: Option<Vec<String>>,
 ) -> Result<(), String> {
-    if daemon.terms.lock().await.contains_key(&term_id) {
-        return Err(format!("term_id already in use: {term_id}"));
-    }
+    check_free(&daemon, &term_id).await?;
 
     let argv = match cmd {
         Some(v) if !v.is_empty() => v,

@@ -352,6 +352,11 @@ pub(crate) async fn spawn_requested(
     board_id: Option<String>,
     inherit_cwd_from: Option<String>,
 ) {
+    // Before the cwd, whose read can take the gate's limit. term::spawn checks
+    // again, for a spawn of the same id in that time.
+    if let Err(e) = term::check_free(daemon, &term_id).await {
+        return spawn_failed(daemon, e).await;
+    }
     let board = owning_board(daemon, board_id).await;
     let cwd = spawn_cwd(daemon, cwd, inherit_cwd_from).await;
     spawn_term(daemon, term_id, cols, rows, cwd, cmd, board).await;
@@ -403,11 +408,13 @@ async fn spawn_term(
         Ok(()) => {
             daemon.term_boards.lock().await.insert(term_id, board);
         }
-        Err(e) => {
-            warn!("spawn_term failed: {e}");
-            daemon.push(Msg::Err { msg: e }).await;
-        }
+        Err(e) => spawn_failed(daemon, e).await,
     }
+}
+
+async fn spawn_failed(daemon: &Daemon, e: String) {
+    warn!("spawn_term failed: {e}");
+    daemon.push(Msg::Err { msg: e }).await;
 }
 
 async fn delete_board(daemon: &Arc<Daemon>, conn: &mut AppConn, board_id: &str) {

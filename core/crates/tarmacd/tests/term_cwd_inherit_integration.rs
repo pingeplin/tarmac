@@ -101,7 +101,7 @@ fn spawn_term_falls_back_when_inherit_source_is_unknown() {
 
 // issue #77 (the WHICH-pid guard): inheritance resolves the source's live cwd
 // even while the source shell has a *foreground child* running (e.g. a build,
-// vim, less). live_cwd reads the foreground-process-group leader, so whether
+// vim, less). The daemon reads the foreground-process-group leader's cwd, so whether
 // that child shares the shell's group or gets its own, its cwd is the shell's
 // post-`cd` directory — a running job must never break inheritance.
 #[test]
