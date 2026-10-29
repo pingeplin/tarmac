@@ -609,9 +609,7 @@ mod tests {
     }
 
     async fn next_file_event(app: &mut mpsc::Receiver<Msg>) -> u64 {
-        let msg = tokio::time::timeout(Duration::from_secs(5), app.recv()).await.expect("a push");
-        let Some(Msg::FileEvent { mtime_ms, .. }) = msg else { panic!("expected a file_event, got {msg:?}") };
-        mtime_ms
+        next_change(app).await.1
     }
 
     /// The next `file_event`, past the other pushes.
@@ -1175,7 +1173,11 @@ mod tests {
     /// Runs `look` on a task of its own: a read that blocks the test's task
     /// would block the timer that ends the wait too.
     async fn answers<T: Send + 'static>(look: impl Future<Output = T> + Send + 'static) -> T {
-        tokio::time::timeout(Duration::from_secs(2), tokio::spawn(look)).await.expect("an answer").unwrap()
+        within(tokio::spawn(look)).await
+    }
+
+    async fn within<T>(task: tokio::task::JoinHandle<T>) -> T {
+        tokio::time::timeout(Duration::from_secs(2), task).await.expect("an answer").unwrap()
     }
 
     async fn look_at(daemon: &Arc<Daemon>) {
@@ -1826,14 +1828,10 @@ mod tests {
         Daemon::with_fs(tmp.join("state.json"), source, Arc::new(Notify::new()), fs, LIMIT)
     }
 
-    fn cannot_watch(daemon: &Daemon, dir: &Path) -> Result<(), String> {
-        let answer = daemon.gate().did_not_answer(&format!("cannot watch {}", dir.display()));
-        assert!(answer.starts_with(&format!("cannot watch {}: did not answer in ", dir.display())));
-        Err(answer)
-    }
-
-    async fn within<T>(task: tokio::task::JoinHandle<T>) -> T {
-        tokio::time::timeout(Duration::from_secs(2), task).await.expect("an answer").unwrap()
+    /// What an open whose watch did not answer gets, from a daemon whose limit
+    /// is `LIMIT`.
+    fn cannot_watch(dir: &Path) -> Result<(), String> {
+        Err(format!("cannot watch {}: did not answer in {LIMIT:?}", dir.display()))
     }
 
     async fn try_close(daemon: &Arc<Daemon>, doc: &Path) -> bool {
@@ -1854,7 +1852,7 @@ mod tests {
         let daemon = held(&tmp, source, fs);
 
         let before = std::time::Instant::now();
-        assert_eq!(try_open(&daemon, &doc).await, cannot_watch(&daemon, &gone));
+        assert_eq!(try_open(&daemon, &doc).await, cannot_watch(&gone));
         assert!(before.elapsed() < 3 * LIMIT, "it waited {:?}", before.elapsed());
         assert!(!registered(&daemon, &doc).await);
         assert_eq!(count(&daemon, &gone), 0);
@@ -1910,7 +1908,7 @@ mod tests {
         look_at(&daemon).await;
         assert!(before.elapsed() < LIMIT, "the close and the look waited {:?}", before.elapsed());
 
-        assert_eq!(within(opening).await, cannot_watch(&daemon, &new));
+        assert_eq!(within(opening).await, cannot_watch(&new));
         assert!(opened.elapsed() < 3 * LIMIT, "the open waited {:?}", opened.elapsed());
         assert!(!registered(&daemon, &doc).await);
 
@@ -1966,7 +1964,7 @@ mod tests {
         assert_eq!(try_open(&daemon, &stuck).await, did_not_answer(&daemon, &stuck));
 
         let before = std::time::Instant::now();
-        assert_eq!(try_open(&daemon, &doc).await, cannot_watch(&daemon, &gone));
+        assert_eq!(try_open(&daemon, &doc).await, cannot_watch(&gone));
         assert!(before.elapsed() < LIMIT, "it waited {:?}", before.elapsed());
         assert_eq!(fs.calls(Call::Resolve), 2, "the doc was resolved");
         assert!(!registered(&daemon, &doc).await);

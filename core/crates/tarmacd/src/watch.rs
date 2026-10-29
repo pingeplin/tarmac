@@ -87,14 +87,18 @@ impl Watcher {
     /// now. A request is not an edge: what the thread compares is the state
     /// when it comes to it.
     pub fn reconcile(&self, dir: &Path) {
-        let _ = self.0.send(Ask::Reconcile(dir.to_owned(), None));
+        self.ask(dir, None);
     }
 
     /// `reconcile`, and its answer.
     pub fn answer(&self, dir: &Path) -> oneshot::Receiver<Answer> {
         let (tx, rx) = oneshot::channel();
-        let _ = self.0.send(Ask::Reconcile(dir.to_owned(), Some(tx)));
+        self.ask(dir, Some(tx));
         rx
+    }
+
+    fn ask(&self, dir: &Path, reply: Option<oneshot::Sender<Answer>>) {
+        let _ = self.0.send(Ask::Reconcile(dir.to_owned(), reply));
     }
 
     /// Reconciles again each dir that was skipped while it was out.
@@ -192,20 +196,23 @@ impl<W: Fn(&Path) -> bool, O: Fn(&Path) -> bool, F: Fn()> Thread<W, O, F> {
             self.retry.insert(dir.to_owned());
             return Err(NotWatched::Out);
         }
-        let called = if want { self.source.watch(dir) } else { self.source.unwatch(dir) };
-        (self.woke)();
-        // notify 8.2.0 takes the dir out of its stream before it fails most
-        // unwatches (`FsEventWatcher::remove_path`), so a failed one counts
-        // as done: a dir kept here would never be watched again.
-        if !want {
+        let (verb, called) = if want {
+            let called = self.source.watch(dir);
+            if called.is_ok() {
+                self.watched.insert(dir.to_owned());
+            }
+            ("watch", called)
+        } else {
+            // notify 8.2.0 takes the dir out of its stream before it fails
+            // most unwatches (`FsEventWatcher::remove_path`), so a failed one
+            // counts as done: a dir kept here would never be watched again.
             self.watched.remove(dir);
-        }
+            ("unwatch", self.source.unwatch(dir))
+        };
+        (self.woke)();
         if let Err(e) = called {
-            tracing::warn!("cannot {} {}: {e}", if want { "watch" } else { "unwatch" }, dir.display());
+            tracing::warn!("cannot {verb} {}: {e}", dir.display());
             return Err(NotWatched::Refused(e));
-        }
-        if want {
-            self.watched.insert(dir.to_owned());
         }
         Ok(true)
     }
