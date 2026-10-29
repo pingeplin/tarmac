@@ -221,17 +221,21 @@ impl<T> Takeoff<T> {
 }
 
 impl<T> Landing<T> {
-    /// The answer, or `Out` when it is not there at `deadline`: the call is
-    /// then left.
-    async fn land(mut self, deadline: Instant) -> Result<T, Out> {
-        if let Ok(answer) = tokio::time::timeout_at(deadline, &mut self.answer).await {
-            return Ok(answer.expect("a gate call does not panic"));
+    /// The answer, `None` for a call that panicked, or `Out` when it is not
+    /// there at `deadline`: the call is then left.
+    async fn land(mut self, deadline: Instant) -> Result<Option<T>, Out> {
+        match tokio::time::timeout_at(deadline, &mut self.answer).await {
+            Ok(answer) => Ok(answer.ok()),
+            Err(_) => self.leave().await,
         }
+    }
+
+    async fn leave(self) -> Result<Option<T>, Out> {
         if self.keys.leave(&self.key, self.call) {
             return Err(Out);
         }
         // It returned as the deadline came: its answer is there.
-        Ok(self.answer.await.expect("a gate call does not panic"))
+        Ok(self.answer.await.ok())
     }
 }
 
@@ -286,7 +290,7 @@ impl PathGate {
             }
         };
         self.fly_apart(takeoff, op);
-        landing.land(deadline).await
+        Ok(landing.land(deadline).await?.expect("a gate call does not panic"))
     }
 
     fn fly_apart<T: Send + 'static>(&self, takeoff: Takeoff<T>, op: impl FnOnce(&dyn PathFs) -> T + Send + 'static) {
@@ -317,7 +321,8 @@ impl PathGate {
         let mut now = HashMap::new();
         while let Ok(Some((path, landing))) = tokio::time::timeout_at(deadline, landings.recv()).await {
             match landing.land(deadline).await {
-                Ok(stamp) => now.insert(path, stamp),
+                Ok(Some(stamp)) => now.insert(path, stamp),
+                Ok(None) => None,
                 Err(Out) => break,
             };
         }
@@ -347,7 +352,7 @@ impl PathGate {
         }
         let mut now = Vec::new();
         for (path, landing) in landings {
-            if let Ok(stamp) = landing.land(deadline).await {
+            if let Ok(Some(stamp)) = landing.land(deadline).await {
                 now.push((path, stamp));
             }
         }
