@@ -10,7 +10,7 @@ use std::sync::{Mutex, PoisonError};
 /// needs one sets its own `TARMAC_SOCKET`.
 pub fn tarmac() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_tarmac"));
-    cmd.env("TARMAC_SOCKET", scratch().join("absent.sock"));
+    cmd.env("TARMAC_SOCKET", std::env::temp_dir().join(format!("tarmac-cli-test-{}-absent.sock", std::process::id())));
     cmd
 }
 
