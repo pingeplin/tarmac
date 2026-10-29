@@ -23,7 +23,7 @@ pub struct DocInfo {
     /// (`Registry::take_untold`).
     pub untold: bool,
     /// Restored, and its file not read yet. In memory only. Its first reading
-    /// is taken as it is, with no change (`Registry::take_changes`), as a
+    /// is taken as it is, with no change (`Registry::take_first_reading`), as a
     /// restart takes each file.
     pub unread: bool,
     pub last_opened_ms: u64,
