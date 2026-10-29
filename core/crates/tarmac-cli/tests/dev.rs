@@ -5,7 +5,6 @@
 // app, and several of which a real app reaches only rarely (a body that is not
 // JSON, a reply that takes 5.5 s, silence).
 
-use std::ops::Deref;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -44,15 +43,7 @@ impl Fake {
     }
 
     fn run(&self, args: &[&str]) -> Report {
-        Report::of(tarmac().env("TARMAC_DEV_SOCKET", &self.sock).arg("dev").args(args))
-    }
-}
-
-impl Deref for Fake {
-    type Target = Double;
-
-    fn deref(&self) -> &Double {
-        &self.0
+        Report::of(tarmac().env("TARMAC_DEV_SOCKET", &self.0.sock).arg("dev").args(args))
     }
 }
 
@@ -118,7 +109,7 @@ fn exactly_one_request_frame_is_sent() {
     let fake = Fake::start(Reply::Now(ok_reply("{}")));
     let out = fake.run(&["focus", "t-1"]);
     assert_eq!(out.code(), Some(0));
-    let frames = fake.frames();
+    let frames = fake.0.frames();
     assert_eq!(frames.len(), 1, "expected exactly one frame, got {}", frames.len());
     assert_eq!(
         dev::decode_request(&frames[0]).unwrap(),
@@ -136,7 +127,7 @@ fn an_over_long_socket_path_is_refused_before_dialling() {
     assert_eq!(out.code(), Some(1));
     assert!(out.stderr.contains("104"));
     // The fake at the short path was never dialled.
-    assert!(fake.received.lock().unwrap().is_empty());
+    assert!(fake.0.received.lock().unwrap().is_empty());
 }
 
 /// A usage error is the CLI's own: exit 2 like `skill` and `--version`, the reason
@@ -155,7 +146,7 @@ fn a_usage_error_exits_two_before_dialling() {
         assert!(out.stderr.contains("tarmac dev snapshot"), "{args:?} prints no usage: {}", out.stderr);
     }
     // Not `frames()`: it joins a server thread that is still in `accept`.
-    assert!(fake.received.lock().unwrap().is_empty());
+    assert!(fake.0.received.lock().unwrap().is_empty());
 }
 
 /// S73(b) — the load-bearing half. The CLI's read deadline is the app's budget

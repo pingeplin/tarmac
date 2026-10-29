@@ -4,7 +4,6 @@
 // renders from a `hello_ok`, and a fake is the only way to drive the states a
 // real daemon reaches rarely (a version-less app, a pre-key daemon, silence).
 
-use std::ops::Deref;
 use std::time::{Duration, Instant};
 
 use tarmac_protocol::{self as proto, Msg};
@@ -42,15 +41,7 @@ impl Fake {
     }
 
     fn version(&self) -> Report {
-        Report::of(tarmac().env("TARMAC_SOCKET", &self.sock).arg("--version"))
-    }
-}
-
-impl Deref for Fake {
-    type Target = Double;
-
-    fn deref(&self) -> &Double {
-        &self.0
+        Report::of(tarmac().env("TARMAC_SOCKET", &self.0.sock).arg("--version"))
     }
 }
 
@@ -94,7 +85,7 @@ fn the_report_is_five_exact_lines() {
             "cli      {}\ndaemon   9.9.9 (pid 4242)\napp      8.8.8 (running)\nchannel  {}\nsocket   {}\n",
             env!("CARGO_PKG_VERSION"),
             expected_channel(),
-            fake.sock.display()
+            fake.0.sock.display()
         )
     );
     assert_ne!(
@@ -207,7 +198,7 @@ fn the_cli_sends_exactly_one_version_less_hello() {
     let fake = Fake::start(Reply::Frame(full_reply()));
     assert_eq!(fake.version().code(), Some(0));
 
-    let received = fake.frames();
+    let received = fake.0.frames();
     assert_eq!(received.len(), 1, "--version must send exactly one frame");
     assert_eq!(
         proto::decode(&received[0]).unwrap(),
@@ -285,10 +276,10 @@ fn help_lists_the_version_verb_and_its_exit_status() {
 #[test]
 fn open_still_fails_on_a_rejected_handshake() {
     let fake = Fake::start(Reply::Frame(Msg::Err { msg: "nope".into() }));
-    let doc = fake.dir.join("doc.md");
+    let doc = fake.0.dir.join("doc.md");
     std::fs::write(&doc, "# hi\n").unwrap();
 
-    let out = Report::of(tarmac().env("TARMAC_SOCKET", &fake.sock).args(["open", doc.to_str().unwrap()]));
+    let out = Report::of(tarmac().env("TARMAC_SOCKET", &fake.0.sock).args(["open", doc.to_str().unwrap()]));
 
     assert_eq!(out.code(), Some(1));
     let err = out.one_stderr_line();
