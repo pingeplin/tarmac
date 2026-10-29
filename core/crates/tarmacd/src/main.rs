@@ -3,6 +3,7 @@ mod conn;
 mod docs;
 mod persist;
 mod proc;
+mod reader;
 mod state;
 mod term;
 mod watch;
