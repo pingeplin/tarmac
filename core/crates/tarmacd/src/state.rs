@@ -2403,4 +2403,87 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
+
+    /// A state file with `docs` on board-1, behind an empty active board-0.
+    fn state_on_a_background_board(docs: &[&Path]) -> String {
+        let docs: Vec<_> = docs
+            .iter()
+            .map(|p| serde_json::json!({"path": p, "via": "cli", "read": false, "last_changed_ms": RESTORED}))
+            .collect();
+        serde_json::json!({
+            "boards": [{"board_id": "board-0"}, {"board_id": "board-1", "docs": docs}],
+            "active": "board-0",
+        })
+        .to_string()
+    }
+
+    /// Switches to board-1, and what its switch tells.
+    async fn switch_to_board_1(daemon: &Arc<Daemon>) -> Vec<(PathBuf, u64)> {
+        let daemon = daemon.clone();
+        answers(async move {
+            daemon
+                .look(Boards::doc_paths, |boards, now| {
+                    boards.set_active("board-1");
+                    crate::docs::take_to_tell(&daemon, boards.active_registry_mut(), now)
+                })
+                .await
+        })
+        .await
+    }
+
+    // The startup reading is taken on every board, not on the active one
+    // only: a change after it is told at the switch. The change comes before
+    // the look that the startup watch wakes, `BURST` later.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_restart_reads_the_docs_of_a_background_board() {
+        let tmp = canon_tmp("restart-background");
+        let doc = write_doc(tmp.join("d/a.md"));
+        std::fs::write(tmp.join("state.json"), state_on_a_background_board(&[&doc])).unwrap();
+        let (fs, _unheld) = stuck_fs();
+        let daemon = gated(&tmp, fs).await;
+
+        let changed = change(&doc);
+        assert_eq!(switch_to_board_1(&daemon).await, vec![(doc, changed)]);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // D10: the first reading after the volume answers is the one taken with
+    // no change, on a background board too, not the first one at its switch.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_background_doc_that_was_not_read_is_read_when_it_answers() {
+        let tmp = canon_tmp("restart-background-unread");
+        let gone = tmp.join("gone");
+        let doc = write_doc(gone.join("a.md"));
+        std::fs::write(tmp.join("state.json"), state_on_a_background_board(&[&doc])).unwrap();
+        let (fs, release) = stuck_fs();
+        fs.hold(Call::Stamp, &gone);
+        let daemon = gated(&tmp, fs).await;
+
+        drop(release);
+        eventually("the return of the read", || !daemon.gate().is_out_dir(&gone)).await;
+        look_at(&daemon).await;
+        let changed = change(&doc);
+        assert_eq!(switch_to_board_1(&daemon).await, vec![(doc, changed)]);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // 2610.0012 S20, on a board in the background.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_restart_gives_a_background_board_s_docs_their_repo() {
+        let tmp = canon_tmp("restart-background-repo");
+        let one = tmp.join("one");
+        let doc = write_doc(one.join("a.md"));
+        std::fs::write(tmp.join("state.json"), state_on_a_background_board(&[&doc])).unwrap();
+        let (fs, _unheld) = stuck_fs();
+        fs.answer_repo(&one, "first");
+        let daemon = gated(&tmp, fs).await;
+
+        let entry = daemon.boards.lock().await.registry_mut(Some("board-1")).entry(&doc).unwrap();
+        let repo = (Some("first".to_owned()), Some(one.to_string_lossy().into_owned()), Some(tarmac_protocol::repo_color_index("first")));
+        assert_eq!((entry.repo, entry.repo_root, entry.repo_color), repo);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 }

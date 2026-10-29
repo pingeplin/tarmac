@@ -53,6 +53,16 @@ impl DocInfo {
         self.last_changed_ms = Some(ms);
         ms
     }
+
+    /// Takes the first reading of an unread doc, with no change. False for a
+    /// doc that is not unread.
+    fn take_first_reading(&mut self, stamp: Option<FileStamp>) -> bool {
+        if !std::mem::take(&mut self.unread) {
+            return false;
+        }
+        self.seen = stamp;
+        true
+    }
 }
 
 pub fn epoch_ms(t: SystemTime) -> u64 {
@@ -136,11 +146,7 @@ impl Registry {
         let mut changes = Vec::new();
         for (path, stamp) in now {
             let Some(info) = self.docs.get_mut(path) else { continue };
-            if std::mem::take(&mut info.unread) {
-                info.seen = *stamp;
-                continue;
-            }
-            if info.seen == *stamp {
+            if info.take_first_reading(*stamp) || info.seen == *stamp {
                 continue;
             }
             match stamp {
@@ -156,10 +162,20 @@ impl Registry {
         changes
     }
 
+    /// The first reading of each unread doc in `now`, with no change.
+    pub fn take_first_readings(&mut self, now: &HashMap<PathBuf, Option<FileStamp>>) {
+        for (path, stamp) in now {
+            if let Some(info) = self.docs.get_mut(path) {
+                info.take_first_reading(*stamp);
+            }
+        }
+    }
+
     /// `doc_refresh`: takes the file as seen whether or not it differs, and
-    /// returns its mtime in ms. `None` for an unknown path.
-    pub fn refresh(&mut self, path: &Path, stamp: FileStamp) -> Option<u64> {
-        Some(self.docs.get_mut(path)?.see(stamp))
+    /// returns its mtime in ms. `None`, with nothing taken, for an unknown
+    /// path or no file: a file that is gone emits nothing until it is back.
+    pub fn refresh(&mut self, path: &Path, stamp: Option<FileStamp>) -> Option<u64> {
+        Some(self.docs.get_mut(path)?.see(stamp?))
     }
 
     /// The `file_event` for `path` reached no app.
@@ -304,6 +320,11 @@ impl Boards {
         if let Some(idx) = self.index_of(id) {
             self.boards[idx].registry.hold(path);
         }
+    }
+
+    /// The path of each unread doc, of every board.
+    pub fn unread_doc_paths(&self) -> impl Iterator<Item = &PathBuf> {
+        self.boards.iter().flat_map(|b| b.registry.docs.iter().filter(|(_, info)| info.unread).map(|(path, _)| path))
     }
 
     /// The path of each registered doc, of every board.
@@ -589,11 +610,11 @@ mod tests {
         reg.take_changes(&now(&doc, at(20)));
         reg.hold(&doc);
 
-        assert_eq!(reg.refresh(&doc, at(30).unwrap()), Some(30_000));
+        assert_eq!(reg.refresh(&doc, at(30)), Some(30_000));
         assert_eq!(reg.docs[&doc].last_changed_ms, Some(30_000));
         assert_eq!(reg.take_changes(&now(&doc, at(30))), vec![], "the file is as the refresh saw it");
         assert_eq!(reg.take_untold(), vec![], "the refresh told it");
-        assert_eq!(reg.refresh(Path::new("/d/other.md"), at(30).unwrap()), None);
+        assert_eq!(reg.refresh(Path::new("/d/other.md"), at(30)), None);
     }
 
     // "If the file is deleted, stop emitting until the path exists again."
@@ -703,8 +724,19 @@ mod tests {
         assert_eq!(reg.take_changes(&now(&doc, at(10))), vec![(doc.clone(), 10_000)], "it was gone");
 
         let mut reg = unread_registry(&doc);
-        assert_eq!(reg.refresh(&doc, at(10).unwrap()), Some(10_000));
+        assert_eq!(reg.refresh(&doc, at(10)), Some(10_000));
         assert_eq!(reg.take_changes(&now(&doc, at(20))), vec![(doc, 20_000)]);
+    }
+
+    // A refresh that finds no file pushes nothing and takes nothing: the doc
+    // stays unread, and the first reading of a file is still no change.
+    #[test]
+    fn a_refresh_of_an_unread_doc_with_no_file_leaves_it_unread() {
+        let doc = PathBuf::from("/d/a.md");
+        let mut reg = unread_registry(&doc);
+        assert_eq!(reg.refresh(&doc, None), None);
+        assert_eq!(reg.take_changes(&now(&doc, at(10))), vec![]);
+        assert_eq!(reg.docs[&doc].last_changed_ms, Some(5_000));
     }
 
     #[test]

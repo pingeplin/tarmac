@@ -24,8 +24,9 @@ struct PersistedDoc {
     last_changed_ms: Option<u64>,
     #[serde(default)]
     last_opened_ms: u64,
-    // Written for inspectability but recomputed at startup (`Daemon::new`): a
-    // .git appearing or vanishing between runs is an observed fact.
+    // Written for inspectability but recomputed at startup
+    // (`docs::read_restored`): a .git appearing or vanishing between runs is
+    // an observed fact.
     repo: Option<String>,
     repo_root: Option<String>,
     repo_color: Option<u8>,

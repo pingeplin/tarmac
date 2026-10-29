@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -154,8 +154,7 @@ pub async fn read_restored(gate: &Arc<PathGate>, boards: &mut Boards) {
     let now = gate.stamps(docs.iter().cloned()).await;
     let repos: HashMap<PathBuf, Option<RepoInfo>> = walks.join_all().await.into_iter().collect();
     for reg in boards.registries_mut() {
-        // Every restored doc is unread: this takes its reading with no change.
-        reg.take_changes(&now);
+        reg.take_first_readings(&now);
         for (path, info) in &mut reg.docs {
             let repo = path.parent().and_then(|dir| repos.get(dir)).and_then(Option::as_ref);
             info.repo = repo.map(|r| r.name.clone());
@@ -193,12 +192,20 @@ pub fn take_to_tell(
 
 /// Compares each doc of the active board with its file, and pushes a
 /// `file_event` for each that changed. A doc of another board is compared when
-/// its board is sent (`conn::change_and_send_active_board`).
+/// its board is sent (`conn::change_and_send_active_board`). An unread doc of
+/// any board is read too, and its first reading taken with no change: a
+/// change after its volume answers is then told at its switch.
 pub async fn report_changes(daemon: &Daemon) {
     let (board, tell) = daemon
         .look(
-            |boards| boards.active_registry().docs.keys().cloned().collect::<Vec<_>>(),
+            |boards| {
+                let active = boards.active_registry().docs.keys();
+                active.chain(boards.unread_doc_paths()).cloned().collect::<HashSet<_>>()
+            },
             |boards, now| {
+                for reg in boards.registries_mut() {
+                    reg.take_first_readings(now);
+                }
                 let tell = take_to_tell(daemon, boards.active_registry_mut(), now);
                 (boards.active_id().to_string(), tell)
             },
@@ -233,9 +240,7 @@ pub async fn stat_and_push(daemon: &Arc<Daemon>, path: &Path) -> bool {
         .look(
             |_| vec![path.to_owned()],
             |boards, now| {
-                // Deleted files emit nothing until the path exists again.
-                let stamp = now.get(path).copied().flatten()?;
-                let mtime_ms = boards.active_registry_mut().refresh(path, stamp)?;
+                let mtime_ms = boards.active_registry_mut().refresh(path, now.get(path).copied().flatten())?;
                 // Before the push, as in `take_to_tell`.
                 daemon.mark_dirty();
                 Some((boards.active_id().to_string(), mtime_ms))

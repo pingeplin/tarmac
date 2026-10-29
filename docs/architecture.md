@@ -338,9 +338,13 @@ daemon restart the `Restore` still carries the time, and no `FileEvent` comes,
 since what was held is gone and startup takes each file as it is. A restored
 doc whose file did not answer in time at startup is **unread**
 (`DocInfo.unread`, in memory): the first reading of it, by a look, is taken
-the same way, with no `FileEvent` and `last_changed_ms` as restored. A reading
-of no file ends `unread` too (the doc is then like one whose file is gone), and
-so does a `DocRefresh`, which pushes as for any doc. Not
+the same way, with no `FileEvent` and `last_changed_ms` as restored. Each look
+of the active board also reads the unread docs of every other board and takes
+only that first reading there, so a change after the volume answers is told at
+the switch, not swallowed by it. A reading of no file ends `unread` too (the
+doc is then like one whose file is gone), and so does a `DocRefresh` that
+finds the file, which pushes as for any doc; one that finds no file pushes
+nothing and leaves the doc unread. Not
 covered: a `FileEvent` that was queued for an app whose connection then
 closed before it was written. It is not held, and an app that connects again
 with its cards in place keeps the old content until the next change or `↻`.
