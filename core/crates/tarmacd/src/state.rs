@@ -395,6 +395,10 @@ mod tests {
         d
     }
 
+    /// Many FSEvents streams that start at once can take a stream more than
+    /// the gate's limit to start: a test with a real watcher holds this.
+    static REAL_WATCHER: Mutex<()> = Mutex::const_new(());
+
     async fn daemon_with_doc_dir(tag: &str) -> (PathBuf, PathBuf, Arc<Daemon>) {
         let tmp = tmp_dir(tag);
         let doc_dir = tmp.join("d");
@@ -417,6 +421,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_dir_is_watched_from_its_first_count_to_its_last() {
+        let _one_watcher = REAL_WATCHER.lock().await;
         let (tmp, doc_dir, daemon) = daemon_with_doc_dir("count").await;
 
         daemon.acquire_watch(&doc_dir).await.unwrap();
@@ -433,6 +438,7 @@ mod tests {
 
     #[tokio::test]
     async fn closing_the_sole_doc_of_a_dir_unwatches_it() {
+        let _one_watcher = REAL_WATCHER.lock().await;
         let (tmp, doc_dir, daemon) = daemon_with_doc_dir("close-sole").await;
         let doc = doc_dir.join("a.md");
         open_doc(&daemon, None, &doc).await;
@@ -448,6 +454,7 @@ mod tests {
 
     #[tokio::test]
     async fn watched_dir_kept_when_sibling_doc_remains() {
+        let _one_watcher = REAL_WATCHER.lock().await;
         let (tmp, doc_dir, daemon) = daemon_with_doc_dir("s8b").await;
         let doc_a = doc_dir.join("a.md");
         open_doc(&daemon, None, &doc_a).await;
@@ -461,6 +468,7 @@ mod tests {
 
     #[tokio::test]
     async fn watched_dir_kept_while_another_board_has_a_doc_there() {
+        let _one_watcher = REAL_WATCHER.lock().await;
         let (tmp, doc_dir, daemon) = daemon_with_doc_dir("close-cross-board").await;
         let (doc_a, doc_b) = (doc_dir.join("a.md"), doc_dir.join("b.md"));
         open_doc(&daemon, None, &doc_a).await;
@@ -479,6 +487,7 @@ mod tests {
 
     #[tokio::test]
     async fn deleting_a_board_unwatches_the_dirs_no_board_is_left_in() {
+        let _one_watcher = REAL_WATCHER.lock().await;
         let (tmp, shared, daemon) = daemon_with_doc_dir("delete-board").await;
         let own = tmp.join("own");
         std::fs::create_dir_all(&own).unwrap();
@@ -502,6 +511,7 @@ mod tests {
 
     #[tokio::test]
     async fn reopening_a_doc_counts_it_once() {
+        let _one_watcher = REAL_WATCHER.lock().await;
         let (tmp, doc_dir, daemon) = daemon_with_doc_dir("reopen").await;
         let doc = doc_dir.join("a.md");
         open_doc(&daemon, None, &doc).await;
@@ -515,6 +525,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_open_that_cannot_watch_registers_and_counts_nothing() {
+        let _one_watcher = REAL_WATCHER.lock().await;
         let (tmp, _, daemon) = daemon_with_doc_dir("open-fails").await;
         let late_dir = tmp.join("late");
         let doc = late_dir.join("a.md");
@@ -540,6 +551,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_restart_counts_every_restored_doc() {
+        let _one_watcher = REAL_WATCHER.lock().await;
         let tmp = tmp_dir("restart-count");
         let doc_dir = tmp.join("d");
         std::fs::create_dir_all(&doc_dir).unwrap();
@@ -560,6 +572,7 @@ mod tests {
     // still registered: it must hold the watch that a later open starts.
     #[tokio::test]
     async fn a_restored_doc_counts_when_its_dir_could_not_be_watched() {
+        let _one_watcher = REAL_WATCHER.lock().await;
         let tmp = tmp_dir("restart-missing");
         let doc_dir = tmp.join("d");
         let (a, b) = (doc_dir.join("a.md"), doc_dir.join("b.md"));
@@ -1045,6 +1058,7 @@ mod tests {
     // seven left the new doc registered and its directory unwatched.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn dir_stays_watched_when_an_open_races_a_close() {
+        let _one_watcher = REAL_WATCHER.lock().await;
         let (tmp, doc_dir, daemon) = daemon_with_doc_dir("open-races-close").await;
         // An open registers the canonical path (/tmp -> /private/tmp).
         let doc_dir = std::fs::canonicalize(&doc_dir).unwrap();
