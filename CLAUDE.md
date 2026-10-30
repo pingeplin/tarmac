@@ -1,6 +1,6 @@
 # Tarmac
 
-Tarmac is a terminal-first macOS cockpit for working alongside CLI coding agents. You run an agent (or anything) in a real terminal inside Tarmac; when that process — or you, a Makefile, a git hook, CI — runs `tarmac open <path>`, the referenced markdown doc surfaces as a live card on an infinite, pannable, zoomable **board**, placed next to the terminal that opened it and tied by a dashed provenance edge. It is deliberately **not an agent harness**: every on-screen mark is backed by an observable OS fact (a running process, an mtime change, a `tarmac open` socket call, a terminal bell), never by parsing agent output. Status: working prototype (M0–M3 + the v4 whiteboard migration complete on `main`).
+Tarmac is a terminal-first macOS cockpit for working alongside CLI coding agents. You run an agent (or anything) in a real terminal inside Tarmac; when that process — or you, a Makefile, a git hook, CI — runs `tarmac open <path>`, the referenced markdown doc surfaces as a live card on an infinite, pannable, zoomable **board**, placed next to the terminal that opened it and tied by a dashed provenance edge. It is deliberately **not an agent harness**: every on-screen mark is backed by an observable OS fact (a running process, an mtime change, a `tarmac open` socket call, a terminal bell), never by parsing agent output. Status: shipped as notarized macOS releases (GitHub Releases + a Homebrew cask, `make release`); work is per-issue (`docs/workflow.md`).
 
 ## Architecture
 
