@@ -195,15 +195,10 @@ pub async fn save_loop(daemon: Arc<Daemon>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicU32, Ordering};
 
     // Per-test unique state path under the OS temp dir.
     fn tmp_state(tag: &str) -> PathBuf {
-        static N: AtomicU32 = AtomicU32::new(0);
-        let n = N.fetch_add(1, Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!("tarmac-persist-{}-{}-{n}", std::process::id(), tag));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir.join("state.json")
+        crate::fixtures::tmp_dir(tag).join("state.json")
     }
 
     // A legacy flat state file: top-level docs/tiles/board, no `boards` key. The
