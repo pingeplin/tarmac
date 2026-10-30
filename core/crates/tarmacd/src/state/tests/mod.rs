@@ -234,6 +234,11 @@ fn held_source(holds: &[(Change, &Path)]) -> (Box<dyn WakeSource>, Arc<SourceCal
     (Box::new(HeldSource { calls: calls.clone(), holds, until_released }), calls, release)
 }
 
+/// A daemon whose watcher is `source`, with no app.
+async fn on_source(state_path: PathBuf, source: impl WakeSource + 'static) -> Arc<Daemon> {
+    Daemon::with_source(state_path, Box::new(source), Arc::new(Notify::new())).await
+}
+
 /// A daemon whose watcher is `source` and whose gate calls `fs`.
 async fn held(tmp: &Path, source: Box<dyn WakeSource>, fs: Arc<StuckFs>) -> Arc<Daemon> {
     Daemon::with_fs(tmp.join("state.json"), source, Arc::new(Notify::new()), fs, LIMIT).await

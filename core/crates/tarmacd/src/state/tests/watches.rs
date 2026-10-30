@@ -183,8 +183,7 @@ async fn a_reopen_behind_a_pending_unwatch_keeps_its_dir_watched() {
 async fn an_open_whose_watch_is_refused_fails_each_time_and_wakes_a_look() {
     let tmp = tmp_dir("refused-twice");
     let refused = tmp.join("refused");
-    let daemon =
-        Daemon::with_source(tmp.join("state.json"), Box::new(RefusesDir(refused.clone())), Arc::new(Notify::new())).await;
+    let daemon = on_source(tmp.join("state.json"), RefusesDir(refused.clone())).await;
     let mut app = connect_app(&daemon).await;
     let kept = write_doc(tmp.join("kept/a.md"));
     open_doc(&daemon, None, &kept).await;

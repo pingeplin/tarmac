@@ -17,15 +17,11 @@ impl WakeSource for ExistingDirs {
     }
 }
 
-async fn on_existing_dirs(state_path: PathBuf) -> Arc<Daemon> {
-    Daemon::with_source(state_path, Box::new(ExistingDirs), Arc::new(Notify::new())).await
-}
-
 async fn daemon_with_doc_dir(tag: &str) -> (PathBuf, PathBuf, Arc<Daemon>) {
     let tmp = tmp_dir(tag);
     let doc_dir = tmp.join("d");
     std::fs::create_dir_all(&doc_dir).unwrap();
-    let daemon = on_existing_dirs(tmp.join("state.json")).await;
+    let daemon = on_source(tmp.join("state.json"), ExistingDirs).await;
     (tmp, doc_dir, daemon)
 }
 
@@ -151,7 +147,7 @@ async fn a_restart_counts_every_restored_doc() {
     std::fs::create_dir_all(&doc_dir).unwrap();
     let (a, b) = (doc_dir.join("a.md"), doc_dir.join("b.md"));
     std::fs::write(tmp.join("state.json"), state_with_docs(&[&a, &b])).unwrap();
-    let daemon = on_existing_dirs(tmp.join("state.json")).await;
+    let daemon = on_source(tmp.join("state.json"), ExistingDirs).await;
     assert!(watched(&daemon, &doc_dir).await);
 
     assert!(daemon.close_doc(&a).await);
@@ -170,7 +166,7 @@ async fn a_restored_doc_counts_when_its_dir_could_not_be_watched() {
     let doc_dir = tmp.join("d");
     let (a, b) = (doc_dir.join("a.md"), doc_dir.join("b.md"));
     std::fs::write(tmp.join("state.json"), state_with_docs(&[&a])).unwrap();
-    let daemon = on_existing_dirs(tmp.join("state.json")).await;
+    let daemon = on_source(tmp.join("state.json"), ExistingDirs).await;
     assert!(!watched(&daemon, &doc_dir).await);
 
     std::fs::create_dir_all(&doc_dir).unwrap();

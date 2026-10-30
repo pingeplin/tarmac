@@ -45,7 +45,7 @@ Pick the innermost layer that can express the failure.
 
 | The change is… | The failing test goes… |
 | --- | --- |
-| A pure decision, transform, or rule in Rust | `#[cfg(test)] mod tests` at the **bottom of the same file** — `core/crates/tarmacd/src/boards.rs`, `core/crates/tarmacd/src/term.rs`. One exception: the tests of `core/crates/tarmac-protocol/src/lib.rs` are in `core/crates/tarmac-protocol/src/tests.rs` |
+| A pure decision, transform, or rule in Rust | `#[cfg(test)] mod tests` at the **bottom of the same file** — `core/crates/tarmacd/src/boards.rs`, `core/crates/tarmacd/src/term.rs`. Two exceptions: the tests of `core/crates/tarmac-protocol/src/lib.rs` are in `core/crates/tarmac-protocol/src/tests.rs`, and those of `core/crates/tarmacd/src/state.rs` are in `core/crates/tarmacd/src/state/tests/`, one file per subject. A test double or helper that tests of two modules share goes in `core/crates/tarmacd/src/fixtures.rs` |
 | Daemon behaviour observable over the socket | a suite in `core/crates/tarmacd/tests/` (`boards_integration.rs`, `restore_integration.rs`, …), built on the real-daemon harness in `core/crates/tarmacd/tests/common/mod.rs` |
 | The wire contract | `core/crates/tarmac-protocol/src/tests.rs` — a new conformance vector, byte-exact — **and** the same vector in `app/Tests/TarmacKitTests/ConformanceTests.swift`, with the Rust encoder's bytes for the new frame in `app/Tests/TarmacKitTests/RustEncoderParityTests.swift`. Never edit an existing one; see the additive-only rule in [`protocol.md`](protocol.md) |
 | CLI surface (exit codes, stderr, `--help`) | `core/crates/tarmac-cli/tests/cli.rs` — spawn the real binary |

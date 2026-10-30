@@ -3,8 +3,7 @@ use super::*;
 /// A daemon that its watcher never wakes, with no app.
 async fn silent(tag: &str) -> (PathBuf, Arc<Daemon>) {
     let tmp = tmp_dir(tag);
-    let daemon =
-        Daemon::with_source(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new())).await;
+    let daemon = on_source(tmp.join("state.json"), Silent).await;
     (tmp, daemon)
 }
 
@@ -348,8 +347,7 @@ async fn a_refresh_stats_the_file_and_does_not_replay_what_is_recorded() {
 async fn an_open_that_cannot_watch_reports_a_change_too() {
     let tmp = tmp_dir("refused-reports");
     let refused = tmp.join("refused");
-    let daemon =
-        Daemon::with_source(tmp.join("state.json"), Box::new(RefusesDir(refused.clone())), Arc::new(Notify::new())).await;
+    let daemon = on_source(tmp.join("state.json"), RefusesDir(refused.clone())).await;
     let mut app = connect_app(&daemon).await;
     let kept = write_doc(tmp.join("kept/a.md"));
     open_doc(&daemon, None, &kept).await;

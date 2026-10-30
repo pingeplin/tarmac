@@ -100,7 +100,7 @@ async fn an_open_that_did_not_answer_is_not_finished_when_its_call_returns() {
 #[tokio::test]
 async fn an_open_answers_a_missing_path_a_directory_and_a_file_as_before() {
     let tmp = canon_tmp("open-texts");
-    let daemon = Daemon::with_source(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new())).await;
+    let daemon = on_source(tmp.join("state.json"), Silent).await;
     let missing = tmp.join("missing.md");
     let dir = tmp.join("dir");
     std::fs::create_dir_all(&dir).unwrap();
