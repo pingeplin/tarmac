@@ -378,3 +378,82 @@ fn read_each(fs: &dyn PathFs, keys: &Arc<Keys>, batch: &Mutex<Batch>, out_at: In
         takeoff.fly(fs, |fs| fs.stamp(&path));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fixtures::*;
+
+    fn stuck_reader() -> (PathGate, Arc<StuckFs>, std::sync::mpsc::Sender<()>) {
+        let (fs, release) = stuck_fs();
+        (PathGate::new(fs.clone(), LIMIT, Arc::new(|| {})), fs, release)
+    }
+
+    // The doc that panics first, so the rest is read apart. It has no entry:
+    // not known, which is not gone.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_stamp_that_panics_gives_its_doc_no_entry_and_the_rest_is_read() {
+        let tmp = tmp_dir("stamp-panics-first");
+        let (reader, stuck, _release) = stuck_reader();
+        let paths: Vec<PathBuf> = ["a", "b", "c"].iter().map(|n| write_doc(tmp.join(format!("d/{n}.md")))).collect();
+        stuck.panic_on(&paths[0]);
+
+        let read = paths.clone();
+        let now = answers(async move { reader.stamps(read).await }).await;
+        let others = paths[1..].iter().map(|p| (p.clone(), crate::reader::stamp(p)));
+        assert_eq!(now, HashMap::from_iter(others));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // In a look, the order of the docs is the order of a hash map: here the
+    // stuck reads come first.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn the_reads_after_one_that_does_not_return_go_on() {
+        let tmp = tmp_dir("stuck-first");
+        let doc = write_doc(tmp.join("d/b.md"));
+        let (reader, stuck, _release) = stuck_reader();
+        stuck.hold(Call::Stamp, &tmp.join("gone"));
+
+        let paths = vec![write_doc(tmp.join("gone/a.md")), write_doc(tmp.join("gone/b.md")), doc.clone()];
+        let now = answers(async move { reader.stamps(paths).await }).await;
+        assert_eq!(now, HashMap::from([(doc.clone(), crate::reader::stamp(&doc))]));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // A volume that is gone takes each of its docs.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_look_waits_two_limits_at_most_for_all_its_stuck_reads() {
+        let tmp = tmp_dir("stuck-many");
+        let docs: Vec<PathBuf> = (0..4).map(|i| write_doc(tmp.join(format!("gone/{i}.md")))).collect();
+        let (reader, stuck, _release) = stuck_reader();
+        stuck.hold(Call::Stamp, &tmp.join("gone"));
+
+        let before = std::time::Instant::now();
+        let now = answers(async move { reader.stamps(docs).await }).await;
+        assert!(before.elapsed() < 3 * LIMIT, "it waited {:?}", before.elapsed());
+        assert_eq!(now, HashMap::new());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // The second stuck read is on a thread of its own (`read_apart`), and the
+    // next look must not start it again either.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn no_stuck_read_of_a_look_is_read_again_by_the_next() {
+        let tmp = tmp_dir("stuck-apart");
+        let docs: Vec<PathBuf> = (0..2).map(|i| write_doc(tmp.join(format!("gone/{i}.md")))).collect();
+        let (reader, stuck, _release) = stuck_reader();
+        let reader = Arc::new(reader);
+        stuck.hold(Call::Stamp, &tmp.join("gone"));
+
+        for _ in 0..2 {
+            let (reader, docs) = (reader.clone(), docs.clone());
+            answers(async move { reader.stamps(docs).await }).await;
+        }
+        assert_eq!(stuck.held(Call::Stamp), 2);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+}
