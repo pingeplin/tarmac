@@ -1,6 +1,8 @@
 mod boards;
 mod conn;
 mod docs;
+#[cfg(test)]
+mod fixtures;
 mod persist;
 mod proc;
 mod reader;
