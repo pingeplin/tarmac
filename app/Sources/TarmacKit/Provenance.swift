@@ -1,6 +1,6 @@
 import CoreGraphics
 
-/// Pure doc→terminal provenance logic (Phase 5b), kept view-independent in
+/// Pure doc→terminal provenance logic, kept view-independent in
 /// TarmacKit so it is unit-tested.
 public enum Provenance {
     /// Whether the provenance edge from the owner terminal to this doc should be

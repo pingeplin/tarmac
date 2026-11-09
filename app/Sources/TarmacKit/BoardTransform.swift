@@ -1,6 +1,6 @@
 import CoreGraphics
 
-/// Pure world↔view transform for the v4 board (crib §5):
+/// Pure world↔view transform for the board:
 /// `view = (world − center) · zoom + viewportCenter`, inverted by
 /// `world = (view − viewportCenter) / zoom + center`.
 ///

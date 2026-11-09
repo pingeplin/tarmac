@@ -96,7 +96,7 @@ public enum BoardSwitcher {
         return min(max(0, index), count - 1)
     }
 
-    // MARK: - P5.4 rename / delete validation (mirrors the daemon's authority)
+    // MARK: - Rename / delete validation (mirrors the daemon's authority)
 
     /// Whether a board may be deleted: only when more than one exists (a board set
     /// is never empty). Mirrors the daemon's last-board refusal so the switcher

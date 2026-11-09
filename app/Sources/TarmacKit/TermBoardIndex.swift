@@ -1,4 +1,4 @@
-/// The `term_id → board_id` ownership index (M3). Every terminal belongs to
+/// The `term_id → board_id` ownership index. Every terminal belongs to
 /// exactly one board, so the frames the daemon keys by the globally-unique
 /// `term_id` (`output` / `exit` / `term_proc` / `bell`) route to the owning
 /// board even when it is backgrounded, and `tarmac open` provenance + board
