@@ -1,5 +1,5 @@
 /// Tiny pure formatters for the chrome overlays: the zoom-control percent
-/// readout, the titlebar-chip label fallback and the on-card recency meta.
+/// readout, the status bar's card count and the on-card recency meta.
 public enum ChromeText {
     /// How long after a change a doc card still says so.
     public static let recentWindowMs: UInt64 = 30_000
@@ -9,13 +9,6 @@ public enum ChromeText {
     /// "Infinity%" or in full rather than trapping an integer conversion.
     public static func zoomPercent(_ zoom: Double) -> String {
         "\((zoom * 100).roundedHalfUp.javaScriptString)%"
-    }
-
-    /// The board's display name, falling back to its id when the name is absent
-    /// OR empty, so an empty name never renders a blank chip.
-    public static func boardChipLabel(name: String?, boardID: String) -> String {
-        guard let name, !name.isEmpty else { return boardID }
-        return name
     }
 
     /// The status bar's count of the cards on the active board.

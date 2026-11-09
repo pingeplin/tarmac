@@ -412,7 +412,8 @@ final class BoardView: NSView, ThemeFollowing {
     }
 
     /// One provenance edge per doc card whose owning terminal card is on the
-    /// board, rebuilt from the cards' on-screen frames.
+    /// board, rebuilt from the cards' on-screen frames. Never gated on
+    /// `attached`, the gravity flag: a doc dragged away keeps its edge (#39).
     func recomputeEdges() {
         var built: [Provenance.Segment] = []
         for (id, card) in cards {

@@ -2,7 +2,7 @@ import Foundation
 
 /// Pure per-channel path derivation (spec 2606.0003) — the Swift twin of
 /// `tarmac_protocol`'s `channel_dir` / `resolve_socket_path` /
-/// `resolve_state_path` / `dev::resolve_dev_socket_path`. The build
+/// `dev::resolve_dev_socket_path`. The build
 /// configuration IS the channel: a debug build resolves under a `dev/` subdir, a
 /// release build keeps the byte-for-byte legacy flat path (zero migration, no
 /// orphaned boards). Nothing here reads the environment or the disk, so the
@@ -95,13 +95,6 @@ public enum ChannelPaths {
     /// exactly the `/dev` segment (S2/S5).
     public static func socketPath(override: String?, home: String, channel: Channel) -> String {
         resolve(override, home: home, channel: channel, file: "tarmacd.sock")
-    }
-
-    /// The daemon's state file — `TARMAC_STATE`, else `channelDir/state.json`,
-    /// beside the socket (S6/S7). Only `tarmacd` reads it; the app resolves it to
-    /// name the file, never to open it.
-    public static func statePath(override: String?, home: String, channel: Channel) -> String {
-        resolve(override, home: home, channel: channel, file: "state.json")
     }
 
     /// The in-app QA driver's socket (issue #166), which the APP binds —
