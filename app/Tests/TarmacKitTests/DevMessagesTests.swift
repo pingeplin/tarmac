@@ -72,6 +72,15 @@ final class DevMessagesTests: XCTestCase {
             00 00 00 00 00 00 a1 68 cb 40 82 c0 00 00 00 00 00
             """
         )
+        // DevRequest::Resize { card: "t-1", w: 800.0, h: 600.0, handle: Some("top-left") }
+        assertParity(
+            .resize(card: "t-1", w: 800, h: 600, handle: "top-left"),
+            """
+            85 a1 74 a6 72 65 73 69 7a 65 a4 63 61 72 64 a3 74 2d 31 a1 77 cb 40 89
+            00 00 00 00 00 00 a1 68 cb 40 82 c0 00 00 00 00 00 a6 68 61 6e 64 6c 65
+            a8 74 6f 70 2d 6c 65 66 74
+            """
+        )
     }
 
     func testCardInputVerbs() {

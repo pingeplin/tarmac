@@ -152,6 +152,32 @@ final class DevRoutingTests: XCTestCase {
         )
     }
 
+    /// #296: the request names the handle; the action carries it.
+    func testAResizeDragsTheHandleItNames() {
+        XCTAssertEqual(
+            route(.resize(card: "t-1", w: 800, h: 600, handle: "top-left"), docs()),
+            .resize(
+                card: "t-1", from: CGSize(width: 400, height: 300), to: CGSize(width: 800, height: 600),
+                takesKeys: true, handle: .topLeft
+            )
+        )
+        XCTAssertEqual(
+            route(.resize(card: "t-1", w: 800, h: 600), docs()),
+            .resize(
+                card: "t-1", from: CGSize(width: 400, height: 300), to: CGSize(width: 800, height: 600),
+                takesKeys: true, handle: .bottomRight
+            )
+        )
+    }
+
+    func testAResizeNamingNoHandleIsRefused() {
+        guard case .refused(let error) = route(.resize(card: "t-1", w: 800, h: 600, handle: "middle"), docs()) else {
+            return XCTFail("an unknown handle was not refused")
+        }
+        XCTAssertEqual(error.code, .badRequest)
+        XCTAssertTrue(error.message.contains("middle"), error.message)
+    }
+
     // MARK: - S76 the wire speaks bare ids
 
     /// The Tauri app's internal `term:`/`doc:` prefix is not an alias here: an id
