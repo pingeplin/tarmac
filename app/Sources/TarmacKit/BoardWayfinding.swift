@@ -1,13 +1,13 @@
 import CoreGraphics
 
-/// Pure wayfinding math for the v4 board chrome (Phase 4 / crib §6–7):
+/// Pure wayfinding math for the board chrome:
 /// fit-to-cards, the world↔minimap mapping, and offscreen-hint edge geometry.
 ///
 /// All of it is view-independent (no AppKit), so it lives in TarmacKit beside
 /// `BoardTransform` as a single, unit-tested source of truth. The AppKit
 /// overlays (`ZoomControl` / `Minimap` / `OffscreenHints`) call into it.
 public enum BoardWayfinding {
-    // MARK: - Fit to cards (zoom control ⊡ fit; crib §6)
+    // MARK: - Fit to cards (zoom control ⊡ fit)
 
     /// The result of fitting all cards into the viewport: a target zoom plus the
     /// world-space center to point the viewport at.
@@ -28,7 +28,7 @@ public enum BoardWayfinding {
         return box
     }
 
-    /// Fit-with-margin (crib §6): center the viewport on the cards' bounding box
+    /// Fit-with-margin: center the viewport on the cards' bounding box
     /// and pick the largest zoom that keeps the box inside `viewportSize` with a
     /// `margin` fraction of slack on every side (e.g. 0.1 = 10% padding). The
     /// zoom is clamped to `[minZoom, maxZoom]`. Returns nil when there are no
@@ -58,7 +58,7 @@ public enum BoardWayfinding {
         return Fit(zoom: zoom, center: center)
     }
 
-    // MARK: - World ↔ minimap mapping (crib §6)
+    // MARK: - World ↔ minimap mapping
 
     /// Maps the world bounding box (cards + the current viewport rect) into the
     /// minimap's pixel box, preserving aspect ratio and centering, so the
@@ -147,13 +147,13 @@ public enum BoardWayfinding {
         return MinimapMapping(worldOrigin: CGPoint(x: worldBox.minX, y: worldBox.minY), scale: scale, offset: offset)
     }
 
-    // MARK: - Offscreen hints (crib §6)
+    // MARK: - Offscreen hints
 
     /// Which viewport edge a hint pins to, toward an offscreen card.
     public enum Edge: Equatable {
         case left, right, top, bottom
 
-        /// The single-glyph direction arrow (crib §6: `→ ← ↑ ↓`).
+        /// The single-glyph direction arrow (`→ ← ↑ ↓`).
         public var arrow: String {
             switch self {
             case .left: return "←"

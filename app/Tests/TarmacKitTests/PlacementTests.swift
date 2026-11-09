@@ -45,7 +45,7 @@ final class PlacementTests: XCTestCase {
     // MARK: - firstFreeSlot
 
     private func doc(_ x: CGFloat, _ y: CGFloat) -> CGRect {
-        CGRect(x: x, y: y, width: Placement.docWidth, height: Placement.docHeight)
+        CGRect(origin: CGPoint(x: x, y: y), size: Placement.docSize)
     }
 
     /// `count` docs opened one after another from `terminal`, each placed with
@@ -99,7 +99,7 @@ final class PlacementTests: XCTestCase {
         for terminal in [owner, bigTerminal] {
             let docs = place(6, around: terminal)
             let reach = terminal.insetBy(
-                dx: -(Placement.docWidth + Placement.gapX), dy: -(Placement.docHeight + Placement.gapY)
+                dx: -(Placement.docSize.width + Placement.gapX), dy: -(Placement.docSize.height + Placement.gapY)
             )
             for d in docs { XCTAssertTrue(reach.contains(d), "\(d) around \(terminal)") }
             let sides = Set(docs.flatMap { d -> [String] in
@@ -154,21 +154,21 @@ final class PlacementTests: XCTestCase {
         let baseX = Placement.termFrame.maxX + Placement.gapX
         XCTAssertEqual(Placement.scatterFrame(slot: 0), CGRect(x: 636, y: 80, width: 392, height: 310))
         let s1 = Placement.scatterFrame(slot: 1)
-        XCTAssertEqual(s1.minX, baseX + Placement.docWidth + Placement.gapX, "slot 1 is column 1 of the same row")
+        XCTAssertEqual(s1.minX, baseX + Placement.docSize.width + Placement.gapX, "slot 1 is column 1 of the same row")
         XCTAssertEqual(s1.minY, Placement.termFrame.minY)
         let s2 = Placement.scatterFrame(slot: 2)
         XCTAssertEqual(s2.minX, baseX, "slot 2 is column 0 of row 1")
-        XCTAssertEqual(s2.minY, Placement.termFrame.minY + Placement.docHeight + Placement.gapY)
+        XCTAssertEqual(s2.minY, Placement.termFrame.minY + Placement.docSize.height + Placement.gapY)
     }
 
     func testTheLayoutConstantsMatchTheDocumentedGrid() {
         XCTAssertEqual(Placement.termFrame, CGRect(x: 80, y: 80, width: 470, height: 330))
-        XCTAssertEqual(Placement.docWidth, 392)
-        XCTAssertEqual(Placement.docHeight, 310)
+        XCTAssertEqual(Placement.docSize.width, 392)
+        XCTAssertEqual(Placement.docSize.height, 310)
         XCTAssertEqual(Placement.gapX, 86)
         XCTAssertEqual(Placement.gapY, 40)
-        XCTAssertEqual(Placement.cascadeDX, 43)
-        XCTAssertEqual(Placement.cascadeDY, 40)
+        XCTAssertEqual(TermPlacement.cascadeDX, 43)
+        XCTAssertEqual(TermPlacement.cascadeDY, 40)
         XCTAssertEqual(Placement.collisionInset, 8)
         XCTAssertEqual(Placement.ringCount, 16)
         XCTAssertEqual(Placement.docColumns, 2)
@@ -180,19 +180,19 @@ final class PlacementTests: XCTestCase {
     /// inset makes it collide: with no inset, or one that shrinks, the slot is free.
     func testACardJustPastTheSlotsRightEdgeStillCollidesThroughTheInset() {
         let first = Placement.firstFreeSlot(owner: owner, existing: [])
-        let neighbour = CGRect(x: first.maxX + 4, y: first.minY, width: 100, height: Placement.docHeight)
+        let neighbour = CGRect(x: first.maxX + 4, y: first.minY, width: 100, height: Placement.docSize.height)
         XCTAssertEqual(Placement.firstFreeSlot(owner: owner, existing: [neighbour]), doc(80, 450))
     }
 
     func testACardJustBelowTheSlotStillCollidesThroughTheInset() {
         let first = Placement.firstFreeSlot(owner: owner, existing: [])
-        let below = CGRect(x: first.minX, y: first.maxY + 4, width: Placement.docWidth, height: 20)
+        let below = CGRect(x: first.minX, y: first.maxY + 4, width: Placement.docSize.width, height: 20)
         XCTAssertEqual(Placement.firstFreeSlot(owner: owner, existing: [below]), doc(80, 450))
     }
 
     func testACardMoreThanTheInsetAwayDoesNotCollide() {
         let first = Placement.firstFreeSlot(owner: owner, existing: [])
-        let clear = CGRect(x: first.maxX + 9, y: first.minY, width: 20, height: Placement.docHeight)
+        let clear = CGRect(x: first.maxX + 9, y: first.minY, width: 20, height: Placement.docSize.height)
         XCTAssertEqual(Placement.firstFreeSlot(owner: owner, existing: [clear]), first)
     }
 
@@ -201,7 +201,7 @@ final class PlacementTests: XCTestCase {
     func testTheScanReachesTheLastRing() {
         let inner = CGFloat(Placement.ringCount - 1)
         let blocked = owner.insetBy(
-            dx: -inner * (Placement.docWidth + Placement.gapX), dy: -inner * (Placement.docHeight + Placement.gapY)
+            dx: -inner * (Placement.docSize.width + Placement.gapX), dy: -inner * (Placement.docSize.height + Placement.gapY)
         )
         XCTAssertEqual(
             Placement.firstFreeSlot(owner: owner, existing: [blocked]),

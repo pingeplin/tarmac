@@ -4,8 +4,9 @@ import CoreGraphics
 /// `LayoutTile`s the `layout` message persists, and parses a restored `tiles`
 /// list back into the term / doc placements the board rebuilds from. A term tile
 /// carries its `term_id` and geometry; a board doc tile carries its path,
-/// geometry and `loose` (= not attached). A tile with all-nil geometry is an M1
-/// tile, placed by the caller's scatter.
+/// geometry and `loose` (= not attached). The caller places a tile with
+/// all-nil geometry: a term by `TermPlacement.restoredFrame`, a doc by
+/// `Placement.scatterFrame`.
 ///
 /// Incoming `shelf: true` tiles — saved before the shelf was removed — are
 /// dropped silently, and `build` never emits one.
@@ -41,7 +42,7 @@ public enum LayoutTiles {
         }
     }
 
-    /// A terminal placement parsed from a restored tile. `frame` is nil for an M1
+    /// A terminal placement parsed from a restored tile. `frame` is nil for a
     /// geometry-less tile; `termID` is nil for a legacy single-terminal tile.
     public struct ParsedTerm: Equatable, Sendable {
         public var termID: String?
@@ -55,7 +56,7 @@ public enum LayoutTiles {
         }
     }
 
-    /// A board doc placement parsed from a restored tile; a nil `frame` means M1.
+    /// A board doc placement parsed from a restored tile; a nil `frame` means it has no geometry.
     public struct ParsedDoc: Equatable, Sendable {
         public var path: String
         public var frame: CGRect?

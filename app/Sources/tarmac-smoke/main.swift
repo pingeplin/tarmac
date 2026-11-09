@@ -2,8 +2,9 @@ import Foundation
 import TarmacKit
 
 // Cross-language integration proof: drives a real tarmacd over the socket and
-// asserts the M0 contract end to end. Prints PASS/FAIL per check; exits nonzero
-// on any failure.
+// asserts the handshake, a terminal's output and exit, `doc_opened` and
+// `file_event` end to end. Prints PASS/FAIL per check; exits nonzero on any
+// failure.
 
 final class Inbox: @unchecked Sendable {
     private let cond = NSCondition()

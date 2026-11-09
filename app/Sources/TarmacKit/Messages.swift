@@ -1,6 +1,6 @@
 import Foundation
 
-/// The doc entry of docs/protocol.md "M1 subset": nested in `restore.docs[]`,
+/// The doc entry of docs/protocol.md: nested in `restore.docs[]`,
 /// flattened into `doc_opened`. Defaults match the wire defaults (missing key).
 public struct RestoreDoc: Equatable, Sendable {
     public var path: String
@@ -11,8 +11,8 @@ public struct RestoreDoc: Equatable, Sendable {
     public var read: Bool
     public var lastChangedMs: UInt64?
     public var lastOpenedMs: UInt64?
-    /// v4 Phase 3 additive (missing ⇒ nil): the term that opened the doc
-    /// (provenance + gravity owner).
+    /// Missing ⇒ nil: the term that opened the doc (provenance + gravity
+    /// owner).
     public var termID: String?
 
     public init(
@@ -42,10 +42,8 @@ public struct RestoreDoc: Equatable, Sendable {
 /// kind "term" (no path) or "doc" (registry path). Unknown kinds pass through
 /// the codec; receivers skip them per the protocol.
 ///
-/// v4 (Phase 2) adds the optional world-space card frame `x,y,w,h` and stacking
-/// order `z` — all additive (missing ⇒ nil). The init params default to nil so
-/// existing `LayoutTile(kind:)` / `LayoutTile(kind:path:)` calls are unchanged,
-/// and an M1 tile (no geometry) decodes with all-nil geometry.
+/// The world-space card frame `x,y,w,h` and stacking order `z` are optional
+/// (missing ⇒ nil), so a tile with no geometry decodes with all-nil geometry.
 public struct LayoutTile: Equatable, Sendable {
     public var kind: String
     public var path: String?
@@ -54,16 +52,14 @@ public struct LayoutTile: Equatable, Sendable {
     public var w: Double?
     public var h: Double?
     public var z: Int?
-    /// v4 Phase 3 additive (missing ⇒ nil): gravity-detached flag (missing ⇒
-    /// attached).
+    /// Gravity-detached flag; missing ⇒ nil, which means attached.
     public var loose: Bool?
-    /// v4 Phase 3 additive (missing ⇒ nil): true ⇒ the doc is parked on the
-    /// shelf rather than placed on the board (shelf tiles carry no geometry).
+    /// Missing ⇒ nil. True ⇒ the doc is parked on the shelf rather than placed
+    /// on the board (shelf tiles carry no geometry).
     public var shelf: Bool?
-    /// v4 Phase 5b additive (missing ⇒ nil): the `term_id` a terminal tile
-    /// belongs to, so N terminal cards persist distinct positions. nil on doc
-    /// tiles and on legacy single-terminal layouts. Last init param so every
-    /// existing `LayoutTile(kind:…)` call compiles unchanged.
+    /// Missing ⇒ nil: the `term_id` a terminal tile belongs to, so N terminal
+    /// cards persist distinct positions. nil on doc tiles and on legacy
+    /// single-terminal layouts.
     public var termID: String?
 
     public init(
@@ -92,7 +88,7 @@ public struct LayoutTile: Equatable, Sendable {
 }
 
 /// The persisted board viewport for a strip: zoom factor + world-space center.
-/// v4 additive (`restore.board` / `layout.board`); whole map missing ⇒ nil.
+/// `restore.board` / `layout.board`; whole map missing ⇒ nil.
 public struct BoardViewport: Equatable, Sendable {
     public var zoom: Double
     public var cx: Double
@@ -105,16 +101,16 @@ public struct BoardViewport: Equatable, Sendable {
     }
 }
 
-/// M3: one board's identity for the boards switcher (`board_list`). `name` is
+/// One board's identity for the boards switcher (`board_list`). `name` is
 /// the user-given display name (nil until named — manual naming only); the
 /// switcher falls back to the slug `boardID`. Display order is the array order.
 public struct BoardMeta: Equatable, Sendable {
     public var boardID: String
     public var name: String?
-    /// P5 additive (missing ⇒ nil): the daemon's count of *live* ptys on this
-    /// board. The honest per-board liveness the app cannot derive for a board it
-    /// has never visited this session (no cards yet); the daemon re-pushes
-    /// board_list when a term spawns/exits. A pre-P5 sender omits the key (nil).
+    /// Missing ⇒ nil: the daemon's count of *live* ptys on this board. The
+    /// honest per-board liveness the app cannot derive for a board it has never
+    /// visited this session (no cards yet); the daemon re-pushes board_list when
+    /// a term spawns/exits. An older daemon omits the key.
     public var running: Int?
 
     public init(boardID: String, name: String? = nil, running: Int? = nil) {
@@ -124,7 +120,7 @@ public struct BoardMeta: Equatable, Sendable {
     }
 }
 
-/// Every message in docs/protocol.md (v1, M0 + M1 subsets).
+/// Every message in docs/protocol.md.
 public enum Message: Equatable, Sendable {
     /// `appVersion` (additive, missing ⇒ nil) is the client's own version. Only
     /// an app sets it; `tarmac --version` reports it back to the user.
@@ -144,22 +140,22 @@ public enum Message: Equatable, Sendable {
     )
     case ack
     case err(msg: String)
-    /// `boardID` (M3 additive, missing ⇒ the calling term's board, else the
-    /// active one) names an explicit target board.
+    /// `boardID` (missing ⇒ the calling term's board, else the active one)
+    /// names an explicit target board.
     case open(path: String, termID: String?, boardID: String? = nil)
     case docRead(path: String)
-    /// M3 additive (missing ⇒ nil): the board this layout/restore belongs to.
+    /// Missing ⇒ nil: the board this layout/restore belongs to.
     /// App→daemon `layout` stamps the active board so the daemon persists to the
     /// right board (not just its active one); daemon→app `restore` is stamped
     /// with the restored board's id so the app binds it to the correct board
     /// (and can reject a stale restore that arrives after a later switch).
     case layout(dock: [String], tiles: [LayoutTile], board: BoardViewport?, boardID: String?)
-    /// P5 additive `liveTerms` (default empty): the term_ids the daemon owns a
-    /// live pty for on this board. The app re-binds these cards to the running
-    /// shells (consuming the replayed scrollback that follows) instead of cold-
-    /// spawning; empty ⇒ cold-spawn (pre-P5 / daemon-restart, shells gone).
+    /// `liveTerms` (default empty): the term_ids the daemon owns a live pty for
+    /// on this board. The app re-binds these cards to the running shells
+    /// (consuming the replayed scrollback that follows) instead of cold-
+    /// spawning; empty ⇒ cold-spawn (an older or restarted daemon, shells gone).
     case restore(docs: [RestoreDoc], tiles: [LayoutTile], board: BoardViewport?, boardID: String?, liveTerms: [String])
-    /// `boardID` (M3 additive, missing ⇒ board-0 / active) is the board the new
+    /// `boardID` (missing ⇒ board-0 / active) is the board the new
     /// terminal belongs to. `inheritCwdFrom` (issue #77, missing ⇒ nil) names a
     /// terminal whose LIVE cwd the new one starts in; the daemon resolves it at
     /// spawn time and ignores it when `cwd` is set.
@@ -178,17 +174,17 @@ public enum Message: Equatable, Sendable {
     case exit(termID: String, code: Int?)
     case docOpened(doc: RestoreDoc)
     case fileEvent(path: String, mtimeMs: UInt64)
-    /// M2 honest signals (daemon → app; additive types). `termProc` is the
+    /// Honest signals (daemon → app). `termProc` is the
     /// foreground process name on a terminal; `bell` is a seen BEL (0x07).
     case termProc(termID: String, name: String, pid: Int?)
     case bell(termID: String)
-    /// M3 ("strips = boards"; additive types). `boardList` (daemon → app) is the
+    /// Boards. `boardList` (daemon → app) is the
     /// full set of boards + the active one; `boardSwitch` / `boardCreate`
     /// (app → daemon) drive the switcher.
     case boardList(boards: [BoardMeta], active: String)
     case boardSwitch(boardID: String)
     case boardCreate
-    /// P5.4 (app → daemon): rename a board (`name` empty ⇒ clear to the slug) /
+    /// App → daemon: rename a board (`name` empty ⇒ clear to the slug) /
     /// delete a board (the daemon refuses the last board and fixes the active one
     /// if the deleted board was active). Drive the ⌘K switcher's ⌘E / ⌘⌫.
     case boardRename(boardID: String, name: String)
@@ -408,7 +404,7 @@ public extension Message {
         )
     }
 
-    /// Decode the optional v4 `board` viewport map. Whole map missing ⇒ nil;
+    /// Decode the optional `board` viewport map. Whole map missing ⇒ nil;
     /// when present, `zoom/cx/cy` are required floats.
     private static func board(from map: [String: MsgPackValue]?) throws -> BoardViewport? {
         guard let m = map else { return nil }

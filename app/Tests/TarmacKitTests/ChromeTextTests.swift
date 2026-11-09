@@ -26,15 +26,6 @@ final class ChromeTextTests: XCTestCase {
         XCTAssertEqual(ChromeText.zoomPercent(1e300), "1e+302%")
     }
 
-    func testBoardChipLabelUsesTheNameWhenPresent() {
-        XCTAssertEqual(ChromeText.boardChipLabel(name: "Frontend", boardID: "b-1"), "Frontend")
-    }
-
-    func testBoardChipLabelFallsBackToTheIDForANilOrEmptyName() {
-        XCTAssertEqual(ChromeText.boardChipLabel(name: nil, boardID: "b-1"), "b-1")
-        XCTAssertEqual(ChromeText.boardChipLabel(name: "", boardID: "b-3"), "b-3")
-    }
-
     func testCardCountIsSingularOnlyForExactlyOneCard() {
         XCTAssertEqual(ChromeText.cardCount(1), "1 card")
         XCTAssertEqual(ChromeText.cardCount(0), "0 cards")

@@ -82,29 +82,6 @@ final class ChannelPathsTests: XCTestCase {
         }
     }
 
-    // MARK: - statePath
-
-    /// S6/S7/S9 for the state resolver — the Rust `resolve_state_path_cases` grid.
-    func testStatePathGrid() {
-        let cases: [(override: String?, channel: ChannelPaths.Channel, expected: String)] = [
-            // S6: release == the legacy flat path.
-            (nil, .release, "/Users/eplin/Library/Application Support/tarmac/state.json"),
-            // S7: dev carries the SAME `dev/` segment as the socket.
-            (nil, .dev, "/Users/eplin/Library/Application Support/tarmac/dev/state.json"),
-            ("/tmp/s.json", .release, "/tmp/s.json"),
-            ("/tmp/s.json", .dev, "/tmp/s.json"),
-            // S9: empty override == unset.
-            ("", .dev, "/Users/eplin/Library/Application Support/tarmac/dev/state.json"),
-        ]
-        for c in cases {
-            XCTAssertEqual(
-                ChannelPaths.statePath(override: c.override, home: home, channel: c.channel),
-                c.expected,
-                "statePath(override: \(c.override.map { "\"\($0)\"" } ?? "nil"), channel: \(c.channel))"
-            )
-        }
-    }
-
     // MARK: - devSocketPath
 
     /// S50/S51: the QA driver's socket per channel; `TARMAC_DEV_SOCKET` wins
@@ -127,13 +104,11 @@ final class ChannelPathsTests: XCTestCase {
         }
     }
 
-    /// S7/S52 by construction: the three files share the per-channel directory,
-    /// so a dev app can never meet a dev socket beside release state.
-    func testSocketStateAndDevSocketShareTheChannelDir() {
+    /// S52 by construction: both sockets share the per-channel directory.
+    func testSocketAndDevSocketShareTheChannelDir() {
         for channel in [ChannelPaths.Channel.release, .dev] {
             let dir = ChannelPaths.channelDir(home: home, channel: channel)
             XCTAssertEqual(ChannelPaths.socketPath(override: nil, home: home, channel: channel), dir + "/tarmacd.sock")
-            XCTAssertEqual(ChannelPaths.statePath(override: nil, home: home, channel: channel), dir + "/state.json")
             XCTAssertEqual(
                 ChannelPaths.devSocketPath(override: nil, home: home, channel: channel),
                 dir + "/tarmac-dev.sock"

@@ -1,4 +1,4 @@
-/// Pure decision for P5 terminal restore: for each persisted terminal tile,
+/// Pure decision for terminal restore: for each persisted terminal tile,
 /// whether the app re-binds the card to a daemon-owned live pty (consuming the
 /// replayed scrollback that follows the restore) or cold-spawns a fresh shell.
 ///
@@ -6,8 +6,8 @@
 /// `BoardRestore` builds the restore plan around these decisions. A tile re-binds iff its persisted `term_id` is among
 /// the daemon's reported live terms (`Restore.liveTerms`); everything else cold-
 /// spawns — a tile with no persisted id, a shell that exited while detached, or a
-/// daemon that restarted (all shells gone ⇒ `liveTerms` empty ⇒ all cold-spawn,
-/// the pre-P5 behaviour).
+/// daemon that restarted (all shells gone ⇒ `liveTerms` empty ⇒ all
+/// cold-spawn).
 public enum TermRestore {
     public enum Plan: Equatable {
         /// Adopt the daemon's still-live pty under this exact id; do NOT spawn.

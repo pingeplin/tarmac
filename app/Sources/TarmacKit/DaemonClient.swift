@@ -221,24 +221,24 @@ public final class DaemonClient: @unchecked Sendable {
         send(.layout(dock: dock, tiles: tiles, board: board, boardID: boardID))
     }
 
-    /// M3: make `boardID` the active board (the daemon replies with board_list +
+    /// Make `boardID` the active board (the daemon replies with board_list +
     /// that board's restore).
     public func boardSwitch(boardID: String) {
         send(.boardSwitch(boardID: boardID))
     }
 
-    /// M3: mint a fresh board (the daemon assigns the slug id and makes it active).
+    /// Mint a fresh board (the daemon assigns the slug id and makes it active).
     public func boardCreate() {
         send(.boardCreate)
     }
 
-    /// P5.4: rename `boardID` (an empty `name` clears it back to the slug). The
+    /// Rename `boardID` (an empty `name` clears it back to the slug). The
     /// daemon re-pushes board_list with the new name.
     public func boardRename(boardID: String, name: String) {
         send(.boardRename(boardID: boardID, name: name))
     }
 
-    /// P5.4: delete `boardID`. The daemon refuses the last board and, when the
+    /// Delete `boardID`. The daemon refuses the last board and, when the
     /// deleted board was active, fixes the active board and re-pushes board_list +
     /// the new active board's restore.
     public func boardDelete(boardID: String) {
