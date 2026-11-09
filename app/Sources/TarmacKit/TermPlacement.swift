@@ -2,18 +2,13 @@ import CoreGraphics
 
 /// Where a terminal card goes when nothing has placed it yet.
 public enum TermPlacement {
-    /// A ⌘T terminal: one cascade step down-right of the prime terminal's
-    /// origin (the boot origin when nothing is prime), stepped further while it
-    /// would sit on an existing card's origin. Always the boot size — the prime
-    /// card's own size is not inherited.
-    public static func newTerminalFrame(primeOrigin: CGPoint?, existingOrigins: [CGPoint]) -> CGRect {
-        let origin = BoardWayfinding.cascadeOrigin(
-            base: primeOrigin ?? Placement.termFrame.origin,
-            existing: existingOrigins,
-            dx: Placement.cascadeDX,
-            dy: Placement.cascadeDY
+    /// A ⌘T terminal: the first free ring slot around the prime terminal (the
+    /// boot frame when nothing is prime), the same rule a fresh doc follows.
+    /// Always the boot size — the prime card's own size is not inherited.
+    public static func newTerminalFrame(prime: CGRect?, existing: [CGRect]) -> CGRect {
+        Placement.firstFreeSlot(
+            owner: prime ?? Placement.termFrame, existing: existing, size: Placement.termFrame.size
         )
-        return CGRect(origin: origin, size: Placement.termFrame.size)
     }
 
     /// The frame of the `index`-th restored terminal tile that carries no

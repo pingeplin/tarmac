@@ -1082,8 +1082,9 @@ view; `KeyLadder` says which ones the app takes, in this order:
    open switcher — always consumed, so it never reaches Close Window.
 3. While the switcher is open it owns the keyboard (`SwitcherKeys`); an
    unhandled `⌘` chord is left for the menu.
-4. `⌘T` opens a terminal, cascaded from the prime one and inheriting its
-   current directory (`inherit_cwd_from`).
+4. `⌘T` opens a terminal in the first free slot around the prime one (the
+   same ring rule a fresh doc follows, `Placement.firstFreeSlot`), inheriting
+   its current directory (`inherit_cwd_from`).
 5. Plain `Return`, when no terminal holds the keys, no text control in a
    markdown doc's raw HTML is being typed into, and a signalling card is off
    screen, remembers the viewport and flies to that card.
@@ -1437,7 +1438,8 @@ effect; and `theme`: the `choice`, the variant `in_effect` and the `name` (the i
 → CLI makes the path absolute + reads `TARMAC_TERM_ID` + sends `Open` → daemon resolves the
 caller's board, counts the doc toward its parent dir's watch, upserts the doc, derives repo
 metadata, pushes `DocOpened` → app lands a `fresh` card in the first free slot
-right of the caller terminal, with a provenance edge → agent edits the file →
+around the caller terminal — right of it first, then clockwise (below, left,
+above, then the corners), ring by ring outward — with a provenance edge → agent edits the file →
 daemon `FileEvent` → the card re-renders and its header shows `✎ Ns`.
 
 **App disconnect → reconnect.** Daemon stays up; ptys keep running and filling

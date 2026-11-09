@@ -1,9 +1,9 @@
 import CoreGraphics
 
-/// Where a `tarmac open` doc lands on the board. A fresh doc is placed beside its
-/// owning terminal by a first-free-slot grid search with an 8 pt collision inset,
-/// so several docs from one terminal stack neatly instead of landing on top of
-/// each other. A persisted doc tile with no geometry (the M1 migration path)
+/// Where a `tarmac open` doc lands on the board. A fresh doc takes the first
+/// free slot, with an 8 pt collision inset, in the rings around its owning
+/// terminal, so several docs from one terminal surround it instead of landing
+/// on top of each other. A persisted doc tile with no geometry (the M1 migration path)
 /// falls back to a deterministic two-column scatter.
 ///
 /// World space is top-down/flipped (larger y is lower), like `BoardTransform`.
@@ -15,13 +15,14 @@ public enum Placement {
     public static let openingViewport = BoardFly.destination(showing: termFrame)
     public static let docWidth: CGFloat = 392
     public static let docHeight: CGFloat = 310
+    public static let docSize = CGSize(width: docWidth, height: docHeight)
     public static let gapX: CGFloat = 86
     public static let gapY: CGFloat = 40
-    /// The ⌘T terminal cascade nudge, consumed by `BoardWayfinding.cascadeOrigin`.
+    /// The cascade step of geometry-less restored terminals (`TermPlacement`).
     public static let cascadeDX: CGFloat = 43
     public static let cascadeDY: CGFloat = 40
-    public static let scanRows = 64
-    public static let scanCols = 64
+    /// The rings around the owner `firstFreeSlot` tries before it stacks.
+    public static let ringCount = 16
     /// A candidate slot must clear every existing card by this much.
     public static let collisionInset: CGFloat = 8
     public static let docColumns = 2
@@ -33,27 +34,48 @@ public enum Placement {
         a.minX < b.maxX && b.minX < a.maxX && a.minY < b.maxY && b.minY < a.maxY
     }
 
-    /// The world frame for a fresh doc card owned by `owner`: the first
-    /// `docWidth × docHeight` slot, scanned row-major from the anchor (owner's
-    /// right edge + `gapX`, owner's top), that clears every `existing` card by
-    /// `collisionInset`. A fully occupied grid stacks at the anchor — overlapping
-    /// but still valid geometry.
-    public static func firstFreeSlot(owner: CGRect, existing: [CGRect]) -> CGRect {
-        let startX = owner.maxX + gapX
-        let startY = owner.minY
+    /// The world frame for a fresh card of `size` owned by `owner`: the first
+    /// slot, ring by ring outward (`ringSlots`), that clears every `existing`
+    /// card by `collisionInset`. When all `ringCount` rings are taken it stacks
+    /// at the first slot — overlapping but still valid geometry.
+    public static func firstFreeSlot(owner: CGRect, existing: [CGRect], size: CGSize = docSize) -> CGRect {
         let grown = existing.map { $0.insetBy(dx: -collisionInset, dy: -collisionInset) }
-        for row in 0..<scanRows {
-            for col in 0..<scanCols {
-                let candidate = CGRect(
-                    x: startX + CGFloat(col) * (docWidth + gapX),
-                    y: startY + CGFloat(row) * (docHeight + gapY),
-                    width: docWidth,
-                    height: docHeight
-                )
-                if !grown.contains(where: { rectsIntersect(candidate, $0) }) { return candidate }
+        for ring in 0..<ringCount {
+            let free = ringSlots(around: owner, ring: ring, size: size).first { slot in
+                !grown.contains { rectsIntersect(slot, $0) }
             }
+            if let free { return free }
         }
-        return CGRect(x: startX, y: startY, width: docWidth, height: docHeight)
+        return ringSlots(around: owner, ring: 0, size: size)[0]
+    }
+
+    /// The `ring`-th (0-based) ring of slots around `owner`, in placing order.
+    /// First the sides, clockwise from the right: each side holds as many slots
+    /// as start along the owner's edge, aligned to its top or left, and the k-th
+    /// slot of every side comes before the (k+1)-th of any. Then the corners,
+    /// clockwise from bottom-right. A corner can overlap a side slot of a big
+    /// owner; the collision check then skips it. Ring n is ring 0 around
+    /// `owner` grown by n pitches.
+    static func ringSlots(around owner: CGRect, ring: Int, size: CGSize) -> [CGRect] {
+        let pitchX = size.width + gapX
+        let pitchY = size.height + gapY
+        let o = owner.insetBy(dx: -CGFloat(ring) * pitchX, dy: -CGFloat(ring) * pitchY)
+        let right = o.maxX + gapX, left = o.minX - pitchX
+        let below = o.maxY + gapY, above = o.minY - pitchY
+        let rows = Array(stride(from: o.minY, to: o.maxY, by: pitchY))
+        let cols = Array(stride(from: o.minX, to: o.maxX, by: pitchX))
+        var origins: [CGPoint] = []
+        for k in 0..<max(rows.count, cols.count) {
+            if k < rows.count { origins.append(CGPoint(x: right, y: rows[k])) }
+            if k < cols.count { origins.append(CGPoint(x: cols[k], y: below)) }
+            if k < rows.count { origins.append(CGPoint(x: left, y: rows[k])) }
+            if k < cols.count { origins.append(CGPoint(x: cols[k], y: above)) }
+        }
+        origins += [
+            CGPoint(x: right, y: below), CGPoint(x: left, y: below),
+            CGPoint(x: left, y: above), CGPoint(x: right, y: above),
+        ]
+        return origins.map { CGRect(origin: $0, size: size) }
     }
 
     /// The frame of the `slot`-th (0-based) geometry-less doc: `docColumns`

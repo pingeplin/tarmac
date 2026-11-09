@@ -2,8 +2,8 @@ import CoreGraphics
 import XCTest
 @testable import TarmacKit
 
-/// Where a `tarmac open` doc lands on the board: a first-free-slot grid search
-/// beside the owning terminal, and the M1 scatter fallback.
+/// Where a `tarmac open` doc lands on the board: the first free slot in the
+/// rings around the owning terminal, and the M1 scatter fallback.
 final class PlacementTests: XCTestCase {
     private let owner = Placement.termFrame
 
@@ -46,38 +46,103 @@ final class PlacementTests: XCTestCase {
 
     // MARK: - firstFreeSlot
 
+    private func doc(_ x: CGFloat, _ y: CGFloat) -> CGRect {
+        CGRect(x: x, y: y, width: Placement.docWidth, height: Placement.docHeight)
+    }
+
+    /// `count` docs opened one after another from `terminal`, each placed with
+    /// the terminal and every earlier doc on the board.
+    private func place(_ count: Int, around terminal: CGRect) -> [CGRect] {
+        (0..<count).reduce(into: []) { placed, _ in
+            placed.append(Placement.firstFreeSlot(owner: terminal, existing: [terminal] + placed))
+        }
+    }
+
+    private let bigTerminal = CGRect(x: 80, y: 80, width: 720, height: 460)
+
     func testFirstDocLandsAtTheAnchorRightOfTheOwnerAtItsTop() {
         XCTAssertEqual(
             Placement.firstFreeSlot(owner: owner, existing: []),
             CGRect(x: 80 + 470 + 86, y: 80, width: 392, height: 310)
         )
+        XCTAssertEqual(place(1, around: owner), [doc(636, 80)])
     }
 
-    func testSkipsToTheNextColumnWhenTheAnchorSlotIsOccupied() {
-        let first = Placement.firstFreeSlot(owner: owner, existing: [])
-        let second = Placement.firstFreeSlot(owner: owner, existing: [first])
+    /// The boot terminal has room for one doc on each side: right, below, left,
+    /// above, then the corners clockwise from bottom-right.
+    func testDocsCircleTheBootTerminalClockwiseSidesThenCorners() {
+        XCTAssertEqual(place(8, around: owner), [
+            doc(636, 80), doc(80, 450), doc(-398, 80), doc(80, -270),
+            doc(636, 450), doc(-398, 450), doc(-398, -270), doc(636, -270),
+        ])
+    }
+
+    /// A 720×460 terminal has room for two docs along each side, so a side's
+    /// second slot comes before any corner. The right side's second slot hangs
+    /// into the bottom row and takes the bottom's second slot; a corner that a
+    /// side slot covers is skipped too. Only top-left is left, then ring two.
+    func testABigTerminalTakesItsSecondSideSlotsBeforeTheCorners() {
+        XCTAssertEqual(place(9, around: bigTerminal), [
+            doc(886, 80), doc(80, 580), doc(-398, 80), doc(80, -270),
+            doc(886, 430), doc(-398, 430), doc(558, -270),
+            doc(-398, -270), doc(1364, -270),
+        ])
+    }
+
+    /// A full first ring sends the next doc to the second ring: the ring around
+    /// the terminal grown by one pitch, starting right of it at its top.
+    func testTheNinthDocAroundTheBootTerminalOpensTheSecondRing() {
+        XCTAssertEqual(place(9, around: owner).last, doc(1114, -270))
+    }
+
+    /// #232 acceptance: six docs lie on at least three sides of their terminal,
+    /// and none is farther from it than one doc plus the gap.
+    func testSixDocsSurroundTheirTerminalWithinOneDocAndAGap() {
+        for terminal in [owner, bigTerminal] {
+            let docs = place(6, around: terminal)
+            let reach = terminal.insetBy(
+                dx: -(Placement.docWidth + Placement.gapX), dy: -(Placement.docHeight + Placement.gapY)
+            )
+            for d in docs { XCTAssertTrue(reach.contains(d), "\(d) around \(terminal)") }
+            let sides = Set(docs.flatMap { d -> [String] in
+                [d.minX >= terminal.maxX ? "right" : nil, d.maxX <= terminal.minX ? "left" : nil,
+                 d.minY >= terminal.maxY ? "below" : nil, d.maxY <= terminal.minY ? "above" : nil]
+                    .compactMap { $0 }
+            })
+            XCTAssertGreaterThanOrEqual(sides.count, 3, "\(sides) around \(terminal)")
+        }
+    }
+
+    func testNoPlacedDocComesWithinTheInsetOfAnEarlierCard() {
+        for terminal in [owner, bigTerminal] {
+            let docs = place(40, around: terminal)
+            for (i, d) in docs.enumerated() {
+                for other in [terminal] + docs[..<i] {
+                    let grown = other.insetBy(dx: -Placement.collisionInset, dy: -Placement.collisionInset)
+                    XCTAssertFalse(Placement.rectsIntersect(d, grown), "doc \(i) \(d) vs \(other)")
+                }
+            }
+        }
+    }
+
+    /// The slot takes the size it is given, and that size sets how many slots
+    /// fit along each side.
+    func testASlotTakesTheSizeItIsGiven() {
+        let size = Placement.termFrame.size
+        let first = Placement.firstFreeSlot(owner: bigTerminal, existing: [bigTerminal], size: size)
+        XCTAssertEqual(first, CGRect(origin: CGPoint(x: 886, y: 80), size: size))
+        var taken = [bigTerminal, first]
+        for _ in 0..<3 { taken.append(Placement.firstFreeSlot(owner: bigTerminal, existing: taken, size: size)) }
         XCTAssertEqual(
-            second,
-            CGRect(x: first.minX + Placement.docWidth + Placement.gapX, y: first.minY,
-                   width: Placement.docWidth, height: Placement.docHeight)
+            Placement.firstFreeSlot(owner: bigTerminal, existing: taken, size: size).origin,
+            CGPoint(x: 886, y: 450), "the right side's second slot, one terminal height plus the gap down"
         )
-        XCTAssertFalse(Placement.rectsIntersect(first, second))
     }
 
     func testAnExistingCardWithinTheCollisionInsetStillCountsAsOccupied() {
         let first = Placement.firstFreeSlot(owner: owner, existing: [])
         let near = first.offsetBy(dx: 4, dy: 0)
-        XCTAssertNotEqual(Placement.firstFreeSlot(owner: owner, existing: [near]).minX, first.minX)
-    }
-
-    func testWrapsToTheNextRowWhenARowFillsUp() {
-        let rowBlockers = (0..<Placement.scanCols).map { col in
-            CGRect(x: anchorX + CGFloat(col) * (Placement.docWidth + Placement.gapX), y: owner.minY,
-                   width: Placement.docWidth, height: Placement.docHeight)
-        }
-        let placed = Placement.firstFreeSlot(owner: owner, existing: rowBlockers)
-        XCTAssertEqual(placed.minY, owner.minY + Placement.docHeight + Placement.gapY)
-        XCTAssertEqual(placed.minX, anchorX)
+        XCTAssertNotEqual(Placement.firstFreeSlot(owner: owner, existing: [near]), first)
     }
 
     func testStacksAtTheAnchorWhenTheWholeScanGridIsOccupied() {
@@ -110,8 +175,7 @@ final class PlacementTests: XCTestCase {
         XCTAssertEqual(Placement.cascadeDX, 43)
         XCTAssertEqual(Placement.cascadeDY, 40)
         XCTAssertEqual(Placement.collisionInset, 8)
-        XCTAssertEqual(Placement.scanRows, 64)
-        XCTAssertEqual(Placement.scanCols, 64)
+        XCTAssertEqual(Placement.ringCount, 16)
         XCTAssertEqual(Placement.docColumns, 2)
     }
 
@@ -122,22 +186,13 @@ final class PlacementTests: XCTestCase {
     func testACardJustPastTheSlotsRightEdgeStillCollidesThroughTheInset() {
         let first = Placement.firstFreeSlot(owner: owner, existing: [])
         let neighbour = CGRect(x: first.maxX + 4, y: first.minY, width: 100, height: Placement.docHeight)
-        XCTAssertEqual(
-            Placement.firstFreeSlot(owner: owner, existing: [neighbour]),
-            CGRect(x: anchorX + 2 * (Placement.docWidth + Placement.gapX), y: owner.minY,
-                   width: Placement.docWidth, height: Placement.docHeight),
-            "columns 0 and 1 are both within 8 pt of the neighbour"
-        )
+        XCTAssertEqual(Placement.firstFreeSlot(owner: owner, existing: [neighbour]), doc(80, 450))
     }
 
     func testACardJustBelowTheSlotStillCollidesThroughTheInset() {
         let first = Placement.firstFreeSlot(owner: owner, existing: [])
         let below = CGRect(x: first.minX, y: first.maxY + 4, width: Placement.docWidth, height: 20)
-        XCTAssertEqual(
-            Placement.firstFreeSlot(owner: owner, existing: [below]),
-            CGRect(x: anchorX + Placement.docWidth + Placement.gapX, y: owner.minY,
-                   width: Placement.docWidth, height: Placement.docHeight)
-        )
+        XCTAssertEqual(Placement.firstFreeSlot(owner: owner, existing: [below]), doc(80, 450))
     }
 
     func testACardMoreThanTheInsetAwayDoesNotCollide() {
@@ -146,24 +201,16 @@ final class PlacementTests: XCTestCase {
         XCTAssertEqual(Placement.firstFreeSlot(owner: owner, existing: [clear]), first)
     }
 
-    /// Columns 0…62 blocked in every row: the slot is column 63 of row 0, which a
-    /// scan of only 63 columns would never reach.
-    func testTheScanReachesTheSixtyFourthColumn() {
-        let pitch = Placement.docWidth + Placement.gapX
-        let blocked = CGRect(x: 0, y: -1e6, width: anchorX + 62 * pitch + Placement.docWidth, height: 2e6)
-        XCTAssertEqual(
-            Placement.firstFreeSlot(owner: owner, existing: [blocked]),
-            CGRect(x: anchorX + 63 * pitch, y: owner.minY, width: Placement.docWidth, height: Placement.docHeight)
+    /// Every ring before the last blocked: the slot is the first of the last
+    /// ring, which a scan of one ring fewer never reaches.
+    func testTheScanReachesTheLastRing() {
+        let inner = CGFloat(Placement.ringCount - 1)
+        let blocked = owner.insetBy(
+            dx: -inner * (Placement.docWidth + Placement.gapX), dy: -inner * (Placement.docHeight + Placement.gapY)
         )
-    }
-
-    /// Rows 0…62 blocked in every column: the slot is row 63, column 0.
-    func testTheScanReachesTheSixtyFourthRow() {
-        let pitch = Placement.docHeight + Placement.gapY
-        let blocked = CGRect(x: -1e6, y: 0, width: 2e6, height: owner.minY + 62 * pitch + Placement.docHeight)
         XCTAssertEqual(
             Placement.firstFreeSlot(owner: owner, existing: [blocked]),
-            CGRect(x: anchorX, y: owner.minY + 63 * pitch, width: Placement.docWidth, height: Placement.docHeight)
+            doc(blocked.maxX + Placement.gapX, blocked.minY)
         )
     }
 }

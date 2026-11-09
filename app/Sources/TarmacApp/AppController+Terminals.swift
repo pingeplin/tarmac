@@ -212,8 +212,8 @@ extension AppController {
         guard board.didInitialRestore else { return }
         let cards = Array(board.view.cards.values)
         let frame = TermPlacement.newTerminalFrame(
-            primeOrigin: board.primeTermCard?.worldFrame.rect.origin,
-            existingOrigins: cards.map(\.worldFrame.rect.origin)
+            prime: board.primeTermCard?.worldFrame.rect,
+            existing: cards.map(\.worldFrame.rect)
         )
         let z = ZOrder.raised(above: cards.map(\.worldFrame.z))
         let candidates = board.sessionOrder.compactMap { id -> CwdInherit.Candidate? in
