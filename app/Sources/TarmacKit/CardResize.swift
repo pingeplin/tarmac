@@ -9,6 +9,13 @@ public enum CardResize {
     public enum Handle: Equatable, Sendable {
         case topLeft, topRight, bottomLeft, bottomRight
         case top, bottom, left, right
+
+        /// Dragged, the left edge moves and the right edge stays pinned.
+        public var movesLeft: Bool { self == .topLeft || self == .bottomLeft || self == .left }
+        /// Dragged, the top edge moves and the bottom edge stays pinned.
+        public var movesTop: Bool { self == .topLeft || self == .topRight || self == .top }
+        public var resizesWidth: Bool { self != .top && self != .bottom }
+        public var resizesHeight: Bool { self != .left && self != .right }
     }
 
     public static let minWidth: CGFloat = 160
@@ -25,13 +32,8 @@ public enum CardResize {
         var width = start.size.width
         var height = start.size.height
 
-        let movesLeft = handle == .topLeft || handle == .bottomLeft || handle == .left
-        let movesTop = handle == .topLeft || handle == .topRight || handle == .top
-        let resizesWidth = handle != .top && handle != .bottom
-        let resizesHeight = handle != .left && handle != .right
-
-        if resizesWidth {
-            if movesLeft {
+        if handle.resizesWidth {
+            if handle.movesLeft {
                 let newWidth = max(minSize.width, width - delta.dx)
                 x += width - newWidth
                 width = newWidth
@@ -40,8 +42,8 @@ public enum CardResize {
             }
         }
 
-        if resizesHeight {
-            if movesTop {
+        if handle.resizesHeight {
+            if handle.movesTop {
                 let newHeight = max(minSize.height, height - delta.dy)
                 y += height - newHeight
                 height = newHeight

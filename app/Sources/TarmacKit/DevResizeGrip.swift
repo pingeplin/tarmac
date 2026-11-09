@@ -55,8 +55,8 @@ public enum DevResizeGrip {
         let dx = (to.width - from.width) * zoom
         let dy = (to.height - from.height) * zoom
         return CGVector(
-            dx: [.top, .bottom].contains(handle) ? 0 : [.topLeft, .bottomLeft, .left].contains(handle) ? -dx : dx,
-            dy: [.left, .right].contains(handle) ? 0 : [.topLeft, .topRight, .top].contains(handle) ? -dy : dy
+            dx: handle.resizesWidth ? (handle.movesLeft ? -dx : dx) : 0,
+            dy: handle.resizesHeight ? (handle.movesTop ? -dy : dy) : 0
         )
     }
 
