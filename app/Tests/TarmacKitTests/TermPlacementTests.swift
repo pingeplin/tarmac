@@ -5,31 +5,39 @@ import XCTest
 final class TermPlacementTests: XCTestCase {
     // MARK: - ⌘T
 
-    func testANewTerminalCascadesFromThePrimeOrigin() {
-        let frame = TermPlacement.newTerminalFrame(
-            primeOrigin: CGPoint(x: 300, y: 200), existingOrigins: [CGPoint(x: 300, y: 200)]
+    func testANewTerminalLandsRightOfThePrimeAtItsTop() {
+        let prime = CGRect(x: 300, y: 200, width: 470, height: 330)
+        XCTAssertEqual(
+            TermPlacement.newTerminalFrame(prime: prime, existing: [prime]),
+            CGRect(x: 856, y: 200, width: 470, height: 330)
         )
-        XCTAssertEqual(frame, CGRect(x: 343, y: 240, width: 470, height: 330))
     }
 
-    func testWithNoPrimeItCascadesFromTheBootOrigin() {
-        let frame = TermPlacement.newTerminalFrame(primeOrigin: nil, existingOrigins: [])
-        XCTAssertEqual(frame, CGRect(x: 123, y: 120, width: 470, height: 330))
+    func testWithNoPrimeItCirclesTheBootFrame() {
+        XCTAssertEqual(
+            TermPlacement.newTerminalFrame(prime: nil, existing: []),
+            CGRect(x: 636, y: 80, width: 470, height: 330)
+        )
     }
 
-    /// The size is the boot size whatever the prime card was resized to: only
-    /// the prime's origin is an input.
+    /// The size is the boot size whatever the prime card was resized to.
     func testTheSizeIsAlwaysTheBootSize() {
-        let frame = TermPlacement.newTerminalFrame(primeOrigin: CGPoint(x: 0, y: 0), existingOrigins: [])
-        XCTAssertEqual(frame.size, CGSize(width: 470, height: 330))
+        let prime = CGRect(x: 0, y: 0, width: 800, height: 600)
+        XCTAssertEqual(
+            TermPlacement.newTerminalFrame(prime: prime, existing: [prime]),
+            CGRect(x: 886, y: 0, width: 470, height: 330)
+        )
     }
 
-    func testItStepsPastACardAlreadySittingOnTheCascadeSlot() {
-        let frame = TermPlacement.newTerminalFrame(
-            primeOrigin: CGPoint(x: 80, y: 80),
-            existingOrigins: [CGPoint(x: 80, y: 80), CGPoint(x: 123, y: 120), CGPoint(x: 170, y: 164)]
+    /// A doc already right of the prime sends the terminal to the next slot
+    /// clockwise: below the prime, left-aligned.
+    func testItTakesTheNextRingSlotWhenTheFirstIsTaken() {
+        let prime = Placement.termFrame
+        let doc = Placement.firstFreeSlot(owner: prime, existing: [prime])
+        XCTAssertEqual(
+            TermPlacement.newTerminalFrame(prime: prime, existing: [prime, doc]),
+            CGRect(x: 80, y: 450, width: 470, height: 330)
         )
-        XCTAssertEqual(frame.origin, CGPoint(x: 209, y: 200), "(166,160) is within 8 px of (170,164)")
     }
 
     func testTheFirstGeometryLessTerminalTakesTheBootFrame() {
