@@ -17,7 +17,7 @@ public enum DevRequest: Equatable, Sendable {
     /// terminal. Card ids are term ids or absolute paths, never the literal
     /// "board", so absence carries the meaning with no sentinel.
     case focus(card: String?)
-    case resize(card: String, w: Double, h: Double)
+    case resize(card: String, w: Double, h: Double, handle: String? = nil)
     case type(card: String, text: String)
     case key(card: String, combo: String)
     /// A native ⌘ chord posted in-process (spec 2609.0018, #183). The app parses
@@ -83,7 +83,8 @@ public extension DevRequest {
             return .resize(
                 card: try fields.req("card", \.stringValue),
                 w: try fields.req("w", \.doubleValue),
-                h: try fields.req("h", \.doubleValue)
+                h: try fields.req("h", \.doubleValue),
+                handle: try fields.opt("handle", \.stringValue)
             )
         case "type":
             return .type(card: try fields.req("card", \.stringValue), text: try fields.req("text", \.stringValue))
@@ -115,11 +116,12 @@ public extension DevRequest {
         case .focus(let card):
             fields.put("t", .string("focus"))
             fields.put("card", unlessNil: card.map(MsgPackValue.string))
-        case .resize(let card, let w, let h):
+        case .resize(let card, let w, let h, let handle):
             fields.put("t", .string("resize"))
             fields.put("card", .string(card))
             fields.put("w", .double(w))
             fields.put("h", .double(h))
+            fields.put("handle", unlessNil: handle.map(MsgPackValue.string))
         case .type(let card, let text):
             fields.put("t", .string("type"))
             fields.put("card", .string(card))

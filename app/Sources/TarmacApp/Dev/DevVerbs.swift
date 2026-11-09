@@ -85,8 +85,8 @@ final class DevVerbs {
             return ok(try await focus(onMarkdown: card))
         case .focusHTML(let card, let borrow):
             return ok(try await focus(onHTML: card, borrow: borrow))
-        case .resize(let card, let from, let to, let takesKeys):
-            return ok(try await resize(try cardView(card), from: from, to: to, takesKeys: takesKeys))
+        case .resize(let card, let from, let to, let takesKeys, let handle):
+            return ok(try await resize(try cardView(card), from: from, to: to, takesKeys: takesKeys, handle: handle))
         case .type(let card, let text):
             return ok(try await type(text, into: try terminal(card)))
         case .key(_, let combo, let stroke):
@@ -212,12 +212,17 @@ final class DevVerbs {
 
     // MARK: - resize
 
-    private func resize(_ card: CardView, from: CGSize, to: CGSize, takesKeys: Bool) async throws -> JSONValue {
+    private func resize(
+        _ card: CardView, from: CGSize, to: CGSize, takesKeys: Bool, handle: CardResize.Handle
+    ) async throws -> JSONValue {
+        guard let press = DevResizeGrip.pressPoint(handle, of: card.frame, hasClose: card.hasCloseButton) else {
+            throw DevError(.badRequest, "the card has no \(DevResizeGrip.name(of: handle)) handle")
+        }
         let activated = try await input.takeKey()
         guard let cards = card.superview, let grip = card.subviews.lazy.compactMap({ $0 as? CardResizeGrip }).first
         else { throw DevError(.driverThrew, "the card has no resize handle to drag") }
-        let delta = DevResizeGrip.delta(from: from, to: to, zoom: board.viewport.zoom)
-        let events = try DevResizeGrip.drag(at: DevResizeGrip.handle(of: card.frame), by: delta).map { step in
+        let delta = DevResizeGrip.delta(from: from, to: to, zoom: board.viewport.zoom, handle: handle)
+        let events = try DevResizeGrip.drag(at: press, by: delta).map { step in
             try input.mouse(step.phase.eventType, at: cards.convert(step.location, to: nil))
         }
         let delivery = DevPointer.Delivery(
@@ -230,7 +235,7 @@ final class DevVerbs {
         }
         await input.settle()
         return DevInjection(activated: activated, delivery: delivery).annotate(
-            DevResizeGrip.reply(from: from, to: card.worldFrame.rect.size, delta: delta)
+            DevResizeGrip.reply(from: from, to: card.worldFrame.rect.size, delta: delta, handle: handle)
         )
     }
 

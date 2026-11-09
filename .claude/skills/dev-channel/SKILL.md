@@ -103,7 +103,7 @@ socket.
 ```sh
 tarmac dev snapshot [--until <expr>] [--timeout <ms>]
 tarmac dev zoom <z>
-tarmac dev resize <card> <w>x<h>
+tarmac dev resize <card> <w>x<h> [--handle <handle>]
 tarmac dev focus <card>|board
 tarmac dev type <card> "<text>"
 tarmac dev key <card> "<combo>"
@@ -251,7 +251,13 @@ tarmac dev key t-1 ctrl+c
   `make qa`, or relaunch between them.
 - `resize` drags the bottom-right handle in board units and reports where the
   card landed, clamped to the 160×90 minimum:
-  `{"from": {...}, "to": {"w": 800, "h": 600}, "delta_px": {...}}`.
+  `{"from": {...}, "to": {"w": 800, "h": 600}, "delta_px": {...}, "handle": "bottom-right"}`.
+  `--handle` drags another one instead: `top-left`, `top`, `top-right`,
+  `right`, `bottom-right`, `bottom`, `bottom-left` or `left` (#296). The edge
+  opposite the handle stays put, so `top-left` moves the card's origin; an
+  edge handle changes only its own axis and ignores the other half of
+  `<w>x<h>`. A doc card has no `top-right` handle (its `✕` is there), and
+  asking for it answers `bad_request` and drags nothing.
   The press on the handle selects the card like any press on it, so a visible
   terminal card also takes the keys; a culled card is resized and the keys stay
   where they were.

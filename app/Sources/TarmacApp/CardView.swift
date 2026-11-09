@@ -432,9 +432,12 @@ final class CardView: NSView, ThemeFollowing {
         CardHandles.handle(
             at: CGPoint(x: point.x - frame.minX, y: point.y - frame.minY),
             cardSize: frame.size,
-            hasClose: header.closeButton != nil
+            hasClose: hasCloseButton
         )
     }
+
+    /// A card with a ✕ has no top-right resize handle (`CardHandles`).
+    var hasCloseButton: Bool { header.closeButton != nil }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let hit = super.hitTest(point) else { return nil }

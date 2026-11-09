@@ -28,10 +28,14 @@ pub enum DevRequest {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         card: Option<String>,
     },
+    /// `handle` names the one to drag (`top-left` … `left`); absent is the
+    /// bottom-right one. The app parses it, as it does a `press` combo.
     Resize {
         card: String,
         w: f64,
         h: f64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        handle: Option<String>,
     },
     Type {
         card: String,
@@ -137,13 +141,43 @@ mod tests {
             DevRequest::Zoom { z: 0.5 },
             DevRequest::Focus { card: Some("t-1".into()) },
             DevRequest::Focus { card: None },
-            DevRequest::Resize { card: "t-1".into(), w: 800.0, h: 600.0 },
+            DevRequest::Resize { card: "t-1".into(), w: 800.0, h: 600.0, handle: None },
+            DevRequest::Resize { card: "t-1".into(), w: 800.0, h: 600.0, handle: Some("top-left".into()) },
             DevRequest::Type { card: "t-1".into(), text: "a\nb".into() },
             DevRequest::Key { card: "t-1".into(), combo: "ctrl+c".into() },
         ];
         for req in all {
             assert_eq!(roundtrip(&req), req, "roundtrip changed {req:?}");
         }
+    }
+
+    fn hex(bytes: &[u8]) -> String {
+        bytes.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ")
+    }
+
+    /// The bytes `DevMessagesTests` pins the Swift codec to. With no handle the
+    /// key is omitted, so the request is today's.
+    #[test]
+    fn a_resize_carries_its_handle_only_when_one_is_named() {
+        let bare = DevRequest::Resize { card: "t-1".into(), w: 800.0, h: 600.0, handle: None };
+        assert_eq!(
+            hex(&encode_request(&bare).unwrap()),
+            "84 a1 74 a6 72 65 73 69 7a 65 a4 63 61 72 64 a3 74 2d 31 a1 77 cb 40 89 \
+             00 00 00 00 00 00 a1 68 cb 40 82 c0 00 00 00 00 00"
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+        let named = DevRequest::Resize { card: "t-1".into(), w: 800.0, h: 600.0, handle: Some("top-left".into()) };
+        assert_eq!(
+            hex(&encode_request(&named).unwrap()),
+            "85 a1 74 a6 72 65 73 69 7a 65 a4 63 61 72 64 a3 74 2d 31 a1 77 cb 40 89 \
+             00 00 00 00 00 00 a1 68 cb 40 82 c0 00 00 00 00 00 a6 68 61 6e 64 6c 65 \
+             a8 74 6f 70 2d 6c 65 66 74"
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
     }
 
     /// The encoding is a msgpack MAP, not an array. This is the one

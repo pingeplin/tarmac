@@ -27,11 +27,15 @@ pub fn read_deadline_ms(timeout_ms: Option<u32>) -> u64 {
 const USAGE: &str = "\
 usage: tarmac dev snapshot [--until <expr>] [--timeout <ms>]
        tarmac dev zoom <z>
-       tarmac dev resize <card> <w>x<h>
+       tarmac dev resize <card> <w>x<h> [--handle <handle>]
        tarmac dev focus <card>|board
        tarmac dev type <card> \"<text>\"
        tarmac dev key <card> \"<combo>\"
        tarmac dev press <combo> [--hold <ms>] [--age <ms>] [--busy <ms>]";
+
+/// The names `--handle` takes; the app maps each to a card handle.
+const RESIZE_HANDLES: [&str; 8] =
+    ["top-left", "top", "top-right", "right", "bottom-right", "bottom", "bottom-left", "left"];
 
 fn usage<T>(what: &str) -> Result<T, String> {
     Err(format!("{what}\n{USAGE}"))
@@ -60,13 +64,15 @@ pub fn parse_verb(args: &[String]) -> Result<DevRequest, String> {
             [card] => Ok(DevRequest::Focus { card: Some(card.clone()) }),
             _ => usage("tarmac dev focus: expected <card> or board"),
         },
-        "resize" => match rest {
-            [card, size] => {
-                let (w, h) = parse_size(size)?;
-                Ok(DevRequest::Resize { card: card.clone(), w, h })
-            }
-            _ => usage("tarmac dev resize: expected <card> <w>x<h>"),
-        },
+        "resize" => {
+            let handle = match rest.get(2..) {
+                Some([]) => None,
+                Some([flag, name]) if flag == "--handle" && RESIZE_HANDLES.contains(&name.as_str()) => Some(name.clone()),
+                _ => return usage("tarmac dev resize: expected <card> <w>x<h> [--handle <handle>]"),
+            };
+            let (w, h) = parse_size(&rest[1])?;
+            Ok(DevRequest::Resize { card: rest[0].clone(), w, h, handle })
+        }
         "type" => match rest {
             [card, text] => Ok(DevRequest::Type { card: card.clone(), text: text.clone() }),
             _ => usage("tarmac dev type: expected <card> <text>"),
@@ -283,9 +289,37 @@ mod tests {
 
     #[test]
     fn resize_parses_wxh_and_rejects_every_other_spelling() {
-        parses_to(&["resize", "t-1", "800x600"], DevRequest::Resize { card: "t-1".into(), w: 800.0, h: 600.0 });
+        parses_to(
+            &["resize", "t-1", "800x600"],
+            DevRequest::Resize { card: "t-1".into(), w: 800.0, h: 600.0, handle: None },
+        );
         for bad in ["800", "800x", "x600", "800X600", "800x600x2", "axb", ""] {
             assert!(parse(&["resize", "t-1", bad]).is_err(), "expected a usage error for {bad:?}");
+        }
+    }
+
+    #[test]
+    fn resize_names_any_of_the_eight_handles() {
+        for name in ["top-left", "top", "top-right", "right", "bottom-right", "bottom", "bottom-left", "left"] {
+            parses_to(
+                &["resize", "t-1", "800x600", "--handle", name],
+                DevRequest::Resize { card: "t-1".into(), w: 800.0, h: 600.0, handle: Some(name.into()) },
+            );
+        }
+    }
+
+    #[test]
+    fn a_resize_handle_outside_the_eight_is_a_usage_error() {
+        for bad in [
+            vec!["resize", "t-1", "800x600", "--handle"],
+            vec!["resize", "t-1", "800x600", "--handle", "middle"],
+            vec!["resize", "t-1", "800x600", "--handle", "TOP-LEFT"],
+            vec!["resize", "t-1", "800x600", "--handle", "topLeft"],
+            vec!["resize", "t-1", "800x600", "--grip", "left"],
+            vec!["resize", "t-1", "800x600", "--handle", "left", "extra"],
+        ] {
+            let err = parse(&bad).expect_err(&format!("expected a usage error for {bad:?}"));
+            assert!(err.contains("tarmac dev"), "usage line does not name `tarmac dev`: {err}");
         }
     }
 

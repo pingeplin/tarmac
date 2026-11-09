@@ -445,6 +445,42 @@ async function main() {
   });
 
   await quitGuardScenarios(term);
+
+  console.log("\nD20 — a resize from each of the eight handles (#296)");
+  check("each handle moves its own edges and pins the opposite ones", () => {
+    reset(term);
+    showGrip();
+    pointer("resize", term, "600x400");
+    const start = termCard(waitFor(term, `cards[${term}].board_rect.w ~= 600`), term).board_rect;
+    near(start.h, 400, 1, "start h");
+    for (const handle of ["top-left", "top", "top-right", "right", "bottom-right", "bottom", "bottom-left", "left"]) {
+      const movesX = !["top", "bottom"].includes(handle);
+      const axis = movesX ? "w" : "h";
+      const body = json(pointer("resize", term, "680x460", "--handle", handle));
+      eq(body.handle, handle, `${handle}: reply handle`);
+      near(body.to.w, movesX ? 680 : 600, 1e-6, `${handle}: reply to.w`);
+      near(body.to.h, ["left", "right"].includes(handle) ? 400 : 460, 1e-6, `${handle}: reply to.h`);
+      const r = termCard(waitFor(term, `cards[${term}].board_rect.${axis} ~= ${movesX ? 680 : 460}`), term).board_rect;
+      // The edge opposite the handle is the one that stays.
+      const pinsRight = ["top-left", "left", "bottom-left"].includes(handle);
+      const pinsBottom = ["top-left", "top", "top-right"].includes(handle);
+      near(pinsRight ? r.x + r.w : r.x, pinsRight ? start.x + start.w : start.x, 1, `${handle}: pinned x edge`);
+      near(pinsBottom ? r.y + r.h : r.y, pinsBottom ? start.y + start.h : start.y, 1, `${handle}: pinned y edge`);
+      // The same handle back to the start size puts the card back where it began.
+      pointer("resize", term, "600x400", "--handle", handle);
+      const back = termCard(waitFor(term, `cards[${term}].board_rect.${axis} ~= ${movesX ? 600 : 400}`), term).board_rect;
+      for (const k of ["x", "y", "w", "h"]) near(back[k], start[k], 1, `${handle}: back to start ${k}`);
+    }
+  });
+  check("a handle the card does not have is refused, and nothing is dragged", () => {
+    const id = openFixture(writeFixtures()["d17.md"]);
+    const before = JSON.stringify(termCard(snapshot(), id).board_rect);
+    const r = dev("resize", id, "500x400", "--handle", "top-right");
+    eq(r.code, 1, "exit code");
+    eq(JSON.parse(r.err).error, "bad_request", "error code");
+    eq(JSON.stringify(termCard(snapshot(), id).board_rect), before, "the doc's frame");
+  });
+
   run.finish();
 }
 
