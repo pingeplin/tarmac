@@ -40,12 +40,14 @@ import {
   termCard,
   eq,
   near,
+  nearRect,
   between,
   waitFor,
   reset,
   pointer,
   showGrip,
   GRIP_ZOOM,
+  HANDLES,
   typeAll,
   runner,
   preflight,
@@ -453,7 +455,7 @@ async function main() {
     pointer("resize", term, "600x400");
     const start = termCard(waitFor(term, `cards[${term}].board_rect.w ~= 600`), term).board_rect;
     near(start.h, 400, 1, "start h");
-    for (const handle of ["top-left", "top", "top-right", "right", "bottom-right", "bottom", "bottom-left", "left"]) {
+    for (const handle of HANDLES) {
       const movesX = !["top", "bottom"].includes(handle);
       const axis = movesX ? "w" : "h";
       const body = json(pointer("resize", term, "680x460", "--handle", handle));
@@ -469,7 +471,7 @@ async function main() {
       // The same handle back to the start size puts the card back where it began.
       pointer("resize", term, "600x400", "--handle", handle);
       const back = termCard(waitFor(term, `cards[${term}].board_rect.${axis} ~= ${movesX ? 600 : 400}`), term).board_rect;
-      for (const k of ["x", "y", "w", "h"]) near(back[k], start[k], 1, `${handle}: back to start ${k}`);
+      nearRect(back, start, 1, `${handle}: back to start`);
     }
   });
   check("a handle the card does not have is refused, and nothing is dragged", () => {
@@ -482,7 +484,7 @@ async function main() {
   });
 
   console.log("\nD21 — a terminal's resize carries its attached docs by the edge they face (#294)");
-  const frames = () => Object.fromEntries(snapshot().cards.map((c) => [c.id, c.board_rect]));
+  const frames = (snap = snapshot()) => Object.fromEntries(snap.cards.map((c) => [c.id, c.board_rect]));
   // On one axis: a doc past the far edge follows it, one before the near edge
   // follows that, and one between the edges stays unless both moved alike.
   const follow = (lo, hi, t0lo, t0hi, t1lo, t1hi) =>
@@ -492,7 +494,7 @@ async function main() {
     y: d.y + follow(d.y, d.y + d.h, t0.y, t0.y + t0.h, t1.y, t1.y + t1.h),
   });
   const sameFrames = (a, b, ids, what) => {
-    for (const id of ids) for (const k of ["x", "y", "w", "h"]) near(b[id][k], a[id][k], 1, `${what}: ${id.slice(-10)} ${k}`);
+    for (const id of ids) nearRect(b[id], a[id], 1, `${what}: ${id.slice(-10)}`);
   };
   const attached = [];
   check("every attached doc keeps its gap to the edge it faces, from all eight handles", () => {
@@ -514,11 +516,10 @@ async function main() {
       return [d.x >= t.x + t.w && "right", d.x + d.w <= t.x && "left", d.y >= t.y + t.h && "below", d.y + d.h <= t.y && "above"];
     }).filter(Boolean));
     eq([...sides].sort().join(","), "above,below,left,right", "sides the attached docs sit on");
-    for (const handle of ["top-left", "top", "top-right", "right", "bottom-right", "bottom", "bottom-left", "left"]) {
+    for (const handle of HANDLES) {
       const axis = ["top", "bottom"].includes(handle) ? "h" : "w";
       pointer("resize", term, "680x460", "--handle", handle);
-      waitFor(term, `cards[${term}].board_rect.${axis} ~= ${axis === "w" ? 680 : 460}`);
-      const now = frames();
+      const now = frames(waitFor(term, `cards[${term}].board_rect.${axis} ~= ${axis === "w" ? 680 : 460}`));
       for (const id of attached) {
         const want = where(start[id], t, now[term]);
         near(now[id].x, want.x, 1, `${handle}: ${id.slice(-10)} x`);
@@ -526,8 +527,8 @@ async function main() {
       }
       sameFrames(start, now, loose, `${handle}: an unattached card`);
       pointer("resize", term, "600x400", "--handle", handle);
-      waitFor(term, `cards[${term}].board_rect.${axis} ~= ${axis === "w" ? 600 : 400}`);
-      sameFrames(start, frames(), [term, ...attached, ...loose], `${handle}: back to start`);
+      const back = frames(waitFor(term, `cards[${term}].board_rect.${axis} ~= ${axis === "w" ? 600 : 400}`));
+      sameFrames(start, back, [term, ...attached, ...loose], `${handle}: back to start`);
     }
   });
   check("a doc's resize moves no other card", () => {
@@ -535,8 +536,7 @@ async function main() {
     const before = frames();
     const others = Object.keys(before).filter((id) => id !== doc);
     pointer("resize", doc, "500x400");
-    waitFor(term, `cards[${doc}].board_rect.w ~= 500`);
-    sameFrames(before, frames(), others, "after the doc's resize");
+    sameFrames(before, frames(waitFor(term, `cards[${doc}].board_rect.w ~= 500`)), others, "after the doc's resize");
     pointer("resize", doc, `${before[doc].w}x${before[doc].h}`);
   });
 

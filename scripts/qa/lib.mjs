@@ -72,6 +72,11 @@ export const near = (a, b, tol, what) => {
   if (Math.abs(a - b) > tol) throw new Error(`${what}: ${a} is not within ${tol} of ${b}`);
 };
 
+/** Each of x, y, w and h of `a` is within `tol` of `b`'s. */
+export const nearRect = (a, b, tol, what) => {
+  for (const k of ["x", "y", "w", "h"]) near(a[k], b[k], tol, `${what} ${k}`);
+};
+
 export function between(v, lo, hi, what) {
   if (!(v >= lo && v <= hi)) throw new Error(`${what}: ${v} is not within [${lo}, ${hi}]`);
 }
@@ -139,6 +144,9 @@ export function pointer(...args) {
  *  clear of the minimap, so the press on it takes the window's path. A resize is in board units, so
  *  nothing a scenario asserts about one depends on the zoom. */
 export const GRIP_ZOOM = 0.4;
+
+/** The eight resize handles, by the names `tarmac dev resize --handle` takes. */
+export const HANDLES = ["top-left", "top", "top-right", "right", "bottom-right", "bottom", "bottom-left", "left"];
 
 export function showGrip() {
   eq(json(dev("zoom", String(GRIP_ZOOM))).zoom, GRIP_ZOOM, "zoom that puts the resize handle on screen");
