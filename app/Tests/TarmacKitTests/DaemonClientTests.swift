@@ -173,6 +173,14 @@ private final class FakeDaemon: @unchecked Sendable {
         }
     }
 
+    /// The links as the daemon sees them, for a failure message: how many it
+    /// accepted, which reached their end, and how many frames each one read.
+    var links: String {
+        state.lock()
+        defer { state.unlock() }
+        return "accepted \(connections.count), ended \(ended.sorted()), frames per link \(frames.map(\.count))"
+    }
+
     /// Hang up on connection `index`, as a daemon that died does.
     func drop(_ index: Int = 0) {
         guard accepted(index + 1) else { return }
@@ -659,7 +667,10 @@ final class DaemonClientTests: XCTestCase {
         daemon.drop(0)
         daemon.drop(1)
 
-        XCTAssertEqual(statuses.first(5), [.connected, .closed, .connected, .closed, .connected])
+        // A rare full-suite failure stops after the second `.connected` (#301).
+        // `accepted 2` with both links ended: the client had its end of stream
+        // and the status came late. More: the second drop missed the live link.
+        XCTAssertEqual(statuses.first(5), [.connected, .closed, .connected, .closed, .connected], daemon.links)
     }
 
     /// A path too long for `sockaddr_un` fails the connect with a reason
