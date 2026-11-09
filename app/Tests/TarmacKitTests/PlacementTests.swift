@@ -7,8 +7,6 @@ import XCTest
 final class PlacementTests: XCTestCase {
     private let owner = Placement.termFrame
 
-    private var anchorX: CGFloat { owner.maxX + Placement.gapX }
-
     // MARK: - openingViewport
 
     /// A board nobody has moved shows its boot terminal at 100 %, in the middle
@@ -145,12 +143,9 @@ final class PlacementTests: XCTestCase {
         XCTAssertNotEqual(Placement.firstFreeSlot(owner: owner, existing: [near]), first)
     }
 
-    func testStacksAtTheAnchorWhenTheWholeScanGridIsOccupied() {
+    func testStacksAtTheFirstSlotWhenEveryRingIsOccupied() {
         let everything = CGRect(x: -1e6, y: -1e6, width: 2e7, height: 2e7)
-        XCTAssertEqual(
-            Placement.firstFreeSlot(owner: owner, existing: [everything]),
-            CGRect(x: anchorX, y: owner.minY, width: Placement.docWidth, height: Placement.docHeight)
-        )
+        XCTAssertEqual(Placement.firstFreeSlot(owner: owner, existing: [everything]), doc(636, 80))
     }
 
     // MARK: - scatterFrame

@@ -40,13 +40,10 @@ public enum Placement {
     /// at the first slot — overlapping but still valid geometry.
     public static func firstFreeSlot(owner: CGRect, existing: [CGRect], size: CGSize = docSize) -> CGRect {
         let grown = existing.map { $0.insetBy(dx: -collisionInset, dy: -collisionInset) }
-        for ring in 0..<ringCount {
-            let free = ringSlots(around: owner, ring: ring, size: size).first { slot in
-                !grown.contains { rectsIntersect(slot, $0) }
-            }
-            if let free { return free }
-        }
-        return ringSlots(around: owner, ring: 0, size: size)[0]
+        return (0..<ringCount).lazy
+            .flatMap { ringSlots(around: owner, ring: $0, size: size) }
+            .first { slot in !grown.contains { rectsIntersect(slot, $0) } }
+            ?? ringSlots(around: owner, ring: 0, size: size)[0]
     }
 
     /// The `ring`-th (0-based) ring of slots around `owner`, in placing order.
