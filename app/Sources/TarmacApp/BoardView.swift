@@ -256,10 +256,8 @@ final class BoardView: NSView, ThemeFollowing {
 
     private let cardLayer = CardLayerView()
     private let edgeLayer = EdgeLayerView()
-    /// A terminal card's attached docs, held while that card is being moved by
-    /// its header. Only a header move carries them: a resize from the left or
-    /// top also shifts the terminal's origin, and must leave its docs where
-    /// they are.
+    /// A terminal card's attached docs, held while that card is being moved or
+    /// resized. Each follows the terminal edge it faces (`CardCarry`).
     private var carry: CardCarry<CardID>?
     private let cursors = HoverCursorRouter()
     private let flight = ViewportFlight()
@@ -306,7 +304,7 @@ final class BoardView: NSView, ThemeFollowing {
     private func wire(_ card: CardView) {
         card.onClose = { [weak self] c in self?.onCardClose?(c.id) }
         card.onRefresh = { [weak self] c in self?.onCardRefresh?(c.id) }
-        card.onMoveBegan = { [weak self] c in self?.beginCarry(for: c) }
+        card.onGestureBegan = { [weak self] c in self?.beginCarry(for: c) }
         card.onFrameChanging = { [weak self] c in
             guard let self else { return }
             self.carrySatellites(of: c)
@@ -336,14 +334,14 @@ final class BoardView: NSView, ThemeFollowing {
         let attached = cards.filter { $0.value.ownerTermID == card.id && $0.value.attached }
         carry = CardCarry(
             owner: card.id,
-            ownerOrigin: card.worldFrame.rect.origin,
-            satellites: attached.mapValues(\.worldFrame.rect.origin)
+            ownerFrame: card.worldFrame.rect,
+            satellites: attached.mapValues(\.worldFrame.rect)
         )
     }
 
     private func carrySatellites(of card: CardView) {
         guard let carry else { return }
-        for (id, origin) in carry.origins(moving: card.id, to: card.worldFrame.rect.origin) {
+        for (id, origin) in carry.origins(moving: card.id, to: card.worldFrame.rect) {
             guard let satellite = cards[id] else { continue }
             satellite.worldFrame.x = origin.x
             satellite.worldFrame.y = origin.y

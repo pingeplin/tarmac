@@ -53,7 +53,6 @@ final class CardGestureTracker {
 
     func headerPressed(_ event: NSEvent) {
         begin(.headerPress(at: pointer(event), frame: card.worldFrame.rect))
-        card.onMoveBegan?(card)
     }
 
     func gripPressed(_ event: NSEvent) {
@@ -79,6 +78,7 @@ final class CardGestureTracker {
     private func begin(_ gesture: CardGesture) {
         if let unreleased = slot.press(gesture) { finish(unreleased) }
         card.setLifted(slot.isLifted)
+        card.onGestureBegan?(card)
     }
 
     private func finish(_ outcome: CardGesture.Outcome) {
