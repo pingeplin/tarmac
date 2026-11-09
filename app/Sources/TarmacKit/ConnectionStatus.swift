@@ -28,8 +28,10 @@ public struct ConnectionStatus: Equatable, Sendable {
 
     // MARK: - Connect-failure details
 
-    public static func noDaemon(at socketPath: String) -> String {
-        "no daemon at \(socketPath)"
+    /// The path and the channel, as the CLI names them (spec 2606.0003 S10).
+    /// The channel goes first: the status bar clips a long path from the end.
+    public static func noDaemon(at socketPath: String, channel: ChannelPaths.Channel) -> String {
+        "no daemon on the \(ChannelPaths.channelLabel(channel)) channel at \(socketPath)"
     }
 
     /// `tarmac_protocol::check_socket_path_len`'s message.

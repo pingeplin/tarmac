@@ -375,13 +375,14 @@ final class DaemonClientTests: XCTestCase {
 
     private func makeClient(
         _ socketPath: String? = nil,
+        channel: ChannelPaths.Channel = .dev,
         appVersion: String? = nil,
         environment: [String: String] = [:],
         executableDir: String = "/nonexistent",
         timing: DaemonClient.Timing = .fast
     ) -> (client: DaemonClient, statuses: Log<ConnectionStatus>, messages: Log<Message>) {
         let client = DaemonClient(
-            socketPath: socketPath, appVersion: appVersion, environment: environment,
+            socketPath: socketPath, channel: channel, appVersion: appVersion, environment: environment,
             executableDir: executableDir, timing: timing, deliveryQueue: delivery
         )
         let statuses = Log<ConnectionStatus>()
@@ -645,15 +646,16 @@ final class DaemonClientTests: XCTestCase {
     }
 
     /// With no daemon and nothing to spawn, each attempt fails by naming the
-    /// socket, and after the backoff budget the client says so and stops.
+    /// socket and the client's own channel, and after the backoff budget the
+    /// client says so and stops.
     func testAMissingDaemonFailsEachAttemptThenGivesUp() {
         let path = FakeDaemon.temporaryPath()
         let (client, statuses, _) = makeClient(
-            path, timing: .fast.givingUpConnectAfter(0.05).reconnecting { $0 <= 2 ? 0.01 : nil }
+            path, channel: .release, timing: .fast.givingUpConnectAfter(0.05).reconnecting { $0 <= 2 ? 0.01 : nil }
         )
         client.start()
 
-        let failed = ConnectionStatus.connectFailed("no daemon at \(path)")
+        let failed = ConnectionStatus.connectFailed("no daemon on the release channel at \(path)")
         XCTAssertEqual(statuses.first(4), [failed, failed, failed, .gaveUp])
         usleep(300_000)
         XCTAssertEqual(statuses.all.count, 4, "nothing is attempted after giving up")
@@ -875,7 +877,7 @@ final class DaemonClientTests: XCTestCase {
             environment: fake.environment(daemon: daemon), timing: .fast.givingUpConnectAfter(0.1)
         )
         client.start()
-        XCTAssertEqual(statuses.first(1), [.connectFailed("no daemon at \(fake.socket)")])
+        XCTAssertEqual(statuses.first(1), [.connectFailed("no daemon on the dev channel at \(fake.socket)")])
 
         try fake.install(replying: .helloOK(v: 1))
         XCTAssertTrue(statuses.saw { $0 == .connected })
