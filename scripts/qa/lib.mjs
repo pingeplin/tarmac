@@ -47,11 +47,13 @@ export function devTimed(...args) {
 }
 
 /** `tarmac open <path>` against the daemon `make run` spawned. `TARMAC_TERM_ID`
- *  is removed so the doc lands on the active board rather than being attributed
- *  to the terminal this script happens to run in. */
-export function open(path) {
+ *  is `term` when given, which attaches the doc to that terminal; otherwise it is
+ *  removed so the doc lands on the active board rather than being attributed to
+ *  the terminal this script happens to run in. */
+export function open(path, term) {
   const e = env();
-  delete e.TARMAC_TERM_ID;
+  if (term) e.TARMAC_TERM_ID = term;
+  else delete e.TARMAC_TERM_ID;
   execFileSync(CLI, ["open", path], { env: e, stdio: ["ignore", "pipe", "pipe"] });
 }
 

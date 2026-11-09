@@ -728,7 +728,9 @@ and placed by a world-space `CardFrame {x, y, w, h, z}`.
 - **Move.** Dragging the header moves the card: it follows the pointer from the
   first point of travel. The press counts as a *move* — the card lifts, and on
   release a doc detaches — only once the pointer has gone more than 3 points on
-  either axis (`CardDrag`); short of that it is a click, which selects. **Gravity:** moving a terminal carries its attached docs (`CardCarry`);
+  either axis (`CardDrag`); short of that it is a click, which selects. **Gravity:** moving or resizing a terminal carries its attached docs (`CardCarry`):
+  on each axis a doc follows the terminal edge it faces, and one between the
+  edges follows only a move;
   a completed move of a doc detaches it (persisted as `loose`) and clears its
   fresh mark. A resize never detaches.
 - **Resize.** Eight invisible handles — corners and edges — that keep a fixed

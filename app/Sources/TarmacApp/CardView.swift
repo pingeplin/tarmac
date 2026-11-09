@@ -26,8 +26,8 @@ final class CardView: NSView, ThemeFollowing {
         ZOrder.Place(z: worldFrame.z, added: addedOrder)
     }
 
-    /// A header press, which may become a move, went down on this card.
-    var onMoveBegan: ((CardView) -> Void)?
+    /// A header or resize-handle press went down on this card.
+    var onGestureBegan: ((CardView) -> Void)?
     /// The gesture changed `worldFrame`; the board reprojects the card.
     var onFrameChanging: ((CardView) -> Void)?
     /// The pointer was released, with what the gesture amounted to.
