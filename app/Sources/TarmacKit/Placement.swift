@@ -3,8 +3,8 @@ import CoreGraphics
 /// Where a `tarmac open` doc lands on the board. A fresh doc takes the first
 /// free slot, with an 8 pt collision inset, in the rings around its owning
 /// terminal, so several docs from one terminal surround it instead of landing
-/// on top of each other. A persisted doc tile with no geometry (the M1 migration path)
-/// falls back to a deterministic two-column scatter.
+/// on top of each other. A persisted doc tile with no geometry falls back to a
+/// deterministic two-column scatter.
 ///
 /// World space is top-down/flipped (larger y is lower), like `BoardTransform`.
 public enum Placement {
@@ -13,14 +13,9 @@ public enum Placement {
     /// The viewport a board opens at when none was persisted: on the boot
     /// terminal, the one card such a board has.
     public static let openingViewport = BoardFly.destination(showing: termFrame)
-    public static let docWidth: CGFloat = 392
-    public static let docHeight: CGFloat = 310
-    public static let docSize = CGSize(width: docWidth, height: docHeight)
+    public static let docSize = CGSize(width: 392, height: 310)
     public static let gapX: CGFloat = 86
     public static let gapY: CGFloat = 40
-    /// The cascade step of geometry-less restored terminals (`TermPlacement`).
-    public static let cascadeDX: CGFloat = 43
-    public static let cascadeDY: CGFloat = 40
     /// The rings around the owner `firstFreeSlot` tries before it stacks.
     public static let ringCount = 16
     /// A candidate slot must clear every existing card by this much.
@@ -81,10 +76,11 @@ public enum Placement {
         let col = slot % docColumns
         let row = slot / docColumns
         return CGRect(
-            x: owner.maxX + gapX + CGFloat(col) * (docWidth + gapX),
-            y: owner.minY + CGFloat(row) * (docHeight + gapY),
-            width: docWidth,
-            height: docHeight
+            origin: CGPoint(
+                x: owner.maxX + gapX + CGFloat(col) * (docSize.width + gapX),
+                y: owner.minY + CGFloat(row) * (docSize.height + gapY)
+            ),
+            size: docSize
         )
     }
 }
