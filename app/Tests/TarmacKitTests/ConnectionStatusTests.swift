@@ -22,8 +22,8 @@ final class ConnectionStatusTests: XCTestCase {
             ConnectionStatus(connected: false, reason: "could not reconnect to tarmacd")
         )
         XCTAssertEqual(
-            ConnectionStatus.connectFailed("no daemon at /x/tarmacd.sock"),
-            ConnectionStatus(connected: false, reason: "connect failed: no daemon at /x/tarmacd.sock")
+            ConnectionStatus.connectFailed("no daemon on the dev channel at /x/tarmacd.sock"),
+            ConnectionStatus(connected: false, reason: "connect failed: no daemon on the dev channel at /x/tarmacd.sock")
         )
     }
 
@@ -35,8 +35,17 @@ final class ConnectionStatusTests: XCTestCase {
         XCTAssertEqual(ConnectionStatus(connected: false, reason: nil).label, "detached")
     }
 
-    func testAMissingDaemonIsNamedByItsSocket() {
-        XCTAssertEqual(ConnectionStatus.noDaemon(at: "/repo/.dev/tarmacd.sock"), "no daemon at /repo/.dev/tarmacd.sock")
+    /// Spec 2606.0003 S10: the path and the channel, as the CLI's "no tarmac
+    /// daemon running" names them, so a dev app that finds no daemon says why.
+    func testAMissingDaemonIsNamedByItsSocketAndChannel() {
+        XCTAssertEqual(
+            ConnectionStatus.noDaemon(at: "/repo/.dev/tarmacd.sock", channel: .dev),
+            "no daemon on the dev channel at /repo/.dev/tarmacd.sock"
+        )
+        XCTAssertEqual(
+            ConnectionStatus.noDaemon(at: "/x/tarmacd.sock", channel: .release),
+            "no daemon on the release channel at /x/tarmacd.sock"
+        )
     }
 
     /// `tarmac_protocol::check_socket_path_len`'s message, so both apps say the

@@ -322,7 +322,7 @@ public final class DaemonClient: @unchecked Sendable {
             if let fd = connectOnce() { return .success(fd) }
             if Date() >= deadline { break }
         }
-        return .failure(ConnectFailure(detail: ConnectionStatus.noDaemon(at: socketPath)))
+        return .failure(ConnectFailure(detail: ConnectionStatus.noDaemon(at: socketPath, channel: channel)))
     }
 
     /// The handshake, the version check, then frames until the link drops.
