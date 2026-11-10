@@ -43,6 +43,9 @@ public enum CardConsole {
         /// The document of the frame's load number `load` is on screen. The
         /// host page says this itself, and carries no such word from the card.
         case shown(load: Int)
+        /// The shim could not take these interfaces off the document's
+        /// global. The host page has unloaded the document.
+        case unsealed(names: [String])
     }
 
     /// Validates a `WKScriptMessage` body. A `ready` must carry the `meta` key — a
@@ -59,6 +62,10 @@ public enum CardConsole {
             return (payload["load"] as? Int).map(Message.shown)
         case "scrolled":
             return ScrollMetrics(report: payload).map(Message.scrolled)
+        case "unsealed":
+            guard let names = payload["names"] as? [String], !names.isEmpty, names.allSatisfy(isInterfaceName)
+            else { return nil }
+            return .unsealed(names: names)
         case "ready":
             guard let meta = payload["meta"] else { return nil }
             if meta is NSNull { return .ready(meta: nil) }
@@ -78,6 +85,12 @@ public enum CardConsole {
         default:
             return nil
         }
+    }
+
+    /// A card can say `unsealed` itself and the names are shown as they came,
+    /// so a name is what an interface's name can be and no more.
+    private static func isInterfaceName(_ name: String) -> Bool {
+        name.range(of: #"^[A-Za-z][A-Za-z0-9]{0,63}\z"#, options: .regularExpression) != nil
     }
 
     /// An order-preserving buffer; beyond `cap` the oldest entries fall off,

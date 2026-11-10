@@ -80,7 +80,7 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
         scrolled.onMessage = { [weak self] message in self?.scrollReported(message) }
         host.onResize = { [weak self] size in self?.layoutPage(viewport: size) }
         addSubview(host)
-        DocFrameRules.shared.whenSettled { [weak self] rules in self?.start(guardedBy: rules) }
+        ContentRules.docFrames.whenSettled { [weak self] rules in self?.start(guardedBy: rules) }
     }
 
     /// Loads the page, once the web view has the rule its frames load under.

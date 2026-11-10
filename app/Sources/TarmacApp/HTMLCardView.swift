@@ -74,10 +74,19 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
         addSubview(console)
         themeChanged()
         fontsChanged()
-        loadPage()
+        CardWebView.turnPeerConnectionOff(in: webView)
+        coverDocument()
+        ContentRules.cardNetwork.whenSettled { [weak self] rules in self?.start(guardedBy: rules) }
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// Loads the host page, once the web view has the rule it loads under.
+    /// Whether it loads with none is the session's to say.
+    private func start(guardedBy rules: WKContentRuleList?) {
+        if let rules { webView.configuration.userContentController.add(rules) }
+        apply(session.start(guarded: rules != nil))
+    }
 
     private func loadPage() {
         pageLoaded = false
@@ -171,6 +180,11 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
         reportScrollCover()
     }
 
+    private func openConsole() {
+        guard console.isHidden else { return }
+        toggleConsole()
+    }
+
     /// The console gained an entry. A card can log faster than its console
     /// can be drawn, so the badge and the panel catch up at most once per
     /// `CardConsole.refreshInterval`, and the panel only while it is open.
@@ -250,7 +264,11 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
 
     private func received(_ message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame, let parsed = CardConsole.parse(message.body) else { return }
-        for effect in session.handle(parsed, borrowed: shield.isHidden) {
+        apply(session.handle(parsed, borrowed: shield.isHidden))
+    }
+
+    private func apply(_ effects: [HTMLCardSession.Effect]) {
+        for effect in effects {
             switch effect {
             case .post(let reply): post(reply)
             case .escapeHome: onEscapeHome?()
@@ -258,6 +276,8 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
             case .modeChanged: layoutDocument()
             case .scrollChanged(let metrics): onScrollChanged?(metrics)
             case .documentShown: webView.alphaValue = 1
+            case .loadPage: loadPage()
+            case .openConsole: openConsole()
             }
         }
     }
@@ -279,7 +299,7 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         onScrollChanged?(nil)
-        loadPage()
+        apply(session.processEnded())
     }
 
     func webView(

@@ -1,10 +1,12 @@
 // The HTML card host page's script. It carries, and bounds the size of what
-// it carries: what a message means is the app's to decide. Its own word to
-// the app is that the card's document is on screen. It runs in the
+// it carries: what a message means is the app's to decide, all but
+// `unsealed`, at which this page unloads the card's document. Its own word
+// to the app is that the card's document is on screen. It runs in the
 // app's own content world, so the card's document has no handle on the
 // message handler it posts to.
 (function () {
   const card = document.getElementById("card");
+  const page = card.parentNode;
 
   // The app keeps this many characters of a console line (`CardConsole`).
   // Receiving a message costs the app's main thread in proportion to its
@@ -96,9 +98,24 @@
   // stops its own load never fires this, and its shim has spoken.
   card.addEventListener("load", documentStarted);
 
+  // A document whose shim could not take an interface off its global is
+  // taken out of the page, and its script ends with it. No navigation is
+  // asked for: the app allows the frame none but to a card. The frame goes
+  // back in when it is given its next source. Until then the page is as it
+  // started, with no source asked for: a document whose frames were being
+  // awaited is not told of.
+  function unload() {
+    card.remove();
+    card.removeAttribute("src");
+    asked = 0;
+    started = 0;
+  }
+
   window.addEventListener("message", function (event) {
-    // Only this card's own document is heard.
-    if (event.source !== card.contentWindow) return;
+    // Only this card's own document is heard, and none while the frame is
+    // out of the page: it has no window then, and a word with no source
+    // would pass for its own.
+    if (event.source === null || event.source !== card.contentWindow) return;
     try {
       // The shim's first word is for this page alone. The document that the
       // frame had before can say it after the frame was given the next one.
@@ -107,7 +124,9 @@
         return;
       }
       const message = carried(event.data);
-      if (message !== undefined) webkit.messageHandlers.card.postMessage(message);
+      if (message === undefined) return;
+      if (message.tarmac === "unsealed") unload();
+      webkit.messageHandlers.card.postMessage(message);
     } catch (error) {
       // A payload that cannot be measured or carried is not a Tarmac message.
     }
@@ -120,9 +139,12 @@
       replaced = source === src ? null : source;
       source = src;
       card.src = src;
+      // After an unload. The source is given first: an empty frame's `load`
+      // would pass for the start of this document.
+      if (!card.isConnected) page.appendChild(card);
     },
     post(message) {
-      card.contentWindow.postMessage(message, "*");
+      card.contentWindow?.postMessage(message, "*");
     },
     layout(width, height, scale) {
       card.style.width = width + "px";
