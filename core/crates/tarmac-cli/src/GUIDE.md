@@ -83,7 +83,9 @@ Everything below fails **silently** — no error, just a blank or broken card.
   text font from the user's (below) or from a system font stack. A custom font
   must be a `data:` URI.
 - **No network of any kind.** `fetch`, `XMLHttpRequest`, `WebSocket`, and
-  `sendBeacon` are all blocked. Embed your data in the file as a literal.
+  `sendBeacon` are all blocked, and there is no WebRTC: `RTCPeerConnection`
+  and the other `RTC…` names are `undefined`. Embed your data in the file as
+  a literal.
 - **No storage.** `localStorage`, `sessionStorage`, cookies, and IndexedDB are
   unavailable at an opaque origin.
 - **Images and media must be `data:` or `blob:`.** A remote image URL, or even a

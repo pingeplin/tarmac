@@ -326,4 +326,29 @@ final class CardConsoleTests: XCTestCase {
     func testAnEmptyBufferHasNoBadge() {
         XCTAssertNil(CardConsole.badgeLabel(count: 0))
     }
+
+    // MARK: - unsealed
+
+    func testAcceptsAnUnsealedPayloadThatNamesWhatWasLeft() {
+        XCTAssertEqual(
+            CardConsole.parse(["tarmac": "unsealed", "names": ["RTCPeerConnection"]]),
+            .unsealed(names: ["RTCPeerConnection"])
+        )
+        let longest = "R" + String(repeating: "x", count: 63)
+        XCTAssertEqual(CardConsole.parse(["tarmac": "unsealed", "names": [longest]]), .unsealed(names: [longest]))
+    }
+
+    /// A name is shown to the user as it came, so it is letters and digits
+    /// and no longer than a name is.
+    func testRejectsAnUnsealedPayloadWhoseNamesAreNotNames() {
+        let malformed: [Any?] = [
+            nil, [String](), "RTCPeerConnection", ["RTCPeerConnection", 7], [""],
+            ["R" + String(repeating: "x", count: 64)], ["RTC Peer"], ["<b>"], ["9RTC"], ["RTCPëer"], ["RTCPeer\n"],
+        ]
+        for names in malformed {
+            var payload: [String: Any] = ["tarmac": "unsealed"]
+            payload["names"] = names
+            XCTAssertNil(CardConsole.parse(payload), "\(String(describing: names))")
+        }
+    }
 }

@@ -109,4 +109,16 @@ final class DocTemplateTests: XCTestCase {
         XCTAssertTrue(page.contains("--bg1: #eff0f1;"))
         XCTAssertFalse(page.contains("color-scheme"))
     }
+
+    /// The shim takes WebRTC off a card's document, and a document that
+    /// could reach another window of its own origin would find it there
+    /// again: the frame's origin is opaque, and it is granted nothing.
+    func testTheCardsFrameIsSandboxedToScriptsAlone() throws {
+        let text = try host()
+        let onWhat = "an HTML card has no WebRTC only while its one frame is sandboxed to scripts alone"
+        XCTAssertEqual(count(of: "<iframe", in: text), 1, onWhat)
+        let frame = try firstMatch(#"(<iframe[^>]*>)"#, in: text)
+        XCTAssertEqual(try firstMatch(#"\bsandbox="([^"]*)""#, in: frame), "allow-scripts", onWhat)
+        XCTAssertEqual(try firstMatch(#"\ballow="([^"]*)""#, in: frame), "", onWhat)
+    }
 }

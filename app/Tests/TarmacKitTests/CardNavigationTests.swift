@@ -89,6 +89,11 @@ final class CardNavigationTests: XCTestCase {
 
     // MARK: - HTML card
 
+    /// The shim takes WebRTC off a card's document. A frame that held
+    /// anything else, or a window the card opened, would have it again.
+    private let noOtherDocument =
+        "an HTML card has no WebRTC only while its frame holds nothing but a card document"
+
     func testTheHostPagesOwnLoadIsAllowed() {
         XCTAssertEqual(CardNavigation.htmlCard(load("about:blank")), .allow)
     }
@@ -106,8 +111,13 @@ final class CardNavigationTests: XCTestCase {
     }
 
     func testTheCardsFrameNeverLeavesTheCardScheme() {
-        for url in ["https://example.com", "http://example.com", "file:///etc/passwd", "tarmac-card://img/%2Fa.png", "data:text/html,x"] {
-            XCTAssertEqual(CardNavigation.htmlCard(later(url, target: .subframe)), .cancel, url)
+        for url in [
+            "https://example.com", "http://example.com", "file:///etc/passwd", "tarmac-card://img/%2Fa.png",
+            "data:text/html,x", "about:srcdoc", "blob:null/x",
+        ] {
+            XCTAssertEqual(
+                CardNavigation.htmlCard(later(url, target: .subframe)), .cancel, "\(noOtherDocument): \(url)"
+            )
         }
     }
 
@@ -115,13 +125,14 @@ final class CardNavigationTests: XCTestCase {
     func testAURLThatOnlyMentionsTheCardSchemeIsNotACardDocument() {
         XCTAssertEqual(
             CardNavigation.htmlCard(later("https://example.com/?u=tarmac-card://doc/%2Fa.html", target: .subframe)),
-            .cancel
+            .cancel, noOtherDocument
         )
     }
 
     func testAnHTMLCardOpensNoWindow() {
-        XCTAssertEqual(CardNavigation.htmlCard(later("tarmac-card://doc/%2Fa.html", target: .newWindow)), .cancel)
-        XCTAssertEqual(CardNavigation.htmlCard(later("https://example.com", target: .newWindow)), .cancel)
+        for url in ["tarmac-card://doc/%2Fa.html", "https://example.com"] {
+            XCTAssertEqual(CardNavigation.htmlCard(later(url, target: .newWindow)), .cancel, "\(noOtherDocument): \(url)")
+        }
     }
 
     func testOnlyTheTwoInlineFramesAreAboutURLsADocMayFrame() {

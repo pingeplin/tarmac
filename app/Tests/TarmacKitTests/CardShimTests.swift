@@ -358,10 +358,14 @@ final class CardShimTests: XCTestCase {
         return context
     }
 
+    /// `prepare` runs in the window before the shim does, as a script the
+    /// engine itself would have run.
     private func loadShim(
-        meta: String? = "magnify", omitting native: String? = nil, head: Bool = false, fonts: CardFontVariables? = nil
+        meta: String? = "magnify", omitting native: String? = nil, head: Bool = false,
+        fonts: CardFontVariables? = nil, prepare: String? = nil
     ) throws -> Shim {
         let context = try window(meta: meta, omitting: native, head: head)
+        if let prepare { context.evaluateScript(prepare) }
         let raw = try source()
         context.evaluateScript(fonts?.filling(raw) ?? raw)
         return Shim(context: context)
@@ -1487,5 +1491,107 @@ final class CardShimTests: XCTestCase {
         paused.pause()
         paused.run("h.send({ tarmac: 'cull', culled: 0 })")
         XCTAssertFalse(try paused.stillRunning(), "S28: paused, culled 0")
+    }
+
+    // MARK: - an HTML card has no WebRTC
+
+    private static let webRTCNames = [
+        "RTCPeerConnection", "webkitRTCPeerConnection", "RTCIceCandidate", "RTCSessionDescription",
+        "RTCDataChannel", "RTCRtpSender", "RTCRtpReceiver", "RTCRtpTransceiver", "RTCIceTransport",
+        "RTCDtlsTransport", "RTCSctpTransport", "RTCCertificate",
+    ]
+
+    /// A window whose engine has the WebRTC interfaces, all but `absent`;
+    /// those of `fixed` are on properties the shim cannot remove, defined in
+    /// that order.
+    private func webRTCWindow(
+        head: Bool = false, fixed: [String] = [], absent: Bool = false, also prepare: String = ""
+    ) throws -> Shim {
+        let names = String(decoding: try JSONSerialization.data(withJSONObject: Self.webRTCNames), as: UTF8.self)
+        let held = String(decoding: try JSONSerialization.data(withJSONObject: fixed), as: UTF8.self)
+        return try loadShim(head: head, prepare: """
+        globalThis.rtcNames = \(names);
+        for (const name of \(held)) {
+          Object.defineProperty(globalThis, name, { value() {}, writable: false, configurable: false });
+        }
+        if (!\(absent)) {
+          for (const name of rtcNames) if (!(name in globalThis)) globalThis[name] = function () {};
+        }
+        \(prepare)
+        """)
+    }
+
+    private static let leftDefined = "rtcNames.filter((name) => window[name] !== undefined)"
+
+    private func unsealed(_ shim: Shim) throws -> [NSDictionary] {
+        try shim.posted().filter { $0["tarmac"] as? String == "unsealed" }
+    }
+
+    /// With a head and with none: the step before it in the file cannot run
+    /// in a document that has no head.
+    func testEveryWebRTCInterfaceIsGoneBeforeTheCardsScriptRuns() throws {
+        for head in [true, false] {
+            let shim = try webRTCWindow(head: head)
+            XCTAssertEqual(try shim.strings(Self.leftDefined), [], "head \(head)")
+            XCTAssertEqual(try unsealed(shim), [], "head \(head)")
+        }
+    }
+
+    /// The descriptor is what holds: after a `delete` any tree reads
+    /// `undefined`, and only a property that cannot be removed stays one.
+    func testTheCardsScriptCannotPutAnInterfaceBack() throws {
+        let shim = try webRTCWindow(head: true)
+        for attempt in [
+            "window.RTCPeerConnection = function () {}",
+            "Object.defineProperty(window, 'RTCPeerConnection', { value() {} })",
+            "delete window.RTCPeerConnection",
+        ] {
+            _ = shim.thrown(attempt)
+            XCTAssertEqual(shim.flag("window.RTCPeerConnection === undefined"), true, attempt)
+            let descriptor = "Object.getOwnPropertyDescriptor(window, 'RTCPeerConnection')"
+            XCTAssertEqual(shim.flag("\(descriptor).writable"), false, attempt)
+            XCTAssertEqual(shim.flag("\(descriptor).configurable"), false, attempt)
+        }
+    }
+
+    func testAnEngineWithoutWebRTCIsLeftWithNoneAndTheShimStillStarts() throws {
+        let shim = try webRTCWindow(absent: true)
+        XCTAssertEqual(try shim.strings(Self.leftDefined), [])
+        XCTAssertEqual(try unsealed(shim), [])
+        XCTAssertTrue(try shim.hasPosted(["tarmac": "started", "source": "tarmac-card://doc/card.html?v=1"]))
+
+        shim.run("for (const name of rtcNames) { try { window[name] = function () {}; } catch (error) {} }")
+        XCTAssertEqual(try shim.strings(Self.leftDefined), [])
+    }
+
+    func testAnInterfaceThatCannotBeRemovedIsReportedBeforeTheDocumentStarts() throws {
+        let shim = try webRTCWindow(fixed: ["RTCPeerConnection"])
+        XCTAssertEqual(try unsealed(shim), [["tarmac": "unsealed", "names": ["RTCPeerConnection"]]])
+        let kinds = try shim.posted().compactMap { $0["tarmac"] as? String }
+        XCTAssertEqual(kinds.prefix(2), ["unsealed", "started"])
+        XCTAssertEqual(try shim.strings(Self.leftDefined), ["RTCPeerConnection"])
+
+        shim.run("h.domReady()")
+        XCTAssertTrue(try shim.hasPosted(["tarmac": "ready", "meta": "magnify"]))
+    }
+
+    func testOneReportNamesEveryInterfaceLeftInTheOrderOfTheList() throws {
+        let shim = try webRTCWindow(fixed: ["RTCDataChannel", "webkitRTCPeerConnection"])
+        XCTAssertEqual(
+            try unsealed(shim), [["tarmac": "unsealed", "names": ["webkitRTCPeerConnection", "RTCDataChannel"]]]
+        )
+    }
+
+    func testTheInterfacesAreGoneBeforeTheShimTouchesTheDocument() throws {
+        let shim = try webRTCWindow(head: true, also: """
+        globalThis.goneAtEachElement = [];
+        const createElement = document.createElement;
+        document.createElement = function (...args) {
+          goneAtEachElement.push(rtcNames.every((name) => window[name] === undefined));
+          return createElement.apply(this, args);
+        };
+        """)
+        XCTAssertGreaterThan(try shim.count("goneAtEachElement"), 0)
+        XCTAssertEqual(shim.flag("goneAtEachElement.every((gone) => gone)"), true)
     }
 }

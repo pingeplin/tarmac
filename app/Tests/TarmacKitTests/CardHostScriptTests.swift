@@ -26,10 +26,23 @@ final class CardHostScriptTests: XCTestCase {
         var listener = null;
         var window = { addEventListener(type, heard) { if (type === "message") listener = heard; } };
         var heardOfTheFrame = {};
+        var sourceAtEachEntry = [];
+        var body = {
+          appendChild(frame) {
+            cardWindow = {};
+            Object.assign(frame, { contentWindow: cardWindow, isConnected: true });
+            sourceAtEachEntry.push(frame.src);
+          },
+        };
         var card = {
           contentWindow: cardWindow,
+          isConnected: true,
+          parentNode: body,
           style: {},
           addEventListener(type, heard) { heardOfTheFrame[type] = heard; },
+          remove() { Object.assign(this, { contentWindow: null, isConnected: false }); },
+          removeAttribute(name) { delete this[name]; },
+          focus() {},
         };
         var document = { getElementById() { return card; } };
         var askedFrames = [];
@@ -372,5 +385,82 @@ final class CardHostScriptTests: XCTestCase {
     func testAMessageOfExactlyAThousandCharactersIsCarriedAndOneMoreIsNot() {
         XCTAssertEqual(carried("{ tarmac: 'ready', meta: 'x'.repeat(972) }").count, 1)
         XCTAssertEqual(carried("{ tarmac: 'ready', meta: 'x'.repeat(973) }").count, 0)
+    }
+
+    // MARK: - unsealed
+
+    /// The shim has twelve names to report, none longer than this one.
+    func testAnUnsealedThatNamesEveryInterfaceIsCarriedWhole() throws {
+        let names = (1...12).map { "webkitRTCPeerConnection\($0)" }
+        let list = String(decoding: try JSONSerialization.data(withJSONObject: names), as: UTF8.self)
+        let bodies = carried("{ tarmac: 'unsealed', names: \(list) }")
+        XCTAssertEqual(bodies.count, 1)
+        XCTAssertEqual(CardConsole.parse(try XCTUnwrap(bodies.first)), .unsealed(names: names))
+    }
+
+    private func flag(_ expression: String) -> Bool? {
+        let value = context.evaluateScript(expression)
+        return value?.isBoolean == true ? value?.toBool() : nil
+    }
+
+    /// The document is gone before the app hears why, and nothing it had
+    /// already posted is heard after it.
+    func testAnUnsealedDocumentIsUnloadedBeforeTheAppIsTold() throws {
+        load()
+        context.evaluateScript("""
+        var oldWindow = cardWindow;
+        var inThePageWhenTold = [];
+        webkit.messageHandlers.card.postMessage = (message) => {
+          inThePageWhenTold.push(card.isConnected);
+          posted.push(message);
+        };
+        """)
+
+        let bodies = carried("{ tarmac: 'unsealed', names: ['RTCPeerConnection'] }")
+        XCTAssertEqual(bodies.count, 1)
+        XCTAssertEqual(CardConsole.parse(try XCTUnwrap(bodies.first)), .unsealed(names: ["RTCPeerConnection"]))
+        XCTAssertEqual(flag("inThePageWhenTold.length === 1 && inThePageWhenTold[0] === false"), true)
+        XCTAssertEqual(flag("'src' in card"), false)
+
+        XCTAssertEqual(carried("{ tarmac: 'started' }", from: "oldWindow").count, 0)
+        XCTAssertEqual(carried("{ tarmac: 'console', level: 'log', args: ['late'] }", from: "oldWindow").count, 0)
+        XCTAssertEqual(carried("{ tarmac: 'escape' }", from: "null").count, 0)
+        XCTAssertEqual(frames(3), [])
+    }
+
+    /// The frame can have loaded, and its two frames be awaited, when the
+    /// document's word is heard: the app is not told that it is on screen.
+    func testADocumentUnloadedWhileItsFramesWereAwaitedIsNotToldOf() {
+        load()
+        frameLoaded()
+        frames(1)
+        hear("{ tarmac: 'unsealed', names: ['RTCPeerConnection'] }")
+        XCTAssertEqual(frames(3).filter { $0["tarmac"] as? String == "shown" }, [])
+
+        // The page is as it started: a `load` of the empty frame says nothing.
+        frameLoaded()
+        XCTAssertEqual(frames(3).filter { $0["tarmac"] as? String == "shown" }, [])
+    }
+
+    /// The frame goes back with its source already given: an empty frame's
+    /// `load` would pass for the start of the new document.
+    func testTheNextLoadPutsTheFrameBackWithItsSource() {
+        load()
+        hear("{ tarmac: 'unsealed', names: ['RTCPeerConnection'] }")
+        context.evaluateScript("""
+        window.tarmacCard.post({ tarmac: 'cull', culled: true });
+        window.tarmacCard.layout(10, 20, 1);
+        window.tarmacCard.focus();
+        posted = [];
+        """)
+
+        load("tarmac-card://doc/a.html?v=2", number: 2)
+        XCTAssertEqual(flag("card.isConnected"), true)
+        XCTAssertEqual(
+            context.evaluateScript("sourceAtEachEntry").toArray() as? [String], ["tarmac-card://doc/a.html?v=2"]
+        )
+        frameLoaded()
+        hear("{ tarmac: 'started' }")
+        XCTAssertEqual(frames(4), [Self.shown(2)])
     }
 }
