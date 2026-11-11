@@ -165,36 +165,30 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
     // MARK: - Cull
 
     func setCulled(_ culled: Bool) {
-        session.culled = culled
-        post(.cull(culled))
-        readData()
+        session.setCulled(culled).forEach(apply)
     }
 
     // MARK: - Data file
 
     /// The daemon saw the data file change.
     func dataChanged() {
-        session.dataChanged()
-        readData()
+        session.dataChanged().forEach(apply)
     }
 
     /// Reads off the main thread: a file can be large, or on a slow volume.
-    private func readData() {
-        guard let read = session.nextRead() else { return }
-        let html = path
+    private func run(_ read: HTMLCardSession.DataRead) {
         Self.dataReads.async { [weak self] in
             let outcome = CardDataRead.read(
-                file: read.file, html: html, resolve: FileBytes.resolved, read: FileBytes.read
+                file: read.file, html: read.html, resolve: FileBytes.resolved, read: FileBytes.read
             )
             DispatchQueue.main.async { [weak self] in
-                self?.dataRead(read, outcome)
+                self?.readEnded(read, outcome)
             }
         }
     }
 
-    private func dataRead(_ read: HTMLCardSession.DataRead, _ outcome: CardDataRead.Outcome) {
+    private func readEnded(_ read: HTMLCardSession.DataRead, _ outcome: CardDataRead.Outcome) {
         session.readEnded(read, outcome).forEach(apply)
-        readData()
     }
 
     /// The text is an argument, never part of the script.
@@ -302,6 +296,7 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
         case .scrollChanged(let metrics): onScrollChanged?(metrics)
         case .documentShown: webView.alphaValue = 1
         case .dataFile(let file): onDataFile?(file)
+        case .read(let read): run(read)
         case .deliver(let text): deliver(text)
         }
     }

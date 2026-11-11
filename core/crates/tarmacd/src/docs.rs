@@ -207,9 +207,8 @@ pub async fn report_changes(daemon: &Daemon) {
     let (board, tell) = daemon
         .look(
             |boards| {
-                let active = boards.active_registry();
-                let paths = active.docs.keys().chain(active.data_paths());
-                paths.chain(boards.unread_doc_paths()).cloned().collect::<HashSet<_>>()
+                let paths = boards.active_registry().watched_paths().chain(boards.unread_doc_paths());
+                paths.cloned().collect::<HashSet<_>>()
             },
             |boards, now| {
                 boards.take_first_readings(now);
@@ -281,17 +280,13 @@ pub async fn record_data(daemon: &Daemon, board: &str, doc: &Path, data: Option<
                 if !reg.set_data(doc, data.clone()) {
                     return None;
                 }
-                let told = data.as_ref().filter(|_| active).and_then(|data| {
-                    let mtime_ms = reg.see_data(data, *now.get(data)?)?;
-                    Some((data.clone(), mtime_ms))
-                });
-                Some(told)
+                Some(data.as_ref().filter(|_| active).and_then(|data| reg.see_data(data, *now.get(data)?)))
             },
         )
         .await;
     let Some(told) = recorded else { return false };
-    if let Some((data, mtime_ms)) = told {
-        daemon.push(file_event(&data, mtime_ms)).await;
+    if let (Some(data), Some(mtime_ms)) = (&data, told) {
+        daemon.push(file_event(data, mtime_ms)).await;
     }
     true
 }

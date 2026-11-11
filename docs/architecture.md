@@ -376,7 +376,7 @@ board the `DocData` is answered at once, in a look of its own: the file is
 taken as seen and a `FileEvent` for it is pushed, the same name again
 included. Each look of the active board reads the data files of the board
 too, and a look of a board switch reads those of every board
-(`Boards::data_paths`); `docs::take_to_tell` adds a `FileEvent` for each data
+(`Boards::watched_paths`); `docs::take_to_tell` adds a `FileEvent` for each data
 file that differs from what was seen (`Registry::take_data_changes`), one for
 a path that is also a doc or that two docs name. A `DocData` for a board in
 the background starts from nothing seen, so its file is reported after the

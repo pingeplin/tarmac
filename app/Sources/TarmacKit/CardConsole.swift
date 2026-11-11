@@ -51,10 +51,9 @@ public enum CardConsole {
     /// Validates a `WKScriptMessage` body. A `ready` must carry the `meta` key — a
     /// string or null; an absent key is neither — and unknown keys are ignored.
     /// Its `data`, when there is one, is a string or null, and its `load` an
-    /// integer. A
-    /// console payload whose args hold a value JSON cannot carry is rejected whole.
-    /// Its `dropped` is the host page's count of what it cut, never the card's:
-    /// the page writes the key itself.
+    /// integer. A console payload whose args hold a value JSON cannot carry is
+    /// rejected whole. Its `dropped` is the host page's count of what it cut,
+    /// never the card's: the page writes the key itself.
     public static func parse(_ body: Any) -> Message? {
         guard let payload = body as? [String: Any], let kind = payload["tarmac"] as? String else { return nil }
         switch kind {

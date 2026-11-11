@@ -30,15 +30,7 @@ pub struct DocInfo {
     /// The term that opened this doc; `None` when opened without a `TARMAC_TERM_ID`.
     pub term_id: Option<String>,
     /// The data file the doc reads (`doc_data`). In memory only.
-    pub data: Option<DataFile>,
-}
-
-/// A doc's data file, and the file as the daemon last saw it for this board.
-/// The docs of a board that read one path see it as one: each look and each
-/// `doc_data` answer takes it for all of them (`Registry::see_data`).
-pub struct DataFile {
-    pub path: PathBuf,
-    pub seen: Option<FileStamp>,
+    pub data: Option<PathBuf>,
 }
 
 /// What the daemon reads of a doc's file to know that it changed. The length
@@ -87,11 +79,21 @@ pub struct Registry {
     pub tiles: Vec<Tile>,
     /// `None` until the app sends one in a layout snapshot.
     pub board: Option<BoardViewport>,
+    /// Each data file as the daemon last saw it for this board, one for a path
+    /// that several docs read. In memory only. The docs' `data` say which
+    /// paths are read; an entry for a path that none reads is never looked up.
+    data_seen: HashMap<PathBuf, Option<FileStamp>>,
 }
 
 impl Registry {
     pub fn empty() -> Self {
-        Registry { docs: HashMap::new(), dock: Vec::new(), tiles: vec![term_tile()], board: None }
+        Registry {
+            docs: HashMap::new(),
+            dock: Vec::new(),
+            tiles: vec![term_tile()],
+            board: None,
+            data_seen: HashMap::new(),
+        }
     }
 
     pub fn entry(&self, path: &Path) -> Option<DocEntry> {
@@ -191,21 +193,34 @@ impl Registry {
     /// switch. False, with nothing recorded, for an unknown doc.
     pub fn set_data(&mut self, doc: &Path, data: Option<PathBuf>) -> bool {
         let Some(info) = self.docs.get_mut(doc) else { return false };
-        info.data = data.map(|path| DataFile { path, seen: None });
+        if let Some(path) = &data {
+            self.data_seen.remove(path);
+        }
+        info.data = data;
+        self.forget_unread_data();
         true
     }
 
-    /// The data file of each doc that reads one.
-    pub fn data_paths(&self) -> impl Iterator<Item = &PathBuf> {
-        self.docs.values().filter_map(|info| info.data.as_ref().map(|data| &data.path))
+    /// Drops what was seen of a data file that no doc reads any more.
+    fn forget_unread_data(&mut self) {
+        let read: HashSet<&PathBuf> = self.docs.values().filter_map(|info| info.data.as_ref()).collect();
+        self.data_seen.retain(|path, _| read.contains(path));
     }
 
-    /// Takes `stamp` as the data file `path` of each doc that reads it, and
+    /// The data file of each doc that reads one.
+    fn data_paths(&self) -> impl Iterator<Item = &PathBuf> {
+        self.docs.values().filter_map(|info| info.data.as_ref())
+    }
+
+    /// The paths a look reads for this board: each doc's file and each data file.
+    pub fn watched_paths(&self) -> impl Iterator<Item = &PathBuf> {
+        self.docs.keys().chain(self.data_paths())
+    }
+
+    /// Takes `stamp` as the data file `path`, for each doc that reads it, and
     /// returns its mtime in ms. `None` for no file.
     pub fn see_data(&mut self, path: &Path, stamp: Option<FileStamp>) -> Option<u64> {
-        for data in self.docs.values_mut().filter_map(|info| info.data.as_mut()).filter(|data| data.path == path) {
-            data.seen = stamp;
-        }
+        self.data_seen.insert(path.to_owned(), stamp);
         stamp.map(|stamp| epoch_ms(stamp.mtime))
     }
 
@@ -213,16 +228,18 @@ impl Registry {
     /// path, with the file's mtime in ms. Each is taken as seen. A file that is
     /// gone is taken and not returned, as in `take_changes`.
     pub fn take_data_changes(&mut self, now: &HashMap<PathBuf, Option<FileStamp>>) -> Vec<(PathBuf, u64)> {
-        let changed: HashMap<PathBuf, Option<FileStamp>> = self
-            .docs
-            .values()
-            .filter_map(|info| info.data.as_ref())
-            .filter_map(|data| {
-                let stamp = *now.get(&data.path)?;
-                (data.seen != stamp).then(|| (data.path.clone(), stamp))
-            })
-            .collect();
-        changed.into_iter().filter_map(|(path, stamp)| Some((path.clone(), self.see_data(&path, stamp)?))).collect()
+        let mut changes = Vec::new();
+        for path in self.docs.values().filter_map(|info| info.data.as_ref()) {
+            let Some(&stamp) = now.get(path) else { continue };
+            if self.data_seen.get(path).copied().flatten() == stamp {
+                continue;
+            }
+            self.data_seen.insert(path.clone(), stamp);
+            if let Some(stamp) = stamp {
+                changes.push((path.clone(), epoch_ms(stamp.mtime)));
+            }
+        }
+        changes
     }
 
     /// The `file_event` for `path` reached no app.
@@ -249,6 +266,7 @@ impl Registry {
         let existed = self.docs.remove(path).is_some();
         if existed {
             self.dock.retain(|p| p != path);
+            self.forget_unread_data();
         }
         existed
     }
@@ -392,9 +410,9 @@ impl Boards {
         self.boards.iter().flat_map(|b| b.registry.docs.keys().cloned()).collect()
     }
 
-    /// The path of each data file, of every board.
-    pub fn data_paths(&self) -> HashSet<PathBuf> {
-        self.boards.iter().flat_map(|b| b.registry.data_paths().cloned()).collect()
+    /// `Registry::watched_paths` of every board.
+    pub fn watched_paths(&self) -> HashSet<PathBuf> {
+        self.boards.iter().flat_map(|b| b.registry.watched_paths().cloned()).collect()
     }
 
     pub fn contains(&self, id: &str) -> bool {
@@ -807,9 +825,9 @@ mod tests {
     fn registry_reading(docs: &[&Path], data: &Path, seen: Option<FileStamp>) -> Registry {
         let mut reg = Registry::empty();
         for doc in docs {
-            let data = DataFile { path: data.to_owned(), seen };
-            reg.docs.insert(doc.to_path_buf(), DocInfo { data: Some(data), ..doc_info() });
+            reg.docs.insert(doc.to_path_buf(), DocInfo { data: Some(data.to_owned()), ..doc_info() });
         }
+        reg.data_seen.insert(data.to_owned(), seen);
         reg
     }
 
@@ -822,12 +840,13 @@ mod tests {
         assert_eq!(reg.take_data_changes(&now(&data, at(20))), vec![], "both docs took it");
     }
 
-    // One doc saw the file and the other did not: the one change is taken for both.
+    // One doc saw the file and another names it: the one change is taken for both.
     #[test]
     fn a_data_file_is_seen_for_each_doc_that_reads_it() {
         let data = PathBuf::from("/d/stats.json");
         let mut reg = registry_reading(&[Path::new("/d/a.html")], &data, at(10));
-        reg.docs.insert(PathBuf::from("/d/b.html"), DocInfo { data: Some(DataFile { path: data.clone(), seen: None }), ..doc_info() });
+        reg.docs.insert(PathBuf::from("/d/b.html"), doc_info());
+        assert!(reg.set_data(Path::new("/d/b.html"), Some(data.clone())));
 
         assert_eq!(reg.take_data_changes(&now(&data, at(10))), vec![(data.clone(), 10_000)]);
         assert_eq!(reg.take_data_changes(&now(&data, at(10))), vec![]);
@@ -868,10 +887,31 @@ mod tests {
     }
 
     #[test]
+    fn a_data_file_that_another_doc_still_reads_keeps_what_was_seen() {
+        let (a, b, c) = (Path::new("/d/a.html"), Path::new("/d/b.html"), Path::new("/d/c.html"));
+        let data = PathBuf::from("/d/stats.json");
+        let mut reg = registry_reading(&[a, b, c, Path::new("/d/d.html")], &data, at(10));
+
+        assert!(reg.set_data(a, None));
+        assert!(reg.set_data(b, Some(PathBuf::from("/d/next.json"))));
+        assert!(reg.close_doc(c));
+        assert_eq!(reg.take_data_changes(&now(&data, at(10))), vec![]);
+    }
+
+    #[test]
     fn the_data_file_of_an_unknown_doc_is_not_recorded() {
         let mut reg = Registry::empty();
         assert!(!reg.set_data(Path::new("/d/a.html"), Some(PathBuf::from("/d/stats.json"))));
         assert_eq!(reg.data_paths().count(), 0);
+    }
+
+    #[test]
+    fn a_data_file_named_by_an_unknown_doc_is_not_seen_anew() {
+        let data = PathBuf::from("/d/stats.json");
+        let mut reg = registry_reading(&[Path::new("/d/a.html")], &data, at(10));
+
+        assert!(!reg.set_data(Path::new("/d/nope.html"), Some(data.clone())));
+        assert_eq!(reg.take_data_changes(&now(&data, at(10))), vec![]);
     }
 
     #[test]

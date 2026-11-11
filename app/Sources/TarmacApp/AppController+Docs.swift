@@ -132,7 +132,7 @@ extension AppController {
         borrow.closed(id)
         if focusedCardID == id { defocus() }
         activeBoard.view.removeCard(id: id)
-        dataFiles.forget(CardDataRegistrations.Card(boardID: activeBoardID, path: path))
+        dataFiles.set(nil, for: CardDataRegistrations.Card(boardID: activeBoardID, path: path))
         activeBoard.docOwner[path] = nil
         activeBoard.store.remove(path)
         client.docClose(path: path)

@@ -146,13 +146,8 @@ async fn change_and_send_active_board(
     let by_board = daemon.live_terms_by_board().await;
     // Every board's docs and data files are read, since `change` decides
     // which board is shown.
-    let paths = |boards: &Boards| {
-        let mut paths = boards.doc_paths();
-        paths.extend(boards.data_paths());
-        paths
-    };
     let sent = daemon
-        .look(paths, |boards, now| {
+        .look(Boards::watched_paths, |boards, now| {
             if !change(boards) {
                 return None;
             }

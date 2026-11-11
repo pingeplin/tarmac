@@ -44,7 +44,7 @@ final class CardDataRegistrationsTests: XCTestCase {
 
     func testS49AClosedCardAndARemovedBoardAreForgotten() {
         var table = table()
-        table.forget(dash0)
+        table.set(nil, for: dash0)
         XCTAssertEqual(table.cards(reading: "/a/stats.json"), [dash1])
         XCTAssertFalse(table.resent.contains(.docData(boardID: "board-0", path: "/a/dash.html", data: "/a/stats.json")))
         XCTAssertEqual(table.resent.count, 2)

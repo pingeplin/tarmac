@@ -15,20 +15,24 @@ public struct HTMLCardSession: Equatable, Sendable {
         /// The data file this card now reads, nil for none: the daemon is to
         /// be told, also when it is the file it was told before.
         case dataFile(String?)
+        /// Run this read off the main thread and hand its outcome back
+        /// (`readEnded`).
+        case read(DataRead)
         /// Hand the data file's text to the document.
         case deliver(String)
     }
 
-    /// A read the view is to run, and to hand back with its outcome.
+    /// A read of `file`, the data file of the card whose file is `html`.
     public struct DataRead: Equatable, Sendable {
         public let file: String
-        let turn: Int
+        public let html: String
+        let load: Int
     }
 
     public private(set) var console = CardConsole.Buffer()
     /// The mode adopted for the current load; nil until its first ready.
     public private(set) var mode: ZoomMode?
-    public var culled = false
+    private var culled = false
     private var loads = LoadCount()
     /// The fonts last given. A reload keeps them: the next document is born
     /// with the values of its request, which a change since then missed.
@@ -74,43 +78,56 @@ public struct HTMLCardSession: Equatable, Sendable {
             // Only the first ready of the current load, as the host page
             // counts it, names the data file: one document cannot register
             // file after file.
-            if let load, loads.isCurrent(load) { effects += named(data) }
+            if let load, loads.isCurrent(load) { effects += named(data, by: load) }
             return effects
         }
     }
 
-    private mutating func named(_ name: String?) -> [Effect] {
+    private mutating func named(_ name: String?, by load: Int) -> [Effect] {
         var effects: [Effect] = []
         var file: String?
-        switch name.map({ CardDataPath.dataFile(html: html, name: $0) }) {
-        case .file(let path)?:
-            file = path
-        case .refused(let path, let reason)?:
-            effects += dataLine(path, reason)
-        case nil:
-            break
+        if let name {
+            switch CardDataPath.dataFile(html: html, name: name) {
+            case .file(let path):
+                file = path
+            case .refused(let path, let reason):
+                effects += dataLine(path, reason)
+            }
         }
         guard file != nil || feed.file != nil else { return effects }
-        feed.register(file)
+        feed.register(file, by: load)
         return effects + [.dataFile(file)]
     }
 
-    /// The data file changed on disk.
-    public mutating func dataChanged() {
-        feed.changed()
+    /// The card was culled, or is back in view: the document is told, and a
+    /// read that the cull held back starts.
+    public mutating func setCulled(_ culled: Bool) -> [Effect] {
+        self.culled = culled
+        return [.post(.cull(culled))] + nextRead()
     }
 
-    /// The read to run now, if any: one at a time, and none while culled.
-    /// Asked after a change, a read's end and the end of a cull.
-    public mutating func nextRead() -> DataRead? {
-        feed.next(culled: culled)
+    /// The data file changed on disk.
+    public mutating func dataChanged() -> [Effect] {
+        feed.changed()
+        return nextRead()
     }
 
     /// A read the view ran has ended. Its text is delivered only to the load
     /// and the file it was started for, and only in view: a card culled
-    /// meanwhile reads again when it is back.
+    /// meanwhile reads again when it is back. A change that came during the
+    /// read starts the next one, whatever became of this one.
     public mutating func readEnded(_ read: DataRead, _ outcome: CardDataRead.Outcome) -> [Effect] {
-        guard feed.ended(read, culled: culled) else { return [] }
+        let effects = taken(read, outcome)
+        return effects + nextRead()
+    }
+
+    /// One read at a time, and none while culled.
+    private mutating func nextRead() -> [Effect] {
+        feed.next(html: html, loads: loads, culled: culled).map { [.read($0)] } ?? []
+    }
+
+    private mutating func taken(_ read: DataRead, _ outcome: CardDataRead.Outcome) -> [Effect] {
+        guard feed.ended(read, loads: loads, culled: culled) else { return [] }
         switch outcome {
         case .text(let text):
             lastDataLine = nil
@@ -148,49 +165,43 @@ public struct HTMLCardSession: Equatable, Sendable {
     @discardableResult
     public mutating func reloaded() -> Int {
         mode = nil
-        feed.reloaded()
         return loads.next()
     }
 }
 
-/// The card's data file and its reads. The turn changes with each load and
-/// each registration, and a read is for the turn it was started in.
+/// The card's data file and its reads. A read is for the file and the load
+/// that named it, and only while that load is the current one.
 private struct Feed: Equatable, Sendable {
-    /// What the daemon was last told this card reads.
+    /// What the daemon was last told this card reads; a reload keeps it.
     private(set) var file: String?
-    /// Whether `file` was named by the current load; false from a reload
-    /// until that load's first ready.
-    private var current = false
-    private var turn = 0
+    /// The load whose first ready named `file`.
+    private var registeredLoad: Int?
     private var reading = false
     private var again = false
 
-    mutating func register(_ file: String?) {
+    /// A change seen before is not this registration's: the daemon reports
+    /// the file anew in answer to each one.
+    mutating func register(_ file: String?, by load: Int) {
         self.file = file
-        current = file != nil
-        turn += 1
-    }
-
-    mutating func reloaded() {
-        current = false
-        turn += 1
+        registeredLoad = load
+        again = false
     }
 
     mutating func changed() {
         if file != nil { again = true }
     }
 
-    mutating func next(culled: Bool) -> HTMLCardSession.DataRead? {
-        guard let file, current, !culled, !reading, again else { return nil }
+    mutating func next(html: String, loads: LoadCount, culled: Bool) -> HTMLCardSession.DataRead? {
+        guard let file, let registeredLoad, loads.isCurrent(registeredLoad), !culled, !reading, again else { return nil }
         reading = true
         again = false
-        return HTMLCardSession.DataRead(file: file, turn: turn)
+        return HTMLCardSession.DataRead(file: file, html: html, load: registeredLoad)
     }
 
     /// Whether the read's outcome is the card's to take now.
-    mutating func ended(_ read: HTMLCardSession.DataRead, culled: Bool) -> Bool {
+    mutating func ended(_ read: HTMLCardSession.DataRead, loads: LoadCount, culled: Bool) -> Bool {
         reading = false
-        guard read.turn == turn else { return false }
+        guard read.file == file, read.load == registeredLoad, loads.isCurrent(read.load) else { return false }
         if culled { again = true }
         return !culled
     }

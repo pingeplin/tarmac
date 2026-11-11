@@ -40,7 +40,7 @@ final class HTMLCardSessionTests: XCTestCase {
 
     func testAReadyOnACulledCardRepeatsThatItIsCulled() {
         var session = HTMLCardSession()
-        session.culled = true
+        _ = session.setCulled(true)
         XCTAssertEqual(session.handle(.ready(meta: nil), borrowed: false).first, .post(.cull(true)))
     }
 
@@ -97,7 +97,7 @@ final class HTMLCardSessionTests: XCTestCase {
         )
 
         var culled = HTMLCardSession()
-        culled.culled = true
+        _ = culled.setCulled(true)
         _ = culled.fontsChanged(fontsA)
         XCTAssertEqual(culled.handle(.ready(meta: nil), borrowed: false).first, .post(.cull(true)))
     }
@@ -111,7 +111,7 @@ final class HTMLCardSessionTests: XCTestCase {
     func test2610_0010S23AChangeIsPostedAndTheSameValuesAreNot() {
         for culled in [false, true] {
             var session = HTMLCardSession()
-            session.culled = culled
+            _ = session.setCulled(culled)
             XCTAssertEqual(session.fontsChanged(fontsA), .fonts(fontsA), "culled \(culled)")
             XCTAssertNil(session.fontsChanged(fontsA), "culled \(culled)")
             XCTAssertEqual(session.fontsChanged(fontsB), .fonts(fontsB), "culled \(culled)")
@@ -157,9 +157,9 @@ final class HTMLCardSessionTests: XCTestCase {
         let before = session
         XCTAssertEqual(session.handle(.shown(load: load), borrowed: false), [.documentShown])
         XCTAssertEqual(session.handle(.shown(load: load), borrowed: true), [.documentShown])
-        session.culled = true
+        _ = session.setCulled(true)
         XCTAssertEqual(session.handle(.shown(load: load), borrowed: false), [.documentShown])
-        session.culled = false
+        _ = session.setCulled(false)
         XCTAssertEqual(session, before)
     }
 
@@ -201,13 +201,17 @@ final class HTMLCardSessionTests: XCTestCase {
     /// A card whose current load named `name`, and what its `ready` gave.
     private func card(naming name: String? = "stats.json") -> (HTMLCardSession, [Effect]) {
         var session = HTMLCardSession(html: "/a/b/dash.html")
-        let load = session.reloaded()
-        let effects = session.handle(.ready(meta: nil, data: name, load: load), borrowed: false)
+        let effects = reload(&session, naming: name)
         return (session, effects)
     }
 
     private func registrations(_ effects: [Effect]) -> [String?] {
         effects.compactMap { if case .dataFile(let file) = $0 { return .some(file) } else { return nil } }
+    }
+
+    /// The reads the effects start.
+    private func reads(_ effects: [Effect]) -> [HTMLCardSession.DataRead] {
+        effects.compactMap { if case .read(let read) = $0 { return read } else { return nil } }
     }
 
     private func reload(_ session: inout HTMLCardSession, naming name: String?) -> [Effect] {
@@ -280,38 +284,39 @@ final class HTMLCardSessionTests: XCTestCase {
         XCTAssertEqual(registrations(reload(&session, naming: "x.json")), ["/a/b/x.json"])
     }
 
+    /// The read is an effect of the change itself.
     func test2611S26AChangeStartsARead() throws {
-        var session = card().0
-        XCTAssertNil(session.nextRead(), "nothing changed yet")
-        session.dataChanged()
-        XCTAssertEqual(try XCTUnwrap(session.nextRead()).file, stats)
+        var (session, registered) = card()
+        XCTAssertEqual(reads(registered), [], "nothing changed yet")
+        let read = try XCTUnwrap(reads(session.dataChanged()).first)
+        XCTAssertEqual(read.file, stats)
+        XCTAssertEqual(read.html, "/a/b/dash.html")
     }
 
     func test2611S27ChangesDuringAReadGiveOneMoreRead() throws {
         var session = card().0
-        session.dataChanged()
-        let read = try XCTUnwrap(session.nextRead())
-        session.dataChanged()
-        session.dataChanged()
-        XCTAssertNil(session.nextRead())
-        _ = session.readEnded(read, .text("{}"))
-        XCTAssertNotNil(session.nextRead())
-        XCTAssertNil(session.nextRead())
+        let read = try XCTUnwrap(reads(session.dataChanged()).first)
+        XCTAssertEqual(reads(session.dataChanged()), [])
+        XCTAssertEqual(reads(session.dataChanged()), [])
+        let ended = session.readEnded(read, .text("{}"))
+        XCTAssertEqual(ended.first, .deliver("{}"), "the outcome before the next read")
+        let next = reads(ended)
+        XCTAssertEqual(next.count, 1)
+        XCTAssertEqual(reads(session.readEnded(try XCTUnwrap(next.first), .text("{}"))), [])
     }
 
     func test2611S28ACulledCardReadsWhenItIsBackInView() {
         var session = card().0
-        session.culled = true
-        session.dataChanged()
-        XCTAssertNil(session.nextRead())
-        session.culled = false
-        XCTAssertNotNil(session.nextRead())
-        XCTAssertNil(session.nextRead())
+        XCTAssertEqual(reads(session.setCulled(true)), [])
+        XCTAssertEqual(reads(session.dataChanged()), [])
+        let back = session.setCulled(false)
+        XCTAssertEqual(back.first, .post(.cull(false)), "the document is told before it reads")
+        XCTAssertEqual(reads(back).count, 1)
+        XCTAssertEqual(reads(session.setCulled(false)), [])
 
         var quiet = card().0
-        quiet.culled = true
-        quiet.culled = false
-        XCTAssertNil(quiet.nextRead())
+        XCTAssertEqual(reads(quiet.setCulled(true)), [])
+        XCTAssertEqual(reads(quiet.setCulled(false)), [])
     }
 
     /// From a reload until the new load's first ready, the file is not yet
@@ -319,16 +324,32 @@ final class HTMLCardSessionTests: XCTestCase {
     func test2611S29AChangeBetweenAReloadAndItsReadyStartsNoRead() {
         var session = card().0
         let load = session.reloaded()
-        session.dataChanged()
-        XCTAssertNil(session.nextRead())
-        _ = session.handle(.ready(meta: nil, data: "stats.json", load: load), borrowed: false)
-        session.dataChanged()
-        XCTAssertEqual(session.nextRead()?.file, stats)
+        XCTAssertEqual(reads(session.dataChanged()), [])
+        XCTAssertEqual(reads(session.handle(.ready(meta: nil, data: "stats.json", load: load), borrowed: false)), [])
+        XCTAssertEqual(reads(session.dataChanged()).map(\.file), [stats])
+    }
+
+    /// A change of the file a card read before is not a change of the file
+    /// its next load names: that one is read when the daemon reports it. A
+    /// file that is not there would else be read, and write a line.
+    func test2611S28aAChangeOfTheFileBeforeStartsNoReadOfANewlyNamedFile() throws {
+        var culled = card().0
+        _ = culled.setCulled(true)
+        XCTAssertEqual(reads(culled.dataChanged()), [])
+        _ = reload(&culled, naming: "y.json")
+        XCTAssertEqual(reads(culled.setCulled(false)), [])
+        XCTAssertEqual(reads(culled.dataChanged()).map(\.file), ["/a/b/y.json"])
+
+        var reading = card().0
+        let read = try readStarted(&reading)
+        XCTAssertEqual(reads(reading.dataChanged()), [])
+        _ = reload(&reading, naming: "y.json")
+        XCTAssertEqual(reads(reading.readEnded(read, .text("{}"))), [])
+        XCTAssertEqual(reads(reading.dataChanged()).map(\.file), ["/a/b/y.json"])
     }
 
     private func readStarted(_ session: inout HTMLCardSession) throws -> HTMLCardSession.DataRead {
-        session.dataChanged()
-        return try XCTUnwrap(session.nextRead())
+        try XCTUnwrap(reads(session.dataChanged()).first)
     }
 
     func test2611S29AReadIsDeliveredOnlyToTheLoadAndFileItWasFor() throws {
@@ -353,15 +374,28 @@ final class HTMLCardSessionTests: XCTestCase {
         XCTAssertEqual(repeated.readEnded(first, .text("[1]")), [], "the same file, a later load")
     }
 
+    /// The new load's file changed while the old load's read was out: that
+    /// read is not delivered, and its end starts the read for the new load.
+    func test2611S29AStaleReadThatEndsStartsTheReadThatWaitedForIt() throws {
+        var session = card().0
+        let old = try readStarted(&session)
+        _ = reload(&session, naming: "stats.json")
+        XCTAssertEqual(reads(session.dataChanged()), [], "one read at a time")
+        let ended = session.readEnded(old, .text("[1]"))
+        XCTAssertFalse(ended.contains(.deliver("[1]")))
+        let next = try XCTUnwrap(reads(ended).first)
+        XCTAssertEqual(reads(ended).count, 1)
+        XCTAssertEqual(session.readEnded(next, .text("[2]")), [.deliver("[2]")])
+    }
+
     func test2611S29aAReadThatEndsWhileCulledIsReadAgainInView() throws {
         var session = card().0
         let read = try readStarted(&session)
-        session.culled = true
+        _ = session.setCulled(true)
         XCTAssertEqual(session.readEnded(read, .text("[1]")), [])
-        XCTAssertNil(session.nextRead())
-        session.culled = false
-        let again = try XCTUnwrap(session.nextRead())
-        XCTAssertEqual(session.readEnded(again, .text("[2]")), [.deliver("[2]")])
+        let back = reads(session.setCulled(false))
+        XCTAssertEqual(back.count, 1)
+        XCTAssertEqual(session.readEnded(try XCTUnwrap(back.first), .text("[2]")), [.deliver("[2]")])
     }
 
     func test2611S30AFailedReadDeliversNothingAndSaysWhy() throws {

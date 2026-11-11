@@ -1545,12 +1545,21 @@ final class CardShimTests: XCTestCase {
         }
     }
 
-    /// The host page carries a message of at most 1,000 characters of JSON.
-    /// The name is measured as JSON writes it, and a page that took
-    /// `console.error` for itself does not keep the line from the app.
+    /// The shim's bound is the host page's, which is the app's line cap
+    /// (`CardHostScriptTests`).
+    func test2611S3TheShimMeasuresAgainstTheLineCapTheAppKeeps() throws {
+        let regex = try NSRegularExpression(pattern: #"var messageCap = (\d+);"#)
+        let text = try source()
+        let match = try XCTUnwrap(regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)))
+        XCTAssertEqual(Int(text[try XCTUnwrap(Range(match.range(at: 1), in: text))]), CardConsole.lineCap)
+    }
+
+    /// The host page carries a message of at most `CardConsole.lineCap`
+    /// characters of JSON. The name is measured as JSON writes it, and a page
+    /// that took `console.error` for itself does not keep the line from the app.
     func test2611S3ANameThatDoesNotFitIsLeftOutAndSaidSo() throws {
         let fill = "(n, unit) => unit.repeat(n)"
-        let room = "1000 - JSON.stringify({ tarmac: 'ready', meta: null, data: '' }).length"
+        let room = "\(CardConsole.lineCap) - JSON.stringify({ tarmac: 'ready', meta: null, data: '' }).length"
         for (unit, width) in [("x", 1), ("\\\"", 2)] {
             let probe = try loadShim(meta: nil)
             let free = try XCTUnwrap(probe.number(room).flatMap { Int(exactly: $0) })
@@ -1562,7 +1571,8 @@ final class CardShimTests: XCTestCase {
             fitting.run("h.domReady()")
             XCTAssertEqual(try readies(fitting).first?["data"] as? String, fits, "unit \(unit)")
             XCTAssertEqual(
-                fitting.number("JSON.stringify({ tarmac: 'ready', meta: null, data: h.posted.at(-1).data }).length"), 1000
+                fitting.number("JSON.stringify({ tarmac: 'ready', meta: null, data: h.posted.at(-1).data }).length"),
+                Double(CardConsole.lineCap)
             )
             XCTAssertEqual(try nameErrors(fitting), [], "unit \(unit)")
 
@@ -1580,7 +1590,7 @@ final class CardShimTests: XCTestCase {
     /// the host page whatever it names, as it is today: the name is kept, and
     /// the console is told nothing of it.
     func test2611S3AReadyTooLongWithoutTheNameKeepsItAndSaysNothing() throws {
-        let shim = try loadShim(meta: String(repeating: "x", count: 1000), data: "stats.json")
+        let shim = try loadShim(meta: String(repeating: "x", count: CardConsole.lineCap), data: "stats.json")
         shim.run("h.domReady()")
         XCTAssertEqual(try readies(shim).first?["data"] as? String, "stats.json")
         XCTAssertEqual(try nameErrors(shim), [])

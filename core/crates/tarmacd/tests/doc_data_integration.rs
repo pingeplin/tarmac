@@ -12,7 +12,7 @@ mod common;
 use std::path::Path;
 use std::time::Duration;
 
-use common::{Conn, TestDaemon, edit, mtime_ms, none_within, quiet, temp_dir, write_doc};
+use common::{Conn, TestDaemon, edit, is_file_event_for, mtime_ms, none_within, quiet, temp_dir, write_doc};
 use serde_json::json;
 use tarmac_protocol::{BoardViewport, Msg};
 
@@ -21,7 +21,7 @@ fn doc_data(app: &mut Conn, board: &str, doc: &str, data: Option<&str>) {
 }
 
 fn is_event_for_any(msg: &Msg, paths: &[&str]) -> bool {
-    matches!(msg, Msg::FileEvent { path, .. } if paths.contains(&path.as_str()))
+    paths.iter().any(|path| is_file_event_for(msg, path))
 }
 
 /// Waits for `msg_is`, and fails on a `file_event` for any of `paths` before
@@ -75,12 +75,17 @@ struct Card {
 }
 
 impl Card {
-    fn open(daemon: &TestDaemon, app: &mut Conn) -> Self {
-        let card = Card {
+    /// The three files, with no doc open.
+    fn write(daemon: &TestDaemon) -> Self {
+        Card {
             dash: write_doc(&daemon.dir.join("docs/dash.html"), "<p>dash</p>\n"),
             other: write_doc(&daemon.dir.join("docs/other.md"), "other\n"),
             stats: write_doc(&daemon.dir.join("docs/stats.json"), "{}\n"),
-        };
+        }
+    }
+
+    fn open(daemon: &TestDaemon, app: &mut Conn) -> Self {
+        let card = Card::write(daemon);
         app.open_on("board-0", &card.dash);
         app.open_on("board-0", &card.other);
         card
@@ -293,11 +298,7 @@ fn a_data_file_that_is_also_a_doc_is_one_file_event_for_a_change() {
 /// switch to board-1: the wake of an open would look at board-1 after it, and
 /// report the data file without the look of the switch.
 fn card_in_the_background(daemon: &TestDaemon, app: &mut Conn) -> Card {
-    let card = Card {
-        dash: write_doc(&daemon.dir.join("docs/dash.html"), "<p>dash</p>\n"),
-        other: write_doc(&daemon.dir.join("docs/other.md"), "other\n"),
-        stats: write_doc(&daemon.dir.join("docs/stats.json"), "{}\n"),
-    };
+    let card = Card::write(daemon);
     app.open_on("board-0", &card.other);
     app.create_board("board-1");
     app.open_on("board-1", &card.dash);

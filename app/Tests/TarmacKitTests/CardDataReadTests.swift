@@ -2,42 +2,22 @@ import XCTest
 @testable import TarmacKit
 
 /// The read of a card's data file (spec 2611.0002 S30, S32), with a stand-in
-/// file system: where each path resolves to, and what each resolved path
-/// holds.
+/// file system (`SchemeFixtures.Disk`): a path resolves when it, or the file
+/// its link leads to, is on the disk.
 final class CardDataReadTests: XCTestCase {
-    private struct Missing: LocalizedError {
-        var errorDescription: String? { "No such file or directory (os error 2)" }
-    }
+    private typealias Disk = SchemeFixtures.Disk
 
     private let html = "/a/b/dash.html"
     private let file = "/a/b/stats.json"
-
-    /// `links` maps a path to where it resolves; a path not in it resolves
-    /// to itself, and one mapped to nil does not resolve.
-    private final class Disk {
-        var links: [String: String?] = [:]
-        var files: [String: Result<Data, any Error>] = [:]
-        var reads: [String] = []
-
-        func resolve(_ path: String) -> Result<String, any Error> {
-            guard let link = links[path] else { return .success(path) }
-            return link.map { .success($0) } ?? .failure(Missing())
-        }
-
-        func read(_ path: String) -> Result<Data, any Error> {
-            reads.append(path)
-            return files[path] ?? .failure(Missing())
-        }
-    }
+    private let missing = SchemeFixtures.NoSuchFile().localizedDescription
 
     private func read(_ disk: Disk) -> CardDataRead.Outcome {
         CardDataRead.read(file: file, html: html, resolve: disk.resolve, read: disk.read)
     }
 
+    /// The card's file and its data file beside it, holding `bytes`.
     private func holding(_ bytes: [UInt8]) -> Disk {
-        let disk = Disk()
-        disk.files[file] = .success(Data(bytes))
-        return disk
+        Disk([html: Data(), file: Data(bytes)])
     }
 
     private func holding(_ text: String) -> Disk { holding(Array(text.utf8)) }
@@ -45,57 +25,55 @@ final class CardDataReadTests: XCTestCase {
     func testS30AFileBesideTheCardIsReadAsText() {
         let disk = holding(#"{"n":1}"#)
         XCTAssertEqual(read(disk), .text(#"{"n":1}"#))
-        XCTAssertEqual(disk.reads, [file])
+        XCTAssertEqual(disk.opened, [file])
     }
 
     func testS30ANameThatResolvesToAnotherDirectoryIsNeverRead() {
-        let disk = holding("{}")
-        disk.links[file] = "/etc/stats.json"
-        disk.files["/etc/stats.json"] = .success(Data("{}".utf8))
-        guard case .refused(let reason) = read(disk) else { return XCTFail("read") }
-        XCTAssertTrue(reason.contains("outside"), reason)
-        XCTAssertEqual(disk.reads, [])
-
-        disk.links[file] = "/a/b/sub/stats.json"
-        guard case .refused = read(disk) else { return XCTFail("a subdirectory was read") }
-        XCTAssertEqual(disk.reads, [])
+        for target in ["/etc/stats.json", "/a/b/sub/stats.json"] {
+            let disk = Disk([html: Data(), file: Data("{}".utf8), target: Data("{}".utf8)], links: [file: target])
+            XCTAssertEqual(read(disk), .refused(CardDataRead.leadsOutside), target)
+            XCTAssertEqual(disk.opened, [], target)
+        }
     }
 
     /// The resolved file is the one read, never the name.
     func testS30ANameThatResolvesToAnotherFileBesideTheCardReadsThatFile() {
-        let disk = Disk()
-        disk.links[file] = "/a/b/real.json"
-        disk.files["/a/b/real.json"] = .success(Data("[1]".utf8))
+        let disk = Disk([html: Data(), "/a/b/real.json": Data("[1]".utf8)], links: [file: "/a/b/real.json"])
         XCTAssertEqual(read(disk), .text("[1]"))
-        XCTAssertEqual(disk.reads, ["/a/b/real.json"])
+        XCTAssertEqual(disk.opened, ["/a/b/real.json"])
     }
 
     /// The directory is the resolved HTML file's, not its name's.
     func testS30TheDirectoryIsTheResolvedHTMLFiles() {
-        let disk = holding("{}")
-        disk.links[html] = "/c/dash.html"
-        guard case .refused = read(disk) else { return XCTFail("read beside the HTML file's name") }
-        disk.links[file] = "/c/stats.json"
-        disk.files["/c/stats.json"] = .success(Data("{}".utf8))
+        let beside = Disk([file: Data("{}".utf8), "/c/dash.html": Data()], links: [html: "/c/dash.html"])
+        XCTAssertEqual(read(beside), .refused(CardDataRead.leadsOutside), "read beside the HTML file's name")
+        XCTAssertEqual(beside.opened, [])
+
+        let disk = Disk(
+            ["/c/stats.json": Data("{}".utf8), "/c/dash.html": Data()],
+            links: [html: "/c/dash.html", file: "/c/stats.json"]
+        )
         XCTAssertEqual(read(disk), .text("{}"))
-        XCTAssertEqual(disk.reads, ["/c/stats.json"])
+        XCTAssertEqual(disk.opened, ["/c/stats.json"])
     }
 
     func testS30AResolveThatFailsForEitherFileIsARefusalAndNoRead() {
-        for path in [file, html] {
-            let disk = holding("{}")
-            disk.links[path] = .some(nil)
-            guard case .refused(let reason) = read(disk) else { return XCTFail(path) }
-            XCTAssertTrue(reason.contains("No such file"), reason)
-            XCTAssertEqual(disk.reads, [], path)
-        }
+        let dataGone = Disk([html: Data()])
+        XCTAssertEqual(read(dataGone), .refused(missing))
+        XCTAssertEqual(dataGone.opened, [])
+
+        let cardGone = Disk([file: Data("{}".utf8)])
+        XCTAssertEqual(read(cardGone), .refused("the card's file: \(missing)"))
+        XCTAssertEqual(cardGone.opened, [])
     }
 
+    /// The disk's own read fails only for a file that is not there, which
+    /// resolve has refused already: a stand-in read gives the other failures.
     func testS30AReadThatFailsGivesItsReason() {
+        let disk = holding("{}")
         for error in [FileBytes.NotAFile(), FileBytes.TooLarge(limit: FileBytes.sizeCap)] as [any Error] {
-            let disk = Disk()
-            disk.files[file] = .failure(error)
-            XCTAssertEqual(read(disk), .refused(error.localizedDescription))
+            let outcome = CardDataRead.read(file: file, html: html, resolve: disk.resolve, read: { _ in .failure(error) })
+            XCTAssertEqual(outcome, .refused(error.localizedDescription))
         }
     }
 

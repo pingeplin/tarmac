@@ -56,6 +56,7 @@
     if (data === null || typeof data !== "object") return undefined;
     // This page's own word: a card cannot say that it is on screen.
     if (data.tarmac === "shown") return undefined;
+    if (data.tarmac === "ready") return stamped(data);
     if (data.tarmac !== "console" || !Array.isArray(data.args)) return small(data) ? data : undefined;
     if (!small(data.level)) return undefined;
     return { tarmac: "console", level: data.level, ...cutArgs(data.args) };
@@ -101,6 +102,12 @@
   // stops its own load never fires this, and its shim has spoken.
   card.addEventListener("load", documentStarted);
 
+  // The document that the frame had before can still speak after the frame
+  // was given the next one: its source is this load's no more.
+  function ofThisLoad(from) {
+    return replaced === null || from !== replaced;
+  }
+
   // A `ready` with its `source` and any `load` of the card's taken off, and
   // the load's number when it is the first of the load. The document that
   // was replaced can still speak once the frame has loaded the next one, so
@@ -109,7 +116,7 @@
   function stamped(data) {
     const { source: from, load: _, ...ready } = data;
     if (!small(ready)) return undefined;
-    if (stamp !== null && (replaced === null || from !== replaced)) {
+    if (stamp !== null && ofThisLoad(from)) {
       ready.load = stamp;
       stamp = null;
     }
@@ -120,15 +127,9 @@
     // Only this card's own document is heard.
     if (event.source !== card.contentWindow) return;
     try {
-      // The shim's first word is for this page alone. The document that the
-      // frame had before can say it after the frame was given the next one.
+      // The shim's first word is for this page alone.
       if (event.data !== null && typeof event.data === "object" && event.data.tarmac === "started") {
-        if (replaced === null || event.data.source !== replaced) documentStarted();
-        return;
-      }
-      if (event.data !== null && typeof event.data === "object" && event.data.tarmac === "ready") {
-        const ready = stamped(event.data);
-        if (ready !== undefined) webkit.messageHandlers.card.postMessage(ready);
+        if (ofThisLoad(event.data.source)) documentStarted();
         return;
       }
       const message = carried(event.data);

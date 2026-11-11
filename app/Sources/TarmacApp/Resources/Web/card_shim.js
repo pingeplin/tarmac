@@ -1,11 +1,11 @@
 // Console-capture + escape-hatch + zoom + scroll-report + default-scheme +
 // font-properties + data-file shim for sandboxed HTML doc cards (specs
 // 2607.0004, 2607.0006, 2610.0003, 2610.0007, 2610.0010, 2610.0011,
-// 2611.0002). Placed
-// by CardProtocol.respond in every tarmac-card:// response after the file's
-// leading doctype, so it runs before any author script and observes
-// console/error/escape activity from the very first line of card script. Must
-// never throw or break the host page — every path here is defensive.
+// 2611.0002). Placed by CardProtocol.respond in every tarmac-card:// response
+// after the file's leading doctype, so it runs before any author script and
+// observes console/error/escape activity from the very first line of card
+// script. Must never throw or break the host page — every path here is
+// defensive.
 (function () {
   // Filled with the user's fonts per request (CardFontVariables.filling); the
   // file as it stands is valid JavaScript and holds none.
@@ -379,15 +379,13 @@
   var messageCap = 1000;
 
   function readyMessage() {
-    var ready = { tarmac: "ready", meta: readMeta(), data: readData() };
-    if (ready.data !== null && JSON.stringify(ready).length > messageCap) {
-      var named = ready.data;
-      ready.data = null;
-      if (JSON.stringify(ready).length <= messageCap) {
-        relay("error", ["tarmac-data: the name is too long to be sent (" + named.length + " characters); no data is read"]);
-      } else {
-        ready.data = named;
-      }
+    var meta = readMeta();
+    var named = readData();
+    var ready = { tarmac: "ready", meta: meta, data: named };
+    var unnamed = { tarmac: "ready", meta: meta, data: null };
+    if (named !== null && JSON.stringify(ready).length > messageCap && JSON.stringify(unnamed).length <= messageCap) {
+      relay("error", ["tarmac-data: the name is too long to be sent (" + named.length + " characters); no data is read"]);
+      ready = unnamed;
     }
     ready.source = location.href;
     return ready;

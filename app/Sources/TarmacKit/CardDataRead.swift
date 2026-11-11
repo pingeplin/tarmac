@@ -23,15 +23,14 @@ public enum CardDataRead {
         resolve: (String) -> Result<String, any Error>, read: (String) -> Result<Data, any Error>
     ) -> Outcome {
         let resolved: String
+        switch resolve(file) {
+        case .failure(let error): return .refused(error.localizedDescription)
+        case .success(let path): resolved = path
+        }
         let directory: String
-        switch (resolve(file), resolve(html)) {
-        case (.failure(let error), _):
-            return .refused(error.localizedDescription)
-        case (_, .failure(let error)):
-            return .refused("the card's file: \(error.localizedDescription)")
-        case (.success(let data), .success(let card)):
-            resolved = data
-            directory = CardDataPath.parent(of: card)
+        switch resolve(html) {
+        case .failure(let error): return .refused("the card's file: \(error.localizedDescription)")
+        case .success(let card): directory = CardDataPath.parent(of: card)
         }
         guard CardDataPath.parent(of: resolved) == directory else { return .refused(leadsOutside) }
         switch read(resolved) {
@@ -42,9 +41,11 @@ public enum CardDataRead {
         }
     }
 
-    /// The bytes as text when they are strict JSON (`StrictJSON`).
-    static func text(of bytes: Data) -> Outcome {
-        guard let text = String(data: bytes, encoding: .utf8) else { return .refused(notUTF8) }
-        return StrictJSON.isValid(bytes) ? .text(text) : .refused(notJSON)
+    /// The bytes as text when they are strict JSON (`StrictJSON`): one copy,
+    /// and one UTF-8 check, for a file that can be large and change often.
+    static func text(of data: Data) -> Outcome {
+        let bytes = [UInt8](data)
+        guard let text = String(validating: bytes, as: UTF8.self) else { return .refused(notUTF8) }
+        return StrictJSON.isValid(utf8: bytes) ? .text(text) : .refused(notJSON)
     }
 }
