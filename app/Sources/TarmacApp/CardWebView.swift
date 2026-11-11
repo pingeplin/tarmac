@@ -29,28 +29,6 @@ enum CardWebView {
         }
         return kind.init(frame: .zero, configuration: configuration)
     }
-
-    private static var saidPeerSwitchNotInForce = false
-
-    /// Turns WebKit's own switch for WebRTC off in `webView`, where this
-    /// system has it, and says once for the run when it is not in force. The
-    /// selectors are private, so they are found by name, and a system
-    /// without them is left as it is.
-    static func turnPeerConnectionOff(in webView: WKWebView) {
-        let preferences = webView.configuration.preferences
-        let set = NSSelectorFromString("_setPeerConnectionEnabled:")
-        let get = NSSelectorFromString("_peerConnectionEnabled")
-        var readback: Bool?
-        if preferences.responds(to: set), preferences.responds(to: get) {
-            typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
-            typealias Getter = @convention(c) (AnyObject, Selector) -> Bool
-            unsafeBitCast(preferences.method(for: set), to: Setter.self)(preferences, set, false)
-            readback = unsafeBitCast(preferences.method(for: get), to: Getter.self)(preferences, get)
-        }
-        guard let line = CardPeerSwitch.logLine(readback: readback), !saidPeerSwitchNotInForce else { return }
-        saidPeerSwitchNotInForce = true
-        Log.stderr(line)
-    }
 }
 
 extension WKWebView {

@@ -1,40 +1,11 @@
-// No-WebRTC + console-capture + escape-hatch + zoom + scroll-report +
-// default-scheme + font-properties shim for sandboxed HTML doc cards (specs 2607.0004,
+// Console-capture + escape-hatch + zoom + scroll-report + default-scheme +
+// font-properties shim for sandboxed HTML doc cards (specs 2607.0004,
 // 2607.0006, 2610.0003, 2610.0007, 2610.0010, 2610.0011). Placed
 // by CardProtocol.respond in every tarmac-card:// response after the file's
 // leading doctype, so it runs before any author script and observes
 // console/error/escape activity from the very first line of card script. Must
 // never throw or break the host page — every path here is defensive.
 (function () {
-  // A card has no WebRTC: each interface is taken off the global and its name
-  // is left as an `undefined` that cannot be changed, before any script of
-  // the card runs. A name that could not be taken off is told to the host
-  // page, which unloads this document.
-  var left = [
-    "RTCPeerConnection", "webkitRTCPeerConnection", "RTCIceCandidate", "RTCSessionDescription",
-    "RTCDataChannel", "RTCRtpSender", "RTCRtpReceiver", "RTCRtpTransceiver", "RTCIceTransport",
-    "RTCDtlsTransport", "RTCSctpTransport", "RTCCertificate",
-  ].filter(function (name) {
-    try {
-      delete window[name];
-      Object.defineProperty(window, name, { value: undefined, writable: false, configurable: false });
-    } catch (e) {
-      // The read below is the answer.
-    }
-    try {
-      return window[name] !== undefined;
-    } catch (e) {
-      return true;
-    }
-  });
-  if (left.length > 0) {
-    try {
-      window.parent.postMessage({ tarmac: "unsealed", names: left }, "*");
-    } catch (e) {
-      // Nothing more can be done from here.
-    }
-  }
-
   // Filled with the user's fonts per request (CardFontVariables.filling); the
   // file as it stands is valid JavaScript and holds none.
   var bootFonts = [/*tarmac-fonts*/][0];
