@@ -517,7 +517,7 @@ closed or its board deleted. It is ignored, with nothing recorded, for an unknow
 `board_id` (there is **no** fall-back to the active board), for a `path` that is
 not a doc of that board, and for a `data` that is not a file in the doc's own
 directory: relative, in another directory (a subdirectory included), or naming no
-file (`<dir>/..`). The directory is compared as text, with no link followed and
+file (`<dir>/..`). The directory is compared component by component, as bytes, with no link followed and
 no `..` resolved, so `<dir>/sub/../x.json` is refused.
 
 - **At once.** When the board is the active one and the file is there, the daemon

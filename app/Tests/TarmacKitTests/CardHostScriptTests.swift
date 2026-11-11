@@ -405,6 +405,11 @@ final class CardHostScriptTests: XCTestCase {
         hear("{ tarmac: 'started', source: '\(sourceA)' }")
         XCTAssertEqual(ready("source: '\(sourceA)'"), [stamped(3)])
         XCTAssertEqual(ready("source: '\(sourceA)'"), [unstamped])
+        // The frame's `load` event comes after the shim's `ready`, and a
+        // card can say `started` again: neither starts the load anew.
+        frameLoaded()
+        hear("{ tarmac: 'started', source: '\(sourceA)' }")
+        XCTAssertEqual(ready("source: '\(sourceA)'"), [unstamped])
     }
 
     func test2611S12ACardCannotNameALoad() {

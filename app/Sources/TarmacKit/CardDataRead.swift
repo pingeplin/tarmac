@@ -27,12 +27,12 @@ public enum CardDataRead {
         case .failure(let error): return .refused(error.localizedDescription)
         case .success(let path): resolved = path
         }
-        let directory: String
+        let card: String
         switch resolve(html) {
         case .failure(let error): return .refused("the card's file: \(error.localizedDescription)")
-        case .success(let card): directory = CardDataPath.parent(of: card)
+        case .success(let path): card = path
         }
-        guard CardDataPath.parent(of: resolved) == directory else { return .refused(leadsOutside) }
+        guard CardDataPath.isBeside(resolved, html: card) else { return .refused(leadsOutside) }
         switch read(resolved) {
         case .failure(let error):
             return .refused(error.localizedDescription)

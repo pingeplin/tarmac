@@ -36,6 +36,35 @@ final class CardDataReadTests: XCTestCase {
         }
     }
 
+    /// The directories are compared as bytes (`CardDataPathTests`): a
+    /// combining mark after a slash does not hide the slash, and two forms of
+    /// one letter are two directories.
+    func testS30TheResolvedDirectoryIsComparedAsBytes() {
+        let mark = "\u{301}"
+        let under = "/a/b/sub/\(mark)x.json"
+        let disk = Disk([html: Data(), under: Data("{}".utf8)], links: [file: under])
+        XCTAssertEqual(read(disk), .refused(CardDataRead.leadsOutside))
+        XCTAssertEqual(disk.opened, [])
+
+        let composed = "/v/\u{e9}/dash.html"
+        let decomposed = "/v/e\(mark)/x.json"
+        let other = Disk([composed: Data(), decomposed: Data("{}".utf8)], links: ["/v/\u{e9}/stats.json": decomposed])
+        XCTAssertEqual(
+            CardDataRead.read(file: "/v/\u{e9}/stats.json", html: composed, resolve: other.resolve, read: other.read),
+            .refused(CardDataRead.leadsOutside)
+        )
+        XCTAssertEqual(other.opened, [])
+    }
+
+    /// A resolved path is taken as it is given: its directory is not worked
+    /// out again from `..` components, which a resolved path does not have.
+    func testS30AResolvedPathIsNotNormalisedAgain() {
+        let odd = "/a/b/l/../stats.json"
+        let disk = Disk([html: Data(), odd: Data("{}".utf8)], links: [file: odd])
+        XCTAssertEqual(read(disk), .refused(CardDataRead.leadsOutside))
+        XCTAssertEqual(disk.opened, [])
+    }
+
     /// The resolved file is the one read, never the name.
     func testS30ANameThatResolvesToAnotherFileBesideTheCardReadsThatFile() {
         let disk = Disk([html: Data(), "/a/b/real.json": Data("[1]".utf8)], links: [file: "/a/b/real.json"])

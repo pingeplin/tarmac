@@ -91,11 +91,7 @@
       return;
     }
     tarmac.data = value;
-    try {
-      window.dispatchEvent(new CustomEvent("tarmac:data", { detail: value }));
-    } catch (e) {
-      // A listener's error is the page's.
-    }
+    window.dispatchEvent(new CustomEvent("tarmac:data", { detail: value }));
   }
 
   function safeSerialize(args) {
@@ -381,14 +377,14 @@
   function readyMessage() {
     var meta = readMeta();
     var named = readData();
-    var ready = { tarmac: "ready", meta: meta, data: named };
+    var message = { tarmac: "ready", meta: meta, data: named };
     var unnamed = { tarmac: "ready", meta: meta, data: null };
-    if (named !== null && JSON.stringify(ready).length > messageCap && JSON.stringify(unnamed).length <= messageCap) {
+    if (named !== null && JSON.stringify(message).length > messageCap && JSON.stringify(unnamed).length <= messageCap) {
       relay("error", ["tarmac-data: the name is too long to be sent (" + named.length + " characters); no data is read"]);
-      ready = unnamed;
+      message = unnamed;
     }
-    ready.source = location.href;
-    return ready;
+    message.source = location.href;
+    return message;
   }
 
   window.addEventListener("message", function (e) {

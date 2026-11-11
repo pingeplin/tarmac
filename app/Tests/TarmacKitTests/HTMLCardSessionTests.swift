@@ -237,6 +237,20 @@ final class HTMLCardSessionTests: XCTestCase {
         XCTAssertEqual(later, [.post(.cull(false)), .post(magnify)])
     }
 
+    /// The host page stamps one ready for each load. The session holds the
+    /// rule too: a second one that is stamped with the same load names no
+    /// file, and a read of the first file is still delivered.
+    func test2611S21aASecondStampedReadyOfTheLoadRegistersNothing() throws {
+        var session = HTMLCardSession()
+        let load = session.reloaded()
+        _ = session.handle(.ready(meta: nil, data: "stats.json", load: load), borrowed: false)
+        let read = try readStarted(&session)
+        let second = session.handle(.ready(meta: nil, data: "other.json", load: load), borrowed: false)
+        XCTAssertEqual(registrations(second), [])
+        XCTAssertEqual(session.readEnded(read, .text("{}")), [.deliver("{}")])
+        XCTAssertEqual(reads(session.dataChanged()).map(\.file), [stats])
+    }
+
     func test2611S22AReadyOfAnotherLoadRegistersNothing() {
         for other in [-1, 1] {
             var session = HTMLCardSession()

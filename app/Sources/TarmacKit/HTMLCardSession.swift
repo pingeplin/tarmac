@@ -39,6 +39,8 @@ public struct HTMLCardSession: Equatable, Sendable {
     private var fonts: CardFontVariables?
     private let html: String
     private var feed = Feed()
+    /// The load whose stamped ready was heard.
+    private var namedLoad: Int?
     /// The data line last written, until any other entry or a delivery.
     private var lastDataLine: String?
 
@@ -75,10 +77,13 @@ public struct HTMLCardSession: Equatable, Sendable {
                 mode = adopted
                 effects.append(.modeChanged)
             }
-            // Only the first ready of the current load, as the host page
-            // counts it, names the data file: one document cannot register
-            // file after file.
-            if let load, loads.isCurrent(load) { effects += named(data, by: load) }
+            // Only the first ready of the current load names the data file:
+            // one document cannot register file after file. The host page
+            // stamps one for each load, and this does not rest on it.
+            if let load, loads.isCurrent(load), load != namedLoad {
+                namedLoad = load
+                effects += named(data, by: load)
+            }
             return effects
         }
     }
@@ -201,7 +206,7 @@ private struct Feed: Equatable, Sendable {
     /// Whether the read's outcome is the card's to take now.
     mutating func ended(_ read: HTMLCardSession.DataRead, loads: LoadCount, culled: Bool) -> Bool {
         reading = false
-        guard read.file == file, read.load == registeredLoad, loads.isCurrent(read.load) else { return false }
+        guard loads.isCurrent(read.load) else { return false }
         if culled { again = true }
         return !culled
     }

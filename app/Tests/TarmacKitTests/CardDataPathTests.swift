@@ -34,6 +34,24 @@ final class CardDataPathTests: XCTestCase {
         }
     }
 
+    /// A path is bytes to the file system. Swift joins a `/` to a combining
+    /// mark that follows it, and compares strings by canonical equivalence:
+    /// a rule written on characters loses the slash, or takes two
+    /// directories for one.
+    func testS18aAPathIsJudgedAsBytes() {
+        let mark = "\u{301}"
+        XCTAssertEqual(
+            judged("sub/\(mark)x.json"),
+            .refused(path: "/a/b/sub/\(mark)x.json", reason: CardDataPath.inSubdirectory)
+        )
+        XCTAssertEqual(judged("../\(mark)x.json"), .refused(path: "/a/\(mark)x.json", reason: CardDataPath.outside))
+        XCTAssertEqual(CardDataPath.dataFile(html: "/a/b/\(mark)dash.html", name: "x.json"), .file("/a/b/x.json"))
+        XCTAssertEqual(
+            CardDataPath.dataFile(html: "/v/\u{e9}/dash.html", name: "/v/e\(mark)/x.json"),
+            .refused(path: "/v/e\(mark)/x.json", reason: CardDataPath.outside)
+        )
+    }
+
     /// A sibling whose name starts with the card's directory's is not under it.
     func testS17ASiblingDirectoryThatSharesThePrefixIsOutside() {
         XCTAssertEqual(judged("/a/bc/x.json"), .refused(path: "/a/bc/x.json", reason: CardDataPath.outside))
