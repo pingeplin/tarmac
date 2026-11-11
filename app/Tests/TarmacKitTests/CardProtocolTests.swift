@@ -24,41 +24,8 @@ final class CardProtocolTests: XCTestCase {
     func testCSPIsByteExact() {
         XCTAssertEqual(
             CardProtocol.csp,
-            "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:",
-            "an HTML card has no WebRTC only while its document can make no frame and no worker of its own"
+            "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:"
         )
-    }
-
-    /// The shim takes WebRTC off the document before the card's script
-    /// runs, so no script of the file may come ahead of it: whatever the
-    /// file opens with, the shim goes in before the first `<script` that a
-    /// browser reads as a tag. A `<?` ends at its first `>` and `<!-->` is a
-    /// whole comment, so the last two hold a script of their own. The rule
-    /// itself is `ShimPlacementTests`' (its S1, S2, S3, S5 and S6); none of
-    /// those files has a script after its lead.
-    func testTheShimComesBeforeEveryScriptOfTheFile() {
-        let bom: [UInt8] = [0xEF, 0xBB, 0xBF]
-        let cases: [(lead: [UInt8], shimAt: Int)] = [
-            (Array("<script>".utf8), 0),
-            (bom + Array("<script>".utf8), 3),
-            (Array("<!doctype html><script>".utf8), 15),
-            (Array("<!-- <script> --><!doctype html><script>".utf8), 32),
-            (Array("<?x <script> ?><script>".utf8), 0),
-            (Array("\n <script>".utf8), 0),
-            (Array("<?x <script><!doctype html><script>".utf8), 27),
-            (Array("<?x > <script>1</script> ?><!doctype html><script>".utf8), 0),
-            (Array("<!--> <script>1</script> --><!doctype html><script>".utf8), 0),
-        ]
-        for (lead, shimAt) in cases {
-            let path = "/tmp/lead.html"
-            let file = Data(lead + Array("<p>x</p>".utf8))
-            let resp = serve(SchemeFixtures.docURI(path), disk: .init([path: file]))
-            XCTAssertEqual(
-                resp.body,
-                file.prefix(shimAt) + Data("<script>/*shim*/</script>\n".utf8) + file.dropFirst(shimAt),
-                "an HTML card has no WebRTC only while the shim runs first: \(String(decoding: lead, as: UTF8.self))"
-            )
-        }
     }
 
     /// S9

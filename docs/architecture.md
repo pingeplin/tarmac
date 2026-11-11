@@ -918,7 +918,7 @@ handlers they post to. No cookies, cache or storage outlive the app.
   re-addressed (`DocImage`) to the `img` host of `tarmac-card://` before it is
   fetched; other schemes are left as written. Only the doc's own top frame
   loads from that host: every doc web view carries a content rule
-  (`DocFrameRule`, compiled once by `ContentRules`) that blocks
+  (`DocFrameRule`, compiled once by `DocFrameRules`) that blocks
   `tarmac-card://img/` in child frames, and the page is not loaded until the
   rule is attached.
 - **Links.** Only an absolute `http(s)` link opens, in the system browser; the
@@ -939,8 +939,11 @@ the path, never stored, so the wire protocol knows nothing about it). Its body
 is `HTMLCardView`: a web view holding a small host page (`card-host.html`) whose
 one element is `<iframe sandbox="allow-scripts" allow="">` pointed at
 `tarmac-card://doc/<percent-encoded path>?v=<mtime>`. The document runs real
-JavaScript at an opaque origin: no network, no forms, popups or top navigation,
-no permission-policy feature, and no handle on the app.
+JavaScript at an opaque origin: no load that its CSP governs, no forms, popups
+or top navigation, no permission-policy feature, and no handle on the app. The
+CSP is not a network boundary: Tarmac closes no path that a CSP does not govern,
+so the script of a card is to be trusted no more than that of a page in a
+browser.
 
 - **Scheme handler.** `CardSchemeHandler` answers `tarmac-card://`; what to
   serve is `CardSchemeRouter`'s decision, and the file is read off the main
@@ -960,38 +963,20 @@ no permission-policy feature, and no handle on the app.
   Each web view is served only its own host — an HTML card's
   the `doc` host, a markdown doc's the `img` host — so a markdown doc cannot
   frame a local file as an unsandboxed card document.
-- **No network.** The response CSP refuses what a document fetches. An HTML
-  card's web view also carries a content rule (`CardNetworkRule`, compiled
-  once by `ContentRules`) that blocks every `http(s)` and `ws(s)` load in
-  every frame, and the host page is not loaded until the rule is attached:
-  if WebKit refuses the rule, the card loads nothing and its console says
-  why (`HTMLCardSession.start(guarded:)`, also after the web content process
-  ends). Markdown docs are not under this rule.
-- **No WebRTC.** The shim takes the interfaces off the document (below), and
-  the web view's own WebKit switch for them is turned off where the system
-  has one (`CardPeerSwitch`; one line on stderr when it is not in force).
-  The shim's part rests on the frame's sandbox, the CSP and
-  `CardNavigation.htmlCard` staying as they are, and the tests of each say
-  so. Markdown docs are not under the switch.
 - **The shim** (`card_shim.js`) is everything a document can observe of its
-  host: before anything else it takes the WebRTC interfaces off the
-  document's global and leaves each name an `undefined` that cannot be
-  redefined (a document where one could not be removed says `unsealed`, and
-  the host page takes the frame out of the page, which ends the document,
-  and puts it back at the next load); it gives the document a default colour
-  scheme, so that a document
+  host: it gives the document a default colour scheme, so that a document
   that states none follows the app's appearance (one
   `<meta name="color-scheme" content="light dark">`, which any `color-scheme`
   in the author's CSS beats, and which the shim removes when the author's own
   meta is parsed); it tells its parent that the document has started
-  (`started`, next after the colour scheme, before any author script runs); it
+  (`started`, its second act, before any author script runs); it
   relays `console.log`/`info`/`warn`/`error`, uncaught errors, unhandled
   rejections and `Escape` to its parent,
   declares `--tarmac-prose-size`, `--tarmac-prose-font` and
   `--tarmac-mono-font` on the root, in one `:root` rule of a constructed
   stylesheet (so that the author's `<html style>` is kept and the author's own
   `:root` rule does not win), from values filled in at load and from `fonts`
-  messages (from the parent only; `started` keeps its place),
+  messages (from the parent only; `started` stays its second act),
   applies the zoom, gates the document's schedulers, scrolls the root where
   the host says while the card's scroll thumb is dragged (`scrollTo`, a
   finite number, from the parent only), and reports where the

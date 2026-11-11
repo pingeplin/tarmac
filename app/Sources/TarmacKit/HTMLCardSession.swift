@@ -11,10 +11,6 @@ public struct HTMLCardSession: Equatable, Sendable {
         case scrollChanged(ScrollMetrics)
         /// The document is on screen: the web view can be seen.
         case documentShown
-        /// Load the host page: the web view has the rule it loads under.
-        case loadPage
-        /// Show the console, for an entry the user did not ask to see.
-        case openConsole
     }
 
     public private(set) var console = CardConsole.Buffer()
@@ -25,23 +21,13 @@ public struct HTMLCardSession: Equatable, Sendable {
     /// The fonts last given. A reload keeps them: the next document is born
     /// with the values of its request, which a change since then missed.
     private var fonts: CardFontVariables?
-    /// Whether the web view has `CardNetworkRule`; nil until it is known.
-    private var guarded: Bool?
-    /// The current load's document was unloaded by the host page.
-    private var unsealed = false
 
     public init() {}
 
     public mutating func handle(_ message: CardConsole.Message, borrowed: Bool) -> [Effect] {
-        // Words of a document that is gone, or of the card that forged the
-        // one that unloaded it.
-        guard !unsealed else { return [] }
         switch message {
         case .escape:
             return borrowed ? [.escapeHome] : []
-        case .unsealed(let names):
-            unsealed = true
-            return refuse("card unloaded: could not remove \(names.joined(separator: ", "))")
         case .console(let entry):
             console.push(entry)
             return [.consoleChanged]
@@ -70,23 +56,6 @@ public struct HTMLCardSession: Equatable, Sendable {
         }
     }
 
-    /// The web view was given `CardNetworkRule`, or WebKit has none to give:
-    /// a card loads nothing in a web view that could reach the network.
-    public mutating func start(guarded: Bool) -> [Effect] {
-        self.guarded = guarded
-        return guarded ? [.loadPage] : refuse("card not loaded: the content rules are not available")
-    }
-
-    /// The web content process ended, and the host page with it.
-    public mutating func processEnded() -> [Effect] {
-        guarded.map { start(guarded: $0) } ?? []
-    }
-
-    private mutating func refuse(_ reason: String) -> [Effect] {
-        console.push(CardConsole.Entry(level: .error, args: [.string(reason)]))
-        return [.consoleChanged, .openConsole]
-    }
-
     /// The message to post, or nil when `fonts` is what the document has.
     public mutating func fontsChanged(_ fonts: CardFontVariables) -> CardHostMessage? {
         guard fonts != self.fonts else { return nil }
@@ -100,7 +69,6 @@ public struct HTMLCardSession: Equatable, Sendable {
     @discardableResult
     public mutating func reloaded() -> Int {
         mode = nil
-        unsealed = false
         return loads.next()
     }
 }
