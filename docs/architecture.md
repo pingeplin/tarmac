@@ -162,8 +162,9 @@ reports.
 | Docs | `Open {path, term_id?, board_id?}` | cli/app→D | surface a doc |
 | | `DocRead {path}` | app→D | mark a doc read |
 | | `DocOpened(DocEntry)` | D→app | a doc was opened/updated |
-| | `FileEvent {path, mtime_ms}` | D→app | a doc of the active board changed on disk |
+| | `FileEvent {path, mtime_ms}` | D→app | a doc of the active board, or a data file that one of them reads, changed on disk |
 | | `DocRefresh {path}` | app→D | re-stat a doc now and push its `file_event` |
+| | `DocData {board_id, path, data?}` | app→D | name (or, with no `data`, clear) the data file a doc reads; the daemon reports it with `file_event`s |
 | Terminal I/O | `SpawnTerm {term_id, cols, rows, cwd?, cmd?, board_id?, inherit_cwd_from?}` | app→D | create a PTY card |
 | | `Input {term_id, bytes}` | app→D | keystrokes and mouse reports |
 | | `Output {term_id, bytes}` | D→app | raw PTY output (≤64 KiB chunks) |
@@ -190,7 +191,7 @@ cx, cy}`.
 **Conformance vectors are the tripwire.** Two codecs implement this contract —
 `tarmac-protocol` (Rust, serde) and the hand-written `MsgPack` / `Message` codec
 in `TarmacKit` (Swift) — and both carry the same hex-encoded msgpack vectors
-(V1–V13) as mandatory tests: in `core/crates/tarmac-protocol/src/tests.rs`
+(V1–V15) as mandatory tests: in `core/crates/tarmac-protocol/src/tests.rs`
 and in `app/Tests/TarmacKitTests/ConformanceTests.swift`. Each vector must decode
 to the same structure and survive an encode→decode roundtrip on both sides. The
 Swift encoder is additionally pinned byte-for-byte to what
@@ -314,7 +315,8 @@ daemon records `last_changed_ms` **before** it pushes (so a crash never loses
 the fact), and pushes `FileEvent`. A file that is gone pushes nothing, and is a
 change when it is back.
 
-A **look** compares the docs of the active board (`docs::report_changes`). The
+A **look** compares the docs of the active board, and the data files they
+read (below), with their files (`docs::report_changes`). The
 daemon looks:
 
 - `BURST` (100 ms) after a wake of the watcher (`docs::watch_loop`), and
@@ -363,7 +365,27 @@ covered: a `FileEvent` that was queued for an app whose connection then
 closed before it was written. It is not held, and an app that connects again
 with its cards in place keeps the old content until the next change or `↻`.
 
-`Daemon::look` is the one place that reads a doc's file for a change. It reads
+A doc can name a **data file** (`DocData`, #311): a file in the doc's own
+directory, judged on the text — `docs::record_data` follows no link and
+resolves no `..`, and ignores an unknown board (no fall-back to the active
+one), an unknown doc, or a file elsewhere. It is kept with the doc entry
+(`DocInfo.data`, in memory only, never saved), so a `DocClose` or a
+`BoardDelete` forgets it. Its stamp is one per (board, path): every doc of a
+board that names the path sees it as one (`Registry::see_data`). On the active
+board the `DocData` is answered at once, in a look of its own: the file is
+taken as seen and a `FileEvent` for it is pushed, the same name again
+included. Each look of the active board reads the data files of the board
+too, and a look of a board switch reads those of every board
+(`Boards::data_paths`); `docs::take_to_tell` adds a `FileEvent` for each data
+file that differs from what was seen (`Registry::take_data_changes`), one for
+a path that is also a doc or that two docs name. A `DocData` for a board in
+the background starts from nothing seen, so its file is reported after the
+`Restore` of that board's switch. A data change records nothing to save and
+is not held when no app is connected: the app sends `DocData` again after it
+connects. `DocRefresh` does not read data files, and no directory is watched
+for one: its doc's is.
+
+`Daemon::look` is the one place that reads a doc's file or a data file for a change. It reads
 with no `boards` lock held, gives the reading to its caller under that lock,
 and runs one at a time: an older reading must not be applied after a newer
 one. Nothing is pushed from inside it.
@@ -1037,6 +1059,35 @@ browser.
 - **Live reload.** A `FileEvent` with a new mtime changes `?v=` and reloads the
   document — its JS state is lost, its console kept; an unchanged mtime reloads
   nothing.
+- **Data file** (#311). A document names one JSON file with
+  `<meta name="tarmac-data">`, and each change of that file reaches the loaded
+  document with no reload. The shim puts the name in its `ready` (`data`,
+  null for none; left out, with a console line, when it alone would take the
+  message over the host page's 1000 characters) with the document's address
+  (`source`). The host page takes `source` and any `load` of the card's off
+  before it measures, and stamps the first `ready` it carries after a load
+  has started with that load's number — never one from the source the frame
+  had before — so a card cannot stamp a load, and one document names one
+  file. `HTMLCardSession` takes the name only from a `ready` stamped with the
+  current load and judges it in the text (`CardDataPath`): a file in the
+  HTML file's own directory, or a refusal (a subdirectory, outside, no file)
+  that is one console line. An accepted name, or the clearing of one, is a
+  `doc_data` the controller sends for the card's board and doc, and
+  `CardDataRegistrations` keeps it, so that a `file_event` for a data path
+  reaches each card that reads it, on every built board, and every
+  registration is sent again at `hello_ok`; a closed card and a removed board
+  are forgotten. A card that is told of a change reads the file off the main
+  thread, one read at a time, and none while culled (it reads once when back
+  in view): `CardDataRead` resolves both files, refuses a data file whose
+  resolved directory is not the HTML file's, reads the resolved file within
+  `FileBytes.sizeCap` and takes it only as UTF-8 that passes `StrictJSON`. A
+  result is delivered only to the load and the file it was read for: the
+  view hands the text to `tarmacCard.data` as an argument of
+  `callAsyncJavaScript`, the host page posts `{tarmac:"data", text}` into the
+  frame, and the shim parses it, sets `window.tarmac.data` (its own object,
+  so a page's own `window.tarmac` is kept) and dispatches `tarmac:data`. A
+  failed read is one console line, `tarmac-data: <path>: <reason>`, not
+  written twice in a row.
 - **Cull pause.** A culled card's document is sent `cull`, and the shim pauses
   its `requestAnimationFrame`, `setInterval` and `setTimeout` schedulers until
   the card is shown again.

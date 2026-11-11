@@ -22,6 +22,9 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
     var onConsoleChanged: ((Int) -> Void)?
     var onScrollChanged: ((ScrollMetrics?) -> Void)?
     var onScrollCoverChanged: (() -> Void)?
+    /// The document's current load names this data file, or none: the
+    /// daemon is to be told (spec 2611.0002).
+    var onDataFile: ((String?) -> Void)?
 
     /// The open console lies over the bottom of the document.
     var scrollCover: CGFloat { console.isHidden ? 0 : console.frame.height }
@@ -34,7 +37,7 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
     let shield = CardShieldView()
     private let console = CardConsoleView()
 
-    private var session = HTMLCardSession()
+    private var session: HTMLCardSession
     private var consoleUpdate = CoalescedUpdate()
     private var pageLoaded = false
     /// The theme whose backdrop the host page holds: the one it was loaded
@@ -48,12 +51,15 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
 
+    private static let dataReads = DispatchQueue(label: "tarmac.card-data", qos: .userInitiated, attributes: .concurrent)
+
     // Read once: every HTML card loads the same host page and script.
     private static let scripts = [BundledResource.web("card-host.js").text]
     private static let host = BundledResource.web("card-host.html").text
 
     init(path: String) {
         self.path = path
+        session = HTMLCardSession(html: path)
         webView = CardWebView.make(scripts: Self.scripts, served: .cards, kind: HTMLCardWebView.self)
         host = ScreenSpaceHost(content: webView)
         super.init(frame: .zero)
@@ -161,6 +167,40 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
     func setCulled(_ culled: Bool) {
         session.culled = culled
         post(.cull(culled))
+        readData()
+    }
+
+    // MARK: - Data file
+
+    /// The daemon saw the data file change.
+    func dataChanged() {
+        session.dataChanged()
+        readData()
+    }
+
+    /// Reads off the main thread: a file can be large, or on a slow volume.
+    private func readData() {
+        guard let read = session.nextRead() else { return }
+        let html = path
+        Self.dataReads.async { [weak self] in
+            let outcome = CardDataRead.read(
+                file: read.file, html: html, resolve: FileBytes.resolved, read: FileBytes.read
+            )
+            DispatchQueue.main.async { [weak self] in
+                self?.dataRead(read, outcome)
+            }
+        }
+    }
+
+    private func dataRead(_ read: HTMLCardSession.DataRead, _ outcome: CardDataRead.Outcome) {
+        session.readEnded(read, outcome).forEach(apply)
+        readData()
+    }
+
+    /// The text is an argument, never part of the script.
+    private func deliver(_ text: String) {
+        guard pageLoaded else { return }
+        webView.runInCardWorld("tarmacCard.data(text)", arguments: ["text": text])
     }
 
     // MARK: - Console
@@ -250,15 +290,19 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
 
     private func received(_ message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame, let parsed = CardConsole.parse(message.body) else { return }
-        for effect in session.handle(parsed, borrowed: shield.isHidden) {
-            switch effect {
-            case .post(let reply): post(reply)
-            case .escapeHome: onEscapeHome?()
-            case .consoleChanged: consoleChanged()
-            case .modeChanged: layoutDocument()
-            case .scrollChanged(let metrics): onScrollChanged?(metrics)
-            case .documentShown: webView.alphaValue = 1
-            }
+        session.handle(parsed, borrowed: shield.isHidden).forEach(apply)
+    }
+
+    private func apply(_ effect: HTMLCardSession.Effect) {
+        switch effect {
+        case .post(let reply): post(reply)
+        case .escapeHome: onEscapeHome?()
+        case .consoleChanged: consoleChanged()
+        case .modeChanged: layoutDocument()
+        case .scrollChanged(let metrics): onScrollChanged?(metrics)
+        case .documentShown: webView.alphaValue = 1
+        case .dataFile(let file): onDataFile?(file)
+        case .deliver(let text): deliver(text)
         }
     }
 

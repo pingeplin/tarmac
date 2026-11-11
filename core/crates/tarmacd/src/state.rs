@@ -168,7 +168,7 @@ impl Daemon {
 
     /// One look: reads the files of `paths` with no `boards` lock held, then
     /// gives the reading to `apply` under that lock. It is the one place that
-    /// reads a doc's file for a change, and it runs one at a time, so that an
+    /// reads a doc's file or a data file for a change, and it runs one at a time, so that an
     /// older reading is never applied after a newer one. Nothing is pushed
     /// from inside it. A doc whose file could not be read in time
     /// (`PathGate`) is not in the reading.

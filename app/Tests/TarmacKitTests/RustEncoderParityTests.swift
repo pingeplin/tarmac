@@ -118,6 +118,28 @@ final class RustEncoderParityTests: XCTestCase {
         )
     }
 
+    /// 2611.0002 S34.
+    func testDocData() {
+        // Msg::DocData { board_id: "board-0", path: "/a/dash.html", data: Some("/a/stats.json") }
+        // — conformance vector 14.
+        assertParity(
+            .docData(boardID: "board-0", path: "/a/dash.html", data: "/a/stats.json"),
+            """
+            84 a1 74 a8 64 6f 63 5f 64 61 74 61 a8 62 6f 61 72 64 5f 69 64 a7 62 6f
+            61 72 64 2d 30 a4 70 61 74 68 ac 2f 61 2f 64 61 73 68 2e 68 74 6d 6c a4
+            64 61 74 61 ad 2f 61 2f 73 74 61 74 73 2e 6a 73 6f 6e
+            """
+        )
+        // Msg::DocData { board_id: "board-0", path: "/a/dash.html", data: None } — conformance vector 15.
+        assertParity(
+            .docData(boardID: "board-0", path: "/a/dash.html"),
+            """
+            83 a1 74 a8 64 6f 63 5f 64 61 74 61 a8 62 6f 61 72 64 5f 69 64 a7 62 6f
+            61 72 64 2d 30 a4 70 61 74 68 ac 2f 61 2f 64 61 73 68 2e 68 74 6d 6c
+            """
+        )
+    }
+
     func testScrollback() {
         // Msg::ScrollbackRequest { term_id: "t1" } — conformance vector 12.
         assertParity(

@@ -41,9 +41,22 @@ extension AppController {
         card.setFresh(fresh)
         bind(card, path: path, on: board)
         wireBorrow(card)
+        wireDataFile(card, path: path, on: board)
         card.docBody?.refresh(lastChangedMs: board.store.doc(for: path)?.lastChangedMs)
         board.view.recomputeEdges()
         return card
+    }
+
+    /// An HTML card's document names its data file: the daemon is told, and
+    /// reports the file to the app as it reports a doc.
+    private func wireDataFile(_ card: CardView, path: String, on board: Board) {
+        guard let html = card.htmlBody else { return }
+        let named = CardDataRegistrations.Card(boardID: board.boardID, path: path)
+        html.onDataFile = { [weak self] file in
+            guard let self else { return }
+            dataFiles.set(file, for: named)
+            client.docData(boardID: named.boardID, path: named.path, data: file)
+        }
     }
 
     /// Gives a doc card what the registry knows about it: its header, and the
@@ -92,13 +105,17 @@ extension AppController {
     // MARK: - Change, refresh, close
 
     /// `file_event`: the watcher is global, so every board that knows the doc
-    /// takes the change time and shows the doc again.
+    /// takes the change time and shows the doc again, and every card that
+    /// reads the file as its data file reads it again.
     func handleFileEvent(path: String, mtimeMs: UInt64) {
         for board in boards.values where board.store.doc(for: path) != nil {
             board.store.applyFileEvent(path: path, mtimeMs: mtimeMs)
             guard let card = board.view.card(.doc(path)) else { continue }
             if let doc = board.store.doc(for: path) { card.apply(doc: doc) }
             card.docBody?.refresh(lastChangedMs: mtimeMs)
+        }
+        for named in dataFiles.cards(reading: path) {
+            boards[named.boardID]?.view.card(.doc(named.path))?.htmlBody?.dataChanged()
         }
     }
 
@@ -115,6 +132,7 @@ extension AppController {
         borrow.closed(id)
         if focusedCardID == id { defocus() }
         activeBoard.view.removeCard(id: id)
+        dataFiles.forget(CardDataRegistrations.Card(boardID: activeBoardID, path: path))
         activeBoard.docOwner[path] = nil
         activeBoard.store.remove(path)
         client.docClose(path: path)

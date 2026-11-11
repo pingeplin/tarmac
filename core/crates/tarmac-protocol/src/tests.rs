@@ -251,6 +251,33 @@ fn conformance_vector_13_scrollback() {
     );
 }
 
+// `assert_vector` decodes only. Vector 15 is the form with no `data`, so the
+// encoder's bytes are pinned too: a `data: nil` key would decode the same.
+#[test]
+fn conformance_vector_14_doc_data() {
+    let hex = "84 a1 74 a8 64 6f 63 5f 64 61 74 61 a8 62 6f 61 72 64 5f 69 \
+               64 a7 62 6f 61 72 64 2d 30 a4 70 61 74 68 ac 2f 61 2f 64 61 \
+               73 68 2e 68 74 6d 6c a4 64 61 74 61 ad 2f 61 2f 73 74 61 74 \
+               73 2e 6a 73 6f 6e";
+    let msg = Msg::DocData {
+        board_id: "board-0".into(),
+        path: "/a/dash.html".into(),
+        data: Some("/a/stats.json".into()),
+    };
+    assert_vector(hex, msg.clone());
+    assert_eq!(encode(&msg).unwrap(), unhex(hex));
+}
+
+#[test]
+fn conformance_vector_15_doc_data_with_no_data() {
+    let hex = "83 a1 74 a8 64 6f 63 5f 64 61 74 61 a8 62 6f 61 72 64 5f 69 \
+               64 a7 62 6f 61 72 64 2d 30 a4 70 61 74 68 ac 2f 61 2f 64 61 \
+               73 68 2e 68 74 6d 6c";
+    let msg = Msg::DocData { board_id: "board-0".into(), path: "/a/dash.html".into(), data: None };
+    assert_vector(hex, msg.clone());
+    assert_eq!(encode(&msg).unwrap(), unhex(hex));
+}
+
 #[test]
 fn scrollback_reply_round_trips_empty_bytes() {
     // The daemon always answers, even with an empty ring — the empty reply
@@ -768,6 +795,8 @@ fn all_message_types_roundtrip() {
         Msg::Open { path: "/a.md".into(), term_id: Some("t9".into()), board_id: Some("board-1".into()) },
         Msg::DocClose { path: "/tmp/a.md".into() },
         Msg::DocRefresh { path: "/tmp/a.md".into() },
+        Msg::DocData { board_id: "board-1".into(), path: "/tmp/a.html".into(), data: Some("/tmp/a.json".into()) },
+        Msg::DocData { board_id: "board-1".into(), path: "/tmp/a.html".into(), data: None },
     ];
     for m in msgs {
         assert_eq!(roundtrip(&m), m, "roundtrip failed for {m:?}");

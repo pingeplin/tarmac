@@ -65,6 +65,7 @@ extension AppController {
         for id in Array(board.view.cards.keys) {
             board.view.removeCard(id: id)
         }
+        dataFiles.forget(board: board.boardID)
 
         notifyDaemonReplaced(tiles: tiles, liveTerms: liveTerms)
         let plan = BoardRestore.plan(tiles: tiles, docs: docs, liveTerms: liveTerms, mint: BootTerminal.mint)

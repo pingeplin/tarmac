@@ -1,6 +1,7 @@
 // Console-capture + escape-hatch + zoom + scroll-report + default-scheme +
-// font-properties shim for sandboxed HTML doc cards (specs 2607.0004,
-// 2607.0006, 2610.0003, 2610.0007, 2610.0010, 2610.0011). Placed
+// font-properties + data-file shim for sandboxed HTML doc cards (specs
+// 2607.0004, 2607.0006, 2610.0003, 2610.0007, 2610.0010, 2610.0011,
+// 2611.0002). Placed
 // by CardProtocol.respond in every tarmac-card:// response after the file's
 // leading doctype, so it runs before any author script and observes
 // console/error/escape activity from the very first line of card script. Must
@@ -74,6 +75,28 @@
   }
 
   applyFonts(bootFonts);
+
+  // The data file's content (spec 2611.0002), there before any script of the
+  // page runs. A page that gives the global another value keeps it: the
+  // content goes to this object, never through `window.tarmac`.
+  var tarmac = {};
+  window.tarmac = tarmac;
+
+  function deliver(text) {
+    if (typeof text !== "string") return;
+    var value;
+    try {
+      value = JSON.parse(text);
+    } catch (e) {
+      return;
+    }
+    tarmac.data = value;
+    try {
+      window.dispatchEvent(new CustomEvent("tarmac:data", { detail: value }));
+    } catch (e) {
+      // A listener's error is the page's.
+    }
+  }
 
   function safeSerialize(args) {
     return Array.prototype.map.call(args, serializeOne);
@@ -340,6 +363,36 @@
     }
   }
 
+  function readData() {
+    try {
+      var el = document.querySelector('meta[name="tarmac-data"]');
+      return (el && el.content) || null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // The host page carries no message over this many characters of JSON
+  // (`lineCap` in card-host.js), and drops a longer `ready` whole: a name
+  // that takes it over is left out, so a long name costs the card its data
+  // and not its zoom, cull and fonts. Its `source` is not counted.
+  var messageCap = 1000;
+
+  function readyMessage() {
+    var ready = { tarmac: "ready", meta: readMeta(), data: readData() };
+    if (ready.data !== null && JSON.stringify(ready).length > messageCap) {
+      var named = ready.data;
+      ready.data = null;
+      if (JSON.stringify(ready).length <= messageCap) {
+        relay("error", ["tarmac-data: the name is too long to be sent (" + named.length + " characters); no data is read"]);
+      } else {
+        ready.data = named;
+      }
+    }
+    ready.source = location.href;
+    return ready;
+  }
+
   window.addEventListener("message", function (e) {
     try {
       // Only the host drives zoom, the cull, the scroll and the fonts: a nested
@@ -361,6 +414,10 @@
       // it waits for nothing, and it sets no timer a culled card would hold.
       if (d.tarmac === "fonts") {
         applyFonts(d.vars);
+        return;
+      }
+      if (d.tarmac === "data") {
+        deliver(d.text);
         return;
       }
       // The scroll thumb is being dragged: the root goes where the host says,
@@ -426,7 +483,7 @@
     try {
       // The card draws the root's scroll position itself.
       document.documentElement.style.scrollbarWidth = "none";
-      window.parent.postMessage({ tarmac: "ready", meta: readMeta() }, "*");
+      window.parent.postMessage(readyMessage(), "*");
     } catch (e) {
       // ignore
     }

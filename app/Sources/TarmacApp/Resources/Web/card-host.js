@@ -72,6 +72,10 @@
   let started = 0;
   let source = null;
   let replaced = null;
+  // The load the next `ready` names, until one does (spec 2611.0002): only
+  // the first `ready` of a load names its data file, and only this page can
+  // say which load a `ready` is of.
+  let stamp = null;
 
   // Two frames, measured: the first is drawn with the document in it, and a
   // word posted in the second reaches the app after that drawing has. Told
@@ -83,6 +87,7 @@
   function documentStarted() {
     if (started === asked) return;
     started = asked;
+    stamp = asked;
     const load = asked;
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
@@ -96,6 +101,21 @@
   // stops its own load never fires this, and its shim has spoken.
   card.addEventListener("load", documentStarted);
 
+  // A `ready` with its `source` and any `load` of the card's taken off, and
+  // the load's number when it is the first of the load. The document that
+  // was replaced can still speak once the frame has loaded the next one, so
+  // its source is refused the stamp as it is refused the start. The size is
+  // measured first: a `ready` that is dropped leaves the stamp.
+  function stamped(data) {
+    const { source: from, load: _, ...ready } = data;
+    if (!small(ready)) return undefined;
+    if (stamp !== null && (replaced === null || from !== replaced)) {
+      ready.load = stamp;
+      stamp = null;
+    }
+    return ready;
+  }
+
   window.addEventListener("message", function (event) {
     // Only this card's own document is heard.
     if (event.source !== card.contentWindow) return;
@@ -104,6 +124,11 @@
       // frame had before can say it after the frame was given the next one.
       if (event.data !== null && typeof event.data === "object" && event.data.tarmac === "started") {
         if (replaced === null || event.data.source !== replaced) documentStarted();
+        return;
+      }
+      if (event.data !== null && typeof event.data === "object" && event.data.tarmac === "ready") {
+        const ready = stamped(event.data);
+        if (ready !== undefined) webkit.messageHandlers.card.postMessage(ready);
         return;
       }
       const message = carried(event.data);
@@ -116,6 +141,7 @@
   window.tarmacCard = {
     load(src, number) {
       asked = number;
+      stamp = null;
       // The same address again: its start cannot be told from the old one's.
       replaced = source === src ? null : source;
       source = src;
@@ -123,6 +149,9 @@
     },
     post(message) {
       card.contentWindow.postMessage(message, "*");
+    },
+    data(text) {
+      card.contentWindow.postMessage({ tarmac: "data", text }, "*");
     },
     layout(width, height, scale) {
       card.style.width = width + "px";

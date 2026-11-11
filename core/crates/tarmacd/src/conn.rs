@@ -144,10 +144,15 @@ async fn change_and_send_active_board(
     change: impl FnOnce(&mut Boards) -> bool,
 ) -> bool {
     let by_board = daemon.live_terms_by_board().await;
-    // Every board's docs are read, since `change` decides which board is
-    // shown.
+    // Every board's docs and data files are read, since `change` decides
+    // which board is shown.
+    let paths = |boards: &Boards| {
+        let mut paths = boards.doc_paths();
+        paths.extend(boards.data_paths());
+        paths
+    };
     let sent = daemon
-        .look(Boards::doc_paths, |boards, now| {
+        .look(paths, |boards, now| {
             if !change(boards) {
                 return None;
             }
@@ -329,6 +334,11 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
         Msg::DocRefresh { path } => {
             if !docs::stat_and_push(daemon, Path::new(&path)).await {
                 debug!("doc_refresh no-op for {path} (not on the active board, or unreadable)");
+            }
+        }
+        Msg::DocData { board_id, path, data } => {
+            if !docs::record_data(daemon, &board_id, Path::new(&path), data.map(PathBuf::from)).await {
+                debug!("doc_data ignored for {path} on {board_id} (an unknown board or doc, or a data file not beside the doc)");
             }
         }
         Msg::ScrollbackRequest { term_id } => {

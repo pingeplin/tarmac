@@ -127,6 +127,7 @@ pub fn upsert_doc(
                     unread: false,
                     last_opened_ms: epoch_ms(SystemTime::now()),
                     term_id,
+                    data: None,
                 },
             );
             reg.dock.push(path.to_owned());
@@ -174,9 +175,11 @@ pub async fn watch_loop(daemon: Arc<Daemon>) {
 }
 
 /// What a look has for the app: the docs of `reg` whose file changed
-/// (`Registry::take_changes`), then those whose last change reached no app. It
-/// asks for the save of what it recorded: before any push, so a crash between
-/// the two never loses the fact.
+/// (`Registry::take_changes`), then those whose last change reached no app,
+/// then the data files that changed (`Registry::take_data_changes`), one
+/// `file_event` for a path that is both. It asks for the save of what it
+/// recorded: before any push, so a crash between the two never loses the
+/// fact. A data file records nothing to save.
 pub fn take_to_tell(
     daemon: &Daemon,
     reg: &mut Registry,
@@ -187,20 +190,26 @@ pub fn take_to_tell(
         daemon.mark_dirty();
     }
     tell.extend(reg.take_untold());
+    for (path, mtime_ms) in reg.take_data_changes(now) {
+        if !tell.iter().any(|(told, _)| *told == path) {
+            tell.push((path, mtime_ms));
+        }
+    }
     tell
 }
 
-/// Compares each doc of the active board with its file, and pushes a
-/// `file_event` for each that changed. A doc of another board is compared when
-/// its board is sent (`conn::change_and_send_active_board`). An unread doc of
-/// any board is read too, and its first reading taken with no change: a
-/// change after its volume answers is then told at its switch.
+/// Compares each doc and each data file of the active board with its file,
+/// and pushes a `file_event` for each that changed. A doc of another board is
+/// compared when its board is sent (`conn::change_and_send_active_board`). An
+/// unread doc of any board is read too, and its first reading taken with no
+/// change: a change after its volume answers is then told at its switch.
 pub async fn report_changes(daemon: &Daemon) {
     let (board, tell) = daemon
         .look(
             |boards| {
-                let active = boards.active_registry().docs.keys();
-                active.chain(boards.unread_doc_paths()).cloned().collect::<HashSet<_>>()
+                let active = boards.active_registry();
+                let paths = active.docs.keys().chain(active.data_paths());
+                paths.chain(boards.unread_doc_paths()).cloned().collect::<HashSet<_>>()
             },
             |boards, now| {
                 boards.take_first_readings(now);
@@ -248,4 +257,48 @@ pub async fn stat_and_push(daemon: &Arc<Daemon>, path: &Path) -> bool {
     let Some((board, mtime_ms)) = recorded else { return false };
     push_file_event(daemon, &board, path, mtime_ms).await;
     true
+}
+
+/// `doc_data`: the doc `doc` of board `board` reads the file `data`, or none.
+/// When the board is active and the file is there, the file is taken as seen
+/// and a `file_event` for it is pushed, the same file again included. A board
+/// in the background reports it at its switch. It is not held when it
+/// reaches no app: the app sends `doc_data` again when it connects.
+///
+/// False, with nothing recorded, for an unknown board (no fall-back to the
+/// active one), an unknown doc on it, or a `data` that is not a file in the
+/// doc's own directory.
+pub async fn record_data(daemon: &Daemon, board: &str, doc: &Path, data: Option<PathBuf>) -> bool {
+    if data.as_deref().is_some_and(|data| !beside(doc, data)) {
+        return false;
+    }
+    let recorded = daemon
+        .look(
+            |_| data.clone(),
+            |boards, now| {
+                let active = boards.active_id() == board;
+                let reg = boards.known_registry_mut(board)?;
+                if !reg.set_data(doc, data.clone()) {
+                    return None;
+                }
+                let told = data.as_ref().filter(|_| active).and_then(|data| {
+                    let mtime_ms = reg.see_data(data, *now.get(data)?)?;
+                    Some((data.clone(), mtime_ms))
+                });
+                Some(told)
+            },
+        )
+        .await;
+    let Some(told) = recorded else { return false };
+    if let Some((data, mtime_ms)) = told {
+        daemon.push(file_event(&data, mtime_ms)).await;
+    }
+    true
+}
+
+/// `data` names a file in the directory of `doc`, judged on the text: no
+/// link is followed, and a `..` is not resolved. A doc's path is absolute, so
+/// a relative `data` is refused too.
+fn beside(doc: &Path, data: &Path) -> bool {
+    data.file_name().is_some() && data.parent() == doc.parent()
 }
