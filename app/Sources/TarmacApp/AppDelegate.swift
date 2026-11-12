@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             configDir: configDir, configOverride: configOverride, socketOverride: environment["TARMAC_SOCKET"]
         )
         let client = AppController.daemonClient()
+        DocFrameRules.install(socketPath: client.socketPath)
         let prefs = AppPrefsStore(
             path: AppPrefs.path(in: prefsDir), legacy: AppPrefs.path(besideSocket: client.socketPath)
         )
