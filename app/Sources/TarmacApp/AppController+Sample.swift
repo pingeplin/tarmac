@@ -18,7 +18,8 @@ extension AppController {
     }
 
     /// The counts are over the boards this app has built; each HTML card's
-    /// largest pending count is taken, and so reset, here. The footprints are
+    /// pending peak is taken, and so reset, here: that take is also what lets
+    /// the card give its next over-limit line. The footprints are
     /// left unread: `SampleLog` reads them off the main actor.
     func gatherSample() -> SampleLine.Sample {
         var sample = SampleLine.Sample(
