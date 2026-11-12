@@ -17,16 +17,21 @@ use tokio::sync::oneshot;
 /// time between two of its looks.
 pub const BURST: Duration = Duration::from_millis(100);
 
+/// `unwatch` is also called for a dir whose `watch` failed.
 pub trait WakeSource: Send {
     fn watch(&mut self, dir: &Path) -> anyhow::Result<()>;
     fn unwatch(&mut self, dir: &Path) -> anyhow::Result<()>;
 }
 
-/// FSEvents through `notify`. Each `watch` and `unwatch` restarts its one
-/// stream, and the restart loses the events that the stream has not delivered
-/// yet (#253): the watcher thread wakes a look after either. No debouncer
-/// (#258).
+/// FSEvents through `notify`. A `watch` or `unwatch` that changes its paths
+/// restarts its one stream; notify 9 starts the new one at the last event the
+/// old one delivered, where 8.2 lost the events not delivered yet (#253). The
+/// watcher thread still wakes a look after either. No debouncer (#258).
 pub struct NotifySource(RecommendedWatcher);
+
+fn is_watch_not_found(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<notify::Error>().is_some_and(|e| matches!(e.kind, notify::ErrorKind::WatchNotFound))
+}
 
 impl NotifySource {
     /// `wake` runs on the watcher's thread, for each event.
@@ -120,8 +125,8 @@ impl Asks {
     /// The one thread that calls `source`, one call at a time, so that a
     /// call that does not return (notify reads the path itself) holds only
     /// this thread. A dir is wanted while `wanted` says so; `woke` runs after
-    /// each call of the source, which restarts the stream whether it
-    /// succeeded or not (#253). It ends when every `Watcher` is dropped.
+    /// each call of the source, whether it succeeded or not (#253). It ends
+    /// when every `Watcher` is dropped.
     pub fn spawn(
         self,
         source: Box<dyn WakeSource>,
@@ -200,12 +205,23 @@ impl<W: Fn(&Path) -> bool, O: Fn(&Path) -> bool, F: Fn()> Thread<W, O, F> {
             let called = self.source.watch(dir);
             if called.is_ok() {
                 self.watched.insert(dir.to_owned());
+            } else {
+                // notify 9 can fail a watch after taking the dir into its
+                // stream, which then does not start again
+                // (`FsEventWatcher::watch_inner`); a dir not kept here is
+                // never unwatched, so the watch is taken back.
+                if let Err(e) = self.source.unwatch(dir)
+                    && !is_watch_not_found(&e)
+                {
+                    tracing::warn!("cannot take back the watch of {}: {e}", dir.display());
+                }
             }
             ("watch", called)
         } else {
-            // notify 8.2.0 takes the dir out of its stream before it fails
-            // most unwatches (`FsEventWatcher::remove_path`), so a failed one
-            // counts as done: a dir kept here would never be watched again.
+            // notify 9 fails an unwatch only when the dir was not in its
+            // stream or after taking it out (`FsEventWatcher::unwatch_inner`),
+            // so a failed one counts as done: a dir kept here would never be
+            // watched again.
             self.watched.remove(dir);
             ("unwatch", self.source.unwatch(dir))
         };
@@ -215,5 +231,17 @@ impl<W: Fn(&Path) -> bool, O: Fn(&Path) -> bool, F: Fn()> Thread<W, O, F> {
             return Err(NotWatched::Refused(e));
         }
         Ok(true)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_watch_not_found;
+
+    #[test]
+    fn only_notifys_watch_not_found_is_one() {
+        assert!(is_watch_not_found(&notify::Error::watch_not_found().into()));
+        assert!(!is_watch_not_found(&notify::Error::path_not_found().into()));
+        assert!(!is_watch_not_found(&anyhow::anyhow!("watch not found")));
     }
 }
