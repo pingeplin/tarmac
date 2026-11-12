@@ -97,6 +97,17 @@ final class DaemonSpawnerTests: XCTestCase {
         XCTAssertEqual(logText(), "FIRST\nSECOND\n")
     }
 
+    /// An unopenable log path costs the log, never the daemon.
+    func testTheDaemonStillRunsWhenTheLogCannotBeOpened() throws {
+        XCTAssertEqual(exitCode(reap(try sh("exit 7", logPath: dir))), 7)
+    }
+
+    /// The child's environment is the one handed over, observed from the child.
+    func testTheChildSeesTheEnvironmentItWasGiven() throws {
+        _ = reap(try sh("printenv PATH; printenv MARK", environment: ["PATH": "/x/bin:/usr/bin:/bin", "MARK": "m"]))
+        XCTAssertEqual(logText(), "/x/bin:/usr/bin:/bin\nm\n")
+    }
+
     /// A log over the cap moves to `.1`, replacing an older one, and the new
     /// session starts an empty file.
     func testALogOverTheCapMovesAsideAndTheNewOneStartsEmpty() throws {
@@ -129,17 +140,6 @@ final class DaemonSpawnerTests: XCTestCase {
 
         XCTAssertEqual(FileManager.default.contents(atPath: log)?.count, cap + 5)
         XCTAssertTrue(logText().hasSuffix("xNEW\n"))
-    }
-
-    /// An unopenable log path costs the log, never the daemon.
-    func testTheDaemonStillRunsWhenTheLogCannotBeOpened() throws {
-        XCTAssertEqual(exitCode(reap(try sh("exit 7", logPath: dir))), 7)
-    }
-
-    /// The child's environment is the one handed over, observed from the child.
-    func testTheChildSeesTheEnvironmentItWasGiven() throws {
-        _ = reap(try sh("printenv PATH; printenv MARK", environment: ["PATH": "/x/bin:/usr/bin:/bin", "MARK": "m"]))
-        XCTAssertEqual(logText(), "/x/bin:/usr/bin:/bin\nm\n")
     }
 
     /// The daemon must not hold the launching terminal's stdin.
