@@ -363,7 +363,7 @@ async fn a_dir_whose_watch_failed_is_unwatched_again() {
     let (fs, _unheld) = stuck_fs();
     let daemon = held(&tmp, Box::new(WatchFails(d.clone(), calls.clone())), fs).await;
 
-    assert!(try_open(&daemon, &doc).await.is_err());
+    assert!(try_open(&daemon, &doc).await.is_err_and(|e| e.contains("too many paths")));
     assert!(!watched(&daemon, &d).await);
     assert_eq!(calls.of(Change::Unwatch, &d), 1);
 

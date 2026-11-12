@@ -17,16 +17,21 @@ use tokio::sync::oneshot;
 /// time between two of its looks.
 pub const BURST: Duration = Duration::from_millis(100);
 
+/// `unwatch` is also called for a dir whose `watch` failed.
 pub trait WakeSource: Send {
     fn watch(&mut self, dir: &Path) -> anyhow::Result<()>;
     fn unwatch(&mut self, dir: &Path) -> anyhow::Result<()>;
 }
 
-/// FSEvents through `notify`. A `watch` or `unwatch` restarts its one stream;
-/// notify 9 starts the new one at the last event the old one delivered, where
-/// 8.2 lost the events not delivered yet (#253). The watcher thread still
-/// wakes a look after either. No debouncer (#258).
+/// FSEvents through `notify`. A `watch` or `unwatch` that changes its paths
+/// restarts its one stream; notify 9 starts the new one at the last event the
+/// old one delivered, where 8.2 lost the events not delivered yet (#253). The
+/// watcher thread still wakes a look after either. No debouncer (#258).
 pub struct NotifySource(RecommendedWatcher);
+
+fn is_watch_not_found(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<notify::Error>().is_some_and(|e| matches!(e.kind, notify::ErrorKind::WatchNotFound))
+}
 
 impl NotifySource {
     /// `wake` runs on the watcher's thread, for each event.
@@ -205,7 +210,11 @@ impl<W: Fn(&Path) -> bool, O: Fn(&Path) -> bool, F: Fn()> Thread<W, O, F> {
                 // stream, which then does not start again
                 // (`FsEventWatcher::watch_inner`); a dir not kept here is
                 // never unwatched, so the watch is taken back.
-                let _ = self.source.unwatch(dir);
+                if let Err(e) = self.source.unwatch(dir)
+                    && !is_watch_not_found(&e)
+                {
+                    tracing::warn!("cannot take back the watch of {}: {e}", dir.display());
+                }
             }
             ("watch", called)
         } else {
