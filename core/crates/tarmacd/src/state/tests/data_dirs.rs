@@ -386,7 +386,10 @@ async fn a_data_directory_made_later_is_watched_at_a_wake_of_the_file_system() {
     assert_eq!(calls.of(Change::Watch, &sub), 0);
 }
 
-// S14c. The resolve of `sub` does not return.
+// S14c. The resolve of `sub` does not return. Only that call is held: a
+// stamp of the data file held too would leave its key busy, and a look skips
+// a busy key with no call (`PathGate::stamps`), so nothing could show that
+// the registration stands.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_data_directory_whose_resolve_does_not_answer_is_watched_when_it_returns() {
     let mut card = Card::silent("s14c").await;
@@ -398,11 +401,12 @@ async fn a_data_directory_whose_resolve_does_not_answer_is_watched_when_it_retur
     let (daemon, dash, data) = (card.daemon.clone(), card.dash.clone(), stats.clone());
     assert!(answers(async move { name(&daemon, &dash, Some(&data)).await }).await);
     assert!(before.elapsed() < 2 * LIMIT, "it waited {:?}", before.elapsed());
+    assert_eq!(next_change(&mut card.app).await.0, stats, "the answer");
     assert_eq!(card.fs.held(Call::ResolveDir), 1);
     assert!(!card.watched(&sub).await);
-    let stamps = card.fs.calls(Call::Stamp);
+    let changed = change(&stats);
     look_at(&card.daemon).await;
-    assert!(card.fs.calls(Call::Stamp) > stamps, "the registration stands: a look reads the file");
+    assert_eq!(file_events(&mut card.app), vec![(stats.clone(), changed)], "the registration stands");
 
     card.let_go();
     let deadline = std::time::Instant::now() + Duration::from_secs(2);
