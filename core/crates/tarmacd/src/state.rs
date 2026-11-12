@@ -224,9 +224,10 @@ impl Daemon {
     /// the unwatch of one would end the other. Nothing is counted for a file
     /// in the doc's own directory, which the doc counts, nor for a directory
     /// that resolves to that one, out of the doc's tree, or to a hidden name
-    /// below it. A directory that cannot be resolved or watched gives its
-    /// count back at once and is `Wanted`. True with it when the stream
-    /// restarted: the caller looks at the docs, as `open_doc` does.
+    /// below it. A directory that cannot be resolved takes no count, and one
+    /// whose watch fails gives its count back at once: both are `Wanted`.
+    /// True with it when the stream restarted: the caller looks at the docs,
+    /// as `open_doc` does.
     pub async fn count_data_dir(&self, doc: &Path, data: &Path) -> (DataDir, bool) {
         let (Some(doc_dir), Some(dir)) = (doc.parent(), data.parent()) else { return (DataDir::Uncounted, false) };
         if dir == doc_dir {
@@ -335,11 +336,10 @@ impl Daemon {
 
     /// Removes a board and takes its docs, and their data files'
     /// directories, off their counts, dropping the watch of each directory
-    /// that is left empty. False for the
-    /// last board or an unknown id. It does not look at the docs: its caller
-    /// sends the active board next, and that send looks
-    /// (`conn::change_and_send_active_board`), and the watcher thread wakes a
-    /// look after its unwatches.
+    /// that is left empty. False for the last board or an unknown id. It does
+    /// not look at the docs: its caller sends the active board next, and that
+    /// send looks (`conn::change_and_send_active_board`), and the watcher
+    /// thread wakes a look after its unwatches.
     pub async fn delete_board(&self, id: &str) -> bool {
         let deleted = self.boards.lock().await.delete(id);
         let Some(board) = deleted else { return false };

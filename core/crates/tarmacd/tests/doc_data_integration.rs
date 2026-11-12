@@ -411,6 +411,8 @@ fn card_reading_sub(daemon: &TestDaemon, app: &mut Conn) -> (Card, String) {
 // file_event would carry the text as sent or the file it leads to. The
 // daemon's cwd is the card's directory, so that the relative name names a
 // file too.
+// A doc named with `//` is judged from its registry key: the same `//` in its
+// `data` is refused.
 #[test]
 fn a_doc_data_that_is_not_a_clean_path_under_the_directory_is_refused() {
     let root = temp_dir();
@@ -448,8 +450,10 @@ fn a_doc_data_that_is_not_a_clean_path_under_the_directory_is_refused() {
     for data in &sent {
         doc_data(&mut app, "board-0", &dash, Some(data));
     }
+    let under_doubled = format!("{parent}//docs/sub/x.json");
+    doc_data(&mut app, "board-0", &format!("{parent}//docs/dash.html"), Some(&under_doubled));
 
-    let led_to = [&beside, &in_sub, &above, &elsewhere, &sibling, &d];
+    let led_to = [&beside, &in_sub, &above, &elsewhere, &sibling, &d, &under_doubled];
     let refused: Vec<&str> = sent.iter().map(String::as_str).chain(led_to.iter().map(|p| p.as_str())).collect();
     none_at_once_for(&mut app, &other, &refused);
     for file in [&beside, &in_sub, &above, &elsewhere, &sibling] {

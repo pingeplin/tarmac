@@ -41,10 +41,16 @@ struct Card {
 impl Card {
     /// `tmp` is canonical (`canon_tmp`).
     async fn on(tmp: PathBuf, source: Box<dyn WakeSource>) -> Self {
+        Card::within(tmp, source, LIMIT).await
+    }
+
+    /// `on`, with a gate that waits `limit` for each call: a test that lets
+    /// a held call go is then sure it returns in time.
+    async fn within(tmp: PathBuf, source: Box<dyn WakeSource>, limit: Duration) -> Self {
         let dir = tmp.join("d");
         let dash = write_doc(dir.join("dash.html"));
         let (fs, release) = stuck_fs();
-        let daemon = held(&tmp, source, fs.clone()).await;
+        let daemon = Daemon::with_fs(tmp.join("state.json"), source, Arc::new(Wake::default()), fs.clone(), limit).await;
         let (generation, mut app) = take_the_place(&daemon).await;
         open_doc(&daemon, None, &dash).await;
         flushed(&mut app, &dash).await;
@@ -105,6 +111,9 @@ async fn a_doc_data_that_is_refused_asks_for_no_watch() {
     for data in &sent {
         assert!(!name(&card.daemon, &card.dash, Some(Path::new(data))).await, "{data}");
     }
+    let doubled = PathBuf::from(format!("{tmp}//d/dash.html"));
+    let under_doubled = PathBuf::from(format!("{tmp}//d/sub/x.json"));
+    assert!(!name(&card.daemon, &doubled, Some(&under_doubled)).await, "a doc written with //");
 
     assert_eq!(watches(&calls), 1, "the doc's directory only");
     for dir in [card.dir.join("sub"), card.tmp.clone(), card.tmp.join("away"), card.tmp.join("dx")] {
@@ -155,6 +164,42 @@ async fn a_watch_that_fails_is_tried_again_at_a_wake_of_the_file_system_only() {
     eventually("a second try", || calls.of(Change::Watch, &sub) == 2).await;
     tokio::time::sleep(4 * crate::watch::BURST).await;
     assert_eq!(calls.of(Change::Watch, &sub), 2, "one try for one wake");
+
+    for tries in [3, 4] {
+        card.daemon.wake.from_fs();
+        eventually("the next try", || calls.of(Change::Watch, &sub) == tries).await;
+    }
+}
+
+// S14d
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_same_name_again_tries_a_directory_that_is_wanted() {
+    let card = Card::silent("s14d").await;
+    let sub = card.dir.join("sub");
+    let stats = sub.join("stats.json");
+    assert!(name(&card.daemon, &card.dash, Some(&stats)).await);
+    std::fs::create_dir(&sub).unwrap();
+
+    assert!(name(&card.daemon, &card.dash, Some(&stats)).await);
+    assert!(card.watched(&sub).await);
+}
+
+// S14e
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_registration_cleared_during_its_try_keeps_nothing_of_it() {
+    let mut card = Card::within(canon_tmp("s14e"), Box::new(Silent), Duration::from_secs(30)).await;
+    let sub = card.dir.join("sub");
+    assert!(name(&card.daemon, &card.dash, Some(&sub.join("stats.json"))).await);
+    std::fs::create_dir(&sub).unwrap();
+    card.fs.hold(Call::ResolveDir, &sub);
+
+    let changed = change(&card.dash);
+    card.daemon.wake.from_fs();
+    eventually("the try's held resolve", || card.fs.held(Call::ResolveDir) == 1).await;
+    assert!(name(&card.daemon, &card.dash, None).await);
+    card.let_go();
+    assert_eq!(next_change(&mut card.app).await, (card.dash.clone(), changed), "the look after the try");
+    assert!(!card.watched(&sub).await);
 }
 
 // S17
@@ -235,6 +280,25 @@ async fn closing_the_doc_gives_back_the_count_of_its_data_directory() {
     assert!(card.daemon.close_doc(&card.dash).await);
     assert!(!card.watched(&sub).await);
     assert!(card.watched(&card.dir).await);
+}
+
+// S21a
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_doc_closed_while_its_data_directory_is_counted_gives_the_count_back() {
+    let mut card = Card::within(canon_tmp("s21a"), Box::new(Silent), Duration::from_secs(30)).await;
+    let sub = card.dir.join("sub");
+    let stats = write_doc(sub.join("stats.json"));
+    card.fs.hold(Call::ResolveDir, &sub);
+
+    let naming = {
+        let (daemon, dash) = (card.daemon.clone(), card.dash.clone());
+        tokio::spawn(async move { name(&daemon, &dash, Some(&stats)).await })
+    };
+    eventually("the held resolve", || card.fs.held(Call::ResolveDir) == 1).await;
+    assert!(card.daemon.close_doc(&card.dash).await);
+    card.let_go();
+    assert!(!within(naming).await, "the doc is gone");
+    assert!(!card.watched(&sub).await);
 }
 
 // S22
@@ -562,4 +626,27 @@ async fn the_end_of_an_app_that_lost_its_place_drops_nothing() {
         look_at(&card.daemon).await;
         assert_eq!(file_events(&mut b), vec![(stats, changed)], "A ends first: {a_ends_first}");
     }
+}
+
+// S26c. The name is in flight, with no count of its own (it was held), when
+// another connection takes the place and drops the registration.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_name_in_flight_when_the_place_is_taken_leaves_the_new_apps_name_counted() {
+    let mut card = Card::silent("s26c").await;
+    let stats = card.reading("sub/stats.json").await;
+    let sub = card.dir.join("sub");
+    card.fs.hold(Call::Stamp, &sub);
+
+    let again = {
+        let (daemon, dash, stats) = (card.daemon.clone(), card.dash.clone(), stats.clone());
+        tokio::spawn(async move { name(&daemon, &dash, Some(&stats)).await })
+    };
+    eventually("the held stamp", || card.fs.held(Call::Stamp) == 1).await;
+    let (_, mut b) = take_the_place(&card.daemon).await;
+    card.let_go();
+    assert!(within(again).await);
+
+    assert!(name(&card.daemon, &card.dash, Some(&stats)).await);
+    assert_eq!(next_change(&mut b).await.0, stats);
+    assert!(card.watched(&sub).await);
 }

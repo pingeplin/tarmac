@@ -335,13 +335,23 @@ pub async fn stat_and_push(daemon: &Arc<Daemon>, path: &Path) -> bool {
 /// False, with nothing recorded, for an unknown board (no fall-back to the
 /// active one), an unknown doc on it, or a `data` that `is_under` refuses.
 pub async fn record_data(daemon: &Daemon, board: &str, doc: &Path, data: Option<PathBuf>) -> bool {
+    // The doc as its registry key writes it: `Path` finds `<p>//d/dash.html`
+    // under `<p>/d/dash.html`, but `data` is judged on its bytes.
+    let known = daemon.boards.lock().await.known_registry(board).and_then(|reg| {
+        let (key, _) = reg.docs.get_key_value(doc)?;
+        Some((key.clone(), reg.counts_anew(doc, data.as_deref())?))
+    });
+    let Some((doc, anew)) = known else { return false };
+    let doc = doc.as_path();
     if data.as_deref().is_some_and(|data| !is_under(doc, data)) {
         return false;
     }
-    let anew = daemon.boards.lock().await.known_registry(board).and_then(|reg| reg.counts_anew(doc, data.as_deref()));
-    let Some(anew) = anew else { return false };
-    let (dir, watched) = match data.as_deref().filter(|_| anew) {
-        Some(data) => daemon.count_data_dir(doc, data).await,
+    // A name held already takes no count; if it is not held by the look
+    // (the app's place was taken meanwhile and dropped it), it is `Wanted`,
+    // so that the next `doc_data` for it, or a wake, counts it.
+    let (dir, watched) = match data.as_deref() {
+        Some(data) if anew => daemon.count_data_dir(doc, data).await,
+        Some(_) => (DataDir::Wanted, false),
         None => (DataDir::Uncounted, false),
     };
     let recorded = daemon
