@@ -37,8 +37,9 @@ extension AppController {
 
     func handle(_ message: Message) {
         switch message {
-        case .helloOK:
+        case .helloOK(_, _, let daemonPid, _, _):
             connected = true
+            daemonSession.daemonPid = daemonPid.flatMap { Int32(exactly: $0) }
             // The daemon keeps what a card reads in memory only: a daemon
             // that was restarted knows none of it.
             dataFiles.resent.forEach(client.send)

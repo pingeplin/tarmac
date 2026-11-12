@@ -8,4 +8,6 @@ struct DaemonSession {
     var restoredBoards: Set<String> = []
     /// The restart toast has been shown since the connection last dropped.
     var restartNotified = false
+    /// `hello_ok.daemon_pid`: the daemon the sample log reads the memory of.
+    var daemonPid: Int32?
 }

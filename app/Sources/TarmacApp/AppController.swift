@@ -137,6 +137,11 @@ final class AppController {
     var borrow = CardBorrow<CardID>()
     /// The data file each HTML card reads, across every board.
     var dataFiles = CardDataRegistrations()
+    lazy var sampleLog = SampleLog(
+        path: SampleLogFile.path(socketPath: client.socketPath),
+        resource: SampleLine.Resource(pid: getpid(), version: client.appVersion),
+        gather: { [weak self] in self?.gatherSample() }
+    )
 
     /// Shared HH:mm formatter (en_US_POSIX). DateFormatter construction is
     /// expensive (ICU / locale load), and the offscreen hints ask for one per
@@ -238,6 +243,7 @@ final class AppController {
         clickFocusMonitor = nil
         scrollRouteMonitor = nil
         magnifyRouteMonitor = nil
+        sampleLog.stop()
         client.close()
     }
 }

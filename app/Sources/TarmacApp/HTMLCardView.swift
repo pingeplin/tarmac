@@ -25,6 +25,9 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
     /// The document's current load names this data file, or none: the
     /// daemon is to be told (spec 2611.0002).
     var onDataFile: ((String?) -> Void)?
+    /// The pending events went over `HTMLCardSession.pendingLimit`; the
+    /// count is the one that did.
+    var onPendingOverLimit: ((Int) -> Void)?
 
     /// The open console lies over the bottom of the document.
     var scrollCover: CGFloat { console.isHidden ? 0 : console.frame.height }
@@ -204,6 +207,13 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
         session.event(text).forEach(apply)
     }
 
+    /// The largest count of pending events since the call before.
+    func takeLargestPending() -> Int {
+        session.takeLargestPending()
+    }
+
+    var webProcessID: Int32? { webView.webProcessID }
+
     /// The texts are an argument, never part of the script. With no host page
     /// they are dropped, as a delivery is.
     private func flushEvents() {
@@ -316,6 +326,7 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
         // The events of one main-loop turn go to the document in one call:
         // the flush is queued behind the frames already on the main queue.
         case .flushEvents: DispatchQueue.main.async { [weak self] in self?.flushEvents() }
+        case .pendingOverLimit(let count): onPendingOverLimit?(count)
         }
     }
 

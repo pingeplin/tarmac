@@ -42,6 +42,9 @@ extension AppController {
         bind(card, path: path, on: board)
         wireBorrow(card)
         wireDataFile(card, path: path, on: board)
+        card.htmlBody?.onPendingOverLimit = { [weak self] count in
+            self?.sampleLog.pendingOverLimit(path: path, count: count)
+        }
         card.docBody?.refresh(lastChangedMs: board.store.doc(for: path)?.lastChangedMs)
         board.view.recomputeEdges()
         return card

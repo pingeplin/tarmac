@@ -37,6 +37,7 @@ extension AppController {
             self?.viewReady = true
             self?.maybeSpawn()
         }
+        startSampling()
     }
 
     // MARK: - Keys
