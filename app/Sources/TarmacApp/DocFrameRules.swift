@@ -11,11 +11,12 @@ final class DocFrameRules {
     static let shared = DocFrameRules()
 
     private enum State {
-        case compiling([(WKContentRuleList?) -> Void])
+        case compiling
         case settled(WKContentRuleList?)
     }
 
-    private var state = State.compiling([])
+    private var state = State.compiling
+    private var waiting: [(WKContentRuleList?) -> Void] = []
 
     private init() {
         // A store of its own: the default one is a folder in the user's
@@ -38,14 +39,16 @@ final class DocFrameRules {
     /// Calls `then` with the compiled rule, or with nil if WebKit refused it.
     func whenSettled(_ then: @escaping (WKContentRuleList?) -> Void) {
         switch state {
-        case .compiling(let waiting): state = .compiling(waiting + [then])
+        case .compiling: waiting.append(then)
         case .settled(let rules): then(rules)
         }
     }
 
     private func settle(_ rules: WKContentRuleList?) {
-        guard case .compiling(let waiting) = state else { return }
+        guard case .compiling = state else { return }
         state = .settled(rules)
-        waiting.forEach { $0(rules) }
+        let ready = waiting
+        waiting = []
+        ready.forEach { $0(rules) }
     }
 }
