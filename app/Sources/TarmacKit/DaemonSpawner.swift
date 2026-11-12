@@ -6,10 +6,11 @@ import Foundation
 /// session nor hand back a child it does not also wait on.
 public enum DaemonSpawner {
     /// The child's pid, or nil when nothing was launched. `environment` is the
-    /// child's whole environment. `logPath` receives stdout and stderr, truncated
-    /// per launch so the file is bounded by one daemon session; if it cannot be
-    /// opened the daemon still starts, on the app's own stdout and stderr — a bad
-    /// log directory must never cost the daemon.
+    /// child's whole environment. `logPath` receives stdout and stderr, appended
+    /// to so that a crashed daemon's panic survives the respawns after it; a log
+    /// over 1 MiB first moves to `<logPath>.1`. A log that cannot be moved keeps
+    /// growing, and one that cannot be opened leaves the daemon on the app's own
+    /// stdout and stderr — a bad log directory must never cost the daemon.
     public static func spawn(
         program: String,
         arguments: [String] = [],
@@ -68,10 +69,18 @@ public enum DaemonSpawner {
         return waitpid(pid, &status, WNOHANG)
     }
 
+    /// One size cap rather than one file per spawn bounds the log: an outage can
+    /// spawn more than once, and each spawn would rotate the crash log away.
+    private static let logCap: off_t = 1 << 20
+
     private static func openLog(at path: String) -> Int32 {
         let directory = (path as NSString).deletingLastPathComponent
         try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
-        return open(path, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
+        var info = stat()
+        if stat(path, &info) == 0, info.st_size > logCap {
+            rename(path, path + ".1")
+        }
+        return open(path, O_WRONLY | O_CREAT | O_APPEND, 0o644)
     }
 
     private static func cStrings(_ strings: [String]) -> [UnsafeMutablePointer<CChar>?] {
