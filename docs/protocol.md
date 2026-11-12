@@ -155,7 +155,8 @@ daemon → app:
 Watch the doc's **parent directory** (non-recursive) — editors and agents replace
 files atomically, so watching the file inode directly misses rewrites. An event of
 the watcher only wakes the daemon. The daemon then stats each doc of the active
-board and sends a `file_event` for each file that differs — in mtime, length or
+board, and each data file that one of them reads (`doc_data`), and sends a
+`file_event` for each file that differs — in mtime, length or
 inode — from what the daemon last saw for that board and doc. So `mtime_ms` can be
 the one of the `file_event` before. From the watcher: at most one `file_event` for
 a doc per 100 ms. If the file is deleted, stop emitting until the path exists again
@@ -499,6 +500,54 @@ all existing vectors decode unchanged.
 |---|---|---|---|
 | `path` | string (required) | — | the doc to re-stat (the registry key) |
 
+## Naming a doc's data file (issue #311)
+
+    {t:"doc_data", board_id, path, data}            — app → daemon
+    {t:"doc_data", board_id, path}                  — app → daemon: the doc reads none
+
+An HTML doc names one JSON file beside it, its **data file**; the app reads that
+file and hands its content to the loaded document. The daemon reports the data
+file as it reports a doc: with a `file_event {path: <data>, mtime_ms}`. There is no
+reply frame.
+
+The daemon records `data` with the doc entry of `path` on board `board_id`. A
+`doc_data` with a `data` replaces the doc's data file; one with no `data` clears
+it. It is in memory only: never in the state file, and gone when the doc is
+closed or its board deleted. It is ignored, with nothing recorded, for an unknown
+`board_id` (there is **no** fall-back to the active board), for a `path` that is
+not a doc of that board, and for a `data` that is not a file in the doc's own
+directory: relative, in another directory (a subdirectory included), or naming no
+file (`<dir>/..`). The directory is compared component by component, as bytes, with no link followed and
+no `..` resolved, so `<dir>/sub/../x.json` is refused.
+
+- **At once.** When the board is the active one and the file is there, the daemon
+  takes the file as seen and pushes a `file_event` for `data`, for every
+  `doc_data` that names it, the same name again included. A file that is not
+  there pushes nothing.
+- **Then, for each change.** The data files of the active board are compared in
+  each look, as its docs are (see File watching): a file that differs from what
+  was seen for that path on that board — in mtime, length or inode — gets a
+  `file_event`. A file that is gone pushes nothing and is a change when it is
+  back. One change of a path gives one `file_event`, also when two docs name it
+  or when it is a doc of the board too. No directory is watched for a data file:
+  it is in its doc's directory, which is watched.
+- **A board in the background** is not answered at once. Each `doc_data` with a
+  `data` starts from nothing seen, so when that board is made active a
+  `file_event` for the data file follows its `restore`, if the file is there;
+  after that, as for a doc, one follows the `restore` when the file changed.
+- A data `file_event` that reaches no app is not held: the app sends `doc_data`
+  again after it connects, and the answer brings the content.
+
+`doc_refresh` does not look at data files. New **additive app→daemon type**: a
+daemon that does not know it ignores it under the unknown-type rule, and the card
+gets no data; all existing vectors decode unchanged.
+
+| key | type | missing ⇒ | semantics |
+|---|---|---|---|
+| `board_id` | string (required) | — | the board of the doc; an unknown id is ignored |
+| `path` | string (required) | — | the doc that reads the file (the registry key) |
+| `data` | string | the doc reads no data file | absolute path of the data file, in the doc's directory |
+
 ## Replaying a terminal's scrollback on demand (issue #41)
 
     {t:"scrollback_request", term_id}               — app → daemon
@@ -634,3 +683,21 @@ round-trip. Byte-exact encoder output is NOT required (key order may legally dif
         83 a1 74 aa 73 63 72 6f 6c 6c 62 61 63 6b
         a7 74 65 72 6d 5f 69 64 a2 74 31
         a5 62 79 74 65 73 c4 03 68 69 0a
+
+14. (issue #311) `{t:"doc_data", board_id:"board-0", path:"/a/dash.html",
+    data:"/a/stats.json"}` — new additive app→daemon type; decodes by tag and
+    round-trips; existing vectors V1–V13 are unaffected. Keys in the order
+    `rmp_serde::to_vec_named` writes them.
+
+        84 a1 74 a8 64 6f 63 5f 64 61 74 61 a8 62 6f 61 72 64 5f 69
+        64 a7 62 6f 61 72 64 2d 30 a4 70 61 74 68 ac 2f 61 2f 64 61
+        73 68 2e 68 74 6d 6c a4 64 61 74 61 ad 2f 61 2f 73 74 61 74
+        73 2e 6a 73 6f 6e
+
+15. (issue #311) `{t:"doc_data", board_id:"board-0", path:"/a/dash.html"}` — the
+    same type with no `data`: the doc reads none. `data` is omitted, not nil, so
+    the map has three keys.
+
+        83 a1 74 a8 64 6f 63 5f 64 61 74 61 a8 62 6f 61 72 64 5f 69
+        64 a7 62 6f 61 72 64 2d 30 a4 70 61 74 68 ac 2f 61 2f 64 61
+        73 68 2e 68 74 6d 6c

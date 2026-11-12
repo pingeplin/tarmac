@@ -20,6 +20,12 @@ enum StrictJSON {
     static func isValid(_ data: Data) -> Bool {
         let bytes = [UInt8](data)
         guard String(validating: bytes, as: UTF8.self) != nil else { return false }
+        return isValid(utf8: bytes)
+    }
+
+    /// The grammar alone: `bytes` must already be known to be UTF-8, for the
+    /// walk takes any byte of 0x20 or above inside a string.
+    static func isValid(utf8 bytes: [UInt8]) -> Bool {
         var reader = Reader(bytes: bytes)
         return reader.document()
     }

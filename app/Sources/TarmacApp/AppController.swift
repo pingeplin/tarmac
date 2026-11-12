@@ -135,6 +135,8 @@ final class AppController {
 
     /// The one HTML card whose shield is down, across every board.
     var borrow = CardBorrow<CardID>()
+    /// The data file each HTML card reads, across every board.
+    var dataFiles = CardDataRegistrations()
 
     /// Shared HH:mm formatter (en_US_POSIX). DateFormatter construction is
     /// expensive (ICU / locale load), and the offscreen hints ask for one per
