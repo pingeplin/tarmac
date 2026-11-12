@@ -24,12 +24,26 @@ public struct HTMLCardSession: Equatable, Sendable {
         /// after the main-loop turn: the view takes them then (`takeEvents`).
         case flushEvents
         /// The pending events went over `pendingLimit` (spec 2611.0004): the
-        /// sample log is to say so. Once for each fill, as the count only
-        /// grows by one and is only ever emptied whole.
+        /// sample log is to say so. Only the first time since the peak was
+        /// last taken, so a card that goes over in each turn of the main
+        /// loop cannot fill the log (#331).
         case pendingOverLimit(Int)
     }
 
     public static let pendingLimit = 1_000
+
+    /// What the pending events did since the sample log last asked.
+    public struct PendingPeak: Equatable, Sendable {
+        /// The most events held at one time.
+        public let largest: Int
+        /// How many times the count went over `pendingLimit`.
+        public let timesOver: Int
+
+        public init(largest: Int, timesOver: Int) {
+            self.largest = largest
+            self.timesOver = timesOver
+        }
+    }
 
     /// A read of `file`, the data file of the card whose file is `html`.
     public struct DataRead: Equatable, Sendable {
@@ -57,6 +71,9 @@ public struct HTMLCardSession: Equatable, Sendable {
     /// The most `events` held since the sample log last asked. Neither a take
     /// nor a reload resets it: a timer that reads the count sees it emptied.
     private var largestPending = 0
+    /// The fills that went over `pendingLimit` since then. A fill goes over
+    /// once: the count only grows by one and is only ever emptied whole.
+    private var timesOver = 0
 
     /// `html` is the card's file, an absolute and resolved path.
     public init(html: String) {
@@ -184,14 +201,16 @@ public struct HTMLCardSession: Equatable, Sendable {
         guard isReady else { return [] }
         events.append(text)
         largestPending = max(largestPending, events.count)
-        if events.count == Self.pendingLimit + 1 { return [.pendingOverLimit(events.count)] }
+        if events.count == Self.pendingLimit + 1 {
+            timesOver += 1
+            return timesOver == 1 ? [.pendingOverLimit(events.count)] : []
+        }
         return events.count == 1 ? [.flushEvents] : []
     }
 
-    /// The largest count of pending events since the call before, 0 for none.
-    public mutating func takeLargestPending() -> Int {
-        defer { largestPending = 0 }
-        return largestPending
+    public mutating func takePendingPeak() -> PendingPeak {
+        defer { (largestPending, timesOver) = (0, 0) }
+        return PendingPeak(largest: largestPending, timesOver: timesOver)
     }
 
     public mutating func takeEvents() -> [String] {
