@@ -22,7 +22,7 @@ final class SampleLineTests: XCTestCase {
             cardsHTML: 3,
             cardsMarkdown: 2,
             cardsTerminal: 1,
-            pending: [Pending(path: "/a/dash.html", count: 6)],
+            pending: [Pending(path: "/a/dash.html", count: 6, timesOver: 0)],
             webContent: [
                 WebContent(pid: 9201, path: "/a/dash.html", footprint: 120_390_544),
                 WebContent(pid: 9202, path: "/a/b.md", footprint: 100_000_000),
@@ -48,7 +48,7 @@ final class SampleLineTests: XCTestCase {
 
     func testS3ASampleWithEveryValueIsExactlyTheExpectedText() throws {
         let line = SampleLine.sample(full, resource: resource, atMs: atMs)
-        XCTAssertEqual(line, #"{"attrs":{"tarmac.app.memory.footprint":149063264,"tarmac.boards.count":2,"tarmac.boards.loaded":1,"tarmac.card.pending_events.max":6,"tarmac.card.pending_events.path":"/a/dash.html","tarmac.cards.html":3,"tarmac.cards.markdown":2,"tarmac.cards.terminal":1,"tarmac.daemon.memory.footprint":6504928,"tarmac.daemon.pid":9160,"tarmac.webcontent.largest.memory.footprint":120390544,"tarmac.webcontent.largest.path":"/a/dash.html","tarmac.webcontent.memory.footprint":412876800,"tarmac.webcontent.processes":5},"event":"tarmac.sample","resource":{"process.pid":9156,"service.name":"tarmac-app","service.version":"0.20.1"},"severity":"INFO","ts":"2026-11-12T10:15:00.000Z"}"#)
+        XCTAssertEqual(line, #"{"attrs":{"tarmac.app.memory.footprint":149063264,"tarmac.boards.count":2,"tarmac.boards.loaded":1,"tarmac.card.pending_events.max":6,"tarmac.card.pending_events.over_limit.count":0,"tarmac.card.pending_events.path":"/a/dash.html","tarmac.cards.html":3,"tarmac.cards.markdown":2,"tarmac.cards.terminal":1,"tarmac.daemon.memory.footprint":6504928,"tarmac.daemon.pid":9160,"tarmac.webcontent.largest.memory.footprint":120390544,"tarmac.webcontent.largest.path":"/a/dash.html","tarmac.webcontent.memory.footprint":412876800,"tarmac.webcontent.processes":5},"event":"tarmac.sample","resource":{"process.pid":9156,"service.name":"tarmac-app","service.version":"0.20.1"},"severity":"INFO","ts":"2026-11-12T10:15:00.000Z"}"#)
         XCTAssertNoThrow(try object(line))
     }
 
@@ -121,8 +121,22 @@ final class SampleLineTests: XCTestCase {
         XCTAssertEqual(attrs["tarmac.webcontent.largest.path"] as? String, "/a/b.md")
     }
 
+    func testS7aTheTimesOverTheLimitAreSummedOverTheCardsAnd0IsWritten() throws {
+        for pending in [[], [Pending(path: "/a/dash.html", count: 6, timesOver: 0)]] {
+            var sample = full
+            sample.pending = pending
+            XCTAssertEqual(try attrs(of: sample)["tarmac.card.pending_events.over_limit.count"] as? Int, 0)
+        }
+        var sample = full
+        sample.pending = [
+            Pending(path: "/a/two.html", count: 1_001, timesOver: 2),
+            Pending(path: "/a/dash.html", count: 1_500, timesOver: 3),
+        ]
+        XCTAssertEqual(try attrs(of: sample)["tarmac.card.pending_events.over_limit.count"] as? Int, 5)
+    }
+
     func testS7APendingMaxOf0HasNoPathAndAMaxOf6NamesItsCard() throws {
-        for pending in [[], [Pending(path: "/a/dash.html", count: 0)]] {
+        for pending in [[], [Pending(path: "/a/dash.html", count: 0, timesOver: 0)]] {
             var sample = full
             sample.pending = pending
             let attrs = try attrs(of: sample)
@@ -131,9 +145,9 @@ final class SampleLineTests: XCTestCase {
         }
         var sample = full
         sample.pending = [
-            Pending(path: "/a/two.html", count: 2),
-            Pending(path: "/a/dash.html", count: 6),
-            Pending(path: "/a/five.html", count: 5),
+            Pending(path: "/a/two.html", count: 2, timesOver: 0),
+            Pending(path: "/a/dash.html", count: 6, timesOver: 0),
+            Pending(path: "/a/five.html", count: 5, timesOver: 0),
         ]
         let attrs = try attrs(of: sample)
         XCTAssertEqual(attrs["tarmac.card.pending_events.max"] as? Int, 6)
@@ -172,7 +186,7 @@ final class SampleLineTests: XCTestCase {
     func testS10APathWithAQuoteABackslashAndANonASCIILetterComesBackTheSame() throws {
         let path = #"/a/"q"\b/é.html"#
         var sample = full
-        sample.pending = [Pending(path: path, count: 1)]
+        sample.pending = [Pending(path: path, count: 1, timesOver: 0)]
         sample.webContent = [WebContent(pid: 1, path: path, footprint: 1)]
         let attrs = try attrs(of: sample)
         XCTAssertEqual(attrs["tarmac.card.pending_events.path"] as? String, path)

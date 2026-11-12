@@ -34,7 +34,8 @@ extension AppController {
                 }
                 if let html = card.htmlBody {
                     sample.cardsHTML += 1
-                    sample.pending.append(SampleLine.Pending(path: path, count: html.takeLargestPending()))
+                    let peak = html.takePendingPeak()
+                    sample.pending.append(SampleLine.Pending(path: path, count: peak.largest, timesOver: peak.timesOver))
                 } else {
                     sample.cardsMarkdown += 1
                 }

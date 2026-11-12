@@ -35,14 +35,16 @@ public enum SampleLine {
     }
 
     /// The largest count of pending events one HTML card reached since the
-    /// sample before.
+    /// sample before, and how many times that count went over the limit.
     public struct Pending: Equatable, Sendable {
         public let path: String
         public let count: Int
+        public let timesOver: Int
 
-        public init(path: String, count: Int) {
+        public init(path: String, count: Int, timesOver: Int) {
             self.path = path
             self.count = count
+            self.timesOver = timesOver
         }
     }
 
@@ -101,6 +103,7 @@ public enum SampleLine {
         }
         let pending = largest(sample.pending)
         attrs["tarmac.card.pending_events.max"] = number(pending?.count ?? 0)
+        attrs["tarmac.card.pending_events.over_limit.count"] = number(sample.pending.reduce(0) { $0 + $1.timesOver })
         if let pending { attrs["tarmac.card.pending_events.path"] = .string(pending.path) }
         let processes = distinctReadable(sample.webContent)
         if let top = processes.max(by: { $0.bytes < $1.bytes }) {

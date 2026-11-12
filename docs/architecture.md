@@ -729,8 +729,10 @@ there. So the app keeps a record of its own beside `tarmacd.log`:
   value that cannot be read is left out, with its partner keys.
 - **`tarmac.card.pending_events.over_limit`** (`WARN`): one line when the
   pending events of one HTML card go over 1,000 (`HTMLCardSession.pendingLimit`).
-  It is written again only after those events were emptied and the count goes
-  over again.
+  A card gives it once at most between two sample lines, so a card that goes
+  over in each turn of the main loop cannot fill the file (#331). The sample
+  line's `tarmac.card.pending_events.over_limit.count` is how many times the
+  HTML cards went over the limit since the sample before, 0 for none.
 - **Growth.** Before each append, not only at launch, a file over 1 MiB moves
   to `tarmac-app.jsonl.1`, which replaces an older one. A failed move or open
   drops the line. No directory is made.

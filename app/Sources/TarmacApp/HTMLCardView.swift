@@ -207,9 +207,8 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
         session.event(text).forEach(apply)
     }
 
-    /// The largest count of pending events since the call before.
-    func takeLargestPending() -> Int {
-        session.takeLargestPending()
+    func takePendingPeak() -> HTMLCardSession.PendingPeak {
+        session.takePendingPeak()
     }
 
     var webProcessID: Int32? { webView.webProcessID }

@@ -550,7 +550,7 @@ final class HTMLCardSessionTests: XCTestCase {
         XCTAssertEqual(session.takeEvents(), ["c"])
     }
 
-    // MARK: - the pending count (2611.0004 S18–S23)
+    // MARK: - the pending count (2611.0004 S18–S27)
 
     private let limit = HTMLCardSession.pendingLimit
 
@@ -572,8 +572,8 @@ final class HTMLCardSessionTests: XCTestCase {
     func test2611_0004S18TheLargestPendingCountIsTakenOnce() {
         var session = ready()
         _ = push(3, to: &session)
-        XCTAssertEqual(session.takeLargestPending(), 3)
-        XCTAssertEqual(session.takeLargestPending(), 0)
+        XCTAssertEqual(session.takePendingPeak().largest, 3)
+        XCTAssertEqual(session.takePendingPeak(), HTMLCardSession.PendingPeak(largest: 0, timesOver: 0))
     }
 
     /// Neither the last batch nor the sum of the batches.
@@ -583,23 +583,23 @@ final class HTMLCardSessionTests: XCTestCase {
         _ = session.takeEvents()
         _ = push(5, to: &session)
         _ = session.takeEvents()
-        XCTAssertEqual(session.takeLargestPending(), 5)
+        XCTAssertEqual(session.takePendingPeak().largest, 5)
 
         _ = push(5, to: &session)
         _ = session.takeEvents()
         _ = push(2, to: &session)
         _ = session.takeEvents()
-        XCTAssertEqual(session.takeLargestPending(), 5)
+        XCTAssertEqual(session.takePendingPeak().largest, 5)
     }
 
     func test2611_0004S20ACardNotReadyKeepsNoCount() {
         var session = HTMLCardSession()
         let load = session.reloaded()
-        _ = push(4, to: &session)
-        XCTAssertEqual(session.takeLargestPending(), 0)
+        _ = push(limit + 1, to: &session)
+        XCTAssertEqual(session.takePendingPeak(), HTMLCardSession.PendingPeak(largest: 0, timesOver: 0))
         _ = session.handle(.ready(meta: nil, data: nil, load: load), borrowed: false)
         _ = push(1, to: &session)
-        XCTAssertEqual(session.takeLargestPending(), 1, "the same card counts once it is ready")
+        XCTAssertEqual(session.takePendingPeak().largest, 1, "the same card counts once it is ready")
     }
 
     func test2611_0004TheLimitIs1000() {
@@ -613,29 +613,68 @@ final class HTMLCardSessionTests: XCTestCase {
         XCTAssertEqual(given[1_001], [.pendingOverLimit(1_001)])
     }
 
-    func test2611_0004S22ItIsSaidAgainAfterATakeAndAnotherOverflow() {
+    func test2611_0004S22AnotherOverflowBeforeTheNextPeakTakeSaysNothing() {
         var session = ready()
         _ = push(limit + 1, to: &session)
         _ = session.takeEvents()
-        let given = overLimit(push(limit + 1, to: &session))
-        XCTAssertEqual(given[limit + 1], [.pendingOverLimit(limit + 1)])
-        XCTAssertEqual(given.count, 1)
+        XCTAssertEqual(overLimit(push(limit + 2, to: &session)), [:])
+        XCTAssertEqual(session.takePendingPeak().timesOver, 2)
     }
 
-    /// A reload empties the events too, so the next overflow is said again.
-    func test2611_0004S22aItIsSaidAgainAfterAReloadAndAnotherOverflow() {
+    /// A reload empties the events too, and makes the word no more possible.
+    func test2611_0004S22AnotherOverflowAfterAReloadSaysNothing() {
         var session = ready()
         _ = push(limit + 1, to: &session)
         let load = session.reloaded()
         _ = session.handle(.ready(meta: nil, data: nil, load: load), borrowed: false)
-        let given = overLimit(push(limit + 1, to: &session))
-        XCTAssertEqual(given[limit + 1], [.pendingOverLimit(limit + 1)])
+        XCTAssertEqual(overLimit(push(limit + 2, to: &session)), [:])
+        XCTAssertEqual(session.takePendingPeak().timesOver, 2)
+    }
+
+    func test2611_0004S24ItIsSaidAgainOnceAfterThePeakWasTaken() {
+        var session = ready()
+        _ = push(limit + 1, to: &session)
+        _ = session.takeEvents()
+        _ = push(limit + 1, to: &session)
+        _ = session.takePendingPeak()
+        _ = session.takeEvents()
+        let given = overLimit(push(limit + 2, to: &session))
+        XCTAssertEqual(given, [limit + 1: [.pendingOverLimit(limit + 1)]])
+        XCTAssertEqual(session.takePendingPeak().timesOver, 1)
+    }
+
+    func test2611_0004S25EachFillOverTheLimitIsCountedAndOnlyTheFirstIsSaid() {
+        var session = ready()
+        var said = 0
+        for _ in 0..<3 {
+            said += overLimit(push(limit + 1, to: &session)).count
+            _ = session.takeEvents()
+        }
+        XCTAssertEqual(said, 1)
+        XCTAssertEqual(session.takePendingPeak().timesOver, 3)
+        XCTAssertEqual(session.takePendingPeak().timesOver, 0)
+    }
+
+    /// The count went over the limit before the take, not after it.
+    func test2611_0004S26AFillStillOverTheLimitAtATakeIsNotCountedAgain() {
+        var session = ready()
+        _ = push(limit + 1, to: &session)
+        XCTAssertEqual(session.takePendingPeak().timesOver, 1)
+        XCTAssertEqual(overLimit(push(5, to: &session)), [:])
+        XCTAssertEqual(session.takePendingPeak().timesOver, 0)
+    }
+
+    func test2611_0004S27ACountAtTheLimitIsNotOverIt() {
+        var session = ready()
+        XCTAssertEqual(session.takePendingPeak().timesOver, 0)
+        XCTAssertEqual(overLimit(push(limit, to: &session)), [:])
+        XCTAssertEqual(session.takePendingPeak(), HTMLCardSession.PendingPeak(largest: limit, timesOver: 0))
     }
 
     func test2611_0004S23AReloadKeepsTheLargestCount() {
         var session = ready()
         _ = push(limit + 1, to: &session)
         session.reloaded()
-        XCTAssertEqual(session.takeLargestPending(), limit + 1)
+        XCTAssertEqual(session.takePendingPeak().largest, limit + 1)
     }
 }
