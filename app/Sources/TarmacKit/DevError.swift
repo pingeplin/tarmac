@@ -23,6 +23,7 @@ public struct DevError: Error, Equatable, Sendable {
         case emptyBuffer = "empty_buffer"
         case notRetargeted = "not_retargeted"
         case notKey = "not_key"
+        case noSuchBoard = "no_such_board"
     }
 
     public var code: Code

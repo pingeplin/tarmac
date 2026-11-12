@@ -24,6 +24,9 @@ public enum DevRequest: Equatable, Sendable {
     /// `combo`; the CLI has already range-checked the flags against the maxima
     /// below.
     case press(combo: String, holdMs: Int?, ageMs: Int?, busyMs: Int?)
+    /// `boardID: nil` makes a new board; otherwise switch to that one. Both answer once
+    /// the app's active board has changed.
+    case board(boardID: String?)
     /// A verb this build does not know. A value rather than a decode error, so
     /// the app can answer "unsupported" instead of dropping the frame.
     case unknown(type: String)
@@ -34,16 +37,18 @@ public enum DevRequest: Equatable, Sendable {
     public static let holdMsMax = 10_000
     public static let ageMsMax = 60_000
     public static let busyMsMax = 1_800
+    public static let boardWaitMs = 5_000
 
     /// The caller's own budget, where the verb has one: `snapshot` carries its
     /// `--timeout`, `press` its `--busy` (the page answers only once the freeze
-    /// ends). Both ends of the socket size their wait from it — the app adds
-    /// 2000 ms of slack, the CLI 3000 ms — so the innermost deadline always
-    /// fires first.
+    /// ends), `board` the fixed `boardWaitMs`. Both ends of the socket size
+    /// their wait from it — the app adds 2000 ms of slack, the CLI 3000 ms — so
+    /// the innermost deadline always fires first.
     public var timeoutMs: Int? {
         switch self {
         case .snapshot(_, let timeoutMs): return timeoutMs
         case .press(_, _, _, let busyMs): return busyMs
+        case .board: return Self.boardWaitMs
         default: return nil
         }
     }
@@ -90,6 +95,8 @@ public extension DevRequest {
             return .type(card: try fields.req("card", \.stringValue), text: try fields.req("text", \.stringValue))
         case "key":
             return .key(card: try fields.req("card", \.stringValue), combo: try fields.req("combo", \.stringValue))
+        case "board":
+            return .board(boardID: try fields.opt("board_id", \.stringValue))
         case "press":
             return .press(
                 combo: try fields.req("combo", \.stringValue),
@@ -136,6 +143,9 @@ public extension DevRequest {
             fields.put("hold_ms", unlessNil: int(holdMs))
             fields.put("age_ms", unlessNil: int(ageMs))
             fields.put("busy_ms", unlessNil: int(busyMs))
+        case .board(let boardID):
+            fields.put("t", .string("board"))
+            fields.put("board_id", unlessNil: boardID.map(MsgPackValue.string))
         case .unknown(let type):
             fields.put("t", .string(type))
         }

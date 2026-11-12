@@ -82,7 +82,9 @@ struct DevSnapshotReader {
             borrowedCard: controller.borrow.id?.wireID,
             zoom: board.viewport.zoom,
             center: board.viewport.center,
-            viewSize: board.bounds.size
+            viewSize: board.bounds.size,
+            activeBoardID: controller.activeBoardID,
+            boardIDs: controller.boardMetas.map(\.boardID)
         )
     }
 

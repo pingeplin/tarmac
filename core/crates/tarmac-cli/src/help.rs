@@ -27,9 +27,13 @@ binary exits 1 with \"driver unavailable in release builds\".
     tarmac dev focus <card>|board
     tarmac dev type <card> \"<text>\"
     tarmac dev key <card> \"<combo>\"
+    tarmac dev board <board-id>|--new
     tarmac dev press <combo> [--hold <ms>] [--age <ms>] [--busy <ms>]
 
-<card> is a terminal's term id or a doc's absolute path. snapshot prints JSON on
+<card> is a terminal's term id or a doc's absolute path. dev board makes a board
+active, or with --new makes one, and answers {\"board_id\": ...} with the board
+that is active once the app has switched; snapshot then shows that board.
+snapshot prints JSON on
 stdout; every other verb prints a small JSON object describing what it observed.
 A failing verb prints the app's JSON error on stderr and exits 1.
 

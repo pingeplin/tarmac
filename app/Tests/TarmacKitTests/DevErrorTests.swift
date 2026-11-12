@@ -10,7 +10,7 @@ final class DevErrorTests: XCTestCase {
             "app_not_ready", "app_unresponsive", "driver_threw", "unsupported_verb", "bad_request",
             "no_such_card", "not_focused", "unsupported_card_kind", "card_hidden",
             "bad_expr", "timeout", "unsupported_combo", "bad_combo", "empty_buffer",
-            "not_retargeted", "not_key",
+            "not_retargeted", "not_key", "no_such_board",
         ])
     }
 

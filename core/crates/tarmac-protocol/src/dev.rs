@@ -56,6 +56,12 @@ pub enum DevRequest {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         busy_ms: Option<u32>,
     },
+    /// `board_id: None` makes a new board; `Some` switches to that one. Both
+    /// answer once the app's active board has changed.
+    Board {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        board_id: Option<String>,
+    },
     /// Decoding an unknown verb to a value rather than an error lets the app
     /// answer "unsupported" instead of dropping the frame.
     #[serde(other)]
@@ -69,16 +75,20 @@ pub enum DevRequest {
 pub const HOLD_MS_MAX: u32 = 10_000;
 pub const AGE_MS_MAX: u32 = 60_000;
 pub const BUSY_MS_MAX: u32 = 1_800;
+/// How long the app waits for the active board to change after `board`.
+pub const BOARD_WAIT_MS: u32 = 5_000;
 
 impl DevRequest {
     /// The caller's own wait budget, where the verb has one: `snapshot` carries
     /// its `--timeout`, `press` its `--busy` (the page answers only once the
-    /// freeze ends). Every other wait fits in the backend's fixed slack. It lives
+    /// freeze ends), `board` the fixed `BOARD_WAIT_MS` (the wait for the active
+    /// board to change). Every other wait fits in the backend's fixed slack. It lives
     /// on the type because both ends of the socket need the rule.
     pub fn timeout_ms(&self) -> Option<u32> {
         match self {
             DevRequest::Snapshot { timeout_ms, .. } => *timeout_ms,
             DevRequest::Press { busy_ms, .. } => *busy_ms,
+            DevRequest::Board { .. } => Some(BOARD_WAIT_MS),
             _ => None,
         }
     }
@@ -145,6 +155,8 @@ mod tests {
             DevRequest::Resize { card: "t-1".into(), w: 800.0, h: 600.0, handle: Some("top-left".into()) },
             DevRequest::Type { card: "t-1".into(), text: "a\nb".into() },
             DevRequest::Key { card: "t-1".into(), combo: "ctrl+c".into() },
+            DevRequest::Board { board_id: Some("board-1".into()) },
+            DevRequest::Board { board_id: None },
         ];
         for req in all {
             assert_eq!(roundtrip(&req), req, "roundtrip changed {req:?}");
@@ -258,6 +270,29 @@ mod tests {
         let press = |busy_ms| DevRequest::Press { combo: "cmd+q".into(), hold_ms: None, age_ms: None, busy_ms };
         assert_eq!(press(Some(1000)).timeout_ms(), Some(1000));
         assert_eq!(press(None).timeout_ms(), None);
+    }
+
+    /// `board` is tagged `board`, a new board is an absent key, and its budget is
+    /// the fixed wait for the active board to change, which both ends size from.
+    #[test]
+    fn board_is_tagged_skips_an_absent_id_and_has_a_fixed_budget() {
+        let bare = encode_request(&DevRequest::Board { board_id: None }).unwrap();
+        assert_eq!(rmp_serde::from_slice::<Tag>(&bare).unwrap().t, "board");
+        let keys: std::collections::BTreeMap<String, serde::de::IgnoredAny> = rmp_serde::from_slice(&bare).unwrap();
+        assert_eq!(keys.keys().cloned().collect::<Vec<_>>(), ["t"]);
+        assert_eq!(BOARD_WAIT_MS, 5_000);
+        assert_eq!(DevRequest::Board { board_id: None }.timeout_ms(), Some(BOARD_WAIT_MS));
+        assert_eq!(DevRequest::Board { board_id: Some("board-1".into()) }.timeout_ms(), Some(BOARD_WAIT_MS));
+    }
+
+    /// The bytes `DevMessagesTests` pins the Swift codec to.
+    #[test]
+    fn board_bytes_are_what_the_swift_codec_is_pinned_to() {
+        assert_eq!(hex(&encode_request(&DevRequest::Board { board_id: None }).unwrap()), "81 a1 74 a5 62 6f 61 72 64");
+        assert_eq!(
+            hex(&encode_request(&DevRequest::Board { board_id: Some("board-1".into()) }).unwrap()),
+            "82 a1 74 a5 62 6f 61 72 64 a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 31"
+        );
     }
 
     /// Additive-only holds for `press` too.
