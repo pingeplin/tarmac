@@ -3,6 +3,7 @@ mod conn;
 mod docs;
 #[cfg(test)]
 mod fixtures;
+mod panic_log;
 mod persist;
 mod proc;
 mod reader;
@@ -79,6 +80,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .with_writer(std::io::stderr)
         .init();
+    panic_log::install();
 
     let sock = socket_path();
     if let Err(msg) = check_socket_path_len(&sock) {
