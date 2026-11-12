@@ -254,6 +254,30 @@ mod tests {
         );
         assert_eq!(read_all(b"\r\n \r\n", 8), vec![Line::Blank, Line::Blank]);
         assert_eq!(read_all(b"          \n", 8), vec![Line::Blank], "blank over the limit");
+        assert_eq!(read_all(b"        x\n", 8), vec![Line::OverLimit], "a value past the limit");
+    }
+
+    /// Interrupted once, then its bytes.
+    struct Interrupted {
+        interrupted: bool,
+        rest: &'static [u8],
+    }
+
+    impl Read for Interrupted {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if !self.interrupted {
+                self.interrupted = true;
+                return Err(io::ErrorKind::Interrupted.into());
+            }
+            self.rest.read(buf)
+        }
+    }
+
+    #[test]
+    fn a_read_that_was_interrupted_is_made_again() {
+        let input = Interrupted { interrupted: false, rest: b"1\n" };
+        let lines: Vec<Line> = Lines::new(input, 8).map(Result::unwrap).collect();
+        assert_eq!(lines, vec![value("1")]);
     }
 
     #[test]
