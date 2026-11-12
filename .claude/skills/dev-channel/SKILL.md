@@ -59,7 +59,8 @@ needs staging.
 | `PATH` | prefixed with `core/target/debug`, so `tarmac open` inside the app's own terminals resolves the freshly built CLI |
 
 The app's stderr is the `make run` output. The daemon's is `.dev/tarmacd.log`,
-truncated each time the app spawns one.
+appended to by each daemon the app spawns; past 1 MiB a spawn moves it to
+`.dev/tarmacd.log.1` first. A daemon panic is in it as a timestamped `ERROR`.
 
 **A second channel in the same worktree** — a clean board, or a QA run that
 must not touch your dev state — is one variable. `DEV_DIR` moves all four
