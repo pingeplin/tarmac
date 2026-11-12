@@ -28,7 +28,8 @@ final class CardShimTests: XCTestCase {
     private static let intervalIdBase = 3000
 
     /// The stand-in window, taking the document's `tarmac-zoom` meta, the one
-    /// native to leave out, and whether the document has a head. The window is
+    /// native to leave out, whether the document has a head, and its
+    /// `tarmac-data` meta (spec 2611.0002). The window is
     /// the global object, as it is in a page; `h` is what a test drives it
     /// with and reads back from.
     ///
@@ -37,7 +38,7 @@ final class CardShimTests: XCTestCase {
     /// element, and the one query the default colour scheme asks. Without it
     /// the document is the one every test before spec 2610.0007 runs in.
     private static let page = """
-    (function (meta, omitNative, withHead) {
+    (function (meta, omitNative, withHead, dataMeta) {
       const listeners = new Map();
       const docListeners = new Map();
       const posted = [];
@@ -73,6 +74,16 @@ final class CardShimTests: XCTestCase {
         parent,
         addEventListener: (type, fn) => add(listeners, type, fn),
         removeEventListener() {},
+        dispatchEvent(event) {
+          emit(listeners, event.type, event);
+          return true;
+        },
+        CustomEvent: class {
+          constructor(type, init) {
+            this.type = type;
+            this.detail = init ? init.detail : null;
+          }
+        },
         scrollBy() {},
 
         requestAnimationFrame(cb) {
@@ -122,6 +133,7 @@ final class CardShimTests: XCTestCase {
           addEventListener: (type, fn) => add(docListeners, type, fn),
           querySelector(sel) {
             if (sel === 'meta[name="tarmac-zoom"]' && meta !== null) return { content: meta };
+            if (sel === 'meta[name="tarmac-data"]' && dataMeta !== null) return { content: dataMeta };
             return null;
           },
         },
@@ -342,6 +354,11 @@ final class CardShimTests: XCTestCase {
         }
     }
 
+    /// The `ready` of a document that names no data file (spec 2611.0002).
+    private static func ready(meta: String?) -> [String: Any] {
+        ["tarmac": "ready", "meta": meta as Any? ?? NSNull(), "data": NSNull(), "source": "tarmac-card://doc/card.html?v=1"]
+    }
+
     private func source() throws -> String {
         let app = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -350,18 +367,21 @@ final class CardShimTests: XCTestCase {
         )
     }
 
-    private func window(meta: String?, omitting native: String? = nil, head: Bool = false) throws -> JSContext {
+    private func window(
+        meta: String?, omitting native: String? = nil, head: Bool = false, data: String? = nil
+    ) throws -> JSContext {
         let context = try XCTUnwrap(JSContext())
         context.exceptionHandler = { _, error in XCTFail("the script threw: \(String(describing: error))") }
         context.evaluateScript(Self.page)
-            .call(withArguments: [meta as Any? ?? NSNull(), native as Any? ?? NSNull(), head])
+            .call(withArguments: [meta as Any? ?? NSNull(), native as Any? ?? NSNull(), head, data as Any? ?? NSNull()])
         return context
     }
 
     private func loadShim(
-        meta: String? = "magnify", omitting native: String? = nil, head: Bool = false, fonts: CardFontVariables? = nil
+        meta: String? = "magnify", omitting native: String? = nil, head: Bool = false, fonts: CardFontVariables? = nil,
+        data: String? = nil
     ) throws -> Shim {
-        let context = try window(meta: meta, omitting: native, head: head)
+        let context = try window(meta: meta, omitting: native, head: head, data: data)
         let raw = try source()
         context.evaluateScript(fonts?.filling(raw) ?? raw)
         return Shim(context: context)
@@ -373,7 +393,7 @@ final class CardShimTests: XCTestCase {
         let shim = try loadShim(meta: "magnify")
 
         shim.run("h.domReady()")
-        XCTAssertTrue(try shim.hasPosted(["tarmac": "ready", "meta": "magnify"]), "S5: ready")
+        XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "S5: ready")
 
         shim.run("h.send({ tarmac: 'zoom', z: 3 })")
         XCTAssertEqual(shim.number("h.style.zoom"), 3, "S5: zoom")
@@ -382,7 +402,7 @@ final class CardShimTests: XCTestCase {
     func testS5ReportsANullMetaForADocumentWithNoTarmacZoomTag() throws {
         let shim = try loadShim(meta: nil)
         shim.run("h.domReady()")
-        XCTAssertTrue(try shim.hasPosted(["tarmac": "ready", "meta": NSNull()]), "S5")
+        XCTAssertTrue(try shim.hasPosted(Self.ready(meta: nil)), "S5")
     }
 
     /// What matters is that the natives exist before the shim runs, so it
@@ -905,7 +925,7 @@ final class CardShimTests: XCTestCase {
         let shim = try loadShim()
         shim.pause()
         shim.run("h.domReady()")
-        XCTAssertTrue(try shim.hasPosted(["tarmac": "ready", "meta": "magnify"]), "S26")
+        XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "S26")
     }
 
     // MARK: - hostile and malformed cull messages (S27, S28)
@@ -951,7 +971,7 @@ final class CardShimTests: XCTestCase {
 
         shim.run("h.domReady()")
         XCTAssertEqual(shim.number("h.style.zoom"), 3, "2609.0003 S8: retained")
-        XCTAssertTrue(try shim.hasPosted(["tarmac": "ready", "meta": "magnify"]), "2609.0003 S8: ready")
+        XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "2609.0003 S8: ready")
     }
 
     /// The premise of the #99 fix: the host re-posts the same constant on a
@@ -1232,7 +1252,7 @@ final class CardShimTests: XCTestCase {
         )
 
         shim.run("h.domReady()")
-        XCTAssertTrue(try shim.hasPosted(["tarmac": "ready", "meta": "magnify"]), "2610.0007 S70: the rest of the shim")
+        XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "2610.0007 S70: the rest of the shim")
     }
 
     func test2610_0007S70AWindowWithNoMutationObserverKeepsTheDefaultAndLoads() throws {
@@ -1240,7 +1260,7 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(try shim.strings(Self.headElements), [Self.defaultScheme], "2610.0007 S70: the head")
 
         shim.run("h.domReady()")
-        XCTAssertTrue(try shim.hasPosted(["tarmac": "ready", "meta": "magnify"]), "2610.0007 S70: the rest of the shim")
+        XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "2610.0007 S70: the rest of the shim")
     }
 
     // MARK: - the user's fonts as CSS properties (2610.0010 S8–S20)
@@ -1293,14 +1313,14 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(try shim.count("h.sheets"), 0, "S12: no sheet is made")
         XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 0, "S12: none is adopted")
         shim.run("h.domReady()")
-        XCTAssertTrue(try shim.hasPosted(["tarmac": "ready", "meta": "magnify"]), "S12: the rest of the shim")
+        XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "S12: the rest of the shim")
     }
 
     func test2610_0010S13AWindowWithNoConstructedStylesheetsLoadsAndStillWorks() throws {
         let shim = try loadShim(omitting: "CSSStyleSheet", fonts: Self.fonts)
         XCTAssertNil(shim.thrown("h.send({ tarmac: 'fonts', vars: { '--tarmac-prose-size': '20px' } })"), "S13: a message")
         shim.run("h.domReady()")
-        XCTAssertTrue(try shim.hasPosted(["tarmac": "ready", "meta": "magnify"]), "S13: ready")
+        XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "S13: ready")
         shim.run("h.send({ tarmac: 'zoom', z: 3 })")
         XCTAssertEqual(shim.number("h.style.zoom"), 3, "S13: zoom")
         shim.pause()
@@ -1487,5 +1507,172 @@ final class CardShimTests: XCTestCase {
         paused.pause()
         paused.run("h.send({ tarmac: 'cull', culled: 0 })")
         XCTAssertFalse(try paused.stillRunning(), "S28: paused, culled 0")
+    }
+
+    // MARK: - the data file (2611.0002 S1–S9)
+
+    private let address = "tarmac-card://doc/card.html?v=1"
+
+    private func readies(_ shim: Shim) throws -> [NSDictionary] {
+        try shim.posted().filter { $0["tarmac"] as? String == "ready" }
+    }
+
+    private func nameErrors(_ shim: Shim) throws -> [NSDictionary] {
+        try shim.posted().filter {
+            $0["tarmac"] as? String == "console" && $0["level"] as? String == "error"
+                && "\($0["args"] ?? "")".contains("tarmac-data")
+        }
+    }
+
+    func test2611S1ReadyNamesTheDataFileAndTheDocumentsAddress() throws {
+        let shim = try loadShim(meta: "magnify", data: "stats.json")
+        shim.run("h.domReady()")
+        XCTAssertEqual(
+            try readies(shim),
+            [["tarmac": "ready", "meta": "magnify", "data": "stats.json", "source": address]]
+        )
+        XCTAssertEqual(try shim.posted().first?["source"] as? String, address, "the source of its started word")
+    }
+
+    func test2611S2ReadyNamesNoFileWithNoMetaOrAnEmptyOne() throws {
+        for data in [nil, ""] as [String?] {
+            let shim = try loadShim(meta: nil, data: data)
+            shim.run("h.domReady()")
+            XCTAssertEqual(
+                try readies(shim), [["tarmac": "ready", "meta": NSNull(), "data": NSNull(), "source": address]],
+                "\(data.debugDescription)"
+            )
+        }
+    }
+
+    /// The shim's bound is the host page's, which is the app's line cap
+    /// (`CardHostScriptTests`).
+    func test2611S3TheShimMeasuresAgainstTheLineCapTheAppKeeps() throws {
+        let regex = try NSRegularExpression(pattern: #"var messageCap = (\d+);"#)
+        let text = try source()
+        let match = try XCTUnwrap(regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)))
+        XCTAssertEqual(Int(text[try XCTUnwrap(Range(match.range(at: 1), in: text))]), CardConsole.lineCap)
+    }
+
+    /// The host page carries a message of at most `CardConsole.lineCap`
+    /// characters of JSON. The name is measured as JSON writes it, and a page
+    /// that took `console.error` for itself does not keep the line from the app.
+    func test2611S3ANameThatDoesNotFitIsLeftOutAndSaidSo() throws {
+        let fill = "(n, unit) => unit.repeat(n)"
+        let room = "\(CardConsole.lineCap) - JSON.stringify({ tarmac: 'ready', meta: null, data: '' }).length"
+        for (unit, width) in [("x", 1), ("\\\"", 2)] {
+            let probe = try loadShim(meta: nil)
+            let free = try XCTUnwrap(probe.number(room).flatMap { Int(exactly: $0) })
+            XCTAssertEqual(free % width, 0, "the bound is reached exactly")
+            let fits = try XCTUnwrap(probe.run("(\(fill))(\(free / width), '\(unit)')").toString())
+            let over = try XCTUnwrap(probe.run("(\(fill))(\(free / width + 1), '\(unit)')").toString())
+
+            let fitting = try loadShim(meta: nil, data: fits)
+            fitting.run("h.domReady()")
+            XCTAssertEqual(try readies(fitting).first?["data"] as? String, fits, "unit \(unit)")
+            XCTAssertEqual(
+                fitting.number("JSON.stringify({ tarmac: 'ready', meta: null, data: h.posted.at(-1).data }).length"),
+                Double(CardConsole.lineCap)
+            )
+            XCTAssertEqual(try nameErrors(fitting), [], "unit \(unit)")
+
+            let long = try loadShim(meta: nil, data: over)
+            long.run("window.console.error = function () {}; h.domReady()")
+            XCTAssertEqual(
+                try readies(long), [["tarmac": "ready", "meta": NSNull(), "data": NSNull(), "source": address]],
+                "unit \(unit)"
+            )
+            XCTAssertEqual(try nameErrors(long).count, 1, "unit \(unit)")
+        }
+    }
+
+    /// A `ready` that its zoom meta alone takes over the bound is dropped by
+    /// the host page whatever it names, as it is today: the name is kept, and
+    /// the console is told nothing of it.
+    func test2611S3AReadyTooLongWithoutTheNameKeepsItAndSaysNothing() throws {
+        let shim = try loadShim(meta: String(repeating: "x", count: CardConsole.lineCap), data: "stats.json")
+        shim.run("h.domReady()")
+        XCTAssertEqual(try readies(shim).first?["data"] as? String, "stats.json")
+        XCTAssertEqual(try nameErrors(shim), [])
+    }
+
+    func test2611S4BeforeAnyDataTheGlobalIsAnObjectWithNoData() throws {
+        let shim = try loadShim()
+        XCTAssertEqual(shim.run("typeof window.tarmac").toString(), "object")
+        XCTAssertEqual(shim.flag("window.tarmac !== null && window.tarmac.data === undefined"), true)
+    }
+
+    private func listen(_ shim: Shim) {
+        shim.run("var heard = []; window.addEventListener('tarmac:data', (e) => heard.push(e));")
+    }
+
+    private func deliver(_ shim: Shim, _ text: String, from source: String = "parent") {
+        shim.run("h.send({ tarmac: 'data', text: \(text) }, \(source))")
+    }
+
+    private func json(_ shim: Shim, _ expression: String) -> String? {
+        let value = shim.run("JSON.stringify(\(expression))")
+        return value.isString ? value.toString() : nil
+    }
+
+    func test2611S5ADeliveryIsParsedKeptAndDispatched() throws {
+        let shim = try loadShim()
+        listen(shim)
+        deliver(shim, #"'{"n":1}'"#)
+        XCTAssertEqual(shim.number("heard.length"), 1)
+        XCTAssertEqual(shim.run("heard[0].type").toString(), "tarmac:data")
+        XCTAssertEqual(json(shim, "heard[0].detail"), #"{"n":1}"#)
+        XCTAssertEqual(shim.flag("window.tarmac.data === heard[0].detail"), true)
+    }
+
+    func test2611S6EachDeliveryIsDispatchedInOrderAndTheLastIsKept() throws {
+        let shim = try loadShim()
+        listen(shim)
+        deliver(shim, #"'{"n":1}'"#)
+        deliver(shim, "'[2]'")
+        XCTAssertEqual(json(shim, "heard.map((e) => e.detail)"), #"[{"n":1},[2]]"#)
+        XCTAssertEqual(json(shim, "window.tarmac.data"), "[2]")
+    }
+
+    func test2611S7ADeliveryFromAnotherWindowIsIgnored() throws {
+        let shim = try loadShim()
+        listen(shim)
+        deliver(shim, "'[1]'")
+        deliver(shim, "'[2]'", from: "{}")
+        deliver(shim, "'[3]'", from: "window")
+        XCTAssertEqual(shim.number("heard.length"), 1)
+        XCTAssertEqual(json(shim, "window.tarmac.data"), "[1]")
+    }
+
+    func test2611S8ATextThatIsNoStringOrNoJSONIsDroppedQuietly() throws {
+        let shim = try loadShim()
+        listen(shim)
+        deliver(shim, "'[1]'")
+        for text in ["undefined", "3", "null", "{ a: 1 }", "['[2]']", "''", "'{'", "'[1,]'"] {
+            deliver(shim, text)
+            XCTAssertEqual(shim.number("heard.length"), 1, text)
+            XCTAssertEqual(json(shim, "window.tarmac.data"), "[1]", text)
+        }
+        shim.run("h.send({ tarmac: 'data' })")
+        XCTAssertEqual(shim.number("heard.length"), 1, "no text")
+    }
+
+    /// A listener that throws is the page's error, not the shim's.
+    func test2611S8AListenerThatThrowsDoesNotBreakTheNextDelivery() throws {
+        let shim = try loadShim()
+        shim.run("window.addEventListener('tarmac:data', () => { throw new Error('boom'); })")
+        listen(shim)
+        deliver(shim, "'[1]'")
+        deliver(shim, "'[2]'")
+        XCTAssertEqual(json(shim, "window.tarmac.data"), "[2]")
+    }
+
+    func test2611S9APageThatTookTheGlobalKeepsIt() throws {
+        let shim = try loadShim()
+        listen(shim)
+        shim.run("window.tarmac = { mine: true }")
+        deliver(shim, #"'{"n":1}'"#)
+        XCTAssertEqual(json(shim, "heard.map((e) => e.detail)"), #"[{"n":1}]"#)
+        XCTAssertEqual(json(shim, "window.tarmac"), #"{"mine":true}"#)
     }
 }

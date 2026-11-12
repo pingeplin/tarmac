@@ -262,6 +262,12 @@ public final class DaemonClient: @unchecked Sendable {
         send(.docRefresh(path: path))
     }
 
+    /// issue #311: the doc on `boardID` reads the data file `data`, or none.
+    /// The daemon answers with a `file_event` for the file when it exists.
+    public func docData(boardID: String, path: String, data: String?) {
+        send(.docData(boardID: boardID, path: path, data: data))
+    }
+
     /// issue #41: ask for one terminal's scrollback ring. Exactly one
     /// `scrollback` comes back, even for an unknown terminal — but a daemon that
     /// predates the type never answers, so the caller bounds its wait.

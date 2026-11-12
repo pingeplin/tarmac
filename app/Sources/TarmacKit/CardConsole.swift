@@ -37,7 +37,10 @@ public enum CardConsole {
     public enum Message: Equatable, Sendable {
         case console(Entry)
         case escape
-        case ready(meta: String?)
+        /// `data` is the document's `tarmac-data` name, nil for none. `load` is
+        /// the host page's number for the load whose first `ready` this is;
+        /// nil on every other `ready`.
+        case ready(meta: String?, data: String? = nil, load: Int? = nil)
         /// Where the document's root is scrolled to.
         case scrolled(ScrollMetrics)
         /// The document of the frame's load number `load` is on screen. The
@@ -46,10 +49,11 @@ public enum CardConsole {
     }
 
     /// Validates a `WKScriptMessage` body. A `ready` must carry the `meta` key — a
-    /// string or null; an absent key is neither — and unknown keys are ignored. A
-    /// console payload whose args hold a value JSON cannot carry is rejected whole.
-    /// Its `dropped` is the host page's count of what it cut, never the card's:
-    /// the page writes the key itself.
+    /// string or null; an absent key is neither — and unknown keys are ignored.
+    /// Its `data`, when there is one, is a string or null, and its `load` an
+    /// integer. A console payload whose args hold a value JSON cannot carry is
+    /// rejected whole. Its `dropped` is the host page's count of what it cut,
+    /// never the card's: the page writes the key itself.
     public static func parse(_ body: Any) -> Message? {
         guard let payload = body as? [String: Any], let kind = payload["tarmac"] as? String else { return nil }
         switch kind {
@@ -60,10 +64,13 @@ public enum CardConsole {
         case "scrolled":
             return ScrollMetrics(report: payload).map(Message.scrolled)
         case "ready":
-            guard let meta = payload["meta"] else { return nil }
-            if meta is NSNull { return .ready(meta: nil) }
-            guard let text = meta as? String else { return nil }
-            return .ready(meta: text)
+            guard let meta = stringOrNull(payload["meta"]), let data = stringOrNull(payload["data"] ?? NSNull())
+            else { return nil }
+            guard let rawLoad = payload["load"] else { return .ready(meta: meta, data: data) }
+            // A boolean crosses as a number, and is no load.
+            guard case .number(let number)? = JSONValue(foundation: rawLoad), let load = Int(exactly: number)
+            else { return nil }
+            return .ready(meta: meta, data: data, load: load)
         case "console":
             guard let name = payload["level"] as? String, let level = Level(rawValue: name),
                   let rawArgs = payload["args"] as? [Any]
@@ -77,6 +84,16 @@ public enum CardConsole {
             return .console(Entry(level: level, args: args, dropped: max(0, dropped)))
         default:
             return nil
+        }
+    }
+
+    /// `.some(nil)` for null, the text for a string, and nil for anything
+    /// else, an absent key included.
+    private static func stringOrNull(_ value: Any?) -> String?? {
+        switch value {
+        case let text as String: return .some(text)
+        case is NSNull: return .some(nil)
+        default: return nil
         }
     }
 

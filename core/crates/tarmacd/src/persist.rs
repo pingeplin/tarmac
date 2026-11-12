@@ -120,6 +120,7 @@ fn hydrate(pb: PersistedBoard) -> Board {
                 unread: true,
                 last_opened_ms: d.last_opened_ms,
                 term_id: d.term_id,
+                data: None,
             },
         );
         reg.dock.push(path);

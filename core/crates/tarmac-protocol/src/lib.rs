@@ -166,6 +166,15 @@ pub enum Msg {
     DocRefresh {
         path: String,
     },
+    /// App -> daemon: the doc `path` on board `board_id` reads the data file
+    /// `data`; `None` clears it. The daemon reports that file as it reports a
+    /// doc, with a `file_event` for `data`.
+    DocData {
+        board_id: String,
+        path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        data: Option<String>,
+    },
     /// App -> daemon: re-emit one terminal's scrollback. An unknown `term_id` is
     /// not an error; see `Scrollback`.
     ScrollbackRequest {
