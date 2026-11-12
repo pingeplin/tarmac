@@ -26,7 +26,7 @@ struct Card {
     daemon: Arc<Daemon>,
     app: mpsc::Receiver<Msg>,
     fs: Arc<StuckFs>,
-    _release: std::sync::mpsc::Sender<()>,
+    release: std::sync::mpsc::Sender<()>,
 }
 
 impl Card {
@@ -39,7 +39,7 @@ impl Card {
         let mut app = connect_app(&daemon).await;
         open_doc(&daemon, None, &dash).await;
         flushed(&mut app, &dash).await;
-        Card { tmp, dir, dash, daemon, app, fs, _release: release }
+        Card { tmp, dir, dash, daemon, app, fs, release }
     }
 
     async fn silent(tag: &str) -> Self {
@@ -57,6 +57,11 @@ impl Card {
 
     async fn watched(&self, dir: &Path) -> bool {
         watched(&self.daemon, dir).await
+    }
+
+    /// Lets go each call that `fs` holds, and each later one.
+    fn let_go(&mut self) {
+        self.release = std::sync::mpsc::channel().0;
     }
 }
 
@@ -179,10 +184,12 @@ async fn another_name_moves_the_count_to_its_directory() {
 async fn the_same_name_again_counts_nothing_more() {
     let mut card = Card::silent("s19").await;
     let stats = card.reading("sub/stats.json").await;
+    let resolves = card.fs.calls(Call::ResolveDir);
     for _ in 0..2 {
         assert!(name(&card.daemon, &card.dash, Some(&stats)).await);
         assert_eq!(next_change(&mut card.app).await.0, stats);
     }
+    assert_eq!(card.fs.calls(Call::ResolveDir), resolves, "no directory is resolved again");
     let sub = card.dir.join("sub");
     assert!(card.watched(&sub).await);
 
@@ -311,4 +318,183 @@ async fn a_restart_watches_no_data_directory_until_a_doc_data_names_the_file() {
     assert!(watched(&daemon, &sub).await);
 
     let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// Every call the gate made, of each kind.
+fn gate_calls(fs: &StuckFs) -> Vec<u32> {
+    [Call::Resolve, Call::ResolveDir, Call::Stamp, Call::RepoOf, Call::IsDir, Call::PidCwd].map(|c| fs.calls(c)).to_vec()
+}
+
+/// A change of `doc`, a wake given as the file system's, and that wake's
+/// look: a try that it made has ended.
+async fn wake_from_fs(card: &mut Card, doc: &Path) {
+    let changed = change(doc);
+    card.daemon.wake.from_fs();
+    assert_eq!(next_change(&mut card.app).await, (doc.to_owned(), changed), "the look of the wake");
+}
+
+// S14. `sub` is not there, then a regular file.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_data_directory_that_is_not_there_is_not_tried_until_a_wake() {
+    for sub_is_a_file in [false, true] {
+        let (source, calls, _release) = held_source(&[]);
+        let card = Card::on(canon_tmp("s14"), source).await;
+        let sub = card.dir.join("sub");
+        if sub_is_a_file {
+            write_doc(sub.clone());
+        }
+
+        assert!(name(&card.daemon, &card.dash, Some(&sub.join("stats.json"))).await);
+        let made = gate_calls(&card.fs);
+        tokio::time::sleep(4 * crate::watch::BURST).await;
+        assert_eq!(gate_calls(&card.fs), made, "no further call, a file: {sub_is_a_file}");
+        assert_eq!(calls.of(Change::Watch, &sub), 0, "a file: {sub_is_a_file}");
+    }
+}
+
+// S14b
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_data_directory_made_later_is_watched_at_a_wake_of_the_file_system() {
+    let mut card = Card::silent("s14b").await;
+    let sub = card.dir.join("sub");
+    assert!(name(&card.daemon, &card.dash, Some(&sub.join("stats.json"))).await);
+    std::fs::create_dir(&sub).unwrap();
+    let dash = card.dash.clone();
+    wake_from_fs(&mut card, &dash).await;
+    assert!(card.watched(&sub).await);
+    assert!(name(&card.daemon, &card.dash, None).await);
+    assert!(!card.watched(&sub).await);
+
+    let (source, calls, _release) = held_source(&[]);
+    let mut card = Card::on(canon_tmp("s14b-cleared"), source).await;
+    let sub = card.dir.join("sub");
+    assert!(name(&card.daemon, &card.dash, Some(&sub.join("stats.json"))).await);
+    assert!(name(&card.daemon, &card.dash, None).await);
+    std::fs::create_dir(&sub).unwrap();
+    let dash = card.dash.clone();
+    wake_from_fs(&mut card, &dash).await;
+    assert!(!card.watched(&sub).await);
+    assert_eq!(calls.of(Change::Watch, &sub), 0);
+}
+
+// S14c. The resolve of `sub` does not return.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_data_directory_whose_resolve_does_not_answer_is_watched_when_it_returns() {
+    let mut card = Card::silent("s14c").await;
+    let sub = card.dir.join("sub");
+    let stats = write_doc(sub.join("stats.json"));
+    card.fs.hold(Call::ResolveDir, &sub);
+
+    let before = std::time::Instant::now();
+    let (daemon, dash, data) = (card.daemon.clone(), card.dash.clone(), stats.clone());
+    assert!(answers(async move { name(&daemon, &dash, Some(&data)).await }).await);
+    assert!(before.elapsed() < 2 * LIMIT, "it waited {:?}", before.elapsed());
+    assert_eq!(card.fs.held(Call::ResolveDir), 1);
+    assert!(!card.watched(&sub).await);
+    let stamps = card.fs.calls(Call::Stamp);
+    look_at(&card.daemon).await;
+    assert!(card.fs.calls(Call::Stamp) > stamps, "the registration stands: a look reads the file");
+
+    card.let_go();
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while !card.watched(&sub).await {
+        assert!(std::time::Instant::now() < deadline, "sub is never watched");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+// S29a
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_data_path_through_a_link_to_the_doc_directory_counts_nothing() {
+    let (source, calls, _release) = held_source(&[]);
+    let card = Card::on(canon_tmp("s29a"), source).await;
+    open_doc(&card.daemon, None, &write_doc(card.dir.join("other.md"))).await;
+    std::os::unix::fs::symlink(".", card.dir.join("self")).unwrap();
+    write_doc(card.dir.join("stats.json"));
+
+    assert!(name(&card.daemon, &card.dash, Some(&card.dir.join("self/stats.json"))).await);
+    assert_eq!(calls.of(Change::Watch, &card.dir.join("self")), 0);
+    assert!(name(&card.daemon, &card.dash, None).await);
+    assert!(card.watched(&card.dir).await);
+    assert_eq!(calls.of(Change::Unwatch, &card.dir), 0);
+    assert_eq!(calls.of(Change::Unwatch, &card.dir.join("self")), 0);
+}
+
+// S30
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_data_path_through_a_link_out_of_the_tree_watches_nothing() {
+    let (source, calls, _release) = held_source(&[]);
+    let card = Card::on(canon_tmp("s30"), source).await;
+    let away = card.tmp.join("away");
+    write_doc(away.join("stats.json"));
+    std::os::unix::fs::symlink(&away, card.dir.join("out")).unwrap();
+
+    assert!(name(&card.daemon, &card.dash, Some(&card.dir.join("out/stats.json"))).await);
+    assert_eq!(watches(&calls), 1, "the doc's directory only");
+    assert!(!card.watched(&card.dir.join("out")).await);
+    assert!(!card.watched(&away).await);
+    assert!(name(&card.daemon, &card.dash, None).await);
+    assert_eq!(calls.0.lock().unwrap().iter().filter(|(c, _)| *c == Change::Unwatch).count(), 0);
+    assert!(card.watched(&card.dir).await);
+}
+
+/// `<dir>/in`, a link to `<dir>/real`, which holds `stats.json`, named for
+/// the card's doc.
+async fn reading_through_in(card: &mut Card) -> PathBuf {
+    let real = card.dir.join("real");
+    write_doc(real.join("stats.json"));
+    std::os::unix::fs::symlink(&real, card.dir.join("in")).unwrap();
+    let named = card.dir.join("in/stats.json");
+    assert!(name(&card.daemon, &card.dash, Some(&named)).await);
+    assert_eq!(next_change(&mut card.app).await.0, named, "the answer names the path as sent");
+    real
+}
+
+// S31a
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_data_path_through_a_link_in_the_tree_watches_the_directory_it_leads_to() {
+    let (source, calls, _release) = held_source(&[]);
+    let mut card = Card::on(canon_tmp("s31a"), source).await;
+    let real = reading_through_in(&mut card).await;
+
+    assert_eq!(calls.of(Change::Watch, &real), 1);
+    assert_eq!(calls.of(Change::Watch, &card.dir.join("in")), 0);
+    assert!(card.watched(&real).await);
+    assert!(name(&card.daemon, &card.dash, None).await);
+    assert!(!card.watched(&real).await);
+    assert_eq!(calls.of(Change::Watch, &card.dir.join("in")), 0);
+}
+
+// S31b
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_count_is_given_back_for_the_directory_it_was_taken_for() {
+    let (source, calls, _release) = held_source(&[]);
+    let mut card = Card::on(canon_tmp("s31b"), source).await;
+    let real = reading_through_in(&mut card).await;
+    let real2 = card.dir.join("real2");
+    std::fs::create_dir(&real2).unwrap();
+    assert!(card.watched(&real).await);
+
+    std::fs::remove_file(card.dir.join("in")).unwrap();
+    std::os::unix::fs::symlink(&real2, card.dir.join("in")).unwrap();
+    assert!(name(&card.daemon, &card.dash, None).await);
+    assert!(!card.watched(&real).await);
+    assert!(!card.watched(&real2).await);
+    assert_eq!(calls.of(Change::Watch, &real2), 0);
+}
+
+// S34a
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_data_path_through_a_link_to_a_hidden_directory_watches_nothing() {
+    let (source, calls, _release) = held_source(&[]);
+    let card = Card::on(canon_tmp("s34a"), source).await;
+    let cfg = card.dir.join(".cfg");
+    write_doc(cfg.join("x.json"));
+    std::os::unix::fs::symlink(&cfg, card.dir.join("data")).unwrap();
+
+    assert!(name(&card.daemon, &card.dash, Some(&card.dir.join("data/x.json"))).await);
+    for dir in [cfg, card.dir.join("data")] {
+        assert_eq!(calls.of(Change::Watch, &dir), 0, "{}", dir.display());
+        assert!(!card.watched(&dir).await, "{}", dir.display());
+    }
 }

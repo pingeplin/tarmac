@@ -38,6 +38,9 @@ pub trait PathFs: Send + Sync {
     /// canonicalize + stat. Err for a missing path, an I/O error, or a path
     /// that is not a regular file; the message is the one an open answers.
     fn resolve(&self, raw: &Path) -> Result<(PathBuf, FileStamp), String>;
+    /// canonicalize, for a directory only: `None` for a missing path, an I/O
+    /// error, or a path that is not a directory.
+    fn resolve_dir(&self, raw: &Path) -> Option<PathBuf>;
     fn stamp(&self, path: &Path) -> Option<FileStamp>;
     fn repo_of(&self, doc: &Path) -> Option<RepoInfo>;
     fn is_dir(&self, path: &Path) -> bool;
@@ -58,6 +61,10 @@ impl PathFs for RealFs {
         }
         let stamp = stamp_of(&meta).map_err(cannot_stat)?;
         Ok((canon, stamp))
+    }
+
+    fn resolve_dir(&self, raw: &Path) -> Option<PathBuf> {
+        std::fs::canonicalize(raw).ok().filter(|canon| canon.is_dir())
     }
 
     fn stamp(&self, path: &Path) -> Option<FileStamp> {

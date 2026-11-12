@@ -384,8 +384,14 @@ pub async fn record_data(daemon: &Daemon, board: &str, doc: &Path, data: Option<
 /// followed. A doc's path is absolute and resolved, so a relative `data` is
 /// refused too.
 fn is_under(doc: &Path, data: &Path) -> bool {
-    let Some(dir) = doc.parent().map(|dir| dir.as_os_str().as_bytes()) else { return false };
-    let Some(rest) = data.as_os_str().as_bytes().strip_prefix(dir) else { return false };
+    doc.parent().is_some_and(|dir| is_below(dir, data))
+}
+
+/// `path` is under `dir`, by whole components as bytes, with each component
+/// below `dir` there and not hidden. `dir` is a resolved path.
+pub fn is_below(dir: &Path, path: &Path) -> bool {
+    let dir = dir.as_os_str().as_bytes();
+    let Some(rest) = path.as_os_str().as_bytes().strip_prefix(dir) else { return false };
     let below = if dir.ends_with(b"/") { Some(rest) } else { rest.strip_prefix(b"/") };
     below.is_some_and(|below| below.split(|b| *b == b'/').all(|c| !c.is_empty() && !c.starts_with(b".")))
 }

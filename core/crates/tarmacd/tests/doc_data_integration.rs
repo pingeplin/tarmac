@@ -678,3 +678,51 @@ fn a_data_path_through_a_link_to_the_doc_directory_leaves_its_watch() {
     let edited = edit(&card.other);
     assert_eq!(app.recv_file_event_since(&card.other, edited), edited);
 }
+
+/// `<dir>/<name>` made as a link to `target`, and the path of `file` through
+/// it, as text: `write_doc` would give the resolved path.
+fn through_link(card: &Card, name: &str, target: &Path, file: &str) -> String {
+    std::os::unix::fs::symlink(target, Path::new(&card.dir()).join(name)).unwrap();
+    format!("{}/{name}/{file}", card.dir())
+}
+
+// S30a. The negative check is the point here: a forced look would stat the
+// file through the link and report it.
+#[test]
+fn a_data_file_through_a_link_out_of_the_tree_is_seen_only_by_a_look() {
+    let away = temp_dir();
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let card = Card::open(&daemon, &mut app);
+    let real = write_doc(&away.join("stats.json"), "{}\n");
+    let out = through_link(&card, "out", &away, "stats.json");
+    doc_data(&mut app, "board-0", &card.dash, Some(&out));
+    assert_eq!(app.recv_file_event_for(&out), mtime_ms(&real), "the registration stands");
+    assert!(quiet(&mut app, &out));
+
+    edit(&real);
+    assert!(quiet(&mut app, &out), "nothing watches the directory the link leads to");
+    let edited = edit(&card.other);
+    app.recv_file_event_since(&card.other, edited);
+    assert_eq!(app.recv_file_event_for(&out), mtime_ms(&real), "a look stats it");
+
+    let _ = std::fs::remove_dir_all(&away);
+}
+
+// S31
+#[test]
+fn one_write_through_a_link_in_the_tree_is_one_file_event_for_the_path_named() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let card = Card::open(&daemon, &mut app);
+    let real = write_doc(&daemon.dir.join("docs/real/stats.json"), "{}\n");
+    let named = through_link(&card, "in", Path::new(&real).parent().unwrap(), "stats.json");
+    doc_data(&mut app, "board-0", &card.dash, Some(&named));
+    assert_eq!(app.recv_file_event_for(&named), mtime_ms(&real));
+    assert!(quiet(&mut app, &named));
+
+    let edited = edit(&real);
+    assert_eq!(app.recv_file_event_since(&named, edited), edited);
+    assert!(quiet(&mut app, &named), "one file_event for one write");
+    assert!(none_within(&mut app, Duration::from_millis(200), |m| is_file_event_for(m, &real)), "none for the resolved path");
+}

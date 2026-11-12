@@ -218,8 +218,13 @@ impl Daemon {
     }
 
     /// Counts the directory of `data`, the data file of `doc` (2611.0005),
-    /// and has it watched. Nothing for a file in the doc's own directory,
-    /// which the doc counts. A directory that cannot be watched gives its
+    /// and has it watched. The directory is resolved first, on the gate: the
+    /// counts and the watcher thread are keyed by a path's text, and notify
+    /// by the resolved path, so a link would give one watch two texts and
+    /// the unwatch of one would end the other. Nothing is counted for a file
+    /// in the doc's own directory, which the doc counts, nor for a directory
+    /// that resolves to that one, out of the doc's tree, or to a hidden name
+    /// below it. A directory that cannot be resolved or watched gives its
     /// count back at once and is `Wanted`. True with it when the stream
     /// restarted: the caller looks at the docs, as `open_doc` does.
     pub async fn count_data_dir(&self, doc: &Path, data: &Path) -> (DataDir, bool) {
@@ -227,11 +232,19 @@ impl Daemon {
         if dir == doc_dir {
             return (DataDir::Uncounted, false);
         }
-        match self.acquire_watch(dir).await {
-            Ok(watched) => (DataDir::Counted(dir.to_owned()), watched),
+        let resolve = {
+            let dir = dir.to_owned();
+            move |fs: &dyn PathFs| fs.resolve_dir(&dir)
+        };
+        let Ok(Some(resolved)) = self.gate.run(dir, resolve).await else { return (DataDir::Wanted, false) };
+        if !crate::docs::is_below(doc_dir, &resolved) {
+            return (DataDir::Uncounted, false);
+        }
+        match self.acquire_watch(&resolved).await {
+            Ok(watched) => (DataDir::Counted(resolved), watched),
             Err(e) => {
                 tracing::debug!("the data directory is tried again at a wake of the file system: {e}");
-                self.release_watch(dir);
+                self.release_watch(&resolved);
                 (DataDir::Wanted, false)
             }
         }
