@@ -375,15 +375,18 @@ directory or in one under it, at any depth (2611.0005), judged on the bytes of
 the path as given — `docs::is_under` follows no link, works nothing out (a
 `.`, `..` or empty component is refused, as `Path` would drop the first and
 the last when it compares), and refuses a hidden component (one that starts
-with `.`) below the doc's directory. `docs::record_data` ignores an unknown
-board (no fall-back to the active one), an unknown doc, or a refused path, and
-keeps the registration that stood before. It is kept with the doc entry
-(`DocInfo.data`, in memory only, never saved), so a `DocClose` or a
-`BoardDelete` forgets it, and every registration of every board is dropped
-when the app's connection ends or another connection takes its place
-(`Daemon::install_app`, `Daemon::remove_app`, with the place held, so the end
-of a connection that lost the place drops nothing of the one that took it). Its stamp is one per (board, path): every doc of a
-board that names the path sees it as one (`Registry::see_data`). On the active
+with `.`) below the doc's directory. The doc's directory is taken from its
+registry key, not from the path the app sent, which `Path` matches to the key
+with `//` in it. `docs::record_data` ignores an unknown board (no fall-back to
+the active one), an unknown doc, or a refused path, and keeps the registration
+that stood before. It is kept with the doc entry (`DocInfo.data`, in memory
+only, never saved), so a `DocClose` or a `BoardDelete` forgets it, and every
+registration of every board is dropped when the app's connection ends or
+another connection takes its place (`Daemon::install_app`,
+`Daemon::remove_app`, with the place held, so the end of a connection that
+lost the place drops nothing of the one that took it). Its stamp is one per
+(board, path): every doc of a board that names the path sees it as one
+(`Registry::see_data`). On the active
 board the `DocData` is answered at once, in a look of its own: the file is
 taken as seen and a `FileEvent` for it is pushed, the same name again
 included. Each look of the active board reads the data files of the board
@@ -411,12 +414,16 @@ directory, never for a new resolve, when the name is replaced or cleared, the
 doc closed, its board deleted, or the app goes; the same name again counts
 nothing more. A count that made a new watch is followed by a look before the
 `DocData` handling ends, as an open's is. A directory that cannot be resolved
-or watched (not there, not a directory, refused, or out on the gate) gives its
-count back at once and is `DataDir::Wanted`: `watch_loop` tries it again at a
-wake of the file system only (`watch::Wake`: a source event, or the gate's
-`returned`), and a `DocData` that names the file again tries it too. The
-watcher thread's own wake after a call of the source brings a look and no try:
-a watch that fails would else be tried at every look.
+(not there, not a directory, or out on the gate) takes no count, and one whose
+watch fails gives its count back at once; both are `DataDir::Wanted`:
+`watch_loop` tries it again at a wake of the file system only (`watch::Wake`:
+a source event, or the gate's `returned`), and a `DocData` that names the file
+again tries it too. A try whose registration was replaced, cleared or dropped
+meanwhile gives its count back. A name that was held, and so took no count, is
+`Wanted` too when the look finds it no longer held (another connection took
+the app's place and dropped it meanwhile). The watcher thread's own wake after
+a call of the source brings a look and no try: a watch that fails would else
+be tried at every look.
 
 `Daemon::look` is the one place that reads a doc's file or a data file for a change. It reads
 with no `boards` lock held, gives the reading to its caller under that lock,

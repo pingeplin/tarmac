@@ -247,7 +247,9 @@ card does not flash.
   is a symlink that leads out of it. A hidden name below that directory is
   refused too: no file or directory on the way may start with `.`
   (`.cache/stats.json`, `data/.stats.json`). A directory that does not exist
-  yet can be made later; the file is read when it is written there.
+  yet can be made later. A directory more than one level down that is made
+  one level at a time can be seen late: at the next change in a directory
+  Tarmac watches, or the next load of the HTML file.
 - **`tarmac:data`** is a `CustomEvent` on `window`, and `detail` is the parsed
   content. It fires after each load of the document, when the file exists
   and is valid, and after each change of the file. Tarmac does not compare the
