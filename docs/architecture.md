@@ -715,9 +715,10 @@ there. So the app keeps a record of its own beside `tarmacd.log`:
   shape of the OpenTelemetry log data model: `ts` (UTC, RFC 3339, milliseconds,
   `Z`), `severity`, `event`, `attrs` and `resource` (`process.pid`,
   `service.name` `tarmac-app`, and `service.version` when the app names one).
-- **`tarmac.sample`** (`INFO`): one line when the controller starts, then one
-  every 300 s. The first line is written before the daemon has answered, so it
-  has no daemon keys and a board count of 0. Its `attrs`: the memory of the app, of the daemon
+- **`tarmac.sample`** (`INFO`): one line every 300 s from when the controller
+  starts, and one more, once, when the first `restore` from the daemon was
+  applied, so that the first line has the daemon's keys and the boards. A
+  reconnect adds no line. Its `attrs`: the memory of the app, of the daemon
   (`hello_ok.daemon_pid`, forgotten with the link) and of the web content
   processes (their count of distinct pids, the sum, and the largest with its
   card's path); the boards the daemon lists and the boards the app has built;

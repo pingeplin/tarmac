@@ -37,9 +37,9 @@ struct SampleGathered: Sendable {
     }
 }
 
-/// The app's sample log, `tarmac-app.jsonl` (spec 2611.0004): a line when it
-/// starts and one every interval, and a line when an HTML card's pending
-/// events go over the limit. Counts and pids are gathered on the main actor;
+/// The app's sample log, `tarmac-app.jsonl` (spec 2611.0004): a line at the
+/// first restore, one every interval from the start, and a line when an HTML
+/// card's pending events go over the limit. Counts and pids are gathered on the main actor;
 /// footprints are read and lines appended on one serial queue, so no two
 /// appends interleave their size check and their write.
 @MainActor
@@ -48,6 +48,7 @@ final class SampleLog {
     private let resource: SampleLine.Resource
     private let gather: @MainActor () -> SampleGathered?
     private var timer: Timer?
+    private var wroteBaseline = false
 
     private static let writes = DispatchQueue(label: "tarmac.sample-log", qos: .utility)
 
@@ -59,7 +60,6 @@ final class SampleLog {
 
     func start(intervalSeconds: TimeInterval) {
         stop()
-        sample()
         let timer = Timer(timeInterval: intervalSeconds, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.sample() }
         }
@@ -73,6 +73,15 @@ final class SampleLog {
     func stop() {
         timer?.invalidate()
         timer = nil
+    }
+
+    /// The first line with the daemon's pid and the boards in it: the daemon
+    /// has answered and the first board is built. A reconnect sends a restore
+    /// again and gets no line.
+    func restored() {
+        guard !wroteBaseline else { return }
+        wroteBaseline = true
+        sample()
     }
 
     func pendingOverLimit(path card: String, count: Int) {

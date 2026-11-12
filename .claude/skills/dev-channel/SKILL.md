@@ -62,7 +62,7 @@ The app's stderr is the `make run` output. The daemon's is `.dev/tarmacd.log`,
 appended to by each daemon the app spawns; past 1 MiB a spawn moves it to
 `.dev/tarmacd.log.1` first. A daemon panic is in it as a timestamped `ERROR`.
 The app's sample log is `.dev/tarmac-app.jsonl` (memory and pending card
-events, one JSON line every 300 s); `TARMAC_SAMPLE_INTERVAL_S=5 make run` makes
+events, one JSON line at the first restore and one every 300 s); `TARMAC_SAMPLE_INTERVAL_S=5 make run` makes
 it every 5 s in a dev build, and a release build ignores the variable.
 
 **A second channel in the same worktree** — a clean board, or a QA run that
