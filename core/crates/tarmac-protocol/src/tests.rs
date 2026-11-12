@@ -278,6 +278,26 @@ fn conformance_vector_15_doc_data_with_no_data() {
     assert_eq!(encode(&msg).unwrap(), unhex(hex));
 }
 
+// `assert_vector` decodes only, and key order is what the Swift parity test
+// pins, so the encoder's bytes are pinned too.
+#[test]
+fn conformance_vector_16_push() {
+    let hex = "83 a1 74 a4 70 75 73 68 a4 70 61 74 68 ac 2f 61 2f 64 61 73 68 2e 68 74 6d 6c \
+               a4 64 61 74 61 a7 7b 22 6e 22 3a 31 7d";
+    let msg = Msg::Push { path: "/a/dash.html".into(), data: r#"{"n":1}"#.into() };
+    assert_vector(hex, msg.clone());
+    assert_eq!(encode(&msg).unwrap(), unhex(hex));
+}
+
+#[test]
+fn conformance_vector_17_doc_event() {
+    let hex = "83 a1 74 a9 64 6f 63 5f 65 76 65 6e 74 a4 70 61 74 68 ac 2f 61 2f 64 61 73 68 \
+               2e 68 74 6d 6c a4 64 61 74 61 a7 7b 22 6e 22 3a 31 7d";
+    let msg = Msg::DocEvent { path: "/a/dash.html".into(), data: r#"{"n":1}"#.into() };
+    assert_vector(hex, msg.clone());
+    assert_eq!(encode(&msg).unwrap(), unhex(hex));
+}
+
 #[test]
 fn scrollback_reply_round_trips_empty_bytes() {
     // The daemon always answers, even with an empty ring — the empty reply
@@ -797,6 +817,8 @@ fn all_message_types_roundtrip() {
         Msg::DocRefresh { path: "/tmp/a.md".into() },
         Msg::DocData { board_id: "board-1".into(), path: "/tmp/a.html".into(), data: Some("/tmp/a.json".into()) },
         Msg::DocData { board_id: "board-1".into(), path: "/tmp/a.html".into(), data: None },
+        Msg::Push { path: "/tmp/a.html".into(), data: "[1,2]".into() },
+        Msg::DocEvent { path: "/tmp/a.html".into(), data: String::new() },
     ];
     for m in msgs {
         assert_eq!(roundtrip(&m), m, "roundtrip failed for {m:?}");

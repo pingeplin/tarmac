@@ -98,9 +98,10 @@ no version of its own names none and restarts nothing.
     → {t:"open", path:"/abs/path.md"}
     ← {t:"ack"}  |  {t:"err", msg}
 
-`tarmac --version` is the other CLI verb that opens the socket. It completes the
-handshake, renders `hello_ok`'s daemon and app keys, and closes without sending a
-second frame.
+`tarmac push` sends `push` frames on the same session: see *Events for a loaded
+HTML card*. `tarmac --version` is the third CLI verb that opens the socket. It
+completes the handshake, renders `hello_ok`'s daemon and app keys, and closes
+without sending a second frame.
 
 - `path` MUST be absolute. The CLI makes it absolute against its working
   directory (`std::path::absolute`) and makes no file-system call on it, so a
@@ -148,6 +149,7 @@ daemon → app:
                                               the term's resources are gone after this
     {t:"doc_opened", path, via:"cli"|"user"}  — M1 adds the rest of the doc entry; see M1 subset
     {t:"file_event", path, mtime_ms:<uint>} — see File watching
+    {t:"doc_event", path, data}             — see Events for a loaded HTML card
     {t:"err", msg}                          — non-fatal notice
 
 ## File watching semantics
@@ -548,6 +550,66 @@ gets no data; all existing vectors decode unchanged.
 | `path` | string (required) | — | the doc that reads the file (the registry key) |
 | `data` | string | the doc reads no data file | absolute path of the data file, in the doc's directory |
 
+## Events for a loaded HTML card (issue #326)
+
+    {t:"push", path, data}          — cli → daemon; answered with ack | err
+    {t:"doc_event", path, data}     — daemon → app; no reply
+
+`tarmac push` gives one JSON value to the HTML cards of an open doc that are
+loaded at that moment. `data` is the value as text. The daemon checks it, the
+app does not parse it, and the document gets it as a `tarmac:event`. A cli
+session can carry any number of `push` frames. The cli sends each one after the
+answer to the one before, because an answer carries no id.
+
+The daemon checks a `push` in this order. The first check that fails is the
+answer, `err {msg}`; `<path>` is the path as given:
+
+| Case | Answer |
+| --- | --- |
+| the frame does not decode (no `path` or no `data`, or a `data` that is not a msgpack str) | `err "malformed frame: <decoder's message>"`, as for any frame of the session; the connection stays open |
+| `data` is not one JSON value (below) | `err "not one JSON value: <serde_json's message>"` |
+| `path` is not absolute | `err "path is not absolute: <path>"` |
+| the resolve fails | the text `open` answers: `cannot open <path>: <io error>`, `cannot stat <resolved>: <io error>`, or `not a regular file: <resolved>` |
+| the resolve does not answer in the path gate's limit | `cannot open <path>: did not answer in <limit>`, as `open` answers |
+| no board has the doc | `err "not an open doc: <path>"` |
+| the `doc_event` would be over `MAX_FRAME_LEN` | `err "value is over the frame limit (16 MiB)"`; nothing is pushed |
+| no app is connected | `err "no app is connected"` |
+| otherwise | `ack`, after the `doc_event` is queued for the app |
+
+- **The path.** The daemon looks `path` up as a doc key on every board. When no
+  board has it as given, it resolves it as `open` does (canonicalized, a regular
+  file, through the time-limited path gate) and looks up the resolved path. Each
+  cli connection keeps the resolved path of each path it gave whose resolve
+  succeeded, and does not resolve that path again; a resolve that failed is made
+  again on the next `push`. The registry is asked on every `push`, so a doc
+  closed since is refused.
+- **One `doc_event` for each `push`**, however many boards hold the doc. Its
+  `path` is the registry key (the resolved path) and its `data` is the `push`'s,
+  byte for byte. A doc of any kind gets it, also on a board in the background:
+  the app gives it only to an HTML card whose document is ready for its current
+  load, and drops it otherwise. Nothing is kept for later.
+- **`ack` means queued for the app**, not drawn by a card. While the app's queue
+  is full, the answer waits.
+- **The JSON rule** is `serde_json`'s for one value: any value at the top, white
+  space (space, tab, LF, CR) around it, and nothing after it. Refused among
+  others: empty text, a byte-order mark, a number out of the range of a double
+  (`1e400`), an unpaired surrogate escape (`"\ud800"`), and more than 127 levels
+  of nested arrays and objects.
+- **The frame limit.** The cli does not send a `push` whose payload is over
+  `MAX_FRAME_LEN`. A frame whose length prefix is over it ends the connection
+  with no answer (*Framing*). The `doc_event` is 5 bytes longer than the `push`
+  (more when the resolved path is longer), so the daemon checks it again.
+
+A `push` on an app connection is ignored, as any message the app session does
+not take. New **additive types**: a daemon that does not know `push` ignores it
+under the unknown-type rule and does not answer, and the cli reports that no
+answer came in 5 s. All existing vectors decode unchanged.
+
+| key | type | missing ⇒ | semantics |
+|---|---|---|---|
+| `path` | string (required) | — | `push`: the doc, an absolute path as given; `doc_event`: the doc's registry key |
+| `data` | string (required) | — | one JSON value, as text |
+
 ## Replaying a terminal's scrollback on demand (issue #41)
 
     {t:"scrollback_request", term_id}               — app → daemon
@@ -701,3 +763,18 @@ round-trip. Byte-exact encoder output is NOT required (key order may legally dif
         83 a1 74 a8 64 6f 63 5f 64 61 74 61 a8 62 6f 61 72 64 5f 69
         64 a7 62 6f 61 72 64 2d 30 a4 70 61 74 68 ac 2f 61 2f 64 61
         73 68 2e 68 74 6d 6c
+
+16. (issue #326) `{t:"push", path:"/a/dash.html", data:"{\"n\":1}"}` — new
+    additive cli→daemon type; decodes by tag and round-trips; existing vectors
+    V1–V15 are unaffected. Keys in the order `rmp_serde::to_vec_named` writes
+    them.
+
+        83 a1 74 a4 70 75 73 68 a4 70 61 74 68 ac 2f 61 2f 64 61 73 68
+        2e 68 74 6d 6c a4 64 61 74 61 a7 7b 22 6e 22 3a 31 7d
+
+17. (issue #326) `{t:"doc_event", path:"/a/dash.html", data:"{\"n\":1}"}` — new
+    additive daemon→app type, the same keys in the same order.
+
+        83 a1 74 a9 64 6f 63 5f 65 76 65 6e 74 a4 70 61 74 68 ac 2f 61
+        2f 64 61 73 68 2e 68 74 6d 6c a4 64 61 74 61 a7 7b 22 6e 22 3a
+        31 7d

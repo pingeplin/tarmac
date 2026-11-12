@@ -8,7 +8,7 @@ private extension HTMLCardSession {
 
 /// What the host does with each message from an HTML card's document, and what
 /// a reload resets (specs 2607.0004, 2607.0006, 2609.0002, 2609.0003,
-/// 2611.0002).
+/// 2611.0002, 2611.0003).
 final class HTMLCardSessionTests: XCTestCase {
     private typealias Effect = HTMLCardSession.Effect
     private let magnify = CardHostMessage.zoom(Double(CardZoom.magnifyK))
@@ -452,5 +452,64 @@ final class HTMLCardSessionTests: XCTestCase {
         var session = card(naming: "../x.json").0
         XCTAssertFalse(reload(&session, naming: "../x.json").contains(.consoleChanged))
         XCTAssertEqual(session.console.entries.count, 1)
+    }
+
+    // MARK: - events (2611.0003 S25–S30)
+
+    private let text = #"{"n":1}"#
+
+    /// A card whose current load's stamped ready was heard, its document
+    /// naming no data file.
+    private func ready() -> HTMLCardSession { card(naming: nil).0 }
+
+    func test2611_0003S25ACardReadyForItsLoadGetsTheEvent() {
+        let session = ready()
+        XCTAssertEqual(session.event(text), [.event(text)])
+    }
+
+    func test2611_0003S26ACardWithNoReadyYetGetsNothing() {
+        var fresh = HTMLCardSession()
+        XCTAssertEqual(fresh.event(text), [])
+        fresh.reloaded()
+        XCTAssertEqual(fresh.event(text), [])
+    }
+
+    func test2611_0003S27NothingBetweenAReloadAndTheNewLoadsReady() {
+        var session = ready()
+        let load = session.reloaded()
+        XCTAssertEqual(session.event(text), [])
+        _ = session.handle(.ready(meta: nil, data: nil, load: load), borrowed: false)
+        XCTAssertEqual(session.event(text), [.event(text)])
+    }
+
+    func test2611_0003S28ACulledCardGetsTheEvent() {
+        var session = ready()
+        _ = session.setCulled(true)
+        XCTAssertEqual(session.event(text), [.event(text)])
+    }
+
+    /// A ready with no stamp, or the stamp of a load that is not the current
+    /// one, adopts a mode and names nothing.
+    func test2611_0003S29AReadyOfAnOldLoadOrWithNoStampIsNotReady() {
+        var old = HTMLCardSession()
+        let load = old.reloaded()
+        old.reloaded()
+        _ = old.handle(.ready(meta: nil, data: nil, load: load), borrowed: false)
+        XCTAssertEqual(old.event(text), [])
+
+        var unstamped = HTMLCardSession()
+        unstamped.reloaded()
+        _ = unstamped.handle(.ready(meta: nil), borrowed: false)
+        XCTAssertNotNil(unstamped.mode, "the ready was heard")
+        XCTAssertEqual(unstamped.event(text), [])
+    }
+
+    func test2611_0003S30AnEventAndTheDataFileDoNotTouchEachOther() throws {
+        var session = card().0
+        let read = try readStarted(&session)
+        let before = session
+        XCTAssertEqual(session.event(text), [.event(text)])
+        XCTAssertEqual(session, before)
+        XCTAssertEqual(session.readEnded(read, .text("[1]")), [.deliver("[1]")])
     }
 }

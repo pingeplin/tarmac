@@ -330,6 +330,47 @@ final class ConformanceTests: XCTestCase {
         XCTAssertEqual(message.encodedPayload(), payload)
     }
 
+    /// 2611.0003 S2 (issue #326, additive cli → daemon): one value for the
+    /// cards of a doc.
+    func testVector16Push() throws {
+        let payload = hexData("""
+            83 a1 74 a4 70 75 73 68 a4 70 61 74 68 ac 2f 61 2f 64 61 73 68 2e 68 74 6d 6c
+            a4 64 61 74 61 a7 7b 22 6e 22 3a 31 7d
+            """)
+        let message = Message.push(path: "/a/dash.html", data: #"{"n":1}"#)
+        let expected = MsgPackValue.map([
+            "t": .string("push"),
+            "path": .string("/a/dash.html"),
+            "data": .string(#"{"n":1}"#),
+        ])
+
+        XCTAssertEqual(try MsgPack.decode(payload), expected)
+        XCTAssertEqual(try Message.decode(payload: payload), message)
+        assertRoundTrips(expected)
+        assertRoundTrips(message)
+        XCTAssertEqual(message.encodedPayload(), payload)
+    }
+
+    /// 2611.0003 S2 (daemon → app): the value, for the doc's cards.
+    func testVector17DocEvent() throws {
+        let payload = hexData("""
+            83 a1 74 a9 64 6f 63 5f 65 76 65 6e 74 a4 70 61 74 68 ac 2f 61 2f 64 61 73 68
+            2e 68 74 6d 6c a4 64 61 74 61 a7 7b 22 6e 22 3a 31 7d
+            """)
+        let message = Message.docEvent(path: "/a/dash.html", data: #"{"n":1}"#)
+        let expected = MsgPackValue.map([
+            "t": .string("doc_event"),
+            "path": .string("/a/dash.html"),
+            "data": .string(#"{"n":1}"#),
+        ])
+
+        XCTAssertEqual(try MsgPack.decode(payload), expected)
+        XCTAssertEqual(try Message.decode(payload: payload), message)
+        assertRoundTrips(expected)
+        assertRoundTrips(message)
+        XCTAssertEqual(message.encodedPayload(), payload)
+    }
+
     /// The daemon answers every `scrollback_request`, even with an empty ring;
     /// the empty reply must survive the codec so the app can stop waiting.
     func testScrollbackReplyRoundTripsEmptyBytes() {

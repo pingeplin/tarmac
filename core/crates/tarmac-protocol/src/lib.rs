@@ -187,6 +187,18 @@ pub enum Msg {
         #[serde(with = "serde_bytes")]
         bytes: Vec<u8>,
     },
+    /// cli -> daemon: one JSON value for the loaded cards of the doc `path`;
+    /// answered `ack` or `err`. `data` is the value's text, checked by the
+    /// daemon only. Field order is wire order (vector 16).
+    Push {
+        path: String,
+        data: String,
+    },
+    /// Daemon -> app: a `push`, with `path` the registry's key. No reply.
+    DocEvent {
+        path: String,
+        data: String,
+    },
     /// A receiver ignores message types it does not know instead of failing.
     #[serde(other)]
     Unknown,

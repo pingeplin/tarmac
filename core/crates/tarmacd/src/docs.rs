@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use tarmac_protocol::Msg;
+use tarmac_protocol::{MAX_FRAME_LEN, Msg};
 use tokio::task::JoinSet;
 use tracing::debug;
 
@@ -51,14 +51,7 @@ pub async fn handle_open(
         return Err(format!("path is not absolute: {raw_path}"));
     }
     let gate = daemon.gate();
-    let resolve = {
-        let p = p.to_owned();
-        move |fs: &dyn PathFs| fs.resolve(&p)
-    };
-    let (canon, seen) = gate
-        .run(p, resolve)
-        .await
-        .map_err(|Out| gate.did_not_answer(&format!("cannot open {raw_path}")))??;
+    let (canon, seen) = resolve(gate, raw_path).await?;
     // `None` resolves to the active board inside `registry_mut`.
     let target = match (board_id, &term_id) {
         (Some(id), _) => Some(id),
@@ -84,6 +77,69 @@ pub async fn handle_open(
     debug!("doc opened via {via}: {}", canon.display());
     daemon.push(Msg::DocOpened(entry)).await;
     Ok(())
+}
+
+/// `push`: gives `data`, one JSON value, to the app for the open doc
+/// `raw_path`, as one `doc_event` with the registry's path whatever boards
+/// hold the doc. The JSON check comes first, as it costs no file-system call.
+/// A path the registry does not have as given is resolved through the gate
+/// once for each connection, which owns `resolved` (given -> resolved); a
+/// resolve that fails is not kept. The registry is asked on every push, so a
+/// doc closed since is refused.
+pub async fn handle_push(
+    daemon: &Daemon,
+    resolved: &mut HashMap<PathBuf, PathBuf>,
+    raw_path: &str,
+    data: String,
+) -> Result<(), String> {
+    serde_json::from_str::<serde_json::Value>(&data).map_err(|e| format!("not one JSON value: {e}"))?;
+    let given = Path::new(raw_path);
+    if !given.is_absolute() {
+        return Err(format!("path is not absolute: {raw_path}"));
+    }
+    let key = match open_key(daemon, given).await {
+        Some(key) => key,
+        None => {
+            let path = match resolved.get(given) {
+                Some(path) => path.clone(),
+                None => {
+                    let (path, _) = resolve(daemon.gate(), raw_path).await?;
+                    resolved.insert(given.to_owned(), path.clone());
+                    path
+                }
+            };
+            open_key(daemon, &path).await.ok_or_else(|| format!("not an open doc: {raw_path}"))?
+        }
+    };
+    let event = Msg::DocEvent { path: key.to_string_lossy().into_owned(), data };
+    // A frame over the limit would end the app's connection when it is
+    // written (`conn::app_session`), after this push had been acked.
+    if !tarmac_protocol::encode(&event).is_ok_and(|p| p.len() <= MAX_FRAME_LEN as usize) {
+        return Err("value is over the frame limit (16 MiB)".into());
+    }
+    if !daemon.push(event).await {
+        return Err("no app is connected".into());
+    }
+    Ok(())
+}
+
+/// `raw_path` resolved through the gate, keyed by the path as given, with
+/// the texts an open answers.
+async fn resolve(gate: &PathGate, raw_path: &str) -> Result<(PathBuf, FileStamp), String> {
+    let given = Path::new(raw_path);
+    let resolve = {
+        let given = given.to_owned();
+        move |fs: &dyn PathFs| fs.resolve(&given)
+    };
+    gate.run(given, resolve).await.map_err(|Out| gate.did_not_answer(&format!("cannot open {raw_path}")))?
+}
+
+/// The registry's key for `path` on any board, as it is written: `Path`
+/// equality also takes `/./`, `//` and a trailing `/`, and the app keys its
+/// cards by the text.
+async fn open_key(daemon: &Daemon, path: &Path) -> Option<PathBuf> {
+    let boards = daemon.boards.lock().await;
+    boards.iter().find_map(|board| board.registry.docs.get_key_value(path)).map(|(key, _)| key.clone())
 }
 
 /// Registers `path` in `reg`, or refreshes the doc already there. True when

@@ -119,6 +119,14 @@ extension AppController {
         }
     }
 
+    /// `doc_event`: the value goes to the doc's HTML card on every board
+    /// that has built one; the session decides whether its document takes it.
+    func handleDocEvent(path: String, data: String) {
+        for board in boards.values {
+            board.view.card(.doc(path))?.htmlBody?.event(data)
+        }
+    }
+
     /// The header `↻`. Nothing changes here: the daemon stats the file and its
     /// `file_event` is what shows the doc again.
     func refreshDocFromDisk(_ path: String) {

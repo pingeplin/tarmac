@@ -38,6 +38,7 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
     private let console = CardConsoleView()
 
     private var session: HTMLCardSession
+    private var events = CardEventBatch()
     private var consoleUpdate = CoalescedUpdate()
     private var pageLoaded = false
     /// The theme whose backdrop the host page holds: the one it was loaded
@@ -87,6 +88,7 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
 
     private func loadPage() {
         pageLoaded = false
+        events.drop()
         loadingPage = true
         backdropGiven = PageTheme(Theme.palette)
         coverDocument()
@@ -197,6 +199,28 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
         webView.runInCardWorld("tarmacCard.data(text)", arguments: ["text": text])
     }
 
+    // MARK: - Events
+
+    /// A pushed value for this card's doc (spec 2611.0003).
+    func event(_ text: String) {
+        session.event(text).forEach(apply)
+    }
+
+    /// The events of one main-loop turn go to the document in one call: the
+    /// flush is queued behind the frames already on the main queue.
+    private func queue(_ text: String) {
+        guard events.add(text) else { return }
+        DispatchQueue.main.async { [weak self] in self?.flushEvents() }
+    }
+
+    /// The texts are an argument, never part of the script. With no host page
+    /// they are dropped, as a delivery is.
+    private func flushEvents() {
+        let texts = events.take()
+        guard pageLoaded, !texts.isEmpty else { return }
+        webView.runInCardWorld("tarmacCard.events(texts)", arguments: ["texts": texts])
+    }
+
     // MARK: - Console
 
     func toggleConsole() {
@@ -254,6 +278,7 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
     private func loadDocument() {
         guard pageLoaded, let source else { return }
         let load = session.reloaded()
+        events.drop()
         coverDocument()
         webView.resetWheel()
         onScrollChanged?(nil)
@@ -298,6 +323,7 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
         case .dataFile(let file): onDataFile?(file)
         case .read(let read): run(read)
         case .deliver(let text): deliver(text)
+        case .event(let text): queue(text)
         }
     }
 

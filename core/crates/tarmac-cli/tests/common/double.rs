@@ -102,6 +102,14 @@ impl Peer {
         Some(payload)
     }
 
+    /// A frame that comes within `wait`, recorded; `None` when none does.
+    pub fn read_within(&mut self, wait: Duration) -> Option<Vec<u8>> {
+        self.stream.set_read_timeout(Some(wait)).unwrap();
+        let payload = self.read();
+        self.stream.set_read_timeout(Some(WAIT)).unwrap();
+        payload
+    }
+
     pub fn write(&mut self, payload: &[u8]) -> bool {
         frame::write_sync(&mut self.stream, payload).is_ok()
     }

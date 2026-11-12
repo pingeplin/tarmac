@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -77,6 +77,8 @@ async fn handshake(daemon: Arc<Daemon>, mut stream: UnixStream) -> anyhow::Resul
 }
 
 async fn cli_session(daemon: Arc<Daemon>, mut stream: UnixStream) -> anyhow::Result<()> {
+    // The pushes of this connection: each path given, resolved once.
+    let mut resolved = HashMap::new();
     loop {
         let payload = match frame::read_async(&mut stream).await {
             Ok(p) => p,
@@ -85,6 +87,13 @@ async fn cli_session(daemon: Arc<Daemon>, mut stream: UnixStream) -> anyhow::Res
         match proto::decode(&payload) {
             Ok(Msg::Open { path, term_id, board_id }) => {
                 let reply = match docs::handle_open(&daemon, &path, "cli", term_id, board_id).await {
+                    Ok(()) => Msg::Ack,
+                    Err(msg) => Msg::Err { msg },
+                };
+                write_msg(&mut stream, &reply).await?;
+            }
+            Ok(Msg::Push { path, data }) => {
+                let reply = match docs::handle_push(&daemon, &mut resolved, &path, data).await {
                     Ok(()) => Msg::Ack,
                     Err(msg) => Msg::Err { msg },
                 };

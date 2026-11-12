@@ -80,6 +80,8 @@ extension AppController {
             handleDocOpened(doc)
         case .fileEvent(let path, let mtimeMs):
             handleFileEvent(path: path, mtimeMs: mtimeMs)
+        case .docEvent(let path, let data):
+            handleDocEvent(path: path, data: data)
         case .termProc(let termID, let name, _):
             handleTermProc(termID: termID, name: name)
         case .bell(let termID):

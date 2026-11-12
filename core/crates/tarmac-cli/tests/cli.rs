@@ -47,6 +47,16 @@ fn help_exits_zero_and_documents_open() {
     assert!(out.stdout.contains("TARMAC_SOCKET"));
 }
 
+// Spec 2611.0003: the verb, both of its modes, and its exit status.
+#[test]
+fn help_documents_push() {
+    let out = Report::of(tarmac().arg("--help"));
+    assert!(out.status.success());
+    assert!(out.stdout.contains("tarmac push <html-path> <json>"), "{}", out.stdout);
+    assert!(out.stdout.contains("tarmac push <html-path> -"), "{}", out.stdout);
+    assert!(out.stdout.contains("1  the daemon refused an open or a push"), "{}", out.stdout);
+}
+
 #[test]
 fn no_args_exits_with_usage_error() {
     let out = Report::of(&mut tarmac());

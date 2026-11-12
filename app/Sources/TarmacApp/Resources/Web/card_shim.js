@@ -1,7 +1,7 @@
 // Console-capture + escape-hatch + zoom + scroll-report + default-scheme +
-// font-properties + data-file shim for sandboxed HTML doc cards (specs
-// 2607.0004, 2607.0006, 2610.0003, 2610.0007, 2610.0010, 2610.0011,
-// 2611.0002). Placed by CardProtocol.respond in every tarmac-card:// response
+// font-properties + data-file + events shim for sandboxed HTML doc cards
+// (specs 2607.0004, 2607.0006, 2610.0003, 2610.0007, 2610.0010, 2610.0011,
+// 2611.0002, 2611.0003). Placed by CardProtocol.respond in every tarmac-card:// response
 // after the file's leading doctype, so it runs before any author script and
 // observes console/error/escape activity from the very first line of card
 // script. Must never throw or break the host page — every path here is
@@ -92,6 +92,28 @@
     }
     tarmac.data = value;
     window.dispatchEvent(new CustomEvent("tarmac:data", { detail: value }));
+  }
+
+  // Pushed values (spec 2611.0003), one `tarmac:event` each, in order. Each
+  // text has its own guard: one that does not parse, or a listener that
+  // throws, stops none after it. `window.tarmac.data` is not theirs.
+  function dispatchEvents(texts) {
+    if (!Array.isArray(texts)) return;
+    for (var i = 0; i < texts.length; i++) {
+      if (typeof texts[i] !== "string") continue;
+      var value;
+      try {
+        value = JSON.parse(texts[i]);
+      } catch (e) {
+        relay("error", ["tarmac:event: not valid JSON"]);
+        continue;
+      }
+      try {
+        window.dispatchEvent(new CustomEvent("tarmac:event", { detail: value }));
+      } catch (e) {
+        // A listener's error is the page's, and WebKit reports it as such.
+      }
+    }
   }
 
   function safeSerialize(args) {
@@ -412,6 +434,10 @@
       }
       if (d.tarmac === "data") {
         deliver(d.text);
+        return;
+      }
+      if (d.tarmac === "events") {
+        dispatchEvents(d.texts);
         return;
       }
       // The scroll thumb is being dragged: the root goes where the host says,

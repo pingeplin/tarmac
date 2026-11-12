@@ -20,6 +20,8 @@ public struct HTMLCardSession: Equatable, Sendable {
         case read(DataRead)
         /// Hand the data file's text to the document.
         case deliver(String)
+        /// Hand a pushed value's text to the document (spec 2611.0003).
+        case event(String)
     }
 
     /// A read of `file`, the data file of the card whose file is `html`.
@@ -155,6 +157,13 @@ public struct HTMLCardSession: Equatable, Sendable {
         console.push(CardConsole.Entry(level: .error, args: [.string(line)]))
         lastDataLine = line
         return [.consoleChanged]
+    }
+
+    /// A pushed value (spec 2611.0003) goes to a document that is ready for
+    /// the current load, culled or not. Nothing is kept for one that is not.
+    public func event(_ text: String) -> [Effect] {
+        guard let namedLoad, loads.isCurrent(namedLoad) else { return [] }
+        return [.event(text)]
     }
 
     /// The message to post, or nil when `fonts` is what the document has.

@@ -6,6 +6,7 @@ use std::time::Duration;
 use tarmac_protocol::{self as proto, Msg, frame};
 
 mod help;
+mod push;
 mod skill;
 
 /// The one build-config to channel mapping: a debug build is `dev`, a release
@@ -70,6 +71,7 @@ fn run(args: &[String]) -> i32 {
         }
         Some("dev") => dev_dispatch(&args[1..]),
         Some("skill") => skill::run(&args[1..]),
+        Some("push") => push::run(&args[1..]),
         Some("open") => match &args[1..] {
             [path] => match open(path) {
                 Ok(line) => {
@@ -187,13 +189,11 @@ fn app_line(info: &DaemonInfo) -> String {
     }
 }
 
-fn open(raw_path: &str) -> Result<String, String> {
-    // No file-system call on the path: on a hung volume it would hang the cli,
-    // and Ctrl-C could not end it (#267).
-    let path = std::path::absolute(raw_path).map_err(|e| format!("cannot open {raw_path}: {e}"))?;
-
+/// A connection past its handshake, or the reason there is none, as the
+/// verbs that talk to the daemon print it.
+fn connect() -> Result<UnixStream, String> {
     let sock = socket_path();
-    let (mut stream, _) = handshake(&sock).map_err(|e| match e {
+    let (stream, _) = handshake(&sock).map_err(|e| match e {
         NoHandshake::NoDaemon => format!(
             "no tarmac daemon running ({} channel, socket: {})",
             proto::channel_label(current_channel()),
@@ -201,6 +201,15 @@ fn open(raw_path: &str) -> Result<String, String> {
         ),
         NoHandshake::Reason(why) => why,
     })?;
+    Ok(stream)
+}
+
+fn open(raw_path: &str) -> Result<String, String> {
+    // No file-system call on the path: on a hung volume it would hang the cli,
+    // and Ctrl-C could not end it (#267).
+    let path = std::path::absolute(raw_path).map_err(|e| format!("cannot open {raw_path}: {e}"))?;
+
+    let mut stream = connect()?;
 
     let term_id = std::env::var("TARMAC_TERM_ID").ok().filter(|s| !s.is_empty());
     // board_id stays None: the daemon resolves the board from term_id, falling

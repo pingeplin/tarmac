@@ -486,4 +486,15 @@ final class CardHostScriptTests: XCTestCase {
             [["tarmac": "data", "text": text]]
         )
     }
+
+    /// 2611.0003 S34: the texts of one flush go into the frame as one message.
+    func test2611_0003S34TheEventTextsArePostedIntoTheFrameAsOneMessage() {
+        let texts = ["1", "2", #"{"s":"\"</script>"}"#]
+        context.setObject(texts, forKeyedSubscript: "texts" as NSString)
+        context.evaluateScript("window.tarmacCard.events(texts)")
+        XCTAssertEqual(
+            context.evaluateScript("cardWindow.posted").toArray() as? [NSDictionary],
+            [["tarmac": "events", "texts": texts]]
+        )
+    }
 }
