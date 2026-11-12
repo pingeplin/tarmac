@@ -602,11 +602,15 @@ final class HTMLCardSessionTests: XCTestCase {
         XCTAssertEqual(session.takeLargestPending(), 1, "the same card counts once it is ready")
     }
 
+    func test2611_0004TheLimitIs1000() {
+        XCTAssertEqual(HTMLCardSession.pendingLimit, 1_000)
+    }
+
     func test2611_0004S21TheEventThatGoesOverTheLimitSaysSoOnce() {
         var session = ready()
-        let given = overLimit(push(limit + 2, to: &session))
-        XCTAssertEqual(Array(given.keys), [limit + 1])
-        XCTAssertEqual(given[limit + 1], [.pendingOverLimit(limit + 1)])
+        let given = overLimit(push(1_002, to: &session))
+        XCTAssertEqual(Array(given.keys), [1_001])
+        XCTAssertEqual(given[1_001], [.pendingOverLimit(1_001)])
     }
 
     func test2611_0004S22ItIsSaidAgainAfterATakeAndAnotherOverflow() {

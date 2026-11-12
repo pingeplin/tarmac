@@ -92,12 +92,12 @@ final class SampleLineTests: XCTestCase {
     }
 
     /// Two cards in one process: the process counts once, and its first card
-    /// names it.
+    /// names it. The largest is neither the last entry nor the last process.
     func testS6WebContentCountsDistinctPidsOnceAndNamesTheLargest() throws {
         var sample = full
         sample.webContent = [
-            WebContent(pid: 1, path: "/a/ten.html", footprint: 10),
             WebContent(pid: 2, path: "/a/thirty.html", footprint: 30),
+            WebContent(pid: 1, path: "/a/ten.html", footprint: 10),
             WebContent(pid: 2, path: "/a/twenty.md", footprint: 20),
         ]
         let attrs = try attrs(of: sample)
@@ -107,8 +107,8 @@ final class SampleLineTests: XCTestCase {
         XCTAssertEqual(attrs["tarmac.webcontent.largest.path"] as? String, "/a/thirty.html")
     }
 
-    /// An unreadable entry is not a process of the count, and the readable
-    /// entry of a pid is the one that counts.
+    /// An entry whose process could not be read is left out of the count, the
+    /// sum and the largest.
     func testAnUnreadableEntryIsNotCounted() throws {
         var sample = full
         sample.webContent = [
@@ -148,8 +148,17 @@ final class SampleLineTests: XCTestCase {
         XCTAssertEqual(resource["process.pid"] as? Int, 42)
     }
 
-    /// 07:05:09.007 in Taipei is 23:05:09.007 of the day before in UTC.
+    /// 07:05:09.007 in Taipei is 23:05:09.007 of the day before in UTC. The
+    /// process runs in Taipei for the test, so a line in local time cannot
+    /// pass on a machine whose zone is UTC.
     func testS9TheTimeIsUTCWithThreeDecimalsAndZ() throws {
+        let saved = getenv("TZ").map { String(cString: $0) }
+        setenv("TZ", "Asia/Taipei", 1)
+        tzset()
+        defer {
+            if let saved { setenv("TZ", saved, 1) } else { unsetenv("TZ") }
+            tzset()
+        }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Taipei"))
         let date = try XCTUnwrap(calendar.date(from: DateComponents(

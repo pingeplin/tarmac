@@ -63,6 +63,8 @@ final class SampleLog {
         let timer = Timer(timeInterval: intervalSeconds, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.sample() }
         }
+        // A sample need not be on the second: let the system batch its wakeup.
+        timer.tolerance = intervalSeconds / 10
         // Common modes, so a tracked menu or a live resize cannot hold a sample back.
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
