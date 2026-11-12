@@ -22,10 +22,10 @@ pub trait WakeSource: Send {
     fn unwatch(&mut self, dir: &Path) -> anyhow::Result<()>;
 }
 
-/// FSEvents through `notify`. Each `watch` and `unwatch` restarts its one
-/// stream, and the restart loses the events that the stream has not delivered
-/// yet (#253): the watcher thread wakes a look after either. No debouncer
-/// (#258).
+/// FSEvents through `notify`. A `watch` or `unwatch` restarts its one stream;
+/// notify 9 starts the new one at the last event the old one delivered, where
+/// 8.2 lost the events not delivered yet (#253). The watcher thread still
+/// wakes a look after either. No debouncer (#258).
 pub struct NotifySource(RecommendedWatcher);
 
 impl NotifySource {
@@ -120,8 +120,8 @@ impl Asks {
     /// The one thread that calls `source`, one call at a time, so that a
     /// call that does not return (notify reads the path itself) holds only
     /// this thread. A dir is wanted while `wanted` says so; `woke` runs after
-    /// each call of the source, which restarts the stream whether it
-    /// succeeded or not (#253). It ends when every `Watcher` is dropped.
+    /// each call of the source, whether it succeeded or not (#253). It ends
+    /// when every `Watcher` is dropped.
     pub fn spawn(
         self,
         source: Box<dyn WakeSource>,
@@ -200,6 +200,12 @@ impl<W: Fn(&Path) -> bool, O: Fn(&Path) -> bool, F: Fn()> Thread<W, O, F> {
             let called = self.source.watch(dir);
             if called.is_ok() {
                 self.watched.insert(dir.to_owned());
+            } else {
+                // notify 9 can fail a watch after taking the dir into its
+                // stream, which then does not start again
+                // (`FsEventWatcher::watch_inner`); a dir not kept here is
+                // never unwatched, so the watch is taken back.
+                let _ = self.source.unwatch(dir);
             }
             ("watch", called)
         } else {
