@@ -32,9 +32,9 @@ async fn wait_for_saved(tmp: &Path, doc: &Path, want: Option<u64>) {
     panic!("the state file never had {want:?}, it has {:?}", saved());
 }
 
-// #253: an unwatch restarts the FSEvents stream, and the restart loses the
-// events that the stream has not delivered yet. So the watcher thread
-// wakes a look after the unwatch; here no other wake comes at all.
+// #253: the watcher thread wakes a look after the unwatch (notify 8.2 lost
+// the events its restarted stream had not delivered); here no other wake
+// comes at all.
 #[tokio::test]
 async fn a_close_reports_a_change_that_no_wake_told_of() {
     let (tmp, daemon, mut app) = silent_daemon("close-reports").await;
@@ -342,7 +342,7 @@ async fn a_refresh_stats_the_file_and_does_not_replay_what_is_recorded() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-// notify restarts its stream also for a watch that fails.
+// The watcher thread wakes a look after a watch that fails too (#253).
 #[tokio::test]
 async fn an_open_that_cannot_watch_reports_a_change_too() {
     let tmp = tmp_dir("refused-reports");

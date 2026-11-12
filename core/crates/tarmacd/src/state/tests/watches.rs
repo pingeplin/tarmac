@@ -312,9 +312,9 @@ impl WakeSource for UnwatchFails {
     }
 }
 
-// notify takes the dir out of its stream before it fails most unwatches
-// (`FsEventWatcher::remove_path`): a dir that is kept as watched would
-// never be watched again.
+// notify fails an unwatch only when the dir was not in its stream or after
+// taking it out (`FsEventWatcher::unwatch_inner`): a dir that is kept as
+// watched would never be watched again.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_dir_whose_unwatch_failed_is_watched_by_the_next_open() {
     let tmp = canon_tmp("unwatch-fails");
@@ -330,6 +330,42 @@ async fn a_dir_whose_unwatch_failed_is_watched_by_the_next_open() {
 
     assert_eq!(try_open(&daemon, &doc).await, Ok(()));
     assert_eq!(calls.of(Change::Watch, &d), 2);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// Records each call; each watch of its dir fails.
+struct WatchFails(PathBuf, Arc<SourceCalls>);
+
+impl WakeSource for WatchFails {
+    fn watch(&mut self, dir: &Path) -> anyhow::Result<()> {
+        self.1.0.lock().unwrap().push((Change::Watch, dir.to_owned()));
+        anyhow::ensure!(dir != self.0, "too many paths");
+        Ok(())
+    }
+
+    fn unwatch(&mut self, dir: &Path) -> anyhow::Result<()> {
+        self.1.0.lock().unwrap().push((Change::Unwatch, dir.to_owned()));
+        Ok(())
+    }
+}
+
+// notify 9 can fail a watch after it has taken the dir into its stream
+// (`FsEventWatcher::watch_inner`: the stream does not start again), and a
+// dir that is not counted as watched is never unwatched: the failed watch
+// is taken back, so the stream starts again with the other dirs.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_dir_whose_watch_failed_is_unwatched_again() {
+    let tmp = canon_tmp("watch-fails");
+    let d = tmp.join("d");
+    let doc = write_doc(d.join("a.md"));
+    let calls = Arc::new(SourceCalls::default());
+    let (fs, _unheld) = stuck_fs();
+    let daemon = held(&tmp, Box::new(WatchFails(d.clone(), calls.clone())), fs).await;
+
+    assert!(try_open(&daemon, &doc).await.is_err_and(|e| e.contains("too many paths")));
+    assert!(!watched(&daemon, &d).await);
+    assert_eq!(calls.of(Change::Unwatch, &d), 1);
 
     let _ = std::fs::remove_dir_all(&tmp);
 }
