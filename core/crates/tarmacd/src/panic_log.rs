@@ -5,7 +5,7 @@ use std::any::Any;
 use std::panic::Location;
 
 /// Chains onto the hook already installed, which still prints the panic as
-/// before. Install after the subscriber, or the record goes nowhere.
+/// before. The record goes to the subscriber set when the panic happens.
 pub fn install() {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -29,7 +29,6 @@ mod tests {
     use super::{install, record};
     use std::io::Write;
     use std::panic::{self, Location};
-    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
 
     #[test]
@@ -72,13 +71,16 @@ mod tests {
     }
 
     // The hook is process-wide: it is swapped and restored around one panic,
-    // and the tracing subscriber is scoped to this thread.
+    // and the tracing subscriber is scoped to this thread. Other tests here
+    // panic on purpose, so the stub hook is checked for this test's payload.
     #[test]
     fn a_panic_is_logged_as_an_error_and_the_previous_hook_still_runs() {
         let original = panic::take_hook();
-        let chained = Arc::new(AtomicBool::new(false));
+        let chained = Arc::new(Mutex::new(Vec::new()));
         let seen = chained.clone();
-        panic::set_hook(Box::new(move |_| seen.store(true, Ordering::SeqCst)));
+        panic::set_hook(Box::new(move |info| {
+            seen.lock().unwrap().push(info.payload_as_str().unwrap_or_default().to_string());
+        }));
         install();
 
         let out = Captured::default();
@@ -92,6 +94,6 @@ mod tests {
         assert!(text.contains("ERROR"), "{text}");
         assert!(text.contains(&format!("panicked at {}:", file!())), "{text}");
         assert!(text.contains("boom 7"), "{text}");
-        assert!(chained.load(Ordering::SeqCst));
+        assert!(chained.lock().unwrap().iter().any(|p| p == "boom 7"));
     }
 }

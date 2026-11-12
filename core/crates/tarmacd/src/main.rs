@@ -79,6 +79,9 @@ async fn main() -> anyhow::Result<()> {
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .with_writer(std::io::stderr)
+        // On a failed write the fmt layer falls back to `eprintln!`, which
+        // panics; inside the panic hook that is an abort.
+        .log_internal_errors(false)
         .init();
     panic_log::install();
 

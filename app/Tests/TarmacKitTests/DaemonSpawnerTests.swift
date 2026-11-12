@@ -17,8 +17,9 @@ private func terminatingSignal(_ status: Int32) -> Int32? {
     return signal != 0 && signal != 0x7f ? signal : nil
 }
 
-/// How the daemon is launched, observed from real children. The first five are
-/// the Rust `daemon_command_*` tests in `desktop/src-tauri/src/bridge.rs`.
+/// How the daemon is launched, observed from real children. The first five port
+/// the Rust `daemon_command_*` tests in `desktop/src-tauri/src/bridge.rs`; the
+/// third asserted a truncated log until #317.
 final class DaemonSpawnerTests: XCTestCase {
     private var dir = ""
     private var log: String { dir + "/tarmacd.log" }
@@ -43,7 +44,7 @@ final class DaemonSpawnerTests: XCTestCase {
     }
 
     private let cap = 1 << 20
-    private var previous: String { log + ".1" }
+    private var rotated: String { log + ".1" }
 
     private func writeLog(bytes: Int) throws -> Data {
         let body = Data(repeating: UInt8(ascii: "x"), count: bytes)
@@ -111,13 +112,13 @@ final class DaemonSpawnerTests: XCTestCase {
     /// A log over the cap moves to `.1`, replacing an older one, and the new
     /// session starts an empty file.
     func testALogOverTheCapMovesAsideAndTheNewOneStartsEmpty() throws {
-        try "OLDER\n".write(toFile: previous, atomically: true, encoding: .utf8)
+        try "OLDER\n".write(toFile: rotated, atomically: true, encoding: .utf8)
         let full = try writeLog(bytes: cap + 1)
 
         _ = reap(try sh("echo NEW"))
 
         XCTAssertEqual(logText(), "NEW\n")
-        XCTAssertEqual(FileManager.default.contents(atPath: previous), full)
+        XCTAssertEqual(FileManager.default.contents(atPath: rotated), full)
     }
 
     /// The cap is a ceiling: a log of exactly that size is still appended to.
@@ -128,12 +129,12 @@ final class DaemonSpawnerTests: XCTestCase {
 
         XCTAssertEqual(FileManager.default.contents(atPath: log)?.count, cap + 4)
         XCTAssertTrue(logText().hasSuffix("xNEW\n"))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: previous))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: rotated))
     }
 
     /// A rotation that fails costs the bound, never the daemon or its output.
     func testTheDaemonStillRunsAndLogsWhenTheRotationFails() throws {
-        try FileManager.default.createDirectory(atPath: previous + "/occupied", withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(atPath: rotated + "/occupied", withIntermediateDirectories: true)
         _ = try writeLog(bytes: cap + 1)
 
         XCTAssertEqual(exitCode(reap(try sh("echo NEW; exit 7"))), 7)
