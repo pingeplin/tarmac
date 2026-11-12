@@ -78,7 +78,7 @@ paths, no relative links.
 | Doc | What it is |
 | --- | --- |
 | [`proposed/v4c-editable-docs.md`](proposed/v4c-editable-docs.md) | Editable doc cards, borrowed focus, write-conflict banner. Captured from mocks; never started. Doc cards are read-only today. |
-| [`designs/2611.0001_html_card_data_push.md`](designs/2611.0001_html_card_data_push.md) | New data into a loaded HTML card with no reload: a JSON state file the daemon watches, and a `tarmac push` verb for single events; a card reads only in its own directory tree. Phases 1 (the state file, #313) and 2 (`tarmac push`, #326) are built; phase 3 (a data file in a subdirectory) is not. |
+| [`designs/2611.0001_html_card_data_push.md`](designs/2611.0001_html_card_data_push.md) | New data into a loaded HTML card with no reload: a JSON state file the daemon watches, and a `tarmac push` verb for single events; a card reads only in its own directory tree. **Built in part**, the one exception to "zero lines" here: phases 1 (the state file, #313) and 2 (`tarmac push`, #326) are built and described in `architecture.md`; phase 3 (a data file in a subdirectory) is not. |
 
 ## HISTORICAL
 

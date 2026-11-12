@@ -24,16 +24,16 @@ Unix socket:
 
 A third tiny binary, the **`tarmac` CLI**, is the universal doorbell: `tarmac
 open <path>` connects to the daemon, names a doc, and exits. `open`, `push` and
-`--version` are its three verbs that talk to the daemon (`tarmac push` hands one
+`--version` are its verbs that talk to the daemon (`tarmac push` hands one
 JSON value, or one for each line of stdin, to the loaded HTML cards of an open
 doc; `--version` only completes
 the handshake, to report the daemon's and the connected app's versions);
-`tarmac skill` is a purely local fourth verb that
+`tarmac skill` is a purely local verb that
 prints the agent-facing guide (`core/crates/tarmac-cli/src/GUIDE.md`, embedded in
 the binary); `tarmac skill install` copies a shim (`SKILL.md` beside it) into
 each supported agent's skills directory, which tells the agent to run
 `tarmac skill` and so cannot go stale with the guide.
-A fifth family, `tarmac dev <verb>`, talks to the **app** rather than the daemon,
+Another family, `tarmac dev <verb>`, talks to the **app** rather than the daemon,
 over a second socket the app owns (`tarmac-dev.sock`, beside the daemon's in the
 same per-channel dir; override `TARMAC_DEV_SOCKET`). It is the in-app QA driver
 from issue #166 — `snapshot`, `zoom`, `resize`, `focus`, `type`, `key`,
@@ -1104,15 +1104,16 @@ browser.
 - **Events** (#326). `tarmac push` gives a loaded document one value at a
   time, in order, with no file and no reload. A `doc_event` goes, on every
   built board, to the doc's card with an HTML body (a markdown card takes
-  nothing). `HTMLCardSession.event` passes the text on only when the
-  card heard the stamped `ready` of its current load, culled or not. Nothing is
-  kept for a card that is not ready (before that `ready`, between a reload and
-  the next one, after the web process ended). The view adds the text to its
-  `CardEventBatch` and, when the batch was empty, queues one flush on the main
-  queue: the events that came in the frames queued before it go in one
-  `tarmacCard.events(texts)` call, with the texts as an argument of
-  `callAsyncJavaScript`. The batch is emptied when the view asks for a new
-  document or a new host page, and a flush with no host page posts nothing.
+  nothing). `HTMLCardSession.event` keeps the text only when the card heard
+  the stamped `ready` of its current load, culled or not. Nothing is kept for
+  a card that is not ready (before that `ready`, between a reload and the next
+  one). The first text the session keeps since the last take asks the view
+  for one flush (`flushEvents`), which the view queues on the main queue: the
+  events that came in the frames queued before it go in one
+  `tarmacCard.events(texts)` call (`takeEvents`), with the texts as an
+  argument of `callAsyncJavaScript`. A reload empties what was not taken, and
+  a flush with no host page (after the web process ended, until the new page
+  asks for the document) posts nothing.
   The host page posts `{tarmac:"events", texts}` into the frame. For each
   text that is a string, the shim does `JSON.parse` and dispatches a
   `tarmac:event` on `window` with the value as `detail`. Each text has its own

@@ -293,6 +293,15 @@ pub fn encode(msg: &Msg) -> Result<Vec<u8>, rmp_serde::encode::Error> {
     rmp_serde::to_vec_named(msg)
 }
 
+/// What the cli and the daemon answer for a value whose frame would be over
+/// `MAX_FRAME_LEN`.
+pub const OVER_FRAME_LIMIT: &str = "value is over the frame limit (16 MiB)";
+
+/// `encode`, or `None` when the payload is over `limit` bytes.
+pub fn encode_within(msg: &Msg, limit: usize) -> Option<Vec<u8>> {
+    encode(msg).ok().filter(|payload| payload.len() <= limit)
+}
+
 pub fn decode(bytes: &[u8]) -> Result<Msg, rmp_serde::decode::Error> {
     rmp_serde::from_slice(bytes)
 }

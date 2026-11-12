@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use tarmac_protocol::{self as proto, Msg};
 
 mod common;
-use common::{Double, Report, hello_ok, scratch, tarmac};
+use common::{Double, Report, channel, hello_ok, scratch, tarmac, tarmac_at};
 
 /// What the fake daemon does after reading the client's `hello`.
 enum Reply {
@@ -41,7 +41,7 @@ impl Fake {
     }
 
     fn version(&self) -> Report {
-        Report::of(tarmac().env("TARMAC_SOCKET", &self.0.sock).arg("--version"))
+        Report::of(tarmac_at(&self.0.sock).arg("--version"))
     }
 }
 
@@ -55,12 +55,6 @@ impl Report {
             .unwrap_or_else(|| panic!("no `{label}` line in:\n{}", self.stdout))
             .to_string()
     }
-}
-
-/// The channel this test binary's build config implies — the same mapping the
-/// CLI uses, so `cargo test --release` cannot make these tests lie.
-fn expected_channel() -> &'static str {
-    if cfg!(debug_assertions) { "dev" } else { "release" }
 }
 
 /// A daemon reporting sentinel values unlike any real release, so no assertion
@@ -84,7 +78,7 @@ fn the_report_is_five_exact_lines() {
         format!(
             "cli      {}\ndaemon   9.9.9 (pid 4242)\napp      8.8.8 (running)\nchannel  {}\nsocket   {}\n",
             env!("CARGO_PKG_VERSION"),
-            expected_channel(),
+            channel(),
             fake.0.sock.display()
         )
     );
@@ -217,14 +211,14 @@ fn the_cli_sends_exactly_one_version_less_hello() {
 fn no_daemon_still_reports_the_cli_channel_and_socket() {
     let dir = scratch();
     let sock = dir.join("absent.sock");
-    let report = Report::of(tarmac().env("TARMAC_SOCKET", &sock).arg("--version"));
+    let report = Report::of(tarmac_at(&sock).arg("--version"));
 
     assert_eq!(report.code(), Some(0));
     assert_eq!(report.stderr, "");
     assert_eq!(report.line("cli"), env!("CARGO_PKG_VERSION"));
     assert_eq!(report.line("daemon"), "not running");
     assert_eq!(report.line("app"), "unknown (no daemon)");
-    assert_eq!(report.line("channel"), expected_channel());
+    assert_eq!(report.line("channel"), channel());
     assert_eq!(report.line("socket"), sock.display().to_string());
 }
 
@@ -236,7 +230,7 @@ fn an_over_long_socket_path_is_unreachable_not_absent() {
     let dir = scratch();
     let sock = dir.join(format!("{}.sock", "s".repeat(120)));
     assert!(sock.as_os_str().len() >= 104, "fixture must exceed the sun_path cap");
-    let report = Report::of(tarmac().env("TARMAC_SOCKET", &sock).arg("--version"));
+    let report = Report::of(tarmac_at(&sock).arg("--version"));
 
     assert_eq!(report.code(), Some(0));
     assert!(report.line("daemon").starts_with("unreachable ("), "got: {}", report.line("daemon"));
@@ -279,7 +273,7 @@ fn open_still_fails_on_a_rejected_handshake() {
     let doc = fake.0.dir.join("doc.md");
     std::fs::write(&doc, "# hi\n").unwrap();
 
-    let out = Report::of(tarmac().env("TARMAC_SOCKET", &fake.0.sock).args(["open", doc.to_str().unwrap()]));
+    let out = Report::of(tarmac_at(&fake.0.sock).args(["open", doc.to_str().unwrap()]));
 
     assert_eq!(out.code(), Some(1));
     let err = out.one_stderr_line();

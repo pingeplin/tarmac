@@ -1,4 +1,5 @@
 use std::ffi::OsString;
+use std::io;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -99,15 +100,36 @@ fn run(args: &[String]) -> i32 {
     }
 }
 
+fn lost(e: io::Error) -> String {
+    format!("daemon connection lost: {e}")
+}
+
 fn send(stream: &mut UnixStream, msg: &Msg) -> Result<(), String> {
     let payload = proto::encode(msg).map_err(|e| format!("encode failed: {e}"))?;
-    frame::write_sync(stream, &payload).map_err(|e| format!("daemon connection lost: {e}"))
+    frame::write_sync(stream, &payload).map_err(lost)
 }
 
 fn recv(stream: &mut UnixStream) -> Result<Msg, String> {
-    let payload =
-        frame::read_sync(stream).map_err(|e| format!("daemon connection lost: {e}"))?;
+    recv_or(stream, lost)
+}
+
+/// `recv`, with a failed read worded by `read_failed`.
+fn recv_or(stream: &mut UnixStream, read_failed: impl FnOnce(io::Error) -> String) -> Result<Msg, String> {
+    let payload = frame::read_sync(stream).map_err(read_failed)?;
     proto::decode(&payload).map_err(|e| format!("bad frame from daemon: {e}"))
+}
+
+/// The daemon's answer to a request: `Ok(Ok(()))` for `ack`, `Ok(Err(msg))`
+/// for `err`, skipping any other message. `Err` is a connection that failed,
+/// with a failed read worded by `read_failed`.
+fn answer(stream: &mut UnixStream, read_failed: impl Fn(io::Error) -> String) -> Result<Result<(), String>, String> {
+    loop {
+        match recv_or(stream, &read_failed)? {
+            Msg::Ack => return Ok(Ok(())),
+            Msg::Err { msg } => return Ok(Err(msg)),
+            _ => continue,
+        }
+    }
 }
 
 /// The `hello_ok` fields; `open` needs only the reply, `--version` renders all.
@@ -215,11 +237,5 @@ fn open(raw_path: &str) -> Result<String, String> {
     // board_id stays None: the daemon resolves the board from term_id, falling
     // back to the active one.
     send(&mut stream, &Msg::Open { path: path.to_string_lossy().into_owned(), term_id, board_id: None })?;
-    loop {
-        match recv(&mut stream)? {
-            Msg::Ack => return Ok(format!("opened {}", path.display())),
-            Msg::Err { msg } => return Err(msg),
-            _ => continue,
-        }
-    }
+    answer(&mut stream, lost)?.map(|()| format!("opened {}", path.display()))
 }

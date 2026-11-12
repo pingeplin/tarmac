@@ -99,9 +99,9 @@ no version of its own names none and restarts nothing.
     ← {t:"ack"}  |  {t:"err", msg}
 
 `tarmac push` sends `push` frames on the same session: see *Events for a loaded
-HTML card*. `tarmac --version` is the third CLI verb that opens the socket. It
-completes the handshake, renders `hello_ok`'s daemon and app keys, and closes
-without sending a second frame.
+HTML card*. `tarmac --version` also opens the socket. It completes the
+handshake, renders `hello_ok`'s daemon and app keys, and closes without sending
+a second frame.
 
 - `path` MUST be absolute. The CLI makes it absolute against its working
   directory (`std::path::absolute`) and makes no file-system call on it, so a

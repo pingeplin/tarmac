@@ -20,16 +20,18 @@ async fn push_once(daemon: &Arc<Daemon>, path: &Path, data: &str) -> Result<(), 
     push(daemon, Cache::new(), path, data).await.0
 }
 
-fn doc_events(app: &mut mpsc::Receiver<Msg>) -> Vec<(PathBuf, String)> {
+/// The `doc_event`s the app has now, each path as it is written: the app
+/// keys its cards by the text.
+fn doc_events(app: &mut mpsc::Receiver<Msg>) -> Vec<(String, String)> {
     let event = |msg| match msg {
-        Msg::DocEvent { path, data } => Some((PathBuf::from(path), data)),
+        Msg::DocEvent { path, data } => Some((path, data)),
         _ => None,
     };
     pushed(app).into_iter().filter_map(event).collect()
 }
 
-/// `real/dash.html` open on the active board under its canonical path, and
-/// `link`, a symlink to `real`: the doc's other spelling.
+/// `real/<file>` under its canonical path, and `link`, a symlink to `real`:
+/// the doc's other spelling.
 struct Linked {
     tmp: PathBuf,
     doc: PathBuf,
@@ -40,14 +42,26 @@ struct Linked {
 }
 
 impl Linked {
-    async fn open(tag: &str) -> Self {
+    /// `real/<file>`, open on no board.
+    async fn written(tag: &str, file: &str) -> Self {
         let tmp = canon_tmp(tag);
-        let doc = write_doc(tmp.join("real/dash.html"));
+        let doc = write_doc(tmp.join("real").join(file));
         std::os::unix::fs::symlink(tmp.join("real"), tmp.join("link")).unwrap();
         let (fs, release) = stuck_fs();
         let daemon = gated(&tmp, fs.clone()).await;
-        open_doc(&daemon, None, &doc).await;
-        Linked { linked: tmp.join("link/dash.html"), tmp, doc, daemon, fs, _release: release }
+        Linked { linked: tmp.join("link").join(file), tmp, doc, daemon, fs, _release: release }
+    }
+
+    /// `real/dash.html`, open on the active board.
+    async fn open(tag: &str) -> Self {
+        let linked = Linked::written(tag, "dash.html").await;
+        open_doc(&linked.daemon, None, &linked.doc).await;
+        linked
+    }
+
+    /// The registry's key, as it is written.
+    fn key(&self) -> String {
+        self.doc.to_str().unwrap().to_owned()
     }
 }
 
@@ -93,7 +107,7 @@ async fn one_json_value_is_taken_and_given_to_the_app_as_it_was_sent() {
     for data in values {
         assert_eq!(push_once(&linked.daemon, &linked.doc, data).await, Ok(()), "{data:?}");
     }
-    let expected: Vec<_> = values.iter().map(|data| (linked.doc.clone(), data.to_string())).collect();
+    let expected: Vec<_> = values.iter().map(|data| (linked.key(), data.to_string())).collect();
     assert_eq!(doc_events(&mut app), expected);
 }
 
@@ -112,7 +126,7 @@ async fn a_push_to_another_spelling_of_the_doc_names_the_registry_path() {
     let mut app = connect_app(&linked.daemon).await;
 
     assert_eq!(push_once(&linked.daemon, &linked.linked, r#"{"n":1}"#).await, Ok(()));
-    assert_eq!(doc_events(&mut app), vec![(linked.doc.clone(), r#"{"n":1}"#.into())]);
+    assert_eq!(doc_events(&mut app), vec![(linked.key(), r#"{"n":1}"#.into())]);
 }
 
 // Choice 3: `Path` equality takes `/./`, `//` and a trailing `/` for the
@@ -121,20 +135,13 @@ async fn a_push_to_another_spelling_of_the_doc_names_the_registry_path() {
 async fn an_event_names_the_registry_key_as_it_is_written() {
     let linked = Linked::open("push-key-text").await;
     let mut app = connect_app(&linked.daemon).await;
-    let doc = linked.doc.to_str().unwrap();
-    let spellings = [doc.replace("/real/", "/real/./"), doc.replacen('/', "//", 1), format!("{doc}/")];
+    let key = linked.key();
+    let spellings = [key.replace("/real/", "/real/./"), key.replacen('/', "//", 1), format!("{key}/")];
 
     for spelling in &spellings {
         assert_eq!(push_once(&linked.daemon, Path::new(spelling), "1").await, Ok(()), "{spelling}");
     }
-    let paths: Vec<String> = pushed(&mut app)
-        .into_iter()
-        .filter_map(|msg| match msg {
-            Msg::DocEvent { path, .. } => Some(path),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(paths, vec![doc.to_owned(); spellings.len()]);
+    assert_eq!(doc_events(&mut app), vec![(key, "1".to_string()); spellings.len()]);
     assert_eq!(linked.fs.calls(Call::Resolve), 0);
 }
 
@@ -186,19 +193,14 @@ async fn a_doc_closed_mid_stream_is_refused_whatever_the_cache_holds() {
 // S22
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_doc_on_a_board_in_the_background_gets_its_event() {
-    let tmp = canon_tmp("push-background");
-    let doc = write_doc(tmp.join("d/dash.html"));
-    let (fs, _release) = stuck_fs();
-    let daemon = gated(&tmp, fs).await;
-    let mut app = connect_app(&daemon).await;
-    let other = daemon.boards.lock().await.create();
-    open_doc(&daemon, Some(&other), &doc).await;
-    daemon.boards.lock().await.set_active(crate::boards::DEFAULT_BOARD_ID);
+    let linked = Linked::written("push-background", "dash.html").await;
+    let mut app = connect_app(&linked.daemon).await;
+    let other = linked.daemon.boards.lock().await.create();
+    open_doc(&linked.daemon, Some(&other), &linked.doc).await;
+    linked.daemon.boards.lock().await.set_active(crate::boards::DEFAULT_BOARD_ID);
 
-    assert_eq!(push_once(&daemon, &doc, "1").await, Ok(()));
-    assert_eq!(doc_events(&mut app), vec![(doc, "1".into())]);
-
-    let _ = std::fs::remove_dir_all(&tmp);
+    assert_eq!(push_once(&linked.daemon, &linked.doc, "1").await, Ok(()));
+    assert_eq!(doc_events(&mut app), vec![(linked.key(), "1".into())]);
 }
 
 // S22
@@ -210,23 +212,18 @@ async fn a_doc_on_two_boards_gets_one_event() {
     open_doc(&linked.daemon, Some(&other), &linked.doc).await;
 
     assert_eq!(push_once(&linked.daemon, &linked.doc, "1").await, Ok(()));
-    assert_eq!(doc_events(&mut app), vec![(linked.doc.clone(), "1".into())]);
+    assert_eq!(doc_events(&mut app), vec![(linked.key(), "1".into())]);
 }
 
 // S23: the daemon does not know a doc's kind as the app sees it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_markdown_doc_gets_its_event_too() {
-    let tmp = canon_tmp("push-markdown");
-    let doc = write_doc(tmp.join("d/notes.md"));
-    let (fs, _release) = stuck_fs();
-    let daemon = gated(&tmp, fs).await;
-    let mut app = connect_app(&daemon).await;
-    open_doc(&daemon, None, &doc).await;
+    let linked = Linked::written("push-markdown", "notes.md").await;
+    let mut app = connect_app(&linked.daemon).await;
+    open_doc(&linked.daemon, None, &linked.doc).await;
 
-    assert_eq!(push_once(&daemon, &doc, "1").await, Ok(()));
-    assert_eq!(doc_events(&mut app), vec![(doc, "1".into())]);
-
-    let _ = std::fs::remove_dir_all(&tmp);
+    assert_eq!(push_once(&linked.daemon, &linked.doc, "1").await, Ok(()));
+    assert_eq!(doc_events(&mut app), vec![(linked.key(), "1".into())]);
 }
 
 // S47

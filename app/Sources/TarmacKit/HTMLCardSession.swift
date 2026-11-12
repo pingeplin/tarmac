@@ -20,8 +20,9 @@ public struct HTMLCardSession: Equatable, Sendable {
         case read(DataRead)
         /// Hand the data file's text to the document.
         case deliver(String)
-        /// Hand a pushed value's text to the document (spec 2611.0003).
-        case event(String)
+        /// Queue one hand-over of the pushed values (spec 2611.0003) for
+        /// after the main-loop turn: the view takes them then (`takeEvents`).
+        case flushEvents
     }
 
     /// A read of `file`, the data file of the card whose file is `html`.
@@ -45,6 +46,8 @@ public struct HTMLCardSession: Equatable, Sendable {
     private var namedLoad: Int?
     /// The data line last written, until any other entry or a delivery.
     private var lastDataLine: String?
+    /// The pushed values not yet handed to the document. No bound of its own.
+    private var events: [String] = []
 
     /// `html` is the card's file, an absolute and resolved path.
     public init(html: String) {
@@ -159,11 +162,24 @@ public struct HTMLCardSession: Equatable, Sendable {
         return [.consoleChanged]
     }
 
+    /// The stamped ready of the current load was heard.
+    private var isReady: Bool {
+        guard let namedLoad else { return false }
+        return loads.isCurrent(namedLoad)
+    }
+
     /// A pushed value (spec 2611.0003) goes to a document that is ready for
     /// the current load, culled or not. Nothing is kept for one that is not.
-    public func event(_ text: String) -> [Effect] {
-        guard let namedLoad, loads.isCurrent(namedLoad) else { return [] }
-        return [.event(text)]
+    /// The first value since the last take asks for a flush.
+    public mutating func event(_ text: String) -> [Effect] {
+        guard isReady else { return [] }
+        events.append(text)
+        return events.count == 1 ? [.flushEvents] : []
+    }
+
+    public mutating func takeEvents() -> [String] {
+        defer { events = [] }
+        return events
     }
 
     /// The message to post, or nil when `fonts` is what the document has.
@@ -174,11 +190,13 @@ public struct HTMLCardSession: Equatable, Sendable {
     }
 
     /// The document was loaded again from disk: its mode is decided afresh, so
-    /// a meta tag that was removed does not carry over. The console is kept.
+    /// a meta tag that was removed does not carry over, and the events the
+    /// old document did not take are not the new one's. The console is kept.
     /// The result numbers the load, for the host page to name in its `shown`.
     @discardableResult
     public mutating func reloaded() -> Int {
         mode = nil
+        events = []
         return loads.next()
     }
 }

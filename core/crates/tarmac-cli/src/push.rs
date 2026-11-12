@@ -5,10 +5,9 @@
 use std::io::{self, BufRead, BufReader, Read};
 use std::os::unix::net::UnixStream;
 
-use tarmac_protocol::{self as proto, Msg, frame};
+use tarmac_protocol::{self as proto, Msg, OVER_FRAME_LIMIT};
 
 const LIMIT: usize = proto::MAX_FRAME_LEN as usize;
-const OVER_LIMIT: &str = "value is over the frame limit (16 MiB)";
 const NO_ANSWER: &str = "no answer from the daemon in 5 s (an older daemon, or the app is not reading)";
 
 pub fn run(args: &[String]) -> i32 {
@@ -23,7 +22,11 @@ pub fn run(args: &[String]) -> i32 {
     };
     match mode {
         Mode::One(value) => one(&path, value),
-        Mode::Stream => stream(&path, io::stdin().lock()),
+        // The handshake comes before the first read of stdin.
+        Mode::Stream => match crate::connect() {
+            Ok(mut conn) => stream(&mut conn, &path, io::stdin().lock()),
+            Err(why) => fail(&why),
+        },
     }
 }
 
@@ -33,42 +36,28 @@ fn fail(line: &str) -> i32 {
 }
 
 fn one(path: &str, value: &str) -> i32 {
-    let Some(payload) = payload(path, value.to_owned(), LIMIT) else { return fail(OVER_LIMIT) };
-    let mut conn = match crate::connect() {
-        Ok(conn) => conn,
-        Err(why) => return fail(&why),
-    };
-    match exchange(&mut conn, &payload) {
+    let Some(payload) = payload(path, value.to_owned(), LIMIT) else { return fail(OVER_FRAME_LIMIT) };
+    match crate::connect().and_then(|mut conn| exchange(&mut conn, &payload)) {
         Ok(Ok(())) => 0,
         Ok(Err(refusal)) | Err(refusal) => fail(&refusal),
     }
 }
 
-/// The handshake comes before the first read of `input`. A refused line does
-/// not end the stream; a connection that fails does, since answers carry no
-/// id and a late one could be taken for the next line's.
-fn stream(path: &str, input: impl Read) -> i32 {
-    let mut conn = match crate::connect() {
-        Ok(conn) => conn,
-        Err(why) => return fail(&why),
-    };
+/// A refused line does not end the stream; a connection that fails does,
+/// since answers carry no id and a late one could be taken for the next
+/// line's.
+fn stream(conn: &mut UnixStream, path: &str, input: impl Read) -> i32 {
     let mut refused = false;
-    for line in Lines::new(input, LIMIT) {
-        let (n, line) = match line {
-            Ok(line) => line,
-            Err(e) => return fail(&format!("cannot read stdin: {e}")),
-        };
+    for (line, n) in Lines::new(input, LIMIT).zip(1usize..) {
         let refusal = match line {
-            Line::Blank => continue,
-            Line::OverLimit => OVER_LIMIT.to_owned(),
-            Line::NotUtf8 => "not UTF-8".to_owned(),
-            Line::Value(text) => match payload(path, text, LIMIT) {
-                None => OVER_LIMIT.to_owned(),
-                Some(payload) => match exchange(&mut conn, &payload) {
-                    Ok(Ok(())) => continue,
-                    Ok(Err(refusal)) => refusal,
-                    Err(why) => return fail(&format!("line {n}: {why}")),
-                },
+            Err(e) => return fail(&format!("cannot read stdin: {e}")),
+            Ok(Line::Blank) => continue,
+            Ok(Line::OverLimit) => OVER_FRAME_LIMIT.to_owned(),
+            Ok(Line::NotUtf8) => "not UTF-8".to_owned(),
+            Ok(Line::Value(text)) => match send_value(conn, path, text) {
+                Sent::Acked => continue,
+                Sent::Refused(refusal) => refusal,
+                Sent::Ended(why) => return fail(&format!("line {n}: {why}")),
             },
         };
         eprintln!("tarmac: line {n}: {refusal}");
@@ -77,31 +66,38 @@ fn stream(path: &str, input: impl Read) -> i32 {
     i32::from(refused)
 }
 
-/// Sends one `push` and waits for its answer: `Ok` with the daemon's `ack` or
-/// `err`, `Err` when the connection failed. Other answers are skipped.
-fn exchange(conn: &mut UnixStream, payload: &[u8]) -> Result<Result<(), String>, String> {
-    let lost = |e: io::Error| format!("daemon connection lost: {e}");
-    frame::write_sync(conn, payload).map_err(lost)?;
-    loop {
-        let answer = frame::read_sync(conn).map_err(|e| match e.kind() {
-            io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => NO_ANSWER.to_owned(),
-            _ => lost(e),
-        })?;
-        match proto::decode(&answer).map_err(|e| format!("bad frame from daemon: {e}"))? {
-            Msg::Ack => return Ok(Ok(())),
-            Msg::Err { msg } => return Ok(Err(msg)),
-            _ => continue,
-        }
+enum Sent {
+    Acked,
+    Refused(String),
+    /// The connection failed: the stream ends.
+    Ended(String),
+}
+
+fn send_value(conn: &mut UnixStream, path: &str, text: String) -> Sent {
+    let Some(payload) = payload(path, text, LIMIT) else { return Sent::Refused(OVER_FRAME_LIMIT.to_owned()) };
+    match exchange(conn, &payload) {
+        Ok(Ok(())) => Sent::Acked,
+        Ok(Err(refusal)) => Sent::Refused(refusal),
+        Err(why) => Sent::Ended(why),
     }
 }
 
-pub enum Mode<'a> {
+/// Sends one `push` and waits for its answer (`crate::answer`).
+fn exchange(conn: &mut UnixStream, payload: &[u8]) -> Result<Result<(), String>, String> {
+    proto::frame::write_sync(conn, payload).map_err(crate::lost)?;
+    crate::answer(conn, |e| match e.kind() {
+        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => NO_ANSWER.to_owned(),
+        _ => crate::lost(e),
+    })
+}
+
+enum Mode<'a> {
     One(&'a str),
     Stream,
 }
 
 /// `<path> <json>` or `<path> -`. `None` is a usage error.
-pub fn parse(args: &[String]) -> Option<(&str, Mode<'_>)> {
+fn parse(args: &[String]) -> Option<(&str, Mode<'_>)> {
     match args {
         [path, dash] if dash == "-" => Some((path, Mode::Stream)),
         [path, value] => Some((path, Mode::One(value))),
@@ -110,41 +106,29 @@ pub fn parse(args: &[String]) -> Option<(&str, Mode<'_>)> {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum Line {
+enum Line {
     Value(String),
     Blank,
     OverLimit,
     NotUtf8,
 }
 
-/// The lines of a stream, numbered from 1.
-pub struct Lines<R> {
+/// The lines of a stream, each held only to `limit` bytes.
+struct Lines<R> {
     reader: BufReader<R>,
     limit: usize,
-    number: usize,
     held: Vec<u8>,
     done: bool,
-    /// The most bytes of one line held at once.
-    #[cfg(test)]
-    peak: usize,
 }
 
 impl<R: Read> Lines<R> {
-    pub fn new(reader: R, limit: usize) -> Self {
-        Lines {
-            reader: BufReader::new(reader),
-            limit,
-            number: 0,
-            held: Vec::new(),
-            done: false,
-            #[cfg(test)]
-            peak: 0,
-        }
+    fn new(reader: R, limit: usize) -> Self {
+        Lines { reader: BufReader::new(reader), limit, held: Vec::new(), done: false }
     }
 }
 
 impl<R: Read> Iterator for Lines<R> {
-    type Item = io::Result<(usize, Line)>;
+    type Item = io::Result<Line>;
 
     // The line is read in the reader's own chunks and held only to `limit`,
     // so a line of any length costs no more memory than that.
@@ -179,14 +163,9 @@ impl<R: Read> Iterator for Lines<R> {
                 last_cr = last == b'\r';
                 let room = self.limit.saturating_sub(self.held.len()).min(part.len());
                 self.held.extend_from_slice(&part[..room]);
-                #[cfg(test)]
-                {
-                    self.peak = self.peak.max(self.held.len());
-                }
             }
             self.reader.consume(used);
         }
-        self.number += 1;
         let len = len - usize::from(last_cr);
         let line = if blank {
             Line::Blank
@@ -199,14 +178,13 @@ impl<R: Read> Iterator for Lines<R> {
                 Err(_) => Line::NotUtf8,
             }
         };
-        Some(Ok((self.number, line)))
+        Some(Ok(line))
     }
 }
 
 /// The encoded `push`, or `None` when it is over `limit`.
-pub fn payload(path: &str, data: String, limit: usize) -> Option<Vec<u8>> {
-    let payload = proto::encode(&Msg::Push { path: path.into(), data }).ok()?;
-    (payload.len() <= limit).then_some(payload)
+fn payload(path: &str, data: String, limit: usize) -> Option<Vec<u8>> {
+    proto::encode_within(&Msg::Push { path: path.into(), data }, limit)
 }
 
 #[cfg(test)]
@@ -217,8 +195,9 @@ mod tests {
         list.iter().map(|s| s.to_string()).collect()
     }
 
+    /// Numbered as `stream` numbers them.
     fn read_all(input: &[u8], limit: usize) -> Vec<(usize, Line)> {
-        Lines::new(input, limit).map(Result::unwrap).collect()
+        Lines::new(input, limit).zip(1..).map(|(line, n)| (n, line.unwrap())).collect()
     }
 
     fn value(text: &str) -> Line {
@@ -284,10 +263,10 @@ mod tests {
     #[test]
     fn a_line_over_the_limit_is_refused_with_no_more_than_the_limit_held() {
         let mut lines = Lines::new(&b"123456789\nabcdefgh\n"[..], 8);
-        assert_eq!(lines.next().unwrap().unwrap(), (1, Line::OverLimit));
-        assert_eq!(lines.next().unwrap().unwrap(), (2, value("abcdefgh")));
+        assert_eq!(lines.next().unwrap().unwrap(), Line::OverLimit);
+        assert_eq!(lines.held.len(), 8);
+        assert_eq!(lines.next().unwrap().unwrap(), value("abcdefgh"));
         assert!(lines.next().is_none());
-        assert_eq!(lines.peak, 8);
     }
 
     // S8
@@ -295,8 +274,8 @@ mod tests {
     fn a_long_line_is_held_to_the_limit_whatever_the_read_size() {
         let long = vec![b'7'; 64 * 1024];
         let mut lines = Lines::new(&long[..], 8);
-        assert_eq!(lines.next().unwrap().unwrap(), (1, Line::OverLimit));
-        assert!(lines.peak <= 8, "held {}", lines.peak);
+        assert_eq!(lines.next().unwrap().unwrap(), Line::OverLimit);
+        assert_eq!(lines.held.len(), 8);
     }
 
     // S8
@@ -336,7 +315,7 @@ mod tests {
     #[test]
     fn a_read_error_comes_after_the_lines_before_it_and_ends_the_lines() {
         let mut lines = Lines::new(FailsAfter(b"1\n"), 8);
-        assert_eq!(lines.next().unwrap().unwrap(), (1, value("1")));
+        assert_eq!(lines.next().unwrap().unwrap(), value("1"));
         assert_eq!(lines.next().unwrap().unwrap_err().to_string(), "the disk is gone");
         assert!(lines.next().is_none());
     }
@@ -348,5 +327,31 @@ mod tests {
         let at = payload("/p", "x".repeat(100), limit).expect("exactly the limit");
         assert_eq!(proto::decode(&at).unwrap(), Msg::Push { path: "/p".into(), data: "x".repeat(100) });
         assert_eq!(payload("/p", "x".repeat(101), limit), None);
+    }
+    /// A connection whose daemon end reads and never answers, and whose cli
+    /// end waits `wait` for an answer.
+    fn silent_daemon(wait: std::time::Duration) -> (UnixStream, UnixStream) {
+        let (cli, daemon) = UnixStream::pair().unwrap();
+        cli.set_read_timeout(Some(wait)).unwrap();
+        (cli, daemon)
+    }
+
+    // S16: the binary's own run of this, with the real 5 s, is in tests/push.rs.
+    #[test]
+    fn no_answer_in_the_read_timeout_is_worded_as_no_answer() {
+        let (mut cli, _daemon) = silent_daemon(std::time::Duration::from_millis(100));
+        let payload = payload("/p", "1".into(), LIMIT).unwrap();
+        assert_eq!(exchange(&mut cli, &payload), Err(NO_ANSWER.to_owned()));
+    }
+
+    // S16
+    #[test]
+    fn a_stream_with_no_answer_ends_at_that_line() {
+        let (mut cli, mut daemon) = silent_daemon(std::time::Duration::from_millis(100));
+        assert_eq!(stream(&mut cli, "/p", &b"1\n2\n"[..]), 1);
+        drop(cli);
+        let sent: Vec<Msg> =
+            std::iter::from_fn(|| proto::frame::read_sync(&mut daemon).ok()).map(|p| proto::decode(&p).unwrap()).collect();
+        assert_eq!(sent, vec![Msg::Push { path: "/p".into(), data: "1".into() }]);
     }
 }

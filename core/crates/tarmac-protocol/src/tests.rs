@@ -299,6 +299,14 @@ fn conformance_vector_17_doc_event() {
 }
 
 #[test]
+fn a_payload_of_exactly_the_limit_is_within_it_and_one_byte_more_is_not() {
+    let push = |n: usize| Msg::Push { path: "/p".into(), data: "x".repeat(n) };
+    let limit = encode(&push(100)).unwrap().len();
+    assert_eq!(encode_within(&push(100), limit), Some(encode(&push(100)).unwrap()));
+    assert_eq!(encode_within(&push(101), limit), None);
+}
+
+#[test]
 fn scrollback_reply_round_trips_empty_bytes() {
     // The daemon always answers, even with an empty ring — the empty reply
     // must survive the codec so the app can stop awaiting.

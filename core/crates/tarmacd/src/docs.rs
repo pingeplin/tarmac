@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use tarmac_protocol::{MAX_FRAME_LEN, Msg};
+use tarmac_protocol::{MAX_FRAME_LEN, Msg, OVER_FRAME_LIMIT};
 use tokio::task::JoinSet;
 use tracing::debug;
 
@@ -80,12 +80,9 @@ pub async fn handle_open(
 }
 
 /// `push`: gives `data`, one JSON value, to the app for the open doc
-/// `raw_path`, as one `doc_event` with the registry's path whatever boards
+/// `raw_path`, as one `doc_event` with the registry's key whatever boards
 /// hold the doc. The JSON check comes first, as it costs no file-system call.
-/// A path the registry does not have as given is resolved through the gate
-/// once for each connection, which owns `resolved` (given -> resolved); a
-/// resolve that fails is not kept. The registry is asked on every push, so a
-/// doc closed since is refused.
+/// The registry is asked on every push, so a doc closed since is refused.
 pub async fn handle_push(
     daemon: &Daemon,
     resolved: &mut HashMap<PathBuf, PathBuf>,
@@ -97,25 +94,20 @@ pub async fn handle_push(
     if !given.is_absolute() {
         return Err(format!("path is not absolute: {raw_path}"));
     }
-    let key = match open_key(daemon, given).await {
+    let open = daemon.boards.lock().await.doc_key(given).cloned();
+    let key = match open {
         Some(key) => key,
         None => {
-            let path = match resolved.get(given) {
-                Some(path) => path.clone(),
-                None => {
-                    let (path, _) = resolve(daemon.gate(), raw_path).await?;
-                    resolved.insert(given.to_owned(), path.clone());
-                    path
-                }
-            };
-            open_key(daemon, &path).await.ok_or_else(|| format!("not an open doc: {raw_path}"))?
+            let path = cached_resolve(daemon.gate(), resolved, raw_path).await?;
+            let open = daemon.boards.lock().await.doc_key(&path).cloned();
+            open.ok_or_else(|| format!("not an open doc: {raw_path}"))?
         }
     };
     let event = Msg::DocEvent { path: key.to_string_lossy().into_owned(), data };
     // A frame over the limit would end the app's connection when it is
     // written (`conn::app_session`), after this push had been acked.
-    if !tarmac_protocol::encode(&event).is_ok_and(|p| p.len() <= MAX_FRAME_LEN as usize) {
-        return Err("value is over the frame limit (16 MiB)".into());
+    if tarmac_protocol::encode_within(&event, MAX_FRAME_LEN as usize).is_none() {
+        return Err(OVER_FRAME_LIMIT.into());
     }
     if !daemon.push(event).await {
         return Err("no app is connected".into());
@@ -123,8 +115,24 @@ pub async fn handle_push(
     Ok(())
 }
 
-/// `raw_path` resolved through the gate, keyed by the path as given, with
-/// the texts an open answers.
+/// The resolved path of `raw_path`: the one this connection kept in
+/// `resolved`, or a resolve's, which is kept when it succeeds.
+async fn cached_resolve(
+    gate: &PathGate,
+    resolved: &mut HashMap<PathBuf, PathBuf>,
+    raw_path: &str,
+) -> Result<PathBuf, String> {
+    let given = Path::new(raw_path);
+    if let Some(path) = resolved.get(given) {
+        return Ok(path.clone());
+    }
+    let (path, _) = resolve(gate, raw_path).await?;
+    resolved.insert(given.to_owned(), path.clone());
+    Ok(path)
+}
+
+/// The canonical path of `raw_path`, a regular file, and its stamp, read
+/// through the gate under the path as given; or the text an open answers.
 async fn resolve(gate: &PathGate, raw_path: &str) -> Result<(PathBuf, FileStamp), String> {
     let given = Path::new(raw_path);
     let resolve = {
@@ -132,14 +140,6 @@ async fn resolve(gate: &PathGate, raw_path: &str) -> Result<(PathBuf, FileStamp)
         move |fs: &dyn PathFs| fs.resolve(&given)
     };
     gate.run(given, resolve).await.map_err(|Out| gate.did_not_answer(&format!("cannot open {raw_path}")))?
-}
-
-/// The registry's key for `path` on any board, as it is written: `Path`
-/// equality also takes `/./`, `//` and a trailing `/`, and the app keys its
-/// cards by the text.
-async fn open_key(daemon: &Daemon, path: &Path) -> Option<PathBuf> {
-    let boards = daemon.boards.lock().await;
-    boards.iter().find_map(|board| board.registry.docs.get_key_value(path)).map(|(key, _)| key.clone())
 }
 
 /// Registers `path` in `reg`, or refreshes the doc already there. True when

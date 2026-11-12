@@ -36,6 +36,19 @@ pub fn tarmac() -> Command {
     cmd
 }
 
+/// `tarmac`, on the socket `sock`.
+pub fn tarmac_at(sock: impl AsRef<std::ffi::OsStr>) -> Command {
+    let mut cmd = tarmac();
+    cmd.env("TARMAC_SOCKET", sock);
+    cmd
+}
+
+/// The channel this test binary's build config implies — the same mapping the
+/// CLI uses, so `cargo test --release` cannot make these tests lie.
+pub fn channel() -> &'static str {
+    if cfg!(debug_assertions) { "dev" } else { "release" }
+}
+
 static SPAWN: Mutex<()> = Mutex::new(());
 
 /// `Command::spawn`, one child at a time. On macOS std marks a child's pipes
@@ -44,10 +57,6 @@ static SPAWN: Mutex<()> = Mutex::new(());
 fn spawn(cmd: &mut Command, stdin: Stdio) -> Child {
     let _spawning = SPAWN.lock().unwrap_or_else(PoisonError::into_inner);
     cmd.stdin(stdin).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap()
-}
-
-fn output(cmd: &mut Command) -> Output {
-    spawn(cmd, Stdio::null()).wait_with_output().unwrap()
 }
 
 /// The captured result of one run of the binary.
@@ -59,7 +68,7 @@ pub struct Report {
 
 impl Report {
     pub fn of(cmd: &mut Command) -> Self {
-        Report::from(output(cmd))
+        Report::with_stdin(cmd, Stdio::null())
     }
 
     /// `of`, with `stdin` for the child's stdin: a file, or a directory, whose

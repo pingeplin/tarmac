@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use tarmac_protocol::{self as proto, MAX_FRAME_LEN, Msg};
 
 mod common;
-use common::{Double, Report, hello_ok, scratch, tarmac};
+use common::{Double, Report, channel, hello_ok, scratch, tarmac, tarmac_at};
 
 const NO_ANSWER: &str = "no answer from the daemon in 5 s (an older daemon, or the app is not reading)";
 
@@ -80,11 +80,11 @@ impl PushDaemon {
     }
 
     fn push(&self, args: &[&str]) -> Report {
-        Report::of(tarmac().env("TARMAC_SOCKET", &self.double.sock).arg("push").args(args))
+        Report::of(tarmac_at(&self.double.sock).arg("push").args(args))
     }
 
     fn stream(&self, path: &str, input: impl Into<Vec<u8>>) -> Report {
-        Report::of_input(tarmac().env("TARMAC_SOCKET", &self.double.sock).args(["push", path, "-"]), input.into())
+        Report::of_input(tarmac_at(&self.double.sock).args(["push", path, "-"]), input.into())
     }
 
     /// Every frame after the `hello`, decoded; the `hello` is checked.
@@ -104,10 +104,6 @@ fn no_daemon_line(sock: &Path) -> String {
     format!("tarmac: no tarmac daemon running ({} channel, socket: {})\n", channel(), sock.display())
 }
 
-fn channel() -> &'static str {
-    if cfg!(debug_assertions) { "dev" } else { "release" }
-}
-
 // S10
 #[test]
 fn one_value_is_one_push_and_success_prints_nothing() {
@@ -125,7 +121,7 @@ fn a_relative_path_is_sent_made_absolute_against_the_cwd() {
     let expected = std::fs::canonicalize(&dir).unwrap().join("rel/dash.html");
     let daemon = PushDaemon::acking();
     let out = Report::of(
-        tarmac().current_dir(&dir).env("TARMAC_SOCKET", &daemon.double.sock).args(["push", "rel/dash.html", "1"]),
+        tarmac_at(&daemon.double.sock).current_dir(&dir).args(["push", "rel/dash.html", "1"]),
     );
 
     assert_eq!(out.code(), Some(0), "stderr: {}", out.stderr);
@@ -214,7 +210,7 @@ fn a_line_over_the_frame_limit_is_refused_by_the_cli_and_not_sent() {
 #[test]
 fn no_daemon_is_the_message_open_gives() {
     let sock = scratch().join("absent.sock");
-    let out = Report::of(tarmac().env("TARMAC_SOCKET", &sock).args(["push", "/p", "1"]));
+    let out = Report::of(tarmac_at(&sock).args(["push", "/p", "1"]));
 
     assert_eq!(out.code(), Some(1));
     assert_eq!(out.stderr, no_daemon_line(&sock));
@@ -225,7 +221,7 @@ fn no_daemon_is_the_message_open_gives() {
 #[test]
 fn no_daemon_ends_a_stream_before_stdin_is_read() {
     let sock = scratch().join("absent.sock");
-    let out = Report::with_open_stdin(tarmac().env("TARMAC_SOCKET", &sock).args(["push", "/p", "-"]), Duration::from_secs(10))
+    let out = Report::with_open_stdin(tarmac_at(&sock).args(["push", "/p", "-"]), Duration::from_secs(10))
         .expect("the cli exits with stdin open");
 
     assert_eq!(out.code(), Some(1));
@@ -242,17 +238,6 @@ fn one_value_with_no_answer_ends_after_the_read_timeout() {
     assert_eq!(out.stderr, format!("tarmac: {NO_ANSWER}\n"));
     assert_eq!(out.code(), Some(1));
     assert!(started.elapsed() >= Duration::from_secs(5), "it waited {:?}", started.elapsed());
-}
-
-// S16
-#[test]
-fn a_stream_with_no_answer_ends_at_that_line() {
-    let daemon = PushDaemon::start(|_| Answer::Silence);
-    let out = daemon.stream("/p", "1\n2\n");
-
-    assert_eq!(out.stderr, format!("tarmac: line 1: {NO_ANSWER}\n"));
-    assert_eq!(out.code(), Some(1));
-    assert_eq!(daemon.pushes(), vec![push_msg("/p", "1")]);
 }
 
 // S43
@@ -328,7 +313,7 @@ fn one_value_sends_a_blank_argument_as_it_is() {
 fn a_read_error_on_stdin_ends_the_stream_and_names_stdin() {
     let daemon = PushDaemon::acking();
     let dir = std::fs::File::open(scratch()).unwrap();
-    let out = Report::with_stdin(tarmac().env("TARMAC_SOCKET", &daemon.double.sock).args(["push", "/p", "-"]), dir);
+    let out = Report::with_stdin(tarmac_at(&daemon.double.sock).args(["push", "/p", "-"]), dir);
 
     assert!(out.one_stderr_line().starts_with("tarmac: cannot read stdin: "), "got: {}", out.stderr);
     assert_eq!(out.code(), Some(1));
