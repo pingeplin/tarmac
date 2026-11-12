@@ -7,11 +7,11 @@ use tarmac_protocol::{DocEntry, Msg};
 use tokio::sync::{Mutex, Notify, mpsc};
 use tokio_util::sync::CancellationToken;
 
-use crate::boards::{BoardId, Boards, FileStamp};
+use crate::boards::{BoardId, Boards, DataDir, FileStamp};
 use crate::docs::RepoInfo;
 use crate::reader::{PathFs, PathGate, RealFs};
 use crate::term::TermHandle;
-use crate::watch::{NotWatched, NotifySource, WakeSource, Watcher};
+use crate::watch::{NotWatched, NotifySource, Wake, WakeSource, Watcher};
 
 pub struct AppSlot {
     pub generation: u64,
@@ -66,7 +66,7 @@ pub struct Daemon {
     doc_counts: Arc<DocCounts>,
     watcher: Watcher,
     /// Set by the watcher; `docs::watch_loop` waits on it.
-    wake: Arc<Notify>,
+    wake: Arc<Wake>,
     /// One `look` at a time. Taken before `boards`, never while `boards` is
     /// held.
     looking: Mutex<()>,
@@ -78,17 +78,17 @@ pub struct Daemon {
 
 impl Daemon {
     pub async fn new(state_path: PathBuf) -> anyhow::Result<Arc<Self>> {
-        let wake = Arc::new(Notify::new());
+        let wake = Arc::new(Wake::default());
         let source = NotifySource::new({
             let wake = wake.clone();
-            move || wake.notify_one()
+            move || wake.from_fs()
         })?;
         Ok(Self::with_source(state_path, Box::new(source), wake).await)
     }
 
     /// `source` is told which directories have a doc, and sets `wake` when a
     /// file in one of them may have changed.
-    async fn with_source(state_path: PathBuf, source: Box<dyn WakeSource>, wake: Arc<Notify>) -> Arc<Self> {
+    async fn with_source(state_path: PathBuf, source: Box<dyn WakeSource>, wake: Arc<Wake>) -> Arc<Self> {
         Self::with_fs(state_path, source, wake, Arc::new(RealFs), crate::reader::READ_LIMIT).await
     }
 
@@ -97,7 +97,7 @@ impl Daemon {
     async fn with_fs(
         state_path: PathBuf,
         source: Box<dyn WakeSource>,
-        wake: Arc<Notify>,
+        wake: Arc<Wake>,
         fs: Arc<dyn PathFs>,
         limit: std::time::Duration,
     ) -> Arc<Self> {
@@ -105,7 +105,7 @@ impl Daemon {
         let gate = Arc::new(PathGate::new(fs, limit, {
             let (wake, watcher) = (wake.clone(), watcher.clone());
             Arc::new(move || {
-                wake.notify_one();
+                wake.from_fs();
                 watcher.retry();
             })
         }));
@@ -124,7 +124,7 @@ impl Daemon {
             },
             {
                 let wake = wake.clone();
-                move || wake.notify_one()
+                move || wake.from_daemon()
             },
         );
         let mut boards = crate::persist::load(&state_path);
@@ -162,8 +162,9 @@ impl Daemon {
         &self.gate
     }
 
-    pub async fn woken(&self) {
-        self.wake.notified().await;
+    /// True when a wake since the last one came from the file system.
+    pub async fn woken(&self) -> bool {
+        self.wake.woken().await
     }
 
     /// One look: reads the files of `paths` with no `boards` lock held, then
@@ -216,6 +217,49 @@ impl Daemon {
         }
     }
 
+    /// Counts the directory of `data`, the data file of `doc` (2611.0005),
+    /// and has it watched. Nothing for a file in the doc's own directory,
+    /// which the doc counts. A directory that cannot be watched gives its
+    /// count back at once and is `Wanted`. True with it when the stream
+    /// restarted: the caller looks at the docs, as `open_doc` does.
+    pub async fn count_data_dir(&self, doc: &Path, data: &Path) -> (DataDir, bool) {
+        let (Some(doc_dir), Some(dir)) = (doc.parent(), data.parent()) else { return (DataDir::Uncounted, false) };
+        if dir == doc_dir {
+            return (DataDir::Uncounted, false);
+        }
+        match self.acquire_watch(dir).await {
+            Ok(watched) => (DataDir::Counted(dir.to_owned()), watched),
+            Err(e) => {
+                tracing::debug!("the data directory is tried again at a wake of the file system: {e}");
+                self.release_watch(dir);
+                (DataDir::Wanted, false)
+            }
+        }
+    }
+
+    /// Gives back what a data registration counted.
+    pub fn release_data_dir(&self, dir: &DataDir) {
+        if let DataDir::Counted(dir) = dir {
+            self.release_watch(dir);
+        }
+    }
+
+    /// Tries again the directory of each data file that wants one, on every
+    /// board (2611.0005). Called at a wake of the file system only (`Wake`).
+    /// A registration replaced, cleared or dropped during its try keeps
+    /// nothing of it.
+    pub async fn try_wanted_data(&self) {
+        let wanted = self.boards.lock().await.wanted_data();
+        for (board, doc, data) in wanted {
+            let (dir, _) = self.count_data_dir(&doc, &data).await;
+            let not_held = match self.boards.lock().await.known_registry_mut(&board) {
+                Some(reg) => reg.settle_wanted(&doc, &data, dir),
+                None => dir,
+            };
+            self.release_data_dir(&not_held);
+        }
+    }
+
     /// Registers a doc on `board` (the active one for `None`), or refreshes the
     /// one already there. `seen` and `repo` are the doc's file and repo, read
     /// by the caller, for a doc that is new to `board`. Fails, with nothing
@@ -258,27 +302,27 @@ impl Daemon {
             // A repair, on purpose: `seen` was read before the doc was
             // registered, and the wake of a change in between could come
             // before it too. A re-open keeps what was seen and needs none.
-            self.wake.notify_one();
+            self.wake.from_daemon();
         }
         Ok(entry)
     }
 
-    /// Forgets a doc of the active board and takes it off its directory's
-    /// count. False for an unknown path.
+    /// Forgets a doc of the active board and takes it, and its data file's
+    /// directory, off their counts. False for an unknown path.
     pub async fn close_doc(&self, path: &Path) -> bool {
         let closed = self.boards.lock().await.active_registry_mut().close_doc(path);
-        if !closed {
-            return false;
-        }
+        let Some(info) = closed else { return false };
         self.mark_dirty();
         if let Some(dir) = path.parent() {
             self.release_watch(dir);
         }
+        self.release_data_dir(&info.data_dir);
         true
     }
 
-    /// Removes a board and takes its docs off their directories' counts,
-    /// dropping the watch of each directory that is left empty. False for the
+    /// Removes a board and takes its docs, and their data files'
+    /// directories, off their counts, dropping the watch of each directory
+    /// that is left empty. False for the
     /// last board or an unknown id. It does not look at the docs: its caller
     /// sends the active board next, and that send looks
     /// (`conn::change_and_send_active_board`), and the watcher thread wakes a
@@ -287,8 +331,11 @@ impl Daemon {
         let deleted = self.boards.lock().await.delete(id);
         let Some(board) = deleted else { return false };
         self.mark_dirty();
-        for dir in board.registry.docs.keys().filter_map(|p| p.parent()) {
-            self.release_watch(dir);
+        for (path, info) in &board.registry.docs {
+            if let Some(dir) = path.parent() {
+                self.release_watch(dir);
+            }
+            self.release_data_dir(&info.data_dir);
         }
         true
     }

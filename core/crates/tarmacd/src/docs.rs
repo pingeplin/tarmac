@@ -8,7 +8,7 @@ use tarmac_protocol::{MAX_FRAME_LEN, Msg, OVER_FRAME_LIMIT};
 use tokio::task::JoinSet;
 use tracing::debug;
 
-use crate::boards::{Boards, DocInfo, FileStamp, Registry, epoch_ms};
+use crate::boards::{Boards, DataDir, DocInfo, FileStamp, Registry, epoch_ms};
 use crate::reader::{Out, PathFs, PathGate};
 use crate::state::Daemon;
 
@@ -185,6 +185,7 @@ pub fn upsert_doc(
                     last_opened_ms: epoch_ms(SystemTime::now()),
                     term_id,
                     data: None,
+                    data_dir: DataDir::Uncounted,
                 },
             );
             reg.dock.push(path.to_owned());
@@ -222,11 +223,16 @@ pub async fn read_restored(gate: &Arc<PathGate>, boards: &mut Boards) {
     }
 }
 
-/// One look for each wake, `BURST` after it (#258, docs/architecture.md).
+/// One look for each wake, `BURST` after it (#258, docs/architecture.md). A
+/// wake of the file system first tries again each data file's directory that
+/// is not watched, so that the look reports what a new watch missed.
 pub async fn watch_loop(daemon: Arc<Daemon>) {
     loop {
-        daemon.woken().await;
+        let from_fs = daemon.woken().await;
         tokio::time::sleep(crate::watch::BURST).await;
+        if from_fs {
+            daemon.try_wanted_data().await;
+        }
         report_changes(&daemon).await;
     }
 }
@@ -321,28 +327,52 @@ pub async fn stat_and_push(daemon: &Arc<Daemon>, path: &Path) -> bool {
 /// in the background reports it at its switch. It is not held when it
 /// reaches no app: the app sends `doc_data` again when it connects.
 ///
+/// The directory of a file under the doc's own is counted before the look,
+/// as `open_doc` counts, since the look's `apply` holds the `boards` lock:
+/// the count is given back when the doc is gone by then, or when the file
+/// was named already. A new watch is followed by a look.
+///
 /// False, with nothing recorded, for an unknown board (no fall-back to the
 /// active one), an unknown doc on it, or a `data` that `is_under` refuses.
 pub async fn record_data(daemon: &Daemon, board: &str, doc: &Path, data: Option<PathBuf>) -> bool {
     if data.as_deref().is_some_and(|data| !is_under(doc, data)) {
         return false;
     }
+    let anew = daemon.boards.lock().await.known_registry(board).and_then(|reg| reg.counts_anew(doc, data.as_deref()));
+    let Some(anew) = anew else { return false };
+    let (dir, watched) = match data.as_deref().filter(|_| anew) {
+        Some(data) => daemon.count_data_dir(doc, data).await,
+        None => (DataDir::Uncounted, false),
+    };
     let recorded = daemon
         .look(
             |_| data.clone(),
             |boards, now| {
                 let active = boards.active_id() == board;
-                let reg = boards.known_registry_mut(board)?;
-                if !reg.set_data(doc, data.clone()) {
-                    return None;
+                let Some(reg) = boards.known_registry_mut(board) else { return Err(dir) };
+                if !reg.docs.contains_key(doc) {
+                    return Err(dir);
                 }
-                Some(data.as_ref().filter(|_| active).and_then(|data| reg.see_data(data, *now.get(data)?)))
+                let not_held = reg.set_data(doc, data.clone(), dir).expect("the doc is registered");
+                Ok((not_held, data.as_ref().filter(|_| active).and_then(|data| reg.see_data(data, *now.get(data)?))))
             },
         )
         .await;
-    let Some(told) = recorded else { return false };
+    let told = match recorded {
+        Ok((not_held, told)) => {
+            daemon.release_data_dir(&not_held);
+            told
+        }
+        Err(dir) => {
+            daemon.release_data_dir(&dir);
+            return false;
+        }
+    };
     if let (Some(data), Some(mtime_ms)) = (&data, told) {
         daemon.push(file_event(data, mtime_ms)).await;
+    }
+    if watched {
+        report_changes(daemon).await;
     }
     true
 }

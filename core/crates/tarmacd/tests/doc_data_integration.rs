@@ -515,3 +515,166 @@ fn one_write_of_a_data_file_in_a_subdirectory_is_one_file_event() {
     assert_eq!(app.recv_file_event_since(&stats, edited), edited);
     assert!(quiet(&mut app, &stats), "one file_event for one write");
 }
+
+/// Each `file_event` for `path` until none comes for the `quiet` window, the
+/// first waited for as long as `recv_file_event_for` waits.
+fn file_events_until_quiet(app: &mut Conn, path: &str) -> Vec<u64> {
+    let mut seen = vec![app.recv_file_event_for(path)];
+    let mut take = |m: &Msg| match m {
+        Msg::FileEvent { path: p, mtime_ms } if p == path => {
+            seen.push(*mtime_ms);
+            true
+        }
+        _ => false,
+    };
+    while !none_within(app, Duration::from_millis(800), &mut take) {}
+    seen
+}
+
+// S11
+#[test]
+fn a_data_file_in_a_subdirectory_replaced_by_a_rename_is_reported() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let (_card, stats) = card_reading_sub(&daemon, &mut app);
+
+    let written = daemon.dir.join("docs/sub/stats.json.new");
+    std::fs::write(&written, "{\"n\":2}\n").unwrap();
+    std::fs::rename(&written, &stats).unwrap();
+    let events = file_events_until_quiet(&mut app, &stats);
+    assert_eq!(events.last(), Some(&mtime_ms(&stats)), "{events:?}");
+}
+
+// S12
+#[test]
+fn a_data_file_that_is_not_there_in_a_subdirectory_is_reported_when_it_is_made() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let card = Card::open(&daemon, &mut app);
+    std::fs::create_dir_all(daemon.dir.join("docs/sub")).unwrap();
+    let new = format!("{}/sub/new.json", card.dir());
+
+    doc_data(&mut app, "board-0", &card.dash, Some(&new));
+    look_with_none_for(&mut app, &card.other, &[&new]);
+
+    write_doc(Path::new(&new), "[1]\n");
+    assert_eq!(app.recv_file_event_for(&new), mtime_ms(&new));
+    assert!(quiet(&mut app, &new), "one file_event for one file made");
+}
+
+// S13. The write comes after the look that the `mkdir` wakes: a write in
+// that look's window would be reported with no watch of `sub`.
+#[test]
+fn a_data_file_in_a_subdirectory_that_is_made_later_is_reported() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let card = Card::open(&daemon, &mut app);
+    let stats = format!("{}/sub/stats.json", card.dir());
+    doc_data(&mut app, "board-0", &card.dash, Some(&stats));
+    look_with_none_for(&mut app, &card.other, &[&stats]);
+
+    std::fs::create_dir(daemon.dir.join("docs/sub")).unwrap();
+    assert!(quiet(&mut app, &stats));
+    write_doc(Path::new(&stats), "{}\n");
+    assert_eq!(app.recv_file_event_for(&stats), mtime_ms(&stats));
+}
+
+// S15
+#[test]
+fn one_write_of_a_data_file_two_levels_down_is_one_file_event() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let card = Card::open(&daemon, &mut app);
+    let stats = write_doc(&daemon.dir.join("docs/a/b/stats.json"), "{}\n");
+    card.register_file(&mut app, &stats);
+    assert!(quiet(&mut app, &stats));
+
+    let edited = edit(&stats);
+    assert_eq!(app.recv_file_event_since(&stats, edited), edited);
+    assert!(quiet(&mut app, &stats), "one file_event for one write");
+}
+
+// S16
+#[test]
+fn a_subdirectory_removed_and_made_again_is_still_watched() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let (_card, stats) = card_reading_sub(&daemon, &mut app);
+
+    let sub = daemon.dir.join("docs/sub");
+    std::fs::remove_dir_all(&sub).unwrap();
+    std::fs::create_dir(&sub).unwrap();
+    assert!(quiet(&mut app, &stats));
+    write_doc(Path::new(&stats), "[2]\n");
+    assert_eq!(app.recv_file_event_for(&stats), mtime_ms(&stats));
+}
+
+// S20a
+#[test]
+fn a_subdirectory_that_another_doc_still_reads_in_stays_watched() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let card = Card::open(&daemon, &mut app);
+    let dash2 = write_doc(&daemon.dir.join("docs/dash2.html"), "<p>dash2</p>\n");
+    app.open_on("board-0", &dash2);
+    let a = write_doc(&daemon.dir.join("docs/sub/a.json"), "{}\n");
+    let b = write_doc(&daemon.dir.join("docs/sub/b.json"), "{}\n");
+    card.register_file(&mut app, &a);
+    doc_data(&mut app, "board-0", &dash2, Some(&b));
+    assert_eq!(app.recv_file_event_for(&b), mtime_ms(&b));
+
+    doc_data(&mut app, "board-0", &card.dash, None);
+    assert!(quiet(&mut app, &b));
+    let edited = edit(&b);
+    assert_eq!(app.recv_file_event_since(&b, edited), edited);
+    assert!(quiet(&mut app, &b), "one file_event for one write");
+}
+
+// S25a: S44 with the file in `sub`.
+#[test]
+fn a_doc_data_in_a_subdirectory_for_a_board_in_the_background_is_answered_at_its_switch() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let card = card_in_the_background(&daemon, &mut app);
+    let stats = write_doc(&daemon.dir.join("docs/sub/stats.json"), "{}\n");
+
+    doc_data(&mut app, "board-1", &card.dash, Some(&stats));
+    none_at_once_for(&mut app, &card.other, &[&stats]);
+    look_with_none_for(&mut app, &card.other, &[&stats]);
+
+    switch_with_restore_first(&mut app, "board-1", &stats);
+    assert_eq!(app.recv_file_event_for(&stats), mtime_ms(&stats));
+}
+
+// S28, the state file. A layout makes the save.
+#[test]
+fn a_data_file_in_a_subdirectory_is_not_in_the_state_file() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let (_card, _stats) = card_reading_sub(&daemon, &mut app);
+
+    let viewport = BoardViewport { zoom: 1.25, cx: 10.0, cy: 20.0 };
+    app.send(&Msg::Layout { dock: vec![], tiles: vec![], board: Some(viewport), board_id: None });
+    daemon.wait_for_state("the layout's viewport", |v| v["boards"][0]["board"]["zoom"] == json!(1.25));
+    let state = daemon.state_json().to_string();
+    assert!(state.contains("dash.html"), "the doc is in the state file");
+    assert!(!state.contains("stats.json") && !state.contains("/sub"), "no trace of the data file: {state}");
+}
+
+// S29. `self` leads to the card's own directory: the watch of that directory
+// must outlive the data file's registration.
+#[test]
+fn a_data_path_through_a_link_to_the_doc_directory_leaves_its_watch() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let card = Card::open(&daemon, &mut app);
+    std::os::unix::fs::symlink(".", daemon.dir.join("docs/self")).unwrap();
+    let through = format!("{}/self/stats.json", card.dir());
+    doc_data(&mut app, "board-0", &card.dash, Some(&through));
+    assert_eq!(app.recv_file_event_for(&through), mtime_ms(&card.stats));
+
+    doc_data(&mut app, "board-0", &card.dash, None);
+    assert!(quiet(&mut app, &card.other));
+    let edited = edit(&card.other);
+    assert_eq!(app.recv_file_event_since(&card.other, edited), edited);
+}

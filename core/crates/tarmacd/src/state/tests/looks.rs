@@ -77,7 +77,7 @@ async fn a_wake_reports_a_change() {
     tokio::task::yield_now().await;
     assert_eq!(file_events(&mut app), vec![], "nothing looked at the doc yet");
 
-    daemon.wake.notify_one();
+    daemon.wake.from_fs();
     assert_eq!(next_file_event(&mut app).await, changed);
 
     let _ = std::fs::remove_dir_all(&tmp);
@@ -94,11 +94,11 @@ async fn a_look_comes_no_sooner_than_the_burst_window_after_the_one_before() {
     // Taken before the first look: the wait starts when that look ends.
     let before = std::time::Instant::now();
     let first = change(&doc);
-    daemon.wake.notify_one();
+    daemon.wake.from_fs();
     assert_eq!(next_file_event(&mut app).await, first);
 
     let second = change(&doc);
-    daemon.wake.notify_one();
+    daemon.wake.from_fs();
     assert_eq!(next_file_event(&mut app).await, second);
     assert!(before.elapsed() >= crate::watch::BURST, "the second look came after {:?}", before.elapsed());
 
@@ -335,7 +335,7 @@ async fn a_refresh_stats_the_file_and_does_not_replay_what_is_recorded() {
     wait_for_saved(&tmp, &doc, Some(second)).await;
 
     // The refresh took the file as seen: a look after it has nothing to tell.
-    daemon.wake.notify_one();
+    daemon.wake.from_fs();
     tokio::time::sleep(Duration::from_millis(50)).await;
     assert_eq!(file_events(&mut app), vec![]);
 
