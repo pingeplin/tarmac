@@ -15,6 +15,7 @@ extension AppController {
             scrollback.unmount(termID)
         }
         termIndex.removeBoard(id)
+        dataFiles.forget(board: id)
         boards[id] = nil
     }
 

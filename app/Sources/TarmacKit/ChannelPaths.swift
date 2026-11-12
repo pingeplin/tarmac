@@ -108,6 +108,15 @@ public enum ChannelPaths {
         return channelDir(home: home, channel: channel) + "/" + file
     }
 
+    /// The folder a channel compiles its content rules into, under the
+    /// temporary directory. Keyed on the socket path the app really uses, so
+    /// two builds that talk to one daemon share a folder and no two channels do.
+    /// It has no Rust twin.
+    public static func contentRulesDir(socketPath: String, temporaryDirectory: String) -> String {
+        let hash = socketPath.utf8.reduce(0xcbf2_9ce4_8422_2325 as UInt64) { ($0 ^ UInt64($1)) &* 0x100_0000_01b3 }
+        return join(temporaryDirectory, "tarmac-content-rules-" + String(format: "%016llx", hash))
+    }
+
     /// Human label for diagnostics: `.release` -> `"release"`, `.dev` -> `"dev"`.
     /// Mirrors Rust `tarmac_protocol::channel_label` (spec S10).
     public static func channelLabel(_ channel: Channel) -> String {

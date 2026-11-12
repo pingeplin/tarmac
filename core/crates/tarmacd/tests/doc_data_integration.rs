@@ -1,0 +1,383 @@
+// #311 / spec 2611.0002: `doc_data` names the data file that an HTML doc
+// reads. The daemon answers it with a `file_event` for that file, and reports
+// each later change of it as it reports a doc's: in a look of the active
+// board, and at the switch to the doc's board.
+//
+// A check that no `file_event` comes passes for the wrong reason when no look
+// runs. So each one forces a look first (`look_with_none_for`): it changes a
+// doc that is open beside the data file and waits for that doc's event.
+
+mod common;
+
+use std::path::Path;
+use std::time::Duration;
+
+use common::{Conn, TestDaemon, edit, is_file_event_for, mtime_ms, none_within, quiet, temp_dir, write_doc};
+use serde_json::json;
+use tarmac_protocol::{BoardViewport, Msg};
+
+fn doc_data(app: &mut Conn, board: &str, doc: &str, data: Option<&str>) {
+    app.send(&Msg::DocData { board_id: board.into(), path: doc.into(), data: data.map(str::to_string) });
+}
+
+fn is_event_for_any(msg: &Msg, paths: &[&str]) -> bool {
+    paths.iter().any(|path| is_file_event_for(msg, path))
+}
+
+/// Waits for `msg_is`, and fails on a `file_event` for any of `paths` before
+/// it: `recv_until` would drop that event.
+fn recv_with_none_for(app: &mut Conn, what: &str, paths: &[&str], mut msg_is: impl FnMut(&Msg) -> bool) {
+    app.recv_until(what, |m| {
+        assert!(!is_event_for_any(m, paths), "a file_event before {what}: {m:?}");
+        msg_is(m)
+    });
+}
+
+/// Makes the daemon look at the active board, then fails on a `file_event`
+/// for any of `paths` before that look's event for `other`, or within the
+/// window after it: the events of one look come in no set order.
+fn look_with_none_for(app: &mut Conn, other: &str, paths: &[&str]) {
+    let edited = edit(other);
+    recv_with_none_for(app, &format!("the look's file_event for {other}"), paths, |m| {
+        matches!(m, Msg::FileEvent { path, mtime_ms } if path == other && *mtime_ms >= edited)
+    });
+    assert!(
+        none_within(app, Duration::from_millis(800), |m| is_event_for_any(m, paths)),
+        "a file_event for one of {paths:?} after the look"
+    );
+}
+
+/// Fails on a `file_event` for any of `paths` that answers what the test sent
+/// before: the daemon handles the frames of one connection in order, so the
+/// answer to a `doc_refresh` sent now comes after it.
+fn none_at_once_for(app: &mut Conn, other: &str, paths: &[&str]) {
+    app.send(&Msg::DocRefresh { path: other.into() });
+    recv_with_none_for(app, &format!("the refresh's file_event for {other}"), paths, |m| {
+        matches!(m, Msg::FileEvent { path, .. } if path == other)
+    });
+}
+
+/// `board_switch`, failing on a `file_event` for `data` before the restore.
+fn switch_with_restore_first(app: &mut Conn, board: &str, data: &str) {
+    app.send(&Msg::BoardSwitch { board_id: board.into() });
+    recv_with_none_for(app, &format!("restore for {board}"), &[data], |m| {
+        matches!(m, Msg::Restore { board_id, .. } if board_id.as_deref() == Some(board))
+    });
+}
+
+/// An HTML doc and a doc beside it, both open on board-0, and the data file
+/// `stats.json` beside them. `other` is the doc a test changes to force a
+/// look.
+struct Card {
+    dash: String,
+    other: String,
+    stats: String,
+}
+
+impl Card {
+    /// The three files, with no doc open.
+    fn write(daemon: &TestDaemon) -> Self {
+        Card {
+            dash: write_doc(&daemon.dir.join("docs/dash.html"), "<p>dash</p>\n"),
+            other: write_doc(&daemon.dir.join("docs/other.md"), "other\n"),
+            stats: write_doc(&daemon.dir.join("docs/stats.json"), "{}\n"),
+        }
+    }
+
+    fn open(daemon: &TestDaemon, app: &mut Conn) -> Self {
+        let card = Card::write(daemon);
+        app.open_on("board-0", &card.dash);
+        app.open_on("board-0", &card.other);
+        card
+    }
+
+    /// A path beside the card's doc, made as text, with no file made.
+    fn beside(&self, name: &str) -> String {
+        format!("{}/{name}", Path::new(&self.dash).parent().unwrap().display())
+    }
+
+    /// `doc_data` for `dash` on board-0, and its answer.
+    fn register(&self, app: &mut Conn) {
+        doc_data(app, "board-0", &self.dash, Some(&self.stats));
+        assert_eq!(app.recv_file_event_for(&self.stats), mtime_ms(&self.stats));
+    }
+}
+
+// S36
+#[test]
+fn a_doc_data_is_answered_with_a_file_event_for_the_data_file() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let card = Card::open(&daemon, &mut app);
+
+    doc_data(&mut app, "board-0", &card.dash, Some(&card.stats));
+    assert_eq!(app.recv_file_event_for(&card.stats), mtime_ms(&card.stats), "the data file's mtime");
+}
+
+// S36a
+#[test]
+fn the_answer_takes_the_data_file_as_seen() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let card = Card::open(&daemon, &mut app);
+    card.register(&mut app);
+
+    look_with_none_for(&mut app, &card.other, &[&card.stats]);
+}
+
+// S37
+#[test]
+fn one_write_of_the_data_file_is_one_file_event() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let card = Card::open(&daemon, &mut app);
+    card.register(&mut app);
+
+    let edited = edit(&card.stats);
+    assert_eq!(app.recv_file_event_since(&card.stats, edited), edited);
+    assert!(quiet(&mut app, &card.stats), "one file_event for one write");
+}
+
+// S38
+#[test]
+fn the_same_doc_data_again_is_answered_again() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let card = Card::open(&daemon, &mut app);
+    card.register(&mut app);
+    assert!(quiet(&mut app, &card.stats), "the file did not change");
+
+    doc_data(&mut app, "board-0", &card.dash, Some(&card.stats));
+    assert_eq!(app.recv_file_event_for(&card.stats), mtime_ms(&card.stats));
+}
+
+// S39
+#[test]
+fn a_data_file_that_is_not_there_is_reported_when_it_is_made() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let card = Card::open(&daemon, &mut app);
+    let later = card.beside("later.json");
+
+    doc_data(&mut app, "board-0", &card.dash, Some(&later));
+    look_with_none_for(&mut app, &card.other, &[&later]);
+
+    write_doc(Path::new(&later), "[1]\n");
+    assert_eq!(app.recv_file_event_for(&later), mtime_ms(&later));
+    assert!(quiet(&mut app, &later), "one file_event for one file made");
+}
+
+// S40
+#[test]
+fn a_doc_data_with_no_data_clears_the_data_file() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let card = Card::open(&daemon, &mut app);
+    card.register(&mut app);
+
+    doc_data(&mut app, "board-0", &card.dash, None);
+    edit(&card.stats);
+    look_with_none_for(&mut app, &card.other, &[&card.stats]);
+}
+
+// S40a
+#[test]
+fn a_doc_data_with_another_file_replaces_the_data_file() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let card = Card::open(&daemon, &mut app);
+    card.register(&mut app);
+    let next = write_doc(&daemon.dir.join("docs/next.json"), "{}\n");
+
+    doc_data(&mut app, "board-0", &card.dash, Some(&next));
+    assert_eq!(app.recv_file_event_for(&next), mtime_ms(&next), "the new file is answered");
+
+    edit(&card.stats);
+    look_with_none_for(&mut app, &card.other, &[&card.stats]);
+}
+
+// S41. Each file that is refused is there, beside the doc when the daemon
+// resolves it: a daemon that took it would report it. The daemon's cwd is the
+// parent of the docs' directory, so that the relative name names a file too.
+#[test]
+fn a_doc_data_that_is_refused_records_nothing() {
+    let cwd = temp_dir();
+    let away = temp_dir();
+    let daemon = TestDaemon::start_with(|cmd| {
+        cmd.current_dir(&cwd);
+    });
+    let mut app = daemon.connect_app_drained();
+    let dash = write_doc(&cwd.join("docs/dash.html"), "<p>dash</p>\n");
+    let other = write_doc(&cwd.join("docs/other.md"), "other\n");
+    app.open_on("board-0", &dash);
+    app.open_on("board-0", &other);
+    let docs = Path::new(&dash).parent().unwrap().display().to_string();
+
+    let below = write_doc(&cwd.join("docs/sub/below.json"), "{}\n");
+    let above = write_doc(&cwd.join("above.json"), "{}\n");
+    let elsewhere = write_doc(&away.join("away.json"), "{}\n");
+    let relative_file = write_doc(&cwd.join("docs/relative.json"), "{}\n");
+    let relative = "docs/relative.json".to_string();
+    let through_sub_file = write_doc(&cwd.join("docs/through.json"), "{}\n");
+    let through_sub = format!("{docs}/sub/../through.json");
+    let the_dir_above = format!("{docs}/..");
+    let no_doc = format!("{docs}/nope.html");
+    let of_no_doc = write_doc(&cwd.join("docs/of-no-doc.json"), "{}\n");
+    let of_no_board = write_doc(&cwd.join("docs/of-no-board.json"), "{}\n");
+
+    for data in [&below, &above, &elsewhere, &relative, &through_sub, &the_dir_above] {
+        doc_data(&mut app, "board-0", &dash, Some(data));
+    }
+    doc_data(&mut app, "board-0", &no_doc, Some(&of_no_doc));
+    doc_data(&mut app, "board-9", &dash, Some(&of_no_board));
+
+    let refused = [&below, &above, &elsewhere, &relative, &through_sub, &the_dir_above, &of_no_doc, &of_no_board];
+    let refused: Vec<&str> = refused.iter().map(|p| p.as_str()).collect();
+    none_at_once_for(&mut app, &other, &refused);
+    for file in [&below, &above, &elsewhere, &relative_file, &through_sub_file, &of_no_doc, &of_no_board] {
+        edit(file);
+    }
+    look_with_none_for(&mut app, &other, &refused);
+
+    let taken = write_doc(&cwd.join("docs/taken.json"), "{}\n");
+    doc_data(&mut app, "board-0", &dash, Some(&taken));
+    assert_eq!(app.recv_file_event_for(&taken), mtime_ms(&taken), "the same doc takes a file beside it");
+
+    let _ = std::fs::remove_dir_all(&cwd);
+    let _ = std::fs::remove_dir_all(&away);
+}
+
+// S42. `other` keeps the directory watched.
+#[test]
+fn a_closed_doc_reads_its_data_file_no_more() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let card = Card::open(&daemon, &mut app);
+    card.register(&mut app);
+
+    app.send(&Msg::DocClose { path: card.dash.clone() });
+    edit(&card.stats);
+    look_with_none_for(&mut app, &card.other, &[&card.stats]);
+}
+
+// S43
+#[test]
+fn a_data_file_that_two_docs_read_is_one_file_event_for_a_change() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let card = Card::open(&daemon, &mut app);
+    let dash2 = write_doc(&daemon.dir.join("docs/dash2.html"), "<p>dash2</p>\n");
+    app.open_on("board-0", &dash2);
+    card.register(&mut app);
+    doc_data(&mut app, "board-0", &dash2, Some(&card.stats));
+    assert_eq!(app.recv_file_event_for(&card.stats), mtime_ms(&card.stats));
+    assert!(quiet(&mut app, &card.stats));
+
+    let edited = edit(&card.stats);
+    assert_eq!(app.recv_file_event_since(&card.stats, edited), edited);
+    assert!(quiet(&mut app, &card.stats), "one file_event for one write");
+}
+
+// S43, a data file that is also a doc of the board.
+#[test]
+fn a_data_file_that_is_also_a_doc_is_one_file_event_for_a_change() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let card = Card::open(&daemon, &mut app);
+    app.open_on("board-0", &card.stats);
+    card.register(&mut app);
+    assert!(quiet(&mut app, &card.stats));
+
+    let edited = edit(&card.stats);
+    assert_eq!(app.recv_file_event_since(&card.stats, edited), edited);
+    assert!(quiet(&mut app, &card.stats), "one file_event for one write");
+}
+
+/// A card whose doc is on board-1, in the background, and whose `other` is
+/// on board-0, the active board. A test forces a look of board-0 before its
+/// switch to board-1: the wake of an open would look at board-1 after it, and
+/// report the data file without the look of the switch.
+fn card_in_the_background(daemon: &TestDaemon, app: &mut Conn) -> Card {
+    let card = Card::write(daemon);
+    app.open_on("board-0", &card.other);
+    app.create_board("board-1");
+    app.open_on("board-1", &card.dash);
+    app.switch_to("board-0");
+    card
+}
+
+// S44
+#[test]
+fn a_doc_data_for_a_board_in_the_background_is_answered_at_its_switch() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let card = card_in_the_background(&daemon, &mut app);
+
+    doc_data(&mut app, "board-1", &card.dash, Some(&card.stats));
+    none_at_once_for(&mut app, &card.other, &[&card.stats]);
+    look_with_none_for(&mut app, &card.other, &[&card.stats]);
+
+    switch_with_restore_first(&mut app, "board-1", &card.stats);
+    assert_eq!(app.recv_file_event_for(&card.stats), mtime_ms(&card.stats));
+}
+
+// The spec's choices 6 and 9: a `doc_data` sent again for a board in the
+// background (an app that connected again) is answered at the switch as the
+// first was, with the file not changed.
+#[test]
+fn the_same_doc_data_again_for_a_board_in_the_background_is_answered_at_its_switch() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let card = card_in_the_background(&daemon, &mut app);
+    doc_data(&mut app, "board-1", &card.dash, Some(&card.stats));
+    look_with_none_for(&mut app, &card.other, &[&card.stats]);
+    app.switch_to("board-1");
+    assert_eq!(app.recv_file_event_for(&card.stats), mtime_ms(&card.stats));
+    switch_with_restore_first(&mut app, "board-0", &card.stats);
+
+    doc_data(&mut app, "board-1", &card.dash, Some(&card.stats));
+    none_at_once_for(&mut app, &card.other, &[&card.stats]);
+    look_with_none_for(&mut app, &card.other, &[&card.stats]);
+    switch_with_restore_first(&mut app, "board-1", &card.stats);
+    assert_eq!(app.recv_file_event_for(&card.stats), mtime_ms(&card.stats));
+}
+
+// S45. A doc of board-1 beside the data file is changed after it, and its
+// event awaited, so that the wake of the data file's write is spent before
+// the switch back: only the look of the switch can then report the change.
+#[test]
+fn a_change_of_a_data_file_in_the_background_is_reported_at_the_switch() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let card = Card::open(&daemon, &mut app);
+    card.register(&mut app);
+    let b1 = write_doc(&daemon.dir.join("docs/b1.md"), "b1\n");
+    app.create_board("board-1");
+    app.open_on("board-1", &b1);
+
+    let edited = edit(&card.stats);
+    let b1_edited = edit(&b1);
+    recv_with_none_for(&mut app, "file_event for b1", &[&card.stats], |m| {
+        matches!(m, Msg::FileEvent { path, mtime_ms } if *path == b1 && *mtime_ms >= b1_edited)
+    });
+    assert!(quiet(&mut app, &card.stats), "board-1 does not read the data file");
+
+    switch_with_restore_first(&mut app, "board-0", &card.stats);
+    assert_eq!(app.recv_file_event_for(&card.stats), edited);
+}
+
+// S46. `doc_data` saves nothing itself, so a layout makes the save.
+#[test]
+fn the_data_file_is_not_in_the_state_file() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let card = Card::open(&daemon, &mut app);
+    card.register(&mut app);
+
+    let viewport = BoardViewport { zoom: 1.25, cx: 10.0, cy: 20.0 };
+    app.send(&Msg::Layout { dock: vec![], tiles: vec![], board: Some(viewport), board_id: None });
+    daemon.wait_for_state("the layout's viewport", |v| v["boards"][0]["board"]["zoom"] == json!(1.25));
+    let state = daemon.state_json().to_string();
+    assert!(state.contains("dash.html"), "the doc is in the state file");
+    assert!(!state.contains("stats.json"), "the data file is not: {state}");
+}

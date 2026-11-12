@@ -83,15 +83,17 @@ Everything below fails **silently** — no error, just a blank or broken card.
   text font from the user's (below) or from a system font stack. A custom font
   must be a `data:` URI.
 - **No network requests.** `fetch`, `XMLHttpRequest`, `WebSocket`, and
-  `sendBeacon` are all blocked. Embed your data in the file as a literal.
+  `sendBeacon` are all blocked. Embed your data in the file as a literal, or
+  put it in a JSON data file beside the card (below).
 - **No storage.** `localStorage`, `sessionStorage`, cookies, and IndexedDB are
   unavailable at an opaque origin.
 - **Images and media must be `data:` or `blob:`.** A remote image URL, or even a
   local file path, will not load. Inline small images as `data:` URIs; prefer
   drawing with SVG.
 
-So: one `.html` file, no siblings, no assets directory, no build step. If you
-need data in the chart, serialize it into a `const` at the top of the script.
+So: one `.html` file, no assets directory, no build step. If you need data in
+the chart, serialize it into a `const` at the top of the script, or, for data
+that changes, name one JSON file beside the card (below).
 
 ### What you get for free
 
@@ -220,6 +222,50 @@ The cost is that text reflows while zooming. Only reach for it when the layout i
 genuinely a function of the viewport; magnify is the right default for a report,
 a table, a diagram, or a static chart.
 
+### Data from a file
+
+A card that shows data which changes, such as a dashboard you rewrite many
+times a minute, can name one JSON file. Tarmac reads the file and gives the
+content to the loaded document. When you rewrite the file, the document gets
+the new content and is not loaded again: it keeps its script state, and the
+card does not flash.
+
+```html
+<meta name="tarmac-data" content="stats.json">
+<script>
+  addEventListener("tarmac:data", e => render(e.detail));
+  if (window.tarmac.data !== undefined) render(window.tarmac.data);
+</script>
+```
+
+- **One file, beside the HTML file.** The first `tarmac-data` meta in the
+  document when it is parsed is the one read; a meta added later by a script is
+  not seen. A relative name is taken from the HTML file's directory. A name
+  that leads to another directory is refused, a subdirectory included. A
+  symlink that leads out of the directory is refused too.
+- **`tarmac:data`** is a `CustomEvent` on `window`, and `detail` is the parsed
+  content. It fires after each load of the document, when the file exists
+  and is valid, and after each change of the file. Tarmac does not compare the
+  content with what it gave before: the same content can come again (after a
+  reload, or after Tarmac reconnects to its daemon). Make the handler safe to
+  run again with the same value.
+- **`window.tarmac`** is defined before any of your script runs.
+  `window.tarmac.data` is `undefined` until the first content comes, and then
+  the last content given. If your page sets its own `window.tarmac`, it keeps
+  it, and the event still fires.
+- **Write the whole file each time.** Each change gives the whole file; the
+  latest content wins. Changes that come faster than the watcher looks (about
+  every 100 ms) give one event, with the content at the time of the read.
+- **Strict JSON, at most 64 MiB.** Any JSON value is allowed at the top, with
+  white space around it. Not given, and the document keeps what it has: a
+  file that is not there, is not a regular file, is over 64 MiB, is not UTF-8,
+  or is not strict JSON (a byte-order mark, a number too large for a double,
+  more than 127 levels of arrays and objects). A refused name, and a file that
+  could not be read or is not valid, is one line in the card's console. A file
+  that is not there writes no line: the content comes when you make the file.
+- **A card out of view gets no content.** It gets the latest content once,
+  when it is back in view.
+
 ## Checklist before `tarmac open` on an HTML file
 
 - [ ] One file. No external `src`, `href`, or `url()` that leaves the document.
@@ -228,7 +274,8 @@ a table, a diagram, or a static chart.
 - [ ] Fonts: `var(--tarmac-prose-font, <system stack>)` to follow the user's, or
       a system stack. Every use has a fallback; you never set a `--tarmac-` name.
 - [ ] All CSS in a `<style>` block.
-- [ ] All data embedded as literals; no `fetch`.
+- [ ] All data embedded as literals, or in one JSON file beside the card that a
+      `tarmac-data` meta names; no `fetch`.
 - [ ] Images inline as `data:` URIs, or drawn as SVG.
 - [ ] Sizes use `%`, `px`, `rem` — no `vw`/`vh`, no media queries of size.
 - [ ] Colours: both a background and a text colour, or neither; a

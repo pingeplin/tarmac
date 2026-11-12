@@ -137,6 +137,33 @@ final class CardConsoleTests: XCTestCase {
         XCTAssertNil(parse(["tarmac": "ready"]))
     }
 
+    // MARK: - the data name and the load (2611.0002 S19)
+
+    func test2611S19AReadyCarriesItsDataNameAndItsLoad() {
+        XCTAssertEqual(
+            parse(["tarmac": "ready", "meta": NSNull(), "data": "stats.json", "load": 3]),
+            .ready(meta: nil, data: "stats.json", load: 3)
+        )
+        XCTAssertEqual(
+            parse(["tarmac": "ready", "meta": "reveal", "data": "stats.json"]),
+            .ready(meta: "reveal", data: "stats.json", load: nil)
+        )
+    }
+
+    func test2611S19ANullOrAbsentDataNamesNoFile() {
+        XCTAssertEqual(parse(["tarmac": "ready", "meta": NSNull(), "data": NSNull(), "load": 2]), .ready(meta: nil, load: 2))
+        XCTAssertEqual(parse(["tarmac": "ready", "meta": NSNull(), "load": 2]), .ready(meta: nil, data: nil, load: 2))
+    }
+
+    func test2611S19ADataOrALoadOfAnotherTypeMakesTheReadyUnparseable() {
+        for data in [1, true, [String: Any](), ["a"]] as [Any] {
+            XCTAssertNil(parse(["tarmac": "ready", "meta": NSNull(), "data": data]), "data \(data)")
+        }
+        for load in ["3", 1.5, true, NSNull(), [3]] as [Any] {
+            XCTAssertNil(parse(["tarmac": "ready", "meta": NSNull(), "load": load]), "load \(load)")
+        }
+    }
+
     /// Absent is neither a string nor null (2607.0006 S14, guards 2607.0006 S8).
     func testRejectsAReadyPayloadWithTheMetaKeyAbsent() {
         let probe: [String: Any] = ["base": 400, "zoomed": 200]

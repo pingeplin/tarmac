@@ -1,8 +1,14 @@
 import XCTest
 @testable import TarmacKit
 
+/// A card's file for the tests that do not look at where it is.
+private extension HTMLCardSession {
+    init() { self.init(html: "/a/b/dash.html") }
+}
+
 /// What the host does with each message from an HTML card's document, and what
-/// a reload resets (specs 2607.0004, 2607.0006, 2609.0002, 2609.0003).
+/// a reload resets (specs 2607.0004, 2607.0006, 2609.0002, 2609.0003,
+/// 2611.0002).
 final class HTMLCardSessionTests: XCTestCase {
     private typealias Effect = HTMLCardSession.Effect
     private let magnify = CardHostMessage.zoom(Double(CardZoom.magnifyK))
@@ -34,7 +40,7 @@ final class HTMLCardSessionTests: XCTestCase {
 
     func testAReadyOnACulledCardRepeatsThatItIsCulled() {
         var session = HTMLCardSession()
-        session.culled = true
+        _ = session.setCulled(true)
         XCTAssertEqual(session.handle(.ready(meta: nil), borrowed: false).first, .post(.cull(true)))
     }
 
@@ -91,7 +97,7 @@ final class HTMLCardSessionTests: XCTestCase {
         )
 
         var culled = HTMLCardSession()
-        culled.culled = true
+        _ = culled.setCulled(true)
         _ = culled.fontsChanged(fontsA)
         XCTAssertEqual(culled.handle(.ready(meta: nil), borrowed: false).first, .post(.cull(true)))
     }
@@ -105,7 +111,7 @@ final class HTMLCardSessionTests: XCTestCase {
     func test2610_0010S23AChangeIsPostedAndTheSameValuesAreNot() {
         for culled in [false, true] {
             var session = HTMLCardSession()
-            session.culled = culled
+            _ = session.setCulled(culled)
             XCTAssertEqual(session.fontsChanged(fontsA), .fonts(fontsA), "culled \(culled)")
             XCTAssertNil(session.fontsChanged(fontsA), "culled \(culled)")
             XCTAssertEqual(session.fontsChanged(fontsB), .fonts(fontsB), "culled \(culled)")
@@ -151,9 +157,9 @@ final class HTMLCardSessionTests: XCTestCase {
         let before = session
         XCTAssertEqual(session.handle(.shown(load: load), borrowed: false), [.documentShown])
         XCTAssertEqual(session.handle(.shown(load: load), borrowed: true), [.documentShown])
-        session.culled = true
+        _ = session.setCulled(true)
         XCTAssertEqual(session.handle(.shown(load: load), borrowed: false), [.documentShown])
-        session.culled = false
+        _ = session.setCulled(false)
         XCTAssertEqual(session, before)
     }
 
@@ -186,5 +192,265 @@ final class HTMLCardSessionTests: XCTestCase {
         let entry = CardConsole.Entry(level: .warn, args: ["a", 1])
         XCTAssertEqual(session.handle(.console(entry), borrowed: false), [.consoleChanged])
         XCTAssertEqual(session.console.entries, [entry])
+    }
+
+    // MARK: - the data file (2611.0002 S20–S31)
+
+    private let stats = "/a/b/stats.json"
+
+    /// A card whose current load named `name`, and what its `ready` gave.
+    private func card(naming name: String? = "stats.json") -> (HTMLCardSession, [Effect]) {
+        var session = HTMLCardSession(html: "/a/b/dash.html")
+        let effects = reload(&session, naming: name)
+        return (session, effects)
+    }
+
+    private func registrations(_ effects: [Effect]) -> [String?] {
+        effects.compactMap { if case .dataFile(let file) = $0 { return .some(file) } else { return nil } }
+    }
+
+    /// The reads the effects start.
+    private func reads(_ effects: [Effect]) -> [HTMLCardSession.DataRead] {
+        effects.compactMap { if case .read(let read) = $0 { return read } else { return nil } }
+    }
+
+    private func reload(_ session: inout HTMLCardSession, naming name: String?) -> [Effect] {
+        let load = session.reloaded()
+        return session.handle(.ready(meta: nil, data: name, load: load), borrowed: false)
+    }
+
+    private func line(_ path: String, _ reason: String) -> CardConsole.Entry {
+        CardConsole.Entry(level: .error, args: [.string("tarmac-data: \(path): \(reason)")])
+    }
+
+    func test2611S20TheFirstReadyOfTheLoadRegistersItsFileAfterWhatReadyGivesToday() {
+        var today = HTMLCardSession()
+        let todays = today.handle(.ready(meta: nil), borrowed: false)
+        XCTAssertEqual(card().1, todays + [.dataFile(stats)])
+    }
+
+    func test2611S21ALaterReadyOfTheLoadRegistersNothing() {
+        var (session, first) = card()
+        XCTAssertEqual(registrations(first), [stats])
+        let later = session.handle(.ready(meta: nil, data: "other.json"), borrowed: false)
+        XCTAssertEqual(registrations(later), [])
+        XCTAssertEqual(later, [.post(.cull(false)), .post(magnify)])
+    }
+
+    /// The host page stamps one ready for each load. The session holds the
+    /// rule too: a second one that is stamped with the same load names no
+    /// file, and a read of the first file is still delivered.
+    func test2611S21aASecondStampedReadyOfTheLoadRegistersNothing() throws {
+        var session = HTMLCardSession()
+        let load = session.reloaded()
+        _ = session.handle(.ready(meta: nil, data: "stats.json", load: load), borrowed: false)
+        let read = try readStarted(&session)
+        let second = session.handle(.ready(meta: nil, data: "other.json", load: load), borrowed: false)
+        XCTAssertEqual(registrations(second), [])
+        XCTAssertEqual(session.readEnded(read, .text("{}")), [.deliver("{}")])
+        XCTAssertEqual(reads(session.dataChanged()).map(\.file), [stats])
+    }
+
+    func test2611S22AReadyOfAnotherLoadRegistersNothing() {
+        for other in [-1, 1] {
+            var session = HTMLCardSession()
+            let load = session.reloaded()
+            let effects = session.handle(.ready(meta: nil, data: "stats.json", load: load + other), borrowed: false)
+            XCTAssertEqual(registrations(effects), [], "load \(load + other)")
+            XCTAssertEqual(
+                registrations(session.handle(.ready(meta: nil, data: "stats.json", load: load), borrowed: false)),
+                [stats]
+            )
+        }
+        var unloaded = HTMLCardSession()
+        XCTAssertEqual(registrations(unloaded.handle(.ready(meta: nil, data: "x.json", load: 0), borrowed: false)), [])
+    }
+
+    func test2611S23ARefusedNameRegistersNothingAndSaysWhy() {
+        let (session, effects) = card(naming: "../x.json")
+        XCTAssertEqual(registrations(effects), [])
+        XCTAssertTrue(effects.contains(.consoleChanged))
+        XCTAssertEqual(session.console.entries, [line("/a/x.json", CardDataPath.outside)])
+    }
+
+    func test2611S24TheNextLoadClearsReplacesOrRepeatsTheRegistration() {
+        var none = card().0
+        XCTAssertEqual(registrations(reload(&none, naming: nil)), [nil])
+
+        var refused = card().0
+        let effects = reload(&refused, naming: "sub/x.json")
+        XCTAssertEqual(registrations(effects), [nil])
+        XCTAssertTrue(effects.contains(.consoleChanged))
+        XCTAssertEqual(refused.console.entries, [line("/a/b/sub/x.json", CardDataPath.inSubdirectory)])
+
+        var same = card().0
+        XCTAssertEqual(registrations(reload(&same, naming: "stats.json")), [stats])
+
+        var other = card().0
+        XCTAssertEqual(registrations(reload(&other, naming: "y.json")), ["/a/b/y.json"])
+    }
+
+    func test2611S25ACardThatNeverHadAFileIsToldNothing() {
+        var (session, effects) = card(naming: nil)
+        XCTAssertEqual(registrations(effects), [])
+        XCTAssertEqual(registrations(reload(&session, naming: nil)), [])
+        XCTAssertEqual(registrations(reload(&session, naming: "../x.json")), [])
+        XCTAssertEqual(registrations(reload(&session, naming: "x.json")), ["/a/b/x.json"])
+    }
+
+    /// The read is an effect of the change itself.
+    func test2611S26AChangeStartsARead() throws {
+        var (session, registered) = card()
+        XCTAssertEqual(reads(registered), [], "nothing changed yet")
+        let read = try XCTUnwrap(reads(session.dataChanged()).first)
+        XCTAssertEqual(read.file, stats)
+        XCTAssertEqual(read.html, "/a/b/dash.html")
+    }
+
+    func test2611S27ChangesDuringAReadGiveOneMoreRead() throws {
+        var session = card().0
+        let read = try XCTUnwrap(reads(session.dataChanged()).first)
+        XCTAssertEqual(reads(session.dataChanged()), [])
+        XCTAssertEqual(reads(session.dataChanged()), [])
+        let ended = session.readEnded(read, .text("{}"))
+        XCTAssertEqual(ended.first, .deliver("{}"), "the outcome before the next read")
+        let next = reads(ended)
+        XCTAssertEqual(next.count, 1)
+        XCTAssertEqual(reads(session.readEnded(try XCTUnwrap(next.first), .text("{}"))), [])
+    }
+
+    func test2611S28ACulledCardReadsWhenItIsBackInView() {
+        var session = card().0
+        XCTAssertEqual(reads(session.setCulled(true)), [])
+        XCTAssertEqual(reads(session.dataChanged()), [])
+        let back = session.setCulled(false)
+        XCTAssertEqual(back.first, .post(.cull(false)), "the document is told before it reads")
+        XCTAssertEqual(reads(back).count, 1)
+        XCTAssertEqual(reads(session.setCulled(false)), [])
+
+        var quiet = card().0
+        XCTAssertEqual(reads(quiet.setCulled(true)), [])
+        XCTAssertEqual(reads(quiet.setCulled(false)), [])
+    }
+
+    /// From a reload until the new load's first ready, the file is not yet
+    /// the new document's: a change then starts no read.
+    func test2611S29AChangeBetweenAReloadAndItsReadyStartsNoRead() {
+        var session = card().0
+        let load = session.reloaded()
+        XCTAssertEqual(reads(session.dataChanged()), [])
+        XCTAssertEqual(reads(session.handle(.ready(meta: nil, data: "stats.json", load: load), borrowed: false)), [])
+        XCTAssertEqual(reads(session.dataChanged()).map(\.file), [stats])
+    }
+
+    /// A change of the file a card read before is not a change of the file
+    /// its next load names: that one is read when the daemon reports it. A
+    /// file that is not there would else be read, and write a line.
+    func test2611S28aAChangeOfTheFileBeforeStartsNoReadOfANewlyNamedFile() throws {
+        var culled = card().0
+        _ = culled.setCulled(true)
+        XCTAssertEqual(reads(culled.dataChanged()), [])
+        _ = reload(&culled, naming: "y.json")
+        XCTAssertEqual(reads(culled.setCulled(false)), [])
+        XCTAssertEqual(reads(culled.dataChanged()).map(\.file), ["/a/b/y.json"])
+
+        var reading = card().0
+        let read = try readStarted(&reading)
+        XCTAssertEqual(reads(reading.dataChanged()), [])
+        _ = reload(&reading, naming: "y.json")
+        XCTAssertEqual(reads(reading.readEnded(read, .text("{}"))), [])
+        XCTAssertEqual(reads(reading.dataChanged()).map(\.file), ["/a/b/y.json"])
+    }
+
+    private func readStarted(_ session: inout HTMLCardSession) throws -> HTMLCardSession.DataRead {
+        try XCTUnwrap(reads(session.dataChanged()).first)
+    }
+
+    func test2611S29AReadIsDeliveredOnlyToTheLoadAndFileItWasFor() throws {
+        var session = card().0
+        let read = try readStarted(&session)
+        XCTAssertEqual(session.readEnded(read, .text("[1]")), [.deliver("[1]")])
+        XCTAssertEqual(session.readEnded(try readStarted(&session), .text("[1]")), [.deliver("[1]")], "the same again")
+
+        var reloaded = card().0
+        let before = try readStarted(&reloaded)
+        reloaded.reloaded()
+        XCTAssertEqual(reloaded.readEnded(before, .text("[1]")), [])
+
+        var renamed = card().0
+        let old = try readStarted(&renamed)
+        _ = reload(&renamed, naming: "y.json")
+        XCTAssertEqual(renamed.readEnded(old, .text("[1]")), [])
+
+        var repeated = card().0
+        let first = try readStarted(&repeated)
+        _ = reload(&repeated, naming: "stats.json")
+        XCTAssertEqual(repeated.readEnded(first, .text("[1]")), [], "the same file, a later load")
+    }
+
+    /// The new load's file changed while the old load's read was out: that
+    /// read is not delivered, and its end starts the read for the new load.
+    func test2611S29AStaleReadThatEndsStartsTheReadThatWaitedForIt() throws {
+        var session = card().0
+        let old = try readStarted(&session)
+        _ = reload(&session, naming: "stats.json")
+        XCTAssertEqual(reads(session.dataChanged()), [], "one read at a time")
+        let ended = session.readEnded(old, .text("[1]"))
+        XCTAssertFalse(ended.contains(.deliver("[1]")))
+        let next = try XCTUnwrap(reads(ended).first)
+        XCTAssertEqual(reads(ended).count, 1)
+        XCTAssertEqual(session.readEnded(next, .text("[2]")), [.deliver("[2]")])
+    }
+
+    func test2611S29aAReadThatEndsWhileCulledIsReadAgainInView() throws {
+        var session = card().0
+        let read = try readStarted(&session)
+        _ = session.setCulled(true)
+        XCTAssertEqual(session.readEnded(read, .text("[1]")), [])
+        let back = reads(session.setCulled(false))
+        XCTAssertEqual(back.count, 1)
+        XCTAssertEqual(session.readEnded(try XCTUnwrap(back.first), .text("[2]")), [.deliver("[2]")])
+    }
+
+    func test2611S30AFailedReadDeliversNothingAndSaysWhy() throws {
+        let reasons = [
+            CardDataRead.leadsOutside, FileBytes.NotAFile().localizedDescription,
+            FileBytes.TooLarge(limit: FileBytes.sizeCap).localizedDescription, CardDataRead.notUTF8, CardDataRead.notJSON,
+        ]
+        for reason in reasons {
+            var session = card().0
+            XCTAssertEqual(session.readEnded(try readStarted(&session), .refused(reason)), [.consoleChanged], reason)
+            XCTAssertEqual(session.console.entries, [line(stats, reason)], reason)
+        }
+    }
+
+    func test2611S31TheSameLineIsNotWrittenTwiceInARow() throws {
+        var session = card().0
+        let reason = CardDataRead.notJSON
+        _ = session.readEnded(try readStarted(&session), .refused(reason))
+        XCTAssertEqual(session.readEnded(try readStarted(&session), .refused(reason)), [])
+        XCTAssertEqual(session.console.entries.count, 1, "twice in a row")
+
+        _ = session.readEnded(try readStarted(&session), .refused(CardDataRead.notUTF8))
+        XCTAssertEqual(session.console.entries.count, 2, "another line")
+
+        _ = session.readEnded(try readStarted(&session), .text("{}"))
+        _ = session.readEnded(try readStarted(&session), .refused(CardDataRead.notUTF8))
+        XCTAssertEqual(session.console.entries.count, 3, "after a delivery")
+
+        _ = session.handle(.console(CardConsole.Entry(level: .log, args: ["hi"])), borrowed: false)
+        _ = session.readEnded(try readStarted(&session), .refused(CardDataRead.notUTF8))
+        XCTAssertEqual(session.console.entries.count, 5, "after another entry")
+
+        _ = reload(&session, naming: "stats.json")
+        XCTAssertEqual(session.readEnded(try readStarted(&session), .refused(CardDataRead.notUTF8)), [])
+        XCTAssertEqual(session.console.entries.count, 5, "a reload between")
+    }
+
+    /// The path rule's refusal is a line like a read's, under the same rule.
+    func test2611S31ARefusedNameIsNotWrittenTwiceInARowAcrossReloads() {
+        var session = card(naming: "../x.json").0
+        XCTAssertFalse(reload(&session, naming: "../x.json").contains(.consoleChanged))
+        XCTAssertEqual(session.console.entries.count, 1)
     }
 }

@@ -29,6 +29,8 @@ pub struct DocInfo {
     pub last_opened_ms: u64,
     /// The term that opened this doc; `None` when opened without a `TARMAC_TERM_ID`.
     pub term_id: Option<String>,
+    /// The data file the doc reads (`doc_data`). In memory only.
+    pub data: Option<PathBuf>,
 }
 
 /// What the daemon reads of a doc's file to know that it changed. The length
@@ -77,11 +79,21 @@ pub struct Registry {
     pub tiles: Vec<Tile>,
     /// `None` until the app sends one in a layout snapshot.
     pub board: Option<BoardViewport>,
+    /// Each data file as the daemon last saw it for this board, one for a path
+    /// that several docs read. In memory only. The docs' `data` say which
+    /// paths are read; an entry for a path that none reads is never looked up.
+    data_seen: HashMap<PathBuf, Option<FileStamp>>,
 }
 
 impl Registry {
     pub fn empty() -> Self {
-        Registry { docs: HashMap::new(), dock: Vec::new(), tiles: vec![term_tile()], board: None }
+        Registry {
+            docs: HashMap::new(),
+            dock: Vec::new(),
+            tiles: vec![term_tile()],
+            board: None,
+            data_seen: HashMap::new(),
+        }
     }
 
     pub fn entry(&self, path: &Path) -> Option<DocEntry> {
@@ -176,6 +188,60 @@ impl Registry {
         Some(self.docs.get_mut(path)?.see(stamp?))
     }
 
+    /// `doc_data`: the doc `doc` reads the file `data`, or none. A file named
+    /// again is seen anew, so that a board in the background reports it at its
+    /// switch. False, with nothing recorded, for an unknown doc.
+    pub fn set_data(&mut self, doc: &Path, data: Option<PathBuf>) -> bool {
+        let Some(info) = self.docs.get_mut(doc) else { return false };
+        if let Some(path) = &data {
+            self.data_seen.remove(path);
+        }
+        info.data = data;
+        self.forget_unread_data();
+        true
+    }
+
+    /// Drops what was seen of a data file that no doc reads any more.
+    fn forget_unread_data(&mut self) {
+        let read: HashSet<&PathBuf> = self.docs.values().filter_map(|info| info.data.as_ref()).collect();
+        self.data_seen.retain(|path, _| read.contains(path));
+    }
+
+    /// The data file of each doc that reads one.
+    fn data_paths(&self) -> impl Iterator<Item = &PathBuf> {
+        self.docs.values().filter_map(|info| info.data.as_ref())
+    }
+
+    /// The paths a look reads for this board: each doc's file and each data file.
+    pub fn watched_paths(&self) -> impl Iterator<Item = &PathBuf> {
+        self.docs.keys().chain(self.data_paths())
+    }
+
+    /// Takes `stamp` as the data file `path`, for each doc that reads it, and
+    /// returns its mtime in ms. `None` for no file.
+    pub fn see_data(&mut self, path: &Path, stamp: Option<FileStamp>) -> Option<u64> {
+        self.data_seen.insert(path.to_owned(), stamp);
+        stamp.map(|stamp| epoch_ms(stamp.mtime))
+    }
+
+    /// The data files in `now` that differ from what was seen, one for each
+    /// path, with the file's mtime in ms. Each is taken as seen. A file that is
+    /// gone is taken and not returned, as in `take_changes`.
+    pub fn take_data_changes(&mut self, now: &HashMap<PathBuf, Option<FileStamp>>) -> Vec<(PathBuf, u64)> {
+        let mut changes = Vec::new();
+        for path in self.docs.values().filter_map(|info| info.data.as_ref()) {
+            let Some(&stamp) = now.get(path) else { continue };
+            if self.data_seen.get(path).copied().flatten() == stamp {
+                continue;
+            }
+            self.data_seen.insert(path.clone(), stamp);
+            if let Some(stamp) = stamp {
+                changes.push((path.clone(), epoch_ms(stamp.mtime)));
+            }
+        }
+        changes
+    }
+
     /// The `file_event` for `path` reached no app.
     fn hold(&mut self, path: &Path) {
         if let Some(info) = self.docs.get_mut(path) {
@@ -200,6 +266,7 @@ impl Registry {
         let existed = self.docs.remove(path).is_some();
         if existed {
             self.dock.retain(|p| p != path);
+            self.forget_unread_data();
         }
         existed
     }
@@ -304,6 +371,12 @@ impl Boards {
         &mut self.boards[idx].registry
     }
 
+    /// The registry of board `id`, with no fall-back: `None` for an unknown id.
+    pub fn known_registry_mut(&mut self, id: &str) -> Option<&mut Registry> {
+        let idx = self.index_of(id)?;
+        Some(&mut self.boards[idx].registry)
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = &Board> {
         self.boards.iter()
     }
@@ -335,6 +408,11 @@ impl Boards {
     /// The path of each registered doc, of every board.
     pub fn doc_paths(&self) -> HashSet<PathBuf> {
         self.boards.iter().flat_map(|b| b.registry.docs.keys().cloned()).collect()
+    }
+
+    /// `Registry::watched_paths` of every board.
+    pub fn watched_paths(&self) -> HashSet<PathBuf> {
+        self.boards.iter().flat_map(|b| b.registry.watched_paths().cloned()).collect()
     }
 
     pub fn contains(&self, id: &str) -> bool {
@@ -532,7 +610,7 @@ mod tests {
     }
 
     fn doc_info() -> DocInfo {
-        DocInfo { via: "t".into(), read: false, repo: None, repo_root: None, repo_color: None, last_changed_ms: None, seen: None, untold: false, unread: false, last_opened_ms: 0, term_id: None }
+        DocInfo { via: "t".into(), read: false, repo: None, repo_root: None, repo_color: None, last_changed_ms: None, seen: None, untold: false, unread: false, last_opened_ms: 0, term_id: None, data: None }
     }
 
     #[test]
@@ -742,6 +820,109 @@ mod tests {
         assert_eq!(reg.refresh(&doc, None), None);
         assert_eq!(reg.take_changes(&now(&doc, at(10))), vec![]);
         assert_eq!(reg.docs[&doc].last_changed_ms, Some(5_000));
+    }
+
+    fn registry_reading(docs: &[&Path], data: &Path, seen: Option<FileStamp>) -> Registry {
+        let mut reg = Registry::empty();
+        for doc in docs {
+            reg.docs.insert(doc.to_path_buf(), DocInfo { data: Some(data.to_owned()), ..doc_info() });
+        }
+        reg.data_seen.insert(data.to_owned(), seen);
+        reg
+    }
+
+    #[test]
+    fn a_data_file_that_two_docs_read_is_one_change() {
+        let data = PathBuf::from("/d/stats.json");
+        let mut reg = registry_reading(&[Path::new("/d/a.html"), Path::new("/d/b.html")], &data, at(10));
+
+        assert_eq!(reg.take_data_changes(&now(&data, at(20))), vec![(data.clone(), 20_000)]);
+        assert_eq!(reg.take_data_changes(&now(&data, at(20))), vec![], "both docs took it");
+    }
+
+    // One doc saw the file and another names it: the one change is taken for both.
+    #[test]
+    fn a_data_file_is_seen_for_each_doc_that_reads_it() {
+        let data = PathBuf::from("/d/stats.json");
+        let mut reg = registry_reading(&[Path::new("/d/a.html")], &data, at(10));
+        reg.docs.insert(PathBuf::from("/d/b.html"), doc_info());
+        assert!(reg.set_data(Path::new("/d/b.html"), Some(data.clone())));
+
+        assert_eq!(reg.take_data_changes(&now(&data, at(10))), vec![(data.clone(), 10_000)]);
+        assert_eq!(reg.take_data_changes(&now(&data, at(10))), vec![]);
+        assert_eq!(reg.see_data(&data, at(30)), Some(30_000));
+        assert_eq!(reg.take_data_changes(&now(&data, at(30))), vec![], "the answer of a doc_data took it for both");
+    }
+
+    #[test]
+    fn a_data_file_that_is_gone_is_no_change_until_it_is_back() {
+        let data = PathBuf::from("/d/stats.json");
+        let mut reg = registry_reading(&[Path::new("/d/a.html")], &data, at(10));
+
+        assert_eq!(reg.take_data_changes(&now(&data, None)), vec![]);
+        assert_eq!(reg.take_data_changes(&now(&data, at(10))), vec![(data, 10_000)], "also with its old mtime");
+    }
+
+    #[test]
+    fn a_data_file_that_was_not_read_keeps_what_was_seen() {
+        let data = PathBuf::from("/d/stats.json");
+        let mut reg = registry_reading(&[Path::new("/d/a.html")], &data, at(10));
+
+        assert_eq!(reg.take_data_changes(&now(Path::new("/d/a.html"), at(20))), vec![]);
+        assert_eq!(reg.take_data_changes(&now(&data, at(10))), vec![], "not taken as gone");
+        assert_eq!(reg.take_data_changes(&now(&data, at(20))), vec![(data, 20_000)]);
+    }
+
+    #[test]
+    fn a_data_file_named_again_is_seen_anew() {
+        let doc = PathBuf::from("/d/a.html");
+        let data = PathBuf::from("/d/stats.json");
+        let mut reg = registry_reading(&[&doc], &data, at(10));
+
+        assert!(reg.set_data(&doc, Some(data.clone())));
+        assert_eq!(reg.take_data_changes(&now(&data, at(10))), vec![(data.clone(), 10_000)]);
+        assert!(reg.set_data(&doc, None));
+        assert_eq!(reg.take_data_changes(&now(&data, at(20))), vec![], "a doc that reads none");
+        assert_eq!(reg.data_paths().count(), 0);
+    }
+
+    #[test]
+    fn a_data_file_that_another_doc_still_reads_keeps_what_was_seen() {
+        let (a, b, c) = (Path::new("/d/a.html"), Path::new("/d/b.html"), Path::new("/d/c.html"));
+        let data = PathBuf::from("/d/stats.json");
+        let mut reg = registry_reading(&[a, b, c, Path::new("/d/d.html")], &data, at(10));
+
+        assert!(reg.set_data(a, None));
+        assert!(reg.set_data(b, Some(PathBuf::from("/d/next.json"))));
+        assert!(reg.close_doc(c));
+        assert_eq!(reg.take_data_changes(&now(&data, at(10))), vec![]);
+    }
+
+    #[test]
+    fn the_data_file_of_an_unknown_doc_is_not_recorded() {
+        let mut reg = Registry::empty();
+        assert!(!reg.set_data(Path::new("/d/a.html"), Some(PathBuf::from("/d/stats.json"))));
+        assert_eq!(reg.data_paths().count(), 0);
+    }
+
+    #[test]
+    fn a_data_file_named_by_an_unknown_doc_is_not_seen_anew() {
+        let data = PathBuf::from("/d/stats.json");
+        let mut reg = registry_reading(&[Path::new("/d/a.html")], &data, at(10));
+
+        assert!(!reg.set_data(Path::new("/d/nope.html"), Some(data.clone())));
+        assert_eq!(reg.take_data_changes(&now(&data, at(10))), vec![]);
+    }
+
+    #[test]
+    fn a_known_registry_has_no_fall_back_to_the_active_board() {
+        let mut boards = Boards::single();
+        boards.create();
+        boards.known_registry_mut(DEFAULT_BOARD_ID).expect("board-0").docs.insert(PathBuf::from("/d/a.md"), doc_info());
+
+        assert!(boards.known_registry_mut("board-404").is_none());
+        assert!(boards.registry_mut(Some(DEFAULT_BOARD_ID)).docs.contains_key(Path::new("/d/a.md")));
+        assert!(boards.active_registry().docs.is_empty(), "board-1 is active and has no doc");
     }
 
     #[test]
