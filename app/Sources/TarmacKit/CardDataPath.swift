@@ -1,6 +1,7 @@
-/// Where an HTML card's `tarmac-data` name leads (spec 2611.0002), judged in
-/// the text alone: no file-system call, so a name is never followed to see
-/// where it goes. The read judges the resolved file again (`CardDataRead`).
+/// Where an HTML card's `tarmac-data` name leads (specs 2611.0002, 2611.0005),
+/// judged in the text alone: no file-system call, so a name is never followed
+/// to see where it goes. The read judges the resolved file again
+/// (`CardDataRead`).
 enum CardDataPath {
     enum Judgement: Equatable, Sendable {
         case file(String)
@@ -8,11 +9,13 @@ enum CardDataPath {
         case refused(path: String, reason: String)
     }
 
-    static let inSubdirectory = "in a subdirectory: not read yet"
     static let outside = "outside this card's directory"
     static let namesNoFile = "names no file"
+    static let hidden = "in a hidden file or directory"
 
-    /// `html` is the card's file, an absolute and resolved path.
+    /// `html` is the card's file, an absolute and resolved path. The file
+    /// must be in its directory or in one under it, with no hidden component
+    /// below that directory.
     static func dataFile(html: String, name: String) -> Judgement {
         let directory = Array(components(html).dropLast())
         let path = components(name, onto: name.utf8.first == slash ? [] : directory)
@@ -21,19 +24,29 @@ enum CardDataPath {
         if name.utf8.last == slash || name.utf8.contains(0) || path == directory {
             return .refused(path: text, reason: namesNoFile)
         }
-        if path.dropLast().elementsEqual(directory) { return .file(text) }
-        return .refused(path: text, reason: path.starts(with: directory) ? inSubdirectory : outside)
+        guard path.starts(with: directory) else { return .refused(path: text, reason: outside) }
+        if isHidden(path.dropFirst(directory.count)) { return .refused(path: text, reason: hidden) }
+        return .file(text)
     }
 
-    /// Whether `file` is in the directory that holds `html`. Both are
-    /// resolved paths and are taken as given: the bytes before the last
-    /// slash of each are compared, and nothing is worked out again.
-    static func isBeside(_ file: String, html: String) -> Bool {
-        func directory(_ path: String) -> ArraySlice<UInt8> {
-            let bytes = Array(path.utf8)
-            return bytes[..<(bytes.lastIndex(of: slash) ?? 0)]
+    /// The components of `file` below the directory that holds `html`, or
+    /// nil when `file` is not under it. Both are resolved paths and are taken
+    /// as given: each component of the directory equals the file's at the
+    /// same place, as bytes, and a file with an empty, `.` or `..` component
+    /// is under no directory, since nothing is worked out again.
+    static func below(_ file: String, html: String) -> ArraySlice<ArraySlice<UInt8>>? {
+        let parts = Array(file.utf8).split(separator: slash, omittingEmptySubsequences: false)
+        let directory = Array(html.utf8).split(separator: slash, omittingEmptySubsequences: false).dropLast()
+        let unworked = parts.dropFirst().allSatisfy {
+            !$0.isEmpty && !$0.elementsEqual(".".utf8) && !$0.elementsEqual("..".utf8)
         }
-        return directory(file).elementsEqual(directory(html))
+        guard unworked, parts.count > directory.count, parts.starts(with: directory) else { return nil }
+        return parts.dropFirst(directory.count)
+    }
+
+    /// A component is hidden when its first byte is a dot.
+    static func isHidden(_ components: some Sequence<ArraySlice<UInt8>>) -> Bool {
+        components.contains { $0.first == UInt8(ascii: ".") }
     }
 
     private static let slash = UInt8(ascii: "/")

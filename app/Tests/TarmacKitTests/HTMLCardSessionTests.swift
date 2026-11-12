@@ -278,16 +278,23 @@ final class HTMLCardSessionTests: XCTestCase {
         XCTAssertEqual(registrations(reload(&none, naming: nil)), [nil])
 
         var refused = card().0
-        let effects = reload(&refused, naming: "sub/x.json")
+        let effects = reload(&refused, naming: "../x.json")
         XCTAssertEqual(registrations(effects), [nil])
         XCTAssertTrue(effects.contains(.consoleChanged))
-        XCTAssertEqual(refused.console.entries, [line("/a/b/sub/x.json", CardDataPath.inSubdirectory)])
+        XCTAssertEqual(refused.console.entries, [line("/a/x.json", CardDataPath.outside)])
 
         var same = card().0
         XCTAssertEqual(registrations(reload(&same, naming: "stats.json")), [stats])
 
         var other = card().0
         XCTAssertEqual(registrations(reload(&other, naming: "y.json")), ["/a/b/y.json"])
+    }
+
+    func test2611_0005S7ANameInASubdirectoryRegistersThatFileWithNoConsoleLine() {
+        let (session, effects) = card(naming: "sub/stats.json")
+        XCTAssertEqual(registrations(effects), ["/a/b/sub/stats.json"])
+        XCTAssertFalse(effects.contains(.consoleChanged))
+        XCTAssertEqual(session.console.entries, [])
     }
 
     func test2611S25ACardThatNeverHadAFileIsToldNothing() {
