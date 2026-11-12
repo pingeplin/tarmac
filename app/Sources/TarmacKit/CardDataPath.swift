@@ -44,7 +44,6 @@ enum CardDataPath {
         return parts.dropFirst(directory.count)
     }
 
-    /// A component is hidden when its first byte is a dot.
     static func isHidden(_ components: some Sequence<ArraySlice<UInt8>>) -> Bool {
         components.contains { $0.first == UInt8(ascii: ".") }
     }

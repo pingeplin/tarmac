@@ -98,8 +98,7 @@ impl Card {
 
     /// `doc_data` for `dash` on board-0, and its answer.
     fn register(&self, app: &mut Conn) {
-        doc_data(app, "board-0", &self.dash, Some(&self.stats));
-        assert_eq!(app.recv_file_event_for(&self.stats), mtime_ms(&self.stats));
+        self.register_file(app, &self.stats);
     }
 }
 
@@ -386,10 +385,6 @@ fn the_data_file_is_not_in_the_state_file() {
 
 impl Card {
     /// The card's directory, as the registry writes it.
-    fn dir(&self) -> String {
-        Path::new(&self.dash).parent().unwrap().display().to_string()
-    }
-
     /// `doc_data` for `dash` naming `data`, and its answer.
     fn register_file(&self, app: &mut Conn, data: &str) {
         doc_data(app, "board-0", &self.dash, Some(data));
@@ -556,7 +551,7 @@ fn a_data_file_that_is_not_there_in_a_subdirectory_is_reported_when_it_is_made()
     let mut app = daemon.connect_app_drained();
     let card = Card::open(&daemon, &mut app);
     std::fs::create_dir_all(daemon.dir.join("docs/sub")).unwrap();
-    let new = format!("{}/sub/new.json", card.dir());
+    let new = card.beside("sub/new.json");
 
     doc_data(&mut app, "board-0", &card.dash, Some(&new));
     look_with_none_for(&mut app, &card.other, &[&new]);
@@ -573,7 +568,7 @@ fn a_data_file_in_a_subdirectory_that_is_made_later_is_reported() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     let card = Card::open(&daemon, &mut app);
-    let stats = format!("{}/sub/stats.json", card.dir());
+    let stats = card.beside("sub/stats.json");
     doc_data(&mut app, "board-0", &card.dash, Some(&stats));
     look_with_none_for(&mut app, &card.other, &[&stats]);
 
@@ -673,7 +668,7 @@ fn a_data_path_through_a_link_to_the_doc_directory_leaves_its_watch() {
     let mut app = daemon.connect_app_drained();
     let card = Card::open(&daemon, &mut app);
     std::os::unix::fs::symlink(".", daemon.dir.join("docs/self")).unwrap();
-    let through = format!("{}/self/stats.json", card.dir());
+    let through = card.beside("self/stats.json");
     doc_data(&mut app, "board-0", &card.dash, Some(&through));
     assert_eq!(app.recv_file_event_for(&through), mtime_ms(&card.stats));
 
@@ -686,8 +681,8 @@ fn a_data_path_through_a_link_to_the_doc_directory_leaves_its_watch() {
 /// `<dir>/<name>` made as a link to `target`, and the path of `file` through
 /// it, as text: `write_doc` would give the resolved path.
 fn through_link(card: &Card, name: &str, target: &Path, file: &str) -> String {
-    std::os::unix::fs::symlink(target, Path::new(&card.dir()).join(name)).unwrap();
-    format!("{}/{name}/{file}", card.dir())
+    std::os::unix::fs::symlink(target, card.beside(name)).unwrap();
+    card.beside(&format!("{name}/{file}"))
 }
 
 // S30a. The negative check is the point here: a forced look would stat the

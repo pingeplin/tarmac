@@ -338,8 +338,8 @@ pub async fn record_data(daemon: &Daemon, board: &str, doc: &Path, data: Option<
     // The doc as its registry key writes it: `Path` finds `<p>//d/dash.html`
     // under `<p>/d/dash.html`, but `data` is judged on its bytes.
     let known = daemon.boards.lock().await.known_registry(board).and_then(|reg| {
-        let (key, _) = reg.docs.get_key_value(doc)?;
-        Some((key.clone(), reg.counts_anew(doc, data.as_deref())?))
+        let (key, info) = reg.docs.get_key_value(doc)?;
+        Some((key.clone(), !info.holds(data.as_deref())))
     });
     let Some((doc, anew)) = known else { return false };
     let doc = doc.as_path();
@@ -360,24 +360,17 @@ pub async fn record_data(daemon: &Daemon, board: &str, doc: &Path, data: Option<
             |boards, now| {
                 let active = boards.active_id() == board;
                 let Some(reg) = boards.known_registry_mut(board) else { return Err(dir) };
-                if !reg.docs.contains_key(doc) {
-                    return Err(dir);
-                }
-                let not_held = reg.set_data(doc, data.clone(), dir).expect("the doc is registered");
+                let not_held = reg.set_data(doc, data.clone(), dir)?;
                 Ok((not_held, data.as_ref().filter(|_| active).and_then(|data| reg.see_data(data, *now.get(data)?))))
             },
         )
         .await;
-    let told = match recorded {
-        Ok((not_held, told)) => {
-            daemon.release_data_dir(&not_held);
-            told
-        }
-        Err(dir) => {
-            daemon.release_data_dir(&dir);
-            return false;
-        }
+    let (not_held, told) = match recorded {
+        Ok((not_held, told)) => (not_held, Some(told)),
+        Err(dir) => (dir, None),
     };
+    daemon.release_data_dir(&not_held);
+    let Some(told) = told else { return false };
     if let (Some(data), Some(mtime_ms)) = (&data, told) {
         daemon.push(file_event(data, mtime_ms)).await;
     }

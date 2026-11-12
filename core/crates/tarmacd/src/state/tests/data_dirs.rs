@@ -20,10 +20,6 @@ async fn take_the_place(daemon: &Daemon) -> (u64, mpsc::Receiver<Msg>) {
     (generation, rx)
 }
 
-fn watches(calls: &SourceCalls) -> usize {
-    calls.0.lock().unwrap().iter().filter(|(change, _)| *change == Change::Watch).count()
-}
-
 /// `<tmp>/d/dash.html` open on board-0 of a daemon on `source`, whose gate
 /// calls `fs`, and an app that the open's look has reached.
 struct Card {
@@ -125,7 +121,7 @@ async fn a_doc_data_that_is_refused_asks_for_no_watch() {
     let under_doubled = PathBuf::from(format!("{tmp}//d/sub/x.json"));
     assert!(!name(&card.daemon, &doubled, Some(&under_doubled)).await, "a doc written with //");
 
-    assert_eq!(watches(&calls), 1, "the doc's directory only");
+    assert_eq!(calls.count(Change::Watch), 1, "the doc's directory only");
     for dir in [card.dir.join("sub"), card.tmp.clone(), card.tmp.join("away"), card.tmp.join("dx")] {
         assert!(!card.watched(&dir).await, "{}", dir.display());
     }
@@ -410,10 +406,10 @@ fn gate_calls(fs: &StuckFs) -> Vec<u32> {
 
 /// A change of `doc`, a wake given as the file system's, and that wake's
 /// look: a try that it made has ended.
-async fn wake_from_fs(card: &mut Card, doc: &Path) {
-    let changed = change(doc);
+async fn wake_from_fs(card: &mut Card) {
+    let changed = change(&card.dash);
     card.daemon.wake.from_fs();
-    assert_eq!(next_change(&mut card.app).await, (doc.to_owned(), changed), "the look of the wake");
+    assert_eq!(next_change(&mut card.app).await, (card.dash.clone(), changed), "the look of the wake");
 }
 
 // S14. `sub` is not there, then a regular file.
@@ -442,8 +438,7 @@ async fn a_data_directory_made_later_is_watched_at_a_wake_of_the_file_system() {
     let sub = card.dir.join("sub");
     assert!(name(&card.daemon, &card.dash, Some(&sub.join("stats.json"))).await);
     std::fs::create_dir(&sub).unwrap();
-    let dash = card.dash.clone();
-    wake_from_fs(&mut card, &dash).await;
+    wake_from_fs(&mut card).await;
     assert!(card.watched(&sub).await);
     assert!(name(&card.daemon, &card.dash, None).await);
     assert!(!card.watched(&sub).await);
@@ -454,8 +449,7 @@ async fn a_data_directory_made_later_is_watched_at_a_wake_of_the_file_system() {
     assert!(name(&card.daemon, &card.dash, Some(&sub.join("stats.json"))).await);
     assert!(name(&card.daemon, &card.dash, None).await);
     std::fs::create_dir(&sub).unwrap();
-    let dash = card.dash.clone();
-    wake_from_fs(&mut card, &dash).await;
+    wake_from_fs(&mut card).await;
     assert!(!card.watched(&sub).await);
     assert_eq!(calls.of(Change::Watch, &sub), 0);
 }
@@ -513,11 +507,11 @@ async fn a_data_path_through_a_link_out_of_the_tree_watches_nothing() {
     std::os::unix::fs::symlink(&away, card.dir.join("out")).unwrap();
 
     assert!(name(&card.daemon, &card.dash, Some(&card.dir.join("out/stats.json"))).await);
-    assert_eq!(watches(&calls), 1, "the doc's directory only");
+    assert_eq!(calls.count(Change::Watch), 1, "the doc's directory only");
     assert!(!card.watched(&card.dir.join("out")).await);
     assert!(!card.watched(&away).await);
     assert!(name(&card.daemon, &card.dash, None).await);
-    assert_eq!(calls.0.lock().unwrap().iter().filter(|(c, _)| *c == Change::Unwatch).count(), 0);
+    assert_eq!(calls.count(Change::Unwatch), 0);
     assert!(card.watched(&card.dir).await);
 }
 

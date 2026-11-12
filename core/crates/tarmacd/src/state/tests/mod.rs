@@ -194,6 +194,10 @@ enum Change {
 struct SourceCalls(std::sync::Mutex<Vec<(Change, PathBuf)>>);
 
 impl SourceCalls {
+    fn count(&self, change: Change) -> usize {
+        self.0.lock().unwrap().iter().filter(|(c, _)| *c == change).count()
+    }
+
     fn of(&self, change: Change, dir: &Path) -> usize {
         self.0.lock().unwrap().iter().filter(|(c, d)| *c == change && d == dir).count()
     }

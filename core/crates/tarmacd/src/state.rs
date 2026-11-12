@@ -233,11 +233,9 @@ impl Daemon {
         if dir == doc_dir {
             return (DataDir::Uncounted, false);
         }
-        let resolve = {
-            let dir = dir.to_owned();
-            move |fs: &dyn PathFs| fs.resolve_dir(&dir)
-        };
-        let Ok(Some(resolved)) = self.gate.run(dir, resolve).await else { return (DataDir::Wanted, false) };
+        let owned = dir.to_owned();
+        let resolved = self.gate.run(dir, move |fs| fs.resolve_dir(&owned)).await;
+        let Ok(Some(resolved)) = resolved else { return (DataDir::Wanted, false) };
         if !crate::docs::is_below(doc_dir, &resolved) {
             return (DataDir::Uncounted, false);
         }
@@ -256,6 +254,15 @@ impl Daemon {
         if let DataDir::Counted(dir) = dir {
             self.release_watch(dir);
         }
+    }
+
+    /// Gives back what a doc that is gone counted: its directory, and its
+    /// data file's.
+    fn release_doc(&self, path: &Path, info: &crate::boards::DocInfo) {
+        if let Some(dir) = path.parent() {
+            self.release_watch(dir);
+        }
+        self.release_data_dir(&info.data_dir);
     }
 
     /// Tries again the directory of each data file that wants one, on every
@@ -327,10 +334,7 @@ impl Daemon {
         let closed = self.boards.lock().await.active_registry_mut().close_doc(path);
         let Some(info) = closed else { return false };
         self.mark_dirty();
-        if let Some(dir) = path.parent() {
-            self.release_watch(dir);
-        }
-        self.release_data_dir(&info.data_dir);
+        self.release_doc(path, &info);
         true
     }
 
@@ -345,10 +349,7 @@ impl Daemon {
         let Some(board) = deleted else { return false };
         self.mark_dirty();
         for (path, info) in &board.registry.docs {
-            if let Some(dir) = path.parent() {
-                self.release_watch(dir);
-            }
-            self.release_data_dir(&info.data_dir);
+            self.release_doc(path, info);
         }
         true
     }
