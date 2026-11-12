@@ -39,6 +39,9 @@ extension AppController {
         switch message {
         case .helloOK:
             connected = true
+            // The daemon keeps what a card reads in memory only: a daemon
+            // that was restarted knows none of it.
+            dataFiles.resent.forEach(client.send)
         case .boardList(let metas, let active):
             boardMetas = metas
             // Sync each visited board's local display name from the daemon's

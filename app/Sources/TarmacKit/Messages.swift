@@ -200,6 +200,10 @@ public enum Message: Equatable, Sendable {
     /// `file_event`, changed or not. Covers edits the watcher drops while the
     /// doc's board is in the background.
     case docRefresh(path: String)
+    /// issue #311 (app → daemon): the doc `path` on board `boardID` reads the
+    /// data file `data`; nil clears it. The daemon answers with a `file_event`
+    /// for that file, and sends one for each change it sees.
+    case docData(boardID: String, path: String, data: String? = nil)
     /// issue #41: `scrollbackRequest` (app → daemon) asks for one terminal's
     /// scrollback ring; the daemon answers with exactly one `scrollback`, always —
     /// empty bytes for a silent or unknown terminal.
@@ -348,6 +352,12 @@ public extension Message {
             return .docClose(path: try req("path", \.stringValue))
         case "doc_refresh":
             return .docRefresh(path: try req("path", \.stringValue))
+        case "doc_data":
+            return .docData(
+                boardID: try req("board_id", \.stringValue),
+                path: try req("path", \.stringValue),
+                data: try opt("data", \.stringValue)
+            )
         case "scrollback_request":
             return .scrollbackRequest(termID: try req("term_id", \.stringValue))
         case "scrollback":
@@ -547,6 +557,12 @@ public extension Message {
             return Self.tagged("doc_close") { $0.put("path", .string(path)) }
         case .docRefresh(let path):
             return Self.tagged("doc_refresh") { $0.put("path", .string(path)) }
+        case .docData(let boardID, let path, let data):
+            return Self.tagged("doc_data") {
+                $0.put("board_id", .string(boardID))
+                $0.put("path", .string(path))
+                $0.put("data", unlessNil: data.map(MsgPackValue.string))
+            }
         case .scrollbackRequest(let termID):
             return Self.tagged("scrollback_request") { $0.put("term_id", .string(termID)) }
         case .scrollback(let termID, let bytes):

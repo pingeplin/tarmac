@@ -285,6 +285,51 @@ final class ConformanceTests: XCTestCase {
         XCTAssertEqual(Message.scrollback(termID: "t1", bytes: bytes).encodedPayload(), payload)
     }
 
+    /// 2611.0002 S33 (issue #311, additive app → daemon): a doc names its data
+    /// file.
+    func testVector14DocDataNamesAFile() throws {
+        let payload = hexData("""
+            84 a1 74 a8 64 6f 63 5f 64 61 74 61 a8 62 6f 61 72 64 5f 69
+            64 a7 62 6f 61 72 64 2d 30 a4 70 61 74 68 ac 2f 61 2f 64 61
+            73 68 2e 68 74 6d 6c a4 64 61 74 61 ad 2f 61 2f 73 74 61 74
+            73 2e 6a 73 6f 6e
+            """)
+        let message = Message.docData(boardID: "board-0", path: "/a/dash.html", data: "/a/stats.json")
+        let expected = MsgPackValue.map([
+            "t": .string("doc_data"),
+            "board_id": .string("board-0"),
+            "path": .string("/a/dash.html"),
+            "data": .string("/a/stats.json"),
+        ])
+
+        XCTAssertEqual(try MsgPack.decode(payload), expected)
+        XCTAssertEqual(try Message.decode(payload: payload), message)
+        assertRoundTrips(expected)
+        assertRoundTrips(message)
+        XCTAssertEqual(message.encodedPayload(), payload)
+    }
+
+    /// 2611.0002 S33: with no `data` key the doc reads no file.
+    func testVector15DocDataNamesNone() throws {
+        let payload = hexData("""
+            83 a1 74 a8 64 6f 63 5f 64 61 74 61 a8 62 6f 61 72 64 5f 69
+            64 a7 62 6f 61 72 64 2d 30 a4 70 61 74 68 ac 2f 61 2f 64 61
+            73 68 2e 68 74 6d 6c
+            """)
+        let message = Message.docData(boardID: "board-0", path: "/a/dash.html")
+        let expected = MsgPackValue.map([
+            "t": .string("doc_data"),
+            "board_id": .string("board-0"),
+            "path": .string("/a/dash.html"),
+        ])
+
+        XCTAssertEqual(try MsgPack.decode(payload), expected)
+        XCTAssertEqual(try Message.decode(payload: payload), message)
+        assertRoundTrips(expected)
+        assertRoundTrips(message)
+        XCTAssertEqual(message.encodedPayload(), payload)
+    }
+
     /// The daemon answers every `scrollback_request`, even with an empty ring;
     /// the empty reply must survive the codec so the app can stop waiting.
     func testScrollbackReplyRoundTripsEmptyBytes() {
