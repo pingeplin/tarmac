@@ -233,3 +233,15 @@ impl<W: Fn(&Path) -> bool, O: Fn(&Path) -> bool, F: Fn()> Thread<W, O, F> {
         Ok(true)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::is_watch_not_found;
+
+    #[test]
+    fn only_notifys_watch_not_found_is_one() {
+        assert!(is_watch_not_found(&notify::Error::watch_not_found().into()));
+        assert!(!is_watch_not_found(&notify::Error::path_not_found().into()));
+        assert!(!is_watch_not_found(&anyhow::anyhow!("watch not found")));
+    }
+}
