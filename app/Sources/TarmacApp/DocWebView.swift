@@ -20,6 +20,7 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
 
     var onScrollChanged: ((ScrollMetrics?) -> Void)?
     let scrollCover: CGFloat = 0
+    var webProcessID: Int32? { webView.webProcessID }
     var onScrollCoverChanged: (() -> Void)?
 
     private let path: String

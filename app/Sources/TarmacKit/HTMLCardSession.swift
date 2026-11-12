@@ -23,7 +23,13 @@ public struct HTMLCardSession: Equatable, Sendable {
         /// Queue one hand-over of the pushed values (spec 2611.0003) for
         /// after the main-loop turn: the view takes them then (`takeEvents`).
         case flushEvents
+        /// The pending events went over `pendingLimit` (spec 2611.0004): the
+        /// sample log is to say so. Once for each fill, as the count only
+        /// grows by one and is only ever emptied whole.
+        case pendingOverLimit(Int)
     }
+
+    public static let pendingLimit = 1_000
 
     /// A read of `file`, the data file of the card whose file is `html`.
     public struct DataRead: Equatable, Sendable {
@@ -48,6 +54,9 @@ public struct HTMLCardSession: Equatable, Sendable {
     private var lastDataLine: String?
     /// The pushed values not yet handed to the document. No bound of its own.
     private var events: [String] = []
+    /// The most `events` held since the sample log last asked. Neither a take
+    /// nor a reload resets it: a timer that reads the count sees it emptied.
+    private var largestPending = 0
 
     /// `html` is the card's file, an absolute and resolved path.
     public init(html: String) {
@@ -174,7 +183,15 @@ public struct HTMLCardSession: Equatable, Sendable {
     public mutating func event(_ text: String) -> [Effect] {
         guard isReady else { return [] }
         events.append(text)
+        largestPending = max(largestPending, events.count)
+        if events.count == Self.pendingLimit + 1 { return [.pendingOverLimit(events.count)] }
         return events.count == 1 ? [.flushEvents] : []
+    }
+
+    /// The largest count of pending events since the call before, 0 for none.
+    public mutating func takeLargestPending() -> Int {
+        defer { largestPending = 0 }
+        return largestPending
     }
 
     public mutating func takeEvents() -> [String] {

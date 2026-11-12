@@ -32,6 +32,18 @@ enum CardWebView {
 }
 
 extension WKWebView {
+    /// The pid of this view's web content process, for the sample log (spec
+    /// 2611.0004). WebKit has no public API for it, so this reads the SPI
+    /// `_webProcessIdentifier`, and only when the view still answers to it:
+    /// nil once WebKit drops it. It is 0 before the first load commits,
+    /// which is nil too.
+    var webProcessID: Int32? {
+        guard responds(to: Selector(("_webProcessIdentifier"))),
+              let pid = (value(forKey: "_webProcessIdentifier") as? NSNumber)?.int32Value, pid != 0
+        else { return nil }
+        return pid
+    }
+
     /// Runs `script` in the app's world.
     func runInCardWorld(_ script: String) {
         evaluateJavaScript(script, in: nil, in: CardWebView.world, completionHandler: nil)

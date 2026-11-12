@@ -21,6 +21,10 @@ protocol DocCardBody: NSView {
 
     /// Scrolls the doc to `offset`, in the unit of the metrics it reports.
     func scroll(to offset: Double)
+
+    /// The pid of the web content process that draws the doc, nil when it is
+    /// not known (`WKWebView.webProcessID`).
+    var webProcessID: Int32? { get }
 }
 
 @MainActor

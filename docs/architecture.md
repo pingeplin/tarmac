@@ -704,6 +704,46 @@ the reason. On a drop the app toasts `tarmacd connection lost` and changes no
 card — there is no "detached" card state. The reconnect's `Restore` is what
 reconciles the cards ([*Restore and reconnect*](#restore-and-reconnect)).
 
+### The sample log
+
+The app writes stderr only, and an app started from Finder has `/dev/null`
+there. So the app keeps a record of its own beside `tarmacd.log`:
+`tarmac-app.jsonl` in the socket's directory, one file for each channel
+(`SampleLogFile`, spec 2611.0004). It is local, and nothing is sent.
+
+- **Lines.** One JSON object for each line, keys sorted (`SampleLine`), in the
+  shape of the OpenTelemetry log data model: `ts` (UTC, RFC 3339, milliseconds,
+  `Z`), `severity`, `event`, `attrs` and `resource` (`process.pid`,
+  `service.name` `tarmac-app`, and `service.version` when the app names one).
+- **`tarmac.sample`** (`INFO`): one line every 300 s from when the controller
+  starts, and one more, once, when the first `restore` of the active board
+  was applied, so that the first line has the daemon's keys and the boards. A
+  reconnect adds no line. Its `attrs`: the memory of the app, of the daemon
+  (`hello_ok.daemon_pid`, forgotten with the link) and of the web content
+  processes (their count of distinct pids, the sum, and the largest with its
+  card's path); the boards the daemon lists and the boards the app has built;
+  the terminal, markdown and HTML cards on those boards; and the largest count
+  of pending pushed events of one HTML card since the sample before, with its
+  path. Each memory value is a footprint in bytes (`ri_phys_footprint`, which
+  is what Activity Monitor shows), not a resident size (`ProcessFootprint`). A
+  value that cannot be read is left out, with its partner keys.
+- **`tarmac.card.pending_events.over_limit`** (`WARN`): one line when the
+  pending events of one HTML card go over 1,000 (`HTMLCardSession.pendingLimit`).
+  It is written again only after those events were emptied and the count goes
+  over again.
+- **Growth.** Before each append, not only at launch, a file over 1 MiB moves
+  to `tarmac-app.jsonl.1`, which replaces an older one. A failed move or open
+  drops the line. No directory is made.
+- **Web content pids.** WebKit has no public API for them. The app reads the
+  SPI `_webProcessIdentifier`, and only when the web view `responds(to:)` it;
+  0 (before the first load commits) is unknown. Without the SPI, the four
+  `tarmac.webcontent.*` keys are left out and nothing else changes.
+- **Threads.** The counts and pids are gathered on the main actor; the
+  footprints are read and the line is appended on one serial utility queue
+  (`app/Sources/TarmacApp/SampleLog.swift`). In a DEBUG build only,
+  `TARMAC_SAMPLE_INTERVAL_S` (a number of seconds, at least 1) replaces the
+  300 s.
+
 ### The board
 
 A board is one `BoardView` (`app/Sources/TarmacApp/BoardView.swift`). The app

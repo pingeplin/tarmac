@@ -549,4 +549,93 @@ final class HTMLCardSessionTests: XCTestCase {
         XCTAssertEqual(session.event("c"), [.flushEvents])
         XCTAssertEqual(session.takeEvents(), ["c"])
     }
+
+    // MARK: - the pending count (2611.0004 S18–S23)
+
+    private let limit = HTMLCardSession.pendingLimit
+
+    /// The effects of the `count` events that follow, one array each.
+    private func push(_ count: Int, to session: inout HTMLCardSession) -> [[Effect]] {
+        (0..<count).map { _ in session.event(text) }
+    }
+
+    private func overLimit(_ effects: [[Effect]]) -> [Int: [Effect]] {
+        var given: [Int: [Effect]] = [:]
+        for (index, each) in effects.enumerated() where each.contains(where: {
+            if case .pendingOverLimit = $0 { return true } else { return false }
+        }) {
+            given[index + 1] = each
+        }
+        return given
+    }
+
+    func test2611_0004S18TheLargestPendingCountIsTakenOnce() {
+        var session = ready()
+        _ = push(3, to: &session)
+        XCTAssertEqual(session.takeLargestPending(), 3)
+        XCTAssertEqual(session.takeLargestPending(), 0)
+    }
+
+    /// Neither the last batch nor the sum of the batches.
+    func test2611_0004S19TheLargestBatchIsReportedAcrossTakes() {
+        var session = ready()
+        _ = push(2, to: &session)
+        _ = session.takeEvents()
+        _ = push(5, to: &session)
+        _ = session.takeEvents()
+        XCTAssertEqual(session.takeLargestPending(), 5)
+
+        _ = push(5, to: &session)
+        _ = session.takeEvents()
+        _ = push(2, to: &session)
+        _ = session.takeEvents()
+        XCTAssertEqual(session.takeLargestPending(), 5)
+    }
+
+    func test2611_0004S20ACardNotReadyKeepsNoCount() {
+        var session = HTMLCardSession()
+        let load = session.reloaded()
+        _ = push(4, to: &session)
+        XCTAssertEqual(session.takeLargestPending(), 0)
+        _ = session.handle(.ready(meta: nil, data: nil, load: load), borrowed: false)
+        _ = push(1, to: &session)
+        XCTAssertEqual(session.takeLargestPending(), 1, "the same card counts once it is ready")
+    }
+
+    func test2611_0004TheLimitIs1000() {
+        XCTAssertEqual(HTMLCardSession.pendingLimit, 1_000)
+    }
+
+    func test2611_0004S21TheEventThatGoesOverTheLimitSaysSoOnce() {
+        var session = ready()
+        let given = overLimit(push(1_002, to: &session))
+        XCTAssertEqual(Array(given.keys), [1_001])
+        XCTAssertEqual(given[1_001], [.pendingOverLimit(1_001)])
+    }
+
+    func test2611_0004S22ItIsSaidAgainAfterATakeAndAnotherOverflow() {
+        var session = ready()
+        _ = push(limit + 1, to: &session)
+        _ = session.takeEvents()
+        let given = overLimit(push(limit + 1, to: &session))
+        XCTAssertEqual(given[limit + 1], [.pendingOverLimit(limit + 1)])
+        XCTAssertEqual(given.count, 1)
+    }
+
+    /// A reload empties the events too, so the next overflow is said again.
+    func test2611_0004S22aItIsSaidAgainAfterAReloadAndAnotherOverflow() {
+        var session = ready()
+        _ = push(limit + 1, to: &session)
+        let load = session.reloaded()
+        _ = session.handle(.ready(meta: nil, data: nil, load: load), borrowed: false)
+        let given = overLimit(push(limit + 1, to: &session))
+        XCTAssertEqual(given[limit + 1], [.pendingOverLimit(limit + 1)])
+    }
+
+    func test2611_0004S23AReloadKeepsTheLargestCount() {
+        var session = ready()
+        _ = push(limit + 1, to: &session)
+        session.reloaded()
+        XCTAssertEqual(session.takeLargestPending(), limit + 1)
+    }
 }

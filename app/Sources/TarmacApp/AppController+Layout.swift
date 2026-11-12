@@ -38,6 +38,7 @@ extension AppController {
         syncGrids(on: board)
         spawnPending(on: board)
         refreshChrome()
+        sampleLog.restored()
         if switching {
             finishArrive(on: board)
         } else if firstVisit {
