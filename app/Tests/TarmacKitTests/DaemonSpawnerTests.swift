@@ -42,6 +42,15 @@ final class DaemonSpawnerTests: XCTestCase {
         (try? String(contentsOfFile: path ?? log, encoding: .utf8)) ?? ""
     }
 
+    private let cap = 1 << 20
+    private var previous: String { log + ".1" }
+
+    private func writeLog(bytes: Int) throws -> Data {
+        let body = Data(repeating: UInt8(ascii: "x"), count: bytes)
+        try body.write(to: URL(fileURLWithPath: log))
+        return body
+    }
+
     /// Sends `pid` SIGTERM and reaps it; a child that outlives that is killed.
     private func assertSIGTERMKills(_ pid: pid_t, file: StaticString = #filePath, line: UInt = #line) {
         kill(pid, SIGTERM)
@@ -79,12 +88,47 @@ final class DaemonSpawnerTests: XCTestCase {
         XCTAssertTrue(body.contains("err"), "stderr must be redirected, log was \(body)")
     }
 
-    /// Each launch truncates: the file is bounded by one daemon session.
-    func testTheLogIsTruncatedPerLaunch() throws {
-        for marker in ["FIRST-MARKER-WITH-PADDING", "SECOND"] {
+    /// Each launch appends: a crashed daemon's panic survives the respawns that
+    /// follow it, and one outage may spawn more than once.
+    func testEachLaunchAppendsToTheLog() throws {
+        for marker in ["FIRST", "SECOND"] {
             _ = reap(try sh("echo \(marker)"))
         }
-        XCTAssertEqual(logText(), "SECOND\n")
+        XCTAssertEqual(logText(), "FIRST\nSECOND\n")
+    }
+
+    /// A log over the cap moves to `.1`, replacing an older one, and the new
+    /// session starts an empty file.
+    func testALogOverTheCapMovesAsideAndTheNewOneStartsEmpty() throws {
+        try "OLDER\n".write(toFile: previous, atomically: true, encoding: .utf8)
+        let full = try writeLog(bytes: cap + 1)
+
+        _ = reap(try sh("echo NEW"))
+
+        XCTAssertEqual(logText(), "NEW\n")
+        XCTAssertEqual(FileManager.default.contents(atPath: previous), full)
+    }
+
+    /// The cap is a ceiling: a log of exactly that size is still appended to.
+    func testALogAtTheCapIsAppendedTo() throws {
+        _ = try writeLog(bytes: cap)
+
+        _ = reap(try sh("echo NEW"))
+
+        XCTAssertEqual(FileManager.default.contents(atPath: log)?.count, cap + 4)
+        XCTAssertTrue(logText().hasSuffix("xNEW\n"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: previous))
+    }
+
+    /// A rotation that fails costs the bound, never the daemon or its output.
+    func testTheDaemonStillRunsAndLogsWhenTheRotationFails() throws {
+        try FileManager.default.createDirectory(atPath: previous + "/occupied", withIntermediateDirectories: true)
+        _ = try writeLog(bytes: cap + 1)
+
+        XCTAssertEqual(exitCode(reap(try sh("echo NEW; exit 7"))), 7)
+
+        XCTAssertEqual(FileManager.default.contents(atPath: log)?.count, cap + 5)
+        XCTAssertTrue(logText().hasSuffix("xNEW\n"))
     }
 
     /// An unopenable log path costs the log, never the daemon.
