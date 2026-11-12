@@ -138,7 +138,7 @@ final class AppController {
     /// The data file each HTML card reads, across every board.
     var dataFiles = CardDataRegistrations()
     lazy var sampleLog = SampleLog(
-        path: SampleLogFile.path(socketPath: client.socketPath),
+        file: SampleLogFile.path(socketPath: client.socketPath),
         resource: SampleLine.Resource(pid: getpid(), version: client.appVersion),
         gather: { [weak self] in self?.gatherSample() }
     )

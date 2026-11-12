@@ -716,8 +716,8 @@ there. So the app keeps a record of its own beside `tarmacd.log`:
   `Z`), `severity`, `event`, `attrs` and `resource` (`process.pid`,
   `service.name` `tarmac-app`, and `service.version` when the app names one).
 - **`tarmac.sample`** (`INFO`): one line every 300 s from when the controller
-  starts, and one more, once, when the first `restore` from the daemon was
-  applied, so that the first line has the daemon's keys and the boards. A
+  starts, and one more, once, when the first `restore` of the active board
+  was applied, so that the first line has the daemon's keys and the boards. A
   reconnect adds no line. Its `attrs`: the memory of the app, of the daemon
   (`hello_ok.daemon_pid`, forgotten with the link) and of the web content
   processes (their count of distinct pids, the sum, and the largest with its

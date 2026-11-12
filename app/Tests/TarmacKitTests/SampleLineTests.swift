@@ -184,4 +184,37 @@ final class SampleLineTests: XCTestCase {
         XCTAssertEqual(line, #"{"attrs":{"tarmac.card.pending_events.count":1001,"tarmac.card.pending_events.limit":1000,"tarmac.card.pending_events.path":"/a/dash.html"},"event":"tarmac.card.pending_events.over_limit","resource":{"process.pid":9156,"service.name":"tarmac-app","service.version":"0.20.1"},"severity":"WARN","ts":"2026-11-12T10:15:00.000Z"}"#)
         XCTAssertNoThrow(try object(line))
     }
+
+    func testReadingFillsTheAppTheDaemonAndEachWebContentFootprint() {
+        var unread = full
+        unread.appFootprint = nil
+        unread.daemonFootprint = nil
+        unread.webContent = [
+            WebContent(pid: 9201, path: "/a/dash.html", footprint: nil),
+            WebContent(pid: 9202, path: "/a/gone.md", footprint: nil),
+        ]
+        let footprints: [Int32: UInt64] = [9156: 149_063_264, 9160: 6_504_928, 9201: 120_390_544]
+
+        let read = unread.reading(appPid: 9156) { footprints[$0] }
+
+        var expected = full
+        expected.webContent = [
+            WebContent(pid: 9201, path: "/a/dash.html", footprint: 120_390_544),
+            WebContent(pid: 9202, path: "/a/gone.md", footprint: nil),
+        ]
+        XCTAssertEqual(read, expected)
+    }
+
+    func testReadingWithNoDaemonPidAsksForNoDaemonFootprint() {
+        var unread = full
+        unread.daemonPid = nil
+        unread.daemonFootprint = nil
+        unread.webContent = []
+        var asked: [Int32] = []
+
+        let read = unread.reading(appPid: 9156) { asked.append($0); return 1 }
+
+        XCTAssertEqual(asked, [9156])
+        XCTAssertNil(read.daemonFootprint)
+    }
 }

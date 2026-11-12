@@ -69,7 +69,6 @@ extension AppController {
             refreshSwitcherIfOpen()
         case .restore(let docs, let tiles, let board, let restoredBoardID, let liveTerms):
             applyRestore(docs: docs, tiles: tiles, viewport: board, boardID: restoredBoardID, liveTerms: liveTerms)
-            sampleLog.restored()
         case .output(let termID, let bytes):
             // Shown whatever board the terminal is on: a backgrounded board's
             // shell keeps progressing and is current on switch-back.

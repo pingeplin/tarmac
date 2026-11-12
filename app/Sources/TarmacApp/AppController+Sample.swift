@@ -18,28 +18,31 @@ extension AppController {
     }
 
     /// The counts are over the boards this app has built; each HTML card's
-    /// largest pending count is taken, and so reset, here.
-    func gatherSample() -> SampleGathered {
-        var gathered = SampleGathered(daemonPid: daemonSession.daemonPid)
-        gathered.boardsCount = boardMetas.count
-        gathered.boardsLoaded = boards.count
+    /// largest pending count is taken, and so reset, here. The footprints are
+    /// left unread: `SampleLog` reads them off the main actor.
+    func gatherSample() -> SampleLine.Sample {
+        var sample = SampleLine.Sample(
+            appFootprint: nil, daemonPid: daemonSession.daemonPid, daemonFootprint: nil,
+            boardsCount: boardMetas.count, boardsLoaded: boards.count,
+            cardsHTML: 0, cardsMarkdown: 0, cardsTerminal: 0, pending: [], webContent: []
+        )
         for board in boards.values {
             for card in board.view.cards.values {
                 guard case .doc(let path) = card.id else {
-                    gathered.cardsTerminal += 1
+                    sample.cardsTerminal += 1
                     continue
                 }
                 if let html = card.htmlBody {
-                    gathered.cardsHTML += 1
-                    gathered.pending.append(SampleLine.Pending(path: path, count: html.takeLargestPending()))
+                    sample.cardsHTML += 1
+                    sample.pending.append(SampleLine.Pending(path: path, count: html.takeLargestPending()))
                 } else {
-                    gathered.cardsMarkdown += 1
+                    sample.cardsMarkdown += 1
                 }
                 if let pid = card.docBody?.webProcessID {
-                    gathered.webViews.append(SampleGathered.WebView(pid: pid, path: path))
+                    sample.webContent.append(SampleLine.WebContent(pid: pid, path: path, footprint: nil))
                 }
             }
         }
-        return gathered
+        return sample
     }
 }

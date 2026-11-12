@@ -74,6 +74,16 @@ public enum SampleLine {
             self.pending = pending
             self.webContent = webContent
         }
+
+        /// The sample with its footprints read: the app's, the daemon's and
+        /// each web content process's. The reads are not for the main actor.
+        public func reading(appPid: Int32, _ footprint: (Int32) -> UInt64?) -> Sample {
+            var read = self
+            read.appFootprint = footprint(appPid)
+            read.daemonFootprint = daemonPid.flatMap(footprint)
+            read.webContent = webContent.map { WebContent(pid: $0.pid, path: $0.path, footprint: footprint($0.pid)) }
+            return read
+        }
     }
 
     public static func sample(_ sample: Sample, resource: Resource, atMs: Int64) -> String {
