@@ -726,3 +726,23 @@ fn one_write_through_a_link_in_the_tree_is_one_file_event_for_the_path_named() {
     assert!(quiet(&mut app, &named), "one file_event for one write");
     assert!(none_within(&mut app, Duration::from_millis(200), |m| is_file_event_for(m, &real)), "none for the resolved path");
 }
+
+// S26b. The new app names no file: neither registration of the app that
+// went is left.
+#[test]
+fn the_registrations_of_an_app_that_went_are_dropped() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let (card, stats) = card_reading_sub(&daemon, &mut app);
+    let dash2 = write_doc(&daemon.dir.join("docs/dash2.html"), "<p>dash2</p>\n");
+    app.open_on("board-0", &dash2);
+    let beside = write_doc(&daemon.dir.join("docs/beside.json"), "{}\n");
+    doc_data(&mut app, "board-0", &dash2, Some(&beside));
+    assert_eq!(app.recv_file_event_for(&beside), mtime_ms(&beside));
+
+    drop(app);
+    let mut app = daemon.connect_app_drained();
+    edit(&stats);
+    edit(&beside);
+    look_with_none_for(&mut app, &card.other, &[&stats, &beside]);
+}

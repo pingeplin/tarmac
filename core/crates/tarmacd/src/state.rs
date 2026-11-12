@@ -365,6 +365,9 @@ impl Daemon {
         &self.state_path
     }
 
+    /// The connection takes the app's place. The data registrations of the
+    /// one it replaces are dropped while the place is held, so that none of
+    /// its own is: the app names each file again when it connects (2611.0005).
     pub async fn install_app(
         &self,
         tx: mpsc::Sender<Msg>,
@@ -372,7 +375,8 @@ impl Daemon {
     ) -> (u64, CancellationToken) {
         let cancel = CancellationToken::new();
         let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
-        let old = self.app.lock().await.replace(AppSlot {
+        let mut slot = self.app.lock().await;
+        let old = slot.replace(AppSlot {
             generation,
             tx,
             cancel: cancel.clone(),
@@ -381,6 +385,7 @@ impl Daemon {
         if let Some(old) = old {
             tracing::info!("replacing previous app connection");
             old.cancel.cancel();
+            self.drop_data().await;
         }
         (generation, cancel)
     }
@@ -394,10 +399,23 @@ impl Daemon {
         }
     }
 
+    /// The connection `generation` ends. When it holds the app's place, the
+    /// place is left and the data registrations are dropped, with the place
+    /// held: a connection that took the place meanwhile loses nothing.
     pub async fn remove_app(&self, generation: u64) {
         let mut slot = self.app.lock().await;
         if slot.as_ref().is_some_and(|s| s.generation == generation) {
             *slot = None;
+            self.drop_data().await;
+        }
+    }
+
+    /// Drops every data registration of every board, with its count. Takes
+    /// `boards` with `app` held: no path holds `boards` and then takes `app`.
+    async fn drop_data(&self) {
+        let dropped = self.boards.lock().await.drop_data();
+        for dir in &dropped {
+            self.release_data_dir(dir);
         }
     }
 

@@ -13,6 +13,13 @@ async fn name(daemon: &Daemon, doc: &Path, data: Option<&Path>) -> bool {
     name_on(daemon, DEFAULT_BOARD_ID, doc, data).await
 }
 
+/// A connection takes the app's place: its generation, and its pushes.
+async fn take_the_place(daemon: &Daemon) -> (u64, mpsc::Receiver<Msg>) {
+    let (tx, rx) = mpsc::channel(16);
+    let (generation, _) = daemon.install_app(tx, None).await;
+    (generation, rx)
+}
+
 fn watches(calls: &SourceCalls) -> usize {
     calls.0.lock().unwrap().iter().filter(|(change, _)| *change == Change::Watch).count()
 }
@@ -25,6 +32,8 @@ struct Card {
     dash: PathBuf,
     daemon: Arc<Daemon>,
     app: mpsc::Receiver<Msg>,
+    /// The generation of the connection that holds the app's place.
+    generation: u64,
     fs: Arc<StuckFs>,
     release: std::sync::mpsc::Sender<()>,
 }
@@ -36,10 +45,10 @@ impl Card {
         let dash = write_doc(dir.join("dash.html"));
         let (fs, release) = stuck_fs();
         let daemon = held(&tmp, source, fs.clone()).await;
-        let mut app = connect_app(&daemon).await;
+        let (generation, mut app) = take_the_place(&daemon).await;
         open_doc(&daemon, None, &dash).await;
         flushed(&mut app, &dash).await;
-        Card { tmp, dir, dash, daemon, app, fs, release }
+        Card { tmp, dir, dash, daemon, app, generation, fs, release }
     }
 
     async fn silent(tag: &str) -> Self {
@@ -496,5 +505,57 @@ async fn a_data_path_through_a_link_to_a_hidden_directory_watches_nothing() {
     for dir in [cfg, card.dir.join("data")] {
         assert_eq!(calls.of(Change::Watch, &dir), 0, "{}", dir.display());
         assert!(!card.watched(&dir).await, "{}", dir.display());
+    }
+}
+
+// S26
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_end_of_the_app_drops_every_data_registration_of_every_board() {
+    let mut card = Card::silent("s26").await;
+    let stats = card.reading("sub/stats.json").await;
+    let background = card.daemon.boards.lock().await.create();
+    card.daemon.boards.lock().await.set_active(DEFAULT_BOARD_ID);
+    let bg_dash = write_doc(card.dir.join("bg.html"));
+    open_doc(&card.daemon, Some(&background), &bg_dash).await;
+    let bg_data = write_doc(card.dir.join("bg/x.json"));
+    assert!(name_on(&card.daemon, &background, &bg_dash, Some(&bg_data)).await);
+    let (sub, bg) = (card.dir.join("sub"), card.dir.join("bg"));
+    assert!(card.watched(&sub).await);
+    assert!(card.watched(&bg).await);
+
+    card.daemon.remove_app(card.generation).await;
+    assert!(!card.watched(&sub).await);
+    assert!(!card.watched(&bg).await);
+
+    let (_, mut next) = take_the_place(&card.daemon).await;
+    assert!(name(&card.daemon, &card.dash, Some(&stats)).await);
+    assert!(card.watched(&sub).await);
+    assert_eq!(next_change(&mut next).await.0, stats);
+}
+
+// S26a. Only this harness can put B's frames and A's end in a set order:
+// `conn::handshake` sends `hello_ok` before `app_session` takes the place.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_end_of_an_app_that_lost_its_place_drops_nothing() {
+    for a_ends_first in [false, true] {
+        let mut card = Card::silent("s26a").await;
+        let stats = card.reading("sub/stats.json").await;
+        let sub = card.dir.join("sub");
+
+        let (_, mut b) = take_the_place(&card.daemon).await;
+        assert!(!card.watched(&sub).await, "B took the place, A ends first: {a_ends_first}");
+        if a_ends_first {
+            card.daemon.remove_app(card.generation).await;
+        }
+        assert!(name(&card.daemon, &card.dash, Some(&stats)).await);
+        assert_eq!(next_change(&mut b).await.0, stats);
+        if !a_ends_first {
+            card.daemon.remove_app(card.generation).await;
+        }
+
+        assert!(card.watched(&sub).await, "A ends first: {a_ends_first}");
+        let changed = change(&stats);
+        look_at(&card.daemon).await;
+        assert_eq!(file_events(&mut b), vec![(stats, changed)], "A ends first: {a_ends_first}");
     }
 }

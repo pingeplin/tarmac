@@ -312,6 +312,18 @@ impl Registry {
         untold
     }
 
+    /// Drops the data registration of every doc, and returns what each
+    /// counted.
+    fn drop_data(&mut self) -> Vec<DataDir> {
+        self.data_seen.clear();
+        let docs = self.docs.values_mut();
+        docs.map(|info| {
+            info.data = None;
+            std::mem::take(&mut info.data_dir)
+        })
+        .collect()
+    }
+
     /// The doc that was closed; `None` when the path is unknown.
     pub fn close_doc(&mut self, path: &Path) -> Option<DocInfo> {
         let closed = self.docs.remove(path)?;
@@ -467,6 +479,11 @@ impl Boards {
     /// The key of the doc `path` on any board, as the key is written.
     pub fn doc_key(&self, path: &Path) -> Option<&PathBuf> {
         self.boards.iter().find_map(|b| b.registry.docs.get_key_value(path)).map(|(key, _)| key)
+    }
+
+    /// `Registry::drop_data` on every board.
+    pub fn drop_data(&mut self) -> Vec<DataDir> {
+        self.registries_mut().flat_map(Registry::drop_data).collect()
     }
 
     /// Each data registration of every board whose directory is wanted: its
