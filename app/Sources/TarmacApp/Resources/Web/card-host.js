@@ -154,6 +154,9 @@
     data(text) {
       card.contentWindow.postMessage({ tarmac: "data", text }, "*");
     },
+    events(texts) {
+      card.contentWindow.postMessage({ tarmac: "events", texts }, "*");
+    },
     layout(width, height, scale) {
       card.style.width = width + "px";
       card.style.height = height + "px";

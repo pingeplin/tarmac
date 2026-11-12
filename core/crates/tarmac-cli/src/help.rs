@@ -88,6 +88,10 @@ tarmac — agent cockpit CLI
 
 USAGE:
     tarmac open <path>      register a file with the running tarmac app
+    tarmac push <html-path> <json>
+                            send one JSON value to the loaded cards of an open doc
+    tarmac push <html-path> -
+                            send one JSON value per line of stdin, in order
     tarmac --version        report the cli, daemon, and app versions
     tarmac skill            print the agent-facing Tarmac guide
     tarmac skill install    install a SKILL.md that points coding agents at it
@@ -96,6 +100,14 @@ USAGE:
 `tarmac open` is fire-and-forget: anything (you, an agent, a Makefile, a git
 hook) can run it to surface a doc in the cockpit. A relative path works;
 Tarmac checks the file.
+
+`tarmac push` hands a value to an HTML card that is loaded now: the document
+gets it as a `tarmac:event` on `window`, with the parsed value as `detail`.
+Nothing is kept for a card that is not loaded. The doc must be open; the daemon
+checks that the value is one JSON value. It prints nothing on success. With `-`
+it reads stdin on one connection, skips blank lines, and names each refused line
+on stderr (`line <n>: <reason>`) and goes on; it ends at a lost connection or
+when the daemon does not answer in 5 s.
 
 {DEV_HELP}`tarmac skill` never talks to the daemon. `install` writes one SKILL.md per
 target — claude-code (~/.claude/skills) and codex (~/.agents/skills) — and
@@ -114,7 +126,8 @@ exits 0 whether or not a daemon is running.
 
 EXIT STATUS:
     0  success; also `tarmac --version` with no daemon running
-    1  the daemon rejected the open, no daemon is running, or an install failed
+    1  the daemon refused an open or a push (with -, any line), no daemon is
+       running, or an install failed
     2  usage error
 ";
 

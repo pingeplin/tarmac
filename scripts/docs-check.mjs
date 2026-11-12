@@ -115,7 +115,7 @@ for (const [p, status] of statusOf) {
 //
 // This rule is also what discharges spec 2609.0015's S49: the QA driver's
 // `DevRequest` is a separate enum on a separate socket, deliberately NOT a `Msg`
-// variant, so this rule finds nothing new and the V1-V15 conformance vectors stay
+// variant, so this rule finds nothing new and the V1-V17 conformance vectors stay
 // untouched. Make it a `Msg` variant and this rule fails until both docs and the
 // vectors are updated — which is the point.
 

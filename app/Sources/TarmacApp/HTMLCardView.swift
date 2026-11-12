@@ -197,6 +197,21 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
         webView.runInCardWorld("tarmacCard.data(text)", arguments: ["text": text])
     }
 
+    // MARK: - Events
+
+    /// A pushed value for this card's doc (spec 2611.0003).
+    func event(_ text: String) {
+        session.event(text).forEach(apply)
+    }
+
+    /// The texts are an argument, never part of the script. With no host page
+    /// they are dropped, as a delivery is.
+    private func flushEvents() {
+        let texts = session.takeEvents()
+        guard pageLoaded, !texts.isEmpty else { return }
+        webView.runInCardWorld("tarmacCard.events(texts)", arguments: ["texts": texts])
+    }
+
     // MARK: - Console
 
     func toggleConsole() {
@@ -298,6 +313,9 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
         case .dataFile(let file): onDataFile?(file)
         case .read(let read): run(read)
         case .deliver(let text): deliver(text)
+        // The events of one main-loop turn go to the document in one call:
+        // the flush is queued behind the frames already on the main queue.
+        case .flushEvents: DispatchQueue.main.async { [weak self] in self?.flushEvents() }
         }
     }
 

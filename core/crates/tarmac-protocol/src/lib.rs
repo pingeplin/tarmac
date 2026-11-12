@@ -187,6 +187,18 @@ pub enum Msg {
         #[serde(with = "serde_bytes")]
         bytes: Vec<u8>,
     },
+    /// cli -> daemon: one JSON value for the loaded cards of the doc `path`;
+    /// answered `ack` or `err`. `data` is the value's text, checked by the
+    /// daemon only. Field order is wire order (vector 16).
+    Push {
+        path: String,
+        data: String,
+    },
+    /// Daemon -> app: a `push`, with `path` the registry's key. No reply.
+    DocEvent {
+        path: String,
+        data: String,
+    },
     /// A receiver ignores message types it does not know instead of failing.
     #[serde(other)]
     Unknown,
@@ -279,6 +291,15 @@ pub fn repo_color_index(repo: &str) -> u8 {
 // violating the "map with string keys" rule.
 pub fn encode(msg: &Msg) -> Result<Vec<u8>, rmp_serde::encode::Error> {
     rmp_serde::to_vec_named(msg)
+}
+
+/// What the cli and the daemon answer for a value whose frame would be over
+/// `MAX_FRAME_LEN`.
+pub const OVER_FRAME_LIMIT: &str = "value is over the frame limit (16 MiB)";
+
+/// `encode`, or `None` when the payload is over `limit` bytes.
+pub fn encode_within(msg: &Msg, limit: usize) -> Option<Vec<u8>> {
+    encode(msg).ok().filter(|payload| payload.len() <= limit)
 }
 
 pub fn decode(bytes: &[u8]) -> Result<Msg, rmp_serde::decode::Error> {

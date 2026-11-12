@@ -35,7 +35,8 @@ summary, a chart. Prefer one substantial card over a stream of small ones.
 
 **Rewriting the file is the update path.** Write to the same path again and the
 card reloads and pulses cyan. There is no update command, no partial patch, and
-no need to re-run `tarmac open`.
+no need to re-run `tarmac open`. An HTML card can also take new data with no
+reload: see *Data from a file* and *Events from a producer* below.
 
 ## What renders how
 
@@ -266,6 +267,56 @@ card does not flash.
 - **A card out of view gets no content.** It gets the latest content once,
   when it is back in view.
 
+### Events from a producer
+
+A card can also take single values, one at a time and in order, from anything
+that runs `tarmac push`: a log line, a step that ended, a count.
+
+```sh
+tarmac push dash.html '{"step":"build","ok":true}'   # one value
+producer | tarmac push dash.html -                    # one value per line of stdin
+```
+
+```html
+<script>
+  addEventListener("tarmac:event", e => apply(e.detail));
+</script>
+```
+
+- **Open the file first.** A push goes to an HTML file that `tarmac open` has
+  put on a board. A file that is not open is refused: `not an open doc`. A
+  relative path works. A push to an open markdown file exits `0` and shows
+  nothing.
+- **`tarmac:event`** is a `CustomEvent` on `window`, and `detail` is the parsed
+  value. The events come in the order they were sent. An event does not change
+  `window.tarmac.data`.
+- **No replay.** A value goes to the cards of that file that are loaded at that
+  moment, also a card out of view and a card on another board. A card that is
+  loading or reloading gets nothing, and so does a card on a board that was not
+  shown since Tarmac started. Nothing is kept for later.
+- **After a reload, take the state from a file.** A document that needs the
+  whole picture reads it from its data file (`tarmac-data`, above) after each
+  load, and takes the events for what comes after. The file and the events
+  have no order between them: an event can come before or after the content of
+  a file that was written first. Make `apply` safe for that.
+- **One JSON value for each push.** Tarmac checks the text with a strict JSON
+  parser: any value at the top, with white space around it, and nothing after
+  it. It refuses a byte-order mark, a number out of the range of a double
+  (`1e400`), an unpaired surrogate escape (`"\ud800"`), and more than 127
+  levels of arrays and objects. At most 16 MiB.
+- **With `-`**, each line of stdin is one value, on one connection. A value
+  written over more than one line is refused line by line. Blank lines are
+  skipped. A refused line is one line on stderr, `tarmac: line <n>: <reason>`,
+  and the stream goes on. Each line waits for Tarmac's answer before the next
+  is sent, so a stream goes as fast as Tarmac takes it. The stream ends when
+  the connection is lost, or when Tarmac does not answer in 5 s.
+- **Exit status**: `0` the value is queued for the app, which is not proof
+  that a card drew it; `1` a value was refused (with `-`, any line), no Tarmac
+  is running, or no app is connected; `2` bad usage. Success prints nothing.
+- A text that the card cannot parse gives no event and one error line in the
+  card's console, `tarmac:event: not valid JSON`. This is rare: Tarmac and the
+  browser do not agree on every text.
+
 ## Checklist before `tarmac open` on an HTML file
 
 - [ ] One file. No external `src`, `href`, or `url()` that leaves the document.
@@ -275,7 +326,7 @@ card does not flash.
       a system stack. Every use has a fallback; you never set a `--tarmac-` name.
 - [ ] All CSS in a `<style>` block.
 - [ ] All data embedded as literals, or in one JSON file beside the card that a
-      `tarmac-data` meta names; no `fetch`.
+      `tarmac-data` meta names, or pushed with `tarmac push`; no `fetch`.
 - [ ] Images inline as `data:` URIs, or drawn as SVG.
 - [ ] Sizes use `%`, `px`, `rem` — no `vw`/`vh`, no media queries of size.
 - [ ] Colours: both a background and a text colour, or neither; a

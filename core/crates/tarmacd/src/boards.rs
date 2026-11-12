@@ -410,6 +410,11 @@ impl Boards {
         self.boards.iter().flat_map(|b| b.registry.docs.keys().cloned()).collect()
     }
 
+    /// The key of the doc `path` on any board, as the key is written.
+    pub fn doc_key(&self, path: &Path) -> Option<&PathBuf> {
+        self.boards.iter().find_map(|b| b.registry.docs.get_key_value(path)).map(|(key, _)| key)
+    }
+
     /// `Registry::watched_paths` of every board.
     pub fn watched_paths(&self) -> HashSet<PathBuf> {
         self.boards.iter().flat_map(|b| b.registry.watched_paths().cloned()).collect()
@@ -611,6 +616,21 @@ mod tests {
 
     fn doc_info() -> DocInfo {
         DocInfo { via: "t".into(), read: false, repo: None, repo_root: None, repo_color: None, last_changed_ms: None, seen: None, untold: false, unread: false, last_opened_ms: 0, term_id: None, data: None }
+    }
+
+    // `Path` equality takes `/./`, `//` and a trailing `/` for the key, and the
+    // app keys its cards by the key's text (spec 2611.0003, choice 3).
+    #[test]
+    fn a_doc_key_is_the_key_as_it_is_written() {
+        let mut boards = Boards::single();
+        let other = boards.create();
+        let doc = PathBuf::from("/tmp/k/dash.html");
+        boards.registry_mut(Some(&other)).docs.insert(doc.clone(), doc_info());
+
+        for spelling in ["/tmp/k/dash.html", "/tmp/k/./dash.html", "//tmp/k/dash.html", "/tmp/k/dash.html/"] {
+            assert_eq!(boards.doc_key(Path::new(spelling)).map(|key| key.to_str().unwrap()), Some("/tmp/k/dash.html"), "{spelling}");
+        }
+        assert_eq!(boards.doc_key(Path::new("/tmp/k/other.html")), None);
     }
 
     #[test]

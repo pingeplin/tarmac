@@ -4,7 +4,7 @@ use std::process::Command;
 use tarmac_protocol::{self as proto, Msg};
 
 mod common;
-use common::{Double, Report, hello_ok, scratch, tarmac};
+use common::{Double, Report, hello_ok, scratch, tarmac, tarmac_at};
 
 /// A daemon double for `open`: it does the handshake, records the `Open` path,
 /// then answers `reply`.
@@ -24,11 +24,11 @@ impl OpenDaemon {
     }
 
     fn open(&self, path: &str) -> Report {
-        Report::of(tarmac().env("TARMAC_SOCKET", &self.0.sock).args(["open", path]))
+        Report::of(tarmac_at(&self.0.sock).args(["open", path]))
     }
 
     fn open_in(&self, cwd: &Path, path: &str) -> Report {
-        Report::of(tarmac().current_dir(cwd).env("TARMAC_SOCKET", &self.0.sock).args(["open", path]))
+        Report::of(tarmac_at(&self.0.sock).current_dir(cwd).args(["open", path]))
     }
 
     fn opened(&self) -> Option<String> {
@@ -45,6 +45,16 @@ fn help_exits_zero_and_documents_open() {
     assert!(out.status.success());
     assert!(out.stdout.contains("tarmac open <path>"));
     assert!(out.stdout.contains("TARMAC_SOCKET"));
+}
+
+// Spec 2611.0003: the verb, both of its modes, and its exit status.
+#[test]
+fn help_documents_push() {
+    let out = Report::of(tarmac().arg("--help"));
+    assert!(out.status.success());
+    assert!(out.stdout.contains("tarmac push <html-path> <json>"), "{}", out.stdout);
+    assert!(out.stdout.contains("tarmac push <html-path> -"), "{}", out.stdout);
+    assert!(out.stdout.contains("1  the daemon refused an open or a push"), "{}", out.stdout);
 }
 
 #[test]
@@ -127,7 +137,7 @@ fn no_daemon_is_a_clear_one_line_error() {
     std::fs::write(&file, "# hi\n").unwrap();
 
     let out = Report::of(
-        tarmac().env("TARMAC_SOCKET", dir.join("absent.sock")).args(["open", file.to_str().unwrap()]),
+        tarmac_at(dir.join("absent.sock")).args(["open", file.to_str().unwrap()]),
     );
     assert_eq!(out.code(), Some(1));
     assert!(out.one_stderr_line().contains("no tarmac daemon running"));

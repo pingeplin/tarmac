@@ -78,7 +78,6 @@ paths, no relative links.
 | Doc | What it is |
 | --- | --- |
 | [`proposed/v4c-editable-docs.md`](proposed/v4c-editable-docs.md) | Editable doc cards, borrowed focus, write-conflict banner. Captured from mocks; never started. Doc cards are read-only today. |
-| [`designs/2611.0001_html_card_data_push.md`](designs/2611.0001_html_card_data_push.md) | New data into a loaded HTML card with no reload: a JSON state file the daemon watches, and a `tarmac push` verb for single events; a card reads only in its own directory tree. Draft, not built. |
 
 ## HISTORICAL
 
@@ -95,6 +94,7 @@ present: go by the banner, and by which toolkit the page names.
 - [`archive/m3/`](archive/m3) — the "strips = boards" milestone record (`plan.md`) and its P4 design spec.
 - [`archive/v4/`](archive/v4) — the v3-grid → v4-whiteboard migration plan + visual crib.
 - [`designs/`](designs) — one record per shipped change (numbered `YYMM.NNNN_*` plus a few named ones). These are *change* records: accurate about the change they accompanied, not about today. A design record for a change that was investigated but **not** built lives here too and carries a PROPOSED banner — read the banner, not the directory.
+- [`designs/2611.0001_html_card_data_push.md`](designs/2611.0001_html_card_data_push.md) — data pushed into a loaded HTML card: the state file (phase 1, #313) and `tarmac push` (phase 2, #326) are built; its phase 3 (a data file in a subdirectory) is **not built**, and for that part the page is intent only.
 - `.blueprint/specs/` (repo root) — the per-issue implementation specs the design records are derived from. Same rule: historical.
 
 ## Milestone vocabulary

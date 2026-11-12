@@ -1675,4 +1675,97 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(json(shim, "heard.map((e) => e.detail)"), #"[{"n":1}]"#)
         XCTAssertEqual(json(shim, "window.tarmac"), #"{"mine":true}"#)
     }
+
+    // MARK: - events (2611.0003 S35–S40)
+
+    private func listenForEvents(_ shim: Shim) {
+        shim.run("var events = []; window.addEventListener('tarmac:event', (e) => events.push(e));")
+    }
+
+    /// `texts` is a JavaScript expression.
+    private func sendEvents(_ shim: Shim, _ texts: String, from source: String = "parent") {
+        shim.run("h.send({ tarmac: 'events', texts: \(texts) }, \(source))")
+    }
+
+    private func consoleEntries(_ shim: Shim) throws -> [NSDictionary] {
+        try shim.posted().filter { $0["tarmac"] as? String == "console" }
+    }
+
+    func test2611_0003S35EachTextIsParsedAndDispatchedInOrder() throws {
+        let shim = try loadShim()
+        listenForEvents(shim)
+        sendEvents(shim, #"['{"n":1}', '{"n":2}']"#)
+        XCTAssertEqual(json(shim, "events.map((e) => e.type)"), #"["tarmac:event","tarmac:event"]"#)
+        XCTAssertEqual(json(shim, "events.map((e) => e.detail)"), #"[{"n":1},{"n":2}]"#)
+    }
+
+    /// The line goes through the shim's own relay: a page that took
+    /// `console.error` for itself does not keep it from the app (choice 17).
+    func test2611_0003S36ATextThatIsNoJSONIsOneErrorLineAndTheRestAreDispatched() throws {
+        let shim = try loadShim()
+        listenForEvents(shim)
+        shim.run("window.console.error = function () {}")
+        sendEvents(shim, #"['{"n":1}', '{bad', '{"n":3}']"#)
+        XCTAssertEqual(json(shim, "events.map((e) => e.detail)"), #"[{"n":1},{"n":3}]"#)
+        XCTAssertEqual(
+            try consoleEntries(shim),
+            [["tarmac": "console", "level": "error", "args": ["tarmac:event: not valid JSON"]]]
+        )
+    }
+
+    func test2611_0003S37EventsFromAnotherWindowAreIgnored() throws {
+        let shim = try loadShim()
+        listenForEvents(shim)
+        sendEvents(shim, "['[1]']", from: "{}")
+        sendEvents(shim, "['[2]']", from: "window")
+        XCTAssertEqual(shim.number("events.length"), 0)
+        sendEvents(shim, "['[3]']")
+        XCTAssertEqual(json(shim, "events.map((e) => e.detail)"), "[[3]]")
+    }
+
+    func test2611_0003S38AnEventLeavesTheDataAsItWas() throws {
+        let shim = try loadShim()
+        listen(shim)
+        listenForEvents(shim)
+        deliver(shim, #"'{"n":1}'"#)
+        sendEvents(shim, "['[2]']")
+        XCTAssertEqual(json(shim, "events.map((e) => e.detail)"), "[[2]]")
+        XCTAssertEqual(shim.number("heard.length"), 1, "no tarmac:data")
+        XCTAssertEqual(json(shim, "window.tarmac.data"), #"{"n":1}"#)
+        XCTAssertEqual(shim.flag("window.tarmac.data === heard[0].detail"), true)
+
+        let none = try loadShim()
+        listen(none)
+        listenForEvents(none)
+        sendEvents(none, "['[2]']")
+        XCTAssertEqual(json(none, "events.map((e) => e.detail)"), "[[2]]")
+        XCTAssertEqual(none.number("heard.length"), 0)
+        XCTAssertEqual(none.flag("window.tarmac.data === undefined"), true)
+    }
+
+    /// The stand-in's `dispatchEvent` lets a listener's error out, as WebKit's
+    /// does not: this is the shim's own guard. One listener records and then
+    /// throws, so a text after the first is heard only past that guard.
+    func test2611_0003S39AListenerThatThrowsDoesNotStopTheNextText() throws {
+        let shim = try loadShim()
+        shim.run("var events = []; window.addEventListener('tarmac:event', (e) => { events.push(e); throw new Error('boom'); });")
+        sendEvents(shim, "['[1]', '[2]']")
+        XCTAssertEqual(json(shim, "events.map((e) => e.detail)"), "[[1],[2]]")
+    }
+
+    /// `'12'` is a string that would iterate into two texts of JSON; `1` and
+    /// `null` are what `JSON.parse` would take after coercing them.
+    func test2611_0003S40TextsThatAreNoArrayOrEntriesThatAreNoStringGiveNothing() throws {
+        let shim = try loadShim()
+        listenForEvents(shim)
+        for texts in ["'12'", "'[1]'", "undefined", "null", "3", "{ 0: '[1]', length: 1 }"] {
+            XCTAssertNil(shim.thrown("h.send({ tarmac: 'events', texts: \(texts) })"), texts)
+        }
+        shim.run("h.send({ tarmac: 'events' })")
+        XCTAssertEqual(shim.number("events.length"), 0)
+
+        sendEvents(shim, #"[1, null, {}, ['[1]'], '{"n":2}', true]"#)
+        XCTAssertEqual(json(shim, "events.map((e) => e.detail)"), #"[{"n":2}]"#)
+        XCTAssertEqual(try consoleEntries(shim), [])
+    }
 }

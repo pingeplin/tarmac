@@ -1,4 +1,5 @@
 use std::ffi::OsString;
+use std::io;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -6,6 +7,7 @@ use std::time::Duration;
 use tarmac_protocol::{self as proto, Msg, frame};
 
 mod help;
+mod push;
 mod skill;
 
 /// The one build-config to channel mapping: a debug build is `dev`, a release
@@ -70,6 +72,7 @@ fn run(args: &[String]) -> i32 {
         }
         Some("dev") => dev_dispatch(&args[1..]),
         Some("skill") => skill::run(&args[1..]),
+        Some("push") => push::run(&args[1..]),
         Some("open") => match &args[1..] {
             [path] => match open(path) {
                 Ok(line) => {
@@ -97,15 +100,36 @@ fn run(args: &[String]) -> i32 {
     }
 }
 
+fn lost(e: io::Error) -> String {
+    format!("daemon connection lost: {e}")
+}
+
 fn send(stream: &mut UnixStream, msg: &Msg) -> Result<(), String> {
     let payload = proto::encode(msg).map_err(|e| format!("encode failed: {e}"))?;
-    frame::write_sync(stream, &payload).map_err(|e| format!("daemon connection lost: {e}"))
+    frame::write_sync(stream, &payload).map_err(lost)
 }
 
 fn recv(stream: &mut UnixStream) -> Result<Msg, String> {
-    let payload =
-        frame::read_sync(stream).map_err(|e| format!("daemon connection lost: {e}"))?;
+    recv_or(stream, lost)
+}
+
+/// `recv`, with a failed read worded by `read_failed`.
+fn recv_or(stream: &mut UnixStream, read_failed: impl FnOnce(io::Error) -> String) -> Result<Msg, String> {
+    let payload = frame::read_sync(stream).map_err(read_failed)?;
     proto::decode(&payload).map_err(|e| format!("bad frame from daemon: {e}"))
+}
+
+/// The daemon's answer to a request: `Ok(Ok(()))` for `ack`, `Ok(Err(msg))`
+/// for `err`, skipping any other message. `Err` is a connection that failed,
+/// with a failed read worded by `read_failed`.
+fn answer(stream: &mut UnixStream, read_failed: impl Fn(io::Error) -> String) -> Result<Result<(), String>, String> {
+    loop {
+        match recv_or(stream, &read_failed)? {
+            Msg::Ack => return Ok(Ok(())),
+            Msg::Err { msg } => return Ok(Err(msg)),
+            _ => continue,
+        }
+    }
 }
 
 /// The `hello_ok` fields; `open` needs only the reply, `--version` renders all.
@@ -187,13 +211,11 @@ fn app_line(info: &DaemonInfo) -> String {
     }
 }
 
-fn open(raw_path: &str) -> Result<String, String> {
-    // No file-system call on the path: on a hung volume it would hang the cli,
-    // and Ctrl-C could not end it (#267).
-    let path = std::path::absolute(raw_path).map_err(|e| format!("cannot open {raw_path}: {e}"))?;
-
+/// A connection past its handshake, or the reason there is none, as the
+/// verbs that talk to the daemon print it.
+fn connect() -> Result<UnixStream, String> {
     let sock = socket_path();
-    let (mut stream, _) = handshake(&sock).map_err(|e| match e {
+    let (stream, _) = handshake(&sock).map_err(|e| match e {
         NoHandshake::NoDaemon => format!(
             "no tarmac daemon running ({} channel, socket: {})",
             proto::channel_label(current_channel()),
@@ -201,16 +223,19 @@ fn open(raw_path: &str) -> Result<String, String> {
         ),
         NoHandshake::Reason(why) => why,
     })?;
+    Ok(stream)
+}
+
+fn open(raw_path: &str) -> Result<String, String> {
+    // No file-system call on the path: on a hung volume it would hang the cli,
+    // and Ctrl-C could not end it (#267).
+    let path = std::path::absolute(raw_path).map_err(|e| format!("cannot open {raw_path}: {e}"))?;
+
+    let mut stream = connect()?;
 
     let term_id = std::env::var("TARMAC_TERM_ID").ok().filter(|s| !s.is_empty());
     // board_id stays None: the daemon resolves the board from term_id, falling
     // back to the active one.
     send(&mut stream, &Msg::Open { path: path.to_string_lossy().into_owned(), term_id, board_id: None })?;
-    loop {
-        match recv(&mut stream)? {
-            Msg::Ack => return Ok(format!("opened {}", path.display())),
-            Msg::Err { msg } => return Err(msg),
-            _ => continue,
-        }
-    }
+    answer(&mut stream, lost)?.map(|()| format!("opened {}", path.display()))
 }

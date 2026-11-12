@@ -23,15 +23,17 @@ Unix socket:
   doc cards, and turns human input into requests to the daemon.
 
 A third tiny binary, the **`tarmac` CLI**, is the universal doorbell: `tarmac
-open <path>` connects to the daemon, names a doc, and exits. `open` and
-`--version` are its two verbs that talk to the daemon (`--version` only completes
+open <path>` connects to the daemon, names a doc, and exits. `open`, `push` and
+`--version` are its verbs that talk to the daemon (`tarmac push` hands one
+JSON value, or one for each line of stdin, to the loaded HTML cards of an open
+doc; `--version` only completes
 the handshake, to report the daemon's and the connected app's versions);
-`tarmac skill` is a purely local third verb that
+`tarmac skill` is a purely local verb that
 prints the agent-facing guide (`core/crates/tarmac-cli/src/GUIDE.md`, embedded in
 the binary); `tarmac skill install` copies a shim (`SKILL.md` beside it) into
 each supported agent's skills directory, which tells the agent to run
 `tarmac skill` and so cannot go stale with the guide.
-A fourth family, `tarmac dev <verb>`, talks to the **app** rather than the daemon,
+Another family, `tarmac dev <verb>`, talks to the **app** rather than the daemon,
 over a second socket the app owns (`tarmac-dev.sock`, beside the daemon's in the
 same per-channel dir; override `TARMAC_DEV_SOCKET`). It is the in-app QA driver
 from issue #166 — `snapshot`, `zoom`, `resize`, `focus`, `type`, `key`,
@@ -157,7 +159,7 @@ reports.
 | --- | --- | --- | --- |
 | Lifecycle | `Hello {role, v, app_version?}` | C→D | handshake |
 | | `HelloOk {v, daemon_version?, daemon_pid?, app_version?, app_connected?}` | D→C | accept |
-| | `Ack` | D→cli | generic success (reply to `open`) |
+| | `Ack` | D→cli | generic success (reply to `open` and `push`) |
 | | `Err {msg}` | D→C | error notice (closes the link on a handshake error) |
 | Docs | `Open {path, term_id?, board_id?}` | cli/app→D | surface a doc |
 | | `DocRead {path}` | app→D | mark a doc read |
@@ -165,6 +167,8 @@ reports.
 | | `FileEvent {path, mtime_ms}` | D→app | a doc of the active board, or a data file that one of them reads, changed on disk |
 | | `DocRefresh {path}` | app→D | re-stat a doc now and push its `file_event` |
 | | `DocData {board_id, path, data?}` | app→D | name (or, with no `data`, clear) the data file a doc reads; the daemon reports it with `file_event`s |
+| | `Push {path, data}` | cli→D | one JSON value, as text, for the loaded HTML cards of an open doc; `ack` once it is queued for the app, else `err` |
+| | `DocEvent {path, data}` | D→app | that value, for each card of the doc (`path` is the registry's key); no reply |
 | Terminal I/O | `SpawnTerm {term_id, cols, rows, cwd?, cmd?, board_id?, inherit_cwd_from?}` | app→D | create a PTY card |
 | | `Input {term_id, bytes}` | app→D | keystrokes and mouse reports |
 | | `Output {term_id, bytes}` | D→app | raw PTY output (≤64 KiB chunks) |
@@ -191,7 +195,7 @@ cx, cy}`.
 **Conformance vectors are the tripwire.** Two codecs implement this contract —
 `tarmac-protocol` (Rust, serde) and the hand-written `MsgPack` / `Message` codec
 in `TarmacKit` (Swift) — and both carry the same hex-encoded msgpack vectors
-(V1–V15) as mandatory tests: in `core/crates/tarmac-protocol/src/tests.rs`
+(V1–V17) as mandatory tests: in `core/crates/tarmac-protocol/src/tests.rs`
 and in `app/Tests/TarmacKitTests/ConformanceTests.swift`. Each vector must decode
 to the same structure and survive an encode→decode roundtrip on both sides. The
 Swift encoder is additionally pinned byte-for-byte to what
@@ -1097,6 +1101,25 @@ browser.
   so a page's own `window.tarmac` is kept) and dispatches `tarmac:data`. A
   failed read is one console line, `tarmac-data: <path>: <reason>`, not
   written twice in a row.
+- **Events** (#326). `tarmac push` gives a loaded document one value at a
+  time, in order, with no file and no reload. A `doc_event` goes, on every
+  built board, to the doc's card with an HTML body (a markdown card takes
+  nothing). `HTMLCardSession.event` keeps the text only when the card heard
+  the stamped `ready` of its current load, culled or not. Nothing is kept for
+  a card that is not ready (before that `ready`, between a reload and the next
+  one). The first text the session keeps since the last take asks the view
+  for one flush (`flushEvents`), which the view queues on the main queue: the
+  events that came in the frames queued before it go in one
+  `tarmacCard.events(texts)` call (`takeEvents`), with the texts as an
+  argument of `callAsyncJavaScript`. A reload empties what was not taken, and
+  a flush with no host page (after the web process ended, until the new page
+  asks for the document) posts nothing.
+  The host page posts `{tarmac:"events", texts}` into the frame. For each
+  text that is a string, the shim does `JSON.parse` and dispatches a
+  `tarmac:event` on `window` with the value as `detail`. Each text has its own
+  guard: a text that does not parse is one console error, `tarmac:event: not
+  valid JSON`, sent through the shim's own relay, and a listener that throws
+  stops none of the texts after it. `window.tarmac.data` is not touched.
 - **Cull pause.** A culled card's document is sent `cull`, and the shim pauses
   its `requestAnimationFrame`, `setInterval` and `setTimeout` schedulers until
   the card is shown again.
