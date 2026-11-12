@@ -203,9 +203,10 @@ impl<W: Fn(&Path) -> bool, O: Fn(&Path) -> bool, F: Fn()> Thread<W, O, F> {
             }
             ("watch", called)
         } else {
-            // notify 8.2.0 takes the dir out of its stream before it fails
-            // most unwatches (`FsEventWatcher::remove_path`), so a failed one
-            // counts as done: a dir kept here would never be watched again.
+            // notify 9 fails an unwatch only when the dir was not in its
+            // stream or after taking it out (`FsEventWatcher::unwatch_inner`),
+            // so a failed one counts as done: a dir kept here would never be
+            // watched again.
             self.watched.remove(dir);
             ("unwatch", self.source.unwatch(dir))
         };
