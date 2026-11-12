@@ -199,6 +199,7 @@ fn a_doc_data_with_another_file_replaces_the_data_file() {
 // S41. Each file that is refused is there, beside the doc when the daemon
 // resolves it: a daemon that took it would report it. The daemon's cwd is the
 // parent of the docs' directory, so that the relative name names a file too.
+// A file in a subdirectory is taken since 2611.0005 (S9).
 #[test]
 fn a_doc_data_that_is_refused_records_nothing() {
     let cwd = temp_dir();
@@ -213,7 +214,6 @@ fn a_doc_data_that_is_refused_records_nothing() {
     app.open_on("board-0", &other);
     let docs = Path::new(&dash).parent().unwrap().display().to_string();
 
-    let below = write_doc(&cwd.join("docs/sub/below.json"), "{}\n");
     let above = write_doc(&cwd.join("above.json"), "{}\n");
     let elsewhere = write_doc(&away.join("away.json"), "{}\n");
     let relative_file = write_doc(&cwd.join("docs/relative.json"), "{}\n");
@@ -225,16 +225,16 @@ fn a_doc_data_that_is_refused_records_nothing() {
     let of_no_doc = write_doc(&cwd.join("docs/of-no-doc.json"), "{}\n");
     let of_no_board = write_doc(&cwd.join("docs/of-no-board.json"), "{}\n");
 
-    for data in [&below, &above, &elsewhere, &relative, &through_sub, &the_dir_above] {
+    for data in [&above, &elsewhere, &relative, &through_sub, &the_dir_above] {
         doc_data(&mut app, "board-0", &dash, Some(data));
     }
     doc_data(&mut app, "board-0", &no_doc, Some(&of_no_doc));
     doc_data(&mut app, "board-9", &dash, Some(&of_no_board));
 
-    let refused = [&below, &above, &elsewhere, &relative, &through_sub, &the_dir_above, &of_no_doc, &of_no_board];
+    let refused = [&above, &elsewhere, &relative, &through_sub, &the_dir_above, &of_no_doc, &of_no_board];
     let refused: Vec<&str> = refused.iter().map(|p| p.as_str()).collect();
     none_at_once_for(&mut app, &other, &refused);
-    for file in [&below, &above, &elsewhere, &relative_file, &through_sub_file, &of_no_doc, &of_no_board] {
+    for file in [&above, &elsewhere, &relative_file, &through_sub_file, &of_no_doc, &of_no_board] {
         edit(file);
     }
     look_with_none_for(&mut app, &other, &refused);
@@ -380,4 +380,138 @@ fn the_data_file_is_not_in_the_state_file() {
     let state = daemon.state_json().to_string();
     assert!(state.contains("dash.html"), "the doc is in the state file");
     assert!(!state.contains("stats.json"), "the data file is not: {state}");
+}
+
+// Spec 2611.0005: a data file in a directory under the doc's own.
+
+impl Card {
+    /// The card's directory, as the registry writes it.
+    fn dir(&self) -> String {
+        Path::new(&self.dash).parent().unwrap().display().to_string()
+    }
+
+    /// `doc_data` for `dash` naming `data`, and its answer.
+    fn register_file(&self, app: &mut Conn, data: &str) {
+        doc_data(app, "board-0", &self.dash, Some(data));
+        assert_eq!(app.recv_file_event_for(data), mtime_ms(data));
+    }
+}
+
+/// The card with `sub/stats.json` written and registered, and the looks that
+/// the opens and the registration woke waited out.
+fn card_reading_sub(daemon: &TestDaemon, app: &mut Conn) -> (Card, String) {
+    let card = Card::open(daemon, app);
+    let stats = write_doc(&daemon.dir.join("docs/sub/stats.json"), "{}\n");
+    card.register_file(app, &stats);
+    assert!(quiet(app, &stats), "the file did not change");
+    (card, stats)
+}
+
+// S8. Each `data` is refused whole. The files they lead to are there, and a
+// file_event would carry the text as sent or the file it leads to. The
+// daemon's cwd is the card's directory, so that the relative name names a
+// file too.
+#[test]
+fn a_doc_data_that_is_not_a_clean_path_under_the_directory_is_refused() {
+    let root = temp_dir();
+    let dir = std::fs::canonicalize(&root).unwrap().join("docs");
+    std::fs::create_dir_all(&dir).unwrap();
+    let daemon = TestDaemon::start_with(|cmd| {
+        cmd.current_dir(&dir);
+    });
+    let mut app = daemon.connect_app_drained();
+    let dash = write_doc(&dir.join("dash.html"), "<p>dash</p>\n");
+    let other = write_doc(&dir.join("other.md"), "other\n");
+    app.open_on("board-0", &dash);
+    app.open_on("board-0", &other);
+    let d = dir.display().to_string();
+    let parent = dir.parent().unwrap().display().to_string();
+
+    let beside = write_doc(&dir.join("x.json"), "{}\n");
+    let in_sub = write_doc(&dir.join("sub/x.json"), "{}\n");
+    let above = write_doc(&dir.parent().unwrap().join("x.json"), "{}\n");
+    let elsewhere = write_doc(&dir.parent().unwrap().join("away/x.json"), "{}\n");
+    let sibling = write_doc(&dir.parent().unwrap().join("docsx/x.json"), "{}\n");
+    let sent = [
+        format!("{d}/sub/../x.json"),
+        format!("{d}/../x.json"),
+        format!("{d}/sub/../../away/x.json"),
+        format!("{d}/./x.json"),
+        format!("{d}/sub/./x.json"),
+        format!("{d}//sub/x.json"),
+        format!("{d}/sub/x.json/"),
+        format!("{d}x/x.json"),
+        d.clone(),
+        format!("{parent}/x.json"),
+        "sub/x.json".to_string(),
+    ];
+    for data in &sent {
+        doc_data(&mut app, "board-0", &dash, Some(data));
+    }
+
+    let led_to = [&beside, &in_sub, &above, &elsewhere, &sibling, &d];
+    let refused: Vec<&str> = sent.iter().map(String::as_str).chain(led_to.iter().map(|p| p.as_str())).collect();
+    none_at_once_for(&mut app, &other, &refused);
+    for file in [&beside, &in_sub, &above, &elsewhere, &sibling] {
+        edit(file);
+    }
+    write_doc(&dir.join("made.txt"), "a change of the directory itself\n");
+    look_with_none_for(&mut app, &other, &refused);
+
+    doc_data(&mut app, "board-0", &dash, Some(&in_sub));
+    assert_eq!(app.recv_file_event_for(&in_sub), mtime_ms(&in_sub), "the same doc takes a file under it");
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+// S34
+#[test]
+fn a_doc_data_with_a_hidden_name_below_the_directory_is_refused() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let card = Card::open(&daemon, &mut app);
+    let hidden = [
+        write_doc(&daemon.dir.join("docs/.x.json"), "{}\n"),
+        write_doc(&daemon.dir.join("docs/.cfg/x.json"), "{}\n"),
+        write_doc(&daemon.dir.join("docs/sub/.x.json"), "{}\n"),
+    ];
+    let refused: Vec<&str> = hidden.iter().map(String::as_str).collect();
+    for data in &refused {
+        doc_data(&mut app, "board-0", &card.dash, Some(data));
+    }
+    none_at_once_for(&mut app, &card.other, &refused);
+    for file in &refused {
+        edit(file);
+    }
+    look_with_none_for(&mut app, &card.other, &refused);
+
+    let dash = write_doc(&daemon.dir.join(".hid/dash.html"), "<p>dash</p>\n");
+    let data = write_doc(&daemon.dir.join(".hid/sub/x.json"), "{}\n");
+    app.open_on("board-0", &dash);
+    doc_data(&mut app, "board-0", &dash, Some(&data));
+    assert_eq!(app.recv_file_event_for(&data), mtime_ms(&data), "a doc's own directory may be hidden");
+}
+
+// S9
+#[test]
+fn a_doc_data_for_a_file_in_a_subdirectory_is_answered_with_a_file_event() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let card = Card::open(&daemon, &mut app);
+    let stats = write_doc(&daemon.dir.join("docs/sub/stats.json"), "{}\n");
+
+    doc_data(&mut app, "board-0", &card.dash, Some(&stats));
+    assert_eq!(app.recv_file_event_for(&stats), mtime_ms(&stats));
+}
+
+// S10. No look is forced: only a watch of `sub` can report the write.
+#[test]
+fn one_write_of_a_data_file_in_a_subdirectory_is_one_file_event() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let (_card, stats) = card_reading_sub(&daemon, &mut app);
+
+    let edited = edit(&stats);
+    assert_eq!(app.recv_file_event_since(&stats, edited), edited);
+    assert!(quiet(&mut app, &stats), "one file_event for one write");
 }

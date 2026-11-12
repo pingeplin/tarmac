@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -321,10 +322,9 @@ pub async fn stat_and_push(daemon: &Arc<Daemon>, path: &Path) -> bool {
 /// reaches no app: the app sends `doc_data` again when it connects.
 ///
 /// False, with nothing recorded, for an unknown board (no fall-back to the
-/// active one), an unknown doc on it, or a `data` that is not a file in the
-/// doc's own directory.
+/// active one), an unknown doc on it, or a `data` that `is_under` refuses.
 pub async fn record_data(daemon: &Daemon, board: &str, doc: &Path, data: Option<PathBuf>) -> bool {
-    if data.as_deref().is_some_and(|data| !beside(doc, data)) {
+    if data.as_deref().is_some_and(|data| !is_under(doc, data)) {
         return false;
     }
     let recorded = daemon
@@ -347,9 +347,15 @@ pub async fn record_data(daemon: &Daemon, board: &str, doc: &Path, data: Option<
     true
 }
 
-/// `data` names a file in the directory of `doc`, judged on the text: no
-/// link is followed, and a `..` is not resolved. A doc's path is absolute, so
-/// a relative `data` is refused too.
-fn beside(doc: &Path, data: &Path) -> bool {
-    data.file_name().is_some() && data.parent() == doc.parent()
+/// `data` names a file in the directory of `doc` or in one under it, judged
+/// on its bytes as given (2611.0005): `Path` drops `.` and empty components
+/// when it compares. Below that directory each component is there and not
+/// hidden, which refuses `.`, `..`, `//` and a trailing `/`; no link is
+/// followed. A doc's path is absolute and resolved, so a relative `data` is
+/// refused too.
+fn is_under(doc: &Path, data: &Path) -> bool {
+    let Some(dir) = doc.parent().map(|dir| dir.as_os_str().as_bytes()) else { return false };
+    let Some(rest) = data.as_os_str().as_bytes().strip_prefix(dir) else { return false };
+    let below = if dir.ends_with(b"/") { Some(rest) } else { rest.strip_prefix(b"/") };
+    below.is_some_and(|below| below.split(|b| *b == b'/').all(|c| !c.is_empty() && !c.starts_with(b".")))
 }
