@@ -3,6 +3,7 @@ mod conn;
 mod docs;
 #[cfg(test)]
 mod fixtures;
+mod panic_log;
 mod persist;
 mod proc;
 mod reader;
@@ -78,7 +79,11 @@ async fn main() -> anyhow::Result<()> {
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .with_writer(std::io::stderr)
+        // On a failed write the fmt layer falls back to `eprintln!`, which
+        // panics; inside the panic hook that is an abort.
+        .log_internal_errors(false)
         .init();
+    panic_log::install();
 
     let sock = socket_path();
     if let Err(msg) = check_socket_path_len(&sock) {
