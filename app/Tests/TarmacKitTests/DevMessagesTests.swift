@@ -83,6 +83,16 @@ final class DevMessagesTests: XCTestCase {
         )
     }
 
+    func testBoardVerb() {
+        // DevRequest::Board { board_id: Some("board-1") }
+        assertParity(
+            .board(boardID: "board-1"),
+            "82 a1 74 a5 62 6f 61 72 64 a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 31"
+        )
+        // DevRequest::Board { board_id: None } — a new board; no sentinel.
+        assertParity(.board(boardID: nil), "81 a1 74 a5 62 6f 61 72 64")
+    }
+
     func testCardInputVerbs() {
         // DevRequest::Type { card: "t-1", text: "a\nb" }
         assertParity(
@@ -218,6 +228,8 @@ final class DevMessagesTests: XCTestCase {
         XCTAssertNil(DevRequest.snapshot(until: "x", timeoutMs: nil).timeoutMs)
         XCTAssertEqual(DevRequest.press(combo: "cmd+q", holdMs: 9, ageMs: 8, busyMs: 1000).timeoutMs, 1000)
         XCTAssertNil(DevRequest.press(combo: "cmd+q", holdMs: 9, ageMs: 8, busyMs: nil).timeoutMs)
+        XCTAssertEqual(DevRequest.board(boardID: nil).timeoutMs, 5_000)
+        XCTAssertEqual(DevRequest.board(boardID: "board-1").timeoutMs, 5_000)
         XCTAssertNil(DevRequest.zoom(z: 1).timeoutMs)
         XCTAssertNil(DevRequest.key(card: "t-1", combo: "ctrl+c").timeoutMs)
     }
@@ -226,6 +238,7 @@ final class DevMessagesTests: XCTestCase {
         XCTAssertEqual(DevRequest.holdMsMax, 10_000)
         XCTAssertEqual(DevRequest.ageMsMax, 60_000)
         XCTAssertEqual(DevRequest.busyMsMax, 1_800)
+        XCTAssertEqual(DevRequest.boardWaitMs, 5_000)
     }
 
     // MARK: - Replies

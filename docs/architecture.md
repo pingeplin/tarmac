@@ -34,9 +34,9 @@ each supported agent's skills directory, which tells the agent to run
 A fourth family, `tarmac dev <verb>`, talks to the **app** rather than the daemon,
 over a second socket the app owns (`tarmac-dev.sock`, beside the daemon's in the
 same per-channel dir; override `TARMAC_DEV_SOCKET`). It is the in-app QA driver
-from issue #166 — `snapshot`, `zoom`, `resize`, `focus`, `type`, `key` and
-`press` — so an agent or a script can drive and read the cockpit without a
-keyboard ([§4](#the-qa-driver-tarmac-dev)). It is compiled out of release builds
+from issue #166 — `snapshot`, `zoom`, `resize`, `focus`, `type`, `key`,
+`press` and `board` — so an agent or a script can drive and read the cockpit
+without a keyboard ([§4](#the-qa-driver-tarmac-dev)). It is compiled out of release builds
 at two gates: `#[cfg(debug_assertions)]` on the CLI verb
 (`core/crates/tarmac-cli/src/main.rs`) and `#if DEBUG` on the app's endpoint
 (`app/Sources/TarmacApp/Dev/DevDriver.swift`) — the same predicate that maps a
@@ -1480,6 +1480,12 @@ had to be activated to take the input (`activated`). If `accept` fails the
 driver closes the socket and removes its file, so callers fail at once. `press`
 posts a native `⌘` chord to the application's event queue, with a debug-only
 "held" override for the ⌘Q guard's release poll.
+
+`board <id>` and `board --new` send the board switcher's own `board_switch` and
+`board_create` (`client.boardSwitch` / `boardCreate`), then wait until the app's
+active board has changed and its `switching` flag has dropped (`DevBoardWait`,
+bounded by `BOARD_WAIT_MS`), and answer `{"board_id": ...}`. An id the app has not
+heard of in a `board_list` is `no_such_board` and nothing is sent.
 
 `snapshot` reports the active board (`DevSnapshot`): the viewport, each card's
 world `board_rect` and measured `screen_rect`, `content_origin` — where those

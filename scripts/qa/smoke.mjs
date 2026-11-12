@@ -17,6 +17,7 @@
 // shell (D12, with S21's activation check), through kitty flags 5 (D13), from
 // the board (D14), the re-show (D15), a page shortcut ⌘T/⌘W (D16), from a
 // markdown card (D17) and an HTML card (D18), and into a frozen page (D19).
+// D22 (#315) switches boards with `board` and makes one with `board --new`.
 // The cases that END the app are `make qa-quit` (`quit.mjs`).
 //
 // Every scenario that types mints its OWN sentinel from a per-run nonce, and the
@@ -538,6 +539,41 @@ async function main() {
     pointer("resize", doc, "500x400");
     sameFrames(before, frames(waitFor(term, `cards[${doc}].board_rect.w ~= 500`)), others, "after the doc's resize");
     pointer("resize", doc, `${before[doc].w}x${before[doc].h}`);
+  });
+
+  console.log("\nD22 — `board` switches boards and `board --new` makes one (#315)");
+  await checkAsync("a new board shows none of the first board's cards, and switching back shows them again", async () => {
+    reset(term);
+    const doc = openFixture(writeFixtures()["d17.md"]);
+    const first = snapshot();
+    eq(first.board_id, boardId, "board_id before");
+    const ids = (snap) => snap.cards.map((c) => c.id);
+    for (const id of [term, doc]) eq(ids(first).includes(id), true, `${id} on the first board`);
+
+    const made = dev("board", "--new");
+    eq(made.code, 0, `board --new exit code (${made.err.trim()})`);
+    try {
+      const created = json(made).board_id;
+      if (created === boardId) throw new Error(`board --new answered the first board's id ${boardId}`);
+      const second = snapshot();
+      eq(second.board_id, created, "snapshot board_id after --new");
+      for (const id of [term, doc]) eq(ids(second).includes(id), false, `${id} on the new board`);
+    } finally {
+      const back = dev("board", boardId);
+      eq(back.code, 0, `board ${boardId} exit code (${back.err.trim()})`);
+      eq(json(back).board_id, boardId, "reply board_id after switching back");
+    }
+    const again = snapshot();
+    eq(again.board_id, boardId, "snapshot board_id after switching back");
+    for (const id of [term, doc]) eq(ids(again).includes(id), true, `${id} back on the first board`);
+
+    const same = dev("board", boardId);
+    eq(same.code, 0, `board ${boardId} on the active board exit code (${same.err.trim()})`);
+    eq(json(same).board_id, boardId, "the active board answers at once");
+    const unknown = dev("board", "board-no-such");
+    eq(unknown.code, 1, "an unknown board exits 1");
+    eq(json(unknown).error, "no_such_board", "an unknown board's error code");
+    eq(snapshot().board_id, boardId, "an unknown board changes nothing");
   });
 
   run.finish();

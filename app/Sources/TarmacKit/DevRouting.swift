@@ -44,10 +44,16 @@ public enum DevRouting {
         public var zoom: CGFloat
         public var center: CGPoint
         public var viewSize: CGSize
+        public var activeBoardID: String
+        /// Every board the app knows, as the daemon's last `board_list` named them.
+        public var boardIDs: [String]
 
         public init(
-            cards: [Card], keyboardFocusCard: String?, borrowedCard: String?, zoom: CGFloat, center: CGPoint, viewSize: CGSize
+            cards: [Card], keyboardFocusCard: String?, borrowedCard: String?, zoom: CGFloat, center: CGPoint, viewSize: CGSize,
+            activeBoardID: String, boardIDs: [String]
         ) {
+            self.activeBoardID = activeBoardID
+            self.boardIDs = boardIDs
             self.cards = cards
             self.keyboardFocusCard = keyboardFocusCard
             self.borrowedCard = borrowedCard
@@ -85,11 +91,15 @@ public enum DevRouting {
         case key(card: String, combo: String, stroke: DevKeyStroke)
         /// Right-click the terminal's last written cell (`DevCellPoint`).
         case contextMenu(card: String)
+        /// Already the active board: nothing is sent, and the answer names it.
+        case activeBoard(String)
+        case switchBoard(to: String)
+        case createBoard(from: String)
         case refused(DevError)
     }
 
     /// The verbs this build answers, for a newer CLI that sends another.
-    public static let implementedVerbs = ["snapshot", "zoom", "focus", "resize", "type", "key", "press"]
+    public static let implementedVerbs = ["snapshot", "zoom", "focus", "resize", "type", "key", "press", "board"]
 
     /// Saying which verbs exist is more use to a newer CLI than naming the verb
     /// it sent back at it.
@@ -108,6 +118,17 @@ public enum DevRouting {
             return .press(combo: combo, holdMs: holdMs, ageMs: ageMs, busyMs: busyMs)
         case .unknown(let type):
             return .refused(unsupportedVerb(type))
+        case .board(nil):
+            return .createBoard(from: context.activeBoardID)
+        case .board(let id?):
+            if id == context.activeBoardID { return .activeBoard(id) }
+            guard context.boardIDs.contains(id) else {
+                return .refused(DevError(
+                    .noSuchBoard, "the app knows no board with that id",
+                    extra: ["board_id": .string(id), "boards": .array(context.boardIDs.map(JSONValue.string))]
+                ))
+            }
+            return .switchBoard(to: id)
         case .zoom(let z):
             return .zoom(z)
         case .focus(nil):

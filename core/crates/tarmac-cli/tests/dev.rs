@@ -196,6 +196,7 @@ fn help_documents_the_dev_family_and_its_limits() {
         "tarmac dev snapshot",
         "tarmac dev zoom",
         "tarmac dev focus",
+        "tarmac dev board <board-id>|--new",
         "dev builds only",
         "TARMAC_DEV_SOCKET",
         "⌘C",

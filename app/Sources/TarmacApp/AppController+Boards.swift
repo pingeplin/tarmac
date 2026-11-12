@@ -148,7 +148,7 @@ extension AppController {
         case .create:
             // The daemon makes the new board active and says so in a
             // `board_list`, which is what the app follows.
-            client.boardCreate()
+            createBoard()
             closeSwitcher()
         case .rename(let boardID, let name):
             switcherState = state
@@ -172,11 +172,15 @@ extension AppController {
 
     // MARK: - Board switching
 
+    func createBoard() {
+        client.boardCreate()
+    }
+
     /// App-initiated switch to `targetID`: detach the current board and tell the
     /// daemon, which replies with `board_list` + the target's `restore`; the
     /// arrive path (`applyRestore`) mounts + (first visit) builds it. No-op if
     /// already there or the target is unknown. ⌘K routes here too.
-    private func performSwitch(to targetID: String) {
+    func performSwitch(to targetID: String) {
         guard targetID != activeBoardID, boardMetas.contains(where: { $0.boardID == targetID }) else { return }
         beginArrivingSwitch(to: targetID)
         client.boardSwitch(boardID: targetID)

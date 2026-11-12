@@ -31,6 +31,7 @@ usage: tarmac dev snapshot [--until <expr>] [--timeout <ms>]
        tarmac dev focus <card>|board
        tarmac dev type <card> \"<text>\"
        tarmac dev key <card> \"<combo>\"
+       tarmac dev board <board-id>|--new
        tarmac dev press <combo> [--hold <ms>] [--age <ms>] [--busy <ms>]";
 
 /// The names `--handle` takes; the app maps each to a card handle.
@@ -80,6 +81,11 @@ pub fn parse_verb(args: &[String]) -> Result<DevRequest, String> {
         "key" => match rest {
             [card, combo] => Ok(DevRequest::Key { card: card.clone(), combo: combo.clone() }),
             _ => usage("tarmac dev key: expected <card> <combo>"),
+        },
+        "board" => match rest {
+            [flag] if flag == "--new" => Ok(DevRequest::Board { board_id: None }),
+            [id] if !id.is_empty() && !id.starts_with("--") => Ok(DevRequest::Board { board_id: Some(id.clone()) }),
+            _ => usage("tarmac dev board: expected <board-id> or --new"),
         },
         "press" => parse_press(rest),
         other => usage(&format!("tarmac dev: unknown verb '{other}'")),
@@ -321,6 +327,34 @@ mod tests {
             let err = parse(&bad).expect_err(&format!("expected a usage error for {bad:?}"));
             assert!(err.contains("tarmac dev"), "usage line does not name `tarmac dev`: {err}");
         }
+    }
+
+    #[test]
+    fn board_takes_an_id_or_new() {
+        parses_to(&["board", "board-1"], DevRequest::Board { board_id: Some("board-1".into()) });
+        parses_to(&["board", "--new"], DevRequest::Board { board_id: None });
+    }
+
+    #[test]
+    fn board_rejects_every_other_spelling() {
+        for bad in [
+            vec!["board"],
+            vec!["board", "board-1", "extra"],
+            vec!["board", "--new", "board-1"],
+            vec!["board", "board-1", "--new"],
+            vec!["board", "--New"],
+            vec!["board", "--nope"],
+            vec!["board", ""],
+        ] {
+            let err = parse(&bad).expect_err(&format!("expected a usage error for {bad:?}"));
+            assert!(err.starts_with("tarmac dev board:"), "{bad:?}: {err}");
+            assert!(err.contains("tarmac dev board <board-id>"), "usage lacks the board line: {err}");
+        }
+    }
+
+    #[test]
+    fn the_deadline_reads_the_board_wait_off_a_board_request() {
+        assert_eq!(read_deadline_ms(DevRequest::Board { board_id: None }.timeout_ms()), 8_000);
     }
 
     #[test]

@@ -93,6 +93,14 @@ final class DevVerbs {
             return ok(try await key(combo, stroke))
         case .contextMenu(let card):
             return ok(try await contextMenu(in: try terminal(card), card: card))
+        case .activeBoard(let id):
+            return try await arrive(.board(id))
+        case .switchBoard(let id):
+            controller.performSwitch(to: id)
+            return try await arrive(.board(id))
+        case .createBoard(let from):
+            controller.createBoard()
+            return try await arrive(.otherThan(from))
         }
     }
 
@@ -107,6 +115,25 @@ final class DevVerbs {
         let started = Uptime.nowMs
         while true {
             switch wait.step(snapshot: reader.snapshot(), elapsedMs: Int(Uptime.nowMs - started)) {
+            case .reply(let reply): return reply
+            case .pollAgain: try await Task.sleep(for: .milliseconds(DevSnapshotWait.pollMs))
+            }
+        }
+    }
+
+    // MARK: - board
+
+    /// The switch is asynchronous: the daemon answers, then the app mounts the
+    /// board. `switching` is what stays true until that is done.
+    private func arrive(_ goal: DevBoardWait.Goal) async throws -> DevReply {
+        let wait = DevBoardWait(goal: goal)
+        let started = Uptime.nowMs
+        while true {
+            let step = wait.step(
+                activeBoardID: controller.activeBoardID, switching: controller.switching,
+                elapsedMs: Int(Uptime.nowMs - started)
+            )
+            switch step {
             case .reply(let reply): return reply
             case .pollAgain: try await Task.sleep(for: .milliseconds(DevSnapshotWait.pollMs))
             }

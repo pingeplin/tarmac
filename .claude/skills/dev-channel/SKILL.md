@@ -108,6 +108,7 @@ tarmac dev resize <card> <w>x<h> [--handle <handle>]
 tarmac dev focus <card>|board
 tarmac dev type <card> "<text>"
 tarmac dev key <card> "<combo>"
+tarmac dev board <board-id>|--new
 tarmac dev press <combo> [--hold <ms>] [--age <ms>] [--busy <ms>]
 ```
 
@@ -178,7 +179,16 @@ core/target/debug/tarmac dev snapshot | jq .
   per request, `tarmac: dev <request> -> <reply>` — `snapshot` excepted.
   `make qa` prints the `delivery` of every `focus` and `resize` under its
   scenario (`focus d17.md → handling`); the log has the whole reply.
-- A failure prints JSON on **stderr** and exits 1: `no_such_card`,
+- `board <board-id>` makes that board active and `board --new` makes one; both
+  answer `{"board_id": ...}` with the board active once the app has switched
+  (it waits, up to 5 s, then answers `timeout`), so `snapshot` after it shows
+  that board's cards. Board ids are `board-N`. An id the app does not know
+  answers `no_such_board` and sends nothing. There is no verb to delete a
+  board: each `board --new` leaves one extra board in `state.json`, with a live
+  boot shell. A create is answered with whichever board is active when the wait
+  ends, so a hand switch or a reconnect during it can win. After a `timeout`
+  answer the frame already sent may still act later.
+- A failure prints JSON on **stderr** and exits 1: `no_such_board`, `no_such_card`,
   `not_focused`, `unsupported_card_kind`, `card_hidden`, `unsupported_combo`,
   `bad_combo`, `empty_buffer`, `unsupported_verb`, `bad_expr`, `bad_request`,
   `timeout`, `not_retargeted`, `not_key`, `app_not_ready`, `app_unresponsive`,
@@ -194,7 +204,7 @@ says `activated: true`. So **do not type in other apps while a run is in
 progress** — those keys land in the dev app's focused terminal. If activation is
 refused (a **locked screen** refuses every activation call) the verb answers
 `not_key` after 1 s and nothing is injected: the suites need an unlocked
-session. `snapshot`, `zoom` and `key <term> contextmenu` never activate.
+session. `snapshot`, `zoom`, `board` and `key <term> contextmenu` never activate.
 
 ### Typing and keying
 
@@ -354,7 +364,8 @@ timeout 5000 ms; `--timeout 0` means evaluate once.
 - `focus <term>` is a real mouse press unless its `delivery` reads `handling`,
   so a program with mouse reporting on (Claude Code, vim) also receives a
   button-press report.
-- No verb pans, switches boards, or creates a card.
+- No verb pans or creates a card. `board` switches boards and makes one; it
+  cannot delete one.
 
 ## The scenario suite — `make qa`
 

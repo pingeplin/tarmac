@@ -25,7 +25,8 @@ final class DevRoutingTests: XCTestCase {
             borrowedCard: borrowed,
             zoom: 1,
             center: .zero,
-            viewSize: CGSize(width: 1000, height: 800)
+            viewSize: CGSize(width: 1000, height: 800),
+            activeBoardID: "board-0", boardIDs: ["board-0"]
         )
     }
 
@@ -84,7 +85,41 @@ final class DevRoutingTests: XCTestCase {
         let error = refusal(.unknown(type: "pan"))
         XCTAssertEqual(error?.code, .unsupportedVerb)
         XCTAssertEqual(error?.message.contains("`pan`"), true)
-        XCTAssertEqual(error?.message.contains("snapshot, zoom, focus, resize, type, key, press"), true)
+        XCTAssertEqual(error?.message.contains("snapshot, zoom, focus, resize, type, key, press, board"), true)
+    }
+
+    // MARK: - board
+
+    private let boards = DevRouting.Context(
+        cards: [], keyboardFocusCard: nil, borrowedCard: nil, zoom: 1, center: .zero,
+        viewSize: CGSize(width: 1000, height: 800), activeBoardID: "board-0", boardIDs: ["board-0", "board-1"]
+    )
+
+    /// The active board is answered before the known list is consulted.
+    func testTheActiveBoardIsNotRefusedWhenTheKnownListIsEmpty() {
+        var empty = boards
+        empty.boardIDs = []
+        XCTAssertEqual(route(.board(boardID: "board-0"), empty), .activeBoard("board-0"))
+    }
+
+    func testABoardThatIsKnownAndNotActiveIsSwitchedTo() {
+        XCTAssertEqual(route(.board(boardID: "board-1"), boards), .switchBoard(to: "board-1"))
+    }
+
+    func testTheActiveBoardIsNotSwitchedTo() {
+        XCTAssertEqual(route(.board(boardID: "board-0"), boards), .activeBoard("board-0"))
+    }
+
+    func testNoBoardIDMakesANewBoardFromTheActiveOne() {
+        XCTAssertEqual(route(.board(boardID: nil), boards), .createBoard(from: "board-0"))
+    }
+
+    func testABoardTheAppDoesNotKnowIsRefusedNamingTheOnesItDoes() {
+        for id in ["board-9", "", "Board-1", "board-1 ", "--new"] {
+            let error = refusal(.board(boardID: id), boards)
+            XCTAssertEqual(error?.code, .noSuchBoard, "\"\(id)\"")
+            XCTAssertEqual(error?.extra, ["board_id": .string(id), "boards": ["board-0", "board-1"]], "\"\(id)\"")
+        }
     }
 
     // MARK: - S35 focus <term>
@@ -334,7 +369,8 @@ final class DevRoutingTests: XCTestCase {
         func context(zoom: CGFloat, center: CGPoint) -> DevRouting.Context {
             DevRouting.Context(
                 cards: cards, keyboardFocusCard: nil, borrowedCard: nil,
-                zoom: zoom, center: center, viewSize: CGSize(width: 1000, height: 800)
+                zoom: zoom, center: center, viewSize: CGSize(width: 1000, height: 800),
+                activeBoardID: "board-0", boardIDs: ["board-0"]
             )
         }
         let focus = DevRequest.focus(card: "/a/c.html")
