@@ -8,7 +8,11 @@ import WebKit
 /// it is known there will be none.
 @MainActor
 final class DocFrameRules {
-    static let shared = DocFrameRules()
+    private(set) static var shared: DocFrameRules!
+
+    static func install(socketPath: String) {
+        shared = DocFrameRules(socketPath: socketPath)
+    }
 
     private enum State {
         case compiling([(WKContentRuleList?) -> Void])
@@ -17,10 +21,13 @@ final class DocFrameRules {
 
     private var state = State.compiling([])
 
-    private init() {
+    private init(socketPath: String) {
         // A store of its own: the default one is a folder in the user's
-        // Library, and the rule is compiled anew at every launch.
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("tarmac-content-rules")
+        // Library, and the rule is compiled anew at every launch. One per
+        // channel, so a dev build and the installed app never share a file.
+        let folder = URL(fileURLWithPath: ChannelPaths.contentRulesDir(
+            socketPath: socketPath, temporaryDirectory: FileManager.default.temporaryDirectory.path
+        ))
         guard let store = WKContentRuleListStore(url: folder) else {
             settle(nil)
             return

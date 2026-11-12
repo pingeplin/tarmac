@@ -241,4 +241,42 @@ final class ChannelPathsTests: XCTestCase {
             )
         }
     }
+
+    // MARK: - contentRulesDir (issue #308)
+
+    /// The empty path and "a" are the published FNV-1a 64 test vectors; "é"
+    /// pins the UTF-8 bytes and the zero padding.
+    func testContentRulesDirNamesTheFnv1a64HashOfTheSocketPath() {
+        XCTAssertEqual(
+            ChannelPaths.contentRulesDir(socketPath: "", temporaryDirectory: "/t"),
+            "/t/tarmac-content-rules-cbf29ce484222325"
+        )
+        XCTAssertEqual(
+            ChannelPaths.contentRulesDir(socketPath: "a", temporaryDirectory: "/t"),
+            "/t/tarmac-content-rules-af63dc4c8601ec8c"
+        )
+        XCTAssertEqual(
+            ChannelPaths.contentRulesDir(socketPath: "\u{e9}", temporaryDirectory: "/t"),
+            "/t/tarmac-content-rules-0ac21707b7181e01"
+        )
+    }
+
+    func testContentRulesDirIsOnePerSocketPath() {
+        let dev = ChannelPaths.contentRulesDir(socketPath: "/h/dev/tarmacd.sock", temporaryDirectory: "/t")
+        let other = ChannelPaths.contentRulesDir(socketPath: "/w/.dev/tarmacd.sock", temporaryDirectory: "/t")
+        let installed = ChannelPaths.contentRulesDir(socketPath: "/h/tarmacd.sock", temporaryDirectory: "/t")
+        XCTAssertEqual(dev, ChannelPaths.contentRulesDir(socketPath: "/h/dev/tarmacd.sock", temporaryDirectory: "/t"))
+        XCTAssertEqual(Set([dev, other, installed]).count, 3)
+    }
+
+    func testContentRulesDirIsInsideTheTemporaryDirectory() {
+        XCTAssertTrue(
+            ChannelPaths.contentRulesDir(socketPath: "/s", temporaryDirectory: "/var/tmp")
+                .hasPrefix("/var/tmp/tarmac-content-rules-")
+        )
+        XCTAssertEqual(
+            ChannelPaths.contentRulesDir(socketPath: "/s", temporaryDirectory: "/var/tmp/"),
+            ChannelPaths.contentRulesDir(socketPath: "/s", temporaryDirectory: "/var/tmp")
+        )
+    }
 }
