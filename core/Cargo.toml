@@ -28,7 +28,9 @@ serde_json = "1"
 tokio = "1.52"
 tokio-util = "0.7"
 portable-pty = "0.9"
-notify = "8.2"
+# notify pinned to a pre-release: 8.2's FSEvents callback panics on an
+# unexpected path or flag and aborts the daemon (#316). Move to 9.0.0 (#318).
+notify = "=9.0.0-rc.8"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 anyhow = "1"

@@ -458,9 +458,13 @@ directory itself or a file in it) is not asked of notify; it waits in the
 thread's `retry` set, and the gate's `returned` sends the thread `Retry`,
 which reconciles each such directory again. A directory whose `unwatch`
 fails still leaves the set: notify takes the path out of the stream before it
-can fail, so keeping it would mean it is never watched again. If the thread
-panics, it logs an error and is not restarted; every open that needs a new
-watch then fails at its limit.
+can fail, so keeping it would mean it is never watched again. A directory
+whose `watch` fails is unwatched again at once: notify 9 can fail a watch
+after taking the path into the stream, which then does not start again
+(over its FSEvents path budget, a twelfth of `RLIMIT_NOFILE`, or when
+FSEvents does not create or start the stream), and a directory not in the
+set is never unwatched. If the thread panics, it logs an error and is not
+restarted; every open that needs a new watch then fails at its limit.
 
 Every open sends `Reconcile`. Only the first doc of a directory waits for
 the answer, within `READ_LIMIT`: no answer, a directory that is out, or a
@@ -474,11 +478,13 @@ restored docs are counted and, after their reads, each directory gets a
 need a new watch fail at their limit, and every other open, close and look
 goes on.
 
-Each `watch` and `unwatch` restarts the FSEvents stream, and the restart
-loses the events that the stream has not delivered yet, of any watched file
-(#253). So the watcher thread wakes `watch_loop` after each call of the
-source, whether it succeeded or not. `open_doc` also looks itself when its
-watch ran, since only that look is sure to come after the doc is registered.
+A `watch` or `unwatch` that changes the watched paths restarts the FSEvents
+stream. Under notify 8.2 the restart lost the events that the stream had
+not delivered yet, of any watched file (#253); notify 9 starts the new
+stream at the last event the old one delivered. The watcher thread still
+wakes `watch_loop` after each call of the source, whether it succeeded or
+not. `open_doc` also looks itself when its watch ran, since only that look
+is sure to come after the doc is registered.
 What is left of the gap: a change made after that look and before the new
 stream delivers is seen at the next look.
 
