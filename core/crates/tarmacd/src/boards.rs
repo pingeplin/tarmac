@@ -45,8 +45,10 @@ pub enum DataDir {
     Uncounted,
     /// This directory, counted and watched.
     Counted(PathBuf),
-    /// A directory that could not be resolved or watched: it is tried again
-    /// at a wake of the file system.
+    /// A directory that could not be resolved or watched, or a name that was
+    /// held, took no count, and was found no longer held (another connection
+    /// took the app's place meanwhile): it is tried again at a wake of the
+    /// file system and at a `doc_data` that names the file again.
     Wanted,
 }
 

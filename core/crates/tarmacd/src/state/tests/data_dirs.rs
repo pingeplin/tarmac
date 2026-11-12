@@ -74,6 +74,16 @@ impl Card {
         watched(&self.daemon, dir).await
     }
 
+    /// Waits until `dir` is watched: a try comes at a wake that the test
+    /// cannot tell apart from the daemon's own.
+    async fn becomes_watched(&self, dir: &Path) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while !self.watched(dir).await {
+            assert!(std::time::Instant::now() < deadline, "{} is never watched", dir.display());
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
     /// Lets go each call that `fs` holds, and each later one.
     fn let_go(&mut self) {
         self.release = std::sync::mpsc::channel().0;
@@ -473,11 +483,7 @@ async fn a_data_directory_whose_resolve_does_not_answer_is_watched_when_it_retur
     assert_eq!(file_events(&mut card.app), vec![(stats.clone(), changed)], "the registration stands");
 
     card.let_go();
-    let deadline = std::time::Instant::now() + Duration::from_secs(2);
-    while !card.watched(&sub).await {
-        assert!(std::time::Instant::now() < deadline, "sub is never watched");
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    card.becomes_watched(&sub).await;
 }
 
 // S29a
@@ -649,4 +655,52 @@ async fn a_name_in_flight_when_the_place_is_taken_leaves_the_new_apps_name_count
     assert!(name(&card.daemon, &card.dash, Some(&stats)).await);
     assert_eq!(next_change(&mut b).await.0, stats);
     assert!(card.watched(&sub).await);
+}
+
+/// A card on a source that holds the watch of `<tmp>/d/sub`, with `sub`
+/// wanted for `sub/stats.json`, then made, and a try of it held in the
+/// watcher thread after a wake given as the file system's. The gate is
+/// free, so a `doc_data` runs to its end while the try is held. A change
+/// of `dash` waits for the look that follows the try.
+async fn try_held_in_the_watcher(tag: &str) -> (Card, Arc<SourceCalls>, std::sync::mpsc::Sender<()>, u64) {
+    let tmp = canon_tmp(tag);
+    let sub = tmp.join("d/sub");
+    let (source, calls, release) = held_source(&[(Change::Watch, &sub)]);
+    let card = Card::within(tmp, source, Duration::from_secs(30)).await;
+    assert!(name(&card.daemon, &card.dash, Some(&sub.join("stats.json"))).await);
+    std::fs::create_dir(&sub).unwrap();
+    let changed = change(&card.dash);
+    card.daemon.wake.from_fs();
+    eventually("the try's held watch", || calls.of(Change::Watch, &sub) == 1).await;
+    (card, calls, release, changed)
+}
+
+// S14f
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_try_that_ends_after_the_name_was_counted_again_keeps_one_count() {
+    let (mut card, _calls, release, changed) = try_held_in_the_watcher("s14f").await;
+    let sub = card.dir.join("sub");
+    assert!(name(&card.daemon, &card.dash, Some(&sub.join("stats.json"))).await);
+
+    drop(release);
+    assert_eq!(next_change(&mut card.app).await, (card.dash.clone(), changed), "the look after the try");
+    assert!(card.watched(&sub).await);
+    assert!(name(&card.daemon, &card.dash, None).await);
+    assert!(!card.watched(&sub).await, "one count only was kept");
+}
+
+// S14g
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_try_that_ends_after_the_name_was_replaced_keeps_nothing_for_the_new_name() {
+    let (mut card, _calls, release, changed) = try_held_in_the_watcher("s14g").await;
+    let (sub, two) = (card.dir.join("sub"), card.dir.join("two"));
+    assert!(name(&card.daemon, &card.dash, Some(&two.join("x.json"))).await);
+
+    drop(release);
+    assert_eq!(next_change(&mut card.app).await, (card.dash.clone(), changed), "the look after the try");
+    assert!(!card.watched(&sub).await);
+
+    std::fs::create_dir(&two).unwrap();
+    card.daemon.wake.from_fs();
+    card.becomes_watched(&two).await;
 }
