@@ -165,6 +165,27 @@ fn a_line_the_daemon_refuses_is_named_and_the_stream_goes_on() {
     );
 }
 
+// S6 and S12 through the binary: blank lines are counted and not sent.
+#[test]
+fn a_refused_line_is_named_by_its_number_counting_blank_lines() {
+    let daemon = PushDaemon::start(|n| if n == 1 { err("x") } else { ack() });
+    let out = daemon.stream("/p", "1\n\n \t\nnot json\n");
+
+    assert_eq!(out.stderr, "tarmac: line 4: x\n");
+    assert_eq!(out.code(), Some(1));
+    assert_eq!(daemon.pushes(), vec![push_msg("/p", "1"), push_msg("/p", "not json")]);
+}
+
+// S6 through the binary: a blank line is neither sent nor refused.
+#[test]
+fn blank_lines_are_skipped_without_a_word() {
+    let daemon = PushDaemon::acking();
+    let out = daemon.stream("/p", "1\n\n \r\n2\n");
+
+    assert_eq!((out.code(), out.stderr.as_str()), (Some(0), ""));
+    assert_eq!(daemon.pushes(), vec![push_msg("/p", "1"), push_msg("/p", "2")]);
+}
+
 // S13
 #[test]
 fn one_value_the_daemon_refuses_prints_its_text() {

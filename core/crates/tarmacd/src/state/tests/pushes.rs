@@ -119,6 +119,14 @@ async fn a_relative_path_is_refused() {
     assert_eq!(answer, Err("path is not absolute: real/dash.html".into()));
 }
 
+// Choice 1: the JSON check comes first.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_relative_path_with_a_text_that_is_not_json_is_refused_for_the_text() {
+    let linked = Linked::open("push-order").await;
+    let answer = push_once(&linked.daemon, Path::new("real/dash.html"), "{").await;
+    assert_eq!(answer, Err("not one JSON value: EOF while parsing an object at line 1 column 1".into()));
+}
+
 // S19
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_push_to_another_spelling_of_the_doc_names_the_registry_path() {

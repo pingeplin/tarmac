@@ -2,7 +2,7 @@
 //! HTML cards of an open doc. The cli does not parse JSON: the daemon is the
 //! one checker, and the cli stays std-only.
 
-use std::io::{self, BufRead, BufReader, Read};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
 
 use tarmac_protocol::{self as proto, Msg, OVER_FRAME_LIMIT};
@@ -24,14 +24,18 @@ pub fn run(args: &[String]) -> i32 {
         Mode::One(value) => one(&path, value),
         // The handshake comes before the first read of stdin.
         Mode::Stream => match crate::connect() {
-            Ok(mut conn) => stream(&mut conn, &path, io::stdin().lock()),
+            Ok(mut conn) => stream(&mut conn, &path, io::stdin().lock(), &mut io::stderr()),
             Err(why) => fail(&why),
         },
     }
 }
 
 fn fail(line: &str) -> i32 {
-    eprintln!("tarmac: {line}");
+    fail_to(&mut io::stderr(), line)
+}
+
+fn fail_to(err: &mut impl Write, line: &str) -> i32 {
+    let _ = writeln!(err, "tarmac: {line}");
     1
 }
 
@@ -46,21 +50,21 @@ fn one(path: &str, value: &str) -> i32 {
 /// A refused line does not end the stream; a connection that fails does,
 /// since answers carry no id and a late one could be taken for the next
 /// line's.
-fn stream(conn: &mut UnixStream, path: &str, input: impl Read) -> i32 {
+fn stream(conn: &mut UnixStream, path: &str, input: impl Read, err: &mut impl Write) -> i32 {
     let mut refused = false;
     for (line, n) in Lines::new(input, LIMIT).zip(1usize..) {
         let refusal = match line {
-            Err(e) => return fail(&format!("cannot read stdin: {e}")),
+            Err(e) => return fail_to(err, &format!("cannot read stdin: {e}")),
             Ok(Line::Blank) => continue,
             Ok(Line::OverLimit) => OVER_FRAME_LIMIT.to_owned(),
             Ok(Line::NotUtf8) => "not UTF-8".to_owned(),
             Ok(Line::Value(text)) => match send_value(conn, path, text) {
                 Sent::Acked => continue,
                 Sent::Refused(refusal) => refusal,
-                Sent::Ended(why) => return fail(&format!("line {n}: {why}")),
+                Sent::Ended(why) => return fail_to(err, &format!("line {n}: {why}")),
             },
         };
-        eprintln!("tarmac: line {n}: {refusal}");
+        fail_to(err, &format!("line {n}: {refusal}"));
         refused = true;
     }
     i32::from(refused)
@@ -144,7 +148,12 @@ impl<R: Read> Iterator for Lines<R> {
                     self.done = true;
                     return None;
                 }
-                Ok([]) => break,
+                // The end is kept: on a terminal a second read would wait
+                // for one more end of input.
+                Ok([]) => {
+                    self.done = true;
+                    break;
+                }
                 Ok(chunk) => chunk,
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Err(e) => {
@@ -166,7 +175,7 @@ impl<R: Read> Iterator for Lines<R> {
             }
             self.reader.consume(used);
         }
-        let len = len - usize::from(last_cr);
+        let len = len - usize::from(last_cr && ended);
         let line = if blank {
             Line::Blank
         } else if len > self.limit {
@@ -195,9 +204,8 @@ mod tests {
         list.iter().map(|s| s.to_string()).collect()
     }
 
-    /// Numbered as `stream` numbers them.
-    fn read_all(input: &[u8], limit: usize) -> Vec<(usize, Line)> {
-        Lines::new(input, limit).zip(1..).map(|(line, n)| (n, line.unwrap())).collect()
+    fn read_all(input: &[u8], limit: usize) -> Vec<Line> {
+        Lines::new(input, limit).map(Result::unwrap).collect()
     }
 
     fn value(text: &str) -> Line {
@@ -226,37 +234,37 @@ mod tests {
     // S4
     #[test]
     fn lines_end_at_a_newline_and_the_last_needs_none() {
-        assert_eq!(read_all(b"a\nb\n", 8), vec![(1, value("a")), (2, value("b"))]);
-        assert_eq!(read_all(b"a\nb", 8), vec![(1, value("a")), (2, value("b"))]);
+        assert_eq!(read_all(b"a\nb\n", 8), vec![value("a"), value("b")]);
+        assert_eq!(read_all(b"a\nb", 8), vec![value("a"), value("b")]);
     }
 
     // S5
     #[test]
     fn one_carriage_return_before_the_newline_is_dropped() {
-        assert_eq!(read_all(b"a\r\nb\r\n", 8), vec![(1, value("a")), (2, value("b"))]);
-        assert_eq!(read_all(b"a\r\r\n", 8), vec![(1, value("a\r"))]);
+        assert_eq!(read_all(b"a\r\nb\r\n", 8), vec![value("a"), value("b")]);
+        assert_eq!(read_all(b"a\r\r\n", 8), vec![value("a\r")]);
     }
 
     // S6
     #[test]
-    fn blank_lines_are_skipped_and_still_counted() {
+    fn blank_lines_are_given_as_blank() {
         assert_eq!(
             read_all(b"a\n\n \t\nb\n", 8),
-            vec![(1, value("a")), (2, Line::Blank), (3, Line::Blank), (4, value("b"))]
+            vec![value("a"), Line::Blank, Line::Blank, value("b")]
         );
-        assert_eq!(read_all(b"\r\n \r\n", 8), vec![(1, Line::Blank), (2, Line::Blank)]);
-        assert_eq!(read_all(b"          \n", 8), vec![(1, Line::Blank)], "blank over the limit");
+        assert_eq!(read_all(b"\r\n \r\n", 8), vec![Line::Blank, Line::Blank]);
+        assert_eq!(read_all(b"          \n", 8), vec![Line::Blank], "blank over the limit");
     }
 
     #[test]
     fn white_space_around_a_value_is_kept() {
-        assert_eq!(read_all(b" 1 \t\n", 8), vec![(1, value(" 1 \t"))]);
+        assert_eq!(read_all(b" 1 \t\n", 8), vec![value(" 1 \t")]);
     }
 
     // S7
     #[test]
     fn a_line_that_is_not_utf8_is_refused_and_the_next_is_read() {
-        assert_eq!(read_all(b"1\n\xff\xfe\n2\n", 8), vec![(1, value("1")), (2, Line::NotUtf8), (3, value("2"))]);
+        assert_eq!(read_all(b"1\n\xff\xfe\n2\n", 8), vec![value("1"), Line::NotUtf8, value("2")]);
     }
 
     // S8
@@ -281,13 +289,67 @@ mod tests {
     // S8
     #[test]
     fn a_line_over_the_limit_that_is_not_utf8_is_refused_as_over_the_limit() {
-        assert_eq!(read_all(b"\xff\xfe\xff\xfe\xff\xfe\xff\xfe\xff\n", 8), vec![(1, Line::OverLimit)]);
+        assert_eq!(read_all(b"\xff\xfe\xff\xfe\xff\xfe\xff\xfe\xff\n", 8), vec![Line::OverLimit]);
     }
 
     // S8: the carriage return is not part of the line.
     #[test]
     fn a_line_of_the_limit_with_a_carriage_return_is_read_whole() {
-        assert_eq!(read_all(b"abcdefgh\r\n", 8), vec![(1, value("abcdefgh"))]);
+        assert_eq!(read_all(b"abcdefgh\r\n", 8), vec![value("abcdefgh")]);
+    }
+
+    /// One byte for each read: every line ends across reads.
+    struct OneByte(&'static [u8]);
+
+    impl Read for OneByte {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            let Some((&first, rest)) = self.0.split_first() else { return Ok(0) };
+            buf[0] = first;
+            self.0 = rest;
+            Ok(1)
+        }
+    }
+
+    // S5, S7, S8 with every line split across reads.
+    #[test]
+    fn lines_split_across_reads_are_read_as_whole_lines() {
+        let input = b"a\r\nabcdefgh\r\nx\xe2\x82\xacy\n123456789\nlast";
+        let lines: Vec<Line> = Lines::new(OneByte(input), 8).map(Result::unwrap).collect();
+        assert_eq!(lines, vec![value("a"), value("abcdefgh"), value("x\u{20ac}y"), Line::OverLimit, value("last")]);
+    }
+
+    // S5: a `\r` is dropped only before a `\n`.
+    #[test]
+    fn a_carriage_return_at_the_end_of_input_stays_in_the_line() {
+        assert_eq!(read_all(b"a\r", 8), vec![value("a\r")]);
+        assert_eq!(read_all(b"abcdefgh\r", 8), vec![Line::OverLimit]);
+    }
+
+    /// `input`, then the end, after which a read panics: on a terminal a read
+    /// after the end waits for one more end.
+    struct EndsOnce {
+        input: &'static [u8],
+        ended: bool,
+    }
+
+    impl Read for EndsOnce {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            assert!(!self.ended, "a read after the end of input");
+            let n = self.input.len().min(buf.len());
+            buf[..n].copy_from_slice(&self.input[..n]);
+            self.input = &self.input[n..];
+            self.ended = n == 0;
+            Ok(n)
+        }
+    }
+
+    #[test]
+    fn the_end_of_input_is_read_once() {
+        for input in [&b"a"[..], b"a\n", b""] {
+            let lines = Lines::new(EndsOnce { input, ended: false }, 8);
+            let expected = if input.is_empty() { vec![] } else { vec![value("a")] };
+            assert_eq!(lines.map(Result::unwrap).collect::<Vec<_>>(), expected, "{input:?}");
+        }
     }
 
     // S9
@@ -348,7 +410,12 @@ mod tests {
     #[test]
     fn a_stream_with_no_answer_ends_at_that_line() {
         let (mut cli, mut daemon) = silent_daemon(std::time::Duration::from_millis(100));
-        assert_eq!(stream(&mut cli, "/p", &b"1\n2\n"[..]), 1);
+        let mut err = Vec::new();
+        assert_eq!(stream(&mut cli, "/p", &b"1\n2\n"[..], &mut err), 1);
+        assert_eq!(
+            String::from_utf8(err).unwrap(),
+            "tarmac: line 1: no answer from the daemon in 5 s (an older daemon, or the app is not reading)\n"
+        );
         drop(cli);
         let sent: Vec<Msg> =
             std::iter::from_fn(|| proto::frame::read_sync(&mut daemon).ok()).map(|p| proto::decode(&p).unwrap()).collect();
