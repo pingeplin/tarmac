@@ -14,7 +14,8 @@ final class DevRoutingTests: XCTestCase {
     /// Only the ACTIVE board's cards: another board's are deliberately not
     /// addressable.
     private func context(
-        cards: [Card]? = nil, keyboardFocus: String? = nil, borrowed: String? = nil
+        cards: [Card]? = nil, keyboardFocus: String? = nil, borrowed: String? = nil,
+        zoom: CGFloat = 1, center: CGPoint = .zero, boardIDs: [String] = ["board-0"]
     ) -> DevRouting.Context {
         DevRouting.Context(
             cards: cards ?? [
@@ -23,10 +24,10 @@ final class DevRoutingTests: XCTestCase {
             ],
             keyboardFocusCard: keyboardFocus,
             borrowedCard: borrowed,
-            zoom: 1,
-            center: .zero,
+            zoom: zoom,
+            center: center,
             viewSize: CGSize(width: 1000, height: 800),
-            activeBoardID: "board-0", boardIDs: ["board-0"]
+            activeBoardID: "board-0", boardIDs: boardIDs
         )
     }
 
@@ -90,10 +91,7 @@ final class DevRoutingTests: XCTestCase {
 
     // MARK: - board
 
-    private let boards = DevRouting.Context(
-        cards: [], keyboardFocusCard: nil, borrowedCard: nil, zoom: 1, center: .zero,
-        viewSize: CGSize(width: 1000, height: 800), activeBoardID: "board-0", boardIDs: ["board-0", "board-1"]
-    )
+    private var boards: DevRouting.Context { context(cards: [], boardIDs: ["board-0", "board-1"]) }
 
     /// The active board is answered before the known list is consulted.
     func testTheActiveBoardIsNotRefusedWhenTheKnownListIsEmpty() {
@@ -366,21 +364,16 @@ final class DevRoutingTests: XCTestCase {
     /// follows the viewport's centre, so `zoom` can bring a refused card back.
     func testS8TheCullFollowsTheViewportsZoomAndCentre() {
         let cards = [Card(id: "/a/c.html", kind: .doc, frame: CGRect(x: 2500, y: 0, width: 400, height: 300))]
-        func context(zoom: CGFloat, center: CGPoint) -> DevRouting.Context {
-            DevRouting.Context(
-                cards: cards, keyboardFocusCard: nil, borrowedCard: nil,
-                zoom: zoom, center: center, viewSize: CGSize(width: 1000, height: 800),
-                activeBoardID: "board-0", boardIDs: ["board-0"]
-            )
-        }
         let focus = DevRequest.focus(card: "/a/c.html")
-        XCTAssertEqual(refusal(focus, context(zoom: 1, center: .zero))?.code, .cardHidden)
-        XCTAssertEqual(route(focus, context(zoom: 0.5, center: .zero)), .focusHTML(card: "/a/c.html", borrow: true))
+        XCTAssertEqual(refusal(focus, context(cards: cards, zoom: 1, center: .zero))?.code, .cardHidden)
         XCTAssertEqual(
-            route(focus, context(zoom: 1, center: CGPoint(x: 2500, y: 0))),
+            route(focus, context(cards: cards, zoom: 0.5, center: .zero)), .focusHTML(card: "/a/c.html", borrow: true)
+        )
+        XCTAssertEqual(
+            route(focus, context(cards: cards, zoom: 1, center: CGPoint(x: 2500, y: 0))),
             .focusHTML(card: "/a/c.html", borrow: true)
         )
-        XCTAssertEqual(refusal(focus, context(zoom: 1, center: CGPoint(x: 0, y: 2500)))?.code, .cardHidden)
+        XCTAssertEqual(refusal(focus, context(cards: cards, zoom: 1, center: CGPoint(x: 0, y: 2500)))?.code, .cardHidden)
     }
 
     func testS8CardHiddenIsFocusOnAnHTMLCardAndNothingElse() {
