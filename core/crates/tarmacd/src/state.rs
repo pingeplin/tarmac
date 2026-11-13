@@ -7,7 +7,7 @@ use tarmac_protocol::{DocEntry, Msg};
 use tokio::sync::{Mutex, Notify, mpsc};
 use tokio_util::sync::CancellationToken;
 
-use crate::boards::{BoardId, Boards, DataDir, FileStamp};
+use crate::boards::{BoardId, Boards, DataDir, FileStamp, WantedData};
 use crate::docs::RepoInfo;
 use crate::reader::{PathFs, PathGate, RealFs};
 use crate::term::TermHandle;
@@ -262,7 +262,9 @@ impl Daemon {
         if let Some(dir) = path.parent() {
             self.release_watch(dir);
         }
-        self.release_data_dir(&info.data_dir);
+        if let Some(read) = &info.data {
+            self.release_data_dir(&read.dir);
+        }
     }
 
     /// Tries again the directory of each data file that wants one, on every
@@ -271,10 +273,10 @@ impl Daemon {
     /// nothing of it.
     pub async fn try_wanted_data(&self) {
         let wanted = self.boards.lock().await.wanted_data();
-        for (board, doc, data) in wanted {
-            let (dir, _) = self.count_data_dir(&doc, &data).await;
+        for WantedData { board, doc, file } in wanted {
+            let (dir, _) = self.count_data_dir(&doc, &file).await;
             let not_held = match self.boards.lock().await.known_registry_mut(&board) {
-                Some(reg) => reg.settle_wanted(&doc, &data, dir),
+                Some(reg) => reg.settle_wanted(&doc, &file, dir),
                 None => dir,
             };
             self.release_data_dir(&not_held);

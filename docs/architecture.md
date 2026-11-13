@@ -409,7 +409,7 @@ a path's text and notify by the resolved path: counted by its text, a link
 A directory that resolves to the doc's own, out of the doc's tree, or to a
 hidden name below it is counted for nothing; each look still stats the file,
 and the app's read refuses what is outside. What a registration counted is
-kept with it (`DocInfo.data_dir`, a `DataDir`) and given back for that same
+kept with it (`DataRead.dir`, a `DataDir`) and given back for that same
 directory, never for a new resolve, when the name is replaced or cleared, the
 doc closed, its board deleted, or the app goes; the same name again counts
 nothing more. A count that made a new watch is followed by a look before the
