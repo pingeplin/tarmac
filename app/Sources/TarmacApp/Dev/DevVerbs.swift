@@ -112,12 +112,8 @@ final class DevVerbs {
 
     private func snapshot(until: String?, timeoutMs: Int?) async throws -> DevReply {
         let wait = try DevSnapshotWait(until: until, timeoutMs: timeoutMs)
-        let started = Uptime.nowMs
-        while true {
-            switch wait.step(snapshot: reader.snapshot(), elapsedMs: Int(Uptime.nowMs - started)) {
-            case .reply(let reply): return reply
-            case .pollAgain: try await Task.sleep(for: .milliseconds(DevSnapshotWait.pollMs))
-            }
+        return try await poll { started in
+            wait.step(snapshot: reader.snapshot(), elapsedMs: Int(Uptime.nowMs - started))
         }
     }
 
@@ -127,13 +123,20 @@ final class DevVerbs {
     /// board. `switching` is what stays true until that is done.
     private func arrive(_ goal: DevBoardWait.Goal) async throws -> DevReply {
         let wait = DevBoardWait(goal: goal)
-        let started = Uptime.nowMs
-        while true {
-            let step = wait.step(
+        return try await poll { started in
+            wait.step(
                 activeBoardID: controller.activeBoardID, switching: controller.switching,
                 elapsedMs: Int(Uptime.nowMs - started)
             )
-            switch step {
+        }
+    }
+
+    /// Steps a wait every `pollMs` until it replies. A step is given the time
+    /// the wait started, so it reads the app's state before the clock.
+    private func poll(_ step: (_ startedMs: UInt64) -> DevSnapshotWait.Step) async throws -> DevReply {
+        let started = Uptime.nowMs
+        while true {
+            switch step(started) {
             case .reply(let reply): return reply
             case .pollAgain: try await Task.sleep(for: .milliseconds(DevSnapshotWait.pollMs))
             }

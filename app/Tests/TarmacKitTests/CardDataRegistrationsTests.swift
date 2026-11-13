@@ -18,7 +18,7 @@ final class CardDataRegistrationsTests: XCTestCase {
         return table
     }
 
-    func testS47AChangeGoesToEveryCardThatRegisteredThePathOnEveryBoard() {
+    func test2611_0002S47AChangeGoesToEveryCardThatRegisteredThePathOnEveryBoard() {
         let table = table()
         XCTAssertEqual(Set(table.cards(reading: "/a/stats.json")), [dash0, dash1])
         XCTAssertEqual(table.cards(reading: "/a/stats.json").count, 2)
@@ -27,7 +27,7 @@ final class CardDataRegistrationsTests: XCTestCase {
         XCTAssertEqual(table.cards(reading: "/a/dash.html"), [], "a doc path is no data path")
     }
 
-    func testS48AReconnectSendsOneDataFileForEachCardThatReadsAFile() {
+    func test2611_0002S48AReconnectSendsOneDataFileForEachCardThatReadsAFile() {
         var table = table()
         let expected: [Message] = [
             .dataFile(boardID: "board-0", path: "/a/dash.html", file: "/a/stats.json"),
@@ -42,7 +42,7 @@ final class CardDataRegistrationsTests: XCTestCase {
         XCTAssertEqual(table.cards(reading: "/a/x.json"), [])
     }
 
-    func testS49AClosedCardAndARemovedBoardAreForgotten() {
+    func test2611_0002S49AClosedCardAndARemovedBoardAreForgotten() {
         var table = table()
         table.set(nil, for: dash0)
         XCTAssertEqual(table.cards(reading: "/a/stats.json"), [dash1])
@@ -54,7 +54,7 @@ final class CardDataRegistrationsTests: XCTestCase {
         XCTAssertEqual(table.resent, [.dataFile(boardID: "board-0", path: "/a/other.html", file: "/a/x.json")])
     }
 
-    func testS50ACardThatRegistersAnotherFileLeavesTheFirst() {
+    func test2611_0002S50ACardThatRegistersAnotherFileLeavesTheFirst() {
         var table = CardDataRegistrations()
         table.set("/a/stats.json", for: dash0)
         table.set("/a/y.json", for: dash0)

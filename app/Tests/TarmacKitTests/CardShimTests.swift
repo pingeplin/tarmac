@@ -1524,7 +1524,7 @@ final class CardShimTests: XCTestCase {
         }
     }
 
-    func test2611S1ReadyNamesTheDataFileAndTheDocumentsAddress() throws {
+    func test2611_0002S1ReadyNamesTheDataFileAndTheDocumentsAddress() throws {
         let shim = try loadShim(meta: "magnify", data: "stats.json")
         shim.run("h.domReady()")
         XCTAssertEqual(
@@ -1534,7 +1534,7 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(try shim.posted().first?["source"] as? String, address, "the source of its started word")
     }
 
-    func test2611S2ReadyNamesNoFileWithNoMetaOrAnEmptyOne() throws {
+    func test2611_0002S2ReadyNamesNoFileWithNoMetaOrAnEmptyOne() throws {
         for data in [nil, ""] as [String?] {
             let shim = try loadShim(meta: nil, data: data)
             shim.run("h.domReady()")
@@ -1547,7 +1547,7 @@ final class CardShimTests: XCTestCase {
 
     /// The shim's bound is the host page's, which is the app's line cap
     /// (`CardHostScriptTests`).
-    func test2611S3TheShimMeasuresAgainstTheLineCapTheAppKeeps() throws {
+    func test2611_0002S3TheShimMeasuresAgainstTheLineCapTheAppKeeps() throws {
         let regex = try NSRegularExpression(pattern: #"var messageCap = (\d+);"#)
         let text = try source()
         let match = try XCTUnwrap(regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)))
@@ -1557,7 +1557,7 @@ final class CardShimTests: XCTestCase {
     /// The host page carries a message of at most `CardConsole.lineCap`
     /// characters of JSON. The name is measured as JSON writes it, and a page
     /// that took `console.error` for itself does not keep the line from the app.
-    func test2611S3ANameThatDoesNotFitIsLeftOutAndSaidSo() throws {
+    func test2611_0002S3ANameThatDoesNotFitIsLeftOutAndSaidSo() throws {
         let fill = "(n, unit) => unit.repeat(n)"
         let room = "\(CardConsole.lineCap) - JSON.stringify({ tarmac: 'ready', meta: null, data: '' }).length"
         for (unit, width) in [("x", 1), ("\\\"", 2)] {
@@ -1589,14 +1589,14 @@ final class CardShimTests: XCTestCase {
     /// A `ready` that its zoom meta alone takes over the bound is dropped by
     /// the host page whatever it names, as it is today: the name is kept, and
     /// the console is told nothing of it.
-    func test2611S3AReadyTooLongWithoutTheNameKeepsItAndSaysNothing() throws {
+    func test2611_0002S3AReadyTooLongWithoutTheNameKeepsItAndSaysNothing() throws {
         let shim = try loadShim(meta: String(repeating: "x", count: CardConsole.lineCap), data: "stats.json")
         shim.run("h.domReady()")
         XCTAssertEqual(try readies(shim).first?["data"] as? String, "stats.json")
         XCTAssertEqual(try nameErrors(shim), [])
     }
 
-    func test2611S4BeforeAnyDataTheGlobalIsAnObjectWithNoData() throws {
+    func test2611_0002S4BeforeAnyDataTheGlobalIsAnObjectWithNoData() throws {
         let shim = try loadShim()
         XCTAssertEqual(shim.run("typeof window.tarmac").toString(), "object")
         XCTAssertEqual(shim.flag("window.tarmac !== null && window.tarmac.data === undefined"), true)
@@ -1615,7 +1615,7 @@ final class CardShimTests: XCTestCase {
         return value.isString ? value.toString() : nil
     }
 
-    func test2611S5ADeliveryIsParsedKeptAndDispatched() throws {
+    func test2611_0002S5ADeliveryIsParsedKeptAndDispatched() throws {
         let shim = try loadShim()
         listen(shim)
         deliver(shim, #"'{"n":1}'"#)
@@ -1625,7 +1625,7 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(shim.flag("window.tarmac.data === heard[0].detail"), true)
     }
 
-    func test2611S6EachDeliveryIsDispatchedInOrderAndTheLastIsKept() throws {
+    func test2611_0002S6EachDeliveryIsDispatchedInOrderAndTheLastIsKept() throws {
         let shim = try loadShim()
         listen(shim)
         deliver(shim, #"'{"n":1}'"#)
@@ -1634,7 +1634,7 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(json(shim, "window.tarmac.data"), "[2]")
     }
 
-    func test2611S7ADeliveryFromAnotherWindowIsIgnored() throws {
+    func test2611_0002S7ADeliveryFromAnotherWindowIsIgnored() throws {
         let shim = try loadShim()
         listen(shim)
         deliver(shim, "'[1]'")
@@ -1644,7 +1644,7 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(json(shim, "window.tarmac.data"), "[1]")
     }
 
-    func test2611S8ATextThatIsNoStringOrNoJSONIsDroppedQuietly() throws {
+    func test2611_0002S8ATextThatIsNoStringOrNoJSONIsDroppedQuietly() throws {
         let shim = try loadShim()
         listen(shim)
         deliver(shim, "'[1]'")
@@ -1658,7 +1658,7 @@ final class CardShimTests: XCTestCase {
     }
 
     /// A listener that throws is the page's error, not the shim's.
-    func test2611S8AListenerThatThrowsDoesNotBreakTheNextDelivery() throws {
+    func test2611_0002S8AListenerThatThrowsDoesNotBreakTheNextDelivery() throws {
         let shim = try loadShim()
         shim.run("window.addEventListener('tarmac:data', () => { throw new Error('boom'); })")
         listen(shim)
@@ -1667,7 +1667,7 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(json(shim, "window.tarmac.data"), "[2]")
     }
 
-    func test2611S9APageThatTookTheGlobalKeepsIt() throws {
+    func test2611_0002S9APageThatTookTheGlobalKeepsIt() throws {
         let shim = try loadShim()
         listen(shim)
         shim.run("window.tarmac = { mine: true }")

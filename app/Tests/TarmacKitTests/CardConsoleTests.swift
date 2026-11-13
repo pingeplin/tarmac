@@ -139,7 +139,7 @@ final class CardConsoleTests: XCTestCase {
 
     // MARK: - the data name and the load (2611.0002 S19)
 
-    func test2611S19AReadyCarriesItsDataNameAndItsLoad() {
+    func test2611_0002S19AReadyCarriesItsDataNameAndItsLoad() {
         XCTAssertEqual(
             parse(["tarmac": "ready", "meta": NSNull(), "data": "stats.json", "load": 3]),
             .ready(meta: nil, data: "stats.json", load: 3)
@@ -150,12 +150,12 @@ final class CardConsoleTests: XCTestCase {
         )
     }
 
-    func test2611S19ANullOrAbsentDataNamesNoFile() {
+    func test2611_0002S19ANullOrAbsentDataNamesNoFile() {
         XCTAssertEqual(parse(["tarmac": "ready", "meta": NSNull(), "data": NSNull(), "load": 2]), .ready(meta: nil, load: 2))
         XCTAssertEqual(parse(["tarmac": "ready", "meta": NSNull(), "load": 2]), .ready(meta: nil, data: nil, load: 2))
     }
 
-    func test2611S19ADataOrALoadOfAnotherTypeMakesTheReadyUnparseable() {
+    func test2611_0002S19ADataOrALoadOfAnotherTypeMakesTheReadyUnparseable() {
         for data in [1, true, [String: Any](), ["a"]] as [Any] {
             XCTAssertNil(parse(["tarmac": "ready", "meta": NSNull(), "data": data]), "data \(data)")
         }

@@ -22,7 +22,7 @@ final class SampleLineTests: XCTestCase {
             cardsHTML: 3,
             cardsMarkdown: 2,
             cardsTerminal: 1,
-            pending: [Pending(path: "/a/dash.html", count: 6, timesOver: 0)],
+            pending: [Pending(path: "/a/dash.html", largest: 6, timesOver: 0)],
             webContent: [
                 WebContent(pid: 9201, path: "/a/dash.html", footprint: 120_390_544),
                 WebContent(pid: 9202, path: "/a/b.md", footprint: 100_000_000),
@@ -46,13 +46,13 @@ final class SampleLineTests: XCTestCase {
         try attrs(SampleLine.sample(sample, resource: resource, atMs: atMs))
     }
 
-    func testS3ASampleWithEveryValueIsExactlyTheExpectedText() throws {
+    func test2611_0004S3ASampleWithEveryValueIsExactlyTheExpectedText() throws {
         let line = SampleLine.sample(full, resource: resource, atMs: atMs)
         XCTAssertEqual(line, #"{"attrs":{"tarmac.app.memory.footprint":149063264,"tarmac.boards.count":2,"tarmac.boards.loaded":1,"tarmac.card.pending_events.max":6,"tarmac.card.pending_events.over_limit.times":0,"tarmac.card.pending_events.path":"/a/dash.html","tarmac.cards.html":3,"tarmac.cards.markdown":2,"tarmac.cards.terminal":1,"tarmac.daemon.memory.footprint":6504928,"tarmac.daemon.pid":9160,"tarmac.webcontent.largest.memory.footprint":120390544,"tarmac.webcontent.largest.path":"/a/dash.html","tarmac.webcontent.memory.footprint":412876800,"tarmac.webcontent.processes.count":5},"event":"tarmac.sample","resource":{"process.pid":9156,"service.name":"tarmac-app","service.version":"0.20.1"},"severity":"INFO","ts":"2026-11-12T10:15:00.000Z"}"#)
         XCTAssertNoThrow(try object(line))
     }
 
-    func testS4NoDaemonPidOrNoDaemonFootprintLeavesOutBothDaemonKeys() throws {
+    func test2611_0004S4NoDaemonPidOrNoDaemonFootprintLeavesOutBothDaemonKeys() throws {
         var noPid = full
         noPid.daemonPid = nil
         var noFootprint = full
@@ -79,7 +79,7 @@ final class SampleLineTests: XCTestCase {
     ]
 
     /// No view known, or none whose process could be read.
-    func testS5NoWebContentProcessLeavesOutTheFourWebContentKeys() throws {
+    func test2611_0004S5NoWebContentProcessLeavesOutTheFourWebContentKeys() throws {
         var none = full
         none.webContent = []
         var unreadable = full
@@ -93,7 +93,7 @@ final class SampleLineTests: XCTestCase {
 
     /// Two cards in one process: the process counts once, and its first card
     /// names it. The largest is neither the last entry nor the last process.
-    func testS6WebContentCountsDistinctPidsOnceAndNamesTheLargest() throws {
+    func test2611_0004S6WebContentCountsDistinctPidsOnceAndNamesTheLargest() throws {
         var sample = full
         sample.webContent = [
             WebContent(pid: 2, path: "/a/thirty.html", footprint: 30),
@@ -121,22 +121,22 @@ final class SampleLineTests: XCTestCase {
         XCTAssertEqual(attrs["tarmac.webcontent.largest.path"] as? String, "/a/b.md")
     }
 
-    func testS7aTheTimesOverTheLimitAreSummedOverTheCardsAnd0IsWritten() throws {
-        for pending in [[], [Pending(path: "/a/dash.html", count: 6, timesOver: 0)]] {
+    func test2611_0004S7aTheTimesOverTheLimitAreSummedOverTheCardsAnd0IsWritten() throws {
+        for pending in [[], [Pending(path: "/a/dash.html", largest: 6, timesOver: 0)]] {
             var sample = full
             sample.pending = pending
             XCTAssertEqual(try attrs(of: sample)["tarmac.card.pending_events.over_limit.times"] as? Int, 0)
         }
         var sample = full
         sample.pending = [
-            Pending(path: "/a/two.html", count: 1_001, timesOver: 2),
-            Pending(path: "/a/dash.html", count: 1_500, timesOver: 3),
+            Pending(path: "/a/two.html", largest: 1_001, timesOver: 2),
+            Pending(path: "/a/dash.html", largest: 1_500, timesOver: 3),
         ]
         XCTAssertEqual(try attrs(of: sample)["tarmac.card.pending_events.over_limit.times"] as? Int, 5)
     }
 
-    func testS7APendingMaxOf0HasNoPathAndAMaxOf6NamesItsCard() throws {
-        for pending in [[], [Pending(path: "/a/dash.html", count: 0, timesOver: 0)]] {
+    func test2611_0004S7APendingMaxOf0HasNoPathAndAMaxOf6NamesItsCard() throws {
+        for pending in [[], [Pending(path: "/a/dash.html", largest: 0, timesOver: 0)]] {
             var sample = full
             sample.pending = pending
             let attrs = try attrs(of: sample)
@@ -145,16 +145,16 @@ final class SampleLineTests: XCTestCase {
         }
         var sample = full
         sample.pending = [
-            Pending(path: "/a/two.html", count: 2, timesOver: 0),
-            Pending(path: "/a/dash.html", count: 6, timesOver: 0),
-            Pending(path: "/a/five.html", count: 5, timesOver: 0),
+            Pending(path: "/a/two.html", largest: 2, timesOver: 0),
+            Pending(path: "/a/dash.html", largest: 6, timesOver: 0),
+            Pending(path: "/a/five.html", largest: 5, timesOver: 0),
         ]
         let attrs = try attrs(of: sample)
         XCTAssertEqual(attrs["tarmac.card.pending_events.max"] as? Int, 6)
         XCTAssertEqual(attrs["tarmac.card.pending_events.path"] as? String, "/a/dash.html")
     }
 
-    func testS8NoAppVersionLeavesOutServiceVersion() throws {
+    func test2611_0004S8NoAppVersionLeavesOutServiceVersion() throws {
         let line = SampleLine.sample(full, resource: SampleLine.Resource(pid: 42, version: nil), atMs: atMs)
         let resource = try XCTUnwrap(object(line)["resource"] as? [String: Any])
         XCTAssertNil(resource["service.version"])
@@ -165,7 +165,7 @@ final class SampleLineTests: XCTestCase {
     /// 07:05:09.007 in Taipei is 23:05:09.007 of the day before in UTC. The
     /// process runs in Taipei for the test, so a line in local time cannot
     /// pass on a machine whose zone is UTC.
-    func testS9TheTimeIsUTCWithThreeDecimalsAndZ() throws {
+    func test2611_0004S9TheTimeIsUTCWithThreeDecimalsAndZ() throws {
         let saved = getenv("TZ").map { String(cString: $0) }
         setenv("TZ", "Asia/Taipei", 1)
         tzset()
@@ -183,17 +183,17 @@ final class SampleLineTests: XCTestCase {
         XCTAssertEqual(try object(line)["ts"] as? String, "2026-11-11T23:05:09.007Z")
     }
 
-    func testS10APathWithAQuoteABackslashAndANonASCIILetterComesBackTheSame() throws {
+    func test2611_0004S10APathWithAQuoteABackslashAndANonASCIILetterComesBackTheSame() throws {
         let path = #"/a/"q"\b/é.html"#
         var sample = full
-        sample.pending = [Pending(path: path, count: 1, timesOver: 0)]
+        sample.pending = [Pending(path: path, largest: 1, timesOver: 0)]
         sample.webContent = [WebContent(pid: 1, path: path, footprint: 1)]
         let attrs = try attrs(of: sample)
         XCTAssertEqual(attrs["tarmac.card.pending_events.path"] as? String, path)
         XCTAssertEqual(attrs["tarmac.webcontent.largest.path"] as? String, path)
     }
 
-    func testS11TheOverLimitLineIsExactlyTheExpectedText() throws {
+    func test2611_0004S11TheOverLimitLineIsExactlyTheExpectedText() throws {
         let line = SampleLine.overLimit(path: "/a/dash.html", count: 1001, limit: 1000, resource: resource, atMs: atMs)
         XCTAssertEqual(line, #"{"attrs":{"tarmac.card.pending_events.held":1001,"tarmac.card.pending_events.limit":1000,"tarmac.card.pending_events.path":"/a/dash.html"},"event":"tarmac.card.pending_events.over_limit","resource":{"process.pid":9156,"service.name":"tarmac-app","service.version":"0.20.1"},"severity":"WARN","ts":"2026-11-12T10:15:00.000Z"}"#)
         XCTAssertNoThrow(try object(line))
