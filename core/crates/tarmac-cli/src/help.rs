@@ -88,9 +88,9 @@ tarmac — agent cockpit CLI
 
 USAGE:
     tarmac open <path>      register a file with the running tarmac app
-    tarmac push <html-path> <json>
+    tarmac push <path> <json>
                             send one JSON value to the loaded cards of an open doc
-    tarmac push <html-path> -
+    tarmac push <path> -
                             send one JSON value per line of stdin, in order
     tarmac --version        report the cli, daemon, and app versions
     tarmac skill            print the agent-facing Tarmac guide
@@ -102,7 +102,7 @@ hook) can run it to surface a doc in the cockpit. A relative path works;
 Tarmac checks the file.
 
 `tarmac push` hands a value to an HTML card that is loaded now: the document
-gets it as a `tarmac:event` on `window`, with the parsed value as `detail`.
+gets it as a `tarmac:push` on `window`, with the parsed value as `detail`.
 Nothing is kept for a card that is not loaded. The doc must be open; the daemon
 checks that the value is one JSON value. It prints nothing on success. With `-`
 it reads stdin on one connection, skips blank lines, and names each refused line

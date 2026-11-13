@@ -92,8 +92,8 @@ async fn cli_session(daemon: Arc<Daemon>, mut stream: UnixStream) -> anyhow::Res
                 };
                 write_msg(&mut stream, &reply).await?;
             }
-            Ok(Msg::Push { path, data }) => {
-                let reply = match docs::handle_push(&daemon, &mut resolved, &path, data).await {
+            Ok(Msg::Push { path, value }) => {
+                let reply = match docs::handle_push(&daemon, &mut resolved, &path, value).await {
                     Ok(()) => Msg::Ack,
                     Err(msg) => Msg::Err { msg },
                 };
@@ -340,9 +340,9 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
                 debug!("doc_refresh no-op for {path} (not on the active board, or unreadable)");
             }
         }
-        Msg::DocData { board_id, path, data } => {
-            if !docs::record_data(daemon, &board_id, Path::new(&path), data.map(PathBuf::from)).await {
-                debug!("doc_data ignored for {path} on {board_id} (an unknown board or doc, or a data file not under the doc's directory)");
+        Msg::DataFile { board_id, path, file } => {
+            if !docs::record_data(daemon, &board_id, Path::new(&path), file.map(PathBuf::from)).await {
+                debug!("data_file ignored for {path} on {board_id} (an unknown board or doc, or a data file not under the doc's directory)");
             }
         }
         Msg::ScrollbackRequest { term_id } => {

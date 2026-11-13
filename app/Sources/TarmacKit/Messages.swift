@@ -201,15 +201,15 @@ public enum Message: Equatable, Sendable {
     /// doc's board is in the background.
     case docRefresh(path: String)
     /// issue #311 (app → daemon): the doc `path` on board `boardID` reads the
-    /// data file `data`; nil clears it. The daemon answers with a `file_event`
+    /// data file `file`; nil clears it. The daemon answers with a `file_event`
     /// for that file, and sends one for each change it sees.
-    case docData(boardID: String, path: String, data: String? = nil)
+    case dataFile(boardID: String, path: String, file: String? = nil)
     /// issue #326 (cli → daemon): one JSON value, as text, for the cards of
     /// the doc `path`; answered with `ack` or `err`. The app never gets one.
-    case push(path: String, data: String)
+    case push(path: String, value: String)
     /// issue #326 (daemon → app): the value of a `push`, for each loaded card
     /// of the doc `path` (the registry's key).
-    case docEvent(path: String, data: String)
+    case docEvent(path: String, value: String)
     /// issue #41: `scrollbackRequest` (app → daemon) asks for one terminal's
     /// scrollback ring; the daemon answers with exactly one `scrollback`, always —
     /// empty bytes for a silent or unknown terminal.
@@ -358,16 +358,16 @@ public extension Message {
             return .docClose(path: try req("path", \.stringValue))
         case "doc_refresh":
             return .docRefresh(path: try req("path", \.stringValue))
-        case "doc_data":
-            return .docData(
+        case "data_file":
+            return .dataFile(
                 boardID: try req("board_id", \.stringValue),
                 path: try req("path", \.stringValue),
-                data: try opt("data", \.stringValue)
+                file: try opt("file", \.stringValue)
             )
         case "push":
-            return .push(path: try req("path", \.stringValue), data: try req("data", \.stringValue))
+            return .push(path: try req("path", \.stringValue), value: try req("value", \.stringValue))
         case "doc_event":
-            return .docEvent(path: try req("path", \.stringValue), data: try req("data", \.stringValue))
+            return .docEvent(path: try req("path", \.stringValue), value: try req("value", \.stringValue))
         case "scrollback_request":
             return .scrollbackRequest(termID: try req("term_id", \.stringValue))
         case "scrollback":
@@ -567,21 +567,21 @@ public extension Message {
             return Self.tagged("doc_close") { $0.put("path", .string(path)) }
         case .docRefresh(let path):
             return Self.tagged("doc_refresh") { $0.put("path", .string(path)) }
-        case .docData(let boardID, let path, let data):
-            return Self.tagged("doc_data") {
+        case .dataFile(let boardID, let path, let file):
+            return Self.tagged("data_file") {
                 $0.put("board_id", .string(boardID))
                 $0.put("path", .string(path))
-                $0.put("data", unlessNil: data.map(MsgPackValue.string))
+                $0.put("file", unlessNil: file.map(MsgPackValue.string))
             }
-        case .push(let path, let data):
+        case .push(let path, let value):
             return Self.tagged("push") {
                 $0.put("path", .string(path))
-                $0.put("data", .string(data))
+                $0.put("value", .string(value))
             }
-        case .docEvent(let path, let data):
+        case .docEvent(let path, let value):
             return Self.tagged("doc_event") {
                 $0.put("path", .string(path))
-                $0.put("data", .string(data))
+                $0.put("value", .string(value))
             }
         case .scrollbackRequest(let termID):
             return Self.tagged("scrollback_request") { $0.put("term_id", .string(termID)) }

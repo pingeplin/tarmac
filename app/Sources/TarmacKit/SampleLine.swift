@@ -103,11 +103,11 @@ public enum SampleLine {
         }
         let pending = largest(sample.pending)
         attrs["tarmac.card.pending_events.max"] = number(pending?.count ?? 0)
-        attrs["tarmac.card.pending_events.over_limit.count"] = number(sample.pending.reduce(0) { $0 + $1.timesOver })
+        attrs["tarmac.card.pending_events.over_limit.times"] = number(sample.pending.reduce(0) { $0 + $1.timesOver })
         if let pending { attrs["tarmac.card.pending_events.path"] = .string(pending.path) }
         let processes = distinctReadable(sample.webContent)
         if let top = processes.max(by: { $0.bytes < $1.bytes }) {
-            attrs["tarmac.webcontent.processes"] = number(processes.count)
+            attrs["tarmac.webcontent.processes.count"] = number(processes.count)
             attrs["tarmac.webcontent.memory.footprint"] = number(processes.reduce(0) { $0 + $1.bytes })
             attrs["tarmac.webcontent.largest.memory.footprint"] = number(top.bytes)
             attrs["tarmac.webcontent.largest.path"] = .string(top.path)
@@ -120,7 +120,7 @@ public enum SampleLine {
         line(
             event: "tarmac.card.pending_events.over_limit", severity: "WARN",
             attrs: [
-                "tarmac.card.pending_events.count": number(count),
+                "tarmac.card.pending_events.held": number(count),
                 "tarmac.card.pending_events.limit": number(limit),
                 "tarmac.card.pending_events.path": .string(path),
             ],

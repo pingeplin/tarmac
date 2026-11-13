@@ -166,9 +166,9 @@ reports.
 | | `DocOpened(DocEntry)` | D→app | a doc was opened/updated |
 | | `FileEvent {path, mtime_ms}` | D→app | a doc of the active board, or a data file that one of them reads, changed on disk |
 | | `DocRefresh {path}` | app→D | re-stat a doc now and push its `file_event` |
-| | `DocData {board_id, path, data?}` | app→D | name (or, with no `data`, clear) the data file a doc reads; the daemon reports it with `file_event`s |
-| | `Push {path, data}` | cli→D | one JSON value, as text, for the loaded HTML cards of an open doc; `ack` once it is queued for the app, else `err` |
-| | `DocEvent {path, data}` | D→app | that value, for each card of the doc (`path` is the registry's key); no reply |
+| | `DataFile {board_id, path, file?}` | app→D | name (or, with no `file`, clear) the data file a doc reads; the daemon reports it with `file_event`s |
+| | `Push {path, value}` | cli→D | one JSON value, as text, for the loaded HTML cards of an open doc; `ack` once it is queued for the app, else `err` |
+| | `DocEvent {path, value}` | D→app | that value, for each card of the doc (`path` is the registry's key); no reply |
 | Terminal I/O | `SpawnTerm {term_id, cols, rows, cwd?, cmd?, board_id?, inherit_cwd_from?}` | app→D | create a PTY card |
 | | `Input {term_id, bytes}` | app→D | keystrokes and mouse reports |
 | | `Output {term_id, bytes}` | D→app | raw PTY output (≤64 KiB chunks) |
@@ -330,7 +330,7 @@ daemon looks:
 - after each call of the watcher thread to notify, which wakes `watch_loop`
   whether the call succeeded or not (see #253 below): the watch of an open,
   the unwatch of a close or a `BoardDelete`, the watch or unwatch of a data
-  file's directory. An open, or a `DocData`, that watched also looks itself
+  file's directory. An open, or a `DataFile`, that watched also looks itself
   once it has registered the doc or the name. Any other open of a doc that is new
   to its board wakes the watcher once it has registered the doc: its stamp
   was read before that, and a change in between may have woken the watcher
@@ -370,7 +370,7 @@ covered: a `FileEvent` that was queued for an app whose connection then
 closed before it was written. It is not held, and an app that connects again
 with its cards in place keeps the old content until the next change or `↻`.
 
-A doc can name a **data file** (`DocData`, #311): a file in the doc's own
+A doc can name a **data file** (`DataFile`, #311): a file in the doc's own
 directory or in one under it, at any depth (2611.0005), judged on the bytes of
 the path as given — `docs::is_under` follows no link, works nothing out (a
 `.`, `..` or empty component is refused, as `Path` would drop the first and
@@ -387,16 +387,16 @@ another connection takes its place (`Daemon::install_app`,
 lost the place drops nothing of the one that took it). Its stamp is one per
 (board, path): every doc of a board that names the path sees it as one
 (`Registry::see_data`). On the active
-board the `DocData` is answered at once, in a look of its own: the file is
+board the `DataFile` is answered at once, in a look of its own: the file is
 taken as seen and a `FileEvent` for it is pushed, the same name again
 included. Each look of the active board reads the data files of the board
 too, and a look of a board switch reads those of every board
 (`Boards::watched_paths`); `docs::take_to_tell` adds a `FileEvent` for each data
 file that differs from what was seen (`Registry::take_data_changes`), one for
-a path that is also a doc or that two docs name. A `DocData` for a board in
+a path that is also a doc or that two docs name. A `DataFile` for a board in
 the background starts from nothing seen, so its file is reported after the
 `Restore` of that board's switch. A data change records nothing to save and
-is not held when no app is connected: the app sends `DocData` again after it
+is not held when no app is connected: the app sends `DataFile` again after it
 connects. `DocRefresh` does not read data files.
 
 A data file beside its doc needs no watch: the doc's directory is watched. For
@@ -413,11 +413,11 @@ kept with it (`DocInfo.data_dir`, a `DataDir`) and given back for that same
 directory, never for a new resolve, when the name is replaced or cleared, the
 doc closed, its board deleted, or the app goes; the same name again counts
 nothing more. A count that made a new watch is followed by a look before the
-`DocData` handling ends, as an open's is. A directory that cannot be resolved
+`DataFile` handling ends, as an open's is. A directory that cannot be resolved
 (not there, not a directory, or out on the gate) takes no count, and one whose
 watch fails gives its count back at once; both are `DataDir::Wanted`:
 `watch_loop` tries it again at a wake of the file system only (`watch::Wake`:
-a source event, or the gate's `returned`), and a `DocData` that names the file
+a source event, or the gate's `returned`), and a `DataFile` that names the file
 again tries it too. A try whose registration was replaced, cleared or dropped
 meanwhile gives its count back. A name that was held, and so took no count, is
 `Wanted` too when the look finds it no longer held (another connection took
@@ -767,7 +767,7 @@ there. So the app keeps a record of its own beside `tarmacd.log`:
   pending events of one HTML card go over 1,000 (`HTMLCardSession.pendingLimit`).
   A card gives it once at most between two sample lines, so a card that goes
   over in each turn of the main loop cannot fill the file (#331). The sample
-  line's `tarmac.card.pending_events.over_limit.count` is how many times the
+  line's `tarmac.card.pending_events.over_limit.times` is how many times the
   HTML cards went over the limit since the sample before, 0 for none.
 - **Growth.** Before each append, not only at launch, a file over 1 MiB moves
   to `tarmac-app.jsonl.1`, which replaces an older one. A failed move or open
@@ -1164,7 +1164,7 @@ browser.
   HTML file's own directory or in one under it, at any depth, or a refusal
   (outside, no file, or a hidden name below that directory) that is one
   console line. An accepted name, or the clearing of one, is a
-  `doc_data` the controller sends for the card's board and doc, and
+  `data_file` the controller sends for the card's board and doc, and
   `CardDataRegistrations` keeps it, so that a `file_event` for a data path
   reaches each card that reads it, on every built board, and every
   registration is sent again at `hello_ok`; a closed card and a removed board
@@ -1196,8 +1196,8 @@ browser.
   asks for the document) posts nothing.
   The host page posts `{tarmac:"events", texts}` into the frame. For each
   text that is a string, the shim does `JSON.parse` and dispatches a
-  `tarmac:event` on `window` with the value as `detail`. Each text has its own
-  guard: a text that does not parse is one console error, `tarmac:event: not
+  `tarmac:push` on `window` with the value as `detail`. Each text has its own
+  guard: a text that does not parse is one console error, `tarmac:push: not
   valid JSON`, sent through the shim's own relay, and a listener that throws
   stops none of the texts after it. `window.tarmac.data` is not touched.
 - **Cull pause.** A culled card's document is sent `cull`, and the shim pauses

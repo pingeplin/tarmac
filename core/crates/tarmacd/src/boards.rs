@@ -29,7 +29,7 @@ pub struct DocInfo {
     pub last_opened_ms: u64,
     /// The term that opened this doc; `None` when opened without a `TARMAC_TERM_ID`.
     pub term_id: Option<String>,
-    /// The data file the doc reads (`doc_data`). In memory only.
+    /// The data file the doc reads (`data_file`). In memory only.
     pub data: Option<PathBuf>,
     /// What the registration of `data` counts. In memory only.
     pub data_dir: DataDir,
@@ -48,7 +48,7 @@ pub enum DataDir {
     /// A directory that could not be resolved or watched, or a name that was
     /// held, took no count, and was found no longer held (another connection
     /// took the app's place meanwhile): it is tried again at a wake of the
-    /// file system and at a `doc_data` that names the file again.
+    /// file system and at a `data_file` that names the file again.
     Wanted,
 }
 
@@ -213,7 +213,7 @@ impl Registry {
         Some(self.docs.get_mut(path)?.see(stamp?))
     }
 
-    /// `doc_data`: the doc `doc` reads the file `data`, or none, and `dir` is
+    /// `data_file`: the doc `doc` reads the file `data`, or none, and `dir` is
     /// what that counts. A file named again is seen anew, so that a board in
     /// the background reports it at its switch, and keeps what it counted.
     /// Returns what is no longer held, for its count to be given back: the
@@ -951,7 +951,7 @@ mod tests {
         assert_eq!(reg.take_data_changes(&now(&data, at(10))), vec![(data.clone(), 10_000)]);
         assert_eq!(reg.take_data_changes(&now(&data, at(10))), vec![]);
         assert_eq!(reg.see_data(&data, at(30)), Some(30_000));
-        assert_eq!(reg.take_data_changes(&now(&data, at(30))), vec![], "the answer of a doc_data took it for both");
+        assert_eq!(reg.take_data_changes(&now(&data, at(30))), vec![], "the answer of a data_file took it for both");
     }
 
     #[test]

@@ -119,23 +119,23 @@ final class RustEncoderParityTests: XCTestCase {
     }
 
     /// 2611.0002 S34.
-    func testDocData() {
-        // Msg::DocData { board_id: "board-0", path: "/a/dash.html", data: Some("/a/stats.json") }
+    func testDataFile() {
+        // Msg::DataFile { board_id: "board-0", path: "/a/dash.html", file: Some("/a/stats.json") }
         // — conformance vector 14.
         assertParity(
-            .docData(boardID: "board-0", path: "/a/dash.html", data: "/a/stats.json"),
+            .dataFile(boardID: "board-0", path: "/a/dash.html", file: "/a/stats.json"),
             """
-            84 a1 74 a8 64 6f 63 5f 64 61 74 61 a8 62 6f 61 72 64 5f 69 64 a7 62 6f
-            61 72 64 2d 30 a4 70 61 74 68 ac 2f 61 2f 64 61 73 68 2e 68 74 6d 6c a4
-            64 61 74 61 ad 2f 61 2f 73 74 61 74 73 2e 6a 73 6f 6e
+            84 a1 74 a9 64 61 74 61 5f 66 69 6c 65 a8 62 6f 61 72 64 5f 69 64 a7 62
+            6f 61 72 64 2d 30 a4 70 61 74 68 ac 2f 61 2f 64 61 73 68 2e 68 74 6d 6c
+            a4 66 69 6c 65 ad 2f 61 2f 73 74 61 74 73 2e 6a 73 6f 6e
             """
         )
-        // Msg::DocData { board_id: "board-0", path: "/a/dash.html", data: None } — conformance vector 15.
+        // Msg::DataFile { board_id: "board-0", path: "/a/dash.html", file: None } — conformance vector 15.
         assertParity(
-            .docData(boardID: "board-0", path: "/a/dash.html"),
+            .dataFile(boardID: "board-0", path: "/a/dash.html"),
             """
-            83 a1 74 a8 64 6f 63 5f 64 61 74 61 a8 62 6f 61 72 64 5f 69 64 a7 62 6f
-            61 72 64 2d 30 a4 70 61 74 68 ac 2f 61 2f 64 61 73 68 2e 68 74 6d 6c
+            83 a1 74 a9 64 61 74 61 5f 66 69 6c 65 a8 62 6f 61 72 64 5f 69 64 a7 62
+            6f 61 72 64 2d 30 a4 70 61 74 68 ac 2f 61 2f 64 61 73 68 2e 68 74 6d 6c
             """
         )
     }
@@ -143,20 +143,20 @@ final class RustEncoderParityTests: XCTestCase {
     /// 2611.0003 S2. The spec's vectors 16 and 17: the Rust side's capture
     /// of them is `tarmac-protocol`'s own vector test.
     func testPushAndDocEvent() {
-        // Msg::Push { path: "/a/dash.html", data: "{\"n\":1}" } — conformance vector 16.
+        // Msg::Push { path: "/a/dash.html", value: "{\"n\":1}" } — conformance vector 16.
         assertParity(
-            .push(path: "/a/dash.html", data: #"{"n":1}"#),
+            .push(path: "/a/dash.html", value: #"{"n":1}"#),
             """
             83 a1 74 a4 70 75 73 68 a4 70 61 74 68 ac 2f 61 2f 64 61 73 68 2e 68 74
-            6d 6c a4 64 61 74 61 a7 7b 22 6e 22 3a 31 7d
+            6d 6c a5 76 61 6c 75 65 a7 7b 22 6e 22 3a 31 7d
             """
         )
-        // Msg::DocEvent { path: "/a/dash.html", data: "{\"n\":1}" } — conformance vector 17.
+        // Msg::DocEvent { path: "/a/dash.html", value: "{\"n\":1}" } — conformance vector 17.
         assertParity(
-            .docEvent(path: "/a/dash.html", data: #"{"n":1}"#),
+            .docEvent(path: "/a/dash.html", value: #"{"n":1}"#),
             """
             83 a1 74 a9 64 6f 63 5f 65 76 65 6e 74 a4 70 61 74 68 ac 2f 61 2f 64 61
-            73 68 2e 68 74 6d 6c a4 64 61 74 61 a7 7b 22 6e 22 3a 31 7d
+            73 68 2e 68 74 6d 6c a5 76 61 6c 75 65 a7 7b 22 6e 22 3a 31 7d
             """
         )
     }

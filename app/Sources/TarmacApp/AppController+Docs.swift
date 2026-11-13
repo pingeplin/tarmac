@@ -58,7 +58,7 @@ extension AppController {
         html.onDataFile = { [weak self] file in
             guard let self else { return }
             dataFiles.set(file, for: named)
-            client.docData(boardID: named.boardID, path: named.path, data: file)
+            client.dataFile(boardID: named.boardID, path: named.path, file: file)
         }
     }
 
@@ -124,9 +124,9 @@ extension AppController {
 
     /// `doc_event`: the value goes to the doc's HTML card on every board
     /// that has built one; the session decides whether its document takes it.
-    func handleDocEvent(path: String, data: String) {
+    func handleDocEvent(path: String, value: String) {
         for board in boards.values {
-            board.view.card(.doc(path))?.htmlBody?.event(data)
+            board.view.card(.doc(path))?.htmlBody?.event(value)
         }
     }
 

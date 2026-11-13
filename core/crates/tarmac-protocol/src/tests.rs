@@ -251,29 +251,29 @@ fn conformance_vector_13_scrollback() {
     );
 }
 
-// `assert_vector` decodes only. Vector 15 is the form with no `data`, so the
-// encoder's bytes are pinned too: a `data: nil` key would decode the same.
+// `assert_vector` decodes only. Vector 15 is the form with no `file`, so the
+// encoder's bytes are pinned too: a `file: nil` key would decode the same.
 #[test]
-fn conformance_vector_14_doc_data() {
-    let hex = "84 a1 74 a8 64 6f 63 5f 64 61 74 61 a8 62 6f 61 72 64 5f 69 \
-               64 a7 62 6f 61 72 64 2d 30 a4 70 61 74 68 ac 2f 61 2f 64 61 \
-               73 68 2e 68 74 6d 6c a4 64 61 74 61 ad 2f 61 2f 73 74 61 74 \
-               73 2e 6a 73 6f 6e";
-    let msg = Msg::DocData {
+fn conformance_vector_14_data_file() {
+    let hex = "84 a1 74 a9 64 61 74 61 5f 66 69 6c 65 a8 62 6f 61 72 64 5f \
+               69 64 a7 62 6f 61 72 64 2d 30 a4 70 61 74 68 ac 2f 61 2f 64 \
+               61 73 68 2e 68 74 6d 6c a4 66 69 6c 65 ad 2f 61 2f 73 74 61 \
+               74 73 2e 6a 73 6f 6e";
+    let msg = Msg::DataFile {
         board_id: "board-0".into(),
         path: "/a/dash.html".into(),
-        data: Some("/a/stats.json".into()),
+        file: Some("/a/stats.json".into()),
     };
     assert_vector(hex, msg.clone());
     assert_eq!(encode(&msg).unwrap(), unhex(hex));
 }
 
 #[test]
-fn conformance_vector_15_doc_data_with_no_data() {
-    let hex = "83 a1 74 a8 64 6f 63 5f 64 61 74 61 a8 62 6f 61 72 64 5f 69 \
-               64 a7 62 6f 61 72 64 2d 30 a4 70 61 74 68 ac 2f 61 2f 64 61 \
-               73 68 2e 68 74 6d 6c";
-    let msg = Msg::DocData { board_id: "board-0".into(), path: "/a/dash.html".into(), data: None };
+fn conformance_vector_15_data_file_with_no_file() {
+    let hex = "83 a1 74 a9 64 61 74 61 5f 66 69 6c 65 a8 62 6f 61 72 64 5f \
+               69 64 a7 62 6f 61 72 64 2d 30 a4 70 61 74 68 ac 2f 61 2f 64 \
+               61 73 68 2e 68 74 6d 6c";
+    let msg = Msg::DataFile { board_id: "board-0".into(), path: "/a/dash.html".into(), file: None };
     assert_vector(hex, msg.clone());
     assert_eq!(encode(&msg).unwrap(), unhex(hex));
 }
@@ -283,8 +283,8 @@ fn conformance_vector_15_doc_data_with_no_data() {
 #[test]
 fn conformance_vector_16_push() {
     let hex = "83 a1 74 a4 70 75 73 68 a4 70 61 74 68 ac 2f 61 2f 64 61 73 68 2e 68 74 6d 6c \
-               a4 64 61 74 61 a7 7b 22 6e 22 3a 31 7d";
-    let msg = Msg::Push { path: "/a/dash.html".into(), data: r#"{"n":1}"#.into() };
+               a5 76 61 6c 75 65 a7 7b 22 6e 22 3a 31 7d";
+    let msg = Msg::Push { path: "/a/dash.html".into(), value: r#"{"n":1}"#.into() };
     assert_vector(hex, msg.clone());
     assert_eq!(encode(&msg).unwrap(), unhex(hex));
 }
@@ -292,15 +292,15 @@ fn conformance_vector_16_push() {
 #[test]
 fn conformance_vector_17_doc_event() {
     let hex = "83 a1 74 a9 64 6f 63 5f 65 76 65 6e 74 a4 70 61 74 68 ac 2f 61 2f 64 61 73 68 \
-               2e 68 74 6d 6c a4 64 61 74 61 a7 7b 22 6e 22 3a 31 7d";
-    let msg = Msg::DocEvent { path: "/a/dash.html".into(), data: r#"{"n":1}"#.into() };
+               2e 68 74 6d 6c a5 76 61 6c 75 65 a7 7b 22 6e 22 3a 31 7d";
+    let msg = Msg::DocEvent { path: "/a/dash.html".into(), value: r#"{"n":1}"#.into() };
     assert_vector(hex, msg.clone());
     assert_eq!(encode(&msg).unwrap(), unhex(hex));
 }
 
 #[test]
 fn a_payload_of_exactly_the_limit_is_within_it_and_one_byte_more_is_not() {
-    let push = |n: usize| Msg::Push { path: "/p".into(), data: "x".repeat(n) };
+    let push = |n: usize| Msg::Push { path: "/p".into(), value: "x".repeat(n) };
     let limit = encode(&push(100)).unwrap().len();
     assert_eq!(encode_within(&push(100), limit), Some(encode(&push(100)).unwrap()));
     assert_eq!(encode_within(&push(101), limit), None);
@@ -823,10 +823,10 @@ fn all_message_types_roundtrip() {
         Msg::Open { path: "/a.md".into(), term_id: Some("t9".into()), board_id: Some("board-1".into()) },
         Msg::DocClose { path: "/tmp/a.md".into() },
         Msg::DocRefresh { path: "/tmp/a.md".into() },
-        Msg::DocData { board_id: "board-1".into(), path: "/tmp/a.html".into(), data: Some("/tmp/a.json".into()) },
-        Msg::DocData { board_id: "board-1".into(), path: "/tmp/a.html".into(), data: None },
-        Msg::Push { path: "/tmp/a.html".into(), data: "[1,2]".into() },
-        Msg::DocEvent { path: "/tmp/a.html".into(), data: String::new() },
+        Msg::DataFile { board_id: "board-1".into(), path: "/tmp/a.html".into(), file: Some("/tmp/a.json".into()) },
+        Msg::DataFile { board_id: "board-1".into(), path: "/tmp/a.html".into(), file: None },
+        Msg::Push { path: "/tmp/a.html".into(), value: "[1,2]".into() },
+        Msg::DocEvent { path: "/tmp/a.html".into(), value: String::new() },
     ];
     for m in msgs {
         assert_eq!(roundtrip(&m), m, "roundtrip failed for {m:?}");

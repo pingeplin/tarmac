@@ -80,7 +80,7 @@ pub async fn handle_open(
     Ok(())
 }
 
-/// `push`: gives `data`, one JSON value, to the app for the open doc
+/// `push`: gives `value`, one JSON value, to the app for the open doc
 /// `raw_path`, as one `doc_event` with the registry's key whatever boards
 /// hold the doc. The JSON check comes first, as it costs no file-system call.
 /// The registry is asked on every push, so a doc closed since is refused.
@@ -88,9 +88,9 @@ pub async fn handle_push(
     daemon: &Daemon,
     resolved: &mut HashMap<PathBuf, PathBuf>,
     raw_path: &str,
-    data: String,
+    value: String,
 ) -> Result<(), String> {
-    serde_json::from_str::<serde_json::Value>(&data).map_err(|e| format!("not one JSON value: {e}"))?;
+    serde_json::from_str::<serde_json::Value>(&value).map_err(|e| format!("not one JSON value: {e}"))?;
     let given = Path::new(raw_path);
     if !given.is_absolute() {
         return Err(format!("path is not absolute: {raw_path}"));
@@ -104,7 +104,7 @@ pub async fn handle_push(
             open.ok_or_else(|| format!("not an open doc: {raw_path}"))?
         }
     };
-    let event = Msg::DocEvent { path: key.to_string_lossy().into_owned(), data };
+    let event = Msg::DocEvent { path: key.to_string_lossy().into_owned(), value };
     // A frame over the limit would end the app's connection when it is
     // written (`conn::app_session`), after this push had been acked.
     if tarmac_protocol::encode_within(&event, MAX_FRAME_LEN as usize).is_none() {
@@ -321,11 +321,11 @@ pub async fn stat_and_push(daemon: &Arc<Daemon>, path: &Path) -> bool {
     true
 }
 
-/// `doc_data`: the doc `doc` of board `board` reads the file `data`, or none.
+/// `data_file`: the doc `doc` of board `board` reads the file `data`, or none.
 /// When the board is active and the file is there, the file is taken as seen
 /// and a `file_event` for it is pushed, the same file again included. A board
 /// in the background reports it at its switch. It is not held when it
-/// reaches no app: the app sends `doc_data` again when it connects.
+/// reaches no app: the app sends `data_file` again when it connects.
 ///
 /// The directory of a file under the doc's own is counted before the look,
 /// as `open_doc` counts, since the look's `apply` holds the `boards` lock:
@@ -348,7 +348,7 @@ pub async fn record_data(daemon: &Daemon, board: &str, doc: &Path, data: Option<
     }
     // A name held already takes no count; if it is not held by the look
     // (the app's place was taken meanwhile and dropped it), it is `Wanted`,
-    // so that the next `doc_data` for it, or a wake, counts it.
+    // so that the next `data_file` for it, or a wake, counts it.
     let (dir, watched) = match data.as_deref() {
         Some(data) if anew => daemon.count_data_dir(doc, data).await,
         Some(_) => (DataDir::Wanted, false),

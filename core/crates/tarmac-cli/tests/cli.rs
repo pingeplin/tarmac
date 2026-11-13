@@ -52,8 +52,9 @@ fn help_exits_zero_and_documents_open() {
 fn help_documents_push() {
     let out = Report::of(tarmac().arg("--help"));
     assert!(out.status.success());
-    assert!(out.stdout.contains("tarmac push <html-path> <json>"), "{}", out.stdout);
-    assert!(out.stdout.contains("tarmac push <html-path> -"), "{}", out.stdout);
+    assert!(out.stdout.contains("tarmac push <path> <json>"), "{}", out.stdout);
+    assert!(out.stdout.contains("tarmac push <path> -"), "{}", out.stdout);
+    assert!(out.stdout.contains("as a `tarmac:push` on `window`"), "{}", out.stdout);
     assert!(out.stdout.contains("1  the daemon refused an open or a push"), "{}", out.stdout);
 }
 

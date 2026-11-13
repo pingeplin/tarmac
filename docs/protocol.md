@@ -159,7 +159,7 @@ files atomically, so watching the file inode directly misses rewrites. A data fi
 in a directory under the doc's own has that directory watched too (see Naming a
 doc's data file). An event of
 the watcher only wakes the daemon. The daemon then stats each doc of the active
-board, and each data file that one of them reads (`doc_data`), and sends a
+board, and each data file that one of them reads (`data_file`), and sends a
 `file_event` for each file that differs — in mtime, length or
 inode — from what the daemon last saw for that board and doc. So `mtime_ms` can be
 the one of the `file_event` before. From the watcher: at most one `file_event` for
@@ -506,24 +506,24 @@ all existing vectors decode unchanged.
 
 ## Naming a doc's data file (issue #311)
 
-    {t:"doc_data", board_id, path, data}            — app → daemon
-    {t:"doc_data", board_id, path}                  — app → daemon: the doc reads none
+    {t:"data_file", board_id, path, file}           — app → daemon
+    {t:"data_file", board_id, path}                 — app → daemon: the doc reads none
 
 An HTML doc names one JSON file in its own directory or in a directory under it,
 at any depth (2611.0005), its **data file**; the app reads that
 file and hands its content to the loaded document. The daemon reports the data
-file as it reports a doc: with a `file_event {path: <data>, mtime_ms}`. There is no
+file as it reports a doc: with a `file_event {path: <file>, mtime_ms}`. There is no
 reply frame.
 
-The daemon records `data` with the doc entry of `path` on board `board_id`. A
-`doc_data` with a `data` replaces the doc's data file; one with no `data` clears
+The daemon records `file` with the doc entry of `path` on board `board_id`. A
+`data_file` with a `file` replaces the doc's data file; one with no `file` clears
 it. It is in memory only: never in the state file, and gone when the doc is
 closed or its board deleted, and every registration of every board is dropped
 when the app's connection ends or another connection takes its place: the app
 names each file again after it connects. It is ignored, with nothing recorded and
 the registration before kept, for an unknown `board_id` (there is **no**
 fall-back to the active board), for a `path` that is not a doc of that board, and
-for a `data` that is not a file under the doc's directory: relative, outside that
+for a `file` that is not a file under the doc's directory: relative, outside that
 directory, with a `.`, `..` or empty component (`//`), ending in `/`, naming no
 file (`<dir>`), or with a **hidden** component (one that starts with `.`) below
 the doc's directory. The path is judged on its bytes as given, with no link
@@ -531,8 +531,8 @@ followed and nothing worked out, so `<dir>/sub/../x.json` and `<dir>/./x.json`
 are refused; the doc's own directory may be hidden.
 
 - **At once.** When the board is the active one and the file is there, the daemon
-  takes the file as seen and pushes a `file_event` for `data`, for every
-  `doc_data` that names it, the same name again included. A file that is not
+  takes the file as seen and pushes a `file_event` for `file`, for every
+  `data_file` that names it, the same name again included. A file that is not
   there pushes nothing.
 - **Then, for each change.** The data files of the active board are compared in
   each look, as its docs are (see File watching): a file that differs from what
@@ -547,13 +547,13 @@ are refused; the doc's own directory may be hidden.
   counts nothing more. A directory that resolves to the doc's own, out of the
   doc's tree, or to a hidden name below it is not watched: each look still stats
   the file. A directory that is not there, or cannot be watched, is tried again at
-  each change that the file system reports and at each `doc_data` that names the
+  each change that the file system reports and at each `data_file` that names the
   file again. A board in the background counts its watch too.
-- **A board in the background** is not answered at once. Each `doc_data` with a
-  `data` starts from nothing seen, so when that board is made active a
+- **A board in the background** is not answered at once. Each `data_file` with a
+  `file` starts from nothing seen, so when that board is made active a
   `file_event` for the data file follows its `restore`, if the file is there;
   after that, as for a doc, one follows the `restore` when the file changed.
-- A data `file_event` that reaches no app is not held: the app sends `doc_data`
+- A data `file_event` that reaches no app is not held: the app sends `data_file`
   again after it connects, and the answer brings the content.
 
 `doc_refresh` does not look at data files. New **additive app→daemon type**: a
@@ -564,16 +564,16 @@ gets no data; all existing vectors decode unchanged.
 |---|---|---|---|
 | `board_id` | string (required) | — | the board of the doc; an unknown id is ignored |
 | `path` | string (required) | — | the doc that reads the file (the registry key) |
-| `data` | string | the doc reads no data file | absolute path of the data file, in the doc's directory or under it |
+| `file` | string | the doc reads no data file | absolute path of the data file, in the doc's directory or under it |
 
 ## Events for a loaded HTML card (issue #326)
 
-    {t:"push", path, data}          — cli → daemon; answered with ack | err
-    {t:"doc_event", path, data}     — daemon → app; no reply
+    {t:"push", path, value}         — cli → daemon; answered with ack | err
+    {t:"doc_event", path, value}    — daemon → app; no reply
 
 `tarmac push` gives one JSON value to the HTML cards of an open doc that are
-loaded at that moment. `data` is the value as text. The daemon checks it, the
-app does not parse it, and the document gets it as a `tarmac:event`. A cli
+loaded at that moment. `value` is the value as text. The daemon checks it, the
+app does not parse it, and the document gets it as a `tarmac:push`. A cli
 session can carry any number of `push` frames. The cli sends each one after the
 answer to the one before, because an answer carries no id.
 
@@ -582,8 +582,8 @@ answer, `err {msg}`; `<path>` is the path as given:
 
 | Case | Answer |
 | --- | --- |
-| the frame does not decode (no `path` or no `data`, or a `data` that is not a msgpack str) | `err "malformed frame: <decoder's message>"`, as for any frame of the session; the connection stays open |
-| `data` is not one JSON value (below) | `err "not one JSON value: <serde_json's message>"` |
+| the frame does not decode (no `path` or no `value`, or a `value` that is not a msgpack str) | `err "malformed frame: <decoder's message>"`, as for any frame of the session; the connection stays open |
+| `value` is not one JSON value (below) | `err "not one JSON value: <serde_json's message>"` |
 | `path` is not absolute | `err "path is not absolute: <path>"` |
 | the resolve fails | the text `open` answers: `cannot open <path>: <io error>`, `cannot stat <resolved>: <io error>`, or `not a regular file: <resolved>` |
 | the resolve does not answer in the path gate's limit | `cannot open <path>: did not answer in <limit>`, as `open` answers |
@@ -600,7 +600,7 @@ answer, `err {msg}`; `<path>` is the path as given:
   again on the next `push`. The registry is asked on every `push`, so a doc
   closed since is refused.
 - **One `doc_event` for each `push`**, however many boards hold the doc. Its
-  `path` is the registry key (the resolved path) and its `data` is the `push`'s,
+  `path` is the registry key (the resolved path) and its `value` is the `push`'s,
   byte for byte. A doc of any kind gets it, also on a board in the background:
   the app gives it only to an HTML card whose document is ready for its current
   load, and drops it otherwise. Nothing is kept for later.
@@ -624,7 +624,7 @@ answer came in 5 s. All existing vectors decode unchanged.
 | key | type | missing ⇒ | semantics |
 |---|---|---|---|
 | `path` | string (required) | — | `push`: the doc, an absolute path as given; `doc_event`: the doc's registry key |
-| `data` | string (required) | — | one JSON value, as text |
+| `value` | string (required) | — | one JSON value, as text |
 
 ## Replaying a terminal's scrollback on demand (issue #41)
 
@@ -762,35 +762,35 @@ round-trip. Byte-exact encoder output is NOT required (key order may legally dif
         a7 74 65 72 6d 5f 69 64 a2 74 31
         a5 62 79 74 65 73 c4 03 68 69 0a
 
-14. (issue #311) `{t:"doc_data", board_id:"board-0", path:"/a/dash.html",
-    data:"/a/stats.json"}` — new additive app→daemon type; decodes by tag and
+14. (issue #311) `{t:"data_file", board_id:"board-0", path:"/a/dash.html",
+    file:"/a/stats.json"}` — new additive app→daemon type; decodes by tag and
     round-trips; existing vectors V1–V13 are unaffected. Keys in the order
     `rmp_serde::to_vec_named` writes them.
 
-        84 a1 74 a8 64 6f 63 5f 64 61 74 61 a8 62 6f 61 72 64 5f 69
-        64 a7 62 6f 61 72 64 2d 30 a4 70 61 74 68 ac 2f 61 2f 64 61
-        73 68 2e 68 74 6d 6c a4 64 61 74 61 ad 2f 61 2f 73 74 61 74
-        73 2e 6a 73 6f 6e
+        84 a1 74 a9 64 61 74 61 5f 66 69 6c 65 a8 62 6f 61 72 64 5f
+        69 64 a7 62 6f 61 72 64 2d 30 a4 70 61 74 68 ac 2f 61 2f 64
+        61 73 68 2e 68 74 6d 6c a4 66 69 6c 65 ad 2f 61 2f 73 74 61
+        74 73 2e 6a 73 6f 6e
 
-15. (issue #311) `{t:"doc_data", board_id:"board-0", path:"/a/dash.html"}` — the
-    same type with no `data`: the doc reads none. `data` is omitted, not nil, so
+15. (issue #311) `{t:"data_file", board_id:"board-0", path:"/a/dash.html"}` — the
+    same type with no `file`: the doc reads none. `file` is omitted, not nil, so
     the map has three keys.
 
-        83 a1 74 a8 64 6f 63 5f 64 61 74 61 a8 62 6f 61 72 64 5f 69
-        64 a7 62 6f 61 72 64 2d 30 a4 70 61 74 68 ac 2f 61 2f 64 61
-        73 68 2e 68 74 6d 6c
+        83 a1 74 a9 64 61 74 61 5f 66 69 6c 65 a8 62 6f 61 72 64 5f
+        69 64 a7 62 6f 61 72 64 2d 30 a4 70 61 74 68 ac 2f 61 2f 64
+        61 73 68 2e 68 74 6d 6c
 
-16. (issue #326) `{t:"push", path:"/a/dash.html", data:"{\"n\":1}"}` — new
+16. (issue #326) `{t:"push", path:"/a/dash.html", value:"{\"n\":1}"}` — new
     additive cli→daemon type; decodes by tag and round-trips; existing vectors
     V1–V15 are unaffected. Keys in the order `rmp_serde::to_vec_named` writes
     them.
 
-        83 a1 74 a4 70 75 73 68 a4 70 61 74 68 ac 2f 61 2f 64 61 73 68
-        2e 68 74 6d 6c a4 64 61 74 61 a7 7b 22 6e 22 3a 31 7d
+        83 a1 74 a4 70 75 73 68 a4 70 61 74 68 ac 2f 61 2f 64 61 73
+        68 2e 68 74 6d 6c a5 76 61 6c 75 65 a7 7b 22 6e 22 3a 31 7d
 
-17. (issue #326) `{t:"doc_event", path:"/a/dash.html", data:"{\"n\":1}"}` — new
+17. (issue #326) `{t:"doc_event", path:"/a/dash.html", value:"{\"n\":1}"}` — new
     additive daemon→app type, the same keys in the same order.
 
-        83 a1 74 a9 64 6f 63 5f 65 76 65 6e 74 a4 70 61 74 68 ac 2f 61
-        2f 64 61 73 68 2e 68 74 6d 6c a4 64 61 74 61 a7 7b 22 6e 22 3a
-        31 7d
+        83 a1 74 a9 64 6f 63 5f 65 76 65 6e 74 a4 70 61 74 68 ac 2f
+        61 2f 64 61 73 68 2e 68 74 6d 6c a5 76 61 6c 75 65 a7 7b 22
+        6e 22 3a 31 7d
