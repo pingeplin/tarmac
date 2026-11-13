@@ -46,7 +46,7 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
     private var markdown: String?
     private var lastChangedMs: UInt64?
     /// Reads are answered off the main thread; only the latest one is shown.
-    private var reads = 0
+    private var reads = LoadCount()
     /// A word that a page is drawn can come for a page that was replaced.
     private var pageLoads = LoadCount()
 
@@ -141,13 +141,12 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
 
     func refresh(lastChangedMs: UInt64?) {
         self.lastChangedMs = lastChangedMs
-        reads += 1
-        let read = reads
+        let read = reads.next()
         let path = self.path
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let markdown = DocSource.markdown(path: path, contents: FileBytes.read(path: path))
             DispatchQueue.main.async { [weak self] in
-                guard let self, read == self.reads else { return }
+                guard let self, self.reads.isCurrent(read) else { return }
                 self.markdown = markdown
                 self.render()
             }
