@@ -22,7 +22,7 @@ final class SampleLineTests: XCTestCase {
             cardsHTML: 3,
             cardsMarkdown: 2,
             cardsTerminal: 1,
-            pending: [Pending(path: "/a/dash.html", count: 6, timesOver: 0)],
+            pending: [Pending(path: "/a/dash.html", largest: 6, timesOver: 0)],
             webContent: [
                 WebContent(pid: 9201, path: "/a/dash.html", footprint: 120_390_544),
                 WebContent(pid: 9202, path: "/a/b.md", footprint: 100_000_000),
@@ -122,21 +122,21 @@ final class SampleLineTests: XCTestCase {
     }
 
     func test2611_0004S7aTheTimesOverTheLimitAreSummedOverTheCardsAnd0IsWritten() throws {
-        for pending in [[], [Pending(path: "/a/dash.html", count: 6, timesOver: 0)]] {
+        for pending in [[], [Pending(path: "/a/dash.html", largest: 6, timesOver: 0)]] {
             var sample = full
             sample.pending = pending
             XCTAssertEqual(try attrs(of: sample)["tarmac.card.pending_events.over_limit.times"] as? Int, 0)
         }
         var sample = full
         sample.pending = [
-            Pending(path: "/a/two.html", count: 1_001, timesOver: 2),
-            Pending(path: "/a/dash.html", count: 1_500, timesOver: 3),
+            Pending(path: "/a/two.html", largest: 1_001, timesOver: 2),
+            Pending(path: "/a/dash.html", largest: 1_500, timesOver: 3),
         ]
         XCTAssertEqual(try attrs(of: sample)["tarmac.card.pending_events.over_limit.times"] as? Int, 5)
     }
 
     func test2611_0004S7APendingMaxOf0HasNoPathAndAMaxOf6NamesItsCard() throws {
-        for pending in [[], [Pending(path: "/a/dash.html", count: 0, timesOver: 0)]] {
+        for pending in [[], [Pending(path: "/a/dash.html", largest: 0, timesOver: 0)]] {
             var sample = full
             sample.pending = pending
             let attrs = try attrs(of: sample)
@@ -145,9 +145,9 @@ final class SampleLineTests: XCTestCase {
         }
         var sample = full
         sample.pending = [
-            Pending(path: "/a/two.html", count: 2, timesOver: 0),
-            Pending(path: "/a/dash.html", count: 6, timesOver: 0),
-            Pending(path: "/a/five.html", count: 5, timesOver: 0),
+            Pending(path: "/a/two.html", largest: 2, timesOver: 0),
+            Pending(path: "/a/dash.html", largest: 6, timesOver: 0),
+            Pending(path: "/a/five.html", largest: 5, timesOver: 0),
         ]
         let attrs = try attrs(of: sample)
         XCTAssertEqual(attrs["tarmac.card.pending_events.max"] as? Int, 6)
@@ -186,7 +186,7 @@ final class SampleLineTests: XCTestCase {
     func test2611_0004S10APathWithAQuoteABackslashAndANonASCIILetterComesBackTheSame() throws {
         let path = #"/a/"q"\b/é.html"#
         var sample = full
-        sample.pending = [Pending(path: path, count: 1, timesOver: 0)]
+        sample.pending = [Pending(path: path, largest: 1, timesOver: 0)]
         sample.webContent = [WebContent(pid: 1, path: path, footprint: 1)]
         let attrs = try attrs(of: sample)
         XCTAssertEqual(attrs["tarmac.card.pending_events.path"] as? String, path)

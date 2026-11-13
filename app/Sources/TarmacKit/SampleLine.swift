@@ -38,12 +38,12 @@ public enum SampleLine {
     /// sample before, and how many times that count went over the limit.
     public struct Pending: Equatable, Sendable {
         public let path: String
-        public let count: Int
+        public let largest: Int
         public let timesOver: Int
 
-        public init(path: String, count: Int, timesOver: Int) {
+        public init(path: String, largest: Int, timesOver: Int) {
             self.path = path
-            self.count = count
+            self.largest = largest
             self.timesOver = timesOver
         }
     }
@@ -102,7 +102,7 @@ public enum SampleLine {
             attrs["tarmac.daemon.memory.footprint"] = number(bytes)
         }
         let pending = largest(sample.pending)
-        attrs["tarmac.card.pending_events.max"] = number(pending?.count ?? 0)
+        attrs["tarmac.card.pending_events.max"] = number(pending?.largest ?? 0)
         attrs["tarmac.card.pending_events.over_limit.times"] = number(sample.pending.reduce(0) { $0 + $1.timesOver })
         if let pending { attrs["tarmac.card.pending_events.path"] = .string(pending.path) }
         let processes = distinctReadable(sample.webContent)
@@ -131,7 +131,7 @@ public enum SampleLine {
     /// The card with the largest count, nil when no count is over 0. Ties go
     /// to the first, as `max(by:)` keeps the first of equals.
     private static func largest(_ pending: [Pending]) -> Pending? {
-        pending.max { $0.count < $1.count }.flatMap { $0.count > 0 ? $0 : nil }
+        pending.max { $0.largest < $1.largest }.flatMap { $0.largest > 0 ? $0 : nil }
     }
 
     /// One entry for each readable pid, named by its first card in the input:
