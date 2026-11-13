@@ -8,7 +8,7 @@ use tarmac_protocol::{MAX_FRAME_LEN, Msg, OVER_FRAME_LIMIT};
 use tokio::task::JoinSet;
 use tracing::debug;
 
-use crate::boards::{Boards, DataDir, DocInfo, FileStamp, Registry, epoch_ms};
+use crate::boards::{Boards, DataDir, DataRead, DocInfo, FileStamp, Registry, epoch_ms};
 use crate::reader::{Out, PathFs, PathGate};
 use crate::state::Daemon;
 
@@ -185,7 +185,6 @@ pub fn upsert_doc(
                     last_opened_ms: epoch_ms(SystemTime::now()),
                     term_id,
                     data: None,
-                    data_dir: DataDir::Uncounted,
                 },
             );
             reg.dock.push(path.to_owned());
@@ -360,7 +359,7 @@ pub async fn record_data(daemon: &Daemon, board: &str, doc: &Path, data: Option<
             |boards, now| {
                 let active = boards.active_id() == board;
                 let Some(reg) = boards.known_registry_mut(board) else { return Err(dir) };
-                let not_held = reg.set_data(doc, data.clone(), dir)?;
+                let not_held = reg.set_data(doc, data.clone().map(|file| DataRead { file, dir }))?;
                 Ok((not_held, data.as_ref().filter(|_| active).and_then(|data| reg.see_data(data, *now.get(data)?))))
             },
         )
@@ -397,4 +396,85 @@ pub fn is_below(dir: &Path, path: &Path) -> bool {
     let Some(rest) = path.as_os_str().as_bytes().strip_prefix(dir) else { return false };
     let below = if dir.ends_with(b"/") { Some(rest) } else { rest.strip_prefix(b"/") };
     below.is_some_and(|below| below.split(|b| *b == b'/').all(|c| !c.is_empty() && !c.starts_with(b".")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn under(data: &str) -> bool {
+        is_under(Path::new("/a/d/dash.html"), Path::new(data))
+    }
+
+    #[test]
+    fn a_file_beside_the_doc_is_under_it() {
+        assert!(under("/a/d/x.json"));
+    }
+
+    #[test]
+    fn a_file_at_any_depth_below_the_doc_is_under_it() {
+        assert!(under("/a/d/sub/deeper/x.json"));
+    }
+
+    #[test]
+    fn a_dot_dot_component_is_refused_wherever_it_leads() {
+        assert!(!under("/a/d/sub/../x.json"));
+        assert!(!under("/a/d/../x.json"));
+        assert!(!under("/a/d/sub/../../away/x.json"));
+    }
+
+    #[test]
+    fn a_dot_component_is_refused() {
+        assert!(!under("/a/d/./x.json"));
+        assert!(!under("/a/d/sub/./x.json"));
+    }
+
+    #[test]
+    fn an_empty_component_is_refused() {
+        assert!(!under("/a/d//sub/x.json"));
+    }
+
+    #[test]
+    fn a_trailing_slash_is_refused() {
+        assert!(!under("/a/d/sub/x.json/"));
+    }
+
+    #[test]
+    fn a_hidden_component_below_the_doc_is_refused() {
+        assert!(!under("/a/d/.x.json"));
+        assert!(!under("/a/d/.cache/x.json"));
+    }
+
+    #[test]
+    fn a_sibling_directory_that_starts_with_the_doc_directory_is_not_under_it() {
+        assert!(!under("/a/dx/x.json"));
+    }
+
+    #[test]
+    fn the_doc_directory_itself_is_not_under_it() {
+        assert!(!under("/a/d"));
+    }
+
+    #[test]
+    fn the_doc_directory_with_a_trailing_slash_is_not_under_it() {
+        assert!(!under("/a/d/"));
+    }
+
+    #[test]
+    fn the_parent_of_the_doc_directory_is_not_under_it() {
+        assert!(!under("/a/x.json"));
+        assert!(!under("/a"));
+    }
+
+    #[test]
+    fn a_relative_path_is_refused() {
+        assert!(!under("d/x.json"));
+        assert!(!under("sub/x.json"));
+    }
+
+    #[test]
+    fn below_the_root_a_path_needs_no_second_separator() {
+        assert!(is_below(Path::new("/"), Path::new("/x.json")));
+        assert!(!is_below(Path::new("/"), Path::new("//x.json")));
+    }
 }

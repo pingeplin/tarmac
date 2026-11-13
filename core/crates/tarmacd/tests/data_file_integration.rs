@@ -100,6 +100,12 @@ impl Card {
     fn register(&self, app: &mut Conn) {
         self.register_file(app, &self.stats);
     }
+
+    /// `data_file` for `dash` naming `data`, and its answer.
+    fn register_file(&self, app: &mut Conn, data: &str) {
+        data_file(app, "board-0", &self.dash, Some(data));
+        assert_eq!(app.recv_file_event_for(data), mtime_ms(data));
+    }
 }
 
 // S36
@@ -382,15 +388,6 @@ fn the_data_file_is_not_in_the_state_file() {
 }
 
 // Spec 2611.0005: a data file in a directory under the doc's own.
-
-impl Card {
-    /// The card's directory, as the registry writes it.
-    /// `data_file` for `dash` naming `data`, and its answer.
-    fn register_file(&self, app: &mut Conn, data: &str) {
-        data_file(app, "board-0", &self.dash, Some(data));
-        assert_eq!(app.recv_file_event_for(data), mtime_ms(data));
-    }
-}
 
 /// The card with `sub/stats.json` written and registered, and the looks that
 /// the opens and the registration woke waited out.

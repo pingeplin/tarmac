@@ -41,9 +41,9 @@ fn fail_to(err: &mut impl Write, line: &str) -> i32 {
 
 fn one(path: &str, value: &str) -> i32 {
     let Some(payload) = payload(path, value.to_owned(), LIMIT) else { return fail(OVER_FRAME_LIMIT) };
-    match crate::connect().and_then(|mut conn| exchange(&mut conn, &payload)) {
-        Ok(Ok(())) => 0,
-        Ok(Err(refusal)) | Err(refusal) => fail(&refusal),
+    match crate::connect().map(|mut conn| exchange(&mut conn, &payload)) {
+        Ok(Sent::Acked) => 0,
+        Ok(Sent::Refused(why) | Sent::Ended(why)) | Err(why) => fail(&why),
     }
 }
 
@@ -70,6 +70,7 @@ fn stream(conn: &mut UnixStream, path: &str, input: impl Read, err: &mut impl Wr
     i32::from(refused)
 }
 
+#[derive(Debug, PartialEq)]
 enum Sent {
     Acked,
     Refused(String),
@@ -79,20 +80,23 @@ enum Sent {
 
 fn send_value(conn: &mut UnixStream, path: &str, text: String) -> Sent {
     let Some(payload) = payload(path, text, LIMIT) else { return Sent::Refused(OVER_FRAME_LIMIT.to_owned()) };
-    match exchange(conn, &payload) {
+    exchange(conn, &payload)
+}
+
+/// Sends one `push` and waits for its answer (`crate::answer`).
+fn exchange(conn: &mut UnixStream, payload: &[u8]) -> Sent {
+    if let Err(e) = proto::frame::write_sync(conn, payload) {
+        return Sent::Ended(crate::lost(e));
+    }
+    let answer = crate::answer(conn, |e| match e.kind() {
+        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => NO_ANSWER.to_owned(),
+        _ => crate::lost(e),
+    });
+    match answer {
         Ok(Ok(())) => Sent::Acked,
         Ok(Err(refusal)) => Sent::Refused(refusal),
         Err(why) => Sent::Ended(why),
     }
-}
-
-/// Sends one `push` and waits for its answer (`crate::answer`).
-fn exchange(conn: &mut UnixStream, payload: &[u8]) -> Result<Result<(), String>, String> {
-    proto::frame::write_sync(conn, payload).map_err(crate::lost)?;
-    crate::answer(conn, |e| match e.kind() {
-        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => NO_ANSWER.to_owned(),
-        _ => crate::lost(e),
-    })
 }
 
 enum Mode<'a> {
@@ -427,7 +431,7 @@ mod tests {
     fn no_answer_in_the_read_timeout_is_worded_as_no_answer() {
         let (mut cli, _daemon) = silent_daemon(std::time::Duration::from_millis(100));
         let payload = payload("/p", "1".into(), LIMIT).unwrap();
-        assert_eq!(exchange(&mut cli, &payload), Err(NO_ANSWER.to_owned()));
+        assert_eq!(exchange(&mut cli, &payload), Sent::Ended(NO_ANSWER.to_owned()));
     }
 
     // S16

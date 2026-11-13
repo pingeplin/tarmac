@@ -86,23 +86,25 @@ async fn cli_session(daemon: Arc<Daemon>, mut stream: UnixStream) -> anyhow::Res
         };
         match proto::decode(&payload) {
             Ok(Msg::Open { path, term_id, board_id }) => {
-                let reply = match docs::handle_open(&daemon, &path, "cli", term_id, board_id).await {
-                    Ok(()) => Msg::Ack,
-                    Err(msg) => Msg::Err { msg },
-                };
-                write_msg(&mut stream, &reply).await?;
+                let done = docs::handle_open(&daemon, &path, "cli", term_id, board_id).await;
+                write_msg(&mut stream, &reply(done)).await?;
             }
             Ok(Msg::Push { path, value }) => {
-                let reply = match docs::handle_push(&daemon, &mut resolved, &path, value).await {
-                    Ok(()) => Msg::Ack,
-                    Err(msg) => Msg::Err { msg },
-                };
-                write_msg(&mut stream, &reply).await?;
+                let done = docs::handle_push(&daemon, &mut resolved, &path, value).await;
+                write_msg(&mut stream, &reply(done)).await?;
             }
             Ok(Msg::Unknown) => debug!("ignoring unknown message type from cli"),
             Ok(other) => debug!("ignoring unexpected cli message: {other:?}"),
             Err(e) => reject(&mut stream, format!("malformed frame: {e}")).await?,
         }
+    }
+}
+
+/// The answer to a cli `open` or `push`.
+fn reply(done: Result<(), String>) -> Msg {
+    match done {
+        Ok(()) => Msg::Ack,
+        Err(msg) => Msg::Err { msg },
     }
 }
 
