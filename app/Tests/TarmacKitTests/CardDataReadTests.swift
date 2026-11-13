@@ -1,7 +1,8 @@
 import XCTest
 @testable import TarmacKit
 
-/// The read of a card's data file (spec 2611.0002 S30, S32), with a stand-in
+/// The read of a card's data file (spec 2611.0002 S30, S32; 2611.0005 S6,
+/// S33), with a stand-in
 /// file system (`SchemeFixtures.Disk`): a path resolves when it, or the file
 /// its link leads to, is on the disk.
 final class CardDataReadTests: XCTestCase {
@@ -29,7 +30,7 @@ final class CardDataReadTests: XCTestCase {
     }
 
     func testS30ANameThatResolvesToAnotherDirectoryIsNeverRead() {
-        for target in ["/etc/stats.json", "/a/b/sub/stats.json"] {
+        for target in ["/etc/stats.json", "/a/bc/stats.json"] {
             let disk = Disk([html: Data(), file: Data("{}".utf8), target: Data("{}".utf8)], links: [file: target])
             XCTAssertEqual(read(disk), .refused(CardDataRead.leadsOutside), target)
             XCTAssertEqual(disk.opened, [], target)
@@ -43,8 +44,8 @@ final class CardDataReadTests: XCTestCase {
         let mark = "\u{301}"
         let under = "/a/b/sub/\(mark)x.json"
         let disk = Disk([html: Data(), under: Data("{}".utf8)], links: [file: under])
-        XCTAssertEqual(read(disk), .refused(CardDataRead.leadsOutside))
-        XCTAssertEqual(disk.opened, [])
+        XCTAssertEqual(read(disk), .text("{}"))
+        XCTAssertEqual(disk.opened, [under])
 
         let composed = "/v/\u{e9}/dash.html"
         let decomposed = "/v/e\(mark)/x.json"
@@ -84,6 +85,56 @@ final class CardDataReadTests: XCTestCase {
         )
         XCTAssertEqual(read(disk), .text("{}"))
         XCTAssertEqual(disk.opened, ["/c/stats.json"])
+    }
+
+    func testS6AResolvedFileUnderTheCardsDirectoryIsReadAndOneOutsideIsNot() {
+        let link = "/a/b/link/x.json"
+        let away = Disk([html: Data(), "/elsewhere/x.json": Data("{}".utf8)], links: [link: "/elsewhere/x.json"])
+        XCTAssertEqual(
+            CardDataRead.read(file: link, html: html, resolve: away.resolve, read: away.read),
+            .refused(CardDataRead.leadsOutside)
+        )
+        XCTAssertEqual(away.opened, [])
+
+        let other = Disk([html: Data(), "/a/b/other/x.json": Data("[1]".utf8)], links: [link: "/a/b/other/x.json"])
+        XCTAssertEqual(CardDataRead.read(file: link, html: html, resolve: other.resolve, read: other.read), .text("[1]"))
+        XCTAssertEqual(other.opened, ["/a/b/other/x.json"])
+
+        let deeper = Disk([html: Data(), "/a/b/sub/stats.json": Data("[2]".utf8)], links: [file: "/a/b/sub/stats.json"])
+        XCTAssertEqual(read(deeper), .text("[2]"))
+        XCTAssertEqual(deeper.opened, ["/a/b/sub/stats.json"])
+
+        let real = Disk(
+            ["/real/dash.html": Data(), "/real/sub/x.json": Data("[3]".utf8)],
+            links: [html: "/real/dash.html", "/a/b/sub/x.json": "/real/sub/x.json"]
+        )
+        XCTAssertEqual(
+            CardDataRead.read(file: "/a/b/sub/x.json", html: html, resolve: real.resolve, read: real.read), .text("[3]")
+        )
+        XCTAssertEqual(real.opened, ["/real/sub/x.json"])
+    }
+
+    /// The hidden rule on the resolved file, below the resolved HTML file's
+    /// directory only.
+    func testS33AResolvedFileThatIsHiddenBelowTheCardsDirectoryIsNeverRead() {
+        let name = "/a/b/data/x.json"
+        for target in ["/a/b/.cfg/x.json", "/a/b/sub/.x.json"] {
+            let disk = Disk([html: Data(), target: Data("{}".utf8)], links: [name: target])
+            XCTAssertEqual(
+                CardDataRead.read(file: name, html: html, resolve: disk.resolve, read: disk.read),
+                .refused(CardDataRead.leadsToHidden), target
+            )
+            XCTAssertEqual(disk.opened, [], target)
+        }
+
+        let hiddenCard = Disk(
+            ["/a/.b/dash.html": Data(), "/a/.b/sub/x.json": Data("{}".utf8)],
+            links: [html: "/a/.b/dash.html", name: "/a/.b/sub/x.json"]
+        )
+        XCTAssertEqual(
+            CardDataRead.read(file: name, html: html, resolve: hiddenCard.resolve, read: hiddenCard.read), .text("{}")
+        )
+        XCTAssertEqual(hiddenCard.opened, ["/a/.b/sub/x.json"])
     }
 
     func testS30AResolveThatFailsForEitherFileIsARefusalAndNoRead() {

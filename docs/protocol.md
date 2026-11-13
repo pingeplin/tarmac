@@ -155,7 +155,9 @@ daemon → app:
 ## File watching semantics
 
 Watch the doc's **parent directory** (non-recursive) — editors and agents replace
-files atomically, so watching the file inode directly misses rewrites. An event of
+files atomically, so watching the file inode directly misses rewrites. A data file
+in a directory under the doc's own has that directory watched too (see Naming a
+doc's data file). An event of
 the watcher only wakes the daemon. The daemon then stats each doc of the active
 board, and each data file that one of them reads (`doc_data`), and sends a
 `file_event` for each file that differs — in mtime, length or
@@ -507,7 +509,8 @@ all existing vectors decode unchanged.
     {t:"doc_data", board_id, path, data}            — app → daemon
     {t:"doc_data", board_id, path}                  — app → daemon: the doc reads none
 
-An HTML doc names one JSON file beside it, its **data file**; the app reads that
+An HTML doc names one JSON file in its own directory or in a directory under it,
+at any depth (2611.0005), its **data file**; the app reads that
 file and hands its content to the loaded document. The daemon reports the data
 file as it reports a doc: with a `file_event {path: <data>, mtime_ms}`. There is no
 reply frame.
@@ -515,12 +518,17 @@ reply frame.
 The daemon records `data` with the doc entry of `path` on board `board_id`. A
 `doc_data` with a `data` replaces the doc's data file; one with no `data` clears
 it. It is in memory only: never in the state file, and gone when the doc is
-closed or its board deleted. It is ignored, with nothing recorded, for an unknown
-`board_id` (there is **no** fall-back to the active board), for a `path` that is
-not a doc of that board, and for a `data` that is not a file in the doc's own
-directory: relative, in another directory (a subdirectory included), or naming no
-file (`<dir>/..`). The directory is compared component by component, as bytes, with no link followed and
-no `..` resolved, so `<dir>/sub/../x.json` is refused.
+closed or its board deleted, and every registration of every board is dropped
+when the app's connection ends or another connection takes its place: the app
+names each file again after it connects. It is ignored, with nothing recorded and
+the registration before kept, for an unknown `board_id` (there is **no**
+fall-back to the active board), for a `path` that is not a doc of that board, and
+for a `data` that is not a file under the doc's directory: relative, outside that
+directory, with a `.`, `..` or empty component (`//`), ending in `/`, naming no
+file (`<dir>`), or with a **hidden** component (one that starts with `.`) below
+the doc's directory. The path is judged on its bytes as given, with no link
+followed and nothing worked out, so `<dir>/sub/../x.json` and `<dir>/./x.json`
+are refused; the doc's own directory may be hidden.
 
 - **At once.** When the board is the active one and the file is there, the daemon
   takes the file as seen and pushes a `file_event` for `data`, for every
@@ -531,8 +539,16 @@ no `..` resolved, so `<dir>/sub/../x.json` is refused.
   was seen for that path on that board — in mtime, length or inode — gets a
   `file_event`. A file that is gone pushes nothing and is a change when it is
   back. One change of a path gives one `file_event`, also when two docs name it
-  or when it is a doc of the board too. No directory is watched for a data file:
-  it is in its doc's directory, which is watched.
+  or when it is a doc of the board too.
+- **The watch.** A file beside the doc needs no watch of its own: the doc's
+  directory is watched. For a file in a directory under it, the daemon resolves
+  that directory (links followed) and counts and watches the resolved directory,
+  as it does a doc's, for as long as the registration stands; the same name again
+  counts nothing more. A directory that resolves to the doc's own, out of the
+  doc's tree, or to a hidden name below it is not watched: each look still stats
+  the file. A directory that is not there, or cannot be watched, is tried again at
+  each change that the file system reports and at each `doc_data` that names the
+  file again. A board in the background counts its watch too.
 - **A board in the background** is not answered at once. Each `doc_data` with a
   `data` starts from nothing seen, so when that board is made active a
   `file_event` for the data file follows its `restore`, if the file is there;
@@ -548,7 +564,7 @@ gets no data; all existing vectors decode unchanged.
 |---|---|---|---|
 | `board_id` | string (required) | — | the board of the doc; an unknown id is ignored |
 | `path` | string (required) | — | the doc that reads the file (the registry key) |
-| `data` | string | the doc reads no data file | absolute path of the data file, in the doc's directory |
+| `data` | string | the doc reads no data file | absolute path of the data file, in the doc's directory or under it |
 
 ## Events for a loaded HTML card (issue #326)
 

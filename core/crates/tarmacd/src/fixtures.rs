@@ -28,6 +28,7 @@ pub(crate) const LIMIT: Duration = Duration::from_millis(200);
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(crate) enum Call {
     Resolve,
+    ResolveDir,
     Stamp,
     RepoOf,
     IsDir,
@@ -90,6 +91,11 @@ impl PathFs for StuckFs {
     fn resolve(&self, raw: &Path) -> Result<(PathBuf, FileStamp), String> {
         self.wait_if_held(Call::Resolve, raw);
         RealFs.resolve(raw)
+    }
+
+    fn resolve_dir(&self, raw: &Path) -> Option<PathBuf> {
+        self.wait_if_held(Call::ResolveDir, raw);
+        RealFs.resolve_dir(raw)
     }
 
     fn stamp(&self, path: &Path) -> Option<FileStamp> {

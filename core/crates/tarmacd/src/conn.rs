@@ -342,7 +342,7 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
         }
         Msg::DocData { board_id, path, data } => {
             if !docs::record_data(daemon, &board_id, Path::new(&path), data.map(PathBuf::from)).await {
-                debug!("doc_data ignored for {path} on {board_id} (an unknown board or doc, or a data file not beside the doc)");
+                debug!("doc_data ignored for {path} on {board_id} (an unknown board or doc, or a data file not under the doc's directory)");
             }
         }
         Msg::ScrollbackRequest { term_id } => {

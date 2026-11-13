@@ -6,16 +6,49 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher as _};
-use tokio::sync::oneshot;
+use tokio::sync::{Notify, oneshot};
 
 /// The burst window docs/protocol.md gives a `file_event`: how long
 /// `docs::watch_loop` waits after a wake before it looks, and so the least
 /// time between two of its looks.
 pub const BURST: Duration = Duration::from_millis(100);
+
+/// What wakes the look (`docs::watch_loop`), and whether a wake since the
+/// last one came from the file system. Only such a wake tries again a data
+/// file's directory that is not watched (2611.0005): the watcher thread
+/// wakes a look after each call of the source, also one that failed, so a
+/// try at its wake would never end.
+#[derive(Default)]
+pub struct Wake {
+    notify: Notify,
+    from_fs: AtomicBool,
+}
+
+impl Wake {
+    /// A file in a watched directory may have changed, or a gate call that
+    /// was out returned.
+    pub fn from_fs(&self) {
+        self.from_fs.store(true, Ordering::SeqCst);
+        self.notify.notify_one();
+    }
+
+    /// The daemon's own: the watcher thread after a call of the source, or a
+    /// repair.
+    pub fn from_daemon(&self) {
+        self.notify.notify_one();
+    }
+
+    /// True when a wake since the last one came from the file system.
+    pub async fn woken(&self) -> bool {
+        self.notify.notified().await;
+        self.from_fs.swap(false, Ordering::SeqCst)
+    }
+}
 
 /// `unwatch` is also called for a dir whose `watch` failed.
 pub trait WakeSource: Send {

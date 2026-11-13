@@ -11,6 +11,7 @@ mod watches;
 mod restart;
 mod spawn_cwd;
 mod pushes;
+mod data_dirs;
 
 async fn open_doc(daemon: &Daemon, board: Option<&str>, doc: &Path) {
     daemon.open_doc(board, doc, "t", None, crate::reader::stamp(doc), None).await.unwrap();
@@ -193,6 +194,10 @@ enum Change {
 struct SourceCalls(std::sync::Mutex<Vec<(Change, PathBuf)>>);
 
 impl SourceCalls {
+    fn count(&self, change: Change) -> usize {
+        self.0.lock().unwrap().iter().filter(|(c, _)| *c == change).count()
+    }
+
     fn of(&self, change: Change, dir: &Path) -> usize {
         self.0.lock().unwrap().iter().filter(|(c, d)| *c == change && d == dir).count()
     }
@@ -235,12 +240,28 @@ fn held_source(holds: &[(Change, &Path)]) -> (Box<dyn WakeSource>, Arc<SourceCal
     (Box::new(HeldSource { calls: calls.clone(), holds, until_released }), calls, release)
 }
 
+/// Records each call; each watch of its dir fails.
+struct WatchFails(PathBuf, Arc<SourceCalls>);
+
+impl WakeSource for WatchFails {
+    fn watch(&mut self, dir: &Path) -> anyhow::Result<()> {
+        self.1.0.lock().unwrap().push((Change::Watch, dir.to_owned()));
+        anyhow::ensure!(dir != self.0, "too many paths");
+        Ok(())
+    }
+
+    fn unwatch(&mut self, dir: &Path) -> anyhow::Result<()> {
+        self.1.0.lock().unwrap().push((Change::Unwatch, dir.to_owned()));
+        Ok(())
+    }
+}
+
 /// A daemon whose watcher is `source`, with no app.
 async fn on_source(state_path: PathBuf, source: impl WakeSource + 'static) -> Arc<Daemon> {
-    Daemon::with_source(state_path, Box::new(source), Arc::new(Notify::new())).await
+    Daemon::with_source(state_path, Box::new(source), Arc::new(Wake::default())).await
 }
 
 /// A daemon whose watcher is `source` and whose gate calls `fs`.
 async fn held(tmp: &Path, source: Box<dyn WakeSource>, fs: Arc<StuckFs>) -> Arc<Daemon> {
-    Daemon::with_fs(tmp.join("state.json"), source, Arc::new(Notify::new()), fs, LIMIT).await
+    Daemon::with_fs(tmp.join("state.json"), source, Arc::new(Wake::default()), fs, LIMIT).await
 }

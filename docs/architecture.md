@@ -329,8 +329,9 @@ daemon looks:
   `BURST` while it does (#258);
 - after each call of the watcher thread to notify, which wakes `watch_loop`
   whether the call succeeded or not (see #253 below): the watch of an open,
-  the unwatch of a close or a `BoardDelete`. An open that watched also looks
-  itself once it has registered the doc. Any other open of a doc that is new
+  the unwatch of a close or a `BoardDelete`, the watch or unwatch of a data
+  file's directory. An open, or a `DocData`, that watched also looks itself
+  once it has registered the doc or the name. Any other open of a doc that is new
   to its board wakes the watcher once it has registered the doc: its stamp
   was read before that, and a change in between may have woken the watcher
   too early. A re-open of a doc already on its board causes no look of its
@@ -370,12 +371,22 @@ closed before it was written. It is not held, and an app that connects again
 with its cards in place keeps the old content until the next change or `↻`.
 
 A doc can name a **data file** (`DocData`, #311): a file in the doc's own
-directory, judged on the text — `docs::record_data` follows no link and
-resolves no `..`, and ignores an unknown board (no fall-back to the active
-one), an unknown doc, or a file elsewhere. It is kept with the doc entry
-(`DocInfo.data`, in memory only, never saved), so a `DocClose` or a
-`BoardDelete` forgets it. Its stamp is one per (board, path): every doc of a
-board that names the path sees it as one (`Registry::see_data`). On the active
+directory or in one under it, at any depth (2611.0005), judged on the bytes of
+the path as given — `docs::is_under` follows no link, works nothing out (a
+`.`, `..` or empty component is refused, as `Path` would drop the first and
+the last when it compares), and refuses a hidden component (one that starts
+with `.`) below the doc's directory. The doc's directory is taken from its
+registry key, not from the path the app sent, which `Path` matches to the key
+with `//` in it. `docs::record_data` ignores an unknown board (no fall-back to
+the active one), an unknown doc, or a refused path, and keeps the registration
+that stood before. It is kept with the doc entry (`DocInfo.data`, in memory
+only, never saved), so a `DocClose` or a `BoardDelete` forgets it, and every
+registration of every board is dropped when the app's connection ends or
+another connection takes its place (`Daemon::install_app`,
+`Daemon::remove_app`, with the place held, so the end of a connection that
+lost the place drops nothing of the one that took it). Its stamp is one per
+(board, path): every doc of a board that names the path sees it as one
+(`Registry::see_data`). On the active
 board the `DocData` is answered at once, in a look of its own: the file is
 taken as seen and a `FileEvent` for it is pushed, the same name again
 included. Each look of the active board reads the data files of the board
@@ -386,8 +397,33 @@ a path that is also a doc or that two docs name. A `DocData` for a board in
 the background starts from nothing seen, so its file is reported after the
 `Restore` of that board's switch. A data change records nothing to save and
 is not held when no app is connected: the app sends `DocData` again after it
-connects. `DocRefresh` does not read data files, and no directory is watched
-for one: its doc's is.
+connects. `DocRefresh` does not read data files.
+
+A data file beside its doc needs no watch: the doc's directory is watched. For
+one in a directory under it, `Daemon::count_data_dir` resolves that directory
+on the gate (`PathFs::resolve_dir`) and counts the **resolved** directory as a
+doc counts its own, before the look that records the name, since the look's
+`apply` holds the `boards` lock. The counts and the watcher thread are keyed by
+a path's text and notify by the resolved path: counted by its text, a link
+(`self -> .`) gives one watch two texts, and the unwatch of one ends the other.
+A directory that resolves to the doc's own, out of the doc's tree, or to a
+hidden name below it is counted for nothing; each look still stats the file,
+and the app's read refuses what is outside. What a registration counted is
+kept with it (`DocInfo.data_dir`, a `DataDir`) and given back for that same
+directory, never for a new resolve, when the name is replaced or cleared, the
+doc closed, its board deleted, or the app goes; the same name again counts
+nothing more. A count that made a new watch is followed by a look before the
+`DocData` handling ends, as an open's is. A directory that cannot be resolved
+(not there, not a directory, or out on the gate) takes no count, and one whose
+watch fails gives its count back at once; both are `DataDir::Wanted`:
+`watch_loop` tries it again at a wake of the file system only (`watch::Wake`:
+a source event, or the gate's `returned`), and a `DocData` that names the file
+again tries it too. A try whose registration was replaced, cleared or dropped
+meanwhile gives its count back. A name that was held, and so took no count, is
+`Wanted` too when the look finds it no longer held (another connection took
+the app's place and dropped it meanwhile). The watcher thread's own wake after
+a call of the source brings a look and no try: a watch that fails would else
+be tried at every look.
 
 `Daemon::look` is the one place that reads a doc's file or a data file for a change. It reads
 with no `boards` lock held, gives the reading to its caller under that lock,
@@ -1125,16 +1161,18 @@ browser.
   had before — so a card cannot stamp a load, and one document names one
   file. `HTMLCardSession` takes the name only from a `ready` stamped with the
   current load and judges it in the text (`CardDataPath`): a file in the
-  HTML file's own directory, or a refusal (a subdirectory, outside, no file)
-  that is one console line. An accepted name, or the clearing of one, is a
+  HTML file's own directory or in one under it, at any depth, or a refusal
+  (outside, no file, or a hidden name below that directory) that is one
+  console line. An accepted name, or the clearing of one, is a
   `doc_data` the controller sends for the card's board and doc, and
   `CardDataRegistrations` keeps it, so that a `file_event` for a data path
   reaches each card that reads it, on every built board, and every
   registration is sent again at `hello_ok`; a closed card and a removed board
   are forgotten. A card that is told of a change reads the file off the main
   thread, one read at a time, and none while culled (it reads once when back
-  in view): `CardDataRead` resolves both files, refuses a data file whose
-  resolved directory is not the HTML file's, reads the resolved file within
+  in view): `CardDataRead` resolves both files, refuses a data file that is
+  not under the resolved HTML file's directory by whole components, as bytes,
+  or that has a hidden name below it, reads the resolved file within
   `FileBytes.sizeCap` and takes it only as UTF-8 that passes `StrictJSON`. A
   result is delivered only to the load and the file it was read for: the
   view hands the text to `tarmacCard.data` as an argument of

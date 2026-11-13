@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -7,7 +8,7 @@ use tarmac_protocol::{MAX_FRAME_LEN, Msg, OVER_FRAME_LIMIT};
 use tokio::task::JoinSet;
 use tracing::debug;
 
-use crate::boards::{Boards, DocInfo, FileStamp, Registry, epoch_ms};
+use crate::boards::{Boards, DataDir, DocInfo, FileStamp, Registry, epoch_ms};
 use crate::reader::{Out, PathFs, PathGate};
 use crate::state::Daemon;
 
@@ -184,6 +185,7 @@ pub fn upsert_doc(
                     last_opened_ms: epoch_ms(SystemTime::now()),
                     term_id,
                     data: None,
+                    data_dir: DataDir::Uncounted,
                 },
             );
             reg.dock.push(path.to_owned());
@@ -221,11 +223,16 @@ pub async fn read_restored(gate: &Arc<PathGate>, boards: &mut Boards) {
     }
 }
 
-/// One look for each wake, `BURST` after it (#258, docs/architecture.md).
+/// One look for each wake, `BURST` after it (#258, docs/architecture.md). A
+/// wake of the file system first tries again each data file's directory that
+/// is not watched, so that the look reports what a new watch missed.
 pub async fn watch_loop(daemon: Arc<Daemon>) {
     loop {
-        daemon.woken().await;
+        let from_fs = daemon.woken().await;
         tokio::time::sleep(crate::watch::BURST).await;
+        if from_fs {
+            daemon.try_wanted_data().await;
+        }
         report_changes(&daemon).await;
     }
 }
@@ -320,36 +327,74 @@ pub async fn stat_and_push(daemon: &Arc<Daemon>, path: &Path) -> bool {
 /// in the background reports it at its switch. It is not held when it
 /// reaches no app: the app sends `doc_data` again when it connects.
 ///
+/// The directory of a file under the doc's own is counted before the look,
+/// as `open_doc` counts, since the look's `apply` holds the `boards` lock:
+/// the count is given back when the doc is gone by then, or when the file
+/// was named already. A new watch is followed by a look.
+///
 /// False, with nothing recorded, for an unknown board (no fall-back to the
-/// active one), an unknown doc on it, or a `data` that is not a file in the
-/// doc's own directory.
+/// active one), an unknown doc on it, or a `data` that `is_under` refuses.
 pub async fn record_data(daemon: &Daemon, board: &str, doc: &Path, data: Option<PathBuf>) -> bool {
-    if data.as_deref().is_some_and(|data| !beside(doc, data)) {
+    // The doc as its registry key writes it: `Path` finds `<p>//d/dash.html`
+    // under `<p>/d/dash.html`, but `data` is judged on its bytes.
+    let known = daemon.boards.lock().await.known_registry(board).and_then(|reg| {
+        let (key, info) = reg.docs.get_key_value(doc)?;
+        Some((key.clone(), !info.holds(data.as_deref())))
+    });
+    let Some((doc, anew)) = known else { return false };
+    let doc = doc.as_path();
+    if data.as_deref().is_some_and(|data| !is_under(doc, data)) {
         return false;
     }
+    // A name held already takes no count; if it is not held by the look
+    // (the app's place was taken meanwhile and dropped it), it is `Wanted`,
+    // so that the next `doc_data` for it, or a wake, counts it.
+    let (dir, watched) = match data.as_deref() {
+        Some(data) if anew => daemon.count_data_dir(doc, data).await,
+        Some(_) => (DataDir::Wanted, false),
+        None => (DataDir::Uncounted, false),
+    };
     let recorded = daemon
         .look(
             |_| data.clone(),
             |boards, now| {
                 let active = boards.active_id() == board;
-                let reg = boards.known_registry_mut(board)?;
-                if !reg.set_data(doc, data.clone()) {
-                    return None;
-                }
-                Some(data.as_ref().filter(|_| active).and_then(|data| reg.see_data(data, *now.get(data)?)))
+                let Some(reg) = boards.known_registry_mut(board) else { return Err(dir) };
+                let not_held = reg.set_data(doc, data.clone(), dir)?;
+                Ok((not_held, data.as_ref().filter(|_| active).and_then(|data| reg.see_data(data, *now.get(data)?))))
             },
         )
         .await;
-    let Some(told) = recorded else { return false };
+    let (not_held, told) = match recorded {
+        Ok((not_held, told)) => (not_held, Some(told)),
+        Err(dir) => (dir, None),
+    };
+    daemon.release_data_dir(&not_held);
+    let Some(told) = told else { return false };
     if let (Some(data), Some(mtime_ms)) = (&data, told) {
         daemon.push(file_event(data, mtime_ms)).await;
+    }
+    if watched {
+        report_changes(daemon).await;
     }
     true
 }
 
-/// `data` names a file in the directory of `doc`, judged on the text: no
-/// link is followed, and a `..` is not resolved. A doc's path is absolute, so
-/// a relative `data` is refused too.
-fn beside(doc: &Path, data: &Path) -> bool {
-    data.file_name().is_some() && data.parent() == doc.parent()
+/// `data` names a file in the directory of `doc` or in one under it, judged
+/// on its bytes as given (2611.0005): `Path` drops `.` and empty components
+/// when it compares. Below that directory each component is there and not
+/// hidden, which refuses `.`, `..`, `//` and a trailing `/`; no link is
+/// followed. A doc's path is absolute and resolved, so a relative `data` is
+/// refused too.
+fn is_under(doc: &Path, data: &Path) -> bool {
+    doc.parent().is_some_and(|dir| is_below(dir, data))
+}
+
+/// `path` is under `dir`, by whole components as bytes, with each component
+/// below `dir` there and not hidden. `dir` is a resolved path.
+pub fn is_below(dir: &Path, path: &Path) -> bool {
+    let dir = dir.as_os_str().as_bytes();
+    let Some(rest) = path.as_os_str().as_bytes().strip_prefix(dir) else { return false };
+    let below = if dir.ends_with(b"/") { Some(rest) } else { rest.strip_prefix(b"/") };
+    below.is_some_and(|below| below.split(|b| *b == b'/').all(|c| !c.is_empty() && !c.starts_with(b".")))
 }

@@ -423,7 +423,7 @@ async fn a_change_between_the_stamp_and_the_upsert_of_an_open_is_pushed() {
     // A limit that the held walk cannot reach: a walk that is out wakes a
     // look of its own when it returns.
     let daemon =
-        Daemon::with_fs(tmp.join("state.json"), Box::new(Silent), Arc::new(Notify::new()), fs.clone(), Duration::from_secs(30)).await;
+        Daemon::with_fs(tmp.join("state.json"), Box::new(Silent), Arc::new(Wake::default()), fs.clone(), Duration::from_secs(30)).await;
     assert_eq!(try_open(&daemon, &open).await, Ok(()));
     let mut app = connect_app(&daemon).await;
     let doc = write_doc(tmp.join("d/b.md"));

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use tarmac_protocol::{BoardViewport, Tile};
 use tracing::warn;
 
-use crate::boards::{Board, Boards, DEFAULT_BOARD_ID, DocInfo, Registry};
+use crate::boards::{Board, Boards, DEFAULT_BOARD_ID, DataDir, DocInfo, Registry};
 use crate::state::Daemon;
 
 const SAVE_DEBOUNCE: Duration = Duration::from_millis(150);
@@ -121,6 +121,7 @@ fn hydrate(pb: PersistedBoard) -> Board {
                 last_opened_ms: d.last_opened_ms,
                 term_id: d.term_id,
                 data: None,
+                data_dir: DataDir::Uncounted,
             },
         );
         reg.dock.push(path);

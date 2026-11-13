@@ -85,7 +85,7 @@ Everything below fails **silently** — no error, just a blank or broken card.
   must be a `data:` URI.
 - **No network requests.** `fetch`, `XMLHttpRequest`, `WebSocket`, and
   `sendBeacon` are all blocked. Embed your data in the file as a literal, or
-  put it in a JSON data file beside the card (below).
+  put it in a JSON data file in the card's directory (below).
 - **No storage.** `localStorage`, `sessionStorage`, cookies, and IndexedDB are
   unavailable at an opaque origin.
 - **Images and media must be `data:` or `blob:`.** A remote image URL, or even a
@@ -94,7 +94,7 @@ Everything below fails **silently** — no error, just a blank or broken card.
 
 So: one `.html` file, no assets directory, no build step. If you need data in
 the chart, serialize it into a `const` at the top of the script, or, for data
-that changes, name one JSON file beside the card (below).
+that changes, name one JSON file in the card's directory (below).
 
 ### What you get for free
 
@@ -239,11 +239,17 @@ card does not flash.
 </script>
 ```
 
-- **One file, beside the HTML file.** The first `tarmac-data` meta in the
-  document when it is parsed is the one read; a meta added later by a script is
-  not seen. A relative name is taken from the HTML file's directory. A name
-  that leads to another directory is refused, a subdirectory included. A
-  symlink that leads out of the directory is refused too.
+- **One file, in the HTML file's directory or in a directory under it.** The
+  first `tarmac-data` meta in the document when it is parsed is the one read; a
+  meta added later by a script is not seen. A relative name is taken from the
+  HTML file's directory: `stats.json` and `data/stats.json` are both read. A
+  name that leads out of that directory (`../stats.json`) is refused, and so
+  is a symlink that leads out of it. A hidden name below that directory is
+  refused too: no file or directory on the way may start with `.`
+  (`.cache/stats.json`, `data/.stats.json`). A directory that does not exist
+  yet can be made later. A directory more than one level down that is made
+  one level at a time can be seen late: at the next change in a directory
+  Tarmac watches, or the next load of the HTML file.
 - **`tarmac:data`** is a `CustomEvent` on `window`, and `detail` is the parsed
   content. It fires after each load of the document, when the file exists
   and is valid, and after each change of the file. Tarmac does not compare the
@@ -325,8 +331,9 @@ producer | tarmac push dash.html -                    # one value per line of st
 - [ ] Fonts: `var(--tarmac-prose-font, <system stack>)` to follow the user's, or
       a system stack. Every use has a fallback; you never set a `--tarmac-` name.
 - [ ] All CSS in a `<style>` block.
-- [ ] All data embedded as literals, or in one JSON file beside the card that a
-      `tarmac-data` meta names, or pushed with `tarmac push`; no `fetch`.
+- [ ] All data embedded as literals, or in one JSON file in the card's directory
+      (or under it, with no hidden name) that a `tarmac-data` meta names, or
+      pushed with `tarmac push`; no `fetch`.
 - [ ] Images inline as `data:` URIs, or drawn as SVG.
 - [ ] Sizes use `%`, `px`, `rem` — no `vw`/`vh`, no media queries of size.
 - [ ] Colours: both a background and a text colour, or neither; a

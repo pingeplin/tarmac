@@ -160,7 +160,7 @@ async fn a_reopen_behind_a_pending_unwatch_keeps_its_dir_watched() {
     let (fs, _unheld) = stuck_fs();
     let (source, calls, release) = held_source(&[(Change::Unwatch, &x)]);
     // A limit that the release after the poll below cannot miss.
-    let daemon = Daemon::with_fs(tmp.join("state.json"), source, Arc::new(Notify::new()), fs, Duration::from_secs(30)).await;
+    let daemon = Daemon::with_fs(tmp.join("state.json"), source, Arc::new(Wake::default()), fs, Duration::from_secs(30)).await;
     assert_eq!(try_open(&daemon, &busy).await, Ok(()));
     assert_eq!(try_open(&daemon, &doc).await, Ok(()));
     assert!(try_close(&daemon, &busy).await);
@@ -332,22 +332,6 @@ async fn a_dir_whose_unwatch_failed_is_watched_by_the_next_open() {
     assert_eq!(calls.of(Change::Watch, &d), 2);
 
     let _ = std::fs::remove_dir_all(&tmp);
-}
-
-/// Records each call; each watch of its dir fails.
-struct WatchFails(PathBuf, Arc<SourceCalls>);
-
-impl WakeSource for WatchFails {
-    fn watch(&mut self, dir: &Path) -> anyhow::Result<()> {
-        self.1.0.lock().unwrap().push((Change::Watch, dir.to_owned()));
-        anyhow::ensure!(dir != self.0, "too many paths");
-        Ok(())
-    }
-
-    fn unwatch(&mut self, dir: &Path) -> anyhow::Result<()> {
-        self.1.0.lock().unwrap().push((Change::Unwatch, dir.to_owned()));
-        Ok(())
-    }
 }
 
 // notify 9 can fail a watch after it has taken the dir into its stream
