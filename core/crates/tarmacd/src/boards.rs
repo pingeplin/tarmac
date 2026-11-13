@@ -30,18 +30,21 @@ pub struct DocInfo {
     /// The term that opened this doc; `None` when opened without a `TARMAC_TERM_ID`.
     pub term_id: Option<String>,
     /// The data file the doc reads (`data_file`). In memory only.
-    pub data: Option<PathBuf>,
-    /// What the registration of `data` counts. In memory only.
-    pub data_dir: DataDir,
+    pub data: Option<DataRead>,
+}
+
+/// A doc's data registration: the file it reads, and what that counts.
+pub struct DataRead {
+    pub file: PathBuf,
+    pub dir: DataDir,
 }
 
 /// What a doc's data registration counts (2611.0005), so that the count is
 /// given back for the directory it was taken for.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DataDir {
-    /// Nothing: no file, a file in the doc's own directory, which the doc
-    /// counts, or a directory that leads out of the doc's tree.
-    #[default]
+    /// Nothing: a file in the doc's own directory, which the doc counts, or a
+    /// directory that leads out of the doc's tree.
     Uncounted,
     /// This directory, counted and watched.
     Counted(PathBuf),
@@ -85,8 +88,16 @@ impl DocInfo {
     /// It reads `data` already, with its directory settled: naming it again
     /// counts nothing.
     pub(crate) fn holds(&self, data: Option<&Path>) -> bool {
-        self.data.as_deref() == data && self.data_dir != DataDir::Wanted
+        match &self.data {
+            Some(read) => Some(read.file.as_path()) == data && read.dir != DataDir::Wanted,
+            None => data.is_none(),
+        }
     }
+}
+
+/// What `data` counts, to be given back: nothing for no file.
+fn counted(data: Option<DataRead>) -> DataDir {
+    data.map_or(DataDir::Uncounted, |read| read.dir)
 }
 
 pub fn epoch_ms(t: SystemTime) -> u64 {
@@ -213,33 +224,32 @@ impl Registry {
         Some(self.docs.get_mut(path)?.see(stamp?))
     }
 
-    /// `data_file`: the doc `doc` reads the file `data`, or none, and `dir` is
-    /// what that counts. A file named again is seen anew, so that a board in
-    /// the background reports it at its switch, and keeps what it counted.
-    /// Returns what is no longer held, for its count to be given back: the
-    /// registration's before, or `dir` itself for a file named again. `Err`
-    /// with `dir`, and nothing recorded, for an unknown doc.
-    pub fn set_data(&mut self, doc: &Path, data: Option<PathBuf>, dir: DataDir) -> Result<DataDir, DataDir> {
-        let Some(info) = self.docs.get_mut(doc) else { return Err(dir) };
-        if let Some(path) = &data {
-            self.data_seen.remove(path);
+    /// `data_file`: the doc `doc` reads `data`, or no file. A file named
+    /// again is seen anew, so that a board in the background reports it at
+    /// its switch, and keeps what it counted. Returns what is no longer held,
+    /// for its count to be given back: the registration's before, or what
+    /// `data` counts for a file named again. `Err` with what `data` counts,
+    /// and nothing recorded, for an unknown doc.
+    pub fn set_data(&mut self, doc: &Path, data: Option<DataRead>) -> Result<DataDir, DataDir> {
+        let Some(info) = self.docs.get_mut(doc) else { return Err(counted(data)) };
+        if let Some(read) = &data {
+            self.data_seen.remove(&read.file);
         }
-        if info.holds(data.as_deref()) {
-            return Ok(dir);
+        if info.holds(data.as_ref().map(|read| read.file.as_path())) {
+            return Ok(counted(data));
         }
-        info.data = data;
-        let before = std::mem::replace(&mut info.data_dir, dir);
+        let before = std::mem::replace(&mut info.data, data);
         self.forget_unread_data();
-        Ok(before)
+        Ok(counted(before))
     }
 
     /// Takes `dir` for the data file `data` of `doc` when that registration
     /// still wants its directory, and returns what is not held: `dir` when
     /// the registration was replaced, cleared or dropped meanwhile.
     pub fn settle_wanted(&mut self, doc: &Path, data: &Path, dir: DataDir) -> DataDir {
-        match self.docs.get_mut(doc) {
-            Some(info) if info.data.as_deref() == Some(data) && info.data_dir == DataDir::Wanted => {
-                info.data_dir = dir;
+        match self.docs.get_mut(doc).and_then(|info| info.data.as_mut()) {
+            Some(read) if read.file == data && read.dir == DataDir::Wanted => {
+                read.dir = dir;
                 DataDir::Uncounted
             }
             _ => dir,
@@ -248,13 +258,13 @@ impl Registry {
 
     /// Drops what was seen of a data file that no doc reads any more.
     fn forget_unread_data(&mut self) {
-        let read: HashSet<&PathBuf> = self.docs.values().filter_map(|info| info.data.as_ref()).collect();
+        let read: HashSet<&PathBuf> = self.docs.values().filter_map(|info| Some(&info.data.as_ref()?.file)).collect();
         self.data_seen.retain(|path, _| read.contains(path));
     }
 
     /// The data file of each doc that reads one.
     fn data_paths(&self) -> impl Iterator<Item = &PathBuf> {
-        self.docs.values().filter_map(|info| info.data.as_ref())
+        self.docs.values().filter_map(|info| Some(&info.data.as_ref()?.file))
     }
 
     /// The paths a look reads for this board: each doc's file and each data file.
@@ -274,7 +284,7 @@ impl Registry {
     /// gone is taken and not returned, as in `take_changes`.
     pub fn take_data_changes(&mut self, now: &HashMap<PathBuf, Option<FileStamp>>) -> Vec<(PathBuf, u64)> {
         let mut changes = Vec::new();
-        for path in self.docs.values().filter_map(|info| info.data.as_ref()) {
+        for path in self.docs.values().filter_map(|info| Some(&info.data.as_ref()?.file)) {
             let Some(&stamp) = now.get(path) else { continue };
             if self.data_seen.get(path).copied().flatten() == stamp {
                 continue;
@@ -310,13 +320,7 @@ impl Registry {
     /// counted.
     fn drop_data(&mut self) -> Vec<DataDir> {
         self.data_seen.clear();
-        self.docs
-            .values_mut()
-            .map(|info| {
-                info.data = None;
-                std::mem::take(&mut info.data_dir)
-            })
-            .collect()
+        self.docs.values_mut().filter_map(|info| Some(info.data.take()?.dir)).collect()
     }
 
     /// The doc that was closed; `None` when the path is unknown.
@@ -487,8 +491,8 @@ impl Boards {
         let mut wanted = Vec::new();
         for board in &self.boards {
             for (doc, info) in &board.registry.docs {
-                if let (Some(data), DataDir::Wanted) = (&info.data, &info.data_dir) {
-                    wanted.push((board.id.clone(), doc.clone(), data.clone()));
+                if let Some(DataRead { file, dir: DataDir::Wanted }) = &info.data {
+                    wanted.push((board.id.clone(), doc.clone(), file.clone()));
                 }
             }
         }
@@ -695,7 +699,12 @@ mod tests {
     }
 
     fn doc_info() -> DocInfo {
-        DocInfo { via: "t".into(), read: false, repo: None, repo_root: None, repo_color: None, last_changed_ms: None, seen: None, untold: false, unread: false, last_opened_ms: 0, term_id: None, data: None, data_dir: DataDir::Uncounted }
+        DocInfo { via: "t".into(), read: false, repo: None, repo_root: None, repo_color: None, last_changed_ms: None, seen: None, untold: false, unread: false, last_opened_ms: 0, term_id: None, data: None }
+    }
+
+    /// A read of `file` that counts nothing.
+    fn uncounted(file: impl Into<PathBuf>) -> Option<DataRead> {
+        Some(DataRead { file: file.into(), dir: DataDir::Uncounted })
     }
 
     // `Path` equality takes `/./`, `//` and a trailing `/` for the key, and the
@@ -925,7 +934,7 @@ mod tests {
     fn registry_reading(docs: &[&Path], data: &Path, seen: Option<FileStamp>) -> Registry {
         let mut reg = Registry::empty();
         for doc in docs {
-            reg.docs.insert(doc.to_path_buf(), DocInfo { data: Some(data.to_owned()), ..doc_info() });
+            reg.docs.insert(doc.to_path_buf(), DocInfo { data: uncounted(data), ..doc_info() });
         }
         reg.data_seen.insert(data.to_owned(), seen);
         reg
@@ -946,7 +955,7 @@ mod tests {
         let data = PathBuf::from("/d/stats.json");
         let mut reg = registry_reading(&[Path::new("/d/a.html")], &data, at(10));
         reg.docs.insert(PathBuf::from("/d/b.html"), doc_info());
-        assert!(reg.set_data(Path::new("/d/b.html"), Some(data.clone()), DataDir::Uncounted).is_ok());
+        assert!(reg.set_data(Path::new("/d/b.html"), uncounted(data.clone())).is_ok());
 
         assert_eq!(reg.take_data_changes(&now(&data, at(10))), vec![(data.clone(), 10_000)]);
         assert_eq!(reg.take_data_changes(&now(&data, at(10))), vec![]);
@@ -979,9 +988,9 @@ mod tests {
         let data = PathBuf::from("/d/stats.json");
         let mut reg = registry_reading(&[&doc], &data, at(10));
 
-        assert!(reg.set_data(&doc, Some(data.clone()), DataDir::Uncounted).is_ok());
+        assert!(reg.set_data(&doc, uncounted(data.clone())).is_ok());
         assert_eq!(reg.take_data_changes(&now(&data, at(10))), vec![(data.clone(), 10_000)]);
-        assert!(reg.set_data(&doc, None, DataDir::Uncounted).is_ok());
+        assert!(reg.set_data(&doc, None).is_ok());
         assert_eq!(reg.take_data_changes(&now(&data, at(20))), vec![], "a doc that reads none");
         assert_eq!(reg.data_paths().count(), 0);
     }
@@ -992,8 +1001,8 @@ mod tests {
         let data = PathBuf::from("/d/stats.json");
         let mut reg = registry_reading(&[a, b, c, Path::new("/d/d.html")], &data, at(10));
 
-        assert!(reg.set_data(a, None, DataDir::Uncounted).is_ok());
-        assert!(reg.set_data(b, Some(PathBuf::from("/d/next.json")), DataDir::Uncounted).is_ok());
+        assert!(reg.set_data(a, None).is_ok());
+        assert!(reg.set_data(b, uncounted("/d/next.json")).is_ok());
         assert!(reg.close_doc(c).is_some());
         assert_eq!(reg.take_data_changes(&now(&data, at(10))), vec![]);
     }
@@ -1001,7 +1010,7 @@ mod tests {
     #[test]
     fn the_data_file_of_an_unknown_doc_is_not_recorded() {
         let mut reg = Registry::empty();
-        assert!(reg.set_data(Path::new("/d/a.html"), Some(PathBuf::from("/d/stats.json")), DataDir::Uncounted).is_err());
+        assert!(reg.set_data(Path::new("/d/a.html"), uncounted("/d/stats.json")).is_err());
         assert_eq!(reg.data_paths().count(), 0);
     }
 
@@ -1010,7 +1019,7 @@ mod tests {
         let data = PathBuf::from("/d/stats.json");
         let mut reg = registry_reading(&[Path::new("/d/a.html")], &data, at(10));
 
-        assert!(reg.set_data(Path::new("/d/nope.html"), Some(data.clone()), DataDir::Uncounted).is_err());
+        assert!(reg.set_data(Path::new("/d/nope.html"), uncounted(data.clone())).is_err());
         assert_eq!(reg.take_data_changes(&now(&data, at(10))), vec![]);
     }
 

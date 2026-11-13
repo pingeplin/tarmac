@@ -262,7 +262,9 @@ impl Daemon {
         if let Some(dir) = path.parent() {
             self.release_watch(dir);
         }
-        self.release_data_dir(&info.data_dir);
+        if let Some(read) = &info.data {
+            self.release_data_dir(&read.dir);
+        }
     }
 
     /// Tries again the directory of each data file that wants one, on every

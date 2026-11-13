@@ -8,7 +8,7 @@ use tarmac_protocol::{MAX_FRAME_LEN, Msg, OVER_FRAME_LIMIT};
 use tokio::task::JoinSet;
 use tracing::debug;
 
-use crate::boards::{Boards, DataDir, DocInfo, FileStamp, Registry, epoch_ms};
+use crate::boards::{Boards, DataDir, DataRead, DocInfo, FileStamp, Registry, epoch_ms};
 use crate::reader::{Out, PathFs, PathGate};
 use crate::state::Daemon;
 
@@ -185,7 +185,6 @@ pub fn upsert_doc(
                     last_opened_ms: epoch_ms(SystemTime::now()),
                     term_id,
                     data: None,
-                    data_dir: DataDir::Uncounted,
                 },
             );
             reg.dock.push(path.to_owned());
@@ -360,7 +359,7 @@ pub async fn record_data(daemon: &Daemon, board: &str, doc: &Path, data: Option<
             |boards, now| {
                 let active = boards.active_id() == board;
                 let Some(reg) = boards.known_registry_mut(board) else { return Err(dir) };
-                let not_held = reg.set_data(doc, data.clone(), dir)?;
+                let not_held = reg.set_data(doc, data.clone().map(|file| DataRead { file, dir }))?;
                 Ok((not_held, data.as_ref().filter(|_| active).and_then(|data| reg.see_data(data, *now.get(data)?))))
             },
         )
