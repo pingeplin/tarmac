@@ -1679,7 +1679,7 @@ final class CardShimTests: XCTestCase {
     // MARK: - events (2611.0003 S35–S40)
 
     private func listenForEvents(_ shim: Shim) {
-        shim.run("var events = []; window.addEventListener('tarmac:event', (e) => events.push(e));")
+        shim.run("var events = []; window.addEventListener('tarmac:push', (e) => events.push(e));")
     }
 
     /// `texts` is a JavaScript expression.
@@ -1695,7 +1695,7 @@ final class CardShimTests: XCTestCase {
         let shim = try loadShim()
         listenForEvents(shim)
         sendEvents(shim, #"['{"n":1}', '{"n":2}']"#)
-        XCTAssertEqual(json(shim, "events.map((e) => e.type)"), #"["tarmac:event","tarmac:event"]"#)
+        XCTAssertEqual(json(shim, "events.map((e) => e.type)"), #"["tarmac:push","tarmac:push"]"#)
         XCTAssertEqual(json(shim, "events.map((e) => e.detail)"), #"[{"n":1},{"n":2}]"#)
     }
 
@@ -1709,7 +1709,7 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(json(shim, "events.map((e) => e.detail)"), #"[{"n":1},{"n":3}]"#)
         XCTAssertEqual(
             try consoleEntries(shim),
-            [["tarmac": "console", "level": "error", "args": ["tarmac:event: not valid JSON"]]]
+            [["tarmac": "console", "level": "error", "args": ["tarmac:push: not valid JSON"]]]
         )
     }
 
@@ -1748,7 +1748,7 @@ final class CardShimTests: XCTestCase {
     /// throws, so a text after the first is heard only past that guard.
     func test2611_0003S39AListenerThatThrowsDoesNotStopTheNextText() throws {
         let shim = try loadShim()
-        shim.run("var events = []; window.addEventListener('tarmac:event', (e) => { events.push(e); throw new Error('boom'); });")
+        shim.run("var events = []; window.addEventListener('tarmac:push', (e) => { events.push(e); throw new Error('boom'); });")
         sendEvents(shim, "['[1]', '[2]']")
         XCTAssertEqual(json(shim, "events.map((e) => e.detail)"), "[[1],[2]]")
     }

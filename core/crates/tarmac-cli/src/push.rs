@@ -12,13 +12,13 @@ const NO_ANSWER: &str = "no answer from the daemon in 5 s (an older daemon, or t
 
 pub fn run(args: &[String]) -> i32 {
     let Some((raw_path, mode)) = parse(args) else {
-        eprintln!("tarmac: usage: tarmac push <html-path> <json>  |  tarmac push <html-path> -");
+        eprintln!("tarmac: usage: tarmac push <path> <json>  |  tarmac push <path> -");
         return 2;
     };
     // No file-system call on the path, as for `open` (#267).
     let path = match std::path::absolute(raw_path) {
         Ok(path) => path.to_string_lossy().into_owned(),
-        Err(e) => return fail(&format!("cannot push to '{raw_path}': {e}")),
+        Err(e) => return fail(&format!("cannot push to {raw_path}: {e}")),
     };
     match mode {
         Mode::One(value) => one(&path, value),
@@ -192,8 +192,8 @@ impl<R: Read> Iterator for Lines<R> {
 }
 
 /// The encoded `push`, or `None` when it is over `limit`.
-fn payload(path: &str, data: String, limit: usize) -> Option<Vec<u8>> {
-    proto::encode_within(&Msg::Push { path: path.into(), data }, limit)
+fn payload(path: &str, value: String, limit: usize) -> Option<Vec<u8>> {
+    proto::encode_within(&Msg::Push { path: path.into(), value }, limit)
 }
 
 #[cfg(test)]
@@ -409,9 +409,9 @@ mod tests {
     // S42
     #[test]
     fn a_push_of_exactly_the_limit_passes_and_one_byte_more_does_not() {
-        let limit = proto::encode(&Msg::Push { path: "/p".into(), data: "x".repeat(100) }).unwrap().len();
+        let limit = proto::encode(&Msg::Push { path: "/p".into(), value: "x".repeat(100) }).unwrap().len();
         let at = payload("/p", "x".repeat(100), limit).expect("exactly the limit");
-        assert_eq!(proto::decode(&at).unwrap(), Msg::Push { path: "/p".into(), data: "x".repeat(100) });
+        assert_eq!(proto::decode(&at).unwrap(), Msg::Push { path: "/p".into(), value: "x".repeat(100) });
         assert_eq!(payload("/p", "x".repeat(101), limit), None);
     }
     /// A connection whose daemon end reads and never answers, and whose cli
@@ -443,6 +443,6 @@ mod tests {
         drop(cli);
         let sent: Vec<Msg> =
             std::iter::from_fn(|| proto::frame::read_sync(&mut daemon).ok()).map(|p| proto::decode(&p).unwrap()).collect();
-        assert_eq!(sent, vec![Msg::Push { path: "/p".into(), data: "1".into() }]);
+        assert_eq!(sent, vec![Msg::Push { path: "/p".into(), value: "1".into() }]);
     }
 }

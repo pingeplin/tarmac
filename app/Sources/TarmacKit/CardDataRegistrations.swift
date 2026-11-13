@@ -27,9 +27,9 @@ public struct CardDataRegistrations: Sendable {
         files.compactMap { $0.value == file ? $0.key : nil }
     }
 
-    /// A `doc_data` for each card that reads a file.
+    /// A `data_file` for each card that reads a file.
     public var resent: [Message] {
-        files.map { card, file in .docData(boardID: card.boardID, path: card.path, data: file) }
+        files.map { card, file in .dataFile(boardID: card.boardID, path: card.path, file: file) }
     }
 
     public mutating func forget(board boardID: String) {

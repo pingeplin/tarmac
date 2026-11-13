@@ -96,8 +96,8 @@ impl PushDaemon {
     }
 }
 
-fn push_msg(path: &str, data: &str) -> Msg {
-    Msg::Push { path: path.into(), data: data.into() }
+fn push_msg(path: &str, value: &str) -> Msg {
+    Msg::Push { path: path.into(), value: value.into() }
 }
 
 fn no_daemon_line(sock: &Path) -> String {
@@ -134,7 +134,11 @@ fn any_other_argument_count_is_a_usage_error() {
     for args in [&["push"][..], &["push", "/p"], &["push", "/p", "1", "2"]] {
         let out = Report::of(tarmac().args(args));
         assert_eq!(out.code(), Some(2), "{args:?}");
-        assert!(out.one_stderr_line().contains("usage: tarmac push"), "{args:?}: {}", out.stderr);
+        assert_eq!(
+            out.one_stderr_line(),
+            "tarmac: usage: tarmac push <path> <json>  |  tarmac push <path> -\n",
+            "{args:?}"
+        );
     }
 }
 
@@ -313,7 +317,7 @@ fn an_empty_path_is_refused_with_no_connection() {
     drop(daemon);
 
     assert_eq!(out.code(), Some(1));
-    assert!(out.one_stderr_line().starts_with("tarmac: cannot push to '': "), "got: {}", out.stderr);
+    assert!(out.one_stderr_line().starts_with("tarmac: cannot push to : "), "got: {}", out.stderr);
     assert!(received.lock().unwrap().is_empty(), "the cli connected");
 }
 

@@ -27,12 +27,12 @@ final class CardDataRegistrationsTests: XCTestCase {
         XCTAssertEqual(table.cards(reading: "/a/dash.html"), [], "a doc path is no data path")
     }
 
-    func testS48AReconnectSendsOneDocDataForEachCardThatReadsAFile() {
+    func testS48AReconnectSendsOneDataFileForEachCardThatReadsAFile() {
         var table = table()
         let expected: [Message] = [
-            .docData(boardID: "board-0", path: "/a/dash.html", data: "/a/stats.json"),
-            .docData(boardID: "board-1", path: "/a/dash.html", data: "/a/stats.json"),
-            .docData(boardID: "board-0", path: "/a/other.html", data: "/a/x.json"),
+            .dataFile(boardID: "board-0", path: "/a/dash.html", file: "/a/stats.json"),
+            .dataFile(boardID: "board-1", path: "/a/dash.html", file: "/a/stats.json"),
+            .dataFile(boardID: "board-0", path: "/a/other.html", file: "/a/x.json"),
         ]
         XCTAssertEqual(table.resent.count, 3)
         XCTAssertEqual(Set(table.resent.map(\.debugText)), Set(expected.map(\.debugText)))
@@ -46,12 +46,12 @@ final class CardDataRegistrationsTests: XCTestCase {
         var table = table()
         table.set(nil, for: dash0)
         XCTAssertEqual(table.cards(reading: "/a/stats.json"), [dash1])
-        XCTAssertFalse(table.resent.contains(.docData(boardID: "board-0", path: "/a/dash.html", data: "/a/stats.json")))
+        XCTAssertFalse(table.resent.contains(.dataFile(boardID: "board-0", path: "/a/dash.html", file: "/a/stats.json")))
         XCTAssertEqual(table.resent.count, 2)
 
         table.forget(board: "board-1")
         XCTAssertEqual(table.cards(reading: "/a/stats.json"), [])
-        XCTAssertEqual(table.resent, [.docData(boardID: "board-0", path: "/a/other.html", data: "/a/x.json")])
+        XCTAssertEqual(table.resent, [.dataFile(boardID: "board-0", path: "/a/other.html", file: "/a/x.json")])
     }
 
     func testS50ACardThatRegistersAnotherFileLeavesTheFirst() {

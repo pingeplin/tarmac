@@ -4,7 +4,7 @@
 use super::*;
 use crate::boards::DEFAULT_BOARD_ID;
 
-/// `doc_data` for `doc` of `board`, as the daemon handles it.
+/// `data_file` for `doc` of `board`, as the daemon handles it.
 async fn name_on(daemon: &Daemon, board: &str, doc: &Path, data: Option<&Path>) -> bool {
     crate::docs::record_data(daemon, board, doc, data.map(Path::to_path_buf)).await
 }
@@ -94,7 +94,7 @@ impl Drop for Card {
 
 // S8a. The doc's own open is the one watch.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_doc_data_that_is_refused_asks_for_no_watch() {
+async fn a_data_file_that_is_refused_asks_for_no_watch() {
     let (source, calls, _release) = held_source(&[]);
     let card = Card::on(canon_tmp("s8a"), source).await;
     let (d, tmp) = (card.dir.display().to_string(), card.tmp.display().to_string());
@@ -129,7 +129,7 @@ async fn a_doc_data_that_is_refused_asks_for_no_watch() {
 
 // S8b
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_doc_data_that_is_refused_leaves_the_registration_and_its_count() {
+async fn a_data_file_that_is_refused_leaves_the_registration_and_its_count() {
     let mut card = Card::silent("s8b").await;
     card.reading("sub/stats.json").await;
     let two = write_doc(card.dir.join("two/x.json"));
@@ -367,7 +367,7 @@ async fn a_doc_of_a_board_in_the_background_counts_its_data_directory() {
 
 // S27. The harness of `an_open_reports_a_change_that_no_wake_told_of`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_doc_data_that_makes_a_watch_reports_a_change_that_no_wake_told_of() {
+async fn a_data_file_that_makes_a_watch_reports_a_change_that_no_wake_told_of() {
     let mut card = Card::silent("s27").await;
     let kept = write_doc(card.tmp.join("kept/a.md"));
     open_doc(&card.daemon, None, &kept).await;
@@ -381,7 +381,7 @@ async fn a_doc_data_that_makes_a_watch_reports_a_change_that_no_wake_told_of() {
 
 // S28, the restart. The data file is not in the state file (S28 [it]).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_restart_watches_no_data_directory_until_a_doc_data_names_the_file() {
+async fn a_restart_watches_no_data_directory_until_a_data_file_names_the_file() {
     let tmp = canon_tmp("s28");
     let dash = write_doc(tmp.join("d/dash.html"));
     let stats = write_doc(tmp.join("d/sub/stats.json"));
@@ -654,7 +654,7 @@ async fn a_name_in_flight_when_the_place_is_taken_leaves_the_new_apps_name_count
 /// A card on a source that holds the watch of `<tmp>/d/sub`, with `sub`
 /// wanted for `sub/stats.json`, then made, and a try of it held in the
 /// watcher thread after a wake given as the file system's. The gate is
-/// free, so a `doc_data` runs to its end while the try is held. A change
+/// free, so a `data_file` runs to its end while the try is held. A change
 /// of `dash` waits for the look that follows the try.
 async fn try_held_in_the_watcher(tag: &str) -> (Card, Arc<SourceCalls>, std::sync::mpsc::Sender<()>, u64) {
     let tmp = canon_tmp(tag);

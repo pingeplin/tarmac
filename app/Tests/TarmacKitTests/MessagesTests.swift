@@ -7,30 +7,30 @@ final class MessagesTests: XCTestCase {
         try Message.decode(payload: MsgPack.encode(.map(fields)))
     }
 
-    func testS41ADocEventDecodesWithItsPathAndData() throws {
+    func testS41ADocEventDecodesWithItsPathAndValue() throws {
         XCTAssertEqual(
-            try decoded(["t": .string("doc_event"), "path": .string("/a/dash.html"), "data": .string("[1]")]),
-            .docEvent(path: "/a/dash.html", data: "[1]")
+            try decoded(["t": .string("doc_event"), "path": .string("/a/dash.html"), "value": .string("[1]")]),
+            .docEvent(path: "/a/dash.html", value: "[1]")
         )
     }
 
-    func testS41ADocEventWithNoDataIsRefused() {
+    func testS41ADocEventWithNoValueIsRefused() {
         for fields: [String: MsgPackValue] in [
             ["t": .string("doc_event"), "path": .string("/a/dash.html")],
-            ["t": .string("doc_event"), "path": .string("/a/dash.html"), "data": .nil],
+            ["t": .string("doc_event"), "path": .string("/a/dash.html"), "value": .nil],
         ] {
             XCTAssertThrowsError(try decoded(fields)) { error in
-                XCTAssertEqual(error as? MessageError, .missingField("data"))
+                XCTAssertEqual(error as? MessageError, .missingField("value"))
             }
         }
     }
 
-    func testS41ADocEventWhoseDataIsNoStringIsRefused() {
-        for data: MsgPackValue in [.int(1), .binary(Data("[1]".utf8)), .array([.string("[1]")])] {
+    func testS41ADocEventWhoseValueIsNoStringIsRefused() {
+        for value: MsgPackValue in [.int(1), .binary(Data("[1]".utf8)), .array([.string("[1]")])] {
             XCTAssertThrowsError(
-                try decoded(["t": .string("doc_event"), "path": .string("/a/dash.html"), "data": data])
+                try decoded(["t": .string("doc_event"), "path": .string("/a/dash.html"), "value": value])
             ) { error in
-                XCTAssertEqual(error as? MessageError, .badField("data"), "\(data)")
+                XCTAssertEqual(error as? MessageError, .badField("value"), "\(value)")
             }
         }
     }

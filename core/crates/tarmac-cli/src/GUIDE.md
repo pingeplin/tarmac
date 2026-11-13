@@ -285,7 +285,7 @@ producer | tarmac push dash.html -                    # one value per line of st
 
 ```html
 <script>
-  addEventListener("tarmac:event", e => apply(e.detail));
+  addEventListener("tarmac:push", e => apply(e.detail));
 </script>
 ```
 
@@ -293,7 +293,7 @@ producer | tarmac push dash.html -                    # one value per line of st
   put on a board. A file that is not open is refused: `not an open doc`. A
   relative path works. A push to an open markdown file exits `0` and shows
   nothing.
-- **`tarmac:event`** is a `CustomEvent` on `window`, and `detail` is the parsed
+- **`tarmac:push`** is a `CustomEvent` on `window`, and `detail` is the parsed
   value. The events come in the order they were sent. An event does not change
   `window.tarmac.data`.
 - **No replay.** A value goes to the cards of that file that are loaded at that
@@ -309,7 +309,8 @@ producer | tarmac push dash.html -                    # one value per line of st
   parser: any value at the top, with white space around it, and nothing after
   it. It refuses a byte-order mark, a number out of the range of a double
   (`1e400`), an unpaired surrogate escape (`"\ud800"`), and more than 127
-  levels of arrays and objects. At most 16 MiB.
+  levels of arrays and objects. At most 16 MiB for the whole frame: the path
+  and the value together.
 - **With `-`**, each line of stdin is one value, on one connection. A value
   written over more than one line is refused line by line. Blank lines are
   skipped. A refused line is one line on stderr, `tarmac: line <n>: <reason>`,
@@ -320,7 +321,7 @@ producer | tarmac push dash.html -                    # one value per line of st
   that a card drew it; `1` a value was refused (with `-`, any line), no Tarmac
   is running, or no app is connected; `2` bad usage. Success prints nothing.
 - A text that the card cannot parse gives no event and one error line in the
-  card's console, `tarmac:event: not valid JSON`. This is rare: Tarmac and the
+  card's console, `tarmac:push: not valid JSON`. This is rare: Tarmac and the
   browser do not agree on every text.
 
 ## Checklist before `tarmac open` on an HTML file

@@ -94,7 +94,7 @@
     window.dispatchEvent(new CustomEvent("tarmac:data", { detail: value }));
   }
 
-  // Pushed values (spec 2611.0003), one `tarmac:event` each, in order. Each
+  // Pushed values (spec 2611.0003), one `tarmac:push` each, in order. Each
   // text has its own guard: one that does not parse, or a listener that
   // throws, stops none after it. `window.tarmac.data` is not theirs.
   function dispatchEvents(texts) {
@@ -105,11 +105,11 @@
       try {
         value = JSON.parse(texts[i]);
       } catch (e) {
-        relay("error", ["tarmac:event: not valid JSON"]);
+        relay("error", ["tarmac:push: not valid JSON"]);
         continue;
       }
       try {
-        window.dispatchEvent(new CustomEvent("tarmac:event", { detail: value }));
+        window.dispatchEvent(new CustomEvent("tarmac:push", { detail: value }));
       } catch (e) {
         // A listener's error is the page's, and WebKit reports it as such.
       }

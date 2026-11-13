@@ -6,25 +6,25 @@ use super::*;
 type Cache = HashMap<PathBuf, PathBuf>;
 
 /// `handle_push` on a task of its own, which gives the cache back.
-async fn push(daemon: &Arc<Daemon>, cache: Cache, path: &Path, data: &str) -> (Result<(), String>, Cache) {
-    let (daemon, path, data) = (daemon.clone(), path.to_str().unwrap().to_owned(), data.to_owned());
+async fn push(daemon: &Arc<Daemon>, cache: Cache, path: &Path, value: &str) -> (Result<(), String>, Cache) {
+    let (daemon, path, value) = (daemon.clone(), path.to_str().unwrap().to_owned(), value.to_owned());
     answers(async move {
         let mut cache = cache;
-        let answer = crate::docs::handle_push(&daemon, &mut cache, &path, data).await;
+        let answer = crate::docs::handle_push(&daemon, &mut cache, &path, value).await;
         (answer, cache)
     })
     .await
 }
 
-async fn push_once(daemon: &Arc<Daemon>, path: &Path, data: &str) -> Result<(), String> {
-    push(daemon, Cache::new(), path, data).await.0
+async fn push_once(daemon: &Arc<Daemon>, path: &Path, value: &str) -> Result<(), String> {
+    push(daemon, Cache::new(), path, value).await.0
 }
 
 /// The `doc_event`s the app has now, each path as it is written: the app
 /// keys its cards by the text.
 fn doc_events(app: &mut mpsc::Receiver<Msg>) -> Vec<(String, String)> {
     let event = |msg| match msg {
-        Msg::DocEvent { path, data } => Some((path, data)),
+        Msg::DocEvent { path, value } => Some((path, value)),
         _ => None,
     };
     pushed(app).into_iter().filter_map(event).collect()
@@ -90,9 +90,9 @@ async fn a_text_that_is_not_one_json_value_is_refused_before_any_resolve() {
         (r#""\ud800""#, "unexpected end of hex escape at line 1 column 8"),
         (&nested(128), "recursion limit exceeded at line 1 column 128"),
     ];
-    for (data, why) in cases {
-        let answer = push_once(&linked.daemon, &linked.linked, data).await;
-        assert_eq!(answer, Err(format!("not one JSON value: {why}")), "{data:?}");
+    for (value, why) in cases {
+        let answer = push_once(&linked.daemon, &linked.linked, value).await;
+        assert_eq!(answer, Err(format!("not one JSON value: {why}")), "{value:?}");
     }
     assert_eq!(linked.fs.calls(Call::Resolve), 0);
     assert_eq!(doc_events(&mut app), vec![]);
@@ -104,10 +104,10 @@ async fn one_json_value_is_taken_and_given_to_the_app_as_it_was_sent() {
     let linked = Linked::open("push-json").await;
     let mut app = connect_app(&linked.daemon).await;
     let values = ["1", r#""s""#, "null", r#"[1,{"a":[]}]"#, " {\"a\":1} \t", &nested(127)];
-    for data in values {
-        assert_eq!(push_once(&linked.daemon, &linked.doc, data).await, Ok(()), "{data:?}");
+    for value in values {
+        assert_eq!(push_once(&linked.daemon, &linked.doc, value).await, Ok(()), "{value:?}");
     }
-    let expected: Vec<_> = values.iter().map(|data| (linked.key(), data.to_string())).collect();
+    let expected: Vec<_> = values.iter().map(|value| (linked.key(), value.to_string())).collect();
     assert_eq!(doc_events(&mut app), expected);
 }
 

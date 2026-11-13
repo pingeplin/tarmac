@@ -1,4 +1,4 @@
-// #311 / spec 2611.0002: `doc_data` names the data file that an HTML doc
+// #311 / spec 2611.0002: `data_file` names the data file that an HTML doc
 // reads. The daemon answers it with a `file_event` for that file, and reports
 // each later change of it as it reports a doc's: in a look of the active
 // board, and at the switch to the doc's board.
@@ -16,8 +16,8 @@ use common::{Conn, TestDaemon, edit, is_file_event_for, mtime_ms, none_within, q
 use serde_json::json;
 use tarmac_protocol::{BoardViewport, Msg};
 
-fn doc_data(app: &mut Conn, board: &str, doc: &str, data: Option<&str>) {
-    app.send(&Msg::DocData { board_id: board.into(), path: doc.into(), data: data.map(str::to_string) });
+fn data_file(app: &mut Conn, board: &str, doc: &str, file: Option<&str>) {
+    app.send(&Msg::DataFile { board_id: board.into(), path: doc.into(), file: file.map(str::to_string) });
 }
 
 fn is_event_for_any(msg: &Msg, paths: &[&str]) -> bool {
@@ -96,7 +96,7 @@ impl Card {
         format!("{}/{name}", Path::new(&self.dash).parent().unwrap().display())
     }
 
-    /// `doc_data` for `dash` on board-0, and its answer.
+    /// `data_file` for `dash` on board-0, and its answer.
     fn register(&self, app: &mut Conn) {
         self.register_file(app, &self.stats);
     }
@@ -104,12 +104,12 @@ impl Card {
 
 // S36
 #[test]
-fn a_doc_data_is_answered_with_a_file_event_for_the_data_file() {
+fn a_data_file_is_answered_with_a_file_event_for_the_data_file() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     let card = Card::open(&daemon, &mut app);
 
-    doc_data(&mut app, "board-0", &card.dash, Some(&card.stats));
+    data_file(&mut app, "board-0", &card.dash, Some(&card.stats));
     assert_eq!(app.recv_file_event_for(&card.stats), mtime_ms(&card.stats), "the data file's mtime");
 }
 
@@ -139,14 +139,14 @@ fn one_write_of_the_data_file_is_one_file_event() {
 
 // S38
 #[test]
-fn the_same_doc_data_again_is_answered_again() {
+fn the_same_data_file_again_is_answered_again() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     let card = Card::open(&daemon, &mut app);
     card.register(&mut app);
     assert!(quiet(&mut app, &card.stats), "the file did not change");
 
-    doc_data(&mut app, "board-0", &card.dash, Some(&card.stats));
+    data_file(&mut app, "board-0", &card.dash, Some(&card.stats));
     assert_eq!(app.recv_file_event_for(&card.stats), mtime_ms(&card.stats));
 }
 
@@ -158,7 +158,7 @@ fn a_data_file_that_is_not_there_is_reported_when_it_is_made() {
     let card = Card::open(&daemon, &mut app);
     let later = card.beside("later.json");
 
-    doc_data(&mut app, "board-0", &card.dash, Some(&later));
+    data_file(&mut app, "board-0", &card.dash, Some(&later));
     look_with_none_for(&mut app, &card.other, &[&later]);
 
     write_doc(Path::new(&later), "[1]\n");
@@ -168,27 +168,27 @@ fn a_data_file_that_is_not_there_is_reported_when_it_is_made() {
 
 // S40
 #[test]
-fn a_doc_data_with_no_data_clears_the_data_file() {
+fn a_data_file_with_no_file_clears_the_data_file() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     let card = Card::open(&daemon, &mut app);
     card.register(&mut app);
 
-    doc_data(&mut app, "board-0", &card.dash, None);
+    data_file(&mut app, "board-0", &card.dash, None);
     edit(&card.stats);
     look_with_none_for(&mut app, &card.other, &[&card.stats]);
 }
 
 // S40a
 #[test]
-fn a_doc_data_with_another_file_replaces_the_data_file() {
+fn a_data_file_with_another_file_replaces_the_data_file() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     let card = Card::open(&daemon, &mut app);
     card.register(&mut app);
     let next = write_doc(&daemon.dir.join("docs/next.json"), "{}\n");
 
-    doc_data(&mut app, "board-0", &card.dash, Some(&next));
+    data_file(&mut app, "board-0", &card.dash, Some(&next));
     assert_eq!(app.recv_file_event_for(&next), mtime_ms(&next), "the new file is answered");
 
     edit(&card.stats);
@@ -200,7 +200,7 @@ fn a_doc_data_with_another_file_replaces_the_data_file() {
 // parent of the docs' directory, so that the relative name names a file too.
 // A file in a subdirectory is taken since 2611.0005 (S9).
 #[test]
-fn a_doc_data_that_is_refused_records_nothing() {
+fn a_data_file_that_is_refused_records_nothing() {
     let cwd = temp_dir();
     let away = temp_dir();
     let daemon = TestDaemon::start_with(|cmd| {
@@ -225,10 +225,10 @@ fn a_doc_data_that_is_refused_records_nothing() {
     let of_no_board = write_doc(&cwd.join("docs/of-no-board.json"), "{}\n");
 
     for data in [&above, &elsewhere, &relative, &through_sub, &the_dir_above] {
-        doc_data(&mut app, "board-0", &dash, Some(data));
+        data_file(&mut app, "board-0", &dash, Some(data));
     }
-    doc_data(&mut app, "board-0", &no_doc, Some(&of_no_doc));
-    doc_data(&mut app, "board-9", &dash, Some(&of_no_board));
+    data_file(&mut app, "board-0", &no_doc, Some(&of_no_doc));
+    data_file(&mut app, "board-9", &dash, Some(&of_no_board));
 
     let refused = [&above, &elsewhere, &relative, &through_sub, &the_dir_above, &of_no_doc, &of_no_board];
     let refused: Vec<&str> = refused.iter().map(|p| p.as_str()).collect();
@@ -239,7 +239,7 @@ fn a_doc_data_that_is_refused_records_nothing() {
     look_with_none_for(&mut app, &other, &refused);
 
     let taken = write_doc(&cwd.join("docs/taken.json"), "{}\n");
-    doc_data(&mut app, "board-0", &dash, Some(&taken));
+    data_file(&mut app, "board-0", &dash, Some(&taken));
     assert_eq!(app.recv_file_event_for(&taken), mtime_ms(&taken), "the same doc takes a file beside it");
 
     let _ = std::fs::remove_dir_all(&cwd);
@@ -268,7 +268,7 @@ fn a_data_file_that_two_docs_read_is_one_file_event_for_a_change() {
     let dash2 = write_doc(&daemon.dir.join("docs/dash2.html"), "<p>dash2</p>\n");
     app.open_on("board-0", &dash2);
     card.register(&mut app);
-    doc_data(&mut app, "board-0", &dash2, Some(&card.stats));
+    data_file(&mut app, "board-0", &dash2, Some(&card.stats));
     assert_eq!(app.recv_file_event_for(&card.stats), mtime_ms(&card.stats));
     assert!(quiet(&mut app, &card.stats));
 
@@ -307,12 +307,12 @@ fn card_in_the_background(daemon: &TestDaemon, app: &mut Conn) -> Card {
 
 // S44
 #[test]
-fn a_doc_data_for_a_board_in_the_background_is_answered_at_its_switch() {
+fn a_data_file_for_a_board_in_the_background_is_answered_at_its_switch() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     let card = card_in_the_background(&daemon, &mut app);
 
-    doc_data(&mut app, "board-1", &card.dash, Some(&card.stats));
+    data_file(&mut app, "board-1", &card.dash, Some(&card.stats));
     none_at_once_for(&mut app, &card.other, &[&card.stats]);
     look_with_none_for(&mut app, &card.other, &[&card.stats]);
 
@@ -320,21 +320,21 @@ fn a_doc_data_for_a_board_in_the_background_is_answered_at_its_switch() {
     assert_eq!(app.recv_file_event_for(&card.stats), mtime_ms(&card.stats));
 }
 
-// The spec's choices 6 and 9: a `doc_data` sent again for a board in the
+// The spec's choices 6 and 9: a `data_file` sent again for a board in the
 // background (an app that connected again) is answered at the switch as the
 // first was, with the file not changed.
 #[test]
-fn the_same_doc_data_again_for_a_board_in_the_background_is_answered_at_its_switch() {
+fn the_same_data_file_again_for_a_board_in_the_background_is_answered_at_its_switch() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     let card = card_in_the_background(&daemon, &mut app);
-    doc_data(&mut app, "board-1", &card.dash, Some(&card.stats));
+    data_file(&mut app, "board-1", &card.dash, Some(&card.stats));
     look_with_none_for(&mut app, &card.other, &[&card.stats]);
     app.switch_to("board-1");
     assert_eq!(app.recv_file_event_for(&card.stats), mtime_ms(&card.stats));
     switch_with_restore_first(&mut app, "board-0", &card.stats);
 
-    doc_data(&mut app, "board-1", &card.dash, Some(&card.stats));
+    data_file(&mut app, "board-1", &card.dash, Some(&card.stats));
     none_at_once_for(&mut app, &card.other, &[&card.stats]);
     look_with_none_for(&mut app, &card.other, &[&card.stats]);
     switch_with_restore_first(&mut app, "board-1", &card.stats);
@@ -365,7 +365,7 @@ fn a_change_of_a_data_file_in_the_background_is_reported_at_the_switch() {
     assert_eq!(app.recv_file_event_for(&card.stats), edited);
 }
 
-// S46. `doc_data` saves nothing itself, so a layout makes the save.
+// S46. `data_file` saves nothing itself, so a layout makes the save.
 #[test]
 fn the_data_file_is_not_in_the_state_file() {
     let daemon = TestDaemon::start();
@@ -385,9 +385,9 @@ fn the_data_file_is_not_in_the_state_file() {
 
 impl Card {
     /// The card's directory, as the registry writes it.
-    /// `doc_data` for `dash` naming `data`, and its answer.
+    /// `data_file` for `dash` naming `data`, and its answer.
     fn register_file(&self, app: &mut Conn, data: &str) {
-        doc_data(app, "board-0", &self.dash, Some(data));
+        data_file(app, "board-0", &self.dash, Some(data));
         assert_eq!(app.recv_file_event_for(data), mtime_ms(data));
     }
 }
@@ -409,7 +409,7 @@ fn card_reading_sub(daemon: &TestDaemon, app: &mut Conn) -> (Card, String) {
 // A doc named with `//` is judged from its registry key: the same `//` in its
 // `data` is refused.
 #[test]
-fn a_doc_data_that_is_not_a_clean_path_under_the_directory_is_refused() {
+fn a_data_file_that_is_not_a_clean_path_under_the_directory_is_refused() {
     let root = temp_dir();
     let dir = std::fs::canonicalize(&root).unwrap().join("docs");
     std::fs::create_dir_all(&dir).unwrap();
@@ -443,10 +443,10 @@ fn a_doc_data_that_is_not_a_clean_path_under_the_directory_is_refused() {
         "sub/x.json".to_string(),
     ];
     for data in &sent {
-        doc_data(&mut app, "board-0", &dash, Some(data));
+        data_file(&mut app, "board-0", &dash, Some(data));
     }
     let under_doubled = format!("{parent}//docs/sub/x.json");
-    doc_data(&mut app, "board-0", &format!("{parent}//docs/dash.html"), Some(&under_doubled));
+    data_file(&mut app, "board-0", &format!("{parent}//docs/dash.html"), Some(&under_doubled));
 
     let led_to = [&beside, &in_sub, &above, &elsewhere, &sibling, &d, &under_doubled];
     let refused: Vec<&str> = sent.iter().map(String::as_str).chain(led_to.iter().map(|p| p.as_str())).collect();
@@ -457,7 +457,7 @@ fn a_doc_data_that_is_not_a_clean_path_under_the_directory_is_refused() {
     write_doc(&dir.join("made.txt"), "a change of the directory itself\n");
     look_with_none_for(&mut app, &other, &refused);
 
-    doc_data(&mut app, "board-0", &dash, Some(&in_sub));
+    data_file(&mut app, "board-0", &dash, Some(&in_sub));
     assert_eq!(app.recv_file_event_for(&in_sub), mtime_ms(&in_sub), "the same doc takes a file under it");
 
     let _ = std::fs::remove_dir_all(&root);
@@ -465,7 +465,7 @@ fn a_doc_data_that_is_not_a_clean_path_under_the_directory_is_refused() {
 
 // S34
 #[test]
-fn a_doc_data_with_a_hidden_name_below_the_directory_is_refused() {
+fn a_data_file_with_a_hidden_name_below_the_directory_is_refused() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     let card = Card::open(&daemon, &mut app);
@@ -476,7 +476,7 @@ fn a_doc_data_with_a_hidden_name_below_the_directory_is_refused() {
     ];
     let refused: Vec<&str> = hidden.iter().map(String::as_str).collect();
     for data in &refused {
-        doc_data(&mut app, "board-0", &card.dash, Some(data));
+        data_file(&mut app, "board-0", &card.dash, Some(data));
     }
     none_at_once_for(&mut app, &card.other, &refused);
     for file in &refused {
@@ -487,19 +487,19 @@ fn a_doc_data_with_a_hidden_name_below_the_directory_is_refused() {
     let dash = write_doc(&daemon.dir.join(".hid/dash.html"), "<p>dash</p>\n");
     let data = write_doc(&daemon.dir.join(".hid/sub/x.json"), "{}\n");
     app.open_on("board-0", &dash);
-    doc_data(&mut app, "board-0", &dash, Some(&data));
+    data_file(&mut app, "board-0", &dash, Some(&data));
     assert_eq!(app.recv_file_event_for(&data), mtime_ms(&data), "a doc's own directory may be hidden");
 }
 
 // S9
 #[test]
-fn a_doc_data_for_a_file_in_a_subdirectory_is_answered_with_a_file_event() {
+fn a_data_file_for_a_file_in_a_subdirectory_is_answered_with_a_file_event() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     let card = Card::open(&daemon, &mut app);
     let stats = write_doc(&daemon.dir.join("docs/sub/stats.json"), "{}\n");
 
-    doc_data(&mut app, "board-0", &card.dash, Some(&stats));
+    data_file(&mut app, "board-0", &card.dash, Some(&stats));
     assert_eq!(app.recv_file_event_for(&stats), mtime_ms(&stats));
 }
 
@@ -553,7 +553,7 @@ fn a_data_file_that_is_not_there_in_a_subdirectory_is_reported_when_it_is_made()
     std::fs::create_dir_all(daemon.dir.join("docs/sub")).unwrap();
     let new = card.beside("sub/new.json");
 
-    doc_data(&mut app, "board-0", &card.dash, Some(&new));
+    data_file(&mut app, "board-0", &card.dash, Some(&new));
     look_with_none_for(&mut app, &card.other, &[&new]);
 
     write_doc(Path::new(&new), "[1]\n");
@@ -569,7 +569,7 @@ fn a_data_file_in_a_subdirectory_that_is_made_later_is_reported() {
     let mut app = daemon.connect_app_drained();
     let card = Card::open(&daemon, &mut app);
     let stats = card.beside("sub/stats.json");
-    doc_data(&mut app, "board-0", &card.dash, Some(&stats));
+    data_file(&mut app, "board-0", &card.dash, Some(&stats));
     look_with_none_for(&mut app, &card.other, &[&stats]);
 
     std::fs::create_dir(daemon.dir.join("docs/sub")).unwrap();
@@ -619,10 +619,10 @@ fn a_subdirectory_that_another_doc_still_reads_in_stays_watched() {
     let a = write_doc(&daemon.dir.join("docs/sub/a.json"), "{}\n");
     let b = write_doc(&daemon.dir.join("docs/sub/b.json"), "{}\n");
     card.register_file(&mut app, &a);
-    doc_data(&mut app, "board-0", &dash2, Some(&b));
+    data_file(&mut app, "board-0", &dash2, Some(&b));
     assert_eq!(app.recv_file_event_for(&b), mtime_ms(&b));
 
-    doc_data(&mut app, "board-0", &card.dash, None);
+    data_file(&mut app, "board-0", &card.dash, None);
     assert!(quiet(&mut app, &b));
     let edited = edit(&b);
     assert_eq!(app.recv_file_event_since(&b, edited), edited);
@@ -631,13 +631,13 @@ fn a_subdirectory_that_another_doc_still_reads_in_stays_watched() {
 
 // S25a: S44 with the file in `sub`.
 #[test]
-fn a_doc_data_in_a_subdirectory_for_a_board_in_the_background_is_answered_at_its_switch() {
+fn a_data_file_in_a_subdirectory_for_a_board_in_the_background_is_answered_at_its_switch() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     let card = card_in_the_background(&daemon, &mut app);
     let stats = write_doc(&daemon.dir.join("docs/sub/stats.json"), "{}\n");
 
-    doc_data(&mut app, "board-1", &card.dash, Some(&stats));
+    data_file(&mut app, "board-1", &card.dash, Some(&stats));
     none_at_once_for(&mut app, &card.other, &[&stats]);
     look_with_none_for(&mut app, &card.other, &[&stats]);
 
@@ -669,10 +669,10 @@ fn a_data_path_through_a_link_to_the_doc_directory_leaves_its_watch() {
     let card = Card::open(&daemon, &mut app);
     std::os::unix::fs::symlink(".", daemon.dir.join("docs/self")).unwrap();
     let through = card.beside("self/stats.json");
-    doc_data(&mut app, "board-0", &card.dash, Some(&through));
+    data_file(&mut app, "board-0", &card.dash, Some(&through));
     assert_eq!(app.recv_file_event_for(&through), mtime_ms(&card.stats));
 
-    doc_data(&mut app, "board-0", &card.dash, None);
+    data_file(&mut app, "board-0", &card.dash, None);
     assert!(quiet(&mut app, &card.other));
     let edited = edit(&card.other);
     assert_eq!(app.recv_file_event_since(&card.other, edited), edited);
@@ -695,7 +695,7 @@ fn a_data_file_through_a_link_out_of_the_tree_is_seen_only_by_a_look() {
     let card = Card::open(&daemon, &mut app);
     let real = write_doc(&away.join("stats.json"), "{}\n");
     let out = through_link(&card, "out", &away, "stats.json");
-    doc_data(&mut app, "board-0", &card.dash, Some(&out));
+    data_file(&mut app, "board-0", &card.dash, Some(&out));
     assert_eq!(app.recv_file_event_for(&out), mtime_ms(&real), "the registration stands");
     assert!(quiet(&mut app, &out));
 
@@ -716,7 +716,7 @@ fn one_write_through_a_link_in_the_tree_is_one_file_event_for_the_path_named() {
     let card = Card::open(&daemon, &mut app);
     let real = write_doc(&daemon.dir.join("docs/real/stats.json"), "{}\n");
     let named = through_link(&card, "in", Path::new(&real).parent().unwrap(), "stats.json");
-    doc_data(&mut app, "board-0", &card.dash, Some(&named));
+    data_file(&mut app, "board-0", &card.dash, Some(&named));
     assert_eq!(app.recv_file_event_for(&named), mtime_ms(&real));
     assert!(quiet(&mut app, &named));
 
@@ -736,7 +736,7 @@ fn the_registrations_of_an_app_that_went_are_dropped() {
     let dash2 = write_doc(&daemon.dir.join("docs/dash2.html"), "<p>dash2</p>\n");
     app.open_on("board-0", &dash2);
     let beside = write_doc(&daemon.dir.join("docs/beside.json"), "{}\n");
-    doc_data(&mut app, "board-0", &dash2, Some(&beside));
+    data_file(&mut app, "board-0", &dash2, Some(&beside));
     assert_eq!(app.recv_file_event_for(&beside), mtime_ms(&beside));
 
     drop(app);
