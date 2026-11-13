@@ -29,7 +29,7 @@ final class CardDataReadTests: XCTestCase {
         XCTAssertEqual(disk.opened, [file])
     }
 
-    func test2611_0002S30ANameThatResolvesToAnotherDirectoryIsNeverRead() {
+    func test2611_0002S30_2611_0005S5ANameThatResolvesToAnotherDirectoryIsNeverRead() {
         for target in ["/etc/stats.json", "/a/bc/stats.json"] {
             let disk = Disk([html: Data(), file: Data("{}".utf8), target: Data("{}".utf8)], links: [file: target])
             XCTAssertEqual(read(disk), .refused(CardDataRead.leadsOutside), target)
@@ -40,7 +40,7 @@ final class CardDataReadTests: XCTestCase {
     /// The directories are compared as bytes (`CardDataPathTests`): a
     /// combining mark after a slash does not hide the slash, and two forms of
     /// one letter are two directories.
-    func test2611_0002S30TheResolvedDirectoryIsComparedAsBytes() {
+    func test2611_0002S30_2611_0005S5TheResolvedDirectoryIsComparedAsBytes() {
         let mark = "\u{301}"
         let under = "/a/b/sub/\(mark)x.json"
         let disk = Disk([html: Data(), under: Data("{}".utf8)], links: [file: under])
