@@ -397,3 +397,84 @@ pub fn is_below(dir: &Path, path: &Path) -> bool {
     let below = if dir.ends_with(b"/") { Some(rest) } else { rest.strip_prefix(b"/") };
     below.is_some_and(|below| below.split(|b| *b == b'/').all(|c| !c.is_empty() && !c.starts_with(b".")))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn under(data: &str) -> bool {
+        is_under(Path::new("/a/d/dash.html"), Path::new(data))
+    }
+
+    #[test]
+    fn a_file_beside_the_doc_is_under_it() {
+        assert!(under("/a/d/x.json"));
+    }
+
+    #[test]
+    fn a_file_at_any_depth_below_the_doc_is_under_it() {
+        assert!(under("/a/d/sub/deeper/x.json"));
+    }
+
+    #[test]
+    fn a_dot_dot_component_is_refused_also_when_it_leads_back_under() {
+        assert!(!under("/a/d/sub/../x.json"));
+        assert!(!under("/a/d/../x.json"));
+        assert!(!under("/a/d/sub/../../away/x.json"));
+    }
+
+    #[test]
+    fn a_dot_component_is_refused() {
+        assert!(!under("/a/d/./x.json"));
+        assert!(!under("/a/d/sub/./x.json"));
+    }
+
+    #[test]
+    fn an_empty_component_is_refused() {
+        assert!(!under("/a/d//sub/x.json"));
+    }
+
+    #[test]
+    fn a_trailing_slash_is_refused() {
+        assert!(!under("/a/d/sub/x.json/"));
+    }
+
+    #[test]
+    fn a_hidden_component_below_the_doc_is_refused() {
+        assert!(!under("/a/d/.x.json"));
+        assert!(!under("/a/d/.cache/x.json"));
+    }
+
+    #[test]
+    fn a_sibling_directory_that_starts_with_the_doc_directory_is_not_under_it() {
+        assert!(!under("/a/dx/x.json"));
+    }
+
+    #[test]
+    fn the_doc_directory_itself_is_not_under_it() {
+        assert!(!under("/a/d"));
+    }
+
+    #[test]
+    fn the_doc_directory_with_a_trailing_slash_is_not_under_it() {
+        assert!(!under("/a/d/"));
+    }
+
+    #[test]
+    fn the_parent_of_the_doc_directory_is_not_under_it() {
+        assert!(!under("/a/x.json"));
+        assert!(!under("/a"));
+    }
+
+    #[test]
+    fn a_relative_path_is_refused() {
+        assert!(!under("d/x.json"));
+        assert!(!under("sub/x.json"));
+    }
+
+    #[test]
+    fn below_the_root_a_path_needs_no_second_separator() {
+        assert!(is_below(Path::new("/"), Path::new("/x.json")));
+        assert!(!is_below(Path::new("/"), Path::new("//x.json")));
+    }
+}
