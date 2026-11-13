@@ -113,13 +113,13 @@ public struct HTMLCardSession: Equatable, Sendable {
             // stamps one for each load, and this does not rest on it.
             if let load, loads.isCurrent(load), load != namedLoad {
                 namedLoad = load
-                effects += named(data, by: load)
+                effects += named(data)
             }
             return effects
         }
     }
 
-    private mutating func named(_ name: String?, by load: Int) -> [Effect] {
+    private mutating func named(_ name: String?) -> [Effect] {
         var effects: [Effect] = []
         var file: String?
         if let name {
@@ -131,7 +131,7 @@ public struct HTMLCardSession: Equatable, Sendable {
             }
         }
         guard file != nil || feed.file != nil else { return effects }
-        feed.register(file, by: load)
+        feed.register(file)
         return effects + [.dataFile(file)]
     }
 
@@ -159,7 +159,7 @@ public struct HTMLCardSession: Equatable, Sendable {
 
     /// One read at a time, and none while culled.
     private mutating func nextRead() -> [Effect] {
-        feed.next(html: html, loads: loads, culled: culled).map { [.read($0)] } ?? []
+        feed.next(html: html, namedLoad: namedLoad, loads: loads, culled: culled).map { [.read($0)] } ?? []
     }
 
     private mutating func taken(_ read: DataRead, _ outcome: CardDataRead.Outcome) -> [Effect] {
@@ -242,16 +242,13 @@ public struct HTMLCardSession: Equatable, Sendable {
 private struct Feed: Equatable, Sendable {
     /// What the daemon was last told this card reads; a reload keeps it.
     private(set) var file: String?
-    /// The load whose first ready named `file`.
-    private var registeredLoad: Int?
     private var reading = false
     private var again = false
 
     /// A change seen before is not this registration's: the daemon reports
     /// the file anew in answer to each one.
-    mutating func register(_ file: String?, by load: Int) {
+    mutating func register(_ file: String?) {
         self.file = file
-        registeredLoad = load
         again = false
     }
 
@@ -259,11 +256,13 @@ private struct Feed: Equatable, Sendable {
         if file != nil { again = true }
     }
 
-    mutating func next(html: String, loads: LoadCount, culled: Bool) -> HTMLCardSession.DataRead? {
-        guard let file, let registeredLoad, loads.isCurrent(registeredLoad), !culled, !reading, again else { return nil }
+    /// `namedLoad` is the load whose first ready named `file`: a file is
+    /// registered only then.
+    mutating func next(html: String, namedLoad: Int?, loads: LoadCount, culled: Bool) -> HTMLCardSession.DataRead? {
+        guard let file, let namedLoad, loads.isCurrent(namedLoad), !culled, !reading, again else { return nil }
         reading = true
         again = false
-        return HTMLCardSession.DataRead(file: file, html: html, load: registeredLoad)
+        return HTMLCardSession.DataRead(file: file, html: html, load: namedLoad)
     }
 
     /// Whether the read's outcome is the card's to take now.
