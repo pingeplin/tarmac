@@ -377,6 +377,14 @@ impl Board {
     }
 }
 
+/// A data registration whose directory is wanted: its board, its doc and its
+/// file.
+pub struct WantedData {
+    pub board: BoardId,
+    pub doc: PathBuf,
+    pub file: PathBuf,
+}
+
 /// The boards in display order plus the active one — never empty, and `active`
 /// always names a live board.
 pub struct Boards {
@@ -485,14 +493,13 @@ impl Boards {
         self.registries_mut().flat_map(Registry::drop_data).collect()
     }
 
-    /// Each data registration of every board whose directory is wanted: its
-    /// board, its doc and its file.
-    pub fn wanted_data(&self) -> Vec<(BoardId, PathBuf, PathBuf)> {
+    /// Each data registration of every board whose directory is wanted.
+    pub fn wanted_data(&self) -> Vec<WantedData> {
         let mut wanted = Vec::new();
         for board in &self.boards {
             for (doc, info) in &board.registry.docs {
                 if let Some(DataRead { file, dir: DataDir::Wanted }) = &info.data {
-                    wanted.push((board.id.clone(), doc.clone(), file.clone()));
+                    wanted.push(WantedData { board: board.id.clone(), doc: doc.clone(), file: file.clone() });
                 }
             }
         }
