@@ -390,7 +390,7 @@ final class CardHostScriptTests: XCTestCase {
 
     private let unstamped: NSDictionary = ["tarmac": "ready", "meta": NSNull(), "data": "stats.json"]
 
-    func test2611S10TheFirstReadyOfALoadCarriesItsNumber() throws {
+    func test2611_0002S10TheFirstReadyOfALoadCarriesItsNumber() throws {
         load(sourceA, number: 3)
         hear("{ tarmac: 'started', source: '\(sourceA)' }")
         let bodies = ready("source: '\(sourceA)'")
@@ -400,7 +400,7 @@ final class CardHostScriptTests: XCTestCase {
         )
     }
 
-    func test2611S11ALaterReadyOfTheLoadCarriesNone() {
+    func test2611_0002S11ALaterReadyOfTheLoadCarriesNone() {
         load(sourceA, number: 3)
         hear("{ tarmac: 'started', source: '\(sourceA)' }")
         XCTAssertEqual(ready("source: '\(sourceA)'"), [stamped(3)])
@@ -412,7 +412,7 @@ final class CardHostScriptTests: XCTestCase {
         XCTAssertEqual(ready("source: '\(sourceA)'"), [unstamped])
     }
 
-    func test2611S12ACardCannotNameALoad() {
+    func test2611_0002S12ACardCannotNameALoad() {
         load(sourceA, number: 3)
         hear("{ tarmac: 'started', source: '\(sourceA)' }")
         XCTAssertEqual(ready("source: '\(sourceA)', load: 99"), [stamped(3)])
@@ -422,7 +422,7 @@ final class CardHostScriptTests: XCTestCase {
     /// The source is the page's alone and is not measured: a long path must
     /// not cost a card its `ready`. A `ready` the page drops for its size does
     /// not use up the stamp.
-    func test2611S12aTheSourceIsNotMeasuredAndADroppedReadyLeavesTheStamp() throws {
+    func test2611_0002S12aTheSourceIsNotMeasuredAndADroppedReadyLeavesTheStamp() throws {
         let sized = """
         (() => {
           const ready = { tarmac: 'ready', meta: '', data: null };
@@ -448,7 +448,7 @@ final class CardHostScriptTests: XCTestCase {
 
     /// The document of the load before is still in the frame until the new
     /// one starts, and its `ready` names no file.
-    func test2611S13AReadyBeforeTheNewDocumentStartsIsNotStamped() {
+    func test2611_0002S13AReadyBeforeTheNewDocumentStartsIsNotStamped() {
         load(sourceA, number: 3)
         hear("{ tarmac: 'started', source: '\(sourceA)' }")
         load(sourceB, number: 4)
@@ -459,7 +459,7 @@ final class CardHostScriptTests: XCTestCase {
 
     /// The frame's `load` event names no document: the one it replaced can
     /// still speak after it.
-    func test2611S13bTheReplacedDocumentsReadyCannotTakeTheStamp() {
+    func test2611_0002S13bTheReplacedDocumentsReadyCannotTakeTheStamp() {
         load(sourceA, number: 3)
         hear("{ tarmac: 'started', source: '\(sourceA)' }")
         load(sourceB, number: 4)
@@ -468,7 +468,7 @@ final class CardHostScriptTests: XCTestCase {
         XCTAssertEqual(ready("source: '\(sourceB)'"), [stamped(4)])
     }
 
-    func test2611S13aNoReadyIsStampedBeforeALoadIsAsked() {
+    func test2611_0002S13aNoReadyIsStampedBeforeALoadIsAsked() {
         frameLoaded()
         hear("{ tarmac: 'started', source: '\(sourceA)' }")
         XCTAssertEqual(ready("source: '\(sourceA)'"), [unstamped])
@@ -477,7 +477,7 @@ final class CardHostScriptTests: XCTestCase {
         XCTAssertEqual(ready("source: '\(sourceA)'"), [stamped(1)])
     }
 
-    func test2611S14TheDataTextIsPostedIntoTheFrame() {
+    func test2611_0002S14TheDataTextIsPostedIntoTheFrame() {
         let text = #"{"s":"\"</script>${x}\u2028"}"#
         context.setObject(text, forKeyedSubscript: "text" as NSString)
         context.evaluateScript("window.tarmacCard.data(text)")

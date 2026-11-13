@@ -12,20 +12,20 @@ final class CardDataPathTests: XCTestCase {
         CardDataPath.dataFile(html: html, name: name)
     }
 
-    func testS15ANameThatLeadsToAFileBesideTheCardGivesThatFile() {
+    func test2611_0002S15ANameThatLeadsToAFileBesideTheCardGivesThatFile() {
         for name in ["stats.json", "./stats.json", ".//stats.json", "x/../stats.json", "/a/b/stats.json"] {
             XCTAssertEqual(judged(name), .file("/a/b/stats.json"), name)
         }
     }
 
-    func testS1ANameUnderTheCardsDirectoryGivesThatFileAtAnyDepth() {
+    func test2611_0005S1ANameUnderTheCardsDirectoryGivesThatFileAtAnyDepth() {
         for name in ["sub/stats.json", "./sub/stats.json", "sub//stats.json", "sub/x/../stats.json", "/a/b/sub/stats.json"] {
             XCTAssertEqual(judged(name), .file("/a/b/sub/stats.json"), name)
         }
         XCTAssertEqual(judged("sub/deep/stats.json"), .file("/a/b/sub/deep/stats.json"))
     }
 
-    func testS2ANameThatLeadsOutOfTheTreeIsRefusedAsOutside() {
+    func test2611_0005S2ANameThatLeadsOutOfTheTreeIsRefusedAsOutside() {
         let cases = [
             ("../stats.json", "/a/stats.json"), ("/etc/passwd", "/etc/passwd"), ("sub/../../x.json", "/a/x.json"),
             ("/a/bc/x.json", "/a/bc/x.json"), ("../bc/x.json", "/a/bc/x.json"),
@@ -35,7 +35,7 @@ final class CardDataPathTests: XCTestCase {
         }
     }
 
-    func testS3ANameThatNamesADirectoryUnderTheCardNamesNoFile() {
+    func test2611_0005S3ANameThatNamesADirectoryUnderTheCardNamesNoFile() {
         let cases = [("sub/..", "/a/b"), ("sub/../", "/a/b"), ("sub/", "/a/b/sub"), ("sub/./", "/a/b/sub")]
         for (name, path) in cases {
             XCTAssertEqual(judged(name), .refused(path: path, reason: CardDataPath.namesNoFile), name)
@@ -44,7 +44,7 @@ final class CardDataPathTests: XCTestCase {
 
     /// A hidden name below the card's directory is refused, the file's own
     /// included; the card's directory itself may be hidden.
-    func testS32AHiddenNameBelowTheCardsDirectoryIsRefused() {
+    func test2611_0005S32AHiddenNameBelowTheCardsDirectoryIsRefused() {
         let cases = [
             (".stats.json", "/a/b/.stats.json"), (".cfg/x.json", "/a/b/.cfg/x.json"),
             ("sub/.cfg/x.json", "/a/b/sub/.cfg/x.json"), ("sub/.x.json", "/a/b/sub/.x.json"),
@@ -65,7 +65,7 @@ final class CardDataPathTests: XCTestCase {
     /// mark that follows it, and compares strings by canonical equivalence:
     /// a rule written on characters loses the slash, or takes two
     /// directories for one.
-    func testS4S18aAPathIsJudgedAsBytes() {
+    func test2611_0005S4_2611_0002S18aAPathIsJudgedAsBytes() {
         let mark = "\u{301}"
         XCTAssertEqual(judged("sub/\(mark)x.json"), .file("/a/b/sub/\(mark)x.json"))
         XCTAssertEqual(judged("../\(mark)x.json"), .refused(path: "/a/\(mark)x.json", reason: CardDataPath.outside))
@@ -81,16 +81,16 @@ final class CardDataPathTests: XCTestCase {
     }
 
     /// A sibling whose name starts with the card's directory's is not under it.
-    func testS17ASiblingDirectoryThatSharesThePrefixIsOutside() {
+    func test2611_0005S2ASiblingDirectoryThatSharesThePrefixIsOutside() {
         XCTAssertEqual(judged("/a/bc/x.json"), .refused(path: "/a/bc/x.json", reason: CardDataPath.outside))
     }
 
     /// `..` above the root stays at the root, as POSIX has it.
-    func testS17ANameThatClimbsPastTheRootIsOutside() {
+    func test2611_0002S17ANameThatClimbsPastTheRootIsOutside() {
         XCTAssertEqual(judged("../../../../x.json"), .refused(path: "/x.json", reason: CardDataPath.outside))
     }
 
-    func testS18ANameThatNamesNoFileIsRefused() {
+    func test2611_0002S18ANameThatNamesNoFileIsRefused() {
         for name in ["", ".", "./", "x/..", "stats.json/", "st\u{0}ats.json"] {
             guard case .refused(_, let reason) = judged(name) else {
                 XCTFail("\(name.debugDescription) was taken")
@@ -102,14 +102,14 @@ final class CardDataPathTests: XCTestCase {
         XCTAssertEqual(judged("stats.json/"), .refused(path: "/a/b/stats.json", reason: CardDataPath.namesNoFile))
     }
 
-    func testS3aACardAtTheRootTakesAFileBesideItAndUnderIt() {
+    func test2611_0005S3aACardAtTheRootTakesAFileBesideItAndUnderIt() {
         XCTAssertEqual(CardDataPath.dataFile(html: "/dash.html", name: "x.json"), .file("/x.json"))
         XCTAssertEqual(CardDataPath.dataFile(html: "/dash.html", name: "s/x.json"), .file("/s/x.json"))
     }
 
     /// The under-check of the read, on resolved paths taken as given: by
     /// whole components, as bytes, and nothing worked out again.
-    func testS5TheUnderCheckIsByWholeComponentsAsBytes() {
+    func test2611_0005S5TheUnderCheckIsByWholeComponentsAsBytes() {
         let mark = "\u{301}"
         for file in ["/a/b/x.json", "/a/b/sub/deep/x.json", "/a/b/sub/\(mark)x.json"] {
             XCTAssertNotNil(CardDataPath.below(file, html: html), file)
