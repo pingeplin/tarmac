@@ -417,7 +417,7 @@ mod tests {
     }
 
     #[test]
-    fn a_dot_dot_component_is_refused_also_when_it_leads_back_under() {
+    fn a_dot_dot_component_is_refused_wherever_it_leads() {
         assert!(!under("/a/d/sub/../x.json"));
         assert!(!under("/a/d/../x.json"));
         assert!(!under("/a/d/sub/../../away/x.json"));

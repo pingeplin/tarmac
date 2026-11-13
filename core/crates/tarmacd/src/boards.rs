@@ -43,8 +43,8 @@ pub struct DataRead {
 /// given back for the directory it was taken for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DataDir {
-    /// Nothing: a file in the doc's own directory, which the doc counts, or a
-    /// directory that leads out of the doc's tree.
+    /// Nothing: no file, a file in the doc's own directory, which the doc
+    /// counts, or a directory that leads out of the doc's tree.
     Uncounted,
     /// This directory, counted and watched.
     Counted(PathBuf),
