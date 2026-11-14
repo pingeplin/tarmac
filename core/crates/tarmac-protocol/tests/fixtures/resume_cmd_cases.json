@@ -1,0 +1,373 @@
+{
+ "_comment": "Spec 2611.0011 S31: the resume command check. Each case's command is its parts, each part's text repeated its count. Read by tarmac-protocol's tests and the Swift ResumeCommandTests, so both languages check the same table.",
+ "cases": [
+  {
+   "parts": [
+    [
+     "claude --resume ab-12",
+     1
+    ]
+   ],
+   "cause": null
+  },
+  {
+   "parts": [
+    [
+     "cd /Users/u/\u6587\u4ef6/\u5c08\u6848 && ls",
+     1
+    ]
+   ],
+   "cause": null
+  },
+  {
+   "parts": [
+    [
+     "a",
+     256
+    ]
+   ],
+   "cause": null
+  },
+  {
+   "parts": [
+    [
+     "e\u0301",
+     127
+    ],
+    [
+     "ab",
+     1
+    ]
+   ],
+   "cause": null
+  },
+  {
+   "parts": [
+    [
+     "e\u0301",
+     127
+    ],
+    [
+     "abx",
+     1
+    ]
+   ],
+   "cause": "over 256 characters"
+  },
+  {
+   "parts": [
+    [
+     "a",
+     257
+    ]
+   ],
+   "cause": "over 256 characters"
+  },
+  {
+   "parts": [
+    [
+     "",
+     1
+    ]
+   ],
+   "cause": "empty"
+  },
+  {
+   "parts": [
+    [
+     "   ",
+     1
+    ]
+   ],
+   "cause": "empty"
+  },
+  {
+   "parts": [
+    [
+     "echo a\necho b",
+     1
+    ]
+   ],
+   "cause": "a control character"
+  },
+  {
+   "parts": [
+    [
+     "echo a\rb",
+     1
+    ]
+   ],
+   "cause": "a control character"
+  },
+  {
+   "parts": [
+    [
+     "echo\ta",
+     1
+    ]
+   ],
+   "cause": "a control character"
+  },
+  {
+   "parts": [
+    [
+     "echo \u001b[2J",
+     1
+    ]
+   ],
+   "cause": "a control character"
+  },
+  {
+   "parts": [
+    [
+     "echo \u007f",
+     1
+    ]
+   ],
+   "cause": "a control character"
+  },
+  {
+   "parts": [
+    [
+     "echo \u009bx",
+     1
+    ]
+   ],
+   "cause": "a control character"
+  },
+  {
+   "parts": [
+    [
+     "echo a\u2028b",
+     1
+    ]
+   ],
+   "cause": "a control character"
+  },
+  {
+   "parts": [
+    [
+     "echo a\u2029b",
+     1
+    ]
+   ],
+   "cause": "a control character"
+  },
+  {
+   "parts": [
+    [
+     "echo \u061cx",
+     1
+    ]
+   ],
+   "cause": "an invisible format character"
+  },
+  {
+   "parts": [
+    [
+     "echo \u200bx",
+     1
+    ]
+   ],
+   "cause": "an invisible format character"
+  },
+  {
+   "parts": [
+    [
+     "echo \u200cx",
+     1
+    ]
+   ],
+   "cause": "an invisible format character"
+  },
+  {
+   "parts": [
+    [
+     "echo \u200fx",
+     1
+    ]
+   ],
+   "cause": "an invisible format character"
+  },
+  {
+   "parts": [
+    [
+     "echo \u202ax",
+     1
+    ]
+   ],
+   "cause": "an invisible format character"
+  },
+  {
+   "parts": [
+    [
+     "echo \u202dx",
+     1
+    ]
+   ],
+   "cause": "an invisible format character"
+  },
+  {
+   "parts": [
+    [
+     "echo \u202ex",
+     1
+    ]
+   ],
+   "cause": "an invisible format character"
+  },
+  {
+   "parts": [
+    [
+     "echo \u2060x",
+     1
+    ]
+   ],
+   "cause": "an invisible format character"
+  },
+  {
+   "parts": [
+    [
+     "echo \u2063x",
+     1
+    ]
+   ],
+   "cause": "an invisible format character"
+  },
+  {
+   "parts": [
+    [
+     "echo \u2064x",
+     1
+    ]
+   ],
+   "cause": "an invisible format character"
+  },
+  {
+   "parts": [
+    [
+     "echo \u2066x",
+     1
+    ]
+   ],
+   "cause": "an invisible format character"
+  },
+  {
+   "parts": [
+    [
+     "echo \u2067x",
+     1
+    ]
+   ],
+   "cause": "an invisible format character"
+  },
+  {
+   "parts": [
+    [
+     "echo \u2069x",
+     1
+    ]
+   ],
+   "cause": "an invisible format character"
+  },
+  {
+   "parts": [
+    [
+     "echo \ufeffx",
+     1
+    ]
+   ],
+   "cause": "an invisible format character"
+  },
+  {
+   "parts": [
+    [
+     "echo \u061bx",
+     1
+    ]
+   ],
+   "cause": null
+  },
+  {
+   "parts": [
+    [
+     "echo \u061dx",
+     1
+    ]
+   ],
+   "cause": null
+  },
+  {
+   "parts": [
+    [
+     "echo \u200ax",
+     1
+    ]
+   ],
+   "cause": null
+  },
+  {
+   "parts": [
+    [
+     "echo \u2010x",
+     1
+    ]
+   ],
+   "cause": null
+  },
+  {
+   "parts": [
+    [
+     "echo \u202fx",
+     1
+    ]
+   ],
+   "cause": null
+  },
+  {
+   "parts": [
+    [
+     "echo \u205fx",
+     1
+    ]
+   ],
+   "cause": null
+  },
+  {
+   "parts": [
+    [
+     "echo \u2065x",
+     1
+    ]
+   ],
+   "cause": null
+  },
+  {
+   "parts": [
+    [
+     "echo \u206ax",
+     1
+    ]
+   ],
+   "cause": null
+  },
+  {
+   "parts": [
+    [
+     "echo \ufefex",
+     1
+    ]
+   ],
+   "cause": null
+  },
+  {
+   "parts": [
+    [
+     "echo \uff00x",
+     1
+    ]
+   ],
+   "cause": null
+  }
+ ]
+}

@@ -438,41 +438,31 @@ fn a_nil_resume_and_a_nil_cmd_are_not_on_the_wire() {
     assert!(!has(&encode(&resume(None)).unwrap(), b"cmd"));
 }
 
-/// S31's table: each case and whether `check_resume_cmd` accepts it. The
-/// Swift `ResumeCommandTests` runs the same table.
-fn resume_cmd_cases() -> Vec<(String, Result<(), &'static str>)> {
-    let combining = format!("{}{}", "e\u{301}".repeat(127), "ab");
-    assert_eq!(combining.chars().count(), 256);
-    vec![
-        ("claude --resume ab-12".into(), Ok(())),
-        ("cd /Users/u/文件/專案 && ls".into(), Ok(())),
-        ("a".repeat(RESUME_CMD_MAX), Ok(())),
-        (combining.clone(), Ok(())),
-        (format!("{combining}x"), Err("over 256 characters")),
-        ("a".repeat(RESUME_CMD_MAX + 1), Err("over 256 characters")),
-        (String::new(), Err("empty")),
-        ("   ".into(), Err("empty")),
-        ("echo a\necho b".into(), Err("a control character")),
-        ("echo a\rb".into(), Err("a control character")),
-        ("echo\ta".into(), Err("a control character")),
-        ("echo \u{1b}[2J".into(), Err("a control character")),
-        ("echo \u{7f}".into(), Err("a control character")),
-        ("echo \u{9b}x".into(), Err("a control character")),
-        ("echo a\u{2028}b".into(), Err("a control character")),
-        ("echo a\u{2029}b".into(), Err("a control character")),
-        ("echo \u{202e}x".into(), Err("an invisible format character")),
-        ("echo \u{200b}x".into(), Err("an invisible format character")),
-        ("echo \u{2066}x".into(), Err("an invisible format character")),
-        ("echo \u{061c}x".into(), Err("an invisible format character")),
-        ("echo \u{2064}x".into(), Err("an invisible format character")),
-        ("echo \u{feff}x".into(), Err("an invisible format character")),
-    ]
+/// S31's table, `tests/fixtures/resume_cmd_cases.json`, which the Swift
+/// `ResumeCommandTests` reads too: each command and the cause it is refused
+/// for, or none.
+fn resume_cmd_cases() -> Vec<(String, Result<(), String>)> {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/resume_cmd_cases.json");
+    let table: serde_json::Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    let case = |c: &serde_json::Value| {
+        let cmd: String = c["parts"].as_array().unwrap().iter().map(|p| p[0].as_str().unwrap().repeat(p[1].as_u64().unwrap() as usize)).collect();
+        (cmd, c["cause"].as_str().map_or(Ok(()), |cause| Err(cause.to_owned())))
+    };
+    table["cases"].as_array().unwrap().iter().map(case).collect()
+}
+
+#[test]
+fn s31_the_table_has_each_kind_of_case() {
+    let cases = resume_cmd_cases();
+    let combining = &cases[3].0;
+    assert_eq!((combining.chars().count(), combining.contains('\u{301}')), (256, true));
+    assert!(cases.iter().any(|(_, w)| w.is_ok()) && cases.iter().any(|(_, w)| w.is_err()));
 }
 
 #[test]
 fn s31_the_resume_command_check() {
     for (cmd, want) in resume_cmd_cases() {
-        assert_eq!(check_resume_cmd(&cmd), want, "{cmd:?}");
+        assert_eq!(check_resume_cmd(&cmd).map_err(str::to_owned), want, "{cmd:?}");
     }
 }
 

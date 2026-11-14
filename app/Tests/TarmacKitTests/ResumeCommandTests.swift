@@ -1,43 +1,55 @@
+import Foundation
 import XCTest
 import TarmacKit
 
-/// 2611.0011 S31: the same table as `tarmac-protocol`'s `resume_cmd_cases`, so
-/// both languages accept and refuse the same commands with the same cause.
+/// 2611.0011 S31: `tarmac-protocol`'s `tests/fixtures/resume_cmd_cases.json`,
+/// the table its own `s31_the_resume_command_check` runs, so both languages
+/// accept and refuse the same commands with the same cause.
 final class ResumeCommandTests: XCTestCase {
-    private let combining = String(repeating: "e\u{301}", count: 127) + "ab"
+    private struct Table: Decodable {
+        struct Case: Decodable {
+            let parts: [Part]
+            let cause: String?
+        }
 
-    private var cases: [(String, String?)] {
-        [
-            ("claude --resume ab-12", nil),
-            ("cd /Users/u/文件/專案 && ls", nil),
-            (String(repeating: "a", count: 256), nil),
-            (combining, nil),
-            (combining + "x", "over 256 characters"),
-            (String(repeating: "a", count: 257), "over 256 characters"),
-            ("", "empty"),
-            ("   ", "empty"),
-            ("echo a\necho b", "a control character"),
-            ("echo a\rb", "a control character"),
-            ("echo\ta", "a control character"),
-            ("echo \u{1b}[2J", "a control character"),
-            ("echo \u{7f}", "a control character"),
-            ("echo \u{9b}x", "a control character"),
-            ("echo a\u{2028}b", "a control character"),
-            ("echo a\u{2029}b", "a control character"),
-            ("echo \u{202e}x", "an invisible format character"),
-            ("echo \u{200b}x", "an invisible format character"),
-            ("echo \u{2066}x", "an invisible format character"),
-            ("echo \u{061c}x", "an invisible format character"),
-            ("echo \u{2064}x", "an invisible format character"),
-            ("echo \u{feff}x", "an invisible format character"),
-        ]
+        /// A text and how many times it is repeated: `["a", 256]`.
+        struct Part: Decodable {
+            let text: String
+            let count: Int
+
+            init(from decoder: Decoder) throws {
+                var pair = try decoder.unkeyedContainer()
+                text = try pair.decode(String.self)
+                count = try pair.decode(Int.self)
+            }
+        }
+
+        let cases: [Case]
     }
 
-    func testTheTableOfCases() {
-        XCTAssertEqual(combining.unicodeScalars.count, 256)
-        XCTAssertLessThan(combining.count, 256)
-        for (cmd, cause) in cases {
+    private func cases() throws -> [(cmd: String, cause: String?)] {
+        let fixture = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("core/crates/tarmac-protocol/tests/fixtures/resume_cmd_cases.json")
+        let table = try JSONDecoder().decode(Table.self, from: Data(contentsOf: fixture))
+        return table.cases.map { c in
+            (c.parts.map { String(repeating: $0.text, count: $0.count) }.joined(), c.cause)
+        }
+    }
+
+    func testTheSharedTableOfCases() throws {
+        let all = try cases()
+        XCTAssertGreaterThan(all.count, 30)
+        for (cmd, cause) in all {
             XCTAssertEqual(ResumeCommand.check(cmd), cause, cmd.debugDescription)
         }
+    }
+
+    /// A grapheme count would accept the table's 257-scalar command of
+    /// combining marks.
+    func testTheCombiningCaseIsCountedInScalars() throws {
+        let combining = try cases()[3].cmd
+        XCTAssertEqual(combining.unicodeScalars.count, 256)
+        XCTAssertLessThan(combining.count, 256)
     }
 }
