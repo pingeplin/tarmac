@@ -46,6 +46,7 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
         boardSwitcher.isHidden = true
         inboxPanel.isHidden = true
         for layer in OverlayStack.backToFront { addSubview(overlay(layer)) }
+        board.mountUnderCards(offHints.under)
 
         // −/+ zoom about the viewport center; fit frames every card.
         zoomControl.onZoomOut = { [weak self] in
@@ -76,7 +77,7 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
 
     private func overlay(_ layer: OverlayStack) -> NSView {
         switch layer {
-        case .hints: return offHints.layer
+        case .hints: return offHints.over
         case .zoomControl: return zoomControl
         case .minimap: return minimap
         case .toasts: return toasts
@@ -98,9 +99,9 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
 
     /// Mounts `bv` as the shown whiteboard: detaches the current board view and
     /// inserts `bv` as the bottom-most subview (below the status bar and every
-    /// overlay) and re-wiring its wayfinding callbacks. Used by the controller
-    /// on every board switch-arrive (and to re-mount the same view after
-    /// `unmountBoard`). The detached
+    /// overlay), re-wiring its wayfinding callbacks and moving the under-card
+    /// pill layer into it. Used by the controller on every board switch-arrive
+    /// (and to re-mount the same view after `unmountBoard`). The detached
     /// board's cards + live terminal views stay parented to it off-window, so
     /// background ptys keep running.
     func mountBoard(_ bv: BoardView) {
@@ -111,6 +112,7 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
         board = bv
         board.alphaValue = boardAlpha
         addSubview(bv, positioned: .below, relativeTo: statusBar)
+        bv.mountUnderCards(offHints.under)
         wireBoardCallbacks(bv)
         needsLayout = true
     }
@@ -205,7 +207,7 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
         statusBar.frame = NSRect(x: 0, y: area.maxY, width: bounds.width, height: StatusBar.height)
 
         let uncovered = InboxPanelLayout.uncovered(area, open: !inboxPanel.isHidden)
-        offHints.layer.frame = area
+        offHints.over.frame = area
         toasts.frame = uncovered
         // Zoom control: bottom-left, left 12, 12 above the status bar.
         zoomControl.sizeToContents()
@@ -226,5 +228,16 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
         if !restoreCard.isHidden { restoreCard.frame = area }
         if !inboxPanel.isHidden { inboxPanel.frame = InboxPanelLayout.panelRect(area) }
         cardsChanged()
+    }
+}
+
+private extension BoardView {
+    /// Puts `sheet` over the provenance edges and under every card. The board
+    /// keeps its two layers private, so the edge layer is found by its type.
+    func mountUnderCards(_ sheet: NSView) {
+        guard let edges = subviews.first(where: { $0 is EdgeLayerView }) else { return }
+        sheet.frame = bounds
+        sheet.autoresizingMask = [.width, .height]
+        addSubview(sheet, positioned: .above, relativeTo: edges)
     }
 }

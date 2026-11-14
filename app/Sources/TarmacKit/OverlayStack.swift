@@ -1,7 +1,9 @@
 /// The overlays stacked over the board, and which covers which. Cases are in
 /// the order `desktop/src/App.tsx` mounts them, which is what breaks a tie.
 ///
-/// The status bar is not here: it sits below the board area, not over it.
+/// The status bar is not here: it sits below the board area, not over it. Nor
+/// are the pills that could not clear a card, which go inside the board, under
+/// its cards.
 public enum OverlayStack: CaseIterable, Sendable {
     case zoomControl, minimap, hints, toasts, switcher, restoreCard, inbox
 
