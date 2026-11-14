@@ -24,6 +24,9 @@ final class OfferStripView: NSView, ThemeFollowing {
     private var scale = CardScale(zoom: 1, backing: 2)
     /// The press of a reopen offer; nil for the resume chip, which takes none.
     var onPress: (() -> Void)?
+    /// The whole command, verbatim. A tool tip rect, as the header gives its
+    /// report chip, since the resume chip takes no hit.
+    private var tip: String?
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
@@ -49,7 +52,7 @@ final class OfferStripView: NSView, ThemeFollowing {
 
     func show(lines: [String], toolTip: String?) {
         label.stringValue = lines.joined(separator: "\n")
-        self.toolTip = toolTip
+        tip = toolTip
     }
 
     func apply(_ scale: CardScale) {
@@ -69,6 +72,8 @@ final class OfferStripView: NSView, ThemeFollowing {
         let height = min(textHeight + 2 * padY, body.height)
         frame = NSRect(x: body.minX + inset, y: body.maxY - inset - height, width: width, height: height)
         label.frame = NSRect(x: padX, y: padY, width: textWidth, height: textHeight)
+        removeAllToolTips()
+        if tip != nil { addToolTip(bounds, owner: self, userData: nil) }
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -77,5 +82,16 @@ final class OfferStripView: NSView, ThemeFollowing {
 
     override func mouseDown(with event: NSEvent) {
         onPress?()
+    }
+}
+
+extension OfferStripView: NSViewToolTipOwner {
+    nonisolated func view(
+        _ view: NSView,
+        stringForToolTip tag: NSView.ToolTipTag,
+        point: NSPoint,
+        userData data: UnsafeMutableRawPointer?
+    ) -> String {
+        MainActor.assumeIsolated { tip ?? "" }
     }
 }
