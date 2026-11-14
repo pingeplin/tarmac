@@ -318,7 +318,7 @@ fn conformance_vector_18_restore_term_records() {
     let hex = "84 a1 74 a7 72 65 73 74 6f 72 65 a4 64 6f 63 73 90 a5 74 69 6c 65 73 90 \
                ac 74 65 72 6d 5f 72 65 63 6f 72 64 73 81 a2 74 31 \
                81 a8 6c 61 73 74 5f 63 77 64 a2 2f 77";
-    let msg = restore_with_records(BTreeMap::from([("t1".into(), TermRecord { last_cwd: Some("/w".into()) })]));
+    let msg = restore_with_records(BTreeMap::from([("t1".into(), TermRecord { last_cwd: Some("/w".into()), resume: None })]));
     assert_vector(hex, msg.clone());
     assert_eq!(encode(&msg).unwrap(), unhex(hex));
 }
@@ -396,6 +396,84 @@ fn conformance_vector_24_typed_input() {
          a5 62 79 74 65 73 c4 01 61 a5 74 79 70 65 64 c3",
         Msg::Input { term_id: "t1".into(), bytes: b"a".to_vec(), typed: true },
     );
+}
+
+// Spec 2611.0011: the resume record and its frame.
+fn resume(cmd: Option<&str>) -> Msg {
+    Msg::Resume { term_id: "t1".into(), cmd: cmd.map(str::to_string) }
+}
+
+fn record(last_cwd: Option<&str>, cmd: Option<&str>) -> TermRecord {
+    TermRecord { last_cwd: last_cwd.map(str::to_string), resume: cmd.map(|c| ResumeRecord { cmd: c.into() }) }
+}
+
+#[test]
+fn conformance_vector_25_resume() {
+    assert_frame(
+        "83 a1 74 a6 72 65 73 75 6d 65 a7 74 65 72 6d 5f 69 64 a2 74 31 \
+         a3 63 6d 64 b5 63 6c 61 75 64 65 20 2d 2d 72 65 73 75 6d 65 20 61 62 2d 31 32",
+        resume(Some("claude --resume ab-12")),
+    );
+}
+
+#[test]
+fn conformance_vector_26_resume_clear() {
+    assert_frame("82 a1 74 a6 72 65 73 75 6d 65 a7 74 65 72 6d 5f 69 64 a2 74 31", resume(None));
+}
+
+#[test]
+fn conformance_vector_27_restore_resume_record() {
+    assert_frame(
+        "84 a1 74 a7 72 65 73 74 6f 72 65 a4 64 6f 63 73 90 a5 74 69 6c 65 73 90 \
+         ac 74 65 72 6d 5f 72 65 63 6f 72 64 73 81 a2 74 31 \
+         82 a8 6c 61 73 74 5f 63 77 64 a2 2f 77 a6 72 65 73 75 6d 65 81 a3 63 6d 64 \
+         b5 63 6c 61 75 64 65 20 2d 2d 72 65 73 75 6d 65 20 61 62 2d 31 32",
+        restore_with_records(BTreeMap::from([("t1".into(), record(Some("/w"), Some("claude --resume ab-12")))])),
+    );
+}
+
+#[test]
+fn a_nil_resume_and_a_nil_cmd_are_not_on_the_wire() {
+    assert_eq!(rmp_serde::to_vec_named(&record(Some("/w"), None)).unwrap(), unhex("81 a8 6c 61 73 74 5f 63 77 64 a2 2f 77"));
+    assert!(!has(&encode(&resume(None)).unwrap(), b"cmd"));
+}
+
+/// S31's table: each case and whether `check_resume_cmd` accepts it. The
+/// Swift `ResumeCommandTests` runs the same table.
+fn resume_cmd_cases() -> Vec<(String, Result<(), &'static str>)> {
+    let combining = format!("{}{}", "e\u{301}".repeat(127), "ab");
+    assert_eq!(combining.chars().count(), 256);
+    vec![
+        ("claude --resume ab-12".into(), Ok(())),
+        ("cd /Users/u/文件/專案 && ls".into(), Ok(())),
+        ("a".repeat(RESUME_CMD_MAX), Ok(())),
+        (combining.clone(), Ok(())),
+        (format!("{combining}x"), Err("over 256 characters")),
+        ("a".repeat(RESUME_CMD_MAX + 1), Err("over 256 characters")),
+        (String::new(), Err("empty")),
+        ("   ".into(), Err("empty")),
+        ("echo a\necho b".into(), Err("a control character")),
+        ("echo a\rb".into(), Err("a control character")),
+        ("echo\ta".into(), Err("a control character")),
+        ("echo \u{1b}[2J".into(), Err("a control character")),
+        ("echo \u{7f}".into(), Err("a control character")),
+        ("echo \u{9b}x".into(), Err("a control character")),
+        ("echo a\u{2028}b".into(), Err("a control character")),
+        ("echo a\u{2029}b".into(), Err("a control character")),
+        ("echo \u{202e}x".into(), Err("an invisible format character")),
+        ("echo \u{200b}x".into(), Err("an invisible format character")),
+        ("echo \u{2066}x".into(), Err("an invisible format character")),
+        ("echo \u{061c}x".into(), Err("an invisible format character")),
+        ("echo \u{2064}x".into(), Err("an invisible format character")),
+        ("echo \u{feff}x".into(), Err("an invisible format character")),
+    ]
+}
+
+#[test]
+fn s31_the_resume_command_check() {
+    for (cmd, want) in resume_cmd_cases() {
+        assert_eq!(check_resume_cmd(&cmd), want, "{cmd:?}");
+    }
 }
 
 #[test]
@@ -943,7 +1021,7 @@ fn all_message_types_roundtrip() {
             board: Some(BoardViewport { zoom: 1.0, cx: 0.0, cy: 0.0 }),
             board_id: None,
             live_terms: vec!["t1".into()],
-            term_records: BTreeMap::from([("t1".into(), TermRecord { last_cwd: Some("/w".into()) })]),
+            term_records: BTreeMap::from([("t1".into(), TermRecord { last_cwd: Some("/w".into()), resume: None })]),
         },
         Msg::SpawnTerm {
             term_id: "t1".into(),
@@ -1002,6 +1080,8 @@ fn all_message_types_roundtrip() {
         Msg::DataFile { board_id: "board-1".into(), path: "/tmp/a.html".into(), file: None },
         Msg::Push { path: "/tmp/a.html".into(), value: "[1,2]".into() },
         Msg::DocEvent { path: "/tmp/a.html".into(), value: String::new() },
+        resume(Some("claude --resume ab-12")),
+        resume(None),
     ];
     for m in msgs {
         assert_eq!(roundtrip(&m), m, "roundtrip failed for {m:?}");

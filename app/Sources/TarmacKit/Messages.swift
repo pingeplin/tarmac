@@ -42,9 +42,20 @@ public struct RestoreDoc: Equatable, Sendable {
 public struct TermRecord: Equatable, Sendable {
     /// The terminal's last cwd that the daemon read.
     public var lastCwd: String?
+    /// 2611.0011: the command that resumes the agent session last run there.
+    public var resume: ResumeRecord?
 
-    public init(lastCwd: String?) {
+    public init(lastCwd: String?, resume: ResumeRecord? = nil) {
         self.lastCwd = lastCwd
+        self.resume = resume
+    }
+}
+
+public struct ResumeRecord: Equatable, Sendable {
+    public var cmd: String
+
+    public init(cmd: String) {
+        self.cmd = cmd
     }
 }
 
@@ -242,6 +253,9 @@ public enum Message: Equatable, Sendable {
     /// 2611.0009 (daemon → app): a terminal's current report. No `kind` is no
     /// report; a missing `read` is unread.
     case termReport(termID: String, kind: String?, text: String?, atMs: UInt64?, proc: String?, read: Bool)
+    /// 2611.0011 (cli → daemon): a terminal's resume command; nil clears it.
+    /// The app never sends one.
+    case resume(termID: String, cmd: String?)
     /// issue #41: `scrollbackRequest` (app → daemon) asks for one terminal's
     /// scrollback ring; the daemon answers with exactly one `scrollback`, always —
     /// empty bytes for a silent or unknown terminal.
@@ -421,6 +435,8 @@ public extension Message {
                 proc: try opt("proc", \.stringValue),
                 read: try opt("read", \.boolValue) ?? false
             )
+        case "resume":
+            return .resume(termID: try req("term_id", \.stringValue), cmd: try opt("cmd", \.stringValue))
         case "scrollback_request":
             return .scrollbackRequest(termID: try req("term_id", \.stringValue))
         case "scrollback":
@@ -433,10 +449,21 @@ public extension Message {
     private static func termRecords(from m: [String: MsgPackValue]?) throws -> [String: TermRecord] {
         try (m ?? [:]).mapValues { value in
             guard let record = value.mapValue else { throw MessageError.badField("term_records") }
-            guard let raw = record["last_cwd"], !raw.isNil else { return TermRecord(lastCwd: nil) }
-            guard let lastCwd = raw.stringValue else { throw MessageError.badField("last_cwd") }
-            return TermRecord(lastCwd: lastCwd)
+            return TermRecord(lastCwd: try optString(record, "last_cwd"), resume: try resumeRecord(record["resume"]))
         }
+    }
+
+    private static func optString(_ m: [String: MsgPackValue], _ key: String) throws -> String? {
+        guard let raw = m[key], !raw.isNil else { return nil }
+        guard let value = raw.stringValue else { throw MessageError.badField(key) }
+        return value
+    }
+
+    private static func resumeRecord(_ raw: MsgPackValue?) throws -> ResumeRecord? {
+        guard let raw, !raw.isNil else { return nil }
+        guard let m = raw.mapValue else { throw MessageError.badField("resume") }
+        guard let cmd = try optString(m, "cmd") else { throw MessageError.missingField("resume.cmd") }
+        return ResumeRecord(cmd: cmd)
     }
 
     private static func docEntry(from m: [String: MsgPackValue]) throws -> RestoreDoc {
@@ -582,6 +609,11 @@ public extension Message {
                 $0.put("proc", unlessNil: proc.map(MsgPackValue.string))
                 $0.put("read", unlessNil: read ? .bool(true) : nil)
             }
+        case .resume(let termID, let cmd):
+            return Self.tagged("resume") {
+                $0.put("term_id", .string(termID))
+                $0.put("cmd", unlessNil: cmd.map(MsgPackValue.string))
+            }
         case .input(let termID, let bytes, let typed):
             return Self.tagged("input") {
                 $0.put("term_id", .string(termID))
@@ -718,6 +750,7 @@ public extension Message {
         .orderedMap(records.sorted { $0.key < $1.key }.map { id, record in
             var m = WireFields()
             m.put("last_cwd", unlessNil: record.lastCwd.map(MsgPackValue.string))
+            m.put("resume", unlessNil: record.resume.map { .orderedMap([MsgPackField("cmd", .string($0.cmd))]) })
             return MsgPackField(id, .orderedMap(m.fields))
         })
     }

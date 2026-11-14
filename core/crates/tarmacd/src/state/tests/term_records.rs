@@ -27,7 +27,7 @@ async fn on_any_board(daemon: &Daemon, term_id: &str) -> bool {
 }
 
 fn cwd(path: &str) -> Option<TermRecord> {
-    Some(TermRecord { last_cwd: Some(path.into()) })
+    Some(TermRecord { last_cwd: Some(path.into()), resume: None })
 }
 
 async fn until_recorded(daemon: &Daemon, term_id: &str, dir: &Path) {
