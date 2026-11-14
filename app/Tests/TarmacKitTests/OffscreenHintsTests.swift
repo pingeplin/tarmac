@@ -608,8 +608,8 @@ final class OffscreenHintLayoutTests: XCTestCase {
         XCTAssertEqual(pills.sorted { $0.top < $1.top }.map(\.cardID), ["a", "b"], "the order along the edge is kept")
     }
 
-    /// The minimap and the toasts are drawn over every pill, so a pill left
-    /// under them covers no card: it is not occluded.
+    /// The corner chrome is drawn over every pill, so a pill left under it
+    /// covers no card: it is not occluded.
     func testAPillThatCannotClearTheChromeIsNotOccluded() throws {
         let saturating = CGRect(x: 900, y: -1000, width: 100, height: 3000)
         let pill = try XCTUnwrap(

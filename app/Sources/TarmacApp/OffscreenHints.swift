@@ -28,9 +28,9 @@ final class OffscreenHints {
 
     /// Shows a pill for each of `hints`, and returns them as placed.
     /// `viewRect` is the part of the board's bounds left uncovered and
-    /// `obstacles` its cards' on-screen rects, and `chrome` the minimap and
-    /// the toasts, drawn over the pills; all in the board's coordinates, which
-    /// both layers share.
+    /// `obstacles` its cards' on-screen rects, and `chrome` the corner chrome
+    /// drawn over the pills (`OverlayStack.pillChrome`); all in the board's
+    /// coordinates, which both layers share.
     @discardableResult
     func show(
         _ hints: [OffscreenHintLayout.Hint], in viewRect: CGRect, around obstacles: [CGRect], clearOf chrome: [CGRect]

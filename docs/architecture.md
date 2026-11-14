@@ -1548,10 +1548,11 @@ moves along its edge to the nearest free gap, and on the bottom edge to the
 nearest one on its left first. An edge that still leaves a pill under the
 chrome is placed again from its far end, stacking toward its start, each pill
 starting where the first placing put it; the second placing is kept only when
-it leaves fewer pills under the chrome and pushes no more out of the view. A
-pill that finds no free gap clear of the cards is drawn under them (#126):
-cards win. One left under the chrome stays over the cards and under the
-chrome.
+it leaves fewer pills covered, by the chrome or by a card, and pushes no more
+out of the view. A pill takes a gap only where the pills after it on its edge
+still fit before the edge's end. A pill that finds no free gap clear of the
+cards is drawn under them (#126): cards win. A pill left under the chrome but
+clear of every card is drawn over the cards and under the chrome.
 
 **The inbox** (spec 2611.0013, `InboxPanelView`; rules in `Inbox`,
 `InboxCopy`, `InboxKeys`, `InboxJump`, `InboxPanelLayout`). A store of report
