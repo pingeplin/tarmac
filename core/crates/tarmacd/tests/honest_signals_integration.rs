@@ -6,7 +6,7 @@ mod common;
 
 use std::time::Instant;
 
-use common::{LONG, TestDaemon};
+use common::{LONG, TestDaemon, temp_dir};
 use tarmac_protocol::Msg;
 
 #[test]
@@ -67,6 +67,31 @@ fn term_proc_reports_a_foreground_process_name() {
             Msg::Exit { term_id, .. } if term_id == "proc-term" => {
                 panic!("term exited before any term_proc arrived");
             }
+            _ => {}
+        }
+    }
+}
+
+// Claude Code's native install runs `claude` as a symlink to a versioned
+// binary: the title is the name it was run by, not the resolved file (#349).
+#[test]
+fn term_proc_names_a_symlinked_command_by_the_link() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let link = temp_dir().join("claude");
+    std::os::unix::fs::symlink("/bin/sleep", &link).unwrap();
+
+    app.spawn_term("link-term", &[link.to_str().unwrap(), "5"]);
+
+    let deadline = Instant::now() + LONG;
+    loop {
+        match app.recv(deadline, "term_proc") {
+            // The pty child is the daemon's fork until it execs.
+            Msg::TermProc { term_id, name, .. } if term_id == "link-term" && name != "tarmacd" => {
+                assert_eq!(name, "claude");
+                break;
+            }
+            Msg::Exit { term_id, .. } if term_id == "link-term" => panic!("term exited before any term_proc arrived"),
             _ => {}
         }
     }

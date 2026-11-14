@@ -299,9 +299,13 @@ Each terminal fans out into blocking threads (reader → 64 KiB chunks, writer,
 async **pump** that owns the daemon handle. The pump is the only place with a
 daemon reference, so it is where the three honest signals are sourced:
 
-- **`TermProc`** — poll the master's `process_group_leader` pid, resolve the
-  executable basename via `proc_pidpath` (macOS), push only when the name
-  *changes*. This becomes the card's title.
+- **`TermProc`** — poll the master's `process_group_leader` pid, name it by
+  the basename of its argv[0] (`sysctl(KERN_PROCARGS2)`, macOS; a login
+  shell's `-` dropped, so `-zsh` is `zsh`), push only when the name *changes*.
+  argv[0] is not resolved through a symlink, so Claude Code's `claude` link is
+  `claude`, not its version file (#349). When argv is unreadable (another
+  user's process gives `EINVAL`), the name is the `proc_pidpath` basename.
+  This becomes the card's title, and the doc owner chip shows it.
 - **`Bell`** — a `0x07` outside an escape string, debounced to one per ~250 ms;
   the BEL ending oh-my-zsh's per-prompt title (`ESC ]2;…BEL`) is not a bell.
 - **`Exit`** — `child.wait()`; a signal death sends `code: None` (the protocol's
@@ -342,7 +346,7 @@ only. `Daemon::report` ties it to a holder with `Holder::resolve` (pure):
 - **The holder**: `Agent {pid, started}`,
   `Shell {pid, caller}`, or, for an unattributed caller, `Leader {pid}`, the
   foreground leader; with none, `err`. `proc` is the holder's
-  `proc_pidpath` name.
+  name, by the same lookup as `TermProc`.
 - **The lifetime.** Each 750 ms poll reads the leader once and, before the
   `continue` on a failed read, runs `Holder::alive` for a terminal with a
   report: an agent while its pid is live
