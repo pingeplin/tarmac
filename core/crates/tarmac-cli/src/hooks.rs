@@ -1,8 +1,8 @@
 //! `tarmac hooks`: Claude Code reports through one fixed hook entry (spec
 //! 2611.0010). The settings file holds only a call to `tarmac hooks run claude`;
-//! the mapping from a hook's input to a report lives here, so an upgrade of the
-//! binary updates it. Only the cli knows an agent: the daemon gets a plain
-//! `report`.
+//! the mapping from a hook's input to a report or a resume command lives here,
+//! so an upgrade of the binary updates it. Only the cli knows an agent: the
+//! daemon gets a plain `report` or `resume`.
 
 use std::io::{self, IsTerminal, Read, Write};
 use std::os::unix::fs::PermissionsExt;
@@ -219,7 +219,12 @@ fn hook(args: &[String]) -> Result<(), String> {
     }
     let input: ClaudeInput =
         serde_json::from_slice(&read_input()?).map_err(|e| format!("the input is not a JSON object: {e}"))?;
-    let Some(msg) = claude_report(&term_id.to_string_lossy(), &input) else { return Ok(()) };
+    let Some(msg) = claude_message(&term_id.to_string_lossy(), &input) else {
+        if input.hook_event_name.0.as_deref() == Some("SessionStart") {
+            return Err("session_id refused".into());
+        }
+        return Ok(());
+    };
     let no_answer = format!("no answer from the daemon in {} ms", HOOK_DEADLINE.as_millis());
     report::send(&msg, HOOK_DEADLINE, report::NoAnswer::Anywhere(&no_answer))
 }
@@ -241,7 +246,7 @@ fn read_input() -> Result<Vec<u8>, String> {
     }
 }
 
-/// The four fields of a Claude hook input that the mapping reads; the rest,
+/// The five fields of a Claude hook input that the mapping reads; the rest,
 /// a long `prompt` among them, is skipped unparsed.
 #[derive(Deserialize, Default)]
 #[serde(default)]
@@ -250,6 +255,7 @@ struct ClaudeInput {
     notification_type: Lenient,
     message: Lenient,
     last_assistant_message: Lenient,
+    session_id: Lenient,
 }
 
 /// A field that counts only when it is a string; any other value is as if
@@ -266,9 +272,9 @@ impl<'de> Deserialize<'de> for Lenient {
     }
 }
 
-/// The report a Claude hook input stands for, if any. `SessionStart` is
-/// installed but maps to nothing until slice 4.
-fn claude_report(term_id: &str, input: &ClaudeInput) -> Option<Msg> {
+/// The frame a Claude hook input stands for, if any: a report, or at
+/// `SessionStart` the command that resumes the session (spec 2611.0011).
+fn claude_message(term_id: &str, input: &ClaudeInput) -> Option<Msg> {
     let report = |kind: &str, text: Option<String>| Some(Msg::Report { term_id: term_id.into(), kind: kind.into(), text });
     let text = |field: &Lenient| field.0.as_deref().and_then(report_text);
     match input.hook_event_name.0.as_deref()? {
@@ -277,8 +283,21 @@ fn claude_report(term_id: &str, input: &ClaudeInput) -> Option<Msg> {
         }
         "Stop" => report("done", text(&input.last_assistant_message)),
         "UserPromptSubmit" => report("clear", None),
+        "SessionStart" => {
+            let id = input.session_id.0.as_deref().filter(|id| is_safe_session_id(id))?;
+            Some(Msg::Resume { term_id: term_id.into(), cmd: Some(format!("claude --resume {id}")) })
+        }
         _ => None,
     }
+}
+
+/// `^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$` (D8): no shell metacharacter, no
+/// quoting needed, and no id that reads as a flag.
+fn is_safe_session_id(id: &str) -> bool {
+    let mut chars = id.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphanumeric())
+        && id.len() <= 128
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
 /// The text without its control characters, its whitespace runs folded to one
@@ -391,7 +410,7 @@ mod tests {
     }
 
     fn report_of(input: Value) -> Option<Msg> {
-        claude_report("t9", &serde_json::from_value(input).unwrap())
+        claude_message("t9", &serde_json::from_value(input).unwrap())
     }
 
     fn msg(kind: &str, text: Option<&str>) -> Msg {
@@ -430,7 +449,10 @@ mod tests {
         );
         assert_eq!(report_of(fixture("stop")), Some(msg("done", Some("You picked red."))));
         assert_eq!(report_of(fixture("user-prompt-submit")), Some(msg("clear", None)));
-        assert_eq!(report_of(fixture("session-start")), None);
+        assert_eq!(
+            report_of(fixture("session-start")),
+            Some(Msg::Resume { term_id: "t9".into(), cmd: Some("claude --resume 00000000-0000-0000-0000-000000000000".into()) })
+        );
     }
 
     // Claude Code 2.1.325 sends AskUserQuestion and plan approval as a
@@ -457,6 +479,30 @@ mod tests {
         let prompt = json!({"hook_event_name": "UserPromptSubmit", "prompt": "x".repeat(10_000)});
         assert_eq!(report_of(prompt), Some(msg("clear", None)));
         assert_eq!(report_of(json!({"hook_event_name": "SessionStart", "source": "startup"})), None);
+    }
+
+    fn session_start(id: Value) -> Value {
+        let mut input = json!({"hook_event_name": "SessionStart", "source": "resume"});
+        if !id.is_null() {
+            input["session_id"] = id;
+        }
+        input
+    }
+
+    #[test]
+    fn s22_a_session_id_from_the_safe_set_gives_its_resume_command() {
+        for id in ["00000000-0000-0000-0000-000000000000", "ab_12", &format!("a{}", "b".repeat(127))] {
+            let want = Msg::Resume { term_id: "t9".into(), cmd: Some(format!("claude --resume {id}")) };
+            assert_eq!(report_of(session_start(json!(id))), Some(want), "{id}");
+        }
+    }
+
+    #[test]
+    fn s22_any_other_session_id_gives_nothing() {
+        let too_long = json!(format!("a{}", "b".repeat(128)));
+        for id in [json!("-rf"), json!("../x"), json!("a b"), json!("a;b"), json!("$(x)"), json!(""), too_long, json!(7), Value::Null] {
+            assert_eq!(report_of(session_start(id.clone())), None, "{id}");
+        }
     }
 
     // The idle notification that Claude Code 2.1.325 sent 60 s after a Stop.

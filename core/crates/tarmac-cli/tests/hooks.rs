@@ -151,6 +151,11 @@ fn s6_hooks_run_sends_the_report_of_its_input() {
         (fixture("stop"), report("done", Some("You picked red.")), "captured stop"),
         (fixture("notification-permission"), report("blocked", Some("Claude needs your permission")), "permission"),
         (fixture("user-prompt-submit"), report("clear", None), "prompt"),
+        (
+            fixture("session-start"),
+            Msg::Resume { term_id: "t9".into(), cmd: Some("claude --resume 00000000-0000-0000-0000-000000000000".into()) },
+            "captured session start",
+        ),
     ] {
         let double = daemon(Daemon::Answers(Msg::Ack));
         let out = run_against(&double, input);
@@ -256,7 +261,6 @@ fn s24_bad_input_exits_0_without_connecting() {
         (b"not json".to_vec(), "not json"),
         (b"[]".to_vec(), "an array"),
         (br#"{"hook_event_name": 7}"#.to_vec(), "a number as the event"),
-        (fixture("session-start"), "session start"),
         (br#"{"hook_event_name": "Notification", "notification_type": "idle_prompt", "message": "waiting"}"#.to_vec(), "idle"),
         (stop_input_of_len((4 << 20) + 1), "over 4 MiB"),
     ] {
@@ -265,6 +269,18 @@ fn s24_bad_input_exits_0_without_connecting() {
         assert_silent_success(&out, case);
         assert_no_connection(&out, case);
     }
+}
+
+// 2611.0011 S23
+#[test]
+fn s23_a_refused_session_id_says_so_and_does_not_connect() {
+    let mut input: serde_json::Value = serde_json::from_slice(&fixture("session-start")).unwrap();
+    input["session_id"] = "a;b".into();
+    let out = Report::of_input(&mut run_claude(&sandbox()), serde_json::to_vec(&input).unwrap());
+
+    assert_silent_success(&out, "a;b");
+    assert_eq!(out.one_stderr_line(), "tarmac: hooks run: session_id refused\n");
+    assert_no_connection(&out, "a;b");
 }
 
 // The control of the limit case, so that one cannot pass on a parse failure.
