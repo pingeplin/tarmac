@@ -20,8 +20,11 @@ fn argv0(procargs: &[u8]) -> Option<&[u8]> {
 
 /// The basename of argv[0], less a login shell's leading `-`.
 fn name_of_argv0(argv0: &[u8]) -> Option<String> {
-    let argv0 = argv0.strip_prefix(b"-").unwrap_or(argv0);
-    let base = argv0.rsplit(|&b| b == b'/').next()?;
+    basename(argv0.strip_prefix(b"-").unwrap_or(argv0))
+}
+
+fn basename(path: &[u8]) -> Option<String> {
+    let base = path.rsplit(|&b| b == b'/').next()?;
     (!base.is_empty()).then(|| String::from_utf8_lossy(base).into_owned())
 }
 
@@ -30,36 +33,15 @@ fn name_of_argv0(argv0: &[u8]) -> Option<String> {
 /// is unreadable (`EINVAL` on another user's process), the executable's basename.
 #[cfg(target_os = "macos")]
 pub fn process_name(pid: libc::pid_t) -> Option<String> {
-    procargs(pid).as_deref().and_then(argv0).and_then(name_of_argv0).or_else(|| path_name(pid))
+    argv0_name(pid).or_else(|| path_name(pid))
 }
 
-/// The argument area is at most `KERN_ARGMAX` bytes. A shorter buffer is no
-/// error: it came back as argc and zeros (measured, Darwin 25.6).
+/// One `sysctl` read into `buf`: the count written, or `None` on error.
 #[cfg(target_os = "macos")]
-fn procargs(pid: libc::pid_t) -> Option<Vec<u8>> {
-    static ARGMAX: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
-    let argmax = (*ARGMAX.get_or_init(|| {
-        let mut mib = [libc::CTL_KERN, libc::KERN_ARGMAX];
-        let mut argmax: libc::c_int = 0;
-        let mut size = std::mem::size_of::<libc::c_int>();
-        // SAFETY: `mib` names two ints; `argmax` is `size` bytes.
-        let ret = unsafe {
-            libc::sysctl(
-                mib.as_mut_ptr(),
-                mib.len() as libc::c_uint,
-                &mut argmax as *mut _ as *mut libc::c_void,
-                &mut size,
-                std::ptr::null_mut(),
-                0,
-            )
-        };
-        (ret == 0 && argmax > 0).then_some(argmax as usize)
-    }))?;
-    let mut mib = [libc::CTL_KERN, libc::KERN_PROCARGS2, pid];
-    let mut buf = vec![0u8; argmax];
+fn sysctl(mib: &mut [libc::c_int], buf: &mut [u8]) -> Option<usize> {
     let mut size = buf.len();
-    // SAFETY: `mib` names three ints; `buf` is `size` bytes, and sysctl writes at
-    // most `size` bytes and sets `size` to the count written.
+    // SAFETY: `mib` names `mib.len()` ints; `buf` is `size` bytes, and sysctl
+    // writes at most `size` bytes and sets `size` to the count written.
     let ret = unsafe {
         libc::sysctl(
             mib.as_mut_ptr(),
@@ -70,17 +52,30 @@ fn procargs(pid: libc::pid_t) -> Option<Vec<u8>> {
             0,
         )
     };
-    if ret != 0 {
-        return None;
-    }
-    buf.truncate(size);
-    Some(buf)
+    (ret == 0).then_some(size)
+}
+
+/// The argument area is at most `KERN_ARGMAX` bytes (1 MiB). A shorter buffer
+/// is no error: it came back as argc and zeros (measured, Darwin 25.6). The
+/// buffer is kept per thread, so a poll does not allocate it again.
+#[cfg(target_os = "macos")]
+fn argv0_name(pid: libc::pid_t) -> Option<String> {
+    thread_local!(static PROCARGS: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) });
+    PROCARGS.with_borrow_mut(|buf| {
+        if buf.is_empty() {
+            let mut argmax = [0u8; 4];
+            sysctl(&mut [libc::CTL_KERN, libc::KERN_ARGMAX], &mut argmax).filter(|&n| n == 4)?;
+            buf.resize(usize::try_from(i32::from_ne_bytes(argmax)).ok().filter(|&n| n > 0)?, 0);
+        }
+        let size = sysctl(&mut [libc::CTL_KERN, libc::KERN_PROCARGS2, pid], buf)?;
+        argv0(&buf[..size]).and_then(name_of_argv0)
+    })
 }
 
 #[cfg(target_os = "macos")]
 fn path_name(pid: libc::pid_t) -> Option<String> {
-    let mut buf = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
-    // SAFETY: buf is a valid, sized allocation; proc_pidpath writes at most
+    let mut buf = [0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
+    // SAFETY: buf is a valid, sized buffer; proc_pidpath writes at most
     // `buffersize` bytes and returns the number written (<= buffersize) or <= 0
     // on error. We never read past `len`.
     let len = unsafe {
@@ -89,10 +84,7 @@ fn path_name(pid: libc::pid_t) -> Option<String> {
     if len <= 0 {
         return None;
     }
-    buf.truncate(len as usize);
-    let path = String::from_utf8_lossy(&buf);
-    let base = std::path::Path::new(path.as_ref()).file_name()?.to_string_lossy().into_owned();
-    if base.is_empty() { None } else { Some(base) }
+    basename(&buf[..len as usize])
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -167,24 +159,10 @@ const SZOMB: i8 = 5;
 /// root-owned pids and on zombies.
 #[cfg(target_os = "macos")]
 pub fn proc_facts(pid: libc::pid_t) -> Facts {
-    let mut mib = [libc::CTL_KERN, libc::KERN_PROC, libc::KERN_PROC_PID, pid];
     let mut buf = [0u8; KINFO_PROC_SIZE];
-    let mut size = buf.len();
-    // SAFETY: `mib` names four ints; `buf` is `size` bytes, and sysctl writes at
-    // most `size` bytes and sets `size` to the count written.
-    let ret = unsafe {
-        libc::sysctl(
-            mib.as_mut_ptr(),
-            mib.len() as libc::c_uint,
-            buf.as_mut_ptr() as *mut libc::c_void,
-            &mut size,
-            std::ptr::null_mut(),
-            0,
-        )
-    };
-    if ret != 0 {
+    let Some(size) = sysctl(&mut [libc::CTL_KERN, libc::KERN_PROC, libc::KERN_PROC_PID, pid], &mut buf) else {
         return Facts::Unread;
-    }
+    };
     match size {
         0 => Facts::Gone,
         KINFO_PROC_SIZE if buf[P_STAT] as i8 == SZOMB => Facts::Gone,
