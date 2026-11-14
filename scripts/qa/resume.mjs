@@ -53,9 +53,10 @@ let reopened = null;
 await run.checkAsync("a stand-in agent records the command, and state.json has it before the kill", async () => {
   pointer("focus", term);
   typeAll(term, `cd '${folder}' && sleep 1\n`);
-  typeAll(term, `( '${CLI}' resume set "${CMD}"; sleep 600 ) & echo QAPID=$!\n`);
+  typeAll(term, `( '${CLI}' resume set "${CMD}"; sleep 600 ) & echo QA""PID=$!\n`);
   const tail = waitFor(term, `cards[${term}].term.scrollback_tail contains "QAPID="`, "--timeout", "5000");
   agentPgid = Number(/QAPID=(\d+)/.exec(tail.cards.find((c) => c.id === term).term.scrollback_tail)?.[1]) || null;
+  if (!agentPgid) throw new Error("the stand-in agent's pid was not printed; end its `sleep 600` by hand (jobs -l)");
   const entry = await until("the record in state.json", 10000, () => {
     const r = records(boardId)[term];
     return r?.resume?.cmd === CMD && r?.last_cwd === folder ? r : null;
