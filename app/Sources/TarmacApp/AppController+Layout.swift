@@ -33,10 +33,11 @@ extension AppController {
             return
         }
         if switching { mount(board) }
+        var card: RestoreCard?
         if firstVisit {
             board.didInitialRestore = true
             board.store.applyRestore(docs)
-            build(
+            card = build(
                 board, tiles: tiles, docs: docs, viewport: viewport, liveTerms: Set(liveTerms), termRecords: termRecords
             )
         } else {
@@ -56,15 +57,32 @@ extension AppController {
                 focusPrimeTerminal()
             }
         }
+        if let card { showRestoreCard(card) }
+    }
+
+    /// #358: the card over the board until any key or a click closes it.
+    private func showRestoreCard(_ card: RestoreCard) {
+        restoreCard = card
+        rootView.setRestoreCard(card)
+        rootView.layoutSubtreeIfNeeded()
+        rootView.restoreCard.takeKeys()
+    }
+
+    func closeRestoreCard() {
+        restoreCard = nil
+        // Before the view is hidden: hiding the first responder hands the keys
+        // to the window, and there would be nothing left to give back.
+        rootView.restoreCard.returnKeys(fallback: activeBoard.primeTerminalView ?? rootView.board)
+        rootView.setRestoreCard(nil)
     }
 
     /// First visit: the board's cards are exactly what `BoardRestore.plan` says.
     /// The placeholder terminal the board showed until now never spawned, so
-    /// dropping it orphans nothing.
+    /// dropping it orphans nothing. Returns the restore card the plan gives.
     private func build(
         _ board: Board, tiles: [LayoutTile], docs: [RestoreDoc], viewport: BoardViewport?, liveTerms: Set<String>,
         termRecords: [String: TermRecord]
-    ) {
+    ) -> RestoreCard? {
         for termID in board.sessionOrder {
             scrollback.unmount(termID)
             termIndex.remove(termID: termID)
@@ -79,7 +97,7 @@ extension AppController {
         let plan = BoardRestore.plan(
             tiles: tiles, docs: docs, liveTerms: liveTerms, termRecords: termRecords, mint: BootTerminal.mint
         )
-        notifyRestored(tiles: tiles, liveTerms: liveTerms, summary: RestoreSummary.lines(plan: plan))
+        notifyRestored(tiles: tiles, liveTerms: liveTerms)
         for term in plan.terms {
             addTerminal(
                 term.termID, frame: CardFrame(rect: term.frame, z: term.z), spawn: term.spawn, resume: term.resume,
@@ -108,24 +126,21 @@ extension AppController {
         // The ids minted for cold spawns are not on disk yet, and a relaunch
         // can only re-bind a shell whose id its tile carries.
         persistLayout(for: board)
+        return RestoreCard.make(plan: plan)
     }
 
     /// The toast for terminals that a daemon replaced on a version mismatch
-    /// took with it (`RestartNotice`), once per connection, with the restore's
-    /// `summary` lines (2611.0011, D13) after its own; else a toast of the
-    /// summary alone, when it has a line.
-    private func notifyRestored(tiles: [LayoutTile], liveTerms: Set<String>, summary: [String]) {
+    /// took with it (`RestartNotice`), once per connection. What was restored
+    /// is the restore card's (#358), not the toast's.
+    private func notifyRestored(tiles: [LayoutTile], liveTerms: Set<String>) {
         guard let notice = RestartNotice.make(
             replaced: client.daemonReplaced,
             tileTermIDs: LayoutTiles.parse(tiles).terms.map(\.termID),
             liveTerms: liveTerms,
             alreadyNotified: daemonSession.restartNotified
-        ) else {
-            if !summary.isEmpty { rootView.toasts.show(title: "terminals restored", bodyLines: summary) }
-            return
-        }
+        ) else { return }
         daemonSession.restartNotified = true
-        rootView.toasts.show(title: notice.title, bodyLines: [notice.body] + summary)
+        rootView.toasts.show(title: notice.title, bodyLines: [notice.body])
     }
 
     /// A restore for a board that is already built (`ReconnectRestore`):

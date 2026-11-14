@@ -162,7 +162,8 @@ public enum DevSnapshot {
 
         /// Maps the window's first responder onto the card that holds the keys.
         ///
-        /// The ⌘K switcher holds first responder while it is up. The Tauri
+        /// The ⌘K switcher, and the restore card (#358), hold first responder
+        /// while they are up. The Tauri
         /// switcher never takes DOM focus — `activeElement` stays on the
         /// terminal behind it — so while it holds the keys the card reported is
         /// `switcherOwner`, the one it hands them back to.
@@ -390,6 +391,8 @@ public enum DevSnapshot {
         public var quitGuard: QuitGuard?
         public var fonts: Fonts
         public var theme: Theme
+        /// #358: the restore card while it is up.
+        public var restoreCard: RestoreCard?
 
         public init(
             boardID: String,
@@ -403,7 +406,8 @@ public enum DevSnapshot {
             keyboardFocus: KeyboardFocus,
             quitGuard: QuitGuard?,
             fonts: Fonts,
-            theme: Theme
+            theme: Theme,
+            restoreCard: RestoreCard? = nil
         ) {
             self.boardID = boardID
             self.visibility = visibility
@@ -417,6 +421,7 @@ public enum DevSnapshot {
             self.quitGuard = quitGuard
             self.fonts = fonts
             self.theme = theme
+            self.restoreCard = restoreCard
         }
     }
 
@@ -438,6 +443,7 @@ public enum DevSnapshot {
             "quit_guard": input.quitGuard.map(quitGuard) ?? .null,
             "fonts": fonts(input.fonts),
             "theme": theme(input.theme),
+            "restore_card": input.restoreCard.map { ["lines": .array($0.lines.map { .string($0.string) })] } ?? .null,
         ]
     }
 

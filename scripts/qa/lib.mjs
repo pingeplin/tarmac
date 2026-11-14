@@ -233,6 +233,14 @@ export function preflight(run) {
     run.die("no live terminal card on the active board — open one and re-run");
   }
   console.log(`board ${snap.board_id} · terminal ${term.id} · visibility ${snap.visibility}`);
+  if (snap.restore_card) {
+    // A cold launch's restore card (#358) takes the first key of any scenario.
+    console.log("closing the restore card with escape");
+    const holder = snap.active_element.card ?? term.id;
+    if (!snap.active_element.card) dev("focus", holder);
+    if (snapshot().restore_card) dev("key", holder, "escape");
+    if (snapshot().restore_card) run.die("the restore card did not close");
+  }
   if (snap.visibility !== "visible") {
     console.log("note: the window is not visible; see Q5 before blaming a failure on the driver");
   }

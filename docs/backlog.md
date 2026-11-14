@@ -56,25 +56,24 @@ are confirmed absent in the code. Roughly ordered by value.
   idle-timer + banner UI + `⌫` go-back. Note the no-harness rule: focus is
   *requested* by any caller, never agent-arbitrated.
 
-### 1.2 · Session restore card / overlay
-- **What:** on relaunch, the desk renders dimmed (35%) under a veil with a centered
-  card listing restore facts (`✓ 6 docs · 3 repos`, history-intact line, "agent was
-  waiting since …"), "any key to continue". Detached strip shows a `$ tarmac attach
-  <name>` empty state instead.
-- **Chrome (README §Screens 8, exact):** centered card — `bg2` background, `12px`
-  radius, `22×26px` padding — over the desk dimmed to **35%** under a veil. The
-  three fact lines verbatim: `✓ 6 docs · 3 repos` · `✓ tmux attached · 2 windows,
-  history intact` · `→ agent was waiting on you · since 13:47`; footer "any key to
-  continue".
+### 1.2 · Session restore card — the v3 fact lines
+- **What:** the v3 restore card's fact lines that the built card does not
+  show: `✓ 6 docs · 3 repos`, `→ agent was waiting on you · since 13:47`.
+  The tmux line (`✓ tmux attached · 2 windows, history intact`) and the
+  detached strip's `$ tarmac attach <name>` empty state depend on tmux/attach
+  (see §2) and are not wanted.
 - **Source:** README §Screens 8 "Session restore".
-- **State:** spec 2611.0011 ships the content only, as toast lines: a
-  first-visit restore with cold spawns adds `✓ N terminals back in their
-  folders` and `↻ M with an agent session to resume` to the `RestartNotice`
-  toast, or shows them in a `terminals restored` toast (`RestoreSummary`). The
-  overlay — the veil and the any-key card — is still open, in issue #358; until
-  it lands nothing takes the first key after a launch.
-- **Scope:** a board-arrive overlay view + the restore-facts model. The detached
-  empty-state depends on tmux/attach (see §2), so ship the attached-only card first.
+- **State:** the card itself is built (issue #358, `RestoreCard`,
+  `RestoreCardView`): after a first-visit restore whose plan has a line (a
+  cold spawn that asked for a folder or has a resume), the board is drawn at
+  35 % opacity under the v3 veil (`rgba(8, 10, 13, 0.62)`), with a centred
+  card (`bg2`, 12px radius, 22×26px padding) that lists `✓ N terminals back
+  in their folders` and `↻ M with an agent session to resume` (spec
+  2611.0011, D13) over the footer `any key to continue`. Any key but `⌘Q`
+  closes it and reaches no terminal; `⌘Q` stays the menu's. Neither v3 line
+  above is on it.
+- **Scope:** a doc and repo count from the restore plan's docs; "waiting on
+  you" needs a fact the daemon keeps across a restart, which it does not.
 
 ### 1.3 · Doc-path linkification in terminal output
 - **What:** any path in terminal output matching the open-doc set is linkified

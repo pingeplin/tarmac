@@ -57,7 +57,8 @@ struct DevSnapshotReader {
                 available: controller.theme.library.all.map(\.id),
                 refused: controller.theme.library.refused.map(\.detail),
                 findings: ThemeBrowser.contrastDetail(controller.theme.inEffect.palette)
-            )
+            ),
+            restoreCard: controller.restoreCard
         ))
     }
 
@@ -89,14 +90,15 @@ struct DevSnapshotReader {
     }
 
     /// Keyboard focus is the first responder's whether or not the window is
-    /// key, as `activeElement` is the document's.
+    /// key, as `activeElement` is the document's. While the switcher or the
+    /// restore card holds the keys, it is the card they go back to.
     var keyboardFocus: DevSnapshot.KeyboardFocus {
-        let switcher = controller.rootView.boardSwitcher
         let responder = controller.window?.firstResponder
+        let overlay = responder as? KeyHoldingView
         return DevSnapshot.KeyboardFocus(
             responder: holder(of: responder),
-            switcherOwner: holder(of: switcher.keysOwner),
-            switcherHoldsKeys: responder === switcher
+            switcherOwner: holder(of: overlay?.keysOwner),
+            switcherHoldsKeys: overlay != nil
         )
     }
 

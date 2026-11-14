@@ -137,6 +137,10 @@ final class AppController {
     var switcherOpen = false
     /// The open switcher's filter, selection, rename and delete-confirm state.
     var switcherState = SwitcherKeys.State()
+    /// #358: the restore card while it is up, and the latch that drops the
+    /// repeats of the key that closed it.
+    var restoreCard: RestoreCard?
+    var afterRestoreCard = false
 
     /// The one HTML card whose shield is down, across every board.
     var borrow = CardBorrow<CardID>()
@@ -186,6 +190,7 @@ final class AppController {
         // ⌘K switcher: a row click opens that board; a veil click dismisses.
         rootView.boardSwitcher.onPickRow = { [weak self] index in self?.switcherPickRow(index) }
         rootView.boardSwitcher.onDismiss = { [weak self] in self?.closeSwitcher() }
+        rootView.restoreCard.onDismiss = { [weak self] in self?.closeRestoreCard() }
         // Mount board-0 and bind its per-board callbacks (edge labels + layout
         // persistence). The same `mount(_:)` runs on every switch-arrive.
         mount(board0)

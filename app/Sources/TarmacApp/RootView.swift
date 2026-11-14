@@ -21,6 +21,7 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
     // The ⌘K boards switcher (veil + centered panel), modal; hidden until ⌘K.
     // The controller drives its contents + key handling.
     let boardSwitcher = BoardSwitcherView()
+    let restoreCard = RestoreCardView()
 
     /// Supplies the mounted board's off-screen signalling cards, in card order.
     /// The controller knows the labels and bell times the board does not.
@@ -72,6 +73,7 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
         case .minimap: return minimap
         case .toasts: return toasts
         case .switcher: return boardSwitcher
+        case .restoreCard: return restoreCard
         }
     }
 
@@ -96,7 +98,9 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
         guard board !== bv || bv.superview == nil else { return }
         if board !== bv { board.removeFromSuperview() }
         bv.removeFromSuperview()
+        board.alphaValue = 1
         board = bv
+        board.alphaValue = boardAlpha
         addSubview(bv, positioned: .below, relativeTo: statusBar)
         bv.mountUnderCards(offHints.under)
         wireBoardCallbacks(bv)
@@ -151,6 +155,16 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
         needsLayout = true
     }
 
+    /// Shows the restore card, and dims the board under it to the v3 desk's
+    /// 35%; nil hides it.
+    func setRestoreCard(_ card: RestoreCard?) {
+        if let card { restoreCard.show(card) } else { restoreCard.hide() }
+        board.alphaValue = boardAlpha
+        needsLayout = true
+    }
+
+    private var boardAlpha: CGFloat { restoreCard.isHidden ? 1 : 0.35 }
+
     /// The window above the status bar: the board, and what every overlay is
     /// measured from.
     private var boardArea: NSRect {
@@ -180,6 +194,7 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
         // ⌘K switcher: covers the board area and leaves the status bar legible;
         // the panel centers itself within.
         if !boardSwitcher.isHidden { boardSwitcher.frame = area }
+        if !restoreCard.isHidden { restoreCard.frame = area }
         cardsChanged()
     }
 }
