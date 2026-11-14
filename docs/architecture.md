@@ -379,10 +379,11 @@ names a terminal and a command, or none to clear it. The command is checked by
 sent in every `Restore`. Its holder is found by the report's walk and is always
 a pid with its start time (`resume::tie`: the agent, the shell itself for a
 command set at the prompt, or the leader of the fallback); it lives in memory
-only, in the board's `resume_holders`, beside the record. `boards` is the one
-lock for the record, the holder and the handle's resume atomic (none, held,
-unclaimed), which is written only in the step that changes the record, so an
-idle tick or a key costs one load. The drops while the daemon lives:
+only, on the terminal's handle, beside a `resume::Flag` atomic (none, held,
+unclaimed). Both are written only with `boards` held, in the step that changes
+the record, and every drop goes through one `Daemon::drop_resume`; the flag is
+read with no lock, so an idle tick or a key costs one load, and the poll reads
+the holder from the handle with no board lock. The drops while the daemon lives:
 
 - the poll's `check_resume`, before the `continue` on a failed leader read,
   drops it when the holder's pid is gone or has another start time; it checks
@@ -1112,7 +1113,10 @@ strip as `↻ reopen here  ⏎`, `in <folder>` and `then offers: <cmd>`
 replaces it in place with a cold spawn in that folder that succeeds the dead id
 and offers the command. The strip is a sibling of its card in the card layer,
 stacked just above it, so it is drawn at full opacity on a dimmed dead card,
-and it wraps inside the card's width.
+and it wraps inside the card's width. It takes the chip metrics (`ChipMetrics`)
+and a border, but unlike a header chip it is filled with the terminal's
+background (`termBg`) and drawn in `Theme.text`: it lies over terminal text,
+which a chip with no fill would let show through.
 
 **Exit.** `TermExit` decides: a non-zero or signal `Exit` toasts and holds the
 card open *dead* — dimmed, taking no input, never persisted; a clean exit

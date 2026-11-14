@@ -4,8 +4,8 @@ import TarmacKit
 /// A terminal card's offer (spec 2611.0011): the resume chip, or a dead card's
 /// `↻ reopen here  ⏎`. It is pinned to the bottom of the card's body, over the
 /// content, and wraps inside the card's width, so no part of a command is
-/// clipped. It uses the report chip's metrics: a bordered mono text, laid out
-/// at the board's zoom.
+/// clipped. It uses the chip metrics (`ChipMetrics`), laid out at the board's
+/// zoom, with a fill: it is opaque chrome over terminal text.
 ///
 /// It is a sibling of its card in the board's card layer, stacked just above
 /// it, not a subview: a dead card dims itself with `alphaValue`, which would
