@@ -311,7 +311,7 @@ final class ChipView: NSView, ThemeFollowing {
 /// A card's header: the handle the card is dragged by, with what identifies
 /// the card on the left and its state and controls packed against the right.
 ///
-/// A terminal header reads `›_ label … 回報 · 2m ●`; a doc header reads
+/// A terminal header reads `›_ label … report · 2m ●`; a doc header reads
 /// `¶ ● label … ← owner  ✚ now  ✎ Ns  ↻  ✕`. The buttons keep their own
 /// presses; everywhere else a press is the header's.
 ///
@@ -479,7 +479,7 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
         needsLayout = true
     }
 
-    /// Shows a terminal's report as `回報 · <age>`, or hides the chip with nil.
+    /// Shows a terminal's report as `report · <age>`, or hides the chip with nil.
     /// A shown chip reads its age again every `ReportChip.refreshInterval`.
     func setReport(_ report: TermReport?) {
         guard report != nil || self.report != nil else { return }
