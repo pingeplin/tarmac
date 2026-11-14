@@ -82,6 +82,24 @@ fn help_documents_resume() {
     assert!(out.stdout.contains("`report` or `resume` ran outside a"), "{}", out.stdout);
 }
 
+// Spec 2611.0012: the three verbs, `--term` with no doc changes, and 124.
+#[test]
+fn help_documents_terms_events_and_wait() {
+    let out = Report::of(tarmac().arg("--help"));
+    assert!(out.status.success());
+    for phrase in [
+        "tarmac terms",
+        "tarmac events [--term ID] [--kind exit,bell,changed,report]",
+        "tarmac wait --exit ID | --bell ID | --report blocked|done --term ID",
+        "tarmac wait --changed PATH [--settle MS]",
+        "`--term` alone gives no `changed` events",
+        "`terms`, `events` or `wait` was refused",
+        "124  tarmac wait timed out",
+    ] {
+        assert!(out.stdout.contains(phrase), "{phrase}: {}", out.stdout);
+    }
+}
+
 // Spec 2611.0010: the four forms, what install writes, and the exit status of run.
 #[test]
 fn help_documents_hooks() {

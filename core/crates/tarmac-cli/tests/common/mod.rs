@@ -63,6 +63,78 @@ impl OneAnswer {
     }
 }
 
+/// What a `Streamer` double does after the request.
+pub enum Step {
+    Write(Msg),
+    Pause(Duration),
+}
+
+/// What a `Streamer` does once its steps are done.
+pub enum Then {
+    Close,
+    Hold,
+}
+
+/// A daemon double for a verb that sends one request after its hello and
+/// reads frames until it ends: `events`, `wait` and `terms`.
+pub struct Streamer {
+    pub double: Double,
+}
+
+impl Streamer {
+    pub fn start(steps: Vec<Step>, then: Then) -> Self {
+        let double = Double::start("tarmacd.sock", move |peer| {
+            let hello_ok = proto::encode(&hello_ok(None, None, None, None)).unwrap();
+            if peer.read().is_none() || !peer.write(&hello_ok) || peer.read().is_none() {
+                return;
+            }
+            for step in steps {
+                match step {
+                    Step::Write(msg) => {
+                        if !peer.write(&proto::encode(&msg).unwrap()) {
+                            return;
+                        }
+                    }
+                    Step::Pause(wait) => std::thread::sleep(wait),
+                }
+            }
+            if let Then::Hold = then {
+                peer.hold();
+            }
+        });
+        Streamer { double }
+    }
+
+    /// Writes `frames`, then closes.
+    pub fn writing(frames: Vec<Msg>) -> Self {
+        Streamer::start(frames.into_iter().map(Step::Write).collect(), Then::Close)
+    }
+
+    pub fn run(&self, args: &[&str]) -> Report {
+        Report::of(tarmac_at(&self.double.sock).args(args))
+    }
+
+    /// The request after the `hello`, decoded, and its raw payload. Read
+    /// with no join: a double that holds keeps its thread to its drop, and
+    /// the request was read before any frame the cli got.
+    pub fn request(&self) -> (Msg, Vec<u8>) {
+        let frames = self.double.received.lock().unwrap().clone();
+        let raw = frames.get(1).expect("a request after the hello").clone();
+        (proto::decode(&raw).unwrap(), raw)
+    }
+}
+
+/// True when nothing reached the double: no hello, so no connection.
+pub fn untouched(double: &Double) -> bool {
+    double.received.lock().unwrap().is_empty()
+}
+
+/// `cmd` started with its stdout and stderr piped, for a test that acts while
+/// it runs; through the same lock as every other spawn (#190).
+pub fn start(cmd: &mut Command) -> Child {
+    spawn(cmd, Stdio::null())
+}
+
 pub fn hello_ok(
     daemon_version: Option<&str>,
     daemon_pid: Option<u32>,

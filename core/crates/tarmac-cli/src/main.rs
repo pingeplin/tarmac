@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use tarmac_protocol::{self as proto, Msg, frame};
 
 mod agents;
+mod events;
 mod help;
 mod hooks;
 mod push;
@@ -14,6 +15,8 @@ mod report;
 mod resume;
 mod settings_file;
 mod skill;
+mod terms;
+mod wait;
 
 /// The one build-config to channel mapping: a debug build is `dev`, a release
 /// build `release`.
@@ -81,6 +84,9 @@ fn run(args: &[String]) -> i32 {
         Some("report") => report::run(&args[1..]),
         Some("resume") => resume::run(&args[1..]),
         Some("hooks") => hooks::run(&args[1..]),
+        Some("terms") => terms::run(&args[1..]),
+        Some("events") => events::run(&args[1..]),
+        Some("wait") => wait::run(&args[1..]),
         Some("open") => match &args[1..] {
             [path] => match open(path) {
                 Ok(line) => {

@@ -108,6 +108,78 @@ when the user presses Return on that card. Rules:
   first key in that terminal uses or drops the offer, once.
 - The Claude Code hooks set it for you at each session's start.
 
+## Waiting on Tarmac's facts
+
+```sh
+tarmac terms
+tarmac events [--term ID] [--kind exit,bell,changed,report]
+tarmac wait --exit ID [--timeout MS]
+tarmac wait --bell ID [--timeout MS]
+tarmac wait --report blocked|done --term ID [--timeout MS]
+tarmac wait --changed PATH [--settle MS] [--timeout MS]
+```
+
+They read what Tarmac already sees (a terminal's exit, a bell, a doc change, a
+report) and work from any shell, inside Tarmac or not. Your own terminal's id
+is `$TARMAC_TERM_ID`; `tarmac terms` names the others:
+
+```
+{"term":"t7","board":"board-1","cwd":"/w/api","proc":"cargo"}
+```
+
+`cwd` and `proc` are left out when Tarmac could not read them.
+
+`tarmac events` prints one JSON line per fact until it is killed:
+
+```
+{"event":"exit","term":"t1","board":"board-0","code":3,"received_ms":1700000000123}
+{"event":"exit","term":"t1","signal":true,"received_ms":...}
+{"event":"bell","term":"t1","board":"board-0","received_ms":...}
+{"event":"changed","path":"/abs/a.md","mtime_ms":1700000000000,"received_ms":...}
+{"event":"report","term":"t1","board":"board-0","kind":"blocked","text":"May I?","proc":"claude","at_ms":1700000000000,"read":false,"received_ms":...}
+{"event":"report","term":"t1","received_ms":...}
+```
+
+The last line is a report that went away. `board` is there when Tarmac sent it.
+With `--term`, the terminal's current report and, for one that ended, its exit
+come first, with `"snapshot":true` after `event`.
+
+`tarmac wait` ends at one fact:
+
+- `--exit ID` prints `{"code":3}`, or `{"signal":true}`; at once for one of the
+  last 64 terminals that ended.
+- `--bell ID` prints nothing.
+- `--report KIND --term ID` prints `{"kind":...,"text":...,"proc":...,"at_ms":...,"read":...}`.
+- `--changed PATH` prints `{"deleted":false}` or `{"deleted":true}`.
+
+Exit status: `0` the fact came, `1` a failure (the line on stderr says which),
+`2` usage, `124` the `--timeout` ran out.
+
+Hazards:
+
+- **`changed` covers open docs only**, and their data files: those on the
+  active board, as Tarmac looks at them. A change of a doc on a board in the
+  background comes when that board is shown. `changed` can repeat an
+  `mtime_ms`: compare it with the last one you saw for that path.
+- **`--term` alone gives no `changed` events.** A doc change has no terminal;
+  `--term` with `--kind changed` is a usage error.
+- **A report that ends at its terminal's exit has no `report` line.** Take
+  `exit` with `report`. So a `wait --report` that starts after "report done,
+  then exit" exits 1 with `terminal <id> exited`: Tarmac forgot the report at
+  the exit.
+- **`wait --report` takes a current report**, read or unread. In a loop, the
+  same report returns at once on each pass: compare `at_ms` with the last one
+  you saw.
+- **`events | head -1` waits for the next event** after the first line: a
+  closed pipe is seen only at the next write. `events` then exits 0.
+- **Pass `--timeout` in an unattended script.** Each waiting `events` or `wait`
+  holds one of the daemon's file descriptors.
+- **`wait --changed` stats the file itself**, so it adds no watch to Tarmac.
+  On a volume that stopped answering a stat can hang it, and `--timeout` cannot
+  end a stat that hangs.
+- An older Tarmac does not answer these verbs: they exit 1 after 5 s, or `124`
+  with a shorter `--timeout`. `wait --changed` works with any.
+
 ## What renders how
 
 | File | Rendered as |
