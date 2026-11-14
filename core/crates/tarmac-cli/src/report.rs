@@ -2,6 +2,8 @@
 //! optional text, or `clear` (spec 2611.0009). The daemon finds the process
 //! the report belongs to; the cli only names the terminal.
 
+use std::time::{Duration, Instant};
+
 use tarmac_protocol::{self as proto, Msg, cap_report_text};
 
 const USAGE: &str = "usage: tarmac report blocked|done [\"<text>\"]  |  tarmac report clear";
@@ -22,7 +24,7 @@ pub fn run(args: &[String]) -> i32 {
         kind: kind.to_owned(),
         text: text.map(cap_report_text),
     };
-    match send(&msg) {
+    match send(&msg, crate::DAEMON_WAIT, &crate::no_answer("an older daemon")) {
         Ok(()) => 0,
         Err(why) => {
             eprintln!("tarmac: {why}");
@@ -45,8 +47,12 @@ fn parse(args: &[String]) -> Option<(&str, Option<&str>)> {
     }
 }
 
-fn send(msg: &Msg) -> Result<(), String> {
+/// Sends `msg` and waits for its `ack`, from connect to answer inside `wait`.
+/// Prints nothing: the error is the line the caller prints, with `no_answer`
+/// as the one for a daemon that did not answer in time.
+pub(crate) fn send(msg: &Msg, wait: Duration, no_answer: &str) -> Result<(), String> {
     let payload = proto::encode(msg).map_err(|e| format!("encode failed: {e}"))?;
-    let mut stream = crate::connect()?;
-    crate::exchange(&mut stream, &payload, "an older daemon")?
+    let until = Instant::now() + wait;
+    let mut stream = crate::connect_until(until)?;
+    crate::exchange_until(&mut stream, &payload, until, no_answer)?
 }

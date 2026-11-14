@@ -2,12 +2,13 @@ use std::ffi::OsString;
 use std::io;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tarmac_protocol::{self as proto, Msg, frame};
 
 mod agents;
 mod help;
+mod hooks;
 mod push;
 mod report;
 mod skill;
@@ -76,6 +77,7 @@ fn run(args: &[String]) -> i32 {
         Some("skill") => skill::run(&args[1..]),
         Some("push") => push::run(&args[1..]),
         Some("report") => report::run(&args[1..]),
+        Some("hooks") => hooks::run(&args[1..]),
         Some("open") => match &args[1..] {
             [path] => match open(path) {
                 Ok(line) => {
@@ -145,6 +147,44 @@ fn exchange(stream: &mut UnixStream, payload: &[u8], why: &str) -> Result<Result
     })
 }
 
+/// `exchange` inside `until`: each write and read gets the time that is left,
+/// and running out of it is worded as `no_answer`.
+fn exchange_until(
+    stream: &mut UnixStream,
+    payload: &[u8],
+    until: Instant,
+    no_answer: &str,
+) -> Result<Result<(), String>, String> {
+    let worded = |e: io::Error| match e.kind() {
+        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => no_answer.to_string(),
+        _ => lost(e),
+    };
+    time_out_at(stream, until).map_err(worded)?;
+    frame::write_sync(stream, payload).map_err(worded)?;
+    loop {
+        time_out_at(stream, until).map_err(worded)?;
+        match recv_or(stream, worded)? {
+            Msg::Ack => return Ok(Ok(())),
+            Msg::Err { msg } => return Ok(Err(msg)),
+            _ => continue,
+        }
+    }
+}
+
+/// Gives the next read and write the time left until `until`. With none
+/// left it is the time-out itself: the socket refuses a zero timeout.
+fn time_out_at(stream: &UnixStream, until: Instant) -> io::Result<()> {
+    let left = until.saturating_duration_since(Instant::now());
+    if left.is_zero() {
+        return Err(io::ErrorKind::TimedOut.into());
+    }
+    stream.set_read_timeout(Some(left))?;
+    stream.set_write_timeout(Some(left))
+}
+
+/// How long `open`, `push`, `report` and `--version` wait for the daemon.
+const DAEMON_WAIT: Duration = Duration::from_secs(5);
+
 fn no_answer(why: &str) -> String {
     format!("no answer from the daemon in 5 s ({why})")
 }
@@ -165,19 +205,21 @@ enum NoHandshake {
     Reason(String),
 }
 
-/// Returns the live stream so `open` can keep using it.
-fn handshake(sock: &Path) -> Result<(UnixStream, DaemonInfo), NoHandshake> {
+/// Returns the live stream so `open` can keep using it. Each write and read
+/// ends by `until`.
+fn handshake(sock: &Path, until: Instant) -> Result<(UnixStream, DaemonInfo), NoHandshake> {
     proto::check_socket_path_len(sock).map_err(NoHandshake::Reason)?;
     let mut stream = UnixStream::connect(sock).map_err(|_| NoHandshake::NoDaemon)?;
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
-    let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
+    let timed = |stream: &UnixStream| time_out_at(stream, until).map_err(|e| NoHandshake::Reason(lost(e)));
 
+    timed(&stream)?;
     send(&mut stream, &Msg::Hello {
         role: "cli".into(),
         v: proto::PROTOCOL_VERSION,
         app_version: None,
     })
     .map_err(NoHandshake::Reason)?;
+    timed(&stream)?;
     match recv(&mut stream).map_err(NoHandshake::Reason)? {
         Msg::HelloOk { daemon_version, daemon_pid, app_version, app_connected, .. } => Ok((
             stream,
@@ -191,7 +233,7 @@ fn handshake(sock: &Path) -> Result<(UnixStream, DaemonInfo), NoHandshake> {
 /// The five-line report. Every value is observed, never inferred: an absent app
 /// is reported only when the daemon said so.
 fn version_report(sock: &Path) -> String {
-    let (daemon, app) = match handshake(sock) {
+    let (daemon, app) = match handshake(sock, Instant::now() + DAEMON_WAIT) {
         Ok((_, info)) => (daemon_line(&info), app_line(&info)),
         Err(NoHandshake::NoDaemon) => ("not running".into(), "unknown (no daemon)".into()),
         Err(NoHandshake::Reason(why)) => {
@@ -229,10 +271,19 @@ fn app_line(info: &DaemonInfo) -> String {
 }
 
 /// A connection past its handshake, or the reason there is none, as the
-/// verbs that talk to the daemon print it.
+/// verbs that talk to the daemon print it. Every later read and write waits
+/// `DAEMON_WAIT`.
 fn connect() -> Result<UnixStream, String> {
+    let stream = connect_until(Instant::now() + DAEMON_WAIT)?;
+    let _ = stream.set_read_timeout(Some(DAEMON_WAIT));
+    let _ = stream.set_write_timeout(Some(DAEMON_WAIT));
+    Ok(stream)
+}
+
+/// `connect`, with the handshake ended by `until`.
+fn connect_until(until: Instant) -> Result<UnixStream, String> {
     let sock = socket_path();
-    let (stream, _) = handshake(&sock).map_err(|e| match e {
+    let (stream, _) = handshake(&sock, until).map_err(|e| match e {
         NoHandshake::NoDaemon => format!(
             "no tarmac daemon running ({} channel, socket: {})",
             proto::channel_label(current_channel()),
