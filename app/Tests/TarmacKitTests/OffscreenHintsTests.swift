@@ -553,6 +553,27 @@ final class OffscreenHintLayoutTests: XCTestCase {
         XCTAssertFalse(pill.occluded)
     }
 
+    /// The last gap, [850, 990], holds one pill. Taking it would push the two
+    /// later siblings past the view's end, so the first two stay under the
+    /// card and the third keeps its own place.
+    func testAPillLeavesTheLastGapWhenItsSiblingsWouldHaveNoRoomAfterIt() {
+        let card = CGRect(x: -50, y: -20, width: 892, height: 300)
+        let pills = stack(
+            [100, 300, 930].map { hint("t\(Int($0))", CGPoint(x: $0, y: -300), .live, 0) }, obstacles: [card]
+        )
+        XCTAssertEqual(pills.map(\.left), [60, 260, 890])
+    }
+
+    /// The last gap, [822, 990], holds both pills exactly.
+    func testTwoPillsShareTheLastGapWhenItHoldsThemBoth() {
+        let card = CGRect(x: -50, y: -20, width: 864, height: 300)
+        let pills = stack(
+            [100, 300].map { hint("t\(Int($0))", CGPoint(x: $0, y: -300), .live, 0) }, obstacles: [card]
+        )
+        XCTAssertEqual(pills.map(\.left), [822, 910])
+        XCTAssertFalse(pills.contains { $0.occluded })
+    }
+
     /// The right band runs past the toast and the minimap; the pill wants 748.
     func testARightEdgePillNearTheBottomClearsTheToastAndTheMinimap() throws {
         let pill = try XCTUnwrap(

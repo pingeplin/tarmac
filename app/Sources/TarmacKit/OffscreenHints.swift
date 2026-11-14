@@ -206,13 +206,17 @@ public enum OffscreenHintLayout {
         let sign: CGFloat = backward ? -1 : 1
         let prefer: Side? = backward ? .higher : (edge == .bottom ? .lower : nil)
         let blockers = options.obstacles + options.chrome
+        let order = backward ? Array(group.indices.reversed()) : Array(group.indices)
+        let lengths = group.map { vertical ? $0.size.height : $0.size.width }
+        var reserve = order.reduce(0) { $0 + lengths[$1] + options.stackGap }
         var lastEnd = -CGFloat.infinity
         var pass = Pass()
 
-        for index in backward ? Array(group.indices.reversed()) : Array(group.indices) {
+        for index in order {
             let item = group[index]
             let size = item.size
-            let length = vertical ? size.height : size.width
+            let length = lengths[index]
+            reserve -= length + options.stackGap
             let posLo = (vertical ? viewRect.minY : viewRect.minX) + options.edgeMargin
             let posHi = (vertical ? viewRect.maxY : viewRect.maxX) - length - options.edgeMargin
             let crossPos: CGFloat
@@ -240,6 +244,7 @@ public enum OffscreenHintLayout {
                 obstacles: obstacleIntervals.map { backward ? Interval(lo: -$0.hi, hi: -$0.lo) : $0 },
                 siblingFloor: lastEnd + options.stackGap,
                 posLo: backward ? mirror(posHi) : posLo, posHi: backward ? mirror(posLo) : posHi,
+                reserve: reserve,
                 prefer: prefer
             )
             lastEnd = resolved + length
@@ -301,7 +306,9 @@ public enum OffscreenHintLayout {
     ///
     /// Otherwise it searches `[max(posLo, siblingFloor), posHi]` for the free gap
     /// (the window minus the obstacle intervals) closest to `desired` — on the
-    /// `prefer` side of it first, when there is one; ties favor the later gap,
+    /// `prefer` side of it first, when there is one. A gap is taken only where
+    /// the later siblings (`reserve`, their lengths and gaps) still fit before
+    /// `posHi`, so taking it pushes none of them out of view; ties favor the later gap,
     /// matching the sibling nudge's forward-only bias. If obstacles saturate the
     /// whole window, it falls back to the window-clamped `desired`. A pill is
     /// always returned, never suppressed.
@@ -312,6 +319,7 @@ public enum OffscreenHintLayout {
         siblingFloor: CGFloat,
         posLo: CGFloat,
         posHi: CGFloat,
+        reserve: CGFloat,
         prefer: Side?
     ) -> CGFloat {
         let lo = max(posLo, siblingFloor)
@@ -347,7 +355,7 @@ public enum OffscreenHintLayout {
             for gap in gaps where gap.hi - gap.lo >= length {
                 let candidate = BoardWayfinding.clamp(clampedDesired, gap.lo, gap.hi - length)
                 let distance = abs(candidate - clampedDesired)
-                if accept(candidate), distance <= bestDistance {
+                if candidate <= posHi - reserve, accept(candidate), distance <= bestDistance {
                     bestDistance = distance
                     best = candidate
                 }
