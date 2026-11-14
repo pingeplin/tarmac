@@ -1560,6 +1560,14 @@ the start of its text (24 Unicode scalars, one line), an exit pill reads
 `exited`; blocked and bell are amber, done `Theme.ok`, exit
 `Theme.consoleError`, and the minimap uses the same colours.
 
+At most 10 pills show (`OffscreenHintLayout.maxPills`, `shown`, issue #373),
+chosen before they are placed: the highest rank first, then the newest
+signal — a report's `at_ms`, the bell's or the exit's time (the app's clock) —
+then the higher `z` (live has no time, so `z` alone), then card order. The
+chosen pills keep card order. The ⏎ flight still takes the best of every
+hint, so it can go to a card with no pill. No pill counts the rest: the inbox
+lists every signal.
+
 A pill keeps clear of the visible cards and of the corner chrome drawn over
 it — the zoom control, the minimap and the shown toasts
 (`OverlayStack.pillChrome`; `OffscreenHintLayout.stackPills`, issue #365): it

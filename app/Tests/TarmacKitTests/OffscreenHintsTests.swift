@@ -72,6 +72,81 @@ final class OffscreenHintLayoutTests: XCTestCase {
         XCTAssertEqual(Layout.flyTarget([hint("first", .zero, .live, 5), hint("second", .zero, .live, 5)]), "first")
     }
 
+    // MARK: - shown (#373)
+
+    private func signalled(_ cardID: String, _ signal: Layout.Signal, at: UInt64?, z: Int = 0) -> Layout.Hint {
+        Layout.Hint(cardID: cardID, centerView: .zero, signal: signal, label: cardID, z: z, signalAt: at)
+    }
+
+    private func lives(_ count: Int) -> [Layout.Hint] {
+        (0..<count).map { signalled("live\($0)", .live, at: nil, z: $0) }
+    }
+
+    func testTheCapIsTen() {
+        XCTAssertEqual(Layout.maxPills, 10)
+    }
+
+    func testTenOrFewerHintsAreAllShownUnchanged() {
+        let hints = [signalled("old", .bell, at: 1, z: 1)] + lives(8) + [signalled("new", .bell, at: 9, z: 0)]
+        XCTAssertEqual(Layout.shown(hints), hints)
+    }
+
+    func testMoreThanTenShowsExactlyTen() {
+        XCTAssertEqual(Layout.shown(lives(15)).count, 10)
+    }
+
+    func testABlockedHintIsKeptOverHigherZLowerRanks() {
+        let hints = lives(10).map { var h = $0; h.z += 100; return h }
+            + [signalled("blocked", .blocked, at: 1, z: 0)]
+        let shown = Layout.shown(hints).map(\.cardID)
+        XCTAssertTrue(shown.contains("blocked"))
+        XCTAssertFalse(shown.contains("live0"))
+    }
+
+    func testRankComesBeforeTime() {
+        let hints = (0..<10).map { signalled("done\($0)", .done, at: 1000 + UInt64($0)) }
+            + [signalled("exit", .exit, at: 1)]
+        XCTAssertTrue(Layout.shown(hints).map(\.cardID).contains("exit"))
+        XCTAssertFalse(Layout.shown(hints).map(\.cardID).contains("done0"))
+    }
+
+    func testWithinARankTheNewerSignalWinsWhateverTheZ() {
+        let hints = [signalled("old", .bell, at: 5, z: 99)]
+            + (0..<10).map { signalled("bell\($0)", .bell, at: 10 + UInt64($0), z: 0) }
+        XCTAssertFalse(Layout.shown(hints).map(\.cardID).contains("old"))
+    }
+
+    func testLivePillsFallBackToZ() {
+        let hints = lives(11)
+        XCTAssertFalse(Layout.shown(hints).map(\.cardID).contains("live0"))
+    }
+
+    func testEqualTimesFallToTheHigherZThenTheEarlierHint() {
+        let byZ = [signalled("low", .exit, at: 7, z: 1)] + (0..<10).map { signalled("e\($0)", .exit, at: 7, z: 2) }
+        XCTAssertFalse(Layout.shown(byZ).map(\.cardID).contains("low"))
+        let byOrder = (0..<11).map { signalled("e\($0)", .exit, at: 7, z: 2) }
+        XCTAssertEqual(Layout.shown(byOrder).map(\.cardID), (0..<10).map { "e\($0)" })
+    }
+
+    func testTheShownHintsKeepTheirInputOrder() {
+        let hints = lives(5) + [signalled("blocked", .blocked, at: 1)] + lives(6).map { var h = $0; h.cardID += "b"; return h }
+        XCTAssertEqual(
+            Layout.shown(hints).map(\.cardID),
+            ["live1", "live2", "live3", "live4", "blocked", "live1b", "live2b", "live3b", "live4b", "live5b"]
+        )
+    }
+
+    func testTheSignalTimeIsTheTimeOfTheShownSignal() {
+        let at = { (signal: Layout.Signal) in
+            Layout.signalAt(signal, reportAtMs: 1, bellAtMs: 2, exitAtMs: 3)
+        }
+        XCTAssertEqual(at(.blocked), 1)
+        XCTAssertEqual(at(.done), 1)
+        XCTAssertEqual(at(.bell), 2)
+        XCTAssertEqual(at(.exit), 3)
+        XCTAssertNil(at(.live))
+    }
+
     // MARK: - pillLabel
 
     func testPillLabelJoinsNameAndTimeWithAMiddleDotForABellAndIsTheNameForLive() {

@@ -1,10 +1,10 @@
 import CoreGraphics
 
 /// Overlay-level offscreen-hint logic: a card's signal and its rank, the single ⏎-fly target, the pill
-/// label and the per-edge greedy stacking layout. The edge geometry itself
+/// label, which pills are shown, and the per-edge greedy stacking layout. The edge geometry itself
 /// (`BoardWayfinding.hintPlacement`, `Edge.arrow`) lives in `BoardWayfinding`;
-/// this adds what lived in the untested AppKit overlay. Pure and time-free — the
-/// view supplies the measured pill sizes and the HH:MM text.
+/// this adds what lived in the untested AppKit overlay. Pure and clock-free — the
+/// view supplies the measured pill sizes, the HH:MM text and each signal's time.
 public enum OffscreenHintLayout {
     public enum Signal: Equatable, Sendable {
         case blocked, bell, exit, done, live
@@ -18,13 +18,18 @@ public enum OffscreenHintLayout {
         public var label: String
         /// Stacking order; higher is more recently fronted. Breaks a tie of rank.
         public var z: Int
+        /// When the signal came, in ms since the epoch; nil for live.
+        public var signalAt: UInt64?
 
-        public init(cardID: String, centerView: CGPoint, signal: Signal, label: String, z: Int) {
+        public init(
+            cardID: String, centerView: CGPoint, signal: Signal, label: String, z: Int, signalAt: UInt64? = nil
+        ) {
             self.cardID = cardID
             self.centerView = centerView
             self.signal = signal
             self.label = label
             self.z = z
+            self.signalAt = signalAt
         }
     }
 
@@ -116,6 +121,36 @@ public enum OffscreenHintLayout {
             if (rank(hint.signal), hint.z) > (rank(current.signal), current.z) { best = hint }
         }
         return best?.cardID
+    }
+
+    /// The most pills the board shows at once (#373); the inbox lists the rest.
+    public static let maxPills = 10
+
+    /// The hints that get a pill, in their input order: at most `maxPills`,
+    /// by rank, then the newest signal (live has none), then the higher z,
+    /// then the earlier hint.
+    public static func shown(_ hints: [Hint]) -> [Hint] {
+        guard hints.count > maxPills else { return hints }
+        let kept = Set(
+            hints.indices
+                .sorted { a, b in
+                    let (x, y) = (hints[a], hints[b])
+                    return (rank(x.signal), x.signalAt ?? 0, x.z, b) > (rank(y.signal), y.signalAt ?? 0, y.z, a)
+                }
+                .prefix(maxPills)
+        )
+        return hints.indices.filter(kept.contains).map { hints[$0] }
+    }
+
+    /// The time of the card's shown signal: a report's for blocked and done,
+    /// the bell's, the exit's; live has none.
+    public static func signalAt(_ signal: Signal, reportAtMs: UInt64?, bellAtMs: UInt64?, exitAtMs: UInt64?) -> UInt64? {
+        switch signal {
+        case .blocked, .done: reportAtMs
+        case .bell: bellAtMs
+        case .exit: exitAtMs
+        case .live: nil
+        }
     }
 
     /// The longest start of a report's text a pill quotes, in Unicode scalars.

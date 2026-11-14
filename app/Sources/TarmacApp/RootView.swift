@@ -156,9 +156,10 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
         let visible = InboxPanelLayout.uncovered(board.bounds, open: !inboxPanel.isHidden)
         let hints = offscreenHintProvider?(visible) ?? []
         placedHints = offHints.show(
-            hints, in: visible, around: board.cards.values.map(\.frame), clearOf: chromeOverHints
+            OffscreenHintLayout.shown(hints), in: visible, around: board.cards.values.map(\.frame), clearOf: chromeOverHints
         )
-        // Only terminals signal, so a hint's id is a terminal's.
+        // Only terminals signal, so a hint's id is a terminal's. ⏎ flies to
+        // the best of every hint, shown or not.
         offscreenFlyTarget = OffscreenHintLayout.flyTarget(hints).map(CardID.term)
     }
 
