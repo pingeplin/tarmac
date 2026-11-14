@@ -50,7 +50,7 @@ final class Demo: NSObject, NSApplicationDelegate {
             ))
         }
 
-        terminal.onInput = { [client, termID] in client.input(termID: termID, bytes: Data($0)) }
+        terminal.onInput = { [client, termID] bytes, _ in client.input(termID: termID, bytes: Data(bytes)) }
         terminal.onResize = { [client, termID] in client.resize(termID: termID, cols: $0, rows: $1) }
         terminal.onTitleChanged = { [weak self] in self?.window.title = $0 ?? "tarmac-term-demo" }
         terminal.onClipboardWrite = {

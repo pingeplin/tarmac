@@ -32,7 +32,7 @@ extension AppController {
         } catch {
             fatalError("tarmac: could not create a terminal view: \(error)")
         }
-        view.onInput = { [weak self] bytes in self?.terminalDidSend(termID: termID, Data(bytes)) }
+        view.onInput = { [weak self] bytes, source in self?.terminalDidSend(termID: termID, Data(bytes), source: source) }
         view.onResize = { [weak self] _, _ in self?.terminalSizeChanged(termID: termID) }
         view.onTitleChanged = { [weak self] title in self?.handleTermTitle(termID: termID, title: title) }
         view.onScrollChanged = { [weak self] scrollbar in self?.terminalScrolled(termID: termID, scrollbar) }
@@ -108,12 +108,11 @@ extension AppController {
 
     /// Bytes for the PTY: what the user typed, pasted or clicked, and what the
     /// terminal answers a program by itself (DA1, a cursor report, a focus
-    /// report). Any of them clears a lit bell. A dead or unspawned terminal has
-    /// no PTY to send to.
-    func terminalDidSend(termID: String, _ bytes: Data) {
+    /// report). A dead or unspawned terminal has no PTY to send to.
+    func terminalDidSend(termID: String, _ bytes: Data, source: InputSource) {
         guard let s = session(ofTerm: termID), s.reachable else { return }
         client.input(termID: termID, bytes: bytes)
-        clearBell(termID: termID)
+        if source == .user { clearBell(termID: termID) }
     }
 
     /// `output` and `scrollback` bytes the gate let through. A ring is the
@@ -363,8 +362,8 @@ extension AppController {
         refreshSwitcherIfOpen()
     }
 
-    /// Puts out a lit bell; a no-op when it is not lit. Called for any bytes
-    /// the terminal sends, and when it becomes prime by a press on its card.
+    /// Puts out a lit bell; a no-op when it is not lit. Called when the user
+    /// sends input to the terminal, and when it becomes prime by a press on its card.
     func clearBell(termID: String) {
         guard let (s, board) = anySession(termID),
               let card = board.view.card(.term(termID)), card.bellActive else { return }
