@@ -395,9 +395,10 @@ the term card's header label to `name` (the honest "card title = process name").
 
 A BEL byte (`0x07`) outside an escape string was seen in the terminal's output
 stream. The daemon scans forwarded output chunks for such a `0x07` and pushes
-`bell` debounced to at most one per ~250 ms. A BEL that ends an OSC, or one inside
-a DCS, SOS, PM or APC payload, is not a bell. The app gives the term card an amber (`#fdbc4b`) signal that clears on
-the next keystroke to that terminal or when it regains focus.
+`bell` debounced to at most one per ~250 ms. A BEL that ends an OSC, or one
+inside a DCS, SOS, PM or APC payload, is not a bell. The app gives the term card
+an amber (`#fdbc4b`) signal that clears on the next keystroke to that terminal
+or when it regains focus.
 
 | key | type | missing ⇒ | semantics |
 |---|---|---|---|

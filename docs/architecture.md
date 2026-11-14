@@ -294,13 +294,8 @@ daemon reference, so it is where the three honest signals are sourced:
 - **`TermProc`** — poll the master's `process_group_leader` pid, resolve the
   executable basename via `proc_pidpath` (macOS), push only when the name
   *changes*. This becomes the card's title.
-- **`Bell`** — scan output chunks for a `0x07` outside an escape string,
-  debounced to one per ~250 ms. A BEL that ends an OSC (`ESC ]` … `BEL`, the
-  title oh-my-zsh sets at every prompt) or sits inside a DCS, SOS, PM or APC
-  payload is not a bell; CAN or SUB aborts the string. The scan state
-  (`core/crates/tarmacd/src/bell_scan.rs`) lives per terminal across chunks, so
-  a sequence split at a chunk boundary still counts as one. Raw `0x80`–`0x9F`
-  are not taken as C1 introducers: in UTF-8 output they are continuation bytes.
+- **`Bell`** — a `0x07` outside an escape string, debounced to one per ~250 ms;
+  the BEL ending oh-my-zsh's per-prompt title (`ESC ]2;…BEL`) is not a bell.
 - **`Exit`** — `child.wait()`; a signal death sends `code: None` (the protocol's
   nil marker), never a fabricated code. The app turns it into a *dead card*; the
   daemon does **not** auto-respawn.

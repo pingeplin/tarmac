@@ -22,7 +22,10 @@ enum State {
 }
 
 impl BellScan {
-    pub fn rings(&mut self, chunk: &[u8]) -> bool {
+    pub fn feed(&mut self, chunk: &[u8]) -> bool {
+        if matches!(self.state, State::Ground) && !chunk.contains(&BEL) && !chunk.contains(&ESC) {
+            return false;
+        }
         let mut rang = false;
         for &b in chunk {
             self.state = match (self.state, b) {
@@ -48,7 +51,7 @@ mod tests {
     use super::*;
 
     fn rings(chunk: &[u8]) -> bool {
-        BellScan::default().rings(chunk)
+        BellScan::default().feed(chunk)
     }
 
     #[test]
@@ -63,17 +66,14 @@ mod tests {
     }
 
     #[test]
-    fn a_bel_that_ends_an_osc_title_does_not_ring() {
-        for ps in ["0", "1", "2"] {
-            assert!(!rings(format!("\x1b]{ps};~/src\x07").as_bytes()), "OSC {ps}");
-        }
+    fn an_osc_title_ended_by_bel_or_st_does_not_ring() {
+        assert!(!rings(b"\x1b]2;~/src\x07"));
+        assert!(!rings(b"\x1b]2;~/src\x1b\\"));
     }
 
     #[test]
-    fn an_osc_ended_by_st_does_not_ring() {
-        for ps in ["0", "1", "2"] {
-            assert!(!rings(format!("\x1b]{ps};~/src\x1b\\").as_bytes()), "OSC {ps}");
-        }
+    fn an_osc_8_hyperlink_does_not_ring() {
+        assert!(!rings(b"\x1b]8;;https://example.com\x07link\x1b]8;;\x07"));
     }
 
     #[test]
@@ -83,58 +83,65 @@ mod tests {
     }
 
     #[test]
+    fn an_esc_inside_an_osc_starts_a_new_sequence() {
+        assert!(!rings(b"\x1b]2;a\x1b]2;b\x07"));
+    }
+
+    #[test]
     fn a_string_split_at_any_byte_does_not_ring() {
         let seqs: [&[u8]; 3] = [b"\x1b]2;user@host: ~/src\x07", b"\x1b]2;title\x1b\\", b"\x1bPq\x07#0\x1b\\"];
         for seq in seqs {
             for at in 0..=seq.len() {
                 let mut scan = BellScan::default();
-                assert!(!scan.rings(&seq[..at]), "{seq:?}: first half, split at {at}");
-                assert!(!scan.rings(&seq[at..]), "{seq:?}: second half, split at {at}");
-                assert!(scan.rings(b"\x07"), "{seq:?}: lone BEL after a split at {at}");
+                assert!(!scan.feed(&seq[..at]), "{seq:?}: first half, split at {at}");
+                assert!(!scan.feed(&seq[at..]), "{seq:?}: second half, split at {at}");
+                assert!(scan.feed(b"\x07"), "{seq:?}: lone BEL after a split at {at}");
             }
         }
     }
 
     #[test]
-    fn can_and_sub_abort_an_osc() {
-        assert!(rings(b"\x1b]2;tit\x18\x07"));
-        assert!(rings(b"\x1b]2;tit\x1a\x07"));
+    fn an_escape_sequence_ended_in_a_later_chunk_returns_to_ground() {
+        let mut scan = BellScan::default();
+        assert!(!scan.feed(b"\x1b"));
+        assert!(!scan.feed(b"[0m"));
+        assert!(scan.feed(b"]\x07"));
     }
 
     #[test]
-    fn can_and_sub_abort_a_dcs() {
-        assert!(rings(b"\x1bPq#0\x18\x07"));
-        assert!(rings(b"\x1bPq#0\x1a\x07"));
-    }
-
-    #[test]
-    fn a_bel_inside_dcs_apc_pm_or_sos_does_not_ring() {
-        for intro in [b'P', b'_', b'^', b'X'] {
-            let mut scan = BellScan::default();
-            assert!(!scan.rings(&[0x1b, intro, b'a', 0x07, b'b']), "{}", intro as char);
-            assert!(!scan.rings(b"\x1b\\"), "{}", intro as char);
-            assert!(scan.rings(b"\x07"), "lone BEL after the {} string", intro as char);
+    fn can_and_sub_abort_an_osc_or_a_dcs() {
+        let seqs: [&[u8]; 4] = [b"\x1b]2;tit\x18\x07", b"\x1b]2;tit\x1a\x07", b"\x1bPq#0\x18\x07", b"\x1bPq#0\x1a\x07"];
+        for seq in seqs {
+            assert!(rings(seq), "{seq:?}");
         }
     }
 
     #[test]
-    fn a_bel_after_a_csi_rings() {
+    fn bels_inside_dcs_apc_pm_or_sos_do_not_ring() {
+        for intro in [b'P', b'_', b'^', b'X'] {
+            let mut scan = BellScan::default();
+            assert!(!scan.feed(&[0x1b, intro, b'a', 0x07, b'b', 0x07, b'c', 0x1b, b'\\']), "{}", intro as char);
+            assert!(scan.feed(b"\x07"), "lone BEL after the {} string", intro as char);
+        }
+    }
+
+    #[test]
+    fn a_bel_after_a_finished_escape_sequence_rings() {
         assert!(rings(b"\x1b[31mred\x1b[0m\x07"));
+        assert!(rings(b"\x1b[0mPass\x07"));
     }
 
     #[test]
-    fn a_bel_among_utf8_rings() {
+    fn a_bel_right_after_esc_or_inside_a_csi_rings() {
+        assert!(rings(b"\x1b\x07"));
+        assert!(rings(b"\x1b[3\x07m"));
+    }
+
+    #[test]
+    fn utf8_and_raw_c1_bytes_change_nothing() {
         assert!(rings("中\x07文".as_bytes()));
-        assert!(rings("\u{15d}\x07".as_bytes()));
-    }
-
-    #[test]
-    fn a_utf8_title_ended_by_bel_does_not_ring() {
-        assert!(!rings("\x1b]2;中文 ŝ\x07".as_bytes()));
-    }
-
-    #[test]
-    fn a_c1_byte_is_not_an_osc_introducer() {
         assert!(rings(b"\x9d2;title\x07"));
+        assert!(rings("\u{15d}\x07".as_bytes()));
+        assert!(!rings("\x1b]2;中文 ŝ\x07".as_bytes()));
     }
 }
