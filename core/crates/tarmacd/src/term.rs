@@ -9,6 +9,7 @@ use tarmac_protocol::Msg;
 use tokio::sync::{mpsc, oneshot};
 use tracing::debug;
 
+use crate::bell_scan::BellScan;
 use crate::boards::BoardId;
 use crate::proc;
 use crate::state::Daemon;
@@ -16,7 +17,6 @@ use crate::state::Daemon;
 pub const OUTPUT_CHUNK: usize = 64 * 1024; // protocol: output chunks <= 64 KiB
 pub(crate) const PROC_POLL_INTERVAL: Duration = Duration::from_millis(750);
 const BELL_DEBOUNCE: Duration = Duration::from_millis(250);
-const BEL: u8 = 0x07;
 // A (re)connecting app replays this to re-bind to a live shell instead of
 // cold-spawning. Bounded so N boards x M terms stay cheap.
 const SCROLLBACK_CAP: usize = 256 * 1024;
@@ -304,13 +304,15 @@ pub async fn spawn(daemon: Arc<Daemon>, plan: SpawnPlan) -> Result<(), String> {
 }
 
 /// Pushes at most one bell per `BELL_DEBOUNCE` window.
+#[derive(Default)]
 struct BellDebounce {
+    scan: BellScan,
     last: Option<Instant>,
 }
 
 impl BellDebounce {
     fn rings(&mut self, chunk: &[u8]) -> bool {
-        if !chunk.contains(&BEL) {
+        if !self.scan.rings(chunk) {
             return false;
         }
         let now = Instant::now();
@@ -350,7 +352,7 @@ async fn pump(
     mut exit_rx: oneshot::Receiver<Option<i64>>,
     handle: Arc<TermHandle>,
 ) {
-    let mut bells = BellDebounce { last: None };
+    let mut bells = BellDebounce::default();
     let mut exit_code: Option<Option<i64>> = None;
     loop {
         if exit_code.is_some() {
@@ -461,6 +463,21 @@ mod tests {
     fn empty_value_falls_through_to_next_key() {
         assert!(!decide(&[("LC_ALL", ""), ("LANG", "en_US.UTF-8")]));
         assert!(decide(&[("LC_CTYPE", ""), ("LANG", "C")]));
+    }
+
+    #[test]
+    fn a_second_bell_inside_the_debounce_window_is_dropped() {
+        let mut bells = BellDebounce::default();
+        assert!(bells.rings(b"\x07"));
+        assert!(!bells.rings(b"\x07"));
+    }
+
+    #[test]
+    fn an_osc_split_across_chunks_does_not_ring_the_debounce() {
+        let mut bells = BellDebounce::default();
+        assert!(!bells.rings(b"\x1b]2;tit"));
+        assert!(!bells.rings(b"le\x07"));
+        assert!(bells.rings(b"\x07"));
     }
 
     // The exit goes first and the pump takes it before any chunk exists, so the

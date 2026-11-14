@@ -1,3 +1,4 @@
+mod bell_scan;
 mod boards;
 mod conn;
 mod docs;

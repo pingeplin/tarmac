@@ -23,6 +23,21 @@ fn bel_in_output_yields_a_bell_frame() {
     assert_eq!(term_id, "bell-term");
 }
 
+// oh-my-zsh sets the title this way at every prompt (#351). The pump pushes a
+// chunk's Bell before the Exit frame, so no Bell before Exit means none at all.
+#[test]
+fn bel_that_ends_an_osc_title_yields_no_bell_frame() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+
+    app.spawn_term("title-term", &["/bin/sh", "-c", "printf '\\033]2;title\\a'"]);
+
+    let first = app.recv_until("bell or exit", |m| {
+        matches!(m, Msg::Bell { .. }) || matches!(m, Msg::Exit { term_id, .. } if term_id == "title-term")
+    });
+    assert!(matches!(first, Msg::Exit { .. }), "expected no Bell before Exit, got {first:?}");
+}
+
 #[test]
 fn term_proc_reports_a_foreground_process_name() {
     let daemon = TestDaemon::start();
