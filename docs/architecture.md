@@ -23,11 +23,19 @@ Unix socket:
   doc cards, and turns human input into requests to the daemon.
 
 A third tiny binary, the **`tarmac` CLI**, is the universal doorbell: `tarmac
-open <path>` connects to the daemon, names a doc, and exits. `open`, `push` and
-`--version` are its verbs that talk to the daemon (`tarmac push` hands one
-JSON value, or one for each line of stdin, to the loaded HTML cards of an open
-doc; `--version` only completes
+open <path>` connects to the daemon, names a doc, and exits. `open`, `push`,
+`report`, `--version` and `hooks run` are its verbs that talk to the daemon
+(`tarmac push` hands one JSON value, or one for each line of stdin, to the
+loaded HTML cards of an open doc; `tarmac report` sets or clears the calling
+terminal's report, spec 2611.0009; `--version` only completes
 the handshake, to report the daemon's and the connected app's versions);
+`tarmac hooks install`, `uninstall` and `status` are local: they merge four
+Claude Code hooks into Claude's settings file, each a fixed call to
+`tarmac hooks run claude || true`, and `hooks run claude` maps the hook's input
+on stdin to a `report` and always exits 0 (spec 2611.0010). Only the CLI knows
+an agent; the daemon and the app see plain `report` frames. For this the CLI
+depends on `serde_json`, and on nothing else beyond the protocol crate and
+`serde`;
 `tarmac skill` is a purely local verb that
 prints the agent-facing guide (`core/crates/tarmac-cli/src/GUIDE.md`, embedded in
 the binary); `tarmac skill install` copies a shim (`SKILL.md` beside it) into
@@ -61,7 +69,7 @@ scenario suite is `scripts/qa/smoke.mjs`, run by `make qa` against a live
                                                        |
                                                        |  spawns ptys (sets TARMAC_TERM_ID)
                                                        v
-   $ tarmac open <path>   ------------------->  tarmac CLI (Rust, std-only)
+   $ tarmac open <path>   ------------------->  tarmac CLI (Rust)
    (run inside a tarmac pty)                    names a doc, then exits
 ```
 
