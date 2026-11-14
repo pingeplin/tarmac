@@ -1528,8 +1528,8 @@ land in the terminal behind it.
 ### Wayfinding and overlays
 
 Layered over the board, back to front (`OverlayStack`): offscreen hint pills
-(one per signalling terminal whose centre is off screen, on the edge it
-overshoots; a pill that cannot clear a card is drawn under the cards), the zoom
+(one per signalling terminal whose centre is off screen, at most 10 —
+below — on the edge it overshoots; a pill that cannot clear a card is drawn under the cards), the zoom
 control (bottom-left: `−`, percent, `+`, fit — steps of ×1.2 about the viewport
 centre; fit frames every card with a 10 % margin), the minimap (bottom-right;
 cards coloured by signal, click to re-centre), the inbox panel, toasts (at
