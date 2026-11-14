@@ -216,6 +216,15 @@ extension HeaderButton: HoverCursorProviding {
     func hoverCursor(at windowPoint: NSPoint) -> NSCursor { .pointingHand }
 }
 
+/// The world metrics of a chip, shared by the header's chips and a terminal
+/// card's offer strip, so card chrome looks the same everywhere.
+enum ChipMetrics {
+    static let padX: CGFloat = 6
+    static let padY: CGFloat = 1
+    static let fontSize: CGFloat = 9
+    static let cornerRadius: CGFloat = 4
+}
+
 /// A header chip: a 1 px border and mono text, no fill, at most 120 wide with
 /// the text cut at the tail. The doc card's `← <terminal>` chip is neutral; a
 /// terminal's report chip takes its kind's colour (spec 2611.0009), so one
@@ -230,10 +239,6 @@ final class ChipView: NSView, ThemeFollowing {
     }
 
     private static let maxWidth: CGFloat = 120
-    private static let padX: CGFloat = 6
-    private static let padY: CGFloat = 1
-    private static let fontSize: CGFloat = 9
-    private static let cornerRadius: CGFloat = 4
 
     private let label = NSTextField(labelWithString: "")
     private var size: NSSize = .zero
@@ -286,12 +291,12 @@ final class ChipView: NSView, ThemeFollowing {
     }
 
     private func measure() {
-        label.font = Theme.mono(scale.length(Self.fontSize))
-        layer?.cornerRadius = scale.length(Self.cornerRadius)
+        label.font = Theme.mono(scale.length(ChipMetrics.fontSize))
+        layer?.cornerRadius = scale.length(ChipMetrics.cornerRadius)
         layer?.borderWidth = scale.line(1)
         let text = label.headerMetrics(zoom: scale.zoom)
-        let padX = scale.length(Self.padX)
-        let padY = scale.length(Self.padY)
+        let padX = scale.length(ChipMetrics.padX)
+        let padY = scale.length(ChipMetrics.padY)
         let overhang = CardHeaderLayout.textOverhang(scale: scale.zoom)
         let natural = text.room + 2 * padX
         let width = min(scale.length(Self.maxWidth), natural)

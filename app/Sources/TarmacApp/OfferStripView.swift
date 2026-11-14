@@ -12,11 +12,18 @@ import TarmacKit
 /// dim every subview, and the offer is drawn at full opacity.
 @MainActor
 final class OfferStripView: NSView, ThemeFollowing {
-    private static let fontSize: CGFloat = 9
-    private static let padX: CGFloat = 6
-    private static let padY: CGFloat = 3
-    private static let cornerRadius: CGFloat = 4
     private static let inset: CGFloat = 6
+
+    /// What the strip was last measured for; a pan moves it only.
+    private struct Measured: Equatable {
+        let bodySize: CGSize
+        let scale: CardScale
+        let text: String
+        let tip: String?
+    }
+
+    private var measured: Measured?
+    private var height: CGFloat = 0
 
     /// The card it belongs to, which places it and stacks it.
     private(set) weak var card: CardView?
@@ -57,23 +64,30 @@ final class OfferStripView: NSView, ThemeFollowing {
 
     func apply(_ scale: CardScale) {
         self.scale = scale
-        label.font = Theme.mono(scale.length(Self.fontSize))
-        layer?.cornerRadius = scale.length(Self.cornerRadius)
+        label.font = Theme.mono(scale.length(ChipMetrics.fontSize))
+        layer?.cornerRadius = scale.length(ChipMetrics.cornerRadius)
         layer?.borderWidth = scale.line(1)
     }
 
     /// Lays the strip out along the bottom of `body`, a rect in the card
-    /// layer's coordinates, as tall as its wrapped text.
+    /// layer's coordinates, as tall as its wrapped text. The text is measured
+    /// and the tool tip set again only when what they depend on changed.
     func place(along body: CGRect) {
-        let inset = scale.length(Self.inset), padX = scale.length(Self.padX), padY = scale.length(Self.padY)
+        let inset = scale.length(Self.inset)
         let width = max(0, body.width - 2 * inset)
-        let textWidth = max(0, width - 2 * padX)
-        let textHeight = ceil(label.sizeThatFits(NSSize(width: textWidth, height: .greatestFiniteMagnitude)).height)
-        let height = min(textHeight + 2 * padY, body.height)
-        frame = NSRect(x: body.minX + inset, y: body.maxY - inset - height, width: width, height: height)
-        label.frame = NSRect(x: padX, y: padY, width: textWidth, height: textHeight)
-        removeAllToolTips()
-        if tip != nil { addToolTip(bounds, owner: self, userData: nil) }
+        let now = Measured(bodySize: body.size, scale: scale, text: label.stringValue, tip: tip)
+        if now != measured {
+            measured = now
+            let padX = scale.length(ChipMetrics.padX), padY = scale.length(ChipMetrics.padY)
+            let textWidth = max(0, width - 2 * padX)
+            let textHeight = ceil(label.sizeThatFits(NSSize(width: textWidth, height: .greatestFiniteMagnitude)).height)
+            height = min(textHeight + 2 * padY, body.height)
+            label.frame = NSRect(x: padX, y: padY, width: textWidth, height: textHeight)
+            frame.size = NSSize(width: width, height: height)
+            removeAllToolTips()
+            if tip != nil { addToolTip(bounds, owner: self, userData: nil) }
+        }
+        frame.origin = NSPoint(x: body.minX + inset, y: body.maxY - inset - height)
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {

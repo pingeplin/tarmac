@@ -52,9 +52,9 @@ final class ToastQueueTests: XCTestCase {
 
     func testAddCarriesTheIconAndBodyThrough() {
         var queue = ToastQueue()
-        queue.add(id: "a", icon: "›_", title: "exited", body: "code 1", nowMs: 0)
+        queue.add(id: "a", icon: "›_", title: "exited", bodyLines: ["code 1"], nowMs: 0)
         XCTAssertEqual(queue.toasts.first?.icon, "›_")
-        XCTAssertEqual(queue.toasts.first?.body, "code 1")
+        XCTAssertEqual(queue.toasts.first?.bodyLines, ["code 1"])
     }
 
     // MARK: - pruneExpired

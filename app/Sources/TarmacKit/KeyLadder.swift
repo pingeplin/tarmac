@@ -26,22 +26,16 @@ public enum KeyLadder {
         /// A signalling card is off screen, so Return has somewhere to fly.
         public var hasFlyTarget: Bool
         public var esc: EscLadder.Facts
-        /// 2611.0011: the focused terminal is prime and its resume offer is
-        /// armed.
-        public var resumeArmed: Bool
-        /// The focused terminal is dead and offers to reopen.
-        public var reopenOffered: Bool
-        /// The focused terminal shows a resume offer, armed or not, or a
-        /// reopen offer.
-        public var offerShown: Bool
+        /// 2611.0011: what the focused terminal offers.
+        public var offer: Offer
         /// The focused terminal ran its command by `.runResume`, and no key
         /// that is not a repeat has come since (`afterRun(was:press:action:)`).
         public var afterRun: Bool
 
         public init(
             composing: Bool = false, switcherOpen: Bool = false, keys: Keys = .terminal, editingText: Bool = false,
-            hasFlyTarget: Bool = false, esc: EscLadder.Facts = EscLadder.Facts(), resumeArmed: Bool = false,
-            reopenOffered: Bool = false, offerShown: Bool = false, afterRun: Bool = false
+            hasFlyTarget: Bool = false, esc: EscLadder.Facts = EscLadder.Facts(), offer: Offer = .none,
+            afterRun: Bool = false
         ) {
             self.composing = composing
             self.switcherOpen = switcherOpen
@@ -49,11 +43,21 @@ public enum KeyLadder {
             self.editingText = editingText
             self.hasFlyTarget = hasFlyTarget
             self.esc = esc
-            self.resumeArmed = resumeArmed
-            self.reopenOffered = reopenOffered
-            self.offerShown = offerShown
+            self.offer = offer
             self.afterRun = afterRun
         }
+    }
+
+    /// What the terminal with keyboard focus offers (2611.0011).
+    public enum Offer: Equatable, Sendable {
+        case none
+        /// A resume offer that is not armed: the shell is not up, or the
+        /// card is not prime.
+        case resumeIdle
+        /// A resume offer on the prime card whose shell is up.
+        case resumeArmed
+        /// A dead card's offer to reopen.
+        case reopen
     }
 
     public enum Action: Equatable, Sendable {
@@ -107,10 +111,12 @@ public enum KeyLadder {
     /// A plain Return on a terminal (2611.0011): a repeat is decided first, so
     /// a held key never runs or reopens again (the D10 amendment, RA3).
     private static func offerAction(_ press: KeyPress, _ facts: Facts) -> Action? {
-        if press.isRepeat { return facts.offerShown || facts.afterRun ? .ignoreRepeat : nil }
-        if facts.resumeArmed { return .runResume }
-        if facts.reopenOffered { return .reopenDead }
-        return nil
+        if press.isRepeat { return facts.offer != .none || facts.afterRun ? .ignoreRepeat : nil }
+        switch facts.offer {
+        case .resumeArmed: return .runResume
+        case .reopen: return .reopenDead
+        case .none, .resumeIdle: return nil
+        }
     }
 
     /// The focused terminal's latch after `press` was decided as `action`:

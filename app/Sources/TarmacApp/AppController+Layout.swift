@@ -121,11 +121,11 @@ extension AppController {
             liveTerms: liveTerms,
             alreadyNotified: daemonSession.restartNotified
         ) else {
-            if !summary.isEmpty { rootView.toasts.show(title: "terminals restored", body: summary.joined(separator: "\n")) }
+            if !summary.isEmpty { rootView.toasts.show(title: "terminals restored", bodyLines: summary) }
             return
         }
         daemonSession.restartNotified = true
-        rootView.toasts.show(title: notice.title, body: ([notice.body] + summary).joined(separator: "\n"))
+        rootView.toasts.show(title: notice.title, bodyLines: [notice.body] + summary)
     }
 
     /// A restore for a board that is already built (`ReconnectRestore`):
@@ -135,17 +135,16 @@ extension AppController {
     /// is sent a restore.
     private func reconcile(_ board: Board, liveTerms: Set<String>, replayFollows: Bool) {
         let outcome = ReconnectRestore.reconcile(board.reconnectTerms, liveTerms: liveTerms, replayFollows: replayFollows)
+        markLost(outcome.lost, on: board)
+        let offered = offerReopens(on: board)
         if outcome.daemonRestarted, !daemonSession.restartNotified {
             daemonSession.restartNotified = true
-            let reopenable = outcome.lost.filter {
-                DeadCardOffer.make(record: board.termRecords[$0], home: NSHomeDirectory()) != nil
-            }.count
+            let reopenable = outcome.lost.filter(offered.contains).count
             rootView.toasts.show(
-                title: ReconnectRestore.restartToastTitle, body: ReconnectRestore.restartToastBody(reopenable: reopenable)
+                title: ReconnectRestore.restartToastTitle,
+                bodyLines: [ReconnectRestore.restartToastBody(reopenable: reopenable)]
             )
         }
-        markLost(outcome.lost, on: board)
-        offerReopens(on: board)
         if outcome.daemonRestarted {
             for other in boards.values where other !== board {
                 markLost(ReconnectRestore.lostToRestart(other.reconnectTerms), on: other)

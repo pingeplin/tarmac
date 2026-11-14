@@ -10,8 +10,7 @@ public struct ResumeOffer: Equatable, Sendable {
 
     /// Nil for no command, or one `ResumeCommand.check` refuses.
     public static func make(cmd: String?) -> ResumeOffer? {
-        guard let cmd, ResumeCommand.check(cmd) == nil else { return nil }
-        return ResumeOffer(cmd: cmd, shellUp: false)
+        ResumeCommand.accepted(cmd).map { ResumeOffer(cmd: $0, shellUp: false) }
     }
 
     public func armed(prime: Bool) -> Bool { shellUp && prime }

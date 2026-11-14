@@ -299,50 +299,50 @@ final class KeyLadderTests: XCTestCase {
     }
 
     func testS9PlainReturnRunsAnArmedResumeOrReopensADeadCard() {
-        XCTAssertEqual(KeyLadder.decide(enter(), Facts(resumeArmed: true, offerShown: true)), .runResume)
-        XCTAssertEqual(KeyLadder.decide(enter(), Facts(reopenOffered: true, offerShown: true)), .reopenDead)
+        XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .resumeArmed)), .runResume)
+        XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .reopen)), .reopenDead)
     }
 
     func testS9TheKeysThatComeFirstStillComeFirst() {
-        var composing = Facts(resumeArmed: true, offerShown: true)
+        var composing = Facts(offer: .resumeArmed)
         composing.composing = true
         XCTAssertNotEqual(KeyLadder.decide(enter(), composing), .runResume)
-        var switcher = Facts(resumeArmed: true, offerShown: true)
+        var switcher = Facts(offer: .resumeArmed)
         switcher.switcherOpen = true
         XCTAssertNotEqual(KeyLadder.decide(enter(), switcher), .runResume)
         for mods in [option, command, control] {
-            XCTAssertNotEqual(KeyLadder.decide(enter(mods), Facts(resumeArmed: true, offerShown: true)), .runResume, "\(mods)")
-            XCTAssertNotEqual(KeyLadder.decide(enter(mods), Facts(reopenOffered: true, offerShown: true)), .reopenDead, "\(mods)")
+            XCTAssertNotEqual(KeyLadder.decide(enter(mods), Facts(offer: .resumeArmed)), .runResume, "\(mods)")
+            XCTAssertNotEqual(KeyLadder.decide(enter(mods), Facts(offer: .reopen)), .reopenDead, "\(mods)")
         }
-        XCTAssertNotEqual(KeyLadder.decide(enter(), Facts(keys: .host, resumeArmed: true, offerShown: true)), .runResume)
+        XCTAssertNotEqual(KeyLadder.decide(enter(), Facts(keys: .host, offer: .resumeArmed)), .runResume)
     }
 
     /// A fresh Return on an offer that is not armed reaches the shell, and
     /// so drops the offer (D9).
     func testS9AFreshReturnOnAnOfferThatIsNotArmedPassesThrough() {
-        XCTAssertEqual(KeyLadder.decide(enter(), Facts(resumeArmed: false)), .passThrough)
-        XCTAssertEqual(KeyLadder.decide(enter(), Facts(resumeArmed: false, offerShown: true)), .passThrough)
+        XCTAssertEqual(KeyLadder.decide(enter(), Facts()), .passThrough)
+        XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .resumeIdle)), .passThrough)
     }
 
     func testS9ARepeatedReturnOnAReopenOfferIsIgnored() {
-        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(reopenOffered: true, offerShown: true)), .ignoreRepeat)
+        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offer: .reopen)), .ignoreRepeat)
     }
 
     /// The D10 amendment: a held Return reopens once, and its repeats neither
     /// run the new card's command nor reach its shell.
     func testS9AHeldReturnReopensOnceAndItsRepeatsAreIgnored() {
-        XCTAssertEqual(KeyLadder.decide(enter(), Facts(reopenOffered: true, offerShown: true)), .reopenDead)
-        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(resumeArmed: true, offerShown: true)), .ignoreRepeat)
-        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(resumeArmed: false, offerShown: true)), .ignoreRepeat)
-        XCTAssertEqual(KeyLadder.decide(enter(), Facts(resumeArmed: true, offerShown: true)), .runResume)
-        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offerShown: false, afterRun: false)), .passThrough)
+        XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .reopen)), .reopenDead)
+        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offer: .resumeArmed)), .ignoreRepeat)
+        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offer: .resumeIdle)), .ignoreRepeat)
+        XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .resumeArmed)), .runResume)
+        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts()), .passThrough)
     }
 
     /// RA3: a held Return that runs the command sends it once.
     func testS9AHeldReturnThatRanTheCommandIgnoresItsRepeats() {
         let runReturn = enter()
         XCTAssertTrue(KeyLadder.afterRun(was: false, press: runReturn, action: .runResume))
-        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offerShown: false, afterRun: true)), .ignoreRepeat)
+        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(afterRun: true)), .ignoreRepeat)
         XCTAssertTrue(KeyLadder.afterRun(was: true, press: repeated(enter()), action: .ignoreRepeat))
         XCTAssertFalse(KeyLadder.afterRun(was: true, press: letter("a"), action: .passThrough))
     }

@@ -19,10 +19,7 @@ final class ToastView: NSView, ThemeFollowing {
     init(_ toast: ToastQueue.Toast) {
         let icon = ChromeLabel(toast.icon, size: 13, color: Theme.agent)
         let title = ChromeLabel(toast.title, size: 11, color: Theme.text)
-        // One label for each line of the body (a restore's summary has two).
-        let body = (toast.body?.components(separatedBy: "\n") ?? []).map {
-            ChromeLabel($0, size: 10, color: Theme.faint)
-        }
+        let body = toast.bodyLines.map { ChromeLabel($0, size: 10, color: Theme.faint) }
 
         let iconWidth = icon.textSize.width
         let textRoom = min(Self.maxTextWidth, Self.maxWidth - 2 * Self.insetX - iconWidth - Self.gap)
@@ -91,10 +88,10 @@ final class ToastStackView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    func show(icon: String = "¶", title: String, body: String?) {
+    func show(icon: String = "¶", title: String, bodyLines: [String]) {
         minted += 1
         let id = "toast-\(minted)"
-        queue.add(id: id, icon: icon, title: title, body: body, nowMs: Self.nowMs)
+        queue.add(id: id, icon: icon, title: title, bodyLines: bodyLines, nowMs: Self.nowMs)
         render()
         if let view = views[id] { animateIn(view) }
     }

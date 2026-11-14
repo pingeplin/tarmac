@@ -128,7 +128,9 @@ struct DevSnapshotReader {
 
     private func content(of card: CardView) -> DevSnapshot.Card.Content {
         guard case .term(let termID) = card.id else { return .doc }
-        let session = controller.sessions[termID]
+        // The board whose view holds the card: its session and its prime.
+        let board = controller.boards.values.first { $0.view.card(card.id) === card } ?? controller.activeBoard
+        let session = board.sessions[termID]
         let view = session?.view
         return .term(DevSnapshot.Terminal(
             live: session?.live ?? false,
@@ -139,7 +141,7 @@ struct DevSnapshotReader {
             selection: view?.selectedText,
             scrollbackTail: view?.engine.tail(lines: DevSnapshot.scrollbackTailLines) ?? "",
             resume: session.flatMap { s in
-                s.resumeOffer.map { DevSnapshot.Resume(cmd: $0.cmd, armed: $0.armed(prime: controller.isPrime(s, on: controller.activeBoard))) }
+                s.resumeOffer.map { DevSnapshot.Resume(cmd: $0.cmd, armed: $0.armed(prime: controller.isPrime(s, on: board))) }
             },
             reopen: card.dead && session?.deadOffer != nil
         ))

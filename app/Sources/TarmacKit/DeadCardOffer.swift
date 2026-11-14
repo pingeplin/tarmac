@@ -14,7 +14,7 @@ public enum DeadCardOffer {
     /// Nil unless the record has a folder or an accepted command.
     public static func make(record: TermRecord?, home: String) -> Offer? {
         let cwd = record?.lastCwd
-        let resume = record?.resume.map(\.cmd).flatMap { ResumeCommand.check($0) == nil ? $0 : nil }
+        let resume = ResumeCommand.accepted(record?.resume?.cmd)
         guard cwd != nil || resume != nil else { return nil }
         var lines = ["↻ reopen here  ⏎"]
         if let cwd { lines.append("in \(tilde(cwd, home: home))") }

@@ -135,8 +135,7 @@ extension AppController {
     }
 
     /// Return on the focused terminal's armed offer (`.runResume`).
-    func runResume() {
-        guard let s = focusedSession else { return }
+    func runResume(_ s: TerminalSession) {
         stepResume(s, .returnKey(prime: isPrime(s, on: activeBoard)))
     }
 
@@ -159,13 +158,18 @@ extension AppController {
         }
     }
 
-    /// Gives each dead card of `board` the offer its latest restore allows.
-    func offerReopens(on board: Board) {
+    /// Gives each dead card of `board` the offer its latest restore allows;
+    /// the ids of the cards that got one.
+    @discardableResult
+    func offerReopens(on board: Board) -> Set<String> {
+        var offered: Set<String> = []
         for termID in board.sessionOrder {
             guard let s = board.sessions[termID], board.view.card(.term(termID))?.dead == true else { continue }
             s.deadOffer = DeadCardOffer.make(record: board.termRecords[termID], home: NSHomeDirectory())
+            if s.deadOffer != nil { offered.insert(termID) }
             refreshOffer(s, on: board)
         }
+        return offered
     }
 
     /// Replaces the dead card `termID` in place with a cold spawn in its
@@ -187,13 +191,6 @@ extension AppController {
         spawnPending(on: board)
         persistLayout(for: board)
         refreshSwitcherIfOpen()
-    }
-
-    /// The session whose view has keyboard focus, live or dead.
-    var focusedSession: TerminalSession? {
-        guard let responder = window?.firstResponder as? NSView,
-              let view = responder.enclosing(TerminalView.self) else { return nil }
-        return activeBoard.sessions.values.first { $0.view === view }
     }
 
     /// `output` and `scrollback` bytes the gate let through. A ring is the
@@ -334,7 +331,7 @@ extension AppController {
         let board = routeBoard(ofTerm: termID)
         guard let s = board.sessions[termID], let card = board.view.card(.term(termID)) else { return }
         if let title = TermExitToast.title(code: code) {
-            rootView.toasts.show(icon: TermExitToast.icon, title: title, body: nil)
+            rootView.toasts.show(icon: TermExitToast.icon, title: title, bodyLines: [])
         }
         let frame = card.worldFrame
         switch TermExit.decide(code: code, otherLiveTerminals: board.otherLiveTerminals(than: termID)) {

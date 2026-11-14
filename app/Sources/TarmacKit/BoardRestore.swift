@@ -82,7 +82,7 @@ public enum BoardRestore {
             case .coldSpawn:
                 let record = tile.termID.flatMap { termRecords[$0] }
                 (termID, spawn) = (mint(), SpawnRequest(cwd: record?.lastCwd, succeeds: tile.termID))
-                resume = ResumeOffer.make(cmd: record?.resume?.cmd)?.cmd
+                resume = ResumeCommand.accepted(record?.resume?.cmd)
             }
             if let persisted = tile.termID { restoredID[persisted] = termID }
             terms.append(Term(

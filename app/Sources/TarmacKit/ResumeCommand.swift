@@ -5,6 +5,13 @@
 public enum ResumeCommand {
     public static let maxScalars = 256
 
+    /// `cmd` when there is one and `check` accepts it: the one test of a
+    /// command the app would offer.
+    public static func accepted(_ cmd: String?) -> String? {
+        guard let cmd, check(cmd) == nil else { return nil }
+        return cmd
+    }
+
     /// Nil when accepted, else the cause, worded as the daemon words it.
     public static func check(_ cmd: String) -> String? {
         let scalars = cmd.unicodeScalars
