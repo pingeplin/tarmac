@@ -35,7 +35,6 @@ const HOOK_STDIN_WAIT: Duration = Duration::from_secs(1);
 /// From connect to `ack`. An older daemon never answers `report`, and each
 /// hook would otherwise hold Claude for the 5 s of the other verbs.
 const HOOK_DEADLINE: Duration = Duration::from_millis(500);
-const HOOK_NO_ANSWER: &str = "no answer from the daemon in 500 ms";
 
 const SKIPPED_CODEX: &str = "skipped codex: hooks are not supported for codex yet";
 const OLD_FORM: &str = "installed, old form (run tarmac hooks install)";
@@ -350,7 +349,7 @@ fn hook(args: &[String]) -> Result<(), String> {
     }
     let Some((kind, text)) = claude_report(&input) else { return Ok(()) };
     let msg = Msg::Report { term_id: term_id.to_string_lossy().into_owned(), kind: kind.to_owned(), text };
-    report::send(&msg, HOOK_DEADLINE, HOOK_NO_ANSWER)
+    report::send(&msg, HOOK_DEADLINE, &format!("no answer from the daemon in {} ms", HOOK_DEADLINE.as_millis()))
 }
 
 /// Stdin, read on a thread of its own so that a writer that never closes it
@@ -641,6 +640,19 @@ mod tests {
         assert_eq!(done_text(json!("a\u{001b}[31mb\u{0007}c\u{009b}d")), Some("a[31mbcd".into()));
         assert_eq!(done_text(json!("a \u{001b} b")), Some("a b".into()));
         assert_eq!(done_text(json!("\u{001b}\u{0007}")), None);
+    }
+
+    #[test]
+    fn s18_the_cap_counts_the_text_after_the_fold() {
+        let text = format!("a{}", "   \n b".repeat(200));
+        let folded = format!("a{}", " b".repeat(200));
+        assert_eq!(done_text(json!(text)), Some(tarmac_protocol::cap_report_text(&folded)));
+        assert_eq!(done_text(json!(text)).unwrap().chars().count(), REPORT_TEXT_MAX);
+    }
+
+    #[test]
+    fn s18_unicode_whitespace_folds_and_is_not_removed() {
+        assert_eq!(done_text(json!("a\u{000b}b\u{000c}c\u{0085}d\u{00a0}e")), Some("a b c d e".into()));
     }
 
     // S18

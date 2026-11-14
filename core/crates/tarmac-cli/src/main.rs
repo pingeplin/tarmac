@@ -186,7 +186,7 @@ fn time_out_at(stream: &UnixStream, until: Instant) -> io::Result<()> {
 const DAEMON_WAIT: Duration = Duration::from_secs(5);
 
 fn no_answer(why: &str) -> String {
-    format!("no answer from the daemon in 5 s ({why})")
+    format!("no answer from the daemon in {} s ({why})", DAEMON_WAIT.as_secs())
 }
 
 /// The `hello_ok` fields; `open` needs only the reply, `--version` renders all.
