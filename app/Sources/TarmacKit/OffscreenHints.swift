@@ -39,8 +39,8 @@ public enum OffscreenHintLayout {
         public var left: CGFloat
         public var top: CGFloat
         /// The placed pill still overlaps a card: the edge band was saturated and
-        /// the gap search had to fall back, so the view paints it UNDER the cards
-        /// (#126). Measured on the rounded rect actually painted, against the raw
+        /// the gap search had to fall back. The view draws it over the card all
+        /// the same (#365; #126 drew it under the cards, where it was lost). Measured on the rounded rect actually painted, against the raw
         /// card rects rather than the stackGap-padded intervals — it means the pill
         /// covers card content, not that it sits close to one.
         public var occluded: Bool

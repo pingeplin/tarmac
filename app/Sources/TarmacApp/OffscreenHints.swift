@@ -3,15 +3,13 @@ import TarmacKit
 
 /// The edge pills: one per signalling card whose centre is off screen, pinned
 /// to the viewport edge towards it. `OffscreenHintLayout` decides where each
-/// goes; this measures them, draws them, and sorts them onto two layers — a
-/// pill that found room goes over the cards, one that could not clear a card
-/// goes under them, so it never covers what the card shows.
+/// goes; this measures them and draws them, every one over the cards: a pill
+/// that could not clear a card covers a strip of it rather than vanish under
+/// it (#365, reversing #126).
 @MainActor
 final class OffscreenHints {
     /// Sits over every card.
-    let over = OffscreenHintLayer()
-    /// Belongs inside the board, over its edges and under its cards.
-    let under = OffscreenHintLayer()
+    let layer = OffscreenHintLayer()
 
     private static let edgeInset: CGFloat = 18
     private static let edgeMargin: CGFloat = 10
@@ -29,8 +27,7 @@ final class OffscreenHints {
     /// Shows a pill for each of `hints`, and returns them as placed.
     /// `viewRect` is the part of the board's bounds left uncovered and
     /// `obstacles` its cards' on-screen rects, and `chrome` the minimap and
-    /// the toasts, drawn over the pills; all in the board's coordinates, which
-    /// both layers share.
+    /// the toasts, drawn over the pills; all in the board's coordinates.
     @discardableResult
     func show(
         _ hints: [OffscreenHintLayout.Hint], in viewRect: CGRect, around obstacles: [CGRect], clearOf chrome: [CGRect]
@@ -59,7 +56,6 @@ final class OffscreenHints {
         for position in placed {
             guard let pill = pills[position.cardID] else { continue }
             pill.frame = NSRect(origin: CGPoint(x: position.left, y: position.top), size: pill.size)
-            let layer = position.occluded ? under : over
             if pill.superview !== layer { layer.addSubview(pill) }
         }
         return placed
