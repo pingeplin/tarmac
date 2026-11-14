@@ -75,8 +75,7 @@ fn a_failing_reply_goes_to_stderr_and_exits_one() {
 }
 
 /// S61 — `body` is opaque. A body that is not JSON prints verbatim and the exit
-/// code still follows `ok`; the CLI never parses it, which is what keeps this
-/// crate std-only.
+/// code still follows `ok`; the CLI never parses it.
 #[test]
 fn the_body_is_never_parsed() {
     let fake = Fake::start(Reply::Now(ok_reply("not json at all")));

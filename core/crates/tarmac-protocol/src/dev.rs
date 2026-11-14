@@ -94,8 +94,7 @@ impl DevRequest {
     }
 }
 
-/// `body` is an opaque string the CLI prints verbatim and never parses, which
-/// keeps `tarmac-cli` std-only.
+/// `body` is an opaque string the CLI prints verbatim and never parses.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct DevReply {
     pub ok: bool,
