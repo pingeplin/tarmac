@@ -25,6 +25,10 @@ final class BoardView: NSView, ThemeFollowing {
     /// the chrome derived from the cards.
     var onCardsChanged: (() -> Void)?
 
+    /// Whether a terminal's inbox exit row is unread, which its signal reads
+    /// (2611.0013); the inbox is the controller's.
+    var exitUnread: (String) -> Bool = { _ in false }
+
     /// Fires when a doc card's ✕ is clicked. Removing the card is the
     /// listener's call, since it also owns what closing a doc means.
     var onCardClose: ((CardID) -> Void)?
@@ -143,7 +147,11 @@ final class BoardView: NSView, ThemeFollowing {
     }
 
     var minimapItems: [Minimap.Item] {
-        cards.values.map { Minimap.Item(worldRect: $0.worldFrame.rect, signal: $0.signal) }
+        cards.map { id, card in
+            let exit: Bool
+            if case .term(let termID) = id { exit = exitUnread(termID) } else { exit = false }
+            return Minimap.Item(worldRect: card.worldFrame.rect, signal: card.signal(exitUnread: exit))
+        }
     }
 
     // MARK: - Viewport

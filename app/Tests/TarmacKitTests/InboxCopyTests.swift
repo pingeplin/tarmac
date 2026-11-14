@@ -73,6 +73,23 @@ final class InboxCopyTests: XCTestCase {
         XCTAssertEqual(InboxCopy.place(exit, boardName: nil, cardLabel: nil, home: "/Users/u"), "board-1 › shell")
     }
 
+    /// The row's tool tip has the report's whole text, as it was sent.
+    func testTheToolTipHasTheWholeText() {
+        let report = item(.report(.blocked), proc: "claude", text: "line one\n  line two")
+        XCTAssertEqual(
+            InboxCopy.toolTip(report, place: "api › claude"),
+            "report · during claude\n“line one\n  line two”\napi › claude"
+        )
+        XCTAssertEqual(InboxCopy.toolTip(item(.bell), place: "b › shell"), "bell\nb › shell")
+    }
+
+    func testEachKindHasTheColourOfItsPillSignal() {
+        XCTAssertEqual(Inbox.Kind.report(.blocked).signal, .blocked)
+        XCTAssertEqual(Inbox.Kind.report(.done).signal, .done)
+        XCTAssertEqual(Inbox.Kind.bell.signal, .bell)
+        XCTAssertEqual(Inbox.Kind.exit(code: 1).signal, .exit)
+    }
+
     func testTheAgeIsTheReportAge() {
         XCTAssertEqual(InboxCopy.age(item(.bell, at: 1_000), nowMs: 1_000 + 125_000), "2m")
         XCTAssertEqual(InboxCopy.age(item(.bell, at: 9_000), nowMs: 1_000), "<1m")

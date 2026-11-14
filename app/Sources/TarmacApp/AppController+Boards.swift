@@ -18,8 +18,6 @@ extension AppController {
         termIndex.removeBoard(id)
         dataFiles.forget(board: id)
         boards[id] = nil
-        inbox.removeBoard(boardID: id)
-        inboxChanged()
     }
 
     /// Mounts `board`'s view in RootView and (re)binds the controller-owned
@@ -95,7 +93,7 @@ extension AppController {
 
     private func renderSwitcher() {
         rootView.boardSwitcher.render(
-            rows: switcherRows(), state: switcherState, nowMs: UInt64(Date().timeIntervalSince1970 * 1000)
+            rows: switcherRows(), state: switcherState, nowMs: WallClock.nowMs
         )
     }
 
@@ -226,6 +224,7 @@ extension AppController {
     @discardableResult
     func mintBoard(id: String, name: String?, view: BoardView = BoardView()) -> Board {
         let board = Board(boardID: id, name: name, view: view)
+        board.view.exitUnread = { [weak self] termID in self?.inbox.exitUnread(termID: termID) ?? false }
         let bootTermID = BootTerminal.mint()
         let boot = makeSession(termID: bootTermID)
         board.sessions[bootTermID] = boot
@@ -244,17 +243,15 @@ extension AppController {
     func finishArrive(on board: Board) {
         rootView.layoutSubtreeIfNeeded()
         applyBorrow()
-        // An inbox jump that switched lands first, and gives the keys to its
-        // card (2611.0013, D14).
-        if !landPendingJump(on: board) {
-            let home: NSView = board.primeTerminalView ?? rootView.board
-            // A switcher opened while the board was on its way keeps the keys,
-            // and hands them to the arrived board when it closes.
-            if switcherOpen {
-                rootView.boardSwitcher.keysOwner = home
-            } else {
-                window?.makeFirstResponder(home)
-            }
+        // An inbox jump that switched lands first, and its card is the
+        // keyboard's home (2611.0013, D14).
+        let home: NSView = landPendingJump(on: board) ?? board.primeTerminalView ?? rootView.board
+        // A switcher opened while the board was on its way keeps the keys, and
+        // hands them to the arrived board when it closes.
+        if switcherOpen {
+            rootView.boardSwitcher.keysOwner = home
+        } else {
+            window?.makeFirstResponder(home)
         }
         updatePrimacy()
         switching = false

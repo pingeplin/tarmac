@@ -1464,8 +1464,9 @@ cards across switches.
 The switcher (`BoardSwitcherView`; rules in `BoardSwitcher` and `SwitcherKeys`)
 lists boards in daemon order, filtered by a case-insensitive prefix as you type,
 each with running / bell / report / card counts — local facts for a visited
-board, `BoardMeta.running` for one never visited; the report count is the
-inbox's unread reports, which it knows for either (spec 2611.0013). `↑`/`↓` move, `Return` switches,
+board, `BoardMeta.running` for one never visited, which shows no card count
+(the app has counted none); the report count is the inbox's unread reports,
+which it knows for either (spec 2611.0013). `↑`/`↓` move, `Return` switches,
 `⌘1`–`9` jump to the *visible* rows, `⌘N` sends `BoardCreate`, `⌘E` renames
 (`BoardRename`), `⌘⌫` twice deletes (`BoardDelete`; never the last board), `ESC`
 closes. It holds first responder while it is open, so the menu's Paste cannot
@@ -1519,13 +1520,19 @@ row reads its kind tag (the `ChipView` form), `report · during <proc>`, `bell`
 or the exit toast's words, its age, the quote, and `<board> › <terminal> ·
 <cwd>`. `Return` or a click jumps: on another board, one switch, landed in
 `finishArrive`; then a live card becomes prime and takes the keys, a dead one
-is selected, and one that went drops its row; an exit of a board not built
+is selected, and one that went removes its row; an exit of a board not built
 yet lands on the shell that `succeeds` it, recorded when the board is first
 built. A jump reads nothing: typed input marks a report read, and a press, a
-key or a jump marks a bell or exit item read. `⌫` and `clear all read` hide
-rows in the panel only; the chip, the bell dot and the report pill stay. A
-board switch, a press outside the panel, `ESC` and `⌘I` close it; it holds
-first responder while it is up (`KeyHoldingView`).
+key or a jump marks a bell or exit item read (`clearBell`, the one "the user
+touched it" entry). `⌫` and `clear all read` hide rows in the panel only,
+until a newer event; the chip, the bell dot and the report pill stay. A card
+the user closes takes its rows with it, and the store remembers the terminal
+(`Inbox.removeTerm`): the daemon's `exit` for a `⌘W`'s SIGHUP comes after the
+card is gone and makes no row. The store's operations say whether they changed
+it, so the pills, the button and an open panel redraw only then, and only the
+boards that hold the terminal; a card's exit pill reads the store
+(`BoardView.exitUnread`). A board switch, a press outside the panel, `ESC` and
+`⌘I` close it; it holds first responder while it is up (`KeyHoldingView`).
 
 ### Quitting and closing
 
@@ -1843,14 +1850,19 @@ window-content coordinates start on the display — each card's `scroll`
 (`{offset, visible, total, shown, thumb}`, or `null` before its content has
 reported; `thumb` is the scroll thumb's rect beside `screen_rect`, or `null`
 when none is laid out), the selected card, keyboard
-focus, per-terminal `cols`/`rows`/`proc`/`selection`/`scrollback_tail` (and,
+focus (`active_element`: the card the keys reach; while the switcher, the
+restore card or the inbox holds them, `card` is null and `overlay` and
+`returns_to` name the overlay and the card it gives them back to),
+per-terminal `cols`/`rows`/`proc`/`selection`/`scrollback_tail` (and,
 only when the card offers one, `resume: {cmd, armed}` and `reopen: true`), the
 quit guard's state, `fonts`: for each font role the family saved in
 `app-prefs.json` and what the role resolved to (a PostScript `face`, or the
 `css` value for doc prose), and for `terminal` and `document` the `size` in
 effect; `inbox`: `{open, badge, filter, selected, items}`, each item's `kind`,
 `term`, `board`, `read` and `title`; `hints`: each placed pill's `card`,
-`signal` and `edge`; and `theme`: the `choice`, the variant `in_effect` and the `name` (the id) of the theme in effect, the `folder` the theme files are read from, the ids of the themes that are `available`, each file that was `refused` with its reason, and the detector's `findings` for the theme in effect. `--until` re-evaluates an expression every 50 ms
+`signal` and `edge`; and `theme`: the `choice`, the variant `in_effect` and the `name` (the id) of the theme in effect, the `folder` the theme files are read from, the ids of the themes that are `available`, each file that was `refused` with its reason, and the detector's `findings` for the theme in effect. `--until` re-evaluates an expression every 50 ms, and keeps polling while a
+board switch has no board on screen; only a plain snapshot, or the deadline,
+answers `app_not_ready` then
 (`DevUntil`). The scenario suites are `scripts/qa/smoke.mjs` (`make qa`) and
 `scripts/qa/quit.mjs` (`make qa-quit`), and `scripts/qa/resume.mjs`
 (`make qa-resume`), which kills the dev daemon by the pid that holds its socket.

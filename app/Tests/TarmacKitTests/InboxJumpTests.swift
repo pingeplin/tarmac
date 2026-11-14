@@ -8,15 +8,12 @@ final class InboxJumpTests: XCTestCase {
         Inbox.Item(kind: .bell, termID: "T", boardID: board, atMs: 0, proc: nil, cwd: nil, text: nil, read: false)
     }
 
-    func testS6AnItemOnTheActiveBoardFlies() {
-        XCTAssertEqual(InboxJump.plan(item(board: "board-0"), activeBoardID: "board-0"), .fly(termID: "T"))
+    func testS6AnItemOnTheActiveBoardSwitchesNowhere() {
+        XCTAssertNil(InboxJump.switchTarget(item(board: "board-0"), activeBoardID: "board-0"))
     }
 
-    func testS6AnItemOnAnotherBoardSwitchesThenFlies() {
-        XCTAssertEqual(
-            InboxJump.plan(item(board: "board-1"), activeBoardID: "board-0"),
-            .switchThenFly(boardID: "board-1", termID: "T")
-        )
+    func testS6AnItemOnAnotherBoardSwitchesToItsBoard() {
+        XCTAssertEqual(InboxJump.switchTarget(item(board: "board-1"), activeBoardID: "board-0"), "board-1")
     }
 
     func testS6ALiveCardIsPrimedAndADeadOneSelected() {

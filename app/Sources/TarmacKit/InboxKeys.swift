@@ -30,12 +30,14 @@ public enum InboxKeys {
     /// filter and clear the selection: `reselect` then picks the new top row.
     public static func handle(_ press: KeyPress, state: State, rows: [Inbox.ItemID]) -> (state: State, effect: Effect) {
         var next = state
+        // A ⌘ chord the panel has no use for is the menu's, ⌘↑ and ⌘Esc too.
+        guard !press.command else { return (state, .leaveForMenu) }
         switch press.named {
         case .escape:
             return (state, .close)
-        case .enter where !press.command:
+        case .enter:
             return (state, state.selected.map(Effect.jump) ?? .none)
-        case .backspace where !press.command:
+        case .backspace:
             return (state, state.selected.map(Effect.remove) ?? .none)
         case .arrowUp, .arrowDown:
             let step = press.named == .arrowUp ? -1 : 1
@@ -45,12 +47,12 @@ public enum InboxKeys {
             }
             next.selected = rows[max(0, min(rows.count - 1, index + step))]
             return (next, .none)
-        case .tab where !press.command:
+        case .tab:
             next.filter = press.shift ? state.filter.previous : state.filter.next
             next.selected = nil
             return (next, .none)
         default:
-            return (state, press.command ? .leaveForMenu : .none)
+            return (state, .none)
         }
     }
 

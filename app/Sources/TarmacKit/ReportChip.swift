@@ -64,9 +64,15 @@ public enum ReportChip {
 
     private static let title = "report"
 
+    /// A report placed in time: `report · during <proc>`, or `report`. The
+    /// chip's tool tip and an inbox row both read it.
+    public static func heading(proc: String?) -> String {
+        proc.map { "\(title) · during \($0)" } ?? title
+    }
+
     public static func model(report: TermReport, nowMs: UInt64) -> Model {
         let elapsed = nowMs >= report.atMs ? nowMs - report.atMs : 0
-        let heading = report.proc.map { "\(title) · during \($0)" } ?? title
+        let heading = heading(proc: report.proc)
         return Model(
             text: "\(title) · \(ChromeText.reportAge(elapsedMs: elapsed))",
             tone: report.kind,

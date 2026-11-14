@@ -70,6 +70,10 @@ final class InboxKeysTests: XCTestCase {
         XCTAssertEqual(typed.1, InboxKeys.Effect.none)
         XCTAssertEqual(typed.0, state)
         XCTAssertEqual(handle(letter("v", command), state, [a]).1, .leaveForMenu)
+        for press in [key(126, command), key(125, command), key(53, command)] {
+            XCTAssertEqual(handle(press, state, [a, b]).1, .leaveForMenu, "\(press.keyCode)")
+            XCTAssertEqual(handle(press, state, [a, b]).0, state)
+        }
     }
 
     func testS8WithNoRowsReturnAndBackspaceDoNothing() {

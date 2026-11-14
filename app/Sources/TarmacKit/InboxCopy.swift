@@ -19,10 +19,16 @@ public enum InboxCopy {
 
     public static func title(_ item: Inbox.Item) -> String {
         switch item.kind {
-        case .report: during("report", item.proc)
+        case .report: ReportChip.heading(proc: item.proc)
         case .bell: during("bell", item.proc)
         case .exit(let code): TermExitToast.title(code: code) ?? "exit"
         }
+    }
+
+    /// The row's tool tip: the title, the whole text as it was sent, quoted,
+    /// and the place.
+    public static func toolTip(_ item: Inbox.Item, place: String) -> String {
+        ([title(item)] + [item.text.map { "“\($0)”" }].compactMap { $0 } + [place]).joined(separator: "\n")
     }
 
     public static func quote(_ item: Inbox.Item) -> String? {

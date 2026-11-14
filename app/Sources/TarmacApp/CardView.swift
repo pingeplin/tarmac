@@ -378,11 +378,10 @@ final class CardView: NSView, ThemeFollowing {
 
     /// The terminal's current report, as its header chip shows it.
     private(set) var report: TermReport?
-    /// The terminal's exit item in the inbox is unread (2611.0013).
-    var exitUnread = false
 
-    /// What the minimap and the offscreen hints show for this card.
-    var signal: OffscreenHintLayout.Signal? {
+    /// What the minimap and the offscreen hints show for this card, given
+    /// whether its inbox exit row is unread (2611.0013).
+    func signal(exitUnread: Bool) -> OffscreenHintLayout.Signal? {
         OffscreenHintLayout.signal(report: report, bellLit: bellActive, exitUnread: exitUnread, live: liveActive)
     }
 

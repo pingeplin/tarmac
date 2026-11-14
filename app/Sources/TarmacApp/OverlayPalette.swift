@@ -31,8 +31,9 @@ enum OverlayPalette {
     }
 
     /// A signal's colour: a blocked report and a bell want the user, a done
-    /// report is good news, an exit is an error.
-    private static func tone(_ signal: OffscreenHintLayout.Signal) -> NSColor {
+    /// report is good news, an exit is an error. The pills, the minimap and the
+    /// report and inbox chips all read it here.
+    static func tone(_ signal: OffscreenHintLayout.Signal) -> NSColor {
         switch signal {
         case .blocked, .bell: return Theme.amber
         case .done: return Theme.ok

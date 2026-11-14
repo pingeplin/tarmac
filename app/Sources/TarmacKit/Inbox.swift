@@ -25,6 +25,16 @@ public struct Inbox: Equatable, Sendable {
         case bell
         case exit(code: Int?)
 
+        /// The pill signal the kind shows as, and so its colour.
+        public var signal: OffscreenHintLayout.Signal {
+            switch self {
+            case .report(.blocked): .blocked
+            case .report(.done): .done
+            case .bell: .bell
+            case .exit: .exit
+            }
+        }
+
         public var family: Family {
             switch self {
             case .report: .report
@@ -108,70 +118,91 @@ public struct Inbox: Equatable, Sendable {
 
     public init() {}
 
+    // Every operation returns whether the store changed, so the app redraws
+    // only then.
+
     /// A `term_report` frame: with a kind it puts the terminal's report item
     /// on the frame's board, else `fallbackBoard` (an older daemon), else
     /// nowhere; with none it removes the item.
-    public mutating func apply(_ frame: TermReportFrame, fallbackBoard: String?) {
-        let id = ItemID(termID: frame.termID, family: .report)
-        guard let report = frame.report else {
-            entries[id] = nil
-            return
-        }
-        guard let boardID = frame.boardID ?? fallbackBoard else { return }
-        put(Item(
+    @discardableResult
+    public mutating func apply(_ frame: TermReportFrame, fallbackBoard: String?) -> Bool {
+        guard let report = frame.report else { return reportEnded(termID: frame.termID) }
+        guard let boardID = frame.boardID ?? fallbackBoard else { return false }
+        return put(Item(
             kind: .report(report.kind), termID: frame.termID, boardID: boardID, atMs: report.atMs, proc: report.proc,
             cwd: frame.cwd, text: report.text, read: report.read
         ))
     }
 
-    public mutating func bell(termID: String, boardID: String, proc: String?, cwd: String?, nowMs: UInt64) {
+    @discardableResult
+    public mutating func bell(termID: String, boardID: String, proc: String?, cwd: String?, nowMs: UInt64) -> Bool {
         put(Item(kind: .bell, termID: termID, boardID: boardID, atMs: nowMs, proc: proc, cwd: cwd, text: nil, read: false))
     }
 
     /// The terminal's report ended with no frame: it was lost, or it exited.
-    public mutating func reportEnded(termID: String) {
-        entries[ItemID(termID: termID, family: .report)] = nil
+    @discardableResult
+    public mutating func reportEnded(termID: String) -> Bool {
+        entries.removeValue(forKey: ItemID(termID: termID, family: .report)) != nil
     }
 
     /// Every `exit` frame ends the report; one that `TermExitToast` names
     /// also puts an exit item.
-    public mutating func exit(termID: String, boardID: String, code: Int?, proc: String?, cwd: String?, nowMs: UInt64) {
-        reportEnded(termID: termID)
-        guard TermExitToast.title(code: code) != nil else { return }
-        put(Item(kind: .exit(code: code), termID: termID, boardID: boardID, atMs: nowMs, proc: proc, cwd: cwd, text: nil, read: false))
+    @discardableResult
+    public mutating func exit(
+        termID: String, boardID: String, code: Int?, proc: String?, cwd: String?, nowMs: UInt64
+    ) -> Bool {
+        let ended = reportEnded(termID: termID)
+        guard TermExitToast.title(code: code) != nil else { return ended }
+        let item = Item(
+            kind: .exit(code: code), termID: termID, boardID: boardID, atMs: nowMs, proc: proc, cwd: cwd, text: nil,
+            read: false
+        )
+        return put(item) || ended
     }
 
     /// The user touched the terminal: its bell and exit items are read. A
     /// report is read only by the daemon's word.
-    public mutating func touch(termID: String) {
+    @discardableResult
+    public mutating func touch(termID: String) -> Bool {
+        var changed = false
         for family in [Family.bell, .exit] {
-            entries[ItemID(termID: termID, family: family)]?.item.read = true
+            let id = ItemID(termID: termID, family: family)
+            guard entries[id]?.item.read == false else { continue }
+            entries[id]?.item.read = true
+            changed = true
         }
+        return changed
     }
 
-    public mutating func removeTerm(termID: String) {
+    /// The card went: its rows go, and nothing it sends later makes one —
+    /// the daemon's `exit` for a ⌘W comes after the card is gone. Term ids
+    /// are never reused, so what else is kept for it goes too.
+    @discardableResult
+    public mutating func removeTerm(termID: String) -> Bool {
         removed.insert(termID)
-        entries = entries.filter { $0.key.termID != termID }
-    }
-
-    public mutating func removeBoard(boardID: String) {
-        entries = entries.filter { $0.value.item.boardID != boardID }
+        successors[termID] = nil
+        gone.remove(termID)
+        dismissed = dismissed.filter { $0.key.termID != termID }
+        return keepEntries { $0.key.termID != termID }
     }
 
     /// Every board there is: an item of any other board goes.
-    public mutating func keepBoards(_ ids: Set<String>) {
-        entries = entries.filter { ids.contains($0.value.item.boardID) }
+    @discardableResult
+    public mutating func keepBoards(_ ids: Set<String>) -> Bool {
+        keepEntries { ids.contains($0.value.item.boardID) }
     }
 
     /// Reports come back with the daemon's replay; dismissals stay.
-    public mutating func lostConnection() {
-        entries = entries.filter { $0.key.family != .report }
+    @discardableResult
+    public mutating func lostConnection() -> Bool {
+        keepEntries { $0.key.family != .report }
     }
 
     /// A board was built for the first time, with the terminal `cards` and the
     /// cold spawns that replaced dead terminals. A bell or exit item whose
     /// terminal has neither a card nor a successor there has nothing to land on.
-    public mutating func boardBuilt(boardID: String, cards: Set<String>, successors: [String: String]) {
+    @discardableResult
+    public mutating func boardBuilt(boardID: String, cards: Set<String>, successors: [String: String]) -> Bool {
         self.successors.merge(successors) { _, new in new }
         let orphans = entries.values.map(\.item).filter {
             $0.boardID == boardID && $0.kind.family != .report && !cards.contains($0.termID)
@@ -181,6 +212,7 @@ public struct Inbox: Equatable, Sendable {
             gone.insert(item.termID)
             entries[item.id] = nil
         }
+        return !orphans.isEmpty
     }
 
     /// The terminal a jump to `termID`'s item lands on: its successor, if a
@@ -190,16 +222,32 @@ public struct Inbox: Equatable, Sendable {
         return gone.contains(termID) ? nil : termID
     }
 
-    public mutating func dismiss(_ id: ItemID) {
-        guard let entry = entries.removeValue(forKey: id) else { return }
+    /// Hides the item until a newer `atMs` for it comes.
+    @discardableResult
+    public mutating func dismiss(_ id: ItemID) -> Bool {
+        guard let entry = entries.removeValue(forKey: id) else { return false }
         dismissed[id] = entry.item.atMs
+        return true
+    }
+
+    /// Takes the item out, hiding nothing: a jump whose card went (S36).
+    @discardableResult
+    public mutating func remove(_ id: ItemID) -> Bool {
+        entries.removeValue(forKey: id) != nil
     }
 
     /// Dismisses the read items that `filter` shows.
-    public mutating func clearRead(_ filter: Filter) {
+    @discardableResult
+    public mutating func clearRead(_ filter: Filter) -> Bool {
+        var changed = false
         for item in items(filter) where item.read {
-            dismiss(item.id)
+            changed = dismiss(item.id) || changed
         }
+        return changed
+    }
+
+    public func item(_ id: ItemID) -> Item? {
+        entries[id]?.item
     }
 
     /// Newest first; on a tie of `atMs`, the item put later first.
@@ -224,20 +272,25 @@ public struct Inbox: Equatable, Sendable {
 
     /// An item with the `atMs` it already has keeps its place, so a report
     /// marked read does not move.
-    private mutating func put(_ item: Item) {
+    private mutating func put(_ item: Item) -> Bool {
         let id = item.id
-        guard !removed.contains(item.termID) else { return }
-        if dismissed[id] == item.atMs {
-            entries[id] = nil
-            return
-        }
+        guard !removed.contains(item.termID) else { return false }
+        if dismissed[id] == item.atMs { return entries.removeValue(forKey: id) != nil }
         if let entry = entries[id], entry.item.atMs == item.atMs {
+            guard entry.item != item else { return false }
             entries[id]?.item = item
-            return
+            return true
         }
         entries[id] = Entry(item: item, seq: nextSeq)
         nextSeq += 1
         trim()
+        return true
+    }
+
+    private mutating func keepEntries(_ keep: ((key: ItemID, value: Entry)) -> Bool) -> Bool {
+        let before = entries.count
+        entries = entries.filter(keep)
+        return entries.count != before
     }
 
     private mutating func trim() {

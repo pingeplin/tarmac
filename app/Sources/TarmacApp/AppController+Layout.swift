@@ -109,11 +109,11 @@ extension AppController {
         // Before `finishArrive` takes a pending jump: an exit row of a
         // terminal cold-spawned anew lands on the shell that succeeds it.
         let successors = plan.terms.compactMap { term in term.spawn?.succeeds.map { ($0, term.termID) } }
-        inbox.boardBuilt(
+        let built = inbox.boardBuilt(
             boardID: board.boardID, cards: Set(plan.terms.map(\.termID)),
             successors: Dictionary(successors, uniquingKeysWith: { first, _ in first })
         )
-        inboxChanged()
+        if built { inboxChanged() }
 
         board.docOwner = [:]
         for doc in docs {
@@ -191,6 +191,9 @@ extension AppController {
             guard let s = board.sessions[termID] else { continue }
             holdOpen(s, on: board)
         }
+        // A lost terminal sends no `exit`, so its report ends here.
+        let ended = Set(termIDs.filter { inbox.reportEnded(termID: $0) })
+        if !ended.isEmpty { inboxChanged(ended) }
         board.reassignPrime()
         updatePrimacy(on: board)
         persistLayout(for: board)

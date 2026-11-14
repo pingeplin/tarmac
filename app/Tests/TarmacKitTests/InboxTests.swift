@@ -243,7 +243,7 @@ final class InboxTests: XCTestCase {
         inbox.removeTerm(termID: "T")
         XCTAssertEqual(ids(inbox), [id("U", .bell)])
         put(&inbox, report("V", at: 5, board: "board-1"))
-        inbox.removeBoard(boardID: "board-1")
+        inbox.keepBoards(["board-0"])
         XCTAssertEqual(ids(inbox), [id("U", .bell)])
     }
 
@@ -258,6 +258,44 @@ final class InboxTests: XCTestCase {
         put(&inbox, report("T", at: 4))
         XCTAssertEqual(inbox.items(.all), [])
         XCTAssertEqual(inbox.unreadCount, 0)
+    }
+
+    /// S36: a jump to a card that went removes its row; unlike a dismissal,
+    /// a later frame with the same `atMs` shows it again.
+    func testRemoveTakesTheItemOutWithoutHidingItsReplay() {
+        var inbox = Inbox()
+        put(&inbox, report("T", at: 10))
+        XCTAssertTrue(inbox.remove(id("T", .report)))
+        XCTAssertEqual(inbox.items(.all), [])
+        XCTAssertFalse(inbox.remove(id("T", .report)))
+        put(&inbox, report("T", at: 10))
+        XCTAssertEqual(ids(inbox), [id("T", .report)])
+    }
+
+    func testAnItemIsFoundByItsID() {
+        var inbox = Inbox()
+        bell(&inbox, "T", at: 5)
+        XCTAssertEqual(inbox.item(id("T", .bell))?.atMs, 5)
+        XCTAssertNil(inbox.item(id("T", .exit)))
+    }
+
+    /// Each operation says whether it changed anything, so the app redraws
+    /// only then.
+    func testTheOperationsSayWhetherTheyChangedAnything() {
+        var inbox = Inbox()
+        XCTAssertFalse(inbox.touch(termID: "T"))
+        XCTAssertTrue(inbox.bell(termID: "T", boardID: "b", proc: nil, cwd: nil, nowMs: 1))
+        XCTAssertTrue(inbox.touch(termID: "T"))
+        XCTAssertFalse(inbox.touch(termID: "T"))
+        XCTAssertFalse(inbox.apply(report("U", at: 1, board: nil), fallbackBoard: nil))
+        XCTAssertTrue(inbox.apply(report("U", at: 1), fallbackBoard: nil))
+        XCTAssertFalse(inbox.apply(report("U", at: 1), fallbackBoard: nil))
+        XCTAssertFalse(inbox.reportEnded(termID: "V"))
+        XCTAssertTrue(inbox.reportEnded(termID: "U"))
+        XCTAssertFalse(inbox.exit(termID: "V", boardID: "b", code: 0, proc: nil, cwd: nil, nowMs: 2))
+        XCTAssertTrue(inbox.exit(termID: "V", boardID: "b", code: 1, proc: nil, cwd: nil, nowMs: 2))
+        XCTAssertTrue(inbox.removeTerm(termID: "V"))
+        XCTAssertFalse(inbox.bell(termID: "V", boardID: "b", proc: nil, cwd: nil, nowMs: 3))
     }
 
     func testS22OverTheCapTheOldestReadItemGoesFirst() {

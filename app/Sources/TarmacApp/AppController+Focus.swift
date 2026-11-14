@@ -44,10 +44,9 @@ extension AppController {
         guard board.card(id) != nil else { return }
         board.select(id)
         board.raise(id)
-        if case let .term(termID) = id { touchInbox(termID: termID) }
+        if case let .term(termID) = id { clearBell(termID: termID) }
         if case let .term(termID) = id, sessions[termID]?.live == true {
             setPrime(termID)
-            clearBell(termID: termID)
         } else if case let .term(termID) = id, let s = sessions[termID] {
             // A dead card is never prime, but it holds the keys, so that
             // Return reaches its reopen offer (2611.0011, D10).

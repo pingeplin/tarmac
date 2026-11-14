@@ -16,6 +16,7 @@ final class InboxPanelView: KeyHoldingView, FontFollowing, ThemeFollowing {
         let place: String
         let age: String
         let read: Bool
+        let toolTip: String
     }
 
     struct Model: Equatable {
@@ -39,10 +40,9 @@ final class InboxPanelView: KeyHoldingView, FontFollowing, ThemeFollowing {
     }
 
     @MainActor
-    fileprivate enum Font {
+    private enum Font {
         static var heading: NSFont { Theme.mono(10) }
         static var count: NSFont { Theme.mono(10, weight: .semibold) }
-        static var chip: NSFont { Theme.mono(10) }
         static var empty: NSFont { Theme.mono(10.5) }
         static var footer: NSFont { Theme.mono(10) }
     }
@@ -50,18 +50,18 @@ final class InboxPanelView: KeyHoldingView, FontFollowing, ThemeFollowing {
     private let edge = NSView()
     private let header = FlippedColumnView()
     private let headerRule = NSView()
-    private let heading = InboxLabel()
-    private let count = InboxLabel()
-    private let filters = Inbox.Filter.allCases.map { InboxButton(InboxCopy.filterName($0)) }
-    private let clearRead = InboxButton("clear all read")
+    private let heading = OverlayLabel()
+    private let count = OverlayLabel()
+    private let filters = Inbox.Filter.allCases.map { InboxFilterButton(InboxCopy.filterName($0)) }
+    private let clearRead = InboxFilterButton("clear all read")
     private let scroll = NSScrollView()
     private let rowsDoc = FlippedColumnView()
-    private let emptyLabel = InboxLabel()
+    private let emptyLabel = OverlayLabel()
     private let footer = FlippedColumnView()
     private let footerRule = NSView()
-    private let footerLabel = InboxLabel()
+    private let footerLabel = OverlayLabel()
     private var rowViews: [InboxRowView] = []
-    private var model = Model(unread: 0, filter: .all, rows: [], selected: nil)
+    private var model: Model?
 
     override var isFlipped: Bool { true }
 
@@ -101,7 +101,7 @@ final class InboxPanelView: KeyHoldingView, FontFollowing, ThemeFollowing {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     func fontsChanged() {
-        render(model)
+        redraw()
     }
 
     func themeChanged() {
@@ -109,11 +109,19 @@ final class InboxPanelView: KeyHoldingView, FontFollowing, ThemeFollowing {
         edge.layer?.backgroundColor = Theme.line.cgColor
         for bar in [header, footer] { bar.layer?.backgroundColor = Theme.bg1.cgColor }
         for rule in [headerRule, footerRule] { rule.layer?.backgroundColor = Theme.lineSoft.cgColor }
-        render(model)
+        redraw()
     }
 
+    /// A model like the one shown draws nothing again.
     func render(_ model: Model) {
+        guard model != self.model else { return }
         self.model = model
+        redraw()
+    }
+
+    /// Draws the model again: a font or a theme changed what it looks like.
+    private func redraw() {
+        guard let model else { return }
         heading.attributedStringValue = NSAttributedString(
             string: "inbox", attributes: [.font: Font.heading, .foregroundColor: Theme.faint, .kern: 0.8]
         )
@@ -132,13 +140,16 @@ final class InboxPanelView: KeyHoldingView, FontFollowing, ThemeFollowing {
             string: InboxCopy.footer, attributes: [.font: Font.footer, .foregroundColor: Theme.faint]
         )
 
-        for view in rowViews { view.removeFromSuperview() }
-        rowViews = model.rows.map { row in
+        // Row views are kept and given new rows; only the count changes.
+        while rowViews.count > model.rows.count { rowViews.removeLast().removeFromSuperview() }
+        while rowViews.count < model.rows.count {
             let view = InboxRowView()
+            rowsDoc.addSubview(view)
+            rowViews.append(view)
+        }
+        for (view, row) in zip(rowViews, model.rows) {
             view.configure(row, selected: row.id == model.selected)
             view.onClick = { [weak self] in self?.onPick?(row.id) }
-            rowsDoc.addSubview(view)
-            return view
         }
         emptyLabel.isHidden = !model.rows.isEmpty
         needsLayout = true
@@ -158,7 +169,7 @@ final class InboxPanelView: KeyHoldingView, FontFollowing, ThemeFollowing {
         let clearSize = clearRead.fittingSize
         let line = max(headingSize.height, clearSize.height)
         heading.frame = NSRect(
-            x: Metric.padX, y: Metric.padY + ((line - headingSize.height) / 2).rounded(),
+            x: Metric.padX, y: line.centered(headingSize.height, top: Metric.padY),
             width: headingSize.width, height: headingSize.height
         )
         let countSize = count.fittedSize
@@ -207,212 +218,4 @@ final class InboxPanelView: KeyHoldingView, FontFollowing, ThemeFollowing {
             width: emptySize.width, height: emptySize.height
         )
     }
-}
-
-/// One item: its kind tag, title and age; the quote of a report; its place.
-/// A read row's text goes faint and its tag keeps the kind's colour on its
-/// border; nothing is dimmed by transparency.
-@MainActor
-private final class InboxRowView: NSView {
-    var onClick: (() -> Void)?
-    private(set) var selected = false
-
-    private enum Metric {
-        static let padX: CGFloat = 14
-        static let padY: CGFloat = 8
-        static let lineGap: CGFloat = 3
-        static let gap: CGFloat = 8
-    }
-
-    @MainActor
-    private enum Font {
-        static var title: NSFont { Theme.mono(11) }
-        static var quote: NSFont { Theme.mono(11) }
-        static var place: NSFont { Theme.mono(10) }
-        static var age: NSFont { Theme.mono(10) }
-    }
-
-    private let kindTag = ChipView()
-    private let title = InboxLabel()
-    private let age = InboxLabel()
-    private let quote = InboxLabel()
-    private let place = InboxLabel()
-    private var hovered = false
-    private var tracking: NSTrackingArea?
-
-    override var isFlipped: Bool { true }
-
-    init() {
-        super.init(frame: .zero)
-        wantsLayer = true
-        for label in [title, quote, place] { label.lineBreakMode = .byTruncatingTail }
-        for view in [kindTag, title, age, quote, place] { addSubview(view) }
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    func configure(_ row: InboxPanelView.Row, selected: Bool) {
-        self.selected = selected
-        paint()
-        kindTag.setTone(.inbox(row.kind, dimmed: row.read))
-        kindTag.setLabel(InboxCopy.tag(row.kind))
-        let text = row.read ? Theme.faint : Theme.text
-        title.attributedStringValue = NSAttributedString(
-            string: row.title, attributes: [.font: Font.title, .foregroundColor: text]
-        )
-        age.attributedStringValue = NSAttributedString(
-            string: row.age, attributes: [.font: Font.age, .foregroundColor: Theme.faint]
-        )
-        quote.attributedStringValue = NSAttributedString(
-            string: row.quote ?? "",
-            attributes: [.font: Font.quote, .foregroundColor: row.read ? Theme.faint : Theme.muted]
-        )
-        quote.isHidden = row.quote == nil
-        place.attributedStringValue = NSAttributedString(
-            string: row.place, attributes: [.font: Font.place, .foregroundColor: Theme.faint]
-        )
-        toolTip = ([row.title, row.quote].compactMap { $0 } + [row.place]).joined(separator: "\n")
-        needsLayout = true
-    }
-
-    func height() -> CGFloat {
-        let first = max(kindTag.intrinsicContentSize.height, title.fittedSize.height)
-        let lines = [first, quote.isHidden ? nil : quote.fittedSize.height, place.fittedSize.height].compactMap { $0 }
-        return Metric.padY * 2 + lines.reduce(0, +) + Metric.lineGap * CGFloat(lines.count - 1)
-    }
-
-    private func paint() {
-        layer?.backgroundColor = (selected || hovered ? Theme.bg3 : NSColor.clear).cgColor
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        kindTag.apply(CardScale(zoom: 1, backing: window?.backingScaleFactor ?? 2))
-    }
-
-    override func layout() {
-        super.layout()
-        let width = bounds.width
-        let tagSize = kindTag.intrinsicContentSize
-        let titleSize = title.fittedSize
-        let first = max(tagSize.height, titleSize.height)
-        kindTag.frame = NSRect(
-            x: Metric.padX, y: Metric.padY + ((first - tagSize.height) / 2).rounded(),
-            width: tagSize.width, height: tagSize.height
-        )
-        let ageSize = age.fittedSize
-        age.frame = NSRect(
-            x: width - Metric.padX - ageSize.width, y: Metric.padY + ((first - ageSize.height) / 2).rounded(),
-            width: ageSize.width, height: ageSize.height
-        )
-        let titleX = kindTag.frame.maxX + Metric.gap
-        title.frame = NSRect(
-            x: titleX, y: Metric.padY + ((first - titleSize.height) / 2).rounded(),
-            width: max(0, min(titleSize.width, age.frame.minX - Metric.gap - titleX)), height: titleSize.height
-        )
-        var y = Metric.padY + first + Metric.lineGap
-        if !quote.isHidden {
-            let size = quote.fittedSize
-            quote.frame = NSRect(
-                x: Metric.padX, y: y, width: min(size.width, width - Metric.padX * 2), height: size.height
-            )
-            y += size.height + Metric.lineGap
-        }
-        let placeSize = place.fittedSize
-        place.frame = NSRect(
-            x: Metric.padX, y: y, width: min(placeSize.width, width - Metric.padX * 2), height: placeSize.height
-        )
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(
-            rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self
-        )
-        addTrackingArea(area)
-        tracking = area
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        hovered = true
-        paint()
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        hovered = false
-        paint()
-    }
-
-    override func mouseDown(with event: NSEvent) { onClick?() }
-
-    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
-}
-
-/// A filter chip or `clear all read`: a 1 px border and mono text, as the
-/// header chips are; the active filter takes the agent colour.
-@MainActor
-private final class InboxButton: NSView {
-    var onClick: (() -> Void)?
-    private let label = InboxLabel()
-    private let text: String
-
-    private enum Metric {
-        static let padX: CGFloat = 6
-        static let padY: CGFloat = 2
-    }
-
-    override var isFlipped: Bool { true }
-
-    init(_ text: String) {
-        self.text = text
-        super.init(frame: .zero)
-        wantsLayer = true
-        layer?.cornerRadius = 4
-        layer?.borderWidth = 1
-        addSubview(label)
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    func setActive(_ active: Bool) {
-        layer?.borderColor = (active ? Theme.agent : Theme.lineSoft).cgColor
-        label.attributedStringValue = NSAttributedString(
-            string: text,
-            attributes: [.font: InboxPanelView.Font.chip, .foregroundColor: active ? Theme.agent : Theme.muted]
-        )
-        needsLayout = true
-    }
-
-    override var fittingSize: NSSize {
-        let size = label.fittedSize
-        return NSSize(width: size.width + Metric.padX * 2, height: size.height + Metric.padY * 2)
-    }
-
-    override func layout() {
-        super.layout()
-        let size = label.fittedSize
-        label.frame = NSRect(x: Metric.padX, y: Metric.padY, width: size.width, height: size.height)
-    }
-
-    override func mouseDown(with event: NSEvent) { onClick?() }
-
-    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
-}
-
-/// A text run of the panel. Clicks go to whatever holds it.
-@MainActor
-private final class InboxLabel: NSTextField {
-    init() {
-        super.init(frame: .zero)
-        isEditable = false
-        isSelectable = false
-        isBezeled = false
-        drawsBackground = false
-        lineBreakMode = .byClipping
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
