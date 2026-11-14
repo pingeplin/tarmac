@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use tarmac_protocol::{DocEntry, Msg, ResumeRecord, TermRecord};
+use tarmac_protocol::{DocEntry, Msg, ResumeRecord, TermInfo, TermRecord};
 use tokio::sync::{Mutex, Notify, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
@@ -71,6 +71,11 @@ pub struct Daemon {
     /// before `app` (in `push`); `boards` and `terms` are never taken while
     /// it is held.
     pub reports: Mutex<Reports>,
+    /// Every frame `push` gives the app, for `tarmac events` and `wait`.
+    pub events: crate::events::Fanout,
+    /// Written in `term_ended` before the term leaves `terms`, so an id is
+    /// always live, in the ring, or unknown. Held for a read or a write only.
+    pub exits: std::sync::Mutex<crate::events::ExitRing>,
     doc_counts: Arc<DocCounts>,
     watcher: Watcher,
     /// Set by the watcher; `docs::watch_loop` waits on it.
@@ -160,6 +165,8 @@ impl Daemon {
             terms: Mutex::new(HashMap::new()),
             term_boards: Mutex::new(HashMap::new()),
             reports: Mutex::new(Reports::default()),
+            events: crate::events::Fanout::new(crate::events::EVENTS_CAPACITY),
+            exits: std::sync::Mutex::default(),
             doc_counts,
             watcher,
             wake,
@@ -518,7 +525,10 @@ impl Daemon {
     /// keeps only once the shutdown has begun (spec 2611.0011, D3, D4).
     /// Returns the board the terminal was filed under, read as its entry goes:
     /// after this the daemon no longer knows it (spec 2611.0013).
+    /// The exit is recorded first (spec 2611.0012, D4): a subscriber then
+    /// finds the id live or in the ring, never neither.
     pub async fn term_ended(&self, term_id: &str, code: Option<i64>) -> Option<BoardId> {
+        self.exits.lock().expect("exits lock").record(term_id, code);
         if self.terms.lock().await.remove(term_id).is_none() {
             tracing::warn!("term {term_id} missing from registry at exit");
         }
@@ -721,6 +731,40 @@ impl Daemon {
         self.boards.lock().await.board_list_msg(&live)
     }
 
+    /// The live terminals for `tarmac terms` (spec 2611.0012), in board
+    /// order, then by id. Each one's process name and cwd are read at the same
+    /// time, the cwd on the gate, so the list takes about one gate limit, not
+    /// one for each terminal. No lock is held while they are read.
+    pub async fn terms_list(&self) -> Vec<TermInfo> {
+        let by_board = self.live_terms_by_board().await;
+        let order: Vec<BoardId> = self.boards.lock().await.iter().map(|b| b.id.clone()).collect();
+        let place = |board: &BoardId| order.iter().position(|b| b == board).unwrap_or(usize::MAX);
+        let mut rows: Vec<TermInfo> = by_board
+            .into_iter()
+            .flat_map(|(board_id, ids)| ids.into_iter().map(move |term_id| TermInfo { term_id, board_id: board_id.clone(), cwd: None, proc: None }))
+            .collect();
+        rows.sort_by(|a, b| (place(&a.board_id), &a.term_id).cmp(&(place(&b.board_id), &b.term_id)));
+        let handles: Vec<Option<Arc<TermHandle>>> = {
+            let terms = self.terms.lock().await;
+            rows.iter().map(|row| terms.get(&row.term_id).cloned()).collect()
+        };
+        let mut reads = tokio::task::JoinSet::new();
+        for (i, handle) in handles.into_iter().enumerate() {
+            let (Some(handle), gate) = (handle, self.gate.clone()) else { continue };
+            reads.spawn(async move {
+                let Some(pid) = handle.foreground_pid() else { return (i, None, None) };
+                let name = proc::process_name(pid);
+                (i, gate.pid_cwd(pid).await.ok().flatten(), name)
+            });
+        }
+        while let Some(read) = reads.join_next().await {
+            if let Ok((i, cwd, name)) = read {
+                (rows[i].cwd, rows[i].proc) = (cwd, name);
+            }
+        }
+        rows
+    }
+
     /// The live term_ids per board (term_boards ∩ terms: an entry only counts
     /// while its term is still in `terms`). Locks `terms`, then `term_boards`,
     /// each released before the next, so it cannot deadlock against the pump's
@@ -739,7 +783,9 @@ impl Daemon {
 
     /// Pushes to the connected app. False when there is none, or it went
     /// away: the frame is dropped.
+    /// A subscriber gets it too, but is not an app: the return is the app's.
     pub async fn push(&self, msg: Msg) -> bool {
+        self.events.publish(&msg);
         let tx = self.app.lock().await.as_ref().map(|s| s.tx.clone());
         match tx {
             Some(tx) => tx.send(msg).await.is_ok(),
