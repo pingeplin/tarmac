@@ -64,6 +64,10 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
             vp.cy = world.y
             self.board.setViewport(vp, commit: true)
         }
+        toasts.onChange = { [weak self] in
+            guard let self else { return }
+            self.refreshWayfinding(self.board.viewport)
+        }
         // Refresh the chrome off the live viewport / card set.
         wireBoardCallbacks(board)
         zoomControl.setZoom(board.viewport.zoom)
@@ -151,9 +155,18 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
         // screen, and the pills keep to what it leaves (2611.0013, D12).
         let visible = InboxPanelLayout.uncovered(board.bounds, open: !inboxPanel.isHidden)
         let hints = offscreenHintProvider?(visible) ?? []
-        placedHints = offHints.show(hints, in: visible, around: board.cards.values.map(\.frame))
+        placedHints = offHints.show(
+            hints, in: visible, around: board.cards.values.map(\.frame), clearOf: chromeOverHints
+        )
         // Only terminals signal, so a hint's id is a terminal's.
         offscreenFlyTarget = OffscreenHintLayout.flyTarget(hints).map(CardID.term)
+    }
+
+    /// The minimap and the toasts, in the board's coordinates: drawn over the
+    /// pills, so the pills keep clear of them.
+    private var chromeOverHints: [CGRect] {
+        let minimapRect = minimap.isHidden ? [] : [board.convert(minimap.frame, from: self)]
+        return minimapRect + toasts.frames.map { board.convert($0, from: toasts) }
     }
 
     /// Shows / hides the ⌘K boards switcher overlay (the controller renders its
@@ -207,6 +220,7 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
             width: Minimap.mapWidth,
             height: Minimap.mapHeight
         )
+        toasts.keepAbove = minimap.isHidden ? nil : toasts.convert(minimap.frame, from: self)
 
         // ⌘K switcher: covers the board area and leaves the status bar legible;
         // the panel centers itself within.

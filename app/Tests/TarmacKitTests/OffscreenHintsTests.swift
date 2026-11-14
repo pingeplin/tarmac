@@ -113,17 +113,21 @@ final class OffscreenHintLayoutTests: XCTestCase {
     private let view = CGRect(x: 0, y: 0, width: 1000, height: 800)
     private let size = CGSize(width: 80, height: 24)
 
-    private func options(obstacles: [CGRect] = []) -> Layout.Options {
+    private func options(obstacles: [CGRect] = [], chrome: [CGRect] = []) -> Layout.Options {
         let size = size
-        return Layout.Options(edgeInset: 18, edgeMargin: 10, stackGap: 8, pillSize: { _ in size }, obstacles: obstacles)
+        return Layout.Options(
+            edgeInset: 18, edgeMargin: 10, stackGap: 8, pillSize: { _ in size }, obstacles: obstacles, chrome: chrome
+        )
     }
 
     private func rect(of pill: Layout.PlacedPill) -> CGRect {
         CGRect(x: pill.left, y: pill.top, width: size.width, height: size.height)
     }
 
-    private func stack(_ hints: [Layout.Hint], obstacles: [CGRect] = []) -> [Layout.PlacedPill] {
-        Layout.stackPills(hints, in: view, options: options(obstacles: obstacles))
+    private func stack(
+        _ hints: [Layout.Hint], obstacles: [CGRect] = [], chrome: [CGRect] = []
+    ) -> [Layout.PlacedPill] {
+        Layout.stackPills(hints, in: view, options: options(obstacles: obstacles, chrome: chrome))
     }
 
     func testStackPillsOfNoHintsIsEmpty() {
@@ -421,5 +425,108 @@ final class OffscreenHintLayoutTests: XCTestCase {
         XCTAssertEqual(Array(tops[0..<12]), (0..<12).map { 388 + 32 * CGFloat($0) })
         XCTAssertEqual(tops[12], 908, "obstacle.maxY + stackGap")
         XCTAssertEqual(tops[13], 940, "one stackGap past the sibling")
+    }
+
+    // MARK: - the minimap and the toasts (#365)
+
+    /// The minimap over this view: 132×88, 12 in from the right and the bottom.
+    private let minimap = CGRect(x: 856, y: 700, width: 132, height: 88)
+    /// A toast a gap above it, in the same right-hand column.
+    private let toast = CGRect(x: 680, y: 650, width: 296, height: 42)
+
+    private func assertClear(
+        _ pills: [Layout.PlacedPill], of chrome: [CGRect], file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let rects = pills.map(rect(of:))
+        for (pill, placed) in zip(pills, rects) {
+            for rect in chrome {
+                XCTAssertFalse(
+                    Placement.rectsIntersect(placed, rect), "\(pill.cardID) is under \(rect)", file: file, line: line
+                )
+            }
+            XCTAssertTrue(view.insetBy(dx: 10, dy: 10).contains(placed), "\(pill.cardID) left the view", file: file, line: line)
+        }
+        for i in rects.indices {
+            for j in rects.indices where j > i {
+                XCTAssertFalse(
+                    Placement.rectsIntersect(rects[i], rects[j]), "pills \(i) and \(j) overlap", file: file, line: line
+                )
+            }
+        }
+    }
+
+    /// Naive placement would put this pill at {880, 766}, under the minimap.
+    func testABottomPillUnderTheMinimapShiftsLeftOfIt() throws {
+        let pill = try XCTUnwrap(stack([hint("b", CGPoint(x: 920, y: 2000), .live, 0)], chrome: [minimap]).first)
+        XCTAssertEqual(pill.edge, .bottom)
+        XCTAssertEqual(pill.left, 856 - 8 - 80, "minimap.minX - stackGap - width")
+        XCTAssertEqual(pill.top, 766)
+        XCTAssertFalse(pill.occluded)
+    }
+
+    /// The card's padded span is [392, 508] and the pill wants 440: the gap to
+    /// its right (508) is nearer than the one to its left (312), and the left wins.
+    func testABottomPillThatMustMovePrefersTheLeft() throws {
+        let card = CGRect(x: 400, y: 700, width: 100, height: 200)
+        let pill = try XCTUnwrap(stack([hint("b", CGPoint(x: 480, y: 2000), .live, 0)], obstacles: [card]).first)
+        XCTAssertEqual(pill.left, 392 - 80)
+        XCTAssertFalse(pill.occluded)
+    }
+
+    /// No room to the left of the card: the nearest gap, to its right, as before.
+    func testABottomPillWithNoRoomToTheLeftTakesTheNearestGap() throws {
+        let card = CGRect(x: 0, y: 700, width: 300, height: 200)
+        let pill = try XCTUnwrap(stack([hint("b", CGPoint(x: 240, y: 2000), .live, 0)], obstacles: [card]).first)
+        XCTAssertEqual(pill.left, 308, "card.maxX + stackGap")
+    }
+
+    func testTwoBottomPillsAtTheMinimapCornerBothClearIt() {
+        let pills = stack(
+            [hint("a", CGPoint(x: 900, y: 2000), .live, 0), hint("b", CGPoint(x: 960, y: 2000), .live, 0)],
+            chrome: [minimap]
+        )
+        XCTAssertEqual(pills.count, 2)
+        assertClear(pills, of: [minimap])
+        XCTAssertEqual(pills.sorted { $0.left < $1.left }.map(\.cardID), ["a", "b"], "the order along the edge is kept")
+    }
+
+    func testTwoBottomPillsAtTheLeftCornerStayInTheView() {
+        let pills = stack(
+            [hint("a", CGPoint(x: 30, y: 2000), .live, 0), hint("b", CGPoint(x: 31, y: 2000), .live, 0)],
+            chrome: [minimap]
+        )
+        XCTAssertEqual(pills.count, 2)
+        assertClear(pills, of: [minimap])
+    }
+
+    /// The right band runs past the toast and the minimap; the pill wants 748.
+    func testARightEdgePillNearTheBottomClearsTheToastAndTheMinimap() throws {
+        let pill = try XCTUnwrap(
+            stack([hint("r", CGPoint(x: 2000, y: 760), .live, 0)], chrome: [toast, minimap]).first
+        )
+        XCTAssertEqual(pill.edge, .right)
+        XCTAssertEqual(pill.top, 650 - 8 - 24, "toast.minY - stackGap - height")
+        assertClear([pill], of: [toast, minimap])
+    }
+
+    func testTwoRightEdgePillsAtTheBottomCornerBothClearTheToastAndTheMinimap() {
+        let pills = stack(
+            [hint("a", CGPoint(x: 2000, y: 740), .live, 0), hint("b", CGPoint(x: 2000, y: 770), .live, 0)],
+            chrome: [toast, minimap]
+        )
+        XCTAssertEqual(pills.count, 2)
+        assertClear(pills, of: [toast, minimap])
+        XCTAssertEqual(pills.sorted { $0.top < $1.top }.map(\.cardID), ["a", "b"], "the order along the edge is kept")
+    }
+
+    /// The minimap and the toasts are drawn over every pill, so a pill left
+    /// under them covers no card: it is not occluded.
+    func testAPillThatCannotClearTheChromeIsNotOccluded() throws {
+        let saturating = CGRect(x: 900, y: -1000, width: 100, height: 3000)
+        let pill = try XCTUnwrap(
+            stack([hint("r", CGPoint(x: 2000, y: 400), .live, 0)], chrome: [saturating]).first
+        )
+        XCTAssertTrue(Placement.rectsIntersect(rect(of: pill), saturating))
+        XCTAssertFalse(pill.occluded)
     }
 }

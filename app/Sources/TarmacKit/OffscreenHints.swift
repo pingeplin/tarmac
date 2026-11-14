@@ -58,19 +58,25 @@ public enum OffscreenHintLayout {
         /// Every currently-visible card's view-space rect, a uniform obstacle set
         /// (no card identity) that pills are nudged clear of.
         public var obstacles: [CGRect]
+        /// The view-space rects of the chrome drawn over the pills (the minimap,
+        /// each toast). Pills keep clear of them as of a card, but a pill left
+        /// under one covers no card, so they never make a pill `occluded`.
+        public var chrome: [CGRect]
 
         public init(
             edgeInset: CGFloat,
             edgeMargin: CGFloat,
             stackGap: CGFloat,
             pillSize: @escaping (Hint) -> CGSize,
-            obstacles: [CGRect] = []
+            obstacles: [CGRect] = [],
+            chrome: [CGRect] = []
         ) {
             self.edgeInset = edgeInset
             self.edgeMargin = edgeMargin
             self.stackGap = stackGap
             self.pillSize = pillSize
             self.obstacles = obstacles
+            self.chrome = chrome
         }
     }
 
@@ -138,12 +144,12 @@ public enum OffscreenHintLayout {
     /// Projects each offscreen hint to an edge, groups by edge, sorts along the
     /// edge, greedily nudges stacked pills apart, clamps inside the view minus the
     /// margins and rounds. Hints whose center is inside the view are skipped.
+    ///
+    /// An edge is resolved from its start (left, top) forward. When that leaves
+    /// a pill under the chrome — which sits in the bottom-right corner — the edge
+    /// is resolved again from its end backward, and the pass with fewer pills
+    /// under the chrome wins.
     public static func stackPills(_ hints: [Hint], in viewRect: CGRect, options: Options) -> [PlacedPill] {
-        struct Projected {
-            let hint: Hint
-            let placement: BoardWayfinding.HintPlacement
-            let size: CGSize
-        }
         let projected = hints.compactMap { hint -> Projected? in
             guard let placement = BoardWayfinding.hintPlacement(
                 cardCenterView: hint.centerView, viewRect: viewRect, inset: options.edgeInset
@@ -158,55 +164,93 @@ public enum OffscreenHintLayout {
                 .enumerated()
                 .sorted { ($0.element.placement.along, $0.offset) < ($1.element.placement.along, $1.offset) }
                 .map(\.element)
-            let vertical = edge == .left || edge == .right
-            var lastEnd = -CGFloat.infinity
-
-            for item in group {
-                let size = item.size
-                let length = vertical ? size.height : size.width
-                let posLo = (vertical ? viewRect.minY : viewRect.minX) + options.edgeMargin
-                let posHi = (vertical ? viewRect.maxY : viewRect.maxX) - length - options.edgeMargin
-                let crossPos: CGFloat
-                switch edge {
-                case .left: crossPos = viewRect.minX + options.edgeMargin
-                case .right: crossPos = viewRect.maxX - size.width - options.edgeMargin
-                case .top: crossPos = viewRect.minY + options.edgeMargin
-                case .bottom: crossPos = viewRect.maxY - size.height - options.edgeMargin
-                }
-                let band = vertical
-                    ? CGRect(x: crossPos, y: viewRect.minY, width: size.width, height: viewRect.height)
-                    : CGRect(x: viewRect.minX, y: crossPos, width: viewRect.width, height: size.height)
-                let obstacleIntervals = options.obstacles
-                    .filter { Placement.rectsIntersect(band, $0) }
-                    .map { vertical
-                        ? Interval(lo: $0.minY - options.stackGap, hi: $0.maxY + options.stackGap)
-                        : Interval(lo: $0.minX - options.stackGap, hi: $0.maxX + options.stackGap)
-                    }
-                let desired = BoardWayfinding.clamp(item.placement.along - length / 2, posLo, posHi)
-                let pos = resolveAlongPosition(
-                    desired: desired, length: length, obstacles: obstacleIntervals,
-                    siblingFloor: lastEnd + options.stackGap, posLo: posLo, posHi: posHi
-                )
-                lastEnd = pos + length
-                let rect = CGRect(
-                    x: (vertical ? crossPos : pos).roundedHalfUp,
-                    y: (vertical ? pos : crossPos).roundedHalfUp,
-                    width: size.width,
-                    height: size.height
-                )
-                placed.append(PlacedPill(
-                    cardID: item.hint.cardID,
-                    signal: item.hint.signal,
-                    label: item.hint.label,
-                    edge: edge,
-                    arrow: edge.arrow,
-                    left: rect.minX,
-                    top: rect.minY,
-                    occluded: options.obstacles.contains { Placement.rectsIntersect(rect, $0) }
-                ))
+            let forward = place(group, on: edge, in: viewRect, options: options, backward: false)
+            guard forward.underChrome > 0 else {
+                placed += forward.pills
+                continue
             }
+            let backward = place(group, on: edge, in: viewRect, options: options, backward: true)
+            placed += (backward.underChrome < forward.underChrome ? backward : forward).pills
         }
         return placed
+    }
+
+    private struct Projected {
+        let hint: Hint
+        let placement: BoardWayfinding.HintPlacement
+        let size: CGSize
+    }
+
+    /// Places one edge's pills, sorted along it. A backward pass works in
+    /// mirrored coordinates (`x → −x` along the edge), so the sibling nudge and
+    /// the overflow run toward the edge's start; it prefers a move toward the
+    /// start too. A forward pass on the bottom edge prefers a move to the left.
+    private static func place(
+        _ group: [Projected], on edge: BoardWayfinding.Edge, in viewRect: CGRect, options: Options, backward: Bool
+    ) -> (pills: [PlacedPill], underChrome: Int) {
+        let vertical = edge == .left || edge == .right
+        let sign: CGFloat = backward ? -1 : 1
+        let prefer: Side? = backward ? .higher : (edge == .bottom ? .lower : nil)
+        var lastEnd = -CGFloat.infinity
+        var placed: [PlacedPill] = []
+        var underChrome = 0
+
+        for item in backward ? group.reversed() : group {
+            let size = item.size
+            let length = vertical ? size.height : size.width
+            let posLo = (vertical ? viewRect.minY : viewRect.minX) + options.edgeMargin
+            let posHi = (vertical ? viewRect.maxY : viewRect.maxX) - length - options.edgeMargin
+            let crossPos: CGFloat
+            switch edge {
+            case .left: crossPos = viewRect.minX + options.edgeMargin
+            case .right: crossPos = viewRect.maxX - size.width - options.edgeMargin
+            case .top: crossPos = viewRect.minY + options.edgeMargin
+            case .bottom: crossPos = viewRect.maxY - size.height - options.edgeMargin
+            }
+            let band = vertical
+                ? CGRect(x: crossPos, y: viewRect.minY, width: size.width, height: viewRect.height)
+                : CGRect(x: viewRect.minX, y: crossPos, width: viewRect.width, height: size.height)
+            let obstacleIntervals = (options.obstacles + options.chrome)
+                .filter { Placement.rectsIntersect(band, $0) }
+                .map { vertical
+                    ? Interval(lo: $0.minY - options.stackGap, hi: $0.maxY + options.stackGap)
+                    : Interval(lo: $0.minX - options.stackGap, hi: $0.maxX + options.stackGap)
+                }
+            let desired = BoardWayfinding.clamp(item.placement.along - length / 2, posLo, posHi)
+            // A mirrored start: the far end of the span, negated.
+            let mirror = { (start: CGFloat) in backward ? -(start + length) : start }
+            let resolved = resolveAlongPosition(
+                desired: mirror(desired), length: length,
+                obstacles: obstacleIntervals.map { backward ? Interval(lo: -$0.hi, hi: -$0.lo) : $0 },
+                siblingFloor: lastEnd + options.stackGap,
+                posLo: backward ? mirror(posHi) : posLo, posHi: backward ? mirror(posLo) : posHi,
+                prefer: prefer
+            )
+            lastEnd = resolved + length
+            let pos = sign * resolved - (backward ? length : 0)
+            let rect = CGRect(
+                x: (vertical ? crossPos : pos).roundedHalfUp,
+                y: (vertical ? pos : crossPos).roundedHalfUp,
+                width: size.width,
+                height: size.height
+            )
+            placed.append(PlacedPill(
+                cardID: item.hint.cardID,
+                signal: item.hint.signal,
+                label: item.hint.label,
+                edge: edge,
+                arrow: edge.arrow,
+                left: rect.minX,
+                top: rect.minY,
+                occluded: options.obstacles.contains { Placement.rectsIntersect(rect, $0) }
+            ))
+            if options.chrome.contains(where: { Placement.rectsIntersect(rect, $0) }) { underChrome += 1 }
+        }
+        return (backward ? placed.reversed() : placed, underChrome)
+    }
+
+    private enum Side {
+        case lower, higher
     }
 
     private struct Interval {
@@ -238,17 +282,19 @@ public enum OffscreenHintLayout {
     /// the pill overflow.
     ///
     /// Otherwise it searches `[max(posLo, siblingFloor), posHi]` for the free gap
-    /// (the window minus the obstacle intervals) closest to `desired`; ties favor
-    /// the later gap, matching the sibling nudge's forward-only bias. If obstacles
-    /// saturate the whole window, it falls back to the window-clamped `desired`.
-    /// A pill is always returned, never suppressed.
+    /// (the window minus the obstacle intervals) closest to `desired` — on the
+    /// `prefer` side of it first, when there is one; ties favor the later gap,
+    /// matching the sibling nudge's forward-only bias. If obstacles saturate the
+    /// whole window, it falls back to the window-clamped `desired`. A pill is
+    /// always returned, never suppressed.
     private static func resolveAlongPosition(
         desired: CGFloat,
         length: CGFloat,
         obstacles: [Interval],
         siblingFloor: CGFloat,
         posLo: CGFloat,
-        posHi: CGFloat
+        posHi: CGFloat,
+        prefer: Side?
     ) -> CGFloat {
         let lo = max(posLo, siblingFloor)
         if lo > posHi {
@@ -275,16 +321,22 @@ public enum OffscreenHintLayout {
         }
         if posHi > cursor { gaps.append(Interval(lo: cursor, hi: posHi)) }
 
-        var best: CGFloat?
-        var bestDistance = CGFloat.infinity
-        for gap in gaps where gap.hi - gap.lo >= length {
-            let candidate = BoardWayfinding.clamp(clampedDesired, gap.lo, gap.hi - length)
-            let distance = abs(candidate - clampedDesired)
-            if distance <= bestDistance {
-                bestDistance = distance
-                best = candidate
+        func nearest(where accept: (CGFloat) -> Bool) -> CGFloat? {
+            var best: CGFloat?
+            var bestDistance = CGFloat.infinity
+            for gap in gaps where gap.hi - gap.lo >= length {
+                let candidate = BoardWayfinding.clamp(clampedDesired, gap.lo, gap.hi - length)
+                let distance = abs(candidate - clampedDesired)
+                if accept(candidate), distance <= bestDistance {
+                    bestDistance = distance
+                    best = candidate
+                }
             }
+            return best
         }
-        return best ?? clampedDesired
+        let preferred = prefer.flatMap { side in
+            nearest { side == .lower ? $0 <= clampedDesired : $0 >= clampedDesired }
+        }
+        return preferred ?? nearest { _ in true } ?? clampedDesired
     }
 }
