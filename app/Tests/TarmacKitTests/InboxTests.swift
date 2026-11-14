@@ -247,6 +247,19 @@ final class InboxTests: XCTestCase {
         XCTAssertEqual(ids(inbox), [id("U", .bell)])
     }
 
+    /// ⌘W closes a terminal's card at once; the daemon's `exit` for its
+    /// SIGHUP comes after, and must not list the card the user just closed.
+    func testARemovedTerminalMakesNoItemAfterward() {
+        var inbox = Inbox()
+        bell(&inbox, "T", at: 1)
+        inbox.removeTerm(termID: "T")
+        exit(&inbox, "T", code: nil, at: 2)
+        bell(&inbox, "T", at: 3)
+        put(&inbox, report("T", at: 4))
+        XCTAssertEqual(inbox.items(.all), [])
+        XCTAssertEqual(inbox.unreadCount, 0)
+    }
+
     func testS22OverTheCapTheOldestReadItemGoesFirst() {
         var inbox = Inbox()
         bell(&inbox, "t0", at: 0)

@@ -2,7 +2,7 @@ import CoreGraphics
 import XCTest
 @testable import TarmacKit
 
-/// The overlay-level offscreen-hint logic: priority, the single ⏎-fly target,
+/// The overlay-level offscreen-hint logic: a card's signal and its rank, the single ⏎-fly target,
 /// the pill label and the per-edge greedy stacking. The edge geometry it builds
 /// on (`BoardWayfinding.hintPlacement`) is tested in `BoardWayfindingTests`.
 final class OffscreenHintLayoutTests: XCTestCase {
@@ -63,7 +63,7 @@ final class OffscreenHintLayoutTests: XCTestCase {
         XCTAssertEqual(Layout.flyTarget([hint("first", .zero, .bell, 3), hint("second", .zero, .bell, 3)]), "first")
     }
 
-    func testEqualPriorityReturnsTheFirstInArrayOrder() {
+    func testAnEqualRankAndZReturnsTheFirstInArrayOrder() {
         XCTAssertEqual(Layout.flyTarget([hint("first", .zero, .live, 5), hint("second", .zero, .live, 5)]), "first")
     }
 

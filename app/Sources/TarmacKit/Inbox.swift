@@ -102,6 +102,9 @@ public struct Inbox: Equatable, Sendable {
     private var successors: [String: String] = [:]
     /// Terminals a board's first build found with no card and no successor.
     private var gone: Set<String> = []
+    /// Terminals whose card the user closed: the daemon's `exit` for the
+    /// SIGHUP comes after, and makes no row. Term ids are never reused.
+    private var removed: Set<String> = []
 
     public init() {}
 
@@ -147,6 +150,7 @@ public struct Inbox: Equatable, Sendable {
     }
 
     public mutating func removeTerm(termID: String) {
+        removed.insert(termID)
         entries = entries.filter { $0.key.termID != termID }
     }
 
@@ -222,6 +226,7 @@ public struct Inbox: Equatable, Sendable {
     /// marked read does not move.
     private mutating func put(_ item: Item) {
         let id = item.id
+        guard !removed.contains(item.termID) else { return }
         if dismissed[id] == item.atMs {
             entries[id] = nil
             return

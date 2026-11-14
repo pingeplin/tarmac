@@ -13,6 +13,7 @@ extension AppController {
         guard id != activeBoardID, boards[id] != nil else { return }
         for termID in termIndex.terms(of: id) {
             scrollback.unmount(termID)
+            inbox.removeTerm(termID: termID)
         }
         termIndex.removeBoard(id)
         dataFiles.forget(board: id)

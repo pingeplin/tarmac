@@ -402,7 +402,8 @@ extension AppController {
     }
 
     /// ⌘W on a terminal card (`FocusedClose.decide`). The card goes at once, so
-    /// the exit the daemon reports for the SIGHUP finds no card and is ignored.
+    /// the exit the daemon reports for the SIGHUP finds no card and is ignored,
+    /// and the inbox, which forgot the terminal with its card, lists nothing.
     /// A dead card's close is sent too: the daemon deletes its record
     /// (2611.0011, D12).
     func closeTerminal(_ termID: String, replace: Bool) {
