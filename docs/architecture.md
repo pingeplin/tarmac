@@ -1563,14 +1563,15 @@ the start of its text (24 Unicode scalars, one line), an exit pill reads
 A pill keeps clear of the visible cards and of the corner chrome drawn over
 it — the zoom control, the minimap and the shown toasts
 (`OverlayStack.pillChrome`; `OffscreenHintLayout.stackPills`, issue #365): it
-moves along its edge to the nearest free gap, and on the bottom edge to the
-nearest one on its left first. An edge that still leaves a pill under the
-chrome is placed again from its far end, stacking toward its start, each pill
-starting where the first placing put it; the second placing is kept only when
-it leaves fewer pills covered, by the chrome or by a card, and pushes no more
-out of the view. A pill takes a gap only where the pills after it on its edge
-still fit before the edge's end. A pill that finds no free gap clear of the
-cards is drawn under them (#126): cards win. A pill left under the chrome but
+moves along its edge to the nearest free gap; in the first placing, a bottom
+pill tries the nearest one on its left first. An edge that still leaves a pill
+under the chrome is placed again from its far end, stacking toward its start,
+each pill starting where the first placing put it and moving to the nearest
+free gap on either side (so a bottom pill may move right); the second placing
+is kept only when it leaves fewer pills covered, by the chrome or by a card,
+and pushes no more past the view's margins. A pill that finds no free gap is
+left where it wanted to be; if that is on a card, it is drawn under the cards
+(#126): cards win. A pill left under the chrome but
 clear of every card is drawn over the cards and under the chrome.
 
 **The inbox** (spec 2611.0013, `InboxPanelView`; rules in `Inbox`,

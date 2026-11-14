@@ -38,9 +38,9 @@ public enum OffscreenHintLayout {
         public var arrow: String
         public var left: CGFloat
         public var top: CGFloat
-        /// The placed pill still overlaps a card: the edge band was saturated and
-        /// the gap search had to fall back, so the view paints it UNDER the cards
-        /// (#126). Measured on the rounded rect actually painted, against the raw
+        /// The placed pill still overlaps a card: no free gap of its edge band,
+        /// clear of the cards and the chrome, held it, so the view paints it
+        /// UNDER the cards (#126). Measured on the rounded rect actually painted, against the raw
         /// card rects rather than the stackGap-padded intervals — it means the pill
         /// covers card content, not that it sits close to one.
         public var occluded: Bool
@@ -149,8 +149,9 @@ public enum OffscreenHintLayout {
     /// An edge is resolved from its start (left, top) forward. When that leaves
     /// a pill under the chrome — the zoom control, the minimap, the toasts — the
     /// edge is resolved again from its end backward, each pill starting where the
-    /// forward pass put it. The backward pass wins only when it leaves fewer
-    /// pills covered, by the chrome or by a card, and no more outside the view.
+    /// forward pass put it, with no side preferred. The backward pass wins only
+    /// when it leaves fewer pills covered, by the chrome or by a card, and no
+    /// more pushed past the view's margins.
     public static func stackPills(_ hints: [Hint], in viewRect: CGRect, options: Options) -> [PlacedPill] {
         let projected = hints.compactMap { hint -> Projected? in
             guard let placement = BoardWayfinding.hintPlacement(
@@ -301,10 +302,11 @@ public enum OffscreenHintLayout {
     /// the pill overflow.
     ///
     /// Otherwise it searches `[max(posLo, siblingFloor), posHi]` for the free gap
-    /// (the window minus the obstacle intervals) closest to `desired` — at or
-    /// below it first, when `preferLower`; ties favor the later gap, matching
-    /// the sibling nudge's forward-only bias. If obstacles saturate the
-    /// whole window, it falls back to the window-clamped `desired`. A pill is
+    /// (the window minus the obstacle intervals, cards and chrome alike) closest
+    /// to `desired` — at or below it first, when `preferLower`; ties favor the
+    /// later gap, matching the sibling nudge's forward-only bias. If no gap holds
+    /// the pill, it falls back to the window-clamped `desired`, on whatever is
+    /// there. A pill is
     /// always returned, never suppressed.
     private static func resolveAlongPosition(
         desired: CGFloat,
