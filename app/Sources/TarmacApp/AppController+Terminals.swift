@@ -513,7 +513,7 @@ extension AppController {
                 signalAt: OffscreenHintLayout.signalAt(
                     signal,
                     reportAtMs: card.report?.atMs,
-                    bellAtMs: s.bellAt.map { UInt64($0.timeIntervalSince1970 * 1000) },
+                    bellAtMs: s.bellAt.map(WallClock.ms),
                     exitAtMs: inbox.item(Inbox.ItemID(termID: termID, family: .exit))?.atMs
                 )
             )

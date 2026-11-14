@@ -131,15 +131,8 @@ public enum OffscreenHintLayout {
     /// then the earlier hint.
     public static func shown(_ hints: [Hint]) -> [Hint] {
         guard hints.count > maxPills else { return hints }
-        let kept = Set(
-            hints.indices
-                .sorted { a, b in
-                    let (x, y) = (hints[a], hints[b])
-                    return (rank(x.signal), x.signalAt ?? 0, x.z, b) > (rank(y.signal), y.signalAt ?? 0, y.z, a)
-                }
-                .prefix(maxPills)
-        )
-        return hints.indices.filter(kept.contains).map { hints[$0] }
+        let keys = hints.indices.map { (rank(hints[$0].signal), hints[$0].signalAt ?? 0, hints[$0].z, -$0) }
+        return hints.indices.sorted { keys[$0] > keys[$1] }.prefix(maxPills).sorted().map { hints[$0] }
     }
 
     /// The time of the card's shown signal: a report's for blocked and done,

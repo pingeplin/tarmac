@@ -78,8 +78,8 @@ final class OffscreenHintLayoutTests: XCTestCase {
         Layout.Hint(cardID: cardID, centerView: .zero, signal: signal, label: cardID, z: z, signalAt: at)
     }
 
-    private func lives(_ count: Int) -> [Layout.Hint] {
-        (0..<count).map { signalled("live\($0)", .live, at: nil, z: $0) }
+    private func lives(_ count: Int, suffix: String = "", zBase: Int = 0) -> [Layout.Hint] {
+        (0..<count).map { signalled("live\($0)\(suffix)", .live, at: nil, z: zBase + $0) }
     }
 
     func testTheCapIsTen() {
@@ -91,13 +91,8 @@ final class OffscreenHintLayoutTests: XCTestCase {
         XCTAssertEqual(Layout.shown(hints), hints)
     }
 
-    func testMoreThanTenShowsExactlyTen() {
-        XCTAssertEqual(Layout.shown(lives(15)).count, 10)
-    }
-
     func testABlockedHintIsKeptOverHigherZLowerRanks() {
-        let hints = lives(10).map { var h = $0; h.z += 100; return h }
-            + [signalled("blocked", .blocked, at: 1, z: 0)]
+        let hints = lives(10, zBase: 100) + [signalled("blocked", .blocked, at: 1, z: 0)]
         let shown = Layout.shown(hints).map(\.cardID)
         XCTAssertTrue(shown.contains("blocked"))
         XCTAssertFalse(shown.contains("live0"))
@@ -129,7 +124,7 @@ final class OffscreenHintLayoutTests: XCTestCase {
     }
 
     func testTheShownHintsKeepTheirInputOrder() {
-        let hints = lives(5) + [signalled("blocked", .blocked, at: 1)] + lives(6).map { var h = $0; h.cardID += "b"; return h }
+        let hints = lives(5) + [signalled("blocked", .blocked, at: 1)] + lives(6, suffix: "b")
         XCTAssertEqual(
             Layout.shown(hints).map(\.cardID),
             ["live1", "live2", "live3", "live4", "blocked", "live1b", "live2b", "live3b", "live4b", "live5b"]
