@@ -48,7 +48,9 @@ final class DevSnapshotTests: XCTestCase {
         contentOrigin: CGPoint? = nil,
         fonts: DevSnapshot.Fonts? = nil,
         theme: DevSnapshot.Theme? = nil,
-        restoreCard: RestoreCard? = nil
+        restoreCard: RestoreCard? = nil,
+        inbox: DevSnapshot.InboxFacts = DevSnapshot.InboxFacts(),
+        hints: [DevSnapshot.Hint] = []
     ) -> Input {
         Input(
             boardID: "board-0",
@@ -66,7 +68,9 @@ final class DevSnapshotTests: XCTestCase {
                 interfaceFace: "SystemMono-Regular", documentCSS: "system-ui", documentSize: 14
             ),
             theme: theme ?? DevSnapshot.Theme(choice: .standard, inEffect: .dark, name: "breeze-dark"),
-            restoreCard: restoreCard
+            restoreCard: restoreCard,
+            inbox: inbox,
+            hints: hints
         )
     }
 
@@ -97,8 +101,8 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(
             snapshot.keys.sorted(),
             [
-                "active_element", "board_id", "cards", "content_origin", "focused_card", "fonts", "quit_guard",
-                "restore_card", "theme", "v", "viewport", "visibility",
+                "active_element", "board_id", "cards", "content_origin", "focused_card", "fonts", "hints", "inbox",
+                "quit_guard", "restore_card", "theme", "v", "viewport", "visibility",
             ]
         )
         XCTAssertEqual(snapshot["v"], 1)
@@ -848,6 +852,7 @@ final class DevSnapshotTests: XCTestCase {
                 + #""fonts":{"document":{"css":"system-ui","saved":null,"size":14},"#
                 + #""interface":{"face":"SystemMono-Regular","saved":null},"#
                 + #""terminal":{"face":"SystemMono-Regular","saved":null,"size":16}},"#
+                + #""hints":[],"inbox":{"badge":"inbox","filter":"all","items":[],"open":false,"selected":null},"#
                 + #""quit_guard":null,"restore_card":null,"#
                 + #""theme":{"available":[],"choice":"dark","findings":[],"folder":"","in_effect":"dark","#
                 + #""name":"breeze-dark","refused":[]},"v":1,"#
@@ -869,5 +874,37 @@ final class DevSnapshotTests: XCTestCase {
             ["lines": ["✓ 1 terminal back in its folder"]]
         )
         XCTAssertEqual(fields(DevSnapshot.build(input()))["restore_card"], .null)
+    }
+
+    // MARK: - 2611.0013 D18: the inbox and the pills
+
+    func testTheInboxIsItsStateAndItsItemsInListOrder() {
+        let blocked = Inbox.Item(
+            kind: .report(.blocked), termID: "T", boardID: "board-1", atMs: 2, proc: "claude", cwd: nil, text: "ok?",
+            read: false
+        )
+        let bell = Inbox.Item(kind: .bell, termID: "U", boardID: "board-0", atMs: 1, proc: nil, cwd: nil, text: nil, read: true)
+        let facts = DevSnapshot.InboxFacts(
+            open: true, unread: 1, filter: .all, selected: blocked.id, items: [blocked, bell]
+        )
+        XCTAssertEqual(
+            fields(DevSnapshot.build(input(inbox: facts)))["inbox"],
+            [
+                "open": true, "badge": "inbox · 1", "filter": "all",
+                "selected": ["kind": "blocked", "term": "T"],
+                "items": [
+                    ["kind": "blocked", "term": "T", "board": "board-1", "read": false, "title": "report · during claude"],
+                    ["kind": "bell", "term": "U", "board": "board-0", "read": true, "title": "bell"],
+                ],
+            ]
+        )
+    }
+
+    func testTheHintsAreThePillsAsPlaced() {
+        let hints = [DevSnapshot.Hint(card: "T", signal: .exit, edge: .right)]
+        XCTAssertEqual(
+            fields(DevSnapshot.build(input(hints: hints)))["hints"],
+            [["card": "T", "signal": "exit", "edge": "right"]]
+        )
     }
 }

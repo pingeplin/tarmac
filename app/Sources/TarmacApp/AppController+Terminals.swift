@@ -485,14 +485,16 @@ extension AppController {
         let visible = board.view.viewportWorldRect
         return board.sessionOrder.compactMap { termID in
             guard let s = board.sessions[termID], let card = board.view.card(.term(termID)),
-                  let signal = card.signal.wayfinding else { return nil }
+                  let signal = card.signal else { return nil }
             let center = CGPoint(x: card.worldFrame.rect.midX, y: card.worldFrame.rect.midY)
             guard BoardWayfinding.isOffscreen(cardCenterWorld: center, viewportWorldRect: visible) else { return nil }
             return OffscreenHintLayout.Hint(
                 cardID: termID,
                 centerView: board.view.worldToView(center),
                 signal: signal,
-                label: OffscreenHintLayout.pillLabel(signal: signal, name: s.label, hhmm: hhmm(s.bellAt ?? Date())),
+                label: OffscreenHintLayout.pillLabel(
+                    signal: signal, name: s.label, hhmm: hhmm(s.bellAt ?? Date()), quote: card.report?.text
+                ),
                 z: card.worldFrame.z
             )
         }

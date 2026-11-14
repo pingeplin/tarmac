@@ -96,6 +96,8 @@ extension AppController {
             break
         case .closeRestoreCard:
             closeRestoreCard()
+        case .toggleInbox, .inboxKey:
+            return false
         }
         return true
     }

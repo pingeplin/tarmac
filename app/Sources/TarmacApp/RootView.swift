@@ -22,6 +22,7 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
     // The controller drives its contents + key handling.
     let boardSwitcher = BoardSwitcherView()
     let restoreCard = RestoreCardView()
+    let inboxPanel = InboxPanelView()
 
     /// Supplies the mounted board's off-screen signalling cards, in card order.
     /// The controller knows the labels and bell times the board does not.
@@ -74,6 +75,7 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
         case .toasts: return toasts
         case .switcher: return boardSwitcher
         case .restoreCard: return restoreCard
+        case .inbox: return inboxPanel
         }
     }
 

@@ -376,16 +376,19 @@ final class CardView: NSView, ThemeFollowing {
     private(set) var bellActive = false
     private(set) var liveActive = false
 
-    /// What the minimap and the offscreen hints show for this card. A lit bell
-    /// outranks live.
-    var signal: CardSignal {
-        if bellActive { return .bell }
-        if liveActive { return .live }
-        return .none
+    /// The terminal's current report, as its header chip shows it.
+    private(set) var report: TermReport?
+    /// The terminal's exit item in the inbox is unread (2611.0013).
+    var exitUnread = false
+
+    /// What the minimap and the offscreen hints show for this card.
+    var signal: OffscreenHintLayout.Signal? {
+        OffscreenHintLayout.signal(report: report, bellLit: bellActive, exitUnread: exitUnread, live: liveActive)
     }
 
     /// A terminal's report, as a chip in the header; nil hides it.
     func setReport(_ report: TermReport?) {
+        self.report = report
         header.setReport(report)
     }
 
@@ -560,13 +563,6 @@ final class CardView: NSView, ThemeFollowing {
             layer.add(border, forKey: "liftBorderOff")
         }
     }
-}
-
-/// What a card shows on the minimap and in the offscreen hints.
-enum CardSignal: Equatable {
-    case none
-    case live
-    case bell
 }
 
 extension CardView: @MainActor ClearableFreshDoc {

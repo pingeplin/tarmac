@@ -63,12 +63,18 @@ public enum DevPress {
     }
 
     /// `cmd` plus any of `shift`, `alt`, `ctrl` (each at most once, any order),
-    /// then one ASCII lowercase letter or digit. Every `bad_combo` rule is
-    /// checked before `cmd` is looked for, so `unsupported_combo` always means a
-    /// well-formed chord without it.
+    /// then one ASCII lowercase letter or digit; or one of `namedKeys`
+    /// (2611.0013, D18). Every `bad_combo` rule is checked before `cmd` is
+    /// looked for, so `unsupported_combo` always means a well-formed chord
+    /// without it.
     public static func parse(_ combo: String) -> Result<Chord, DevError> {
+        if let named = namedKeys[combo] { return .success(named) }
         func bad(_ what: String) -> Result<Chord, DevError> {
-            .failure(DevError(.badCombo, "\(what) in `\(combo)`; the grammar is cmd[+shift][+alt][+ctrl]+<a-z|0-9>"))
+            .failure(DevError(
+                .badCombo,
+                "\(what) in `\(combo)`; the grammar is cmd[+shift][+alt][+ctrl]+<a-z|0-9>, or one of "
+                    + namedKeys.keys.sorted().joined(separator: ", ")
+            ))
         }
         let parts = combo.split(separator: "+", omittingEmptySubsequences: false).map(String.init)
         var flags: UInt64 = 0
@@ -126,6 +132,18 @@ public enum DevPress {
     public static let notKey = DevError(
         .notKey, "activation was refused (a locked screen?); click the dev window and re-run"
     )
+
+    /// The keys the inbox panel takes, as AppKit reports them: a closed list,
+    /// and no printable key, which `tarmac dev type` sends.
+    private static let namedKeys: [String: Chord] = [
+        "enter": Chord(flags: 0, characters: "\r", keyCode: 36),
+        "up": Chord(flags: 0, characters: "\u{F700}", keyCode: 126),
+        "down": Chord(flags: 0, characters: "\u{F701}", keyCode: 125),
+        "escape": Chord(flags: 0, characters: "\u{1B}", keyCode: 53),
+        "tab": Chord(flags: 0, characters: "\t", keyCode: 48),
+        "shift+tab": Chord(flags: QuitShortcut.shift, characters: "\u{19}", keyCode: 48),
+        "backspace": Chord(flags: 0, characters: "\u{7F}", keyCode: 51),
+    ]
 
     private static let modifiers: [String: UInt64] = [
         "cmd": QuitShortcut.command, "shift": QuitShortcut.shift,

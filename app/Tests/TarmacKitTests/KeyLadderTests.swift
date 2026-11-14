@@ -28,7 +28,7 @@ final class KeyLadderTests: XCTestCase {
     /// Every key the ladder would otherwise take.
     private var takenKeys: [KeyPress] {
         [
-            letter("k", command), letter("w", command), letter("t", command), enter(), esc(),
+            letter("k", command), letter("i", command), letter("w", command), letter("t", command), enter(), esc(),
         ]
     }
 
@@ -215,6 +215,37 @@ final class KeyLadderTests: XCTestCase {
         for key in keys {
             XCTAssertEqual(KeyLadder.decide(key, facts), .passThrough, "\(key)")
         }
+    }
+
+    // MARK: - the inbox (2611.0013 S7)
+
+    func testS7CommandITogglesTheInboxWhoeverHoldsTheKeysAndOverTheSwitcher() {
+        for keys in [KeyLadder.Keys.terminal, .host, .console] {
+            XCTAssertEqual(KeyLadder.decide(letter("i", command), Facts(keys: keys)), .toggleInbox, "\(keys)")
+        }
+        XCTAssertEqual(KeyLadder.decide(letter("i", command), Facts(switcherOpen: true)), .toggleInbox)
+        XCTAssertEqual(KeyLadder.decide(letter("i", command), Facts(inboxOpen: true)), .toggleInbox)
+    }
+
+    func testS7TheOpenInboxOwnsEveryKeyButCommandKAndCommandW() {
+        let open = Facts(keys: .host, hasFlyTarget: true, esc: toasts, inboxOpen: true)
+        for key in [enter(), esc(), letter("a"), named(125), tab(), letter("v", command)] {
+            XCTAssertEqual(KeyLadder.decide(key, open), .inboxKey, "\(key)")
+        }
+        XCTAssertEqual(KeyLadder.decide(letter("k", command), open), .toggleSwitcher)
+        XCTAssertEqual(KeyLadder.decide(letter("w", command), open), .closeSelectedCard)
+    }
+
+    func testS7PlainReturnWithTheInboxOpenIsTheInboxsNotAFlight() {
+        let facts = Facts(keys: .host, hasFlyTarget: true)
+        XCTAssertEqual(KeyLadder.decide(enter(), facts), .flyToSignal)
+        var open = facts
+        open.inboxOpen = true
+        XCTAssertEqual(KeyLadder.decide(enter(), open), .inboxKey)
+    }
+
+    func testTheRestoreCardTakesCommandIBeforeTheInbox() {
+        XCTAssertEqual(KeyLadder.decide(letter("i", command), Facts(restoreCard: true, inboxOpen: true)), .closeRestoreCard)
     }
 
     // MARK: - the console of an HTML card

@@ -21,14 +21,17 @@ public enum BoardSwitcher {
         public let cards: Int
         /// Whether the board has any live pty — drives the cyan-vs-faint glyph.
         public let isLive: Bool
+        /// Unread reports in the inbox (2611.0013), visited board or not.
+        public let report: Int
 
-        public init(boardID: String, name: String?, running: Int, bell: Int, cards: Int, isLive: Bool) {
+        public init(boardID: String, name: String?, running: Int, bell: Int, cards: Int, isLive: Bool, report: Int = 0) {
             self.boardID = boardID
             self.name = name
             self.running = running
             self.bell = bell
             self.cards = cards
             self.isLive = isLive
+            self.report = report
         }
 
         /// What the row shows: the display name, else the slug.
@@ -47,8 +50,12 @@ public enum BoardSwitcher {
         public let bell: Int
         public let cards: Int
         public let meta: String
+        public let report: Int
 
-        public init(boardID: String, display: String, isActive: Bool, isLive: Bool, running: Int, bell: Int, cards: Int, meta: String) {
+        public init(
+            boardID: String, display: String, isActive: Bool, isLive: Bool, running: Int, bell: Int, cards: Int,
+            meta: String, report: Int = 0
+        ) {
             self.boardID = boardID
             self.display = display
             self.isActive = isActive
@@ -57,6 +64,7 @@ public enum BoardSwitcher {
             self.bell = bell
             self.cards = cards
             self.meta = meta
+            self.report = report
         }
     }
 
@@ -77,7 +85,8 @@ public enum BoardSwitcher {
                     running: s.running,
                     bell: s.bell,
                     cards: s.cards,
-                    meta: meta(running: s.running, bell: s.bell, cards: s.cards)
+                    meta: meta(running: s.running, bell: s.bell, report: s.report, cards: s.cards),
+                    report: s.report
                 )
             }
     }
@@ -152,9 +161,11 @@ public enum BoardSwitcher {
     /// A board's row facts. A board that has had its restore counts its own
     /// cards: running shells, lit bells (a terminal can be both) and every
     /// card. One that has not shows the daemon's running count and no cards,
-    /// whatever placeholder it holds meanwhile.
+    /// whatever placeholder it holds meanwhile. `reports` is the inbox's count
+    /// of unread reports, which it knows for either.
     public static func summary(
-        boardID: String, name: String?, visited: Bool, terms: [TermFact], cards: Int, daemonRunning: Int?
+        boardID: String, name: String?, visited: Bool, terms: [TermFact], cards: Int, daemonRunning: Int?,
+        reports: Int = 0
     ) -> BoardSummary {
         let localRunning = terms.filter(\.running).count
         let (running, isLive) = liveness(
@@ -162,7 +173,7 @@ public enum BoardSwitcher {
         )
         return BoardSummary(
             boardID: boardID, name: name, running: running, bell: visited ? terms.filter(\.bell).count : 0,
-            cards: visited ? cards : 0, isLive: isLive
+            cards: visited ? cards : 0, isLive: isLive, report: reports
         )
     }
 
@@ -173,14 +184,15 @@ public enum BoardSwitcher {
         !commandHeld
     }
 
-    /// The row meta line: `"N running · M bell · K cards"`, dropping the running
-    /// and bell segments when zero; the card count is always shown (singular
+    /// The row meta line: `"N running · M bell · R report · K cards"`, dropping
+    /// the running, bell and report segments when zero; the card count is always shown (singular
     /// "1 card"). Matches B5's faint meta text — the leading ⠧ spinner and the
     /// glyph colors are the view's job.
-    public static func meta(running: Int, bell: Int, cards: Int) -> String {
+    public static func meta(running: Int, bell: Int, report: Int = 0, cards: Int) -> String {
         var parts: [String] = []
         if running > 0 { parts.append("\(running) running") }
         if bell > 0 { parts.append("\(bell) bell") }
+        if report > 0 { parts.append("\(report) report") }
         parts.append(cards == 1 ? "1 card" : "\(cards) cards")
         return parts.joined(separator: " · ")
     }

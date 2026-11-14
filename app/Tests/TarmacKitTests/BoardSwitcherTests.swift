@@ -224,6 +224,26 @@ final class BoardSwitcherTests: XCTestCase {
         XCTAssertEqual(s, BoardSwitcher.BoardSummary(boardID: "b", name: nil, running: 3, bell: 0, cards: 0, isLive: true))
     }
 
+    // 2611.0013 S10: unread reports, for a visited board and a never-visited one.
+    func testS10TheReportCountIsKeptForABoardVisitedOrNot() {
+        let unvisited = BoardSwitcher.summary(
+            boardID: "b", name: nil, visited: false, terms: [term(bell: true)], cards: 1, daemonRunning: 1, reports: 2
+        )
+        XCTAssertEqual(unvisited.bell, 0)
+        XCTAssertEqual(unvisited.report, 2)
+        let visited = BoardSwitcher.summary(boardID: "b", name: nil, visited: true, terms: [], cards: 1, daemonRunning: nil, reports: 1)
+        XCTAssertEqual(visited.report, 1)
+        let row = BoardSwitcher.rows(summaries: [unvisited], active: "a", filter: "")
+        XCTAssertEqual(row.first?.report, 2)
+        XCTAssertEqual(row.first?.meta, "1 running · 2 report · 0 cards")
+    }
+
+    func testS10TheMetaDropsAZeroReportAndKeepsTheOrder() {
+        XCTAssertEqual(BoardSwitcher.meta(running: 1, bell: 0, report: 2, cards: 3), "1 running · 2 report · 3 cards")
+        XCTAssertEqual(BoardSwitcher.meta(running: 2, bell: 1, report: 1, cards: 8), "2 running · 1 bell · 1 report · 8 cards")
+        XCTAssertEqual(BoardSwitcher.meta(running: 0, bell: 0, report: 0, cards: 1), "1 card")
+    }
+
     func testUnvisitedBoardWithNoDaemonCountIsNotLive() {
         let s = BoardSwitcher.summary(boardID: "b", name: nil, visited: false, terms: [], cards: 0, daemonRunning: nil)
         XCTAssertEqual(s.running, 0)

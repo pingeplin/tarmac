@@ -372,6 +372,40 @@ public enum DevSnapshot {
         }
     }
 
+    /// The inbox panel (2611.0013): its state and the items of its filter.
+    public struct InboxFacts: Equatable, Sendable {
+        public var open: Bool
+        public var unread: Int
+        public var filter: Inbox.Filter
+        public var selected: Inbox.ItemID?
+        /// In list order.
+        public var items: [Inbox.Item]
+
+        public init(
+            open: Bool = false, unread: Int = 0, filter: Inbox.Filter = .all, selected: Inbox.ItemID? = nil,
+            items: [Inbox.Item] = []
+        ) {
+            self.open = open
+            self.unread = unread
+            self.filter = filter
+            self.selected = selected
+            self.items = items
+        }
+    }
+
+    /// One offscreen pill as placed.
+    public struct Hint: Equatable, Sendable {
+        public var card: String
+        public var signal: OffscreenHintLayout.Signal
+        public var edge: BoardWayfinding.Edge
+
+        public init(card: String, signal: OffscreenHintLayout.Signal, edge: BoardWayfinding.Edge) {
+            self.card = card
+            self.signal = signal
+            self.edge = edge
+        }
+    }
+
     public struct Input: Equatable, Sendable {
         public var boardID: String
         public var visibility: Visibility
@@ -393,6 +427,8 @@ public enum DevSnapshot {
         public var theme: Theme
         /// #358: the restore card while it is up.
         public var restoreCard: RestoreCard?
+        public var inbox: InboxFacts
+        public var hints: [Hint]
 
         public init(
             boardID: String,
@@ -407,7 +443,9 @@ public enum DevSnapshot {
             quitGuard: QuitGuard?,
             fonts: Fonts,
             theme: Theme,
-            restoreCard: RestoreCard? = nil
+            restoreCard: RestoreCard? = nil,
+            inbox: InboxFacts = InboxFacts(),
+            hints: [Hint] = []
         ) {
             self.boardID = boardID
             self.visibility = visibility
@@ -422,6 +460,8 @@ public enum DevSnapshot {
             self.fonts = fonts
             self.theme = theme
             self.restoreCard = restoreCard
+            self.inbox = inbox
+            self.hints = hints
         }
     }
 
@@ -444,7 +484,40 @@ public enum DevSnapshot {
             "fonts": fonts(input.fonts),
             "theme": theme(input.theme),
             "restore_card": input.restoreCard.map { ["lines": .array($0.lines.map { .string($0.string) })] } ?? .null,
+            "inbox": inbox(input.inbox),
+            "hints": .array(input.hints.map { hint in
+                [
+                    "card": .string(hint.card), "signal": .string(signalName(hint.signal)),
+                    "edge": .string(hint.edge.rawValue),
+                ]
+            }),
         ]
+    }
+
+    private static func inbox(_ facts: InboxFacts) -> JSONValue {
+        let selected = facts.selected.flatMap { id in facts.items.first { $0.id == id } }
+        return [
+            "open": .bool(facts.open),
+            "badge": .string(InboxBadge.text(unread: facts.unread)),
+            "filter": .string(facts.filter.rawValue),
+            "selected": selected.map { ["kind": .string(InboxCopy.tag($0.kind)), "term": .string($0.termID)] } ?? .null,
+            "items": .array(facts.items.map { item in
+                [
+                    "kind": .string(InboxCopy.tag(item.kind)), "term": .string(item.termID),
+                    "board": .string(item.boardID), "read": .bool(item.read), "title": .string(InboxCopy.title(item)),
+                ]
+            }),
+        ]
+    }
+
+    private static func signalName(_ signal: OffscreenHintLayout.Signal) -> String {
+        switch signal {
+        case .blocked: "blocked"
+        case .bell: "bell"
+        case .exit: "exit"
+        case .done: "done"
+        case .live: "live"
+        }
     }
 
     private static func theme(_ theme: Theme) -> JSONValue {
