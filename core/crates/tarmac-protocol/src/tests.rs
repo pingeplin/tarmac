@@ -306,10 +306,11 @@ fn restore_with_records(term_records: BTreeMap<String, TermRecord>) -> Msg {
 }
 
 fn spawn_succeeding(succeeds: Option<&str>) -> Msg {
-    let Msg::SpawnTerm { term_id, cols, rows, cwd, cmd, board_id, inherit_cwd_from, .. } = spawn_term("t1", None, None) else {
-        unreachable!()
-    };
-    Msg::SpawnTerm { term_id, cols, rows, cwd, cmd, board_id, inherit_cwd_from, succeeds: succeeds.map(str::to_string) }
+    let mut msg = spawn_term("t1", None, None);
+    if let Msg::SpawnTerm { succeeds: s, .. } = &mut msg {
+        *s = succeeds.map(str::to_string);
+    }
+    msg
 }
 
 #[test]

@@ -42,15 +42,13 @@ pub(crate) enum Call {
 pub(crate) struct StuckFs {
     holds: std::sync::Mutex<Vec<(Call, PathBuf)>>,
     until_released: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
-    /// Each method's calls, and how many of them it held.
-    counts: std::sync::Mutex<HashMap<Call, (u32, u32)>>,
+    /// Each method's calls on each path, and how many of them it held.
+    counts: std::sync::Mutex<HashMap<(Call, PathBuf), (u32, u32)>>,
     repos: std::sync::Mutex<Vec<(PathBuf, String)>>,
     panics: std::sync::Mutex<Vec<PathBuf>>,
     /// The `pid_cwd` answers the test names, by pid, `None` for every pid.
     cwds: std::sync::Mutex<Vec<(Option<libc::pid_t>, Option<String>)>>,
     cwds_returned: AtomicU32,
-    /// The pid of each `pid_cwd` call.
-    cwd_pids: std::sync::Mutex<Vec<libc::pid_t>>,
 }
 
 impl StuckFs {
@@ -78,8 +76,8 @@ impl StuckFs {
     }
 
     /// The `pid_cwd` calls of `pid`.
-    pub(crate) fn pid_cwd_calls(&self, pid: libc::pid_t) -> usize {
-        self.cwd_pids.lock().unwrap().iter().filter(|p| **p == pid).count()
+    pub(crate) fn pid_cwd_calls(&self, pid: libc::pid_t) -> u32 {
+        self.counts.lock().unwrap().get(&(Call::PidCwd, pid_path(pid))).map_or(0, |count| count.0)
     }
 
     /// The `pid_cwd` calls that returned.
@@ -95,7 +93,7 @@ impl StuckFs {
     fn wait_if_held(&self, call: Call, path: &Path) {
         let held = self.holds.lock().unwrap().iter().any(|(c, under)| *c == call && path.starts_with(under));
         let mut counts = self.counts.lock().unwrap();
-        let count = counts.entry(call).or_default();
+        let count = counts.entry((call, path.to_owned())).or_default();
         count.0 += 1;
         count.1 += u32::from(held);
         drop(counts);
@@ -105,11 +103,16 @@ impl StuckFs {
     }
 
     pub(crate) fn calls(&self, call: Call) -> u32 {
-        self.counts.lock().unwrap().get(&call).map_or(0, |count| count.0)
+        self.counted(call).map(|count| count.0).sum()
     }
 
     pub(crate) fn held(&self, call: Call) -> u32 {
-        self.counts.lock().unwrap().get(&call).map_or(0, |count| count.1)
+        self.counted(call).map(|count| count.1).sum()
+    }
+
+    fn counted(&self, call: Call) -> impl Iterator<Item = (u32, u32)> {
+        let counts = self.counts.lock().unwrap();
+        counts.iter().filter(|((c, _), _)| *c == call).map(|(_, count)| *count).collect::<Vec<_>>().into_iter()
     }
 }
 
@@ -145,7 +148,6 @@ impl PathFs for StuckFs {
     }
 
     fn pid_cwd(&self, pid: libc::pid_t) -> Option<String> {
-        self.cwd_pids.lock().unwrap().push(pid);
         self.wait_if_held(Call::PidCwd, &pid_path(pid));
         let answers = self.cwds.lock().unwrap().clone();
         let named = answers.iter().find(|(p, _)| *p == Some(pid)).or_else(|| answers.iter().find(|(p, _)| p.is_none()));
@@ -172,7 +174,6 @@ pub(crate) fn stuck_fs() -> (Arc<StuckFs>, std::sync::mpsc::Sender<()>) {
         panics: std::sync::Mutex::default(),
         cwds: std::sync::Mutex::default(),
         cwds_returned: AtomicU32::new(0),
-        cwd_pids: std::sync::Mutex::default(),
     });
     (fs, release)
 }
