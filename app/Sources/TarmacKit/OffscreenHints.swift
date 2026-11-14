@@ -148,8 +148,9 @@ public enum OffscreenHintLayout {
     ///
     /// An edge is resolved from its start (left, top) forward. When that leaves
     /// a pill under the chrome — which sits in the bottom-right corner — the edge
-    /// is resolved again from its end backward, and the pass with fewer pills
-    /// under the chrome wins.
+    /// is resolved again from its end backward, each pill starting where the
+    /// forward pass put it, and the backward pass wins when it leaves fewer pills
+    /// under the chrome and no more outside the view.
     public static func stackPills(_ hints: [Hint], in viewRect: CGRect, options: Options) -> [PlacedPill] {
         let projected = hints.compactMap { hint -> Projected? in
             guard let placement = BoardWayfinding.hintPlacement(
@@ -165,13 +166,14 @@ public enum OffscreenHintLayout {
                 .enumerated()
                 .sorted { ($0.element.placement.along, $0.offset) < ($1.element.placement.along, $1.offset) }
                 .map(\.element)
-            let forward = place(group, on: edge, in: viewRect, options: options, backward: false)
+            let forward = place(group, on: edge, in: viewRect, options: options, from: nil)
             guard forward.underChrome > 0 else {
                 placed += forward.pills
                 continue
             }
-            let backward = place(group, on: edge, in: viewRect, options: options, backward: true)
-            placed += (backward.underChrome < forward.underChrome ? backward : forward).pills
+            let backward = place(group, on: edge, in: viewRect, options: options, from: forward.pills)
+            let better = backward.underChrome < forward.underChrome && backward.outside <= forward.outside
+            placed += (better ? backward : forward).pills
         }
         return placed
     }
@@ -182,22 +184,34 @@ public enum OffscreenHintLayout {
         let size: CGSize
     }
 
-    /// Places one edge's pills, sorted along it. A backward pass works in
-    /// mirrored coordinates (`x → −x` along the edge), so the sibling nudge and
-    /// the overflow run toward the edge's start; it prefers a move toward the
-    /// start too. A forward pass on the bottom edge prefers a move to the left.
+    private struct Pass {
+        var pills: [PlacedPill] = []
+        /// Pills under the chrome.
+        var underChrome = 0
+        /// Pills pushed past the view's margins.
+        var outside = 0
+    }
+
+    /// Places one edge's pills, sorted along it. A backward pass — `from` the
+    /// forward pass's pills, in the same order, each pill starting where that
+    /// put it — works in mirrored coordinates (`x → −x` along the edge), so the
+    /// sibling nudge and the overflow run toward the edge's start; it prefers a
+    /// move toward the start too. A forward pass on the bottom edge prefers a
+    /// move to the left.
     private static func place(
-        _ group: [Projected], on edge: BoardWayfinding.Edge, in viewRect: CGRect, options: Options, backward: Bool
-    ) -> (pills: [PlacedPill], underChrome: Int) {
+        _ group: [Projected], on edge: BoardWayfinding.Edge, in viewRect: CGRect, options: Options,
+        from seeds: [PlacedPill]?
+    ) -> Pass {
+        let backward = seeds != nil
         let vertical = edge == .left || edge == .right
         let sign: CGFloat = backward ? -1 : 1
         let prefer: Side? = backward ? .higher : (edge == .bottom ? .lower : nil)
         let blockers = options.obstacles + options.chrome
         var lastEnd = -CGFloat.infinity
-        var placed: [PlacedPill] = []
-        var underChrome = 0
+        var pass = Pass()
 
-        for item in backward ? group.reversed() : group {
+        for index in backward ? Array(group.indices.reversed()) : Array(group.indices) {
+            let item = group[index]
             let size = item.size
             let length = vertical ? size.height : size.width
             let posLo = (vertical ? viewRect.minY : viewRect.minX) + options.edgeMargin
@@ -218,7 +232,8 @@ public enum OffscreenHintLayout {
                     ? Interval(lo: $0.minY - options.stackGap, hi: $0.maxY + options.stackGap)
                     : Interval(lo: $0.minX - options.stackGap, hi: $0.maxX + options.stackGap)
                 }
-            let desired = BoardWayfinding.clamp(item.placement.along - length / 2, posLo, posHi)
+            let desired = seeds.map { vertical ? $0[index].top : $0[index].left }
+                ?? BoardWayfinding.clamp(item.placement.along - length / 2, posLo, posHi)
             // A mirrored start: the far end of the span, negated.
             let mirror = { (start: CGFloat) in backward ? -(start + length) : start }
             let resolved = resolveAlongPosition(
@@ -236,7 +251,7 @@ public enum OffscreenHintLayout {
                 width: size.width,
                 height: size.height
             )
-            placed.append(PlacedPill(
+            pass.pills.append(PlacedPill(
                 cardID: item.hint.cardID,
                 signal: item.hint.signal,
                 label: item.hint.label,
@@ -246,9 +261,11 @@ public enum OffscreenHintLayout {
                 top: rect.minY,
                 occluded: options.obstacles.contains { Placement.rectsIntersect(rect, $0) }
             ))
-            if options.chrome.contains(where: { Placement.rectsIntersect(rect, $0) }) { underChrome += 1 }
+            if options.chrome.contains(where: { Placement.rectsIntersect(rect, $0) }) { pass.underChrome += 1 }
+            if pos < posLo || pos > posHi { pass.outside += 1 }
         }
-        return (backward ? placed.reversed() : placed, underChrome)
+        if backward { pass.pills.reverse() }
+        return pass
     }
 
     private enum Side {

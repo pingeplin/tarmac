@@ -1545,7 +1545,9 @@ A pill keeps clear of the visible cards, the minimap and the shown toasts
 (`OffscreenHintLayout.stackPills`, issue #365): it moves along its edge to the
 nearest free gap, and on the bottom edge to the nearest one on its left first.
 An edge that still leaves a pill under the minimap or a toast is placed again
-from its far end, stacking toward its start. A pill that finds no free gap is
+from its far end, stacking toward its start, each pill starting where the
+first placing put it; the second placing is kept only when it leaves fewer
+pills under them and pushes no more out of the view. A pill that finds no free gap is
 drawn over the cards all the same (#126 drew it under them, where it was lost
 or showed through a dimmed card); the minimap and the toasts are drawn over
 every pill.

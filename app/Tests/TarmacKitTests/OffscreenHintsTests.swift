@@ -498,6 +498,26 @@ final class OffscreenHintLayoutTests: XCTestCase {
         assertClear(pills, of: [minimap])
     }
 
+    /// Clearing the minimap corner must not push the pills of the other corner
+    /// out of the view.
+    func testClearingTheMinimapKeepsTheLeftCornerPillsInTheView() {
+        let pills = stack(
+            [30, 31, 900, 960].map { hint("x\(Int($0))", CGPoint(x: $0, y: 2000), .live, 0) },
+            chrome: [minimap]
+        )
+        XCTAssertEqual(pills.count, 4)
+        assertClear(pills, of: [minimap])
+    }
+
+    func testClearingTheToastsKeepsTheTopCornerPillsInTheView() {
+        let pills = stack(
+            [30, 31, 740, 770].map { hint("y\(Int($0))", CGPoint(x: 2000, y: $0), .live, 0) },
+            chrome: [toast, minimap]
+        )
+        XCTAssertEqual(pills.count, 4)
+        assertClear(pills, of: [toast, minimap])
+    }
+
     /// The right band runs past the toast and the minimap; the pill wants 748.
     func testARightEdgePillNearTheBottomClearsTheToastAndTheMinimap() throws {
         let pill = try XCTUnwrap(
