@@ -1,6 +1,6 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: core ghostty-vt app test docs-check dco-check run qa qa-quit kill-daemon bundle dmg release
+.PHONY: core ghostty-vt app test docs-check dco-check run qa qa-quit qa-resume kill-daemon bundle dmg release
 
 # The dev channel: one directory that holds this worktree's own daemon socket,
 # state, driver socket and config directory. Everything that launches or drives
@@ -102,6 +102,12 @@ qa-quit: core
 	$(DEV_ENV) \
 	CASE="$(CASE)" \
 	node $(ROOT)/scripts/qa/quit.mjs
+
+# Resume after a restart (spec 2611.0011, S37): it kills the dev daemon by the
+# pid that holds its socket, so every dev terminal ends; `make run` again after.
+qa-resume: core
+	$(DEV_ENV) \
+	node $(ROOT)/scripts/qa/resume.mjs
 
 # Kill the dev tarmacd for this worktree (same socket path as `make run`).
 # Sends SIGKILL (kill -9); exits 0 whether or not it was running.
