@@ -23,6 +23,28 @@ fn bel_in_output_yields_a_bell_frame() {
     assert_eq!(term_id, "bell-term");
 }
 
+// oh-my-zsh sets the title this way at every prompt (#351). The real BEL comes
+// after the debounce window, so a title BEL taken for a bell would make two.
+// The pump pushes a chunk's Bell before the Exit frame.
+#[test]
+fn only_the_bel_outside_an_osc_title_yields_a_bell_frame() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+
+    app.spawn_term("title-term", &["/bin/sh", "-c", "printf '\\033]2;title\\a'; sleep 0.5; printf '\\a'"]);
+
+    let mut bells = 0;
+    app.recv_until("exit", |m| match m {
+        Msg::Bell { .. } => {
+            bells += 1;
+            false
+        }
+        Msg::Exit { term_id, .. } => term_id == "title-term",
+        _ => false,
+    });
+    assert_eq!(bells, 1);
+}
+
 #[test]
 fn term_proc_reports_a_foreground_process_name() {
     let daemon = TestDaemon::start();

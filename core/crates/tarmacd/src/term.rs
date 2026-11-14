@@ -9,6 +9,7 @@ use tarmac_protocol::Msg;
 use tokio::sync::{mpsc, oneshot};
 use tracing::debug;
 
+use crate::bell_scan::BellScan;
 use crate::boards::BoardId;
 use crate::proc;
 use crate::state::Daemon;
@@ -16,7 +17,6 @@ use crate::state::Daemon;
 pub const OUTPUT_CHUNK: usize = 64 * 1024; // protocol: output chunks <= 64 KiB
 pub(crate) const PROC_POLL_INTERVAL: Duration = Duration::from_millis(750);
 const BELL_DEBOUNCE: Duration = Duration::from_millis(250);
-const BEL: u8 = 0x07;
 // A (re)connecting app replays this to re-bind to a live shell instead of
 // cold-spawning. Bounded so N boards x M terms stay cheap.
 const SCROLLBACK_CAP: usize = 256 * 1024;
@@ -304,16 +304,13 @@ pub async fn spawn(daemon: Arc<Daemon>, plan: SpawnPlan) -> Result<(), String> {
 }
 
 /// Pushes at most one bell per `BELL_DEBOUNCE` window.
+#[derive(Default)]
 struct BellDebounce {
     last: Option<Instant>,
 }
 
 impl BellDebounce {
-    fn rings(&mut self, chunk: &[u8]) -> bool {
-        if !chunk.contains(&BEL) {
-            return false;
-        }
-        let now = Instant::now();
+    fn allow(&mut self, now: Instant) -> bool {
         if self.last.is_none_or(|t| now.duration_since(t) >= BELL_DEBOUNCE) {
             self.last = Some(now);
             return true;
@@ -329,10 +326,11 @@ async fn forward_chunk(
     daemon: &Daemon,
     term_id: &str,
     handle: &TermHandle,
-    bells: &mut BellDebounce,
+    scan: &mut BellScan,
+    debounce: &mut BellDebounce,
     chunk: Vec<u8>,
 ) {
-    let bell = bells.rings(&chunk);
+    let bell = scan.feed(&chunk) && debounce.allow(Instant::now());
     // The guard drops at the `;`, before any .await.
     handle.scrollback.lock().expect("scrollback lock").push(&chunk);
     daemon.push(Msg::Output { term_id: term_id.to_owned(), bytes: chunk }).await;
@@ -350,20 +348,21 @@ async fn pump(
     mut exit_rx: oneshot::Receiver<Option<i64>>,
     handle: Arc<TermHandle>,
 ) {
-    let mut bells = BellDebounce { last: None };
+    let mut scan = BellScan::default();
+    let mut debounce = BellDebounce::default();
     let mut exit_code: Option<Option<i64>> = None;
     loop {
         if exit_code.is_some() {
             // Child is gone; drain whatever output remains, with a grace cap
             // in case a grandchild still holds the pty open.
             match tokio::time::timeout(Duration::from_secs(2), out_rx.recv()).await {
-                Ok(Some(chunk)) => forward_chunk(&daemon, &term_id, &handle, &mut bells, chunk).await,
+                Ok(Some(chunk)) => forward_chunk(&daemon, &term_id, &handle, &mut scan, &mut debounce, chunk).await,
                 _ => break,
             }
         } else {
             tokio::select! {
                 maybe = out_rx.recv() => match maybe {
-                    Some(chunk) => forward_chunk(&daemon, &term_id, &handle, &mut bells, chunk).await,
+                    Some(chunk) => forward_chunk(&daemon, &term_id, &handle, &mut scan, &mut debounce, chunk).await,
                     None => {
                         exit_code = Some((&mut exit_rx).await.unwrap_or(None));
                         break;
@@ -461,6 +460,22 @@ mod tests {
     fn empty_value_falls_through_to_next_key() {
         assert!(!decide(&[("LC_ALL", ""), ("LANG", "en_US.UTF-8")]));
         assert!(decide(&[("LC_CTYPE", ""), ("LANG", "C")]));
+    }
+
+    #[test]
+    fn a_second_bell_inside_the_debounce_window_is_dropped() {
+        let t0 = Instant::now();
+        let mut debounce = BellDebounce::default();
+        assert!(debounce.allow(t0));
+        assert!(!debounce.allow(t0 + BELL_DEBOUNCE - Duration::from_millis(1)));
+    }
+
+    #[test]
+    fn the_debounce_rearms_once_the_window_has_passed() {
+        let t0 = Instant::now();
+        let mut debounce = BellDebounce::default();
+        assert!(debounce.allow(t0));
+        assert!(debounce.allow(t0 + BELL_DEBOUNCE));
     }
 
     // The exit goes first and the pump takes it before any chunk exists, so the
