@@ -62,9 +62,14 @@ public enum DevSnapshot {
         public var selection: String?
         /// The `scrollbackTailLines` rows ending at the cursor's row.
         public var scrollbackTail: String
+        /// 2611.0011: the resume offer the card shows, if any.
+        public var resume: Resume?
+        /// The dead card offers to reopen.
+        public var reopen: Bool
 
         public init(
-            live: Bool, dead: Bool, cols: Int, rows: Int, proc: String?, selection: String?, scrollbackTail: String
+            live: Bool, dead: Bool, cols: Int, rows: Int, proc: String?, selection: String?, scrollbackTail: String,
+            resume: Resume? = nil, reopen: Bool = false
         ) {
             self.live = live
             self.dead = dead
@@ -73,6 +78,18 @@ public enum DevSnapshot {
             self.proc = proc
             self.selection = selection
             self.scrollbackTail = scrollbackTail
+            self.resume = resume
+            self.reopen = reopen
+        }
+    }
+
+    public struct Resume: Equatable, Sendable {
+        public var cmd: String
+        public var armed: Bool
+
+        public init(cmd: String, armed: Bool) {
+            self.cmd = cmd
+            self.armed = armed
         }
     }
 
@@ -492,7 +509,7 @@ public enum DevSnapshot {
         case .doc:
             fields["borrowed"] = .bool(card.id == input.borrowedCard)
         case .term(let terminal):
-            fields["term"] = [
+            var term: [String: JSONValue] = [
                 "alive": .bool(terminal.live && !terminal.dead),
                 "cols": .number(Double(terminal.cols)),
                 "rows": .number(Double(terminal.rows)),
@@ -501,6 +518,13 @@ public enum DevSnapshot {
                 "selection": optional(terminal.selection.flatMap { $0.isEmpty ? nil : $0 }),
                 "scrollback_tail": .string(terminal.scrollbackTail),
             ]
+            // Present only with an offer (2611.0011): a terminal with neither
+            // keeps its six keys.
+            if let resume = terminal.resume {
+                term["resume"] = ["cmd": .string(resume.cmd), "armed": .bool(resume.armed)]
+            }
+            if terminal.reopen { term["reopen"] = true }
+            fields["term"] = .object(term)
         }
         return .object(fields)
     }

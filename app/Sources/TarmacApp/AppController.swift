@@ -26,6 +26,12 @@ final class TerminalSession {
     var bellAt: Date?
     /// The grid last sent to the daemon; nil until a spawn or resize went out.
     var sentGrid: TermGrid.Size?
+    /// 2611.0011: the command a cold spawn offers to run, until the first key.
+    var resumeOffer: ResumeOffer?
+    /// A dead card's offer to reopen in place, from its board's latest restore.
+    var deadOffer: DeadCardOffer.Offer?
+    /// `KeyLadder.afterRun`'s latch for this terminal.
+    var afterRun = false
 
     /// The PTY exists daemon-side as far as the app knows, so input and
     /// resizes may be sent for it.

@@ -19,27 +19,22 @@ public enum FocusedClose {
         /// Focused doc — close its card.
         case closeDoc
         /// Focused terminal — terminate it; `replace` ⇒ it was the board's last
-        /// live terminal, so spawn a fresh shell in its place.
-        /// `signalClose` ⇒ the pty was still live, so the daemon needs telling.
-        case closeTerminal(replace: Bool, signalClose: Bool)
+        /// live terminal, so spawn a fresh shell in its place. The daemon is
+        /// always told, live or dead: for a dead card it deletes the record
+        /// (2611.0011, D12).
+        case closeTerminal(replace: Bool)
     }
 
     /// `otherLiveTerminals` is the count of OTHER live terminals on the board; it
     /// only affects the `.term` case (decides whether to replace it).
-    ///
-    /// `dead` (`.term` only): the focused terminal's pty has already exited. Then
-    /// `signalClose` is false — there is nothing live to close, so the caller must
-    /// not depend on `TermClose` being a safe no-op for an already-gone `term_id`.
-    /// `replace` is unaffected by `dead`.
-    public static func decide(kind: Kind, otherLiveTerminals: Int, dead: Bool = false) -> Action {
+    public static func decide(kind: Kind, otherLiveTerminals: Int) -> Action {
         switch kind {
         case .none:
             return .noop
         case .doc:
             return .closeDoc
         case .term:
-            let replace = TermExit.decide(code: 0, otherLiveTerminals: otherLiveTerminals) == .removeAndReplace
-            return .closeTerminal(replace: replace, signalClose: !dead)
+            return .closeTerminal(replace: TermExit.decide(code: 0, otherLiveTerminals: otherLiveTerminals) == .removeAndReplace)
         }
     }
 }

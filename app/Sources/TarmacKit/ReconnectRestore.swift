@@ -35,7 +35,10 @@ public enum ReconnectRestore {
     }
 
     public static let restartToastTitle = "daemon restarted — terminals lost"
-    public static let restartToastBody = "open new terminals with ⌘T"
+    /// `reopenable` counts the board's dead cards that offer a reopen.
+    public static func restartToastBody(reopenable: Int) -> String {
+        reopenable > 0 ? "⏎ on a dead card reopens it in its folder" : "open new terminals with ⌘T"
+    }
 
     /// `terms` is the board's terminals in card order. A live terminal missing
     /// from `liveTerms` is lost. An empty `liveTerms` for a board that had a

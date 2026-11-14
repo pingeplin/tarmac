@@ -164,4 +164,9 @@ final class KeyPressTests: XCTestCase {
     func testACommandDigitIsOneCharacter() {
         XCTAssertNil(press(0x12, "12", command).commandDigit)
     }
+
+    /// 2611.0011: a press is not a repeat unless the shell says so.
+    func testAPressIsNotARepeatByDefault() {
+        XCTAssertFalse(KeyPress(keyCode: 36, characters: "\r", charactersIgnoringModifiers: "\r", modifierFlags: 0).isRepeat)
+    }
 }

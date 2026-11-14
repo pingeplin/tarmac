@@ -44,6 +44,10 @@ extension AppController {
         if case let .term(termID) = id, sessions[termID]?.live == true {
             setPrime(termID)
             clearBell(termID: termID)
+        } else if case let .term(termID) = id, let s = sessions[termID] {
+            // A dead card is never prime, but it holds the keys, so that
+            // Return reaches its reopen offer (2611.0011, D10).
+            window?.makeFirstResponder(s.view)
         }
     }
 
@@ -128,6 +132,10 @@ extension AppController {
             card.setQuiet(CardDim.isQuiet(
                 terminal: isTerminal, prime: isPrime, dead: card.dead, boardHasPrime: primeID != nil
             ))
+        }
+        // The resume chip's key hint shows on the prime card only.
+        for s in b.sessions.values where s.resumeOffer != nil {
+            refreshOffer(s, on: b)
         }
     }
 

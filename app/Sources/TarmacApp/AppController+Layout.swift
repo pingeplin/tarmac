@@ -23,6 +23,8 @@ extension AppController {
         guard let board = boards[targetID] else { return }
         let firstOnConnection = daemonSession.restoredBoards.insert(targetID).inserted
         let firstVisit = !board.didInitialRestore
+        // Kept on every restore (2611.0011, D11): what a dead card offers.
+        board.termRecords = termRecords
         guard targetID == activeBoardID else {
             if !firstVisit {
                 reconcile(board, liveTerms: Set(liveTerms), replayFollows: firstOnConnection)
@@ -74,12 +76,15 @@ extension AppController {
         }
         dataFiles.forget(board: board.boardID)
 
-        notifyDaemonReplaced(tiles: tiles, liveTerms: liveTerms)
         let plan = BoardRestore.plan(
             tiles: tiles, docs: docs, liveTerms: liveTerms, termRecords: termRecords, mint: BootTerminal.mint
         )
+        notifyRestored(tiles: tiles, liveTerms: liveTerms, summary: RestoreSummary.lines(plan: plan))
         for term in plan.terms {
-            addTerminal(term.termID, frame: CardFrame(rect: term.frame, z: term.z), spawn: term.spawn, on: board)
+            addTerminal(
+                term.termID, frame: CardFrame(rect: term.frame, z: term.z), spawn: term.spawn, resume: term.resume,
+                on: board
+            )
         }
         board.primeTermID = plan.terms.first?.termID
 
@@ -106,16 +111,21 @@ extension AppController {
     }
 
     /// The toast for terminals that a daemon replaced on a version mismatch
-    /// took with it (`RestartNotice`); once per connection.
-    private func notifyDaemonReplaced(tiles: [LayoutTile], liveTerms: Set<String>) {
+    /// took with it (`RestartNotice`), once per connection, with the restore's
+    /// `summary` lines (2611.0011, D13) after its own; else a toast of the
+    /// summary alone, when it has a line.
+    private func notifyRestored(tiles: [LayoutTile], liveTerms: Set<String>, summary: [String]) {
         guard let notice = RestartNotice.make(
             replaced: client.daemonReplaced,
             tileTermIDs: LayoutTiles.parse(tiles).terms.map(\.termID),
             liveTerms: liveTerms,
             alreadyNotified: daemonSession.restartNotified
-        ) else { return }
+        ) else {
+            if !summary.isEmpty { rootView.toasts.show(title: "terminals restored", body: summary.joined(separator: "\n")) }
+            return
+        }
         daemonSession.restartNotified = true
-        rootView.toasts.show(title: notice.title, body: notice.body)
+        rootView.toasts.show(title: notice.title, body: ([notice.body] + summary).joined(separator: "\n"))
     }
 
     /// A restore for a board that is already built (`ReconnectRestore`):
@@ -127,11 +137,15 @@ extension AppController {
         let outcome = ReconnectRestore.reconcile(board.reconnectTerms, liveTerms: liveTerms, replayFollows: replayFollows)
         if outcome.daemonRestarted, !daemonSession.restartNotified {
             daemonSession.restartNotified = true
+            let reopenable = outcome.lost.filter {
+                DeadCardOffer.make(record: board.termRecords[$0], home: NSHomeDirectory()) != nil
+            }.count
             rootView.toasts.show(
-                title: ReconnectRestore.restartToastTitle, body: ReconnectRestore.restartToastBody
+                title: ReconnectRestore.restartToastTitle, body: ReconnectRestore.restartToastBody(reopenable: reopenable)
             )
         }
         markLost(outcome.lost, on: board)
+        offerReopens(on: board)
         if outcome.daemonRestarted {
             for other in boards.values where other !== board {
                 markLost(ReconnectRestore.lostToRestart(other.reconnectTerms), on: other)

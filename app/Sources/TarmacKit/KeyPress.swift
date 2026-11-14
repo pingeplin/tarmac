@@ -15,12 +15,18 @@ public struct KeyPress: Equatable, Sendable {
     public var charactersIgnoringModifiers: String
     /// `NSEvent.ModifierFlags` raw bits; only the four intent modifiers are read.
     public var modifierFlags: UInt
+    /// `NSEvent.isARepeat`: a key held down, not a fresh press.
+    public var isRepeat: Bool
 
-    public init(keyCode: UInt16, characters: String, charactersIgnoringModifiers: String, modifierFlags: UInt) {
+    public init(
+        keyCode: UInt16, characters: String, charactersIgnoringModifiers: String, modifierFlags: UInt,
+        isRepeat: Bool = false
+    ) {
         self.keyCode = keyCode
         self.characters = characters
         self.charactersIgnoringModifiers = charactersIgnoringModifiers
         self.modifierFlags = modifierFlags
+        self.isRepeat = isRepeat
     }
 
     public var command: Bool { modifierFlags & TermKeyBinding.command != 0 }

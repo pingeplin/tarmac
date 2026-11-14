@@ -58,9 +58,12 @@ extension AppController {
         let press = KeyPress(
             keyCode: event.keyCode, characters: event.characters ?? "",
             charactersIgnoringModifiers: event.charactersIgnoringModifiers ?? "",
-            modifierFlags: event.modifierFlags.rawValue
+            modifierFlags: event.modifierFlags.rawValue, isRepeat: event.isARepeat
         )
-        switch KeyLadder.decide(press, keyFacts()) {
+        let focused = focusedSession
+        let action = KeyLadder.decide(press, keyFacts(focused))
+        if let focused { focused.afterRun = KeyLadder.afterRun(was: focused.afterRun, press: press, action: action) }
+        switch action {
         case .passThrough:
             return false
         case .toggleSwitcher:
@@ -83,15 +86,23 @@ extension AppController {
             // the keyboard by then.
             returnKeys()
             return false
+        case .runResume:
+            runResume()
+        case .reopenDead:
+            if let focused { reopenDead(focused.termID) }
+        case .ignoreRepeat:
+            break
         }
         return true
     }
 
-    private func keyFacts() -> KeyLadder.Facts {
+    private func keyFacts(_ focused: TerminalSession?) -> KeyLadder.Facts {
         let terminal = focusedTerminal
         let borrow = borrowedCard
         let selectedIsDoc: Bool
         if case .doc = focusedCardID { selectedIsDoc = true } else { selectedIsDoc = false }
+        let dead = focused.flatMap { activeBoard.view.card(.term($0.termID))?.dead } ?? false
+        let reopenOffered = dead && focused?.deadOffer != nil
         return KeyLadder.Facts(
             composing: terminal?.hasMarkedText() == true,
             switcherOpen: switcherOpen,
@@ -104,7 +115,11 @@ extension AppController {
                 cardBorrowed: borrow.borrowed,
                 hasFreshDoc: activeBoard.view.cards.values.contains(where: \.isFreshDoc),
                 selectedIsDoc: selectedIsDoc
-            )
+            ),
+            resumeArmed: focused.map { $0.resumeOffer?.armed(prime: isPrime($0, on: activeBoard)) == true } ?? false,
+            reopenOffered: reopenOffered,
+            offerShown: focused?.resumeOffer != nil || reopenOffered,
+            afterRun: focused?.afterRun ?? false
         )
     }
 
@@ -172,25 +187,23 @@ extension AppController {
     private func closeSelectedCard() {
         let kind: FocusedClose.Kind
         var otherLive = 0
-        var dead = false
         switch focusedCardID {
         case .doc:
             kind = .doc
         case .term(let termID):
             kind = .term
             otherLive = activeBoard.otherLiveTerminals(than: termID)
-            dead = activeBoard.view.card(.term(termID))?.dead ?? false
         case nil:
             kind = .none
         }
-        switch FocusedClose.decide(kind: kind, otherLiveTerminals: otherLive, dead: dead) {
+        switch FocusedClose.decide(kind: kind, otherLiveTerminals: otherLive) {
         case .noop:
             break
         case .closeDoc:
             if case .doc(let path)? = focusedCardID { closeDocCard(path) }
-        case .closeTerminal(let replace, let signalClose):
+        case .closeTerminal(let replace):
             if case .term(let termID)? = focusedCardID {
-                closeTerminal(termID, replace: replace, signalClose: signalClose)
+                closeTerminal(termID, replace: replace)
             }
         }
     }

@@ -109,10 +109,91 @@ extension AppController {
     /// Bytes for the PTY: what the user typed, pasted or clicked, and what the
     /// terminal answers a program by itself (DA1, a cursor report, a focus
     /// report). A dead or unspawned terminal has no PTY to send to.
+    ///
+    /// Any user byte that reaches the PTY drops a resume offer (2611.0011,
+    /// D9); the engine's own answers do not.
     func terminalDidSend(termID: String, _ bytes: Data, source: InputSource) {
         guard let s = session(ofTerm: termID), s.reachable else { return }
+        if source == .user, s.resumeOffer != nil { stepResume(s, .userInput) }
         client.input(termID: termID, bytes: bytes, typed: source == .user)
         if source == .user { clearBell(termID: termID) }
+    }
+
+    // MARK: - Resume and reopen (2611.0011)
+
+    /// Feeds `event` to `s`'s resume offer, performs its effect, and shows
+    /// what is left of it. A run goes as typed input, which the daemon takes
+    /// as the first key that drops the record (D6).
+    func stepResume(_ s: TerminalSession, _ event: ResumeOffer.Event) {
+        let (offer, effect) = ResumeOffer.step(s.resumeOffer, event)
+        let changed = offer != s.resumeOffer
+        s.resumeOffer = offer
+        if case .run(let bytes)? = effect {
+            client.input(termID: s.termID, bytes: bytes, typed: true)
+        }
+        if changed, let (_, board) = anySession(s.termID) { refreshOffer(s, on: board) }
+    }
+
+    /// Return on the focused terminal's armed offer (`.runResume`).
+    func runResume() {
+        guard let s = focusedSession else { return }
+        stepResume(s, .returnKey(prime: isPrime(s, on: activeBoard)))
+    }
+
+    func isPrime(_ s: TerminalSession, on board: Board) -> Bool {
+        board.hasLivePrime && board.primeTermID == s.termID
+    }
+
+    /// Shows `s`'s offer on its card: the resume chip, a dead card's reopen
+    /// strip, or nothing.
+    func refreshOffer(_ s: TerminalSession, on board: Board) {
+        guard let card = board.view.card(.term(s.termID)) else { return }
+        if let offer = s.resumeOffer {
+            let model = ResumeChip.model(offer: offer, prime: isPrime(s, on: board))
+            card.setOffer(lines: [model.text], toolTip: model.toolTip)
+        } else if card.dead, let offer = s.deadOffer {
+            let termID = s.termID
+            card.setOffer(lines: offer.lines, onPress: { [weak self] in self?.reopenDead(termID) })
+        } else {
+            card.setOffer(lines: nil)
+        }
+    }
+
+    /// Gives each dead card of `board` the offer its latest restore allows.
+    func offerReopens(on board: Board) {
+        for termID in board.sessionOrder {
+            guard let s = board.sessions[termID], board.view.card(.term(termID))?.dead == true else { continue }
+            s.deadOffer = DeadCardOffer.make(record: board.termRecords[termID], home: NSHomeDirectory())
+            refreshOffer(s, on: board)
+        }
+    }
+
+    /// Replaces the dead card `termID` in place with a cold spawn in its
+    /// folder that succeeds it, offering its resume command. Nothing is sent
+    /// for the dead id: the spawn's `succeeds` moves its record. The new card
+    /// takes the keys before the next key event, so a repeat of the same
+    /// Return meets its facts (`.ignoreRepeat`).
+    func reopenDead(_ termID: String) {
+        let board = activeBoard
+        guard let s = board.sessions[termID], let offer = s.deadOffer,
+              let card = board.view.card(.term(termID)), card.dead else { return }
+        let frame = card.worldFrame
+        let reopen = DeadCardOffer.reopen(offer, deadID: termID)
+        removeTerminalCard(termID, on: board)
+        board.termRecords[termID] = nil
+        let fresh = addTerminal(BootTerminal.mint(), frame: frame, spawn: reopen.spawn, resume: reopen.resume, on: board)
+        board.view.select(.term(fresh.termID))
+        setPrime(fresh.termID)
+        spawnPending(on: board)
+        persistLayout(for: board)
+        refreshSwitcherIfOpen()
+    }
+
+    /// The session whose view has keyboard focus, live or dead.
+    var focusedSession: TerminalSession? {
+        guard let responder = window?.firstResponder as? NSView,
+              let view = responder.enclosing(TerminalView.self) else { return nil }
+        return activeBoard.sessions.values.first { $0.view === view }
     }
 
     /// `output` and `scrollback` bytes the gate let through. A ring is the
@@ -125,11 +206,13 @@ extension AppController {
         case .replace(let ring):
             s.view.reset()
             s.view.replay(ring)
+            if s.resumeOffer != nil { stepResume(s, .output(byteCount: ring.count)) }
         case .append(let chunks):
             // With the link down an answer would queue and reach the program
             // stale, after the reconnect.
             for chunk in chunks {
                 if connected { s.feed(chunk) } else { s.view.replay(chunk) }
+                if s.resumeOffer != nil { stepResume(s, .output(byteCount: chunk.count)) }
             }
         }
     }
@@ -141,10 +224,11 @@ extension AppController {
     /// bound to a PTY the daemon already runs.
     @discardableResult
     func addTerminal(
-        _ termID: String, frame: CardFrame, spawn: SpawnRequest?, on board: Board
+        _ termID: String, frame: CardFrame, spawn: SpawnRequest?, resume: String? = nil, on board: Board
     ) -> TerminalSession {
         let s = makeSession(termID: termID)
         s.pendingSpawn = spawn
+        s.resumeOffer = ResumeOffer.make(cmd: resume)
         board.sessions[termID] = s
         board.sessionOrder.append(termID)
         termIndex.assign(termID: termID, to: board.boardID)
@@ -162,6 +246,7 @@ extension AppController {
         // a terminal it has not spawned yet arrives ahead of that shell's output.
         scrollback.mount(termID)
         if spawn == nil { reportGrid(of: s) }
+        refreshOffer(s, on: board)
         return s
     }
 
@@ -278,8 +363,10 @@ extension AppController {
         s.pendingSpawn = nil
         s.procName = nil
         s.bellAt = nil
+        s.resumeOffer = nil
         board.view.card(.term(s.termID))?.setReport(nil)
         board.view.card(.term(s.termID))?.setExited()
+        refreshOffer(s, on: board)
         board.view.signalsChanged()
         refreshOwnerChips(on: board)
     }
@@ -303,11 +390,13 @@ extension AppController {
 
     /// ⌘W on a terminal card (`FocusedClose.decide`). The card goes at once, so
     /// the exit the daemon reports for the SIGHUP finds no card and is ignored.
-    func closeTerminal(_ termID: String, replace: Bool, signalClose: Bool) {
+    /// A dead card's close is sent too: the daemon deletes its record
+    /// (2611.0011, D12).
+    func closeTerminal(_ termID: String, replace: Bool) {
         let board = activeBoard
         guard let card = board.view.card(.term(termID)) else { return }
         let frame = card.worldFrame
-        if signalClose { client.termClose(termID: termID) }
+        client.termClose(termID: termID)
         removeTerminalCard(termID, on: board)
         if replace {
             replaceTerminal(at: frame, on: board)

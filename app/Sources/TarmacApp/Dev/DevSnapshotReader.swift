@@ -137,7 +137,11 @@ struct DevSnapshotReader {
             rows: view?.rows ?? 0,
             proc: session?.procName,
             selection: view?.selectedText,
-            scrollbackTail: view?.engine.tail(lines: DevSnapshot.scrollbackTailLines) ?? ""
+            scrollbackTail: view?.engine.tail(lines: DevSnapshot.scrollbackTailLines) ?? "",
+            resume: session.flatMap { s in
+                s.resumeOffer.map { DevSnapshot.Resume(cmd: $0.cmd, armed: $0.armed(prime: controller.isPrime(s, on: controller.activeBoard))) }
+            },
+            reopen: card.dead && session?.deadOffer != nil
         ))
     }
 }

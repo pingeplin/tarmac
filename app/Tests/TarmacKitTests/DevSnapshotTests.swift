@@ -237,6 +237,31 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(facts(terminal(tail: ""))["scrollback_tail"], "")
     }
 
+    // MARK: - 2611.0011 S26 the resume and reopen offers
+
+    func testS26AResumeOfferIsReportedWithWhetherItIsArmed() {
+        var armed = terminal()
+        armed.resume = DevSnapshot.Resume(cmd: "echo HI", armed: true)
+        XCTAssertEqual(facts(armed)["resume"], ["cmd": "echo HI", "armed": true])
+        var waiting = terminal()
+        waiting.resume = DevSnapshot.Resume(cmd: "echo HI", armed: false)
+        XCTAssertEqual(facts(waiting)["resume"], ["cmd": "echo HI", "armed": false])
+        XCTAssertNil(facts(armed)["reopen"])
+    }
+
+    func testS26ADeadCardWithAnOfferIsReportedAsReopen() {
+        var dead = terminal(live: false, dead: true)
+        dead.reopen = true
+        XCTAssertEqual(facts(dead)["reopen"], true)
+        XCTAssertNil(facts(dead)["resume"])
+    }
+
+    func testS26ATerminalWithNoOfferHasNeither() {
+        let plain = facts(terminal())
+        XCTAssertNil(plain["resume"])
+        XCTAssertNil(plain["reopen"])
+    }
+
     // MARK: - S3 screen_rect is the measurement, or null
 
     func testS3AnUnmeasuredCardReportsNullAndKeepsItsBoardRect() {
