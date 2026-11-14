@@ -297,3 +297,26 @@ fn cli_hello_ok_reports_daemon_version_and_pid_alongside_the_app() {
     assert_eq!(daemon_pid, Some(daemon.child.id()));
     assert_eq!(app_version.as_deref(), Some("9.9.9"));
 }
+
+#[test]
+fn a_daemon_started_at_256_files_gives_its_shells_open_max() {
+    use std::os::unix::process::CommandExt;
+    let mut hard = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+    // SAFETY: `hard` is a valid rlimit for getrlimit to fill.
+    assert_eq!(unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut hard) }, 0);
+    let daemon = TestDaemon::start_with(|cmd| {
+        // SAFETY: setrlimit is async-signal-safe, and nothing else runs here.
+        unsafe {
+            cmd.pre_exec(|| {
+                let launchd = libc::rlimit { rlim_cur: 256, rlim_max: libc::RLIM_INFINITY };
+                if libc::setrlimit(libc::RLIMIT_NOFILE, &launchd) == 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
+            });
+        }
+    });
+    let mut app = daemon.connect_app();
+    app.recv_restore();
+
+    app.spawn_term("t1", &["/bin/sh", "-c", "echo nofile=$(ulimit -n)."]);
+
+    app.recv_output_containing("t1", &format!("nofile={}.", hard.rlim_max.min(10240)));
+}

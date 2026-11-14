@@ -3,6 +3,7 @@ mod boards;
 mod conn;
 mod docs;
 mod events;
+mod fd_limit;
 #[cfg(test)]
 mod fixtures;
 mod panic_log;
@@ -21,6 +22,8 @@ use tarmac_protocol::{Channel, channel_label, check_socket_path_len, resolve_soc
 use tokio::net::UnixListener;
 use tokio::signal::unix::{SignalKind, signal};
 use tracing::{error, info, warn};
+
+const ACCEPT_RETRY: std::time::Duration = std::time::Duration::from_millis(100);
 
 /// The ONE audited build-config → Channel mapping for this binary: a debug
 /// build is the `dev` channel, a release build `release`.
@@ -88,6 +91,7 @@ async fn main() -> anyhow::Result<()> {
         .log_internal_errors(false)
         .init();
     panic_log::install();
+    fd_limit::raise();
 
     let sock = socket_path();
     if let Err(msg) = check_socket_path_len(&sock) {
@@ -132,7 +136,12 @@ async fn main() -> anyhow::Result<()> {
                 let d = daemon.clone();
                 tokio::spawn(async move { conn::handle(d, stream, peer_pid).await });
             }
-            Err(e) => warn!("accept failed: {e}"),
+            // Out of descriptors (EMFILE) the next accept fails at once too;
+            // the pause keeps that from spinning a core until one is freed.
+            Err(e) => {
+                warn!("accept failed: {e}");
+                tokio::time::sleep(ACCEPT_RETRY).await;
+            }
         }
     }
 }

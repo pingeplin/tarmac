@@ -13,6 +13,10 @@ This guide covers what is worth knowing: how to surface a file, how to say that
 you are blocked or done, and how to write an HTML file that survives the board's
 sandbox and zoom model.
 
+A shell in a Tarmac terminal inherits the daemon's open file limit, so
+`ulimit -n` there is 10240 by default, not launchd's 256. For another value, set
+`ulimit -n` in the shell's start-up file.
+
 ## Surfacing a file
 
 ```sh
