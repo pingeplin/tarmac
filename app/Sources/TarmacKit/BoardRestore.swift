@@ -6,22 +6,16 @@ public enum BoardRestore {
         public var termID: String
         public var frame: CGRect
         public var z: Int
-        /// False for a terminal re-bound to a PTY the daemon still owns.
-        public var needsSpawn: Bool
-        /// The folder a cold spawn starts in: its persisted terminal's last.
-        public var spawnCwd: String?
-        /// The persisted terminal a cold spawn replaces, whose record it takes.
-        public var succeeds: String?
+        /// Nil for a terminal re-bound to a PTY the daemon still owns.
+        public var spawn: SpawnRequest?
 
-        public init(
-            termID: String, frame: CGRect, z: Int, needsSpawn: Bool, spawnCwd: String? = nil, succeeds: String? = nil
-        ) {
+        public var needsSpawn: Bool { spawn != nil }
+
+        public init(termID: String, frame: CGRect, z: Int, spawn: SpawnRequest?) {
             self.termID = termID
             self.frame = frame
             self.z = z
-            self.needsSpawn = needsSpawn
-            self.spawnCwd = spawnCwd
-            self.succeeds = succeeds
+            self.spawn = spawn
         }
     }
 
@@ -75,26 +69,21 @@ public enum BoardRestore {
         var terms: [Term] = []
         for (index, tile) in parsed.terms.enumerated() {
             let termID: String
-            let needsSpawn: Bool
-            var succeeds: String?
+            let spawn: SpawnRequest?
             switch rebinds[index] {
             case .rebind(let live):
-                (termID, needsSpawn) = (live, false)
+                (termID, spawn) = (live, nil)
             case .coldSpawn:
-                (termID, needsSpawn, succeeds) = (mint(), true, tile.termID)
+                let cwd = tile.termID.flatMap { termRecords[$0]?.lastCwd }
+                (termID, spawn) = (mint(), SpawnRequest(cwd: cwd, succeeds: tile.termID))
             }
             if let persisted = tile.termID { restoredID[persisted] = termID }
             terms.append(Term(
-                termID: termID,
-                frame: tile.frame ?? TermPlacement.restoredFrame(index: index),
-                z: tile.z,
-                needsSpawn: needsSpawn,
-                spawnCwd: succeeds.flatMap { termRecords[$0]?.lastCwd },
-                succeeds: succeeds
+                termID: termID, frame: tile.frame ?? TermPlacement.restoredFrame(index: index), z: tile.z, spawn: spawn
             ))
         }
         if terms.isEmpty {
-            terms.append(Term(termID: mint(), frame: Placement.termFrame, z: 0, needsSpawn: true))
+            terms.append(Term(termID: mint(), frame: Placement.termFrame, z: 0, spawn: SpawnRequest()))
         }
 
         var recordedOwner: [String: String?] = [:]

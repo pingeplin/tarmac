@@ -79,11 +79,7 @@ extension AppController {
             tiles: tiles, docs: docs, liveTerms: liveTerms, termRecords: termRecords, mint: BootTerminal.mint
         )
         for term in plan.terms {
-            let s = addTerminal(
-                term.termID, frame: CardFrame(rect: term.frame, z: term.z), needsSpawn: term.needsSpawn, on: board
-            )
-            s.spawnCwd = term.spawnCwd
-            s.succeeds = term.succeeds
+            addTerminal(term.termID, frame: CardFrame(rect: term.frame, z: term.z), spawn: term.spawn, on: board)
         }
         board.primeTermID = plan.terms.first?.termID
 

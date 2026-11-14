@@ -138,15 +138,14 @@ extension AppController {
     // MARK: - Creating and spawning
 
     /// Puts a terminal card on `board` and asks the daemon for its history. A
-    /// card that `needsSpawn` gets its shell from `spawnPending`; one that does
-    /// not is bound to a PTY the daemon already runs.
+    /// card with a `spawn` gets its shell from `spawnPending`; one without is
+    /// bound to a PTY the daemon already runs.
     @discardableResult
     func addTerminal(
-        _ termID: String, frame: CardFrame, needsSpawn: Bool, inheritCwdFrom: String? = nil, on board: Board
+        _ termID: String, frame: CardFrame, spawn: SpawnRequest?, on board: Board
     ) -> TerminalSession {
         let s = makeSession(termID: termID)
-        s.needsSpawn = needsSpawn
-        s.inheritCwdFrom = inheritCwdFrom
+        s.pendingSpawn = spawn
         board.sessions[termID] = s
         board.sessionOrder.append(termID)
         termIndex.assign(termID: termID, to: board.boardID)
@@ -163,7 +162,7 @@ extension AppController {
         // Before any spawn: the daemon answers in order, so the (empty) ring of
         // a terminal it has not spawned yet arrives ahead of that shell's output.
         scrollback.mount(termID)
-        if !needsSpawn { reportGrid(of: s) }
+        if spawn == nil { reportGrid(of: s) }
         return s
     }
 
@@ -182,8 +181,8 @@ extension AppController {
     func spawnPending(on board: Board) {
         guard connected, viewReady, daemonSession.restoredBoards.contains(board.boardID) else { return }
         for termID in board.sessionOrder {
-            guard let s = board.sessions[termID], s.needsSpawn else { continue }
-            spawn(s, on: board)
+            guard let s = board.sessions[termID], let request = s.pendingSpawn else { continue }
+            spawn(s, request, on: board)
         }
     }
 
@@ -191,17 +190,17 @@ extension AppController {
     /// folder, else in the directory of `inherit_cwd_from`, else in `$HOME`.
     /// `board_id` files the PTY under its own board even when that board is in
     /// the background.
-    private func spawn(_ s: TerminalSession, on board: Board) {
+    private func spawn(_ s: TerminalSession, _ request: SpawnRequest, on board: Board) {
         // The card is laid out at its world size whether or not its board is
         // mounted, so the PTY starts at the card's grid and not at the view's
         // default frame.
         board.view.card(.term(s.termID))?.layoutSubtreeIfNeeded()
         let grid = TermGrid.spawn(cols: s.view.cols, rows: s.view.rows)
-        s.needsSpawn = false
+        s.pendingSpawn = nil
         s.sentGrid = grid
         client.spawnTerm(
-            termID: s.termID, cols: grid.cols, rows: grid.rows, cwd: s.spawnCwd, cmd: nil,
-            boardID: board.boardID, inheritCwdFrom: s.inheritCwdFrom, succeeds: s.succeeds
+            termID: s.termID, cols: grid.cols, rows: grid.rows, cwd: request.cwd, cmd: nil,
+            boardID: board.boardID, inheritCwdFrom: request.inheritCwdFrom, succeeds: request.succeeds
         )
     }
 
@@ -225,8 +224,8 @@ extension AppController {
             )
         }
         let s = addTerminal(
-            BootTerminal.mint(), frame: CardFrame(rect: frame, z: z), needsSpawn: true,
-            inheritCwdFrom: CwdInherit.source(in: candidates), on: board
+            BootTerminal.mint(), frame: CardFrame(rect: frame, z: z),
+            spawn: SpawnRequest(inheritCwdFrom: CwdInherit.source(in: candidates)), on: board
         )
         board.primeTermID = s.termID
         updatePrimacy(on: board)
@@ -237,7 +236,7 @@ extension AppController {
     /// A fresh shell in the place of the board's last live terminal, which just
     /// went away: same frame and z, a new id, prime.
     private func replaceTerminal(at frame: CardFrame, on board: Board) {
-        let s = addTerminal(BootTerminal.mint(), frame: frame, needsSpawn: true, on: board)
+        let s = addTerminal(BootTerminal.mint(), frame: frame, spawn: SpawnRequest(), on: board)
         board.primeTermID = s.termID
         spawnPending(on: board)
     }
@@ -277,7 +276,7 @@ extension AppController {
     /// still lands on the dead card.
     func holdOpen(_ s: TerminalSession, on board: Board) {
         s.live = false
-        s.needsSpawn = false
+        s.pendingSpawn = nil
         s.procName = nil
         s.bellAt = nil
         board.view.card(.term(s.termID))?.setExited()

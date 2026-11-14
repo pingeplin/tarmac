@@ -8,6 +8,8 @@ final class BoardRestoreTests: XCTestCase {
     private typealias Doc = BoardRestore.Doc
 
     private let boot = CGRect(x: 80, y: 80, width: 470, height: 330)
+    /// The frame `termTile` gives.
+    private let tileFrame = CGRect(x: 10, y: 20, width: 500, height: 300)
 
     /// Mints `new-1`, `new-2`, … so a cold spawn's id is recognisable.
     private func plan(
@@ -37,21 +39,14 @@ final class BoardRestoreTests: XCTestCase {
 
     func testATileWhoseTerminalIsStillLiveReBindsUnderItsId() {
         let restored = plan([termTile("t0")], live: ["t0"])
-        XCTAssertEqual(
-            restored.terms,
-            [Term(termID: "t0", frame: CGRect(x: 10, y: 20, width: 500, height: 300), z: 3, needsSpawn: false)]
-        )
+        XCTAssertEqual(restored.terms, [Term(termID: "t0", frame: tileFrame, z: 3, spawn: nil)])
     }
 
     /// An id is never reused for a new shell.
     func testATileWhoseTerminalIsGoneColdSpawnsUnderAFreshIdAtTheSameFrameAndZ() {
         let restored = plan([termTile("t0")], live: ["other"])
         XCTAssertEqual(
-            restored.terms,
-            [Term(
-                termID: "new-1", frame: CGRect(x: 10, y: 20, width: 500, height: 300), z: 3, needsSpawn: true,
-                succeeds: "t0"
-            )]
+            restored.terms, [Term(termID: "new-1", frame: tileFrame, z: 3, spawn: SpawnRequest(succeeds: "t0"))]
         )
     }
 
@@ -60,26 +55,22 @@ final class BoardRestoreTests: XCTestCase {
     /// S4
     func testAColdSpawnStartsInItsRecordedFolderAndSucceedsItsPersistedId() {
         let restored = plan([termTile("t0")], records: ["t0": TermRecord(lastCwd: "/w")])
-        XCTAssertEqual(restored.terms.map(\.termID), ["new-1"])
-        XCTAssertEqual(restored.terms.map(\.needsSpawn), [true])
-        XCTAssertEqual(restored.terms.map(\.spawnCwd), ["/w"])
-        XCTAssertEqual(restored.terms.map(\.succeeds), ["t0"])
+        XCTAssertEqual(
+            restored.terms,
+            [Term(termID: "new-1", frame: tileFrame, z: 3, spawn: SpawnRequest(cwd: "/w", succeeds: "t0"))]
+        )
     }
 
     /// S10
     func testAReboundTerminalGetsNoFolderAndSucceedsNothing() {
         let restored = plan([termTile("t0")], live: ["t0"], records: ["t0": TermRecord(lastCwd: "/w")])
-        XCTAssertEqual(restored.terms.map(\.termID), ["t0"])
-        XCTAssertEqual(restored.terms.map(\.needsSpawn), [false])
-        XCTAssertEqual(restored.terms.map(\.spawnCwd), [nil])
-        XCTAssertEqual(restored.terms.map(\.succeeds), [nil])
+        XCTAssertEqual(restored.terms, [Term(termID: "t0", frame: tileFrame, z: 3, spawn: nil)])
     }
 
     /// S11
     func testAColdSpawnWithNoRecordStillSucceedsItsPersistedId() {
         let restored = plan([termTile("t0")], records: ["other": TermRecord(lastCwd: "/w")])
-        XCTAssertEqual(restored.terms.map(\.spawnCwd), [nil])
-        XCTAssertEqual(restored.terms.map(\.succeeds), ["t0"])
+        XCTAssertEqual(restored.terms.map(\.spawn), [SpawnRequest(succeeds: "t0")])
     }
 
     /// S12
@@ -87,16 +78,13 @@ final class BoardRestoreTests: XCTestCase {
         let restored = plan(
             [docTile("/a.md")], docs: [registered("/a.md")], records: ["t0": TermRecord(lastCwd: "/w")]
         )
-        XCTAssertEqual(restored.terms.map(\.spawnCwd), [nil])
-        XCTAssertEqual(restored.terms.map(\.succeeds), [nil])
+        XCTAssertEqual(restored.terms.map(\.spawn), [SpawnRequest()])
     }
 
     /// S21
     func testALegacyTileWithNoIdGetsNoFolder() {
         let restored = plan([termTile(nil)], records: ["t0": TermRecord(lastCwd: "/w")])
-        XCTAssertEqual(restored.terms.map(\.needsSpawn), [true])
-        XCTAssertEqual(restored.terms.map(\.spawnCwd), [nil])
-        XCTAssertEqual(restored.terms.map(\.succeeds), [nil])
+        XCTAssertEqual(restored.terms.map(\.spawn), [SpawnRequest()])
     }
 
     func testATileWithNoPersistedIdColdSpawns() {
@@ -111,11 +99,11 @@ final class BoardRestoreTests: XCTestCase {
 
     func testABoardWithNoTerminalTileGetsOneAtTheBootFrame() {
         let restored = plan([docTile("/a.md")], docs: [registered("/a.md")])
-        XCTAssertEqual(restored.terms, [Term(termID: "new-1", frame: boot, z: 0, needsSpawn: true)])
+        XCTAssertEqual(restored.terms, [Term(termID: "new-1", frame: boot, z: 0, spawn: SpawnRequest())])
     }
 
     func testAnEmptyRestoreStillYieldsOneTerminal() {
-        XCTAssertEqual(plan([]).terms, [Term(termID: "new-1", frame: boot, z: 0, needsSpawn: true)])
+        XCTAssertEqual(plan([]).terms, [Term(termID: "new-1", frame: boot, z: 0, spawn: SpawnRequest())])
     }
 
     func testAGeometryLessTerminalTileCascadesByItsIndex() {

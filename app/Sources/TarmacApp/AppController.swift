@@ -14,14 +14,9 @@ final class TerminalSession {
     /// listing it. The placeholder a board shows before its first restore is
     /// never live.
     var live = false
-    /// The card's `spawn_term` has not been sent yet.
-    var needsSpawn = false
-    /// ⌘T: the terminal whose current directory the spawn inherits.
-    var inheritCwdFrom: String?
-    /// A restored terminal's last folder, and the persisted terminal it
-    /// replaces (`BoardRestore.Term`).
-    var spawnCwd: String?
-    var succeeds: String?
+    /// The card's `spawn_term`, until it is sent.
+    var pendingSpawn: SpawnRequest?
+    var needsSpawn: Bool { pendingSpawn != nil }
     /// Header label; see `TermLabel`.
     var label = TermLabel.initial
     /// The daemon's last `term_proc` name, verbatim — `label` loses it to a
