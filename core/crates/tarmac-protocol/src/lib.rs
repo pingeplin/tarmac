@@ -116,6 +116,10 @@ pub enum Msg {
         term_id: String,
         #[serde(with = "serde_bytes")]
         bytes: Vec<u8>,
+        /// Input from the user's own key, paste, text or mouse report; only
+        /// such input marks a report read. Sent only as `true`.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        typed: bool,
     },
     Output {
         term_id: String,
@@ -209,6 +213,30 @@ pub enum Msg {
     DocEvent {
         path: String,
         value: String,
+    },
+    /// cli -> daemon: the terminal's report, `blocked`, `done` or `clear`;
+    /// answered `ack` or `err`.
+    Report {
+        term_id: String,
+        kind: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        text: Option<String>,
+    },
+    /// Daemon -> app: a terminal's current report. No `kind` is no report.
+    TermReport {
+        term_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        kind: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        text: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        at_ms: Option<u64>,
+        /// The holder's process name, as the daemon read it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        proc: Option<String>,
+        /// The reverse of `DocEntry.read`: a missing key is unread.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        read: bool,
     },
     /// A receiver ignores message types it does not know instead of failing.
     #[serde(other)]
@@ -304,6 +332,21 @@ pub fn repo_color_index(repo: &str) -> u8 {
         hash = hash.wrapping_mul(0x100_0000_01b3);
     }
     (hash % 4) as u8
+}
+
+/// The longest report text, in Unicode scalar values (`char`s).
+pub const REPORT_TEXT_MAX: usize = 280;
+
+/// `text`, or its first `REPORT_TEXT_MAX - 1` chars and `…` when it is longer.
+/// The cli and the daemon both cap with it.
+pub fn cap_report_text(text: &str) -> String {
+    match text.char_indices().nth(REPORT_TEXT_MAX) {
+        None => text.to_owned(),
+        Some(_) => {
+            let (cut, _) = text.char_indices().nth(REPORT_TEXT_MAX - 1).expect("longer than the cap");
+            format!("{}…", &text[..cut])
+        }
+    }
 }
 
 // to_vec_named is load-bearing: plain to_vec emits structs as msgpack arrays,

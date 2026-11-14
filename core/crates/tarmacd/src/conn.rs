@@ -250,7 +250,7 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
         Msg::SpawnTerm { term_id, cols, rows, cwd, cmd, board_id, inherit_cwd_from, succeeds } => {
             spawn_requested(daemon, term_id, (cols, rows), cwd, cmd, board_id, inherit_cwd_from, succeeds).await;
         }
-        Msg::Input { term_id, bytes } => match daemon.term(&term_id).await {
+        Msg::Input { term_id, bytes, .. } => match daemon.term(&term_id).await {
             Some(h) => {
                 let _ = h.input_tx.send(bytes).await;
             }

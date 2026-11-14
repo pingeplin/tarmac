@@ -299,7 +299,7 @@ impl Conn {
     /// Echo `marker` through a live `cat` and wait until the daemon has seen it, so
     /// the term's scrollback ring is known to hold it.
     pub fn echo_marker(&mut self, term_id: &str, marker: &str) {
-        self.send(&Msg::Input { term_id: term_id.into(), bytes: format!("{marker}\n").into_bytes() });
+        self.send(&Msg::Input { term_id: term_id.into(), bytes: format!("{marker}\n").into_bytes(), typed: false });
         self.recv_output_containing(term_id, marker);
     }
 

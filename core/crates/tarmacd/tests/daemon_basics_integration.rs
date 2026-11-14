@@ -112,7 +112,7 @@ fn term_input_pty_size_and_exit_code() {
     let mut collected = Vec::new();
     app.collect_output_into(&mut collected, "t2", "stty size output", b"30 100");
 
-    app.send(&Msg::Input { term_id: "t2".into(), bytes: b"ping\n".to_vec() });
+    app.send(&Msg::Input { term_id: "t2".into(), bytes: b"ping\n".to_vec(), typed: false });
     app.collect_output_into(&mut collected, "t2", "echoed input", b"got-ping");
 
     let (term_id, code) = app.recv_exit();

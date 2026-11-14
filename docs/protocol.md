@@ -99,7 +99,7 @@ no version of its own names none and restarts nothing.
     ← {t:"ack"}  |  {t:"err", msg}
 
 `tarmac push` sends `push` frames on the same session: see *Events for a loaded
-HTML card*. `tarmac --version` also opens the socket. It completes the
+HTML card*. `tarmac report` sends one `report` frame: see *A terminal's report*. `tarmac --version` also opens the socket. It completes the
 handshake, renders `hello_ok`'s daemon and app keys, and closes without sending
 a second frame.
 
@@ -136,7 +136,7 @@ app → daemon:
         cwd : string | nil        (nil → $HOME)
         cmd : [string, ...] | nil (nil → user's login shell: $SHELL else /bin/zsh, args: -il)
         pty env: TERM=xterm-256color, rest inherited
-    {t:"input", term_id, bytes:<bin>}
+    {t:"input", term_id, bytes:<bin>, typed?:true}   — `typed`: see A terminal's report
     {t:"resize", term_id, cols, rows}
     {t:"open", path}    — same effects as CLI open but via:"user"; no reply frame;
                           doc_opened is still pushed (single code path)
@@ -150,6 +150,7 @@ daemon → app:
     {t:"doc_opened", path, via:"cli"|"user"}  — M1 adds the rest of the doc entry; see M1 subset
     {t:"file_event", path, mtime_ms:<uint>} — see File watching
     {t:"doc_event", path, data}             — see Events for a loaded HTML card
+    {t:"term_report", term_id, ...}         — see A terminal's report
     {t:"err", msg}                          — non-fatal notice
 
 ## File watching semantics
@@ -665,6 +666,71 @@ answer came in 5 s. All existing vectors decode unchanged.
 | `path` | string (required) | — | `push`: the doc, an absolute path as given; `doc_event`: the doc's registry key |
 | `value` | string (required) | — | one JSON value, as text |
 
+## A terminal's report (spec 2611.0009)
+
+    {t:"report", term_id, kind:"blocked"|"done"|"clear", text?}   — cli → daemon; answered with ack | err
+    {t:"term_report", term_id, kind?, text?, at_ms?, proc?, read?} — daemon → app; no reply
+    {t:"input", ..., typed?:true}                                  — app → daemon
+
+A process in terminal `term_id` runs `tarmac report blocked|done ["<text>"]` or
+`tarmac report clear`. The daemon keeps one current report for each live
+terminal, in memory only: no key in `state.json`, so a daemon restart loses it
+and an app relaunch does not.
+
+The daemon checks a `report` in this order; the first check that fails is the
+answer:
+
+| Case | Answer |
+| --- | --- |
+| `term_id` is not a live terminal | `err "unknown terminal: <term_id>"` |
+| `kind` is not `blocked`, `done` or `clear` | `err "unknown report kind: <kind>"` |
+| `clear` | `ack`; a `text` is ignored; `term_report {term_id}` is pushed only when there was a report |
+| no process to tie the report to (below) | `err "no process to tie the report to in <term_id>"` |
+| otherwise | `ack`, after the `term_report` is queued for the app |
+
+- **The text.** The daemon caps `text` at 280 Unicode scalar values
+  (`cap_report_text`: a longer text keeps 279 and gets `…`), and stores an empty
+  `text` as no text. The cli caps it the same way before it sends.
+- **The holder.** The daemon reads the client's pid at accept (`LOCAL_PEEREPID`)
+  and walks its parent pids up to the terminal's PTY child. A terminal spawned
+  with a `cmd` has its PTY child as the holder. Else the chain member just below
+  the PTY child is the holder (the agent), or the shell itself when the caller's
+  parent is the shell (a report typed at the prompt). A caller that the walk
+  cannot place (re-parented, gone, or a failed read) falls back to the
+  terminal's foreground process-group leader; with none, the `err` above.
+- **The lifetime.** Each 750 ms poll removes the report, with a `term_report`
+  that has no `kind`, when its holder is gone: an agent pid that exited or was
+  reused; a shell holder or leader holder once another foreground leader is
+  seen. A command shorter than one tick is not seen. A terminal's exit removes
+  its report with no `term_report`: the `exit` frame ends it in the app.
+- **A repeat** is a new report: a new `at_ms`, unread, its holder found again.
+- **Read.** An `input` with `typed: true` marks the current report read, and
+  the daemon pushes it again with `read: true`. The app sets `typed` only for
+  the user's own input. An `input` with no `typed` never marks it read.
+- **Restore.** After each `restore` (and its `file_event`s), the daemon sends a
+  `term_report` for every live terminal of that board, with no `kind` for one
+  that has no report, then the scrollback replay. This is on every restore, not
+  only a board's first one on a connection.
+
+| message | key | type | missing ⇒ |
+|---|---|---|---|
+| `report` | `term_id` | string (required) | — |
+| `report` | `kind` | string (required) | — |
+| `report` | `text` | string | no text; omitted when nil |
+| `term_report` | `term_id` | string (required) | — |
+| `term_report` | `kind` | `"blocked"` \| `"done"` | no report; then only `term_id` is sent. A receiver treats a kind it does not know as no report |
+| `term_report` | `text` | string | no text |
+| `term_report` | `at_ms` | uint, ms since the epoch | always sent with a `kind` |
+| `term_report` | `proc` | string | the holder's process name was not read |
+| `term_report` | `read` | bool | **false** (the reverse of `DocEntry.read`); written only as `true` |
+| `input` | `typed` | bool | false; written only as `true` |
+
+New **additive types and key**: a daemon that does not know `report` ignores it
+and does not answer, and the cli reports that no answer came in 5 s. An app that
+does not know `term_report` ignores it. A daemon that does not know `typed`
+ignores it. An `input` with `typed: false` encodes as before, byte for byte
+(vector 3).
+
 ## Replaying a terminal's scrollback on demand (issue #41)
 
     {t:"scrollback_request", term_id}               — app → daemon
@@ -850,3 +916,39 @@ round-trip. Byte-exact encoder output is NOT required (key order may legally dif
         87 a1 74 aa 73 70 61 77 6e 5f 74 65 72 6d a7 74 65 72 6d 5f
         69 64 a2 74 31 a4 63 6f 6c 73 50 a4 72 6f 77 73 18 a3 63 77
         64 c0 a3 63 6d 64 c0 a8 73 75 63 63 65 65 64 73 a2 74 30
+
+20. (issue #348) `{t:"report", term_id:"t1", kind:"blocked", text:"ok?"}` — new
+    additive cli→daemon type. Keys in the order `rmp_serde::to_vec_named` writes
+    them.
+
+        84 a1 74 a6 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74
+        31 a4 6b 69 6e 64 a7 62 6c 6f 63 6b 65 64 a4 74 65 78 74 a3
+        6f 6b 3f
+
+21. (issue #348) `{t:"report", term_id:"t1", kind:"clear"}` — the same type with
+    no `text`, which is omitted, not nil.
+
+        83 a1 74 a6 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74
+        31 a4 6b 69 6e 64 a5 63 6c 65 61 72
+
+22. (issue #348) `{t:"term_report", term_id:"t1", kind:"done", text:"ok",
+    at_ms:1700000000000, proc:"claude", read:true}` — new additive daemon→app
+    type with every key; `at_ms` is a msgpack uint64 (`cf`).
+
+        87 a1 74 ab 74 65 72 6d 5f 72 65 70 6f 72 74 a7 74 65 72 6d
+        5f 69 64 a2 74 31 a4 6b 69 6e 64 a4 64 6f 6e 65 a4 74 65 78
+        74 a2 6f 6b a5 61 74 5f 6d 73 cf 00 00 01 8b cf e5 68 00 a4
+        70 72 6f 63 a6 63 6c 61 75 64 65 a4 72 65 61 64 c3
+
+23. (issue #348) `{t:"term_report", term_id:"t1"}` — no report. Every optional
+    key is omitted, and `read: false` is omitted too.
+
+        82 a1 74 ab 74 65 72 6d 5f 72 65 70 6f 72 74 a7 74 65 72 6d
+        5f 69 64 a2 74 31
+
+24. (issue #348) `{t:"input", term_id:"t1", bytes:"a", typed:true}` — the
+    additive `typed` key; `bytes` is `bin` (`c4 01 61`). With `typed: false` the
+    key is omitted and the frame is vector 3's shape.
+
+        84 a1 74 a5 69 6e 70 75 74 a7 74 65 72 6d 5f 69 64 a2 74 31
+        a5 62 79 74 65 73 c4 01 61 a5 74 79 70 65 64 c3

@@ -421,6 +421,106 @@ final class ConformanceTests: XCTestCase {
         XCTAssertEqual(message.encodedPayload(), payload)
     }
 
+    private func assertVector(
+        _ hex: String,
+        _ expected: MsgPackValue,
+        _ message: Message,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        let payload = hexData(hex)
+        XCTAssertEqual(try MsgPack.decode(payload), expected, file: file, line: line)
+        XCTAssertEqual(try Message.decode(payload: payload), message, file: file, line: line)
+        assertRoundTrips(expected, file: file, line: line)
+        assertRoundTrips(message, file: file, line: line)
+        XCTAssertEqual(message.encodedPayload(), payload, file: file, line: line)
+    }
+
+    /// 2611.0009 S8 (cli → daemon): a report with a text.
+    func testVector20Report() throws {
+        try assertVector(
+            """
+            84 a1 74 a6 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74 31
+            a4 6b 69 6e 64 a7 62 6c 6f 63 6b 65 64 a4 74 65 78 74 a3 6f 6b 3f
+            """,
+            .map(["t": .string("report"), "term_id": .string("t1"), "kind": .string("blocked"), "text": .string("ok?")]),
+            .report(termID: "t1", kind: "blocked", text: "ok?")
+        )
+    }
+
+    /// 2611.0009 S8: `clear` has no `text` key.
+    func testVector21ReportClear() throws {
+        try assertVector(
+            """
+            83 a1 74 a6 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74 31
+            a4 6b 69 6e 64 a5 63 6c 65 61 72
+            """,
+            .map(["t": .string("report"), "term_id": .string("t1"), "kind": .string("clear")]),
+            .report(termID: "t1", kind: "clear", text: nil)
+        )
+    }
+
+    /// 2611.0009 S8 (daemon → app): every key; `at_ms` is a uint64.
+    func testVector22TermReport() throws {
+        try assertVector(
+            """
+            87 a1 74 ab 74 65 72 6d 5f 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74 31
+            a4 6b 69 6e 64 a4 64 6f 6e 65 a4 74 65 78 74 a2 6f 6b
+            a5 61 74 5f 6d 73 cf 00 00 01 8b cf e5 68 00
+            a4 70 72 6f 63 a6 63 6c 61 75 64 65 a4 72 65 61 64 c3
+            """,
+            .map([
+                "t": .string("term_report"),
+                "term_id": .string("t1"),
+                "kind": .string("done"),
+                "text": .string("ok"),
+                "at_ms": .int(1_700_000_000_000),
+                "proc": .string("claude"),
+                "read": .bool(true),
+            ]),
+            .termReport(termID: "t1", kind: "done", text: "ok", atMs: 1_700_000_000_000, proc: "claude", read: true)
+        )
+    }
+
+    /// 2611.0009 S8: no report.
+    func testVector23TermReportNone() throws {
+        try assertVector(
+            "82 a1 74 ab 74 65 72 6d 5f 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74 31",
+            .map(["t": .string("term_report"), "term_id": .string("t1")]),
+            .termReport(termID: "t1", kind: nil, text: nil, atMs: nil, proc: nil, read: false)
+        )
+    }
+
+    /// 2611.0009 S8 (app → daemon): the user's own input.
+    func testVector24TypedInput() throws {
+        try assertVector(
+            """
+            84 a1 74 a5 69 6e 70 75 74 a7 74 65 72 6d 5f 69 64 a2 74 31
+            a5 62 79 74 65 73 c4 01 61 a5 74 79 70 65 64 c3
+            """,
+            .map(["t": .string("input"), "term_id": .string("t1"), "bytes": .binary(Data("a".utf8)), "typed": .bool(true)]),
+            .input(termID: "t1", bytes: Data("a".utf8), typed: true)
+        )
+    }
+
+    /// 2611.0009 S8: an untyped input, an unread report and a report with no
+    /// text put no key for it on the wire; a missing `read` is unread.
+    func testAnUntypedInputAnUnreadReportAndATextlessReportHaveNoKeyForIt() throws {
+        let input = Message.input(termID: "t1", bytes: Data("a".utf8), typed: false)
+        XCTAssertNil(try MsgPack.decode(input.encodedPayload()).mapValue?["typed"])
+        let unread = Message.termReport(termID: "t1", kind: "done", text: nil, atMs: 1, proc: nil, read: false)
+        XCTAssertNil(try MsgPack.decode(unread.encodedPayload()).mapValue?["read"])
+        let textless = Message.report(termID: "t1", kind: "done", text: nil)
+        XCTAssertNil(try MsgPack.decode(textless.encodedPayload()).mapValue?["text"])
+        let noRead = MsgPack.encode(.map([
+            "t": .string("term_report"), "term_id": .string("t1"), "kind": .string("done"), "at_ms": .int(1),
+        ]))
+        XCTAssertEqual(
+            try Message.decode(payload: noRead),
+            .termReport(termID: "t1", kind: "done", text: nil, atMs: 1, proc: nil, read: false)
+        )
+    }
+
     /// 2611.0007 S5: an empty table, a nil `succeeds` and a nil `last_cwd`
     /// put no key on the wire.
     func testAnEmptyRecordTableANilSucceedsAndANilLastCwdHaveNoKey() throws {

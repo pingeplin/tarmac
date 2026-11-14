@@ -106,7 +106,7 @@ fn conformance_vector_3_input() {
     assert_vector(
         "83 a1 74 a5 69 6e 70 75 74 a7 74 65 72 6d 5f 69 64 a2 74 31 \
          a5 62 79 74 65 73 c4 03 6c 73 0a",
-        Msg::Input { term_id: "t1".into(), bytes: b"ls\n".to_vec() },
+        Msg::Input { term_id: "t1".into(), bytes: b"ls\n".to_vec(), typed: false },
     );
 }
 
@@ -331,6 +331,122 @@ fn conformance_vector_19_spawn_term_succeeds() {
     let msg = spawn_succeeding(Some("t0"));
     assert_vector(hex, msg.clone());
     assert_eq!(encode(&msg).unwrap(), unhex(hex));
+}
+
+// Spec 2611.0009: a terminal's report. Each vector pins the encoder's bytes
+// too: a `None` key or a `false` flag would decode the same.
+fn assert_frame(hex: &str, msg: Msg) {
+    assert_vector(hex, msg.clone());
+    assert_eq!(encode(&msg).unwrap(), unhex(hex));
+}
+
+fn report(kind: &str, text: Option<&str>) -> Msg {
+    Msg::Report { term_id: "t1".into(), kind: kind.into(), text: text.map(str::to_string) }
+}
+
+fn term_report_none() -> Msg {
+    Msg::TermReport { term_id: "t1".into(), kind: None, text: None, at_ms: None, proc: None, read: false }
+}
+
+#[test]
+fn conformance_vector_20_report() {
+    assert_frame(
+        "84 a1 74 a6 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74 31 \
+         a4 6b 69 6e 64 a7 62 6c 6f 63 6b 65 64 a4 74 65 78 74 a3 6f 6b 3f",
+        report("blocked", Some("ok?")),
+    );
+}
+
+#[test]
+fn conformance_vector_21_report_clear() {
+    assert_frame(
+        "83 a1 74 a6 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74 31 \
+         a4 6b 69 6e 64 a5 63 6c 65 61 72",
+        report("clear", None),
+    );
+}
+
+#[test]
+fn conformance_vector_22_term_report() {
+    assert_frame(
+        "87 a1 74 ab 74 65 72 6d 5f 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74 31 \
+         a4 6b 69 6e 64 a4 64 6f 6e 65 a4 74 65 78 74 a2 6f 6b \
+         a5 61 74 5f 6d 73 cf 00 00 01 8b cf e5 68 00 \
+         a4 70 72 6f 63 a6 63 6c 61 75 64 65 a4 72 65 61 64 c3",
+        Msg::TermReport {
+            term_id: "t1".into(),
+            kind: Some("done".into()),
+            text: Some("ok".into()),
+            at_ms: Some(1_700_000_000_000),
+            proc: Some("claude".into()),
+            read: true,
+        },
+    );
+}
+
+#[test]
+fn conformance_vector_23_term_report_none() {
+    assert_frame("82 a1 74 ab 74 65 72 6d 5f 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74 31", term_report_none());
+}
+
+#[test]
+fn conformance_vector_24_typed_input() {
+    assert_frame(
+        "84 a1 74 a5 69 6e 70 75 74 a7 74 65 72 6d 5f 69 64 a2 74 31 \
+         a5 62 79 74 65 73 c4 01 61 a5 74 79 70 65 64 c3",
+        Msg::Input { term_id: "t1".into(), bytes: b"a".to_vec(), typed: true },
+    );
+}
+
+#[test]
+fn an_untyped_input_an_unread_report_and_a_report_with_no_text_have_no_key_for_it() {
+    let input = Msg::Input { term_id: "t1".into(), bytes: b"ls\n".to_vec(), typed: false };
+    assert_eq!(
+        encode(&input).unwrap(),
+        unhex("83 a1 74 a5 69 6e 70 75 74 a7 74 65 72 6d 5f 69 64 a2 74 31 a5 62 79 74 65 73 c4 03 6c 73 0a")
+    );
+    let unread = Msg::TermReport {
+        term_id: "t1".into(),
+        kind: Some("done".into()),
+        text: None,
+        at_ms: Some(1),
+        proc: None,
+        read: false,
+    };
+    assert!(!has(&encode(&unread).unwrap(), b"read"));
+    assert!(!has(&encode(&report("done", None)).unwrap(), b"text"));
+}
+
+#[test]
+fn a_term_report_with_no_read_key_decodes_as_unread() {
+    let bytes = unhex(
+        "84 a1 74 ab 74 65 72 6d 5f 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74 31 \
+         a4 6b 69 6e 64 a4 64 6f 6e 65 a5 61 74 5f 6d 73 01",
+    );
+    let Msg::TermReport { read, .. } = decode(&bytes).unwrap() else { panic!("not a term_report") };
+    assert!(!read);
+}
+
+#[test]
+fn a_report_text_of_exactly_the_cap_is_kept_and_one_more_is_cut_with_an_ellipsis() {
+    let at_cap = "a".repeat(REPORT_TEXT_MAX);
+    assert_eq!(cap_report_text(&at_cap), at_cap);
+    let capped = cap_report_text(&"a".repeat(REPORT_TEXT_MAX + 1));
+    assert_eq!(capped, format!("{}…", "a".repeat(REPORT_TEXT_MAX - 1)));
+}
+
+#[test]
+fn a_cjk_report_text_is_cut_at_a_char_boundary() {
+    let capped = cap_report_text(&"字".repeat(300));
+    assert_eq!(capped.chars().count(), REPORT_TEXT_MAX);
+    assert_eq!(capped, format!("{}…", "字".repeat(REPORT_TEXT_MAX - 1)));
+}
+
+#[test]
+fn a_combining_sequence_at_the_cut_is_cut_between_scalars() {
+    let head = "a".repeat(REPORT_TEXT_MAX - 2);
+    let text = format!("{head}e\u{301}\u{1F44D}\u{1F3FD}tail");
+    assert_eq!(cap_report_text(&text), format!("{head}e…"));
 }
 
 // The Swift parity test of the same frame pins the key order: sorted.
@@ -723,7 +839,7 @@ fn key_order_is_irrelevant_even_with_tag_last_and_bin_payload() {
     );
     assert_eq!(
         decode(&bytes).unwrap(),
-        Msg::Input { term_id: "t1".into(), bytes: b"ls\n".to_vec() }
+        Msg::Input { term_id: "t1".into(), bytes: b"ls\n".to_vec(), typed: false }
     );
 }
 
@@ -763,7 +879,7 @@ fn wide_integer_encodings_are_accepted() {
 
 #[test]
 fn byte_fields_encode_with_bin_family() {
-    let encoded = encode(&Msg::Input { term_id: "t1".into(), bytes: b"ls\n".to_vec() }).unwrap();
+    let encoded = encode(&Msg::Input { term_id: "t1".into(), bytes: b"ls\n".to_vec(), typed: false }).unwrap();
     let needle = [0xc4u8, 0x03, 0x6c, 0x73, 0x0a]; // bin8, len 3, "ls\n"
     assert!(has(&encoded, &needle), "bytes not bin-encoded: {encoded:02x?}");
 }
@@ -842,7 +958,7 @@ fn all_message_types_roundtrip() {
         spawn_term("t2", None, None),
         // cwd absent but an inherit-cwd-from hint present
         spawn_term("t3", None, Some("t1")),
-        Msg::Input { term_id: "t1".into(), bytes: vec![0u8; 64 * 1024] },
+        Msg::Input { term_id: "t1".into(), bytes: vec![0u8; 64 * 1024], typed: false },
         Msg::Output { term_id: "t1".into(), bytes: b"hello\r\n".to_vec() },
         Msg::Resize { term_id: "t1".into(), cols: 80, rows: 24 },
         Msg::Exit { term_id: "t1".into(), code: Some(0) },

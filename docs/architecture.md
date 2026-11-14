@@ -159,7 +159,7 @@ reports.
 | --- | --- | --- | --- |
 | Lifecycle | `Hello {role, v, app_version?}` | C→D | handshake |
 | | `HelloOk {v, daemon_version?, daemon_pid?, app_version?, app_connected?}` | D→C | accept |
-| | `Ack` | D→cli | generic success (reply to `open` and `push`) |
+| | `Ack` | D→cli | generic success (reply to `open`, `push` and `report`) |
 | | `Err {msg}` | D→C | error notice (closes the link on a handshake error) |
 | Docs | `Open {path, term_id?, board_id?}` | cli/app→D | surface a doc |
 | | `DocRead {path}` | app→D | mark a doc read |
@@ -170,12 +170,14 @@ reports.
 | | `Push {path, value}` | cli→D | one JSON value, as text, for the loaded HTML cards of an open doc; `ack` once it is queued for the app, else `err` |
 | | `DocEvent {path, value}` | D→app | that value, for each card of the doc (`path` is the registry's key); no reply |
 | Terminal I/O | `SpawnTerm {term_id, cols, rows, cwd?, cmd?, board_id?, inherit_cwd_from?}` | app→D | create a PTY card |
-| | `Input {term_id, bytes}` | app→D | keystrokes and mouse reports |
+| | `Input {term_id, bytes, typed?}` | app→D | keystrokes and mouse reports; `typed` marks the user's own input, which reads a report |
 | | `Output {term_id, bytes}` | D→app | raw PTY output (≤64 KiB chunks) |
 | | `Resize {term_id, cols, rows}` | app→D | resize the PTY |
 | | `Exit {term_id, code?}` | D→app | the PTY exited (nil code = signal death) |
 | | `TermProc {term_id, name, pid?}` | D→app | foreground process name changed |
 | | `Bell {term_id}` | D→app | a BEL (0x07) was seen |
+| | `Report {term_id, kind, text?}` | cli→D | a terminal's report, `blocked`, `done` or `clear`; `ack` or `err` |
+| | `TermReport {term_id, kind?, text?, at_ms?, proc?, read?}` | D→app | a terminal's current report; no `kind` is none |
 | | `ScrollbackRequest {term_id}` | app→D | re-send one term's scrollback ring now |
 | | `Scrollback {term_id, bytes}` | D→app | that ring, one frame per request |
 | Layout | `Layout {dock, tiles, board?, board_id?}` | app→D | layout snapshot for a board |
@@ -195,7 +197,7 @@ cx, cy}`.
 **Conformance vectors are the tripwire.** Two codecs implement this contract —
 `tarmac-protocol` (Rust, serde) and the hand-written `MsgPack` / `Message` codec
 in `TarmacKit` (Swift) — and both carry the same hex-encoded msgpack vectors
-(V1–V19) as mandatory tests: in `core/crates/tarmac-protocol/src/tests.rs`
+(V1–V24) as mandatory tests: in `core/crates/tarmac-protocol/src/tests.rs`
 and in `app/Tests/TarmacKitTests/ConformanceTests.swift`. Each vector must decode
 to the same structure and survive an encode→decode roundtrip on both sides. The
 Swift encoder is additionally pinned byte-for-byte to what

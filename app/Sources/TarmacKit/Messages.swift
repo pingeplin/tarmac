@@ -192,7 +192,9 @@ public enum Message: Equatable, Sendable {
         inheritCwdFrom: String? = nil,
         succeeds: String? = nil
     )
-    case input(termID: String, bytes: Data)
+    /// `typed` (2611.0009): the user's own input, which marks the terminal's
+    /// report read. Written only when true.
+    case input(termID: String, bytes: Data, typed: Bool = false)
     case resize(termID: String, cols: Int, rows: Int)
     case output(termID: String, bytes: Data)
     case exit(termID: String, code: Int?)
@@ -234,6 +236,12 @@ public enum Message: Equatable, Sendable {
     /// issue #326 (daemon → app): the value of a `push`, for each loaded card
     /// of the doc `path` (the registry's key).
     case docEvent(path: String, value: String)
+    /// 2611.0009 (cli → daemon): a terminal's report, `blocked`, `done` or
+    /// `clear`; answered with `ack` or `err`. The app never sends one.
+    case report(termID: String, kind: String, text: String?)
+    /// 2611.0009 (daemon → app): a terminal's current report. No `kind` is no
+    /// report; a missing `read` is unread.
+    case termReport(termID: String, kind: String?, text: String?, atMs: UInt64?, proc: String?, read: Bool)
     /// issue #41: `scrollbackRequest` (app → daemon) asks for one terminal's
     /// scrollback ring; the daemon answers with exactly one `scrollback`, always —
     /// empty bytes for a silent or unknown terminal.
@@ -336,7 +344,11 @@ public extension Message {
                 succeeds: try opt("succeeds", \.stringValue)
             )
         case "input":
-            return .input(termID: try req("term_id", \.stringValue), bytes: try req("bytes", \.binaryValue))
+            return .input(
+                termID: try req("term_id", \.stringValue),
+                bytes: try req("bytes", \.binaryValue),
+                typed: try opt("typed", \.boolValue) ?? false
+            )
         case "resize":
             return .resize(
                 termID: try req("term_id", \.stringValue),
@@ -394,6 +406,21 @@ public extension Message {
             return .push(path: try req("path", \.stringValue), value: try req("value", \.stringValue))
         case "doc_event":
             return .docEvent(path: try req("path", \.stringValue), value: try req("value", \.stringValue))
+        case "report":
+            return .report(
+                termID: try req("term_id", \.stringValue),
+                kind: try req("kind", \.stringValue),
+                text: try opt("text", \.stringValue)
+            )
+        case "term_report":
+            return .termReport(
+                termID: try req("term_id", \.stringValue),
+                kind: try opt("kind", \.stringValue),
+                text: try opt("text", \.stringValue),
+                atMs: try opt("at_ms", \.uint64Value),
+                proc: try opt("proc", \.stringValue),
+                read: try opt("read", \.boolValue) ?? false
+            )
         case "scrollback_request":
             return .scrollbackRequest(termID: try req("term_id", \.stringValue))
         case "scrollback":
@@ -540,10 +567,26 @@ public extension Message {
                 $0.put("inherit_cwd_from", unlessNil: inheritCwdFrom.map(MsgPackValue.string))
                 $0.put("succeeds", unlessNil: succeeds.map(MsgPackValue.string))
             }
-        case .input(let termID, let bytes):
+        case .report(let termID, let kind, let text):
+            return Self.tagged("report") {
+                $0.put("term_id", .string(termID))
+                $0.put("kind", .string(kind))
+                $0.put("text", unlessNil: text.map(MsgPackValue.string))
+            }
+        case .termReport(let termID, let kind, let text, let atMs, let proc, let read):
+            return Self.tagged("term_report") {
+                $0.put("term_id", .string(termID))
+                $0.put("kind", unlessNil: kind.map(MsgPackValue.string))
+                $0.put("text", unlessNil: text.map(MsgPackValue.string))
+                $0.put("at_ms", unlessNil: atMs.map(Self.uintValue))
+                $0.put("proc", unlessNil: proc.map(MsgPackValue.string))
+                $0.put("read", unlessNil: read ? .bool(true) : nil)
+            }
+        case .input(let termID, let bytes, let typed):
             return Self.tagged("input") {
                 $0.put("term_id", .string(termID))
                 $0.put("bytes", .binary(bytes))
+                $0.put("typed", unlessNil: typed ? .bool(true) : nil)
             }
         case .resize(let termID, let cols, let rows):
             return Self.tagged("resize") {
