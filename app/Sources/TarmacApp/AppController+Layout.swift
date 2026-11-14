@@ -64,10 +64,15 @@ extension AppController {
     private func showRestoreCard(_ card: RestoreCard) {
         restoreCard = card
         rootView.setRestoreCard(card)
+        rootView.layoutSubtreeIfNeeded()
+        rootView.restoreCard.takeKeys()
     }
 
     func closeRestoreCard() {
         restoreCard = nil
+        // Before the view is hidden: hiding the first responder hands the keys
+        // to the window, and there would be nothing left to give back.
+        rootView.restoreCard.returnKeys(fallback: activeBoard.primeTerminalView ?? rootView.board)
         rootView.setRestoreCard(nil)
     }
 

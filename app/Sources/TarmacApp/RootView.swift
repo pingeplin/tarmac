@@ -160,6 +160,7 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
     func setRestoreCard(_ card: RestoreCard?) {
         if let card { restoreCard.show(card) } else { restoreCard.hide() }
         board.alphaValue = boardAlpha
+        needsLayout = true
     }
 
     private var boardAlpha: CGFloat { restoreCard.isHidden ? 1 : 0.35 }
@@ -193,7 +194,7 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
         // ⌘K switcher: covers the board area and leaves the status bar legible;
         // the panel centers itself within.
         if !boardSwitcher.isHidden { boardSwitcher.frame = area }
-        restoreCard.frame = area
+        if !restoreCard.isHidden { restoreCard.frame = area }
         cardsChanged()
     }
 }

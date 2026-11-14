@@ -395,6 +395,16 @@ final class KeyLadderTests: XCTestCase {
         XCTAssertEqual(KeyLadder.decide(letter("a"), Facts(keys: .document, restoreCard: true)), .closeRestoreCard)
     }
 
+    func testTheCardTakesTheKeyBeforeAComposition() {
+        XCTAssertEqual(KeyLadder.decide(letter("a"), Facts(composing: true, restoreCard: true)), .closeRestoreCard)
+    }
+
+    /// A repeat dropped while the card is up, from a key held since before it
+    /// showed, does not set the latch: only closing the card does.
+    func testADroppedRepeatDoesNotSetTheLatch() {
+        XCTAssertFalse(KeyLadder.afterRestoreCard(was: false, press: repeated(letter("a")), action: .ignoreRepeat))
+    }
+
     /// ⌘Q is the menu's: Quit and its hold guard still work with the card up.
     func testCommandQPassesThroughTheCard() {
         XCTAssertEqual(KeyLadder.decide(letter("q", command), cardUp), .passThrough)

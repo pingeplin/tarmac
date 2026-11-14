@@ -4,10 +4,11 @@ import TarmacKit
 /// The restore card (backlog §1.2, #358), after the v3 handoff's `.tm-veil`
 /// and `.tm-card`: a veil over the board area and a centred card with the
 /// restore's lines and the any-key footer. It takes every click over the board
-/// area and reports it; its keys are the controller's (`KeyLadder`). The
-/// board under it is dimmed by `RootView`.
+/// area and reports it, and holds the keys while it is up; which key does what
+/// is the controller's (`KeyLadder`). The board under it is dimmed by
+/// `RootView`.
 @MainActor
-final class RestoreCardView: NSView, FontFollowing, ThemeFollowing {
+final class RestoreCardView: KeyHoldingView, FontFollowing, ThemeFollowing {
     var onDismiss: (() -> Void)?
 
     private enum Metric {
@@ -50,19 +51,17 @@ final class RestoreCardView: NSView, FontFollowing, ThemeFollowing {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    /// Each line is a glyph and its text: `✓` in the ok colour, any other
-    /// glyph dim, as the v3 card's rows.
+    /// Each line is a glyph and its text: an ok glyph in the ok colour, any
+    /// other dim, as the v3 card's rows.
     func show(_ restore: RestoreCard) {
         for row in rows {
             row.glyph.removeFromSuperview()
             row.text.removeFromSuperview()
         }
         rows = restore.lines.map { line in
-            let glyph = String(line.prefix(1))
-            let text = String(line.dropFirst()).trimmingCharacters(in: .whitespaces)
-            return (
-                ChromeLabel(glyph, size: 11, color: glyph == "✓" ? Theme.ok : Theme.faint),
-                ChromeLabel(text, size: 11, color: Theme.muted)
+            (
+                ChromeLabel(line.glyph, size: 11, color: line.ok ? Theme.ok : Theme.faint),
+                ChromeLabel(line.text, size: 11, color: Theme.muted)
             )
         }
         for row in rows {

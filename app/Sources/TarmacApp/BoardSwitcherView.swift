@@ -6,14 +6,11 @@ import TarmacKit
 /// is given, with `SwitcherChrome`'s words, and reports clicks; the controller
 /// owns the state and every key.
 @MainActor
-final class BoardSwitcherView: NSView, FontFollowing, ThemeFollowing {
+final class BoardSwitcherView: KeyHoldingView, FontFollowing, ThemeFollowing {
     /// A row was clicked (its index among the visible rows).
     var onPickRow: ((Int) -> Void)?
     /// The veil outside the panel was clicked.
     var onDismiss: (() -> Void)?
-
-    /// Who gets keyboard focus back when the switcher closes.
-    weak var keysOwner: NSResponder?
 
     private enum Metric {
         static let panelWidth: CGFloat = 380
@@ -57,7 +54,6 @@ final class BoardSwitcherView: NSView, FontFollowing, ThemeFollowing {
     private var blink: Timer?
 
     override var isFlipped: Bool { true }
-    override var acceptsFirstResponder: Bool { true }
 
     init() {
         super.init(frame: .zero)
@@ -107,32 +103,6 @@ final class BoardSwitcherView: NSView, FontFollowing, ThemeFollowing {
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
-
-    // MARK: - Keyboard focus
-
-    /// Takes first responder, remembering who had it. The view answers none
-    /// of the menu's first-responder commands, so while it is up Paste, Copy
-    /// and Select All do nothing instead of reaching the terminal behind it.
-    func takeKeys() {
-        keysOwner = window?.firstResponder
-        window?.makeFirstResponder(self)
-    }
-
-    /// Hands first responder back to `keysOwner`, or to `fallback` when that
-    /// view has left the window meanwhile.
-    func returnKeys(fallback: NSView) {
-        defer { keysOwner = nil }
-        guard let window, window.firstResponder === self else { return }
-        if let owner = keysOwner as? NSView, owner.window === window {
-            window.makeFirstResponder(owner)
-        } else {
-            window.makeFirstResponder(fallback)
-        }
-    }
-
-    /// A ⌘ chord the menu did not take comes back as a key-down; unanswered,
-    /// it would run off the responder chain and the window would beep.
-    override func keyDown(with event: NSEvent) {}
 
     // MARK: - Rendering
 
