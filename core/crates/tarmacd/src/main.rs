@@ -136,8 +136,8 @@ async fn main() -> anyhow::Result<()> {
                 let d = daemon.clone();
                 tokio::spawn(async move { conn::handle(d, stream, peer_pid).await });
             }
-            // Out of descriptors (EMFILE) the next accept fails at once too;
-            // the pause keeps that from spinning a core until one is freed.
+            // Out of descriptors (EMFILE) the next accept would fail too;
+            // the pause keeps the loop from retrying at once.
             Err(e) => {
                 warn!("accept failed: {e}");
                 tokio::time::sleep(ACCEPT_RETRY).await;

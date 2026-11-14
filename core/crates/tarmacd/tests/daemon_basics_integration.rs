@@ -299,24 +299,38 @@ fn cli_hello_ok_reports_daemon_version_and_pid_alongside_the_app() {
 }
 
 #[test]
-fn a_daemon_started_at_256_files_gives_its_shells_open_max() {
+fn a_daemon_started_at_256_files_gives_its_shells_open_max_and_keeps_the_hard_limit() {
     use std::os::unix::process::CommandExt;
-    let mut hard = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
-    // SAFETY: `hard` is a valid rlimit for getrlimit to fill.
-    assert_eq!(unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut hard) }, 0);
+    let mut limit = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+    // SAFETY: `limit` is a valid rlimit for getrlimit to fill.
+    assert_eq!(unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) }, 0);
+    let hard = limit.rlim_max;
+    let mut per_proc: libc::c_int = 0;
+    let mut size = std::mem::size_of::<libc::c_int>();
+    // SAFETY: the name is NUL-terminated and `per_proc` is `size` bytes.
+    let rc = unsafe {
+        libc::sysctlbyname(c"kern.maxfilesperproc".as_ptr(), (&raw mut per_proc).cast(), &mut size, std::ptr::null_mut(), 0)
+    };
+    assert_eq!(rc, 0);
     let daemon = TestDaemon::start_with(|cmd| {
         // SAFETY: setrlimit is async-signal-safe, and nothing else runs here.
         unsafe {
-            cmd.pre_exec(|| {
-                let launchd = libc::rlimit { rlim_cur: 256, rlim_max: libc::RLIM_INFINITY };
-                if libc::setrlimit(libc::RLIMIT_NOFILE, &launchd) == 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
+            cmd.pre_exec(move || {
+                let launchd = libc::rlimit { rlim_cur: 256, rlim_max: hard };
+                match libc::setrlimit(libc::RLIMIT_NOFILE, &launchd) {
+                    0 => Ok(()),
+                    _ => Err(std::io::Error::last_os_error()),
+                }
             });
         }
     });
     let mut app = daemon.connect_app();
     app.recv_restore();
 
-    app.spawn_term("t1", &["/bin/sh", "-c", "echo nofile=$(ulimit -n)."]);
+    app.spawn_term("t1", &["/bin/sh", "-c", "echo nofile=$(ulimit -n)/$(ulimit -Hn)."]);
 
-    app.recv_output_containing("t1", &format!("nofile={}.", hard.rlim_max.min(10240)));
+    let soft = 10240.min(hard).min(u64::try_from(per_proc).unwrap());
+    let hard = if hard == libc::RLIM_INFINITY { "unlimited".to_string() } else { hard.to_string() };
+    app.recv_output_containing("t1", &format!("nofile={soft}/{hard}."));
 }
+

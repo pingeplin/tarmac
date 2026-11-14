@@ -241,15 +241,17 @@ The accept loop reads each client's pid with `UnixStream::peer_cred()`
 read only while the client's end is open; only a cli session uses it (a
 `report`, below).
 
-After an accept error the loop waits 100 ms before the next accept: out of
-descriptors (`EMFILE`), each accept fails at once, and a loop with no pause
-spins a core until one is freed (#360). There is no cap on subscribers.
+After an accept error the loop waits 100 ms before the next accept, so that
+out of descriptors (`EMFILE`) it does not retry at once (#360). There is no cap
+on subscribers.
 
-At start-up, before it opens anything, `fd_limit::raise` lifts the soft
+At start-up, before the socket, the watcher and any terminal,
+`fd_limit::raise` lifts the soft
 `RLIMIT_NOFILE` from launchd's 256 to `OPEN_MAX` (10240), clamped to the hard
 limit and `kern.maxfilesperproc`, and never lowers it. A child inherits the
-limit, so `ulimit -n` in a Tarmac terminal is 10240 by default; a user who
-wants another value sets `ulimit -n` in the shell's start-up file.
+limit, so `ulimit -n` in a Tarmac terminal is at least 10240 unless the hard
+limit is lower; a user who wants another value sets `ulimit -n` in the shell's
+start-up file.
 
 The CLI gets a short-lived `cli_session`. The app gets a long-lived
 `app_session` that installs the single-app slot, creates the bounded
