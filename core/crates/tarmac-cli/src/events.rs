@@ -3,41 +3,35 @@
 //! shares. The cli checks each frame's kind and terminal itself: it does not
 //! trust the daemon's filter alone.
 
-use std::cell::Cell;
 use std::io::{self, Write};
 use std::os::unix::net::UnixStream;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use serde_json::{Map, Value, json};
-use tarmac_protocol::{self as proto, Msg, frame};
+use serde::Serialize;
+use tarmac_protocol::{self as proto, EventKind, Msg, frame};
 
 const USAGE: &str = "usage: tarmac events [--term ID] [--kind exit,bell,changed,report]";
-const KINDS: [&str; 4] = ["exit", "bell", "changed", "report"];
 const LAGGED: &str = "the daemon dropped this stream: it fell behind (lagged)";
 
 pub fn run(args: &[String]) -> i32 {
-    let Some((kinds, term_id)) = parse(args) else {
+    let Some(want) = parse(args) else {
         eprintln!("tarmac: {USAGE}");
         return 2;
     };
-    let wanted = |msg: &Msg| {
-        kind_of(msg).is_some_and(|(kind, term)| {
-            kinds.as_ref().is_none_or(|k| k.iter().any(|n| n == kind)) && term_id.as_deref().is_none_or(|want| term == Some(want))
-        })
-    };
-    let (mut stream, snapshot) = match subscribe(kinds.clone(), term_id.clone(), None) {
+    let kinds = want.kinds.as_ref().map(|k| k.iter().map(|k| k.name().to_string()).collect());
+    let (mut stream, snapshot) = match subscribe(kinds, want.term_id.clone(), None) {
         Ok(opened) => opened,
         Err(stop) => return stopped(stop),
     };
     let mut out = io::stdout().lock();
-    for msg in snapshot.iter().filter(|m| wanted(m)) {
+    for msg in snapshot.iter().filter(|m| want.admits(m)) {
         if print(&mut out, msg, true).is_err() {
             return 0;
         }
     }
     loop {
         match next(&mut stream, None) {
-            Ok(msg) if wanted(&msg) => {
+            Ok(msg) if want.admits(&msg) => {
                 // A closed stdout is the reader's end, not a failure (D16).
                 if print(&mut out, &msg, false).is_err() {
                     return 0;
@@ -50,8 +44,8 @@ pub fn run(args: &[String]) -> i32 {
 }
 
 fn print(out: &mut impl Write, msg: &Msg, snapshot: bool) -> io::Result<()> {
-    let Some(line) = line(msg, snapshot, now_ms()) else { return Ok(()) };
-    writeln!(out, "{line}")?;
+    let Some(line) = Line::of(msg, snapshot, now_ms()) else { return Ok(()) };
+    writeln!(out, "{}", serde_json::to_string(&line).map_err(io::Error::other)?)?;
     out.flush()
 }
 
@@ -66,10 +60,26 @@ fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
 }
 
-/// The filter: `--kind` as given, `--term`. `None` is a usage error: an
-/// unknown or empty kind, a flag twice or with no value, a stray argument,
-/// or `--term` with `changed` named, since a `file_event` has no terminal.
-fn parse(args: &[String]) -> Option<(Option<Vec<String>>, Option<String>)> {
+/// What `events` asks for: the `--kind`s in their order (`None` is all) and
+/// the `--term`.
+#[derive(Debug, PartialEq)]
+struct Want {
+    kinds: Option<Vec<EventKind>>,
+    term_id: Option<String>,
+}
+
+impl Want {
+    fn admits(&self, msg: &Msg) -> bool {
+        EventKind::of(msg).is_some_and(|(kind, term)| {
+            self.kinds.as_ref().is_none_or(|k| k.contains(&kind)) && self.term_id.as_deref().is_none_or(|want| term == Some(want))
+        })
+    }
+}
+
+/// `None` is a usage error: an unknown or empty kind, a flag twice or with no
+/// value, a stray argument, or `--term` with `changed` named, since a
+/// `file_event` has no terminal.
+fn parse(args: &[String]) -> Option<Want> {
     let (mut kinds, mut term_id) = (None, None);
     let mut rest = args.iter();
     while let Some(flag) = rest.next() {
@@ -82,86 +92,86 @@ fn parse(args: &[String]) -> Option<(Option<Vec<String>>, Option<String>)> {
             return None;
         }
     }
-    let kinds: Option<Vec<String>> = kinds.map(|k| k.split(',').map(str::to_string).collect());
-    if kinds.as_ref().is_some_and(|k| k.iter().any(|n| !KINDS.contains(&n.as_str()))) {
-        return None;
-    }
-    if term_id.is_some() && kinds.as_ref().is_some_and(|k| k.iter().any(|n| n == "changed")) {
-        return None;
-    }
-    Some((kinds, term_id))
-}
-
-/// The kind of an event frame, by its cli name, and its terminal.
-pub(crate) fn kind_of(msg: &Msg) -> Option<(&'static str, Option<&str>)> {
-    match msg {
-        Msg::Exit { term_id, .. } => Some(("exit", Some(term_id))),
-        Msg::Bell { term_id, .. } => Some(("bell", Some(term_id))),
-        Msg::FileEvent { .. } => Some(("changed", None)),
-        Msg::TermReport { term_id, .. } => Some(("report", Some(term_id))),
-        _ => None,
-    }
-}
-
-/// One JSON line for an event frame, `None` for any other. `received_ms` is
-/// the cli's clock when it read the frame; a snapshot frame is marked.
-fn line(msg: &Msg, snapshot: bool, received_ms: u64) -> Option<Value> {
-    let (event, _) = kind_of(msg)?;
-    let mut m = Map::new();
-    m.insert("event".into(), json!(event));
-    if snapshot {
-        m.insert("snapshot".into(), json!(true));
-    }
-    let mut put = |key: &str, value: Option<Value>| {
-        if let Some(value) = value {
-            m.insert(key.into(), value);
-        }
+    let kinds: Option<Vec<EventKind>> = match kinds {
+        Some(names) => Some(names.split(',').map(EventKind::named).collect::<Option<_>>()?),
+        None => None,
     };
-    match msg {
-        Msg::Exit { term_id, code, board_id } => {
-            put("term", Some(json!(term_id)));
-            put("board", board_id.as_ref().map(|b| json!(b)));
-            match code {
-                Some(code) => put("code", Some(json!(code))),
-                None => put("signal", Some(json!(true))),
-            }
-        }
-        Msg::Bell { term_id, board_id } => {
-            put("term", Some(json!(term_id)));
-            put("board", board_id.as_ref().map(|b| json!(b)));
-        }
-        Msg::FileEvent { path, mtime_ms } => {
-            put("path", Some(json!(path)));
-            put("mtime_ms", Some(json!(mtime_ms)));
-        }
-        Msg::TermReport { term_id, kind, board_id, .. } => {
-            put("term", Some(json!(term_id)));
-            put("board", board_id.as_ref().map(|b| json!(b)));
-            if kind.is_some() {
-                m.extend(report(msg)?);
-            }
-        }
-        _ => return None,
+    if term_id.is_some() && kinds.as_ref().is_some_and(|k| k.contains(&EventKind::Changed)) {
+        return None;
     }
-    m.insert("received_ms".into(), json!(received_ms));
-    Some(Value::Object(m))
+    Some(Want { kinds, term_id })
 }
 
-/// A report frame's own keys, as `wait --report` prints them; `None` for a
-/// frame with no report.
-pub(crate) fn report(msg: &Msg) -> Option<Map<String, Value>> {
-    let Msg::TermReport { kind: Some(kind), text, at_ms, proc, read, .. } = msg else { return None };
-    let mut m = Map::new();
-    m.insert("kind".into(), json!(kind));
-    if let Some(text) = text {
-        m.insert("text".into(), json!(text));
+/// One JSON line. Its keys are written in field order.
+#[derive(Serialize)]
+struct Line<'a> {
+    event: &'static str,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    snapshot: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    term: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    board: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    code: Option<i64>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    signal: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mtime_ms: Option<u64>,
+    #[serde(flatten)]
+    report: Option<Report<'a>>,
+    received_ms: u64,
+}
+
+impl<'a> Line<'a> {
+    /// The line of an event frame, `None` for any other. `received_ms` is the
+    /// cli's clock when it read the frame; a snapshot frame is marked.
+    fn of(msg: &'a Msg, snapshot: bool, received_ms: u64) -> Option<Line<'a>> {
+        let (kind, term) = EventKind::of(msg)?;
+        let mut line = Line {
+            event: kind.name(),
+            snapshot,
+            term,
+            board: None,
+            code: None,
+            signal: false,
+            path: None,
+            mtime_ms: None,
+            report: Report::of(msg),
+            received_ms,
+        };
+        match msg {
+            Msg::Exit { code, board_id, .. } => {
+                (line.board, line.code, line.signal) = (board_id.as_deref(), *code, code.is_none());
+            }
+            Msg::Bell { board_id, .. } | Msg::TermReport { board_id, .. } => line.board = board_id.as_deref(),
+            Msg::FileEvent { path, mtime_ms } => (line.path, line.mtime_ms) = (Some(path.as_str()), Some(*mtime_ms)),
+            _ => {}
+        }
+        Some(line)
     }
-    if let Some(proc) = proc {
-        m.insert("proc".into(), json!(proc));
+}
+
+/// A report's own keys, as `wait --report` prints them.
+#[derive(Serialize)]
+pub(crate) struct Report<'a> {
+    kind: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    proc: Option<&'a str>,
+    at_ms: Option<u64>,
+    read: bool,
+}
+
+impl<'a> Report<'a> {
+    /// `None` for a frame with no report.
+    pub(crate) fn of(msg: &'a Msg) -> Option<Report<'a>> {
+        let Msg::TermReport { kind: Some(kind), text, at_ms, proc, read, .. } = msg else { return None };
+        Some(Report { kind, text: text.as_deref(), proc: proc.as_deref(), at_ms: *at_ms, read: *read })
     }
-    m.insert("at_ms".into(), json!(at_ms));
-    m.insert("read".into(), json!(read));
-    Some(m)
 }
 
 /// Why a stream ended: a line for stderr with exit 1, or the `--timeout`
@@ -179,22 +189,20 @@ pub(crate) fn subscribe(kinds: Option<Vec<String>>, term_id: Option<String>, dea
     let until = deadline.map_or(five, |d| d.min(five));
     let late = deadline.is_some_and(|d| d <= five);
     let no_answer = crate::no_answer("an older daemon");
-    let timed_out = Cell::new(false);
-    let failed = |e: io::Error| {
-        timed_out.set(matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut));
-        crate::late_or_lost(e, &no_answer)
+    let stop = |e: io::Error| match crate::is_timeout(&e) {
+        true if late => Stop::Late,
+        true => Stop::Fail(no_answer.clone()),
+        false => Stop::Fail(crate::lost(e)),
     };
-    let stop = |why: String| if late && timed_out.get() { Stop::Late } else { Stop::Fail(why) };
-    let mut stream = crate::connect_until(until, &failed).map_err(stop)?;
+    let mut stream = crate::connect_until(until, &|e| crate::late_or_lost(e, &no_answer)).map_err(|why| match late && why == no_answer {
+        true => Stop::Late,
+        false => Stop::Fail(why),
+    })?;
     let payload = proto::encode(&Msg::Subscribe { kinds, term_id }).map_err(|e| Stop::Fail(format!("encode failed: {e}")))?;
-    crate::time_out_at(&stream, until).map_err(|e| stop(failed(e)))?;
-    frame::write_sync(&mut stream, &payload).map_err(|e| stop(failed(e)))?;
+    crate::time_out_at(&stream, until).and_then(|()| frame::write_sync(&mut stream, &payload)).map_err(stop)?;
     let mut snapshot = Vec::new();
     loop {
-        if !read_until(&stream, Some(until)) {
-            return Err(stop(failed(io::ErrorKind::TimedOut.into())));
-        }
-        match crate::recv_or(&mut stream, &failed).map_err(stop)? {
+        match decoded(read(&mut stream, Some(until)).map_err(stop)?)? {
             Msg::Ack => return Ok((stream, snapshot)),
             Msg::Err { msg } => return Err(Stop::Fail(msg)),
             msg => snapshot.push(msg),
@@ -202,35 +210,35 @@ pub(crate) fn subscribe(kinds: Option<Vec<String>>, term_id: Option<String>, dea
     }
 }
 
-/// Gives the next read the time left until `until`, or no limit; false when
-/// none is left. macOS refuses a timeout on a socket the peer has closed, and
-/// the read that follows says so.
-fn read_until(stream: &UnixStream, until: Option<Instant>) -> bool {
-    let left = until.map(|u| u.saturating_duration_since(Instant::now()));
-    if left.is_some_and(|l| l.is_zero()) {
-        return false;
-    }
-    let _ = stream.set_read_timeout(left);
-    true
-}
-
 /// The next frame after `ack`. With a `deadline`, running out is `Late`.
 pub(crate) fn next(stream: &mut UnixStream, deadline: Option<Instant>) -> Result<Msg, Stop> {
-    if !read_until(stream, deadline) {
-        return Err(Stop::Late);
+    let payload = read(stream, deadline).map_err(|e| match crate::is_timeout(&e) && deadline.is_some() {
+        true => Stop::Late,
+        false => Stop::Fail(crate::lost(e)),
+    })?;
+    match decoded(payload)? {
+        Msg::Err { msg } if msg == "lagged" => Err(Stop::Fail(LAGGED.into())),
+        Msg::Err { msg } => Err(Stop::Fail(msg)),
+        msg => Ok(msg),
     }
-    let timed_out = Cell::new(false);
-    let msg = crate::recv_or(stream, |e| {
-        timed_out.set(matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut));
-        crate::lost(e)
-    });
-    match msg {
-        Err(_) if timed_out.get() && deadline.is_some() => Err(Stop::Late),
-        Err(why) => Err(Stop::Fail(why)),
-        Ok(Msg::Err { msg }) if msg == "lagged" => Err(Stop::Fail(LAGGED.into())),
-        Ok(Msg::Err { msg }) => Err(Stop::Fail(msg)),
-        Ok(msg) => Ok(msg),
+}
+
+/// One frame, read by `until` (with no limit for `None`). macOS refuses a
+/// timeout on a socket the peer has closed; that refusal is let pass, and
+/// the read reports the close.
+fn read(stream: &mut UnixStream, until: Option<Instant>) -> io::Result<Vec<u8>> {
+    let set = match until {
+        Some(until) => crate::time_out_at(stream, until),
+        None => stream.set_read_timeout(None),
+    };
+    match set {
+        Err(e) if crate::is_timeout(&e) => Err(e),
+        _ => frame::read_sync(stream),
     }
+}
+
+fn decoded(payload: Vec<u8>) -> Result<Msg, Stop> {
+    proto::decode(&payload).map_err(|e| Stop::Fail(format!("bad frame from daemon: {e}")))
 }
 
 #[cfg(test)]
@@ -242,7 +250,7 @@ mod tests {
     }
 
     fn text(msg: &Msg, snapshot: bool) -> String {
-        line(msg, snapshot, 9).unwrap().to_string()
+        serde_json::to_string(&Line::of(msg, snapshot, 9).unwrap()).unwrap()
     }
 
     fn report(kind: Option<&str>, text: Option<&str>, proc: Option<&str>, board_id: Option<&str>) -> Msg {
@@ -290,20 +298,21 @@ mod tests {
 
     #[test]
     fn a_frame_that_is_not_an_event_has_no_line() {
-        assert!(line(&Msg::Output { term_id: "t1".into(), bytes: vec![] }, false, 9).is_none());
-        assert!(line(&Msg::Ack, false, 9).is_none());
+        assert!(Line::of(&Msg::Output { term_id: "t1".into(), bytes: vec![] }, false, 9).is_none());
+        assert!(Line::of(&Msg::Ack, false, 9).is_none());
     }
 
     #[test]
     fn the_flags_are_parsed_and_kinds_keep_their_order() {
-        assert_eq!(parse(&args(&[])), Some((None, None)));
-        assert_eq!(parse(&args(&["--kind", "report,exit", "--term", "t1"])), Some((Some(args(&["report", "exit"])), Some("t1".into()))));
-        assert_eq!(parse(&args(&["--term", "t1"])), Some((None, Some("t1".into()))));
+        let want = |kinds: Option<Vec<EventKind>>, term_id: Option<&str>| Some(Want { kinds, term_id: term_id.map(str::to_string) });
+        assert_eq!(parse(&args(&[])), want(None, None));
+        assert_eq!(parse(&args(&["--kind", "report,exit", "--term", "t1"])), want(Some(vec![EventKind::Report, EventKind::Exit]), Some("t1")));
+        assert_eq!(parse(&args(&["--term", "t1"])), want(None, Some("t1")));
     }
 
     #[test]
     fn a_bad_flag_is_a_usage_error() {
-        for bad in [&["--kind", "later"][..], &["--kind", ""], &["--kind", "bell,"], &["--term", "t1", "--kind", "changed"], &["x"], &["--term"], &["--kind"], &["--term", "a", "--term", "b"]] {
+        for bad in [&["--kind", "later"][..], &["--kind", ""], &["--kind", "bell,"], &["--term", "t1", "--kind", "changed"], &["x"], &["--term"], &["--kind"], &["--term", "a", "--term", "b"], &["--kind", "bell", "--kind", "exit"], &["--term", "t1", "--kind", "bell,changed"]] {
             assert_eq!(parse(&args(bad)), None, "{bad:?}");
         }
     }

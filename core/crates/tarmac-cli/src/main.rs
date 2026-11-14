@@ -169,10 +169,12 @@ fn exchange_until(
 
 /// A time-out worded as `no_answer`; any other failure as a lost connection.
 fn late_or_lost(e: io::Error, no_answer: &str) -> String {
-    match e.kind() {
-        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => no_answer.to_string(),
-        _ => lost(e),
-    }
+    if is_timeout(&e) { no_answer.to_string() } else { lost(e) }
+}
+
+/// A read or write that ran out of time: a socket timeout gives either kind.
+fn is_timeout(e: &io::Error) -> bool {
+    matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut)
 }
 
 /// Gives the next read and write the time left until `until`. With none

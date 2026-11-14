@@ -3,7 +3,7 @@
 
 use std::io::Write;
 
-use serde_json::{Map, json};
+use serde::Serialize;
 use tarmac_protocol::{Msg, TermInfo};
 
 const USAGE: &str = "usage: tarmac terms";
@@ -17,7 +17,8 @@ pub fn run(args: &[String]) -> i32 {
         Ok(terms) => {
             let mut out = std::io::stdout().lock();
             for row in &terms {
-                let _ = writeln!(out, "{}", line(row));
+                let row = Row { term: &row.term_id, board: &row.board_id, cwd: row.cwd.as_deref(), proc: row.proc.as_deref() };
+                let _ = writeln!(out, "{}", serde_json::to_string(&row).unwrap_or_default());
             }
             0
         }
@@ -41,15 +42,13 @@ fn list() -> Result<Vec<TermInfo>, String> {
     }
 }
 
-fn line(row: &TermInfo) -> serde_json::Value {
-    let mut m = Map::new();
-    m.insert("term".into(), json!(row.term_id));
-    m.insert("board".into(), json!(row.board_id));
-    if let Some(cwd) = &row.cwd {
-        m.insert("cwd".into(), json!(cwd));
-    }
-    if let Some(proc) = &row.proc {
-        m.insert("proc".into(), json!(proc));
-    }
-    serde_json::Value::Object(m)
+/// One line; its keys are written in field order.
+#[derive(Serialize)]
+struct Row<'a> {
+    term: &'a str,
+    board: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cwd: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    proc: Option<&'a str>,
 }

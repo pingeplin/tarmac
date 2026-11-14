@@ -25,6 +25,19 @@ enum Mode {
     Changed { path: String, settle: Option<Duration> },
 }
 
+impl Mode {
+    /// The kinds a daemon wait subscribes to, and its terminal; `None` for
+    /// `--changed`. A bell or report wait takes the exit too.
+    fn daemon(&self) -> Option<(&'static [&'static str], &str)> {
+        match self {
+            Mode::Exit(id) => Some((&["exit"], id)),
+            Mode::Bell(id) => Some((&["bell", "exit"], id)),
+            Mode::Report { term_id, .. } => Some((&["report", "exit"], term_id)),
+            Mode::Changed { .. } => None,
+        }
+    }
+}
+
 pub fn run(args: &[String]) -> i32 {
     let started = Instant::now();
     let Some((mode, timeout)) = parse(args) else {
@@ -34,10 +47,8 @@ pub fn run(args: &[String]) -> i32 {
     // A sum past what `Instant` holds is no deadline at all.
     let deadline = timeout.and_then(|t| started.checked_add(t));
     let outcome = match &mode {
-        Mode::Exit(id) => from_daemon(&mode, &["exit"], id, deadline),
-        Mode::Bell(id) => from_daemon(&mode, &["bell", "exit"], id, deadline),
-        Mode::Report { term_id, .. } => from_daemon(&mode, &["report", "exit"], term_id, deadline),
         Mode::Changed { path, settle } => changed(path, *settle, started, deadline),
+        mode => from_daemon(mode, deadline),
     };
     match outcome {
         Outcome::Done(line) => {
@@ -60,7 +71,8 @@ enum Outcome {
     TimedOut,
 }
 
-fn from_daemon(mode: &Mode, kinds: &[&str], term_id: &str, deadline: Option<Instant>) -> Outcome {
+fn from_daemon(mode: &Mode, deadline: Option<Instant>) -> Outcome {
+    let Some((kinds, term_id)) = mode.daemon() else { return Outcome::Failed("--changed does not talk to the daemon".into()) };
     let kinds = kinds.iter().map(|k| k.to_string()).collect();
     let (mut stream, snapshot) = match events::subscribe(Some(kinds), Some(term_id.to_owned()), deadline) {
         Ok(opened) => opened,
@@ -89,18 +101,15 @@ fn from_daemon(mode: &Mode, kinds: &[&str], term_id: &str, deadline: Option<Inst
 /// What `msg` means for the wait, `None` when it goes on. An exit ends a
 /// wait for a bell or a report that can no longer come.
 fn verdict(mode: &Mode, msg: &Msg) -> Option<Outcome> {
-    let (kind, term) = events::kind_of(msg)?;
-    let (Mode::Exit(id) | Mode::Bell(id) | Mode::Report { term_id: id, .. }) = mode else { return None };
-    if term != Some(id.as_str()) {
-        return None;
-    }
+    let (_, id) = mode.daemon()?;
     match (mode, msg) {
+        (_, Msg::Exit { term_id, .. } | Msg::Bell { term_id, .. } | Msg::TermReport { term_id, .. }) if term_id != id => None,
         (Mode::Exit(_), Msg::Exit { code: Some(code), .. }) => Some(Outcome::Done(Some(json!({ "code": code })))),
         (Mode::Exit(_), Msg::Exit { code: None, .. }) => Some(Outcome::Done(Some(json!({ "signal": true })))),
         (_, Msg::Exit { .. }) => Some(Outcome::Failed(format!("terminal {id} exited"))),
-        (Mode::Bell(_), _) if kind == "bell" => Some(Outcome::Done(None)),
+        (Mode::Bell(_), Msg::Bell { .. }) => Some(Outcome::Done(None)),
         (Mode::Report { kind: want, .. }, Msg::TermReport { kind: Some(got), .. }) if got == want => {
-            events::report(msg).map(|m| Outcome::Done(Some(Value::Object(m))))
+            Some(Outcome::Done(serde_json::to_value(events::Report::of(msg)?).ok()))
         }
         _ => None,
     }
