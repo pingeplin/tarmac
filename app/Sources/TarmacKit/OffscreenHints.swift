@@ -58,9 +58,10 @@ public enum OffscreenHintLayout {
         /// Every currently-visible card's view-space rect, a uniform obstacle set
         /// (no card identity) that pills are nudged clear of.
         public var obstacles: [CGRect]
-        /// The view-space rects of the chrome drawn over the pills (the minimap,
-        /// each toast). Pills keep clear of them as of a card, but a pill left
-        /// under one covers no card, so they never make a pill `occluded`.
+        /// The view-space rects of the chrome drawn over the pills (the zoom
+        /// control, the minimap, each toast). Pills keep clear of them as of a
+        /// card, but a pill left under one covers no card, so they never make
+        /// a pill `occluded`.
         public var chrome: [CGRect]
 
         public init(
@@ -196,9 +197,8 @@ public enum OffscreenHintLayout {
     /// Places one edge's pills, sorted along it. A backward pass — `from` the
     /// forward pass's pills, in the same order, each pill starting where that
     /// put it — works in mirrored coordinates (`x → −x` along the edge), so the
-    /// sibling nudge and the overflow run toward the edge's start; it prefers a
-    /// move toward the start too. A forward pass on the bottom edge prefers a
-    /// move to the left.
+    /// sibling nudge and the overflow run toward the edge's start. A forward
+    /// pass on the bottom edge prefers a move to the left.
     private static func place(
         _ group: [Projected], on edge: BoardWayfinding.Edge, in viewRect: CGRect, options: Options,
         from seeds: [PlacedPill]?
@@ -206,7 +206,7 @@ public enum OffscreenHintLayout {
         let backward = seeds != nil
         let vertical = edge == .left || edge == .right
         let sign: CGFloat = backward ? -1 : 1
-        let prefer: Side? = backward ? .higher : (edge == .bottom ? .lower : nil)
+        let preferLower = !backward && edge == .bottom
         let blockers = options.obstacles + options.chrome
         let order = backward ? Array(group.indices.reversed()) : Array(group.indices)
         let lengths = group.map { vertical ? $0.size.height : $0.size.width }
@@ -247,7 +247,7 @@ public enum OffscreenHintLayout {
                 siblingFloor: lastEnd + options.stackGap,
                 posLo: backward ? mirror(posHi) : posLo, posHi: backward ? mirror(posLo) : posHi,
                 reserve: reserve,
-                prefer: prefer
+                preferLower: preferLower
             )
             lastEnd = resolved + length
             let pos = sign * resolved - (backward ? length : 0)
@@ -275,10 +275,6 @@ public enum OffscreenHintLayout {
         }
         if backward { pass.pills.reverse() }
         return pass
-    }
-
-    private enum Side {
-        case lower, higher
     }
 
     private struct Interval {
@@ -310,10 +306,10 @@ public enum OffscreenHintLayout {
     /// the pill overflow.
     ///
     /// Otherwise it searches `[max(posLo, siblingFloor), posHi]` for the free gap
-    /// (the window minus the obstacle intervals) closest to `desired` — on the
-    /// `prefer` side of it first, when there is one. A gap is taken only where
-    /// the later siblings (`reserve`, their lengths and gaps) still fit before
-    /// `posHi`, so taking it pushes none of them out of view; ties favor the later gap,
+    /// (the window minus the obstacle intervals) closest to `desired` — at or
+    /// below it first, when `preferLower`. A gap is taken only where the later
+    /// siblings (`reserve`, their lengths and gaps) still fit before `posHi`, so
+    /// taking it pushes none of them out of view; ties favor the later gap,
     /// matching the sibling nudge's forward-only bias. If obstacles saturate the
     /// whole window, it falls back to the window-clamped `desired`. A pill is
     /// always returned, never suppressed.
@@ -325,7 +321,7 @@ public enum OffscreenHintLayout {
         posLo: CGFloat,
         posHi: CGFloat,
         reserve: CGFloat,
-        prefer: Side?
+        preferLower: Bool
     ) -> CGFloat {
         let lo = max(posLo, siblingFloor)
         if lo > posHi {
@@ -367,9 +363,7 @@ public enum OffscreenHintLayout {
             }
             return best
         }
-        let preferred = prefer.flatMap { side in
-            nearest { side == .lower ? $0 <= clampedDesired : $0 >= clampedDesired }
-        }
+        let preferred = preferLower ? nearest { $0 <= clampedDesired } : nil
         return preferred ?? nearest { _ in true } ?? clampedDesired
     }
 }
