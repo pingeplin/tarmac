@@ -208,13 +208,15 @@ public enum Message: Equatable, Sendable {
     case input(termID: String, bytes: Data, typed: Bool = false)
     case resize(termID: String, cols: Int, rows: Int)
     case output(termID: String, bytes: Data)
-    case exit(termID: String, code: Int?)
+    /// `boardID` (2611.0013): the board the terminal was filed under when it
+    /// ended; nil from an older daemon.
+    case exit(termID: String, code: Int?, boardID: String? = nil)
     case docOpened(doc: RestoreDoc)
     case fileEvent(path: String, mtimeMs: UInt64)
     /// Honest signals (daemon → app). `termProc` is the
     /// foreground process name on a terminal; `bell` is a seen BEL (0x07).
     case termProc(termID: String, name: String, pid: Int?)
-    case bell(termID: String)
+    case bell(termID: String, boardID: String? = nil)
     /// Boards. `boardList` (daemon → app) is the
     /// full set of boards + the active one; `boardSwitch` / `boardCreate`
     /// (app → daemon) drive the switcher.
@@ -252,7 +254,12 @@ public enum Message: Equatable, Sendable {
     case report(termID: String, kind: String, text: String?)
     /// 2611.0009 (daemon → app): a terminal's current report. No `kind` is no
     /// report; a missing `read` is unread.
-    case termReport(termID: String, kind: String?, text: String?, atMs: UInt64?, proc: String?, read: Bool)
+    /// `boardID` and `cwd` (2611.0013): the terminal's board and `last_cwd`
+    /// record when the report was made; never on a frame with no `kind`.
+    case termReport(
+        termID: String, kind: String?, text: String?, atMs: UInt64?, proc: String?, read: Bool,
+        boardID: String? = nil, cwd: String? = nil
+    )
     /// 2611.0011 (cli → daemon): a terminal's resume command; nil clears it.
     /// The app never sends one.
     case resume(termID: String, cmd: String?)
@@ -372,7 +379,11 @@ public extension Message {
         case "output":
             return .output(termID: try req("term_id", \.stringValue), bytes: try req("bytes", \.binaryValue))
         case "exit":
-            return .exit(termID: try req("term_id", \.stringValue), code: try opt("code", \.intValue))
+            return .exit(
+                termID: try req("term_id", \.stringValue),
+                code: try opt("code", \.intValue),
+                boardID: try opt("board_id", \.stringValue)
+            )
         case "doc_opened":
             return .docOpened(doc: try Self.docEntry(from: map))
         case "file_event":
@@ -384,7 +395,7 @@ public extension Message {
                 pid: try opt("pid", \.intValue)
             )
         case "bell":
-            return .bell(termID: try req("term_id", \.stringValue))
+            return .bell(termID: try req("term_id", \.stringValue), boardID: try opt("board_id", \.stringValue))
         case "board_list":
             let boards = try req("boards", \.arrayValue).map { entry -> BoardMeta in
                 guard let m = entry.mapValue else { throw MessageError.badField("boards") }
@@ -433,7 +444,9 @@ public extension Message {
                 text: try opt("text", \.stringValue),
                 atMs: try opt("at_ms", \.uint64Value),
                 proc: try opt("proc", \.stringValue),
-                read: try opt("read", \.boolValue) ?? false
+                read: try opt("read", \.boolValue) ?? false,
+                boardID: try opt("board_id", \.stringValue),
+                cwd: try opt("cwd", \.stringValue)
             )
         case "resume":
             return .resume(termID: try req("term_id", \.stringValue), cmd: try opt("cmd", \.stringValue))
@@ -600,7 +613,7 @@ public extension Message {
                 $0.put("kind", .string(kind))
                 $0.put("text", unlessNil: text.map(MsgPackValue.string))
             }
-        case .termReport(let termID, let kind, let text, let atMs, let proc, let read):
+        case .termReport(let termID, let kind, let text, let atMs, let proc, let read, let boardID, let cwd):
             return Self.tagged("term_report") {
                 $0.put("term_id", .string(termID))
                 $0.put("kind", unlessNil: kind.map(MsgPackValue.string))
@@ -608,6 +621,8 @@ public extension Message {
                 $0.put("at_ms", unlessNil: atMs.map(Self.uintValue))
                 $0.put("proc", unlessNil: proc.map(MsgPackValue.string))
                 $0.put("read", unlessNil: read ? .bool(true) : nil)
+                $0.put("board_id", unlessNil: boardID.map(MsgPackValue.string))
+                $0.put("cwd", unlessNil: cwd.map(MsgPackValue.string))
             }
         case .resume(let termID, let cmd):
             return Self.tagged("resume") {
@@ -631,10 +646,11 @@ public extension Message {
                 $0.put("term_id", .string(termID))
                 $0.put("bytes", .binary(bytes))
             }
-        case .exit(let termID, let code):
+        case .exit(let termID, let code, let boardID):
             return Self.tagged("exit") {
                 $0.put("term_id", .string(termID))
                 $0.put("code", orNil: code.map { .int(Int64($0)) })
+                $0.put("board_id", unlessNil: boardID.map(MsgPackValue.string))
             }
         case .docOpened(let doc):
             return Self.tagged("doc_opened") { Self.putDocEntry(doc, into: &$0) }
@@ -649,8 +665,11 @@ public extension Message {
                 $0.put("name", .string(name))
                 $0.put("pid", unlessNil: pid.map { .int(Int64($0)) })
             }
-        case .bell(let termID):
-            return Self.tagged("bell") { $0.put("term_id", .string(termID)) }
+        case .bell(let termID, let boardID):
+            return Self.tagged("bell") {
+                $0.put("term_id", .string(termID))
+                $0.put("board_id", unlessNil: boardID.map(MsgPackValue.string))
+            }
         case .boardList(let boards, let active):
             return Self.tagged("board_list") {
                 $0.put("boards", .array(boards.map { meta in

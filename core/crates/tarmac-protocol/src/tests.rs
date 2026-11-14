@@ -345,7 +345,7 @@ fn report(kind: &str, text: Option<&str>) -> Msg {
 }
 
 fn term_report_none() -> Msg {
-    Msg::TermReport { term_id: "t1".into(), kind: None, text: None, at_ms: None, proc: None, read: false }
+    Msg::TermReport { term_id: "t1".into(), kind: None, text: None, at_ms: None, proc: None, read: false, board_id: None, cwd: None }
 }
 
 #[test]
@@ -380,6 +380,8 @@ fn conformance_vector_22_term_report() {
             at_ms: Some(1_700_000_000_000),
             proc: Some("claude".into()),
             read: true,
+            board_id: None,
+            cwd: None,
         },
     );
 }
@@ -395,6 +397,53 @@ fn conformance_vector_24_typed_input() {
         "84 a1 74 a5 69 6e 70 75 74 a7 74 65 72 6d 5f 69 64 a2 74 31 \
          a5 62 79 74 65 73 c4 01 61 a5 74 79 70 65 64 c3",
         Msg::Input { term_id: "t1".into(), bytes: b"a".to_vec(), typed: true },
+    );
+}
+
+// Spec 2611.0013: the place of a report, and the board of a bell and an exit.
+#[test]
+fn conformance_vector_28_term_report_with_its_place() {
+    assert_frame(
+        "86 a1 74 ab 74 65 72 6d 5f 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74 31 \
+         a4 6b 69 6e 64 a7 62 6c 6f 63 6b 65 64 a5 61 74 5f 6d 73 cf 00 00 01 8b cf e5 68 00 \
+         a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 31 a3 63 77 64 a2 2f 77",
+        Msg::TermReport {
+            term_id: "t1".into(),
+            kind: Some("blocked".into()),
+            text: None,
+            at_ms: Some(1_700_000_000_000),
+            proc: None,
+            read: false,
+            board_id: Some("board-1".into()),
+            cwd: Some("/w".into()),
+        },
+    );
+}
+
+#[test]
+fn conformance_vector_29_bell_with_its_board() {
+    assert_frame(
+        "83 a1 74 a4 62 65 6c 6c a7 74 65 72 6d 5f 69 64 a2 74 31 \
+         a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 31",
+        Msg::Bell { term_id: "t1".into(), board_id: Some("board-1".into()) },
+    );
+}
+
+#[test]
+fn conformance_vector_30_exit_with_its_board() {
+    assert_frame(
+        "84 a1 74 a4 65 78 69 74 a7 74 65 72 6d 5f 69 64 a2 74 31 a4 63 6f 64 65 03 \
+         a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 31",
+        Msg::Exit { term_id: "t1".into(), code: Some(3), board_id: Some("board-1".into()) },
+    );
+}
+
+#[test]
+fn a_bell_and_an_exit_with_no_board_encode_as_before() {
+    assert_frame("82 a1 74 a4 62 65 6c 6c a7 74 65 72 6d 5f 69 64 a2 74 31", Msg::Bell { term_id: "t1".into(), board_id: None });
+    assert_frame(
+        "83 a1 74 a4 65 78 69 74 a7 74 65 72 6d 5f 69 64 a2 74 31 a4 63 6f 64 65 c0",
+        Msg::Exit { term_id: "t1".into(), code: None, board_id: None },
     );
 }
 
@@ -480,6 +529,8 @@ fn an_untyped_input_an_unread_report_and_a_report_with_no_text_have_no_key_for_i
         at_ms: Some(1),
         proc: None,
         read: false,
+        board_id: None,
+        cwd: None,
     };
     assert!(!has(&encode(&unread).unwrap(), b"read"));
     assert!(!has(&encode(&report("done", None)).unwrap(), b"text"));
@@ -1029,8 +1080,8 @@ fn all_message_types_roundtrip() {
         Msg::Input { term_id: "t1".into(), bytes: vec![0u8; 64 * 1024], typed: false },
         Msg::Output { term_id: "t1".into(), bytes: b"hello\r\n".to_vec() },
         Msg::Resize { term_id: "t1".into(), cols: 80, rows: 24 },
-        Msg::Exit { term_id: "t1".into(), code: Some(0) },
-        Msg::Exit { term_id: "t1".into(), code: None },
+        Msg::Exit { term_id: "t1".into(), code: Some(0), board_id: None },
+        Msg::Exit { term_id: "t1".into(), code: None, board_id: None },
         Msg::DocOpened(DocEntry {
             path: "/a.md".into(),
             via: "user".into(),
@@ -1045,7 +1096,7 @@ fn all_message_types_roundtrip() {
         Msg::FileEvent { path: "/a.md".into(), mtime_ms: 1_765_432_100_123 },
         Msg::TermProc { term_id: "t1".into(), name: "zsh".into(), pid: Some(4242) },
         Msg::TermProc { term_id: "t1".into(), name: "vim".into(), pid: None },
-        Msg::Bell { term_id: "t1".into() },
+        Msg::Bell { term_id: "t1".into(), board_id: None },
         // board CRUD/list
         Msg::BoardList {
             boards: vec![
@@ -1098,13 +1149,13 @@ fn m2_term_proc_and_bell_roundtrip() {
         Msg::TermProc { term_id: "t1".into(), name: "vim".into(), pid: None }
     );
 
-    let bell = Msg::Bell { term_id: "t1".into() };
+    let bell = Msg::Bell { term_id: "t1".into(), board_id: None };
     assert_eq!(roundtrip(&bell), bell);
     // {t:"bell", term_id:"t1"} from the wire.
     let bell_bytes = unhex(
         "82 a1 74 a4 62 65 6c 6c a7 74 65 72 6d 5f 69 64 a2 74 31",
     );
-    assert_eq!(decode(&bell_bytes).unwrap(), Msg::Bell { term_id: "t1".into() });
+    assert_eq!(decode(&bell_bytes).unwrap(), Msg::Bell { term_id: "t1".into(), board_id: None });
 }
 
 #[test]

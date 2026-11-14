@@ -6,8 +6,8 @@ mod common;
 use std::time::{Duration, Instant};
 
 use common::{
-    Conn, LONG, Restore, Spawn, TestDaemon, canon_dir, has_record, no_err_frame, saved_cwd, signal, signal_and_wait,
-    term_records, wait_exit,
+    Conn, LONG, Spawn, TestDaemon, canon_dir, has_record, no_err_frame, probe_until, probe_until_cwd, saved_cwd,
+    signal, signal_and_wait, term_records, wait_exit,
 };
 use serde_json::{Value, json};
 use tarmac_protocol::{Msg, Tile};
@@ -31,32 +31,6 @@ fn spawn(app: &mut Conn, term_id: &str, argv: &[String], opts: Spawn) {
 
 fn in_dir(dir: &str) -> Spawn {
     Spawn { cwd: Some(dir.into()), ..Default::default() }
-}
-
-/// A new app connection, and the restore of the active board it gets.
-fn probe(daemon: &TestDaemon) -> (Conn, Restore) {
-    let mut app = daemon.connect_app();
-    app.recv_board_list();
-    let restore = app.recv_restore();
-    (app, restore)
-}
-
-/// Probes until the active board's restore satisfies `done`, to `deadline`;
-/// the newest connection.
-fn probe_until(daemon: &TestDaemon, what: &str, deadline: Instant, done: impl Fn(&Restore) -> bool) -> Conn {
-    loop {
-        let (app, restore) = probe(daemon);
-        if done(&restore) {
-            return app;
-        }
-        assert!(Instant::now() < deadline, "the restore never showed {what}: {:?}", restore.term_records);
-        std::thread::sleep(Duration::from_millis(50));
-    }
-}
-
-/// Probes until the active board's record of `term_id` has `want`.
-fn probe_until_cwd(daemon: &TestDaemon, term_id: &str, want: &str) -> Conn {
-    probe_until(daemon, &format!("{term_id} in {want}"), Instant::now() + LONG, |r| r.last_cwd(term_id) == Some(want))
 }
 
 fn term_tile(term_id: &str) -> Tile {
@@ -200,7 +174,7 @@ fn an_idle_cd_is_saved_at_shutdown() {
     let saved = term_records(&daemon.state_json(), 0)["T"].clone();
     assert_eq!(saved, json!({"last_cwd": b}), "the entry has last_cwd and no other key");
     daemon.relaunch();
-    let (_app, restore) = probe(&daemon);
+    let (_app, restore) = daemon.probe();
     assert_eq!(restore.last_cwd("T"), Some(b.as_str()));
 }
 
@@ -249,7 +223,7 @@ fn succeeds_moves_the_record_to_the_new_term() {
     spawn(&mut app, "T2", &plain("pwd -P; read _"), Spawn { succeeds: Some("T".into()), ..in_dir(&b) });
 
     wait_output(&mut app, "T2", &b);
-    let (_app, restore) = probe(&daemon);
+    let (_app, restore) = daemon.probe();
     assert!(restore.term_records.contains_key("T2"), "{:?}", restore.term_records);
     assert!(!restore.term_records.contains_key("T"), "{:?}", restore.term_records);
     daemon.wait_for_state("the move saved", |v| has_record(v, 0, "T2") && !has_record(v, 0, "T"));
@@ -266,7 +240,7 @@ fn a_layout_keeps_the_records() {
 
     daemon.wait_for_state("the layout of X", |v| v["boards"][0]["tiles"][0]["term_id"] == json!("X"));
     assert_eq!(saved_cwd(&daemon.state_json(), 0, "T"), json!("/seeded"));
-    let (_app, restore) = probe(&daemon);
+    let (_app, restore) = daemon.probe();
     assert_eq!(restore.last_cwd("T"), Some("/seeded"));
 }
 
@@ -296,7 +270,7 @@ fn term_close_deletes_the_record() {
     app.send(&Msg::TermClose { term_id: "T".into() });
 
     assert_eq!(app.recv_exit().0, "T");
-    let (_app, restore) = probe(&daemon);
+    let (_app, restore) = daemon.probe();
     assert!(!restore.term_records.contains_key("T"), "{:?}", restore.term_records);
     daemon.wait_for_state("no record of T", |v| !has_record(v, 0, "T"));
 }
@@ -315,7 +289,7 @@ fn a_clean_exit_deletes_the_record_and_a_failure_keeps_it() {
     let mut exits: Vec<(String, Option<i64>)> = (0..3).map(|_| app.recv_exit()).collect();
     exits.sort();
     assert_eq!(exits, vec![("T1".into(), Some(0)), ("T2".into(), Some(3)), ("T3".into(), None)]);
-    let (_app, restore) = probe(&daemon);
+    let (_app, restore) = daemon.probe();
     let kept: Vec<&String> = restore.term_records.keys().collect();
     assert_eq!(kept, ["T2", "T3"]);
     daemon.wait_for_state("no record of T1", |v| !has_record(v, 0, "T1") && has_record(v, 0, "T2") && has_record(v, 0, "T3"));
@@ -341,7 +315,7 @@ fn term_close_deletes_the_record_of_a_term_that_is_not_live() {
 fn an_old_state_file_loads_with_no_records_and_saves_none() {
     let old = json!({"boards": [{"board_id": "board-0", "tiles": [{"kind": "term", "term_id": "T"}]}, {"board_id": "board-1"}], "active": "board-0"});
     let daemon = TestDaemon::start_seeded(&old);
-    let (mut app, restore) = probe(&daemon);
+    let (mut app, restore) = daemon.probe();
     assert!(restore.term_records.is_empty());
 
     send_layout(&mut app, &["X"]);
@@ -368,7 +342,7 @@ fn a_gone_folder_spawns_in_home() {
 
     wait_output(&mut app, "T2", &home);
     assert!(no_err_frame(&mut app), "an err frame");
-    let (_app, restore) = probe(&daemon);
+    let (_app, restore) = daemon.probe();
     assert!(!restore.term_records.contains_key("T"), "{:?}", restore.term_records);
     let _ = std::fs::remove_dir_all(home_dir);
 }
@@ -383,7 +357,7 @@ fn succeeds_naming_a_live_term_moves_nothing() {
 
     wait_output(&mut app, "X", "XUP");
     assert!(no_err_frame(&mut app), "an err frame");
-    let (_app, restore) = probe(&daemon);
+    let (_app, restore) = daemon.probe();
     assert!(restore.term_records.contains_key("L"), "{:?}", restore.term_records);
 }
 
@@ -411,7 +385,7 @@ fn a_failed_spawn_moves_nothing() {
 
     let err = app.recv_until("err", |m| matches!(m, Msg::Err { .. }));
     assert_eq!(err, Msg::Err { msg: "term_id already in use: X".into() });
-    let (_app, restore) = probe(&daemon);
+    let (_app, restore) = daemon.probe();
     assert_eq!(restore.last_cwd("T"), Some("/seeded"));
 }
 
@@ -425,7 +399,7 @@ fn a_spawn_that_cannot_exec_moves_nothing() {
 
     let err = app.recv_until("err", |m| matches!(m, Msg::Err { .. }));
     assert!(matches!(&err, Msg::Err { msg } if msg.starts_with("spawn failed")), "{err:?}");
-    let (_app, restore) = probe(&daemon);
+    let (_app, restore) = daemon.probe();
     assert_eq!(restore.last_cwd("T"), Some("/seeded"));
     assert!(!restore.term_records.contains_key("X"), "{:?}", restore.term_records);
 }

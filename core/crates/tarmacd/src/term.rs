@@ -373,7 +373,8 @@ async fn forward_chunk(
     handle.scrollback.lock().expect("scrollback lock").push(&chunk);
     daemon.push(Msg::Output { term_id: term_id.to_owned(), bytes: chunk }).await;
     if bell {
-        daemon.push(Msg::Bell { term_id: term_id.to_owned() }).await;
+        let board_id = daemon.term_boards.lock().await.get(term_id).cloned();
+        daemon.push(Msg::Bell { term_id: term_id.to_owned(), board_id }).await;
     }
 }
 
@@ -414,8 +415,8 @@ async fn pump(
     }
     let code = exit_code.flatten();
     debug!("term {term_id} exited with {code:?}");
-    daemon.term_ended(&term_id, code).await;
-    daemon.push(Msg::Exit { term_id, code }).await;
+    let board_id = daemon.term_ended(&term_id, code).await;
+    daemon.push(Msg::Exit { term_id, code, board_id }).await;
     // The exited pty lowered its board's running count; re-push so a switcher
     // row, even for a board the app has not rebuilt, drops it.
     daemon.push(daemon.board_list_msg().await).await;
@@ -542,7 +543,7 @@ mod tests {
         assert_eq!(frames, vec![
             Msg::Output { term_id: "t1".into(), bytes: b"last ".to_vec() },
             Msg::Output { term_id: "t1".into(), bytes: b"words".to_vec() },
-            Msg::Exit { term_id: "t1".into(), code: Some(0) },
+            Msg::Exit { term_id: "t1".into(), code: Some(0), board_id: None },
         ]);
     }
 }

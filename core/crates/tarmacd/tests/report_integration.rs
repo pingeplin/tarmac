@@ -7,7 +7,7 @@ mod common;
 
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use common::{Conn, FrameLog, Spawn, TestDaemon, is_report_for, none_within};
+use common::{Conn, FrameLog, Spawn, TestDaemon, canon_dir, is_report_for, none_within, probe_until_cwd};
 use tarmac_protocol::{self as proto, Msg, Tile};
 
 /// A job-control shell that reads no rc file: each command runs in a process
@@ -408,3 +408,110 @@ fn s33_a_report_typed_at_the_prompt_is_held_by_the_shell() {
     assert!(typed.elapsed() <= Duration::from_millis(1500), "removed {:?} after sleep 2", typed.elapsed());
 }
 
+
+// Spec 2611.0013: the place of a report, the connect replay of other boards'
+// reports, and the board of a bell and an exit.
+
+/// A report frame's `board_id` and `cwd`.
+fn place(msg: &Msg) -> (Option<String>, Option<String>) {
+    let Msg::TermReport { board_id, cwd, .. } = msg.clone() else { panic!("not a term_report: {msg:?}") };
+    (board_id, cwd)
+}
+
+fn has_kind_for(msg: &Msg, term_id: &str) -> bool {
+    matches!(msg, Msg::TermReport { term_id: t, kind: Some(_), .. } if t == term_id)
+}
+
+// S11
+#[test]
+fn s11_a_report_frame_carries_its_board_and_folder_and_a_removal_neither() {
+    let daemon = TestDaemon::start();
+    let dir = canon_dir(&common::temp_dir().join("api"));
+    let mut app = daemon.connect_app_drained();
+    app.create_board("board-1");
+    app.spawn_term_with("T", JOB_SHELL, Spawn { cwd: Some(dir.clone()), ..Spawn::on_board("board-1") });
+    app.recv_output_containing("T", "%");
+    let mut app = probe_until_cwd(&daemon, "T", &dir);
+
+    assert_ack(Conn::cli_report(&daemon.sock, "T", "blocked", None));
+    let frame = app.recv_until("T's report", |m| has_kind_for(m, "T"));
+    assert_eq!(place(&frame), (Some("board-1".into()), Some(dir)));
+
+    assert_ack(Conn::cli_report(&daemon.sock, "T", "clear", None));
+    let removal = app.recv_report_for("T");
+    assert!(is_removal_for(&removal, "T"), "{removal:?}");
+    assert_eq!(place(&removal), (None, None));
+}
+
+/// Board-0 shown with a shell A; board-1 with shells T and U, where T has a
+/// report the test marked read. The app connection is closed.
+fn two_boards_with_a_read_report(daemon: &TestDaemon) -> Seen {
+    let mut app = daemon.connect_app_drained();
+    app.create_board("board-1");
+    for t in ["T", "U"] {
+        app.spawn_term_with(t, JOB_SHELL, Spawn::on_board("board-1"));
+        app.recv_output_containing(t, "%");
+    }
+    app.switch_to("board-0");
+    app.spawn_term_with("A", JOB_SHELL, Spawn::on_board("board-0"));
+    app.recv_output_containing("A", "%");
+    let first = report_from_test(daemon, &mut app, "T", "blocked", Some("ok?"));
+    app.send(&Msg::Input { term_id: "T".into(), bytes: b"\n".to_vec(), typed: true });
+    app.recv_until("T read", |m| is_report_for(m, "T") && seen(m).read);
+    drop(app);
+    std::thread::sleep(Duration::from_millis(300));
+    first
+}
+
+// S12, S13
+#[test]
+fn s12_s13_a_new_connection_gets_other_boards_reports_once_after_its_first_restore() {
+    let daemon = TestDaemon::start();
+    let first = two_boards_with_a_read_report(&daemon);
+
+    let mut app = daemon.connect_app();
+    let mut log = FrameLog::default();
+    let restore = app.log_until(&mut log, "restore", |m| matches!(m, Msg::Restore { .. }));
+    app.log_until_output(&mut log, "A", restore, b"%");
+    app.log_for(&mut log, Duration::from_millis(500));
+
+    let (a, t) = (log.reports_for("A", 0), log.reports_for("T", 0));
+    assert_eq!(a.len(), 1, "one frame for A");
+    assert!(is_removal_for(&log.0[a[0]].msg, "A"));
+    assert_eq!(t.len(), 1, "one frame for T");
+    assert_eq!(seen(&log.0[t[0]].msg), Seen { read: true, ..first });
+    assert_eq!(place(&log.0[t[0]].msg).0.as_deref(), Some("board-1"));
+    assert!(log.reports_for("U", 0).is_empty(), "U has no report and gets no frame");
+    let first_output = (restore..log.len()).find(|&i| matches!(log.0[i].msg, Msg::Output { .. })).unwrap();
+    for i in [a[0], t[0]] {
+        assert!(restore < i && i < first_output, "report frame {i} between restore {restore} and output {first_output}");
+    }
+
+    app.send(&Msg::BoardSwitch { board_id: "board-1".into() });
+    let shown = app.log_until(&mut log, "board-1's restore", |m| matches!(m, Msg::Restore { board_id, .. } if board_id.as_deref() == Some("board-1")));
+    app.send(&Msg::BoardSwitch { board_id: "board-0".into() });
+    let back = app.log_until(&mut log, "board-0's restore", |m| matches!(m, Msg::Restore { board_id, .. } if board_id.as_deref() == Some("board-0")));
+    app.log_for(&mut log, Duration::from_millis(500));
+
+    let between = |term: &str| log.reports_for(term, shown).into_iter().filter(|&i| i < back).count();
+    assert_eq!((between("T"), between("U"), between("A")), (1, 1, 0), "board-1's restore has its own set");
+    assert_eq!(log.reports_for("A", back).len(), 1, "board-0's second restore has A's frame");
+    assert!(log.reports_for("T", back).is_empty(), "the replay runs once per connection");
+}
+
+// S42
+#[test]
+fn s42_a_bell_and_an_exit_carry_the_board_of_their_terminal() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    app.create_board("board-1");
+    app.switch_to("board-0");
+    app.spawn_term_with("T", &["/bin/sh", "-c", "printf 'READY\\a'; read _; exit 3"], Spawn::on_board("board-1"));
+
+    let bell = app.recv_until("T's bell", |m| matches!(m, Msg::Bell { term_id, .. } if term_id == "T"));
+    assert_eq!(bell, Msg::Bell { term_id: "T".into(), board_id: Some("board-1".into()) });
+
+    app.type_line("T", "");
+    let exit = app.recv_until("T's exit", |m| matches!(m, Msg::Exit { term_id, .. } if term_id == "T"));
+    assert_eq!(exit, Msg::Exit { term_id: "T".into(), code: Some(3), board_id: Some("board-1".into()) });
+}

@@ -125,6 +125,9 @@ struct AppConn {
     // switch for the rest). A switch-back does not replay: the app kept its
     // backgrounded views fed live, so a second replay would duplicate.
     replayed: HashSet<BoardId>,
+    // The reports of every other board went out with this connection's first
+    // restore (spec 2611.0013); live pushes keep the app current after it.
+    told_elsewhere: bool,
 }
 
 // Each ring is copied under its std::sync::Mutex, never held across an await.
@@ -208,6 +211,12 @@ async fn change_and_send_active_board(
         for msg in reports.snapshot(&live_terms) {
             let _ = conn.tx.send(msg).await;
         }
+        if !conn.told_elsewhere {
+            for msg in reports.elsewhere(&live_terms) {
+                let _ = conn.tx.send(msg).await;
+            }
+            conn.told_elsewhere = true;
+        }
     }
     for (tid, data) in replay {
         for chunk in data.chunks(term::OUTPUT_CHUNK) {
@@ -238,7 +247,7 @@ async fn app_session(
         }
     });
 
-    let mut conn = AppConn { tx, replayed: HashSet::new() };
+    let mut conn = AppConn { tx, replayed: HashSet::new(), told_elsewhere: false };
     send_active_board(&daemon, &mut conn).await;
 
     loop {

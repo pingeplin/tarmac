@@ -134,6 +134,9 @@ pub enum Msg {
     Exit {
         term_id: String,
         code: Option<i64>,
+        /// The board the terminal was filed under when it ended (2611.0013).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        board_id: Option<String>,
     },
     DocOpened(DocEntry),
     FileEvent {
@@ -148,6 +151,9 @@ pub enum Msg {
     },
     Bell {
         term_id: String,
+        /// The board the terminal is filed under (2611.0013).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        board_id: Option<String>,
     },
     /// Daemon -> app: every board in display order, plus the active one.
     BoardList {
@@ -237,6 +243,12 @@ pub enum Msg {
         /// The reverse of `DocEntry.read`: a missing key is unread.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         read: bool,
+        /// The board the terminal is filed under, and its `last_cwd` record,
+        /// when the report was made (2611.0013). Never on a frame with no `kind`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        board_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cwd: Option<String>,
     },
     /// cli -> daemon: the calling terminal's resume command (spec 2611.0011);
     /// no `cmd` clears it. Answered `ack` or `err`.

@@ -89,7 +89,7 @@ final class Smoke {
             case .output(let id, let bytes) where id == termID:
                 outputBytes.append(bytes)
                 return nil
-            case .exit(let id, let code) where id == termID:
+            case .exit(let id, let code, _) where id == termID:
                 sawOutputBeforeExit = !outputBytes.isEmpty
                 return .some(code)
             default:

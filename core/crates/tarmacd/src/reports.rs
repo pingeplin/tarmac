@@ -110,6 +110,14 @@ impl Holder {
     }
 }
 
+/// Where the terminal was when it reported (spec 2611.0013): the board it is
+/// filed under and its `last_cwd` record.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Place {
+    pub board_id: Option<String>,
+    pub cwd: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct CurrentReport {
     kind: Kind,
@@ -118,6 +126,7 @@ struct CurrentReport {
     holder: Holder,
     proc: Option<String>,
     read: bool,
+    place: Place,
 }
 
 /// Each method returns the `term_report` to push, or `None` when the app
@@ -136,8 +145,9 @@ impl Reports {
         now_ms: u64,
         holder: Holder,
         proc: Option<String>,
+        place: Place,
     ) -> Msg {
-        let current = CurrentReport { kind, text, at_ms: now_ms, holder, proc, read: false };
+        let current = CurrentReport { kind, text, at_ms: now_ms, holder, proc, read: false, place };
         let msg = frame(term, Some(&current));
         self.by_term.insert(term.to_owned(), current);
         msg
@@ -170,6 +180,14 @@ impl Reports {
         terms.iter().map(|term| frame(term, self.by_term.get(term))).collect()
     }
 
+    /// The connect replay (2611.0013): one frame for each term that has a
+    /// report and is not in `shown`, sorted by term id.
+    pub fn elsewhere(&self, shown: &[String]) -> Vec<Msg> {
+        let mut terms: Vec<&String> = self.by_term.keys().filter(|t| !shown.contains(t)).collect();
+        terms.sort();
+        terms.into_iter().map(|term| frame(term, self.by_term.get(term))).collect()
+    }
+
     pub fn has(&self, term: &str) -> bool {
         self.by_term.contains_key(term)
     }
@@ -187,6 +205,8 @@ fn frame(term: &str, report: Option<&CurrentReport>) -> Msg {
         at_ms: report.map(|r| r.at_ms),
         proc: report.and_then(|r| r.proc.clone()),
         read: report.is_some_and(|r| r.read),
+        board_id: report.and_then(|r| r.place.board_id.clone()),
+        cwd: report.and_then(|r| r.place.cwd.clone()),
     }
 }
 
@@ -208,15 +228,21 @@ mod tests {
             at_ms: Some(at_ms),
             proc: proc.map(str::to_string),
             read,
+            board_id: None,
+            cwd: None,
         }
     }
 
     fn none_frame(term: &str) -> Msg {
-        Msg::TermReport { term_id: term.into(), kind: None, text: None, at_ms: None, proc: None, read: false }
+        Msg::TermReport { term_id: term.into(), kind: None, text: None, at_ms: None, proc: None, read: false, board_id: None, cwd: None }
     }
 
     fn blocked(reports: &mut Reports, now_ms: u64) -> Msg {
-        reports.report(T, Kind::Blocked, Some("ok?".into()), now_ms, AGENT, Some("claude".into()))
+        reports.report(T, Kind::Blocked, Some("ok?".into()), now_ms, AGENT, Some("claude".into()), Place::default())
+    }
+
+    fn on_board(board: &str, cwd: &str) -> Place {
+        Place { board_id: Some(board.into()), cwd: Some(cwd.into()) }
     }
 
     fn facts(pairs: &[(Pid, Facts)]) -> impl Fn(Pid) -> Facts + use<> {
@@ -242,7 +268,7 @@ mod tests {
         reports.mark_read(T);
         let shell = Holder::Shell { pid: S, caller: C };
 
-        let again = reports.report(T, Kind::Blocked, Some("ok?".into()), 2000, shell, Some("bash".into()));
+        let again = reports.report(T, Kind::Blocked, Some("ok?".into()), 2000, shell, Some("bash".into()), Place::default());
 
         assert_eq!(again, frame("blocked", Some("ok?"), 2000, Some("bash"), false));
         assert_eq!(reports.by_term[T].holder, shell);
@@ -254,7 +280,7 @@ mod tests {
         let mut reports = Reports::default();
         blocked(&mut reports, 1000);
         reports.mark_read(T);
-        let again = reports.report(T, Kind::Done, Some("new".into()), 1500, AGENT, None);
+        let again = reports.report(T, Kind::Done, Some("new".into()), 1500, AGENT, None, Place::default());
         assert_eq!(again, frame("done", Some("new"), 1500, None, false));
     }
 
@@ -300,7 +326,7 @@ mod tests {
     #[test]
     fn s11h_a_shell_holder_lasts_while_the_leader_is_the_shell_or_the_caller() {
         let mut reports = Reports::default();
-        reports.report(T, Kind::Done, None, 1000, Holder::Shell { pid: S, caller: C }, None);
+        reports.report(T, Kind::Done, None, 1000, Holder::Shell { pid: S, caller: C }, None, Place::default());
         let no_facts = facts(&[]);
         for leader in [Some(S), Some(C), None] {
             assert_eq!(reports.check(T, |h| h.alive(&no_facts, leader)), None, "{leader:?}");
@@ -447,6 +473,43 @@ mod tests {
     #[test]
     fn s36_an_unplaced_caller_with_no_leader_has_no_holder() {
         assert_eq!(Holder::resolve(None, Some(CHILD), false, table(CHAIN), || None), None);
+    }
+
+    /// A report frame with its place, as `frame` builds it.
+    fn placed(term: &str, kind: &str, at_ms: u64, read: bool, board: &str, cwd: &str) -> Msg {
+        Msg::TermReport {
+            term_id: term.into(),
+            kind: Some(kind.into()),
+            text: None,
+            at_ms: Some(at_ms),
+            proc: None,
+            read,
+            board_id: Some(board.into()),
+            cwd: Some(cwd.into()),
+        }
+    }
+
+    // 2611.0013 S14
+    #[test]
+    fn s14_the_frame_carries_the_place_given_to_report_and_keeps_it_when_read() {
+        let mut reports = Reports::default();
+        let pushed = reports.report(T, Kind::Done, None, 1000, AGENT, None, on_board("board-1", "/w"));
+        assert_eq!(pushed, placed(T, "done", 1000, false, "board-1", "/w"));
+        assert_eq!(reports.mark_read(T), Some(placed(T, "done", 1000, true, "board-1", "/w")));
+        assert_eq!(reports.clear(T), Some(none_frame(T)), "a removal has no place");
+    }
+
+    // 2611.0013 S14
+    #[test]
+    fn s14_elsewhere_gives_each_reported_term_not_shown_sorted_by_term_id() {
+        let mut reports = Reports::default();
+        reports.report("u", Kind::Done, None, 2000, AGENT, None, on_board("board-2", "/u"));
+        reports.report("t", Kind::Blocked, None, 1000, AGENT, None, on_board("board-1", "/t"));
+        let t = placed("t", "blocked", 1000, false, "board-1", "/t");
+        let u = placed("u", "done", 2000, false, "board-2", "/u");
+
+        assert_eq!(reports.elsewhere(&["u".into(), "a".into()]), vec![t.clone()]);
+        assert_eq!(reports.elsewhere(&[]), vec![t, u]);
     }
 
     #[test]

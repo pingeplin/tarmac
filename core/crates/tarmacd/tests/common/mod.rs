@@ -332,7 +332,7 @@ impl Conn {
     /// The next exit of any term: `(term_id, code)`.
     pub fn recv_exit(&mut self) -> (String, Option<i64>) {
         let msg = self.recv_until("exit", |m| matches!(m, Msg::Exit { .. }));
-        let Msg::Exit { term_id, code } = msg else { unreachable!() };
+        let Msg::Exit { term_id, code, .. } = msg else { unreachable!() };
         (term_id, code)
     }
 
@@ -633,6 +633,24 @@ pub fn no_err_frame(conn: &mut Conn) -> bool {
 
 /// `path`, made, as `pid_cwd` and `pwd -P` give it (a temp dir under `/var`
 /// is `/private/var`).
+/// Probes until the active board's restore satisfies `done`, to `deadline`;
+/// the newest connection.
+pub fn probe_until(daemon: &TestDaemon, what: &str, deadline: Instant, done: impl Fn(&Restore) -> bool) -> Conn {
+    loop {
+        let (app, restore) = daemon.probe();
+        if done(&restore) {
+            return app;
+        }
+        assert!(Instant::now() < deadline, "the restore never showed {what}: {:?}", restore.term_records);
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// Probes until the active board's record of `term_id` has `want`.
+pub fn probe_until_cwd(daemon: &TestDaemon, term_id: &str, want: &str) -> Conn {
+    probe_until(daemon, &format!("{term_id} in {want}"), Instant::now() + LONG, |r| r.last_cwd(term_id) == Some(want))
+}
+
 pub fn canon_dir(path: &Path) -> String {
     std::fs::create_dir_all(path).unwrap();
     std::fs::canonicalize(path).unwrap().to_string_lossy().into_owned()
