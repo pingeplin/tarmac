@@ -36,7 +36,15 @@ public struct DevSnapshotWait: Equatable, Sendable {
         }
     }
 
-    public func step(snapshot: JSONValue, elapsedMs: Int) -> Step {
+    /// The answer while no board is on screen (a switch in flight).
+    public static let noBoard = DevError(.appNotReady, "no board is on screen yet")
+
+    /// `snapshot` is nil while no board is on screen.
+    public func step(snapshot: JSONValue?, elapsedMs: Int) -> Step {
+        guard let snapshot else {
+            guard expression != nil, elapsedMs < timeoutMs else { return .reply(Self.noBoard.reply) }
+            return .pollAgain
+        }
         guard let expression, let source, !DevUntil.evaluate(expression, against: snapshot) else {
             return .reply(DevReply(ok: true, body: snapshot.jsonString))
         }

@@ -624,7 +624,9 @@ async function main() {
     eq(dev("board", boardId).code, 0, "back to the first board again");
     reset(term);
     dev("press", "cmd+i");
-    waitFor(term, "inbox.open == true");
+    const held = waitFor(term, "inbox.open == true");
+    eq(held.active_element.overlay, "inbox", "the open panel holds the keys");
+    eq(held.active_element.returns_to, term, "the card the panel gives the keys back to");
     dev("press", "escape");
     const closed = waitFor(term, "inbox.open == false");
     eq(closed.active_element.card, term, "escape gave the keys back to the first board's terminal");

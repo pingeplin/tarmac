@@ -563,7 +563,7 @@ final class DevSnapshotTests: XCTestCase {
     private typealias Focus = DevSnapshot.KeyboardFocus
 
     private func focus(_ responder: DevSnapshot.KeyHolder?) -> Focus {
-        Focus(responder: responder, switcherOwner: nil, switcherHoldsKeys: false)
+        Focus(responder: responder, overlay: nil, overlayOwner: nil)
     }
 
     func testATerminalHoldingFirstResponderHoldsTheKeys() {
@@ -584,25 +584,38 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(focus(nil), Focus.none)
     }
 
-    /// The Tauri switcher never takes DOM focus — `activeElement` stays on the
-    /// terminal behind it. The native one holds first responder while it is
-    /// up, so the card reported is the one it hands the keys back to.
-    func testWhileTheSwitcherHoldsTheKeysTheirOwnerIsTheCardBehindIt() {
+    /// #364: while an overlay holds first responder — the switcher, the
+    /// restore card, the inbox — the keys reach no card, and that is what is
+    /// reported; the card it hands them back to is a separate fact.
+    func testWhileAnOverlayHoldsTheKeysItIsTheOverlayAndNotTheCardBehindIt() {
         let terminal = DevSnapshot.KeyHolder.terminal(card: "t-1", hasSelection: false)
+        for overlay in [DevSnapshot.Overlay.switcher, .restoreCard, .inbox] {
+            let held = Focus(responder: nil, overlay: overlay, overlayOwner: terminal)
+            XCTAssertEqual(held, .overlay(overlay, returnsTo: .terminal(card: "t-1", hasSelection: false)))
+            XCTAssertNil(held.card)
+        }
+        XCTAssertEqual(Focus(responder: nil, overlay: .inbox, overlayOwner: nil), .overlay(.inbox, returnsTo: .none))
+    }
+
+    func testAnOverlayIsReportedAsADialogWithTheCardItReturnsTheKeysTo() {
+        let held = Focus.overlay(.inbox, returnsTo: .terminal(card: "t-1", hasSelection: false))
+        XCTAssertEqual(activeElement(held), [
+            "card": .null, "tag": "DIALOG", "classes": ["tm-overlay", "inbox"], "selection_type": "None",
+            "overlay": "inbox", "returns_to": "t-1",
+        ])
         XCTAssertEqual(
-            Focus(responder: nil, switcherOwner: terminal, switcherHoldsKeys: true),
-            .terminal(card: "t-1", hasSelection: false)
+            fields(activeElement(.overlay(.restoreCard, returnsTo: .none)))["returns_to"], .null
         )
-        XCTAssertEqual(Focus(responder: nil, switcherOwner: nil, switcherHoldsKeys: true), Focus.none)
+        XCTAssertEqual(fields(activeElement(.overlay(.restoreCard, returnsTo: .none)))["overlay"], "restore_card")
     }
 
     /// An owner left over from an earlier opening says nothing once the
-    /// switcher has given the keys back.
-    func testAClosedSwitchersOwnerIsIgnored() {
+    /// overlay has given the keys back.
+    func testAClosedOverlaysOwnerIsIgnored() {
         let terminal = DevSnapshot.KeyHolder.terminal(card: "t-1", hasSelection: false)
-        XCTAssertEqual(Focus(responder: nil, switcherOwner: terminal, switcherHoldsKeys: false), Focus.none)
+        XCTAssertEqual(Focus(responder: nil, overlay: nil, overlayOwner: terminal), Focus.none)
         XCTAssertEqual(
-            Focus(responder: .doc(path: "/a/c.html"), switcherOwner: terminal, switcherHoldsKeys: false),
+            Focus(responder: .doc(path: "/a/c.html"), overlay: nil, overlayOwner: terminal),
             .htmlDocument(card: "/a/c.html")
         )
     }

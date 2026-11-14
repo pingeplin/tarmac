@@ -174,7 +174,13 @@ core/target/debug/tarmac dev snapshot | jq .
   is `tag: "TEXTAREA"`, `classes: ["xterm-helper-textarea"]`, `selection_type`
   `Caret` (or `Range` when the terminal has a selection); a borrowed HTML
   document is `IFRAME` / `html-frame`; anything else — the board, a markdown
-  card — is `BODY`. `active_element.card` is the card holding the keys.
+  card — is `BODY`. `active_element.card` is the card the keys reach now.
+  While an overlay holds first responder — the ⌘K switcher, the restore card,
+  the inbox panel — it is `tag: "DIALOG"`, `classes: ["tm-overlay", <name>]`,
+  `card: null`, and two more keys are present: `overlay` (`switcher`,
+  `restore_card` or `inbox`) and `returns_to`, the card it hands the keys back
+  to when it closes (or `null`). `type` and `key` are refused then: no card
+  has the keys. Close the restore card with `press escape`.
 - Every other verb prints a small JSON object describing **what it observed**,
   not what you asked for — `zoom 99` answers `{"zoom": 3}` because the board
   clamps.
@@ -368,7 +374,9 @@ so doc paths with dots and slashes work. A string value takes its own double quo
 expression — `--until 'theme.name == "file:Dracula"'` — and a bare word is a
 `bad_expr` (`not a value`). An unresolvable path is `false` (so
 polling continues); a malformed expression is an immediate `bad_expr`. Default
-timeout 5000 ms; `--timeout 0` means evaluate once.
+timeout 5000 ms; `--timeout 0` means evaluate once. A wait keeps polling while
+a board switch has no board on screen; a snapshot with no `--until`, and a
+wait whose deadline passes then, answer `app_not_ready`.
 
 ### What it cannot do
 

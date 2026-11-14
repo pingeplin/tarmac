@@ -66,6 +66,23 @@ final class DevSnapshotWaitTests: XCTestCase {
         }
     }
 
+    /// #364: a board switch takes the board off screen for a moment. A wait
+    /// keeps polling through it; only a plain snapshot, or the deadline,
+    /// answers `app_not_ready`.
+    func testAWaitPollsThroughABoardThatIsNotOnScreenUntilItsDeadline() throws {
+        let wait = try DevSnapshotWait(until: "viewport.zoom == 1", timeoutMs: 300)
+        XCTAssertEqual(wait.step(snapshot: nil, elapsedMs: 0), .pollAgain)
+        XCTAssertEqual(wait.step(snapshot: nil, elapsedMs: 299), .pollAgain)
+        XCTAssertEqual(wait.step(snapshot: whole, elapsedMs: 320), ok(whole))
+        XCTAssertEqual(wait.step(snapshot: nil, elapsedMs: 300), .reply(DevSnapshotWait.noBoard.reply))
+    }
+
+    func testAPlainSnapshotWithNoBoardOnScreenIsNotReadyAtOnce() throws {
+        let wait = try DevSnapshotWait(until: nil, timeoutMs: 5_000)
+        XCTAssertEqual(wait.step(snapshot: nil, elapsedMs: 0), .reply(DevSnapshotWait.noBoard.reply))
+        XCTAssertEqual(DevSnapshotWait.noBoard.code, .appNotReady)
+    }
+
     func testTheSnapshotIsReReadEveryFiftyMilliseconds() {
         XCTAssertEqual(DevSnapshotWait.pollMs, 50)
     }

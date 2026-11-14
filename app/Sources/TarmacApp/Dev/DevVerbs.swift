@@ -42,10 +42,11 @@ final class DevVerbs {
     private var board: BoardView { controller.activeBoard.view }
 
     func answer(_ request: DevRequest) async -> DevReply {
-        // A board that is being switched away from is out of the window for a moment.
-        guard board.window === window else {
-            return DevError(.appNotReady, "no board is on screen yet").reply
-        }
+        // A board that is being switched away from is out of the window for a
+        // moment; a snapshot's wait polls through it (`DevSnapshotWait`).
+        let isSnapshot: Bool
+        if case .snapshot = request { isSnapshot = true } else { isSnapshot = false }
+        guard isSnapshot || boardOnScreen else { return DevSnapshotWait.noBoard.reply }
         let reply: DevReply
         do {
             reply = try await run(DevRouting.route(request, in: reader.routingContext))
@@ -113,9 +114,11 @@ final class DevVerbs {
     private func snapshot(until: String?, timeoutMs: Int?) async throws -> DevReply {
         let wait = try DevSnapshotWait(until: until, timeoutMs: timeoutMs)
         return try await poll { started in
-            wait.step(snapshot: reader.snapshot(), elapsedMs: Int(Uptime.nowMs - started))
+            wait.step(snapshot: boardOnScreen ? reader.snapshot() : nil, elapsedMs: Int(Uptime.nowMs - started))
         }
     }
+
+    private var boardOnScreen: Bool { board.window === window }
 
     // MARK: - board
 
