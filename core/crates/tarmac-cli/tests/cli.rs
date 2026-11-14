@@ -70,6 +70,25 @@ fn help_documents_report() {
     assert!(out.stdout.contains("1  the daemon refused an open, a push or a report"), "{}", out.stdout);
 }
 
+// Spec 2611.0010: the four forms, what install writes, and the exit status of run.
+#[test]
+fn help_documents_hooks() {
+    let out = Report::of(tarmac().arg("--help"));
+    assert!(out.status.success());
+    for phrase in [
+        "tarmac hooks install",
+        "tarmac hooks uninstall",
+        "tarmac hooks status",
+        "tarmac hooks run <agent>",
+        "tarmac hooks run claude || true",
+        "settings.local.json",
+        ".tarmac-backup",
+        "`tarmac hooks run` always exits 0",
+    ] {
+        assert!(out.stdout.contains(phrase), "{phrase}: {}", out.stdout);
+    }
+}
+
 #[test]
 fn no_args_exits_with_usage_error() {
     let out = Report::of(&mut tarmac());

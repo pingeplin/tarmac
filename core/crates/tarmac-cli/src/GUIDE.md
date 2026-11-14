@@ -66,6 +66,25 @@ sent it. Rules:
   seen). `clear` removes it at once.
 - Reports are not saved: a Tarmac restart forgets them.
 
+## Reports from Claude Code
+
+Run `tarmac hooks install` once. It adds four hooks to Claude Code's settings,
+each a call to `tarmac hooks run claude || true`, and from then on every Claude
+session in a Tarmac terminal reports on its own:
+
+- a permission prompt (also a question or a plan to approve) shows `blocked`,
+  with Claude's notification text;
+- the end of a turn shows `done`, with the start of Claude's last message;
+- the next prompt clears the chip.
+
+The text is a claim, shown in quotes, cut to 280 characters with its line
+breaks folded. Outside a Tarmac terminal the hooks do nothing. `tarmac hooks
+status` shows whether the hooks are in place, and the first `tarmac` on the
+`PATH` of `status` itself; a hook sees the `PATH` that `claude` started with,
+which is the same only when both started from the same shell. `tarmac hooks
+uninstall` removes them. You do not need to call `tarmac report`
+yourself from Claude Code once the hooks are installed.
+
 ## What renders how
 
 | File | Rendered as |

@@ -166,12 +166,20 @@ resolves the freshly built CLI). The CLI itself is just:
 
 ```sh
 tarmac open <path>     # surface a markdown file as a card on the active board
+tarmac push <path> <json>  # hand one JSON value to the loaded HTML cards of an open doc
+tarmac report done "<text>"  # show blocked or done on this terminal's card (or clear it)
 tarmac --version       # report the cli, daemon, and app versions
 tarmac skill           # print the agent-facing guide to writing Tarmac cards
 tarmac skill install   # install a SKILL.md that points coding agents at that guide
+tarmac hooks install   # make Claude Code report blocked and done on its terminal card
 ```
 
-`open` and `--version` are the two verbs that talk to the daemon. Inside a Tarmac
+`open`, `push`, `report` and `--version` are the verbs that talk to the daemon,
+and so does `tarmac hooks run claude`, the entry that the hooks call.
+`tarmac hooks install` merges four hooks into Claude Code's `settings.json`
+(with `--scope project`, the project's personal settings.local.json), after a
+`.tarmac-backup`; `tarmac hooks status` checks them and
+`tarmac hooks uninstall` removes them. Inside a Tarmac
 terminal `open` auto-attributes the doc to the calling terminal card via
 `TARMAC_TERM_ID`. `--version` only completes the handshake, then prints the three
 versions that drift independently after an upgrade — this CLI, the running

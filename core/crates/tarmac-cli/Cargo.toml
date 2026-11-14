@@ -7,6 +7,11 @@ edition.workspace = true
 name = "tarmac"
 path = "src/main.rs"
 
-# std-only on purpose: `tarmac open` is called by agents/hooks and must start fast.
+# Agents and hooks call this binary, so it must start fast: no dependency may
+# cost start-up time. serde and serde_json are here only to merge `tarmac hooks
+# install` into an agent's settings and to parse a hook's input; `preserve_order`
+# (set in the workspace) keeps the user's key order.
 [dependencies]
 tarmac-protocol.workspace = true
+serde.workspace = true
+serde_json.workspace = true

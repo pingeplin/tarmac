@@ -1,6 +1,6 @@
 //! `tarmac push`: one JSON value, or one per line of stdin, for the loaded
-//! HTML cards of an open doc. The cli does not parse JSON: the daemon is the
-//! one checker, and the cli stays std-only.
+//! HTML cards of an open doc. The cli does not parse the value: the daemon is
+//! the one checker.
 
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;

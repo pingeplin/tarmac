@@ -150,7 +150,7 @@ back from a rendered bitmap.
 ## 3. Style — Rust
 
 - **Errors follow the crate's role.** `tarmacd` returns `anyhow::Result` from
-  fallible top-level and setup functions. `tarmac-cli` stays std-only: string
+  fallible top-level and setup functions. `tarmac-cli` returns string
   errors, or a small local enum where the caller must distinguish cases
   (`NoHandshake` in `core/crates/tarmac-cli/src/main.rs`). `tarmac-protocol`
   exposes precise library types — `io::Result` for framing, `rmp_serde`'s own

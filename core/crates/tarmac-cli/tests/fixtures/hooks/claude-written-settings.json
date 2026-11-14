@@ -1,0 +1,26 @@
+{
+  "cleanupPeriodDays": 30,
+  "env": {
+    "GREETING": "é"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Read(./notes/表.md)"
+    ],
+    "deny": []
+  },
+  "model": "haiku",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "say done"
+          }
+        ]
+      }
+    ]
+  }
+}

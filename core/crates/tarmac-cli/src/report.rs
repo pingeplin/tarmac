@@ -2,6 +2,8 @@
 //! optional text, or `clear` (spec 2611.0009). The daemon finds the process
 //! the report belongs to; the cli only names the terminal.
 
+use std::time::{Duration, Instant};
+
 use tarmac_protocol::{self as proto, Msg, cap_report_text};
 
 const USAGE: &str = "usage: tarmac report blocked|done [\"<text>\"]  |  tarmac report clear";
@@ -22,7 +24,7 @@ pub fn run(args: &[String]) -> i32 {
         kind: kind.to_owned(),
         text: text.map(cap_report_text),
     };
-    match send(&msg) {
+    match send(&msg, crate::DAEMON_WAIT, NoAnswer::ToTheReport(&crate::no_answer("an older daemon"))) {
         Ok(()) => 0,
         Err(why) => {
             eprintln!("tarmac: {why}");
@@ -45,8 +47,26 @@ fn parse(args: &[String]) -> Option<(&str, Option<&str>)> {
     }
 }
 
-fn send(msg: &Msg) -> Result<(), String> {
+/// The line for a daemon that does not answer in time, and the time-outs it
+/// stands for.
+pub(crate) enum NoAnswer<'a> {
+    /// A time-out on the report only; one in the handshake is a lost
+    /// connection, as `tarmac report` has always said.
+    ToTheReport(&'a str),
+    /// A time-out anywhere from connect to answer.
+    Anywhere(&'a str),
+}
+
+/// Sends `msg` and waits for its `ack`, from connect to answer inside `wait`.
+/// Prints nothing: the error is the line the caller prints.
+pub(crate) fn send(msg: &Msg, wait: Duration, no_answer: NoAnswer) -> Result<(), String> {
     let payload = proto::encode(msg).map_err(|e| format!("encode failed: {e}"))?;
-    let mut stream = crate::connect()?;
-    crate::exchange(&mut stream, &payload, "an older daemon")?
+    let until = Instant::now() + wait;
+    let (line, in_handshake) = match no_answer {
+        NoAnswer::ToTheReport(line) => (line, false),
+        NoAnswer::Anywhere(line) => (line, true),
+    };
+    let late = |e| if in_handshake { crate::late_or_lost(e, line) } else { crate::lost(e) };
+    let mut stream = crate::connect_until(until, &late)?;
+    crate::exchange_until(&mut stream, &payload, until, line)?
 }

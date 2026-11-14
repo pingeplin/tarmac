@@ -99,6 +99,11 @@ USAGE:
     tarmac --version        report the cli, daemon, and app versions
     tarmac skill            print the agent-facing Tarmac guide
     tarmac skill install    install a SKILL.md that points coding agents at it
+    tarmac hooks install   [--target claude-code|codex|all] [--scope user|project] [--dry-run]
+    tarmac hooks uninstall [--target claude-code|codex|all] [--scope user|project] [--dry-run]
+    tarmac hooks status
+    tarmac hooks run <agent>
+                            make Claude Code report blocked and done on its card
 {DEV_USAGE}    tarmac --help           show this help
 
 `tarmac open` is fire-and-forget: anything (you, an agent, a Makefile, a git
@@ -121,6 +126,22 @@ hook ends when the agent exits. One typed at the prompt ends at the next
 command that runs for longer than 750 ms. `clear` removes it. It prints
 nothing on success.
 
+`tarmac hooks install` merges four hooks into Claude Code's settings
+(Notification, Stop, UserPromptSubmit, SessionStart), each a call to
+`tarmac hooks run claude || true` with a 5 s timeout, so a permission prompt
+shows blocked, the end of a turn shows done, and a new prompt clears the chip.
+User scope writes ~/.claude/settings.json ($CLAUDE_CONFIG_DIR/settings.json when
+set); --scope project writes the personal .claude/settings.local.json, unlike
+`skill install --scope project`, which writes the shared .claude/skills. A write
+keeps the rest of the file, copies the old file to <file>.tarmac-backup first,
+and goes through a symlink to its target. A re-run writes nothing; a handler of
+ours that was edited by hand is replaced. `|| true` keeps an older or a missing
+tarmac from blocking a prompt. `uninstall` removes only our handlers. `status`
+shows both scopes and the first tarmac on PATH: the PATH of `status`, which a
+hook sees only when claude started from the same shell. codex is skipped for now.
+`tarmac hooks run` reads the hook's JSON on stdin and sends the report; outside
+a Tarmac terminal it does nothing. It never writes to stdout.
+
 {DEV_HELP}`tarmac skill` never talks to the daemon. `install` writes one SKILL.md per
 target — claude-code (~/.claude/skills) and codex (~/.agents/skills) — and
 accepts:
@@ -139,9 +160,11 @@ exits 0 whether or not a daemon is running.
 EXIT STATUS:
     0  success; also `tarmac --version` with no daemon running
     1  the daemon refused an open, a push or a report (with -, any line), no
-       daemon is running, `report` ran outside a Tarmac terminal, or an install
-       failed
+       daemon is running, `report` ran outside a Tarmac terminal, an install
+       failed, `hooks install` or `hooks uninstall` refused a settings file, or
+       `hooks status` found one unreadable
     2  usage error
+`tarmac hooks run` always exits 0, so that a hook never blocks Claude.
 ";
 
 pub fn text() -> String {
