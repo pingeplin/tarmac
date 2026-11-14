@@ -11,10 +11,11 @@ final class BoardRestoreTests: XCTestCase {
 
     /// Mints `new-1`, `new-2`, … so a cold spawn's id is recognisable.
     private func plan(
-        _ tiles: [LayoutTile], docs: [RestoreDoc] = [], live: Set<String> = []
+        _ tiles: [LayoutTile], docs: [RestoreDoc] = [], live: Set<String> = [],
+        records: [String: TermRecord] = [:]
     ) -> BoardRestore.Plan {
         var minted = 0
-        return BoardRestore.plan(tiles: tiles, docs: docs, liveTerms: live) {
+        return BoardRestore.plan(tiles: tiles, docs: docs, liveTerms: live, termRecords: records) {
             minted += 1
             return "new-\(minted)"
         }
@@ -47,8 +48,55 @@ final class BoardRestoreTests: XCTestCase {
         let restored = plan([termTile("t0")], live: ["other"])
         XCTAssertEqual(
             restored.terms,
-            [Term(termID: "new-1", frame: CGRect(x: 10, y: 20, width: 500, height: 300), z: 3, needsSpawn: true)]
+            [Term(
+                termID: "new-1", frame: CGRect(x: 10, y: 20, width: 500, height: 300), z: 3, needsSpawn: true,
+                succeeds: "t0"
+            )]
         )
+    }
+
+    // MARK: - the last folder (2611.0007)
+
+    /// S4
+    func testAColdSpawnStartsInItsRecordedFolderAndSucceedsItsPersistedId() {
+        let restored = plan([termTile("t0")], records: ["t0": TermRecord(lastCwd: "/w")])
+        XCTAssertEqual(restored.terms.map(\.termID), ["new-1"])
+        XCTAssertEqual(restored.terms.map(\.needsSpawn), [true])
+        XCTAssertEqual(restored.terms.map(\.spawnCwd), ["/w"])
+        XCTAssertEqual(restored.terms.map(\.succeeds), ["t0"])
+    }
+
+    /// S10
+    func testAReboundTerminalGetsNoFolderAndSucceedsNothing() {
+        let restored = plan([termTile("t0")], live: ["t0"], records: ["t0": TermRecord(lastCwd: "/w")])
+        XCTAssertEqual(restored.terms.map(\.termID), ["t0"])
+        XCTAssertEqual(restored.terms.map(\.needsSpawn), [false])
+        XCTAssertEqual(restored.terms.map(\.spawnCwd), [nil])
+        XCTAssertEqual(restored.terms.map(\.succeeds), [nil])
+    }
+
+    /// S11
+    func testAColdSpawnWithNoRecordStillSucceedsItsPersistedId() {
+        let restored = plan([termTile("t0")], records: ["other": TermRecord(lastCwd: "/w")])
+        XCTAssertEqual(restored.terms.map(\.spawnCwd), [nil])
+        XCTAssertEqual(restored.terms.map(\.succeeds), ["t0"])
+    }
+
+    /// S12
+    func testTheOneTerminalAddedToABoardWithNoneGetsNoFolder() {
+        let restored = plan(
+            [docTile("/a.md")], docs: [registered("/a.md")], records: ["t0": TermRecord(lastCwd: "/w")]
+        )
+        XCTAssertEqual(restored.terms.map(\.spawnCwd), [nil])
+        XCTAssertEqual(restored.terms.map(\.succeeds), [nil])
+    }
+
+    /// S21
+    func testALegacyTileWithNoIdGetsNoFolder() {
+        let restored = plan([termTile(nil)], records: ["t0": TermRecord(lastCwd: "/w")])
+        XCTAssertEqual(restored.terms.map(\.needsSpawn), [true])
+        XCTAssertEqual(restored.terms.map(\.spawnCwd), [nil])
+        XCTAssertEqual(restored.terms.map(\.succeeds), [nil])
     }
 
     func testATileWithNoPersistedIdColdSpawns() {

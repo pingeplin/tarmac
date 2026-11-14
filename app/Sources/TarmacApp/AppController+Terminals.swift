@@ -187,9 +187,10 @@ extension AppController {
         }
     }
 
-    /// No `cwd` and no `cmd`: the daemon starts `$SHELL` in `$HOME`, or in the
-    /// directory of `inherit_cwd_from`. `board_id` files the PTY under its own
-    /// board even when that board is in the background.
+    /// No `cmd`: the daemon starts `$SHELL` in a restored terminal's last
+    /// folder, else in the directory of `inherit_cwd_from`, else in `$HOME`.
+    /// `board_id` files the PTY under its own board even when that board is in
+    /// the background.
     private func spawn(_ s: TerminalSession, on board: Board) {
         // The card is laid out at its world size whether or not its board is
         // mounted, so the PTY starts at the card's grid and not at the view's
@@ -199,8 +200,8 @@ extension AppController {
         s.needsSpawn = false
         s.sentGrid = grid
         client.spawnTerm(
-            termID: s.termID, cols: grid.cols, rows: grid.rows, cwd: nil, cmd: nil,
-            boardID: board.boardID, inheritCwdFrom: s.inheritCwdFrom
+            termID: s.termID, cols: grid.cols, rows: grid.rows, cwd: s.spawnCwd, cmd: nil,
+            boardID: board.boardID, inheritCwdFrom: s.inheritCwdFrom, succeeds: s.succeeds
         )
     }
 

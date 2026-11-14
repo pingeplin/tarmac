@@ -18,6 +18,10 @@ final class TerminalSession {
     var needsSpawn = false
     /// ⌘T: the terminal whose current directory the spawn inherits.
     var inheritCwdFrom: String?
+    /// A restored terminal's last folder, and the persisted terminal it
+    /// replaces (`BoardRestore.Term`).
+    var spawnCwd: String?
+    var succeeds: String?
     /// Header label; see `TermLabel`.
     var label = TermLabel.initial
     /// The daemon's last `term_proc` name, verbatim — `label` loses it to a

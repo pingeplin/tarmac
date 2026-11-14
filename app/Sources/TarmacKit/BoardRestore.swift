@@ -8,12 +8,20 @@ public enum BoardRestore {
         public var z: Int
         /// False for a terminal re-bound to a PTY the daemon still owns.
         public var needsSpawn: Bool
+        /// The folder a cold spawn starts in: its persisted terminal's last.
+        public var spawnCwd: String?
+        /// The persisted terminal a cold spawn replaces, whose record it takes.
+        public var succeeds: String?
 
-        public init(termID: String, frame: CGRect, z: Int, needsSpawn: Bool) {
+        public init(
+            termID: String, frame: CGRect, z: Int, needsSpawn: Bool, spawnCwd: String? = nil, succeeds: String? = nil
+        ) {
             self.termID = termID
             self.frame = frame
             self.z = z
             self.needsSpawn = needsSpawn
+            self.spawnCwd = spawnCwd
+            self.succeeds = succeeds
         }
     }
 
@@ -50,12 +58,15 @@ public enum BoardRestore {
     /// `tiles` and `docs` are the restore's layout and doc registry; `liveTerms`
     /// the terminals the daemon still owns. `mint` supplies the id of every
     /// terminal that cold-spawns — a persisted id is never reused for a new shell.
+    /// A cold spawn of a persisted tile succeeds its persisted id, and starts in
+    /// that terminal's last folder in `termRecords` (2611.0007).
     ///
     /// A doc follows its recorded owner to whatever that terminal was restored
     /// as. An owner that was not restored leaves the doc ownerless and detached;
     /// there is no fallback to the board's only terminal.
     public static func plan(
-        tiles: [LayoutTile], docs: [RestoreDoc], liveTerms: Set<String>, mint: () -> String
+        tiles: [LayoutTile], docs: [RestoreDoc], liveTerms: Set<String>, termRecords: [String: TermRecord] = [:],
+        mint: () -> String
     ) -> Plan {
         let parsed = LayoutTiles.parse(tiles)
         let rebinds = TermRestore.plan(tileTermIDs: parsed.terms.map(\.termID), liveTerms: liveTerms)
@@ -65,18 +76,21 @@ public enum BoardRestore {
         for (index, tile) in parsed.terms.enumerated() {
             let termID: String
             let needsSpawn: Bool
+            var succeeds: String?
             switch rebinds[index] {
             case .rebind(let live):
                 (termID, needsSpawn) = (live, false)
             case .coldSpawn:
-                (termID, needsSpawn) = (mint(), true)
+                (termID, needsSpawn, succeeds) = (mint(), true, tile.termID)
             }
             if let persisted = tile.termID { restoredID[persisted] = termID }
             terms.append(Term(
                 termID: termID,
                 frame: tile.frame ?? TermPlacement.restoredFrame(index: index),
                 z: tile.z,
-                needsSpawn: needsSpawn
+                needsSpawn: needsSpawn,
+                spawnCwd: succeeds.flatMap { termRecords[$0]?.lastCwd },
+                succeeds: succeeds
             ))
         }
         if terms.isEmpty {
