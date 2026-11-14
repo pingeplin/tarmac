@@ -9,8 +9,9 @@ Nothing here parses your output or infers your intent. A card appears because a
 process called `tarmac open`; it pulses because the file's mtime changed. The
 file is the entire interface.
 
-This guide covers the two things worth knowing: how to surface a file, and how to
-write an HTML file that survives the board's sandbox and zoom model.
+This guide covers what is worth knowing: how to surface a file, how to say that
+you are blocked or done, and how to write an HTML file that survives the board's
+sandbox and zoom model.
 
 ## Surfacing a file
 
@@ -37,6 +38,33 @@ summary, a chart. Prefer one substantial card over a stream of small ones.
 card reloads and pulses cyan. There is no update command, no partial patch, and
 no need to re-run `tarmac open`. An HTML card can also take new data with no
 reload: see *Data from a file* and *Events from a producer* below.
+
+## Reporting blocked or done
+
+```sh
+tarmac report blocked ["<text>"]
+tarmac report done ["<text>"]
+tarmac report clear
+```
+
+Run inside a Tarmac terminal, it shows a small chip in that terminal card's
+header: amber for `blocked`, green for `done`, with the text in its tool tip.
+The chip says when the report came and quotes your text; it does not claim who
+sent it. Rules:
+
+- The text is optional, at most 280 characters (a longer one is cut with `…`).
+  It is shown as a quote, never as markup.
+- It needs `TARMAC_TERM_ID`: outside a Tarmac terminal it exits `1` and sends
+  nothing. Exit status otherwise as for `open`: `0` sent, `1` refused or no
+  Tarmac running, `2` bad usage (`clear ""` is plain `clear`, not an error).
+- A new report replaces the last one and is unread again; the user's next key
+  in that terminal dims it.
+- The report lasts while the process it belongs to runs. From a hook or a tool
+  call of an agent, that is the agent: the chip goes within a second of the
+  agent's exit. Typed at the prompt, it is the shell: the chip goes at the next
+  command that runs for longer than 750 ms (a quicker one, such as `ls`, is not
+  seen). `clear` removes it at once.
+- Reports are not saved: a Tarmac restart forgets them.
 
 ## What renders how
 
