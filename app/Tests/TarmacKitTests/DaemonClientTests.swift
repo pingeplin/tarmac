@@ -493,6 +493,7 @@ final class DaemonClientTests: XCTestCase {
             termID: "t2", cols: 80, rows: 24, cwd: nil, cmd: nil, boardID: "board-1", inheritCwdFrom: "t1"
         )
         client.input(termID: "t1", bytes: Data("ls\n".utf8))
+        client.input(termID: "t1", bytes: Data("y".utf8), typed: true)
         client.resize(termID: "t1", cols: 120, rows: 40)
         client.termClose(termID: "t1")
         client.scrollbackRequest(termID: "t1")
@@ -512,6 +513,7 @@ final class DaemonClientTests: XCTestCase {
             .spawnTerm(termID: "t1", cols: 80, rows: 24, cwd: nil, cmd: nil),
             .spawnTerm(termID: "t2", cols: 80, rows: 24, cwd: nil, cmd: nil, boardID: "board-1", inheritCwdFrom: "t1"),
             .input(termID: "t1", bytes: Data("ls\n".utf8)),
+            .input(termID: "t1", bytes: Data("y".utf8), typed: true),
             .resize(termID: "t1", cols: 120, rows: 40),
             .termClose(termID: "t1"),
             .scrollbackRequest(termID: "t1"),

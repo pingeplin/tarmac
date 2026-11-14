@@ -90,6 +90,8 @@ extension AppController {
             handleTermProc(termID: termID, name: name)
         case .bell(let termID):
             handleBell(termID: termID)
+        case .termReport(let termID, _, _, _, _, _):
+            handleTermReport(termID: termID, TermReport.from(message))
         default:
             break
         }

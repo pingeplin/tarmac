@@ -202,8 +202,8 @@ public final class DaemonClient: @unchecked Sendable {
         ))
     }
 
-    public func input(termID: String, bytes: Data) {
-        send(.input(termID: termID, bytes: bytes))
+    public func input(termID: String, bytes: Data, typed: Bool = false) {
+        send(.input(termID: termID, bytes: bytes, typed: typed))
     }
 
     public func resize(termID: String, cols: Int, rows: Int) {
