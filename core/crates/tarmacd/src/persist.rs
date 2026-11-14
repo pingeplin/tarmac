@@ -2,13 +2,14 @@
 //! Contract per docs/protocol.md: a daemon restart followed by an app connect
 //! must produce a restore indistinguishable from one without the restart.
 
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tarmac_protocol::{BoardViewport, Tile};
+use tarmac_protocol::{BoardViewport, TermRecord, Tile};
 use tracing::warn;
 
 use crate::boards::{Board, Boards, DEFAULT_BOARD_ID, DocInfo, Registry};
@@ -46,6 +47,8 @@ struct PersistedBoard {
     tiles: Vec<Tile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     board: Option<BoardViewport>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    term_records: BTreeMap<String, TermRecord>,
 }
 
 // The legacy flat fields (`docs`/`tiles`/`board` at top level) are migration
@@ -89,6 +92,7 @@ pub fn load(path: &Path) -> Boards {
             docs: state.docs,
             tiles: state.tiles,
             board: state.board,
+            term_records: BTreeMap::new(),
         })]
     } else {
         state.boards.into_iter().map(hydrate).collect()
@@ -127,6 +131,7 @@ fn hydrate(pb: PersistedBoard) -> Board {
     }
     reg.set_tiles(pb.tiles);
     reg.board = pb.board;
+    reg.term_records = pb.term_records;
     Board { id: pb.board_id, name: pb.name, registry: reg }
 }
 
@@ -155,6 +160,7 @@ fn snapshot(boards: &Boards) -> PersistedState {
                 docs: b.registry.dock.iter().filter_map(|p| persisted_doc(&b.registry, p)).collect(),
                 tiles: b.registry.tiles.clone(),
                 board: b.registry.board.clone(),
+                term_records: b.registry.term_records.clone(),
             })
             .collect(),
         active: boards.active_id().to_string(),
@@ -178,18 +184,39 @@ fn write_atomic(path: &Path, state: &PersistedState) -> anyhow::Result<()> {
     Ok(())
 }
 
-// Dirty-flag + short sleep coalesces mutation bursts into one write.
+/// How long the shutdown save waits for the cwd reads of the live
+/// terminals, all of them together. It is well inside the app's 2 s wait
+/// for a daemon that it replaces.
+pub const SHUTDOWN_CWD_BUDGET: Duration = Duration::from_millis(500);
+
+/// The last write of the state: each live terminal's cwd is read once more,
+/// within `SHUTDOWN_CWD_BUDGET`, and no `save_loop` write follows it.
+pub async fn final_save(daemon: &Arc<Daemon>) {
+    crate::term::read_cwds(daemon, SHUTDOWN_CWD_BUDGET).await;
+    let mut stopped = daemon.saves_stopped.lock().await;
+    *stopped = true;
+    write(daemon).await;
+}
+
+async fn write(daemon: &Daemon) {
+    let state = snapshot(&*daemon.boards.lock().await);
+    if let Err(e) = write_atomic(daemon.state_path(), &state) {
+        warn!("state save failed: {e}");
+    }
+}
+
+// Dirty-flag + short sleep coalesces mutation bursts into one write. Each
+// write holds `saves_stopped`, so it never overlaps the final one, which
+// shares its `.tmp` file.
 pub async fn save_loop(daemon: Arc<Daemon>) {
     loop {
         daemon.dirty_notified().await;
         tokio::time::sleep(SAVE_DEBOUNCE).await;
-        let state = {
-            let boards = daemon.boards.lock().await;
-            snapshot(&boards)
-        };
-        if let Err(e) = write_atomic(daemon.state_path(), &state) {
-            warn!("state save failed: {e}");
+        let stopped = daemon.saves_stopped.lock().await;
+        if *stopped {
+            return;
         }
+        write(&daemon).await;
     }
 }
 

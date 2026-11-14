@@ -46,6 +46,11 @@ pub(crate) struct StuckFs {
     counts: std::sync::Mutex<HashMap<Call, (u32, u32)>>,
     repos: std::sync::Mutex<Vec<(PathBuf, String)>>,
     panics: std::sync::Mutex<Vec<PathBuf>>,
+    /// The `pid_cwd` answers the test names, by pid, `None` for every pid.
+    cwds: std::sync::Mutex<Vec<(Option<libc::pid_t>, Option<String>)>>,
+    cwds_returned: AtomicU32,
+    /// The pid of each `pid_cwd` call.
+    cwd_pids: std::sync::Mutex<Vec<libc::pid_t>>,
 }
 
 impl StuckFs {
@@ -59,6 +64,27 @@ impl StuckFs {
     /// held for every pid under `""`.
     pub(crate) fn hold(&self, call: Call, under: &Path) {
         self.holds.lock().unwrap().push((call, under.to_owned()));
+    }
+
+    /// Holds each later `pid_cwd` of `pid`.
+    pub(crate) fn hold_pid(&self, pid: libc::pid_t) {
+        self.hold(Call::PidCwd, &pid_path(pid));
+    }
+
+    /// Each later `pid_cwd` of `pid`, or of every pid for `None`, answers
+    /// `cwd`. An answer for one pid comes before an answer for every pid.
+    pub(crate) fn answer_cwd(&self, pid: Option<libc::pid_t>, cwd: Option<&str>) {
+        self.cwds.lock().unwrap().push((pid, cwd.map(str::to_owned)));
+    }
+
+    /// The `pid_cwd` calls of `pid`.
+    pub(crate) fn pid_cwd_calls(&self, pid: libc::pid_t) -> usize {
+        self.cwd_pids.lock().unwrap().iter().filter(|p| **p == pid).count()
+    }
+
+    /// The `pid_cwd` calls that returned.
+    pub(crate) fn cwds_returned(&self) -> u32 {
+        self.cwds_returned.load(Ordering::SeqCst)
     }
 
     /// Each later `stamp` of `path` panics.
@@ -119,9 +145,19 @@ impl PathFs for StuckFs {
     }
 
     fn pid_cwd(&self, pid: libc::pid_t) -> Option<String> {
-        self.wait_if_held(Call::PidCwd, Path::new(""));
-        RealFs.pid_cwd(pid)
+        self.cwd_pids.lock().unwrap().push(pid);
+        self.wait_if_held(Call::PidCwd, &pid_path(pid));
+        let answers = self.cwds.lock().unwrap().clone();
+        let named = answers.iter().find(|(p, _)| *p == Some(pid)).or_else(|| answers.iter().find(|(p, _)| p.is_none()));
+        let cwd = named.map_or_else(|| RealFs.pid_cwd(pid), |(_, cwd)| cwd.clone());
+        self.cwds_returned.fetch_add(1, Ordering::SeqCst);
+        cwd
     }
+}
+
+/// The path a hold of `pid_cwd` matches.
+fn pid_path(pid: libc::pid_t) -> PathBuf {
+    PathBuf::from(pid.to_string())
 }
 
 /// The test holds the sender to its end, a panic included: a runtime
@@ -134,6 +170,9 @@ pub(crate) fn stuck_fs() -> (Arc<StuckFs>, std::sync::mpsc::Sender<()>) {
         counts: std::sync::Mutex::default(),
         repos: std::sync::Mutex::default(),
         panics: std::sync::Mutex::default(),
+        cwds: std::sync::Mutex::default(),
+        cwds_returned: AtomicU32::new(0),
+        cwd_pids: std::sync::Mutex::default(),
     });
     (fs, release)
 }

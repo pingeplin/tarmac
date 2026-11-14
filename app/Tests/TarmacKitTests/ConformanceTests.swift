@@ -371,6 +371,70 @@ final class ConformanceTests: XCTestCase {
         XCTAssertEqual(message.encodedPayload(), payload)
     }
 
+    /// 2611.0007 S5 (daemon → app): a board's record of each terminal.
+    func testVector18RestoreTermRecords() throws {
+        let payload = hexData("""
+            84 a1 74 a7 72 65 73 74 6f 72 65 a4 64 6f 63 73 90 a5 74 69 6c 65 73 90
+            ac 74 65 72 6d 5f 72 65 63 6f 72 64 73 81 a2 74 31 81 a8 6c 61 73 74 5f
+            63 77 64 a2 2f 77
+            """)
+        let message = Message.restore(
+            docs: [], tiles: [], board: nil, boardID: nil, liveTerms: [],
+            termRecords: ["t1": TermRecord(lastCwd: "/w")]
+        )
+        let expected = MsgPackValue.map([
+            "t": .string("restore"),
+            "docs": .array([]),
+            "tiles": .array([]),
+            "term_records": .map(["t1": .map(["last_cwd": .string("/w")])]),
+        ])
+
+        XCTAssertEqual(try MsgPack.decode(payload), expected)
+        XCTAssertEqual(try Message.decode(payload: payload), message)
+        assertRoundTrips(expected)
+        assertRoundTrips(message)
+        XCTAssertEqual(message.encodedPayload(), payload)
+    }
+
+    /// 2611.0007 S5 (app → daemon): the persisted id a cold spawn replaces.
+    func testVector19SpawnTermSucceeds() throws {
+        let payload = hexData("""
+            87 a1 74 aa 73 70 61 77 6e 5f 74 65 72 6d a7 74 65 72 6d 5f 69 64 a2 74
+            31 a4 63 6f 6c 73 50 a4 72 6f 77 73 18 a3 63 77 64 c0 a3 63 6d 64 c0 a8
+            73 75 63 63 65 65 64 73 a2 74 30
+            """)
+        let message = Message.spawnTerm(termID: "t1", cols: 80, rows: 24, cwd: nil, cmd: nil, succeeds: "t0")
+        let expected = MsgPackValue.map([
+            "t": .string("spawn_term"),
+            "term_id": .string("t1"),
+            "cols": .int(80),
+            "rows": .int(24),
+            "cwd": .nil,
+            "cmd": .nil,
+            "succeeds": .string("t0"),
+        ])
+
+        XCTAssertEqual(try MsgPack.decode(payload), expected)
+        XCTAssertEqual(try Message.decode(payload: payload), message)
+        assertRoundTrips(expected)
+        assertRoundTrips(message)
+        XCTAssertEqual(message.encodedPayload(), payload)
+    }
+
+    /// 2611.0007 S5: an empty table, a nil `succeeds` and a nil `last_cwd`
+    /// put no key on the wire.
+    func testAnEmptyRecordTableANilSucceedsAndANilLastCwdHaveNoKey() throws {
+        let empty = Message.restore(docs: [], tiles: [], board: nil, boardID: nil, liveTerms: [])
+        XCTAssertNil(try MsgPack.decode(empty.encodedPayload()).mapValue?["term_records"])
+        let spawn = Message.spawnTerm(termID: "t1", cols: 80, rows: 24, cwd: nil, cmd: nil)
+        XCTAssertNil(try MsgPack.decode(spawn.encodedPayload()).mapValue?["succeeds"])
+        let noCwd = Message.restore(
+            docs: [], tiles: [], board: nil, boardID: nil, liveTerms: [], termRecords: ["t1": TermRecord(lastCwd: nil)]
+        )
+        let records = try MsgPack.decode(noCwd.encodedPayload()).mapValue?["term_records"]
+        XCTAssertEqual(records, .map(["t1": .map([:])]))
+    }
+
     /// The daemon answers every `scrollback_request`, even with an empty ring;
     /// the empty reply must survive the codec so the app can stop waiting.
     func testScrollbackReplyRoundTripsEmptyBytes() {

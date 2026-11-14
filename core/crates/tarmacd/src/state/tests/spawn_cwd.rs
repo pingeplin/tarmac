@@ -37,8 +37,12 @@ async fn cwd_out(tag: &str) -> Rig {
 async fn inherit_out(tag: &str) -> Rig {
     let mut r = rig(tag).await;
     source_in(&r.daemon, &mut r.app, &r.dir).await;
-    r.fs.hold(Call::PidCwd, Path::new(""));
+    r.fs.hold_pid(src_pid(&r.daemon).await);
     r
+}
+
+async fn src_pid(daemon: &Daemon) -> libc::pid_t {
+    daemon.term("src").await.expect("src runs").foreground_pid().expect("a foreground pid")
 }
 
 /// The step of a `SpawnTerm` of `argv`, on a task of its own, and how long
@@ -56,7 +60,7 @@ async fn spawn(
     let inherit_cwd_from = inherit_cwd_from.map(str::to_owned);
     let started = std::time::Instant::now();
     within(tokio::spawn(async move {
-        crate::conn::spawn_requested(&daemon, term_id, (80, 24), cwd, Some(cmd), None, inherit_cwd_from).await
+        crate::conn::spawn_requested(&daemon, term_id, (80, 24), cwd, Some(cmd), None, inherit_cwd_from, None).await
     }))
     .await;
     started.elapsed()
@@ -89,10 +93,17 @@ async fn printed(app: &mut mpsc::Receiver<Msg>, term_id: &str, until: Option<&st
     String::from_utf8_lossy(&out).trim().to_owned()
 }
 
-/// A terminal `src` in `dir`, at a `read` once this returns.
+/// A terminal `src` in `dir`, at a `read` once this returns, whose own
+/// first `pid_cwd` (2611.0007) has been recorded.
 async fn source_in(daemon: &Arc<Daemon>, app: &mut mpsc::Receiver<Msg>, dir: &Path) {
     spawn(daemon, "src", &["/bin/sh", "-c", "echo UP; read _"], Some(dir), None).await;
     printed(app, "src", Some("UP")).await;
+    let recorded = || async { daemon.boards.lock().await.active_registry().term_records["src"].last_cwd.is_some() };
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !recorded().await {
+        assert!(std::time::Instant::now() < deadline, "src's cwd was never recorded");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 }
 
 async fn end_source(daemon: &Arc<Daemon>, app: &mut mpsc::Receiver<Msg>) {
@@ -184,7 +195,8 @@ async fn a_spawn_whose_inherited_cwd_does_not_answer_runs_in_home() {
 
     assert!(took < 3 * LIMIT, "the spawn took {took:?}");
     assert_eq!(printed(&mut r.app, "t1", None).await, home());
-    assert_eq!((r.fs.calls(Call::PidCwd), r.fs.held(Call::IsDir)), (1, 1));
+    // src's own first read (2611.0007), and the inherit's.
+    assert_eq!((r.fs.pid_cwd_calls(src_pid(&r.daemon).await), r.fs.held(Call::IsDir)), (2, 1));
     end_source(&r.daemon, &mut r.app).await;
     let _ = std::fs::remove_dir_all(&r.tmp);
 }
@@ -211,7 +223,8 @@ async fn a_spawn_from_a_source_whose_cwd_is_out_runs_in_home_at_once() {
 
     assert!(took < LIMIT, "the spawn took {took:?}");
     assert_eq!(printed(&mut r.app, "t2", None).await, home());
-    assert_eq!(r.fs.calls(Call::PidCwd), 1);
+    // src's own first read (2611.0007), and t1's inherit: none for t2's.
+    assert_eq!(r.fs.pid_cwd_calls(src_pid(&r.daemon).await), 2);
     end_source(&r.daemon, &mut r.app).await;
     let _ = std::fs::remove_dir_all(&r.tmp);
 }

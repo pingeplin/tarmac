@@ -6,13 +6,14 @@ use std::time::{Duration, Instant};
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use tarmac_protocol::Msg;
 use tokio::sync::{mpsc, oneshot};
-use tracing::{debug, warn};
+use tracing::debug;
 
+use crate::boards::BoardId;
 use crate::proc;
 use crate::state::Daemon;
 
 pub const OUTPUT_CHUNK: usize = 64 * 1024; // protocol: output chunks <= 64 KiB
-const PROC_POLL_INTERVAL: Duration = Duration::from_millis(750);
+pub(crate) const PROC_POLL_INTERVAL: Duration = Duration::from_millis(750);
 const BELL_DEBOUNCE: Duration = Duration::from_millis(250);
 const BEL: u8 = 0x07;
 // A (re)connecting app replays this to re-bind to a live shell instead of
@@ -125,13 +126,16 @@ pub async fn check_free(daemon: &Daemon, term_id: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// `succeeds` names the persisted terminal whose record this one takes
+/// (`Daemon::adopt_term`).
 pub async fn spawn(
     daemon: Arc<Daemon>,
     term_id: String,
-    cols: u16,
-    rows: u16,
+    (cols, rows): (u16, u16),
     cwd: Option<String>,
     cmd: Option<Vec<String>>,
+    board: BoardId,
+    succeeds: Option<String>,
 ) -> Result<(), String> {
     check_free(&daemon, &term_id).await?;
 
@@ -188,9 +192,12 @@ pub async fn spawn(
         scrollback: std::sync::Mutex::new(ScrollbackRing::new()),
         pid: child_pid,
     });
+    // Before the loop starts: its first cwd read fills the record of the
+    // term's board, which must be there by then.
+    daemon.adopt_term(&term_id, &board, succeeds.as_deref()).await;
     daemon.terms.lock().await.insert(term_id.clone(), handle.clone());
 
-    tokio::spawn(proc_name_loop(daemon.clone(), term_id.clone(), handle.clone()));
+    tokio::spawn(proc_loop(daemon.clone(), term_id.clone(), handle.clone()));
 
     let (out_tx, out_rx) = mpsc::channel::<Vec<u8>>(256);
     tokio::task::spawn_blocking(move || {
@@ -313,10 +320,7 @@ async fn pump(
     }
     let code = exit_code.flatten();
     debug!("term {term_id} exited with {code:?}");
-    if daemon.terms.lock().await.remove(&term_id).is_none() {
-        warn!("term {term_id} missing from registry at exit");
-    }
-    daemon.term_boards.lock().await.remove(&term_id);
+    daemon.term_ended(&term_id, code).await;
     daemon.push(Msg::Exit { term_id, code }).await;
     // The exited pty lowered its board's running count; re-push so a switcher
     // row, even for a board the app has not rebuilt, drops it.
@@ -324,10 +328,13 @@ async fn pump(
 }
 
 // Pushes a `term_proc` whenever the foreground process name changes (and once
-// on the first resolve). Stops when the pump removes the term after exit. Any
-// lookup or lock failure skips the tick; this loop never panics.
-async fn proc_name_loop(daemon: Arc<Daemon>, term_id: String, handle: Arc<TermHandle>) {
+// on the first resolve), and records the cwd whenever the foreground pid
+// changes (and once for the first pid): an idle terminal makes no cwd read.
+// Stops when the pump removes the term after exit. Any lookup or lock failure
+// skips the tick; this loop never panics.
+async fn proc_loop(daemon: Arc<Daemon>, term_id: String, handle: Arc<TermHandle>) {
     let mut last_name: Option<String> = None;
+    let mut last_pid: Option<libc::pid_t> = None;
     let mut ticker = tokio::time::interval(PROC_POLL_INTERVAL);
     loop {
         ticker.tick().await;
@@ -336,15 +343,40 @@ async fn proc_name_loop(daemon: Arc<Daemon>, term_id: String, handle: Arc<TermHa
         }
 
         let Some(pid) = handle.foreground_pid() else { continue };
-        let Some(name) = proc::process_name(pid) else { continue };
-
-        if last_name.as_deref() != Some(name.as_str()) {
+        if let Some(name) = proc::process_name(pid)
+            && last_name.as_deref() != Some(name.as_str())
+        {
             last_name = Some(name.clone());
             daemon
                 .push(Msg::TermProc { term_id: term_id.clone(), name, pid: Some(pid as i64) })
                 .await;
         }
+        if last_pid != Some(pid) {
+            last_pid = Some(pid);
+            if let Ok(Some(cwd)) = daemon.gate().pid_cwd(pid).await {
+                daemon.record_cwd(&term_id, cwd).await;
+            }
+        }
     }
+}
+
+/// Reads the cwd of every live terminal at once, and records each that
+/// answers by `budget`. A read that does not keeps the cwd recorded before.
+pub async fn read_cwds(daemon: &Arc<Daemon>, budget: Duration) {
+    let deadline = tokio::time::Instant::now() + budget;
+    let terms: Vec<(String, Arc<TermHandle>)> =
+        daemon.terms.lock().await.iter().map(|(id, h)| (id.clone(), h.clone())).collect();
+    let mut reads = tokio::task::JoinSet::new();
+    for (term_id, handle) in terms {
+        let Some(pid) = handle.foreground_pid() else { continue };
+        let daemon = daemon.clone();
+        reads.spawn(async move {
+            if let Ok(Ok(Some(cwd))) = tokio::time::timeout_at(deadline, daemon.gate().pid_cwd(pid)).await {
+                daemon.record_cwd(&term_id, cwd).await;
+            }
+        });
+    }
+    while reads.join_next().await.is_some() {}
 }
 
 #[cfg(test)]

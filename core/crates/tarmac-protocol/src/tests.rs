@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::BTreeMap;
 
 fn unhex(s: &str) -> Vec<u8> {
     let digits: Vec<u8> = s
@@ -46,6 +47,7 @@ fn spawn_term(term_id: &str, board_id: Option<&str>, inherit_cwd_from: Option<&s
         cmd: None,
         board_id: board_id.map(str::to_string),
         inherit_cwd_from: inherit_cwd_from.map(str::to_string),
+        succeeds: None,
     }
 }
 
@@ -298,6 +300,47 @@ fn conformance_vector_17_doc_event() {
     assert_eq!(encode(&msg).unwrap(), unhex(hex));
 }
 
+/// V18's and V19's whole frames.
+fn restore_with_records(term_records: BTreeMap<String, TermRecord>) -> Msg {
+    Msg::Restore { docs: vec![], tiles: vec![], board: None, board_id: None, live_terms: vec![], term_records }
+}
+
+fn spawn_succeeding(succeeds: Option<&str>) -> Msg {
+    let Msg::SpawnTerm { term_id, cols, rows, cwd, cmd, board_id, inherit_cwd_from, .. } = spawn_term("t1", None, None) else {
+        unreachable!()
+    };
+    Msg::SpawnTerm { term_id, cols, rows, cwd, cmd, board_id, inherit_cwd_from, succeeds: succeeds.map(str::to_string) }
+}
+
+#[test]
+fn conformance_vector_18_restore_term_records() {
+    let hex = "84 a1 74 a7 72 65 73 74 6f 72 65 a4 64 6f 63 73 90 a5 74 69 6c 65 73 90 \
+               ac 74 65 72 6d 5f 72 65 63 6f 72 64 73 81 a2 74 31 \
+               81 a8 6c 61 73 74 5f 63 77 64 a2 2f 77";
+    let msg = restore_with_records(BTreeMap::from([("t1".into(), TermRecord { last_cwd: Some("/w".into()) })]));
+    assert_vector(hex, msg.clone());
+    assert_eq!(encode(&msg).unwrap(), unhex(hex));
+}
+
+#[test]
+fn conformance_vector_19_spawn_term_succeeds() {
+    let hex = "87 a1 74 aa 73 70 61 77 6e 5f 74 65 72 6d a7 74 65 72 6d 5f 69 64 a2 74 31 \
+               a4 63 6f 6c 73 50 a4 72 6f 77 73 18 a3 63 77 64 c0 a3 63 6d 64 c0 \
+               a8 73 75 63 63 65 65 64 73 a2 74 30";
+    let msg = spawn_succeeding(Some("t0"));
+    assert_vector(hex, msg.clone());
+    assert_eq!(encode(&msg).unwrap(), unhex(hex));
+}
+
+#[test]
+fn an_empty_record_table_a_nil_succeeds_and_a_nil_last_cwd_are_not_on_the_wire() {
+    let restore = encode(&restore_with_records(BTreeMap::new())).unwrap();
+    assert!(!has(&restore, b"term_records"), "{restore:02x?}");
+    let spawn = encode(&spawn_succeeding(None)).unwrap();
+    assert!(!has(&spawn, b"succeeds"), "{spawn:02x?}");
+    assert_eq!(rmp_serde::to_vec_named(&TermRecord::default()).unwrap(), vec![0x80]);
+}
+
 #[test]
 fn a_payload_of_exactly_the_limit_is_within_it_and_one_byte_more_is_not() {
     let push = |n: usize| Msg::Push { path: "/p".into(), value: "x".repeat(n) };
@@ -334,7 +377,7 @@ fn m0_shaped_restore_decodes_with_defaults() {
     );
     assert_eq!(
         decode(&bytes).unwrap(),
-        Msg::Restore { docs: vec![m0_entry("/a.md", "cli", None)], tiles: vec![], board: None, board_id: None, live_terms: vec![] }
+        Msg::Restore { docs: vec![m0_entry("/a.md", "cli", None)], tiles: vec![], board: None, board_id: None, live_terms: vec![], term_records: BTreeMap::new() }
     );
 }
 
@@ -440,6 +483,7 @@ fn m3_board_id_roundtrip() {
         board: Some(BoardViewport { zoom: 1.0, cx: 0.0, cy: 0.0 }),
         board_id: Some("board-2".into()),
         live_terms: vec![],
+        term_records: BTreeMap::new(),
     };
     assert_eq!(roundtrip(&restore), restore);
 }
@@ -526,16 +570,18 @@ fn p5_restore_live_terms_roundtrips() {
         board: None,
         board_id: Some("board-1".into()),
         live_terms: vec!["t1".into(), "t2".into()],
+        term_records: BTreeMap::new(),
     };
     assert_eq!(roundtrip(&restore), restore);
 
     // An empty live_terms omits the key; a non-empty list is a real key, so
     // the encodings differ.
     let empty = Msg::Restore {
-        docs: vec![], tiles: vec![], board: None, board_id: None, live_terms: vec![],
+        docs: vec![], tiles: vec![], board: None, board_id: None, live_terms: vec![], term_records: BTreeMap::new(),
     };
     let one = Msg::Restore {
         docs: vec![], tiles: vec![], board: None, board_id: None, live_terms: vec!["t1".into()],
+        term_records: BTreeMap::new(),
     };
     let empty_bytes = encode(&empty).unwrap();
     assert!(!has(&empty_bytes, b"live_terms"), "an empty list must omit the live_terms key on the wire");
@@ -770,6 +816,7 @@ fn all_message_types_roundtrip() {
             board: Some(BoardViewport { zoom: 1.0, cx: 0.0, cy: 0.0 }),
             board_id: None,
             live_terms: vec!["t1".into()],
+            term_records: BTreeMap::from([("t1".into(), TermRecord { last_cwd: Some("/w".into()) })]),
         },
         Msg::SpawnTerm {
             term_id: "t1".into(),
@@ -779,6 +826,7 @@ fn all_message_types_roundtrip() {
             cmd: Some(vec!["/bin/echo".into(), "hi".into()]),
             board_id: None,
             inherit_cwd_from: None,
+            succeeds: Some("t0".into()),
         },
         spawn_term("t2", None, None),
         // cwd absent but an inherit-cwd-from hint present

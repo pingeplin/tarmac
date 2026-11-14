@@ -73,6 +73,8 @@ pub struct Daemon {
     gate: Arc<PathGate>,
     next_generation: AtomicU64,
     dirty: Notify,
+    /// Held by each state write; true once the final one is written.
+    pub saves_stopped: Mutex<bool>,
     state_path: PathBuf,
 }
 
@@ -151,6 +153,7 @@ impl Daemon {
             gate,
             next_generation: AtomicU64::new(1),
             dirty: Notify::new(),
+            saves_stopped: Mutex::new(false),
             state_path,
         });
         tokio::spawn(crate::docs::watch_loop(daemon.clone()));
@@ -419,6 +422,65 @@ impl Daemon {
         let dropped = self.boards.lock().await.drop_data();
         for dir in &dropped {
             self.release_data_dir(dir);
+        }
+    }
+
+    /// Files a new terminal under `board` with its record: the record of
+    /// `succeeds` when that board has one and the term is not live, else an
+    /// empty one. Runs before the terminal's first cwd read, which only ever
+    /// fills a record that is there.
+    pub async fn adopt_term(&self, term_id: &str, board: &str, succeeds: Option<&str>) {
+        let succeeds = match succeeds {
+            Some(old) if !self.terms.lock().await.contains_key(old) => Some(old),
+            _ => None,
+        };
+        self.term_boards.lock().await.insert(term_id.to_owned(), board.to_owned());
+        let mut boards = self.boards.lock().await;
+        let Some(reg) = boards.known_registry_mut(board) else { return };
+        let moved = succeeds.and_then(|old| reg.term_records.remove(old));
+        if moved.is_some() {
+            self.mark_dirty();
+        }
+        reg.term_records.insert(term_id.to_owned(), moved.unwrap_or_default());
+    }
+
+    /// Stores `cwd` in the record of a live `term_id`, on its own board. A
+    /// record that is gone (closed, ended cleanly, or its board deleted) is
+    /// not made again. Not saved by itself.
+    pub async fn record_cwd(&self, term_id: &str, cwd: String) {
+        if !self.terms.lock().await.contains_key(term_id) {
+            return;
+        }
+        let Some(board) = self.term_boards.lock().await.get(term_id).cloned() else { return };
+        let mut boards = self.boards.lock().await;
+        if let Some(record) = boards.known_registry_mut(&board).and_then(|reg| reg.term_records.get_mut(term_id)) {
+            record.last_cwd = Some(cwd);
+        }
+    }
+
+    /// Deletes the record of `term_id`, live or not, and kills its process
+    /// group when it is live.
+    pub async fn close_term(&self, term_id: &str) {
+        if self.boards.lock().await.forget_term(term_id) {
+            self.mark_dirty();
+        }
+        match self.term(term_id).await {
+            Some(h) => h.kill(),
+            None => tracing::debug!("term_close for unknown term {term_id}"),
+        }
+    }
+
+    /// Takes an exited terminal out of the maps. A clean exit (`Some(0)`)
+    /// deletes its record; any other keeps it for the dead card.
+    pub async fn term_ended(&self, term_id: &str, code: Option<i64>) {
+        if self.terms.lock().await.remove(term_id).is_none() {
+            tracing::warn!("term {term_id} missing from registry at exit");
+        }
+        let board = self.term_boards.lock().await.remove(term_id);
+        let (Some(board), Some(0)) = (board, code) else { return };
+        let forgot = self.boards.lock().await.known_registry_mut(&board).is_some_and(|reg| reg.term_records.remove(term_id).is_some());
+        if forgot {
+            self.mark_dirty();
         }
     }
 

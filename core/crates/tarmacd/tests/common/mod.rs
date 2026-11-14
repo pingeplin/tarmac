@@ -2,6 +2,7 @@
 // file, with app/cli clients speaking the wire protocol over std sockets.
 #![allow(dead_code)] // each test binary uses a different slice of the harness
 
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -9,7 +10,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use tarmac_protocol::{self as proto, BoardMeta, BoardViewport, DocEntry, Msg, Tile, frame};
+use tarmac_protocol::{self as proto, BoardMeta, BoardViewport, DocEntry, Msg, TermRecord, Tile, frame};
 
 pub const LONG: Duration = Duration::from_secs(20);
 
@@ -41,14 +42,34 @@ impl TestDaemon {
 
     /// `configure` runs after the default environment is set, so it can override it.
     pub fn start_with(configure: impl FnOnce(&mut Command)) -> Self {
+        Self::launch(temp_dir(), configure)
+    }
+
+    /// A daemon that loads `state` (a `state.json`) at its start.
+    pub fn start_seeded(state: &serde_json::Value) -> Self {
+        Self::start_seeded_with(state, |_| {})
+    }
+
+    pub fn start_seeded_with(state: &serde_json::Value, configure: impl FnOnce(&mut Command)) -> Self {
         let dir = temp_dir();
+        std::fs::write(dir.join("state.json"), state.to_string()).unwrap();
+        Self::launch(dir, configure)
+    }
+
+    fn launch(dir: PathBuf, configure: impl FnOnce(&mut Command)) -> Self {
         let sock = dir.join("tarmacd.sock");
         let child = spawn_daemon_with(&sock, configure);
         wait_for_socket(&sock);
         TestDaemon { child, dir, sock }
     }
 
-    fn state_file(&self) -> PathBuf {
+    /// A new daemon on the same socket and state, once the last one has exited.
+    pub fn relaunch(&mut self) {
+        self.child = spawn_daemon(&self.sock);
+        wait_for_socket(&self.sock);
+    }
+
+    pub fn state_file(&self) -> PathBuf {
         self.dir.join("state.json")
     }
 
@@ -309,6 +330,7 @@ impl Conn {
             cmd: Some(cmd.iter().map(|s| s.to_string()).collect()),
             board_id: opts.board_id,
             inherit_cwd_from: opts.inherit_cwd_from,
+            succeeds: opts.succeeds,
         });
     }
 }
@@ -321,6 +343,7 @@ pub struct Spawn {
     pub cwd: Option<String>,
     pub board_id: Option<String>,
     pub inherit_cwd_from: Option<String>,
+    pub succeeds: Option<String>,
 }
 
 impl Spawn {
@@ -331,7 +354,7 @@ impl Spawn {
 
 impl Default for Spawn {
     fn default() -> Self {
-        Spawn { cols: 80, rows: 24, cwd: None, board_id: None, inherit_cwd_from: None }
+        Spawn { cols: 80, rows: 24, cwd: None, board_id: None, inherit_cwd_from: None, succeeds: None }
     }
 }
 
@@ -341,6 +364,7 @@ pub struct Restore {
     pub tiles: Vec<Tile>,
     pub board: Option<BoardViewport>,
     pub live_terms: Vec<String>,
+    pub term_records: BTreeMap<String, TermRecord>,
 }
 
 impl Restore {
@@ -351,10 +375,10 @@ impl Restore {
 
 impl From<Msg> for Restore {
     fn from(msg: Msg) -> Self {
-        let Msg::Restore { board_id, docs, tiles, board, live_terms } = msg else {
+        let Msg::Restore { board_id, docs, tiles, board, live_terms, term_records } = msg else {
             panic!("expected restore, got {msg:?}")
         };
-        Restore { board_id, docs, tiles, board, live_terms }
+        Restore { board_id, docs, tiles, board, live_terms, term_records }
     }
 }
 
@@ -477,12 +501,17 @@ pub fn cli_open(sock: &Path, path: &str) {
 /// death by signal (`status.code() == None`).
 pub fn signal_and_wait(child: &mut Child, sig: libc::c_int) -> std::process::ExitStatus {
     unsafe { libc::kill(child.id() as libc::pid_t, sig) };
+    wait_exit(child)
+}
+
+/// Waits, to a deadline, for a daemon child to exit.
+pub fn wait_exit(child: &mut Child) -> std::process::ExitStatus {
     let deadline = Instant::now() + LONG;
     loop {
         if let Some(status) = child.try_wait().unwrap() {
             return status;
         }
-        assert!(Instant::now() < deadline, "daemon never exited after signal {sig}");
+        assert!(Instant::now() < deadline, "daemon never exited");
         std::thread::sleep(Duration::from_millis(25));
     }
 }

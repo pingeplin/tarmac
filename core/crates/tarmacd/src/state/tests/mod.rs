@@ -12,6 +12,7 @@ mod restart;
 mod spawn_cwd;
 mod pushes;
 mod data_dirs;
+mod term_records;
 
 async fn open_doc(daemon: &Daemon, board: Option<&str>, doc: &Path) {
     daemon.open_doc(board, doc, "t", None, crate::reader::stamp(doc), None).await.unwrap();

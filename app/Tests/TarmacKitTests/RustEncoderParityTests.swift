@@ -161,6 +161,34 @@ final class RustEncoderParityTests: XCTestCase {
         )
     }
 
+    /// 2611.0007 S5. The spec's vectors 18 and 19: the Rust side's capture
+    /// of them is `tarmac-protocol`'s own vector test.
+    func testTermRecordsAndSucceeds() {
+        // Msg::Restore { docs: [], tiles: [], board: None, board_id: None, live_terms: [],
+        //   term_records: {"t1": TermRecord { last_cwd: Some("/w") }} } — conformance vector 18.
+        assertParity(
+            .restore(
+                docs: [], tiles: [], board: nil, boardID: nil, liveTerms: [],
+                termRecords: ["t1": TermRecord(lastCwd: "/w")]
+            ),
+            """
+            84 a1 74 a7 72 65 73 74 6f 72 65 a4 64 6f 63 73 90 a5 74 69 6c 65 73 90
+            ac 74 65 72 6d 5f 72 65 63 6f 72 64 73 81 a2 74 31 81 a8 6c 61 73 74 5f
+            63 77 64 a2 2f 77
+            """
+        )
+        // Msg::SpawnTerm { term_id: "t1", cols: 80, rows: 24, cwd: None, cmd: None,
+        //   board_id: None, inherit_cwd_from: None, succeeds: Some("t0") } — conformance vector 19.
+        assertParity(
+            .spawnTerm(termID: "t1", cols: 80, rows: 24, cwd: nil, cmd: nil, succeeds: "t0"),
+            """
+            87 a1 74 aa 73 70 61 77 6e 5f 74 65 72 6d a7 74 65 72 6d 5f 69 64 a2 74
+            31 a4 63 6f 6c 73 50 a4 72 6f 77 73 18 a3 63 77 64 c0 a3 63 6d 64 c0 a8
+            73 75 63 63 65 65 64 73 a2 74 30
+            """
+        )
+    }
+
     func testScrollback() {
         // Msg::ScrollbackRequest { term_id: "t1" } — conformance vector 12.
         assertParity(
