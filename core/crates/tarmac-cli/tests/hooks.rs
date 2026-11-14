@@ -145,7 +145,7 @@ fn report(kind: &str, text: Option<&str>) -> Msg {
 }
 
 #[test]
-fn s6_hooks_run_sends_the_report_of_its_input() {
+fn s6_hooks_run_sends_the_message_of_its_input() {
     for (input, want, case) in [
         (stop_input("Done.\n\n  All   tests pass.\n"), report("done", Some("Done. All tests pass.")), "stop"),
         (fixture("stop"), report("done", Some("You picked red.")), "captured stop"),

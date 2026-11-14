@@ -15,15 +15,19 @@ pub fn run(args: &[String]) -> i32 {
         eprintln!("tarmac: {USAGE}");
         return 2;
     };
+    for_terminal(NEEDS_TERM, |term_id| Msg::Report { term_id, kind: kind.to_owned(), text: text.map(cap_report_text) })
+}
+
+/// The rest of a verb that speaks for the calling terminal, `report` or
+/// `resume`, once its arguments passed: `msg` for the terminal named by
+/// `TARMAC_TERM_ID`, sent and answered. Exit 1, with `needs_term` or the
+/// daemon's answer on stderr, when it fails.
+pub(crate) fn for_terminal(needs_term: &str, msg: impl FnOnce(String) -> Msg) -> i32 {
     let Some(term_id) = crate::env_override("TARMAC_TERM_ID") else {
-        eprintln!("tarmac: {NEEDS_TERM}");
+        eprintln!("tarmac: {needs_term}");
         return 1;
     };
-    let msg = Msg::Report {
-        term_id: term_id.to_string_lossy().into_owned(),
-        kind: kind.to_owned(),
-        text: text.map(cap_report_text),
-    };
+    let msg = msg(term_id.to_string_lossy().into_owned());
     match send(&msg, crate::DAEMON_WAIT, NoAnswer::ToTheReport(&crate::no_answer("an older daemon"))) {
         Ok(()) => 0,
         Err(why) => {

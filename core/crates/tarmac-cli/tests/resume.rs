@@ -7,58 +7,11 @@ use std::time::{Duration, Instant};
 use tarmac_protocol::{self as proto, Msg};
 
 mod common;
-use common::{Double, Report, channel, hello_ok, tarmac, tarmac_at};
+use common::{Answer, OneAnswer, Report, channel, tarmac, tarmac_at};
 
 const USAGE: &str = "tarmac: usage: tarmac resume set \"<command>\"  |  tarmac resume clear\n";
 const NEEDS_TERM: &str = "tarmac: resume needs TARMAC_TERM_ID (run it in a Tarmac terminal)\n";
 const NO_ANSWER: &str = "tarmac: no answer from the daemon in 5 s (an older daemon)\n";
-
-/// What the double does with the `resume` it has just read.
-enum Answer {
-    Reply(Msg),
-    /// Never answers.
-    Silence,
-}
-
-struct ResumeDaemon {
-    double: Double,
-}
-
-impl ResumeDaemon {
-    fn start(answer: Answer) -> Self {
-        let double = Double::start("tarmacd.sock", move |peer| {
-            let hello_ok = proto::encode(&hello_ok(None, None, None, None)).unwrap();
-            if peer.read().is_none() || !peer.write(&hello_ok) || peer.read().is_none() {
-                return;
-            }
-            match answer {
-                Answer::Reply(msg) => {
-                    peer.write(&proto::encode(&msg).unwrap());
-                    peer.drain();
-                }
-                Answer::Silence => peer.hold(),
-            }
-        });
-        ResumeDaemon { double }
-    }
-
-    fn acking() -> Self {
-        ResumeDaemon::start(Answer::Reply(Msg::Ack))
-    }
-
-    fn run(&self, args: &[&str]) -> Report {
-        Report::of(tarmac_at(&self.double.sock).env("TARMAC_TERM_ID", "t9").arg("resume").args(args))
-    }
-
-    /// The raw payload of the one frame after the `hello`, which is checked.
-    fn sent(&self) -> Vec<u8> {
-        let frames = self.double.frames();
-        let (hello, rest) = frames.split_first().expect("a hello");
-        assert!(matches!(proto::decode(hello).unwrap(), Msg::Hello { .. }), "the first frame is the hello");
-        assert_eq!(rest.len(), 1, "one resume");
-        rest[0].clone()
-    }
-}
 
 /// `tarmac resume` on a socket that is absent: a run that tried to connect
 /// would print the no-daemon line instead of the one asserted.
@@ -78,8 +31,8 @@ fn resume(cmd: Option<&str>) -> Msg {
 // S6
 #[test]
 fn s6_set_sends_the_command_for_the_calling_terminal_and_prints_nothing() {
-    let daemon = ResumeDaemon::acking();
-    let out = daemon.run(&["set", "claude --resume ab-12"]);
+    let daemon = OneAnswer::acking();
+    let out = daemon.run("resume", &["set", "claude --resume ab-12"]);
 
     assert_eq!((out.code(), out.stdout.as_str(), out.stderr.as_str()), (Some(0), "", ""));
     assert_eq!(proto::decode(&daemon.sent()).unwrap(), resume(Some("claude --resume ab-12")));
@@ -88,8 +41,8 @@ fn s6_set_sends_the_command_for_the_calling_terminal_and_prints_nothing() {
 // S6
 #[test]
 fn s6_clear_sends_no_cmd_key() {
-    let daemon = ResumeDaemon::acking();
-    let out = daemon.run(&["clear"]);
+    let daemon = OneAnswer::acking();
+    let out = daemon.run("resume", &["clear"]);
 
     assert_eq!((out.code(), out.stdout.as_str(), out.stderr.as_str()), (Some(0), "", ""));
     let sent = daemon.sent();
@@ -145,8 +98,8 @@ fn s30_no_terminal_exits_1_and_does_not_connect() {
 // S30
 #[test]
 fn s30_the_daemons_refusal_is_printed_and_exits_1() {
-    let daemon = ResumeDaemon::start(Answer::Reply(Msg::Err { msg: "unknown terminal: t9".into() }));
-    let out = daemon.run(&["set", "echo HI"]);
+    let daemon = OneAnswer::start(Answer::Reply(Msg::Err { msg: "unknown terminal: t9".into() }));
+    let out = daemon.run("resume", &["set", "echo HI"]);
 
     assert_eq!((out.code(), out.stderr.as_str()), (Some(1), "tarmac: unknown terminal: t9\n"));
 }
@@ -167,9 +120,9 @@ fn s30_no_daemon_is_the_no_daemon_line() {
 // S30
 #[test]
 fn s30_a_daemon_that_never_answers_is_the_no_answer_line_after_5_s() {
-    let daemon = ResumeDaemon::start(Answer::Silence);
+    let daemon = OneAnswer::start(Answer::Silence);
     let started = Instant::now();
-    let out = daemon.run(&["set", "echo HI"]);
+    let out = daemon.run("resume", &["set", "echo HI"]);
 
     assert_eq!((out.code(), out.stderr.as_str()), (Some(1), NO_ANSWER));
     assert!(started.elapsed() >= Duration::from_secs(5), "gave up after {:?}", started.elapsed());

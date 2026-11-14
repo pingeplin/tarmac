@@ -13,6 +13,56 @@ use tarmac_protocol::{self as proto, Msg};
 mod double;
 pub use double::Double;
 
+/// What a `OneAnswer` double does with the frame after the hello.
+pub enum Answer {
+    Reply(Msg),
+    /// Never answers.
+    Silence,
+}
+
+/// A daemon double for a verb that sends one frame after its hello and waits
+/// for the answer: `report` and `resume`.
+pub struct OneAnswer {
+    pub double: Double,
+}
+
+impl OneAnswer {
+    pub fn start(answer: Answer) -> Self {
+        let double = Double::start("tarmacd.sock", move |peer| {
+            let hello_ok = proto::encode(&hello_ok(None, None, None, None)).unwrap();
+            if peer.read().is_none() || !peer.write(&hello_ok) || peer.read().is_none() {
+                return;
+            }
+            match answer {
+                Answer::Reply(msg) => {
+                    peer.write(&proto::encode(&msg).unwrap());
+                    peer.drain();
+                }
+                Answer::Silence => peer.hold(),
+            }
+        });
+        OneAnswer { double }
+    }
+
+    pub fn acking() -> Self {
+        OneAnswer::start(Answer::Reply(Msg::Ack))
+    }
+
+    /// `tarmac <verb> <args>` in terminal t9.
+    pub fn run(&self, verb: &str, args: &[&str]) -> Report {
+        Report::of(tarmac_at(&self.double.sock).env("TARMAC_TERM_ID", "t9").arg(verb).args(args))
+    }
+
+    /// The raw payload of the one frame after the `hello`, which is checked.
+    pub fn sent(&self) -> Vec<u8> {
+        let frames = self.double.frames();
+        let (hello, rest) = frames.split_first().expect("a hello");
+        assert!(matches!(proto::decode(hello).unwrap(), Msg::Hello { .. }), "the first frame is the hello");
+        assert_eq!(rest.len(), 1, "one frame after the hello");
+        rest[0].clone()
+    }
+}
+
 pub fn hello_ok(
     daemon_version: Option<&str>,
     daemon_pid: Option<u32>,
