@@ -83,7 +83,8 @@ mod tests {
 
     #[test]
     fn a_caller_re_parented_to_launchd_is_unattributed() {
-        assert_eq!(walk(CALLER, false, &[(CALLER, X), (X, 1)]), Found::Unattributed);
+        // A parent of pid 1 that leads to the child: only the guard stops there.
+        assert_eq!(walk(CALLER, false, &[(CALLER, X), (X, 1), (1, CHILD)]), Found::Unattributed);
     }
 
     #[test]

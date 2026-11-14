@@ -57,13 +57,13 @@ fn assert_err(answer: Msg, want: &str) {
     assert_eq!(answer, Msg::Err { msg: want.into() });
 }
 
-/// A drained app connection with a job shell `term_id` at its prompt.
+/// A drained app connection with a job shell for each of `term_ids` at its
+/// prompt. One at a time: a wait for one terminal's prompt drops the frames
+/// of every other.
 fn job_shell(daemon: &TestDaemon, term_ids: &[&str]) -> Conn {
     let mut app = daemon.connect_app_drained();
     for t in term_ids {
         app.spawn_term(t, JOB_SHELL);
-    }
-    for t in term_ids {
         app.recv_output_containing(t, "%");
     }
     app
