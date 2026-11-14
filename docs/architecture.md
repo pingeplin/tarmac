@@ -1586,10 +1586,10 @@ an early pill take it and push its siblings off the view. Of the up to four
 placings (forward and backward, short and full, in that order), a later one
 replaces the best so far only when it leaves fewer pills covered, by the
 chrome or by a card, pushes no more past the view's margins and leaves no
-more fully off the view; a tie keeps the earlier one. A pill that finds no free gap is
-left where it wanted to be; if that is on a card, it is drawn under the cards
-(#126): cards win. A pill left under the chrome but
-clear of every card is drawn over the cards and under the chrome.
+more fully off the view; a tie keeps the earlier one. A pill that finds no
+free gap is left where it wanted to be; if that is on a card, it is drawn under
+the cards (#126): cards win. A pill left under the chrome but clear of every
+card is drawn over the cards and under the chrome.
 
 **The inbox** (spec 2611.0013, `InboxPanelView`; rules in `Inbox`,
 `InboxCopy`, `InboxKeys`, `InboxJump`, `InboxPanelLayout`). A store of report

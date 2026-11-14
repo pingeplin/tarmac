@@ -208,20 +208,14 @@ public enum OffscreenHintLayout {
                 .enumerated()
                 .sorted { ($0.element.placement.along, $0.offset) < ($1.element.placement.along, $1.offset) }
                 .map(\.element)
-            var best: Pass?
-            for lastGapFits in [false, true] {
-                let forward = place(group, on: edge, in: viewRect, options: options, from: nil, lastGapFits: lastGapFits)
-                var candidates = [forward]
-                if forward.underChrome > 0 {
-                    candidates.append(place(
-                        group, on: edge, in: viewRect, options: options, from: forward.pills, lastGapFits: lastGapFits
-                    ))
-                }
-                for candidate in candidates where best.map(candidate.isBetter(than:)) ?? true {
-                    best = candidate
-                }
+            let keepBetter = { (best: Pass, candidate: Pass) in candidate.isBetter(than: best) ? candidate : best }
+            let short = placings(group, on: edge, in: viewRect, options: options, lastGapFits: false)
+            var best = short.dropFirst().reduce(short[0], keepBetter)
+            // With no pill covered, no later placing can be better.
+            if best.covered > 0 {
+                best = placings(group, on: edge, in: viewRect, options: options, lastGapFits: true).reduce(best, keepBetter)
             }
-            placed += best?.pills ?? []
+            placed += best.pills
         }
         return placed
     }
@@ -246,6 +240,16 @@ public enum OffscreenHintLayout {
         func isBetter(than other: Pass) -> Bool {
             covered < other.covered && outside <= other.outside && offView <= other.offView
         }
+    }
+
+    /// The forward placing, then the backward one when the forward leaves a
+    /// pill under the chrome.
+    private static func placings(
+        _ group: [Projected], on edge: BoardWayfinding.Edge, in viewRect: CGRect, options: Options, lastGapFits: Bool
+    ) -> [Pass] {
+        let forward = place(group, on: edge, in: viewRect, options: options, from: nil, lastGapFits: lastGapFits)
+        guard forward.underChrome > 0 else { return [forward] }
+        return [forward, place(group, on: edge, in: viewRect, options: options, from: forward.pills, lastGapFits: lastGapFits)]
     }
 
     /// Places one edge's pills, sorted along it. A backward pass — `from` the
