@@ -87,7 +87,7 @@ final class RecentMetaLabel: NSTextField {
     private func refresh() {
         tickWork?.cancel()
         tickWork = nil
-        let nowMs = UInt64(Date().timeIntervalSince1970 * 1000)
+        let nowMs = WallClock.nowMs
         guard let text = ChromeText.recencyLabel(lastChangedMs: lastChangedMs, nowMs: nowMs) else {
             if !isHidden {
                 isHidden = true
@@ -236,6 +236,8 @@ final class ChipView: NSView, ThemeFollowing {
         /// A dimmed (read) report keeps the kind's colour on its border, so a
         /// read `blocked` and a read `done` still differ; its text goes faint.
         case report(TermReport.Kind, dimmed: Bool)
+        /// An inbox row's kind tag (2611.0013), in the same form.
+        case inbox(Inbox.Kind, dimmed: Bool)
     }
 
     private static let maxWidth: CGFloat = 120
@@ -265,10 +267,15 @@ final class ChipView: NSView, ThemeFollowing {
             layer?.borderColor = Theme.lineSoft.cgColor
             label.textColor = Theme.faint
         case .report(let kind, let dimmed):
-            let color = kind == .blocked ? Theme.amber : Theme.ok
-            layer?.borderColor = color.cgColor
-            label.textColor = dimmed ? Theme.faint : color
+            paint(OverlayPalette.tone(Inbox.Kind.report(kind).signal), dimmed: dimmed)
+        case .inbox(let kind, let dimmed):
+            paint(OverlayPalette.tone(kind.signal), dimmed: dimmed)
         }
+    }
+
+    private func paint(_ color: NSColor, dimmed: Bool) {
+        layer?.borderColor = color.cgColor
+        label.textColor = dimmed ? Theme.faint : color
     }
 
     func setTone(_ tone: Tone) {
@@ -501,7 +508,7 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
             needsLayout = true
             return
         }
-        let model = ReportChip.model(report: report, nowMs: UInt64(Date().timeIntervalSince1970 * 1000))
+        let model = ReportChip.model(report: report, nowMs: WallClock.nowMs)
         reportChip.setTone(.report(model.tone, dimmed: model.dimmed))
         reportToolTip = model.toolTip
         reportChip.isHidden = false

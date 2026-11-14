@@ -19,7 +19,7 @@ fn bel_in_output_yields_a_bell_frame() {
     app.spawn_term("bell-term", &["/bin/sh", "-c", "printf '\\a'; sleep 0.2"]);
 
     let bell = app.recv_until("bell", |m| matches!(m, Msg::Bell { .. }));
-    let Msg::Bell { term_id } = bell else { unreachable!() };
+    let Msg::Bell { term_id, .. } = bell else { unreachable!() };
     assert_eq!(term_id, "bell-term");
 }
 

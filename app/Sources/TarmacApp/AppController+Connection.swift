@@ -36,6 +36,7 @@ extension AppController {
     // MARK: - Daemon messages
 
     func handle(_ message: Message) {
+        feedInbox(message)
         switch message {
         case .helloOK(_, _, let daemonPid, _, _):
             connected = true
@@ -78,7 +79,7 @@ extension AppController {
             scrollback.output(termID, bytes)
         case .scrollback(let termID, let bytes):
             scrollback.reply(termID, bytes)
-        case .exit(let termID, let code):
+        case .exit(let termID, let code, _):
             handleExit(termID: termID, code: code)
         case .docOpened(let doc):
             handleDocOpened(doc)
@@ -88,10 +89,10 @@ extension AppController {
             handleDocEvent(path: path, value: value)
         case .termProc(let termID, let name, _):
             handleTermProc(termID: termID, name: name)
-        case .bell(let termID):
+        case .bell(let termID, _):
             handleBell(termID: termID)
         case .termReport:
-            if let frame = TermReport.frame(message) { handleTermReport(termID: frame.termID, frame.report) }
+            if let frame = TermReport.frame(message) { handleTermReport(frame) }
         default:
             break
         }

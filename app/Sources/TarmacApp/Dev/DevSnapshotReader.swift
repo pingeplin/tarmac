@@ -58,7 +58,15 @@ struct DevSnapshotReader {
                 refused: controller.theme.library.refused.map(\.detail),
                 findings: ThemeBrowser.contrastDetail(controller.theme.inEffect.palette)
             ),
-            restoreCard: controller.restoreCard
+            restoreCard: controller.restoreCard,
+            inbox: DevSnapshot.InboxFacts(
+                open: controller.inboxOpen, unread: controller.inbox.unreadCount,
+                filter: controller.inboxState.filter, selected: controller.inboxState.selected,
+                items: controller.inbox.items(controller.inboxState.filter)
+            ),
+            hints: controller.rootView.placedHints.map {
+                DevSnapshot.Hint(card: $0.cardID, signal: $0.signal, edge: $0.edge)
+            }
         ))
     }
 
@@ -90,15 +98,21 @@ struct DevSnapshotReader {
     }
 
     /// Keyboard focus is the first responder's whether or not the window is
-    /// key, as `activeElement` is the document's. While the switcher or the
-    /// restore card holds the keys, it is the card they go back to.
+    /// key, as `activeElement` is the document's. While the switcher, the
+    /// restore card or the inbox holds the keys, it is that overlay, with the
+    /// card it hands them back to.
     var keyboardFocus: DevSnapshot.KeyboardFocus {
         let responder = controller.window?.firstResponder
-        let overlay = responder as? KeyHoldingView
+        let holding = responder as? KeyHoldingView
+        let root = controller.rootView
+        let overlay: DevSnapshot.Overlay? = switch holding {
+        case root.boardSwitcher?: .switcher
+        case root.restoreCard?: .restoreCard
+        case root.inboxPanel?: .inbox
+        default: nil
+        }
         return DevSnapshot.KeyboardFocus(
-            responder: holder(of: responder),
-            switcherOwner: holder(of: overlay?.keysOwner),
-            switcherHoldsKeys: overlay != nil
+            responder: holder(of: responder), overlay: overlay, overlayOwner: holder(of: holding?.keysOwner)
         )
     }
 

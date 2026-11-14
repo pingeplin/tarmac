@@ -184,11 +184,11 @@ reports.
 | | `Input {term_id, bytes, typed?}` | app→D | keystrokes and mouse reports; `typed` marks the user's own input, which reads a report |
 | | `Output {term_id, bytes}` | D→app | raw PTY output (≤64 KiB chunks) |
 | | `Resize {term_id, cols, rows}` | app→D | resize the PTY |
-| | `Exit {term_id, code?}` | D→app | the PTY exited (nil code = signal death) |
+| | `Exit {term_id, code?, board_id?}` | D→app | the PTY exited (nil code = signal death); `board_id` is its board |
 | | `TermProc {term_id, name, pid?}` | D→app | foreground process name changed |
-| | `Bell {term_id}` | D→app | a BEL (0x07) outside an escape string was seen |
+| | `Bell {term_id, board_id?}` | D→app | a BEL (0x07) outside an escape string was seen |
 | | `Report {term_id, kind, text?}` | cli→D | a terminal's report, `blocked`, `done` or `clear`; `ack` or `err` |
-| | `TermReport {term_id, kind?, text?, at_ms?, proc?, read?}` | D→app | a terminal's current report; no `kind` is none |
+| | `TermReport {term_id, kind?, text?, at_ms?, proc?, read?, board_id?, cwd?}` | D→app | a terminal's current report, and its board and folder; no `kind` is none |
 | | `Resume {term_id, cmd?}` | cli→D | a terminal's resume command; no `cmd` clears it; `ack` or `err` |
 | | `ScrollbackRequest {term_id}` | app→D | re-send one term's scrollback ring now |
 | | `Scrollback {term_id, bytes}` | D→app | that ring, one frame per request |
@@ -209,7 +209,7 @@ cx, cy}`.
 **Conformance vectors are the tripwire.** Two codecs implement this contract —
 `tarmac-protocol` (Rust, serde) and the hand-written `MsgPack` / `Message` codec
 in `TarmacKit` (Swift) — and both carry the same hex-encoded msgpack vectors
-(V1–V27) as mandatory tests: in `core/crates/tarmac-protocol/src/tests.rs`
+(V1–V30) as mandatory tests: in `core/crates/tarmac-protocol/src/tests.rs`
 and in `app/Tests/TarmacKitTests/ConformanceTests.swift`. Each vector must decode
 to the same structure and survive an encode→decode roundtrip on both sides. The
 Swift encoder is additionally pinned byte-for-byte to what
@@ -366,10 +366,25 @@ only. `Daemon::report` ties it to a holder with `Holder::resolve` (pure):
 - **Restore.** After each `Restore` and its `file_event`s, the daemon sends
   one `TermReport` for every live terminal of that board, on every restore, not
   only a board's first on the connection.
+- **The place** (spec 2611.0013). `Daemon::report` reads the terminal's board
+  from `term_boards` and that board's `last_cwd` record, each lock released
+  before the next and before `reports`, and the report keeps them
+  (`reports::Place`): every frame with a `kind` carries `board_id` and `cwd`.
+- **The connect replay** (spec 2611.0013). An app connection's first restore
+  also sends, inside the same `reports` block, one frame for each terminal on
+  another board that has a report (`Reports::elsewhere`, sorted by term id), so
+  the app's inbox knows every board's reports from its connect. `AppConn`
+  remembers it was sent (`told_elsewhere`); later restores send the shown
+  board's frames only.
 
 Each change and its push happen under the `reports` lock, so one terminal's
 frames keep their order. `reports` is taken before `app`; `boards` and `terms`
 are never taken while it is held.
+
+A `Bell` carries the board its terminal is filed under, read from
+`term_boards` by the pump, and an `Exit` the board that `Daemon::term_ended`
+returns from its own `term_boards.remove`: after it the daemon no longer knows
+the terminal (spec 2611.0013).
 
 **A terminal's resume command** (spec 2611.0011). A `Resume` from a cli
 names a terminal and a command, or none to clear it. The command is checked by
@@ -1097,7 +1112,8 @@ report in time, `report · during <proc>`, and quotes the text in `“”`: the 
 a claim of whatever process sent it, never parsed. The app sends `Input.typed`
 for the user's own input only, so a hover report or an engine reply never reads
 it. A dead card drops its report (`holdOpen`), and a lost connection clears
-every chip; the next restore brings the shown board's back.
+every chip; the next restore brings the shown board's back. The inbox
+(below, *Wayfinding and overlays*) lists the same report, from every board.
 
 A cold spawn whose record kept a resume command shows a **resume chip**, a
 strip pinned to the bottom of the card's body over its content:
@@ -1382,7 +1398,7 @@ window's first responder).
   link or a header control (`CardPress`); a markdown doc's web view takes the
   keyboard, so its text can be selected and copied the usual
   way. A press in an HTML card's console gives its text the keyboard for the
-  same reason; the next key that is typing hands it back (rung 7). A press on
+  same reason; the next key that is typing hands it back (rung 8). A press on
   the bare board clears the selection and leaves the keyboard
   with the board.
 - Keyboard focus is put on the board's prime terminal after the active board's
@@ -1401,11 +1417,19 @@ view; `KeyLadder` says which ones the app takes, in this order:
    key that closed it are dropped too, until a key that is not a repeat.
 1. An IME composition in flight, or a borrowed HTML document holding the keys →
    the key passes through.
-2. `⌘K` toggles the switcher. `⌘W` closes the selected card, after closing an
-   open switcher — always consumed, so it never reaches Close Window.
+2. `⌘K` toggles the switcher; `⌘I` toggles the inbox (spec 2611.0013), from
+   any focus, a terminal's included, so a program never sees `⌘I`. `⌘W`
+   closes the selected card, after closing an open switcher or inbox — always
+   consumed, so it never reaches Close Window.
 3. While the switcher is open it owns the keyboard (`SwitcherKeys`); an
    unhandled `⌘` chord is left for the menu.
-4. `⌘T` opens a terminal in the first free slot around the prime one (the
+4. While the inbox is open it owns every other key (`InboxKeys`): `↑`/`↓`
+   move the selection, which is an item id, so a new item never changes what
+   `Return` or `⌫` acts on; `Return` jumps, `⌫` hides the row, `Tab`/`⇧Tab`
+   cycle the filters, `ESC` closes; an unhandled `⌘` chord is left for the
+   menu and any other key is dropped. The `Return` flight and `EscLadder`
+   never see a key then. The switcher and the inbox never show together.
+5. `⌘T` opens a terminal in the first free slot around the prime one (the
    same ring rule a fresh doc follows, `Placement.firstFreeSlot`), inheriting
    its current directory (`inherit_cwd_from`).
    Then plain `Return` on a terminal (spec 2611.0011): a repeat while an offer
@@ -1413,14 +1437,14 @@ view; `KeyLadder` says which ones the app takes, in this order:
    terminal whose resume offer is armed it runs the command (`.runResume`),
    and on a dead terminal with a reopen offer it reopens it (`.reopenDead`). A
    repeat is decided first (`NSEvent.isARepeat`), so a held key acts once.
-5. Plain `Return`, when no terminal holds the keys, no text control in a
+6. Plain `Return`, when no terminal holds the keys, no text control in a
    markdown doc's raw HTML is being typed into, and a signalling card is off
    screen, remembers the viewport and flies to that card.
-6. `ESC` climbs `EscLadder`; the first rung that applies consumes it: dismiss
+7. `ESC` climbs `EscLadder`; the first rung that applies consumes it: dismiss
    toasts → fly back to the remembered viewport → un-borrow → clear `fresh` on
    every doc of the board → deselect a selected doc. With none, `ESC` reaches
    the terminal.
-7. While an HTML card's console holds the keys, a `⌘` chord and a shifted
+8. While an HTML card's console holds the keys, a `⌘` chord and a shifted
    arrow, Home, End or Page key stay with its text. Any other key first returns
    the keyboard — to the borrowed card's document, else the prime terminal —
    and is then dispatched there.
@@ -1439,8 +1463,10 @@ cards across switches.
 
 The switcher (`BoardSwitcherView`; rules in `BoardSwitcher` and `SwitcherKeys`)
 lists boards in daemon order, filtered by a case-insensitive prefix as you type,
-each with running / bell / card counts — local facts for a visited board,
-`BoardMeta.running` for one never visited. `↑`/`↓` move, `Return` switches,
+each with running / bell / report / card counts — local facts for a visited
+board, `BoardMeta.running` for one never visited, which shows no card count
+(the app has counted none); the report count is the inbox's unread reports,
+which it knows for either (spec 2611.0013). `↑`/`↓` move, `Return` switches,
 `⌘1`–`9` jump to the *visible* rows, `⌘N` sends `BoardCreate`, `⌘E` renames
 (`BoardRename`), `⌘⌫` twice deletes (`BoardDelete`; never the last board), `ESC`
 closes. It holds first responder while it is open, so the menu's Paste cannot
@@ -1453,8 +1479,8 @@ Layered over the board, back to front (`OverlayStack`): offscreen hint pills
 overshoots; a pill that cannot clear a card is drawn under the cards), the zoom
 control (bottom-left: `−`, percent, `+`, fit — steps of ×1.2 about the viewport
 centre; fit frames every card with a 10 % margin), the minimap (bottom-right;
-cards coloured by signal, click to re-centre), toasts (at most three, 7 s
-each), the switcher, and the restore card (`RestoreCardView`, issue #358). The
+cards coloured by signal, click to re-centre), the inbox panel, toasts (at
+most three, 7 s each), the switcher, and the restore card (`RestoreCardView`, issue #358). The
 restore card shows after a first-visit restore whose plan has at least one
 line (`RestoreCard`; below). While it is up, the board view is drawn at 35 %
 opacity, and over the board area lies a veil of `rgba(8, 10, 13, 0.62)` (the
@@ -1471,8 +1497,42 @@ the keys back to the view that had them. A 27-point status bar sits below
 the board: `attached` or the link's reason, and the card count. The window
 title names the active board.
 
-Only terminals signal: `bell` while the bell is lit, else `live` while the PTY
-is alive — whatever runs in it.
+Only terminals signal, one signal each (`OffscreenHintLayout.signal`, spec
+2611.0013), the first that holds of: an unread `blocked` report, a lit `bell`,
+an unread inbox `exit` item, an unread `done` report, `live` while the PTY is
+alive. A read report makes no signal. The ⏎ flight takes the highest
+`(rank, z)`: blocked 4, bell 3, exit 2, done 1, live 0. A report pill quotes
+the start of its text (24 Unicode scalars, one line), an exit pill reads
+`exited`; blocked and bell are amber, done `Theme.ok`, exit
+`Theme.consoleError`, and the minimap uses the same colours.
+
+**The inbox** (spec 2611.0013, `InboxPanelView`; rules in `Inbox`,
+`InboxCopy`, `InboxKeys`, `InboxJump`, `InboxPanelLayout`). A store of report
+items (from `TermReport`, of every board, built or not), and bell and exit
+items (the app's own, from `Bell` and `Exit`, fed before any card check), one
+of each per terminal, newest first, at most 200. `⌘I` or the title-bar button
+(`InboxTitlebarButton`, a trailing `NSTitlebarAccessoryViewController`,
+`inbox · N`, in the system's colours) opens a transient panel flush right,
+`min(360, width / 3)` wide and the board area's height, at z 60. It is never
+docked: the board keeps its frame, nothing pans, and the off-screen test, the
+pills, the minimap and the toasts keep to the area it leaves uncovered. Each
+row reads its kind tag (the `ChipView` form), `report · during <proc>`, `bell`
+or the exit toast's words, its age, the quote, and `<board> › <terminal> ·
+<cwd>`. `Return` or a click jumps: on another board, one switch, landed in
+`finishArrive`; then a live card becomes prime and takes the keys, a dead one
+is selected, and one that went removes its row; an exit of a board not built
+yet lands on the shell that `succeeds` it, recorded when the board is first
+built. A jump reads nothing: typed input marks a report read, and a press, a
+key or a jump marks a bell or exit item read (`clearBell`, the one "the user
+touched it" entry). `⌫` and `clear all read` hide rows in the panel only,
+until a newer event; the chip, the bell dot and the report pill stay. A card
+the user closes takes its rows with it, and the store remembers the terminal
+(`Inbox.removeTerm`): the daemon's `exit` for a `⌘W`'s SIGHUP comes after the
+card is gone and makes no row. The store's operations say whether they changed
+it, so the pills, the button and an open panel redraw only then, and only the
+boards that hold the terminal; a card's exit pill reads the store
+(`BoardView.exitUnread`). A board switch, a press outside the panel, `ESC` and
+`⌘I` close it; it holds first responder while it is up (`KeyHoldingView`).
 
 ### Quitting and closing
 
@@ -1774,7 +1834,9 @@ goes through the board's own viewport commit. A reply also says whether the app
 had to be activated to take the input (`activated`). If `accept` fails the
 driver closes the socket and removes its file, so callers fail at once. `press`
 posts a native `⌘` chord to the application's event queue, with a debug-only
-"held" override for the ⌘Q guard's release poll.
+"held" override for the ⌘Q guard's release poll; it also posts a closed list
+of plain keys the inbox takes (`enter`, `up`, `down`, `escape`, `tab`,
+`shift+tab`, `backspace`), so the key ladder sees them (spec 2611.0013).
 
 `board <id>` and `board --new` send the board switcher's own `board_switch` and
 `board_create` (`client.boardSwitch` / `boardCreate`), then wait until the app's
@@ -1788,12 +1850,19 @@ window-content coordinates start on the display — each card's `scroll`
 (`{offset, visible, total, shown, thumb}`, or `null` before its content has
 reported; `thumb` is the scroll thumb's rect beside `screen_rect`, or `null`
 when none is laid out), the selected card, keyboard
-focus, per-terminal `cols`/`rows`/`proc`/`selection`/`scrollback_tail` (and,
+focus (`active_element`: the card the keys reach; while the switcher, the
+restore card or the inbox holds them, `card` is null and `overlay` and
+`returns_to` name the overlay and the card it gives them back to),
+per-terminal `cols`/`rows`/`proc`/`selection`/`scrollback_tail` (and,
 only when the card offers one, `resume: {cmd, armed}` and `reopen: true`), the
 quit guard's state, `fonts`: for each font role the family saved in
 `app-prefs.json` and what the role resolved to (a PostScript `face`, or the
 `css` value for doc prose), and for `terminal` and `document` the `size` in
-effect; and `theme`: the `choice`, the variant `in_effect` and the `name` (the id) of the theme in effect, the `folder` the theme files are read from, the ids of the themes that are `available`, each file that was `refused` with its reason, and the detector's `findings` for the theme in effect. `--until` re-evaluates an expression every 50 ms
+effect; `inbox`: `{open, badge, filter, selected, items}`, each item's `kind`,
+`term`, `board`, `read` and `title`; `hints`: each placed pill's `card`,
+`signal` and `edge`; and `theme`: the `choice`, the variant `in_effect` and the `name` (the id) of the theme in effect, the `folder` the theme files are read from, the ids of the themes that are `available`, each file that was `refused` with its reason, and the detector's `findings` for the theme in effect. `--until` re-evaluates an expression every 50 ms, and keeps polling while a
+board switch has no board on screen; only a plain snapshot, or the deadline,
+answers `app_not_ready` then
 (`DevUntil`). The scenario suites are `scripts/qa/smoke.mjs` (`make qa`) and
 `scripts/qa/quit.mjs` (`make qa-quit`), and `scripts/qa/resume.mjs`
 (`make qa-resume`), which kills the dev daemon by the pid that holds its socket.
@@ -1836,7 +1905,7 @@ viewport.
 | Event | Terminals | Layout / docs / viewport |
 | --- | --- | --- |
 | **App reconnect** (daemon stays up) | **Survive** — the cards stay bound to their ptys; history is replaced from the scrollback ring. A terminal's report and its read flag survive: the chips go at the disconnect and come back with the restore | Untouched — the app's own state stands; only terminals are reconciled |
-| **App relaunch** (daemon stays up) | **Survive** — re-bound on the first restore, history from the scrollback ring; reports come with each board's restore | Restored from daemon memory |
+| **App relaunch** (daemon stays up) | **Survive** — re-bound on the first restore, history from the scrollback ring; reports and their read flags come back, every board's at the connect. The inbox's bell and exit items and its dismissals are lost | Restored from daemon memory |
 | **Daemon restart** | Lost — live shells, and their reports, died with the daemon. A running app marks their cards dead and toasts, and a dead card with a record offers to reopen in place; a freshly launched app cold-spawns new shells at the persisted frames, in their last folder. A resume command survives only when its agent was still running when the daemon went down; the cold-spawned card then offers it, and runs it on one Return | Restored exactly from `state.json` |
 | **Red button / hide** | **Survive** — the app keeps running with its window hidden, and comes back on the next activation or Dock click | Untouched |
 | **Version-mismatch restart** (brew upgrade) | Cold-spawned on the new daemon, in their last folder (same as above). The app toasts the version change (`tarmacd restarted: <from> → <to>`) when a first-visit board has lost terminals; otherwise the existing reconnect toast is what the user sees | Restored from `state.json` via `Msg::Restore` on reconnect |

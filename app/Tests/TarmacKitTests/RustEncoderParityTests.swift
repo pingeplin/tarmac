@@ -266,6 +266,41 @@ final class RustEncoderParityTests: XCTestCase {
         )
     }
 
+    /// 2611.0013 S15. The spec's vectors 28 to 30: the Rust side's capture
+    /// of them is `tarmac-protocol`'s own vector test.
+    func testThePlaceOfAReportAndTheBoardOfABellAndAnExit() {
+        // Msg::TermReport { term_id: "t1", kind: Some("blocked"), text: None, at_ms: Some(1700000000000),
+        //   proc: None, read: false, board_id: Some("board-1"), cwd: Some("/w") } — conformance vector 28.
+        assertParity(
+            .termReport(
+                termID: "t1", kind: "blocked", text: nil, atMs: 1_700_000_000_000, proc: nil, read: false,
+                boardID: "board-1", cwd: "/w"
+            ),
+            """
+            86 a1 74 ab 74 65 72 6d 5f 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2
+            74 31 a4 6b 69 6e 64 a7 62 6c 6f 63 6b 65 64 a5 61 74 5f 6d 73 cf 00 00
+            01 8b cf e5 68 00 a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 31 a3
+            63 77 64 a2 2f 77
+            """
+        )
+        // Msg::Bell { term_id: "t1", board_id: Some("board-1") } — conformance vector 29.
+        assertParity(
+            .bell(termID: "t1", boardID: "board-1"),
+            """
+            83 a1 74 a4 62 65 6c 6c a7 74 65 72 6d 5f 69 64 a2 74 31 a8 62 6f 61 72
+            64 5f 69 64 a7 62 6f 61 72 64 2d 31
+            """
+        )
+        // Msg::Exit { term_id: "t1", code: Some(3), board_id: Some("board-1") } — conformance vector 30.
+        assertParity(
+            .exit(termID: "t1", code: 3, boardID: "board-1"),
+            """
+            84 a1 74 a4 65 78 69 74 a7 74 65 72 6d 5f 69 64 a2 74 31 a4 63 6f 64 65
+            03 a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 31
+            """
+        )
+    }
+
     /// The daemon's `BTreeMap` writes the records in key order, whatever order
     /// they were made in; the Rust capture is `term_records_are_written_in_key_order`.
     func testTermRecordsAreWrittenInKeyOrder() {

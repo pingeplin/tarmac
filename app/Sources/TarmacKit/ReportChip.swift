@@ -21,11 +21,11 @@ public struct TermReport: Equatable, Sendable {
         self.read = read
     }
 
-    /// A `term_report` frame's terminal and its report; nil for any other
+    /// A `term_report` frame's terminal, its place and its report; nil for any other
     /// message. The report is nil for a frame that is no report: no `kind`, a
     /// kind this build does not know, or no `at_ms`.
-    public static func frame(_ message: Message) -> (termID: String, report: TermReport?)? {
-        guard case .termReport(let termID, let kind, let text, let atMs, let proc, let read) = message else {
+    public static func frame(_ message: Message) -> TermReportFrame? {
+        guard case .termReport(let termID, let kind, let text, let atMs, let proc, let read, let boardID, let cwd) = message else {
             return nil
         }
         let known: Kind?
@@ -34,9 +34,18 @@ public struct TermReport: Equatable, Sendable {
         case "done": known = .done
         default: known = nil
         }
-        guard let known, let atMs else { return (termID, nil) }
-        return (termID, TermReport(kind: known, text: text, atMs: atMs, proc: proc, read: read))
+        guard let known, let atMs else { return TermReportFrame(termID: termID, boardID: boardID, cwd: cwd, report: nil) }
+        let report = TermReport(kind: known, text: text, atMs: atMs, proc: proc, read: read)
+        return TermReportFrame(termID: termID, boardID: boardID, cwd: cwd, report: report)
     }
+}
+
+/// A `term_report` frame: the terminal, its place (2611.0013) and its report.
+public struct TermReportFrame: Equatable, Sendable {
+    public let termID: String
+    public let boardID: String?
+    public let cwd: String?
+    public let report: TermReport?
 }
 
 /// What a terminal card's report chip shows. The copy places the report in
@@ -55,9 +64,15 @@ public enum ReportChip {
 
     private static let title = "report"
 
+    /// A report placed in time: `report · during <proc>`, or `report`. The
+    /// chip's tool tip and an inbox row both read it.
+    public static func heading(proc: String?) -> String {
+        proc.map { "\(title) · during \($0)" } ?? title
+    }
+
     public static func model(report: TermReport, nowMs: UInt64) -> Model {
         let elapsed = nowMs >= report.atMs ? nowMs - report.atMs : 0
-        let heading = report.proc.map { "\(title) · during \($0)" } ?? title
+        let heading = heading(proc: report.proc)
         return Model(
             text: "\(title) · \(ChromeText.reportAge(elapsedMs: elapsed))",
             tone: report.kind,

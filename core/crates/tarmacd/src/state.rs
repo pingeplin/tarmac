@@ -12,7 +12,7 @@ use crate::docs::RepoInfo;
 use crate::reader::{PathFs, PathGate, RealFs};
 use crate::proc::{self, Facts, Pid};
 use crate::resume::Flag;
-use crate::reports::{Holder, Kind, Reports};
+use crate::reports::{Holder, Kind, Place, Reports};
 use crate::term::{SpawnPlan, TermHandle};
 use crate::watch::{NotWatched, NotifySource, Wake, WakeSource, Watcher};
 
@@ -516,11 +516,13 @@ impl Daemon {
     /// deletes its record; any other keeps it for the dead card.
     /// A terminal's end also ends its resume command, which a kept record
     /// keeps only once the shutdown has begun (spec 2611.0011, D3, D4).
-    pub async fn term_ended(&self, term_id: &str, code: Option<i64>) {
+    /// Returns the board the terminal was filed under, read as its entry goes:
+    /// after this the daemon no longer knows it (spec 2611.0013).
+    pub async fn term_ended(&self, term_id: &str, code: Option<i64>) -> Option<BoardId> {
         if self.terms.lock().await.remove(term_id).is_none() {
             tracing::warn!("term {term_id} missing from registry at exit");
         }
-        self.term_boards.lock().await.remove(term_id);
+        let board_id = self.term_boards.lock().await.remove(term_id);
         // After the term left `terms`: a report or a resume command stored
         // after this is undone by its handler's own re-check.
         self.reports.lock().await.forget(term_id);
@@ -529,6 +531,7 @@ impl Daemon {
         } else {
             self.end_resume(term_id).await;
         }
+        board_id
     }
 
     /// At a terminal's end, or a set that raced it: drops the command from
@@ -568,14 +571,34 @@ impl Daemon {
         .ok_or_else(|| format!("no process to tie the report to in {term_id}"))?;
         let proc_name = proc::process_name(holder.pid());
         let now_ms = crate::boards::epoch_ms(std::time::SystemTime::now());
-        self.change_report(term_id, &handle, |reports| Some(reports.report(term_id, kind, text, now_ms, holder, proc_name)))
-            .await;
+        let place = self.place(term_id).await;
+        self.change_report(term_id, &handle, |reports| {
+            Some(reports.report(term_id, kind, text, now_ms, holder, proc_name, place))
+        })
+        .await;
         // A terminal that exited while this ran: `term_ended` took it out of
         // `terms` before its own `forget`, so one of the two finds the entry.
         if self.term(term_id).await.is_none() {
             self.reports.lock().await.forget(term_id);
         }
         Ok(())
+    }
+
+    /// Where `term_id` is now: its board, then that board's record of its cwd,
+    /// each lock released before the next and before `reports` is taken.
+    async fn place(&self, term_id: &str) -> Place {
+        let board_id = self.term_boards.lock().await.get(term_id).cloned();
+        let cwd = match &board_id {
+            Some(board) => self
+                .boards
+                .lock()
+                .await
+                .known_registry_mut(board)
+                .and_then(|reg| reg.term_records.get(term_id))
+                .and_then(|record| record.last_cwd.clone()),
+            None => None,
+        };
+        Place { board_id, cwd }
     }
 
     /// The poll's check: removes the report when its holder is gone. `leader`

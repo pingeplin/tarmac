@@ -160,12 +160,27 @@ core/target/debug/tarmac dev snapshot | jq .
   first keyboard press), and `restore_card` — `{lines}` while the restore card
   of a cold launch is up (#358), else `null`. It takes the first key, so the
   `make qa` runners close it with `escape` before their first scenario.
+  `inbox` (spec 2611.0013) is `{open, badge, filter, selected, items}`: `badge`
+  is the title-bar button's text (`inbox · N`), `selected` is `{kind, term}` or
+  `null`, and `items` are the current filter's rows in list order, each
+  `{kind, term, board, read, title}` with `kind` one of `blocked`, `done`,
+  `bell`, `exit`. They are reported whether the panel is open or not; an array
+  cannot be indexed by `--until`, so wait on `inbox.open` or
+  `inbox.selected.term` and read the items off the reply. `hints` is each
+  placed offscreen pill, `{card, signal, edge}`, `signal` one of `blocked`,
+  `bell`, `exit`, `done`, `live`.
 - **`active_element` speaks DOM.** The scenario suite predates the native app,
   so keyboard focus is reported in the vocabulary it reads: a focused terminal
   is `tag: "TEXTAREA"`, `classes: ["xterm-helper-textarea"]`, `selection_type`
   `Caret` (or `Range` when the terminal has a selection); a borrowed HTML
   document is `IFRAME` / `html-frame`; anything else — the board, a markdown
-  card — is `BODY`. `active_element.card` is the card holding the keys.
+  card — is `BODY`. `active_element.card` is the card the keys reach now.
+  While an overlay holds first responder — the ⌘K switcher, the restore card,
+  the inbox panel — it is `tag: "DIALOG"`, `classes: ["tm-overlay", <name>]`,
+  `card: null`, and two more keys are present: `overlay` (`switcher`,
+  `restore_card` or `inbox`) and `returns_to`, the card it hands the keys back
+  to when it closes (or `null`). `type` and `key` are refused then: no card
+  has the keys. Close the restore card with `press escape`.
 - Every other verb prints a small JSON object describing **what it observed**,
   not what you asked for — `zoom 99` answers `{"zoom": 3}` because the board
   clamps.
@@ -304,8 +319,11 @@ so the chord takes the path a typed one does — the app's key monitor, the firs
 responder, then the menu — and the ⌘Q guard reads it off `NSApp.currentEvent`
 like any other. It is what `make qa` uses to drive the guard, and it presses any
 ⌘ chord: `cmd+q`, `cmd+shift+z`, `alt+cmd+q`, `cmd+1`. `cmd` plus any of
-`shift`, `alt`, `ctrl`, then one lowercase letter or digit; no named keys (⌘⌫,
-⌘Enter) and no `meta`.
+`shift`, `alt`, `ctrl`, then one lowercase letter or digit; no named keys with
+a modifier (⌘⌫, ⌘Enter) and no `meta`. It also posts a closed list of plain
+keys bare, for the inbox (spec 2611.0013): `enter`, `up`, `down`, `escape`,
+`tab`, `shift+tab`, `backspace` — no printable key (`type` sends those, into a
+terminal, and `key` never goes through the key ladder).
 
 ```sh
 tarmac dev press cmd+q --hold 300      # a tap: 300 < the 500 ms hold threshold
@@ -356,7 +374,9 @@ so doc paths with dots and slashes work. A string value takes its own double quo
 expression — `--until 'theme.name == "file:Dracula"'` — and a bare word is a
 `bad_expr` (`not a value`). An unresolvable path is `false` (so
 polling continues); a malformed expression is an immediate `bad_expr`. Default
-timeout 5000 ms; `--timeout 0` means evaluate once.
+timeout 5000 ms; `--timeout 0` means evaluate once. A wait keeps polling while
+a board switch has no board on screen; a snapshot with no `--until`, and a
+wait whose deadline passes then, answer `app_not_ready`.
 
 ### What it cannot do
 

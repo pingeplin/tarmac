@@ -1,7 +1,7 @@
 import AppKit
 
-/// An overlay that holds first responder while it is up: the ⌘K switcher and
-/// the restore card. It answers none of the menu's first-responder commands,
+/// An overlay that holds first responder while it is up: the ⌘K switcher, the
+/// restore card and the inbox panel. It answers none of the menu's first-responder commands,
 /// so a Paste, Copy or Select All chosen from the menu does nothing instead of
 /// reaching the terminal behind it.
 @MainActor

@@ -40,16 +40,16 @@ final class BoardSwitcherView: KeyHoldingView, FontFollowing, ThemeFollowing {
     private let content = FlippedColumnView()
     private let queryBar = FlippedColumnView()
     private let queryRule = NSView()
-    private let queryLabel = SwitcherLabel()
+    private let queryLabel = OverlayLabel()
     private let queryClip = FlippedColumnView()
-    private let queryText = SwitcherLabel()
-    private let caret = SwitcherLabel()
+    private let queryText = OverlayLabel()
+    private let caret = OverlayLabel()
     private let scroll = NSScrollView()
     private let rowsDoc = FlippedColumnView()
-    private let emptyLabel = SwitcherLabel()
+    private let emptyLabel = OverlayLabel()
     private let footer = FlippedColumnView()
     private let footerRule = NSView()
-    private let footerLabel = SwitcherLabel()
+    private let footerLabel = OverlayLabel()
     private var rowViews: [BoardSwitcherRow] = []
     private var blink: Timer?
 
@@ -273,9 +273,7 @@ final class BoardSwitcherView: KeyHoldingView, FontFollowing, ThemeFollowing {
 /// One board row: the live glyph, the name (teal, with a mark, for the active
 /// board), the counts and the ⌘n hint. Clicking it switches to that board.
 @MainActor
-final class BoardSwitcherRow: NSView {
-    var onClick: (() -> Void)?
-
+final class BoardSwitcherRow: OverlayRowView {
     private enum Metric {
         static let padX: CGFloat = 14
         static let padY: CGFloat = 7
@@ -295,19 +293,13 @@ final class BoardSwitcherRow: NSView {
 
     static var height: CGFloat { Metric.padY * 2 + Font.name.normalLineHeight }
 
-    private let glyphLabel = SwitcherLabel()
-    private let nameLabel = SwitcherLabel()
-    private let metaLabel = SwitcherLabel()
-    private let ordinalLabel = SwitcherLabel()
-    private var selected = false
-    private var hovered = false
-    private var tracking: NSTrackingArea?
+    private let glyphLabel = OverlayLabel()
+    private let nameLabel = OverlayLabel()
+    private let metaLabel = OverlayLabel()
+    private let ordinalLabel = OverlayLabel()
 
-    override var isFlipped: Bool { true }
-
-    init() {
-        super.init(frame: .zero)
-        wantsLayer = true
+    override init() {
+        super.init()
         nameLabel.lineBreakMode = .byTruncatingTail
         for label in [glyphLabel, nameLabel, metaLabel, ordinalLabel] {
             addSubview(label)
@@ -318,7 +310,6 @@ final class BoardSwitcherRow: NSView {
 
     func configure(row: BoardSwitcher.BoardRow, selected: Bool, glyph: String, ordinal: String?) {
         self.selected = selected
-        paint()
 
         glyphLabel.attributedStringValue = NSAttributedString(
             string: glyph,
@@ -347,14 +338,10 @@ final class BoardSwitcherRow: NSView {
         needsLayout = true
     }
 
-    private func paint() {
-        layer?.backgroundColor = (selected || hovered ? Theme.bg3 : NSColor.clear).cgColor
-    }
-
     override func layout() {
         super.layout()
         func centered(_ size: NSSize, x: CGFloat, width: CGFloat? = nil) -> NSRect {
-            NSRect(x: x, y: ((bounds.height - size.height) / 2).rounded(), width: width ?? size.width, height: size.height)
+            NSRect(x: x, y: bounds.height.centered(size.height), width: width ?? size.width, height: size.height)
         }
         glyphLabel.frame = centered(glyphLabel.fittedSize, x: Metric.padX)
 
@@ -372,45 +359,4 @@ final class BoardSwitcherRow: NSView {
         let nameSize = nameLabel.fittedSize
         nameLabel.frame = centered(nameSize, x: nameX, width: max(0, min(nameSize.width, right - nameX)))
     }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(
-            rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self
-        )
-        addTrackingArea(area)
-        tracking = area
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        hovered = true
-        paint()
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        hovered = false
-        paint()
-    }
-
-    override func mouseDown(with event: NSEvent) { onClick?() }
-
-    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
-}
-
-/// A text run of the panel. Clicks go to whatever holds it.
-@MainActor
-private final class SwitcherLabel: NSTextField {
-    init() {
-        super.init(frame: .zero)
-        isEditable = false
-        isSelectable = false
-        isBezeled = false
-        drawsBackground = false
-        lineBreakMode = .byClipping
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

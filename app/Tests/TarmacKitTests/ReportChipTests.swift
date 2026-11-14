@@ -62,6 +62,17 @@ final class ReportChipTests: XCTestCase {
         )
     }
 
+    // 2611.0013: the frame gives the report's place too.
+    func testAFrameGivesItsBoardAndFolder() {
+        let message = Message.termReport(
+            termID: "t1", kind: "done", text: nil, atMs: 5, proc: nil, read: false, boardID: "board-1", cwd: "/w"
+        )
+        let parsed = TermReport.frame(message)
+        XCTAssertEqual(parsed?.boardID, "board-1")
+        XCTAssertEqual(parsed?.cwd, "/w")
+        XCTAssertNil(TermReport.frame(frame())?.boardID)
+    }
+
     // S20
     func testS20AReportFromTheFutureIsUnderAMinuteOld() throws {
         XCTAssertEqual(try model(frame(atMs: now + 90_000)).text, "report · <1m")

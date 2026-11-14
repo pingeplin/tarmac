@@ -1,13 +1,13 @@
 import CoreGraphics
 
-/// Overlay-level offscreen-hint logic: priority, the single ⏎-fly target, the pill
+/// Overlay-level offscreen-hint logic: a card's signal and its rank, the single ⏎-fly target, the pill
 /// label and the per-edge greedy stacking layout. The edge geometry itself
 /// (`BoardWayfinding.hintPlacement`, `Edge.arrow`) lives in `BoardWayfinding`;
 /// this adds what lived in the untested AppKit overlay. Pure and time-free — the
 /// view supplies the measured pill sizes and the HH:MM text.
 public enum OffscreenHintLayout {
     public enum Signal: Equatable, Sendable {
-        case bell, live
+        case blocked, bell, exit, done, live
     }
 
     /// One signalling offscreen card, in VIEW (overlay-local) coordinates.
@@ -16,7 +16,7 @@ public enum OffscreenHintLayout {
         public var centerView: CGPoint
         public var signal: Signal
         public var label: String
-        /// Stacking order; higher is more recently fronted. Feeds `priority`.
+        /// Stacking order; higher is more recently fronted. Breaks a tie of rank.
         public var z: Int
 
         public init(cardID: String, centerView: CGPoint, signal: Signal, label: String, z: Int) {
@@ -74,32 +74,65 @@ public enum OffscreenHintLayout {
         }
     }
 
-    /// A bell always outranks live; within a class the most-recently-fronted
-    /// (higher z) wins. Saturates rather than overflowing for a huge `z`.
-    public static func priority(signal: Signal, z: Int) -> Int {
-        let (sum, overflowed) = (signal == .bell ? 1000 : 0).addingReportingOverflow(z)
-        return overflowed ? .max : sum
+    /// Blocked 4, bell 3, exit 2, done 1, live 0.
+    public static func rank(_ signal: Signal) -> Int {
+        switch signal {
+        case .blocked: 4
+        case .bell: 3
+        case .exit: 2
+        case .done: 1
+        case .live: 0
+        }
     }
 
-    /// The single ⏎-fly target: the highest-priority hint's card id, or nil when
-    /// empty. The first wins a tie (strictly-greater swap), so callers must
-    /// iterate cards in a stable order for determinism.
+    /// A card's one signal (spec 2611.0013), the highest it has. A read
+    /// report makes none: the card falls through to its other facts.
+    public static func signal(report: TermReport?, bellLit: Bool, exitUnread: Bool, live: Bool) -> Signal? {
+        let unread = report.flatMap { $0.read ? nil : $0.kind }
+        if unread == .blocked { return .blocked }
+        if bellLit { return .bell }
+        if exitUnread { return .exit }
+        if unread == .done { return .done }
+        return live ? .live : nil
+    }
+
+    /// The single ⏎-fly target: the hint with the highest `(rank, z)`, or nil
+    /// when empty. The first wins a tie (strictly-greater swap), so callers
+    /// must iterate cards in a stable order for determinism.
     public static func flyTarget(_ hints: [Hint]) -> String? {
         var best: Hint?
-        var bestPriority = Int.min
         for hint in hints {
-            let candidate = priority(signal: hint.signal, z: hint.z)
-            if best == nil || candidate > bestPriority {
+            guard let current = best else {
                 best = hint
-                bestPriority = candidate
+                continue
             }
+            if (rank(hint.signal), hint.z) > (rank(current.signal), current.z) { best = hint }
         }
         return best?.cardID
     }
 
-    /// A bell reads `name · hhmm` (middle dot U+00B7); live reads just the name.
-    public static func pillLabel(signal: Signal, name: String, hhmm: String) -> String {
-        signal == .bell ? "\(name) · \(hhmm)" : name
+    /// The longest start of a report's text a pill quotes, in Unicode scalars.
+    public static let quoteScalars = 24
+
+    /// A bell reads `name · hhmm` (middle dot U+00B7); a report quotes the
+    /// start of its text, one line; an exit says so; live reads the name.
+    public static func pillLabel(signal: Signal, name: String, hhmm: String, quote: String?) -> String {
+        switch signal {
+        case .blocked, .done:
+            guard let quote else { return "\(name) · report" }
+            return "\(name) · “\(start(of: InboxCopy.oneLine(quote)))”"
+        case .bell: return "\(name) · \(hhmm)"
+        case .exit: return "\(name) · exited"
+        case .live: return name
+        }
+    }
+
+    private static func start(of text: String) -> String {
+        let scalars = text.unicodeScalars
+        guard scalars.count > quoteScalars else { return text }
+        var kept = String.UnicodeScalarView(scalars.prefix(quoteScalars - 1))
+        kept.append("…")
+        return String(kept)
     }
 
     /// Projects each offscreen hint to an edge, groups by edge, sorts along the

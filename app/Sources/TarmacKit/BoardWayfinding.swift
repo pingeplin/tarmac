@@ -150,7 +150,7 @@ public enum BoardWayfinding {
     // MARK: - Offscreen hints
 
     /// Which viewport edge a hint pins to, toward an offscreen card.
-    public enum Edge: Equatable {
+    public enum Edge: String, Equatable, Sendable {
         case left, right, top, bottom
 
         /// The single-glyph direction arrow (`→ ← ↑ ↓`).

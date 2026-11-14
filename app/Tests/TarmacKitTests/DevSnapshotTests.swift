@@ -48,7 +48,9 @@ final class DevSnapshotTests: XCTestCase {
         contentOrigin: CGPoint? = nil,
         fonts: DevSnapshot.Fonts? = nil,
         theme: DevSnapshot.Theme? = nil,
-        restoreCard: RestoreCard? = nil
+        restoreCard: RestoreCard? = nil,
+        inbox: DevSnapshot.InboxFacts = DevSnapshot.InboxFacts(),
+        hints: [DevSnapshot.Hint] = []
     ) -> Input {
         Input(
             boardID: "board-0",
@@ -66,7 +68,9 @@ final class DevSnapshotTests: XCTestCase {
                 interfaceFace: "SystemMono-Regular", documentCSS: "system-ui", documentSize: 14
             ),
             theme: theme ?? DevSnapshot.Theme(choice: .standard, inEffect: .dark, name: "breeze-dark"),
-            restoreCard: restoreCard
+            restoreCard: restoreCard,
+            inbox: inbox,
+            hints: hints
         )
     }
 
@@ -97,8 +101,8 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(
             snapshot.keys.sorted(),
             [
-                "active_element", "board_id", "cards", "content_origin", "focused_card", "fonts", "quit_guard",
-                "restore_card", "theme", "v", "viewport", "visibility",
+                "active_element", "board_id", "cards", "content_origin", "focused_card", "fonts", "hints", "inbox",
+                "quit_guard", "restore_card", "theme", "v", "viewport", "visibility",
             ]
         )
         XCTAssertEqual(snapshot["v"], 1)
@@ -559,7 +563,7 @@ final class DevSnapshotTests: XCTestCase {
     private typealias Focus = DevSnapshot.KeyboardFocus
 
     private func focus(_ responder: DevSnapshot.KeyHolder?) -> Focus {
-        Focus(responder: responder, switcherOwner: nil, switcherHoldsKeys: false)
+        Focus(responder: responder, overlay: nil, overlayOwner: nil)
     }
 
     func testATerminalHoldingFirstResponderHoldsTheKeys() {
@@ -580,25 +584,38 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(focus(nil), Focus.none)
     }
 
-    /// The Tauri switcher never takes DOM focus — `activeElement` stays on the
-    /// terminal behind it. The native one holds first responder while it is
-    /// up, so the card reported is the one it hands the keys back to.
-    func testWhileTheSwitcherHoldsTheKeysTheirOwnerIsTheCardBehindIt() {
+    /// #364: while an overlay holds first responder — the switcher, the
+    /// restore card, the inbox — the keys reach no card, and that is what is
+    /// reported; the card it hands them back to is a separate fact.
+    func testWhileAnOverlayHoldsTheKeysItIsTheOverlayAndNotTheCardBehindIt() {
         let terminal = DevSnapshot.KeyHolder.terminal(card: "t-1", hasSelection: false)
+        for overlay in [DevSnapshot.Overlay.switcher, .restoreCard, .inbox] {
+            let held = Focus(responder: nil, overlay: overlay, overlayOwner: terminal)
+            XCTAssertEqual(held, .overlay(overlay, returnsTo: .terminal(card: "t-1", hasSelection: false)))
+            XCTAssertNil(held.card)
+        }
+        XCTAssertEqual(Focus(responder: nil, overlay: .inbox, overlayOwner: nil), .overlay(.inbox, returnsTo: .none))
+    }
+
+    func testAnOverlayIsReportedAsADialogWithTheCardItReturnsTheKeysTo() {
+        let held = Focus.overlay(.inbox, returnsTo: .terminal(card: "t-1", hasSelection: false))
+        XCTAssertEqual(activeElement(held), [
+            "card": .null, "tag": "DIALOG", "classes": ["tm-overlay", "inbox"], "selection_type": "None",
+            "overlay": "inbox", "returns_to": "t-1",
+        ])
         XCTAssertEqual(
-            Focus(responder: nil, switcherOwner: terminal, switcherHoldsKeys: true),
-            .terminal(card: "t-1", hasSelection: false)
+            fields(activeElement(.overlay(.restoreCard, returnsTo: .none)))["returns_to"], .null
         )
-        XCTAssertEqual(Focus(responder: nil, switcherOwner: nil, switcherHoldsKeys: true), Focus.none)
+        XCTAssertEqual(fields(activeElement(.overlay(.restoreCard, returnsTo: .none)))["overlay"], "restore_card")
     }
 
     /// An owner left over from an earlier opening says nothing once the
-    /// switcher has given the keys back.
-    func testAClosedSwitchersOwnerIsIgnored() {
+    /// overlay has given the keys back.
+    func testAClosedOverlaysOwnerIsIgnored() {
         let terminal = DevSnapshot.KeyHolder.terminal(card: "t-1", hasSelection: false)
-        XCTAssertEqual(Focus(responder: nil, switcherOwner: terminal, switcherHoldsKeys: false), Focus.none)
+        XCTAssertEqual(Focus(responder: nil, overlay: nil, overlayOwner: terminal), Focus.none)
         XCTAssertEqual(
-            Focus(responder: .doc(path: "/a/c.html"), switcherOwner: terminal, switcherHoldsKeys: false),
+            Focus(responder: .doc(path: "/a/c.html"), overlay: nil, overlayOwner: terminal),
             .htmlDocument(card: "/a/c.html")
         )
     }
@@ -848,6 +865,7 @@ final class DevSnapshotTests: XCTestCase {
                 + #""fonts":{"document":{"css":"system-ui","saved":null,"size":14},"#
                 + #""interface":{"face":"SystemMono-Regular","saved":null},"#
                 + #""terminal":{"face":"SystemMono-Regular","saved":null,"size":16}},"#
+                + #""hints":[],"inbox":{"badge":"inbox","filter":"all","items":[],"open":false,"selected":null},"#
                 + #""quit_guard":null,"restore_card":null,"#
                 + #""theme":{"available":[],"choice":"dark","findings":[],"folder":"","in_effect":"dark","#
                 + #""name":"breeze-dark","refused":[]},"v":1,"#
@@ -869,5 +887,37 @@ final class DevSnapshotTests: XCTestCase {
             ["lines": ["✓ 1 terminal back in its folder"]]
         )
         XCTAssertEqual(fields(DevSnapshot.build(input()))["restore_card"], .null)
+    }
+
+    // MARK: - 2611.0013 D18: the inbox and the pills
+
+    func testTheInboxIsItsStateAndItsItemsInListOrder() {
+        let blocked = Inbox.Item(
+            kind: .report(.blocked), termID: "T", boardID: "board-1", atMs: 2, proc: "claude", cwd: nil, text: "ok?",
+            read: false
+        )
+        let bell = Inbox.Item(kind: .bell, termID: "U", boardID: "board-0", atMs: 1, proc: nil, cwd: nil, text: nil, read: true)
+        let facts = DevSnapshot.InboxFacts(
+            open: true, unread: 1, filter: .all, selected: blocked.id, items: [blocked, bell]
+        )
+        XCTAssertEqual(
+            fields(DevSnapshot.build(input(inbox: facts)))["inbox"],
+            [
+                "open": true, "badge": "inbox · 1", "filter": "all",
+                "selected": ["kind": "blocked", "term": "T"],
+                "items": [
+                    ["kind": "blocked", "term": "T", "board": "board-1", "read": false, "title": "report · during claude"],
+                    ["kind": "bell", "term": "U", "board": "board-0", "read": true, "title": "bell"],
+                ],
+            ]
+        )
+    }
+
+    func testTheHintsAreThePillsAsPlaced() {
+        let hints = [DevSnapshot.Hint(card: "T", signal: .exit, edge: .right)]
+        XCTAssertEqual(
+            fields(DevSnapshot.build(input(hints: hints)))["hints"],
+            [["card": "T", "signal": "exit", "edge": "right"]]
+        )
     }
 }

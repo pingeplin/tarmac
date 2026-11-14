@@ -143,12 +143,20 @@ public enum DevSnapshot {
         }
     }
 
-    /// Which card holds keyboard focus — a different fact from the selected card;
+    /// The overlays that hold first responder while they are up.
+    public enum Overlay: String, Equatable, Sendable {
+        case switcher, restoreCard = "restore_card", inbox
+    }
+
+    /// Who holds keyboard focus — a different fact from the selected card;
     /// the two disagree legitimately, which is why both are reported.
-    public enum KeyboardFocus: Equatable, Sendable {
+    public indirect enum KeyboardFocus: Equatable, Sendable {
         case terminal(card: String, hasSelection: Bool)
         /// A borrowed HTML card whose document is first responder.
         case htmlDocument(card: String)
+        /// An overlay holds first responder (#364): the keys reach no card.
+        /// `returnsTo` is where it hands them back when it closes.
+        case overlay(Overlay, returnsTo: KeyboardFocus)
         /// The board, a markdown card, or anything that is not one of the above.
         case none
 
@@ -156,19 +164,18 @@ public enum DevSnapshot {
         public var card: String? {
             switch self {
             case .terminal(let card, _), .htmlDocument(let card): card
-            case .none: nil
+            case .overlay, .none: nil
             }
         }
 
-        /// Maps the window's first responder onto the card that holds the keys.
-        ///
-        /// The ⌘K switcher, and the restore card (#358), hold first responder
-        /// while they are up. The Tauri
-        /// switcher never takes DOM focus — `activeElement` stays on the
-        /// terminal behind it — so while it holds the keys the card reported is
-        /// `switcherOwner`, the one it hands them back to.
-        public init(responder: KeyHolder?, switcherOwner: KeyHolder?, switcherHoldsKeys: Bool) {
-            switch switcherHoldsKeys ? switcherOwner : responder {
+        /// Maps the window's first responder onto who holds the keys. While
+        /// `overlay` is up, `overlayOwner` is the card it took them from.
+        public init(responder: KeyHolder?, overlay: Overlay?, overlayOwner: KeyHolder?) {
+            if let overlay {
+                self = .overlay(overlay, returnsTo: KeyboardFocus(responder: overlayOwner, overlay: nil, overlayOwner: nil))
+                return
+            }
+            switch responder {
             case .terminal(let card, let hasSelection):
                 self = .terminal(card: card, hasSelection: hasSelection)
             case .doc(let path) where DocKind(path: path) == .html:
@@ -224,16 +231,31 @@ public enum DevSnapshot {
     ///
     ///     terminal        TEXTAREA  xterm-helper-textarea  Caret, or Range with a selection
     ///     HTML document   IFRAME    html-frame             None
+    ///     an overlay      DIALOG    tm-overlay <name>      None
     ///     otherwise       BODY      (no classes)           None
+    ///
+    /// `card` is the card the keys reach now. Only while an overlay holds them
+    /// are two more keys present: `overlay`, its name, and `returns_to`, the
+    /// card it hands them back to on close, or null.
     public struct ActiveElement: Equatable, Sendable {
         public var card: String?
         public var tag: String
         public var classes: [String]
         public var selectionType: SelectionType
+        public var overlay: Overlay?
+        public var returnsTo: String?
 
         public init(_ focus: KeyboardFocus) {
             card = focus.card
+            overlay = nil
+            returnsTo = nil
             switch focus {
+            case .overlay(let name, let owner):
+                tag = "DIALOG"
+                classes = ["tm-overlay", name.rawValue]
+                selectionType = .none
+                overlay = name
+                returnsTo = owner.card
             case .terminal(_, let hasSelection):
                 tag = "TEXTAREA"
                 classes = ["xterm-helper-textarea"]
@@ -250,12 +272,17 @@ public enum DevSnapshot {
         }
 
         var json: JSONValue {
-            [
+            var fields: [String: JSONValue] = [
                 "card": optional(card),
                 "tag": .string(tag),
                 "classes": .array(classes.map(JSONValue.string)),
                 "selection_type": .string(selectionType.rawValue),
             ]
+            if let overlay {
+                fields["overlay"] = .string(overlay.rawValue)
+                fields["returns_to"] = optional(returnsTo)
+            }
+            return .object(fields)
         }
     }
 
@@ -372,6 +399,40 @@ public enum DevSnapshot {
         }
     }
 
+    /// The inbox panel (2611.0013): its state and the items of its filter.
+    public struct InboxFacts: Equatable, Sendable {
+        public var open: Bool
+        public var unread: Int
+        public var filter: Inbox.Filter
+        public var selected: Inbox.ItemID?
+        /// In list order.
+        public var items: [Inbox.Item]
+
+        public init(
+            open: Bool = false, unread: Int = 0, filter: Inbox.Filter = .all, selected: Inbox.ItemID? = nil,
+            items: [Inbox.Item] = []
+        ) {
+            self.open = open
+            self.unread = unread
+            self.filter = filter
+            self.selected = selected
+            self.items = items
+        }
+    }
+
+    /// One offscreen pill as placed.
+    public struct Hint: Equatable, Sendable {
+        public var card: String
+        public var signal: OffscreenHintLayout.Signal
+        public var edge: BoardWayfinding.Edge
+
+        public init(card: String, signal: OffscreenHintLayout.Signal, edge: BoardWayfinding.Edge) {
+            self.card = card
+            self.signal = signal
+            self.edge = edge
+        }
+    }
+
     public struct Input: Equatable, Sendable {
         public var boardID: String
         public var visibility: Visibility
@@ -393,6 +454,8 @@ public enum DevSnapshot {
         public var theme: Theme
         /// #358: the restore card while it is up.
         public var restoreCard: RestoreCard?
+        public var inbox: InboxFacts
+        public var hints: [Hint]
 
         public init(
             boardID: String,
@@ -407,7 +470,9 @@ public enum DevSnapshot {
             quitGuard: QuitGuard?,
             fonts: Fonts,
             theme: Theme,
-            restoreCard: RestoreCard? = nil
+            restoreCard: RestoreCard? = nil,
+            inbox: InboxFacts = InboxFacts(),
+            hints: [Hint] = []
         ) {
             self.boardID = boardID
             self.visibility = visibility
@@ -422,6 +487,8 @@ public enum DevSnapshot {
             self.fonts = fonts
             self.theme = theme
             self.restoreCard = restoreCard
+            self.inbox = inbox
+            self.hints = hints
         }
     }
 
@@ -444,7 +511,40 @@ public enum DevSnapshot {
             "fonts": fonts(input.fonts),
             "theme": theme(input.theme),
             "restore_card": input.restoreCard.map { ["lines": .array($0.lines.map { .string($0.string) })] } ?? .null,
+            "inbox": inbox(input.inbox),
+            "hints": .array(input.hints.map { hint in
+                [
+                    "card": .string(hint.card), "signal": .string(signalName(hint.signal)),
+                    "edge": .string(hint.edge.rawValue),
+                ]
+            }),
         ]
+    }
+
+    private static func inbox(_ facts: InboxFacts) -> JSONValue {
+        let selected = facts.selected.flatMap { id in facts.items.first { $0.id == id } }
+        return [
+            "open": .bool(facts.open),
+            "badge": .string(InboxBadge.text(unread: facts.unread)),
+            "filter": .string(facts.filter.rawValue),
+            "selected": selected.map { ["kind": .string(InboxCopy.tag($0.kind)), "term": .string($0.termID)] } ?? .null,
+            "items": .array(facts.items.map { item in
+                [
+                    "kind": .string(InboxCopy.tag(item.kind)), "term": .string(item.termID),
+                    "board": .string(item.boardID), "read": .bool(item.read), "title": .string(InboxCopy.title(item)),
+                ]
+            }),
+        ]
+    }
+
+    private static func signalName(_ signal: OffscreenHintLayout.Signal) -> String {
+        switch signal {
+        case .blocked: "blocked"
+        case .bell: "bell"
+        case .exit: "exit"
+        case .done: "done"
+        case .live: "live"
+        }
     }
 
     private static func theme(_ theme: Theme) -> JSONValue {

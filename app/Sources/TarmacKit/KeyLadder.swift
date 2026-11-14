@@ -36,11 +36,13 @@ public enum KeyLadder {
         /// A key closed the restore card, and no key that is not a repeat has
         /// come since (`afterRestoreCard(was:press:action:)`).
         public var afterRestoreCard: Bool
+        /// 2611.0013: the inbox panel is open.
+        public var inboxOpen: Bool
 
         public init(
             composing: Bool = false, switcherOpen: Bool = false, keys: Keys = .terminal, editingText: Bool = false,
             hasFlyTarget: Bool = false, esc: EscLadder.Facts = EscLadder.Facts(), offer: Offer = .none,
-            afterRun: Bool = false, restoreCard: Bool = false, afterRestoreCard: Bool = false
+            afterRun: Bool = false, restoreCard: Bool = false, afterRestoreCard: Bool = false, inboxOpen: Bool = false
         ) {
             self.composing = composing
             self.switcherOpen = switcherOpen
@@ -52,6 +54,7 @@ public enum KeyLadder {
             self.afterRun = afterRun
             self.restoreCard = restoreCard
             self.afterRestoreCard = afterRestoreCard
+            self.inboxOpen = inboxOpen
         }
     }
 
@@ -95,6 +98,10 @@ public enum KeyLadder {
         /// Any key but ⌘Q while the restore card is up: it closes the card
         /// and goes nowhere else.
         case closeRestoreCard
+        /// ⌘I.
+        case toggleInbox
+        /// The open inbox panel owns the key (`InboxKeys`).
+        case inboxKey
     }
 
     public static func decide(_ press: KeyPress, _ facts: Facts) -> Action {
@@ -103,8 +110,10 @@ public enum KeyLadder {
         // saw them either. ESC still un-borrows, through the card shim's relay.
         if facts.composing || facts.keys == .document { return .passThrough }
         if press.isCommandChord("k") { return .toggleSwitcher }
+        if press.isCommandChord("i") { return .toggleInbox }
         if press.isCommandChord("w") { return .closeSelectedCard }
         if facts.switcherOpen { return .switcherKey }
+        if facts.inboxOpen { return .inboxKey }
         if press.isCommandChord("t") { return .newTerminal }
         let plain = !press.command && !press.option && !press.control
         if press.named == .enter, plain, facts.keys == .terminal, let offer = offerAction(press, facts) {

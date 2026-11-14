@@ -26,9 +26,13 @@ final class OffscreenHints {
         pills = [:]
     }
 
-    /// Shows a pill for each of `hints`. `viewRect` is the board's bounds and
+    /// Shows a pill for each of `hints`, and returns them as placed.
+    /// `viewRect` is the part of the board's bounds left uncovered and
     /// `obstacles` its cards' on-screen rects; both layers share that space.
-    func show(_ hints: [OffscreenHintLayout.Hint], in viewRect: CGRect, around obstacles: [CGRect]) {
+    @discardableResult
+    func show(
+        _ hints: [OffscreenHintLayout.Hint], in viewRect: CGRect, around obstacles: [CGRect]
+    ) -> [OffscreenHintLayout.PlacedPill] {
         var next: [String: OffscreenHintPill] = [:]
         for hint in hints {
             guard let placement = BoardWayfinding.hintPlacement(
@@ -55,6 +59,7 @@ final class OffscreenHints {
             let layer = position.occluded ? under : over
             if pill.superview !== layer { layer.addSubview(pill) }
         }
+        return placed
     }
 }
 

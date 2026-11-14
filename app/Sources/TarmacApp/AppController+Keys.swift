@@ -30,6 +30,7 @@ extension AppController {
             let routed = MainActor.assumeIsolated { self?.routeMagnify(event) ?? false }
             return routed ? nil : event
         }
+        installInboxButton()
         connectToDaemon()
 
         // Layout has happened by the next runloop turn.
@@ -72,6 +73,7 @@ extension AppController {
             if switcherOpen { closeSwitcher() } else { openSwitcher() }
         case .closeSelectedCard:
             closeSwitcher()
+            closeInbox()
             closeSelectedCard()
         case .switcherKey:
             return handleSwitcherKey(press)
@@ -96,6 +98,10 @@ extension AppController {
             break
         case .closeRestoreCard:
             closeRestoreCard()
+        case .toggleInbox:
+            toggleInbox()
+        case .inboxKey:
+            return handleInboxKey(press)
         }
         return true
     }
@@ -120,7 +126,8 @@ extension AppController {
             offer: focused.map(keyOffer) ?? .none,
             afterRun: focused?.afterRun ?? false,
             restoreCard: restoreCard != nil,
-            afterRestoreCard: afterRestoreCard
+            afterRestoreCard: afterRestoreCard,
+            inboxOpen: inboxOpen
         )
     }
 

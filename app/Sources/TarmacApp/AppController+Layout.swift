@@ -99,12 +99,21 @@ extension AppController {
         )
         notifyRestored(tiles: tiles, liveTerms: liveTerms)
         for term in plan.terms {
-            addTerminal(
+            let s = addTerminal(
                 term.termID, frame: CardFrame(rect: term.frame, z: term.z), spawn: term.spawn, resume: term.resume,
                 on: board
             )
+            s.lastCwd = termRecords[term.termID]?.lastCwd ?? term.spawn?.cwd
         }
         board.primeTermID = plan.terms.first?.termID
+        // Before `finishArrive` takes a pending jump: an exit row of a
+        // terminal cold-spawned anew lands on the shell that succeeds it.
+        let successors = plan.terms.compactMap { term in term.spawn?.succeeds.map { ($0, term.termID) } }
+        let built = inbox.boardBuilt(
+            boardID: board.boardID, cards: Set(plan.terms.map(\.termID)),
+            successors: Dictionary(successors, uniquingKeysWith: { first, _ in first })
+        )
+        if built { inboxChanged() }
 
         board.docOwner = [:]
         for doc in docs {
@@ -149,6 +158,9 @@ extension AppController {
     /// takes every other board's terminals with it, since only the active board
     /// is sent a restore.
     private func reconcile(_ board: Board, liveTerms: Set<String>, replayFollows: Bool) {
+        for (termID, s) in board.sessions {
+            if let cwd = board.termRecords[termID]?.lastCwd { s.lastCwd = cwd }
+        }
         let outcome = ReconnectRestore.reconcile(board.reconnectTerms, liveTerms: liveTerms, replayFollows: replayFollows)
         markLost(outcome.lost, on: board)
         let offered = offerReopens(on: board)
@@ -179,6 +191,9 @@ extension AppController {
             guard let s = board.sessions[termID] else { continue }
             holdOpen(s, on: board)
         }
+        // A lost terminal sends no `exit`, so its report ends here.
+        let ended = Set(termIDs.filter { inbox.reportEnded(termID: $0) })
+        if !ended.isEmpty { inboxChanged(ended) }
         board.reassignPrime()
         updatePrimacy(on: board)
         persistLayout(for: board)

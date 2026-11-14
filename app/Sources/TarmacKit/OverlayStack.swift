@@ -5,11 +5,13 @@
 /// are the pills that could not clear a card, which go inside the board, under
 /// its cards.
 public enum OverlayStack: CaseIterable, Sendable {
-    case zoomControl, minimap, hints, toasts, switcher, restoreCard
+    case zoomControl, minimap, hints, toasts, switcher, restoreCard, inbox
 
     /// The overlay's `z-index` in `desktop/src/theme/chrome.css`. The switcher's
     /// veil (79) and panel (80) are one view here. The restore card (#358) has
     /// no stylesheet: it takes the first key, so it is drawn over everything.
+    /// The inbox panel (2611.0013) has none either: over the pills, the zoom
+    /// control and the minimap, under the toasts and the switcher.
     public var zIndex: Int {
         switch self {
         case .zoomControl, .minimap: return 50
@@ -17,6 +19,7 @@ public enum OverlayStack: CaseIterable, Sendable {
         case .toasts: return 70
         case .switcher: return 80
         case .restoreCard: return 90
+        case .inbox: return 60
         }
     }
 

@@ -79,7 +79,7 @@ final class Demo: NSObject, NSApplicationDelegate {
             runScript()
         case .output(let id, let bytes) where id == termID:
             terminal.feed(bytes)
-        case .exit(let id, _) where id == termID:
+        case .exit(let id, _, _) where id == termID:
             NSApp.terminate(nil)
         default:
             break

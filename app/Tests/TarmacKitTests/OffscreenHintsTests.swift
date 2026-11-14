@@ -2,7 +2,7 @@ import CoreGraphics
 import XCTest
 @testable import TarmacKit
 
-/// The overlay-level offscreen-hint logic: priority, the single ⏎-fly target,
+/// The overlay-level offscreen-hint logic: a card's signal and its rank, the single ⏎-fly target,
 /// the pill label and the per-edge greedy stacking. The edge geometry it builds
 /// on (`BoardWayfinding.hintPlacement`) is tested in `BoardWayfindingTests`.
 final class OffscreenHintLayoutTests: XCTestCase {
@@ -12,20 +12,36 @@ final class OffscreenHintLayoutTests: XCTestCase {
         Layout.Hint(cardID: cardID, centerView: center, signal: signal, label: cardID, z: z)
     }
 
-    // MARK: - priority
+    // MARK: - signal and rank (2611.0013 S24)
 
-    func testBellAlwaysOutranksLiveAndZBreaksTiesWithinAClass() {
-        XCTAssertEqual(Layout.priority(signal: .bell, z: 5), 1005)
-        XCTAssertEqual(Layout.priority(signal: .live, z: 5), 5)
-        XCTAssertGreaterThan(Layout.priority(signal: .bell, z: 0), Layout.priority(signal: .live, z: 999))
+    private func report(_ kind: TermReport.Kind, read: Bool = false, text: String? = nil) -> TermReport {
+        TermReport(kind: kind, text: text, atMs: 0, proc: nil, read: read)
     }
 
-    func testPrioritySaturatesInsteadOfOverflowingForAHugeZ() {
-        XCTAssertEqual(Layout.priority(signal: .bell, z: .max), .max)
-        XCTAssertEqual(Layout.priority(signal: .live, z: .max), .max)
-        XCTAssertEqual(Layout.priority(signal: .bell, z: .max - 1000), .max)
-        XCTAssertEqual(Layout.priority(signal: .bell, z: .max - 1001), .max - 1)
-        XCTAssertEqual(Layout.priority(signal: .live, z: .min), .min)
+    private func signal(
+        _ report: TermReport? = nil, bell: Bool = false, exit: Bool = false, live: Bool = true
+    ) -> Layout.Signal? {
+        Layout.signal(report: report, bellLit: bell, exitUnread: exit, live: live)
+    }
+
+    func testS24OnlyAnUnreadReportSignalsAndTheRestFallThroughInRank() {
+        XCTAssertEqual(signal(report(.blocked), bell: true), .blocked)
+        XCTAssertEqual(signal(report(.blocked, read: true), bell: true), .bell)
+        XCTAssertEqual(signal(exit: true, live: false), .exit)
+        XCTAssertEqual(signal(report(.done), exit: true, live: false), .exit)
+        XCTAssertEqual(signal(report(.done)), .done)
+        XCTAssertEqual(signal(report(.done, read: true)), .live)
+        XCTAssertNil(signal(live: false))
+    }
+
+    func testS24ABellOutranksAnExitAndABlockedReportOutranksBoth() {
+        XCTAssertEqual(signal(bell: true, exit: true, live: false), .bell)
+        XCTAssertEqual(signal(report(.blocked), exit: true, live: false), .blocked)
+    }
+
+    func testS24TheRankIsBlockedBellExitDoneLive() {
+        let order: [Layout.Signal] = [.live, .done, .exit, .bell, .blocked]
+        XCTAssertEqual(order.map(Layout.rank), [0, 1, 2, 3, 4])
     }
 
     // MARK: - flyTarget
@@ -45,15 +61,51 @@ final class OffscreenHintLayoutTests: XCTestCase {
         XCTAssertEqual(Layout.flyTarget([hint("lo", .zero, .bell, 1), hint("hi", .zero, .bell, 9)]), "hi")
     }
 
-    func testEqualPriorityReturnsTheFirstInArrayOrder() {
+    func testS24TheRankWinsWhateverTheZ() {
+        XCTAssertEqual(Layout.flyTarget([hint("live", .zero, .live, 5000), hint("bell", .zero, .bell, 0)]), "bell")
+        XCTAssertEqual(Layout.flyTarget([hint("done", .zero, .done, 9), hint("exit", .zero, .exit, 1)]), "exit")
+        XCTAssertEqual(Layout.flyTarget([hint("blocked", .zero, .blocked, 1), hint("bell", .zero, .bell, 9)]), "blocked")
+        XCTAssertEqual(Layout.flyTarget([hint("first", .zero, .bell, 3), hint("second", .zero, .bell, 3)]), "first")
+    }
+
+    func testAnEqualRankAndZReturnsTheFirstInArrayOrder() {
         XCTAssertEqual(Layout.flyTarget([hint("first", .zero, .live, 5), hint("second", .zero, .live, 5)]), "first")
     }
 
     // MARK: - pillLabel
 
     func testPillLabelJoinsNameAndTimeWithAMiddleDotForABellAndIsTheNameForLive() {
-        XCTAssertEqual(Layout.pillLabel(signal: .bell, name: "notes.md", hhmm: "14:32"), "notes.md · 14:32")
-        XCTAssertEqual(Layout.pillLabel(signal: .live, name: "agent", hhmm: "14:32"), "agent")
+        XCTAssertEqual(Layout.pillLabel(signal: .bell, name: "notes.md", hhmm: "14:32", quote: nil), "notes.md · 14:32")
+        XCTAssertEqual(Layout.pillLabel(signal: .live, name: "agent", hhmm: "14:32", quote: "ignored"), "agent")
+    }
+
+    func testS25AReportPillQuotesTheStartOfItsTextOnOneLine() {
+        XCTAssertEqual(
+            Layout.pillLabel(signal: .blocked, name: "claude", hhmm: "14:32", quote: "abcdefghij\n  klmnopqrstuvwxyz0123"),
+            "claude · “abcdefghij klmnopqrstuv…”"
+        )
+        let exactly24 = "abcdefghijklmnopqrstuvwx"
+        XCTAssertEqual(
+            Layout.pillLabel(signal: .done, name: "claude", hhmm: "14:32", quote: exactly24), "claude · “\(exactly24)”"
+        )
+    }
+
+    /// Cut by Unicode scalars, not by characters: 13 decomposed `é` are 26
+    /// scalars, so the pill keeps 23 of them.
+    func testS25TheQuoteIsCutByUnicodeScalars() {
+        let text = String(repeating: "e\u{301}", count: 13)
+        let kept = String(repeating: "e\u{301}", count: 11) + "e"
+        XCTAssertEqual(
+            Layout.pillLabel(signal: .blocked, name: "claude", hhmm: "14:32", quote: text).unicodeScalars.map(\.value),
+            "claude · “\(kept)…”".unicodeScalars.map(\.value)
+        )
+    }
+
+    func testS25ADoneWithNoTextAnExitABellAndLiveReadTheirWords() {
+        XCTAssertEqual(Layout.pillLabel(signal: .done, name: "claude", hhmm: "14:32", quote: nil), "claude · report")
+        XCTAssertEqual(Layout.pillLabel(signal: .exit, name: "claude", hhmm: "14:32", quote: nil), "claude · exited")
+        XCTAssertEqual(Layout.pillLabel(signal: .bell, name: "claude", hhmm: "14:32", quote: "x"), "claude · 14:32")
+        XCTAssertEqual(Layout.pillLabel(signal: .live, name: "claude", hhmm: "14:32", quote: nil), "claude")
     }
 
     // MARK: - stackPills

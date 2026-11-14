@@ -72,7 +72,7 @@ extension AppController {
 
     /// The session for `termID` wherever its card is. The index forgets a
     /// terminal at exit while its dead card stays, so this looks at the boards.
-    private func anySession(_ termID: String) -> (session: TerminalSession, board: Board)? {
+    func anySession(_ termID: String) -> (session: TerminalSession, board: Board)? {
         if let board = ownerBoard(ofTerm: termID), let session = board.sessions[termID] {
             return (session, board)
         }
@@ -326,7 +326,8 @@ extension AppController {
 
     /// A shell exited (`TermExit.decide`): a failure holds the card open dead,
     /// a clean exit removes it, and the board's last live terminal is replaced.
-    /// An exit for a card that is already gone is ignored.
+    /// An exit for a card that is already gone is ignored; the inbox heard of
+    /// it before (`feedInbox`).
     func handleExit(termID: String, code: Int?) {
         let board = routeBoard(ofTerm: termID)
         guard let s = board.sessions[termID], let card = board.view.card(.term(termID)) else { return }
@@ -382,11 +383,13 @@ extension AppController {
         board.view.removeCard(id: .term(termID))
         board.view.signalsChanged()
         refreshOwnerChips(on: board)
+        if inbox.removeTerm(termID: termID) { inboxChanged([termID]) }
         if heldFocus { window?.makeFirstResponder(rootView.board) }
     }
 
     /// ⌘W on a terminal card (`FocusedClose.decide`). The card goes at once, so
-    /// the exit the daemon reports for the SIGHUP finds no card and is ignored.
+    /// the exit the daemon reports for the SIGHUP finds no card and is ignored,
+    /// and the inbox, which forgot the terminal with its card, lists nothing.
     /// A dead card's close is sent too: the daemon deletes its record
     /// (2611.0011, D12).
     func closeTerminal(_ termID: String, replace: Bool) {
@@ -418,7 +421,9 @@ extension AppController {
             for termID in board.sessions.keys {
                 board.view.card(.term(termID))?.setReport(nil)
             }
+            board.view.signalsChanged()
         }
+        if inbox.lostConnection() { inboxChanged() }
     }
 
     // MARK: - Label, bell
@@ -447,11 +452,14 @@ extension AppController {
     }
 
     /// `term_report`: the terminal's current report, or nil for none. A frame
-    /// for a terminal with no card, or a dead one, is dropped.
-    func handleTermReport(termID: String, _ report: TermReport?) {
+    /// for a terminal with no card, or a dead one, puts no chip; the inbox
+    /// took it before (`feedInbox`).
+    func handleTermReport(_ frame: TermReportFrame) {
+        let termID = frame.termID
         guard let (_, board) = anySession(termID),
               let card = board.view.card(.term(termID)), !card.dead else { return }
-        card.setReport(report)
+        card.setReport(frame.report)
+        board.view.signalsChanged()
     }
 
     /// `bell`: light the card amber and note when.
@@ -464,9 +472,11 @@ extension AppController {
         refreshSwitcherIfOpen()
     }
 
-    /// Puts out a lit bell; a no-op when it is not lit. Called when the user
-    /// sends input to the terminal, and when it becomes prime by a press on its card.
+    /// The user touched the terminal — sent it input, pressed its card, or
+    /// jumped to it: its inbox bell and exit rows are read, and a lit bell
+    /// goes out.
     func clearBell(termID: String) {
+        touchInbox(termID: termID)
         guard let (s, board) = anySession(termID),
               let card = board.view.card(.term(termID)), card.bellActive else { return }
         s.bellAt = nil
@@ -477,22 +487,28 @@ extension AppController {
 
     // MARK: - Offscreen hints
 
-    /// The active board's signalling terminals whose centre is off screen, in
-    /// card order — the order that settles which of two equal signals ⏎ flies
-    /// to. A live one reads its label; a lit bell adds when it rang.
-    func offscreenHints() -> [OffscreenHintLayout.Hint] {
+    /// The active board's signalling terminals whose centre is outside
+    /// `viewRect` — the board's bounds, less an open inbox panel — in card
+    /// order, the order that settles which of two equal signals ⏎ flies to.
+    func offscreenHints(in viewRect: CGRect) -> [OffscreenHintLayout.Hint] {
         let board = activeBoard
-        let visible = board.view.viewportWorldRect
+        let topLeft = board.view.viewToWorld(CGPoint(x: viewRect.minX, y: viewRect.minY))
+        let bottomRight = board.view.viewToWorld(CGPoint(x: viewRect.maxX, y: viewRect.maxY))
+        let visible = CGRect(
+            x: topLeft.x, y: topLeft.y, width: bottomRight.x - topLeft.x, height: bottomRight.y - topLeft.y
+        )
         return board.sessionOrder.compactMap { termID in
             guard let s = board.sessions[termID], let card = board.view.card(.term(termID)),
-                  let signal = card.signal.wayfinding else { return nil }
+                  let signal = card.signal(exitUnread: inbox.exitUnread(termID: termID)) else { return nil }
             let center = CGPoint(x: card.worldFrame.rect.midX, y: card.worldFrame.rect.midY)
             guard BoardWayfinding.isOffscreen(cardCenterWorld: center, viewportWorldRect: visible) else { return nil }
             return OffscreenHintLayout.Hint(
                 cardID: termID,
                 centerView: board.view.worldToView(center),
                 signal: signal,
-                label: OffscreenHintLayout.pillLabel(signal: signal, name: s.label, hhmm: hhmm(s.bellAt ?? Date())),
+                label: OffscreenHintLayout.pillLabel(
+                    signal: signal, name: s.label, hhmm: hhmm(s.bellAt ?? Date()), quote: card.report?.text
+                ),
                 z: card.worldFrame.z
             )
         }

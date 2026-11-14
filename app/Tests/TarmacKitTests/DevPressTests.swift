@@ -48,6 +48,24 @@ final class DevPressTests: XCTestCase {
         }
     }
 
+    /// 2611.0013 D18: a closed list of named keys, bare, and ⇧Tab; posted as a
+    /// chord is, so the key ladder sees them. No printable key.
+    func testANamedKeyIsItsKeyCodeAndTheCharactersAppKitGivesIt() {
+        XCTAssertEqual(DevPress.parse("enter"), chord(0, "\r", 36))
+        XCTAssertEqual(DevPress.parse("up"), chord(0, "\u{F700}", 126))
+        XCTAssertEqual(DevPress.parse("down"), chord(0, "\u{F701}", 125))
+        XCTAssertEqual(DevPress.parse("escape"), chord(0, "\u{1B}", 53))
+        XCTAssertEqual(DevPress.parse("tab"), chord(0, "\t", 48))
+        XCTAssertEqual(DevPress.parse("shift+tab"), chord(shift, "\u{19}", 48))
+        XCTAssertEqual(DevPress.parse("backspace"), chord(0, "\u{7F}", 51))
+    }
+
+    func testANamedKeyTakesNoOtherModifier() {
+        for combo in ["cmd+enter", "shift+enter", "ctrl+tab", "alt+escape", "shift+shift+tab", "Enter", "space"] {
+            XCTAssertNotNil(code(DevPress.parse(combo)), combo)
+        }
+    }
+
     // MARK: - the refusal
 
     private func matches(_ combo: String, _ keyEquivalent: String, _ mask: UInt64) -> Bool {

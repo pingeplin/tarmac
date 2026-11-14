@@ -30,6 +30,9 @@ extension AppController {
     /// doc's link, which act by themselves, changes nothing here (`CardPress`).
     func handlePress(on hit: NSView?) {
         guard !switcherOpen, window?.isKeyWindow == true else { return }
+        // A press anywhere but on the open inbox closes it, and then does
+        // what it does.
+        if inboxOpen, let hit, !hit.isDescendant(of: rootView.inboxPanel) { closeInbox() }
         guard let hit, hit.isDescendant(of: rootView.board) else { return }
         guard let card = enclosingCard(hit) else { return defocus() }
         guard CardPress.selects(card.pressPlace(of: hit)) else { return }
@@ -41,9 +44,9 @@ extension AppController {
         guard board.card(id) != nil else { return }
         board.select(id)
         board.raise(id)
+        if case let .term(termID) = id { clearBell(termID: termID) }
         if case let .term(termID) = id, sessions[termID]?.live == true {
             setPrime(termID)
-            clearBell(termID: termID)
         } else if case let .term(termID) = id, let s = sessions[termID] {
             // A dead card is never prime, but it holds the keys, so that
             // Return reaches its reopen offer (2611.0011, D10).

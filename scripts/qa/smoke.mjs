@@ -18,6 +18,8 @@
 // the board (D14), the re-show (D15), a page shortcut ⌘T/⌘W (D16), from a
 // markdown card (D17) and an HTML card (D18), and into a frozen page (D19).
 // D22 (#315) switches boards with `board` and makes one with `board --new`.
+// S35 (spec 2611.0013, #364) opens the inbox with ⌘I, jumps to a report on
+// another board with ↵, and closes the panel with escape (`press` plain keys).
 // The cases that END the app are `make qa-quit` (`quit.mjs`).
 //
 // Every scenario that types mints its OWN sentinel from a per-run nonce, and the
@@ -32,6 +34,8 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, realpathS
 import { resolve } from "node:path";
 import {
   ROOT,
+  CLI,
+  DAEMON_SOCK,
   STATE,
   SOCK,
   dev,
@@ -574,6 +578,58 @@ async function main() {
     eq(unknown.code, 1, "an unknown board exits 1");
     eq(json(unknown).error, "no_such_board", "an unknown board's error code");
     eq(snapshot().board_id, boardId, "an unknown board changes nothing");
+  });
+
+  console.log("\nS35 — the inbox jumps to a report on another board (2611.0013)");
+  await checkAsync("⌘I lists it, ↵ lands on its terminal, escape gives the keys back", async () => {
+    reset(term);
+    const made = dev("board", "--new");
+    eq(made.code, 0, `board --new exit code (${made.err.trim()})`);
+    const other = json(made).board_id;
+    const terms = (snap) => snap.cards.filter((c) => c.kind === "term").map((c) => c.id);
+    const before = terms(snapshot());
+    dev("press", "cmd+t");
+    let agent = null;
+    for (let i = 0; i < 50 && !agent; i++) {
+      await sleep(100);
+      agent = terms(snapshot()).find((id) => !before.includes(id)) ?? null;
+    }
+    if (!agent) throw new Error("cmd+t made no terminal on the new board");
+    waitFor(agent, `cards[${agent}].term.alive == true`);
+    pointer("focus", agent);
+    const text = `QA ${sentinel("inbox")}`;
+    dev("type", agent, `TARMAC_SOCKET='${DAEMON_SOCK}' zsh -c '${CLI} report blocked "${text}"; sleep 600'\n`);
+    let listed = null;
+    for (let i = 0; i < 100 && !listed; i++) {
+      await sleep(100);
+      listed = snapshot().inbox.items.find((it) => it.term === agent && it.kind === "blocked") ?? null;
+    }
+    if (!listed) throw new Error(`no blocked item for ${agent}`);
+    eq(dev("board", boardId).code, 0, "back to the first board");
+
+    dev("press", "cmd+i");
+    const open = waitFor(term, "inbox.open == true");
+    eq(open.inbox.selected?.term, agent, "the selected item's terminal");
+    eq(open.inbox.selected?.kind, "blocked", "the selected item's kind");
+    const item = open.inbox.items.find((it) => it.term === agent);
+    eq(item?.board, other, "the item's board");
+    eq(item?.read, false, "the item is unread");
+
+    dev("press", "enter");
+    waitFor(agent, `board_id == "${other}"`);
+    const landed = waitFor(agent, `active_element.card == "${agent}"`);
+    eq(landed.inbox.open, false, "the jump closed the panel");
+    dev("key", agent, "ctrl+c");
+
+    eq(dev("board", boardId).code, 0, "back to the first board again");
+    reset(term);
+    dev("press", "cmd+i");
+    const held = waitFor(term, "inbox.open == true");
+    eq(held.active_element.overlay, "inbox", "the open panel holds the keys");
+    eq(held.active_element.returns_to, term, "the card the panel gives the keys back to");
+    dev("press", "escape");
+    const closed = waitFor(term, "inbox.open == false");
+    eq(closed.active_element.card, term, "escape gave the keys back to the first board's terminal");
   });
 
   run.finish();

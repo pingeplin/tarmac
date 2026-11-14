@@ -13,6 +13,7 @@ extension AppController {
         guard id != activeBoardID, boards[id] != nil else { return }
         for termID in termIndex.terms(of: id) {
             scrollback.unmount(termID)
+            inbox.removeTerm(termID: termID)
         }
         termIndex.removeBoard(id)
         dataFiles.forget(board: id)
@@ -56,6 +57,7 @@ extension AppController {
     /// the first responder, and must not land in the terminal behind it.
     func openSwitcher() {
         guard !switcherOpen else { return }
+        closeInbox()
         switcherOpen = true
         switcherState = SwitcherKeys.opened(summaries: boardSummaries(), active: activeBoardID)
         // Laid out before it is rendered, so scrolling the selected row into
@@ -91,7 +93,7 @@ extension AppController {
 
     private func renderSwitcher() {
         rootView.boardSwitcher.render(
-            rows: switcherRows(), state: switcherState, nowMs: UInt64(Date().timeIntervalSince1970 * 1000)
+            rows: switcherRows(), state: switcherState, nowMs: WallClock.nowMs
         )
     }
 
@@ -123,7 +125,7 @@ extension AppController {
         }
         return BoardSwitcher.summary(
             boardID: id, name: name, visited: board?.didInitialRestore ?? false, terms: terms ?? [],
-            cards: board?.view.cards.count ?? 0, daemonRunning: daemonRunning
+            cards: board?.view.cards.count ?? 0, daemonRunning: daemonRunning, reports: inbox.unreadReports(board: id)
         )
     }
 
@@ -196,6 +198,7 @@ extension AppController {
         // A settling pan's debounced persist goes out before the switch.
         flushPendingPersist()
         closeSwitcher()
+        closeInbox()
         switching = true
         // First responder comes off the leaving board's views before the view
         // is swapped; a stale one would leave the arrived board unfocused.
@@ -221,6 +224,7 @@ extension AppController {
     @discardableResult
     func mintBoard(id: String, name: String?, view: BoardView = BoardView()) -> Board {
         let board = Board(boardID: id, name: name, view: view)
+        board.view.exitUnread = { [weak self] termID in self?.inbox.exitUnread(termID: termID) ?? false }
         let bootTermID = BootTerminal.mint()
         let boot = makeSession(termID: bootTermID)
         board.sessions[bootTermID] = boot
@@ -239,7 +243,9 @@ extension AppController {
     func finishArrive(on board: Board) {
         rootView.layoutSubtreeIfNeeded()
         applyBorrow()
-        let home: NSView = board.primeTerminalView ?? rootView.board
+        // An inbox jump that switched lands first, and its card is the
+        // keyboard's home (2611.0013, D14).
+        let home: NSView = landPendingJump(on: board) ?? board.primeTerminalView ?? rootView.board
         // A switcher opened while the board was on its way keeps the keys, and
         // hands them to the arrived board when it closes.
         if switcherOpen {

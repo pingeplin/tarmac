@@ -1,6 +1,6 @@
 /// The ⌘K switcher's keyboard while it is open: every key it is handed changes
-/// its state, asks the app for something, or both. ⌘K and ⌘W never get here
-/// (`KeyLadder` takes them first).
+/// its state, asks the app for something, or both. ⌘K, ⌘I and ⌘W never get
+/// here (`KeyLadder` takes them first).
 ///
 /// Rename mode does not block navigation: ↑/↓, ⌘1–9 and ⌘N act as they do
 /// outside it, as in the web app.

@@ -88,7 +88,7 @@ fn spawn_term_falls_back_when_inherit_source_is_unknown() {
     loop {
         match app.recv(deadline, "t1 pwd output or exit") {
             Msg::Output { term_id, bytes } if term_id == "t1" => collected.extend_from_slice(&bytes),
-            Msg::Exit { term_id, code } if term_id == "t1" => {
+            Msg::Exit { term_id, code, .. } if term_id == "t1" => {
                 assert_eq!(code, Some(0), "pwd should exit cleanly even with an unresolvable inherit source");
                 break;
             }

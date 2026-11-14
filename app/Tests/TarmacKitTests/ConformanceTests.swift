@@ -548,6 +548,53 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
+    /// 2611.0013 S15 (daemon → app): a report with its place.
+    func testVector28TermReportWithItsPlace() throws {
+        try assertVector(
+            """
+            86 a1 74 ab 74 65 72 6d 5f 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74 31
+            a4 6b 69 6e 64 a7 62 6c 6f 63 6b 65 64 a5 61 74 5f 6d 73 cf 00 00 01 8b cf e5 68 00
+            a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 31 a3 63 77 64 a2 2f 77
+            """,
+            .map([
+                "t": .string("term_report"),
+                "term_id": .string("t1"),
+                "kind": .string("blocked"),
+                "at_ms": .int(1_700_000_000_000),
+                "board_id": .string("board-1"),
+                "cwd": .string("/w"),
+            ]),
+            .termReport(
+                termID: "t1", kind: "blocked", text: nil, atMs: 1_700_000_000_000, proc: nil, read: false,
+                boardID: "board-1", cwd: "/w"
+            )
+        )
+    }
+
+    /// 2611.0013 S15: a bell with its board.
+    func testVector29BellWithItsBoard() throws {
+        try assertVector(
+            """
+            83 a1 74 a4 62 65 6c 6c a7 74 65 72 6d 5f 69 64 a2 74 31
+            a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 31
+            """,
+            .map(["t": .string("bell"), "term_id": .string("t1"), "board_id": .string("board-1")]),
+            .bell(termID: "t1", boardID: "board-1")
+        )
+    }
+
+    /// 2611.0013 S15: an exit with its board.
+    func testVector30ExitWithItsBoard() throws {
+        try assertVector(
+            """
+            84 a1 74 a4 65 78 69 74 a7 74 65 72 6d 5f 69 64 a2 74 31 a4 63 6f 64 65 03
+            a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 31
+            """,
+            .map(["t": .string("exit"), "term_id": .string("t1"), "code": .int(3), "board_id": .string("board-1")]),
+            .exit(termID: "t1", code: 3, boardID: "board-1")
+        )
+    }
+
     /// 2611.0011 S12: a nil `resume` and a nil `cmd` put no key on the wire.
     func testANilResumeAndANilCmdHaveNoKey() throws {
         let restore = Message.restore(
