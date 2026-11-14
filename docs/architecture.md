@@ -1510,11 +1510,12 @@ land in the terminal behind it.
 
 Layered over the board, back to front (`OverlayStack`): offscreen hint pills
 (one per signalling terminal whose centre is off screen, on the edge it
-overshoots; a pill that cannot clear a card is drawn under the cards), the zoom
+overshoots), the zoom
 control (bottom-left: `−`, percent, `+`, fit — steps of ×1.2 about the viewport
 centre; fit frames every card with a 10 % margin), the minimap (bottom-right;
 cards coloured by signal, click to re-centre), the inbox panel, toasts (at
-most three, 7 s each), the switcher, and the restore card (`RestoreCardView`, issue #358). The
+most three, 7 s each, stacked upward from 8 points above the minimap, so the
+two never overlap — `ToastStackLayout`), the switcher, and the restore card (`RestoreCardView`, issue #358). The
 restore card shows after a first-visit restore whose plan has at least one
 line (`RestoreCard`; below). While it is up, the board view is drawn at 35 %
 opacity, and over the board area lies a veil of `rgba(8, 10, 13, 0.62)` (the
@@ -1539,6 +1540,15 @@ alive. A read report makes no signal. The ⏎ flight takes the highest
 the start of its text (24 Unicode scalars, one line), an exit pill reads
 `exited`; blocked and bell are amber, done `Theme.ok`, exit
 `Theme.consoleError`, and the minimap uses the same colours.
+
+A pill keeps clear of the visible cards, the minimap and the shown toasts
+(`OffscreenHintLayout.stackPills`, issue #365): it moves along its edge to the
+nearest free gap, and on the bottom edge to the nearest one on its left first.
+An edge that still leaves a pill under the minimap or a toast is placed again
+from its far end, stacking toward its start. A pill that finds no free gap is
+drawn over the cards all the same (#126 drew it under them, where it was lost
+or showed through a dimmed card); the minimap and the toasts are drawn over
+every pill.
 
 **The inbox** (spec 2611.0013, `InboxPanelView`; rules in `Inbox`,
 `InboxCopy`, `InboxKeys`, `InboxJump`, `InboxPanelLayout`). A store of report
