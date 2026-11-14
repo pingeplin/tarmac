@@ -366,6 +366,51 @@ const USER_EVENTS: &str = r#"    "PreToolUse": [
       }
     ]"#;
 
+const INSTALLED_EVENTS: &str = r#"    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "tarmac hooks run claude || true",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "tarmac hooks run claude || true",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "tarmac hooks run claude || true",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "tarmac hooks run claude || true",
+            "timeout": 5
+          }
+        ]
+      }
+    ]"#;
+
 /// F-claude with `hooks` (holding `inner`) as its last key.
 fn f_claude_with_hooks_last(hooks: &str) -> String {
     F_CLAUDE.replace("  \"cleanupPeriodDays\": 30\n}", &format!("  \"cleanupPeriodDays\": 30,\n{hooks}\n}}"))
@@ -568,12 +613,7 @@ fn s4b_a_removal_moves_no_other_key() {
 
     put(&path, &f_mid());
     assert_eq!(claude(&dir, "install").code(), Some(0));
-    let v = json(&path);
-    assert_eq!(keys(&v), ["permissions", "hooks", "env", "model", "cleanupPeriodDays"]);
-    assert_eq!(
-        keys(&v["hooks"]),
-        ["PreToolUse", "PostToolUse", "Notification", "Stop", "UserPromptSubmit", "SessionStart"]
-    );
+    assert_eq!(read(&path), f_claude_with_hooks_mid(&format!("{USER_EVENTS},\n{INSTALLED_EVENTS}")));
 }
 
 /// A dir holding a `tarmac` that is a symlink to the binary under test.
