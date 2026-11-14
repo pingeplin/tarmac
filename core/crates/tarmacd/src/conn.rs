@@ -10,7 +10,7 @@ use tracing::{debug, info, warn};
 
 use crate::boards::{BoardId, Boards};
 use crate::state::Daemon;
-use crate::{docs, term};
+use crate::{docs, events, term};
 
 /// `peer_pid` is the client's pid, read at accept; only a cli session uses it.
 pub async fn handle(daemon: Arc<Daemon>, stream: UnixStream, peer_pid: Option<libc::pid_t>) {
@@ -19,13 +19,8 @@ pub async fn handle(daemon: Arc<Daemon>, stream: UnixStream, peer_pid: Option<li
     }
 }
 
-async fn write_msg(
-    w: &mut (impl AsyncWrite + Unpin),
-    msg: &Msg,
-) -> anyhow::Result<()> {
-    let payload = proto::encode(msg)?;
-    frame::write_async(w, &payload).await?;
-    Ok(())
+async fn write_msg(w: &mut (impl AsyncWrite + Unpin), msg: &Msg) -> anyhow::Result<()> {
+    Ok(frame::write_msg_async(w, msg).await?)
 }
 
 async fn reject(w: &mut (impl AsyncWrite + Unpin), msg: String) -> anyhow::Result<()> {
@@ -102,11 +97,28 @@ async fn cli_session(daemon: Arc<Daemon>, mut stream: UnixStream, peer_pid: Opti
                 let done = daemon.set_resume(peer_pid, &term_id, cmd).await;
                 write_msg(&mut stream, &reply(done)).await?;
             }
+            Ok(Msg::Subscribe { kinds, term_id }) => return subscribe(&daemon, stream, kinds, term_id).await,
+            Ok(Msg::TermsList) => write_msg(&mut stream, &Msg::Terms { terms: daemon.terms_list().await }).await?,
             Ok(Msg::Unknown) => debug!("ignoring unknown message type from cli"),
             Ok(other) => debug!("ignoring unexpected cli message: {other:?}"),
             Err(e) => reject(&mut stream, format!("malformed frame: {e}")).await?,
         }
     }
+}
+
+/// The rest of a cli session that sent `subscribe` (spec 2611.0012): `err`,
+/// or the snapshot, `ack` and the live frames, until the client goes.
+async fn subscribe(daemon: &Daemon, mut stream: UnixStream, kinds: Option<Vec<String>>, term_id: Option<String>) -> anyhow::Result<()> {
+    let sub = match events::subscribe(daemon, kinds, term_id).await {
+        Ok(sub) => sub,
+        Err(msg) => return reject(&mut stream, msg).await,
+    };
+    for msg in sub.snapshot.iter().chain([&Msg::Ack]) {
+        write_msg(&mut stream, msg).await?;
+    }
+    let (read, write) = stream.split();
+    events::serve(sub.rx, &sub.filter, read, write).await;
+    Ok(())
 }
 
 /// The answer to a cli `open`, `push`, `report` or `resume`.
@@ -198,9 +210,10 @@ async fn change_and_send_active_board(
     let _ = conn.tx.send(board_list).await;
     let _ = conn.tx.send(restore).await;
     // After the restore: the app reads a doc of a board it has already built
-    // again on a `file_event` only.
+    // again on a `file_event` only. The report replays below are not
+    // changes, and are not published.
     for (path, mtime_ms) in tell {
-        if conn.tx.send(docs::file_event(&path, mtime_ms)).await.is_err() {
+        if conn.tx.send(daemon.published(docs::file_event(&path, mtime_ms))).await.is_err() {
             daemon.boards.lock().await.hold(&active_id, &path);
         }
     }
@@ -434,8 +447,7 @@ async fn spawn_cwd(
     let cwd = match cwd {
         Some(cwd) => cwd,
         None => {
-            let pid = daemon.term(&inherit_cwd_from?).await?.foreground_pid()?;
-            daemon.gate().pid_cwd(pid).await.ok()??
+            daemon.term(&inherit_cwd_from?).await?.foreground_read(daemon.gate()).await?.1?
         }
     };
     let path = PathBuf::from(&cwd);

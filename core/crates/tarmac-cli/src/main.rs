@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use tarmac_protocol::{self as proto, Msg, frame};
 
 mod agents;
+mod events;
 mod help;
 mod hooks;
 mod push;
@@ -14,6 +15,8 @@ mod report;
 mod resume;
 mod settings_file;
 mod skill;
+mod terms;
+mod wait;
 
 /// The one build-config to channel mapping: a debug build is `dev`, a release
 /// build `release`.
@@ -81,6 +84,9 @@ fn run(args: &[String]) -> i32 {
         Some("report") => report::run(&args[1..]),
         Some("resume") => resume::run(&args[1..]),
         Some("hooks") => hooks::run(&args[1..]),
+        Some("terms") => terms::run(&args[1..]),
+        Some("events") => events::run(&args[1..]),
+        Some("wait") => wait::run(&args[1..]),
         Some("open") => match &args[1..] {
             [path] => match open(path) {
                 Ok(line) => {
@@ -163,10 +169,12 @@ fn exchange_until(
 
 /// A time-out worded as `no_answer`; any other failure as a lost connection.
 fn late_or_lost(e: io::Error, no_answer: &str) -> String {
-    match e.kind() {
-        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => no_answer.to_string(),
-        _ => lost(e),
-    }
+    if is_timeout(&e) { no_answer.to_string() } else { lost(e) }
+}
+
+/// A read or write that ran out of time: a socket timeout gives either kind.
+fn is_timeout(e: &io::Error) -> bool {
+    matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut)
 }
 
 /// Gives the next read and write the time left until `until`. With none
@@ -180,7 +188,8 @@ fn time_out_at(stream: &UnixStream, until: Instant) -> io::Result<()> {
     stream.set_write_timeout(Some(left))
 }
 
-/// How long `open`, `push`, `report` and `--version` wait for the daemon.
+/// How long `open`, `push`, `report`, `--version` and the first answer to
+/// `terms`, `events` and `wait` wait for the daemon.
 const DAEMON_WAIT: Duration = Duration::from_secs(5);
 
 fn no_answer(why: &str) -> String {

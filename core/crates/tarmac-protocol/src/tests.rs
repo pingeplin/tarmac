@@ -447,6 +447,52 @@ fn a_bell_and_an_exit_with_no_board_encode_as_before() {
     );
 }
 
+// Spec 2611.0012: the facts for scripts.
+fn subscribe(kinds: Option<&[&str]>, term_id: Option<&str>) -> Msg {
+    Msg::Subscribe { kinds: kinds.map(|k| k.iter().map(|s| s.to_string()).collect()), term_id: term_id.map(str::to_string) }
+}
+
+fn term_info(cwd: Option<&str>, proc: Option<&str>) -> TermInfo {
+    TermInfo { term_id: "t1".into(), board_id: "board-0".into(), cwd: cwd.map(str::to_string), proc: proc.map(str::to_string) }
+}
+
+#[test]
+fn conformance_vector_31_subscribe() {
+    assert_frame(
+        "83 a1 74 a9 73 75 62 73 63 72 69 62 65 a5 6b 69 6e 64 73 92 a4 65 78 69 74 \
+         a6 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74 31",
+        subscribe(Some(&["exit", "report"]), Some("t1")),
+    );
+}
+
+#[test]
+fn conformance_vector_32_subscribe_to_everything() {
+    assert_frame("81 a1 74 a9 73 75 62 73 63 72 69 62 65", subscribe(None, None));
+}
+
+#[test]
+fn conformance_vector_33_terms_list() {
+    assert_frame("81 a1 74 aa 74 65 72 6d 73 5f 6c 69 73 74", Msg::TermsList);
+}
+
+#[test]
+fn conformance_vector_34_terms() {
+    assert_frame(
+        "82 a1 74 a5 74 65 72 6d 73 a5 74 65 72 6d 73 91 84 a7 74 65 72 6d 5f 69 64 a2 74 31 \
+         a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 30 a3 63 77 64 a2 2f 77 a4 70 72 6f 63 a3 7a 73 68",
+        Msg::Terms { terms: vec![term_info(Some("/w"), Some("zsh"))] },
+    );
+}
+
+#[test]
+fn conformance_vector_35_terms_with_no_cwd_or_proc() {
+    assert_frame(
+        "82 a1 74 a5 74 65 72 6d 73 a5 74 65 72 6d 73 91 82 a7 74 65 72 6d 5f 69 64 a2 74 31 \
+         a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 30",
+        Msg::Terms { terms: vec![term_info(None, None)] },
+    );
+}
+
 // Spec 2611.0011: the resume record and its frame.
 fn resume(cmd: Option<&str>) -> Msg {
     Msg::Resume { term_id: "t1".into(), cmd: cmd.map(str::to_string) }

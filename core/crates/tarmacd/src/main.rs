@@ -2,6 +2,7 @@ mod bell_scan;
 mod boards;
 mod conn;
 mod docs;
+mod events;
 #[cfg(test)]
 mod fixtures;
 mod panic_log;

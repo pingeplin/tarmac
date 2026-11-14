@@ -11,7 +11,36 @@ use std::time::{Duration, Instant};
 use tarmac_protocol::{self as proto, Msg};
 
 mod double;
-pub use double::Double;
+pub mod frames;
+pub use double::{Double, Peer};
+
+/// The line of a verb whose daemon does not answer in time.
+pub const NO_ANSWER: &str = "tarmac: no answer from the daemon in 5 s (an older daemon)\n";
+
+/// Reads the `hello` and writes `hello_ok`, `late` after it, then reads the
+/// request. False when the client went away first.
+pub fn handshake(peer: &mut Peer, late: Duration) -> bool {
+    let hello_ok = proto::encode(&hello_ok(None, None, None, None)).unwrap();
+    if peer.read().is_none() {
+        return false;
+    }
+    std::thread::sleep(late);
+    peer.write(&hello_ok) && peer.read().is_some()
+}
+
+/// Exit 2 with the verb's one usage line.
+#[track_caller]
+pub fn assert_usage(out: &Report, verb: &str) {
+    assert_eq!(out.code(), Some(2), "{}", out.stderr);
+    assert!(out.one_stderr_line().starts_with(&format!("tarmac: usage: tarmac {verb}")), "{}", out.stderr);
+}
+
+/// Exit 1 with the no-answer line, no sooner than 5 s after `started`.
+#[track_caller]
+pub fn assert_no_answer(out: &Report, started: Instant) {
+    assert_eq!((out.code(), out.stderr.as_str()), (Some(1), NO_ANSWER));
+    assert!(started.elapsed() >= Duration::from_secs(5), "gave up after {:?}", started.elapsed());
+}
 
 /// What a `OneAnswer` double does with the frame after the hello.
 pub enum Answer {
@@ -29,8 +58,7 @@ pub struct OneAnswer {
 impl OneAnswer {
     pub fn start(answer: Answer) -> Self {
         let double = Double::start("tarmacd.sock", move |peer| {
-            let hello_ok = proto::encode(&hello_ok(None, None, None, None)).unwrap();
-            if peer.read().is_none() || !peer.write(&hello_ok) || peer.read().is_none() {
+            if !handshake(peer, Duration::ZERO) {
                 return;
             }
             match answer {
@@ -61,6 +89,82 @@ impl OneAnswer {
         assert_eq!(rest.len(), 1, "one frame after the hello");
         rest[0].clone()
     }
+}
+
+/// What a `Streamer` double does after the request.
+pub enum Step {
+    Write(Msg),
+    Pause(Duration),
+}
+
+/// What a `Streamer` does once its steps are done.
+pub enum Then {
+    Close,
+    Hold,
+}
+
+/// A daemon double for a verb that sends one request after its hello and
+/// reads frames until it ends: `events`, `wait` and `terms`.
+pub struct Streamer {
+    pub double: Double,
+}
+
+impl Streamer {
+    pub fn start(steps: Vec<Step>, then: Then) -> Self {
+        Streamer::start_late(Duration::ZERO, steps, then)
+    }
+
+    /// `start`, with the `hello_ok` written `late`: a slow handshake.
+    pub fn start_late(late: Duration, steps: Vec<Step>, then: Then) -> Self {
+        let double = Double::start("tarmacd.sock", move |peer| {
+            if !handshake(peer, late) {
+                return;
+            }
+            for step in steps {
+                match step {
+                    Step::Write(msg) => {
+                        if !peer.write(&proto::encode(&msg).unwrap()) {
+                            return;
+                        }
+                    }
+                    Step::Pause(wait) => std::thread::sleep(wait),
+                }
+            }
+            if let Then::Hold = then {
+                peer.hold();
+            }
+        });
+        Streamer { double }
+    }
+
+    /// Writes `frames`, then closes.
+    pub fn writing(frames: Vec<Msg>) -> Self {
+        Streamer::start(frames.into_iter().map(Step::Write).collect(), Then::Close)
+    }
+
+    pub fn run(&self, args: &[&str]) -> Report {
+        Report::of(tarmac_at(&self.double.sock).args(args))
+    }
+
+    /// The request after the `hello`, decoded, and its raw payload. Read
+    /// with no join: a double that holds keeps its thread to its drop, and
+    /// the request was read before any frame the cli got.
+    pub fn request(&self) -> (Msg, Vec<u8>) {
+        let frames = self.double.received.lock().unwrap().clone();
+        let raw = frames.get(1).expect("a request after the hello").clone();
+        (proto::decode(&raw).unwrap(), raw)
+    }
+}
+
+/// True when nothing reached the double: no hello, so no connection.
+pub fn untouched(double: &Double) -> bool {
+    double.received.lock().unwrap().is_empty()
+}
+
+/// `cmd` started with its stdout and stderr piped, for a test that acts while
+/// it runs; through the same lock as every other spawn (#190).
+pub fn start(cmd: &mut Command) -> Child {
+    spawn(cmd, Stdio::null())
 }
 
 pub fn hello_ok(

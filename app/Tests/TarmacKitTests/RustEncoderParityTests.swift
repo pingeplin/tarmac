@@ -301,6 +301,42 @@ final class RustEncoderParityTests: XCTestCase {
         )
     }
 
+    /// 2611.0012 S15. The spec's vectors 31 to 35, captured by `tarmac-protocol`'s
+    /// own vector tests.
+    func testTheFactsForScripts() {
+        // Msg::Subscribe { kinds: Some(["exit", "report"]), term_id: Some("t1") } — conformance vector 31.
+        assertParity(
+            .subscribe(kinds: ["exit", "report"], termID: "t1"),
+            """
+            83 a1 74 a9 73 75 62 73 63 72 69 62 65 a5 6b 69 6e 64 73 92 a4 65 78 69
+            74 a6 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74 31
+            """
+        )
+        // Msg::Subscribe { kinds: None, term_id: None } — conformance vector 32.
+        assertParity(.subscribe(kinds: nil, termID: nil), "81 a1 74 a9 73 75 62 73 63 72 69 62 65")
+        // Msg::TermsList — conformance vector 33.
+        assertParity(.termsList, "81 a1 74 aa 74 65 72 6d 73 5f 6c 69 73 74")
+        // Msg::Terms { terms: [TermInfo { term_id: "t1", board_id: "board-0", cwd: Some("/w"),
+        //   proc: Some("zsh") }] } — conformance vector 34.
+        assertParity(
+            .terms([TermInfo(termID: "t1", boardID: "board-0", cwd: "/w", proc: "zsh")]),
+            """
+            82 a1 74 a5 74 65 72 6d 73 a5 74 65 72 6d 73 91 84 a7 74 65 72 6d 5f 69
+            64 a2 74 31 a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 30 a3 63 77
+            64 a2 2f 77 a4 70 72 6f 63 a3 7a 73 68
+            """
+        )
+        // Msg::Terms { terms: [TermInfo { term_id: "t1", board_id: "board-0", cwd: None, proc: None }] }
+        //   — conformance vector 35.
+        assertParity(
+            .terms([TermInfo(termID: "t1", boardID: "board-0")]),
+            """
+            82 a1 74 a5 74 65 72 6d 73 a5 74 65 72 6d 73 91 82 a7 74 65 72 6d 5f 69
+            64 a2 74 31 a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 30
+            """
+        )
+    }
+
     /// The daemon's `BTreeMap` writes the records in key order, whatever order
     /// they were made in; the Rust capture is `term_records_are_written_in_key_order`.
     func testTermRecordsAreWrittenInKeyOrder() {

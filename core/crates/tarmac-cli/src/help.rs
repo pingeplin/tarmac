@@ -99,6 +99,12 @@ USAGE:
     tarmac resume set \"<command>\"
     tarmac resume clear
                             offer a command in this terminal after a restart
+    tarmac terms            list the live terminals, one JSON line each
+    tarmac events [--term ID] [--kind exit,bell,changed,report]
+                            print the daemon's facts as JSON lines
+    tarmac wait --exit ID | --bell ID | --report blocked|done --term ID
+    tarmac wait --changed PATH [--settle MS]
+                            wait for one fact; each takes [--timeout MS]
     tarmac --version        report the cli, daemon, and app versions
     tarmac skill            print the agent-facing Tarmac guide
     tarmac skill install    install a SKILL.md that points coding agents at it
@@ -136,6 +142,32 @@ the process that set it runs. If the daemon restarts first, the card offers the
 command in its folder, and runs it only when you press Return. `clear` removes
 it. It prints nothing on success.
 
+`tarmac terms` prints one JSON line for each live terminal, in board order,
+then by id as text (`t10` before `t2`):
+{\"term\":\"t1\",\"board\":\"board-0\",\"cwd\":\"/w\",\"proc\":\"zsh\"}. `cwd` and `proc` are
+the daemon's fresh reads of the foreground process, left out when it could not
+read them. It is how a script outside a terminal names one.
+
+`tarmac events` prints a JSON line for each exit, bell, doc change and report,
+as the daemon tells the app, until it is killed or the daemon goes (exit 1):
+{\"event\":\"exit\",\"term\":\"t1\",\"code\":3,\"received_ms\":...}. `--term` keeps one
+terminal and `--kind` some kinds; `--term` alone gives no `changed` events,
+since a doc change has no terminal, and `--term` with `--kind changed` is a
+usage error. `changed` covers the open docs of the active board and their data
+files, and can repeat an `mtime_ms`. With `--term`, the terminal's current
+report and its exit, if it has ended, come first, marked \"snapshot\":true. A
+report that ends at its terminal's exit has no report line: take `exit` too.
+
+`tarmac wait` blocks until one fact. `--exit ID` prints {\"code\":N} or
+{\"signal\":true}, at once for one of the last 64 terminals that ended.
+`--bell ID` prints nothing. `--report KIND --term ID` prints the report, and
+takes a current one at once, read or unread: a loop compares `at_ms`. A bell or
+report wait whose terminal exits first exits 1. `--changed PATH` never talks
+to the daemon: it stats PATH every 100 ms for 2 s, then every 250 ms, and ends
+at the first change after its start, or once --settle MS pass with none; it
+prints {\"deleted\":false} or {\"deleted\":true}. --timeout MS counts from the
+start and exits 124; pass it in an unattended script.
+
 `tarmac hooks install` merges four hooks into Claude Code's settings
 (Notification, Stop, UserPromptSubmit, SessionStart), each a call to
 `tarmac hooks run claude || true` with a 5 s timeout, so a permission prompt
@@ -172,10 +204,13 @@ EXIT STATUS:
     0  success; also `tarmac --version` with no daemon running
     1  the daemon refused an open, a push or a report (with -, any line),
        or a resume, no daemon is running, `report` or `resume` ran outside a
-       Tarmac terminal, an install failed, `hooks install` or `hooks
+       Tarmac terminal, `terms`, `events` or `wait` was refused or lost the
+       daemon, a bell or report wait saw its terminal exit, `wait --changed`
+       could not stat its path, an install failed, `hooks install` or `hooks
        uninstall` refused a settings file, or `hooks status` found one
        unreadable
     2  usage error
+  124  tarmac wait timed out
 `tarmac hooks run` always exits 0, so that a hook never blocks Claude.
 ";
 

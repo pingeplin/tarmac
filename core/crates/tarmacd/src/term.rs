@@ -12,6 +12,7 @@ use tracing::debug;
 use crate::bell_scan::BellScan;
 use crate::boards::BoardId;
 use crate::proc;
+use crate::reader::PathGate;
 use crate::reports::Holder;
 use crate::resume::Flag;
 use crate::state::Daemon;
@@ -178,6 +179,14 @@ impl TermHandle {
     /// whose cwd a new terminal inherits. A poisoned lock yields `None`.
     pub fn foreground_pid(&self) -> Option<libc::pid_t> {
         self.master.lock().ok()?.process_group_leader()
+    }
+
+    /// The foreground pid and its cwd, read on `gate`: a cwd on a volume
+    /// that is gone does not answer. The cwd is `None` when the read is out
+    /// or gives nothing.
+    pub async fn foreground_read(&self, gate: &PathGate) -> Option<(libc::pid_t, Option<String>)> {
+        let pid = self.foreground_pid()?;
+        Some((pid, gate.pid_cwd(pid).await.ok().flatten()))
     }
 }
 
@@ -374,7 +383,7 @@ async fn forward_chunk(
     daemon.push(Msg::Output { term_id: term_id.to_owned(), bytes: chunk }).await;
     if bell {
         let board_id = daemon.term_boards.lock().await.get(term_id).cloned();
-        daemon.push(Msg::Bell { term_id: term_id.to_owned(), board_id }).await;
+        daemon.emit(Msg::Bell { term_id: term_id.to_owned(), board_id }).await;
     }
 }
 
@@ -416,7 +425,7 @@ async fn pump(
     let code = exit_code.flatten();
     debug!("term {term_id} exited with {code:?}");
     let board_id = daemon.term_ended(&term_id, code).await;
-    daemon.push(Msg::Exit { term_id, code, board_id }).await;
+    daemon.emit(Msg::Exit { term_id, code, board_id }).await;
     // The exited pty lowered its board's running count; re-push so a switcher
     // row, even for a board the app has not rebuilt, drops it.
     daemon.push(daemon.board_list_msg().await).await;

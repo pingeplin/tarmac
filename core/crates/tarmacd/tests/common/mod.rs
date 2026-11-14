@@ -10,7 +10,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use tarmac_protocol::{self as proto, BoardMeta, BoardViewport, DocEntry, Msg, TermRecord, Tile, frame};
+use tarmac_protocol::{self as proto, BoardMeta, BoardViewport, DocEntry, Msg, TermInfo, TermRecord, Tile, frame};
 
 pub const LONG: Duration = Duration::from_secs(20);
 
@@ -383,6 +383,24 @@ impl Conn {
         cli.recv(Instant::now() + LONG, "the answer to a resume")
     }
 
+    /// A cli `subscribe` on this connection (spec 2611.0012): the frames
+    /// before `ack`. An `err`, or no `ack` in 5 s, fails the test.
+    pub fn subscribe(&mut self, kinds: Option<&[&str]>, term_id: Option<&str>) -> Vec<Msg> {
+        self.send(&Msg::Subscribe {
+            kinds: kinds.map(|k| k.iter().map(|s| s.to_string()).collect()),
+            term_id: term_id.map(str::to_string),
+        });
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut snapshot = Vec::new();
+        loop {
+            match self.recv(deadline, "the ack of a subscribe") {
+                Msg::Ack => return snapshot,
+                Msg::Err { msg } => panic!("the subscribe was refused: {msg}"),
+                msg => snapshot.push(msg),
+            }
+        }
+    }
+
     pub fn recv_report_for(&mut self, term_id: &str) -> Msg {
         self.recv_until(&format!("term_report for {term_id}"), |m| is_report_for(m, term_id))
     }
@@ -675,6 +693,18 @@ pub fn write_doc(path: &Path, content: &str) -> String {
     std::fs::canonicalize(path).unwrap().to_string_lossy().into_owned()
 }
 
+pub fn is_term_proc_for(msg: &Msg, want: &str) -> bool {
+    matches!(msg, Msg::TermProc { term_id, .. } if term_id == want)
+}
+
+pub fn is_exit_for(msg: &Msg, want: &str) -> bool {
+    matches!(msg, Msg::Exit { term_id, .. } if term_id == want)
+}
+
+pub fn is_bell_for(msg: &Msg, want: &str) -> bool {
+    matches!(msg, Msg::Bell { term_id, .. } if term_id == want)
+}
+
 pub fn is_file_event_for(msg: &Msg, want: &str) -> bool {
     matches!(msg, Msg::FileEvent { path, .. } if path == want)
 }
@@ -742,6 +772,23 @@ pub fn dock_index(v: &serde_json::Value, board: usize, path: &str) -> Option<usi
         .as_array()?
         .iter()
         .position(|e| e["path"] == serde_json::json!(path))
+}
+
+/// A cli connection subscribed with `kinds` and `term_id`, and its snapshot.
+pub fn subscriber(sock: &Path, kinds: Option<&[&str]>, term_id: Option<&str>) -> (Conn, Vec<Msg>) {
+    let mut cli = Conn::hello(sock, "cli");
+    let snapshot = cli.subscribe(kinds, term_id);
+    (cli, snapshot)
+}
+
+/// The daemon's answer to a cli `terms_list`.
+pub fn cli_terms(sock: &Path) -> Vec<TermInfo> {
+    let mut cli = Conn::hello(sock, "cli");
+    cli.send(&Msg::TermsList);
+    match cli.recv(Instant::now() + LONG, "terms") {
+        Msg::Terms { terms } => terms,
+        other => panic!("expected terms, got {other:?}"),
+    }
 }
 
 pub fn cli_open(sock: &Path, path: &str) {

@@ -291,7 +291,7 @@ pub fn file_event(path: &Path, mtime_ms: u64) -> Msg {
 /// Pushes the `file_event`, and holds the doc when it reached no app. `board`
 /// is the board the change was taken for, which need not be active any more.
 pub async fn push_file_event(daemon: &Daemon, board: &str, path: &Path, mtime_ms: u64) {
-    if !daemon.push(file_event(path, mtime_ms)).await {
+    if !daemon.emit(file_event(path, mtime_ms)).await {
         daemon.boards.lock().await.hold(board, path);
     }
 }
@@ -371,7 +371,7 @@ pub async fn record_data(daemon: &Daemon, board: &str, doc: &Path, data: Option<
     daemon.release_data_dir(&not_held);
     let Some(told) = told else { return false };
     if let (Some(data), Some(mtime_ms)) = (&data, told) {
-        daemon.push(file_event(data, mtime_ms)).await;
+        daemon.emit(file_event(data, mtime_ms)).await;
     }
     if watched {
         report_changes(daemon).await;

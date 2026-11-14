@@ -257,6 +257,22 @@ pub enum Msg {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cmd: Option<String>,
     },
+    /// cli -> daemon (spec 2611.0012): the daemon's facts for a script. The
+    /// reply is `err`, or the snapshot frames, `ack`, then the live `exit`,
+    /// `bell`, `file_event` and `term_report` frames that pass the filter.
+    /// `kinds` names `exit`, `bell`, `changed` or `report`; missing is all.
+    Subscribe {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        kinds: Option<Vec<String>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        term_id: Option<String>,
+    },
+    /// cli -> daemon: the live terminals; answered `terms` or `err`.
+    TermsList,
+    /// Daemon -> cli: one row per live terminal, in board order, then by id.
+    Terms {
+        terms: Vec<TermInfo>,
+    },
     /// A receiver ignores message types it does not know instead of failing.
     #[serde(other)]
     Unknown,
@@ -273,6 +289,57 @@ pub struct BoardMeta {
     /// it never opened. Missing => unknown, which is distinct from `Some(0)`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub running: Option<u32>,
+}
+
+/// The kinds of frame a `subscribe` names (spec 2611.0012), by the cli's
+/// names on the wire in `kinds`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum EventKind {
+    Exit,
+    Bell,
+    Changed,
+    Report,
+}
+
+impl EventKind {
+    pub const ALL: [EventKind; 4] = [EventKind::Exit, EventKind::Bell, EventKind::Changed, EventKind::Report];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            EventKind::Exit => "exit",
+            EventKind::Bell => "bell",
+            EventKind::Changed => "changed",
+            EventKind::Report => "report",
+        }
+    }
+
+    pub fn named(name: &str) -> Option<EventKind> {
+        EventKind::ALL.into_iter().find(|k| k.name() == name)
+    }
+
+    /// The kind of an event frame and its terminal, `None` for any other
+    /// frame. A `file_event` has no terminal.
+    pub fn of(msg: &Msg) -> Option<(EventKind, Option<&str>)> {
+        match msg {
+            Msg::Exit { term_id, .. } => Some((EventKind::Exit, Some(term_id))),
+            Msg::Bell { term_id, .. } => Some((EventKind::Bell, Some(term_id))),
+            Msg::FileEvent { .. } => Some((EventKind::Changed, None)),
+            Msg::TermReport { term_id, .. } => Some((EventKind::Report, Some(term_id))),
+            _ => None,
+        }
+    }
+}
+
+/// One live terminal in `terms`. `cwd` and `proc` are the daemon's fresh reads,
+/// missing when it could not read them.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct TermInfo {
+    pub term_id: String,
+    pub board_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proc: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]

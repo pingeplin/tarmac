@@ -51,6 +51,22 @@ public struct TermRecord: Equatable, Sendable {
     }
 }
 
+/// 2611.0012: one live terminal in `terms`. `cwd` and `proc` are the
+/// daemon's fresh reads; missing when it could not read them.
+public struct TermInfo: Equatable, Sendable {
+    public var termID: String
+    public var boardID: String
+    public var cwd: String?
+    public var proc: String?
+
+    public init(termID: String, boardID: String, cwd: String? = nil, proc: String? = nil) {
+        self.termID = termID
+        self.boardID = boardID
+        self.cwd = cwd
+        self.proc = proc
+    }
+}
+
 public struct ResumeRecord: Equatable, Sendable {
     public var cmd: String
 
@@ -263,6 +279,13 @@ public enum Message: Equatable, Sendable {
     /// 2611.0011 (cli → daemon): a terminal's resume command; nil clears it.
     /// The app never sends one.
     case resume(termID: String, cmd: String?)
+    /// 2611.0012 (cli → daemon): the daemon's facts for a script, filtered by
+    /// kind and terminal; nil is no filter. The app never sends one.
+    case subscribe(kinds: [String]?, termID: String?)
+    /// 2611.0012 (cli → daemon): the live terminals. The app never sends one.
+    case termsList
+    /// 2611.0012 (daemon → cli): the answer to `termsList`. The app never gets one.
+    case terms([TermInfo])
     /// issue #41: `scrollbackRequest` (app → daemon) asks for one terminal's
     /// scrollback ring; the daemon answers with exactly one `scrollback`, always —
     /// empty bytes for a silent or unknown terminal.
@@ -450,6 +473,12 @@ public extension Message {
             )
         case "resume":
             return .resume(termID: try req("term_id", \.stringValue), cmd: try opt("cmd", \.stringValue))
+        case "subscribe":
+            return .subscribe(kinds: try opt("kinds", Self.stringArray), termID: try opt("term_id", \.stringValue))
+        case "terms_list":
+            return .termsList
+        case "terms":
+            return .terms(try req("terms", \.arrayValue).map(Self.termInfo(from:)))
         case "scrollback_request":
             return .scrollbackRequest(termID: try req("term_id", \.stringValue))
         case "scrollback":
@@ -470,6 +499,13 @@ public extension Message {
         guard let raw = m[key], !raw.isNil else { return nil }
         guard let value = raw.stringValue else { throw MessageError.badField(key) }
         return value
+    }
+
+    private static func termInfo(from raw: MsgPackValue) throws -> TermInfo {
+        guard let m = raw.mapValue else { throw MessageError.badField("terms") }
+        guard let termID = try optString(m, "term_id") else { throw MessageError.missingField("terms.term_id") }
+        guard let boardID = try optString(m, "board_id") else { throw MessageError.missingField("terms.board_id") }
+        return TermInfo(termID: termID, boardID: boardID, cwd: try optString(m, "cwd"), proc: try optString(m, "proc"))
     }
 
     private static func resumeRecord(_ raw: MsgPackValue?) throws -> ResumeRecord? {
@@ -629,6 +665,15 @@ public extension Message {
                 $0.put("term_id", .string(termID))
                 $0.put("cmd", unlessNil: cmd.map(MsgPackValue.string))
             }
+        case .subscribe(let kinds, let termID):
+            return Self.tagged("subscribe") {
+                $0.put("kinds", unlessNil: kinds.map(Self.stringArrayValue))
+                $0.put("term_id", unlessNil: termID.map(MsgPackValue.string))
+            }
+        case .termsList:
+            return Self.tagged("terms_list")
+        case .terms(let terms):
+            return Self.tagged("terms") { $0.put("terms", .array(terms.map(Self.termInfoValue))) }
         case .input(let termID, let bytes, let typed):
             return Self.tagged("input") {
                 $0.put("term_id", .string(termID))
@@ -772,6 +817,15 @@ public extension Message {
             m.put("resume", unlessNil: record.resume.map { .orderedMap([MsgPackField("cmd", .string($0.cmd))]) })
             return MsgPackField(id, .orderedMap(m.fields))
         })
+    }
+
+    private static func termInfoValue(_ info: TermInfo) -> MsgPackValue {
+        var m = WireFields()
+        m.put("term_id", .string(info.termID))
+        m.put("board_id", .string(info.boardID))
+        m.put("cwd", unlessNil: info.cwd.map(MsgPackValue.string))
+        m.put("proc", unlessNil: info.proc.map(MsgPackValue.string))
+        return .orderedMap(m.fields)
     }
 
     private static func boardValue(_ board: BoardViewport) -> MsgPackValue {

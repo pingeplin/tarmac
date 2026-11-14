@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use tarmac_protocol::{DocEntry, Msg, ResumeRecord, TermRecord};
+use tarmac_protocol::{DocEntry, Msg, ResumeRecord, TermInfo, TermRecord};
 use tokio::sync::{Mutex, Notify, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
@@ -71,6 +71,12 @@ pub struct Daemon {
     /// before `app` (in `push`); `boards` and `terms` are never taken while
     /// it is held.
     pub reports: Mutex<Reports>,
+    /// The `exit`, `bell`, `file_event` and `term_report` frames the app is
+    /// given, for `tarmac events` and `wait` (`published`).
+    pub events: crate::events::Fanout,
+    /// Written in `term_ended` before the term leaves `terms`, so an id is
+    /// always live, in the ring, or unknown. Held for a read or a write only.
+    pub exits: std::sync::Mutex<crate::events::ExitRing>,
     doc_counts: Arc<DocCounts>,
     watcher: Watcher,
     /// Set by the watcher; `docs::watch_loop` waits on it.
@@ -160,6 +166,8 @@ impl Daemon {
             terms: Mutex::new(HashMap::new()),
             term_boards: Mutex::new(HashMap::new()),
             reports: Mutex::new(Reports::default()),
+            events: crate::events::Fanout::new(crate::events::EVENTS_CAPACITY),
+            exits: std::sync::Mutex::default(),
             doc_counts,
             watcher,
             wake,
@@ -518,7 +526,10 @@ impl Daemon {
     /// keeps only once the shutdown has begun (spec 2611.0011, D3, D4).
     /// Returns the board the terminal was filed under, read as its entry goes:
     /// after this the daemon no longer knows it (spec 2611.0013).
+    /// The exit is recorded first (spec 2611.0012, D4): a subscriber then
+    /// finds the id live or in the ring, never neither.
     pub async fn term_ended(&self, term_id: &str, code: Option<i64>) -> Option<BoardId> {
+        self.exits.lock().expect("exits lock").record(term_id, code);
         if self.terms.lock().await.remove(term_id).is_none() {
             tracing::warn!("term {term_id} missing from registry at exit");
         }
@@ -706,7 +717,7 @@ impl Daemon {
         let msg = change(&mut reports);
         handle.set_report(reports.has(term_id), reports.unread(term_id));
         if let Some(msg) = msg {
-            self.push(msg).await;
+            self.emit(msg).await;
         }
     }
 
@@ -719,6 +730,38 @@ impl Daemon {
     pub async fn board_list_msg(&self) -> Msg {
         let live = self.live_terms_by_board().await;
         self.boards.lock().await.board_list_msg(&live)
+    }
+
+    /// The live terminals for `tarmac terms` (spec 2611.0012), in board
+    /// order, then by id. Each one's process name and cwd are read at the same
+    /// time, the cwd on the gate, so the list takes about one gate limit, not
+    /// one for each terminal. No lock is held while they are read.
+    pub async fn terms_list(&self) -> Vec<TermInfo> {
+        let by_board = self.live_terms_by_board().await;
+        let live: Vec<(String, BoardId, Arc<TermHandle>)> = {
+            let terms = self.terms.lock().await;
+            by_board
+                .into_iter()
+                .flat_map(|(board_id, ids)| ids.into_iter().map(move |term_id| (term_id, board_id.clone())))
+                .filter_map(|(term_id, board_id)| Some((term_id.clone(), board_id, terms.get(&term_id)?.clone())))
+                .collect()
+        };
+        let mut reads = tokio::task::JoinSet::new();
+        for (term_id, board_id, handle) in live {
+            let gate = self.gate.clone();
+            reads.spawn(async move {
+                let (pid, cwd) = handle.foreground_read(&gate).await.unzip();
+                TermInfo { term_id, board_id, cwd: cwd.flatten(), proc: pid.and_then(proc::process_name) }
+            });
+        }
+        let mut rows = Vec::new();
+        while let Some(read) = reads.join_next().await {
+            rows.extend(read.ok());
+        }
+        let order: Vec<BoardId> = self.boards.lock().await.iter().map(|b| b.id.clone()).collect();
+        // Ids sort as text, so `t10` comes before `t2`.
+        rows.sort_by_cached_key(|row| (order.iter().position(|b| *b == row.board_id).unwrap_or(usize::MAX), row.term_id.clone()));
+        rows
     }
 
     /// The live term_ids per board (term_boards ∩ terms: an entry only counts
@@ -739,6 +782,19 @@ impl Daemon {
 
     /// Pushes to the connected app. False when there is none, or it went
     /// away: the frame is dropped.
+    /// `msg`, published to the subscribers first (spec 2611.0012): every
+    /// event frame for the app passes here, whatever channel then sends it.
+    pub fn published(&self, msg: Msg) -> Msg {
+        self.events.publish(&msg);
+        msg
+    }
+
+    /// An event frame, published and then pushed. The return is `push`'s: a
+    /// subscriber is not an app.
+    pub async fn emit(&self, msg: Msg) -> bool {
+        self.push(self.published(msg)).await
+    }
+
     pub async fn push(&self, msg: Msg) -> bool {
         let tx = self.app.lock().await.as_ref().map(|s| s.tx.clone());
         match tx {
