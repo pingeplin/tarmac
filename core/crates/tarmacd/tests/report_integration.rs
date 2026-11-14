@@ -443,15 +443,35 @@ fn s11_a_report_frame_carries_its_board_and_folder_and_a_removal_neither() {
     assert_eq!(place(&removal), (None, None));
 }
 
-/// Board-0 shown with a shell A; board-1 with shells T and U, where T has a
-/// report the test marked read. The app connection is closed.
-fn two_boards_with_a_read_report(daemon: &TestDaemon) -> Seen {
+// S11, with the terminal's board in the background: the place is its own
+// board's, not the shown one's.
+#[test]
+fn s11_a_background_terminals_report_carries_its_own_board_and_folder() {
+    let daemon = TestDaemon::start();
+    let dir = canon_dir(&common::temp_dir().join("api"));
     let mut app = daemon.connect_app_drained();
     app.create_board("board-1");
-    for t in ["T", "U"] {
-        app.spawn_term_with(t, JOB_SHELL, Spawn::on_board("board-1"));
-        app.recv_output_containing(t, "%");
-    }
+    app.spawn_term_with("T", JOB_SHELL, Spawn { cwd: Some(dir.clone()), ..Spawn::on_board("board-1") });
+    app.recv_output_containing("T", "%");
+    let mut app = probe_until_cwd(&daemon, "T", &dir);
+    app.switch_to("board-0");
+
+    assert_ack(Conn::cli_report(&daemon.sock, "T", "blocked", None));
+    let frame = app.recv_until("T's report", |m| has_kind_for(m, "T"));
+    assert_eq!(place(&frame), (Some("board-1".into()), Some(dir)));
+}
+
+/// Board-0 shown with a shell A; board-1 with shells T, in `dir` and its
+/// folder recorded, and U, where T has a report the test marked read. The app
+/// connection is closed.
+fn two_boards_with_a_read_report(daemon: &TestDaemon, dir: &str) -> Seen {
+    let mut app = daemon.connect_app_drained();
+    app.create_board("board-1");
+    app.spawn_term_with("T", JOB_SHELL, Spawn { cwd: Some(dir.into()), ..Spawn::on_board("board-1") });
+    app.recv_output_containing("T", "%");
+    let mut app = probe_until_cwd(daemon, "T", dir);
+    app.spawn_term_with("U", JOB_SHELL, Spawn::on_board("board-1"));
+    app.recv_output_containing("U", "%");
     app.switch_to("board-0");
     app.spawn_term_with("A", JOB_SHELL, Spawn::on_board("board-0"));
     app.recv_output_containing("A", "%");
@@ -467,7 +487,8 @@ fn two_boards_with_a_read_report(daemon: &TestDaemon) -> Seen {
 #[test]
 fn s12_s13_a_new_connection_gets_other_boards_reports_once_after_its_first_restore() {
     let daemon = TestDaemon::start();
-    let first = two_boards_with_a_read_report(&daemon);
+    let dir = canon_dir(&common::temp_dir().join("api"));
+    let first = two_boards_with_a_read_report(&daemon, &dir);
 
     let mut app = daemon.connect_app();
     let mut log = FrameLog::default();
@@ -480,7 +501,7 @@ fn s12_s13_a_new_connection_gets_other_boards_reports_once_after_its_first_resto
     assert!(is_removal_for(&log.0[a[0]].msg, "A"));
     assert_eq!(t.len(), 1, "one frame for T");
     assert_eq!(seen(&log.0[t[0]].msg), Seen { read: true, ..first });
-    assert_eq!(place(&log.0[t[0]].msg).0.as_deref(), Some("board-1"));
+    assert_eq!(place(&log.0[t[0]].msg), (Some("board-1".into()), Some(dir.clone())));
     assert!(log.reports_for("U", 0).is_empty(), "U has no report and gets no frame");
     let first_output = (restore..log.len()).find(|&i| matches!(log.0[i].msg, Msg::Output { .. })).unwrap();
     for i in [a[0], t[0]] {

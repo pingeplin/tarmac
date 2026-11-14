@@ -234,6 +234,7 @@ final class KeyLadderTests: XCTestCase {
         }
         XCTAssertEqual(KeyLadder.decide(letter("k", command), open), .toggleSwitcher)
         XCTAssertEqual(KeyLadder.decide(letter("w", command), open), .closeSelectedCard)
+        XCTAssertEqual(KeyLadder.decide(letter("t", command), open), .inboxKey)
     }
 
     func testS7PlainReturnWithTheInboxOpenIsTheInboxsNotAFlight() {

@@ -631,8 +631,6 @@ pub fn no_err_frame(conn: &mut Conn) -> bool {
     matches!(answer, Msg::Scrollback { .. })
 }
 
-/// `path`, made, as `pid_cwd` and `pwd -P` give it (a temp dir under `/var`
-/// is `/private/var`).
 /// Probes until the active board's restore satisfies `done`, to `deadline`;
 /// the newest connection.
 pub fn probe_until(daemon: &TestDaemon, what: &str, deadline: Instant, done: impl Fn(&Restore) -> bool) -> Conn {
@@ -651,6 +649,8 @@ pub fn probe_until_cwd(daemon: &TestDaemon, term_id: &str, want: &str) -> Conn {
     probe_until(daemon, &format!("{term_id} in {want}"), Instant::now() + LONG, |r| r.last_cwd(term_id) == Some(want))
 }
 
+/// `path`, made, as `pid_cwd` and `pwd -P` give it (a temp dir under `/var`
+/// is `/private/var`).
 pub fn canon_dir(path: &Path) -> String {
     std::fs::create_dir_all(path).unwrap();
     std::fs::canonicalize(path).unwrap().to_string_lossy().into_owned()

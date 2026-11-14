@@ -34,6 +34,11 @@ final class OffscreenHintLayoutTests: XCTestCase {
         XCTAssertNil(signal(live: false))
     }
 
+    func testS24ABellOutranksAnExitAndABlockedReportOutranksBoth() {
+        XCTAssertEqual(signal(bell: true, exit: true, live: false), .bell)
+        XCTAssertEqual(signal(report(.blocked), exit: true, live: false), .blocked)
+    }
+
     func testS24TheRankIsBlockedBellExitDoneLive() {
         let order: [Layout.Signal] = [.live, .done, .exit, .bell, .blocked]
         XCTAssertEqual(order.map(Layout.rank), [0, 1, 2, 3, 4])
@@ -82,6 +87,17 @@ final class OffscreenHintLayoutTests: XCTestCase {
         let exactly24 = "abcdefghijklmnopqrstuvwx"
         XCTAssertEqual(
             Layout.pillLabel(signal: .done, name: "claude", hhmm: "14:32", quote: exactly24), "claude · “\(exactly24)”"
+        )
+    }
+
+    /// Cut by Unicode scalars, not by characters: 13 decomposed `é` are 26
+    /// scalars, so the pill keeps 23 of them.
+    func testS25TheQuoteIsCutByUnicodeScalars() {
+        let text = String(repeating: "e\u{301}", count: 13)
+        let kept = String(repeating: "e\u{301}", count: 11) + "e"
+        XCTAssertEqual(
+            Layout.pillLabel(signal: .blocked, name: "claude", hhmm: "14:32", quote: text).unicodeScalars.map(\.value),
+            "claude · “\(kept)…”".unicodeScalars.map(\.value)
         )
     }
 
