@@ -144,6 +144,33 @@ fn a_command_records_the_cwd_with_no_shutdown() {
     probe_until_cwd(&daemon, "T", &b);
 }
 
+// S1: a new pid with the same name is read too.
+#[test]
+fn a_new_pid_with_the_same_name_records_the_cwd() {
+    let daemon = TestDaemon::start();
+    let (a, b, c) = (
+        canon_dir(&daemon.dir.join("a")),
+        canon_dir(&daemon.dir.join("b")),
+        canon_dir(&daemon.dir.join("c")),
+    );
+    let (mut app, first) = job_shell_recorded(&daemon, &a);
+
+    input(&mut app, "T", &format!("cd '{b}' && sleep 2 && cd '{c}' && sleep 30"));
+    let pid = proc_pid(&mut app, "T", "the first sleep's term_proc", |name, _| name == "sleep");
+    assert_ne!(pid, first, "the shell gave the sleep no process group of its own");
+
+    // The second sleep runs 30 s, so only a read at its own pid shows c.
+    let deadline = Instant::now() + Duration::from_secs(12);
+    loop {
+        let (_app, restore) = probe(&daemon);
+        if last_cwd(&restore, "T").as_deref() == Some(c.as_str()) {
+            break;
+        }
+        assert!(Instant::now() < deadline, "the second sleep's cwd was never recorded: {:?}", restore.term_records);
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
 // S7
 #[test]
 fn a_cwd_change_does_not_save() {
@@ -402,6 +429,21 @@ fn a_failed_spawn_moves_nothing() {
     assert_eq!(err, Msg::Err { msg: "term_id already in use: X".into() });
     let (_app, restore) = probe(&daemon);
     assert_eq!(last_cwd(&restore, "T").as_deref(), Some("/seeded"));
+}
+
+// S16: a spawn that fails after its id was found free moves nothing.
+#[test]
+fn a_spawn_that_cannot_exec_moves_nothing() {
+    let daemon = TestDaemon::start_seeded(&seeded(json!({"T": {"last_cwd": "/seeded"}})));
+    let mut app = daemon.connect_app_drained();
+
+    spawn(&mut app, "X", &["/nonexistent/tarmac-no-such-shell".to_string()], Spawn { succeeds: Some("T".into()), ..Default::default() });
+
+    let err = app.recv_until("err", |m| matches!(m, Msg::Err { .. }));
+    assert!(matches!(&err, Msg::Err { msg } if msg.starts_with("spawn failed")), "{err:?}");
+    let (_app, restore) = probe(&daemon);
+    assert_eq!(last_cwd(&restore, "T").as_deref(), Some("/seeded"));
+    assert!(!restore.term_records.contains_key("X"), "{:?}", restore.term_records);
 }
 
 // S20

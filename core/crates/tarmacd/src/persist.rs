@@ -334,6 +334,22 @@ mod tests {
         assert_eq!(boards.active_id(), "board-0");
     }
 
+    // 2611.0007: no save_loop write lands after the final save, which shares
+    // its temp file.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn no_write_follows_the_final_save() {
+        let path = tmp_state("final-save");
+        let daemon = Daemon::new(path.clone()).await.unwrap();
+        final_save(&daemon).await;
+        let kept = std::fs::read(&path).unwrap();
+
+        daemon.boards.lock().await.rename(DEFAULT_BOARD_ID, Some("renamed".into()));
+        daemon.mark_dirty();
+        tokio::time::sleep(SAVE_DEBOUNCE * 3).await;
+
+        assert_eq!(std::fs::read(&path).unwrap(), kept);
+    }
+
     // Missing or corrupt files are never fatal: a single default board-0.
     #[test]
     fn missing_and_corrupt_files_yield_default_board() {

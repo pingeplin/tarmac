@@ -74,7 +74,7 @@ pub struct Daemon {
     next_generation: AtomicU64,
     dirty: Notify,
     /// Held by each state write; true once the final one is written.
-    pub saves_stopped: Mutex<bool>,
+    pub(crate) saves_stopped: Mutex<bool>,
     state_path: PathBuf,
 }
 

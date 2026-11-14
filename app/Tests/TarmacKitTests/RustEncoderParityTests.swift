@@ -189,6 +189,21 @@ final class RustEncoderParityTests: XCTestCase {
         )
     }
 
+    /// The daemon's `BTreeMap` writes the records in key order, whatever order
+    /// they were made in; the Rust capture is `term_records_are_written_in_key_order`.
+    func testTermRecordsAreWrittenInKeyOrder() {
+        let records = Dictionary(uniqueKeysWithValues: ["f", "e", "d", "c", "b", "a"].map { ($0, TermRecord(lastCwd: nil)) })
+        // Msg::Restore { docs: [], tiles: [], …, term_records: {"a".."f": TermRecord { last_cwd: None }} }
+        assertParity(
+            .restore(docs: [], tiles: [], board: nil, boardID: nil, liveTerms: [], termRecords: records),
+            """
+            84 a1 74 a7 72 65 73 74 6f 72 65 a4 64 6f 63 73 90 a5 74 69 6c 65 73 90
+            ac 74 65 72 6d 5f 72 65 63 6f 72 64 73 86 a1 61 80 a1 62 80 a1 63 80 a1
+            64 80 a1 65 80 a1 66 80
+            """
+        )
+    }
+
     func testScrollback() {
         // Msg::ScrollbackRequest { term_id: "t1" } — conformance vector 12.
         assertParity(

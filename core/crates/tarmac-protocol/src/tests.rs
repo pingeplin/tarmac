@@ -332,6 +332,16 @@ fn conformance_vector_19_spawn_term_succeeds() {
     assert_eq!(encode(&msg).unwrap(), unhex(hex));
 }
 
+// The Swift parity test of the same frame pins the key order: sorted.
+#[test]
+fn term_records_are_written_in_key_order() {
+    let records = ["f", "e", "d", "c", "b", "a"].map(|k| (k.to_string(), TermRecord::default()));
+    let hex = "84 a1 74 a7 72 65 73 74 6f 72 65 a4 64 6f 63 73 90 a5 74 69 6c 65 73 90 \
+               ac 74 65 72 6d 5f 72 65 63 6f 72 64 73 86 a1 61 80 a1 62 80 a1 63 80 a1 64 80 \
+               a1 65 80 a1 66 80";
+    assert_eq!(encode(&restore_with_records(BTreeMap::from(records))).unwrap(), unhex(hex));
+}
+
 #[test]
 fn an_empty_record_table_a_nil_succeeds_and_a_nil_last_cwd_are_not_on_the_wire() {
     let restore = encode(&restore_with_records(BTreeMap::new())).unwrap();
