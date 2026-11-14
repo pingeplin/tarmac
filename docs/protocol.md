@@ -145,8 +145,10 @@ app → daemon:
 daemon → app:
 
     {t:"output", term_id, bytes:<bin>}      — raw pty bytes, read order, chunks ≤ 64 KiB
-    {t:"exit", term_id, code:<int>|nil}     — child exited (nil = killed by signal);
-                                              the term's resources are gone after this
+    {t:"exit", term_id, code:<int>|nil, board_id?}
+                                            — child exited (nil = killed by signal);
+                                              the term's resources are gone after this;
+                                              `board_id`: see A terminal's report
     {t:"doc_opened", path, via:"cli"|"user"}  — M1 adds the rest of the doc entry; see M1 subset
     {t:"file_event", path, mtime_ms:<uint>} — see File watching
     {t:"doc_event", path, data}             — see Events for a loaded HTML card
@@ -392,7 +394,7 @@ the term card's header label to `name` (the honest "card title = process name").
 | `name` | string (required) | — | foreground process name: the argv[0] basename, less a login shell's leading `-`; the `proc_pidpath` basename when argv is unreadable |
 | `pid` | int \| nil | nil | the process-group leader pid, when resolvable (diagnostic) |
 
-    {t:"bell", term_id}                              — daemon → app
+    {t:"bell", term_id, board_id?}                   — daemon → app
 
 A BEL byte (`0x07`) outside an escape string was seen in the terminal's output
 stream. The daemon scans forwarded output chunks for such a `0x07` and pushes
@@ -404,6 +406,7 @@ or when it regains focus.
 | key | type | missing ⇒ | semantics |
 |---|---|---|---|
 | `term_id` | string (required) | — | the terminal that rang the bell |
+| `board_id` | string | unknown (an older daemon): the app uses its own index | the board the terminal is filed under (spec 2611.0013); `exit` carries it too, read before the daemon forgets the terminal |
 
 ## M3 boards ("strips = boards")
 
@@ -673,7 +676,7 @@ answer came in 5 s. All existing vectors decode unchanged.
 ## A terminal's report (spec 2611.0009)
 
     {t:"report", term_id, kind:"blocked"|"done"|"clear", text?}   — cli → daemon; answered with ack | err
-    {t:"term_report", term_id, kind?, text?, at_ms?, proc?, read?} — daemon → app; no reply
+    {t:"term_report", term_id, kind?, text?, at_ms?, proc?, read?, board_id?, cwd?} — daemon → app; no reply
     {t:"input", ..., typed?:true}                                  — app → daemon
 
 A process in terminal `term_id` runs `tarmac report blocked|done ["<text>"]` or
@@ -715,6 +718,16 @@ answer:
   `term_report` for every live terminal of that board, with no `kind` for one
   that has no report, then the scrollback replay. This is on every restore, not
   only a board's first one on a connection.
+- **The place** (spec 2611.0013). A frame with a `kind` carries `board_id`, the
+  board the terminal is filed under, and `cwd`, its `last_cwd` record, each read
+  when the report was made; a repeat gets the place of its own time. A frame
+  with no `kind` carries neither.
+- **The connect replay** (spec 2611.0013). On an app connection's first
+  restore, after the shown board's report frames and before its scrollback
+  replay, the daemon also sends one `term_report` for each live terminal on
+  another board that has a current report, sorted by term id. A terminal with
+  no report gets no frame, and a later restore on the same connection does not
+  send them again: live pushes keep the app current after it.
 
 | message | key | type | missing ⇒ |
 |---|---|---|---|
@@ -727,13 +740,17 @@ answer:
 | `term_report` | `at_ms` | uint, ms since the epoch | always sent with a `kind` |
 | `term_report` | `proc` | string | the holder's process name was not read |
 | `term_report` | `read` | bool | **false** (the reverse of `DocEntry.read`); written only as `true` |
+| `term_report` | `board_id` | string | unknown (an older daemon); never sent with no `kind` |
+| `term_report` | `cwd` | string | no folder recorded; never sent with no `kind` |
 | `input` | `typed` | bool | false; written only as `true` |
 
 New **additive types and key**: a daemon that does not know `report` ignores it
 and does not answer, and the cli reports that no answer came in 5 s. An app that
 does not know `term_report` ignores it. A daemon that does not know `typed`
 ignores it. An `input` with `typed: false` encodes as before, byte for byte
-(vector 3).
+(vector 3). An app that does not know `board_id` or `cwd` ignores them; a
+`term_report`, `bell` or `exit` with neither encodes as before, byte for byte
+(vectors 22, 23).
 
 ## Resuming after a restart (spec 2611.0011)
 
@@ -1038,3 +1055,26 @@ round-trip. Byte-exact encoder output is NOT required (key order may legally dif
         31 82 a8 6c 61 73 74 5f 63 77 64 a2 2f 77 a6 72 65 73 75 6d
         65 81 a3 63 6d 64 b5 63 6c 61 75 64 65 20 2d 2d 72 65 73 75
         6d 65 20 61 62 2d 31 32
+
+28. (spec 2611.0013) `{t:"term_report", term_id:"t1", kind:"blocked",
+    at_ms:1700000000000, board_id:"board-1", cwd:"/w"}` — the additive
+    `board_id` and `cwd` keys, after `read`; `text`, `proc` and `read` are
+    omitted.
+
+        86 a1 74 ab 74 65 72 6d 5f 72 65 70 6f 72 74 a7 74 65 72 6d
+        5f 69 64 a2 74 31 a4 6b 69 6e 64 a7 62 6c 6f 63 6b 65 64 a5
+        61 74 5f 6d 73 cf 00 00 01 8b cf e5 68 00 a8 62 6f 61 72 64
+        5f 69 64 a7 62 6f 61 72 64 2d 31 a3 63 77 64 a2 2f 77
+
+29. (spec 2611.0013) `{t:"bell", term_id:"t1", board_id:"board-1"}` — the
+    additive `board_id` key. With none it is omitted.
+
+        83 a1 74 a4 62 65 6c 6c a7 74 65 72 6d 5f 69 64 a2 74 31 a8
+        62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 31
+
+30. (spec 2611.0013) `{t:"exit", term_id:"t1", code:3, board_id:"board-1"}` —
+    the additive `board_id` key, after `code`. With none it is omitted.
+
+        84 a1 74 a4 65 78 69 74 a7 74 65 72 6d 5f 69 64 a2 74 31 a4
+        63 6f 64 65 03 a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64
+        2d 31

@@ -152,7 +152,10 @@ done-differently, not missing:
 - dock / index rails → **shelf** (itself since removed — see §4)
 - grid desk + drag-swap → **infinite board**, free move + resize
 - right rail (STRIPS / PROCESSES / FILE EVENTS) → **card-header signals + wayfinding**
-  (minimap / zoom control / offscreen pills); no rail is built, by design
+  (minimap / zoom control / offscreen pills); no rail is built, by design.
+  A transient inbox panel exists by owner decision 2026-11-14 (design 2611.0006
+  §2, spec 2611.0013): it lists reports, bells and exits over the board's right
+  edge while open; it is not a docked rail and never resizes the board
 - terminal tabs + horizontal splits → **multiple terminal cards** (⌘T)
 - strips = tmux sessions → **boards**
 
