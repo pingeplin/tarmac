@@ -177,7 +177,8 @@ Hazards:
   holds one of the daemon's file descriptors.
 - **`wait --changed` stats the file itself**, so it adds no watch to Tarmac.
   The stat runs in a helper process, so `--timeout` and Ctrl-C end the wait
-  even on a volume that stopped answering.
+  even on a volume that stopped answering. A helper stuck on such a volume can
+  stay until the volume gives up.
 - An older Tarmac does not answer these verbs: they exit 1 after 5 s, or `124`
   with a shorter `--timeout`. `wait --changed` works with any.
 

@@ -52,7 +52,14 @@ pub fn run(args: &[String]) -> i32 {
     // A sum past what `Instant` holds is no deadline at all.
     let deadline = timeout.and_then(|t| started.checked_add(t));
     let outcome = match &mode {
-        Mode::Changed { path, settle } => changed(path, *settle, deadline),
+        Mode::Changed { path, settle } => match std::env::current_exe() {
+            Ok(exe) => {
+                let mut helper = Command::new(exe);
+                helper.arg(STAT_HELPER).arg(path);
+                changed(helper, *settle, deadline)
+            }
+            Err(e) => Outcome::Failed(format!("cannot start the stat helper of wait --changed: {e}")),
+        },
         mode => from_daemon(mode, deadline),
     };
     match outcome {
@@ -208,18 +215,25 @@ impl Sample {
 /// sample at the poll cadence, until a stat error, or until a write fails
 /// because `wait` has gone.
 pub fn stat_helper(args: &[String]) -> i32 {
-    let [path] = args else { return 2 };
+    let [raw] = args else { return 2 };
     let started = Instant::now();
     let mut out = io::stdout().lock();
+    let path = match std::path::absolute(raw) {
+        Ok(path) => path,
+        Err(e) => {
+            let _ = writeln!(out, "{STAT_ERROR}cannot stat {raw}: {e}");
+            return 0;
+        }
+    };
     loop {
-        match sample(Path::new(path)) {
+        match sample(&path) {
             Ok(s) => {
                 if writeln!(out, "{}", s.line()).and_then(|()| out.flush()).is_err() {
                     return 0;
                 }
             }
             Err(e) => {
-                let _ = writeln!(out, "{STAT_ERROR}cannot stat {path}: {e}");
+                let _ = writeln!(out, "{STAT_ERROR}cannot stat {}: {e}", path.display());
                 return 0;
             }
         }
@@ -277,21 +291,19 @@ fn watch(lines: &Receiver<String>, settle: Option<Duration>, deadline: Option<In
     }
 }
 
-/// The stat runs in a helper process (#361): on a volume that does not
-/// answer, a stat blocks uninterruptibly for minutes, and a process with a
-/// thread stuck there may not be able to exit. So this process never touches
-/// the path, and on its way out it leaves a stuck helper behind.
-fn changed(raw: &str, settle: Option<Duration>, deadline: Option<Instant>) -> Outcome {
-    let path = match std::path::absolute(raw) {
-        Ok(path) => path,
-        Err(e) => return Outcome::Failed(format!("cannot stat {raw}: {e}")),
-    };
-    let helper = std::env::current_exe().and_then(|exe| spawn_helper(Command::new(exe).arg(STAT_HELPER).arg(&path)));
-    let (mut child, samples) = match helper {
+/// The stat runs in `helper`, a process of its own (#361): on a volume that
+/// does not answer, a stat blocks uninterruptibly for minutes, and a process
+/// with a thread stuck there may not be able to exit. So this process gets no
+/// path at all, not even to make it absolute, since a relative one reads the
+/// cwd.
+fn changed(mut helper: Command, settle: Option<Duration>, deadline: Option<Instant>) -> Outcome {
+    let (mut child, lines) = match spawn_helper(&mut helper) {
         Ok(started) => started,
         Err(e) => return Outcome::Failed(format!("cannot start the stat helper of wait --changed: {e}")),
     };
-    let outcome = watch(&samples, settle, deadline);
+    let outcome = watch(&lines, settle, deadline);
+    // Never waited for: a helper stuck in the kernel would hold this process
+    // with it. It is left behind, and ends when its stat returns.
     let _ = child.kill();
     outcome
 }
@@ -369,11 +381,15 @@ mod tests {
         rx
     }
 
-    /// `spawn_helper`, one child at a time: on macOS a child spawned while a
-    /// sibling's pipe is not yet close-on-exec keeps it open (#190).
-    fn helper(cmd: &mut Command) -> (Child, Receiver<String>) {
+    /// One child spawned at a time: on macOS a child spawned while a sibling's
+    /// pipe is not yet close-on-exec keeps it open (#190).
+    fn spawning() -> std::sync::MutexGuard<'static, ()> {
         static SPAWN: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let _spawning = SPAWN.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        SPAWN.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn helper(cmd: &mut Command) -> (Child, Receiver<String>) {
+        let _spawning = spawning();
         spawn_helper(cmd).unwrap()
     }
 
@@ -469,6 +485,43 @@ mod tests {
         let out = watch(&lines, None, within(2000));
         let _ = child.wait();
         assert!(matches!(out, Outcome::Failed(why) if why.contains("helper")));
+    }
+
+    fn sh(script: &str) -> Command {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", script]);
+        cmd
+    }
+
+    #[test]
+    fn changed_needs_no_path_only_the_helper_s_lines() {
+        let _spawning = spawning();
+        let out = changed(sh("echo a; sleep 0.2; echo b; exec sleep 30"), None, within(3000));
+        assert_eq!(out, Outcome::Done(Some(json!({ "deleted": false }))));
+    }
+
+    #[test]
+    fn a_helper_that_never_answers_is_killed_at_the_deadline() {
+        let pid_file = std::env::temp_dir().join(format!("tarmac-wait-helper-{}.pid", std::process::id()));
+        let _spawning = spawning();
+        let started = Instant::now();
+        let out = changed(sh(&format!("echo $$ > {}; exec sleep 30", pid_file.display())), None, within(500));
+        let took = started.elapsed();
+        assert_eq!(out, Outcome::TimedOut);
+        assert!(took < Duration::from_millis(1000), "{took:?}");
+
+        let pid = std::fs::read_to_string(&pid_file).unwrap().trim().to_owned();
+        let _ = std::fs::remove_file(&pid_file);
+        let state = || {
+            let ps = Command::new("ps").args(["-o", "stat=", "-p", &pid]).output().unwrap();
+            String::from_utf8_lossy(&ps.stdout).trim().to_owned()
+        };
+        let until = Instant::now() + Duration::from_millis(500);
+        while !(state().is_empty() || state().starts_with('Z')) && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let left = state();
+        assert!(left.is_empty() || left.starts_with('Z'), "the helper is still {left:?}");
     }
 
     #[test]

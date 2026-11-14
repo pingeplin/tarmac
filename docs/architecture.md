@@ -470,12 +470,14 @@ change when it is back.
 A subscriber's `changed` event (spec 2611.0012) is a `FileEvent` the daemon
 told the app, from a look, a `DocRefresh`, a `DataFile` or the tell of a board
 made active, so it can repeat an `mtime_ms`; it covers open docs and their data
-files only. `tarmac wait --changed` stats its path in the CLI and adds no watch.
-The stat runs in one helper process, the same binary run with an internal
-argument, which writes a line for each sample on a pipe (#361). The CLI itself
-never touches the path, so on a volume that does not answer, where a stat
-blocks uninterruptibly for minutes, `--timeout` and Ctrl-C still end the wait;
-a helper stuck in the kernel is left behind and ends when the stat returns.
+files only. `tarmac wait --changed` never connects and adds no watch: it stats
+its path in one helper process, the same binary run with an internal argument,
+which writes a line for each sample on a pipe (#361). The CLI hands the path on
+as typed and does no path work itself, not even making it absolute, which reads
+the cwd. So on a volume that does not answer, where a stat blocks
+uninterruptibly for minutes, `--timeout` and Ctrl-C still end the wait. The
+CLI kills the helper and never waits for it; a helper stuck in the kernel is
+left behind and ends when the stat returns.
 
 A **look** compares the docs of the active board, and the data files they
 read (below), with their files (`docs::report_changes`). The
