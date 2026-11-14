@@ -6,18 +6,30 @@ import XCTest
 final class TerminalViewTests: XCTestCase {
     private var view: TerminalView!
     private var window: NSWindow!
-    private var sent: [UInt8] = []
     private var calls: [Sent] = []
     private var resizes: [[Int]] = []
 
+    private struct Sent: Equatable {
+        var bytes: [UInt8]
+        var source: InputSource
+        var text: String { String(decoding: bytes, as: UTF8.self) }
+
+        init(bytes: [UInt8], source: InputSource) {
+            self.bytes = bytes
+            self.source = source
+        }
+
+        init(text: String, source: InputSource) {
+            self.init(bytes: Array(text.utf8), source: source)
+        }
+    }
+
+    private var sent: [UInt8] { calls.flatMap(\.bytes) }
     private var sentText: String { String(decoding: sent, as: UTF8.self) }
 
     override func setUp() async throws {
         view = try TerminalView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
-        view.onInput = { [unowned self] in
-            self.sent.append(contentsOf: $0)
-            self.calls.append(Sent(text: String(decoding: $0, as: UTF8.self), source: $1))
-        }
+        view.onInput = { [unowned self] in self.calls.append(Sent(bytes: $0, source: $1)) }
         view.onResize = { [unowned self] in self.resizes.append([$0, $1]) }
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
@@ -25,7 +37,6 @@ final class TerminalViewTests: XCTestCase {
         )
         window.contentView?.addSubview(view)
         window.makeFirstResponder(view)
-        sent = []
         calls = []
         resizes = []
     }
@@ -35,10 +46,11 @@ final class TerminalViewTests: XCTestCase {
     }
 
     private func key(
-        _ characters: String, code: UInt16, flags: NSEvent.ModifierFlags = [], unmodified: String? = nil
+        _ characters: String, code: UInt16, flags: NSEvent.ModifierFlags = [], unmodified: String? = nil,
+        type: NSEvent.EventType = .keyDown
     ) -> NSEvent {
         NSEvent.keyEvent(
-            with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 1,
+            with: type, location: .zero, modifierFlags: flags, timestamp: 1,
             windowNumber: window.windowNumber, context: nil, characters: characters,
             charactersIgnoringModifiers: unmodified ?? characters, isARepeat: false, keyCode: code
         )!
@@ -765,14 +777,11 @@ final class TerminalViewTests: XCTestCase {
 
     func testKeyReleasesDuringCompositionStayWithTheIme() {
         feed("\u{1b}[>3u")
-        let release = NSEvent.keyEvent(
-            with: .keyUp, location: .zero, modifierFlags: [], timestamp: 1, windowNumber: window.windowNumber,
-            context: nil, characters: "n", charactersIgnoringModifiers: "n", isARepeat: false, keyCode: 0x2d
-        )!
+        let release = key("n", code: 0x2d, type: .keyUp)
         view.keyUp(with: release)
         XCTAssertFalse(sent.isEmpty, "a kitty program that asked for releases gets them")
 
-        sent = []
+        calls = []
         view.setMarkedText("n", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
         view.keyUp(with: release)
         XCTAssertEqual(sent, [])
@@ -786,7 +795,7 @@ final class TerminalViewTests: XCTestCase {
         view.paste(nil)
         XCTAssertEqual(sentText, "a\rb")
 
-        sent = []
+        calls = []
         feed("\u{1b}[?2004h")
         view.paste(nil)
         XCTAssertEqual(sentText, "\u{1b}[200~a\nb\u{1b}[201~")
@@ -823,11 +832,11 @@ final class TerminalViewTests: XCTestCase {
     func testClipboardAccessIsAdvertisedOnlyWhenTheHostTakesWrites() {
         feed("\u{1b}[c")
         XCTAssertEqual(sentText, "\u{1b}[?62;22c")
-        sent = []
+        calls = []
         view.onClipboardWrite = { _ in }
         feed("\u{1b}[c")
         XCTAssertEqual(sentText, "\u{1b}[?62;22;52c")
-        sent = []
+        calls = []
         view.onClipboardWrite = nil
         feed("\u{1b}[c")
         XCTAssertEqual(sentText, "\u{1b}[?62;22c")
@@ -1026,7 +1035,7 @@ final class TerminalViewTests: XCTestCase {
             frame: NSRect(x: 0, y: 0, width: 600, height: 400), fontSize: 20, fontFamily: "Monaco",
             backingScale: other
         )
-        view.onInput = { [unowned self] bytes, _ in self.sent.append(contentsOf: bytes) }
+        view.onInput = { [unowned self] in self.calls.append(Sent(bytes: $0, source: $1)) }
         window.contentView?.addSubview(view)
 
         view.feed(Data("\u{1b}[14t".utf8))
@@ -1200,7 +1209,7 @@ final class TerminalViewTests: XCTestCase {
         view.theme = light
         XCTAssertEqual(sentText, "\u{1b}[?997;2n")
 
-        sent = []
+        calls = []
         view.theme = dark
         XCTAssertEqual(sentText, "\u{1b}[?997;1n")
     }
@@ -1418,11 +1427,6 @@ final class TerminalViewTests: XCTestCase {
 
     // MARK: the source of each send (2611.0008)
 
-    private struct Sent: Equatable {
-        var text: String
-        var source: InputSource
-    }
-
     /// S1
     func test2611_0008S1AKeyPressIsTheUsers() {
         view.keyDown(with: key("a", code: 0x00))
@@ -1441,6 +1445,11 @@ final class TerminalViewTests: XCTestCase {
 
     /// S2
     func test2611_0008S2APasteIsTheUsers() {
+        let saved = NSPasteboard.general.string(forType: .string)
+        defer {
+            NSPasteboard.general.clearContents()
+            if let saved { NSPasteboard.general.setString(saved, forType: .string) }
+        }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString("hi", forType: .string)
 
@@ -1464,32 +1473,21 @@ final class TerminalViewTests: XCTestCase {
     }
 
     /// S4
-    func test2611_0008S4AKeyReleaseIsTheUsers() throws {
+    func test2611_0008S4AKeyReleaseIsTheUsers() {
         feed("\u{1b}[>3u")
-        let release = try XCTUnwrap(NSEvent.keyEvent(
-            with: .keyUp, location: .zero, modifierFlags: [], timestamp: 1, windowNumber: window.windowNumber,
-            context: nil, characters: "n", charactersIgnoringModifiers: "n", isARepeat: false, keyCode: 0x2d
-        ))
 
-        view.keyUp(with: release)
+        view.keyUp(with: key("n", code: 0x2d, type: .keyUp))
 
-        XCTAssertFalse(calls.isEmpty)
-        XCTAssertEqual(calls.map(\.source), [.user])
+        XCTAssertEqual(calls, [Sent(text: "\u{1b}[110;1:3u", source: .user)])
     }
 
     /// S4
-    func test2611_0008S4AModifierKeyIsTheUsers() throws {
+    func test2611_0008S4AModifierKeyIsTheUsers() {
         feed("\u{1b}[>8u")
-        let shift = try XCTUnwrap(NSEvent.keyEvent(
-            with: .flagsChanged, location: .zero, modifierFlags: .shift, timestamp: 1,
-            windowNumber: window.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "",
-            isARepeat: false, keyCode: 0x38
-        ))
 
-        view.flagsChanged(with: shift)
+        view.flagsChanged(with: key("", code: 0x38, flags: .shift, type: .flagsChanged))
 
-        XCTAssertFalse(calls.isEmpty)
-        XCTAssertEqual(calls.map(\.source), [.user])
+        XCTAssertEqual(calls, [Sent(text: "\u{1b}[57441;2u", source: .user)])
     }
 
     /// S5b
@@ -1516,9 +1514,8 @@ final class TerminalViewTests: XCTestCase {
 
         view.scrollWheel(with: try wheel(lines: 1))
 
-        XCTAssertEqual(calls.count, 1)
-        XCTAssertTrue(calls[0].text.hasPrefix("\u{1b}[<64;"), calls[0].text.debugDescription)
-        XCTAssertEqual(calls[0].source, .user)
+        XCTAssertEqual(calls.map(\.source), [.user])
+        XCTAssertTrue(sentText.hasPrefix("\u{1b}[<64;"), sentText.debugDescription)
     }
 
     /// S5 — mode 1000 reports no motion, so the drag uses button-event mode.
@@ -1530,6 +1527,43 @@ final class TerminalViewTests: XCTestCase {
         view.mouseDragged(with: try mouse(.leftMouseDragged, col: 4, row: 0))
 
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[<32;5;1M", source: .user)])
+    }
+
+    /// S5
+    func test2611_0008S5ALeftReleaseReportIsTheUsers() throws {
+        feed("\u{1b}[?1000h\u{1b}[?1006h")
+        view.mouseDown(with: try mouse(.leftMouseDown, col: 2, row: 0))
+        calls = []
+
+        view.mouseUp(with: try mouse(.leftMouseUp, col: 2, row: 0))
+
+        XCTAssertEqual(calls, [Sent(text: "\u{1b}[<0;3;1m", source: .user)])
+    }
+
+    /// S5
+    func test2611_0008S5RightButtonReportsAreTheUsers() throws {
+        feed("\u{1b}[?1002h\u{1b}[?1006h")
+
+        view.rightMouseDown(with: try mouse(.rightMouseDown, col: 2, row: 0))
+        view.rightMouseDragged(with: try mouse(.rightMouseDragged, col: 4, row: 0))
+        view.rightMouseUp(with: try mouse(.rightMouseUp, col: 4, row: 0))
+
+        XCTAssertEqual(calls, [
+            Sent(text: "\u{1b}[<2;3;1M", source: .user), Sent(text: "\u{1b}[<34;5;1M", source: .user),
+            Sent(text: "\u{1b}[<2;5;1m", source: .user),
+        ])
+    }
+
+    /// S5
+    func test2611_0008S5MiddleButtonReportsAreTheUsers() throws {
+        feed("\u{1b}[?1000h\u{1b}[?1006h")
+
+        view.otherMouseDown(with: try mouse(.otherMouseDown, col: 2, row: 0))
+        view.otherMouseUp(with: try mouse(.otherMouseUp, col: 2, row: 0))
+
+        XCTAssertEqual(calls, [
+            Sent(text: "\u{1b}[<1;3;1M", source: .user), Sent(text: "\u{1b}[<1;3;1m", source: .user),
+        ])
     }
 
     /// S6

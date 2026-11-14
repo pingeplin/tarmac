@@ -990,10 +990,11 @@ itself), and so is a drag.
 **Honest signals.** The label starts as `shell`; each `TermProc` and each
 non-blank OSC title overwrites it, last writer wins (`TermLabel`). `Bell` turns
 the header's glyph amber and shows an amber `●` there until the user sends
-input to that PTY (a key, a paste, text, a mouse report) or the card becomes
-prime by a press. Engine replies and focus reports never clear the dot. The view's own bell and OSC 52 clipboard hooks are left unset
-on purpose: the daemon's `Bell` is the observed fact, and a program may not
-overwrite the user's clipboard.
+input to that PTY (a key, a paste, text, a mouse click, drag or wheel step) or
+the card becomes prime by a press. Engine replies, focus reports, colour-scheme
+reports and hover motion never clear it. The view's own bell and OSC 52
+clipboard hooks are left unset on purpose: the daemon's `Bell` is the observed
+fact, and a program may not overwrite the user's clipboard.
 
 **Exit.** `TermExit` decides: a non-zero or signal `Exit` toasts and holds the
 card open *dead* — dimmed, taking no input, never persisted; a clean exit

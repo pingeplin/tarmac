@@ -20,8 +20,7 @@ public enum InputSource: Sendable, Equatable { case user, terminal }
 
 /// A terminal surface: libghostty-vt holds the emulator state; this view draws
 /// it with CoreText and turns AppKit events into PTY bytes. It owns no PTY —
-/// output is `feed`, and everything the user does leaves through `onInput`, and
-/// so do the terminal's own replies and reports, each tagged with its source.
+/// output is `feed`, and everything the user does leaves through `onInput`.
 ///
 /// Layout is in the view's own bounds, so a host that scales the view (the
 /// board's zoom) never changes cols×rows; only a real resize does.

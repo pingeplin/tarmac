@@ -108,8 +108,7 @@ extension AppController {
 
     /// Bytes for the PTY: what the user typed, pasted or clicked, and what the
     /// terminal answers a program by itself (DA1, a cursor report, a focus
-    /// report). All of them reach the PTY; only the user's clear a lit bell. A
-    /// dead or unspawned terminal has no PTY to send to.
+    /// report). A dead or unspawned terminal has no PTY to send to.
     func terminalDidSend(termID: String, _ bytes: Data, source: InputSource) {
         guard let s = session(ofTerm: termID), s.reachable else { return }
         client.input(termID: termID, bytes: bytes)
