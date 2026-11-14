@@ -11,7 +11,7 @@ use tarmac_protocol::Msg;
 
 mod common;
 use common::frames::{bell, exit, term_report};
-use common::{Report, Step, Streamer, Then, assert_no_answer, assert_usage, scratch, start, tarmac_at, untouched};
+use common::{Report, Step, Streamer, Then, assert_no_answer, assert_usage, scratch, start, tarmac, tarmac_at, untouched};
 
 const NOT_ANSWERED: &str = "tarmac: wait: timed out before the daemon answered\n";
 
@@ -397,5 +397,60 @@ fn s34_a_stat_error_that_is_not_missing_exits_1() {
     let (out, _) = changed_with(&dir.join("f.txt"), &["--timeout", "2000"], Duration::ZERO, || {});
 
     assert_eq!(out.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&out.stderr).starts_with("tarmac: cannot stat "), "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr),
+        format!("tarmac: cannot stat {}: Permission denied (os error 13)\n", dir.join("f.txt").display())
+    );
+}
+
+#[test]
+fn the_helper_samples_at_the_poll_cadence_and_ends_when_its_reader_goes() {
+    use std::io::BufRead;
+    let file = old_file(&scratch(), "a.txt");
+    let mut helper = start(tarmac().arg("__wait-changed-stat").arg(&file));
+    let mut lines = std::io::BufReader::new(helper.stdout.take().unwrap()).lines();
+    let first = lines.next().unwrap().unwrap();
+    let window = Instant::now() + Duration::from_secs(1);
+    let mut count = 1;
+    while Instant::now() < window {
+        assert_eq!(lines.next().unwrap().unwrap(), first);
+        count += 1;
+    }
+    drop(lines);
+    let until = Instant::now() + Duration::from_millis(400);
+    let mut ended = helper.try_wait().unwrap();
+    while ended.is_none() && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(20));
+        ended = helper.try_wait().unwrap();
+    }
+    let _ = helper.kill();
+    let _ = helper.wait();
+
+    assert!((2..=13).contains(&count), "{count} samples in 1 s");
+    assert_eq!(ended.and_then(|s| s.code()), Some(0), "the helper did not end once its reader went");
+}
+
+// #361: the stat runs in a helper process, so a stat that hangs cannot hold
+// the wait past its --timeout. The path goes to it as given: making a
+// relative path absolute reads the cwd, which can hang too.
+#[test]
+fn the_stat_runs_in_one_helper_process_given_the_path_as_typed() {
+    let dir = scratch();
+    old_file(&dir, "a.txt");
+    let wait = start(tarmac().args(["wait", "--changed", "a.txt", "--timeout", "3000"]).current_dir(&dir));
+    let children = || {
+        let out = std::process::Command::new("pgrep").args(["-l", "-f", "-P"]).arg(wait.id().to_string()).output().unwrap();
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    let until = Instant::now() + Duration::from_millis(2500);
+    let mut listed = children();
+    while listed.is_empty() && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(50));
+        listed = children();
+    }
+    let out = wait.wait_with_output().unwrap();
+
+    assert_eq!(listed.lines().count(), 1, "{listed}");
+    assert!(listed.trim_end().ends_with("__wait-changed-stat a.txt"), "{listed}");
+    assert_eq!(out.status.code(), Some(124));
 }
