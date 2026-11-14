@@ -38,7 +38,7 @@ pub fn process_name(pid: libc::pid_t) -> Option<String> {
 
 /// One `sysctl` read into `buf`: the count written, or `None` on error.
 #[cfg(target_os = "macos")]
-fn sysctl(mib: &mut [libc::c_int], buf: &mut [u8]) -> Option<usize> {
+pub(crate) fn sysctl(mib: &mut [libc::c_int], buf: &mut [u8]) -> Option<usize> {
     let mut size = buf.len();
     // SAFETY: `mib` names `mib.len()` ints; `buf` is `size` bytes, and sysctl
     // writes at most `size` bytes and sets `size` to the count written.

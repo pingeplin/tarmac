@@ -27,7 +27,7 @@ open <path>` connects to the daemon, names a doc, and exits. `open`, `push`,
 `report`, `resume`, `terms`, `events`, `wait`, `--version` and `hooks run` are
 its verbs that talk to the daemon (`tarmac terms`, `events` and `wait` read the
 daemon's live terminals and its exits, bells, doc changes and reports, spec
-2611.0012, except `wait --changed`, which stats a path in the CLI; `tarmac push` hands one JSON value, or one for each line of stdin, to the
+2611.0012, except `wait --changed`, which stats a path in a helper process of the CLI; `tarmac push` hands one JSON value, or one for each line of stdin, to the
 loaded HTML cards of an open doc; `tarmac report` sets or clears the calling
 terminal's report, spec 2611.0009; `tarmac resume` sets or clears the command
 that resumes its agent session, spec 2611.0011; `--version` only completes
@@ -240,6 +240,18 @@ The accept loop reads each client's pid with `UnixStream::peer_cred()`
 (`LOCAL_PEEREPID`) before the connection's first `await`, since the pid can be
 read only while the client's end is open; only a cli session uses it (a
 `report`, below).
+
+After an accept error the loop waits 100 ms before the next accept, so that
+out of descriptors (`EMFILE`) it does not retry at once (#360). There is no cap
+on subscribers.
+
+At start-up, before the socket, the watcher and any terminal,
+`fd_limit::raise` lifts the soft
+`RLIMIT_NOFILE` from launchd's 256 to `OPEN_MAX` (10240), clamped to the hard
+limit and `kern.maxfilesperproc`, and never lowers it. A child inherits the
+limit, so `ulimit -n` in a Tarmac terminal is at least 10240 unless the hard
+limit is lower; a user who wants another value sets `ulimit -n` in the shell's
+start-up file.
 
 The CLI gets a short-lived `cli_session`. The app gets a long-lived
 `app_session` that installs the single-app slot, creates the bounded
@@ -470,7 +482,14 @@ change when it is back.
 A subscriber's `changed` event (spec 2611.0012) is a `FileEvent` the daemon
 told the app, from a look, a `DocRefresh`, a `DataFile` or the tell of a board
 made active, so it can repeat an `mtime_ms`; it covers open docs and their data
-files only. `tarmac wait --changed` stats its path in the CLI and adds no watch.
+files only. `tarmac wait --changed` never connects and adds no watch: it stats
+its path in one helper process, the same binary run with an internal argument,
+which writes a line for each sample on a pipe (#361). The CLI hands the path on
+as typed and does no path work itself, not even making it absolute, which reads
+the cwd. So on a volume that does not answer, where a stat blocks
+uninterruptibly for minutes, `--timeout` and Ctrl-C still end the wait. The
+CLI kills the helper and never waits for it; a helper stuck in the kernel is
+left behind and ends when the stat returns.
 
 A **look** compares the docs of the active board, and the data files they
 read (below), with their files (`docs::report_changes`). The
@@ -676,7 +695,7 @@ fails still leaves the set: notify takes the path out of the stream before it
 can fail, so keeping it would mean it is never watched again. A directory
 whose `watch` fails is unwatched again at once: notify 9 can fail a watch
 after taking the path into the stream, which then does not start again
-(over its FSEvents path budget, a twelfth of `RLIMIT_NOFILE`, or when
+(over its FSEvents path budget, a twelfth of the soft `RLIMIT_NOFILE`, or when
 FSEvents does not create or start the stream), and a directory not in the
 set is never unwatched. If the thread panics, it logs an error and is not
 restarted; every open that needs a new watch then fails at its limit.

@@ -13,6 +13,10 @@ This guide covers what is worth knowing: how to surface a file, how to say that
 you are blocked or done, and how to write an HTML file that survives the board's
 sandbox and zoom model.
 
+A shell in a Tarmac terminal inherits the daemon's open file limit, so
+`ulimit -n` there is at least 10240 unless the hard limit is lower, not
+launchd's 256. For another value, set `ulimit -n` in the shell's start-up file.
+
 ## Surfacing a file
 
 ```sh
@@ -176,8 +180,9 @@ Hazards:
 - **Pass `--timeout` in an unattended script.** Each waiting `events` or `wait`
   holds one of the daemon's file descriptors.
 - **`wait --changed` stats the file itself**, so it adds no watch to Tarmac.
-  On a volume that stopped answering a stat can hang it, and `--timeout` cannot
-  end a stat that hangs.
+  The stat runs in a helper process, so `--timeout` and Ctrl-C end the wait
+  even on a volume that stopped answering. A helper stuck on such a volume can
+  stay until the volume gives up.
 - An older Tarmac does not answer these verbs: they exit 1 after 5 s, or `124`
   with a shorter `--timeout`. `wait --changed` works with any.
 

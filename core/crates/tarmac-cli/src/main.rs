@@ -87,6 +87,7 @@ fn run(args: &[String]) -> i32 {
         Some("terms") => terms::run(&args[1..]),
         Some("events") => events::run(&args[1..]),
         Some("wait") => wait::run(&args[1..]),
+        Some(wait::STAT_HELPER) => wait::stat_helper(&args[1..]),
         Some("open") => match &args[1..] {
             [path] => match open(path) {
                 Ok(line) => {
