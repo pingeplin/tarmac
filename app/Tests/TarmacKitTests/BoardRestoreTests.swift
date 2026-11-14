@@ -61,7 +61,6 @@ final class BoardRestoreTests: XCTestCase {
         )
     }
 
-    /// S10
     // MARK: - 2611.0011 S7: the resume command a cold spawn offers
 
     private let resumed = TermRecord(lastCwd: "/w", resume: ResumeRecord(cmd: "claude --resume ab-12"))
@@ -89,6 +88,7 @@ final class BoardRestoreTests: XCTestCase {
         XCTAssertEqual(plan([], records: ["t0": resumed]).terms.map(\.resume), [nil])
     }
 
+    /// S10
     func testAReboundTerminalGetsNoFolderAndSucceedsNothing() {
         let restored = plan([termTile("t0")], live: ["t0"], records: ["t0": TermRecord(lastCwd: "/w")])
         XCTAssertEqual(restored.terms, [Term(termID: "t0", frame: tileFrame, z: 3, spawn: nil)])

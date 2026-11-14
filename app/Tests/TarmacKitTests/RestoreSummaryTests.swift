@@ -32,6 +32,14 @@ final class RestoreSummaryTests: XCTestCase {
         )
     }
 
+    /// Only a cold spawn is counted: a rebound term carries no resume from a
+    /// plan, and one that did would still not be offered.
+    func testARecordOnAReboundTermIsNotCounted() {
+        XCTAssertEqual(
+            RestoreSummary.lines(plan: plan([term("d", spawn: nil, resume: "echo HI")])), []
+        )
+    }
+
     func testS11NoColdSpawnGivesNoLine() {
         XCTAssertEqual(RestoreSummary.lines(plan: plan([term("d", spawn: nil)])), [])
     }

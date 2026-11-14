@@ -75,18 +75,21 @@ final class ResumeOfferTests: XCTestCase {
 
     // MARK: S20
 
+    /// Each row is an offer in another state, and the Return that follows
+    /// it is one that would have run that offer had it survived.
     func testS20AnyUserByteDropsTheOfferInEveryState() throws {
-        let cases: [(String, ResumeOffer)] = [
-            ("not yet armed", try offer()),
-            ("armed, on a card that is not prime", try armed()),
-            ("armed, on the prime card, with \"a\"", try armed()),
-            ("armed, with an Esc byte", try armed()),
+        let cases: [(String, ResumeOffer, Bool)] = [
+            ("not yet armed, then Return once armed", try offer("echo one"), true),
+            ("armed, on a card that is not prime", try armed("echo two"), false),
+            ("armed, on the prime card, with \"a\"", try armed("echo three"), true),
+            ("armed, with an Esc byte", try armed(uuid), true),
         ]
-        for (name, offer) in cases {
+        for (name, offer, prime) in cases {
             let (dropped, effect) = ResumeOffer.step(offer, .userInput)
             XCTAssertNil(dropped, name)
             XCTAssertNil(effect, name)
-            XCTAssertNil(ResumeOffer.step(dropped, .returnKey(prime: true)).effect, name)
+            let armedAgain = ResumeOffer.step(dropped, .output(byteCount: 5)).offer
+            XCTAssertNil(ResumeOffer.step(armedAgain, .returnKey(prime: prime)).effect, name)
         }
     }
 
