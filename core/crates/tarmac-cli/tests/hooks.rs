@@ -189,19 +189,17 @@ fn s20_no_daemon_is_fast_silent_and_says_so_on_stderr() {
 
 #[test]
 fn s21_a_daemon_that_never_answers_is_given_up_on_at_the_deadline() {
-    for (kind, want) in [
-        (Daemon::SilentAfterHello, Some("tarmac: hooks run: no answer from the daemon in 500 ms\n")),
-        (Daemon::SilentToHello, None),
+    // Whichever phase the deadline ends in, the line is the same.
+    for kind in [
+        Daemon::SilentAfterHello,
+        Daemon::SilentToHello,
+        Daemon::SlowHelloThenSilent(Duration::from_millis(800)),
     ] {
         let (best, outs) = fastest(3, || run_against(&daemon(kind.clone()), stop_input("Done.")));
 
         for out in &outs {
             assert_silent_success(out, "silent daemon");
-            let line = out.one_stderr_line();
-            assert!(line.starts_with("tarmac: hooks run: ") && !line.contains("5 s"), "{line}");
-            if let Some(want) = want {
-                assert_eq!(line, want);
-            }
+            assert_eq!(out.one_stderr_line(), "tarmac: hooks run: no answer from the daemon in 500 ms\n");
         }
         assert!(best >= Duration::from_millis(450) && best <= Duration::from_millis(1000), "the fastest run took {best:?}");
     }
@@ -212,7 +210,7 @@ fn s21_a_daemon_that_never_answers_is_given_up_on_at_the_deadline() {
 #[test]
 fn one_deadline_spans_the_handshake_and_the_answer() {
     let (best, outs) = fastest(3, || {
-        run_against(&daemon(Daemon::SlowHelloThenSilent(Duration::from_millis(400))), stop_input("Done."))
+        run_against(&daemon(Daemon::SlowHelloThenSilent(Duration::from_millis(300))), stop_input("Done."))
     });
 
     for out in &outs {

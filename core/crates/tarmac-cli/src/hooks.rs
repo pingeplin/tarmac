@@ -221,7 +221,7 @@ fn hook(args: &[String]) -> Result<(), String> {
         serde_json::from_slice(&read_input()?).map_err(|e| format!("the input is not a JSON object: {e}"))?;
     let Some(msg) = claude_report(&term_id.to_string_lossy(), &input) else { return Ok(()) };
     let no_answer = format!("no answer from the daemon in {} ms", HOOK_DEADLINE.as_millis());
-    report::send(&msg, HOOK_DEADLINE, &no_answer)
+    report::send(&msg, HOOK_DEADLINE, report::NoAnswer::Anywhere(&no_answer))
 }
 
 /// Stdin, read on a thread of its own so that a writer that never closes it

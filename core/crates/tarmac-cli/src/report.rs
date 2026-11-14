@@ -24,7 +24,7 @@ pub fn run(args: &[String]) -> i32 {
         kind: kind.to_owned(),
         text: text.map(cap_report_text),
     };
-    match send(&msg, crate::DAEMON_WAIT, &crate::no_answer("an older daemon")) {
+    match send(&msg, crate::DAEMON_WAIT, NoAnswer::ToTheReport(&crate::no_answer("an older daemon"))) {
         Ok(()) => 0,
         Err(why) => {
             eprintln!("tarmac: {why}");
@@ -47,12 +47,26 @@ fn parse(args: &[String]) -> Option<(&str, Option<&str>)> {
     }
 }
 
+/// The line for a daemon that does not answer in time, and the time-outs it
+/// stands for.
+pub(crate) enum NoAnswer<'a> {
+    /// A time-out on the report only; one in the handshake is a lost
+    /// connection, as `tarmac report` has always said.
+    ToTheReport(&'a str),
+    /// A time-out anywhere from connect to answer.
+    Anywhere(&'a str),
+}
+
 /// Sends `msg` and waits for its `ack`, from connect to answer inside `wait`.
-/// Prints nothing: the error is the line the caller prints, with `no_answer`
-/// as the one for a daemon that did not answer in time.
-pub(crate) fn send(msg: &Msg, wait: Duration, no_answer: &str) -> Result<(), String> {
+/// Prints nothing: the error is the line the caller prints.
+pub(crate) fn send(msg: &Msg, wait: Duration, no_answer: NoAnswer) -> Result<(), String> {
     let payload = proto::encode(msg).map_err(|e| format!("encode failed: {e}"))?;
     let until = Instant::now() + wait;
-    let mut stream = crate::connect_until(until)?;
-    crate::exchange_until(&mut stream, &payload, until, no_answer)?
+    let (line, in_handshake) = match no_answer {
+        NoAnswer::ToTheReport(line) => (line, false),
+        NoAnswer::Anywhere(line) => (line, true),
+    };
+    let late = |e| if in_handshake { crate::late_or_lost(e, line) } else { crate::lost(e) };
+    let mut stream = crate::connect_until(until, &late)?;
+    crate::exchange_until(&mut stream, &payload, until, line)?
 }
