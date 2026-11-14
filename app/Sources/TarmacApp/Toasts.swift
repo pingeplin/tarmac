@@ -84,6 +84,22 @@ final class ToastStackView: NSView {
 
     var hasToasts: Bool { !queue.toasts.isEmpty }
 
+    /// The rect, in this view's coordinates, the column stacks above (the
+    /// minimap); nil keeps it at its own inset.
+    var keepAbove: CGRect? {
+        didSet { if keepAbove != oldValue { needsLayout = true } }
+    }
+
+    /// The set of toasts changed.
+    var onChange: (() -> Void)?
+
+    /// Where each toast goes, oldest first — the layout's frames, not those of
+    /// views still animating in.
+    var frames: [CGRect] {
+        let sizes = queue.toasts.compactMap { views[$0.id]?.size }
+        return ToastStackLayout.frames(sizes: sizes, in: bounds, above: keepAbove)
+    }
+
     override var isFlipped: Bool { true }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -116,11 +132,11 @@ final class ToastStackView: NSView {
         }
         place()
         schedulePrune()
+        onChange?()
     }
 
     private func place() {
         let ordered = queue.toasts.compactMap { views[$0.id] }
-        let frames = ToastStackLayout.frames(sizes: ordered.map(\.size), in: bounds)
         for (view, frame) in zip(ordered, frames) { view.frame = frame }
     }
 

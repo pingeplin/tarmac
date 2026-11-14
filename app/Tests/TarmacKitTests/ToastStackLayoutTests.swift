@@ -42,4 +42,30 @@ final class ToastStackLayoutTests: XCTestCase {
             [CGRect(x: 40 + 600 - 14 - 100, y: 20 + 400 - 38 - 30, width: 100, height: 30)]
         )
     }
+
+    /// The minimap of a 1100×673 board: 132×88, 12 in from the right and the bottom.
+    private let minimap = CGRect(x: 1100 - 12 - 132, y: 673 - 12 - 88, width: 132, height: 88)
+
+    func testTheNewestToastSitsAGapAboveTheMinimap() {
+        XCTAssertEqual(
+            ToastStackLayout.frames(sizes: [CGSize(width: 200, height: 36)], in: area, above: minimap),
+            [CGRect(x: 1100 - 14 - 200, y: 573 - 8 - 36, width: 200, height: 36)]
+        )
+    }
+
+    func testToastsStackUpwardFromTheMinimapAndNoneOverlapsIt() {
+        let frames = ToastStackLayout.frames(
+            sizes: [CGSize(width: 320, height: 50), CGSize(width: 120, height: 36)], in: area, above: minimap
+        )
+        XCTAssertEqual(frames.map(\.maxY), [573 - 8 - 36 - 8, 573 - 8])
+        for frame in frames { XCTAssertFalse(frame.intersects(minimap), "\(frame)") }
+    }
+
+    func testARectLowerThanTheColumnLeavesTheColumnWhereItWas() {
+        let low = CGRect(x: 900, y: 673 - 20, width: 132, height: 10)
+        XCTAssertEqual(
+            ToastStackLayout.frames(sizes: [CGSize(width: 200, height: 36)], in: area, above: low),
+            ToastStackLayout.frames(sizes: [CGSize(width: 200, height: 36)], in: area)
+        )
+    }
 }

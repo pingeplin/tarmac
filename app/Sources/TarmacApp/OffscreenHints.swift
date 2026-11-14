@@ -28,10 +28,12 @@ final class OffscreenHints {
 
     /// Shows a pill for each of `hints`, and returns them as placed.
     /// `viewRect` is the part of the board's bounds left uncovered and
-    /// `obstacles` its cards' on-screen rects; both layers share that space.
+    /// `obstacles` its cards' on-screen rects, and `chrome` the corner chrome
+    /// drawn over the pills (`OverlayStack.pillChrome`); all in the board's
+    /// coordinates, which both layers share.
     @discardableResult
     func show(
-        _ hints: [OffscreenHintLayout.Hint], in viewRect: CGRect, around obstacles: [CGRect]
+        _ hints: [OffscreenHintLayout.Hint], in viewRect: CGRect, around obstacles: [CGRect], clearOf chrome: [CGRect]
     ) -> [OffscreenHintLayout.PlacedPill] {
         var next: [String: OffscreenHintPill] = [:]
         for hint in hints {
@@ -51,7 +53,8 @@ final class OffscreenHints {
             edgeMargin: Self.edgeMargin,
             stackGap: Self.stackGap,
             pillSize: { sizes[$0.cardID] ?? .zero },
-            obstacles: obstacles
+            obstacles: obstacles,
+            chrome: chrome
         ))
         for position in placed {
             guard let pill = pills[position.cardID] else { continue }
