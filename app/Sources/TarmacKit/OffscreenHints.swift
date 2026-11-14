@@ -208,17 +208,13 @@ public enum OffscreenHintLayout {
         let sign: CGFloat = backward ? -1 : 1
         let preferLower = !backward && edge == .bottom
         let blockers = options.obstacles + options.chrome
-        let order = backward ? Array(group.indices.reversed()) : Array(group.indices)
-        let lengths = group.map { vertical ? $0.size.height : $0.size.width }
-        var reserve = order.reduce(0) { $0 + lengths[$1] + options.stackGap }
         var lastEnd = -CGFloat.infinity
         var pass = Pass()
 
-        for index in order {
+        for index in backward ? Array(group.indices.reversed()) : Array(group.indices) {
             let item = group[index]
             let size = item.size
-            let length = lengths[index]
-            reserve -= length + options.stackGap
+            let length = vertical ? size.height : size.width
             let posLo = (vertical ? viewRect.minY : viewRect.minX) + options.edgeMargin
             let posHi = (vertical ? viewRect.maxY : viewRect.maxX) - length - options.edgeMargin
             let crossPos: CGFloat
@@ -246,7 +242,6 @@ public enum OffscreenHintLayout {
                 obstacles: obstacleIntervals.map { backward ? Interval(lo: -$0.hi, hi: -$0.lo) : $0 },
                 siblingFloor: lastEnd + options.stackGap,
                 posLo: backward ? mirror(posHi) : posLo, posHi: backward ? mirror(posLo) : posHi,
-                reserve: reserve,
                 preferLower: preferLower
             )
             lastEnd = resolved + length
@@ -307,10 +302,8 @@ public enum OffscreenHintLayout {
     ///
     /// Otherwise it searches `[max(posLo, siblingFloor), posHi]` for the free gap
     /// (the window minus the obstacle intervals) closest to `desired` — at or
-    /// below it first, when `preferLower`. A gap is taken only where the later
-    /// siblings (`reserve`, their lengths and gaps) still fit before `posHi`, so
-    /// taking it pushes none of them out of view; ties favor the later gap,
-    /// matching the sibling nudge's forward-only bias. If obstacles saturate the
+    /// below it first, when `preferLower`; ties favor the later gap, matching
+    /// the sibling nudge's forward-only bias. If obstacles saturate the
     /// whole window, it falls back to the window-clamped `desired`. A pill is
     /// always returned, never suppressed.
     private static func resolveAlongPosition(
@@ -320,7 +313,6 @@ public enum OffscreenHintLayout {
         siblingFloor: CGFloat,
         posLo: CGFloat,
         posHi: CGFloat,
-        reserve: CGFloat,
         preferLower: Bool
     ) -> CGFloat {
         let lo = max(posLo, siblingFloor)
@@ -332,10 +324,8 @@ public enum OffscreenHintLayout {
             return pos
         }
 
-        // `posHi` bounds a pill's start; the window's spans run to its end.
-        let end = posHi + length
         let windowed = merged(obstacles)
-            .map { Interval(lo: max($0.lo, lo), hi: min($0.hi, end)) }
+            .map { Interval(lo: max($0.lo, lo), hi: min($0.hi, posHi)) }
             .filter { $0.hi > $0.lo }
         let clampedDesired = BoardWayfinding.clamp(desired, lo, posHi)
         if !windowed.contains(where: { clampedDesired < $0.hi && clampedDesired + length > $0.lo }) {
@@ -348,7 +338,7 @@ public enum OffscreenHintLayout {
             if obstacle.lo > cursor { gaps.append(Interval(lo: cursor, hi: obstacle.lo)) }
             cursor = max(cursor, obstacle.hi)
         }
-        if end > cursor { gaps.append(Interval(lo: cursor, hi: end)) }
+        if posHi > cursor { gaps.append(Interval(lo: cursor, hi: posHi)) }
 
         func nearest(where accept: (CGFloat) -> Bool) -> CGFloat? {
             var best: CGFloat?
@@ -356,7 +346,7 @@ public enum OffscreenHintLayout {
             for gap in gaps where gap.hi - gap.lo >= length {
                 let candidate = BoardWayfinding.clamp(clampedDesired, gap.lo, gap.hi - length)
                 let distance = abs(candidate - clampedDesired)
-                if candidate <= posHi - reserve, accept(candidate), distance <= bestDistance {
+                if accept(candidate), distance <= bestDistance {
                     bestDistance = distance
                     best = candidate
                 }
