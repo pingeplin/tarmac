@@ -1,16 +1,30 @@
 //! A terminal's resume command (spec 2611.0011): the holder it lasts for, and
 //! the handle's flag that lets a poll tick or a key with no command take no
-//! lock. Pure. The command lives in the board's `term_records`; the holder
-//! beside it, in memory only.
+//! lock. Pure. The command lives in the board's `term_records`; the holder on
+//! the terminal's handle, in memory only.
 
 use crate::proc::{Facts, Pid};
 use crate::reports::Holder;
 
 /// The handle's flag: no command, a command with a holder, or one with none
 /// (loaded from disk, or moved by `succeeds`), which typed input drops.
-pub const NONE: u8 = 0;
-pub const HELD: u8 = 1;
-pub const UNCLAIMED: u8 = 2;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum Flag {
+    None = 0,
+    Held = 1,
+    Unclaimed = 2,
+}
+
+impl Flag {
+    pub fn from_u8(raw: u8) -> Flag {
+        match raw {
+            1 => Flag::Held,
+            2 => Flag::Unclaimed,
+            _ => Flag::None,
+        }
+    }
+}
 
 /// The holder of a resume command is always a pid with its start time (D2):
 /// a command lasts for a process's life, not until the next foreground job.

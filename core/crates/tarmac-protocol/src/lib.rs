@@ -386,6 +386,12 @@ pub fn check_resume_cmd(cmd: &str) -> Result<(), &'static str> {
     Ok(())
 }
 
+/// `check_resume_cmd`, with the refusal worded as the cli and the daemon
+/// print it.
+pub fn refuse_resume_cmd(cmd: &str) -> Result<(), String> {
+    check_resume_cmd(cmd).map_err(|cause| format!("resume command refused: {cause}"))
+}
+
 fn is_invisible_format(c: char) -> bool {
     matches!(c, '\u{061c}' | '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{2069}' | '\u{feff}')
 }

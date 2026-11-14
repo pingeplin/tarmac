@@ -7,8 +7,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tarmac_protocol::{BoardMeta, BoardViewport, DocEntry, Msg, TermRecord, Tile};
 
-use crate::reports::Holder;
-
 pub struct DocInfo {
     pub via: String,
     pub read: bool,
@@ -124,9 +122,6 @@ pub struct Registry {
     /// Each terminal's record, kept across a `Layout`, which replaces only
     /// the tiles.
     pub term_records: BTreeMap<String, TermRecord>,
-    /// The holder of each live terminal's resume command (spec 2611.0011).
-    /// In memory only: a pid from a dead daemon names no process.
-    pub resume_holders: HashMap<String, Holder>,
 }
 
 impl Registry {
@@ -138,7 +133,6 @@ impl Registry {
             board: None,
             data_seen: HashMap::new(),
             term_records: BTreeMap::new(),
-            resume_holders: HashMap::new(),
         }
     }
 
@@ -560,20 +554,17 @@ impl Boards {
     /// Deletes the record of `term_id` from whichever board holds it. False
     /// when none does.
     pub fn forget_term(&mut self, term_id: &str) -> bool {
-        self.registries_mut().any(|reg| {
-            reg.resume_holders.remove(term_id);
-            reg.term_records.remove(term_id).is_some()
-        })
+        for reg in self.registries_mut() {
+            if reg.term_records.remove(term_id).is_some() {
+                return true;
+            }
+        }
+        false
     }
 
-    /// At a terminal's end: forgets the holder of its resume command, and the
-    /// command too when `drop_cmd`, on whichever board holds it. True when a
-    /// command was dropped.
-    pub fn end_resume(&mut self, term_id: &str, drop_cmd: bool) -> bool {
-        self.registries_mut().any(|reg| {
-            reg.resume_holders.remove(term_id);
-            drop_cmd && reg.term_records.get_mut(term_id).and_then(|r| r.resume.take()).is_some()
-        })
+    /// The record of `term_id` on whichever board holds it.
+    pub fn record_mut(&mut self, term_id: &str) -> Option<&mut TermRecord> {
+        self.registries_mut().find_map(|reg| reg.term_records.get_mut(term_id))
     }
 
     /// False (no-op) if no such board.

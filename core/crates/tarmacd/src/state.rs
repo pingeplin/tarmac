@@ -11,7 +11,7 @@ use crate::boards::{BoardId, Boards, DataDir, FileStamp, WantedData};
 use crate::docs::RepoInfo;
 use crate::reader::{PathFs, PathGate, RealFs};
 use crate::proc::{self, Facts, Pid};
-use crate::resume::{HELD, NONE, UNCLAIMED};
+use crate::resume::Flag;
 use crate::reports::{Holder, Kind, Reports};
 use crate::term::{SpawnPlan, TermHandle};
 use crate::watch::{NotWatched, NotifySource, Wake, WakeSource, Watcher};
@@ -470,7 +470,7 @@ impl Daemon {
             self.mark_dirty();
         }
         if moved.as_ref().is_some_and(|r| r.resume.is_some()) {
-            handle.set_resume_flag(UNCLAIMED);
+            handle.unclaim_resume();
         }
         reg.term_records.insert(plan.term_id.clone(), moved.unwrap_or_default());
     }
@@ -531,9 +531,22 @@ impl Daemon {
         }
     }
 
+    /// At a terminal's end, or a set that raced it: drops the command from
+    /// the record kept on whichever board, unless the shutdown has begun.
     async fn end_resume(&self, term_id: &str) {
-        let drop_cmd = !self.shutting_down.load(Ordering::SeqCst);
-        if self.boards.lock().await.end_resume(term_id, drop_cmd) {
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return;
+        }
+        self.drop_resume(self.boards.lock().await.record_mut(term_id), None);
+    }
+
+    /// The one drop of a resume command, run with `boards` held: the
+    /// command, and `handle`'s holder and flag; dirty when a command went.
+    fn drop_resume(&self, record: Option<&mut TermRecord>, handle: Option<&TermHandle>) {
+        if let Some(handle) = handle {
+            handle.forget_resume();
+        }
+        if record.and_then(|r| r.resume.take()).is_some() {
             self.mark_dirty();
         }
     }
@@ -583,27 +596,24 @@ impl Daemon {
         let unknown = || format!("unknown terminal: {term_id}");
         let handle = self.term(term_id).await.ok_or_else(unknown)?;
         let Some(cmd) = cmd else {
-            self.change_resume(term_id, &handle, |holders, record, handle| {
-                holders.remove(term_id);
-                handle.set_resume_flag(NONE);
-                record.resume.take().is_some()
-            })
-            .await;
+            self.with_record(term_id, |record| self.drop_resume(record, Some(&handle))).await;
             return Ok(());
         };
-        tarmac_protocol::check_resume_cmd(&cmd).map_err(|cause| format!("resume command refused: {cause}"))?;
+        tarmac_protocol::refuse_resume_cmd(&cmd)?;
         let holder = Holder::resolve(peer, handle.pid(), handle.spawned_with_cmd(), proc::proc_facts, || {
             handle.foreground_pid()
         })
         .and_then(|holder| crate::resume::tie(holder, proc::proc_facts))
         .ok_or_else(|| format!("no process to tie the resume command to in {term_id}"))?;
         let stored = self
-            .change_resume(term_id, &handle, |holders, record, handle| {
-                holders.insert(term_id.to_owned(), holder);
-                handle.set_resume_flag(HELD);
-                let same = record.resume.as_ref().is_some_and(|r| r.cmd == cmd);
-                record.resume = Some(ResumeRecord { cmd });
-                !same
+            .with_record(term_id, |record| {
+                let Some(record) = record else { return false };
+                handle.hold_resume(holder);
+                if record.resume.as_ref().is_none_or(|r| r.cmd != cmd) {
+                    record.resume = Some(ResumeRecord { cmd });
+                    self.mark_dirty();
+                }
+                true
             })
             .await;
         if !stored {
@@ -617,65 +627,44 @@ impl Daemon {
         Ok(())
     }
 
-    /// One change of `term_id`'s record, its holder and `handle`'s flag, in
-    /// one `boards` step; marks the state dirty when `change` says it changed
-    /// the record. False when the term has no record on its board.
-    async fn change_resume(
-        &self,
-        term_id: &str,
-        handle: &TermHandle,
-        change: impl FnOnce(&mut HashMap<String, Holder>, &mut TermRecord, &TermHandle) -> bool,
-    ) -> bool {
-        let Some(board) = self.term_boards.lock().await.get(term_id).cloned() else { return false };
+    /// Runs `change` with `boards` held, on `term_id`'s record on its own
+    /// board, or `None` when it has none there.
+    async fn with_record<T>(&self, term_id: &str, change: impl FnOnce(Option<&mut TermRecord>) -> T) -> T {
+        let board = self.term_boards.lock().await.get(term_id).cloned();
         let mut boards = self.boards.lock().await;
-        let Some(reg) = boards.known_registry_mut(&board) else { return false };
-        let Some(record) = reg.term_records.get_mut(term_id) else { return false };
-        if change(&mut reg.resume_holders, record, handle) {
-            self.mark_dirty();
-        }
-        true
+        let reg = board.and_then(|b| boards.known_registry_mut(&b));
+        change(reg.and_then(|reg| reg.term_records.get_mut(term_id)))
     }
 
     /// The poll's check: drops the resume command when its holder is gone,
-    /// unless the shutdown has begun. The holder is copied and checked with
-    /// no lock held, and removed only if it is still the one checked, so a
-    /// `resume` set in between is never undone.
+    /// unless the shutdown has begun. The holder is read from the handle and
+    /// checked with no lock held, and dropped only if it is still the one
+    /// checked, so a `resume` set in between is never undone.
     pub async fn check_resume(&self, term_id: &str, handle: &TermHandle, facts_of: impl Fn(Pid) -> Facts) {
-        if handle.resume_flag() != HELD {
+        if handle.resume_flag() != Flag::Held {
             return;
         }
-        let Some(board) = self.term_boards.lock().await.get(term_id).cloned() else { return };
-        let copy = self.boards.lock().await.known_registry(&board).and_then(|reg| reg.resume_holders.get(term_id).copied());
-        let Some(checked) = copy else { return };
+        let Some(checked) = handle.resume_holder() else { return };
         if checked.alive(facts_of, None) {
             return;
         }
-        let mut boards = self.boards.lock().await;
-        if self.shutting_down.load(Ordering::SeqCst) {
-            return;
-        }
-        let Some(reg) = boards.known_registry_mut(&board) else { return };
-        if reg.resume_holders.get(term_id) != Some(&checked) {
-            return;
-        }
-        reg.resume_holders.remove(term_id);
-        handle.set_resume_flag(NONE);
-        if reg.term_records.get_mut(term_id).and_then(|r| r.resume.take()).is_some() {
-            self.mark_dirty();
-        }
+        self.with_record(term_id, |record| {
+            if !self.shutting_down.load(Ordering::SeqCst) && handle.resume_holder() == Some(checked) {
+                self.drop_resume(record, Some(handle));
+            }
+        })
+        .await;
     }
 
     /// Typed input drops a resume command that has no holder (D6).
     pub async fn claim_resume(&self, term_id: &str, handle: &TermHandle) {
-        if handle.resume_flag() != UNCLAIMED {
+        if handle.resume_flag() != Flag::Unclaimed {
             return;
         }
-        self.change_resume(term_id, handle, |_, record, handle| {
-            if handle.resume_flag() != UNCLAIMED {
-                return false;
+        self.with_record(term_id, |record| {
+            if handle.resume_flag() == Flag::Unclaimed {
+                self.drop_resume(record, Some(handle));
             }
-            handle.set_resume_flag(NONE);
-            record.resume.take().is_some()
         })
         .await;
     }
