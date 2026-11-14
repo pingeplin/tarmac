@@ -186,7 +186,8 @@ fn time_out_at(stream: &UnixStream, until: Instant) -> io::Result<()> {
     stream.set_write_timeout(Some(left))
 }
 
-/// How long `open`, `push`, `report` and `--version` wait for the daemon.
+/// How long `open`, `push`, `report`, `--version` and the first answer to
+/// `terms`, `events` and `wait` wait for the daemon.
 const DAEMON_WAIT: Duration = Duration::from_secs(5);
 
 fn no_answer(why: &str) -> String {

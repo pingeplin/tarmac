@@ -71,7 +71,8 @@ pub struct Daemon {
     /// before `app` (in `push`); `boards` and `terms` are never taken while
     /// it is held.
     pub reports: Mutex<Reports>,
-    /// Every frame `push` gives the app, for `tarmac events` and `wait`.
+    /// The `exit`, `bell`, `file_event` and `term_report` frames `push`
+    /// gives the app, for `tarmac events` and `wait`.
     pub events: crate::events::Fanout,
     /// Written in `term_ended` before the term leaves `terms`, so an id is
     /// always live, in the ring, or unknown. Held for a read or a write only.

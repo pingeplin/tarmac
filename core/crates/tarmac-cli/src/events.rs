@@ -173,20 +173,18 @@ pub(crate) enum Stop {
 
 /// Connects, sends `subscribe` and reads to `ack`: the stream and the
 /// snapshot frames before it. Each wait ends at the earlier of 5 s and
-/// `deadline`; running out at `deadline` is `Late`.
+/// `deadline`; running out is `Late` when `deadline` is that limit.
 pub(crate) fn subscribe(kinds: Option<Vec<String>>, term_id: Option<String>, deadline: Option<Instant>) -> Result<(UnixStream, Vec<Msg>), Stop> {
     let five = Instant::now() + crate::DAEMON_WAIT;
     let until = deadline.map_or(five, |d| d.min(five));
+    let late = deadline.is_some_and(|d| d <= five);
     let no_answer = crate::no_answer("an older daemon");
     let timed_out = Cell::new(false);
     let failed = |e: io::Error| {
         timed_out.set(matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut));
         crate::late_or_lost(e, &no_answer)
     };
-    let stop = |why: String| match deadline {
-        Some(d) if timed_out.get() && Instant::now() >= d => Stop::Late,
-        _ => Stop::Fail(why),
-    };
+    let stop = |why: String| if late && timed_out.get() { Stop::Late } else { Stop::Fail(why) };
     let mut stream = crate::connect_until(until, &failed).map_err(stop)?;
     let payload = proto::encode(&Msg::Subscribe { kinds, term_id }).map_err(|e| Stop::Fail(format!("encode failed: {e}")))?;
     crate::time_out_at(&stream, until).map_err(|e| stop(failed(e)))?;
