@@ -95,6 +95,8 @@ enum Daemon {
     Answers(Msg),
     SilentAfterHello,
     SilentToHello,
+    /// Answers the hello late, then never answers the report.
+    SlowHelloThenSilent(Duration),
 }
 
 fn daemon(kind: Daemon) -> Double {
@@ -103,7 +105,13 @@ fn daemon(kind: Daemon) -> Double {
             return peer.hold();
         }
         let hello_ok = proto::encode(&hello_ok(None, None, None, None)).unwrap();
-        if peer.read().is_none() || !peer.write(&hello_ok) || peer.read().is_none() {
+        if peer.read().is_none() {
+            return;
+        }
+        if let Daemon::SlowHelloThenSilent(stall) = kind {
+            std::thread::sleep(stall);
+        }
+        if !peer.write(&hello_ok) || peer.read().is_none() {
             return;
         }
         match kind {
@@ -201,6 +209,21 @@ fn s21_a_daemon_that_never_answers_is_given_up_on_at_the_deadline() {
         }
         assert!(best >= Duration::from_millis(450) && best <= Duration::from_millis(1000), "the fastest run took {best:?}");
     }
+}
+
+// The deadline covers connect to answer: time spent in the handshake is not
+// given again to the answer.
+#[test]
+fn one_deadline_spans_the_handshake_and_the_answer() {
+    let (best, outs) = fastest(3, || {
+        run_against(&daemon(Daemon::SlowHelloThenSilent(Duration::from_millis(400))), stop_input("Done."))
+    });
+
+    for out in &outs {
+        assert_silent_success(out, "slow hello");
+        assert_eq!(out.one_stderr_line(), "tarmac: hooks run: no answer from the daemon in 500 ms\n");
+    }
+    assert!(best <= Duration::from_millis(750), "the fastest run took {best:?}");
 }
 
 // S22
@@ -894,6 +917,11 @@ fn s16_the_files_mode_is_kept_and_a_new_file_gets_the_default() {
     set_mode(&path, 0o600);
     claude(&dir, "install");
     assert_eq!((mode(&path), mode(&backup_of(&path))), (0o600, 0o600));
+    for (kept, verb) in [(0o644, "uninstall"), (0o640, "install")] {
+        set_mode(&path, kept);
+        assert_eq!(claude(&dir, verb).code(), Some(0));
+        assert_eq!((mode(&path), mode(&backup_of(&path))), (kept, kept), "{kept:o}");
+    }
 
     let dir = sandbox();
     let reference = dir.join("reference");
@@ -1008,5 +1036,54 @@ fn s28_a_usage_error_exits_2_and_makes_no_file() {
         assert_eq!(out.code(), Some(2), "{args:?}");
         assert!(out.stderr.contains("usage"), "{args:?}: {}", out.stderr);
         assert_eq!(tree(&dir), [dir.join("home"), dir.join("proj")], "{args:?}");
+    }
+}
+
+// A repository can hold a symlink where the backup goes. The backup must
+// replace that link, never write through it.
+#[test]
+fn a_symlink_at_the_backup_path_is_replaced_not_followed() {
+    let dir = sandbox();
+    let victim = dir.join("victim");
+    put(&victim, "export SAFE=1\n");
+    set_mode(&victim, 0o640);
+    let local = project_settings(&dir);
+    put(&local, F_CLAUDE);
+    std::os::unix::fs::symlink(&victim, backup_of(&local)).unwrap();
+
+    let out = hooks(&dir, &["install", "--target", "claude-code", "--scope", "project"]);
+
+    assert_eq!(out.code(), Some(0), "{}", out.stderr);
+    assert_eq!((read(&victim), mode(&victim)), ("export SAFE=1\n".to_string(), 0o640));
+    assert!(std::fs::symlink_metadata(backup_of(&local)).unwrap().file_type().is_file());
+    assert_eq!(read(&backup_of(&local)), F_CLAUDE);
+}
+
+#[test]
+fn an_empty_hooks_key_keeps_its_place() {
+    let dir = sandbox();
+    let path = user_settings(&dir);
+    put(&path, &F_CLAUDE.replace("  },\n  \"env\"", "  },\n  \"hooks\": {},\n  \"env\""));
+
+    assert_eq!(claude(&dir, "install").code(), Some(0));
+
+    assert_eq!(keys(&json(&path)), ["permissions", "hooks", "env", "model", "cleanupPeriodDays"]);
+}
+
+#[test]
+fn the_project_hint_names_the_real_file_through_a_symlink_on_both_verbs() {
+    let dir = sandbox();
+    let target = dir.join("dotfiles/local.json");
+    put(&target, F_CLAUDE);
+    let link = project_settings(&dir);
+    std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    for verb in ["install", "uninstall"] {
+        let out = hooks(&dir, &[verb, "--target", "claude-code", "--scope", "project"]);
+
+        assert_eq!(out.code(), Some(0), "{verb}: {}", out.stderr);
+        let hint = status_line(&out, "hint: ");
+        assert!(hint.contains(&format!("{} only", target.display())), "{verb}: {hint}");
+        assert!(hint.ends_with(&backup_of(&target).display().to_string()), "{verb}: {hint}");
     }
 }

@@ -233,9 +233,9 @@ fn write(settings: &Settings) -> Result<Option<PathBuf>, String> {
     let written = (|| {
         file.write_all(text.as_bytes())?;
         file.sync_all()?;
-        if let Some(mode) = mode {
-            fs::set_permissions(&tmp, fs::Permissions::from_mode(mode))?;
-            fs::copy(real, &backup)?;
+        if let (Some(mode), Some(original)) = (mode, &settings.original) {
+            file.set_permissions(fs::Permissions::from_mode(mode))?;
+            put_backup(&backup, original.as_bytes(), mode)?;
         }
         fs::rename(&tmp, real)
     })();
@@ -244,6 +244,26 @@ fn write(settings: &Settings) -> Result<Option<PathBuf>, String> {
         return Err(cannot_write(e));
     }
     Ok(mode.map(|_| backup))
+}
+
+/// Puts `bytes` at `backup` through a new temp file and a rename: a symlink
+/// planted at `backup` is replaced, never written through.
+fn put_backup(backup: &Path, bytes: &[u8], mode: u32) -> io::Result<()> {
+    let mut tmp = backup.as_os_str().to_owned();
+    tmp.push("-tmp");
+    let tmp = PathBuf::from(tmp);
+    let _ = fs::remove_file(&tmp);
+    let mut file = OpenOptions::new().write(true).create_new(true).mode(0o600).open(&tmp)?;
+    let written = (|| {
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        file.set_permissions(fs::Permissions::from_mode(mode))?;
+        fs::rename(&tmp, backup)
+    })();
+    if written.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    written
 }
 
 /// Exit 1 when a file is unreadable; `not installed` is not an error.
