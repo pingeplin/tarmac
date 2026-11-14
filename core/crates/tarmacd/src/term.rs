@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
@@ -10,6 +11,7 @@ use tracing::debug;
 
 use crate::boards::BoardId;
 use crate::proc;
+use crate::reporting;
 use crate::state::Daemon;
 
 pub const OUTPUT_CHUNK: usize = 64 * 1024; // protocol: output chunks <= 64 KiB
@@ -59,9 +61,37 @@ pub struct TermHandle {
     // only valid while we own it). The child is its own process-group leader, so
     // `kill(-pid, ..)` signals the group.
     pid: Option<libc::pid_t>,
+    /// The terminal was spawned with a `cmd`: its PTY child is the agent for
+    /// every report made in it (spec 2611.0009, D1).
+    spawned_with_cmd: bool,
+    // Written only under the daemon's `reports` lock, in the step that changes
+    // the store; read without it, so that a key costs one load.
+    has_report: AtomicBool,
+    unread_report: AtomicBool,
 }
 
 impl TermHandle {
+    pub fn pid(&self) -> Option<libc::pid_t> {
+        self.pid
+    }
+
+    pub fn spawned_with_cmd(&self) -> bool {
+        self.spawned_with_cmd
+    }
+
+    pub fn has_report(&self) -> bool {
+        self.has_report.load(Ordering::Relaxed)
+    }
+
+    pub fn unread_report(&self) -> bool {
+        self.unread_report.load(Ordering::Relaxed)
+    }
+
+    pub fn set_report_flags(&self, has: bool, unread: bool) {
+        self.has_report.store(has, Ordering::Relaxed);
+        self.unread_report.store(unread, Ordering::Relaxed);
+    }
+
     pub fn resize(&self, cols: u16, rows: u16) -> Result<(), String> {
         self.master
             .lock()
@@ -196,6 +226,9 @@ pub async fn spawn(daemon: Arc<Daemon>, plan: SpawnPlan) -> Result<(), String> {
         master: std::sync::Mutex::new(pty.master),
         scrollback: std::sync::Mutex::new(ScrollbackRing::new()),
         pid: child_pid,
+        spawned_with_cmd: plan.cmd.is_some(),
+        has_report: AtomicBool::new(false),
+        unread_report: AtomicBool::new(false),
     });
     // Before the loop starts: its first cwd read fills the record of the
     // term's board, which must be there by then.
@@ -346,6 +379,9 @@ async fn proc_loop(daemon: Arc<Daemon>, term_id: String, handle: Arc<TermHandle>
         if !daemon.terms.lock().await.contains_key(&term_id) {
             break;
         }
+        // Before the leader read below, whose failure skips the rest of the
+        // tick: an agent's exit must end its report all the same.
+        reporting::check(&daemon, &term_id, &handle).await;
 
         let Some(pid) = handle.foreground_pid() else { continue };
         if let Some(name) = proc::process_name(pid)
@@ -422,6 +458,9 @@ mod tests {
             master: std::sync::Mutex::new(native_pty_system().openpty(PtySize::default()).unwrap().master),
             scrollback: std::sync::Mutex::new(ScrollbackRing::new()),
             pid: None,
+            spawned_with_cmd: false,
+            has_report: AtomicBool::new(false),
+            unread_report: AtomicBool::new(false),
         });
         let (out_tx, out_rx) = mpsc::channel(2);
         let (exit_tx, exit_rx) = oneshot::channel();

@@ -10,6 +10,7 @@ use tokio_util::sync::CancellationToken;
 use crate::boards::{BoardId, Boards, DataDir, FileStamp, WantedData};
 use crate::docs::RepoInfo;
 use crate::reader::{PathFs, PathGate, RealFs};
+use crate::reports::Reports;
 use crate::term::{SpawnPlan, TermHandle};
 use crate::watch::{NotWatched, NotifySource, Wake, WakeSource, Watcher};
 
@@ -63,6 +64,11 @@ pub struct Daemon {
     /// The board each terminal belongs to (set at spawn): routes `tarmac open`
     /// from a backgrounded board's term and scopes per-board teardown/restore.
     pub term_boards: Mutex<HashMap<String, BoardId>>,
+    /// Each live terminal's current report. Each change and its push happen
+    /// under this lock, so one terminal's frames keep their order. Taken
+    /// before `app` (in `push`); `boards` and `terms` are never taken while
+    /// it is held.
+    pub reports: Mutex<Reports>,
     doc_counts: Arc<DocCounts>,
     watcher: Watcher,
     /// Set by the watcher; `docs::watch_loop` waits on it.
@@ -147,6 +153,7 @@ impl Daemon {
             boards: Mutex::new(boards),
             terms: Mutex::new(HashMap::new()),
             term_boards: Mutex::new(HashMap::new()),
+            reports: Mutex::new(Reports::default()),
             doc_counts,
             watcher,
             wake,
@@ -498,6 +505,9 @@ impl Daemon {
             tracing::warn!("term {term_id} missing from registry at exit");
         }
         self.term_boards.lock().await.remove(term_id);
+        // After the term left `terms`: a report stored after this is undone
+        // by the handler's own re-check (`reporting::handle_report`).
+        self.reports.lock().await.forget(term_id);
         if code == Some(0) {
             self.forget_record(term_id).await;
         }

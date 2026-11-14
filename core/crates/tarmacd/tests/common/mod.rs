@@ -45,6 +45,31 @@ impl TestDaemon {
         Self::launch(temp_dir(), configure)
     }
 
+    /// A daemon whose `cmd: None` spawns are `/bin/sh -il` with `HOME` an empty
+    /// dir: a job-control shell that reads no rc file of the user (spec
+    /// 2611.0009, OQ4).
+    pub fn start_sh() -> Self {
+        let dir = temp_dir();
+        let home = dir.join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        Self::launch(dir, |cmd| {
+            cmd.env("SHELL", "/bin/sh").env("HOME", &home);
+        })
+    }
+
+    /// A shell command that sends `frames`, each framed, from a process in a
+    /// pty: the frames go to a file in the daemon's dir, and `nc` sends them
+    /// (spec 2611.0009, OQ3). The daemon's answers are written to the pty.
+    pub fn nc_reporter(&self, name: &str, frames: &[Msg]) -> String {
+        let mut bytes = Vec::new();
+        for msg in frames {
+            frame::write_sync(&mut bytes, &proto::encode(msg).unwrap()).unwrap();
+        }
+        let file = self.dir.join(format!("{name}.frames"));
+        std::fs::write(&file, bytes).unwrap();
+        format!("/usr/bin/nc -U -w 2 {} < {}", self.sock.display(), file.display())
+    }
+
     /// A daemon that loads `state` (a `state.json`) at its start.
     pub fn start_seeded(state: &serde_json::Value) -> Self {
         Self::start_seeded_with(state, |_| {})
@@ -320,13 +345,97 @@ impl Conn {
         self.spawn_term_with(term_id, cmd, Spawn::default());
     }
 
+    /// A cli `report` from the test process itself, and the daemon's answer.
+    /// The walk from the test process never reaches a pty, so the caller is
+    /// unattributed.
+    pub fn cli_report(sock: &Path, term_id: &str, kind: &str, text: Option<&str>) -> Msg {
+        let mut cli = Conn::hello(sock, "cli");
+        cli.send(&Msg::Report { term_id: term_id.into(), kind: kind.into(), text: text.map(str::to_string) });
+        cli.recv(Instant::now() + LONG, "the answer to a report")
+    }
+
+    pub fn recv_report_for(&mut self, term_id: &str) -> Msg {
+        self.recv_until(&format!("term_report for {term_id}"), |m| is_report_for(m, term_id))
+    }
+
+    /// The next frame that matches `pred` within `wait`, or `None`.
+    pub fn recv_within(&mut self, wait: Duration, mut pred: impl FnMut(&Msg) -> bool) -> Option<Msg> {
+        let deadline = Instant::now() + wait;
+        let found = loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                break None;
+            }
+            self.0.set_read_timeout(Some(remaining)).unwrap();
+            match frame::read_sync(&mut self.0) {
+                Ok(payload) => {
+                    let msg = proto::decode(&payload).expect("decode frame");
+                    if pred(&msg) {
+                        break Some(msg);
+                    }
+                }
+                Err(_) => break None,
+            }
+        };
+        self.0.set_read_timeout(Some(LONG)).unwrap();
+        found
+    }
+
+    /// Types `line` and a newline into `term_id`.
+    pub fn type_line(&mut self, term_id: &str, line: &str) {
+        self.send(&Msg::Input { term_id: term_id.into(), bytes: format!("{line}\n").into_bytes(), typed: false });
+    }
+
+    /// Reads frames into `log` until one matches `pred`; its index.
+    pub fn log_until(&mut self, log: &mut FrameLog, what: &str, mut pred: impl FnMut(&Msg) -> bool) -> usize {
+        let deadline = Instant::now() + LONG;
+        loop {
+            let msg = self.recv(deadline, what);
+            let hit = pred(&msg);
+            log.0.push(Logged { at: Instant::now(), msg });
+            if hit {
+                return log.0.len() - 1;
+            }
+        }
+    }
+
+    /// Reads frames into `log` until `term_id`'s output from index `from` on
+    /// contains `needle`; the index of the chunk that completes it.
+    pub fn log_until_output(&mut self, log: &mut FrameLog, term_id: &str, from: usize, needle: &[u8]) -> usize {
+        let deadline = Instant::now() + LONG;
+        loop {
+            if let Some(i) = log.output_index_containing(term_id, from, needle) {
+                return i;
+            }
+            let msg = self.recv(deadline, &format!("output containing {:?}", String::from_utf8_lossy(needle)));
+            log.0.push(Logged { at: Instant::now(), msg });
+        }
+    }
+
+    /// Reads every frame that comes within `wait` into `log`.
+    pub fn log_for(&mut self, log: &mut FrameLog, wait: Duration) {
+        let deadline = Instant::now() + wait;
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            self.0.set_read_timeout(Some(remaining)).unwrap();
+            match frame::read_sync(&mut self.0) {
+                Ok(payload) => log.0.push(Logged { at: Instant::now(), msg: proto::decode(&payload).expect("decode frame") }),
+                Err(_) => break,
+            }
+        }
+        self.0.set_read_timeout(Some(LONG)).unwrap();
+    }
+
     pub fn spawn_term_with(&mut self, term_id: &str, cmd: &[&str], opts: Spawn) {
         self.send(&Msg::SpawnTerm {
             term_id: term_id.into(),
             cols: opts.cols,
             rows: opts.rows,
             cwd: opts.cwd,
-            cmd: Some(cmd.iter().map(|s| s.to_string()).collect()),
+            cmd: (!opts.login_shell).then(|| cmd.iter().map(|s| s.to_string()).collect()),
             board_id: opts.board_id,
             inherit_cwd_from: opts.inherit_cwd_from,
             succeeds: opts.succeeds,
@@ -343,9 +452,16 @@ pub struct Spawn {
     pub board_id: Option<String>,
     pub inherit_cwd_from: Option<String>,
     pub succeeds: Option<String>,
+    /// Sends `cmd: None`, so the daemon spawns `$SHELL -il`; the `cmd` given
+    /// is not sent.
+    pub login_shell: bool,
 }
 
 impl Spawn {
+    pub fn login_shell() -> Self {
+        Spawn { login_shell: true, ..Default::default() }
+    }
+
     pub fn on_board(board_id: &str) -> Self {
         Spawn { board_id: Some(board_id.into()), ..Default::default() }
     }
@@ -353,7 +469,7 @@ impl Spawn {
 
 impl Default for Spawn {
     fn default() -> Self {
-        Spawn { cols: 80, rows: 24, cwd: None, board_id: None, inherit_cwd_from: None, succeeds: None }
+        Spawn { cols: 80, rows: 24, cwd: None, board_id: None, inherit_cwd_from: None, succeeds: None, login_shell: false }
     }
 }
 
@@ -384,6 +500,58 @@ impl From<Msg> for Restore {
         };
         Restore { board_id, docs, tiles, board, live_terms, term_records }
     }
+}
+
+/// One frame of a `FrameLog`, with the time it was read.
+pub struct Logged {
+    pub at: Instant,
+    pub msg: Msg,
+}
+
+/// Every frame an app connection read, in order. The `recv_*` helpers drop
+/// what does not match; a test that asserts the order of two frames reads into
+/// a log instead.
+#[derive(Default)]
+pub struct FrameLog(pub Vec<Logged>);
+
+impl FrameLog {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// The index of `term_id`'s output chunk, from index `from` on, at which
+    /// the concatenated output first contains `needle`.
+    pub fn output_index_containing(&self, term_id: &str, from: usize, needle: &[u8]) -> Option<usize> {
+        let mut text = Vec::new();
+        for (i, logged) in self.0.iter().enumerate().skip(from) {
+            if let Msg::Output { term_id: t, bytes } = &logged.msg
+                && t == term_id
+            {
+                text.extend_from_slice(bytes);
+                if contains(&text, needle) {
+                    return Some(i);
+                }
+            }
+        }
+        None
+    }
+
+    /// The indexes of `term_id`'s `term_report`s from index `from` on.
+    pub fn reports_for(&self, term_id: &str, from: usize) -> Vec<usize> {
+        (from..self.0.len()).filter(|&i| is_report_for(&self.0[i].msg, term_id)).collect()
+    }
+
+    /// The name of `term_id`'s last `term_proc`.
+    pub fn last_proc_name(&self, term_id: &str) -> Option<String> {
+        self.0.iter().rev().find_map(|l| match &l.msg {
+            Msg::TermProc { term_id: t, name, .. } if t == term_id => Some(name.clone()),
+            _ => None,
+        })
+    }
+}
+
+pub fn is_report_for(msg: &Msg, want: &str) -> bool {
+    matches!(msg, Msg::TermReport { term_id, .. } if term_id == want)
 }
 
 pub fn contains(haystack: &[u8], needle: &[u8]) -> bool {

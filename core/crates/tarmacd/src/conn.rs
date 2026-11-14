@@ -10,10 +10,11 @@ use tracing::{debug, info, warn};
 
 use crate::boards::{BoardId, Boards};
 use crate::state::Daemon;
-use crate::{docs, term};
+use crate::{docs, reporting, term};
 
-pub async fn handle(daemon: Arc<Daemon>, stream: UnixStream) {
-    if let Err(e) = handshake(daemon, stream).await {
+/// `peer_pid` is the client's pid, read at accept; only a cli session uses it.
+pub async fn handle(daemon: Arc<Daemon>, stream: UnixStream, peer_pid: Option<libc::pid_t>) {
+    if let Err(e) = handshake(daemon, stream, peer_pid).await {
         debug!("connection ended: {e}");
     }
 }
@@ -52,7 +53,7 @@ fn hello_ok(app: Option<(bool, Option<String>)>) -> Msg {
     }
 }
 
-async fn handshake(daemon: Arc<Daemon>, mut stream: UnixStream) -> anyhow::Result<()> {
+async fn handshake(daemon: Arc<Daemon>, mut stream: UnixStream, peer_pid: Option<libc::pid_t>) -> anyhow::Result<()> {
     let first = frame::read_async(&mut stream).await?;
     let (role, v, app_version) = match proto::decode(&first) {
         Ok(Msg::Hello { role, v, app_version }) => (role, v, app_version),
@@ -66,7 +67,7 @@ async fn handshake(daemon: Arc<Daemon>, mut stream: UnixStream) -> anyhow::Resul
         "cli" => {
             let slot = daemon.app_slot_version().await;
             write_msg(&mut stream, &hello_ok(Some(slot))).await?;
-            cli_session(daemon, stream).await
+            cli_session(daemon, stream, peer_pid).await
         }
         "app" => {
             write_msg(&mut stream, &hello_ok(None)).await?;
@@ -76,7 +77,7 @@ async fn handshake(daemon: Arc<Daemon>, mut stream: UnixStream) -> anyhow::Resul
     }
 }
 
-async fn cli_session(daemon: Arc<Daemon>, mut stream: UnixStream) -> anyhow::Result<()> {
+async fn cli_session(daemon: Arc<Daemon>, mut stream: UnixStream, peer_pid: Option<libc::pid_t>) -> anyhow::Result<()> {
     // The pushes of this connection: each path given, resolved once.
     let mut resolved = HashMap::new();
     loop {
@@ -93,6 +94,10 @@ async fn cli_session(daemon: Arc<Daemon>, mut stream: UnixStream) -> anyhow::Res
                 let done = docs::handle_push(&daemon, &mut resolved, &path, value).await;
                 write_msg(&mut stream, &reply(done)).await?;
             }
+            Ok(Msg::Report { term_id, kind, text }) => {
+                let done = reporting::handle_report(&daemon, peer_pid, &term_id, &kind, text).await;
+                write_msg(&mut stream, &reply(done)).await?;
+            }
             Ok(Msg::Unknown) => debug!("ignoring unknown message type from cli"),
             Ok(other) => debug!("ignoring unexpected cli message: {other:?}"),
             Err(e) => reject(&mut stream, format!("malformed frame: {e}")).await?,
@@ -100,7 +105,7 @@ async fn cli_session(daemon: Arc<Daemon>, mut stream: UnixStream) -> anyhow::Res
     }
 }
 
-/// The answer to a cli `open` or `push`.
+/// The answer to a cli `open`, `push` or `report`.
 fn reply(done: Result<(), String>) -> Msg {
     match done {
         Ok(()) => Msg::Ack,
@@ -192,6 +197,14 @@ async fn change_and_send_active_board(
             daemon.boards.lock().await.hold(&active_id, &path);
         }
     }
+    // On every restore, not only a board's first: the app drops a frame for a
+    // card it has not built, so a background board shows its reports when shown.
+    {
+        let reports = daemon.reports.lock().await;
+        for msg in reports.snapshot(&live_terms) {
+            let _ = conn.tx.send(msg).await;
+        }
+    }
     for (tid, data) in replay {
         for chunk in data.chunks(term::OUTPUT_CHUNK) {
             let _ = conn.tx.send(Msg::Output { term_id: tid.clone(), bytes: chunk.to_vec() }).await;
@@ -250,9 +263,12 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
         Msg::SpawnTerm { term_id, cols, rows, cwd, cmd, board_id, inherit_cwd_from, succeeds } => {
             spawn_requested(daemon, term_id, (cols, rows), cwd, cmd, board_id, inherit_cwd_from, succeeds).await;
         }
-        Msg::Input { term_id, bytes, .. } => match daemon.term(&term_id).await {
+        Msg::Input { term_id, bytes, typed } => match daemon.term(&term_id).await {
             Some(h) => {
                 let _ = h.input_tx.send(bytes).await;
+                if typed {
+                    reporting::mark_read(daemon, &term_id, &h).await;
+                }
             }
             None => debug!("input for unknown term {term_id}"),
         },
