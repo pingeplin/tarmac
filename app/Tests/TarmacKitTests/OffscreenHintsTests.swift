@@ -544,6 +544,22 @@ final class OffscreenHintLayoutTests: XCTestCase {
         XCTAssertLessThanOrEqual(outside.count, 1, "\(outside.map(\.left))")
     }
 
+    /// Forward leaves one pill under the minimap and two under the cards.
+    /// Resolved from the end, every pill clears them, but the first two are
+    /// pushed off the view's left side, so the forward placing stays.
+    func testResolvingFromTheEndNeverPushesAPillOffTheView() {
+        let cards = [
+            CGRect(x: 606, y: 712, width: 294, height: 113), CGRect(x: 188, y: 507, width: 401, height: 297),
+        ]
+        let pills = stack(
+            [73, 154, 975, 145].map { hint("x\(Int($0))", CGPoint(x: $0, y: 2000), .live, 0) },
+            obstacles: cards, chrome: [minimap]
+        )
+        XCTAssertEqual(pills.count, 4)
+        let offView = pills.filter { !rect(of: $0).intersects(view) }
+        XCTAssertEqual(offView.map(\.cardID), [])
+    }
+
     /// Forward, the first pill takes the gap [690, 848] and the second is left
     /// under the minimap. Resolved from the end, the second takes the gap and
     /// the first goes under the card: one pill covered either way, so the
