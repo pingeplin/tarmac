@@ -8,6 +8,7 @@ use tarmac_protocol::{self as proto, Msg, frame};
 
 mod help;
 mod push;
+mod report;
 mod skill;
 
 /// The one build-config to channel mapping: a debug build is `dev`, a release
@@ -73,6 +74,7 @@ fn run(args: &[String]) -> i32 {
         Some("dev") => dev_dispatch(&args[1..]),
         Some("skill") => skill::run(&args[1..]),
         Some("push") => push::run(&args[1..]),
+        Some("report") => report::run(&args[1..]),
         Some("open") => match &args[1..] {
             [path] => match open(path) {
                 Ok(line) => {

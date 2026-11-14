@@ -92,6 +92,10 @@ USAGE:
                             send one JSON value to the loaded cards of an open doc
     tarmac push <path> -
                             send one JSON value per line of stdin, in order
+    tarmac report blocked [\"<text>\"]
+    tarmac report done [\"<text>\"]
+    tarmac report clear
+                            set or clear this terminal's report on its card
     tarmac --version        report the cli, daemon, and app versions
     tarmac skill            print the agent-facing Tarmac guide
     tarmac skill install    install a SKILL.md that points coding agents at it
@@ -108,6 +112,14 @@ checks that the value is one JSON value. It prints nothing on success. With `-`
 it reads stdin on one connection, skips blank lines, and names each refused line
 on stderr (`line <n>: <reason>`) and goes on; it ends at a lost connection or
 when the daemon does not answer in 5 s.
+
+`tarmac report` runs inside a Tarmac terminal (it reads TARMAC_TERM_ID) and
+says that the agent there is blocked or done, with an optional text of at most
+280 characters; the card shows it as a chip. The report lasts while the process
+that made it runs: the daemon finds that process, so a report from an agent's
+hook ends when the agent exits. One typed at the prompt ends at the next
+command that runs for longer than 750 ms. `clear` removes it. It prints
+nothing on success.
 
 {DEV_HELP}`tarmac skill` never talks to the daemon. `install` writes one SKILL.md per
 target — claude-code (~/.claude/skills) and codex (~/.agents/skills) — and
@@ -126,8 +138,9 @@ exits 0 whether or not a daemon is running.
 
 EXIT STATUS:
     0  success; also `tarmac --version` with no daemon running
-    1  the daemon refused an open or a push (with -, any line), no daemon is
-       running, or an install failed
+    1  the daemon refused an open, a push or a report (with -, any line), no
+       daemon is running, `report` ran outside a Tarmac terminal, or an install
+       failed
     2  usage error
 ";
 
