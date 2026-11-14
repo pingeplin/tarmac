@@ -24,9 +24,6 @@ final class TerminalSession {
     var procName: String?
     /// When the lit bell rang.
     var bellAt: Date?
-    /// The daemon's last `term_report` for this terminal; dropped when the
-    /// card dies or the connection is lost.
-    var report: TermReport?
     /// The grid last sent to the daemon; nil until a spawn or resize went out.
     var sentGrid: TermGrid.Size?
 

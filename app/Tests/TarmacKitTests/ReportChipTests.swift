@@ -16,7 +16,7 @@ final class ReportChipTests: XCTestCase {
     }
 
     private func model(_ message: Message) throws -> ReportChip.Model {
-        ReportChip.model(report: try XCTUnwrap(TermReport.from(message)), nowMs: now)
+        ReportChip.model(report: try XCTUnwrap(TermReport.frame(message)?.report), nowMs: now)
     }
 
     // S7
@@ -44,29 +44,22 @@ final class ReportChipTests: XCTestCase {
     }
 
     // S19
-    func testS19AFrameWithNoKindAnUnknownKindOrNoAtMsIsNoReport() {
-        XCTAssertNil(TermReport.from(frame(kind: nil)))
-        XCTAssertNil(TermReport.from(frame(kind: "later")))
-        XCTAssertNil(TermReport.from(frame(atMs: nil)))
-        XCTAssertNil(TermReport.from(.bell(termID: "t1")))
+    func testS19AFrameWithNoKindAnUnknownKindOrNoAtMsIsNoReportForItsTerminal() {
+        for message in [frame(kind: nil), frame(kind: "later"), frame(atMs: nil)] {
+            let parsed = TermReport.frame(message)
+            XCTAssertEqual(parsed?.termID, "t1")
+            XCTAssertNil(parsed?.report)
+        }
+        XCTAssertNil(TermReport.frame(.bell(termID: "t1")))
     }
 
     func testAFrameKeepsItsFields() {
+        let parsed = TermReport.frame(frame(read: true))
+        XCTAssertEqual(parsed?.termID, "t1")
         XCTAssertEqual(
-            TermReport.from(frame(read: true)),
+            parsed?.report,
             TermReport(kind: .blocked, text: "May I?", atMs: now - 125_000, proc: "claude", read: true)
         )
-    }
-
-    // S20
-    func testS20TheAgeIsFlooredToItsUnit() {
-        let cases: [(UInt64, String)] = [
-            (0, "<1m"), (59_999, "<1m"), (60_000, "1m"), (3_599_999, "59m"), (3_600_000, "1h"),
-            (86_399_999, "23h"), (86_400_000, "1d"), (3 * 86_400_000 - 1, "2d"),
-        ]
-        for (elapsed, age) in cases {
-            XCTAssertEqual(ReportChip.age(elapsedMs: elapsed), age, "\(elapsed)")
-        }
     }
 
     // S20

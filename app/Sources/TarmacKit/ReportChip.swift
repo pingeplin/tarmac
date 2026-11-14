@@ -21,18 +21,21 @@ public struct TermReport: Equatable, Sendable {
         self.read = read
     }
 
-    /// Nil for any other message, and for a frame that is no report: no
-    /// `kind`, a kind this build does not know, or no `at_ms`.
-    public static func from(_ message: Message) -> TermReport? {
-        guard case .termReport(_, let kind, let text, let atMs, let proc, let read) = message,
-              let atMs else { return nil }
-        let known: Kind
+    /// A `term_report` frame's terminal and its report; nil for any other
+    /// message. The report is nil for a frame that is no report: no `kind`, a
+    /// kind this build does not know, or no `at_ms`.
+    public static func frame(_ message: Message) -> (termID: String, report: TermReport?)? {
+        guard case .termReport(let termID, let kind, let text, let atMs, let proc, let read) = message else {
+            return nil
+        }
+        let known: Kind?
         switch kind {
         case "blocked": known = .blocked
         case "done": known = .done
-        default: return nil
+        default: known = nil
         }
-        return TermReport(kind: known, text: text, atMs: atMs, proc: proc, read: read)
+        guard let known, let atMs else { return (termID, nil) }
+        return (termID, TermReport(kind: known, text: text, atMs: atMs, proc: proc, read: read))
     }
 }
 
@@ -56,21 +59,10 @@ public enum ReportChip {
         let elapsed = nowMs >= report.atMs ? nowMs - report.atMs : 0
         let heading = report.proc.map { "\(title) · 在 \($0) 期間" } ?? title
         return Model(
-            text: "\(title) · \(age(elapsedMs: elapsed))",
+            text: "\(title) · \(ChromeText.reportAge(elapsedMs: elapsed))",
             tone: report.kind,
             dimmed: report.read,
             toolTip: report.text.map { "\(heading)\n「\($0)」" } ?? heading
         )
-    }
-
-    /// `<1m`, `Nm`, `Nh` or `Nd`, each floored.
-    public static func age(elapsedMs: UInt64) -> String {
-        let minutes = elapsedMs / 60_000
-        switch minutes {
-        case 0: return "<1m"
-        case ..<60: return "\(minutes)m"
-        case ..<(24 * 60): return "\(minutes / 60)h"
-        default: return "\(minutes / (24 * 60))d"
-        }
     }
 }

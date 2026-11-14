@@ -360,6 +360,8 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
     /// button is the header's own, so the chip is never the view hit.
     private var reportToolTip: String?
     private var reportToolTipTag: NSView.ToolTipTag?
+    /// The chip frame the tool tip was last registered for; nil for none.
+    private var reportToolTipRect: NSRect?
     private let freshMeta = NSTextField(labelWithString: "✚ now")
     private let recency = RecentMetaLabel(font: Theme.mono(recencyFontSize))
     private let bellDot = NSTextField(labelWithString: "●")
@@ -480,6 +482,7 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
     /// Shows a terminal's report as `回報 · <age>`, or hides the chip with nil.
     /// A shown chip reads its age again every `ReportChip.refreshInterval`.
     func setReport(_ report: TermReport?) {
+        guard report != nil || self.report != nil else { return }
         self.report = report
         refreshReport()
     }
@@ -551,8 +554,12 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
         for (item, span) in zip(trailing, frames.trailing) { place(item, at: span.x) }
         // The label alone can be given less room than it takes, and is cut to it.
         place(title, at: frames.label.x, cutTo: frames.label.width < title.room ? frames.label.width : nil)
-        if let tag = reportToolTipTag { removeToolTip(tag) }
-        reportToolTipTag = reportChip.isHidden ? nil : addToolTip(reportChip.frame, owner: self, userData: nil)
+        let rect = reportChip.isHidden ? nil : reportChip.frame
+        if rect != reportToolTipRect {
+            if let tag = reportToolTipTag { removeToolTip(tag) }
+            reportToolTipTag = rect.map { addToolTip($0, owner: self, userData: nil) }
+            reportToolTipRect = rect
+        }
     }
 
     private struct Item {

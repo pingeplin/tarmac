@@ -278,7 +278,6 @@ extension AppController {
         s.pendingSpawn = nil
         s.procName = nil
         s.bellAt = nil
-        s.report = nil
         board.view.card(.term(s.termID))?.setReport(nil)
         board.view.card(.term(s.termID))?.setExited()
         board.view.signalsChanged()
@@ -330,9 +329,8 @@ extension AppController {
         scrollback.socketLost()
         daemonSession = DaemonSession()
         for board in boards.values {
-            for s in board.sessions.values where s.report != nil {
-                s.report = nil
-                board.view.card(.term(s.termID))?.setReport(nil)
+            for termID in board.sessions.keys {
+                board.view.card(.term(termID))?.setReport(nil)
             }
         }
     }
@@ -365,9 +363,8 @@ extension AppController {
     /// `term_report`: the terminal's current report, or nil for none. A frame
     /// for a terminal with no card, or a dead one, is dropped.
     func handleTermReport(termID: String, _ report: TermReport?) {
-        guard let (s, board) = anySession(termID),
+        guard let (_, board) = anySession(termID),
               let card = board.view.card(.term(termID)), !card.dead else { return }
-        s.report = report
         card.setReport(report)
     }
 
