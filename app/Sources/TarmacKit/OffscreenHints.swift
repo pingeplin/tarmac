@@ -146,10 +146,10 @@ public enum OffscreenHintLayout {
     /// margins and rounds. Hints whose center is inside the view are skipped.
     ///
     /// An edge is resolved from its start (left, top) forward. When that leaves
-    /// a pill under the chrome — which sits in the bottom-right corner — the edge
-    /// is resolved again from its end backward, each pill starting where the
-    /// forward pass put it, and the backward pass wins when it leaves fewer pills
-    /// under the chrome and no more outside the view.
+    /// a pill under the chrome — the zoom control, the minimap, the toasts — the
+    /// edge is resolved again from its end backward, each pill starting where the
+    /// forward pass put it. The backward pass wins only when it leaves fewer
+    /// pills covered, by the chrome or by a card, and no more outside the view.
     public static func stackPills(_ hints: [Hint], in viewRect: CGRect, options: Options) -> [PlacedPill] {
         let projected = hints.compactMap { hint -> Projected? in
             guard let placement = BoardWayfinding.hintPlacement(
@@ -171,7 +171,7 @@ public enum OffscreenHintLayout {
                 continue
             }
             let backward = place(group, on: edge, in: viewRect, options: options, from: forward.pills)
-            let better = backward.underChrome < forward.underChrome && backward.outside <= forward.outside
+            let better = backward.covered < forward.covered && backward.outside <= forward.outside
             placed += (better ? backward : forward).pills
         }
         return placed
@@ -187,6 +187,8 @@ public enum OffscreenHintLayout {
         var pills: [PlacedPill] = []
         /// Pills under the chrome.
         var underChrome = 0
+        /// Pills under the chrome or a card.
+        var covered = 0
         /// Pills pushed past the view's margins.
         var outside = 0
     }
@@ -255,6 +257,8 @@ public enum OffscreenHintLayout {
                 width: size.width,
                 height: size.height
             )
+            let occluded = options.obstacles.contains { Placement.rectsIntersect(rect, $0) }
+            let underChrome = options.chrome.contains { Placement.rectsIntersect(rect, $0) }
             pass.pills.append(PlacedPill(
                 cardID: item.hint.cardID,
                 signal: item.hint.signal,
@@ -263,9 +267,10 @@ public enum OffscreenHintLayout {
                 arrow: edge.arrow,
                 left: rect.minX,
                 top: rect.minY,
-                occluded: options.obstacles.contains { Placement.rectsIntersect(rect, $0) }
+                occluded: occluded
             ))
-            if options.chrome.contains(where: { Placement.rectsIntersect(rect, $0) }) { pass.underChrome += 1 }
+            if underChrome { pass.underChrome += 1 }
+            if underChrome || occluded { pass.covered += 1 }
             if pos < posLo || pos > posHi { pass.outside += 1 }
         }
         if backward { pass.pills.reverse() }

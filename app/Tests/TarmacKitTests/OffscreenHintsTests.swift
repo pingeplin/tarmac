@@ -564,6 +564,20 @@ final class OffscreenHintLayoutTests: XCTestCase {
         XCTAssertEqual(pills.map(\.left), [60, 260, 890])
     }
 
+    /// Forward, the first pill takes the gap [690, 848] and the second is left
+    /// under the minimap. Resolved from the end, the second takes the gap and
+    /// the first goes under the card: one pill covered either way, so the
+    /// forward placing stays.
+    func testResolvingFromTheEndDoesNotTradeAPillUnderTheChromeForOneUnderACard() {
+        let card = CGRect(x: -50, y: 700, width: 732, height: 200)
+        let pills = stack(
+            [hint("a", CGPoint(x: 100, y: 2000), .live, 0), hint("c", CGPoint(x: 960, y: 2000), .live, 0)],
+            obstacles: [card], chrome: [minimap]
+        )
+        XCTAssertEqual(pills.map(\.left), [690, 910])
+        XCTAssertFalse(pills.contains { $0.occluded })
+    }
+
     /// The last gap, [822, 990], holds both pills exactly.
     func testTwoPillsShareTheLastGapWhenItHoldsThemBoth() {
         let card = CGRect(x: -50, y: -20, width: 864, height: 300)
