@@ -1578,9 +1578,15 @@ moves along its edge to the nearest free gap; in the first placing, a bottom
 pill tries the nearest one on its left first. An edge that still leaves a pill
 under the chrome is placed again from its far end, stacking toward its start,
 each pill starting where the first placing put it and moving to the nearest
-free gap on either side (so a bottom pill may move right); the second placing
-is kept only when it leaves fewer pills covered, by the chrome or by a card,
-and pushes no more past the view's margins. A pill that finds no free gap is
+free gap on either side (so a bottom pill may move right). Each edge is
+placed that way twice: once with the last free gap of the band cut one pill
+length short, as before issue #375, and once with it running to the band's
+end. The full last gap holds a pill the short one cannot, but it can also let
+an early pill take it and push its siblings off the view. Of the up to four
+placings (forward and backward, short and full, in that order), a later one
+replaces the best so far only when it leaves fewer pills covered, by the
+chrome or by a card, pushes no more past the view's margins and leaves no
+more fully off the view; a tie keeps the earlier one. A pill that finds no free gap is
 left where it wanted to be; if that is on a card, it is drawn under the cards
 (#126): cards win. A pill left under the chrome but
 clear of every card is drawn over the cards and under the chrome.
