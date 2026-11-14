@@ -98,6 +98,10 @@ async fn cli_session(daemon: Arc<Daemon>, mut stream: UnixStream, peer_pid: Opti
                 let done = daemon.report(peer_pid, &term_id, &kind, text).await;
                 write_msg(&mut stream, &reply(done)).await?;
             }
+            Ok(Msg::Resume { term_id, cmd }) => {
+                let done = daemon.set_resume(peer_pid, &term_id, cmd).await;
+                write_msg(&mut stream, &reply(done)).await?;
+            }
             Ok(Msg::Unknown) => debug!("ignoring unknown message type from cli"),
             Ok(other) => debug!("ignoring unexpected cli message: {other:?}"),
             Err(e) => reject(&mut stream, format!("malformed frame: {e}")).await?,
@@ -105,7 +109,7 @@ async fn cli_session(daemon: Arc<Daemon>, mut stream: UnixStream, peer_pid: Opti
     }
 }
 
-/// The answer to a cli `open`, `push` or `report`.
+/// The answer to a cli `open`, `push`, `report` or `resume`.
 fn reply(done: Result<(), String>) -> Msg {
     match done {
         Ok(()) => Msg::Ack,
@@ -268,6 +272,7 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
                 let _ = h.input_tx.send(bytes).await;
                 if typed {
                     daemon.mark_report_read(&term_id, &h).await;
+                    daemon.claim_resume(&term_id, &h).await;
                 }
             }
             None => debug!("input for unknown term {term_id}"),

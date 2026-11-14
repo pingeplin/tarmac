@@ -67,9 +67,12 @@ are confirmed absent in the code. Roughly ordered by value.
   history intact` · `→ agent was waiting on you · since 13:47`; footer "any key to
   continue".
 - **Source:** README §Screens 8 "Session restore".
-- **State:** the app restores layout/viewport **silently** — `applyRestore` in
-  `app/Sources/TarmacApp/AppController+Layout.swift` builds the board and shows
-  no overlay.
+- **State:** spec 2611.0011 ships the content only, as toast lines: a
+  first-visit restore with cold spawns adds `✓ N terminals back in their
+  folders` and `↻ M with an agent session to resume` to the `RestartNotice`
+  toast, or shows them in a `terminals restored` toast (`RestoreSummary`). The
+  overlay — the veil and the any-key card — is still open, in issue #358; until
+  it lands nothing takes the first key after a launch.
 - **Scope:** a board-arrive overlay view + the restore-facts model. The detached
   empty-state depends on tmux/attach (see §2), so ship the attached-only card first.
 

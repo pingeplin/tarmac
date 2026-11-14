@@ -9,6 +9,7 @@ mod persist;
 mod proc;
 mod reader;
 mod reports;
+mod resume;
 mod state;
 mod term;
 mod watch;

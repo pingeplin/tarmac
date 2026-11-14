@@ -58,9 +58,13 @@ extension AppController {
         let press = KeyPress(
             keyCode: event.keyCode, characters: event.characters ?? "",
             charactersIgnoringModifiers: event.charactersIgnoringModifiers ?? "",
-            modifierFlags: event.modifierFlags.rawValue
+            modifierFlags: event.modifierFlags.rawValue, isRepeat: event.isARepeat
         )
-        switch KeyLadder.decide(press, keyFacts()) {
+        let terminal = focusedTerminal
+        let focused = terminal.flatMap(session(of:))
+        let action = KeyLadder.decide(press, keyFacts(terminal: terminal, focused: focused))
+        if let focused { focused.afterRun = KeyLadder.afterRun(was: focused.afterRun, press: press, action: action) }
+        switch action {
         case .passThrough:
             return false
         case .toggleSwitcher:
@@ -83,12 +87,17 @@ extension AppController {
             // the keyboard by then.
             returnKeys()
             return false
+        case .runResume:
+            if let focused { runResume(focused) }
+        case .reopenDead:
+            if let focused { reopenDead(focused.termID) }
+        case .ignoreRepeat:
+            break
         }
         return true
     }
 
-    private func keyFacts() -> KeyLadder.Facts {
-        let terminal = focusedTerminal
+    private func keyFacts(terminal: TerminalView?, focused: TerminalSession?) -> KeyLadder.Facts {
         let borrow = borrowedCard
         let selectedIsDoc: Bool
         if case .doc = focusedCardID { selectedIsDoc = true } else { selectedIsDoc = false }
@@ -104,8 +113,22 @@ extension AppController {
                 cardBorrowed: borrow.borrowed,
                 hasFreshDoc: activeBoard.view.cards.values.contains(where: \.isFreshDoc),
                 selectedIsDoc: selectedIsDoc
-            )
+            ),
+            offer: focused.map(keyOffer) ?? .none,
+            afterRun: focused?.afterRun ?? false
         )
+    }
+
+    /// What the terminal with the keys offers, for the key ladder.
+    private func keyOffer(_ s: TerminalSession) -> KeyLadder.Offer {
+        if let offer = s.resumeOffer { return offer.armed(prime: isPrime(s, on: activeBoard)) ? .resumeArmed : .resumeIdle }
+        let dead = activeBoard.view.card(.term(s.termID))?.dead == true
+        return dead && s.deadOffer != nil ? .reopen : .none
+    }
+
+    /// The active board's session whose view is `view`.
+    private func session(of view: TerminalView) -> TerminalSession? {
+        activeBoard.sessions.values.first { $0.view === view }
     }
 
     /// The terminal view with keyboard focus, live or dead.
@@ -172,25 +195,23 @@ extension AppController {
     private func closeSelectedCard() {
         let kind: FocusedClose.Kind
         var otherLive = 0
-        var dead = false
         switch focusedCardID {
         case .doc:
             kind = .doc
         case .term(let termID):
             kind = .term
             otherLive = activeBoard.otherLiveTerminals(than: termID)
-            dead = activeBoard.view.card(.term(termID))?.dead ?? false
         case nil:
             kind = .none
         }
-        switch FocusedClose.decide(kind: kind, otherLiveTerminals: otherLive, dead: dead) {
+        switch FocusedClose.decide(kind: kind, otherLiveTerminals: otherLive) {
         case .noop:
             break
         case .closeDoc:
             if case .doc(let path)? = focusedCardID { closeDocCard(path) }
-        case .closeTerminal(let replace, let signalClose):
+        case .closeTerminal(let replace):
             if case .term(let termID)? = focusedCardID {
-                closeTerminal(termID, replace: replace, signalClose: signalClose)
+                closeTerminal(termID, replace: replace)
             }
         }
     }

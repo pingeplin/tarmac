@@ -1,16 +1,17 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use tarmac_protocol::{DocEntry, Msg};
+use tarmac_protocol::{DocEntry, Msg, ResumeRecord, TermRecord};
 use tokio::sync::{Mutex, Notify, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::boards::{BoardId, Boards, DataDir, FileStamp, WantedData};
 use crate::docs::RepoInfo;
 use crate::reader::{PathFs, PathGate, RealFs};
-use crate::proc::{self, Pid};
+use crate::proc::{self, Facts, Pid};
+use crate::resume::Flag;
 use crate::reports::{Holder, Kind, Reports};
 use crate::term::{SpawnPlan, TermHandle};
 use crate::watch::{NotWatched, NotifySource, Wake, WakeSource, Watcher};
@@ -83,6 +84,10 @@ pub struct Daemon {
     /// Requests to `persist::save_loop` for its last write.
     finals: mpsc::Sender<oneshot::Sender<()>>,
     state_path: PathBuf,
+    /// Set by `final_save` (spec 2611.0011, D4): from then on neither a gone
+    /// holder nor a terminal's end drops a resume command, so the save keeps
+    /// the commands whose agents ran when the daemon was signalled.
+    shutting_down: AtomicBool,
 }
 
 impl Daemon {
@@ -164,6 +169,7 @@ impl Daemon {
             dirty: Notify::new(),
             finals,
             state_path,
+            shutting_down: AtomicBool::new(false),
         });
         tokio::spawn(crate::docs::watch_loop(daemon.clone()));
         tokio::spawn(crate::persist::save_loop(daemon.clone(), final_requests));
@@ -371,6 +377,7 @@ impl Daemon {
     /// Has the save loop read each live terminal's cwd once more, write the
     /// state a last time and stop: no write follows. Returns once written.
     pub async fn final_save(&self) {
+        self.shutting_down.store(true, Ordering::SeqCst);
         let (done, saved) = oneshot::channel();
         if self.finals.send(done).await.is_ok() {
             let _ = saved.await;
@@ -447,7 +454,10 @@ impl Daemon {
     /// `succeeds` when that board has one and the term is not live, else an
     /// empty one. Runs before the terminal's first cwd read, which only ever
     /// fills a record that is there.
-    pub async fn adopt_term(&self, plan: &SpawnPlan) {
+    ///
+    /// A moved resume command has no holder: `handle` is marked unclaimed in
+    /// the same step, so typed input drops it (spec 2611.0011, D6).
+    pub async fn adopt_term(&self, plan: &SpawnPlan, handle: &TermHandle) {
         let succeeds = match plan.succeeds.as_deref() {
             Some(old) if !self.terms.lock().await.contains_key(old) => Some(old),
             _ => None,
@@ -458,6 +468,9 @@ impl Daemon {
         let moved = succeeds.and_then(|old| reg.term_records.remove(old));
         if moved.is_some() {
             self.mark_dirty();
+        }
+        if moved.as_ref().is_some_and(|r| r.resume.is_some()) {
+            handle.unclaim_resume();
         }
         reg.term_records.insert(plan.term_id.clone(), moved.unwrap_or_default());
     }
@@ -501,16 +514,40 @@ impl Daemon {
 
     /// Takes an exited terminal out of the maps. A clean exit (`Some(0)`)
     /// deletes its record; any other keeps it for the dead card.
+    /// A terminal's end also ends its resume command, which a kept record
+    /// keeps only once the shutdown has begun (spec 2611.0011, D3, D4).
     pub async fn term_ended(&self, term_id: &str, code: Option<i64>) {
         if self.terms.lock().await.remove(term_id).is_none() {
             tracing::warn!("term {term_id} missing from registry at exit");
         }
         self.term_boards.lock().await.remove(term_id);
-        // After the term left `terms`: a report stored after this is undone
-        // by the handler's own re-check (`Daemon::report`).
+        // After the term left `terms`: a report or a resume command stored
+        // after this is undone by its handler's own re-check.
         self.reports.lock().await.forget(term_id);
         if code == Some(0) {
             self.forget_record(term_id).await;
+        } else {
+            self.end_resume(term_id).await;
+        }
+    }
+
+    /// At a terminal's end, or a set that raced it: drops the command from
+    /// the record kept on whichever board, unless the shutdown has begun.
+    async fn end_resume(&self, term_id: &str) {
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return;
+        }
+        self.drop_resume(self.boards.lock().await.record_mut(term_id), None);
+    }
+
+    /// The one drop of a resume command, run with `boards` held: the
+    /// command, and `handle`'s holder and flag; dirty when a command went.
+    fn drop_resume(&self, record: Option<&mut TermRecord>, handle: Option<&TermHandle>) {
+        if let Some(handle) = handle {
+            handle.forget_resume();
+        }
+        if record.and_then(|r| r.resume.take()).is_some() {
+            self.mark_dirty();
         }
     }
 
@@ -550,6 +587,86 @@ impl Daemon {
             })
             .await;
         }
+    }
+
+    /// The answer to a cli `resume` (spec 2611.0011): `Err` is the `err` text.
+    /// `cmd: None` clears. The command is checked before its holder is
+    /// resolved, and no process is read while `boards` is held.
+    pub async fn set_resume(&self, peer: Option<Pid>, term_id: &str, cmd: Option<String>) -> Result<(), String> {
+        let unknown = || format!("unknown terminal: {term_id}");
+        let handle = self.term(term_id).await.ok_or_else(unknown)?;
+        let Some(cmd) = cmd else {
+            self.with_record(term_id, |record| self.drop_resume(record, Some(&handle))).await;
+            return Ok(());
+        };
+        tarmac_protocol::refuse_resume_cmd(&cmd)?;
+        let holder = Holder::resolve(peer, handle.pid(), handle.spawned_with_cmd(), proc::proc_facts, || {
+            handle.foreground_pid()
+        })
+        .and_then(|holder| crate::resume::tie(holder, proc::proc_facts))
+        .ok_or_else(|| format!("no process to tie the resume command to in {term_id}"))?;
+        let stored = self
+            .with_record(term_id, |record| {
+                let Some(record) = record else { return false };
+                handle.hold_resume(holder);
+                if record.resume.as_ref().is_none_or(|r| r.cmd != cmd) {
+                    record.resume = Some(ResumeRecord { cmd });
+                    self.mark_dirty();
+                }
+                true
+            })
+            .await;
+        if !stored {
+            return Err(unknown());
+        }
+        // A terminal that ended while this ran: `term_ended` took it out of
+        // `terms` before its own drop, so one of the two finds the command.
+        if self.term(term_id).await.is_none() {
+            self.end_resume(term_id).await;
+        }
+        Ok(())
+    }
+
+    /// Runs `change` with `boards` held, on `term_id`'s record on its own
+    /// board, or `None` when it has none there.
+    async fn with_record<T>(&self, term_id: &str, change: impl FnOnce(Option<&mut TermRecord>) -> T) -> T {
+        let board = self.term_boards.lock().await.get(term_id).cloned();
+        let mut boards = self.boards.lock().await;
+        let reg = board.and_then(|b| boards.known_registry_mut(&b));
+        change(reg.and_then(|reg| reg.term_records.get_mut(term_id)))
+    }
+
+    /// The poll's check: drops the resume command when its holder is gone,
+    /// unless the shutdown has begun. The holder is read from the handle and
+    /// checked with no lock held, and dropped only if it is still the one
+    /// checked, so a `resume` set in between is never undone.
+    pub async fn check_resume(&self, term_id: &str, handle: &TermHandle, facts_of: impl Fn(Pid) -> Facts) {
+        if handle.resume_flag() != Flag::Held {
+            return;
+        }
+        let Some(checked) = handle.resume_holder() else { return };
+        if checked.alive(facts_of, None) {
+            return;
+        }
+        self.with_record(term_id, |record| {
+            if !self.shutting_down.load(Ordering::SeqCst) && handle.resume_holder() == Some(checked) {
+                self.drop_resume(record, Some(handle));
+            }
+        })
+        .await;
+    }
+
+    /// Typed input drops a resume command that has no holder (D6).
+    pub async fn claim_resume(&self, term_id: &str, handle: &TermHandle) {
+        if handle.resume_flag() != Flag::Unclaimed {
+            return;
+        }
+        self.with_record(term_id, |record| {
+            if handle.resume_flag() == Flag::Unclaimed {
+                self.drop_resume(record, Some(handle));
+            }
+        })
+        .await;
     }
 
     /// Typed input marks an unread report read.

@@ -75,7 +75,9 @@ session in a Tarmac terminal reports on its own:
 - a permission prompt (also a question or a plan to approve) shows `blocked`,
   with Claude's notification text;
 - the end of a turn shows `done`, with the start of Claude's last message;
-- the next prompt clears the chip.
+- the next prompt clears the chip;
+- the start of a session records `claude --resume <session_id>` as the
+  terminal's resume command (see *Resuming after a restart*).
 
 The text is a claim, shown in quotes, cut to 280 characters with its line
 breaks folded. Outside a Tarmac terminal the hooks do nothing. `tarmac hooks
@@ -84,6 +86,27 @@ status` shows whether the hooks are in place, and the first `tarmac` on the
 which is the same only when both started from the same shell. `tarmac hooks
 uninstall` removes them. You do not need to call `tarmac report`
 yourself from Claude Code once the hooks are installed.
+
+## Resuming after a restart
+
+```sh
+tarmac resume set "<command>"
+tarmac resume clear
+```
+
+Run inside a Tarmac terminal, `set` records the command that resumes the agent
+session running there. If Tarmac restarts while that agent still runs, the
+terminal comes back in its folder and its card offers the command; it runs only
+when the user presses Return on that card. Rules:
+
+- The command is one line of at most 256 characters, with no control or
+  invisible characters; any other is refused with exit `2`.
+- It needs `TARMAC_TERM_ID`, as `report` does. Exit status as for `report`.
+- It lasts while the process that set it runs: from an agent's hook, the agent.
+  The agent's exit, or the terminal's, drops it.
+- A later `set` replaces it; `clear` removes it. After a restart the user's
+  first key in that terminal uses or drops the offer, once.
+- The Claude Code hooks set it for you at each session's start.
 
 ## What renders how
 

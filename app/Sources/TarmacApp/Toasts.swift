@@ -19,14 +19,14 @@ final class ToastView: NSView, ThemeFollowing {
     init(_ toast: ToastQueue.Toast) {
         let icon = ChromeLabel(toast.icon, size: 13, color: Theme.agent)
         let title = ChromeLabel(toast.title, size: 11, color: Theme.text)
-        let body = toast.body.map { ChromeLabel($0, size: 10, color: Theme.faint) }
+        let body = toast.bodyLines.map { ChromeLabel($0, size: 10, color: Theme.faint) }
 
         let iconWidth = icon.textSize.width
         let textRoom = min(Self.maxTextWidth, Self.maxWidth - 2 * Self.insetX - iconWidth - Self.gap)
         let titleWidth = min(title.textSize.width, textRoom)
-        let bodyWidth = min(body?.textSize.width ?? 0, textRoom)
+        let bodyWidth = min(body.map(\.textSize.width).max() ?? 0, textRoom)
         let textWidth = max(titleWidth, bodyWidth)
-        let textHeight = title.lineHeight + (body.map { Self.bodyTop + $0.lineHeight } ?? 0)
+        let textHeight = title.lineHeight + (body.isEmpty ? 0 : Self.bodyTop + body.map(\.lineHeight).reduce(0, +))
         let contentHeight = max(Self.iconLineHeight, textHeight)
         size = NSSize(
             width: (2 * Self.insetX + iconWidth + Self.gap + textWidth).rounded(.up),
@@ -49,10 +49,11 @@ final class ToastView: NSView, ThemeFollowing {
         let textX = Self.insetX + iconWidth + Self.gap
         title.place(at: CGPoint(x: textX, y: Self.insetY), width: titleWidth)
         addSubview(title)
-        if let body {
-            let bodyY = Self.insetY + title.lineHeight + Self.bodyTop
-            body.place(at: CGPoint(x: textX, y: bodyY.rounded()), width: bodyWidth)
-            addSubview(body)
+        var bodyY = Self.insetY + title.lineHeight + Self.bodyTop
+        for line in body {
+            line.place(at: CGPoint(x: textX, y: bodyY.rounded()), width: bodyWidth)
+            addSubview(line)
+            bodyY += line.lineHeight
         }
     }
 
@@ -87,10 +88,10 @@ final class ToastStackView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    func show(icon: String = "¶", title: String, body: String?) {
+    func show(icon: String = "¶", title: String, bodyLines: [String]) {
         minted += 1
         let id = "toast-\(minted)"
-        queue.add(id: id, icon: icon, title: title, body: body, nowMs: Self.nowMs)
+        queue.add(id: id, icon: icon, title: title, bodyLines: bodyLines, nowMs: Self.nowMs)
         render()
         if let view = views[id] { animateIn(view) }
     }

@@ -234,6 +234,38 @@ final class RustEncoderParityTests: XCTestCase {
         )
     }
 
+    /// 2611.0011 S12. The spec's vectors 25 to 27: the Rust side's capture
+    /// of them is `tarmac-protocol`'s own vector test.
+    func testResumeAndTheResumeRecord() {
+        // Msg::Resume { term_id: "t1", cmd: Some("claude --resume ab-12") } — conformance vector 25.
+        assertParity(
+            .resume(termID: "t1", cmd: "claude --resume ab-12"),
+            """
+            83 a1 74 a6 72 65 73 75 6d 65 a7 74 65 72 6d 5f 69 64 a2 74 31 a3 63 6d
+            64 b5 63 6c 61 75 64 65 20 2d 2d 72 65 73 75 6d 65 20 61 62 2d 31 32
+            """
+        )
+        // Msg::Resume { term_id: "t1", cmd: None } — conformance vector 26.
+        assertParity(
+            .resume(termID: "t1", cmd: nil),
+            "82 a1 74 a6 72 65 73 75 6d 65 a7 74 65 72 6d 5f 69 64 a2 74 31"
+        )
+        // Msg::Restore { .., term_records: {"t1": TermRecord { last_cwd: Some("/w"),
+        //   resume: Some(ResumeRecord { cmd: "claude --resume ab-12" }) }} } — conformance vector 27.
+        assertParity(
+            .restore(
+                docs: [], tiles: [], board: nil, boardID: nil, liveTerms: [],
+                termRecords: ["t1": TermRecord(lastCwd: "/w", resume: ResumeRecord(cmd: "claude --resume ab-12"))]
+            ),
+            """
+            84 a1 74 a7 72 65 73 74 6f 72 65 a4 64 6f 63 73 90 a5 74 69 6c 65 73 90
+            ac 74 65 72 6d 5f 72 65 63 6f 72 64 73 81 a2 74 31 82 a8 6c 61 73 74 5f
+            63 77 64 a2 2f 77 a6 72 65 73 75 6d 65 81 a3 63 6d 64 b5 63 6c 61 75 64
+            65 20 2d 2d 72 65 73 75 6d 65 20 61 62 2d 31 32
+            """
+        )
+    }
+
     /// The daemon's `BTreeMap` writes the records in key order, whatever order
     /// they were made in; the Rust capture is `term_records_are_written_in_key_order`.
     func testTermRecordsAreWrittenInKeyOrder() {

@@ -99,7 +99,7 @@ no version of its own names none and restarts nothing.
     ← {t:"ack"}  |  {t:"err", msg}
 
 `tarmac push` sends `push` frames on the same session: see *Events for a loaded
-HTML card*. `tarmac report` sends one `report` frame: see *A terminal's report*. `tarmac --version` also opens the socket. It completes the
+HTML card*. `tarmac report` sends one `report` frame: see *A terminal's report*. `tarmac resume` sends one `resume` frame: see *Resuming after a restart*. `tarmac --version` also opens the socket. It completes the
 handshake, renders `hello_ok`'s daemon and app keys, and closes without sending
 a second frame.
 
@@ -472,7 +472,7 @@ normal default.
 
 ## A terminal's last folder (issue #345, spec 2611.0007)
 
-    TermRecord      {last_cwd?: str}                            — a map, string keys
+    TermRecord      {last_cwd?: str, resume?: {cmd: str}}        — a map, string keys
     {t:"restore", ..., term_records:{<term_id>: TermRecord}}     — daemon → app
     {t:"spawn_term", ..., succeeds:"t0"}                         — app → daemon
 
@@ -505,6 +505,7 @@ A live terminal has a record before its first read, which may have no
 | `restore` | `term_records` | map of term id → `TermRecord` | an empty table; omitted when empty |
 | `spawn_term` | `succeeds` | string | nil; omitted when nil |
 | `TermRecord` | `last_cwd` | string | nil; omitted when nil (a record with none is an empty map) |
+| `TermRecord` | `resume` | map `{cmd: str}` | no resume command; omitted when nil. See *Resuming after a restart* |
 
 `spawn_term.cwd` and `cmd` keep their encoding: a nil is written as msgpack nil.
 
@@ -734,6 +735,64 @@ does not know `term_report` ignores it. A daemon that does not know `typed`
 ignores it. An `input` with `typed: false` encodes as before, byte for byte
 (vector 3).
 
+## Resuming after a restart (spec 2611.0011)
+
+    {t:"resume", term_id, cmd?}                                   — cli → daemon; answered with ack | err
+    TermRecord.resume {cmd: str}                                  — in restore.term_records and state.json
+
+A process in terminal `term_id` runs `tarmac resume set "<command>"` or
+`tarmac resume clear`; `tarmac hooks run claude` sends
+`claude --resume <session_id>` at Claude's `SessionStart`. With `cmd` the frame
+sets the terminal's resume command; without it, it clears it.
+
+The daemon checks a `resume` in this order; the first check that fails is the
+answer:
+
+| Case | Answer |
+| --- | --- |
+| `term_id` is not a live terminal | `err "unknown terminal: <term_id>"` |
+| no `cmd` | `ack`; the record's `resume` is removed, and the state is saved only when there was one |
+| `cmd` is refused by `check_resume_cmd` | `err "resume command refused: <cause>"` |
+| no process to tie the command to | `err "no process to tie the resume command to in <term_id>"` |
+| otherwise | `ack`, after the command is stored in the terminal's record |
+
+- **The command check** (`check_resume_cmd`, mirrored by the app's
+  `ResumeCommand.check`). It refuses a blank command, any control character
+  (Unicode Cc, and U+2028 and U+2029), the invisible format and bidi characters
+  U+061C, U+200B–U+200F, U+202A–U+202E, U+2060–U+2064, U+2066–U+2069 and U+FEFF,
+  and more than 256 Unicode scalar values. The causes are `empty`,
+  `a control character`, `an invisible format character` and
+  `over 256 characters`. The cli, the daemon and the app each apply it.
+- **The holder.** The walk of *A terminal's report* finds the process. Here it
+  is always a pid with its start time: the agent, the shell itself for a command
+  set at the prompt, or the foreground leader as the fallback. The holder is in
+  memory only; no pid is on the wire or in `state.json`.
+- **Saving.** A set, a clear that removed one, and each drop below save the
+  state. A set with the command already stored does not save.
+- **Drops while the daemon lives.** The 750 ms poll drops the command when its
+  holder has exited, or its pid has another start time. A terminal that ends
+  drops it at any exit code; a non-zero or signal exit still keeps the record
+  and its `last_cwd`. Neither drop happens once the daemon's shutdown save has
+  begun, so a command whose agent was running when the daemon was signalled is
+  kept.
+- **After a restart.** A command loaded from `state.json`, or moved to a new
+  term by `spawn_term.succeeds`, has no holder. The first `input` with
+  `typed: true` to that terminal drops it. A new `resume` set gives it a holder,
+  and typed input no longer drops it.
+- **No push.** The daemon sends the app nothing for a `resume`. The app reads
+  the records from each `restore`.
+
+| message | key | type | missing ⇒ |
+|---|---|---|---|
+| `resume` | `term_id` | string (required) | — |
+| `resume` | `cmd` | string | a clear; omitted when nil |
+| `TermRecord` | `resume.cmd` | string (required in `resume`) | — |
+
+New **additive type and key**: a daemon that does not know `resume` ignores it
+and does not answer; the cli reports that no answer came in 5 s, and
+`hooks run claude` gives up at its 500 ms deadline. A daemon or app that does
+not know `TermRecord.resume` ignores it.
+
 ## Replaying a terminal's scrollback on demand (issue #41)
 
     {t:"scrollback_request", term_id}               — app → daemon
@@ -955,3 +1014,27 @@ round-trip. Byte-exact encoder output is NOT required (key order may legally dif
 
         84 a1 74 a5 69 6e 70 75 74 a7 74 65 72 6d 5f 69 64 a2 74 31
         a5 62 79 74 65 73 c4 01 61 a5 74 79 70 65 64 c3
+
+25. (spec 2611.0011) `{t:"resume", term_id:"t1", cmd:"claude --resume ab-12"}` —
+    new additive cli→daemon type. Keys in the order `rmp_serde::to_vec_named`
+    writes them.
+
+        83 a1 74 a6 72 65 73 75 6d 65 a7 74 65 72 6d 5f 69 64 a2 74
+        31 a3 63 6d 64 b5 63 6c 61 75 64 65 20 2d 2d 72 65 73 75 6d
+        65 20 61 62 2d 31 32
+
+26. (spec 2611.0011) `{t:"resume", term_id:"t1"}` — a clear: `cmd` is omitted,
+    not nil.
+
+        82 a1 74 a6 72 65 73 75 6d 65 a7 74 65 72 6d 5f 69 64 a2 74
+        31
+
+27. (spec 2611.0011) `{t:"restore", docs:[], tiles:[], term_records:{"t1":{last_cwd:"/w",
+    resume:{cmd:"claude --resume ab-12"}}}}` — the additive `TermRecord.resume`
+    key, written after `last_cwd`.
+
+        84 a1 74 a7 72 65 73 74 6f 72 65 a4 64 6f 63 73 90 a5 74 69
+        6c 65 73 90 ac 74 65 72 6d 5f 72 65 63 6f 72 64 73 81 a2 74
+        31 82 a8 6c 61 73 74 5f 63 77 64 a2 2f 77 a6 72 65 73 75 6d
+        65 81 a3 63 6d 64 b5 63 6c 61 75 64 65 20 2d 2d 72 65 73 75
+        6d 65 20 61 62 2d 31 32

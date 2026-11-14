@@ -70,6 +70,28 @@ impl TestDaemon {
         format!("/usr/bin/nc -U -w 2 {} < {}", self.sock.display(), file.display())
     }
 
+    /// `nc_reporter` for a `resume` of `term_id` (spec 2611.0011): the hello
+    /// and the frame.
+    pub fn nc_resume(&self, name: &str, term_id: &str, cmd: &str) -> String {
+        let hello = Msg::Hello { role: "cli".into(), v: proto::PROTOCOL_VERSION, app_version: None };
+        self.nc_reporter(name, &[hello, Msg::Resume { term_id: term_id.into(), cmd: Some(cmd.into()) }])
+    }
+
+    /// A new app connection, which takes the app's place, and the restore of
+    /// the active board it gets: every later app frame goes on it.
+    pub fn probe(&self) -> (Conn, Restore) {
+        let mut app = self.connect_app();
+        app.recv_board_list();
+        let restore = app.recv_restore();
+        (app, restore)
+    }
+
+    /// The inode of `state.json`: each save renames a new file in, so a save
+    /// that writes the same bytes still changes it.
+    pub fn state_inode(&self) -> u64 {
+        std::os::unix::fs::MetadataExt::ino(&std::fs::metadata(self.state_file()).unwrap())
+    }
+
     /// A daemon that loads `state` (a `state.json`) at its start.
     pub fn start_seeded(state: &serde_json::Value) -> Self {
         Self::start_seeded_with(state, |_| {})
@@ -354,6 +376,13 @@ impl Conn {
         cli.recv(Instant::now() + LONG, "the answer to a report")
     }
 
+    /// A cli `resume` from the test process itself, and the daemon's answer.
+    pub fn cli_resume(sock: &Path, term_id: &str, cmd: Option<&str>) -> Msg {
+        let mut cli = Conn::hello(sock, "cli");
+        cli.send(&Msg::Resume { term_id: term_id.into(), cmd: cmd.map(str::to_string) });
+        cli.recv(Instant::now() + LONG, "the answer to a resume")
+    }
+
     pub fn recv_report_for(&mut self, term_id: &str) -> Msg {
         self.recv_until(&format!("term_report for {term_id}"), |m| is_report_for(m, term_id))
     }
@@ -486,6 +515,11 @@ impl Restore {
     /// The `last_cwd` of `term_id`'s record.
     pub fn last_cwd(&self, term_id: &str) -> Option<&str> {
         self.term_records.get(term_id)?.last_cwd.as_deref()
+    }
+
+    /// The resume command of `term_id`'s record.
+    pub fn resume_cmd(&self, term_id: &str) -> Option<&str> {
+        Some(self.term_records.get(term_id)?.resume.as_ref()?.cmd.as_str())
     }
 
     pub fn last_changed(&self, path: &str) -> Option<u64> {

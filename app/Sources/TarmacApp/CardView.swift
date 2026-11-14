@@ -319,6 +319,51 @@ final class CardView: NSView, ThemeFollowing {
         alphaValue = CardDim.opacity(dead: dead, quiet: quiet)
     }
 
+    // MARK: - Offer strip
+
+    /// The terminal's offer (`OfferStripView`), kept in the card layer just
+    /// above this card; nil when it offers nothing.
+    private(set) var offerStrip: OfferStripView?
+
+    /// Shows `lines` in the offer strip, or takes the strip away with nil. A
+    /// strip with `onPress` is a button.
+    func setOffer(lines: [String]?, toolTip: String? = nil, onPress: (() -> Void)? = nil) {
+        guard let lines else {
+            offerStrip?.removeFromSuperview()
+            offerStrip = nil
+            return
+        }
+        let strip = offerStrip ?? OfferStripView(card: self)
+        if offerStrip == nil {
+            offerStrip = strip
+            strip.apply(scale)
+            strip.isHidden = isHidden
+            superview?.addSubview(strip, positioned: .above, relativeTo: self)
+        }
+        strip.show(lines: lines, toolTip: toolTip)
+        strip.onPress = onPress
+        placeOfferStrip()
+    }
+
+    private func placeOfferStrip() {
+        guard let strip = offerStrip, let superview, !isHidden else { return }
+        strip.place(along: clip.convert(bodyHost.frame, to: superview))
+    }
+
+    override var isHidden: Bool {
+        didSet { offerStrip?.isHidden = isHidden }
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        guard let strip = offerStrip else { return }
+        if let superview {
+            superview.addSubview(strip, positioned: .above, relativeTo: self)
+        } else {
+            strip.removeFromSuperview()
+        }
+    }
+
     // MARK: - Owner chip
 
     /// Shows `← <name>` in the header, or hides the chip with nil.
@@ -386,18 +431,21 @@ final class CardView: NSView, ThemeFollowing {
         }
         if resized || reshaped { needsLayout = true }
         applyProjectedScale()
+        placeOfferStrip()
     }
 
     override func viewDidUnhide() {
         super.viewDidUnhide()
         needsLayout = true
         applyProjectedScale()
+        placeOfferStrip()
     }
 
     private func applyProjectedScale() {
         guard projectedScale != scale else { return }
         scale = projectedScale
         header.apply(scale)
+        offerStrip?.apply(scale)
         applyShadow()
     }
 
@@ -424,6 +472,7 @@ final class CardView: NSView, ThemeFollowing {
         layoutScrollThumb(body: box.shownBody)
         laidOutWorldSize = worldFrame.rect.size
         layoutRing()
+        placeOfferStrip()
     }
 
     // MARK: - Resize handles

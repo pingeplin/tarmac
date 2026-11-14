@@ -12,6 +12,8 @@ use tracing::debug;
 use crate::bell_scan::BellScan;
 use crate::boards::BoardId;
 use crate::proc;
+use crate::reports::Holder;
+use crate::resume::Flag;
 use crate::state::Daemon;
 
 pub const OUTPUT_CHUNK: usize = 64 * 1024; // protocol: output chunks <= 64 KiB
@@ -67,6 +69,13 @@ pub struct TermHandle {
     // daemon's `reports` lock, in the step that changes the store; read
     // without it, so that a key or a poll tick with no report costs one load.
     report: AtomicU8,
+    // A `resume::Flag`, and the holder of the resume command, an `Agent`.
+    // Both are written only under the daemon's `boards` lock, in the step
+    // that changes the record; the flag is read without it, so a key or a
+    // poll tick with no command costs one load. The holder's lock is taken
+    // after `boards`, never across an await.
+    resume: AtomicU8,
+    resume_holder: std::sync::Mutex<Option<Holder>>,
 }
 
 const NO_REPORT: u8 = 0;
@@ -99,6 +108,31 @@ impl TermHandle {
         self.report.store(state, Ordering::Relaxed);
     }
 
+    pub fn resume_flag(&self) -> Flag {
+        Flag::from_u8(self.resume.load(Ordering::Relaxed))
+    }
+
+    pub fn resume_holder(&self) -> Option<Holder> {
+        *self.resume_holder.lock().expect("resume holder lock")
+    }
+
+    /// A command with `holder`.
+    pub fn hold_resume(&self, holder: Holder) {
+        *self.resume_holder.lock().expect("resume holder lock") = Some(holder);
+        self.resume.store(Flag::Held as u8, Ordering::Relaxed);
+    }
+
+    /// A command with no holder.
+    pub fn unclaim_resume(&self) {
+        *self.resume_holder.lock().expect("resume holder lock") = None;
+        self.resume.store(Flag::Unclaimed as u8, Ordering::Relaxed);
+    }
+
+    pub fn forget_resume(&self) {
+        *self.resume_holder.lock().expect("resume holder lock") = None;
+        self.resume.store(Flag::None as u8, Ordering::Relaxed);
+    }
+
     /// A handle on a pty that no process holds: no pid, no foreground leader.
     #[cfg(test)]
     pub(crate) fn detached() -> Arc<TermHandle> {
@@ -109,6 +143,8 @@ impl TermHandle {
             pid: None,
             spawned_with_cmd: false,
             report: AtomicU8::new(NO_REPORT),
+            resume: AtomicU8::new(Flag::None as u8),
+            resume_holder: std::sync::Mutex::new(None),
         })
     }
 
@@ -248,10 +284,12 @@ pub async fn spawn(daemon: Arc<Daemon>, plan: SpawnPlan) -> Result<(), String> {
         pid: child_pid,
         spawned_with_cmd: plan.cmd.is_some(),
         report: AtomicU8::new(NO_REPORT),
+        resume: AtomicU8::new(Flag::None as u8),
+        resume_holder: std::sync::Mutex::new(None),
     });
     // Before the loop starts: its first cwd read fills the record of the
     // term's board, which must be there by then.
-    daemon.adopt_term(&plan).await;
+    daemon.adopt_term(&plan, &handle).await;
     daemon.terms.lock().await.insert(term_id.clone(), handle.clone());
 
     tokio::spawn(proc_loop(daemon.clone(), term_id.clone(), handle.clone()));
@@ -388,7 +426,7 @@ async fn pump(
 // changes (and once for the first pid): an idle terminal makes no cwd read.
 // Stops when the pump removes the term after exit. Any lookup or lock failure
 // skips the tick; this loop never panics.
-async fn proc_loop(daemon: Arc<Daemon>, term_id: String, handle: Arc<TermHandle>) {
+pub(crate) async fn proc_loop(daemon: Arc<Daemon>, term_id: String, handle: Arc<TermHandle>) {
     let mut last_name: Option<String> = None;
     let mut last_pid: Option<libc::pid_t> = None;
     let mut ticker = tokio::time::interval(PROC_POLL_INTERVAL);
@@ -399,8 +437,9 @@ async fn proc_loop(daemon: Arc<Daemon>, term_id: String, handle: Arc<TermHandle>
         }
         let leader = handle.foreground_pid();
         // Before the `continue` on a failed leader read: an agent's exit must
-        // end its report all the same.
+        // end its report and its resume command all the same.
         daemon.check_report(&term_id, &handle, leader).await;
+        daemon.check_resume(&term_id, &handle, proc::proc_facts).await;
 
         let Some(pid) = leader else { continue };
         if let Some(name) = proc::process_name(pid)

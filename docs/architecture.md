@@ -24,16 +24,19 @@ Unix socket:
 
 A third tiny binary, the **`tarmac` CLI**, is the universal doorbell: `tarmac
 open <path>` connects to the daemon, names a doc, and exits. `open`, `push`,
-`report`, `--version` and `hooks run` are its verbs that talk to the daemon
-(`tarmac push` hands one JSON value, or one for each line of stdin, to the
+`report`, `resume`, `--version` and `hooks run` are its verbs that talk to the
+daemon (`tarmac push` hands one JSON value, or one for each line of stdin, to the
 loaded HTML cards of an open doc; `tarmac report` sets or clears the calling
-terminal's report, spec 2611.0009; `--version` only completes
+terminal's report, spec 2611.0009; `tarmac resume` sets or clears the command
+that resumes its agent session, spec 2611.0011; `--version` only completes
 the handshake, to report the daemon's and the connected app's versions);
 `tarmac hooks install`, `uninstall` and `status` are local: they merge four
 Claude Code hooks into Claude's settings file, each a fixed call to
 `tarmac hooks run claude || true`, and `hooks run claude` maps the hook's input
-on stdin to a `report` and always exits 0 (spec 2611.0010). Only the CLI knows
-an agent; the daemon and the app see plain `report` frames. For this the CLI
+on stdin to a `report`, or at `SessionStart` to a `resume` of
+`claude --resume <session_id>`, and always exits 0 (spec 2611.0010, 2611.0011).
+Only the CLI knows an agent; the daemon and the app see plain `report` and
+`resume` frames. For this the CLI
 depends on `serde_json`, and on nothing else beyond the protocol crate and
 `serde`;
 `tarmac skill` is a purely local verb that
@@ -167,7 +170,7 @@ reports.
 | --- | --- | --- | --- |
 | Lifecycle | `Hello {role, v, app_version?}` | C→D | handshake |
 | | `HelloOk {v, daemon_version?, daemon_pid?, app_version?, app_connected?}` | D→C | accept |
-| | `Ack` | D→cli | generic success (reply to `open`, `push` and `report`) |
+| | `Ack` | D→cli | generic success (reply to `open`, `push`, `report` and `resume`) |
 | | `Err {msg}` | D→C | error notice (closes the link on a handshake error) |
 | Docs | `Open {path, term_id?, board_id?}` | cli/app→D | surface a doc |
 | | `DocRead {path}` | app→D | mark a doc read |
@@ -186,6 +189,7 @@ reports.
 | | `Bell {term_id}` | D→app | a BEL (0x07) outside an escape string was seen |
 | | `Report {term_id, kind, text?}` | cli→D | a terminal's report, `blocked`, `done` or `clear`; `ack` or `err` |
 | | `TermReport {term_id, kind?, text?, at_ms?, proc?, read?}` | D→app | a terminal's current report; no `kind` is none |
+| | `Resume {term_id, cmd?}` | cli→D | a terminal's resume command; no `cmd` clears it; `ack` or `err` |
 | | `ScrollbackRequest {term_id}` | app→D | re-send one term's scrollback ring now |
 | | `Scrollback {term_id, bytes}` | D→app | that ring, one frame per request |
 | Layout | `Layout {dock, tiles, board?, board_id?}` | app→D | layout snapshot for a board |
@@ -205,7 +209,7 @@ cx, cy}`.
 **Conformance vectors are the tripwire.** Two codecs implement this contract —
 `tarmac-protocol` (Rust, serde) and the hand-written `MsgPack` / `Message` codec
 in `TarmacKit` (Swift) — and both carry the same hex-encoded msgpack vectors
-(V1–V24) as mandatory tests: in `core/crates/tarmac-protocol/src/tests.rs`
+(V1–V27) as mandatory tests: in `core/crates/tarmac-protocol/src/tests.rs`
 and in `app/Tests/TarmacKitTests/ConformanceTests.swift`. Each vector must decode
 to the same structure and survive an encode→decode roundtrip on both sides. The
 Swift encoder is additionally pinned byte-for-byte to what
@@ -366,6 +370,35 @@ only. `Daemon::report` ties it to a holder with `Holder::resolve` (pure):
 Each change and its push happen under the `reports` lock, so one terminal's
 frames keep their order. `reports` is taken before `app`; `boards` and `terms`
 are never taken while it is held.
+
+**A terminal's resume command** (spec 2611.0011). A `Resume` from a cli
+names a terminal and a command, or none to clear it. The command is checked by
+`check_resume_cmd` (one line, no control, format or bidi character, at most
+256 chars) in the cli, the daemon and the app. `Daemon::set_resume` stores it as
+`resume: {cmd}` in the terminal's record, beside `last_cwd`, so it is saved and
+sent in every `Restore`. Its holder is found by the report's walk and is always
+a pid with its start time (`resume::tie`: the agent, the shell itself for a
+command set at the prompt, or the leader of the fallback); it lives in memory
+only, on the terminal's handle, beside a `resume::Flag` atomic (none, held,
+unclaimed). Both are written only with `boards` held, in the step that changes
+the record, and every drop goes through one `Daemon::drop_resume`; the flag is
+read with no lock, so an idle tick or a key costs one load, and the poll reads
+the holder from the handle with no board lock. The drops while the daemon lives:
+
+- the poll's `check_resume`, before the `continue` on a failed leader read,
+  drops it when the holder's pid is gone or has another start time; it checks
+  a copy with no lock held and removes it only if it is still the holder it
+  checked;
+- a terminal's end drops it at any exit code; a non-zero or signal exit still
+  keeps the record and its `last_cwd`;
+- a command with no holder — loaded from disk, or moved by `succeeds` — is
+  dropped by the first `Input` with `typed: true` to its terminal; a new set
+  gives it a holder.
+
+`final_save` first sets `shutting_down`, which stops exactly the first two
+drops, so a command whose agent still ran when the daemon was signalled is
+saved, and offered by the next restore. A set with the stored command does not
+save; every other change does.
 
 Each terminal keeps a byte-capped **scrollback ring** (256 KiB, front-eviction),
 appended unconditionally even with no app connected. On (re)connect the daemon
@@ -646,8 +679,9 @@ State is atomic JSON at `~/Library/Application Support/tarmac/state.json`
 docs, tiles, board?, term_records? }], active }`. Durable: the board set + active id + names;
 each board's docs in dock order with read flags / timestamps / `term_id`
 provenance; the tile layout (v4 geometry + per-term tile ids); the viewport;
-each terminal's record (`term_records: { term_id: { last_cwd? } }`, omitted
-when empty), which a `Layout` never touches.
+each terminal's record (`term_records: { term_id: { last_cwd?, resume?: { cmd } } }`,
+omitted when empty), which a `Layout` never touches. No pid is saved: the
+holder of a resume command is in memory only.
 Repo metadata is written for inspectability but **recomputed at startup**, on
 the gate (*Docs & file watching*) — a `.git` appearing or vanishing between
 runs is treated as an observed fact, not trusted from disk.
@@ -1065,13 +1099,33 @@ for the user's own input only, so a hover report or an engine reply never reads
 it. A dead card drops its report (`holdOpen`), and a lost connection clears
 every chip; the next restore brings the shown board's back.
 
+A cold spawn whose record kept a resume command shows a **resume chip**, a
+strip pinned to the bottom of the card's body over its content:
+`↻ last here: <cmd>`, with each id-like word cut to four characters and `…`
+and the whole command in the tool tip (`ResumeOffer`, `ResumeChip`). Once the
+card's first output came and while it is prime, it adds `  ⏎ run · esc skip`,
+and Return runs the command once, with one carriage return, as typed input.
+Any user byte that reaches the PTY drops the offer, before or after it is
+armed, and the daemon drops the record at that typed input. A dead card whose
+board's latest restore has a record with a folder or a command shows the same
+strip as `↻ reopen here  ⏎`, `in <folder>` and `then offers: <cmd>`
+(`DeadCardOffer`); a press on it, or Return while the dead card holds the keys,
+replaces it in place with a cold spawn in that folder that succeeds the dead id
+and offers the command. The strip is a sibling of its card in the card layer,
+stacked just above it, so it is drawn at full opacity on a dimmed dead card,
+and it wraps inside the card's width. It takes the chip metrics (`ChipMetrics`)
+and a border, but unlike a header chip it is filled with the terminal's
+background (`termBg`) and drawn in `Theme.text`: it lies over terminal text,
+which a chip with no fill would let show through.
+
 **Exit.** `TermExit` decides: a non-zero or signal `Exit` toasts and holds the
 card open *dead* — dimmed, taking no input, never persisted; a clean exit
 removes the card; a clean exit of the board's last live terminal replaces it
 with a fresh shell at the same frame. Nothing is respawned after a failure.
-`⌘W` on the selected terminal card removes it at once, sending `TermClose`
-unless the shell had already exited, and — as with a clean exit — replaces the
-board's last live terminal with a fresh shell (`FocusedClose`).
+`⌘W` on the selected terminal card removes it at once, sending `TermClose`,
+for a dead card too, whose record the daemon then deletes (spec 2611.0011,
+D12), and — as with a clean exit — replaces the board's last live terminal
+with a fresh shell (`FocusedClose`).
 
 **Scrollback restore.** Every terminal card, when it is created, sends
 `ScrollbackRequest` and holds that terminal's live `Output` — up to 256 KiB —
@@ -1323,7 +1377,8 @@ inheritance and doc placement), and the view that holds **keyboard focus** (the
 window's first responder).
 
 - A press on a live terminal card — body or header — selects it, makes it prime
-  and gives it the keyboard. A press on a doc card selects it — except on a
+  and gives it the keyboard. A press on a dead terminal card selects it and
+  gives it the keyboard, for its reopen offer; a dead card is never prime. A press on a doc card selects it — except on a
   link or a header control (`CardPress`); a markdown doc's web view takes the
   keyboard, so its text can be selected and copied the usual
   way. A press in an HTML card's console gives its text the keyboard for the
@@ -1350,6 +1405,11 @@ view; `KeyLadder` says which ones the app takes, in this order:
 4. `⌘T` opens a terminal in the first free slot around the prime one (the
    same ring rule a fresh doc follows, `Placement.firstFreeSlot`), inheriting
    its current directory (`inherit_cwd_from`).
+   Then plain `Return` on a terminal (spec 2611.0011): a repeat while an offer
+   shows, or just after a run, is ignored (`.ignoreRepeat`); else on the prime
+   terminal whose resume offer is armed it runs the command (`.runResume`),
+   and on a dead terminal with a reopen offer it reopens it (`.reopenDead`). A
+   repeat is decided first (`NSEvent.isARepeat`), so a held key acts once.
 5. Plain `Return`, when no terminal holds the keys, no text control in a
    markdown doc's raw HTML is being typed into, and a signalling card is off
    screen, remembers the viewport and flies to that card.
@@ -1647,7 +1707,17 @@ The daemon sends `Restore` for its active board on connect, and after every
   Terminals still in `live_terms` stay as they are; the rest become dead cards;
   nothing is respawned. An empty `live_terms` for a board that had a live
   terminal is a daemon restart: one toast (`daemon restarted — terminals lost`),
-  and every other visited board's live terminals are marked dead too.
+  and every other visited board's live terminals are marked dead too. Its body
+  is `⏎ on a dead card reopens it in its folder` when a lost card gets a reopen
+  offer, else `open new terminals with ⌘T`.
+- **The records.** The app keeps each restore's `term_records` for its board,
+  on the first visit and on every later restore (spec 2611.0011, D11). After a
+  later restore each dead card of that board gets the reopen offer its record
+  allows; a card that dies of its own exit gets one only at the board's next
+  restore. A first-visit restore with cold spawns adds
+  `✓ N terminals back in their folders` and `↻ M with an agent session to
+  resume` to the `RestartNotice` toast, or shows them in a toast of their own,
+  `terminals restored` (`RestoreSummary`).
 - **Spawn gating.** Nothing is spawned for a board before its restore on the
   current connection: that restore lists the live terminals, and a shell
   spawned just ahead of it would be taken for lost.
@@ -1697,13 +1767,15 @@ window-content coordinates start on the display — each card's `scroll`
 (`{offset, visible, total, shown, thumb}`, or `null` before its content has
 reported; `thumb` is the scroll thumb's rect beside `screen_rect`, or `null`
 when none is laid out), the selected card, keyboard
-focus, per-terminal `cols`/`rows`/`proc`/`selection`/`scrollback_tail`, the
+focus, per-terminal `cols`/`rows`/`proc`/`selection`/`scrollback_tail` (and,
+only when the card offers one, `resume: {cmd, armed}` and `reopen: true`), the
 quit guard's state, `fonts`: for each font role the family saved in
 `app-prefs.json` and what the role resolved to (a PostScript `face`, or the
 `css` value for doc prose), and for `terminal` and `document` the `size` in
 effect; and `theme`: the `choice`, the variant `in_effect` and the `name` (the id) of the theme in effect, the `folder` the theme files are read from, the ids of the themes that are `available`, each file that was `refused` with its reason, and the detector's `findings` for the theme in effect. `--until` re-evaluates an expression every 50 ms
 (`DevUntil`). The scenario suites are `scripts/qa/smoke.mjs` (`make qa`) and
-`scripts/qa/quit.mjs` (`make qa-quit`).
+`scripts/qa/quit.mjs` (`make qa-quit`), and `scripts/qa/resume.mjs`
+(`make qa-resume`), which kills the dev daemon by the pid that holds its socket.
 
 ---
 
@@ -1744,7 +1816,7 @@ viewport.
 | --- | --- | --- |
 | **App reconnect** (daemon stays up) | **Survive** — the cards stay bound to their ptys; history is replaced from the scrollback ring. A terminal's report and its read flag survive: the chips go at the disconnect and come back with the restore | Untouched — the app's own state stands; only terminals are reconciled |
 | **App relaunch** (daemon stays up) | **Survive** — re-bound on the first restore, history from the scrollback ring; reports come with each board's restore | Restored from daemon memory |
-| **Daemon restart** | Lost — live shells, and their reports, died with the daemon. A running app marks their cards dead and toasts; a freshly launched app cold-spawns new shells at the persisted frames, in their last folder | Restored exactly from `state.json` |
+| **Daemon restart** | Lost — live shells, and their reports, died with the daemon. A running app marks their cards dead and toasts, and a dead card with a record offers to reopen in place; a freshly launched app cold-spawns new shells at the persisted frames, in their last folder. A resume command survives only when its agent was still running when the daemon went down; the cold-spawned card then offers it, and runs it on one Return | Restored exactly from `state.json` |
 | **Red button / hide** | **Survive** — the app keeps running with its window hidden, and comes back on the next activation or Dock click | Untouched |
 | **Version-mismatch restart** (brew upgrade) | Cold-spawned on the new daemon, in their last folder (same as above). The app toasts the version change (`tarmacd restarted: <from> → <to>`) when a first-visit board has lost terminals; otherwise the existing reconnect toast is what the user sees | Restored from `state.json` via `Msg::Restore` on reconnect |
 

@@ -10,7 +10,8 @@ public struct ToastQueue: Equatable, Sendable {
         /// A leading mono glyph: "¶" for connection toasts, "›_" for shell toasts.
         public var icon: String
         public var title: String
-        public var body: String?
+        /// The lines under the title, each on a line of its own.
+        public var bodyLines: [String]
         public var expiresAtMs: Int
     }
 
@@ -26,12 +27,12 @@ public struct ToastQueue: Equatable, Sendable {
         id: String,
         icon: String,
         title: String,
-        body: String? = nil,
+        bodyLines: [String] = [],
         nowMs: Int
     ) {
         let (expiresAtMs, overflowed) = nowMs.addingReportingOverflow(Self.ttlMs)
         toasts.append(Toast(
-            id: id, icon: icon, title: title, body: body,
+            id: id, icon: icon, title: title, bodyLines: bodyLines,
             expiresAtMs: overflowed ? .max : expiresAtMs
         ))
         if toasts.count > Self.maxToasts { toasts.removeFirst(toasts.count - Self.maxToasts) }

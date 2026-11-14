@@ -244,12 +244,18 @@ final class BoardView: NSView, ThemeFollowing {
     private func restack() {
         cardLayer.sortSubviews({ a, b, _ in
             MainActor.assumeIsolated {
-                guard let a = (a as? CardView)?.stackPlace, let b = (b as? CardView)?.stackPlace else {
-                    return .orderedSame
-                }
+                guard let a = BoardView.stackKey(a), let b = BoardView.stackKey(b) else { return .orderedSame }
                 return a < b ? .orderedAscending : b < a ? .orderedDescending : .orderedSame
             }
         }, context: nil)
+    }
+
+    /// A card's place; its offer strip (2611.0011) takes the same place, just
+    /// above the card.
+    private static func stackKey(_ view: NSView) -> (ZOrder.Place, Int)? {
+        if let card = view as? CardView { return (card.stackPlace, 0) }
+        if let place = (view as? OfferStripView)?.card?.stackPlace { return (place, 1) }
+        return nil
     }
 
     // MARK: - Internals

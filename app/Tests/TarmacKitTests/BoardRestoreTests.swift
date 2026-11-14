@@ -61,6 +61,33 @@ final class BoardRestoreTests: XCTestCase {
         )
     }
 
+    // MARK: - 2611.0011 S7: the resume command a cold spawn offers
+
+    private let resumed = TermRecord(lastCwd: "/w", resume: ResumeRecord(cmd: "claude --resume ab-12"))
+
+    func testS7AColdSpawnCarriesItsRecordsResumeCommand() {
+        let restored = plan([termTile("t0")], records: ["t0": resumed])
+        XCTAssertEqual(restored.terms.map(\.spawn), [SpawnRequest(cwd: "/w", succeeds: "t0")])
+        XCTAssertEqual(restored.terms.map(\.resume), ["claude --resume ab-12"])
+    }
+
+    func testS7AReboundTerminalOffersNoResume() {
+        let restored = plan([termTile("t0")], live: ["t0"], records: ["t0": resumed])
+        XCTAssertEqual(restored.terms.map(\.resume), [nil])
+    }
+
+    func testS7ARefusedCommandIsNotOfferedAndTheSpawnIsUnchanged() {
+        let refused = TermRecord(lastCwd: "/w", resume: ResumeRecord(cmd: "echo a\necho b"))
+        let restored = plan([termTile("t0")], records: ["t0": refused])
+        XCTAssertEqual(restored.terms.map(\.spawn), [SpawnRequest(cwd: "/w", succeeds: "t0")])
+        XCTAssertEqual(restored.terms.map(\.resume), [nil])
+    }
+
+    func testS7ALegacyTileAndTheBoardsFreshTerminalOfferNoResume() {
+        XCTAssertEqual(plan([termTile(nil)], records: ["t0": resumed]).terms.map(\.resume), [nil])
+        XCTAssertEqual(plan([], records: ["t0": resumed]).terms.map(\.resume), [nil])
+    }
+
     /// S10
     func testAReboundTerminalGetsNoFolderAndSucceedsNothing() {
         let restored = plan([termTile("t0")], live: ["t0"], records: ["t0": TermRecord(lastCwd: "/w")])

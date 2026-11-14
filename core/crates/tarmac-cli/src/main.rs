@@ -11,6 +11,7 @@ mod help;
 mod hooks;
 mod push;
 mod report;
+mod resume;
 mod settings_file;
 mod skill;
 
@@ -78,6 +79,7 @@ fn run(args: &[String]) -> i32 {
         Some("skill") => skill::run(&args[1..]),
         Some("push") => push::run(&args[1..]),
         Some("report") => report::run(&args[1..]),
+        Some("resume") => resume::run(&args[1..]),
         Some("hooks") => hooks::run(&args[1..]),
         Some("open") => match &args[1..] {
             [path] => match open(path) {

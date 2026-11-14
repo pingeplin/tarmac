@@ -43,6 +43,10 @@ final class Board {
     /// The prime terminal card's id, or nil when no terminal is live.
     var primeTermID: String?
 
+    /// The terminal records of this board's latest restore (2611.0011, D11):
+    /// what a dead card offers.
+    var termRecords: [String: TermRecord] = [:]
+
     /// Provenance: doc path → the `term_id` that opened it (from `DocEntry`).
     var docOwner: [String: String] = [:]
 

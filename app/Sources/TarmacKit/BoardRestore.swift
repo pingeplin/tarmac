@@ -8,14 +8,18 @@ public enum BoardRestore {
         public var z: Int
         /// Nil for a terminal re-bound to a PTY the daemon still owns.
         public var spawn: SpawnRequest?
+        /// 2611.0011: the command a cold spawn of a persisted tile offers to
+        /// run, from its record, when `ResumeCommand.check` accepts it.
+        public var resume: String?
 
         public var needsSpawn: Bool { spawn != nil }
 
-        public init(termID: String, frame: CGRect, z: Int, spawn: SpawnRequest?) {
+        public init(termID: String, frame: CGRect, z: Int, spawn: SpawnRequest?, resume: String? = nil) {
             self.termID = termID
             self.frame = frame
             self.z = z
             self.spawn = spawn
+            self.resume = resume
         }
     }
 
@@ -53,7 +57,8 @@ public enum BoardRestore {
     /// the terminals the daemon still owns. `mint` supplies the id of every
     /// terminal that cold-spawns — a persisted id is never reused for a new shell.
     /// A cold spawn of a persisted tile succeeds its persisted id, and starts in
-    /// that terminal's last folder in `termRecords` (2611.0007).
+    /// that terminal's last folder in `termRecords` (2611.0007); it offers the
+    /// record's resume command when the app accepts it (2611.0011).
     ///
     /// A doc follows its recorded owner to whatever that terminal was restored
     /// as. An owner that was not restored leaves the doc ownerless and detached;
@@ -70,16 +75,19 @@ public enum BoardRestore {
         for (index, tile) in parsed.terms.enumerated() {
             let termID: String
             let spawn: SpawnRequest?
+            var resume: String?
             switch rebinds[index] {
             case .rebind(let live):
                 (termID, spawn) = (live, nil)
             case .coldSpawn:
-                let cwd = tile.termID.flatMap { termRecords[$0]?.lastCwd }
-                (termID, spawn) = (mint(), SpawnRequest(cwd: cwd, succeeds: tile.termID))
+                let record = tile.termID.flatMap { termRecords[$0] }
+                (termID, spawn) = (mint(), SpawnRequest(cwd: record?.lastCwd, succeeds: tile.termID))
+                resume = ResumeCommand.accepted(record?.resume?.cmd)
             }
             if let persisted = tile.termID { restoredID[persisted] = termID }
             terms.append(Term(
-                termID: termID, frame: tile.frame ?? TermPlacement.restoredFrame(index: index), z: tile.z, spawn: spawn
+                termID: termID, frame: tile.frame ?? TermPlacement.restoredFrame(index: index), z: tile.z, spawn: spawn,
+                resume: resume
             ))
         }
         if terms.isEmpty {

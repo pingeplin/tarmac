@@ -102,7 +102,7 @@ extension AppController {
     private func handleDisconnect(_ reason: String?) {
         connected = false
         terminalsLostConnection()
-        rootView.toasts.show(title: "tarmacd connection lost", body: reason)
+        rootView.toasts.show(title: "tarmacd connection lost", bodyLines: reason.map { [$0] } ?? [])
         // Every board's glyph goes faint (no live pty); refresh an open switcher.
         refreshSwitcherIfOpen()
     }

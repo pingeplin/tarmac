@@ -238,6 +238,13 @@ pub enum Msg {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         read: bool,
     },
+    /// cli -> daemon: the calling terminal's resume command (spec 2611.0011);
+    /// no `cmd` clears it. Answered `ack` or `err`.
+    Resume {
+        term_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cmd: Option<String>,
+    },
     /// A receiver ignores message types it does not know instead of failing.
     #[serde(other)]
     Unknown,
@@ -312,6 +319,16 @@ pub struct TermRecord {
     /// The terminal's last cwd that the daemon read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_cwd: Option<String>,
+    /// Set while the terminal's agent runs; kept when the daemon dies first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume: Option<ResumeRecord>,
+}
+
+/// The command that resumes the agent session last run in a terminal. No pid:
+/// one from a dead daemon names no process.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ResumeRecord {
+    pub cmd: String,
 }
 
 /// The persisted board viewport: zoom factor and world-space center.
@@ -344,6 +361,39 @@ pub fn cap_report_text(text: &str) -> String {
         return text.to_owned();
     }
     text.chars().take(REPORT_TEXT_MAX - 1).chain(['…']).collect()
+}
+
+/// The longest resume command, in Unicode scalar values (`char`s).
+pub const RESUME_CMD_MAX: usize = 256;
+
+/// Accepts a command that runs as exactly one visible line: not blank, no
+/// control character (U+2028 and U+2029 count as one), no invisible format or
+/// bidi character, at most `RESUME_CMD_MAX` chars. The cli, the daemon and the
+/// app (`ResumeCommand.check`) each apply it. `Err` names the cause.
+pub fn check_resume_cmd(cmd: &str) -> Result<(), &'static str> {
+    if cmd.trim().is_empty() {
+        return Err("empty");
+    }
+    if cmd.chars().any(|c| c.is_control() || matches!(c, '\u{2028}' | '\u{2029}')) {
+        return Err("a control character");
+    }
+    if cmd.chars().any(is_invisible_format) {
+        return Err("an invisible format character");
+    }
+    if cmd.chars().count() > RESUME_CMD_MAX {
+        return Err("over 256 characters");
+    }
+    Ok(())
+}
+
+/// `check_resume_cmd`, with the refusal worded as the cli and the daemon
+/// print it.
+pub fn refuse_resume_cmd(cmd: &str) -> Result<(), String> {
+    check_resume_cmd(cmd).map_err(|cause| format!("resume command refused: {cause}"))
+}
+
+fn is_invisible_format(c: char) -> bool {
+    matches!(c, '\u{061c}' | '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{2069}' | '\u{feff}')
 }
 
 // to_vec_named is load-bearing: plain to_vec emits structs as msgpack arrays,

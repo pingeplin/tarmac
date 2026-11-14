@@ -554,7 +554,17 @@ impl Boards {
     /// Deletes the record of `term_id` from whichever board holds it. False
     /// when none does.
     pub fn forget_term(&mut self, term_id: &str) -> bool {
-        self.registries_mut().any(|reg| reg.term_records.remove(term_id).is_some())
+        for reg in self.registries_mut() {
+            if reg.term_records.remove(term_id).is_some() {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// The record of `term_id` on whichever board holds it.
+    pub fn record_mut(&mut self, term_id: &str) -> Option<&mut TermRecord> {
+        self.registries_mut().find_map(|reg| reg.term_records.get_mut(term_id))
     }
 
     /// False (no-op) if no such board.

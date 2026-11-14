@@ -96,6 +96,9 @@ USAGE:
     tarmac report done [\"<text>\"]
     tarmac report clear
                             set or clear this terminal's report on its card
+    tarmac resume set \"<command>\"
+    tarmac resume clear
+                            offer a command in this terminal after a restart
     tarmac --version        report the cli, daemon, and app versions
     tarmac skill            print the agent-facing Tarmac guide
     tarmac skill install    install a SKILL.md that points coding agents at it
@@ -126,10 +129,18 @@ hook ends when the agent exits. One typed at the prompt ends at the next
 command that runs for longer than 750 ms. `clear` removes it. It prints
 nothing on success.
 
+`tarmac resume set` runs inside a Tarmac terminal and records the command that
+resumes the agent session there, such as `claude --resume <id>`: one line of at
+most 256 characters, with no control or invisible characters. It lasts while
+the process that set it runs. If the daemon restarts first, the card offers the
+command in its folder, and runs it only when you press Return. `clear` removes
+it. It prints nothing on success.
+
 `tarmac hooks install` merges four hooks into Claude Code's settings
 (Notification, Stop, UserPromptSubmit, SessionStart), each a call to
 `tarmac hooks run claude || true` with a 5 s timeout, so a permission prompt
-shows blocked, the end of a turn shows done, and a new prompt clears the chip.
+shows blocked, the end of a turn shows done, a new prompt clears the chip, and
+a session's start records `claude --resume <session_id>` for `tarmac resume`.
 User scope writes ~/.claude/settings.json ($CLAUDE_CONFIG_DIR/settings.json when
 set); --scope project writes the personal .claude/settings.local.json, unlike
 `skill install --scope project`, which writes the shared .claude/skills. A write
@@ -159,10 +170,11 @@ exits 0 whether or not a daemon is running.
 
 EXIT STATUS:
     0  success; also `tarmac --version` with no daemon running
-    1  the daemon refused an open, a push or a report (with -, any line), no
-       daemon is running, `report` ran outside a Tarmac terminal, an install
-       failed, `hooks install` or `hooks uninstall` refused a settings file, or
-       `hooks status` found one unreadable
+    1  the daemon refused an open, a push or a report (with -, any line),
+       or a resume, no daemon is running, `report` or `resume` ran outside a
+       Tarmac terminal, an install failed, `hooks install` or `hooks
+       uninstall` refused a settings file, or `hooks status` found one
+       unreadable
     2  usage error
 `tarmac hooks run` always exits 0, so that a hook never blocks Claude.
 ";

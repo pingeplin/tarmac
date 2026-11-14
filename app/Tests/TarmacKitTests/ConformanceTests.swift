@@ -503,6 +503,61 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
+    /// 2611.0011 S12 (cli → daemon): set a resume command.
+    func testVector25Resume() throws {
+        try assertVector(
+            """
+            83 a1 74 a6 72 65 73 75 6d 65 a7 74 65 72 6d 5f 69 64 a2 74 31
+            a3 63 6d 64 b5 63 6c 61 75 64 65 20 2d 2d 72 65 73 75 6d 65 20 61 62 2d 31 32
+            """,
+            .map(["t": .string("resume"), "term_id": .string("t1"), "cmd": .string("claude --resume ab-12")]),
+            .resume(termID: "t1", cmd: "claude --resume ab-12")
+        )
+    }
+
+    /// 2611.0011 S12: a clear has no `cmd` key.
+    func testVector26ResumeClear() throws {
+        try assertVector(
+            "82 a1 74 a6 72 65 73 75 6d 65 a7 74 65 72 6d 5f 69 64 a2 74 31",
+            .map(["t": .string("resume"), "term_id": .string("t1")]),
+            .resume(termID: "t1", cmd: nil)
+        )
+    }
+
+    /// 2611.0011 S12 (daemon → app): a record with a resume command.
+    func testVector27RestoreResumeRecord() throws {
+        try assertVector(
+            """
+            84 a1 74 a7 72 65 73 74 6f 72 65 a4 64 6f 63 73 90 a5 74 69 6c 65 73 90
+            ac 74 65 72 6d 5f 72 65 63 6f 72 64 73 81 a2 74 31
+            82 a8 6c 61 73 74 5f 63 77 64 a2 2f 77 a6 72 65 73 75 6d 65 81 a3 63 6d 64
+            b5 63 6c 61 75 64 65 20 2d 2d 72 65 73 75 6d 65 20 61 62 2d 31 32
+            """,
+            .map([
+                "t": .string("restore"),
+                "docs": .array([]),
+                "tiles": .array([]),
+                "term_records": .map([
+                    "t1": .map(["last_cwd": .string("/w"), "resume": .map(["cmd": .string("claude --resume ab-12")])]),
+                ]),
+            ]),
+            .restore(
+                docs: [], tiles: [], board: nil, boardID: nil, liveTerms: [],
+                termRecords: ["t1": TermRecord(lastCwd: "/w", resume: ResumeRecord(cmd: "claude --resume ab-12"))]
+            )
+        )
+    }
+
+    /// 2611.0011 S12: a nil `resume` and a nil `cmd` put no key on the wire.
+    func testANilResumeAndANilCmdHaveNoKey() throws {
+        let restore = Message.restore(
+            docs: [], tiles: [], board: nil, boardID: nil, liveTerms: [], termRecords: ["t1": TermRecord(lastCwd: "/w")]
+        )
+        let record = try MsgPack.decode(restore.encodedPayload()).mapValue?["term_records"]?.mapValue?["t1"]?.mapValue
+        XCTAssertEqual(record?.keys.sorted(), ["last_cwd"])
+        XCTAssertNil(try MsgPack.decode(Message.resume(termID: "t1", cmd: nil).encodedPayload()).mapValue?["cmd"])
+    }
+
     /// 2611.0009 S8: an untyped input, an unread report and a report with no
     /// text put no key for it on the wire; a missing `read` is unread.
     func testAnUntypedInputAnUnreadReportAndATextlessReportHaveNoKeyForIt() throws {

@@ -91,6 +91,12 @@ final class ReconnectRestoreTests: XCTestCase {
 
     func testTheRestartToastNamesTheWayForward() {
         XCTAssertEqual(ReconnectRestore.restartToastTitle, "daemon restarted — terminals lost")
-        XCTAssertEqual(ReconnectRestore.restartToastBody, "open new terminals with ⌘T")
+        XCTAssertEqual(ReconnectRestore.restartToastBody(reopenable: 0), "open new terminals with ⌘T")
+    }
+
+    /// 2611.0011 S11: a dead card that offers a reopen changes the way forward.
+    func testTheRestartToastPointsAtADeadCardThatCanReopen() {
+        XCTAssertEqual(ReconnectRestore.restartToastBody(reopenable: 1), "⏎ on a dead card reopens it in its folder")
+        XCTAssertEqual(ReconnectRestore.restartToastBody(reopenable: 2), "⏎ on a dead card reopens it in its folder")
     }
 }

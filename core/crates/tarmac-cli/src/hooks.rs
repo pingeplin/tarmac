@@ -1,8 +1,8 @@
 //! `tarmac hooks`: Claude Code reports through one fixed hook entry (spec
 //! 2611.0010). The settings file holds only a call to `tarmac hooks run claude`;
-//! the mapping from a hook's input to a report lives here, so an upgrade of the
-//! binary updates it. Only the cli knows an agent: the daemon gets a plain
-//! `report`.
+//! the mapping from a hook's input to a report or a resume command lives here,
+//! so an upgrade of the binary updates it. Only the cli knows an agent: the
+//! daemon gets a plain `report` or `resume`.
 
 use std::io::{self, IsTerminal, Read, Write};
 use std::os::unix::fs::PermissionsExt;
@@ -219,7 +219,7 @@ fn hook(args: &[String]) -> Result<(), String> {
     }
     let input: ClaudeInput =
         serde_json::from_slice(&read_input()?).map_err(|e| format!("the input is not a JSON object: {e}"))?;
-    let Some(msg) = claude_report(&term_id.to_string_lossy(), &input) else { return Ok(()) };
+    let Some(msg) = claude_message(&term_id.to_string_lossy(), &input)? else { return Ok(()) };
     let no_answer = format!("no answer from the daemon in {} ms", HOOK_DEADLINE.as_millis());
     report::send(&msg, HOOK_DEADLINE, report::NoAnswer::Anywhere(&no_answer))
 }
@@ -241,7 +241,7 @@ fn read_input() -> Result<Vec<u8>, String> {
     }
 }
 
-/// The four fields of a Claude hook input that the mapping reads; the rest,
+/// The five fields of a Claude hook input that the mapping reads; the rest,
 /// a long `prompt` among them, is skipped unparsed.
 #[derive(Deserialize, Default)]
 #[serde(default)]
@@ -250,6 +250,7 @@ struct ClaudeInput {
     notification_type: Lenient,
     message: Lenient,
     last_assistant_message: Lenient,
+    session_id: Lenient,
 }
 
 /// A field that counts only when it is a string; any other value is as if
@@ -266,19 +267,33 @@ impl<'de> Deserialize<'de> for Lenient {
     }
 }
 
-/// The report a Claude hook input stands for, if any. `SessionStart` is
-/// installed but maps to nothing until slice 4.
-fn claude_report(term_id: &str, input: &ClaudeInput) -> Option<Msg> {
-    let report = |kind: &str, text: Option<String>| Some(Msg::Report { term_id: term_id.into(), kind: kind.into(), text });
+/// The frame a Claude hook input stands for, if any: a report, or at
+/// `SessionStart` the command that resumes the session (spec 2611.0011).
+/// `Err` is a `SessionStart` whose `session_id` is refused.
+fn claude_message(term_id: &str, input: &ClaudeInput) -> Result<Option<Msg>, String> {
+    let report = |kind: &str, text: Option<String>| Ok(Some(Msg::Report { term_id: term_id.into(), kind: kind.into(), text }));
     let text = |field: &Lenient| field.0.as_deref().and_then(report_text);
-    match input.hook_event_name.0.as_deref()? {
-        "Notification" if input.notification_type.0.as_deref() == Some("permission_prompt") => {
+    match input.hook_event_name.0.as_deref() {
+        Some("Notification") if input.notification_type.0.as_deref() == Some("permission_prompt") => {
             report("blocked", text(&input.message))
         }
-        "Stop" => report("done", text(&input.last_assistant_message)),
-        "UserPromptSubmit" => report("clear", None),
-        _ => None,
+        Some("Stop") => report("done", text(&input.last_assistant_message)),
+        Some("UserPromptSubmit") => report("clear", None),
+        Some("SessionStart") => {
+            let id = input.session_id.0.as_deref().filter(|id| is_safe_session_id(id)).ok_or("session_id refused")?;
+            Ok(Some(Msg::Resume { term_id: term_id.into(), cmd: Some(format!("claude --resume {id}")) }))
+        }
+        _ => Ok(None),
     }
+}
+
+/// `^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$` (D8): no shell metacharacter, no
+/// quoting needed, and no id that reads as a flag.
+fn is_safe_session_id(id: &str) -> bool {
+    let mut chars = id.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphanumeric())
+        && id.len() <= 128
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
 /// The text without its control characters, its whitespace runs folded to one
@@ -390,8 +405,12 @@ mod tests {
         json!({"hook_event_name": "Stop", "last_assistant_message": message})
     }
 
-    fn report_of(input: Value) -> Option<Msg> {
-        claude_report("t9", &serde_json::from_value(input).unwrap())
+    fn message_of(input: Value) -> Option<Msg> {
+        claude_message("t9", &serde_json::from_value(input).unwrap()).expect("not refused")
+    }
+
+    fn refusal_of(input: Value) -> String {
+        claude_message("t9", &serde_json::from_value(input).unwrap()).expect_err("refused")
     }
 
     fn msg(kind: &str, text: Option<&str>) -> Msg {
@@ -399,7 +418,7 @@ mod tests {
     }
 
     fn done_text(message: Value) -> Option<String> {
-        match report_of(stop(message)) {
+        match message_of(stop(message)) {
             Some(Msg::Report { kind, text, .. }) if kind == "done" => text,
             other => panic!("a Stop is done, got {other:?}"),
         }
@@ -418,19 +437,22 @@ mod tests {
             "notification_type": "permission_prompt",
             "message": "Claude needs your permission to use Bash",
         });
-        assert_eq!(report_of(input.clone()), Some(msg("blocked", Some("Claude needs your permission to use Bash"))));
+        assert_eq!(message_of(input.clone()), Some(msg("blocked", Some("Claude needs your permission to use Bash"))));
     }
 
     // The inputs that Claude Code 2.1.325 sent.
     #[test]
     fn s5_the_captured_inputs_map_as_the_table_says() {
         assert_eq!(
-            report_of(fixture("notification-permission")),
+            message_of(fixture("notification-permission")),
             Some(msg("blocked", Some("Claude needs your permission")))
         );
-        assert_eq!(report_of(fixture("stop")), Some(msg("done", Some("You picked red."))));
-        assert_eq!(report_of(fixture("user-prompt-submit")), Some(msg("clear", None)));
-        assert_eq!(report_of(fixture("session-start")), None);
+        assert_eq!(message_of(fixture("stop")), Some(msg("done", Some("You picked red."))));
+        assert_eq!(message_of(fixture("user-prompt-submit")), Some(msg("clear", None)));
+        assert_eq!(
+            message_of(fixture("session-start")),
+            Some(Msg::Resume { term_id: "t9".into(), cmd: Some("claude --resume 00000000-0000-0000-0000-000000000000".into()) })
+        );
     }
 
     // Claude Code 2.1.325 sends AskUserQuestion and plan approval as a
@@ -438,11 +460,11 @@ mod tests {
     #[test]
     fn a_question_and_a_plan_approval_arrive_as_permission_prompts() {
         assert_eq!(
-            report_of(fixture("notification-ask-user-question")),
+            message_of(fixture("notification-ask-user-question")),
             Some(msg("blocked", Some("Claude needs your permission")))
         );
         assert_eq!(
-            report_of(fixture("notification-plan-approval")),
+            message_of(fixture("notification-plan-approval")),
             Some(msg("blocked", Some("Claude Code needs your approval for the plan")))
         );
     }
@@ -453,17 +475,44 @@ mod tests {
     }
 
     #[test]
-    fn s5_a_prompt_clears_and_a_session_start_is_nothing() {
+    fn s5_a_prompt_clears_and_a_session_start_with_no_id_is_refused() {
         let prompt = json!({"hook_event_name": "UserPromptSubmit", "prompt": "x".repeat(10_000)});
-        assert_eq!(report_of(prompt), Some(msg("clear", None)));
-        assert_eq!(report_of(json!({"hook_event_name": "SessionStart", "source": "startup"})), None);
+        assert_eq!(message_of(prompt), Some(msg("clear", None)));
+        assert_eq!(refusal_of(json!({"hook_event_name": "SessionStart", "source": "startup"})), "session_id refused");
+    }
+
+    fn session_start(id: Value) -> Value {
+        let mut input = json!({"hook_event_name": "SessionStart", "source": "resume"});
+        if !id.is_null() {
+            input["session_id"] = id;
+        }
+        input
+    }
+
+    #[test]
+    fn s22_a_session_id_from_the_safe_set_gives_its_resume_command() {
+        for id in ["00000000-0000-0000-0000-000000000000", "ab_12", &format!("a{}", "b".repeat(127))] {
+            let want = Msg::Resume { term_id: "t9".into(), cmd: Some(format!("claude --resume {id}")) };
+            assert_eq!(message_of(session_start(json!(id))), Some(want), "{id}");
+        }
+    }
+
+    #[test]
+    fn s22_any_other_session_id_gives_nothing() {
+        let too_long = json!(format!("a{}", "b".repeat(128)));
+        for id in [
+            json!("-rf"), json!("../x"), json!("a b"), json!("a;b"), json!("$(x)"), json!(""), too_long, json!(7), Value::Null,
+            json!("_ab"), json!("aé"), json!("a٣"), json!("é1"),
+        ] {
+            assert_eq!(refusal_of(session_start(id.clone())), "session_id refused", "{id}");
+        }
     }
 
     // The idle notification that Claude Code 2.1.325 sent 60 s after a Stop.
     #[test]
     fn s19_the_captured_idle_notification_is_nothing() {
         assert_eq!(fixture("notification-idle")["notification_type"], "idle_prompt");
-        assert_eq!(report_of(fixture("notification-idle")), None);
+        assert_eq!(message_of(fixture("notification-idle")), None);
     }
 
     #[test]
@@ -473,14 +522,14 @@ mod tests {
             if !kind.is_null() {
                 input["notification_type"] = kind.clone();
             }
-            assert_eq!(report_of(input.clone()), None, "{kind}");
+            assert_eq!(message_of(input.clone()), None, "{kind}");
         }
     }
 
     #[test]
     fn an_unknown_or_missing_event_is_nothing() {
         for input in [json!({"hook_event_name": "PreToolUse"}), json!({"hook_event_name": 7}), json!({}), json!([])] {
-            assert_eq!(report_of(input.clone()), None, "{input}");
+            assert_eq!(message_of(input.clone()), None, "{input}");
         }
     }
 
@@ -496,7 +545,7 @@ mod tests {
         for message in [json!(" \n\t "), json!(""), json!(7)] {
             assert_eq!(done_text(message.clone()), None, "{message}");
         }
-        assert_eq!(report_of(json!({"hook_event_name": "Stop"})), Some(msg("done", None)));
+        assert_eq!(message_of(json!({"hook_event_name": "Stop"})), Some(msg("done", None)));
     }
 
     #[test]

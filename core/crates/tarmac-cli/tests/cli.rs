@@ -70,6 +70,18 @@ fn help_documents_report() {
     assert!(out.stdout.contains("1  the daemon refused an open, a push or a report"), "{}", out.stdout);
 }
 
+// Spec 2611.0011: the verb, its two forms, and its exit status.
+#[test]
+fn help_documents_resume() {
+    let out = Report::of(tarmac().arg("--help"));
+    assert!(out.status.success());
+    for form in ["tarmac resume set \"<command>\"", "tarmac resume clear"] {
+        assert!(out.stdout.contains(form), "{form}: {}", out.stdout);
+    }
+    assert!(out.stdout.contains("or a resume, no daemon is running"), "{}", out.stdout);
+    assert!(out.stdout.contains("`report` or `resume` ran outside a"), "{}", out.stdout);
+}
+
 // Spec 2611.0010: the four forms, what install writes, and the exit status of run.
 #[test]
 fn help_documents_hooks() {
