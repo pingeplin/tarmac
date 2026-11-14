@@ -11,7 +11,7 @@ use tarmac_protocol::Msg;
 
 mod common;
 use common::frames::{bell, exit, term_report};
-use common::{Report, Step, Streamer, Then, assert_no_answer, assert_usage, scratch, start, tarmac_at, untouched};
+use common::{Report, Step, Streamer, Then, assert_no_answer, assert_usage, scratch, start, tarmac, tarmac_at, untouched};
 
 const NOT_ANSWERED: &str = "tarmac: wait: timed out before the daemon answered\n";
 
@@ -398,4 +398,27 @@ fn s34_a_stat_error_that_is_not_missing_exits_1() {
 
     assert_eq!(out.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&out.stderr).starts_with("tarmac: cannot stat "), "{}", String::from_utf8_lossy(&out.stderr));
+}
+
+// #361: the stat runs in a helper process, so a stat that hangs cannot hold
+// the wait past its --timeout.
+#[test]
+fn the_stat_runs_in_one_helper_process() {
+    let file = old_file(&scratch(), "a.txt");
+    let wait = start(tarmac().args(["wait", "--changed"]).arg(&file).args(["--timeout", "3000"]));
+    let children = || {
+        let out = std::process::Command::new("pgrep").args(["-l", "-f", "-P"]).arg(wait.id().to_string()).output().unwrap();
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    let until = Instant::now() + Duration::from_millis(2500);
+    let mut listed = children();
+    while listed.is_empty() && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(50));
+        listed = children();
+    }
+    let out = wait.wait_with_output().unwrap();
+
+    assert_eq!(listed.lines().count(), 1, "{listed}");
+    assert!(listed.contains(&format!("__wait-changed-stat {}", file.display())), "{listed}");
+    assert_eq!(out.status.code(), Some(124));
 }

@@ -27,7 +27,7 @@ open <path>` connects to the daemon, names a doc, and exits. `open`, `push`,
 `report`, `resume`, `terms`, `events`, `wait`, `--version` and `hooks run` are
 its verbs that talk to the daemon (`tarmac terms`, `events` and `wait` read the
 daemon's live terminals and its exits, bells, doc changes and reports, spec
-2611.0012, except `wait --changed`, which stats a path in the CLI; `tarmac push` hands one JSON value, or one for each line of stdin, to the
+2611.0012, except `wait --changed`, which stats a path in a helper process of the CLI; `tarmac push` hands one JSON value, or one for each line of stdin, to the
 loaded HTML cards of an open doc; `tarmac report` sets or clears the calling
 terminal's report, spec 2611.0009; `tarmac resume` sets or clears the command
 that resumes its agent session, spec 2611.0011; `--version` only completes
@@ -471,6 +471,11 @@ A subscriber's `changed` event (spec 2611.0012) is a `FileEvent` the daemon
 told the app, from a look, a `DocRefresh`, a `DataFile` or the tell of a board
 made active, so it can repeat an `mtime_ms`; it covers open docs and their data
 files only. `tarmac wait --changed` stats its path in the CLI and adds no watch.
+The stat runs in one helper process, the same binary run with an internal
+argument, which writes a line for each sample on a pipe (#361). The CLI itself
+never touches the path, so on a volume that does not answer, where a stat
+blocks uninterruptibly for minutes, `--timeout` and Ctrl-C still end the wait;
+a helper stuck in the kernel is left behind and ends when the stat returns.
 
 A **look** compares the docs of the active board, and the data files they
 read (below), with their files (`docs::report_changes`). The
