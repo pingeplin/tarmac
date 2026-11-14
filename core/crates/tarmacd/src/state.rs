@@ -1,16 +1,17 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use tarmac_protocol::{DocEntry, Msg};
+use tarmac_protocol::{DocEntry, Msg, ResumeRecord, TermRecord};
 use tokio::sync::{Mutex, Notify, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::boards::{BoardId, Boards, DataDir, FileStamp, WantedData};
 use crate::docs::RepoInfo;
 use crate::reader::{PathFs, PathGate, RealFs};
-use crate::proc::{self, Pid};
+use crate::proc::{self, Facts, Pid};
+use crate::resume::{HELD, NONE, UNCLAIMED};
 use crate::reports::{Holder, Kind, Reports};
 use crate::term::{SpawnPlan, TermHandle};
 use crate::watch::{NotWatched, NotifySource, Wake, WakeSource, Watcher};
@@ -83,6 +84,10 @@ pub struct Daemon {
     /// Requests to `persist::save_loop` for its last write.
     finals: mpsc::Sender<oneshot::Sender<()>>,
     state_path: PathBuf,
+    /// Set by `final_save` (spec 2611.0011, D4): from then on neither a gone
+    /// holder nor a terminal's end drops a resume command, so the save keeps
+    /// the commands whose agents ran when the daemon was signalled.
+    shutting_down: AtomicBool,
 }
 
 impl Daemon {
@@ -164,6 +169,7 @@ impl Daemon {
             dirty: Notify::new(),
             finals,
             state_path,
+            shutting_down: AtomicBool::new(false),
         });
         tokio::spawn(crate::docs::watch_loop(daemon.clone()));
         tokio::spawn(crate::persist::save_loop(daemon.clone(), final_requests));
@@ -371,6 +377,7 @@ impl Daemon {
     /// Has the save loop read each live terminal's cwd once more, write the
     /// state a last time and stop: no write follows. Returns once written.
     pub async fn final_save(&self) {
+        self.shutting_down.store(true, Ordering::SeqCst);
         let (done, saved) = oneshot::channel();
         if self.finals.send(done).await.is_ok() {
             let _ = saved.await;
@@ -447,7 +454,10 @@ impl Daemon {
     /// `succeeds` when that board has one and the term is not live, else an
     /// empty one. Runs before the terminal's first cwd read, which only ever
     /// fills a record that is there.
-    pub async fn adopt_term(&self, plan: &SpawnPlan) {
+    ///
+    /// A moved resume command has no holder: `handle` is marked unclaimed in
+    /// the same step, so typed input drops it (spec 2611.0011, D6).
+    pub async fn adopt_term(&self, plan: &SpawnPlan, handle: &TermHandle) {
         let succeeds = match plan.succeeds.as_deref() {
             Some(old) if !self.terms.lock().await.contains_key(old) => Some(old),
             _ => None,
@@ -458,6 +468,9 @@ impl Daemon {
         let moved = succeeds.and_then(|old| reg.term_records.remove(old));
         if moved.is_some() {
             self.mark_dirty();
+        }
+        if moved.as_ref().is_some_and(|r| r.resume.is_some()) {
+            handle.set_resume_flag(UNCLAIMED);
         }
         reg.term_records.insert(plan.term_id.clone(), moved.unwrap_or_default());
     }
@@ -501,16 +514,27 @@ impl Daemon {
 
     /// Takes an exited terminal out of the maps. A clean exit (`Some(0)`)
     /// deletes its record; any other keeps it for the dead card.
+    /// A terminal's end also ends its resume command, which a kept record
+    /// keeps only once the shutdown has begun (spec 2611.0011, D3, D4).
     pub async fn term_ended(&self, term_id: &str, code: Option<i64>) {
         if self.terms.lock().await.remove(term_id).is_none() {
             tracing::warn!("term {term_id} missing from registry at exit");
         }
         self.term_boards.lock().await.remove(term_id);
-        // After the term left `terms`: a report stored after this is undone
-        // by the handler's own re-check (`Daemon::report`).
+        // After the term left `terms`: a report or a resume command stored
+        // after this is undone by its handler's own re-check.
         self.reports.lock().await.forget(term_id);
         if code == Some(0) {
             self.forget_record(term_id).await;
+        } else {
+            self.end_resume(term_id).await;
+        }
+    }
+
+    async fn end_resume(&self, term_id: &str) {
+        let drop_cmd = !self.shutting_down.load(Ordering::SeqCst);
+        if self.boards.lock().await.end_resume(term_id, drop_cmd) {
+            self.mark_dirty();
         }
     }
 
@@ -550,6 +574,110 @@ impl Daemon {
             })
             .await;
         }
+    }
+
+    /// The answer to a cli `resume` (spec 2611.0011): `Err` is the `err` text.
+    /// `cmd: None` clears. The command is checked before its holder is
+    /// resolved, and no process is read while `boards` is held.
+    pub async fn set_resume(&self, peer: Option<Pid>, term_id: &str, cmd: Option<String>) -> Result<(), String> {
+        let unknown = || format!("unknown terminal: {term_id}");
+        let handle = self.term(term_id).await.ok_or_else(unknown)?;
+        let Some(cmd) = cmd else {
+            self.change_resume(term_id, &handle, |holders, record, handle| {
+                holders.remove(term_id);
+                handle.set_resume_flag(NONE);
+                record.resume.take().is_some()
+            })
+            .await;
+            return Ok(());
+        };
+        tarmac_protocol::check_resume_cmd(&cmd).map_err(|cause| format!("resume command refused: {cause}"))?;
+        let holder = Holder::resolve(peer, handle.pid(), handle.spawned_with_cmd(), proc::proc_facts, || {
+            handle.foreground_pid()
+        })
+        .and_then(|holder| crate::resume::tie(holder, proc::proc_facts))
+        .ok_or_else(|| format!("no process to tie the resume command to in {term_id}"))?;
+        let stored = self
+            .change_resume(term_id, &handle, |holders, record, handle| {
+                holders.insert(term_id.to_owned(), holder);
+                handle.set_resume_flag(HELD);
+                let same = record.resume.as_ref().is_some_and(|r| r.cmd == cmd);
+                record.resume = Some(ResumeRecord { cmd });
+                !same
+            })
+            .await;
+        if !stored {
+            return Err(unknown());
+        }
+        // A terminal that ended while this ran: `term_ended` took it out of
+        // `terms` before its own drop, so one of the two finds the command.
+        if self.term(term_id).await.is_none() {
+            self.end_resume(term_id).await;
+        }
+        Ok(())
+    }
+
+    /// One change of `term_id`'s record, its holder and `handle`'s flag, in
+    /// one `boards` step; marks the state dirty when `change` says it changed
+    /// the record. False when the term has no record on its board.
+    async fn change_resume(
+        &self,
+        term_id: &str,
+        handle: &TermHandle,
+        change: impl FnOnce(&mut HashMap<String, Holder>, &mut TermRecord, &TermHandle) -> bool,
+    ) -> bool {
+        let Some(board) = self.term_boards.lock().await.get(term_id).cloned() else { return false };
+        let mut boards = self.boards.lock().await;
+        let Some(reg) = boards.known_registry_mut(&board) else { return false };
+        let Some(record) = reg.term_records.get_mut(term_id) else { return false };
+        if change(&mut reg.resume_holders, record, handle) {
+            self.mark_dirty();
+        }
+        true
+    }
+
+    /// The poll's check: drops the resume command when its holder is gone,
+    /// unless the shutdown has begun. The holder is copied and checked with
+    /// no lock held, and removed only if it is still the one checked, so a
+    /// `resume` set in between is never undone.
+    pub async fn check_resume(&self, term_id: &str, handle: &TermHandle, facts_of: impl Fn(Pid) -> Facts) {
+        if handle.resume_flag() != HELD {
+            return;
+        }
+        let Some(board) = self.term_boards.lock().await.get(term_id).cloned() else { return };
+        let copy = self.boards.lock().await.known_registry(&board).and_then(|reg| reg.resume_holders.get(term_id).copied());
+        let Some(checked) = copy else { return };
+        if checked.alive(facts_of, None) {
+            return;
+        }
+        let mut boards = self.boards.lock().await;
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return;
+        }
+        let Some(reg) = boards.known_registry_mut(&board) else { return };
+        if reg.resume_holders.get(term_id) != Some(&checked) {
+            return;
+        }
+        reg.resume_holders.remove(term_id);
+        handle.set_resume_flag(NONE);
+        if reg.term_records.get_mut(term_id).and_then(|r| r.resume.take()).is_some() {
+            self.mark_dirty();
+        }
+    }
+
+    /// Typed input drops a resume command that has no holder (D6).
+    pub async fn claim_resume(&self, term_id: &str, handle: &TermHandle) {
+        if handle.resume_flag() != UNCLAIMED {
+            return;
+        }
+        self.change_resume(term_id, handle, |_, record, handle| {
+            if handle.resume_flag() != UNCLAIMED {
+                return false;
+            }
+            handle.set_resume_flag(NONE);
+            record.resume.take().is_some()
+        })
+        .await;
     }
 
     /// Typed input marks an unread report read.

@@ -67,6 +67,9 @@ pub struct TermHandle {
     // daemon's `reports` lock, in the step that changes the store; read
     // without it, so that a key or a poll tick with no report costs one load.
     report: AtomicU8,
+    // `resume::NONE`, `HELD` or `UNCLAIMED`. Written only under the daemon's
+    // `boards` lock, in the step that changes the record; read without it.
+    resume: AtomicU8,
 }
 
 const NO_REPORT: u8 = 0;
@@ -99,6 +102,14 @@ impl TermHandle {
         self.report.store(state, Ordering::Relaxed);
     }
 
+    pub fn resume_flag(&self) -> u8 {
+        self.resume.load(Ordering::Relaxed)
+    }
+
+    pub fn set_resume_flag(&self, flag: u8) {
+        self.resume.store(flag, Ordering::Relaxed);
+    }
+
     /// A handle on a pty that no process holds: no pid, no foreground leader.
     #[cfg(test)]
     pub(crate) fn detached() -> Arc<TermHandle> {
@@ -109,6 +120,7 @@ impl TermHandle {
             pid: None,
             spawned_with_cmd: false,
             report: AtomicU8::new(NO_REPORT),
+            resume: AtomicU8::new(crate::resume::NONE),
         })
     }
 
@@ -248,10 +260,11 @@ pub async fn spawn(daemon: Arc<Daemon>, plan: SpawnPlan) -> Result<(), String> {
         pid: child_pid,
         spawned_with_cmd: plan.cmd.is_some(),
         report: AtomicU8::new(NO_REPORT),
+        resume: AtomicU8::new(crate::resume::NONE),
     });
     // Before the loop starts: its first cwd read fills the record of the
     // term's board, which must be there by then.
-    daemon.adopt_term(&plan).await;
+    daemon.adopt_term(&plan, &handle).await;
     daemon.terms.lock().await.insert(term_id.clone(), handle.clone());
 
     tokio::spawn(proc_loop(daemon.clone(), term_id.clone(), handle.clone()));
@@ -399,8 +412,9 @@ async fn proc_loop(daemon: Arc<Daemon>, term_id: String, handle: Arc<TermHandle>
         }
         let leader = handle.foreground_pid();
         // Before the `continue` on a failed leader read: an agent's exit must
-        // end its report all the same.
+        // end its report and its resume command all the same.
         daemon.check_report(&term_id, &handle, leader).await;
+        daemon.check_resume(&term_id, &handle, proc::proc_facts).await;
 
         let Some(pid) = leader else { continue };
         if let Some(name) = proc::process_name(pid)
