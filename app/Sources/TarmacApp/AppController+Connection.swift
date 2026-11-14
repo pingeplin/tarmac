@@ -64,6 +64,10 @@ extension AppController {
             for id in Array(boards.keys) where id != activeBoardID && !liveBoardIDs.contains(id) {
                 removeBoard(id)
             }
+            // A board never built here has no `Board` to remove: its items
+            // go with the list.
+            inbox.keepBoards(liveBoardIDs)
+            inboxChanged()
             refreshChrome()
             // Keep an open switcher in sync with board adds/removes/active-change.
             refreshSwitcherIfOpen()
@@ -78,8 +82,8 @@ extension AppController {
             scrollback.output(termID, bytes)
         case .scrollback(let termID, let bytes):
             scrollback.reply(termID, bytes)
-        case .exit(let termID, let code, _):
-            handleExit(termID: termID, code: code)
+        case .exit(let termID, let code, let boardID):
+            handleExit(termID: termID, code: code, boardID: boardID)
         case .docOpened(let doc):
             handleDocOpened(doc)
         case .fileEvent(let path, let mtimeMs):
@@ -88,10 +92,10 @@ extension AppController {
             handleDocEvent(path: path, value: value)
         case .termProc(let termID, let name, _):
             handleTermProc(termID: termID, name: name)
-        case .bell(let termID, _):
-            handleBell(termID: termID)
+        case .bell(let termID, let boardID):
+            handleBell(termID: termID, boardID: boardID)
         case .termReport:
-            if let frame = TermReport.frame(message) { handleTermReport(termID: frame.termID, frame.report) }
+            if let frame = TermReport.frame(message) { handleTermReport(frame) }
         default:
             break
         }

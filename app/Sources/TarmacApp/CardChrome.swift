@@ -236,6 +236,8 @@ final class ChipView: NSView, ThemeFollowing {
         /// A dimmed (read) report keeps the kind's colour on its border, so a
         /// read `blocked` and a read `done` still differ; its text goes faint.
         case report(TermReport.Kind, dimmed: Bool)
+        /// An inbox row's kind tag (2611.0013), in the same form.
+        case inbox(Inbox.Kind, dimmed: Bool)
     }
 
     private static let maxWidth: CGFloat = 120
@@ -265,9 +267,22 @@ final class ChipView: NSView, ThemeFollowing {
             layer?.borderColor = Theme.lineSoft.cgColor
             label.textColor = Theme.faint
         case .report(let kind, let dimmed):
-            let color = kind == .blocked ? Theme.amber : Theme.ok
-            layer?.borderColor = color.cgColor
-            label.textColor = dimmed ? Theme.faint : color
+            paint(kind == .blocked ? Theme.amber : Theme.ok, dimmed: dimmed)
+        case .inbox(let kind, let dimmed):
+            paint(Self.color(kind), dimmed: dimmed)
+        }
+    }
+
+    private func paint(_ color: NSColor, dimmed: Bool) {
+        layer?.borderColor = color.cgColor
+        label.textColor = dimmed ? Theme.faint : color
+    }
+
+    private static func color(_ kind: Inbox.Kind) -> NSColor {
+        switch kind {
+        case .report(.blocked), .bell: Theme.amber
+        case .report(.done): Theme.ok
+        case .exit: Theme.consoleError
         }
     }
 

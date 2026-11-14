@@ -32,6 +32,9 @@ final class TerminalSession {
     var deadOffer: DeadCardOffer.Offer?
     /// `KeyLadder.afterRun`'s latch for this terminal.
     var afterRun = false
+    /// The terminal's folder as the app last saw it: from a restore's record
+    /// or a report frame. Only a bell or an exit item reads it (2611.0013).
+    var lastCwd: String?
 
     /// The PTY exists daemon-side as far as the app knows, so input and
     /// resizes may be sent for it.
@@ -142,6 +145,17 @@ final class AppController {
     var restoreCard: RestoreCard?
     var afterRestoreCard = false
 
+    /// 2611.0013: reports, bells and exits from every board; the panel that
+    /// lists them, its state and the rows it shows; a jump waiting for its
+    /// board's restore; and the title-bar button.
+    var inbox = Inbox()
+    var inboxOpen = false
+    var inboxState = InboxKeys.State()
+    var inboxRows: [Inbox.ItemID] = []
+    var pendingJump: (boardID: String, item: Inbox.ItemID)?
+    var inboxTick: Timer?
+    var inboxButton: InboxTitlebarButton?
+
     /// The one HTML card whose shield is down, across every board.
     var borrow = CardBorrow<CardID>()
     /// The data file each HTML card reads, across every board.
@@ -186,11 +200,14 @@ final class AppController {
         let board0 = mintBoard(id: Board.defaultID, name: nil, view: rootView.board)
 
         // Reads `activeBoard` dynamically, so the hints track the mounted board.
-        rootView.offscreenHintProvider = { [weak self] in self?.offscreenHints() ?? [] }
+        rootView.offscreenHintProvider = { [weak self] visible in self?.offscreenHints(in: visible) ?? [] }
         // ⌘K switcher: a row click opens that board; a veil click dismisses.
         rootView.boardSwitcher.onPickRow = { [weak self] index in self?.switcherPickRow(index) }
         rootView.boardSwitcher.onDismiss = { [weak self] in self?.closeSwitcher() }
         rootView.restoreCard.onDismiss = { [weak self] in self?.closeRestoreCard() }
+        rootView.inboxPanel.onPick = { [weak self] id in self?.jump(to: id) }
+        rootView.inboxPanel.onFilter = { [weak self] filter in self?.setInboxFilter(filter) }
+        rootView.inboxPanel.onClearRead = { [weak self] in self?.clearReadInbox() }
         // Mount board-0 and bind its per-board callbacks (edge labels + layout
         // persistence). The same `mount(_:)` runs on every switch-arrive.
         mount(board0)

@@ -116,7 +116,10 @@ extension AppController {
         guard let s = session(ofTerm: termID), s.reachable else { return }
         if source == .user, s.resumeOffer != nil { stepResume(s, .userInput) }
         client.input(termID: termID, bytes: bytes, typed: source == .user)
-        if source == .user { clearBell(termID: termID) }
+        if source == .user {
+            clearBell(termID: termID)
+            touchInbox(termID: termID)
+        }
     }
 
     // MARK: - Resume and reopen (2611.0011)
@@ -326,8 +329,17 @@ extension AppController {
 
     /// A shell exited (`TermExit.decide`): a failure holds the card open dead,
     /// a clean exit removes it, and the board's last live terminal is replaced.
-    /// An exit for a card that is already gone is ignored.
-    func handleExit(termID: String, code: Int?) {
+    /// An exit for a card that is already gone is ignored, but the inbox hears
+    /// of it first, whatever board it is on (2611.0013, D4): the process name
+    /// is read before `holdOpen` drops it.
+    func handleExit(termID: String, code: Int?, boardID: String? = nil) {
+        if let inboxBoard = inboxBoard(boardID, termID: termID) {
+            let s = anySession(termID)?.session
+            inbox.exit(
+                termID: termID, boardID: inboxBoard, code: code, proc: s?.procName, cwd: s?.lastCwd, nowMs: wallClockMs
+            )
+            inboxChanged()
+        }
         let board = routeBoard(ofTerm: termID)
         guard let s = board.sessions[termID], let card = board.view.card(.term(termID)) else { return }
         if let title = TermExitToast.title(code: code) {
@@ -362,6 +374,8 @@ extension AppController {
         s.bellAt = nil
         s.resumeOffer = nil
         board.view.card(.term(s.termID))?.setReport(nil)
+        inbox.reportEnded(termID: s.termID)
+        inboxChanged()
         board.view.card(.term(s.termID))?.setExited()
         refreshOffer(s, on: board)
         board.view.signalsChanged()
@@ -382,6 +396,8 @@ extension AppController {
         board.view.removeCard(id: .term(termID))
         board.view.signalsChanged()
         refreshOwnerChips(on: board)
+        inbox.removeTerm(termID: termID)
+        inboxChanged()
         if heldFocus { window?.makeFirstResponder(rootView.board) }
     }
 
@@ -418,7 +434,10 @@ extension AppController {
             for termID in board.sessions.keys {
                 board.view.card(.term(termID))?.setReport(nil)
             }
+            board.view.signalsChanged()
         }
+        inbox.lostConnection()
+        inboxChanged()
     }
 
     // MARK: - Label, bell
@@ -446,16 +465,28 @@ extension AppController {
         refreshSwitcherIfOpen()
     }
 
-    /// `term_report`: the terminal's current report, or nil for none. A frame
-    /// for a terminal with no card, or a dead one, is dropped.
-    func handleTermReport(termID: String, _ report: TermReport?) {
+    /// `term_report`: the terminal's current report, or nil for none. The
+    /// inbox takes it first, whatever board it is on (2611.0013); a frame for
+    /// a terminal with no card, or a dead one, then puts no chip.
+    func handleTermReport(_ frame: TermReportFrame) {
+        let termID = frame.termID
+        inbox.apply(frame, fallbackBoard: ownerBoard(ofTerm: termID)?.boardID)
+        if let cwd = frame.cwd { anySession(termID)?.session.lastCwd = cwd }
+        inboxChanged()
         guard let (_, board) = anySession(termID),
               let card = board.view.card(.term(termID)), !card.dead else { return }
-        card.setReport(report)
+        card.setReport(frame.report)
+        board.view.signalsChanged()
     }
 
-    /// `bell`: light the card amber and note when.
-    func handleBell(termID: String) {
+    /// `bell`: light the card amber and note when. The inbox hears of it
+    /// first, whatever board it is on (2611.0013, D4).
+    func handleBell(termID: String, boardID: String? = nil) {
+        if let inboxBoard = inboxBoard(boardID, termID: termID) {
+            let s = anySession(termID)?.session
+            inbox.bell(termID: termID, boardID: inboxBoard, proc: s?.procName, cwd: s?.lastCwd, nowMs: wallClockMs)
+            inboxChanged()
+        }
         let board = routeBoard(ofTerm: termID)
         guard let s = board.sessions[termID], let card = board.view.card(.term(termID)), !card.dead else { return }
         s.bellAt = Date()
@@ -477,12 +508,16 @@ extension AppController {
 
     // MARK: - Offscreen hints
 
-    /// The active board's signalling terminals whose centre is off screen, in
-    /// card order — the order that settles which of two equal signals ⏎ flies
-    /// to. A live one reads its label; a lit bell adds when it rang.
-    func offscreenHints() -> [OffscreenHintLayout.Hint] {
+    /// The active board's signalling terminals whose centre is outside
+    /// `viewRect` — the board's bounds, less an open inbox panel — in card
+    /// order, the order that settles which of two equal signals ⏎ flies to.
+    func offscreenHints(in viewRect: CGRect) -> [OffscreenHintLayout.Hint] {
         let board = activeBoard
-        let visible = board.view.viewportWorldRect
+        let topLeft = board.view.viewToWorld(CGPoint(x: viewRect.minX, y: viewRect.minY))
+        let bottomRight = board.view.viewToWorld(CGPoint(x: viewRect.maxX, y: viewRect.maxY))
+        let visible = CGRect(
+            x: topLeft.x, y: topLeft.y, width: bottomRight.x - topLeft.x, height: bottomRight.y - topLeft.y
+        )
         return board.sessionOrder.compactMap { termID in
             guard let s = board.sessions[termID], let card = board.view.card(.term(termID)),
                   let signal = card.signal else { return nil }
