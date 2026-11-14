@@ -24,8 +24,10 @@ Unix socket:
 
 A third tiny binary, the **`tarmac` CLI**, is the universal doorbell: `tarmac
 open <path>` connects to the daemon, names a doc, and exits. `open`, `push`,
-`report`, `resume`, `--version` and `hooks run` are its verbs that talk to the
-daemon (`tarmac push` hands one JSON value, or one for each line of stdin, to the
+`report`, `resume`, `terms`, `events`, `wait`, `--version` and `hooks run` are
+its verbs that talk to the daemon (`tarmac terms`, `events` and `wait` read the
+daemon's live terminals and its exits, bells, doc changes and reports, spec
+2611.0012, except `wait --changed`, which stats a path in the CLI; `tarmac push` hands one JSON value, or one for each line of stdin, to the
 loaded HTML cards of an open doc; `tarmac report` sets or clears the calling
 terminal's report, spec 2611.0009; `tarmac resume` sets or clears the command
 that resumes its agent session, spec 2611.0011; `--version` only completes
@@ -245,6 +247,24 @@ The CLI gets a short-lived `cli_session`. The app gets a long-lived
 write half. A monotonic generation guard ensures a late teardown of an evicted
 connection can't clobber the new app's slot.
 
+**Subscribers** (spec 2611.0012). A `cli` session that sends `Subscribe` stays
+open as a subscriber; there is no new role. `Daemon::push` publishes each
+`Exit`, `Bell`, `FileEvent` and `TermReport` to `Daemon::events`, one bounded
+`tokio::sync::broadcast` fan-out (`events::Fanout`, 1024 frames), before its app
+send and with its return unchanged: it is still "the app's channel took it", so
+a `FileEvent` that reached only a subscriber is still held for the app. The
+board-switch tell loop (`conn::change_and_send_active_board`) does not pass
+`push` and publishes its `FileEvent`s itself; the `TermReport` replays of a
+restore and of a connection's first restore are not published. With no
+subscriber, `publish` clones nothing. `events::subscribe` takes the receiver
+first, then (with a `term_id`) the terminal's report and its exit from the
+ring as the snapshot; `events::serve` writes the frames its `Filter` admits
+until the client closes, and a subscriber more than 1024 frames behind gets
+`Err {msg: "lagged"}` and is closed. The daemon never waits for a subscriber,
+and the app slot, its generation and `hello_ok.app_connected` know nothing of
+them. `TermsList` is answered by `Daemon::terms_list`: the live terminals in
+board order, each one's process name and gated cwd read at the same time.
+
 ### State model
 
 ```
@@ -255,6 +275,8 @@ Daemon
  │                     └─ Registry { docs, dock, tiles, board: viewport }
  ├─ terms:       Mutex<HashMap<term_id, Arc<TermHandle>>>   all live PTYs, global
  ├─ term_boards: Mutex<HashMap<term_id, BoardId>>           which board owns a term
+ ├─ events:      events::Fanout                             the broadcast to subscribers (spec 2611.0012)
+ ├─ exits:       std::sync::Mutex<ExitRing>                 the last 64 exits, for a subscriber's snapshot
  ├─ doc_counts:  std::sync::Mutex<HashMap<dir, usize>>      docs per directory
  └─ watcher:     watch::Watcher                             asks of the watcher thread, which owns the wake source
 ```
@@ -317,7 +339,10 @@ daemon reference, so it is where the three honest signals are sourced:
   the BEL ending oh-my-zsh's per-prompt title (`ESC ]2;…BEL`) is not a bell.
 - **`Exit`** — `child.wait()`; a signal death sends `code: None` (the protocol's
   nil marker), never a fabricated code. The app turns it into a *dead card*; the
-  daemon does **not** auto-respawn.
+  daemon does **not** auto-respawn. `Daemon::term_ended` records `(term_id,
+  code)` in the exit ring (`events::ExitRing`, the last 64, by count, in memory
+  only) **before** the term leaves `terms`, so a subscriber always finds an id
+  live, in the ring, or unknown (spec 2611.0012, D4).
 
 `kill()` signals the whole **process group** (`libc::kill(-pid, SIGHUP)`) — the
 child is its own group leader, so a SIGHUP lets a shell exit cleanly as on a
@@ -440,6 +465,11 @@ FAT and exFAT keep them; a network volume was not tried.) For a change the
 daemon records `last_changed_ms` **before** it pushes (so a crash never loses
 the fact), and pushes `FileEvent`. A file that is gone pushes nothing, and is a
 change when it is back.
+
+A subscriber's `changed` event (spec 2611.0012) is a `FileEvent` the daemon
+told the app, from a look, a `DocRefresh`, a `DataFile` or the tell of a board
+made active, so it can repeat an `mtime_ms`; it covers open docs and their data
+files only. `tarmac wait --changed` stats its path in the CLI and adds no watch.
 
 A **look** compares the docs of the active board, and the data files they
 read (below), with their files (`docs::report_changes`). The
