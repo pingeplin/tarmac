@@ -3,10 +3,12 @@
 
 mod common;
 
-use std::path::Path;
 use std::time::{Duration, Instant};
 
-use common::{Conn, LONG, Restore, Spawn, TestDaemon, none_within, signal_and_wait, wait_exit};
+use common::{
+    Conn, LONG, Restore, Spawn, TestDaemon, canon_dir, has_record, no_err_frame, saved_cwd, signal, signal_and_wait,
+    term_records, wait_exit,
+};
 use serde_json::{Value, json};
 use tarmac_protocol::{Msg, Tile};
 
@@ -14,10 +16,9 @@ use tarmac_protocol::{Msg, Tile};
 /// process group of its own, so the foreground pid changes.
 const JOB_SHELL: &[&str] = &["/bin/zsh", "-f", "-i"];
 
-fn canon_dir(path: &Path) -> String {
-    std::fs::create_dir_all(path).unwrap();
-    std::fs::canonicalize(path).unwrap().to_string_lossy().into_owned()
-}
+/// Three times the daemon's 150 ms save debounce: a save that is due has
+/// landed by its end.
+const SAVE_WINDOW: Duration = Duration::from_millis(450);
 
 fn plain(script: &str) -> Vec<String> {
     vec!["/bin/sh".into(), "-c".into(), script.into()]
@@ -32,10 +33,6 @@ fn in_dir(dir: &str) -> Spawn {
     Spawn { cwd: Some(dir.into()), ..Default::default() }
 }
 
-fn last_cwd(restore: &Restore, term_id: &str) -> Option<String> {
-    restore.term_records.get(term_id).and_then(|r| r.last_cwd.clone())
-}
-
 /// A new app connection, and the restore of the active board it gets.
 fn probe(daemon: &TestDaemon) -> (Conn, Restore) {
     let mut app = daemon.connect_app();
@@ -44,17 +41,22 @@ fn probe(daemon: &TestDaemon) -> (Conn, Restore) {
     (app, restore)
 }
 
-/// Probes until the active board's record of `term_id` has `want`.
-fn probe_until_cwd(daemon: &TestDaemon, term_id: &str, want: &str) -> Conn {
-    let deadline = Instant::now() + LONG;
+/// Probes until the active board's restore satisfies `done`, to `deadline`;
+/// the newest connection.
+fn probe_until(daemon: &TestDaemon, what: &str, deadline: Instant, done: impl Fn(&Restore) -> bool) -> Conn {
     loop {
         let (app, restore) = probe(daemon);
-        if last_cwd(&restore, term_id).as_deref() == Some(want) {
+        if done(&restore) {
             return app;
         }
-        assert!(Instant::now() < deadline, "the record of {term_id} never showed {want}: {:?}", restore.term_records);
-        std::thread::sleep(Duration::from_millis(100));
+        assert!(Instant::now() < deadline, "the restore never showed {what}: {:?}", restore.term_records);
+        std::thread::sleep(Duration::from_millis(50));
     }
+}
+
+/// Probes until the active board's record of `term_id` has `want`.
+fn probe_until_cwd(daemon: &TestDaemon, term_id: &str, want: &str) -> Conn {
+    probe_until(daemon, &format!("{term_id} in {want}"), Instant::now() + LONG, |r| r.last_cwd(term_id) == Some(want))
 }
 
 fn term_tile(term_id: &str) -> Tile {
@@ -68,18 +70,6 @@ fn send_layout(app: &mut Conn, term_ids: &[&str]) {
         board: None,
         board_id: Some("board-0".into()),
     });
-}
-
-fn records(v: &Value, board: usize) -> Value {
-    v["boards"][board]["term_records"].clone()
-}
-
-fn has_record(v: &Value, board: usize, term_id: &str) -> bool {
-    !records(v, board)[term_id].is_null()
-}
-
-fn saved_cwd(v: &Value, board: usize, term_id: &str) -> Value {
-    records(v, board)[term_id]["last_cwd"].clone()
 }
 
 fn board(id: &str, term_records: Value) -> Value {
@@ -155,20 +145,14 @@ fn a_new_pid_with_the_same_name_records_the_cwd() {
     );
     let (mut app, first) = job_shell_recorded(&daemon, &a);
 
-    input(&mut app, "T", &format!("cd '{b}' && sleep 2 && cd '{c}' && sleep 30"));
+    input(&mut app, "T", &format!("cd '{b}' && sleep 1.6 && cd '{c}' && sleep 5"));
     let pid = proc_pid(&mut app, "T", "the first sleep's term_proc", |name, _| name == "sleep");
     assert_ne!(pid, first, "the shell gave the sleep no process group of its own");
 
-    // The second sleep runs 30 s, so only a read at its own pid shows c.
-    let deadline = Instant::now() + Duration::from_secs(12);
-    loop {
-        let (_app, restore) = probe(&daemon);
-        if last_cwd(&restore, "T").as_deref() == Some(c.as_str()) {
-            break;
-        }
-        assert!(Instant::now() < deadline, "the second sleep's cwd was never recorded: {:?}", restore.term_records);
-        std::thread::sleep(Duration::from_millis(100));
-    }
+    // The second sleep runs from 1.6 s to 6.6 s: only a read at its own pid
+    // shows c before 5 s.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    probe_until(&daemon, "the second sleep's cwd", deadline, |r| r.last_cwd("T") == Some(c.as_str()));
 }
 
 // S7
@@ -179,12 +163,12 @@ fn a_cwd_change_does_not_save() {
     let (mut app, first) = job_shell_recorded(&daemon, &a);
     send_layout(&mut app, &["T"]);
     daemon.wait_for_state("the layout of T", |v| v["boards"][0]["tiles"][0]["term_id"] == json!("T"));
-    std::thread::sleep(Duration::from_millis(500));
+    std::thread::sleep(SAVE_WINDOW);
     let kept = std::fs::read(daemon.state_file()).unwrap();
 
     cd_and_sleep(&mut app, &b, first);
     let mut app = probe_until_cwd(&daemon, "T", &b);
-    std::thread::sleep(Duration::from_secs(1));
+    std::thread::sleep(SAVE_WINDOW);
 
     assert_eq!(std::fs::read(daemon.state_file()).unwrap(), kept, "a cwd change saved the state");
     send_layout(&mut app, &["T"]);
@@ -213,11 +197,11 @@ fn an_idle_cd_is_saved_at_shutdown() {
     let status = signal_and_wait(&mut daemon.child, libc::SIGTERM);
 
     assert!(status.success(), "the daemon exited with {status:?}");
-    let saved = records(&daemon.state_json(), 0)["T"].clone();
+    let saved = term_records(&daemon.state_json(), 0)["T"].clone();
     assert_eq!(saved, json!({"last_cwd": b}), "the entry has last_cwd and no other key");
     daemon.relaunch();
     let (_app, restore) = probe(&daemon);
-    assert_eq!(last_cwd(&restore, "T"), Some(b));
+    assert_eq!(restore.last_cwd("T"), Some(b.as_str()));
 }
 
 /// S18: the state is saved before the socket goes.
@@ -226,7 +210,7 @@ fn saved_before_the_socket_goes(sig: libc::c_int) {
     let (a, b) = (canon_dir(&daemon.dir.join("a")), canon_dir(&daemon.dir.join("b")));
     let _app = moved_at_idle(&daemon, &a, &b);
 
-    unsafe { libc::kill(daemon.child.id() as libc::pid_t, sig) };
+    signal(&daemon.child, sig);
     let deadline = Instant::now() + LONG;
     while daemon.sock.exists() {
         assert!(Instant::now() < deadline, "the socket never went");
@@ -283,7 +267,7 @@ fn a_layout_keeps_the_records() {
     daemon.wait_for_state("the layout of X", |v| v["boards"][0]["tiles"][0]["term_id"] == json!("X"));
     assert_eq!(saved_cwd(&daemon.state_json(), 0, "T"), json!("/seeded"));
     let (_app, restore) = probe(&daemon);
-    assert_eq!(last_cwd(&restore, "T").as_deref(), Some("/seeded"));
+    assert_eq!(restore.last_cwd("T"), Some("/seeded"));
 }
 
 /// Plain shells, each in `daemon.dir`, whose records a layout save has written.
@@ -343,7 +327,7 @@ fn term_close_deletes_the_record_of_a_term_that_is_not_live() {
     let daemon = TestDaemon::start_seeded(&seeded_on_board_1());
     let mut app = daemon.connect_app_drained();
     app.send(&Msg::TermClose { term_id: "nobody".into() });
-    assert!(none_within(&mut app, Duration::from_secs(1), |m| matches!(m, Msg::Err { .. })), "an err frame");
+    assert!(no_err_frame(&mut app), "an err frame");
 
     app.send(&Msg::TermClose { term_id: "T".into() });
 
@@ -383,7 +367,7 @@ fn a_gone_folder_spawns_in_home() {
     spawn(&mut app, "T2", &plain("pwd -P; read _"), Spawn { succeeds: Some("T".into()), ..in_dir(&gone) });
 
     wait_output(&mut app, "T2", &home);
-    assert!(none_within(&mut app, Duration::from_secs(1), |m| matches!(m, Msg::Err { .. })), "an err frame");
+    assert!(no_err_frame(&mut app), "an err frame");
     let (_app, restore) = probe(&daemon);
     assert!(!restore.term_records.contains_key("T"), "{:?}", restore.term_records);
     let _ = std::fs::remove_dir_all(home_dir);
@@ -398,7 +382,7 @@ fn succeeds_naming_a_live_term_moves_nothing() {
     spawn(&mut app, "X", &plain("echo XUP; read _"), Spawn { succeeds: Some("L".into()), ..Default::default() });
 
     wait_output(&mut app, "X", "XUP");
-    assert!(none_within(&mut app, Duration::from_secs(1), |m| matches!(m, Msg::Err { .. })), "an err frame");
+    assert!(no_err_frame(&mut app), "an err frame");
     let (_app, restore) = probe(&daemon);
     assert!(restore.term_records.contains_key("L"), "{:?}", restore.term_records);
 }
@@ -412,7 +396,7 @@ fn succeeds_naming_an_id_with_no_record_is_no_error() {
     spawn(&mut app, "X", &plain("echo XUP; read _"), Spawn { succeeds: Some("nobody".into()), ..Default::default() });
 
     wait_output(&mut app, "X", "XUP");
-    assert!(none_within(&mut app, Duration::from_secs(1), |m| matches!(m, Msg::Err { .. })), "an err frame");
+    assert!(no_err_frame(&mut app), "an err frame");
 }
 
 // S16
@@ -428,7 +412,7 @@ fn a_failed_spawn_moves_nothing() {
     let err = app.recv_until("err", |m| matches!(m, Msg::Err { .. }));
     assert_eq!(err, Msg::Err { msg: "term_id already in use: X".into() });
     let (_app, restore) = probe(&daemon);
-    assert_eq!(last_cwd(&restore, "T").as_deref(), Some("/seeded"));
+    assert_eq!(restore.last_cwd("T"), Some("/seeded"));
 }
 
 // S16: a spawn that fails after its id was found free moves nothing.
@@ -442,7 +426,7 @@ fn a_spawn_that_cannot_exec_moves_nothing() {
     let err = app.recv_until("err", |m| matches!(m, Msg::Err { .. }));
     assert!(matches!(&err, Msg::Err { msg } if msg.starts_with("spawn failed")), "{err:?}");
     let (_app, restore) = probe(&daemon);
-    assert_eq!(last_cwd(&restore, "T").as_deref(), Some("/seeded"));
+    assert_eq!(restore.last_cwd("T"), Some("/seeded"));
     assert!(!restore.term_records.contains_key("X"), "{:?}", restore.term_records);
 }
 
@@ -456,7 +440,7 @@ fn succeeds_does_not_reach_another_board() {
 
     wait_output(&mut app, "T2", "UP");
     let restore = app.switch_to("board-1");
-    assert_eq!(last_cwd(&restore, "T").as_deref(), Some("/seeded"));
+    assert_eq!(restore.last_cwd("T"), Some("/seeded"));
 }
 
 // S22
@@ -469,10 +453,10 @@ fn a_background_board_records_in_its_own_table() {
     spawn(&mut app, "N", &plain("read _"), Spawn { cwd: Some(a.clone()), ..Spawn::on_board("board-1") });
 
     let deadline = Instant::now() + LONG;
-    while last_cwd(&app.switch_to("board-1"), "N").as_deref() != Some(a.as_str()) {
+    while app.switch_to("board-1").last_cwd("N") != Some(a.as_str()) {
         assert!(Instant::now() < deadline, "board-1 never recorded N");
         app.switch_to("board-0");
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(Duration::from_millis(50));
     }
     let restore = app.switch_to("board-0");
     assert!(!restore.term_records.contains_key("N"), "{:?}", restore.term_records);

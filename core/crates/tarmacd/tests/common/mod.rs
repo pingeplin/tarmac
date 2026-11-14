@@ -111,8 +111,7 @@ impl TestDaemon {
     pub fn restart(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
-        self.child = spawn_daemon(&self.sock);
-        wait_for_socket(&self.sock);
+        self.relaunch();
     }
 }
 
@@ -368,6 +367,11 @@ pub struct Restore {
 }
 
 impl Restore {
+    /// The `last_cwd` of `term_id`'s record.
+    pub fn last_cwd(&self, term_id: &str) -> Option<&str> {
+        self.term_records.get(term_id)?.last_cwd.as_deref()
+    }
+
     pub fn last_changed(&self, path: &str) -> Option<u64> {
         self.docs.iter().find(|d| d.path == path).expect("the doc is on the board").last_changed_ms
     }
@@ -412,6 +416,37 @@ pub fn none_within(conn: &mut Conn, timeout: Duration, mut pred: impl FnMut(&Msg
     }
     conn.0.set_read_timeout(Some(LONG)).unwrap();
     true
+}
+
+/// True when no `err` frame comes before the answer to a `scrollback_request`
+/// sent now: the daemon handles one connection's frames in order, so an
+/// `err` of a frame sent before it would come first.
+pub fn no_err_frame(conn: &mut Conn) -> bool {
+    conn.send(&Msg::ScrollbackRequest { term_id: "no-err-frame".into() });
+    let answer = conn.recv_until("the scrollback answer", |m| {
+        matches!(m, Msg::Err { .. }) || matches!(m, Msg::Scrollback { term_id, .. } if term_id == "no-err-frame")
+    });
+    matches!(answer, Msg::Scrollback { .. })
+}
+
+/// `path`, made, as `pid_cwd` and `pwd -P` give it (a temp dir under `/var`
+/// is `/private/var`).
+pub fn canon_dir(path: &Path) -> String {
+    std::fs::create_dir_all(path).unwrap();
+    std::fs::canonicalize(path).unwrap().to_string_lossy().into_owned()
+}
+
+/// Board `board`'s `term_records` in a saved state.
+pub fn term_records(v: &serde_json::Value, board: usize) -> serde_json::Value {
+    v["boards"][board]["term_records"].clone()
+}
+
+pub fn has_record(v: &serde_json::Value, board: usize, term_id: &str) -> bool {
+    !term_records(v, board)[term_id].is_null()
+}
+
+pub fn saved_cwd(v: &serde_json::Value, board: usize, term_id: &str) -> serde_json::Value {
+    term_records(v, board)[term_id]["last_cwd"].clone()
 }
 
 pub fn write_doc(path: &Path, content: &str) -> String {
@@ -500,8 +535,14 @@ pub fn cli_open(sock: &Path, path: &str) {
 /// Returns the exit status so a test can distinguish a clean `exit(0)` from a
 /// death by signal (`status.code() == None`).
 pub fn signal_and_wait(child: &mut Child, sig: libc::c_int) -> std::process::ExitStatus {
-    unsafe { libc::kill(child.id() as libc::pid_t, sig) };
+    signal(child, sig);
     wait_exit(child)
+}
+
+pub fn signal(child: &Child, sig: libc::c_int) {
+    // SAFETY: kill(2) on the test's own daemon child; a failure only means
+    // it is gone.
+    unsafe { libc::kill(child.id() as libc::pid_t, sig) };
 }
 
 /// Waits, to a deadline, for a daemon child to exit.
