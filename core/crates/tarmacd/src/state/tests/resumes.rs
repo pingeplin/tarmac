@@ -155,3 +155,62 @@ async fn s28b_a_command_is_checked_before_its_holder() {
         Err("resume command refused: a control character".into())
     );
 }
+
+// D3: a signal exit drops the command as any failed exit does.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_signal_exit_drops_the_command_and_keeps_the_entry() {
+    let (r, handle) = resumed("resume-signal").await;
+
+    r.daemon.term_ended("T", None).await;
+
+    assert_eq!(resume_of(&r.daemon).await, None);
+    assert!(has_entry(&r.daemon).await);
+    end(r, handle).await;
+}
+
+// D4: the freeze is set before the shutdown save reads the cwds, so a drop
+// that comes while the save waits on a held read is stopped.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_drop_during_the_shutdown_save_is_stopped() {
+    let mut r = rig_with("resume-save-race", None, Duration::from_secs(30)).await;
+    spawn(&r.daemon, "T", &["/bin/sh", "-c", "read _"], SpawnOpts { cwd: Some(&r.dir), ..Default::default() }).await;
+    let handle = r.daemon.term("T").await.expect("T runs");
+    eventually("T's first pid_cwd", || r.fs.calls(Call::PidCwd) >= 1).await;
+    assert_eq!(r.daemon.set_resume(None, "T", Some("echo HI".into())).await, Ok(()));
+    let before = r.fs.calls(Call::PidCwd);
+    r.fs.hold_pid(pid_of(&r.daemon, "T").await);
+
+    let daemon = r.daemon.clone();
+    let save = tokio::spawn(async move { daemon.final_save().await });
+    eventually("the save's cwd read", || r.fs.calls(Call::PidCwd) > before).await;
+    r.daemon.check_resume("T", &handle, gone).await;
+    r.release();
+    within(save).await;
+
+    assert_eq!(resume_of(&r.daemon).await.as_deref(), Some("echo HI"));
+    let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(r.tmp.join("state.json")).unwrap()).unwrap();
+    assert_eq!(saved["boards"][0]["term_records"]["T"]["resume"]["cmd"], "echo HI");
+    end(r, handle).await;
+}
+
+// The poll checks the holder before its `continue` on a failed leader read:
+// a handle that no process holds has no leader.
+#[tokio::test]
+async fn the_poll_drops_a_gone_holders_command_with_no_leader() {
+    let daemon = Daemon::new(tmp_dir("resume-no-leader").join("state.json")).await.unwrap();
+    let handle = TermHandle::detached();
+    assert_eq!(handle.foreground_pid(), None);
+    daemon.terms.lock().await.insert("T".into(), handle.clone());
+    daemon.term_boards.lock().await.insert("T".into(), "board-0".into());
+    {
+        let mut boards = daemon.boards.lock().await;
+        let record = tarmac_protocol::TermRecord { last_cwd: None, resume: Some(tarmac_protocol::ResumeRecord { cmd: "echo HI".into() }) };
+        boards.known_registry_mut("board-0").unwrap().term_records.insert("T".into(), record);
+        handle.hold_resume(crate::reports::Holder::Agent { pid: std::process::id() as Pid, started: 1 });
+    }
+
+    let poll = tokio::spawn(crate::term::proc_loop(daemon.clone(), "T".into(), handle.clone()));
+    eventually_async("the drop", || async { resume_of(&daemon).await.is_none() }).await;
+    daemon.terms.lock().await.remove("T");
+    poll.abort();
+}
