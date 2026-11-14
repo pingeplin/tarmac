@@ -127,7 +127,8 @@ is `$TARMAC_TERM_ID`; `tarmac terms` names the others:
 {"term":"t7","board":"board-1","cwd":"/w/api","proc":"cargo"}
 ```
 
-`cwd` and `proc` are left out when Tarmac could not read them.
+One line per live terminal, in board order, then by id as text (`t10` comes
+before `t2`). `cwd` and `proc` are left out when Tarmac could not read them.
 
 `tarmac events` prints one JSON line per fact until it is killed:
 

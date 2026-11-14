@@ -142,7 +142,8 @@ the process that set it runs. If the daemon restarts first, the card offers the
 command in its folder, and runs it only when you press Return. `clear` removes
 it. It prints nothing on success.
 
-`tarmac terms` prints one JSON line for each live terminal, in board order:
+`tarmac terms` prints one JSON line for each live terminal, in board order,
+then by id as text (`t10` before `t2`):
 {\"term\":\"t1\",\"board\":\"board-0\",\"cwd\":\"/w\",\"proc\":\"zsh\"}. `cwd` and `proc` are
 the daemon's fresh reads of the foreground process, left out when it could not
 read them. It is how a script outside a terminal names one.

@@ -248,14 +248,15 @@ write half. A monotonic generation guard ensures a late teardown of an evicted
 connection can't clobber the new app's slot.
 
 **Subscribers** (spec 2611.0012). A `cli` session that sends `Subscribe` stays
-open as a subscriber; there is no new role. `Daemon::push` publishes each
-`Exit`, `Bell`, `FileEvent` and `TermReport` to `Daemon::events`, one bounded
-`tokio::sync::broadcast` fan-out (`events::Fanout`, 1024 frames), before its app
-send and with its return unchanged: it is still "the app's channel took it", so
-a `FileEvent` that reached only a subscriber is still held for the app. The
-board-switch tell loop (`conn::change_and_send_active_board`) does not pass
-`push` and publishes its `FileEvent`s itself; the `TermReport` replays of a
-restore and of a connection's first restore are not published. With no
+open as a subscriber; there is no new role. Every `Exit`, `Bell`, `FileEvent`
+and `TermReport` for the app passes `Daemon::published`, the one place that
+hands it to `Daemon::events`, one bounded `tokio::sync::broadcast` fan-out
+(`events::Fanout`, 1024 frames). `Daemon::emit` publishes and then pushes; its
+return is `push`'s, "the app's channel took it", so a `FileEvent` that reached
+only a subscriber is still held for the app, and `push` itself is the app's
+alone. The board-switch tell loop (`conn::change_and_send_active_board`) sends
+published frames on its own channel; the `TermReport` replays of a restore and
+of a connection's first restore are not published. With no
 subscriber, `publish` clones nothing. `events::subscribe` takes the receiver
 first, then (with a `term_id`) the terminal's report and its exit from the
 ring as the snapshot; `events::serve` writes the frames its `Filter` admits

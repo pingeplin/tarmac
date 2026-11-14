@@ -851,7 +851,7 @@ not know `TermRecord.resume` ignores it.
 - The last 64 exits are in memory only; a daemon restart empties them.
 
 **`terms`.** One row for each live terminal, sorted by board order, then by
-`term_id`. `cwd` and `proc` are fresh reads of the terminal's foreground
+`term_id` as text (so `t10` comes before `t2`). `cwd` and `proc` are fresh reads of the terminal's foreground
 process; each is omitted when the daemon could not read it in time. An empty
 list is a valid answer.
 
