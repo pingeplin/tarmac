@@ -1528,8 +1528,9 @@ land in the terminal behind it.
 ### Wayfinding and overlays
 
 Layered over the board, back to front (`OverlayStack`): offscreen hint pills
-(one per signalling terminal whose centre is off screen, at most 10 —
-below — on the edge it overshoots; a pill that cannot clear a card is drawn under the cards), the zoom
+(one per signalling terminal whose centre is off screen, on the edge it
+overshoots, at most 10 (see below); a pill that cannot clear a card is drawn
+under the cards), the zoom
 control (bottom-left: `−`, percent, `+`, fit — steps of ×1.2 about the viewport
 centre; fit frames every card with a 10 % margin), the minimap (bottom-right;
 cards coloured by signal, click to re-centre), the inbox panel, toasts (at
@@ -1560,13 +1561,15 @@ the start of its text (24 Unicode scalars, one line), an exit pill reads
 `exited`; blocked and bell are amber, done `Theme.ok`, exit
 `Theme.consoleError`, and the minimap uses the same colours.
 
-At most 10 pills show (`OffscreenHintLayout.maxPills`, `shown`, issue #373),
+At most 10 pills show (`OffscreenHintLayout.maxPills`, `select`, issue #373),
 chosen before they are placed: the highest rank first, then the newest
-signal — a report's `at_ms`, the bell's or the exit's time (the app's clock) —
-then the higher `z` (live has no time, so `z` alone), then card order. The
-chosen pills keep card order. The ⏎ flight still takes the best of every
-hint, so it can go to a card with no pill. No pill counts the rest: the inbox
-lists every signal.
+signal, then the higher `z`, then card order. The chosen pills keep card
+order. A report's time is its `at_ms`, on the daemon's clock; a bell's and an
+exit's time are on the app's clock. Times are compared only within one rank,
+so the two clocks never meet. Live has no time, so `z` alone decides. The ⏎
+flight still takes the highest `(rank, z)` of every hint, so it can go to a
+card with no pill, and within one rank it can pick an older, higher-`z` card
+than the pills show. No pill counts the rest: the inbox lists every signal.
 
 A pill keeps clear of the visible cards and of the corner chrome drawn over
 it — the zoom control, the minimap and the shown toasts
