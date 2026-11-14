@@ -159,7 +159,7 @@ reports.
 | --- | --- | --- | --- |
 | Lifecycle | `Hello {role, v, app_version?}` | C→D | handshake |
 | | `HelloOk {v, daemon_version?, daemon_pid?, app_version?, app_connected?}` | D→C | accept |
-| | `Ack` | D→cli | generic success (reply to `open` and `push`) |
+| | `Ack` | D→cli | generic success (reply to `open`, `push` and `report`) |
 | | `Err {msg}` | D→C | error notice (closes the link on a handshake error) |
 | Docs | `Open {path, term_id?, board_id?}` | cli/app→D | surface a doc |
 | | `DocRead {path}` | app→D | mark a doc read |
@@ -170,12 +170,14 @@ reports.
 | | `Push {path, value}` | cli→D | one JSON value, as text, for the loaded HTML cards of an open doc; `ack` once it is queued for the app, else `err` |
 | | `DocEvent {path, value}` | D→app | that value, for each card of the doc (`path` is the registry's key); no reply |
 | Terminal I/O | `SpawnTerm {term_id, cols, rows, cwd?, cmd?, board_id?, inherit_cwd_from?}` | app→D | create a PTY card |
-| | `Input {term_id, bytes}` | app→D | keystrokes and mouse reports |
+| | `Input {term_id, bytes, typed?}` | app→D | keystrokes and mouse reports; `typed` marks the user's own input, which reads a report |
 | | `Output {term_id, bytes}` | D→app | raw PTY output (≤64 KiB chunks) |
 | | `Resize {term_id, cols, rows}` | app→D | resize the PTY |
 | | `Exit {term_id, code?}` | D→app | the PTY exited (nil code = signal death) |
 | | `TermProc {term_id, name, pid?}` | D→app | foreground process name changed |
 | | `Bell {term_id}` | D→app | a BEL (0x07) was seen |
+| | `Report {term_id, kind, text?}` | cli→D | a terminal's report, `blocked`, `done` or `clear`; `ack` or `err` |
+| | `TermReport {term_id, kind?, text?, at_ms?, proc?, read?}` | D→app | a terminal's current report; no `kind` is none |
 | | `ScrollbackRequest {term_id}` | app→D | re-send one term's scrollback ring now |
 | | `Scrollback {term_id, bytes}` | D→app | that ring, one frame per request |
 | Layout | `Layout {dock, tiles, board?, board_id?}` | app→D | layout snapshot for a board |
@@ -195,7 +197,7 @@ cx, cy}`.
 **Conformance vectors are the tripwire.** Two codecs implement this contract —
 `tarmac-protocol` (Rust, serde) and the hand-written `MsgPack` / `Message` codec
 in `TarmacKit` (Swift) — and both carry the same hex-encoded msgpack vectors
-(V1–V19) as mandatory tests: in `core/crates/tarmac-protocol/src/tests.rs`
+(V1–V24) as mandatory tests: in `core/crates/tarmac-protocol/src/tests.rs`
 and in `app/Tests/TarmacKitTests/ConformanceTests.swift`. Each vector must decode
 to the same structure and survive an encode→decode roundtrip on both sides. The
 Swift encoder is additionally pinned byte-for-byte to what
@@ -216,6 +218,11 @@ drift. Vectors only grow additively; an existing one is never edited.
 connections on a `tokio::net::UnixListener`, spawning `conn::handle` per
 connection. A SIGHUP/SIGTERM/SIGINT handler removes the socket and `exit(0)`s (so live
 shells die with a full daemon restart — see [§6](#6--what-survives-what)).
+
+The accept loop reads each client's pid with `UnixStream::peer_cred()`
+(`LOCAL_PEEREPID`) before the connection's first `await`, since the pid can be
+read only while the client's end is open; only a cli session uses it (a
+`report`, below).
 
 The CLI gets a short-lived `cli_session`. The app gets a long-lived
 `app_session` that installs the single-app slot, creates the bounded
@@ -308,6 +315,44 @@ delete makes none again. The record's lifetime: a `TermClose` deletes it, live
 or not, on whichever board has it; an exit with `code: Some(0)` deletes it; any
 other exit keeps it for the dead card; a spawn with `succeeds` takes the record
 of the persisted id from its own board when that id is not live.
+
+**A terminal's report** (spec 2611.0009). A `Report` from a cli names a
+terminal and `blocked`, `done` or `clear`, with an optional text (capped at 280
+chars by the cli and again by the daemon). The daemon keeps one current report
+per live terminal in `Daemon::reports` (`reports::Reports`, pure), in memory
+only. `Daemon::report` ties it to a holder with `Holder::resolve` (pure):
+
+- **The walk** follows the client's pid up its
+  parents (`proc::proc_facts`, one `sysctl(KERN_PROC_PID)` read, never
+  `proc_pidinfo`) until it reaches the PTY child. A terminal spawned with a
+  `cmd` (`TermHandle::spawned_with_cmd`) has its child as the agent; else the
+  member just below the child is the agent, or the shell itself when the
+  caller's parent is the shell (a report typed at the prompt). A caller that is
+  re-parented, gone or unreadable, or whose chain to the child has more than
+  32 members (caller and child included), is unattributed.
+- **The holder**: `Agent {pid, started}`,
+  `Shell {pid, caller}`, or, for an unattributed caller, `Leader {pid}`, the
+  foreground leader; with none, `err`. `proc` is the holder's
+  `proc_pidpath` name.
+- **The lifetime.** Each 750 ms poll reads the leader once and, before the
+  `continue` on a failed read, runs `Holder::alive` for a terminal with a
+  report: an agent while its pid is live
+  with the same start time; a shell while the leader is the shell or the
+  reporting cli; a leader while it is the leader. A failed read keeps it for
+  that tick. A removal pushes `TermReport` with no `kind`. An exit forgets the
+  report with no frame; the handler checks `terms` again after it stores one,
+  so a report never outlives its terminal.
+- **Read.** An `Input` with `typed: true` marks the report read, and pushes it
+  again. `TermHandle` keeps one atomic (no report, read, unread), written only
+  under the `reports` lock, so a key, or a poll tick of a terminal with no
+  report, costs one load.
+- **Restore.** After each `Restore` and its `file_event`s, the daemon sends
+  one `TermReport` for every live terminal of that board, on every restore, not
+  only a board's first on the connection.
+
+Each change and its push happen under the `reports` lock, so one terminal's
+frames keep their order. `reports` is taken before `app`; `boards` and `terms`
+are never taken while it is held.
 
 Each terminal keeps a byte-capped **scrollback ring** (256 KiB, front-eviction),
 appended unconditionally even with no app connected. On (re)connect the daemon
@@ -996,6 +1041,17 @@ reports and hover motion never clear it. The view's own bell and OSC 52
 clipboard hooks are left unset on purpose: the daemon's `Bell` is the observed
 fact, and a program may not overwrite the user's clipboard.
 
+A `TermReport` shows a **report chip** before the bell dot: `回報 · <age>`
+(`<1m`, `Nm`, `Nh`, `Nd`), amber for `blocked`, `Theme.ok` green for `done`,
+read again every 30 s (`ReportChip`, `TarmacKit`). It is the doc card's owner
+chip form (`ChipView`: mono, a 1 px border, no fill); a read report keeps the
+kind's colour on its border and its text goes faint. Its tool tip places the
+report in time, `回報 · 在 <proc> 期間`, and quotes the text in `「」`: the text is
+a claim of whatever process sent it, never parsed. The app sends `Input.typed`
+for the user's own input only, so a hover report or an engine reply never reads
+it. A dead card drops its report (`holdOpen`), and a lost connection clears
+every chip; the next restore brings the shown board's back.
+
 **Exit.** `TermExit` decides: a non-zero or signal `Exit` toasts and holds the
 card open *dead* — dimmed, taking no input, never persisted; a clean exit
 removes the card; a clean exit of the board's last live terminal replaces it
@@ -1673,9 +1729,9 @@ viewport.
 
 | Event | Terminals | Layout / docs / viewport |
 | --- | --- | --- |
-| **App reconnect** (daemon stays up) | **Survive** — the cards stay bound to their ptys; history is replaced from the scrollback ring | Untouched — the app's own state stands; only terminals are reconciled |
-| **App relaunch** (daemon stays up) | **Survive** — re-bound on the first restore, history from the scrollback ring | Restored from daemon memory |
-| **Daemon restart** | Lost — live shells died with the daemon. A running app marks their cards dead and toasts; a freshly launched app cold-spawns new shells at the persisted frames, in their last folder | Restored exactly from `state.json` |
+| **App reconnect** (daemon stays up) | **Survive** — the cards stay bound to their ptys; history is replaced from the scrollback ring. A terminal's report and its read flag survive: the chips go at the disconnect and come back with the restore | Untouched — the app's own state stands; only terminals are reconciled |
+| **App relaunch** (daemon stays up) | **Survive** — re-bound on the first restore, history from the scrollback ring; reports come with each board's restore | Restored from daemon memory |
+| **Daemon restart** | Lost — live shells, and their reports, died with the daemon. A running app marks their cards dead and toasts; a freshly launched app cold-spawns new shells at the persisted frames, in their last folder | Restored exactly from `state.json` |
 | **Red button / hide** | **Survive** — the app keeps running with its window hidden, and comes back on the next activation or Dock click | Untouched |
 | **Version-mismatch restart** (brew upgrade) | Cold-spawned on the new daemon, in their last folder (same as above). The app toasts the version change (`tarmacd restarted: <from> → <to>`) when a first-visit board has lost terminals; otherwise the existing reconnect toast is what the user sees | Restored from `state.json` via `Msg::Restore` on reconnect |
 

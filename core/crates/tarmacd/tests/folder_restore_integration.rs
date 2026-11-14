@@ -87,7 +87,7 @@ fn seeded_on_board_1() -> Value {
 }
 
 fn input(app: &mut Conn, term_id: &str, line: &str) {
-    app.send(&Msg::Input { term_id: term_id.into(), bytes: format!("{line}\n").into_bytes() });
+    app.send(&Msg::Input { term_id: term_id.into(), bytes: format!("{line}\n").into_bytes(), typed: false });
 }
 
 fn wait_output(app: &mut Conn, term_id: &str, needle: &str) {

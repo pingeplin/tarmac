@@ -111,7 +111,7 @@ extension AppController {
     /// report). A dead or unspawned terminal has no PTY to send to.
     func terminalDidSend(termID: String, _ bytes: Data, source: InputSource) {
         guard let s = session(ofTerm: termID), s.reachable else { return }
-        client.input(termID: termID, bytes: bytes)
+        client.input(termID: termID, bytes: bytes, typed: source == .user)
         if source == .user { clearBell(termID: termID) }
     }
 
@@ -278,6 +278,7 @@ extension AppController {
         s.pendingSpawn = nil
         s.procName = nil
         s.bellAt = nil
+        board.view.card(.term(s.termID))?.setReport(nil)
         board.view.card(.term(s.termID))?.setExited()
         board.view.signalsChanged()
         refreshOwnerChips(on: board)
@@ -322,9 +323,16 @@ extension AppController {
 
     /// The daemon connection dropped. Cards are left as they are — the next
     /// restore reconciles them — but no scrollback request will be answered now.
+    /// Every report chip goes, on every board: the restore after the reconnect
+    /// brings the shown board's reports back, so none is left stale.
     func terminalsLostConnection() {
         scrollback.socketLost()
         daemonSession = DaemonSession()
+        for board in boards.values {
+            for termID in board.sessions.keys {
+                board.view.card(.term(termID))?.setReport(nil)
+            }
+        }
     }
 
     // MARK: - Label, bell
@@ -350,6 +358,14 @@ extension AppController {
         board.view.signalsChanged()
         refreshOwnerChips(on: board)
         refreshSwitcherIfOpen()
+    }
+
+    /// `term_report`: the terminal's current report, or nil for none. A frame
+    /// for a terminal with no card, or a dead one, is dropped.
+    func handleTermReport(termID: String, _ report: TermReport?) {
+        guard let (_, board) = anySession(termID),
+              let card = board.view.card(.term(termID)), !card.dead else { return }
+        card.setReport(report)
     }
 
     /// `bell`: light the card amber and note when.

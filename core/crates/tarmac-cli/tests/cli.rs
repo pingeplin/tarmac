@@ -55,7 +55,19 @@ fn help_documents_push() {
     assert!(out.stdout.contains("tarmac push <path> <json>"), "{}", out.stdout);
     assert!(out.stdout.contains("tarmac push <path> -"), "{}", out.stdout);
     assert!(out.stdout.contains("as a `tarmac:push` on `window`"), "{}", out.stdout);
-    assert!(out.stdout.contains("1  the daemon refused an open or a push"), "{}", out.stdout);
+    assert!(out.stdout.contains("1  the daemon refused an open, a push"), "{}", out.stdout);
+}
+
+// Spec 2611.0009: the verb, its three forms, and its exit status.
+#[test]
+fn help_documents_report() {
+    let out = Report::of(tarmac().arg("--help"));
+    assert!(out.status.success());
+    for form in ["tarmac report blocked [\"<text>\"]", "tarmac report done [\"<text>\"]", "tarmac report clear"] {
+        assert!(out.stdout.contains(form), "{form}: {}", out.stdout);
+    }
+    assert!(out.stdout.contains("TARMAC_TERM_ID"), "{}", out.stdout);
+    assert!(out.stdout.contains("1  the daemon refused an open, a push or a report"), "{}", out.stdout);
 }
 
 #[test]

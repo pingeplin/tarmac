@@ -10,6 +10,8 @@ use tokio_util::sync::CancellationToken;
 use crate::boards::{BoardId, Boards, DataDir, FileStamp, WantedData};
 use crate::docs::RepoInfo;
 use crate::reader::{PathFs, PathGate, RealFs};
+use crate::proc::{self, Pid};
+use crate::reports::{Holder, Kind, Reports};
 use crate::term::{SpawnPlan, TermHandle};
 use crate::watch::{NotWatched, NotifySource, Wake, WakeSource, Watcher};
 
@@ -63,6 +65,11 @@ pub struct Daemon {
     /// The board each terminal belongs to (set at spawn): routes `tarmac open`
     /// from a backgrounded board's term and scopes per-board teardown/restore.
     pub term_boards: Mutex<HashMap<String, BoardId>>,
+    /// Each live terminal's current report. Each change and its push happen
+    /// under this lock, so one terminal's frames keep their order. Taken
+    /// before `app` (in `push`); `boards` and `terms` are never taken while
+    /// it is held.
+    pub reports: Mutex<Reports>,
     doc_counts: Arc<DocCounts>,
     watcher: Watcher,
     /// Set by the watcher; `docs::watch_loop` waits on it.
@@ -147,6 +154,7 @@ impl Daemon {
             boards: Mutex::new(boards),
             terms: Mutex::new(HashMap::new()),
             term_boards: Mutex::new(HashMap::new()),
+            reports: Mutex::new(Reports::default()),
             doc_counts,
             watcher,
             wake,
@@ -498,8 +506,67 @@ impl Daemon {
             tracing::warn!("term {term_id} missing from registry at exit");
         }
         self.term_boards.lock().await.remove(term_id);
+        // After the term left `terms`: a report stored after this is undone
+        // by the handler's own re-check (`Daemon::report`).
+        self.reports.lock().await.forget(term_id);
         if code == Some(0) {
             self.forget_record(term_id).await;
+        }
+    }
+
+    /// The answer to a cli `report` (spec 2611.0009): `Err` is the `err` text.
+    /// `peer` is the client's pid, read at accept.
+    pub async fn report(&self, peer: Option<Pid>, term_id: &str, kind: &str, text: Option<String>) -> Result<(), String> {
+        let handle = self.term(term_id).await.ok_or_else(|| format!("unknown terminal: {term_id}"))?;
+        if kind == "clear" {
+            self.change_report(term_id, &handle, |reports| reports.clear(term_id)).await;
+            return Ok(());
+        }
+        let kind = Kind::parse(kind).ok_or_else(|| format!("unknown report kind: {kind}"))?;
+        // Any socket client can send a `report`, so the daemon caps it too.
+        let text = text.map(|t| tarmac_protocol::cap_report_text(&t)).filter(|t| !t.is_empty());
+        let holder = Holder::resolve(peer, handle.pid(), handle.spawned_with_cmd(), proc::proc_facts, || {
+            handle.foreground_pid()
+        })
+        .ok_or_else(|| format!("no process to tie the report to in {term_id}"))?;
+        let proc_name = proc::process_name(holder.pid());
+        let now_ms = crate::boards::epoch_ms(std::time::SystemTime::now());
+        self.change_report(term_id, &handle, |reports| Some(reports.report(term_id, kind, text, now_ms, holder, proc_name)))
+            .await;
+        // A terminal that exited while this ran: `term_ended` took it out of
+        // `terms` before its own `forget`, so one of the two finds the entry.
+        if self.term(term_id).await.is_none() {
+            self.reports.lock().await.forget(term_id);
+        }
+        Ok(())
+    }
+
+    /// The poll's check: removes the report when its holder is gone. `leader`
+    /// is the tick's foreground-leader read.
+    pub async fn check_report(&self, term_id: &str, handle: &TermHandle, leader: Option<Pid>) {
+        if handle.has_report() {
+            self.change_report(term_id, handle, |reports| {
+                reports.check(term_id, |holder| holder.alive(proc::proc_facts, leader))
+            })
+            .await;
+        }
+    }
+
+    /// Typed input marks an unread report read.
+    pub async fn mark_report_read(&self, term_id: &str, handle: &TermHandle) {
+        if handle.unread_report() {
+            self.change_report(term_id, handle, |reports| reports.mark_read(term_id)).await;
+        }
+    }
+
+    /// One change of the store, the handle's flag and its push, all under the
+    /// `reports` lock, so one terminal's frames keep their order.
+    async fn change_report(&self, term_id: &str, handle: &TermHandle, change: impl FnOnce(&mut Reports) -> Option<Msg>) {
+        let mut reports = self.reports.lock().await;
+        let msg = change(&mut reports);
+        handle.set_report(reports.has(term_id), reports.unread(term_id));
+        if let Some(msg) = msg {
+            self.push(msg).await;
         }
     }
 

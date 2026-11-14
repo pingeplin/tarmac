@@ -8,7 +8,7 @@ use std::os::unix::net::UnixStream;
 use tarmac_protocol::{self as proto, Msg, OVER_FRAME_LIMIT};
 
 const LIMIT: usize = proto::MAX_FRAME_LEN as usize;
-const NO_ANSWER: &str = "no answer from the daemon in 5 s (an older daemon, or the app is not reading)";
+const NO_ANSWER_WHY: &str = "an older daemon, or the app is not reading";
 
 pub fn run(args: &[String]) -> i32 {
     let Some((raw_path, mode)) = parse(args) else {
@@ -83,16 +83,9 @@ fn send_value(conn: &mut UnixStream, path: &str, text: String) -> Sent {
     exchange(conn, &payload)
 }
 
-/// Sends one `push` and waits for its answer (`crate::answer`).
+/// Sends one `push` and waits for its answer (`crate::exchange`).
 fn exchange(conn: &mut UnixStream, payload: &[u8]) -> Sent {
-    if let Err(e) = proto::frame::write_sync(conn, payload) {
-        return Sent::Ended(crate::lost(e));
-    }
-    let answer = crate::answer(conn, |e| match e.kind() {
-        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => NO_ANSWER.to_owned(),
-        _ => crate::lost(e),
-    });
-    match answer {
+    match crate::exchange(conn, payload, NO_ANSWER_WHY) {
         Ok(Ok(())) => Sent::Acked,
         Ok(Err(refusal)) => Sent::Refused(refusal),
         Err(why) => Sent::Ended(why),
@@ -431,7 +424,7 @@ mod tests {
     fn no_answer_in_the_read_timeout_is_worded_as_no_answer() {
         let (mut cli, _daemon) = silent_daemon(std::time::Duration::from_millis(100));
         let payload = payload("/p", "1".into(), LIMIT).unwrap();
-        assert_eq!(exchange(&mut cli, &payload), Sent::Ended(NO_ANSWER.to_owned()));
+        assert_eq!(exchange(&mut cli, &payload), Sent::Ended(crate::no_answer(NO_ANSWER_WHY)));
     }
 
     // S16

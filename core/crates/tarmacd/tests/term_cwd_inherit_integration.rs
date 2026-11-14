@@ -22,7 +22,7 @@ fn spawn_prime_and_wait_for_cd(app: &mut Conn, daemon: &TestDaemon, moved: &str,
         &["/bin/sh", "-c", &format!("read _; cd '{moved}' && echo CWD_MOVED; {then}")],
         Spawn { cwd: Some(daemon.dir.to_string_lossy().into_owned()), ..Default::default() },
     );
-    app.send(&Msg::Input { term_id: "prime".into(), bytes: b"go\n".to_vec() });
+    app.send(&Msg::Input { term_id: "prime".into(), bytes: b"go\n".to_vec(), typed: false });
 
     let mut collected = Vec::new();
     app.collect_output_into(&mut collected, "prime", "prime cd marker", b"CWD_MOVED");

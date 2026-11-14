@@ -216,10 +216,19 @@ extension HeaderButton: HoverCursorProviding {
     func hoverCursor(at windowPoint: NSPoint) -> NSCursor { .pointingHand }
 }
 
-/// The `← <terminal>` chip on a doc card: at most 120 wide, the name cut at
-/// the tail. Display only.
+/// A header chip: a 1 px border and mono text, no fill, at most 120 wide with
+/// the text cut at the tail. The doc card's `← <terminal>` chip is neutral; a
+/// terminal's report chip takes its kind's colour (spec 2611.0009), so one
+/// form reads the same on every card kind. Display only.
 @MainActor
-final class OwnerChipView: NSView, ThemeFollowing {
+final class ChipView: NSView, ThemeFollowing {
+    enum Tone: Equatable {
+        case neutral
+        /// A dimmed (read) report keeps the kind's colour on its border, so a
+        /// read `blocked` and a read `done` still differ; its text goes faint.
+        case report(TermReport.Kind, dimmed: Bool)
+    }
+
     private static let maxWidth: CGFloat = 120
     private static let padX: CGFloat = 6
     private static let padY: CGFloat = 1
@@ -229,6 +238,7 @@ final class OwnerChipView: NSView, ThemeFollowing {
     private let label = NSTextField(labelWithString: "")
     private var size: NSSize = .zero
     private var scale = CardScale(zoom: 1, backing: 2)
+    private var tone = Tone.neutral
 
     override var acceptsFirstResponder: Bool { false }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -245,8 +255,21 @@ final class OwnerChipView: NSView, ThemeFollowing {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     func themeChanged() {
-        layer?.borderColor = Theme.lineSoft.cgColor
-        label.textColor = Theme.faint
+        switch tone {
+        case .neutral:
+            layer?.borderColor = Theme.lineSoft.cgColor
+            label.textColor = Theme.faint
+        case .report(let kind, let dimmed):
+            let color = kind == .blocked ? Theme.amber : Theme.ok
+            layer?.borderColor = color.cgColor
+            label.textColor = dimmed ? Theme.faint : color
+        }
+    }
+
+    func setTone(_ tone: Tone) {
+        guard tone != self.tone else { return }
+        self.tone = tone
+        themeChanged()
     }
 
     func setLabel(_ text: String) {
@@ -288,7 +311,7 @@ final class OwnerChipView: NSView, ThemeFollowing {
 /// A card's header: the handle the card is dragged by, with what identifies
 /// the card on the left and its state and controls packed against the right.
 ///
-/// A terminal header reads `›_ label … ●`; a doc header reads
+/// A terminal header reads `›_ label … 回報 · 2m ●`; a doc header reads
 /// `¶ ● label … ← owner  ✚ now  ✎ Ns  ↻  ✕`. The buttons keep their own
 /// presses; everywhere else a press is the header's.
 ///
@@ -329,7 +352,16 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
     private let kindGlyph: NSTextField
     private let repoDot = NSView()
     private let label = NSTextField(labelWithString: "")
-    private let ownerChip = OwnerChipView()
+    private let ownerChip = ChipView()
+    private let reportChip = ChipView()
+    private var report: TermReport?
+    private var reportTick: DispatchWorkItem?
+    /// The report chip's tool tip is the header's: a press anywhere but on a
+    /// button is the header's own, so the chip is never the view hit.
+    private var reportToolTip: String?
+    private var reportToolTipTag: NSView.ToolTipTag?
+    /// The chip frame the tool tip was last registered for; nil for none.
+    private var reportToolTipRect: NSRect?
     private let freshMeta = NSTextField(labelWithString: "✚ now")
     private let recency = RecentMetaLabel(font: Theme.mono(recencyFontSize))
     private let bellDot = NSTextField(labelWithString: "●")
@@ -355,13 +387,14 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
         repoDot.isHidden = true
         label.lineBreakMode = .byTruncatingTail
         ownerChip.isHidden = true
+        reportChip.isHidden = true
         freshMeta.isHidden = true
         recency.onUpdate = { [weak self] in self?.needsLayout = true }
         bellDot.isHidden = true
         paint()
 
         let controls: [NSView?] = [refreshButton, closeButton]
-        for view in [hairline, kindGlyph, repoDot, label, ownerChip, freshMeta, recency, bellDot] + controls.compactMap({ $0 }) {
+        for view in [hairline, kindGlyph, repoDot, label, ownerChip, freshMeta, recency, reportChip, bellDot] + controls.compactMap({ $0 }) {
             addSubview(view)
         }
         applyScale()
@@ -383,6 +416,7 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
         recency.font = Theme.mono(scale.length(Self.recencyFontSize))
         repoDot.layer?.cornerRadius = scale.length(Self.dotSize) / 2
         ownerChip.apply(scale)
+        reportChip.apply(scale)
         refreshButton?.apply(scale)
         (accessory as? HeaderButton)?.apply(scale)
         closeButton?.apply(scale)
@@ -445,6 +479,36 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
         needsLayout = true
     }
 
+    /// Shows a terminal's report as `回報 · <age>`, or hides the chip with nil.
+    /// A shown chip reads its age again every `ReportChip.refreshInterval`.
+    func setReport(_ report: TermReport?) {
+        guard report != nil || self.report != nil else { return }
+        self.report = report
+        refreshReport()
+    }
+
+    private func refreshReport() {
+        reportTick?.cancel()
+        reportTick = nil
+        guard let report else {
+            reportChip.isHidden = true
+            reportToolTip = nil
+            needsLayout = true
+            return
+        }
+        let model = ReportChip.model(report: report, nowMs: UInt64(Date().timeIntervalSince1970 * 1000))
+        reportChip.setTone(.report(model.tone, dimmed: model.dimmed))
+        reportToolTip = model.toolTip
+        reportChip.isHidden = false
+        reportChip.setLabel(model.text)
+        needsLayout = true
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated { self?.refreshReport() }
+        }
+        reportTick = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + ReportChip.refreshInterval, execute: work)
+    }
+
     /// A lit bell turns the glyph amber and shows the amber dot.
     func setBell(_ on: Bool) {
         guard on == bellDot.isHidden else { return }
@@ -475,7 +539,7 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
         let dot = scale.length(Self.dotSize)
         let leading = [item(kindGlyph), Item(view: repoDot, room: dot, size: NSSize(width: dot, height: dot))]
             .filter { !$0.view.isHidden }
-        let trailingViews: [NSView?] = [ownerChip, freshMeta, recency, refreshButton, accessory, closeButton, bellDot]
+        let trailingViews: [NSView?] = [ownerChip, freshMeta, recency, refreshButton, accessory, closeButton, reportChip, bellDot]
         let trailing = trailingViews.compactMap { $0 }.filter { !$0.isHidden }.map(item)
         let title = item(label)
 
@@ -490,6 +554,12 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
         for (item, span) in zip(trailing, frames.trailing) { place(item, at: span.x) }
         // The label alone can be given less room than it takes, and is cut to it.
         place(title, at: frames.label.x, cutTo: frames.label.width < title.room ? frames.label.width : nil)
+        let rect = reportChip.isHidden ? nil : reportChip.frame
+        if rect != reportToolTipRect {
+            if let tag = reportToolTipTag { removeToolTip(tag) }
+            reportToolTipTag = rect.map { addToolTip($0, owner: self, userData: nil) }
+            reportToolTipRect = rect
+        }
     }
 
     private struct Item {
@@ -636,5 +706,16 @@ final class TerminalBodyView: NSView, ThemeFollowing {
     override func layout() {
         super.layout()
         terminal?.frame = bounds
+    }
+}
+
+extension CardHeaderView: NSViewToolTipOwner {
+    nonisolated func view(
+        _ view: NSView,
+        stringForToolTip tag: NSView.ToolTipTag,
+        point: NSPoint,
+        userData data: UnsafeMutableRawPointer?
+    ) -> String {
+        MainActor.assumeIsolated { reportToolTip ?? "" }
     }
 }

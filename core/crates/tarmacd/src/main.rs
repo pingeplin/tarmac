@@ -7,6 +7,7 @@ mod panic_log;
 mod persist;
 mod proc;
 mod reader;
+mod reports;
 mod state;
 mod term;
 mod watch;
@@ -122,8 +123,11 @@ async fn main() -> anyhow::Result<()> {
     loop {
         match listener.accept().await {
             Ok((stream, _addr)) => {
+                // Read before any await: the peer's pid can be read only while
+                // its end is open.
+                let peer_pid = stream.peer_cred().ok().and_then(|cred| cred.pid());
                 let d = daemon.clone();
-                tokio::spawn(async move { conn::handle(d, stream).await });
+                tokio::spawn(async move { conn::handle(d, stream, peer_pid).await });
             }
             Err(e) => warn!("accept failed: {e}"),
         }

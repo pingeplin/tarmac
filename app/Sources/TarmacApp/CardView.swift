@@ -339,6 +339,11 @@ final class CardView: NSView, ThemeFollowing {
         return .none
     }
 
+    /// A terminal's report, as a chip in the header; nil hides it.
+    func setReport(_ report: TermReport?) {
+        header.setReport(report)
+    }
+
     /// A lit bell shows as an amber glyph and dot in the header.
     func setBell(_ on: Bool) {
         guard !dead, on != bellActive else { return }
