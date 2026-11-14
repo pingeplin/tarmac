@@ -22,7 +22,7 @@ public enum OffscreenHintLayout {
         public var signalAt: UInt64?
 
         public init(
-            cardID: String, centerView: CGPoint, signal: Signal, label: String, z: Int, signalAt: UInt64? = nil
+            cardID: String, centerView: CGPoint, signal: Signal, label: String, z: Int, signalAt: UInt64?
         ) {
             self.cardID = cardID
             self.centerView = centerView
@@ -133,6 +133,12 @@ public enum OffscreenHintLayout {
         guard hints.count > maxPills else { return hints }
         let keys = hints.indices.map { (rank(hints[$0].signal), hints[$0].signalAt ?? 0, hints[$0].z, -$0) }
         return hints.indices.sorted { keys[$0] > keys[$1] }.prefix(maxPills).sorted().map { hints[$0] }
+    }
+
+    /// The pills to show, and the ⏎-fly target, taken from every hint: it
+    /// can be a card the cap left without a pill.
+    public static func select(_ hints: [Hint]) -> (shown: [Hint], flyTarget: String?) {
+        (shown(hints), flyTarget(hints))
     }
 
     /// The time of the card's shown signal: a report's for blocked and done,

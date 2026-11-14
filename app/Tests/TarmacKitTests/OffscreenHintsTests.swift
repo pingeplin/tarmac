@@ -9,7 +9,7 @@ final class OffscreenHintLayoutTests: XCTestCase {
     private typealias Layout = OffscreenHintLayout
 
     private func hint(_ cardID: String, _ center: CGPoint, _ signal: Layout.Signal, _ z: Int) -> Layout.Hint {
-        Layout.Hint(cardID: cardID, centerView: center, signal: signal, label: cardID, z: z)
+        Layout.Hint(cardID: cardID, centerView: center, signal: signal, label: cardID, z: z, signalAt: nil)
     }
 
     // MARK: - signal and rank (2611.0013 S24)
@@ -129,6 +129,14 @@ final class OffscreenHintLayoutTests: XCTestCase {
             Layout.shown(hints).map(\.cardID),
             ["live1", "live2", "live3", "live4", "blocked", "live1b", "live2b", "live3b", "live4b", "live5b"]
         )
+    }
+
+    func testSelectShowsTheCappedPillsAndFliesToTheBestOfEveryHint() {
+        let hints = [signalled("old", .bell, at: 1, z: 99)]
+            + (0..<10).map { signalled("bell\($0)", .bell, at: 10 + UInt64($0), z: 0) }
+        let selection = Layout.select(hints)
+        XCTAssertEqual(selection.shown, Layout.shown(hints))
+        XCTAssertEqual(selection.flyTarget, "old")
     }
 
     func testTheSignalTimeIsTheTimeOfTheShownSignal() {
@@ -437,7 +445,7 @@ final class OffscreenHintLayoutTests: XCTestCase {
         let options = Layout.Options(
             edgeInset: 18, edgeMargin: 10, stackGap: 8, pillSize: { _ in size }, obstacles: obstacles
         )
-        let hint = Layout.Hint(cardID: "h", centerView: center, signal: .live, label: "h", z: 0)
+        let hint = Layout.Hint(cardID: "h", centerView: center, signal: .live, label: "h", z: 0, signalAt: nil)
         return try XCTUnwrap(Layout.stackPills([hint], in: view, options: options).first)
     }
 
