@@ -57,7 +57,8 @@ struct DevSnapshotReader {
                 available: controller.theme.library.all.map(\.id),
                 refused: controller.theme.library.refused.map(\.detail),
                 findings: ThemeBrowser.contrastDetail(controller.theme.inEffect.palette)
-            )
+            ),
+            restoreCard: controller.restoreCard
         ))
     }
 

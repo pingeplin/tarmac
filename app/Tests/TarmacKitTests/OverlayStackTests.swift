@@ -8,10 +8,12 @@ final class OverlayStackTests: XCTestCase {
         XCTAssertEqual(OverlayStack.minimap.zIndex, 50)
         XCTAssertEqual(OverlayStack.toasts.zIndex, 70)
         XCTAssertEqual(OverlayStack.switcher.zIndex, 80)
+        XCTAssertEqual(OverlayStack.restoreCard.zIndex, 90)
     }
 
-    func testThePillsAreUnderTheCornerControlsAndTheSwitcherIsOverEverything() {
-        XCTAssertEqual(OverlayStack.backToFront, [.hints, .zoomControl, .minimap, .toasts, .switcher])
+    /// #358: the card that takes the first key is drawn over everything.
+    func testThePillsAreUnderTheCornerControlsAndTheRestoreCardIsOverEverything() {
+        XCTAssertEqual(OverlayStack.backToFront, [.hints, .zoomControl, .minimap, .toasts, .switcher, .restoreCard])
     }
 
     func testEveryOverlayIsStackedOnce() {

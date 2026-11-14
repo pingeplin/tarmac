@@ -390,6 +390,8 @@ public enum DevSnapshot {
         public var quitGuard: QuitGuard?
         public var fonts: Fonts
         public var theme: Theme
+        /// #358: the restore card while it is up.
+        public var restoreCard: RestoreCard?
 
         public init(
             boardID: String,
@@ -403,7 +405,8 @@ public enum DevSnapshot {
             keyboardFocus: KeyboardFocus,
             quitGuard: QuitGuard?,
             fonts: Fonts,
-            theme: Theme
+            theme: Theme,
+            restoreCard: RestoreCard? = nil
         ) {
             self.boardID = boardID
             self.visibility = visibility
@@ -417,6 +420,7 @@ public enum DevSnapshot {
             self.quitGuard = quitGuard
             self.fonts = fonts
             self.theme = theme
+            self.restoreCard = restoreCard
         }
     }
 
@@ -438,6 +442,7 @@ public enum DevSnapshot {
             "quit_guard": input.quitGuard.map(quitGuard) ?? .null,
             "fonts": fonts(input.fonts),
             "theme": theme(input.theme),
+            "restore_card": input.restoreCard.map { ["lines": .array($0.lines.map(JSONValue.string))] } ?? .null,
         ]
     }
 

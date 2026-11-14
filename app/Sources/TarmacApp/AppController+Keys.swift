@@ -64,6 +64,7 @@ extension AppController {
         let focused = terminal.flatMap(session(of:))
         let action = KeyLadder.decide(press, keyFacts(terminal: terminal, focused: focused))
         if let focused { focused.afterRun = KeyLadder.afterRun(was: focused.afterRun, press: press, action: action) }
+        afterRestoreCard = KeyLadder.afterRestoreCard(was: afterRestoreCard, press: press, action: action)
         switch action {
         case .passThrough:
             return false
@@ -93,6 +94,8 @@ extension AppController {
             if let focused { reopenDead(focused.termID) }
         case .ignoreRepeat:
             break
+        case .closeRestoreCard:
+            closeRestoreCard()
         }
         return true
     }
@@ -115,7 +118,9 @@ extension AppController {
                 selectedIsDoc: selectedIsDoc
             ),
             offer: focused.map(keyOffer) ?? .none,
-            afterRun: focused?.afterRun ?? false
+            afterRun: focused?.afterRun ?? false,
+            restoreCard: restoreCard != nil,
+            afterRestoreCard: afterRestoreCard
         )
     }
 

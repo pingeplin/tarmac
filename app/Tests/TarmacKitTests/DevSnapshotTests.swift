@@ -47,7 +47,8 @@ final class DevSnapshotTests: XCTestCase {
         quitGuard: Guard? = nil,
         contentOrigin: CGPoint? = nil,
         fonts: DevSnapshot.Fonts? = nil,
-        theme: DevSnapshot.Theme? = nil
+        theme: DevSnapshot.Theme? = nil,
+        restoreCard: RestoreCard? = nil
     ) -> Input {
         Input(
             boardID: "board-0",
@@ -64,7 +65,8 @@ final class DevSnapshotTests: XCTestCase {
                 saved: [:], terminalFace: "SystemMono-Regular", terminalSize: 16,
                 interfaceFace: "SystemMono-Regular", documentCSS: "system-ui", documentSize: 14
             ),
-            theme: theme ?? DevSnapshot.Theme(choice: .standard, inEffect: .dark, name: "breeze-dark")
+            theme: theme ?? DevSnapshot.Theme(choice: .standard, inEffect: .dark, name: "breeze-dark"),
+            restoreCard: restoreCard
         )
     }
 
@@ -95,8 +97,8 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(
             snapshot.keys.sorted(),
             [
-                "active_element", "board_id", "cards", "content_origin", "focused_card", "fonts", "quit_guard", "theme",
-                "v", "viewport", "visibility",
+                "active_element", "board_id", "cards", "content_origin", "focused_card", "fonts", "quit_guard",
+                "restore_card", "theme", "v", "viewport", "visibility",
             ]
         )
         XCTAssertEqual(snapshot["v"], 1)
@@ -846,11 +848,26 @@ final class DevSnapshotTests: XCTestCase {
                 + #""fonts":{"document":{"css":"system-ui","saved":null,"size":14},"#
                 + #""interface":{"face":"SystemMono-Regular","saved":null},"#
                 + #""terminal":{"face":"SystemMono-Regular","saved":null,"size":16}},"#
-                + #""quit_guard":null,"#
+                + #""quit_guard":null,"restore_card":null,"#
                 + #""theme":{"available":[],"choice":"dark","findings":[],"folder":"","in_effect":"dark","#
                 + #""name":"breeze-dark","refused":[]},"v":1,"#
                 + #""viewport":{"cx":500,"cy":350,"view_rect":{"h":700,"w":1000,"x":24,"y":40},"zoom":1},"#
                 + #""visibility":"visible"}"#
         )
+    }
+
+    // MARK: - #358: the restore card
+
+    func testTheRestoreCardIsItsLinesWhileItIsUpAndNullOtherwise() throws {
+        let plan = BoardRestore.Plan(
+            terms: [BoardRestore.Term(termID: "a", frame: .zero, z: 0, spawn: SpawnRequest(cwd: "/a", succeeds: "A"))],
+            docs: [], droppedDocPaths: []
+        )
+        let card = try XCTUnwrap(RestoreCard.make(plan: plan))
+        XCTAssertEqual(
+            fields(DevSnapshot.build(input(restoreCard: card)))["restore_card"],
+            ["lines": ["✓ 1 terminal back in its folder"]]
+        )
+        XCTAssertEqual(fields(DevSnapshot.build(input()))["restore_card"], .null)
     }
 }

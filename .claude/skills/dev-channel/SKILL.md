@@ -157,7 +157,9 @@ core/target/debug/tarmac dev snapshot | jq .
   what it last did: `phase` (`idle` | `showing` | `confirming`), `notice`
   (`visible`, `alpha`; alpha reads 0 while not visible) and `last_press`
   (`press_ms`, `route` of `guard` | `terminate`, `age_ms`, or `null` before the
-  first keyboard press).
+  first keyboard press), and `restore_card` — `{lines}` while the restore card
+  of a cold launch is up (#358), else `null`. It takes the first key, so the
+  `make qa` runners close it with `escape` before their first scenario.
 - **`active_element` speaks DOM.** The scenario suite predates the native app,
   so keyboard focus is reported in the vocabulary it reads: a focused terminal
   is `tag: "TEXTAREA"`, `classes: ["xterm-helper-textarea"]`, `selection_type`

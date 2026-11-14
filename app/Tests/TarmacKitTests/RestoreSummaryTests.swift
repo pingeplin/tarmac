@@ -2,7 +2,7 @@ import CoreGraphics
 import XCTest
 import TarmacKit
 
-/// 2611.0011 S11: the toast lines of a first-visit restore with cold spawns.
+/// 2611.0011 S11: the lines of a first-visit restore with cold spawns.
 final class RestoreSummaryTests: XCTestCase {
     private func term(_ id: String, spawn: SpawnRequest?, resume: String? = nil) -> BoardRestore.Term {
         BoardRestore.Term(termID: id, frame: .zero, z: 0, spawn: spawn, resume: resume)

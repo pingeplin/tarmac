@@ -31,11 +31,16 @@ public enum KeyLadder {
         /// The focused terminal ran its command by `.runResume`, and no key
         /// that is not a repeat has come since (`afterRun(was:press:action:)`).
         public var afterRun: Bool
+        /// #358: the restore card is up.
+        public var restoreCard: Bool
+        /// A key closed the restore card, and no key that is not a repeat has
+        /// come since (`afterRestoreCard(was:press:action:)`).
+        public var afterRestoreCard: Bool
 
         public init(
             composing: Bool = false, switcherOpen: Bool = false, keys: Keys = .terminal, editingText: Bool = false,
             hasFlyTarget: Bool = false, esc: EscLadder.Facts = EscLadder.Facts(), offer: Offer = .none,
-            afterRun: Bool = false
+            afterRun: Bool = false, restoreCard: Bool = false, afterRestoreCard: Bool = false
         ) {
             self.composing = composing
             self.switcherOpen = switcherOpen
@@ -45,6 +50,8 @@ public enum KeyLadder {
             self.esc = esc
             self.offer = offer
             self.afterRun = afterRun
+            self.restoreCard = restoreCard
+            self.afterRestoreCard = afterRestoreCard
         }
     }
 
@@ -85,9 +92,13 @@ public enum KeyLadder {
         /// A repeated Return while an offer shows, or just after a run: taken
         /// and dropped, so a held key acts once.
         case ignoreRepeat
+        /// Any key but ⌘Q while the restore card is up: it closes the card
+        /// and goes nowhere else.
+        case closeRestoreCard
     }
 
     public static func decide(_ press: KeyPress, _ facts: Facts) -> Action {
+        if let action = restoreCardAction(press, facts) { return action }
         // A sandboxed document's keys are its own: the web app's handler never
         // saw them either. ESC still un-borrows, through the card shim's relay.
         if facts.composing || facts.keys == .document { return .passThrough }
@@ -122,7 +133,28 @@ public enum KeyLadder {
     /// The focused terminal's latch after `press` was decided as `action`:
     /// set by `.runResume`, kept by a repeat, cleared by any other key.
     public static func afterRun(was: Bool, press: KeyPress, action: Action) -> Bool {
-        if action == .runResume { return true }
+        latch(was: was, press: press, setBy: action == .runResume)
+    }
+
+    /// The restore card (#358) comes before everything, the switcher and a
+    /// composition too: it is drawn over them, and no key has reached a
+    /// terminal since it showed. A repeat never closes it, so a key held from
+    /// before it showed cannot close it unseen, and the repeats of the key
+    /// that closed it are dropped. ⌘Q is the menu's.
+    private static func restoreCardAction(_ press: KeyPress, _ facts: Facts) -> Action? {
+        guard facts.restoreCard || facts.afterRestoreCard, !press.isCommandChord("q") else { return nil }
+        if press.isRepeat { return .ignoreRepeat }
+        return facts.restoreCard ? .closeRestoreCard : nil
+    }
+
+    /// The latch after `press` was decided as `action`: set by closing the
+    /// restore card, kept by a repeat, cleared by any other key.
+    public static func afterRestoreCard(was: Bool, press: KeyPress, action: Action) -> Bool {
+        latch(was: was, press: press, setBy: action == .closeRestoreCard)
+    }
+
+    private static func latch(was: Bool, press: KeyPress, setBy: Bool) -> Bool {
+        if setBy { return true }
         return press.isRepeat ? was : false
     }
 
