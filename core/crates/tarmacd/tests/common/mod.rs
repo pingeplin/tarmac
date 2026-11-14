@@ -693,6 +693,18 @@ pub fn write_doc(path: &Path, content: &str) -> String {
     std::fs::canonicalize(path).unwrap().to_string_lossy().into_owned()
 }
 
+pub fn is_term_proc_for(msg: &Msg, want: &str) -> bool {
+    matches!(msg, Msg::TermProc { term_id, .. } if term_id == want)
+}
+
+pub fn is_exit_for(msg: &Msg, want: &str) -> bool {
+    matches!(msg, Msg::Exit { term_id, .. } if term_id == want)
+}
+
+pub fn is_bell_for(msg: &Msg, want: &str) -> bool {
+    matches!(msg, Msg::Bell { term_id, .. } if term_id == want)
+}
+
 pub fn is_file_event_for(msg: &Msg, want: &str) -> bool {
     matches!(msg, Msg::FileEvent { path, .. } if path == want)
 }

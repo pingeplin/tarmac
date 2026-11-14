@@ -19,13 +19,8 @@ pub async fn handle(daemon: Arc<Daemon>, stream: UnixStream, peer_pid: Option<li
     }
 }
 
-pub(crate) async fn write_msg(
-    w: &mut (impl AsyncWrite + Unpin),
-    msg: &Msg,
-) -> anyhow::Result<()> {
-    let payload = proto::encode(msg)?;
-    frame::write_async(w, &payload).await?;
-    Ok(())
+async fn write_msg(w: &mut (impl AsyncWrite + Unpin), msg: &Msg) -> anyhow::Result<()> {
+    Ok(frame::write_msg_async(w, msg).await?)
 }
 
 async fn reject(w: &mut (impl AsyncWrite + Unpin), msg: String) -> anyhow::Result<()> {
@@ -215,12 +210,10 @@ async fn change_and_send_active_board(
     let _ = conn.tx.send(board_list).await;
     let _ = conn.tx.send(restore).await;
     // After the restore: the app reads a doc of a board it has already built
-    // again on a `file_event` only. Published too, since this send does not
-    // pass `push`; the report replays below are not changes and are not.
+    // again on a `file_event` only. The report replays below are not
+    // changes, and are not published.
     for (path, mtime_ms) in tell {
-        let event = docs::file_event(&path, mtime_ms);
-        daemon.events.publish(&event);
-        if conn.tx.send(event).await.is_err() {
+        if conn.tx.send(daemon.published(docs::file_event(&path, mtime_ms))).await.is_err() {
             daemon.boards.lock().await.hold(&active_id, &path);
         }
     }
@@ -454,8 +447,7 @@ async fn spawn_cwd(
     let cwd = match cwd {
         Some(cwd) => cwd,
         None => {
-            let pid = daemon.term(&inherit_cwd_from?).await?.foreground_pid()?;
-            daemon.gate().pid_cwd(pid).await.ok()??
+            daemon.term(&inherit_cwd_from?).await?.foreground_read(daemon.gate()).await?.1?
         }
     };
     let path = PathBuf::from(&cwd);

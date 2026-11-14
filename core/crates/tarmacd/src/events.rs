@@ -7,7 +7,7 @@
 use std::collections::VecDeque;
 use std::time::Duration;
 
-use tarmac_protocol::Msg;
+use tarmac_protocol::{EventKind, Msg, frame};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 use tokio::sync::broadcast::{self, error::RecvError};
 
@@ -21,18 +21,7 @@ const EXIT_RING: usize = 64;
 const LAGGED_WRITE: Duration = Duration::from_secs(1);
 
 pub fn is_event(msg: &Msg) -> bool {
-    kind_of(msg).is_some()
-}
-
-/// The frame's kind and terminal; `None` for a frame that is not an event.
-fn kind_of(msg: &Msg) -> Option<(Kind, Option<&str>)> {
-    match msg {
-        Msg::Exit { term_id, .. } => Some((Kind::Exit, Some(term_id))),
-        Msg::Bell { term_id, .. } => Some((Kind::Bell, Some(term_id))),
-        Msg::FileEvent { .. } => Some((Kind::Changed, None)),
-        Msg::TermReport { term_id, .. } => Some((Kind::Report, Some(term_id))),
-        _ => None,
-    }
+    EventKind::of(msg).is_some()
 }
 
 pub struct Fanout(broadcast::Sender<Msg>);
@@ -79,28 +68,8 @@ impl ExitRing {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Kind {
-    Exit,
-    Bell,
-    Changed,
-    Report,
-}
-
-impl Kind {
-    /// The cli's name, on the wire in `subscribe.kinds`.
-    fn name(self) -> &'static str {
-        match self {
-            Kind::Exit => "exit",
-            Kind::Bell => "bell",
-            Kind::Changed => "changed",
-            Kind::Report => "report",
-        }
-    }
-}
-
 pub struct Filter {
-    kinds: Vec<Kind>,
+    kinds: Vec<EventKind>,
     term_id: Option<String>,
 }
 
@@ -108,10 +77,9 @@ impl Filter {
     /// `kinds` names `exit`, `bell`, `changed` and `report`; `None` is all
     /// four. Unknown names are ignored; none known left is the `Err`.
     pub fn new(kinds: Option<Vec<String>>, term_id: Option<String>) -> Result<Filter, String> {
-        let all = [Kind::Exit, Kind::Bell, Kind::Changed, Kind::Report];
-        let kinds: Vec<Kind> = match kinds {
-            None => all.to_vec(),
-            Some(names) => all.into_iter().filter(|k| names.iter().any(|n| n == k.name())).collect(),
+        let kinds: Vec<EventKind> = match kinds {
+            None => EventKind::ALL.to_vec(),
+            Some(names) => EventKind::ALL.into_iter().filter(|k| names.iter().any(|n| n == k.name())).collect(),
         };
         if kinds.is_empty() {
             return Err("no known event kind".into());
@@ -119,13 +87,13 @@ impl Filter {
         Ok(Filter { kinds, term_id })
     }
 
-    pub fn wants(&self, kind: Kind) -> bool {
+    pub fn wants(&self, kind: EventKind) -> bool {
         self.kinds.contains(&kind)
     }
 
     /// A `file_event` has no terminal, so a terminal filter never admits one.
     pub fn admits(&self, msg: &Msg) -> bool {
-        let Some((kind, term_id)) = kind_of(msg) else { return false };
+        let Some((kind, term_id)) = EventKind::of(msg) else { return false };
         self.wants(kind) && self.term_id.as_deref().is_none_or(|want| term_id == Some(want))
     }
 }
@@ -151,10 +119,10 @@ pub async fn subscribe(daemon: &Daemon, kinds: Option<Vec<String>>, term_id: Opt
         if !live && exited.is_none() {
             return Err(format!("unknown terminal: {id}"));
         }
-        if filter.wants(Kind::Report) {
+        if filter.wants(EventKind::Report) {
             snapshot.extend(daemon.reports.lock().await.snapshot(std::slice::from_ref(&id)));
         }
-        if let Some(code) = exited.filter(|_| filter.wants(Kind::Exit)) {
+        if let Some(code) = exited.filter(|_| filter.wants(EventKind::Exit)) {
             snapshot.push(Msg::Exit { term_id: id, code, board_id: None });
         }
     }
@@ -180,13 +148,13 @@ pub async fn serve(
             }
             got = rx.recv() => match got {
                 Ok(msg) => {
-                    if filter.admits(&msg) && crate::conn::write_msg(&mut write, &msg).await.is_err() {
+                    if filter.admits(&msg) && frame::write_msg_async(&mut write, &msg).await.is_err() {
                         return;
                     }
                 }
                 Err(RecvError::Lagged(_)) => {
                     let lagged = Msg::Err { msg: "lagged".into() };
-                    let _ = tokio::time::timeout(LAGGED_WRITE, crate::conn::write_msg(&mut write, &lagged)).await;
+                    let _ = tokio::time::timeout(LAGGED_WRITE, frame::write_msg_async(&mut write, &lagged)).await;
                     return;
                 }
                 Err(RecvError::Closed) => return,
@@ -198,7 +166,7 @@ pub async fn serve(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tarmac_protocol::{frame, DocEntry};
+    use tarmac_protocol::DocEntry;
     use tokio::io::{AsyncWriteExt, DuplexStream};
 
     fn bell(term_id: &str) -> Msg {
@@ -398,5 +366,24 @@ mod tests {
         assert_eq!(next_frame(&mut client).await.unwrap(), Msg::Err { msg: "lagged".into() });
         assert_eq!(next_frame(&mut client).await.unwrap_err().kind(), std::io::ErrorKind::UnexpectedEof);
         task.await.unwrap();
+    }
+
+    // S21: a client that reads nothing still has its stream closed, within
+    // the limit of the `lagged` write (D7).
+    #[tokio::test]
+    async fn the_lagged_write_has_a_limit_when_the_client_reads_nothing() {
+        let fanout = Fanout::new(2);
+        let (_client, server) = tokio::io::duplex(8);
+        let rx = fanout.subscribe();
+        for n in 1..=3 {
+            fanout.publish(&bell(&format!("t{n}")));
+        }
+
+        let task = tokio::spawn(async move {
+            let (read, write) = tokio::io::split(server);
+            serve(rx, &Filter::new(None, None).unwrap(), read, write).await;
+        });
+
+        tokio::time::timeout(LAGGED_WRITE + Duration::from_millis(500), task).await.expect("serve ends after the limit").unwrap();
     }
 }

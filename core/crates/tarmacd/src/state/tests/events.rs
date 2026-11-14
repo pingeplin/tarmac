@@ -17,6 +17,10 @@ async fn next_matching(rx: &mut tokio::sync::broadcast::Receiver<Msg>, pred: imp
     tokio::time::timeout(Duration::from_secs(5), found).await.expect("a frame")
 }
 
+fn is_file_event(msg: &Msg, path: &Path) -> bool {
+    matches!(msg, Msg::FileEvent { path: p, .. } if Path::new(p) == path)
+}
+
 fn exits(daemon: &Daemon, term_id: &str) -> Option<Option<i64>> {
     daemon.exits.lock().unwrap().lookup(term_id)
 }
@@ -62,6 +66,25 @@ async fn a_file_event_reaches_a_subscriber_and_the_doc_is_still_held_with_no_app
     let told = next_matching(&mut rx, |m| matches!(m, Msg::FileEvent { mtime_ms: 5, .. })).await;
     assert_eq!(told, crate::docs::file_event(&doc, 5));
     assert!(daemon.boards.lock().await.active_registry().docs[&doc].untold);
+}
+
+// A `doc_refresh` and a `data_file` tell the app of a file too: each is
+// published, the same file again included (D5).
+#[tokio::test]
+async fn a_refresh_and_a_data_file_reach_a_subscriber() {
+    let tmp = canon_tmp("tap-refresh");
+    let doc = write_doc(tmp.join("dash.html"));
+    let data = write_doc(tmp.join("stats.json"));
+    let daemon = on_source(tmp.join("state.json"), Silent).await;
+    let _app = connect_app(&daemon).await;
+    open_doc(&daemon, None, &doc).await;
+    let board = daemon.boards.lock().await.active_id().to_string();
+    let mut rx = daemon.events.subscribe();
+
+    assert!(crate::docs::stat_and_push(&daemon, &doc).await);
+    next_matching(&mut rx, |m| is_file_event(m, &doc)).await;
+    assert!(crate::docs::record_data(&daemon, &board, &doc, Some(data.clone())).await);
+    next_matching(&mut rx, |m| is_file_event(m, &data)).await;
 }
 
 // S22

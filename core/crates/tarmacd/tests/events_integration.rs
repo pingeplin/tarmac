@@ -6,8 +6,8 @@ mod common;
 use std::time::{Duration, Instant};
 
 use common::{
-    Conn, FrameLog, LONG, Spawn, TestDaemon, canon_dir, cli_open, cli_terms, edit, is_file_event_for, none_within,
-    settle, subscriber, temp_dir, write_doc,
+    Conn, FrameLog, LONG, Spawn, TestDaemon, canon_dir, cli_open, cli_terms, edit, is_bell_for, is_exit_for,
+    is_file_event_for, is_term_proc_for, none_within, settle, subscriber, temp_dir, write_doc,
 };
 use tarmac_protocol::{Msg, frame};
 
@@ -15,18 +15,6 @@ use tarmac_protocol::{Msg, frame};
 const WAITS: &[&str] = &["/bin/zsh", "-f", "-c", "read _; exit 3"];
 const READS: &[&str] = &["/bin/zsh", "-f", "-c", "read _"];
 const RINGS: &[&str] = &["/bin/zsh", "-f", "-c", "read _; printf '\\a'; read _"];
-
-fn is_term_proc_for(msg: &Msg, want: &str) -> bool {
-    matches!(msg, Msg::TermProc { term_id, .. } if term_id == want)
-}
-
-fn is_exit_for(msg: &Msg, want: &str) -> bool {
-    matches!(msg, Msg::Exit { term_id, .. } if term_id == want)
-}
-
-fn is_bell_for(msg: &Msg, want: &str) -> bool {
-    matches!(msg, Msg::Bell { term_id, .. } if term_id == want)
-}
 
 /// `cmd` spawned as `term_id`, once its process runs: its first `term_proc`.
 fn spawned(app: &mut Conn, term_id: &str, cmd: &[&str], opts: Spawn) {

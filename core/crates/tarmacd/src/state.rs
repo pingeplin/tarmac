@@ -71,8 +71,8 @@ pub struct Daemon {
     /// before `app` (in `push`); `boards` and `terms` are never taken while
     /// it is held.
     pub reports: Mutex<Reports>,
-    /// The `exit`, `bell`, `file_event` and `term_report` frames `push`
-    /// gives the app, for `tarmac events` and `wait`.
+    /// The `exit`, `bell`, `file_event` and `term_report` frames the app is
+    /// given, for `tarmac events` and `wait` (`published`).
     pub events: crate::events::Fanout,
     /// Written in `term_ended` before the term leaves `terms`, so an id is
     /// always live, in the ring, or unknown. Held for a read or a write only.
@@ -717,7 +717,7 @@ impl Daemon {
         let msg = change(&mut reports);
         handle.set_report(reports.has(term_id), reports.unread(term_id));
         if let Some(msg) = msg {
-            self.push(msg).await;
+            self.emit(msg).await;
         }
     }
 
@@ -738,31 +738,29 @@ impl Daemon {
     /// one for each terminal. No lock is held while they are read.
     pub async fn terms_list(&self) -> Vec<TermInfo> {
         let by_board = self.live_terms_by_board().await;
-        let order: Vec<BoardId> = self.boards.lock().await.iter().map(|b| b.id.clone()).collect();
-        let place = |board: &BoardId| order.iter().position(|b| b == board).unwrap_or(usize::MAX);
-        let mut rows: Vec<TermInfo> = by_board
-            .into_iter()
-            .flat_map(|(board_id, ids)| ids.into_iter().map(move |term_id| TermInfo { term_id, board_id: board_id.clone(), cwd: None, proc: None }))
-            .collect();
-        rows.sort_by(|a, b| (place(&a.board_id), &a.term_id).cmp(&(place(&b.board_id), &b.term_id)));
-        let handles: Vec<Option<Arc<TermHandle>>> = {
+        let live: Vec<(String, BoardId, Arc<TermHandle>)> = {
             let terms = self.terms.lock().await;
-            rows.iter().map(|row| terms.get(&row.term_id).cloned()).collect()
+            by_board
+                .into_iter()
+                .flat_map(|(board_id, ids)| ids.into_iter().map(move |term_id| (term_id, board_id.clone())))
+                .filter_map(|(term_id, board_id)| Some((term_id.clone(), board_id, terms.get(&term_id)?.clone())))
+                .collect()
         };
         let mut reads = tokio::task::JoinSet::new();
-        for (i, handle) in handles.into_iter().enumerate() {
-            let (Some(handle), gate) = (handle, self.gate.clone()) else { continue };
+        for (term_id, board_id, handle) in live {
+            let gate = self.gate.clone();
             reads.spawn(async move {
-                let Some(pid) = handle.foreground_pid() else { return (i, None, None) };
-                let name = proc::process_name(pid);
-                (i, gate.pid_cwd(pid).await.ok().flatten(), name)
+                let (pid, cwd) = handle.foreground_read(&gate).await.unzip();
+                TermInfo { term_id, board_id, cwd: cwd.flatten(), proc: pid.and_then(proc::process_name) }
             });
         }
+        let mut rows = Vec::new();
         while let Some(read) = reads.join_next().await {
-            if let Ok((i, cwd, name)) = read {
-                (rows[i].cwd, rows[i].proc) = (cwd, name);
-            }
+            rows.extend(read.ok());
         }
+        let order: Vec<BoardId> = self.boards.lock().await.iter().map(|b| b.id.clone()).collect();
+        // Ids sort as text, so `t10` comes before `t2`.
+        rows.sort_by_cached_key(|row| (order.iter().position(|b| *b == row.board_id).unwrap_or(usize::MAX), row.term_id.clone()));
         rows
     }
 
@@ -784,9 +782,20 @@ impl Daemon {
 
     /// Pushes to the connected app. False when there is none, or it went
     /// away: the frame is dropped.
-    /// A subscriber gets it too, but is not an app: the return is the app's.
-    pub async fn push(&self, msg: Msg) -> bool {
+    /// `msg`, published to the subscribers first (spec 2611.0012): every
+    /// event frame for the app passes here, whatever channel then sends it.
+    pub fn published(&self, msg: Msg) -> Msg {
         self.events.publish(&msg);
+        msg
+    }
+
+    /// An event frame, published and then pushed. The return is `push`'s: a
+    /// subscriber is not an app.
+    pub async fn emit(&self, msg: Msg) -> bool {
+        self.push(self.published(msg)).await
+    }
+
+    pub async fn push(&self, msg: Msg) -> bool {
         let tx = self.app.lock().await.as_ref().map(|s| s.tx.clone());
         match tx {
             Some(tx) => tx.send(msg).await.is_ok(),

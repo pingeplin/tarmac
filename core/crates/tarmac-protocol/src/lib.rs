@@ -291,6 +291,45 @@ pub struct BoardMeta {
     pub running: Option<u32>,
 }
 
+/// The kinds of frame a `subscribe` names (spec 2611.0012), by the cli's
+/// names on the wire in `kinds`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum EventKind {
+    Exit,
+    Bell,
+    Changed,
+    Report,
+}
+
+impl EventKind {
+    pub const ALL: [EventKind; 4] = [EventKind::Exit, EventKind::Bell, EventKind::Changed, EventKind::Report];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            EventKind::Exit => "exit",
+            EventKind::Bell => "bell",
+            EventKind::Changed => "changed",
+            EventKind::Report => "report",
+        }
+    }
+
+    pub fn named(name: &str) -> Option<EventKind> {
+        EventKind::ALL.into_iter().find(|k| k.name() == name)
+    }
+
+    /// The kind of an event frame and its terminal, `None` for any other
+    /// frame. A `file_event` has no terminal.
+    pub fn of(msg: &Msg) -> Option<(EventKind, Option<&str>)> {
+        match msg {
+            Msg::Exit { term_id, .. } => Some((EventKind::Exit, Some(term_id))),
+            Msg::Bell { term_id, .. } => Some((EventKind::Bell, Some(term_id))),
+            Msg::FileEvent { .. } => Some((EventKind::Changed, None)),
+            Msg::TermReport { term_id, .. } => Some((EventKind::Report, Some(term_id))),
+            _ => None,
+        }
+    }
+}
+
 /// One live terminal in `terms`. `cwd` and `proc` are the daemon's fresh reads,
 /// missing when it could not read them.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]

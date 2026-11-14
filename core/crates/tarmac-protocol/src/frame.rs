@@ -55,6 +55,13 @@ pub async fn write_async(
     w.write_all(payload).await
 }
 
+/// `msg`, encoded and framed.
+#[cfg(feature = "async")]
+pub async fn write_msg_async(w: &mut (impl tokio::io::AsyncWrite + Unpin), msg: &crate::Msg) -> io::Result<()> {
+    let payload = crate::encode(msg).map_err(io::Error::other)?;
+    write_async(w, &payload).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
