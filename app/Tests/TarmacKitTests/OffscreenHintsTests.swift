@@ -426,7 +426,7 @@ final class OffscreenHintLayoutTests: XCTestCase {
         XCTAssertEqual(tops[13], 940, "one stackGap past the sibling")
     }
 
-    // MARK: - the minimap and the toasts (#365)
+    // MARK: - the corner chrome
 
     /// The minimap over this view: 132×88, 12 in from the right and the bottom.
     private let minimap = CGRect(x: 856, y: 700, width: 132, height: 88)
@@ -516,6 +516,41 @@ final class OffscreenHintLayoutTests: XCTestCase {
         )
         XCTAssertEqual(pills.count, 4)
         assertClear(pills, of: [toast, minimap])
+    }
+
+    /// The zoom control over this view's bottom-left corner.
+    private let zoomControl = CGRect(x: 12, y: 762, width: 160, height: 26)
+
+    /// The card's padded span is [92, 708]: no room to its left past the zoom
+    /// control, so the pill takes the gap to its right.
+    func testABottomPillDoesNotShiftLeftUnderTheZoomControl() throws {
+        let card = CGRect(x: 100, y: 600, width: 600, height: 300)
+        let pill = try XCTUnwrap(
+            stack([hint("b", CGPoint(x: 680, y: 2000), .live, 0)], obstacles: [card], chrome: [minimap, zoomControl]).first
+        )
+        XCTAssertEqual(pill.left, 708, "card.maxX + stackGap")
+        assertClear([pill], of: [minimap, zoomControl])
+    }
+
+    /// Eleven pills fill the bottom band; one overflows whichever way the edge
+    /// is resolved. Resolving it again from its end must not push out a second.
+    func testResolvingAnEdgeFromItsEndPushesNoMorePillsOutOfTheView() {
+        let pills = stack(
+            (0..<11).map { hint("p\($0)", CGPoint(x: 100 + 80 * CGFloat($0), y: 2000), .live, 0) },
+            chrome: [minimap]
+        )
+        XCTAssertEqual(pills.count, 11)
+        let outside = pills.filter { !view.insetBy(dx: 10, dy: 10).contains(rect(of: $0)) }
+        XCTAssertLessThanOrEqual(outside.count, 1, "\(outside.map(\.left))")
+    }
+
+    /// The gap right of the card runs from its padded edge, 840, to the band's
+    /// end, 990: room for the 80-point pill.
+    func testThePillFitsTheLastGapOfTheBand() throws {
+        let card = CGRect(x: 50, y: 700, width: 782, height: 200)
+        let pill = try XCTUnwrap(stack([hint("b", CGPoint(x: 760, y: 2000), .live, 0)], obstacles: [card]).first)
+        XCTAssertEqual(pill.left, 840, "card.maxX + stackGap")
+        XCTAssertFalse(pill.occluded)
     }
 
     /// The right band runs past the toast and the minimap; the pill wants 748.

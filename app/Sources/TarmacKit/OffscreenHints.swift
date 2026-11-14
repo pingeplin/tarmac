@@ -323,8 +323,10 @@ public enum OffscreenHintLayout {
             return pos
         }
 
+        // `posHi` bounds a pill's start; the window's spans run to its end.
+        let end = posHi + length
         let windowed = merged(obstacles)
-            .map { Interval(lo: max($0.lo, lo), hi: min($0.hi, posHi)) }
+            .map { Interval(lo: max($0.lo, lo), hi: min($0.hi, end)) }
             .filter { $0.hi > $0.lo }
         let clampedDesired = BoardWayfinding.clamp(desired, lo, posHi)
         if !windowed.contains(where: { clampedDesired < $0.hi && clampedDesired + length > $0.lo }) {
@@ -337,7 +339,7 @@ public enum OffscreenHintLayout {
             if obstacle.lo > cursor { gaps.append(Interval(lo: cursor, hi: obstacle.lo)) }
             cursor = max(cursor, obstacle.hi)
         }
-        if posHi > cursor { gaps.append(Interval(lo: cursor, hi: posHi)) }
+        if end > cursor { gaps.append(Interval(lo: cursor, hi: end)) }
 
         func nearest(where accept: (CGFloat) -> Bool) -> CGFloat? {
             var best: CGFloat?
