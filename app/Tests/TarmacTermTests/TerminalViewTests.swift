@@ -7,13 +7,17 @@ final class TerminalViewTests: XCTestCase {
     private var view: TerminalView!
     private var window: NSWindow!
     private var sent: [UInt8] = []
+    private var calls: [Sent] = []
     private var resizes: [[Int]] = []
 
     private var sentText: String { String(decoding: sent, as: UTF8.self) }
 
     override func setUp() async throws {
         view = try TerminalView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
-        view.onInput = { [unowned self] in self.sent.append(contentsOf: $0) }
+        view.onInput = { [unowned self] in
+            self.sent.append(contentsOf: $0)
+            self.calls.append(Sent(text: String(decoding: $0, as: UTF8.self), source: $1))
+        }
         view.onResize = { [unowned self] in self.resizes.append([$0, $1]) }
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
@@ -22,6 +26,7 @@ final class TerminalViewTests: XCTestCase {
         window.contentView?.addSubview(view)
         window.makeFirstResponder(view)
         sent = []
+        calls = []
         resizes = []
     }
 
@@ -1021,7 +1026,7 @@ final class TerminalViewTests: XCTestCase {
             frame: NSRect(x: 0, y: 0, width: 600, height: 400), fontSize: 20, fontFamily: "Monaco",
             backingScale: other
         )
-        view.onInput = { [unowned self] in self.sent.append(contentsOf: $0) }
+        view.onInput = { [unowned self] bytes, _ in self.sent.append(contentsOf: bytes) }
         window.contentView?.addSubview(view)
 
         view.feed(Data("\u{1b}[14t".utf8))
@@ -1172,7 +1177,7 @@ final class TerminalViewTests: XCTestCase {
     func test2610_0007S23ColourQueriesAreAnsweredFromTheThemeGivenAtInit() throws {
         let view = try TerminalView(frame: NSRect(x: 0, y: 0, width: 600, height: 400), theme: light)
         var sent: [UInt8] = []
-        view.onInput = { sent.append(contentsOf: $0) }
+        view.onInput = { bytes, _ in sent.append(contentsOf: bytes) }
 
         view.feed(Data(colourQueries.utf8))
         feed("\u{1b}[?996n")
@@ -1409,6 +1414,181 @@ final class TerminalViewTests: XCTestCase {
         view.onTitleChanged = { titles.append($0) }
         feed("\u{1b}]2;vim\u{07}")
         XCTAssertEqual(titles, ["vim"])
+    }
+
+    // MARK: the source of each send (2611.0008)
+
+    private struct Sent: Equatable {
+        var text: String
+        var source: InputSource
+    }
+
+    /// S1
+    func test2611_0008S1AKeyPressIsTheUsers() {
+        view.keyDown(with: key("a", code: 0x00))
+
+        XCTAssertEqual(calls, [Sent(text: "a", source: .user)])
+    }
+
+    /// S1
+    func test2611_0008S1BytesTheHostSendsForAChordAreTheUsers() {
+        view.keyOverride = { _ in [0x15] }
+
+        view.keyDown(with: key("\u{7f}", code: 0x33, flags: .command))
+
+        XCTAssertEqual(calls, [Sent(text: "\u{15}", source: .user)])
+    }
+
+    /// S2
+    func test2611_0008S2APasteIsTheUsers() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString("hi", forType: .string)
+
+        view.paste(nil)
+
+        XCTAssertEqual(calls, [Sent(text: "hi", source: .user)])
+    }
+
+    /// S3
+    func test2611_0008S3SentTextIsTheUsers() {
+        view.sendText("x")
+
+        XCTAssertEqual(calls, [Sent(text: "x", source: .user)])
+    }
+
+    /// S3
+    func test2611_0008S3AnImeCommitIsTheUsers() {
+        view.insertText("你", replacementRange: NSRange(location: NSNotFound, length: 0))
+
+        XCTAssertEqual(calls, [Sent(text: "你", source: .user)])
+    }
+
+    /// S4
+    func test2611_0008S4AKeyReleaseIsTheUsers() throws {
+        feed("\u{1b}[>3u")
+        let release = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyUp, location: .zero, modifierFlags: [], timestamp: 1, windowNumber: window.windowNumber,
+            context: nil, characters: "n", charactersIgnoringModifiers: "n", isARepeat: false, keyCode: 0x2d
+        ))
+
+        view.keyUp(with: release)
+
+        XCTAssertFalse(calls.isEmpty)
+        XCTAssertEqual(calls.map(\.source), [.user])
+    }
+
+    /// S4
+    func test2611_0008S4AModifierKeyIsTheUsers() throws {
+        feed("\u{1b}[>8u")
+        let shift = try XCTUnwrap(NSEvent.keyEvent(
+            with: .flagsChanged, location: .zero, modifierFlags: .shift, timestamp: 1,
+            windowNumber: window.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "",
+            isARepeat: false, keyCode: 0x38
+        ))
+
+        view.flagsChanged(with: shift)
+
+        XCTAssertFalse(calls.isEmpty)
+        XCTAssertEqual(calls.map(\.source), [.user])
+    }
+
+    /// S5b
+    func test2611_0008S5bAHoverReportIsTheTerminals() throws {
+        feed("\u{1b}[?1003h\u{1b}[?1006h")
+
+        view.mouseMoved(with: try mouse(.mouseMoved, col: 2, row: 0))
+
+        XCTAssertEqual(calls, [Sent(text: "\u{1b}[<35;3;1M", source: .terminal)])
+    }
+
+    /// S5
+    func test2611_0008S5AMousePressReportIsTheUsers() throws {
+        feed("\u{1b}[?1000h\u{1b}[?1006h")
+
+        view.mouseDown(with: try mouse(.leftMouseDown, col: 2, row: 0))
+
+        XCTAssertEqual(calls, [Sent(text: "\u{1b}[<0;3;1M", source: .user)])
+    }
+
+    /// S5
+    func test2611_0008S5AWheelReportIsTheUsers() throws {
+        feed("\u{1b}[?1000h\u{1b}[?1006h")
+
+        view.scrollWheel(with: try wheel(lines: 1))
+
+        XCTAssertEqual(calls.count, 1)
+        XCTAssertTrue(calls[0].text.hasPrefix("\u{1b}[<64;"), calls[0].text.debugDescription)
+        XCTAssertEqual(calls[0].source, .user)
+    }
+
+    /// S5 — mode 1000 reports no motion, so the drag uses button-event mode.
+    func test2611_0008S5ADragReportIsTheUsers() throws {
+        feed("\u{1b}[?1002h\u{1b}[?1006h")
+        view.mouseDown(with: try mouse(.leftMouseDown, col: 2, row: 0))
+        calls = []
+
+        view.mouseDragged(with: try mouse(.leftMouseDragged, col: 4, row: 0))
+
+        XCTAssertEqual(calls, [Sent(text: "\u{1b}[<32;5;1M", source: .user)])
+    }
+
+    /// S6
+    func test2611_0008S6AWheelInTheAlternateScreenIsTheUsers() throws {
+        feed("\u{1b}[?1049h")
+
+        view.scrollWheel(with: try wheel(lines: 1))
+
+        XCTAssertEqual(calls, [Sent(text: "\u{1b}[A", source: .user)])
+    }
+
+    /// S7
+    func test2611_0008S7FocusReportsAreTheTerminals() {
+        feed("\u{1b}[?1004h")
+
+        window.makeFirstResponder(nil)
+        window.makeFirstResponder(view)
+
+        XCTAssertEqual(calls, [Sent(text: "\u{1b}[O", source: .terminal), Sent(text: "\u{1b}[I", source: .terminal)])
+    }
+
+    /// S8
+    func test2611_0008S8AnEngineReplyIsTheTerminals() {
+        feed("\u{1b}[c")
+
+        XCTAssertEqual(calls, [Sent(text: "\u{1b}[?62;22c", source: .terminal)])
+    }
+
+    /// S9
+    func test2611_0008S9AColourSchemeReportIsTheTerminals() {
+        feed("\u{1b}[?2031h")
+
+        view.theme = light
+        view.theme = dark
+
+        XCTAssertEqual(calls, [
+            Sent(text: "\u{1b}[?997;2n", source: .terminal), Sent(text: "\u{1b}[?997;1n", source: .terminal),
+        ])
+    }
+
+    /// S12
+    func test2611_0008S12AReplaySendsNothing() {
+        view.replay(Data("\u{1b}[c".utf8))
+
+        XCTAssertEqual(calls, [])
+    }
+
+    /// S13
+    func test2611_0008S13EachSendKeepsItsOwnSource() {
+        feed("\u{1b}[?1004h")
+
+        window.makeFirstResponder(nil)
+        view.keyDown(with: key("a", code: 0x00))
+        window.makeFirstResponder(view)
+
+        XCTAssertEqual(calls, [
+            Sent(text: "\u{1b}[O", source: .terminal), Sent(text: "a", source: .user),
+            Sent(text: "\u{1b}[I", source: .terminal),
+        ])
     }
 }
 

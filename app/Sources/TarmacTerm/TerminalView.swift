@@ -14,15 +14,20 @@ public struct TerminalKeyChord: Equatable, Sendable {
     }
 }
 
+/// Who a send to the PTY comes from: the user acting on the view, or the
+/// terminal answering a program or reporting by itself.
+public enum InputSource: Sendable, Equatable { case user, terminal }
+
 /// A terminal surface: libghostty-vt holds the emulator state; this view draws
 /// it with CoreText and turns AppKit events into PTY bytes. It owns no PTY —
-/// output is `feed`, and everything the user does leaves through `onInput`.
+/// output is `feed`, and everything the user does leaves through `onInput`, and
+/// so do the terminal's own replies and reports, each tagged with its source.
 ///
 /// Layout is in the view's own bounds, so a host that scales the view (the
 /// board's zoom) never changes cols×rows; only a real resize does.
 @MainActor
 public final class TerminalView: NSView {
-    public var onInput: (([UInt8]) -> Void)?
+    public var onInput: (([UInt8], InputSource) -> Void)?
     public var onResize: ((_ cols: Int, _ rows: Int) -> Void)?
     public var onTitleChanged: ((String?) -> Void)?
     public var onBell: (() -> Void)?
@@ -73,7 +78,7 @@ public final class TerminalView: NSView {
             let previous = renderer.theme
             guard newValue != previous, (try? engine.apply(newValue)) != nil else { return }
             renderer.theme = newValue
-            if newValue.isDark != previous.isDark { send(engine.encodeColorScheme(dark: newValue.isDark)) }
+            if newValue.isDark != previous.isDark { send(engine.encodeColorScheme(dark: newValue.isDark), source: .terminal) }
             // Every row of the frame after a theme is applied is dirty,
             // whichever colour changed, so reading it redraws the whole view.
             readIfNotHeld()
@@ -194,7 +199,7 @@ public final class TerminalView: NSView {
     }
 
     private func wireEffects() {
-        engine.effects.onWritePty = { [weak self] in self?.onInput?($0) }
+        engine.effects.onWritePty = { [weak self] in self?.onInput?($0, .terminal) }
         engine.effects.onBell = { [weak self] in self?.onBell?() }
         engine.effects.onTitleChanged = { [weak self] in
             guard let self else { return }
@@ -386,7 +391,7 @@ public final class TerminalView: NSView {
     private func reportFocus(_ focused: Bool) {
         guard focused != reportedFocus else { return }
         reportedFocus = focused
-        send(engine.encodeFocus(gained: focused))
+        send(engine.encodeFocus(gained: focused), source: .terminal)
     }
 
     public override func viewDidMoveToWindow() {
@@ -447,9 +452,9 @@ public final class TerminalView: NSView {
 
     // MARK: sending
 
-    func send(_ bytes: [UInt8]) {
+    func send(_ bytes: [UInt8], source: InputSource) {
         guard !bytes.isEmpty else { return }
-        onInput?(bytes)
+        onInput?(bytes, source)
     }
 
     /// Bytes the user typed: besides reaching the PTY they drop the selection
@@ -459,7 +464,7 @@ public final class TerminalView: NSView {
         if hasSelection { selection.clear() }
         if !engine.isViewportAtBottom { engine.scrollViewport(.bottom) }
         scheduleRead()
-        send(bytes)
+        send(bytes, source: .user)
     }
 
     public func sendText(_ text: String) {
@@ -516,7 +521,7 @@ public final class TerminalView: NSView {
         guard !hasMarkedText() else { return }
         send(engine.encode(KeyInput(
             action: pressed ? .press : .release, key: KeyTranslation.key(forKeyCode: event.keyCode), mods: mods
-        )))
+        )), source: .user)
     }
 
     /// AppKit offers ⌘ and ⌃ chords here before `keyDown`. The menu owns ⌘ chords
@@ -573,7 +578,7 @@ public final class TerminalView: NSView {
             composing: composing
         )
         let bytes = engine.encode(input)
-        if action == .release { send(bytes) } else { sendTyped(bytes) }
+        if action == .release { send(bytes, source: .user) } else { sendTyped(bytes) }
     }
 
     // MARK: edit commands
@@ -606,7 +611,7 @@ public final class TerminalView: NSView {
         engine.isMouseTracking && !event.modifierFlags.contains(.option)
     }
 
-    private func report(_ event: NSEvent, action: MouseAction, button: MouseButton?) {
+    private func report(_ event: NSEvent, action: MouseAction, button: MouseButton?, source: InputSource) {
         guard let gridLayout, let point = surfacePoint(event) else { return }
         // A drag that leaves the grid keeps reporting from its nearest edge.
         let size = gridLayout.gridSize
@@ -616,7 +621,7 @@ public final class TerminalView: NSView {
             x: min(max(point.x, 0), size.width - 1), y: min(max(point.y, 0), size.height - 1),
             anyButtonPressed: pressedButtons > 0
         )
-        send(engine.encode(input, surface: gridLayout.surface))
+        send(engine.encode(input, surface: gridLayout.surface), source: source)
     }
 
     public override func mouseDown(with event: NSEvent) {
@@ -626,7 +631,7 @@ public final class TerminalView: NSView {
         reportedLinkPress = nil
         if programOwnsMouse(event) {
             if opensLinks(event) { reportedLinkPress = surfacePoint(event).flatMap(linkPress(at:)) }
-            return report(event, action: .press, button: .left)
+            return report(event, action: .press, button: .left, source: .user)
         }
         guard let gridLayout, let point = surfacePoint(event) else { return }
         selection.press(point, time: event.timestamp, surface: gridLayout.surface)
@@ -635,7 +640,7 @@ public final class TerminalView: NSView {
 
     public override func mouseDragged(with event: NSEvent) {
         if surfacePoint(event).flatMap(cell(at:)) != reportedLinkPress?.cell { reportedLinkPress = nil }
-        if programOwnsMouse(event) { return report(event, action: .motion, button: .left) }
+        if programOwnsMouse(event) { return report(event, action: .motion, button: .left, source: .user) }
         guard let gridLayout, let point = surfacePoint(event) else { return }
         lastDragPoint = point
         selection.drag(point, surface: gridLayout.surface, rectangle: event.modifierFlags.contains(.option))
@@ -647,7 +652,7 @@ public final class TerminalView: NSView {
         pressedButtons = max(pressedButtons - 1, 0)
         stopAutoscroll()
         if programOwnsMouse(event) {
-            report(event, action: .release, button: .left)
+            report(event, action: .release, button: .left, source: .user)
             return openLinkUnderReportedClick(event)
         }
         guard let gridLayout, let point = surfacePoint(event) else { return }
@@ -759,30 +764,30 @@ public final class TerminalView: NSView {
     public override func rightMouseDown(with event: NSEvent) {
         guard programOwnsMouse(event) else { return super.rightMouseDown(with: event) }
         pressedButtons += 1
-        report(event, action: .press, button: .right)
+        report(event, action: .press, button: .right, source: .user)
     }
 
     public override func rightMouseUp(with event: NSEvent) {
         guard programOwnsMouse(event) else { return super.rightMouseUp(with: event) }
         pressedButtons = max(pressedButtons - 1, 0)
-        report(event, action: .release, button: .right)
+        report(event, action: .release, button: .right, source: .user)
     }
 
     public override func rightMouseDragged(with event: NSEvent) {
         guard programOwnsMouse(event) else { return super.rightMouseDragged(with: event) }
-        report(event, action: .motion, button: .right)
+        report(event, action: .motion, button: .right, source: .user)
     }
 
     public override func otherMouseDown(with event: NSEvent) {
         guard programOwnsMouse(event) else { return super.otherMouseDown(with: event) }
         pressedButtons += 1
-        report(event, action: .press, button: .middle)
+        report(event, action: .press, button: .middle, source: .user)
     }
 
     public override func otherMouseUp(with event: NSEvent) {
         guard programOwnsMouse(event) else { return super.otherMouseUp(with: event) }
         pressedButtons = max(pressedButtons - 1, 0)
-        report(event, action: .release, button: .middle)
+        report(event, action: .release, button: .middle, source: .user)
     }
 
     public override func updateTrackingAreas() {
@@ -804,7 +809,9 @@ public final class TerminalView: NSView {
         }
         updateHover(event)
         guard isFocused, programOwnsMouse(event), !hasSelection else { return }
-        report(event, action: .motion, button: nil)
+        // On a pannable board the pointer crosses cards on its way elsewhere:
+        // a hover is not the user acting on this one.
+        report(event, action: .motion, button: nil, source: .terminal)
     }
 
     public override func scrollWheel(with event: NSEvent) {
@@ -819,12 +826,12 @@ public final class TerminalView: NSView {
 
         if programOwnsMouse(event) {
             for _ in 0..<abs(lines) {
-                report(event, action: .press, button: lines > 0 ? .wheelUp : .wheelDown)
+                report(event, action: .press, button: lines > 0 ? .wheelUp : .wheelDown, source: .user)
             }
         } else if engine.isAlternateScreen {
             // No scrollback here: the wheel walks the program's own view, as arrow keys.
             let key = lines > 0 ? GHOSTTY_KEY_ARROW_UP : GHOSTTY_KEY_ARROW_DOWN
-            for _ in 0..<abs(lines) { send(engine.encode(KeyInput(key: key))) }
+            for _ in 0..<abs(lines) { send(engine.encode(KeyInput(key: key)), source: .user) }
         } else {
             engine.scrollViewport(.rows(-lines))
             scheduleRead()

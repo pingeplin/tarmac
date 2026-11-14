@@ -292,9 +292,9 @@ final class DevVerbs {
     private func insert(_ char: String, into view: TerminalView) -> Bool {
         let forward = view.onInput
         var sent = false
-        view.onInput = { bytes in
+        view.onInput = { bytes, source in
             sent = true
-            forward?(bytes)
+            forward?(bytes, source)
         }
         defer { view.onInput = forward }
         view.insertText(char, replacementRange: NSRange(location: NSNotFound, length: 0))
