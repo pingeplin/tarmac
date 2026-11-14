@@ -2,13 +2,11 @@
 //! optional text, or `clear` (spec 2611.0009). The daemon finds the process
 //! the report belongs to; the cli only names the terminal.
 
-use std::io;
-
-use tarmac_protocol::{Msg, cap_report_text};
+use tarmac_protocol::{self as proto, Msg, cap_report_text};
 
 const USAGE: &str = "usage: tarmac report blocked|done [\"<text>\"]  |  tarmac report clear";
 const NEEDS_TERM: &str = "report needs TARMAC_TERM_ID (run it in a Tarmac terminal)";
-const NO_ANSWER: &str = "no answer from the daemon in 5 s (an older daemon)";
+
 
 pub fn run(args: &[String]) -> i32 {
     let Some((kind, text)) = parse(args) else {
@@ -48,10 +46,7 @@ fn parse(args: &[String]) -> Option<(&str, Option<&str>)> {
 }
 
 fn send(msg: &Msg) -> Result<(), String> {
+    let payload = proto::encode(msg).map_err(|e| format!("encode failed: {e}"))?;
     let mut stream = crate::connect()?;
-    crate::send(&mut stream, msg)?;
-    crate::answer(&mut stream, |e| match e.kind() {
-        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => NO_ANSWER.to_owned(),
-        _ => crate::lost(e),
-    })?
+    crate::exchange(&mut stream, &payload, "an older daemon")?
 }

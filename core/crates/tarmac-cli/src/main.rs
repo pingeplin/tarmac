@@ -134,6 +134,20 @@ fn answer(stream: &mut UnixStream, read_failed: impl Fn(io::Error) -> String) ->
     }
 }
 
+/// One request and its answer, as `answer` gives it. A read that times out
+/// is worded as no answer, with `why` saying what peer leaves one unanswered.
+fn exchange(stream: &mut UnixStream, payload: &[u8], why: &str) -> Result<Result<(), String>, String> {
+    frame::write_sync(stream, payload).map_err(lost)?;
+    answer(stream, |e| match e.kind() {
+        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => no_answer(why),
+        _ => lost(e),
+    })
+}
+
+fn no_answer(why: &str) -> String {
+    format!("no answer from the daemon in 5 s ({why})")
+}
+
 /// The `hello_ok` fields; `open` needs only the reply, `--version` renders all.
 struct DaemonInfo {
     daemon_version: Option<String>,

@@ -340,13 +340,10 @@ pub const REPORT_TEXT_MAX: usize = 280;
 /// `text`, or its first `REPORT_TEXT_MAX - 1` chars and `…` when it is longer.
 /// The cli and the daemon both cap with it.
 pub fn cap_report_text(text: &str) -> String {
-    match text.char_indices().nth(REPORT_TEXT_MAX) {
-        None => text.to_owned(),
-        Some(_) => {
-            let (cut, _) = text.char_indices().nth(REPORT_TEXT_MAX - 1).expect("longer than the cap");
-            format!("{}…", &text[..cut])
-        }
+    if text.chars().count() <= REPORT_TEXT_MAX {
+        return text.to_owned();
     }
+    text.chars().take(REPORT_TEXT_MAX - 1).chain(['…']).collect()
 }
 
 // to_vec_named is load-bearing: plain to_vec emits structs as msgpack arrays,
