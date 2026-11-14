@@ -378,17 +378,18 @@ notifications about a running pty.
 
     {t:"term_proc", term_id, name, pid:<int>|nil}   — daemon → app
 
-The current foreground process name on a terminal (the file basename of the
-process-group leader's executable). The daemon polls the pty's controlling
-process group (`tcgetpgrp` via `MasterPty::process_group_leader`) and resolves
-the executable path (`proc_pidpath` on macOS); it pushes a `term_proc` only when
-the name **changes** (deduped; pushed once on the first resolve). The app sets
+The current foreground process name on a terminal (the basename of the
+process-group leader's argv[0], less a login shell's leading `-`). The daemon
+polls the pty's controlling process group (`tcgetpgrp` via
+`MasterPty::process_group_leader`) and reads argv[0] (`sysctl(KERN_PROCARGS2)`
+on macOS), or, when argv is unreadable, the executable path (`proc_pidpath`);
+it pushes a `term_proc` only when the name **changes** (deduped; pushed once on the first resolve). The app sets
 the term card's header label to `name` (the honest "card title = process name").
 
 | key | type | missing ⇒ | semantics |
 |---|---|---|---|
 | `term_id` | string (required) | — | the terminal whose foreground process this is |
-| `name` | string (required) | — | foreground process name (executable basename) |
+| `name` | string (required) | — | foreground process name: the argv[0] basename, less a login shell's leading `-`; the `proc_pidpath` basename when argv is unreadable |
 | `pid` | int \| nil | nil | the process-group leader pid, when resolvable (diagnostic) |
 
     {t:"bell", term_id}                              — daemon → app

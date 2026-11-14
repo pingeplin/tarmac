@@ -117,6 +117,20 @@ fn s1_s2_the_walk_finds_the_agent_below_the_shell_and_the_report_ends_with_it() 
     assert!(after <= Duration::from_millis(3500), "the removal came {after:?} after SENT");
 }
 
+// The report's proc is the same lookup as the card title (#349).
+#[test]
+fn a_report_names_a_symlinked_holder_by_the_link() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    let link = common::temp_dir().join("claude");
+    std::os::unix::fs::symlink("/bin/sleep", &link).unwrap();
+    app.spawn_term("T", &[link.to_str().unwrap(), "5"]);
+    app.recv_until("term_proc after exec", |m| matches!(m, Msg::TermProc { term_id, name, .. } if term_id == "T" && name != "tarmacd"));
+
+    let frame = report_from_test(&daemon, &mut app, "T", "blocked", None);
+    assert_eq!(frame.proc.as_deref(), Some("claude"));
+}
+
 // S3
 #[test]
 fn s3_an_unattributed_report_is_held_by_the_foreground_leader() {

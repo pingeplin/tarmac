@@ -4,11 +4,78 @@
 
 pub type Pid = libc::pid_t;
 
-/// The executable's basename, via `proc_pidpath`.
+/// argv[0] in a `KERN_PROCARGS2` buffer: a native-endian argc, the exec path
+/// and its NUL padding, then argv. `None` for no argument or a cut buffer.
+fn argv0(procargs: &[u8]) -> Option<&[u8]> {
+    let argc = i32::from_ne_bytes(procargs.get(..4)?.try_into().ok()?);
+    if argc < 1 {
+        return None;
+    }
+    let rest = &procargs[4..];
+    let path_end = rest.iter().position(|&b| b == 0)?;
+    let rest = &rest[path_end..];
+    let rest = &rest[rest.iter().position(|&b| b != 0)?..];
+    Some(&rest[..rest.iter().position(|&b| b == 0)?])
+}
+
+/// The basename of argv[0], less a login shell's leading `-`.
+fn name_of_argv0(argv0: &[u8]) -> Option<String> {
+    basename(argv0.strip_prefix(b"-").unwrap_or(argv0))
+}
+
+fn basename(path: &[u8]) -> Option<String> {
+    let base = path.rsplit(|&b| b == b'/').next()?;
+    (!base.is_empty()).then(|| String::from_utf8_lossy(base).into_owned())
+}
+
+/// The basename of argv[0] (`sysctl(KERN_PROCARGS2)`), as `ps -o comm` shows
+/// it: not resolved through a symlink, a login shell's `-` dropped. When argv
+/// is unreadable (`EINVAL` on another user's process), the executable's basename.
 #[cfg(target_os = "macos")]
 pub fn process_name(pid: libc::pid_t) -> Option<String> {
-    let mut buf = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
-    // SAFETY: buf is a valid, sized allocation; proc_pidpath writes at most
+    argv0_name(pid).or_else(|| path_name(pid))
+}
+
+/// One `sysctl` read into `buf`: the count written, or `None` on error.
+#[cfg(target_os = "macos")]
+fn sysctl(mib: &mut [libc::c_int], buf: &mut [u8]) -> Option<usize> {
+    let mut size = buf.len();
+    // SAFETY: `mib` names `mib.len()` ints; `buf` is `size` bytes, and sysctl
+    // writes at most `size` bytes and sets `size` to the count written.
+    let ret = unsafe {
+        libc::sysctl(
+            mib.as_mut_ptr(),
+            mib.len() as libc::c_uint,
+            buf.as_mut_ptr() as *mut libc::c_void,
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    (ret == 0).then_some(size)
+}
+
+/// The argument area is at most `KERN_ARGMAX` bytes (1 MiB). A shorter buffer
+/// is no error: it came back as argc and zeros (measured, Darwin 25.6). The
+/// buffer is kept per thread, so a poll does not allocate it again.
+#[cfg(target_os = "macos")]
+fn argv0_name(pid: libc::pid_t) -> Option<String> {
+    thread_local!(static PROCARGS: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) });
+    PROCARGS.with_borrow_mut(|buf| {
+        if buf.is_empty() {
+            let mut argmax = [0u8; 4];
+            sysctl(&mut [libc::CTL_KERN, libc::KERN_ARGMAX], &mut argmax).filter(|&n| n == 4)?;
+            buf.resize(usize::try_from(i32::from_ne_bytes(argmax)).ok().filter(|&n| n > 0)?, 0);
+        }
+        let size = sysctl(&mut [libc::CTL_KERN, libc::KERN_PROCARGS2, pid], buf)?;
+        argv0(&buf[..size]).and_then(name_of_argv0)
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn path_name(pid: libc::pid_t) -> Option<String> {
+    let mut buf = [0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
+    // SAFETY: buf is a valid, sized buffer; proc_pidpath writes at most
     // `buffersize` bytes and returns the number written (<= buffersize) or <= 0
     // on error. We never read past `len`.
     let len = unsafe {
@@ -17,10 +84,7 @@ pub fn process_name(pid: libc::pid_t) -> Option<String> {
     if len <= 0 {
         return None;
     }
-    buf.truncate(len as usize);
-    let path = String::from_utf8_lossy(&buf);
-    let base = std::path::Path::new(path.as_ref()).file_name()?.to_string_lossy().into_owned();
-    if base.is_empty() { None } else { Some(base) }
+    basename(&buf[..len as usize])
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -95,24 +159,10 @@ const SZOMB: i8 = 5;
 /// root-owned pids and on zombies.
 #[cfg(target_os = "macos")]
 pub fn proc_facts(pid: libc::pid_t) -> Facts {
-    let mut mib = [libc::CTL_KERN, libc::KERN_PROC, libc::KERN_PROC_PID, pid];
     let mut buf = [0u8; KINFO_PROC_SIZE];
-    let mut size = buf.len();
-    // SAFETY: `mib` names four ints; `buf` is `size` bytes, and sysctl writes at
-    // most `size` bytes and sets `size` to the count written.
-    let ret = unsafe {
-        libc::sysctl(
-            mib.as_mut_ptr(),
-            mib.len() as libc::c_uint,
-            buf.as_mut_ptr() as *mut libc::c_void,
-            &mut size,
-            std::ptr::null_mut(),
-            0,
-        )
-    };
-    if ret != 0 {
+    let Some(size) = sysctl(&mut [libc::CTL_KERN, libc::KERN_PROC, libc::KERN_PROC_PID, pid], &mut buf) else {
         return Facts::Unread;
-    }
+    };
     match size {
         0 => Facts::Gone,
         KINFO_PROC_SIZE if buf[P_STAT] as i8 == SZOMB => Facts::Gone,
@@ -131,11 +181,115 @@ pub fn proc_facts(_pid: libc::pid_t) -> Facts {
     Facts::Unread
 }
 
+#[cfg(test)]
+mod parse_tests {
+    use super::{argv0, name_of_argv0};
+
+    fn procargs(argc: i32, rest: &[u8]) -> Vec<u8> {
+        let mut buf = argc.to_ne_bytes().to_vec();
+        buf.extend_from_slice(rest);
+        buf
+    }
+
+    #[test]
+    fn argv0_follows_the_exec_path_and_its_padding() {
+        let buf = procargs(2, b"/real/2.1.325\0\0\0\0claude\0--resume\0PATH=/bin\0");
+        assert_eq!(argv0(&buf), Some(&b"claude"[..]));
+    }
+
+    #[test]
+    fn argv0_with_no_padding_after_the_exec_path() {
+        assert_eq!(argv0(&procargs(1, b"/bin/sleep\0sleep\0")), Some(&b"sleep"[..]));
+    }
+
+    #[test]
+    fn no_argv0_without_an_argument() {
+        assert_eq!(argv0(&procargs(0, b"/bin/sleep\0\0PATH=/bin\0")), None);
+        assert_eq!(argv0(&procargs(-1, b"/bin/sleep\0sleep\0")), None);
+    }
+
+    #[test]
+    fn no_argv0_from_a_short_or_cut_buffer() {
+        assert_eq!(argv0(b""), None);
+        assert_eq!(argv0(&[1, 0, 0]), None);
+        assert_eq!(argv0(&procargs(1, b"")), None);
+        assert_eq!(argv0(&procargs(1, b"/bin/sleep")), None);
+        assert_eq!(argv0(&procargs(1, b"/bin/sleep\0\0\0")), None);
+        assert_eq!(argv0(&procargs(1, b"/bin/sleep\0sle")), None);
+    }
+
+    #[test]
+    fn argv0_of_garbage_is_bytes_or_none_never_a_panic() {
+        for buf in [&[0xffu8; 3][..], &[0xff; 4], &[0xff; 9], &[1, 0, 0, 0, 0xff, 0, 0xfe, 0]] {
+            let _ = argv0(buf);
+        }
+    }
+
+    #[test]
+    fn the_name_is_the_basename_of_argv0() {
+        assert_eq!(name_of_argv0(b"claude").as_deref(), Some("claude"));
+        assert_eq!(name_of_argv0(b"/Users/x/.local/bin/claude").as_deref(), Some("claude"));
+        assert_eq!(name_of_argv0(b"./run.sh").as_deref(), Some("run.sh"));
+    }
+
+    #[test]
+    fn a_login_shell_loses_its_leading_dash() {
+        assert_eq!(name_of_argv0(b"-zsh").as_deref(), Some("zsh"));
+        assert_eq!(name_of_argv0(b"-/bin/zsh").as_deref(), Some("zsh"));
+    }
+
+    #[test]
+    fn an_empty_name_is_none() {
+        assert_eq!(name_of_argv0(b""), None);
+        assert_eq!(name_of_argv0(b"-"), None);
+        assert_eq!(name_of_argv0(b"/usr/bin/"), None);
+    }
+
+    #[test]
+    fn a_name_that_is_not_utf8_is_read_lossily() {
+        assert_eq!(name_of_argv0(b"a\xffb").as_deref(), Some("a\u{fffd}b"));
+    }
+}
+
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
-    use super::{Facts, pid_cwd, proc_facts};
-    use std::process::{Command, Stdio};
+    use super::{Facts, pid_cwd, proc_facts, process_name};
+    use std::os::unix::process::CommandExt;
+    use std::process::{Child, Command, Stdio};
     use std::time::{Duration, Instant};
+
+    fn name_of(command: &mut Command) -> Option<String> {
+        let mut child: Child = command.arg("5").spawn().unwrap();
+        let name = process_name(child.id() as libc::pid_t);
+        child.kill().unwrap();
+        child.wait().unwrap();
+        name
+    }
+
+    // Claude Code's native install runs `claude` as a symlink to a versioned
+    // binary; proc_pidpath resolves it to the version (#349).
+    #[test]
+    fn a_process_run_through_a_symlink_is_named_by_the_link() {
+        let link = crate::fixtures::tmp_dir("argv0").join("claude");
+        std::os::unix::fs::symlink("/bin/sleep", &link).unwrap();
+        assert_eq!(name_of(&mut Command::new(&link)).as_deref(), Some("claude"));
+    }
+
+    #[test]
+    fn a_login_shell_argv0_loses_its_dash() {
+        assert_eq!(name_of(Command::new("/bin/sleep").arg0("-zsh")).as_deref(), Some("zsh"));
+    }
+
+    // launchd is root-owned: its argv is unreadable to us, its path is not.
+    #[test]
+    fn a_process_with_unreadable_argv_is_named_by_its_path() {
+        assert_eq!(process_name(1).as_deref(), Some("launchd"));
+    }
+
+    #[test]
+    fn a_plain_process_keeps_its_name() {
+        assert_eq!(name_of(&mut Command::new("/bin/sleep")).as_deref(), Some("sleep"));
+    }
 
     #[test]
     fn own_pid_is_live_with_its_parent_and_a_start_time() {
