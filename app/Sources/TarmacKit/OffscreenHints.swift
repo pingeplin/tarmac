@@ -39,10 +39,11 @@ public enum OffscreenHintLayout {
         public var left: CGFloat
         public var top: CGFloat
         /// The placed pill still overlaps a card: the edge band was saturated and
-        /// the gap search had to fall back. The view draws it over the card all
-        /// the same (#365; #126 drew it under the cards, where it was lost). Measured on the rounded rect actually painted, against the raw
-        /// card rects rather than the stackGap-padded intervals — it means the pill
-        /// covers card content, not that it sits close to one.
+        /// the gap search had to fall back. Measured on the rounded rect actually
+        /// painted, against the raw card rects rather than the stackGap-padded
+        /// intervals — it means the pill covers card content, not that it sits
+        /// close to one. The view draws it over the card all the same (#365;
+        /// under the cards, as #126 had it, the pill was lost).
         public var occluded: Bool
     }
 
@@ -191,6 +192,7 @@ public enum OffscreenHintLayout {
         let vertical = edge == .left || edge == .right
         let sign: CGFloat = backward ? -1 : 1
         let prefer: Side? = backward ? .higher : (edge == .bottom ? .lower : nil)
+        let blockers = options.obstacles + options.chrome
         var lastEnd = -CGFloat.infinity
         var placed: [PlacedPill] = []
         var underChrome = 0
@@ -210,7 +212,7 @@ public enum OffscreenHintLayout {
             let band = vertical
                 ? CGRect(x: crossPos, y: viewRect.minY, width: size.width, height: viewRect.height)
                 : CGRect(x: viewRect.minX, y: crossPos, width: viewRect.width, height: size.height)
-            let obstacleIntervals = (options.obstacles + options.chrome)
+            let obstacleIntervals = blockers
                 .filter { Placement.rectsIntersect(band, $0) }
                 .map { vertical
                     ? Interval(lo: $0.minY - options.stackGap, hi: $0.maxY + options.stackGap)

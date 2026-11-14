@@ -284,9 +284,8 @@ final class OffscreenHintLayoutTests: XCTestCase {
 
     // MARK: - occluded
 
-    /// An occluded pill is painted under the cards, the rest keep the over-card
-    /// overlay (#126), so the flag must agree with the pill's own placed rect, not
-    /// with which branch produced it.
+    /// The flag says a pill covers card content, so it must agree with the pill's
+    /// own placed rect, not with which branch produced it.
     func testOccludedIsFalseWhenThereAreNoObstaclesAtAll() throws {
         let pill = try XCTUnwrap(stack([hint("r", CGPoint(x: 2000, y: 400), .bell, 0)]).first)
         XCTAssertFalse(pill.occluded)

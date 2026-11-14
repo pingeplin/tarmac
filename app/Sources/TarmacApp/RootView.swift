@@ -98,8 +98,9 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
 
     /// Mounts `bv` as the shown whiteboard: detaches the current board view and
     /// inserts `bv` as the bottom-most subview (below the status bar and every
-    /// overlay) and re-wiring its wayfinding callbacks. Used by the controller on every board switch-arrive
-    /// (and to re-mount the same view after `unmountBoard`). The detached
+    /// overlay) and re-wiring its wayfinding callbacks. Used by the controller
+    /// on every board switch-arrive (and to re-mount the same view after
+    /// `unmountBoard`). The detached
     /// board's cards + live terminal views stay parented to it off-window, so
     /// background ptys keep running.
     func mountBoard(_ bv: BoardView) {
