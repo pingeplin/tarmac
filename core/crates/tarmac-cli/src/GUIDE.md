@@ -79,8 +79,10 @@ session in a Tarmac terminal reports on its own:
 
 The text is a claim, shown in quotes, cut to 280 characters with its line
 breaks folded. Outside a Tarmac terminal the hooks do nothing. `tarmac hooks
-status` shows whether the hooks are in place and which `tarmac` they will run;
-`tarmac hooks uninstall` removes them. You do not need to call `tarmac report`
+status` shows whether the hooks are in place, and the first `tarmac` on the
+`PATH` of `status` itself; a hook sees the `PATH` that `claude` started with,
+which is the same only when both started from the same shell. `tarmac hooks
+uninstall` removes them. You do not need to call `tarmac report`
 yourself from Claude Code once the hooks are installed.
 
 ## What renders how

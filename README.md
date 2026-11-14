@@ -177,7 +177,8 @@ tarmac hooks install   # make Claude Code report blocked and done on its termina
 `open`, `push`, `report` and `--version` are the verbs that talk to the daemon,
 and so does `tarmac hooks run claude`, the entry that the hooks call.
 `tarmac hooks install` merges four hooks into Claude Code's `settings.json`
-(after a `.tarmac-backup`); `tarmac hooks status` checks them and
+(with `--scope project`, the project's personal settings.local.json), after a
+`.tarmac-backup`; `tarmac hooks status` checks them and
 `tarmac hooks uninstall` removes them. Inside a Tarmac
 terminal `open` auto-attributes the doc to the calling terminal card via
 `TARMAC_TERM_ID`. `--version` only completes the handshake, then prints the three

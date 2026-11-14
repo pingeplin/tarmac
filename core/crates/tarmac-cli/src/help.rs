@@ -160,8 +160,9 @@ exits 0 whether or not a daemon is running.
 EXIT STATUS:
     0  success; also `tarmac --version` with no daemon running
     1  the daemon refused an open, a push or a report (with -, any line), no
-       daemon is running, `report` ran outside a Tarmac terminal, or an install
-       failed
+       daemon is running, `report` ran outside a Tarmac terminal, an install
+       failed, `hooks install` or `hooks uninstall` refused a settings file, or
+       `hooks status` found one unreadable
     2  usage error
 `tarmac hooks run` always exits 0, so that a hook never blocks Claude.
 ";
