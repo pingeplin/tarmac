@@ -14,8 +14,8 @@ use common::{Double, Report, hello_ok, scratch, tarmac};
 const NO_DAEMON: &str = "no tarmac daemon running";
 
 /// A scratch dir in its canonical form, so a path the cli prints compares
-/// equal to one the test builds (`/var` is `/private/var` on macOS), with
-/// the `home` and `proj` dirs of `hooks_cmd`.
+/// equal to one the test builds (`/var` is `/private/var` on macOS), with the
+/// `home` and `proj` dirs that `hooks_cmd` points at.
 fn sandbox() -> PathBuf {
     let dir = scratch().canonicalize().unwrap();
     for sub in ["home", "proj"] {
@@ -27,9 +27,6 @@ fn sandbox() -> PathBuf {
 /// `tarmac hooks`, with `dir/home` as HOME, `dir/proj` as the cwd, an empty
 /// CLAUDE_CONFIG_DIR (unset, so HOME decides) and no TARMAC_TERM_ID.
 fn hooks_cmd(dir: &Path) -> Command {
-    for sub in ["home", "proj"] {
-        std::fs::create_dir_all(dir.join(sub)).unwrap();
-    }
     let mut cmd = tarmac();
     cmd.env("HOME", dir.join("home"))
         .env("CLAUDE_CONFIG_DIR", "")
@@ -55,10 +52,12 @@ fn fixture(name: &str) -> Vec<u8> {
     std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hooks").join(format!("{name}.json"))).unwrap()
 }
 
-/// `hooks run claude` for terminal t9, on an absent socket.
-fn run_with_no_daemon(args: &[&str], input: Vec<u8>) -> Report {
-    let dir = sandbox();
-    Report::of_input(hooks_cmd(&dir).env("TARMAC_TERM_ID", "t9").args(args), input)
+/// `hooks run claude` for terminal t9, on an absent socket unless the test
+/// sets one.
+fn run_claude(dir: &Path) -> Command {
+    let mut cmd = hooks_cmd(dir);
+    cmd.env("TARMAC_TERM_ID", "t9").args(["run", "claude"]);
+    cmd
 }
 
 /// The hook's own rule: exit 0 and nothing on stdout, whatever happened.
@@ -127,7 +126,7 @@ fn daemon(kind: Daemon) -> Double {
 fn run_against(double: &Double, input: Vec<u8>) -> Report {
     let dir = sandbox();
     Report::of_input(
-        hooks_cmd(&dir).env("TARMAC_SOCKET", &double.sock).env("TARMAC_TERM_ID", "t9").args(["run", "claude"]),
+        run_claude(&dir).env("TARMAC_SOCKET", &double.sock),
         input,
     )
 }
@@ -145,7 +144,6 @@ fn report(kind: &str, text: Option<&str>) -> Msg {
     Msg::Report { term_id: "t9".into(), kind: kind.into(), text: text.map(str::to_string) }
 }
 
-// S6
 #[test]
 fn s6_hooks_run_sends_the_report_of_its_input() {
     for (input, want, case) in [
@@ -167,7 +165,6 @@ fn s6_hooks_run_sends_the_report_of_its_input() {
     }
 }
 
-// S20
 #[test]
 fn s20_no_daemon_is_fast_silent_and_says_so_on_stderr() {
     let dead = sandbox().join("dead.sock");
@@ -176,7 +173,7 @@ fn s20_no_daemon_is_fast_silent_and_says_so_on_stderr() {
         let (best, outs) = fastest(5, || {
             let dir = sandbox();
             Report::of_input(
-                hooks_cmd(&dir).env("TARMAC_SOCKET", &sock).env("TARMAC_TERM_ID", "t9").args(["run", "claude"]),
+                run_claude(&dir).env("TARMAC_SOCKET", &sock),
                 stop_input("Done."),
             )
         });
@@ -190,7 +187,6 @@ fn s20_no_daemon_is_fast_silent_and_says_so_on_stderr() {
     }
 }
 
-// S21
 #[test]
 fn s21_a_daemon_that_never_answers_is_given_up_on_at_the_deadline() {
     for (kind, want) in [
@@ -226,7 +222,6 @@ fn one_deadline_spans_the_handshake_and_the_answer() {
     assert!(best <= Duration::from_millis(750), "the fastest run took {best:?}");
 }
 
-// S22
 #[test]
 fn s22_a_refusal_is_a_stderr_line_and_exit_0() {
     let double = daemon(Daemon::Answers(Msg::Err { msg: "unknown terminal: t9".into() }));
@@ -236,7 +231,6 @@ fn s22_a_refusal_is_a_stderr_line_and_exit_0() {
     assert!(out.one_stderr_line().contains("unknown terminal: t9"), "{}", out.stderr);
 }
 
-// S23
 #[test]
 fn s23_no_terminal_exits_at_once_without_reading_stdin() {
     for term_id in [None, Some("")] {
@@ -257,7 +251,6 @@ fn s23_no_terminal_exits_at_once_without_reading_stdin() {
     }
 }
 
-// S24
 #[test]
 fn s24_bad_input_exits_0_without_connecting() {
     for (input, case) in [
@@ -269,29 +262,28 @@ fn s24_bad_input_exits_0_without_connecting() {
         (br#"{"hook_event_name": "Notification", "notification_type": "idle_prompt", "message": "waiting"}"#.to_vec(), "idle"),
         (stop_input_of_len((4 << 20) + 1), "over 4 MiB"),
     ] {
-        let out = run_with_no_daemon(&["run", "claude"], input);
+        let out = Report::of_input(&mut run_claude(&sandbox()), input);
 
         assert_silent_success(&out, case);
         assert_no_connection(&out, case);
     }
 }
 
-// S24: the control of the limit case, so that one cannot pass on a parse failure.
+// The control of the limit case, so that one cannot pass on a parse failure.
 #[test]
 fn s24_an_input_of_exactly_4_mib_is_sent() {
-    let out = run_with_no_daemon(&["run", "claude"], stop_input_of_len(4 << 20));
+    let out = Report::of_input(&mut run_claude(&sandbox()), stop_input_of_len(4 << 20));
 
     assert_silent_success(&out, "4 MiB");
     assert!(out.stderr.contains(NO_DAEMON), "{}", out.stderr);
 }
 
-// S24
 #[test]
 fn s24_a_stdin_that_never_closes_ends_within_the_wait() {
     let dir = sandbox();
     let started = Instant::now();
     let out = Report::with_open_stdin(
-        hooks_cmd(&dir).env("TARMAC_TERM_ID", "t9").args(["run", "claude"]),
+        &mut run_claude(&dir),
         Duration::from_secs(5),
     )
     .expect("it exits");
@@ -301,11 +293,10 @@ fn s24_a_stdin_that_never_closes_ends_within_the_wait() {
     assert_no_connection(&out, "open stdin");
 }
 
-// S25
 #[test]
 fn s25_bad_arguments_exit_0_with_one_stderr_line() {
     for args in [&["run"][..], &["run", "codex"], &["run", "cursor"], &["run", "claude", "extra"]] {
-        let out = run_with_no_daemon(args, stop_input("Done."));
+        let out = Report::of_input(hooks_cmd(&sandbox()).env("TARMAC_TERM_ID", "t9").args(args), stop_input("Done."));
 
         let case = format!("{args:?}");
         assert_silent_success(&out, &case);
@@ -497,8 +488,9 @@ fn hooks(dir: &Path, args: &[&str]) -> Report {
     Report::of(hooks_cmd(dir).args(args))
 }
 
-fn claude(dir: &Path, verb: &str) -> Report {
-    hooks(dir, &[verb, "--target", "claude-code"])
+/// `verb` for claude-code alone, with `extra` flags.
+fn claude(dir: &Path, verb: &str, extra: &[&str]) -> Report {
+    hooks(dir, &[&[verb, "--target", "claude-code"], extra].concat())
 }
 
 /// Every file under `dir`, so a test can see that nothing new was made.
@@ -531,12 +523,11 @@ fn keys(v: &serde_json::Value) -> Vec<&str> {
     v.as_object().unwrap().keys().map(String::as_str).collect()
 }
 
-// S1
 #[test]
 fn s1_install_into_a_missing_file_makes_it() {
     let dir = sandbox();
     let path = user_settings(&dir);
-    let out = claude(&dir, "install");
+    let out = claude(&dir, "install", &[]);
 
     assert_eq!((out.code(), out.stderr.as_str()), (Some(0), ""));
     assert_eq!(out.stdout, format!("installed: {}\n", path.display()));
@@ -547,13 +538,12 @@ fn s1_install_into_a_missing_file_makes_it() {
     assert!(!backup_of(&path).exists());
 }
 
-// S2
 #[test]
 fn s2_install_merges_and_backs_the_file_up() {
     let dir = sandbox();
     let path = user_settings(&dir);
     put(&path, &f_own_hooks());
-    let out = claude(&dir, "install");
+    let out = claude(&dir, "install", &[]);
 
     assert_eq!(out.code(), Some(0), "{}", out.stderr);
     let backup = backup_of(&path);
@@ -575,18 +565,17 @@ fn mtime(path: &Path) -> std::time::SystemTime {
     std::fs::metadata(path).unwrap().modified().unwrap()
 }
 
-// S3
 #[test]
 fn s3_a_second_install_writes_nothing() {
     let dir = sandbox();
     let path = user_settings(&dir);
     let backup = backup_of(&path);
     put(&path, &f_own_hooks());
-    claude(&dir, "install");
+    claude(&dir, "install", &[]);
     let before = (read(&path), mtime(&path), read(&backup), mtime(&backup));
     std::thread::sleep(Duration::from_millis(20));
 
-    let out = claude(&dir, "install");
+    let out = claude(&dir, "install", &[]);
 
     assert_eq!(out.code(), Some(0), "{}", out.stderr);
     assert_eq!(out.stdout, format!("already installed: {}\n", path.display()));
@@ -600,13 +589,12 @@ fn round_trip(original: &str) -> String {
     let path = user_settings(&dir);
     put(&path, original);
     for verb in ["install", "uninstall"] {
-        let out = claude(&dir, verb);
+        let out = claude(&dir, verb, &[]);
         assert_eq!(out.code(), Some(0), "{verb}: {}", out.stderr);
     }
     read(&path)
 }
 
-// S4
 #[test]
 fn s4_install_then_uninstall_gives_the_original_bytes_back() {
     for (name, original) in [("F-claude", F_CLAUDE.to_string()), ("F-own-hooks", f_own_hooks()), ("F-4", f_4())] {
@@ -614,28 +602,27 @@ fn s4_install_then_uninstall_gives_the_original_bytes_back() {
     }
 }
 
-// Review answer 8: a settings.json that Claude Code 2.1.325 wrote itself.
+// A settings.json that Claude Code 2.1.325 wrote itself (it reorders keys).
 #[test]
 fn a_file_that_claude_wrote_comes_back_byte_for_byte() {
     let original = String::from_utf8(fixture("claude-written-settings")).unwrap();
     assert_eq!(round_trip(&original), original);
 }
 
-// S4b
 #[test]
 fn s4b_a_removal_moves_no_other_key() {
     let dir = sandbox();
     let path = user_settings(&dir);
     put(&path, &f_mid());
-    assert_eq!(claude(&dir, "uninstall").code(), Some(0));
+    assert_eq!(claude(&dir, "uninstall", &[]).code(), Some(0));
     assert_eq!(read(&path), f_claude_with_hooks_mid(USER_EVENTS));
 
     put(&path, &f_mid_only());
-    assert_eq!(claude(&dir, "uninstall").code(), Some(0));
+    assert_eq!(claude(&dir, "uninstall", &[]).code(), Some(0));
     assert_eq!(read(&path), F_CLAUDE);
 
     put(&path, &f_mid());
-    assert_eq!(claude(&dir, "install").code(), Some(0));
+    assert_eq!(claude(&dir, "install", &[]).code(), Some(0));
     assert_eq!(read(&path), f_claude_with_hooks_mid(&format!("{USER_EVENTS},\n{INSTALLED_EVENTS}")));
 }
 
@@ -651,11 +638,10 @@ fn status_line<'a>(out: &'a Report, prefix: &str) -> &'a str {
     out.stdout.lines().find(|l| l.starts_with(prefix)).unwrap_or_else(|| panic!("no `{prefix}` line: {}", out.stdout))
 }
 
-// S7
 #[test]
 fn s7_status_reads_both_scopes_and_the_path() {
     let dir = sandbox();
-    claude(&dir, "install");
+    claude(&dir, "install", &[]);
     put(&project_settings(&dir), &format!("{{\n  \"hooks\": {{\n{BARE_STOP}\n  }}\n}}\n"));
     std::fs::copy(user_settings(&dir), dir.join("proj/.claude/settings.json")).unwrap();
     let bin = path_with_this_binary(&dir);
@@ -675,7 +661,6 @@ fn s7_status_reads_both_scopes_and_the_path() {
     );
 }
 
-// S7
 #[test]
 fn s7_the_path_line_names_the_first_executable_tarmac() {
     let dir = sandbox();
@@ -698,16 +683,15 @@ fn s7_the_path_line_names_the_first_executable_tarmac() {
     );
 }
 
-// S8
 #[test]
 fn s8_uninstall_removes_ours_only() {
     let dir = sandbox();
     let path = user_settings(&dir);
     put(&path, &f_own_hooks());
-    claude(&dir, "install");
+    claude(&dir, "install", &[]);
     let installed = read(&path);
 
-    let out = claude(&dir, "uninstall");
+    let out = claude(&dir, "uninstall", &[]);
 
     assert_eq!(out.code(), Some(0), "{}", out.stderr);
     assert_eq!(out.stdout, format!("uninstalled: {}\nbackup: {}\n", path.display(), backup_of(&path).display()));
@@ -715,7 +699,6 @@ fn s8_uninstall_removes_ours_only() {
     assert_eq!(read(&backup_of(&path)), installed);
 }
 
-// S9
 #[test]
 fn s9_uninstall_leaves_every_near_match_as_it_was() {
     let dir = sandbox();
@@ -733,13 +716,12 @@ fn s9_uninstall_leaves_every_near_match_as_it_was() {
     all.extend(foreign.as_array().unwrap().iter().cloned());
     put(&path, &serde_json::json!({"hooks": {"Stop": [{"hooks": all}]}}).to_string());
 
-    let out = claude(&dir, "uninstall");
+    let out = claude(&dir, "uninstall", &[]);
 
     assert_eq!(out.code(), Some(0), "{}", out.stderr);
     assert_eq!(json(&path), serde_json::json!({"hooks": {"Stop": [{"hooks": foreign}]}}));
 }
 
-// S10
 #[test]
 fn s10_an_old_form_shows_in_status_and_install_replaces_it() {
     let bare = serde_json::json!({"type": "command", "command": "tarmac hooks run claude"});
@@ -763,7 +745,7 @@ fn s10_an_old_form_shows_in_status_and_install_replaces_it() {
         let status = hooks(&dir, &["status"]);
         assert!(status_line(&status, "claude-code  user").ends_with("installed, old form (run tarmac hooks install)"), "({name}) {}", status.stdout);
 
-        assert_eq!(claude(&dir, "install").code(), Some(0), "({name})");
+        assert_eq!(claude(&dir, "install", &[]).code(), Some(0), "({name})");
 
         let status = hooks(&dir, &["status"]);
         assert!(status_line(&status, "claude-code  user").ends_with("  installed"), "({name}) {}", status.stdout);
@@ -777,7 +759,6 @@ fn s10_an_old_form_shows_in_status_and_install_replaces_it() {
     }
 }
 
-// S12
 #[test]
 fn s12_codex_is_skipped_as_a_success() {
     const SKIP: &str = "skipped codex: hooks are not supported for codex yet\n";
@@ -794,7 +775,6 @@ fn s12_codex_is_skipped_as_a_success() {
     assert_eq!(out.stdout, format!("installed: {}\n{SKIP}", user_settings(&dir).display()));
 }
 
-// S13
 #[test]
 fn s13_claude_config_dir_and_project_scope_pick_the_file() {
     let dir = sandbox();
@@ -828,43 +808,40 @@ fn s13_claude_config_dir_and_project_scope_pick_the_file() {
     }
 }
 
-// S13
 #[test]
 fn s13_an_empty_claude_config_dir_is_home() {
     let dir = sandbox();
-    let out = claude(&dir, "install");
+    let out = claude(&dir, "install", &[]);
     assert_eq!(out.stdout, format!("installed: {}\n", user_settings(&dir).display()));
 }
 
-// S14
 #[test]
 fn s14_dry_run_writes_nothing() {
     let dir = sandbox();
     let before = tree(&dir);
     let path = user_settings(&dir);
     for (verb, want) in [("install", "would install"), ("uninstall", "not installed")] {
-        let out = hooks(&dir, &[verb, "--target", "claude-code", "--dry-run"]);
+        let out = claude(&dir, verb, &["--dry-run"]);
         assert_eq!((out.code(), out.stdout.clone()), (Some(0), format!("{want}: {}\n", path.display())), "{verb}");
     }
     assert_eq!(tree(&dir), before);
 
     put(&path, &f_own_hooks());
-    claude(&dir, "install");
+    claude(&dir, "install", &[]);
     let before = tree(&dir);
     let bytes = read(&path);
     for (verb, want) in [("install", "already installed"), ("uninstall", "would uninstall")] {
-        let out = hooks(&dir, &[verb, "--target", "claude-code", "--dry-run"]);
+        let out = claude(&dir, verb, &["--dry-run"]);
         assert_eq!((out.code(), out.stdout.clone()), (Some(0), format!("{want}: {}\n", path.display())), "{verb}");
     }
     assert_eq!((tree(&dir), read(&path)), (before, bytes));
 
     put(&path, "{\"a\": 1,}");
     for verb in ["install", "uninstall"] {
-        assert_eq!(hooks(&dir, &[verb, "--target", "claude-code", "--dry-run"]).code(), Some(1), "{verb}");
+        assert_eq!(claude(&dir, verb, &["--dry-run"]).code(), Some(1), "{verb}");
     }
 }
 
-// S15
 #[test]
 fn s15_a_symlinked_file_is_written_through() {
     let dir = sandbox();
@@ -874,7 +851,7 @@ fn s15_a_symlinked_file_is_written_through() {
     std::fs::create_dir_all(link.parent().unwrap()).unwrap();
     std::os::unix::fs::symlink(&target, &link).unwrap();
 
-    let out = claude(&dir, "install");
+    let out = claude(&dir, "install", &[]);
 
     assert_eq!(out.code(), Some(0), "{}", out.stderr);
     let backup = backup_of(&target);
@@ -884,7 +861,6 @@ fn s15_a_symlinked_file_is_written_through() {
     assert_eq!(read(&backup), F_CLAUDE);
 }
 
-// S15
 #[test]
 fn s15_a_symlink_to_a_missing_file_is_refused() {
     let dir = sandbox();
@@ -893,7 +869,7 @@ fn s15_a_symlink_to_a_missing_file_is_refused() {
     std::os::unix::fs::symlink(dir.join("dotfiles/missing.json"), &link).unwrap();
     let before = tree(&dir);
 
-    let out = claude(&dir, "install");
+    let out = claude(&dir, "install", &[]);
 
     assert_eq!(out.code(), Some(1));
     assert!(out.one_stderr_line().contains(&link.display().to_string()), "{}", out.stderr);
@@ -908,29 +884,27 @@ fn set_mode(path: &Path, mode: u32) {
     std::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(mode)).unwrap();
 }
 
-// S16
 #[test]
 fn s16_the_files_mode_is_kept_and_a_new_file_gets_the_default() {
     let dir = sandbox();
     let path = user_settings(&dir);
     put(&path, F_CLAUDE);
     set_mode(&path, 0o600);
-    claude(&dir, "install");
+    claude(&dir, "install", &[]);
     assert_eq!((mode(&path), mode(&backup_of(&path))), (0o600, 0o600));
     for (kept, verb) in [(0o644, "uninstall"), (0o640, "install")] {
         set_mode(&path, kept);
-        assert_eq!(claude(&dir, verb).code(), Some(0));
+        assert_eq!(claude(&dir, verb, &[]).code(), Some(0));
         assert_eq!((mode(&path), mode(&backup_of(&path))), (kept, kept), "{kept:o}");
     }
 
     let dir = sandbox();
     let reference = dir.join("reference");
     std::fs::File::create(&reference).unwrap();
-    claude(&dir, "install");
+    claude(&dir, "install", &[]);
     assert_eq!(mode(&user_settings(&dir)), mode(&reference));
 }
 
-// S16b
 #[test]
 fn s16b_a_target_that_is_not_writable_fails_closed() {
     let probe = sandbox().join("probe");
@@ -949,7 +923,7 @@ fn s16b_a_target_that_is_not_writable_fails_closed() {
         set_mode(&parent, dir_mode);
         let before = tree(&parent);
 
-        let out = claude(&dir, "install");
+        let out = claude(&dir, "install", &[]);
 
         set_mode(&parent, 0o755);
         assert_eq!(out.code(), Some(1), "{case}");
@@ -959,7 +933,6 @@ fn s16b_a_target_that_is_not_writable_fails_closed() {
     }
 }
 
-// S26
 #[test]
 fn s26_a_file_of_the_wrong_shape_is_refused() {
     for bad in [
@@ -978,7 +951,7 @@ fn s26_a_file_of_the_wrong_shape_is_refused() {
             put(&path, bad);
             let before = tree(&dir);
 
-            let out = claude(&dir, verb);
+            let out = claude(&dir, verb, &[]);
 
             assert_eq!(out.code(), Some(1), "{verb} {bad:?}");
             assert!(out.one_stderr_line().contains(&path.display().to_string()), "{verb} {bad:?}: {}", out.stderr);
@@ -987,7 +960,6 @@ fn s26_a_file_of_the_wrong_shape_is_refused() {
     }
 }
 
-// S26
 #[test]
 fn s26_status_shows_an_unparsable_file_and_exits_1() {
     let dir = sandbox();
@@ -997,18 +969,17 @@ fn s26_status_shows_an_unparsable_file_and_exits_1() {
     assert!(status_line(&out, "claude-code  user").contains("unreadable: "), "{}", out.stdout);
 }
 
-// Review answer 7: an empty file, or one with a BOM, names its cause.
+// An empty file, or one with a BOM, is refused with its cause named.
 #[test]
 fn an_empty_file_or_a_bom_is_named_as_the_cause() {
     for (bad, cause) in [("", "empty"), ("\u{feff}{}", "BOM")] {
         let dir = sandbox();
         put(&user_settings(&dir), bad);
-        let out = claude(&dir, "install");
+        let out = claude(&dir, "install", &[]);
         assert!(out.stderr.contains(cause), "{bad:?}: {}", out.stderr);
     }
 }
 
-// S27
 #[test]
 fn s27_a_refused_target_does_not_stop_the_other() {
     let dir = sandbox();
@@ -1018,7 +989,6 @@ fn s27_a_refused_target_does_not_stop_the_other() {
     assert_eq!(out.stdout, "skipped codex: hooks are not supported for codex yet\n");
 }
 
-// S28
 #[test]
 fn s28_a_usage_error_exits_2_and_makes_no_file() {
     for args in [
@@ -1051,7 +1021,7 @@ fn a_symlink_at_the_backup_path_is_replaced_not_followed() {
     put(&local, F_CLAUDE);
     std::os::unix::fs::symlink(&victim, backup_of(&local)).unwrap();
 
-    let out = hooks(&dir, &["install", "--target", "claude-code", "--scope", "project"]);
+    let out = claude(&dir, "install", &["--scope", "project"]);
 
     assert_eq!(out.code(), Some(0), "{}", out.stderr);
     assert_eq!((read(&victim), mode(&victim)), ("export SAFE=1\n".to_string(), 0o640));
@@ -1065,7 +1035,7 @@ fn an_empty_hooks_key_keeps_its_place() {
     let path = user_settings(&dir);
     put(&path, &F_CLAUDE.replace("  },\n  \"env\"", "  },\n  \"hooks\": {},\n  \"env\""));
 
-    assert_eq!(claude(&dir, "install").code(), Some(0));
+    assert_eq!(claude(&dir, "install", &[]).code(), Some(0));
 
     assert_eq!(keys(&json(&path)), ["permissions", "hooks", "env", "model", "cleanupPeriodDays"]);
 }
@@ -1079,7 +1049,7 @@ fn the_project_hint_names_the_real_file_through_a_symlink_on_both_verbs() {
     std::fs::create_dir_all(link.parent().unwrap()).unwrap();
     std::os::unix::fs::symlink(&target, &link).unwrap();
     for verb in ["install", "uninstall"] {
-        let out = hooks(&dir, &[verb, "--target", "claude-code", "--scope", "project"]);
+        let out = claude(&dir, verb, &["--scope", "project"]);
 
         assert_eq!(out.code(), Some(0), "{verb}: {}", out.stderr);
         let hint = status_line(&out, "hint: ");

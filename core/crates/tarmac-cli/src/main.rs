@@ -11,6 +11,7 @@ mod help;
 mod hooks;
 mod push;
 mod report;
+mod settings_file;
 mod skill;
 
 /// The one build-config to channel mapping: a debug build is `dev`, a release
@@ -161,14 +162,8 @@ fn exchange_until(
     };
     time_out_at(stream, until).map_err(worded)?;
     frame::write_sync(stream, payload).map_err(worded)?;
-    loop {
-        time_out_at(stream, until).map_err(worded)?;
-        match recv_or(stream, worded)? {
-            Msg::Ack => return Ok(Ok(())),
-            Msg::Err { msg } => return Ok(Err(msg)),
-            _ => continue,
-        }
-    }
+    time_out_at(stream, until).map_err(worded)?;
+    answer(stream, worded)
 }
 
 /// Gives the next read and write the time left until `until`. With none

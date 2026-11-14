@@ -69,13 +69,7 @@ fn install(args: &[String]) -> i32 {
             return 2;
         }
     };
-    let env = match Env::from_process() {
-        Ok(e) => e,
-        Err(e) => {
-            eprintln!("tarmac: {e}");
-            return 1;
-        }
-    };
+    let Some(env) = Env::from_process() else { return 1 };
     let mut failed = false;
     for target in parsed.targets {
         let path = skill_path(target, parsed.scope, &env);

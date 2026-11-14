@@ -67,7 +67,12 @@ pub(crate) struct Env {
 }
 
 impl Env {
-    pub(crate) fn from_process() -> Result<Self, String> {
+    /// The process's own, or `None` after the reason is printed.
+    pub(crate) fn from_process() -> Option<Self> {
+        Self::read_process().map_err(|e| eprintln!("tarmac: {e}")).ok()
+    }
+
+    fn read_process() -> Result<Self, String> {
         let home = crate::env_override("HOME").ok_or_else(|| "HOME is not set".to_string())?;
         let cwd = std::env::current_dir().map_err(|e| format!("cannot read cwd: {e}"))?;
         Ok(Env {
