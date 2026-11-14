@@ -11,97 +11,24 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::agents::{Env, Scope, Target, parse_flags};
+
 const GUIDE: &str = include_str!("GUIDE.md");
 
 const SHIM: &str = include_str!("SKILL.md");
 
 const SKILL_NAME: &str = "tarmac";
 
-/// `install`'s flags, owned here because this module is what parses them.
-/// `main.rs` splices it into `--help`; a usage error prints it verbatim.
+/// The flags `agents::parse_flags` accepts. `main.rs` splices it into `--help`;
+/// a usage error prints it verbatim.
 pub const USAGE: &str = "    --target claude-code|codex|all   default: all
     --scope  user|project            default: user
     --dry-run                        print the paths, write nothing
 ";
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Target {
-    ClaudeCode,
-    Codex,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Scope {
-    User,
-    Project,
-}
-
-impl Target {
-    pub const ALL: [Target; 2] = [Target::ClaudeCode, Target::Codex];
-
-    fn parse(s: &str) -> Option<Self> {
-        match s {
-            "claude-code" => Some(Target::ClaudeCode),
-            "codex" => Some(Target::Codex),
-            _ => None,
-        }
-    }
-
-    /// Codex reads the cross-agent `.agents/skills`; its `$CODEX_HOME/skills` is
-    /// deprecated back-compat.
-    fn config_dir(self) -> &'static str {
-        match self {
-            Target::ClaudeCode => ".claude",
-            Target::Codex => ".agents",
-        }
-    }
-
-    /// The user-scope root. The inner match is deliberately exhaustive on
-    /// `Target`: a new agent must answer "does it have a config-dir override?"
-    /// at the compiler's insistence rather than inherit a wildcard's answer.
-    fn user_root(self, env: &Env) -> PathBuf {
-        match self {
-            Target::ClaudeCode => env.claude_config_dir.clone(),
-            Target::Codex => None,
-        }
-        .unwrap_or_else(|| env.home.join(self.config_dir()))
-    }
-}
-
-impl Scope {
-    fn parse(s: &str) -> Option<Self> {
-        match s {
-            "user" => Some(Scope::User),
-            "project" => Some(Scope::Project),
-            _ => None,
-        }
-    }
-}
-
-/// Everything about the machine that decides where a skill lands. Injected so
-/// the path logic is testable without touching a real `$HOME`.
-pub struct Env {
-    pub home: PathBuf,
-    /// `$CLAUDE_CONFIG_DIR`, which displaces `$HOME/.claude` when set.
-    pub claude_config_dir: Option<PathBuf>,
-    pub cwd: PathBuf,
-}
-
-impl Env {
-    pub fn from_process() -> Result<Self, String> {
-        let home = crate::env_override("HOME").ok_or_else(|| "HOME is not set".to_string())?;
-        let cwd = std::env::current_dir().map_err(|e| format!("cannot read cwd: {e}"))?;
-        Ok(Env {
-            home: PathBuf::from(home),
-            claude_config_dir: crate::env_override("CLAUDE_CONFIG_DIR").map(PathBuf::from),
-            cwd,
-        })
-    }
-}
-
 /// Where one target's `SKILL.md` belongs. Codex's user scope is keyed on `$HOME`
 /// and not on `$CODEX_HOME` — the latter only reaches its deprecated root.
-pub fn skill_path(target: Target, scope: Scope, env: &Env) -> PathBuf {
+pub(crate) fn skill_path(target: Target, scope: Scope, env: &Env) -> PathBuf {
     let root = match scope {
         Scope::User => target.user_root(env),
         Scope::Project => env.cwd.join(target.config_dir()),
@@ -115,41 +42,6 @@ fn write_skill(path: &Path, doc: &str) -> Result<(), String> {
         .ok_or_else(|| format!("{} has no parent directory", path.display()))?;
     fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
     fs::write(path, doc).map_err(|e| format!("cannot write {}: {e}", path.display()))
-}
-
-struct InstallArgs {
-    targets: Vec<Target>,
-    scope: Scope,
-    dry_run: bool,
-}
-
-fn parse_install(args: &[String]) -> Result<InstallArgs, String> {
-    let mut targets = Target::ALL.to_vec();
-    let mut scope = Scope::User;
-    let mut dry_run = false;
-    let mut it = args.iter();
-    while let Some(arg) = it.next() {
-        match arg.as_str() {
-            "--dry-run" => dry_run = true,
-            "--target" => {
-                let v = it.next().ok_or("--target needs a value")?;
-                targets = if v == "all" {
-                    Target::ALL.to_vec()
-                } else {
-                    vec![Target::parse(v).ok_or_else(|| {
-                        format!("unknown target '{v}' (claude-code, codex, all)")
-                    })?]
-                };
-            }
-            "--scope" => {
-                let v = it.next().ok_or("--scope needs a value")?;
-                scope = Scope::parse(v)
-                    .ok_or_else(|| format!("unknown scope '{v}' (user, project)"))?;
-            }
-            other => return Err(format!("unexpected argument '{other}'")),
-        }
-    }
-    Ok(InstallArgs { targets, scope, dry_run })
 }
 
 /// Returns the exit code: 0 ok, 1 a target failed, 2 usage.
@@ -170,7 +62,7 @@ pub fn run(args: &[String]) -> i32 {
 /// Every target is attempted — one unwritable root must not deny the other
 /// agent its skill — so the exit code is the aggregate, not the first failure.
 fn install(args: &[String]) -> i32 {
-    let parsed = match parse_install(args) {
+    let parsed = match parse_flags(args) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("tarmac: {e}\n{USAGE}");
@@ -304,41 +196,5 @@ mod tests {
                 assert!(!doc.contains(repo_path), "leaks a repo path: {repo_path}");
             }
         }
-    }
-
-    fn install_args(args: &[&str]) -> Result<InstallArgs, String> {
-        let owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-        parse_install(&owned)
-    }
-
-    #[test]
-    fn install_defaults_to_every_target_at_user_scope() {
-        let a = install_args(&[]).unwrap();
-        assert_eq!(a.targets, Target::ALL.to_vec());
-        assert_eq!(a.scope, Scope::User);
-        assert!(!a.dry_run);
-    }
-
-    #[test]
-    fn install_flags_narrow_target_and_scope() {
-        let a = install_args(&["--target", "codex", "--scope", "project", "--dry-run"]).unwrap();
-        assert_eq!(a.targets, vec![Target::Codex]);
-        assert_eq!(a.scope, Scope::Project);
-        assert!(a.dry_run);
-    }
-
-    #[test]
-    fn usage_text_documents_every_flag_the_parser_accepts() {
-        for flag in ["--target", "--scope", "--dry-run"] {
-            assert!(USAGE.contains(flag), "USAGE omits {flag}");
-        }
-    }
-
-    #[test]
-    fn install_rejects_unknown_values_and_stray_arguments() {
-        assert!(install_args(&["--target", "cursor"]).is_err());
-        assert!(install_args(&["--scope", "system"]).is_err());
-        assert!(install_args(&["--target"]).is_err());
-        assert!(install_args(&["extra"]).is_err());
     }
 }

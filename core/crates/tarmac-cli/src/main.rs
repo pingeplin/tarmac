@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use tarmac_protocol::{self as proto, Msg, frame};
 
+mod agents;
 mod help;
 mod push;
 mod report;
