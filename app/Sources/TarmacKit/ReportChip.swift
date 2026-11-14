@@ -53,16 +53,16 @@ public enum ReportChip {
     /// How often a shown chip reads its age again.
     public static let refreshInterval: TimeInterval = 30
 
-    private static let title = "回報"
+    private static let title = "report"
 
     public static func model(report: TermReport, nowMs: UInt64) -> Model {
         let elapsed = nowMs >= report.atMs ? nowMs - report.atMs : 0
-        let heading = report.proc.map { "\(title) · 在 \($0) 期間" } ?? title
+        let heading = report.proc.map { "\(title) · during \($0)" } ?? title
         return Model(
             text: "\(title) · \(ChromeText.reportAge(elapsedMs: elapsed))",
             tone: report.kind,
             dimmed: report.read,
-            toolTip: report.text.map { "\(heading)\n「\($0)」" } ?? heading
+            toolTip: report.text.map { "\(heading)\n“\($0)”" } ?? heading
         )
     }
 }

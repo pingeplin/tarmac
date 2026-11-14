@@ -1050,12 +1050,12 @@ reports and hover motion never clear it. The view's own bell and OSC 52
 clipboard hooks are left unset on purpose: the daemon's `Bell` is the observed
 fact, and a program may not overwrite the user's clipboard.
 
-A `TermReport` shows a **report chip** before the bell dot: `回報 · <age>`
+A `TermReport` shows a **report chip** before the bell dot: `report · <age>`
 (`<1m`, `Nm`, `Nh`, `Nd`), amber for `blocked`, `Theme.ok` green for `done`,
 read again every 30 s (`ReportChip`, `TarmacKit`). It is the doc card's owner
 chip form (`ChipView`: mono, a 1 px border, no fill); a read report keeps the
 kind's colour on its border and its text goes faint. Its tool tip places the
-report in time, `回報 · 在 <proc> 期間`, and quotes the text in `「」`: the text is
+report in time, `report · during <proc>`, and quotes the text in `“”`: the text is
 a claim of whatever process sent it, never parsed. The app sends `Input.typed`
 for the user's own input only, so a hover report or an engine reply never reads
 it. A dead card drops its report (`holdOpen`), and a lost connection clears

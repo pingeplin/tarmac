@@ -22,10 +22,10 @@ final class ReportChipTests: XCTestCase {
     // S7
     func testS7AnUnreadBlockedReportQuotesItsTextAndPlacesItInTime() throws {
         let chip = try model(frame())
-        XCTAssertEqual(chip.text, "回報 · 2m")
+        XCTAssertEqual(chip.text, "report · 2m")
         XCTAssertEqual(chip.tone, .blocked)
         XCTAssertFalse(chip.dimmed)
-        XCTAssertEqual(chip.toolTip, "回報 · 在 claude 期間\n「May I?」")
+        XCTAssertEqual(chip.toolTip, "report · during claude\n“May I?”")
     }
 
     // S7
@@ -38,9 +38,9 @@ final class ReportChipTests: XCTestCase {
 
     // S19
     func testS19NoProcIsTheBareTitleAndNoTextIsOneLine() throws {
-        XCTAssertEqual(try model(frame(proc: nil)).toolTip, "回報\n「May I?」")
-        XCTAssertEqual(try model(frame(text: nil)).toolTip, "回報 · 在 claude 期間")
-        XCTAssertEqual(try model(frame(text: nil, proc: nil)).toolTip, "回報")
+        XCTAssertEqual(try model(frame(proc: nil)).toolTip, "report\n“May I?”")
+        XCTAssertEqual(try model(frame(text: nil)).toolTip, "report · during claude")
+        XCTAssertEqual(try model(frame(text: nil, proc: nil)).toolTip, "report")
     }
 
     // S19
@@ -64,6 +64,6 @@ final class ReportChipTests: XCTestCase {
 
     // S20
     func testS20AReportFromTheFutureIsUnderAMinuteOld() throws {
-        XCTAssertEqual(try model(frame(atMs: now + 90_000)).text, "回報 · <1m")
+        XCTAssertEqual(try model(frame(atMs: now + 90_000)).text, "report · <1m")
     }
 }
