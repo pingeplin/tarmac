@@ -67,8 +67,11 @@ extension AppController {
             refreshChrome()
             // Keep an open switcher in sync with board adds/removes/active-change.
             refreshSwitcherIfOpen()
-        case .restore(let docs, let tiles, let board, let restoredBoardID, let liveTerms):
-            applyRestore(docs: docs, tiles: tiles, viewport: board, boardID: restoredBoardID, liveTerms: liveTerms)
+        case .restore(let docs, let tiles, let board, let restoredBoardID, let liveTerms, let termRecords):
+            applyRestore(
+                docs: docs, tiles: tiles, viewport: board, boardID: restoredBoardID, liveTerms: liveTerms,
+                termRecords: termRecords
+            )
         case .output(let termID, let bytes):
             // Shown whatever board the terminal is on: a backgrounded board's
             // shell keeps progressing and is current on switch-back.

@@ -4,13 +4,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use tarmac_protocol::{DocEntry, Msg};
-use tokio::sync::{Mutex, Notify, mpsc};
+use tokio::sync::{Mutex, Notify, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::boards::{BoardId, Boards, DataDir, FileStamp, WantedData};
 use crate::docs::RepoInfo;
 use crate::reader::{PathFs, PathGate, RealFs};
-use crate::term::TermHandle;
+use crate::term::{SpawnPlan, TermHandle};
 use crate::watch::{NotWatched, NotifySource, Wake, WakeSource, Watcher};
 
 pub struct AppSlot {
@@ -73,6 +73,8 @@ pub struct Daemon {
     gate: Arc<PathGate>,
     next_generation: AtomicU64,
     dirty: Notify,
+    /// Requests to `persist::save_loop` for its last write.
+    finals: mpsc::Sender<oneshot::Sender<()>>,
     state_path: PathBuf,
 }
 
@@ -139,6 +141,7 @@ impl Daemon {
                 watcher.reconcile(dir);
             }
         }
+        let (finals, final_requests) = mpsc::channel(1);
         let daemon = Arc::new(Daemon {
             app: Mutex::new(None),
             boards: Mutex::new(boards),
@@ -151,10 +154,11 @@ impl Daemon {
             gate,
             next_generation: AtomicU64::new(1),
             dirty: Notify::new(),
+            finals,
             state_path,
         });
         tokio::spawn(crate::docs::watch_loop(daemon.clone()));
-        tokio::spawn(crate::persist::save_loop(daemon.clone()));
+        tokio::spawn(crate::persist::save_loop(daemon.clone(), final_requests));
         daemon
     }
 
@@ -356,6 +360,15 @@ impl Daemon {
         true
     }
 
+    /// Has the save loop read each live terminal's cwd once more, write the
+    /// state a last time and stop: no write follows. Returns once written.
+    pub async fn final_save(&self) {
+        let (done, saved) = oneshot::channel();
+        if self.finals.send(done).await.is_ok() {
+            let _ = saved.await;
+        }
+    }
+
     pub fn mark_dirty(&self) {
         self.dirty.notify_one();
     }
@@ -419,6 +432,74 @@ impl Daemon {
         let dropped = self.boards.lock().await.drop_data();
         for dir in &dropped {
             self.release_data_dir(dir);
+        }
+    }
+
+    /// Files a new terminal under `board` with its record: the record of
+    /// `succeeds` when that board has one and the term is not live, else an
+    /// empty one. Runs before the terminal's first cwd read, which only ever
+    /// fills a record that is there.
+    pub async fn adopt_term(&self, plan: &SpawnPlan) {
+        let succeeds = match plan.succeeds.as_deref() {
+            Some(old) if !self.terms.lock().await.contains_key(old) => Some(old),
+            _ => None,
+        };
+        self.term_boards.lock().await.insert(plan.term_id.clone(), plan.board.clone());
+        let mut boards = self.boards.lock().await;
+        let Some(reg) = boards.known_registry_mut(&plan.board) else { return };
+        let moved = succeeds.and_then(|old| reg.term_records.remove(old));
+        if moved.is_some() {
+            self.mark_dirty();
+        }
+        reg.term_records.insert(plan.term_id.clone(), moved.unwrap_or_default());
+    }
+
+    /// Reads the cwd of `pid` on the gate and stores it in the record of
+    /// `term_id`, on the board the term is filed under. A record that is gone
+    /// (closed, ended cleanly, or its board deleted) is not made again, and a
+    /// read with no answer keeps the cwd before it. Not saved by itself.
+    pub async fn note_cwd(&self, term_id: &str, pid: libc::pid_t) {
+        let Ok(Some(cwd)) = self.gate.pid_cwd(pid).await else { return };
+        let Some(board) = self.term_boards.lock().await.get(term_id).cloned() else { return };
+        let mut boards = self.boards.lock().await;
+        if let Some(record) = boards.known_registry_mut(&board).and_then(|reg| reg.term_records.get_mut(term_id)) {
+            record.last_cwd = Some(cwd);
+        }
+    }
+
+    /// The foreground pid of each live terminal.
+    pub async fn foreground_pids(&self) -> Vec<(String, libc::pid_t)> {
+        let terms = self.terms.lock().await;
+        terms.iter().filter_map(|(id, h)| Some((id.clone(), h.foreground_pid()?))).collect()
+    }
+
+    /// Deletes the record of `term_id` from whichever board holds it, and
+    /// marks the state dirty when there was one.
+    async fn forget_record(&self, term_id: &str) {
+        if self.boards.lock().await.forget_term(term_id) {
+            self.mark_dirty();
+        }
+    }
+
+    /// Deletes the record of `term_id`, live or not, and kills its process
+    /// group when it is live.
+    pub async fn close_term(&self, term_id: &str) {
+        self.forget_record(term_id).await;
+        match self.term(term_id).await {
+            Some(h) => h.kill(),
+            None => tracing::debug!("term_close for unknown term {term_id}"),
+        }
+    }
+
+    /// Takes an exited terminal out of the maps. A clean exit (`Some(0)`)
+    /// deletes its record; any other keeps it for the dead card.
+    pub async fn term_ended(&self, term_id: &str, code: Option<i64>) {
+        if self.terms.lock().await.remove(term_id).is_none() {
+            tracing::warn!("term {term_id} missing from registry at exit");
+        }
+        self.term_boards.lock().await.remove(term_id);
+        if code == Some(0) {
+            self.forget_record(term_id).await;
         }
     }
 

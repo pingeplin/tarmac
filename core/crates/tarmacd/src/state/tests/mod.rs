@@ -12,6 +12,7 @@ mod restart;
 mod spawn_cwd;
 mod pushes;
 mod data_dirs;
+mod term_records;
 
 async fn open_doc(daemon: &Daemon, board: Option<&str>, doc: &Path) {
     daemon.open_doc(board, doc, "t", None, crate::reader::stamp(doc), None).await.unwrap();
@@ -166,8 +167,12 @@ async fn registered(daemon: &Daemon, doc: &Path) -> bool {
 }
 
 async fn eventually(what: &str, done: impl Fn() -> bool) {
-    let deadline = std::time::Instant::now() + Duration::from_secs(2);
-    while !done() {
+    eventually_async(what, || std::future::ready(done())).await;
+}
+
+async fn eventually_async<F: Future<Output = bool>>(what: &str, done: impl Fn() -> F) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !done().await {
         assert!(std::time::Instant::now() < deadline, "{what} never happened");
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
@@ -264,4 +269,97 @@ async fn on_source(state_path: PathBuf, source: impl WakeSource + 'static) -> Ar
 /// A daemon whose watcher is `source` and whose gate calls `fs`.
 async fn held(tmp: &Path, source: Box<dyn WakeSource>, fs: Arc<StuckFs>) -> Arc<Daemon> {
     Daemon::with_fs(tmp.join("state.json"), source, Arc::new(Wake::default()), fs, LIMIT).await
+}
+
+/// A daemon on `StuckFs` that loads `state`, its app, and a dir in a temp dir
+/// of its own, which is not under `$HOME`. The test keeps `release` until
+/// it lets the held calls return.
+struct Rig {
+    tmp: PathBuf,
+    dir: PathBuf,
+    daemon: Arc<Daemon>,
+    app: mpsc::Receiver<Msg>,
+    fs: Arc<StuckFs>,
+    release: Option<std::sync::mpsc::Sender<()>>,
+}
+
+impl Rig {
+    /// Lets every held call return, and each later one.
+    fn release(&mut self) {
+        self.release = None;
+    }
+
+    async fn end(mut self) {
+        self.release();
+        let terms: Vec<_> = self.daemon.terms.lock().await.values().cloned().collect();
+        for term in terms {
+            term.kill();
+        }
+        let _ = std::fs::remove_dir_all(&self.tmp);
+    }
+}
+
+async fn rig_with(tag: &str, state: Option<serde_json::Value>, limit: Duration) -> Rig {
+    let tmp = canon_tmp(tag);
+    let dir = tmp.join("d");
+    std::fs::create_dir_all(&dir).unwrap();
+    if let Some(state) = state {
+        std::fs::write(tmp.join("state.json"), state.to_string()).unwrap();
+    }
+    let (fs, release) = stuck_fs();
+    let daemon = Daemon::with_fs(tmp.join("state.json"), Box::new(Silent), Arc::new(Wake::default()), fs.clone(), limit).await;
+    let app = connect_app(&daemon).await;
+    Rig { tmp, dir, daemon, app, fs, release: Some(release) }
+}
+
+/// What a test's `SpawnTerm` names beside its id and argv.
+#[derive(Default, Clone, Copy)]
+struct SpawnOpts<'a> {
+    board: Option<&'a str>,
+    cwd: Option<&'a Path>,
+    inherit_cwd_from: Option<&'a str>,
+    succeeds: Option<&'a str>,
+}
+
+/// The step of a `SpawnTerm` of `argv`, on a task of its own, and how long
+/// it took to return.
+async fn spawn(daemon: &Arc<Daemon>, term_id: &str, argv: &[&str], opts: SpawnOpts<'_>) -> Duration {
+    let (daemon, term_id) = (daemon.clone(), term_id.to_owned());
+    let cmd = argv.iter().map(|a| a.to_string()).collect();
+    let owned = |s: Option<&str>| s.map(str::to_owned);
+    let (board, inherit_cwd_from, succeeds) = (owned(opts.board), owned(opts.inherit_cwd_from), owned(opts.succeeds));
+    let cwd = opts.cwd.map(|c| c.to_string_lossy().into_owned());
+    let started = std::time::Instant::now();
+    within(tokio::spawn(async move {
+        crate::conn::spawn_requested(&daemon, term_id, (80, 24), cwd, Some(cmd), board, inherit_cwd_from, succeeds).await
+    }))
+    .await;
+    started.elapsed()
+}
+
+async fn pid_of(daemon: &Daemon, term_id: &str) -> libc::pid_t {
+    daemon.term(term_id).await.expect("the term runs").foreground_pid().expect("a foreground pid")
+}
+
+/// What `term_id` printed until `until` is in it, or to its exit when
+/// `until` is `None`. An `err` frame fails the test.
+async fn printed(app: &mut mpsc::Receiver<Msg>, term_id: &str, until: Option<&str>) -> String {
+    let mut out = Vec::new();
+    let frames = async {
+        loop {
+            match app.recv().await.expect("the app is connected") {
+                Msg::Output { term_id: t, bytes } if t == term_id => {
+                    out.extend(bytes);
+                    if until.is_some_and(|u| String::from_utf8_lossy(&out).contains(u)) {
+                        return;
+                    }
+                }
+                Msg::Exit { term_id: t, .. } if t == term_id => return,
+                Msg::Err { msg } => panic!("an err frame: {msg}"),
+                _ => {}
+            }
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(5), frames).await.expect("the term's frames");
+    String::from_utf8_lossy(&out).trim().to_owned()
 }

@@ -6,14 +6,16 @@ public enum BoardRestore {
         public var termID: String
         public var frame: CGRect
         public var z: Int
-        /// False for a terminal re-bound to a PTY the daemon still owns.
-        public var needsSpawn: Bool
+        /// Nil for a terminal re-bound to a PTY the daemon still owns.
+        public var spawn: SpawnRequest?
 
-        public init(termID: String, frame: CGRect, z: Int, needsSpawn: Bool) {
+        public var needsSpawn: Bool { spawn != nil }
+
+        public init(termID: String, frame: CGRect, z: Int, spawn: SpawnRequest?) {
             self.termID = termID
             self.frame = frame
             self.z = z
-            self.needsSpawn = needsSpawn
+            self.spawn = spawn
         }
     }
 
@@ -50,12 +52,15 @@ public enum BoardRestore {
     /// `tiles` and `docs` are the restore's layout and doc registry; `liveTerms`
     /// the terminals the daemon still owns. `mint` supplies the id of every
     /// terminal that cold-spawns — a persisted id is never reused for a new shell.
+    /// A cold spawn of a persisted tile succeeds its persisted id, and starts in
+    /// that terminal's last folder in `termRecords` (2611.0007).
     ///
     /// A doc follows its recorded owner to whatever that terminal was restored
     /// as. An owner that was not restored leaves the doc ownerless and detached;
     /// there is no fallback to the board's only terminal.
     public static func plan(
-        tiles: [LayoutTile], docs: [RestoreDoc], liveTerms: Set<String>, mint: () -> String
+        tiles: [LayoutTile], docs: [RestoreDoc], liveTerms: Set<String>, termRecords: [String: TermRecord] = [:],
+        mint: () -> String
     ) -> Plan {
         let parsed = LayoutTiles.parse(tiles)
         let rebinds = TermRestore.plan(tileTermIDs: parsed.terms.map(\.termID), liveTerms: liveTerms)
@@ -64,23 +69,21 @@ public enum BoardRestore {
         var terms: [Term] = []
         for (index, tile) in parsed.terms.enumerated() {
             let termID: String
-            let needsSpawn: Bool
+            let spawn: SpawnRequest?
             switch rebinds[index] {
             case .rebind(let live):
-                (termID, needsSpawn) = (live, false)
+                (termID, spawn) = (live, nil)
             case .coldSpawn:
-                (termID, needsSpawn) = (mint(), true)
+                let cwd = tile.termID.flatMap { termRecords[$0]?.lastCwd }
+                (termID, spawn) = (mint(), SpawnRequest(cwd: cwd, succeeds: tile.termID))
             }
             if let persisted = tile.termID { restoredID[persisted] = termID }
             terms.append(Term(
-                termID: termID,
-                frame: tile.frame ?? TermPlacement.restoredFrame(index: index),
-                z: tile.z,
-                needsSpawn: needsSpawn
+                termID: termID, frame: tile.frame ?? TermPlacement.restoredFrame(index: index), z: tile.z, spawn: spawn
             ))
         }
         if terms.isEmpty {
-            terms.append(Term(termID: mint(), frame: Placement.termFrame, z: 0, needsSpawn: true))
+            terms.append(Term(termID: mint(), frame: Placement.termFrame, z: 0, spawn: SpawnRequest()))
         }
 
         var recordedOwner: [String: String?] = [:]

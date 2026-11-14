@@ -38,6 +38,16 @@ public struct RestoreDoc: Equatable, Sendable {
     }
 }
 
+/// What the daemon keeps of one terminal across its restarts (2611.0007).
+public struct TermRecord: Equatable, Sendable {
+    /// The terminal's last cwd that the daemon read.
+    public var lastCwd: String?
+
+    public init(lastCwd: String?) {
+        self.lastCwd = lastCwd
+    }
+}
+
 /// One slot in the desk tile order (`restore.tiles[]` / `layout.tiles[]`):
 /// kind "term" (no path) or "doc" (registry path). Unknown kinds pass through
 /// the codec; receivers skip them per the protocol.
@@ -154,11 +164,24 @@ public enum Message: Equatable, Sendable {
     /// on this board. The app re-binds these cards to the running shells
     /// (consuming the replayed scrollback that follows) instead of cold-
     /// spawning; empty ⇒ cold-spawn (an older or restarted daemon, shells gone).
-    case restore(docs: [RestoreDoc], tiles: [LayoutTile], board: BoardViewport?, boardID: String?, liveTerms: [String])
+    ///
+    /// `termRecords` (2611.0007, default empty): the board's record of each
+    /// terminal, keyed by term id. A cold spawn of a persisted tile starts in
+    /// its record's `lastCwd`.
+    case restore(
+        docs: [RestoreDoc],
+        tiles: [LayoutTile],
+        board: BoardViewport?,
+        boardID: String?,
+        liveTerms: [String],
+        termRecords: [String: TermRecord] = [:]
+    )
     /// `boardID` (missing ⇒ board-0 / active) is the board the new
     /// terminal belongs to. `inheritCwdFrom` (issue #77, missing ⇒ nil) names a
     /// terminal whose LIVE cwd the new one starts in; the daemon resolves it at
-    /// spawn time and ignores it when `cwd` is set.
+    /// spawn time and ignores it when `cwd` is set. `succeeds` (2611.0007,
+    /// missing ⇒ nil) names the persisted terminal whose record the new one
+    /// takes.
     case spawnTerm(
         termID: String,
         cols: Int,
@@ -166,7 +189,8 @@ public enum Message: Equatable, Sendable {
         cwd: String?,
         cmd: [String]?,
         boardID: String? = nil,
-        inheritCwdFrom: String? = nil
+        inheritCwdFrom: String? = nil,
+        succeeds: String? = nil
     )
     case input(termID: String, bytes: Data)
     case resize(termID: String, cols: Int, rows: Int)
@@ -297,7 +321,8 @@ public extension Message {
             return .restore(
                 docs: docs, tiles: tiles, board: board,
                 boardID: try opt("board_id", \.stringValue),
-                liveTerms: try opt("live_terms", Self.stringArray) ?? []
+                liveTerms: try opt("live_terms", Self.stringArray) ?? [],
+                termRecords: try Self.termRecords(from: opt("term_records", \.mapValue))
             )
         case "spawn_term":
             return .spawnTerm(
@@ -307,7 +332,8 @@ public extension Message {
                 cwd: try opt("cwd", \.stringValue),
                 cmd: try opt("cmd", Self.stringArray),
                 boardID: try opt("board_id", \.stringValue),
-                inheritCwdFrom: try opt("inherit_cwd_from", \.stringValue)
+                inheritCwdFrom: try opt("inherit_cwd_from", \.stringValue),
+                succeeds: try opt("succeeds", \.stringValue)
             )
         case "input":
             return .input(termID: try req("term_id", \.stringValue), bytes: try req("bytes", \.binaryValue))
@@ -374,6 +400,15 @@ public extension Message {
             return .scrollback(termID: try req("term_id", \.stringValue), bytes: try req("bytes", \.binaryValue))
         default:
             return .unknown(type: t)
+        }
+    }
+
+    private static func termRecords(from m: [String: MsgPackValue]?) throws -> [String: TermRecord] {
+        try (m ?? [:]).mapValues { value in
+            guard let record = value.mapValue else { throw MessageError.badField("term_records") }
+            guard let raw = record["last_cwd"], !raw.isNil else { return TermRecord(lastCwd: nil) }
+            guard let lastCwd = raw.stringValue else { throw MessageError.badField("last_cwd") }
+            return TermRecord(lastCwd: lastCwd)
         }
     }
 
@@ -481,7 +516,7 @@ public extension Message {
                 $0.put("board", unlessNil: board.map(Self.boardValue))
                 $0.put("board_id", unlessNil: boardID.map(MsgPackValue.string))
             }
-        case .restore(let docs, let tiles, let board, let boardID, let liveTerms):
+        case .restore(let docs, let tiles, let board, let boardID, let liveTerms, let termRecords):
             return Self.tagged("restore") {
                 $0.put("docs", .array(docs.map { doc in
                     var entry = WireFields()
@@ -492,8 +527,9 @@ public extension Message {
                 $0.put("board", unlessNil: board.map(Self.boardValue))
                 $0.put("board_id", unlessNil: boardID.map(MsgPackValue.string))
                 $0.put("live_terms", unlessNil: liveTerms.isEmpty ? nil : Self.stringArrayValue(liveTerms))
+                $0.put("term_records", unlessNil: termRecords.isEmpty ? nil : Self.termRecordsValue(termRecords))
             }
-        case .spawnTerm(let termID, let cols, let rows, let cwd, let cmd, let boardID, let inheritCwdFrom):
+        case .spawnTerm(let termID, let cols, let rows, let cwd, let cmd, let boardID, let inheritCwdFrom, let succeeds):
             return Self.tagged("spawn_term") {
                 $0.put("term_id", .string(termID))
                 $0.put("cols", .int(Int64(cols)))
@@ -502,6 +538,7 @@ public extension Message {
                 $0.put("cmd", orNil: cmd.map(Self.stringArrayValue))
                 $0.put("board_id", unlessNil: boardID.map(MsgPackValue.string))
                 $0.put("inherit_cwd_from", unlessNil: inheritCwdFrom.map(MsgPackValue.string))
+                $0.put("succeeds", unlessNil: succeeds.map(MsgPackValue.string))
             }
         case .input(let termID, let bytes):
             return Self.tagged("input") {
@@ -631,6 +668,15 @@ public extension Message {
         m.put("shelf", unlessNil: tile.shelf.map(MsgPackValue.bool))
         m.put("term_id", unlessNil: tile.termID.map(MsgPackValue.string))
         return .orderedMap(m.fields)
+    }
+
+    /// Keys in sorted order, as the daemon's `BTreeMap` writes them.
+    private static func termRecordsValue(_ records: [String: TermRecord]) -> MsgPackValue {
+        .orderedMap(records.sorted { $0.key < $1.key }.map { id, record in
+            var m = WireFields()
+            m.put("last_cwd", unlessNil: record.lastCwd.map(MsgPackValue.string))
+            return MsgPackField(id, .orderedMap(m.fields))
+        })
     }
 
     private static func boardValue(_ board: BoardViewport) -> MsgPackValue {

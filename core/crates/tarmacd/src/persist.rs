@@ -2,17 +2,19 @@
 //! Contract per docs/protocol.md: a daemon restart followed by an app connect
 //! must produce a restore indistinguishable from one without the restart.
 
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tarmac_protocol::{BoardViewport, Tile};
+use tarmac_protocol::{BoardViewport, TermRecord, Tile};
 use tracing::warn;
 
 use crate::boards::{Board, Boards, DEFAULT_BOARD_ID, DocInfo, Registry};
 use crate::state::Daemon;
+use tokio::sync::{mpsc, oneshot};
 
 const SAVE_DEBOUNCE: Duration = Duration::from_millis(150);
 
@@ -46,6 +48,8 @@ struct PersistedBoard {
     tiles: Vec<Tile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     board: Option<BoardViewport>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    term_records: BTreeMap<String, TermRecord>,
 }
 
 // The legacy flat fields (`docs`/`tiles`/`board` at top level) are migration
@@ -89,6 +93,7 @@ pub fn load(path: &Path) -> Boards {
             docs: state.docs,
             tiles: state.tiles,
             board: state.board,
+            term_records: BTreeMap::new(),
         })]
     } else {
         state.boards.into_iter().map(hydrate).collect()
@@ -127,6 +132,7 @@ fn hydrate(pb: PersistedBoard) -> Board {
     }
     reg.set_tiles(pb.tiles);
     reg.board = pb.board;
+    reg.term_records = pb.term_records;
     Board { id: pb.board_id, name: pb.name, registry: reg }
 }
 
@@ -155,6 +161,7 @@ fn snapshot(boards: &Boards) -> PersistedState {
                 docs: b.registry.dock.iter().filter_map(|p| persisted_doc(&b.registry, p)).collect(),
                 tiles: b.registry.tiles.clone(),
                 board: b.registry.board.clone(),
+                term_records: b.registry.term_records.clone(),
             })
             .collect(),
         active: boards.active_id().to_string(),
@@ -178,17 +185,53 @@ fn write_atomic(path: &Path, state: &PersistedState) -> anyhow::Result<()> {
     Ok(())
 }
 
-// Dirty-flag + short sleep coalesces mutation bursts into one write.
-pub async fn save_loop(daemon: Arc<Daemon>) {
+/// How long the shutdown save waits for the cwd reads of the live
+/// terminals, all of them together. It is well inside the app's 2 s wait
+/// for a daemon that it replaces.
+pub const SHUTDOWN_CWD_BUDGET: Duration = Duration::from_millis(500);
+
+/// Reads the cwd of every live terminal at once, and records each that
+/// answers within `SHUTDOWN_CWD_BUDGET`. A read that does not keeps the cwd
+/// recorded before.
+async fn read_cwds(daemon: &Arc<Daemon>) {
+    let deadline = tokio::time::Instant::now() + SHUTDOWN_CWD_BUDGET;
+    let mut reads = tokio::task::JoinSet::new();
+    for (term_id, pid) in daemon.foreground_pids().await {
+        let daemon = daemon.clone();
+        reads.spawn(async move {
+            let _ = tokio::time::timeout_at(deadline, daemon.note_cwd(&term_id, pid)).await;
+        });
+    }
+    while reads.join_next().await.is_some() {}
+}
+
+async fn write(daemon: &Daemon) {
+    let state = snapshot(&*daemon.boards.lock().await);
+    let path = daemon.state_path().to_owned();
+    match tokio::task::spawn_blocking(move || write_atomic(&path, &state)).await {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => warn!("state save failed: {e}"),
+        Err(e) => warn!("state save did not finish: {e}"),
+    }
+}
+
+/// The one writer of the state file. A dirty flag and a short sleep coalesce
+/// a burst of changes into one write. A request from `Daemon::final_save`
+/// ends it: each live terminal's cwd is read once more, the state is
+/// written a last time, and the request is answered.
+pub async fn save_loop(daemon: Arc<Daemon>, mut finals: mpsc::Receiver<oneshot::Sender<()>>) {
     loop {
-        daemon.dirty_notified().await;
-        tokio::time::sleep(SAVE_DEBOUNCE).await;
-        let state = {
-            let boards = daemon.boards.lock().await;
-            snapshot(&boards)
-        };
-        if let Err(e) = write_atomic(daemon.state_path(), &state) {
-            warn!("state save failed: {e}");
+        tokio::select! {
+            _ = async {
+                daemon.dirty_notified().await;
+                tokio::time::sleep(SAVE_DEBOUNCE).await;
+            } => write(&daemon).await,
+            Some(done) = finals.recv() => {
+                read_cwds(&daemon).await;
+                write(&daemon).await;
+                let _ = done.send(());
+                return;
+            }
         }
     }
 }
@@ -305,6 +348,22 @@ mod tests {
         assert_eq!(ids, vec!["board-0", "board-1"]);
         assert_eq!(boards.iter().nth(1).unwrap().name.as_deref(), Some("infra"));
         assert_eq!(boards.active_id(), "board-0");
+    }
+
+    // 2611.0007: no save_loop write lands after the final save, which shares
+    // its temp file.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn no_write_follows_the_final_save() {
+        let path = tmp_state("final-save");
+        let daemon = Daemon::new(path.clone()).await.unwrap();
+        daemon.final_save().await;
+        let kept = std::fs::read(&path).unwrap();
+
+        daemon.boards.lock().await.rename(DEFAULT_BOARD_ID, Some("renamed".into()));
+        daemon.mark_dirty();
+        tokio::time::sleep(SAVE_DEBOUNCE * 3).await;
+
+        assert_eq!(std::fs::read(&path).unwrap(), kept);
     }
 
     // Missing or corrupt files are never fatal: a single default board-0.

@@ -193,11 +193,12 @@ public final class DaemonClient: @unchecked Sendable {
         cwd: String?,
         cmd: [String]?,
         boardID: String? = nil,
-        inheritCwdFrom: String? = nil
+        inheritCwdFrom: String? = nil,
+        succeeds: String? = nil
     ) {
         send(.spawnTerm(
             termID: termID, cols: cols, rows: rows, cwd: cwd, cmd: cmd,
-            boardID: boardID, inheritCwdFrom: inheritCwdFrom
+            boardID: boardID, inheritCwdFrom: inheritCwdFrom, succeeds: succeeds
         ))
     }
 

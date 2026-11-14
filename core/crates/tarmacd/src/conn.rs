@@ -247,8 +247,8 @@ async fn app_session(
 
 async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
     match msg {
-        Msg::SpawnTerm { term_id, cols, rows, cwd, cmd, board_id, inherit_cwd_from } => {
-            spawn_requested(daemon, term_id, (cols, rows), cwd, cmd, board_id, inherit_cwd_from).await;
+        Msg::SpawnTerm { term_id, cols, rows, cwd, cmd, board_id, inherit_cwd_from, succeeds } => {
+            spawn_requested(daemon, term_id, (cols, rows), cwd, cmd, board_id, inherit_cwd_from, succeeds).await;
         }
         Msg::Input { term_id, bytes } => match daemon.term(&term_id).await {
             Some(h) => {
@@ -264,13 +264,11 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
             }
             None => debug!("resize for unknown term {term_id}"),
         },
-        // Kills one terminal's process group (SIGHUP) so a single card can close.
-        // The handle is cloned and the terms lock dropped before kill(), as in
-        // board delete; the pump's wait thread then runs the normal exit cleanup.
-        Msg::TermClose { term_id } => match daemon.term(&term_id).await {
-            Some(h) => h.kill(),
-            None => debug!("term_close for unknown term {term_id}"),
-        },
+        // Deletes the terminal's record, and kills its process group (SIGHUP)
+        // so a single card can close. The handle is cloned and the terms lock
+        // dropped before kill(), as in board delete; the pump's wait thread then
+        // runs the normal exit cleanup.
+        Msg::TermClose { term_id } => daemon.close_term(&term_id).await,
         Msg::Open { path, term_id, board_id } => {
             // No reply frame for an app open; doc_opened is still pushed.
             if let Err(e) = docs::handle_open(daemon, &path, "user", term_id, board_id).await {
@@ -366,6 +364,7 @@ pub(crate) async fn spawn_requested(
     cmd: Option<Vec<String>>,
     board_id: Option<String>,
     inherit_cwd_from: Option<String>,
+    succeeds: Option<String>,
 ) {
     // Before the cwd, whose read can take the gate's limit. term::spawn checks
     // again, for a spawn of the same id in that time.
@@ -374,7 +373,14 @@ pub(crate) async fn spawn_requested(
     }
     let board = owning_board(daemon, board_id).await;
     let cwd = spawn_cwd(daemon, cwd, inherit_cwd_from).await;
-    spawn_term(daemon, term_id, cols, rows, cwd, cmd, board).await;
+    // No board_list re-push on a successful spawn: the app initiated it for a
+    // board it is building and already knows the new running count. Only the
+    // exit re-push (term.rs) is load-bearing, for a term dying on a board the
+    // app has not rebuilt.
+    let plan = term::SpawnPlan { term_id, size: (cols, rows), cwd, cmd, board, succeeds };
+    if let Err(e) = term::spawn(daemon.clone(), plan).await {
+        spawn_failed(daemon, e).await;
+    }
 }
 
 // An explicit, known board_id wins, else the active board.
@@ -405,26 +411,6 @@ async fn spawn_cwd(
     let path = PathBuf::from(&cwd);
     let is_dir = daemon.gate().run(&path.clone(), move |fs| fs.is_dir(&path)).await;
     matches!(is_dir, Ok(true)).then_some(cwd)
-}
-
-// No board_list re-push on a successful spawn: the app initiated it for a board
-// it is building and already knows the new running count. Only the exit re-push
-// (term.rs) is load-bearing, for a term dying on a board the app has not rebuilt.
-async fn spawn_term(
-    daemon: &Arc<Daemon>,
-    term_id: String,
-    cols: u16,
-    rows: u16,
-    cwd: Option<String>,
-    cmd: Option<Vec<String>>,
-    board: BoardId,
-) {
-    match term::spawn(daemon.clone(), term_id.clone(), cols, rows, cwd, cmd).await {
-        Ok(()) => {
-            daemon.term_boards.lock().await.insert(term_id, board);
-        }
-        Err(e) => spawn_failed(daemon, e).await,
-    }
 }
 
 async fn spawn_failed(daemon: &Daemon, e: String) {

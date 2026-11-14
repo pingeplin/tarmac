@@ -15,7 +15,10 @@ extension AppController {
     /// is stale: it arrived after a later switch. Such a board is not built or
     /// shown, but if it is already built it is still reconciled, because the
     /// daemon replays its terminals' history either way.
-    func applyRestore(docs: [RestoreDoc], tiles: [LayoutTile], viewport: BoardViewport?, boardID: String?, liveTerms: [String]) {
+    func applyRestore(
+        docs: [RestoreDoc], tiles: [LayoutTile], viewport: BoardViewport?, boardID: String?, liveTerms: [String],
+        termRecords: [String: TermRecord]
+    ) {
         let targetID = boardID ?? Board.defaultID
         guard let board = boards[targetID] else { return }
         let firstOnConnection = daemonSession.restoredBoards.insert(targetID).inserted
@@ -31,7 +34,9 @@ extension AppController {
         if firstVisit {
             board.didInitialRestore = true
             board.store.applyRestore(docs)
-            build(board, tiles: tiles, docs: docs, viewport: viewport, liveTerms: Set(liveTerms))
+            build(
+                board, tiles: tiles, docs: docs, viewport: viewport, liveTerms: Set(liveTerms), termRecords: termRecords
+            )
         } else {
             reconcile(board, liveTerms: Set(liveTerms), replayFollows: firstOnConnection)
         }
@@ -55,7 +60,8 @@ extension AppController {
     /// The placeholder terminal the board showed until now never spawned, so
     /// dropping it orphans nothing.
     private func build(
-        _ board: Board, tiles: [LayoutTile], docs: [RestoreDoc], viewport: BoardViewport?, liveTerms: Set<String>
+        _ board: Board, tiles: [LayoutTile], docs: [RestoreDoc], viewport: BoardViewport?, liveTerms: Set<String>,
+        termRecords: [String: TermRecord]
     ) {
         for termID in board.sessionOrder {
             scrollback.unmount(termID)
@@ -69,11 +75,11 @@ extension AppController {
         dataFiles.forget(board: board.boardID)
 
         notifyDaemonReplaced(tiles: tiles, liveTerms: liveTerms)
-        let plan = BoardRestore.plan(tiles: tiles, docs: docs, liveTerms: liveTerms, mint: BootTerminal.mint)
+        let plan = BoardRestore.plan(
+            tiles: tiles, docs: docs, liveTerms: liveTerms, termRecords: termRecords, mint: BootTerminal.mint
+        )
         for term in plan.terms {
-            addTerminal(
-                term.termID, frame: CardFrame(rect: term.frame, z: term.z), needsSpawn: term.needsSpawn, on: board
-            )
+            addTerminal(term.termID, frame: CardFrame(rect: term.frame, z: term.z), spawn: term.spawn, on: board)
         }
         board.primeTermID = plan.terms.first?.termID
 

@@ -10,6 +10,8 @@ pub use channel::{
     Channel,
 };
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -85,6 +87,10 @@ pub enum Msg {
         /// to the running shells. Empty => cold-spawn.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         live_terms: Vec<String>,
+        /// The board's record of each terminal, keyed by term id. A cold spawn
+        /// of a persisted tile starts in its record's `last_cwd`.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        term_records: BTreeMap<String, TermRecord>,
     },
     SpawnTerm {
         term_id: String,
@@ -100,6 +106,11 @@ pub enum Msg {
         /// the daemon's default.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         inherit_cwd_from: Option<String>,
+        /// The persisted term id this terminal replaces: its record moves to
+        /// the new `term_id`. Ignored for a live term, an id with no record,
+        /// or a spawn that fails.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        succeeds: Option<String>,
     },
     Input {
         term_id: String,
@@ -265,6 +276,14 @@ pub struct Tile {
     /// single-terminal layouts, which the daemon keeps as one `None`-keyed tile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub term_id: Option<String>,
+}
+
+/// What the daemon keeps of one terminal across its restarts.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+pub struct TermRecord {
+    /// The terminal's last cwd that the daemon read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_cwd: Option<String>,
 }
 
 /// The persisted board viewport: zoom factor and world-space center.

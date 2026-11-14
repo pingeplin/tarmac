@@ -42,10 +42,13 @@ pub(crate) enum Call {
 pub(crate) struct StuckFs {
     holds: std::sync::Mutex<Vec<(Call, PathBuf)>>,
     until_released: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
-    /// Each method's calls, and how many of them it held.
-    counts: std::sync::Mutex<HashMap<Call, (u32, u32)>>,
+    /// Each method's calls on each path, and how many of them it held.
+    counts: std::sync::Mutex<HashMap<(Call, PathBuf), (u32, u32)>>,
     repos: std::sync::Mutex<Vec<(PathBuf, String)>>,
     panics: std::sync::Mutex<Vec<PathBuf>>,
+    /// The `pid_cwd` answers the test names, by pid, `None` for every pid.
+    cwds: std::sync::Mutex<Vec<(Option<libc::pid_t>, Option<String>)>>,
+    cwds_returned: AtomicU32,
 }
 
 impl StuckFs {
@@ -61,6 +64,27 @@ impl StuckFs {
         self.holds.lock().unwrap().push((call, under.to_owned()));
     }
 
+    /// Holds each later `pid_cwd` of `pid`.
+    pub(crate) fn hold_pid(&self, pid: libc::pid_t) {
+        self.hold(Call::PidCwd, &pid_path(pid));
+    }
+
+    /// Each later `pid_cwd` of `pid`, or of every pid for `None`, answers
+    /// `cwd`. An answer for one pid comes before an answer for every pid.
+    pub(crate) fn answer_cwd(&self, pid: Option<libc::pid_t>, cwd: Option<&str>) {
+        self.cwds.lock().unwrap().push((pid, cwd.map(str::to_owned)));
+    }
+
+    /// The `pid_cwd` calls of `pid`.
+    pub(crate) fn pid_cwd_calls(&self, pid: libc::pid_t) -> u32 {
+        self.counts.lock().unwrap().get(&(Call::PidCwd, pid_path(pid))).map_or(0, |count| count.0)
+    }
+
+    /// The `pid_cwd` calls that returned.
+    pub(crate) fn cwds_returned(&self) -> u32 {
+        self.cwds_returned.load(Ordering::SeqCst)
+    }
+
     /// Each later `stamp` of `path` panics.
     pub(crate) fn panic_on(&self, path: &Path) {
         self.panics.lock().unwrap().push(path.to_owned());
@@ -69,7 +93,7 @@ impl StuckFs {
     fn wait_if_held(&self, call: Call, path: &Path) {
         let held = self.holds.lock().unwrap().iter().any(|(c, under)| *c == call && path.starts_with(under));
         let mut counts = self.counts.lock().unwrap();
-        let count = counts.entry(call).or_default();
+        let count = counts.entry((call, path.to_owned())).or_default();
         count.0 += 1;
         count.1 += u32::from(held);
         drop(counts);
@@ -79,11 +103,16 @@ impl StuckFs {
     }
 
     pub(crate) fn calls(&self, call: Call) -> u32 {
-        self.counts.lock().unwrap().get(&call).map_or(0, |count| count.0)
+        self.counted(call).map(|count| count.0).sum()
     }
 
     pub(crate) fn held(&self, call: Call) -> u32 {
-        self.counts.lock().unwrap().get(&call).map_or(0, |count| count.1)
+        self.counted(call).map(|count| count.1).sum()
+    }
+
+    fn counted(&self, call: Call) -> impl Iterator<Item = (u32, u32)> {
+        let counts = self.counts.lock().unwrap();
+        counts.iter().filter(|((c, _), _)| *c == call).map(|(_, count)| *count).collect::<Vec<_>>().into_iter()
     }
 }
 
@@ -119,9 +148,18 @@ impl PathFs for StuckFs {
     }
 
     fn pid_cwd(&self, pid: libc::pid_t) -> Option<String> {
-        self.wait_if_held(Call::PidCwd, Path::new(""));
-        RealFs.pid_cwd(pid)
+        self.wait_if_held(Call::PidCwd, &pid_path(pid));
+        let answers = self.cwds.lock().unwrap().clone();
+        let named = answers.iter().find(|(p, _)| *p == Some(pid)).or_else(|| answers.iter().find(|(p, _)| p.is_none()));
+        let cwd = named.map_or_else(|| RealFs.pid_cwd(pid), |(_, cwd)| cwd.clone());
+        self.cwds_returned.fetch_add(1, Ordering::SeqCst);
+        cwd
     }
+}
+
+/// The path a hold of `pid_cwd` matches.
+fn pid_path(pid: libc::pid_t) -> PathBuf {
+    PathBuf::from(pid.to_string())
 }
 
 /// The test holds the sender to its end, a panic included: a runtime
@@ -134,6 +172,8 @@ pub(crate) fn stuck_fs() -> (Arc<StuckFs>, std::sync::mpsc::Sender<()>) {
         counts: std::sync::Mutex::default(),
         repos: std::sync::Mutex::default(),
         panics: std::sync::Mutex::default(),
+        cwds: std::sync::Mutex::default(),
+        cwds_returned: AtomicU32::new(0),
     });
     (fs, release)
 }

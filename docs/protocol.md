@@ -466,14 +466,53 @@ reflects where that shell is *now*, including after it has `cd`'d away. Ignored
 when `cwd` is already set; an unknown or dead source term falls through to the
 normal default.
 
+## A terminal's last folder (issue #345, spec 2611.0007)
+
+    TermRecord      {last_cwd?: str}                            — a map, string keys
+    {t:"restore", ..., term_records:{<term_id>: TermRecord}}     — daemon → app
+    {t:"spawn_term", ..., succeeds:"t0"}                         — app → daemon
+
+Each board keeps a table `term_records`: what the daemon keeps of one terminal
+across its restarts. It is persisted in `state.json` beside the board's
+`tiles`, and a `layout` never changes it.
+
+- **Recording.** The daemon reads a terminal's cwd when its foreground pid
+  changes (and once for the first pid), and once more at a shutdown by SIGTERM,
+  SIGHUP or SIGINT, before the socket goes. A read that does not answer keeps the
+  value before it. A cwd read never saves the state by itself.
+- **Deleting.** A `term_close` deletes the record, whether the term is live or
+  not, on whichever board holds it. A clean exit (`code: 0`) deletes it too; a
+  non-zero or signal exit keeps it, for the card held dead. A deleted board takes
+  its table with it. A read that returns after the record is gone does not make
+  it again.
+- **`succeeds`.** A cold spawn of a persisted tile names the persisted id. When
+  the spawn succeeds, the daemon moves that id's record, on the new term's own
+  board only, to the new `term_id`. It is ignored — never an error — when it
+  names a live term or an id with no record there, or when the spawn fails.
+- **Restore.** The app's first-visit restore of a board sends a cold spawn of
+  each persisted tile with `cwd: last_cwd` and `succeeds: <persisted id>`. The
+  daemon checks `cwd` as for any spawn: a folder that is gone gives `$HOME`.
+
+A live terminal has a record before its first read, which may have no
+`last_cwd`.
+
+| message | key | type | missing ⇒ |
+|---|---|---|---|
+| `restore` | `term_records` | map of term id → `TermRecord` | an empty table; omitted when empty |
+| `spawn_term` | `succeeds` | string | nil; omitted when nil |
+| `TermRecord` | `last_cwd` | string | nil; omitted when nil (a record with none is an empty map) |
+
+`spawn_term.cwd` and `cmd` keep their encoding: a nil is written as msgpack nil.
+
 ## Closing a single terminal (issue #15)
 
     {t:"term_close", term_id}                       — app → daemon
 
 Terminate one terminal's pty so ⌘W can close a single terminal card. The daemon
 SIGHUPs the term's process group (reusing the board-delete kill path); the pump's
-wait thread then runs the normal teardown and pushes the usual `exit`. A
-`term_close` for an unknown `term_id` is a no-op. New **additive app→daemon
+wait thread then runs the normal teardown and pushes the usual `exit`. It also
+deletes the term's record (`term_records`, issue #345), live or not. A
+`term_close` for a `term_id` with no pty kills nothing. New **additive app→daemon
 type**: a receiver that does not know it ignores it under the unknown-type rule,
 so all existing vectors decode unchanged.
 
@@ -794,3 +833,20 @@ round-trip. Byte-exact encoder output is NOT required (key order may legally dif
         83 a1 74 a9 64 6f 63 5f 65 76 65 6e 74 a4 70 61 74 68 ac 2f
         61 2f 64 61 73 68 2e 68 74 6d 6c a5 76 61 6c 75 65 a7 7b 22
         6e 22 3a 31 7d
+
+18. (issue #345) `{t:"restore", docs:[], tiles:[], term_records:{"t1":{last_cwd:"/w"}}}`
+    — the additive `term_records` key. `docs` is required and `tiles` is always
+    written; `board`, `board_id` and `live_terms` are omitted. Keys in the order
+    `rmp_serde::to_vec_named` writes them.
+
+        84 a1 74 a7 72 65 73 74 6f 72 65 a4 64 6f 63 73 90 a5 74 69
+        6c 65 73 90 ac 74 65 72 6d 5f 72 65 63 6f 72 64 73 81 a2 74
+        31 81 a8 6c 61 73 74 5f 63 77 64 a2 2f 77
+
+19. (issue #345) `{t:"spawn_term", term_id:"t1", cols:80, rows:24, cwd:nil, cmd:nil, succeeds:"t0"}`
+    — the additive `succeeds` key. `cwd` and `cmd` are written as nil;
+    `board_id` and `inherit_cwd_from` are omitted.
+
+        87 a1 74 aa 73 70 61 77 6e 5f 74 65 72 6d a7 74 65 72 6d 5f
+        69 64 a2 74 31 a4 63 6f 6c 73 50 a4 72 6f 77 73 18 a3 63 77
+        64 c0 a3 63 6d 64 c0 a8 73 75 63 63 65 65 64 73 a2 74 30

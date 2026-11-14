@@ -195,7 +195,7 @@ cx, cy}`.
 **Conformance vectors are the tripwire.** Two codecs implement this contract —
 `tarmac-protocol` (Rust, serde) and the hand-written `MsgPack` / `Message` codec
 in `TarmacKit` (Swift) — and both carry the same hex-encoded msgpack vectors
-(V1–V17) as mandatory tests: in `core/crates/tarmac-protocol/src/tests.rs`
+(V1–V19) as mandatory tests: in `core/crates/tarmac-protocol/src/tests.rs`
 and in `app/Tests/TarmacKitTests/ConformanceTests.swift`. Each vector must decode
 to the same structure and survive an encode→decode roundtrip on both sides. The
 Swift encoder is additionally pinned byte-for-byte to what
@@ -295,6 +295,19 @@ daemon reference, so it is where the three honest signals are sourced:
 `kill()` signals the whole **process group** (`libc::kill(-pid, SIGHUP)`) — the
 child is its own group leader, so a SIGHUP lets a shell exit cleanly as on a
 terminal close.
+
+The same poll records the terminal's folder (issue #345, spec 2611.0007).
+When the foreground pid changes (and once for the first pid), it reads that
+pid's cwd on the gate and stores it as `last_cwd` in the term's record, in the
+`term_records` table of its own board (`Daemon::note_cwd`). An idle terminal
+makes no read. A read that is out, or gives nothing, keeps the value before
+it, and a read never marks the state dirty. The record is made at spawn, before
+the poll starts (`Daemon::adopt_term`), and a read only fills a record that is
+there, so a read that returns after a `TermClose`, a clean exit or a board
+delete makes none again. The record's lifetime: a `TermClose` deletes it, live
+or not, on whichever board has it; an exit with `code: Some(0)` deletes it; any
+other exit keeps it for the dead card; a spawn with `succeeds` takes the record
+of the persisted id from its own board when that id is not live.
 
 Each terminal keeps a byte-capped **scrollback ring** (256 KiB, front-eviction),
 appended unconditionally even with no app connected. On (re)connect the daemon
@@ -572,9 +585,11 @@ parent dir's watch, upserts the doc into that board's registry, and pushes
 
 State is atomic JSON at `~/Library/Application Support/tarmac/state.json`
 (override `TARMAC_STATE`). The shape is nested: `{ boards: [{ board_id, name?,
-docs, tiles, board? }], active }`. Durable: the board set + active id + names;
+docs, tiles, board?, term_records? }], active }`. Durable: the board set + active id + names;
 each board's docs in dock order with read flags / timestamps / `term_id`
-provenance; the tile layout (v4 geometry + per-term tile ids); the viewport.
+provenance; the tile layout (v4 geometry + per-term tile ids); the viewport;
+each terminal's record (`term_records: { term_id: { last_cwd? } }`, omitted
+when empty), which a `Layout` never touches.
 Repo metadata is written for inspectability but **recomputed at startup**, on
 the gate (*Docs & file watching*) — a `.git` appearing or vanishing between
 runs is treated as an observed fact, not trusted from disk.
@@ -585,6 +600,14 @@ never swaps in a truncated file. A missing/corrupt file is never fatal (fall
 back to a default single board). A pre-M3 *flat* file (no `boards` key) is
 migrated once into a single `board-0` verbatim; writes always emit the nested
 shape — lossless and one-way.
+
+The save loop is the only writer of the file, and writes on a blocking
+thread. A SIGTERM, SIGHUP or SIGINT asks it for one last save before the
+socket goes (`Daemon::final_save`): it reads the cwd of every live terminal
+at once, within `SHUTDOWN_CWD_BUDGET` (500 ms, well inside the app's 2 s
+restart wait), writes the state, answers and stops, so no write follows. A
+SIGKILL (or `make kill-daemon`) skips it, and loses any `cd` since the last
+save.
 
 ---
 
@@ -1527,7 +1550,8 @@ neither lost nor delayed. Pending snapshots are flushed on a board switch, when
 the app resigns active, and at quit. A board is never persisted before its first
 restore. The snapshot (`LayoutTiles`) carries `dock` (doc paths in open order),
 live terminal tiles with `x, y, w, h, z, term_id` (dead cards are left out), doc
-tiles with `loose` = not attached, the live viewport, and `board_id`.
+tiles with `loose` = not attached, the live viewport, and `board_id`. A
+`Layout` replaces the board's tiles only: the daemon's `term_records` stay.
 
 ### Restore and reconnect
 
@@ -1537,7 +1561,10 @@ The daemon sends `Restore` for its active board on connect, and after every
 - **First visit** (`BoardRestore`). A terminal tile whose `term_id` is in
   `live_terms` is re-bound to that PTY; any other gets a freshly minted id and a
   cold spawn at the same frame and `z` — a persisted id is never reused for a
-  new shell. A board always ends up with at least one terminal. Doc tiles are
+  new shell. A cold spawn of a persisted tile starts in that terminal's
+  `last_cwd` from `restore.term_records` and names the persisted id in
+  `spawn_term.succeeds`, so the daemon moves the record to the new id; a
+  folder that is gone gives `$HOME`. A board always ends up with at least one terminal. Doc tiles are
   joined with `restore.docs`; a doc follows its recorded owner to whatever that
   terminal was restored as, and an owner that was not restored leaves it
   ownerless. The newly minted ids are persisted by that restore,
@@ -1643,9 +1670,9 @@ viewport.
 | --- | --- | --- |
 | **App reconnect** (daemon stays up) | **Survive** — the cards stay bound to their ptys; history is replaced from the scrollback ring | Untouched — the app's own state stands; only terminals are reconciled |
 | **App relaunch** (daemon stays up) | **Survive** — re-bound on the first restore, history from the scrollback ring | Restored from daemon memory |
-| **Daemon restart** | Lost — live shells died with the daemon. A running app marks their cards dead and toasts; a freshly launched app cold-spawns new shells at the persisted frames | Restored exactly from `state.json` |
+| **Daemon restart** | Lost — live shells died with the daemon. A running app marks their cards dead and toasts; a freshly launched app cold-spawns new shells at the persisted frames, in their last folder | Restored exactly from `state.json` |
 | **Red button / hide** | **Survive** — the app keeps running with its window hidden, and comes back on the next activation or Dock click | Untouched |
-| **Version-mismatch restart** (brew upgrade) | Cold-spawned on the new daemon (same as above). The app toasts the version change (`tarmacd restarted: <from> → <to>`) when a first-visit board has lost terminals; otherwise the existing reconnect toast is what the user sees | Restored from `state.json` via `Msg::Restore` on reconnect |
+| **Version-mismatch restart** (brew upgrade) | Cold-spawned on the new daemon, in their last folder (same as above). The app toasts the version change (`tarmacd restarted: <from> → <to>`) when a first-visit board has lost terminals; otherwise the existing reconnect toast is what the user sees | Restored from `state.json` via `Msg::Restore` on reconnect |
 
 Daemon-restart PTY re-parenting (true live-shell survival across a daemon
 restart) is designed but deliberately unbuilt; cold layout-only restore + the

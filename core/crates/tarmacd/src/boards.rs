@@ -1,11 +1,11 @@
 //! The pure board model: boards, their registries and the frames built from
 //! them. No I/O, no locks — `Daemon` holds a `Boards` behind one mutex.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use tarmac_protocol::{BoardMeta, BoardViewport, DocEntry, Msg, Tile};
+use tarmac_protocol::{BoardMeta, BoardViewport, DocEntry, Msg, TermRecord, Tile};
 
 pub struct DocInfo {
     pub via: String,
@@ -119,6 +119,9 @@ pub struct Registry {
     /// that several docs read. In memory only. The docs' `data` say which
     /// paths are read; an entry for a path that none reads is never looked up.
     data_seen: HashMap<PathBuf, Option<FileStamp>>,
+    /// Each terminal's record, kept across a `Layout`, which replaces only
+    /// the tiles.
+    pub term_records: BTreeMap<String, TermRecord>,
 }
 
 impl Registry {
@@ -129,6 +132,7 @@ impl Registry {
             tiles: vec![term_tile()],
             board: None,
             data_seen: HashMap::new(),
+            term_records: BTreeMap::new(),
         }
     }
 
@@ -543,7 +547,14 @@ impl Boards {
             board: board.registry.board.clone(),
             board_id: Some(board.id.clone()),
             live_terms,
+            term_records: board.registry.term_records.clone(),
         }
+    }
+
+    /// Deletes the record of `term_id` from whichever board holds it. False
+    /// when none does.
+    pub fn forget_term(&mut self, term_id: &str) -> bool {
+        self.registries_mut().any(|reg| reg.term_records.remove(term_id).is_some())
     }
 
     /// False (no-op) if no such board.

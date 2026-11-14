@@ -2,6 +2,7 @@
 // file, with app/cli clients speaking the wire protocol over std sockets.
 #![allow(dead_code)] // each test binary uses a different slice of the harness
 
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -9,7 +10,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use tarmac_protocol::{self as proto, BoardMeta, BoardViewport, DocEntry, Msg, Tile, frame};
+use tarmac_protocol::{self as proto, BoardMeta, BoardViewport, DocEntry, Msg, TermRecord, Tile, frame};
 
 pub const LONG: Duration = Duration::from_secs(20);
 
@@ -41,14 +42,34 @@ impl TestDaemon {
 
     /// `configure` runs after the default environment is set, so it can override it.
     pub fn start_with(configure: impl FnOnce(&mut Command)) -> Self {
+        Self::launch(temp_dir(), configure)
+    }
+
+    /// A daemon that loads `state` (a `state.json`) at its start.
+    pub fn start_seeded(state: &serde_json::Value) -> Self {
+        Self::start_seeded_with(state, |_| {})
+    }
+
+    pub fn start_seeded_with(state: &serde_json::Value, configure: impl FnOnce(&mut Command)) -> Self {
         let dir = temp_dir();
+        std::fs::write(dir.join("state.json"), state.to_string()).unwrap();
+        Self::launch(dir, configure)
+    }
+
+    fn launch(dir: PathBuf, configure: impl FnOnce(&mut Command)) -> Self {
         let sock = dir.join("tarmacd.sock");
         let child = spawn_daemon_with(&sock, configure);
         wait_for_socket(&sock);
         TestDaemon { child, dir, sock }
     }
 
-    fn state_file(&self) -> PathBuf {
+    /// A new daemon on the same socket and state, once the last one has exited.
+    pub fn relaunch(&mut self) {
+        self.child = spawn_daemon(&self.sock);
+        wait_for_socket(&self.sock);
+    }
+
+    pub fn state_file(&self) -> PathBuf {
         self.dir.join("state.json")
     }
 
@@ -90,8 +111,7 @@ impl TestDaemon {
     pub fn restart(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
-        self.child = spawn_daemon(&self.sock);
-        wait_for_socket(&self.sock);
+        self.relaunch();
     }
 }
 
@@ -309,6 +329,7 @@ impl Conn {
             cmd: Some(cmd.iter().map(|s| s.to_string()).collect()),
             board_id: opts.board_id,
             inherit_cwd_from: opts.inherit_cwd_from,
+            succeeds: opts.succeeds,
         });
     }
 }
@@ -321,6 +342,7 @@ pub struct Spawn {
     pub cwd: Option<String>,
     pub board_id: Option<String>,
     pub inherit_cwd_from: Option<String>,
+    pub succeeds: Option<String>,
 }
 
 impl Spawn {
@@ -331,7 +353,7 @@ impl Spawn {
 
 impl Default for Spawn {
     fn default() -> Self {
-        Spawn { cols: 80, rows: 24, cwd: None, board_id: None, inherit_cwd_from: None }
+        Spawn { cols: 80, rows: 24, cwd: None, board_id: None, inherit_cwd_from: None, succeeds: None }
     }
 }
 
@@ -341,9 +363,15 @@ pub struct Restore {
     pub tiles: Vec<Tile>,
     pub board: Option<BoardViewport>,
     pub live_terms: Vec<String>,
+    pub term_records: BTreeMap<String, TermRecord>,
 }
 
 impl Restore {
+    /// The `last_cwd` of `term_id`'s record.
+    pub fn last_cwd(&self, term_id: &str) -> Option<&str> {
+        self.term_records.get(term_id)?.last_cwd.as_deref()
+    }
+
     pub fn last_changed(&self, path: &str) -> Option<u64> {
         self.docs.iter().find(|d| d.path == path).expect("the doc is on the board").last_changed_ms
     }
@@ -351,10 +379,10 @@ impl Restore {
 
 impl From<Msg> for Restore {
     fn from(msg: Msg) -> Self {
-        let Msg::Restore { board_id, docs, tiles, board, live_terms } = msg else {
+        let Msg::Restore { board_id, docs, tiles, board, live_terms, term_records } = msg else {
             panic!("expected restore, got {msg:?}")
         };
-        Restore { board_id, docs, tiles, board, live_terms }
+        Restore { board_id, docs, tiles, board, live_terms, term_records }
     }
 }
 
@@ -388,6 +416,37 @@ pub fn none_within(conn: &mut Conn, timeout: Duration, mut pred: impl FnMut(&Msg
     }
     conn.0.set_read_timeout(Some(LONG)).unwrap();
     true
+}
+
+/// True when no `err` frame comes before the answer to a `scrollback_request`
+/// sent now: the daemon handles one connection's frames in order, so an
+/// `err` of a frame sent before it would come first.
+pub fn no_err_frame(conn: &mut Conn) -> bool {
+    conn.send(&Msg::ScrollbackRequest { term_id: "no-err-frame".into() });
+    let answer = conn.recv_until("the scrollback answer", |m| {
+        matches!(m, Msg::Err { .. }) || matches!(m, Msg::Scrollback { term_id, .. } if term_id == "no-err-frame")
+    });
+    matches!(answer, Msg::Scrollback { .. })
+}
+
+/// `path`, made, as `pid_cwd` and `pwd -P` give it (a temp dir under `/var`
+/// is `/private/var`).
+pub fn canon_dir(path: &Path) -> String {
+    std::fs::create_dir_all(path).unwrap();
+    std::fs::canonicalize(path).unwrap().to_string_lossy().into_owned()
+}
+
+/// Board `board`'s `term_records` in a saved state.
+pub fn term_records(v: &serde_json::Value, board: usize) -> serde_json::Value {
+    v["boards"][board]["term_records"].clone()
+}
+
+pub fn has_record(v: &serde_json::Value, board: usize, term_id: &str) -> bool {
+    !term_records(v, board)[term_id].is_null()
+}
+
+pub fn saved_cwd(v: &serde_json::Value, board: usize, term_id: &str) -> serde_json::Value {
+    term_records(v, board)[term_id]["last_cwd"].clone()
 }
 
 pub fn write_doc(path: &Path, content: &str) -> String {
@@ -476,13 +535,24 @@ pub fn cli_open(sock: &Path, path: &str) {
 /// Returns the exit status so a test can distinguish a clean `exit(0)` from a
 /// death by signal (`status.code() == None`).
 pub fn signal_and_wait(child: &mut Child, sig: libc::c_int) -> std::process::ExitStatus {
+    signal(child, sig);
+    wait_exit(child)
+}
+
+pub fn signal(child: &Child, sig: libc::c_int) {
+    // SAFETY: kill(2) on the test's own daemon child; a failure only means
+    // it is gone.
     unsafe { libc::kill(child.id() as libc::pid_t, sig) };
+}
+
+/// Waits, to a deadline, for a daemon child to exit.
+pub fn wait_exit(child: &mut Child) -> std::process::ExitStatus {
     let deadline = Instant::now() + LONG;
     loop {
         if let Some(status) = child.try_wait().unwrap() {
             return status;
         }
-        assert!(Instant::now() < deadline, "daemon never exited after signal {sig}");
+        assert!(Instant::now() < deadline, "daemon never exited");
         std::thread::sleep(Duration::from_millis(25));
     }
 }

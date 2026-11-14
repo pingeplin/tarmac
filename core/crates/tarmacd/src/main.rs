@@ -102,6 +102,7 @@ async fn main() -> anyhow::Result<()> {
     let daemon = state::Daemon::new(state_path()).await?;
 
     let sock_for_signal = sock.clone();
+    let daemon_for_signal = daemon.clone();
     tokio::spawn(async move {
         // SIGHUP included: it is what a terminal sends its session on teardown,
         // and it was the one death that skipped the unlink.
@@ -111,6 +112,9 @@ async fn main() -> anyhow::Result<()> {
             _ = sigint.recv() => {}
         }
         info!("shutting down");
+        // Saved before the socket goes: an app that waits for the socket to
+        // go then finds the state a new daemon restores.
+        daemon_for_signal.final_save().await;
         let _ = std::fs::remove_file(&sock_for_signal);
         std::process::exit(0);
     });
