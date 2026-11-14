@@ -170,7 +170,7 @@ reports.
 | --- | --- | --- | --- |
 | Lifecycle | `Hello {role, v, app_version?}` | C→D | handshake |
 | | `HelloOk {v, daemon_version?, daemon_pid?, app_version?, app_connected?}` | D→C | accept |
-| | `Ack` | D→cli | generic success (reply to `open`, `push`, `report` and `resume`) |
+| | `Ack` | D→cli | generic success (reply to `open`, `push`, `report` and `resume`); the end of a `subscribe` snapshot |
 | | `Err {msg}` | D→C | error notice (closes the link on a handshake error) |
 | Docs | `Open {path, term_id?, board_id?}` | cli/app→D | surface a doc |
 | | `DocRead {path}` | app→D | mark a doc read |
@@ -190,6 +190,9 @@ reports.
 | | `Report {term_id, kind, text?}` | cli→D | a terminal's report, `blocked`, `done` or `clear`; `ack` or `err` |
 | | `TermReport {term_id, kind?, text?, at_ms?, proc?, read?, board_id?, cwd?}` | D→app | a terminal's current report, and its board and folder; no `kind` is none |
 | | `Resume {term_id, cmd?}` | cli→D | a terminal's resume command; no `cmd` clears it; `ack` or `err` |
+| | `Subscribe {kinds?, term_id?}` | cli→D | stream the `Exit`, `Bell`, `FileEvent` and `TermReport` frames that pass the filter: `err`, or a snapshot, `ack`, then live frames |
+| | `TermsList` | cli→D | ask for the live terminals |
+| | `Terms {terms}` | D→cli | one `{term_id, board_id, cwd?, proc?}` per live terminal, in board order |
 | | `ScrollbackRequest {term_id}` | app→D | re-send one term's scrollback ring now |
 | | `Scrollback {term_id, bytes}` | D→app | that ring, one frame per request |
 | Layout | `Layout {dock, tiles, board?, board_id?}` | app→D | layout snapshot for a board |

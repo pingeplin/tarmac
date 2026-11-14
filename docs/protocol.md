@@ -99,7 +99,7 @@ no version of its own names none and restarts nothing.
     ← {t:"ack"}  |  {t:"err", msg}
 
 `tarmac push` sends `push` frames on the same session: see *Events for a loaded
-HTML card*. `tarmac report` sends one `report` frame: see *A terminal's report*. `tarmac resume` sends one `resume` frame: see *Resuming after a restart*. `tarmac --version` also opens the socket. It completes the
+HTML card*. `tarmac report` sends one `report` frame: see *A terminal's report*. `tarmac resume` sends one `resume` frame: see *Resuming after a restart*. `tarmac events` and `tarmac wait` send one `subscribe` frame, and `tarmac terms` one `terms_list` frame: see *Events and terminals for scripts*. `tarmac --version` also opens the socket. It completes the
 handshake, renders `hello_ok`'s daemon and app keys, and closes without sending
 a second frame.
 
@@ -810,6 +810,65 @@ and does not answer; the cli reports that no answer came in 5 s, and
 `hooks run claude` gives up at its 500 ms deadline. A daemon or app that does
 not know `TermRecord.resume` ignores it.
 
+## Events and terminals for scripts (spec 2611.0012)
+
+    {t:"subscribe", kinds?:[str], term_id?}                        — cli → daemon; answered with err (then close) | snapshot frames…, ack, then live frames
+    {t:"terms_list"}                                               — cli → daemon; answered with terms | err
+    {t:"terms", terms:[{term_id, board_id, cwd?, proc?}]}           — daemon → cli
+
+`tarmac events` and `tarmac wait` send `subscribe`; `tarmac terms` sends
+`terms_list`. Both are messages of a `cli` session: there is no new role.
+
+**`subscribe`.**
+
+- `kinds` names `exit`, `bell`, `changed` (a `file_event`) and `report` (a
+  `term_report`). Missing: all four. Unknown names are ignored, so a newer cli
+  can ask an older daemon for a kind it lacks. No known name left (an empty
+  list included): `err "no known event kind"`, then the daemon closes.
+- `term_id`, when it is given, must be a live terminal or one of the last 64
+  that exited; else `err "unknown terminal: <id>"`, then the daemon closes. A
+  live terminal wins over an exit of the same id.
+- **The snapshot** comes only with a `term_id`, before `ack`: that terminal's
+  `term_report` (with `report` in the kinds; one with no `kind` when it has no
+  report), then its `exit` from the last 64 exits (with `exit` in the kinds,
+  when it is not live). A snapshot `exit` has no `board_id`. Then `ack`.
+- **Live frames** are the `exit`, `bell`, `file_event` and `term_report` frames
+  the daemon sends the app, byte for byte, that pass the filter. A `term_id`
+  filter passes no `file_event`, which has no terminal. They are sent whether
+  or not an app is connected.
+- A `file_event` is a frame the daemon told the app: the looks at the active
+  board's docs and data files, a `doc_refresh` (with the mtime changed or not),
+  a `data_file` (the same file again included), and the changes of a board that
+  is made active. It can repeat an `mtime_ms`. The connect and restore replays
+  of `term_report` are not live frames and are not sent.
+- A report that ends with its terminal's exit gets no `term_report` (the `exit`
+  ends it). A receiver that tracks reports takes `exit` too.
+- A frame can come twice: in the snapshot and live, or a `file_event` with the
+  same `mtime_ms`. A receiver accepts that.
+- A subscriber more than 1024 frames behind gets `err "lagged"`, and the daemon
+  closes the connection. The daemon never waits for a subscriber.
+- After `subscribe`, the daemon reads nothing from the client but its close.
+- The last 64 exits are in memory only; a daemon restart empties them.
+
+**`terms`.** One row for each live terminal, sorted by board order, then by
+`term_id`. `cwd` and `proc` are fresh reads of the terminal's foreground
+process; each is omitted when the daemon could not read it in time. An empty
+list is a valid answer.
+
+| message | key | type | missing ⇒ |
+|---|---|---|---|
+| `subscribe` | `kinds` | array of string | all four kinds; omitted when nil |
+| `subscribe` | `term_id` | string | every terminal, and `file_event`s; omitted when nil |
+| `terms` | `terms` | array of row (required) | — |
+| row | `term_id` | string (required) | — |
+| row | `board_id` | string (required) | — |
+| row | `cwd` | string | not read; omitted when nil |
+| row | `proc` | string | not read; omitted when nil |
+
+New **additive types**: a daemon that does not know `subscribe` or
+`terms_list` ignores it and does not answer, and the cli reports that no answer
+came in 5 s.
+
 ## Replaying a terminal's scrollback on demand (issue #41)
 
     {t:"scrollback_request", term_id}               — app → daemon
@@ -1078,3 +1137,36 @@ round-trip. Byte-exact encoder output is NOT required (key order may legally dif
         84 a1 74 a4 65 78 69 74 a7 74 65 72 6d 5f 69 64 a2 74 31 a4
         63 6f 64 65 03 a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64
         2d 31
+
+31. (spec 2611.0012) `{t:"subscribe", kinds:["exit","report"], term_id:"t1"}` —
+    new additive cli→daemon type. Keys in the order `rmp_serde::to_vec_named`
+    writes them.
+
+        83 a1 74 a9 73 75 62 73 63 72 69 62 65 a5 6b 69 6e 64 73 92
+        a4 65 78 69 74 a6 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64
+        a2 74 31
+
+32. (spec 2611.0012) `{t:"subscribe"}` — no `kinds` and no `term_id`: both are
+    omitted, not nil.
+
+        81 a1 74 a9 73 75 62 73 63 72 69 62 65
+
+33. (spec 2611.0012) `{t:"terms_list"}` — new additive cli→daemon type.
+
+        81 a1 74 aa 74 65 72 6d 73 5f 6c 69 73 74
+
+34. (spec 2611.0012) `{t:"terms", terms:[{term_id:"t1", board_id:"board-0",
+    cwd:"/w", proc:"zsh"}]}` — new additive daemon→cli type, a row with every
+    key.
+
+        82 a1 74 a5 74 65 72 6d 73 a5 74 65 72 6d 73 91 84 a7 74 65
+        72 6d 5f 69 64 a2 74 31 a8 62 6f 61 72 64 5f 69 64 a7 62 6f
+        61 72 64 2d 30 a3 63 77 64 a2 2f 77 a4 70 72 6f 63 a3 7a 73
+        68
+
+35. (spec 2611.0012) `{t:"terms", terms:[{term_id:"t1", board_id:"board-0"}]}`
+    — a row with no `cwd` and no `proc`: both are omitted, not nil.
+
+        82 a1 74 a5 74 65 72 6d 73 a5 74 65 72 6d 73 91 82 a7 74 65
+        72 6d 5f 69 64 a2 74 31 a8 62 6f 61 72 64 5f 69 64 a7 62 6f
+        61 72 64 2d 30

@@ -595,6 +595,71 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
+    /// 2611.0012 S15 (cli → daemon): a subscribe with both keys.
+    func testVector31Subscribe() throws {
+        try assertVector(
+            """
+            83 a1 74 a9 73 75 62 73 63 72 69 62 65 a5 6b 69 6e 64 73 92 a4 65 78 69 74
+            a6 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74 31
+            """,
+            .map([
+                "t": .string("subscribe"),
+                "kinds": .array([.string("exit"), .string("report")]),
+                "term_id": .string("t1"),
+            ]),
+            .subscribe(kinds: ["exit", "report"], termID: "t1")
+        )
+    }
+
+    /// 2611.0012 S15: a subscribe with no keys.
+    func testVector32SubscribeToEverything() throws {
+        try assertVector(
+            "81 a1 74 a9 73 75 62 73 63 72 69 62 65",
+            .map(["t": .string("subscribe")]),
+            .subscribe(kinds: nil, termID: nil)
+        )
+    }
+
+    /// 2611.0012 S15 (cli → daemon): the live terminals, asked.
+    func testVector33TermsList() throws {
+        try assertVector("81 a1 74 aa 74 65 72 6d 73 5f 6c 69 73 74", .map(["t": .string("terms_list")]), .termsList)
+    }
+
+    /// 2611.0012 S15 (daemon → cli): a row with every key.
+    func testVector34Terms() throws {
+        try assertVector(
+            """
+            82 a1 74 a5 74 65 72 6d 73 a5 74 65 72 6d 73 91 84 a7 74 65 72 6d 5f 69 64 a2 74 31
+            a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 30 a3 63 77 64 a2 2f 77 a4 70 72 6f 63 a3 7a 73 68
+            """,
+            .map([
+                "t": .string("terms"),
+                "terms": .array([
+                    .map([
+                        "term_id": .string("t1"), "board_id": .string("board-0"), "cwd": .string("/w"),
+                        "proc": .string("zsh"),
+                    ]),
+                ]),
+            ]),
+            .terms([TermInfo(termID: "t1", boardID: "board-0", cwd: "/w", proc: "zsh")])
+        )
+    }
+
+    /// 2611.0012 S15: a row with no `cwd` and no `proc` has no key for them.
+    func testVector35TermsWithNoCwdOrProc() throws {
+        try assertVector(
+            """
+            82 a1 74 a5 74 65 72 6d 73 a5 74 65 72 6d 73 91 82 a7 74 65 72 6d 5f 69 64 a2 74 31
+            a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 30
+            """,
+            .map([
+                "t": .string("terms"),
+                "terms": .array([.map(["term_id": .string("t1"), "board_id": .string("board-0")])]),
+            ]),
+            .terms([TermInfo(termID: "t1", boardID: "board-0")])
+        )
+    }
+
     /// 2611.0011 S12: a nil `resume` and a nil `cmd` put no key on the wire.
     func testANilResumeAndANilCmdHaveNoKey() throws {
         let restore = Message.restore(

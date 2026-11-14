@@ -257,6 +257,22 @@ pub enum Msg {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cmd: Option<String>,
     },
+    /// cli -> daemon (spec 2611.0012): the daemon's facts for a script. The
+    /// reply is `err`, or the snapshot frames, `ack`, then the live `exit`,
+    /// `bell`, `file_event` and `term_report` frames that pass the filter.
+    /// `kinds` names `exit`, `bell`, `changed` or `report`; missing is all.
+    Subscribe {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        kinds: Option<Vec<String>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        term_id: Option<String>,
+    },
+    /// cli -> daemon: the live terminals; answered `terms` or `err`.
+    TermsList,
+    /// Daemon -> cli: one row per live terminal, in board order, then by id.
+    Terms {
+        terms: Vec<TermInfo>,
+    },
     /// A receiver ignores message types it does not know instead of failing.
     #[serde(other)]
     Unknown,
@@ -273,6 +289,18 @@ pub struct BoardMeta {
     /// it never opened. Missing => unknown, which is distinct from `Some(0)`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub running: Option<u32>,
+}
+
+/// One live terminal in `terms`. `cwd` and `proc` are the daemon's fresh reads,
+/// missing when it could not read them.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct TermInfo {
+    pub term_id: String,
+    pub board_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proc: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
