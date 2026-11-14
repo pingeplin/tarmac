@@ -1396,6 +1396,9 @@ window's first responder).
 **The key ladder.** One local key-down monitor sees every key before the focused
 view; `KeyLadder` says which ones the app takes, in this order:
 
+0. While the restore card is up, every key but `⌘Q` closes it and goes
+   nowhere else; a repeat is dropped and never closes it. The repeats of the
+   key that closed it are dropped too, until a key that is not a repeat.
 1. An IME composition in flight, or a borrowed HTML document holding the keys →
    the key passes through.
 2. `⌘K` toggles the switcher. `⌘W` closes the selected card, after closing an
@@ -1451,7 +1454,16 @@ overshoots; a pill that cannot clear a card is drawn under the cards), the zoom
 control (bottom-left: `−`, percent, `+`, fit — steps of ×1.2 about the viewport
 centre; fit frames every card with a 10 % margin), the minimap (bottom-right;
 cards coloured by signal, click to re-centre), toasts (at most three, 7 s
-each), and the switcher. A 27-point status bar sits below
+each), the switcher, and the restore card (`RestoreCardView`, issue #358). The
+restore card shows after a first-visit restore that cold-spawned a terminal
+in its folder or with a resume (`RestoreCard`; below): a veil over the board
+area (the v3 handoff's `.tm-veil`, `rgba(8, 10, 13, 0.62)`) over the board
+at 35 % opacity, under a centred card (`.tm-card`: `bg2`, 12-point radius,
+22 × 26 padding) with the restore's lines and the footer `any key to
+continue`. Any key but `⌘Q` closes it and goes nowhere else, before the
+switcher, a composition, the Esc ladder and the resume chips (`KeyLadder`);
+a repeat never closes it, and the repeats of the key that closed it are
+dropped. A click anywhere over the board area closes it too. A 27-point status bar sits below
 the board: `attached` or the link's reason, and the card count. The window
 title names the active board.
 
@@ -1714,10 +1726,12 @@ The daemon sends `Restore` for its active board on connect, and after every
   on the first visit and on every later restore (spec 2611.0011, D11). After a
   later restore each dead card of that board gets the reopen offer its record
   allows; a card that dies of its own exit gets one only at the board's next
-  restore. A first-visit restore with cold spawns adds
+  restore. A first-visit restore with cold spawns shows the restore card
+  ([*Wayfinding and overlays*](#wayfinding-and-overlays)) with
   `✓ N terminals back in their folders` and `↻ M with an agent session to
-  resume` to the `RestartNotice` toast, or shows them in a toast of their own,
-  `terminals restored` (`RestoreSummary`).
+  resume` (`RestoreSummary`; N counts the spawns that asked for a folder). A
+  line whose count is 0 is left out, and with no line there is no card. The
+  `RestartNotice` toast still shows its own line beside it.
 - **Spawn gating.** Nothing is spawned for a board before its restore on the
   current connection: that restore lists the live terminals, and a shell
   spawned just ahead of it would be taken for lost.
