@@ -78,6 +78,7 @@ paths, no relative links.
 | Doc | What it is |
 | --- | --- |
 | [`proposed/v4c-editable-docs.md`](proposed/v4c-editable-docs.md) | Editable doc cards, borrowed focus, write-conflict banner. Captured from mocks; never started. Doc cards are read-only today. |
+| [`designs/2611.0006_agent_reports_inbox_wait_resume.md`](designs/2611.0006_agent_reports_inbox_wait_resume.md) | `tarmac report`, the inbox, `tarmac events`/`wait`, resume after a restart, `tarmac hooks install`. Draft for review; nothing built. |
 
 ## HISTORICAL
 
