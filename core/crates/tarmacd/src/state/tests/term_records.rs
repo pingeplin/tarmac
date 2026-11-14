@@ -139,7 +139,7 @@ async fn a_held_cwd_read_ends_the_shutdown_save_at_its_budget() {
 
     let started = std::time::Instant::now();
     let daemon = r.daemon.clone();
-    within(tokio::spawn(async move { crate::persist::final_save(&daemon).await })).await;
+    within(tokio::spawn(async move { daemon.final_save().await })).await;
 
     // Two held reads share one deadline: the save waits it out once.
     let took = started.elapsed();

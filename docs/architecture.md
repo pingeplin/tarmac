@@ -299,7 +299,7 @@ terminal close.
 The same poll records the terminal's folder (issue #345, spec 2611.0007).
 When the foreground pid changes (and once for the first pid), it reads that
 pid's cwd on the gate and stores it as `last_cwd` in the term's record, in the
-`term_records` table of its own board (`Daemon::record_cwd`). An idle terminal
+`term_records` table of its own board (`Daemon::note_cwd`). An idle terminal
 makes no read. A read that is out, or gives nothing, keeps the value before
 it, and a read never marks the state dirty. The record is made at spawn, before
 the poll starts (`Daemon::adopt_term`), and a read only fills a record that is
@@ -601,10 +601,11 @@ back to a default single board). A pre-M3 *flat* file (no `boards` key) is
 migrated once into a single `board-0` verbatim; writes always emit the nested
 shape — lossless and one-way.
 
-A SIGTERM, SIGHUP or SIGINT runs one last save before the socket goes
-(`persist::final_save`): it reads the cwd of every live terminal at once,
-within `SHUTDOWN_CWD_BUDGET` (500 ms, well inside the app's 2 s restart wait),
-writes the state, and stops the save loop, which shares its temp file. A
+The save loop is the only writer of the file, and writes on a blocking
+thread. A SIGTERM, SIGHUP or SIGINT asks it for one last save before the
+socket goes (`Daemon::final_save`): it reads the cwd of every live terminal
+at once, within `SHUTDOWN_CWD_BUDGET` (500 ms, well inside the app's 2 s
+restart wait), writes the state, answers and stops, so no write follows. A
 SIGKILL (or `make kill-daemon`) skips it, and loses any `cd` since the last
 save.
 

@@ -14,6 +14,7 @@ use tracing::warn;
 
 use crate::boards::{Board, Boards, DEFAULT_BOARD_ID, DocInfo, Registry};
 use crate::state::Daemon;
+use tokio::sync::{mpsc, oneshot};
 
 const SAVE_DEBOUNCE: Duration = Duration::from_millis(150);
 
@@ -189,34 +190,49 @@ fn write_atomic(path: &Path, state: &PersistedState) -> anyhow::Result<()> {
 /// for a daemon that it replaces.
 pub const SHUTDOWN_CWD_BUDGET: Duration = Duration::from_millis(500);
 
-/// The last write of the state: each live terminal's cwd is read once more,
-/// within `SHUTDOWN_CWD_BUDGET`, and no `save_loop` write follows it.
-pub async fn final_save(daemon: &Arc<Daemon>) {
-    crate::term::read_cwds(daemon, SHUTDOWN_CWD_BUDGET).await;
-    let mut stopped = daemon.saves_stopped.lock().await;
-    *stopped = true;
-    write(daemon).await;
+/// Reads the cwd of every live terminal at once, and records each that
+/// answers within `SHUTDOWN_CWD_BUDGET`. A read that does not keeps the cwd
+/// recorded before.
+async fn read_cwds(daemon: &Arc<Daemon>) {
+    let deadline = tokio::time::Instant::now() + SHUTDOWN_CWD_BUDGET;
+    let mut reads = tokio::task::JoinSet::new();
+    for (term_id, pid) in daemon.foreground_pids().await {
+        let daemon = daemon.clone();
+        reads.spawn(async move {
+            let _ = tokio::time::timeout_at(deadline, daemon.note_cwd(&term_id, pid)).await;
+        });
+    }
+    while reads.join_next().await.is_some() {}
 }
 
 async fn write(daemon: &Daemon) {
     let state = snapshot(&*daemon.boards.lock().await);
-    if let Err(e) = write_atomic(daemon.state_path(), &state) {
-        warn!("state save failed: {e}");
+    let path = daemon.state_path().to_owned();
+    match tokio::task::spawn_blocking(move || write_atomic(&path, &state)).await {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => warn!("state save failed: {e}"),
+        Err(e) => warn!("state save did not finish: {e}"),
     }
 }
 
-// Dirty-flag + short sleep coalesces mutation bursts into one write. Each
-// write holds `saves_stopped`, so it never overlaps the final one, which
-// shares its `.tmp` file.
-pub async fn save_loop(daemon: Arc<Daemon>) {
+/// The one writer of the state file. A dirty flag and a short sleep coalesce
+/// a burst of changes into one write. A request from `Daemon::final_save`
+/// ends it: each live terminal's cwd is read once more, the state is
+/// written a last time, and the request is answered.
+pub async fn save_loop(daemon: Arc<Daemon>, mut finals: mpsc::Receiver<oneshot::Sender<()>>) {
     loop {
-        daemon.dirty_notified().await;
-        tokio::time::sleep(SAVE_DEBOUNCE).await;
-        let stopped = daemon.saves_stopped.lock().await;
-        if *stopped {
-            return;
+        tokio::select! {
+            _ = async {
+                daemon.dirty_notified().await;
+                tokio::time::sleep(SAVE_DEBOUNCE).await;
+            } => write(&daemon).await,
+            Some(done) = finals.recv() => {
+                read_cwds(&daemon).await;
+                write(&daemon).await;
+                let _ = done.send(());
+                return;
+            }
         }
-        write(&daemon).await;
     }
 }
 
@@ -340,7 +356,7 @@ mod tests {
     async fn no_write_follows_the_final_save() {
         let path = tmp_state("final-save");
         let daemon = Daemon::new(path.clone()).await.unwrap();
-        final_save(&daemon).await;
+        daemon.final_save().await;
         let kept = std::fs::read(&path).unwrap();
 
         daemon.boards.lock().await.rename(DEFAULT_BOARD_ID, Some("renamed".into()));

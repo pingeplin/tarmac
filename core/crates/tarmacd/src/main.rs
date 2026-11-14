@@ -114,7 +114,7 @@ async fn main() -> anyhow::Result<()> {
         info!("shutting down");
         // Saved before the socket goes: an app that waits for the socket to
         // go then finds the state a new daemon restores.
-        persist::final_save(&daemon_for_signal).await;
+        daemon_for_signal.final_save().await;
         let _ = std::fs::remove_file(&sock_for_signal);
         std::process::exit(0);
     });

@@ -126,18 +126,23 @@ pub async fn check_free(daemon: &Daemon, term_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// `succeeds` names the persisted terminal whose record this one takes
-/// (`Daemon::adopt_term`).
-pub async fn spawn(
-    daemon: Arc<Daemon>,
-    term_id: String,
-    (cols, rows): (u16, u16),
-    cwd: Option<String>,
-    cmd: Option<Vec<String>>,
-    board: BoardId,
-    succeeds: Option<String>,
-) -> Result<(), String> {
-    check_free(&daemon, &term_id).await?;
+/// One terminal to spawn, with its cwd already checked.
+pub struct SpawnPlan {
+    pub term_id: String,
+    pub size: (u16, u16),
+    pub cwd: Option<String>,
+    pub cmd: Option<Vec<String>>,
+    pub board: BoardId,
+    /// The persisted terminal whose record this one takes (`Daemon::adopt_term`).
+    pub succeeds: Option<String>,
+}
+
+pub async fn spawn(daemon: Arc<Daemon>, plan: SpawnPlan) -> Result<(), String> {
+    check_free(&daemon, &plan.term_id).await?;
+    let (cols, rows) = plan.size;
+    let term_id = plan.term_id.clone();
+    let cmd = plan.cmd.clone();
+    let cwd = plan.cwd.clone();
 
     let argv = match cmd {
         Some(v) if !v.is_empty() => v,
@@ -194,7 +199,7 @@ pub async fn spawn(
     });
     // Before the loop starts: its first cwd read fills the record of the
     // term's board, which must be there by then.
-    daemon.adopt_term(&term_id, &board, succeeds.as_deref()).await;
+    daemon.adopt_term(&plan).await;
     daemon.terms.lock().await.insert(term_id.clone(), handle.clone());
 
     tokio::spawn(proc_loop(daemon.clone(), term_id.clone(), handle.clone()));
@@ -353,30 +358,9 @@ async fn proc_loop(daemon: Arc<Daemon>, term_id: String, handle: Arc<TermHandle>
         }
         if last_pid != Some(pid) {
             last_pid = Some(pid);
-            if let Ok(Some(cwd)) = daemon.gate().pid_cwd(pid).await {
-                daemon.record_cwd(&term_id, cwd).await;
-            }
+            daemon.note_cwd(&term_id, pid).await;
         }
     }
-}
-
-/// Reads the cwd of every live terminal at once, and records each that
-/// answers by `budget`. A read that does not keeps the cwd recorded before.
-pub async fn read_cwds(daemon: &Arc<Daemon>, budget: Duration) {
-    let deadline = tokio::time::Instant::now() + budget;
-    let terms: Vec<(String, Arc<TermHandle>)> =
-        daemon.terms.lock().await.iter().map(|(id, h)| (id.clone(), h.clone())).collect();
-    let mut reads = tokio::task::JoinSet::new();
-    for (term_id, handle) in terms {
-        let Some(pid) = handle.foreground_pid() else { continue };
-        let daemon = daemon.clone();
-        reads.spawn(async move {
-            if let Ok(Ok(Some(cwd))) = tokio::time::timeout_at(deadline, daemon.gate().pid_cwd(pid)).await {
-                daemon.record_cwd(&term_id, cwd).await;
-            }
-        });
-    }
-    while reads.join_next().await.is_some() {}
 }
 
 #[cfg(test)]

@@ -377,7 +377,8 @@ pub(crate) async fn spawn_requested(
     // board it is building and already knows the new running count. Only the
     // exit re-push (term.rs) is load-bearing, for a term dying on a board the
     // app has not rebuilt.
-    if let Err(e) = term::spawn(daemon.clone(), term_id, (cols, rows), cwd, cmd, board, succeeds).await {
+    let plan = term::SpawnPlan { term_id, size: (cols, rows), cwd, cmd, board, succeeds };
+    if let Err(e) = term::spawn(daemon.clone(), plan).await {
         spawn_failed(daemon, e).await;
     }
 }
