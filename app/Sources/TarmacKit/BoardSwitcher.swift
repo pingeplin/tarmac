@@ -17,14 +17,14 @@ public enum BoardSwitcher {
         public let running: Int
         /// Cards with an unacked bell (amber) signal.
         public let bell: Int
-        /// Total cards on the board.
-        public let cards: Int
+        /// Total cards on the board; nil for a board never shown.
+        public let cards: Int?
         /// Whether the board has any live pty — drives the cyan-vs-faint glyph.
         public let isLive: Bool
         /// Unread reports in the inbox (2611.0013), visited board or not.
         public let report: Int
 
-        public init(boardID: String, name: String?, running: Int, bell: Int, cards: Int, isLive: Bool, report: Int = 0) {
+        public init(boardID: String, name: String?, running: Int, bell: Int, cards: Int?, isLive: Bool, report: Int = 0) {
             self.boardID = boardID
             self.name = name
             self.running = running
@@ -48,12 +48,12 @@ public enum BoardSwitcher {
         public let isLive: Bool
         public let running: Int
         public let bell: Int
-        public let cards: Int
+        public let cards: Int?
         public let meta: String
         public let report: Int
 
         public init(
-            boardID: String, display: String, isActive: Bool, isLive: Bool, running: Int, bell: Int, cards: Int,
+            boardID: String, display: String, isActive: Bool, isLive: Bool, running: Int, bell: Int, cards: Int?,
             meta: String, report: Int = 0
         ) {
             self.boardID = boardID
@@ -160,7 +160,7 @@ public enum BoardSwitcher {
 
     /// A board's row facts. A board that has had its restore counts its own
     /// cards: running shells, lit bells (a terminal can be both) and every
-    /// card. One that has not shows the daemon's running count and no cards,
+    /// card. One that has not shows the daemon's running count and no card count,
     /// whatever placeholder it holds meanwhile. `reports` is the inbox's count
     /// of unread reports, which it knows for either.
     public static func summary(
@@ -173,7 +173,7 @@ public enum BoardSwitcher {
         )
         return BoardSummary(
             boardID: boardID, name: name, running: running, bell: visited ? terms.filter(\.bell).count : 0,
-            cards: visited ? cards : 0, isLive: isLive, report: reports
+            cards: visited ? cards : nil, isLive: isLive, report: reports
         )
     }
 
@@ -185,15 +185,16 @@ public enum BoardSwitcher {
     }
 
     /// The row meta line: `"N running · M bell · R report · K cards"`, dropping
-    /// the running, bell and report segments when zero; the card count is always shown (singular
-    /// "1 card"). Matches B5's faint meta text — the leading ⠧ spinner and the
+    /// the running, bell and report segments when zero, and the card count of
+    /// a board never shown (nil); a shown board's card count is always there,
+    /// zero included (singular "1 card"). Matches B5's faint meta text — the leading ⠧ spinner and the
     /// glyph colors are the view's job.
-    public static func meta(running: Int, bell: Int, report: Int = 0, cards: Int) -> String {
+    public static func meta(running: Int, bell: Int, report: Int = 0, cards: Int?) -> String {
         var parts: [String] = []
         if running > 0 { parts.append("\(running) running") }
         if bell > 0 { parts.append("\(bell) bell") }
         if report > 0 { parts.append("\(report) report") }
-        parts.append(cards == 1 ? "1 card" : "\(cards) cards")
+        if let cards { parts.append(cards == 1 ? "1 card" : "\(cards) cards") }
         return parts.joined(separator: " · ")
     }
 }
