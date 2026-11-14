@@ -320,29 +320,32 @@ of the persisted id from its own board when that id is not live.
 terminal and `blocked`, `done` or `clear`, with an optional text (capped at 280
 chars by the cli and again by the daemon). The daemon keeps one current report
 per live terminal in `Daemon::reports` (`reports::Reports`, pure), in memory
-only. `reporting::handle_report` ties it to a holder:
+only. `Daemon::report` ties it to a holder with `Holder::resolve` (pure):
 
-- **The walk** (`agent::find_agent`, pure) follows the client's pid up its
+- **The walk** follows the client's pid up its
   parents (`proc::proc_facts`, one `sysctl(KERN_PROC_PID)` read, never
   `proc_pidinfo`) until it reaches the PTY child. A terminal spawned with a
   `cmd` (`TermHandle::spawned_with_cmd`) has its child as the agent; else the
   member just below the child is the agent, or the shell itself when the
   caller's parent is the shell (a report typed at the prompt). A caller that is
-  re-parented, gone, unreadable or more than 32 hops away is unattributed.
-- **The holder** (`reports::decide_holder`): `Agent {pid, started}`,
+  re-parented, gone or unreadable, or whose chain to the child has more than
+  32 members (caller and child included), is unattributed.
+- **The holder**: `Agent {pid, started}`,
   `Shell {pid, caller}`, or, for an unattributed caller, `Leader {pid}`, the
   foreground leader; with none, `err`. `proc` is the holder's
   `proc_pidpath` name.
-- **The lifetime.** Each 750 ms poll, before its leader read, runs
-  `Holder::alive` for a terminal with a report: an agent while its pid is live
+- **The lifetime.** Each 750 ms poll reads the leader once and, before the
+  `continue` on a failed read, runs `Holder::alive` for a terminal with a
+  report: an agent while its pid is live
   with the same start time; a shell while the leader is the shell or the
   reporting cli; a leader while it is the leader. A failed read keeps it for
   that tick. A removal pushes `TermReport` with no `kind`. An exit forgets the
   report with no frame; the handler checks `terms` again after it stores one,
   so a report never outlives its terminal.
 - **Read.** An `Input` with `typed: true` marks the report read, and pushes it
-  again. `TermHandle` keeps `has_report` and `unread_report` atomics, written
-  only under the `reports` lock, so a key costs one load when no report waits.
+  again. `TermHandle` keeps one atomic (no report, read, unread), written only
+  under the `reports` lock, so a key, or a poll tick of a terminal with no
+  report, costs one load.
 - **Restore.** After each `Restore` and its `file_event`s, the daemon sends
   one `TermReport` for every live terminal of that board, on every restore, not
   only a board's first on the connection.

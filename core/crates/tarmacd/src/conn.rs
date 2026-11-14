@@ -10,7 +10,7 @@ use tracing::{debug, info, warn};
 
 use crate::boards::{BoardId, Boards};
 use crate::state::Daemon;
-use crate::{docs, reporting, term};
+use crate::{docs, term};
 
 /// `peer_pid` is the client's pid, read at accept; only a cli session uses it.
 pub async fn handle(daemon: Arc<Daemon>, stream: UnixStream, peer_pid: Option<libc::pid_t>) {
@@ -95,7 +95,7 @@ async fn cli_session(daemon: Arc<Daemon>, mut stream: UnixStream, peer_pid: Opti
                 write_msg(&mut stream, &reply(done)).await?;
             }
             Ok(Msg::Report { term_id, kind, text }) => {
-                let done = reporting::handle_report(&daemon, peer_pid, &term_id, &kind, text).await;
+                let done = daemon.report(peer_pid, &term_id, &kind, text).await;
                 write_msg(&mut stream, &reply(done)).await?;
             }
             Ok(Msg::Unknown) => debug!("ignoring unknown message type from cli"),
@@ -267,7 +267,7 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
             Some(h) => {
                 let _ = h.input_tx.send(bytes).await;
                 if typed {
-                    reporting::mark_read(daemon, &term_id, &h).await;
+                    daemon.mark_report_read(&term_id, &h).await;
                 }
             }
             None => debug!("input for unknown term {term_id}"),

@@ -1,4 +1,3 @@
-mod agent;
 mod boards;
 mod conn;
 mod docs;
@@ -8,7 +7,6 @@ mod panic_log;
 mod persist;
 mod proc;
 mod reader;
-mod reporting;
 mod reports;
 mod state;
 mod term;

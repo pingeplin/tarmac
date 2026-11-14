@@ -2,6 +2,8 @@
 //! is `None`; the daemon ships on macOS and the other targets only keep the
 //! crate buildable.
 
+pub type Pid = libc::pid_t;
+
 /// The executable's basename, via `proc_pidpath`.
 #[cfg(target_os = "macos")]
 pub fn process_name(pid: libc::pid_t) -> Option<String> {

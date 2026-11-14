@@ -252,14 +252,15 @@ fn s15_a_background_boards_reports_come_with_each_of_its_restores() {
 fn s32_a_report_removed_while_no_app_is_connected_is_removed_at_the_next_restore() {
     let daemon = TestDaemon::start();
     let mut app = job_shell(&daemon, &["T", "U"]);
-    app.type_line("T", "sleep 5");
+    app.type_line("T", "sleep 2");
     let typed = Instant::now();
     app.recv_until("term_proc sleep", |m| matches!(m, Msg::TermProc { term_id, name, .. } if term_id == "T" && name == "sleep"));
     let frame = report_from_test(&daemon, &mut app, "T", "blocked", None);
     assert_eq!(frame.proc.as_deref(), Some("sleep"));
     drop(app);
 
-    std::thread::sleep(Duration::from_secs(7).saturating_sub(typed.elapsed()));
+    // `sleep` ends at 2 s and the next tick sees it by 2.75 s.
+    std::thread::sleep(Duration::from_secs(4).saturating_sub(typed.elapsed()));
     let mut app = daemon.connect_app();
     let mut log = FrameLog::default();
     let restore = app.log_until(&mut log, "restore", |m| matches!(m, Msg::Restore { .. }));
@@ -318,9 +319,10 @@ fn clear_removes_a_report() {
 fn s18_the_daemon_caps_a_raw_clients_text() {
     let daemon = TestDaemon::start();
     let mut app = job_shell(&daemon, &["T"]);
-    let long = "x".repeat(1000);
+    // Three bytes a char: a cap by bytes would keep 93 chars, or split one.
+    let long = "中".repeat(1000);
     let frame = report_from_test(&daemon, &mut app, "T", "blocked", Some(&long));
-    assert_eq!(frame.text.unwrap().chars().count(), proto::REPORT_TEXT_MAX);
+    assert_eq!(frame.text, Some(format!("{}…", "中".repeat(proto::REPORT_TEXT_MAX - 1))));
 }
 
 // S21
@@ -391,3 +393,4 @@ fn s33_a_report_typed_at_the_prompt_is_held_by_the_shell() {
     assert!(is_removal_for(&removal, "T"), "{removal:?}");
     assert!(typed.elapsed() <= Duration::from_millis(1500), "removed {:?} after sleep 2", typed.elapsed());
 }
+

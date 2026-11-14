@@ -6,8 +6,11 @@ use std::collections::HashMap;
 
 use tarmac_protocol::Msg;
 
-use crate::agent::{Found, Pid};
-use crate::proc::Facts;
+use crate::proc::{Facts, Pid};
+
+/// The longest chain the walk follows, caller and PTY child included: a guard
+/// against a cycle.
+const MAX_HOPS: usize = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -44,6 +47,48 @@ pub enum Holder {
 }
 
 impl Holder {
+    /// The holder of a report from a client whose pid is `caller`, in a
+    /// terminal whose PTY child is `child`: the walk up `caller`'s parents to
+    /// `child`. A child spawned with a `cmd` (`child_is_cmd`) is the agent for
+    /// every caller. Else the member just below the child is the agent, or the
+    /// shell holds it when the caller is the child or the child's child (a
+    /// report typed at the prompt; the cli exits right after its answer, so it
+    /// is never the agent). A caller the walk cannot place (no pid, a parent
+    /// gone or unread, pid 1 reached, or a chain of more than `MAX_HOPS`)
+    /// falls back to the foreground `leader`, read only then. `None`: no
+    /// process to tie the report to.
+    pub fn resolve(
+        caller: Option<Pid>,
+        child: Option<Pid>,
+        child_is_cmd: bool,
+        facts_of: impl Fn(Pid) -> Facts,
+        leader: impl FnOnce() -> Option<Pid>,
+    ) -> Option<Holder> {
+        Self::walk(caller, child, child_is_cmd, facts_of).or_else(|| leader().map(|pid| Holder::Leader { pid }))
+    }
+
+    fn walk(caller: Option<Pid>, child: Option<Pid>, child_is_cmd: bool, facts_of: impl Fn(Pid) -> Facts) -> Option<Holder> {
+        let (caller, child) = (caller?, child?);
+        let (mut pid, mut below, mut members) = (caller, None, 1);
+        while pid != child {
+            if pid <= 1 || members == MAX_HOPS {
+                return None;
+            }
+            let Facts::Live { ppid, started } = facts_of(pid) else { return None };
+            below = Some((pid, started));
+            pid = ppid;
+            members += 1;
+        }
+        if child_is_cmd {
+            let Facts::Live { started, .. } = facts_of(child) else { return None };
+            return Some(Holder::Agent { pid: child, started });
+        }
+        match below {
+            Some((pid, started)) if pid != caller => Some(Holder::Agent { pid, started }),
+            _ => Some(Holder::Shell { pid: child, caller }),
+        }
+    }
+
     pub fn pid(&self) -> Pid {
         match *self {
             Holder::Agent { pid, .. } | Holder::Shell { pid, .. } | Holder::Leader { pid } => pid,
@@ -63,27 +108,6 @@ impl Holder {
             Holder::Leader { pid } => leader.is_none_or(|l| l == pid),
         }
     }
-}
-
-/// The holder of a report from the walk's result. `None`: no process to tie
-/// it to. `leader` is read only in the fallback.
-pub fn decide_holder(
-    found: Found,
-    child: Option<Pid>,
-    peer: Option<Pid>,
-    facts_of: impl Fn(Pid) -> Facts,
-    leader: impl FnOnce() -> Option<Pid>,
-) -> Option<Holder> {
-    match (found, child, peer) {
-        (Found::Agent(pid), _, _) => {
-            if let Facts::Live { started, .. } = facts_of(pid) {
-                return Some(Holder::Agent { pid, started });
-            }
-        }
-        (Found::Shell, Some(pid), Some(caller)) => return Some(Holder::Shell { pid, caller }),
-        _ => {}
-    }
-    leader().map(|pid| Holder::Leader { pid })
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -320,33 +344,109 @@ mod tests {
         assert!(!leader.alive(facts(&[]), Some(S)));
     }
 
+    // The walk: S9 and S36, against the production `Holder::resolve`.
+    const CHILD: Pid = 100;
+    const A: Pid = 200;
+    const X: Pid = 300;
+    const Y: Pid = 400;
+    const CALLER: Pid = 500;
+    const CHAIN: &[(Pid, Pid)] = &[(CALLER, X), (X, A), (A, CHILD), (CHILD, 1)];
+
+    /// A process table: each pid's parent; every pid in it started at its own
+    /// pid, and any other is gone.
+    fn table(parents: &[(Pid, Pid)]) -> impl Fn(Pid) -> Facts + use<> {
+        let parents = parents.to_vec();
+        move |pid| {
+            parents.iter().find(|(p, _)| *p == pid).map_or(Facts::Gone, |&(_, ppid)| Facts::Live { ppid, started: pid as u64 })
+        }
+    }
+
+    fn resolve(caller: Pid, cmd: bool, parents: &[(Pid, Pid)]) -> Option<Holder> {
+        Holder::resolve(Some(caller), Some(CHILD), cmd, table(parents), || Some(L))
+    }
+
+    fn agent(pid: Pid) -> Option<Holder> {
+        Some(Holder::Agent { pid, started: pid as u64 })
+    }
+
+    const LEADER: Option<Holder> = Some(Holder::Leader { pid: L });
+
     #[test]
-    fn s36_an_agent_with_live_facts_is_held_with_its_start_time() {
-        let holder = decide_holder(Found::Agent(200), Some(S), Some(C), facts(&[(200, live(11))]), || Some(L));
-        assert_eq!(holder, Some(Holder::Agent { pid: 200, started: 11 }));
+    fn s9a_the_agent_is_the_member_just_below_the_shell() {
+        assert_eq!(resolve(CALLER, false, CHAIN), agent(A));
     }
 
     #[test]
-    fn s36_an_agent_whose_facts_are_not_live_falls_back_to_the_leader() {
+    fn s9b_s36_a_caller_whose_parent_is_the_shell_is_held_by_the_shell() {
+        let shell = Holder::resolve(Some(CALLER), Some(CHILD), false, table(&[(CALLER, CHILD)]), || panic!("no leader read"));
+        assert_eq!(shell, Some(Holder::Shell { pid: CHILD, caller: CALLER }));
+    }
+
+    #[test]
+    fn s9c_the_shell_itself_as_the_caller_is_held_by_the_shell() {
+        assert_eq!(resolve(CHILD, false, &[(CHILD, 1)]), Some(Holder::Shell { pid: CHILD, caller: CHILD }));
+    }
+
+    #[test]
+    fn s9d_s9i_a_child_spawned_as_cmd_is_the_agent_for_every_caller() {
+        assert_eq!(resolve(CALLER, true, CHAIN), agent(CHILD));
+        assert_eq!(resolve(CALLER, true, &[(CALLER, CHILD), (CHILD, 1)]), agent(CHILD));
+    }
+
+    #[test]
+    fn s36_a_cmd_child_whose_facts_are_not_live_falls_back_to_the_leader() {
+        let parents = [(CALLER, CHILD)];
         for f in [Facts::Gone, Facts::Unread] {
-            let holder = decide_holder(Found::Agent(200), Some(S), Some(C), facts(&[(200, f)]), || Some(L));
-            assert_eq!(holder, Some(Holder::Leader { pid: L }), "{f:?}");
+            let facts_of = |pid| if pid == CHILD { f } else { table(&parents)(pid) };
+            assert_eq!(Holder::resolve(Some(CALLER), Some(CHILD), true, facts_of, || Some(L)), LEADER, "{f:?}");
         }
     }
 
     #[test]
-    fn s36_the_shell_holds_a_report_typed_at_the_prompt() {
-        let holder = decide_holder(Found::Shell, Some(S), Some(C), facts(&[]), || panic!("no leader read"));
-        assert_eq!(holder, Some(Holder::Shell { pid: S, caller: C }));
+    fn s9e_a_caller_re_parented_to_launchd_falls_back_to_the_leader() {
+        // A parent of pid 1 that leads to the child: only the guard stops there.
+        assert_eq!(resolve(CALLER, false, &[(CALLER, X), (X, 1), (1, CHILD)]), LEADER);
     }
 
     #[test]
-    fn s36_an_unattributed_caller_falls_back_to_the_leader_or_to_none() {
-        assert_eq!(
-            decide_holder(Found::Unattributed, Some(S), Some(C), facts(&[]), || Some(L)),
-            Some(Holder::Leader { pid: L })
-        );
-        assert_eq!(decide_holder(Found::Unattributed, Some(S), None, facts(&[]), || None), None);
+    fn s9f_s36_a_parent_gone_or_unread_on_the_way_falls_back_to_the_leader() {
+        assert_eq!(resolve(CALLER, false, &[(CALLER, X)]), LEADER);
+        let unread = |pid| if pid == X { Facts::Unread } else { table(CHAIN)(pid) };
+        assert_eq!(Holder::resolve(Some(CALLER), Some(CHILD), false, unread, || Some(L)), LEADER);
+    }
+
+    #[test]
+    fn s9g_no_caller_or_no_child_falls_back_to_the_leader() {
+        assert_eq!(Holder::resolve(None, Some(CHILD), false, table(CHAIN), || Some(L)), LEADER);
+        assert_eq!(Holder::resolve(Some(CALLER), None, false, table(CHAIN), || Some(L)), LEADER);
+    }
+
+    #[test]
+    fn s9h_a_cycle_falls_back_to_the_leader() {
+        assert_eq!(resolve(CALLER, false, &[(CALLER, X), (X, Y), (Y, X)]), LEADER);
+    }
+
+    /// A chain of `members` pids, the caller first and the child last.
+    fn chain_of(members: usize) -> (Pid, Vec<(Pid, Pid)>) {
+        let pids: Vec<Pid> = (0..members - 1).map(|i| 1000 + i as Pid).chain([CHILD]).collect();
+        (pids[0], pids.windows(2).map(|w| (w[0], w[1])).collect())
+    }
+
+    #[test]
+    fn s9h_a_chain_of_32_members_is_walked() {
+        let (caller, parents) = chain_of(32);
+        assert_eq!(resolve(caller, false, &parents), agent(parents[parents.len() - 1].0));
+    }
+
+    #[test]
+    fn s9h_a_chain_of_33_members_falls_back_to_the_leader() {
+        let (caller, parents) = chain_of(33);
+        assert_eq!(resolve(caller, false, &parents), LEADER);
+    }
+
+    #[test]
+    fn s36_an_unplaced_caller_with_no_leader_has_no_holder() {
+        assert_eq!(Holder::resolve(None, Some(CHILD), false, table(CHAIN), || None), None);
     }
 
     #[test]
