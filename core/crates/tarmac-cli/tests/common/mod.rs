@@ -11,7 +11,36 @@ use std::time::{Duration, Instant};
 use tarmac_protocol::{self as proto, Msg};
 
 mod double;
-pub use double::Double;
+pub mod frames;
+pub use double::{Double, Peer};
+
+/// The line of a verb whose daemon does not answer in time.
+pub const NO_ANSWER: &str = "tarmac: no answer from the daemon in 5 s (an older daemon)\n";
+
+/// Reads the `hello` and writes `hello_ok`, `late` after it, then reads the
+/// request. False when the client went away first.
+pub fn handshake(peer: &mut Peer, late: Duration) -> bool {
+    let hello_ok = proto::encode(&hello_ok(None, None, None, None)).unwrap();
+    if peer.read().is_none() {
+        return false;
+    }
+    std::thread::sleep(late);
+    peer.write(&hello_ok) && peer.read().is_some()
+}
+
+/// Exit 2 with the verb's one usage line.
+#[track_caller]
+pub fn assert_usage(out: &Report, verb: &str) {
+    assert_eq!(out.code(), Some(2), "{}", out.stderr);
+    assert!(out.one_stderr_line().starts_with(&format!("tarmac: usage: tarmac {verb}")), "{}", out.stderr);
+}
+
+/// Exit 1 with the no-answer line, no sooner than 5 s after `started`.
+#[track_caller]
+pub fn assert_no_answer(out: &Report, started: Instant) {
+    assert_eq!((out.code(), out.stderr.as_str()), (Some(1), NO_ANSWER));
+    assert!(started.elapsed() >= Duration::from_secs(5), "gave up after {:?}", started.elapsed());
+}
 
 /// What a `OneAnswer` double does with the frame after the hello.
 pub enum Answer {
@@ -29,8 +58,7 @@ pub struct OneAnswer {
 impl OneAnswer {
     pub fn start(answer: Answer) -> Self {
         let double = Double::start("tarmacd.sock", move |peer| {
-            let hello_ok = proto::encode(&hello_ok(None, None, None, None)).unwrap();
-            if peer.read().is_none() || !peer.write(&hello_ok) || peer.read().is_none() {
+            if !handshake(peer, Duration::ZERO) {
                 return;
             }
             match answer {
@@ -83,9 +111,13 @@ pub struct Streamer {
 
 impl Streamer {
     pub fn start(steps: Vec<Step>, then: Then) -> Self {
+        Streamer::start_late(Duration::ZERO, steps, then)
+    }
+
+    /// `start`, with the `hello_ok` written `late`: a slow handshake.
+    pub fn start_late(late: Duration, steps: Vec<Step>, then: Then) -> Self {
         let double = Double::start("tarmacd.sock", move |peer| {
-            let hello_ok = proto::encode(&hello_ok(None, None, None, None)).unwrap();
-            if peer.read().is_none() || !peer.write(&hello_ok) || peer.read().is_none() {
+            if !handshake(peer, late) {
                 return;
             }
             for step in steps {

@@ -6,37 +6,11 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tarmac_protocol::Msg;
 
 mod common;
-use common::{Report, Step, Streamer, Then, start, tarmac_at, untouched};
-
-const USAGE: &str = "tarmac: usage: tarmac events [--term ID] [--kind exit,bell,changed,report]\n";
+use common::frames::{bell, exit, term_report};
+use common::{Report, Step, Streamer, Then, assert_no_answer, assert_usage, start, tarmac_at, untouched};
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
-}
-
-fn bell(term_id: &str) -> Msg {
-    Msg::Bell { term_id: term_id.into(), board_id: None }
-}
-
-fn exit(term_id: &str, code: Option<i64>) -> Msg {
-    Msg::Exit { term_id: term_id.into(), code, board_id: None }
-}
-
-fn no_report(term_id: &str) -> Msg {
-    Msg::TermReport { term_id: term_id.into(), kind: None, text: None, at_ms: None, proc: None, read: false, board_id: None, cwd: None }
-}
-
-fn blocked() -> Msg {
-    Msg::TermReport {
-        term_id: "t1".into(),
-        kind: Some("blocked".into()),
-        text: Some("May I?".into()),
-        at_ms: Some(1_700_000_000_000),
-        proc: Some("claude".into()),
-        read: false,
-        board_id: None,
-        cwd: None,
-    }
 }
 
 /// The line with its `received_ms` taken out, and that value. `received_ms`
@@ -48,17 +22,21 @@ fn split_received(line: &str) -> (String, u64) {
     (serde_json::to_string(&v).unwrap(), ms)
 }
 
+fn lines(out: &Report) -> Vec<String> {
+    out.stdout.lines().map(|l| split_received(l).0).collect()
+}
+
 // S12
 #[test]
 fn s12_each_frame_is_one_json_line_and_the_snapshot_is_marked() {
     let daemon = Streamer::writing(vec![
-        blocked(),
+        term_report("t1", Some("blocked"), Some("May I?"), Some("claude"), false),
         Msg::Ack,
         bell("t1"),
         exit("t1", Some(0)),
         exit("t2", None),
         Msg::FileEvent { path: "/a.md".into(), mtime_ms: 5 },
-        no_report("t1"),
+        term_report("t1", None, None, None, false),
     ]);
     let before = now_ms();
 
@@ -96,8 +74,7 @@ fn a_frame_with_a_board_names_it_after_the_terminal() {
 
     let out = daemon.run(&["events"]);
 
-    let lines: Vec<String> = out.stdout.lines().map(|l| split_received(l).0).collect();
-    assert_eq!(lines, [r#"{"event":"bell","term":"t1","board":"board-1"}"#, r#"{"event":"exit","term":"t1","board":"board-1","code":2}"#]);
+    assert_eq!(lines(&out), [r#"{"event":"bell","term":"t1","board":"board-1"}"#, r#"{"event":"exit","term":"t1","board":"board-1","code":2}"#]);
 }
 
 // S12
@@ -116,8 +93,17 @@ fn frames_the_filter_does_not_take_are_skipped() {
 
     let out = daemon.run(&["events", "--term", "t1", "--kind", "bell"]);
 
-    let lines: Vec<String> = out.stdout.lines().map(|l| split_received(l).0).collect();
-    assert_eq!(lines, [r#"{"event":"bell","term":"t1"}"#]);
+    assert_eq!(lines(&out), [r#"{"event":"bell","term":"t1"}"#]);
+}
+
+// After `ack` the stream has no time limit: the 5 s wait is for the answer.
+#[test]
+fn a_stream_quiet_for_longer_than_5_s_goes_on() {
+    let daemon = Streamer::start(vec![Step::Write(Msg::Ack), Step::Pause(Duration::from_millis(5500)), Step::Write(bell("t1"))], Then::Close);
+
+    let out = daemon.run(&["events"]);
+
+    assert_eq!(lines(&out), [r#"{"event":"bell","term":"t1"}"#], "{}", out.stderr);
 }
 
 // S29
@@ -136,10 +122,7 @@ fn s31_a_daemon_that_never_answers_is_the_no_answer_line_after_5_s() {
     let daemon = Streamer::start(vec![], Then::Hold);
     let started = Instant::now();
 
-    let out = daemon.run(&["events"]);
-
-    assert_eq!((out.code(), out.stderr.as_str()), (Some(1), "tarmac: no answer from the daemon in 5 s (an older daemon)\n"));
-    assert!(started.elapsed() >= Duration::from_secs(5), "gave up after {:?}", started.elapsed());
+    assert_no_answer(&daemon.run(&["events"]), started);
 }
 
 // S32
@@ -152,18 +135,13 @@ fn s32_a_lagged_stream_is_named() {
     assert_eq!((out.code(), out.stderr.as_str()), (Some(1), "tarmac: the daemon dropped this stream: it fell behind (lagged)\n"));
 }
 
-// S33
+// S33: the whole matrix is `parse`'s unit test.
 #[test]
 fn s33_a_usage_error_exits_2_with_no_connection() {
-    for args in [&["--kind", "later"][..], &["--kind", ""], &["--term", "t1", "--kind", "changed"], &["--term", "t1", "--kind", "bell,changed"], &["extra"], &["--term"], &["--term", "a", "--term", "b"], &["--kind", "bell", "--kind", "exit"]] {
-        let daemon = Streamer::writing(vec![Msg::Ack]);
+    let daemon = Streamer::writing(vec![Msg::Ack]);
 
-        let out = Report::of(tarmac_at(&daemon.double.sock).arg("events").args(args));
-
-        assert_eq!(out.code(), Some(2), "{args:?}");
-        assert_eq!(out.one_stderr_line(), USAGE, "{args:?}");
-        assert!(untouched(&daemon.double), "{args:?}");
-    }
+    assert_usage(&Report::of(tarmac_at(&daemon.double.sock).args(["events", "--term", "t1", "--kind", "changed"])), "events");
+    assert!(untouched(&daemon.double));
 }
 
 // S35
@@ -179,9 +157,8 @@ fn s35_a_closed_stdout_ends_events_with_exit_0() {
 
     let mut first = String::new();
     BufReader::new(child.stdout.take().unwrap()).read_line(&mut first).unwrap();
-    let closed = Instant::now();
 
-    let deadline = closed + Duration::from_secs(1);
+    let deadline = Instant::now() + Duration::from_secs(1);
     let status = loop {
         if let Some(status) = child.try_wait().unwrap() {
             break status;

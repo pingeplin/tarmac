@@ -14,7 +14,7 @@ use tarmac_protocol::Msg;
 use crate::events::{self, Stop};
 
 const USAGE: &str =
-    "usage: tarmac wait --exit ID | --bell ID | --report blocked|done --term ID | --changed PATH [--settle MS]  [--timeout MS]";
+    "usage: tarmac wait --exit ID | --bell ID | --report blocked|done --term ID | --changed PATH [--settle MS] [--timeout MS]";
 const TIMED_OUT: i32 = 124;
 
 #[derive(Debug, PartialEq)]

@@ -5,47 +5,33 @@
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::Output;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use tarmac_protocol::Msg;
 
 mod common;
-use common::{Report, Step, Streamer, Then, scratch, start, tarmac_at, untouched};
+use common::frames::{bell, exit, term_report};
+use common::{Report, Step, Streamer, Then, assert_no_answer, assert_usage, scratch, start, tarmac_at, untouched};
 
-const USAGE: &str =
-    "tarmac: usage: tarmac wait --exit ID | --bell ID | --report blocked|done --term ID | --changed PATH [--settle MS]  [--timeout MS]\n";
 const NOT_ANSWERED: &str = "tarmac: wait: timed out before the daemon answered\n";
-
-fn exit(code: Option<i64>) -> Msg {
-    Msg::Exit { term_id: "t9".into(), code, board_id: None }
-}
-
-fn report(kind: Option<&str>, text: Option<&str>, proc: Option<&str>, read: bool) -> Msg {
-    Msg::TermReport {
-        term_id: "t9".into(),
-        kind: kind.map(str::to_string),
-        text: text.map(str::to_string),
-        at_ms: kind.map(|_| 1_700_000_000_000),
-        proc: proc.map(str::to_string),
-        read,
-        board_id: None,
-        cwd: None,
-    }
-}
 
 fn subscribe(kinds: &[&str]) -> Msg {
     Msg::Subscribe { kinds: Some(kinds.iter().map(|k| k.to_string()).collect()), term_id: Some("t9".into()) }
+}
+
+fn holding(frames: Vec<Msg>) -> Streamer {
+    Streamer::start(frames.into_iter().map(Step::Write).collect(), Then::Hold)
 }
 
 // S9
 #[test]
 fn s9_an_exit_prints_its_code() {
     for (frames, stdout) in [
-        (vec![Msg::Ack, exit(Some(3))], "{\"code\":3}\n"),
-        (vec![Msg::Ack, exit(None)], "{\"signal\":true}\n"),
-        (vec![exit(Some(3)), Msg::Ack], "{\"code\":3}\n"),
+        (vec![Msg::Ack, exit("t9", Some(3))], "{\"code\":3}\n"),
+        (vec![Msg::Ack, exit("t9", None)], "{\"signal\":true}\n"),
+        (vec![exit("t9", Some(3)), Msg::Ack], "{\"code\":3}\n"),
     ] {
-        let daemon = Streamer::start(frames.into_iter().map(Step::Write).collect(), Then::Hold);
+        let daemon = holding(frames);
 
         let out = daemon.run(&["wait", "--exit", "t9"]);
 
@@ -57,12 +43,12 @@ fn s9_an_exit_prints_its_code() {
 // S10
 #[test]
 fn s10_a_report_of_the_kind_prints_it_and_others_are_skipped() {
-    let blocked = report(Some("blocked"), Some("May I?"), Some("claude"), true);
+    let blocked = term_report("t9", Some("blocked"), Some("May I?"), Some("claude"), true);
     for frames in [
-        vec![Msg::Ack, report(Some("done"), None, None, false), report(None, None, None, false), blocked.clone()],
+        vec![Msg::Ack, term_report("t9", Some("done"), None, None, false), term_report("t9", None, None, None, false), blocked.clone()],
         vec![blocked.clone(), Msg::Ack],
     ] {
-        let daemon = Streamer::start(frames.into_iter().map(Step::Write).collect(), Then::Hold);
+        let daemon = holding(frames);
 
         let out = daemon.run(&["wait", "--report", "blocked", "--term", "t9"]);
 
@@ -74,7 +60,7 @@ fn s10_a_report_of_the_kind_prints_it_and_others_are_skipped() {
 
 #[test]
 fn a_report_with_no_text_or_proc_has_no_key_for_them() {
-    let daemon = Streamer::writing(vec![Msg::Ack, report(Some("done"), None, None, false)]);
+    let daemon = Streamer::writing(vec![Msg::Ack, term_report("t9", Some("done"), None, None, false)]);
 
     let out = daemon.run(&["wait", "--report", "done", "--term", "t9"]);
 
@@ -84,7 +70,7 @@ fn a_report_with_no_text_or_proc_has_no_key_for_them() {
 // S11
 #[test]
 fn s11_a_bell_ends_the_wait_and_prints_nothing() {
-    let daemon = Streamer::start(vec![Step::Write(Msg::Ack), Step::Write(Msg::Bell { term_id: "t9".into(), board_id: None })], Then::Hold);
+    let daemon = holding(vec![Msg::Ack, bell("t9")]);
 
     let out = daemon.run(&["wait", "--bell", "t9"]);
 
@@ -94,8 +80,7 @@ fn s11_a_bell_ends_the_wait_and_prints_nothing() {
 
 #[test]
 fn frames_of_another_terminal_are_skipped() {
-    let other = Msg::Exit { term_id: "t8".into(), code: Some(1), board_id: None };
-    let daemon = Streamer::start(vec![Step::Write(Msg::Ack), Step::Write(other), Step::Write(exit(Some(2)))], Then::Hold);
+    let daemon = holding(vec![Msg::Ack, exit("t8", Some(1)), exit("t9", Some(2))]);
 
     let out = daemon.run(&["wait", "--exit", "t9"]);
 
@@ -116,7 +101,7 @@ fn s29_an_unknown_terminal_is_printed_and_exits_1() {
 #[test]
 fn s30_an_exit_ends_a_wait_for_a_bell_or_a_report() {
     for args in [&["--bell", "t9"][..], &["--report", "done", "--term", "t9"]] {
-        let daemon = Streamer::start(vec![Step::Write(Msg::Ack), Step::Write(exit(Some(0)))], Then::Hold);
+        let daemon = holding(vec![Msg::Ack, exit("t9", Some(0))]);
 
         let out = Report::of(tarmac_at(&daemon.double.sock).arg("wait").args(args));
 
@@ -133,7 +118,7 @@ fn timed(daemon: &Streamer, args: &[&str]) -> (Report, Duration) {
 // S31
 #[test]
 fn s31_a_timeout_after_the_ack_exits_124_with_nothing_printed() {
-    let daemon = Streamer::start(vec![Step::Write(Msg::Ack)], Then::Hold);
+    let daemon = holding(vec![Msg::Ack]);
 
     let (out, took) = timed(&daemon, &["wait", "--exit", "t9", "--timeout", "300"]);
 
@@ -156,11 +141,40 @@ fn s31_a_timeout_before_the_ack_exits_124_with_one_line() {
 #[test]
 fn s31_with_no_timeout_a_daemon_that_never_answers_is_the_no_answer_line() {
     let daemon = Streamer::start(vec![], Then::Hold);
+    let started = Instant::now();
 
-    let (out, took) = timed(&daemon, &["wait", "--exit", "t9"]);
+    assert_no_answer(&daemon.run(&["wait", "--exit", "t9"]), started);
+}
 
-    assert_eq!((out.code(), out.stderr.as_str()), (Some(1), "tarmac: no answer from the daemon in 5 s (an older daemon)\n"));
-    assert!(took >= Duration::from_secs(5), "{took:?}");
+// D14: with a `--timeout` past the 5 s wait, a silent daemon is still the
+// older-daemon line, not a timeout.
+#[test]
+fn a_timeout_longer_than_the_5_s_wait_still_gives_the_no_answer_line() {
+    let daemon = Streamer::start(vec![], Then::Hold);
+    let started = Instant::now();
+
+    assert_no_answer(&daemon.run(&["wait", "--exit", "t9", "--timeout", "6000"]), started);
+}
+
+// D14: the deadline counts from the start, the handshake included.
+#[test]
+fn the_timeout_counts_a_slow_handshake() {
+    let daemon = Streamer::start_late(Duration::from_millis(400), vec![Step::Write(Msg::Ack)], Then::Hold);
+
+    let (out, took) = timed(&daemon, &["wait", "--exit", "t9", "--timeout", "700"]);
+
+    assert_eq!((out.code(), out.stdout.as_str(), out.stderr.as_str()), (Some(124), "", ""));
+    assert!(took < Duration::from_millis(1000), "{took:?}");
+}
+
+// After `ack` a wait with no `--timeout` has no time limit.
+#[test]
+fn a_wait_quiet_for_longer_than_5_s_goes_on() {
+    let daemon = Streamer::start(vec![Step::Write(Msg::Ack), Step::Pause(Duration::from_millis(5500)), Step::Write(exit("t9", Some(0)))], Then::Hold);
+
+    let out = daemon.run(&["wait", "--exit", "t9"]);
+
+    assert_eq!((out.code(), out.stdout.as_str(), out.stderr.as_str()), (Some(0), "{\"code\":0}\n", ""));
 }
 
 // S32
@@ -176,33 +190,16 @@ fn s32_the_daemon_going_away_or_a_lag_exits_1() {
     assert_eq!((out.code(), out.stderr.as_str()), (Some(1), "tarmac: the daemon dropped this stream: it fell behind (lagged)\n"));
 }
 
-// S33
+// S33: the whole matrix is `parse`'s unit test.
 #[test]
 fn s33_a_usage_error_exits_2_with_no_connection() {
-    let cases: &[&[&str]] = &[
-        &[],
-        &["--exit"],
-        &["--exit", "t1", "--bell", "t1"],
-        &["--report", "later", "--term", "t1"],
-        &["--report", "done"],
-        &["--exit", "t1", "--term", "t1"],
-        &["--exit", "t1", "--settle", "5"],
-        &["--exit", "t1", "--timeout", "0"],
-        &["--exit", "t1", "--timeout", "abc"],
-        &["--changed"],
-        &["--changed", "/a", "--settle", "0"],
-        &["--exit", "t1", "--exit", "t2"],
-        &["--exit", "t1", "extra"],
-    ];
-    for args in cases {
-        let daemon = Streamer::writing(vec![Msg::Ack]);
+    let daemon = Streamer::writing(vec![Msg::Ack]);
 
-        let out = Report::of(tarmac_at(&daemon.double.sock).arg("wait").args(*args));
+    let out = Report::of(tarmac_at(&daemon.double.sock).args(["wait", "--report", "later", "--term", "t1"]));
 
-        assert_eq!(out.code(), Some(2), "{args:?}");
-        assert_eq!(out.one_stderr_line(), USAGE, "{args:?}");
-        assert!(untouched(&daemon.double), "{args:?}");
-    }
+    assert_usage(&out, "wait");
+    assert!(out.stderr.contains("--changed PATH [--settle MS] [--timeout MS]"), "{}", out.stderr);
+    assert!(untouched(&daemon.double));
 }
 
 /// A file in a scratch dir whose mtime is 3 s back, so a change made now
@@ -306,6 +303,51 @@ fn s27_settle_waits_for_the_last_change() {
 
     assert_eq!((out.status.code(), stdout(&out)), (Some(0), "{\"deleted\":false}\n"));
     assert!(took >= Duration::from_millis(1100), "{took:?}");
+}
+
+/// A file whose mtime is half a second past a whole second 3 s back, so a
+/// change of 1 µs keeps its seconds.
+fn file_at_half_second(dir: &Path, name: &str) -> (PathBuf, SystemTime) {
+    let path = dir.join(name);
+    std::fs::write(&path, "abc").unwrap();
+    let secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() - 3;
+    let mtime = UNIX_EPOCH + Duration::new(secs, 500_000_000);
+    File::options().write(true).open(&path).unwrap().set_modified(mtime).unwrap();
+    (path, mtime)
+}
+
+// S27: each fact of a sample counts alone.
+#[test]
+fn a_change_of_the_size_alone_or_of_the_mtime_below_a_second_ends_the_wait() {
+    let dir = scratch();
+    let cases: Vec<(&str, Box<dyn Fn(&Path, SystemTime)>)> = vec![
+        (
+            "size",
+            Box::new(|f, mtime| {
+                std::fs::write(f, "abcd").unwrap();
+                File::options().write(true).open(f).unwrap().set_modified(mtime).unwrap();
+            }),
+        ),
+        ("nsec", Box::new(|f, mtime| File::options().write(true).open(f).unwrap().set_modified(mtime + Duration::from_micros(1)).unwrap())),
+    ];
+    for (name, act) in cases {
+        let (file, mtime) = file_at_half_second(&dir, &format!("{name}.txt"));
+
+        let (out, _) = changed_with(&file, &["--timeout", "3000"], Duration::from_millis(300), || act(&file, mtime));
+
+        assert_eq!((out.status.code(), stdout(&out)), (Some(0), "{\"deleted\":false}\n"), "{name}");
+    }
+}
+
+// D17: a path below a file is missing, not a stat error.
+#[test]
+fn a_path_below_a_file_is_missing() {
+    let file = scratch().join("plain.txt");
+    std::fs::write(&file, "a").unwrap();
+
+    let (out, _) = changed_with(&file.join("x"), &["--timeout", "500"], Duration::ZERO, || {});
+
+    assert_eq!((out.status.code(), stdout(&out), String::from_utf8_lossy(&out.stderr).as_ref()), (Some(124), "", ""));
 }
 
 // S28

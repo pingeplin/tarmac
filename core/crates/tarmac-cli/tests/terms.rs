@@ -1,13 +1,11 @@
 // `tarmac terms` (spec 2611.0012) against a daemon double.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use tarmac_protocol::{Msg, TermInfo};
 
 mod common;
-use common::{Report, Step, Streamer, Then, tarmac_at, untouched};
-
-const NO_ANSWER: &str = "tarmac: no answer from the daemon in 5 s (an older daemon)\n";
+use common::{Report, Streamer, Then, assert_no_answer, assert_usage, tarmac_at, untouched};
 
 fn row(cwd: Option<&str>, proc: Option<&str>) -> TermInfo {
     TermInfo { term_id: "t1".into(), board_id: "board-0".into(), cwd: cwd.map(str::to_string), proc: proc.map(str::to_string) }
@@ -50,20 +48,14 @@ fn s31_a_daemon_that_never_answers_is_the_no_answer_line_after_5_s() {
     let daemon = Streamer::start(vec![], Then::Hold);
     let started = Instant::now();
 
-    let out = daemon.run(&["terms"]);
-
-    assert_eq!((out.code(), out.stderr.as_str()), (Some(1), NO_ANSWER));
-    assert!(started.elapsed() >= Duration::from_secs(5), "gave up after {:?}", started.elapsed());
+    assert_no_answer(&daemon.run(&["terms"]), started);
 }
 
 // S33
 #[test]
 fn s33_an_argument_is_a_usage_error_with_no_connection() {
-    let daemon = Streamer::start(vec![Step::Pause(Duration::ZERO)], Then::Close);
+    let daemon = Streamer::writing(vec![]);
 
-    let out = Report::of(tarmac_at(&daemon.double.sock).args(["terms", "extra"]));
-
-    assert_eq!(out.code(), Some(2));
-    assert_eq!(out.one_stderr_line(), "tarmac: usage: tarmac terms\n");
+    assert_usage(&Report::of(tarmac_at(&daemon.double.sock).args(["terms", "extra"])), "terms");
     assert!(untouched(&daemon.double));
 }

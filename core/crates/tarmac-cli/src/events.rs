@@ -136,8 +136,8 @@ fn line(msg: &Msg, snapshot: bool, received_ms: u64) -> Option<Value> {
         }
         Msg::TermReport { term_id, kind, board_id, .. } => {
             put("term", Some(json!(term_id)));
+            put("board", board_id.as_ref().map(|b| json!(b)));
             if kind.is_some() {
-                put("board", board_id.as_ref().map(|b| json!(b)));
                 m.extend(report(msg)?);
             }
         }
@@ -275,6 +275,11 @@ mod tests {
         for (msg, want) in cases {
             assert_eq!(text(&msg, false), want, "{msg:?}");
         }
+    }
+
+    #[test]
+    fn a_report_with_no_kind_names_the_board_its_frame_carries() {
+        assert_eq!(text(&report(None, None, None, Some("b1")), false), r#"{"event":"report","term":"t1","board":"b1","received_ms":9}"#);
     }
 
     #[test]
