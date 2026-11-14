@@ -12,6 +12,7 @@
 // Run:  make qa-resume    (against a live `make run`; DEV_DIR= as for it)
 
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -93,8 +94,11 @@ await run.checkAsync("Return on the armed chip runs the command once", async () 
   const lines = card.term.scrollback_tail.split("\n").map((l) => l.trimEnd());
   eq(lines.filter((l) => l === "RESUMED").length, 1, "lines that are exactly RESUMED");
   eq(card.term.resume, undefined, "the chip is gone");
-  typeAll(reopened, "pwd\n");
-  waitFor(reopened, `cards[${reopened}].term.scrollback_tail contains "${folder}"`, "--timeout", "5000");
+  // A short mark of the folder, not the path itself: a temp path is wider
+  // than a default card, and a wrapped line would not match.
+  const mark = createHash("sha1").update(`${folder}\n`).digest("hex").slice(0, 8);
+  typeAll(reopened, `printf 'CW%s:%s\\n' D "$(pwd -P | shasum | cut -c1-8)"\n`);
+  waitFor(reopened, `cards[${reopened}].term.scrollback_tail contains "CWD:${mark}"`, "--timeout", "5000");
 });
 
 await run.checkAsync("state.json: no entry under the dead id, and the new entry has no resume", async () => {
