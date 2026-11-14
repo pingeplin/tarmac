@@ -162,11 +162,14 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
         offscreenFlyTarget = OffscreenHintLayout.flyTarget(hints).map(CardID.term)
     }
 
-    /// The minimap and the toasts, in the board's coordinates: drawn over the
-    /// pills, so the pills keep clear of them.
+    /// The corner chrome drawn over the pills (`OverlayStack.pillChrome`), in
+    /// the board's coordinates: each toast, not the column's sheet.
     private var chromeOverHints: [CGRect] {
-        let minimapRect = minimap.isHidden ? [] : [board.convert(minimap.frame, from: self)]
-        return minimapRect + toasts.frames.map { board.convert($0, from: toasts) }
+        OverlayStack.pillChrome.flatMap { layer -> [CGRect] in
+            layer == .toasts
+                ? toasts.frames.map { board.convert($0, from: toasts) }
+                : [board.convert(overlay(layer).frame, from: self)]
+        }
     }
 
     /// Shows / hides the ⌘K boards switcher overlay (the controller renders its
@@ -220,7 +223,7 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
             width: Minimap.mapWidth,
             height: Minimap.mapHeight
         )
-        toasts.keepAbove = minimap.isHidden ? nil : toasts.convert(minimap.frame, from: self)
+        toasts.keepAbove = toasts.convert(minimap.frame, from: self)
 
         // ⌘K switcher: covers the board area and leaves the status bar legible;
         // the panel centers itself within.

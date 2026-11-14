@@ -23,6 +23,20 @@ public enum OverlayStack: CaseIterable, Sendable {
         }
     }
 
+    /// The corner chrome drawn over the pills, which the pills keep clear of.
+    /// The inbox narrows the pills' area instead; the switcher and the restore
+    /// card cover the whole board.
+    public static var pillChrome: [OverlayStack] {
+        backToFront.filter { $0.isCorner && $0.zIndex > hints.zIndex }
+    }
+
+    private var isCorner: Bool {
+        switch self {
+        case .zoomControl, .minimap, .toasts: true
+        case .hints, .switcher, .restoreCard, .inbox: false
+        }
+    }
+
     public static var backToFront: [OverlayStack] {
         allCases.enumerated()
             .sorted { ($0.element.zIndex, $0.offset) < ($1.element.zIndex, $1.offset) }

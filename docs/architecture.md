@@ -1510,7 +1510,7 @@ land in the terminal behind it.
 
 Layered over the board, back to front (`OverlayStack`): offscreen hint pills
 (one per signalling terminal whose centre is off screen, on the edge it
-overshoots), the zoom
+overshoots; a pill that cannot clear a card is drawn under the cards), the zoom
 control (bottom-left: `−`, percent, `+`, fit — steps of ×1.2 about the viewport
 centre; fit frames every card with a 10 % margin), the minimap (bottom-right;
 cards coloured by signal, click to re-centre), the inbox panel, toasts (at
@@ -1541,16 +1541,17 @@ the start of its text (24 Unicode scalars, one line), an exit pill reads
 `exited`; blocked and bell are amber, done `Theme.ok`, exit
 `Theme.consoleError`, and the minimap uses the same colours.
 
-A pill keeps clear of the visible cards, the minimap and the shown toasts
-(`OffscreenHintLayout.stackPills`, issue #365): it moves along its edge to the
-nearest free gap, and on the bottom edge to the nearest one on its left first.
-An edge that still leaves a pill under the minimap or a toast is placed again
-from its far end, stacking toward its start, each pill starting where the
-first placing put it; the second placing is kept only when it leaves fewer
-pills under them and pushes no more out of the view. A pill that finds no free gap is
-drawn over the cards all the same (#126 drew it under them, where it was lost
-or showed through a dimmed card); the minimap and the toasts are drawn over
-every pill.
+A pill keeps clear of the visible cards and of the corner chrome drawn over
+it — the zoom control, the minimap and the shown toasts
+(`OverlayStack.pillChrome`; `OffscreenHintLayout.stackPills`, issue #365): it
+moves along its edge to the nearest free gap, and on the bottom edge to the
+nearest one on its left first. An edge that still leaves a pill under the
+chrome is placed again from its far end, stacking toward its start, each pill
+starting where the first placing put it; the second placing is kept only when
+it leaves fewer pills under the chrome and pushes no more out of the view. A
+pill that finds no free gap clear of the cards is drawn under them (#126):
+cards win. One left under the chrome stays over the cards and under the
+chrome.
 
 **The inbox** (spec 2611.0013, `InboxPanelView`; rules in `Inbox`,
 `InboxCopy`, `InboxKeys`, `InboxJump`, `InboxPanelLayout`). A store of report

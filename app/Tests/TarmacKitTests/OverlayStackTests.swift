@@ -19,6 +19,14 @@ final class OverlayStackTests: XCTestCase {
         )
     }
 
+    /// The pills keep clear of the corner controls drawn over them. The inbox
+    /// narrows the pills' area instead, and the switcher and the restore card
+    /// cover the whole board.
+    func testThePillsKeepClearOfTheZoomControlTheMinimapAndTheToasts() {
+        XCTAssertEqual(OverlayStack.pillChrome, [.zoomControl, .minimap, .toasts])
+        for layer in OverlayStack.pillChrome { XCTAssertGreaterThan(layer.zIndex, OverlayStack.hints.zIndex) }
+    }
+
     func testEveryOverlayIsStackedOnce() {
         XCTAssertEqual(OverlayStack.backToFront.count, OverlayStack.allCases.count)
         XCTAssertEqual(Set(OverlayStack.backToFront), Set(OverlayStack.allCases))
