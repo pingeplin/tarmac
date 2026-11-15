@@ -201,4 +201,20 @@ final class DevPointerTests: XCTestCase {
             ["activated": "mine", "delivery": 7]
         )
     }
+
+    // MARK: - 2611.0015 D16: a control is clicked, never only handled
+
+    func testAControlIsPressedThroughTheWindowAtAReachablePoint() {
+        let press = DevPointer.controlPress(among: [Candidate(point: a, reachable: false), Candidate(point: b, reachable: true)])
+        XCTAssertEqual(press, Press(point: b, delivery: .window))
+    }
+
+    func testAControlNoPointReachesIsClickedOnTheTargetAtItsFirstPoint() {
+        let press = DevPointer.controlPress(among: [Candidate(point: a, reachable: false), Candidate(point: b, reachable: false)])
+        XCTAssertEqual(press, Press(point: a, delivery: .target))
+    }
+
+    func testAControlWithNoPointIsStillClickedOnTheTarget() {
+        XCTAssertEqual(DevPointer.controlPress(among: []).delivery, .target)
+    }
 }

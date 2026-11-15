@@ -97,6 +97,14 @@ public enum DevPointer {
     }
 
     private static let margin: CGFloat = 8
+
+    /// The press on a control (`tarmac dev click`, 2611.0015 D16): through the
+    /// window where a point reaches it, else on the control itself. Never the
+    /// press handling alone: a click is what the verb is for.
+    public static func controlPress(among candidates: [Candidate]) -> Press {
+        if let reachable = candidates.first(where: \.reachable) { return Press(point: reachable.point, delivery: .window) }
+        return Press(point: candidates.first?.point ?? .zero, delivery: .target)
+    }
 }
 
 /// How a verb's input got in, reported beside the verb's own reply so a run
