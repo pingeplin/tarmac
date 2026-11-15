@@ -191,7 +191,8 @@ reports.
 | | `Bell {term_id, board_id?}` | D→app | a BEL (0x07) outside an escape string was seen |
 | | `Report {term_id, kind, text?}` | cli→D | a terminal's report, `blocked`, `done` or `clear`; `ack` or `err` |
 | | `TermReport {term_id, kind?, text?, at_ms?, proc?, read?, board_id?, cwd?}` | D→app | a terminal's current report, and its board and folder; no `kind` is none |
-| | `Resume {term_id, cmd?}` | cli→D | a terminal's resume command; no `cmd` clears it; `ack` or `err` |
+| | `Resume {term_id, cmd?}` | cli→D, app→D | a terminal's resume command; no `cmd` clears it; `ack` or `err`. From the app, only the clear acts (a skip), with no reply |
+| | `TermResume {term_id, cmd?}` | D→app | a live terminal's recorded resume command changed; no `cmd` is none |
 | | `Subscribe {kinds?, term_id?}` | cli→D | stream the `Exit`, `Bell`, `FileEvent` and `TermReport` frames that pass the filter: `err`, or a snapshot, `ack`, then live frames |
 | | `TermsList` | cli→D | ask for the live terminals |
 | | `Terms {terms}` | D→cli | one `{term_id, board_id, cwd?, proc?}` per live terminal, in board order |
@@ -455,6 +456,16 @@ the holder from the handle with no board lock. The drops while the daemon lives:
 drops, so a command whose agent still ran when the daemon was signalled is
 saved, and offered by the next restore. A set with the stored command does not
 save; every other change does.
+
+The app's skip (spec 2611.0015) is a `Resume` with no `cmd` on the app
+session: `Daemon::skip_resume` drops the command by the typed-input rule, so
+only a command with no holder goes, and one an agent set since the restore is
+kept. A `Resume` with a `cmd` from the app is ignored. Each change of a live
+terminal's stored command — a new or different set, and a clear, the poll's
+drop, the typed-input drop or the skip that removed one — is pushed to the app
+as `TermResume` with `Daemon::push`, after `boards` is released; it is not an
+event, so `tarmac events` never sees it. The end of a terminal, a `succeeds`
+move and `TermClose` push nothing.
 
 Each terminal keeps a byte-capped **scrollback ring** (256 KiB, front-eviction),
 appended unconditionally even with no app connected. On (re)connect the daemon
@@ -1062,7 +1073,8 @@ and placed by a world-space `CardFrame {x, y, w, h, z}`.
 - **Doc header.** Glyph, repo dot (only when the daemon gave a `repo_color`),
   the file's basename, `← <owner>` chip, `✚ now`, `✎ Ns` recency (for 30 s after
   a change), `↻`, the console badge (HTML cards), `✕`. A terminal header has a
-  glyph and a label; it has no close button.
+  glyph and a label; it has no close button. It shows the `resume` chip, before
+  its report chip, while its terminal has a recorded resume command (below).
 
 ### Terminal cards
 
@@ -1168,19 +1180,42 @@ it. A dead card drops its report (`holdOpen`), and a lost connection clears
 every chip; the next restore brings the shown board's back. The inbox
 (below, *Wayfinding and overlays*) lists the same report, from every board.
 
-A cold spawn whose record kept a resume command shows a **resume chip**, a
-strip pinned to the bottom of the card's body over its content:
-`↻ last here: <cmd>`, with each id-like word cut to four characters and `…`
-and the whole command in the tool tip (`ResumeOffer`, `ResumeChip`). Once the
-card's first output came and while it is prime, it adds `  ⏎ run · esc skip`,
-and Return runs the command once, with one carriage return, as typed input.
-Any user byte that reaches the PTY drops the offer, before or after it is
-armed, and the daemon drops the record at that typed input. A dead card whose
-board's latest restore has a record with a folder or a command shows the same
-strip as `↻ reopen here  ⏎`, `in <folder>` and `then offers: <cmd>`
-(`DeadCardOffer`); a press on it, or Return while the dead card holds the keys,
+A cold spawn whose record kept a resume command shows a **resume panel**
+(spec 2611.0015), pinned to the bottom of the card's body over its content:
+the title `resume last agent session?`, the whole command, never shortened, and
+the buttons `resume` and `skip` (`ResumeOffer`, `ResumePanel`). A click on
+`resume` works on any card: it selects the card, which makes it prime, and
+requests the run; a click on `skip` leaves the selection. A request runs the
+command at once when the card's first output has come, else it queues the run
+for that output (the title reads `resumes when the shell is ready`, and only
+`skip` is left). Once the first output came and while the card is prime, the
+buttons read `⏎ resume` and `esc skip`, and Return runs the command once, with
+one carriage return, as typed input. Return on a queued offer is taken and
+dropped. Any user byte that reaches the PTY drops the offer, queued or not, and
+the daemon drops the record at that typed input. A skip sends no byte, so the
+app sends `resume {term_id}` with no command, which drops a record no agent
+claimed since the restore. Only the panel's buttons take a press; one elsewhere
+on it reaches the card. They act on a release inside them, with no tracking
+loop, and the press monitor treats them as controls: a press on one never
+clears the selection (`CardPress.clearsSelection`).
+
+A live terminal whose recorded command is known shows a **`resume` chip** in
+its header (`ResumeHeaderChip`), also while it runs as usual and while its panel
+shows; a dead card has none. Its tool tip is the whole command. A click puts
+the command on the pasteboard and toasts `resume command copied`; it never runs
+anything, and it neither selects the card nor moves the keyboard. The app keeps
+one recorded command for each terminal (`TerminalSession.recordedResume`,
+`RecordedResume`): from each restore's `term_records`, live terminals included,
+and from each `term_resume` push. Every value passes `ResumeCommand.check`.
+
+A dead card whose
+board's latest restore has a record with a folder or a command shows a
+strip of `reopen here  ⏎`, `in <folder>` and `then offers: <cmd>`, with each
+id-like word of the command cut to four characters and `…` (`DeadCardOffer`,
+`ResumeChip.display`); a press on it, or Return while the dead card holds the keys,
 replaces it in place with a cold spawn in that folder that succeeds the dead id
-and offers the command. The strip is a sibling of its card in the card layer,
+and offers the command. `↻` means refresh only: no resume or reopen text uses
+it. The panel and the strip are one view, a sibling of its card in the card layer,
 stacked just above it, so it is drawn at full opacity on a dimmed dead card,
 and it wraps inside the card's width. It takes the chip metrics (`ChipMetrics`)
 and a border, but unlike a header chip it is filled with the terminal's
@@ -1466,8 +1501,11 @@ window's first responder).
 view; `KeyLadder` says which ones the app takes, in this order:
 
 0. While the restore card is up, every key but `⌘Q` closes it and goes
-   nowhere else; a repeat is dropped and never closes it. The repeats of the
-   key that closed it are dropped too, until a key that is not a repeat.
+   nowhere else; a repeat is dropped and never closes it. With its three
+   choices (spec 2611.0015), a plain `Return` is `resume all`, a plain `ESC` is
+   `skip all` (before the toasts' rung) and any other key is `decide per card`.
+   The repeats of the key that closed it are dropped too, until a key that is
+   not a repeat.
 1. An IME composition in flight, or a borrowed HTML document holding the keys →
    the key passes through.
 2. `⌘K` toggles the switcher; `⌘I` toggles the inbox (spec 2611.0013), from
@@ -1488,7 +1526,9 @@ view; `KeyLadder` says which ones the app takes, in this order:
    Then plain `Return` on a terminal (spec 2611.0011): a repeat while an offer
    shows, or just after a run, is ignored (`.ignoreRepeat`); else on the prime
    terminal whose resume offer is armed it runs the command (`.runResume`),
-   and on a dead terminal with a reopen offer it reopens it (`.reopenDead`). A
+   on a terminal whose offer is queued it is taken and dropped
+   (`.resumeQueued`, spec 2611.0015), and on a dead terminal with a reopen
+   offer it reopens it (`.reopenDead`). A
    repeat is decided first (`NSEvent.isARepeat`), so a held key acts once.
 6. Plain `Return`, when no terminal holds the keys, no text control in a
    markdown doc's raw HTML is being typed into, and a signalling card is off
@@ -1542,10 +1582,16 @@ opacity, and over the board area lies a veil of `rgba(8, 10, 13, 0.62)` (the
 v3 handoff's `.tm-veil`). On the veil is a centred card (`.tm-card`: `bg2`,
 12-point radius, 22 × 26 padding) with the restore's lines and the footer
 `any key to continue`. Any key but `⌘Q` closes it and goes nowhere else,
-before the switcher, a composition, the Esc ladder and the resume chips
+before the switcher, a composition, the Esc ladder and the resume offers
 (`KeyLadder`); `⌘Q` is left for the menu, so Quit works with the card up. A
 repeat never closes it, and the repeats of the key that closed it are
-dropped. A click anywhere over the board area closes it too. Like the
+dropped. A click anywhere over the board area closes it too. When a cold spawn
+of the board has a resume command (spec 2611.0015), the footer gives way to
+three buttons: `⏎ resume all` (Return) requests every offer of the board, each
+run at once or at its card's first output; `esc skip all` (`ESC`) skips every
+offer, which also asks the daemon to drop each record; `decide per card` (any
+other key, or a click anywhere else over the board area) closes the card and
+leaves each card's panel. Like the
 switcher, it holds first responder while it is up (`KeyHoldingView`), so a
 Paste, Copy or Select All chosen from the menu reaches no terminal; it gives
 the keys back to the view that had them. A 27-point status bar sits below
@@ -1877,8 +1923,11 @@ The daemon sends `Restore` for its active board on connect, and after every
   restore. A first-visit restore shows the restore card
   ([*Wayfinding and overlays*](#wayfinding-and-overlays)) when its plan has
   a line: `✓ N terminals back in their folders` (N counts the cold spawns
-  that asked for a folder) and `↻ M with an agent session to resume` (M
-  counts the cold spawns with a resume), in `RestoreCard`. A line whose count
+  that asked for a folder) and `M with an agent session to resume` (M
+  counts the cold spawns with a resume; no glyph, its text aligned with the
+  `✓` line's), in `RestoreCard`. Each restore's `term_records` carries the
+  records of live terminals too: it is the baseline of the `resume` chip, which
+  `term_resume` pushes keep current. A line whose count
   is 0 is left out, and with no line there is no card. A cold spawn comes
   from any tile whose terminal is not live: most often after a daemon
   restart, but also when a tile's shell exited while the app was closed. The
@@ -1928,6 +1977,21 @@ active board has changed and its `switching` flag has dropped (`DevBoardWait`,
 bounded by `BOARD_WAIT_MS`), and answer `{"board_id": ...}`. An id the app has not
 heard of in a `board_list` is `no_such_board` and nothing is sent.
 
+`click <card> <control>` and `click restore_card <control>` (spec 2611.0015)
+press and release a control: a terminal card's panel `resume` or `skip` or its
+header `resume_chip`, or the restore card's `resume_all`, `decide_per_card`,
+`skip_all` or `veil` (a point of the veil outside the card). The app owns the
+names (`DevClick`), so the CLI checks only the arity. `DevRouting` refuses in a
+fixed order: a name not in the target's set is `bad_request`; on the restore
+card an absent control is `no_such_control`; on a card, `no_such_card`, then
+`unsupported_card_kind` for a doc, then `control_covered` while the restore
+card is up (a user's click there lands on the veil), then `no_such_control`
+with the names `present`, then `card_hidden` for a culled card. The click
+goes through the window where a point reaches the control, else to the control
+after the app's press handling; never `handling`. Each control acts on a
+release inside it with no tracking loop, so both deliveries fire it. The reply
+is `{card, control, focused_card, active_element, activated, delivery}`.
+
 `snapshot` reports the active board (`DevSnapshot`): the viewport, each card's
 world `board_rect` and measured `screen_rect`, `content_origin` — where those
 window-content coordinates start on the display — each card's `scroll`
@@ -1938,7 +2002,10 @@ focus (`active_element`: the card the keys reach; while the switcher, the
 restore card or the inbox holds them, `card` is null and `overlay` and
 `returns_to` name the overlay and the card it gives them back to),
 per-terminal `cols`/`rows`/`proc`/`selection`/`scrollback_tail` (and,
-only when the card offers one, `resume: {cmd, armed}` and `reopen: true`), the
+only when the card offers one, `resume: {cmd, armed, queued, title, buttons}`
+and `reopen: true`, and `resume_chip: <cmd>` while its header chip shows),
+`restore_card: {lines, choices}` while it is up, `toasts`: the titles on
+screen, oldest first, the
 quit guard's state, `fonts`: for each font role the family saved in
 `app-prefs.json` and what the role resolved to (a PostScript `face`, or the
 `css` value for doc prose), and for `terminal` and `document` the `size` in

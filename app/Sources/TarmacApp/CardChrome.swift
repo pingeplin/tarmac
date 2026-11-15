@@ -349,7 +349,7 @@ final class ChipView: NSView, PressControl, ThemeFollowing {
 /// A card's header: the handle the card is dragged by, with what identifies
 /// the card on the left and its state and controls packed against the right.
 ///
-/// A terminal header reads `›_ label … report · 2m ●`; a doc header reads
+/// A terminal header reads `›_ label … resume  report · 2m ●`; a doc header reads
 /// `¶ ● label … ← owner  ✚ now  ✎ Ns  ↻  ✕`. The buttons keep their own
 /// presses; everywhere else a press is the header's.
 ///
