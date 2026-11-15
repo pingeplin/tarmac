@@ -183,9 +183,16 @@ public enum OffscreenHintLayout {
     /// An edge is resolved from its start (left, top) forward. When that leaves
     /// a pill under the chrome — the zoom control, the minimap, the toasts — the
     /// edge is resolved again from its end backward, each pill starting where the
-    /// forward pass put it, with no side preferred. The backward pass wins only
-    /// when it leaves fewer pills covered, by the chrome or by a card, and no
-    /// more pushed past the view's margins.
+    /// forward pass put it, with no side preferred.
+    ///
+    /// Each edge is placed twice that way: with the band's last gap ending a
+    /// pill length short, and with it ending at the band's end.
+    /// The short gap keeps a pill off the last free gap, but the full gap can
+    /// let an early pill take it and push its siblings off the view. Of the up
+    /// to four placings — forward and backward, short and full, in that order —
+    /// a later one replaces the best so far only when it leaves fewer pills
+    /// covered, by the chrome or by a card, no more pushed past the view's
+    /// margins and no more fully off the view. A tie keeps the earlier one.
     public static func stackPills(_ hints: [Hint], in viewRect: CGRect, options: Options) -> [PlacedPill] {
         let projected = hints.compactMap { hint -> Projected? in
             guard let placement = BoardWayfinding.hintPlacement(
@@ -201,14 +208,14 @@ public enum OffscreenHintLayout {
                 .enumerated()
                 .sorted { ($0.element.placement.along, $0.offset) < ($1.element.placement.along, $1.offset) }
                 .map(\.element)
-            let forward = place(group, on: edge, in: viewRect, options: options, from: nil)
-            guard forward.underChrome > 0 else {
-                placed += forward.pills
-                continue
+            let keepBetter = { (best: Pass, candidate: Pass) in candidate.isBetter(than: best) ? candidate : best }
+            let short = placings(group, on: edge, in: viewRect, options: options, lastGapFits: false)
+            var best = short.dropFirst().reduce(short[0], keepBetter)
+            // With no pill covered, no later placing can be better.
+            if best.covered > 0 {
+                best = placings(group, on: edge, in: viewRect, options: options, lastGapFits: true).reduce(best, keepBetter)
             }
-            let backward = place(group, on: edge, in: viewRect, options: options, from: forward.pills)
-            let better = backward.covered < forward.covered && backward.outside <= forward.outside
-            placed += (better ? backward : forward).pills
+            placed += best.pills
         }
         return placed
     }
@@ -227,6 +234,22 @@ public enum OffscreenHintLayout {
         var covered = 0
         /// Pills pushed past the view's margins.
         var outside = 0
+        /// Pills fully off the view.
+        var offView = 0
+
+        func isBetter(than other: Pass) -> Bool {
+            covered < other.covered && outside <= other.outside && offView <= other.offView
+        }
+    }
+
+    /// The forward placing, then the backward one when the forward leaves a
+    /// pill under the chrome.
+    private static func placings(
+        _ group: [Projected], on edge: BoardWayfinding.Edge, in viewRect: CGRect, options: Options, lastGapFits: Bool
+    ) -> [Pass] {
+        let forward = place(group, on: edge, in: viewRect, options: options, from: nil, lastGapFits: lastGapFits)
+        guard forward.underChrome > 0 else { return [forward] }
+        return [forward, place(group, on: edge, in: viewRect, options: options, from: forward.pills, lastGapFits: lastGapFits)]
     }
 
     /// Places one edge's pills, sorted along it. A backward pass — `from` the
@@ -236,7 +259,7 @@ public enum OffscreenHintLayout {
     /// pass on the bottom edge prefers a move to the left.
     private static func place(
         _ group: [Projected], on edge: BoardWayfinding.Edge, in viewRect: CGRect, options: Options,
-        from seeds: [PlacedPill]?
+        from seeds: [PlacedPill]?, lastGapFits: Bool
     ) -> Pass {
         let backward = seeds != nil
         let vertical = edge == .left || edge == .right
@@ -277,7 +300,7 @@ public enum OffscreenHintLayout {
                 obstacles: obstacleIntervals.map { backward ? Interval(lo: -$0.hi, hi: -$0.lo) : $0 },
                 siblingFloor: lastEnd + options.stackGap,
                 posLo: backward ? mirror(posHi) : posLo, posHi: backward ? mirror(posLo) : posHi,
-                preferLower: preferLower
+                preferLower: preferLower, lastGapFits: lastGapFits
             )
             lastEnd = resolved + length
             let pos = sign * resolved - (backward ? length : 0)
@@ -302,6 +325,7 @@ public enum OffscreenHintLayout {
             if underChrome { pass.underChrome += 1 }
             if underChrome || occluded { pass.covered += 1 }
             if pos < posLo || pos > posHi { pass.outside += 1 }
+            if !Placement.rectsIntersect(rect, viewRect) { pass.offView += 1 }
         }
         if backward { pass.pills.reverse() }
         return pass
@@ -335,13 +359,14 @@ public enum OffscreenHintLayout {
     /// answer in-bounds, so it pushes forward past whatever is in the way and lets
     /// the pill overflow.
     ///
-    /// Otherwise it searches `[max(posLo, siblingFloor), posHi]` for the free gap
-    /// (the window minus the obstacle intervals, cards and chrome alike) closest
-    /// to `desired` — at or below it first, when `preferLower`; ties favor the
-    /// later gap, matching the sibling nudge's forward-only bias. If no gap holds
-    /// the pill, it falls back to the window-clamped `desired`, on whatever is
-    /// there. A pill is
-    /// always returned, never suppressed.
+    /// Otherwise it searches `[max(posLo, siblingFloor), posHi]` for the start in
+    /// a free gap (the window minus the obstacle intervals, cards and chrome
+    /// alike; with `lastGapFits`, the last gap runs to `posHi + length`, the
+    /// band's end, else only to `posHi`) closest to `desired` — at or below it
+    /// first, when `preferLower`; ties favor the later gap, matching the sibling
+    /// nudge's forward-only bias. If no gap holds the pill, it falls back to the
+    /// window-clamped `desired`, on whatever is there. A pill is always
+    /// returned, never suppressed.
     private static func resolveAlongPosition(
         desired: CGFloat,
         length: CGFloat,
@@ -349,7 +374,8 @@ public enum OffscreenHintLayout {
         siblingFloor: CGFloat,
         posLo: CGFloat,
         posHi: CGFloat,
-        preferLower: Bool
+        preferLower: Bool,
+        lastGapFits: Bool
     ) -> CGFloat {
         let lo = max(posLo, siblingFloor)
         if lo > posHi {
@@ -360,8 +386,9 @@ public enum OffscreenHintLayout {
             return pos
         }
 
+        let end = lastGapFits ? posHi + length : posHi
         let windowed = merged(obstacles)
-            .map { Interval(lo: max($0.lo, lo), hi: min($0.hi, posHi)) }
+            .map { Interval(lo: max($0.lo, lo), hi: min($0.hi, end)) }
             .filter { $0.hi > $0.lo }
         let clampedDesired = BoardWayfinding.clamp(desired, lo, posHi)
         if !windowed.contains(where: { clampedDesired < $0.hi && clampedDesired + length > $0.lo }) {
@@ -374,7 +401,7 @@ public enum OffscreenHintLayout {
             if obstacle.lo > cursor { gaps.append(Interval(lo: cursor, hi: obstacle.lo)) }
             cursor = max(cursor, obstacle.hi)
         }
-        if posHi > cursor { gaps.append(Interval(lo: cursor, hi: posHi)) }
+        if end > cursor { gaps.append(Interval(lo: cursor, hi: end)) }
 
         func nearest(where accept: (CGFloat) -> Bool) -> CGFloat? {
             var best: CGFloat?

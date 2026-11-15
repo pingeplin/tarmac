@@ -682,4 +682,99 @@ final class OffscreenHintLayoutTests: XCTestCase {
         XCTAssertTrue(Placement.rectsIntersect(rect(of: pill), saturating))
         XCTAssertFalse(pill.occluded)
     }
+
+    // MARK: - the last gap of a band (#375)
+
+    private func offView(_ pills: [Layout.PlacedPill]) -> Int {
+        pills.filter { !Placement.rectsIntersect(rect(of: $0), view) }.count
+    }
+
+    /// The card's padded span is [42, 840] and the band ends at 990: the pill
+    /// fits the last gap, [840, 990].
+    func testAPillFitsTheLastGapOfItsBand() throws {
+        let card = CGRect(x: 50, y: 700, width: 782, height: 200)
+        let pill = try XCTUnwrap(stack([hint("b", CGPoint(x: 800, y: 2000), .live, 0)], obstacles: [card]).first)
+        XCTAssertEqual(pill.left, 840, "card.maxX + stackGap")
+        XCTAssertFalse(pill.occluded)
+    }
+
+    /// With the last gap open, the first pill takes it and pushes its
+    /// siblings off the view; the placing that leaves two pills under the
+    /// card and none off the view stays.
+    func testTheLastGapNeverPushesASiblingOffTheView() {
+        let card = CGRect(x: -50, y: -20, width: 892, height: 300)
+        let pills = stack([100, 300, 930].map { hint("t\(Int($0))", CGPoint(x: $0, y: -2000), .live, 0) }, obstacles: [card])
+        XCTAssertEqual(pills.count, 3)
+        XCTAssertEqual(offView(pills), 0)
+        XCTAssertEqual(pills.filter(\.occluded).count, 2)
+    }
+
+    func testTheLastGapPushesNoMorePillsOffTheViewThanBefore() {
+        let card = CGRect(x: 898, y: -48, width: 700, height: 440)
+        let pills = stack([880, 894, 919].map { hint("t\(Int($0))", CGPoint(x: $0, y: -2000), .live, 0) }, obstacles: [card])
+        XCTAssertEqual(pills.count, 3)
+        XCTAssertEqual(offView(pills), 1)
+        XCTAssertEqual(pills.filter(\.occluded).count, 1)
+    }
+
+    /// The bottom band overflows either way. With the last gap open, the
+    /// first pill clears the card and every later one shifts right, so one
+    /// more leaves the view: the placing that leaves it under the card stays.
+    func testTheLastGapNeverTradesACoveredPillForOneOffTheView() {
+        let view = CGRect(x: 0, y: 0, width: 701, height: 636)
+        let sizes: [String: CGSize] = [
+            "p0": CGSize(width: 186, height: 27), "p1": CGSize(width: 67, height: 21),
+            "p2": CGSize(width: 168, height: 23), "p3": CGSize(width: 220, height: 25),
+            "p4": CGSize(width: 210, height: 26), "p5": CGSize(width: 82, height: 23),
+            "p6": CGSize(width: 52, height: 24),
+        ]
+        let centres: [String: CGFloat] = ["p0": 1, "p1": -141, "p2": 229, "p3": 784, "p4": 75, "p5": 429, "p6": 353]
+        let hints = centres.keys.sorted().map { hint($0, CGPoint(x: centres[$0]!, y: 2000), .live, 0) }
+        let cards = [CGRect(x: -332, y: 644, width: 924, height: 611), CGRect(x: -332, y: 529, width: 731, height: 313)]
+        let options = Layout.Options(
+            edgeInset: 18, edgeMargin: 10, stackGap: 8, pillSize: { sizes[$0.cardID]! }, obstacles: cards
+        )
+        let pills = Layout.stackPills(hints, in: view, options: options)
+        let rects = pills.map { CGRect(origin: CGPoint(x: $0.left, y: $0.top), size: sizes[$0.cardID]!) }
+        XCTAssertEqual(pills.count, 7)
+        XCTAssertEqual(rects.filter { !Placement.rectsIntersect($0, view) }.count, 3)
+        XCTAssertEqual(pills.filter(\.occluded).count, 1)
+    }
+
+    /// The card's padded span is [824, 1460]: clipped at the band's end, it
+    /// still covers the pill's wanted start, 910, so the pill moves left of it.
+    func testTheCardPastTheLastPillStartStillBlocksTheBandsEnd() throws {
+        let card = CGRect(x: 832, y: -189, width: 620, height: 250)
+        let pill = try XCTUnwrap(stack([hint("t", CGPoint(x: 1000, y: -2000), .live, 0)], obstacles: [card]).first)
+        XCTAssertEqual(pill.left, 832 - 8 - 80, "card.minX - stackGap - width")
+        XCTAssertFalse(pill.occluded)
+    }
+
+    /// The card's padded span is [55, 651] and the minimap's [692, 796]. Only
+    /// the full last gap, resolved from the end, puts the lower pill above
+    /// the minimap and the upper one above the card.
+    func testTheFullLastGapResolvedFromTheEndClearsTheCardAndTheMinimap() {
+        let card = CGRect(x: 669, y: 63, width: 810, height: 580)
+        let pills = stack(
+            [hint("a", CGPoint(x: 3000, y: 683), .live, 0), hint("b", CGPoint(x: 3000, y: 588), .live, 0)],
+            obstacles: [card], chrome: [zoomControl, minimap]
+        )
+        XCTAssertEqual(pills.map(\.top).sorted(), [63 - 8 - 24, 700 - 8 - 24], "card.minY and minimap.minY, less stackGap and height")
+        assertClear(pills, of: [zoomControl, minimap])
+        XCTAssertFalse(pills.contains { $0.occluded })
+    }
+
+    /// Found by a randomized search. Resolved from the end, the bottom band
+    /// leaves one pill fewer under the minimap but pushes the first pill fully
+    /// off the view's left side, so the forward placing stays.
+    func testResolvingFromTheEndNeverTradesACoveredPillForOneOffTheView() {
+        let cards = [CGRect(x: -234, y: 492, width: 250, height: 340), CGRect(x: 355, y: 789, width: 280, height: 540)]
+        let pills = stack(
+            [361, 957, 175, 388, 513, 39].map { hint("x\(Int($0))", CGPoint(x: $0, y: 2800), .live, 0) },
+            obstacles: cards, chrome: [zoomControl, minimap, toast]
+        )
+        XCTAssertEqual(pills.count, 6)
+        XCTAssertEqual(offView(pills), 0)
+        XCTAssertEqual(pills.filter { Placement.rectsIntersect(rect(of: $0), minimap) }.count, 2)
+    }
 }
