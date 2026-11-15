@@ -102,6 +102,8 @@ final class DevVerbs {
         case .createBoard(let from):
             controller.createBoard()
             return try await arrive(.otherThan(from))
+        case .click:
+            throw DevError(.driverThrew, "click")
         }
     }
 

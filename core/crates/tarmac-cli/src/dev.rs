@@ -32,6 +32,7 @@ usage: tarmac dev snapshot [--until <expr>] [--timeout <ms>]
        tarmac dev type <card> \"<text>\"
        tarmac dev key <card> \"<combo>\"
        tarmac dev board <board-id>|--new
+       tarmac dev click <card>|restore_card <control>
        tarmac dev press <combo> [--hold <ms>] [--age <ms>] [--busy <ms>]";
 
 /// The names `--handle` takes; the app maps each to a card handle.
@@ -86,6 +87,13 @@ pub fn parse_verb(args: &[String]) -> Result<DevRequest, String> {
             [flag] if flag == "--new" => Ok(DevRequest::Board { board_id: None }),
             [id] if !id.is_empty() && !id.starts_with("--") => Ok(DevRequest::Board { board_id: Some(id.clone()) }),
             _ => usage("tarmac dev board: expected <board-id> or --new"),
+        },
+        "click" => match rest {
+            [target, control] => Ok(DevRequest::Click {
+                card: (target != "restore_card").then(|| target.clone()),
+                control: control.clone(),
+            }),
+            _ => usage("tarmac dev click: expected <card>|restore_card <control>"),
         },
         "press" => parse_press(rest),
         other => usage(&format!("tarmac dev: unknown verb '{other}'")),
@@ -276,6 +284,20 @@ mod tests {
         parses_to(&["focus", "t-1"], DevRequest::Focus { card: Some("t-1".into()) });
         parses_to(&["type", "t-1", "hi"], DevRequest::Type { card: "t-1".into(), text: "hi".into() });
         parses_to(&["key", "t-1", "ctrl+c"], DevRequest::Key { card: "t-1".into(), combo: "ctrl+c".into() });
+    }
+
+    /// S34: two arguments, `restore_card` is the absent card, and the control
+    /// is sent as it is: the app owns the names.
+    #[test]
+    fn s34_click_parses_a_card_or_the_restore_card_and_any_control_name() {
+        parses_to(&["click", "t-1", "resume"], DevRequest::Click { card: Some("t-1".into()), control: "resume".into() });
+        parses_to(&["click", "restore_card", "skip_all"], DevRequest::Click { card: None, control: "skip_all".into() });
+        parses_to(&["click", "t-1", "nonsense"], DevRequest::Click { card: Some("t-1".into()), control: "nonsense".into() });
+        for bad in [vec!["click"], vec!["click", "t-1"], vec!["click", "t-1", "resume", "extra"]] {
+            let err = parse(&bad).expect_err(&format!("expected a usage error for {bad:?}"));
+            assert!(err.contains("tarmac dev"), "{err}");
+        }
+        assert!(USAGE.contains("tarmac dev click <card>|restore_card <control>"));
     }
 
     /// An out-of-range zoom is not an error: the app clamps it, and a range check

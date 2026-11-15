@@ -15,20 +15,25 @@ import Foundation
 ///     (`not_focused`), so a passing verb proves focus rather than establishing
 ///     it — and that is checked before the combo is parsed, so a caller fixing
 ///     both gets one error at a time;
-///   - `card_hidden` is `focus` on an HTML card alone: a culled card's web view
-///     is hidden and cannot take focus. The predicate is the one the board culls
-///     with, so the refusal and the paint agree.
+///   - `card_hidden` is `focus` on an HTML card, or `click` on a culled card:
+///     its view is hidden and cannot take focus or a press. The predicate is the
+///     one the board culls with, so the refusal and the paint agree.
+///
+/// `click` (2611.0015 D16) has an order of its own; see `click(_:_:in:)`.
 public enum DevRouting {
     public struct Card: Equatable, Sendable {
         /// The bare wire id: a term id, or a doc's absolute path.
         public var id: String
         public var kind: DevCardKind
         public var frame: CGRect
+        /// The `click` controls the card shows now, from the models that draw them.
+        public var controls: [DevClick.Control]
 
-        public init(id: String, kind: DevCardKind, frame: CGRect) {
+        public init(id: String, kind: DevCardKind, frame: CGRect, controls: [DevClick.Control] = []) {
             self.id = id
             self.kind = kind
             self.frame = frame
+            self.controls = controls
         }
     }
 
@@ -47,11 +52,14 @@ public enum DevRouting {
         public var activeBoardID: String
         /// Every board the app knows, as the daemon's last `board_list` named them.
         public var boardIDs: [String]
+        /// Nil unless the restore card is up.
+        public var restoreCard: RestoreCardFacts?
 
         public init(
             cards: [Card], keyboardFocusCard: String?, borrowedCard: String?, zoom: CGFloat, center: CGPoint, viewSize: CGSize,
-            activeBoardID: String, boardIDs: [String]
+            activeBoardID: String, boardIDs: [String], restoreCard: RestoreCardFacts? = nil
         ) {
+            self.restoreCard = restoreCard
             self.activeBoardID = activeBoardID
             self.boardIDs = boardIDs
             self.cards = cards
@@ -61,6 +69,15 @@ public enum DevRouting {
             self.center = center
             self.viewSize = viewSize
         }
+    }
+
+    public struct RestoreCardFacts: Equatable, Sendable {
+        /// The card offers its three choices: it has a resume line.
+        public var choices: Bool
+
+        public init(choices: Bool) { self.choices = choices }
+
+        var controls: [DevClick.Control] { choices ? DevClick.controls(of: .restoreCard) : [.veil] }
     }
 
     public enum Route: Equatable, Sendable {
@@ -95,11 +112,14 @@ public enum DevRouting {
         case activeBoard(String)
         case switchBoard(to: String)
         case createBoard(from: String)
+        /// Press and release `control` of the card, or of the restore card
+        /// when `card` is nil.
+        case click(card: String?, control: DevClick.Control)
         case refused(DevError)
     }
 
     /// The verbs this build answers, for a newer CLI that sends another.
-    public static let implementedVerbs = ["snapshot", "zoom", "focus", "resize", "type", "key", "press", "board"]
+    public static let implementedVerbs = ["snapshot", "zoom", "focus", "resize", "type", "key", "press", "board", "click"]
 
     /// Saying which verbs exist is more use to a newer CLI than naming the verb
     /// it sent back at it.
@@ -118,6 +138,8 @@ public enum DevRouting {
             return .press(combo: combo, holdMs: holdMs, ageMs: ageMs, busyMs: busyMs)
         case .unknown(let type):
             return .refused(unsupportedVerb(type))
+        case .click(let card, let control):
+            return click(card, control, in: context)
         case .board(nil):
             return .createBoard(from: context.activeBoardID)
         case .board(let id?):
@@ -161,6 +183,50 @@ public enum DevRouting {
                 }
             }
         }
+    }
+
+    /// The name first: it is a property of the request, so it comes before any
+    /// look-up. A modal restore card covers every card control, present or
+    /// not. An absent control is a fact no zoom changes, so it comes before
+    /// `card_hidden`.
+    private static func click(_ id: String?, _ name: String, in context: Context) -> Route {
+        let names = DevClick.controls(of: id == nil ? .restoreCard : .card)
+        guard let control = DevClick.Control(rawValue: name), names.contains(control) else {
+            let set = names.map(\.rawValue).joined(separator: ", ")
+            let target = id == nil ? "the restore card" : "a card"
+            return .refused(DevError(.badRequest, "\(target) has no control `\(name)`; it has \(set)"))
+        }
+        guard let id else {
+            let present = context.restoreCard?.controls ?? []
+            guard present.contains(control) else { return noSuchControl(card: nil, control, present: present) }
+            return .click(card: nil, control: control)
+        }
+        return onCard(id, in: context) { card in
+            guard card.kind == .term else {
+                return refused(.unsupportedCardKind, "only a terminal card has these controls", card: id)
+            }
+            guard context.restoreCard == nil else {
+                return .refused(DevError(
+                    .controlCovered, "the restore card covers every card; click one of its controls first",
+                    extra: ["card": .string(id), "control": .string(name)]
+                ))
+            }
+            guard card.controls.contains(control) else { return noSuchControl(card: id, control, present: card.controls) }
+            guard isVisible(card, in: context) else {
+                return refused(.cardHidden, "that card is culled off-screen and its controls are hidden; zoom out", card: id)
+            }
+            return .click(card: id, control: control)
+        }
+    }
+
+    private static func noSuchControl(card: String?, _ control: DevClick.Control, present: [DevClick.Control]) -> Route {
+        .refused(DevError(
+            .noSuchControl, "that control is not showing now",
+            extra: [
+                "card": card.map(JSONValue.string) ?? .null, "control": .string(control.rawValue),
+                "present": .array(present.map { .string($0.rawValue) }),
+            ]
+        ))
     }
 
     private static func onCard(_ id: String, in context: Context, _ then: (Card) -> Route) -> Route {

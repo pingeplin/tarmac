@@ -137,6 +137,9 @@ fn a_usage_error_exits_two_before_dialling() {
     for (args, reason) in [
         (&["teleport"][..], "tarmac dev: unknown verb 'teleport'"),
         (&["zoom"][..], "tarmac dev zoom: expected exactly one argument"),
+        (&["click"][..], "tarmac dev click: expected <card>|restore_card <control>"),
+        (&["click", "t-1"][..], "tarmac dev click: expected <card>|restore_card <control>"),
+        (&["click", "t-1", "resume", "extra"][..], "tarmac dev click: expected <card>|restore_card <control>"),
     ] {
         let out = fake.run(args);
         assert_eq!(out.code(), Some(2), "{args:?}");
@@ -196,6 +199,7 @@ fn help_documents_the_dev_family_and_its_limits() {
         "tarmac dev zoom",
         "tarmac dev focus",
         "tarmac dev board <board-id>|--new",
+        "tarmac dev click <card>|restore_card <control>",
         "dev builds only",
         "TARMAC_DEV_SOCKET",
         "⌘C",
