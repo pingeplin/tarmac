@@ -639,9 +639,7 @@ impl Daemon {
         let unknown = || format!("unknown terminal: {term_id}");
         let handle = self.term(term_id).await.ok_or_else(unknown)?;
         let Some(cmd) = cmd else {
-            if self.with_record(term_id, |record| self.drop_resume(record, Some(&handle))).await {
-                self.push_resume(term_id, None).await;
-            }
+            self.drop_and_push(term_id, |record| self.drop_resume(record, Some(&handle))).await;
             return Ok(());
         };
         tarmac_protocol::refuse_resume_cmd(&cmd)?;
@@ -674,6 +672,14 @@ impl Daemon {
         Ok(())
     }
 
+    /// Runs `drop` as `with_record` does and, when it dropped the command,
+    /// tells the app, with `boards` released.
+    async fn drop_and_push(&self, term_id: &str, drop: impl FnOnce(Option<&mut TermRecord>) -> bool) {
+        if self.with_record(term_id, drop).await {
+            self.push_resume(term_id, None).await;
+        }
+    }
+
     /// Runs `change` with `boards` held, on `term_id`'s record on its own
     /// board, or `None` when it has none there.
     async fn with_record<T>(&self, term_id: &str, change: impl FnOnce(Option<&mut TermRecord>) -> T) -> T {
@@ -695,16 +701,12 @@ impl Daemon {
         if checked.alive(facts_of, None) {
             return;
         }
-        let dropped = self
-            .with_record(term_id, |record| {
-                !self.shutting_down.load(Ordering::SeqCst)
-                    && handle.resume_holder() == Some(checked)
-                    && self.drop_resume(record, Some(handle))
-            })
-            .await;
-        if dropped {
-            self.push_resume(term_id, None).await;
-        }
+        self.drop_and_push(term_id, |record| {
+            !self.shutting_down.load(Ordering::SeqCst)
+                && handle.resume_holder() == Some(checked)
+                && self.drop_resume(record, Some(handle))
+        })
+        .await;
     }
 
     /// Typed input drops a resume command that has no holder (D6).
@@ -712,12 +714,8 @@ impl Daemon {
         if handle.resume_flag() != Flag::Unclaimed {
             return;
         }
-        let dropped = self
-            .with_record(term_id, |record| handle.resume_flag() == Flag::Unclaimed && self.drop_resume(record, Some(handle)))
+        self.drop_and_push(term_id, |record| handle.resume_flag() == Flag::Unclaimed && self.drop_resume(record, Some(handle)))
             .await;
-        if dropped {
-            self.push_resume(term_id, None).await;
-        }
     }
 
     /// The app's skip (spec 2611.0015, D4): the same drop as typed input, so

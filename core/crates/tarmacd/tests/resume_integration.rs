@@ -7,7 +7,7 @@ mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{Conn, FrameLog, Restore, Spawn, TestDaemon, canon_dir, signal_and_wait, term_records};
+use common::{Conn, FrameLog, Restore, Spawn, TestDaemon, canon_dir, is_term_resume, signal_and_wait, term_records};
 use serde_json::{Value, json};
 use tarmac_protocol::Msg;
 
@@ -327,10 +327,6 @@ const QUIET: Duration = Duration::from_secs(1);
 
 fn term_resume(term_id: &str, cmd: Option<&str>) -> Msg {
     Msg::TermResume { term_id: term_id.into(), cmd: cmd.map(str::to_string) }
-}
-
-fn is_term_resume(msg: &Msg) -> bool {
-    matches!(msg, Msg::TermResume { .. })
 }
 
 /// The first `term_resume` in `log` from `from` on, reading more frames into
