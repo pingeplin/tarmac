@@ -1580,8 +1580,7 @@ under the chrome is placed again from its far end, stacking toward its start,
 each pill starting where the first placing put it and moving to the nearest
 free gap on either side (so a bottom pill may move right). Each edge is
 placed that way twice: once with the last free gap of the band cut one pill
-length short, as before issue #375, and once with it running to the band's
-end. The full last gap holds a pill the short one cannot, but it can also let
+length short, and once with it running to the band's end (issue #375). The full last gap holds a pill the short one cannot, but it can also let
 an early pill take it and push its siblings off the view. Of the up to four
 placings (forward and backward, short and full, in that order), a later one
 replaces the best so far only when it leaves fewer pills covered, by the

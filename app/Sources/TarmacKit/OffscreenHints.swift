@@ -186,7 +186,7 @@ public enum OffscreenHintLayout {
     /// forward pass put it, with no side preferred.
     ///
     /// Each edge is placed twice that way: with the band's last gap ending a
-    /// pill length short, as before #375, and with it ending at the band's end.
+    /// pill length short, and with it ending at the band's end.
     /// The short gap keeps a pill off the last free gap, but the full gap can
     /// let an early pill take it and push its siblings off the view. Of the up
     /// to four placings — forward and backward, short and full, in that order —
