@@ -740,4 +740,41 @@ final class OffscreenHintLayoutTests: XCTestCase {
         XCTAssertEqual(rects.filter { !Placement.rectsIntersect($0, view) }.count, 3)
         XCTAssertEqual(pills.filter(\.occluded).count, 1)
     }
+
+    /// The card's padded span is [824, 1460]: clipped at the band's end, it
+    /// still covers the pill's wanted start, 910, so the pill moves left of it.
+    func testTheCardPastTheLastPillStartStillBlocksTheBandsEnd() throws {
+        let card = CGRect(x: 832, y: -189, width: 620, height: 250)
+        let pill = try XCTUnwrap(stack([hint("t", CGPoint(x: 1000, y: -2000), .live, 0)], obstacles: [card]).first)
+        XCTAssertEqual(pill.left, 832 - 8 - 80, "card.minX - stackGap - width")
+        XCTAssertFalse(pill.occluded)
+    }
+
+    /// The card's padded span is [55, 651] and the minimap's [692, 796]. Only
+    /// the full last gap, resolved from the end, puts the lower pill above
+    /// the minimap and the upper one above the card.
+    func testTheFullLastGapResolvedFromTheEndClearsTheCardAndTheMinimap() {
+        let card = CGRect(x: 669, y: 63, width: 810, height: 580)
+        let pills = stack(
+            [hint("a", CGPoint(x: 3000, y: 683), .live, 0), hint("b", CGPoint(x: 3000, y: 588), .live, 0)],
+            obstacles: [card], chrome: [zoomControl, minimap]
+        )
+        XCTAssertEqual(pills.map(\.top).sorted(), [63 - 8 - 24, 700 - 8 - 24], "card.minY and minimap.minY, less stackGap and height")
+        assertClear(pills, of: [zoomControl, minimap])
+        XCTAssertFalse(pills.contains { $0.occluded })
+    }
+
+    /// Found by a randomized search. Resolved from the end, the bottom band
+    /// leaves one pill fewer under the minimap but pushes the first pill fully
+    /// off the view's left side, so the forward placing stays.
+    func testResolvingFromTheEndNeverTradesACoveredPillForOneOffTheView() {
+        let cards = [CGRect(x: -234, y: 492, width: 250, height: 340), CGRect(x: 355, y: 789, width: 280, height: 540)]
+        let pills = stack(
+            [361, 957, 175, 388, 513, 39].map { hint("x\(Int($0))", CGPoint(x: $0, y: 2800), .live, 0) },
+            obstacles: cards, chrome: [zoomControl, minimap, toast]
+        )
+        XCTAssertEqual(pills.count, 6)
+        XCTAssertEqual(offView(pills), 0)
+        XCTAssertEqual(pills.filter { Placement.rectsIntersect(rect(of: $0), minimap) }.count, 2)
+    }
 }
