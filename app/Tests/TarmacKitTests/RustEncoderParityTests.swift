@@ -266,6 +266,25 @@ final class RustEncoderParityTests: XCTestCase {
         )
     }
 
+    /// 2611.0015 S10. The spec's vectors 36 and 37: the Rust side's capture
+    /// of them is `tarmac-protocol`'s own vector test.
+    func testTermResume() {
+        // Msg::TermResume { term_id: "t1", cmd: Some("claude --resume ab-12") } — conformance vector 36.
+        assertParity(
+            .termResume(termID: "t1", cmd: "claude --resume ab-12"),
+            """
+            83 a1 74 ab 74 65 72 6d 5f 72 65 73 75 6d 65 a7 74 65 72 6d 5f 69 64 a2
+            74 31 a3 63 6d 64 b5 63 6c 61 75 64 65 20 2d 2d 72 65 73 75 6d 65 20 61
+            62 2d 31 32
+            """
+        )
+        // Msg::TermResume { term_id: "t1", cmd: None } — conformance vector 37.
+        assertParity(
+            .termResume(termID: "t1", cmd: nil),
+            "82 a1 74 ab 74 65 72 6d 5f 72 65 73 75 6d 65 a7 74 65 72 6d 5f 69 64 a2 74 31"
+        )
+    }
+
     /// 2611.0013 S15. The spec's vectors 28 to 30: the Rust side's capture
     /// of them is `tarmac-protocol`'s own vector test.
     func testThePlaceOfAReportAndTheBoardOfABellAndAnExit() {

@@ -257,6 +257,13 @@ pub enum Msg {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cmd: Option<String>,
     },
+    /// Daemon -> app (spec 2611.0015): a live terminal's recorded resume
+    /// command changed. No `cmd` is no command. Not a `subscribe` kind.
+    TermResume {
+        term_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cmd: Option<String>,
+    },
     /// cli -> daemon (spec 2611.0012): the daemon's facts for a script. The
     /// reply is `err`, or the snapshot frames, `ack`, then the live `exit`,
     /// `bell`, `file_event` and `term_report` frames that pass the filter.

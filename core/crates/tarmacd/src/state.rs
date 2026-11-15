@@ -555,14 +555,23 @@ impl Daemon {
     }
 
     /// The one drop of a resume command, run with `boards` held: the
-    /// command, and `handle`'s holder and flag; dirty when a command went.
-    fn drop_resume(&self, record: Option<&mut TermRecord>, handle: Option<&TermHandle>) {
+    /// command, and `handle`'s holder and flag; dirty, and true, when a
+    /// command went.
+    fn drop_resume(&self, record: Option<&mut TermRecord>, handle: Option<&TermHandle>) -> bool {
         if let Some(handle) = handle {
             handle.forget_resume();
         }
-        if record.and_then(|r| r.resume.take()).is_some() {
+        let dropped = record.and_then(|r| r.resume.take()).is_some();
+        if dropped {
             self.mark_dirty();
         }
+        dropped
+    }
+
+    /// Tells the app that `term_id`'s command is now `cmd` (spec 2611.0015,
+    /// D10). Not an event, so not `emit`; sent with `boards` released.
+    async fn push_resume(&self, term_id: &str, cmd: Option<String>) {
+        self.push(Msg::TermResume { term_id: term_id.into(), cmd }).await;
     }
 
     /// The answer to a cli `report` (spec 2611.0009): `Err` is the `err` text.
@@ -630,7 +639,9 @@ impl Daemon {
         let unknown = || format!("unknown terminal: {term_id}");
         let handle = self.term(term_id).await.ok_or_else(unknown)?;
         let Some(cmd) = cmd else {
-            self.with_record(term_id, |record| self.drop_resume(record, Some(&handle))).await;
+            if self.with_record(term_id, |record| self.drop_resume(record, Some(&handle))).await {
+                self.push_resume(term_id, None).await;
+            }
             return Ok(());
         };
         tarmac_protocol::refuse_resume_cmd(&cmd)?;
@@ -641,22 +652,24 @@ impl Daemon {
         .ok_or_else(|| format!("no process to tie the resume command to in {term_id}"))?;
         let stored = self
             .with_record(term_id, |record| {
-                let Some(record) = record else { return false };
+                let record = record?;
                 handle.hold_resume(holder);
-                if record.resume.as_ref().is_none_or(|r| r.cmd != cmd) {
-                    record.resume = Some(ResumeRecord { cmd });
+                let changed = record.resume.as_ref().is_none_or(|r| r.cmd != cmd);
+                if changed {
+                    record.resume = Some(ResumeRecord { cmd: cmd.clone() });
                     self.mark_dirty();
                 }
-                true
+                Some(changed)
             })
             .await;
-        if !stored {
-            return Err(unknown());
-        }
+        let Some(changed) = stored else { return Err(unknown()) };
         // A terminal that ended while this ran: `term_ended` took it out of
         // `terms` before its own drop, so one of the two finds the command.
+        // Its `exit` ends the card, so no push.
         if self.term(term_id).await.is_none() {
             self.end_resume(term_id).await;
+        } else if changed {
+            self.push_resume(term_id, Some(cmd)).await;
         }
         Ok(())
     }
@@ -682,12 +695,16 @@ impl Daemon {
         if checked.alive(facts_of, None) {
             return;
         }
-        self.with_record(term_id, |record| {
-            if !self.shutting_down.load(Ordering::SeqCst) && handle.resume_holder() == Some(checked) {
-                self.drop_resume(record, Some(handle));
-            }
-        })
-        .await;
+        let dropped = self
+            .with_record(term_id, |record| {
+                !self.shutting_down.load(Ordering::SeqCst)
+                    && handle.resume_holder() == Some(checked)
+                    && self.drop_resume(record, Some(handle))
+            })
+            .await;
+        if dropped {
+            self.push_resume(term_id, None).await;
+        }
     }
 
     /// Typed input drops a resume command that has no holder (D6).
@@ -695,12 +712,22 @@ impl Daemon {
         if handle.resume_flag() != Flag::Unclaimed {
             return;
         }
-        self.with_record(term_id, |record| {
-            if handle.resume_flag() == Flag::Unclaimed {
-                self.drop_resume(record, Some(handle));
-            }
-        })
-        .await;
+        let dropped = self
+            .with_record(term_id, |record| handle.resume_flag() == Flag::Unclaimed && self.drop_resume(record, Some(handle)))
+            .await;
+        if dropped {
+            self.push_resume(term_id, None).await;
+        }
+    }
+
+    /// The app's skip (spec 2611.0015, D4): the same drop as typed input, so
+    /// a command an agent set since the restore (`Held`) is never undone. An
+    /// unknown terminal is a no-op: app-session frames have no reply.
+    pub async fn skip_resume(&self, term_id: &str) {
+        match self.term(term_id).await {
+            Some(handle) => self.claim_resume(term_id, &handle).await,
+            None => tracing::debug!("resume skip for unknown term {term_id}"),
+        }
     }
 
     /// Typed input marks an unread report read.

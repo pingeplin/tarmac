@@ -527,6 +527,32 @@ fn conformance_vector_27_restore_resume_record() {
     );
 }
 
+// Spec 2611.0015: the daemon's push of a terminal's resume command.
+fn term_resume(cmd: Option<&str>) -> Msg {
+    Msg::TermResume { term_id: "t1".into(), cmd: cmd.map(str::to_string) }
+}
+
+#[test]
+fn conformance_vector_36_term_resume() {
+    assert_frame(
+        "83 a1 74 ab 74 65 72 6d 5f 72 65 73 75 6d 65 a7 74 65 72 6d \
+         5f 69 64 a2 74 31 a3 63 6d 64 b5 63 6c 61 75 64 65 20 2d 2d \
+         72 65 73 75 6d 65 20 61 62 2d 31 32",
+        term_resume(Some("claude --resume ab-12")),
+    );
+}
+
+#[test]
+fn conformance_vector_37_term_resume_none() {
+    assert_frame("82 a1 74 ab 74 65 72 6d 5f 72 65 73 75 6d 65 a7 74 65 72 6d 5f 69 64 a2 74 31", term_resume(None));
+}
+
+#[test]
+fn s21_term_resume_is_not_an_event() {
+    assert_eq!(EventKind::of(&term_resume(Some("echo HI"))), None);
+    assert_eq!(EventKind::of(&term_resume(None)), None);
+}
+
 #[test]
 fn a_nil_resume_and_a_nil_cmd_are_not_on_the_wire() {
     assert_eq!(rmp_serde::to_vec_named(&record(Some("/w"), None)).unwrap(), unhex("81 a8 6c 61 73 74 5f 63 77 64 a2 2f 77"));
@@ -1169,6 +1195,8 @@ fn all_message_types_roundtrip() {
         Msg::DocEvent { path: "/tmp/a.html".into(), value: String::new() },
         resume(Some("claude --resume ab-12")),
         resume(None),
+        term_resume(Some("claude --resume ab-12")),
+        term_resume(None),
     ];
     for m in msgs {
         assert_eq!(roundtrip(&m), m, "roundtrip failed for {m:?}");

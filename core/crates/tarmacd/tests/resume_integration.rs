@@ -319,3 +319,219 @@ fn s28_the_daemon_refuses_an_unknown_terminal_then_a_bad_command() {
     let (_app, restore) = daemon.probe();
     assert_eq!(restore.resume_cmd("T"), None);
 }
+
+// Spec 2611.0015: the daemon pushes `term_resume` at each change of a live
+// terminal's command, and the app session's `resume` clears an unclaimed one.
+
+const QUIET: Duration = Duration::from_secs(1);
+
+fn term_resume(term_id: &str, cmd: Option<&str>) -> Msg {
+    Msg::TermResume { term_id: term_id.into(), cmd: cmd.map(str::to_string) }
+}
+
+fn is_term_resume(msg: &Msg) -> bool {
+    matches!(msg, Msg::TermResume { .. })
+}
+
+/// The first `term_resume` in `log` from `from` on, reading more frames into
+/// it until one comes; its index.
+fn await_term_resume(app: &mut Conn, log: &mut FrameLog, from: usize) -> usize {
+    if let Some(i) = (from..log.len()).find(|&i| is_term_resume(&log.0[i].msg)) {
+        return i;
+    }
+    app.log_until(log, "a term_resume", is_term_resume)
+}
+
+#[track_caller]
+fn assert_no_term_resume(app: &mut Conn, log: &FrameLog, from: usize) {
+    let early: Vec<_> = log.0[from..].iter().filter(|l| is_term_resume(&l.msg)).map(|l| &l.msg).collect();
+    assert!(early.is_empty(), "pushed: {early:?}");
+    assert!(common::none_within(app, QUIET, is_term_resume), "a term_resume came");
+}
+
+// S11
+#[test]
+fn s11_a_set_pushes_the_command_and_a_repeat_of_it_does_not() {
+    let daemon = TestDaemon::start_sh();
+    let mut log = FrameLog::default();
+    let mut app = shell_at_prompt(&daemon, "T", Spawn::default(), &mut log);
+
+    let start = log.len();
+    agent_sets(&daemon, &mut app, &mut log, "T", "echo HI", 30);
+    let at = await_term_resume(&mut app, &mut log, start);
+    assert_eq!(log.0[at].msg, term_resume("T", Some("echo HI")));
+
+    let again = log.len();
+    agent_sets(&daemon, &mut app, &mut log, "T", "echo HI", 30);
+    assert_no_term_resume(&mut app, &log, again);
+
+    let changed = log.len();
+    agent_sets(&daemon, &mut app, &mut log, "T", "echo HO", 30);
+    let at = await_term_resume(&mut app, &mut log, changed);
+    assert_eq!(log.0[at].msg, term_resume("T", Some("echo HO")));
+
+    app.send(&Msg::BoardSwitch { board_id: "board-0".into() });
+    let restore = Restore::from(app.recv_until("the restore", |m| matches!(m, Msg::Restore { .. })));
+    assert_eq!(restore.live_terms, ["T"]);
+    assert_eq!(restore.resume_cmd("T"), Some("echo HO"));
+}
+
+// S12
+#[test]
+fn s12_a_cli_clear_pushes_once() {
+    let daemon = TestDaemon::start_sh();
+    let (mut app, mut log, _) = set_by_agent(&daemon, 30);
+    await_term_resume(&mut app, &mut log, 0);
+
+    let start = log.len();
+    assert_ack(Conn::cli_resume(&daemon.sock, "T", None));
+    let at = await_term_resume(&mut app, &mut log, start);
+    assert_eq!(log.0[at].msg, term_resume("T", None));
+
+    let again = log.len();
+    assert_ack(Conn::cli_resume(&daemon.sock, "T", None));
+    assert_no_term_resume(&mut app, &log, again);
+}
+
+// S13
+#[test]
+fn s13_the_polls_drop_pushes_a_clear() {
+    let daemon = TestDaemon::start_sh();
+    let (mut app, mut log, sent) = set_by_agent(&daemon, 3);
+    let set = await_term_resume(&mut app, &mut log, 0);
+    assert_eq!(log.0[set].msg, term_resume("T", Some("echo HI")));
+
+    let deadline = sent + Duration::from_secs(6);
+    let clear = app.recv_within(deadline.saturating_duration_since(Instant::now()), is_term_resume);
+    assert_eq!(clear, Some(term_resume("T", None)));
+}
+
+/// A daemon seeded with `T`'s record with `echo HI`, and the app connection
+/// that spawned `T2` as its successor, with every frame since in `log`.
+fn moved_on_one_connection(log: &mut FrameLog) -> (TestDaemon, Conn) {
+    let tmp = common::temp_dir();
+    let a = canon_dir(&tmp.join("a"));
+    let home = canon_dir(&tmp.join("home"));
+    let seeded = json!({
+        "boards": [{"board_id": "board-0", "tiles": [{"kind": "term", "term_id": "T"}],
+                    "term_records": {"T": {"last_cwd": a, "resume": {"cmd": "echo HI"}}}}],
+        "active": "board-0",
+    });
+    let daemon = TestDaemon::start_seeded_with(&seeded, |cmd| {
+        cmd.env("SHELL", "/bin/sh").env("HOME", &home);
+    });
+    let app = shell_at_prompt(&daemon, "T2", Spawn { cwd: Some(a), succeeds: Some("T".into()), ..Default::default() }, log);
+    (daemon, app)
+}
+
+// S14
+#[test]
+fn s14_the_move_pushes_nothing_and_the_typed_drop_pushes_a_clear() {
+    let mut log = FrameLog::default();
+    let (_daemon, mut app) = moved_on_one_connection(&mut log);
+    assert_no_term_resume(&mut app, &log, 0);
+
+    let start = log.len();
+    app.send(&Msg::Input { term_id: "T2".into(), bytes: b"\r".to_vec(), typed: true });
+    let at = await_term_resume(&mut app, &mut log, start);
+    assert_eq!(log.0[at].msg, term_resume("T2", None));
+}
+
+// S15
+#[test]
+fn s15_the_app_clear_drops_an_unclaimed_record_and_a_cmd_from_the_app_sets_none() {
+    let mut log = FrameLog::default();
+    let (daemon, mut app) = moved_on_one_connection(&mut log);
+
+    let start = log.len();
+    app.send(&Msg::Resume { term_id: "T2".into(), cmd: None });
+    let at = await_term_resume(&mut app, &mut log, start);
+    assert_eq!(log.0[at].msg, term_resume("T2", None));
+    daemon.wait_for_state("T2 with no resume", |v| {
+        let record = &term_records(v, 0)["T2"];
+        !record.is_null() && record["resume"].is_null()
+    });
+
+    let set = log.len();
+    app.send(&Msg::Resume { term_id: "T2".into(), cmd: Some("echo X".into()) });
+    assert_no_term_resume(&mut app, &log, set);
+    let (_app, restore) = daemon.probe();
+    assert_eq!(restore.resume_cmd("T2"), None);
+}
+
+// S15
+#[test]
+fn s15_the_app_clear_never_drops_a_held_record() {
+    let daemon = TestDaemon::start_sh();
+    let (mut app, mut log, _) = set_by_agent(&daemon, 30);
+    await_term_resume(&mut app, &mut log, 0);
+
+    let start = log.len();
+    app.send(&Msg::Resume { term_id: "T".into(), cmd: None });
+    assert_no_term_resume(&mut app, &log, start);
+    let (_app, restore) = daemon.probe();
+    assert_eq!(restore.resume_cmd("T"), Some("echo HI"));
+}
+
+// S20
+#[test]
+fn s20_the_end_of_a_terminal_and_a_close_push_nothing() {
+    let daemon = TestDaemon::start_sh();
+    let (mut app, mut log, _) = set_by_agent(&daemon, 30);
+    await_term_resume(&mut app, &mut log, 0);
+
+    let start = log.len();
+    app.type_line("T", "exit 3");
+    app.log_until(&mut log, "T's exit", |m| common::is_exit_for(m, "T"));
+    assert_no_term_resume(&mut app, &log, start);
+
+    let opened = log.len();
+    app.spawn_term_with("U", &[], Spawn::login_shell());
+    app.log_until_output(&mut log, "U", opened, b"$ ");
+    agent_sets(&daemon, &mut app, &mut log, "U", "echo HI", 30);
+    let at = await_term_resume(&mut app, &mut log, opened);
+    assert_eq!(log.0[at].msg, term_resume("U", Some("echo HI")), "the control: a set pushes");
+
+    let closed = log.len();
+    app.send(&Msg::TermClose { term_id: "U".into() });
+    assert_no_term_resume(&mut app, &log, closed);
+}
+
+// S21
+#[test]
+fn s21_a_subscriber_never_gets_a_term_resume() {
+    let daemon = TestDaemon::start_sh();
+    let mut log = FrameLog::default();
+    let mut app = shell_at_prompt(&daemon, "T", Spawn::default(), &mut log);
+    let (mut events, _) = common::subscriber(&daemon.sock, None, None);
+
+    let start = log.len();
+    agent_sets(&daemon, &mut app, &mut log, "T", "echo HI", 30);
+    await_term_resume(&mut app, &mut log, start);
+    assert!(common::none_within(&mut events, QUIET, is_term_resume), "the subscriber got a term_resume");
+
+    app.type_line("T", "exit 3");
+    let exit = events.recv_within(Duration::from_secs(5), |m| common::is_exit_for(m, "T"));
+    assert!(exit.is_some(), "the control: the subscriber got no exit");
+}
+
+// S24
+#[test]
+fn s24_an_app_clear_for_an_unknown_terminal_changes_nothing() {
+    let daemon = TestDaemon::start_sh();
+    let mut log = FrameLog::default();
+    let mut app = shell_at_prompt(&daemon, "T", Spawn::default(), &mut log);
+
+    let start = log.len();
+    app.send(&Msg::Resume { term_id: "nope".into(), cmd: None });
+    assert_no_term_resume(&mut app, &log, start);
+
+    let typed = log.len();
+    app.type_line("T", "echo ST\"\"ILL");
+    app.log_until_output(&mut log, "T", typed, b"STILL");
+
+    let set = log.len();
+    agent_sets(&daemon, &mut app, &mut log, "T", "echo HI", 30);
+    let at = await_term_resume(&mut app, &mut log, set);
+    assert_eq!(log.0[at].msg, term_resume("T", Some("echo HI")));
+}
