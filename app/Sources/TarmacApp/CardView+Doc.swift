@@ -7,7 +7,7 @@ extension CardView {
 
     /// Where a press on `hit`, a view of this card, lands (`CardPress`).
     func pressPlace(of hit: NSView) -> CardPress.Place {
-        if hit is HeaderButton { return .headerControl }
+        if hit is PressControl { return .headerControl }
         if markdownBody?.pointerIsOverLink == true, bodyContains(hit) { return .link }
         return .elsewhere
     }

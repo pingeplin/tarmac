@@ -66,7 +66,8 @@ struct DevSnapshotReader {
             ),
             hints: controller.rootView.placedHints.map {
                 DevSnapshot.Hint(card: $0.cardID, signal: $0.signal, edge: $0.edge)
-            }
+            },
+            toasts: controller.rootView.toasts.titles
         ))
     }
 
@@ -85,7 +86,9 @@ struct DevSnapshotReader {
     var routingContext: DevRouting.Context {
         DevRouting.Context(
             cards: cards.map { card in
-                DevRouting.Card(id: card.id.wireID, kind: card.id.wireRef.kind, frame: card.worldFrame.rect)
+                DevRouting.Card(
+                    id: card.id.wireID, kind: card.id.wireRef.kind, frame: card.worldFrame.rect, controls: controls(of: card)
+                )
             },
             keyboardFocusCard: keyboardFocus.card,
             borrowedCard: controller.borrow.id?.wireID,
@@ -93,8 +96,23 @@ struct DevSnapshotReader {
             center: board.viewport.center,
             viewSize: board.bounds.size,
             activeBoardID: controller.activeBoardID,
-            boardIDs: controller.boardMetas.map(\.boardID)
+            boardIDs: controller.boardMetas.map(\.boardID),
+            restoreCard: controller.restoreCard.map { DevRouting.RestoreCardFacts(choices: !$0.choices.isEmpty) }
         )
+    }
+
+    /// The `click` controls a card shows, from the models that draw them.
+    private func controls(of card: CardView) -> [DevClick.Control] {
+        guard case .term(let termID) = card.id, let (s, board) = controller.anySession(termID) else { return [] }
+        return DevClick.present(panel: panel(s, on: board), chip: chip(s, card: card))
+    }
+
+    private func panel(_ s: TerminalSession, on board: Board) -> ResumePanel.Model? {
+        s.resumeOffer.map { ResumePanel.model(offer: $0, prime: controller.isPrime(s, on: board)) }
+    }
+
+    private func chip(_ s: TerminalSession, card: CardView) -> ResumeHeaderChip.Model? {
+        ResumeHeaderChip.model(cmd: s.recordedResume, dead: card.dead)
     }
 
     /// Keyboard focus is the first responder's whether or not the window is
@@ -159,7 +177,8 @@ struct DevSnapshotReader {
             resume: session.flatMap { s in
                 s.resumeOffer.map { DevSnapshot.Resume(offer: $0, prime: controller.isPrime(s, on: board)) }
             },
-            reopen: card.dead && session?.deadOffer != nil
+            reopen: card.dead && session?.deadOffer != nil,
+            resumeChip: session.flatMap { chip($0, card: card)?.toolTip }
         ))
     }
 }

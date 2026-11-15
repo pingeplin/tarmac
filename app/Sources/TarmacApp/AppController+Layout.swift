@@ -60,12 +60,30 @@ extension AppController {
         if let card { showRestoreCard(card) }
     }
 
-    /// #358: the card over the board until any key or a click closes it.
+    /// #358: the card over the board until a choice, any key or a click closes it.
     private func showRestoreCard(_ card: RestoreCard) {
         restoreCard = card
         rootView.setRestoreCard(card)
         rootView.layoutSubtreeIfNeeded()
         rootView.restoreCard.takeKeys()
+    }
+
+    /// 2611.0015 D1, D4, D5: `resume all` requests each offer of the board,
+    /// which runs now or at its card's first output; `skip all` skips each;
+    /// `decide per card` leaves them. Then the card closes.
+    func chooseOnRestoreCard(_ action: RestoreCard.Choice.Action) {
+        let event: ResumeOffer.Event? = switch action {
+        case .resumeAll: .request
+        case .skipAll: .skip
+        case .perCard: nil
+        }
+        if let event {
+            for termID in activeBoard.sessionOrder {
+                guard let s = activeBoard.sessions[termID], s.resumeOffer != nil else { continue }
+                stepResume(s, event)
+            }
+        }
+        closeRestoreCard()
     }
 
     func closeRestoreCard() {
@@ -104,6 +122,7 @@ extension AppController {
                 on: board
             )
             s.lastCwd = termRecords[term.termID]?.lastCwd ?? term.spawn?.cwd
+            setRecordedResume(s, RecordedResume.command(for: term, termRecords: termRecords), on: board)
         }
         board.primeTermID = plan.terms.first?.termID
         // Before `finishArrive` takes a pending jump: an exit row of a
@@ -160,6 +179,10 @@ extension AppController {
     private func reconcile(_ board: Board, liveTerms: Set<String>, replayFollows: Bool) {
         for (termID, s) in board.sessions {
             if let cwd = board.termRecords[termID]?.lastCwd { s.lastCwd = cwd }
+            // A restore corrects a stale value (2611.0015 D11).
+            if s.live {
+                setRecordedResume(s, RecordedResume.command(liveTermID: termID, termRecords: board.termRecords), on: board)
+            }
         }
         let outcome = ReconnectRestore.reconcile(board.reconnectTerms, liveTerms: liveTerms, replayFollows: replayFollows)
         markLost(outcome.lost, on: board)

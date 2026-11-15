@@ -26,20 +26,24 @@ extension AppController {
 
     /// A left-button press that lands on `hit`. On a card it selects and raises
     /// that card, and a live terminal also becomes prime; on the bare board it
-    /// clears the selection. A press on an overlay, or on a header control or a
-    /// doc's link, which act by themselves, changes nothing here (`CardPress`).
+    /// clears the selection. A press on an overlay, or on a control or a doc's
+    /// link, which act by themselves, changes nothing here (`CardPress`): a
+    /// resume panel's buttons lie outside their card.
     func handlePress(on hit: NSView?) {
         guard !switcherOpen, window?.isKeyWindow == true else { return }
         // A press anywhere but on the open inbox closes it, and then does
         // what it does.
         if inboxOpen, let hit, !hit.isDescendant(of: rootView.inboxPanel) { closeInbox() }
         guard let hit, hit.isDescendant(of: rootView.board) else { return }
-        guard let card = enclosingCard(hit) else { return defocus() }
+        guard let card = enclosingCard(hit) else {
+            if CardPress.clearsSelection(hit is PressControl ? .headerControl : .elsewhere) { defocus() }
+            return
+        }
         guard CardPress.selects(card.pressPlace(of: hit)) else { return }
         select(card.id)
     }
 
-    private func select(_ id: CardID) {
+    func select(_ id: CardID) {
         let board = activeBoard.view
         guard board.card(id) != nil else { return }
         board.select(id)
@@ -136,7 +140,7 @@ extension AppController {
                 terminal: isTerminal, prime: isPrime, dead: card.dead, boardHasPrime: primeID != nil
             ))
         }
-        // The resume chip's key hint shows on the prime card only.
+        // The resume panel's key hints show on the prime card only.
         for s in b.sessions.values where s.resumeOffer != nil {
             refreshOffer(s, on: b)
         }

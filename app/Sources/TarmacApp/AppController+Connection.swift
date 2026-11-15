@@ -93,6 +93,8 @@ extension AppController {
             handleBell(termID: termID)
         case .termReport:
             if let frame = TermReport.frame(message) { handleTermReport(frame) }
+        case .termResume(let termID, let cmd):
+            handleTermResume(termID: termID, cmd: cmd)
         default:
             break
         }

@@ -325,24 +325,36 @@ final class CardView: NSView, ThemeFollowing {
     /// above this card; nil when it offers nothing.
     private(set) var offerStrip: OfferStripView?
 
-    /// Shows `lines` in the offer strip, or takes the strip away with nil. A
-    /// strip with `onPress` is a button.
-    func setOffer(lines: [String]?, toolTip: String? = nil, onPress: (() -> Void)? = nil) {
+    /// Shows a dead card's `lines` in the offer strip, a button that calls
+    /// `onPress`, or takes the strip away with nil.
+    func setOffer(lines: [String]?, onPress: (() -> Void)? = nil) {
         guard let lines else {
             offerStrip?.removeFromSuperview()
             offerStrip = nil
             return
         }
-        let strip = offerStrip ?? OfferStripView(card: self)
-        if offerStrip == nil {
-            offerStrip = strip
-            strip.apply(scale)
-            strip.isHidden = isHidden
-            superview?.addSubview(strip, positioned: .above, relativeTo: self)
-        }
-        strip.show(lines: lines, toolTip: toolTip)
+        let strip = showOfferStrip()
+        strip.show(lines: lines)
         strip.onPress = onPress
         placeOfferStrip()
+    }
+
+    /// Shows the resume panel (2611.0015 D9) in the offer strip.
+    func setOffer(panel: ResumePanel.Model, onChoice: @escaping (ResumePanel.Choice) -> Void) {
+        let strip = showOfferStrip()
+        strip.show(panel, onChoice: onChoice)
+        strip.onPress = nil
+        placeOfferStrip()
+    }
+
+    private func showOfferStrip() -> OfferStripView {
+        if let offerStrip { return offerStrip }
+        let strip = OfferStripView(card: self)
+        offerStrip = strip
+        strip.apply(scale)
+        strip.isHidden = isHidden
+        superview?.addSubview(strip, positioned: .above, relativeTo: self)
+        return strip
     }
 
     private func placeOfferStrip() {
