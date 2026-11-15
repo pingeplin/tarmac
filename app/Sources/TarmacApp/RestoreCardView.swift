@@ -60,7 +60,7 @@ final class RestoreCardView: KeyHoldingView, FontFollowing, ThemeFollowing {
         }
         rows = restore.lines.map { line in
             (
-                ChromeLabel(line.glyph, size: 11, color: line.ok ? Theme.ok : Theme.faint),
+                ChromeLabel(line.glyph ?? "", size: 11, color: line.ok ? Theme.ok : Theme.faint),
                 ChromeLabel(line.text, size: 11, color: Theme.muted)
             )
         }

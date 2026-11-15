@@ -16,7 +16,7 @@ final class RestoreCardTests: XCTestCase {
     }
 
     private func folders(_ n: Int) -> Line { Line(glyph: "✓", text: "\(n) terminals back in their folders", ok: true) }
-    private func resumes(_ n: Int) -> Line { Line(glyph: "↻", text: "\(n) with an agent session to resume", ok: false) }
+    private func resumes(_ n: Int) -> Line { Line(glyph: nil, text: "\(n) with an agent session to resume", ok: false) }
 
     func testS11FoldersAndResumesAreCountedAcrossColdSpawnsOnly() {
         let card = RestoreCard.make(plan: plan([
@@ -61,5 +61,33 @@ final class RestoreCardTests: XCTestCase {
 
     func testAColdSpawnWithNoFolderAndNoResumeShowsNoCard() {
         XCTAssertNil(RestoreCard.make(plan: plan([term("a", spawn: SpawnRequest(succeeds: "A"))])))
+    }
+
+    // MARK: 2611.0015 S5: the three choices, and no refresh glyph
+
+    private let resumable = [
+        BoardRestore.Term(termID: "a", frame: .zero, z: 0, spawn: SpawnRequest(cwd: "/a", succeeds: "A"), resume: "echo HI"),
+    ]
+
+    func testS5APlanWithAResumeGivesTheThreeChoicesInOrder() throws {
+        let card = try XCTUnwrap(RestoreCard.make(plan: plan(resumable)))
+        XCTAssertEqual(card.choices.map(\.text), ["⏎ resume all", "decide per card", "esc skip all"])
+        XCTAssertEqual(card.choices.map(\.action), [.resumeAll, .perCard, .skipAll])
+    }
+
+    func testS5APlanWithOnlyFolderLinesHasNoChoicesAndKeepsTheFooter() throws {
+        let card = try XCTUnwrap(RestoreCard.make(plan: plan([term("a", spawn: SpawnRequest(cwd: "/a", succeeds: "A"))])))
+        XCTAssertEqual(card.choices, [])
+        XCTAssertEqual(RestoreCard.footer, "any key to continue")
+    }
+
+    func testS5TheResumeLineHasNoGlyphAndReadsAsItsTextAlone() {
+        XCTAssertEqual(resumes(1).string, "1 with an agent session to resume")
+    }
+
+    func testS5NoLineOrChoiceHasTheRefreshGlyph() throws {
+        let card = try XCTUnwrap(RestoreCard.make(plan: plan(resumable + [term("b", spawn: SpawnRequest(cwd: "/b"))])))
+        let texts = card.lines.map(\.string) + card.choices.map(\.text) + [RestoreCard.footer]
+        XCTAssertFalse(texts.contains { $0.contains("↻") }, "\(texts)")
     }
 }

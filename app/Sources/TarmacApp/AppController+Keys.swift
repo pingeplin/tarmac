@@ -96,7 +96,7 @@ extension AppController {
             if let focused { reopenDead(focused.termID) }
         case .ignoreRepeat:
             break
-        case .closeRestoreCard:
+        case .closeRestoreCard, .restoreResumeAll, .restoreSkipAll:
             closeRestoreCard()
         case .toggleInbox:
             toggleInbox()

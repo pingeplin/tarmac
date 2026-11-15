@@ -148,8 +148,8 @@ extension AppController {
     func refreshOffer(_ s: TerminalSession, on board: Board) {
         guard let card = board.view.card(.term(s.termID)) else { return }
         if let offer = s.resumeOffer {
-            let model = ResumeChip.model(offer: offer, prime: isPrime(s, on: board))
-            card.setOffer(lines: [model.text], toolTip: model.toolTip)
+            let model = ResumePanel.model(offer: offer, prime: isPrime(s, on: board))
+            card.setOffer(lines: [model.title, model.command], toolTip: model.command)
         } else if card.dead, let offer = s.deadOffer {
             let termID = s.termID
             card.setOffer(lines: offer.lines, onPress: { [weak self] in self?.reopenDead(termID) })
