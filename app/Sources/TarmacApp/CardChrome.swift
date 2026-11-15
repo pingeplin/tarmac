@@ -107,19 +107,40 @@ final class RecentMetaLabel: NSTextField {
     }
 }
 
-/// A view that keeps a press to itself and acts on its release inside it, with
-/// no tracking loop of its own: a press on one never selects a card, clears the
-/// selection or starts a drag (`CardPress.headerControl`).
+/// A view that keeps a press to itself and calls `onClick` on its release
+/// inside it, with no tracking loop of its own: a press on one never selects a
+/// card, clears the selection or starts a drag (`CardPress.headerControl`). A
+/// container whose hit test claims presses passes a hit on one through.
 @MainActor
-protocol PressControl: NSView {}
+class PressControl: NSView {
+    var onClick: (() -> Void)?
+
+    /// Whether a press here is the control's; false lets it fall through.
+    var takesPress: Bool { true }
+
+    override var acceptsFirstResponder: Bool { false }
+
+    // A label inside would otherwise take the press itself.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        takesPress && super.hitTest(point) != nil ? self : nil
+    }
+
+    override func mouseDown(with event: NSEvent) {}
+
+    override func mouseUp(with event: NSEvent) {
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?() }
+    }
+}
+
+extension PressControl: HoverCursorProviding {
+    func hoverCursor(at windowPoint: NSPoint) -> NSCursor { .pointingHand }
+}
 
 /// A control in a card header (`✕`, `↻`). It keeps the press to itself, so a
 /// click on it never selects the card or starts a drag, and acts on release
 /// inside it.
 @MainActor
-final class HeaderButton: NSView, PressControl, ThemeFollowing {
-    var onClick: (() -> Void)?
-
+final class HeaderButton: PressControl, ThemeFollowing {
     private static let padX: CGFloat = 5
     private static let padY: CGFloat = 1
     private static let cornerRadius: CGFloat = 4
@@ -130,8 +151,6 @@ final class HeaderButton: NSView, PressControl, ThemeFollowing {
     private var size: NSSize = .zero
     private var hovered = false
     private var trackingArea: NSTrackingArea?
-
-    override var acceptsFirstResponder: Bool { false }
 
     init(glyph: String, toolTip: String, fontSize: CGFloat = 10.5) {
         label = NSTextField(labelWithString: glyph)
@@ -175,17 +194,6 @@ final class HeaderButton: NSView, PressControl, ThemeFollowing {
 
     override var intrinsicContentSize: NSSize { size }
 
-    // The label would otherwise take the press itself.
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        super.hitTest(point) == nil ? nil : self
-    }
-
-    override func mouseDown(with event: NSEvent) {}
-
-    override func mouseUp(with event: NSEvent) {
-        if bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?() }
-    }
-
     override func mouseEntered(with event: NSEvent) {
         hovered = true
         paint()
@@ -218,15 +226,6 @@ final class HeaderButton: NSView, PressControl, ThemeFollowing {
     }
 }
 
-extension HeaderButton: HoverCursorProviding {
-    func hoverCursor(at windowPoint: NSPoint) -> NSCursor { .pointingHand }
-}
-
-/// Only a chip with an action is ever hit, so only it sets a cursor.
-extension ChipView: HoverCursorProviding {
-    func hoverCursor(at windowPoint: NSPoint) -> NSCursor { .pointingHand }
-}
-
 /// The world metrics of a chip, shared by the header's chips and a terminal
 /// card's offer strip, so card chrome looks the same everywhere.
 enum ChipMetrics {
@@ -243,7 +242,7 @@ enum ChipMetrics {
 /// action: the `resume` chip and a resume panel's buttons (2611.0015) act on a
 /// release inside them, as `HeaderButton` does.
 @MainActor
-final class ChipView: NSView, PressControl, ThemeFollowing {
+final class ChipView: PressControl, ThemeFollowing {
     enum Tone: Equatable {
         case neutral
         /// A dimmed (read) report keeps the kind's colour on its border, so a
@@ -260,21 +259,9 @@ final class ChipView: NSView, PressControl, ThemeFollowing {
     private var scale = CardScale(zoom: 1, backing: 2)
     private var tone = Tone.neutral
 
-    /// Nil for a chip that takes no press.
-    var onClick: (() -> Void)?
-
-    override var acceptsFirstResponder: Bool { false }
-
-    // The label would otherwise take the press itself.
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        onClick == nil || super.hitTest(point) == nil ? nil : self
-    }
-
-    override func mouseDown(with event: NSEvent) {}
-
-    override func mouseUp(with event: NSEvent) {
-        if bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?() }
-    }
+    /// A chip with no `onClick` takes no press, so it is never hit and sets
+    /// no cursor.
+    override var takesPress: Bool { onClick != nil }
 
     init() {
         super.init(frame: .zero)
@@ -394,6 +381,7 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
     private let reportChip = ChipView()
     /// 2611.0015 D12: copies the terminal's recorded resume command.
     let resumeChip = ChipView()
+    private var resumeChipModel: ResumeHeaderChip.Model?
     private var report: TermReport?
     private var reportTick: DispatchWorkItem?
     /// The report chip's tool tip is the header's: a press anywhere but on a
@@ -553,16 +541,17 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
     }
 
     /// Shows the `resume` chip with the whole command as its tool tip, or
-    /// hides it with nil. A click on it calls `onClick`.
+    /// hides it with nil. A click on it calls `onClick`; a model already shown
+    /// takes only the new `onClick`.
     func setResumeChip(_ model: ResumeHeaderChip.Model?, onClick: @escaping () -> Void) {
+        resumeChip.onClick = model == nil ? nil : onClick
+        guard model != resumeChipModel else { return }
+        resumeChipModel = model
         guard let model else {
-            guard !resumeChip.isHidden else { return }
             resumeChip.isHidden = true
-            resumeChip.onClick = nil
             needsLayout = true
             return
         }
-        resumeChip.onClick = onClick
         resumeChip.toolTip = model.toolTip
         resumeChip.isHidden = false
         resumeChip.setLabel(model.text)
@@ -660,7 +649,7 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
     // A press anywhere but on a control is the header's own.
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let hit = super.hitTest(point) else { return nil }
-        return hit is PressControl ? hit : self
+        return hit as? PressControl ?? self
     }
 
     override func mouseDown(with event: NSEvent) {

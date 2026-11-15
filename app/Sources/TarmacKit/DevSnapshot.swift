@@ -89,15 +89,17 @@ public enum DevSnapshot {
     /// An offer as its card shows it: the panel's own model, so a runner
     /// checks the copy the user reads.
     public struct Resume: Equatable, Sendable {
-        public var armed: Bool
-        public var queued: Bool
-        public var panel: ResumePanel.Model
+        public var offer: ResumeOffer
+        public var prime: Bool
 
         public init(offer: ResumeOffer, prime: Bool) {
-            self.armed = offer.armed(prime: prime)
-            self.queued = offer.queued
-            self.panel = ResumePanel.model(offer: offer, prime: prime)
+            self.offer = offer
+            self.prime = prime
         }
+
+        public var armed: Bool { offer.armed(prime: prime) }
+        public var queued: Bool { offer.queued }
+        public var panel: ResumePanel.Model { ResumePanel.model(offer: offer, prime: prime) }
     }
 
     /// A card's scroll position and the two facts its thumb's showing rests on.
@@ -644,9 +646,10 @@ public enum DevSnapshot {
             // Present only with an offer (2611.0011) or a chip (2611.0015): a
             // terminal with none keeps its six keys.
             if let resume = terminal.resume {
+                let panel = resume.panel
                 term["resume"] = [
-                    "cmd": .string(resume.panel.command), "armed": .bool(resume.armed), "queued": .bool(resume.queued),
-                    "title": .string(resume.panel.title), "buttons": .array(resume.panel.buttons.map { .string($0.text) }),
+                    "cmd": .string(panel.command), "armed": .bool(resume.armed), "queued": .bool(resume.queued),
+                    "title": .string(panel.title), "buttons": .array(panel.buttons.map { .string($0.text) }),
                 ]
             }
             if terminal.reopen { term["reopen"] = true }

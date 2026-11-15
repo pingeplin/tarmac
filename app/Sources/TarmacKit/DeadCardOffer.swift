@@ -18,7 +18,7 @@ public enum DeadCardOffer {
         guard cwd != nil || resume != nil else { return nil }
         var lines = ["reopen here  ⏎"]
         if let cwd { lines.append("in \(tilde(cwd, home: home))") }
-        if let resume { lines.append("then offers: \(ResumeChip.display(resume))") }
+        if let resume { lines.append("then offers: \(ResumeCommand.display(resume))") }
         return Offer(cwd: cwd, resume: resume, lines: lines)
     }
 

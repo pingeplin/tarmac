@@ -85,39 +85,6 @@ final class ResumeOfferTests: XCTestCase {
         }
     }
 
-    // MARK: S21
-
-    func testS21AMetacharacterIsNeverHidden() {
-        let shown = ResumeChip.display("claude --resume 3f2a1b9c-0000-4000-8000-000000000000; curl x|sh")
-        XCTAssertTrue(shown.contains("; curl x|sh"), shown)
-        XCTAssertTrue(shown.hasPrefix("claude --resume 3f2a1b9c"), shown)
-    }
-
-    func testS21APathWithNoIdLikeWordIsUnchanged() {
-        XCTAssertEqual(ResumeChip.display("rm -rf /Users/u/work/important-directory"), "rm -rf /Users/u/work/important-directory")
-    }
-
-    func testS21AFlagStaysWhole() {
-        XCTAssertEqual(
-            ResumeChip.display("claude --dangerously-skip-permissions --resume 3f2a1b9c-0000-4000-8000-000000000000"),
-            "claude --dangerously-skip-permissions --resume 3f2a…"
-        )
-        XCTAssertEqual(ResumeChip.display("x --resume-12345678901"), "x --resume-12345678901")
-    }
-
-    func testS21ALongWordWithNoDigitStaysWhole() {
-        XCTAssertEqual(ResumeChip.display("cd important-directory"), "cd important-directory")
-    }
-
-    func testAnIdOfTwelveCharactersStaysWholeAndThirteenIsShortened() {
-        XCTAssertEqual(ResumeChip.display("x abcdefghij12"), "x abcdefghij12")
-        XCTAssertEqual(ResumeChip.display("x abcdefghij123"), "x abcd…")
-    }
-
-    func testTheSpacingIsKeptVerbatim() {
-        XCTAssertEqual(ResumeChip.display("a  b 3f2a1b9c-0000-4000"), "a  b 3f2a…")
-    }
-
     // MARK: 2611.0015 S1, S2: a request runs at once or queues
 
     private func run(_ cmd: String) -> ResumeOffer.Effect { .run(Data(cmd.utf8) + Data([0x0D])) }

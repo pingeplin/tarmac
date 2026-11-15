@@ -94,14 +94,10 @@ extension AppController {
             if let focused { runResume(focused) }
         case .reopenDead:
             if let focused { reopenDead(focused.termID) }
-        case .ignoreRepeat:
+        case .swallow:
             break
-        case .closeRestoreCard:
-            chooseOnRestoreCard(.perCard)
-        case .restoreResumeAll:
-            chooseOnRestoreCard(.resumeAll)
-        case .restoreSkipAll:
-            chooseOnRestoreCard(.skipAll)
+        case .restoreCard(let action):
+            chooseOnRestoreCard(action)
         case .toggleInbox:
             toggleInbox()
         case .inboxKey:
@@ -129,8 +125,7 @@ extension AppController {
             ),
             offer: focused.map(keyOffer) ?? .none,
             afterRun: focused?.afterRun ?? false,
-            restoreCard: restoreCard != nil,
-            restoreChoices: restoreCard?.choices.isEmpty == false,
+            restoreCard: restoreCard?.choices.map(\.action),
             afterRestoreCard: afterRestoreCard,
             inboxOpen: inboxOpen
         )

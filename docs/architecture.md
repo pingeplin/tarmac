@@ -1196,8 +1196,8 @@ the daemon drops the record at that typed input. A skip sends no byte, so the
 app sends `resume {term_id}` with no command, which drops a record no agent
 claimed since the restore. Only the panel's buttons take a press; one elsewhere
 on it reaches the card. They act on a release inside them, with no tracking
-loop, and the press monitor treats them as controls: a press on one never
-clears the selection (`CardPress.clearsSelection`).
+loop, and the press monitor treats them as controls (`PressControl`): a press
+on one never clears the selection.
 
 A live terminal whose recorded command is known shows a **`resume` chip** in
 its header (`ResumeHeaderChip`), also while it runs as usual and while its panel
@@ -1212,7 +1212,7 @@ A dead card whose
 board's latest restore has a record with a folder or a command shows a
 strip of `reopen here  ⏎`, `in <folder>` and `then offers: <cmd>`, with each
 id-like word of the command cut to four characters and `…` (`DeadCardOffer`,
-`ResumeChip.display`); a press on it, or Return while the dead card holds the keys,
+`ResumeCommand.display`); a press on it, or Return while the dead card holds the keys,
 replaces it in place with a cold spawn in that folder that succeeds the dead id
 and offers the command. `↻` means refresh only: no resume or reopen text uses
 it. The panel and the strip are one view, a sibling of its card in the card layer,
@@ -1524,7 +1524,7 @@ view; `KeyLadder` says which ones the app takes, in this order:
    same ring rule a fresh doc follows, `Placement.firstFreeSlot`), inheriting
    its current directory (`inherit_cwd_from`).
    Then plain `Return` on a terminal (spec 2611.0011): a repeat while an offer
-   shows, or just after a run, is ignored (`.ignoreRepeat`); else on the prime
+   shows, or just after a run, is dropped (`.swallow`); else on the prime
    terminal whose resume offer is armed it runs the command (`.runResume`),
    on a terminal whose offer is queued it is taken and dropped
    (`.resumeQueued`, spec 2611.0015), and on a dead terminal with a reopen

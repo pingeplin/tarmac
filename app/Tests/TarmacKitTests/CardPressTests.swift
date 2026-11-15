@@ -16,11 +16,4 @@ final class CardPressTests: XCTestCase {
     func testAPressOnALinkInADocDoesNotSelectTheCard() {
         XCTAssertFalse(CardPress.selects(.link))
     }
-
-    /// 2611.0015 D9, O10: a resume panel's button is outside its card. A press
-    /// on it leaves the selection, which only the bare board clears.
-    func testAPressOutsideEveryCardClearsTheSelectionOnlyOnTheBareBoard() {
-        XCTAssertTrue(CardPress.clearsSelection(.elsewhere))
-        XCTAssertFalse(CardPress.clearsSelection(.headerControl))
-    }
 }

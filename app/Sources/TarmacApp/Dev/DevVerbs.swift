@@ -271,12 +271,9 @@ final class DevVerbs {
     private func controlView(_ control: DevClick.Control, of card: String?) throws -> NSView {
         let overlay = controller.rootView.restoreCard
         let view: NSView? = switch control {
-        case .resume: board.card(.term(card ?? ""))?.offerStrip?.button(.resume)
-        case .skip: board.card(.term(card ?? ""))?.offerStrip?.button(.skip)
+        case .panel(let choice): board.card(.term(card ?? ""))?.offerStrip?.button(choice)
         case .resumeChip: board.card(.term(card ?? ""))?.header.resumeChip
-        case .resumeAll: overlay.button(.resumeAll)
-        case .decidePerCard: overlay.button(.perCard)
-        case .skipAll: overlay.button(.skipAll)
+        case .restore(let action): overlay.button(action)
         case .veil: overlay
         }
         guard let view, !view.isHiddenOrHasHiddenAncestor else {

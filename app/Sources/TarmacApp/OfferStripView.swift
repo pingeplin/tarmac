@@ -21,7 +21,7 @@ final class OfferStripView: NSView, ThemeFollowing {
         let bodySize: CGSize
         let scale: CardScale
         let text: String
-        let buttons: [String]
+        let buttons: [ResumePanel.Button]
     }
 
     private var measured: Measured?
@@ -34,9 +34,11 @@ final class OfferStripView: NSView, ThemeFollowing {
     /// The press of a reopen offer, which makes the whole strip a button; nil
     /// for the resume panel, whose buttons alone take a press.
     var onPress: (() -> Void)?
-    private var title: String?
-    private var buttons: [(choice: ResumePanel.Choice, view: ChipView)] = []
-    private var buttonTexts: [String] = []
+    /// The resume panel it shows; nil for a dead card's lines.
+    private var panel: ResumePanel.Model?
+    private var text = ""
+    private var onChoice: ((ResumePanel.Choice) -> Void)?
+    private var buttons: [(model: ResumePanel.Button, view: ChipView)] = []
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
@@ -64,48 +66,53 @@ final class OfferStripView: NSView, ThemeFollowing {
 
     /// The dead card's strip: plain lines, no buttons.
     func show(lines: [String]) {
-        title = nil
-        label.stringValue = lines.joined(separator: "\n")
-        setButtons([], onChoice: { _ in })
+        panel = nil
+        onChoice = nil
+        text = lines.joined(separator: "\n")
+        paintText()
+        setButtons([])
     }
 
-    /// The resume panel: the title over the whole command, and its buttons.
+    /// The resume panel: the title over the whole command, and its buttons. A
+    /// panel already shown takes only the new `onChoice`.
     func show(_ panel: ResumePanel.Model, onChoice: @escaping (ResumePanel.Choice) -> Void) {
-        title = panel.title
-        label.stringValue = "\(panel.title)\n\(panel.command)"
+        self.onChoice = onChoice
+        guard panel != self.panel else { return }
+        self.panel = panel
+        text = "\(panel.title)\n\(panel.command)"
         paintText()
-        setButtons(panel.buttons, onChoice: onChoice)
+        setButtons(panel.buttons)
     }
 
     /// The button of `choice`, while it shows.
     func button(_ choice: ResumePanel.Choice) -> NSView? {
-        buttons.first { $0.choice == choice }?.view
+        buttons.first { $0.model.choice == choice }?.view
     }
 
-    private func setButtons(_ models: [ResumePanel.Button], onChoice: @escaping (ResumePanel.Choice) -> Void) {
-        if buttons.map(\.choice) != models.map(\.choice) {
+    private func setButtons(_ models: [ResumePanel.Button]) {
+        if buttons.map(\.model.choice) != models.map(\.choice) {
             for button in buttons { button.view.removeFromSuperview() }
             buttons = models.map { model in
                 let view = ChipView()
                 view.apply(scale)
+                view.onClick = { [weak self] in self?.onChoice?(model.choice) }
                 addSubview(view)
-                return (model.choice, view)
+                return (model, view)
             }
         }
-        for (button, model) in zip(buttons, models) {
-            button.view.onClick = { onChoice(model.choice) }
-            button.view.setLabel(model.text)
+        for index in buttons.indices {
+            buttons[index].model = models[index]
+            buttons[index].view.setLabel(models[index].text)
         }
-        buttonTexts = models.map(\.text)
     }
 
-    /// The title reads faint, as a chip's label; the command in full colour.
+    /// The panel's title reads faint, as a chip's label; the rest in full colour.
     private func paintText() {
-        guard let title, label.stringValue.hasPrefix(title) else { return }
-        let text = NSMutableAttributedString(
-            string: label.stringValue, attributes: [.font: label.font ?? Theme.mono(9), .foregroundColor: Theme.text]
-        )
-        text.addAttribute(.foregroundColor, value: Theme.faint, range: NSRange(location: 0, length: (title as NSString).length))
+        let font = label.font ?? Theme.mono(9)
+        let text = NSMutableAttributedString(string: text, attributes: [.font: font, .foregroundColor: Theme.text])
+        if let title = panel?.title {
+            text.addAttribute(.foregroundColor, value: Theme.faint, range: NSRange(location: 0, length: (title as NSString).length))
+        }
         label.attributedStringValue = text
     }
 
@@ -124,7 +131,7 @@ final class OfferStripView: NSView, ThemeFollowing {
     func place(along body: CGRect) {
         let inset = scale.length(Self.inset)
         let width = max(0, body.width - 2 * inset)
-        let now = Measured(bodySize: body.size, scale: scale, text: label.stringValue, buttons: buttonTexts)
+        let now = Measured(bodySize: body.size, scale: scale, text: text, buttons: buttons.map(\.model))
         if now != measured {
             measured = now
             let padX = scale.length(ChipMetrics.padX), padY = scale.length(ChipMetrics.padY)
@@ -151,7 +158,7 @@ final class OfferStripView: NSView, ThemeFollowing {
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let hit = super.hitTest(point) else { return nil }
         if onPress != nil { return self }
-        return hit is ChipView ? hit : nil
+        return hit as? PressControl
     }
 
     override func mouseDown(with event: NSEvent) {

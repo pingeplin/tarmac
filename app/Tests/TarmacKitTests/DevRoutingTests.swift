@@ -402,9 +402,11 @@ final class DevRoutingTests: XCTestCase {
 
     private typealias Control = DevClick.Control
 
+    private let allChoices: [RestoreCard.Choice.Action] = [.resumeAll, .perCard, .skipAll]
+
     private func clickContext(
-        controls: [Control] = [.resume, .skip, .resumeChip], frame: CGRect? = nil,
-        restoreCard: DevRouting.RestoreCardFacts? = nil
+        controls: [Control] = [.panel(.resume), .panel(.skip), .resumeChip], frame: CGRect? = nil,
+        restoreCard: [RestoreCard.Choice.Action]? = nil
     ) -> DevRouting.Context {
         var context = context(cards: [
             Card(id: "t-1", kind: .term, frame: frame ?? self.frame, controls: controls),
@@ -423,22 +425,22 @@ final class DevRoutingTests: XCTestCase {
     }
 
     func testS35EachPresentControlOfAVisibleTerminalIsClicked() {
-        for control in [Control.resume, .skip, .resumeChip] {
+        for control in [Control.panel(.resume), .panel(.skip), .resumeChip] {
             XCTAssertEqual(route(click("t-1", control.rawValue), clickContext()), .click(card: "t-1", control: control))
         }
     }
 
     func testS35EachRestoreCardControlIsClickedWhileTheCardShowsItsChoices() {
-        let up = clickContext(restoreCard: DevRouting.RestoreCardFacts(choices: true))
-        for control in [Control.resumeAll, .decidePerCard, .skipAll, .veil] {
+        let up = clickContext(restoreCard: allChoices)
+        for control in [Control.restore(.resumeAll), .restore(.perCard), .restore(.skipAll), .veil] {
             XCTAssertEqual(route(click(nil, control.rawValue), up), .click(card: nil, control: control))
         }
-        let plain = clickContext(restoreCard: DevRouting.RestoreCardFacts(choices: false))
+        let plain = clickContext(restoreCard: [])
         XCTAssertEqual(route(click(nil, "veil"), plain), .click(card: nil, control: .veil))
     }
 
     func testS36AControlNotInTheTargetsSetIsABadRequestNamingTheSet() {
-        let up = clickContext(restoreCard: DevRouting.RestoreCardFacts(choices: true))
+        let up = clickContext(restoreCard: allChoices)
         let cardSet = "resume, skip, resume_chip"
         let restoreSet = "resume_all, decide_per_card, skip_all, veil"
         for (request, names) in [
@@ -468,14 +470,14 @@ final class DevRoutingTests: XCTestCase {
 
     func testS37AnAbsentControlOfACardIsNoSuchControlNamingWhatIsPresent() {
         absent(click("t-1", "resume"), clickContext(controls: []), card: "t-1", present: [])
-        absent(click("t-1", "resume"), clickContext(controls: [.skip, .resumeChip]), card: "t-1", present: ["skip", "resume_chip"])
-        absent(click("t-1", "resume_chip"), clickContext(controls: [.resume, .skip]), card: "t-1", present: ["resume", "skip"])
+        absent(click("t-1", "resume"), clickContext(controls: [.panel(.skip), .resumeChip]), card: "t-1", present: ["skip", "resume_chip"])
+        absent(click("t-1", "resume_chip"), clickContext(controls: [.panel(.resume), .panel(.skip)]), card: "t-1", present: ["resume", "skip"])
     }
 
     func testS37AnAbsentRestoreCardControlIsNoSuchControlWithANullCard() {
         absent(click(nil, "skip_all"), clickContext(), card: .null, present: [])
         absent(
-            click(nil, "skip_all"), clickContext(restoreCard: DevRouting.RestoreCardFacts(choices: false)),
+            click(nil, "skip_all"), clickContext(restoreCard: []),
             card: .null, present: ["veil"]
         )
     }
@@ -486,8 +488,8 @@ final class DevRoutingTests: XCTestCase {
     }
 
     func testS38TheRestoreCardCoversEveryCardControlBeforeItsPresenceIsAsked() {
-        let up = DevRouting.RestoreCardFacts(choices: true)
-        for controls in [[Control.resume, .skip], []] {
+        let up = allChoices
+        for controls in [[Control.panel(.resume), .panel(.skip)], []] {
             let error = refusal(click("t-1", "resume"), clickContext(controls: controls, restoreCard: up))
             XCTAssertEqual(error?.code, .controlCovered, "\(controls)")
             XCTAssertEqual(error?.extra["card"], "t-1")
@@ -497,8 +499,8 @@ final class DevRoutingTests: XCTestCase {
 
     func testS38ACulledCardIsCardHiddenOnlyWhenTheControlIsPresent() {
         XCTAssertEqual(refusal(click("t-1", "resume"), clickContext(frame: culled))?.code, .cardHidden)
-        XCTAssertEqual(refusal(click("t-1", "resume"), clickContext(controls: [.skip], frame: culled))?.code, .noSuchControl)
-        XCTAssertEqual(route(click("t-1", "resume"), clickContext()), .click(card: "t-1", control: .resume))
+        XCTAssertEqual(refusal(click("t-1", "resume"), clickContext(controls: [.panel(.skip)], frame: culled))?.code, .noSuchControl)
+        XCTAssertEqual(route(click("t-1", "resume"), clickContext()), .click(card: "t-1", control: .panel(.resume)))
     }
 
     // MARK: - messages

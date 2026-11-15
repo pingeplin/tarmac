@@ -246,7 +246,7 @@ final class KeyLadderTests: XCTestCase {
     }
 
     func testTheRestoreCardTakesCommandIBeforeTheInbox() {
-        XCTAssertEqual(KeyLadder.decide(letter("i", command), Facts(restoreCard: true, inboxOpen: true)), .closeRestoreCard)
+        XCTAssertEqual(KeyLadder.decide(letter("i", command), Facts(restoreCard: [], inboxOpen: true)), .restoreCard(.perCard))
     }
 
     // MARK: - the console of an HTML card
@@ -357,15 +357,15 @@ final class KeyLadderTests: XCTestCase {
     }
 
     func testS9ARepeatedReturnOnAReopenOfferIsIgnored() {
-        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offer: .reopen)), .ignoreRepeat)
+        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offer: .reopen)), .swallow)
     }
 
     /// The D10 amendment: a held Return reopens once, and its repeats neither
     /// run the new card's command nor reach its shell.
     func testS9AHeldReturnReopensOnceAndItsRepeatsAreIgnored() {
         XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .reopen)), .reopenDead)
-        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offer: .resumeArmed)), .ignoreRepeat)
-        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offer: .resumeIdle)), .ignoreRepeat)
+        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offer: .resumeArmed)), .swallow)
+        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offer: .resumeIdle)), .swallow)
         XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .resumeArmed)), .runResume)
         XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts()), .passThrough)
     }
@@ -374,8 +374,8 @@ final class KeyLadderTests: XCTestCase {
     func testS9AHeldReturnThatRanTheCommandIgnoresItsRepeats() {
         let runReturn = enter()
         XCTAssertTrue(KeyLadder.afterRun(was: false, press: runReturn, action: .runResume))
-        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(afterRun: true)), .ignoreRepeat)
-        XCTAssertTrue(KeyLadder.afterRun(was: true, press: repeated(enter()), action: .ignoreRepeat))
+        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(afterRun: true)), .swallow)
+        XCTAssertTrue(KeyLadder.afterRun(was: true, press: repeated(enter()), action: .swallow))
         XCTAssertFalse(KeyLadder.afterRun(was: true, press: letter("a"), action: .passThrough))
     }
 
@@ -399,42 +399,42 @@ final class KeyLadderTests: XCTestCase {
 
     // MARK: - #358: the restore card takes the first key
 
-    private let cardUp = Facts(restoreCard: true)
+    private let cardUp = Facts(restoreCard: [])
 
     func testAnyKeyClosesTheRestoreCardAndReachesNothingElse() {
         let keys = [letter("a"), letter("a", control), enter(), esc(), tab(), letter("k", command), letter("v", command)]
         for key in keys {
-            XCTAssertEqual(KeyLadder.decide(key, cardUp), .closeRestoreCard, "\(key)")
+            XCTAssertEqual(KeyLadder.decide(key, cardUp), .restoreCard(.perCard), "\(key)")
         }
     }
 
     /// R4: the card takes the first key before the resume chips.
     func testTheCardTakesReturnBeforeAnArmedResumeOrAReopen() {
-        XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .resumeArmed, restoreCard: true)), .closeRestoreCard)
-        XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .reopen, restoreCard: true)), .closeRestoreCard)
+        XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .resumeArmed, restoreCard: [])), .restoreCard(.perCard))
+        XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .reopen, restoreCard: [])), .restoreCard(.perCard))
         XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .resumeArmed)), .runResume)
     }
 
     func testTheCardTakesEscBeforeTheEscLadder() {
-        XCTAssertEqual(KeyLadder.decide(esc(), Facts(esc: toasts, restoreCard: true)), .closeRestoreCard)
+        XCTAssertEqual(KeyLadder.decide(esc(), Facts(esc: toasts, restoreCard: [])), .restoreCard(.perCard))
     }
 
     func testTheCardComesBeforeTheSwitcherAndAnyFocus() {
         var facts = eager
         facts.switcherOpen = true
-        facts.restoreCard = true
-        XCTAssertEqual(KeyLadder.decide(letter("a"), facts), .closeRestoreCard)
-        XCTAssertEqual(KeyLadder.decide(letter("a"), Facts(keys: .document, restoreCard: true)), .closeRestoreCard)
+        facts.restoreCard = []
+        XCTAssertEqual(KeyLadder.decide(letter("a"), facts), .restoreCard(.perCard))
+        XCTAssertEqual(KeyLadder.decide(letter("a"), Facts(keys: .document, restoreCard: [])), .restoreCard(.perCard))
     }
 
     func testTheCardTakesTheKeyBeforeAComposition() {
-        XCTAssertEqual(KeyLadder.decide(letter("a"), Facts(composing: true, restoreCard: true)), .closeRestoreCard)
+        XCTAssertEqual(KeyLadder.decide(letter("a"), Facts(composing: true, restoreCard: [])), .restoreCard(.perCard))
     }
 
     /// A repeat dropped while the card is up, from a key held since before it
     /// showed, does not set the latch: only closing the card does.
     func testADroppedRepeatDoesNotSetTheLatch() {
-        XCTAssertFalse(KeyLadder.afterRestoreCard(was: false, press: repeated(letter("a")), action: .ignoreRepeat))
+        XCTAssertFalse(KeyLadder.afterRestoreCard(was: false, press: repeated(letter("a")), action: .swallow))
     }
 
     /// ⌘Q is the menu's: Quit and its hold guard still work with the card up.
@@ -444,15 +444,15 @@ final class KeyLadderTests: XCTestCase {
 
     /// A key held since before the card showed does not close it unseen.
     func testARepeatDoesNotCloseTheCard() {
-        XCTAssertEqual(KeyLadder.decide(repeated(letter("a")), cardUp), .ignoreRepeat)
+        XCTAssertEqual(KeyLadder.decide(repeated(letter("a")), cardUp), .swallow)
     }
 
     /// The key that closed the card reaches no terminal while it is held.
     func testTheRepeatsOfTheKeyThatClosedTheCardAreIgnored() {
-        XCTAssertTrue(KeyLadder.afterRestoreCard(was: false, press: enter(), action: .closeRestoreCard))
-        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(afterRestoreCard: true)), .ignoreRepeat)
-        XCTAssertEqual(KeyLadder.decide(repeated(letter("a")), Facts(afterRestoreCard: true)), .ignoreRepeat)
-        XCTAssertTrue(KeyLadder.afterRestoreCard(was: true, press: repeated(enter()), action: .ignoreRepeat))
+        XCTAssertTrue(KeyLadder.afterRestoreCard(was: false, press: enter(), action: .restoreCard(.perCard)))
+        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(afterRestoreCard: true)), .swallow)
+        XCTAssertEqual(KeyLadder.decide(repeated(letter("a")), Facts(afterRestoreCard: true)), .swallow)
+        XCTAssertTrue(KeyLadder.afterRestoreCard(was: true, press: repeated(enter()), action: .swallow))
     }
 
     func testAFreshKeyAfterTheCardIsDecidedAsUsualAndClearsTheLatch() {
@@ -464,17 +464,17 @@ final class KeyLadderTests: XCTestCase {
 
     // MARK: - 2611.0015 S3: the restore card's keys with choices
 
-    private let choicesUp = Facts(restoreCard: true, restoreChoices: true)
+    private let choicesUp = Facts(restoreCard: [.resumeAll, .perCard, .skipAll])
 
     func testS3PlainOrShiftedReturnResumesAll() {
-        XCTAssertEqual(KeyLadder.decide(enter(), choicesUp), .restoreResumeAll)
-        XCTAssertEqual(KeyLadder.decide(enter(shift), choicesUp), .restoreResumeAll)
+        XCTAssertEqual(KeyLadder.decide(enter(), choicesUp), .restoreCard(.resumeAll))
+        XCTAssertEqual(KeyLadder.decide(enter(shift), choicesUp), .restoreCard(.resumeAll))
     }
 
     func testS3PlainOrShiftedEscSkipsAllAndDoesNotClearTheToastsFirst() {
-        XCTAssertEqual(KeyLadder.decide(esc(), choicesUp), .restoreSkipAll)
-        XCTAssertEqual(KeyLadder.decide(esc(shift), choicesUp), .restoreSkipAll)
-        XCTAssertEqual(KeyLadder.decide(esc(), Facts(esc: toasts, restoreCard: true, restoreChoices: true)), .restoreSkipAll)
+        XCTAssertEqual(KeyLadder.decide(esc(), choicesUp), .restoreCard(.skipAll))
+        XCTAssertEqual(KeyLadder.decide(esc(shift), choicesUp), .restoreCard(.skipAll))
+        XCTAssertEqual(KeyLadder.decide(esc(), Facts(esc: toasts, restoreCard: [.resumeAll, .perCard, .skipAll])), .restoreCard(.skipAll))
     }
 
     func testS3AnyOtherKeyDecidesPerCard() {
@@ -483,14 +483,14 @@ final class KeyLadderTests: XCTestCase {
             enter(option), enter(command), enter(control), esc(command), esc(option),
         ]
         for key in keys {
-            XCTAssertEqual(KeyLadder.decide(key, choicesUp), .closeRestoreCard, "\(key)")
+            XCTAssertEqual(KeyLadder.decide(key, choicesUp), .restoreCard(.perCard), "\(key)")
         }
     }
 
     func testS3CommandQPassesThroughAndARepeatNeverChooses() {
         XCTAssertEqual(KeyLadder.decide(letter("q", command), choicesUp), .passThrough)
         for key in [enter(), esc(), letter("a")] {
-            XCTAssertEqual(KeyLadder.decide(repeated(key), choicesUp), .ignoreRepeat, "\(key)")
+            XCTAssertEqual(KeyLadder.decide(repeated(key), choicesUp), .swallow, "\(key)")
         }
     }
 
@@ -506,25 +506,25 @@ final class KeyLadderTests: XCTestCase {
         var armed = choicesUp
         armed.offer = .resumeArmed
         for facts in [composing, switcher, inbox, document, armed] {
-            XCTAssertEqual(KeyLadder.decide(enter(), facts), .restoreResumeAll, "\(facts)")
+            XCTAssertEqual(KeyLadder.decide(enter(), facts), .restoreCard(.resumeAll), "\(facts)")
         }
     }
 
     // MARK: - 2611.0015 S4: the latch covers all three choices
 
     func testS4ResumeAllAndSkipAllSetTheLatch() {
-        XCTAssertTrue(KeyLadder.afterRestoreCard(was: false, press: enter(), action: .restoreResumeAll))
-        XCTAssertTrue(KeyLadder.afterRestoreCard(was: false, press: esc(), action: .restoreSkipAll))
+        XCTAssertTrue(KeyLadder.afterRestoreCard(was: false, press: enter(), action: .restoreCard(.resumeAll)))
+        XCTAssertTrue(KeyLadder.afterRestoreCard(was: false, press: esc(), action: .restoreCard(.skipAll)))
     }
 
     /// The prime card ran at once, so it has no offer and no `afterRun`:
     /// only the latch keeps the repeats from its shell.
     func testS4UnderTheLatchTheRepeatsReachNoTerminal() {
         let latched = Facts(offer: .none, afterRun: false, afterRestoreCard: true)
-        XCTAssertEqual(KeyLadder.decide(repeated(enter()), latched), .ignoreRepeat)
-        XCTAssertEqual(KeyLadder.decide(repeated(esc()), latched), .ignoreRepeat)
+        XCTAssertEqual(KeyLadder.decide(repeated(enter()), latched), .swallow)
+        XCTAssertEqual(KeyLadder.decide(repeated(esc()), latched), .swallow)
         XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offer: .none, afterRun: false)), .passThrough)
-        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offer: .resumeQueued, afterRestoreCard: true)), .ignoreRepeat)
+        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offer: .resumeQueued, afterRestoreCard: true)), .swallow)
     }
 
     func testS4AFreshLetterClearsTheLatch() {
@@ -534,8 +534,8 @@ final class KeyLadderTests: XCTestCase {
     // MARK: - 2611.0015 S17: Return on a queued offer is taken and dropped
 
     func testS17ReturnOnAQueuedOfferIsDroppedFreshOrRepeated() {
-        XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .resumeQueued)), .ignoreRepeat)
-        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offer: .resumeQueued)), .ignoreRepeat)
+        XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .resumeQueued)), .swallow)
+        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offer: .resumeQueued)), .swallow)
         XCTAssertEqual(KeyLadder.decide(letter("a"), Facts(offer: .resumeQueued)), .passThrough)
         XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .resumeIdle)), .passThrough)
         XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .resumeArmed)), .runResume)
@@ -544,12 +544,12 @@ final class KeyLadderTests: XCTestCase {
     // MARK: - 2611.0015 S18: with no resume line, any key closes
 
     func testS18WithNoChoicesReturnAndEscOnlyClose() {
-        let noChoices = Facts(restoreCard: true, restoreChoices: false)
+        let noChoices = Facts(restoreCard: [])
         for key in [enter(), esc(), letter("a"), letter("k", command)] {
-            XCTAssertEqual(KeyLadder.decide(key, noChoices), .closeRestoreCard, "\(key)")
+            XCTAssertEqual(KeyLadder.decide(key, noChoices), .restoreCard(.perCard), "\(key)")
         }
         XCTAssertEqual(KeyLadder.decide(letter("q", command), noChoices), .passThrough)
-        XCTAssertEqual(KeyLadder.decide(repeated(enter()), noChoices), .ignoreRepeat)
-        XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .resumeArmed, restoreCard: true, restoreChoices: false)), .closeRestoreCard)
+        XCTAssertEqual(KeyLadder.decide(repeated(enter()), noChoices), .swallow)
+        XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .resumeArmed, restoreCard: [])), .restoreCard(.perCard))
     }
 }

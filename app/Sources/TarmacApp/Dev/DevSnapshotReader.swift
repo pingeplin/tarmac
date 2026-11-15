@@ -97,7 +97,7 @@ struct DevSnapshotReader {
             viewSize: board.bounds.size,
             activeBoardID: controller.activeBoardID,
             boardIDs: controller.boardMetas.map(\.boardID),
-            restoreCard: controller.restoreCard.map { DevRouting.RestoreCardFacts(choices: !$0.choices.isEmpty) }
+            restoreCard: controller.restoreCard?.choices.map(\.action)
         )
     }
 

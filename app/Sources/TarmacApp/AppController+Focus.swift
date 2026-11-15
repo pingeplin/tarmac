@@ -36,7 +36,7 @@ extension AppController {
         if inboxOpen, let hit, !hit.isDescendant(of: rootView.inboxPanel) { closeInbox() }
         guard let hit, hit.isDescendant(of: rootView.board) else { return }
         guard let card = enclosingCard(hit) else {
-            if CardPress.clearsSelection(hit is PressControl ? .headerControl : .elsewhere) { defocus() }
+            if !(hit is PressControl) { defocus() }
             return
         }
         guard CardPress.selects(card.pressPlace(of: hit)) else { return }

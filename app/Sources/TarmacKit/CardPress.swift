@@ -13,11 +13,4 @@ public enum CardPress {
     public static func selects(_ place: Place) -> Bool {
         place == .elsewhere
     }
-
-    /// A press on the board outside every card: the bare board clears the
-    /// selection, while a control that lies outside its card, a resume
-    /// panel's button (2611.0015 D9), acts by itself and leaves it.
-    public static func clearsSelection(_ place: Place) -> Bool {
-        place == .elsewhere
-    }
 }

@@ -48,20 +48,14 @@ final class ResumeHeaderChipTests: XCTestCase {
         let rebound = term("t", spawn: nil)
         XCTAssertEqual(RecordedResume.command(for: rebound, termRecords: records("t", "echo HO")), "echo HO")
         XCTAssertNil(RecordedResume.command(for: rebound, termRecords: [:]))
+        XCTAssertNil(RecordedResume.command(for: rebound, termRecords: records("u", "echo HO")))
         XCTAssertNil(RecordedResume.command(for: rebound, termRecords: records("t", "echo a\necho b")))
     }
 
-    func testS9ALiveIdTakesItsRecordedCommandWhenAccepted() {
-        XCTAssertEqual(RecordedResume.command(liveTermID: "t", termRecords: records("t", "echo HO")), "echo HO")
-        XCTAssertNil(RecordedResume.command(liveTermID: "t", termRecords: [:]))
-        XCTAssertNil(RecordedResume.command(liveTermID: "t", termRecords: records("u", "echo HO")))
-        XCTAssertNil(RecordedResume.command(liveTermID: "t", termRecords: records("t", "echo a\necho b")))
-    }
-
     func testS9APushedCommandIsKeptOnlyWhenAccepted() {
-        XCTAssertEqual(RecordedResume.command(pushed: "echo HI"), "echo HI")
-        XCTAssertNil(RecordedResume.command(pushed: nil))
-        XCTAssertNil(RecordedResume.command(pushed: "echo a\necho b"))
+        XCTAssertEqual(ResumeCommand.accepted("echo HI"), "echo HI")
+        XCTAssertNil(ResumeCommand.accepted(nil))
+        XCTAssertNil(ResumeCommand.accepted("echo a\necho b"))
     }
 
     // MARK: S23
@@ -71,7 +65,7 @@ final class ResumeHeaderChipTests: XCTestCase {
         XCTAssertNil(ResumeOffer.make(cmd: refused))
         XCTAssertNil(ResumeHeaderChip.model(cmd: refused, dead: false))
         XCTAssertNil(RecordedResume.command(for: term("t", spawn: SpawnRequest(), resume: refused), termRecords: [:]))
-        XCTAssertNil(RecordedResume.command(liveTermID: "t", termRecords: records("t", refused)))
-        XCTAssertNil(RecordedResume.command(pushed: refused))
+        XCTAssertNil(RecordedResume.command(for: term("t", spawn: nil), termRecords: records("t", refused)))
+        XCTAssertNil(ResumeCommand.accepted(refused))
     }
 }

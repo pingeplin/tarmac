@@ -4,9 +4,35 @@ import CoreGraphics
 /// set, owned by the app as it owns `key` combos. The CLI sends a name as it
 /// is, so one definition decides which names exist.
 public enum DevClick {
-    public enum Control: String, CaseIterable, Sendable {
-        case resume, skip, resumeChip = "resume_chip"
-        case resumeAll = "resume_all", decidePerCard = "decide_per_card", skipAll = "skip_all", veil
+    /// A control as the model that draws it names it; `rawValue` is its wire
+    /// name.
+    public enum Control: Equatable, Sendable, RawRepresentable {
+        /// A resume panel's button.
+        case panel(ResumePanel.Choice)
+        /// The header's `resume` chip.
+        case resumeChip
+        /// One of the restore card's choices.
+        case restore(RestoreCard.Choice.Action)
+        /// The restore card's veil, outside the card.
+        case veil
+
+        public var rawValue: String {
+            switch self {
+            case .panel(.resume): "resume"
+            case .panel(.skip): "skip"
+            case .resumeChip: "resume_chip"
+            case .restore(.resumeAll): "resume_all"
+            case .restore(.perCard): "decide_per_card"
+            case .restore(.skipAll): "skip_all"
+            case .veil: "veil"
+            }
+        }
+
+        public init?(rawValue: String) {
+            guard let control = (controls(of: .card) + controls(of: .restoreCard)).first(where: { $0.rawValue == rawValue })
+            else { return nil }
+            self = control
+        }
     }
 
     public enum Target: Equatable, Sendable {
@@ -17,21 +43,21 @@ public enum DevClick {
 
     public static func controls(of target: Target) -> [Control] {
         switch target {
-        case .card: [.resume, .skip, .resumeChip]
-        case .restoreCard: [.resumeAll, .decidePerCard, .skipAll, .veil]
+        case .card: [.panel(.resume), .panel(.skip), .resumeChip]
+        case .restoreCard: [.restore(.resumeAll), .restore(.perCard), .restore(.skipAll), .veil]
         }
     }
 
     /// What a terminal card shows now, from the models that draw it: the
     /// panel's buttons, then the header chip.
     public static func present(panel: ResumePanel.Model?, chip: ResumeHeaderChip.Model?) -> [Control] {
-        let buttons: [Control] = (panel?.buttons ?? []).map { button in
-            switch button.choice {
-            case .resume: .resume
-            case .skip: .skip
-            }
-        }
-        return buttons + (chip == nil ? [] : [.resumeChip])
+        (panel?.buttons ?? []).map { .panel($0.choice) } + (chip == nil ? [] : [.resumeChip])
+    }
+
+    /// What the restore card shows now: its choices, then the veil, which
+    /// every restore card has.
+    public static func present(restoreChoices: [RestoreCard.Choice.Action]) -> [Control] {
+        restoreChoices.map(Control.restore) + [.veil]
     }
 
     /// The veil's candidate points: those of the overlay outside the card,

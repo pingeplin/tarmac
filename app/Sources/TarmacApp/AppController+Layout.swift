@@ -181,7 +181,7 @@ extension AppController {
             if let cwd = board.termRecords[termID]?.lastCwd { s.lastCwd = cwd }
             // A restore corrects a stale value (2611.0015 D11).
             if s.live {
-                setRecordedResume(s, RecordedResume.command(liveTermID: termID, termRecords: board.termRecords), on: board)
+                setRecordedResume(s, ResumeCommand.accepted(board.termRecords[termID]?.resume?.cmd), on: board)
             }
         }
         let outcome = ReconnectRestore.reconcile(board.reconnectTerms, liveTerms: liveTerms, replayFollows: replayFollows)

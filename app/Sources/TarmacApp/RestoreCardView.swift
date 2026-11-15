@@ -116,7 +116,7 @@ final class RestoreCardView: KeyHoldingView, FontFollowing, ThemeFollowing {
     /// area is the card's.
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard !isHidden, frame.contains(point) else { return nil }
-        return super.hitTest(point) as? ChipView ?? self
+        return super.hitTest(point) as? PressControl ?? self
     }
 
     override func mouseDown(with event: NSEvent) {

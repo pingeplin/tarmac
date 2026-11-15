@@ -19,15 +19,15 @@ final class DevClickTests: XCTestCase {
     func testAPanelAndAChipArePresentInOrder() throws {
         let panel = ResumePanel.model(offer: try offer([]), prime: false)
         let chip = ResumeHeaderChip.model(cmd: "echo HI", dead: false)
-        XCTAssertEqual(DevClick.present(panel: panel, chip: chip), [.resume, .skip, .resumeChip])
-        XCTAssertEqual(DevClick.present(panel: panel, chip: nil), [.resume, .skip])
+        XCTAssertEqual(DevClick.present(panel: panel, chip: chip), [.panel(.resume), .panel(.skip), .resumeChip])
+        XCTAssertEqual(DevClick.present(panel: panel, chip: nil), [.panel(.resume), .panel(.skip)])
         XCTAssertEqual(DevClick.present(panel: nil, chip: chip), [.resumeChip])
         XCTAssertEqual(DevClick.present(panel: nil, chip: nil), [])
     }
 
     func testAQueuedPanelHasOnlySkip() throws {
         let queued = ResumePanel.model(offer: try offer([.request]), prime: true)
-        XCTAssertEqual(DevClick.present(panel: queued, chip: nil), [.skip])
+        XCTAssertEqual(DevClick.present(panel: queued, chip: nil), [.panel(.skip)])
     }
 
     func testTheVeilIsPressedOnlyOutsideTheCard() {
@@ -40,7 +40,7 @@ final class DevClickTests: XCTestCase {
     }
 
     func testTheReplyNamesTheControlAndTheFocusAfterIt() {
-        let reply = DevClick.reply(card: "t-1", control: .resume, selectedCard: "t-1", keyboardFocus: .none)
+        let reply = DevClick.reply(card: "t-1", control: .panel(.resume), selectedCard: "t-1", keyboardFocus: .none)
         guard case .object(let fields) = reply else { return XCTFail("\(reply)") }
         XCTAssertEqual(fields["card"], "t-1")
         XCTAssertEqual(fields["control"], "resume")
@@ -49,7 +49,7 @@ final class DevClickTests: XCTestCase {
     }
 
     func testTheRestoreCardsReplyHasANullCard() {
-        let reply = DevClick.reply(card: nil, control: .resumeAll, selectedCard: nil, keyboardFocus: .none)
+        let reply = DevClick.reply(card: nil, control: .restore(.resumeAll), selectedCard: nil, keyboardFocus: .none)
         guard case .object(let fields) = reply else { return XCTFail("\(reply)") }
         XCTAssertEqual(fields["card"], .null)
         XCTAssertEqual(fields["control"], "resume_all")

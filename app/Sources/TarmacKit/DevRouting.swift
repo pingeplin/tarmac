@@ -52,12 +52,12 @@ public enum DevRouting {
         public var activeBoardID: String
         /// Every board the app knows, as the daemon's last `board_list` named them.
         public var boardIDs: [String]
-        /// Nil unless the restore card is up.
-        public var restoreCard: RestoreCardFacts?
+        /// The restore card's choices while it is up; nil while it is not.
+        public var restoreCard: [RestoreCard.Choice.Action]?
 
         public init(
             cards: [Card], keyboardFocusCard: String?, borrowedCard: String?, zoom: CGFloat, center: CGPoint, viewSize: CGSize,
-            activeBoardID: String, boardIDs: [String], restoreCard: RestoreCardFacts? = nil
+            activeBoardID: String, boardIDs: [String], restoreCard: [RestoreCard.Choice.Action]? = nil
         ) {
             self.restoreCard = restoreCard
             self.activeBoardID = activeBoardID
@@ -69,15 +69,6 @@ public enum DevRouting {
             self.center = center
             self.viewSize = viewSize
         }
-    }
-
-    public struct RestoreCardFacts: Equatable, Sendable {
-        /// The card offers its three choices: it has a resume line.
-        public var choices: Bool
-
-        public init(choices: Bool) { self.choices = choices }
-
-        var controls: [DevClick.Control] { choices ? DevClick.controls(of: .restoreCard) : [.veil] }
     }
 
     public enum Route: Equatable, Sendable {
@@ -197,7 +188,7 @@ public enum DevRouting {
             return .refused(DevError(.badRequest, "\(target) has no control `\(name)`; it has \(set)"))
         }
         guard let id else {
-            let present = context.restoreCard?.controls ?? []
+            let present = context.restoreCard.map(DevClick.present(restoreChoices:)) ?? []
             guard present.contains(control) else { return noSuchControl(card: nil, control, present: present) }
             return .click(card: nil, control: control)
         }
