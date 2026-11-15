@@ -485,6 +485,8 @@ final class DevRoutingTests: XCTestCase {
     func testS38AnUnknownCardThenADocCardAreRefusedFirst() {
         XCTAssertEqual(refusal(click("nope", "resume"), clickContext())?.code, .noSuchCard)
         XCTAssertEqual(refusal(click("/a/b.md", "resume"), clickContext())?.code, .unsupportedCardKind)
+        XCTAssertEqual(refusal(click("nope", "resume"), clickContext(restoreCard: allChoices))?.code, .noSuchCard)
+        XCTAssertEqual(refusal(click("/a/b.md", "resume"), clickContext(restoreCard: allChoices))?.code, .unsupportedCardKind)
     }
 
     func testS38TheRestoreCardCoversEveryCardControlBeforeItsPresenceIsAsked() {

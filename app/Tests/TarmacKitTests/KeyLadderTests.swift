@@ -408,7 +408,7 @@ final class KeyLadderTests: XCTestCase {
         }
     }
 
-    /// R4: the card takes the first key before the resume chips.
+    /// R4: the card takes the first key before the resume panels.
     func testTheCardTakesReturnBeforeAnArmedResumeOrAReopen() {
         XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .resumeArmed, restoreCard: [])), .restoreCard(.perCard))
         XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .reopen, restoreCard: [])), .restoreCard(.perCard))

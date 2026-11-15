@@ -6,7 +6,7 @@
 /// not as found: a gone folder gives `$HOME` silently.
 public struct RestoreCard: Equatable, Sendable {
     public struct Line: Equatable, Sendable {
-        /// Nil for a line of plain words: no glyph means "resume" (2611.0015 D14).
+        /// Nil for a line of plain words: the resume and reopen lines have no glyph (2611.0015 D14).
         public let glyph: String?
         public let text: String
         public let ok: Bool

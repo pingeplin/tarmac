@@ -2,7 +2,7 @@ import Foundation
 import XCTest
 import TarmacKit
 
-/// 2611.0011 S8, S20, S21 and 2611.0015 S1, S2, S6, S7, S16: the resume
+/// 2611.0011 S8, S20 and 2611.0015 S1, S2, S6, S7, S16: the resume
 /// offer, its one reducer, and the panel that shows it.
 final class ResumeOfferTests: XCTestCase {
     private let uuid = "claude --resume 3f2a1b9c-0000-4000-8000-000000000000"

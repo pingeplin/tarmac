@@ -439,6 +439,11 @@ fn s15_the_app_clear_drops_an_unclaimed_record_and_a_cmd_from_the_app_sets_none(
     let mut log = FrameLog::default();
     let (daemon, mut app) = moved_on_one_connection(&mut log);
 
+    let early = log.len();
+    app.send(&Msg::Resume { term_id: "T2".into(), cmd: Some("echo X".into()) });
+    assert_no_term_resume(&mut app, &log, early);
+    daemon.wait_for_state("T2 keeps its resume", |v| !term_records(v, 0)["T2"]["resume"].is_null());
+
     let start = log.len();
     app.send(&Msg::Resume { term_id: "T2".into(), cmd: None });
     let at = await_term_resume(&mut app, &mut log, start);
