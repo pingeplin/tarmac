@@ -660,6 +660,36 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
+    /// 2611.0015 S10 (daemon → app): a terminal's recorded command changed.
+    func testVector36TermResume() throws {
+        try assertVector(
+            """
+            83 a1 74 ab 74 65 72 6d 5f 72 65 73 75 6d 65 a7 74 65 72 6d
+            5f 69 64 a2 74 31 a3 63 6d 64 b5 63 6c 61 75 64 65 20 2d 2d
+            72 65 73 75 6d 65 20 61 62 2d 31 32
+            """,
+            .map(["t": .string("term_resume"), "term_id": .string("t1"), "cmd": .string("claude --resume ab-12")]),
+            .termResume(termID: "t1", cmd: "claude --resume ab-12")
+        )
+    }
+
+    /// 2611.0015 S10: no `cmd` is "no command".
+    func testVector37TermResumeWithNoCmd() throws {
+        try assertVector(
+            """
+            82 a1 74 ab 74 65 72 6d 5f 72 65 73 75 6d 65 a7 74 65 72 6d
+            5f 69 64 a2 74 31
+            """,
+            .map(["t": .string("term_resume"), "term_id": .string("t1")]),
+            .termResume(termID: "t1", cmd: nil)
+        )
+    }
+
+    func testS10ATermResumeWithANilCmdHasNoCmdKey() throws {
+        let fields = try MsgPack.decode(Message.termResume(termID: "t1", cmd: nil).encodedPayload()).mapValue
+        XCTAssertEqual(fields?.keys.sorted(), ["t", "term_id"])
+    }
+
     /// 2611.0011 S12: a nil `resume` and a nil `cmd` put no key on the wire.
     func testANilResumeAndANilCmdHaveNoKey() throws {
         let restore = Message.restore(

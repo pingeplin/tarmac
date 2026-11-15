@@ -99,9 +99,11 @@ tarmac resume clear
 ```
 
 Run inside a Tarmac terminal, `set` records the command that resumes the agent
-session running there. If Tarmac restarts while that agent still runs, the
-terminal comes back in its folder and its card offers the command; it runs only
-when the user presses Return on that card. Rules:
+session running there. While the agent runs, the card shows a `resume` chip in
+its header; a click copies the command. If Tarmac restarts while that agent
+still runs, the terminal comes back in its folder, and the restore card and a
+panel on the card offer the command; it runs only when the user chooses
+`resume` there. Rules:
 
 - The command is one line of at most 256 characters, with no control or
   invisible characters; any other is refused with exit `2`.
@@ -109,7 +111,7 @@ when the user presses Return on that card. Rules:
 - It lasts while the process that set it runs: from an agent's hook, the agent.
   The agent's exit, or the terminal's, drops it.
 - A later `set` replaces it; `clear` removes it. After a restart the user's
-  first key in that terminal uses or drops the offer, once.
+  choice, or the first key typed in that terminal, uses or drops the offer, once.
 - The Claude Code hooks set it for you at each session's start.
 
 ## Waiting on Tarmac's facts

@@ -606,6 +606,10 @@ pub fn is_report_for(msg: &Msg, want: &str) -> bool {
     matches!(msg, Msg::TermReport { term_id, .. } if term_id == want)
 }
 
+pub fn is_term_resume(msg: &Msg) -> bool {
+    matches!(msg, Msg::TermResume { .. })
+}
+
 pub fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack.windows(needle.len()).any(|w| w == needle)
 }

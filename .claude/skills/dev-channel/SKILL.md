@@ -113,6 +113,7 @@ tarmac dev type <card> "<text>"
 tarmac dev key <card> "<combo>"
 tarmac dev board <board-id>|--new
 tarmac dev press <combo> [--hold <ms>] [--age <ms>] [--busy <ms>]
+tarmac dev click <card>|restore_card <control>
 ```
 
 Use the debug CLI with the socket pinned, or nothing will answer:
@@ -157,9 +158,18 @@ core/target/debug/tarmac dev snapshot | jq .
   what it last did: `phase` (`idle` | `showing` | `confirming`), `notice`
   (`visible`, `alpha`; alpha reads 0 while not visible) and `last_press`
   (`press_ms`, `route` of `guard` | `terminate`, `age_ms`, or `null` before the
-  first keyboard press), and `restore_card` — `{lines}` while the restore card
-  of a cold launch is up (#358), else `null`. It takes the first key, so the
-  `make qa` runners close it with `escape` before their first scenario.
+  first keyboard press), and `restore_card` — `{lines, choices}` while the
+  restore card of a cold launch is up (#358), else `null`; `choices` is
+  `["⏎ resume all", "decide per card", "esc skip all"]` when a cold spawn has a
+  resume command, else `[]` (spec 2611.0015). It takes the first key, so the
+  `make qa` runners close it with `press tab` before their first scenario —
+  **not** `escape`: with choices, Esc is `skip all`, which deletes the resume
+  records. Tab is `decide per card`, or a plain close without choices.
+  A terminal with a resume offer has `resume: {cmd, armed, queued, title,
+  buttons}` (the panel's text), and one whose header shows the `resume` chip
+  has `resume_chip: <cmd>`; with none the key is absent, so wait for it to go
+  by polling `snapshot`, not `--until` (an absent path is never true).
+  `toasts` lists the titles of the toasts on screen, oldest first.
   `inbox` (spec 2611.0013) is `{open, badge, filter, selected, items}`: `badge`
   is the title-bar button's text (`inbox · N`), `selected` is `{kind, term}` or
   `null`, and `items` are the current filter's rows in list order, each
@@ -180,7 +190,8 @@ core/target/debug/tarmac dev snapshot | jq .
   `card: null`, and two more keys are present: `overlay` (`switcher`,
   `restore_card` or `inbox`) and `returns_to`, the card it hands the keys back
   to when it closes (or `null`). `type` and `key` are refused then: no card
-  has the keys. Close the restore card with `press escape`.
+  has the keys. Close the restore card with `press tab`, never `press escape`
+  (with choices, Esc skips every resume offer of the board).
 - Every other verb prints a small JSON object describing **what it observed**,
   not what you asked for — `zoom 99` answers `{"zoom": 3}` because the board
   clamps.
@@ -208,16 +219,30 @@ core/target/debug/tarmac dev snapshot | jq .
   boot shell. A create is answered with whichever board is active when the wait
   ends, so a hand switch or a reconnect during it can win. After a `timeout`
   answer the frame already sent may still act later.
+- `click <card> <control>` presses and releases a control (spec 2611.0015): on
+  a terminal card `resume` or `skip` (its resume panel's buttons) or
+  `resume_chip` (its header chip); on `restore_card`, a literal word,
+  `resume_all`, `decide_per_card`, `skip_all` or `veil` (a point of the veil
+  outside the card). The app owns the names; the CLI checks only that there are
+  two arguments (else exit 2). It answers `{card, control, focused_card,
+  active_element, activated, delivery}`, `card` null for the restore card, and
+  `delivery` is `window` or `target`, **never `handling`**: a click is what the
+  verb is for. Read the effect with `snapshot`. The refusals, in order: a name
+  not in the target's set is `bad_request`; then `no_such_card`,
+  `unsupported_card_kind` for a doc, `control_covered` while the restore card is
+  up, `no_such_control` (with `present`, the names the target shows now) and
+  `card_hidden` for a culled card.
 - A failure prints JSON on **stderr** and exits 1: `no_such_board`, `no_such_card`,
-  `not_focused`, `unsupported_card_kind`, `card_hidden`, `unsupported_combo`,
-  `bad_combo`, `empty_buffer`, `unsupported_verb`, `bad_expr`, `bad_request`,
-  `timeout`, `not_retargeted`, `not_key`, `app_not_ready`, `app_unresponsive`,
-  `driver_threw`. CLI-side failures (no app, a too-long socket path) stay
-  one-line plain text.
+  `not_focused`, `unsupported_card_kind`, `card_hidden` (`focus` on a culled
+  HTML card, `click` on a culled card), `no_such_control`, `control_covered`,
+  `unsupported_combo`, `bad_combo`, `empty_buffer`, `unsupported_verb`,
+  `bad_expr`, `bad_request`, `timeout`, `not_retargeted`, `not_key`,
+  `app_not_ready`, `app_unresponsive`, `driver_threw`. CLI-side failures (no
+  app, a too-long socket path) stay one-line plain text.
 
 ### Input verbs take the app forward
 
-`focus`, `resize`, `key` and `press` — and `type` when it has to press a key —
+`focus`, `resize`, `key`, `press` and `click` — and `type` when it has to press a key —
 first make the dev window key, calling `NSApp.activate(ignoringOtherApps:)` if
 it is not. That **steals focus** from whatever you were using, and the reply
 says `activated: true`. So **do not type in other apps while a run is in
@@ -391,6 +416,10 @@ wait whose deadline passes then, answer `app_not_ready`.
   button-press report.
 - No verb pans or creates a card. `board` switches boards and makes one; it
   cannot delete one.
+- `click` names controls, not points: a press on a panel's command text, which
+  is no control, stays hand QA. No verb sends a held key: `key` and `press`
+  always send `isARepeat: false`, so the repeat guards are tested only in
+  `KeyLadderTests`.
 
 ## The scenario suite — `make qa`
 
@@ -431,6 +460,23 @@ make qa-quit CASE=stale     # S17: a press stamped 2.5 s old quits at once
 run` returns, the daemon survives, and the next app reconnects to it.
 `CASE=stale`'s route is only visible in the `make run` output
 (`tarmac: quit-key route=terminate …`); record it by hand.
+
+```sh
+make qa-resume                       # CASE=reopen: no relaunch
+make qa-resume CASE=restore-setup    # then `make run`, then one case below
+make qa-resume CASE=resume-all       # or resume-all-click, per-card, per-card-click,
+                                     # veil, skip-all, skip-all-click, quit
+```
+
+`scripts/qa/resume.mjs` (specs 2611.0011 S37 and 2611.0015) kills the dev
+daemon by the pid that holds its socket, so every dev terminal ends.
+`CASE=reopen` (the default; `qa-quit`'s `CASE ?= hold` is not inherited)
+reopens four dead cards and drives the resume panel's keys and clicks, the
+header chip (it saves and restores the clipboard) and the `click` refusals.
+The restore card shows only at a board's first visit in an app session, so
+each restore card case needs `CASE=restore-setup` and a fresh `make run`
+before it; `restore-setup` wants a board with exactly one terminal card, so
+use a fresh `DEV_DIR`. An unknown `CASE` exits non-zero before any step.
 
 ## When it does not answer
 

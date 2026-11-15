@@ -299,6 +299,9 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
             }
             None => debug!("input for unknown term {term_id}"),
         },
+        Msg::Resume { term_id, cmd: None } => daemon.skip_resume(&term_id).await,
+        // Only a cli caller can be tied to a process, so only the cli sets one.
+        Msg::Resume { term_id, cmd: Some(_) } => debug!("app resume with a cmd for {term_id} ignored"),
         Msg::Resize { term_id, cols, rows } => match daemon.term(&term_id).await {
             Some(h) => {
                 if let Err(e) = h.resize(cols, rows) {

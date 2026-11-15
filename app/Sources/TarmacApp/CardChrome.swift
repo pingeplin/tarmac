@@ -107,13 +107,40 @@ final class RecentMetaLabel: NSTextField {
     }
 }
 
+/// A view that keeps a press to itself and calls `onClick` on its release
+/// inside it, with no tracking loop of its own: a press on one never selects a
+/// card, clears the selection or starts a drag (`CardPress.headerControl`). A
+/// container whose hit test claims presses passes a hit on one through.
+@MainActor
+class PressControl: NSView {
+    var onClick: (() -> Void)?
+
+    /// Whether a press here is the control's; false lets it fall through.
+    var takesPress: Bool { true }
+
+    override var acceptsFirstResponder: Bool { false }
+
+    // A label inside would otherwise take the press itself.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        takesPress && super.hitTest(point) != nil ? self : nil
+    }
+
+    override func mouseDown(with event: NSEvent) {}
+
+    override func mouseUp(with event: NSEvent) {
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?() }
+    }
+}
+
+extension PressControl: HoverCursorProviding {
+    func hoverCursor(at windowPoint: NSPoint) -> NSCursor { .pointingHand }
+}
+
 /// A control in a card header (`✕`, `↻`). It keeps the press to itself, so a
 /// click on it never selects the card or starts a drag, and acts on release
 /// inside it.
 @MainActor
-final class HeaderButton: NSView, ThemeFollowing {
-    var onClick: (() -> Void)?
-
+final class HeaderButton: PressControl, ThemeFollowing {
     private static let padX: CGFloat = 5
     private static let padY: CGFloat = 1
     private static let cornerRadius: CGFloat = 4
@@ -124,8 +151,6 @@ final class HeaderButton: NSView, ThemeFollowing {
     private var size: NSSize = .zero
     private var hovered = false
     private var trackingArea: NSTrackingArea?
-
-    override var acceptsFirstResponder: Bool { false }
 
     init(glyph: String, toolTip: String, fontSize: CGFloat = 10.5) {
         label = NSTextField(labelWithString: glyph)
@@ -169,17 +194,6 @@ final class HeaderButton: NSView, ThemeFollowing {
 
     override var intrinsicContentSize: NSSize { size }
 
-    // The label would otherwise take the press itself.
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        super.hitTest(point) == nil ? nil : self
-    }
-
-    override func mouseDown(with event: NSEvent) {}
-
-    override func mouseUp(with event: NSEvent) {
-        if bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?() }
-    }
-
     override func mouseEntered(with event: NSEvent) {
         hovered = true
         paint()
@@ -212,10 +226,6 @@ final class HeaderButton: NSView, ThemeFollowing {
     }
 }
 
-extension HeaderButton: HoverCursorProviding {
-    func hoverCursor(at windowPoint: NSPoint) -> NSCursor { .pointingHand }
-}
-
 /// The world metrics of a chip, shared by the header's chips and a terminal
 /// card's offer strip, so card chrome looks the same everywhere.
 enum ChipMetrics {
@@ -228,9 +238,11 @@ enum ChipMetrics {
 /// A header chip: a 1 px border and mono text, no fill, at most 120 wide with
 /// the text cut at the tail. The doc card's `← <terminal>` chip is neutral; a
 /// terminal's report chip takes its kind's colour (spec 2611.0009), so one
-/// form reads the same on every card kind. Display only.
+/// form reads the same on every card kind. Display only, unless it is given an
+/// action: the `resume` chip and a resume panel's buttons (2611.0015) act on a
+/// release inside them, as `HeaderButton` does.
 @MainActor
-final class ChipView: NSView, ThemeFollowing {
+final class ChipView: PressControl, ThemeFollowing {
     enum Tone: Equatable {
         case neutral
         /// A dimmed (read) report keeps the kind's colour on its border, so a
@@ -247,8 +259,9 @@ final class ChipView: NSView, ThemeFollowing {
     private var scale = CardScale(zoom: 1, backing: 2)
     private var tone = Tone.neutral
 
-    override var acceptsFirstResponder: Bool { false }
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    /// A chip with no `onClick` takes no press, so it is never hit and sets
+    /// no cursor.
+    override var takesPress: Bool { onClick != nil }
 
     init() {
         super.init(frame: .zero)
@@ -323,7 +336,7 @@ final class ChipView: NSView, ThemeFollowing {
 /// A card's header: the handle the card is dragged by, with what identifies
 /// the card on the left and its state and controls packed against the right.
 ///
-/// A terminal header reads `›_ label … report · 2m ●`; a doc header reads
+/// A terminal header reads `›_ label … resume  report · 2m ●`; a doc header reads
 /// `¶ ● label … ← owner  ✚ now  ✎ Ns  ↻  ✕`. The buttons keep their own
 /// presses; everywhere else a press is the header's.
 ///
@@ -366,6 +379,9 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
     private let label = NSTextField(labelWithString: "")
     private let ownerChip = ChipView()
     private let reportChip = ChipView()
+    /// 2611.0015 D12: copies the terminal's recorded resume command.
+    let resumeChip = ChipView()
+    private var resumeChipModel: ResumeHeaderChip.Model?
     private var report: TermReport?
     private var reportTick: DispatchWorkItem?
     /// The report chip's tool tip is the header's: a press anywhere but on a
@@ -400,13 +416,15 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
         label.lineBreakMode = .byTruncatingTail
         ownerChip.isHidden = true
         reportChip.isHidden = true
+        resumeChip.isHidden = true
         freshMeta.isHidden = true
         recency.onUpdate = { [weak self] in self?.needsLayout = true }
         bellDot.isHidden = true
         paint()
 
         let controls: [NSView?] = [refreshButton, closeButton]
-        for view in [hairline, kindGlyph, repoDot, label, ownerChip, freshMeta, recency, reportChip, bellDot] + controls.compactMap({ $0 }) {
+        let views = [hairline, kindGlyph, repoDot, label, ownerChip, freshMeta, recency, resumeChip, reportChip, bellDot]
+        for view in views + controls.compactMap({ $0 }) {
             addSubview(view)
         }
         applyScale()
@@ -429,6 +447,7 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
         repoDot.layer?.cornerRadius = scale.length(Self.dotSize) / 2
         ownerChip.apply(scale)
         reportChip.apply(scale)
+        resumeChip.apply(scale)
         refreshButton?.apply(scale)
         (accessory as? HeaderButton)?.apply(scale)
         closeButton?.apply(scale)
@@ -521,6 +540,24 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
         DispatchQueue.main.asyncAfter(deadline: .now() + ReportChip.refreshInterval, execute: work)
     }
 
+    /// Shows the `resume` chip with the whole command as its tool tip, or
+    /// hides it with nil. A click on it calls `onClick`; a model already shown
+    /// takes only the new `onClick`.
+    func setResumeChip(_ model: ResumeHeaderChip.Model?, onClick: @escaping () -> Void) {
+        resumeChip.onClick = model == nil ? nil : onClick
+        guard model != resumeChipModel else { return }
+        resumeChipModel = model
+        guard let model else {
+            resumeChip.isHidden = true
+            needsLayout = true
+            return
+        }
+        resumeChip.toolTip = model.toolTip
+        resumeChip.isHidden = false
+        resumeChip.setLabel(model.text)
+        needsLayout = true
+    }
+
     /// A lit bell turns the glyph amber and shows the amber dot.
     func setBell(_ on: Bool) {
         guard on == bellDot.isHidden else { return }
@@ -551,7 +588,9 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
         let dot = scale.length(Self.dotSize)
         let leading = [item(kindGlyph), Item(view: repoDot, room: dot, size: NSSize(width: dot, height: dot))]
             .filter { !$0.view.isHidden }
-        let trailingViews: [NSView?] = [ownerChip, freshMeta, recency, refreshButton, accessory, closeButton, reportChip, bellDot]
+        let trailingViews: [NSView?] = [
+            ownerChip, freshMeta, recency, refreshButton, accessory, closeButton, resumeChip, reportChip, bellDot,
+        ]
         let trailing = trailingViews.compactMap { $0 }.filter { !$0.isHidden }.map(item)
         let title = item(label)
 
@@ -607,10 +646,10 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
 
     // MARK: Mouse
 
-    // A press anywhere but on a button is the header's own.
+    // A press anywhere but on a control is the header's own.
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let hit = super.hitTest(point) else { return nil }
-        return hit is HeaderButton ? hit : self
+        return hit as? PressControl ?? self
     }
 
     override func mouseDown(with event: NSEvent) {

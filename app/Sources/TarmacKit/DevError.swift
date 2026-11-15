@@ -24,6 +24,8 @@ public struct DevError: Error, Equatable, Sendable {
         case notRetargeted = "not_retargeted"
         case notKey = "not_key"
         case noSuchBoard = "no_such_board"
+        case noSuchControl = "no_such_control"
+        case controlCovered = "control_covered"
     }
 
     public var code: Code

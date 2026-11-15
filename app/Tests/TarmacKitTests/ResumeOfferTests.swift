@@ -2,8 +2,8 @@ import Foundation
 import XCTest
 import TarmacKit
 
-/// 2611.0011 S8, S20, S21: the resume chip's offer, its one reducer, and what
-/// the chip shows.
+/// 2611.0011 S8, S20 and 2611.0015 S1, S2, S6, S7, S16: the resume
+/// offer, its one reducer, and the panel that shows it.
 final class ResumeOfferTests: XCTestCase {
     private let uuid = "claude --resume 3f2a1b9c-0000-4000-8000-000000000000"
 
@@ -17,20 +17,12 @@ final class ResumeOfferTests: XCTestCase {
 
     // MARK: S8
 
-    func testS8TheChipShowsTheShortenedCommandWithNoKeyHintBeforeTheShellIsUp() throws {
-        let model = ResumeChip.model(offer: try offer(), prime: true)
-        XCTAssertEqual(model.text, "↻ last here: claude --resume 3f2a…")
-        XCTAssertEqual(model.toolTip, uuid)
-    }
-
-    func testS8AnEmptyChunkDoesNotArmAndAChunkArmsOnlyThePrimeCardsHint() throws {
+    func testS8AnEmptyChunkDoesNotArmAndAChunkArmsOnlyThePrimeCard() throws {
         let empty = try XCTUnwrap(ResumeOffer.step(try offer(), .output(byteCount: 0)).offer)
         XCTAssertFalse(empty.armed(prime: true))
         let up = try armed()
         XCTAssertTrue(up.armed(prime: true))
         XCTAssertFalse(up.armed(prime: false))
-        XCTAssertTrue(ResumeChip.model(offer: up, prime: true).text.hasSuffix("  ⏎ run · esc skip"))
-        XCTAssertFalse(ResumeChip.model(offer: up, prime: false).text.contains("⏎"))
     }
 
     func testS8ReturnOnTheArmedPrimeCardRunsTheCommandAndOneCarriageReturnOnce() throws {
@@ -93,36 +85,130 @@ final class ResumeOfferTests: XCTestCase {
         }
     }
 
-    // MARK: S21
+    // MARK: 2611.0015 S1, S2: a request runs at once or queues
 
-    func testS21AMetacharacterIsNeverHidden() {
-        let shown = ResumeChip.display("claude --resume 3f2a1b9c-0000-4000-8000-000000000000; curl x|sh")
-        XCTAssertTrue(shown.contains("; curl x|sh"), shown)
-        XCTAssertTrue(shown.hasPrefix("claude --resume 3f2a1b9c"), shown)
+    private func run(_ cmd: String) -> ResumeOffer.Effect { .run(Data(cmd.utf8) + Data([0x0D])) }
+
+    func testS1ARequestRunsAnOfferWhoseShellIsUpAndQueuesOneWhoseShellIsNot() throws {
+        let (aAfter, aEffect) = ResumeOffer.step(try armed("echo A"), .request)
+        XCTAssertNil(aAfter)
+        XCTAssertEqual(aEffect, run("echo A"))
+
+        let (b, bEffect) = ResumeOffer.step(try offer("echo B"), .request)
+        XCTAssertEqual(b?.queued, true)
+        XCTAssertNil(bEffect)
     }
 
-    func testS21APathWithNoIdLikeWordIsUnchanged() {
-        XCTAssertEqual(ResumeChip.display("rm -rf /Users/u/work/important-directory"), "rm -rf /Users/u/work/important-directory")
+    func testS1AQueuedOfferWaitsThroughARequestAReturnAndAnEmptyChunk() throws {
+        let queued = try XCTUnwrap(ResumeOffer.step(try offer("echo B"), .request).offer)
+        for event in [ResumeOffer.Event.request, .returnKey(prime: true), .output(byteCount: 0)] {
+            let (kept, effect) = ResumeOffer.step(queued, event)
+            XCTAssertEqual(kept, queued, "\(event)")
+            XCTAssertNil(effect, "\(event)")
+        }
     }
 
-    func testS21AFlagStaysWhole() {
+    func testS1AQueuedOfferRunsAtItsFirstOutputOnceWithOneCarriageReturn() throws {
+        let queued = try XCTUnwrap(ResumeOffer.step(try offer("echo B"), .request).offer)
+        let (gone, effect) = ResumeOffer.step(queued, .output(byteCount: 3))
+        XCTAssertNil(gone)
+        guard case .run(let bytes) = effect else { return XCTFail("\(String(describing: effect))") }
+        XCTAssertEqual(bytes, Data("echo B".utf8) + Data([0x0D]))
+        XCTAssertEqual(bytes.filter { $0 == 0x0D }.count, 1)
+        for event in [ResumeOffer.Event.output(byteCount: 3), .request, .returnKey(prime: true)] {
+            XCTAssertNil(ResumeOffer.step(gone, event).effect, "\(event)")
+        }
+    }
+
+    func testANewOfferIsNotQueued() throws {
+        XCTAssertFalse(try offer().queued)
+        XCTAssertFalse(try armed().queued)
+    }
+
+    func testS2AQueuedOfferIsNeverArmed() throws {
+        let queued = try XCTUnwrap(ResumeOffer.step(try offer(), .request).offer)
+        XCTAssertFalse(queued.armed(prime: true))
+    }
+
+    func testS2ARequestRunsOnACardThatIsNotPrimeAsReturnDoesOnThePrimeCard() throws {
+        let up = try armed()
+        XCTAssertFalse(up.armed(prime: false))
+        let request = ResumeOffer.step(up, .request)
+        XCTAssertNil(request.offer)
+        XCTAssertEqual(request.effect, run(uuid))
+        XCTAssertEqual(request.effect, ResumeOffer.step(up, .returnKey(prime: true)).effect)
+    }
+
+    // MARK: 2611.0015 S7: skip
+
+    func testS7SkipDropsAFreshAnArmedAndAQueuedOfferWithTheSkipEffect() throws {
+        let queued = try XCTUnwrap(ResumeOffer.step(try offer(), .request).offer)
+        for (name, offer) in [("fresh", try offer()), ("armed", try armed()), ("queued", queued)] {
+            let (gone, effect) = ResumeOffer.step(offer, .skip)
+            XCTAssertNil(gone, name)
+            XCTAssertEqual(effect, .skip, name)
+        }
+        let (none, effect) = ResumeOffer.step(nil, .skip)
+        XCTAssertNil(none)
+        XCTAssertNil(effect)
+    }
+
+    // MARK: 2611.0015 S16: input cancels only its own card's queued run
+
+    func testS16InputToOneQueuedCardLeavesTheOtherCardsQueuedRun() throws {
+        let a = try XCTUnwrap(ResumeOffer.step(try offer("echo A"), .request).offer)
+        let b = try XCTUnwrap(ResumeOffer.step(try offer("echo B"), .request).offer)
+        let (aGone, aEffect) = ResumeOffer.step(a, .userInput)
+        XCTAssertNil(aGone)
+        XCTAssertNil(aEffect)
+        XCTAssertNil(ResumeOffer.step(aGone, .output(byteCount: 3)).effect)
+        XCTAssertEqual(ResumeOffer.step(b, .output(byteCount: 3)).effect, run("echo B"))
+    }
+
+    // MARK: 2611.0015 S6: the panel
+
+    private typealias Button = ResumePanel.Button
+
+    /// 200 characters that end in an id-like word, which `display` would cut.
+    private let long = String(repeating: "a", count: 154) + " --resume 3f2a1b9c-0000-4000-8000-000000000000"
+
+    func testS6APanelBeforeTheShellIsUpShowsTheWholeCommandAndPlainButtons() throws {
+        XCTAssertEqual(long.count, 200)
+        let model = ResumePanel.model(offer: try offer(long), prime: true)
+        XCTAssertEqual(model.title, "resume last agent session?")
+        XCTAssertEqual(model.command, long)
+        XCTAssertEqual(model.buttons, [Button(choice: .resume, text: "resume"), Button(choice: .skip, text: "skip")])
+    }
+
+    func testS6AnArmedOfferShowsTheKeyHintsOnThePrimeCardOnly() throws {
+        let up = try armed(long)
         XCTAssertEqual(
-            ResumeChip.display("claude --dangerously-skip-permissions --resume 3f2a1b9c-0000-4000-8000-000000000000"),
-            "claude --dangerously-skip-permissions --resume 3f2a…"
+            ResumePanel.model(offer: up, prime: true).buttons,
+            [Button(choice: .resume, text: "⏎ resume"), Button(choice: .skip, text: "esc skip")]
         )
-        XCTAssertEqual(ResumeChip.display("x --resume-12345678901"), "x --resume-12345678901")
+        XCTAssertEqual(
+            ResumePanel.model(offer: up, prime: false).buttons,
+            [Button(choice: .resume, text: "resume"), Button(choice: .skip, text: "skip")]
+        )
+        XCTAssertEqual(ResumePanel.model(offer: up, prime: true).command, long)
     }
 
-    func testS21ALongWordWithNoDigitStaysWhole() {
-        XCTAssertEqual(ResumeChip.display("cd important-directory"), "cd important-directory")
+    func testS6AQueuedOfferSaysItWaitsAndOffersOnlySkip() throws {
+        let queued = try XCTUnwrap(ResumeOffer.step(try offer(long), .request).offer)
+        for prime in [true, false] {
+            let model = ResumePanel.model(offer: queued, prime: prime)
+            XCTAssertEqual(model.title, "resumes when the shell is ready", "\(prime)")
+            XCTAssertEqual(model.buttons, [Button(choice: .skip, text: "skip")], "\(prime)")
+            XCTAssertEqual(model.command, long)
+        }
     }
 
-    func testAnIdOfTwelveCharactersStaysWholeAndThirteenIsShortened() {
-        XCTAssertEqual(ResumeChip.display("x abcdefghij12"), "x abcdefghij12")
-        XCTAssertEqual(ResumeChip.display("x abcdefghij123"), "x abcd…")
-    }
-
-    func testTheSpacingIsKeptVerbatim() {
-        XCTAssertEqual(ResumeChip.display("a  b 3f2a1b9c-0000-4000"), "a  b 3f2a…")
+    func testS6NoPanelTextHasTheRefreshGlyph() throws {
+        let queued = try XCTUnwrap(ResumeOffer.step(try offer(), .request).offer)
+        for (offer, prime) in [(try offer(), true), (try armed(), true), (try armed(), false), (queued, true)] {
+            let model = ResumePanel.model(offer: offer, prime: prime)
+            XCTAssertFalse(model.title.contains("↻"))
+            XCTAssertFalse(model.buttons.contains { $0.text.contains("↻") })
+        }
     }
 }

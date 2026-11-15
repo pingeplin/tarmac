@@ -27,6 +27,9 @@ public enum DevRequest: Equatable, Sendable {
     /// `boardID: nil` makes a new board; otherwise switch to that one. Both answer once
     /// the app's active board has changed.
     case board(boardID: String?)
+    /// Click a control (spec 2611.0015 D16). `card: nil` is the restore card,
+    /// as it is the board for `focus`. The app checks `control`'s name.
+    case click(card: String?, control: String)
     /// A verb this build does not know. A value rather than a decode error, so
     /// the app can answer "unsupported" instead of dropping the frame.
     case unknown(type: String)
@@ -97,6 +100,8 @@ public extension DevRequest {
             return .key(card: try fields.req("card", \.stringValue), combo: try fields.req("combo", \.stringValue))
         case "board":
             return .board(boardID: try fields.opt("board_id", \.stringValue))
+        case "click":
+            return .click(card: try fields.opt("card", \.stringValue), control: try fields.req("control", \.stringValue))
         case "press":
             return .press(
                 combo: try fields.req("combo", \.stringValue),
@@ -146,6 +151,10 @@ public extension DevRequest {
         case .board(let boardID):
             fields.put("t", .string("board"))
             fields.put("board_id", unlessNil: boardID.map(MsgPackValue.string))
+        case .click(let card, let control):
+            fields.put("t", .string("click"))
+            fields.put("card", unlessNil: card.map(MsgPackValue.string))
+            fields.put("control", .string(control))
         case .unknown(let type):
             fields.put("t", .string(type))
         }

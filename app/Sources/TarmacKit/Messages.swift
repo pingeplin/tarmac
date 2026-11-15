@@ -277,8 +277,12 @@ public enum Message: Equatable, Sendable {
         boardID: String? = nil, cwd: String? = nil
     )
     /// 2611.0011 (cli → daemon): a terminal's resume command; nil clears it.
-    /// The app never sends one.
+    /// 2611.0015 D4 (app → daemon): only the clear, which the daemon acts on
+    /// only for a record no agent claimed since the restore.
     case resume(termID: String, cmd: String?)
+    /// 2611.0015 (daemon → app): a live terminal's recorded command changed;
+    /// nil is no command.
+    case termResume(termID: String, cmd: String?)
     /// 2611.0012 (cli → daemon): the daemon's facts for a script, filtered by
     /// kind and terminal; nil is no filter. The app never sends one.
     case subscribe(kinds: [String]?, termID: String?)
@@ -473,6 +477,8 @@ public extension Message {
             )
         case "resume":
             return .resume(termID: try req("term_id", \.stringValue), cmd: try opt("cmd", \.stringValue))
+        case "term_resume":
+            return .termResume(termID: try req("term_id", \.stringValue), cmd: try opt("cmd", \.stringValue))
         case "subscribe":
             return .subscribe(kinds: try opt("kinds", Self.stringArray), termID: try opt("term_id", \.stringValue))
         case "terms_list":
@@ -662,6 +668,11 @@ public extension Message {
             }
         case .resume(let termID, let cmd):
             return Self.tagged("resume") {
+                $0.put("term_id", .string(termID))
+                $0.put("cmd", unlessNil: cmd.map(MsgPackValue.string))
+            }
+        case .termResume(let termID, let cmd):
+            return Self.tagged("term_resume") {
                 $0.put("term_id", .string(termID))
                 $0.put("cmd", unlessNil: cmd.map(MsgPackValue.string))
             }

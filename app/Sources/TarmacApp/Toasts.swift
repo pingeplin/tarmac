@@ -84,6 +84,9 @@ final class ToastStackView: NSView {
 
     var hasToasts: Bool { !queue.toasts.isEmpty }
 
+    /// The titles of the toasts on screen, oldest first.
+    var titles: [String] { queue.toasts.map(\.title) }
+
     /// The rect, in this view's coordinates, the column stacks above (the
     /// minimap); nil keeps it at its own inset.
     var keepAbove: CGRect? {

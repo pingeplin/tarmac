@@ -68,10 +68,11 @@ are confirmed absent in the code. Roughly ordered by value.
   cold spawn that asked for a folder or has a resume), the board is drawn at
   35 % opacity under the v3 veil (`rgba(8, 10, 13, 0.62)`), with a centred
   card (`bg2`, 12px radius, 22×26px padding) that lists `✓ N terminals back
-  in their folders` and `↻ M with an agent session to resume` (spec
-  2611.0011, D13) over the footer `any key to continue`. Any key but `⌘Q`
-  closes it and reaches no terminal; `⌘Q` stays the menu's. Neither v3 line
-  above is on it.
+  in their folders` and `M with an agent session to resume` (spec
+  2611.0011, D13; 2611.0015, D14) over the footer `any key to continue`, or,
+  with a resume line, the choices `⏎ resume all`, `decide per card` and
+  `esc skip all` (spec 2611.0015). Any key but `⌘Q` closes it and reaches no
+  terminal; `⌘Q` stays the menu's. Neither v3 line above is on it.
 - **Scope:** a doc and repo count from the restore plan's docs; "waiting on
   you" needs a fact the daemon keeps across a restart, which it does not.
 

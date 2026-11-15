@@ -102,6 +102,8 @@ final class DevVerbs {
         case .createBoard(let from):
             controller.createBoard()
             return try await arrive(.otherThan(from))
+        case .click(let card, let control):
+            return ok(try await click(control, of: card))
         }
     }
 
@@ -241,6 +243,43 @@ final class DevVerbs {
         return injection.annotate(
             DevSnapshot.focusReply(selectedCard: board.selectedID?.wireID, keyboardFocus: reader.keyboardFocus)
         )
+    }
+
+    // MARK: - click
+
+    /// A down and an up on the control, through the window where a point
+    /// reaches it, else on the control itself (2611.0015 D16). Each control
+    /// acts on its release, with no tracking loop, so both deliveries fire it.
+    private func click(_ control: DevClick.Control, of card: String?) async throws -> JSONValue {
+        let activated = try await input.takeKey()
+        let view = try controlView(control, of: card)
+        let overlay = controller.rootView.restoreCard
+        let points = control == .veil
+            ? DevClick.veilPoints(in: overlay.bounds, card: overlay.cardFrame)
+            : DevTargetPoints.candidates(in: view.bounds)
+        let candidates = points.map { point in
+            DevPointer.Candidate(point: point, reachable: input.hitView(at: view.convert(point, to: nil)) === view)
+        }
+        let press = DevPointer.controlPress(among: candidates)
+        try input.click(at: press.point, on: view, by: press.delivery)
+        await input.settle()
+        return DevInjection(activated: activated, delivery: press.delivery).annotate(DevClick.reply(
+            card: card, control: control, selectedCard: board.selectedID?.wireID, keyboardFocus: reader.keyboardFocus
+        ))
+    }
+
+    private func controlView(_ control: DevClick.Control, of card: String?) throws -> NSView {
+        let overlay = controller.rootView.restoreCard
+        let view: NSView? = switch control {
+        case .panel(let choice): board.card(.term(card ?? ""))?.offerStrip?.button(choice)
+        case .resumeChip: board.card(.term(card ?? ""))?.header.resumeChip
+        case .restore(let action): overlay.button(action)
+        case .veil: overlay
+        }
+        guard let view, !view.isHiddenOrHasHiddenAncestor else {
+            throw DevError(.driverThrew, "\(control.rawValue) left the screen mid-verb")
+        }
+        return view
     }
 
     // MARK: - resize

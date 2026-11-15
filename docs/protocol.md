@@ -141,6 +141,7 @@ app → daemon:
     {t:"open", path}    — same effects as CLI open but via:"user"; no reply frame;
                           doc_opened is still pushed (single code path)
                           (v4 Phase 3 adds an optional `term_id`; see below)
+    {t:"resume", term_id}                    — a skip; no reply. See Resuming after a restart
 
 daemon → app:
 
@@ -153,6 +154,7 @@ daemon → app:
     {t:"file_event", path, mtime_ms:<uint>} — see File watching
     {t:"doc_event", path, data}             — see Events for a loaded HTML card
     {t:"term_report", term_id, ...}         — see A terminal's report
+    {t:"term_resume", term_id, cmd?}        — see Resuming after a restart
     {t:"err", msg}                          — non-fatal notice
 
 ## File watching semantics
@@ -752,9 +754,11 @@ ignores it. An `input` with `typed: false` encodes as before, byte for byte
 `term_report`, `bell` or `exit` with neither encodes as before, byte for byte
 (vectors 22, 23).
 
-## Resuming after a restart (spec 2611.0011)
+## Resuming after a restart (spec 2611.0011, spec 2611.0015)
 
     {t:"resume", term_id, cmd?}                                   — cli → daemon; answered with ack | err
+    {t:"resume", term_id}                                         — app → daemon (a skip); no reply
+    {t:"term_resume", term_id, cmd?}                              — daemon → app; no reply
     TermRecord.resume {cmd: str}                                  — in restore.term_records and state.json
 
 A process in terminal `term_id` runs `tarmac resume set "<command>"` or
@@ -796,19 +800,45 @@ answer:
   term by `spawn_term.succeeds`, has no holder. The first `input` with
   `typed: true` to that terminal drops it. A new `resume` set gives it a holder,
   and typed input no longer drops it.
-- **No push.** The daemon sends the app nothing for a `resume`. The app reads
-  the records from each `restore`.
+- **The push** (spec 2611.0015). Each `restore` carries the board's whole
+  `term_records`, live terminals included: that is the baseline. After it the
+  daemon pushes `term_resume` to the app when a live terminal's stored command
+  changes, with `Daemon::push` and after `boards` is released. It is not a
+  `subscribe` kind. No `cmd` means "no command". With no app connected the push
+  is dropped, and the next restore carries the record.
+
+  | Change | Push |
+  | --- | --- |
+  | a set with a new or different command | `term_resume {term_id, cmd}` |
+  | a set with the stored command | none |
+  | a cli clear, the poll's drop, the typed-input drop or the app's skip that removed a command | `term_resume {term_id}` |
+  | any of those that found no command | none |
+  | the end of a terminal, or a set that raced it | none: the `exit` frame ends the card |
+  | the `spawn_term.succeeds` move | none: the app planned that spawn |
+  | `term_close` | none: the card is gone |
+
+- **The app's skip** (spec 2611.0015). A `resume` with no `cmd` on the app
+  session is a skip: the daemon removes the command only when no agent claimed
+  it since the restore (it was loaded or moved, and has no holder), saves and
+  pushes `term_resume {term_id}`. A command an agent set since is kept. An
+  unknown terminal is ignored. There is no reply: app-session frames have none.
+  A `resume` with a `cmd` on the app session is ignored: only a cli caller can
+  be tied to a process.
 
 | message | key | type | missing ⇒ |
 |---|---|---|---|
 | `resume` | `term_id` | string (required) | — |
 | `resume` | `cmd` | string | a clear; omitted when nil |
+| `term_resume` | `term_id` | string (required) | — |
+| `term_resume` | `cmd` | string | no command; omitted when nil |
 | `TermRecord` | `resume.cmd` | string (required in `resume`) | — |
 
 New **additive type and key**: a daemon that does not know `resume` ignores it
 and does not answer; the cli reports that no answer came in 5 s, and
 `hooks run claude` gives up at its 500 ms deadline. A daemon or app that does
-not know `TermRecord.resume` ignores it.
+not know `TermRecord.resume` ignores it. An app that does not know
+`term_resume` ignores it. A daemon that ignores the app's `resume` keeps a
+skipped command until the first typed key, as before.
 
 ## Events and terminals for scripts (spec 2611.0012)
 
@@ -1170,3 +1200,16 @@ round-trip. Byte-exact encoder output is NOT required (key order may legally dif
         82 a1 74 a5 74 65 72 6d 73 a5 74 65 72 6d 73 91 82 a7 74 65
         72 6d 5f 69 64 a2 74 31 a8 62 6f 61 72 64 5f 69 64 a7 62 6f
         61 72 64 2d 30
+
+36. (spec 2611.0015) `{t:"term_resume", term_id:"t1", cmd:"claude --resume ab-12"}`
+    — new additive daemon→app type.
+
+        83 a1 74 ab 74 65 72 6d 5f 72 65 73 75 6d 65 a7 74 65 72 6d
+        5f 69 64 a2 74 31 a3 63 6d 64 b5 63 6c 61 75 64 65 20 2d 2d
+        72 65 73 75 6d 65 20 61 62 2d 31 32
+
+37. (spec 2611.0015) `{t:"term_resume", term_id:"t1"}` — no command: `cmd` is
+    omitted, not nil. The app's skip (`resume` with no `cmd`) is vector 26.
+
+        82 a1 74 ab 74 65 72 6d 5f 72 65 73 75 6d 65 a7 74 65 72 6d
+        5f 69 64 a2 74 31

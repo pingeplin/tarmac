@@ -86,7 +86,7 @@ final class DevRoutingTests: XCTestCase {
         let error = refusal(.unknown(type: "pan"))
         XCTAssertEqual(error?.code, .unsupportedVerb)
         XCTAssertEqual(error?.message.contains("`pan`"), true)
-        XCTAssertEqual(error?.message.contains("snapshot, zoom, focus, resize, type, key, press, board"), true)
+        XCTAssertEqual(error?.message.contains("snapshot, zoom, focus, resize, type, key, press, board, click"), true)
     }
 
     // MARK: - board
@@ -396,6 +396,113 @@ final class DevRoutingTests: XCTestCase {
             XCTAssertEqual(refusal(.type(card: card, text: "x"), docs())?.code, .unsupportedCardKind, card)
             XCTAssertEqual(refusal(.key(card: card, combo: "enter"), docs())?.code, .unsupportedCardKind, card)
         }
+    }
+
+    // MARK: - 2611.0015 click
+
+    private typealias Control = DevClick.Control
+
+    private let allChoices: [RestoreCard.Choice.Action] = [.resumeAll, .perCard, .skipAll]
+
+    private func clickContext(
+        controls: [Control] = [.panel(.resume), .panel(.skip), .resumeChip], frame: CGRect? = nil,
+        restoreCard: [RestoreCard.Choice.Action]? = nil
+    ) -> DevRouting.Context {
+        var context = context(cards: [
+            Card(id: "t-1", kind: .term, frame: frame ?? self.frame, controls: controls),
+            Card(id: "/a/b.md", kind: .doc, frame: self.frame),
+        ])
+        context.restoreCard = restoreCard
+        return context
+    }
+
+    private let culled = CGRect(x: 10_000, y: 0, width: 400, height: 300)
+
+    private func click(_ card: String?, _ control: String) -> DevRequest { .click(card: card, control: control) }
+
+    func testS33ClickIsAnImplementedVerb() {
+        XCTAssertTrue(DevRouting.implementedVerbs.contains("click"))
+    }
+
+    func testS35EachPresentControlOfAVisibleTerminalIsClicked() {
+        for control in [Control.panel(.resume), .panel(.skip), .resumeChip] {
+            XCTAssertEqual(route(click("t-1", control.rawValue), clickContext()), .click(card: "t-1", control: control))
+        }
+    }
+
+    func testS35EachRestoreCardControlIsClickedWhileTheCardShowsItsChoices() {
+        let up = clickContext(restoreCard: allChoices)
+        for control in [Control.restore(.resumeAll), .restore(.perCard), .restore(.skipAll), .veil] {
+            XCTAssertEqual(route(click(nil, control.rawValue), up), .click(card: nil, control: control))
+        }
+        let plain = clickContext(restoreCard: [])
+        XCTAssertEqual(route(click(nil, "veil"), plain), .click(card: nil, control: .veil))
+    }
+
+    func testS36AControlNotInTheTargetsSetIsABadRequestNamingTheSet() {
+        let up = clickContext(restoreCard: allChoices)
+        let cardSet = "resume, skip, resume_chip"
+        let restoreSet = "resume_all, decide_per_card, skip_all, veil"
+        for (request, names) in [
+            (click("t-1", "nonsense"), cardSet), (click("t-1", "resume_all"), cardSet), (click(nil, "resume"), restoreSet),
+        ] {
+            let error = refusal(request, up)
+            XCTAssertEqual(error?.code, .badRequest, "\(request)")
+            XCTAssertEqual(error?.message.contains(names), true, "\(request): \(error?.message ?? "")")
+        }
+    }
+
+    func testS36TheNameIsCheckedBeforeTheCardIsLookedUp() {
+        XCTAssertEqual(refusal(click("nope", "nonsense"), clickContext())?.code, .badRequest)
+    }
+
+    private func absent(
+        _ request: DevRequest, _ context: DevRouting.Context, card: JSONValue, present: [String],
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let error = refusal(request, context, file: file, line: line)
+        XCTAssertEqual(error?.code, .noSuchControl, file: file, line: line)
+        guard case .click(_, let control) = request else { return XCTFail(file: file, line: line) }
+        XCTAssertEqual(error?.extra["card"], card, file: file, line: line)
+        XCTAssertEqual(error?.extra["control"], .string(control), file: file, line: line)
+        XCTAssertEqual(error?.extra["present"], .array(present.map(JSONValue.string)), file: file, line: line)
+    }
+
+    func testS37AnAbsentControlOfACardIsNoSuchControlNamingWhatIsPresent() {
+        absent(click("t-1", "resume"), clickContext(controls: []), card: "t-1", present: [])
+        absent(click("t-1", "resume"), clickContext(controls: [.panel(.skip), .resumeChip]), card: "t-1", present: ["skip", "resume_chip"])
+        absent(click("t-1", "resume_chip"), clickContext(controls: [.panel(.resume), .panel(.skip)]), card: "t-1", present: ["resume", "skip"])
+    }
+
+    func testS37AnAbsentRestoreCardControlIsNoSuchControlWithANullCard() {
+        absent(click(nil, "skip_all"), clickContext(), card: .null, present: [])
+        absent(
+            click(nil, "skip_all"), clickContext(restoreCard: []),
+            card: .null, present: ["veil"]
+        )
+    }
+
+    func testS38AnUnknownCardThenADocCardAreRefusedFirst() {
+        XCTAssertEqual(refusal(click("nope", "resume"), clickContext())?.code, .noSuchCard)
+        XCTAssertEqual(refusal(click("/a/b.md", "resume"), clickContext())?.code, .unsupportedCardKind)
+        XCTAssertEqual(refusal(click("nope", "resume"), clickContext(restoreCard: allChoices))?.code, .noSuchCard)
+        XCTAssertEqual(refusal(click("/a/b.md", "resume"), clickContext(restoreCard: allChoices))?.code, .unsupportedCardKind)
+    }
+
+    func testS38TheRestoreCardCoversEveryCardControlBeforeItsPresenceIsAsked() {
+        let up = allChoices
+        for controls in [[Control.panel(.resume), .panel(.skip)], []] {
+            let error = refusal(click("t-1", "resume"), clickContext(controls: controls, restoreCard: up))
+            XCTAssertEqual(error?.code, .controlCovered, "\(controls)")
+            XCTAssertEqual(error?.extra["card"], "t-1")
+            XCTAssertEqual(error?.extra["control"], "resume")
+        }
+    }
+
+    func testS38ACulledCardIsCardHiddenOnlyWhenTheControlIsPresent() {
+        XCTAssertEqual(refusal(click("t-1", "resume"), clickContext(frame: culled))?.code, .cardHidden)
+        XCTAssertEqual(refusal(click("t-1", "resume"), clickContext(controls: [.panel(.skip)], frame: culled))?.code, .noSuchControl)
+        XCTAssertEqual(route(click("t-1", "resume"), clickContext()), .click(card: "t-1", control: .panel(.resume)))
     }
 
     // MARK: - messages

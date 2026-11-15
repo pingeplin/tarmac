@@ -50,7 +50,8 @@ final class DevSnapshotTests: XCTestCase {
         theme: DevSnapshot.Theme? = nil,
         restoreCard: RestoreCard? = nil,
         inbox: DevSnapshot.InboxFacts = DevSnapshot.InboxFacts(),
-        hints: [DevSnapshot.Hint] = []
+        hints: [DevSnapshot.Hint] = [],
+        toasts: [String] = []
     ) -> Input {
         Input(
             boardID: "board-0",
@@ -70,7 +71,8 @@ final class DevSnapshotTests: XCTestCase {
             theme: theme ?? DevSnapshot.Theme(choice: .standard, inEffect: .dark, name: "breeze-dark"),
             restoreCard: restoreCard,
             inbox: inbox,
-            hints: hints
+            hints: hints,
+            toasts: toasts
         )
     }
 
@@ -102,7 +104,7 @@ final class DevSnapshotTests: XCTestCase {
             snapshot.keys.sorted(),
             [
                 "active_element", "board_id", "cards", "content_origin", "focused_card", "fonts", "hints", "inbox",
-                "quit_guard", "restore_card", "theme", "v", "viewport", "visibility",
+                "quit_guard", "restore_card", "theme", "toasts", "v", "viewport", "visibility",
             ]
         )
         XCTAssertEqual(snapshot["v"], 1)
@@ -245,14 +247,64 @@ final class DevSnapshotTests: XCTestCase {
 
     // MARK: - 2611.0011 S26 the resume and reopen offers
 
-    func testS26AResumeOfferIsReportedWithWhetherItIsArmed() {
+    private func offer(_ events: [ResumeOffer.Event]) throws -> ResumeOffer {
+        try XCTUnwrap(events.reduce(ResumeOffer.make(cmd: "echo HI")) { ResumeOffer.step($0, $1).offer })
+    }
+
+    func testS26AResumeOfferIsReportedWithWhetherItIsArmed() throws {
         var armed = terminal()
-        armed.resume = DevSnapshot.Resume(cmd: "echo HI", armed: true)
-        XCTAssertEqual(facts(armed)["resume"], ["cmd": "echo HI", "armed": true])
+        armed.resume = DevSnapshot.Resume(offer: try offer([.output(byteCount: 5)]), prime: true)
+        XCTAssertEqual(fields(facts(armed)["resume"])["armed"], true)
         var waiting = terminal()
-        waiting.resume = DevSnapshot.Resume(cmd: "echo HI", armed: false)
-        XCTAssertEqual(facts(waiting)["resume"], ["cmd": "echo HI", "armed": false])
+        waiting.resume = DevSnapshot.Resume(offer: try offer([]), prime: true)
+        XCTAssertEqual(facts(waiting)["resume"], [
+            "cmd": "echo HI", "armed": false, "queued": false, "title": "resume last agent session?",
+            "buttons": ["resume", "skip"],
+        ])
         XCTAssertNil(facts(armed)["reopen"])
+    }
+
+    // MARK: - 2611.0015 S22: the panel, the header chip, the choices and the toasts
+
+    func testS22AQueuedAndAnArmedOfferAreReportedWithTheirPanel() throws {
+        var queued = terminal()
+        queued.resume = DevSnapshot.Resume(offer: try offer([.request]), prime: true)
+        XCTAssertEqual(facts(queued)["resume"], [
+            "cmd": "echo HI", "armed": false, "queued": true, "title": "resumes when the shell is ready",
+            "buttons": ["skip"],
+        ])
+        var armed = terminal()
+        armed.resume = DevSnapshot.Resume(offer: try offer([.output(byteCount: 5)]), prime: true)
+        XCTAssertEqual(facts(armed)["resume"], [
+            "cmd": "echo HI", "armed": true, "queued": false, "title": "resume last agent session?",
+            "buttons": ["⏎ resume", "esc skip"],
+        ])
+    }
+
+    func testS22AHeaderChipIsReportedAsItsCommandAndNoChipHasNoKey() {
+        var chip = terminal()
+        chip.resumeChip = "echo HI"
+        XCTAssertEqual(facts(chip)["resume_chip"], "echo HI")
+        XCTAssertNil(facts(terminal())["resume_chip"])
+    }
+
+    func testS22TheRestoreCardReportsItsChoicesOrNone() throws {
+        func card(resume: String?) throws -> RestoreCard {
+            try XCTUnwrap(RestoreCard.make(plan: BoardRestore.Plan(
+                terms: [BoardRestore.Term(termID: "a", frame: .zero, z: 0, spawn: SpawnRequest(cwd: "/a", succeeds: "A"), resume: resume)],
+                docs: [], droppedDocPaths: []
+            )))
+        }
+        let choices = fields(fields(DevSnapshot.build(input(restoreCard: try card(resume: "echo HI"))))["restore_card"])["choices"]
+        XCTAssertEqual(choices, ["⏎ resume all", "decide per card", "esc skip all"])
+        let none = fields(fields(DevSnapshot.build(input(restoreCard: try card(resume: nil))))["restore_card"])["choices"]
+        XCTAssertEqual(none, .array([]))
+    }
+
+    func testS22TheToastsOnScreenAreListedOldestFirst() {
+        XCTAssertEqual(fields(DevSnapshot.build(input(toasts: [ResumeHeaderChip.copiedToast])))["toasts"], ["resume command copied"])
+        XCTAssertEqual(fields(DevSnapshot.build(input(toasts: ["a", "b"])))["toasts"], ["a", "b"])
+        XCTAssertEqual(fields(DevSnapshot.build(input()))["toasts"], .array([]))
     }
 
     func testS26ADeadCardWithAnOfferIsReportedAsReopen() {
@@ -868,7 +920,7 @@ final class DevSnapshotTests: XCTestCase {
                 + #""hints":[],"inbox":{"badge":"inbox","filter":"all","items":[],"open":false,"selected":null},"#
                 + #""quit_guard":null,"restore_card":null,"#
                 + #""theme":{"available":[],"choice":"dark","findings":[],"folder":"","in_effect":"dark","#
-                + #""name":"breeze-dark","refused":[]},"v":1,"#
+                + #""name":"breeze-dark","refused":[]},"toasts":[],"v":1,"#
                 + #""viewport":{"cx":500,"cy":350,"view_rect":{"h":700,"w":1000,"x":24,"y":40},"zoom":1},"#
                 + #""visibility":"visible"}"#
         )
@@ -884,7 +936,7 @@ final class DevSnapshotTests: XCTestCase {
         let card = try XCTUnwrap(RestoreCard.make(plan: plan))
         XCTAssertEqual(
             fields(DevSnapshot.build(input(restoreCard: card)))["restore_card"],
-            ["lines": ["✓ 1 terminal back in its folder"]]
+            ["lines": ["✓ 1 terminal back in its folder"], "choices": []]
         )
         XCTAssertEqual(fields(DevSnapshot.build(input()))["restore_card"], .null)
     }

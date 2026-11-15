@@ -6,7 +6,7 @@ public enum DeadCardOffer {
         public let cwd: String?
         /// A command `ResumeCommand.check` accepts, or nil.
         public let resume: String?
-        /// The strip's lines: `↻ reopen here  ⏎`, then the folder and the
+        /// The strip's lines: `reopen here  ⏎`, then the folder and the
         /// command when there is one.
         public let lines: [String]
     }
@@ -16,9 +16,9 @@ public enum DeadCardOffer {
         let cwd = record?.lastCwd
         let resume = ResumeCommand.accepted(record?.resume?.cmd)
         guard cwd != nil || resume != nil else { return nil }
-        var lines = ["↻ reopen here  ⏎"]
+        var lines = ["reopen here  ⏎"]
         if let cwd { lines.append("in \(tilde(cwd, home: home))") }
-        if let resume { lines.append("then offers: \(ResumeChip.display(resume))") }
+        if let resume { lines.append("then offers: \(ResumeCommand.display(resume))") }
         return Offer(cwd: cwd, resume: resume, lines: lines)
     }
 

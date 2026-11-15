@@ -94,10 +94,10 @@ extension AppController {
             if let focused { runResume(focused) }
         case .reopenDead:
             if let focused { reopenDead(focused.termID) }
-        case .ignoreRepeat:
+        case .swallow:
             break
-        case .closeRestoreCard:
-            closeRestoreCard()
+        case .restoreCard(let action):
+            chooseOnRestoreCard(action)
         case .toggleInbox:
             toggleInbox()
         case .inboxKey:
@@ -125,7 +125,7 @@ extension AppController {
             ),
             offer: focused.map(keyOffer) ?? .none,
             afterRun: focused?.afterRun ?? false,
-            restoreCard: restoreCard != nil,
+            restoreCard: restoreCard?.choices.map(\.action),
             afterRestoreCard: afterRestoreCard,
             inboxOpen: inboxOpen
         )
@@ -133,7 +133,10 @@ extension AppController {
 
     /// What the terminal with the keys offers, for the key ladder.
     private func keyOffer(_ s: TerminalSession) -> KeyLadder.Offer {
-        if let offer = s.resumeOffer { return offer.armed(prime: isPrime(s, on: activeBoard)) ? .resumeArmed : .resumeIdle }
+        if let offer = s.resumeOffer {
+            if offer.queued { return .resumeQueued }
+            return offer.armed(prime: isPrime(s, on: activeBoard)) ? .resumeArmed : .resumeIdle
+        }
         let dead = activeBoard.view.card(.term(s.termID))?.dead == true
         return dead && s.deadOffer != nil ? .reopen : .none
     }

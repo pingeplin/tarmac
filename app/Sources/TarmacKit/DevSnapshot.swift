@@ -66,11 +66,14 @@ public enum DevSnapshot {
         public var resume: Resume?
         /// The dead card offers to reopen.
         public var reopen: Bool
+        /// 2611.0015: the command the header chip copies, while it shows.
+        public var resumeChip: String?
 
         public init(
             live: Bool, dead: Bool, cols: Int, rows: Int, proc: String?, selection: String?, scrollbackTail: String,
-            resume: Resume? = nil, reopen: Bool = false
+            resume: Resume? = nil, reopen: Bool = false, resumeChip: String? = nil
         ) {
+            self.resumeChip = resumeChip
             self.live = live
             self.dead = dead
             self.cols = cols
@@ -83,14 +86,20 @@ public enum DevSnapshot {
         }
     }
 
+    /// An offer as its card shows it: the panel's own model, so a runner
+    /// checks the copy the user reads.
     public struct Resume: Equatable, Sendable {
-        public var cmd: String
-        public var armed: Bool
+        public var offer: ResumeOffer
+        public var prime: Bool
 
-        public init(cmd: String, armed: Bool) {
-            self.cmd = cmd
-            self.armed = armed
+        public init(offer: ResumeOffer, prime: Bool) {
+            self.offer = offer
+            self.prime = prime
         }
+
+        public var armed: Bool { offer.armed(prime: prime) }
+        public var queued: Bool { offer.queued }
+        public var panel: ResumePanel.Model { ResumePanel.model(offer: offer, prime: prime) }
     }
 
     /// A card's scroll position and the two facts its thumb's showing rests on.
@@ -456,6 +465,8 @@ public enum DevSnapshot {
         public var restoreCard: RestoreCard?
         public var inbox: InboxFacts
         public var hints: [Hint]
+        /// 2611.0015: the titles of the toasts on screen, oldest first.
+        public var toasts: [String]
 
         public init(
             boardID: String,
@@ -472,8 +483,10 @@ public enum DevSnapshot {
             theme: Theme,
             restoreCard: RestoreCard? = nil,
             inbox: InboxFacts = InboxFacts(),
-            hints: [Hint] = []
+            hints: [Hint] = [],
+            toasts: [String] = []
         ) {
+            self.toasts = toasts
             self.boardID = boardID
             self.visibility = visibility
             self.viewport = viewport
@@ -510,8 +523,14 @@ public enum DevSnapshot {
             "quit_guard": input.quitGuard.map(quitGuard) ?? .null,
             "fonts": fonts(input.fonts),
             "theme": theme(input.theme),
-            "restore_card": input.restoreCard.map { ["lines": .array($0.lines.map { .string($0.string) })] } ?? .null,
+            "restore_card": input.restoreCard.map { card in
+                [
+                    "lines": .array(card.lines.map { .string($0.string) }),
+                    "choices": .array(card.choices.map { .string($0.text) }),
+                ]
+            } ?? .null,
             "inbox": inbox(input.inbox),
+            "toasts": .array(input.toasts.map(JSONValue.string)),
             "hints": .array(input.hints.map { hint in
                 [
                     "card": .string(hint.card), "signal": .string(signalName(hint.signal)),
@@ -624,12 +643,17 @@ public enum DevSnapshot {
                 "selection": optional(terminal.selection.flatMap { $0.isEmpty ? nil : $0 }),
                 "scrollback_tail": .string(terminal.scrollbackTail),
             ]
-            // Present only with an offer (2611.0011): a terminal with neither
-            // keeps its six keys.
+            // Present only with an offer (2611.0011) or a chip (2611.0015): a
+            // terminal with none keeps its six keys.
             if let resume = terminal.resume {
-                term["resume"] = ["cmd": .string(resume.cmd), "armed": .bool(resume.armed)]
+                let panel = resume.panel
+                term["resume"] = [
+                    "cmd": .string(panel.command), "armed": .bool(resume.armed), "queued": .bool(resume.queued),
+                    "title": .string(panel.title), "buttons": .array(panel.buttons.map { .string($0.text) }),
+                ]
             }
             if terminal.reopen { term["reopen"] = true }
+            if let chip = terminal.resumeChip { term["resume_chip"] = .string(chip) }
             fields["term"] = .object(term)
         }
         return .object(fields)

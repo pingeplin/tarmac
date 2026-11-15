@@ -31,8 +31,9 @@ public enum KeyLadder {
         /// The focused terminal ran its command by `.runResume`, and no key
         /// that is not a repeat has come since (`afterRun(was:press:action:)`).
         public var afterRun: Bool
-        /// #358: the restore card is up.
-        public var restoreCard: Bool
+        /// #358: the restore card's choices while it is up (2611.0015: none
+        /// on a card with no resume line); nil while it is not.
+        public var restoreCard: [RestoreCard.Choice.Action]?
         /// A key closed the restore card, and no key that is not a repeat has
         /// come since (`afterRestoreCard(was:press:action:)`).
         public var afterRestoreCard: Bool
@@ -42,7 +43,8 @@ public enum KeyLadder {
         public init(
             composing: Bool = false, switcherOpen: Bool = false, keys: Keys = .terminal, editingText: Bool = false,
             hasFlyTarget: Bool = false, esc: EscLadder.Facts = EscLadder.Facts(), offer: Offer = .none,
-            afterRun: Bool = false, restoreCard: Bool = false, afterRestoreCard: Bool = false, inboxOpen: Bool = false
+            afterRun: Bool = false, restoreCard: [RestoreCard.Choice.Action]? = nil, afterRestoreCard: Bool = false,
+            inboxOpen: Bool = false
         ) {
             self.composing = composing
             self.switcherOpen = switcherOpen
@@ -66,6 +68,8 @@ public enum KeyLadder {
         case resumeIdle
         /// A resume offer on the prime card whose shell is up.
         case resumeArmed
+        /// A resume offer that runs at the card's first output (2611.0015 D1).
+        case resumeQueued
         /// A dead card's offer to reopen.
         case reopen
     }
@@ -92,12 +96,14 @@ public enum KeyLadder {
         case runResume
         /// Return on a dead terminal that offers to reopen.
         case reopenDead
-        /// A repeated Return while an offer shows, or just after a run: taken
-        /// and dropped, so a held key acts once.
-        case ignoreRepeat
-        /// Any key but ⌘Q while the restore card is up: it closes the card
-        /// and goes nowhere else.
-        case closeRestoreCard
+        /// A key taken and dropped: a repeat while an offer or the restore
+        /// card shows or just after either acted, so a held key acts once, or
+        /// a Return on a queued offer.
+        case swallow
+        /// A key on the restore card, which closes it and goes nowhere else:
+        /// with choices a plain Return resumes all and a plain Esc skips all;
+        /// any other key but ⌘Q decides per card.
+        case restoreCard(RestoreCard.Choice.Action)
         /// ⌘I.
         case toggleInbox
         /// The open inbox panel owns the key (`InboxKeys`).
@@ -131,10 +137,13 @@ public enum KeyLadder {
     /// A plain Return on a terminal (2611.0011): a repeat is decided first, so
     /// a held key never runs or reopens again (the D10 amendment, RA3).
     private static func offerAction(_ press: KeyPress, _ facts: Facts) -> Action? {
-        if press.isRepeat { return facts.offer != .none || facts.afterRun ? .ignoreRepeat : nil }
+        if press.isRepeat { return facts.offer != .none || facts.afterRun ? .swallow : nil }
         switch facts.offer {
         case .resumeArmed: return .runResume
         case .reopen: return .reopenDead
+        // It means "run it", and it is already queued: passed on, it would
+        // drop the run and give the shell an empty line (2611.0015 D2).
+        case .resumeQueued: return .swallow
         case .none, .resumeIdle: return nil
         }
     }
@@ -150,16 +159,26 @@ public enum KeyLadder {
     /// terminal since it showed. A repeat never closes it, so a key held from
     /// before it showed cannot close it unseen, and the repeats of the key
     /// that closed it are dropped. ⌘Q is the menu's.
+    ///
+    /// With choices (2611.0015 D7), a plain Return resumes all and a plain Esc
+    /// skips all: the card comes before the Esc ladder, so a toast is not
+    /// cleared first. Any other key decides per card.
     private static func restoreCardAction(_ press: KeyPress, _ facts: Facts) -> Action? {
-        guard facts.restoreCard || facts.afterRestoreCard, !press.isCommandChord("q") else { return nil }
-        if press.isRepeat { return .ignoreRepeat }
-        return facts.restoreCard ? .closeRestoreCard : nil
+        guard facts.restoreCard != nil || facts.afterRestoreCard, !press.isCommandChord("q") else { return nil }
+        if press.isRepeat { return .swallow }
+        guard let choices = facts.restoreCard else { return nil }
+        let plain = !press.command && !press.option && !press.control
+        if !choices.isEmpty, plain, press.named == .enter { return .restoreCard(.resumeAll) }
+        if !choices.isEmpty, plain, press.named == .escape { return .restoreCard(.skipAll) }
+        return .restoreCard(.perCard)
     }
 
-    /// The latch after `press` was decided as `action`: set by closing the
-    /// restore card, kept by a repeat, cleared by any other key.
+    /// The latch after `press` was decided as `action`: set by any of the
+    /// restore card's choices, kept by a repeat, cleared by any other key. So
+    /// no repeat of the key that chose reaches a terminal and drops its run.
     public static func afterRestoreCard(was: Bool, press: KeyPress, action: Action) -> Bool {
-        latch(was: was, press: press, setBy: action == .closeRestoreCard)
+        if case .restoreCard = action { return true }
+        return latch(was: was, press: press, setBy: false)
     }
 
     private static func latch(was: Bool, press: KeyPress, setBy: Bool) -> Bool {

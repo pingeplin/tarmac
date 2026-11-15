@@ -28,6 +28,10 @@ final class TerminalSession {
     var sentGrid: TermGrid.Size?
     /// 2611.0011: the command a cold spawn offers to run, until the first key.
     var resumeOffer: ResumeOffer?
+    /// 2611.0015 D11: the daemon's recorded resume command, from the restores
+    /// and the `term_resume` pushes; the header chip copies it. An offer's run
+    /// or skip does not clear it: the daemon's push does.
+    var recordedResume: String?
     /// A dead card's offer to reopen in place, from its board's latest restore.
     var deadOffer: DeadCardOffer.Offer?
     /// `KeyLadder.afterRun`'s latch for this terminal.
@@ -204,7 +208,7 @@ final class AppController {
         // ⌘K switcher: a row click opens that board; a veil click dismisses.
         rootView.boardSwitcher.onPickRow = { [weak self] index in self?.switcherPickRow(index) }
         rootView.boardSwitcher.onDismiss = { [weak self] in self?.closeSwitcher() }
-        rootView.restoreCard.onDismiss = { [weak self] in self?.closeRestoreCard() }
+        rootView.restoreCard.onChoice = { [weak self] in self?.chooseOnRestoreCard($0) }
         rootView.inboxPanel.onPick = { [weak self] id in self?.jump(to: id) }
         rootView.inboxPanel.onFilter = { [weak self] filter in self?.setInboxFilter(filter) }
         rootView.inboxPanel.onClearRead = { [weak self] in self?.clearReadInbox() }

@@ -123,15 +123,55 @@ extension AppController {
 
     /// Feeds `event` to `s`'s resume offer, performs its effect, and shows
     /// what is left of it. A run goes as typed input, which the daemon takes
-    /// as the first key that drops the record (D6).
+    /// as the first key that drops the record (D6). A skip sends no byte, so
+    /// it asks the daemon to drop the record (2611.0015 D4).
     func stepResume(_ s: TerminalSession, _ event: ResumeOffer.Event) {
         let (offer, effect) = ResumeOffer.step(s.resumeOffer, event)
         let changed = offer != s.resumeOffer
         s.resumeOffer = offer
-        if case .run(let bytes)? = effect {
-            client.input(termID: s.termID, bytes: bytes, typed: true)
+        switch effect {
+        case .run(let bytes)?: client.input(termID: s.termID, bytes: bytes, typed: true)
+        case .skip?: client.send(.resume(termID: s.termID, cmd: nil))
+        case nil: break
         }
         if changed, let (_, board) = anySession(s.termID) { refreshOffer(s, on: board) }
+    }
+
+    /// A click on a panel's button (2611.0015 D3, O10): `resume` selects its
+    /// card, which makes it prime, then requests the run; `skip` leaves the
+    /// selection. Neither moves the viewport.
+    private func choose(_ choice: ResumePanel.Choice, for termID: String) {
+        guard let (s, _) = anySession(termID) else { return }
+        switch choice {
+        case .resume:
+            select(.term(termID))
+            stepResume(s, .request)
+        case .skip:
+            stepResume(s, .skip)
+        }
+    }
+
+    // MARK: - The resume chip (2611.0015)
+
+    /// Keeps `cmd` as `s`'s recorded command and shows it on the header chip.
+    func setRecordedResume(_ s: TerminalSession, _ cmd: String?, on board: Board) {
+        s.recordedResume = cmd
+        refreshOffer(s, on: board)
+    }
+
+    /// The chip only copies: it never runs anything, and the keys stay where
+    /// they were.
+    private func copyResumeCommand(_ cmd: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(cmd, forType: .string)
+        rootView.toasts.show(title: ResumeHeaderChip.copiedToast, bodyLines: [])
+    }
+
+    /// A `term_resume` push (2611.0015 D10): a term on no built board is
+    /// dropped, and that board's first restore carries its record.
+    func handleTermResume(termID: String, cmd: String?) {
+        guard let (s, board) = anySession(termID) else { return }
+        setRecordedResume(s, ResumeCommand.accepted(cmd), on: board)
     }
 
     /// Return on the focused terminal's armed offer (`.runResume`).
@@ -143,13 +183,20 @@ extension AppController {
         board.hasLivePrime && board.primeTermID == s.termID
     }
 
-    /// Shows `s`'s offer on its card: the resume chip, a dead card's reopen
-    /// strip, or nothing.
+    /// Shows what `s`'s card offers: the resume panel, a dead card's reopen
+    /// strip, or nothing, and the header's `resume` chip.
     func refreshOffer(_ s: TerminalSession, on board: Board) {
         guard let card = board.view.card(.term(s.termID)) else { return }
+        let chip = ResumeHeaderChip.model(cmd: s.recordedResume, dead: card.dead)
+        card.header.setResumeChip(chip) { [weak self] in
+            guard let chip else { return }
+            self?.copyResumeCommand(chip.toolTip)
+        }
         if let offer = s.resumeOffer {
-            let model = ResumeChip.model(offer: offer, prime: isPrime(s, on: board))
-            card.setOffer(lines: [model.text], toolTip: model.toolTip)
+            let termID = s.termID
+            card.setOffer(panel: ResumePanel.model(offer: offer, prime: isPrime(s, on: board))) { [weak self] choice in
+                self?.choose(choice, for: termID)
+            }
         } else if card.dead, let offer = s.deadOffer {
             let termID = s.termID
             card.setOffer(lines: offer.lines, onPress: { [weak self] in self?.reopenDead(termID) })
@@ -176,7 +223,7 @@ extension AppController {
     /// folder that succeeds it, offering its resume command. Nothing is sent
     /// for the dead id: the spawn's `succeeds` moves its record. The new card
     /// takes the keys before the next key event, so a repeat of the same
-    /// Return meets its facts (`.ignoreRepeat`).
+    /// Return meets its facts (`.swallow`).
     func reopenDead(_ termID: String) {
         let board = activeBoard
         guard let s = board.sessions[termID], let offer = s.deadOffer,
@@ -186,6 +233,7 @@ extension AppController {
         removeTerminalCard(termID, on: board)
         board.termRecords[termID] = nil
         let fresh = addTerminal(BootTerminal.mint(), frame: frame, spawn: reopen.spawn, resume: reopen.resume, on: board)
+        setRecordedResume(fresh, reopen.resume, on: board)
         board.view.select(.term(fresh.termID))
         setPrime(fresh.termID)
         spawnPending(on: board)

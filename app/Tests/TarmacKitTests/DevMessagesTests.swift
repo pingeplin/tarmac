@@ -93,6 +93,29 @@ final class DevMessagesTests: XCTestCase {
         assertParity(.board(boardID: nil), "81 a1 74 a5 62 6f 61 72 64")
     }
 
+    /// 2611.0015 S33: the restore card is the absent `card`, with no sentinel.
+    func testS33ClickVerb() {
+        // DevRequest::Click { card: Some("t-1"), control: "resume" }
+        assertParity(
+            .click(card: "t-1", control: "resume"),
+            """
+            83 a1 74 a5 63 6c 69 63 6b a4 63 61 72 64 a3 74 2d 31 a7 63 6f 6e 74 72
+            6f 6c a6 72 65 73 75 6d 65
+            """
+        )
+        // DevRequest::Click { card: None, control: "resume_all" }
+        assertParity(
+            .click(card: nil, control: "resume_all"),
+            "82 a1 74 a5 63 6c 69 63 6b a7 63 6f 6e 74 72 6f 6c aa 72 65 73 75 6d 65 5f 61 6c 6c"
+        )
+    }
+
+    func testS33AClickWithNoControlIsMalformed() {
+        XCTAssertThrowsError(try DevRequest.decode(.map(["t": .string("click"), "card": .string("t-1")]))) { error in
+            XCTAssertEqual(error as? MessageError, .missingField("control"))
+        }
+    }
+
     func testCardInputVerbs() {
         // DevRequest::Type { card: "t-1", text: "a\nb" }
         assertParity(

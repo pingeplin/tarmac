@@ -62,6 +62,13 @@ pub enum DevRequest {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         board_id: Option<String>,
     },
+    /// Spec 2611.0015: click a named control of a card, or of the restore card
+    /// when `card` is absent. The app owns the set of names.
+    Click {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        card: Option<String>,
+        control: String,
+    },
     /// Decoding an unknown verb to a value rather than an error lets the app
     /// answer "unsupported" instead of dropping the frame.
     #[serde(other)]
@@ -156,6 +163,8 @@ mod tests {
             DevRequest::Key { card: "t-1".into(), combo: "ctrl+c".into() },
             DevRequest::Board { board_id: Some("board-1".into()) },
             DevRequest::Board { board_id: None },
+            DevRequest::Click { card: Some("t-1".into()), control: "resume".into() },
+            DevRequest::Click { card: None, control: "resume_all".into() },
         ];
         for req in all {
             assert_eq!(roundtrip(&req), req, "roundtrip changed {req:?}");
@@ -292,6 +301,33 @@ mod tests {
             hex(&encode_request(&DevRequest::Board { board_id: Some("board-1".into()) }).unwrap()),
             "82 a1 74 a5 62 6f 61 72 64 a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 31"
         );
+    }
+
+    /// Spec 2611.0015 S33: `click` is tagged `click`, the restore card is an
+    /// absent `card`, and these are the bytes `DevMessagesTests` pins.
+    #[test]
+    fn click_bytes_are_what_the_swift_codec_is_pinned_to() {
+        let on_card = encode_request(&DevRequest::Click { card: Some("t-1".into()), control: "resume".into() }).unwrap();
+        assert_eq!(rmp_serde::from_slice::<Tag>(&on_card).unwrap().t, "click");
+        assert_eq!(
+            hex(&on_card),
+            "83 a1 74 a5 63 6c 69 63 6b a4 63 61 72 64 a3 74 2d 31 a7 63 6f 6e 74 72 6f 6c a6 72 65 73 75 6d 65"
+        );
+        let restore = encode_request(&DevRequest::Click { card: None, control: "resume_all".into() }).unwrap();
+        let keys: std::collections::BTreeMap<String, serde::de::IgnoredAny> = rmp_serde::from_slice(&restore).unwrap();
+        assert_eq!(keys.keys().cloned().collect::<Vec<_>>(), ["control", "t"]);
+        assert_eq!(
+            hex(&restore),
+            "82 a1 74 a5 63 6c 69 63 6b a7 63 6f 6e 74 72 6f 6c aa 72 65 73 75 6d 65 5f 61 6c 6c"
+        );
+    }
+
+    #[test]
+    fn a_click_with_no_control_does_not_decode() {
+        #[derive(serde::Serialize)]
+        struct Bare { t: &'static str, card: &'static str }
+        let bytes = rmp_serde::to_vec_named(&Bare { t: "click", card: "t-1" }).unwrap();
+        assert!(decode_request(&bytes).is_err());
     }
 
     /// Additive-only holds for `press` too.

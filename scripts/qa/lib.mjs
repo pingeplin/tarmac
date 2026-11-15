@@ -209,8 +209,9 @@ export function runner(prog) {
 }
 
 /** The suite's entry conditions: a debug CLI, a listening driver, a live
- *  terminal on the active board. Returns that terminal's id and the board. */
-export function preflight(run) {
+ *  terminal on the active board. Returns that terminal's id and the board.
+ *  `keepRestoreCard` leaves a restore card up, for a case that reads it. */
+export function preflight(run, { keepRestoreCard = false } = {}) {
   if (!existsSync(CLI)) {
     run.die(`no debug CLI at ${CLI} — run \`make core\` first`);
   }
@@ -233,11 +234,13 @@ export function preflight(run) {
     run.die("no live terminal card on the active board — open one and re-run");
   }
   console.log(`board ${snap.board_id} · terminal ${term.id} · visibility ${snap.visibility}`);
-  if (snap.restore_card) {
+  if (snap.restore_card && !keepRestoreCard) {
     // A cold launch's restore card (#358) takes the first key of any scenario.
-    // `press` goes through the key ladder, as a typed key does.
-    console.log("closing the restore card with escape");
-    dev("press", "escape");
+    // `press` goes through the key ladder, as a typed key does. Not Esc: with
+    // a resume line that is `skip all`, which deletes records (2611.0015 D7);
+    // Tab is `decide per card`, or a plain close.
+    console.log("closing the restore card with tab");
+    dev("press", "tab");
     if (dev("snapshot", "--until", "restore_card == null").code !== 0) run.die("the restore card did not close");
   }
   if (snap.visibility !== "visible") {
