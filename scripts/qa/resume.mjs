@@ -41,18 +41,14 @@ import {
   runner,
   sleep,
   snapshot,
+  termCard,
   typeAll,
   waitFor,
   waitGone,
 } from "./lib.mjs";
 
 const run = runner("make qa-resume");
-const CASES = [
-  "reopen", "restore-setup", "resume-all", "resume-all-click", "per-card", "per-card-click", "veil", "skip-all",
-  "skip-all-click", "quit",
-];
 const CASE = process.env.CASE || "reopen";
-if (!CASES.includes(CASE)) run.die(`unknown CASE=${CASE}; expected one of ${CASES.join(", ")}`);
 
 /** Its output, `RESUMED`, is not in its own text: a line that is exactly
  *  `RESUMED` proves the command ran, which the echoed command line cannot. */
@@ -62,8 +58,8 @@ const COPIED = "resume command copied";
 
 const state = () => JSON.parse(readFileSync(STATE, "utf8"));
 const records = (boardId) => state().boards.find((b) => b.board_id === boardId)?.term_records ?? {};
-const card = (snap, id) => snap.cards.find((c) => c.id === id);
-const term = (snap, id) => card(snap, id)?.term;
+const term = (snap, id) => termCard(snap, id)?.term;
+const eqJson = (actual, expected, what) => eq(JSON.stringify(actual), JSON.stringify(expected), what);
 const resumed = (snap, id) =>
   (term(snap, id)?.scrollback_tail ?? "").split("\n").filter((l) => l.trimEnd() === "RESUMED").length;
 const terminals = (snap) => snap.cards.filter((c) => c.kind === "term").map((c) => c.id);
@@ -84,7 +80,21 @@ const settled = (what, boundMs, holds) => until(what, boundMs, () => {
   const s = snapshot();
   return holds(s) ? s : null;
 });
-const chipGone = (id) => settled(`${id}'s resume_chip gone`, 2000, (s) => term(s, id)?.resume_chip === undefined);
+const chipsGone = (ids) =>
+  settled(`the resume_chip of ${ids.join(", ")} gone`, 2000, (s) => ids.every((id) => term(s, id)?.resume_chip === undefined));
+
+/** Each terminal's scrollback, once it has not changed for a second. */
+async function steadyTails() {
+  let last;
+  let since = 0;
+  const tails = await until("the scrollback holds still for 1000 ms", 10000, () => {
+    const s = snapshot();
+    const now = JSON.stringify(Object.fromEntries(terminals(s).map((id) => [id, term(s, id).scrollback_tail])));
+    if (now !== last) [last, since] = [now, Date.now()];
+    return Date.now() - since >= 1000 ? now : null;
+  });
+  return JSON.parse(tails);
+}
 
 /** The dev daemon's pids, from the socket alone. */
 function daemonPids() {
@@ -178,7 +188,7 @@ async function panelClicks(boardId, resumeID, skipID) {
     eq(body.active_element.card, resumeID, "the card has the keys");
     const snap = waitFor(resumeID, `cards[${resumeID}].term.scrollback_tail contains "RESUMED"`, "--timeout", "5000");
     eq(resumed(snap, resumeID), 1, "lines that are exactly RESUMED");
-    eq(JSON.stringify(snap.viewport), JSON.stringify(before.viewport), "viewport");
+    eqJson(snap.viewport, before.viewport, "viewport");
   });
 
   await run.checkAsync(`click ${skipID} skip: the selection stays, the panel, the chip and the record go (S26)`, async () => {
@@ -186,7 +196,7 @@ async function panelClicks(boardId, resumeID, skipID) {
     eq(code, 0, "click exit");
     eq(body.focused_card, resumeID, "the selection is the resume click's card (O10)");
     eq(term(snapshot(), skipID).resume, undefined, "the panel is gone");
-    await chipGone(skipID);
+    await chipsGone([skipID]);
     await until(`no resume for ${skipID} in state.json`, 2000, () => records(boardId)[skipID]?.resume === undefined);
   });
 }
@@ -224,12 +234,11 @@ async function reopen() {
     pointer("focus", id);
     eq(dev("key", id, "enter").code, 0, `key ${id} enter`);
     const known = new Set([...fresh.values()]);
-    const snap = await until(`a reopened card in ${id}'s place`, 5000, () => {
+    const { snap, added } = await until(`a reopened card in ${id}'s place`, 5000, () => {
       const s = snapshot();
-      const added = s.cards.find((c) => c.term?.resume?.cmd === CMD && !known.has(c.id) && !ids.includes(c.id));
-      return s.cards.every((c) => c.id !== id) && added ? s : null;
+      const found = s.cards.find((c) => c.term?.resume?.cmd === CMD && !known.has(c.id) && !ids.includes(c.id));
+      return s.cards.every((c) => c.id !== id) && found ? { snap: s, added: found.id } : null;
     });
-    const added = snap.cards.find((c) => c.term?.resume?.cmd === CMD && !known.has(c.id) && !ids.includes(c.id)).id;
     fresh.set(id, added);
     eq(snap.focused_card, added, "the reopened card is selected");
     return added;
@@ -246,12 +255,12 @@ async function reopen() {
 
   await run.checkAsync("Return on A″'s armed panel runs the command once; the chip goes (S30, 2611.0011 S37)", async () => {
     waitFor(a2, `cards[${a2}].term.resume.armed == true`, "--timeout", "10000");
-    eq(JSON.stringify(term(snapshot(), a2).resume.buttons), JSON.stringify(["⏎ resume", "esc skip"]), "prime buttons");
+    eqJson(term(snapshot(), a2).resume.buttons, ["⏎ resume", "esc skip"], "prime buttons");
     eq(dev("key", a2, "enter").code, 0, "key enter");
     const snap = waitFor(a2, `cards[${a2}].term.scrollback_tail contains "RESUMED"`, "--timeout", "5000");
     eq(resumed(snap, a2), 1, "lines that are exactly RESUMED");
     eq(term(snap, a2).resume, undefined, "the panel is gone");
-    await chipGone(a2);
+    await chipsGone([a2]);
   });
 
   await run.checkAsync("A″ is in its folder, and state.json has no entry under A's dead id", async () => {
@@ -304,15 +313,16 @@ async function reopen() {
   await run.checkAsync("`tarmac resume clear` in A″ takes the chip away (S29)", async () => {
     pointer("focus", a2);
     typeAll(a2, `'${CLI}' resume clear\n`);
-    await chipGone(a2);
+    await chipsGone([a2]);
   });
 
   await run.checkAsync("click refuses a bad name, an absent control, no restore card and a doc (S40)", async () => {
-    const before = JSON.stringify(snapshot().cards.map((c) => [c.id, c.term?.resume, c.term?.resume_chip]));
+    const offers = () => snapshot().cards.map((c) => [c.id, c.term?.resume, c.term?.resume_chip]);
+    const before = offers();
     let r = click(a2, "nonsense");
     eq(r.code, 1, "nonsense exit");
     eq(r.body.error, "bad_request", "nonsense error");
-    eq(JSON.stringify(snapshot().cards.map((c) => [c.id, c.term?.resume, c.term?.resume_chip])), before, "nothing changed");
+    eqJson(offers(), before, "nothing changed");
     r = click(a2, "resume");
     eq(r.code, 1, "absent exit");
     eq(r.body.error, "no_such_control", "absent error");
@@ -379,10 +389,8 @@ function restoreCardUp() {
   const offers = snap.cards.filter((c) => c.term?.resume?.cmd === CMD).map((c) => c.id);
   const plain = terminals(snap).filter((id) => !offers.includes(id));
   run.check("the restore card reads its lines and its choices (S25)", () => {
-    eq(JSON.stringify(snap.restore_card.lines), JSON.stringify([
-      "✓ 3 terminals back in their folders", "2 with an agent session to resume",
-    ]), "lines");
-    eq(JSON.stringify(snap.restore_card.choices), JSON.stringify(CHOICES), "choices");
+    eqJson(snap.restore_card.lines, ["✓ 3 terminals back in their folders", "2 with an agent session to resume"], "lines");
+    eqJson(snap.restore_card.choices, CHOICES, "choices");
     eq(offers.length, 2, "cards that offer the command");
   });
   return { boardId, offers, plain };
@@ -397,19 +405,20 @@ async function resumeAll(choose) {
       const snap = waitFor(id, `cards[${id}].term.scrollback_tail contains "RESUMED"`, "--timeout", "10000");
       eq(resumed(snap, id), 1, `RESUMED lines in ${id}`);
     }
-    for (const id of plain) eq(resumed(snapshot(), id), 0, `RESUMED lines in ${id}`);
+    const snap = snapshot();
+    for (const id of plain) eq(resumed(snap, id), 0, `RESUMED lines in ${id}`);
     await until("no resume in state.json", 2000, () => offers.every((id) => records(boardId)[id]?.resume === undefined));
-    for (const id of offers) await chipGone(id);
+    await chipsGone(offers);
   });
 }
 
 async function perCard(choose) {
   const { boardId, offers } = restoreCardUp();
   await run.checkAsync("decide per card: the card closes, no terminal gets a byte, both panels show (S26)", async () => {
-    await sleep(1000);
-    const tails = Object.fromEntries(terminals(snapshot()).map((id) => [id, term(snapshot(), id).scrollback_tail]));
+    const tails = await steadyTails();
     choose();
     waitFor(null, "restore_card == null", "--timeout", "2000");
+    // Nothing to wait for: the check is that no byte arrives.
     await sleep(500);
     const snap = snapshot();
     for (const [id, tail] of Object.entries(tails)) eq(term(snap, id).scrollback_tail, tail, `${id}'s scrollback`);
@@ -421,10 +430,10 @@ async function perCard(choose) {
     const prime = snap.active_element.card;
     const other = offers.find((id) => id !== prime);
     if (offers.includes(prime)) {
-      waitFor(prime, `cards[${prime}].term.resume.armed == true`, "--timeout", "10000");
-      eq(JSON.stringify(term(snapshot(), prime).resume.buttons), JSON.stringify(["⏎ resume", "esc skip"]), "prime buttons");
+      const armed = waitFor(prime, `cards[${prime}].term.resume.armed == true`, "--timeout", "10000");
+      eqJson(term(armed, prime).resume.buttons, ["⏎ resume", "esc skip"], "prime buttons");
     }
-    eq(JSON.stringify(term(snapshot(), other).resume.buttons), JSON.stringify(["resume", "skip"]), "other buttons");
+    eqJson(term(snapshot(), other).resume.buttons, ["resume", "skip"], "other buttons");
   });
   if (CASE === "per-card") {
     const prime = snapshot().active_element.card;
@@ -440,16 +449,18 @@ async function skipAll(choose) {
     choose();
     waitFor(null, "restore_card == null", "--timeout", "2000");
     await until("no resume in state.json", 2000, () => offers.every((id) => records(boardId)[id]?.resume === undefined));
-    for (const id of offers) await chipGone(id);
+    await chipsGone(offers);
     await sleep(2000);
-    for (const id of offers) eq(resumed(snapshot(), id), 0, `RESUMED lines in ${id}`);
+    const snap = snapshot();
+    for (const id of offers) eq(resumed(snap, id), 0, `RESUMED lines in ${id}`);
   });
 }
 
 async function quitWithChoicesUp() {
   const { boardId, offers } = restoreCardUp();
   await run.checkAsync("⌘Q with the choices up quits; nothing ran, the records stay (S32)", async () => {
-    for (const id of offers) eq(resumed(snapshot(), id), 0, `RESUMED lines in ${id}`);
+    const snap = snapshot();
+    for (const id of offers) eq(resumed(snap, id), 0, `RESUMED lines in ${id}`);
     await quitByDoubleTap();
     eq(offers.every((id) => records(boardId)[id]?.resume?.cmd === CMD), true, "both commands in state.json");
   });
@@ -467,6 +478,8 @@ const cases = {
   "skip-all-click": () => skipAll(() => eq(click("restore_card", "skip_all").code, 0, "click skip_all")),
   quit: quitWithChoicesUp,
 };
+const CASES = Object.keys(cases);
+if (!CASES.includes(CASE)) run.die(`unknown CASE=${CASE}; expected one of ${CASES.join(", ")}`);
 
 try {
   await cases[CASE]();

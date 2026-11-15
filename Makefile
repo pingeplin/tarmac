@@ -97,7 +97,7 @@ qa: core
 
 # The ⌘Q guard's QUITTING scenarios (spec 2609.0018): one CASE per run, and
 # each ends the app, so `make run` again between cases.
-CASE ?= hold
+qa-quit: CASE ?= hold
 qa-quit: core
 	$(DEV_ENV) \
 	CASE="$(CASE)" \
@@ -105,11 +105,11 @@ qa-quit: core
 
 # Resume after a restart (spec 2611.0011 S37, 2611.0015 D15): it kills the dev
 # daemon by the pid that holds its socket, so every dev terminal ends; `make run`
-# again after. One CASE per run. `qa-quit`'s `CASE ?= hold` above is global, so
-# a CASE that only that default set (origin `file`) means none was given here.
+# again after. One CASE per run.
+qa-resume: CASE ?= reopen
 qa-resume: core
 	$(DEV_ENV) \
-	CASE="$(if $(filter file,$(origin CASE)),reopen,$(CASE))" \
+	CASE="$(CASE)" \
 	node $(ROOT)/scripts/qa/resume.mjs
 
 # Kill the dev tarmacd for this worktree (same socket path as `make run`).
