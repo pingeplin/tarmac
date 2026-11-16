@@ -287,6 +287,18 @@ mod tests {
     // 2611.0013 S14
     #[test]
     fn s14_elsewhere_gives_each_reported_term_not_shown_sorted_by_term_id() {
+        let mut reports = Reports::default();
+        reports.report("u", Kind::Done, None, 2000, AGENT, None, on_board("board-2", "/u"));
+        reports.report("t", Kind::Blocked, None, 1000, AGENT, None, on_board("board-1", "/t"));
+        let t = report_frame("t", "blocked", None, 1000, None, false, on_board("board-1", "/t"));
+        let u = report_frame("u", "done", None, 2000, None, false, on_board("board-2", "/u"));
+
+        assert_eq!(reports.elsewhere(&["u".into(), "a".into()]), vec![t.clone()]);
+        assert_eq!(reports.elsewhere(&[]), vec![t, u]);
+    }
+
+    #[test]
+    fn restore_frames_give_the_snapshot_then_the_elsewhere_frames_only_when_asked() {
         // Eight terms elsewhere: an order by chance is one in 40320.
         let elsewhere = ["s", "u", "p", "x", "q", "w", "r", "v"];
         let mut reports = Reports::default();
