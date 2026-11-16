@@ -9,6 +9,8 @@ use daemon::{DAEMON_WAIT, DaemonInfo, NoHandshake, answer, connect, handshake, l
 mod agents;
 mod daemon;
 mod events;
+#[cfg(test)]
+mod fixtures;
 mod help;
 mod hooks;
 mod push;

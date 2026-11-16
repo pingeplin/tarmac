@@ -188,16 +188,12 @@ mod tests {
         assert!(!settled(Some(at(400)), settle, at(600)), "a later change starts the settle again");
     }
 
-    fn line(s: Sample) -> String {
-        s.line()
-    }
-
     fn a() -> String {
-        line(Sample::Present { dev: 1, ino: 2, mtime_ns: -3, size: 4 })
+        Sample::Present { dev: 1, ino: 2, mtime_ns: -3, size: 4 }.line()
     }
 
     fn b() -> String {
-        line(Sample::Present { dev: 1, ino: 2, mtime_ns: 5, size: 4 })
+        Sample::Present { dev: 1, ino: 2, mtime_ns: 5, size: 4 }.line()
     }
 
     const DENIED: &str = "error cannot stat /x: denied";
@@ -240,15 +236,15 @@ mod tests {
             Sample::Present { dev: 1, ino: 2, mtime_ns: -3, size: 9 },
             Sample::Missing,
         ] {
-            assert_ne!(base, line(other));
+            assert_ne!(base, other.line());
         }
-        assert_eq!(line(Sample::Missing), MISSING);
+        assert_eq!(Sample::Missing.line(), MISSING);
     }
 
     #[test]
     fn the_first_sample_is_the_base_and_a_different_one_ends_the_wait() {
         assert_eq!(watch(&told(vec![a(), a(), b()]), None, within(2000)), Outcome::Done(Some(json!({ "deleted": false }))));
-        assert_eq!(watch(&told(vec![a(), line(Sample::Missing)]), None, within(2000)), Outcome::Done(Some(json!({ "deleted": true }))));
+        assert_eq!(watch(&told(vec![a(), Sample::Missing.line()]), None, within(2000)), Outcome::Done(Some(json!({ "deleted": true }))));
     }
 
     #[test]

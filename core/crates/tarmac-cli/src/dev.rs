@@ -241,11 +241,11 @@ fn exchange(req: &DevRequest) -> Result<proto::dev::DevReply, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fixtures::args;
     use proto::dev::DevRequest;
 
-    fn parse(args: &[&str]) -> Result<DevRequest, String> {
-        let owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-        parse_verb(&owned)
+    fn parse(a: &[&str]) -> Result<DevRequest, String> {
+        parse_verb(&args(a))
     }
 
     #[track_caller]

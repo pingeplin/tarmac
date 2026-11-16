@@ -196,10 +196,7 @@ fn payload(path: &str, value: String, limit: usize) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn args(list: &[&str]) -> Vec<String> {
-        list.iter().map(|s| s.to_string()).collect()
-    }
+    use crate::fixtures::args;
 
     fn read_all(input: &[u8], limit: usize) -> Vec<Line> {
         Lines::new(input, limit).map(Result::unwrap).collect()

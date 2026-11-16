@@ -59,6 +59,15 @@ pub fn assert_no_answer(out: &Report, started: Instant) {
     assert!(started.elapsed() >= Duration::from_secs(5), "gave up after {:?}", started.elapsed());
 }
 
+/// Runs `tarmac <args>` against a daemon that never answers, and asserts the
+/// no-answer line.
+#[track_caller]
+pub fn assert_never_answered(args: &[&str]) {
+    let daemon = Streamer::holding(vec![]);
+    let started = Instant::now();
+    assert_no_answer(&daemon.run(args), started);
+}
+
 /// What a `OneAnswer` double does with the frame after the hello.
 pub enum Answer {
     Reply(Msg),
@@ -162,6 +171,11 @@ impl Streamer {
     /// Writes `frames`, then closes.
     pub fn writing(frames: Vec<Msg>) -> Self {
         Streamer::start(frames.into_iter().map(Step::Write).collect(), Then::Close)
+    }
+
+    /// Writes `frames`, then holds the connection open.
+    pub fn holding(frames: Vec<Msg>) -> Self {
+        Streamer::start(frames.into_iter().map(Step::Write).collect(), Then::Hold)
     }
 
     pub fn run(&self, args: &[&str]) -> Report {
