@@ -399,6 +399,8 @@ fn an_open_from_a_terminal_the_daemon_does_not_have_names_no_owner_and_keeps_the
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     app.spawn_term("t1", &["/bin/cat"]);
+    // The opens are on other connections: the daemon must have t1 first.
+    app.echo_marker("t1", "up");
     let owned = write_doc(&daemon.dir.join("d/owned.md"), "a\n");
     let fresh = write_doc(&daemon.dir.join("d/fresh.md"), "b\n");
     let cli_open_as = |term_id: &str, path: &str| {

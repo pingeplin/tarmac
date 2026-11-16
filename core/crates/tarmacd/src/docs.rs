@@ -38,8 +38,8 @@ pub fn derive_repo(doc: &Path) -> Option<RepoInfo> {
 
 
 // Single code path for CLI ("cli") and app ("user") opens. `term_id` is the
-// calling terminal card, None when unknown or not live. The doc lands on `board_id`, else
-// the board owning the calling term, else the active board.
+// calling terminal card, None when unknown or not live. The doc lands on
+// `board_id`, else the board owning the calling term, else the active board.
 pub async fn handle_open(
     daemon: &Arc<Daemon>,
     raw_path: &str,

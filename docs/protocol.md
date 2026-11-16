@@ -365,7 +365,9 @@ entry and surfaces it via the doc entry's `term_id` (above) in `doc_opened` and
 
 A `term_id` that names no live terminal of the daemon is taken as nil: it names
 no board, a new doc gets no owner, and a doc that is open keeps the owner it has
-(#386). A stale `TARMAC_TERM_ID` gives such an id.
+(#386). A stale `TARMAC_TERM_ID` gives such an id. Live means a pty the daemon
+runs now: the id of a dead card, which `term_records` still has, does not count,
+so a process that outlived its terminal opens a doc with no owner.
 
 ### Doc entry (extended)
 
