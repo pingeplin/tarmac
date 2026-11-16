@@ -3,7 +3,7 @@
 //! `tarmac dev` still exits 1 with "driver unavailable": the verb is recognised,
 //! just not advertised to someone who can never run it.
 
-use crate::skill;
+use crate::agents;
 
 #[cfg(debug_assertions)]
 const DEV_SOCKET: &str = " The dev driver's socket sits beside it as\ntarmac-dev.sock; override with TARMAC_DEV_SOCKET.";
@@ -218,5 +218,5 @@ EXIT STATUS:
 pub fn text() -> String {
     let head = HELP_HEAD_FMT.replace("{DEV_USAGE}", DEV_USAGE).replace("{DEV_HELP}", DEV_HELP);
     let tail = HELP_TAIL_FMT.replace("{DEV_SOCKET}", DEV_SOCKET);
-    format!("{head}{}{tail}", skill::USAGE)
+    format!("{head}{}{tail}", agents::FLAGS_USAGE)
 }

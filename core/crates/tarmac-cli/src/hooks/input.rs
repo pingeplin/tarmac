@@ -6,7 +6,7 @@ use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use tarmac_protocol::{Msg, REPORT_TEXT_MAX, cap_report_text};
 
-use crate::report;
+use crate::daemon::{NoAnswer, send_acked};
 
 const HOOK_STDIN_MAX: usize = 4 << 20;
 const HOOK_STDIN_WAIT: Duration = Duration::from_secs(1);
@@ -41,7 +41,7 @@ fn hook(args: &[String]) -> Result<(), String> {
         serde_json::from_slice(&read_input()?).map_err(|e| format!("the input is not a JSON object: {e}"))?;
     let Some(msg) = claude_message(&term_id.to_string_lossy(), &input)? else { return Ok(()) };
     let no_answer = format!("no answer from the daemon in {} ms", HOOK_DEADLINE.as_millis());
-    report::send(&msg, HOOK_DEADLINE, report::NoAnswer::Anywhere(&no_answer))
+    send_acked(&msg, HOOK_DEADLINE, NoAnswer::Anywhere(&no_answer))
 }
 
 /// Stdin, read on a thread of its own so that a writer that never closes it

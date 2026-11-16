@@ -87,6 +87,11 @@ pub(crate) fn no_answer(why: &str) -> String {
     format!("no answer from the daemon in {} s ({why})", DAEMON_WAIT.as_secs())
 }
 
+/// `no_answer` for a verb whose request only a daemon that predates it leaves unanswered.
+pub(crate) fn no_answer_older() -> String {
+    no_answer("an older daemon")
+}
+
 /// The `hello_ok` fields; `open` needs only the reply, `--version` renders all.
 pub(crate) struct DaemonInfo {
     pub(crate) daemon_version: Option<String>,
@@ -152,4 +157,47 @@ pub(crate) fn connect_until(until: Instant, failed: &dyn Fn(io::Error) -> String
         NoHandshake::Reason(why) => why,
     })?;
     Ok(stream)
+}
+
+/// The rest of a verb that speaks for the calling terminal, `report` or
+/// `resume`, once its arguments passed: `msg` for the terminal named by
+/// `TARMAC_TERM_ID`, sent and answered. Exit 1, with `needs_term` or the
+/// daemon's answer on stderr, when it fails.
+pub(crate) fn for_terminal(needs_term: &str, msg: impl FnOnce(String) -> Msg) -> i32 {
+    let Some(term_id) = crate::env_override("TARMAC_TERM_ID") else {
+        eprintln!("tarmac: {needs_term}");
+        return 1;
+    };
+    let msg = msg(term_id.to_string_lossy().into_owned());
+    match send_acked(&msg, DAEMON_WAIT, NoAnswer::AfterHandshake(&no_answer_older())) {
+        Ok(()) => 0,
+        Err(why) => {
+            eprintln!("tarmac: {why}");
+            1
+        }
+    }
+}
+
+/// The line for a daemon that does not answer in time, and the time-outs it
+/// stands for.
+pub(crate) enum NoAnswer<'a> {
+    /// A time-out after the handshake only; one in the handshake is a lost
+    /// connection, as `tarmac report` has always said.
+    AfterHandshake(&'a str),
+    /// A time-out anywhere from connect to answer.
+    Anywhere(&'a str),
+}
+
+/// Sends `msg` and waits for its `ack`, from connect to answer inside `wait`.
+/// Prints nothing: the error is the line the caller prints.
+pub(crate) fn send_acked(msg: &Msg, wait: Duration, no_answer: NoAnswer) -> Result<(), String> {
+    let payload = proto::encode(msg).map_err(|e| format!("encode failed: {e}"))?;
+    let until = Instant::now() + wait;
+    let (line, in_handshake) = match no_answer {
+        NoAnswer::AfterHandshake(line) => (line, false),
+        NoAnswer::Anywhere(line) => (line, true),
+    };
+    let late = |e| if in_handshake { late_or_lost(e, line) } else { lost(e) };
+    let mut stream = connect_until(until, &late)?;
+    exchange_until(&mut stream, &payload, until, line)?
 }

@@ -30,19 +30,6 @@ enum Mode {
     Changed { path: String, settle: Option<Duration> },
 }
 
-impl Mode {
-    /// The kinds a daemon wait subscribes to, and its terminal; `None` for
-    /// `--changed`. A bell or report wait takes the exit too.
-    fn daemon(&self) -> Option<(&'static [&'static str], &str)> {
-        match self {
-            Mode::Exit(id) => Some((&["exit"], id)),
-            Mode::Bell(id) => Some((&["bell", "exit"], id)),
-            Mode::Report { term_id, .. } => Some((&["report", "exit"], term_id)),
-            Mode::Changed { .. } => None,
-        }
-    }
-}
-
 pub fn run(args: &[String]) -> i32 {
     let started = Instant::now();
     let Some((mode, timeout)) = parse(args) else {
@@ -60,7 +47,9 @@ pub fn run(args: &[String]) -> i32 {
             }
             Err(e) => Outcome::Failed(format!("cannot start the stat helper of wait --changed: {e}")),
         },
-        mode => from_daemon(mode, deadline),
+        Mode::Exit(id) => from_daemon(&mode, &["exit"], id, deadline),
+        Mode::Bell(id) => from_daemon(&mode, &["bell", "exit"], id, deadline),
+        Mode::Report { term_id, .. } => from_daemon(&mode, &["report", "exit"], term_id, deadline),
     };
     match outcome {
         Outcome::Done(line) => {
@@ -84,8 +73,9 @@ enum Outcome {
     TimedOut,
 }
 
-fn from_daemon(mode: &Mode, deadline: Option<Instant>) -> Outcome {
-    let Some((kinds, term_id)) = mode.daemon() else { return Outcome::Failed("--changed does not talk to the daemon".into()) };
+/// The wait on terminal `term_id` for `kinds`, which a bell or report wait
+/// extends with the exit.
+fn from_daemon(mode: &Mode, kinds: &[&str], term_id: &str, deadline: Option<Instant>) -> Outcome {
     let kinds = kinds.iter().map(|k| k.to_string()).collect();
     let (mut stream, snapshot) = match events::subscribe(Some(kinds), Some(term_id.to_owned()), deadline) {
         Ok(opened) => opened,
@@ -95,13 +85,13 @@ fn from_daemon(mode: &Mode, deadline: Option<Instant>) -> Outcome {
         }
         Err(Stop::Fail(why)) => return Outcome::Failed(why),
     };
-    if let Some(outcome) = snapshot.iter().find_map(|msg| verdict(mode, msg)) {
+    if let Some(outcome) = snapshot.iter().find_map(|msg| verdict(mode, term_id, msg)) {
         return outcome;
     }
     loop {
         match events::next(&mut stream, deadline) {
             Ok(msg) => {
-                if let Some(outcome) = verdict(mode, &msg) {
+                if let Some(outcome) = verdict(mode, term_id, &msg) {
                     return outcome;
                 }
             }
@@ -113,8 +103,7 @@ fn from_daemon(mode: &Mode, deadline: Option<Instant>) -> Outcome {
 
 /// What `msg` means for the wait, `None` when it goes on. An exit ends a
 /// wait for a bell or a report that can no longer come.
-fn verdict(mode: &Mode, msg: &Msg) -> Option<Outcome> {
-    let (_, id) = mode.daemon()?;
+fn verdict(mode: &Mode, id: &str, msg: &Msg) -> Option<Outcome> {
     match (mode, msg) {
         (_, Msg::Exit { term_id, .. } | Msg::Bell { term_id, .. } | Msg::TermReport { term_id, .. }) if term_id != id => None,
         (Mode::Exit(_), Msg::Exit { code: Some(code), .. }) => Some(Outcome::Done(Some(json!({ "code": code })))),
@@ -163,10 +152,7 @@ fn parse(args: &[String]) -> Option<(Mode, Option<Duration>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn args(a: &[&str]) -> Vec<String> {
-        a.iter().map(|s| s.to_string()).collect()
-    }
+    use crate::fixtures::args;
 
     #[test]
     fn each_mode_is_parsed() {

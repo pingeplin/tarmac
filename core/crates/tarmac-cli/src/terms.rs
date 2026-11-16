@@ -32,7 +32,7 @@ pub fn run(args: &[String]) -> i32 {
 fn list() -> Result<Vec<TermInfo>, String> {
     let mut stream = crate::daemon::connect()?;
     crate::daemon::send(&mut stream, &Msg::TermsList)?;
-    let no_answer = crate::daemon::no_answer("an older daemon");
+    let no_answer = crate::daemon::no_answer_older();
     loop {
         match crate::daemon::recv_or(&mut stream, |e| crate::daemon::late_or_lost(e, &no_answer))? {
             Msg::Terms { terms } => return Ok(terms),

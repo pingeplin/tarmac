@@ -188,7 +188,7 @@ pub(crate) fn subscribe(kinds: Option<Vec<String>>, term_id: Option<String>, dea
     let five = Instant::now() + crate::daemon::DAEMON_WAIT;
     let until = deadline.map_or(five, |d| d.min(five));
     let late = deadline.is_some_and(|d| d <= five);
-    let no_answer = crate::daemon::no_answer("an older daemon");
+    let no_answer = crate::daemon::no_answer_older();
     let stop = |e: io::Error| match crate::daemon::is_timeout(&e) {
         true if late => Stop::Late,
         true => Stop::Fail(no_answer.clone()),
@@ -244,10 +244,7 @@ fn decoded(payload: Vec<u8>) -> Result<Msg, Stop> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn args(a: &[&str]) -> Vec<String> {
-        a.iter().map(|s| s.to_string()).collect()
-    }
+    use crate::fixtures::args;
 
     fn text(msg: &Msg, snapshot: bool) -> String {
         serde_json::to_string(&Line::of(msg, snapshot, 9).unwrap()).unwrap()
