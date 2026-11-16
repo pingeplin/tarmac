@@ -205,7 +205,7 @@ decoders apply the defaults below, so every M0 frame still decodes.
 | `read` | bool | true | false ⇔ unread (a cli open clears it; `doc_read` sets it). Not an optional: M1 encoders always write true/false, never nil; a missing key means true so entries from M0-era daemons never render an unread dot |
 | `last_changed_ms` | uint \| nil | nil | unchanged from M0: mtime_ms of the last observed file change |
 | `last_opened_ms` | uint \| nil | nil | wall-clock ms-epoch of the most recent open (cli or user); M1 daemons always send it (registration is an open) |
-| `term_id` | string \| nil | nil | **v4 Phase 3, additive**: the term that opened the doc (provenance + gravity owner). The daemon sets it from the `open` message's `term_id` (the CLI reads `TARMAC_TERM_ID` from its pty env); a re-open carrying a `term_id` updates the owner, one without leaves it. Persisted; carried in both `restore.docs[]` and `doc_opened` |
+| `term_id` | string \| nil | nil | **v4 Phase 3, additive**: the term that opened the doc (provenance + gravity owner). The daemon sets it from the `open` message's `term_id` (the CLI reads `TARMAC_TERM_ID` from its pty env); a re-open carrying the `term_id` of a live terminal updates the owner, any other leaves it. Persisted; carried in both `restore.docs[]` and `doc_opened` |
 
 #### `repo_color` algorithm
 
@@ -362,6 +362,12 @@ inside a tarmac terminal attributes itself to that terminal card. The app's own
 `open` arm passes `term_id` (or nil). The daemon stores it on the doc registry
 entry and surfaces it via the doc entry's `term_id` (above) in `doc_opened` and
 `restore`. `persist.rs` round-trips it (`PersistedDoc.term_id`, serde default).
+
+A `term_id` that names no live terminal of the daemon is taken as nil: it names
+no board, a new doc gets no owner, and a doc that is open keeps the owner it has
+(#386). A stale `TARMAC_TERM_ID` gives such an id. Live means a pty the daemon
+runs now: the id of a dead card, which `term_records` still has, does not count,
+so a process that outlived its terminal opens a doc with no owner.
 
 ### Doc entry (extended)
 
