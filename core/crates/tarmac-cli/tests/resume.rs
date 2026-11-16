@@ -87,6 +87,15 @@ fn s30_no_terminal_exits_1_and_does_not_connect() {
     }
 }
 
+/// The daemon gives no such id, so the verb is not in a Tarmac terminal.
+#[test]
+fn a_term_id_that_is_not_utf8_is_no_terminal() {
+    use std::os::unix::ffi::OsStrExt;
+    let out = without_daemon("resume", Some(std::ffi::OsStr::from_bytes(b"t\xff9")), &["set", "echo HI"]);
+
+    assert_eq!((out.code(), out.stderr.as_str()), (Some(1), NEEDS_TERM));
+}
+
 // S30
 #[test]
 fn s30_the_daemons_refusal_is_printed_and_exits_1() {

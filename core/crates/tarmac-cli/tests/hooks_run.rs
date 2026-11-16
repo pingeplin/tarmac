@@ -190,6 +190,19 @@ fn s23_no_terminal_exits_at_once_without_reading_stdin() {
     }
 }
 
+/// The daemon gives no such id, so the hook is not in a Tarmac terminal.
+#[test]
+fn a_term_id_that_is_not_utf8_is_no_terminal() {
+    use std::os::unix::ffi::OsStrExt;
+    let dir = sandbox();
+    let mut cmd = hooks_cmd(&dir);
+    cmd.env("TARMAC_TERM_ID", std::ffi::OsStr::from_bytes(b"t\xff9"));
+    let out = Report::of_input(cmd.args(["run", "claude"]), fixture("stop"));
+
+    assert_silent_success(&out, "no terminal");
+    assert_no_connection(&out, "no terminal");
+}
+
 #[test]
 fn s24_bad_input_exits_0_without_connecting() {
     for (input, case) in [

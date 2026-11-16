@@ -33,13 +33,13 @@ fn hook(args: &[String]) -> Result<(), String> {
         _ => return Err("usage: tarmac hooks run <agent>".into()),
     }
     // Outside a Tarmac terminal every hook ends here, before a read of stdin.
-    let Some(term_id) = crate::env_override("TARMAC_TERM_ID") else { return Ok(()) };
+    let Some(term_id) = crate::calling_term() else { return Ok(()) };
     if io::stdin().is_terminal() {
         return Ok(());
     }
     let input: ClaudeInput =
         serde_json::from_slice(&read_input()?).map_err(|e| format!("the input is not a JSON object: {e}"))?;
-    let Some(msg) = claude_message(&term_id.to_string_lossy(), &input)? else { return Ok(()) };
+    let Some(msg) = claude_message(&term_id, &input)? else { return Ok(()) };
     let no_answer = format!("no answer from the daemon in {} ms", HOOK_DEADLINE.as_millis());
     send_acked(&msg, HOOK_DEADLINE, NoAnswer::Anywhere(&no_answer))
 }
