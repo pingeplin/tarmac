@@ -12,6 +12,7 @@ use tarmac_protocol::{self as proto, Msg};
 
 mod double;
 pub mod frames;
+pub mod hooks;
 pub use double::{Double, Peer};
 
 /// The line of a verb whose daemon does not answer in time.
@@ -73,8 +74,13 @@ pub struct OneAnswer {
 
 impl OneAnswer {
     pub fn start(answer: Answer) -> Self {
+        OneAnswer::start_late(Duration::ZERO, answer)
+    }
+
+    /// `start`, with the `hello_ok` written `late`: a slow handshake.
+    pub fn start_late(late: Duration, answer: Answer) -> Self {
         let double = Double::start("tarmacd.sock", move |peer| {
-            if !handshake(peer, Duration::ZERO) {
+            if !handshake(peer, late) {
                 return;
             }
             match answer {
