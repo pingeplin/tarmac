@@ -32,6 +32,12 @@ public struct PendingPersists {
         return true
     }
 
+    /// The boards the daemon has. One it deleted owes nothing: the daemon has
+    /// no board to file that snapshot under.
+    public mutating func keep(_ live: Set<String>) {
+        tokens = tokens.filter { live.contains($0.key) }
+    }
+
     /// A board is being left, or the app is going to the background or
     /// quitting: every board that owes a snapshot, to be sent now.
     public mutating func flushAll() -> [String] {
