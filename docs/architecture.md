@@ -1891,7 +1891,10 @@ schedules a `Layout` snapshot for *that* board on a 200 ms trailing debounce,
 one timer per board (`PendingPersists`), so a background board's change is
 neither lost nor delayed. Pending snapshots are flushed on a board switch, when
 the app resigns active, and at quit. A board is never persisted before its first
-restore. The snapshot (`LayoutTiles`) carries `dock` (doc paths in open order),
+restore, and a board that the daemon's `BoardList` no longer has owes none
+(`PendingPersists.keep`): the daemon ignores a `Layout` for a board it does not
+have, where it once filed it under the active board (#383). The snapshot
+(`LayoutTiles`) carries `dock` (doc paths in open order),
 live terminal tiles with `x, y, w, h, z, term_id` (dead cards are left out), doc
 tiles with `loose` = not attached, the live viewport, and `board_id`. A
 `Layout` replaces the board's tiles only: the daemon's `term_records` stay.

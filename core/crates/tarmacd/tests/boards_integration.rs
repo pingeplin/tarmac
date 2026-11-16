@@ -411,6 +411,9 @@ fn a_layout_for_a_deleted_board_does_not_land_on_the_active_board() {
 
     let stray = BoardViewport { zoom: 2.0, cx: 9.0, cy: 9.0 };
     app.send(&Msg::Layout { dock: vec![], tiles: vec![term_tile("t1", 120.0)], board: Some(stray), board_id: Some("board-1".into()) });
+    // A round trip on the same connection: the daemon has read the layout.
+    app.send(&Msg::BoardRename { board_id: "board-0".into(), name: "read".into() });
+    app.recv_board_list();
 
     let mut again = daemon.connect_app();
     again.recv_board_list();
