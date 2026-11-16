@@ -6,7 +6,7 @@ mod common;
 
 use std::time::Instant;
 
-use common::{LONG, Spawn, TestDaemon, cli_open, mtime_ms, settle, touch, write_doc};
+use common::{Conn, LONG, Spawn, TestDaemon, cli_open, mtime_ms, settle, touch, write_doc};
 use tarmac_protocol::{BoardMeta, BoardViewport, DocEntry, Msg, Tile};
 
 fn term_tile(term_id: &str, x: f64) -> Tile {
@@ -391,5 +391,28 @@ fn board_delete_persists() {
     app.send(&Msg::BoardDelete { board_id: "board-1".into() });
     assert_eq!(board_ids(&app.recv_board_list().0), vec!["board-0"]);
     daemon.wait_for_state("board-1 gone from the saved state", |v| saved_boards(v) == 1);
+}
+
+// #386: a stale TARMAC_TERM_ID, or a foreign client.
+#[test]
+fn an_open_from_a_terminal_the_daemon_does_not_have_names_no_owner_and_keeps_the_one_a_doc_had() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    app.spawn_term("t1", &["/bin/cat"]);
+    let owned = write_doc(&daemon.dir.join("d/owned.md"), "a\n");
+    let fresh = write_doc(&daemon.dir.join("d/fresh.md"), "b\n");
+    let cli_open_as = |term_id: &str, path: &str| {
+        let mut cli = Conn::hello(&daemon.sock, "cli");
+        cli.send(&Msg::Open { path: path.into(), term_id: Some(term_id.into()), board_id: None });
+        assert!(matches!(cli.recv(Instant::now() + LONG, "ack"), Msg::Ack));
+    };
+    cli_open_as("t1", &owned);
+    assert_eq!(app.recv_doc_opened().term_id.as_deref(), Some("t1"));
+
+    cli_open_as("t-gone", &owned);
+    assert_eq!(app.recv_doc_opened().term_id.as_deref(), Some("t1"), "the doc keeps its owner");
+
+    cli_open_as("t-gone", &fresh);
+    assert_eq!(app.recv_doc_opened().term_id, None, "a new doc gets no owner");
 }
 

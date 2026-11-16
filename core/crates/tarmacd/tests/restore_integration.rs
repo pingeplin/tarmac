@@ -293,6 +293,7 @@ fn shelf_loose_and_term_id_survive_daemon_restart() {
     let a = write_doc(&repo_dir.join("a.md"), "a\n");
 
     // Open the doc with a calling term_id (provenance owner).
+    app.spawn_term("term-7", &["/bin/cat"]);
     app.send(&Msg::Open { path: a.clone(), term_id: Some("term-7".into()), board_id: None });
     let opened = app.recv_doc_opened();
     assert_eq!(opened.term_id.as_deref(), Some("term-7"), "open must carry the term_id");

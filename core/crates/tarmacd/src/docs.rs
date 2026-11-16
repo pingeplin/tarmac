@@ -38,7 +38,7 @@ pub fn derive_repo(doc: &Path) -> Option<RepoInfo> {
 
 
 // Single code path for CLI ("cli") and app ("user") opens. `term_id` is the
-// calling terminal card, None when unknown. The doc lands on `board_id`, else
+// calling terminal card, None when unknown or not live. The doc lands on `board_id`, else
 // the board owning the calling term, else the active board.
 pub async fn handle_open(
     daemon: &Arc<Daemon>,
@@ -53,12 +53,15 @@ pub async fn handle_open(
     }
     let gate = daemon.gate();
     let (canon, seen) = resolve(gate, raw_path).await?;
-    // `None` resolves to the active board inside `registry_mut`.
-    let target = match (board_id, &term_id) {
-        (Some(id), _) => Some(id),
-        (None, Some(t)) => daemon.term_boards.lock().await.get(t).cloned(),
-        (None, None) => None,
+    // A terminal the daemon does not have names no board and no owner: a
+    // stale TARMAC_TERM_ID must not take a doc from the terminal it has (#386).
+    let term_board = match &term_id {
+        Some(t) => daemon.term_boards.lock().await.get(t).cloned(),
+        None => None,
     };
+    let term_id = term_id.filter(|_| term_board.is_some());
+    // `None` resolves to the active board inside `registry_mut`.
+    let target = board_id.or(term_board);
     // A doc already on the board keeps its repo (`upsert_doc`), so only a new
     // one is walked, with no lock held. A walk that is out gives no repo.
     let registered = daemon.boards.lock().await.registry_mut(target.as_deref()).docs.contains_key(&canon);
