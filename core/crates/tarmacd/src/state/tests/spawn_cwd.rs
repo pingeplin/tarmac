@@ -5,10 +5,6 @@ fn home() -> String {
     std::fs::canonicalize(std::env::var("HOME").unwrap()).unwrap().to_string_lossy().into_owned()
 }
 
-async fn rig(tag: &str) -> Rig {
-    rig_with(tag, None, LIMIT).await
-}
-
 /// A rig whose `is_dir` of its dir does not return.
 async fn cwd_out(tag: &str) -> Rig {
     let r = rig(tag).await;

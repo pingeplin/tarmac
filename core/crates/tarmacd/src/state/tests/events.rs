@@ -126,9 +126,9 @@ async fn subscribers_and_the_terms_list_make_no_watch() {
 // S24
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_cwd_reads_of_the_terms_list_run_at_the_same_time() {
-    let mut r = rig("terms-stuck").await;
+    let r = rig("terms-stuck").await;
     for term_id in ["t1", "t2", "t3", "t4"] {
-        spawn(&r.daemon, term_id, &["/bin/sh", "-c", "read _"], SpawnOpts::default()).await;
+        spawn_idle(&r.daemon, term_id, SpawnOpts::default()).await;
     }
     for term_id in ["t1", "t2", "t3", "t4"] {
         eventually_async("each term's first cwd read", || async {
@@ -149,10 +149,5 @@ async fn the_cwd_reads_of_the_terms_list_run_at_the_same_time() {
     assert!(took < 2 * LIMIT, "the list took {took:?}");
     assert_eq!(rows.iter().map(|row| row.term_id.as_str()).collect::<Vec<_>>(), ["t1", "t2", "t3", "t4"]);
     assert!(rows.iter().all(|row| row.cwd.is_none() && row.proc.is_some()), "{rows:?}");
-    let _ = &mut r.app;
     r.end().await;
-}
-
-async fn rig(tag: &str) -> Rig {
-    rig_with(tag, None, LIMIT).await
 }

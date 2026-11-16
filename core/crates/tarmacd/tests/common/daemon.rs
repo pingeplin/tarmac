@@ -6,7 +6,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use tarmac_protocol::{self as proto, Msg, frame};
 
-use super::{Conn, LONG, Restore};
+use super::{Conn, FrameLog, LONG, Restore, Spawn};
 
 // Counter, not just a timestamp: parallel test threads can hit the same
 // nanosecond and would then share (and tear down) each other's socket dir.
@@ -139,6 +139,13 @@ impl TestDaemon {
 
     pub fn connect_app_drained(&self) -> Conn {
         self.connect_app_drained_as(None)
+    }
+
+    /// A drained app connection with a login shell `term_id` at its prompt.
+    pub fn shell_at_prompt(&self, term_id: &str, opts: Spawn, log: &mut FrameLog) -> Conn {
+        let mut app = self.connect_app_drained();
+        app.login_shell_at_prompt(log, term_id, opts);
+        app
     }
 
     /// A drained app connection announcing `app_version`.

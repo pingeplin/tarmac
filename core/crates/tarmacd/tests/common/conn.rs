@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use tarmac_protocol::{self as proto, BoardMeta, DocEntry, Msg, TermInfo, frame};
 
-use super::{FrameLog, LONG, Logged, Restore, contains, is_file_event_for, is_report_for};
+use super::{FrameLog, LONG, Logged, Restore, contains, is_file_event_for, is_report_for, temp_dir};
 
 pub struct Conn(pub UnixStream);
 
@@ -238,7 +238,16 @@ impl Conn {
 
     /// Types `line` and a newline into `term_id`.
     pub fn type_line(&mut self, term_id: &str, line: &str) {
-        self.send(&Msg::Input { term_id: term_id.into(), bytes: format!("{line}\n").into_bytes(), typed: false });
+        self.input(term_id, format!("{line}\n").as_bytes());
+    }
+
+    /// An `input` the app marks as typed by the user.
+    pub fn keystroke(&mut self, term_id: &str, bytes: &[u8]) {
+        self.send(&Msg::Input { term_id: term_id.into(), bytes: bytes.to_vec(), typed: true });
+    }
+
+    pub fn input(&mut self, term_id: &str, bytes: &[u8]) {
+        self.send(&Msg::Input { term_id: term_id.into(), bytes: bytes.to_vec(), typed: false });
     }
 
     /// Reads frames into `log` until one matches `pred`; its index.
@@ -265,6 +274,21 @@ impl Conn {
             let msg = self.recv(deadline, &format!("output containing {:?}", String::from_utf8_lossy(needle)));
             log.0.push(Logged { at: Instant::now(), msg });
         }
+    }
+
+    /// Spawns a login shell `term_id` and logs frames into `log` until its
+    /// prompt shows.
+    pub fn login_shell_at_prompt(&mut self, log: &mut FrameLog, term_id: &str, opts: Spawn) {
+        let from = log.len();
+        self.spawn_term_with(term_id, &[], Spawn { login_shell: true, ..opts });
+        self.log_until_output(log, term_id, from, b"$ ");
+    }
+
+    /// Spawns `term_id` as `sleep 5` run by a symlink named `claude`.
+    pub fn spawn_as_claude(&mut self, term_id: &str) {
+        let link = temp_dir().join("claude");
+        std::os::unix::fs::symlink("/bin/sleep", &link).unwrap();
+        self.spawn_term(term_id, &[link.to_str().unwrap(), "5"]);
     }
 
     /// Reads every frame that comes within `wait` into `log`.
