@@ -21,16 +21,7 @@ const DEV_HELP: &str = "`tarmac dev` talks to the app, not the daemon, over its 
 cockpit without a keyboard, and it is available in dev builds only — a release
 binary exits 1 with \"driver unavailable in release builds\".
 
-    tarmac dev snapshot [--until <expr>] [--timeout <ms>]
-    tarmac dev zoom <z>
-    tarmac dev resize <card> <w>x<h>
-    tarmac dev focus <card>|board
-    tarmac dev type <card> \"<text>\"
-    tarmac dev key <card> \"<combo>\"
-    tarmac dev board <board-id>|--new
-    tarmac dev click <card>|restore_card <control>
-    tarmac dev press <combo> [--hold <ms>] [--age <ms>] [--busy <ms>] [--repeat <n>]
-
+{DEV_FORMS}
 <card> is a terminal's term id or a doc's absolute path. dev board makes a board
 active, or with --new makes one, and answers {\"board_id\": ...} with the board
 that is active once the app has switched; snapshot then shows that board.
@@ -215,8 +206,33 @@ EXIT STATUS:
 `tarmac hooks run` always exits 0, so that a hook never blocks Claude.
 ";
 
+/// The forms of `tarmac dev`, one indented line each: the list `dev` itself
+/// prints on a usage error.
+#[cfg(debug_assertions)]
+fn dev_forms() -> String {
+    crate::dev::FORMS.iter().map(|form| format!("    {form}\n")).collect()
+}
+#[cfg(not(debug_assertions))]
+fn dev_forms() -> String {
+    String::new()
+}
+
 pub fn text() -> String {
-    let head = HELP_HEAD_FMT.replace("{DEV_USAGE}", DEV_USAGE).replace("{DEV_HELP}", DEV_HELP);
+    let head = HELP_HEAD_FMT
+        .replace("{DEV_USAGE}", DEV_USAGE)
+        .replace("{DEV_HELP}", DEV_HELP)
+        .replace("{DEV_FORMS}", &dev_forms());
     let tail = HELP_TAIL_FMT.replace("{DEV_SOCKET}", DEV_SOCKET);
     format!("{head}{}{tail}", agents::FLAGS_USAGE)
+}
+
+#[cfg(all(test, debug_assertions))]
+mod tests {
+    #[test]
+    fn the_help_lists_every_dev_form_as_the_usage_error_does() {
+        let help = super::text();
+        for form in crate::dev::FORMS {
+            assert!(help.contains(&format!("\n    {form}\n")), "the help lacks: {form}");
+        }
+    }
 }
