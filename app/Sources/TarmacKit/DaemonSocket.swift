@@ -47,6 +47,18 @@ enum DaemonSocket {
         return Data(payload)
     }
 
+    /// Whether `fd` has bytes to read, or has ended, within `seconds`.
+    static func waitReadable(_ fd: Int32, within seconds: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        var entry = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+        while true {
+            let left = max(0, deadline.timeIntervalSinceNow)
+            let n = poll(&entry, 1, Int32((left * 1000).rounded(.up)))
+            if n < 0, errno == EINTR { continue }
+            return n > 0
+        }
+    }
+
     /// Whether all of `data` was written.
     static func write(_ data: Data, to fd: Int32) -> Bool {
         data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in

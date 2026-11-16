@@ -75,7 +75,7 @@ fn accept(listener: &UnixListener, stopped: &Receiver<()>) -> Option<UnixStream>
             Ok((stream, _)) => {
                 // macOS hands the accepted socket the listener's O_NONBLOCK.
                 stream.set_nonblocking(false).unwrap();
-                stream.set_read_timeout(Some(WAIT)).unwrap();
+                limit_reads(&stream, WAIT);
                 return Some(stream);
             }
             Err(e) if e.kind() == ErrorKind::WouldBlock => {}
@@ -85,6 +85,13 @@ fn accept(listener: &UnixListener, stopped: &Receiver<()>) -> Option<UnixStream>
             return None;
         }
     }
+}
+
+/// A limit on each read of `stream`. macOS refuses the option with EINVAL once
+/// the peer has gone, which a client that exits at once can do first. No limit
+/// is needed then: a read gets what was sent, then EOF.
+fn limit_reads(stream: &UnixStream, wait: Duration) {
+    let _ = stream.set_read_timeout(Some(wait));
 }
 
 /// The accepted connection, as a handler sees it.
@@ -104,9 +111,9 @@ impl Peer {
 
     /// A frame that comes within `wait`, recorded; `None` when none does.
     pub fn read_within(&mut self, wait: Duration) -> Option<Vec<u8>> {
-        self.stream.set_read_timeout(Some(wait)).unwrap();
+        limit_reads(&self.stream, wait);
         let payload = self.read();
-        self.stream.set_read_timeout(Some(WAIT)).unwrap();
+        limit_reads(&self.stream, WAIT);
         payload
     }
 
@@ -117,13 +124,13 @@ impl Peer {
     /// Keep reading so the test can observe whether the client sends anything
     /// after its request. EOF (the client exiting) ends it.
     pub fn drain(&mut self) {
-        self.stream.set_read_timeout(Some(LINGER)).unwrap();
+        limit_reads(&self.stream, LINGER);
         while self.read().is_some() {}
     }
 
     /// `drain`, but whatever bytes arrive are recorded as one entry, framed or not.
     pub fn drain_bytes(&mut self) {
-        self.stream.set_read_timeout(Some(LINGER)).unwrap();
+        limit_reads(&self.stream, LINGER);
         let mut sink = Vec::new();
         let _ = self.stream.read_to_end(&mut sink);
         if !sink.is_empty() {

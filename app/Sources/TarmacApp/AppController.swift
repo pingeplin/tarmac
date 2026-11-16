@@ -255,7 +255,7 @@ final class AppController {
     }
 
     func showConnectionStatus() {
-        rootView.statusBar.setConnection(connectionStatus)
+        rootView.statusBar.setConnection(connectionStatus.shown(handshook: connected))
     }
 
     /// Makes the prime terminal the window's first responder (initial focus): the

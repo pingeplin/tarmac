@@ -65,6 +65,19 @@ final class PendingPersistsTests: XCTestCase {
         XCTAssertEqual(pending.flushAll(), [])
     }
 
+    /// #383: the daemon would file the snapshot of a board it deleted under
+    /// the active one.
+    func testABoardTheDaemonNoLongerHasOwesNothing() {
+        var pending = PendingPersists()
+        let gone = pending.schedule("board-1")
+        _ = pending.schedule("board-0")
+
+        pending.keep(["board-0", "board-2"])
+
+        XCTAssertFalse(pending.fire("board-1", token: gone))
+        XCTAssertEqual(pending.flushAll(), ["board-0"])
+    }
+
     /// A flushed board's snapshot has gone out; its timer must not send it again.
     func testFlushingDisarmsTheTimers() {
         var pending = PendingPersists()

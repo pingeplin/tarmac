@@ -932,9 +932,15 @@ connection. It runs on a thread of its own and delivers `Message`s and
 
 `ConnectionStatus.connected` turns true as soon as the socket connects; the
 controller's own `connected` flag — what gates a spawn — turns true on
-`HelloOk`. Connection state is app-local: the status bar prints `attached`, or
-the reason. On a drop the app toasts `tarmacd connection lost` and changes no
-card — there is no "detached" card state. The reconnect's `Restore` is what
+`HelloOk`. The daemon has 5 s to start its answer to `hello`
+(`Timing.handshakeTimeout`); after that the client closes the link and connects
+again after the reconnect delay. Connection state is app-local: the status bar
+prints `attached` once the handshake has completed, `connecting…` while it is
+pending (`ConnectionStatus.shown`), or the reason. On the drop of a link that
+completed its handshake (`ConnectionStatus.endsLink`) the app toasts `tarmacd
+connection lost` and changes no card — there is no "detached" card state. The
+end of a link that did not, such as the restart of a daemon of another version,
+is not a drop. The reconnect's `Restore` is what
 reconciles the cards ([*Restore and reconnect*](#restore-and-reconnect)).
 
 ### The sample log
@@ -1891,7 +1897,10 @@ schedules a `Layout` snapshot for *that* board on a 200 ms trailing debounce,
 one timer per board (`PendingPersists`), so a background board's change is
 neither lost nor delayed. Pending snapshots are flushed on a board switch, when
 the app resigns active, and at quit. A board is never persisted before its first
-restore. The snapshot (`LayoutTiles`) carries `dock` (doc paths in open order),
+restore, and a board that the daemon's `BoardList` no longer has owes none
+(`PendingPersists.keep`): the daemon ignores a `Layout` for a board it does not
+have, where it once filed it under the active board (#383). The snapshot
+(`LayoutTiles`) carries `dock` (doc paths in open order),
 live terminal tiles with `x, y, w, h, z, term_id` (dead cards are left out), doc
 tiles with `loose` = not attached, the live viewport, and `board_id`. A
 `Layout` replaces the board's tiles only: the daemon's `term_records` stay.
