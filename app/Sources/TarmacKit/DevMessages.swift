@@ -23,7 +23,7 @@ public enum DevRequest: Equatable, Sendable {
     /// A native ⌘ chord posted in-process (spec 2609.0018, #183). The app parses
     /// `combo`; the CLI has already range-checked the flags against the maxima
     /// below.
-    case press(combo: String, holdMs: Int?, ageMs: Int?, busyMs: Int?)
+    case press(combo: String, holdMs: Int?, ageMs: Int?, busyMs: Int?, repeats: Int? = nil)
     /// `boardID: nil` makes a new board; otherwise switch to that one. Both answer once
     /// the app's active board has changed.
     case board(boardID: String?)
@@ -35,11 +35,13 @@ public enum DevRequest: Equatable, Sendable {
     case unknown(type: String)
 
     /// `press --hold` is `1...holdMsMax`, `--age` is `0...ageMsMax`, `--busy` is
-    /// `1...busyMsMax`. `busyMsMax` sits below the ⌘Q guard's 2000 ms freshness
-    /// bound: past it a frozen page's ⌘Q really quits.
+    /// `1...busyMsMax`, `--repeat` is `1...repeatsMax`. `busyMsMax` sits below
+    /// the ⌘Q guard's 2000 ms freshness bound: past it a frozen page's ⌘Q really
+    /// quits.
     public static let holdMsMax = 10_000
     public static let ageMsMax = 60_000
     public static let busyMsMax = 1_800
+    public static let repeatsMax = 100
     public static let boardWaitMs = 5_000
 
     /// The caller's own budget, where the verb has one: `snapshot` carries its
@@ -50,7 +52,7 @@ public enum DevRequest: Equatable, Sendable {
     public var timeoutMs: Int? {
         switch self {
         case .snapshot(_, let timeoutMs): return timeoutMs
-        case .press(_, _, _, let busyMs): return busyMs
+        case .press(_, _, _, let busyMs, _): return busyMs
         case .board: return Self.boardWaitMs
         default: return nil
         }
@@ -81,7 +83,7 @@ public extension DevRequest {
         case "snapshot":
             return .snapshot(
                 until: try fields.opt("until", \.stringValue),
-                timeoutMs: try fields.milliseconds("timeout_ms")
+                timeoutMs: try fields.uint32("timeout_ms")
             )
         case "zoom":
             return .zoom(z: try fields.req("z", \.doubleValue))
@@ -105,9 +107,10 @@ public extension DevRequest {
         case "press":
             return .press(
                 combo: try fields.req("combo", \.stringValue),
-                holdMs: try fields.milliseconds("hold_ms"),
-                ageMs: try fields.milliseconds("age_ms"),
-                busyMs: try fields.milliseconds("busy_ms")
+                holdMs: try fields.uint32("hold_ms"),
+                ageMs: try fields.uint32("age_ms"),
+                busyMs: try fields.uint32("busy_ms"),
+                repeats: try fields.uint32("repeats")
             )
         default:
             return .unknown(type: t)
@@ -142,12 +145,13 @@ public extension DevRequest {
             fields.put("t", .string("key"))
             fields.put("card", .string(card))
             fields.put("combo", .string(combo))
-        case .press(let combo, let holdMs, let ageMs, let busyMs):
+        case .press(let combo, let holdMs, let ageMs, let busyMs, let repeats):
             fields.put("t", .string("press"))
             fields.put("combo", .string(combo))
             fields.put("hold_ms", unlessNil: int(holdMs))
             fields.put("age_ms", unlessNil: int(ageMs))
             fields.put("busy_ms", unlessNil: int(busyMs))
+            fields.put("repeats", unlessNil: int(repeats))
         case .board(let boardID):
             fields.put("t", .string("board"))
             fields.put("board_id", unlessNil: boardID.map(MsgPackValue.string))
@@ -195,7 +199,7 @@ private struct DevFields {
     }
 
     /// The Rust wire type is `u32`.
-    func milliseconds(_ key: String) throws -> Int? {
+    func uint32(_ key: String) throws -> Int? {
         guard let value = try opt(key, \.intValue) else { return nil }
         guard UInt32(exactly: value) != nil else { throw MessageError.badField(key) }
         return value

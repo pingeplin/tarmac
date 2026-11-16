@@ -29,6 +29,15 @@ DEV_ENV := TARMAC_SOCKET="$(DEV_SOCKET)" \
 	TARMAC_STATE="$(DEV_DIR)/state.json" \
 	TARMAC_DEV_SOCKET="$(DEV_DIR)/tarmac-dev.sock" \
 	TARMAC_CONFIG_DIR="$(DEV_DIR)/config"
+# `make run SHELL_GATE=1` (#380): each shell of the channel starts through
+# scripts/qa/gate-shell.sh, which holds it while $(SHELL_GATE_FILE) exists, so
+# `make qa-resume CASE=before-output` can act before a shell's first output.
+# TARMAC_QA_SHELL comes first: a gated terminal already has one, and its SHELL
+# is the gate script.
+SHELL_GATE_FILE := $(DEV_DIR)/shell-gate
+GATE_ENV := $(if $(SHELL_GATE),TARMAC_QA_SHELL="$${TARMAC_QA_SHELL:-$$SHELL}" \
+	TARMAC_QA_SHELL_GATE="$(SHELL_GATE_FILE)" \
+	SHELL="$(ROOT)/scripts/qa/gate-shell.sh")
 
 core:
 	cd $(ROOT)/core && cargo build
@@ -80,6 +89,7 @@ run: core app
 	mkdir -p "$(DEV_DIR)"
 	cd $(ROOT)/app && \
 	$(DEV_ENV) \
+	$(GATE_ENV) \
 	TARMAC_DEV_LABEL="$(DEV_LABEL)" \
 	TARMAC_APP_VERSION="$$(sed -n 's/^version = "\(.*\)"/\1/p' $(ROOT)/core/Cargo.toml | head -1)" \
 	TARMAC_DAEMON="$(ROOT)/core/target/debug/tarmacd" \
@@ -109,6 +119,7 @@ qa-quit: core
 qa-resume: CASE ?= reopen
 qa-resume: core
 	$(DEV_ENV) \
+	TARMAC_QA_SHELL_GATE="$(SHELL_GATE_FILE)" \
 	CASE="$(CASE)" \
 	node $(ROOT)/scripts/qa/resume.mjs
 

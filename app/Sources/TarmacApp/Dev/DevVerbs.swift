@@ -74,8 +74,8 @@ final class DevVerbs {
             throw error
         case .snapshot(let until, let timeoutMs):
             return try await snapshot(until: until, timeoutMs: timeoutMs)
-        case .press(let combo, let holdMs, let ageMs, let busyMs):
-            return ok(try await press(combo: combo, holdMs: holdMs, ageMs: ageMs, busyMs: busyMs))
+        case .press(let combo, let holdMs, let ageMs, let busyMs, let repeats):
+            return ok(try await press(combo: combo, holdMs: holdMs, ageMs: ageMs, busyMs: busyMs, repeats: repeats))
         case .zoom(let z):
             return ok(await zoom(to: z))
         case .focusBoard:

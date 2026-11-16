@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use tarmac_protocol::{self as proto, frame};
-use proto::dev::{AGE_MS_MAX, BUSY_MS_MAX, DevRequest, HOLD_MS_MAX, decode_reply, encode_request};
+use proto::dev::{AGE_MS_MAX, BUSY_MS_MAX, DevRequest, HOLD_MS_MAX, REPEATS_MAX, decode_reply, encode_request};
 
 use crate::{current_channel, env_override, home_or_root};
 
@@ -33,7 +33,7 @@ usage: tarmac dev snapshot [--until <expr>] [--timeout <ms>]
        tarmac dev key <card> \"<combo>\"
        tarmac dev board <board-id>|--new
        tarmac dev click <card>|restore_card <control>
-       tarmac dev press <combo> [--hold <ms>] [--age <ms>] [--busy <ms>]";
+       tarmac dev press <combo> [--hold <ms>] [--age <ms>] [--busy <ms>] [--repeat <n>]";
 
 /// The names `--handle` takes; the app maps each to a card handle.
 const RESIZE_HANDLES: [&str; 8] =
@@ -140,12 +140,14 @@ fn parse_press(rest: &[String]) -> Result<DevRequest, String> {
     let mut hold_ms = None;
     let mut age_ms = None;
     let mut busy_ms = None;
+    let mut repeats = None;
     let mut rest = &rest[1..];
     while let Some(flag) = rest.first().map(String::as_str) {
         let (slot, lo, hi) = match flag {
             "--hold" => (&mut hold_ms, 1, HOLD_MS_MAX),
             "--age" => (&mut age_ms, 0, AGE_MS_MAX),
             "--busy" => (&mut busy_ms, 1, BUSY_MS_MAX),
+            "--repeat" => (&mut repeats, 1, REPEATS_MAX),
             other if other.starts_with("--") => {
                 return usage(&format!("tarmac dev press: unknown flag {other}"));
             }
@@ -166,7 +168,7 @@ fn parse_press(rest: &[String]) -> Result<DevRequest, String> {
     if busy_ms.is_some() && age_ms.is_some() {
         return usage("tarmac dev press: --busy cannot be combined with --age");
     }
-    Ok(DevRequest::Press { combo: combo.clone(), hold_ms, age_ms, busy_ms })
+    Ok(DevRequest::Press { combo: combo.clone(), hold_ms, age_ms, busy_ms, repeats })
 }
 
 /// `<w>x<h>` in board units. One spelling only, so a typo fails loudly instead
@@ -418,7 +420,18 @@ mod tests {
     }
 
     fn press(combo: &str, hold_ms: Option<u32>, age_ms: Option<u32>, busy_ms: Option<u32>) -> DevRequest {
-        DevRequest::Press { combo: combo.into(), hold_ms, age_ms, busy_ms }
+        DevRequest::Press { combo: combo.into(), hold_ms, age_ms, busy_ms, repeats: None }
+    }
+
+    /// #380: `--repeat` is the count of autorepeat keyDowns, `1..=REPEATS_MAX`.
+    #[test]
+    fn press_parses_repeat() {
+        let held = |repeats| DevRequest::Press {
+            combo: "enter".into(), hold_ms: Some(1000), age_ms: None, busy_ms: None, repeats,
+        };
+        parses_to(&["press", "enter", "--hold", "1000", "--repeat", "20"], held(Some(20)));
+        parses_to(&["press", "enter", "--repeat", "1", "--hold", "1000"], held(Some(1)));
+        parses_to(&["press", "enter", "--hold", "1000", "--repeat", "100"], held(Some(100)));
     }
 
     /// The combo itself is not checked here; the app parses it.
@@ -469,6 +482,10 @@ mod tests {
         names(&["press", "cmd+q", "--now"], &["--now"]);
         names(&["press", "cmd+q", "extra"], &["extra"]);
         names(&["press", "cmd+q", "--hold", "5", "--hold", "6"], &["--hold"]);
+        names(&["press", "enter", "--repeat", "0"], &["--repeat"]);
+        names(&["press", "enter", "--repeat", "101"], &["--repeat"]);
+        names(&["press", "enter", "--repeat"], &["--repeat"]);
+        names(&["press", "enter", "--repeat", "2", "--repeat", "3"], &["--repeat"]);
         names(&["press", "cmd+q", "--busy", "0"], &["--busy"]);
         names(&["press", "cmd+q", "--busy", "1801"], &["--busy"]);
         names(&["press", "cmd+q", "--busy", "500", "--age", "10"], &["--busy", "--age"]);

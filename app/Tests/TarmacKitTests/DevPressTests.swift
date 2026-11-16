@@ -151,6 +151,34 @@ final class DevPressTests: XCTestCase {
         }
     }
 
+    /// #380: `--repeat n` posts n autorepeat keyDowns, the first after
+    /// macOS's shortest initial delay and then at its fastest rate, and the key
+    /// is held until one gap after the last, unless `--hold` is longer.
+    func testRepeatsFollowTheInitialDelayAndTheKeyIsHeldPastTheLast() {
+        let enter = DevPress.Chord(flags: 0, characters: "\r", keyCode: 36)
+        XCTAssertEqual(
+            DevPress.plan(combo: "enter", holdMs: nil, ageMs: nil, busyMs: nil, repeats: 3),
+            .success(DevPress.Plan(chord: enter, holdMs: 349, ageMs: 0, busyMs: nil, repeatsAtMs: [250, 283, 316]))
+        )
+        XCTAssertEqual(
+            DevPress.plan(combo: "enter", holdMs: 1_000, ageMs: nil, busyMs: nil, repeats: 2),
+            .success(DevPress.Plan(chord: enter, holdMs: 1_000, ageMs: 0, busyMs: nil, repeatsAtMs: [250, 283]))
+        )
+        XCTAssertEqual(
+            DevPress.plan(combo: "enter", holdMs: nil, ageMs: nil, busyMs: nil, repeats: 100).map(\.repeatsAtMs.count),
+            .success(100)
+        )
+    }
+
+    func testARepeatCountOutOfRangeIsABadRequest() {
+        for repeats in [0, -1, 101] {
+            XCTAssertEqual(
+                code(DevPress.plan(combo: "enter", holdMs: nil, ageMs: nil, busyMs: nil, repeats: repeats)),
+                .badRequest, "\(repeats)"
+            )
+        }
+    }
+
     /// Their sum could cross the guard's freshness bound and really quit, so the
     /// pair is refused even at `--age 0`.
     func testBusyWithAgeIsABadRequest() {
@@ -165,7 +193,8 @@ final class DevPressTests: XCTestCase {
 
     // MARK: - the reply and the refusals
 
-    /// `lib.mjs` reads `press_ms`, `hold_ms`, `activated` and `busy_ms` off this.
+    /// `lib.mjs` reads `press_ms`, `hold_ms`, `activated` and `busy_ms` off this;
+    /// `repeats` is the count of autorepeat keyDowns posted (#380).
     func testTheReplySaysWhatWasPostedNotWhatTheKeyCaused() {
         let chord = DevPress.Chord(flags: cmd, characters: "q", keyCode: 12)
         XCTAssertEqual(
@@ -173,14 +202,18 @@ final class DevPressTests: XCTestCase {
                 combo: "cmd+q", pressMs: 268_318_196,
                 plan: DevPress.Plan(chord: chord, holdMs: 300, ageMs: 0, busyMs: nil), activated: false
             ),
-            ["combo": "cmd+q", "press_ms": 268_318_196, "hold_ms": 300, "activated": false, "busy_ms": .null]
+            [
+                "combo": "cmd+q", "press_ms": 268_318_196, "hold_ms": 300, "activated": false, "busy_ms": .null,
+                "repeats": 0,
+            ]
         )
         XCTAssertEqual(
             DevPress.reply(
                 combo: "cmd+q", pressMs: 5,
-                plan: DevPress.Plan(chord: chord, holdMs: 100, ageMs: 0, busyMs: 1_000), activated: true
+                plan: DevPress.Plan(chord: chord, holdMs: 349, ageMs: 0, busyMs: 1_000, repeatsAtMs: [250, 283, 316]),
+                activated: true
             ),
-            ["combo": "cmd+q", "press_ms": 5, "hold_ms": 100, "activated": true, "busy_ms": 1_000]
+            ["combo": "cmd+q", "press_ms": 5, "hold_ms": 349, "activated": true, "busy_ms": 1_000, "repeats": 3]
         )
     }
 

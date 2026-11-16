@@ -6,9 +6,10 @@ import TarmacKit
 /// posted to the application's event queue, so it takes the path a typed one
 /// does — the key monitor, then the menu — and the ⌘Q guard reads it off
 /// `NSApp.currentEvent` like any other. What may be posted is `DevPress`'s.
+/// `--repeat` adds the keyDowns of a held key's autorepeat (#380).
 extension DevVerbs {
-    func press(combo: String, holdMs: Int?, ageMs: Int?, busyMs: Int?) async throws -> JSONValue {
-        let plan = try DevPress.plan(combo: combo, holdMs: holdMs, ageMs: ageMs, busyMs: busyMs).get()
+    func press(combo: String, holdMs: Int?, ageMs: Int?, busyMs: Int?, repeats: Int?) async throws -> JSONValue {
+        let plan = try DevPress.plan(combo: combo, holdMs: holdMs, ageMs: ageMs, busyMs: busyMs, repeats: repeats).get()
         guard !reachesAnUnguardedQuit(plan.chord, in: NSApp.mainMenu) else {
             throw DevPress.notRetargeted(combo: combo)
         }
@@ -20,6 +21,11 @@ extension DevVerbs {
         quitGuard.hold(keyCode: plan.chord.keyCode, untilMs: now + plan.holdMs)
         let pressMs = DevPress.pressMs(nowMs: now, ageMs: plan.ageMs)
         try post(.keyDown, plan.chord, stampMs: pressMs)
+        for atMs in plan.repeatsAtMs {
+            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(Int(atMs))) { [weak self] in
+                MainActor.assumeIsolated { try? self?.post(.keyDown, plan.chord, stampMs: Uptime.nowMs, repeat: true) }
+            }
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(Int(plan.holdMs))) { [weak self] in
             MainActor.assumeIsolated { try? self?.post(.keyUp, plan.chord, stampMs: Uptime.nowMs) }
         }
@@ -48,12 +54,12 @@ extension DevVerbs {
         }
     }
 
-    private func post(_ type: NSEvent.EventType, _ chord: DevPress.Chord, stampMs: UInt64) throws {
+    private func post(_ type: NSEvent.EventType, _ chord: DevPress.Chord, stampMs: UInt64, repeat: Bool = false) throws {
         guard let event = NSEvent.keyEvent(
             with: type, location: .zero, modifierFlags: NSEvent.ModifierFlags(rawValue: UInt(chord.flags)),
             timestamp: TimeInterval(stampMs) / 1_000, windowNumber: window.windowNumber, context: nil,
             characters: chord.characters, charactersIgnoringModifiers: chord.characters,
-            isARepeat: false, keyCode: chord.keyCode
+            isARepeat: `repeat`, keyCode: chord.keyCode
         ) else { throw DevError(.driverThrew, "could not build a key event") }
         NSApp.postEvent(event, atStart: false)
     }

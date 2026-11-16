@@ -10,19 +10,22 @@
 //   CASE=restore-setup      two more terminals, the records, a quit through the
 //                           ⌘Q guard and the daemon kill; then `make run` and
 //                           one of the cases below (S25–S27, S32).
-//   CASE=resume-all | resume-all-click | per-card | per-card-click | veil |
-//        skip-all | skip-all-click | quit
+//   CASE=resume-all | resume-all-held | resume-all-click | per-card |
+//        per-card-click | veil | skip-all | skip-all-click | quit
+//   CASE=before-output      needs `make run SHELL_GATE=1`: Return and a
+//                           `resume` click on a reopened card while the gate
+//                           holds its shell before the first output (S28).
 //
 // The daemon is found only by `lsof -t` on lib.mjs's absolute DAEMON_SOCK, as
-// `make kill-daemon` does, and only those pids are killed. The driver's `key`
-// and `press` always send `isARepeat: false`, so the held-key steps stay
-// manual. A step that reads the clipboard saves it first and puts it back.
+// `make kill-daemon` does, and only those pids are killed. A held key is
+// `press --repeat`: autorepeat keyDowns posted in the app, not by the keyboard
+// (#380). A step that reads the clipboard saves it first and puts it back.
 //
 // Run:  make qa-resume [CASE=...]    (against a live `make run`; DEV_DIR= as for it)
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -54,6 +57,9 @@ const CASE = process.env.CASE || "reopen";
  *  `RESUMED` proves the command ran, which the echoed command line cannot. */
 const CMD = "printf 'RES%s\\n' UMED";
 const TITLE = "resume last agent session?";
+const QUEUED_TITLE = "resumes when the shell is ready";
+/** `make run SHELL_GATE=1` holds each new shell while this file exists. */
+const GATE = process.env.TARMAC_QA_SHELL_GATE;
 const COPIED = "resume command copied";
 
 const state = () => JSON.parse(readFileSync(STATE, "utf8"));
@@ -63,6 +69,9 @@ const eqJson = (actual, expected, what) => eq(JSON.stringify(actual), JSON.strin
 const resumed = (snap, id) =>
   (term(snap, id)?.scrollback_tail ?? "").split("\n").filter((l) => l.trimEnd() === "RESUMED").length;
 const terminals = (snap) => snap.cards.filter((c) => c.kind === "term").map((c) => c.id);
+/** `scrollback_tail` ends at the cursor's row, so on a young terminal its line
+ *  count is how far the cursor has gone down. */
+const rows = (tail) => tail.split("\n").length;
 
 async function until(what, boundMs, done) {
   const deadline = Date.now() + boundMs;
@@ -201,22 +210,26 @@ async function panelClicks(boardId, resumeID, skipID) {
   });
 }
 
-// --------------------------------------------------------------- reopen
+// ------------------------------------------------------ dead card cases
 
-async function reopen() {
+/** The preflight terminal and `count - 1` more each record the command in a
+ *  folder of its own; then the daemon is killed, so each card is dead with a
+ *  reopen offer. `reopenOne` reopens one by Return on its dead card and gives
+ *  the id of the card that takes its place, which `fresh` keeps. */
+async function deadCards(count) {
   const { term: a, boardId } = preflight(run);
   const ids = [a];
   const folders = new Map();
 
-  await run.checkAsync("four terminals record the command, and state.json has each before the kill", async () => {
-    for (let i = 0; i < 3; i++) ids.push(await newTerminal());
+  await run.checkAsync(`${count} terminals record the command, and state.json has each before the kill`, async () => {
+    for (let i = 1; i < count; i++) ids.push(await newTerminal());
     for (const id of ids) {
       folders.set(id, folder());
       pointer("focus", id);
       typeAll(id, `cd '${folders.get(id)}' && sleep 1\n`);
       startAgent(id);
     }
-    await until("the four records in state.json", 10000, () =>
+    await until(`the ${count} records in state.json`, 10000, () =>
       ids.every((id) => records(boardId)[id]?.resume?.cmd === CMD),
     );
   });
@@ -243,6 +256,14 @@ async function reopen() {
     eq(snap.focused_card, added, "the reopened card is selected");
     return added;
   }
+  return { boardId, ids, folders, fresh, reopenOne };
+}
+
+// --------------------------------------------------------------- reopen
+
+async function reopen() {
+  const { boardId, ids, folders, fresh, reopenOne } = await deadCards(4);
+  const [a] = ids;
 
   let a2;
   await run.checkAsync("Return on A's dead card reopens it with the panel and the chip (S30)", async () => {
@@ -341,6 +362,79 @@ async function reopen() {
   });
 }
 
+// -------------------------------------------------------- before output
+
+/** The gate holds `id`'s shell: its foreground process is the gate script
+ *  (`sh`, or its `sleep`), it has printed nothing, and the offer is not armed.
+ *  A shell that is merely slow to start is not enough: the step must not
+ *  depend on the race. */
+function silent(id) {
+  const t = term(snapshot(), id);
+  if (!["sh", "sleep"].includes(t.proc) || t.scrollback_tail.trim() !== "") {
+    throw new Error(
+      `${id} is not held by the gate (proc ${t.proc}); run \`make run SHELL_GATE=1\` (same DEV_DIR) first`,
+    );
+  }
+  eq(t.resume.armed, false, `${id} resume.armed`);
+  return t;
+}
+
+/** The same lines at the end of `tail` twice: a prompt the shell printed
+ *  again for an empty line, however many rows the prompt has. */
+function endsWithARepeatedPrompt(tail) {
+  const lines = tail.split("\n").map((l) => l.trimEnd()).filter((l) => l !== "");
+  for (let k = 1; k <= 4 && 2 * k <= lines.length; k++) {
+    const last = lines.slice(-k).join("\n");
+    if (last === lines.slice(-2 * k, -k).join("\n")) return true;
+  }
+  return false;
+}
+
+async function beforeOutput() {
+  if (!GATE) run.die("TARMAC_QA_SHELL_GATE is not set; run this through `make qa-resume`");
+  const { boardId, ids, fresh, reopenOne } = await deadCards(2);
+  const [x, y] = ids;
+  writeFileSync(GATE, "");
+  try {
+    await run.checkAsync(`Return on ${x}'s reopened card before its first output: the panel and the record go (S28)`, async () => {
+      const x2 = await reopenOne(x);
+      silent(x2);
+      eq(dev("key", x2, "enter").code, 0, "key enter");
+      await settled(`${x2}'s panel gone`, 2000, (s) => term(s, x2)?.resume === undefined);
+      await until(`no resume for ${x2} in state.json`, 2000, () => records(boardId)[x2]?.resume === undefined);
+      eq(term(snapshot(), x2).scrollback_tail.trim(), "", `${x2} still has no output`);
+    });
+
+    await run.checkAsync(`click resume on ${y}'s reopened card before its first output: the run is queued (S28)`, async () => {
+      const y2 = await reopenOne(y);
+      silent(y2);
+      const { code, body } = click(y2, "resume");
+      eq(code, 0, "click exit");
+      eq(body.focused_card, y2, "the card is selected (O10)");
+      const t = term(snapshot(), y2);
+      eq(t.resume.queued, true, "resume.queued");
+      eq(t.resume.title, QUEUED_TITLE, "resume.title");
+      eqJson(t.resume.buttons, ["skip"], "buttons");
+      eq(term(snapshot(), y2).scrollback_tail.trim(), "", `${y2} still has no output`);
+    });
+  } finally {
+    rmSync(GATE, { force: true });
+  }
+
+  await run.checkAsync("the gate opens: the queued card runs once, the other shell gets an empty line (S28)", async () => {
+    const [x2, y2] = [fresh.get(x), fresh.get(y)];
+    const snap = waitFor(y2, `cards[${y2}].term.scrollback_tail contains "RESUMED"`, "--timeout", "10000");
+    eq(resumed(snap, y2), 1, `RESUMED lines in ${y2}`);
+    await chipsGone([x2, y2]);
+    await until(`no resume for ${y2} in state.json`, 2000, () => records(boardId)[y2]?.resume === undefined);
+    const tails = await steadyTails();
+    eq(resumed(snapshot(), x2), 0, `RESUMED lines in ${x2}`);
+    if (!endsWithARepeatedPrompt(tails[x2])) {
+      throw new Error(`${x2} does not end with its prompt twice (the empty line):\n${tails[x2]}`);
+    }
+  });
+}
+
 // ------------------------------------------------------- restore card cases
 
 async function restoreSetup() {
@@ -412,6 +506,28 @@ async function resumeAll(choose) {
   });
 }
 
+/** S25 held: a Return held for a second gives autorepeats after the card
+ *  closes. They are taken and dropped, so the card that has the keys moves
+ *  down no more rows than the other card that ran the same command in the same
+ *  folder, and the card with no offer does not move. */
+async function resumeAllHeld() {
+  const { offers, plain } = restoreCardUp();
+  await run.checkAsync("resume all by a held Return: the repeats give no card an empty line (S25)", async () => {
+    const before = await steadyTails();
+    const r = dev("press", "enter", "--hold", "1000", "--repeat", "20");
+    eq(r.code, 0, "press exit");
+    eq(json(r).repeats, 20, "repeats posted");
+    waitFor(null, "restore_card == null", "--timeout", "2000");
+    for (const id of offers) waitFor(id, `cards[${id}].term.scrollback_tail contains "RESUMED"`, "--timeout", "10000");
+    await sleep(1500);
+    const after = await steadyTails();
+    for (const id of offers) eq(resumed(snapshot(), id), 1, `RESUMED lines in ${id}`);
+    const moved = (id) => rows(after[id]) - rows(before[id]);
+    eq(moved(offers[0]), moved(offers[1]), `rows ${offers[0]} moved, against ${offers[1]}`);
+    for (const id of plain) eq(after[id], before[id], `${id}'s scrollback`);
+  });
+}
+
 async function perCard(choose) {
   const { boardId, offers } = restoreCardUp();
   await run.checkAsync("decide per card: the card closes, no terminal gets a byte, both panels show (S26)", async () => {
@@ -470,6 +586,8 @@ const cases = {
   reopen,
   "restore-setup": restoreSetup,
   "resume-all": () => resumeAll(() => eq(dev("press", "enter").code, 0, "press enter")),
+  "resume-all-held": resumeAllHeld,
+  "before-output": beforeOutput,
   "resume-all-click": () => resumeAll(() => eq(click("restore_card", "resume_all").code, 0, "click resume_all")),
   "per-card": () => perCard(() => eq(dev("press", "tab").code, 0, "press tab")),
   "per-card-click": () => perCard(() => eq(click("restore_card", "decide_per_card").code, 0, "click decide_per_card")),

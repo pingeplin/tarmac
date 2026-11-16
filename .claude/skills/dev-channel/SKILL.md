@@ -112,7 +112,7 @@ tarmac dev focus <card>|board
 tarmac dev type <card> "<text>"
 tarmac dev key <card> "<combo>"
 tarmac dev board <board-id>|--new
-tarmac dev press <combo> [--hold <ms>] [--age <ms>] [--busy <ms>]
+tarmac dev press <combo> [--hold <ms>] [--age <ms>] [--busy <ms>] [--repeat <n>]
 tarmac dev click <card>|restore_card <control>
 ```
 
@@ -356,7 +356,7 @@ tarmac dev snapshot --until 'quit_guard.last_press.press_ms ~= <press_ms>' --tim
 ```
 
 - The reply says **what it did, not what the key caused**:
-  `{"combo": "cmd+q", "press_ms": 268318196, "hold_ms": 300, "activated": false, "busy_ms": null}`.
+  `{"combo": "cmd+q", "press_ms": 268318196, "hold_ms": 300, "activated": false, "busy_ms": null, "repeats": 0}`.
   Read the effect off the snapshot: wait for `quit_guard.last_press.press_ms`
   to match the reply (`~=` absorbs a ±1 truncation), then read `route`,
   `age_ms`, `phase` and `notice` off the snapshot that wait returns.
@@ -366,7 +366,11 @@ tarmac dev snapshot --until 'quit_guard.last_press.press_ms ~= <press_ms>' --tim
   <ms>` (0–60000) stamps the press that far in the past. `--busy <ms>`
   (1–1800) blocks the app's main thread behind the posted key, which is read
   only once the block ends; the reply arrives then, and `age_ms` shows it.
-  `--busy` cannot be combined with `--age`.
+  `--busy` cannot be combined with `--age`. `--repeat <n>` (1–100, #380)
+  posts `n` keyDowns with `isARepeat: true` after the press — a held key's
+  autorepeat, the first at 250 ms and then every 33 ms — and holds the key
+  until 33 ms after the last, unless `--hold` is longer. They are posted in the
+  app, not by the keyboard, so the user's own repeat settings play no part.
 - **A posted chord fires its menu action.** `press alt+cmd+h` runs Hide Others
   and hides your other apps; `press cmd+h` / `cmd+m` hide or minimise the dev
   window. The one chord refused is a real quit: a chord that a native
@@ -417,9 +421,8 @@ wait whose deadline passes then, answer `app_not_ready`.
 - No verb pans or creates a card. `board` switches boards and makes one; it
   cannot delete one.
 - `click` names controls, not points: a press on a panel's command text, which
-  is no control, stays hand QA. No verb sends a held key: `key` and `press`
-  always send `isARepeat: false`, so the repeat guards are tested only in
-  `KeyLadderTests`.
+  is no control, stays hand QA. `key` always sends `isARepeat: false`; only
+  `press --repeat` sends a held key's repeats.
 
 ## The scenario suite — `make qa`
 
@@ -464,8 +467,10 @@ run` returns, the daemon survives, and the next app reconnects to it.
 ```sh
 make qa-resume                       # CASE=reopen: no relaunch
 make qa-resume CASE=restore-setup    # then `make run`, then one case below
-make qa-resume CASE=resume-all       # or resume-all-click, per-card, per-card-click,
-                                     # veil, skip-all, skip-all-click, quit
+make qa-resume CASE=resume-all       # or resume-all-held, resume-all-click, per-card,
+                                     # per-card-click, veil, skip-all, skip-all-click, quit
+make run SHELL_GATE=1                # then, with no relaunch:
+make qa-resume CASE=before-output
 ```
 
 `scripts/qa/resume.mjs` (specs 2611.0011 S37 and 2611.0015) kills the dev
@@ -477,6 +482,13 @@ The restore card shows only at a board's first visit in an app session, so
 each restore card case needs `CASE=restore-setup` and a fresh `make run`
 before it; `restore-setup` wants a board with exactly one terminal card, so
 use a fresh `DEV_DIR`. An unknown `CASE` exits non-zero before any step.
+`CASE=before-output` (#380) needs the app from `make run SHELL_GATE=1`: then
+each shell of the channel starts through `scripts/qa/gate-shell.sh`, which
+holds it while `$DEV_DIR/shell-gate` exists (at most 30 s). The case makes
+that file, acts on reopened cards whose shells have printed nothing, and
+removes it; a card that is not held (its `proc` is not `sh` or `sleep`) stops
+the case. Inside a gated channel `$SHELL` is the gate script, which `exec`s
+the real shell.
 
 ## When it does not answer
 
