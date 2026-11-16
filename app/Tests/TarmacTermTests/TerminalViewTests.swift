@@ -1415,14 +1415,12 @@ final class TerminalViewTests: XCTestCase {
 
     // MARK: the source of each send (2611.0008)
 
-    /// S1
     func test2611_0008S1AKeyPressIsTheUsers() {
         view.keyDown(with: key("a", code: 0x00))
 
         XCTAssertEqual(calls, [Sent(text: "a", source: .user)])
     }
 
-    /// S1
     func test2611_0008S1BytesTheHostSendsForAChordAreTheUsers() {
         view.keyOverride = { _ in [0x15] }
 
@@ -1431,7 +1429,6 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{15}", source: .user)])
     }
 
-    /// S2
     func test2611_0008S2APasteIsTheUsers() {
         let saved = NSPasteboard.general.string(forType: .string)
         defer {
@@ -1446,21 +1443,18 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "hi", source: .user)])
     }
 
-    /// S3
     func test2611_0008S3SentTextIsTheUsers() {
         view.sendText("x")
 
         XCTAssertEqual(calls, [Sent(text: "x", source: .user)])
     }
 
-    /// S3
     func test2611_0008S3AnImeCommitIsTheUsers() {
         view.insertText("你", replacementRange: NSRange(location: NSNotFound, length: 0))
 
         XCTAssertEqual(calls, [Sent(text: "你", source: .user)])
     }
 
-    /// S4
     func test2611_0008S4AKeyReleaseIsTheUsers() {
         feed("\u{1b}[>3u")
 
@@ -1469,7 +1463,6 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[110;1:3u", source: .user)])
     }
 
-    /// S4
     func test2611_0008S4AModifierKeyIsTheUsers() {
         feed("\u{1b}[>8u")
 
@@ -1487,7 +1480,6 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[<35;3;1M", source: .terminal)])
     }
 
-    /// S5
     func test2611_0008S5AMousePressReportIsTheUsers() throws {
         feed("\u{1b}[?1000h\u{1b}[?1006h")
 
@@ -1496,7 +1488,6 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[<0;3;1M", source: .user)])
     }
 
-    /// S5
     func test2611_0008S5AWheelReportIsTheUsers() throws {
         feed("\u{1b}[?1000h\u{1b}[?1006h")
 
@@ -1517,7 +1508,6 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[<32;5;1M", source: .user)])
     }
 
-    /// S5
     func test2611_0008S5ALeftReleaseReportIsTheUsers() throws {
         feed("\u{1b}[?1000h\u{1b}[?1006h")
         view.mouseDown(with: try mouse(.leftMouseDown, col: 2, row: 0))
@@ -1528,7 +1518,6 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[<0;3;1m", source: .user)])
     }
 
-    /// S5
     func test2611_0008S5RightButtonReportsAreTheUsers() throws {
         feed("\u{1b}[?1002h\u{1b}[?1006h")
 
@@ -1542,7 +1531,6 @@ final class TerminalViewTests: XCTestCase {
         ])
     }
 
-    /// S5
     func test2611_0008S5MiddleButtonReportsAreTheUsers() throws {
         feed("\u{1b}[?1000h\u{1b}[?1006h")
 
@@ -1554,7 +1542,6 @@ final class TerminalViewTests: XCTestCase {
         ])
     }
 
-    /// S6
     func test2611_0008S6AWheelInTheAlternateScreenIsTheUsers() throws {
         feed("\u{1b}[?1049h")
 
@@ -1563,7 +1550,6 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[A", source: .user)])
     }
 
-    /// S7
     func test2611_0008S7FocusReportsAreTheTerminals() {
         feed("\u{1b}[?1004h")
 
@@ -1573,7 +1559,6 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[O", source: .terminal), Sent(text: "\u{1b}[I", source: .terminal)])
     }
 
-    /// S8
     func test2611_0008S8AnEngineReplyIsTheTerminals() {
         feed("\u{1b}[c")
 
@@ -1593,7 +1578,6 @@ final class TerminalViewTests: XCTestCase {
         ])
     }
 
-    /// S13
     func test2611_0008S13EachSendKeepsItsOwnSource() {
         feed("\u{1b}[?1004h")
 

@@ -16,6 +16,10 @@ final class DevPressTests: XCTestCase {
         .success(DevPress.Chord(flags: flags, characters: characters, keyCode: keyCode))
     }
 
+    private func enterPlan(hold: Int? = nil, busy: Int? = nil, repeats: Int) -> Result<DevPress.Plan, DevError> {
+        DevPress.plan(combo: "enter", holdMs: hold, ageMs: nil, busyMs: busy, repeats: repeats)
+    }
+
     private func code<T>(_ result: Result<T, DevError>) -> DevError.Code? {
         guard case .failure(let error) = result else { return nil }
         return error.code
@@ -157,23 +161,23 @@ final class DevPressTests: XCTestCase {
     func testRepeatsFollowTheInitialDelayAndTheKeyIsHeldPastTheLast() {
         let enter = DevPress.Chord(flags: 0, characters: "\r", keyCode: 36)
         XCTAssertEqual(
-            DevPress.plan(combo: "enter", holdMs: nil, ageMs: nil, busyMs: nil, repeats: 3),
+            enterPlan(repeats: 3),
             .success(DevPress.Plan(chord: enter, holdMs: 349, ageMs: 0, busyMs: nil, repeatsAtMs: [250, 283, 316]))
         )
         XCTAssertEqual(
-            DevPress.plan(combo: "enter", holdMs: 1_000, ageMs: nil, busyMs: nil, repeats: 2),
+            enterPlan(hold: 1_000, repeats: 2),
             .success(DevPress.Plan(chord: enter, holdMs: 1_000, ageMs: 0, busyMs: nil, repeatsAtMs: [250, 283]))
         )
         XCTAssertEqual(
-            DevPress.plan(combo: "enter", holdMs: 100, ageMs: nil, busyMs: nil, repeats: 3),
+            enterPlan(hold: 100, repeats: 3),
             .success(DevPress.Plan(chord: enter, holdMs: 349, ageMs: 0, busyMs: nil, repeatsAtMs: [250, 283, 316]))
         )
         XCTAssertEqual(
-            DevPress.plan(combo: "enter", holdMs: nil, ageMs: nil, busyMs: nil, repeats: 1),
+            enterPlan(repeats: 1),
             .success(DevPress.Plan(chord: enter, holdMs: 283, ageMs: 0, busyMs: nil, repeatsAtMs: [250]))
         )
         XCTAssertEqual(
-            DevPress.plan(combo: "enter", holdMs: nil, ageMs: nil, busyMs: nil, repeats: 100).map(\.repeatsAtMs.count),
+            enterPlan(repeats: 100).map(\.repeatsAtMs.count),
             .success(100)
         )
     }
@@ -181,13 +185,13 @@ final class DevPressTests: XCTestCase {
     /// A `--busy` freeze would hold every repeat and the keyUp back and post
     /// them together, so the pair is refused, as `--busy` with `--age` is.
     func testBusyWithRepeatIsABadRequest() {
-        XCTAssertEqual(code(DevPress.plan(combo: "enter", holdMs: nil, ageMs: nil, busyMs: 500, repeats: 2)), .badRequest)
+        XCTAssertEqual(code(enterPlan(busy: 500, repeats: 2)), .badRequest)
     }
 
     func testARepeatCountOutOfRangeIsABadRequest() {
         for repeats in [0, -1, 101] {
             XCTAssertEqual(
-                code(DevPress.plan(combo: "enter", holdMs: nil, ageMs: nil, busyMs: nil, repeats: repeats)),
+                code(enterPlan(repeats: repeats)),
                 .badRequest, "\(repeats)"
             )
         }

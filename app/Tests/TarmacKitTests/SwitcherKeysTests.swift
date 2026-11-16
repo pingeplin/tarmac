@@ -5,11 +5,6 @@ import XCTest
 final class SwitcherKeysTests: XCTestCase {
     private typealias State = SwitcherKeys.State
 
-    private let shift: UInt = 1 << 17
-    private let control: UInt = 1 << 18
-    private let option: UInt = 1 << 19
-    private let command: UInt = 1 << 20
-
     /// Display labels: `alpha`, `apex`, `board-2`. `apex` is active.
     private let boards = [
         BoardSwitcher.BoardSummary(boardID: "board-0", name: "alpha", running: 0, bell: 0, cards: 0, isLive: false),
@@ -17,14 +12,6 @@ final class SwitcherKeysTests: XCTestCase {
         BoardSwitcher.BoardSummary(boardID: "board-2", name: nil, running: 0, bell: 0, cards: 0, isLive: false),
     ]
     private let active = "board-1"
-
-    private func letter(_ c: Character, _ mods: UInt = 0) -> KeyPress {
-        KeyPress(keyCode: 0, characters: String(c), charactersIgnoringModifiers: String(c), modifierFlags: mods)
-    }
-
-    private func named(_ keyCode: UInt16, _ mods: UInt = 0) -> KeyPress {
-        KeyPress(keyCode: keyCode, characters: "", charactersIgnoringModifiers: "", modifierFlags: mods)
-    }
 
     private func esc(_ mods: UInt = 0) -> KeyPress { named(53, mods) }
     private func enter(_ mods: UInt = 0) -> KeyPress { named(36, mods) }

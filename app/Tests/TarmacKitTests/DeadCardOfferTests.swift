@@ -5,29 +5,34 @@ import TarmacKit
 final class DeadCardOfferTests: XCTestCase {
     private let home = "/Users/u"
 
+    private func makeOffer(_ cwd: String?, resume: String? = nil) throws -> DeadCardOffer.Offer {
+        try XCTUnwrap(
+            DeadCardOffer.make(record: TermRecord(lastCwd: cwd, resume: resume.map { ResumeRecord(cmd: $0) }), home: home)
+        )
+    }
+
     func testS10AFolderIsOfferedWithHomeShownAsTilde() throws {
-        let offer = try XCTUnwrap(DeadCardOffer.make(record: TermRecord(lastCwd: "/Users/u/w"), home: home))
+        let offer = try makeOffer("/Users/u/w")
         XCTAssertEqual(offer.lines, ["reopen here  ⏎", "in ~/w"])
     }
 
     func testS10HomeIsReplacedOnlyAtAPathBoundary() throws {
-        let offer = try XCTUnwrap(DeadCardOffer.make(record: TermRecord(lastCwd: "/Users/u2/w"), home: home))
+        let offer = try makeOffer("/Users/u2/w")
         XCTAssertEqual(offer.lines, ["reopen here  ⏎", "in /Users/u2/w"])
-        let atHome = try XCTUnwrap(DeadCardOffer.make(record: TermRecord(lastCwd: "/Users/u"), home: home))
+        let atHome = try makeOffer("/Users/u")
         XCTAssertEqual(atHome.lines, ["reopen here  ⏎", "in ~"])
     }
 
     /// 2611.0011 S10 and 2611.0015 S19: plain words, and `↻` only ever means
     /// refresh.
     func testS10S19ASafeResumeAddsAThirdLineInPlainWordsWithNoRefreshGlyph() throws {
-        let record = TermRecord(lastCwd: "/Users/u/w", resume: ResumeRecord(cmd: "claude --resume 3f2a1b9c-0000-4000-8000-000000000000"))
-        let offer = try XCTUnwrap(DeadCardOffer.make(record: record, home: home))
+        let offer = try makeOffer("/Users/u/w", resume: "claude --resume 3f2a1b9c-0000-4000-8000-000000000000")
         XCTAssertEqual(offer.lines, ["reopen here  ⏎", "in ~/w", "then offers: claude --resume 3f2a…"])
         XCTAssertFalse(offer.lines.contains { $0.contains("↻") })
     }
 
     func testS10AResumeAloneIsOfferedWithNoFolderLine() throws {
-        let offer = try XCTUnwrap(DeadCardOffer.make(record: TermRecord(lastCwd: nil, resume: ResumeRecord(cmd: "echo HI")), home: home))
+        let offer = try makeOffer(nil, resume: "echo HI")
         XCTAssertEqual(offer.lines, ["reopen here  ⏎", "then offers: echo HI"])
     }
 
@@ -38,8 +43,7 @@ final class DeadCardOfferTests: XCTestCase {
     }
 
     func testS10ARefusedResumeIsLeftOutOfAFolderOffer() throws {
-        let record = TermRecord(lastCwd: "/w", resume: ResumeRecord(cmd: "echo a\necho b"))
-        let offer = try XCTUnwrap(DeadCardOffer.make(record: record, home: home))
+        let offer = try makeOffer("/w", resume: "echo a\necho b")
         XCTAssertEqual(offer.lines, ["reopen here  ⏎", "in /w"])
         XCTAssertNil(DeadCardOffer.reopen(offer, deadID: "T").resume)
     }
@@ -47,14 +51,14 @@ final class DeadCardOfferTests: XCTestCase {
     // MARK: S25
 
     func testS25ReopenSucceedsTheDeadIdInItsFolderAndCarriesTheResume() throws {
-        let offer = try XCTUnwrap(DeadCardOffer.make(record: TermRecord(lastCwd: "/w", resume: ResumeRecord(cmd: "echo HI")), home: home))
+        let offer = try makeOffer("/w", resume: "echo HI")
         let reopen = DeadCardOffer.reopen(offer, deadID: "T")
         XCTAssertEqual(reopen.spawn, SpawnRequest(cwd: "/w", succeeds: "T"))
         XCTAssertEqual(reopen.resume, "echo HI")
     }
 
     func testS25ReopenWithNoFolderStillSucceedsTheDeadId() throws {
-        let offer = try XCTUnwrap(DeadCardOffer.make(record: TermRecord(lastCwd: nil, resume: ResumeRecord(cmd: "echo HI")), home: home))
+        let offer = try makeOffer(nil, resume: "echo HI")
         XCTAssertEqual(DeadCardOffer.reopen(offer, deadID: "T").spawn, SpawnRequest(cwd: nil, succeeds: "T"))
     }
 }

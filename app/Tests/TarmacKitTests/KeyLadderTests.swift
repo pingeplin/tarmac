@@ -5,19 +5,7 @@ import XCTest
 final class KeyLadderTests: XCTestCase {
     private typealias Facts = KeyLadder.Facts
 
-    private let shift: UInt = 1 << 17
-    private let control: UInt = 1 << 18
-    private let option: UInt = 1 << 19
-    private let command: UInt = 1 << 20
     private let numericPad: UInt = 1 << 21
-
-    private func letter(_ c: Character, _ mods: UInt = 0) -> KeyPress {
-        KeyPress(keyCode: 0, characters: String(c), charactersIgnoringModifiers: String(c), modifierFlags: mods)
-    }
-
-    private func named(_ keyCode: UInt16, _ mods: UInt = 0) -> KeyPress {
-        KeyPress(keyCode: keyCode, characters: "", charactersIgnoringModifiers: "", modifierFlags: mods)
-    }
 
     private func esc(_ mods: UInt = 0) -> KeyPress { named(53, mods) }
     private func enter(_ mods: UInt = 0) -> KeyPress { named(36, mods) }
