@@ -11,9 +11,9 @@ use tracing::debug;
 
 use crate::bell_scan::BellScan;
 use crate::boards::BoardId;
+use crate::holder::Holder;
 use crate::proc;
 use crate::reader::PathGate;
-use crate::reports::Holder;
 use crate::resume::Flag;
 use crate::state::Daemon;
 

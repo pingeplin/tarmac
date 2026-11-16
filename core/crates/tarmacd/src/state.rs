@@ -3,17 +3,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use tarmac_protocol::{DocEntry, Msg, ResumeRecord, TermInfo, TermRecord};
+use tarmac_protocol::{DocEntry, Msg};
 use tokio::sync::{Mutex, Notify, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::boards::{BoardId, Boards, DataDir, FileStamp, WantedData};
 use crate::docs::RepoInfo;
 use crate::reader::{PathFs, PathGate, RealFs};
-use crate::proc::{self, Facts, Pid};
-use crate::resume::Flag;
-use crate::reports::{Kind, Place, Reports};
-use crate::term::{SpawnPlan, TermHandle};
+use crate::reports::Reports;
+use crate::term::TermHandle;
 use crate::watch::{NotWatched, NotifySource, Wake, WakeSource, Watcher};
 
 pub struct AppSlot {
@@ -458,292 +456,6 @@ impl Daemon {
         }
     }
 
-    /// Files a new terminal under `board` with its record: the record of
-    /// `succeeds` when that board has one and the term is not live, else an
-    /// empty one. Runs before the terminal's first cwd read, which only ever
-    /// fills a record that is there.
-    ///
-    /// A moved resume command has no holder: `handle` is marked unclaimed in
-    /// the same step, so typed input drops it (spec 2611.0011, D6).
-    pub async fn adopt_term(&self, plan: &SpawnPlan, handle: &TermHandle) {
-        let succeeds = match plan.succeeds.as_deref() {
-            Some(old) if !self.terms.lock().await.contains_key(old) => Some(old),
-            _ => None,
-        };
-        self.term_boards.lock().await.insert(plan.term_id.clone(), plan.board.clone());
-        let mut boards = self.boards.lock().await;
-        let Some(reg) = boards.known_registry_mut(&plan.board) else { return };
-        let moved = succeeds.and_then(|old| reg.term_records.remove(old));
-        if moved.is_some() {
-            self.mark_dirty();
-        }
-        if moved.as_ref().is_some_and(|r| r.resume.is_some()) {
-            handle.unclaim_resume();
-        }
-        reg.term_records.insert(plan.term_id.clone(), moved.unwrap_or_default());
-    }
-
-    /// Reads the cwd of `pid` on the gate and stores it in the record of
-    /// `term_id`, on the board the term is filed under. A record that is gone
-    /// (closed, ended cleanly, or its board deleted) is not made again, and a
-    /// read with no answer keeps the cwd before it. Not saved by itself.
-    pub async fn note_cwd(&self, term_id: &str, pid: libc::pid_t) {
-        let Ok(Some(cwd)) = self.gate.pid_cwd(pid).await else { return };
-        let Some(board) = self.term_boards.lock().await.get(term_id).cloned() else { return };
-        let mut boards = self.boards.lock().await;
-        if let Some(record) = boards.known_registry_mut(&board).and_then(|reg| reg.term_records.get_mut(term_id)) {
-            record.last_cwd = Some(cwd);
-        }
-    }
-
-    /// The foreground pid of each live terminal.
-    pub async fn foreground_pids(&self) -> Vec<(String, libc::pid_t)> {
-        let terms = self.terms.lock().await;
-        terms.iter().filter_map(|(id, h)| Some((id.clone(), h.foreground_pid()?))).collect()
-    }
-
-    /// Deletes the record of `term_id` from whichever board holds it, and
-    /// marks the state dirty when there was one.
-    async fn forget_record(&self, term_id: &str) {
-        if self.boards.lock().await.forget_term(term_id) {
-            self.mark_dirty();
-        }
-    }
-
-    /// Deletes the record of `term_id`, live or not, and kills its process
-    /// group when it is live.
-    pub async fn close_term(&self, term_id: &str) {
-        self.forget_record(term_id).await;
-        match self.term(term_id).await {
-            Some(h) => h.kill(),
-            None => tracing::debug!("term_close for unknown term {term_id}"),
-        }
-    }
-
-    /// Takes an exited terminal out of the maps. A clean exit (`Some(0)`)
-    /// deletes its record; any other keeps it for the dead card.
-    /// A terminal's end also ends its resume command, which a kept record
-    /// keeps only once the shutdown has begun (spec 2611.0011, D3, D4).
-    /// Returns the board the terminal was filed under, read as its entry goes:
-    /// after this the daemon no longer knows it (spec 2611.0013).
-    /// The exit is recorded first (spec 2611.0012, D4): a subscriber then
-    /// finds the id live or in the ring, never neither.
-    pub async fn term_ended(&self, term_id: &str, code: Option<i64>) -> Option<BoardId> {
-        self.exits.lock().expect("exits lock").record(term_id, code);
-        if self.terms.lock().await.remove(term_id).is_none() {
-            tracing::warn!("term {term_id} missing from registry at exit");
-        }
-        let board_id = self.term_boards.lock().await.remove(term_id);
-        // After the term left `terms`: a report or a resume command stored
-        // after this is undone by its handler's own re-check.
-        self.reports.lock().await.forget(term_id);
-        if code == Some(0) {
-            self.forget_record(term_id).await;
-        } else {
-            self.end_resume(term_id).await;
-        }
-        board_id
-    }
-
-    /// At a terminal's end, or a set that raced it: drops the command from
-    /// the record kept on whichever board, unless the shutdown has begun.
-    async fn end_resume(&self, term_id: &str) {
-        if self.shutting_down.load(Ordering::SeqCst) {
-            return;
-        }
-        self.drop_resume(self.boards.lock().await.record_mut(term_id), None);
-    }
-
-    /// The one drop of a resume command, run with `boards` held: the
-    /// command, and `handle`'s holder and flag; dirty, and true, when a
-    /// command went.
-    fn drop_resume(&self, record: Option<&mut TermRecord>, handle: Option<&TermHandle>) -> bool {
-        if let Some(handle) = handle {
-            handle.forget_resume();
-        }
-        let dropped = record.and_then(|r| r.resume.take()).is_some();
-        if dropped {
-            self.mark_dirty();
-        }
-        dropped
-    }
-
-    /// Tells the app that `term_id`'s command is now `cmd` (spec 2611.0015,
-    /// D10). Not an event, so not `emit`; sent with `boards` released.
-    async fn push_resume(&self, term_id: &str, cmd: Option<String>) {
-        self.push(Msg::TermResume { term_id: term_id.into(), cmd }).await;
-    }
-
-    /// The answer to a cli `report` (spec 2611.0009): `Err` is the `err` text.
-    /// `peer` is the client's pid, read at accept.
-    pub async fn report(&self, peer: Option<Pid>, term_id: &str, kind: &str, text: Option<String>) -> Result<(), String> {
-        let handle = self.term(term_id).await.ok_or_else(|| format!("unknown terminal: {term_id}"))?;
-        if kind == "clear" {
-            self.change_report(term_id, &handle, |reports| reports.clear(term_id)).await;
-            return Ok(());
-        }
-        let kind = Kind::parse(kind).ok_or_else(|| format!("unknown report kind: {kind}"))?;
-        // Any socket client can send a `report`, so the daemon caps it too.
-        let text = text.map(|t| tarmac_protocol::cap_report_text(&t)).filter(|t| !t.is_empty());
-        let holder = handle
-            .resolve_holder(peer)
-            .ok_or_else(|| format!("no process to tie the report to in {term_id}"))?;
-        let proc_name = proc::process_name(holder.pid());
-        let now_ms = crate::boards::epoch_ms(std::time::SystemTime::now());
-        let place = self.place(term_id).await;
-        self.change_report(term_id, &handle, |reports| {
-            Some(reports.report(term_id, kind, text, now_ms, holder, proc_name, place))
-        })
-        .await;
-        // A terminal that exited while this ran: `term_ended` took it out of
-        // `terms` before its own `forget`, so one of the two finds the entry.
-        if self.term(term_id).await.is_none() {
-            self.reports.lock().await.forget(term_id);
-        }
-        Ok(())
-    }
-
-    /// Where `term_id` is now: its board, then that board's record of its cwd,
-    /// each lock released before the next and before `reports` is taken.
-    async fn place(&self, term_id: &str) -> Place {
-        let board_id = self.term_boards.lock().await.get(term_id).cloned();
-        let cwd = match &board_id {
-            Some(board) => self
-                .boards
-                .lock()
-                .await
-                .known_registry_mut(board)
-                .and_then(|reg| reg.term_records.get(term_id))
-                .and_then(|record| record.last_cwd.clone()),
-            None => None,
-        };
-        Place { board_id, cwd }
-    }
-
-    /// The poll's check: removes the report when its holder is gone. `leader`
-    /// is the tick's foreground-leader read.
-    pub async fn check_report(&self, term_id: &str, handle: &TermHandle, leader: Option<Pid>) {
-        if handle.has_report() {
-            self.change_report(term_id, handle, |reports| {
-                reports.check(term_id, |holder| holder.alive(proc::proc_facts, leader))
-            })
-            .await;
-        }
-    }
-
-    /// The answer to a cli `resume` (spec 2611.0011): `Err` is the `err` text.
-    /// `cmd: None` clears. The command is checked before its holder is
-    /// resolved, and no process is read while `boards` is held.
-    pub async fn set_resume(&self, peer: Option<Pid>, term_id: &str, cmd: Option<String>) -> Result<(), String> {
-        let unknown = || format!("unknown terminal: {term_id}");
-        let handle = self.term(term_id).await.ok_or_else(unknown)?;
-        let Some(cmd) = cmd else {
-            self.drop_and_push(term_id, |record| self.drop_resume(record, Some(&handle))).await;
-            return Ok(());
-        };
-        tarmac_protocol::refuse_resume_cmd(&cmd)?;
-        let holder = handle
-            .resolve_holder(peer)
-            .and_then(|holder| crate::resume::tie(holder, proc::proc_facts))
-            .ok_or_else(|| format!("no process to tie the resume command to in {term_id}"))?;
-        let stored = self
-            .with_record(term_id, |record| {
-                let record = record?;
-                handle.hold_resume(holder);
-                let changed = record.resume.as_ref().is_none_or(|r| r.cmd != cmd);
-                if changed {
-                    record.resume = Some(ResumeRecord { cmd: cmd.clone() });
-                    self.mark_dirty();
-                }
-                Some(changed)
-            })
-            .await;
-        let Some(changed) = stored else { return Err(unknown()) };
-        // A terminal that ended while this ran: `term_ended` took it out of
-        // `terms` before its own drop, so one of the two finds the command.
-        // Its `exit` ends the card, so no push.
-        if self.term(term_id).await.is_none() {
-            self.end_resume(term_id).await;
-        } else if changed {
-            self.push_resume(term_id, Some(cmd)).await;
-        }
-        Ok(())
-    }
-
-    /// Runs `drop` as `with_record` does and, when it dropped the command,
-    /// tells the app, with `boards` released.
-    async fn drop_and_push(&self, term_id: &str, drop: impl FnOnce(Option<&mut TermRecord>) -> bool) {
-        if self.with_record(term_id, drop).await {
-            self.push_resume(term_id, None).await;
-        }
-    }
-
-    /// Runs `change` with `boards` held, on `term_id`'s record on its own
-    /// board, or `None` when it has none there.
-    async fn with_record<T>(&self, term_id: &str, change: impl FnOnce(Option<&mut TermRecord>) -> T) -> T {
-        let board = self.term_boards.lock().await.get(term_id).cloned();
-        let mut boards = self.boards.lock().await;
-        let reg = board.and_then(|b| boards.known_registry_mut(&b));
-        change(reg.and_then(|reg| reg.term_records.get_mut(term_id)))
-    }
-
-    /// The poll's check: drops the resume command when its holder is gone,
-    /// unless the shutdown has begun. The holder is read from the handle and
-    /// checked with no lock held, and dropped only if it is still the one
-    /// checked, so a `resume` set in between is never undone.
-    pub async fn check_resume(&self, term_id: &str, handle: &TermHandle, facts_of: impl Fn(Pid) -> Facts) {
-        if handle.resume_flag() != Flag::Held {
-            return;
-        }
-        let Some(checked) = handle.resume_holder() else { return };
-        if checked.alive(facts_of, None) {
-            return;
-        }
-        self.drop_and_push(term_id, |record| {
-            !self.shutting_down.load(Ordering::SeqCst)
-                && handle.resume_holder() == Some(checked)
-                && self.drop_resume(record, Some(handle))
-        })
-        .await;
-    }
-
-    /// Typed input drops a resume command that has no holder (D6).
-    pub async fn claim_resume(&self, term_id: &str, handle: &TermHandle) {
-        if handle.resume_flag() != Flag::Unclaimed {
-            return;
-        }
-        self.drop_and_push(term_id, |record| handle.resume_flag() == Flag::Unclaimed && self.drop_resume(record, Some(handle)))
-            .await;
-    }
-
-    /// The app's skip (spec 2611.0015, D4): the same drop as typed input, so
-    /// a command an agent set since the restore (`Held`) is never undone. An
-    /// unknown terminal is a no-op: app-session frames have no reply.
-    pub async fn skip_resume(&self, term_id: &str) {
-        match self.term(term_id).await {
-            Some(handle) => self.claim_resume(term_id, &handle).await,
-            None => tracing::debug!("resume skip for unknown term {term_id}"),
-        }
-    }
-
-    /// Typed input marks an unread report read.
-    pub async fn mark_report_read(&self, term_id: &str, handle: &TermHandle) {
-        if handle.unread_report() {
-            self.change_report(term_id, handle, |reports| reports.mark_read(term_id)).await;
-        }
-    }
-
-    /// One change of the store, the handle's flag and its push, all under the
-    /// `reports` lock, so one terminal's frames keep their order.
-    async fn change_report(&self, term_id: &str, handle: &TermHandle, change: impl FnOnce(&mut Reports) -> Option<Msg>) {
-        let mut reports = self.reports.lock().await;
-        let msg = change(&mut reports);
-        handle.set_report(reports.has(term_id), reports.unread(term_id));
-        if let Some(msg) = msg {
-            self.emit(msg).await;
-        }
-    }
-
     pub async fn term(&self, id: &str) -> Option<Arc<TermHandle>> {
         self.terms.lock().await.get(id).cloned()
     }
@@ -753,38 +465,6 @@ impl Daemon {
     pub async fn board_list_msg(&self) -> Msg {
         let live = self.live_terms_by_board().await;
         self.boards.lock().await.board_list_msg(&live)
-    }
-
-    /// The live terminals for `tarmac terms` (spec 2611.0012), in board
-    /// order, then by id. Each one's process name and cwd are read at the same
-    /// time, the cwd on the gate, so the list takes about one gate limit, not
-    /// one for each terminal. No lock is held while they are read.
-    pub async fn terms_list(&self) -> Vec<TermInfo> {
-        let by_board = self.live_terms_by_board().await;
-        let live: Vec<(String, BoardId, Arc<TermHandle>)> = {
-            let terms = self.terms.lock().await;
-            by_board
-                .into_iter()
-                .flat_map(|(board_id, ids)| ids.into_iter().map(move |term_id| (term_id, board_id.clone())))
-                .filter_map(|(term_id, board_id)| Some((term_id.clone(), board_id, terms.get(&term_id)?.clone())))
-                .collect()
-        };
-        let mut reads = tokio::task::JoinSet::new();
-        for (term_id, board_id, handle) in live {
-            let gate = self.gate.clone();
-            reads.spawn(async move {
-                let (pid, cwd) = handle.foreground_read(&gate).await.unzip();
-                TermInfo { term_id, board_id, cwd: cwd.flatten(), proc: pid.and_then(proc::process_name) }
-            });
-        }
-        let mut rows = Vec::new();
-        while let Some(read) = reads.join_next().await {
-            rows.extend(read.ok());
-        }
-        let order: Vec<BoardId> = self.boards.lock().await.iter().map(|b| b.id.clone()).collect();
-        // Ids sort as text, so `t10` comes before `t2`.
-        rows.sort_by_cached_key(|row| (order.iter().position(|b| *b == row.board_id).unwrap_or(usize::MAX), row.term_id.clone()));
-        rows
     }
 
     /// The live term_ids per board (term_boards ∩ terms: an entry only counts
@@ -826,6 +506,10 @@ impl Daemon {
         }
     }
 }
+
+mod reports;
+mod resumes;
+mod terms;
 
 #[cfg(test)]
 mod tests;

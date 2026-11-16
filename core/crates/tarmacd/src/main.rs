@@ -6,6 +6,7 @@ mod events;
 mod fd_limit;
 #[cfg(test)]
 mod fixtures;
+mod holder;
 mod panic_log;
 mod persist;
 mod proc;

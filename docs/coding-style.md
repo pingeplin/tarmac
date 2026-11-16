@@ -182,8 +182,8 @@ back from a rendered bitmap.
   crate logs nothing.
 - **Name test functions as sentences** — `respects_posix_precedence_lc_all_over_lang`,
   not a `test_` prefix. Integration tests drive a real daemon over a real socket
-  through `core/crates/tarmacd/tests/common/mod.rs`; add helpers there rather
-  than re-implementing a handshake.
+  through `core/crates/tarmacd/tests/common/mod.rs`; add helpers to the file of
+  their subject beside it rather than re-implementing a handshake.
 
 ## 4. Style — Swift
 

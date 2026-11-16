@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use crate::boards::FileStamp;
+use crate::proc::{Facts, Pid};
 use crate::reader::{PathFs, RealFs};
 
 // Per-test unique temp dir (process id + counter avoids collisions across
@@ -186,4 +187,16 @@ pub(crate) async fn answers<T: Send + 'static>(look: impl Future<Output = T> + S
 
 pub(crate) async fn within<T>(task: tokio::task::JoinHandle<T>) -> T {
     tokio::time::timeout(Duration::from_secs(2), task).await.expect("an answer").unwrap()
+}
+
+pub(crate) const S: Pid = 100;
+pub(crate) const L: Pid = 700;
+
+pub(crate) fn facts(pairs: &[(Pid, Facts)]) -> impl Fn(Pid) -> Facts + use<> {
+    let pairs = pairs.to_vec();
+    move |pid| pairs.iter().find(|(p, _)| *p == pid).map_or(Facts::Gone, |(_, f)| *f)
+}
+
+pub(crate) fn live(started: u64) -> Facts {
+    Facts::Live { ppid: 1, started }
 }

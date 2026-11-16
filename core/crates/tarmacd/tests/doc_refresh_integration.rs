@@ -300,5 +300,5 @@ fn doc_refresh_on_a_deleted_file_emits_nothing() {
 }
 
 // S21 and S22 are `a_refresh_reports_a_change_that_no_wake_told_of` and
-// `a_refresh_stats_the_file_and_does_not_replay_what_is_recorded` in `src/state.rs`:
+// `a_refresh_stats_the_file_and_does_not_replay_what_is_recorded` in `src/state/tests/looks.rs`:
 // over the socket no change stays unseen long enough to refresh it.

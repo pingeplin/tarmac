@@ -68,7 +68,7 @@ fn doc_close_unwatches_dir_when_sole_occupant() {
 
     // No FileEvent should arrive for the closed path; the doc is deregistered.
     // (The watch→unwatch transition on watched_dirs is verified by the unit
-    // tests in state.rs.)
+    // tests in src/state/tests/.)
     assert!(
         none_within(&mut app, Duration::from_millis(800), |m| is_file_event_for(m, &a)),
         "FileEvent must not fire after the doc is deregistered"

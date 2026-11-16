@@ -1,5 +1,5 @@
 use super::*;
-use crate::proc::{Facts, Pid};
+use crate::proc::{self, Facts, Pid};
 use crate::term::TermHandle;
 
 /// A rig with a shell `T` idle at `read _` and the resume command `echo HI`.
@@ -206,7 +206,7 @@ async fn the_poll_drops_a_gone_holders_command_with_no_leader() {
         let mut boards = daemon.boards.lock().await;
         let record = tarmac_protocol::TermRecord { last_cwd: None, resume: Some(tarmac_protocol::ResumeRecord { cmd: "echo HI".into() }) };
         boards.known_registry_mut("board-0").unwrap().term_records.insert("T".into(), record);
-        handle.hold_resume(crate::reports::Holder::Agent { pid: std::process::id() as Pid, started: 1 });
+        handle.hold_resume(crate::holder::Holder::Agent { pid: std::process::id() as Pid, started: 1 });
     }
 
     let poll = tokio::spawn(crate::term::proc_loop(daemon.clone(), "T".into(), handle.clone()));
