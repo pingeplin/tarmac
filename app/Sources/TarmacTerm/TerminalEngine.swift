@@ -198,11 +198,16 @@ public final class TerminalEngine {
         return String(decoding: UnsafeBufferPointer(start: buffer, count: length), as: UTF8.self)
     }
 
+    /// The cursor's row counted from the top of the scrollback.
+    public var cursorRow: Int {
+        read(GHOSTTY_TERMINAL_DATA_SCROLLBACK_ROWS, 0) + Int(read(GHOSTTY_TERMINAL_DATA_CURSOR_Y, UInt16(0)))
+    }
+
     /// The `lines` screen rows ending at the cursor's row, trailing blanks
     /// trimmed, wherever the viewport is scrolled. Rows, not logical lines: a
     /// soft-wrapped line is reported as the rows it occupies.
     public func tail(lines: Int) -> String {
-        let cursorRow = read(GHOSTTY_TERMINAL_DATA_SCROLLBACK_ROWS, 0) + Int(read(GHOSTTY_TERMINAL_DATA_CURSOR_Y, UInt16(0)))
+        let cursorRow = cursorRow
         guard let start = screenRef(col: 0, row: max(cursorRow - lines + 1, 0)),
               let end = screenRef(col: cols - 1, row: cursorRow) else { return "" }
         var selection = GhosttySelection()

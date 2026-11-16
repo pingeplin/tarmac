@@ -14,9 +14,13 @@ final class DevSnapshotTests: XCTestCase {
     private let view = CGRect(x: 24, y: 40, width: 1000, height: 700)
 
     private func terminal(
-        live: Bool = true, dead: Bool = false, proc: String? = "zsh", selection: String? = nil, tail: String = "hi"
+        live: Bool = true, dead: Bool = false, proc: String? = "zsh", selection: String? = nil, tail: String = "hi",
+        cursorRow: Int = 57
     ) -> Terminal {
-        Terminal(live: live, dead: dead, cols: 80, rows: 24, proc: proc, selection: selection, scrollbackTail: tail)
+        Terminal(
+            live: live, dead: dead, cols: 80, rows: 24, proc: proc, selection: selection, scrollbackTail: tail,
+            cursorRow: cursorRow
+        )
     }
 
     private func term(_ terminal: Terminal? = nil, screenRect: CGRect? = nil, scroll: DevSnapshot.Scroll? = nil) -> Card {
@@ -219,11 +223,11 @@ final class DevSnapshotTests: XCTestCase {
     // MARK: - S2 a doc card has no `term` key at all
 
     /// A `term` key holding null would read as a resolvable path to `--until`.
-    func testS2ADocCardHasNoTermKeyAndATerminalHasExactlySix() throws {
+    func testS2ADocCardHasNoTermKeyAndATerminalHasExactlySeven() throws {
         let snapshot = DevSnapshot.build(input())
         XCTAssertEqual(
             fields(card(snapshot, "t-1")["term"]).keys.sorted(),
-            ["alive", "cols", "proc", "rows", "scrollback_tail", "selection"]
+            ["alive", "cols", "cursor_row", "proc", "rows", "scrollback_tail", "selection"]
         )
         XCTAssertNil(card(snapshot, "/Users/e/a.b.md")["term"])
         XCTAssertFalse(try DevUntil.evaluate(DevUntil.parse("cards[/Users/e/a.b.md].term == null"), against: snapshot))
@@ -234,7 +238,16 @@ final class DevSnapshotTests: XCTestCase {
         let facts = fields(card(DevSnapshot.build(input(cards: [term(terminal(tail: "$ ls\na b"))])), "t-1")["term"])
         XCTAssertEqual(facts, [
             "alive": true, "cols": 80, "rows": 24, "proc": "zsh", "selection": .null, "scrollback_tail": "$ ls\na b",
+            "cursor_row": 57,
         ])
+    }
+
+    /// #380: the cursor's row counted from the top of the scrollback, which
+    /// keeps growing where the 40-row `scrollback_tail` stops, so a runner
+    /// can tell how far a terminal moved down.
+    func testTheCursorRowIsReportedAsMeasured() {
+        XCTAssertEqual(facts(terminal(cursorRow: 0))["cursor_row"], 0)
+        XCTAssertEqual(facts(terminal(cursorRow: 1_234))["cursor_row"], 1_234)
     }
 
     /// The view's rows as it hands them over: a blank row inside the tail is

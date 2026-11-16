@@ -35,7 +35,7 @@ DEV_ENV := TARMAC_SOCKET="$(DEV_SOCKET)" \
 # TARMAC_QA_SHELL comes first: a gated terminal already has one, and its SHELL
 # is the gate script.
 SHELL_GATE_FILE := $(DEV_DIR)/shell-gate
-GATE_ENV := $(if $(SHELL_GATE),TARMAC_QA_SHELL="$${TARMAC_QA_SHELL:-$$SHELL}" \
+GATE_ENV := $(if $(filter 1,$(SHELL_GATE)),TARMAC_QA_SHELL="$${TARMAC_QA_SHELL:-$$SHELL}" \
 	TARMAC_QA_SHELL_GATE="$(SHELL_GATE_FILE)" \
 	SHELL="$(ROOT)/scripts/qa/gate-shell.sh")
 

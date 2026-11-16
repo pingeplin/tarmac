@@ -165,9 +165,23 @@ final class DevPressTests: XCTestCase {
             .success(DevPress.Plan(chord: enter, holdMs: 1_000, ageMs: 0, busyMs: nil, repeatsAtMs: [250, 283]))
         )
         XCTAssertEqual(
+            DevPress.plan(combo: "enter", holdMs: 100, ageMs: nil, busyMs: nil, repeats: 3),
+            .success(DevPress.Plan(chord: enter, holdMs: 349, ageMs: 0, busyMs: nil, repeatsAtMs: [250, 283, 316]))
+        )
+        XCTAssertEqual(
+            DevPress.plan(combo: "enter", holdMs: nil, ageMs: nil, busyMs: nil, repeats: 1),
+            .success(DevPress.Plan(chord: enter, holdMs: 283, ageMs: 0, busyMs: nil, repeatsAtMs: [250]))
+        )
+        XCTAssertEqual(
             DevPress.plan(combo: "enter", holdMs: nil, ageMs: nil, busyMs: nil, repeats: 100).map(\.repeatsAtMs.count),
             .success(100)
         )
+    }
+
+    /// A `--busy` freeze would hold every repeat and the keyUp back and post
+    /// them together, so the pair is refused, as `--busy` with `--age` is.
+    func testBusyWithRepeatIsABadRequest() {
+        XCTAssertEqual(code(DevPress.plan(combo: "enter", holdMs: nil, ageMs: nil, busyMs: 500, repeats: 2)), .badRequest)
     }
 
     func testARepeatCountOutOfRangeIsABadRequest() {
@@ -194,7 +208,7 @@ final class DevPressTests: XCTestCase {
     // MARK: - the reply and the refusals
 
     /// `lib.mjs` reads `press_ms`, `hold_ms`, `activated` and `busy_ms` off this;
-    /// `repeats` is the count of autorepeat keyDowns posted (#380).
+    /// `repeats` is the count of autorepeat keyDowns scheduled (#380).
     func testTheReplySaysWhatWasPostedNotWhatTheKeyCaused() {
         let chord = DevPress.Chord(flags: cmd, characters: "q", keyCode: 12)
         XCTAssertEqual(

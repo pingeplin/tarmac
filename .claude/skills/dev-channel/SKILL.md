@@ -152,7 +152,9 @@ core/target/debug/tarmac dev snapshot | jq .
   the id of every theme, `refused`: each file that is no theme, with the
   reason, and `findings`: what the contrast detector found in the theme in
   effect), per-terminal
-  `cols`/`rows`/`proc`/`selection`/`scrollback_tail`, per-doc-card `borrowed`
+  `cols`/`rows`/`proc`/`selection`/`scrollback_tail`/`cursor_row` (the cursor's
+  row from the top of the scrollback, which keeps counting where the 40-row
+  tail stops; #380), per-doc-card `borrowed`
   (the HTML card whose shield is lifted), and `quit_guard` — the ⌘Q guard's hold
   on the Quit item (`retargeted`, `enabled`, which `make qa`'s D11 asserts) plus
   what it last did: `phase` (`idle` | `showing` | `confirming`), `notice`
@@ -366,11 +368,12 @@ tarmac dev snapshot --until 'quit_guard.last_press.press_ms ~= <press_ms>' --tim
   <ms>` (0–60000) stamps the press that far in the past. `--busy <ms>`
   (1–1800) blocks the app's main thread behind the posted key, which is read
   only once the block ends; the reply arrives then, and `age_ms` shows it.
-  `--busy` cannot be combined with `--age`. `--repeat <n>` (1–100, #380)
+  `--busy` cannot be combined with `--age` or `--repeat`. `--repeat <n>` (1–100, #380)
   posts `n` keyDowns with `isARepeat: true` after the press — a held key's
   autorepeat, the first at 250 ms and then every 33 ms — and holds the key
   until 33 ms after the last, unless `--hold` is longer. They are posted in the
   app, not by the keyboard, so the user's own repeat settings play no part.
+  The reply's `repeats` is the count scheduled: it is sent before the first one.
 - **A posted chord fires its menu action.** `press alt+cmd+h` runs Hide Others
   and hides your other apps; `press cmd+h` / `cmd+m` hide or minimise the dev
   window. The one chord refused is a real quit: a chord that a native
@@ -484,11 +487,13 @@ before it; `restore-setup` wants a board with exactly one terminal card, so
 use a fresh `DEV_DIR`. An unknown `CASE` exits non-zero before any step.
 `CASE=before-output` (#380) needs the app from `make run SHELL_GATE=1`: then
 each shell of the channel starts through `scripts/qa/gate-shell.sh`, which
-holds it while `$DEV_DIR/shell-gate` exists (at most 30 s). The case makes
+holds it while `$DEV_DIR/shell-gate` exists (about 30 s at most). The case makes
 that file, acts on reopened cards whose shells have printed nothing, and
 removes it; a card that is not held (its `proc` is not `sh` or `sleep`) stops
 the case. Inside a gated channel `$SHELL` is the gate script, which `exec`s
-the real shell.
+the real shell; a gated daemon keeps it after its app quits, and a `make run`
+started in a gated terminal passes it on, so `make kill-daemon` the channel
+to be rid of it. `make qa-resume` removes a gate file left by a stopped run.
 
 ## When it does not answer
 

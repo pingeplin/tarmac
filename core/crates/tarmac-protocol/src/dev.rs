@@ -181,6 +181,23 @@ mod tests {
         bytes.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ")
     }
 
+    /// #380: the bytes `DevMessagesTests.testPress` pins the Swift codec to, so
+    /// a renamed `repeats` key breaks here and not only on the wire.
+    #[test]
+    fn a_press_carries_its_repeats_under_that_key() {
+        let held = DevRequest::Press {
+            combo: "enter".into(), hold_ms: Some(1000), age_ms: None, busy_ms: None, repeats: Some(20),
+        };
+        assert_eq!(
+            hex(&encode_request(&held).unwrap()),
+            "84 a1 74 a5 70 72 65 73 73 a5 63 6f 6d 62 6f a5 65 6e 74 65 72 a7 68 6f \
+             6c 64 5f 6d 73 cd 03 e8 a7 72 65 70 65 61 74 73 14"
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+    }
+
     /// The bytes `DevMessagesTests` pins the Swift codec to. With no handle the
     /// key is omitted, so the request is today's.
     #[test]

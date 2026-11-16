@@ -58,9 +58,9 @@ public enum DevPress {
             && (ageMs.map((0...DevRequest.ageMsMax).contains) ?? true)
             && (busyMs.map((1...DevRequest.busyMsMax).contains) ?? true)
             && (repeats.map((1...DevRequest.repeatsMax).contains) ?? true)
-            && !(busyMs != nil && ageMs != nil)
+            && !(busyMs != nil && (ageMs != nil || repeats != nil))
         guard inRange else {
-            return .failure(DevError(.badRequest, "hold, age, busy or repeat out of range, or busy with age"))
+            return .failure(DevError(.badRequest, "hold, age, busy or repeat out of range, or busy with age or repeat"))
         }
         let repeatsAtMs = (0..<UInt64(repeats ?? 0)).map { repeatDelayMs + $0 * repeatGapMs }
         let hold = max(holdMs.map(UInt64.init) ?? tapHoldMs, repeatsAtMs.last.map { $0 + repeatGapMs } ?? 0)

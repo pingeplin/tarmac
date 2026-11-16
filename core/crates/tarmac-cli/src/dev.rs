@@ -168,6 +168,10 @@ fn parse_press(rest: &[String]) -> Result<DevRequest, String> {
     if busy_ms.is_some() && age_ms.is_some() {
         return usage("tarmac dev press: --busy cannot be combined with --age");
     }
+    // The freeze would hold the repeats and the keyUp back and post them together.
+    if busy_ms.is_some() && repeats.is_some() {
+        return usage("tarmac dev press: --busy cannot be combined with --repeat");
+    }
     Ok(DevRequest::Press { combo: combo.clone(), hold_ms, age_ms, busy_ms, repeats })
 }
 
@@ -486,6 +490,8 @@ mod tests {
         names(&["press", "enter", "--repeat", "101"], &["--repeat"]);
         names(&["press", "enter", "--repeat"], &["--repeat"]);
         names(&["press", "enter", "--repeat", "2", "--repeat", "3"], &["--repeat"]);
+        names(&["press", "enter", "--busy", "100", "--repeat", "2"], &["--busy", "--repeat"]);
+        names(&["press", "enter", "--repeat", "2", "--busy", "100"], &["--busy", "--repeat"]);
         names(&["press", "cmd+q", "--busy", "0"], &["--busy"]);
         names(&["press", "cmd+q", "--busy", "1801"], &["--busy"]);
         names(&["press", "cmd+q", "--busy", "500", "--age", "10"], &["--busy", "--age"]);

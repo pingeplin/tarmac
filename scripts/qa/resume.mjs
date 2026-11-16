@@ -69,9 +69,6 @@ const eqJson = (actual, expected, what) => eq(JSON.stringify(actual), JSON.strin
 const resumedLines = (tail) => (tail ?? "").split("\n").filter((l) => l.trimEnd() === "RESUMED").length;
 const resumed = (snap, id) => resumedLines(term(snap, id)?.scrollback_tail);
 const terminals = (snap) => snap.cards.filter((c) => c.kind === "term").map((c) => c.id);
-/** `scrollback_tail` ends at the cursor's row, so on a young terminal its line
- *  count is how far the cursor has gone down. */
-const rows = (tail) => tail.split("\n").length;
 
 async function until(what, boundMs, done) {
   const deadline = Date.now() + boundMs;
@@ -103,6 +100,15 @@ async function steadyTails() {
     return Date.now() - since >= 1000 ? now : null;
   });
   return JSON.parse(tails);
+}
+
+/** Each terminal's scrollback and cursor row (from the top of its
+ *  scrollback, #380), once the scrollback has held still. The tail is capped
+ *  at 40 rows, so how far a terminal moved is read off `cursor`. */
+async function steady() {
+  const tails = await steadyTails();
+  const s = snapshot();
+  return { tails, cursor: Object.fromEntries(terminals(s).map((id) => [id, term(s, id).cursor_row])) };
 }
 
 /** The dev daemon's pids, from the socket alone. */
@@ -386,8 +392,10 @@ async function silent(id) {
 
 async function beforeOutput() {
   if (!GATE) run.die("TARMAC_QA_SHELL_GATE is not set; run this through `make qa-resume`");
-  const { boardId, ids, fresh, reopenOne } = await deadCards(3);
-  const [x, y, z] = ids;
+  // X and Z come from `cmd+t`, so they have the same size and a prompt wraps
+  // into the same rows in both; the preflight card stays dead.
+  const { boardId, ids, fresh, reopenOne } = await deadCards(4);
+  const [, x, y, z] = ids;
   writeFileSync(GATE, "");
   try {
     await run.checkAsync(`Return on ${x}'s reopened card before its first output: the panel and the record go (S28)`, async () => {
@@ -421,16 +429,20 @@ async function beforeOutput() {
 
   await run.checkAsync("the gate opens: the queued card runs once, the other shell gets an empty line (S28)", async () => {
     const [x2, y2, z2] = [fresh.get(x), fresh.get(y), fresh.get(z)];
-    const snap = waitFor(y2, `cards[${y2}].term.scrollback_tail contains "RESUMED"`, "--timeout", "10000");
-    eq(resumed(snap, y2), 1, `RESUMED lines in ${y2}`);
+    const ran = waitFor(y2, `cards[${y2}].term.scrollback_tail contains "RESUMED"`, "--timeout", "10000");
+    eq(resumed(ran, y2), 1, `RESUMED lines in ${y2}`);
     await chipsGone([x2, y2]);
     await until(`no resume for ${y2} in state.json`, 2000, () => records(boardId)[y2]?.resume === undefined);
-    const tails = await steadyTails();
-    eq(resumed(snapshot(), x2), 0, `RESUMED lines in ${x2}`);
-    // The same shell start-up in both, so only the empty line's second prompt
-    // puts X″'s cursor further down, however many rows the prompt has.
-    if (rows(tails[x2]) <= rows(tails[z2])) {
-      throw new Error(`${x2}'s cursor is not below ${z2}'s (no empty line):\n${tails[x2]}\n--- ${z2}:\n${tails[z2]}`);
+    const { tails, cursor } = await steady();
+    const snap = snapshot();
+    eq(resumed(snap, x2), 0, `RESUMED lines in ${x2}`);
+    eq(term(snap, x2).cols, term(snap, z2).cols, `${x2}'s cols, against ${z2}'s`);
+    // The same shell start-up at the same width in both, so only the empty
+    // line's second prompt puts X″'s cursor further down.
+    if (cursor[x2] <= cursor[z2]) {
+      throw new Error(
+        `${x2}'s cursor row ${cursor[x2]} is not below ${z2}'s ${cursor[z2]} (no empty line):\n${tails[x2]}\n--- ${z2}:\n${tails[z2]}`,
+      );
     }
   });
 }
@@ -497,7 +509,7 @@ function restoreCardUp() {
 async function resumeAll(choose, { held = false } = {}) {
   const { boardId, offers, plain } = restoreCardUp();
   await run.checkAsync("resume all: each offer runs once, at its own output; the third card gets nothing (S25)", async () => {
-    const before = held && (await steadyTails());
+    const before = held && (await steady());
     choose();
     waitFor(null, "restore_card == null", "--timeout", "2000");
     for (const id of offers) {
@@ -509,12 +521,34 @@ async function resumeAll(choose, { held = false } = {}) {
     await until("no resume in state.json", 2000, () => offers.every((id) => records(boardId)[id]?.resume === undefined));
     await chipsGone(offers);
     if (!held) return;
-    const after = await steadyTails();
-    for (const id of offers) eq(resumedLines(after[id]), 1, `RESUMED lines in ${id}`);
-    const moved = (id) => rows(after[id]) - rows(before[id]);
+    const after = await steady();
+    for (const id of offers) eq(resumedLines(after.tails[id]), 1, `RESUMED lines in ${id}`);
+    const moved = (id) => after.cursor[id] - before.cursor[id];
+    if (moved(offers[0]) <= 0) throw new Error(`${offers[0]} moved ${moved(offers[0])} rows after its run`);
     eq(moved(offers[0]), moved(offers[1]), `rows ${offers[0]} moved, against ${offers[1]}`);
-    for (const id of plain) eq(after[id], before[id], `${id}'s scrollback`);
+    for (const id of plain) {
+      eq(after.tails[id], before.tails[id], `${id}'s scrollback`);
+      eq(after.cursor[id], before.cursor[id], `${id}'s cursor row`);
+    }
+    await repeatsReachATerminal(after.cursor);
   });
+}
+
+/** The positive control of the held case: with the latch cleared by a fresh
+ *  Return, the repeats of a second one reach the terminal that has the keys,
+ *  so the check above did not pass because no repeat arrived. */
+async function repeatsReachATerminal(cursor) {
+  const holder = snapshot().active_element.card;
+  if (!holder || !(holder in cursor)) throw new Error(`no terminal has the keys (active_element.card ${holder})`);
+  const rowsNow = async () => (await steady()).cursor[holder];
+  const start = cursor[holder];
+  eq(dev("press", "enter").code, 0, "press enter");
+  const one = (await rowsNow()) - start;
+  if (one <= 0) throw new Error(`a fresh Return moved ${holder} ${one} rows`);
+  const r = dev("press", "enter", "--hold", "600", "--repeat", "5");
+  eq(r.code, 0, "press enter --repeat 5");
+  const held = (await rowsNow()) - start - one;
+  if (held < 2 * one) throw new Error(`a held Return moved ${holder} ${held} rows, under ${2 * one}: the repeats did not arrive`);
 }
 
 async function perCard(choose) {
@@ -593,6 +627,8 @@ const cases = {
 const CASES = Object.keys(cases);
 if (!CASES.includes(CASE)) run.die(`unknown CASE=${CASE}; expected one of ${CASES.join(", ")}`);
 
+// A run stopped with the gate up leaves it, and it would hold every new shell.
+if (GATE) rmSync(GATE, { force: true });
 try {
   await cases[CASE]();
 } finally {
