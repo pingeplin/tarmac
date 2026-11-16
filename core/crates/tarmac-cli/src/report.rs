@@ -28,7 +28,7 @@ pub(crate) fn for_terminal(needs_term: &str, msg: impl FnOnce(String) -> Msg) ->
         return 1;
     };
     let msg = msg(term_id.to_string_lossy().into_owned());
-    match send(&msg, crate::DAEMON_WAIT, NoAnswer::ToTheReport(&crate::no_answer("an older daemon"))) {
+    match send(&msg, crate::daemon::DAEMON_WAIT, NoAnswer::ToTheReport(&crate::daemon::no_answer("an older daemon"))) {
         Ok(()) => 0,
         Err(why) => {
             eprintln!("tarmac: {why}");
@@ -70,7 +70,7 @@ pub(crate) fn send(msg: &Msg, wait: Duration, no_answer: NoAnswer) -> Result<(),
         NoAnswer::ToTheReport(line) => (line, false),
         NoAnswer::Anywhere(line) => (line, true),
     };
-    let late = |e| if in_handshake { crate::late_or_lost(e, line) } else { crate::lost(e) };
-    let mut stream = crate::connect_until(until, &late)?;
-    crate::exchange_until(&mut stream, &payload, until, line)?
+    let late = |e| if in_handshake { crate::daemon::late_or_lost(e, line) } else { crate::daemon::lost(e) };
+    let mut stream = crate::daemon::connect_until(until, &late)?;
+    crate::daemon::exchange_until(&mut stream, &payload, until, line)?
 }

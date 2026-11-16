@@ -84,12 +84,22 @@ const READ_REPORT: u8 = 1;
 const UNREAD_REPORT: u8 = 2;
 
 impl TermHandle {
-    pub fn pid(&self) -> Option<libc::pid_t> {
-        self.pid
+    fn new(input_tx: mpsc::Sender<Vec<u8>>, master: Box<dyn MasterPty + Send>, pid: Option<libc::pid_t>, spawned_with_cmd: bool) -> Arc<TermHandle> {
+        Arc::new(TermHandle {
+            input_tx,
+            master: std::sync::Mutex::new(master),
+            scrollback: std::sync::Mutex::new(ScrollbackRing::new()),
+            pid,
+            spawned_with_cmd,
+            report: AtomicU8::new(NO_REPORT),
+            resume: AtomicU8::new(Flag::None as u8),
+            resume_holder: std::sync::Mutex::new(None),
+        })
     }
 
-    pub fn spawned_with_cmd(&self) -> bool {
-        self.spawned_with_cmd
+    /// The process a `report` or a `resume` from `peer` is tied to.
+    pub fn resolve_holder(&self, peer: Option<libc::pid_t>) -> Option<Holder> {
+        Holder::resolve(peer, self.pid, self.spawned_with_cmd, proc::proc_facts, || self.foreground_pid())
     }
 
     pub fn has_report(&self) -> bool {
@@ -137,16 +147,7 @@ impl TermHandle {
     /// A handle on a pty that no process holds: no pid, no foreground leader.
     #[cfg(test)]
     pub(crate) fn detached() -> Arc<TermHandle> {
-        Arc::new(TermHandle {
-            input_tx: mpsc::channel(1).0,
-            master: std::sync::Mutex::new(native_pty_system().openpty(PtySize::default()).unwrap().master),
-            scrollback: std::sync::Mutex::new(ScrollbackRing::new()),
-            pid: None,
-            spawned_with_cmd: false,
-            report: AtomicU8::new(NO_REPORT),
-            resume: AtomicU8::new(Flag::None as u8),
-            resume_holder: std::sync::Mutex::new(None),
-        })
+        TermHandle::new(mpsc::channel(1).0, native_pty_system().openpty(PtySize::default()).unwrap().master, None, false)
     }
 
     pub fn resize(&self, cols: u16, rows: u16) -> Result<(), String> {
@@ -286,16 +287,7 @@ pub async fn spawn(daemon: Arc<Daemon>, plan: SpawnPlan) -> Result<(), String> {
         .map_err(|e| format!("pty writer unavailable: {e}"))?;
 
     let (input_tx, mut input_rx) = mpsc::channel::<Vec<u8>>(256);
-    let handle = Arc::new(TermHandle {
-        input_tx,
-        master: std::sync::Mutex::new(pty.master),
-        scrollback: std::sync::Mutex::new(ScrollbackRing::new()),
-        pid: child_pid,
-        spawned_with_cmd: plan.cmd.is_some(),
-        report: AtomicU8::new(NO_REPORT),
-        resume: AtomicU8::new(Flag::None as u8),
-        resume_holder: std::sync::Mutex::new(None),
-    });
+    let handle = TermHandle::new(input_tx, pty.master, child_pid, plan.cmd.is_some());
     // Before the loop starts: its first cwd read fills the record of the
     // term's board, which must be there by then.
     daemon.adopt_term(&plan, &handle).await;

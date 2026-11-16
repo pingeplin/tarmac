@@ -536,7 +536,7 @@ public enum DevSnapshot {
             "toasts": .array(input.toasts.map(JSONValue.string)),
             "hints": .array(input.hints.map { hint in
                 [
-                    "card": .string(hint.card), "signal": .string(signalName(hint.signal)),
+                    "card": .string(hint.card), "signal": .string(hint.signal.rawValue),
                     "edge": .string(hint.edge.rawValue),
                 ]
             }),
@@ -557,16 +557,6 @@ public enum DevSnapshot {
                 ]
             }),
         ]
-    }
-
-    private static func signalName(_ signal: OffscreenHintLayout.Signal) -> String {
-        switch signal {
-        case .blocked: "blocked"
-        case .bell: "bell"
-        case .exit: "exit"
-        case .done: "done"
-        case .live: "live"
-        }
     }
 
     private static func theme(_ theme: Theme) -> JSONValue {

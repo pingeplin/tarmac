@@ -379,12 +379,13 @@ of the persisted id from its own board when that id is not live.
 terminal and `blocked`, `done` or `clear`, with an optional text (capped at 280
 chars by the cli and again by the daemon). The daemon keeps one current report
 per live terminal in `Daemon::reports` (`reports::Reports`, pure), in memory
-only. `Daemon::report` ties it to a holder with `Holder::resolve` (pure):
+only. `Daemon::report` ties it to a holder with `Holder::resolve` (pure), which
+`TermHandle::resolve_holder` calls with the terminal's own facts:
 
 - **The walk** follows the client's pid up its
   parents (`proc::proc_facts`, one `sysctl(KERN_PROC_PID)` read, never
   `proc_pidinfo`) until it reaches the PTY child. A terminal spawned with a
-  `cmd` (`TermHandle::spawned_with_cmd`) has its child as the agent; else the
+  `cmd` (the `spawned_with_cmd` field of `TermHandle`) has its child as the agent; else the
   member just below the child is the agent, or the shell itself when the
   caller's parent is the shell (a report typed at the prompt). A caller that is
   re-parented, gone or unreadable, or whose chain to the child has more than

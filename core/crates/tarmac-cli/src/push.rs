@@ -23,7 +23,7 @@ pub fn run(args: &[String]) -> i32 {
     match mode {
         Mode::One(value) => one(&path, value),
         // The handshake comes before the first read of stdin.
-        Mode::Stream => match crate::connect() {
+        Mode::Stream => match crate::daemon::connect() {
             Ok(mut conn) => stream(&mut conn, &path, io::stdin().lock(), &mut io::stderr()),
             Err(why) => fail(&why),
         },
@@ -41,7 +41,7 @@ fn fail_to(err: &mut impl Write, line: &str) -> i32 {
 
 fn one(path: &str, value: &str) -> i32 {
     let Some(payload) = payload(path, value.to_owned(), LIMIT) else { return fail(OVER_FRAME_LIMIT) };
-    match crate::connect().map(|mut conn| exchange(&mut conn, &payload)) {
+    match crate::daemon::connect().map(|mut conn| exchange(&mut conn, &payload)) {
         Ok(Sent::Acked) => 0,
         Ok(Sent::Refused(why) | Sent::Ended(why)) | Err(why) => fail(&why),
     }
@@ -83,9 +83,9 @@ fn send_value(conn: &mut UnixStream, path: &str, text: String) -> Sent {
     exchange(conn, &payload)
 }
 
-/// Sends one `push` and waits for its answer (`crate::exchange`).
+/// Sends one `push` and waits for its answer (`crate::daemon::exchange`).
 fn exchange(conn: &mut UnixStream, payload: &[u8]) -> Sent {
-    match crate::exchange(conn, payload, NO_ANSWER_WHY) {
+    match crate::daemon::exchange(conn, payload, NO_ANSWER_WHY) {
         Ok(Ok(())) => Sent::Acked,
         Ok(Err(refusal)) => Sent::Refused(refusal),
         Err(why) => Sent::Ended(why),
@@ -424,7 +424,7 @@ mod tests {
     fn no_answer_in_the_read_timeout_is_worded_as_no_answer() {
         let (mut cli, _daemon) = silent_daemon(std::time::Duration::from_millis(100));
         let payload = payload("/p", "1".into(), LIMIT).unwrap();
-        assert_eq!(exchange(&mut cli, &payload), Sent::Ended(crate::no_answer(NO_ANSWER_WHY)));
+        assert_eq!(exchange(&mut cli, &payload), Sent::Ended(crate::daemon::no_answer(NO_ANSWER_WHY)));
     }
 
     // S16

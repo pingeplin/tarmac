@@ -185,21 +185,21 @@ pub(crate) enum Stop {
 /// snapshot frames before it. Each wait ends at the earlier of 5 s and
 /// `deadline`; running out is `Late` when `deadline` is that limit.
 pub(crate) fn subscribe(kinds: Option<Vec<String>>, term_id: Option<String>, deadline: Option<Instant>) -> Result<(UnixStream, Vec<Msg>), Stop> {
-    let five = Instant::now() + crate::DAEMON_WAIT;
+    let five = Instant::now() + crate::daemon::DAEMON_WAIT;
     let until = deadline.map_or(five, |d| d.min(five));
     let late = deadline.is_some_and(|d| d <= five);
-    let no_answer = crate::no_answer("an older daemon");
-    let stop = |e: io::Error| match crate::is_timeout(&e) {
+    let no_answer = crate::daemon::no_answer("an older daemon");
+    let stop = |e: io::Error| match crate::daemon::is_timeout(&e) {
         true if late => Stop::Late,
         true => Stop::Fail(no_answer.clone()),
-        false => Stop::Fail(crate::lost(e)),
+        false => Stop::Fail(crate::daemon::lost(e)),
     };
-    let mut stream = crate::connect_until(until, &|e| crate::late_or_lost(e, &no_answer)).map_err(|why| match late && why == no_answer {
+    let mut stream = crate::daemon::connect_until(until, &|e| crate::daemon::late_or_lost(e, &no_answer)).map_err(|why| match late && why == no_answer {
         true => Stop::Late,
         false => Stop::Fail(why),
     })?;
     let payload = proto::encode(&Msg::Subscribe { kinds, term_id }).map_err(|e| Stop::Fail(format!("encode failed: {e}")))?;
-    crate::time_out_at(&stream, until).and_then(|()| frame::write_sync(&mut stream, &payload)).map_err(stop)?;
+    crate::daemon::time_out_at(&stream, until).and_then(|()| frame::write_sync(&mut stream, &payload)).map_err(stop)?;
     let mut snapshot = Vec::new();
     loop {
         match decoded(read(&mut stream, Some(until)).map_err(stop)?)? {
@@ -212,9 +212,9 @@ pub(crate) fn subscribe(kinds: Option<Vec<String>>, term_id: Option<String>, dea
 
 /// The next frame after `ack`. With a `deadline`, running out is `Late`.
 pub(crate) fn next(stream: &mut UnixStream, deadline: Option<Instant>) -> Result<Msg, Stop> {
-    let payload = read(stream, deadline).map_err(|e| match crate::is_timeout(&e) && deadline.is_some() {
+    let payload = read(stream, deadline).map_err(|e| match crate::daemon::is_timeout(&e) && deadline.is_some() {
         true => Stop::Late,
-        false => Stop::Fail(crate::lost(e)),
+        false => Stop::Fail(crate::daemon::lost(e)),
     })?;
     match decoded(payload)? {
         Msg::Err { msg } if msg == "lagged" => Err(Stop::Fail(LAGGED.into())),
@@ -228,11 +228,11 @@ pub(crate) fn next(stream: &mut UnixStream, deadline: Option<Instant>) -> Result
 /// the read reports the close.
 fn read(stream: &mut UnixStream, until: Option<Instant>) -> io::Result<Vec<u8>> {
     let set = match until {
-        Some(until) => crate::time_out_at(stream, until),
+        Some(until) => crate::daemon::time_out_at(stream, until),
         None => stream.set_read_timeout(None),
     };
     match set {
-        Err(e) if crate::is_timeout(&e) => Err(e),
+        Err(e) if crate::daemon::is_timeout(&e) => Err(e),
         _ => frame::read_sync(stream),
     }
 }

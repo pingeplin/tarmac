@@ -152,7 +152,7 @@ back from a rendered bitmap.
 - **Errors follow the crate's role.** `tarmacd` returns `anyhow::Result` from
   fallible top-level and setup functions. `tarmac-cli` returns string
   errors, or a small local enum where the caller must distinguish cases
-  (`NoHandshake` in `core/crates/tarmac-cli/src/main.rs`). `tarmac-protocol`
+  (`NoHandshake` in `core/crates/tarmac-cli/src/daemon.rs`). `tarmac-protocol`
   exposes precise library types — `io::Result` for framing, `rmp_serde`'s own
   error types for the codec. There is no repo-wide error enum and no
   `thiserror`; do not introduce one for a single call site.

@@ -29,6 +29,16 @@ public enum ChromeText {
         return "✎ \(max(1, Int((Double(elapsedMs) / 1000).rounded())))s"
     }
 
+    /// A signal placed in time: `<title> · during <proc>`, or `<title>`.
+    public static func during(_ title: String, proc: String?) -> String {
+        proc.map { "\(title) · during \($0)" } ?? title
+    }
+
+    /// `reportAge` of a report made at `atMs`; one from the future is new.
+    public static func reportAge(atMs: UInt64, nowMs: UInt64) -> String {
+        reportAge(elapsedMs: nowMs >= atMs ? nowMs - atMs : 0)
+    }
+
     /// A terminal report's age (spec 2611.0009): `<1m`, `Nm`, `Nh` or `Nd`,
     /// each floored.
     public static func reportAge(elapsedMs: UInt64) -> String {

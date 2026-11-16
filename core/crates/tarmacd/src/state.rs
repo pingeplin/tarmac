@@ -12,7 +12,7 @@ use crate::docs::RepoInfo;
 use crate::reader::{PathFs, PathGate, RealFs};
 use crate::proc::{self, Facts, Pid};
 use crate::resume::Flag;
-use crate::reports::{Holder, Kind, Place, Reports};
+use crate::reports::{Kind, Place, Reports};
 use crate::term::{SpawnPlan, TermHandle};
 use crate::watch::{NotWatched, NotifySource, Wake, WakeSource, Watcher};
 
@@ -585,10 +585,9 @@ impl Daemon {
         let kind = Kind::parse(kind).ok_or_else(|| format!("unknown report kind: {kind}"))?;
         // Any socket client can send a `report`, so the daemon caps it too.
         let text = text.map(|t| tarmac_protocol::cap_report_text(&t)).filter(|t| !t.is_empty());
-        let holder = Holder::resolve(peer, handle.pid(), handle.spawned_with_cmd(), proc::proc_facts, || {
-            handle.foreground_pid()
-        })
-        .ok_or_else(|| format!("no process to tie the report to in {term_id}"))?;
+        let holder = handle
+            .resolve_holder(peer)
+            .ok_or_else(|| format!("no process to tie the report to in {term_id}"))?;
         let proc_name = proc::process_name(holder.pid());
         let now_ms = crate::boards::epoch_ms(std::time::SystemTime::now());
         let place = self.place(term_id).await;
@@ -643,11 +642,10 @@ impl Daemon {
             return Ok(());
         };
         tarmac_protocol::refuse_resume_cmd(&cmd)?;
-        let holder = Holder::resolve(peer, handle.pid(), handle.spawned_with_cmd(), proc::proc_facts, || {
-            handle.foreground_pid()
-        })
-        .and_then(|holder| crate::resume::tie(holder, proc::proc_facts))
-        .ok_or_else(|| format!("no process to tie the resume command to in {term_id}"))?;
+        let holder = handle
+            .resolve_holder(peer)
+            .and_then(|holder| crate::resume::tie(holder, proc::proc_facts))
+            .ok_or_else(|| format!("no process to tie the resume command to in {term_id}"))?;
         let stored = self
             .with_record(term_id, |record| {
                 let record = record?;
@@ -805,8 +803,6 @@ impl Daemon {
         by_board
     }
 
-    /// Pushes to the connected app. False when there is none, or it went
-    /// away: the frame is dropped.
     /// `msg`, published to the subscribers first (spec 2611.0012): every
     /// event frame for the app passes here, whatever channel then sends it.
     pub fn published(&self, msg: Msg) -> Msg {
@@ -820,6 +816,8 @@ impl Daemon {
         self.push(self.published(msg)).await
     }
 
+    /// Pushes to the connected app. False when there is none, or it went
+    /// away: the frame is dropped.
     pub async fn push(&self, msg: Msg) -> bool {
         let tx = self.app.lock().await.as_ref().map(|s| s.tx.clone());
         match tx {

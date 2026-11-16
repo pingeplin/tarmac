@@ -9,18 +9,13 @@ public enum InboxCopy {
     }
 
     public static func tag(_ kind: Inbox.Kind) -> String {
-        switch kind {
-        case .report(.blocked): "blocked"
-        case .report(.done): "done"
-        case .bell: "bell"
-        case .exit: "exit"
-        }
+        kind.signal.rawValue
     }
 
     public static func title(_ item: Inbox.Item) -> String {
         switch item.kind {
         case .report: ReportChip.heading(proc: item.proc)
-        case .bell: during("bell", item.proc)
+        case .bell: ChromeText.during("bell", proc: item.proc)
         case .exit(let code): TermExitToast.title(code: code) ?? "exit"
         }
     }
@@ -44,16 +39,12 @@ public enum InboxCopy {
     }
 
     public static func age(_ item: Inbox.Item, nowMs: UInt64) -> String {
-        ChromeText.reportAge(elapsedMs: nowMs >= item.atMs ? nowMs - item.atMs : 0)
+        ChromeText.reportAge(atMs: item.atMs, nowMs: nowMs)
     }
 
     /// Every run of whitespace, newlines included, as one space; trimmed.
     public static func oneLine(_ text: String) -> String {
         text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
-    }
-
-    private static func during(_ title: String, _ proc: String?) -> String {
-        proc.map { "\(title) · during \($0)" } ?? title
     }
 
     private static func tilde(_ path: String, home: String) -> String {

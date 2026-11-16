@@ -6,7 +6,7 @@ import CoreGraphics
 /// this adds what lived in the untested AppKit overlay. Pure and clock-free — the
 /// view supplies the measured pill sizes, the HH:MM text and each signal's time.
 public enum OffscreenHintLayout {
-    public enum Signal: Equatable, Sendable {
+    public enum Signal: String, Equatable, Sendable {
         case blocked, bell, exit, done, live
     }
 
