@@ -64,4 +64,134 @@ final class MessagesTests: XCTestCase {
             XCTAssertFalse(keys.contains("cwd"), "\(frame)")
         }
     }
+
+    // MARK: What each decode site throws, key string and all
+
+    private func assertRefused(
+        _ value: MsgPackValue, _ expected: MessageError, file: StaticString = #filePath, line: UInt = #line
+    ) {
+        XCTAssertThrowsError(try Message.decode(value), "\(value)", file: file, line: line) { error in
+            XCTAssertEqual(error as? MessageError, expected, file: file, line: line)
+        }
+    }
+
+    func testTheTagIsMissingWhenAbsentNilOrNoString() {
+        assertRefused(.array([]), .notAMap)
+        assertRefused(.map(["path": .string("/a")]), .missingField("t"))
+        assertRefused(.map(["t": .nil]), .missingField("t"))
+        assertRefused(.map(["t": .int(1)]), .missingField("t"))
+    }
+
+    func testATopLevelFieldIsMissingWhenAbsentOrNilAndBadWhenMistyped() throws {
+        assertRefused(.map(["t": .string("open")]), .missingField("path"))
+        assertRefused(.map(["t": .string("open"), "path": .nil]), .missingField("path"))
+        assertRefused(.map(["t": .string("open"), "path": .int(1)]), .badField("path"))
+        assertRefused(.map(["t": .string("open"), "path": .string("/a"), "term_id": .int(1)]), .badField("term_id"))
+        XCTAssertEqual(
+            try Message.decode(.map(["t": .string("open"), "path": .string("/a"), "term_id": .nil])),
+            .open(path: "/a", termID: nil)
+        )
+    }
+
+    func testADocEntryNamesItsKeysUnprefixedOpenedOrRestored() throws {
+        let doc: [String: MsgPackValue] = ["path": .string("/a.md"), "via": .string("cli")]
+        func opened(_ extra: [String: MsgPackValue]) -> MsgPackValue {
+            .map(doc.merging(extra) { $1 }.merging(["t": .string("doc_opened")]) { $1 })
+        }
+        func restored(_ extra: [String: MsgPackValue]) -> MsgPackValue {
+            .map(["t": .string("restore"), "docs": .array([.map(doc.merging(extra) { $1 })])])
+        }
+        for frame in [opened, restored] {
+            assertRefused(frame(["path": .nil]), .missingField("path"))
+            assertRefused(frame(["via": .int(1)]), .badField("via"))
+            assertRefused(frame(["repo": .int(1)]), .badField("repo"))
+            assertRefused(frame(["read": .string("yes")]), .badField("read"))
+        }
+        XCTAssertEqual(
+            try Message.decode(opened(["repo": .nil, "read": .nil, "term_id": .nil])),
+            .docOpened(doc: RestoreDoc(path: "/a.md", via: "cli"))
+        )
+        assertRefused(.map(["t": .string("restore"), "docs": .array([.string("/a.md")])]), .badField("docs"))
+    }
+
+    func testATileNamesItsKeysUnderTiles() throws {
+        func layout(_ tile: MsgPackValue) -> MsgPackValue {
+            .map(["t": .string("layout"), "dock": .array([]), "tiles": .array([tile])])
+        }
+        assertRefused(layout(.string("term")), .badField("tiles"))
+        assertRefused(layout(.map([:])), .missingField("tiles.kind"))
+        assertRefused(layout(.map(["kind": .nil])), .missingField("tiles.kind"))
+        assertRefused(layout(.map(["kind": .int(1)])), .badField("tiles.kind"))
+        assertRefused(layout(.map(["kind": .string("term"), "x": .string("1")])), .badField("tiles.x"))
+        assertRefused(layout(.map(["kind": .string("term"), "term_id": .int(1)])), .badField("tiles.term_id"))
+        XCTAssertEqual(
+            try Message.decode(layout(.map(["kind": .string("term"), "x": .nil, "loose": .nil]))),
+            .layout(dock: [], tiles: [LayoutTile(kind: "term")], board: nil, boardID: nil)
+        )
+    }
+
+    func testABoardViewportNamesItsKeysUnderBoard() throws {
+        func layout(_ board: MsgPackValue) -> MsgPackValue {
+            .map(["t": .string("layout"), "dock": .array([]), "tiles": .array([]), "board": board])
+        }
+        assertRefused(layout(.array([])), .badField("board"))
+        assertRefused(layout(.map(["cx": .double(0), "cy": .double(0)])), .missingField("board.zoom"))
+        assertRefused(layout(.map(["zoom": .double(1), "cx": .nil, "cy": .double(0)])), .missingField("board.cx"))
+        assertRefused(layout(.map(["zoom": .double(1), "cx": .double(0), "cy": .string("0")])), .badField("board.cy"))
+        XCTAssertEqual(
+            try Message.decode(layout(.nil)),
+            .layout(dock: [], tiles: [], board: nil, boardID: nil)
+        )
+    }
+
+    func testATermRecordIsMissingUnderResumeButBadUnprefixed() throws {
+        func restore(_ record: MsgPackValue) -> MsgPackValue {
+            .map(["t": .string("restore"), "docs": .array([]), "term_records": .map(["t1": record])])
+        }
+        assertRefused(restore(.string("/w")), .badField("term_records"))
+        assertRefused(restore(.map(["last_cwd": .int(1)])), .badField("last_cwd"))
+        assertRefused(restore(.map(["resume": .string("x")])), .badField("resume"))
+        assertRefused(restore(.map(["resume": .map([:])])), .missingField("resume.cmd"))
+        assertRefused(restore(.map(["resume": .map(["cmd": .nil])])), .missingField("resume.cmd"))
+        assertRefused(restore(.map(["resume": .map(["cmd": .int(1)])])), .badField("cmd"))
+        XCTAssertEqual(
+            try Message.decode(restore(.map(["last_cwd": .nil, "resume": .nil]))),
+            .restore(
+                docs: [], tiles: [], board: nil, boardID: nil, liveTerms: [],
+                termRecords: ["t1": TermRecord(lastCwd: nil)]
+            )
+        )
+    }
+
+    func testATermInfoIsMissingUnderTermsButBadUnprefixed() throws {
+        func terms(_ info: MsgPackValue) -> MsgPackValue {
+            .map(["t": .string("terms"), "terms": .array([info])])
+        }
+        let ids: [String: MsgPackValue] = ["term_id": .string("t1"), "board_id": .string("board-0")]
+        assertRefused(terms(.string("t1")), .badField("terms"))
+        assertRefused(terms(.map(["board_id": .string("board-0")])), .missingField("terms.term_id"))
+        assertRefused(terms(.map(["term_id": .nil, "board_id": .string("board-0")])), .missingField("terms.term_id"))
+        assertRefused(terms(.map(["term_id": .int(1), "board_id": .string("board-0")])), .badField("term_id"))
+        assertRefused(terms(.map(["term_id": .string("t1")])), .missingField("terms.board_id"))
+        assertRefused(terms(.map(["term_id": .string("t1"), "board_id": .int(0)])), .badField("board_id"))
+        assertRefused(terms(.map(ids.merging(["cwd": .int(1)]) { $1 })), .badField("cwd"))
+        assertRefused(terms(.map(ids.merging(["proc": .int(1)]) { $1 })), .badField("proc"))
+        XCTAssertEqual(
+            try Message.decode(terms(.map(ids.merging(["cwd": .nil, "proc": .nil]) { $1 }))),
+            .terms([TermInfo(termID: "t1", boardID: "board-0")])
+        )
+    }
+
+    func testABoardListEntryReadsAMistypedIdAsMissingAndAMistypedNameAsNone() throws {
+        func list(_ entry: MsgPackValue) -> MsgPackValue {
+            .map(["t": .string("board_list"), "boards": .array([entry]), "active": .string("board-0")])
+        }
+        assertRefused(list(.string("board-0")), .badField("boards"))
+        assertRefused(list(.map([:])), .missingField("boards.board_id"))
+        assertRefused(list(.map(["board_id": .int(0)])), .missingField("boards.board_id"))
+        XCTAssertEqual(
+            try Message.decode(list(.map(["board_id": .string("board-0"), "name": .int(1), "running": .string("2")]))),
+            .boardList(boards: [BoardMeta(boardID: "board-0")], active: "board-0")
+        )
+    }
 }
