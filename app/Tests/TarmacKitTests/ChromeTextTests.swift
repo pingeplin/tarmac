@@ -3,6 +3,7 @@ import XCTest
 
 /// The small chrome formatters: zoom readout, titlebar chip fallback, recency meta.
 final class ChromeTextTests: XCTestCase {
+    // 2611.0009 S20
     func testS20AReportAgeIsFlooredToItsUnit() {
         let cases: [(UInt64, String)] = [
             (0, "<1m"), (59_999, "<1m"), (60_000, "1m"), (3_599_999, "59m"), (3_600_000, "1h"),

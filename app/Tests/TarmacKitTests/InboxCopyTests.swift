@@ -1,7 +1,7 @@
 import XCTest
 @testable import TarmacKit
 
-/// Spec 2611.0013 S5, S9, S40: what an inbox row and the title-bar button say.
+/// Spec 2611.0013 S5, S40: what an inbox row says.
 final class InboxCopyTests: XCTestCase {
     func testS5ABlockedReportReadsItsTagTitleAndQuote() {
         let report = inboxItem(.report(.blocked), proc: "claude", text: "May I?")
