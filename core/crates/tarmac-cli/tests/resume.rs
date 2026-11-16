@@ -2,26 +2,18 @@
 // answers are its tests' business; here the subject is what the cli sends,
 // prints and exits with.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use tarmac_protocol::{self as proto, Msg};
 
 mod common;
-use common::{Answer, OneAnswer, Report, channel, tarmac, tarmac_at};
+use common::{Answer, OneAnswer, Report, assert_no_answer, no_daemon_line, tarmac_at, without_daemon};
 
 const USAGE: &str = "tarmac: usage: tarmac resume set \"<command>\"  |  tarmac resume clear\n";
 const NEEDS_TERM: &str = "tarmac: resume needs TARMAC_TERM_ID (run it in a Tarmac terminal)\n";
-const NO_ANSWER: &str = "tarmac: no answer from the daemon in 5 s (an older daemon)\n";
 
-/// `tarmac resume` on a socket that is absent: a run that tried to connect
-/// would print the no-daemon line instead of the one asserted.
 fn no_daemon(term_id: Option<&str>, args: &[&str]) -> Report {
-    let mut cmd = tarmac();
-    cmd.env_remove("TARMAC_TERM_ID");
-    if let Some(term_id) = term_id {
-        cmd.env("TARMAC_TERM_ID", term_id);
-    }
-    Report::of(cmd.arg("resume").args(args))
+    without_daemon("resume", term_id, args)
 }
 
 fn resume(cmd: Option<&str>) -> Msg {
@@ -111,10 +103,7 @@ fn s30_no_daemon_is_the_no_daemon_line() {
     let out = Report::of(tarmac_at(&sock).env("TARMAC_TERM_ID", "t9").args(["resume", "clear"]));
 
     assert_eq!(out.code(), Some(1));
-    assert_eq!(
-        out.stderr,
-        format!("tarmac: no tarmac daemon running ({} channel, socket: {})\n", channel(), sock.display())
-    );
+    assert_eq!(out.stderr, no_daemon_line(&sock));
 }
 
 // S30
@@ -124,6 +113,5 @@ fn s30_a_daemon_that_never_answers_is_the_no_answer_line_after_5_s() {
     let started = Instant::now();
     let out = daemon.run("resume", &["set", "echo HI"]);
 
-    assert_eq!((out.code(), out.stderr.as_str()), (Some(1), NO_ANSWER));
-    assert!(started.elapsed() >= Duration::from_secs(5), "gave up after {:?}", started.elapsed());
+    assert_no_answer(&out, started);
 }

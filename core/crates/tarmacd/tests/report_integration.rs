@@ -7,15 +7,10 @@ mod common;
 
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use common::{Conn, FrameLog, Spawn, TestDaemon, canon_dir, is_report_for, none_within, probe_until_cwd};
+use common::{
+    ACK, Conn, FrameLog, JOB_SHELL, Spawn, TestDaemon, assert_ack, canon_dir, is_report_for, none_within, probe_until_cwd,
+};
 use tarmac_protocol::{self as proto, Msg, Tile};
-
-/// A job-control shell that reads no rc file: each command runs in a process
-/// group of its own, so the foreground leader changes.
-const JOB_SHELL: &[&str] = &["/bin/zsh", "-f", "-i"];
-
-/// The `ack` frame's payload, as the reporter's pty shows it.
-const ACK: &[u8] = &[0x81, 0xa1, 0x74, 0xa3, 0x61, 0x63, 0x6b];
 
 #[derive(Debug, PartialEq)]
 struct Seen {
@@ -45,11 +40,6 @@ fn hello_cli() -> Msg {
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
-}
-
-#[track_caller]
-fn assert_ack(answer: Msg) {
-    assert!(matches!(answer, Msg::Ack), "expected ack, got {answer:?}");
 }
 
 #[track_caller]

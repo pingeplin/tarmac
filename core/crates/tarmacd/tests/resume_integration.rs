@@ -7,21 +7,12 @@ mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{Conn, FrameLog, Restore, Spawn, TestDaemon, canon_dir, is_term_resume, signal_and_wait, term_records};
+use common::{
+    ACK, Conn, FrameLog, SAVE_WINDOW, Spawn, TestDaemon, assert_ack, canon_dir, is_term_resume, probe_until, signal_and_wait,
+    term_records,
+};
 use serde_json::{Value, json};
 use tarmac_protocol::Msg;
-
-/// The `ack` frame's payload, as the agent's pty shows it.
-const ACK: &[u8] = &[0x81, 0xa1, 0x74, 0xa3, 0x61, 0x63, 0x6b];
-
-/// Three times the daemon's 150 ms save debounce: a save that is due has
-/// landed by its end.
-const SAVE_WINDOW: Duration = Duration::from_millis(450);
-
-#[track_caller]
-fn assert_ack(answer: Msg) {
-    assert!(matches!(answer, Msg::Ack), "expected ack, got {answer:?}");
-}
 
 /// A drained app connection with a login shell `term_id` at its prompt.
 fn shell_at_prompt(daemon: &TestDaemon, term_id: &str, opts: Spawn, log: &mut FrameLog) -> Conn {
@@ -54,19 +45,6 @@ fn wait_saved(daemon: &TestDaemon, term_id: &str, want: Value) {
 fn assert_no_save(daemon: &TestDaemon, kept: u64) {
     std::thread::sleep(Duration::from_secs(1));
     assert_eq!(daemon.state_inode(), kept, "the state was saved");
-}
-
-/// Probes until the restore satisfies `done`, to `deadline`; the newest
-/// connection and its restore.
-fn probe_until(daemon: &TestDaemon, what: &str, deadline: Instant, done: impl Fn(&Restore) -> bool) -> (Conn, Restore) {
-    loop {
-        let (app, restore) = daemon.probe();
-        if done(&restore) {
-            return (app, restore);
-        }
-        assert!(Instant::now() < deadline, "the restore never showed {what}: {:?}", restore.term_records);
-        std::thread::sleep(Duration::from_millis(100));
-    }
 }
 
 /// A shell `T` whose agent has set `echo HI` and lives `secs` more.
@@ -367,7 +345,7 @@ fn s11_a_set_pushes_the_command_and_a_repeat_of_it_does_not() {
     assert_eq!(log.0[at].msg, term_resume("T", Some("echo HO")));
 
     app.send(&Msg::BoardSwitch { board_id: "board-0".into() });
-    let restore = Restore::from(app.recv_until("the restore", |m| matches!(m, Msg::Restore { .. })));
+    let restore = app.recv_restore();
     assert_eq!(restore.live_terms, ["T"]);
     assert_eq!(restore.resume_cmd("T"), Some("echo HO"));
 }

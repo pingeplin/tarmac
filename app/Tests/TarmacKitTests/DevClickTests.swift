@@ -5,10 +5,6 @@ import XCTest
 /// 2611.0015 D16: the controls `tarmac dev click` names, which of them a card
 /// shows, where the veil is pressed, and what a click answers.
 final class DevClickTests: XCTestCase {
-    private func offer(_ events: [ResumeOffer.Event]) throws -> ResumeOffer {
-        try XCTUnwrap(events.reduce(ResumeOffer.make(cmd: "echo HI")) { ResumeOffer.step($0, $1).offer })
-    }
-
     func testEachTargetHasItsOwnClosedSetOfNames() {
         XCTAssertEqual(DevClick.controls(of: .card).map(\.rawValue), ["resume", "skip", "resume_chip"])
         XCTAssertEqual(
@@ -17,7 +13,7 @@ final class DevClickTests: XCTestCase {
     }
 
     func testAPanelAndAChipArePresentInOrder() throws {
-        let panel = ResumePanel.model(offer: try offer([]), prime: false)
+        let panel = ResumePanel.model(offer: try ResumeOffer.fixture(after: []), prime: false)
         let chip = ResumeHeaderChip.model(cmd: "echo HI", dead: false)
         XCTAssertEqual(DevClick.present(panel: panel, chip: chip), [.panel(.resume), .panel(.skip), .resumeChip])
         XCTAssertEqual(DevClick.present(panel: panel, chip: nil), [.panel(.resume), .panel(.skip)])
@@ -26,7 +22,7 @@ final class DevClickTests: XCTestCase {
     }
 
     func testAQueuedPanelHasOnlySkip() throws {
-        let queued = ResumePanel.model(offer: try offer([.request]), prime: true)
+        let queued = ResumePanel.model(offer: try ResumeOffer.fixture(after: [.request]), prime: true)
         XCTAssertEqual(DevClick.present(panel: queued, chip: nil), [.panel(.skip)])
     }
 

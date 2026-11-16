@@ -6,19 +6,11 @@ mod common;
 use std::time::{Duration, Instant};
 
 use common::{
-    Conn, LONG, Spawn, TestDaemon, canon_dir, has_record, no_err_frame, probe_until, probe_until_cwd, saved_cwd,
+    Conn, JOB_SHELL, LONG, SAVE_WINDOW, Spawn, TestDaemon, canon_dir, has_record, no_err_frame, probe_until, probe_until_cwd, saved_cwd,
     signal, signal_and_wait, term_records, wait_exit,
 };
 use serde_json::{Value, json};
 use tarmac_protocol::{Msg, Tile};
-
-/// A job-control shell that reads no rc file (OQ1): each command runs in a
-/// process group of its own, so the foreground pid changes.
-const JOB_SHELL: &[&str] = &["/bin/zsh", "-f", "-i"];
-
-/// Three times the daemon's 150 ms save debounce: a save that is due has
-/// landed by its end.
-const SAVE_WINDOW: Duration = Duration::from_millis(450);
 
 fn plain(script: &str) -> Vec<String> {
     vec!["/bin/sh".into(), "-c".into(), script.into()]
@@ -60,10 +52,6 @@ fn seeded_on_board_1() -> Value {
     json!({"boards": [board("board-0", json!({})), board("board-1", json!({"T": {"last_cwd": "/seeded"}}))], "active": "board-0"})
 }
 
-fn input(app: &mut Conn, term_id: &str, line: &str) {
-    app.send(&Msg::Input { term_id: term_id.into(), bytes: format!("{line}\n").into_bytes(), typed: false });
-}
-
 fn wait_output(app: &mut Conn, term_id: &str, needle: &str) {
     let mut collected = Vec::new();
     app.collect_output_into(&mut collected, term_id, needle, needle.as_bytes());
@@ -91,7 +79,7 @@ fn job_shell_recorded(daemon: &TestDaemon, a: &str) -> (Conn, i64) {
 /// `cd b && sleep 3` in `T`, to the `term_proc` of the sleep. The new pid is
 /// the precondition of a job-control shell.
 fn cd_and_sleep(app: &mut Conn, b: &str, first: i64) {
-    input(app, "T", &format!("cd '{b}' && sleep 3"));
+    app.type_line("T", &format!("cd '{b}' && sleep 3"));
     let pid = proc_pid(app, "T", "the sleep's term_proc", |name, _| name == "sleep");
     assert_ne!(pid, first, "the shell gave the sleep no process group of its own");
 }
@@ -119,7 +107,7 @@ fn a_new_pid_with_the_same_name_records_the_cwd() {
     );
     let (mut app, first) = job_shell_recorded(&daemon, &a);
 
-    input(&mut app, "T", &format!("cd '{b}' && sleep 1.6 && cd '{c}' && sleep 5"));
+    app.type_line("T", &format!("cd '{b}' && sleep 1.6 && cd '{c}' && sleep 5"));
     let pid = proc_pid(&mut app, "T", "the first sleep's term_proc", |name, _| name == "sleep");
     assert_ne!(pid, first, "the shell gave the sleep no process group of its own");
 
@@ -156,7 +144,7 @@ fn moved_at_idle(daemon: &TestDaemon, a: &str, b: &str) -> Conn {
     spawn(&mut app, "T", &plain(&format!("read _; cd '{b}' && echo MOVED; read _")), in_dir(a));
     proc_pid(&mut app, "T", "T's first term_proc", |_, _| true);
     let mut app = probe_until_cwd(daemon, "T", a);
-    input(&mut app, "T", "go");
+    app.type_line("T", "go");
     wait_output(&mut app, "T", "MOVED");
     app
 }
@@ -190,7 +178,7 @@ fn saved_before_the_socket_goes(sig: libc::c_int) {
         assert!(Instant::now() < deadline, "the socket never went");
         std::thread::sleep(Duration::from_millis(2));
     }
-    let state: Value = serde_json::from_slice(&std::fs::read(daemon.state_file()).unwrap()).expect("the state parses");
+    let state = daemon.state_json();
 
     assert_eq!(saved_cwd(&state, 0, "T"), json!(b));
     let status = wait_exit(&mut daemon.child);
@@ -283,7 +271,7 @@ fn a_clean_exit_deletes_the_record_and_a_failure_keeps_it() {
     let mut app = saved_shells(&daemon, &shells);
 
     for (term_id, _) in &shells {
-        input(&mut app, term_id, "go");
+        app.type_line(term_id, "go");
     }
 
     let mut exits: Vec<(String, Option<i64>)> = (0..3).map(|_| app.recv_exit()).collect();

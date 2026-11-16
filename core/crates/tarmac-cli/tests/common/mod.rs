@@ -2,7 +2,7 @@
 #![allow(dead_code)] // each test binary uses a different slice of the harness
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
@@ -26,6 +26,22 @@ pub fn handshake(peer: &mut Peer, late: Duration) -> bool {
     }
     std::thread::sleep(late);
     peer.write(&hello_ok) && peer.read().is_some()
+}
+
+/// The line of a verb that finds no daemon on `sock`.
+pub fn no_daemon_line(sock: &Path) -> String {
+    format!("tarmac: no tarmac daemon running ({} channel, socket: {})\n", channel(), sock.display())
+}
+
+/// `tarmac <verb> <args>` on a socket that is absent: a run that tried to
+/// connect would print the no-daemon line instead of the one asserted.
+pub fn without_daemon(verb: &str, term_id: Option<&str>, args: &[&str]) -> Report {
+    let mut cmd = tarmac();
+    cmd.env_remove("TARMAC_TERM_ID");
+    if let Some(term_id) = term_id {
+        cmd.env("TARMAC_TERM_ID", term_id);
+    }
+    Report::of(cmd.arg(verb).args(args))
 }
 
 /// Exit 2 with the verb's one usage line.

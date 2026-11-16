@@ -424,6 +424,22 @@ mod tests {
         }
     }
 
+    fn ours_handlers() -> Vec<Value> {
+        vec![current_handler(), json!({"type": "command", "command": BARE_COMMAND}), json!({"type": "command", "command": " tarmac hooks run claude "})]
+    }
+
+    fn foreign_handlers() -> Vec<Value> {
+        vec![
+            json!({"type": "command", "command": "/opt/homebrew/bin/tarmac hooks run claude"}),
+            json!({"type": "command", "command": "tarmac hooks run claude --x"}),
+            json!({"type": "command", "command": "tarmac", "args": ["hooks", "run", "claude"]}),
+            json!({"type": "command", "command": BARE_COMMAND, "args": []}),
+            json!({"type": "prompt", "command": BARE_COMMAND}),
+            json!({"command": BARE_COMMAND}),
+            json!(BARE_COMMAND),
+        ]
+    }
+
     fn installed() -> Value {
         let mut root = json!({});
         add_current(&mut root);
@@ -587,36 +603,18 @@ mod tests {
 
     #[test]
     fn s9_ours_is_an_exact_command_on_a_command_handler_with_no_args() {
-        let ours = [current_handler(), json!({"type": "command", "command": BARE_COMMAND}), json!({"type": "command", "command": " tarmac hooks run claude "})];
-        let foreign = [
-            json!({"type": "command", "command": "/opt/homebrew/bin/tarmac hooks run claude"}),
-            json!({"type": "command", "command": "tarmac hooks run claude --x"}),
-            json!({"type": "command", "command": "tarmac", "args": ["hooks", "run", "claude"]}),
-            json!({"type": "command", "command": BARE_COMMAND, "args": []}),
-            json!({"type": "prompt", "command": BARE_COMMAND}),
-            json!({"command": BARE_COMMAND}),
-            json!(BARE_COMMAND),
-        ];
-        for h in &ours {
+        for h in &ours_handlers() {
             assert!(is_ours(h), "{h}");
         }
-        for h in &foreign {
+        for h in &foreign_handlers() {
             assert!(!is_ours(h), "{h}");
         }
     }
 
     #[test]
     fn s9_a_removal_keeps_every_foreign_handler_in_its_order() {
-        let foreign = vec![
-            json!({"type": "command", "command": "/opt/homebrew/bin/tarmac hooks run claude"}),
-            json!({"type": "command", "command": "tarmac hooks run claude --x"}),
-            json!({"type": "command", "command": "tarmac", "args": ["hooks", "run", "claude"]}),
-            json!({"type": "command", "command": BARE_COMMAND, "args": []}),
-            json!({"type": "prompt", "command": BARE_COMMAND}),
-            json!({"command": BARE_COMMAND}),
-            json!(BARE_COMMAND),
-        ];
-        let mut all = vec![current_handler(), json!({"type": "command", "command": BARE_COMMAND}), json!({"type": "command", "command": " tarmac hooks run claude "})];
+        let foreign = foreign_handlers();
+        let mut all = ours_handlers();
         all.extend(foreign.iter().cloned());
         let mut root = json!({"hooks": {"Stop": [{"hooks": all}]}});
 

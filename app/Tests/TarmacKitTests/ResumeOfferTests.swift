@@ -8,11 +8,15 @@ final class ResumeOfferTests: XCTestCase {
     private let uuid = "claude --resume 3f2a1b9c-0000-4000-8000-000000000000"
 
     private func offer(_ cmd: String = "claude --resume 3f2a1b9c-0000-4000-8000-000000000000") throws -> ResumeOffer {
-        try XCTUnwrap(ResumeOffer.make(cmd: cmd))
+        try ResumeOffer.fixture(cmd)
     }
 
     private func armed(_ cmd: String = "claude --resume 3f2a1b9c-0000-4000-8000-000000000000") throws -> ResumeOffer {
-        try XCTUnwrap(ResumeOffer.step(try offer(cmd), .output(byteCount: 5)).offer)
+        try ResumeOffer.fixture(cmd, after: [.output(byteCount: 5)])
+    }
+
+    private func queuedOffer(_ cmd: String = "claude --resume 3f2a1b9c-0000-4000-8000-000000000000") throws -> ResumeOffer {
+        try ResumeOffer.fixture(cmd, after: [.request])
     }
 
     // MARK: S8
@@ -100,7 +104,7 @@ final class ResumeOfferTests: XCTestCase {
     }
 
     func testS1AQueuedOfferWaitsThroughARequestAReturnAndAnEmptyChunk() throws {
-        let queued = try XCTUnwrap(ResumeOffer.step(try offer("echo B"), .request).offer)
+        let queued = try queuedOffer("echo B")
         for event in [ResumeOffer.Event.request, .returnKey(prime: true), .output(byteCount: 0)] {
             let (kept, effect) = ResumeOffer.step(queued, event)
             XCTAssertEqual(kept, queued, "\(event)")
@@ -109,7 +113,7 @@ final class ResumeOfferTests: XCTestCase {
     }
 
     func testS1AQueuedOfferRunsAtItsFirstOutputOnceWithOneCarriageReturn() throws {
-        let queued = try XCTUnwrap(ResumeOffer.step(try offer("echo B"), .request).offer)
+        let queued = try queuedOffer("echo B")
         let (gone, effect) = ResumeOffer.step(queued, .output(byteCount: 3))
         XCTAssertNil(gone)
         guard case .run(let bytes) = effect else { return XCTFail("\(String(describing: effect))") }
@@ -126,7 +130,7 @@ final class ResumeOfferTests: XCTestCase {
     }
 
     func testS2AQueuedOfferIsNeverArmed() throws {
-        let queued = try XCTUnwrap(ResumeOffer.step(try offer(), .request).offer)
+        let queued = try queuedOffer()
         XCTAssertFalse(queued.armed(prime: true))
     }
 
@@ -142,7 +146,7 @@ final class ResumeOfferTests: XCTestCase {
     // MARK: 2611.0015 S7: skip
 
     func testS7SkipDropsAFreshAnArmedAndAQueuedOfferWithTheSkipEffect() throws {
-        let queued = try XCTUnwrap(ResumeOffer.step(try offer(), .request).offer)
+        let queued = try queuedOffer()
         for (name, offer) in [("fresh", try offer()), ("armed", try armed()), ("queued", queued)] {
             let (gone, effect) = ResumeOffer.step(offer, .skip)
             XCTAssertNil(gone, name)
@@ -156,8 +160,8 @@ final class ResumeOfferTests: XCTestCase {
     // MARK: 2611.0015 S16: input cancels only its own card's queued run
 
     func testS16InputToOneQueuedCardLeavesTheOtherCardsQueuedRun() throws {
-        let a = try XCTUnwrap(ResumeOffer.step(try offer("echo A"), .request).offer)
-        let b = try XCTUnwrap(ResumeOffer.step(try offer("echo B"), .request).offer)
+        let a = try queuedOffer("echo A")
+        let b = try queuedOffer("echo B")
         let (aGone, aEffect) = ResumeOffer.step(a, .userInput)
         XCTAssertNil(aGone)
         XCTAssertNil(aEffect)
@@ -194,7 +198,7 @@ final class ResumeOfferTests: XCTestCase {
     }
 
     func testS6AQueuedOfferSaysItWaitsAndOffersOnlySkip() throws {
-        let queued = try XCTUnwrap(ResumeOffer.step(try offer(long), .request).offer)
+        let queued = try queuedOffer(long)
         for prime in [true, false] {
             let model = ResumePanel.model(offer: queued, prime: prime)
             XCTAssertEqual(model.title, "resumes when the shell is ready", "\(prime)")
@@ -204,7 +208,7 @@ final class ResumeOfferTests: XCTestCase {
     }
 
     func testS6NoPanelTextHasTheRefreshGlyph() throws {
-        let queued = try XCTUnwrap(ResumeOffer.step(try offer(), .request).offer)
+        let queued = try queuedOffer()
         for (offer, prime) in [(try offer(), true), (try armed(), true), (try armed(), false), (queued, true)] {
             let model = ResumePanel.model(offer: offer, prime: prime)
             XCTAssertFalse(model.title.contains("↻"))

@@ -260,16 +260,12 @@ final class DevSnapshotTests: XCTestCase {
 
     // MARK: - 2611.0011 S26 the resume and reopen offers
 
-    private func offer(_ events: [ResumeOffer.Event]) throws -> ResumeOffer {
-        try XCTUnwrap(events.reduce(ResumeOffer.make(cmd: "echo HI")) { ResumeOffer.step($0, $1).offer })
-    }
-
     func testS26AResumeOfferIsReportedWithWhetherItIsArmed() throws {
         var armed = terminal()
-        armed.resume = DevSnapshot.Resume(offer: try offer([.output(byteCount: 5)]), prime: true)
+        armed.resume = DevSnapshot.Resume(offer: try ResumeOffer.fixture(after: [.output(byteCount: 5)]), prime: true)
         XCTAssertEqual(fields(facts(armed)["resume"])["armed"], true)
         var waiting = terminal()
-        waiting.resume = DevSnapshot.Resume(offer: try offer([]), prime: true)
+        waiting.resume = DevSnapshot.Resume(offer: try ResumeOffer.fixture(after: []), prime: true)
         XCTAssertEqual(facts(waiting)["resume"], [
             "cmd": "echo HI", "armed": false, "queued": false, "title": "resume last agent session?",
             "buttons": ["resume", "skip"],
@@ -281,13 +277,13 @@ final class DevSnapshotTests: XCTestCase {
 
     func testS22AQueuedAndAnArmedOfferAreReportedWithTheirPanel() throws {
         var queued = terminal()
-        queued.resume = DevSnapshot.Resume(offer: try offer([.request]), prime: true)
+        queued.resume = DevSnapshot.Resume(offer: try ResumeOffer.fixture(after: [.request]), prime: true)
         XCTAssertEqual(facts(queued)["resume"], [
             "cmd": "echo HI", "armed": false, "queued": true, "title": "resumes when the shell is ready",
             "buttons": ["skip"],
         ])
         var armed = terminal()
-        armed.resume = DevSnapshot.Resume(offer: try offer([.output(byteCount: 5)]), prime: true)
+        armed.resume = DevSnapshot.Resume(offer: try ResumeOffer.fixture(after: [.output(byteCount: 5)]), prime: true)
         XCTAssertEqual(facts(armed)["resume"], [
             "cmd": "echo HI", "armed": true, "queued": false, "title": "resume last agent session?",
             "buttons": ["⏎ resume", "esc skip"],

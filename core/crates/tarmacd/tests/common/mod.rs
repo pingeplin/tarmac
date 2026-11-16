@@ -14,6 +14,22 @@ use tarmac_protocol::{self as proto, BoardMeta, BoardViewport, DocEntry, Msg, Te
 
 pub const LONG: Duration = Duration::from_secs(20);
 
+/// A job-control shell that reads no rc file: each command runs in a process
+/// group of its own, so the foreground leader changes.
+pub const JOB_SHELL: &[&str] = &["/bin/zsh", "-f", "-i"];
+
+/// The `ack` frame's payload, as a pty shows it.
+pub const ACK: &[u8] = &[0x81, 0xa1, 0x74, 0xa3, 0x61, 0x63, 0x6b];
+
+/// Three times the daemon's 150 ms save debounce: a save that is due has
+/// landed by its end.
+pub const SAVE_WINDOW: Duration = Duration::from_millis(450);
+
+#[track_caller]
+pub fn assert_ack(answer: Msg) {
+    assert!(matches!(answer, Msg::Ack), "expected ack, got {answer:?}");
+}
+
 // Counter, not just a timestamp: parallel test threads can hit the same
 // nanosecond and would then share (and tear down) each other's socket dir.
 static DIR_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -346,7 +362,7 @@ impl Conn {
     /// Echo `marker` through a live `cat` and wait until the daemon has seen it, so
     /// the term's scrollback ring is known to hold it.
     pub fn echo_marker(&mut self, term_id: &str, marker: &str) {
-        self.send(&Msg::Input { term_id: term_id.into(), bytes: format!("{marker}\n").into_bytes(), typed: false });
+        self.type_line(term_id, marker);
         self.recv_output_containing(term_id, marker);
     }
 
@@ -461,19 +477,10 @@ impl Conn {
 
     /// Reads every frame that comes within `wait` into `log`.
     pub fn log_for(&mut self, log: &mut FrameLog, wait: Duration) {
-        let deadline = Instant::now() + wait;
-        loop {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                break;
-            }
-            self.0.set_read_timeout(Some(remaining)).unwrap();
-            match frame::read_sync(&mut self.0) {
-                Ok(payload) => log.0.push(Logged { at: Instant::now(), msg: proto::decode(&payload).expect("decode frame") }),
-                Err(_) => break,
-            }
-        }
-        self.0.set_read_timeout(Some(LONG)).unwrap();
+        self.recv_within(wait, |msg| {
+            log.0.push(Logged { at: Instant::now(), msg: msg.clone() });
+            false
+        });
     }
 
     pub fn spawn_term_with(&mut self, term_id: &str, cmd: &[&str], opts: Spawn) {
@@ -618,28 +625,8 @@ pub fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 // match `pred`. Used to assert the absence of a message (e.g. no FileEvent for a
 // closed doc's path after it has been unwatched). Sets the stream's read timeout
 // around the window and restores the LONG timeout afterwards.
-pub fn none_within(conn: &mut Conn, timeout: Duration, mut pred: impl FnMut(&Msg) -> bool) -> bool {
-    let deadline = Instant::now() + timeout;
-    loop {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            break;
-        }
-        conn.0.set_read_timeout(Some(remaining)).unwrap();
-        match frame::read_sync(&mut conn.0) {
-            Ok(payload) => {
-                if let Ok(msg) = proto::decode(&payload) {
-                    if pred(&msg) {
-                        conn.0.set_read_timeout(Some(LONG)).unwrap();
-                        return false;
-                    }
-                }
-            }
-            Err(_) => break,
-        }
-    }
-    conn.0.set_read_timeout(Some(LONG)).unwrap();
-    true
+pub fn none_within(conn: &mut Conn, timeout: Duration, pred: impl FnMut(&Msg) -> bool) -> bool {
+    conn.recv_within(timeout, pred).is_none()
 }
 
 /// True when no `err` frame comes before the answer to a `scrollback_request`
@@ -654,12 +641,12 @@ pub fn no_err_frame(conn: &mut Conn) -> bool {
 }
 
 /// Probes until the active board's restore satisfies `done`, to `deadline`;
-/// the newest connection.
-pub fn probe_until(daemon: &TestDaemon, what: &str, deadline: Instant, done: impl Fn(&Restore) -> bool) -> Conn {
+/// the newest connection and its restore.
+pub fn probe_until(daemon: &TestDaemon, what: &str, deadline: Instant, done: impl Fn(&Restore) -> bool) -> (Conn, Restore) {
     loop {
         let (app, restore) = daemon.probe();
         if done(&restore) {
-            return app;
+            return (app, restore);
         }
         assert!(Instant::now() < deadline, "the restore never showed {what}: {:?}", restore.term_records);
         std::thread::sleep(Duration::from_millis(50));
@@ -668,7 +655,7 @@ pub fn probe_until(daemon: &TestDaemon, what: &str, deadline: Instant, done: imp
 
 /// Probes until the active board's record of `term_id` has `want`.
 pub fn probe_until_cwd(daemon: &TestDaemon, term_id: &str, want: &str) -> Conn {
-    probe_until(daemon, &format!("{term_id} in {want}"), Instant::now() + LONG, |r| r.last_cwd(term_id) == Some(want))
+    probe_until(daemon, &format!("{term_id} in {want}"), Instant::now() + LONG, |r| r.last_cwd(term_id) == Some(want)).0
 }
 
 /// `path`, made, as `pid_cwd` and `pwd -P` give it (a temp dir under `/var`

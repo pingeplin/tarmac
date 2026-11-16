@@ -31,7 +31,7 @@ final class ResumeHeaderChipTests: XCTestCase {
     // MARK: S9
 
     private func term(_ id: String, spawn: SpawnRequest?, resume: String? = nil) -> BoardRestore.Term {
-        BoardRestore.Term(termID: id, frame: .zero, z: 0, spawn: spawn, resume: resume)
+        .fixture(id, spawn: spawn, resume: resume)
     }
 
     private func records(_ id: String, _ cmd: String) -> [String: TermRecord] {
