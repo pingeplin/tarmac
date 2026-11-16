@@ -35,16 +35,10 @@ public enum InboxCopy {
     public static func place(_ item: Inbox.Item, boardName: String?, cardLabel: String?, home: String) -> String {
         let head = "\(boardName ?? item.boardID) › \(cardLabel ?? item.proc ?? TermLabel.initial)"
         guard let cwd = item.cwd else { return head }
-        return "\(head) · \(tilde(cwd, home: home))"
+        return "\(head) · \(ChromeText.tilde(cwd, home: home))"
     }
 
     public static func age(_ item: Inbox.Item, nowMs: UInt64) -> String {
         ChromeText.reportAge(atMs: item.atMs, nowMs: nowMs)
-    }
-
-    private static func tilde(_ path: String, home: String) -> String {
-        if path == home { return "~" }
-        let prefix = home.hasSuffix("/") ? home : home + "/"
-        return path.hasPrefix(prefix) ? "~/" + path.dropFirst(prefix.count) : path
     }
 }

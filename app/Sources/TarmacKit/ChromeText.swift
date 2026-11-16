@@ -39,6 +39,16 @@ public enum ChromeText {
         text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
+    /// `path` with `home` shown as `~`, at a path boundary only. An empty home
+    /// or the root replaces nothing: every path would start with a tilde.
+    public static func tilde(_ path: String, home: String) -> String {
+        var home = Substring(home)
+        while home.hasSuffix("/") { home.removeLast() }
+        guard !home.isEmpty else { return path }
+        if path == home { return "~" }
+        return path.hasPrefix(home + "/") ? "~" + path.dropFirst(home.count) : path
+    }
+
     /// `reportAge` of a report made at `atMs`; one from the future is new.
     public static func reportAge(atMs: UInt64, nowMs: UInt64) -> String {
         reportAge(elapsedMs: nowMs >= atMs ? nowMs - atMs : 0)
