@@ -42,10 +42,10 @@ async fn an_ended_term_is_in_the_ring_and_out_of_terms() {
 async fn a_live_term_wins_over_its_exit_in_the_ring() {
     let daemon = on_source(tmp_dir("ring-live").join("state.json"), Silent).await;
     daemon.exits.lock().unwrap().record("T", Some(3));
-    let exited = crate::events::subscribe(&daemon, Some(vec!["exit".into()]), Some("T".into())).await.ok().unwrap();
+    let exited = daemon.subscribe(Some(vec!["exit".into()]), Some("T".into())).await.ok().unwrap();
     daemon.terms.lock().await.insert("T".into(), TermHandle::detached());
 
-    let live = crate::events::subscribe(&daemon, Some(vec!["exit".into()]), Some("T".into())).await.ok().unwrap();
+    let live = daemon.subscribe(Some(vec!["exit".into()]), Some("T".into())).await.ok().unwrap();
 
     assert_eq!(exited.snapshot, vec![Msg::Exit { term_id: "T".into(), code: Some(3), board_id: None }]);
     assert_eq!(live.snapshot, vec![]);
@@ -114,7 +114,7 @@ async fn subscribers_and_the_terms_list_make_no_watch() {
     let mut subscribers = Vec::new();
     for (kinds, term_id) in shapes {
         let kinds = kinds.map(|k| k.iter().map(|s| s.to_string()).collect());
-        subscribers.push(crate::events::subscribe(&daemon, kinds, term_id.map(str::to_string)).await);
+        subscribers.push(daemon.subscribe(kinds, term_id.map(str::to_string)).await);
     }
     daemon.terms_list().await;
     drop(subscribers);

@@ -18,6 +18,24 @@ pub enum Holder {
     Leader { pid: Pid },
 }
 
+/// A process told from a later one with the same pid by its start time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StartedPid {
+    pub pid: Pid,
+    pub started: u64,
+}
+
+impl StartedPid {
+    /// `Unread` keeps it.
+    pub fn alive(&self, facts_of: impl Fn(Pid) -> Facts) -> bool {
+        match facts_of(self.pid) {
+            Facts::Live { started, .. } => started == self.started,
+            Facts::Gone => false,
+            Facts::Unread => true,
+        }
+    }
+}
+
 impl Holder {
     /// The holder of a report from a client whose pid is `caller`, in a
     /// terminal whose PTY child is `child`: the walk up `caller`'s parents to
@@ -71,11 +89,7 @@ impl Holder {
     /// keeps the report for this tick, as `Facts::Unread` does.
     pub fn alive(&self, facts_of: impl Fn(Pid) -> Facts, leader: Option<Pid>) -> bool {
         match *self {
-            Holder::Agent { pid, started } => match facts_of(pid) {
-                Facts::Live { started: now, .. } => now == started,
-                Facts::Gone => false,
-                Facts::Unread => true,
-            },
+            Holder::Agent { pid, started } => StartedPid { pid, started }.alive(facts_of),
             Holder::Shell { pid, caller } => leader.is_none_or(|l| l == pid || l == caller),
             Holder::Leader { pid } => leader.is_none_or(|l| l == pid),
         }
@@ -86,11 +100,11 @@ impl Holder {
 /// a command lasts for a process's life, not until the next foreground job.
 /// So the shell itself holds one set at the prompt, and the leader the
 /// fallback's. `None` when that process cannot be read.
-pub fn tie(holder: Holder, facts_of: impl Fn(Pid) -> Facts) -> Option<Holder> {
+pub fn tie(holder: Holder, facts_of: impl Fn(Pid) -> Facts) -> Option<StartedPid> {
     match holder {
-        Holder::Agent { .. } => Some(holder),
+        Holder::Agent { pid, started } => Some(StartedPid { pid, started }),
         Holder::Shell { pid, .. } | Holder::Leader { pid } => match facts_of(pid) {
-            Facts::Live { started, .. } => Some(Holder::Agent { pid, started }),
+            Facts::Live { started, .. } => Some(StartedPid { pid, started }),
             Facts::Gone | Facts::Unread => None,
         },
     }
@@ -236,14 +250,14 @@ mod tie_tests {
     #[test]
     fn an_agent_stays_as_it_is() {
         let agent = Holder::Agent { pid: 200, started: 11 };
-        assert_eq!(tie(agent, |_| Facts::Gone), Some(agent));
+        assert_eq!(tie(agent, |_| Facts::Gone), Some(StartedPid { pid: 200, started: 11 }));
     }
 
     #[test]
     fn a_shell_or_a_leader_is_tied_to_its_own_start_time() {
         let facts = table(100, Facts::Live { ppid: 1, started: 7 });
-        assert_eq!(tie(Holder::Shell { pid: 100, caller: 500 }, &facts), Some(Holder::Agent { pid: 100, started: 7 }));
-        assert_eq!(tie(Holder::Leader { pid: 100 }, &facts), Some(Holder::Agent { pid: 100, started: 7 }));
+        assert_eq!(tie(Holder::Shell { pid: 100, caller: 500 }, &facts), Some(StartedPid { pid: 100, started: 7 }));
+        assert_eq!(tie(Holder::Leader { pid: 100 }, &facts), Some(StartedPid { pid: 100, started: 7 }));
     }
 
     #[test]

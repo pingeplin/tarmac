@@ -109,6 +109,16 @@ impl Reports {
         terms.into_iter().map(|term| frame(term, self.by_term.get(term))).collect()
     }
 
+    /// A restore's replay: the `snapshot` of the `shown` terms and, when
+    /// `elsewhere`, the `elsewhere` frames after it.
+    pub fn restore_frames(&self, shown: &[String], elsewhere: bool) -> Vec<Msg> {
+        let mut frames = self.snapshot(shown);
+        if elsewhere {
+            frames.extend(self.elsewhere(shown));
+        }
+        frames
+    }
+
     pub fn has(&self, term: &str) -> bool {
         self.by_term.contains_key(term)
     }
@@ -285,6 +295,21 @@ mod tests {
 
         assert_eq!(reports.elsewhere(&["u".into(), "a".into()]), vec![t.clone()]);
         assert_eq!(reports.elsewhere(&[]), vec![t, u]);
+    }
+
+    #[test]
+    fn restore_frames_give_the_snapshot_then_the_elsewhere_frames_only_when_asked() {
+        let mut reports = Reports::default();
+        reports.report("u", Kind::Done, None, 2000, AGENT, None, on_board("board-2", "/u"));
+        reports.report("s", Kind::Blocked, None, 1000, AGENT, None, on_board("board-1", "/s"));
+        reports.report("t", Kind::Done, None, 3000, AGENT, None, on_board("board-0", "/t"));
+        let shown: Vec<String> = vec!["t".into(), "a".into()];
+        let s = report_frame("s", "blocked", None, 1000, None, false, on_board("board-1", "/s"));
+        let t = report_frame("t", "done", None, 3000, None, false, on_board("board-0", "/t"));
+        let u = report_frame("u", "done", None, 2000, None, false, on_board("board-2", "/u"));
+
+        assert_eq!(reports.restore_frames(&shown, false), vec![t.clone(), none_frame("a")]);
+        assert_eq!(reports.restore_frames(&shown, true), vec![t, none_frame("a"), s, u]);
     }
 
     #[test]

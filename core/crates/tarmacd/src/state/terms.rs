@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use tarmac_protocol::TermInfo;
 
@@ -7,6 +8,11 @@ use crate::proc;
 use crate::term::{SpawnPlan, TermHandle};
 
 use super::Daemon;
+
+/// How long the shutdown save waits for the cwd reads of the live
+/// terminals, all of them together. It is well inside the app's 2 s wait
+/// for a daemon that it replaces.
+pub(super) const SHUTDOWN_CWD_BUDGET: Duration = Duration::from_millis(500);
 
 impl Daemon {
     /// Files a new terminal under `board` with its record: the record of
@@ -47,8 +53,30 @@ impl Daemon {
         }
     }
 
+    /// Typed input: marks the report read, then drops a resume command that
+    /// has no holder.
+    pub async fn typed_input(&self, term_id: &str, handle: &TermHandle) {
+        self.mark_report_read(term_id, handle).await;
+        self.claim_resume(term_id, handle).await;
+    }
+
+    /// Reads the cwd of every live terminal at once, and records each that
+    /// answers within `SHUTDOWN_CWD_BUDGET`. A read that does not keeps the cwd
+    /// recorded before.
+    pub async fn read_cwds(self: &Arc<Self>) {
+        let deadline = tokio::time::Instant::now() + SHUTDOWN_CWD_BUDGET;
+        let mut reads = tokio::task::JoinSet::new();
+        for (term_id, pid) in self.foreground_pids().await {
+            let daemon = self.clone();
+            reads.spawn(async move {
+                let _ = tokio::time::timeout_at(deadline, daemon.note_cwd(&term_id, pid)).await;
+            });
+        }
+        while reads.join_next().await.is_some() {}
+    }
+
     /// The foreground pid of each live terminal.
-    pub async fn foreground_pids(&self) -> Vec<(String, proc::Pid)> {
+    async fn foreground_pids(&self) -> Vec<(String, proc::Pid)> {
         let terms = self.terms.lock().await;
         terms.iter().filter_map(|(id, h)| Some((id.clone(), h.foreground_pid()?))).collect()
     }

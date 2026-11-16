@@ -73,7 +73,7 @@ async fn a_held_cwd_read_ends_the_shutdown_save_at_its_budget() {
 
     // Two held reads share one deadline: the save waits it out once.
     let took = started.elapsed();
-    let budget = crate::persist::SHUTDOWN_CWD_BUDGET;
+    let budget = crate::state::terms::SHUTDOWN_CWD_BUDGET;
     assert!(took >= budget && took < budget + Duration::from_millis(300), "the save took {took:?}");
     let saved = r.saved();
     let records = &saved["boards"][0]["term_records"];

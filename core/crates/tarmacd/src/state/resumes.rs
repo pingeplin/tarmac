@@ -103,7 +103,7 @@ impl Daemon {
             return;
         }
         let Some(checked) = handle.resume_holder() else { return };
-        if checked.alive(facts_of, None) {
+        if checked.alive(facts_of) {
             return;
         }
         self.drop_and_push(term_id, |record| {
@@ -115,7 +115,7 @@ impl Daemon {
     }
 
     /// Typed input drops a resume command that has no holder (D6).
-    pub async fn claim_resume(&self, term_id: &str, handle: &TermHandle) {
+    pub(super) async fn claim_resume(&self, term_id: &str, handle: &TermHandle) {
         if handle.resume_flag() != Flag::Unclaimed {
             return;
         }

@@ -11,7 +11,7 @@ use tracing::debug;
 
 use crate::bell_scan::Bells;
 use crate::boards::BoardId;
-use crate::holder::Holder;
+use crate::holder::{Holder, StartedPid};
 use crate::proc;
 use crate::reader::PathGate;
 use crate::resume::Flag;
@@ -69,13 +69,13 @@ pub struct TermHandle {
     // daemon's `reports` lock, in the step that changes the store; read
     // without it, so that a key or a poll tick with no report costs one load.
     report: AtomicU8,
-    // A `resume::Flag`, and the holder of the resume command, an `Agent`.
+    // A `resume::Flag`, and the holder of the resume command.
     // Both are written only under the daemon's `boards` lock, in the step
     // that changes the record; the flag is read without it, so a key or a
     // poll tick with no command costs one load. The holder's lock is taken
     // after `boards`, never across an await.
     resume: AtomicU8,
-    resume_holder: std::sync::Mutex<Option<Holder>>,
+    resume_holder: std::sync::Mutex<Option<StartedPid>>,
 }
 
 const NO_REPORT: u8 = 0;
@@ -122,12 +122,12 @@ impl TermHandle {
         Flag::from_u8(self.resume.load(Ordering::Relaxed))
     }
 
-    pub fn resume_holder(&self) -> Option<Holder> {
+    pub fn resume_holder(&self) -> Option<StartedPid> {
         *self.resume_holder.lock().expect("resume holder lock")
     }
 
     /// A command with `holder`.
-    pub fn hold_resume(&self, holder: Holder) {
+    pub fn hold_resume(&self, holder: StartedPid) {
         *self.resume_holder.lock().expect("resume holder lock") = Some(holder);
         self.resume.store(Flag::Held as u8, Ordering::Relaxed);
     }

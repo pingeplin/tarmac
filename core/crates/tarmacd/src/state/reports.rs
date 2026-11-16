@@ -65,7 +65,7 @@ impl Daemon {
     }
 
     /// Typed input marks an unread report read.
-    pub async fn mark_report_read(&self, term_id: &str, handle: &TermHandle) {
+    pub(super) async fn mark_report_read(&self, term_id: &str, handle: &TermHandle) {
         if handle.unread_report() {
             self.change_report(term_id, handle, |reports| reports.mark_read(term_id)).await;
         }

@@ -509,6 +509,7 @@ impl Daemon {
 
 mod reports;
 mod resumes;
+mod subscriptions;
 mod terms;
 
 #[cfg(test)]
