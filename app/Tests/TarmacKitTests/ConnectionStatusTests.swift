@@ -58,4 +58,21 @@ final class ConnectionStatusTests: XCTestCase {
                 + "set TARMAC_SOCKET to a shorter path, e.g. under /tmp"
         )
     }
+
+    /// #384: `connected` is true from the socket's connect, before `hello_ok`.
+    func testALinkWithAPendingHandshakeIsShownAsConnecting() {
+        XCTAssertEqual(ConnectionStatus.connected.shown(handshook: false), .connecting)
+        XCTAssertEqual(ConnectionStatus.connected.shown(handshook: true), .connected)
+        XCTAssertEqual(ConnectionStatus.closed.shown(handshook: false), .closed)
+        XCTAssertEqual(ConnectionStatus.restarting.shown(handshook: true), .restarting)
+    }
+
+    /// #384: the restart of a daemon of another version ends a link that
+    /// never completed its handshake; the user lost nothing.
+    func testOnlyALinkThatCompletedItsHandshakeIsLost() {
+        XCTAssertTrue(ConnectionStatus.closed.endsLink(handshook: true))
+        XCTAssertFalse(ConnectionStatus.closed.endsLink(handshook: false))
+        XCTAssertFalse(ConnectionStatus.restarting.endsLink(handshook: false))
+        XCTAssertFalse(ConnectionStatus.connected.endsLink(handshook: true))
+    }
 }

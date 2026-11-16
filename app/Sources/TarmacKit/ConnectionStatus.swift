@@ -26,6 +26,18 @@ public struct ConnectionStatus: Equatable, Sendable {
         connected ? "attached" : reason ?? "detached"
     }
 
+    /// The status to show. `connected` is true from the socket's connect; until
+    /// `hello_ok` the daemon has agreed to nothing, so that link is `connecting`.
+    public func shown(handshook: Bool) -> ConnectionStatus {
+        connected && !handshook ? .connecting : self
+    }
+
+    /// Whether this status ends a link the app was using. One that never
+    /// completed its handshake carried nothing: its end is not a loss.
+    public func endsLink(handshook: Bool) -> Bool {
+        handshook && !connected
+    }
+
     // MARK: - Connect-failure details
 
     /// The path and the channel, as the CLI names them (spec 2606.0003 S10).

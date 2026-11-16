@@ -606,6 +606,20 @@ final class DaemonClientTests: XCTestCase {
         XCTAssertEqual(inbox.all, [])
     }
 
+    /// #384: a daemon that takes the socket and never answers. The read of
+    /// the first frame had no limit, so the app stayed on that link.
+    func testADaemonThatDoesNotAnswerTheHelloIsLeftAndTriedAgain() throws {
+        let daemon = try makeDaemon()
+        var timing = DaemonClient.Timing.fast
+        timing.handshakeTimeout = 0.2
+        let (client, statuses, inbox) = makeClient(daemon.path, timing: timing)
+        client.start()
+
+        XCTAssertEqual(statuses.first(3), [.connected, .closed, .connected])
+        XCTAssertTrue(daemon.accepted(2))
+        XCTAssertEqual(inbox.all, [])
+    }
+
     /// A dropped link is reported with the bridge's reason, then re-made.
     func testADroppedLinkIsReportedAndReconnected() throws {
         let daemon = try makeDaemon()
