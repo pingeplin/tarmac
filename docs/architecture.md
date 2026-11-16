@@ -270,7 +270,7 @@ only a subscriber is still held for the app, and `push` itself is the app's
 alone. The board-switch tell loop (`conn::change_and_send_active_board`) sends
 published frames on its own channel; the `TermReport` replays of a restore and
 of a connection's first restore are not published. With no
-subscriber, `publish` clones nothing. `events::subscribe` takes the receiver
+subscriber, `publish` clones nothing. `Daemon::subscribe` takes the receiver
 first, then (with a `term_id`) the terminal's report and its exit from the
 ring as the snapshot; `events::serve` writes the frames its `Filter` admits
 until the client closes, and a subscriber more than 1024 frames behind gets
@@ -1215,7 +1215,7 @@ A dead card whose
 board's latest restore has a record with a folder or a command shows a
 strip of `reopen here  ⏎`, `in <folder>` and `then offers: <cmd>`, with each
 id-like word of the command cut to four characters and `…` (`DeadCardOffer`,
-`ResumeCommand.display`); a press on it, or Return while the dead card holds the keys,
+`ResumeCommandDisplay.display`); a press on it, or Return while the dead card holds the keys,
 replaces it in place with a cold spawn in that folder that succeeds the dead id
 and offers the command. `↻` means refresh only: no resume or reopen text uses
 it. The panel and the strip are one view, a sibling of its card in the card layer,
