@@ -325,13 +325,11 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
             }
         }
         Msg::Layout { dock, tiles, board, board_id } => {
-            daemon
-                .boards
-                .lock()
-                .await
-                .registry_mut(board_id.as_deref())
-                .apply_layout(dock, tiles, board);
-            daemon.mark_dirty();
+            if daemon.boards.lock().await.apply_layout(board_id.as_deref(), dock, tiles, board) {
+                daemon.mark_dirty();
+            } else {
+                debug!("layout for unknown board {board_id:?}");
+            }
         }
         // mark_dirty runs inside `change`, before any frame is queued: a send
         // can wait on a slow reader, and the save must not wait with it.

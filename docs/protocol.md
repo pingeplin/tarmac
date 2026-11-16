@@ -454,6 +454,11 @@ byte-identical wire:
 | `spawn_term` | `board_id` | `board-0` / active |
 | `restore` | `board_id` | `board-0` — the daemon always stamps it so the app can bind a restore unambiguously across rapid switches |
 
+A `layout` whose `board_id` names a board the daemon does not have is ignored:
+a snapshot can be on its way for a board that was deleted meanwhile (by another
+app, or while the link was down), and the active board is not the one that
+snapshot describes (#383).
+
 ### `restore.live_terms` (P5)
 
     {t:"restore", ..., live_terms:[term_id, ...]}

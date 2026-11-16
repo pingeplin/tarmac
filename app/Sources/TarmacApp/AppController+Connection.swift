@@ -46,6 +46,10 @@ extension AppController {
             dataFiles.resent.forEach(client.send)
         case .boardList(let metas, let active):
             boardMetas = metas
+            let liveBoardIDs = Set(metas.map(\.boardID))
+            // Before the switch below sends what is owed: a deleted board is
+            // still in `boards` then, and its snapshot would go out (#383).
+            layoutPersister.keep(liveBoardIDs)
             // Sync each visited board's local display name from the daemon's
             // authoritative list, so a rename reflects in the window title +
             // status bar (which read `activeBoard.name`), not just the switcher rows.
@@ -61,7 +65,6 @@ extension AppController {
             // another app) is dropped locally — its detached cards/sessions go and
             // routing to it stops. Never the active board: the daemon fixes active
             // before sending this, so `activeBoardID` always names a live board.
-            let liveBoardIDs = Set(metas.map(\.boardID))
             for id in Array(boards.keys) where id != activeBoardID && !liveBoardIDs.contains(id) {
                 removeBoard(id)
             }

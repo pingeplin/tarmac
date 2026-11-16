@@ -393,3 +393,32 @@ fn board_delete_persists() {
     daemon.wait_for_state("board-1 gone from the saved state", |v| saved_boards(v) == 1);
 }
 
+// #383: the app flushes a pending layout of a board it has just deleted.
+#[test]
+fn a_layout_for_a_deleted_board_does_not_land_on_the_active_board() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app();
+    app.recv_board_list();
+    app.recv_restore();
+    let kept = BoardViewport { zoom: 0.82, cx: 640.0, cy: 360.0 };
+    app.send(&Msg::Layout { dock: vec![], tiles: vec![], board: Some(kept.clone()), board_id: Some("board-0".into()) });
+    app.send(&Msg::BoardCreate);
+    assert_eq!(app.recv_board_list().1, "board-1");
+    app.recv_restore();
+    app.send(&Msg::BoardDelete { board_id: "board-1".into() });
+    assert_eq!(app.recv_board_list().1, "board-0");
+    app.recv_restore();
+
+    let stray = BoardViewport { zoom: 2.0, cx: 9.0, cy: 9.0 };
+    app.send(&Msg::Layout { dock: vec![], tiles: vec![term_tile("t1", 120.0)], board: Some(stray), board_id: Some("board-1".into()) });
+    // A round trip on the same connection: the daemon has read the layout.
+    app.send(&Msg::BoardRename { board_id: "board-0".into(), name: "read".into() });
+    app.recv_board_list();
+
+    let mut again = daemon.connect_app();
+    again.recv_board_list();
+    let restore = again.recv_restore();
+    assert_eq!(restore.board, Some(kept));
+    assert!(restore.tiles.iter().all(|tile| tile.term_id.as_deref() != Some("t1")), "{:?}", restore.tiles);
+}
+

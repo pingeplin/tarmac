@@ -23,6 +23,11 @@ final class LayoutPersister {
         }
     }
 
+    /// Forgets the snapshot of every board that is not in `live`.
+    func keep(_ live: Set<String>) {
+        pending.keep(live)
+    }
+
     /// Sends every snapshot still owed, now.
     func flush() {
         for boardID in pending.flushAll() {
