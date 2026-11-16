@@ -933,8 +933,8 @@ connection. It runs on a thread of its own and delivers `Message`s and
 `ConnectionStatus.connected` turns true as soon as the socket connects; the
 controller's own `connected` flag — what gates a spawn — turns true on
 `HelloOk`. The daemon has 5 s to start its answer to `hello`
-(`Timing.handshakeTimeout`); after that the client closes the link and tries
-again, as for any dropped link. Connection state is app-local: the status bar
+(`Timing.handshakeTimeout`); after that the client closes the link and connects
+again after the reconnect delay. Connection state is app-local: the status bar
 prints `attached` once the handshake has completed, `connecting…` while it is
 pending (`ConnectionStatus.shown`), or the reason. On the drop of a link that
 completed its handshake (`ConnectionStatus.endsLink`) the app toasts `tarmacd
