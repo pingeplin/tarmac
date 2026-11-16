@@ -443,6 +443,17 @@ impl Boards {
         &mut self.boards[idx].registry
     }
 
+    /// `Registry::apply_layout` on board `id`, or on the active board when the
+    /// frame names none. False, with nothing changed, for an unknown id: the
+    /// active board is not the one that layout describes (#383).
+    pub fn apply_layout(&mut self, id: Option<&str>, dock: Vec<String>, tiles: Vec<Tile>, board: Option<BoardViewport>) -> bool {
+        let registry = match id {
+            Some(id) => self.known_registry_mut(id),
+            None => Some(self.active_registry_mut()),
+        };
+        registry.map(|registry| registry.apply_layout(dock, tiles, board)).is_some()
+    }
+
     /// The registry of board `id`, with no fall-back: `None` for an unknown id.
     pub fn known_registry(&self, id: &str) -> Option<&Registry> {
         Some(&self.boards[self.index_of(id)?].registry)
@@ -1049,6 +1060,19 @@ mod tests {
 
         assert!(reg.set_data(Path::new("/d/nope.html"), uncounted(data.clone())).is_err());
         assert_eq!(reg.take_data_changes(&now(&data, at(10))), vec![]);
+    }
+
+    // #383: the app can send the layout of a board after it deleted that board.
+    #[test]
+    fn a_layout_for_an_unknown_board_changes_nothing_and_one_with_no_board_is_for_the_active_one() {
+        let mut boards = Boards::single();
+        let kept = BoardViewport { zoom: 0.5, cx: 1.0, cy: 2.0 };
+        let stray = BoardViewport { zoom: 2.0, cx: 9.0, cy: 9.0 };
+
+        assert!(boards.apply_layout(None, vec![], vec![], Some(kept.clone())));
+        assert!(!boards.apply_layout(Some("board-404"), vec![], vec![], Some(stray)));
+
+        assert_eq!(boards.active_registry().board, Some(kept));
     }
 
     #[test]
