@@ -337,10 +337,11 @@ in portable-pty's own `is_dir`, its `search_path` (which reads the cwd only for
 a `./x` cmd or a relative `PATH` entry), or the `chdir`. A duplicate `term_id`
 is refused before the cwd is read, at once.
 
-Each terminal fans out into blocking threads (reader → 64 KiB chunks, writer,
-`child.wait()` → exit code via oneshot, a 750 ms process-name poll) plus one
-async **pump** that owns the daemon handle. The pump is the only place with a
-daemon reference, so it is where the three honest signals are sourced:
+Each terminal fans out into three blocking threads (reader → 64 KiB chunks,
+writer, `child.wait()` → exit code via oneshot) plus two async tasks that hold
+the daemon handle: a 750 ms **poll** (`term::proc_loop`) and one **pump**. They
+are the only places with a daemon reference, so they are where the three honest
+signals are sourced (the poll gives `TermProc`, the pump `Bell` and `Exit`):
 
 - **`TermProc`** — poll the master's `process_group_leader` pid, name it by
   the basename of its argv[0] (`sysctl(KERN_PROCARGS2)`, macOS; a login
@@ -435,7 +436,7 @@ names a terminal and a command, or none to clear it. The command is checked by
 256 chars) in the cli, the daemon and the app. `Daemon::set_resume` stores it as
 `resume: {cmd}` in the terminal's record, beside `last_cwd`, so it is saved and
 sent in every `Restore`. Its holder is found by the report's walk and is always
-a pid with its start time (`resume::tie`: the agent, the shell itself for a
+a pid with its start time (`holder::tie`: the agent, the shell itself for a
 command set at the prompt, or the leader of the fallback); it lives in memory
 only, on the terminal's handle, beside a `resume::Flag` atomic (none, held,
 unclaimed). Both are written only with `boards` held, in the step that changes
@@ -449,7 +450,8 @@ the holder from the handle with no board lock. The drops while the daemon lives:
   checked;
 - a terminal's end drops it at any exit code; a non-zero or signal exit still
   keeps the record and its `last_cwd`;
-- a command with no holder — loaded from disk, or moved by `succeeds` — is
+- a command with no holder — one that `succeeds` moved to a new terminal,
+  which is how a command loaded from disk gets a terminal — is
   dropped by the first `Input` with `typed: true` to its terminal; a new set
   gives it a holder.
 
