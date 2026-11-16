@@ -6,7 +6,7 @@ mod common;
 
 use std::time::Instant;
 
-use common::{LONG, TestDaemon, temp_dir};
+use common::{LONG, TestDaemon};
 use tarmac_protocol::Msg;
 
 #[test]
@@ -78,10 +78,7 @@ fn term_proc_reports_a_foreground_process_name() {
 fn term_proc_names_a_symlinked_command_by_the_link() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
-    let link = temp_dir().join("claude");
-    std::os::unix::fs::symlink("/bin/sleep", &link).unwrap();
-
-    app.spawn_term("link-term", &[link.to_str().unwrap(), "5"]);
+    app.spawn_as_claude("link-term");
 
     let deadline = Instant::now() + LONG;
     loop {

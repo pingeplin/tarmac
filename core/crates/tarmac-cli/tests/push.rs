@@ -2,7 +2,6 @@
 // `push` as the test says. The daemon's own answers are its tests' business;
 // here the subject is what the cli sends, prints and exits with.
 
-use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
@@ -10,7 +9,7 @@ use std::time::{Duration, Instant};
 use tarmac_protocol::{self as proto, MAX_FRAME_LEN, Msg};
 
 mod common;
-use common::{Double, Report, channel, hello_ok, scratch, tarmac, tarmac_at};
+use common::{Double, Report, hello_ok, no_daemon_line, scratch, tarmac, tarmac_at};
 
 const NO_ANSWER: &str = "no answer from the daemon in 5 s (an older daemon, or the app is not reading)";
 
@@ -98,10 +97,6 @@ impl PushDaemon {
 
 fn push_msg(path: &str, value: &str) -> Msg {
     Msg::Push { path: path.into(), value: value.into() }
-}
-
-fn no_daemon_line(sock: &Path) -> String {
-    format!("tarmac: no tarmac daemon running ({} channel, socket: {})\n", channel(), sock.display())
 }
 
 // S10

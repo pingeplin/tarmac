@@ -47,6 +47,17 @@ fn help_exits_zero_and_documents_open() {
     assert!(out.stdout.contains("TARMAC_SOCKET"));
 }
 
+/// `--help` with success, whose text holds each of `phrases`.
+#[track_caller]
+fn help_containing(phrases: &[&str]) -> Report {
+    let out = Report::of(tarmac().arg("--help"));
+    assert!(out.status.success());
+    for phrase in phrases {
+        assert!(out.stdout.contains(phrase), "{phrase}: {}", out.stdout);
+    }
+    out
+}
+
 // Spec 2611.0003: the verb, both of its modes, and its exit status.
 #[test]
 fn help_documents_push() {
@@ -61,11 +72,7 @@ fn help_documents_push() {
 // Spec 2611.0009: the verb, its three forms, and its exit status.
 #[test]
 fn help_documents_report() {
-    let out = Report::of(tarmac().arg("--help"));
-    assert!(out.status.success());
-    for form in ["tarmac report blocked [\"<text>\"]", "tarmac report done [\"<text>\"]", "tarmac report clear"] {
-        assert!(out.stdout.contains(form), "{form}: {}", out.stdout);
-    }
+    let out = help_containing(&["tarmac report blocked [\"<text>\"]", "tarmac report done [\"<text>\"]", "tarmac report clear"]);
     assert!(out.stdout.contains("TARMAC_TERM_ID"), "{}", out.stdout);
     assert!(out.stdout.contains("1  the daemon refused an open, a push or a report"), "{}", out.stdout);
 }
@@ -73,11 +80,7 @@ fn help_documents_report() {
 // Spec 2611.0011: the verb, its two forms, and its exit status.
 #[test]
 fn help_documents_resume() {
-    let out = Report::of(tarmac().arg("--help"));
-    assert!(out.status.success());
-    for form in ["tarmac resume set \"<command>\"", "tarmac resume clear"] {
-        assert!(out.stdout.contains(form), "{form}: {}", out.stdout);
-    }
+    let out = help_containing(&["tarmac resume set \"<command>\"", "tarmac resume clear"]);
     assert!(out.stdout.contains("or a resume, no daemon is running"), "{}", out.stdout);
     assert!(out.stdout.contains("`report` or `resume` ran outside a"), "{}", out.stdout);
 }
@@ -85,9 +88,7 @@ fn help_documents_resume() {
 // Spec 2611.0012: the three verbs, `--term` with no doc changes, and 124.
 #[test]
 fn help_documents_terms_events_and_wait() {
-    let out = Report::of(tarmac().arg("--help"));
-    assert!(out.status.success());
-    for phrase in [
+    help_containing(&[
         "tarmac terms",
         "tarmac events [--term ID] [--kind exit,bell,changed,report]",
         "tarmac wait --exit ID | --bell ID | --report blocked|done --term ID",
@@ -95,17 +96,13 @@ fn help_documents_terms_events_and_wait() {
         "`--term` alone gives no `changed` events",
         "`terms`, `events` or `wait` was refused",
         "124  tarmac wait timed out",
-    ] {
-        assert!(out.stdout.contains(phrase), "{phrase}: {}", out.stdout);
-    }
+    ]);
 }
 
 // Spec 2611.0010: the four forms, what install writes, and the exit status of run.
 #[test]
 fn help_documents_hooks() {
-    let out = Report::of(tarmac().arg("--help"));
-    assert!(out.status.success());
-    for phrase in [
+    help_containing(&[
         "tarmac hooks install",
         "tarmac hooks uninstall",
         "tarmac hooks status",
@@ -114,9 +111,7 @@ fn help_documents_hooks() {
         "settings.local.json",
         ".tarmac-backup",
         "`tarmac hooks run` always exits 0",
-    ] {
-        assert!(out.stdout.contains(phrase), "{phrase}: {}", out.stdout);
-    }
+    ]);
 }
 
 #[test]
@@ -368,7 +363,7 @@ fn help_documents_the_skill_verb_too() {
     let out = Report::of(tarmac().arg("--help"));
     assert!(out.stdout.contains("tarmac skill"));
     assert!(out.stdout.contains("tarmac skill install"));
-    // --help splices skill::USAGE; without this the interpolation could be
+    // --help splices agents::FLAGS_USAGE; without this the interpolation could be
     // dropped and every other test would stay green.
     assert!(out.stdout.contains("--dry-run"), "--help must carry install's flags");
 }

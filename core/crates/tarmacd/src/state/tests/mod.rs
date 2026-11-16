@@ -155,8 +155,7 @@ fn canon_tmp(tag: &str) -> PathBuf {
 }
 
 async fn try_open(daemon: &Arc<Daemon>, doc: &Path) -> Result<(), String> {
-    let (daemon, doc) = (daemon.clone(), doc.to_str().unwrap().to_owned());
-    answers(async move { crate::docs::handle_open(&daemon, &doc, "cli", None, None).await }).await
+    within(spawn_open(daemon, doc)).await
 }
 
 fn did_not_answer(daemon: &Daemon, doc: &Path) -> Result<(), String> {
@@ -271,8 +270,17 @@ async fn on_source(state_path: PathBuf, source: impl WakeSource + 'static) -> Ar
 
 /// A daemon whose watcher is `source` and whose gate calls `fs`.
 async fn held(tmp: &Path, source: Box<dyn WakeSource>, fs: Arc<StuckFs>) -> Arc<Daemon> {
-    Daemon::with_fs(tmp.join("state.json"), source, Arc::new(Wake::default()), fs, LIMIT).await
+    held_within(tmp, source, fs, LIMIT).await
 }
+
+/// `held`, whose gate gives up on a call after `limit`.
+async fn held_within(tmp: &Path, source: Box<dyn WakeSource>, fs: Arc<StuckFs>, limit: Duration) -> Arc<Daemon> {
+    Daemon::with_fs(tmp.join("state.json"), source, Arc::new(Wake::default()), fs, limit).await
+}
+
+/// Well above `SHUTDOWN_CWD_BUDGET`: only the budget or the test can end a
+/// held read.
+const LONG_LIMIT: Duration = Duration::from_secs(30);
 
 /// A daemon on `StuckFs` that loads `state`, its app, and a dir in a temp dir
 /// of its own, which is not under `$HOME`. The test keeps `release` until
@@ -300,6 +308,15 @@ impl Rig {
         }
         let _ = std::fs::remove_dir_all(&self.tmp);
     }
+
+    /// The state file as saved.
+    fn saved(&self) -> serde_json::Value {
+        serde_json::from_slice(&std::fs::read(self.tmp.join("state.json")).unwrap()).unwrap()
+    }
+}
+
+async fn rig(tag: &str) -> Rig {
+    rig_with(tag, None, LIMIT).await
 }
 
 async fn rig_with(tag: &str, state: Option<serde_json::Value>, limit: Duration) -> Rig {
@@ -310,7 +327,7 @@ async fn rig_with(tag: &str, state: Option<serde_json::Value>, limit: Duration) 
         std::fs::write(tmp.join("state.json"), state.to_string()).unwrap();
     }
     let (fs, release) = stuck_fs();
-    let daemon = Daemon::with_fs(tmp.join("state.json"), Box::new(Silent), Arc::new(Wake::default()), fs.clone(), limit).await;
+    let daemon = held_within(&tmp, Box::new(Silent), fs.clone(), limit).await;
     let app = connect_app(&daemon).await;
     Rig { tmp, dir, daemon, app, fs, release: Some(release) }
 }
@@ -340,7 +357,16 @@ async fn spawn(daemon: &Arc<Daemon>, term_id: &str, argv: &[&str], opts: SpawnOp
     started.elapsed()
 }
 
-async fn pid_of(daemon: &Daemon, term_id: &str) -> libc::pid_t {
+/// The step of a `SpawnTerm` of a shell idle at `read`.
+async fn spawn_idle(daemon: &Arc<Daemon>, term_id: &str, opts: SpawnOpts<'_>) {
+    spawn(daemon, term_id, &["/bin/sh", "-c", "read _"], opts).await;
+}
+
+fn in_dir(dir: &Path) -> SpawnOpts<'_> {
+    SpawnOpts { cwd: Some(dir), ..Default::default() }
+}
+
+async fn pid_of(daemon: &Daemon, term_id: &str) -> crate::proc::Pid {
     daemon.term(term_id).await.expect("the term runs").foreground_pid().expect("a foreground pid")
 }
 

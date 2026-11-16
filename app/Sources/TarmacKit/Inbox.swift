@@ -26,7 +26,7 @@ public struct Inbox: Equatable, Sendable {
         case exit(code: Int?)
 
         /// The pill signal the kind shows as, and so its colour.
-        public var signal: OffscreenHintLayout.Signal {
+        public var signal: CardSignal {
             switch self {
             case .report(.blocked): .blocked
             case .report(.done): .done
@@ -78,13 +78,17 @@ public struct Inbox: Equatable, Sendable {
         public var next: Filter { Self.cycle(self, by: 1) }
         public var previous: Filter { Self.cycle(self, by: -1) }
 
-        public func admits(_ kind: Kind) -> Bool {
+        var family: Family? {
             switch self {
-            case .all: true
-            case .reports: kind.family == .report
-            case .bell: kind.family == .bell
-            case .exit: kind.family == .exit
+            case .all: nil
+            case .reports: .report
+            case .bell: .bell
+            case .exit: .exit
             }
+        }
+
+        public func admits(_ kind: Kind) -> Bool {
+            family == nil || family == kind.family
         }
 
         private static func cycle(_ filter: Filter, by step: Int) -> Filter {

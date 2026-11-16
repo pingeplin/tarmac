@@ -6,11 +6,7 @@ use std::collections::HashMap;
 
 use tarmac_protocol::Msg;
 
-use crate::proc::{Facts, Pid};
-
-/// The longest chain the walk follows, caller and PTY child included: a guard
-/// against a cycle.
-const MAX_HOPS: usize = 32;
+use crate::holder::Holder;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -31,81 +27,6 @@ impl Kind {
         match self {
             Kind::Blocked => "blocked",
             Kind::Done => "done",
-        }
-    }
-}
-
-/// The process whose life the report lasts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Holder {
-    /// `started` tells the process from a later one with the same pid.
-    Agent { pid: Pid, started: u64 },
-    /// A report typed at the prompt: it lasts while the leader is the shell
-    /// `pid` or the reporting `caller`.
-    Shell { pid: Pid, caller: Pid },
-    Leader { pid: Pid },
-}
-
-impl Holder {
-    /// The holder of a report from a client whose pid is `caller`, in a
-    /// terminal whose PTY child is `child`: the walk up `caller`'s parents to
-    /// `child`. A child spawned with a `cmd` (`child_is_cmd`) is the agent for
-    /// every caller. Else the member just below the child is the agent, or the
-    /// shell holds it when the caller is the child or the child's child (a
-    /// report typed at the prompt; the cli exits right after its answer, so it
-    /// is never the agent). A caller the walk cannot place (no pid, a parent
-    /// gone or unread, pid 1 reached, or a chain of more than `MAX_HOPS`)
-    /// falls back to the foreground `leader`, read only then. `None`: no
-    /// process to tie the report to.
-    pub fn resolve(
-        caller: Option<Pid>,
-        child: Option<Pid>,
-        child_is_cmd: bool,
-        facts_of: impl Fn(Pid) -> Facts,
-        leader: impl FnOnce() -> Option<Pid>,
-    ) -> Option<Holder> {
-        Self::walk(caller, child, child_is_cmd, facts_of).or_else(|| leader().map(|pid| Holder::Leader { pid }))
-    }
-
-    fn walk(caller: Option<Pid>, child: Option<Pid>, child_is_cmd: bool, facts_of: impl Fn(Pid) -> Facts) -> Option<Holder> {
-        let (caller, child) = (caller?, child?);
-        let (mut pid, mut below, mut members) = (caller, None, 1);
-        while pid != child {
-            if pid <= 1 || members == MAX_HOPS {
-                return None;
-            }
-            let Facts::Live { ppid, started } = facts_of(pid) else { return None };
-            below = Some((pid, started));
-            pid = ppid;
-            members += 1;
-        }
-        if child_is_cmd {
-            let Facts::Live { started, .. } = facts_of(child) else { return None };
-            return Some(Holder::Agent { pid: child, started });
-        }
-        match below {
-            Some((pid, started)) if pid != caller => Some(Holder::Agent { pid, started }),
-            _ => Some(Holder::Shell { pid: child, caller }),
-        }
-    }
-
-    pub fn pid(&self) -> Pid {
-        match *self {
-            Holder::Agent { pid, .. } | Holder::Shell { pid, .. } | Holder::Leader { pid } => pid,
-        }
-    }
-
-    /// `leader` is a fresh foreground-leader read; `None` (a failed read)
-    /// keeps the report for this tick, as `Facts::Unread` does.
-    pub fn alive(&self, facts_of: impl Fn(Pid) -> Facts, leader: Option<Pid>) -> bool {
-        match *self {
-            Holder::Agent { pid, started } => match facts_of(pid) {
-                Facts::Live { started: now, .. } => now == started,
-                Facts::Gone => false,
-                Facts::Unread => true,
-            },
-            Holder::Shell { pid, caller } => leader.is_none_or(|l| l == pid || l == caller),
-            Holder::Leader { pid } => leader.is_none_or(|l| l == pid),
         }
     }
 }
@@ -188,6 +109,16 @@ impl Reports {
         terms.into_iter().map(|term| frame(term, self.by_term.get(term))).collect()
     }
 
+    /// A restore's replay: the `snapshot` of the `shown` terms and, when
+    /// `elsewhere`, the `elsewhere` frames after it.
+    pub fn restore_frames(&self, shown: &[String], elsewhere: bool) -> Vec<Msg> {
+        let mut frames = self.snapshot(shown);
+        if elsewhere {
+            frames.extend(self.elsewhere(shown));
+        }
+        frames
+    }
+
     pub fn has(&self, term: &str) -> bool {
         self.by_term.contains_key(term)
     }
@@ -213,23 +144,23 @@ fn frame(term: &str, report: Option<&CurrentReport>) -> Msg {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fixtures::{L, S, facts, live};
+    use crate::proc::Pid;
 
     const T: &str = "t1";
-    const S: Pid = 100;
     const C: Pid = 500;
-    const L: Pid = 700;
     const AGENT: Holder = Holder::Agent { pid: 200, started: 11 };
 
-    fn frame(kind: &str, text: Option<&str>, at_ms: u64, proc: Option<&str>, read: bool) -> Msg {
+    fn report_frame(term: &str, kind: &str, text: Option<&str>, at_ms: u64, proc: Option<&str>, read: bool, place: Place) -> Msg {
         Msg::TermReport {
-            term_id: T.into(),
+            term_id: term.into(),
             kind: Some(kind.into()),
             text: text.map(str::to_string),
             at_ms: Some(at_ms),
             proc: proc.map(str::to_string),
             read,
-            board_id: None,
-            cwd: None,
+            board_id: place.board_id,
+            cwd: place.cwd,
         }
     }
 
@@ -245,19 +176,10 @@ mod tests {
         Place { board_id: Some(board.into()), cwd: Some(cwd.into()) }
     }
 
-    fn facts(pairs: &[(Pid, Facts)]) -> impl Fn(Pid) -> Facts + use<> {
-        let pairs = pairs.to_vec();
-        move |pid| pairs.iter().find(|(p, _)| *p == pid).map_or(Facts::Gone, |(_, f)| *f)
-    }
-
-    fn live(started: u64) -> Facts {
-        Facts::Live { ppid: 1, started }
-    }
-
     #[test]
     fn s11a_a_first_report_is_pushed_unread() {
         let mut reports = Reports::default();
-        assert_eq!(blocked(&mut reports, 1000), frame("blocked", Some("ok?"), 1000, Some("claude"), false));
+        assert_eq!(blocked(&mut reports, 1000), report_frame(T, "blocked", Some("ok?"), 1000, Some("claude"), false, Place::default()));
         assert!(reports.has(T) && reports.unread(T));
     }
 
@@ -270,7 +192,7 @@ mod tests {
 
         let again = reports.report(T, Kind::Blocked, Some("ok?".into()), 2000, shell, Some("bash".into()), Place::default());
 
-        assert_eq!(again, frame("blocked", Some("ok?"), 2000, Some("bash"), false));
+        assert_eq!(again, report_frame(T, "blocked", Some("ok?"), 2000, Some("bash"), false, Place::default()));
         assert_eq!(reports.by_term[T].holder, shell);
         assert!(reports.unread(T));
     }
@@ -281,7 +203,7 @@ mod tests {
         blocked(&mut reports, 1000);
         reports.mark_read(T);
         let again = reports.report(T, Kind::Done, Some("new".into()), 1500, AGENT, None, Place::default());
-        assert_eq!(again, frame("done", Some("new"), 1500, None, false));
+        assert_eq!(again, report_frame(T, "done", Some("new"), 1500, None, false, Place::default()));
     }
 
     #[test]
@@ -298,7 +220,7 @@ mod tests {
     fn s11e_mark_read_pushes_once() {
         let mut reports = Reports::default();
         blocked(&mut reports, 1000);
-        assert_eq!(reports.mark_read(T), Some(frame("blocked", Some("ok?"), 1000, Some("claude"), true)));
+        assert_eq!(reports.mark_read(T), Some(report_frame(T, "blocked", Some("ok?"), 1000, Some("claude"), true, Place::default())));
         assert!(!reports.unread(T) && reports.has(T));
         assert_eq!(reports.mark_read(T), None);
     }
@@ -340,18 +262,8 @@ mod tests {
         blocked(&mut reports, 1000);
         assert_eq!(
             reports.snapshot(&[T.into(), "u1".into()]),
-            vec![frame("blocked", Some("ok?"), 1000, Some("claude"), false), none_frame("u1")]
+            vec![report_frame(T, "blocked", Some("ok?"), 1000, Some("claude"), false, Place::default()), none_frame("u1")]
         );
-    }
-
-    #[test]
-    fn s12_an_agent_holder_lasts_while_its_process_with_that_start_time_lives() {
-        let agent = Holder::Agent { pid: 200, started: 11 };
-        assert!(agent.alive(facts(&[(200, live(11))]), Some(L)));
-        assert!(!agent.alive(facts(&[(200, live(12))]), Some(L)), "a reused pid");
-        assert!(agent.alive(facts(&[(200, Facts::Unread)]), Some(L)));
-        assert!(!agent.alive(facts(&[(200, Facts::Gone)]), Some(L)));
-        assert!(!agent.alive(facts(&[(200, Facts::Gone)]), None), "a failed leader read does not keep it");
     }
 
     #[test]
@@ -362,140 +274,13 @@ mod tests {
         assert_eq!(reports.check(T, |h| h.alive(&reused, Some(L))), Some(none_frame(T)));
     }
 
-    #[test]
-    fn s12_a_leader_holder_lasts_while_it_is_the_leader() {
-        let leader = Holder::Leader { pid: L };
-        assert!(leader.alive(facts(&[]), Some(L)));
-        assert!(leader.alive(facts(&[]), None));
-        assert!(!leader.alive(facts(&[]), Some(S)));
-    }
-
-    // The walk: S9 and S36, against the production `Holder::resolve`.
-    const CHILD: Pid = 100;
-    const A: Pid = 200;
-    const X: Pid = 300;
-    const Y: Pid = 400;
-    const CALLER: Pid = 500;
-    const CHAIN: &[(Pid, Pid)] = &[(CALLER, X), (X, A), (A, CHILD), (CHILD, 1)];
-
-    /// A process table: each pid's parent; every pid in it started at its own
-    /// pid, and any other is gone.
-    fn table(parents: &[(Pid, Pid)]) -> impl Fn(Pid) -> Facts + use<> {
-        let parents = parents.to_vec();
-        move |pid| {
-            parents.iter().find(|(p, _)| *p == pid).map_or(Facts::Gone, |&(_, ppid)| Facts::Live { ppid, started: pid as u64 })
-        }
-    }
-
-    fn resolve(caller: Pid, cmd: bool, parents: &[(Pid, Pid)]) -> Option<Holder> {
-        Holder::resolve(Some(caller), Some(CHILD), cmd, table(parents), || Some(L))
-    }
-
-    fn agent(pid: Pid) -> Option<Holder> {
-        Some(Holder::Agent { pid, started: pid as u64 })
-    }
-
-    const LEADER: Option<Holder> = Some(Holder::Leader { pid: L });
-
-    #[test]
-    fn s9a_the_agent_is_the_member_just_below_the_shell() {
-        assert_eq!(resolve(CALLER, false, CHAIN), agent(A));
-    }
-
-    #[test]
-    fn s9b_s36_a_caller_whose_parent_is_the_shell_is_held_by_the_shell() {
-        let shell = Holder::resolve(Some(CALLER), Some(CHILD), false, table(&[(CALLER, CHILD)]), || panic!("no leader read"));
-        assert_eq!(shell, Some(Holder::Shell { pid: CHILD, caller: CALLER }));
-    }
-
-    #[test]
-    fn s9c_the_shell_itself_as_the_caller_is_held_by_the_shell() {
-        assert_eq!(resolve(CHILD, false, &[(CHILD, 1)]), Some(Holder::Shell { pid: CHILD, caller: CHILD }));
-    }
-
-    #[test]
-    fn s9d_s9i_a_child_spawned_as_cmd_is_the_agent_for_every_caller() {
-        assert_eq!(resolve(CALLER, true, CHAIN), agent(CHILD));
-        assert_eq!(resolve(CALLER, true, &[(CALLER, CHILD), (CHILD, 1)]), agent(CHILD));
-    }
-
-    #[test]
-    fn s36_a_cmd_child_whose_facts_are_not_live_falls_back_to_the_leader() {
-        let parents = [(CALLER, CHILD)];
-        for f in [Facts::Gone, Facts::Unread] {
-            let facts_of = |pid| if pid == CHILD { f } else { table(&parents)(pid) };
-            assert_eq!(Holder::resolve(Some(CALLER), Some(CHILD), true, facts_of, || Some(L)), LEADER, "{f:?}");
-        }
-    }
-
-    #[test]
-    fn s9e_a_caller_re_parented_to_launchd_falls_back_to_the_leader() {
-        // A parent of pid 1 that leads to the child: only the guard stops there.
-        assert_eq!(resolve(CALLER, false, &[(CALLER, X), (X, 1), (1, CHILD)]), LEADER);
-    }
-
-    #[test]
-    fn s9f_s36_a_parent_gone_or_unread_on_the_way_falls_back_to_the_leader() {
-        assert_eq!(resolve(CALLER, false, &[(CALLER, X)]), LEADER);
-        let unread = |pid| if pid == X { Facts::Unread } else { table(CHAIN)(pid) };
-        assert_eq!(Holder::resolve(Some(CALLER), Some(CHILD), false, unread, || Some(L)), LEADER);
-    }
-
-    #[test]
-    fn s9g_no_caller_or_no_child_falls_back_to_the_leader() {
-        assert_eq!(Holder::resolve(None, Some(CHILD), false, table(CHAIN), || Some(L)), LEADER);
-        assert_eq!(Holder::resolve(Some(CALLER), None, false, table(CHAIN), || Some(L)), LEADER);
-    }
-
-    #[test]
-    fn s9h_a_cycle_falls_back_to_the_leader() {
-        assert_eq!(resolve(CALLER, false, &[(CALLER, X), (X, Y), (Y, X)]), LEADER);
-    }
-
-    /// A chain of `members` pids, the caller first and the child last.
-    fn chain_of(members: usize) -> (Pid, Vec<(Pid, Pid)>) {
-        let pids: Vec<Pid> = (0..members - 1).map(|i| 1000 + i as Pid).chain([CHILD]).collect();
-        (pids[0], pids.windows(2).map(|w| (w[0], w[1])).collect())
-    }
-
-    #[test]
-    fn s9h_a_chain_of_32_members_is_walked() {
-        let (caller, parents) = chain_of(32);
-        assert_eq!(resolve(caller, false, &parents), agent(parents[parents.len() - 1].0));
-    }
-
-    #[test]
-    fn s9h_a_chain_of_33_members_falls_back_to_the_leader() {
-        let (caller, parents) = chain_of(33);
-        assert_eq!(resolve(caller, false, &parents), LEADER);
-    }
-
-    #[test]
-    fn s36_an_unplaced_caller_with_no_leader_has_no_holder() {
-        assert_eq!(Holder::resolve(None, Some(CHILD), false, table(CHAIN), || None), None);
-    }
-
-    /// A report frame with its place, as `frame` builds it.
-    fn placed(term: &str, kind: &str, at_ms: u64, read: bool, board: &str, cwd: &str) -> Msg {
-        Msg::TermReport {
-            term_id: term.into(),
-            kind: Some(kind.into()),
-            text: None,
-            at_ms: Some(at_ms),
-            proc: None,
-            read,
-            board_id: Some(board.into()),
-            cwd: Some(cwd.into()),
-        }
-    }
-
     // 2611.0013 S14
     #[test]
     fn s14_the_frame_carries_the_place_given_to_report_and_keeps_it_when_read() {
         let mut reports = Reports::default();
         let pushed = reports.report(T, Kind::Done, None, 1000, AGENT, None, on_board("board-1", "/w"));
-        assert_eq!(pushed, placed(T, "done", 1000, false, "board-1", "/w"));
-        assert_eq!(reports.mark_read(T), Some(placed(T, "done", 1000, true, "board-1", "/w")));
+        assert_eq!(pushed, report_frame(T, "done", None, 1000, None, false, on_board("board-1", "/w")));
+        assert_eq!(reports.mark_read(T), Some(report_frame(T, "done", None, 1000, None, true, on_board("board-1", "/w"))));
         assert_eq!(reports.clear(T), Some(none_frame(T)), "a removal has no place");
     }
 
@@ -505,11 +290,30 @@ mod tests {
         let mut reports = Reports::default();
         reports.report("u", Kind::Done, None, 2000, AGENT, None, on_board("board-2", "/u"));
         reports.report("t", Kind::Blocked, None, 1000, AGENT, None, on_board("board-1", "/t"));
-        let t = placed("t", "blocked", 1000, false, "board-1", "/t");
-        let u = placed("u", "done", 2000, false, "board-2", "/u");
+        let t = report_frame("t", "blocked", None, 1000, None, false, on_board("board-1", "/t"));
+        let u = report_frame("u", "done", None, 2000, None, false, on_board("board-2", "/u"));
 
         assert_eq!(reports.elsewhere(&["u".into(), "a".into()]), vec![t.clone()]);
         assert_eq!(reports.elsewhere(&[]), vec![t, u]);
+    }
+
+    #[test]
+    fn restore_frames_give_the_snapshot_then_the_elsewhere_frames_only_when_asked() {
+        // Eight terms elsewhere: an order by chance is one in 40320.
+        let elsewhere = ["s", "u", "p", "x", "q", "w", "r", "v"];
+        let mut reports = Reports::default();
+        for term in elsewhere {
+            reports.report(term, Kind::Blocked, None, 1000, AGENT, None, on_board("board-1", "/e"));
+        }
+        reports.report("t", Kind::Done, None, 3000, AGENT, None, on_board("board-0", "/t"));
+        let shown: Vec<String> = vec!["t".into(), "a".into()];
+        let t = report_frame("t", "done", None, 3000, None, false, on_board("board-0", "/t"));
+        let mut sorted = elsewhere;
+        sorted.sort();
+        let told = sorted.map(|term| report_frame(term, "blocked", None, 1000, None, false, on_board("board-1", "/e")));
+
+        assert_eq!(reports.restore_frames(&shown, false), vec![t.clone(), none_frame("a")]);
+        assert_eq!(reports.restore_frames(&shown, true), [vec![t, none_frame("a")], told.to_vec()].concat());
     }
 
     #[test]

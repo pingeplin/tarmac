@@ -9,18 +9,13 @@ public enum InboxCopy {
     }
 
     public static func tag(_ kind: Inbox.Kind) -> String {
-        switch kind {
-        case .report(.blocked): "blocked"
-        case .report(.done): "done"
-        case .bell: "bell"
-        case .exit: "exit"
-        }
+        kind.signal.rawValue
     }
 
     public static func title(_ item: Inbox.Item) -> String {
         switch item.kind {
         case .report: ReportChip.heading(proc: item.proc)
-        case .bell: during("bell", item.proc)
+        case .bell: ChromeText.during("bell", proc: item.proc)
         case .exit(let code): TermExitToast.title(code: code) ?? "exit"
         }
     }
@@ -32,7 +27,7 @@ public enum InboxCopy {
     }
 
     public static func quote(_ item: Inbox.Item) -> String? {
-        item.text.map { "“\(oneLine($0))”" }
+        item.text.map { "“\(ChromeText.oneLine($0))”" }
     }
 
     /// `<board> › <terminal> · <cwd>`: the board's name or id; the card's
@@ -44,32 +39,12 @@ public enum InboxCopy {
     }
 
     public static func age(_ item: Inbox.Item, nowMs: UInt64) -> String {
-        ChromeText.reportAge(elapsedMs: nowMs >= item.atMs ? nowMs - item.atMs : 0)
-    }
-
-    /// Every run of whitespace, newlines included, as one space; trimmed.
-    public static func oneLine(_ text: String) -> String {
-        text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
-    }
-
-    private static func during(_ title: String, _ proc: String?) -> String {
-        proc.map { "\(title) · during \($0)" } ?? title
+        ChromeText.reportAge(atMs: item.atMs, nowMs: nowMs)
     }
 
     private static func tilde(_ path: String, home: String) -> String {
         if path == home { return "~" }
         let prefix = home.hasSuffix("/") ? home : home + "/"
         return path.hasPrefix(prefix) ? "~/" + path.dropFirst(prefix.count) : path
-    }
-}
-
-/// The title-bar button's title.
-public enum InboxBadge {
-    public static func text(unread: Int) -> String {
-        switch unread {
-        case ...0: "inbox"
-        case ...99: "inbox · \(unread)"
-        default: "inbox · 99+"
-        }
     }
 }

@@ -23,6 +23,12 @@ final class DevSnapshotTests: XCTestCase {
         )
     }
 
+    private func terminal(offerAfter events: [ResumeOffer.Event]) throws -> Terminal {
+        var t = terminal()
+        t.resume = DevSnapshot.Resume(offer: try ResumeOffer.fixture(after: events), prime: true)
+        return t
+    }
+
     private func term(_ terminal: Terminal? = nil, screenRect: CGRect? = nil, scroll: DevSnapshot.Scroll? = nil) -> Card {
         Card(
             id: "t-1", content: .term(terminal ?? self.terminal()),
@@ -260,16 +266,10 @@ final class DevSnapshotTests: XCTestCase {
 
     // MARK: - 2611.0011 S26 the resume and reopen offers
 
-    private func offer(_ events: [ResumeOffer.Event]) throws -> ResumeOffer {
-        try XCTUnwrap(events.reduce(ResumeOffer.make(cmd: "echo HI")) { ResumeOffer.step($0, $1).offer })
-    }
-
     func testS26AResumeOfferIsReportedWithWhetherItIsArmed() throws {
-        var armed = terminal()
-        armed.resume = DevSnapshot.Resume(offer: try offer([.output(byteCount: 5)]), prime: true)
+        let armed = try terminal(offerAfter: [.output(byteCount: 5)])
         XCTAssertEqual(fields(facts(armed)["resume"])["armed"], true)
-        var waiting = terminal()
-        waiting.resume = DevSnapshot.Resume(offer: try offer([]), prime: true)
+        let waiting = try terminal(offerAfter: [])
         XCTAssertEqual(facts(waiting)["resume"], [
             "cmd": "echo HI", "armed": false, "queued": false, "title": "resume last agent session?",
             "buttons": ["resume", "skip"],
@@ -277,17 +277,28 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertNil(facts(armed)["reopen"])
     }
 
+    func testS26ADeadCardWithAnOfferIsReportedAsReopen() {
+        var dead = terminal(live: false, dead: true)
+        dead.reopen = true
+        XCTAssertEqual(facts(dead)["reopen"], true)
+        XCTAssertNil(facts(dead)["resume"])
+    }
+
+    func testS26ATerminalWithNoOfferHasNeither() {
+        let plain = facts(terminal())
+        XCTAssertNil(plain["resume"])
+        XCTAssertNil(plain["reopen"])
+    }
+
     // MARK: - 2611.0015 S22: the panel, the header chip, the choices and the toasts
 
     func testS22AQueuedAndAnArmedOfferAreReportedWithTheirPanel() throws {
-        var queued = terminal()
-        queued.resume = DevSnapshot.Resume(offer: try offer([.request]), prime: true)
+        let queued = try terminal(offerAfter: [.request])
         XCTAssertEqual(facts(queued)["resume"], [
             "cmd": "echo HI", "armed": false, "queued": true, "title": "resumes when the shell is ready",
             "buttons": ["skip"],
         ])
-        var armed = terminal()
-        armed.resume = DevSnapshot.Resume(offer: try offer([.output(byteCount: 5)]), prime: true)
+        let armed = try terminal(offerAfter: [.output(byteCount: 5)])
         XCTAssertEqual(facts(armed)["resume"], [
             "cmd": "echo HI", "armed": true, "queued": false, "title": "resume last agent session?",
             "buttons": ["⏎ resume", "esc skip"],
@@ -318,19 +329,6 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(fields(DevSnapshot.build(input(toasts: [ResumeHeaderChip.copiedToast])))["toasts"], ["resume command copied"])
         XCTAssertEqual(fields(DevSnapshot.build(input(toasts: ["a", "b"])))["toasts"], ["a", "b"])
         XCTAssertEqual(fields(DevSnapshot.build(input()))["toasts"], .array([]))
-    }
-
-    func testS26ADeadCardWithAnOfferIsReportedAsReopen() {
-        var dead = terminal(live: false, dead: true)
-        dead.reopen = true
-        XCTAssertEqual(facts(dead)["reopen"], true)
-        XCTAssertNil(facts(dead)["resume"])
-    }
-
-    func testS26ATerminalWithNoOfferHasNeither() {
-        let plain = facts(terminal())
-        XCTAssertNil(plain["resume"])
-        XCTAssertNil(plain["reopen"])
     }
 
     // MARK: - S3 screen_rect is the measurement, or null
@@ -957,11 +955,8 @@ final class DevSnapshotTests: XCTestCase {
     // MARK: - 2611.0013 D18: the inbox and the pills
 
     func testTheInboxIsItsStateAndItsItemsInListOrder() {
-        let blocked = Inbox.Item(
-            kind: .report(.blocked), termID: "T", boardID: "board-1", atMs: 2, proc: "claude", cwd: nil, text: "ok?",
-            read: false
-        )
-        let bell = Inbox.Item(kind: .bell, termID: "U", boardID: "board-0", atMs: 1, proc: nil, cwd: nil, text: nil, read: true)
+        let blocked = inboxItem(.report(.blocked), proc: "claude", text: "ok?", at: 2)
+        let bell = inboxItem(.bell, board: "board-0", at: 1, term: "U", read: true)
         let facts = DevSnapshot.InboxFacts(
             open: true, unread: 1, filter: .all, selected: blocked.id, items: [blocked, bell]
         )

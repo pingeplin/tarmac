@@ -121,7 +121,7 @@ public enum KeyLadder {
         if facts.switcherOpen { return .switcherKey }
         if facts.inboxOpen { return .inboxKey }
         if press.isCommandChord("t") { return .newTerminal }
-        let plain = !press.command && !press.option && !press.control
+        let plain = press.isUnmodifiedOrShifted
         if press.named == .enter, plain, facts.keys == .terminal, let offer = offerAction(press, facts) {
             return offer
         }
@@ -167,7 +167,7 @@ public enum KeyLadder {
         guard facts.restoreCard != nil || facts.afterRestoreCard, !press.isCommandChord("q") else { return nil }
         if press.isRepeat { return .swallow }
         guard let choices = facts.restoreCard else { return nil }
-        let plain = !press.command && !press.option && !press.control
+        let plain = press.isUnmodifiedOrShifted
         if !choices.isEmpty, plain, press.named == .enter { return .restoreCard(.resumeAll) }
         if !choices.isEmpty, plain, press.named == .escape { return .restoreCard(.skipAll) }
         return .restoreCard(.perCard)

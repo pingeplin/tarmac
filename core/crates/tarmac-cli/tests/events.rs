@@ -7,7 +7,7 @@ use tarmac_protocol::Msg;
 
 mod common;
 use common::frames::{bell, exit, term_report};
-use common::{Report, Step, Streamer, Then, assert_no_answer, assert_usage, start, tarmac_at, untouched};
+use common::{Report, Step, Streamer, Then, assert_never_answered, assert_usage, start, tarmac_at, untouched};
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
@@ -119,10 +119,7 @@ fn s29_a_refusal_is_printed_and_exits_1() {
 // S31
 #[test]
 fn s31_a_daemon_that_never_answers_is_the_no_answer_line_after_5_s() {
-    let daemon = Streamer::start(vec![], Then::Hold);
-    let started = Instant::now();
-
-    assert_no_answer(&daemon.run(&["events"]), started);
+    assert_never_answered(&["events"]);
 }
 
 // S32

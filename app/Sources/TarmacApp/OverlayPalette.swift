@@ -10,7 +10,7 @@ enum OverlayPalette {
     static var minimapBackground: NSColor { Theme.bg0.withAlphaComponent(0.92) }
 
     /// A card's rect in the minimap.
-    static func minimapFill(_ signal: OffscreenHintLayout.Signal?) -> NSColor {
+    static func minimapFill(_ signal: CardSignal?) -> NSColor {
         switch signal {
         case .live: return Theme.agent.withAlphaComponent(0.8)
         case let signal?: return tone(signal).withAlphaComponent(0.85)
@@ -18,22 +18,22 @@ enum OverlayPalette {
         }
     }
 
-    static func hintBorder(_ signal: OffscreenHintLayout.Signal) -> NSColor {
+    static func hintBorder(_ signal: CardSignal) -> NSColor {
         signal == .live ? Theme.agent.withAlphaComponent(0.4) : tone(signal).withAlphaComponent(0.5)
     }
 
-    static func hintArrow(_ signal: OffscreenHintLayout.Signal) -> NSColor {
+    static func hintArrow(_ signal: CardSignal) -> NSColor {
         signal == .live ? Theme.faint : tone(signal)
     }
 
-    static func hintLabel(_ signal: OffscreenHintLayout.Signal) -> NSColor {
+    static func hintLabel(_ signal: CardSignal) -> NSColor {
         signal == .live ? Theme.muted : Theme.text
     }
 
     /// A signal's colour: a blocked report and a bell want the user, a done
     /// report is good news, an exit is an error. The pills, the minimap and the
     /// report and inbox chips all read it here.
-    static func tone(_ signal: OffscreenHintLayout.Signal) -> NSColor {
+    static func tone(_ signal: CardSignal) -> NSColor {
         switch signal {
         case .blocked, .bell: return Theme.amber
         case .done: return Theme.ok

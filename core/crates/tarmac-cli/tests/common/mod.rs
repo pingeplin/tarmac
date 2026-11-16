@@ -2,7 +2,7 @@
 #![allow(dead_code)] // each test binary uses a different slice of the harness
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
@@ -12,6 +12,7 @@ use tarmac_protocol::{self as proto, Msg};
 
 mod double;
 pub mod frames;
+pub mod hooks;
 pub use double::{Double, Peer};
 
 /// The line of a verb whose daemon does not answer in time.
@@ -28,6 +29,22 @@ pub fn handshake(peer: &mut Peer, late: Duration) -> bool {
     peer.write(&hello_ok) && peer.read().is_some()
 }
 
+/// The line of a verb that finds no daemon on `sock`.
+pub fn no_daemon_line(sock: &Path) -> String {
+    format!("tarmac: no tarmac daemon running ({} channel, socket: {})\n", channel(), sock.display())
+}
+
+/// `tarmac <verb> <args>` on a socket that is absent: a run that tried to
+/// connect would print the no-daemon line instead of the one asserted.
+pub fn without_daemon(verb: &str, term_id: Option<&str>, args: &[&str]) -> Report {
+    let mut cmd = tarmac();
+    cmd.env_remove("TARMAC_TERM_ID");
+    if let Some(term_id) = term_id {
+        cmd.env("TARMAC_TERM_ID", term_id);
+    }
+    Report::of(cmd.arg(verb).args(args))
+}
+
 /// Exit 2 with the verb's one usage line.
 #[track_caller]
 pub fn assert_usage(out: &Report, verb: &str) {
@@ -40,6 +57,15 @@ pub fn assert_usage(out: &Report, verb: &str) {
 pub fn assert_no_answer(out: &Report, started: Instant) {
     assert_eq!((out.code(), out.stderr.as_str()), (Some(1), NO_ANSWER));
     assert!(started.elapsed() >= Duration::from_secs(5), "gave up after {:?}", started.elapsed());
+}
+
+/// Runs `tarmac <args>` against a daemon that never answers, and asserts the
+/// no-answer line.
+#[track_caller]
+pub fn assert_never_answered(args: &[&str]) {
+    let daemon = Streamer::holding(vec![]);
+    let started = Instant::now();
+    assert_no_answer(&daemon.run(args), started);
 }
 
 /// What a `OneAnswer` double does with the frame after the hello.
@@ -57,8 +83,13 @@ pub struct OneAnswer {
 
 impl OneAnswer {
     pub fn start(answer: Answer) -> Self {
+        OneAnswer::start_late(Duration::ZERO, answer)
+    }
+
+    /// `start`, with the `hello_ok` written `late`: a slow handshake.
+    pub fn start_late(late: Duration, answer: Answer) -> Self {
         let double = Double::start("tarmacd.sock", move |peer| {
-            if !handshake(peer, Duration::ZERO) {
+            if !handshake(peer, late) {
                 return;
             }
             match answer {
@@ -140,6 +171,11 @@ impl Streamer {
     /// Writes `frames`, then closes.
     pub fn writing(frames: Vec<Msg>) -> Self {
         Streamer::start(frames.into_iter().map(Step::Write).collect(), Then::Close)
+    }
+
+    /// Writes `frames`, then holds the connection open.
+    pub fn holding(frames: Vec<Msg>) -> Self {
+        Streamer::start(frames.into_iter().map(Step::Write).collect(), Then::Hold)
     }
 
     pub fn run(&self, args: &[&str]) -> Report {

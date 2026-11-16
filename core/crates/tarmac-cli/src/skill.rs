@@ -11,20 +11,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::agents::{Env, Scope, Target, parse_flags};
+use crate::agents::{Env, FLAGS_USAGE, Scope, Target, parse_flags};
 
 const GUIDE: &str = include_str!("GUIDE.md");
 
 const SHIM: &str = include_str!("SKILL.md");
 
 const SKILL_NAME: &str = "tarmac";
-
-/// The flags `agents::parse_flags` accepts. `main.rs` splices it into `--help`;
-/// a usage error prints it verbatim.
-pub const USAGE: &str = "    --target claude-code|codex|all   default: all
-    --scope  user|project            default: user
-    --dry-run                        print the paths, write nothing
-";
 
 /// Where one target's `SKILL.md` belongs. Codex's user scope is keyed on `$HOME`
 /// and not on `$CODEX_HOME` — the latter only reaches its deprecated root.
@@ -65,7 +58,7 @@ fn install(args: &[String]) -> i32 {
     let parsed = match parse_flags(args) {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("tarmac: {e}\n{USAGE}");
+            eprintln!("tarmac: {e}\n{FLAGS_USAGE}");
             return 2;
         }
     };

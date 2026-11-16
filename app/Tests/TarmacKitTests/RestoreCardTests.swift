@@ -8,7 +8,7 @@ final class RestoreCardTests: XCTestCase {
     private typealias Line = RestoreCard.Line
 
     private func term(_ id: String, spawn: SpawnRequest?, resume: String? = nil) -> BoardRestore.Term {
-        BoardRestore.Term(termID: id, frame: .zero, z: 0, spawn: spawn, resume: resume)
+        .fixture(id, spawn: spawn, resume: resume)
     }
 
     private func plan(_ terms: [BoardRestore.Term]) -> BoardRestore.Plan {

@@ -35,6 +35,14 @@ final class KeyPressTests: XCTestCase {
         XCTAssertFalse(q.shift)
     }
 
+    func testUnmodifiedOrShiftedAllowsShiftAndNoOtherIntentModifier() {
+        XCTAssertTrue(press(36, "\r").isUnmodifiedOrShifted)
+        XCTAssertTrue(press(36, "\r", shift).isUnmodifiedOrShifted)
+        for mods in [command, option, control, command | shift] {
+            XCTAssertFalse(press(36, "\r", mods).isUnmodifiedOrShifted, "\(mods)")
+        }
+    }
+
     // MARK: named keys
 
     func testNamedKeysAreThePhysicalKeys() {

@@ -83,6 +83,13 @@ impl Env {
     }
 }
 
+/// The flags `parse_flags` accepts. `help.rs` splices it into `--help`;
+/// a usage error prints it verbatim.
+pub(crate) const FLAGS_USAGE: &str = "    --target claude-code|codex|all   default: all
+    --scope  user|project            default: user
+    --dry-run                        print the paths, write nothing
+";
+
 pub(crate) struct Flags {
     pub(crate) targets: Vec<Target>,
     pub(crate) scope: Scope,
@@ -121,11 +128,10 @@ pub(crate) fn parse_flags(args: &[String]) -> Result<Flags, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::skill::USAGE;
+    use crate::fixtures::args;
 
-    fn install_args(args: &[&str]) -> Result<Flags, String> {
-        let owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-        parse_flags(&owned)
+    fn install_args(a: &[&str]) -> Result<Flags, String> {
+        parse_flags(&args(a))
     }
 
     #[test]
@@ -147,7 +153,7 @@ mod tests {
     #[test]
     fn usage_text_documents_every_flag_the_parser_accepts() {
         for flag in ["--target", "--scope", "--dry-run"] {
-            assert!(USAGE.contains(flag), "USAGE omits {flag}");
+            assert!(FLAGS_USAGE.contains(flag), "USAGE omits {flag}");
         }
     }
 

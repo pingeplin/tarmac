@@ -31,25 +31,11 @@ final class ResumeHeaderChipTests: XCTestCase {
     // MARK: S9
 
     private func term(_ id: String, spawn: SpawnRequest?, resume: String? = nil) -> BoardRestore.Term {
-        BoardRestore.Term(termID: id, frame: .zero, z: 0, spawn: spawn, resume: resume)
+        .fixture(id, spawn: spawn, resume: resume)
     }
 
     private func records(_ id: String, _ cmd: String) -> [String: TermRecord] {
         [id: TermRecord(lastCwd: nil, resume: ResumeRecord(cmd: cmd))]
-    }
-
-    func testS9AColdSpawnTakesThePlansCommandWhateverTheTableHolds() {
-        let cold = term("new", spawn: SpawnRequest(succeeds: "old"), resume: "echo HI")
-        XCTAssertEqual(RecordedResume.command(for: cold, termRecords: records("new", "echo HO")), "echo HI")
-        XCTAssertNil(RecordedResume.command(for: term("new", spawn: SpawnRequest()), termRecords: records("new", "echo HO")))
-    }
-
-    func testS9AReboundTermTakesItsRecordedCommandWhenAccepted() {
-        let rebound = term("t", spawn: nil)
-        XCTAssertEqual(RecordedResume.command(for: rebound, termRecords: records("t", "echo HO")), "echo HO")
-        XCTAssertNil(RecordedResume.command(for: rebound, termRecords: [:]))
-        XCTAssertNil(RecordedResume.command(for: rebound, termRecords: records("u", "echo HO")))
-        XCTAssertNil(RecordedResume.command(for: rebound, termRecords: records("t", "echo a\necho b")))
     }
 
     func testS9APushedCommandIsKeptOnlyWhenAccepted() {

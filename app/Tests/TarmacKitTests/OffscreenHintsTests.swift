@@ -8,7 +8,7 @@ import XCTest
 final class OffscreenHintLayoutTests: XCTestCase {
     private typealias Layout = OffscreenHintLayout
 
-    private func hint(_ cardID: String, _ center: CGPoint, _ signal: Layout.Signal, _ z: Int) -> Layout.Hint {
+    private func hint(_ cardID: String, _ center: CGPoint, _ signal: CardSignal, _ z: Int) -> Layout.Hint {
         Layout.Hint(cardID: cardID, centerView: center, signal: signal, label: cardID, z: z, signalAt: nil)
     }
 
@@ -20,7 +20,7 @@ final class OffscreenHintLayoutTests: XCTestCase {
 
     private func signal(
         _ report: TermReport? = nil, bell: Bool = false, exit: Bool = false, live: Bool = true
-    ) -> Layout.Signal? {
+    ) -> CardSignal? {
         Layout.signal(report: report, bellLit: bell, exitUnread: exit, live: live)
     }
 
@@ -40,7 +40,7 @@ final class OffscreenHintLayoutTests: XCTestCase {
     }
 
     func testS24TheRankIsBlockedBellExitDoneLive() {
-        let order: [Layout.Signal] = [.live, .done, .exit, .bell, .blocked]
+        let order: [CardSignal] = [.live, .done, .exit, .bell, .blocked]
         XCTAssertEqual(order.map(Layout.rank), [0, 1, 2, 3, 4])
     }
 
@@ -74,7 +74,7 @@ final class OffscreenHintLayoutTests: XCTestCase {
 
     // MARK: - shown (#373)
 
-    private func signalled(_ cardID: String, _ signal: Layout.Signal, at: UInt64?, z: Int = 0) -> Layout.Hint {
+    private func signalled(_ cardID: String, _ signal: CardSignal, at: UInt64?, z: Int = 0) -> Layout.Hint {
         Layout.Hint(cardID: cardID, centerView: .zero, signal: signal, label: cardID, z: z, signalAt: at)
     }
 
@@ -140,7 +140,7 @@ final class OffscreenHintLayoutTests: XCTestCase {
     }
 
     func testTheSignalTimeIsTheTimeOfTheShownSignal() {
-        let at = { (signal: Layout.Signal) in
+        let at = { (signal: CardSignal) in
             Layout.signalAt(signal, reportAtMs: 1, bellAtMs: 2, exitAtMs: 3)
         }
         XCTAssertEqual(at(.blocked), 1)

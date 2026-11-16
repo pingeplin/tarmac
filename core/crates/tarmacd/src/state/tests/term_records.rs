@@ -2,20 +2,9 @@ use super::*;
 use tarmac_protocol::TermRecord;
 
 const TICK: Duration = crate::term::PROC_POLL_INTERVAL;
-/// Well above `SHUTDOWN_CWD_BUDGET`: only the budget can end a held read.
-const LONG_LIMIT: Duration = Duration::from_secs(30);
 
 fn two_boards() -> serde_json::Value {
     serde_json::json!({"boards": [{"board_id": "board-0"}, {"board_id": "board-1"}], "active": "board-0"})
-}
-
-/// The step of a `SpawnTerm` of a shell idle at `read`.
-async fn spawn_idle(daemon: &Arc<Daemon>, term_id: &str, opts: SpawnOpts<'_>) {
-    spawn(daemon, term_id, &["/bin/sh", "-c", "read _"], opts).await;
-}
-
-fn in_dir(dir: &Path) -> SpawnOpts<'_> {
-    SpawnOpts { cwd: Some(dir), ..Default::default() }
 }
 
 async fn record(daemon: &Daemon, board: &str, term_id: &str) -> Option<TermRecord> {
@@ -84,9 +73,9 @@ async fn a_held_cwd_read_ends_the_shutdown_save_at_its_budget() {
 
     // Two held reads share one deadline: the save waits it out once.
     let took = started.elapsed();
-    let budget = crate::persist::SHUTDOWN_CWD_BUDGET;
+    let budget = crate::state::terms::SHUTDOWN_CWD_BUDGET;
     assert!(took >= budget && took < budget + Duration::from_millis(300), "the save took {took:?}");
-    let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(r.tmp.join("state.json")).unwrap()).unwrap();
+    let saved = r.saved();
     let records = &saved["boards"][0]["term_records"];
     assert_eq!(records["T1"]["last_cwd"], "/fresh/1");
     assert_eq!(records["T2"]["last_cwd"], serde_json::json!(r.dir));

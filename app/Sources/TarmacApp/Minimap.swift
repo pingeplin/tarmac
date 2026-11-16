@@ -11,7 +11,7 @@ final class Minimap: NSView, ThemeFollowing {
     /// One card in the minimap: its world frame + signal (for the rect color).
     struct Item {
         var worldRect: CGRect
-        var signal: OffscreenHintLayout.Signal?
+        var signal: CardSignal?
     }
 
     static let mapWidth: CGFloat = 132

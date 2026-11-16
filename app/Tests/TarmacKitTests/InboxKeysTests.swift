@@ -5,30 +5,19 @@ import XCTest
 final class InboxKeysTests: XCTestCase {
     private typealias State = InboxKeys.State
 
-    private let shift: UInt = 1 << 17
-    private let command: UInt = 1 << 20
-
     private func id(_ term: String) -> Inbox.ItemID { Inbox.ItemID(termID: term, family: .report) }
     private var a: Inbox.ItemID { id("a") }
     private var b: Inbox.ItemID { id("b") }
     private var c: Inbox.ItemID { id("c") }
     private var n: Inbox.ItemID { id("n") }
 
-    private func key(_ keyCode: UInt16, _ mods: UInt = 0) -> KeyPress {
-        KeyPress(keyCode: keyCode, characters: "", charactersIgnoringModifiers: "", modifierFlags: mods)
-    }
-
-    private func letter(_ c: Character, _ mods: UInt = 0) -> KeyPress {
-        KeyPress(keyCode: 0, characters: String(c), charactersIgnoringModifiers: String(c), modifierFlags: mods)
-    }
-
-    private var up: KeyPress { key(126) }
-    private var down: KeyPress { key(125) }
-    private var enter: KeyPress { key(36) }
-    private var backspace: KeyPress { key(51) }
-    private var esc: KeyPress { key(53) }
-    private var tab: KeyPress { key(48) }
-    private var shiftTab: KeyPress { key(48, shift) }
+    private var up: KeyPress { named(126) }
+    private var down: KeyPress { named(125) }
+    private var enter: KeyPress { named(36) }
+    private var backspace: KeyPress { named(51) }
+    private var esc: KeyPress { named(53) }
+    private var tab: KeyPress { named(48) }
+    private var shiftTab: KeyPress { named(48, shift) }
 
     private func handle(_ press: KeyPress, _ state: State, _ rows: [Inbox.ItemID]) -> (State, InboxKeys.Effect) {
         let result = InboxKeys.handle(press, state: state, rows: rows)
@@ -70,7 +59,7 @@ final class InboxKeysTests: XCTestCase {
         XCTAssertEqual(typed.1, InboxKeys.Effect.none)
         XCTAssertEqual(typed.0, state)
         XCTAssertEqual(handle(letter("v", command), state, [a]).1, .leaveForMenu)
-        for press in [key(126, command), key(125, command), key(53, command)] {
+        for press in [named(126, command), named(125, command), named(53, command)] {
             XCTAssertEqual(handle(press, state, [a, b]).1, .leaveForMenu, "\(press.keyCode)")
             XCTAssertEqual(handle(press, state, [a, b]).0, state)
         }

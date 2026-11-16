@@ -194,7 +194,7 @@ public enum BoardSwitcher {
         if running > 0 { parts.append("\(running) running") }
         if bell > 0 { parts.append("\(bell) bell") }
         if report > 0 { parts.append("\(report) report") }
-        if let cards { parts.append(cards == 1 ? "1 card" : "\(cards) cards") }
+        if let cards { parts.append(ChromeText.cardCount(cards)) }
         return parts.joined(separator: " · ")
     }
 }

@@ -1,5 +1,5 @@
 use super::*;
-use crate::proc::{Facts, Pid};
+use crate::proc::{self, Facts, Pid};
 use crate::term::TermHandle;
 
 /// A rig with a shell `T` idle at `read _` and the resume command `echo HI`.
@@ -7,8 +7,8 @@ use crate::term::TermHandle;
 /// ties to its start time. The handle is kept: `term_ended` takes `T` out of
 /// `terms`, where `Rig::end` would no longer find it to kill it.
 async fn resumed(tag: &str) -> (Rig, Arc<TermHandle>) {
-    let r = rig_with(tag, None, LIMIT).await;
-    spawn(&r.daemon, "T", &["/bin/sh", "-c", "read _"], SpawnOpts { cwd: Some(&r.dir), ..Default::default() }).await;
+    let r = rig(tag).await;
+    spawn_idle(&r.daemon, "T", in_dir(&r.dir)).await;
     let handle = r.daemon.term("T").await.expect("T runs");
     assert_eq!(r.daemon.set_resume(None, "T", Some("echo HI".into())).await, Ok(()));
     assert_eq!(resume_of(&r.daemon).await.as_deref(), Some("echo HI"));
@@ -172,8 +172,8 @@ async fn a_signal_exit_drops_the_command_and_keeps_the_entry() {
 // that comes while the save waits on a held read is stopped.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_drop_during_the_shutdown_save_is_stopped() {
-    let mut r = rig_with("resume-save-race", None, Duration::from_secs(30)).await;
-    spawn(&r.daemon, "T", &["/bin/sh", "-c", "read _"], SpawnOpts { cwd: Some(&r.dir), ..Default::default() }).await;
+    let mut r = rig_with("resume-save-race", None, LONG_LIMIT).await;
+    spawn_idle(&r.daemon, "T", in_dir(&r.dir)).await;
     let handle = r.daemon.term("T").await.expect("T runs");
     eventually("T's first pid_cwd", || r.fs.calls(Call::PidCwd) >= 1).await;
     assert_eq!(r.daemon.set_resume(None, "T", Some("echo HI".into())).await, Ok(()));
@@ -188,7 +188,7 @@ async fn a_drop_during_the_shutdown_save_is_stopped() {
     within(save).await;
 
     assert_eq!(resume_of(&r.daemon).await.as_deref(), Some("echo HI"));
-    let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(r.tmp.join("state.json")).unwrap()).unwrap();
+    let saved = r.saved();
     assert_eq!(saved["boards"][0]["term_records"]["T"]["resume"]["cmd"], "echo HI");
     end(r, handle).await;
 }
@@ -206,7 +206,7 @@ async fn the_poll_drops_a_gone_holders_command_with_no_leader() {
         let mut boards = daemon.boards.lock().await;
         let record = tarmac_protocol::TermRecord { last_cwd: None, resume: Some(tarmac_protocol::ResumeRecord { cmd: "echo HI".into() }) };
         boards.known_registry_mut("board-0").unwrap().term_records.insert("T".into(), record);
-        handle.hold_resume(crate::reports::Holder::Agent { pid: std::process::id() as Pid, started: 1 });
+        handle.hold_resume(crate::holder::StartedPid { pid: std::process::id() as Pid, started: 1 });
     }
 
     let poll = tokio::spawn(crate::term::proc_loop(daemon.clone(), "T".into(), handle.clone()));

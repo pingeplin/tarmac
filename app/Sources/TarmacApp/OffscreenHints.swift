@@ -90,7 +90,7 @@ final class OffscreenHintPill: NSView {
     struct Content: Equatable {
         var arrow: String
         var label: String
-        var signal: OffscreenHintLayout.Signal
+        var signal: CardSignal
     }
 
     private static let insetX: CGFloat = 1 + 11

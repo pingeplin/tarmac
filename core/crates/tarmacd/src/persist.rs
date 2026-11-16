@@ -10,11 +10,11 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tarmac_protocol::{BoardViewport, TermRecord, Tile};
+use tokio::sync::{mpsc, oneshot};
 use tracing::warn;
 
 use crate::boards::{Board, Boards, DEFAULT_BOARD_ID, DocInfo, Registry};
 use crate::state::Daemon;
-use tokio::sync::{mpsc, oneshot};
 
 const SAVE_DEBOUNCE: Duration = Duration::from_millis(150);
 
@@ -185,26 +185,6 @@ fn write_atomic(path: &Path, state: &PersistedState) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// How long the shutdown save waits for the cwd reads of the live
-/// terminals, all of them together. It is well inside the app's 2 s wait
-/// for a daemon that it replaces.
-pub const SHUTDOWN_CWD_BUDGET: Duration = Duration::from_millis(500);
-
-/// Reads the cwd of every live terminal at once, and records each that
-/// answers within `SHUTDOWN_CWD_BUDGET`. A read that does not keeps the cwd
-/// recorded before.
-async fn read_cwds(daemon: &Arc<Daemon>) {
-    let deadline = tokio::time::Instant::now() + SHUTDOWN_CWD_BUDGET;
-    let mut reads = tokio::task::JoinSet::new();
-    for (term_id, pid) in daemon.foreground_pids().await {
-        let daemon = daemon.clone();
-        reads.spawn(async move {
-            let _ = tokio::time::timeout_at(deadline, daemon.note_cwd(&term_id, pid)).await;
-        });
-    }
-    while reads.join_next().await.is_some() {}
-}
-
 async fn write(daemon: &Daemon) {
     let state = snapshot(&*daemon.boards.lock().await);
     let path = daemon.state_path().to_owned();
@@ -227,7 +207,7 @@ pub async fn save_loop(daemon: Arc<Daemon>, mut finals: mpsc::Receiver<oneshot::
                 tokio::time::sleep(SAVE_DEBOUNCE).await;
             } => write(&daemon).await,
             Some(done) = finals.recv() => {
-                read_cwds(&daemon).await;
+                daemon.read_cwds().await;
                 write(&daemon).await;
                 let _ = done.send(());
                 return;

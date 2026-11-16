@@ -19,7 +19,6 @@ final class ReportChipTests: XCTestCase {
         ReportChip.model(report: try XCTUnwrap(TermReport.frame(message)?.report), nowMs: now)
     }
 
-    // S7
     func testS7AnUnreadBlockedReportQuotesItsTextAndPlacesItInTime() throws {
         let chip = try model(frame())
         XCTAssertEqual(chip.text, "report · 2m")
@@ -28,7 +27,6 @@ final class ReportChipTests: XCTestCase {
         XCTAssertEqual(chip.toolTip, "report · during claude\n“May I?”")
     }
 
-    // S7
     func testS7ADoneReportHasTheDoneToneAndAReadOneIsDimmed() throws {
         XCTAssertEqual(try model(frame(kind: "done")).tone, .done)
         let read = try model(frame(kind: "done", read: true))
@@ -36,44 +34,12 @@ final class ReportChipTests: XCTestCase {
         XCTAssertEqual(read.tone, .done)
     }
 
-    // S19
     func testS19NoProcIsTheBareTitleAndNoTextIsOneLine() throws {
         XCTAssertEqual(try model(frame(proc: nil)).toolTip, "report\n“May I?”")
         XCTAssertEqual(try model(frame(text: nil)).toolTip, "report · during claude")
         XCTAssertEqual(try model(frame(text: nil, proc: nil)).toolTip, "report")
     }
 
-    // S19
-    func testS19AFrameWithNoKindAnUnknownKindOrNoAtMsIsNoReportForItsTerminal() {
-        for message in [frame(kind: nil), frame(kind: "later"), frame(atMs: nil)] {
-            let parsed = TermReport.frame(message)
-            XCTAssertEqual(parsed?.termID, "t1")
-            XCTAssertNil(parsed?.report)
-        }
-        XCTAssertNil(TermReport.frame(.bell(termID: "t1")))
-    }
-
-    func testAFrameKeepsItsFields() {
-        let parsed = TermReport.frame(frame(read: true))
-        XCTAssertEqual(parsed?.termID, "t1")
-        XCTAssertEqual(
-            parsed?.report,
-            TermReport(kind: .blocked, text: "May I?", atMs: now - 125_000, proc: "claude", read: true)
-        )
-    }
-
-    // 2611.0013: the frame gives the report's place too.
-    func testAFrameGivesItsBoardAndFolder() {
-        let message = Message.termReport(
-            termID: "t1", kind: "done", text: nil, atMs: 5, proc: nil, read: false, boardID: "board-1", cwd: "/w"
-        )
-        let parsed = TermReport.frame(message)
-        XCTAssertEqual(parsed?.boardID, "board-1")
-        XCTAssertEqual(parsed?.cwd, "/w")
-        XCTAssertNil(TermReport.frame(frame())?.boardID)
-    }
-
-    // S20
     func testS20AReportFromTheFutureIsUnderAMinuteOld() throws {
         XCTAssertEqual(try model(frame(atMs: now + 90_000)).text, "report · <1m")
     }

@@ -7,29 +7,12 @@ mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{Conn, FrameLog, Restore, Spawn, TestDaemon, canon_dir, is_term_resume, signal_and_wait, term_records};
+use common::{
+    ACK, Conn, FrameLog, SAVE_WINDOW, Spawn, TestDaemon, assert_ack, canon_dir, is_term_resume, probe_until, signal_and_wait,
+    term_records,
+};
 use serde_json::{Value, json};
 use tarmac_protocol::Msg;
-
-/// The `ack` frame's payload, as the agent's pty shows it.
-const ACK: &[u8] = &[0x81, 0xa1, 0x74, 0xa3, 0x61, 0x63, 0x6b];
-
-/// Three times the daemon's 150 ms save debounce: a save that is due has
-/// landed by its end.
-const SAVE_WINDOW: Duration = Duration::from_millis(450);
-
-#[track_caller]
-fn assert_ack(answer: Msg) {
-    assert!(matches!(answer, Msg::Ack), "expected ack, got {answer:?}");
-}
-
-/// A drained app connection with a login shell `term_id` at its prompt.
-fn shell_at_prompt(daemon: &TestDaemon, term_id: &str, opts: Spawn, log: &mut FrameLog) -> Conn {
-    let mut app = daemon.connect_app_drained();
-    app.spawn_term_with(term_id, &[], Spawn { login_shell: true, ..opts });
-    app.log_until_output(log, term_id, 0, b"$ ");
-    app
-}
 
 /// Types, at `term_id`'s prompt, a background agent that sets `cmd`, prints
 /// `SENT` and lives `secs` more; returns once `SENT` shows, with the ack.
@@ -56,23 +39,10 @@ fn assert_no_save(daemon: &TestDaemon, kept: u64) {
     assert_eq!(daemon.state_inode(), kept, "the state was saved");
 }
 
-/// Probes until the restore satisfies `done`, to `deadline`; the newest
-/// connection and its restore.
-fn probe_until(daemon: &TestDaemon, what: &str, deadline: Instant, done: impl Fn(&Restore) -> bool) -> (Conn, Restore) {
-    loop {
-        let (app, restore) = daemon.probe();
-        if done(&restore) {
-            return (app, restore);
-        }
-        assert!(Instant::now() < deadline, "the restore never showed {what}: {:?}", restore.term_records);
-        std::thread::sleep(Duration::from_millis(100));
-    }
-}
-
 /// A shell `T` whose agent has set `echo HI` and lives `secs` more.
 fn set_by_agent(daemon: &TestDaemon, secs: u32) -> (Conn, FrameLog, Instant) {
     let mut log = FrameLog::default();
-    let mut app = shell_at_prompt(daemon, "T", Spawn::default(), &mut log);
+    let mut app = daemon.shell_at_prompt("T", Spawn::default(), &mut log);
     let sent = agent_sets(daemon, &mut app, &mut log, "T", "echo HI", secs);
     (app, log, sent)
 }
@@ -128,18 +98,8 @@ fn s3_a_sigtermed_daemon_saves_the_command_for_the_next() {
 /// A daemon seeded with `T`'s record in `a` with `echo HI`, and `T2` spawned
 /// as its successor at its prompt; the probe that shows the move.
 fn moved(log: &mut FrameLog) -> (TestDaemon, String, Conn) {
-    let tmp = common::temp_dir();
-    let a = canon_dir(&tmp.join("a"));
-    let home = canon_dir(&tmp.join("home"));
-    let seeded = json!({
-        "boards": [{"board_id": "board-0", "tiles": [{"kind": "term", "term_id": "T"}],
-                    "term_records": {"T": {"last_cwd": a, "resume": {"cmd": "echo HI"}}}}],
-        "active": "board-0",
-    });
-    let daemon = TestDaemon::start_seeded_with(&seeded, |cmd| {
-        cmd.env("SHELL", "/bin/sh").env("HOME", &home);
-    });
-    shell_at_prompt(&daemon, "T2", Spawn { cwd: Some(a.clone()), succeeds: Some("T".into()), ..Default::default() }, log);
+    let (daemon, a, spawner) = seeded_successor(log);
+    drop(spawner);
     let (app, restore) = daemon.probe();
     assert_eq!(restore.resume_cmd("T2"), Some("echo HI"));
     assert!(!restore.term_records.contains_key("T"), "{:?}", restore.term_records);
@@ -152,12 +112,12 @@ fn s4_a_moved_command_is_dropped_by_typed_input_only() {
     let mut log = FrameLog::default();
     let (daemon, a, mut app) = moved(&mut log);
 
-    app.send(&Msg::Input { term_id: "T2".into(), bytes: b"x".to_vec(), typed: false });
+    app.input("T2", b"x");
     std::thread::sleep(Duration::from_secs(1));
     let (mut app, restore) = daemon.probe();
     assert_eq!(restore.resume_cmd("T2"), Some("echo HI"), "an untyped input dropped it");
 
-    app.send(&Msg::Input { term_id: "T2".into(), bytes: b"\r".to_vec(), typed: true });
+    app.keystroke("T2", b"\r");
 
     daemon.wait_for_state("T2 with no resume", |v| {
         let record = &term_records(v, 0)["T2"];
@@ -172,7 +132,7 @@ fn s4b_a_set_over_a_moved_command_is_held() {
     let (daemon, _a, mut app) = moved(&mut log);
     agent_sets(&daemon, &mut app, &mut log, "T2", "echo HO", 30);
 
-    app.send(&Msg::Input { term_id: "T2".into(), bytes: b"\r".to_vec(), typed: true });
+    app.keystroke("T2", b"\r");
     std::thread::sleep(Duration::from_secs(1));
 
     let (_app, restore) = daemon.probe();
@@ -185,7 +145,7 @@ fn s13_typed_input_does_not_drop_a_held_command() {
     let daemon = TestDaemon::start_sh();
     let (mut app, _log, _) = set_by_agent(&daemon, 30);
 
-    app.send(&Msg::Input { term_id: "T".into(), bytes: b"\r".to_vec(), typed: true });
+    app.keystroke("T", b"\r");
     std::thread::sleep(Duration::from_secs(1));
 
     let (_app, restore) = daemon.probe();
@@ -197,7 +157,7 @@ fn s13_typed_input_does_not_drop_a_held_command() {
 fn s14_a_command_set_at_the_prompt_lasts_while_the_shell_lives() {
     let daemon = TestDaemon::start_sh();
     let mut log = FrameLog::default();
-    let mut app = shell_at_prompt(&daemon, "T", Spawn::default(), &mut log);
+    let mut app = daemon.shell_at_prompt("T", Spawn::default(), &mut log);
     let nc = daemon.nc_resume("prompt", "T", "echo HI");
     let start = log.len();
     app.type_line("T", &format!("{nc}; echo BA\"\"CK"));
@@ -246,7 +206,7 @@ fn s15_a_clean_exit_drops_the_entry() {
 fn s17_a_repeat_of_the_same_command_does_not_save() {
     let daemon = TestDaemon::start_sh();
     let mut log = FrameLog::default();
-    let mut app = shell_at_prompt(&daemon, "T", Spawn::default(), &mut log);
+    let mut app = daemon.shell_at_prompt("T", Spawn::default(), &mut log);
     let (first, again) = (daemon.nc_resume("first", "T", "echo HI"), daemon.nc_resume("again", "T", "echo HI"));
     let start = log.len();
     app.type_line("T", &format!("/bin/zsh -f -c '{first}; echo SE\"\"NT; sleep 1; {again}; echo AG\"\"AIN; sleep 30' &"));
@@ -350,7 +310,7 @@ fn assert_no_term_resume(app: &mut Conn, log: &FrameLog, from: usize) {
 fn s11_a_set_pushes_the_command_and_a_repeat_of_it_does_not() {
     let daemon = TestDaemon::start_sh();
     let mut log = FrameLog::default();
-    let mut app = shell_at_prompt(&daemon, "T", Spawn::default(), &mut log);
+    let mut app = daemon.shell_at_prompt("T", Spawn::default(), &mut log);
 
     let start = log.len();
     agent_sets(&daemon, &mut app, &mut log, "T", "echo HI", 30);
@@ -367,7 +327,7 @@ fn s11_a_set_pushes_the_command_and_a_repeat_of_it_does_not() {
     assert_eq!(log.0[at].msg, term_resume("T", Some("echo HO")));
 
     app.send(&Msg::BoardSwitch { board_id: "board-0".into() });
-    let restore = Restore::from(app.recv_until("the restore", |m| matches!(m, Msg::Restore { .. })));
+    let restore = app.recv_restore();
     assert_eq!(restore.live_terms, ["T"]);
     assert_eq!(restore.resume_cmd("T"), Some("echo HO"));
 }
@@ -405,6 +365,12 @@ fn s13_the_polls_drop_pushes_a_clear() {
 /// A daemon seeded with `T`'s record with `echo HI`, and the app connection
 /// that spawned `T2` as its successor, with every frame since in `log`.
 fn moved_on_one_connection(log: &mut FrameLog) -> (TestDaemon, Conn) {
+    let (daemon, _, app) = seeded_successor(log);
+    (daemon, app)
+}
+
+/// `moved_on_one_connection`, and the `a` that `T`'s record names.
+fn seeded_successor(log: &mut FrameLog) -> (TestDaemon, String, Conn) {
     let tmp = common::temp_dir();
     let a = canon_dir(&tmp.join("a"));
     let home = canon_dir(&tmp.join("home"));
@@ -416,8 +382,8 @@ fn moved_on_one_connection(log: &mut FrameLog) -> (TestDaemon, Conn) {
     let daemon = TestDaemon::start_seeded_with(&seeded, |cmd| {
         cmd.env("SHELL", "/bin/sh").env("HOME", &home);
     });
-    let app = shell_at_prompt(&daemon, "T2", Spawn { cwd: Some(a), succeeds: Some("T".into()), ..Default::default() }, log);
-    (daemon, app)
+    let app = daemon.shell_at_prompt("T2", Spawn { cwd: Some(a.clone()), succeeds: Some("T".into()), ..Default::default() }, log);
+    (daemon, a, app)
 }
 
 // S14
@@ -428,7 +394,7 @@ fn s14_the_move_pushes_nothing_and_the_typed_drop_pushes_a_clear() {
     assert_no_term_resume(&mut app, &log, 0);
 
     let start = log.len();
-    app.send(&Msg::Input { term_id: "T2".into(), bytes: b"\r".to_vec(), typed: true });
+    app.keystroke("T2", b"\r");
     let at = await_term_resume(&mut app, &mut log, start);
     assert_eq!(log.0[at].msg, term_resume("T2", None));
 }
@@ -487,8 +453,7 @@ fn s20_the_end_of_a_terminal_and_a_close_push_nothing() {
     assert_no_term_resume(&mut app, &log, start);
 
     let opened = log.len();
-    app.spawn_term_with("U", &[], Spawn::login_shell());
-    app.log_until_output(&mut log, "U", opened, b"$ ");
+    app.login_shell_at_prompt(&mut log, "U", Spawn::default());
     agent_sets(&daemon, &mut app, &mut log, "U", "echo HI", 30);
     let at = await_term_resume(&mut app, &mut log, opened);
     assert_eq!(log.0[at].msg, term_resume("U", Some("echo HI")), "the control: a set pushes");
@@ -503,7 +468,7 @@ fn s20_the_end_of_a_terminal_and_a_close_push_nothing() {
 fn s21_a_subscriber_never_gets_a_term_resume() {
     let daemon = TestDaemon::start_sh();
     let mut log = FrameLog::default();
-    let mut app = shell_at_prompt(&daemon, "T", Spawn::default(), &mut log);
+    let mut app = daemon.shell_at_prompt("T", Spawn::default(), &mut log);
     let (mut events, _) = common::subscriber(&daemon.sock, None, None);
 
     let start = log.len();
@@ -521,7 +486,7 @@ fn s21_a_subscriber_never_gets_a_term_resume() {
 fn s24_an_app_clear_for_an_unknown_terminal_changes_nothing() {
     let daemon = TestDaemon::start_sh();
     let mut log = FrameLog::default();
-    let mut app = shell_at_prompt(&daemon, "T", Spawn::default(), &mut log);
+    let mut app = daemon.shell_at_prompt("T", Spawn::default(), &mut log);
 
     let start = log.len();
     app.send(&Msg::Resume { term_id: "nope".into(), cmd: None });

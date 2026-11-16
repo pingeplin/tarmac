@@ -9,11 +9,12 @@ use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
 use crate::boards::{BoardId, Boards};
+use crate::proc::Pid;
 use crate::state::Daemon;
 use crate::{docs, events, term};
 
 /// `peer_pid` is the client's pid, read at accept; only a cli session uses it.
-pub async fn handle(daemon: Arc<Daemon>, stream: UnixStream, peer_pid: Option<libc::pid_t>) {
+pub async fn handle(daemon: Arc<Daemon>, stream: UnixStream, peer_pid: Option<Pid>) {
     if let Err(e) = handshake(daemon, stream, peer_pid).await {
         debug!("connection ended: {e}");
     }
@@ -48,7 +49,7 @@ fn hello_ok(app: Option<(bool, Option<String>)>) -> Msg {
     }
 }
 
-async fn handshake(daemon: Arc<Daemon>, mut stream: UnixStream, peer_pid: Option<libc::pid_t>) -> anyhow::Result<()> {
+async fn handshake(daemon: Arc<Daemon>, mut stream: UnixStream, peer_pid: Option<Pid>) -> anyhow::Result<()> {
     let first = frame::read_async(&mut stream).await?;
     let (role, v, app_version) = match proto::decode(&first) {
         Ok(Msg::Hello { role, v, app_version }) => (role, v, app_version),
@@ -72,7 +73,7 @@ async fn handshake(daemon: Arc<Daemon>, mut stream: UnixStream, peer_pid: Option
     }
 }
 
-async fn cli_session(daemon: Arc<Daemon>, mut stream: UnixStream, peer_pid: Option<libc::pid_t>) -> anyhow::Result<()> {
+async fn cli_session(daemon: Arc<Daemon>, mut stream: UnixStream, peer_pid: Option<Pid>) -> anyhow::Result<()> {
     // The pushes of this connection: each path given, resolved once.
     let mut resolved = HashMap::new();
     loop {
@@ -109,7 +110,7 @@ async fn cli_session(daemon: Arc<Daemon>, mut stream: UnixStream, peer_pid: Opti
 /// The rest of a cli session that sent `subscribe` (spec 2611.0012): `err`,
 /// or the snapshot, `ack` and the live frames, until the client goes.
 async fn subscribe(daemon: &Daemon, mut stream: UnixStream, kinds: Option<Vec<String>>, term_id: Option<String>) -> anyhow::Result<()> {
-    let sub = match events::subscribe(daemon, kinds, term_id).await {
+    let sub = match daemon.subscribe(kinds, term_id).await {
         Ok(sub) => sub,
         Err(msg) => return reject(&mut stream, msg).await,
     };
@@ -221,15 +222,10 @@ async fn change_and_send_active_board(
     // card it has not built, so a background board shows its reports when shown.
     {
         let reports = daemon.reports.lock().await;
-        for msg in reports.snapshot(&live_terms) {
+        for msg in reports.restore_frames(&live_terms, !conn.told_elsewhere) {
             let _ = conn.tx.send(msg).await;
         }
-        if !conn.told_elsewhere {
-            for msg in reports.elsewhere(&live_terms) {
-                let _ = conn.tx.send(msg).await;
-            }
-            conn.told_elsewhere = true;
-        }
+        conn.told_elsewhere = true;
     }
     for (tid, data) in replay {
         for chunk in data.chunks(term::OUTPUT_CHUNK) {
@@ -293,8 +289,7 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
             Some(h) => {
                 let _ = h.input_tx.send(bytes).await;
                 if typed {
-                    daemon.mark_report_read(&term_id, &h).await;
-                    daemon.claim_resume(&term_id, &h).await;
+                    daemon.typed_input(&term_id, &h).await;
                 }
             }
             None => debug!("input for unknown term {term_id}"),

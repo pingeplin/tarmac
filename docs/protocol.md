@@ -422,8 +422,9 @@ under the unknown-type rule, so every pre-M3 vector decodes unchanged.
     {t:"board_delete", board_id}                           — app → daemon
 
 `board_list` is pushed right after `hello_ok` and again on every board change
-(create / rename / delete / switch, and terminal spawn+exit, which move the
-`running` count). `board_switch` makes a board active and the daemon replies with
+(create / rename / delete / switch, and a terminal's exit, which moves the
+`running` count; a spawn pushes none, because the app that asked for it counts
+it already). `board_switch` makes a board active and the daemon replies with
 that board's `restore`. `board_create` mints a board — the **daemon** assigns the
 slug id, so there is no id on the request. `board_rename` with an empty `name`
 clears the name back to the slug fallback. `board_delete` kills the board's ptys

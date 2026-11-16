@@ -7,15 +7,10 @@ mod common;
 
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use common::{Conn, FrameLog, Spawn, TestDaemon, canon_dir, is_report_for, none_within, probe_until_cwd};
+use common::{
+    ACK, Conn, FrameLog, JOB_SHELL, Spawn, TestDaemon, assert_ack, canon_dir, is_report_for, none_within, probe_until_cwd,
+};
 use tarmac_protocol::{self as proto, Msg, Tile};
-
-/// A job-control shell that reads no rc file: each command runs in a process
-/// group of its own, so the foreground leader changes.
-const JOB_SHELL: &[&str] = &["/bin/zsh", "-f", "-i"];
-
-/// The `ack` frame's payload, as the reporter's pty shows it.
-const ACK: &[u8] = &[0x81, 0xa1, 0x74, 0xa3, 0x61, 0x63, 0x6b];
 
 #[derive(Debug, PartialEq)]
 struct Seen {
@@ -48,11 +43,6 @@ fn now_ms() -> u64 {
 }
 
 #[track_caller]
-fn assert_ack(answer: Msg) {
-    assert!(matches!(answer, Msg::Ack), "expected ack, got {answer:?}");
-}
-
-#[track_caller]
 fn assert_err(answer: Msg, want: &str) {
     assert_eq!(answer, Msg::Err { msg: want.into() });
 }
@@ -78,9 +68,7 @@ fn report_from_test(daemon: &TestDaemon, app: &mut Conn, term_id: &str, kind: &s
 /// A shell spawn `T` at its prompt, and its shell's process name, read after
 /// the prompt shows and one more poll.
 fn login_shell(daemon: &TestDaemon, log: &mut FrameLog) -> (Conn, String) {
-    let mut app = daemon.connect_app_drained();
-    app.spawn_term_with("T", &[], Spawn::login_shell());
-    app.log_until_output(log, "T", 0, b"$ ");
+    let mut app = daemon.shell_at_prompt("T", Spawn::default(), log);
     app.log_for(log, Duration::from_millis(1000));
     let shell = log.last_proc_name("T").expect("a term_proc for the shell");
     (app, shell)
@@ -122,9 +110,7 @@ fn s1_s2_the_walk_finds_the_agent_below_the_shell_and_the_report_ends_with_it() 
 fn a_report_names_a_symlinked_holder_by_the_link() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
-    let link = common::temp_dir().join("claude");
-    std::os::unix::fs::symlink("/bin/sleep", &link).unwrap();
-    app.spawn_term("T", &[link.to_str().unwrap(), "5"]);
+    app.spawn_as_claude("T");
     app.recv_until("term_proc after exec", |m| matches!(m, Msg::TermProc { term_id, name, .. } if term_id == "T" && name != "tarmacd"));
 
     let frame = report_from_test(&daemon, &mut app, "T", "blocked", None);
@@ -168,20 +154,20 @@ fn s4_a_child_spawned_as_cmd_is_the_agent() {
     assert!(none_within(&mut app, Duration::from_secs(2), |m| is_report_for(m, "T")));
 }
 
-// S5
+// S5, S27
 #[test]
-fn s5_only_typed_input_marks_a_report_read() {
+fn s5_s27_only_typed_input_marks_a_report_read() {
     let daemon = TestDaemon::start();
     let mut app = job_shell(&daemon, &["T"]);
     let first = report_from_test(&daemon, &mut app, "T", "blocked", Some("ok?"));
 
-    app.send(&Msg::Input { term_id: "T".into(), bytes: b"\n".to_vec(), typed: false });
+    app.input("T", b"\n");
     assert!(none_within(&mut app, Duration::from_secs(1), |m| is_report_for(m, "T")));
-    app.send(&Msg::Input { term_id: "T".into(), bytes: b"\n".to_vec(), typed: true });
+    app.keystroke("T", b"\n");
     let read = seen(&app.recv_report_for("T"));
 
     assert_eq!(read, Seen { read: true, ..first });
-    app.send(&Msg::Input { term_id: "T".into(), bytes: b"\n".to_vec(), typed: true });
+    app.keystroke("T", b"\n");
     assert!(none_within(&mut app, Duration::from_secs(1), |m| is_report_for(m, "T")));
 }
 
@@ -214,7 +200,7 @@ fn s14_a_new_app_connection_gets_every_report_after_its_restore() {
     let daemon = TestDaemon::start();
     let mut app = job_shell(&daemon, &["T", "U"]);
     let first = report_from_test(&daemon, &mut app, "T", "blocked", Some("ok?"));
-    app.send(&Msg::Input { term_id: "T".into(), bytes: b"\n".to_vec(), typed: true });
+    app.keystroke("T", b"\n");
     app.recv_until("T read", |m| is_report_for(m, "T") && seen(m).read);
     drop(app);
     std::thread::sleep(Duration::from_millis(300));
@@ -345,7 +331,7 @@ fn s21_an_identical_repeat_is_a_new_unread_report() {
     let daemon = TestDaemon::start();
     let mut app = job_shell(&daemon, &["T"]);
     let first = report_from_test(&daemon, &mut app, "T", "blocked", Some("ok?"));
-    app.send(&Msg::Input { term_id: "T".into(), bytes: b"\n".to_vec(), typed: true });
+    app.keystroke("T", b"\n");
     app.recv_until("T read", |m| is_report_for(m, "T") && seen(m).read);
     std::thread::sleep(Duration::from_millis(1100));
 
@@ -354,7 +340,7 @@ fn s21_an_identical_repeat_is_a_new_unread_report() {
     assert!(!again.read);
     assert!(none_within(&mut app, Duration::from_secs(1), |m| is_report_for(m, "T")), "one frame");
 
-    app.send(&Msg::Input { term_id: "T".into(), bytes: b"\n".to_vec(), typed: true });
+    app.keystroke("T", b"\n");
     assert!(seen(&app.recv_report_for("T")).read);
 }
 
@@ -369,18 +355,6 @@ fn s26_the_daemon_refuses_an_unknown_terminal_or_kind_and_drops_an_empty_text() 
 
     let frame = report_from_test(&daemon, &mut app, "T", "blocked", Some(""));
     assert_eq!(frame.text, None);
-}
-
-// S27
-#[test]
-fn s27_an_input_with_no_typed_key_never_marks_a_report_read() {
-    let daemon = TestDaemon::start();
-    let mut app = job_shell(&daemon, &["T"]);
-    report_from_test(&daemon, &mut app, "T", "blocked", None);
-    let today = proto::encode(&Msg::Input { term_id: "T".into(), bytes: b"\n".to_vec(), typed: false }).unwrap();
-    assert!(!common::contains(&today, b"typed"));
-    proto::frame::write_sync(&mut app.0, &today).unwrap();
-    assert!(none_within(&mut app, Duration::from_secs(1), |m| is_report_for(m, "T")));
 }
 
 // S33
@@ -476,7 +450,7 @@ fn two_boards_with_a_read_report(daemon: &TestDaemon, dir: &str) -> Seen {
     app.spawn_term_with("A", JOB_SHELL, Spawn::on_board("board-0"));
     app.recv_output_containing("A", "%");
     let first = report_from_test(daemon, &mut app, "T", "blocked", Some("ok?"));
-    app.send(&Msg::Input { term_id: "T".into(), bytes: b"\n".to_vec(), typed: true });
+    app.keystroke("T", b"\n");
     app.recv_until("T read", |m| is_report_for(m, "T") && seen(m).read);
     drop(app);
     std::thread::sleep(Duration::from_millis(300));

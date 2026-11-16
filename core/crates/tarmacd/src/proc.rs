@@ -1,5 +1,6 @@
 //! Facts about a pid, read from the OS. Every failure (dead pid, permission)
-//! is `None`; the daemon ships on macOS and the other targets only keep the
+//! is `None`, except in `proc_facts`, whose `Facts` tells a gone pid from a
+//! failed read; the daemon ships on macOS and the other targets only keep the
 //! crate buildable.
 
 pub type Pid = libc::pid_t;
@@ -38,7 +39,7 @@ pub fn process_name(pid: libc::pid_t) -> Option<String> {
 
 /// One `sysctl` read into `buf`: the count written, or `None` on error.
 #[cfg(target_os = "macos")]
-pub(crate) fn sysctl(mib: &mut [libc::c_int], buf: &mut [u8]) -> Option<usize> {
+fn sysctl(mib: &mut [libc::c_int], buf: &mut [u8]) -> Option<usize> {
     let mut size = buf.len();
     // SAFETY: `mib` names `mib.len()` ints; `buf` is `size` bytes, and sysctl
     // writes at most `size` bytes and sets `size` to the count written.
@@ -55,17 +56,25 @@ pub(crate) fn sysctl(mib: &mut [libc::c_int], buf: &mut [u8]) -> Option<usize> {
     (ret == 0).then_some(size)
 }
 
+/// One `sysctl` read of a native-endian 4-byte int; `None` on error or on
+/// any other size.
+#[cfg(target_os = "macos")]
+pub(crate) fn sysctl_i32(mib: &mut [libc::c_int]) -> Option<i32> {
+    let mut value = [0u8; 4];
+    sysctl(mib, &mut value).filter(|&n| n == 4)?;
+    Some(i32::from_ne_bytes(value))
+}
+
 /// The argument area is at most `KERN_ARGMAX` bytes (1 MiB). A shorter buffer
 /// is no error: it came back as argc and zeros (measured, Darwin 25.6). The
 /// buffer is kept per thread, so a poll does not allocate it again.
 #[cfg(target_os = "macos")]
-fn argv0_name(pid: libc::pid_t) -> Option<String> {
+fn argv0_name(pid: Pid) -> Option<String> {
     thread_local!(static PROCARGS: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) });
     PROCARGS.with_borrow_mut(|buf| {
         if buf.is_empty() {
-            let mut argmax = [0u8; 4];
-            sysctl(&mut [libc::CTL_KERN, libc::KERN_ARGMAX], &mut argmax).filter(|&n| n == 4)?;
-            buf.resize(usize::try_from(i32::from_ne_bytes(argmax)).ok().filter(|&n| n > 0)?, 0);
+            let argmax = sysctl_i32(&mut [libc::CTL_KERN, libc::KERN_ARGMAX])?;
+            buf.resize(usize::try_from(argmax).ok().filter(|&n| n > 0)?, 0);
         }
         let size = sysctl(&mut [libc::CTL_KERN, libc::KERN_PROCARGS2, pid], buf)?;
         argv0(&buf[..size]).and_then(name_of_argv0)
@@ -73,7 +82,7 @@ fn argv0_name(pid: libc::pid_t) -> Option<String> {
 }
 
 #[cfg(target_os = "macos")]
-fn path_name(pid: libc::pid_t) -> Option<String> {
+fn path_name(pid: Pid) -> Option<String> {
     let mut buf = [0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
     // SAFETY: buf is a valid, sized buffer; proc_pidpath writes at most
     // `buffersize` bytes and returns the number written (<= buffersize) or <= 0
@@ -136,7 +145,7 @@ pub fn pid_cwd(_pid: libc::pid_t) -> Option<String> {
 pub enum Facts {
     /// `started` is the start time in microseconds since the epoch: with the
     /// pid it names one process, since a pid can be reused.
-    Live { ppid: libc::pid_t, started: u64 },
+    Live { ppid: Pid, started: u64 },
     /// No such process, or a zombie: it has exited, reaped or not.
     Gone,
     /// The read failed, or gave a size this build does not know.
@@ -158,7 +167,7 @@ const SZOMB: i8 = 5;
 /// One `sysctl` read; never `proc_pidinfo`, which fails on pid 1, on
 /// root-owned pids and on zombies.
 #[cfg(target_os = "macos")]
-pub fn proc_facts(pid: libc::pid_t) -> Facts {
+pub fn proc_facts(pid: Pid) -> Facts {
     let mut buf = [0u8; KINFO_PROC_SIZE];
     let Some(size) = sysctl(&mut [libc::CTL_KERN, libc::KERN_PROC, libc::KERN_PROC_PID, pid], &mut buf) else {
         return Facts::Unread;
@@ -177,7 +186,7 @@ pub fn proc_facts(pid: libc::pid_t) -> Facts {
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn proc_facts(_pid: libc::pid_t) -> Facts {
+pub fn proc_facts(_pid: Pid) -> Facts {
     Facts::Unread
 }
 

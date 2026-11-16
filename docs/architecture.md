@@ -270,7 +270,7 @@ only a subscriber is still held for the app, and `push` itself is the app's
 alone. The board-switch tell loop (`conn::change_and_send_active_board`) sends
 published frames on its own channel; the `TermReport` replays of a restore and
 of a connection's first restore are not published. With no
-subscriber, `publish` clones nothing. `events::subscribe` takes the receiver
+subscriber, `publish` clones nothing. `Daemon::subscribe` takes the receiver
 first, then (with a `term_id`) the terminal's report and its exit from the
 ring as the snapshot; `events::serve` writes the frames its `Filter` admits
 until the client closes, and a subscriber more than 1024 frames behind gets
@@ -337,10 +337,11 @@ in portable-pty's own `is_dir`, its `search_path` (which reads the cwd only for
 a `./x` cmd or a relative `PATH` entry), or the `chdir`. A duplicate `term_id`
 is refused before the cwd is read, at once.
 
-Each terminal fans out into blocking threads (reader → 64 KiB chunks, writer,
-`child.wait()` → exit code via oneshot, a 750 ms process-name poll) plus one
-async **pump** that owns the daemon handle. The pump is the only place with a
-daemon reference, so it is where the three honest signals are sourced:
+Each terminal fans out into three blocking threads (reader → 64 KiB chunks,
+writer, `child.wait()` → exit code via oneshot) plus two async tasks that hold
+the daemon handle: a 750 ms **poll** (`term::proc_loop`) and one **pump**. They
+are the only places with a daemon reference, so they are where the three honest
+signals are sourced (the poll gives `TermProc`, the pump `Bell` and `Exit`):
 
 - **`TermProc`** — poll the master's `process_group_leader` pid, name it by
   the basename of its argv[0] (`sysctl(KERN_PROCARGS2)`, macOS; a login
@@ -379,12 +380,13 @@ of the persisted id from its own board when that id is not live.
 terminal and `blocked`, `done` or `clear`, with an optional text (capped at 280
 chars by the cli and again by the daemon). The daemon keeps one current report
 per live terminal in `Daemon::reports` (`reports::Reports`, pure), in memory
-only. `Daemon::report` ties it to a holder with `Holder::resolve` (pure):
+only. `Daemon::report` ties it to a holder with `Holder::resolve` (pure), which
+`TermHandle::resolve_holder` calls with the terminal's own facts:
 
 - **The walk** follows the client's pid up its
   parents (`proc::proc_facts`, one `sysctl(KERN_PROC_PID)` read, never
   `proc_pidinfo`) until it reaches the PTY child. A terminal spawned with a
-  `cmd` (`TermHandle::spawned_with_cmd`) has its child as the agent; else the
+  `cmd` (the `spawned_with_cmd` field of `TermHandle`) has its child as the agent; else the
   member just below the child is the agent, or the shell itself when the
   caller's parent is the shell (a report typed at the prompt). A caller that is
   re-parented, gone or unreadable, or whose chain to the child has more than
@@ -434,7 +436,7 @@ names a terminal and a command, or none to clear it. The command is checked by
 256 chars) in the cli, the daemon and the app. `Daemon::set_resume` stores it as
 `resume: {cmd}` in the terminal's record, beside `last_cwd`, so it is saved and
 sent in every `Restore`. Its holder is found by the report's walk and is always
-a pid with its start time (`resume::tie`: the agent, the shell itself for a
+a pid with its start time (`holder::tie`: the agent, the shell itself for a
 command set at the prompt, or the leader of the fallback); it lives in memory
 only, on the terminal's handle, beside a `resume::Flag` atomic (none, held,
 unclaimed). Both are written only with `boards` held, in the step that changes
@@ -448,7 +450,8 @@ the holder from the handle with no board lock. The drops while the daemon lives:
   checked;
 - a terminal's end drops it at any exit code; a non-zero or signal exit still
   keeps the record and its `last_cwd`;
-- a command with no holder — loaded from disk, or moved by `succeeds` — is
+- a command with no holder — one that `succeeds` moved to a new terminal,
+  which is how a command loaded from disk gets a terminal — is
   dropped by the first `Input` with `typed: true` to its terminal; a new set
   gives it a holder.
 
@@ -1212,7 +1215,7 @@ A dead card whose
 board's latest restore has a record with a folder or a command shows a
 strip of `reopen here  ⏎`, `in <folder>` and `then offers: <cmd>`, with each
 id-like word of the command cut to four characters and `…` (`DeadCardOffer`,
-`ResumeCommand.display`); a press on it, or Return while the dead card holds the keys,
+`ResumeCommandDisplay.display`); a press on it, or Return while the dead card holds the keys,
 replaces it in place with a cold spawn in that folder that succeeds the dead id
 and offers the command. `↻` means refresh only: no resume or reopen text uses
 it. The panel and the strip are one view, a sibling of its card in the card layer,

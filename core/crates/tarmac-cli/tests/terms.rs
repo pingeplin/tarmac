@@ -1,11 +1,9 @@
 // `tarmac terms` (spec 2611.0012) against a daemon double.
 
-use std::time::Instant;
-
 use tarmac_protocol::{Msg, TermInfo};
 
 mod common;
-use common::{Report, Streamer, Then, assert_no_answer, assert_usage, tarmac_at, untouched};
+use common::{Report, Streamer, assert_never_answered, assert_usage, tarmac_at, untouched};
 
 fn row(cwd: Option<&str>, proc: Option<&str>) -> TermInfo {
     TermInfo { term_id: "t1".into(), board_id: "board-0".into(), cwd: cwd.map(str::to_string), proc: proc.map(str::to_string) }
@@ -45,10 +43,7 @@ fn a_refusal_is_printed_and_exits_1() {
 // S31
 #[test]
 fn s31_a_daemon_that_never_answers_is_the_no_answer_line_after_5_s() {
-    let daemon = Streamer::start(vec![], Then::Hold);
-    let started = Instant::now();
-
-    assert_no_answer(&daemon.run(&["terms"]), started);
+    assert_never_answered(&["terms"]);
 }
 
 // S33

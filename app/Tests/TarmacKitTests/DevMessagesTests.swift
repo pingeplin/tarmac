@@ -252,6 +252,26 @@ final class DevMessagesTests: XCTestCase {
         }
     }
 
+    func testAFieldIsMissingWhenAbsentOrNilAndBadWhenMistyped() throws {
+        func refused(_ fields: [String: MsgPackValue], _ expected: MessageError, line: UInt = #line) {
+            XCTAssertThrowsError(try DevRequest.decode(.map(fields)), "\(fields)", line: line) { error in
+                XCTAssertEqual(error as? MessageError, expected, line: line)
+            }
+        }
+        refused(["t": .nil], .missingField("t"))
+        refused(["t": .int(1)], .badField("t"))
+        refused(["t": .string("zoom"), "z": .nil], .missingField("z"))
+        refused(["t": .string("zoom"), "z": .string("1")], .badField("z"))
+        refused(["t": .string("focus"), "card": .int(1)], .badField("card"))
+        refused(["t": .string("snapshot"), "timeout_ms": .string("1")], .badField("timeout_ms"))
+        refused(["t": .string("press"), "combo": .string("cmd+q"), "hold_ms": .double(1)], .badField("hold_ms"))
+        XCTAssertEqual(try DevRequest.decode(.map(["t": .string("focus"), "card": .nil])), .focus(card: nil))
+        XCTAssertEqual(
+            try DevRequest.decode(.map(["t": .string("snapshot"), "until": .nil, "timeout_ms": .nil])),
+            .snapshot(until: nil, timeoutMs: nil)
+        )
+    }
+
     /// S23 (2609.0018): the caller's own budget, where the verb has one —
     /// `snapshot` its `--timeout`, `press` its `--busy`. Both ends of the socket
     /// size their wait from it.
@@ -298,5 +318,14 @@ final class DevMessagesTests: XCTestCase {
         XCTAssertThrowsError(try DevReply.decode(payload: hexData("81 a2 6f 6b c3"))) { error in
             XCTAssertEqual(error as? MessageError, .missingField("body"))
         }
+        func refused(_ value: MsgPackValue, _ expected: MessageError, line: UInt = #line) {
+            XCTAssertThrowsError(try DevReply.decode(payload: MsgPack.encode(value)), line: line) { error in
+                XCTAssertEqual(error as? MessageError, expected, line: line)
+            }
+        }
+        refused(.array([]), .notAMap)
+        refused(.map(["ok": .string("true"), "body": .string("x")]), .badField("ok"))
+        refused(.map(["ok": .bool(true), "body": .nil]), .missingField("body"))
+        refused(.map(["ok": .bool(true), "body": .int(1)]), .badField("body"))
     }
 }

@@ -1202,18 +1202,6 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(sentText, "\u{1b}[?997;1n")
     }
 
-    /// S24
-    func test2610_0007S24AProgramThatAskedIsToldOnceEachTimeTheSchemeChanges() {
-        feed("\u{1b}[?2031h")
-
-        view.theme = light
-        XCTAssertEqual(sentText, "\u{1b}[?997;2n")
-
-        calls = []
-        view.theme = dark
-        XCTAssertEqual(sentText, "\u{1b}[?997;1n")
-    }
-
     /// S43
     func test2610_0007S43AProgramThatDidNotAskIsToldNothing() {
         view.theme = light
@@ -1396,13 +1384,13 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(sentText, "\u{1b}[1;1R")
     }
 
-    /// Whoever asked is no longer waiting: an answer would arrive at today's
-    /// prompt as typed text.
-    func testReplayedHistoryAnswersNothingAndRingsNothing() {
+    /// 2611.0008 S12. Whoever asked is no longer waiting: an answer would
+    /// arrive at today's prompt as typed text.
+    func test2611_0008S12ReplayedHistoryAnswersNothingAndRingsNothing() {
         var bells = 0
         view.onBell = { bells += 1 }
         view.replay(Data("old\u{1b}[6n\u{1b}[c\u{07}".utf8))
-        XCTAssertEqual(sent, [])
+        XCTAssertEqual(calls, [])
         XCTAssertEqual(bells, 0)
         XCTAssertEqual(view.viewportCells()[0].prefix(3).joined(), "old")
         feed("\u{1b}[6n\u{07}")
@@ -1427,14 +1415,12 @@ final class TerminalViewTests: XCTestCase {
 
     // MARK: the source of each send (2611.0008)
 
-    /// S1
     func test2611_0008S1AKeyPressIsTheUsers() {
         view.keyDown(with: key("a", code: 0x00))
 
         XCTAssertEqual(calls, [Sent(text: "a", source: .user)])
     }
 
-    /// S1
     func test2611_0008S1BytesTheHostSendsForAChordAreTheUsers() {
         view.keyOverride = { _ in [0x15] }
 
@@ -1443,7 +1429,6 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{15}", source: .user)])
     }
 
-    /// S2
     func test2611_0008S2APasteIsTheUsers() {
         let saved = NSPasteboard.general.string(forType: .string)
         defer {
@@ -1458,21 +1443,18 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "hi", source: .user)])
     }
 
-    /// S3
     func test2611_0008S3SentTextIsTheUsers() {
         view.sendText("x")
 
         XCTAssertEqual(calls, [Sent(text: "x", source: .user)])
     }
 
-    /// S3
     func test2611_0008S3AnImeCommitIsTheUsers() {
         view.insertText("你", replacementRange: NSRange(location: NSNotFound, length: 0))
 
         XCTAssertEqual(calls, [Sent(text: "你", source: .user)])
     }
 
-    /// S4
     func test2611_0008S4AKeyReleaseIsTheUsers() {
         feed("\u{1b}[>3u")
 
@@ -1481,7 +1463,6 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[110;1:3u", source: .user)])
     }
 
-    /// S4
     func test2611_0008S4AModifierKeyIsTheUsers() {
         feed("\u{1b}[>8u")
 
@@ -1499,7 +1480,6 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[<35;3;1M", source: .terminal)])
     }
 
-    /// S5
     func test2611_0008S5AMousePressReportIsTheUsers() throws {
         feed("\u{1b}[?1000h\u{1b}[?1006h")
 
@@ -1508,7 +1488,6 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[<0;3;1M", source: .user)])
     }
 
-    /// S5
     func test2611_0008S5AWheelReportIsTheUsers() throws {
         feed("\u{1b}[?1000h\u{1b}[?1006h")
 
@@ -1529,7 +1508,6 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[<32;5;1M", source: .user)])
     }
 
-    /// S5
     func test2611_0008S5ALeftReleaseReportIsTheUsers() throws {
         feed("\u{1b}[?1000h\u{1b}[?1006h")
         view.mouseDown(with: try mouse(.leftMouseDown, col: 2, row: 0))
@@ -1540,7 +1518,6 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[<0;3;1m", source: .user)])
     }
 
-    /// S5
     func test2611_0008S5RightButtonReportsAreTheUsers() throws {
         feed("\u{1b}[?1002h\u{1b}[?1006h")
 
@@ -1554,7 +1531,6 @@ final class TerminalViewTests: XCTestCase {
         ])
     }
 
-    /// S5
     func test2611_0008S5MiddleButtonReportsAreTheUsers() throws {
         feed("\u{1b}[?1000h\u{1b}[?1006h")
 
@@ -1566,7 +1542,6 @@ final class TerminalViewTests: XCTestCase {
         ])
     }
 
-    /// S6
     func test2611_0008S6AWheelInTheAlternateScreenIsTheUsers() throws {
         feed("\u{1b}[?1049h")
 
@@ -1575,7 +1550,6 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[A", source: .user)])
     }
 
-    /// S7
     func test2611_0008S7FocusReportsAreTheTerminals() {
         feed("\u{1b}[?1004h")
 
@@ -1585,15 +1559,15 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[O", source: .terminal), Sent(text: "\u{1b}[I", source: .terminal)])
     }
 
-    /// S8
     func test2611_0008S8AnEngineReplyIsTheTerminals() {
         feed("\u{1b}[c")
 
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[?62;22c", source: .terminal)])
     }
 
-    /// S9
-    func test2611_0008S9AColourSchemeReportIsTheTerminals() {
+    /// 2610.0007 S24 and 2611.0008 S9: one report for each change, and it is
+    /// the terminal's.
+    func test2610_0007S24And2611_0008S9AProgramThatAskedIsToldOnceEachSchemeChangeAsTheTerminal() {
         feed("\u{1b}[?2031h")
 
         view.theme = light
@@ -1604,14 +1578,6 @@ final class TerminalViewTests: XCTestCase {
         ])
     }
 
-    /// S12
-    func test2611_0008S12AReplaySendsNothing() {
-        view.replay(Data("\u{1b}[c".utf8))
-
-        XCTAssertEqual(calls, [])
-    }
-
-    /// S13
     func test2611_0008S13EachSendKeepsItsOwnSource() {
         feed("\u{1b}[?1004h")
 

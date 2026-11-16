@@ -11,8 +11,6 @@ use tarmac_protocol::{EventKind, Msg, frame};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 use tokio::sync::broadcast::{self, error::RecvError};
 
-use crate::state::Daemon;
-
 /// The frames one subscriber can fall behind by. Above the app channel's 256,
 /// because that one waits and this one does not: a look over a board with
 /// many docs pushes a burst of `file_event`s.
@@ -20,7 +18,7 @@ pub const EVENTS_CAPACITY: usize = 1024;
 const EXIT_RING: usize = 64;
 const LAGGED_WRITE: Duration = Duration::from_secs(1);
 
-pub fn is_event(msg: &Msg) -> bool {
+fn is_event(msg: &Msg) -> bool {
     EventKind::of(msg).is_some()
 }
 
@@ -45,7 +43,7 @@ impl Fanout {
     }
 
     #[cfg(test)]
-    pub fn receiver_count(&self) -> usize {
+    fn receiver_count(&self) -> usize {
         self.0.receiver_count()
     }
 }
@@ -104,29 +102,6 @@ pub struct Subscription {
     pub rx: broadcast::Receiver<Msg>,
     pub filter: Filter,
     pub snapshot: Vec<Msg>,
-}
-
-/// The receiver comes first: a report is changed, and an exit recorded,
-/// before it is published, so each is in the snapshot, or after it in `rx`,
-/// or both. `terms`, `exits` and `reports` are each taken alone.
-pub async fn subscribe(daemon: &Daemon, kinds: Option<Vec<String>>, term_id: Option<String>) -> Result<Subscription, String> {
-    let filter = Filter::new(kinds, term_id.clone())?;
-    let rx = daemon.events.subscribe();
-    let mut snapshot = Vec::new();
-    if let Some(id) = term_id {
-        let live = daemon.term(&id).await.is_some();
-        let exited = if live { None } else { daemon.exits.lock().expect("exits lock").lookup(&id) };
-        if !live && exited.is_none() {
-            return Err(format!("unknown terminal: {id}"));
-        }
-        if filter.wants(EventKind::Report) {
-            snapshot.extend(daemon.reports.lock().await.snapshot(std::slice::from_ref(&id)));
-        }
-        if let Some(code) = exited.filter(|_| filter.wants(EventKind::Exit)) {
-            snapshot.push(Msg::Exit { term_id: id, code, board_id: None });
-        }
-    }
-    Ok(Subscription { rx, filter, snapshot })
 }
 
 /// Writes the frames `filter` admits until the client closes, a write fails,
@@ -306,11 +281,15 @@ mod tests {
     fn served(fanout: &Fanout) -> (DuplexStream, tokio::task::JoinHandle<()>) {
         let (client, server) = tokio::io::duplex(4096);
         let rx = fanout.subscribe();
-        let task = tokio::spawn(async move {
+        (client, serve_on_task(rx, server))
+    }
+
+    /// `serve` of `rx` on `server`, on a task of its own, for every kind.
+    fn serve_on_task(rx: broadcast::Receiver<Msg>, server: DuplexStream) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
             let (read, write) = tokio::io::split(server);
             serve(rx, &Filter::new(None, None).unwrap(), read, write).await;
-        });
-        (client, task)
+        })
     }
 
     async fn next_frame(client: &mut DuplexStream) -> std::io::Result<Msg> {
@@ -358,10 +337,7 @@ mod tests {
             fanout.publish(&bell(&format!("t{n}")));
         }
 
-        let task = tokio::spawn(async move {
-            let (read, write) = tokio::io::split(server);
-            serve(rx, &Filter::new(None, None).unwrap(), read, write).await;
-        });
+        let task = serve_on_task(rx, server);
 
         assert_eq!(next_frame(&mut client).await.unwrap(), Msg::Err { msg: "lagged".into() });
         assert_eq!(next_frame(&mut client).await.unwrap_err().kind(), std::io::ErrorKind::UnexpectedEof);
@@ -379,10 +355,7 @@ mod tests {
             fanout.publish(&bell(&format!("t{n}")));
         }
 
-        let task = tokio::spawn(async move {
-            let (read, write) = tokio::io::split(server);
-            serve(rx, &Filter::new(None, None).unwrap(), read, write).await;
-        });
+        let task = serve_on_task(rx, server);
 
         tokio::time::timeout(LAGGED_WRITE + Duration::from_millis(500), task).await.expect("serve ends after the limit").unwrap();
     }

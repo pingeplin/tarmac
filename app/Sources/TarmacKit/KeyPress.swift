@@ -34,6 +34,9 @@ public struct KeyPress: Equatable, Sendable {
     public var control: Bool { modifierFlags & TermKeyBinding.control != 0 }
     public var shift: Bool { modifierFlags & TermKeyBinding.shift != 0 }
 
+    /// No ⌘, ⌥ or ⌃: shift may be held.
+    public var isUnmodifiedOrShifted: Bool { !command && !option && !control }
+
     public var named: Named? {
         switch keyCode {
         case 53: .escape

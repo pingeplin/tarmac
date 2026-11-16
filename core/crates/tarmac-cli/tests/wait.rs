@@ -11,16 +11,12 @@ use tarmac_protocol::Msg;
 
 mod common;
 use common::frames::{bell, exit, term_report};
-use common::{Report, Step, Streamer, Then, assert_no_answer, assert_usage, scratch, start, tarmac, tarmac_at, untouched};
+use common::{Report, Step, Streamer, Then, assert_never_answered, assert_usage, scratch, start, tarmac, tarmac_at, untouched};
 
 const NOT_ANSWERED: &str = "tarmac: wait: timed out before the daemon answered\n";
 
 fn subscribe(kinds: &[&str]) -> Msg {
     Msg::Subscribe { kinds: Some(kinds.iter().map(|k| k.to_string()).collect()), term_id: Some("t9".into()) }
-}
-
-fn holding(frames: Vec<Msg>) -> Streamer {
-    Streamer::start(frames.into_iter().map(Step::Write).collect(), Then::Hold)
 }
 
 // S9
@@ -31,7 +27,7 @@ fn s9_an_exit_prints_its_code() {
         (vec![Msg::Ack, exit("t9", None)], "{\"signal\":true}\n"),
         (vec![exit("t9", Some(3)), Msg::Ack], "{\"code\":3}\n"),
     ] {
-        let daemon = holding(frames);
+        let daemon = Streamer::holding(frames);
 
         let out = daemon.run(&["wait", "--exit", "t9"]);
 
@@ -48,7 +44,7 @@ fn s10_a_report_of_the_kind_prints_it_and_others_are_skipped() {
         vec![Msg::Ack, term_report("t9", Some("done"), None, None, false), term_report("t9", None, None, None, false), blocked.clone()],
         vec![blocked.clone(), Msg::Ack],
     ] {
-        let daemon = holding(frames);
+        let daemon = Streamer::holding(frames);
 
         let out = daemon.run(&["wait", "--report", "blocked", "--term", "t9"]);
 
@@ -70,7 +66,7 @@ fn a_report_with_no_text_or_proc_has_no_key_for_them() {
 // S11
 #[test]
 fn s11_a_bell_ends_the_wait_and_prints_nothing() {
-    let daemon = holding(vec![Msg::Ack, bell("t9")]);
+    let daemon = Streamer::holding(vec![Msg::Ack, bell("t9")]);
 
     let out = daemon.run(&["wait", "--bell", "t9"]);
 
@@ -80,7 +76,7 @@ fn s11_a_bell_ends_the_wait_and_prints_nothing() {
 
 #[test]
 fn frames_of_another_terminal_are_skipped() {
-    let daemon = holding(vec![Msg::Ack, exit("t8", Some(1)), exit("t9", Some(2))]);
+    let daemon = Streamer::holding(vec![Msg::Ack, exit("t8", Some(1)), exit("t9", Some(2))]);
 
     let out = daemon.run(&["wait", "--exit", "t9"]);
 
@@ -101,7 +97,7 @@ fn s29_an_unknown_terminal_is_printed_and_exits_1() {
 #[test]
 fn s30_an_exit_ends_a_wait_for_a_bell_or_a_report() {
     for args in [&["--bell", "t9"][..], &["--report", "done", "--term", "t9"]] {
-        let daemon = holding(vec![Msg::Ack, exit("t9", Some(0))]);
+        let daemon = Streamer::holding(vec![Msg::Ack, exit("t9", Some(0))]);
 
         let out = Report::of(tarmac_at(&daemon.double.sock).arg("wait").args(args));
 
@@ -118,7 +114,7 @@ fn timed(daemon: &Streamer, args: &[&str]) -> (Report, Duration) {
 // S31
 #[test]
 fn s31_a_timeout_after_the_ack_exits_124_with_nothing_printed() {
-    let daemon = holding(vec![Msg::Ack]);
+    let daemon = Streamer::holding(vec![Msg::Ack]);
 
     let (out, took) = timed(&daemon, &["wait", "--exit", "t9", "--timeout", "300"]);
 
@@ -140,20 +136,14 @@ fn s31_a_timeout_before_the_ack_exits_124_with_one_line() {
 // S31
 #[test]
 fn s31_with_no_timeout_a_daemon_that_never_answers_is_the_no_answer_line() {
-    let daemon = Streamer::start(vec![], Then::Hold);
-    let started = Instant::now();
-
-    assert_no_answer(&daemon.run(&["wait", "--exit", "t9"]), started);
+    assert_never_answered(&["wait", "--exit", "t9"]);
 }
 
 // D14: with a `--timeout` past the 5 s wait, a silent daemon is still the
 // older-daemon line, not a timeout.
 #[test]
 fn a_timeout_longer_than_the_5_s_wait_still_gives_the_no_answer_line() {
-    let daemon = Streamer::start(vec![], Then::Hold);
-    let started = Instant::now();
-
-    assert_no_answer(&daemon.run(&["wait", "--exit", "t9", "--timeout", "6000"]), started);
+    assert_never_answered(&["wait", "--exit", "t9", "--timeout", "6000"]);
 }
 
 // D14: the deadline counts from the start, the handshake included.

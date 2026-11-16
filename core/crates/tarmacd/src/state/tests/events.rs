@@ -42,10 +42,10 @@ async fn an_ended_term_is_in_the_ring_and_out_of_terms() {
 async fn a_live_term_wins_over_its_exit_in_the_ring() {
     let daemon = on_source(tmp_dir("ring-live").join("state.json"), Silent).await;
     daemon.exits.lock().unwrap().record("T", Some(3));
-    let exited = crate::events::subscribe(&daemon, Some(vec!["exit".into()]), Some("T".into())).await.ok().unwrap();
+    let exited = daemon.subscribe(Some(vec!["exit".into()]), Some("T".into())).await.ok().unwrap();
     daemon.terms.lock().await.insert("T".into(), TermHandle::detached());
 
-    let live = crate::events::subscribe(&daemon, Some(vec!["exit".into()]), Some("T".into())).await.ok().unwrap();
+    let live = daemon.subscribe(Some(vec!["exit".into()]), Some("T".into())).await.ok().unwrap();
 
     assert_eq!(exited.snapshot, vec![Msg::Exit { term_id: "T".into(), code: Some(3), board_id: None }]);
     assert_eq!(live.snapshot, vec![]);
@@ -114,7 +114,7 @@ async fn subscribers_and_the_terms_list_make_no_watch() {
     let mut subscribers = Vec::new();
     for (kinds, term_id) in shapes {
         let kinds = kinds.map(|k| k.iter().map(|s| s.to_string()).collect());
-        subscribers.push(crate::events::subscribe(&daemon, kinds, term_id.map(str::to_string)).await);
+        subscribers.push(daemon.subscribe(kinds, term_id.map(str::to_string)).await);
     }
     daemon.terms_list().await;
     drop(subscribers);
@@ -126,9 +126,9 @@ async fn subscribers_and_the_terms_list_make_no_watch() {
 // S24
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_cwd_reads_of_the_terms_list_run_at_the_same_time() {
-    let mut r = rig("terms-stuck").await;
+    let r = rig("terms-stuck").await;
     for term_id in ["t1", "t2", "t3", "t4"] {
-        spawn(&r.daemon, term_id, &["/bin/sh", "-c", "read _"], SpawnOpts::default()).await;
+        spawn_idle(&r.daemon, term_id, SpawnOpts::default()).await;
     }
     for term_id in ["t1", "t2", "t3", "t4"] {
         eventually_async("each term's first cwd read", || async {
@@ -149,10 +149,5 @@ async fn the_cwd_reads_of_the_terms_list_run_at_the_same_time() {
     assert!(took < 2 * LIMIT, "the list took {took:?}");
     assert_eq!(rows.iter().map(|row| row.term_id.as_str()).collect::<Vec<_>>(), ["t1", "t2", "t3", "t4"]);
     assert!(rows.iter().all(|row| row.cwd.is_none() && row.proc.is_some()), "{rows:?}");
-    let _ = &mut r.app;
     r.end().await;
-}
-
-async fn rig(tag: &str) -> Rig {
-    rig_with(tag, None, LIMIT).await
 }
