@@ -66,8 +66,8 @@ const state = () => JSON.parse(readFileSync(STATE, "utf8"));
 const records = (boardId) => state().boards.find((b) => b.board_id === boardId)?.term_records ?? {};
 const term = (snap, id) => termCard(snap, id)?.term;
 const eqJson = (actual, expected, what) => eq(JSON.stringify(actual), JSON.stringify(expected), what);
-const resumed = (snap, id) =>
-  (term(snap, id)?.scrollback_tail ?? "").split("\n").filter((l) => l.trimEnd() === "RESUMED").length;
+const resumedLines = (tail) => (tail ?? "").split("\n").filter((l) => l.trimEnd() === "RESUMED").length;
+const resumed = (snap, id) => resumedLines(term(snap, id)?.scrollback_tail);
 const terminals = (snap) => snap.cards.filter((c) => c.kind === "term").map((c) => c.id);
 /** `scrollback_tail` ends at the cursor's row, so on a young terminal its line
  *  count is how far the cursor has gone down. */
@@ -364,41 +364,35 @@ async function reopen() {
 
 // -------------------------------------------------------- before output
 
-/** The gate holds `id`'s shell: its foreground process is the gate script
- *  (`sh`, or its `sleep`), it has printed nothing, and the offer is not armed.
- *  A shell that is merely slow to start is not enough: the step must not
- *  depend on the race. */
-function silent(id) {
-  const t = term(snapshot(), id);
-  if (!["sh", "sleep"].includes(t.proc) || t.scrollback_tail.trim() !== "") {
-    throw new Error(
-      `${id} is not held by the gate (proc ${t.proc}); run \`make run SHELL_GATE=1\` (same DEV_DIR) first`,
-    );
+/** The gate holds `id`'s shell: its foreground process becomes the gate
+ *  script (`sh`, or its `sleep`; just after the spawn it is still the forked
+ *  `tarmacd`), it has printed nothing, and the offer is not armed. A shell
+ *  that is merely slow to start is not enough: the step must not depend on
+ *  the race. */
+async function silent(id) {
+  let t;
+  try {
+    t = await until(`${id} held by the gate`, 3000, () => {
+      const now = term(snapshot(), id);
+      if (now.scrollback_tail.trim() !== "") throw new Error(`proc ${now.proc}, and it printed`);
+      return ["sh", "sleep"].includes(now.proc) ? now : null;
+    });
+  } catch (e) {
+    throw new Error(`${id} is not held by the gate (${e.message}); run \`make run SHELL_GATE=1\` (same DEV_DIR) first`);
   }
   eq(t.resume.armed, false, `${id} resume.armed`);
   return t;
 }
 
-/** The same lines at the end of `tail` twice: a prompt the shell printed
- *  again for an empty line, however many rows the prompt has. */
-function endsWithARepeatedPrompt(tail) {
-  const lines = tail.split("\n").map((l) => l.trimEnd()).filter((l) => l !== "");
-  for (let k = 1; k <= 4 && 2 * k <= lines.length; k++) {
-    const last = lines.slice(-k).join("\n");
-    if (last === lines.slice(-2 * k, -k).join("\n")) return true;
-  }
-  return false;
-}
-
 async function beforeOutput() {
   if (!GATE) run.die("TARMAC_QA_SHELL_GATE is not set; run this through `make qa-resume`");
-  const { boardId, ids, fresh, reopenOne } = await deadCards(2);
-  const [x, y] = ids;
+  const { boardId, ids, fresh, reopenOne } = await deadCards(3);
+  const [x, y, z] = ids;
   writeFileSync(GATE, "");
   try {
     await run.checkAsync(`Return on ${x}'s reopened card before its first output: the panel and the record go (S28)`, async () => {
       const x2 = await reopenOne(x);
-      silent(x2);
+      await silent(x2);
       eq(dev("key", x2, "enter").code, 0, "key enter");
       await settled(`${x2}'s panel gone`, 2000, (s) => term(s, x2)?.resume === undefined);
       await until(`no resume for ${x2} in state.json`, 2000, () => records(boardId)[x2]?.resume === undefined);
@@ -407,7 +401,7 @@ async function beforeOutput() {
 
     await run.checkAsync(`click resume on ${y}'s reopened card before its first output: the run is queued (S28)`, async () => {
       const y2 = await reopenOne(y);
-      silent(y2);
+      await silent(y2);
       const { code, body } = click(y2, "resume");
       eq(code, 0, "click exit");
       eq(body.focused_card, y2, "the card is selected (O10)");
@@ -415,22 +409,28 @@ async function beforeOutput() {
       eq(t.resume.queued, true, "resume.queued");
       eq(t.resume.title, QUEUED_TITLE, "resume.title");
       eqJson(t.resume.buttons, ["skip"], "buttons");
-      eq(term(snapshot(), y2).scrollback_tail.trim(), "", `${y2} still has no output`);
+      eq(t.scrollback_tail.trim(), "", `${y2} still has no output`);
+    });
+
+    await run.checkAsync(`${z} is reopened under the gate and gets no key: the reference for the empty line`, async () => {
+      await silent(await reopenOne(z));
     });
   } finally {
     rmSync(GATE, { force: true });
   }
 
   await run.checkAsync("the gate opens: the queued card runs once, the other shell gets an empty line (S28)", async () => {
-    const [x2, y2] = [fresh.get(x), fresh.get(y)];
+    const [x2, y2, z2] = [fresh.get(x), fresh.get(y), fresh.get(z)];
     const snap = waitFor(y2, `cards[${y2}].term.scrollback_tail contains "RESUMED"`, "--timeout", "10000");
     eq(resumed(snap, y2), 1, `RESUMED lines in ${y2}`);
     await chipsGone([x2, y2]);
     await until(`no resume for ${y2} in state.json`, 2000, () => records(boardId)[y2]?.resume === undefined);
     const tails = await steadyTails();
     eq(resumed(snapshot(), x2), 0, `RESUMED lines in ${x2}`);
-    if (!endsWithARepeatedPrompt(tails[x2])) {
-      throw new Error(`${x2} does not end with its prompt twice (the empty line):\n${tails[x2]}`);
+    // The same shell start-up in both, so only the empty line's second prompt
+    // puts X″'s cursor further down, however many rows the prompt has.
+    if (rows(tails[x2]) <= rows(tails[z2])) {
+      throw new Error(`${x2}'s cursor is not below ${z2}'s (no empty line):\n${tails[x2]}\n--- ${z2}:\n${tails[z2]}`);
     }
   });
 }
@@ -490,9 +490,14 @@ function restoreCardUp() {
   return { boardId, offers, plain };
 }
 
-async function resumeAll(choose) {
+/** `held` (S25's held Return, #380): the repeats after the card closes are
+ *  taken and dropped, so the card with the keys moves down no more rows than
+ *  the other card that ran the same command in the same folder, and the card
+ *  with no offer gets no byte. */
+async function resumeAll(choose, { held = false } = {}) {
   const { boardId, offers, plain } = restoreCardUp();
   await run.checkAsync("resume all: each offer runs once, at its own output; the third card gets nothing (S25)", async () => {
+    const before = held && (await steadyTails());
     choose();
     waitFor(null, "restore_card == null", "--timeout", "2000");
     for (const id of offers) {
@@ -503,25 +508,9 @@ async function resumeAll(choose) {
     for (const id of plain) eq(resumed(snap, id), 0, `RESUMED lines in ${id}`);
     await until("no resume in state.json", 2000, () => offers.every((id) => records(boardId)[id]?.resume === undefined));
     await chipsGone(offers);
-  });
-}
-
-/** S25 held: a Return held for a second gives autorepeats after the card
- *  closes. They are taken and dropped, so the card that has the keys moves
- *  down no more rows than the other card that ran the same command in the same
- *  folder, and the card with no offer does not move. */
-async function resumeAllHeld() {
-  const { offers, plain } = restoreCardUp();
-  await run.checkAsync("resume all by a held Return: the repeats give no card an empty line (S25)", async () => {
-    const before = await steadyTails();
-    const r = dev("press", "enter", "--hold", "1000", "--repeat", "20");
-    eq(r.code, 0, "press exit");
-    eq(json(r).repeats, 20, "repeats posted");
-    waitFor(null, "restore_card == null", "--timeout", "2000");
-    for (const id of offers) waitFor(id, `cards[${id}].term.scrollback_tail contains "RESUMED"`, "--timeout", "10000");
-    await sleep(1500);
+    if (!held) return;
     const after = await steadyTails();
-    for (const id of offers) eq(resumed(snapshot(), id), 1, `RESUMED lines in ${id}`);
+    for (const id of offers) eq(resumedLines(after[id]), 1, `RESUMED lines in ${id}`);
     const moved = (id) => rows(after[id]) - rows(before[id]);
     eq(moved(offers[0]), moved(offers[1]), `rows ${offers[0]} moved, against ${offers[1]}`);
     for (const id of plain) eq(after[id], before[id], `${id}'s scrollback`);
@@ -586,7 +575,12 @@ const cases = {
   reopen,
   "restore-setup": restoreSetup,
   "resume-all": () => resumeAll(() => eq(dev("press", "enter").code, 0, "press enter")),
-  "resume-all-held": resumeAllHeld,
+  "resume-all-held": () =>
+    resumeAll(() => {
+      const r = dev("press", "enter", "--hold", "1000", "--repeat", "20");
+      eq(r.code, 0, "press enter --repeat 20");
+      eq(json(r).repeats, 20, "repeats posted");
+    }, { held: true }),
   "before-output": beforeOutput,
   "resume-all-click": () => resumeAll(() => eq(click("restore_card", "resume_all").code, 0, "click resume_all")),
   "per-card": () => perCard(() => eq(dev("press", "tab").code, 0, "press tab")),

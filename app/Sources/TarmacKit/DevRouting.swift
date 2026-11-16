@@ -75,7 +75,7 @@ public enum DevRouting {
         /// Reads state and injects nothing.
         case snapshot(until: String?, timeoutMs: Int?)
         /// A native ⌘ chord posted to the window; no card is involved.
-        case press(combo: String, holdMs: Int?, ageMs: Int?, busyMs: Int?, repeats: Int? = nil)
+        case press(combo: String, holdMs: Int?, ageMs: Int?, busyMs: Int?, repeats: Int?)
         /// Committed through the board's own viewport commit, not an event.
         case zoom(Double)
         /// A press on the empty board, which clears selection and keyboard focus.

@@ -21,14 +21,8 @@ extension DevVerbs {
         quitGuard.hold(keyCode: plan.chord.keyCode, untilMs: now + plan.holdMs)
         let pressMs = DevPress.pressMs(nowMs: now, ageMs: plan.ageMs)
         try post(.keyDown, plan.chord, stampMs: pressMs)
-        for atMs in plan.repeatsAtMs {
-            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(Int(atMs))) { [weak self] in
-                MainActor.assumeIsolated { try? self?.post(.keyDown, plan.chord, stampMs: Uptime.nowMs, repeat: true) }
-            }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(Int(plan.holdMs))) { [weak self] in
-            MainActor.assumeIsolated { try? self?.post(.keyUp, plan.chord, stampMs: Uptime.nowMs) }
-        }
+        for atMs in plan.repeatsAtMs { postLater(.keyDown, plan.chord, afterMs: atMs, isRepeat: true) }
+        postLater(.keyUp, plan.chord, afterMs: plan.holdMs)
         if let busyMs = plan.busyMs { stall(ms: busyMs) }
         return DevPress.reply(combo: combo, pressMs: pressMs, plan: plan, activated: activated)
     }
@@ -54,12 +48,18 @@ extension DevVerbs {
         }
     }
 
-    private func post(_ type: NSEvent.EventType, _ chord: DevPress.Chord, stampMs: UInt64, repeat: Bool = false) throws {
+    private func postLater(_ type: NSEvent.EventType, _ chord: DevPress.Chord, afterMs: UInt64, isRepeat: Bool = false) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(Int(afterMs))) { [weak self] in
+            MainActor.assumeIsolated { try? self?.post(type, chord, stampMs: Uptime.nowMs, isRepeat: isRepeat) }
+        }
+    }
+
+    private func post(_ type: NSEvent.EventType, _ chord: DevPress.Chord, stampMs: UInt64, isRepeat: Bool = false) throws {
         guard let event = NSEvent.keyEvent(
             with: type, location: .zero, modifierFlags: NSEvent.ModifierFlags(rawValue: UInt(chord.flags)),
             timestamp: TimeInterval(stampMs) / 1_000, windowNumber: window.windowNumber, context: nil,
             characters: chord.characters, charactersIgnoringModifiers: chord.characters,
-            isARepeat: `repeat`, keyCode: chord.keyCode
+            isARepeat: isRepeat, keyCode: chord.keyCode
         ) else { throw DevError(.driverThrew, "could not build a key event") }
         NSApp.postEvent(event, atStart: false)
     }

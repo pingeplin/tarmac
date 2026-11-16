@@ -4,7 +4,7 @@
 # runner can act before a shell's first output (spec 2611.0015 S28). The cap
 # lets the shell go if a runner dies with the gate up.
 i=0
-while [ -n "$TARMAC_QA_SHELL_GATE" ] && [ -e "$TARMAC_QA_SHELL_GATE" ] && [ "$i" -lt 600 ]; do
+while [ -e "$TARMAC_QA_SHELL_GATE" ] && [ "$i" -lt 600 ]; do
 	sleep 0.05
 	i=$((i + 1))
 done
