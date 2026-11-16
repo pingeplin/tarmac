@@ -24,6 +24,10 @@ public final class DaemonClient: @unchecked Sendable {
         public var restartPollInterval: TimeInterval
         /// Seconds to wait before reconnect attempt `n` (1-based); nil gives up.
         public var reconnectDelay: @Sendable (Int) -> TimeInterval?
+        /// How long the daemon has to start its answer to `hello`. A daemon
+        /// that is stopped still takes the socket, and would hold the app on
+        /// a link that says nothing (#384).
+        public var handshakeTimeout: TimeInterval = 5
 
         public init(
             connectRetryBudget: TimeInterval = 3,
@@ -337,6 +341,7 @@ public final class DaemonClient: @unchecked Sendable {
     private func converse(over fd: Int32, alreadyRestarted: Bool) -> Bool {
         guard let hello = try? Framing.frame(Message.hello(role: "app", v: 1, appVersion: appVersion).encodedPayload()),
             DaemonSocket.write(hello, to: fd),
+            DaemonSocket.waitReadable(fd, within: timing.handshakeTimeout),
             let payload = DaemonSocket.readFrame(from: fd),
             let first = try? Message.decode(payload: payload)
         else { return false }

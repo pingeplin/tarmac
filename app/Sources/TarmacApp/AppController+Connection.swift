@@ -27,7 +27,7 @@ extension AppController {
     }
 
     func handle(_ status: ConnectionStatus) {
-        let dropped = connectionStatus.connected && !status.connected
+        let dropped = status.endsLink(handshook: connected)
         connectionStatus = status
         showConnectionStatus()
         if dropped { handleDisconnect(status.reason) }
@@ -40,6 +40,7 @@ extension AppController {
         switch message {
         case .helloOK(_, _, let daemonPid, _, _):
             connected = true
+            showConnectionStatus()
             daemonSession.daemonPid = daemonPid.flatMap { Int32(exactly: $0) }
             // The daemon keeps what a card reads in memory only: a daemon
             // that was restarted knows none of it.

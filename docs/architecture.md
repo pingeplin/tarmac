@@ -932,9 +932,15 @@ connection. It runs on a thread of its own and delivers `Message`s and
 
 `ConnectionStatus.connected` turns true as soon as the socket connects; the
 controller's own `connected` flag — what gates a spawn — turns true on
-`HelloOk`. Connection state is app-local: the status bar prints `attached`, or
-the reason. On a drop the app toasts `tarmacd connection lost` and changes no
-card — there is no "detached" card state. The reconnect's `Restore` is what
+`HelloOk`. The daemon has 5 s to start its answer to `hello`
+(`Timing.handshakeTimeout`); after that the client closes the link and tries
+again, as for any dropped link. Connection state is app-local: the status bar
+prints `attached` once the handshake has completed, `connecting…` while it is
+pending (`ConnectionStatus.shown`), or the reason. On the drop of a link that
+completed its handshake (`ConnectionStatus.endsLink`) the app toasts `tarmacd
+connection lost` and changes no card — there is no "detached" card state. The
+end of a link that did not, such as the restart of a daemon of another version,
+is not a drop. The reconnect's `Restore` is what
 reconciles the cards ([*Restore and reconnect*](#restore-and-reconnect)).
 
 ### The sample log
