@@ -27,7 +27,7 @@ public enum InboxCopy {
     }
 
     public static func quote(_ item: Inbox.Item) -> String? {
-        item.text.map { "“\(oneLine($0))”" }
+        item.text.map { "“\(ChromeText.oneLine($0))”" }
     }
 
     /// `<board> › <terminal> · <cwd>`: the board's name or id; the card's
@@ -42,25 +42,9 @@ public enum InboxCopy {
         ChromeText.reportAge(atMs: item.atMs, nowMs: nowMs)
     }
 
-    /// Every run of whitespace, newlines included, as one space; trimmed.
-    public static func oneLine(_ text: String) -> String {
-        text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
-    }
-
     private static func tilde(_ path: String, home: String) -> String {
         if path == home { return "~" }
         let prefix = home.hasSuffix("/") ? home : home + "/"
         return path.hasPrefix(prefix) ? "~/" + path.dropFirst(prefix.count) : path
-    }
-}
-
-/// The title-bar button's title.
-public enum InboxBadge {
-    public static func text(unread: Int) -> String {
-        switch unread {
-        case ...0: "inbox"
-        case ...99: "inbox · \(unread)"
-        default: "inbox · 99+"
-        }
     }
 }

@@ -34,6 +34,11 @@ public enum ChromeText {
         proc.map { "\(title) · during \($0)" } ?? title
     }
 
+    /// Every run of whitespace, newlines included, as one space; trimmed.
+    public static func oneLine(_ text: String) -> String {
+        text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+
     /// `reportAge` of a report made at `atMs`; one from the future is new.
     public static func reportAge(atMs: UInt64, nowMs: UInt64) -> String {
         reportAge(elapsedMs: nowMs >= atMs ? nowMs - atMs : 0)
