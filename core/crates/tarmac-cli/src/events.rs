@@ -3,6 +3,7 @@
 //! shares. The cli checks each frame's kind and terminal itself: it does not
 //! trust the daemon's filter alone.
 
+use std::cell::Cell;
 use std::io::{self, Write};
 use std::os::unix::net::UnixStream;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -194,7 +195,12 @@ pub(crate) fn subscribe(kinds: Option<Vec<String>>, term_id: Option<String>, dea
         true => Stop::Fail(no_answer.clone()),
         false => Stop::Fail(crate::daemon::lost(e)),
     };
-    let mut stream = crate::daemon::connect_until(until, &|e| crate::daemon::late_or_lost(e, &no_answer)).map_err(|why| match late && why == no_answer {
+    let timed_out = Cell::new(false);
+    let failed = |e: io::Error| {
+        timed_out.set(crate::daemon::is_timeout(&e));
+        crate::daemon::late_or_lost(e, &no_answer)
+    };
+    let mut stream = crate::daemon::connect_until(until, &failed).map_err(|why| match late && timed_out.get() {
         true => Stop::Late,
         false => Stop::Fail(why),
     })?;

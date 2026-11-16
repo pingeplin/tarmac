@@ -45,7 +45,7 @@ pub(crate) fn exchange(stream: &mut UnixStream, payload: &[u8], why: &str) -> Re
 
 /// `exchange` inside `until`: each write and read gets the time that is left,
 /// and running out of it is worded as `no_answer`.
-pub(crate) fn exchange_until(
+fn exchange_until(
     stream: &mut UnixStream,
     payload: &[u8],
     until: Instant,
@@ -79,7 +79,7 @@ pub(crate) fn time_out_at(stream: &UnixStream, until: Instant) -> io::Result<()>
     stream.set_write_timeout(Some(left))
 }
 
-/// How long `open`, `push`, `report`, `--version` and the first answer to
+/// How long `open`, `push`, `report`, `resume`, `--version` and the first answer to
 /// `terms`, `events` and `wait` wait for the daemon.
 pub(crate) const DAEMON_WAIT: Duration = Duration::from_secs(5);
 
