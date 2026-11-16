@@ -435,10 +435,10 @@ public enum DevSnapshot {
     /// One offscreen pill as placed.
     public struct Hint: Equatable, Sendable {
         public var card: String
-        public var signal: OffscreenHintLayout.Signal
+        public var signal: CardSignal
         public var edge: BoardWayfinding.Edge
 
-        public init(card: String, signal: OffscreenHintLayout.Signal, edge: BoardWayfinding.Edge) {
+        public init(card: String, signal: CardSignal, edge: BoardWayfinding.Edge) {
             self.card = card
             self.signal = signal
             self.edge = edge

@@ -77,7 +77,7 @@ public extension DevRequest {
     }
 
     static func decode(_ value: MsgPackValue) throws -> DevRequest {
-        let fields = try DevFields(value)
+        let fields = try MapReader(value)
         let t = try fields.req("t", \.stringValue)
         switch t {
         case "snapshot":
@@ -168,40 +168,11 @@ public extension DevRequest {
 
 public extension DevReply {
     static func decode(payload: Data) throws -> DevReply {
-        let fields = try DevFields(MsgPack.decode(payload))
+        let fields = try MapReader(MsgPack.decode(payload))
         return DevReply(ok: try fields.req("ok", \.boolValue), body: try fields.req("body", \.stringValue))
     }
 
     func encodedPayload() -> Data {
         MsgPack.encode(.orderedMap([MsgPackField("ok", .bool(ok)), MsgPackField("body", .string(body))]))
-    }
-}
-
-/// Keyed reads off one decoded map, under the daemon protocol's rules: any key
-/// order, unknown keys ignored, an explicit nil the same as a missing key.
-private struct DevFields {
-    let map: [String: MsgPackValue]
-
-    init(_ value: MsgPackValue) throws {
-        guard let map = value.mapValue else { throw MessageError.notAMap }
-        self.map = map
-    }
-
-    func req<T>(_ key: String, _ extract: (MsgPackValue) -> T?) throws -> T {
-        guard let value = try opt(key, extract) else { throw MessageError.missingField(key) }
-        return value
-    }
-
-    func opt<T>(_ key: String, _ extract: (MsgPackValue) -> T?) throws -> T? {
-        guard let raw = map[key], !raw.isNil else { return nil }
-        guard let value = extract(raw) else { throw MessageError.badField(key) }
-        return value
-    }
-
-    /// The Rust wire type is `u32`.
-    func uint32(_ key: String) throws -> Int? {
-        guard let value = try opt(key, \.intValue) else { return nil }
-        guard UInt32(exactly: value) != nil else { throw MessageError.badField(key) }
-        return value
     }
 }

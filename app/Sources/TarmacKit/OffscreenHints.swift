@@ -6,15 +6,11 @@ import CoreGraphics
 /// this adds what lived in the untested AppKit overlay. Pure and clock-free — the
 /// view supplies the measured pill sizes, the HH:MM text and each signal's time.
 public enum OffscreenHintLayout {
-    public enum Signal: String, Equatable, Sendable {
-        case blocked, bell, exit, done, live
-    }
-
     /// One signalling offscreen card, in VIEW (overlay-local) coordinates.
     public struct Hint: Equatable, Sendable {
         public var cardID: String
         public var centerView: CGPoint
-        public var signal: Signal
+        public var signal: CardSignal
         public var label: String
         /// Stacking order; higher is more recently fronted. Breaks a tie of rank.
         public var z: Int
@@ -22,7 +18,7 @@ public enum OffscreenHintLayout {
         public var signalAt: UInt64?
 
         public init(
-            cardID: String, centerView: CGPoint, signal: Signal, label: String, z: Int, signalAt: UInt64?
+            cardID: String, centerView: CGPoint, signal: CardSignal, label: String, z: Int, signalAt: UInt64?
         ) {
             self.cardID = cardID
             self.centerView = centerView
@@ -34,7 +30,7 @@ public enum OffscreenHintLayout {
     }
 
     /// Blocked 4, bell 3, exit 2, done 1, live 0.
-    public static func rank(_ signal: Signal) -> Int {
+    public static func rank(_ signal: CardSignal) -> Int {
         switch signal {
         case .blocked: 4
         case .bell: 3
@@ -46,7 +42,7 @@ public enum OffscreenHintLayout {
 
     /// A card's one signal (spec 2611.0013), the highest it has. A read
     /// report makes none: the card falls through to its other facts.
-    public static func signal(report: TermReport?, bellLit: Bool, exitUnread: Bool, live: Bool) -> Signal? {
+    public static func signal(report: TermReport?, bellLit: Bool, exitUnread: Bool, live: Bool) -> CardSignal? {
         let unread = report.flatMap { $0.read ? nil : $0.kind }
         if unread == .blocked { return .blocked }
         if bellLit { return .bell }
@@ -90,7 +86,9 @@ public enum OffscreenHintLayout {
 
     /// The time of the card's shown signal: a report's for blocked and done,
     /// the bell's, the exit's; live has none.
-    public static func signalAt(_ signal: Signal, reportAtMs: UInt64?, bellAtMs: UInt64?, exitAtMs: UInt64?) -> UInt64? {
+    public static func signalAt(
+        _ signal: CardSignal, reportAtMs: UInt64?, bellAtMs: UInt64?, exitAtMs: UInt64?
+    ) -> UInt64? {
         switch signal {
         case .blocked, .done: reportAtMs
         case .bell: bellAtMs
@@ -104,7 +102,7 @@ public enum OffscreenHintLayout {
 
     /// A bell reads `name · hhmm` (middle dot U+00B7); a report quotes the
     /// start of its text, one line; an exit says so; live reads the name.
-    public static func pillLabel(signal: Signal, name: String, hhmm: String, quote: String?) -> String {
+    public static func pillLabel(signal: CardSignal, name: String, hhmm: String, quote: String?) -> String {
         switch signal {
         case .blocked, .done:
             guard let quote else { return "\(name) · report" }

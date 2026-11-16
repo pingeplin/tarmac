@@ -5,7 +5,7 @@ extension OffscreenHintLayout {
     /// whether it ended up on top of a card.
     public struct PlacedPill: Equatable {
         public var cardID: String
-        public var signal: Signal
+        public var signal: CardSignal
         public var label: String
         public var edge: BoardWayfinding.Edge
         public var arrow: String

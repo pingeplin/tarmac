@@ -321,110 +321,109 @@ public extension Message {
     static func decode(_ value: MsgPackValue) throws -> Message {
         guard let map = value.mapValue else { throw MessageError.notAMap }
         guard let t = map["t"]?.stringValue else { throw MessageError.missingField("t") }
-
-        func req<T>(_ key: String, _ extract: (MsgPackValue) -> T?) throws -> T {
-            guard let raw = map[key], !raw.isNil else { throw MessageError.missingField(key) }
-            guard let v = extract(raw) else { throw MessageError.badField(key) }
-            return v
-        }
-        func opt<T>(_ key: String, _ extract: (MsgPackValue) -> T?) throws -> T? {
-            guard let raw = map[key], !raw.isNil else { return nil }
-            guard let v = extract(raw) else { throw MessageError.badField(key) }
-            return v
-        }
+        let fields = MapReader(map)
 
         switch t {
         case "hello":
             return .hello(
-                role: try req("role", \.stringValue),
-                v: try req("v", \.intValue),
-                appVersion: try opt("app_version", \.stringValue)
+                role: try fields.req("role", \.stringValue),
+                v: try fields.req("v", \.intValue),
+                appVersion: try fields.opt("app_version", \.stringValue)
             )
         case "hello_ok":
             return .helloOK(
-                v: try req("v", \.intValue),
-                daemonVersion: try opt("daemon_version", \.stringValue),
-                daemonPid: try opt("daemon_pid", \.intValue),
-                appVersion: try opt("app_version", \.stringValue),
-                appConnected: try opt("app_connected", \.boolValue)
+                v: try fields.req("v", \.intValue),
+                daemonVersion: try fields.opt("daemon_version", \.stringValue),
+                daemonPid: try fields.opt("daemon_pid", \.intValue),
+                appVersion: try fields.opt("app_version", \.stringValue),
+                appConnected: try fields.opt("app_connected", \.boolValue)
             )
         case "ack":
             return .ack
         case "err":
-            return .err(msg: try req("msg", \.stringValue))
+            return .err(msg: try fields.req("msg", \.stringValue))
         case "open":
             return .open(
-                path: try req("path", \.stringValue),
-                termID: try opt("term_id", \.stringValue),
-                boardID: try opt("board_id", \.stringValue)
+                path: try fields.req("path", \.stringValue),
+                termID: try fields.opt("term_id", \.stringValue),
+                boardID: try fields.opt("board_id", \.stringValue)
             )
         case "doc_read":
-            return .docRead(path: try req("path", \.stringValue))
+            return .docRead(path: try fields.req("path", \.stringValue))
         case "layout":
             return .layout(
-                dock: try req("dock", Self.stringArray),
-                tiles: try req("tiles", \.arrayValue).map(Self.layoutTile(from:)),
-                board: try Self.board(from: opt("board", \.mapValue)),
-                boardID: try opt("board_id", \.stringValue)
+                dock: try fields.req("dock", Self.stringArray),
+                tiles: try fields.req("tiles", \.arrayValue).map(Self.layoutTile(from:)),
+                board: try Self.board(from: fields.opt("board", \.mapValue)),
+                boardID: try fields.opt("board_id", \.stringValue)
             )
         case "restore":
-            let docs = try req("docs", \.arrayValue).map { entry -> RestoreDoc in
+            let docs = try fields.req("docs", \.arrayValue).map { entry -> RestoreDoc in
                 guard let m = entry.mapValue else { throw MessageError.badField("docs") }
-                return try Self.docEntry(from: m)
+                return try Self.docEntry(from: MapReader(m))
             }
-            let tiles = try (opt("tiles", \.arrayValue) ?? []).map(Self.layoutTile(from:))
-            let board = try Self.board(from: opt("board", \.mapValue))
+            let tiles = try (fields.opt("tiles", \.arrayValue) ?? []).map(Self.layoutTile(from:))
+            let board = try Self.board(from: fields.opt("board", \.mapValue))
             return .restore(
                 docs: docs, tiles: tiles, board: board,
-                boardID: try opt("board_id", \.stringValue),
-                liveTerms: try opt("live_terms", Self.stringArray) ?? [],
-                termRecords: try Self.termRecords(from: opt("term_records", \.mapValue))
+                boardID: try fields.opt("board_id", \.stringValue),
+                liveTerms: try fields.opt("live_terms", Self.stringArray) ?? [],
+                termRecords: try Self.termRecords(from: fields.opt("term_records", \.mapValue))
             )
         case "spawn_term":
             return .spawnTerm(
-                termID: try req("term_id", \.stringValue),
-                cols: try req("cols", \.intValue),
-                rows: try req("rows", \.intValue),
-                cwd: try opt("cwd", \.stringValue),
-                cmd: try opt("cmd", Self.stringArray),
-                boardID: try opt("board_id", \.stringValue),
-                inheritCwdFrom: try opt("inherit_cwd_from", \.stringValue),
-                succeeds: try opt("succeeds", \.stringValue)
+                termID: try fields.req("term_id", \.stringValue),
+                cols: try fields.req("cols", \.intValue),
+                rows: try fields.req("rows", \.intValue),
+                cwd: try fields.opt("cwd", \.stringValue),
+                cmd: try fields.opt("cmd", Self.stringArray),
+                boardID: try fields.opt("board_id", \.stringValue),
+                inheritCwdFrom: try fields.opt("inherit_cwd_from", \.stringValue),
+                succeeds: try fields.opt("succeeds", \.stringValue)
             )
         case "input":
             return .input(
-                termID: try req("term_id", \.stringValue),
-                bytes: try req("bytes", \.binaryValue),
-                typed: try opt("typed", \.boolValue) ?? false
+                termID: try fields.req("term_id", \.stringValue),
+                bytes: try fields.req("bytes", \.binaryValue),
+                typed: try fields.opt("typed", \.boolValue) ?? false
             )
         case "resize":
             return .resize(
-                termID: try req("term_id", \.stringValue),
-                cols: try req("cols", \.intValue),
-                rows: try req("rows", \.intValue)
+                termID: try fields.req("term_id", \.stringValue),
+                cols: try fields.req("cols", \.intValue),
+                rows: try fields.req("rows", \.intValue)
             )
         case "output":
-            return .output(termID: try req("term_id", \.stringValue), bytes: try req("bytes", \.binaryValue))
+            return .output(
+                termID: try fields.req("term_id", \.stringValue),
+                bytes: try fields.req("bytes", \.binaryValue)
+            )
         case "exit":
             return .exit(
-                termID: try req("term_id", \.stringValue),
-                code: try opt("code", \.intValue),
-                boardID: try opt("board_id", \.stringValue)
+                termID: try fields.req("term_id", \.stringValue),
+                code: try fields.opt("code", \.intValue),
+                boardID: try fields.opt("board_id", \.stringValue)
             )
         case "doc_opened":
-            return .docOpened(doc: try Self.docEntry(from: map))
+            return .docOpened(doc: try Self.docEntry(from: fields))
         case "file_event":
-            return .fileEvent(path: try req("path", \.stringValue), mtimeMs: try req("mtime_ms", \.uint64Value))
+            return .fileEvent(
+                path: try fields.req("path", \.stringValue),
+                mtimeMs: try fields.req("mtime_ms", \.uint64Value)
+            )
         case "term_proc":
             return .termProc(
-                termID: try req("term_id", \.stringValue),
-                name: try req("name", \.stringValue),
-                pid: try opt("pid", \.intValue)
+                termID: try fields.req("term_id", \.stringValue),
+                name: try fields.req("name", \.stringValue),
+                pid: try fields.opt("pid", \.intValue)
             )
         case "bell":
-            return .bell(termID: try req("term_id", \.stringValue), boardID: try opt("board_id", \.stringValue))
+            return .bell(
+                termID: try fields.req("term_id", \.stringValue),
+                boardID: try fields.opt("board_id", \.stringValue)
+            )
         case "board_list":
-            let boards = try req("boards", \.arrayValue).map { entry -> BoardMeta in
+            let boards = try fields.req("boards", \.arrayValue).map { entry -> BoardMeta in
                 guard let m = entry.mapValue else { throw MessageError.badField("boards") }
                 guard let id = m["board_id"], !id.isNil, let boardID = id.stringValue else {
                     throw MessageError.missingField("boards.board_id")
@@ -433,62 +432,74 @@ public extension Message {
                 let running = m["running"].flatMap { $0.isNil ? nil : $0.intValue }
                 return BoardMeta(boardID: boardID, name: name, running: running)
             }
-            return .boardList(boards: boards, active: try req("active", \.stringValue))
+            return .boardList(boards: boards, active: try fields.req("active", \.stringValue))
         case "board_switch":
-            return .boardSwitch(boardID: try req("board_id", \.stringValue))
+            return .boardSwitch(boardID: try fields.req("board_id", \.stringValue))
         case "board_create":
             return .boardCreate
         case "board_rename":
-            return .boardRename(boardID: try req("board_id", \.stringValue), name: try req("name", \.stringValue))
+            return .boardRename(
+                boardID: try fields.req("board_id", \.stringValue),
+                name: try fields.req("name", \.stringValue)
+            )
         case "board_delete":
-            return .boardDelete(boardID: try req("board_id", \.stringValue))
+            return .boardDelete(boardID: try fields.req("board_id", \.stringValue))
         case "term_close":
-            return .termClose(termID: try req("term_id", \.stringValue))
+            return .termClose(termID: try fields.req("term_id", \.stringValue))
         case "doc_close":
-            return .docClose(path: try req("path", \.stringValue))
+            return .docClose(path: try fields.req("path", \.stringValue))
         case "doc_refresh":
-            return .docRefresh(path: try req("path", \.stringValue))
+            return .docRefresh(path: try fields.req("path", \.stringValue))
         case "data_file":
             return .dataFile(
-                boardID: try req("board_id", \.stringValue),
-                path: try req("path", \.stringValue),
-                file: try opt("file", \.stringValue)
+                boardID: try fields.req("board_id", \.stringValue),
+                path: try fields.req("path", \.stringValue),
+                file: try fields.opt("file", \.stringValue)
             )
         case "push":
-            return .push(path: try req("path", \.stringValue), value: try req("value", \.stringValue))
+            return .push(path: try fields.req("path", \.stringValue), value: try fields.req("value", \.stringValue))
         case "doc_event":
-            return .docEvent(path: try req("path", \.stringValue), value: try req("value", \.stringValue))
+            return .docEvent(path: try fields.req("path", \.stringValue), value: try fields.req("value", \.stringValue))
         case "report":
             return .report(
-                termID: try req("term_id", \.stringValue),
-                kind: try req("kind", \.stringValue),
-                text: try opt("text", \.stringValue)
+                termID: try fields.req("term_id", \.stringValue),
+                kind: try fields.req("kind", \.stringValue),
+                text: try fields.opt("text", \.stringValue)
             )
         case "term_report":
             return .termReport(
-                termID: try req("term_id", \.stringValue),
-                kind: try opt("kind", \.stringValue),
-                text: try opt("text", \.stringValue),
-                atMs: try opt("at_ms", \.uint64Value),
-                proc: try opt("proc", \.stringValue),
-                read: try opt("read", \.boolValue) ?? false,
-                boardID: try opt("board_id", \.stringValue),
-                cwd: try opt("cwd", \.stringValue)
+                termID: try fields.req("term_id", \.stringValue),
+                kind: try fields.opt("kind", \.stringValue),
+                text: try fields.opt("text", \.stringValue),
+                atMs: try fields.opt("at_ms", \.uint64Value),
+                proc: try fields.opt("proc", \.stringValue),
+                read: try fields.opt("read", \.boolValue) ?? false,
+                boardID: try fields.opt("board_id", \.stringValue),
+                cwd: try fields.opt("cwd", \.stringValue)
             )
         case "resume":
-            return .resume(termID: try req("term_id", \.stringValue), cmd: try opt("cmd", \.stringValue))
+            return .resume(termID: try fields.req("term_id", \.stringValue), cmd: try fields.opt("cmd", \.stringValue))
         case "term_resume":
-            return .termResume(termID: try req("term_id", \.stringValue), cmd: try opt("cmd", \.stringValue))
+            return .termResume(
+                termID: try fields.req("term_id", \.stringValue),
+                cmd: try fields.opt("cmd", \.stringValue)
+            )
         case "subscribe":
-            return .subscribe(kinds: try opt("kinds", Self.stringArray), termID: try opt("term_id", \.stringValue))
+            return .subscribe(
+                kinds: try fields.opt("kinds", Self.stringArray),
+                termID: try fields.opt("term_id", \.stringValue)
+            )
         case "terms_list":
             return .termsList
         case "terms":
-            return .terms(try req("terms", \.arrayValue).map(Self.termInfo(from:)))
+            return .terms(try fields.req("terms", \.arrayValue).map(Self.termInfo(from:)))
         case "scrollback_request":
-            return .scrollbackRequest(termID: try req("term_id", \.stringValue))
+            return .scrollbackRequest(termID: try fields.req("term_id", \.stringValue))
         case "scrollback":
-            return .scrollback(termID: try req("term_id", \.stringValue), bytes: try req("bytes", \.binaryValue))
+            return .scrollback(
+                termID: try fields.req("term_id", \.stringValue),
+                bytes: try fields.req("bytes", \.binaryValue)
+            )
         default:
             return .unknown(type: t)
         }
@@ -497,74 +508,63 @@ public extension Message {
     private static func termRecords(from m: [String: MsgPackValue]?) throws -> [String: TermRecord] {
         try (m ?? [:]).mapValues { value in
             guard let record = value.mapValue else { throw MessageError.badField("term_records") }
-            return TermRecord(lastCwd: try optString(record, "last_cwd"), resume: try resumeRecord(record["resume"]))
+            return TermRecord(
+                lastCwd: try MapReader(record).opt("last_cwd", \.stringValue),
+                resume: try resumeRecord(record["resume"])
+            )
         }
-    }
-
-    private static func optString(_ m: [String: MsgPackValue], _ key: String) throws -> String? {
-        guard let raw = m[key], !raw.isNil else { return nil }
-        guard let value = raw.stringValue else { throw MessageError.badField(key) }
-        return value
     }
 
     private static func termInfo(from raw: MsgPackValue) throws -> TermInfo {
         guard let m = raw.mapValue else { throw MessageError.badField("terms") }
-        guard let termID = try optString(m, "term_id") else { throw MessageError.missingField("terms.term_id") }
-        guard let boardID = try optString(m, "board_id") else { throw MessageError.missingField("terms.board_id") }
-        return TermInfo(termID: termID, boardID: boardID, cwd: try optString(m, "cwd"), proc: try optString(m, "proc"))
+        let fields = MapReader(m)
+        guard let termID = try fields.opt("term_id", \.stringValue) else {
+            throw MessageError.missingField("terms.term_id")
+        }
+        guard let boardID = try fields.opt("board_id", \.stringValue) else {
+            throw MessageError.missingField("terms.board_id")
+        }
+        return TermInfo(
+            termID: termID, boardID: boardID,
+            cwd: try fields.opt("cwd", \.stringValue), proc: try fields.opt("proc", \.stringValue)
+        )
     }
 
     private static func resumeRecord(_ raw: MsgPackValue?) throws -> ResumeRecord? {
         guard let raw, !raw.isNil else { return nil }
         guard let m = raw.mapValue else { throw MessageError.badField("resume") }
-        guard let cmd = try optString(m, "cmd") else { throw MessageError.missingField("resume.cmd") }
+        guard let cmd = try MapReader(m).opt("cmd", \.stringValue) else { throw MessageError.missingField("resume.cmd") }
         return ResumeRecord(cmd: cmd)
     }
 
-    private static func docEntry(from m: [String: MsgPackValue]) throws -> RestoreDoc {
-        func req<T>(_ key: String, _ extract: (MsgPackValue) -> T?) throws -> T {
-            guard let raw = m[key], !raw.isNil else { throw MessageError.missingField(key) }
-            guard let v = extract(raw) else { throw MessageError.badField(key) }
-            return v
-        }
-        func opt<T>(_ key: String, _ extract: (MsgPackValue) -> T?) throws -> T? {
-            guard let raw = m[key], !raw.isNil else { return nil }
-            guard let v = extract(raw) else { throw MessageError.badField(key) }
-            return v
-        }
-        return RestoreDoc(
-            path: try req("path", \.stringValue),
-            via: try req("via", \.stringValue),
-            repo: try opt("repo", \.stringValue),
-            repoRoot: try opt("repo_root", \.stringValue),
-            repoColor: try opt("repo_color", \.intValue),
-            read: try opt("read", \.boolValue) ?? true,
-            lastChangedMs: try opt("last_changed_ms", \.uint64Value),
-            lastOpenedMs: try opt("last_opened_ms", \.uint64Value),
-            termID: try opt("term_id", \.stringValue)
+    private static func docEntry(from fields: MapReader) throws -> RestoreDoc {
+        RestoreDoc(
+            path: try fields.req("path", \.stringValue),
+            via: try fields.req("via", \.stringValue),
+            repo: try fields.opt("repo", \.stringValue),
+            repoRoot: try fields.opt("repo_root", \.stringValue),
+            repoColor: try fields.opt("repo_color", \.intValue),
+            read: try fields.opt("read", \.boolValue) ?? true,
+            lastChangedMs: try fields.opt("last_changed_ms", \.uint64Value),
+            lastOpenedMs: try fields.opt("last_opened_ms", \.uint64Value),
+            termID: try fields.opt("term_id", \.stringValue)
         )
     }
 
     private static func layoutTile(from value: MsgPackValue) throws -> LayoutTile {
         guard let m = value.mapValue else { throw MessageError.badField("tiles") }
-        guard let kindRaw = m["kind"], !kindRaw.isNil else { throw MessageError.missingField("tiles.kind") }
-        guard let kind = kindRaw.stringValue else { throw MessageError.badField("tiles.kind") }
-        func opt<T>(_ key: String, _ extract: (MsgPackValue) -> T?) throws -> T? {
-            guard let raw = m[key], !raw.isNil else { return nil }
-            guard let v = extract(raw) else { throw MessageError.badField("tiles.\(key)") }
-            return v
-        }
+        let fields = MapReader(m, prefix: "tiles.")
         return LayoutTile(
-            kind: kind,
-            path: try opt("path", \.stringValue),
-            x: try opt("x", \.doubleValue),
-            y: try opt("y", \.doubleValue),
-            w: try opt("w", \.doubleValue),
-            h: try opt("h", \.doubleValue),
-            z: try opt("z", \.intValue),
-            loose: try opt("loose", \.boolValue),
-            shelf: try opt("shelf", \.boolValue),
-            termID: try opt("term_id", \.stringValue)
+            kind: try fields.req("kind", \.stringValue),
+            path: try fields.opt("path", \.stringValue),
+            x: try fields.opt("x", \.doubleValue),
+            y: try fields.opt("y", \.doubleValue),
+            w: try fields.opt("w", \.doubleValue),
+            h: try fields.opt("h", \.doubleValue),
+            z: try fields.opt("z", \.intValue),
+            loose: try fields.opt("loose", \.boolValue),
+            shelf: try fields.opt("shelf", \.boolValue),
+            termID: try fields.opt("term_id", \.stringValue)
         )
     }
 
@@ -572,12 +572,12 @@ public extension Message {
     /// when present, `zoom/cx/cy` are required floats.
     private static func board(from map: [String: MsgPackValue]?) throws -> BoardViewport? {
         guard let m = map else { return nil }
-        func req(_ key: String) throws -> Double {
-            guard let raw = m[key], !raw.isNil else { throw MessageError.missingField("board.\(key)") }
-            guard let v = raw.doubleValue else { throw MessageError.badField("board.\(key)") }
-            return v
-        }
-        return BoardViewport(zoom: try req("zoom"), cx: try req("cx"), cy: try req("cy"))
+        let fields = MapReader(m, prefix: "board.")
+        return BoardViewport(
+            zoom: try fields.req("zoom", \.doubleValue),
+            cx: try fields.req("cx", \.doubleValue),
+            cy: try fields.req("cy", \.doubleValue)
+        )
     }
 
     private static func stringArray(_ value: MsgPackValue) -> [String]? {
@@ -667,15 +667,9 @@ public extension Message {
                 $0.put("cwd", unlessNil: cwd.map(MsgPackValue.string))
             }
         case .resume(let termID, let cmd):
-            return Self.tagged("resume") {
-                $0.put("term_id", .string(termID))
-                $0.put("cmd", unlessNil: cmd.map(MsgPackValue.string))
-            }
+            return Self.resumeValue("resume", termID: termID, cmd: cmd)
         case .termResume(let termID, let cmd):
-            return Self.tagged("term_resume") {
-                $0.put("term_id", .string(termID))
-                $0.put("cmd", unlessNil: cmd.map(MsgPackValue.string))
-            }
+            return Self.resumeValue("term_resume", termID: termID, cmd: cmd)
         case .subscribe(let kinds, let termID):
             return Self.tagged("subscribe") {
                 $0.put("kinds", unlessNil: kinds.map(Self.stringArrayValue))
@@ -791,6 +785,13 @@ public extension Message {
         fields.put("t", .string(t))
         build(&fields)
         return .orderedMap(fields.fields)
+    }
+
+    private static func resumeValue(_ t: String, termID: String, cmd: String?) -> MsgPackValue {
+        tagged(t) {
+            $0.put("term_id", .string(termID))
+            $0.put("cmd", unlessNil: cmd.map(MsgPackValue.string))
+        }
     }
 
     private static func putDocEntry(_ doc: RestoreDoc, into entry: inout WireFields) {
