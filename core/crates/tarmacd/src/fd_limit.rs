@@ -14,9 +14,7 @@ fn target(soft: u64, hard: u64, per_proc: Option<u64>) -> Option<u64> {
 
 #[cfg(target_os = "macos")]
 fn max_files_per_proc() -> Option<u64> {
-    let mut value = [0u8; 4];
-    crate::proc::sysctl(&mut [libc::CTL_KERN, libc::KERN_MAXFILESPERPROC], &mut value).filter(|&n| n == 4)?;
-    u64::try_from(i32::from_ne_bytes(value)).ok()
+    u64::try_from(crate::proc::sysctl_i32(&mut [libc::CTL_KERN, libc::KERN_MAXFILESPERPROC])?).ok()
 }
 
 #[cfg(not(target_os = "macos"))]

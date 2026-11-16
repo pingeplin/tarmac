@@ -20,7 +20,7 @@ pub const EVENTS_CAPACITY: usize = 1024;
 const EXIT_RING: usize = 64;
 const LAGGED_WRITE: Duration = Duration::from_secs(1);
 
-pub fn is_event(msg: &Msg) -> bool {
+fn is_event(msg: &Msg) -> bool {
     EventKind::of(msg).is_some()
 }
 
@@ -306,11 +306,15 @@ mod tests {
     fn served(fanout: &Fanout) -> (DuplexStream, tokio::task::JoinHandle<()>) {
         let (client, server) = tokio::io::duplex(4096);
         let rx = fanout.subscribe();
-        let task = tokio::spawn(async move {
+        (client, serve_on_task(rx, server))
+    }
+
+    /// `serve` of `rx` on `server`, on a task of its own, for every kind.
+    fn serve_on_task(rx: broadcast::Receiver<Msg>, server: DuplexStream) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
             let (read, write) = tokio::io::split(server);
             serve(rx, &Filter::new(None, None).unwrap(), read, write).await;
-        });
-        (client, task)
+        })
     }
 
     async fn next_frame(client: &mut DuplexStream) -> std::io::Result<Msg> {
@@ -358,10 +362,7 @@ mod tests {
             fanout.publish(&bell(&format!("t{n}")));
         }
 
-        let task = tokio::spawn(async move {
-            let (read, write) = tokio::io::split(server);
-            serve(rx, &Filter::new(None, None).unwrap(), read, write).await;
-        });
+        let task = serve_on_task(rx, server);
 
         assert_eq!(next_frame(&mut client).await.unwrap(), Msg::Err { msg: "lagged".into() });
         assert_eq!(next_frame(&mut client).await.unwrap_err().kind(), std::io::ErrorKind::UnexpectedEof);
@@ -379,10 +380,7 @@ mod tests {
             fanout.publish(&bell(&format!("t{n}")));
         }
 
-        let task = tokio::spawn(async move {
-            let (read, write) = tokio::io::split(server);
-            serve(rx, &Filter::new(None, None).unwrap(), read, write).await;
-        });
+        let task = serve_on_task(rx, server);
 
         tokio::time::timeout(LAGGED_WRITE + Duration::from_millis(500), task).await.expect("serve ends after the limit").unwrap();
     }

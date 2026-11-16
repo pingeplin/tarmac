@@ -48,7 +48,7 @@ pub(crate) struct StuckFs {
     repos: std::sync::Mutex<Vec<(PathBuf, String)>>,
     panics: std::sync::Mutex<Vec<PathBuf>>,
     /// The `pid_cwd` answers the test names, by pid, `None` for every pid.
-    cwds: std::sync::Mutex<Vec<(Option<libc::pid_t>, Option<String>)>>,
+    cwds: std::sync::Mutex<Vec<(Option<Pid>, Option<String>)>>,
     cwds_returned: AtomicU32,
 }
 
@@ -66,18 +66,18 @@ impl StuckFs {
     }
 
     /// Holds each later `pid_cwd` of `pid`.
-    pub(crate) fn hold_pid(&self, pid: libc::pid_t) {
+    pub(crate) fn hold_pid(&self, pid: Pid) {
         self.hold(Call::PidCwd, &pid_path(pid));
     }
 
     /// Each later `pid_cwd` of `pid`, or of every pid for `None`, answers
     /// `cwd`. An answer for one pid comes before an answer for every pid.
-    pub(crate) fn answer_cwd(&self, pid: Option<libc::pid_t>, cwd: Option<&str>) {
+    pub(crate) fn answer_cwd(&self, pid: Option<Pid>, cwd: Option<&str>) {
         self.cwds.lock().unwrap().push((pid, cwd.map(str::to_owned)));
     }
 
     /// The `pid_cwd` calls of `pid`.
-    pub(crate) fn pid_cwd_calls(&self, pid: libc::pid_t) -> u32 {
+    pub(crate) fn pid_cwd_calls(&self, pid: Pid) -> u32 {
         self.counts.lock().unwrap().get(&(Call::PidCwd, pid_path(pid))).map_or(0, |count| count.0)
     }
 
@@ -159,7 +159,7 @@ impl PathFs for StuckFs {
 }
 
 /// The path a hold of `pid_cwd` matches.
-fn pid_path(pid: libc::pid_t) -> PathBuf {
+fn pid_path(pid: Pid) -> PathBuf {
     PathBuf::from(pid.to_string())
 }
 

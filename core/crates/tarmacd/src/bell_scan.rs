@@ -1,7 +1,10 @@
+use std::time::{Duration, Instant};
+
 const BEL: u8 = 0x07;
 const CAN: u8 = 0x18;
 const SUB: u8 = 0x1a;
 const ESC: u8 = 0x1b;
+const BELL_DEBOUNCE: Duration = Duration::from_millis(250);
 
 /// Finds a BEL that rings, across chunk boundaries: one outside an escape
 /// string. A BEL ends an OSC; inside a DCS, SOS, PM or APC it is payload. Raw
@@ -43,6 +46,38 @@ impl BellScan {
             };
         }
         rang
+    }
+}
+
+/// The bells to push: a BEL that `BellScan` finds, at most one per
+/// `BELL_DEBOUNCE` window.
+#[derive(Default)]
+pub struct Bells {
+    scan: BellScan,
+    debounce: BellDebounce,
+}
+
+impl Bells {
+    /// The scan reads every chunk, so its state follows the stream; the
+    /// debounce is asked only of a chunk that rang.
+    pub fn rings(&mut self, chunk: &[u8], now: Instant) -> bool {
+        self.scan.feed(chunk) && self.debounce.allow(now)
+    }
+}
+
+/// Pushes at most one bell per `BELL_DEBOUNCE` window.
+#[derive(Default)]
+struct BellDebounce {
+    last: Option<Instant>,
+}
+
+impl BellDebounce {
+    fn allow(&mut self, now: Instant) -> bool {
+        if self.last.is_none_or(|t| now.duration_since(t) >= BELL_DEBOUNCE) {
+            self.last = Some(now);
+            return true;
+        }
+        false
     }
 }
 
@@ -143,5 +178,21 @@ mod tests {
         assert!(rings(b"\x9d2;title\x07"));
         assert!(rings("\u{15d}\x07".as_bytes()));
         assert!(!rings("\x1b]2;中文 ŝ\x07".as_bytes()));
+    }
+
+    #[test]
+    fn a_second_bell_inside_the_debounce_window_is_dropped() {
+        let t0 = Instant::now();
+        let mut debounce = BellDebounce::default();
+        assert!(debounce.allow(t0));
+        assert!(!debounce.allow(t0 + BELL_DEBOUNCE - Duration::from_millis(1)));
+    }
+
+    #[test]
+    fn the_debounce_rearms_once_the_window_has_passed() {
+        let t0 = Instant::now();
+        let mut debounce = BellDebounce::default();
+        assert!(debounce.allow(t0));
+        assert!(debounce.allow(t0 + BELL_DEBOUNCE));
     }
 }

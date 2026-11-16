@@ -38,7 +38,7 @@ impl Daemon {
     /// `term_id`, on the board the term is filed under. A record that is gone
     /// (closed, ended cleanly, or its board deleted) is not made again, and a
     /// read with no answer keeps the cwd before it. Not saved by itself.
-    pub async fn note_cwd(&self, term_id: &str, pid: libc::pid_t) {
+    pub async fn note_cwd(&self, term_id: &str, pid: proc::Pid) {
         let Ok(Some(cwd)) = self.gate.pid_cwd(pid).await else { return };
         let Some(board) = self.term_boards.lock().await.get(term_id).cloned() else { return };
         let mut boards = self.boards.lock().await;
@@ -48,7 +48,7 @@ impl Daemon {
     }
 
     /// The foreground pid of each live terminal.
-    pub async fn foreground_pids(&self) -> Vec<(String, libc::pid_t)> {
+    pub async fn foreground_pids(&self) -> Vec<(String, proc::Pid)> {
         let terms = self.terms.lock().await;
         terms.iter().filter_map(|(id, h)| Some((id.clone(), h.foreground_pid()?))).collect()
     }
