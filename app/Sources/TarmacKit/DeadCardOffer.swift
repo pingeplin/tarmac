@@ -17,7 +17,7 @@ public enum DeadCardOffer {
         let resume = ResumeCommand.accepted(record?.resume?.cmd)
         guard cwd != nil || resume != nil else { return nil }
         var lines = ["reopen here  ⏎"]
-        if let cwd { lines.append("in \(tilde(cwd, home: home))") }
+        if let cwd { lines.append("in \(ChromeText.tilde(cwd, home: home))") }
         if let resume { lines.append("then offers: \(ResumeCommandDisplay.display(resume))") }
         return Offer(cwd: cwd, resume: resume, lines: lines)
     }
@@ -26,11 +26,5 @@ public enum DeadCardOffer {
     /// it the record would stay under that id with no owner.
     public static func reopen(_ offer: Offer, deadID: String) -> (spawn: SpawnRequest, resume: String?) {
         (SpawnRequest(cwd: offer.cwd, succeeds: deadID), offer.resume)
-    }
-
-    private static func tilde(_ path: String, home: String) -> String {
-        if path == home { return "~" }
-        guard !home.isEmpty, path.hasPrefix(home + "/") else { return path }
-        return "~" + path.dropFirst(home.count)
     }
 }

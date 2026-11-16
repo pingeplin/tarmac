@@ -24,16 +24,26 @@ pub fn read_deadline_ms(timeout_ms: Option<u32>) -> u64 {
     timeout_ms.unwrap_or(0) as u64 + 3_000
 }
 
-const USAGE: &str = "\
-usage: tarmac dev snapshot [--until <expr>] [--timeout <ms>]
-       tarmac dev zoom <z>
-       tarmac dev resize <card> <w>x<h> [--handle <handle>]
-       tarmac dev focus <card>|board
-       tarmac dev type <card> \"<text>\"
-       tarmac dev key <card> \"<combo>\"
-       tarmac dev board <board-id>|--new
-       tarmac dev click <card>|restore_card <control>
-       tarmac dev press <combo> [--hold <ms>] [--age <ms>] [--busy <ms>] [--repeat <n>]";
+/// Every form of the family, written once: `FORMS` for `--help`, and `USAGE`
+/// for a usage error.
+macro_rules! forms {
+    ($first:literal $(, $rest:literal)* $(,)?) => {
+        pub(crate) const FORMS: &[&str] = &[$first $(, $rest)*];
+        const USAGE: &str = concat!("usage: ", $first $(, "\n       ", $rest)*);
+    };
+}
+
+forms![
+    "tarmac dev snapshot [--until <expr>] [--timeout <ms>]",
+    "tarmac dev zoom <z>",
+    "tarmac dev resize <card> <w>x<h> [--handle <handle>]",
+    "tarmac dev focus <card>|board",
+    "tarmac dev type <card> \"<text>\"",
+    "tarmac dev key <card> \"<combo>\"",
+    "tarmac dev board <board-id>|--new",
+    "tarmac dev click <card>|restore_card <control>",
+    "tarmac dev press <combo> [--hold <ms>] [--age <ms>] [--busy <ms>] [--repeat <n>]",
+];
 
 /// The names `--handle` takes; the app maps each to a card handle.
 const RESIZE_HANDLES: [&str; 8] =
@@ -458,6 +468,22 @@ mod tests {
         parses_to(&["press", "cmd+q", "--age", "60000"], press("cmd+q", None, Some(60000), None));
         parses_to(&["press", "cmd+q", "--busy", "1"], press("cmd+q", None, None, Some(1)));
         parses_to(&["press", "cmd+q", "--busy", "1800"], press("cmd+q", None, None, Some(1800)));
+    }
+
+    #[test]
+    fn the_usage_text_lists_every_form_under_one_heading() {
+        assert_eq!(
+            USAGE,
+            "usage: tarmac dev snapshot [--until <expr>] [--timeout <ms>]
+       tarmac dev zoom <z>
+       tarmac dev resize <card> <w>x<h> [--handle <handle>]
+       tarmac dev focus <card>|board
+       tarmac dev type <card> \"<text>\"
+       tarmac dev key <card> \"<combo>\"
+       tarmac dev board <board-id>|--new
+       tarmac dev click <card>|restore_card <control>
+       tarmac dev press <combo> [--hold <ms>] [--age <ms>] [--busy <ms>] [--repeat <n>]"
+        );
     }
 
     /// Only the first line can name the offending flag: `usage()` appends the

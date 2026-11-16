@@ -37,6 +37,16 @@ pub(crate) fn env_override(name: &str) -> Option<OsString> {
     std::env::var_os(name).filter(|v| !v.is_empty())
 }
 
+/// The terminal this process runs in, from `TARMAC_TERM_ID`. A value that is
+/// not UTF-8 is no terminal: the daemon gives no such id.
+pub(crate) fn calling_term() -> Option<String> {
+    term_of(env_override("TARMAC_TERM_ID"))
+}
+
+fn term_of(value: Option<OsString>) -> Option<String> {
+    value?.into_string().ok()
+}
+
 pub(crate) fn home_or_root() -> OsString {
     std::env::var_os("HOME").unwrap_or_else(|| "/".into())
 }
@@ -165,9 +175,24 @@ fn open(raw_path: &str) -> Result<String, String> {
 
     let mut stream = connect()?;
 
-    let term_id = std::env::var("TARMAC_TERM_ID").ok().filter(|s| !s.is_empty());
+    let term_id = calling_term();
     // board_id stays None: the daemon resolves the board from term_id, falling
     // back to the active one.
     send(&mut stream, &Msg::Open { path: path.to_string_lossy().into_owned(), term_id, board_id: None })?;
     answer(&mut stream, lost)?.map(|()| format!("opened {}", path.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::{OsStr, OsString};
+    use std::os::unix::ffi::OsStrExt;
+
+    use super::term_of;
+
+    #[test]
+    fn a_term_id_is_the_value_as_it_is_and_one_that_is_not_utf8_is_none() {
+        assert_eq!(term_of(Some("t9".into())), Some("t9".to_string()));
+        assert_eq!(term_of(Some(OsString::from(OsStr::from_bytes(b"t\xff9")))), None);
+        assert_eq!(term_of(None), None);
+    }
 }

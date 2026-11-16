@@ -164,11 +164,11 @@ pub(crate) fn connect_until(until: Instant, failed: &dyn Fn(io::Error) -> String
 /// `TARMAC_TERM_ID`, sent and answered. Exit 1, with `needs_term` or the
 /// daemon's answer on stderr, when it fails.
 pub(crate) fn for_terminal(needs_term: &str, msg: impl FnOnce(String) -> Msg) -> i32 {
-    let Some(term_id) = crate::env_override("TARMAC_TERM_ID") else {
+    let Some(term_id) = crate::calling_term() else {
         eprintln!("tarmac: {needs_term}");
         return 1;
     };
-    let msg = msg(term_id.to_string_lossy().into_owned());
+    let msg = msg(term_id);
     match send_acked(&msg, DAEMON_WAIT, NoAnswer::AfterHandshake(&no_answer_older())) {
         Ok(()) => 0,
         Err(why) => {

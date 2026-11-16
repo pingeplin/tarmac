@@ -68,4 +68,23 @@ final class ChromeTextTests: XCTestCase {
     func testRecencyLabelTreatsAFutureChangeTimeAsRecent() {
         XCTAssertEqual(ChromeText.recencyLabel(lastChangedMs: 2000, nowMs: 1000), "✎ 1s")
     }
+
+    func testAFolderUnderHomeReadsWithATildeAndOnlyAtAPathBoundary() {
+        XCTAssertEqual(ChromeText.tilde("/Users/u", home: "/Users/u"), "~")
+        XCTAssertEqual(ChromeText.tilde("/Users/u/w", home: "/Users/u"), "~/w")
+        XCTAssertEqual(ChromeText.tilde("/Users/u2/w", home: "/Users/u"), "/Users/u2/w")
+        XCTAssertEqual(ChromeText.tilde("/tmp", home: "/Users/u"), "/tmp")
+    }
+
+    func testAHomeThatEndsInASlashIsTheSameHome() {
+        XCTAssertEqual(ChromeText.tilde("/Users/u/w", home: "/Users/u/"), "~/w")
+        XCTAssertEqual(ChromeText.tilde("/Users/u", home: "/Users/u/"), "~")
+    }
+
+    /// With no home, or the root as home, every path would start with a tilde.
+    func testAnEmptyHomeOrTheRootReplacesNothing() {
+        XCTAssertEqual(ChromeText.tilde("/x", home: ""), "/x")
+        XCTAssertEqual(ChromeText.tilde("/x", home: "/"), "/x")
+        XCTAssertEqual(ChromeText.tilde("/", home: "/"), "/")
+    }
 }

@@ -36,7 +36,7 @@ pub fn no_daemon_line(sock: &Path) -> String {
 
 /// `tarmac <verb> <args>` on a socket that is absent: a run that tried to
 /// connect would print the no-daemon line instead of the one asserted.
-pub fn without_daemon(verb: &str, term_id: Option<&str>, args: &[&str]) -> Report {
+pub fn without_daemon(verb: &str, term_id: Option<impl AsRef<std::ffi::OsStr>>, args: &[&str]) -> Report {
     let mut cmd = tarmac();
     cmd.env_remove("TARMAC_TERM_ID");
     if let Some(term_id) = term_id {
