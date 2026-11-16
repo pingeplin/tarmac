@@ -63,7 +63,7 @@ impl Daemon {
     /// Reads the cwd of every live terminal at once, and records each that
     /// answers within `SHUTDOWN_CWD_BUDGET`. A read that does not keeps the cwd
     /// recorded before.
-    pub async fn read_cwds(self: &Arc<Self>) {
+    pub(crate) async fn read_cwds(self: &Arc<Self>) {
         let deadline = tokio::time::Instant::now() + SHUTDOWN_CWD_BUDGET;
         let mut reads = tokio::task::JoinSet::new();
         for (term_id, pid) in self.foreground_pids().await {
