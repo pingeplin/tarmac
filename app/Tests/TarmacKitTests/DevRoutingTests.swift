@@ -75,8 +75,8 @@ final class DevRoutingTests: XCTestCase {
         )
         XCTAssertEqual(route(.snapshot(until: nil, timeoutMs: nil)), .snapshot(until: nil, timeoutMs: nil))
         XCTAssertEqual(
-            route(.press(combo: "cmd+q", holdMs: 300, ageMs: 5, busyMs: 7), context(cards: [])),
-            .press(combo: "cmd+q", holdMs: 300, ageMs: 5, busyMs: 7)
+            route(.press(combo: "cmd+q", holdMs: 300, ageMs: 5, busyMs: 7, repeats: 20), context(cards: [])),
+            .press(combo: "cmd+q", holdMs: 300, ageMs: 5, busyMs: 7, repeats: 20)
         )
     }
 
