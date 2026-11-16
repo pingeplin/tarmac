@@ -397,7 +397,7 @@ final class KeyLadderTests: XCTestCase {
         XCTAssertEqual(KeyLadder.decide(esc(), Facts(keys: .terminal, esc: EscLadder.Facts())), .passThrough)
     }
 
-    // MARK: - #358: the restore card takes the first key
+    // MARK: - #358 and 2611.0015 S18: the restore card takes the first key; with no resume line, any key closes
 
     private let cardUp = Facts(restoreCard: [])
 
@@ -445,6 +445,7 @@ final class KeyLadderTests: XCTestCase {
     /// A key held since before the card showed does not close it unseen.
     func testARepeatDoesNotCloseTheCard() {
         XCTAssertEqual(KeyLadder.decide(repeated(letter("a")), cardUp), .swallow)
+        XCTAssertEqual(KeyLadder.decide(repeated(enter()), cardUp), .swallow)
     }
 
     /// The key that closed the card reaches no terminal while it is held.
@@ -539,17 +540,5 @@ final class KeyLadderTests: XCTestCase {
         XCTAssertEqual(KeyLadder.decide(letter("a"), Facts(offer: .resumeQueued)), .passThrough)
         XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .resumeIdle)), .passThrough)
         XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .resumeArmed)), .runResume)
-    }
-
-    // MARK: - 2611.0015 S18: with no resume line, any key closes
-
-    func testS18WithNoChoicesReturnAndEscOnlyClose() {
-        let noChoices = Facts(restoreCard: [])
-        for key in [enter(), esc(), letter("a"), letter("k", command)] {
-            XCTAssertEqual(KeyLadder.decide(key, noChoices), .restoreCard(.perCard), "\(key)")
-        }
-        XCTAssertEqual(KeyLadder.decide(letter("q", command), noChoices), .passThrough)
-        XCTAssertEqual(KeyLadder.decide(repeated(enter()), noChoices), .swallow)
-        XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .resumeArmed, restoreCard: [])), .restoreCard(.perCard))
     }
 }

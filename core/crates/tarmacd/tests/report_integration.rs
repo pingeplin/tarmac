@@ -158,9 +158,9 @@ fn s4_a_child_spawned_as_cmd_is_the_agent() {
     assert!(none_within(&mut app, Duration::from_secs(2), |m| is_report_for(m, "T")));
 }
 
-// S5
+// S5, S27
 #[test]
-fn s5_only_typed_input_marks_a_report_read() {
+fn s5_s27_only_typed_input_marks_a_report_read() {
     let daemon = TestDaemon::start();
     let mut app = job_shell(&daemon, &["T"]);
     let first = report_from_test(&daemon, &mut app, "T", "blocked", Some("ok?"));
@@ -359,18 +359,6 @@ fn s26_the_daemon_refuses_an_unknown_terminal_or_kind_and_drops_an_empty_text() 
 
     let frame = report_from_test(&daemon, &mut app, "T", "blocked", Some(""));
     assert_eq!(frame.text, None);
-}
-
-// S27
-#[test]
-fn s27_an_input_with_no_typed_key_never_marks_a_report_read() {
-    let daemon = TestDaemon::start();
-    let mut app = job_shell(&daemon, &["T"]);
-    report_from_test(&daemon, &mut app, "T", "blocked", None);
-    let today = proto::encode(&Msg::Input { term_id: "T".into(), bytes: b"\n".to_vec(), typed: false }).unwrap();
-    assert!(!common::contains(&today, b"typed"));
-    proto::frame::write_sync(&mut app.0, &today).unwrap();
-    assert!(none_within(&mut app, Duration::from_secs(1), |m| is_report_for(m, "T")));
 }
 
 // S33

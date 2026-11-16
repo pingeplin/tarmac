@@ -1202,18 +1202,6 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(sentText, "\u{1b}[?997;1n")
     }
 
-    /// S24
-    func test2610_0007S24AProgramThatAskedIsToldOnceEachTimeTheSchemeChanges() {
-        feed("\u{1b}[?2031h")
-
-        view.theme = light
-        XCTAssertEqual(sentText, "\u{1b}[?997;2n")
-
-        calls = []
-        view.theme = dark
-        XCTAssertEqual(sentText, "\u{1b}[?997;1n")
-    }
-
     /// S43
     func test2610_0007S43AProgramThatDidNotAskIsToldNothing() {
         view.theme = light
@@ -1396,13 +1384,13 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(sentText, "\u{1b}[1;1R")
     }
 
-    /// Whoever asked is no longer waiting: an answer would arrive at today's
-    /// prompt as typed text.
-    func testReplayedHistoryAnswersNothingAndRingsNothing() {
+    /// 2611.0008 S12. Whoever asked is no longer waiting: an answer would
+    /// arrive at today's prompt as typed text.
+    func test2611_0008S12ReplayedHistoryAnswersNothingAndRingsNothing() {
         var bells = 0
         view.onBell = { bells += 1 }
         view.replay(Data("old\u{1b}[6n\u{1b}[c\u{07}".utf8))
-        XCTAssertEqual(sent, [])
+        XCTAssertEqual(calls, [])
         XCTAssertEqual(bells, 0)
         XCTAssertEqual(view.viewportCells()[0].prefix(3).joined(), "old")
         feed("\u{1b}[6n\u{07}")
@@ -1592,8 +1580,9 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[?62;22c", source: .terminal)])
     }
 
-    /// S9
-    func test2611_0008S9AColourSchemeReportIsTheTerminals() {
+    /// 2610.0007 S24 and 2611.0008 S9: one report for each change, and it is
+    /// the terminal's.
+    func test2610_0007S24And2611_0008S9AProgramThatAskedIsToldOnceEachSchemeChangeAsTheTerminal() {
         feed("\u{1b}[?2031h")
 
         view.theme = light
@@ -1602,13 +1591,6 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [
             Sent(text: "\u{1b}[?997;2n", source: .terminal), Sent(text: "\u{1b}[?997;1n", source: .terminal),
         ])
-    }
-
-    /// S12
-    func test2611_0008S12AReplaySendsNothing() {
-        view.replay(Data("\u{1b}[c".utf8))
-
-        XCTAssertEqual(calls, [])
     }
 
     /// S13

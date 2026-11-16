@@ -17,14 +17,9 @@ final class DeadCardOfferTests: XCTestCase {
         XCTAssertEqual(atHome.lines, ["reopen here  ⏎", "in ~"])
     }
 
-    func testS10ASafeResumeAddsAThirdLine() throws {
-        let record = TermRecord(lastCwd: "/w", resume: ResumeRecord(cmd: "claude --resume 3f2a1b9c-0000-4000-8000-000000000000"))
-        let offer = try XCTUnwrap(DeadCardOffer.make(record: record, home: home))
-        XCTAssertEqual(offer.lines, ["reopen here  ⏎", "in /w", "then offers: claude --resume 3f2a…"])
-    }
-
-    /// 2611.0015 S19: plain words, and `↻` only ever means refresh.
-    func testS19TheStripReadsInPlainWordsWithNoRefreshGlyph() throws {
+    /// 2611.0011 S10 and 2611.0015 S19: plain words, and `↻` only ever means
+    /// refresh.
+    func testS10S19ASafeResumeAddsAThirdLineInPlainWordsWithNoRefreshGlyph() throws {
         let record = TermRecord(lastCwd: "/Users/u/w", resume: ResumeRecord(cmd: "claude --resume 3f2a1b9c-0000-4000-8000-000000000000"))
         let offer = try XCTUnwrap(DeadCardOffer.make(record: record, home: home))
         XCTAssertEqual(offer.lines, ["reopen here  ⏎", "in ~/w", "then offers: claude --resume 3f2a…"])

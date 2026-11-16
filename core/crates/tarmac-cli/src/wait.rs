@@ -162,7 +162,7 @@ fn parse(args: &[String]) -> Option<(Mode, Option<Duration>)> {
 
 /// One stat of the path: its identity, mtime and size, or that it is not
 /// there. A change of `ino` or `dev` is a file replaced by a rename.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Debug)]
 enum Sample {
     Present { dev: u64, ino: u64, mtime_ns: i128, size: u64 },
     Missing,
@@ -328,22 +328,6 @@ mod tests {
 
     // S27
     #[test]
-    fn a_sample_differs_in_any_of_its_facts() {
-        let base = Sample::Present { dev: 1, ino: 2, mtime_ns: 3, size: 4 };
-        for other in [
-            Sample::Present { dev: 9, ino: 2, mtime_ns: 3, size: 4 },
-            Sample::Present { dev: 1, ino: 9, mtime_ns: 3, size: 4 },
-            Sample::Present { dev: 1, ino: 2, mtime_ns: 9, size: 4 },
-            Sample::Present { dev: 1, ino: 2, mtime_ns: 3, size: 9 },
-            Sample::Missing,
-        ] {
-            assert_ne!(base, other);
-        }
-        assert_eq!(base, Sample::Present { dev: 1, ino: 2, mtime_ns: 3, size: 4 });
-    }
-
-    // S27
-    #[test]
     fn the_wait_settles_only_after_a_quiet_settle_since_the_last_change() {
         let start = Instant::now();
         let at = |ms| start + Duration::from_millis(ms);
@@ -397,6 +381,7 @@ mod tests {
         Some(Instant::now() + Duration::from_millis(ms))
     }
 
+    // S27
     #[test]
     fn a_sample_line_differs_in_any_of_its_facts() {
         let base = a();
