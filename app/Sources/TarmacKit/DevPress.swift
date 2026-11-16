@@ -26,38 +26,48 @@ public enum DevPress {
         public var ageMs: UInt64
         /// How long the main thread is frozen behind the posted key.
         public var busyMs: UInt64?
+        /// When each autorepeat keyDown is posted, in ms after the press (#380).
+        public var repeatsAtMs: [UInt64]
 
-        public init(chord: Chord, holdMs: UInt64, ageMs: UInt64, busyMs: UInt64?) {
+        public init(chord: Chord, holdMs: UInt64, ageMs: UInt64, busyMs: UInt64?, repeatsAtMs: [UInt64] = []) {
             self.chord = chord
             self.holdMs = holdMs
             self.ageMs = ageMs
             self.busyMs = busyMs
+            self.repeatsAtMs = repeatsAtMs
         }
     }
 
     /// A press that names no `--hold`. Long enough that a double tap quits on
     /// release, as a real one does, not on the first poll.
     public static let tapHoldMs: UInt64 = 100
+    /// A held key's autorepeat at macOS's shortest initial delay and fastest
+    /// rate (Keyboard settings), so `--repeat` reaches its count soonest.
+    public static let repeatDelayMs: UInt64 = 250
+    public static let repeatGapMs: UInt64 = 33
     /// How long activation may take to key the window, and how often to look.
     public static let keyWaitMs = 1_000
     public static let keyPollMs = 20
 
     /// The flags are checked first: the wire accepts any integer, and the CLI
     /// has already refused these, so a miss here is a hand-built frame.
-    public static func plan(combo: String, holdMs: Int?, ageMs: Int?, busyMs: Int?) -> Result<Plan, DevError> {
+    public static func plan(
+        combo: String, holdMs: Int?, ageMs: Int?, busyMs: Int?, repeats: Int? = nil
+    ) -> Result<Plan, DevError> {
         let inRange = (holdMs.map((1...DevRequest.holdMsMax).contains) ?? true)
             && (ageMs.map((0...DevRequest.ageMsMax).contains) ?? true)
             && (busyMs.map((1...DevRequest.busyMsMax).contains) ?? true)
-            && !(busyMs != nil && ageMs != nil)
+            && (repeats.map((1...DevRequest.repeatsMax).contains) ?? true)
+            && !(busyMs != nil && (ageMs != nil || repeats != nil))
         guard inRange else {
-            return .failure(DevError(.badRequest, "hold, age or busy out of range, or busy with age"))
+            return .failure(DevError(.badRequest, "hold, age, busy or repeat out of range, or busy with age or repeat"))
         }
+        let repeatsAtMs = (0..<UInt64(repeats ?? 0)).map { repeatDelayMs + $0 * repeatGapMs }
+        let hold = max(holdMs.map(UInt64.init) ?? tapHoldMs, repeatsAtMs.last.map { $0 + repeatGapMs } ?? 0)
         return parse(combo).map { chord in
             Plan(
-                chord: chord,
-                holdMs: holdMs.map(UInt64.init) ?? tapHoldMs,
-                ageMs: ageMs.map(UInt64.init) ?? 0,
-                busyMs: busyMs.map(UInt64.init)
+                chord: chord, holdMs: hold, ageMs: ageMs.map(UInt64.init) ?? 0,
+                busyMs: busyMs.map(UInt64.init), repeatsAtMs: repeatsAtMs
             )
         }
     }
@@ -119,6 +129,7 @@ public enum DevPress {
             "hold_ms": .number(Double(plan.holdMs)),
             "activated": .bool(activated),
             "busy_ms": plan.busyMs.map { .number(Double($0)) } ?? .null,
+            "repeats": .number(Double(plan.repeatsAtMs.count)),
         ]
     }
 

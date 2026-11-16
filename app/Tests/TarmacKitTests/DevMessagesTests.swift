@@ -167,6 +167,14 @@ final class DevMessagesTests: XCTestCase {
             73 79 5f 6d 73 cd 07 08
             """
         )
+        // DevRequest::Press { combo: "enter", hold_ms: Some(1000), repeats: Some(20), .. } (#380)
+        assertParity(
+            .press(combo: "enter", holdMs: 1000, ageMs: nil, busyMs: nil, repeats: 20),
+            """
+            84 a1 74 a5 70 72 65 73 73 a5 63 6f 6d 62 6f a5 65 6e 74 65 72 a7 68 6f
+            6c 64 5f 6d 73 cd 03 e8 a7 72 65 70 65 61 74 73 14
+            """
+        )
     }
 
     /// S47: a verb this build does not know decodes to a value, so the app can
@@ -215,6 +223,7 @@ final class DevMessagesTests: XCTestCase {
         let cases: [(String, String, Int64)] = [
             ("snapshot", "timeout_ms", .max), ("snapshot", "timeout_ms", -1),
             ("press", "hold_ms", Int64(UInt32.max) + 1), ("press", "age_ms", -1), ("press", "busy_ms", .max),
+            ("press", "repeats", -1),
         ]
         for (t, key, value) in cases {
             let request: MsgPackValue = .map(["t": .string(t), "combo": .string("cmd+q"), key: .int(value)])

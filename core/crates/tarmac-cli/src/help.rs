@@ -29,7 +29,7 @@ binary exits 1 with \"driver unavailable in release builds\".
     tarmac dev key <card> \"<combo>\"
     tarmac dev board <board-id>|--new
     tarmac dev click <card>|restore_card <control>
-    tarmac dev press <combo> [--hold <ms>] [--age <ms>] [--busy <ms>]
+    tarmac dev press <combo> [--hold <ms>] [--age <ms>] [--busy <ms>] [--repeat <n>]
 
 <card> is a terminal's term id or a doc's absolute path. dev board makes a board
 active, or with --new makes one, and answers {\"board_id\": ...} with the board

@@ -55,6 +55,10 @@ pub enum DevRequest {
         age_ms: Option<u32>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         busy_ms: Option<u32>,
+        /// Spec 2611.0015 (#380): keyDowns with `isARepeat` after the press, as a
+        /// held key's autorepeat.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        repeats: Option<u32>,
     },
     /// `board_id: None` makes a new board; `Some` switches to that one. Both
     /// answer once the app's active board has changed.
@@ -76,12 +80,14 @@ pub enum DevRequest {
 }
 
 /// The only definition of `press`'s flag ranges: `--hold` is `1..=HOLD_MS_MAX`,
-/// `--age` is `0..=AGE_MS_MAX`, `--busy` is `1..=BUSY_MS_MAX`. `BUSY_MS_MAX` sits
+/// `--age` is `0..=AGE_MS_MAX`, `--busy` is `1..=BUSY_MS_MAX`, `--repeat` is
+/// `1..=REPEATS_MAX`. `BUSY_MS_MAX` sits
 /// below the guard's 2000 ms freshness bound: past it a frozen page's ⌘Q routes
 /// `terminate` and really quits.
 pub const HOLD_MS_MAX: u32 = 10_000;
 pub const AGE_MS_MAX: u32 = 60_000;
 pub const BUSY_MS_MAX: u32 = 1_800;
+pub const REPEATS_MAX: u32 = 100;
 /// How long the app waits for the active board to change after `board`.
 pub const BOARD_WAIT_MS: u32 = 5_000;
 
@@ -175,6 +181,23 @@ mod tests {
         bytes.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ")
     }
 
+    /// #380: the bytes `DevMessagesTests.testPress` pins the Swift codec to, so
+    /// a renamed `repeats` key breaks here and not only on the wire.
+    #[test]
+    fn a_press_carries_its_repeats_under_that_key() {
+        let held = DevRequest::Press {
+            combo: "enter".into(), hold_ms: Some(1000), age_ms: None, busy_ms: None, repeats: Some(20),
+        };
+        assert_eq!(
+            hex(&encode_request(&held).unwrap()),
+            "84 a1 74 a5 70 72 65 73 73 a5 63 6f 6d 62 6f a5 65 6e 74 65 72 a7 68 6f \
+             6c 64 5f 6d 73 cd 03 e8 a7 72 65 70 65 61 74 73 14"
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+    }
+
     /// The bytes `DevMessagesTests` pins the Swift codec to. With no handle the
     /// key is omitted, so the request is today's.
     #[test]
@@ -252,14 +275,15 @@ mod tests {
     /// are absent keys, not nils.
     #[test]
     fn press_roundtrips_and_skips_absent_flags() {
-        let bare = DevRequest::Press { combo: "cmd+q".into(), hold_ms: None, age_ms: None, busy_ms: None };
+        let bare = DevRequest::Press { combo: "cmd+q".into(), hold_ms: None, age_ms: None, busy_ms: None, repeats: None };
         let all = [
             bare.clone(),
-            DevRequest::Press { combo: "cmd+q".into(), hold_ms: Some(1000), age_ms: None, busy_ms: None },
-            DevRequest::Press { combo: "cmd+q".into(), hold_ms: None, age_ms: Some(2500), busy_ms: None },
-            DevRequest::Press { combo: "alt+cmd+q".into(), hold_ms: Some(10000), age_ms: Some(0), busy_ms: None },
-            DevRequest::Press { combo: "nonsense".into(), hold_ms: None, age_ms: None, busy_ms: None },
-            DevRequest::Press { combo: "cmd+q".into(), hold_ms: None, age_ms: None, busy_ms: Some(1000) },
+            DevRequest::Press { combo: "cmd+q".into(), hold_ms: Some(1000), age_ms: None, busy_ms: None, repeats: None },
+            DevRequest::Press { combo: "cmd+q".into(), hold_ms: None, age_ms: Some(2500), busy_ms: None, repeats: None },
+            DevRequest::Press { combo: "alt+cmd+q".into(), hold_ms: Some(10000), age_ms: Some(0), busy_ms: None, repeats: None },
+            DevRequest::Press { combo: "nonsense".into(), hold_ms: None, age_ms: None, busy_ms: None, repeats: None },
+            DevRequest::Press { combo: "cmd+q".into(), hold_ms: None, age_ms: None, busy_ms: Some(1000), repeats: None },
+            DevRequest::Press { combo: "enter".into(), hold_ms: Some(1000), age_ms: None, busy_ms: None, repeats: Some(20) },
         ];
         for req in all {
             assert_eq!(roundtrip(&req), req, "roundtrip changed {req:?}");
@@ -275,7 +299,7 @@ mod tests {
     /// wait out the freeze.
     #[test]
     fn press_budget_is_its_busy_ms() {
-        let press = |busy_ms| DevRequest::Press { combo: "cmd+q".into(), hold_ms: None, age_ms: None, busy_ms };
+        let press = |busy_ms| DevRequest::Press { combo: "cmd+q".into(), hold_ms: None, age_ms: None, busy_ms, repeats: None };
         assert_eq!(press(Some(1000)).timeout_ms(), Some(1000));
         assert_eq!(press(None).timeout_ms(), None);
     }
@@ -338,7 +362,7 @@ mod tests {
         let bytes = rmp_serde::to_vec_named(&Future { t: "press", combo: "cmd+q", hold_ms: 1, pressure: 5 }).unwrap();
         assert_eq!(
             decode_request(&bytes).unwrap(),
-            DevRequest::Press { combo: "cmd+q".into(), hold_ms: Some(1), age_ms: None, busy_ms: None },
+            DevRequest::Press { combo: "cmd+q".into(), hold_ms: Some(1), age_ms: None, busy_ms: None, repeats: None },
         );
     }
 

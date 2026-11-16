@@ -62,6 +62,8 @@ public enum DevSnapshot {
         public var selection: String?
         /// The `scrollbackTailLines` rows ending at the cursor's row.
         public var scrollbackTail: String
+        /// #380: the cursor's row from the top of the scrollback.
+        public var cursorRow: Int
         /// 2611.0011: the resume offer the card shows, if any.
         public var resume: Resume?
         /// The dead card offers to reopen.
@@ -71,8 +73,9 @@ public enum DevSnapshot {
 
         public init(
             live: Bool, dead: Bool, cols: Int, rows: Int, proc: String?, selection: String?, scrollbackTail: String,
-            resume: Resume? = nil, reopen: Bool = false, resumeChip: String? = nil
+            cursorRow: Int = 0, resume: Resume? = nil, reopen: Bool = false, resumeChip: String? = nil
         ) {
+            self.cursorRow = cursorRow
             self.resumeChip = resumeChip
             self.live = live
             self.dead = dead
@@ -642,9 +645,10 @@ public enum DevSnapshot {
                 // "" would make `contains ""` match vacuously.
                 "selection": optional(terminal.selection.flatMap { $0.isEmpty ? nil : $0 }),
                 "scrollback_tail": .string(terminal.scrollbackTail),
+                "cursor_row": .number(Double(terminal.cursorRow)),
             ]
             // Present only with an offer (2611.0011) or a chip (2611.0015): a
-            // terminal with none keeps its six keys.
+            // terminal with none keeps its seven keys.
             if let resume = terminal.resume {
                 let panel = resume.panel
                 term["resume"] = [

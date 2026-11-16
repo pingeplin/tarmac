@@ -240,6 +240,17 @@ final class TerminalEngineTests: XCTestCase {
         XCTAssertEqual(engine.tail(lines: 4), "line47\nline48\nline49\nline50")
     }
 
+    /// #380: counted from the top of the scrollback, so it keeps growing past
+    /// the screen and past any tail length.
+    func testTheCursorRowCountsTheScrollbackAboveIt() throws {
+        let engine = try engine(cols: 20, rows: 3)
+        XCTAssertEqual(engine.cursorRow, 0)
+        feed(engine, (1...50).map { "line\($0)" }.joined(separator: "\r\n"))
+        XCTAssertEqual(engine.cursorRow, 49)
+        feed(engine, "\u{1b}[A")
+        XCTAssertEqual(engine.cursorRow, 48)
+    }
+
     func testTailStopsAtTheCursorNotAtTheLastLine() throws {
         let engine = try engine(cols: 20, rows: 5)
         feed(engine, "a\r\nb\r\nc\u{1b}[A")

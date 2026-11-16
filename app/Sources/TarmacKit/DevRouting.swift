@@ -75,7 +75,7 @@ public enum DevRouting {
         /// Reads state and injects nothing.
         case snapshot(until: String?, timeoutMs: Int?)
         /// A native ⌘ chord posted to the window; no card is involved.
-        case press(combo: String, holdMs: Int?, ageMs: Int?, busyMs: Int?)
+        case press(combo: String, holdMs: Int?, ageMs: Int?, busyMs: Int?, repeats: Int?)
         /// Committed through the board's own viewport commit, not an event.
         case zoom(Double)
         /// A press on the empty board, which clears selection and keyboard focus.
@@ -125,8 +125,8 @@ public enum DevRouting {
         switch request {
         case .snapshot(let until, let timeoutMs):
             return .snapshot(until: until, timeoutMs: timeoutMs)
-        case .press(let combo, let holdMs, let ageMs, let busyMs):
-            return .press(combo: combo, holdMs: holdMs, ageMs: ageMs, busyMs: busyMs)
+        case .press(let combo, let holdMs, let ageMs, let busyMs, let repeats):
+            return .press(combo: combo, holdMs: holdMs, ageMs: ageMs, busyMs: busyMs, repeats: repeats)
         case .unknown(let type):
             return .refused(unsupportedVerb(type))
         case .click(let card, let control):

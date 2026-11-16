@@ -174,6 +174,7 @@ struct DevSnapshotReader {
             proc: session?.procName,
             selection: view?.selectedText,
             scrollbackTail: view?.engine.tail(lines: DevSnapshot.scrollbackTailLines) ?? "",
+            cursorRow: view?.engine.cursorRow ?? 0,
             resume: session.flatMap { s in
                 s.resumeOffer.map { DevSnapshot.Resume(offer: $0, prime: controller.isPrime(s, on: board)) }
             },

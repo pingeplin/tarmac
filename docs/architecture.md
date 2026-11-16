@@ -2001,7 +2001,8 @@ when none is laid out), the selected card, keyboard
 focus (`active_element`: the card the keys reach; while the switcher, the
 restore card or the inbox holds them, `card` is null and `overlay` and
 `returns_to` name the overlay and the card it gives them back to),
-per-terminal `cols`/`rows`/`proc`/`selection`/`scrollback_tail` (and,
+per-terminal `cols`/`rows`/`proc`/`selection`/`scrollback_tail`/`cursor_row` (the
+cursor's row from the top of the scrollback, #380) (and,
 only when the card offers one, `resume: {cmd, armed, queued, title, buttons}`
 and `reopen: true`, and `resume_chip: <cmd>` while its header chip shows),
 `restore_card: {lines, choices}` while it is up, `toasts`: the titles on
