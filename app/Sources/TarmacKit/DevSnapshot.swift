@@ -356,7 +356,7 @@ public enum DevSnapshot {
 
     /// The chosen fonts (specs 2610.0005, 2610.0006): what is saved for each
     /// role, what each role resolved to on this Mac, and the size in effect
-    /// of the two roles that have one.
+    /// of Terminal and Document.
     public struct Fonts: Equatable, Sendable {
         public var saved: [FontRole: String]
         /// The PostScript name of the regular face terminals are set in.

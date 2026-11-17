@@ -12,7 +12,7 @@ import TarmacKit
 /// it, not a subview: a dead card dims itself with `alphaValue`, which would
 /// dim every subview, and the offer is drawn at full opacity.
 @MainActor
-final class OfferStripView: NSView, ThemeFollowing {
+final class OfferStripView: NSView, FontFollowing, ThemeFollowing {
     private static let inset: CGFloat = 6
     private static let buttonGap: CGFloat = 6
 
@@ -62,6 +62,13 @@ final class OfferStripView: NSView, ThemeFollowing {
         label.textColor = Theme.text
         paintText()
         for button in buttons { button.view.themeChanged() }
+    }
+
+    /// The card places the strip again, which measures it for the new font.
+    func fontsChanged() {
+        measured = nil
+        apply(scale)
+        card?.needsLayout = true
     }
 
     /// The dead card's strip: plain lines, no buttons.

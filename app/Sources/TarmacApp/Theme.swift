@@ -53,6 +53,13 @@ enum Theme {
 
     static var proseFontSize: Double { fontSizes[.document] ?? FontSizeRule.document.standard }
 
+    /// What every chrome font's design size is multiplied by: exactly 1 at
+    /// the standard Interface size. A line height a view fixes for a chrome
+    /// font takes it too.
+    static var interfaceScale: CGFloat {
+        FontSizeRule.interface.factor(at: fontSizes[.interface] ?? FontSizeRule.interface.standard)
+    }
+
     /// What an HTML card is given for the fonts in effect.
     static var cardFonts: CardFontVariables {
         CardFontVariables(
@@ -61,10 +68,12 @@ enum Theme {
         )
     }
 
-    /// The chrome face: the Interface family, or the system's monospaced
-    /// font. A family has a regular and at most a bold, so a weight takes the
-    /// nearer of the two, and a family with no bold gives its regular face.
-    static func mono(_ size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+    /// The chrome face at a design size scaled by `interfaceScale`: the
+    /// Interface family, or the system's monospaced font. A family has a
+    /// regular and at most a bold, so a weight takes the nearer of the two,
+    /// and a family with no bold gives its regular face.
+    static func mono(_ design: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        let size = design * interfaceScale
         let bold = weight.rawValue >= NSFont.Weight.semibold.rawValue
         return chosen(.interface, size: size, bold: bold) ?? NSFont.monospacedSystemFont(ofSize: size, weight: weight)
     }

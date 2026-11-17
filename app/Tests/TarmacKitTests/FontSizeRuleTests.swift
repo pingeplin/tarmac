@@ -75,4 +75,35 @@ final class FontSizeRuleTests: XCTestCase {
         XCTAssertEqual(terminal.typed("1"), 8)
         XCTAssertEqual(terminal.typed("13.3"), 13.5)
     }
+
+    // MARK: #394 — the Interface size scales every chrome font
+
+    private let interface = FontSizeRule.interface
+
+    func testTheInterfaceSizeIsReadByItsOwnRange() {
+        XCTAssertEqual(interface.inEffect(saved: nil), 10.5)
+        for size in [8.0, 12, 16] { XCTAssertEqual(interface.inEffect(saved: size), size, "\(size)") }
+        for size in [7.5, 16.5, 32, 10.25, .nan] {
+            XCTAssertFalse(interface.accepts(size), "\(size)")
+            XCTAssertEqual(interface.inEffect(saved: size), 10.5, "\(size)")
+        }
+        XCTAssertEqual(interface.typed("20"), 16)
+        XCTAssertEqual(interface.typed("11.3"), 11.5)
+    }
+
+    /// At the standard size a chrome font keeps its design size exactly.
+    func testAtTheStandardSizeEveryDesignSizeIsKept() {
+        XCTAssertEqual(interface.factor(at: interface.standard), 1)
+        for design in [8.0, 9, 9.5, 10, 10.5, 11, 11.5, 12, 13] {
+            XCTAssertEqual(design * interface.factor(at: interface.inEffect(saved: nil)), design, "\(design)")
+        }
+    }
+
+    func testTheFactorIsTheSizeOverTheStandard() {
+        XCTAssertEqual(interface.factor(at: 14), 14 / 10.5)
+        XCTAssertEqual(10.5 * interface.factor(at: 14), 14, accuracy: 1e-9)
+        XCTAssertEqual(9 * interface.factor(at: 14), 12, accuracy: 1e-9)
+        XCTAssertEqual(13 * interface.factor(at: 8), 13 * 8 / 10.5, accuracy: 1e-9)
+        XCTAssertEqual(terminal.factor(at: 20), 1.25)
+    }
 }

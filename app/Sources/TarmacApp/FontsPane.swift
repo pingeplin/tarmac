@@ -2,8 +2,8 @@ import AppKit
 import TarmacKit
 
 /// The Fonts pane of the Settings window (specs 2610.0005, 2610.0006): one
-/// row for each font role, a list of the Mac's families, a size for the
-/// roles that have one, and a sample line in the face in effect. What a row
+/// row for each font role, a list of the Mac's families, a size, and a
+/// sample line in the face in effect. What a row
 /// lists and selects is `FontMenu`'s decision and which size a text means is
 /// `FontSizeRule`'s; this builds the controls and forwards a choice to
 /// `FontSettings`.
@@ -19,12 +19,12 @@ final class FontsPane: NSObject {
         let role: FontRole
         let popup = NSPopUpButton()
         let sample = NSTextField(labelWithString: FontsPane.sampleText)
-        let sizeControls: SizeControls?
+        let sizeControls: SizeControls
         var menu: FontMenu
 
         init(_ role: FontRole) {
             self.role = role
-            sizeControls = role.sizeRule.map(SizeControls.init)
+            sizeControls = SizeControls(role.sizeRule)
             menu = FontMenu(role: role, installed: [], saved: nil)
         }
 
@@ -80,8 +80,7 @@ final class FontsPane: NSObject {
     }
 
     private func showSize(of row: Row) {
-        guard let size = fonts.size(for: row.role) else { return }
-        row.sizeControls?.show(size)
+        row.sizeControls.show(fonts.size(for: row.role))
     }
 
     @objc private func choose(_ sender: NSPopUpButton) {
@@ -91,7 +90,7 @@ final class FontsPane: NSObject {
     }
 
     @objc private func step(_ sender: NSStepper) {
-        guard let row = rows.first(where: { $0.sizeControls?.stepper === sender }) else { return }
+        guard let row = rows.first(where: { $0.sizeControls.stepper === sender }) else { return }
         fonts.chooseSize(sender.doubleValue, for: row.role)
         showSize(of: row)
     }
@@ -99,20 +98,13 @@ final class FontsPane: NSObject {
     /// Text that is no size puts the field back; so does a size already in
     /// effect, typed another way (`13.50`).
     @objc private func typeSize(_ sender: NSTextField) {
-        guard let row = rows.first(where: { $0.sizeControls?.field === sender }) else { return }
-        if let typed = row.role.sizeRule?.typed(sender.stringValue) { fonts.chooseSize(typed, for: row.role) }
+        guard let row = rows.first(where: { $0.sizeControls.field === sender }) else { return }
+        if let typed = row.role.sizeRule.typed(sender.stringValue) { fonts.chooseSize(typed, for: row.role) }
         showSize(of: row)
     }
 
     private func makeView() -> NSView {
-        let rowControls = rows.map { controls(for: $0) }
-        let box = SettingsGroup.box(zip(rows, rowControls).map { ($0.role.title, $1, .firstBaseline) })
-        // One width for the three: a row with no size keeps its pop-up under
-        // the others'.
-        NSLayoutConstraint.activate(rowControls.dropFirst().map {
-            $0.widthAnchor.constraint(equalTo: rowControls[0].widthAnchor)
-        })
-        return box
+        SettingsGroup.box(rows.map { ($0.role.title, controls(for: $0), .firstBaseline) })
     }
 
     /// A row's pop-up, with its size beside it, over its sample line, and
@@ -142,7 +134,7 @@ final class FontsPane: NSObject {
     }
 
     private func choices(for row: Row) -> NSView {
-        guard let size = row.sizeControls else { return row.popup }
+        let size = row.sizeControls
         size.field.target = self
         size.field.action = #selector(typeSize(_:))
         size.field.setAccessibilityLabel("\(row.role.title) font size")

@@ -417,18 +417,40 @@ final class AppPrefsTests: XCTestCase {
         )
     }
 
-    /// S25 — Interface has no size, and a size the reader would refuse is
-    /// never written.
+    /// S25 — a size the reader would refuse is never written.
     func testASizeTheReaderRefusesIsNotWritten() {
-        XCTAssertEqual(AppPrefs.decode(data(#"{"interface_font_size":12}"#)).fontSizes, [:])
         let refused: [[FontRole: Double]] = [
-            [.interface: 12, .terminal: 64, .document: 13.3], [.terminal: .infinity, .document: .nan],
+            [.interface: 17, .terminal: 64, .document: 13.3],
+            [.terminal: .infinity, .interface: 10.25, .document: .nan],
         ]
         for sizes in refused {
             let bytes = AppPrefs.encode(Values(fontSizes: sizes))
             XCTAssertEqual(bytes, data(#"{"warn_before_quit":true}"#), "\(sizes)")
             XCTAssertTrue(StrictJSON.isValid(bytes))
         }
+    }
+
+    // MARK: #394 — the Interface size shares the file
+
+    func testTheInterfaceSizeIsWrittenBetweenTheOthersAndReadBack() {
+        let values = Values(fontSizes: [.terminal: 20, .interface: 12, .document: 18])
+        let bytes = AppPrefs.encode(values)
+        XCTAssertEqual(
+            bytes,
+            data(#"{"warn_before_quit":true,"terminal_font_size":20,"interface_font_size":12,"document_font_size":18}"#)
+        )
+        XCTAssertEqual(AppPrefs.decode(bytes), values)
+        XCTAssertEqual(AppPrefs.decode(data(#"{"interface_font_size":10.5}"#)).fontSizes, [.interface: 10.5])
+    }
+
+    func testAnInterfaceSizeOutOfItsRangeOrNotANumberIsNoSize() {
+        for value in ["7.5", "16.5", "32", "10.25", "0", "-12", #""12""#, "true", "null"] {
+            let file = data(#"{"warn_before_quit":false,"interface_font_size":"# + value + #","document_font_size":18}"#)
+            XCTAssertTrue(StrictJSON.isValid(file), value)
+            XCTAssertEqual(AppPrefs.decode(file), Values(warnBeforeQuit: false, fontSizes: [.document: 18]), value)
+        }
+        XCTAssertEqual(AppPrefs.decode(data(#"{"interface_font_size":8}"#)).fontSizes, [.interface: 8])
+        XCTAssertEqual(AppPrefs.decode(data(#"{"interface_font_size":16}"#)).fontSizes, [.interface: 16])
     }
 
     /// S36 — a damaged file gives up its sizes with its guard.

@@ -204,11 +204,10 @@ Verified against the code on 2026-10-02.
   affected. Found with the Settings window (spec 2610.0005); the same
   happens on a build without it once the Window menu is read through
   Accessibility. `app/Sources/TarmacApp/Dev/DevInput.swift`.
-- **The Interface font has no size setting.** The Settings window sets a size
-  for Terminal and for Document; the chrome is set at many fixed sizes (8 to
-  13 pt), so one size does not fit it and a scale factor is not built. A role
-  takes a family's regular face, so one weight of a family cannot be chosen
-  over another. `app/Sources/TarmacApp/SettingsWindowController.swift`.
+- **A font role takes a family's regular face**, so one weight of a family
+  cannot be chosen over another. The Interface size scales the chrome's fonts
+  only: its paddings and fixed bar heights stay as they are.
+  `app/Sources/TarmacApp/SettingsWindowController.swift`.
 - **The size field of the Settings window reads `.` as the decimal mark** in
   every locale, and Escape does not cancel a typed text: it is applied, or
   dropped, when the field's editing ends.
