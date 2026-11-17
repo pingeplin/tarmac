@@ -3,13 +3,14 @@
 //! shares. The cli checks each frame's kind and terminal itself: it does not
 //! trust the daemon's filter alone.
 
-use std::cell::Cell;
 use std::io::{self, Write};
 use std::os::unix::net::UnixStream;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use tarmac_protocol::{self as proto, EventKind, Msg, frame};
+
+use crate::daemon::NoHandshake;
 
 const USAGE: &str = "usage: tarmac events [--term ID] [--kind exit,bell,changed,report]";
 const LAGGED: &str = "the daemon dropped this stream: it fell behind (lagged)";
@@ -71,9 +72,7 @@ struct Want {
 
 impl Want {
     fn admits(&self, msg: &Msg) -> bool {
-        EventKind::of(msg).is_some_and(|(kind, term)| {
-            self.kinds.as_ref().is_none_or(|k| k.contains(&kind)) && self.term_id.as_deref().is_none_or(|want| term == Some(want))
-        })
+        EventKind::admits(self.kinds.as_deref().unwrap_or(&EventKind::ALL), self.term_id.as_deref(), msg)
     }
 }
 
@@ -195,14 +194,9 @@ pub(crate) fn subscribe(kinds: Option<Vec<String>>, term_id: Option<String>, dea
         true => Stop::Fail(no_answer.clone()),
         false => Stop::Fail(crate::daemon::lost(e)),
     };
-    let timed_out = Cell::new(false);
-    let failed = |e: io::Error| {
-        timed_out.set(crate::daemon::is_timeout(&e));
-        crate::daemon::late_or_lost(e, &no_answer)
-    };
-    let mut stream = crate::daemon::connect_until(until, &failed).map_err(|why| match late && timed_out.get() {
-        true => Stop::Late,
-        false => Stop::Fail(why),
+    let mut stream = crate::daemon::connect_until(until).map_err(|e| match e {
+        NoHandshake::TimedOut(e) => stop(e),
+        e => Stop::Fail(e.worded(crate::daemon::lost)),
     })?;
     let payload = proto::encode(&Msg::Subscribe { kinds, term_id }).map_err(|e| Stop::Fail(format!("encode failed: {e}")))?;
     crate::daemon::time_out_at(&stream, until).and_then(|()| frame::write_sync(&mut stream, &payload)).map_err(stop)?;

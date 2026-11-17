@@ -89,10 +89,8 @@ impl Filter {
         self.kinds.contains(&kind)
     }
 
-    /// A `file_event` has no terminal, so a terminal filter never admits one.
     pub fn admits(&self, msg: &Msg) -> bool {
-        let Some((kind, term_id)) = EventKind::of(msg) else { return false };
-        self.wants(kind) && self.term_id.as_deref().is_none_or(|want| term_id == Some(want))
+        EventKind::admits(&self.kinds, self.term_id.as_deref(), msg)
     }
 }
 

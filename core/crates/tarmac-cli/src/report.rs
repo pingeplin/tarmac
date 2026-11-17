@@ -2,7 +2,7 @@
 //! optional text, or `clear` (spec 2611.0009). The daemon finds the process
 //! the report belongs to; the cli only names the terminal.
 
-use tarmac_protocol::{Msg, cap_report_text};
+use tarmac_protocol::{Msg, REPORT_CLEAR, ReportKind, cap_report_text};
 
 const USAGE: &str = "usage: tarmac report blocked|done [\"<text>\"]  |  tarmac report clear";
 const NEEDS_TERM: &str = "report needs TARMAC_TERM_ID (run it in a Tarmac terminal)";
@@ -23,8 +23,6 @@ fn parse(args: &[String]) -> Option<(&str, Option<&str>)> {
         [kind, text] => (kind.as_str(), Some(text.as_str()).filter(|t| !t.is_empty())),
         _ => return None,
     };
-    match (kind, text) {
-        ("blocked" | "done", _) | ("clear", None) => Some((kind, text)),
-        _ => None,
-    }
+    let cleared = kind == REPORT_CLEAR && text.is_none();
+    (ReportKind::named(kind).is_some() || cleared).then_some((kind, text))
 }

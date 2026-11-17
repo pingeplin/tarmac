@@ -54,7 +54,7 @@ impl Daemon {
             .and_then(|holder| crate::holder::tie(holder, proc::proc_facts))
             .ok_or_else(|| format!("no process to tie the resume command to in {term_id}"))?;
         let stored = self
-            .with_record(term_id, |record| {
+            .with_record(term_id, |_, record| {
                 let record = record?;
                 handle.hold_resume(holder);
                 let changed = record.resume.as_ref().is_none_or(|r| r.cmd != cmd);
@@ -80,18 +80,9 @@ impl Daemon {
     /// Runs `drop` as `with_record` does and, when it dropped the command,
     /// tells the app, with `boards` released.
     async fn drop_and_push(&self, term_id: &str, drop: impl FnOnce(Option<&mut TermRecord>) -> bool) {
-        if self.with_record(term_id, drop).await {
+        if self.with_record(term_id, |_, record| drop(record)).await {
             self.push_resume(term_id, None).await;
         }
-    }
-
-    /// Runs `change` with `boards` held, on `term_id`'s record on its own
-    /// board, or `None` when it has none there.
-    async fn with_record<T>(&self, term_id: &str, change: impl FnOnce(Option<&mut TermRecord>) -> T) -> T {
-        let board = self.term_boards.lock().await.get(term_id).cloned();
-        let mut boards = self.boards.lock().await;
-        let reg = board.and_then(|b| boards.known_registry_mut(&b));
-        change(reg.and_then(|reg| reg.term_records.get_mut(term_id)))
     }
 
     /// The poll's check: drops the resume command when its holder is gone,
