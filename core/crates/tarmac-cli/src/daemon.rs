@@ -46,21 +46,6 @@ pub(crate) fn exchange(stream: &mut UnixStream, payload: &[u8], why: &str) -> Re
     answer(stream, |e| late_or_lost(e, &no_answer(why)))
 }
 
-/// `exchange` inside `until`: each write and read gets the time that is left,
-/// and running out of it is worded as `no_answer`.
-fn exchange_until(
-    stream: &mut UnixStream,
-    payload: &[u8],
-    until: Instant,
-    no_answer: &str,
-) -> Result<Result<(), String>, String> {
-    let worded = |e| late_or_lost(e, no_answer);
-    time_out_at(stream, until).map_err(worded)?;
-    frame::write_sync(stream, payload).map_err(worded)?;
-    time_out_at(stream, until).map_err(worded)?;
-    answer(stream, worded)
-}
-
 /// A time-out worded as `no_answer`; any other failure as a lost connection.
 pub(crate) fn late_or_lost(e: io::Error, no_answer: &str) -> String {
     if is_timeout(&e) { no_answer.to_string() } else { lost(e) }
@@ -196,9 +181,14 @@ pub(crate) fn for_terminal(needs_term: &str, msg: impl FnOnce(String) -> Msg) ->
 }
 
 /// Sends `msg` on a connection past its handshake and waits for its `ack`
-/// by `until`; running out of time is `no_answer`. Prints nothing: the
-/// error is the line the caller prints.
+/// by `until`: each write and read gets the time that is left, and running
+/// out of it is `no_answer`. Prints nothing: the error is the line the
+/// caller prints.
 pub(crate) fn send_acked(stream: &mut UnixStream, msg: &Msg, until: Instant, no_answer: &str) -> Result<(), String> {
     let payload = proto::encode(msg).map_err(|e| format!("encode failed: {e}"))?;
-    exchange_until(stream, &payload, until, no_answer)?
+    let worded = |e| late_or_lost(e, no_answer);
+    time_out_at(stream, until).map_err(worded)?;
+    frame::write_sync(stream, &payload).map_err(worded)?;
+    time_out_at(stream, until).map_err(worded)?;
+    answer(stream, worded)?
 }
