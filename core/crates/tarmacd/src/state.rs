@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use tarmac_protocol::{DocEntry, Msg};
+use tarmac_protocol::{DocEntry, Msg, TermRecord};
 use tokio::sync::{Mutex, Notify, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
@@ -458,6 +458,15 @@ impl Daemon {
 
     pub async fn term(&self, id: &str) -> Option<Arc<TermHandle>> {
         self.terms.lock().await.get(id).cloned()
+    }
+
+    /// Runs `change` with `boards` held, on the board `term_id` is filed
+    /// under and its record there; `term_boards` is released first.
+    async fn with_record<T>(&self, term_id: &str, change: impl FnOnce(Option<&BoardId>, Option<&mut TermRecord>) -> T) -> T {
+        let board = self.term_boards.lock().await.get(term_id).cloned();
+        let mut boards = self.boards.lock().await;
+        let record = board.as_ref().and_then(|b| boards.known_registry_mut(b)).and_then(|reg| reg.term_records.get_mut(term_id));
+        change(board.as_ref(), record)
     }
 
     /// A board_list with live-pty counts, locking terms, term_boards, then
