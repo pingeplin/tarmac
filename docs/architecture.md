@@ -374,7 +374,9 @@ there, so a read that returns after a `TermClose`, a clean exit or a board
 delete makes none again. The record's lifetime: a `TermClose` deletes it, live
 or not, on whichever board has it; an exit with `code: Some(0)` deletes it; any
 other exit keeps it for the dead card; a spawn with `succeeds` takes the record
-of the persisted id from its own board when that id is not live.
+of the persisted id from its own board when that id is not live, and with no
+`cwd` and no `inherit_cwd_from` of its own starts in that record's folder
+(`Daemon::succeeded_cwd`, issue #412).
 
 **A terminal's report** (spec 2611.0009). A `Report` from a cli names a
 terminal and `blocked`, `done` or `clear`, with an optional text (capped at 280
@@ -1218,7 +1220,8 @@ one recorded command for each terminal (`TerminalSession.recordedResume`,
 and from each `term_resume` push. Every value passes `ResumeCommand.check`.
 
 A dead card whose
-board's latest restore has a record with a folder or a command shows a
+board's latest restore has a record with a folder or a command, or that died
+of its own exit while the app ran (issue #412), shows a
 strip of `reopen here  ⏎`, `in <folder>` and `then offers: <cmd>`, with each
 id-like word of the command cut to four characters and `…` (`DeadCardOffer`,
 `ResumeCommandDisplay.display`); a press on it, or Return while the dead card holds the keys,
@@ -1939,8 +1942,10 @@ The daemon sends `Restore` for its active board on connect, and after every
 - **The records.** The app keeps each restore's `term_records` for its board,
   on the first visit and on every later restore (spec 2611.0011, D11). After a
   later restore each dead card of that board gets the reopen offer its record
-  allows; a card that dies of its own exit gets one only at the board's next
-  restore. A first-visit restore shows the restore card
+  allows. A card that dies of its own exit gets one at once (issue #412,
+  `DeadCardOffer.afterExit`). It reopens in the folder the app last saw; when
+  the app knows none, the daemon uses the folder of the record it succeeds. It
+  never offers a command: the daemon dropped it at the end. A first-visit restore shows the restore card
   ([*Wayfinding and overlays*](#wayfinding-and-overlays)) when its plan has
   a line: `✓ N terminals back in their folders` (N counts the cold spawns
   that asked for a folder) and `M with an agent session to resume` (M

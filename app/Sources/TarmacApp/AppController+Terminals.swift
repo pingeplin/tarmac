@@ -206,12 +206,14 @@ extension AppController {
     }
 
     /// Gives each dead card of `board` the offer its latest restore allows;
-    /// the ids of the cards that got one.
+    /// the ids of the cards that got one. A card that ended in this run keeps
+    /// the offer its exit gave (`handleExit`, #412).
     @discardableResult
     func offerReopens(on board: Board) -> Set<String> {
         var offered: Set<String> = []
         for termID in board.sessionOrder {
-            guard let s = board.sessions[termID], board.view.card(.term(termID))?.dead == true else { continue }
+            guard let s = board.sessions[termID], !s.endedHere,
+                  board.view.card(.term(termID))?.dead == true else { continue }
             s.deadOffer = DeadCardOffer.make(record: board.termRecords[termID], home: NSHomeDirectory())
             if s.deadOffer != nil { offered.insert(termID) }
             refreshOffer(s, on: board)
@@ -385,6 +387,8 @@ extension AppController {
         let frame = card.worldFrame
         switch TermExit.decide(code: code, otherLiveTerminals: board.otherLiveTerminals(than: termID)) {
         case .holdOpen:
+            s.endedHere = true
+            s.deadOffer = DeadCardOffer.afterExit(cwd: s.lastCwd, home: NSHomeDirectory())
             holdOpen(s, on: board)
             board.reassignPrime()
         case .remove:

@@ -23,10 +23,7 @@ impl Daemon {
     /// A moved resume command has no holder: `handle` is marked unclaimed in
     /// the same step, so typed input drops it (spec 2611.0011, D6).
     pub async fn adopt_term(&self, plan: &SpawnPlan, handle: &TermHandle) {
-        let succeeds = match plan.succeeds.as_deref() {
-            Some(old) if !self.terms.lock().await.contains_key(old) => Some(old),
-            _ => None,
-        };
+        let succeeds = self.dead_successor(plan.succeeds.as_deref()).await;
         self.term_boards.lock().await.insert(plan.term_id.clone(), plan.board.clone());
         let mut boards = self.boards.lock().await;
         let Some(reg) = boards.known_registry_mut(&plan.board) else { return };
@@ -38,6 +35,20 @@ impl Daemon {
             handle.unclaim_resume();
         }
         reg.term_records.insert(plan.term_id.clone(), moved.unwrap_or_default());
+    }
+
+    /// The id a spawn's `succeeds` takes the record of: one that is not live.
+    async fn dead_successor<'a>(&self, succeeds: Option<&'a str>) -> Option<&'a str> {
+        let old = succeeds?;
+        (!self.terms.lock().await.contains_key(old)).then_some(old)
+    }
+
+    /// The folder a spawn with no cwd of its own starts in when it succeeds
+    /// `old` (#412): the recorded cwd of the record `adopt_term` moves.
+    pub async fn succeeded_cwd(&self, board: &BoardId, old: &str) -> Option<String> {
+        let old = self.dead_successor(Some(old)).await?;
+        let boards = self.boards.lock().await;
+        boards.known_registry(board)?.term_records.get(old)?.last_cwd.clone()
     }
 
     /// Reads the cwd of `pid` on the gate and stores it in the record of

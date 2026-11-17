@@ -218,6 +218,23 @@ fn succeeds_moves_the_record_to_the_new_term() {
     let _ = std::fs::remove_dir_all(tmp);
 }
 
+// #412: a reopen of a card that ended in this run sends no cwd; the record
+// it succeeds names the folder.
+#[test]
+fn succeeds_with_no_cwd_spawns_in_the_record_folder() {
+    let daemon = TestDaemon::start();
+    let mut app = saved_shells(&daemon, &[("T", "read _; exit 3")]);
+    let dir = canon_dir(&daemon.dir);
+    app.type_line("T", "go");
+    assert_eq!(app.recv_exit(), ("T".into(), Some(3)));
+
+    spawn(&mut app, "T2", &plain("pwd -P; read _"), Spawn { succeeds: Some("T".into()), ..Default::default() });
+
+    wait_output(&mut app, "T2", &dir);
+    let (_app, restore) = daemon.probe();
+    assert_eq!(restore.last_cwd("T2"), Some(dir.as_str()));
+}
+
 // S6
 #[test]
 fn a_layout_keeps_the_records() {

@@ -510,6 +510,9 @@ across its restarts. It is persisted in `state.json` beside the board's
   the spawn succeeds, the daemon moves that id's record, on the new term's own
   board only, to the new `term_id`. It is ignored — never an error — when it
   names a live term or an id with no record there, or when the spawn fails.
+  A spawn with no `cwd` and no `inherit_cwd_from` starts in that record's
+  `last_cwd` (issue #412: the reopen of a card that ended while the app ran,
+  whose folder the app may not know).
 - **Restore.** The app's first-visit restore of a board sends a cold spawn of
   each persisted tile with `cwd: last_cwd` and `succeeds: <persisted id>`. The
   daemon checks `cwd` as for any spawn: a folder that is gone gives `$HOME`.

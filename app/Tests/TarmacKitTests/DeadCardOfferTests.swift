@@ -61,4 +61,23 @@ final class DeadCardOfferTests: XCTestCase {
         let offer = try makeOffer(nil, resume: "echo HI")
         XCTAssertEqual(DeadCardOffer.reopen(offer, deadID: "T").spawn, SpawnRequest(cwd: nil, succeeds: "T"))
     }
+
+    // MARK: #412: a card that ended in this run
+
+    func testACardThatEndedHereIsOfferedInItsFolder() {
+        XCTAssertEqual(DeadCardOffer.afterExit(cwd: "/Users/u/w", home: home).lines, ["reopen here  ⏎", "in ~/w"])
+    }
+
+    func testACardThatEndedHereWithNoKnownFolderIsStillOffered() {
+        let offer = DeadCardOffer.afterExit(cwd: nil, home: home)
+        XCTAssertEqual(offer.lines, ["reopen here  ⏎"])
+        XCTAssertEqual(DeadCardOffer.reopen(offer, deadID: "T").spawn, SpawnRequest(cwd: nil, succeeds: "T"))
+    }
+
+    /// The daemon drops a terminal's resume command at its end (2611.0011 D3).
+    func testACardThatEndedHereOffersNoCommand() {
+        let offer = DeadCardOffer.afterExit(cwd: "/w", home: home)
+        XCTAssertNil(offer.resume)
+        XCTAssertFalse(offer.lines.contains { $0.hasPrefix("then offers:") })
+    }
 }

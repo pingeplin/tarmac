@@ -411,7 +411,7 @@ pub(crate) async fn spawn_requested(
         return spawn_failed(daemon, e).await;
     }
     let board = owning_board(daemon, board_id).await;
-    let cwd = spawn_cwd(daemon, cwd, inherit_cwd_from).await;
+    let cwd = spawn_cwd(daemon, cwd, inherit_cwd_from, &board, succeeds.as_deref()).await;
     // No board_list re-push on a successful spawn: the app initiated it for a
     // board it is building and already knows the new running count. Only the
     // exit re-push (term.rs) is load-bearing, for a term dying on a board the
@@ -431,7 +431,8 @@ async fn owning_board(daemon: &Daemon, board_id: Option<String>) -> BoardId {
 }
 
 // A new terminal inherits its source's LIVE cwd, not its spawn cwd. An explicit
-// `cwd` always wins. Both reads go through the gate, since a cwd on a volume
+// `cwd` always wins. With neither, a spawn that succeeds a dead term starts in
+// its record's folder (#412). Both reads go through the gate, since a cwd on a volume
 // that is gone does not answer: an unknown/dead source, a cwd that is not a
 // directory, or a read that is out falls through to term::spawn's own $HOME
 // default — never an error. $HOME itself is not checked.
@@ -439,12 +440,13 @@ async fn spawn_cwd(
     daemon: &Daemon,
     cwd: Option<String>,
     inherit_cwd_from: Option<String>,
+    board: &BoardId,
+    succeeds: Option<&str>,
 ) -> Option<String> {
-    let cwd = match cwd {
-        Some(cwd) => cwd,
-        None => {
-            daemon.term(&inherit_cwd_from?).await?.foreground_read(daemon.gate()).await?.1?
-        }
+    let cwd = match (cwd, inherit_cwd_from) {
+        (Some(cwd), _) => cwd,
+        (None, Some(source)) => daemon.term(&source).await?.foreground_read(daemon.gate()).await?.1?,
+        (None, None) => daemon.succeeded_cwd(board, succeeds?).await?,
     };
     let path = PathBuf::from(&cwd);
     let is_dir = daemon.gate().run(&path.clone(), move |fs| fs.is_dir(&path)).await;
