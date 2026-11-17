@@ -32,8 +32,11 @@ extension AppController {
     func handlePress(on hit: NSView?) {
         guard !switcherOpen, window?.isKeyWindow == true else { return }
         // A press anywhere but on the open inbox closes it, and then does
-        // what it does.
-        if inboxOpen, let hit, !hit.isDescendant(of: rootView.inboxPanel) { closeInbox() }
+        // what it does. A pill's jump closes it on release: closed here, the
+        // wider board moves the pills before the release lands on one.
+        if inboxOpen, let hit, !hit.isDescendant(of: rootView.inboxPanel), !(hit is OffscreenHintPill) {
+            closeInbox()
+        }
         guard let hit, rootView.isBoardSurface(hit) else { return }
         guard let card = enclosingCard(hit) else {
             if !(hit is PressControl) { defocus() }
