@@ -3,10 +3,9 @@ import TarmacKit
 
 /// The Fonts pane of the Settings window (specs 2610.0005, 2610.0006): one
 /// row for each font role, a list of the Mac's families, a size, and a
-/// sample line in the face in effect. What a row
-/// lists and selects is `FontMenu`'s decision and which size a text means is
-/// `FontSizeRule`'s; this builds the controls and forwards a choice to
-/// `FontSettings`.
+/// sample line in the face in effect. What a row lists and selects is
+/// `FontMenu`'s decision and which size a text means is `FontSizeRule`'s;
+/// this builds the controls and forwards a choice to `FontSettings`.
 @MainActor
 final class FontsPane: NSObject {
     private static let sampleText = "The quick brown fox 0123456789"

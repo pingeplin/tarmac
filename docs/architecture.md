@@ -1703,7 +1703,7 @@ Interface list only fixed-pitch ones (`FontMenu`). Each row also has a size,
 a number field with a stepper, in half steps: 8 to 32 for Terminal (16 with
 nothing chosen), 8 to 16 for Interface (10.5) and 10 to 24 for Document (14).
 The chrome keeps its design sizes (8 to 13 pt) in code; `Theme.mono` scales
-each by the Interface size over its standard (`Theme.interfaceScale`), so at
+each by the Interface size over its standard (`Theme.chrome`), so at
 10.5 nothing changes. Fixed bar heights (a card header's 30, the status bar's
 27) do not scale, which is why the top is 16. A size and a family are independent: a change of one
 keeps the other. A typed number goes to the nearest size the role has, and

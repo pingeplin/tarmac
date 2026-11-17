@@ -12,12 +12,13 @@ final class ToastView: NSView, ThemeFollowing {
     private static let insetY: CGFloat = 1 + 9
     private static let gap: CGFloat = 7
     private static let bodyTop: CGFloat = 2
+    private static let iconSize: CGFloat = 13
 
     let size: NSSize
 
     init(_ toast: ToastQueue.Toast) {
-        let iconLineHeight = 13 * 1.2 * Theme.interfaceScale
-        let icon = ChromeLabel(toast.icon, size: 13, color: Theme.agent)
+        let iconLineHeight = Theme.chrome(Self.iconSize * 1.2)
+        let icon = ChromeLabel(toast.icon, size: Self.iconSize, color: Theme.agent)
         let title = ChromeLabel(toast.title, size: 11, color: Theme.text)
         let body = toast.bodyLines.map { ChromeLabel($0, size: 10, color: Theme.faint) }
 

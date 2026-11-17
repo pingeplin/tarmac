@@ -75,7 +75,7 @@ final class CardConsoleView: NSView, FontFollowing, ThemeFollowing {
 
     private static var paragraph: NSParagraphStyle {
         let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = lineHeight * Theme.interfaceScale
+        paragraph.minimumLineHeight = Theme.chrome(lineHeight)
         paragraph.maximumLineHeight = paragraph.minimumLineHeight
         paragraph.lineBreakMode = .byCharWrapping
         return paragraph
