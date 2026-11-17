@@ -11,13 +11,14 @@ final class ToastView: NSView, ThemeFollowing {
     private static let insetX: CGFloat = 1 + 12
     private static let insetY: CGFloat = 1 + 9
     private static let gap: CGFloat = 7
-    private static let iconLineHeight: CGFloat = 13 * 1.2
     private static let bodyTop: CGFloat = 2
+    private static let iconSize: CGFloat = 13
 
     let size: NSSize
 
     init(_ toast: ToastQueue.Toast) {
-        let icon = ChromeLabel(toast.icon, size: 13, color: Theme.agent)
+        let iconLineHeight = Theme.chrome(Self.iconSize * 1.2)
+        let icon = ChromeLabel(toast.icon, size: Self.iconSize, color: Theme.agent)
         let title = ChromeLabel(toast.title, size: 11, color: Theme.text)
         let body = toast.bodyLines.map { ChromeLabel($0, size: 10, color: Theme.faint) }
 
@@ -27,7 +28,7 @@ final class ToastView: NSView, ThemeFollowing {
         let bodyWidth = min(body.map(\.textSize.width).max() ?? 0, textRoom)
         let textWidth = max(titleWidth, bodyWidth)
         let textHeight = title.lineHeight + (body.isEmpty ? 0 : Self.bodyTop + body.map(\.lineHeight).reduce(0, +))
-        let contentHeight = max(Self.iconLineHeight, textHeight)
+        let contentHeight = max(iconLineHeight, textHeight)
         size = NSSize(
             width: (2 * Self.insetX + iconWidth + Self.gap + textWidth).rounded(.up),
             height: (2 * Self.insetY + contentHeight).rounded(.up)
@@ -42,7 +43,7 @@ final class ToastView: NSView, ThemeFollowing {
 
         // The glyph's line box is shorter than its font's own line, so the
         // glyph sits above the box's top by half the difference.
-        let iconY = Self.insetY + (Self.iconLineHeight - icon.lineHeight) / 2
+        let iconY = Self.insetY + (iconLineHeight - icon.lineHeight) / 2
         icon.place(at: CGPoint(x: Self.insetX, y: iconY.rounded()))
         addSubview(icon)
 
@@ -72,7 +73,7 @@ final class ToastView: NSView, ThemeFollowing {
 /// which toasts there are and `ToastStackLayout` where they go; this draws
 /// them. Click-through.
 @MainActor
-final class ToastStackView: NSView {
+final class ToastStackView: NSView, FontFollowing {
     private static let pruneInterval: TimeInterval = 0.25
     private static let entryRise: CGFloat = 8
     private static let entryDuration: TimeInterval = 0.18
@@ -117,6 +118,13 @@ final class ToastStackView: NSView {
 
     func clearAll() {
         queue.clearAll()
+        render()
+    }
+
+    /// A toast is measured once, when it is built: each is built again.
+    func fontsChanged() {
+        views.values.forEach { $0.removeFromSuperview() }
+        views = [:]
         render()
     }
 

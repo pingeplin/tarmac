@@ -43,15 +43,23 @@ enum Theme {
     /// it; no entry is the system default.
     static var fontFamilies: [FontRole: String] = [:]
 
-    /// The size in effect for each role that has one, as `FontSettings` last
-    /// resolved it.
+    /// The size in effect for each role, as `FontSettings` last resolved it.
     static var fontSizes: [FontRole: Double] = [:]
+
+    private static func size(of role: FontRole) -> Double { fontSizes[role] ?? role.sizeRule.standard }
 
     /// In world points: the board zoom scales each card as a single unit, so
     /// this is the on-screen size at 100%.
-    static var terminalFontSize: CGFloat { fontSizes[.terminal] ?? FontSizeRule.terminal.standard }
+    static var terminalFontSize: CGFloat { size(of: .terminal) }
 
-    static var proseFontSize: Double { fontSizes[.document] ?? FontSizeRule.document.standard }
+    static var proseFontSize: Double { size(of: .document) }
+
+    /// A chrome design size (a font's, or a line height or a text width a
+    /// view fixes for one) at the Interface size in effect: unchanged at the
+    /// standard size.
+    static func chrome(_ design: CGFloat) -> CGFloat {
+        design * FontSizeRule.interface.factor(at: size(of: .interface))
+    }
 
     /// What an HTML card is given for the fonts in effect.
     static var cardFonts: CardFontVariables {
@@ -61,10 +69,12 @@ enum Theme {
         )
     }
 
-    /// The chrome face: the Interface family, or the system's monospaced
-    /// font. A family has a regular and at most a bold, so a weight takes the
-    /// nearer of the two, and a family with no bold gives its regular face.
-    static func mono(_ size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+    /// The chrome face at a design size (`chrome`): the Interface family, or
+    /// the system's monospaced font. A family has a regular and at most a
+    /// bold, so a weight takes the nearer of the two, and a family with no
+    /// bold gives its regular face.
+    static func mono(_ design: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        let size = chrome(design)
         let bold = weight.rawValue >= NSFont.Weight.semibold.rawValue
         return chosen(.interface, size: size, bold: bold) ?? NSFont.monospacedSystemFont(ofSize: size, weight: weight)
     }

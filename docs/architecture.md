@@ -1703,15 +1703,18 @@ pane has a row for each `FontRole`:
 | `document` | the prose of markdown doc cards; `--tarmac-prose-font` and, with the Document size, `--tarmac-prose-size` of HTML cards | the system UI font |
 
 Each row lists the Mac's font families, *System Default* first; Terminal and
-Interface list only fixed-pitch ones (`FontMenu`). The Terminal and Document
-rows also have a size, a number field with a stepper, in half steps: 8 to 32
-for Terminal (16 with nothing chosen) and 10 to 24 for Document (14).
-Interface has none. A size and a family are independent: a change of one
+Interface list only fixed-pitch ones (`FontMenu`). Each row also has a size,
+a number field with a stepper, in half steps: 8 to 32 for Terminal (16 with
+nothing chosen), 8 to 16 for Interface (10.5) and 10 to 24 for Document (14).
+The chrome keeps its design sizes (8 to 13 pt) in code; `Theme.mono` scales
+each by the Interface size over its standard (`Theme.chrome`), so at
+10.5 nothing changes. Fixed bar heights (a card header's 30, the status bar's
+27) do not scale, which is why the top is 16. A size and a family are independent: a change of one
 keeps the other. A typed number goes to the nearest size the role has, and
 text that is no number puts the field back (`FontSizeRule`). A choice is
 saved in `app-prefs.json`, whose keys are `warn_before_quit`, a family name
 in `terminal_font`, `interface_font` and `document_font`, a number in
-`terminal_font_size` and `document_font_size`, and `theme`, `theme_light` and
+`terminal_font_size`, `interface_font_size` and `document_font_size`, and `theme`, `theme_light` and
 `theme_dark` (below); a size
 the role does not have reads as nothing chosen. `AppPrefsStore` is the
 one owner of the file and saves all of it each time, so no preference drops

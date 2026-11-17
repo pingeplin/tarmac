@@ -43,14 +43,20 @@ public struct FontSizeRule: Equatable, Sendable {
 
     public static let terminal = FontSizeRule(range: 8...32, standard: 16)
     public static let document = FontSizeRule(range: 10...24, standard: 14)
+    /// The chrome is set at many design sizes (8 to 13 pt); its standard is
+    /// 10.5, the size of a card header, the status bar, the edge pills and
+    /// the zoom control. 16 keeps a header's text inside its 30 pt bar.
+    public static let interface = FontSizeRule(range: 8...16, standard: 10.5)
+
+    /// How much a design size is scaled at `size`: exactly 1 at the standard.
+    public func factor(at size: Double) -> Double { size / standard }
 }
 
 extension FontRole {
-    /// Interface has none: its chrome is set at many sizes, not one.
-    public var sizeRule: FontSizeRule? {
+    public var sizeRule: FontSizeRule {
         switch self {
         case .terminal: .terminal
-        case .interface: nil
+        case .interface: .interface
         case .document: .document
         }
     }

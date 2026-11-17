@@ -27,18 +27,17 @@ final class FontSettings {
         onChange?()
     }
 
-    /// The size in effect, or nil for a role that has none.
-    func size(for role: FontRole) -> Double? { Theme.fontSizes[role] }
+    func size(for role: FontRole) -> Double { role.sizeRule.inEffect(saved: prefs.values.fontSizes[role]) }
 
     func chooseSize(_ size: Double, for role: FontRole) {
-        guard let choice = role.sizeRule?.choice(size, saved: prefs.values.fontSizes[role]) else { return }
+        guard let choice = role.sizeRule.choice(size, saved: prefs.values.fontSizes[role]) else { return }
         prefs.update { $0.fontSizes[role] = choice }
         resolveSize(role)
         onChange?()
     }
 
     private func resolveSize(_ role: FontRole) {
-        Theme.fontSizes[role] = role.sizeRule?.inEffect(saved: prefs.values.fontSizes[role])
+        Theme.fontSizes[role] = size(for: role)
     }
 
     /// Reads the one saved family from the Mac, not the whole font list.

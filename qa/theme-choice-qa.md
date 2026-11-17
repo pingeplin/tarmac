@@ -1,5 +1,10 @@
 # QA — the theme choice (#217, spec 2610.0008)
 
+> **Since #394** the Interface row has a size field too, so in
+> `scripts/qa/settings-window.swift` a size index 1 is Interface and the
+> Document size is index 2. In this record `size 1`, `step 1` and
+> `focus 1` were run when index 1 was Document.
+
 **This file holds two runs.** The current run is
 [the run of revision 2](#the-run-of-revision-2-2026-10-07), at the end of
 this file: 31 `[QA]` scenarios, S33 to S56 and S65 to S71, on the list and

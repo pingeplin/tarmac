@@ -1,5 +1,10 @@
 # QA — the theme setting (#209, spec 2610.0007)
 
+> **Since #394** the Interface row has a size field too, so in
+> `scripts/qa/settings-window.swift` a size index 1 is Interface and the
+> Document size is index 2. In this record `size 1`, `step 1` and
+> `focus 1` were run when index 1 was Document.
+
 The live half of [spec 2610.0007](../.blueprint/specs/2610.0007_theme_setting.md):
 its 33 `[QA]` scenarios, with the values observed. The unit scenarios are
 `ThemeChoiceTests`, `AppPrefsTests`, `PaletteTests`, `ContrastTests`,

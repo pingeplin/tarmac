@@ -13,7 +13,7 @@
 //   open-themes              presses Open Themes Folder
 //   apply <Light|Dark> on|off  sets or clears that box of the showcase; its last line is the box as it is then
 //   pick <row> <title>       row 0, 1, 2 = Terminal, Interface, Document
-//   size <n> <text>          sets a size field's text and confirms it, as Return does; n 0, 1 = Terminal, Document
+//   size <n> <text>          sets a size field's text and confirms it, as Return does; n 0, 1, 2 = Terminal, Interface, Document
 //   step <n> up|down [count] presses a size's stepper
 //   focus <n>                gives a size field the keyboard focus, its text selected
 //   type <text>              posts the text to the app as plain keys

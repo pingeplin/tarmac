@@ -12,8 +12,9 @@ final class BoardSwitcherView: KeyHoldingView, FontFollowing, ThemeFollowing {
     /// The veil outside the panel was clicked.
     var onDismiss: (() -> Void)?
 
+    @MainActor
     private enum Metric {
-        static let panelWidth: CGFloat = 380
+        static var panelWidth: CGFloat { Theme.chrome(380) }
         static let panelMaxHeight: CGFloat = 480
         static let border: CGFloat = 1
         static let padX: CGFloat = 14

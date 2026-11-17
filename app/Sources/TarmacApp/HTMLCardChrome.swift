@@ -73,13 +73,18 @@ final class CardConsoleView: NSView, FontFollowing, ThemeFollowing {
         hairline.layer?.backgroundColor = Theme.lineSoft.cgColor
     }
 
-    func show(_ entries: [CardConsole.Entry]) {
+    private static var paragraph: NSParagraphStyle {
         let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = Self.lineHeight
-        paragraph.maximumLineHeight = Self.lineHeight
+        paragraph.minimumLineHeight = Theme.chrome(lineHeight)
+        paragraph.maximumLineHeight = paragraph.minimumLineHeight
         paragraph.lineBreakMode = .byCharWrapping
+        return paragraph
+    }
+
+    func show(_ entries: [CardConsole.Entry]) {
         let lines = NSMutableAttributedString()
         let font = Self.font
+        let paragraph = Self.paragraph
         for (index, entry) in entries.enumerated() {
             lines.append(NSAttributedString(
                 string: (index == 0 ? "" : "\n") + CardConsole.formatArgs(entry.args),
@@ -92,7 +97,8 @@ final class CardConsoleView: NSView, FontFollowing, ThemeFollowing {
 
     func fontsChanged() {
         guard let storage = text.textStorage else { return }
-        storage.addAttribute(.font, value: Self.font, range: NSRange(location: 0, length: storage.length))
+        let all = NSRange(location: 0, length: storage.length)
+        storage.addAttributes([.font: Self.font, .paragraphStyle: Self.paragraph], range: all)
         measured.forget()
         superview?.needsLayout = true
     }
