@@ -1647,7 +1647,8 @@ card is drawn over the cards and under the chrome.
 
 A click on a pill (a `PressControl`, pointing-hand cursor) jumps to its card as
 `Return` on an inbox row does, with no board switch: it closes an open inbox,
-flies, and primes a live card or selects a dead one (`InboxJump.land`).
+flies, and primes a live card or selects a dead one (`InboxJump.land`). Either
+card takes the keyboard: a dead one, as a press on it does, for its reopen offer.
 
 **The inbox** (spec 2611.0013, `InboxPanelView`; rules in `Inbox`,
 `InboxCopy`, `InboxKeys`, `InboxJump`, `InboxPanelLayout`). A store of report
@@ -1663,9 +1664,9 @@ row reads its kind tag (the `ChipView` form), `report · during <proc>`, `bell`
 or the exit toast's words, its age, the quote, and `<board> › <terminal> ·
 <cwd>`. `Return` or a click jumps: on another board, one switch, landed in
 `finishArrive`; then a live card becomes prime and takes the keys, a dead one
-is selected, and one that went removes its row; an exit of a board not built
-yet lands on the shell that `succeeds` it, recorded when the board is first
-built. A jump reads nothing: typed input marks a report read, and a press, a
+is selected and takes the keys for its reopen offer, and one that went removes
+its row; an exit of a board not built yet lands on the shell that `succeeds`
+it, recorded when the board is first built. A jump reads nothing: typed input marks a report read, and a press, a
 key or a jump marks a bell or exit item read (`clearBell`, the one "the user
 touched it" entry). `⌫` and `clear all read` hide rows in the panel only,
 until a newer event; the chip, the bell dot and the report pill stay. A card

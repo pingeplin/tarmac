@@ -220,18 +220,21 @@ extension AppController {
     /// nil when there is no card.
     private func land(card termID: String, on board: Board) -> NSView? {
         let card = board.view.card(.term(termID))
+        let view = board.sessions[termID]?.view
         let home: NSView
         switch InboxJump.land(cardExists: card != nil, cardDead: card?.dead ?? false) {
         case .drop:
             return nil
         case .prime:
-            guard let view = board.sessions[termID]?.view else { return nil }
+            guard let view else { return nil }
             board.primeTermID = termID
             updatePrimacy(on: board)
             home = view
         case .select:
+            // A dead card holds the keys, as a click on it does, so that
+            // Return reaches its reopen offer (2611.0011, D10).
             board.view.select(.term(termID))
-            home = rootView.board
+            home = view ?? rootView.board
         }
         board.view.fly(to: .term(termID))
         clearBell(termID: termID)
