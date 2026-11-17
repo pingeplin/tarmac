@@ -345,6 +345,32 @@ impl EventKind {
     }
 }
 
+/// The kind of a terminal's report (spec 2611.0009), by its name in the
+/// `kind` of `report` and `term_report`. A `report` of `REPORT_CLEAR` clears
+/// one and is no kind.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ReportKind {
+    Blocked,
+    Done,
+}
+
+pub const REPORT_CLEAR: &str = "clear";
+
+impl ReportKind {
+    pub const ALL: [ReportKind; 2] = [ReportKind::Blocked, ReportKind::Done];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            ReportKind::Blocked => "blocked",
+            ReportKind::Done => "done",
+        }
+    }
+
+    pub fn named(name: &str) -> Option<ReportKind> {
+        ReportKind::ALL.into_iter().find(|k| k.name() == name)
+    }
+}
+
 /// One live terminal in `terms`. `cwd` and `proc` are the daemon's fresh reads,
 /// missing when it could not read them.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]

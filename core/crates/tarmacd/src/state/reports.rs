@@ -1,7 +1,7 @@
-use tarmac_protocol::Msg;
+use tarmac_protocol::{Msg, REPORT_CLEAR, ReportKind};
 
 use crate::proc::{self, Pid};
-use crate::reports::{Kind, Place, Reports};
+use crate::reports::{Place, Reports};
 use crate::term::TermHandle;
 
 use super::Daemon;
@@ -11,11 +11,11 @@ impl Daemon {
     /// `peer` is the client's pid, read at accept.
     pub async fn report(&self, peer: Option<Pid>, term_id: &str, kind: &str, text: Option<String>) -> Result<(), String> {
         let handle = self.term(term_id).await.ok_or_else(|| format!("unknown terminal: {term_id}"))?;
-        if kind == "clear" {
+        if kind == REPORT_CLEAR {
             self.change_report(term_id, &handle, |reports| reports.clear(term_id)).await;
             return Ok(());
         }
-        let kind = Kind::parse(kind).ok_or_else(|| format!("unknown report kind: {kind}"))?;
+        let kind = ReportKind::named(kind).ok_or_else(|| format!("unknown report kind: {kind}"))?;
         // Any socket client can send a `report`, so the daemon caps it too.
         let text = text.map(|t| tarmac_protocol::cap_report_text(&t)).filter(|t| !t.is_empty());
         let holder = handle

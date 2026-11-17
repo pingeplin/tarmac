@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
-use tarmac_protocol::{Msg, REPORT_TEXT_MAX, cap_report_text};
+use tarmac_protocol::{Msg, REPORT_CLEAR, REPORT_TEXT_MAX, ReportKind, cap_report_text};
 
 use crate::daemon::{NoAnswer, send_acked};
 
@@ -95,10 +95,10 @@ fn claude_message(term_id: &str, input: &ClaudeInput) -> Result<Option<Msg>, Str
     let text = |field: &Lenient| field.0.as_deref().and_then(report_text);
     match input.hook_event_name.0.as_deref() {
         Some("Notification") if input.notification_type.0.as_deref() == Some("permission_prompt") => {
-            report("blocked", text(&input.message))
+            report(ReportKind::Blocked.name(), text(&input.message))
         }
-        Some("Stop") => report("done", text(&input.last_assistant_message)),
-        Some("UserPromptSubmit") => report("clear", None),
+        Some("Stop") => report(ReportKind::Done.name(), text(&input.last_assistant_message)),
+        Some("UserPromptSubmit") => report(REPORT_CLEAR, None),
         Some("SessionStart") => {
             let id = input.session_id.0.as_deref().filter(|id| is_safe_session_id(id)).ok_or("session_id refused")?;
             Ok(Some(Msg::Resume { term_id: term_id.into(), cmd: Some(format!("claude --resume {id}")) }))

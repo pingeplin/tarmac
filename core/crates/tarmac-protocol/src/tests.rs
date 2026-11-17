@@ -570,6 +570,17 @@ fn an_event_is_admitted_by_its_kind_and_its_terminal() {
 }
 
 #[test]
+fn a_report_kind_is_blocked_or_done() {
+    assert_eq!(ReportKind::named("blocked"), Some(ReportKind::Blocked));
+    assert_eq!(ReportKind::named("done"), Some(ReportKind::Done));
+    assert_eq!(ReportKind::named(REPORT_CLEAR), None);
+    assert_eq!(ReportKind::named("later"), None);
+    for kind in ReportKind::ALL {
+        assert_eq!(ReportKind::named(kind.name()), Some(kind));
+    }
+}
+
+#[test]
 fn a_nil_resume_and_a_nil_cmd_are_not_on_the_wire() {
     assert_eq!(rmp_serde::to_vec_named(&record(Some("/w"), None)).unwrap(), unhex("81 a8 6c 61 73 74 5f 63 77 64 a2 2f 77"));
     assert!(!has(&encode(&resume(None)).unwrap(), b"cmd"));
