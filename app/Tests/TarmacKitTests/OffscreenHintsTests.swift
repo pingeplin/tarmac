@@ -102,9 +102,42 @@ final class OffscreenHintLayoutTests: XCTestCase {
     func testSelectShowsTheCappedPillsAndFliesToTheBestOfEveryHint() {
         let hints = [signalled("old", .bell, at: 1, z: 99)]
             + (0..<10).map { signalled("bell\($0)", .bell, at: 10 + UInt64($0), z: 0) }
-        let selection = Layout.select(hints)
+        let selection = Layout.select(hints, in: CGRect(x: 100, y: 100, width: 800, height: 600))
         XCTAssertEqual(selection.shown, Layout.shown(hints))
         XCTAssertEqual(selection.flyTarget, "old")
+    }
+
+    // MARK: - select drops the cards on screen
+
+    private let screen = CGRect(x: 0, y: 0, width: 800, height: 600)
+
+    func testSelectDropsAHintWhoseCentreIsOnScreen() {
+        let selection = Layout.select(
+            [hint("on", CGPoint(x: 400, y: 300), .bell, 0), hint("off", CGPoint(x: 900, y: 300), .bell, 0)], in: screen
+        )
+        XCTAssertEqual(selection.shown.map(\.cardID), ["off"])
+    }
+
+    func testACentreOnTheLeadingEdgeIsOnScreenAndOnTheTrailingEdgeIsNot() {
+        let edges = [
+            hint("minX", CGPoint(x: 0, y: 300), .live, 0), hint("maxX", CGPoint(x: 800, y: 300), .live, 0),
+            hint("minY", CGPoint(x: 400, y: 0), .live, 0), hint("maxY", CGPoint(x: 400, y: 600), .live, 0),
+        ]
+        XCTAssertEqual(Layout.select(edges, in: screen).shown.map(\.cardID), ["maxX", "maxY"])
+    }
+
+    func testAnOnScreenCardIsNeverTheFlyTarget() {
+        let selection = Layout.select(
+            [hint("on", CGPoint(x: 400, y: 300), .blocked, 9), hint("off", CGPoint(x: -50, y: 300), .live, 0)], in: screen
+        )
+        XCTAssertEqual(selection.flyTarget, "off")
+        XCTAssertNil(Layout.select([hint("on", CGPoint(x: 400, y: 300), .blocked, 9)], in: screen).flyTarget)
+    }
+
+    func testAnOnScreenCardTakesNoPillFromTheCap() {
+        let off = (0..<Layout.maxPills).map { hint("off\($0)", CGPoint(x: 900, y: 300), .live, $0) }
+        let on = hint("on", CGPoint(x: 400, y: 300), .blocked, 0)
+        XCTAssertEqual(Layout.select([on] + off, in: screen).shown, off)
     }
 
     func testTheSignalTimeIsTheTimeOfTheShownSignal() {

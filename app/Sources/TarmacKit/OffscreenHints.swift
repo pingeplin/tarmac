@@ -6,7 +6,7 @@ import CoreGraphics
 /// this adds what lived in the untested AppKit overlay. Pure and clock-free — the
 /// view supplies the measured pill sizes, the HH:MM text and each signal's time.
 public enum OffscreenHintLayout {
-    /// One signalling offscreen card, in VIEW (overlay-local) coordinates.
+    /// One signalling card, in VIEW (overlay-local) coordinates.
     public struct Hint: Equatable, Sendable {
         public var cardID: String
         public var centerView: CGPoint
@@ -56,10 +56,12 @@ public enum OffscreenHintLayout {
         return hints.indices.sorted { keys[$0] > keys[$1] }.prefix(maxPills).sorted().map { hints[$0] }
     }
 
-    /// The pills to show, and the ⏎-fly target, taken from every hint: it
-    /// can be a card the cap left without a pill.
-    public static func select(_ hints: [Hint]) -> (shown: [Hint], flyTarget: String?) {
-        (shown(hints), flyTarget(hints))
+    /// The pills to show, and the ⏎-fly target, taken from every hint whose
+    /// centre is outside `viewRect`: the target can be a card the cap left
+    /// without a pill.
+    public static func select(_ hints: [Hint], in viewRect: CGRect) -> (shown: [Hint], flyTarget: String?) {
+        let offscreen = hints.filter { !viewRect.contains($0.centerView) }
+        return (shown(offscreen), flyTarget(offscreen))
     }
 
     /// The time of the card's shown signal: a report's for blocked and done,
