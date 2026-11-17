@@ -335,6 +335,14 @@ impl EventKind {
             _ => None,
         }
     }
+
+    /// True for an event frame of one of `kinds` and, with a `term_id`, of
+    /// that terminal. A `file_event` has no terminal, so a terminal filter
+    /// never admits one.
+    pub fn admits(kinds: &[EventKind], term_id: Option<&str>, msg: &Msg) -> bool {
+        let Some((kind, term)) = EventKind::of(msg) else { return false };
+        kinds.contains(&kind) && term_id.is_none_or(|want| term == Some(want))
+    }
 }
 
 /// One live terminal in `terms`. `cwd` and `proc` are the daemon's fresh reads,

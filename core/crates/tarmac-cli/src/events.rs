@@ -71,9 +71,7 @@ struct Want {
 
 impl Want {
     fn admits(&self, msg: &Msg) -> bool {
-        EventKind::of(msg).is_some_and(|(kind, term)| {
-            self.kinds.as_ref().is_none_or(|k| k.contains(&kind)) && self.term_id.as_deref().is_none_or(|want| term == Some(want))
-        })
+        EventKind::admits(self.kinds.as_deref().unwrap_or(&EventKind::ALL), self.term_id.as_deref(), msg)
     }
 }
 
