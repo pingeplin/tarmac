@@ -42,7 +42,7 @@ fn hook(args: &[String]) -> Result<(), String> {
     let Some(msg) = claude_message(&term_id, &input)? else { return Ok(()) };
     let no_answer = format!("no answer from the daemon in {} ms", HOOK_DEADLINE.as_millis());
     let until = Instant::now() + HOOK_DEADLINE;
-    let mut stream = connect_until(until).map_err(|e| e.worded(|_| no_answer.clone()))?;
+    let mut stream = connect_until(until).map_err(|e| e.worded(&no_answer))?;
     send_acked(&mut stream, &msg, until, &no_answer)
 }
 
