@@ -132,10 +132,10 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
         refreshWayfinding(board.viewport)
     }
 
-    /// The inbox panel's width follows the Interface size.
+    /// The inbox panel's width follows the Interface size; the layout pass
+    /// shows the pills again.
     func fontsChanged() {
         offHints.forget()
-        refreshWayfinding(board.viewport)
         needsLayout = true
     }
 

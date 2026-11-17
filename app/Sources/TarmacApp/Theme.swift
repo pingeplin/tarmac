@@ -54,8 +54,9 @@ enum Theme {
 
     static var proseFontSize: Double { size(of: .document) }
 
-    /// A chrome design size, a font's or a line height a view fixes for one,
-    /// at the Interface size in effect: unchanged at the standard size.
+    /// A chrome design size (a font's, or a line height or a text width a
+    /// view fixes for one) at the Interface size in effect: unchanged at the
+    /// standard size.
     static func chrome(_ design: CGFloat) -> CGFloat {
         design * FontSizeRule.interface.factor(at: size(of: .interface))
     }
