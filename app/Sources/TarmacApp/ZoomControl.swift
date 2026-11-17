@@ -94,7 +94,7 @@ final class ZoomControl: NSView, FontFollowing, ThemeFollowing {
     private var segmentWidths: [CGFloat] {
         [
             minusBtn.textWidth + Self.padX * 2,
-            max(pct.attributedStringValue.size().width, 30) + Self.pctPadX * 2,
+            max(pct.attributedStringValue.size().width, Theme.chrome(30)) + Self.pctPadX * 2,
             plusBtn.textWidth + Self.padX * 2,
             fitBtn.textWidth + Self.padX * 2,
         ]

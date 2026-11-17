@@ -319,7 +319,7 @@ final class ChipView: PressControl, ThemeFollowing {
         let padY = scale.length(ChipMetrics.padY)
         let overhang = CardHeaderLayout.textOverhang(scale: scale.zoom)
         let natural = text.room + 2 * padX
-        let width = min(scale.length(Self.maxWidth), natural)
+        let width = min(scale.length(Theme.chrome(Self.maxWidth)), natural)
         size = NSSize(width: width, height: scale.aligned(text.size.height + 2 * padY))
         label.frame = NSRect(
             x: scale.aligned(padX - overhang),

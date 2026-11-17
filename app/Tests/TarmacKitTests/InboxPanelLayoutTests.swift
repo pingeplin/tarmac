@@ -22,6 +22,22 @@ final class InboxPanelLayoutTests: XCTestCase {
         XCTAssertEqual(InboxPanelLayout.uncovered(area, open: false), area)
     }
 
+    /// #394: the cap is what the Interface size makes of 360; a third of the
+    /// area still bounds it.
+    func testAScaledCapWidensThePanelUpToAThirdOfTheArea() {
+        let wide = CGRect(x: 0, y: 0, width: 2000, height: 673)
+        XCTAssertEqual(InboxPanelLayout.width(wide, maxWidth: 480), 480)
+        XCTAssertEqual(InboxPanelLayout.width(area, maxWidth: 480), 366)
+        XCTAssertEqual(InboxPanelLayout.width(wide, maxWidth: 300), 300)
+        XCTAssertEqual(
+            InboxPanelLayout.panelRect(wide, maxWidth: 480), CGRect(x: 1520, y: 0, width: 480, height: 673)
+        )
+        XCTAssertEqual(
+            InboxPanelLayout.uncovered(wide, open: true, maxWidth: 480), CGRect(x: 0, y: 0, width: 1520, height: 673)
+        )
+        XCTAssertEqual(InboxPanelLayout.uncovered(wide, open: false, maxWidth: 480), wide)
+    }
+
     func testS26AHintUnderThePanelIsPlacedOnThePanelsLeftEdge() {
         let options = OffscreenHintLayout.Options(
             edgeInset: 12, edgeMargin: 8, stackGap: 6, pillSize: { _ in CGSize(width: 80, height: 22) }

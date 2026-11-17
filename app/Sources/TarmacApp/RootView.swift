@@ -132,10 +132,14 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
         refreshWayfinding(board.viewport)
     }
 
+    /// The inbox panel's width follows the Interface size.
     func fontsChanged() {
         offHints.forget()
         refreshWayfinding(board.viewport)
+        needsLayout = true
     }
+
+    private var inboxMaxWidth: CGFloat { Theme.chrome(InboxPanelLayout.maxWidth) }
 
     /// A pill is reused while what it says is the same, which a new colour
     /// does not change.
@@ -153,7 +157,7 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
         minimap.update(items: board.minimapItems, viewportWorldRect: board.viewportWorldRect)
         // An open inbox covers the board's right strip: a card under it is off
         // screen, and the pills keep to what it leaves (2611.0013, D12).
-        let visible = InboxPanelLayout.uncovered(board.bounds, open: !inboxPanel.isHidden)
+        let visible = InboxPanelLayout.uncovered(board.bounds, open: !inboxPanel.isHidden, maxWidth: inboxMaxWidth)
         let selection = OffscreenHintLayout.select(offscreenHintProvider?(visible) ?? [])
         placedHints = offHints.show(
             selection.shown, in: visible, around: board.cards.values.map(\.frame), clearOf: chromeOverHints
@@ -209,7 +213,7 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
         board.frame = area
         statusBar.frame = NSRect(x: 0, y: area.maxY, width: bounds.width, height: StatusBar.height)
 
-        let uncovered = InboxPanelLayout.uncovered(area, open: !inboxPanel.isHidden)
+        let uncovered = InboxPanelLayout.uncovered(area, open: !inboxPanel.isHidden, maxWidth: inboxMaxWidth)
         offHints.over.frame = area
         toasts.frame = uncovered
         // Zoom control: bottom-left, left 12, 12 above the status bar.
@@ -229,7 +233,7 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
         // the panel centers itself within.
         if !boardSwitcher.isHidden { boardSwitcher.frame = area }
         if !restoreCard.isHidden { restoreCard.frame = area }
-        if !inboxPanel.isHidden { inboxPanel.frame = InboxPanelLayout.panelRect(area) }
+        if !inboxPanel.isHidden { inboxPanel.frame = InboxPanelLayout.panelRect(area, maxWidth: inboxMaxWidth) }
         cardsChanged()
     }
 }
