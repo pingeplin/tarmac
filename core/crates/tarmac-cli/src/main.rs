@@ -131,11 +131,11 @@ fn run(args: &[String]) -> i32 {
 /// The five-line report. Every value is observed, never inferred: an absent app
 /// is reported only when the daemon said so.
 fn version_report(sock: &Path) -> String {
-    let (daemon, app) = match handshake(sock, Instant::now() + DAEMON_WAIT, &lost) {
+    let (daemon, app) = match handshake(sock, Instant::now() + DAEMON_WAIT) {
         Ok((_, info)) => (daemon_line(&info), app_line(&info)),
         Err(NoHandshake::NoDaemon) => ("not running".into(), "unknown (no daemon)".into()),
-        Err(NoHandshake::Reason(why)) => {
-            (format!("unreachable ({why})"), "unknown (daemon unreachable)".into())
+        Err(failed) => {
+            (format!("unreachable ({})", failed.worded(lost)), "unknown (daemon unreachable)".into())
         }
     };
     [

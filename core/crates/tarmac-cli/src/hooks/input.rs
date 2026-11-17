@@ -1,12 +1,12 @@
 use std::io::{self, IsTerminal, Read, Write};
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use tarmac_protocol::{Msg, REPORT_CLEAR, REPORT_TEXT_MAX, ReportKind, cap_report_text};
 
-use crate::daemon::{NoAnswer, send_acked};
+use crate::daemon::{connect_until, send_acked};
 
 const HOOK_STDIN_MAX: usize = 4 << 20;
 const HOOK_STDIN_WAIT: Duration = Duration::from_secs(1);
@@ -41,7 +41,9 @@ fn hook(args: &[String]) -> Result<(), String> {
         serde_json::from_slice(&read_input()?).map_err(|e| format!("the input is not a JSON object: {e}"))?;
     let Some(msg) = claude_message(&term_id, &input)? else { return Ok(()) };
     let no_answer = format!("no answer from the daemon in {} ms", HOOK_DEADLINE.as_millis());
-    send_acked(&msg, HOOK_DEADLINE, NoAnswer::Anywhere(&no_answer))
+    let until = Instant::now() + HOOK_DEADLINE;
+    let mut stream = connect_until(until).map_err(|e| e.worded(|_| no_answer.clone()))?;
+    send_acked(&mut stream, &msg, until, &no_answer)
 }
 
 /// Stdin, read on a thread of its own so that a writer that never closes it
