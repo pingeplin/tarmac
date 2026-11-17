@@ -37,7 +37,7 @@ final class InboxRowView: OverlayRowView {
 
     func configure(_ row: InboxPanelView.Row, selected: Bool) {
         self.selected = selected
-        kindTag.setTone(.inbox(row.kind, dimmed: row.read))
+        kindTag.setTone(.signal(row.kind.signal, dimmed: row.read))
         kindTag.setLabel(InboxCopy.tag(row.kind))
         title.attributedStringValue = NSAttributedString(
             string: row.title, attributes: [.font: Font.title, .foregroundColor: row.read ? Theme.faint : Theme.text]

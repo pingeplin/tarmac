@@ -1,6 +1,6 @@
 import CoreGraphics
 
-/// Overlay-level offscreen-hint logic: a card's signal and its rank, the single ⏎-fly target, the pill
+/// Overlay-level offscreen-hint logic: the single ⏎-fly target, the pill
 /// label, which pills are shown, and the per-edge greedy stacking layout. The edge geometry itself
 /// (`BoardWayfinding.hintPlacement`, `Edge.arrow`) lives in `BoardWayfinding`;
 /// this adds what lived in the untested AppKit overlay. Pure and clock-free — the
@@ -29,28 +29,6 @@ public enum OffscreenHintLayout {
         }
     }
 
-    /// Blocked 4, bell 3, exit 2, done 1, live 0.
-    public static func rank(_ signal: CardSignal) -> Int {
-        switch signal {
-        case .blocked: 4
-        case .bell: 3
-        case .exit: 2
-        case .done: 1
-        case .live: 0
-        }
-    }
-
-    /// A card's one signal (spec 2611.0013), the highest it has. A read
-    /// report makes none: the card falls through to its other facts.
-    public static func signal(report: TermReport?, bellLit: Bool, exitUnread: Bool, live: Bool) -> CardSignal? {
-        let unread = report.flatMap { $0.read ? nil : $0.kind }
-        if unread == .blocked { return .blocked }
-        if bellLit { return .bell }
-        if exitUnread { return .exit }
-        if unread == .done { return .done }
-        return live ? .live : nil
-    }
-
     /// The single ⏎-fly target: the hint with the highest `(rank, z)`, or nil
     /// when empty. The first wins a tie (strictly-greater swap), so callers
     /// must iterate cards in a stable order for determinism.
@@ -61,7 +39,7 @@ public enum OffscreenHintLayout {
                 best = hint
                 continue
             }
-            if (rank(hint.signal), hint.z) > (rank(current.signal), current.z) { best = hint }
+            if (hint.signal.rank, hint.z) > (current.signal.rank, current.z) { best = hint }
         }
         return best?.cardID
     }
@@ -74,7 +52,7 @@ public enum OffscreenHintLayout {
     /// then the earlier hint.
     public static func shown(_ hints: [Hint]) -> [Hint] {
         guard hints.count > maxPills else { return hints }
-        let keys = hints.indices.map { (rank(hints[$0].signal), hints[$0].signalAt ?? 0, hints[$0].z, -$0) }
+        let keys = hints.indices.map { (hints[$0].signal.rank, hints[$0].signalAt ?? 0, hints[$0].z, -$0) }
         return hints.indices.sorted { keys[$0] > keys[$1] }.prefix(maxPills).sorted().map { hints[$0] }
     }
 
