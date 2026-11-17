@@ -19,6 +19,11 @@ public enum TermExit {
         case holdOpen
     }
 
+    /// An error code or a signal (nil) is a failure; only 0 is clean.
+    public static func isFailure(code: Int?) -> Bool {
+        code != 0
+    }
+
     /// Decide the action for an exit with `code`, given `otherLiveTerminals` —
     /// the count of OTHER terminals on the same board still backed by a live pty
     /// (excluding the one that just exited).
@@ -28,7 +33,7 @@ public enum TermExit {
     /// card vanishing and being silently replaced. The guarantee re-applies only
     /// when the user later removes the placeholder.
     public static func decide(code: Int?, otherLiveTerminals: Int) -> Action {
-        guard code == 0 else { return .holdOpen }
+        guard !isFailure(code: code) else { return .holdOpen }
         return otherLiveTerminals == 0 ? .removeAndReplace : .remove
     }
 }

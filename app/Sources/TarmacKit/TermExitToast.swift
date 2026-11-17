@@ -5,10 +5,7 @@ public enum TermExitToast {
 
     /// `code` is the daemon's `exit` code: nil for a signal, 0 for a clean exit.
     public static func title(code: Int?) -> String? {
-        switch code {
-        case nil: return "killed by signal"
-        case 0: return nil
-        case let code?: return "shell exited · \(code)"
-        }
+        guard TermExit.isFailure(code: code) else { return nil }
+        return code.map { "shell exited · \($0)" } ?? "killed by signal"
     }
 }
