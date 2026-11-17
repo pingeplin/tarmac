@@ -242,7 +242,7 @@ enum ChipMetrics {
 /// action: the `resume` chip and a resume panel's buttons (2611.0015) act on a
 /// release inside them, as `HeaderButton` does.
 @MainActor
-final class ChipView: PressControl, ThemeFollowing {
+final class ChipView: PressControl, ThemeFollowing, FontFollowing {
     enum Tone: Equatable {
         case neutral
         /// A dimmed (read) report keeps the kind's colour on its border, so a
@@ -308,6 +308,11 @@ final class ChipView: PressControl, ThemeFollowing {
     func apply(_ scale: CardScale) {
         self.scale = scale
         if !isHidden { measure() }
+    }
+
+    func fontsChanged() {
+        apply(scale)
+        superview?.needsLayout = true
     }
 
     private func measure() {
