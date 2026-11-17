@@ -31,7 +31,7 @@ impl Fake {
             let reply = match reply {
                 Reply::Silence => return peer.hold(),
                 Reply::After(d, reply) => {
-                    std::thread::sleep(d);
+                    peer.pause(d);
                     reply
                 }
                 Reply::Now(reply) => reply,
