@@ -24,10 +24,9 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
     let restoreCard = RestoreCardView()
     let inboxPanel = InboxPanelView()
 
-    /// Supplies the mounted board's signalling cards whose centre is outside
-    /// the given board-local rect, in card order. The controller knows the
-    /// labels and bell times the board does not.
-    var offscreenHintProvider: ((CGRect) -> [OffscreenHintLayout.Hint])?
+    /// Supplies the mounted board's signalling cards, in card order. The
+    /// controller knows the labels and bell times the board does not.
+    var signalHintProvider: (() -> [OffscreenHintLayout.Hint])?
     /// An edge pill was clicked, with the id of the terminal it stands for.
     var onHintClick: ((String) -> Void)? {
         didSet { offHints.onClick = onHintClick }
@@ -168,7 +167,7 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
         // An open inbox covers the board's right strip: a card under it is off
         // screen, and the pills keep to what it leaves (2611.0013, D12).
         let visible = InboxPanelLayout.uncovered(board.bounds, open: !inboxPanel.isHidden, maxWidth: inboxMaxWidth)
-        let selection = OffscreenHintLayout.select(offscreenHintProvider?(visible) ?? [])
+        let selection = OffscreenHintLayout.select(signalHintProvider?() ?? [], in: visible)
         placedHints = offHints.show(
             selection.shown, in: visible, around: board.cards.values.map(\.frame), clearOf: chromeOverHints
         )

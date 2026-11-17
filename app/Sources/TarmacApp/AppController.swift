@@ -204,7 +204,7 @@ final class AppController {
         let board0 = mintBoard(id: Board.defaultID, name: nil, view: rootView.board)
 
         // Reads `activeBoard` dynamically, so the hints track the mounted board.
-        rootView.offscreenHintProvider = { [weak self] visible in self?.offscreenHints(in: visible) ?? [] }
+        rootView.signalHintProvider = { [weak self] in self?.signalHints() ?? [] }
         rootView.onHintClick = { [weak self] termID in self?.jump(toCard: termID) }
         // ⌘K switcher: a row click opens that board; a veil click dismisses.
         rootView.boardSwitcher.onPickRow = { [weak self] index in self?.switcherPickRow(index) }

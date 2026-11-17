@@ -394,7 +394,7 @@ final class CardView: NSView, ThemeFollowing {
     /// What the minimap and the offscreen hints show for this card, given
     /// whether its inbox exit row is unread (2611.0013).
     func signal(exitUnread: Bool) -> CardSignal? {
-        OffscreenHintLayout.signal(report: report, bellLit: bellActive, exitUnread: exitUnread, live: liveActive)
+        CardSignal.of(report: report, bellLit: bellActive, exitUnread: exitUnread, live: liveActive)
     }
 
     /// A terminal's report, as a chip in the header; nil hides it.

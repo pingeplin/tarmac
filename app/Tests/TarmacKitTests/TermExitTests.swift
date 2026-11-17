@@ -35,4 +35,14 @@ final class TermExitTests: XCTestCase {
         XCTAssertEqual(TermExit.decide(code: 0, otherLiveTerminals: 1), .remove)
         XCTAssertEqual(TermExit.decide(code: 0, otherLiveTerminals: 0), .removeAndReplace)
     }
+
+    /// The one failed-exit rule the card, the toast and the inbox share: an
+    /// error code or a signal fails, only 0 is clean.
+    func testOnlyACleanExitIsNotAFailure() {
+        XCTAssertFalse(TermExit.isFailure(code: 0))
+        XCTAssertTrue(TermExit.isFailure(code: 1))
+        XCTAssertTrue(TermExit.isFailure(code: 130))
+        XCTAssertTrue(TermExit.isFailure(code: -1))
+        XCTAssertTrue(TermExit.isFailure(code: nil))
+    }
 }

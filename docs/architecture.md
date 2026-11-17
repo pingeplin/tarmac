@@ -1607,7 +1607,7 @@ the keys back to the view that had them. A 27-point status bar sits below
 the board: `attached` or the link's reason, and the card count. The window
 title names the active board.
 
-Only terminals signal, one signal each (`OffscreenHintLayout.signal`, spec
+Only terminals signal, one signal each (`CardSignal.of`, spec
 2611.0013), the first that holds of: an unread `blocked` report, a lit `bell`,
 an unread inbox `exit` item, an unread `done` report, `live` while the PTY is
 alive. A read report makes no signal. The ⏎ flight takes the highest

@@ -5,8 +5,9 @@ import Foundation
 public enum ReportChip {
     public struct Model: Equatable, Sendable {
         public let text: String
-        /// The kind's colour; a dimmed chip keeps it on its border.
-        public let tone: TermReport.Kind
+        /// The kind's signal, and so its colour; a dimmed chip keeps it on
+        /// its border.
+        public let signal: CardSignal
         public let dimmed: Bool
         public let toolTip: String
     }
@@ -26,7 +27,7 @@ public enum ReportChip {
         let heading = heading(proc: report.proc)
         return Model(
             text: "\(title) · \(ChromeText.reportAge(atMs: report.atMs, nowMs: nowMs))",
-            tone: report.kind,
+            signal: report.kind.signal,
             dimmed: report.read,
             toolTip: report.text.map { "\(heading)\n“\($0)”" } ?? heading
         )

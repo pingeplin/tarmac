@@ -245,11 +245,10 @@ enum ChipMetrics {
 final class ChipView: PressControl, ThemeFollowing, FontFollowing {
     enum Tone: Equatable {
         case neutral
-        /// A dimmed (read) report keeps the kind's colour on its border, so a
-        /// read `blocked` and a read `done` still differ; its text goes faint.
-        case report(TermReport.Kind, dimmed: Bool)
-        /// An inbox row's kind tag (2611.0013), in the same form.
-        case inbox(Inbox.Kind, dimmed: Bool)
+        /// A report chip or an inbox row's kind tag (2611.0013). A dimmed
+        /// (read) one keeps the signal's colour on its border, so a read
+        /// `blocked` and a read `done` still differ; its text goes faint.
+        case signal(CardSignal, dimmed: Bool)
     }
 
     private static let maxWidth: CGFloat = 120
@@ -279,10 +278,8 @@ final class ChipView: PressControl, ThemeFollowing, FontFollowing {
         case .neutral:
             layer?.borderColor = Theme.lineSoft.cgColor
             label.textColor = Theme.faint
-        case .report(let kind, let dimmed):
-            paint(OverlayPalette.tone(Inbox.Kind.report(kind).signal), dimmed: dimmed)
-        case .inbox(let kind, let dimmed):
-            paint(OverlayPalette.tone(kind.signal), dimmed: dimmed)
+        case .signal(let signal, let dimmed):
+            paint(OverlayPalette.tone(signal), dimmed: dimmed)
         }
     }
 
@@ -533,7 +530,7 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
             return
         }
         let model = ReportChip.model(report: report, nowMs: WallClock.nowMs)
-        reportChip.setTone(.report(model.tone, dimmed: model.dimmed))
+        reportChip.setTone(.signal(model.signal, dimmed: model.dimmed))
         reportToolTip = model.toolTip
         reportChip.isHidden = false
         reportChip.setLabel(model.text)

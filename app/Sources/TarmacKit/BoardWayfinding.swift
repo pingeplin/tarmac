@@ -177,14 +177,6 @@ public enum BoardWayfinding {
         }
     }
 
-    /// True when `worldRect` is entirely outside `viewportWorldRect` is NOT what
-    /// we want — a card counts as offscreen when its *center* is outside the
-    /// visible world rect (so partially-visible cards near an edge still hint,
-    /// matching the design's "toward the card" intent).
-    public static func isOffscreen(cardCenterWorld c: CGPoint, viewportWorldRect vp: CGRect) -> Bool {
-        !vp.contains(c)
-    }
-
     /// Places a hint pill for an offscreen card. Given the card center in VIEW
     /// space and the visible view rect, pick the edge the card lies beyond
     /// (whichever axis is most out of bounds) and the clamped position along it.

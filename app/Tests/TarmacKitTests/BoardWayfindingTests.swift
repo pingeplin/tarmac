@@ -247,10 +247,4 @@ final class BoardWayfindingTests: XCTestCase {
         XCTAssertEqual(BoardWayfinding.Edge.top.arrow, "↑")
         XCTAssertEqual(BoardWayfinding.Edge.bottom.arrow, "↓")
     }
-
-    func testIsOffscreenByCenter() {
-        let vp = CGRect(x: 0, y: 0, width: 800, height: 600)
-        XCTAssertFalse(BoardWayfinding.isOffscreen(cardCenterWorld: CGPoint(x: 400, y: 300), viewportWorldRect: vp))
-        XCTAssertTrue(BoardWayfinding.isOffscreen(cardCenterWorld: CGPoint(x: 900, y: 300), viewportWorldRect: vp))
-    }
 }

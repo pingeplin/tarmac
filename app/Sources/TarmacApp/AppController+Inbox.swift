@@ -126,14 +126,9 @@ extension AppController {
             unread: inbox.unreadCount,
             filter: inboxState.filter,
             rows: items.map { item in
-                let place = InboxCopy.place(
+                InboxCopy.row(
                     item, boardName: boardMetas.first { $0.boardID == item.boardID }?.name,
-                    cardLabel: boards[item.boardID]?.sessions[item.termID]?.label, home: home
-                )
-                return InboxPanelView.Row(
-                    id: item.id, kind: item.kind, title: InboxCopy.title(item), quote: InboxCopy.quote(item),
-                    place: place, age: InboxCopy.age(item, nowMs: now), read: item.read,
-                    toolTip: InboxCopy.toolTip(item, place: place)
+                    cardLabel: boards[item.boardID]?.sessions[item.termID]?.label, home: home, nowMs: now
                 )
             },
             selected: inboxState.selected

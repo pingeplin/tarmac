@@ -535,24 +535,18 @@ extension AppController {
 
     // MARK: - Offscreen hints
 
-    /// The active board's signalling terminals whose centre is outside
-    /// `viewRect` — the board's bounds, less an open inbox panel — in card
-    /// order, the order that settles which of two equal signals ⏎ flies to.
-    func offscreenHints(in viewRect: CGRect) -> [OffscreenHintLayout.Hint] {
+    /// The active board's signalling terminals, in card order, the order
+    /// that settles which of two equal signals ⏎ flies to.
+    func signalHints() -> [OffscreenHintLayout.Hint] {
         let board = activeBoard
-        let topLeft = board.view.viewToWorld(CGPoint(x: viewRect.minX, y: viewRect.minY))
-        let bottomRight = board.view.viewToWorld(CGPoint(x: viewRect.maxX, y: viewRect.maxY))
-        let visible = CGRect(
-            x: topLeft.x, y: topLeft.y, width: bottomRight.x - topLeft.x, height: bottomRight.y - topLeft.y
-        )
         return board.sessionOrder.compactMap { termID in
             guard let s = board.sessions[termID], let card = board.view.card(.term(termID)),
                   let signal = card.signal(exitUnread: inbox.exitUnread(termID: termID)) else { return nil }
-            let center = CGPoint(x: card.worldFrame.rect.midX, y: card.worldFrame.rect.midY)
-            guard BoardWayfinding.isOffscreen(cardCenterWorld: center, viewportWorldRect: visible) else { return nil }
             return OffscreenHintLayout.Hint(
                 cardID: termID,
-                centerView: board.view.worldToView(center),
+                centerView: board.view.worldToView(
+                    CGPoint(x: card.worldFrame.rect.midX, y: card.worldFrame.rect.midY)
+                ),
                 signal: signal,
                 label: OffscreenHintLayout.pillLabel(
                     signal: signal, name: s.label, hhmm: hhmm(s.bellAt ?? Date()), quote: card.report?.text

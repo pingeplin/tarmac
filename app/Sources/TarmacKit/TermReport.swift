@@ -3,6 +3,14 @@ public struct TermReport: Equatable, Sendable {
     public enum Kind: Equatable, Sendable {
         case blocked
         case done
+
+        /// The signal, and so the colour, of an unread report of this kind.
+        public var signal: CardSignal {
+            switch self {
+            case .blocked: .blocked
+            case .done: .done
+            }
+        }
     }
 
     public let kind: Kind

@@ -28,8 +28,7 @@ public struct Inbox: Equatable, Sendable {
         /// The pill signal the kind shows as, and so its colour.
         public var signal: CardSignal {
             switch self {
-            case .report(.blocked): .blocked
-            case .report(.done): .done
+            case .report(let kind): kind.signal
             case .bell: .bell
             case .exit: .exit
             }
@@ -149,14 +148,14 @@ public struct Inbox: Equatable, Sendable {
         entries.removeValue(forKey: ItemID(termID: termID, family: .report)) != nil
     }
 
-    /// Every `exit` frame ends the report; one that `TermExitToast` names
-    /// also puts an exit item.
+    /// Every `exit` frame ends the report; a failed one
+    /// (`TermExit.isFailure`) also puts an exit item.
     @discardableResult
     public mutating func exit(
         termID: String, boardID: String, code: Int?, proc: String?, cwd: String?, nowMs: UInt64
     ) -> Bool {
         let ended = reportEnded(termID: termID)
-        guard TermExitToast.title(code: code) != nil else { return ended }
+        guard TermExit.isFailure(code: code) else { return ended }
         let item = Item(
             kind: .exit(code: code), termID: termID, boardID: boardID, atMs: nowMs, proc: proc, cwd: cwd, text: nil,
             read: false

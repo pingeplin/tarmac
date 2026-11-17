@@ -8,21 +8,10 @@ import TarmacKit
 /// Screen-space chrome: the board's zoom never scales it.
 @MainActor
 final class InboxPanelView: KeyHoldingView, FontFollowing, ThemeFollowing {
-    struct Row: Equatable {
-        let id: Inbox.ItemID
-        let kind: Inbox.Kind
-        let title: String
-        let quote: String?
-        let place: String
-        let age: String
-        let read: Bool
-        let toolTip: String
-    }
-
     struct Model: Equatable {
         let unread: Int
         let filter: Inbox.Filter
-        let rows: [Row]
+        let rows: [InboxRow]
         let selected: Inbox.ItemID?
     }
 

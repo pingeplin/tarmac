@@ -88,6 +88,28 @@ final class InboxCopyTests: XCTestCase {
         XCTAssertEqual(InboxCopy.age(inboxItem(.bell, at: 9_000), nowMs: 1_000), "<1m")
     }
 
+    func testARowIsTheItemAsItsPlaceTimeAndCopyReadIt() {
+        let report = inboxItem(
+            .report(.blocked), proc: "claude", cwd: "/Users/u/w", text: "May\nI?", at: 1_000, term: "T1"
+        )
+        XCTAssertEqual(
+            InboxCopy.row(report, boardName: "api", cardLabel: "agent", home: "/Users/u", nowMs: 1_000 + 125_000),
+            InboxRow(
+                id: Inbox.ItemID(termID: "T1", family: .report), kind: .report(.blocked),
+                title: "report · during claude", quote: "“May I?”", place: "api › agent · ~/w", age: "2m",
+                read: false, toolTip: "report · during claude\n“May\nI?”\napi › agent · ~/w"
+            )
+        )
+        let bell = inboxItem(.bell, at: 5_000, read: true)
+        XCTAssertEqual(
+            InboxCopy.row(bell, boardName: nil, cardLabel: nil, home: "/Users/u", nowMs: 1_000),
+            InboxRow(
+                id: Inbox.ItemID(termID: "T", family: .bell), kind: .bell, title: "bell", quote: nil,
+                place: "board-1 › shell", age: "<1m", read: true, toolTip: "bell\nboard-1 › shell"
+            )
+        )
+    }
+
     func testS5EveryStringIsEnglish() {
         let items = [
             inboxItem(.report(.blocked), proc: "claude", cwd: "/w", text: "ok"), inboxItem(.report(.done)),
