@@ -7,7 +7,7 @@ use tarmac_protocol::Msg;
 
 mod common;
 use common::frames::{bell, exit, term_report};
-use common::{Report, Step, Streamer, Then, assert_never_answered, assert_usage, start, tarmac_at, untouched};
+use common::{Double, Report, Step, Streamer, Then, assert_never_answered, assert_no_answer, assert_usage, start, tarmac_at, untouched};
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
@@ -169,4 +169,13 @@ fn s35_a_closed_stdout_ends_events_with_exit_0() {
     let out = child.wait_with_output().unwrap();
     assert!(first.starts_with(r#"{"event":"bell""#), "{first}");
     assert_eq!((status.code(), String::from_utf8_lossy(&out.stderr).as_ref()), (Some(0), ""));
+}
+
+// Unlike `terms`, a time-out in the handshake is the no-answer line.
+#[test]
+fn a_daemon_silent_to_hello_is_the_no_answer_line_after_5_s() {
+    let daemon = Double::start("tarmacd.sock", |peer| peer.hold());
+    let started = Instant::now();
+
+    assert_no_answer(&Report::of(tarmac_at(&daemon.sock).arg("events")), started);
 }

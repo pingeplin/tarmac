@@ -181,7 +181,7 @@ fn a_silent_peer_times_out_instead_of_hanging() {
     let report = fake.version();
 
     assert_eq!(report.code(), Some(0));
-    assert!(report.line("daemon").starts_with("unreachable ("));
+    assert_eq!(report.line("daemon"), "unreachable (daemon connection lost: Resource temporarily unavailable (os error 35))");
     assert!(started.elapsed() < Duration::from_secs(15), "must not hang: {:?}", started.elapsed());
 }
 

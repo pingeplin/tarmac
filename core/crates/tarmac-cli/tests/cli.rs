@@ -1,10 +1,14 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{Duration, Instant};
 
 use tarmac_protocol::{self as proto, Msg};
 
 mod common;
-use common::{Double, Report, hello_ok, scratch, tarmac, tarmac_at};
+use common::{Double, Report, Streamer, hello_ok, scratch, tarmac, tarmac_at};
+
+/// The socket's read time-out, worded as a lost connection.
+const LOST_LATE: &str = "tarmac: daemon connection lost: Resource temporarily unavailable (os error 35)\n";
 
 /// A daemon double for `open`: it does the handshake, records the `Open` path,
 /// then answers `reply`.
@@ -366,4 +370,18 @@ fn help_documents_the_skill_verb_too() {
     // --help splices agents::FLAGS_USAGE; without this the interpolation could be
     // dropped and every other test would stay green.
     assert!(out.stdout.contains("--dry-run"), "--help must carry install's flags");
+}
+
+// `open` words a time-out as a lost connection, in the handshake and after it.
+#[test]
+fn open_against_a_daemon_that_never_answers_is_a_lost_connection_after_5_s() {
+    let silent_to_hello = Double::start("tarmacd.sock", |peer| peer.hold());
+    let silent_to_open = Streamer::holding(vec![]);
+    for sock in [&silent_to_hello.sock, &silent_to_open.double.sock] {
+        let started = Instant::now();
+        let out = Report::of(tarmac_at(sock).args(["open", "/tmp/a.md"]));
+
+        assert_eq!((out.code(), out.stderr.as_str()), (Some(1), LOST_LATE), "{}", sock.display());
+        assert!(started.elapsed() >= Duration::from_secs(5), "gave up after {:?}", started.elapsed());
+    }
 }
