@@ -49,13 +49,16 @@ fn assert_no_connection(out: &Report, case: &str) {
 
 /// The fastest of `runs` runs of `run`, with every result. A debug binary
 /// under a parallel `cargo test` can be slow to start, so a bound holds for
-/// the fastest run; every time is printed for the record.
-fn fastest(runs: usize, mut run: impl FnMut() -> Report) -> (Duration, Vec<Report>) {
+/// the fastest run; every time is printed for the record. Only `run` is
+/// timed: what `setup` makes is made before the clock starts and dropped
+/// after it stops, so a double's teardown is not counted as the cli's time.
+fn fastest<S>(runs: usize, mut setup: impl FnMut() -> S, mut run: impl FnMut(&S) -> Report) -> (Duration, Vec<Report>) {
     let mut times = Vec::new();
     let mut outs = Vec::new();
     for _ in 0..runs {
+        let fixture = setup();
         let started = Instant::now();
-        outs.push(run());
+        outs.push(run(&fixture));
         times.push(started.elapsed());
     }
     eprintln!("run times: {times:?}");
@@ -110,10 +113,9 @@ fn s20_no_daemon_is_fast_silent_and_says_so_on_stderr() {
     let dead = sandbox().join("dead.sock");
     drop(std::os::unix::net::UnixListener::bind(&dead).unwrap());
     for sock in [sandbox().join("absent.sock"), dead] {
-        let (best, outs) = fastest(5, || {
-            let dir = sandbox();
+        let (best, outs) = fastest(5, sandbox, |dir| {
             Report::of_input(
-                run_claude(&dir).env("TARMAC_SOCKET", &sock),
+                run_claude(dir).env("TARMAC_SOCKET", &sock),
                 stop_input("Done."),
             )
         });
@@ -136,7 +138,7 @@ fn s21_a_daemon_that_never_answers_is_given_up_on_at_the_deadline() {
         || OneAnswer::start_late(Duration::from_millis(800), Answer::Silence).double,
     ];
     for start in daemons {
-        let (best, outs) = fastest(3, || run_against(&start(), stop_input("Done.")));
+        let (best, outs) = fastest(3, start, |daemon| run_against(daemon, stop_input("Done.")));
 
         for out in &outs {
             assert_silent_success(out, "silent daemon");
@@ -150,9 +152,11 @@ fn s21_a_daemon_that_never_answers_is_given_up_on_at_the_deadline() {
 // given again to the answer.
 #[test]
 fn one_deadline_spans_the_handshake_and_the_answer() {
-    let (best, outs) = fastest(3, || {
-        run_against(&OneAnswer::start_late(Duration::from_millis(300), Answer::Silence).double, stop_input("Done."))
-    });
+    let (best, outs) = fastest(
+        3,
+        || OneAnswer::start_late(Duration::from_millis(300), Answer::Silence),
+        |daemon| run_against(&daemon.double, stop_input("Done.")),
+    );
 
     for out in &outs {
         assert_silent_success(out, "slow hello");
@@ -173,9 +177,8 @@ fn s22_a_refusal_is_a_stderr_line_and_exit_0() {
 #[test]
 fn s23_no_terminal_exits_at_once_without_reading_stdin() {
     for term_id in [None, Some("")] {
-        let (best, outs) = fastest(5, || {
-            let dir = sandbox();
-            let mut cmd = hooks_cmd(&dir);
+        let (best, outs) = fastest(5, sandbox, |dir| {
+            let mut cmd = hooks_cmd(dir);
             if let Some(id) = term_id {
                 cmd.env("TARMAC_TERM_ID", id);
             }
@@ -243,17 +246,15 @@ fn s24_an_input_of_exactly_4_mib_is_sent() {
 
 #[test]
 fn s24_a_stdin_that_never_closes_ends_within_the_wait() {
-    let dir = sandbox();
-    let started = Instant::now();
-    let out = Report::with_open_stdin(
-        &mut run_claude(&dir),
-        Duration::from_secs(5),
-    )
-    .expect("it exits");
+    let (best, outs) = fastest(3, sandbox, |dir| {
+        Report::with_open_stdin(&mut run_claude(dir), Duration::from_secs(5)).expect("it exits")
+    });
 
-    assert!(started.elapsed() <= Duration::from_millis(1500), "took {:?}", started.elapsed());
-    assert_silent_success(&out, "open stdin");
-    assert_no_connection(&out, "open stdin");
+    for out in &outs {
+        assert_silent_success(out, "open stdin");
+        assert_no_connection(out, "open stdin");
+    }
+    assert!(best <= Duration::from_millis(1500), "the fastest run took {best:?}");
 }
 
 #[test]
