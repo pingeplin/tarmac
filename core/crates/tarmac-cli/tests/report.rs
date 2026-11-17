@@ -2,7 +2,7 @@
 // answers are its tests' business; here the subject is what the cli sends,
 // prints and exits with.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use tarmac_protocol::{self as proto, Msg, REPORT_TEXT_MAX};
 
@@ -11,9 +11,6 @@ use common::{Answer, Double, OneAnswer, Report, assert_no_answer, no_daemon_line
 
 const USAGE: &str = "tarmac: usage: tarmac report blocked|done [\"<text>\"]  |  tarmac report clear\n";
 const NEEDS_TERM: &str = "tarmac: report needs TARMAC_TERM_ID (run it in a Tarmac terminal)\n";
-/// A daemon silent to `hello`: the socket's read time-out, worded as a lost
-/// connection.
-const LOST_IN_HANDSHAKE: &str = "tarmac: daemon connection lost: Resource temporarily unavailable (os error 35)\n";
 
 fn no_daemon(term_id: Option<&str>, args: &[&str]) -> Report {
     without_daemon("report", term_id, args)
@@ -128,13 +125,12 @@ fn s25_the_cli_caps_a_long_text() {
     assert_eq!(proto::decode(&daemon.sent()).unwrap(), report("blocked", Some(&capped)));
 }
 
-// A time-out in the handshake is a lost connection, unlike one after it.
+// A time-out in the handshake is no answer, as one after it is.
 #[test]
-fn a_daemon_silent_to_hello_is_a_lost_connection_after_5_s() {
+fn a_daemon_silent_to_hello_is_the_no_answer_line_after_5_s() {
     let daemon = Double::start("tarmacd.sock", |peer| peer.hold());
     let started = Instant::now();
     let out = Report::of(tarmac_at(&daemon.sock).env("TARMAC_TERM_ID", "t9").args(["report", "done"]));
 
-    assert_eq!((out.code(), out.stderr.as_str()), (Some(1), LOST_IN_HANDSHAKE));
-    assert!(started.elapsed() >= Duration::from_secs(5), "gave up after {:?}", started.elapsed());
+    assert_no_answer(&out, started);
 }

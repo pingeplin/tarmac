@@ -195,8 +195,8 @@ pub(crate) fn subscribe(kinds: Option<Vec<String>>, term_id: Option<String>, dea
         false => Stop::Fail(crate::daemon::lost(e)),
     };
     let mut stream = crate::daemon::connect_until(until).map_err(|e| match e {
-        NoHandshake::TimedOut(e) => stop(e),
-        e => Stop::Fail(e.worded(crate::daemon::lost)),
+        NoHandshake::TimedOut if late => Stop::Late,
+        e => Stop::Fail(e.worded(&no_answer)),
     })?;
     let payload = proto::encode(&Msg::Subscribe { kinds, term_id }).map_err(|e| Stop::Fail(format!("encode failed: {e}")))?;
     crate::daemon::time_out_at(&stream, until).and_then(|()| frame::write_sync(&mut stream, &payload)).map_err(stop)?;

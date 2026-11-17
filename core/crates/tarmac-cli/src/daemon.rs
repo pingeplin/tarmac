@@ -12,9 +12,10 @@ pub(crate) fn lost(e: io::Error) -> String {
     format!("daemon connection lost: {e}")
 }
 
-pub(crate) fn send(stream: &mut UnixStream, msg: &Msg) -> Result<(), String> {
+/// Sends `msg`, with a write that times out worded as `no_answer`.
+pub(crate) fn send(stream: &mut UnixStream, msg: &Msg, no_answer: &str) -> Result<(), String> {
     let payload = proto::encode(msg).map_err(|e| format!("encode failed: {e}"))?;
-    frame::write_sync(stream, &payload).map_err(lost)
+    frame::write_sync(stream, &payload).map_err(|e| late_or_lost(e, no_answer))
 }
 
 /// One frame from the daemon, with a failed read worded by `read_failed`.
@@ -39,11 +40,11 @@ pub(crate) fn answer(stream: &mut UnixStream, read_failed: impl Fn(io::Error) ->
     }
 }
 
-/// One request and its answer, as `answer` gives it. A read that times out
-/// is worded as no answer, with `why` saying what peer leaves one unanswered.
-pub(crate) fn exchange(stream: &mut UnixStream, payload: &[u8], why: &str) -> Result<Result<(), String>, String> {
-    frame::write_sync(stream, payload).map_err(lost)?;
-    answer(stream, |e| late_or_lost(e, &no_answer(why)))
+/// One request and its answer, as `answer` gives it. A write or read that
+/// times out is worded as `no_answer`.
+pub(crate) fn exchange(stream: &mut UnixStream, payload: &[u8], no_answer: &str) -> Result<Result<(), String>, String> {
+    frame::write_sync(stream, payload).map_err(|e| late_or_lost(e, no_answer))?;
+    answer(stream, |e| late_or_lost(e, no_answer))
 }
 
 /// A time-out worded as `no_answer`; any other failure as a lost connection.
@@ -71,8 +72,15 @@ pub(crate) fn time_out_at(stream: &UnixStream, until: Instant) -> io::Result<()>
 /// `terms`, `events` and `wait` wait for the daemon.
 pub(crate) const DAEMON_WAIT: Duration = Duration::from_secs(5);
 
+/// The no-answer line of a request that every daemon answers: `open`'s,
+/// and `--version`'s, whose only request is `hello`.
+pub(crate) fn not_answered() -> String {
+    format!("no answer from the daemon in {} s", DAEMON_WAIT.as_secs())
+}
+
+/// The no-answer line, with `why` saying what peer leaves the request unanswered.
 pub(crate) fn no_answer(why: &str) -> String {
-    format!("no answer from the daemon in {} s ({why})", DAEMON_WAIT.as_secs())
+    format!("{} ({why})", not_answered())
 }
 
 /// `no_answer` for a verb whose request only a daemon that predates it leaves unanswered.
@@ -90,29 +98,29 @@ pub(crate) struct DaemonInfo {
 
 /// Why no `hello_ok` came back. Only a failed `connect` is evidence that nothing
 /// is running; anything else, including a path we refused to dial, leaves the
-/// daemon's state unobserved. A write or read that ran out of time keeps its
-/// error: each verb words it.
+/// daemon's state unobserved. A write or read that ran out of time is the
+/// verb's own no-answer line.
 pub(crate) enum NoHandshake {
     NoDaemon,
-    TimedOut(io::Error),
+    TimedOut,
     Reason(String),
 }
 
 impl NoHandshake {
     /// Any other failed write or read is a lost connection.
     fn failed(e: io::Error) -> NoHandshake {
-        if is_timeout(&e) { NoHandshake::TimedOut(e) } else { NoHandshake::Reason(lost(e)) }
+        if is_timeout(&e) { NoHandshake::TimedOut } else { NoHandshake::Reason(lost(e)) }
     }
 
-    /// The line a verb prints, with a time-out worded by `timed_out`.
-    pub(crate) fn worded(self, timed_out: impl FnOnce(io::Error) -> String) -> String {
+    /// The line a verb prints, with a time-out worded as `no_answer`.
+    pub(crate) fn worded(self, no_answer: &str) -> String {
         match self {
             NoHandshake::NoDaemon => format!(
                 "no tarmac daemon running ({} channel, socket: {})",
                 proto::channel_label(crate::current_channel()),
                 crate::socket_path().display()
             ),
-            NoHandshake::TimedOut(e) => timed_out(e),
+            NoHandshake::TimedOut => no_answer.to_string(),
             NoHandshake::Reason(why) => why,
         }
     }
@@ -141,10 +149,10 @@ pub(crate) fn handshake(sock: &Path, until: Instant) -> Result<(UnixStream, Daem
 }
 
 /// A connection past its handshake, or the reason there is none, as the
-/// verbs that talk to the daemon print it. Every later read and write waits
-/// `DAEMON_WAIT`.
-pub(crate) fn connect() -> Result<UnixStream, String> {
-    let stream = connect_until(Instant::now() + DAEMON_WAIT).map_err(|e| e.worded(lost))?;
+/// verbs that talk to the daemon print it, with a time-out worded as
+/// `no_answer`. Every later read and write waits `DAEMON_WAIT`.
+pub(crate) fn connect(no_answer: &str) -> Result<UnixStream, String> {
+    let stream = connect_until(Instant::now() + DAEMON_WAIT).map_err(|e| e.worded(no_answer))?;
     let _ = stream.set_read_timeout(Some(DAEMON_WAIT));
     let _ = stream.set_write_timeout(Some(DAEMON_WAIT));
     Ok(stream)
@@ -166,11 +174,10 @@ pub(crate) fn for_terminal(needs_term: &str, msg: impl FnOnce(String) -> Msg) ->
     };
     let msg = msg(term_id);
     let until = Instant::now() + DAEMON_WAIT;
-    // A time-out in the handshake is a lost connection, as `tarmac report`
-    // has always said; only one after it is no answer.
+    let no_answer = no_answer_older();
     let sent = connect_until(until)
-        .map_err(|e| e.worded(lost))
-        .and_then(|mut stream| send_acked(&mut stream, &msg, until, &no_answer_older()));
+        .map_err(|e| e.worded(&no_answer))
+        .and_then(|mut stream| send_acked(&mut stream, &msg, until, &no_answer));
     match sent {
         Ok(()) => 0,
         Err(why) => {

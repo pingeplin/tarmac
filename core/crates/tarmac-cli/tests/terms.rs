@@ -1,15 +1,11 @@
 // `tarmac terms` (spec 2611.0012) against a daemon double.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use tarmac_protocol::{Msg, TermInfo};
 
 mod common;
-use common::{Double, Report, Streamer, assert_never_answered, assert_usage, tarmac_at, untouched};
-
-/// A daemon silent to `hello`: the socket's read time-out, worded as a lost
-/// connection.
-const LOST_IN_HANDSHAKE: &str = "tarmac: daemon connection lost: Resource temporarily unavailable (os error 35)\n";
+use common::{Double, Report, Streamer, assert_never_answered, assert_no_answer, assert_usage, tarmac_at, untouched};
 
 fn row(cwd: Option<&str>, proc: Option<&str>) -> TermInfo {
     TermInfo { term_id: "t1".into(), board_id: "board-0".into(), cwd: cwd.map(str::to_string), proc: proc.map(str::to_string) }
@@ -61,13 +57,12 @@ fn s33_an_argument_is_a_usage_error_with_no_connection() {
     assert!(untouched(&daemon.double));
 }
 
-// Unlike `events` and `wait`, a time-out in the handshake is a lost connection.
+// As for `events` and `wait`, a time-out in the handshake is no answer.
 #[test]
-fn a_daemon_silent_to_hello_is_a_lost_connection_after_5_s() {
+fn a_daemon_silent_to_hello_is_the_no_answer_line_after_5_s() {
     let daemon = Double::start("tarmacd.sock", |peer| peer.hold());
     let started = Instant::now();
     let out = Report::of(tarmac_at(&daemon.sock).arg("terms"));
 
-    assert_eq!((out.code(), out.stderr.as_str()), (Some(1), LOST_IN_HANDSHAKE));
-    assert!(started.elapsed() >= Duration::from_secs(5), "gave up after {:?}", started.elapsed());
+    assert_no_answer(&out, started);
 }
