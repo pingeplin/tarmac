@@ -35,8 +35,9 @@ final class TerminalSession {
     /// A dead card's offer to reopen in place: from its exit in this run, else
     /// from its board's latest restore.
     var deadOffer: DeadCardOffer.Offer?
-    /// The card died of its own exit in this run, not at a restore (#412).
-    var endedHere = false
+    /// When the card died of its own exit in this run; nil when it was found
+    /// dead at a restore (#412).
+    var endedAt: Date?
     /// `KeyLadder.afterRun`'s latch for this terminal.
     var afterRun = false
     /// The terminal's folder as the app last saw it: from a restore's record

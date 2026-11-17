@@ -348,6 +348,12 @@ final class KeyLadderTests: XCTestCase {
         XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offer: .reopen)), .swallow)
     }
 
+    /// #412: a stray Return just after the exit keeps the failure screen.
+    func testAReturnOnAReopenOfferThatIsNotArmedYetIsIgnored() {
+        XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .reopenArming)), .swallow)
+        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offer: .reopenArming)), .swallow)
+    }
+
     /// The D10 amendment: a held Return reopens once, and its repeats neither
     /// run the new card's command nor reach its shell.
     func testS9AHeldReturnReopensOnceAndItsRepeatsAreIgnored() {

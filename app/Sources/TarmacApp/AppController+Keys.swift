@@ -138,7 +138,8 @@ extension AppController {
             return offer.armed(prime: isPrime(s, on: activeBoard)) ? .resumeArmed : .resumeIdle
         }
         let dead = activeBoard.view.card(.term(s.termID))?.dead == true
-        return dead && s.deadOffer != nil ? .reopen : .none
+        guard dead, s.deadOffer != nil else { return .none }
+        return DeadCardOffer.returnKey(endedAt: s.endedAt, now: Date())
     }
 
     /// The active board's session whose view is `view`.

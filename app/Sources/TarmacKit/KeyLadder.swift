@@ -72,6 +72,9 @@ public enum KeyLadder {
         case resumeQueued
         /// A dead card's offer to reopen.
         case reopen
+        /// A reopen offer that does not take Return yet (#412): it is taken
+        /// and dropped, so it reaches neither the dead card nor a fly.
+        case reopenArming
     }
 
     public enum Action: Equatable, Sendable {
@@ -143,7 +146,7 @@ public enum KeyLadder {
         case .reopen: return .reopenDead
         // It means "run it", and it is already queued: passed on, it would
         // drop the run and give the shell an empty line (2611.0015 D2).
-        case .resumeQueued: return .swallow
+        case .resumeQueued, .reopenArming: return .swallow
         case .none, .resumeIdle: return nil
         }
     }

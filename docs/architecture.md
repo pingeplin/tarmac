@@ -1540,7 +1540,8 @@ view; `KeyLadder` says which ones the app takes, in this order:
    terminal whose resume offer is armed it runs the command (`.runResume`),
    on a terminal whose offer is queued it is taken and dropped
    (`.resumeQueued`, spec 2611.0015), and on a dead terminal with a reopen
-   offer it reopens it (`.reopenDead`). A
+   offer it reopens it (`.reopenDead`), unless the card ended in this run
+   less than 1 s ago (`.reopenArming`, dropped; issue #412). A
    repeat is decided first (`NSEvent.isARepeat`), so a held key acts once.
 6. Plain `Return`, when no terminal holds the keys, no text control in a
    markdown doc's raw HTML is being typed into, and a signalling card is off
@@ -1943,9 +1944,14 @@ The daemon sends `Restore` for its active board on connect, and after every
   on the first visit and on every later restore (spec 2611.0011, D11). After a
   later restore each dead card of that board gets the reopen offer its record
   allows. A card that dies of its own exit gets one at once (issue #412,
-  `DeadCardOffer.afterExit`). It reopens in the folder the app last saw; when
-  the app knows none, the daemon uses the folder of the record it succeeds. It
-  never offers a command: the daemon dropped it at the end. A first-visit restore shows the restore card
+  `DeadCardOffer.make(record:endedHere:lastCwd:home:)`), and each later
+  restore gives it again. Its strip shows the folder the app last saw, but
+  the reopen sends no `cwd`: the daemon uses the folder of the record it
+  succeeds, which is never older. It never offers a command: the daemon
+  dropped it at the end. Return reopens it only 1 s after the exit
+  (`DeadCardOffer.returnArmDelay`; before that `KeyLadder` swallows it), so a
+  stray Return keeps the failure on screen; a press on the strip works at
+  once. A first-visit restore shows the restore card
   ([*Wayfinding and overlays*](#wayfinding-and-overlays)) when its plan has
   a line: `✓ N terminals back in their folders` (N counts the cold spawns
   that asked for a folder) and `M with an agent session to resume` (M
