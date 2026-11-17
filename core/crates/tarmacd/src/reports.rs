@@ -4,32 +4,9 @@
 
 use std::collections::HashMap;
 
-use tarmac_protocol::Msg;
+use tarmac_protocol::{Msg, ReportKind};
 
 use crate::holder::Holder;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Kind {
-    Blocked,
-    Done,
-}
-
-impl Kind {
-    pub fn parse(kind: &str) -> Option<Kind> {
-        match kind {
-            "blocked" => Some(Kind::Blocked),
-            "done" => Some(Kind::Done),
-            _ => None,
-        }
-    }
-
-    fn wire(self) -> &'static str {
-        match self {
-            Kind::Blocked => "blocked",
-            Kind::Done => "done",
-        }
-    }
-}
 
 /// Where the terminal was when it reported (spec 2611.0013): the board it is
 /// filed under and its `last_cwd` record.
@@ -41,7 +18,7 @@ pub struct Place {
 
 #[derive(Debug, Clone, PartialEq)]
 struct CurrentReport {
-    kind: Kind,
+    kind: ReportKind,
     text: Option<String>,
     at_ms: u64,
     holder: Holder,
@@ -61,7 +38,7 @@ impl Reports {
     pub fn report(
         &mut self,
         term: &str,
-        kind: Kind,
+        kind: ReportKind,
         text: Option<String>,
         now_ms: u64,
         holder: Holder,
@@ -131,7 +108,7 @@ impl Reports {
 fn frame(term: &str, report: Option<&CurrentReport>) -> Msg {
     Msg::TermReport {
         term_id: term.to_owned(),
-        kind: report.map(|r| r.kind.wire().to_owned()),
+        kind: report.map(|r| r.kind.name().to_owned()),
         text: report.and_then(|r| r.text.clone()),
         at_ms: report.map(|r| r.at_ms),
         proc: report.and_then(|r| r.proc.clone()),
@@ -169,7 +146,7 @@ mod tests {
     }
 
     fn blocked(reports: &mut Reports, now_ms: u64) -> Msg {
-        reports.report(T, Kind::Blocked, Some("ok?".into()), now_ms, AGENT, Some("claude".into()), Place::default())
+        reports.report(T, ReportKind::Blocked, Some("ok?".into()), now_ms, AGENT, Some("claude".into()), Place::default())
     }
 
     fn on_board(board: &str, cwd: &str) -> Place {
@@ -190,7 +167,7 @@ mod tests {
         reports.mark_read(T);
         let shell = Holder::Shell { pid: S, caller: C };
 
-        let again = reports.report(T, Kind::Blocked, Some("ok?".into()), 2000, shell, Some("bash".into()), Place::default());
+        let again = reports.report(T, ReportKind::Blocked, Some("ok?".into()), 2000, shell, Some("bash".into()), Place::default());
 
         assert_eq!(again, report_frame(T, "blocked", Some("ok?"), 2000, Some("bash"), false, Place::default()));
         assert_eq!(reports.by_term[T].holder, shell);
@@ -202,7 +179,7 @@ mod tests {
         let mut reports = Reports::default();
         blocked(&mut reports, 1000);
         reports.mark_read(T);
-        let again = reports.report(T, Kind::Done, Some("new".into()), 1500, AGENT, None, Place::default());
+        let again = reports.report(T, ReportKind::Done, Some("new".into()), 1500, AGENT, None, Place::default());
         assert_eq!(again, report_frame(T, "done", Some("new"), 1500, None, false, Place::default()));
     }
 
@@ -248,7 +225,7 @@ mod tests {
     #[test]
     fn s11h_a_shell_holder_lasts_while_the_leader_is_the_shell_or_the_caller() {
         let mut reports = Reports::default();
-        reports.report(T, Kind::Done, None, 1000, Holder::Shell { pid: S, caller: C }, None, Place::default());
+        reports.report(T, ReportKind::Done, None, 1000, Holder::Shell { pid: S, caller: C }, None, Place::default());
         let no_facts = facts(&[]);
         for leader in [Some(S), Some(C), None] {
             assert_eq!(reports.check(T, |h| h.alive(&no_facts, leader)), None, "{leader:?}");
@@ -278,7 +255,7 @@ mod tests {
     #[test]
     fn s14_the_frame_carries_the_place_given_to_report_and_keeps_it_when_read() {
         let mut reports = Reports::default();
-        let pushed = reports.report(T, Kind::Done, None, 1000, AGENT, None, on_board("board-1", "/w"));
+        let pushed = reports.report(T, ReportKind::Done, None, 1000, AGENT, None, on_board("board-1", "/w"));
         assert_eq!(pushed, report_frame(T, "done", None, 1000, None, false, on_board("board-1", "/w")));
         assert_eq!(reports.mark_read(T), Some(report_frame(T, "done", None, 1000, None, true, on_board("board-1", "/w"))));
         assert_eq!(reports.clear(T), Some(none_frame(T)), "a removal has no place");
@@ -288,8 +265,8 @@ mod tests {
     #[test]
     fn s14_elsewhere_gives_each_reported_term_not_shown_sorted_by_term_id() {
         let mut reports = Reports::default();
-        reports.report("u", Kind::Done, None, 2000, AGENT, None, on_board("board-2", "/u"));
-        reports.report("t", Kind::Blocked, None, 1000, AGENT, None, on_board("board-1", "/t"));
+        reports.report("u", ReportKind::Done, None, 2000, AGENT, None, on_board("board-2", "/u"));
+        reports.report("t", ReportKind::Blocked, None, 1000, AGENT, None, on_board("board-1", "/t"));
         let t = report_frame("t", "blocked", None, 1000, None, false, on_board("board-1", "/t"));
         let u = report_frame("u", "done", None, 2000, None, false, on_board("board-2", "/u"));
 
@@ -303,9 +280,9 @@ mod tests {
         let elsewhere = ["s", "u", "p", "x", "q", "w", "r", "v"];
         let mut reports = Reports::default();
         for term in elsewhere {
-            reports.report(term, Kind::Blocked, None, 1000, AGENT, None, on_board("board-1", "/e"));
+            reports.report(term, ReportKind::Blocked, None, 1000, AGENT, None, on_board("board-1", "/e"));
         }
-        reports.report("t", Kind::Done, None, 3000, AGENT, None, on_board("board-0", "/t"));
+        reports.report("t", ReportKind::Done, None, 3000, AGENT, None, on_board("board-0", "/t"));
         let shown: Vec<String> = vec!["t".into(), "a".into()];
         let t = report_frame("t", "done", None, 3000, None, false, on_board("board-0", "/t"));
         let mut sorted = elsewhere;
@@ -314,13 +291,5 @@ mod tests {
 
         assert_eq!(reports.restore_frames(&shown, false), vec![t.clone(), none_frame("a")]);
         assert_eq!(reports.restore_frames(&shown, true), [vec![t, none_frame("a")], told.to_vec()].concat());
-    }
-
-    #[test]
-    fn a_kind_is_blocked_or_done() {
-        assert_eq!(Kind::parse("blocked"), Some(Kind::Blocked));
-        assert_eq!(Kind::parse("done"), Some(Kind::Done));
-        assert_eq!(Kind::parse("clear"), None);
-        assert_eq!(Kind::parse("later"), None);
     }
 }

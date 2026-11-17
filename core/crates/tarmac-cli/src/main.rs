@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use tarmac_protocol::{self as proto, Msg};
 
-use daemon::{DAEMON_WAIT, DaemonInfo, NoHandshake, answer, connect, handshake, lost, send};
+use daemon::{DAEMON_WAIT, DaemonInfo, NoHandshake, connect, exchange, handshake, not_answered};
 
 mod agents;
 mod daemon;
@@ -131,11 +131,11 @@ fn run(args: &[String]) -> i32 {
 /// The five-line report. Every value is observed, never inferred: an absent app
 /// is reported only when the daemon said so.
 fn version_report(sock: &Path) -> String {
-    let (daemon, app) = match handshake(sock, Instant::now() + DAEMON_WAIT, &lost) {
+    let (daemon, app) = match handshake(sock, Instant::now() + DAEMON_WAIT) {
         Ok((_, info)) => (daemon_line(&info), app_line(&info)),
         Err(NoHandshake::NoDaemon) => ("not running".into(), "unknown (no daemon)".into()),
-        Err(NoHandshake::Reason(why)) => {
-            (format!("unreachable ({why})"), "unknown (daemon unreachable)".into())
+        Err(failed) => {
+            (format!("unreachable ({})", failed.worded(&not_answered())), "unknown (daemon unreachable)".into())
         }
     };
     [
@@ -173,13 +173,15 @@ fn open(raw_path: &str) -> Result<String, String> {
     // and Ctrl-C could not end it (#267).
     let path = std::path::absolute(raw_path).map_err(|e| format!("cannot open {raw_path}: {e}"))?;
 
-    let mut stream = connect()?;
+    let no_answer = not_answered();
+    let mut stream = connect(&no_answer)?;
 
     let term_id = calling_term();
     // board_id stays None: the daemon resolves the board from term_id, falling
     // back to the active one.
-    send(&mut stream, &Msg::Open { path: path.to_string_lossy().into_owned(), term_id, board_id: None })?;
-    answer(&mut stream, lost)?.map(|()| format!("opened {}", path.display()))
+    let open = proto::encode(&Msg::Open { path: path.to_string_lossy().into_owned(), term_id, board_id: None })
+        .map_err(|e| format!("encode failed: {e}"))?;
+    exchange(&mut stream, &open, &no_answer)?.map(|()| format!("opened {}", path.display()))
 }
 
 #[cfg(test)]

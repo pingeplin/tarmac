@@ -4,11 +4,13 @@
 
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
+use std::sync::LazyLock;
 
 use tarmac_protocol::{self as proto, Msg, OVER_FRAME_LIMIT};
 
 const LIMIT: usize = proto::MAX_FRAME_LEN as usize;
 const NO_ANSWER_WHY: &str = "an older daemon, or the app is not reading";
+static NO_ANSWER: LazyLock<String> = LazyLock::new(|| crate::daemon::no_answer(NO_ANSWER_WHY));
 
 pub fn run(args: &[String]) -> i32 {
     let Some((raw_path, mode)) = parse(args) else {
@@ -23,7 +25,7 @@ pub fn run(args: &[String]) -> i32 {
     match mode {
         Mode::One(value) => one(&path, value),
         // The handshake comes before the first read of stdin.
-        Mode::Stream => match crate::daemon::connect() {
+        Mode::Stream => match crate::daemon::connect(&NO_ANSWER) {
             Ok(mut conn) => stream(&mut conn, &path, io::stdin().lock(), &mut io::stderr()),
             Err(why) => fail(&why),
         },
@@ -41,7 +43,7 @@ fn fail_to(err: &mut impl Write, line: &str) -> i32 {
 
 fn one(path: &str, value: &str) -> i32 {
     let Some(payload) = payload(path, value.to_owned(), LIMIT) else { return fail(OVER_FRAME_LIMIT) };
-    match crate::daemon::connect().map(|mut conn| exchange(&mut conn, &payload)) {
+    match crate::daemon::connect(&NO_ANSWER).map(|mut conn| exchange(&mut conn, &payload)) {
         Ok(Sent::Acked) => 0,
         Ok(Sent::Refused(why) | Sent::Ended(why)) | Err(why) => fail(&why),
     }
@@ -85,7 +87,7 @@ fn send_value(conn: &mut UnixStream, path: &str, text: String) -> Sent {
 
 /// Sends one `push` and waits for its answer (`crate::daemon::exchange`).
 fn exchange(conn: &mut UnixStream, payload: &[u8]) -> Sent {
-    match crate::daemon::exchange(conn, payload, NO_ANSWER_WHY) {
+    match crate::daemon::exchange(conn, payload, &NO_ANSWER) {
         Ok(Ok(())) => Sent::Acked,
         Ok(Err(refusal)) => Sent::Refused(refusal),
         Err(why) => Sent::Ended(why),
@@ -421,7 +423,7 @@ mod tests {
     fn no_answer_in_the_read_timeout_is_worded_as_no_answer() {
         let (mut cli, _daemon) = silent_daemon(std::time::Duration::from_millis(100));
         let payload = payload("/p", "1".into(), LIMIT).unwrap();
-        assert_eq!(exchange(&mut cli, &payload), Sent::Ended(crate::daemon::no_answer(NO_ANSWER_WHY)));
+        assert_eq!(exchange(&mut cli, &payload), Sent::Ended(NO_ANSWER.clone()));
     }
 
     // S16

@@ -3,11 +3,12 @@ import QuartzCore
 import TarmacKit
 
 /// One toast: a glyph and a title over an optional body. Laid out as
-/// `.tm-toast` is, a border box of at most 320 px.
+/// `.tm-toast` is, a border box of at most 320 px at the standard Interface
+/// size.
 @MainActor
 final class ToastView: NSView, ThemeFollowing {
-    private static let maxWidth: CGFloat = 320
-    private static let maxTextWidth: CGFloat = 280
+    private static var maxWidth: CGFloat { Theme.chrome(320) }
+    private static var maxTextWidth: CGFloat { Theme.chrome(280) }
     private static let insetX: CGFloat = 1 + 12
     private static let insetY: CGFloat = 1 + 9
     private static let gap: CGFloat = 7

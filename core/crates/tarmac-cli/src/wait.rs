@@ -9,7 +9,7 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
-use tarmac_protocol::Msg;
+use tarmac_protocol::{Msg, ReportKind};
 
 use crate::events::{self, Stop};
 
@@ -140,7 +140,7 @@ fn parse(args: &[String]) -> Option<(Mode, Option<Duration>)> {
     let mode = match (exit, bell, report, changed) {
         (Some(id), None, None, None) => Mode::Exit(id),
         (None, Some(id), None, None) => Mode::Bell(id),
-        (None, None, Some(kind), None) if kind == "blocked" || kind == "done" => Mode::Report { kind, term_id: term.clone()? },
+        (None, None, Some(kind), None) if ReportKind::named(&kind).is_some() => Mode::Report { kind, term_id: term.clone()? },
         (None, None, None, Some(path)) => Mode::Changed { path, settle },
         _ => return None,
     };
