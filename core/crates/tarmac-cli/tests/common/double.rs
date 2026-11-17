@@ -141,6 +141,11 @@ impl Peer {
     /// Hold the connection open, never replying, until the double is dropped —
     /// the only way to exercise the client's read timeout.
     pub fn hold(&self) {
-        let _ = self.stopped.recv_timeout(WAIT);
+        self.pause(WAIT);
+    }
+
+    /// Wait `wait`, or less when the double is dropped first.
+    pub fn pause(&self, wait: Duration) {
+        let _ = self.stopped.recv_timeout(wait);
     }
 }
