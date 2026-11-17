@@ -34,7 +34,7 @@ extension AppController {
         // A press anywhere but on the open inbox closes it, and then does
         // what it does.
         if inboxOpen, let hit, !hit.isDescendant(of: rootView.inboxPanel) { closeInbox() }
-        guard let hit, hit.isDescendant(of: rootView.board) else { return }
+        guard let hit, rootView.isBoardSurface(hit) else { return }
         guard let card = enclosingCard(hit) else {
             if !(hit is PressControl) { defocus() }
             return
@@ -84,7 +84,7 @@ extension AppController {
         guard !switcherOpen else { return false }
         let board = rootView.board
         guard let hit = hitView(at: event.locationInWindow, windowNumber: event.windowNumber),
-            hit.isDescendant(of: board)
+            rootView.isBoardSurface(hit)
         else { return false }
         let card = enclosingCard(hit)
         let route = BoardWheel.route(
@@ -117,7 +117,7 @@ extension AppController {
     func routeMagnify(_ event: NSEvent) -> Bool {
         guard !switcherOpen else { return false }
         guard let hit = hitView(at: event.locationInWindow, windowNumber: event.windowNumber),
-            hit.isDescendant(of: rootView.board)
+            rootView.isBoardSurface(hit)
         else { return false }
         rootView.board.magnify(with: event)
         return true
