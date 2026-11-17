@@ -7,7 +7,7 @@ use std::time::Instant;
 use tarmac_protocol::{self as proto, Msg};
 
 mod common;
-use common::{Answer, OneAnswer, Report, assert_no_answer, no_daemon_line, tarmac_at, without_daemon};
+use common::{Answer, Double, OneAnswer, Report, assert_no_answer, no_daemon_line, tarmac_at, without_daemon};
 
 const USAGE: &str = "tarmac: usage: tarmac resume set \"<command>\"  |  tarmac resume clear\n";
 const NEEDS_TERM: &str = "tarmac: resume needs TARMAC_TERM_ID (run it in a Tarmac terminal)\n";
@@ -121,6 +121,16 @@ fn s30_a_daemon_that_never_answers_is_the_no_answer_line_after_5_s() {
     let daemon = OneAnswer::start(Answer::Silence);
     let started = Instant::now();
     let out = daemon.run("resume", &["set", "echo HI"]);
+
+    assert_no_answer(&out, started);
+}
+
+// A time-out in the handshake is no answer, as one after it is.
+#[test]
+fn a_daemon_silent_to_hello_is_the_no_answer_line_after_5_s() {
+    let daemon = Double::start("tarmacd.sock", |peer| peer.hold());
+    let started = Instant::now();
+    let out = Report::of(tarmac_at(&daemon.sock).env("TARMAC_TERM_ID", "t9").args(["resume", "clear"]));
 
     assert_no_answer(&out, started);
 }

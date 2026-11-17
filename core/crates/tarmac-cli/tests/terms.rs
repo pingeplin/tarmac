@@ -1,9 +1,11 @@
 // `tarmac terms` (spec 2611.0012) against a daemon double.
 
+use std::time::Instant;
+
 use tarmac_protocol::{Msg, TermInfo};
 
 mod common;
-use common::{Report, Streamer, assert_never_answered, assert_usage, tarmac_at, untouched};
+use common::{Double, Report, Streamer, assert_never_answered, assert_no_answer, assert_usage, tarmac_at, untouched};
 
 fn row(cwd: Option<&str>, proc: Option<&str>) -> TermInfo {
     TermInfo { term_id: "t1".into(), board_id: "board-0".into(), cwd: cwd.map(str::to_string), proc: proc.map(str::to_string) }
@@ -53,4 +55,14 @@ fn s33_an_argument_is_a_usage_error_with_no_connection() {
 
     assert_usage(&Report::of(tarmac_at(&daemon.double.sock).args(["terms", "extra"])), "terms");
     assert!(untouched(&daemon.double));
+}
+
+// As for `events` and `wait`, a time-out in the handshake is no answer.
+#[test]
+fn a_daemon_silent_to_hello_is_the_no_answer_line_after_5_s() {
+    let daemon = Double::start("tarmacd.sock", |peer| peer.hold());
+    let started = Instant::now();
+    let out = Report::of(tarmac_at(&daemon.sock).arg("terms"));
+
+    assert_no_answer(&out, started);
 }

@@ -6,7 +6,7 @@ mod common;
 
 use std::time::Instant;
 
-use common::{LONG, TestDaemon};
+use common::{FORK_NAME, LONG, TestDaemon};
 use tarmac_protocol::Msg;
 
 #[test]
@@ -84,7 +84,7 @@ fn term_proc_names_a_symlinked_command_by_the_link() {
     loop {
         match app.recv(deadline, "term_proc") {
             // The pty child is the daemon's fork until it execs.
-            Msg::TermProc { term_id, name, .. } if term_id == "link-term" && name != "tarmacd" => {
+            Msg::TermProc { term_id, name, .. } if term_id == "link-term" && name != FORK_NAME => {
                 assert_eq!(name, "claude");
                 break;
             }
