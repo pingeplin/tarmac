@@ -1,10 +1,14 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{Duration, Instant};
 
 use tarmac_protocol::{self as proto, Msg};
 
 mod common;
-use common::{Double, Report, hello_ok, scratch, tarmac, tarmac_at};
+use common::{Double, Report, Streamer, hello_ok, scratch, tarmac, tarmac_at};
+
+/// `open`'s no-answer line: every daemon answers `open`, so it names no reason.
+const NO_ANSWER: &str = "tarmac: no answer from the daemon in 5 s\n";
 
 /// A daemon double for `open`: it does the handshake, records the `Open` path,
 /// then answers `reply`.
@@ -366,4 +370,25 @@ fn help_documents_the_skill_verb_too() {
     // --help splices agents::FLAGS_USAGE; without this the interpolation could be
     // dropped and every other test would stay green.
     assert!(out.stdout.contains("--dry-run"), "--help must carry install's flags");
+}
+
+/// `open` on `sock`: exit 1 with `NO_ANSWER`, no sooner than 5 s.
+#[track_caller]
+fn assert_open_not_answered(sock: &Path) {
+    let started = Instant::now();
+    let out = Report::of(tarmac_at(sock).args(["open", "/tmp/a.md"]));
+
+    assert_eq!((out.code(), out.stderr.as_str()), (Some(1), NO_ANSWER));
+    assert!(started.elapsed() >= Duration::from_secs(5), "gave up after {:?}", started.elapsed());
+}
+
+// `open` words a time-out as no answer, in the handshake and after it.
+#[test]
+fn open_against_a_daemon_silent_to_hello_is_the_no_answer_line_after_5_s() {
+    assert_open_not_answered(&Double::start("tarmacd.sock", |peer| peer.hold()).sock);
+}
+
+#[test]
+fn open_against_a_daemon_that_never_answers_is_the_no_answer_line_after_5_s() {
+    assert_open_not_answered(&Streamer::holding(vec![]).double.sock);
 }

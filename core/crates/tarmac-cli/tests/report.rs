@@ -7,7 +7,7 @@ use std::time::Instant;
 use tarmac_protocol::{self as proto, Msg, REPORT_TEXT_MAX};
 
 mod common;
-use common::{Answer, OneAnswer, Report, assert_no_answer, no_daemon_line, tarmac_at, without_daemon};
+use common::{Answer, Double, OneAnswer, Report, assert_no_answer, no_daemon_line, tarmac_at, without_daemon};
 
 const USAGE: &str = "tarmac: usage: tarmac report blocked|done [\"<text>\"]  |  tarmac report clear\n";
 const NEEDS_TERM: &str = "tarmac: report needs TARMAC_TERM_ID (run it in a Tarmac terminal)\n";
@@ -123,4 +123,14 @@ fn s25_the_cli_caps_a_long_text() {
     assert_eq!(out.code(), Some(0), "stderr: {}", out.stderr);
     let capped = format!("{}…", "中".repeat(REPORT_TEXT_MAX - 1));
     assert_eq!(proto::decode(&daemon.sent()).unwrap(), report("blocked", Some(&capped)));
+}
+
+// A time-out in the handshake is no answer, as one after it is.
+#[test]
+fn a_daemon_silent_to_hello_is_the_no_answer_line_after_5_s() {
+    let daemon = Double::start("tarmacd.sock", |peer| peer.hold());
+    let started = Instant::now();
+    let out = Report::of(tarmac_at(&daemon.sock).env("TARMAC_TERM_ID", "t9").args(["report", "done"]));
+
+    assert_no_answer(&out, started);
 }

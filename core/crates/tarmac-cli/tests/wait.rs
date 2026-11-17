@@ -11,7 +11,7 @@ use tarmac_protocol::Msg;
 
 mod common;
 use common::frames::{bell, exit, term_report};
-use common::{Report, Step, Streamer, Then, assert_never_answered, assert_usage, scratch, start, tarmac, tarmac_at, untouched};
+use common::{Double, Report, Step, Streamer, Then, assert_never_answered, assert_no_answer, assert_usage, scratch, start, tarmac, tarmac_at, untouched};
 
 const NOT_ANSWERED: &str = "tarmac: wait: timed out before the daemon answered\n";
 
@@ -111,26 +111,36 @@ fn timed(daemon: &Streamer, args: &[&str]) -> (Report, Duration) {
     (out, started.elapsed())
 }
 
+/// `wait --exit t9 --timeout 300` against a fresh `daemon()`, three times:
+/// each run exits 124 with `stderr` and no sooner than 300 ms, and the
+/// fastest within 800 ms. Only the fastest is bounded above: the first start
+/// of the debug binary in a test process can take 0.5 s or more (#406).
+#[track_caller]
+fn assert_times_out_at_300_ms(daemon: impl Fn() -> Double, stderr: &str) {
+    let mut times = Vec::new();
+    for _ in 0..3 {
+        let daemon = daemon();
+        let started = Instant::now();
+        let out = Report::of(tarmac_at(&daemon.sock).args(["wait", "--exit", "t9", "--timeout", "300"]));
+        let took = started.elapsed();
+        assert_eq!((out.code(), out.stdout.as_str(), out.stderr.as_str()), (Some(124), "", stderr));
+        assert!(took >= Duration::from_millis(300), "{took:?}");
+        times.push(took);
+    }
+    eprintln!("run times: {times:?}");
+    assert!(times.iter().min().is_some_and(|t| *t < Duration::from_millis(800)), "{times:?}");
+}
+
 // S31
 #[test]
 fn s31_a_timeout_after_the_ack_exits_124_with_nothing_printed() {
-    let daemon = Streamer::holding(vec![Msg::Ack]);
-
-    let (out, took) = timed(&daemon, &["wait", "--exit", "t9", "--timeout", "300"]);
-
-    assert_eq!((out.code(), out.stdout.as_str(), out.stderr.as_str()), (Some(124), "", ""));
-    assert!(took >= Duration::from_millis(300) && took < Duration::from_millis(800), "{took:?}");
+    assert_times_out_at_300_ms(|| Streamer::holding(vec![Msg::Ack]).double, "");
 }
 
 // S31
 #[test]
 fn s31_a_timeout_before_the_ack_exits_124_with_one_line() {
-    let daemon = Streamer::start(vec![], Then::Hold);
-
-    let (out, took) = timed(&daemon, &["wait", "--exit", "t9", "--timeout", "300"]);
-
-    assert_eq!((out.code(), out.stdout.as_str(), out.stderr.as_str()), (Some(124), "", NOT_ANSWERED));
-    assert!(took >= Duration::from_millis(300) && took < Duration::from_millis(800), "{took:?}");
+    assert_times_out_at_300_ms(|| Streamer::start(vec![], Then::Hold).double, NOT_ANSWERED);
 }
 
 // S31
@@ -144,6 +154,16 @@ fn s31_with_no_timeout_a_daemon_that_never_answers_is_the_no_answer_line() {
 #[test]
 fn a_timeout_longer_than_the_5_s_wait_still_gives_the_no_answer_line() {
     assert_never_answered(&["wait", "--exit", "t9", "--timeout", "6000"]);
+}
+
+// S31, in the handshake: no `hello_ok` is the same as no `ack`.
+#[test]
+fn s31_a_daemon_silent_to_hello_is_a_timeout_or_the_no_answer_line() {
+    let daemon = Double::start("tarmacd.sock", |peer| peer.hold());
+    let started = Instant::now();
+    assert_no_answer(&Report::of(tarmac_at(&daemon.sock).args(["wait", "--exit", "t9"])), started);
+
+    assert_times_out_at_300_ms(|| Double::start("tarmacd.sock", |peer| peer.hold()), NOT_ANSWERED);
 }
 
 // D14: the deadline counts from the start, the handshake included.

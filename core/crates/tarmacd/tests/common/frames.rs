@@ -130,6 +130,14 @@ pub fn is_term_proc_for(msg: &Msg, want: &str) -> bool {
     matches!(msg, Msg::TermProc { term_id, .. } if term_id == want)
 }
 
+/// The name a pty child has until it execs: the daemon's fork.
+pub const FORK_NAME: &str = "tarmacd";
+
+/// A `term_proc` for `want` that names the process after its exec.
+pub fn is_exec_proc_for(msg: &Msg, want: &str) -> bool {
+    matches!(msg, Msg::TermProc { term_id, name, .. } if term_id == want && name != FORK_NAME)
+}
+
 pub fn is_exit_for(msg: &Msg, want: &str) -> bool {
     matches!(msg, Msg::Exit { term_id, .. } if term_id == want)
 }

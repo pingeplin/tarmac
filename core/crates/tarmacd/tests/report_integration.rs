@@ -8,7 +8,7 @@ mod common;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use common::{
-    ACK, Conn, FrameLog, JOB_SHELL, Spawn, TestDaemon, assert_ack, canon_dir, is_report_for, none_within, probe_until_cwd,
+    ACK, Conn, FrameLog, JOB_SHELL, Spawn, TestDaemon, assert_ack, canon_dir, is_exec_proc_for, is_report_for, none_within, probe_until_cwd,
 };
 use tarmac_protocol::{self as proto, Msg, Tile};
 
@@ -111,7 +111,7 @@ fn a_report_names_a_symlinked_holder_by_the_link() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     app.spawn_as_claude("T");
-    app.recv_until("term_proc after exec", |m| matches!(m, Msg::TermProc { term_id, name, .. } if term_id == "T" && name != "tarmacd"));
+    app.recv_until("term_proc after exec", |m| is_exec_proc_for(m, "T"));
 
     let frame = report_from_test(&daemon, &mut app, "T", "blocked", None);
     assert_eq!(frame.proc.as_deref(), Some("claude"));

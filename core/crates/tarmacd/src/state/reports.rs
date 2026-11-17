@@ -1,7 +1,7 @@
-use tarmac_protocol::Msg;
+use tarmac_protocol::{Msg, REPORT_CLEAR, ReportKind};
 
 use crate::proc::{self, Pid};
-use crate::reports::{Kind, Place, Reports};
+use crate::reports::{Place, Reports};
 use crate::term::TermHandle;
 
 use super::Daemon;
@@ -11,11 +11,11 @@ impl Daemon {
     /// `peer` is the client's pid, read at accept.
     pub async fn report(&self, peer: Option<Pid>, term_id: &str, kind: &str, text: Option<String>) -> Result<(), String> {
         let handle = self.term(term_id).await.ok_or_else(|| format!("unknown terminal: {term_id}"))?;
-        if kind == "clear" {
+        if kind == REPORT_CLEAR {
             self.change_report(term_id, &handle, |reports| reports.clear(term_id)).await;
             return Ok(());
         }
-        let kind = Kind::parse(kind).ok_or_else(|| format!("unknown report kind: {kind}"))?;
+        let kind = ReportKind::named(kind).ok_or_else(|| format!("unknown report kind: {kind}"))?;
         // Any socket client can send a `report`, so the daemon caps it too.
         let text = text.map(|t| tarmac_protocol::cap_report_text(&t)).filter(|t| !t.is_empty());
         let holder = handle
@@ -36,21 +36,14 @@ impl Daemon {
         Ok(())
     }
 
-    /// Where `term_id` is now: its board, then that board's record of its cwd,
-    /// each lock released before the next and before `reports` is taken.
+    /// Where `term_id` is now: its board and that board's record of its cwd,
+    /// read before `reports` is taken.
     async fn place(&self, term_id: &str) -> Place {
-        let board_id = self.term_boards.lock().await.get(term_id).cloned();
-        let cwd = match &board_id {
-            Some(board) => self
-                .boards
-                .lock()
-                .await
-                .known_registry_mut(board)
-                .and_then(|reg| reg.term_records.get(term_id))
-                .and_then(|record| record.last_cwd.clone()),
-            None => None,
-        };
-        Place { board_id, cwd }
+        self.with_record(term_id, |board, record| Place {
+            board_id: board.cloned(),
+            cwd: record.and_then(|r| r.last_cwd.clone()),
+        })
+        .await
     }
 
     /// The poll's check: removes the report when its holder is gone. `leader`

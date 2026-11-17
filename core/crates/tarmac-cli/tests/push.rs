@@ -260,6 +260,27 @@ fn one_value_with_no_answer_ends_after_the_read_timeout() {
     assert!(started.elapsed() >= Duration::from_secs(5), "it waited {:?}", started.elapsed());
 }
 
+// A time-out in the handshake is no answer, as one after it is.
+#[test]
+fn one_value_against_a_daemon_silent_to_hello_is_the_no_answer_line() {
+    let daemon = Double::start("tarmacd.sock", |peer| peer.hold());
+    let started = Instant::now();
+    let out = Report::of(tarmac_at(&daemon.sock).args(["push", "/p", "1"]));
+
+    assert_eq!((out.code(), out.stderr), (Some(1), format!("tarmac: {NO_ANSWER}\n")));
+    assert!(started.elapsed() >= Duration::from_secs(5), "it waited {:?}", started.elapsed());
+}
+
+// The handshake comes before stdin, so the line names no line number.
+#[test]
+fn a_stream_against_a_daemon_silent_to_hello_is_the_no_answer_line() {
+    let daemon = Double::start("tarmacd.sock", |peer| peer.hold());
+    let out = Report::with_open_stdin(tarmac_at(&daemon.sock).args(["push", "/p", "-"]), Duration::from_secs(15))
+        .expect("the cli exits with stdin open");
+
+    assert_eq!((out.code(), out.stderr), (Some(1), format!("tarmac: {NO_ANSWER}\n")));
+}
+
 // S43
 #[test]
 fn one_value_on_a_lost_connection_says_so() {

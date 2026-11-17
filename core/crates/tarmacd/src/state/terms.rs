@@ -57,11 +57,12 @@ impl Daemon {
     /// read with no answer keeps the cwd before it. Not saved by itself.
     pub async fn note_cwd(&self, term_id: &str, pid: proc::Pid) {
         let Ok(Some(cwd)) = self.gate.pid_cwd(pid).await else { return };
-        let Some(board) = self.term_boards.lock().await.get(term_id).cloned() else { return };
-        let mut boards = self.boards.lock().await;
-        if let Some(record) = boards.known_registry_mut(&board).and_then(|reg| reg.term_records.get_mut(term_id)) {
-            record.last_cwd = Some(cwd);
-        }
+        self.with_record(term_id, |_, record| {
+            if let Some(record) = record {
+                record.last_cwd = Some(cwd);
+            }
+        })
+        .await;
     }
 
     /// Typed input: marks the report read, then drops a resume command that

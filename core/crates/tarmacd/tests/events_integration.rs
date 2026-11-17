@@ -6,8 +6,8 @@ mod common;
 use std::time::{Duration, Instant};
 
 use common::{
-    Conn, FrameLog, LONG, Spawn, TestDaemon, canon_dir, cli_open, cli_terms, edit, is_bell_for, is_exit_for,
-    is_file_event_for, is_term_proc_for, none_within, settle, subscriber, temp_dir, write_doc,
+    Conn, FORK_NAME, FrameLog, LONG, Spawn, TestDaemon, canon_dir, cli_open, cli_terms, edit, is_bell_for,
+    is_exec_proc_for, is_exit_for, is_file_event_for, is_term_proc_for, none_within, settle, subscriber, temp_dir, write_doc,
 };
 use tarmac_protocol::{Msg, frame};
 
@@ -175,9 +175,10 @@ fn s8_terms_lists_the_live_terminals_in_board_order() {
     let mut log = FrameLog(Vec::new());
     app.spawn_term_with("t2", READS, Spawn { cwd: Some(a.to_string_lossy().into()), ..Spawn::on_board("board-0") });
     app.spawn_term_with("t1", READS, Spawn { cwd: Some(b.to_string_lossy().into()), ..Spawn::on_board("board-1") });
+    // The first term_proc can name the fork before its exec; the row shows the shell's.
     for term_id in ["t2", "t1"] {
-        if log.last_proc_name(term_id).is_none() {
-            app.log_until(&mut log, &format!("the term_proc of {term_id}"), |m| is_term_proc_for(m, term_id));
+        if log.last_proc_name(term_id).is_none_or(|name| name == FORK_NAME) {
+            app.log_until(&mut log, &format!("the shell's term_proc of {term_id}"), |m| is_exec_proc_for(m, term_id));
         }
     }
     exited(&mut app, "t0", &["/bin/zsh", "-f", "-c", "exit 0"]);
