@@ -61,4 +61,59 @@ final class DeadCardOfferTests: XCTestCase {
         let offer = try makeOffer(nil, resume: "echo HI")
         XCTAssertEqual(DeadCardOffer.reopen(offer, deadID: "T").spawn, SpawnRequest(cwd: nil, succeeds: "T"))
     }
+
+    // MARK: #412: a card that ended in this run
+
+    private let record = TermRecord(lastCwd: "/Users/u/a", resume: ResumeRecord(cmd: "echo HI"))
+
+    private func endedHere(_ lastCwd: String?) throws -> DeadCardOffer.Offer {
+        try XCTUnwrap(DeadCardOffer.make(record: record, endedHere: true, lastCwd: lastCwd, home: home))
+    }
+
+    /// The app's folder is the freshest it knows (a restore corrects it); the
+    /// record of an older restore is not.
+    func testACardThatEndedHereShowsTheAppsFolderNotTheRecords() throws {
+        XCTAssertEqual(try endedHere("/Users/u/b").lines, ["reopen here  ⏎", "in ~/b"])
+    }
+
+    func testACardThatEndedHereWithNoKnownFolderIsStillOffered() throws {
+        let offer = try XCTUnwrap(DeadCardOffer.make(record: nil, endedHere: true, lastCwd: nil, home: home))
+        XCTAssertEqual(offer.lines, ["reopen here  ⏎"])
+    }
+
+    /// The daemon's record of the dead id is at least as fresh as anything the
+    /// app saw, so the reopen asks for no folder and the daemon picks it.
+    func testACardThatEndedHereReopensInTheDaemonsFolder() throws {
+        let offer = try endedHere("/Users/u/b")
+        XCTAssertEqual(DeadCardOffer.reopen(offer, deadID: "T").spawn, SpawnRequest(cwd: nil, succeeds: "T"))
+    }
+
+    /// The daemon drops a terminal's resume command at its end (2611.0011 D3).
+    func testACardThatEndedHereOffersNoCommand() throws {
+        let offer = try endedHere("/Users/u/b")
+        XCTAssertNil(offer.resume)
+        XCTAssertNil(DeadCardOffer.reopen(offer, deadID: "T").resume)
+        XCTAssertFalse(offer.lines.contains { $0.hasPrefix("then offers:") })
+    }
+
+    func testACardFoundDeadAtARestoreIsOfferedItsRecordUnchanged() {
+        XCTAssertEqual(
+            DeadCardOffer.make(record: record, endedHere: false, lastCwd: "/Users/u/b", home: home),
+            DeadCardOffer.make(record: record, home: home)
+        )
+        XCTAssertNil(DeadCardOffer.make(record: nil, endedHere: false, lastCwd: "/Users/u/b", home: home))
+    }
+
+    // MARK: #412: Return arms a second after the exit
+
+    func testReturnReopensACardThatEndedHereOnlyOneSecondAfterItsExit() {
+        let ended = Date(timeIntervalSinceReferenceDate: 1000)
+        XCTAssertEqual(DeadCardOffer.returnKey(endedAt: ended, now: ended), .reopenArming)
+        XCTAssertEqual(DeadCardOffer.returnKey(endedAt: ended, now: ended + 0.999), .reopenArming)
+        XCTAssertEqual(DeadCardOffer.returnKey(endedAt: ended, now: ended + 1), .reopen)
+    }
+
+    func testReturnReopensACardFoundDeadAtARestoreAtOnce() {
+        XCTAssertEqual(DeadCardOffer.returnKey(endedAt: nil, now: Date()), .reopen)
+    }
 }

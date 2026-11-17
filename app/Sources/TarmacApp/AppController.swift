@@ -32,8 +32,12 @@ final class TerminalSession {
     /// and the `term_resume` pushes; the header chip copies it. An offer's run
     /// or skip does not clear it: the daemon's push does.
     var recordedResume: String?
-    /// A dead card's offer to reopen in place, from its board's latest restore.
+    /// A dead card's offer to reopen in place: from its exit in this run, else
+    /// from its board's latest restore.
     var deadOffer: DeadCardOffer.Offer?
+    /// When the card died of its own exit in this run; nil when it was found
+    /// dead at a restore (#412).
+    var endedAt: Date?
     /// `KeyLadder.afterRun`'s latch for this terminal.
     var afterRun = false
     /// The terminal's folder as the app last saw it: from a restore's record

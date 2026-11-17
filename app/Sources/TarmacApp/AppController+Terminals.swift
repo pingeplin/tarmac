@@ -205,18 +205,24 @@ extension AppController {
         }
     }
 
-    /// Gives each dead card of `board` the offer its latest restore allows;
-    /// the ids of the cards that got one.
+    /// Gives each dead card of `board` its offer after a restore; the ids of
+    /// the cards that got one.
     @discardableResult
     func offerReopens(on board: Board) -> Set<String> {
         var offered: Set<String> = []
         for termID in board.sessionOrder {
             guard let s = board.sessions[termID], board.view.card(.term(termID))?.dead == true else { continue }
-            s.deadOffer = DeadCardOffer.make(record: board.termRecords[termID], home: NSHomeDirectory())
+            s.deadOffer = deadOffer(s, on: board)
             if s.deadOffer != nil { offered.insert(termID) }
             refreshOffer(s, on: board)
         }
         return offered
+    }
+
+    func deadOffer(_ s: TerminalSession, on board: Board) -> DeadCardOffer.Offer? {
+        DeadCardOffer.make(
+            record: board.termRecords[s.termID], endedHere: s.endedAt != nil, lastCwd: s.lastCwd, home: NSHomeDirectory()
+        )
     }
 
     /// Replaces the dead card `termID` in place with a cold spawn in its
@@ -385,6 +391,8 @@ extension AppController {
         let frame = card.worldFrame
         switch TermExit.decide(code: code, otherLiveTerminals: board.otherLiveTerminals(than: termID)) {
         case .holdOpen:
+            s.endedAt = Date()
+            s.deadOffer = deadOffer(s, on: board)
             holdOpen(s, on: board)
             board.reassignPrime()
         case .remove:
