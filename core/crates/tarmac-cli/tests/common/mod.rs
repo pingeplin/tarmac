@@ -25,7 +25,7 @@ pub fn handshake(peer: &mut Peer, late: Duration) -> bool {
     if peer.read().is_none() {
         return false;
     }
-    std::thread::sleep(late);
+    peer.pause(late);
     peer.write(&hello_ok) && peer.read().is_some()
 }
 
@@ -158,7 +158,7 @@ impl Streamer {
                             return;
                         }
                     }
-                    Step::Pause(wait) => std::thread::sleep(wait),
+                    Step::Pause(wait) => peer.pause(wait),
                 }
             }
             if let Then::Hold = then {
