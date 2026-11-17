@@ -4,7 +4,8 @@ public enum InboxJump {
     public enum Landing: Equatable, Sendable {
         /// A live card: it becomes prime and takes the keyboard.
         case prime
-        /// A dead card: selected; the keyboard stays with the board.
+        /// A dead card: selected, and it takes the keyboard, as a click on it
+        /// does, so Return reaches its reopen offer (2611.0011 D10).
         case select
         /// No card: the item goes, and nothing flies.
         case drop
