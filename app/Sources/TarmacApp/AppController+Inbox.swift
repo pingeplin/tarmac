@@ -204,28 +204,42 @@ extension AppController {
         return nil
     }
 
+    /// A click on an edge pill: the jump of an inbox row to the card the pill
+    /// stands for, which is on the active board, so it switches nowhere.
+    func jump(toCard termID: String) {
+        closeInbox(returnKeys: false)
+        preFlightViewport = nil
+        if let home = land(card: termID, on: activeBoard) { window?.makeFirstResponder(home) }
+    }
+
     /// On `board`, which is the active one: the item's card, or the fresh
-    /// shell a first build put in its place. Returns the view that takes the
-    /// keys, which the caller hands them to; nil when there is no card.
+    /// shell a first build put in its place.
     private func land(_ id: Inbox.ItemID, on board: Board) -> NSView? {
-        guard let target = inbox.target(termID: id.termID) else { return nil }
-        let card = board.view.card(.term(target))
+        guard let target = inbox.target(termID: id.termID), let home = land(card: target, on: board) else { return nil }
+        touchInbox(termID: id.termID)
+        return home
+    }
+
+    /// Flies to `termID`'s card and primes or selects it (`InboxJump.land`).
+    /// Returns the view that takes the keys, which the caller hands them to;
+    /// nil when there is no card.
+    private func land(card termID: String, on board: Board) -> NSView? {
+        let card = board.view.card(.term(termID))
         let home: NSView
         switch InboxJump.land(cardExists: card != nil, cardDead: card?.dead ?? false) {
         case .drop:
             return nil
         case .prime:
-            guard let view = board.sessions[target]?.view else { return nil }
-            board.primeTermID = target
+            guard let view = board.sessions[termID]?.view else { return nil }
+            board.primeTermID = termID
             updatePrimacy(on: board)
             home = view
         case .select:
-            board.view.select(.term(target))
+            board.view.select(.term(termID))
             home = rootView.board
         }
-        board.view.fly(to: .term(target))
-        touchInbox(termID: id.termID)
-        clearBell(termID: target)
+        board.view.fly(to: .term(termID))
+        clearBell(termID: termID)
         return home
     }
 

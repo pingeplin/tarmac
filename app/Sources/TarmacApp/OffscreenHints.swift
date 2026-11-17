@@ -18,6 +18,8 @@ final class OffscreenHints {
     private static let stackGap: CGFloat = 8
 
     private var pills: [String: OffscreenHintPill] = [:]
+    /// A pill was clicked, with the id of the terminal it stands for.
+    var onClick: ((String) -> Void)?
 
     /// A pill is measured once, for the font it was built with: after a font
     /// change the next `show` builds every pill again.
@@ -42,7 +44,7 @@ final class OffscreenHints {
             ) else { continue }
             let content = OffscreenHintPill.Content(arrow: placement.edge.arrow, label: hint.label, signal: hint.signal)
             let pill = pills[hint.cardID]
-            next[hint.cardID] = pill?.content == content ? pill : OffscreenHintPill(content)
+            next[hint.cardID] = pill?.content == content ? pill : makePill(content, cardID: hint.cardID)
         }
         for (cardID, pill) in pills where next[cardID] !== pill { pill.removeFromSuperview() }
         pills = next
@@ -64,15 +66,24 @@ final class OffscreenHints {
         }
         return placed
     }
+
+    private func makePill(_ content: OffscreenHintPill.Content, cardID: String) -> OffscreenHintPill {
+        let pill = OffscreenHintPill(content)
+        pill.onClick = { [weak self] in self?.onClick?(cardID) }
+        return pill
+    }
 }
 
-/// A board-sized sheet of pills. Click-through, and clipped to the board so a
-/// pill's shadow never falls on the status bar.
+/// A board-sized sheet of pills. Click-through between the pills, and clipped
+/// to the board so a pill's shadow never falls on the status bar.
 @MainActor
 final class OffscreenHintLayer: NSView {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        return hit === self ? nil : hit
+    }
 
     init() {
         super.init(frame: .zero)
@@ -84,9 +95,9 @@ final class OffscreenHintLayer: NSView {
 }
 
 /// One pill: an arrow and a label in a fully rounded border box, coloured by
-/// the signal it stands for.
+/// the signal it stands for. A click on it jumps to its card.
 @MainActor
-final class OffscreenHintPill: NSView {
+final class OffscreenHintPill: PressControl {
     struct Content: Equatable {
         var arrow: String
         var label: String
@@ -101,7 +112,6 @@ final class OffscreenHintPill: NSView {
     let size: NSSize
 
     override var isFlipped: Bool { true }
-    override var acceptsFirstResponder: Bool { false }
 
     init(_ content: Content) {
         self.content = content

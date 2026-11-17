@@ -28,6 +28,10 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
     /// the given board-local rect, in card order. The controller knows the
     /// labels and bell times the board does not.
     var offscreenHintProvider: ((CGRect) -> [OffscreenHintLayout.Hint])?
+    /// An edge pill was clicked, with the id of the terminal it stands for.
+    var onHintClick: ((String) -> Void)? {
+        didSet { offHints.onClick = onHintClick }
+    }
 
     /// Where ⏎ flies: the off-screen signal that ranks highest, if there is one.
     private(set) var offscreenFlyTarget: CardID?
@@ -124,6 +128,12 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
         board.onViewportChanged = nil
         board.onCardsChanged = nil
         board.removeFromSuperview()
+    }
+
+    /// Whether `hit` is on the board as a press, the wheel and a pinch see it:
+    /// in the board's view tree, or a pill over its cards.
+    func isBoardSurface(_ hit: NSView) -> Bool {
+        hit.isDescendant(of: board) || hit.isDescendant(of: offHints.over)
     }
 
     /// The mounted board's card set, a card's frame or a card's signal changed.

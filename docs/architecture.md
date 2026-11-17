@@ -1645,6 +1645,10 @@ free gap is left where it wanted to be; if that is on a card, it is drawn under
 the cards (#126): cards win. A pill left under the chrome but clear of every
 card is drawn over the cards and under the chrome.
 
+A click on a pill (a `PressControl`, pointing-hand cursor) jumps to its card as
+`Return` on an inbox row does, with no board switch: it closes an open inbox,
+flies, and primes a live card or selects a dead one (`InboxJump.land`).
+
 **The inbox** (spec 2611.0013, `InboxPanelView`; rules in `Inbox`,
 `InboxCopy`, `InboxKeys`, `InboxJump`, `InboxPanelLayout`). A store of report
 items (from `TermReport`, of every board, built or not), and bell and exit
