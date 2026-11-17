@@ -525,7 +525,7 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
             return
         }
         let model = ReportChip.model(report: report, nowMs: WallClock.nowMs)
-        reportChip.setTone(.signal(model.tone, dimmed: model.dimmed))
+        reportChip.setTone(.signal(model.signal, dimmed: model.dimmed))
         reportToolTip = model.toolTip
         reportChip.isHidden = false
         reportChip.setLabel(model.text)

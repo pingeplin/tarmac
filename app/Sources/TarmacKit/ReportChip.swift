@@ -7,7 +7,7 @@ public enum ReportChip {
         public let text: String
         /// The kind's signal, and so its colour; a dimmed chip keeps it on
         /// its border.
-        public let tone: CardSignal
+        public let signal: CardSignal
         public let dimmed: Bool
         public let toolTip: String
     }
@@ -27,7 +27,7 @@ public enum ReportChip {
         let heading = heading(proc: report.proc)
         return Model(
             text: "\(title) · \(ChromeText.reportAge(atMs: report.atMs, nowMs: nowMs))",
-            tone: Inbox.Kind.report(report.kind).signal,
+            signal: report.kind.signal,
             dimmed: report.read,
             toolTip: report.text.map { "\(heading)\n“\($0)”" } ?? heading
         )

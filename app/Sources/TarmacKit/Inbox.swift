@@ -28,8 +28,7 @@ public struct Inbox: Equatable, Sendable {
         /// The pill signal the kind shows as, and so its colour.
         public var signal: CardSignal {
             switch self {
-            case .report(.blocked): .blocked
-            case .report(.done): .done
+            case .report(let kind): kind.signal
             case .bell: .bell
             case .exit: .exit
             }

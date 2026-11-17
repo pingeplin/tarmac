@@ -54,6 +54,8 @@ public enum InboxCopy {
         ChromeText.reportAge(atMs: item.atMs, nowMs: nowMs)
     }
 
+    /// The whole row; the shell looks up the board's name and the card's
+    /// label, and passes the home folder and the clock.
     public static func row(
         _ item: Inbox.Item, boardName: String?, cardLabel: String?, home: String, nowMs: UInt64
     ) -> InboxRow {

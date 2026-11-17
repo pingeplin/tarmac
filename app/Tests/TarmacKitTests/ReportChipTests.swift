@@ -22,16 +22,16 @@ final class ReportChipTests: XCTestCase {
     func testS7AnUnreadBlockedReportQuotesItsTextAndPlacesItInTime() throws {
         let chip = try model(frame())
         XCTAssertEqual(chip.text, "report · 2m")
-        XCTAssertEqual(chip.tone, .blocked)
+        XCTAssertEqual(chip.signal, .blocked)
         XCTAssertFalse(chip.dimmed)
         XCTAssertEqual(chip.toolTip, "report · during claude\n“May I?”")
     }
 
     func testS7ADoneReportHasTheDoneToneAndAReadOneIsDimmed() throws {
-        XCTAssertEqual(try model(frame(kind: "done")).tone, .done)
+        XCTAssertEqual(try model(frame(kind: "done")).signal, .done)
         let read = try model(frame(kind: "done", read: true))
         XCTAssertTrue(read.dimmed)
-        XCTAssertEqual(read.tone, .done)
+        XCTAssertEqual(read.signal, .done)
     }
 
     func testS19NoProcIsTheBareTitleAndNoTextIsOneLine() throws {

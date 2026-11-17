@@ -32,7 +32,7 @@ public enum OffscreenHintLayout {
     /// The single ⏎-fly target: the hint with the highest `(rank, z)`, or nil
     /// when empty. The first wins a tie (strictly-greater swap), so callers
     /// must iterate cards in a stable order for determinism.
-    public static func flyTarget(_ hints: [Hint]) -> String? {
+    static func flyTarget(_ hints: [Hint]) -> String? {
         var best: Hint?
         for hint in hints {
             guard let current = best else {
@@ -50,7 +50,7 @@ public enum OffscreenHintLayout {
     /// The hints that get a pill, in their input order: at most `maxPills`,
     /// by rank, then the newest signal (live has none), then the higher z,
     /// then the earlier hint.
-    public static func shown(_ hints: [Hint]) -> [Hint] {
+    static func shown(_ hints: [Hint]) -> [Hint] {
         guard hints.count > maxPills else { return hints }
         let keys = hints.indices.map { (hints[$0].signal.rank, hints[$0].signalAt ?? 0, hints[$0].z, -$0) }
         return hints.indices.sorted { keys[$0] > keys[$1] }.prefix(maxPills).sorted().map { hints[$0] }
