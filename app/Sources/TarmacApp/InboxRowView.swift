@@ -35,7 +35,7 @@ final class InboxRowView: OverlayRowView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    func configure(_ row: InboxPanelView.Row, selected: Bool) {
+    func configure(_ row: InboxRow, selected: Bool) {
         self.selected = selected
         kindTag.setTone(.signal(row.kind.signal, dimmed: row.read))
         kindTag.setLabel(InboxCopy.tag(row.kind))
