@@ -188,6 +188,47 @@ Hazards:
 - An older Tarmac does not answer these verbs: they exit 1 after 5 s, or `124`
   with a shorter `--timeout`. `wait --changed` works with any.
 
+## Opening another terminal card
+
+```sh
+tarmac term new [--cwd DIR] "<command>"
+```
+
+Opens a terminal card beside yours, with a dashed edge from your card, and
+types the command into its login shell. The shell stays after the command
+ends. It prints the new terminal's id:
+
+```
+{"term":"t9"}
+```
+
+The folder is yours, or `--cwd DIR` (a relative one is taken from yours). The
+card goes on your terminal's board; outside Tarmac, on the active board. Your
+card stays prime and keeps the keys. With `wait`, one agent can start a second
+and wait for it:
+
+```sh
+id=$(tarmac term new "claude 'review the diff in this repo'" | jq -r .term)
+tarmac wait --report done --term "$id" --timeout 3600000
+```
+
+Exit status: `0` the terminal runs and the command is typed when its shell
+takes keys, `1` a refusal or a failure (the line on stderr says which), `2`
+usage or a command that is refused.
+
+Hazards:
+
+- **One line, at most 4096 characters**, with no control or invisible
+  characters. Give a long prompt by file:
+  `tarmac term new 'claude "$(cat brief.md)"'`.
+- **After `the app did not answer`, the card can still open.** Run
+  `tarmac terms` before you retry, or you get two.
+- **A board must have been shown once since the app started.** Else:
+  `board <id> is not ready in the app; show it, then retry`.
+- **The edge lasts for this app run.** After a relaunch the card is a plain
+  terminal. It does not move when your card moves.
+- **There is no limit on cards.** A loop that calls it fills the board.
+
 ## What renders how
 
 | File | Rendered as |

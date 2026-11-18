@@ -92,6 +92,8 @@ USAGE:
     tarmac resume clear
                             offer a command in this terminal after a restart
     tarmac terms            list the live terminals, one JSON line each
+    tarmac term new [--cwd DIR] \"<command>\"
+                            open a terminal card that types the command
     tarmac events [--term ID] [--kind exit,bell,changed,report]
                             print the daemon's facts as JSON lines
     tarmac wait --exit ID | --bell ID | --report blocked|done --term ID
@@ -139,6 +141,14 @@ then by id as text (`t10` before `t2`):
 {\"term\":\"t1\",\"board\":\"board-0\",\"cwd\":\"/w\",\"proc\":\"zsh\"}. `cwd` and `proc` are
 the daemon's fresh reads of the foreground process, left out when it could not
 read them. It is how a script outside a terminal names one.
+
+`tarmac term new` opens a terminal card beside the calling terminal, on its
+board (outside Tarmac, on the active board), and types the command into its
+login shell, which stays after the command ends. The command is one line of at
+most 4096 characters, with no control or invisible characters. The folder is
+this one, or --cwd DIR, which a relative DIR is taken from. It prints
+{\"term\":\"t9\"}. After \"the app did not answer\" the card can still open:
+check `tarmac terms` before a retry.
 
 `tarmac events` prints a JSON line for each exit, bell, doc change and report,
 as the daemon tells the app, until it is killed or the daemon goes (exit 1):
@@ -196,7 +206,8 @@ EXIT STATUS:
     0  success; also `tarmac --version` with no daemon running
     1  the daemon refused an open, a push or a report (with -, any line),
        or a resume, no daemon is running, `report` or `resume` ran outside a
-       Tarmac terminal, `terms`, `events` or `wait` was refused or lost the
+       Tarmac terminal, `term new` was refused or its terminal did not start,
+       `terms`, `events` or `wait` was refused or lost the
        daemon, a bell or report wait saw its terminal exit, `wait --changed`
        could not stat its path, an install failed, `hooks install` or `hooks
        uninstall` refused a settings file, or `hooks status` found one
