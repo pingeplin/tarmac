@@ -212,7 +212,7 @@ EXIT STATUS:
        could not stat its path, an install failed, `hooks install` or `hooks
        uninstall` refused a settings file, or `hooks status` found one
        unreadable
-    2  usage error
+    2  usage error, or a command that `resume set` or `term new` refused
   124  tarmac wait timed out
 `tarmac hooks run` always exits 0, so that a hook never blocks Claude.
 ";

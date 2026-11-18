@@ -13,10 +13,11 @@ public enum Provenance {
         }
     }
 
-    /// The edge of a doc: a straight segment from its owner card's centre to
-    /// its own. Drawn beneath the cards, only the gap between them shows.
-    public static func edge(owner: CGRect, doc: CGRect) -> Segment {
-        Segment(from: CGPoint(x: owner.midX, y: owner.midY), to: CGPoint(x: doc.midX, y: doc.midY))
+    /// The edge of a card with an owner: a straight segment from its owner
+    /// card's centre to its own. Drawn beneath the cards, only the gap
+    /// between them shows.
+    public static func edge(owner: CGRect, card: CGRect) -> Segment {
+        Segment(from: CGPoint(x: owner.midX, y: owner.midY), to: CGPoint(x: card.midX, y: card.midY))
     }
 
     public enum Kind: Sendable {
@@ -45,7 +46,7 @@ public enum Provenance {
     public static func edges<ID>(_ cards: [ID: Card<ID>]) -> [Segment] {
         cards.values.compactMap { card in
             guard let owner = card.owner, let ownerCard = cards[owner] else { return nil }
-            return edge(owner: ownerCard.frame, doc: card.frame)
+            return edge(owner: ownerCard.frame, card: card.frame)
         }
     }
 

@@ -30,7 +30,6 @@ final class TermNewPlanTests: XCTestCase {
             request(), on: board(ownerFrame: owner, primeFrame: prime, existing: existing, zs: [2, 5])
         ))
 
-        XCTAssertEqual(place?.boardID, "board-0")
         XCTAssertEqual(place?.frame, TermPlacement.newTerminalFrame(prime: owner, existing: existing))
         XCTAssertEqual(place?.z, 6)
         XCTAssertEqual(place?.owner, "t1")

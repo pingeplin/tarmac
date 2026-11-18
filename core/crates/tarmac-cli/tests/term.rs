@@ -131,7 +131,7 @@ fn s19_a_command_of_exactly_4096_chars_is_sent() {
 // S21
 #[test]
 fn s21_a_usage_error_exits_2_and_does_not_connect() {
-    for args in [&["term"][..], &["term", "new"], &["term", "new", "a", "b"], &["term", "new", "--frob", "a"], &["term", "new", "--cwd"], &["term", "old", "a"]] {
+    for args in [&["term"][..], &["term", "new"], &["term", "new", "a", "b"], &["term", "new", "--frob", "a"], &["term", "new", "--cwd"], &["term", "new", "--cwd", "", "a"], &["term", "old", "a"]] {
         let daemon = answering("t9");
 
         let out = Report::of(tarmac_at(&daemon.double.sock).args(args));

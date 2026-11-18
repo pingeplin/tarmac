@@ -39,7 +39,6 @@ public enum TermNewPlan {
     }
 
     public struct Place: Equatable, Sendable {
-        public var boardID: String
         public var frame: CGRect
         public var z: Int
         /// Held for this app run only (D7).
@@ -70,7 +69,6 @@ public enum TermNewPlan {
         }
         let owner = board.ownerFrame.flatMap { _ in request.ownerTermID }
         return .place(Place(
-            boardID: request.boardID,
             frame: TermPlacement.newTerminalFrame(prime: board.ownerFrame ?? board.primeFrame, existing: board.existing),
             z: ZOrder.raised(above: board.zs),
             owner: owner,

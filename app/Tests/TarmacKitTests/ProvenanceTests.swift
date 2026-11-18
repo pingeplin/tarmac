@@ -6,10 +6,10 @@ final class ProvenanceTests: XCTestCase {
 
     /// A straight segment between the two cards' centres. It is drawn beneath
     /// the cards, so only the gap between them shows.
-    func testTheEdgeRunsFromTheOwnersCentreToTheDocsCentre() {
+    func testTheEdgeRunsFromTheOwnersCentreToTheCardsCentre() {
         let edge = Provenance.edge(
             owner: CGRect(x: 80, y: 80, width: 470, height: 330),
-            doc: CGRect(x: 636, y: 80, width: 392, height: 310)
+            card: CGRect(x: 636, y: 80, width: 392, height: 310)
         )
         XCTAssertEqual(edge, Provenance.Segment(from: CGPoint(x: 315, y: 245), to: CGPoint(x: 832, y: 235)))
     }
@@ -32,8 +32,8 @@ final class ProvenanceTests: XCTestCase {
     func testS8ATermCardWithAnOwnerOnTheBoardDrawsAnEdgeFromItsOwnersCentre() {
         let edges = Provenance.edges(cards())
 
-        XCTAssertTrue(edges.contains(Provenance.edge(owner: ownerFrame, doc: childFrame)))
-        XCTAssertTrue(edges.contains(Provenance.edge(owner: ownerFrame, doc: docFrame)), "doc edges are unchanged")
+        XCTAssertTrue(edges.contains(Provenance.edge(owner: ownerFrame, card: childFrame)))
+        XCTAssertTrue(edges.contains(Provenance.edge(owner: ownerFrame, card: docFrame)), "doc edges are unchanged")
         XCTAssertEqual(edges.count, 2)
     }
 
@@ -45,7 +45,7 @@ final class ProvenanceTests: XCTestCase {
         var all = cards()
         all["doc"]?.attached = false
 
-        XCTAssertTrue(Provenance.edges(all).contains(Provenance.edge(owner: ownerFrame, doc: docFrame)))
+        XCTAssertTrue(Provenance.edges(all).contains(Provenance.edge(owner: ownerFrame, card: docFrame)))
     }
 
     // MARK: - which cards an owner's drag carries

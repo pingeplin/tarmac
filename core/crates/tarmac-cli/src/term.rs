@@ -34,7 +34,7 @@ pub fn run(args: &[String]) -> i32 {
 fn parse(args: &[String]) -> Result<(&str, Option<&str>), String> {
     let (cmd, cwd) = match args {
         [verb, cmd] if verb == "new" && !cmd.starts_with("--") => (cmd, None),
-        [verb, flag, dir, cmd] if verb == "new" && flag == "--cwd" && !cmd.starts_with("--") => (cmd, Some(dir.as_str())),
+        [verb, flag, dir, cmd] if verb == "new" && flag == "--cwd" && !dir.is_empty() && !cmd.starts_with("--") => (cmd, Some(dir.as_str())),
         _ => return Err(USAGE.into()),
     };
     refuse_term_new_cmd(cmd)?;

@@ -223,8 +223,10 @@ Hazards:
   `tarmac term new 'claude "$(cat brief.md)"'`.
 - **After `the app did not answer`, the card can still open.** Run
   `tarmac terms` before you retry, or you get two.
-- **A board must have been shown once since the app started.** Else:
-  `board <id> is not ready in the app; show it, then retry`.
+- **A board must be ready in the app.** It must have been shown once since
+  the app started, and once more after the app reconnects to Tarmac, for a
+  board in the background. Else: `board <id> is not ready in the app; show it,
+  then retry`. Show that board, then run the command again.
 - **The edge lasts for this app run.** After a relaunch the card is a plain
   terminal. It does not move when your card moves.
 - **There is no limit on cards.** A loop that calls it fills the board.
