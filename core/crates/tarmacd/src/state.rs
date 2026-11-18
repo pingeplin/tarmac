@@ -75,6 +75,8 @@ pub struct Daemon {
     /// Written in `term_ended` before the term leaves `terms`, so an id is
     /// always live, in the ring, or unknown. Held for a read or a write only.
     pub exits: std::sync::Mutex<crate::events::ExitRing>,
+    /// The `term_new` requests waiting for the app (spec 2611.0016).
+    pub term_news: TermNews,
     doc_counts: Arc<DocCounts>,
     watcher: Watcher,
     /// Set by the watcher; `docs::watch_loop` waits on it.
@@ -166,6 +168,7 @@ impl Daemon {
             reports: Mutex::new(Reports::default()),
             events: crate::events::Fanout::new(crate::events::EVENTS_CAPACITY),
             exits: std::sync::Mutex::default(),
+            term_news: TermNews::default(),
             doc_counts,
             watcher,
             wake,
@@ -422,6 +425,7 @@ impl Daemon {
         if let Some(old) = old {
             tracing::info!("replacing previous app connection");
             old.cancel.cancel();
+            self.term_news.app_gone(old.generation);
             self.drop_data().await;
         }
         (generation, cancel)
@@ -443,6 +447,7 @@ impl Daemon {
         let mut slot = self.app.lock().await;
         if slot.as_ref().is_some_and(|s| s.generation == generation) {
             *slot = None;
+            self.term_news.app_gone(generation);
             self.drop_data().await;
         }
     }
@@ -519,7 +524,10 @@ impl Daemon {
 mod reports;
 mod resumes;
 mod subscriptions;
+mod term_news;
 mod terms;
+
+pub use term_news::{TERM_NEW_APP_WAIT, TermNews};
 
 #[cfg(test)]
 mod tests;

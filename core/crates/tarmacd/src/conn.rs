@@ -10,7 +10,7 @@ use tracing::{debug, info, warn};
 
 use crate::boards::{BoardId, Boards};
 use crate::proc::Pid;
-use crate::state::Daemon;
+use crate::state::{Daemon, TERM_NEW_APP_WAIT};
 use crate::{docs, events, term};
 
 /// `peer_pid` is the client's pid, read at accept; only a cli session uses it.
@@ -100,6 +100,13 @@ async fn cli_session(daemon: Arc<Daemon>, mut stream: UnixStream, peer_pid: Opti
             }
             Ok(Msg::Subscribe { kinds, term_id }) => return subscribe(&daemon, stream, kinds, term_id).await,
             Ok(Msg::TermsList) => write_msg(&mut stream, &Msg::Terms { terms: daemon.terms_list().await }).await?,
+            Ok(Msg::TermNew { cmd, cwd, term_id, .. }) => {
+                let answer = match daemon.term_new(cmd, cwd, term_id, TERM_NEW_APP_WAIT).await {
+                    Ok(term_id) => Msg::TermNewOk { req_id: None, term_id },
+                    Err(msg) => Msg::Err { msg },
+                };
+                write_msg(&mut stream, &answer).await?;
+            }
             Ok(Msg::Unknown) => debug!("ignoring unknown message type from cli"),
             Ok(other) => debug!("ignoring unexpected cli message: {other:?}"),
             Err(e) => reject(&mut stream, format!("malformed frame: {e}")).await?,
@@ -384,6 +391,8 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
                 debug!("data_file ignored for {path} on {board_id} (an unknown board or doc, or a data file not under the doc's directory)");
             }
         }
+        Msg::TermNewOk { req_id: Some(req_id), term_id } => daemon.term_new_answered(req_id, Ok(term_id)).await,
+        Msg::TermNewErr { req_id, msg } => daemon.term_new_answered(req_id, Err(msg)).await,
         Msg::ScrollbackRequest { term_id } => {
             // `conn.replayed` is deliberately neither read nor written here: the
             // per-board one-time replay is a separate guarantee.
