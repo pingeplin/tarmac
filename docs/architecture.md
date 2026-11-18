@@ -24,8 +24,9 @@ Unix socket:
 
 A third tiny binary, the **`tarmac` CLI**, is the universal doorbell: `tarmac
 open <path>` connects to the daemon, names a doc, and exits. `open`, `push`,
-`report`, `resume`, `terms`, `events`, `wait`, `--version` and `hooks run` are
-its verbs that talk to the daemon (`tarmac terms`, `events` and `wait` read the
+`report`, `resume`, `term new`, `terms`, `events`, `wait`, `--version` and
+`hooks run` are its verbs that talk to the daemon (`tarmac term new` has the app
+open a terminal card that types a command, spec 2611.0016; `tarmac terms`, `events` and `wait` read the
 daemon's live terminals and its exits, bells, doc changes and reports, spec
 2611.0012, except `wait --changed`, which stats a path in a helper process of the CLI; `tarmac push` hands one JSON value, or one for each line of stdin, to the
 loaded HTML cards of an open doc; `tarmac report` sets or clears the calling

@@ -323,6 +323,11 @@ pub struct SpawnPlan {
 }
 
 pub async fn spawn(daemon: Arc<Daemon>, plan: SpawnPlan) -> Result<(), String> {
+    spawn_holding(daemon, plan, HOLD_DEADLINE).await
+}
+
+/// `spawn`, whose held inputs wait at most `hold_deadline`.
+pub(crate) async fn spawn_holding(daemon: Arc<Daemon>, plan: SpawnPlan, hold_deadline: Duration) -> Result<(), String> {
     check_free(&daemon, &plan.term_id).await?;
     let (cols, rows) = plan.size;
     let term_id = plan.term_id.clone();
@@ -414,7 +419,7 @@ pub async fn spawn(daemon: Arc<Daemon>, plan: SpawnPlan) -> Result<(), String> {
             runtime.block_on(daemon.push(Msg::Err { msg }));
         }
     };
-    tokio::task::spawn_blocking(move || write_inputs(input_rx, writer, HOLD_DEADLINE, keys, dropped));
+    tokio::task::spawn_blocking(move || write_inputs(input_rx, writer, hold_deadline, keys, dropped));
 
     let (exit_tx, exit_rx) = oneshot::channel::<Option<i64>>();
     let mut child = child;
