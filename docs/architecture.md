@@ -290,8 +290,9 @@ the folder (absolute, and a directory on the gate), takes the caller's board
 request to the app with a new `req_id`. The request is filed in `TermNews`
 under the app slot's generation, with the `app` lock held, before the push, so
 a fast answer finds it, and `install_app` and `remove_app` end the requests of
-the connection they replace or remove (`the app went away`). The cli session
-waits at most `TERM_NEW_APP_WAIT` (4 s, inside the cli's 5 s). The app's
+the connection they replace or remove (`the app went away`). One bound, `TERM_NEW_APP_WAIT` (4 s, inside the cli's
+5 s `DAEMON_WAIT`), covers the whole request from its arrival: the folder's
+read, the push and the app's answer. The app's
 `TermNewOk` is accepted only for a terminal the daemon holds, live or in the
 exit ring (`the terminal did not start`); an answer with no request waiting is
 dropped. The app sends `SpawnTerm`, the held `Input` and then `TermNewOk` on
@@ -383,7 +384,9 @@ with `hold` (spec 2611.0016, D11) waits until the master's termios
 (`MasterPty::get_termios`) shows ICANON off: a fresh pty is canonical until the
 shell's line editor starts, and macOS keeps at most 1024 bytes of a canonical
 line, dropping the rest, `\r` included, with no error. It polls every 20 ms,
-taking the master lock for each read only, and inputs behind it wait with it.
+taking the master lock for each read only, and inputs behind it wait with it,
+in the writer's own queue: the writer keeps draining the input channel, so the
+app connection's dispatch never waits on a full one.
 At `HOLD_DEADLINE` (10 s) a still-canonical tty gets the bytes when they are at
 most `HOLD_CANON_SAFE` (1000); a larger input is dropped, and the app gets an
 `Err` notice. The writer holds the `TermHandle` and the daemon weakly: the
