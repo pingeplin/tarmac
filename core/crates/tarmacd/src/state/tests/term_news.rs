@@ -103,12 +103,6 @@ async fn a_folder_read_that_holds_ends_at_the_requests_bound_as_not_a_directory(
     r.end().await;
 }
 
-// D10: the bound is inside the cli's own wait, so the cli hears the daemon.
-#[test]
-fn the_daemons_bound_is_below_the_clis_wait() {
-    assert!(TERM_NEW_APP_WAIT < tarmac_protocol::DAEMON_WAIT);
-}
-
 #[test]
 fn an_app_gone_ends_only_the_requests_of_its_own_connection() {
     let news = TermNews::default();

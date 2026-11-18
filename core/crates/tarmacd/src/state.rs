@@ -465,6 +465,29 @@ impl Daemon {
         self.terms.lock().await.get(id).cloned()
     }
 
+    /// A terminal that is live or in the exit ring. `terms` is read before
+    /// the ring, and each lock is taken alone: an ending terminal is recorded
+    /// in the ring before it leaves `terms`, so it is never neither.
+    pub async fn knows_term(&self, id: &str) -> Option<Known> {
+        if self.term(id).await.is_some() {
+            return Some(Known::Live);
+        }
+        self.exits.lock().expect("exits lock").lookup(id).map(Known::Exited)
+    }
+
+    /// The board of the calling terminal `term_id`, `None` for a terminal the
+    /// daemon does not have: a stale `TARMAC_TERM_ID` names no board (#386).
+    pub async fn caller_board(&self, term_id: Option<&str>) -> Option<BoardId> {
+        self.term_boards.lock().await.get(term_id?).cloned()
+    }
+
+    /// `path` is a directory, as the gate reads it. A read that fails or is
+    /// out is not.
+    pub async fn is_dir(&self, path: &Path) -> bool {
+        let probe = path.to_owned();
+        matches!(self.gate.run(path, move |fs| fs.is_dir(&probe)).await, Ok(true))
+    }
+
     /// Runs `change` with `boards` held, on the board `term_id` is filed
     /// under and its record there; `term_boards` is released first.
     async fn with_record<T>(&self, term_id: &str, change: impl FnOnce(Option<&BoardId>, Option<&mut TermRecord>) -> T) -> T {
@@ -528,6 +551,13 @@ mod term_news;
 mod terms;
 
 pub use term_news::{TERM_NEW_APP_WAIT, TermNews};
+
+/// What the daemon knows of a terminal id (`Daemon::knows_term`).
+pub enum Known {
+    Live,
+    /// One of the last terminals that ended, with its exit code.
+    Exited(Option<i64>),
+}
 
 #[cfg(test)]
 mod tests;

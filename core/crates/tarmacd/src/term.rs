@@ -84,36 +84,16 @@ fn keys_of(master: &dyn MasterPty) -> Keys {
     }
 }
 
-/// What becomes of a held input.
-#[derive(PartialEq, Eq, Debug)]
-enum Held {
-    Write,
-    Drop,
-    Ended,
-}
-
-/// One look at a held input that has waited since `since`: `None` while the
-/// shell does not take keys yet. At `deadline` a still-canonical tty gets the
-/// bytes only when `len` is at most `HOLD_CANON_SAFE`: a cut line would wait
-/// at the prompt for a Return.
-fn hold(len: usize, since: Instant, deadline: Duration, keys: &mut impl FnMut() -> Keys) -> Option<Held> {
-    match keys() {
-        Keys::Taken => Some(Held::Write),
-        Keys::Ended => Some(Held::Ended),
-        Keys::Canonical if since.elapsed() >= deadline => {
-            Some(if len <= HOLD_CANON_SAFE { Held::Write } else { Held::Drop })
-        }
-        Keys::Canonical => None,
-    }
-}
-
-/// The pty writer's loop: each input in turn, a held one once `hold` lets it
-/// go, so that input sent after it waits too. While one is held, the channel
-/// is drained into the writer's own queue, so the app connection's dispatch
-/// does not wait on a hold. Outside a hold the inputs stay in the bounded
-/// channel: while `write_all` blocks on a full pty, the channel can fill and
-/// the dispatch waits, as it always did. `dropped` is told of each held input
-/// that is not written.
+/// The pty writer's loop: each input in turn. A held one waits until the
+/// shell takes keys; at `deadline` a still-canonical tty gets it only when it
+/// is at most `HOLD_CANON_SAFE` bytes, since a cut line would wait at the
+/// prompt for a Return. Input sent after a held one waits too. While one is
+/// held, the channel is drained into the writer's own queue, so the app
+/// connection's dispatch does not wait on a hold. Outside a hold the inputs
+/// stay in the bounded channel: while `write_all` blocks on a full pty, the
+/// channel can fill and the dispatch waits, as it always did. `dropped` is
+/// told of each held input that is not written; a terminal that ends ends the
+/// loop.
 fn write_inputs(
     mut input_rx: mpsc::Receiver<Input>,
     mut writer: impl Write,
@@ -121,39 +101,27 @@ fn write_inputs(
     mut keys: impl FnMut() -> Keys,
     mut dropped: impl FnMut(),
 ) {
-    let mut queue = std::collections::VecDeque::new();
-    let mut held_since: Option<Instant> = None;
+    let mut queue = VecDeque::new();
     loop {
-        if queue.is_empty() {
-            match input_rx.blocking_recv() {
-                Some(input) => queue.push_back(input),
-                None => return,
+        let Some(input) = queue.pop_front().or_else(|| input_rx.blocking_recv()) else { return };
+        if input.hold {
+            let since = Instant::now();
+            let write = loop {
+                while let Ok(next) = input_rx.try_recv() {
+                    queue.push_back(next);
+                }
+                match keys() {
+                    Keys::Taken => break true,
+                    Keys::Ended => return,
+                    Keys::Canonical if since.elapsed() >= deadline => break input.bytes.len() <= HOLD_CANON_SAFE,
+                    Keys::Canonical => std::thread::sleep(HOLD_POLL),
+                }
+            };
+            if !write {
+                dropped();
+                continue;
             }
         }
-        let Some(next) = queue.front() else { continue };
-        if next.hold {
-            while let Ok(input) = input_rx.try_recv() {
-                queue.push_back(input);
-            }
-            let Some(next) = queue.front() else { continue };
-            let since = *held_since.get_or_insert_with(Instant::now);
-            match hold(next.bytes.len(), since, deadline, &mut keys) {
-                None => {
-                    std::thread::sleep(HOLD_POLL);
-                    continue;
-                }
-                Some(Held::Ended) => return,
-                Some(Held::Drop) => {
-                    held_since = None;
-                    queue.pop_front();
-                    dropped();
-                    continue;
-                }
-                Some(Held::Write) => {}
-            }
-        }
-        held_since = None;
-        let Some(input) = queue.pop_front() else { continue };
         if writer.write_all(&input.bytes).is_err() {
             return;
         }
@@ -644,17 +612,10 @@ mod tests {
         }
     }
 
-    fn scratch(tag: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("tarmac-hold-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
     // S33: HOLD_DEADLINE set short.
     #[test]
     fn s33_a_short_held_input_is_written_at_the_deadline_to_a_canonical_child() {
-        let dir = scratch("short");
+        let dir = crate::fixtures::tmp_dir("hold-short");
         let out = dir.join("out");
         let (master, mut child) = canonical_child(&out);
 
@@ -670,7 +631,7 @@ mod tests {
     // S33
     #[test]
     fn s33_a_held_input_over_1000_bytes_is_dropped_at_the_deadline_with_one_notice() {
-        let dir = scratch("long");
+        let dir = crate::fixtures::tmp_dir("hold-long");
         let out = dir.join("out");
         let (master, mut child) = canonical_child(&out);
 

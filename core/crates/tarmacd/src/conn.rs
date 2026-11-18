@@ -457,9 +457,7 @@ async fn spawn_cwd(
         (None, Some(source)) => daemon.term(&source).await?.foreground_read(daemon.gate()).await?.1?,
         (None, None) => daemon.succeeded_cwd(board, succeeds?).await?,
     };
-    let path = PathBuf::from(&cwd);
-    let is_dir = daemon.gate().run(&path.clone(), move |fs| fs.is_dir(&path)).await;
-    matches!(is_dir, Ok(true)).then_some(cwd)
+    daemon.is_dir(Path::new(&cwd)).await.then_some(cwd)
 }
 
 async fn spawn_failed(daemon: &Daemon, e: String) {

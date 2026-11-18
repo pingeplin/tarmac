@@ -2,7 +2,7 @@
 //! terminal; the daemon spawns nothing by itself.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
@@ -16,8 +16,12 @@ use super::Daemon;
 /// How long the daemon waits for the app, inside the cli's own 5 s, so that
 /// only a daemon that predates `term_new` leaves the cli unanswered (D10).
 pub const TERM_NEW_APP_WAIT: Duration = Duration::from_secs(4);
+const _: () = assert!(TERM_NEW_APP_WAIT.as_millis() < tarmac_protocol::DAEMON_WAIT.as_millis());
 
+pub const NO_APP: &str = "no app connected";
 pub const APP_WENT_AWAY: &str = "the app went away";
+pub const APP_DID_NOT_ANSWER: &str = "the app did not answer";
+pub const TERM_DID_NOT_START: &str = "the terminal did not start";
 
 type Answer = Result<String, String>;
 
@@ -49,11 +53,8 @@ impl TermNews {
 
     /// Ends each request pushed to the connection `generation`.
     pub fn app_gone(&self, generation: u64) {
-        let gone: Vec<Waiting> = {
-            let mut waiting = self.waiting.lock().expect("term news lock");
-            let ids: Vec<u64> = waiting.iter().filter(|(_, w)| w.generation == generation).map(|(id, _)| *id).collect();
-            ids.iter().filter_map(|id| waiting.remove(id)).collect()
-        };
+        let gone: Vec<Waiting> =
+            self.waiting.lock().expect("term news lock").extract_if(|_, w| w.generation == generation).map(|(_, w)| w).collect();
         for w in gone {
             let _ = w.answer.send(Err(APP_WENT_AWAY.into()));
         }
@@ -67,6 +68,10 @@ impl Daemon {
     pub async fn term_new(&self, cmd: String, cwd: String, term_id: Option<String>, wait: Duration) -> Answer {
         let deadline = tokio::time::Instant::now() + wait;
         refuse_term_new_cmd(&cmd)?;
+        // Before the folder's read, which can take the bound: no app, no wait.
+        if self.app.lock().await.is_none() {
+            return Err(NO_APP.into());
+        }
         let folder = tokio::time::timeout_at(deadline, self.term_new_folder(&cwd)).await;
         folder.unwrap_or_else(|_| Err(format!("not a directory: {cwd}")))?;
         let (term_id, board_id) = self.term_new_board(term_id).await;
@@ -74,18 +79,18 @@ impl Daemon {
         // pushed to, which `install_app` and `remove_app` end with the lock held.
         let (req_id, rx, tx) = {
             let slot = self.app.lock().await;
-            let Some(slot) = slot.as_ref() else { return Err("no app connected".into()) };
+            let Some(slot) = slot.as_ref() else { return Err(NO_APP.into()) };
             let (req_id, rx) = self.term_news.wait(slot.generation);
             (req_id, rx, slot.tx.clone())
         };
         let msg = Msg::TermNew { req_id: Some(req_id), cmd, cwd, term_id, board_id: Some(board_id) };
         let answer = async {
             if tx.send(msg).await.is_err() {
-                return Err("no app connected".to_string());
+                return Err(NO_APP.to_string());
             }
             rx.await.unwrap_or_else(|_| Err(APP_WENT_AWAY.into()))
         };
-        let answer = tokio::time::timeout_at(deadline, answer).await.unwrap_or_else(|_| Err("the app did not answer".into()));
+        let answer = tokio::time::timeout_at(deadline, answer).await.unwrap_or_else(|_| Err(APP_DID_NOT_ANSWER.into()));
         // A no-op after an answer, which took the request.
         self.term_news.take(req_id);
         answer
@@ -100,40 +105,31 @@ impl Daemon {
             return;
         };
         let answer = match answer {
-            Ok(term_id) if !self.holds(&term_id).await => Err("the terminal did not start".to_string()),
+            Ok(term_id) if self.knows_term(&term_id).await.is_none() => Err(TERM_DID_NOT_START.to_string()),
             answer => answer,
         };
         let _ = tx.send(answer);
     }
 
-    /// `terms` before the exit ring: an ending terminal is recorded in the
-    /// ring before it leaves `terms`.
-    async fn holds(&self, term_id: &str) -> bool {
-        self.terms.lock().await.contains_key(term_id) || self.exits.lock().expect("exits lock").lookup(term_id).is_some()
-    }
-
     /// D3: an absolute path that the gate reads as a directory.
     async fn term_new_folder(&self, cwd: &str) -> Result<(), String> {
-        let path = PathBuf::from(cwd);
+        let path = Path::new(cwd);
         if !path.is_absolute() {
             return Err(format!("not an absolute path: {cwd}"));
         }
-        let probe = path.clone();
-        match self.gate.run(&path, move |fs| fs.is_dir(&probe)).await {
-            Ok(true) => Ok(()),
-            _ => Err(format!("not a directory: {cwd}")),
+        if !self.is_dir(path).await {
+            return Err(format!("not a directory: {cwd}"));
         }
+        Ok(())
     }
 
-    /// D4: a live caller and its board, else no caller and the active board.
+    /// D4: a caller the daemon knows and its board, else no caller and the
+    /// active board.
     async fn term_new_board(&self, term_id: Option<String>) -> (Option<String>, BoardId) {
-        let live = match &term_id {
-            Some(id) if self.term(id).await.is_some() => self.term_boards.lock().await.get(id).cloned().map(|b| (id.clone(), b)),
-            _ => None,
-        };
-        match live {
-            Some((id, board)) => (Some(id), board),
-            None => (None, self.boards.lock().await.active_id().to_string()),
+        let board = self.caller_board(term_id.as_deref()).await;
+        match (term_id, board) {
+            (Some(id), Some(board)) => (Some(id), board),
+            _ => (None, self.boards.lock().await.active_id().to_string()),
         }
     }
 }
