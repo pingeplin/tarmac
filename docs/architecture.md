@@ -284,9 +284,11 @@ them. `TermsList` is answered by `Daemon::terms_list`: the live terminals in
 board order, each one's process name and gated cwd read at the same time.
 
 A cli `TermNew` (spec 2611.0016) is answered by `Daemon::term_new`
-(`state/term_news.rs`). The daemon spawns nothing: it checks the command and
+(`state/term_news.rs`). The daemon spawns nothing: it checks the command, that
+an app is connected (before the folder, whose read can take the bound), and
 the folder (absolute, and a directory on the gate), takes the caller's board
-(the active board when the caller is not a live terminal), and pushes the
+(`Daemon::caller_board`; the active board when the caller is not filed under
+a board, as for `open`), and pushes the
 request to the app with a new `req_id`. The request is filed in `TermNews`
 under the app slot's generation, with the `app` lock held, before the push, so
 a fast answer finds it, and `install_app` and `remove_app` end the requests of
@@ -1520,7 +1522,7 @@ One edge per card with an owner terminal card on the same board, whether
 or not the card is still attached (`Provenance.edges`): a doc and its opener,
 and a `tarmac term new` card and its caller (spec 2611.0016). The term card's
 owner is kept for the app run only, is never persisted, and the card is made
-not attached (`TermNewPlan.Place.attached`), so an owner's drag, which carries
+not attached (`Provenance.startsAttached`: a terminal card never is), so an owner's drag, which carries
 the attached cards it made (`Provenance.carried`), leaves it.
 Each edge is a straight dashed teal segment
 between the two cards' centres, drawn in a layer beneath every card

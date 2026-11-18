@@ -43,9 +43,6 @@ public enum TermNewPlan {
         public var z: Int
         /// Held for this app run only (D7).
         public var owner: String?
-        /// Never: an owner's drag does not carry the card (D7). Gravity that a
-        /// relaunch would drop is worse than none.
-        public let attached = false
         public var spawn: SpawnRequest
         var cmd: String
 

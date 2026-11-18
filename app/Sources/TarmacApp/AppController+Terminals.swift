@@ -313,7 +313,10 @@ extension AppController {
     /// The one readiness rule for a spawn on `board`: connected, the view laid
     /// out, and the board built and restored on this connection.
     func canSpawn(on board: Board) -> Bool {
-        connected && viewReady && board.didInitialRestore && daemonSession.restoredBoards.contains(board.boardID)
+        SpawnReadiness.ready(
+            connected: connected, viewReady: viewReady, built: board.didInitialRestore,
+            restored: daemonSession.restoredBoards.contains(board.boardID)
+        )
     }
 
     /// Nothing is spawned for a board before its restore on this connection:
@@ -396,10 +399,7 @@ extension AppController {
             let s = addTerminal(
                 BootTerminal.mint(), frame: CardFrame(rect: place.frame, z: place.z), spawn: place.spawn, on: board
             )
-            if let card = board.view.card(.term(s.termID)) {
-                card.ownerTermID = place.owner.map(CardID.term)
-                card.attached = place.attached
-            }
+            board.view.card(.term(s.termID))?.ownerTermID = place.owner.map(CardID.term)
             board.view.recomputeEdges()
             spawnPending(on: board)
             client.send(place.input(termID: s.termID))

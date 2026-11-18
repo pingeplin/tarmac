@@ -57,14 +57,14 @@ final class TermNewPlanTests: XCTestCase {
         )
     }
 
-    func testS30APlannedTermCardIsNotAttachedSoItsOwnersDragDoesNotCarryIt() {
+    func testS30APlannedTermCardWithAnOwnerIsNotCarriedByItsOwnersDrag() {
         let place = placed(TermNewPlan.plan(request(), on: board(ownerFrame: owner, existing: [owner])))!
         let cards: [String: Provenance.Card<String>] = [
-            "t1": .init(frame: owner, owner: nil),
-            "t9": .init(frame: place.frame, owner: place.owner, attached: place.attached),
+            "t1": .init(frame: owner, owner: nil, attached: Provenance.startsAttached(isDoc: false)),
+            "t9": .init(frame: place.frame, owner: place.owner, attached: Provenance.startsAttached(isDoc: false)),
         ]
 
-        XCTAssertFalse(place.attached)
+        XCTAssertEqual(place.owner, "t1")
         XCTAssertEqual(Provenance.carried(by: "t1", among: cards), [:])
     }
 

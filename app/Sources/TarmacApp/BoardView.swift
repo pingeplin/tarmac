@@ -429,9 +429,7 @@ final class BoardView: NSView, ThemeFollowing {
     /// The provenance edges (`Provenance.edges`), rebuilt from the cards'
     /// on-screen frames.
     func recomputeEdges() {
-        edgeLayer.setEdges(Provenance.edges(
-            cards.values, frame: \.frame, ownerFrame: { [cards] card in card.ownerTermID.flatMap { cards[$0]?.frame } }
-        ))
+        edgeLayer.setEdges(Provenance.edges(cards))
     }
 
     // MARK: Content scale
@@ -551,4 +549,10 @@ private final class CardLayerView: NSView {
         let hit = super.hitTest(point)
         return hit === self ? nil : hit
     }
+}
+
+/// The edge rule reads a card's on-screen frame and its owner.
+extension CardView: @MainActor Provenance.Linked {
+    var edgeFrame: CGRect { frame }
+    var ownerID: CardID? { ownerTermID }
 }

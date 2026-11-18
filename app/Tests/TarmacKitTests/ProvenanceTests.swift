@@ -32,7 +32,7 @@ final class ProvenanceTests: XCTestCase {
     }
 
     private func edges(_ cards: [String: Provenance.Card<String>]) -> [Provenance.Segment] {
-        Provenance.edges(cards.values, frame: \.frame, ownerFrame: { card in card.owner.flatMap { cards[$0]?.frame } })
+        Provenance.edges(cards)
     }
 
     func testS8ATermCardWithAnOwnerOnTheBoardDrawsAnEdgeFromItsOwnersCentre() {
@@ -55,6 +55,13 @@ final class ProvenanceTests: XCTestCase {
     }
 
     // MARK: - which cards an owner's drag carries
+
+    /// 2611.0016 S30, D7: a terminal card starts not attached, so a term card
+    /// with an owner is not carried; a doc starts attached.
+    func testS30ATermCardStartsNotAttachedAndADocDoes() {
+        XCTAssertFalse(Provenance.startsAttached(isDoc: false))
+        XCTAssertTrue(Provenance.startsAttached(isDoc: true))
+    }
 
     func testAnOwnersDragCarriesTheAttachedCardsItMadeOnly() {
         XCTAssertEqual(Provenance.carried(by: "t1", among: cards()), ["doc": docFrame])
