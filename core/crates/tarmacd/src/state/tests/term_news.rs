@@ -30,10 +30,8 @@ async fn s28_an_app_that_never_answers_is_no_answer_at_the_bound_and_a_late_answ
     r.end().await;
 }
 
-// S33: the app's notice for a dropped held input, with HOLD_DEADLINE short.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn s33_a_dropped_held_input_gives_the_app_one_err_notice() {
-    let mut r = rig("held-notice").await;
+/// A canonical shell `T`, whose held inputs wait at most `hold`, and its handle.
+async fn canonical_term(r: &Rig, hold: Duration) -> Arc<crate::term::TermHandle> {
     let plan = crate::term::SpawnPlan {
         term_id: "T".into(),
         size: (80, 24),
@@ -42,23 +40,50 @@ async fn s33_a_dropped_held_input_gives_the_app_one_err_notice() {
         board: "board-0".into(),
         succeeds: None,
     };
-    crate::term::spawn_holding(r.daemon.clone(), plan, Duration::from_millis(200)).await.unwrap();
-    let handle = r.daemon.term("T").await.expect("T runs");
+    crate::term::spawn_holding(r.daemon.clone(), plan, hold).await.unwrap();
+    r.daemon.term("T").await.expect("T runs")
+}
 
-    let held = crate::term::Input { bytes: [b"y".repeat(1000), b"\r".to_vec()].concat(), hold: true };
-    handle.input_tx.send(held).await.unwrap();
+fn held(n: usize) -> crate::term::Input {
+    crate::term::Input { bytes: [b"y".repeat(n), b"\r".to_vec()].concat(), hold: true }
+}
 
-    let notices = async {
-        let mut notices = Vec::new();
-        while let Ok(Some(msg)) = tokio::time::timeout(Duration::from_secs(1), r.app.recv()).await {
-            if let Msg::Err { msg } = msg {
-                notices.push(msg);
-            }
+/// The `err` notices the app gets until none comes for `quiet`.
+async fn notices(app: &mut mpsc::Receiver<Msg>, quiet: Duration) -> Vec<String> {
+    let mut notices = Vec::new();
+    while let Ok(Some(msg)) = tokio::time::timeout(quiet, app.recv()).await {
+        if let Msg::Err { msg } = msg {
+            notices.push(msg);
         }
-        notices
-    };
-    assert_eq!(notices.await, vec!["input held for T dropped: the shell did not take keys".to_string()]);
+    }
+    notices
+}
+
+// S33: the app's notice for a dropped held input, with HOLD_DEADLINE short.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn s33_a_dropped_held_input_gives_the_app_one_err_notice() {
+    let mut r = rig("held-notice").await;
+    let handle = canonical_term(&r, Duration::from_millis(200)).await;
+
+    handle.input_tx.send(held(1000)).await.unwrap();
+
+    assert_eq!(notices(&mut r.app, Duration::from_secs(1)).await, vec!["input held for T dropped: the shell did not take keys".to_string()]);
     handle.kill();
+    r.end().await;
+}
+
+// D11 End: a held input whose terminal ends before its deadline is neither
+// written nor dropped with a notice.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_held_input_whose_terminal_ends_gives_no_notice() {
+    let mut r = rig("held-end").await;
+    let handle = canonical_term(&r, Duration::from_secs(3)).await;
+    handle.input_tx.send(held(1000)).await.unwrap();
+
+    handle.kill();
+    drop(handle);
+
+    assert_eq!(notices(&mut r.app, Duration::from_secs(5)).await, Vec::<String>::new());
     r.end().await;
 }
 

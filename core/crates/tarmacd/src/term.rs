@@ -92,26 +92,26 @@ enum Held {
     Ended,
 }
 
-/// Waits, polling `keys`, until the shell takes keys. At `deadline` a
-/// still-canonical tty gets the bytes only when `len` is at most
-/// `HOLD_CANON_SAFE`: a cut line would wait at the prompt for a Return.
-fn hold(len: usize, deadline: Duration, keys: &mut impl FnMut() -> Keys) -> Held {
-    let start = Instant::now();
-    loop {
-        match keys() {
-            Keys::Taken => return Held::Write,
-            Keys::Ended => return Held::Ended,
-            Keys::Canonical if start.elapsed() >= deadline => {
-                return if len <= HOLD_CANON_SAFE { Held::Write } else { Held::Drop };
-            }
-            Keys::Canonical => std::thread::sleep(HOLD_POLL),
+/// One look at a held input that has waited since `since`: `None` while the
+/// shell does not take keys yet. At `deadline` a still-canonical tty gets the
+/// bytes only when `len` is at most `HOLD_CANON_SAFE`: a cut line would wait
+/// at the prompt for a Return.
+fn hold(len: usize, since: Instant, deadline: Duration, keys: &mut impl FnMut() -> Keys) -> Option<Held> {
+    match keys() {
+        Keys::Taken => Some(Held::Write),
+        Keys::Ended => Some(Held::Ended),
+        Keys::Canonical if since.elapsed() >= deadline => {
+            Some(if len <= HOLD_CANON_SAFE { Held::Write } else { Held::Drop })
         }
+        Keys::Canonical => None,
     }
 }
 
-/// The pty writer's loop: each input in turn, a held one after `hold`, so
-/// that input sent after it waits too. `dropped` is told of each held input
-/// that is not written.
+/// The pty writer's loop: each input in turn, a held one once `hold` lets it
+/// go, so that input sent after it waits too. While one is held the channel
+/// is still drained into the writer's own queue: the app connection's
+/// dispatch must never wait on a full channel. `dropped` is told of each held
+/// input that is not written.
 fn write_inputs(
     mut input_rx: mpsc::Receiver<Input>,
     mut writer: impl Write,
@@ -119,19 +119,40 @@ fn write_inputs(
     mut keys: impl FnMut() -> Keys,
     mut dropped: impl FnMut(),
 ) {
-    while let Some(input) = input_rx.blocking_recv() {
-        if input.hold {
-            match hold(input.bytes.len(), deadline, &mut keys) {
-                Held::Write => {}
-                Held::Drop => {
+    let mut queue = std::collections::VecDeque::new();
+    let mut held_since: Option<Instant> = None;
+    loop {
+        if queue.is_empty() {
+            match input_rx.blocking_recv() {
+                Some(input) => queue.push_back(input),
+                None => return,
+            }
+        }
+        while let Ok(input) = input_rx.try_recv() {
+            queue.push_back(input);
+        }
+        let Some(next) = queue.front() else { continue };
+        if next.hold {
+            let since = *held_since.get_or_insert_with(Instant::now);
+            match hold(next.bytes.len(), since, deadline, &mut keys) {
+                None => {
+                    std::thread::sleep(HOLD_POLL);
+                    continue;
+                }
+                Some(Held::Ended) => return,
+                Some(Held::Drop) => {
+                    held_since = None;
+                    queue.pop_front();
                     dropped();
                     continue;
                 }
-                Held::Ended => break,
+                Some(Held::Write) => {}
             }
         }
+        held_since = None;
+        let Some(input) = queue.pop_front() else { continue };
         if writer.write_all(&input.bytes).is_err() {
-            break;
+            return;
         }
         let _ = writer.flush();
     }

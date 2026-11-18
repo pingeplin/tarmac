@@ -83,3 +83,23 @@ fn s34_an_input_with_no_hold_is_written_at_once_to_a_canonical_child() {
 
     assert_eq!(read_out(&out, 6, Duration::from_secs(3)), as_read('y', 5));
 }
+
+// D11: a hold keeps taking the app's input into the terminal's own queue, so
+// the app connection never waits on a full input channel; order is kept.
+#[test]
+fn more_inputs_than_the_channel_holds_during_a_hold_block_no_later_frame_and_keep_their_order() {
+    let daemon = TestDaemon::start_sh();
+    let mut app = daemon.connect_app_drained();
+    let out = reader(&mut app, &daemon.dir, Some("2"), 11 + 300);
+    send(&mut app, line('h', 10), true);
+    for _ in 0..300 {
+        send(&mut app, b"x".to_vec(), false);
+    }
+    let asked = Instant::now();
+
+    app.send(&Msg::ScrollbackRequest { term_id: "t1".into() });
+
+    app.recv_until("the scrollback reply", |m| matches!(m, Msg::Scrollback { .. }));
+    assert!(asked.elapsed() < Duration::from_millis(1000), "the app connection waited {:?}", asked.elapsed());
+    assert_eq!(read_out(&out, 311, Duration::from_secs(6)), format!("{}{}", as_read('h', 10), "x".repeat(300)));
+}
