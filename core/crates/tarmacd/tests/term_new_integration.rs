@@ -291,3 +291,17 @@ fn an_answer_for_a_terminal_that_already_ended_is_the_new_terminal() {
 
     assert_eq!(answer(&mut cli), ok("t9"));
 }
+
+// D10 through the socket: the cli session's bound is the daemon's own, inside
+// the cli's wait.
+#[test]
+fn an_app_that_never_answers_is_no_answer_inside_the_clis_wait() {
+    let daemon = TestDaemon::start_sh();
+    let mut app = daemon.connect_app_drained();
+    let started = Instant::now();
+    let mut cli = ask(&daemon.sock, "echo hi", "/tmp", None);
+    forwarded(&mut app);
+
+    assert_eq!(answer(&mut cli), err("the app did not answer"));
+    assert!(started.elapsed() < tarmac_protocol::DAEMON_WAIT, "answered after {:?}", started.elapsed());
+}

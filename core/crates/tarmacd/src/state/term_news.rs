@@ -36,14 +36,14 @@ struct Waiting {
 }
 
 impl TermNews {
-    fn wait(&self, generation: u64) -> (u64, oneshot::Receiver<Answer>) {
+    pub(super) fn wait(&self, generation: u64) -> (u64, oneshot::Receiver<Answer>) {
         let req_id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
         let (answer, rx) = oneshot::channel();
         self.waiting.lock().expect("term news lock").insert(req_id, Waiting { generation, answer });
         (req_id, rx)
     }
 
-    fn take(&self, req_id: u64) -> Option<oneshot::Sender<Answer>> {
+    pub(super) fn take(&self, req_id: u64) -> Option<oneshot::Sender<Answer>> {
         self.waiting.lock().expect("term news lock").remove(&req_id).map(|w| w.answer)
     }
 
@@ -62,31 +62,33 @@ impl TermNews {
 
 impl Daemon {
     /// The answer to a cli `term_new`: the new terminal's id, or the line the
-    /// cli prints. The app is waited for at most `wait`.
+    /// cli prints. One bound, `wait`, covers the whole request from its
+    /// arrival: the folder's read, the push and the app's answer (D10).
     pub async fn term_new(&self, cmd: String, cwd: String, term_id: Option<String>, wait: Duration) -> Answer {
+        let deadline = tokio::time::Instant::now() + wait;
         refuse_term_new_cmd(&cmd)?;
-        self.term_new_folder(&cwd).await?;
+        let folder = tokio::time::timeout_at(deadline, self.term_new_folder(&cwd)).await;
+        folder.unwrap_or_else(|_| Err(format!("not a directory: {cwd}")))?;
         let (term_id, board_id) = self.term_new_board(term_id).await;
         // Under the app lock: the request belongs to the connection it is
         // pushed to, which `install_app` and `remove_app` end with the lock held.
-        let (req_id, mut rx, tx) = {
+        let (req_id, rx, tx) = {
             let slot = self.app.lock().await;
             let Some(slot) = slot.as_ref() else { return Err("no app connected".into()) };
             let (req_id, rx) = self.term_news.wait(slot.generation);
             (req_id, rx, slot.tx.clone())
         };
         let msg = Msg::TermNew { req_id: Some(req_id), cmd, cwd, term_id, board_id: Some(board_id) };
-        if tx.send(msg).await.is_err() {
-            self.term_news.take(req_id);
-            return Err("no app connected".into());
-        }
-        match tokio::time::timeout(wait, &mut rx).await {
-            Ok(answer) => answer.unwrap_or_else(|_| Err(APP_WENT_AWAY.into())),
-            Err(_) => {
-                self.term_news.take(req_id);
-                rx.try_recv().unwrap_or_else(|_| Err("the app did not answer".into()))
+        let answer = async {
+            if tx.send(msg).await.is_err() {
+                return Err("no app connected".to_string());
             }
-        }
+            rx.await.unwrap_or_else(|_| Err(APP_WENT_AWAY.into()))
+        };
+        let answer = tokio::time::timeout_at(deadline, answer).await.unwrap_or_else(|_| Err("the app did not answer".into()));
+        // A no-op after an answer, which took the request.
+        self.term_news.take(req_id);
+        answer
     }
 
     /// The app's answer to request `req_id`. An `Ok` names a terminal the

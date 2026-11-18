@@ -17,6 +17,10 @@ use serde::{Deserialize, Serialize};
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const MAX_FRAME_LEN: u32 = 16 * 1024 * 1024;
 
+/// How long the cli waits for the daemon's answer. A daemon that waits on
+/// someone else for a cli (`term_new`) bounds that wait below it.
+pub const DAEMON_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
 // No `Eq` on Msg, Tile or BoardViewport: their geometry fields are f64.
 //
 // Optional keys are additive: a missing key decodes to `None`, and `None` is

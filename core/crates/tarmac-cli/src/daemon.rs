@@ -70,7 +70,7 @@ pub(crate) fn time_out_at(stream: &UnixStream, until: Instant) -> io::Result<()>
 
 /// How long `open`, `push`, `report`, `resume`, `--version` and the first answer to
 /// `terms`, `events` and `wait` wait for the daemon.
-pub(crate) const DAEMON_WAIT: Duration = Duration::from_secs(5);
+pub(crate) const DAEMON_WAIT: Duration = proto::DAEMON_WAIT;
 
 /// The no-answer line of a request that every daemon answers: `open`'s,
 /// and `--version`'s, whose only request is `hello`.
