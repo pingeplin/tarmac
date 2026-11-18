@@ -122,3 +122,23 @@ fn an_app_gone_ends_only_the_requests_of_its_own_connection() {
     assert!(second_rx.try_recv().is_err(), "the other connection's request still waits");
     assert!(news.take(second).is_some());
 }
+
+// D10: the folder's read and the app's answer share the one bound. A read
+// that takes most of it leaves the app only the rest.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_slow_folder_read_leaves_the_app_only_the_rest_of_the_bound() {
+    let mut r = rig_with("term-new-shared", None, Duration::from_secs(3)).await;
+    r.fs.slow(crate::fixtures::Call::IsDir, &r.dir, Duration::from_millis(600));
+    let daemon = r.daemon.clone();
+    let cwd = r.dir.to_string_lossy().into_owned();
+    let started = std::time::Instant::now();
+    let asked = tokio::spawn(async move { daemon.term_new("echo hi".into(), cwd, None, Duration::from_millis(800)).await });
+    forwarded(&mut r.app).await;
+
+    let answer = within(asked).await;
+
+    assert_eq!(answer, Err("the app did not answer".to_string()));
+    let took = started.elapsed();
+    assert!(took >= Duration::from_millis(600) && took < Duration::from_millis(1100), "answered after {took:?}");
+    r.end().await;
+}
