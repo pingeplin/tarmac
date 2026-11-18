@@ -936,12 +936,13 @@ does for ⌘T; the daemon spawns nothing by itself.
   folder absolute against its own directory with no file-system call, and
   sets `term_id` from `TARMAC_TERM_ID`.
 - **The daemon** checks, in this order: the command
-  (`err "term new command refused: <cause>"`); the folder, on the gate
-  (`err "not an absolute path: <path>"`, `err "not a directory: <path>"`,
-  also for a read that fails or runs out); an app connection
-  (`err "no app connected"`). The board is the calling terminal's; with no
-  `term_id`, or one that is not a live terminal, it is the active board and
-  the frame to the app has no `term_id`. The daemon numbers the request with a
+  (`err "term new command refused: <cause>"`); an app connection
+  (`err "no app connected"`), before the folder, whose read can take the
+  bound; the folder, on the gate (`err "not an absolute path: <path>"`,
+  `err "not a directory: <path>"`, also for a read that fails or runs out).
+  The board is the calling terminal's; with no `term_id`, or one that is not
+  filed under a board (as for `open`), it is the active board and the frame
+  to the app has no `term_id`. The daemon numbers the request with a
   new `req_id` and pushes it to the app.
 - **The app** places the card on `board_id` (first free ring slot around the
   owner card, else the prime card), sends `spawn_term` with no `cmd`, then

@@ -305,3 +305,17 @@ fn an_app_that_never_answers_is_no_answer_inside_the_clis_wait() {
     assert_eq!(answer(&mut cli), err("the app did not answer"));
     assert!(started.elapsed() < tarmac_protocol::DAEMON_WAIT, "answered after {:?}", started.elapsed());
 }
+
+// The app is checked before the folder, whose read can take the bound.
+#[test]
+fn with_no_app_a_bad_folder_is_no_app_connected_at_once() {
+    let daemon = TestDaemon::start_sh();
+
+    for cwd in ["rel/dir", "/no/such/dir"] {
+        let started = Instant::now();
+        let mut cli = ask(&daemon.sock, "echo hi", cwd, None);
+
+        assert_eq!(answer(&mut cli), err("no app connected"), "{cwd}");
+        assert!(started.elapsed() < Duration::from_secs(1), "{cwd}: answered after {:?}", started.elapsed());
+    }
+}
