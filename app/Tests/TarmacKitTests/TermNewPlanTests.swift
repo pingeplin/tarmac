@@ -11,12 +11,9 @@ final class TermNewPlanTests: XCTestCase {
     }
 
     private func board(
-        built: Bool = true, restored: Bool = true, ownerFrame: CGRect? = nil, primeFrame: CGRect? = nil,
-        existing: [CGRect] = [], zs: [Int] = []
+        ready: Bool = true, ownerFrame: CGRect? = nil, primeFrame: CGRect? = nil, existing: [CGRect] = [], zs: [Int] = []
     ) -> TermNewPlan.Board {
-        TermNewPlan.Board(
-            built: built, restored: restored, ownerFrame: ownerFrame, primeFrame: primeFrame, existing: existing, zs: zs
-        )
+        TermNewPlan.Board(ready: ready, ownerFrame: ownerFrame, primeFrame: primeFrame, existing: existing, zs: zs)
     }
 
     private func placed(_ decision: TermNewPlan.Decision) -> TermNewPlan.Place? {
@@ -53,14 +50,22 @@ final class TermNewPlanTests: XCTestCase {
         XCTAssertEqual(place?.frame, TermPlacement.newTerminalFrame(prime: nil, existing: []))
     }
 
-    func testS12ABoardNotBuiltOrNotRestoredOnThisConnectionIsRefused() {
-        for (built, restored) in [(true, false), (false, true), (false, false)] {
-            XCTAssertEqual(
-                TermNewPlan.plan(request(board: "board-2"), on: board(built: built, restored: restored, ownerFrame: owner)),
-                .refuse("board board-2 is not ready in the app; show it, then retry"),
-                "built \(built), restored \(restored)"
-            )
-        }
+    func testS12ABoardTheAppCannotSpawnOnIsRefused() {
+        XCTAssertEqual(
+            TermNewPlan.plan(request(board: "board-2"), on: board(ready: false, ownerFrame: owner)),
+            .refuse("board board-2 is not ready in the app; show it, then retry")
+        )
+    }
+
+    func testS30APlannedTermCardIsNotAttachedSoItsOwnersDragDoesNotCarryIt() {
+        let place = placed(TermNewPlan.plan(request(), on: board(ownerFrame: owner, existing: [owner])))!
+        let cards: [String: Provenance.Card<String>] = [
+            "t1": .init(frame: owner, owner: nil),
+            "t9": .init(frame: place.frame, owner: place.owner, attached: place.attached),
+        ]
+
+        XCTAssertFalse(place.attached)
+        XCTAssertEqual(Provenance.carried(by: "t1", among: cards), [:])
     }
 
     func testS14TheInputIsTheCommandAndAReturnAsUTF8HeldAndNotTyped() {

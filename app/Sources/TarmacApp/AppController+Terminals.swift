@@ -310,11 +310,17 @@ extension AppController {
         }
     }
 
+    /// The one readiness rule for a spawn on `board`: connected, the view laid
+    /// out, and the board built and restored on this connection.
+    func canSpawn(on board: Board) -> Bool {
+        connected && viewReady && board.didInitialRestore && daemonSession.restoredBoards.contains(board.boardID)
+    }
+
     /// Nothing is spawned for a board before its restore on this connection:
     /// that restore lists the live terminals, and a shell spawned just ahead of
     /// it would be missing from the list and so be taken for lost.
     func spawnPending(on board: Board) {
-        guard connected, viewReady, daemonSession.restoredBoards.contains(board.boardID) else { return }
+        guard canSpawn(on: board) else { return }
         for termID in board.sessionOrder {
             guard let s = board.sessions[termID], let request = s.pendingSpawn else { continue }
             spawn(s, request, on: board)
@@ -371,38 +377,36 @@ extension AppController {
     /// A daemon `term_new` (2611.0016): the card goes beside its owner, which
     /// stays prime and keeps the keys, and its shell gets the command. The
     /// answer goes after the spawn and the input, on the same connection, so
-    /// the daemon holds the terminal when it reads it. A view that is not
-    /// ready would hold the spawn, so it is refused as a board not ready.
+    /// the daemon holds the terminal when it reads it.
     func handleTermNew(_ request: TermNewPlan.Request) {
         let board = boards[request.boardID]
-        let cards = board.map { Array($0.view.cards.values) } ?? []
+        let cards = board?.view.cards.values
         let decision = TermNewPlan.plan(request, on: TermNewPlan.Board(
-            built: viewReady && board?.didInitialRestore == true,
-            restored: daemonSession.restoredBoards.contains(request.boardID),
+            ready: board.map(canSpawn(on:)) ?? false,
             ownerFrame: request.ownerTermID.flatMap { board?.view.card(.term($0))?.worldFrame.rect },
             primeFrame: board?.primeTermCard?.worldFrame.rect,
-            existing: cards.map(\.worldFrame.rect),
-            zs: cards.map(\.worldFrame.z)
+            existing: cards?.map(\.worldFrame.rect) ?? [],
+            zs: cards?.map(\.worldFrame.z) ?? []
         ))
-        guard case .place(let place) = decision, let board else {
-            if case .refuse(let msg) = decision { client.send(.termNewErr(reqID: request.reqID, msg: msg)) }
-            return
+        switch decision {
+        case .refuse(let msg):
+            client.send(.termNewErr(reqID: request.reqID, msg: msg))
+        case .place(let place):
+            guard let board else { return }
+            let s = addTerminal(
+                BootTerminal.mint(), frame: CardFrame(rect: place.frame, z: place.z), spawn: place.spawn, on: board
+            )
+            if let card = board.view.card(.term(s.termID)) {
+                card.ownerTermID = place.owner.map(CardID.term)
+                card.attached = place.attached
+            }
+            board.view.recomputeEdges()
+            spawnPending(on: board)
+            client.send(place.input(termID: s.termID))
+            client.send(.termNewOK(reqID: request.reqID, termID: s.termID))
+            persistLayout(for: board)
+            refreshSwitcherIfOpen()
         }
-        let s = addTerminal(
-            BootTerminal.mint(), frame: CardFrame(rect: place.frame, z: place.z), spawn: place.spawn, on: board
-        )
-        spawnPending(on: board)
-        guard s.pendingSpawn == nil else {
-            removeTerminalCard(s.termID, on: board)
-            client.send(.termNewErr(reqID: request.reqID, msg: TermNewPlan.notReady(request.boardID)))
-            return
-        }
-        board.view.card(.term(s.termID))?.ownerTermID = place.owner.map(CardID.term)
-        board.view.recomputeEdges()
-        client.send(place.input(termID: s.termID))
-        client.send(.termNewOK(reqID: request.reqID, termID: s.termID))
-        persistLayout(for: board)
-        refreshSwitcherIfOpen()
     }
 
     /// A fresh shell in the place of the board's last live terminal, which just

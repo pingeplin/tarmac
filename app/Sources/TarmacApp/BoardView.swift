@@ -348,16 +348,10 @@ final class BoardView: NSView, ThemeFollowing {
         carry = CardCarry(
             owner: card.id,
             ownerFrame: card.worldFrame.rect,
-            satellites: Provenance.carried(by: card.id, among: provenanceCards(\.worldFrame.rect))
+            satellites: Provenance.carried(by: card.id, among: cards.mapValues {
+                Provenance.Card(frame: $0.worldFrame.rect, owner: $0.ownerTermID, attached: $0.attached)
+            })
         )
-    }
-
-    /// Each card as the provenance rules read it, at `frame`.
-    private func provenanceCards(_ frame: (CardView) -> CGRect) -> [CardID: Provenance.Card<CardID>] {
-        cards.mapValues { card in
-            let kind: Provenance.Kind = if case .doc = card.id { .doc } else { .term }
-            return Provenance.Card(frame: frame(card), owner: card.ownerTermID, kind: kind, attached: card.attached)
-        }
     }
 
     private func carrySatellites(of card: CardView) {
@@ -435,7 +429,9 @@ final class BoardView: NSView, ThemeFollowing {
     /// The provenance edges (`Provenance.edges`), rebuilt from the cards'
     /// on-screen frames.
     func recomputeEdges() {
-        edgeLayer.setEdges(Provenance.edges(provenanceCards(\.frame)))
+        edgeLayer.setEdges(Provenance.edges(
+            cards.values, frame: \.frame, ownerFrame: { [cards] card in card.ownerTermID.flatMap { cards[$0]?.frame } }
+        ))
     }
 
     // MARK: Content scale

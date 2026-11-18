@@ -20,17 +20,23 @@ final class ProvenanceTests: XCTestCase {
     private let childFrame = CGRect(x: 200, y: 0, width: 100, height: 100)
     private let docFrame = CGRect(x: 0, y: 200, width: 100, height: 100)
 
+    /// The owner `t1`, a term card it made (not attached, as planned) and a
+    /// doc it opened.
     private func cards(owner: Bool = true) -> [String: Provenance.Card<String>] {
         var cards: [String: Provenance.Card<String>] = [
-            "child": .init(frame: childFrame, owner: "t1", kind: .term),
-            "doc": .init(frame: docFrame, owner: "t1", kind: .doc),
+            "child": .init(frame: childFrame, owner: "t1", attached: false),
+            "doc": .init(frame: docFrame, owner: "t1"),
         ]
-        if owner { cards["t1"] = .init(frame: ownerFrame, owner: nil, kind: .term) }
+        if owner { cards["t1"] = .init(frame: ownerFrame, owner: nil) }
         return cards
     }
 
+    private func edges(_ cards: [String: Provenance.Card<String>]) -> [Provenance.Segment] {
+        Provenance.edges(cards.values, frame: \.frame, ownerFrame: { card in card.owner.flatMap { cards[$0]?.frame } })
+    }
+
     func testS8ATermCardWithAnOwnerOnTheBoardDrawsAnEdgeFromItsOwnersCentre() {
-        let edges = Provenance.edges(cards())
+        let edges = edges(cards())
 
         XCTAssertTrue(edges.contains(Provenance.edge(owner: ownerFrame, card: childFrame)))
         XCTAssertTrue(edges.contains(Provenance.edge(owner: ownerFrame, card: docFrame)), "doc edges are unchanged")
@@ -38,26 +44,26 @@ final class ProvenanceTests: XCTestCase {
     }
 
     func testS8WithItsOwnerGoneNoCardDrawsAnEdge() {
-        XCTAssertEqual(Provenance.edges(cards(owner: false)), [])
+        XCTAssertEqual(edges(cards(owner: false)), [])
     }
 
     func testADetachedDocKeepsItsEdge() {
         var all = cards()
         all["doc"]?.attached = false
 
-        XCTAssertTrue(Provenance.edges(all).contains(Provenance.edge(owner: ownerFrame, card: docFrame)))
+        XCTAssertTrue(edges(all).contains(Provenance.edge(owner: ownerFrame, card: docFrame)))
     }
 
     // MARK: - which cards an owner's drag carries
 
-    func testS30ATermCardWithAnOwnerIsNotCarriedByItsOwnersDrag() {
+    func testAnOwnersDragCarriesTheAttachedCardsItMadeOnly() {
         XCTAssertEqual(Provenance.carried(by: "t1", among: cards()), ["doc": docFrame])
     }
 
     func testADetachedDocOrAnotherOwnersDocIsNotCarried() {
         var all = cards()
         all["doc"]?.attached = false
-        all["other"] = .init(frame: docFrame, owner: "t2", kind: .doc)
+        all["other"] = .init(frame: docFrame, owner: "t2")
 
         XCTAssertEqual(Provenance.carried(by: "t1", among: all), [:])
     }

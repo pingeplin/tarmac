@@ -21,16 +21,16 @@ public enum TermNewPlan {
     }
 
     public struct Board: Sendable {
-        public var built: Bool
-        public var restored: Bool
+        /// The app can spawn on the board now: it is connected, its view is
+        /// ready, and the board is built and restored on this connection.
+        public var ready: Bool
         public var ownerFrame: CGRect?
         public var primeFrame: CGRect?
         public var existing: [CGRect]
         public var zs: [Int]
 
-        public init(built: Bool, restored: Bool, ownerFrame: CGRect?, primeFrame: CGRect?, existing: [CGRect], zs: [Int]) {
-            self.built = built
-            self.restored = restored
+        public init(ready: Bool, ownerFrame: CGRect?, primeFrame: CGRect?, existing: [CGRect], zs: [Int]) {
+            self.ready = ready
             self.ownerFrame = ownerFrame
             self.primeFrame = primeFrame
             self.existing = existing
@@ -43,6 +43,9 @@ public enum TermNewPlan {
         public var z: Int
         /// Held for this app run only (D7).
         public var owner: String?
+        /// Never: an owner's drag does not carry the card (D7). Gravity that a
+        /// relaunch would drop is worse than none.
+        public let attached = false
         public var spawn: SpawnRequest
         var cmd: String
 
@@ -61,13 +64,13 @@ public enum TermNewPlan {
         "board \(boardID) is not ready in the app; show it, then retry"
     }
 
-    /// D5: a board is spawned on only once it is built and restored on this
-    /// connection; a spawn held for either would leave the cli waiting.
+    /// D5: a board is spawned on only when it is ready; a spawn held would
+    /// leave the cli waiting.
     public static func plan(_ request: Request, on board: Board) -> Decision {
-        guard board.built, board.restored else {
+        guard board.ready else {
             return .refuse(notReady(request.boardID))
         }
-        let owner = board.ownerFrame.flatMap { _ in request.ownerTermID }
+        let owner = board.ownerFrame == nil ? nil : request.ownerTermID
         return .place(Place(
             frame: TermPlacement.newTerminalFrame(prime: board.ownerFrame ?? board.primeFrame, existing: board.existing),
             z: ZOrder.raised(above: board.zs),

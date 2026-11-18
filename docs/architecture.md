@@ -1519,8 +1519,9 @@ browser.
 One edge per card with an owner terminal card on the same board, whether
 or not the card is still attached (`Provenance.edges`): a doc and its opener,
 and a `tarmac term new` card and its caller (spec 2611.0016). The term card's
-owner is kept for the app run only, is never persisted, and is not attached:
-an owner's drag carries only its attached docs (`Provenance.carried`).
+owner is kept for the app run only, is never persisted, and the card is made
+not attached (`TermNewPlan.Place.attached`), so an owner's drag, which carries
+the attached cards it made (`Provenance.carried`), leaves it.
 Each edge is a straight dashed teal segment
 between the two cards' centres, drawn in a layer beneath every card
 (`EdgeLayerView`), so only the gap between them shows. Edges are rebuilt from
