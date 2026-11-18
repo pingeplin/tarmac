@@ -276,3 +276,18 @@ fn s27_an_answer_for_a_terminal_the_daemon_does_not_hold_is_a_failed_start() {
 
     assert_eq!(answer(&mut cli), err("the terminal did not start"));
 }
+
+// D9: a terminal that already ended is one the daemon holds, in its exit ring.
+#[test]
+fn an_answer_for_a_terminal_that_already_ended_is_the_new_terminal() {
+    let daemon = TestDaemon::start_sh();
+    let mut app = daemon.connect_app_drained();
+    let mut cli = ask(&daemon.sock, "echo hi", "/tmp", None);
+    let (req_id, _) = forwarded(&mut app);
+    app.spawn_term("t9", &["/usr/bin/true"]);
+    app.recv_until("t9's exit", |m| matches!(m, Msg::Exit { term_id, .. } if term_id == "t9"));
+
+    app.send(&Msg::TermNewOk { req_id: Some(req_id), term_id: "t9".into() });
+
+    assert_eq!(answer(&mut cli), ok("t9"));
+}

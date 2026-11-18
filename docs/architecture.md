@@ -282,6 +282,21 @@ and the app slot, its generation and `hello_ok.app_connected` know nothing of
 them. `TermsList` is answered by `Daemon::terms_list`: the live terminals in
 board order, each one's process name and gated cwd read at the same time.
 
+A cli `TermNew` (spec 2611.0016) is answered by `Daemon::term_new`
+(`state/term_news.rs`). The daemon spawns nothing: it checks the command and
+the folder (absolute, and a directory on the gate), takes the caller's board
+(the active board when the caller is not a live terminal), and pushes the
+request to the app with a new `req_id`. The request is filed in `TermNews`
+under the app slot's generation, with the `app` lock held, before the push, so
+a fast answer finds it, and `install_app` and `remove_app` end the requests of
+the connection they replace or remove (`the app went away`). The cli session
+waits at most `TERM_NEW_APP_WAIT` (4 s, inside the cli's 5 s). The app's
+`TermNewOk` is accepted only for a terminal the daemon holds, live or in the
+exit ring (`the terminal did not start`); an answer with no request waiting is
+dropped. The app sends `SpawnTerm`, the held `Input` and then `TermNewOk` on
+its one connection, and the daemon handles them in order, so the terminal is
+in `terms` before the cli gets its id.
+
 ### State model
 
 ```
@@ -343,8 +358,8 @@ is refused before the cwd is read, at once.
 Each terminal fans out into three blocking threads (reader → 64 KiB chunks,
 writer, `child.wait()` → exit code via oneshot) plus two async tasks that hold
 the daemon handle: a 750 ms **poll** (`term::proc_loop`) and one **pump**. They
-are the only places with a daemon reference, so they are where the three honest
-signals are sourced (the poll gives `TermProc`, the pump `Bell` and `Exit`):
+are the only places with a strong daemon reference, so they are where the three
+honest signals are sourced (the poll gives `TermProc`, the pump `Bell` and `Exit`):
 
 - **`TermProc`** — poll the master's `process_group_leader` pid, name it by
   the basename of its argv[0] (`sysctl(KERN_PROCARGS2)`, macOS; a login
@@ -361,6 +376,19 @@ signals are sourced (the poll gives `TermProc`, the pump `Bell` and `Exit`):
   code)` in the exit ring (`events::ExitRing`, the last 64, by count, in memory
   only) **before** the term leaves `terms`, so a subscriber always finds an id
   live, in the ring, or unknown (spec 2611.0012, D4).
+
+The writer takes the terminal's `Input`s in order (`term::write_inputs`). One
+with `hold` (spec 2611.0016, D11) waits until the master's termios
+(`MasterPty::get_termios`) shows ICANON off: a fresh pty is canonical until the
+shell's line editor starts, and macOS keeps at most 1024 bytes of a canonical
+line, dropping the rest, `\r` included, with no error. It polls every 20 ms,
+taking the master lock for each read only, and inputs behind it wait with it.
+At `HOLD_DEADLINE` (10 s) a still-canonical tty gets the bytes when they are at
+most `HOLD_CANON_SAFE` (1000); a larger input is dropped, and the app gets an
+`Err` notice. The writer holds the `TermHandle` and the daemon weakly: the
+handle owns the input sender, so a strong one would keep the writer, and the
+runtime's shutdown, waiting forever. A failed upgrade is the terminal's end,
+and a held input is then not written.
 
 `kill()` signals the whole **process group** (`libc::kill(-pid, SIGHUP)`) — the
 child is its own group leader, so a SIGHUP lets a shell exit cleanly as on a
@@ -1482,8 +1510,12 @@ browser.
 
 ### Provenance edges
 
-One edge per doc card whose owner terminal card is on the same board, whether
-or not the doc is still attached (`Provenance`): a straight dashed teal segment
+One edge per card with an owner terminal card on the same board, whether
+or not the card is still attached (`Provenance.edges`): a doc and its opener,
+and a `tarmac term new` card and its caller (spec 2611.0016). The term card's
+owner is kept for the app run only, is never persisted, and is not attached:
+an owner's drag carries only its attached docs (`Provenance.carried`).
+Each edge is a straight dashed teal segment
 between the two cards' centres, drawn in a layer beneath every card
 (`EdgeLayerView`), so only the gap between them shows. Edges are rebuilt from
 the cards' on-screen frames on every pan, zoom and drag.
