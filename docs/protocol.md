@@ -99,7 +99,7 @@ no version of its own names none and restarts nothing.
     ← {t:"ack"}  |  {t:"err", msg}
 
 `tarmac push` sends `push` frames on the same session: see *Events for a loaded
-HTML card*. `tarmac report` sends one `report` frame: see *A terminal's report*. `tarmac resume` sends one `resume` frame: see *Resuming after a restart*. `tarmac events` and `tarmac wait` send one `subscribe` frame, and `tarmac terms` one `terms_list` frame: see *Events and terminals for scripts*. `tarmac --version` also opens the socket. It completes the
+HTML card*. `tarmac report` sends one `report` frame: see *A terminal's report*. `tarmac resume` sends one `resume` frame: see *Resuming after a restart*. `tarmac events` and `tarmac wait` send one `subscribe` frame, and `tarmac terms` one `terms_list` frame: see *Events and terminals for scripts*. `tarmac term new` sends one `term_new` frame: see *A terminal card from the cli*. `tarmac --version` also opens the socket. It completes the
 handshake, renders `hello_ok`'s daemon and app keys, and closes without sending
 a second frame.
 
@@ -136,12 +136,16 @@ app → daemon:
         cwd : string | nil        (nil → $HOME)
         cmd : [string, ...] | nil (nil → user's login shell: $SHELL else /bin/zsh, args: -il)
         pty env: TERM=xterm-256color, rest inherited
-    {t:"input", term_id, bytes:<bin>, typed?:true}   — `typed`: see A terminal's report
+    {t:"input", term_id, bytes:<bin>, typed?:true, hold?:true}
+                                            — `typed`: see A terminal's report;
+                                              `hold`: see A terminal card from the cli
     {t:"resize", term_id, cols, rows}
     {t:"open", path}    — same effects as CLI open but via:"user"; no reply frame;
                           doc_opened is still pushed (single code path)
                           (v4 Phase 3 adds an optional `term_id`; see below)
     {t:"resume", term_id}                    — a skip; no reply. See Resuming after a restart
+    {t:"term_new_ok", req_id, term_id}      — see A terminal card from the cli
+    {t:"term_new_err", req_id, msg}          — see A terminal card from the cli
 
 daemon → app:
 
@@ -155,6 +159,8 @@ daemon → app:
     {t:"doc_event", path, data}             — see Events for a loaded HTML card
     {t:"term_report", term_id, ...}         — see A terminal's report
     {t:"term_resume", term_id, cmd?}        — see Resuming after a restart
+    {t:"term_new", req_id, cmd, cwd, term_id?, board_id}
+                                            — see A terminal card from the cli
     {t:"err", msg}                          — non-fatal notice
 
 ## File watching semantics
@@ -914,6 +920,67 @@ New **additive types**: a daemon that does not know `subscribe` or
 `terms_list` ignores it and does not answer, and the cli reports that no answer
 came in 5 s.
 
+## A terminal card from the cli (spec 2611.0016)
+
+    {t:"term_new", cmd, cwd, term_id?}                             — cli → daemon; answered with term_new_ok | err
+    {t:"term_new", req_id, cmd, cwd, term_id?, board_id}           — daemon → app
+    {t:"term_new_ok", req_id, term_id}                             — app → daemon
+    {t:"term_new_ok", term_id}                                     — daemon → cli
+    {t:"term_new_err", req_id, msg}                                — app → daemon; the cli gets err {msg}
+
+`tarmac term new [--cwd DIR] "<command>"` asks for a terminal card that types
+`cmd` into a login shell started in `cwd`. The app mints the terminal, as it
+does for ⌘T; the daemon spawns nothing by itself.
+
+- **The cli** checks the command with `check_term_new_cmd` (exit 2), makes the
+  folder absolute against its own directory with no file-system call, and
+  sets `term_id` from `TARMAC_TERM_ID`.
+- **The daemon** checks, in this order: the command
+  (`err "term new command refused: <cause>"`); the folder, on the gate
+  (`err "not an absolute path: <path>"`, `err "not a directory: <path>"`,
+  also for a read that fails or runs out); an app connection
+  (`err "no app connected"`). The board is the calling terminal's; with no
+  `term_id`, or one that is not a live terminal, it is the active board and
+  the frame to the app has no `term_id`. The daemon numbers the request with a
+  new `req_id` and pushes it to the app.
+- **The app** places the card on `board_id` (first free ring slot around the
+  owner card, else the prime card), sends `spawn_term` with no `cmd`, then
+  `input {bytes: cmd + "\r", hold: true}`, then `term_new_ok`, in that order
+  on its connection. It refuses with `term_new_err` a board it has not built,
+  or not restored on this connection:
+  `board <id> is not ready in the app; show it, then retry`.
+- **The answer.** At `term_new_ok` the daemon checks that it holds `term_id`
+  (live, or in the exit ring); else the cli gets
+  `err "the terminal did not start"`. `term_new_err` gives the cli
+  `err {msg}`. The daemon waits 4 s for the app at most
+  (`err "the app did not answer"`); a request whose app connection ends, or is
+  replaced, gets `err "the app went away"`. An answer whose `req_id` has no
+  request waiting is ignored.
+- **`input.hold`.** A fresh pty is canonical until the shell's line editor
+  starts, and a canonical line holds at most 1024 bytes on macOS; the rest is
+  dropped with no error. So the daemon writes held bytes when the pty's
+  termios shows ICANON off. Bytes sent after a held input are written after
+  it. If the pty is still canonical after 10 s, the bytes are written when
+  they are at most 1000; a larger input is dropped and the app gets
+  `err "input held for <term_id> dropped: the shell did not take keys"`. A
+  terminal that ends first gets nothing.
+
+| message | key | type | missing ⇒ |
+|---|---|---|---|
+| `term_new` | `cmd` | string (required) | — |
+| `term_new` | `cwd` | string (required, absolute) | — |
+| `term_new` | `term_id` | string | no owner; the active board; omitted when nil |
+| `term_new` | `req_id` | uint | the cli leg; omitted when nil |
+| `term_new` | `board_id` | string | the cli leg; the daemon always sets it to the app |
+| `term_new_ok` | `req_id` | uint | the daemon → cli leg; omitted when nil |
+| `term_new_ok` | `term_id` | string (required) | — |
+| `term_new_err` | `req_id`, `msg` | uint, string (required) | — |
+| `input` | `hold` | bool | written at once; omitted when false |
+
+New **additive types and key**: a daemon that does not know `term_new` ignores
+it and does not answer, and the cli reports that no answer came in 5 s. A
+daemon that does not know `hold` writes the bytes at once.
+
 ## Replaying a terminal's scrollback on demand (issue #41)
 
     {t:"scrollback_request", term_id}               — app → daemon
@@ -1228,3 +1295,44 @@ round-trip. Byte-exact encoder output is NOT required (key order may legally dif
 
         82 a1 74 ab 74 65 72 6d 5f 72 65 73 75 6d 65 a7 74 65 72 6d
         5f 69 64 a2 74 31
+
+38. (spec 2611.0016) `{t:"term_new", cmd:"echo hi", cwd:"/tmp", term_id:"t1"}`
+    — new additive cli→daemon type; the cli leg has no `req_id` and no
+    `board_id`.
+
+        84 a1 74 a8 74 65 72 6d 5f 6e 65 77 a3 63 6d 64 a7 65 63 68
+        6f 20 68 69 a3 63 77 64 a4 2f 74 6d 70 a7 74 65 72 6d 5f 69
+        64 a2 74 31
+
+39. (spec 2611.0016) `{t:"term_new", req_id:1, cmd:"echo hi", cwd:"/tmp",
+    term_id:"t1", board_id:"board-0"}` — the daemon→app leg.
+
+        86 a1 74 a8 74 65 72 6d 5f 6e 65 77 a6 72 65 71 5f 69 64 01
+        a3 63 6d 64 a7 65 63 68 6f 20 68 69 a3 63 77 64 a4 2f 74 6d
+        70 a7 74 65 72 6d 5f 69 64 a2 74 31 a8 62 6f 61 72 64 5f 69
+        64 a7 62 6f 61 72 64 2d 30
+
+40. (spec 2611.0016) `{t:"term_new_ok", req_id:1, term_id:"t9"}` — new
+    additive app→daemon type.
+
+        83 a1 74 ab 74 65 72 6d 5f 6e 65 77 5f 6f 6b a6 72 65 71 5f
+        69 64 01 a7 74 65 72 6d 5f 69 64 a2 74 39
+
+41. (spec 2611.0016) `{t:"term_new_ok", term_id:"t9"}` — the daemon→cli leg:
+    `req_id` is omitted, not nil.
+
+        82 a1 74 ab 74 65 72 6d 5f 6e 65 77 5f 6f 6b a7 74 65 72 6d
+        5f 69 64 a2 74 39
+
+42. (spec 2611.0016) `{t:"term_new_err", req_id:1, msg:"m"}` — new additive
+    app→daemon type.
+
+        83 a1 74 ac 74 65 72 6d 5f 6e 65 77 5f 65 72 72 a6 72 65 71
+        5f 69 64 01 a3 6d 73 67 a1 6d
+
+43. (spec 2611.0016) `{t:"input", term_id:"t9", bytes:"echo hi\r", hold:true}`
+    — the additive `hold` key, after `typed` (here omitted).
+
+        84 a1 74 a5 69 6e 70 75 74 a7 74 65 72 6d 5f 69 64 a2 74 39
+        a5 62 79 74 65 73 c4 08 65 63 68 6f 20 68 69 0d a4 68 6f 6c
+        64 c3

@@ -183,7 +183,7 @@ reports.
 | | `Push {path, value}` | cli→D | one JSON value, as text, for the loaded HTML cards of an open doc; `ack` once it is queued for the app, else `err` |
 | | `DocEvent {path, value}` | D→app | that value, for each card of the doc (`path` is the registry's key); no reply |
 | Terminal I/O | `SpawnTerm {term_id, cols, rows, cwd?, cmd?, board_id?, inherit_cwd_from?}` | app→D | create a PTY card |
-| | `Input {term_id, bytes, typed?}` | app→D | keystrokes and mouse reports; `typed` marks the user's own input, which reads a report |
+| | `Input {term_id, bytes, typed?, hold?}` | app→D | keystrokes and mouse reports; `typed` marks the user's own input, which reads a report; `hold` has the daemon write the bytes once the shell takes keys |
 | | `Output {term_id, bytes}` | D→app | raw PTY output (≤64 KiB chunks) |
 | | `Resize {term_id, cols, rows}` | app→D | resize the PTY |
 | | `Exit {term_id, code?, board_id?}` | D→app | the PTY exited (nil code = signal death); `board_id` is its board |
@@ -196,6 +196,9 @@ reports.
 | | `Subscribe {kinds?, term_id?}` | cli→D | stream the `Exit`, `Bell`, `FileEvent` and `TermReport` frames that pass the filter: `err`, or a snapshot, `ack`, then live frames |
 | | `TermsList` | cli→D | ask for the live terminals |
 | | `Terms {terms}` | D→cli | one `{term_id, board_id, cwd?, proc?}` per live terminal, in board order |
+| | `TermNew {req_id?, cmd, cwd, term_id?, board_id?}` | cli→D→app | a terminal card that types `cmd` into a login shell; the daemon numbers it and names the board |
+| | `TermNewOk {req_id?, term_id}` | app→D→cli | the new card's terminal; the cli leg has no `req_id` |
+| | `TermNewErr {req_id, msg}` | app→D | the app refused; the cli gets `Err {msg}` |
 | | `ScrollbackRequest {term_id}` | app→D | re-send one term's scrollback ring now |
 | | `Scrollback {term_id, bytes}` | D→app | that ring, one frame per request |
 | Layout | `Layout {dock, tiles, board?, board_id?}` | app→D | layout snapshot for a board |

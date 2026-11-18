@@ -243,11 +243,11 @@ impl Conn {
 
     /// An `input` the app marks as typed by the user.
     pub fn keystroke(&mut self, term_id: &str, bytes: &[u8]) {
-        self.send(&Msg::Input { term_id: term_id.into(), bytes: bytes.to_vec(), typed: true });
+        self.send(&Msg::Input { term_id: term_id.into(), bytes: bytes.to_vec(), typed: true, hold: false });
     }
 
     pub fn input(&mut self, term_id: &str, bytes: &[u8]) {
-        self.send(&Msg::Input { term_id: term_id.into(), bytes: bytes.to_vec(), typed: false });
+        self.send(&Msg::Input { term_id: term_id.into(), bytes: bytes.to_vec(), typed: false, hold: false });
     }
 
     /// Reads frames into `log` until one matches `pred`; its index.

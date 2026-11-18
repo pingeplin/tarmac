@@ -120,6 +120,10 @@ pub enum Msg {
         /// such input marks a report read. Sent only as `true`.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         typed: bool,
+        /// Spec 2611.0016, D11: the daemon holds the bytes until the shell
+        /// takes keys. Sent only as `true`.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        hold: bool,
     },
     Output {
         term_id: String,
@@ -279,6 +283,31 @@ pub enum Msg {
     /// Daemon -> cli: one row per live terminal, in board order, then by id.
     Terms {
         terms: Vec<TermInfo>,
+    },
+    /// cli -> daemon -> app (spec 2611.0016): a terminal card that types
+    /// `cmd` into a login shell in `cwd`. The daemon numbers the request and
+    /// names the board for the app; the cli sends neither.
+    TermNew {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        req_id: Option<u64>,
+        cmd: String,
+        cwd: String,
+        /// The calling terminal: the new card's owner, and its board.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        term_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        board_id: Option<String>,
+    },
+    /// App -> daemon -> cli: the new terminal. Only the app's carries `req_id`.
+    TermNewOk {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        req_id: Option<u64>,
+        term_id: String,
+    },
+    /// App -> daemon: the request was refused; the cli gets `err`.
+    TermNewErr {
+        req_id: u64,
+        msg: String,
     },
     /// A receiver ignores message types it does not know instead of failing.
     #[serde(other)]
@@ -491,6 +520,16 @@ pub const RESUME_CMD_MAX: usize = 256;
 /// bidi character, at most `RESUME_CMD_MAX` chars. The cli, the daemon and the
 /// app (`ResumeCommand.check`) each apply it. `Err` names the cause.
 pub fn check_resume_cmd(cmd: &str) -> Result<(), &'static str> {
+    check_one_line(cmd)?;
+    if cmd.chars().count() > RESUME_CMD_MAX {
+        return Err("over 256 characters");
+    }
+    Ok(())
+}
+
+/// The character rules of `check_resume_cmd`, which each command check
+/// applies before its own limit.
+fn check_one_line(cmd: &str) -> Result<(), &'static str> {
     if cmd.trim().is_empty() {
         return Err("empty");
     }
@@ -500,9 +539,6 @@ pub fn check_resume_cmd(cmd: &str) -> Result<(), &'static str> {
     if cmd.chars().any(is_invisible_format) {
         return Err("an invisible format character");
     }
-    if cmd.chars().count() > RESUME_CMD_MAX {
-        return Err("over 256 characters");
-    }
     Ok(())
 }
 
@@ -510,6 +546,26 @@ pub fn check_resume_cmd(cmd: &str) -> Result<(), &'static str> {
 /// print it.
 pub fn refuse_resume_cmd(cmd: &str) -> Result<(), String> {
     check_resume_cmd(cmd).map_err(|cause| format!("resume command refused: {cause}"))
+}
+
+/// The longest `term new` command, in Unicode scalar values (`char`s).
+pub const TERM_NEW_CMD_MAX: usize = 4096;
+
+/// The rules of `check_resume_cmd` with the limit `TERM_NEW_CMD_MAX`: an
+/// agent's prompt in the command can be long. The cli and the daemon each
+/// apply it.
+pub fn check_term_new_cmd(cmd: &str) -> Result<(), &'static str> {
+    check_one_line(cmd)?;
+    if cmd.chars().count() > TERM_NEW_CMD_MAX {
+        return Err("over 4096 characters");
+    }
+    Ok(())
+}
+
+/// `check_term_new_cmd`, with the refusal worded as the cli and the daemon
+/// print it.
+pub fn refuse_term_new_cmd(cmd: &str) -> Result<(), String> {
+    check_term_new_cmd(cmd).map_err(|cause| format!("term new command refused: {cause}"))
 }
 
 fn is_invisible_format(c: char) -> bool {
