@@ -385,8 +385,10 @@ with `hold` (spec 2611.0016, D11) waits until the master's termios
 shell's line editor starts, and macOS keeps at most 1024 bytes of a canonical
 line, dropping the rest, `\r` included, with no error. It polls every 20 ms,
 taking the master lock for each read only, and inputs behind it wait with it,
-in the writer's own queue: the writer keeps draining the input channel, so the
-app connection's dispatch never waits on a full one.
+in the writer's own queue: during a hold the writer drains the input channel,
+so the app connection's dispatch does not wait on a hold. Outside a hold the
+inputs stay in the 256-slot channel; while a write blocks on a full pty, the
+channel can fill and the dispatch waits, as before.
 At `HOLD_DEADLINE` (10 s) a still-canonical tty gets the bytes when they are at
 most `HOLD_CANON_SAFE` (1000); a larger input is dropped, and the app gets an
 `Err` notice. The writer holds the `TermHandle` and the daemon weakly: the

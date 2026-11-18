@@ -90,10 +90,12 @@ fn s34_an_input_with_no_hold_is_written_at_once_to_a_canonical_child() {
 fn more_inputs_than_the_channel_holds_during_a_hold_block_no_later_frame_and_keep_their_order() {
     let daemon = TestDaemon::start_sh();
     let mut app = daemon.connect_app_drained();
-    let out = reader(&mut app, &daemon.dir, Some("2"), 11 + 300);
+    let numbered: Vec<String> = (0..300).map(|i| format!("{i:03},")).collect();
+    let behind = numbered.concat();
+    let out = reader(&mut app, &daemon.dir, Some("2"), 11 + behind.len());
     send(&mut app, line('h', 10), true);
-    for _ in 0..300 {
-        send(&mut app, b"x".to_vec(), false);
+    for input in &numbered {
+        send(&mut app, input.clone().into_bytes(), false);
     }
     let asked = Instant::now();
 
@@ -101,5 +103,5 @@ fn more_inputs_than_the_channel_holds_during_a_hold_block_no_later_frame_and_kee
 
     app.recv_until("the scrollback reply", |m| matches!(m, Msg::Scrollback { .. }));
     assert!(asked.elapsed() < Duration::from_millis(1000), "the app connection waited {:?}", asked.elapsed());
-    assert_eq!(read_out(&out, 311, Duration::from_secs(6)), format!("{}{}", as_read('h', 10), "x".repeat(300)));
+    assert_eq!(read_out(&out, 11 + behind.len(), Duration::from_secs(6)), format!("{}{behind}", as_read('h', 10)));
 }

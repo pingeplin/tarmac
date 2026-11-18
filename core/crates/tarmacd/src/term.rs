@@ -108,10 +108,12 @@ fn hold(len: usize, since: Instant, deadline: Duration, keys: &mut impl FnMut() 
 }
 
 /// The pty writer's loop: each input in turn, a held one once `hold` lets it
-/// go, so that input sent after it waits too. While one is held the channel
-/// is still drained into the writer's own queue: the app connection's
-/// dispatch must never wait on a full channel. `dropped` is told of each held
-/// input that is not written.
+/// go, so that input sent after it waits too. While one is held, the channel
+/// is drained into the writer's own queue, so the app connection's dispatch
+/// does not wait on a hold. Outside a hold the inputs stay in the bounded
+/// channel: while `write_all` blocks on a full pty, the channel can fill and
+/// the dispatch waits, as it always did. `dropped` is told of each held input
+/// that is not written.
 fn write_inputs(
     mut input_rx: mpsc::Receiver<Input>,
     mut writer: impl Write,
@@ -128,11 +130,12 @@ fn write_inputs(
                 None => return,
             }
         }
-        while let Ok(input) = input_rx.try_recv() {
-            queue.push_back(input);
-        }
         let Some(next) = queue.front() else { continue };
         if next.hold {
+            while let Ok(input) = input_rx.try_recv() {
+                queue.push_back(input);
+            }
+            let Some(next) = queue.front() else { continue };
             let since = *held_since.get_or_insert_with(Instant::now);
             match hold(next.bytes.len(), since, deadline, &mut keys) {
                 None => {
@@ -689,6 +692,41 @@ mod tests {
         write_inputs(rx, &mut written, HOLD_DEADLINE, || Keys::Ended, || panic!("no notice for an ended terminal"));
 
         assert!(written.is_empty());
+    }
+
+    /// A pty writer that notes, at each write, how many of the channel's
+    /// slots are free, and fails at the third so the loop ends.
+    struct SlotsAtWrite {
+        tx: mpsc::Sender<Input>,
+        free: std::sync::Arc<std::sync::Mutex<Vec<usize>>>,
+    }
+
+    impl Write for SlotsAtWrite {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            let mut free = self.free.lock().unwrap();
+            free.push(self.tx.capacity());
+            if free.len() == 3 { Err(std::io::ErrorKind::BrokenPipe.into()) } else { Ok(buf.len()) }
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    // Outside a hold the inputs wait in the bounded channel, not in the
+    // writer's queue: the channel's back-pressure bounds a stuck pty's memory.
+    #[test]
+    fn with_no_hold_the_writer_takes_one_input_at_a_time_from_the_channel() {
+        let (tx, rx) = mpsc::channel(4);
+        for byte in [b"a", b"b", b"c"] {
+            tx.try_send(Input { bytes: byte.to_vec(), hold: false }).unwrap();
+        }
+        let free = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let writer = SlotsAtWrite { tx, free: free.clone() };
+
+        write_inputs(rx, writer, HOLD_DEADLINE, || Keys::Taken, || {});
+
+        assert_eq!(*free.lock().unwrap(), vec![2, 3, 4]);
     }
 
     // The exit goes first and the pump takes it before any chunk exists, so the
