@@ -368,6 +368,43 @@ extension AppController {
         persistLayout(for: board)
     }
 
+    /// A daemon `term_new` (2611.0016): the card goes beside its owner, which
+    /// stays prime and keeps the keys, and its shell gets the command. The
+    /// answer goes after the spawn and the input, on the same connection, so
+    /// the daemon holds the terminal when it reads it. A view that is not
+    /// ready would hold the spawn, so it is refused as a board not ready.
+    func handleTermNew(_ request: TermNewPlan.Request) {
+        let board = boards[request.boardID]
+        let cards = board.map { Array($0.view.cards.values) } ?? []
+        let decision = TermNewPlan.plan(request, on: TermNewPlan.Board(
+            built: viewReady && board?.didInitialRestore == true,
+            restored: daemonSession.restoredBoards.contains(request.boardID),
+            ownerFrame: request.ownerTermID.flatMap { board?.view.card(.term($0))?.worldFrame.rect },
+            primeFrame: board?.primeTermCard?.worldFrame.rect,
+            existing: cards.map(\.worldFrame.rect),
+            zs: cards.map(\.worldFrame.z)
+        ))
+        guard case .place(let place) = decision, let board else {
+            if case .refuse(let msg) = decision { client.send(.termNewErr(reqID: request.reqID, msg: msg)) }
+            return
+        }
+        let s = addTerminal(
+            BootTerminal.mint(), frame: CardFrame(rect: place.frame, z: place.z), spawn: place.spawn, on: board
+        )
+        spawnPending(on: board)
+        guard s.pendingSpawn == nil else {
+            removeTerminalCard(s.termID, on: board)
+            client.send(.termNewErr(reqID: request.reqID, msg: TermNewPlan.notReady(request.boardID)))
+            return
+        }
+        board.view.card(.term(s.termID))?.ownerTermID = place.owner.map(CardID.term)
+        board.view.recomputeEdges()
+        client.send(place.input(termID: s.termID))
+        client.send(.termNewOK(reqID: request.reqID, termID: s.termID))
+        persistLayout(for: board)
+        refreshSwitcherIfOpen()
+    }
+
     /// A fresh shell in the place of the board's last live terminal, which just
     /// went away: same frame and z, a new id, prime.
     private func replaceTerminal(at frame: CardFrame, on board: Board) {

@@ -345,12 +345,19 @@ final class BoardView: NSView, ThemeFollowing {
     private func beginCarry(for card: CardView) {
         carry = nil
         guard case .term = card.id else { return }
-        let attached = cards.filter { $0.value.ownerTermID == card.id && $0.value.attached }
         carry = CardCarry(
             owner: card.id,
             ownerFrame: card.worldFrame.rect,
-            satellites: attached.mapValues(\.worldFrame.rect)
+            satellites: Provenance.carried(by: card.id, among: provenanceCards(\.worldFrame.rect))
         )
+    }
+
+    /// Each card as the provenance rules read it, at `frame`.
+    private func provenanceCards(_ frame: (CardView) -> CGRect) -> [CardID: Provenance.Card<CardID>] {
+        cards.mapValues { card in
+            let kind: Provenance.Kind = if case .doc = card.id { .doc } else { .term }
+            return Provenance.Card(frame: frame(card), owner: card.ownerTermID, kind: kind, attached: card.attached)
+        }
     }
 
     private func carrySatellites(of card: CardView) {
@@ -425,16 +432,10 @@ final class BoardView: NSView, ThemeFollowing {
         onCullChanged?(card.id, visible)
     }
 
-    /// One provenance edge per doc card whose owning terminal card is on the
-    /// board, rebuilt from the cards' on-screen frames. Never gated on
-    /// `attached`, the gravity flag: a doc dragged away keeps its edge (#39).
+    /// The provenance edges (`Provenance.edges`), rebuilt from the cards'
+    /// on-screen frames.
     func recomputeEdges() {
-        var built: [Provenance.Segment] = []
-        for (id, card) in cards {
-            guard case .doc = id, let owner = card.ownerTermID, let ownerCard = cards[owner] else { continue }
-            built.append(Provenance.edge(owner: ownerCard.frame, doc: card.frame))
-        }
-        edgeLayer.setEdges(built)
+        edgeLayer.setEdges(Provenance.edges(provenanceCards(\.frame)))
     }
 
     // MARK: Content scale

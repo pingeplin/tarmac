@@ -99,6 +99,8 @@ extension AppController {
             if let frame = TermReport.frame(message) { handleTermReport(frame) }
         case .termResume(let termID, let cmd):
             handleTermResume(termID: termID, cmd: cmd)
+        case .termNew(let reqID?, let cmd, let cwd, let termID, let boardID?):
+            handleTermNew(TermNewPlan.Request(reqID: reqID, cmd: cmd, cwd: cwd, ownerTermID: termID, boardID: boardID))
         default:
             break
         }
