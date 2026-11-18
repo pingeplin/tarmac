@@ -32,9 +32,10 @@ pub fn run(args: &[String]) -> i32 {
 /// The command and the `--cwd` given; `Err` is the usage line or the
 /// command's refusal.
 fn parse(args: &[String]) -> Result<(&str, Option<&str>), String> {
-    let (cmd, cwd) = match args {
-        [verb, cmd] if verb == "new" && !cmd.starts_with("--") => (cmd, None),
-        [verb, flag, dir, cmd] if verb == "new" && flag == "--cwd" && !dir.is_empty() && !cmd.starts_with("--") => (cmd, Some(dir.as_str())),
+    let Some(("new", rest)) = args.split_first().map(|(verb, rest)| (verb.as_str(), rest)) else { return Err(USAGE.into()) };
+    let (cmd, cwd) = match rest {
+        [cmd] if !cmd.starts_with("--") => (cmd, None),
+        [flag, dir, cmd] if flag == "--cwd" && !dir.is_empty() && !cmd.starts_with("--") => (cmd, Some(dir.as_str())),
         _ => return Err(USAGE.into()),
     };
     refuse_term_new_cmd(cmd)?;
@@ -58,7 +59,7 @@ fn ask(cmd: &str, cwd: String) -> Result<String, String> {
         match crate::daemon::recv_or(&mut stream, |e| crate::daemon::late_or_lost(e, &no_answer))? {
             Msg::TermNewOk { term_id, .. } => return Ok(term_id),
             Msg::Err { msg } => return Err(msg),
-            _ => continue,
+            _ => {}
         }
     }
 }
