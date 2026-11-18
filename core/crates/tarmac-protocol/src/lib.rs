@@ -524,16 +524,12 @@ pub const RESUME_CMD_MAX: usize = 256;
 /// bidi character, at most `RESUME_CMD_MAX` chars. The cli, the daemon and the
 /// app (`ResumeCommand.check`) each apply it. `Err` names the cause.
 pub fn check_resume_cmd(cmd: &str) -> Result<(), &'static str> {
-    check_one_line(cmd)?;
-    if cmd.chars().count() > RESUME_CMD_MAX {
-        return Err("over 256 characters");
-    }
-    Ok(())
+    check_cmd(cmd, RESUME_CMD_MAX, "over 256 characters")
 }
 
-/// The character rules of `check_resume_cmd`, which each command check
-/// applies before its own limit.
-fn check_one_line(cmd: &str) -> Result<(), &'static str> {
+/// The character rules every command check shares, then the limit `max`,
+/// refused as `over`.
+fn check_cmd(cmd: &str, max: usize, over: &'static str) -> Result<(), &'static str> {
     if cmd.trim().is_empty() {
         return Err("empty");
     }
@@ -542,6 +538,9 @@ fn check_one_line(cmd: &str) -> Result<(), &'static str> {
     }
     if cmd.chars().any(is_invisible_format) {
         return Err("an invisible format character");
+    }
+    if cmd.chars().count() > max {
+        return Err(over);
     }
     Ok(())
 }
@@ -559,11 +558,7 @@ pub const TERM_NEW_CMD_MAX: usize = 4096;
 /// agent's prompt in the command can be long. The cli and the daemon each
 /// apply it.
 pub fn check_term_new_cmd(cmd: &str) -> Result<(), &'static str> {
-    check_one_line(cmd)?;
-    if cmd.chars().count() > TERM_NEW_CMD_MAX {
-        return Err("over 4096 characters");
-    }
-    Ok(())
+    check_cmd(cmd, TERM_NEW_CMD_MAX, "over 4096 characters")
 }
 
 /// `check_term_new_cmd`, with the refusal worded as the cli and the daemon
