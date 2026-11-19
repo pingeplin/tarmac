@@ -216,6 +216,8 @@ final class InlineMarkdownTests: XCTestCase {
         XCTAssertEqual(line("`a``"), [p("`a``")])
         XCTAssertEqual(line("``a` `b`"), [p("``a` "), c("b")])
         XCTAssertEqual(line("`` ``"), [p("`` ``")])
+        XCTAssertEqual(line("` ` x`"), [p("` "), c("x")])
+        XCTAssertEqual(line("`` `` x``"), [p("`` "), c("x")])
     }
 
     func testS37AFenceOfMoreBackticksStillOpensAndALineInsideAFenceStillClosesIt() {
