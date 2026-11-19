@@ -13,6 +13,8 @@ This guide covers what is worth knowing: how to surface a file, how to say that
 you are blocked or done, and how to write an HTML file that survives the board's
 sandbox and zoom model.
 
+## Your terminal
+
 A shell in a Tarmac terminal inherits the daemon's open file limit, so
 `ulimit -n` there is at least 10240 unless the hard limit is lower, not
 launchd's 256. For another value, set `ulimit -n` in the shell's start-up file.
