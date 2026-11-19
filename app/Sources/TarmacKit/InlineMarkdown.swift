@@ -1,3 +1,5 @@
+import CoreGraphics
+
 public enum InlineMark: Equatable, Sendable {
     case plain, bold, italic, code, link, bullet
 }
@@ -40,23 +42,41 @@ public struct InlineText: Equatable, Sendable {
     /// At most `limit` Unicode scalars: the first `limit − 1` and a plain `…`
     /// when the text is longer. The pill's rule.
     public func prefix(scalars limit: Int) -> InlineText {
-        prefix(limit) { $0.unicodeScalars.map(String.init) }
+        prefix(limit, count: { $0.unicodeScalars.count }, take: { String($0.unicodeScalars.prefix($1)) })
     }
 
     /// The same rule in `Character`s, so a cut never splits a grapheme. The row's rule.
     public func prefix(characters limit: Int) -> InlineText {
-        prefix(limit) { $0.map(String.init) }
+        prefix(limit, count: \.count, take: { String($0.prefix($1)) })
     }
 
-    private func prefix(_ limit: Int, units: (String) -> [String]) -> InlineText {
-        let split = runs.map { (units: units($0.text), mark: $0.mark) }
-        guard split.reduce(0, { $0 + $1.units.count }) > limit else { return self }
+    /// The longest `prefix(characters:)` that `measure` finds no wider than
+    /// `room`; at least a `…`. The row's cut to its width.
+    public func prefix(fitting room: CGFloat, measure: (InlineText) -> CGFloat) -> InlineText {
+        guard measure(self) > room else { return self }
+        var fits = 1
+        var low = 1
+        var high = runs.reduce(0) { $0 + $1.text.count } - 1
+        while low <= high {
+            let mid = (low + high) / 2
+            if measure(prefix(characters: mid)) <= room {
+                fits = mid
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+        return prefix(characters: fits)
+    }
+
+    private func prefix(_ limit: Int, count: (String) -> Int, take: (String, Int) -> String) -> InlineText {
+        guard runs.reduce(0, { $0 + count($1.text) }) > limit else { return self }
         var left = max(limit, 1) - 1
         var kept: [InlineRun] = []
-        for run in split where left > 0 {
-            let count = min(left, run.units.count)
-            kept.append(InlineRun(run.units.prefix(count).joined(), run.mark))
-            left -= count
+        for run in runs where left > 0 {
+            let taken = min(left, count(run.text))
+            kept.append(InlineRun(take(run.text, taken), run.mark))
+            left -= taken
         }
         return InlineText(kept + [InlineRun("…", .plain)])
     }
@@ -118,18 +138,19 @@ public enum InlineMarkdown {
 
     private static func listItem(_ line: Substring) -> (String, Substring)? {
         let body = line.drop { $0.isWhitespace }
-        let mark: Substring
+        let mark: String
+        let width: Int
         if let first = body.first, "-*+".contains(first) {
-            mark = body.prefix(1)
+            (mark, width) = ("•", 1)
         } else {
             let digits = body.prefix { $0.isASCII && $0.isNumber }
             let after = body.dropFirst(digits.count)
             guard !digits.isEmpty, let close = after.first, close == "." || close == ")" else { return nil }
-            mark = body.prefix(digits.count + 1)
+            (mark, width) = (String(body.prefix(digits.count + 1)), digits.count + 1)
         }
-        let rest = body.dropFirst(mark.count)
+        let rest = body.dropFirst(width)
         guard let gap = rest.first, gap.isWhitespace else { return nil }
-        return (mark == "-" || mark == "*" || mark == "+" ? "•" : String(mark), rest)
+        return (mark, rest)
     }
 
     // MARK: - Inline marks (D3)
@@ -156,21 +177,25 @@ public enum InlineMarkdown {
 
     private static func code(_ chars: [Character], _ start: Int) -> (InlineRun, Int)? {
         guard chars[start] == "`", let end = chars[(start + 1)...].firstIndex(of: "`") else { return nil }
-        let content = trimmed(chars[(start + 1)..<end])
-        return content.isEmpty ? nil : (InlineRun(content, .code), end + 1)
+        return span(chars[(start + 1)..<end], .code, next: end + 1)
     }
 
     private static func link(_ chars: [Character], _ start: Int) -> (InlineRun, Int)? {
         guard chars[start] == "[", let close = chars[(start + 1)...].firstIndex(of: "]"),
               close + 1 < chars.count, chars[close + 1] == "(",
               let end = chars[(close + 2)...].firstIndex(of: ")") else { return nil }
-        let content = trimmed(chars[(start + 1)..<close])
-        return content.isEmpty ? nil : (InlineRun(content, .link), end + 1)
+        return span(chars[(start + 1)..<close], .link, next: end + 1)
+    }
+
+    /// A code span or a link: its content trimmed, and none when that is empty.
+    private static func span(_ content: ArraySlice<Character>, _ mark: InlineMark, next: Int) -> (InlineRun, Int)? {
+        let text = trimmed(content)
+        return text.isEmpty ? nil : (InlineRun(text, mark), next)
     }
 
     private static func emphasis(_ chars: [Character], _ start: Int) -> (InlineRun, Int)? {
-        for (mark, count) in [("*", 2), ("_", 2), ("*", 1), ("_", 1)] {
-            if let found = emphasis(chars, start, mark: Character(mark), count: count) { return found }
+        for (mark, count): (Character, Int) in [("*", 2), ("_", 2), ("*", 1), ("_", 1)] {
+            if let found = emphasis(chars, start, mark: mark, count: count) { return found }
         }
         return nil
     }

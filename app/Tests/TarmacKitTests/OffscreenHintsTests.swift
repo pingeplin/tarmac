@@ -200,6 +200,15 @@ final class OffscreenHintLayoutTests: XCTestCase {
         )
     }
 
+    func testS10APillQuoteWithNoMarkdownReadsAsBefore() {
+        for text in S10.texts {
+            XCTAssertEqual(
+                Layout.pillLabel(signal: .done, name: "claude", hhmm: "14:32", quote: text),
+                .literal("claude · “\(ChromeText.oneLine(text))”"), text
+            )
+        }
+    }
+
     func testS8ThePillsNameIsLiteral() {
         XCTAssertEqual(
             Layout.pillLabel(signal: .blocked, name: "*scratch*", hhmm: "14:32", quote: "ok"),

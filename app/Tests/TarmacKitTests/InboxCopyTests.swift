@@ -41,6 +41,14 @@ final class InboxCopyTests: XCTestCase {
         )
     }
 
+    func testS10ARowQuoteWithNoMarkdownReadsAsBefore() {
+        for text in S10.texts {
+            XCTAssertEqual(
+                InboxCopy.quote(inboxItem(.report(.blocked), text: text)), .literal("“\(ChromeText.oneLine(text))”"), text
+            )
+        }
+    }
+
     func testS30TheQuoteOfAnEmptyReportIsTheQuoteMarks() {
         XCTAssertEqual(InboxCopy.quote(inboxItem(.report(.blocked), text: "")), .literal("“”"))
     }

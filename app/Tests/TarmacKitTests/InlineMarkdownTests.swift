@@ -10,6 +10,14 @@ private func dot(_ text: String = "•") -> InlineRun { InlineRun(text, .bullet)
 
 private func line(_ text: String) -> [InlineRun] { InlineMarkdown.line(text).runs }
 
+/// Spec 2611.0017 S10: texts with no markdown, which must read as before.
+enum S10 {
+    static let texts = [
+        "May I?", "  May\n\tI  run\r\n rm?  ", "snake_case_name", "2 * 3 * 4", "#412 done",
+        "price: $5 (approx)", "a [b] c", "C:\\path\\*", "a\n\n\nb", "__init__.py", "self.__dict__",
+    ]
+}
+
 /// Spec 2611.0017: a report's text as one line of inline marks.
 final class InlineMarkdownTests: XCTestCase {
     // MARK: - Happy path
@@ -51,11 +59,7 @@ final class InlineMarkdownTests: XCTestCase {
     // MARK: - Edge cases
 
     func testS10TextWithNoMarkdownIsOnePlainRunOfItsOneLineForm() {
-        let texts = [
-            "May I?", "  May\n\tI  run\r\n rm?  ", "snake_case_name", "2 * 3 * 4", "#412 done",
-            "price: $5 (approx)", "a [b] c", "C:\\path\\*", "a\n\n\nb", "__init__.py", "self.__dict__",
-        ]
-        for text in texts {
+        for text in S10.texts {
             XCTAssertEqual(line(text), [p(ChromeText.oneLine(text))], text)
         }
     }
@@ -181,6 +185,67 @@ final class InlineMarkdownTests: XCTestCase {
         let text = InlineText.literal("a👍🏽bc")
         XCTAssertEqual(text.prefix(characters: 3).runs, [p("a👍🏽…")])
         XCTAssertEqual(text.prefix(characters: 4), text)
+    }
+
+    // MARK: - Rules a whole-line trim or a common input would hide
+
+    func testALinkInsideALineIsTrimmed() {
+        XCTAssertEqual(line("a [ x ](u) b"), [p("a "), l("x"), p(" b")])
+    }
+
+    func testEmphasisContentCannotStartWithWhitespace() {
+        XCTAssertEqual(line("a * b*"), [p("a * b*")])
+    }
+
+    func testABlankLineEndsAParagraph() {
+        XCTAssertEqual(line("*a\n\nb*"), [p("*a b*")])
+    }
+
+    func testAHeadingEndsTheOpenParagraph() {
+        XCTAssertEqual(line("a\n## H"), [p("a H")])
+    }
+
+    func testTheUnderscoreWordTestCountsDigits() {
+        XCTAssertEqual(line("1_a_"), [p("1_a_")])
+        XCTAssertEqual(line("_a_.5"), [p("_a_.5")])
+    }
+
+    func testAHeadingHasAtMostSixHashes() {
+        XCTAssertEqual(line("####### x"), [p("####### x")])
+    }
+
+    func testAFenceClosesAtALineThatStartsWithThreeBackticks() {
+        XCTAssertEqual(line("```\nx\n```sh\ny"), [c("x"), p(" y")])
+    }
+
+    func testAnOrderedItemNeedsDigits() {
+        XCTAssertEqual(line(". x"), [p(". x")])
+    }
+
+    // MARK: - Fitting a width (D10)
+
+    /// A fake measure: one unit a character, and two for a code run's box.
+    private func units(_ text: InlineText) -> CGFloat {
+        CGFloat(text.runs.reduce(0) { $0 + $1.text.count + ($1.mark == .code ? 2 : 0) })
+    }
+
+    func testD10ATextThatFitsIsUnchanged() {
+        let text = InlineText([p("ab"), c("cdef")])
+        XCTAssertEqual(text.prefix(fitting: 8, measure: units), text)
+    }
+
+    func testD10TheCutKeepsTheMostCharactersThatFitWithTheEllipsis() {
+        let text = InlineText([p("ab"), c("cdef")])
+        XCTAssertEqual(text.prefix(fitting: 6, measure: units).runs, [p("ab"), c("c"), p("…")])
+        XCTAssertEqual(text.prefix(fitting: 5, measure: units).runs, [p("ab…")])
+    }
+
+    func testD10ARoomTooSmallForAnyTextKeepsTheEllipsis() {
+        XCTAssertEqual(InlineText.literal("abc").prefix(fitting: 0, measure: units).runs, [p("…")])
+    }
+
+    func testD10TheCutKeepsGraphemesWhole() {
+        XCTAssertEqual(InlineText.literal("a👍🏽bc").prefix(fitting: 3, measure: units).runs, [p("a👍🏽…")])
     }
 
     // MARK: - Normal form

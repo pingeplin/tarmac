@@ -9,34 +9,65 @@ import TarmacKit
 @MainActor
 final class InlineTextLabel: NSView {
     struct Style {
-        /// A chrome design size (`Theme.mono`).
         var design: CGFloat
         var color: NSColor
         var boxFill: NSColor
         var boxBorder: NSColor
     }
 
-    /// A text field's cell draws its text this far inside its frame; this view
-    /// does the same, so it lines up with the text fields beside it.
-    static let cellInset: CGFloat = 2
-    private static let boxPad: CGFloat = 3
+    /// The faces a style's design size resolves to, read once per `style`:
+    /// the label is measured several times for each cut.
+    private struct Faces {
+        let base: NSFont
+        let bold: NSFont
+        let italic: NSFont?
+        /// What a one-line text field of `base` fits to, so this label keeps
+        /// the height and baseline of the text field it replaces.
+        let lineHeight: CGFloat
+
+        @MainActor
+        init(design: CGFloat) {
+            base = Theme.mono(design)
+            bold = Theme.mono(design, weight: .semibold)
+            let italic = NSFontManager.shared.convert(base, toHaveTrait: .italicFontMask)
+            self.italic = italic.fontDescriptor.symbolicTraits.contains(.italic) ? italic : nil
+            lineHeight = NSAttributedString(string: " ", attributes: [.font: base]).size().height
+        }
+    }
+
+    private struct Piece {
+        let string: NSAttributedString
+        let width: CGFloat
+        let boxed: Bool
+
+        var advance: CGFloat { width + (boxed ? 2 * InlineTextLabel.boxPad : 0) }
+    }
+
+    private nonisolated static let boxPad: CGFloat = 3
     private static let boxRadius: CGFloat = 3
-    /// The slant of an upright face standing in for a missing italic, as the
-    /// board switcher slants its hint.
+    /// `obliqueness` slants an upright face standing in for a missing italic.
     private static let obliqueness = 0.2
 
     var text = InlineText([]) {
-        didSet { needsDisplay = true }
+        didSet { if text != oldValue { needsDisplay = true } }
     }
 
+    /// Set again on every theme or font change, so the faces are read again
+    /// even when the design size is the same.
     var style: Style {
-        didSet { needsDisplay = true }
+        didSet {
+            faces = Faces(design: style.design)
+            needsDisplay = true
+        }
     }
+
+    private var faces: Faces
 
     override var isFlipped: Bool { true }
 
     init(style: Style) {
         self.style = style
+        faces = Faces(design: style.design)
         super.init(frame: .zero)
     }
 
@@ -44,77 +75,60 @@ final class InlineTextLabel: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    /// The height a one-line text field of the base font fits to, so a label
-    /// swapped for this one keeps its height and baseline.
-    var lineHeight: CGFloat {
-        NSAttributedString(string: " ", attributes: [.font: Theme.mono(style.design)]).size().height
-    }
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .staticText }
+    override func accessibilityValue() -> Any? { text.plain }
 
-    /// The whole text, as a text field fits it: its runs, box paddings and cell
-    /// insets, by `lineHeight`.
-    var naturalSize: NSSize { NSSize(width: width(of: text) + 2 * Self.cellInset, height: lineHeight) }
+    /// The untruncated text's line box, as `ChromeLabel.textSize`.
+    var textSize: NSSize { NSSize(width: width(of: text), height: faces.lineHeight) }
+
+    /// What a text field of this text fits to: the line box and the cell insets.
+    var fittedSize: NSSize { NSSize(width: textSize.width + 2 * ChromeLabel.cellInset, height: faces.lineHeight) }
+
+    /// Puts the line box's top-left corner at `origin`, as `ChromeLabel.place`.
+    func place(at origin: CGPoint) {
+        frame = NSRect(
+            x: origin.x.rounded() - ChromeLabel.cellInset, y: origin.y.rounded(),
+            width: textSize.width.rounded(.up) + 2 * ChromeLabel.cellInset, height: faces.lineHeight
+        )
+    }
 
     override func draw(_ dirtyRect: NSRect) {
-        var x = Self.cellInset
-        for (run, string, width) in strings(shown) {
-            if run.mark == .code {
-                let box = NSRect(x: x, y: 0, width: width + 2 * Self.boxPad, height: lineHeight).insetBy(dx: 0.5, dy: 0.5)
-                let path = NSBezierPath(roundedRect: box, xRadius: Self.boxRadius, yRadius: Self.boxRadius)
-                style.boxFill.setFill()
-                path.fill()
-                style.boxBorder.setStroke()
-                path.lineWidth = 1
-                path.stroke()
-                x += Self.boxPad
-            }
-            string.draw(at: NSPoint(x: x, y: 0))
-            x += width + (run.mark == .code ? Self.boxPad : 0)
+        let shown = text.prefix(fitting: bounds.width - 2 * ChromeLabel.cellInset, measure: width(of:))
+        var x = ChromeLabel.cellInset
+        for piece in pieces(shown) {
+            if piece.boxed { drawBox(NSRect(x: x, y: 0, width: piece.advance, height: faces.lineHeight)) }
+            piece.string.draw(at: NSPoint(x: x + (piece.boxed ? Self.boxPad : 0), y: 0))
+            x += piece.advance
         }
     }
 
-    /// The text cut to the view's width: the most characters that fit, with `…`.
-    private var shown: InlineText {
-        let room = bounds.width - 2 * Self.cellInset
-        guard width(of: text) > room else { return text }
-        var fits = 1
-        var low = 1
-        var high = text.plain.count - 1
-        while low <= high {
-            let mid = (low + high) / 2
-            if width(of: text.prefix(characters: mid)) <= room {
-                fits = mid
-                low = mid + 1
-            } else {
-                high = mid - 1
-            }
-        }
-        return text.prefix(characters: fits)
+    private func drawBox(_ rect: NSRect) {
+        let box = backingAlignedRect(rect, options: .alignAllEdgesNearest).insetBy(dx: 0.5, dy: 0.5)
+        let path = NSBezierPath(roundedRect: box, xRadius: Self.boxRadius, yRadius: Self.boxRadius)
+        style.boxFill.setFill()
+        path.fill()
+        style.boxBorder.setStroke()
+        path.lineWidth = 1
+        path.stroke()
     }
 
     private func width(of text: InlineText) -> CGFloat {
-        strings(text).reduce(0) { $0 + $1.width + ($1.run.mark == .code ? 2 * Self.boxPad : 0) }
+        pieces(text).reduce(0) { $0 + $1.advance }
     }
 
-    private func strings(_ text: InlineText) -> [(run: InlineRun, string: NSAttributedString, width: CGFloat)] {
-        let base = Theme.mono(style.design)
-        let italic = Self.italicFace(base)
-        return text.runs.map { run in
-            var attributes: [NSAttributedString.Key: Any] = [.font: base, .foregroundColor: style.color]
+    private func pieces(_ text: InlineText) -> [Piece] {
+        text.runs.map { run in
+            var attributes: [NSAttributedString.Key: Any] = [.font: faces.base, .foregroundColor: style.color]
             switch run.mark {
-            case .bold: attributes[.font] = Theme.mono(style.design, weight: .semibold)
+            case .bold: attributes[.font] = faces.bold
             case .italic:
-                if let italic { attributes[.font] = italic } else { attributes[.obliqueness] = Self.obliqueness }
+                if let italic = faces.italic { attributes[.font] = italic } else { attributes[.obliqueness] = Self.obliqueness }
             case .link: attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
             case .plain, .code, .bullet: break
             }
             let string = NSAttributedString(string: run.text, attributes: attributes)
-            return (run, string, string.size().width)
+            return Piece(string: string, width: string.size().width, boxed: run.mark == .code)
         }
-    }
-
-    /// The family's own italic face, if it has one.
-    private static func italicFace(_ base: NSFont) -> NSFont? {
-        let face = NSFontManager.shared.convert(base, toHaveTrait: .italicFontMask)
-        return face.fontDescriptor.symbolicTraits.contains(.italic) ? face : nil
     }
 }
