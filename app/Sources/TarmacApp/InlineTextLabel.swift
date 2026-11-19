@@ -18,20 +18,15 @@ final class InlineTextLabel: NSView {
     /// The faces a style's design size resolves to, read once per `style`:
     /// the label is measured several times for each cut.
     private struct Faces {
-        let base: NSFont
-        let bold: NSFont
-        let italic: NSFont?
-        /// What a one-line text field of `base` fits to, so this label keeps
-        /// the height and baseline of the text field it replaces.
+        let marks: MarkFaces
+        /// What a one-line text field of the base face fits to, so this label
+        /// keeps the height and baseline of the text field it replaces.
         let lineHeight: CGFloat
 
         @MainActor
         init(design: CGFloat) {
-            base = Theme.mono(design)
-            bold = Theme.mono(design, weight: .semibold)
-            let italic = NSFontManager.shared.convert(base, toHaveTrait: .italicFontMask)
-            self.italic = italic.fontDescriptor.symbolicTraits.contains(.italic) ? italic : nil
-            lineHeight = NSAttributedString(string: " ", attributes: [.font: base]).size().height
+            marks = MarkFaces(design: design)
+            lineHeight = NSAttributedString(string: " ", attributes: [.font: marks.base]).size().height
         }
     }
 
@@ -45,8 +40,6 @@ final class InlineTextLabel: NSView {
 
     private nonisolated static let boxPad: CGFloat = 3
     private static let boxRadius: CGFloat = 3
-    /// `obliqueness` slants an upright face standing in for a missing italic.
-    private static let obliqueness = 0.2
 
     var text = InlineText([]) {
         didSet { if text != oldValue { needsDisplay = true } }
@@ -108,13 +101,10 @@ final class InlineTextLabel: NSView {
     }
 
     private func drawBox(_ rect: NSRect) {
-        let box = backingAlignedRect(rect, options: .alignAllEdgesNearest).insetBy(dx: 0.5, dy: 0.5)
-        let path = NSBezierPath(roundedRect: box, xRadius: Self.boxRadius, yRadius: Self.boxRadius)
-        style.boxFill.setFill()
-        path.fill()
-        style.boxBorder.setStroke()
-        path.lineWidth = 1
-        path.stroke()
+        CodeBox.draw(
+            backingAlignedRect(rect, options: .alignAllEdgesNearest), radius: Self.boxRadius,
+            fill: style.boxFill, border: style.boxBorder
+        )
     }
 
     private func width(of text: InlineText) -> CGFloat {
@@ -123,14 +113,8 @@ final class InlineTextLabel: NSView {
 
     private func pieces(_ text: InlineText) -> [Piece] {
         text.runs.map { run in
-            var attributes: [NSAttributedString.Key: Any] = [.font: faces.base, .foregroundColor: style.color]
-            switch run.mark {
-            case .bold: attributes[.font] = faces.bold
-            case .italic:
-                if let italic = faces.italic { attributes[.font] = italic } else { attributes[.obliqueness] = Self.obliqueness }
-            case .link: attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
-            case .plain, .code, .bullet: break
-            }
+            var attributes: [NSAttributedString.Key: Any] = [.font: faces.marks.base, .foregroundColor: style.color]
+            attributes.merge(faces.marks.attributes(for: run.mark)) { $1 }
             let string = NSAttributedString(string: run.text, attributes: attributes)
             return Piece(string: string, width: string.size().width, boxed: run.mark == .code)
         }

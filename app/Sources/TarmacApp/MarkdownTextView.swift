@@ -7,6 +7,8 @@ import TarmacKit
 @MainActor
 final class MarkdownTextView: NSTextView {
     private let boxes = CodeBoxLayoutManager()
+    /// The width `fit` last laid the text out at, and the height it found.
+    private var fitted: (width: CGFloat, height: CGFloat)?
 
     init() {
         let storage = NSTextStorage()
@@ -31,14 +33,19 @@ final class MarkdownTextView: NSTextView {
         let style = MarkdownStyle()
         boxes.look = style.look
         textStorage?.setAttributedString(style.attributed(blocks))
+        fitted = nil
     }
 
-    /// The text's height at `width`, which the view takes.
+    /// The text's height at `width`, which the view takes. A layout pass with
+    /// the same width and text lays nothing out again.
     func fit(width: CGFloat) -> CGFloat {
+        if let fitted, fitted.width == width { return fitted.height }
         guard let container = textContainer else { return 0 }
         container.size = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
         boxes.ensureLayout(for: container)
-        return ceil(boxes.usedRect(for: container).height + MarkdownStyle.blockPadY)
+        let height = ceil(boxes.usedRect(for: container).height + CodeBoxLayoutManager.blockPadY)
+        fitted = (width, height)
+        return height
     }
 }
 
@@ -51,29 +58,20 @@ extension NSAttributedString.Key {
 /// Interface size in effect when it is made.
 @MainActor
 private struct MarkdownStyle {
-    static let design: CGFloat = 11
-    static let blockPadY = CodeBoxLayoutManager.blockPadY
+    private static let design: CGFloat = 11
+    private static let blockPadY = CodeBoxLayoutManager.blockPadY
     private static let blockPadX: CGFloat = 8
-    private static let spanPad = CodeBoxLayoutManager.spanInset
     private static let listIndent: CGFloat = 18
     private static let markerGap: CGFloat = 6
     private static let blockGap: CGFloat = 7
     private static let itemGap: CGFloat = 2
-    private static let obliqueness = 0.2
 
-    let body = Theme.mono(design)
-    let bold = Theme.mono(design, weight: .semibold)
-    let italic: NSFont?
-    let lineSpacing: CGFloat
+    private let marks = MarkFaces(design: design)
+    private let lineSpacing = (Theme.chrome(design) * 0.4).rounded()
+    private var body: NSFont { marks.base }
 
     var look: CodeBoxLayoutManager.Look {
         CodeBoxLayoutManager.Look(spanFill: Theme.bg2, blockFill: Theme.bg0, border: Theme.line, lineSpacing: lineSpacing)
-    }
-
-    init() {
-        let italic = NSFontManager.shared.convert(body, toHaveTrait: .italicFontMask)
-        self.italic = italic.fontDescriptor.symbolicTraits.contains(.italic) ? italic : nil
-        lineSpacing = (Theme.chrome(Self.design) * 0.4).rounded()
     }
 
     func attributed(_ blocks: [MarkdownBlock]) -> NSAttributedString {
@@ -84,10 +82,11 @@ private struct MarkdownStyle {
             case .paragraph(let text):
                 out.append(runs(text, color: Theme.muted, paragraph: paragraph(after: Self.blockGap)))
             case .heading(let text):
-                out.append(runs(text, color: Theme.text, base: bold, paragraph: paragraph(after: Self.blockGap)))
+                out.append(runs(text, color: Theme.text, base: marks.bold, paragraph: paragraph(after: Self.blockGap)))
             case .list(let items):
                 // A marker wider than the indent, as `10.`, would tab to the next stop.
-                let widest = items.map { NSAttributedString(string: $0.marker, attributes: [.font: body]).size().width }.max() ?? 0
+                let longest = items.map(\.marker).max { $0.count < $1.count } ?? ""
+                let widest = NSAttributedString(string: longest, attributes: [.font: body]).size().width
                 let indent = max(Theme.chrome(Self.listIndent), (widest + Theme.chrome(Self.markerGap)).rounded(.up))
                 for (number, item) in items.enumerated() {
                     let gap = number == items.count - 1 ? Self.blockGap : Self.itemGap
@@ -129,26 +128,21 @@ private struct MarkdownStyle {
         _ text: InlineText, color: NSColor, base: NSFont? = nil, paragraph: NSParagraphStyle
     ) -> NSAttributedString {
         let out = NSMutableAttributedString()
-        let room = 2 * Self.spanPad - 2
+        func makeRoom() {
+            guard out.length > 0 else { return }
+            out.addAttribute(.kern, value: 2 * CodeBoxLayoutManager.spanInset - 2, range: NSRange(location: out.length - 1, length: 1))
+        }
         for run in text.runs {
             var attributes: [NSAttributedString.Key: Any] = [
                 .font: base ?? body, .foregroundColor: color, .paragraphStyle: paragraph,
             ]
-            switch run.mark {
-            case .bold: attributes[.font] = bold
-            case .italic:
-                if let italic { attributes[.font] = italic } else { attributes[.obliqueness] = Self.obliqueness }
-            case .link: attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
-            case .code:
+            attributes.merge(marks.attributes(for: run.mark)) { $1 }
+            if run.mark == .code {
                 attributes[.codeSpan] = true
-                if out.length > 0 { out.addAttribute(.kern, value: room, range: NSRange(location: out.length - 1, length: 1)) }
-            case .plain, .bullet: break
+                makeRoom()
             }
-            let piece = NSMutableAttributedString(string: run.text, attributes: attributes)
-            if run.mark == .code, piece.length > 0 {
-                piece.addAttribute(.kern, value: room, range: NSRange(location: piece.length - 1, length: 1))
-            }
-            out.append(piece)
+            out.append(NSAttributedString(string: run.text, attributes: attributes))
+            if run.mark == .code { makeRoom() }
         }
         return out
     }
@@ -178,7 +172,7 @@ private final class CodeBoxLayoutManager: NSLayoutManager {
             rect.origin.x = 0
             rect.size.width = container.size.width
             rect = rect.offsetBy(dx: origin.x, dy: origin.y).insetBy(dx: 0, dy: -Self.blockPadY)
-            Self.box(rect, radius: 4, fill: look.blockFill, border: look.border)
+            CodeBox.draw(rect, radius: 4, fill: look.blockFill, border: look.border)
         }
         for range in Self.ranges(of: .codeSpan, in: storage, within: chars) {
             // Line by line, by the glyphs: an enclosing rect runs to the end of
@@ -194,7 +188,7 @@ private final class CodeBoxLayoutManager: NSLayoutManager {
                 line.origin.x -= Self.spanInset
                 line.size.width += 2
                 line.size.height -= look.lineSpacing
-                Self.box(line, radius: 3, fill: look.spanFill, border: look.border)
+                CodeBox.draw(line, radius: 3, fill: look.spanFill, border: look.border)
             }
         }
     }
@@ -205,14 +199,5 @@ private final class CodeBoxLayoutManager: NSLayoutManager {
             if value != nil { ranges.append(range) }
         }
         return ranges
-    }
-
-    private static func box(_ rect: NSRect, radius: CGFloat, fill: NSColor, border: NSColor) {
-        let path = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: radius, yRadius: radius)
-        fill.setFill()
-        path.fill()
-        border.setStroke()
-        path.lineWidth = 1
-        path.stroke()
     }
 }

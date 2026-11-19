@@ -64,8 +64,12 @@ final class InboxPanelView: KeyHoldingView, FontFollowing, ThemeFollowing {
     private let preview = InboxPreviewView()
     /// What the panel had for the list and the pane at the last layout.
     private var paneRoom: CGFloat = 0
-    /// The wanted height when the drag in progress began.
-    private var dragStart: Double??
+    /// A drag in progress, from the wanted height it began at.
+    private struct Drag {
+        let start: Double?
+    }
+
+    private var drag: Drag?
     private let emptyLabel = OverlayLabel()
     private let footer = FlippedColumnView()
     private let footerRule = NSView()
@@ -263,22 +267,22 @@ final class InboxPanelView: KeyHoldingView, FontFollowing, ThemeFollowing {
     private func gripPressed(_ count: Int) {
         onGripPress?()
         guard count < 2 else {
-            dragStart = nil
+            drag = nil
             paneWanted = nil
             onPaneHeight?(nil)
             return
         }
-        dragStart = .some(paneWanted)
+        drag = Drag(start: paneWanted)
     }
 
     private func gripDragged(_ delta: CGFloat) {
-        guard case .some(let start) = dragStart else { return }
-        paneWanted = InboxPreviewSplit.dragged(wanted: start, by: delta, room: paneRoom, scale: Theme.chrome(1))
+        guard let drag else { return }
+        paneWanted = InboxPreviewSplit.dragged(wanted: drag.start, by: delta, room: paneRoom, scale: Theme.chrome(1))
     }
 
     private func gripReleased() {
-        guard case .some(let start) = dragStart else { return }
-        dragStart = nil
-        if paneWanted != start { onPaneHeight?(paneWanted) }
+        guard let drag else { return }
+        self.drag = nil
+        if paneWanted != drag.start { onPaneHeight?(paneWanted) }
     }
 }

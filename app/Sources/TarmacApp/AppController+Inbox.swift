@@ -129,13 +129,13 @@ extension AppController {
                 cardLabel: boards[item.boardID]?.sessions[item.termID]?.label, home: home, nowMs: now
             )
         }
-        let selected = zip(items, rowsShown).first { $0.0.id == inboxState.selected }
+        let selected = items.firstIndex { $0.id == inboxState.selected }
         rootView.inboxPanel.render(InboxPanelView.Model(
             unread: inbox.unreadCount,
             filter: inboxState.filter,
             rows: rowsShown,
             selected: inboxState.selected,
-            preview: selected.map { InboxCopy.preview($0.0, place: $0.1.place, nowMs: now) },
+            preview: selected.map { InboxCopy.preview(items[$0], place: rowsShown[$0].place, nowMs: now) },
             gripFocused: inboxState.focus == .grip
         ))
     }

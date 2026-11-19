@@ -12,7 +12,8 @@ final class InboxRowView: OverlayRowView {
         static let padY: CGFloat = 8
         static let lineGap: CGFloat = 3
         static let gap: CGFloat = 8
-        /// What the place line leaves for the `go ↵` chip.
+        /// The least the place line leaves for the `go ↵` chip; more when the
+        /// Interface size makes the chip wider.
         static let goRoom: CGFloat = 48
         static let goRight: CGFloat = 10
         static let goBottom: CGFloat = 7
@@ -110,16 +111,17 @@ final class InboxRowView: OverlayRowView {
             x: titleX, y: first.centered(titleSize.height, top: Metric.padY),
             width: max(0, min(titleSize.width, age.frame.minX - Metric.gap - titleX)), height: titleSize.height
         )
+        let goSize = go.fittingSize
+        let goRoom = max(Metric.goRoom, goSize.width + Metric.goRight + Metric.gap - Metric.padX)
         var y = Metric.padY + first + Metric.lineGap
-        let lines: [(NSView, NSSize)] = [(quote, quote.fittedSize), (place, place.fittedSize)]
-        for (label, size) in lines where !label.isHidden {
-            label.frame = NSRect(
-                x: Metric.padX, y: y, width: min(size.width, width - Metric.padX * 2), height: size.height
-            )
+        let lines: [(NSView, NSSize, CGFloat)] = [
+            (quote, quote.fittedSize, width - Metric.padX * 2),
+            (place, place.fittedSize, width - Metric.padX * 2 - goRoom),
+        ]
+        for (label, size, room) in lines where !label.isHidden {
+            label.frame = NSRect(x: Metric.padX, y: y, width: min(size.width, room), height: size.height)
             y += size.height + Metric.lineGap
         }
-        place.frame.size.width = min(place.frame.width, width - Metric.padX * 2 - Metric.goRoom)
-        let goSize = go.fittingSize
         go.frame = NSRect(
             x: width - Metric.goRight - goSize.width, y: bounds.height - Metric.goBottom - goSize.height,
             width: goSize.width, height: goSize.height

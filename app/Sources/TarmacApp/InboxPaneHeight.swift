@@ -12,6 +12,10 @@ final class InboxPaneHeight {
 
     var wanted: Double? {
         get { prefs.values.inboxPreviewHeight }
-        set { prefs.update { $0.inboxPreviewHeight = newValue } }
+        set {
+            // A held grip key repeats; the file is written only for a change.
+            guard newValue != wanted else { return }
+            prefs.update { $0.inboxPreviewHeight = newValue }
+        }
     }
 }

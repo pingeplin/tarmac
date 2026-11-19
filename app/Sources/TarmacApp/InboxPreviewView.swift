@@ -40,9 +40,8 @@ final class InboxPreviewView: NSView {
     private let close = OverlayLabel()
     private let place = OverlayLabel()
     private var preview: InboxPreview?
-    /// What the text view holds, so a render that changes only the age keeps
-    /// the scroll position.
-    private var shownBody: (id: Inbox.ItemID, body: InboxPreview.Body)?
+    /// Set when the text changed: the next layout scrolls it to its top.
+    private var scrollToTop = false
 
     override var isFlipped: Bool { true }
 
@@ -68,13 +67,14 @@ final class InboxPreviewView: NSView {
         kindTag.apply(CardScale(zoom: 1, backing: window?.backingScaleFactor ?? 2))
     }
 
+    /// A render that changes only the age keeps the text and its scroll.
     func render(_ preview: InboxPreview?) {
+        let old = self.preview
         self.preview = preview
         draw(preview)
-        let body = preview.map { (id: $0.id, body: $0.body) }
-        if body?.id != shownBody?.id || body?.body != shownBody?.body {
-            shownBody = body
-            fillText(keepScroll: false)
+        if old?.id != preview?.id || old?.body != preview?.body {
+            fillText()
+            scrollToTop = true
         }
         needsLayout = true
     }
@@ -83,8 +83,11 @@ final class InboxPreviewView: NSView {
     func styleChanged() {
         layer?.backgroundColor = Theme.bg1.cgColor
         go.setGoLook()
+        let quote: [NSAttributedString.Key: Any] = [.font: Font.quote, .foregroundColor: Theme.faint]
+        open.attributedStringValue = NSAttributedString(string: "“", attributes: quote)
+        close.attributedStringValue = NSAttributedString(string: "”", attributes: quote)
         draw(preview)
-        fillText(keepScroll: true)
+        fillText()
         needsLayout = true
     }
 
@@ -116,17 +119,11 @@ final class InboxPreviewView: NSView {
             place.isHidden = false
             scroll.isHidden = false
         }
-        let quote: [NSAttributedString.Key: Any] = [.font: Font.quote, .foregroundColor: Theme.faint]
-        open.attributedStringValue = NSAttributedString(string: "“", attributes: quote)
-        close.attributedStringValue = NSAttributedString(string: "”", attributes: quote)
     }
 
-    private func fillText(keepScroll: Bool) {
-        let origin = scroll.contentView.bounds.origin
-        if case .blocks(let blocks) = shownBody?.body { text.show(blocks) } else { text.show([]) }
-        layoutSubtreeIfNeeded()
-        scroll.contentView.scroll(to: keepScroll ? origin : .zero)
-        scroll.reflectScrolledClipView(scroll.contentView)
+    /// The scroll position stays where it was unless `scrollToTop` is set.
+    private func fillText() {
+        if case .blocks(let blocks) = preview?.body { text.show(blocks) } else { text.show([]) }
     }
 
     override func layout() {
@@ -159,7 +156,7 @@ final class InboxPreviewView: NSView {
         let top = preview == nil ? Metric.padTop : Metric.padTop + line + Metric.gap
         let captionSize = caption.fittedSize
         caption.frame = NSRect(
-            x: Metric.padX, y: preview == nil ? Metric.padTop : top,
+            x: Metric.padX, y: top,
             width: min(captionSize.width, inner), height: captionSize.height
         )
         let placeSize = place.fittedSize
@@ -181,5 +178,10 @@ final class InboxPreviewView: NSView {
             width: closeSize.width, height: closeSize.height
         )
         doc.frame = NSRect(x: 0, y: 0, width: inner, height: max(textHeight, scroll.contentSize.height))
+        if scrollToTop {
+            scrollToTop = false
+            scroll.contentView.scroll(to: .zero)
+            scroll.reflectScrolledClipView(scroll.contentView)
+        }
     }
 }
