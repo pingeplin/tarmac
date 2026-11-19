@@ -10,15 +10,15 @@ process called `tarmac open`; it pulses because the file's mtime changed. The
 file is the entire interface.
 
 This guide covers how to surface a file, how to say that you are blocked or
-done, how to wait on what Tarmac sees, how to open another terminal card, and
-how to write an HTML file that survives the board's sandbox and zoom model.
+done, how to resume an agent after a restart, how to wait on what Tarmac sees,
+how to open another terminal card, and how to write an HTML file that survives the board's sandbox and zoom model.
 Read the part you need. Read all of *HTML cards* before you write one: a page
 that breaks its rules fails with no error.
 
 ## Your terminal
 
 Inside a Tarmac terminal the environment carries `TARMAC_TERM_ID`, your
-terminal's id. The app sets it; you do not. `report` and `resume` need it.
+terminal's id. Tarmac sets it; you do not. `report` and `resume` need it.
 `open` and `term new` use it to join the new card to yours. Outside Tarmac it
 is not set.
 
@@ -39,9 +39,8 @@ Fire-and-forget: it connects, names the doc, and exits. Rules:
   `2` bad usage. A non-zero exit is never fatal to your work — Tarmac may simply
   not be running. Do not abort a task because `tarmac open` failed.
 - Running it again on the same path does **not** duplicate the card.
-- Inside a Tarmac terminal the environment carries `TARMAC_TERM_ID`, which
-  attributes the card to your terminal and draws the provenance edge. You do not
-  set it; the app does.
+- Inside a Tarmac terminal, `TARMAC_TERM_ID` (see *Your terminal*) attributes
+  the card to your terminal and draws the provenance edge.
 - `TARMAC_SOCKET` overrides the socket location. You rarely need it.
 
 Open a file when it is worth a human's glance: a plan, a findings report, a diff
@@ -81,8 +80,9 @@ sent it. Rules:
 
 ## Reports from Claude Code
 
-The user runs `tarmac hooks install` once. It changes Claude Code's own
-settings, so leave that step to the user. It adds four hooks to them,
+The user runs `tarmac hooks install` once. It and `tarmac hooks uninstall`
+change Claude Code's own settings, so leave both to the user. It adds four
+hooks to them,
 each a call to `tarmac hooks run claude || true`, and from then on every Claude
 session in a Tarmac terminal reports on its own:
 

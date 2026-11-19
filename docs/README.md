@@ -78,7 +78,6 @@ paths, no relative links.
 | Doc | What it is |
 | --- | --- |
 | [`proposed/v4c-editable-docs.md`](proposed/v4c-editable-docs.md) | Editable doc cards, borrowed focus, write-conflict banner. Captured from mocks; never started. Doc cards are read-only today. |
-| [`designs/2611.0006_agent_reports_inbox_wait_resume.md`](designs/2611.0006_agent_reports_inbox_wait_resume.md) | `tarmac report`, the inbox, `tarmac events`/`wait`, resume after a restart, `tarmac hooks install`. Draft for review; nothing built. |
 
 ## HISTORICAL
 
@@ -96,6 +95,7 @@ present: go by the banner, and by which toolkit the page names.
 - [`archive/v4/`](archive/v4) — the v3-grid → v4-whiteboard migration plan + visual crib.
 - [`designs/`](designs) — one record per shipped change (numbered `YYMM.NNNN_*` plus a few named ones). These are *change* records: accurate about the change they accompanied, not about today. A design record for a change that was investigated but **not** built lives here too and carries a PROPOSED banner — read the banner, not the directory.
 - [`designs/2611.0001_html_card_data_push.md`](designs/2611.0001_html_card_data_push.md) — data pushed into a loaded HTML card: the state file (phase 1, #313), `tarmac push` (phase 2, #326) and a data file in a subdirectory (phase 3, #333, which also refuses a hidden name: decision 23) are built.
+- [`designs/2611.0006_agent_reports_inbox_wait_resume.md`](designs/2611.0006_agent_reports_inbox_wait_resume.md) — `tarmac report`, the inbox, `tarmac events`/`wait`, resume after a restart and `tarmac hooks install` are built (slices 1–6); slice 7, Codex hooks (#369), is not.
 - `.blueprint/specs/` (repo root) — the per-issue implementation specs the design records are derived from. Same rule: historical.
 
 ## Milestone vocabulary
