@@ -186,9 +186,9 @@ extension AppController {
 
     // MARK: - The jump
 
-    /// ↵, a double-click on a row or a `go ↵`: at most one board switch, then one flight. The
-    /// keys go to the card it lands on; a jump to a card that went removes
-    /// its row and gives the keys back.
+    /// ↵, a double-click on a row or a `go ↵`: at most one board switch, then
+    /// one flight. The keys go to the card it lands on; a jump to a card that
+    /// went removes its row and gives the keys back.
     func jump(to id: Inbox.ItemID) {
         guard let item = inbox.item(id) else { return }
         let owner = rootView.inboxPanel.keysOwner

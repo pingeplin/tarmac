@@ -33,6 +33,16 @@ final class InboxPreviewSplitTests: XCTestCase {
         XCTAssertEqual(Split.dragged(wanted: 236, by: 5000, room: 3000, scale: 1), 2000)
     }
 
+    func testTheBoundsOfAStepOrADragAreInDesignPoints() {
+        XCTAssertEqual(Split.dragged(wanted: 100, by: 400, room: 600, scale: 2), 174)
+        XCTAssertEqual(Split.stepped(wanted: 160, steps: 1, room: 600, scale: 2), 174)
+    }
+
+    func testTheShownHeightRoundsToTheNearestPoint() {
+        XCTAssertEqual(Split.shown(wanted: 100, room: 800, scale: 1.1), 110)
+        XCTAssertEqual(Split.shown(wanted: 101, room: 800, scale: 1.25), 126)
+    }
+
     func testS29AStepOrADragStartsFromTheShownHeight() {
         XCTAssertEqual(Split.stepped(wanted: 400, steps: -1, room: 300, scale: 1), 150)
         XCTAssertEqual(Split.dragged(wanted: 400, by: -10, room: 300, scale: 1), 164)

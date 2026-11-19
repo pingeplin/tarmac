@@ -27,6 +27,13 @@ final class InboxPointerTests: XCTestCase {
         XCTAssertEqual(effect, InboxKeys.Effect.none)
     }
 
+    func testS7ASingleClickOnTheSelectedRowDoesNotFly() {
+        let state = State(filter: .all, selected: b)
+        let (after, effect) = click(b, 1, state)
+        XCTAssertEqual(effect, InboxKeys.Effect.none)
+        XCTAssertEqual(after, state)
+    }
+
     func testS8ADoubleClickOnTheSelectedRowFlies() {
         let state = State(filter: .all, selected: b)
         let (after, effect) = click(b, 2, state)

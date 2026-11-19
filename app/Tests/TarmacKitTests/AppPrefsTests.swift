@@ -845,6 +845,14 @@ final class InboxPreviewHeightPrefsTests: XCTestCase {
         XCTAssertEqual(AppPrefs.decode(bytes), values)
     }
 
+    func testTheHeightIsWrittenAfterTheThemeOfEachAppearance() {
+        let values = AppPrefs.Values(themes: [.light: "github-light"], inboxPreviewHeight: 200)
+        XCTAssertEqual(
+            AppPrefs.encode(values),
+            data(#"{"warn_before_quit":true,"theme_light":"github-light","inbox_preview_height":200}"#)
+        )
+    }
+
     func testS16WithNoHeightTheBytesAreThoseOfBefore() {
         XCTAssertEqual(AppPrefs.encode(AppPrefs.Values(theme: .light)), data(#"{"warn_before_quit":true,"theme":"light"}"#))
     }

@@ -326,6 +326,7 @@ final class RowHoverTests: XCTestCase {
         XCTAssertEqual(file.bg2, 0x121212)
         XCTAssertEqual(file.bg3, 0x262626)
         XCTAssertEqual(file.rowHover, 0x191919)
+        XCTAssertEqual(ThemeCatalog.all.count, 8)
         for (name, palette) in ThemeCatalog.all.map({ ($0.id, $0.palette) }) + [("file", file)] {
             XCTAssertGreaterThanOrEqual(Self.distance(palette.rowHover, palette.bg2), 2, name)
             XCTAssertGreaterThanOrEqual(Self.distance(palette.rowHover, palette.bg3), 2, name)

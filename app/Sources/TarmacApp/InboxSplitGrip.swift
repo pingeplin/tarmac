@@ -80,5 +80,12 @@ final class InboxSplitGrip: NSView {
         onRelease?()
     }
 
+    /// The panel hid mid-drag: a hidden view gets no `mouseUp`.
+    func cancelPress() {
+        guard pressY != nil else { return }
+        pressY = nil
+        needsDisplay = true
+    }
+
     override func resetCursorRects() { addCursorRect(bounds, cursor: .resizeUpDown) }
 }

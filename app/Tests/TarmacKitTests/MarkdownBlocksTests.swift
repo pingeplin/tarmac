@@ -66,6 +66,18 @@ final class MarkdownBlocksTests: XCTestCase {
 
     func testS32AnItemOfTheOtherKindStartsANewList() {
         XCTAssertEqual(blocks("- a\n1. b"), [.list([item("•", p("a"))]), .list([item("1.", p("b"))])])
+        XCTAssertEqual(blocks("1. a\n- b"), [.list([item("1.", p("a"))]), .list([item("•", p("b"))])])
+    }
+
+    func testABlankLineAHeadingAndAFenceEachEndAList() {
+        XCTAssertEqual(blocks("- a\n\n- b"), [.list([item("•", p("a"))]), .list([item("•", p("b"))])])
+        XCTAssertEqual(blocks("- a\n## H"), [.list([item("•", p("a"))]), .heading(InlineText([p("H")]))])
+        XCTAssertEqual(blocks("- a\n```\nx\n```"), [.list([item("•", p("a"))]), .code(["x"])])
+        XCTAssertEqual(InlineMarkdown.line("- a\n## H").runs, [InlineRun("•", .bullet), p(" a H")])
+    }
+
+    func testACodeBlockKeepsTheSpacesAtTheEndsOfItsLines() {
+        XCTAssertEqual(blocks("```\n  indented\ntrail  \n```"), [.code(["  indented", "trail  "])])
     }
 
     func testS27EmptyBlocksKeepTheLineRules() {

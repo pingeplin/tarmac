@@ -96,7 +96,9 @@ private struct MarkdownStyle {
                         attributes: [.font: body, .foregroundColor: Theme.faint, .paragraphStyle: style]
                     ))
                     out.append(runs(item.text, color: Theme.muted, paragraph: style))
-                    if number < items.count - 1 { out.append(NSAttributedString(string: "\n", attributes: [.paragraphStyle: style])) }
+                    if number < items.count - 1 {
+                        out.append(NSAttributedString(string: "\n", attributes: [.font: body, .paragraphStyle: style]))
+                    }
                 }
             case .code(let lines):
                 let style = paragraph(after: Self.blockGap + Self.blockPadY, inset: Self.blockPadX)

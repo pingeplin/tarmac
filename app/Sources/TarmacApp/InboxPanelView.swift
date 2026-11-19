@@ -79,6 +79,15 @@ final class InboxPanelView: KeyHoldingView, FontFollowing, ThemeFollowing {
 
     override var isFlipped: Bool { true }
 
+    /// Closing the panel mid-drag ends the drag where it was.
+    override var isHidden: Bool {
+        didSet {
+            guard isHidden, drag != nil else { return }
+            grip.cancelPress()
+            gripReleased()
+        }
+    }
+
     init() {
         super.init(frame: .zero)
         wantsLayer = true
