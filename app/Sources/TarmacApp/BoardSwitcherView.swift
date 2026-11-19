@@ -158,7 +158,7 @@ final class BoardSwitcherView: KeyHoldingView, FontFollowing, ThemeFollowing {
                 glyph: SwitcherChrome.liveGlyph(isLive: row.isLive, nowMs: nowMs),
                 ordinal: SwitcherChrome.ordinalHint(row: index)
             )
-            view.onClick = { [weak self] in self?.onPickRow?(index) }
+            view.onClick = { [weak self] _ in self?.onPickRow?(index) }
             rowsDoc.addSubview(view)
             return view
         }

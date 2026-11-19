@@ -218,12 +218,12 @@ extension ThemeFile {
             colours.chrome[key] ?? derived()
         }
         func fill(_ key: ChromeKey, _ dark: Double, _ light: Double) -> UInt32 {
-            given(key, mix(ground, ink, variant == .dark ? dark : light))
+            given(key, Palette.mix(ground, ink, variant == .dark ? dark : light))
         }
         let fills = [fill(.bg0, -0.08, 0.10), fill(.bg1, -0.04, 0.05), fill(.bg2, 0.07, 0.15)]
         let pole: UInt32 = variant == .dark ? 0xffffff : 0x000000
         func lift(_ colour: UInt32, _ floor: Double) -> UInt32 {
-            (0...liftSteps).lazy.map { mix(colour, pole, Double($0) / Double(liftSteps)) }
+            (0...liftSteps).lazy.map { Palette.mix(colour, pole, Double($0) / Double(liftSteps)) }
                 .first { lifted in fills.allSatisfy { Contrast.ratio(lifted, $0) >= floor } } ?? pole
         }
         func mark(_ index: Int) -> UInt32 { lift(ansi[index], PaletteCheck.markFloor) }
@@ -234,8 +234,8 @@ extension ThemeFile {
             line: fill(.line, 0.24, 0.36), lineSoft: fill(.lineSoft, 0.15, 0.25),
             liftBorder: fill(.liftBorder, 0.40, 0.55), primeHeaderBg: fill(.primeHeaderBg, 0.11, 0.20),
             text: given(.text, lift(ink, PaletteCheck.textFloor)),
-            muted: given(.muted, lift(mix(ink, ground, 0.25), PaletteCheck.textFloor)),
-            faint: given(.faint, mix(ink, ground, 0.45)), prose: given(.prose, ink),
+            muted: given(.muted, lift(Palette.mix(ink, ground, 0.25), PaletteCheck.textFloor)),
+            faint: given(.faint, Palette.mix(ink, ground, 0.45)), prose: given(.prose, ink),
             agent: agent, amber: given(.amber, mark(3)), ok: given(.ok, mark(2)),
             consoleError: given(.consoleError, mark(1)),
             // The same thumb in every theme.
@@ -251,13 +251,4 @@ extension ThemeFile {
     private static let liftSteps = 16
     /// The ANSI colour each repo colour starts from.
     private static let repoSources = [3, 2, 4, 5]
-
-    /// On the 8-bit channels, in this order of operations: another order can
-    /// round another way at a half.
-    private static func mix(_ a: UInt32, _ b: UInt32, _ t: Double) -> UInt32 {
-        [16, 8, 0].reduce(0) { mixed, shift in
-            let (from, to) = (Double(a >> shift & 0xff), Double(b >> shift & 0xff))
-            return mixed | UInt32(min(max((from + (to - from) * t).rounded(), 0), 255)) << shift
-        }
-    }
 }

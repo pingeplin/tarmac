@@ -85,16 +85,6 @@ final class InboxCopyTests: XCTestCase {
         XCTAssertEqual(InboxCopy.place(exit, boardName: nil, cardLabel: nil, home: "/Users/u"), "board-1 › shell")
     }
 
-    /// The row's tool tip has the report's whole text, as it was sent.
-    func testTheToolTipHasTheWholeText() {
-        let report = inboxItem(.report(.blocked), proc: "claude", text: "line one\n  line two")
-        XCTAssertEqual(
-            InboxCopy.toolTip(report, place: "api › claude"),
-            "report · during claude\n“line one\n  line two”\napi › claude"
-        )
-        XCTAssertEqual(InboxCopy.toolTip(inboxItem(.bell), place: "b › shell"), "bell\nb › shell")
-    }
-
     func testEachKindHasTheColourOfItsPillSignal() {
         XCTAssertEqual(Inbox.Kind.report(.blocked).signal, .blocked)
         XCTAssertEqual(Inbox.Kind.report(.done).signal, .done)
@@ -116,7 +106,7 @@ final class InboxCopyTests: XCTestCase {
             InboxRow(
                 id: Inbox.ItemID(termID: "T1", family: .report), kind: .report(.blocked),
                 title: "report · during claude", quote: .literal("“May I?”"), place: "api › agent · ~/w", age: "2m",
-                read: false, toolTip: "report · during claude\n“May\nI?”\napi › agent · ~/w"
+                read: false
             )
         )
         let bell = inboxItem(.bell, at: 5_000, read: true)
@@ -124,7 +114,7 @@ final class InboxCopyTests: XCTestCase {
             InboxCopy.row(bell, boardName: nil, cardLabel: nil, home: "/Users/u", nowMs: 1_000),
             InboxRow(
                 id: Inbox.ItemID(termID: "T", family: .bell), kind: .bell, title: "bell", quote: nil,
-                place: "board-1 › shell", age: "<1m", read: true, toolTip: "bell\nboard-1 › shell"
+                place: "board-1 › shell", age: "<1m", read: true
             )
         )
     }
@@ -143,5 +133,47 @@ final class InboxCopyTests: XCTestCase {
         for string in strings {
             XCTAssertFalse(string.contains("回報") || string.contains("期間"), string)
         }
+    }
+}
+
+/// Spec 2611.0018 D3: what the inbox preview pane says.
+final class InboxPreviewCopyTests: XCTestCase {
+    func testS5AReportShowsItsRowsHeadAndItsTextAsBlocks() {
+        let report = inboxItem(.report(.done), proc: "claude", text: "**ok**", at: 1_000, term: "T1")
+        XCTAssertEqual(
+            InboxCopy.preview(report, place: "api › claude", nowMs: 1_000 + 125_000),
+            InboxPreview(
+                id: Inbox.ItemID(termID: "T1", family: .report), kind: .report(.done), tag: "done",
+                title: "report · during claude", age: "2m", place: "api › claude",
+                body: .blocks([.paragraph(InlineText([InlineRun("ok", .bold)]))])
+            )
+        )
+    }
+
+    func testS6ABellAndAnExitHaveNoText() {
+        for kind in [Inbox.Kind.bell, .exit(code: 1)] {
+            let preview = InboxCopy.preview(inboxItem(kind), place: "board-1 › shell", nowMs: 0)
+            XCTAssertEqual(preview.body, .noText)
+            XCTAssertEqual(preview.place, "board-1 › shell")
+            XCTAssertEqual(preview.tag, InboxCopy.tag(kind))
+        }
+    }
+
+    func testS31ABlankTextHasNoText() {
+        for text in ["", "  \n ", "\t"] {
+            let preview = InboxCopy.preview(inboxItem(.report(.blocked), text: text), place: "p", nowMs: 0)
+            XCTAssertEqual(preview.body, .noText, text.debugDescription)
+        }
+    }
+
+    func testS21TextOfOnlyMarkupShowsAsTyped() {
+        let preview = InboxCopy.preview(inboxItem(.report(.done), text: "```\n```"), place: "p", nowMs: 0)
+        XCTAssertEqual(preview.body, .blocks([.paragraph(.literal("``` ```"))]))
+    }
+
+    func testThePanesWordsAreEnglish() {
+        XCTAssertEqual(InboxCopy.go, "go ↵")
+        XCTAssertEqual(InboxCopy.noText, "no text")
+        XCTAssertEqual(InboxCopy.nothingSelected, "preview · nothing selected")
     }
 }

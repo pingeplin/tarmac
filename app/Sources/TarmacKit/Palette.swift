@@ -28,6 +28,20 @@ public struct Palette: Equatable, Sendable {
         Contrast.luminance(background) < Contrast.luminance(foreground) ? .dark : .light
     }
 
+    /// An overlay row under the pointer (spec 2611.0018 D9): a third of the
+    /// way from the list's `bg2` to the selected row's `bg3`, so it is a
+    /// quieter lift than the selection in every theme, a file's too.
+    public var rowHover: UInt32 { Self.mix(bg2, bg3, 1.0 / 3) }
+
+    /// On the 8-bit channels, in this order of operations: another order can
+    /// round another way at a half.
+    static func mix(_ a: UInt32, _ b: UInt32, _ t: Double) -> UInt32 {
+        [16, 8, 0].reduce(0) { mixed, shift in
+            let (from, to) = (Double(a >> shift & 0xff), Double(b >> shift & 0xff))
+            return mixed | UInt32(min(max((from + (to - from) * t).rounded(), 0), 255)) << shift
+        }
+    }
+
     /// Ghostty Breeze: the look before there was a choice.
     static let breezeDark = Palette(
         bg0: 0x24282c, bg1: 0x2b3036, bg2: 0x353b41, bg3: 0x3e444b,

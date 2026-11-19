@@ -7,7 +7,23 @@ public struct InboxRow: Equatable, Sendable {
     public let place: String
     public let age: String
     public let read: Bool
-    public let toolTip: String
+}
+
+/// What the inbox preview pane shows of the selected item (spec 2611.0018 D3).
+public struct InboxPreview: Equatable, Sendable {
+    public enum Body: Equatable, Sendable {
+        case blocks([MarkdownBlock])
+        /// A bell, an exit, or a report with no text or only whitespace.
+        case noText
+    }
+
+    public let id: Inbox.ItemID
+    public let kind: Inbox.Kind
+    public let tag: String
+    public let title: String
+    public let age: String
+    public let place: String
+    public let body: Body
 }
 
 /// What an inbox row says (spec 2611.0013). A report is placed in time only,
@@ -15,6 +31,9 @@ public struct InboxRow: Equatable, Sendable {
 public enum InboxCopy {
     public static let empty = "no items"
     public static let footer = "↑↓ move · ↵ go · ⌫ remove · esc close"
+    public static let go = "go ↵"
+    public static let noText = "no text"
+    public static let nothingSelected = "preview · nothing selected"
 
     public static func filterName(_ filter: Inbox.Filter) -> String {
         filter.rawValue
@@ -30,12 +49,6 @@ public enum InboxCopy {
         case .bell: ChromeText.during("bell", proc: item.proc)
         case .exit(let code): TermExitToast.title(code: code) ?? "exit"
         }
-    }
-
-    /// The row's tool tip: the title, the whole text as it was sent, quoted,
-    /// and the place.
-    public static func toolTip(_ item: Inbox.Item, place: String) -> String {
-        ([title(item)] + [item.text.map { "“\($0)”" }].compactMap { $0 } + [place]).joined(separator: "\n")
     }
 
     public static func quote(_ item: Inbox.Item) -> InlineText? {
@@ -62,7 +75,22 @@ public enum InboxCopy {
         let place = place(item, boardName: boardName, cardLabel: cardLabel, home: home)
         return InboxRow(
             id: item.id, kind: item.kind, title: title(item), quote: quote(item), place: place,
-            age: age(item, nowMs: nowMs), read: item.read, toolTip: toolTip(item, place: place)
+            age: age(item, nowMs: nowMs), read: item.read
         )
+    }
+
+    /// The pane of the selected item. A text that is only markup shows as
+    /// typed, on one line, as the row's quote falls back.
+    public static func preview(_ item: Inbox.Item, place: String, nowMs: UInt64) -> InboxPreview {
+        InboxPreview(
+            id: item.id, kind: item.kind, tag: tag(item.kind), title: title(item), age: age(item, nowMs: nowMs),
+            place: place, body: body(item.text)
+        )
+    }
+
+    private static func body(_ text: String?) -> InboxPreview.Body {
+        guard let text, !text.allSatisfy(\.isWhitespace) else { return .noText }
+        let blocks = InlineMarkdown.blocks(text)
+        return .blocks(blocks.isEmpty ? [.paragraph(.literal(ChromeText.oneLine(text)))] : blocks)
     }
 }

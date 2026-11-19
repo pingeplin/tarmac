@@ -831,3 +831,47 @@ final class AppPrefsTests: XCTestCase {
         XCTAssertTrue(damaged.warnBeforeQuit)
     }
 }
+
+/// Spec 2611.0018 D8: the inbox preview pane's height.
+final class InboxPreviewHeightPrefsTests: XCTestCase {
+    private func data(_ text: String) -> Data { Data(text.utf8) }
+
+    func testS15TheHeightIsWrittenLastAndReadsBack() {
+        let values = AppPrefs.Values(fonts: [.terminal: "Menlo"], theme: .light, inboxPreviewHeight: 180)
+        let bytes = AppPrefs.encode(values)
+        XCTAssertEqual(
+            bytes, data(#"{"warn_before_quit":true,"terminal_font":"Menlo","theme":"light","inbox_preview_height":180}"#)
+        )
+        XCTAssertEqual(AppPrefs.decode(bytes), values)
+    }
+
+    func testTheHeightIsWrittenAfterTheThemeOfEachAppearance() {
+        let values = AppPrefs.Values(themes: [.light: "github-light"], inboxPreviewHeight: 200)
+        XCTAssertEqual(
+            AppPrefs.encode(values),
+            data(#"{"warn_before_quit":true,"theme_light":"github-light","inbox_preview_height":200}"#)
+        )
+    }
+
+    func testS16WithNoHeightTheBytesAreThoseOfBefore() {
+        XCTAssertEqual(AppPrefs.encode(AppPrefs.Values(theme: .light)), data(#"{"warn_before_quit":true,"theme":"light"}"#))
+    }
+
+    func testS23AHeightOutOfItsRangeOrNotANumberIsNoHeight() {
+        for value in ["50", "3000", #""236""#, "true", "null"] {
+            let read = AppPrefs.decode(data(#"{"warn_before_quit":false,"theme":"light","inbox_preview_height":\#(value)}"#))
+            XCTAssertNil(read.inboxPreviewHeight, value)
+            XCTAssertFalse(read.warnBeforeQuit, value)
+            XCTAssertEqual(read.theme, .light, value)
+        }
+        XCTAssertEqual(AppPrefs.decode(data(#"{"inbox_preview_height":72}"#)).inboxPreviewHeight, 72)
+        XCTAssertEqual(AppPrefs.decode(data(#"{"inbox_preview_height":2000}"#)).inboxPreviewHeight, 2000)
+    }
+
+    func testS24AResetWritesNoHeight() {
+        var values = AppPrefs.Values(inboxPreviewHeight: 300)
+        values.inboxPreviewHeight = nil
+        XCTAssertEqual(AppPrefs.encode(values), data(#"{"warn_before_quit":true}"#))
+        XCTAssertEqual(AppPrefs.encode(AppPrefs.Values(inboxPreviewHeight: 50)), data(#"{"warn_before_quit":true}"#))
+    }
+}
