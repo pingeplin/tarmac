@@ -60,6 +60,11 @@ final class MarkdownBlocksTests: XCTestCase {
         XCTAssertEqual(blocks("- a\n- b\nnext"), [.list([item("•", p("a")), item("•", p("b"))]), para(p("next"))])
     }
 
+    func testAnItemEndsTheOpenParagraph() {
+        XCTAssertEqual(blocks("a\n- b\nc"), [para(p("a")), .list([item("•", p("b"))]), para(p("c"))])
+        XCTAssertEqual(InlineMarkdown.line("a\n- b\nc").runs, [p("a "), dot(), p(" b c")])
+    }
+
     func testS32AnItemOfTheOtherKindStartsANewList() {
         XCTAssertEqual(blocks("- a\n1. b"), [.list([item("•", p("a"))]), .list([item("1.", p("b"))])])
         XCTAssertEqual(blocks("1. a\n- b"), [.list([item("1.", p("a"))]), .list([item("•", p("b"))])])
