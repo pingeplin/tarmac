@@ -182,8 +182,8 @@ private struct MarkdownStyle {
     ) -> NSAttributedString {
         let out = NSMutableAttributedString()
         func makeRoom() {
-            guard out.length > 0 else { return }
-            out.addAttribute(.kern, value: CodeSpanBox.kern, range: NSRange(location: out.length - 1, length: 1))
+            guard let last = CodeSpanBox.kernRange(endOf: out.string) else { return }
+            out.addAttribute(.kern, value: CodeSpanBox.kern, range: NSRange(last))
         }
         for run in text.runs {
             var attributes: [NSAttributedString.Key: Any] = [

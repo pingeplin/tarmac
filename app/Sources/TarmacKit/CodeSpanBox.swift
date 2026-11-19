@@ -24,6 +24,15 @@ public enum CodeSpanBox {
     /// ends where the next one starts, as in the row.
     public static let kern = padding
 
+    /// The UTF-16 units of the last character of `text`, which carries the
+    /// kern; nil for no text. A kern on half of a surrogate pair makes TextKit
+    /// draw no glyph for that character (#436).
+    public static func kernRange(endOf text: String) -> Range<Int>? {
+        guard let last = text.last else { return nil }
+        let end = text.utf16.count
+        return (end - last.utf16.count)..<end
+    }
+
     /// `glyphs` is the rect of the span's glyphs on one line and `baseline`
     /// that line's, in the same coordinates. The line's own height plays no
     /// part: line spacing and taller glyphs change it, and not the box.

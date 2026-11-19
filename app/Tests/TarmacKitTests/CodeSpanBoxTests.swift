@@ -14,6 +14,15 @@ final class CodeSpanBoxTests: XCTestCase {
         )
     }
 
+    /// A face whose line height less its baseline is not the padding.
+    func testTheBoxTakesItsHeightAndItsBaselineFromTheFace() {
+        let menlo = CodeSpanBox.Face(baseline: 10, lineHeight: 13.5)
+        XCTAssertEqual(
+            CodeSpanBox.rect(glyphs: CGRect(x: 40, y: 17, width: 49.2, height: 17), baseline: 27, face: menlo),
+            CGRect(x: 37, y: 17, width: 52.2, height: 13.5)
+        )
+    }
+
     func testTheHeightDoesNotFollowTheLinesOwnHeight() {
         let last = CGRect(x: 40, y: 34, width: 49.2, height: 13)
         XCTAssertEqual(CodeSpanBox.rect(glyphs: last, baseline: 45, face: face).height, 14)
@@ -37,5 +46,15 @@ final class CodeSpanBoxTests: XCTestCase {
         let box = CodeSpanBox.rect(glyphs: glyphs, baseline: 11, face: face)
         XCTAssertEqual(box.minX, 40 - 3)
         XCTAssertEqual(box.maxX, glyphs.maxX)
+    }
+
+    // MARK: - The kern's character (#436)
+
+    func testTheKernIsOnTheWholeLastCharacterInUTF16Units() {
+        XCTAssertEqual(CodeSpanBox.kernRange(endOf: "ab"), 1..<2)
+        XCTAssertEqual(CodeSpanBox.kernRange(endOf: "ab😀"), 2..<4)
+        XCTAssertEqual(CodeSpanBox.kernRange(endOf: "ae\u{301}"), 1..<3)
+        XCTAssertEqual(CodeSpanBox.kernRange(endOf: "a👍🏽"), 1..<5)
+        XCTAssertNil(CodeSpanBox.kernRange(endOf: ""))
     }
 }
