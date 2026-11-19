@@ -19,7 +19,7 @@ final class ReportChipTests: XCTestCase {
         ReportChip.model(report: try XCTUnwrap(TermReport.frame(message)?.report), nowMs: now)
     }
 
-    func testS7AnUnreadBlockedReportQuotesItsTextAndPlacesItInTime() throws {
+    func testS7AnUnreadBlockedReportShowsItsAgeInItsKindsColour() throws {
         let chip = try model(frame())
         XCTAssertEqual(chip.text, "report · 2m")
         XCTAssertEqual(chip.signal, .blocked)

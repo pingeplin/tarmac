@@ -1,7 +1,8 @@
 import Foundation
 
 /// What a terminal card's report chip shows. The copy places the report in
-/// time only; it never says who sent it, and quotes its text as a claim.
+/// time only and never says who sent it; the edge pill and the inbox quote
+/// its text.
 public enum ReportChip {
     public struct Model: Equatable, Sendable {
         public let text: String
