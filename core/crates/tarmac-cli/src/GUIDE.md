@@ -9,9 +9,18 @@ Nothing here parses your output or infers your intent. A card appears because a
 process called `tarmac open`; it pulses because the file's mtime changed. The
 file is the entire interface.
 
-This guide covers what is worth knowing: how to surface a file, how to say that
-you are blocked or done, and how to write an HTML file that survives the board's
-sandbox and zoom model.
+This guide covers how to surface a file, how to say that you are blocked or
+done, how to let the user resume your session after a restart, how to wait on what Tarmac sees,
+how to open another terminal card, and how to write an HTML file that survives the board's sandbox and zoom model.
+Read the part you need. Read all of *HTML cards* before you write one: a page
+that breaks its rules fails with no error.
+
+## Your terminal
+
+Inside a Tarmac terminal the environment carries `TARMAC_TERM_ID`, your
+terminal's id. Tarmac sets it; you do not. `report` and `resume` need it.
+`open` and `term new` use it to join the new card to yours. Outside Tarmac it
+is not set.
 
 A shell in a Tarmac terminal inherits the daemon's open file limit, so
 `ulimit -n` there is at least 10240 unless the hard limit is lower, not
@@ -30,9 +39,8 @@ Fire-and-forget: it connects, names the doc, and exits. Rules:
   `2` bad usage. A non-zero exit is never fatal to your work — Tarmac may simply
   not be running. Do not abort a task because `tarmac open` failed.
 - Running it again on the same path does **not** duplicate the card.
-- Inside a Tarmac terminal the environment carries `TARMAC_TERM_ID`, which
-  attributes the card to your terminal and draws the provenance edge. You do not
-  set it; the app does.
+- Inside a Tarmac terminal, `TARMAC_TERM_ID` (see *Your terminal*) attributes
+  the card to your terminal and draws the provenance edge.
 - `TARMAC_SOCKET` overrides the socket location. You rarely need it.
 
 Open a file when it is worth a human's glance: a plan, a findings report, a diff
@@ -72,7 +80,9 @@ sent it. Rules:
 
 ## Reports from Claude Code
 
-Run `tarmac hooks install` once. It adds four hooks to Claude Code's settings,
+The user runs `tarmac hooks install` once. Both `install` and `uninstall`
+change Claude Code's own settings, so leave them to the user. `install` adds
+four hooks to those settings,
 each a call to `tarmac hooks run claude || true`, and from then on every Claude
 session in a Tarmac terminal reports on its own:
 
@@ -201,6 +211,14 @@ ends. It prints the new terminal's id:
 ```
 {"term":"t9"}
 ```
+
+Open every new terminal with `tarmac term new`. Do not open Terminal, iTerm or
+another window with `open -a` or `osascript`: that terminal runs outside
+Tarmac, so the user does not see it on the board, and Tarmac cannot report its
+exit, its bell or its agent's reports. Use a card for work the user should
+see, or work that runs on its own: a second agent session, a dev server, a
+long build or a watch. A short command whose output only you need runs in your
+own shell. Open one card for each task, not one for each step.
 
 The folder is yours, or `--cwd DIR` (a relative one is taken from yours). The
 card goes on your terminal's board; outside Tarmac, on the active board. Your

@@ -112,8 +112,11 @@ un-stamps `core/Cargo.toml`, so the dmg is rebuilt and notarized again.
 - **An agent's `gh pr merge` on a self-authored PR can be stopped by the
   auto-mode classifier**, once per repo. When the script dies on
   `did not merge`, have the user run `gh pr merge <n> --repo <owner>/<repo>
-  --squash --delete-branch`, check `gh pr view <n> --json state`, and re-run the
-  release — it picks up from the merged PR.
+  --squash --delete-branch`, then check
+  `gh pr view <n> --repo <owner>/<repo> --json state,mergedAt`. The user's run
+  can leave the PR `OPEN`; then retry the merge once yourself, and if that is
+  refused too, stop and tell the user.
+  Re-run the release — it picks up from the merged PR.
 - **A pre-release version works as a plain string.** `VERSION=1.14.0-beta` went
   through Cargo, the app↔daemon handshake, signing and notarization
   (2026-10-02), although Apple documents both bundle version keys as digits and
