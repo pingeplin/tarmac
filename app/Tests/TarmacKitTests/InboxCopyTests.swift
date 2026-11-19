@@ -37,7 +37,7 @@ final class InboxCopyTests: XCTestCase {
     func testS9TheRowQuoteRendersInlineMarkdown() {
         XCTAssertEqual(
             InboxCopy.quote(inboxItem(.report(.blocked), text: "**May** I?"))?.runs,
-            [InlineRun("“", .plain), InlineRun("May", .bold), InlineRun(" I?”", .plain)]
+            [p("“"), b("May"), p(" I?”")]
         )
     }
 
@@ -145,7 +145,7 @@ final class InboxPreviewCopyTests: XCTestCase {
             InboxPreview(
                 id: Inbox.ItemID(termID: "T1", family: .report), kind: .report(.done), tag: "done",
                 title: "report · during claude", age: "2m", place: "api › claude",
-                body: .blocks([.paragraph(InlineText([InlineRun("ok", .bold)]))])
+                body: .blocks([.paragraph(InlineText([b("ok")]))])
             )
         )
     }

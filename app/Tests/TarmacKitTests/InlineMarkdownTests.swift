@@ -1,13 +1,6 @@
 import XCTest
 @testable import TarmacKit
 
-private func p(_ text: String) -> InlineRun { InlineRun(text, .plain) }
-private func b(_ text: String) -> InlineRun { InlineRun(text, .bold) }
-private func i(_ text: String) -> InlineRun { InlineRun(text, .italic) }
-private func c(_ text: String) -> InlineRun { InlineRun(text, .code) }
-private func l(_ text: String) -> InlineRun { InlineRun(text, .link) }
-private func dot(_ text: String = "•") -> InlineRun { InlineRun(text, .bullet) }
-
 private func line(_ text: String) -> [InlineRun] { InlineMarkdown.line(text).runs }
 
 /// Spec 2611.0017 S10: texts with no markdown, which must read as before.
@@ -105,13 +98,6 @@ final class InlineMarkdownTests: XCTestCase {
         XCTAssertEqual(line("\\*a\\*"), [p("\\"), i("a\\")])
     }
 
-    func testS22PrefixCutsAcrossRunsAndKeepsMarks() {
-        let text = InlineText([p("ab"), b("cd"), p("ef")])
-        XCTAssertEqual(text.prefix(scalars: 4).runs, [p("ab"), b("c"), p("…")])
-        XCTAssertEqual(text.prefix(scalars: 6), text)
-        XCTAssertEqual(text.prefix(scalars: 1).runs, [p("…")])
-    }
-
     func testS20APillCutThatLandsOnABullet() {
         XCTAssertEqual(
             InlineMarkdown.line("abcdefghijklmnopqrstu\n- xyz").prefix(scalars: 24).runs,
@@ -181,12 +167,6 @@ final class InlineMarkdownTests: XCTestCase {
         XCTAssertEqual(line("[ x ](u)"), [l("x")])
     }
 
-    func testS34ARowCutKeepsGraphemesWhole() {
-        let text = InlineText.literal("a👍🏽bc")
-        XCTAssertEqual(text.prefix(characters: 3).runs, [p("a👍🏽…")])
-        XCTAssertEqual(text.prefix(characters: 4), text)
-    }
-
     // MARK: - Rules a whole-line trim or a common input would hide
 
     func testALinkInsideALineIsTrimmed() {
@@ -223,42 +203,6 @@ final class InlineMarkdownTests: XCTestCase {
         XCTAssertEqual(line("١. x"), [p("١. x")])
     }
 
-    // MARK: - Fitting a width (D10)
-
-    /// A fake measure: one unit a character, and two for a code run's box.
-    private func units(_ text: InlineText) -> CGFloat {
-        CGFloat(text.runs.reduce(0) { $0 + $1.text.count + ($1.mark == .code ? 2 : 0) })
-    }
-
-    func testD10ATextThatFitsIsUnchanged() {
-        let text = InlineText([p("ab"), c("cdef")])
-        XCTAssertEqual(text.prefix(fitting: 8, measure: units), text)
-    }
-
-    func testD10TheCutKeepsTheMostCharactersThatFitWithTheEllipsis() {
-        let text = InlineText([p("ab"), c("cdef")])
-        XCTAssertEqual(text.prefix(fitting: 6, measure: units).runs, [p("ab"), c("c"), p("…")])
-        XCTAssertEqual(text.prefix(fitting: 5, measure: units).runs, [p("ab…")])
-    }
-
-    func testD10ARoomTooSmallForAnyTextKeepsTheEllipsis() {
-        XCTAssertEqual(InlineText.literal("abc").prefix(fitting: 0, measure: units).runs, [p("…")])
-    }
-
-    func testD10TheCutKeepsGraphemesWhole() {
-        XCTAssertEqual(InlineText.literal("a👍🏽bc").prefix(fitting: 3, measure: units).runs, [p("a👍🏽…")])
-        XCTAssertEqual(InlineText.literal("👍🏽👍🏽👍🏽👍🏽").prefix(fitting: 2, measure: units).runs, [p("👍🏽…")])
-    }
-
-    // MARK: - Normal form
-
-    func testQuotedAndPlusJoinPlainRunsSideBySide() {
-        XCTAssertEqual(InlineText([b("May"), p(" I?")]).quoted.runs, [p("“"), b("May"), p(" I?”")])
-        XCTAssertEqual((InlineText.literal("a ") + InlineText([p("b"), c("c")])).runs, [p("a b"), c("c")])
-        XCTAssertEqual(InlineText.literal("").runs, [])
-        XCTAssertEqual(InlineText([p(""), b("x"), p("")]).runs, [b("x")])
-    }
-
     // MARK: - Error scenarios
 
     func testS24EveryCutOfARealTextIsWellFormed() {
@@ -276,88 +220,5 @@ final class InlineMarkdownTests: XCTestCase {
             XCTAssertLessThanOrEqual(text.plain.unicodeScalars.count, oneLine.unicodeScalars.count, "k=\(k)")
             XCTAssertEqual(text.plain, ChromeText.oneLine(text.plain), "k=\(k)")
         }
-    }
-}
-
-private func para(_ runs: InlineRun...) -> MarkdownBlock { .paragraph(InlineText(runs)) }
-private func item(_ marker: String, _ runs: InlineRun...) -> ListItem { ListItem(marker: marker, text: InlineText(runs)) }
-
-private func blocks(_ text: String) -> [MarkdownBlock] { InlineMarkdown.blocks(text) }
-
-/// Spec 2611.0018 D1: a report's text as blocks, for the inbox preview pane.
-final class MarkdownBlocksTests: XCTestCase {
-    func testS1TheProtoypesReportIsAParagraphAListAndAParagraph() {
-        let text = "Done: **inbox preview** spike on `feat/inbox-preview`.\n"
-            + "- added `InboxPreview` to TarmacKit, one rule per block\n"
-            + "- 14 new tests pass under `swift test`\n"
-            + "- the pill quote now counts *rendered* scalars\n\n"
-            + "Left: run `make qa` against a live app, then open the PR."
-        XCTAssertEqual(blocks(text), [
-            para(p("Done: "), b("inbox preview"), p(" spike on "), c("feat/inbox-preview"), p(".")),
-            .list([
-                item("•", p("added "), c("InboxPreview"), p(" to TarmacKit, one rule per block")),
-                item("•", p("14 new tests pass under "), c("swift test")),
-                item("•", p("the pill quote now counts "), i("rendered"), p(" scalars")),
-            ]),
-            para(p("Left: run "), c("make qa"), p(" against a live app, then open the PR.")),
-        ])
-    }
-
-    func testS2AnOrderedListKeepsItsNumbersAsWritten() {
-        XCTAssertEqual(blocks("Triage:\n1. `swift test` green\n2. `cargo test` green\n12. **one** flaky"), [
-            para(p("Triage:")),
-            .list([
-                item("1.", c("swift test"), p(" green")),
-                item("2.", c("cargo test"), p(" green")),
-                item("12.", b("one"), p(" flaky")),
-            ]),
-        ])
-    }
-
-    func testS3AHeadingAndACodeBlockKeepTheirLines() {
-        XCTAssertEqual(blocks("## Plan\n```\ncargo test  -p tarmacd\nmake qa\n```\nthen ship"), [
-            .heading(InlineText([p("Plan")])),
-            .code(["cargo test  -p tarmacd", "make qa"]),
-            para(p("then ship")),
-        ])
-    }
-
-    func testAParagraphsLinesJoinWithOneSpace() {
-        XCTAssertEqual(blocks("one\n  two   three\nfour"), [para(p("one two three four"))])
-    }
-
-    func testS20AnUnclosedFenceRunsToTheEnd() {
-        XCTAssertEqual(blocks("run:\n```\nmake qa"), [para(p("run:")), .code(["make qa"])])
-    }
-
-    func testS21OnlyMarkupHasNoBlocks() {
-        XCTAssertEqual(blocks("```\n```"), [])
-    }
-
-    func testS22AParagraphEndsAList() {
-        XCTAssertEqual(blocks("- a\n- b\nnext"), [.list([item("•", p("a")), item("•", p("b"))]), para(p("next"))])
-    }
-
-    func testS32AnItemOfTheOtherKindStartsANewList() {
-        XCTAssertEqual(blocks("- a\n1. b"), [.list([item("•", p("a"))]), .list([item("1.", p("b"))])])
-        XCTAssertEqual(blocks("1. a\n- b"), [.list([item("1.", p("a"))]), .list([item("•", p("b"))])])
-    }
-
-    func testABlankLineAHeadingAndAFenceEachEndAList() {
-        XCTAssertEqual(blocks("- a\n\n- b"), [.list([item("•", p("a"))]), .list([item("•", p("b"))])])
-        XCTAssertEqual(blocks("- a\n## H"), [.list([item("•", p("a"))]), .heading(InlineText([p("H")]))])
-        XCTAssertEqual(blocks("- a\n```\nx\n```"), [.list([item("•", p("a"))]), .code(["x"])])
-        XCTAssertEqual(InlineMarkdown.line("- a\n## H").runs, [InlineRun("•", .bullet), p(" a H")])
-    }
-
-    func testACodeBlockKeepsTheSpacesAtTheEndsOfItsLines() {
-        XCTAssertEqual(blocks("```\n  indented\ntrail  \n```"), [.code(["  indented", "trail  "])])
-    }
-
-    func testS27EmptyBlocksKeepTheLineRules() {
-        XCTAssertEqual(blocks("- "), [.list([ListItem(marker: "•", text: InlineText([]))])])
-        XCTAssertEqual(InlineMarkdown.line("- ").runs, [InlineRun("•", .bullet)])
-        XCTAssertEqual(blocks("```\n  \n```"), [])
-        XCTAssertEqual(blocks("# \nx"), [para(p("x"))])
     }
 }

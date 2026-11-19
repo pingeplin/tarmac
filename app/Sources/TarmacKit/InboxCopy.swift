@@ -90,7 +90,7 @@ public enum InboxCopy {
 
     private static func body(_ text: String?) -> InboxPreview.Body {
         guard let text, !text.allSatisfy(\.isWhitespace) else { return .noText }
-        let blocks = InlineMarkdown.blocks(text)
+        let blocks = MarkdownBlocks.parse(text)
         return .blocks(blocks.isEmpty ? [.paragraph(.literal(ChromeText.oneLine(text)))] : blocks)
     }
 }
