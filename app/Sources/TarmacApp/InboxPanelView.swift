@@ -3,8 +3,10 @@ import TarmacKit
 
 /// The inbox (spec 2611.0013): a panel flush right over the board area, never
 /// docked. A header with the unread count, the filters and `clear all read`;
-/// one row per item; the keys in a footer. It draws what it is given and
-/// reports clicks; the controller owns the store, the state and every key.
+/// one row per item; the grip and the preview pane of the selected item (spec
+/// 2611.0018); the keys in a footer. It draws what it is given and reports
+/// clicks; the controller owns the store, the state and every key. It owns the
+/// pane's height while a drag runs, and reports the height the user set.
 /// Screen-space chrome: the board's zoom never scales it.
 @MainActor
 final class InboxPanelView: KeyHoldingView, FontFollowing, ThemeFollowing {
@@ -13,9 +15,22 @@ final class InboxPanelView: KeyHoldingView, FontFollowing, ThemeFollowing {
         let filter: Inbox.Filter
         let rows: [InboxRow]
         let selected: Inbox.ItemID?
+        let preview: InboxPreview?
+        let gripFocused: Bool
     }
 
-    var onPick: ((Inbox.ItemID) -> Void)?
+    /// A row's id and the click count.
+    var onPick: ((Inbox.ItemID, Int) -> Void)?
+    var onGo: ((Inbox.ItemID) -> Void)?
+    var onGripPress: (() -> Void)?
+    /// The height the user set, in design points, at a drag's end, a reset
+    /// or a step; nil is the standard.
+    var onPaneHeight: ((Double?) -> Void)?
+
+    /// The height the user set, as `AppPrefs` holds it.
+    var paneWanted: Double? {
+        didSet { if paneWanted != oldValue { needsLayout = true } }
+    }
     var onFilter: ((Inbox.Filter) -> Void)?
     var onClearRead: (() -> Void)?
 
@@ -45,6 +60,12 @@ final class InboxPanelView: KeyHoldingView, FontFollowing, ThemeFollowing {
     private let clearRead = InboxFilterButton("clear all read")
     private let scroll = NSScrollView()
     private let rowsDoc = FlippedColumnView()
+    private let grip = InboxSplitGrip()
+    private let preview = InboxPreviewView()
+    /// What the panel had for the list and the pane at the last layout.
+    private var paneRoom: CGFloat = 0
+    /// The wanted height when the drag in progress began.
+    private var dragStart: Double??
     private let emptyLabel = OverlayLabel()
     private let footer = FlippedColumnView()
     private let footerRule = NSView()
@@ -80,6 +101,15 @@ final class InboxPanelView: KeyHoldingView, FontFollowing, ThemeFollowing {
         scroll.documentView = rowsDoc
         addSubview(scroll)
         rowsDoc.addSubview(emptyLabel)
+        addSubview(grip)
+        addSubview(preview)
+        grip.onPress = { [weak self] count in self?.gripPressed(count) }
+        grip.onDrag = { [weak self] delta in self?.gripDragged(delta) }
+        grip.onRelease = { [weak self] in self?.gripReleased() }
+        preview.onGo = { [weak self] in
+            guard let id = self?.model?.preview?.id else { return }
+            self?.onGo?(id)
+        }
         footer.addSubview(footerRule)
         footer.addSubview(footerLabel)
         addSubview(edge)
@@ -90,6 +120,7 @@ final class InboxPanelView: KeyHoldingView, FontFollowing, ThemeFollowing {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     func fontsChanged() {
+        preview.styleChanged()
         redraw()
     }
 
@@ -98,6 +129,8 @@ final class InboxPanelView: KeyHoldingView, FontFollowing, ThemeFollowing {
         edge.layer?.backgroundColor = Theme.line.cgColor
         for bar in [header, footer] { bar.layer?.backgroundColor = Theme.bg1.cgColor }
         for rule in [headerRule, footerRule] { rule.layer?.backgroundColor = Theme.lineSoft.cgColor }
+        grip.needsDisplay = true
+        preview.styleChanged()
         redraw()
     }
 
@@ -138,8 +171,11 @@ final class InboxPanelView: KeyHoldingView, FontFollowing, ThemeFollowing {
         }
         for (view, row) in zip(rowViews, model.rows) {
             view.configure(row, selected: row.id == model.selected)
-            view.onClick = { [weak self] in self?.onPick?(row.id) }
+            view.onClick = { [weak self] count in self?.onPick?(row.id, count) }
+            view.onGo = { [weak self] in self?.onGo?(row.id) }
         }
+        grip.focused = model.gripFocused
+        preview.render(model.preview)
         emptyLabel.isHidden = !model.rows.isEmpty
         needsLayout = true
         layoutSubtreeIfNeeded()
@@ -190,7 +226,13 @@ final class InboxPanelView: KeyHoldingView, FontFollowing, ThemeFollowing {
             height: footerSize.height
         )
 
-        scroll.frame = NSRect(x: 1, y: headerHeight, width: inner, height: max(0, footer.frame.minY - headerHeight))
+        paneRoom = max(0, footer.frame.minY - headerHeight - InboxSplitGrip.height)
+        let paneHeight = InboxPreviewSplit.shown(wanted: paneWanted, room: paneRoom, scale: Theme.chrome(1))
+        preview.frame = NSRect(x: 1, y: footer.frame.minY - paneHeight, width: inner, height: paneHeight)
+        grip.frame = NSRect(
+            x: 1, y: preview.frame.minY - InboxSplitGrip.height, width: inner, height: InboxSplitGrip.height
+        )
+        scroll.frame = NSRect(x: 1, y: headerHeight, width: inner, height: max(0, grip.frame.minY - headerHeight))
         var y: CGFloat = 0
         for row in rowViews {
             let height = row.height()
@@ -206,5 +248,37 @@ final class InboxPanelView: KeyHoldingView, FontFollowing, ThemeFollowing {
             x: ((inner - emptySize.width) / 2).rounded(), y: Metric.emptyPadY,
             width: emptySize.width, height: emptySize.height
         )
+    }
+
+    // MARK: - The split (spec 2611.0018 D6–D8)
+
+    /// The grip's ↑ (+1) or ↓ (−1).
+    func stepPane(_ steps: Int) {
+        let wanted = InboxPreviewSplit.stepped(wanted: paneWanted, steps: steps, room: paneRoom, scale: Theme.chrome(1))
+        guard wanted != paneWanted else { return }
+        paneWanted = wanted
+        onPaneHeight?(wanted)
+    }
+
+    private func gripPressed(_ count: Int) {
+        onGripPress?()
+        guard count < 2 else {
+            dragStart = nil
+            paneWanted = nil
+            onPaneHeight?(nil)
+            return
+        }
+        dragStart = .some(paneWanted)
+    }
+
+    private func gripDragged(_ delta: CGFloat) {
+        guard case .some(let start) = dragStart else { return }
+        paneWanted = InboxPreviewSplit.dragged(wanted: start, by: delta, room: paneRoom, scale: Theme.chrome(1))
+    }
+
+    private func gripReleased() {
+        guard case .some(let start) = dragStart else { return }
+        dragStart = nil
+        if paneWanted != start { onPaneHeight?(paneWanted) }
     }
 }

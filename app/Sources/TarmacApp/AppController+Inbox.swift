@@ -85,6 +85,7 @@ extension AppController {
         closeSwitcher()
         inboxOpen = true
         inboxState.selected = nil
+        inboxState.focus = .list
         inboxRows = []
         rootView.setInboxVisible(true)
         rootView.layoutSubtreeIfNeeded()
@@ -122,17 +123,35 @@ extension AppController {
         inboxRows = rows
         let now = WallClock.nowMs
         let home = NSHomeDirectory()
+        let rowsShown = items.map { item in
+            InboxCopy.row(
+                item, boardName: boardMetas.first { $0.boardID == item.boardID }?.name,
+                cardLabel: boards[item.boardID]?.sessions[item.termID]?.label, home: home, nowMs: now
+            )
+        }
+        let selected = zip(items, rowsShown).first { $0.0.id == inboxState.selected }
         rootView.inboxPanel.render(InboxPanelView.Model(
             unread: inbox.unreadCount,
             filter: inboxState.filter,
-            rows: items.map { item in
-                InboxCopy.row(
-                    item, boardName: boardMetas.first { $0.boardID == item.boardID }?.name,
-                    cardLabel: boards[item.boardID]?.sessions[item.termID]?.label, home: home, nowMs: now
-                )
-            },
-            selected: inboxState.selected
+            rows: rowsShown,
+            selected: inboxState.selected,
+            preview: selected.map { InboxCopy.preview($0.0, place: $0.1.place, nowMs: now) },
+            gripFocused: inboxState.focus == .grip
         ))
+    }
+
+    /// A click on a row (spec 2611.0018 D5): it selects and previews; a
+    /// double-click on the selected row flies.
+    func clickInbox(_ id: Inbox.ItemID, count: Int) {
+        let (state, effect) = InboxKeys.click(id, count: count, state: inboxState)
+        if case .jump(let id) = effect { return jump(to: id) }
+        inboxState = state
+        renderInbox()
+    }
+
+    func focusInboxGrip() {
+        inboxState.focus = .grip
+        renderInbox()
     }
 
     /// A key the open panel owns (`InboxKeys`). False leaves it for the menu.
@@ -150,6 +169,8 @@ extension AppController {
             jump(to: id)
         case .remove(let id):
             if inbox.dismiss(id) { inboxChanged([id.termID]) }
+        case .resizePane(let steps):
+            rootView.inboxPanel.stepPane(steps)
         }
         return true
     }
@@ -165,7 +186,7 @@ extension AppController {
 
     // MARK: - The jump
 
-    /// ↵ or a click on a row: at most one board switch, then one flight. The
+    /// ↵, a double-click on a row or a `go ↵`: at most one board switch, then one flight. The
     /// keys go to the card it lands on; a jump to a card that went removes
     /// its row and gives the keys back.
     func jump(to id: Inbox.ItemID) {

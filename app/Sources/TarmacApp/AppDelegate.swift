@@ -46,7 +46,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.center()
         closeHider.attach(to: window)
 
-        controller = AppController(window: window, rootView: rootView, client: client, fonts: fonts, theme: theme)
+        controller = AppController(
+            window: window, rootView: rootView, client: client, fonts: fonts, theme: theme,
+            inboxPaneHeight: InboxPaneHeight(prefs: prefs)
+        )
         window.contentView = rootView
 
         quitGuard = QuitGuardController(window: window, warning: WarnBeforeQuit(prefs: prefs))

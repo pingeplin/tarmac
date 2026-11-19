@@ -38,6 +38,16 @@ final class InboxFilterButton: NSView {
         needsLayout = true
     }
 
+    /// The `go ↵` look (spec 2611.0018 D11): `text` on `bg1` in a `line` border.
+    func setGoLook() {
+        layer?.backgroundColor = Theme.bg1.cgColor
+        layer?.borderColor = Theme.line.cgColor
+        label.attributedStringValue = NSAttributedString(
+            string: text, attributes: [.font: Self.font, .foregroundColor: Theme.text]
+        )
+        needsLayout = true
+    }
+
     override var fittingSize: NSSize {
         let size = label.fittedSize
         return NSSize(width: size.width + Metric.padX * 2, height: size.height + Metric.padY * 2)

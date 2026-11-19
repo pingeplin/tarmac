@@ -196,7 +196,10 @@ final class AppController {
         ownerBoard(ofTerm: termID)?.sessions[termID]
     }
 
-    init(window: NSWindow, rootView: RootView, client: DaemonClient, fonts: FontSettings, theme: ThemeSettings) {
+    init(
+        window: NSWindow, rootView: RootView, client: DaemonClient, fonts: FontSettings, theme: ThemeSettings,
+        inboxPaneHeight: InboxPaneHeight
+    ) {
         self.window = window
         self.rootView = rootView
         self.fonts = fonts
@@ -214,7 +217,11 @@ final class AppController {
         rootView.boardSwitcher.onPickRow = { [weak self] index in self?.switcherPickRow(index) }
         rootView.boardSwitcher.onDismiss = { [weak self] in self?.closeSwitcher() }
         rootView.restoreCard.onChoice = { [weak self] in self?.chooseOnRestoreCard($0) }
-        rootView.inboxPanel.onPick = { [weak self] id in self?.jump(to: id) }
+        rootView.inboxPanel.onPick = { [weak self] id, count in self?.clickInbox(id, count: count) }
+        rootView.inboxPanel.onGo = { [weak self] id in self?.jump(to: id) }
+        rootView.inboxPanel.onGripPress = { [weak self] in self?.focusInboxGrip() }
+        rootView.inboxPanel.paneWanted = inboxPaneHeight.wanted
+        rootView.inboxPanel.onPaneHeight = { inboxPaneHeight.wanted = $0 }
         rootView.inboxPanel.onFilter = { [weak self] filter in self?.setInboxFilter(filter) }
         rootView.inboxPanel.onClearRead = { [weak self] in self?.clearReadInbox() }
         // Mount board-0 and bind its per-board callbacks (edge labels + layout

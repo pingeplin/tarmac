@@ -31,6 +31,7 @@ public struct InboxPreview: Equatable, Sendable {
 public enum InboxCopy {
     public static let empty = "no items"
     public static let footer = "↑↓ move · ↵ go · ⌫ remove · esc close"
+    public static let go = "go ↵"
     public static let noText = "no text"
     public static let nothingSelected = "preview · nothing selected"
 

@@ -2,8 +2,9 @@ import AppKit
 import TarmacKit
 
 /// One inbox item: its kind tag, title and age; the quote of a report; its
-/// place. A read row's text goes faint and its tag keeps the kind's colour on
-/// its border; nothing is dimmed by transparency.
+/// place; a `go ↵` chip while it is hovered or selected. A read row's text
+/// goes faint and its tag keeps the kind's colour on its border; nothing is
+/// dimmed by transparency.
 @MainActor
 final class InboxRowView: OverlayRowView {
     private enum Metric {
@@ -11,6 +12,10 @@ final class InboxRowView: OverlayRowView {
         static let padY: CGFloat = 8
         static let lineGap: CGFloat = 3
         static let gap: CGFloat = 8
+        /// What the place line leaves for the `go ↵` chip.
+        static let goRoom: CGFloat = 48
+        static let goRight: CGFloat = 10
+        static let goBottom: CGFloat = 7
     }
 
     @MainActor
@@ -25,11 +30,23 @@ final class InboxRowView: OverlayRowView {
     private let age = OverlayLabel()
     private let quote = InlineTextLabel(style: quoteStyle(read: false, selected: false))
     private let place = OverlayLabel()
+    private let go = InboxFilterButton(InboxCopy.go)
+
+    var onGo: (() -> Void)? {
+        get { go.onClick }
+        set { go.onClick = newValue }
+    }
 
     override init() {
         super.init()
         for label in [title, place] { label.lineBreakMode = .byTruncatingTail }
-        for view in [kindTag, title, age, quote, place] { addSubview(view) }
+        for view in [kindTag, title, age, quote, place, go] { addSubview(view) }
+        go.isHidden = true
+    }
+
+    override func paint() {
+        super.paint()
+        go.isHidden = !(selected || hovered)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -58,7 +75,7 @@ final class InboxRowView: OverlayRowView {
         place.attributedStringValue = NSAttributedString(
             string: row.place, attributes: [.font: Font.place, .foregroundColor: Theme.faint]
         )
-        toolTip = row.toolTip
+        go.setGoLook()
         needsLayout = true
     }
 
@@ -101,5 +118,11 @@ final class InboxRowView: OverlayRowView {
             )
             y += size.height + Metric.lineGap
         }
+        place.frame.size.width = min(place.frame.width, width - Metric.padX * 2 - Metric.goRoom)
+        let goSize = go.fittingSize
+        go.frame = NSRect(
+            x: width - Metric.goRight - goSize.width, y: bounds.height - Metric.goBottom - goSize.height,
+            width: goSize.width, height: goSize.height
+        )
     }
 }

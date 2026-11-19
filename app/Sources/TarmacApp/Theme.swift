@@ -15,6 +15,7 @@ enum Theme {
     static var bg1: NSColor { srgb(palette.bg1) }
     static var bg2: NSColor { srgb(palette.bg2) }
     static var bg3: NSColor { srgb(palette.bg3) }
+    static var rowHover: NSColor { srgb(palette.rowHover) }
     static var termBg: NSColor { srgb(palette.terminal.background) }
     static var line: NSColor { srgb(palette.line) }
     static var lineSoft: NSColor { srgb(palette.lineSoft) }

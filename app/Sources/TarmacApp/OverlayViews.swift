@@ -18,15 +18,17 @@ final class OverlayLabel: NSTextField {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-/// A clickable row of an overlay panel: `bg3` behind it while it is selected
-/// or hovered, a pointing hand, and a click that goes to `onClick`.
+/// A clickable row of an overlay panel (spec 2611.0018 D10): `bg3` and a
+/// `focus-border` outline while it is selected, a quieter `rowHover` while it
+/// is hovered, a pointing hand, and a click that goes to `onClick` with its
+/// click count.
 @MainActor
 class OverlayRowView: NSView {
-    var onClick: (() -> Void)?
+    var onClick: ((Int) -> Void)?
     var selected = false {
         didSet { paint() }
     }
-    private var hovered = false
+    private(set) var hovered = false
     private var tracking: NSTrackingArea?
 
     override var isFlipped: Bool { true }
@@ -39,7 +41,9 @@ class OverlayRowView: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     func paint() {
-        layer?.backgroundColor = (selected || hovered ? Theme.bg3 : NSColor.clear).cgColor
+        layer?.backgroundColor = (selected ? Theme.bg3 : hovered ? Theme.rowHover : NSColor.clear).cgColor
+        layer?.borderWidth = selected ? 1 : 0
+        layer?.borderColor = Theme.focusBorder.cgColor
     }
 
     override func updateTrackingAreas() {
@@ -62,7 +66,7 @@ class OverlayRowView: NSView {
         paint()
     }
 
-    override func mouseDown(with event: NSEvent) { onClick?() }
+    override func mouseDown(with event: NSEvent) { onClick?(event.clickCount) }
 
     override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
 }

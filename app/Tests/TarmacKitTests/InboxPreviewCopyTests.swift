@@ -37,6 +37,7 @@ final class InboxPreviewCopyTests: XCTestCase {
     }
 
     func testThePanesWordsAreEnglish() {
+        XCTAssertEqual(InboxCopy.go, "go ↵")
         XCTAssertEqual(InboxCopy.noText, "no text")
         XCTAssertEqual(InboxCopy.nothingSelected, "preview · nothing selected")
     }
