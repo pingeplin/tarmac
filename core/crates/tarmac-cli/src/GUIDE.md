@@ -212,6 +212,14 @@ ends. It prints the new terminal's id:
 {"term":"t9"}
 ```
 
+Open every new terminal with `tarmac term new`. Do not open Terminal, iTerm or
+another window with `open -a` or `osascript`: that terminal runs outside
+Tarmac, so the user does not see it on the board, and Tarmac cannot report its
+exit, its bell or its agent's reports. Use a card for work the user should
+see, or work that runs on its own: a second agent session, a dev server, a
+long build or a watch. A short command whose output only you need runs in your
+own shell. Open one card for each task, not one for each step.
+
 The folder is yours, or `--cwd DIR` (a relative one is taken from yours). The
 card goes on your terminal's board; outside Tarmac, on the active board. Your
 card stays prime and keeps the keys. With `wait`, one agent can start a second
