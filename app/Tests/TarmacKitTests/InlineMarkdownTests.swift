@@ -218,8 +218,9 @@ final class InlineMarkdownTests: XCTestCase {
         XCTAssertEqual(line("```\nx\n```sh\ny"), [c("x"), p(" y")])
     }
 
-    func testAnOrderedItemNeedsDigits() {
+    func testAnOrderedItemNeedsASCIIDigits() {
         XCTAssertEqual(line(". x"), [p(". x")])
+        XCTAssertEqual(line("١. x"), [p("١. x")])
     }
 
     // MARK: - Fitting a width (D10)
@@ -246,6 +247,7 @@ final class InlineMarkdownTests: XCTestCase {
 
     func testD10TheCutKeepsGraphemesWhole() {
         XCTAssertEqual(InlineText.literal("a👍🏽bc").prefix(fitting: 3, measure: units).runs, [p("a👍🏽…")])
+        XCTAssertEqual(InlineText.literal("👍🏽👍🏽👍🏽👍🏽").prefix(fitting: 2, measure: units).runs, [p("👍🏽…")])
     }
 
     // MARK: - Normal form

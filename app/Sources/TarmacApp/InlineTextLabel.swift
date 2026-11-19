@@ -52,8 +52,8 @@ final class InlineTextLabel: NSView {
         didSet { if text != oldValue { needsDisplay = true } }
     }
 
-    /// Set again on every theme or font change, so the faces are read again
-    /// even when the design size is the same.
+    /// The faces are read again on every set, even for the same design size:
+    /// a row sets its style again after a theme or font change.
     var style: Style {
         didSet {
             faces = Faces(design: style.design)
@@ -79,13 +79,14 @@ final class InlineTextLabel: NSView {
     override func accessibilityRole() -> NSAccessibility.Role? { .staticText }
     override func accessibilityValue() -> Any? { text.plain }
 
-    /// The untruncated text's line box, as `ChromeLabel.textSize`.
+    /// The untruncated text's line box: its width, by a text field's fit height.
     var textSize: NSSize { NSSize(width: width(of: text), height: faces.lineHeight) }
 
-    /// What a text field of this text fits to: the line box and the cell
-    /// insets, rounded up so that `draw` never finds a fitting text too wide.
+    /// What a text field of this text fits to: the line box, rounded up as
+    /// `place` rounds it so that `draw` never finds a fitting text too wide,
+    /// and the cell insets.
     var fittedSize: NSSize {
-        NSSize(width: (textSize.width + 2 * ChromeLabel.cellInset).rounded(.up), height: faces.lineHeight)
+        NSSize(width: textSize.width.rounded(.up) + 2 * ChromeLabel.cellInset, height: faces.lineHeight)
     }
 
     /// Puts the line box's top-left corner at `origin`, as `ChromeLabel.place`.
