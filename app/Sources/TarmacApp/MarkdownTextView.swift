@@ -174,7 +174,7 @@ private final class CodeBoxLayoutManager: NSLayoutManager {
             rect.origin.x = 0
             rect.size.width = container.size.width
             rect = rect.offsetBy(dx: origin.x, dy: origin.y).insetBy(dx: 0, dy: -Self.blockPadY)
-            CodeBox.draw(rect, radius: 4, fill: look.blockFill, border: look.border)
+            CodeBox.draw(Self.whole(rect), radius: 4, fill: look.blockFill, border: look.border)
         }
         for range in Self.ranges(of: .codeSpan, in: storage, within: chars) {
             // Line by line, by the glyphs: an enclosing rect runs to the end of
@@ -190,9 +190,14 @@ private final class CodeBoxLayoutManager: NSLayoutManager {
                 line.origin.x -= Self.spanInset
                 line.size.width += 2
                 line.size.height -= look.lineSpacing
-                CodeBox.draw(line, radius: 3, fill: look.spanFill, border: look.border)
+                CodeBox.draw(Self.whole(line), radius: 3, fill: look.spanFill, border: look.border)
             }
         }
+    }
+
+    /// On whole points, so a 1 px border is sharp on a 1× display too.
+    private static func whole(_ rect: NSRect) -> NSRect {
+        NSRect(x: rect.minX.rounded(), y: rect.minY.rounded(), width: rect.width.rounded(), height: rect.height.rounded())
     }
 
     private static func ranges(of key: NSAttributedString.Key, in storage: NSTextStorage, within: NSRange) -> [NSRange] {
