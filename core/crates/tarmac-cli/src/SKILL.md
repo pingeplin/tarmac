@@ -12,10 +12,11 @@ tarmac open <path>   # show a file as a live card on the board
 tarmac skill         # print the full guide for coding agents
 ```
 
-**Run `tarmac skill` and read all of its output before you write an HTML
-card.** An HTML card runs in a strict sandbox and a frozen-zoom layout, and a
-page that breaks their rules fails silently: a blank or broken card, with no
-error. The rules are in the guide and not in this file, because the guide
+**Run `tarmac skill` and read its output before you use any `tarmac` verb
+other than `open`, and read all of it before you write an HTML card.** An
+HTML card runs in a strict sandbox and a frozen-zoom layout, and a page that
+breaks their rules fails silently: a blank or broken card, with no error. The
+rules are in the guide and not in this file, because the guide
 always matches the installed `tarmac` and this file does not change with it.
 
 To show a markdown file, `tarmac open <path>` is all you need. To update a

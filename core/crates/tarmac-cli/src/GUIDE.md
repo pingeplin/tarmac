@@ -9,11 +9,18 @@ Nothing here parses your output or infers your intent. A card appears because a
 process called `tarmac open`; it pulses because the file's mtime changed. The
 file is the entire interface.
 
-This guide covers what is worth knowing: how to surface a file, how to say that
-you are blocked or done, and how to write an HTML file that survives the board's
-sandbox and zoom model.
+This guide covers how to surface a file, how to say that you are blocked or
+done, how to wait on what Tarmac sees, how to open another terminal card, and
+how to write an HTML file that survives the board's sandbox and zoom model.
+Read the part you need. Read all of *HTML cards* before you write one: a page
+that breaks its rules fails with no error.
 
 ## Your terminal
+
+Inside a Tarmac terminal the environment carries `TARMAC_TERM_ID`, your
+terminal's id. The app sets it; you do not. `report` and `resume` need it.
+`open` and `term new` use it to join the new card to yours. Outside Tarmac it
+is not set.
 
 A shell in a Tarmac terminal inherits the daemon's open file limit, so
 `ulimit -n` there is at least 10240 unless the hard limit is lower, not
@@ -74,7 +81,8 @@ sent it. Rules:
 
 ## Reports from Claude Code
 
-Run `tarmac hooks install` once. It adds four hooks to Claude Code's settings,
+The user runs `tarmac hooks install` once. It changes Claude Code's own
+settings, so leave that step to the user. It adds four hooks to them,
 each a call to `tarmac hooks run claude || true`, and from then on every Claude
 session in a Tarmac terminal reports on its own:
 
