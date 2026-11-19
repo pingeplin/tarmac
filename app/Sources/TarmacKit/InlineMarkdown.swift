@@ -2,8 +2,8 @@
 /// blocks, joined by one space.
 public enum InlineMarkdown {
     public static func line(_ text: String) -> InlineText {
-        let runs = MarkdownBlocks.parse(text).map(flat).filter { !$0.isEmpty }.joined(separator: [InlineRun(" ", .plain)])
-        let rendered = InlineText(Array(runs)).settled
+        let runs = MarkdownBlocks.parse(text).map(flat).filter { !$0.isEmpty }
+        let rendered = InlineText(Array(runs.joined(separator: [InlineRun(" ", .plain)]))).settled
         return rendered.runs.isEmpty ? .literal(ChromeText.oneLine(text)) : rendered
     }
 
