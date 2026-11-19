@@ -17,17 +17,33 @@ enum InlineMarks {
                 plain = ""
                 index = next
             } else {
-                plain.append(chars[index])
-                index += 1
+                // A run of backticks that opens no span is literal as a whole:
+                // a span never starts inside it.
+                let next = index + max(backticks(chars, index), 1)
+                plain.append(contentsOf: chars[index..<next])
+                index = next
             }
         }
         runs.append(InlineRun(plain, .plain))
         return runs
     }
 
+    /// A run of backticks, the content, and the next run of the same length.
     private static func code(_ chars: [Character], _ start: Int) -> (InlineRun, Int)? {
-        guard chars[start] == "`", let end = chars[(start + 1)...].firstIndex(of: "`") else { return nil }
-        return span(chars[(start + 1)..<end], .code, next: end + 1)
+        let length = backticks(chars, start)
+        guard length > 0 else { return nil }
+        let open = start + length
+        var at = open
+        while let close = chars[at...].firstIndex(of: "`") {
+            let closing = backticks(chars, close)
+            if closing == length { return span(chars[open..<close], .code, next: close + length) }
+            at = close + closing
+        }
+        return nil
+    }
+
+    private static func backticks(_ chars: [Character], _ start: Int) -> Int {
+        chars[start...].prefix { $0 == "`" }.count
     }
 
     private static func link(_ chars: [Character], _ start: Int) -> (InlineRun, Int)? {

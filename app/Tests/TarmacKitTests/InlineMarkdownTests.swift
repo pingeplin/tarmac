@@ -199,11 +199,23 @@ final class InlineMarkdownTests: XCTestCase {
     }
 
     func testS36ALineThatOpensAndClosesItsBackticksIsNotAFence() {
-        XCTAssertEqual(line("ok\n```make qa``` failed"), [p("ok ``"), c("make qa"), p("`` failed")])
-        XCTAssertEqual(
-            line("```make qa``` failed\nsee the log"), [p("``"), c("make qa"), p("`` failed see the log")]
-        )
-        XCTAssertEqual(line("```sh`\nx"), [p("``"), c("sh"), p(" x")])
+        XCTAssertEqual(line("ok\n```make qa``` failed"), [p("ok "), c("make qa"), p(" failed")])
+        XCTAssertEqual(line("```make qa``` failed\nsee the log"), [c("make qa"), p(" failed see the log")])
+        XCTAssertEqual(line("```sh`\nx"), [p("```sh` x")])
+    }
+
+    func testS38ACodeSpanClosesAtARunOfAsManyBackticksAsOpenedIt() {
+        XCTAssertEqual(line("a ``b`` c"), [p("a "), c("b"), p(" c")])
+        XCTAssertEqual(line("``a`b``"), [c("a`b")])
+        XCTAssertEqual(line("`a``b`"), [c("a``b")])
+        XCTAssertEqual(line("x ``` y ``` z"), [p("x "), c("y"), p(" z")])
+    }
+
+    func testS38ARunOfBackticksWithNoRunOfItsLengthAfterItIsLiteral() {
+        XCTAssertEqual(line("``a`"), [p("``a`")])
+        XCTAssertEqual(line("`a``"), [p("`a``")])
+        XCTAssertEqual(line("``a` `b`"), [p("``a` "), c("b")])
+        XCTAssertEqual(line("`` ``"), [p("`` ``")])
     }
 
     func testS37AFenceOfMoreBackticksStillOpensAndALineInsideAFenceStillClosesIt() {

@@ -53,9 +53,7 @@ final class MarkdownBlocksTests: XCTestCase {
     }
 
     func testALineThatOpensAndClosesItsBackticksIsAParagraph() {
-        XCTAssertEqual(
-            blocks("```make qa``` failed\nsee the log"), [para(p("``"), c("make qa"), p("`` failed see the log"))]
-        )
+        XCTAssertEqual(blocks("```make qa``` failed\nsee the log"), [para(c("make qa"), p(" failed see the log"))])
     }
 
     func testS21OnlyMarkupHasNoBlocks() {
