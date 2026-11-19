@@ -1717,7 +1717,8 @@ to the row's width by `InlineText.prefix(fitting:measure:)`), and `<board> › <
 **preview pane** at the panel's foot (spec 2611.0018, `InboxPreviewView`):
 the kind tag, title, age and a `go ↵` button, then the whole text as blocks
 (`MarkdownBlocks.parse`: paragraphs, headings, lists, code blocks, drawn by
-`MarkdownTextView` on a TextKit 1 layout manager that draws the code boxes)
+`MarkdownTextView`, a TextKit 1 text view that draws the code boxes itself;
+a code span's box has the row's look, `CodeSpanBox`)
 between corner quote marks, scrolling inside the pane, then the place; a bell
 or exit says `no text`. A drag bar (`InboxSplitGrip`) between the list and the
 pane resizes it within `InboxPreviewSplit`'s bounds, a double-click resets it,

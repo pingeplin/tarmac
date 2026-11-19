@@ -15,21 +15,6 @@ final class InlineTextLabel: NSView {
         var boxBorder: NSColor
     }
 
-    /// The faces a style's design size resolves to, read once per `style`:
-    /// the label is measured several times for each cut.
-    private struct Faces {
-        let marks: MarkFaces
-        /// What a one-line text field of the base face fits to, so this label
-        /// keeps the height and baseline of the text field it replaces.
-        let lineHeight: CGFloat
-
-        @MainActor
-        init(design: CGFloat) {
-            marks = MarkFaces(design: design)
-            lineHeight = NSAttributedString(string: " ", attributes: [.font: marks.base]).size().height
-        }
-    }
-
     private struct Piece {
         let string: NSAttributedString
         let width: CGFloat
@@ -38,7 +23,7 @@ final class InlineTextLabel: NSView {
         var advance: CGFloat { width + (boxed ? 2 * InlineTextLabel.boxPad : 0) }
     }
 
-    private nonisolated static let boxPad: CGFloat = 3
+    private nonisolated static let boxPad = CodeSpanBox.padding
     private static let boxRadius: CGFloat = 3
 
     var text = InlineText([]) {
@@ -49,18 +34,21 @@ final class InlineTextLabel: NSView {
     /// a row sets its style again after a theme or font change.
     var style: Style {
         didSet {
-            faces = Faces(design: style.design)
+            faces = MarkFaces(design: style.design)
             needsDisplay = true
         }
     }
 
-    private var faces: Faces
+    /// The faces the style's design size resolves to, read once per `style`:
+    /// the label is measured several times for each cut. Its `lineHeight`
+    /// keeps the height and baseline of the text field this label replaces.
+    private var faces: MarkFaces
 
     override var isFlipped: Bool { true }
 
     init(style: Style) {
         self.style = style
-        faces = Faces(design: style.design)
+        faces = MarkFaces(design: style.design)
         super.init(frame: .zero)
     }
 
@@ -113,8 +101,8 @@ final class InlineTextLabel: NSView {
 
     private func pieces(_ text: InlineText) -> [Piece] {
         text.runs.map { run in
-            var attributes: [NSAttributedString.Key: Any] = [.font: faces.marks.base, .foregroundColor: style.color]
-            attributes.merge(faces.marks.attributes(for: run.mark)) { $1 }
+            var attributes: [NSAttributedString.Key: Any] = [.font: faces.base, .foregroundColor: style.color]
+            attributes.merge(faces.attributes(for: run.mark)) { $1 }
             let string = NSAttributedString(string: run.text, attributes: attributes)
             return Piece(string: string, width: string.size().width, boxed: run.mark == .code)
         }

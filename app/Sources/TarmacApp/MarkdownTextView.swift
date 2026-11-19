@@ -12,7 +12,7 @@ import TarmacKit
 final class MarkdownTextView: NSTextView {
     static let blockPadY: CGFloat = 6
     /// Room around the text for the code boxes, which reach past the glyphs.
-    static let inset = NSSize(width: CodeSpanBox.inset.rounded(.up), height: blockPadY)
+    static let inset = NSSize(width: CodeSpanBox.padding.rounded(.up), height: blockPadY)
 
     private var style: MarkdownStyle?
     /// The width `fit` last laid the text out at, and the height it found.
@@ -76,14 +76,17 @@ final class MarkdownTextView: NSTextView {
             // Line by line, by the glyphs: an enclosing rect runs to the end of
             // a line the span wraps on.
             let span = glyphs(range)
-            layout.enumerateLineFragments(forGlyphRange: span) { _, _, _, line, _ in
+            layout.enumerateLineFragments(forGlyphRange: span) { fragment, _, _, line, _ in
                 let piece = NSIntersectionRange(line, span)
                 guard piece.length > 0 else { return }
                 let box = CodeSpanBox.rect(
                     glyphs: layout.boundingRect(forGlyphRange: piece, in: container),
-                    lineSpacing: style.lineSpacing, lastLineOfText: NSMaxRange(line) == layout.numberOfGlyphs
+                    baseline: fragment.minY + layout.location(forGlyphAt: piece.location).y, face: style.codeFace
                 ).offsetBy(dx: origin.x, dy: origin.y)
-                CodeBox.draw(Self.whole(box), radius: 3, fill: Theme.bg2, border: Theme.line)
+                CodeBox.draw(
+                    self.backingAlignedRect(box, options: .alignAllEdgesNearest), radius: 3,
+                    fill: Theme.bg0, border: Theme.line
+                )
             }
         }
     }
@@ -111,8 +114,15 @@ private struct MarkdownStyle {
     private static let blockGap: CGFloat = 7
     private static let itemGap: CGFloat = 2
 
-    private let marks = MarkFaces(design: design)
-    let lineSpacing = (Theme.chrome(design) * 0.4).rounded()
+    private let marks: MarkFaces
+    private let lineSpacing = (Theme.chrome(design) * 0.4).rounded()
+    let codeFace: CodeSpanBox.Face
+
+    init() {
+        marks = MarkFaces(design: Self.design)
+        codeFace = marks.codeFace()
+    }
+
     private var body: NSFont { marks.base }
 
     func attributed(_ blocks: [MarkdownBlock]) -> NSAttributedString {
@@ -172,8 +182,8 @@ private struct MarkdownStyle {
     ) -> NSAttributedString {
         let out = NSMutableAttributedString()
         func makeRoom() {
-            guard out.length > 0 else { return }
-            out.addAttribute(.kern, value: CodeSpanBox.kern, range: NSRange(location: out.length - 1, length: 1))
+            guard let last = CodeSpanBox.kernRange(endOf: out.string) else { return }
+            out.addAttribute(.kern, value: CodeSpanBox.kern, range: NSRange(last))
         }
         for run in text.runs {
             var attributes: [NSAttributedString.Key: Any] = [
