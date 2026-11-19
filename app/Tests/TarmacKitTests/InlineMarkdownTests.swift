@@ -198,6 +198,19 @@ final class InlineMarkdownTests: XCTestCase {
         XCTAssertEqual(line("```\nx\n```sh\ny"), [c("x"), p(" y")])
     }
 
+    func testS36ALineThatOpensAndClosesItsBackticksIsNotAFence() {
+        XCTAssertEqual(line("ok\n```make qa``` failed"), [p("ok ``"), c("make qa"), p("`` failed")])
+        XCTAssertEqual(
+            line("```make qa``` failed\nsee the log"), [p("``"), c("make qa"), p("`` failed see the log")]
+        )
+        XCTAssertEqual(line("```sh`\nx"), [p("``"), c("sh"), p(" x")])
+    }
+
+    func testS37AFenceOfMoreBackticksStillOpensAndALineInsideAFenceStillClosesIt() {
+        XCTAssertEqual(line("````\nx\n````"), [c("x")])
+        XCTAssertEqual(line("```\nx\n```y``` z\nw"), [c("x"), p(" w")])
+    }
+
     func testAnOrderedItemNeedsASCIIDigits() {
         XCTAssertEqual(line(". x"), [p(". x")])
         XCTAssertEqual(line("١. x"), [p("١. x")])
