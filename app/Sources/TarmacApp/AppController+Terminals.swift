@@ -598,7 +598,7 @@ extension AppController {
                 ),
                 signal: signal,
                 label: OffscreenHintLayout.pillLabel(
-                    signal: signal, name: s.label, hhmm: hhmm(s.bellAt ?? Date()), quote: card.report?.text
+                    signal: signal, name: s.label, hhmm: hhmm(s.bellAt ?? Date()), quote: card.report?.quote
                 ),
                 z: card.worldFrame.z,
                 signalAt: OffscreenHintLayout.signalAt(

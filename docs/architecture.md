@@ -1660,7 +1660,9 @@ Only terminals signal, one signal each (`CardSignal.of`, spec
 an unread inbox `exit` item, an unread `done` report, `live` while the PTY is
 alive. A read report makes no signal. The ⏎ flight takes the highest
 `(rank, z)`: blocked 4, bell 3, exit 2, done 1, live 0. A report pill quotes
-the start of its text (24 Unicode scalars, one line), an exit pill reads
+the start of its text as one line of inline markdown (spec 2611.0017:
+`InlineMarkdown` parses it once into `TermReport.quote`, and the 24 Unicode
+scalars count the rendered text; `InlineTextLabel` draws it), an exit pill reads
 `exited`; blocked and bell are amber, done `Theme.ok`, exit
 `Theme.consoleError`, and the minimap uses the same colours.
 
@@ -1709,7 +1711,8 @@ of each per terminal, newest first, at most 200. `⌘I` or the title-bar button
 docked: the board keeps its frame, nothing pans, and the off-screen test, the
 pills, the minimap and the toasts keep to the area it leaves uncovered. Each
 row reads its kind tag (the `ChipView` form), `report · during <proc>`, `bell`
-or the exit toast's words, its age, the quote, and `<board> › <terminal> ·
+or the exit toast's words, its age, the quote (one line of inline markdown, cut
+to the row's width by `InlineText.prefix(fitting:measure:)`), and `<board> › <terminal> ·
 <cwd>`. `Return` or a click jumps: on another board, one switch, landed in
 `finishArrive`; then a live card becomes prime and takes the keys, a dead one
 is selected and takes the keys for its reopen offer, and one that went removes

@@ -16,7 +16,6 @@ final class InboxRowView: OverlayRowView {
     @MainActor
     private enum Font {
         static var title: NSFont { Theme.mono(11) }
-        static var quote: NSFont { Theme.mono(11) }
         static var place: NSFont { Theme.mono(10) }
         static var age: NSFont { Theme.mono(10) }
     }
@@ -24,16 +23,24 @@ final class InboxRowView: OverlayRowView {
     private let kindTag = ChipView()
     private let title = OverlayLabel()
     private let age = OverlayLabel()
-    private let quote = OverlayLabel()
+    private let quote = InlineTextLabel(style: quoteStyle(read: false, selected: false))
     private let place = OverlayLabel()
 
     override init() {
         super.init()
-        for label in [title, quote, place] { label.lineBreakMode = .byTruncatingTail }
+        for label in [title, place] { label.lineBreakMode = .byTruncatingTail }
         for view in [kindTag, title, age, quote, place] { addSubview(view) }
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// A read row's text goes faint, marks too; a selected row's code box is `bg2`.
+    private static func quoteStyle(read: Bool, selected: Bool) -> InlineTextLabel.Style {
+        InlineTextLabel.Style(
+            design: 11, color: read ? Theme.faint : Theme.muted, boxFill: selected ? Theme.bg2 : Theme.bg1,
+            boxBorder: Theme.line
+        )
+    }
 
     func configure(_ row: InboxRow, selected: Bool) {
         self.selected = selected
@@ -45,10 +52,8 @@ final class InboxRowView: OverlayRowView {
         age.attributedStringValue = NSAttributedString(
             string: row.age, attributes: [.font: Font.age, .foregroundColor: Theme.faint]
         )
-        quote.attributedStringValue = NSAttributedString(
-            string: row.quote ?? "",
-            attributes: [.font: Font.quote, .foregroundColor: row.read ? Theme.faint : Theme.muted]
-        )
+        quote.style = Self.quoteStyle(read: row.read, selected: selected)
+        quote.text = row.quote ?? InlineText([])
         quote.isHidden = row.quote == nil
         place.attributedStringValue = NSAttributedString(
             string: row.place, attributes: [.font: Font.place, .foregroundColor: Theme.faint]
@@ -89,8 +94,8 @@ final class InboxRowView: OverlayRowView {
             width: max(0, min(titleSize.width, age.frame.minX - Metric.gap - titleX)), height: titleSize.height
         )
         var y = Metric.padY + first + Metric.lineGap
-        for label in [quote, place] where !label.isHidden {
-            let size = label.fittedSize
+        let lines: [(NSView, NSSize)] = [(quote, quote.fittedSize), (place, place.fittedSize)]
+        for (label, size) in lines where !label.isHidden {
             label.frame = NSRect(
                 x: Metric.padX, y: y, width: min(size.width, width - Metric.padX * 2), height: size.height
             )

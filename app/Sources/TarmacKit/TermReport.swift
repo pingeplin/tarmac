@@ -18,6 +18,9 @@ public struct TermReport: Equatable, Sendable {
     public let atMs: UInt64
     public let proc: String?
     public let read: Bool
+    /// The text as inline markdown, parsed once: a pill reads it on every
+    /// viewport change (spec 2611.0017).
+    public let quote: InlineText?
 
     public init(kind: Kind, text: String?, atMs: UInt64, proc: String?, read: Bool) {
         self.kind = kind
@@ -25,6 +28,7 @@ public struct TermReport: Equatable, Sendable {
         self.atMs = atMs
         self.proc = proc
         self.read = read
+        quote = text.map(InlineMarkdown.line)
     }
 
     /// A `term_report` frame's terminal, its place and its report; nil for any other

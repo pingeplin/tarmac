@@ -9,7 +9,7 @@ final class OffscreenHintLayoutTests: XCTestCase {
     private typealias Layout = OffscreenHintLayout
 
     private func hint(_ cardID: String, _ center: CGPoint, _ signal: CardSignal, _ z: Int) -> Layout.Hint {
-        Layout.Hint(cardID: cardID, centerView: center, signal: signal, label: cardID, z: z, signalAt: nil)
+        Layout.Hint(cardID: cardID, centerView: center, signal: signal, label: .literal(cardID), z: z, signalAt: nil)
     }
 
     // MARK: - flyTarget
@@ -43,7 +43,7 @@ final class OffscreenHintLayoutTests: XCTestCase {
     // MARK: - shown (#373)
 
     private func signalled(_ cardID: String, _ signal: CardSignal, at: UInt64?, z: Int = 0) -> Layout.Hint {
-        Layout.Hint(cardID: cardID, centerView: .zero, signal: signal, label: cardID, z: z, signalAt: at)
+        Layout.Hint(cardID: cardID, centerView: .zero, signal: signal, label: .literal(cardID), z: z, signalAt: at)
     }
 
     private func lives(_ count: Int, suffix: String = "", zBase: Int = 0) -> [Layout.Hint] {
@@ -154,18 +154,18 @@ final class OffscreenHintLayoutTests: XCTestCase {
     // MARK: - pillLabel
 
     func testPillLabelJoinsNameAndTimeWithAMiddleDotForABellAndIsTheNameForLive() {
-        XCTAssertEqual(Layout.pillLabel(signal: .bell, name: "notes.md", hhmm: "14:32", quote: nil), "notes.md · 14:32")
-        XCTAssertEqual(Layout.pillLabel(signal: .live, name: "agent", hhmm: "14:32", quote: "ignored"), "agent")
+        XCTAssertEqual(Layout.pillLabel(signal: .bell, name: "notes.md", hhmm: "14:32", quote: nil).plain, "notes.md · 14:32")
+        XCTAssertEqual(Layout.pillLabel(signal: .live, name: "agent", hhmm: "14:32", quote: InlineMarkdown.line("ignored")).plain, "agent")
     }
 
     func testS25AReportPillQuotesTheStartOfItsTextOnOneLine() {
         XCTAssertEqual(
-            Layout.pillLabel(signal: .blocked, name: "claude", hhmm: "14:32", quote: "abcdefghij\n  klmnopqrstuvwxyz0123"),
+            Layout.pillLabel(signal: .blocked, name: "claude", hhmm: "14:32", quote: InlineMarkdown.line("abcdefghij\n  klmnopqrstuvwxyz0123")).plain,
             "claude · “abcdefghij klmnopqrstuv…”"
         )
         let exactly24 = "abcdefghijklmnopqrstuvwx"
         XCTAssertEqual(
-            Layout.pillLabel(signal: .done, name: "claude", hhmm: "14:32", quote: exactly24), "claude · “\(exactly24)”"
+            Layout.pillLabel(signal: .done, name: "claude", hhmm: "14:32", quote: InlineMarkdown.line(exactly24)).plain, "claude · “\(exactly24)”"
         )
     }
 
@@ -175,16 +175,67 @@ final class OffscreenHintLayoutTests: XCTestCase {
         let text = String(repeating: "e\u{301}", count: 13)
         let kept = String(repeating: "e\u{301}", count: 11) + "e"
         XCTAssertEqual(
-            Layout.pillLabel(signal: .blocked, name: "claude", hhmm: "14:32", quote: text).unicodeScalars.map(\.value),
+            Layout.pillLabel(signal: .blocked, name: "claude", hhmm: "14:32", quote: InlineMarkdown.line(text)).plain.unicodeScalars.map(\.value),
             "claude · “\(kept)…”".unicodeScalars.map(\.value)
         )
     }
 
     func testS25ADoneWithNoTextAnExitABellAndLiveReadTheirWords() {
-        XCTAssertEqual(Layout.pillLabel(signal: .done, name: "claude", hhmm: "14:32", quote: nil), "claude · report")
-        XCTAssertEqual(Layout.pillLabel(signal: .exit, name: "claude", hhmm: "14:32", quote: nil), "claude · exited")
-        XCTAssertEqual(Layout.pillLabel(signal: .bell, name: "claude", hhmm: "14:32", quote: "x"), "claude · 14:32")
-        XCTAssertEqual(Layout.pillLabel(signal: .live, name: "claude", hhmm: "14:32", quote: nil), "claude")
+        XCTAssertEqual(Layout.pillLabel(signal: .done, name: "claude", hhmm: "14:32", quote: nil).plain, "claude · report")
+        XCTAssertEqual(Layout.pillLabel(signal: .exit, name: "claude", hhmm: "14:32", quote: nil).plain, "claude · exited")
+        XCTAssertEqual(Layout.pillLabel(signal: .bell, name: "claude", hhmm: "14:32", quote: InlineMarkdown.line("x")).plain, "claude · 14:32")
+        XCTAssertEqual(Layout.pillLabel(signal: .live, name: "claude", hhmm: "14:32", quote: nil).plain, "claude")
+    }
+
+    // MARK: - pillLabel, inline markdown (spec 2611.0017)
+
+    private func pill(name: String = "claude", _ quote: String) -> [InlineRun] {
+        Layout.pillLabel(signal: .blocked, name: name, hhmm: "14:32", quote: InlineMarkdown.line(quote)).runs
+    }
+
+    func testS7ThePillCountsRenderedScalars() {
+        XCTAssertEqual(
+            pill("Need OK to run [cargo test](u) now please"),
+            [InlineRun("claude · “Need OK to run ", .plain), InlineRun("cargo te", .link), InlineRun("…”", .plain)]
+        )
+    }
+
+    func testS10APillQuoteWithNoMarkdownReadsAsBefore() {
+        for text in S10.texts {
+            XCTAssertEqual(
+                Layout.pillLabel(signal: .done, name: "claude", hhmm: "14:32", quote: InlineMarkdown.line(text)),
+                .literal("claude · “\(ChromeText.oneLine(text))”"), text
+            )
+        }
+    }
+
+    func testS8ThePillsNameIsLiteral() {
+        XCTAssertEqual(
+            Layout.pillLabel(signal: .blocked, name: "*scratch*", hhmm: "14:32", quote: InlineMarkdown.line("ok")),
+            .literal("*scratch* · “ok”")
+        )
+    }
+
+    func testS19APillCutInACodeRunClosesTheRunBeforeTheEllipsis() {
+        XCTAssertEqual(
+            pill("`abcdefghijklmnopqrstuvwxyz`"),
+            [InlineRun("claude · “", .plain), InlineRun("abcdefghijklmnopqrstuvw", .code), InlineRun("…”", .plain)]
+        )
+    }
+
+    func testS21ExactlyTwentyFourRenderedScalarsAreNotCut() {
+        XCTAssertEqual(
+            pill("**abcdefghijklmnopqrstuvwx**"),
+            [InlineRun("claude · “", .plain), InlineRun("abcdefghijklmnopqrstuvwx", .bold), InlineRun("”", .plain)]
+        )
+    }
+
+    func testS23OtherPillKindsAreOnePlainRunOfTodaysString() {
+        XCTAssertEqual(Layout.pillLabel(signal: .bell, name: "notes.md", hhmm: "14:32", quote: nil), .literal("notes.md · 14:32"))
+        XCTAssertEqual(Layout.pillLabel(signal: .live, name: "agent", hhmm: "14:32", quote: InlineMarkdown.line("**x**")), .literal("agent"))
+        XCTAssertEqual(Layout.pillLabel(signal: .exit, name: "claude", hhmm: "14:32", quote: nil), .literal("claude · exited"))
+        XCTAssertEqual(Layout.pillLabel(signal: .done, name: "claude", hhmm: "14:32", quote: nil), .literal("claude · report"))
+        XCTAssertEqual(Layout.pillLabel(signal: .bell, name: "claude", hhmm: "14:32", quote: InlineMarkdown.line("**x**")), .literal("claude · 14:32"))
     }
 
     // MARK: - stackPills
@@ -446,7 +497,7 @@ final class OffscreenHintLayoutTests: XCTestCase {
         let options = Layout.Options(
             edgeInset: 18, edgeMargin: 10, stackGap: 8, pillSize: { _ in size }, obstacles: obstacles
         )
-        let hint = Layout.Hint(cardID: "h", centerView: center, signal: .live, label: "h", z: 0, signalAt: nil)
+        let hint = Layout.Hint(cardID: "h", centerView: center, signal: .live, label: .literal("h"), z: 0, signalAt: nil)
         return try XCTUnwrap(Layout.stackPills([hint], in: view, options: options).first)
     }
 

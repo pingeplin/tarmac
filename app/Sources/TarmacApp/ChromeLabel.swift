@@ -14,7 +14,7 @@ extension NSFont {
 /// and make every box 4 pt too wide.
 @MainActor
 final class ChromeLabel: NSTextField, FontFollowing, ThemeFollowing {
-    private static let cellInset: CGFloat = 2
+    static let cellInset: CGFloat = 2
 
     private var size: CGFloat = NSFont.systemFontSize
     private var color: () -> NSColor = { .labelColor }
