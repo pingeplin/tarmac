@@ -11,9 +11,8 @@ import TarmacKit
 @MainActor
 final class MarkdownTextView: NSTextView {
     static let blockPadY: CGFloat = 6
-    static let spanInset: CGFloat = 3.5
     /// Room around the text for the code boxes, which reach past the glyphs.
-    static let inset = NSSize(width: spanInset.rounded(.up), height: blockPadY)
+    static let inset = NSSize(width: CodeSpanBox.inset.rounded(.up), height: blockPadY)
 
     private var style: MarkdownStyle?
     /// The width `fit` last laid the text out at, and the height it found.
@@ -80,10 +79,10 @@ final class MarkdownTextView: NSTextView {
             layout.enumerateLineFragments(forGlyphRange: span) { _, _, _, line, _ in
                 let piece = NSIntersectionRange(line, span)
                 guard piece.length > 0 else { return }
-                var box = layout.boundingRect(forGlyphRange: piece, in: container).offsetBy(dx: origin.x, dy: origin.y)
-                box.origin.x -= Self.spanInset
-                box.size.width += 2
-                box.size.height -= style.lineSpacing
+                let box = CodeSpanBox.rect(
+                    glyphs: layout.boundingRect(forGlyphRange: piece, in: container),
+                    lineSpacing: style.lineSpacing, lastLineOfText: NSMaxRange(line) == layout.numberOfGlyphs
+                ).offsetBy(dx: origin.x, dy: origin.y)
                 CodeBox.draw(Self.whole(box), radius: 3, fill: Theme.bg2, border: Theme.line)
             }
         }
@@ -174,7 +173,7 @@ private struct MarkdownStyle {
         let out = NSMutableAttributedString()
         func makeRoom() {
             guard out.length > 0 else { return }
-            out.addAttribute(.kern, value: 2 * MarkdownTextView.spanInset - 2, range: NSRange(location: out.length - 1, length: 1))
+            out.addAttribute(.kern, value: CodeSpanBox.kern, range: NSRange(location: out.length - 1, length: 1))
         }
         for run in text.runs {
             var attributes: [NSAttributedString.Key: Any] = [
