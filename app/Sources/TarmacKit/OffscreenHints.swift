@@ -81,14 +81,14 @@ public enum OffscreenHintLayout {
     public static let quoteScalars = 24
 
     /// A bell reads `name · hhmm` (middle dot U+00B7); a report quotes the
-    /// start of its text as one line of inline markdown, cut by rendered
-    /// scalars (spec 2611.0017); an exit says so; live reads the name. Only
-    /// the quote is parsed.
-    public static func pillLabel(signal: CardSignal, name: String, hhmm: String, quote: String?) -> InlineText {
+    /// start of its text, parsed as one line of inline markdown
+    /// (`TermReport.quote`), cut by rendered scalars (spec 2611.0017); an exit
+    /// says so; live reads the name.
+    public static func pillLabel(signal: CardSignal, name: String, hhmm: String, quote: InlineText?) -> InlineText {
         switch signal {
         case .blocked, .done:
             guard let quote else { return .literal("\(name) · report") }
-            return .literal("\(name) · ") + InlineMarkdown.line(quote).prefix(scalars: quoteScalars).quoted
+            return .literal("\(name) · ") + quote.prefix(scalars: quoteScalars).quoted
         case .bell: return .literal("\(name) · \(hhmm)")
         case .exit: return .literal("\(name) · exited")
         case .live: return .literal(name)

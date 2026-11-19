@@ -82,8 +82,11 @@ final class InlineTextLabel: NSView {
     /// The untruncated text's line box, as `ChromeLabel.textSize`.
     var textSize: NSSize { NSSize(width: width(of: text), height: faces.lineHeight) }
 
-    /// What a text field of this text fits to: the line box and the cell insets.
-    var fittedSize: NSSize { NSSize(width: textSize.width + 2 * ChromeLabel.cellInset, height: faces.lineHeight) }
+    /// What a text field of this text fits to: the line box and the cell
+    /// insets, rounded up so that `draw` never finds a fitting text too wide.
+    var fittedSize: NSSize {
+        NSSize(width: (textSize.width + 2 * ChromeLabel.cellInset).rounded(.up), height: faces.lineHeight)
+    }
 
     /// Puts the line box's top-left corner at `origin`, as `ChromeLabel.place`.
     func place(at origin: CGPoint) {

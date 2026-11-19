@@ -33,6 +33,14 @@ final class TermReportTests: XCTestCase {
         )
     }
 
+    /// 2611.0017: the text is parsed once, when the report comes, not on
+    /// every pill refresh.
+    func testAReportKeepsItsTextParsedAsInlineMarkdown() {
+        let report = TermReport(kind: .blocked, text: "**May** I?", atMs: 0, proc: nil, read: false)
+        XCTAssertEqual(report.quote, InlineMarkdown.line("**May** I?"))
+        XCTAssertNil(TermReport(kind: .done, text: nil, atMs: 0, proc: nil, read: false).quote)
+    }
+
     // 2611.0013: the frame gives the report's place too.
     func testAFrameGivesItsBoardAndFolder() {
         let message = Message.termReport(

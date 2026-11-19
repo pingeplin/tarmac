@@ -65,7 +65,9 @@ The chip says when the report came and quotes your text; it does not claim who
 sent it. Rules:
 
 - The text is optional, at most 280 characters (a longer one is cut with `…`).
-  It is shown as a quote, never as markup.
+  It is shown as a quote. The edge pill and the inbox row draw its inline
+  markdown on one line (**bold**, *italic*, `code`, a link's text); the chip's
+  tool tip shows it as typed.
 - It needs `TARMAC_TERM_ID`: outside a Tarmac terminal it exits `1` and sends
   nothing. Exit status otherwise as for `open`: `0` sent, `1` refused or no
   Tarmac running, `2` bad usage (`clear ""` is plain `clear`, not an error).
