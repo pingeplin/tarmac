@@ -19,12 +19,11 @@ final class ReportChipTests: XCTestCase {
         ReportChip.model(report: try XCTUnwrap(TermReport.frame(message)?.report), nowMs: now)
     }
 
-    func testS7AnUnreadBlockedReportQuotesItsTextAndPlacesItInTime() throws {
+    func testS7AnUnreadBlockedReportShowsItsAgeInItsKindsColour() throws {
         let chip = try model(frame())
         XCTAssertEqual(chip.text, "report · 2m")
         XCTAssertEqual(chip.signal, .blocked)
         XCTAssertFalse(chip.dimmed)
-        XCTAssertEqual(chip.toolTip, "report · during claude\n“May I?”")
     }
 
     func testS7ADoneReportHasTheDoneToneAndAReadOneIsDimmed() throws {
@@ -34,10 +33,14 @@ final class ReportChipTests: XCTestCase {
         XCTAssertEqual(read.signal, .done)
     }
 
-    func testS19NoProcIsTheBareTitleAndNoTextIsOneLine() throws {
-        XCTAssertEqual(try model(frame(proc: nil)).toolTip, "report\n“May I?”")
-        XCTAssertEqual(try model(frame(text: nil)).toolTip, "report · during claude")
-        XCTAssertEqual(try model(frame(text: nil, proc: nil)).toolTip, "report")
+    func testS19TheHeadingPlacesAReportInTimeAndNoProcIsTheBareTitle() {
+        XCTAssertEqual(ReportChip.heading(proc: "claude"), "report · during claude")
+        XCTAssertEqual(ReportChip.heading(proc: nil), "report")
+    }
+
+    /// #422: the chip has no tool tip; the text shows in the pill and the inbox.
+    func testTheChipIsTheSameWithOrWithoutATextOrAProc() throws {
+        XCTAssertEqual(try model(frame(text: nil, proc: nil)), try model(frame()))
     }
 
     func testS20AReportFromTheFutureIsUnderAMinuteOld() throws {
