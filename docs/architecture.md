@@ -24,8 +24,9 @@ Unix socket:
 
 A third tiny binary, the **`tarmac` CLI**, is the universal doorbell: `tarmac
 open <path>` connects to the daemon, names a doc, and exits. `open`, `push`,
-`report`, `resume`, `terms`, `events`, `wait`, `--version` and `hooks run` are
-its verbs that talk to the daemon (`tarmac terms`, `events` and `wait` read the
+`report`, `resume`, `term new`, `terms`, `events`, `wait`, `--version` and
+`hooks run` are its verbs that talk to the daemon (`tarmac term new` has the app
+open a terminal card that types a command, spec 2611.0016; `tarmac terms`, `events` and `wait` read the
 daemon's live terminals and its exits, bells, doc changes and reports, spec
 2611.0012, except `wait --changed`, which stats a path in a helper process of the CLI; `tarmac push` hands one JSON value, or one for each line of stdin, to the
 loaded HTML cards of an open doc; `tarmac report` sets or clears the calling
@@ -183,7 +184,7 @@ reports.
 | | `Push {path, value}` | cli→D | one JSON value, as text, for the loaded HTML cards of an open doc; `ack` once it is queued for the app, else `err` |
 | | `DocEvent {path, value}` | D→app | that value, for each card of the doc (`path` is the registry's key); no reply |
 | Terminal I/O | `SpawnTerm {term_id, cols, rows, cwd?, cmd?, board_id?, inherit_cwd_from?}` | app→D | create a PTY card |
-| | `Input {term_id, bytes, typed?}` | app→D | keystrokes and mouse reports; `typed` marks the user's own input, which reads a report |
+| | `Input {term_id, bytes, typed?, hold?}` | app→D | keystrokes and mouse reports; `typed` marks the user's own input, which reads a report; `hold` has the daemon write the bytes once the shell takes keys |
 | | `Output {term_id, bytes}` | D→app | raw PTY output (≤64 KiB chunks) |
 | | `Resize {term_id, cols, rows}` | app→D | resize the PTY |
 | | `Exit {term_id, code?, board_id?}` | D→app | the PTY exited (nil code = signal death); `board_id` is its board |
@@ -196,6 +197,9 @@ reports.
 | | `Subscribe {kinds?, term_id?}` | cli→D | stream the `Exit`, `Bell`, `FileEvent` and `TermReport` frames that pass the filter: `err`, or a snapshot, `ack`, then live frames |
 | | `TermsList` | cli→D | ask for the live terminals |
 | | `Terms {terms}` | D→cli | one `{term_id, board_id, cwd?, proc?}` per live terminal, in board order |
+| | `TermNew {req_id?, cmd, cwd, term_id?, board_id?}` | cli→D→app | a terminal card that types `cmd` into a login shell; the daemon numbers it and names the board |
+| | `TermNewOk {req_id?, term_id}` | app→D→cli | the new card's terminal; the cli leg has no `req_id` |
+| | `TermNewErr {req_id, msg}` | app→D | the app refused; the cli gets `Err {msg}` |
 | | `ScrollbackRequest {term_id}` | app→D | re-send one term's scrollback ring now |
 | | `Scrollback {term_id, bytes}` | D→app | that ring, one frame per request |
 | Layout | `Layout {dock, tiles, board?, board_id?}` | app→D | layout snapshot for a board |
@@ -279,6 +283,24 @@ and the app slot, its generation and `hello_ok.app_connected` know nothing of
 them. `TermsList` is answered by `Daemon::terms_list`: the live terminals in
 board order, each one's process name and gated cwd read at the same time.
 
+A cli `TermNew` (spec 2611.0016) is answered by `Daemon::term_new`
+(`state/term_news.rs`). The daemon spawns nothing: it checks the command, that
+an app is connected (before the folder, whose read can take the bound), and
+the folder (absolute, and a directory on the gate), takes the caller's board
+(`Daemon::caller_board`; the active board when the caller is not filed under
+a board, as for `open`), and pushes the
+request to the app with a new `req_id`. The request is filed in `TermNews`
+under the app slot's generation, with the `app` lock held, before the push, so
+a fast answer finds it, and `install_app` and `remove_app` end the requests of
+the connection they replace or remove (`the app went away`). One bound, `TERM_NEW_APP_WAIT` (4 s, inside the cli's
+5 s `DAEMON_WAIT`), covers the whole request from its arrival: the folder's
+read, the push and the app's answer. The app's
+`TermNewOk` is accepted only for a terminal the daemon holds, live or in the
+exit ring (`the terminal did not start`); an answer with no request waiting is
+dropped. The app sends `SpawnTerm`, the held `Input` and then `TermNewOk` on
+its one connection, and the daemon handles them in order, so the terminal is
+in `terms` before the cli gets its id.
+
 ### State model
 
 ```
@@ -340,8 +362,8 @@ is refused before the cwd is read, at once.
 Each terminal fans out into three blocking threads (reader → 64 KiB chunks,
 writer, `child.wait()` → exit code via oneshot) plus two async tasks that hold
 the daemon handle: a 750 ms **poll** (`term::proc_loop`) and one **pump**. They
-are the only places with a daemon reference, so they are where the three honest
-signals are sourced (the poll gives `TermProc`, the pump `Bell` and `Exit`):
+are the only places with a strong daemon reference, so they are where the three
+honest signals are sourced (the poll gives `TermProc`, the pump `Bell` and `Exit`):
 
 - **`TermProc`** — poll the master's `process_group_leader` pid, name it by
   the basename of its argv[0] (`sysctl(KERN_PROCARGS2)`, macOS; a login
@@ -358,6 +380,23 @@ signals are sourced (the poll gives `TermProc`, the pump `Bell` and `Exit`):
   code)` in the exit ring (`events::ExitRing`, the last 64, by count, in memory
   only) **before** the term leaves `terms`, so a subscriber always finds an id
   live, in the ring, or unknown (spec 2611.0012, D4).
+
+The writer takes the terminal's `Input`s in order (`term::write_inputs`). One
+with `hold` (spec 2611.0016, D11) waits until the master's termios
+(`MasterPty::get_termios`) shows ICANON off: a fresh pty is canonical until the
+shell's line editor starts, and macOS keeps at most 1024 bytes of a canonical
+line, dropping the rest, `\r` included, with no error. It polls every 20 ms,
+taking the master lock for each read only, and inputs behind it wait with it,
+in the writer's own queue: during a hold the writer drains the input channel,
+so the app connection's dispatch does not wait on a hold. Outside a hold the
+inputs stay in the 256-slot channel; while a write blocks on a full pty, the
+channel can fill and the dispatch waits, as before.
+At `HOLD_DEADLINE` (10 s) a still-canonical tty gets the bytes when they are at
+most `HOLD_CANON_SAFE` (1000); a larger input is dropped, and the app gets an
+`Err` notice. The writer holds the `TermHandle` and the daemon weakly: the
+handle owns the input sender, so a strong one would keep the writer, and the
+runtime's shutdown, waiting forever. A failed upgrade is the terminal's end,
+and a held input is then not written.
 
 `kill()` signals the whole **process group** (`libc::kill(-pid, SIGHUP)`) — the
 child is its own group leader, so a SIGHUP lets a shell exit cleanly as on a
@@ -1479,8 +1518,13 @@ browser.
 
 ### Provenance edges
 
-One edge per doc card whose owner terminal card is on the same board, whether
-or not the doc is still attached (`Provenance`): a straight dashed teal segment
+One edge per card with an owner terminal card on the same board, whether
+or not the card is still attached (`Provenance.edges`): a doc and its opener,
+and a `tarmac term new` card and its caller (spec 2611.0016). The term card's
+owner is kept for the app run only, is never persisted, and the card is made
+not attached (`Provenance.startsAttached`: a terminal card never is), so an owner's drag, which carries
+the attached cards it made (`Provenance.carried`), leaves it.
+Each edge is a straight dashed teal segment
 between the two cards' centres, drawn in a layer beneath every card
 (`EdgeLayerView`), so only the gap between them shows. Edges are rebuilt from
 the cards' on-screen frames on every pan, zoom and drag.

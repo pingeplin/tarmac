@@ -106,7 +106,7 @@ fn conformance_vector_3_input() {
     assert_vector(
         "83 a1 74 a5 69 6e 70 75 74 a7 74 65 72 6d 5f 69 64 a2 74 31 \
          a5 62 79 74 65 73 c4 03 6c 73 0a",
-        Msg::Input { term_id: "t1".into(), bytes: b"ls\n".to_vec(), typed: false },
+        Msg::Input { term_id: "t1".into(), bytes: b"ls\n".to_vec(), typed: false, hold: false },
     );
 }
 
@@ -396,7 +396,7 @@ fn conformance_vector_24_typed_input() {
     assert_frame(
         "84 a1 74 a5 69 6e 70 75 74 a7 74 65 72 6d 5f 69 64 a2 74 31 \
          a5 62 79 74 65 73 c4 01 61 a5 74 79 70 65 64 c3",
-        Msg::Input { term_id: "t1".into(), bytes: b"a".to_vec(), typed: true },
+        Msg::Input { term_id: "t1".into(), bytes: b"a".to_vec(), typed: true, hold: false },
     );
 }
 
@@ -547,6 +547,91 @@ fn conformance_vector_37_term_resume_none() {
     assert_frame("82 a1 74 ab 74 65 72 6d 5f 72 65 73 75 6d 65 a7 74 65 72 6d 5f 69 64 a2 74 31", term_resume(None));
 }
 
+// Spec 2611.0016: `tarmac term new`, and the held input that types its command.
+fn term_new(req_id: Option<u64>, board_id: Option<&str>) -> Msg {
+    Msg::TermNew {
+        req_id,
+        cmd: "echo hi".into(),
+        cwd: "/tmp".into(),
+        term_id: Some("t1".into()),
+        board_id: board_id.map(str::to_string),
+    }
+}
+
+#[test]
+fn conformance_vector_38_term_new_from_the_cli() {
+    assert_frame(
+        "84 a1 74 a8 74 65 72 6d 5f 6e 65 77 a3 63 6d 64 a7 65 63 68 6f 20 68 69 \
+         a3 63 77 64 a4 2f 74 6d 70 a7 74 65 72 6d 5f 69 64 a2 74 31",
+        term_new(None, None),
+    );
+}
+
+#[test]
+fn conformance_vector_39_term_new_to_the_app() {
+    assert_frame(
+        "86 a1 74 a8 74 65 72 6d 5f 6e 65 77 a6 72 65 71 5f 69 64 01 \
+         a3 63 6d 64 a7 65 63 68 6f 20 68 69 a3 63 77 64 a4 2f 74 6d 70 \
+         a7 74 65 72 6d 5f 69 64 a2 74 31 a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 30",
+        term_new(Some(1), Some("board-0")),
+    );
+}
+
+#[test]
+fn conformance_vector_40_term_new_ok_from_the_app() {
+    assert_frame(
+        "83 a1 74 ab 74 65 72 6d 5f 6e 65 77 5f 6f 6b a6 72 65 71 5f 69 64 01 \
+         a7 74 65 72 6d 5f 69 64 a2 74 39",
+        Msg::TermNewOk { req_id: Some(1), term_id: "t9".into() },
+    );
+}
+
+#[test]
+fn conformance_vector_41_term_new_ok_to_the_cli() {
+    assert_frame(
+        "82 a1 74 ab 74 65 72 6d 5f 6e 65 77 5f 6f 6b a7 74 65 72 6d 5f 69 64 a2 74 39",
+        Msg::TermNewOk { req_id: None, term_id: "t9".into() },
+    );
+}
+
+#[test]
+fn conformance_vector_42_term_new_err() {
+    assert_frame(
+        "83 a1 74 ac 74 65 72 6d 5f 6e 65 77 5f 65 72 72 a6 72 65 71 5f 69 64 01 a3 6d 73 67 a1 6d",
+        Msg::TermNewErr { req_id: 1, msg: "m".into() },
+    );
+}
+
+#[test]
+fn conformance_vector_43_held_input() {
+    assert_frame(
+        "84 a1 74 a5 69 6e 70 75 74 a7 74 65 72 6d 5f 69 64 a2 74 39 \
+         a5 62 79 74 65 73 c4 08 65 63 68 6f 20 68 69 0d a4 68 6f 6c 64 c3",
+        Msg::Input { term_id: "t9".into(), bytes: b"echo hi\r".to_vec(), typed: false, hold: true },
+    );
+}
+
+#[test]
+fn s19_the_term_new_command_check() {
+    let refused = [
+        ("", "empty"),
+        ("   ", "empty"),
+        ("echo a\necho b", "a control character"),
+        ("echo a\rb", "a control character"),
+        ("echo \u{1b}[2J", "a control character"),
+        ("echo a\u{2028}b", "a control character"),
+        ("echo \u{200b}x", "an invisible format character"),
+    ];
+    for (cmd, cause) in refused {
+        assert_eq!(check_term_new_cmd(cmd), Err(cause), "{cmd:?}");
+    }
+    assert_eq!(check_term_new_cmd(&"x".repeat(4097)), Err("over 4096 characters"));
+    assert_eq!(check_term_new_cmd(&"x".repeat(4096)), Ok(()));
+    assert_eq!(check_term_new_cmd(&"中".repeat(4096)), Ok(()), "a limit in chars, not bytes");
+    assert_eq!(check_term_new_cmd("claude --model opus"), Ok(()));
+    assert_eq!(refuse_term_new_cmd("").unwrap_err(), "term new command refused: empty");
+}
+
 #[test]
 fn s21_term_resume_is_not_an_event() {
     assert_eq!(EventKind::of(&term_resume(Some("echo HI"))), None);
@@ -616,7 +701,7 @@ fn s31_the_resume_command_check() {
 
 #[test]
 fn an_untyped_input_an_unread_report_and_a_report_with_no_text_have_no_key_for_it() {
-    let input = Msg::Input { term_id: "t1".into(), bytes: b"ls\n".to_vec(), typed: false };
+    let input = Msg::Input { term_id: "t1".into(), bytes: b"ls\n".to_vec(), typed: false, hold: false };
     assert_eq!(
         encode(&input).unwrap(),
         unhex("83 a1 74 a5 69 6e 70 75 74 a7 74 65 72 6d 5f 69 64 a2 74 31 a5 62 79 74 65 73 c4 03 6c 73 0a")
@@ -1057,7 +1142,7 @@ fn key_order_is_irrelevant_even_with_tag_last_and_bin_payload() {
     );
     assert_eq!(
         decode(&bytes).unwrap(),
-        Msg::Input { term_id: "t1".into(), bytes: b"ls\n".to_vec(), typed: false }
+        Msg::Input { term_id: "t1".into(), bytes: b"ls\n".to_vec(), typed: false, hold: false }
     );
 }
 
@@ -1097,7 +1182,7 @@ fn wide_integer_encodings_are_accepted() {
 
 #[test]
 fn byte_fields_encode_with_bin_family() {
-    let encoded = encode(&Msg::Input { term_id: "t1".into(), bytes: b"ls\n".to_vec(), typed: false }).unwrap();
+    let encoded = encode(&Msg::Input { term_id: "t1".into(), bytes: b"ls\n".to_vec(), typed: false, hold: false }).unwrap();
     let needle = [0xc4u8, 0x03, 0x6c, 0x73, 0x0a]; // bin8, len 3, "ls\n"
     assert!(has(&encoded, &needle), "bytes not bin-encoded: {encoded:02x?}");
 }
@@ -1176,7 +1261,7 @@ fn all_message_types_roundtrip() {
         spawn_term("t2", None, None),
         // cwd absent but an inherit-cwd-from hint present
         spawn_term("t3", None, Some("t1")),
-        Msg::Input { term_id: "t1".into(), bytes: vec![0u8; 64 * 1024], typed: false },
+        Msg::Input { term_id: "t1".into(), bytes: vec![0u8; 64 * 1024], typed: false, hold: false },
         Msg::Output { term_id: "t1".into(), bytes: b"hello\r\n".to_vec() },
         Msg::Resize { term_id: "t1".into(), cols: 80, rows: 24 },
         Msg::Exit { term_id: "t1".into(), code: Some(0), board_id: None },
@@ -1224,6 +1309,10 @@ fn all_message_types_roundtrip() {
         resume(None),
         term_resume(Some("claude --resume ab-12")),
         term_resume(None),
+        term_new(None, None),
+        term_new(Some(u64::MAX), Some("board-1")),
+        Msg::TermNewOk { req_id: Some(7), term_id: "t9".into() },
+        Msg::TermNewErr { req_id: 7, msg: "board board-1 is not ready in the app; show it, then retry".into() },
     ];
     for m in msgs {
         assert_eq!(roundtrip(&m), m, "roundtrip failed for {m:?}");

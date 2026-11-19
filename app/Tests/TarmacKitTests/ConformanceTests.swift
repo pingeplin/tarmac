@@ -685,6 +685,79 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
+    /// 2611.0016 S23 (cli → daemon): the cli leg carries no `req_id` and no `board_id`.
+    func testVector38TermNewFromTheCLI() throws {
+        try assertVector(
+            """
+            84 a1 74 a8 74 65 72 6d 5f 6e 65 77 a3 63 6d 64 a7 65 63 68 6f 20 68 69
+            a3 63 77 64 a4 2f 74 6d 70 a7 74 65 72 6d 5f 69 64 a2 74 31
+            """,
+            .map(["t": .string("term_new"), "cmd": .string("echo hi"), "cwd": .string("/tmp"), "term_id": .string("t1")]),
+            .termNew(reqID: nil, cmd: "echo hi", cwd: "/tmp", termID: "t1", boardID: nil)
+        )
+    }
+
+    /// 2611.0016 S23 (daemon → app): numbered, with the board named.
+    func testVector39TermNewToTheApp() throws {
+        try assertVector(
+            """
+            86 a1 74 a8 74 65 72 6d 5f 6e 65 77 a6 72 65 71 5f 69 64 01
+            a3 63 6d 64 a7 65 63 68 6f 20 68 69 a3 63 77 64 a4 2f 74 6d 70
+            a7 74 65 72 6d 5f 69 64 a2 74 31 a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 30
+            """,
+            .map([
+                "t": .string("term_new"), "req_id": .int(1), "cmd": .string("echo hi"), "cwd": .string("/tmp"),
+                "term_id": .string("t1"), "board_id": .string("board-0"),
+            ]),
+            .termNew(reqID: 1, cmd: "echo hi", cwd: "/tmp", termID: "t1", boardID: "board-0")
+        )
+    }
+
+    /// 2611.0016 S23 (app → daemon).
+    func testVector40TermNewOKFromTheApp() throws {
+        try assertVector(
+            """
+            83 a1 74 ab 74 65 72 6d 5f 6e 65 77 5f 6f 6b a6 72 65 71 5f 69 64 01
+            a7 74 65 72 6d 5f 69 64 a2 74 39
+            """,
+            .map(["t": .string("term_new_ok"), "req_id": .int(1), "term_id": .string("t9")]),
+            .termNewOK(reqID: 1, termID: "t9")
+        )
+    }
+
+    /// 2611.0016 S23 (daemon → cli): no `req_id`.
+    func testVector41TermNewOKToTheCLI() throws {
+        try assertVector(
+            "82 a1 74 ab 74 65 72 6d 5f 6e 65 77 5f 6f 6b a7 74 65 72 6d 5f 69 64 a2 74 39",
+            .map(["t": .string("term_new_ok"), "term_id": .string("t9")]),
+            .termNewOK(reqID: nil, termID: "t9")
+        )
+    }
+
+    /// 2611.0016 S23 (app → daemon).
+    func testVector42TermNewErr() throws {
+        try assertVector(
+            "83 a1 74 ac 74 65 72 6d 5f 6e 65 77 5f 65 72 72 a6 72 65 71 5f 69 64 01 a3 6d 73 67 a1 6d",
+            .map(["t": .string("term_new_err"), "req_id": .int(1), "msg": .string("m")]),
+            .termNewErr(reqID: 1, msg: "m")
+        )
+    }
+
+    /// 2611.0016 S23, D11: the input the daemon holds until the shell takes keys.
+    func testVector43HeldInput() throws {
+        try assertVector(
+            """
+            84 a1 74 a5 69 6e 70 75 74 a7 74 65 72 6d 5f 69 64 a2 74 39
+            a5 62 79 74 65 73 c4 08 65 63 68 6f 20 68 69 0d a4 68 6f 6c 64 c3
+            """,
+            .map([
+                "t": .string("input"), "term_id": .string("t9"), "bytes": .binary(Data("echo hi\r".utf8)),
+                "hold": .bool(true),
+            ]),
+            .input(termID: "t9", bytes: Data("echo hi\r".utf8), hold: true)
+        )
+    }
+
     func testS10ATermResumeWithANilCmdHasNoCmdKey() throws {
         let fields = try MsgPack.decode(Message.termResume(termID: "t1", cmd: nil).encodedPayload()).mapValue
         XCTAssertEqual(fields?.keys.sorted(), ["t", "term_id"])
@@ -1207,6 +1280,9 @@ final class MessageDecodingRulesTests: XCTestCase {
             .docRefresh(path: "/abs/x.md"),
             .scrollbackRequest(termID: "u-1"),
             .scrollback(termID: "u-1", bytes: Data(repeating: 0xab, count: 70_000)),
+            .termNew(reqID: UInt64.max, cmd: "claude", cwd: "/w", termID: nil, boardID: "board-1"),
+            .termNewOK(reqID: 7, termID: "t9"),
+            .termNewErr(reqID: 7, msg: "board board-1 is not ready in the app; show it, then retry"),
         ]
         for message in messages {
             XCTAssertEqual(try Message.decode(payload: message.encodedPayload()), message)

@@ -345,11 +345,12 @@ final class BoardView: NSView, ThemeFollowing {
     private func beginCarry(for card: CardView) {
         carry = nil
         guard case .term = card.id else { return }
-        let attached = cards.filter { $0.value.ownerTermID == card.id && $0.value.attached }
         carry = CardCarry(
             owner: card.id,
             ownerFrame: card.worldFrame.rect,
-            satellites: attached.mapValues(\.worldFrame.rect)
+            satellites: Provenance.carried(by: card.id, among: cards.mapValues {
+                Provenance.Card(frame: $0.worldFrame.rect, owner: $0.ownerTermID, attached: $0.attached)
+            })
         )
     }
 
@@ -425,16 +426,10 @@ final class BoardView: NSView, ThemeFollowing {
         onCullChanged?(card.id, visible)
     }
 
-    /// One provenance edge per doc card whose owning terminal card is on the
-    /// board, rebuilt from the cards' on-screen frames. Never gated on
-    /// `attached`, the gravity flag: a doc dragged away keeps its edge (#39).
+    /// The provenance edges (`Provenance.edges`), rebuilt from the cards'
+    /// on-screen frames.
     func recomputeEdges() {
-        var built: [Provenance.Segment] = []
-        for (id, card) in cards {
-            guard case .doc = id, let owner = card.ownerTermID, let ownerCard = cards[owner] else { continue }
-            built.append(Provenance.edge(owner: ownerCard.frame, doc: card.frame))
-        }
-        edgeLayer.setEdges(built)
+        edgeLayer.setEdges(Provenance.edges(cards))
     }
 
     // MARK: Content scale
@@ -554,4 +549,10 @@ private final class CardLayerView: NSView {
         let hit = super.hitTest(point)
         return hit === self ? nil : hit
     }
+}
+
+/// The edge rule reads a card's on-screen frame and its owner.
+extension CardView: @MainActor Provenance.Linked {
+    var edgeFrame: CGRect { frame }
+    var ownerID: CardID? { ownerTermID }
 }

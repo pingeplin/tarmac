@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::io::{Read, Write};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 
@@ -19,6 +19,13 @@ use crate::state::Daemon;
 
 pub const OUTPUT_CHUNK: usize = 64 * 1024; // protocol: output chunks <= 64 KiB
 pub(crate) const PROC_POLL_INTERVAL: Duration = Duration::from_millis(750);
+/// How often a held input reads the pty's termios (spec 2611.0016, D11).
+const HOLD_POLL: Duration = Duration::from_millis(20);
+/// How long a held input waits for the shell to take keys.
+pub(crate) const HOLD_DEADLINE: Duration = Duration::from_secs(10);
+/// The longest canonical line the typeahead probe saw arrive whole: macOS
+/// keeps 1024 bytes of one and drops the rest, `\r` included, with no error.
+const HOLD_CANON_SAFE: usize = 1000;
 // A (re)connecting app replays this to re-bind to a live shell instead of
 // cold-spawning. Bounded so N boards x M terms stay cheap.
 const SCROLLBACK_CAP: usize = 256 * 1024;
@@ -52,8 +59,78 @@ impl ScrollbackRing {
     }
 }
 
+/// One write to a terminal's pty, in the order the app sent it.
+pub struct Input {
+    pub bytes: Vec<u8>,
+    /// Written once the shell takes keys (`hold`).
+    pub hold: bool,
+}
+
+/// What the pty's line discipline says of a held input's terminal.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Keys {
+    /// ICANON is off: a line editor, or a program in raw mode, reads keys.
+    Taken,
+    /// Canonical, or the termios could not be read.
+    Canonical,
+    /// The terminal is gone.
+    Ended,
+}
+
+fn keys_of(master: &dyn MasterPty) -> Keys {
+    match master.get_termios() {
+        Some(t) if t.local_flags.bits() & libc::ICANON == 0 => Keys::Taken,
+        _ => Keys::Canonical,
+    }
+}
+
+/// The pty writer's loop: each input in turn. A held one waits until the
+/// shell takes keys; at `deadline` a still-canonical tty gets it only when it
+/// is at most `HOLD_CANON_SAFE` bytes, since a cut line would wait at the
+/// prompt for a Return. Input sent after a held one waits too. While one is
+/// held, the channel is drained into the writer's own queue, so the app
+/// connection's dispatch does not wait on a hold. Outside a hold the inputs
+/// stay in the bounded channel: while `write_all` blocks on a full pty, the
+/// channel can fill and the dispatch waits, as it always did. `dropped` is
+/// told of each held input that is not written; a terminal that ends ends the
+/// loop.
+fn write_inputs(
+    mut input_rx: mpsc::Receiver<Input>,
+    mut writer: impl Write,
+    deadline: Duration,
+    mut keys: impl FnMut() -> Keys,
+    mut dropped: impl FnMut(),
+) {
+    let mut queue = VecDeque::new();
+    loop {
+        let Some(input) = queue.pop_front().or_else(|| input_rx.blocking_recv()) else { return };
+        if input.hold {
+            let since = Instant::now();
+            let write = loop {
+                while let Ok(next) = input_rx.try_recv() {
+                    queue.push_back(next);
+                }
+                match keys() {
+                    Keys::Taken => break true,
+                    Keys::Ended => return,
+                    Keys::Canonical if since.elapsed() >= deadline => break input.bytes.len() <= HOLD_CANON_SAFE,
+                    Keys::Canonical => std::thread::sleep(HOLD_POLL),
+                }
+            };
+            if !write {
+                dropped();
+                continue;
+            }
+        }
+        if writer.write_all(&input.bytes).is_err() {
+            return;
+        }
+        let _ = writer.flush();
+    }
+}
+
 pub struct TermHandle {
-    pub input_tx: mpsc::Sender<Vec<u8>>,
+    pub input_tx: mpsc::Sender<Input>,
     master: std::sync::Mutex<Box<dyn MasterPty + Send>>,
     // A std::sync::Mutex (not tokio): it is only ever locked for a synchronous
     // push/snapshot, never across .await.
@@ -83,7 +160,7 @@ const READ_REPORT: u8 = 1;
 const UNREAD_REPORT: u8 = 2;
 
 impl TermHandle {
-    fn new(input_tx: mpsc::Sender<Vec<u8>>, master: Box<dyn MasterPty + Send>, pid: Option<proc::Pid>, spawned_with_cmd: bool) -> Arc<TermHandle> {
+    fn new(input_tx: mpsc::Sender<Input>, master: Box<dyn MasterPty + Send>, pid: Option<proc::Pid>, spawned_with_cmd: bool) -> Arc<TermHandle> {
         Arc::new(TermHandle {
             input_tx,
             master: std::sync::Mutex::new(master),
@@ -155,6 +232,11 @@ impl TermHandle {
             .expect("master lock")
             .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
             .map_err(|e| format!("resize failed: {e}"))
+    }
+
+    /// The master lock is held for the one read.
+    fn keys(&self) -> Keys {
+        self.master.lock().map_or(Keys::Canonical, |m| keys_of(&**m))
     }
 
     pub fn scrollback_snapshot(&self) -> Vec<u8> {
@@ -233,6 +315,11 @@ pub struct SpawnPlan {
 }
 
 pub async fn spawn(daemon: Arc<Daemon>, plan: SpawnPlan) -> Result<(), String> {
+    spawn_holding(daemon, plan, HOLD_DEADLINE).await
+}
+
+/// `spawn`, whose held inputs wait at most `hold_deadline`.
+pub(crate) async fn spawn_holding(daemon: Arc<Daemon>, plan: SpawnPlan, hold_deadline: Duration) -> Result<(), String> {
     check_free(&daemon, &plan.term_id).await?;
     let (cols, rows) = plan.size;
     let term_id = plan.term_id.clone();
@@ -280,12 +367,12 @@ pub async fn spawn(daemon: Arc<Daemon>, plan: SpawnPlan) -> Result<(), String> {
         .master
         .try_clone_reader()
         .map_err(|e| format!("pty reader unavailable: {e}"))?;
-    let mut writer = pty
+    let writer = pty
         .master
         .take_writer()
         .map_err(|e| format!("pty writer unavailable: {e}"))?;
 
-    let (input_tx, mut input_rx) = mpsc::channel::<Vec<u8>>(256);
+    let (input_tx, input_rx) = mpsc::channel::<Input>(256);
     let handle = TermHandle::new(input_tx, pty.master, child_pid, plan.cmd.is_some());
     // Before the loop starts: its first cwd read fills the record of the
     // term's board, which must be there by then.
@@ -310,14 +397,21 @@ pub async fn spawn(daemon: Arc<Daemon>, plan: SpawnPlan) -> Result<(), String> {
         }
     });
 
-    tokio::task::spawn_blocking(move || {
-        while let Some(bytes) = input_rx.blocking_recv() {
-            if writer.write_all(&bytes).is_err() {
-                break;
-            }
-            let _ = writer.flush();
+    // Weak: the handle owns `input_tx`, and a strong one here would keep the
+    // channel, and this thread, open after the terminal ends.
+    let weak: Weak<TermHandle> = Arc::downgrade(&handle);
+    let keys = move || weak.upgrade().map_or(Keys::Ended, |h| h.keys());
+    // Weak too: the daemon holds the handle, so a strong one would be a cycle.
+    let runtime = tokio::runtime::Handle::current();
+    let (notice, dropped_id) = (Arc::downgrade(&daemon), term_id.clone());
+    let dropped = move || {
+        let msg = format!("input held for {dropped_id} dropped: the shell did not take keys");
+        tracing::warn!("{msg}");
+        if let Some(daemon) = notice.upgrade() {
+            runtime.block_on(daemon.push(Msg::Err { msg }));
         }
-    });
+    };
+    tokio::task::spawn_blocking(move || write_inputs(input_rx, writer, hold_deadline, keys, dropped));
 
     let (exit_tx, exit_rx) = oneshot::channel::<Option<i64>>();
     let mut child = child;
@@ -482,6 +576,118 @@ mod tests {
     fn empty_value_falls_through_to_next_key() {
         assert!(!decide(&[("LC_ALL", ""), ("LANG", "en_US.UTF-8")]));
         assert!(decide(&[("LC_CTYPE", ""), ("LANG", "C")]));
+    }
+
+    /// A shell that never leaves canonical mode, reading one line into `out`.
+    fn canonical_child(out: &std::path::Path) -> (Box<dyn MasterPty + Send>, Box<dyn portable_pty::Child + Send + Sync>) {
+        let pair = native_pty_system().openpty(PtySize::default()).unwrap();
+        let mut cmd = CommandBuilder::new("/bin/sh");
+        cmd.args(["-c", &format!("head -n 1 > '{}'", out.display())]);
+        let child = pair.slave.spawn_command(cmd).unwrap();
+        (pair.master, child)
+    }
+
+    /// Runs the writer over one held input of `n` `y`s and a `\r` with a
+    /// 300 ms deadline: how long it took, how many inputs it dropped, and the
+    /// pty's writer, whose drop would write an EOF line.
+    fn hold_past_the_deadline(master: &(dyn MasterPty + Send), n: usize) -> (Duration, usize, Box<dyn Write + Send>) {
+        let (tx, rx) = mpsc::channel(1);
+        tx.try_send(Input { bytes: format!("{}\r", "y".repeat(n)).into_bytes(), hold: true }).unwrap();
+        drop(tx);
+        let mut writer = master.take_writer().unwrap();
+        let mut dropped = 0;
+        let started = Instant::now();
+        write_inputs(rx, &mut writer, Duration::from_millis(300), || keys_of(master), || dropped += 1);
+        (started.elapsed(), dropped, writer)
+    }
+
+    fn read_within(out: &std::path::Path, wait: Duration) -> String {
+        let deadline = Instant::now() + wait;
+        loop {
+            let got = std::fs::read_to_string(out).unwrap_or_default();
+            if !got.is_empty() || Instant::now() >= deadline {
+                return got;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    // S33: HOLD_DEADLINE set short.
+    #[test]
+    fn s33_a_short_held_input_is_written_at_the_deadline_to_a_canonical_child() {
+        let dir = crate::fixtures::tmp_dir("hold-short");
+        let out = dir.join("out");
+        let (master, mut child) = canonical_child(&out);
+
+        let (took, dropped, _writer) = hold_past_the_deadline(&*master, 999);
+
+        assert!(took >= Duration::from_millis(300), "written after {took:?}");
+        assert_eq!(dropped, 0);
+        assert_eq!(read_within(&out, Duration::from_secs(5)), format!("{}\n", "y".repeat(999)));
+        let _ = child.kill();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // S33
+    #[test]
+    fn s33_a_held_input_over_1000_bytes_is_dropped_at_the_deadline_with_one_notice() {
+        let dir = crate::fixtures::tmp_dir("hold-long");
+        let out = dir.join("out");
+        let (master, mut child) = canonical_child(&out);
+
+        let (_, dropped, _writer) = hold_past_the_deadline(&*master, 1000);
+
+        assert_eq!(dropped, 1);
+        assert_eq!(read_within(&out, Duration::from_millis(500)), "");
+        let _ = child.kill();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_held_input_whose_terminal_ends_is_not_written_and_ends_the_writer() {
+        let (tx, rx) = mpsc::channel(2);
+        tx.try_send(Input { bytes: b"a\r".to_vec(), hold: true }).unwrap();
+        tx.try_send(Input { bytes: b"b".to_vec(), hold: false }).unwrap();
+        let mut written = Vec::new();
+
+        write_inputs(rx, &mut written, HOLD_DEADLINE, || Keys::Ended, || panic!("no notice for an ended terminal"));
+
+        assert!(written.is_empty());
+    }
+
+    /// A pty writer that notes, at each write, how many of the channel's
+    /// slots are free, and fails at the third so the loop ends.
+    struct SlotsAtWrite {
+        tx: mpsc::Sender<Input>,
+        free: std::sync::Arc<std::sync::Mutex<Vec<usize>>>,
+    }
+
+    impl Write for SlotsAtWrite {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            let mut free = self.free.lock().unwrap();
+            free.push(self.tx.capacity());
+            if free.len() == 3 { Err(std::io::ErrorKind::BrokenPipe.into()) } else { Ok(buf.len()) }
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    // Outside a hold the inputs wait in the bounded channel, not in the
+    // writer's queue: the channel's back-pressure bounds a stuck pty's memory.
+    #[test]
+    fn with_no_hold_the_writer_takes_one_input_at_a_time_from_the_channel() {
+        let (tx, rx) = mpsc::channel(4);
+        for byte in [b"a", b"b", b"c"] {
+            tx.try_send(Input { bytes: byte.to_vec(), hold: false }).unwrap();
+        }
+        let free = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let writer = SlotsAtWrite { tx, free: free.clone() };
+
+        write_inputs(rx, writer, HOLD_DEADLINE, || Keys::Taken, || {});
+
+        assert_eq!(*free.lock().unwrap(), vec![2, 3, 4]);
     }
 
     // The exit goes first and the pump takes it before any chunk exists, so the

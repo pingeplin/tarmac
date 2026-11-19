@@ -50,9 +50,17 @@ pub(crate) struct StuckFs {
     /// The `pid_cwd` answers the test names, by pid, `None` for every pid.
     cwds: std::sync::Mutex<Vec<(Option<Pid>, Option<String>)>>,
     cwds_returned: AtomicU32,
+    /// Calls that answer, as `RealFs` does, only after a delay.
+    slows: std::sync::Mutex<Vec<(Call, PathBuf, Duration)>>,
 }
 
 impl StuckFs {
+    /// Each later `call` on a path under `under` answers after `delay`: a
+    /// slow volume that does answer.
+    pub(crate) fn slow(&self, call: Call, under: &Path, delay: Duration) {
+        self.slows.lock().unwrap().push((call, under.to_owned(), delay));
+    }
+
     /// Each later `repo_of` of a doc in `dir` answers a repo `name` at
     /// `dir`, with no `.git` on disk.
     pub(crate) fn answer_repo(&self, dir: &Path, name: &str) {
@@ -98,6 +106,10 @@ impl StuckFs {
         count.0 += 1;
         count.1 += u32::from(held);
         drop(counts);
+        let slow = self.slows.lock().unwrap().iter().find(|(c, under, _)| *c == call && path.starts_with(under)).map(|s| s.2);
+        if let Some(delay) = slow {
+            std::thread::sleep(delay);
+        }
         if held {
             let _ = self.until_released.lock().unwrap().recv();
         }
@@ -175,6 +187,7 @@ pub(crate) fn stuck_fs() -> (Arc<StuckFs>, std::sync::mpsc::Sender<()>) {
         panics: std::sync::Mutex::default(),
         cwds: std::sync::Mutex::default(),
         cwds_returned: AtomicU32::new(0),
+        slows: std::sync::Mutex::default(),
     });
     (fs, release)
 }

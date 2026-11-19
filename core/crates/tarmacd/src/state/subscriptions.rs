@@ -2,7 +2,7 @@ use tarmac_protocol::{EventKind, Msg};
 
 use crate::events::{Filter, Subscription};
 
-use super::Daemon;
+use super::{Daemon, Known};
 
 impl Daemon {
     /// The receiver comes first: a report is changed, and an exit recorded,
@@ -13,11 +13,11 @@ impl Daemon {
         let rx = self.events.subscribe();
         let mut snapshot = Vec::new();
         if let Some(id) = term_id {
-            let live = self.term(&id).await.is_some();
-            let exited = if live { None } else { self.exits.lock().expect("exits lock").lookup(&id) };
-            if !live && exited.is_none() {
-                return Err(format!("unknown terminal: {id}"));
-            }
+            let exited = match self.knows_term(&id).await {
+                None => return Err(format!("unknown terminal: {id}")),
+                Some(Known::Live) => None,
+                Some(Known::Exited(code)) => Some(code),
+            };
             if filter.wants(EventKind::Report) {
                 snapshot.extend(self.reports.lock().await.snapshot(std::slice::from_ref(&id)));
             }

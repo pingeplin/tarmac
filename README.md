@@ -168,13 +168,14 @@ resolves the freshly built CLI). The CLI itself is just:
 tarmac open <path>     # surface a markdown file as a card on the active board
 tarmac push <path> <json>  # hand one JSON value to the loaded HTML cards of an open doc
 tarmac report done "<text>"  # show blocked or done on this terminal's card (or clear it)
+tarmac term new "<command>"  # open a terminal card beside this one that types the command
 tarmac --version       # report the cli, daemon, and app versions
 tarmac skill           # print the agent-facing guide to writing Tarmac cards
 tarmac skill install   # install a SKILL.md that points coding agents at that guide
 tarmac hooks install   # make Claude Code report blocked and done on its terminal card
 ```
 
-`open`, `push`, `report` and `--version` are the verbs that talk to the daemon,
+`open`, `push`, `report`, `term new` and `--version` are the verbs that talk to the daemon,
 and so does `tarmac hooks run claude`, the entry that the hooks call.
 `tarmac hooks install` merges four hooks into Claude Code's `settings.json`
 (with `--scope project`, the project's personal settings.local.json), after a

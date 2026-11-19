@@ -44,9 +44,10 @@ final class CardView: NSView, ThemeFollowing {
     /// doc is `attached`, carries the doc along when that terminal is moved.
     var ownerTermID: CardID?
 
-    /// Whether the doc follows its owner terminal. Moving the doc by hand
-    /// detaches it; persisted inverted, as the tile's `loose` flag.
-    var attached = true
+    /// Whether the card follows its owner terminal (`Provenance.startsAttached`).
+    /// Moving a doc by hand detaches it; persisted inverted, as the tile's
+    /// `loose` flag.
+    var attached: Bool
 
     private let clip = FlippedColumnView()
     /// Scales the body: its frame is the body's place on screen, its bounds
@@ -86,6 +87,8 @@ final class CardView: NSView, ThemeFollowing {
     init(id: CardID, worldFrame: CardFrame) {
         self.id = id
         self.worldFrame = worldFrame
+        let isDoc = if case .doc = id { true } else { false }
+        attached = Provenance.startsAttached(isDoc: isDoc)
         switch id {
         case .term:
             header = CardHeaderView(kind: .terminal)

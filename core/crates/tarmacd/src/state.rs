@@ -75,6 +75,8 @@ pub struct Daemon {
     /// Written in `term_ended` before the term leaves `terms`, so an id is
     /// always live, in the ring, or unknown. Held for a read or a write only.
     pub exits: std::sync::Mutex<crate::events::ExitRing>,
+    /// The `term_new` requests waiting for the app (spec 2611.0016).
+    pub term_news: TermNews,
     doc_counts: Arc<DocCounts>,
     watcher: Watcher,
     /// Set by the watcher; `docs::watch_loop` waits on it.
@@ -166,6 +168,7 @@ impl Daemon {
             reports: Mutex::new(Reports::default()),
             events: crate::events::Fanout::new(crate::events::EVENTS_CAPACITY),
             exits: std::sync::Mutex::default(),
+            term_news: TermNews::default(),
             doc_counts,
             watcher,
             wake,
@@ -422,6 +425,7 @@ impl Daemon {
         if let Some(old) = old {
             tracing::info!("replacing previous app connection");
             old.cancel.cancel();
+            self.term_news.app_gone(old.generation);
             self.drop_data().await;
         }
         (generation, cancel)
@@ -443,6 +447,7 @@ impl Daemon {
         let mut slot = self.app.lock().await;
         if slot.as_ref().is_some_and(|s| s.generation == generation) {
             *slot = None;
+            self.term_news.app_gone(generation);
             self.drop_data().await;
         }
     }
@@ -458,6 +463,29 @@ impl Daemon {
 
     pub async fn term(&self, id: &str) -> Option<Arc<TermHandle>> {
         self.terms.lock().await.get(id).cloned()
+    }
+
+    /// A terminal that is live or in the exit ring. `terms` is read before
+    /// the ring, and each lock is taken alone: an ending terminal is recorded
+    /// in the ring before it leaves `terms`, so it is never neither.
+    pub async fn knows_term(&self, id: &str) -> Option<Known> {
+        if self.term(id).await.is_some() {
+            return Some(Known::Live);
+        }
+        self.exits.lock().expect("exits lock").lookup(id).map(Known::Exited)
+    }
+
+    /// The board of the calling terminal `term_id`, `None` for a terminal the
+    /// daemon does not have: a stale `TARMAC_TERM_ID` names no board (#386).
+    pub async fn caller_board(&self, term_id: Option<&str>) -> Option<BoardId> {
+        self.term_boards.lock().await.get(term_id?).cloned()
+    }
+
+    /// `path` is a directory, as the gate reads it. A read that fails or is
+    /// out is not.
+    pub async fn is_dir(&self, path: &Path) -> bool {
+        let probe = path.to_owned();
+        matches!(self.gate.run(path, move |fs| fs.is_dir(&probe)).await, Ok(true))
     }
 
     /// Runs `change` with `boards` held, on the board `term_id` is filed
@@ -519,7 +547,17 @@ impl Daemon {
 mod reports;
 mod resumes;
 mod subscriptions;
+mod term_news;
 mod terms;
+
+pub use term_news::{TERM_NEW_APP_WAIT, TermNews};
+
+/// What the daemon knows of a terminal id (`Daemon::knows_term`).
+pub enum Known {
+    Live,
+    /// One of the last terminals that ended, with its exit code.
+    Exited(Option<i64>),
+}
 
 #[cfg(test)]
 mod tests;

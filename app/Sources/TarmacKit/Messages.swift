@@ -220,8 +220,9 @@ public enum Message: Equatable, Sendable {
         succeeds: String? = nil
     )
     /// `typed` (2611.0009): the user's own input, which marks the terminal's
-    /// report read. Written only when true.
-    case input(termID: String, bytes: Data, typed: Bool = false)
+    /// report read. Written only when true. `hold` (2611.0016, D11): the
+    /// daemon writes the bytes once the shell takes keys; written only when true.
+    case input(termID: String, bytes: Data, typed: Bool = false, hold: Bool = false)
     case resize(termID: String, cols: Int, rows: Int)
     case output(termID: String, bytes: Data)
     /// `boardID` (2611.0013): the board the terminal was filed under when it
@@ -295,6 +296,14 @@ public enum Message: Equatable, Sendable {
     /// empty bytes for a silent or unknown terminal.
     case scrollbackRequest(termID: String)
     case scrollback(termID: String, bytes: Data)
+    /// 2611.0016 (daemon → app): open a terminal card on `boardID` and type
+    /// `cmd` into its shell. The cli leg has no `reqID` and no `boardID`.
+    case termNew(reqID: UInt64?, cmd: String, cwd: String, termID: String?, boardID: String?)
+    /// 2611.0016 (app → daemon): the card's terminal. The daemon's answer to
+    /// the cli has no `reqID`.
+    case termNewOK(reqID: UInt64?, termID: String)
+    /// 2611.0016 (app → daemon): the request was refused.
+    case termNewErr(reqID: UInt64, msg: String)
     /// Unknown message types are ignored per the protocol (log and continue).
     case unknown(type: String)
 }
@@ -385,7 +394,8 @@ public extension Message {
             return .input(
                 termID: try fields.req("term_id", \.stringValue),
                 bytes: try fields.req("bytes", \.binaryValue),
-                typed: try fields.opt("typed", \.boolValue) ?? false
+                typed: try fields.opt("typed", \.boolValue) ?? false,
+                hold: try fields.opt("hold", \.boolValue) ?? false
             )
         case "resize":
             return .resize(
@@ -500,6 +510,18 @@ public extension Message {
                 termID: try fields.req("term_id", \.stringValue),
                 bytes: try fields.req("bytes", \.binaryValue)
             )
+        case "term_new":
+            return .termNew(
+                reqID: try fields.opt("req_id", \.uint64Value),
+                cmd: try fields.req("cmd", \.stringValue),
+                cwd: try fields.req("cwd", \.stringValue),
+                termID: try fields.opt("term_id", \.stringValue),
+                boardID: try fields.opt("board_id", \.stringValue)
+            )
+        case "term_new_ok":
+            return .termNewOK(reqID: try fields.opt("req_id", \.uint64Value), termID: try fields.req("term_id", \.stringValue))
+        case "term_new_err":
+            return .termNewErr(reqID: try fields.req("req_id", \.uint64Value), msg: try fields.req("msg", \.stringValue))
         default:
             return .unknown(type: t)
         }
@@ -679,11 +701,30 @@ public extension Message {
             return Self.tagged("terms_list")
         case .terms(let terms):
             return Self.tagged("terms") { $0.put("terms", .array(terms.map(Self.termInfoValue))) }
-        case .input(let termID, let bytes, let typed):
+        case .input(let termID, let bytes, let typed, let hold):
             return Self.tagged("input") {
                 $0.put("term_id", .string(termID))
                 $0.put("bytes", .binary(bytes))
                 $0.put("typed", unlessNil: typed ? .bool(true) : nil)
+                $0.put("hold", unlessNil: hold ? .bool(true) : nil)
+            }
+        case .termNew(let reqID, let cmd, let cwd, let termID, let boardID):
+            return Self.tagged("term_new") {
+                $0.put("req_id", unlessNil: reqID.map(Self.uintValue))
+                $0.put("cmd", .string(cmd))
+                $0.put("cwd", .string(cwd))
+                $0.put("term_id", unlessNil: termID.map(MsgPackValue.string))
+                $0.put("board_id", unlessNil: boardID.map(MsgPackValue.string))
+            }
+        case .termNewOK(let reqID, let termID):
+            return Self.tagged("term_new_ok") {
+                $0.put("req_id", unlessNil: reqID.map(Self.uintValue))
+                $0.put("term_id", .string(termID))
+            }
+        case .termNewErr(let reqID, let msg):
+            return Self.tagged("term_new_err") {
+                $0.put("req_id", Self.uintValue(reqID))
+                $0.put("msg", .string(msg))
             }
         case .resize(let termID, let cols, let rows):
             return Self.tagged("resize") {

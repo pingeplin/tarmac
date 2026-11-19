@@ -55,10 +55,7 @@ pub async fn handle_open(
     let (canon, seen) = resolve(gate, raw_path).await?;
     // A terminal the daemon does not have names no board and no owner: a
     // stale TARMAC_TERM_ID must not take a doc from the terminal it has (#386).
-    let term_board = match &term_id {
-        Some(t) => daemon.term_boards.lock().await.get(t).cloned(),
-        None => None,
-    };
+    let term_board = daemon.caller_board(term_id.as_deref()).await;
     let term_id = term_id.filter(|_| term_board.is_some());
     // `None` resolves to the active board inside `registry_mut`.
     let target = board_id.or(term_board);

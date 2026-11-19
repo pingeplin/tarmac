@@ -18,6 +18,7 @@ mod report;
 mod resume;
 mod settings_file;
 mod skill;
+mod term;
 mod terms;
 mod wait;
 
@@ -98,6 +99,7 @@ fn run(args: &[String]) -> i32 {
         Some("resume") => resume::run(&args[1..]),
         Some("hooks") => hooks::run(&args[1..]),
         Some("terms") => terms::run(&args[1..]),
+        Some("term") => term::run(&args[1..]),
         Some("events") => events::run(&args[1..]),
         Some("wait") => wait::run(&args[1..]),
         Some(wait::STAT_HELPER) => wait::stat_helper(&args[1..]),

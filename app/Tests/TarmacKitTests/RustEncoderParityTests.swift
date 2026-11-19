@@ -285,6 +285,54 @@ final class RustEncoderParityTests: XCTestCase {
         )
     }
 
+    /// 2611.0016 S23. The spec's vectors 38 to 43: the Rust side's capture
+    /// of them is `tarmac-protocol`'s own vector test.
+    func testTermNew() {
+        // Msg::TermNew { req_id: None, cmd: "echo hi", cwd: "/tmp", term_id: Some("t1"), board_id: None } — conformance vector 38.
+        assertParity(
+            .termNew(reqID: nil, cmd: "echo hi", cwd: "/tmp", termID: "t1", boardID: nil),
+            """
+            84 a1 74 a8 74 65 72 6d 5f 6e 65 77 a3 63 6d 64 a7 65 63 68 6f 20 68 69
+            a3 63 77 64 a4 2f 74 6d 70 a7 74 65 72 6d 5f 69 64 a2 74 31
+            """
+        )
+        // Msg::TermNew { req_id: Some(1), .., board_id: Some("board-0") } — conformance vector 39.
+        assertParity(
+            .termNew(reqID: 1, cmd: "echo hi", cwd: "/tmp", termID: "t1", boardID: "board-0"),
+            """
+            86 a1 74 a8 74 65 72 6d 5f 6e 65 77 a6 72 65 71 5f 69 64 01 a3 63 6d 64
+            a7 65 63 68 6f 20 68 69 a3 63 77 64 a4 2f 74 6d 70 a7 74 65 72 6d 5f 69
+            64 a2 74 31 a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 30
+            """
+        )
+        // Msg::TermNewOk { req_id: Some(1), term_id: "t9" } — conformance vector 40.
+        assertParity(
+            .termNewOK(reqID: 1, termID: "t9"),
+            """
+            83 a1 74 ab 74 65 72 6d 5f 6e 65 77 5f 6f 6b a6 72 65 71 5f 69 64 01 a7
+            74 65 72 6d 5f 69 64 a2 74 39
+            """
+        )
+        // Msg::TermNewOk { req_id: None, term_id: "t9" } — conformance vector 41.
+        assertParity(
+            .termNewOK(reqID: nil, termID: "t9"),
+            "82 a1 74 ab 74 65 72 6d 5f 6e 65 77 5f 6f 6b a7 74 65 72 6d 5f 69 64 a2 74 39"
+        )
+        // Msg::TermNewErr { req_id: 1, msg: "m" } — conformance vector 42.
+        assertParity(
+            .termNewErr(reqID: 1, msg: "m"),
+            "83 a1 74 ac 74 65 72 6d 5f 6e 65 77 5f 65 72 72 a6 72 65 71 5f 69 64 01 a3 6d 73 67 a1 6d"
+        )
+        // Msg::Input { term_id: "t9", bytes: b"echo hi\r", typed: false, hold: true } — conformance vector 43.
+        assertParity(
+            .input(termID: "t9", bytes: Data("echo hi\r".utf8), hold: true),
+            """
+            84 a1 74 a5 69 6e 70 75 74 a7 74 65 72 6d 5f 69 64 a2 74 39 a5 62 79 74
+            65 73 c4 08 65 63 68 6f 20 68 69 0d a4 68 6f 6c 64 c3
+            """
+        )
+    }
+
     /// 2611.0013 S15. The spec's vectors 28 to 30: the Rust side's capture
     /// of them is `tarmac-protocol`'s own vector test.
     func testThePlaceOfAReportAndTheBoardOfABellAndAnExit() {
