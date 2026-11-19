@@ -3,24 +3,34 @@ import TarmacKit
 
 /// A report's text as blocks, wrapped (spec 2611.0018 D13). Not editable, not
 /// selectable, never first responder and no click targets: the inbox panel
-/// keeps the keys, and the text is a claim, not a page.
+/// keeps the keys, and the text is a claim, not a page. It draws the boxes an
+/// attributed string alone cannot: a rounded, bordered box behind each line of
+/// a code span, and one full-width box behind a code block. They are drawn by
+/// the view, not the layout manager: `NSTextView` clips a layout manager's
+/// background to the lines it draws, which cut off a box that reaches past them.
 @MainActor
 final class MarkdownTextView: NSTextView {
-    private let boxes = CodeBoxLayoutManager()
+    static let blockPadY: CGFloat = 6
+    static let spanInset: CGFloat = 3.5
+    /// Room around the text for the code boxes, which reach past the glyphs.
+    static let inset = NSSize(width: spanInset.rounded(.up), height: blockPadY)
+
+    private var style: MarkdownStyle?
     /// The width `fit` last laid the text out at, and the height it found.
     private var fitted: (width: CGFloat, height: CGFloat)?
 
     init() {
         let storage = NSTextStorage()
-        storage.addLayoutManager(boxes)
+        let layout = NSLayoutManager()
+        storage.addLayoutManager(layout)
         let container = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
         container.lineFragmentPadding = 0
-        boxes.addTextContainer(container)
+        layout.addTextContainer(container)
         super.init(frame: .zero, textContainer: container)
         isEditable = false
         isSelectable = false
         drawsBackground = false
-        textContainerInset = .zero
+        textContainerInset = Self.inset
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -31,21 +41,57 @@ final class MarkdownTextView: NSTextView {
 
     func show(_ blocks: [MarkdownBlock]) {
         let style = MarkdownStyle()
-        boxes.look = style.look
+        self.style = style
         textStorage?.setAttributedString(style.attributed(blocks))
         fitted = nil
     }
 
-    /// The text's height at `width`, which the view takes. A layout pass with
-    /// the same width and text lays nothing out again.
+    /// The view's height for text `width` wide, insets included. A layout pass
+    /// with the same width and text lays nothing out again.
     func fit(width: CGFloat) -> CGFloat {
         if let fitted, fitted.width == width { return fitted.height }
-        guard let container = textContainer else { return 0 }
+        guard let container = textContainer, let layout = layoutManager else { return 0 }
         container.size = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
-        boxes.ensureLayout(for: container)
-        let height = ceil(boxes.usedRect(for: container).height + CodeBoxLayoutManager.blockPadY)
+        layout.ensureLayout(for: container)
+        let height = ceil(layout.usedRect(for: container).height + 2 * Self.inset.height)
         fitted = (width, height)
         return height
+    }
+
+    override func drawBackground(in rect: NSRect) {
+        super.drawBackground(in: rect)
+        guard let style, let storage = textStorage, let layout = layoutManager, let container = textContainer else { return }
+        let origin = textContainerOrigin
+        let all = NSRange(location: 0, length: storage.length)
+        func glyphs(_ range: NSRange) -> NSRange { layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil) }
+        storage.enumerateAttribute(.codeBlock, in: all) { value, range, _ in
+            guard value != nil else { return }
+            var box = layout.boundingRect(forGlyphRange: glyphs(range), in: container)
+            box.origin.x = 0
+            box.size.width = container.size.width
+            box = box.offsetBy(dx: origin.x, dy: origin.y).insetBy(dx: 0, dy: -Self.blockPadY)
+            CodeBox.draw(Self.whole(box), radius: 4, fill: Theme.bg0, border: Theme.line)
+        }
+        storage.enumerateAttribute(.codeSpan, in: all) { value, range, _ in
+            guard value != nil else { return }
+            // Line by line, by the glyphs: an enclosing rect runs to the end of
+            // a line the span wraps on.
+            let span = glyphs(range)
+            layout.enumerateLineFragments(forGlyphRange: span) { _, _, _, line, _ in
+                let piece = NSIntersectionRange(line, span)
+                guard piece.length > 0 else { return }
+                var box = layout.boundingRect(forGlyphRange: piece, in: container).offsetBy(dx: origin.x, dy: origin.y)
+                box.origin.x -= Self.spanInset
+                box.size.width += 2
+                box.size.height -= style.lineSpacing
+                CodeBox.draw(Self.whole(box), radius: 3, fill: Theme.bg2, border: Theme.line)
+            }
+        }
+    }
+
+    /// On whole points, so a 1 px border is sharp on a 1× display too.
+    private static func whole(_ rect: NSRect) -> NSRect {
+        NSRect(x: rect.minX.rounded(), y: rect.minY.rounded(), width: rect.width.rounded(), height: rect.height.rounded())
     }
 }
 
@@ -59,7 +105,7 @@ extension NSAttributedString.Key {
 @MainActor
 private struct MarkdownStyle {
     private static let design: CGFloat = 11
-    private static let blockPadY = CodeBoxLayoutManager.blockPadY
+    private static let blockPadY = MarkdownTextView.blockPadY
     private static let blockPadX: CGFloat = 8
     private static let listIndent: CGFloat = 18
     private static let markerGap: CGFloat = 6
@@ -67,12 +113,8 @@ private struct MarkdownStyle {
     private static let itemGap: CGFloat = 2
 
     private let marks = MarkFaces(design: design)
-    private let lineSpacing = (Theme.chrome(design) * 0.4).rounded()
+    let lineSpacing = (Theme.chrome(design) * 0.4).rounded()
     private var body: NSFont { marks.base }
-
-    var look: CodeBoxLayoutManager.Look {
-        CodeBoxLayoutManager.Look(spanFill: Theme.bg2, blockFill: Theme.bg0, border: Theme.line, lineSpacing: lineSpacing)
-    }
 
     func attributed(_ blocks: [MarkdownBlock]) -> NSAttributedString {
         let out = NSMutableAttributedString()
@@ -132,7 +174,7 @@ private struct MarkdownStyle {
         let out = NSMutableAttributedString()
         func makeRoom() {
             guard out.length > 0 else { return }
-            out.addAttribute(.kern, value: 2 * CodeBoxLayoutManager.spanInset - 2, range: NSRange(location: out.length - 1, length: 1))
+            out.addAttribute(.kern, value: 2 * MarkdownTextView.spanInset - 2, range: NSRange(location: out.length - 1, length: 1))
         }
         for run in text.runs {
             var attributes: [NSAttributedString.Key: Any] = [
@@ -147,64 +189,5 @@ private struct MarkdownStyle {
             if run.mark == .code { makeRoom() }
         }
         return out
-    }
-}
-
-/// Draws the boxes an attributed string alone cannot: a rounded, bordered box
-/// behind each line of a code span, and one full-width box behind a code
-/// block (TextKit 1, checked in an offline spike). Not main-actor: AppKit
-/// calls it as a plain `NSLayoutManager`, so it holds its colours itself.
-private final class CodeBoxLayoutManager: NSLayoutManager {
-    struct Look {
-        let spanFill, blockFill, border: NSColor
-        let lineSpacing: CGFloat
-    }
-
-    static let blockPadY: CGFloat = 6
-    static let spanInset: CGFloat = 3.5
-
-    var look: Look?
-
-    override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
-        super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
-        guard let look, let storage = textStorage, let container = textContainers.first else { return }
-        let chars = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
-        for range in Self.ranges(of: .codeBlock, in: storage, within: chars) {
-            var rect = boundingRect(forGlyphRange: glyphRange(forCharacterRange: range, actualCharacterRange: nil), in: container)
-            rect.origin.x = 0
-            rect.size.width = container.size.width
-            rect = rect.offsetBy(dx: origin.x, dy: origin.y).insetBy(dx: 0, dy: -Self.blockPadY)
-            CodeBox.draw(Self.whole(rect), radius: 4, fill: look.blockFill, border: look.border)
-        }
-        for range in Self.ranges(of: .codeSpan, in: storage, within: chars) {
-            // Line by line, by the glyphs: an enclosing rect runs to the end of
-            // a line the span wraps on.
-            let glyphs = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-            var pieces: [NSRange] = []
-            enumerateLineFragments(forGlyphRange: glyphs) { _, _, _, line, _ in
-                let piece = NSIntersectionRange(line, glyphs)
-                if piece.length > 0 { pieces.append(piece) }
-            }
-            for rect in pieces.map({ boundingRect(forGlyphRange: $0, in: container) }) {
-                var line = rect.offsetBy(dx: origin.x, dy: origin.y)
-                line.origin.x -= Self.spanInset
-                line.size.width += 2
-                line.size.height -= look.lineSpacing
-                CodeBox.draw(Self.whole(line), radius: 3, fill: look.spanFill, border: look.border)
-            }
-        }
-    }
-
-    /// On whole points, so a 1 px border is sharp on a 1× display too.
-    private static func whole(_ rect: NSRect) -> NSRect {
-        NSRect(x: rect.minX.rounded(), y: rect.minY.rounded(), width: rect.width.rounded(), height: rect.height.rounded())
-    }
-
-    private static func ranges(of key: NSAttributedString.Key, in storage: NSTextStorage, within: NSRange) -> [NSRange] {
-        var ranges: [NSRange] = []
-        storage.enumerateAttribute(key, in: within) { value, range, _ in
-            if value != nil { ranges.append(range) }
-        }
-        return ranges
     }
 }

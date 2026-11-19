@@ -169,12 +169,15 @@ final class InboxPreviewView: NSView {
 
         let textWidth = max(0, inner - Metric.quoteRoom * 2)
         let textHeight = text.fit(width: textWidth)
-        text.frame = NSRect(x: Metric.quoteRoom, y: 0, width: textWidth, height: textHeight)
+        let inset = MarkdownTextView.inset
+        text.frame = NSRect(
+            x: Metric.quoteRoom - inset.width, y: 0, width: textWidth + 2 * inset.width, height: textHeight
+        )
         let openSize = open.fittedSize
         let closeSize = close.fittedSize
-        open.frame = NSRect(x: 0, y: 0, width: openSize.width, height: openSize.height)
+        open.frame = NSRect(x: 0, y: inset.height, width: openSize.width, height: openSize.height)
         close.frame = NSRect(
-            x: inner - closeSize.width, y: max(0, textHeight - closeSize.height),
+            x: inner - closeSize.width, y: max(0, textHeight - inset.height - closeSize.height),
             width: closeSize.width, height: closeSize.height
         )
         doc.frame = NSRect(x: 0, y: 0, width: inner, height: max(textHeight, scroll.contentSize.height))
