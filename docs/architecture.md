@@ -1222,9 +1222,9 @@ A `TermReport` shows a **report chip** before the bell dot: `report · <age>`
 (`<1m`, `Nm`, `Nh`, `Nd`), amber for `blocked`, `Theme.ok` green for `done`,
 read again every 30 s (`ReportChip`, `TarmacKit`). It is the doc card's owner
 chip form (`ChipView`: mono, a 1 px border, no fill); a read report keeps the
-kind's colour on its border and its text goes faint. Its tool tip places the
-report in time, `report · during <proc>`, and quotes the text in `“”`: the text is
-a claim of whatever process sent it, never parsed. The app sends `Input.typed`
+kind's colour on its border and its text goes faint. It has no tool tip
+(#422): the edge pill and the inbox quote the text in `“”`, as a claim of
+whatever process sent it. The app sends `Input.typed`
 for the user's own input only, so a hover report or an engine reply never reads
 it. A dead card drops its report (`holdOpen`), and a lost connection clears
 every chip; the next restore brings the shown board's back. The inbox

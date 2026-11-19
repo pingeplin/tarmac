@@ -9,7 +9,6 @@ public enum ReportChip {
         /// its border.
         public let signal: CardSignal
         public let dimmed: Bool
-        public let toolTip: String
     }
 
     /// How often a shown chip reads its age again.
@@ -17,19 +16,17 @@ public enum ReportChip {
 
     private static let title = "report"
 
-    /// A report placed in time: `report · during <proc>`, or `report`. The
-    /// chip's tool tip and an inbox row both read it.
+    /// A report placed in time: `report · during <proc>`, or `report`. An
+    /// inbox row and the preview pane read it.
     public static func heading(proc: String?) -> String {
         ChromeText.during(title, proc: proc)
     }
 
     public static func model(report: TermReport, nowMs: UInt64) -> Model {
-        let heading = heading(proc: report.proc)
-        return Model(
+        Model(
             text: "\(title) · \(ChromeText.reportAge(atMs: report.atMs, nowMs: nowMs))",
             signal: report.kind.signal,
-            dimmed: report.read,
-            toolTip: report.text.map { "\(heading)\n“\($0)”" } ?? heading
+            dimmed: report.read
         )
     }
 }
