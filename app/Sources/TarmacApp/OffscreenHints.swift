@@ -124,7 +124,8 @@ final class OffscreenHintPill: PressControl {
         let arrowSize = arrow.textSize
         let labelSize = label.naturalSize
         size = NSSize(
-            width: (2 * Self.insetX + arrowSize.width + Self.gap + labelSize.width).rounded(.up),
+            width: (2 * Self.insetX + arrowSize.width + Self.gap + labelSize.width - 2 * InlineTextLabel.cellInset)
+                .rounded(.up),
             height: 2 * Self.insetY + arrow.lineHeight
         )
         super.init(frame: NSRect(origin: .zero, size: size))
@@ -138,7 +139,9 @@ final class OffscreenHintPill: PressControl {
         arrow.place(at: CGPoint(x: Self.insetX, y: Self.insetY))
         addSubview(arrow)
         label.frame = NSRect(
-            origin: CGPoint(x: (Self.insetX + arrowSize.width + Self.gap).rounded(), y: Self.insetY),
+            origin: CGPoint(
+                x: (Self.insetX + arrowSize.width + Self.gap).rounded() - InlineTextLabel.cellInset, y: Self.insetY
+            ),
             size: NSSize(width: labelSize.width.rounded(.up), height: labelSize.height)
         )
         addSubview(label)
