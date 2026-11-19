@@ -82,7 +82,7 @@ make kill-daemon DEV_DIR="$QA"             # BEFORE the rm: it finds the daemon 
 rm -rf "$QA"
 ```
 
-Replacing `DEV_SOCKET` and `DEV_ENV` by hand still works, but a `DEV_ENV`
+`DEV_SOCKET` and `DEV_ENV` can also be given by hand, but a `DEV_ENV`
 without `TARMAC_CONFIG_DIR` loses that pin.
 
 **There is no hot reload.** After a change, stop the app and `make run` again.

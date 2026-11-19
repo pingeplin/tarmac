@@ -27,7 +27,7 @@ Everything goes through the root `Makefile`:
 
 ## Docs
 
-- `docs/` — **read [`docs/README.md`](docs/README.md) first**: it classifies every doc as ACTIVE / PROPOSED / HISTORICAL. ACTIVE (trust as current): `architecture.md`, `protocol.md` (wire contract + conformance vectors), `backlog.md` (the audited *unbuilt* list), `workflow.md`. PROPOSED (**zero lines implemented**): `proposed/`. HISTORICAL (frozen; all but `designs/2610.0001_native_swift_ui.md` describe two earlier apps — see Gotchas): `archive/`, `designs/`.
+- `docs/` — **read [`docs/README.md`](docs/README.md) first**: it classifies every doc as ACTIVE / PROPOSED / HISTORICAL. ACTIVE (trust as current): `architecture.md`, `protocol.md` (wire contract + conformance vectors), `backlog.md` (the audited *unbuilt* list), `workflow.md`, `coding-style.md`. PROPOSED (**zero lines implemented**): `proposed/`. HISTORICAL (frozen): `archive/`, which describes two earlier apps (see Gotchas). `designs/` holds one record per change, for the earlier apps and for this one; go by each record's banner — a record of a change that was not built is PROPOSED.
 
 ## Conventions
 
