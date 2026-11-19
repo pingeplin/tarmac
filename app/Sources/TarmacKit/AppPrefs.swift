@@ -34,16 +34,20 @@ public enum AppPrefs {
         /// neither is written. An id that no theme has is kept: it is
         /// resolved when it is used (`ThemeLibrary.entry`).
         public var themes: [ThemeVariant: String]
+        /// The inbox preview pane's height the user set, in design points
+        /// (spec 2611.0018 D8); none is the standard one.
+        public var inboxPreviewHeight: Double?
 
         public init(
             warnBeforeQuit: Bool = true, fonts: [FontRole: String] = [:], fontSizes: [FontRole: Double] = [:],
-            theme: ThemeChoice = .standard, themes: [ThemeVariant: String] = [:]
+            theme: ThemeChoice = .standard, themes: [ThemeVariant: String] = [:], inboxPreviewHeight: Double? = nil
         ) {
             self.warnBeforeQuit = warnBeforeQuit
             self.fonts = fonts
             self.fontSizes = fontSizes
             self.theme = theme
             self.themes = themes
+            self.inboxPreviewHeight = inboxPreviewHeight
         }
     }
 
@@ -83,8 +87,17 @@ public enum AppPrefs {
                 let id = try? object.decode(String.self, forKey: Key(variant.prefsKey))
                 values.themes[variant] = ThemeCatalog.saved(id, for: variant)
             }
+            values.inboxPreviewHeight = (try? object.decode(Double.self, forKey: Key(inboxPreviewHeightKey)))
+                .flatMap(acceptedPreviewHeight)
             self.values = values
         }
+    }
+
+    static let inboxPreviewHeightKey = "inbox_preview_height"
+
+    /// A height `InboxPreviewSplit` can store; any other is no entry.
+    private static func acceptedPreviewHeight(_ height: Double) -> Double? {
+        (InboxPreviewSplit.minimum...InboxPreviewSplit.maximum).contains(height) ? height : nil
     }
 
     /// Where the file was up to release 0.16.0, which `migrate` reads.
@@ -160,6 +173,9 @@ public enum AppPrefs {
         for variant in ThemeVariant.allCases {
             guard let id = ThemeCatalog.saved(values.themes[variant], for: variant) else { continue }
             json += #","\#(variant.prefsKey)":\#(JSONValue.string(id).jsonString)"#
+        }
+        if let height = values.inboxPreviewHeight.flatMap(acceptedPreviewHeight) {
+            json += #","\#(inboxPreviewHeightKey)":\#(JSONValue.number(height).jsonString)"#
         }
         return Data((json + "}").utf8)
     }

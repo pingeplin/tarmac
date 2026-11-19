@@ -82,50 +82,103 @@ public struct InlineText: Equatable, Sendable {
     }
 }
 
-/// A report's text as one line of inline marks (spec 2611.0017 D2–D6).
+/// One item of a list: its marker as written (`•` for `-`, `*` or `+`; an
+/// ordered one keeps its number) and its text.
+public struct ListItem: Equatable, Sendable {
+    public let marker: String
+    public let text: InlineText
+
+    public init(marker: String, text: InlineText) {
+        self.marker = marker
+        self.text = text
+    }
+
+    var isOrdered: Bool { marker != "•" }
+}
+
+/// A block of a report's text (spec 2611.0018 D1). A code block keeps its
+/// lines as written.
+public enum MarkdownBlock: Equatable, Sendable {
+    case paragraph(InlineText)
+    case heading(InlineText)
+    case list([ListItem])
+    case code([String])
+}
+
+/// A report's text as one line of inline marks (spec 2611.0017 D2–D6), or as
+/// blocks (spec 2611.0018 D1). Both read the same block rules.
 public enum InlineMarkdown {
     public static func line(_ text: String) -> InlineText {
-        let rendered = settle(InlineText(blocks(text)))
+        let runs = blocks(text).map(flat).filter { !$0.isEmpty }.joined(separator: [InlineRun(" ", .plain)])
+        let rendered = settle(InlineText(Array(runs)))
         return rendered.runs.isEmpty ? .literal(ChromeText.oneLine(text)) : rendered
     }
 
-    // MARK: - Blocks (D2)
+    // MARK: - Blocks (2611.0017 D2, 2611.0018 D1)
 
-    private static func blocks(_ text: String) -> [InlineRun] {
+    public static func blocks(_ text: String) -> [MarkdownBlock] {
         let lines = text.split(omittingEmptySubsequences: false) { $0 == "\n" || $0 == "\r\n" || $0 == "\r" }
-        var blocks: [[InlineRun]] = []
+        var blocks: [MarkdownBlock] = []
         var paragraph: [Substring] = []
+        var list: [ListItem] = []
         func endParagraph() {
-            if !paragraph.isEmpty { blocks.append(inline(paragraph.joined(separator: " "))) }
+            let text = settle(InlineText(inline(paragraph.joined(separator: " "))))
+            if !text.runs.isEmpty { blocks.append(.paragraph(text)) }
             paragraph = []
+        }
+        func endList() {
+            if !list.isEmpty { blocks.append(.list(list)) }
+            list = []
+        }
+        func end() {
+            endParagraph()
+            endList()
         }
         var index = 0
         while index < lines.count {
             let line = lines[index]
             index += 1
             if line.hasPrefix("```") {
-                endParagraph()
-                var body: [Substring] = []
+                end()
+                var body: [String] = []
                 while index < lines.count, !lines[index].hasPrefix("```") {
-                    body.append(lines[index])
+                    body.append(String(lines[index]))
                     index += 1
                 }
                 index += 1
-                blocks.append([InlineRun(ChromeText.oneLine(body.joined(separator: " ")), .code)])
+                if !body.allSatisfy({ $0.allSatisfy(\.isWhitespace) }) { blocks.append(.code(body)) }
             } else if let heading = heading(line) {
-                endParagraph()
-                blocks.append(inline(heading))
+                end()
+                let text = settle(InlineText(inline(heading)))
+                if !text.runs.isEmpty { blocks.append(.heading(text)) }
             } else if let (mark, rest) = listItem(line) {
                 endParagraph()
-                blocks.append([InlineRun(mark, .bullet), InlineRun(" ", .plain)] + inline(rest))
+                let item = ListItem(marker: mark, text: settle(InlineText(inline(rest))))
+                if let last = list.last, last.isOrdered != item.isOrdered { endList() }
+                list.append(item)
             } else if line.allSatisfy(\.isWhitespace) {
-                endParagraph()
+                end()
             } else {
+                endList()
                 paragraph.append(line)
             }
         }
-        endParagraph()
-        return Array(blocks.map { InlineText($0).runs }.filter { !$0.isEmpty }.joined(separator: [InlineRun(" ", .plain)]))
+        end()
+        return blocks
+    }
+
+    /// A block as `line` shows it: a list item is its marker, a space and
+    /// its text; a code block is one code run.
+    private static func flat(_ block: MarkdownBlock) -> [InlineRun] {
+        let gap = InlineRun(" ", .plain)
+        switch block {
+        case .paragraph(let text), .heading(let text):
+            return text.runs
+        case .list(let items):
+            return Array(items.map { [InlineRun($0.marker, .bullet), gap] + $0.text.runs }.joined(separator: [gap]))
+        case .code(let lines):
+            return InlineText([InlineRun(ChromeText.oneLine(lines.joined(separator: " ")), .code)]).runs
+        }
     }
 
     private static func heading(_ line: Substring) -> Substring? {

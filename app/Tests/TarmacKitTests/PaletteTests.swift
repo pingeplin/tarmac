@@ -314,3 +314,25 @@ final class PaletteTests: XCTestCase {
         XCTAssertTrue(isLighter(dark.text, than: dark.bg0))
     }
 }
+
+/// Spec 2611.0018 D9: the hover lift of an overlay row.
+final class RowHoverTests: XCTestCase {
+    func testS17TheBreezeDarkHoverIsThePrototypes() {
+        XCTAssertEqual(ThemeCatalog.standard(for: .dark).palette.rowHover, 0x383e44)
+    }
+
+    func testS18TheHoverStandsApartFromTheListAndTheSelectedRowInEveryTheme() throws {
+        let file = try ThemeFile.palette(of: Data("background = #000000\nforeground = #ffffff\n".utf8)).get()
+        XCTAssertEqual(file.bg2, 0x121212)
+        XCTAssertEqual(file.bg3, 0x262626)
+        XCTAssertEqual(file.rowHover, 0x191919)
+        for (name, palette) in ThemeCatalog.all.map({ ($0.id, $0.palette) }) + [("file", file)] {
+            XCTAssertGreaterThanOrEqual(Self.distance(palette.rowHover, palette.bg2), 2, name)
+            XCTAssertGreaterThanOrEqual(Self.distance(palette.rowHover, palette.bg3), 2, name)
+        }
+    }
+
+    private static func distance(_ a: UInt32, _ b: UInt32) -> Int {
+        [16, 8, 0].map { abs(Int(a >> $0 & 0xff) - Int(b >> $0 & 0xff)) }.max() ?? 0
+    }
+}
