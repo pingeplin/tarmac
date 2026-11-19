@@ -3,7 +3,7 @@ public struct InboxRow: Equatable, Sendable {
     public let id: Inbox.ItemID
     public let kind: Inbox.Kind
     public let title: String
-    public let quote: String?
+    public let quote: InlineText?
     public let place: String
     public let age: String
     public let read: Bool
@@ -38,8 +38,8 @@ public enum InboxCopy {
         ([title(item)] + [item.text.map { "“\($0)”" }].compactMap { $0 } + [place]).joined(separator: "\n")
     }
 
-    public static func quote(_ item: Inbox.Item) -> String? {
-        item.text.map { "“\(ChromeText.oneLine($0))”" }
+    public static func quote(_ item: Inbox.Item) -> InlineText? {
+        item.text.map { InlineMarkdown.line($0).quoted }
     }
 
     /// `<board> › <terminal> · <cwd>`: the board's name or id; the card's

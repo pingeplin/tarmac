@@ -44,7 +44,7 @@ final class InboxPanelLayoutTests: XCTestCase {
             edgeInset: 12, edgeMargin: 8, stackGap: 6, pillSize: { _ in CGSize(width: 80, height: 22) }
         )
         let hint = OffscreenHintLayout.Hint(
-            cardID: "T", centerView: CGPoint(x: 800, y: 300), signal: .bell, label: "T", z: 0, signalAt: 1
+            cardID: "T", centerView: CGPoint(x: 800, y: 300), signal: .bell, label: .literal("T"), z: 0, signalAt: 1
         )
         let open = OffscreenHintLayout.stackPills([hint], in: InboxPanelLayout.uncovered(area, open: true, maxWidth: cap), options: options)
         XCTAssertEqual(open.map(\.edge), [.right])

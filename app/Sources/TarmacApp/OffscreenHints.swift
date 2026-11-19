@@ -100,13 +100,14 @@ final class OffscreenHintLayer: NSView {
 final class OffscreenHintPill: PressControl {
     struct Content: Equatable {
         var arrow: String
-        var label: String
+        var label: InlineText
         var signal: CardSignal
     }
 
     private static let insetX: CGFloat = 1 + 11
     private static let insetY: CGFloat = 1 + 6
     private static let gap: CGFloat = 7
+    private static let fontSize: CGFloat = 10.5
 
     let content: Content
     let size: NSSize
@@ -115,13 +116,16 @@ final class OffscreenHintPill: PressControl {
 
     init(_ content: Content) {
         self.content = content
-        let arrow = ChromeLabel(content.arrow, size: 10.5, color: OverlayPalette.hintArrow(content.signal))
-        let label = ChromeLabel(content.label, size: 10.5, color: OverlayPalette.hintLabel(content.signal))
+        let arrow = ChromeLabel(content.arrow, size: Self.fontSize, color: OverlayPalette.hintArrow(content.signal))
+        let label = InlineTextLabel(style: InlineTextLabel.Style(
+            design: Self.fontSize, color: OverlayPalette.hintLabel(content.signal), boxFill: Theme.bg1, boxBorder: Theme.line
+        ))
+        label.text = content.label
         let arrowSize = arrow.textSize
-        let labelSize = label.textSize
+        let labelSize = label.naturalSize
         size = NSSize(
             width: (2 * Self.insetX + arrowSize.width + Self.gap + labelSize.width).rounded(.up),
-            height: 2 * Self.insetY + labelSize.height
+            height: 2 * Self.insetY + arrow.lineHeight
         )
         super.init(frame: NSRect(origin: .zero, size: size))
         wantsLayer = true
@@ -133,7 +137,10 @@ final class OffscreenHintPill: PressControl {
 
         arrow.place(at: CGPoint(x: Self.insetX, y: Self.insetY))
         addSubview(arrow)
-        label.place(at: CGPoint(x: Self.insetX + arrowSize.width + Self.gap, y: Self.insetY))
+        label.frame = NSRect(
+            origin: CGPoint(x: (Self.insetX + arrowSize.width + Self.gap).rounded(), y: Self.insetY),
+            size: NSSize(width: labelSize.width.rounded(.up), height: labelSize.height)
+        )
         addSubview(label)
     }
 

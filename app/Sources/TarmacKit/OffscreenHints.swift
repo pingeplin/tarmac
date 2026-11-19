@@ -11,14 +11,14 @@ public enum OffscreenHintLayout {
         public var cardID: String
         public var centerView: CGPoint
         public var signal: CardSignal
-        public var label: String
+        public var label: InlineText
         /// Stacking order; higher is more recently fronted. Breaks a tie of rank.
         public var z: Int
         /// When the signal came, in ms since the epoch; nil for live.
         public var signalAt: UInt64?
 
         public init(
-            cardID: String, centerView: CGPoint, signal: CardSignal, label: String, z: Int, signalAt: UInt64?
+            cardID: String, centerView: CGPoint, signal: CardSignal, label: InlineText, z: Int, signalAt: UInt64?
         ) {
             self.cardID = cardID
             self.centerView = centerView
@@ -81,23 +81,17 @@ public enum OffscreenHintLayout {
     public static let quoteScalars = 24
 
     /// A bell reads `name · hhmm` (middle dot U+00B7); a report quotes the
-    /// start of its text, one line; an exit says so; live reads the name.
-    public static func pillLabel(signal: CardSignal, name: String, hhmm: String, quote: String?) -> String {
+    /// start of its text as one line of inline markdown, cut by rendered
+    /// scalars (spec 2611.0017); an exit says so; live reads the name. Only
+    /// the quote is parsed.
+    public static func pillLabel(signal: CardSignal, name: String, hhmm: String, quote: String?) -> InlineText {
         switch signal {
         case .blocked, .done:
-            guard let quote else { return "\(name) · report" }
-            return "\(name) · “\(start(of: ChromeText.oneLine(quote)))”"
-        case .bell: return "\(name) · \(hhmm)"
-        case .exit: return "\(name) · exited"
-        case .live: return name
+            guard let quote else { return .literal("\(name) · report") }
+            return .literal("\(name) · ") + InlineMarkdown.line(quote).prefix(scalars: quoteScalars).quoted
+        case .bell: return .literal("\(name) · \(hhmm)")
+        case .exit: return .literal("\(name) · exited")
+        case .live: return .literal(name)
         }
-    }
-
-    private static func start(of text: String) -> String {
-        let scalars = text.unicodeScalars
-        guard scalars.count > quoteScalars else { return text }
-        var kept = String.UnicodeScalarView(scalars.prefix(quoteScalars - 1))
-        kept.append("…")
-        return String(kept)
     }
 }

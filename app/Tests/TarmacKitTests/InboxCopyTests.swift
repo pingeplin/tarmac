@@ -7,7 +7,7 @@ final class InboxCopyTests: XCTestCase {
         let report = inboxItem(.report(.blocked), proc: "claude", text: "May I?")
         XCTAssertEqual(InboxCopy.tag(report.kind), "blocked")
         XCTAssertEqual(InboxCopy.title(report), "report · during claude")
-        XCTAssertEqual(InboxCopy.quote(report), "“May I?”")
+        XCTAssertEqual(InboxCopy.quote(report)?.plain, "“May I?”")
     }
 
     func testS5ADoneReportWithNoProcOrTextIsTheBareTitleAndNoQuote() {
@@ -31,7 +31,18 @@ final class InboxCopyTests: XCTestCase {
     }
 
     func testS5AQuoteIsOneLine() {
-        XCTAssertEqual(InboxCopy.quote(inboxItem(.report(.blocked), text: "  May\n\tI  run\r\n rm?  ")), "“May I run rm?”")
+        XCTAssertEqual(InboxCopy.quote(inboxItem(.report(.blocked), text: "  May\n\tI  run\r\n rm?  "))?.plain, "“May I run rm?”")
+    }
+
+    func testS9TheRowQuoteRendersInlineMarkdown() {
+        XCTAssertEqual(
+            InboxCopy.quote(inboxItem(.report(.blocked), text: "**May** I?"))?.runs,
+            [InlineRun("“", .plain), InlineRun("May", .bold), InlineRun(" I?”", .plain)]
+        )
+    }
+
+    func testS30TheQuoteOfAnEmptyReportIsTheQuoteMarks() {
+        XCTAssertEqual(InboxCopy.quote(inboxItem(.report(.blocked), text: "")), .literal("“”"))
     }
 
     func testS5ThePlaceIsBoardTerminalAndFolderUnderHome() {
@@ -96,7 +107,7 @@ final class InboxCopyTests: XCTestCase {
             InboxCopy.row(report, boardName: "api", cardLabel: "agent", home: "/Users/u", nowMs: 1_000 + 125_000),
             InboxRow(
                 id: Inbox.ItemID(termID: "T1", family: .report), kind: .report(.blocked),
-                title: "report · during claude", quote: "“May I?”", place: "api › agent · ~/w", age: "2m",
+                title: "report · during claude", quote: .literal("“May I?”"), place: "api › agent · ~/w", age: "2m",
                 read: false, toolTip: "report · during claude\n“May\nI?”\napi › agent · ~/w"
             )
         )
