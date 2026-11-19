@@ -13,12 +13,26 @@ struct MarkFaces {
     let base: NSFont
     let bold: NSFont
     let italic: NSFont?
+    /// What a one-line text field of the base face fits to.
+    let lineHeight: CGFloat
 
     init(design: CGFloat) {
         base = Theme.mono(design)
+        lineHeight = NSAttributedString(string: " ", attributes: [.font: base]).size().height
         bold = Theme.mono(design, weight: .semibold)
         let italic = NSFontManager.shared.convert(base, toHaveTrait: .italicFontMask)
         self.italic = italic.fontDescriptor.symbolicTraits.contains(.italic) ? italic : nil
+    }
+
+    /// A one-line text of the base face, for a code box in wrapped text. A
+    /// TextKit line of one face has its baseline where a drawn string has it;
+    /// only the line heights differ (measured for five faces, issue #434).
+    func codeFace() -> CodeSpanBox.Face {
+        let storage = NSTextStorage(string: " ", attributes: [.font: base])
+        let layout = NSLayoutManager()
+        storage.addLayoutManager(layout)
+        layout.addTextContainer(NSTextContainer(size: NSSize(width: 100, height: 100)))
+        return CodeSpanBox.Face(baseline: layout.location(forGlyphAt: 0).y, lineHeight: lineHeight)
     }
 
     /// What `mark` sets over the base attributes.
