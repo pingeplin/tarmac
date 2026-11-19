@@ -1,6 +1,6 @@
 ---
 name: tarmac
-description: "How to surface files as cards on the Tarmac board with `tarmac open`, and how to author self-contained HTML cards that satisfy Tarmac's sandbox CSP and its frozen-zoom layout model. Use when working inside Tarmac, when a file is worth showing the user as a card, or when writing an HTML report, chart, or dashboard to be displayed on the board."
+description: "How to surface files as cards on the Tarmac board with `tarmac open`, and how to author self-contained HTML cards that satisfy Tarmac's sandbox CSP and its frozen-zoom layout model. Use when working inside Tarmac, when a file is worth showing the user as a card, or when writing an HTML report, chart, or dashboard to be displayed on the board, or when an agent should open another terminal card that runs a command, such as a second agent session (`tarmac term new`)."
 ---
 
 # Tarmac
