@@ -386,12 +386,6 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
     private var resumeChipModel: ResumeHeaderChip.Model?
     private var report: TermReport?
     private var reportTick: DispatchWorkItem?
-    /// The report chip's tool tip is the header's: a press anywhere but on a
-    /// button is the header's own, so the chip is never the view hit.
-    private var reportToolTip: String?
-    private var reportToolTipTag: NSView.ToolTipTag?
-    /// The chip frame the tool tip was last registered for; nil for none.
-    private var reportToolTipRect: NSRect?
     private let freshMeta = NSTextField(labelWithString: "✚ now")
     private let recency = RecentMetaLabel(font: Theme.mono(recencyFontSize))
     private let bellDot = NSTextField(labelWithString: "●")
@@ -525,13 +519,11 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
         reportTick = nil
         guard let report else {
             reportChip.isHidden = true
-            reportToolTip = nil
             needsLayout = true
             return
         }
         let model = ReportChip.model(report: report, nowMs: WallClock.nowMs)
         reportChip.setTone(.signal(model.signal, dimmed: model.dimmed))
-        reportToolTip = model.toolTip
         reportChip.isHidden = false
         reportChip.setLabel(model.text)
         needsLayout = true
@@ -607,12 +599,6 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
         for (item, span) in zip(trailing, frames.trailing) { place(item, at: span.x) }
         // The label alone can be given less room than it takes, and is cut to it.
         place(title, at: frames.label.x, cutTo: frames.label.width < title.room ? frames.label.width : nil)
-        let rect = reportChip.isHidden ? nil : reportChip.frame
-        if rect != reportToolTipRect {
-            if let tag = reportToolTipTag { removeToolTip(tag) }
-            reportToolTipTag = rect.map { addToolTip($0, owner: self, userData: nil) }
-            reportToolTipRect = rect
-        }
     }
 
     private struct Item {
@@ -759,16 +745,5 @@ final class TerminalBodyView: NSView, ThemeFollowing {
     override func layout() {
         super.layout()
         terminal?.frame = bounds
-    }
-}
-
-extension CardHeaderView: NSViewToolTipOwner {
-    nonisolated func view(
-        _ view: NSView,
-        stringForToolTip tag: NSView.ToolTipTag,
-        point: NSPoint,
-        userData data: UnsafeMutableRawPointer?
-    ) -> String {
-        MainActor.assumeIsolated { reportToolTip ?? "" }
     }
 }

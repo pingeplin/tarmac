@@ -60,15 +60,15 @@ tarmac report clear
 ```
 
 Run inside a Tarmac terminal, it shows a small chip in that terminal card's
-header: amber for `blocked`, green for `done`, with the text in its tool tip.
-The chip says when the report came and quotes your text; it does not claim who
+header: amber for `blocked`, green for `done`. The chip says when the report
+came; the edge pill and the inbox quote your text. Tarmac does not claim who
 sent it. Rules:
 
 - The text is optional, at most 280 characters (a longer one is cut with `…`).
   It is shown as a quote. The edge pill and the inbox row draw its inline
   markdown on one line (**bold**, *italic*, `code`, a link's text), and the
   inbox's preview pane shows the whole text with its paragraphs, headings,
-  lists and code blocks; the chip's tool tip shows it as typed.
+  lists and code blocks.
 - It needs `TARMAC_TERM_ID`: outside a Tarmac terminal it exits `1` and sends
   nothing. Exit status otherwise as for `open`: `0` sent, `1` refused or no
   Tarmac running, `2` bad usage (`clear ""` is plain `clear`, not an error).
