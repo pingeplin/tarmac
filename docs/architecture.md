@@ -1716,7 +1716,7 @@ to the row's width by `InlineText.prefix(fitting:measure:)`), and `<board> › <
 <cwd>`, and no tool tip. A click on a row selects it and shows it in the
 **preview pane** at the panel's foot (spec 2611.0018, `InboxPreviewView`):
 the kind tag, title, age and a `go ↵` button, then the whole text as blocks
-(`InlineMarkdown.blocks`: paragraphs, headings, lists, code blocks, drawn by
+(`MarkdownBlocks.parse`: paragraphs, headings, lists, code blocks, drawn by
 `MarkdownTextView` on a TextKit 1 layout manager that draws the code boxes)
 between corner quote marks, scrolling inside the pane, then the place; a bell
 or exit says `no text`. A drag bar (`InboxSplitGrip`) between the list and the

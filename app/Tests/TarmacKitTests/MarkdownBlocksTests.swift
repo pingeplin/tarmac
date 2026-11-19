@@ -4,7 +4,7 @@ import XCTest
 private func para(_ runs: InlineRun...) -> MarkdownBlock { .paragraph(InlineText(runs)) }
 private func item(_ marker: String, _ runs: InlineRun...) -> ListItem { ListItem(marker: marker, text: InlineText(runs)) }
 
-private func blocks(_ text: String) -> [MarkdownBlock] { InlineMarkdown.blocks(text) }
+private func blocks(_ text: String) -> [MarkdownBlock] { MarkdownBlocks.parse(text) }
 
 /// Spec 2611.0018 D1: a report's text as blocks, for the inbox preview pane.
 final class MarkdownBlocksTests: XCTestCase {
