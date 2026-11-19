@@ -33,7 +33,7 @@ public enum MarkdownBlocks {
             switch Line(line) {
             case .fence:
                 var body: [String] = []
-                while let next = lines.next(), !Line.isFence(next) { body.append(String(next)) }
+                while let next = lines.next(), !Line.closesFence(next) { body.append(String(next)) }
                 builder.code(body)
             case .heading(let source): builder.heading(source)
             case .item(let marker, let source): builder.item(marker, source)
@@ -54,7 +54,7 @@ public enum MarkdownBlocks {
         case text(Substring)
 
         init(_ line: Substring) {
-            if Self.isFence(line) {
+            if Self.opensFence(line) {
                 self = .fence
             } else if let heading = Self.heading(line) {
                 self = .heading(heading)
@@ -67,8 +67,15 @@ public enum MarkdownBlocks {
             }
         }
 
-        /// A fence opens and closes at a line that starts with three backticks.
-        static func isFence(_ line: Substring) -> Bool { line.hasPrefix("```") }
+        /// A fence opens at a line that starts with three backticks and has
+        /// no backtick after that run: CommonMark allows none in an info
+        /// string, and a line that closes its own backticks is text (#426).
+        private static func opensFence(_ line: Substring) -> Bool {
+            closesFence(line) && !line.drop { $0 == "`" }.contains("`")
+        }
+
+        /// A fence closes at the next line that starts with three backticks.
+        static func closesFence(_ line: Substring) -> Bool { line.hasPrefix("```") }
 
         private static func heading(_ line: Substring) -> Substring? {
             let hashes = line.prefix { $0 == "#" }.count
