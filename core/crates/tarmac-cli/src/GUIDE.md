@@ -10,7 +10,7 @@ process called `tarmac open`; it pulses because the file's mtime changed. The
 file is the entire interface.
 
 This guide covers how to surface a file, how to say that you are blocked or
-done, how to resume an agent after a restart, how to wait on what Tarmac sees,
+done, how to let the user resume your session after a restart, how to wait on what Tarmac sees,
 how to open another terminal card, and how to write an HTML file that survives the board's sandbox and zoom model.
 Read the part you need. Read all of *HTML cards* before you write one: a page
 that breaks its rules fails with no error.
@@ -80,9 +80,9 @@ sent it. Rules:
 
 ## Reports from Claude Code
 
-The user runs `tarmac hooks install` once. It and `tarmac hooks uninstall`
-change Claude Code's own settings, so leave both to the user. It adds four
-hooks to them,
+The user runs `tarmac hooks install` once. Both `install` and `uninstall`
+change Claude Code's own settings, so leave them to the user. `install` adds
+four hooks to those settings,
 each a call to `tarmac hooks run claude || true`, and from then on every Claude
 session in a Tarmac terminal reports on its own:
 
