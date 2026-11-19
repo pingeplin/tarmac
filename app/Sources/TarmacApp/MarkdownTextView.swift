@@ -56,6 +56,7 @@ private struct MarkdownStyle {
     private static let blockPadX: CGFloat = 8
     private static let spanPad = CodeBoxLayoutManager.spanInset
     private static let listIndent: CGFloat = 18
+    private static let markerGap: CGFloat = 6
     private static let blockGap: CGFloat = 7
     private static let itemGap: CGFloat = 2
     private static let obliqueness = 0.2
@@ -85,9 +86,12 @@ private struct MarkdownStyle {
             case .heading(let text):
                 out.append(runs(text, color: Theme.text, base: bold, paragraph: paragraph(after: Self.blockGap)))
             case .list(let items):
+                // A marker wider than the indent, as `10.`, would tab to the next stop.
+                let widest = items.map { NSAttributedString(string: $0.marker, attributes: [.font: body]).size().width }.max() ?? 0
+                let indent = max(Theme.chrome(Self.listIndent), (widest + Theme.chrome(Self.markerGap)).rounded(.up))
                 for (number, item) in items.enumerated() {
                     let gap = number == items.count - 1 ? Self.blockGap : Self.itemGap
-                    let style = paragraph(after: gap, indent: Theme.chrome(Self.listIndent))
+                    let style = paragraph(after: gap, indent: indent)
                     out.append(NSAttributedString(
                         string: item.marker + "\t",
                         attributes: [.font: body, .foregroundColor: Theme.faint, .paragraphStyle: style]
@@ -177,12 +181,15 @@ private final class CodeBoxLayoutManager: NSLayoutManager {
             Self.box(rect, radius: 4, fill: look.blockFill, border: look.border)
         }
         for range in Self.ranges(of: .codeSpan, in: storage, within: chars) {
-            var rects: [NSRect] = []
-            enumerateEnclosingRects(
-                forGlyphRange: glyphRange(forCharacterRange: range, actualCharacterRange: nil),
-                withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: container
-            ) { rect, _ in rects.append(rect) }
-            for rect in rects {
+            // Line by line, by the glyphs: an enclosing rect runs to the end of
+            // a line the span wraps on.
+            let glyphs = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            var pieces: [NSRange] = []
+            enumerateLineFragments(forGlyphRange: glyphs) { _, _, _, line, _ in
+                let piece = NSIntersectionRange(line, glyphs)
+                if piece.length > 0 { pieces.append(piece) }
+            }
+            for rect in pieces.map({ boundingRect(forGlyphRange: $0, in: container) }) {
                 var line = rect.offsetBy(dx: origin.x, dy: origin.y)
                 line.origin.x -= Self.spanInset
                 line.size.width += 2

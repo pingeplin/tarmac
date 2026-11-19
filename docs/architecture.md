@@ -1701,7 +1701,7 @@ flies, and primes a live card or selects a dead one (`InboxJump.land`). Either
 card takes the keyboard: a dead one, as a press on it does, for its reopen offer.
 
 **The inbox** (spec 2611.0013, `InboxPanelView`; rules in `Inbox`,
-`InboxCopy`, `InboxKeys`, `InboxJump`, `InboxPanelLayout`). A store of report
+`InboxCopy`, `InboxKeys`, `InboxJump`, `InboxPanelLayout`, `InboxPreviewSplit`). A store of report
 items (from `TermReport`, of every board, built or not), and bell and exit
 items (the app's own, from `Bell` and `Exit`, fed before any card check), one
 of each per terminal, newest first, at most 200. `⌘I` or the title-bar button
@@ -1713,7 +1713,19 @@ pills, the minimap and the toasts keep to the area it leaves uncovered. Each
 row reads its kind tag (the `ChipView` form), `report · during <proc>`, `bell`
 or the exit toast's words, its age, the quote (one line of inline markdown, cut
 to the row's width by `InlineText.prefix(fitting:measure:)`), and `<board> › <terminal> ·
-<cwd>`. `Return` or a click jumps: on another board, one switch, landed in
+<cwd>`, and no tool tip. A click on a row selects it and shows it in the
+**preview pane** at the panel's foot (spec 2611.0018, `InboxPreviewView`):
+the kind tag, title, age and a `go ↵` button, then the whole text as blocks
+(`InlineMarkdown.blocks`: paragraphs, headings, lists, code blocks, drawn by
+`MarkdownTextView` on a TextKit 1 layout manager that draws the code boxes)
+between corner quote marks, scrolling inside the pane, then the place; a bell
+or exit says `no text`. A drag bar (`InboxSplitGrip`) between the list and the
+pane resizes it within `InboxPreviewSplit`'s bounds, a double-click resets it,
+and after a press on it ↑↓ resize (`InboxKeys.State.focus`; the panel keeps
+first responder). The height the user set is `inbox_preview_height` in
+`app-prefs.json`. A selected row is `bg3` with a `focus-border` outline, a
+hovered one the quieter `Palette.rowHover` (both overlays: `OverlayRowView`).
+`Return`, a double-click on the selected row or a `go ↵` jumps: on another board, one switch, landed in
 `finishArrive`; then a live card becomes prime and takes the keys, a dead one
 is selected and takes the keys for its reopen offer, and one that went removes
 its row; an exit of a board not built yet lands on the shell that `succeeds`
@@ -1767,7 +1779,7 @@ text that is no number puts the field back (`FontSizeRule`). A choice is
 saved in `app-prefs.json`, whose keys are `warn_before_quit`, a family name
 in `terminal_font`, `interface_font` and `document_font`, a number in
 `terminal_font_size`, `interface_font_size` and `document_font_size`, and `theme`, `theme_light` and
-`theme_dark` (below); a size
+`theme_dark` (below), and `inbox_preview_height` (the inbox, above); a size
 the role does not have reads as nothing chosen. `AppPrefsStore` is the
 one owner of the file and saves all of it each time, so no preference drops
 another's key. A saved family the Mac does not have, or one a fixed-pitch role
