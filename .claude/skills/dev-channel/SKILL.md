@@ -56,6 +56,7 @@ needs staging.
 | `TARMAC_DAEMON` | `core/target/debug/tarmacd`: the daemon binary the app auto-spawns (the daemon itself never reads it) |
 | `TARMAC_APP_VERSION` | the version in `core/Cargo.toml` — an unbundled binary has no `Info.plist`, and the app must name the daemon's own version or it would replace that daemon as stale |
 | `TARMAC_DEV_LABEL` | the worktree name, and for a `DEV_DIR` channel `<worktree>/<its directory>`, shown as the window-title suffix — how to tell two dev windows apart by eye (two `DEV_DIR` directories with the same name read the same: go by pid) |
+| `TARMAC_DEV_ICON` | `packaging/icon/Tarmac-dev-1024.png`, the Dock and ⌘Tab icon of the dev app: the Tarmac icon with orange slashes and a DEV pill (issue #438). The app uses it only when `TARMAC_DEV_LABEL` is set; `swift packaging/icon/build-dev-icon.swift` regenerates it from `Tarmac.svg` |
 | `PATH` | prefixed with `core/target/debug`, so `tarmac open` inside the app's own terminals resolves the freshly built CLI |
 
 The app's stderr is the `make run` output. The daemon's is `.dev/tarmacd.log`,
