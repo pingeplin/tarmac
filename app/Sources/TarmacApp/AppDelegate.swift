@@ -18,6 +18,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Before the first view is built: chrome takes its font and its
         // colours at `init`.
         let environment = ProcessInfo.processInfo.environment
+        if let path = DevIcon.path(devLabel: environment["TARMAC_DEV_LABEL"], iconPath: environment["TARMAC_DEV_ICON"]),
+           let icon = NSImage(contentsOfFile: path) {
+            NSApp.applicationIconImage = icon
+        }
         let configOverride = environment["TARMAC_CONFIG_DIR"]
         let configDir = ChannelPaths.configDir(
             override: configOverride, xdgConfigHome: environment["XDG_CONFIG_HOME"],

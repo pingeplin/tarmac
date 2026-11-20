@@ -80,7 +80,9 @@ test: docs-check ghostty-vt
 # drive another's window. TARMAC_DEV_LABEL suffixes the window title with
 # ` · $(DEV_LABEL)`: the dev binary is not a .app, so Launch Services reports no
 # bundle id for it and the title is the only tell separating one dev app from
-# another (and from the installed one).
+# another. TARMAC_DEV_ICON separates any dev app from the installed one: its
+# Dock and ⌘Tab icon, the Tarmac icon with a DEV mark (issue #438), used only
+# with a dev label.
 # TARMAC_APP_VERSION stands in for the bundle's version: an unbundled binary has
 # no Info.plist, and the app must name the same version as the daemon it just
 # built or it would replace that daemon as stale. `bundle`/`release` set none of
@@ -91,6 +93,7 @@ run: core app
 	$(DEV_ENV) \
 	$(GATE_ENV) \
 	TARMAC_DEV_LABEL="$(DEV_LABEL)" \
+	TARMAC_DEV_ICON="$(ROOT)/packaging/icon/Tarmac-dev-1024.png" \
 	TARMAC_APP_VERSION="$$(sed -n 's/^version = "\(.*\)"/\1/p' $(ROOT)/core/Cargo.toml | head -1)" \
 	TARMAC_DAEMON="$(ROOT)/core/target/debug/tarmacd" \
 	PATH="$(ROOT)/core/target/debug:$$PATH" \
