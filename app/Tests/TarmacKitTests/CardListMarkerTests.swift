@@ -300,7 +300,7 @@ final class CardListMarkerTests: XCTestCase {
     func testS19APageWithNoItemGetsNoSheet() throws {
         let view = try card("<p>no list</p>", zoom: 3)
         XCTAssertEqual(try markerSheets(view), 0)
-        XCTAssertEqual(try eval(view, "document.adoptedStyleSheets.length") as? Int, 0)
+        XCTAssertEqual(try eval(view, "document.adoptedStyleSheets.length") as? Int, 1, "the media sheet only")
     }
 
     func testS12ItemsAddedAfterTheZoomAreMarkedBeforeTheNextTask() throws {
@@ -373,7 +373,7 @@ final class CardListMarkerTests: XCTestCase {
     func testS20TheFontSheetAndTheMarkerSheetBothStay() throws {
         let fonts = CardFontVariables(interfaceFamily: nil, documentFamily: nil, documentSize: 17)
         let view = try card(Self.control, zoom: 3, fonts: fonts)
-        XCTAssertEqual(try eval(view, "document.adoptedStyleSheets.length") as? Int, 2)
+        XCTAssertEqual(try eval(view, "document.adoptedStyleSheets.length") as? Int, 3)
         XCTAssertEqual(try markerSheets(view), 1)
         XCTAssertEqual(
             try eval(view, "document.styleSheets[document.styleSheets.length - 1].cssRules[0].selectorText") as? String,
