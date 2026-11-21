@@ -470,8 +470,8 @@ wide card, so Tarmac caps the width of media:
 - To lift the cap, set `max-width` on the element: `max-width: none`, or
   `max-width: 100%` to fill its container. Any selector works (`img`, a class,
   an id, an inline `style`), but not `:where()`.
-- The `.duo` chart above sits in a column narrower than 560 px, so it needs no
-  change. A chart that must fill the full width of `main` needs the lift:
+- With `main` at 1080 px, each `.duo` column is narrower than 560 px, so the
+  `.duo` chart above needs no change. A chart that must fill the full width of `main` needs the lift:
   `.wide svg { max-width: 100%; }`.
 
 If your document genuinely needs honest, changing viewport dimensions — a
