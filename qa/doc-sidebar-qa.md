@@ -67,6 +67,27 @@ measures the drag on a long doc.
   name="getAttribute"><input name="querySelector"></form>` shows its front
   matter and both headings in the outline, `First` marked.
 
+## Run 3
+
+At `f90781f`: the page's drag end, section scroll, active icon and render
+state from `doc-layout.js`, the layout state sent as arguments, the drawn
+outline icon. Same window, display and docs as Run 1; on board 1 the 1280
+card's body starts at x 434, y 168 in the capture, so only its left part is
+in the window.
+
+| Scenario | Result | Measured |
+|---|---|---|
+| S35 overlay icons | pass | the `≡` icon is three bars 2 px high with 2 px gaps at zoom 1 (rows 454–455, 458–459, 462–463), not a block. `≡` opens the overlay (border at 269) and marks `≡` in `--agent`; `{}` keeps it open, scrolls it to `FRONT MATTER` and moves the mark to `{}`; `{}` again closes it. Opened by `≡` again, an edit of the file (re-render) keeps it open and moves the mark to `{}` (the section is reset to the first icon); a press on the text closes it |
+| S36 drag | pass | from an unselected card: selected and 300 during the drag; 300 in a capture taken at once after the release and 0.6 s later; a click on the grip with no move leaves 300 |
+| S37 collapse and reset | pass | a drag of −200 shows the strip (0–29) while held and after the release; `≡` docks it at 300; a double-click gives 240; the text then starts at 441 (strip: 332) |
+| S38 outline | pass | a click on `Section 3` scrolls to 995, its cap top 13 px below the view's top (box at 8), and marks that entry |
+| S45 controls | pass | `⇤` shows the strip, the text at 332 (centre 654); `{}` docks it at 240 with `FRONT MATTER` at the panel's top; closed, a click on `Section 1`'s tick scrolls to 219 (cap 13 px below the top) and lights that tick in `--agent` |
+| S46 open and narrow | pass | 14 captures while a 1280 plain card's file gains front matter: 4 old frames (no strip, text at 317), then 10 docked (text at 441), none with the new text at full width; at 200 the overlay is 150 and the cursor at its edge is not column-resize, at 392 it is |
+
+A board switch brought the restore card back on board 4 and board 3 in this
+run; it was closed with `press tab` and `restore_card` read null before each
+scenario.
+
 ## Drag cost
 
 On the 3000-line doc (166 606 px at zoom 1) on an 800 card, three drags of +60
