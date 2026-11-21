@@ -1396,7 +1396,11 @@ browser.
   stylesheet (so that the author's `<html style>` is kept and the author's own
   `:root` rule does not win), from values filled in at load and from `fonts`
   messages (from the parent only; `started` stays its second act),
-  applies the zoom, gates the document's schedulers, scrolls the root where
+  applies the zoom, and in a magnified card draws the list markers it can
+  reproduce itself (it marks such an `li` with `data-tarmac-marker` and adds a
+  second constructed stylesheet, because WebKit draws a native outside marker
+  and the item's first line too far left under a root zoom; spec 2611.0019),
+  gates the document's schedulers, scrolls the root where
   the host says while the card's scroll thumb is dragged (`scrollTo`, a
   finite number, from the parent only), and reports where the
   document's root is scrolled to — as the event happens, with no frame or
@@ -1448,7 +1452,8 @@ browser.
 - **Zoom.** Two modes, chosen per document load from
   `<meta name="tarmac-zoom">` (`ZoomMode`). **Magnify**, the default: the
   document is laid out once at root zoom 3 in a box 3× the card's and shown
-  scaled by `zoom/3`, so a board zoom never re-wraps it. **Reveal**
+  scaled by `zoom/3`, so a board zoom never re-wraps it (the shim then draws
+  the list markers itself, *The shim* above). **Reveal**
   (`content="reveal"`): the document is laid out at the card's real on-screen
   pixels and sized again once the zoom has settled. Either way the web view
   takes a new size as a doc card's does (*Zoom* above): it keeps its old frame

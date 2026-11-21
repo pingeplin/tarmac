@@ -1,7 +1,7 @@
-// Console-capture + escape-hatch + zoom + scroll-report + default-scheme +
-// font-properties + data-file + events shim for sandboxed HTML doc cards
-// (specs 2607.0004, 2607.0006, 2610.0003, 2610.0007, 2610.0010, 2610.0011,
-// 2611.0002, 2611.0003). Placed by CardProtocol.respond in every tarmac-card:// response
+// Console-capture + escape-hatch + zoom + list-marker + scroll-report +
+// default-scheme + font-properties + data-file + events shim for sandboxed HTML
+// doc cards (specs 2607.0004, 2607.0006, 2610.0003, 2610.0007, 2610.0010,
+// 2610.0011, 2611.0002, 2611.0003, 2611.0019). Placed by CardProtocol.respond in every tarmac-card:// response
 // after the file's leading doctype, so it runs before any author script and
 // observes console/error/escape activity from the very first line of card
 // script. Must never throw or break the host page — every path here is
@@ -55,15 +55,17 @@
   // author's own, whose :root rule would then win.
   var fontStyle = null;
 
+  function adoptSheet(text) {
+    var sheet = new CSSStyleSheet();
+    sheet.replaceSync(text);
+    document.adoptedStyleSheets = document.adoptedStyleSheets.concat(sheet);
+    return sheet;
+  }
+
   function applyFonts(vars) {
     try {
       if (!vars || typeof vars !== "object" || Array.isArray(vars)) return;
-      if (!fontStyle) {
-        var sheet = new CSSStyleSheet();
-        sheet.replaceSync(":root{}");
-        document.adoptedStyleSheets = document.adoptedStyleSheets.concat(sheet);
-        fontStyle = sheet.cssRules[0].style;
-      }
+      if (!fontStyle) fontStyle = adoptSheet(":root{}").cssRules[0].style;
       Object.keys(vars).forEach(function (name) {
         if (name.indexOf("--tarmac-") === 0 && typeof vars[name] === "string") {
           fontStyle.setProperty(name, vars[name]);
@@ -369,6 +371,121 @@
       document.documentElement.style.zoom = z;
     } catch (e) {
       // ignore
+    }
+    if (typeof z === "number" && isFinite(z) && z > 0 && z !== 1) markLists();
+  }
+
+  // List markers (spec 2611.0019). Under a root zoom other than 1, WebKit
+  // puts the first line of an item with an outside marker too far left, and
+  // the marker further still. Where the shim can draw the same marker, it
+  // marks the item and draws the marker with ::before. The author's computed
+  // style is read before the item is marked, so a marker the author chose is
+  // kept and an item never gets two.
+  var markerTypes = [
+    "disc", "circle", "square", "decimal", "decimal-leading-zero", "lower-roman", "upper-roman",
+    "lower-alpha", "upper-alpha", "lower-latin", "upper-latin", "lower-greek",
+  ];
+  var markerGlyphs = { disc: '"\\2022"', circle: '"\\25E6"', square: '"\\25AA"' };
+  var markerSheetAdopted = false;
+  var markerWatch = null;
+
+  function markerRules() {
+    // A zero-width float, in flow: it scrolls and paints with its item, and
+    // its content overflows to the left of the first line.
+    var rules = [
+      "li[data-tarmac-marker]{list-style-type:none!important}",
+      ":where(li[data-tarmac-marker])::before{float:left;box-sizing:content-box;width:0;margin-left:-.5em;" +
+        "padding-right:.5em;display:flex;justify-content:flex-end;white-space:nowrap;font-variant-numeric:tabular-nums}",
+      // An empty item would not hold its float. Only an empty one: a clear
+      // on any other would also clear an author's float before the list.
+      ":where(li[data-tarmac-marker]:empty)::after{content:\"\";display:block;clear:left}",
+    ];
+    markerTypes.forEach(function (t) {
+      var content = markerGlyphs[t] || "counter(list-item, " + t + ') "."';
+      rules.push(':where(li[data-tarmac-marker="' + t + '"])::before{content:' + content + "}");
+    });
+    return rules.join("\n");
+  }
+
+  function markerType(li) {
+    if (li.hasAttribute("data-tarmac-marker")) return null;
+    var s = getComputedStyle(li);
+    if (s.display !== "list-item" || s.listStylePosition !== "outside" || s.listStyleImage !== "none") return null;
+    if (s.direction !== "ltr" || s.writingMode !== "horizontal-tb") return null;
+    if (markerTypes.indexOf(s.listStyleType) < 0) return null;
+    // The author's own ::before, ::after or ::marker content is theirs.
+    if (getComputedStyle(li, "::marker").content !== "normal") return null;
+    var unset = ["::before", "::after"].every(function (pseudo) {
+      var content = getComputedStyle(li, pseudo).content;
+      return content === "none" || content === "normal";
+    });
+    return unset ? s.listStyleType : null;
+  }
+
+  function markItems(items) {
+    var picked = [];
+    items.forEach(function (li) {
+      var t = markerType(li);
+      if (t) picked.push([li, t]);
+    });
+    if (!picked.length) return;
+    if (!markerSheetAdopted) {
+      adoptSheet(markerRules());
+      markerSheetAdopted = true;
+    }
+    picked.forEach(function (p) {
+      p[0].setAttribute("data-tarmac-marker", p[1]);
+    });
+    // An author !important rule that outranks the sheet keeps the native
+    // marker; Tarmac's would be a second one. All reads come before any
+    // removal, so the style is computed once.
+    picked
+      .filter(function (p) {
+        return getComputedStyle(p[0]).listStyleType !== "none";
+      })
+      .forEach(function (p) {
+        p[0].removeAttribute("data-tarmac-marker");
+      });
+  }
+
+  // A container filled after it was added is in more than one record: each
+  // item is read once, and only while it is still in the document.
+  function addedItems(records) {
+    var items = new Set();
+    records.forEach(function (r) {
+      Array.prototype.forEach.call(r.addedNodes, function (n) {
+        if (n.nodeType !== 1 || !n.isConnected) return;
+        if (n.localName === "li") items.add(n);
+        n.querySelectorAll("li").forEach(function (li) {
+          items.add(li);
+        });
+      });
+    });
+    return Array.from(items);
+  }
+
+  function markLists() {
+    try {
+      var able =
+        typeof CSSStyleSheet === "function" &&
+        typeof MutationObserver === "function" &&
+        typeof getComputedStyle === "function" &&
+        Array.isArray(document.adoptedStyleSheets) &&
+        typeof document.querySelectorAll === "function";
+      if (!able) return;
+      if (!markerWatch) {
+        markerWatch = new MutationObserver(function (records) {
+          try {
+            markItems(addedItems(records));
+          } catch (e) {
+            // ignore
+          }
+        });
+        markerWatch.observe(document.documentElement, { childList: true, subtree: true });
+      }
+      markItems(Array.prototype.slice.call(document.querySelectorAll("li")));
+    } catch (e) {
+      // An item that is not marked keeps WebKit's own marker.
     }
   }
 
