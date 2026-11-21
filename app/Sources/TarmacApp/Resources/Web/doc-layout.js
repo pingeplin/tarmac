@@ -60,6 +60,7 @@
     return tokens
       .map(function (token) {
         if (token.type === "escape" || token.type === "codespan") return token.text;
+        if (token.type === "image") return "";
         if (token.tokens) return plain(token.tokens);
         if (token.type === "text") return decode(token.text);
         if (token.type === "br") return " ";
