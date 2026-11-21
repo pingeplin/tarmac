@@ -209,14 +209,11 @@
   }
 
   // The headings this render marked: a doc's raw HTML cannot know the mark.
+  // Nothing is called on an element the doc wrote, whose own names can hide
+  // a method (a form's input named `getAttribute`).
   function markedHeadings(mark) {
-    const found = new Map();
-    prose.querySelectorAll("[data-outline]").forEach(function (element) {
-      const name = element.getAttribute("data-outline");
-      if (!found.has(name)) found.set(name, element);
-    });
     return outline.map(function (_, index) {
-      return found.get(mark + "-" + index) || null;
+      return prose.querySelector('[data-outline="' + mark + "-" + index + '"]');
     });
   }
 
