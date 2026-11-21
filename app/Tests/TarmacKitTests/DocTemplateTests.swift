@@ -294,7 +294,8 @@ final class DocTemplateTests: XCTestCase {
         // A border style here would outrank the overlay grip's `border-style: none`.
         for rule in try rules()
         where rule.selectors.contains(where: { $0.contains("data-sidebar-side") && $0.contains(".doc-side-grip") }) {
-            XCTAssertFalse(rule.body.contains("solid") || rule.body.contains("border-style"), "\(rule.selectors)")
+            let styled = ["border-style", "border:", "border-left:", "border-right:"].contains(where: rule.body.contains)
+            XCTAssertFalse(styled, "\(rule.selectors)")
         }
         XCTAssertTrue(try rule(for: ".doc-side-strip").contains("left: 0;"))
         XCTAssertTrue(try rule(for: ".doc-scroll").contains("left: calc(var(--side-offset) * var(--zoom));"))
