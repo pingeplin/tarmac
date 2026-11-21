@@ -1328,9 +1328,9 @@ handlers they post to. No cookies, cache or storage outlive the app.
   panel over the text, with no re-wrap, until a press on the text or the icon
   again. A drag of the grip on its inner edge resizes it live, below 160
   collapses it, and a double-click sets 240; a doc with no fields and no
-  heading has none. `CardView` holds the card's choice (`DocSidebar.Stored`:
+  heading has none, which the page alone decides from what it rendered. `CardView` holds the card's choice (`DocSidebar.Stored`:
   a width and open), in memory only; `DocWebView` sends the page its state
-  (`DocSidebar.pageState`) with each layout, render and action, and applies
+  (`DocSidebar.pageState`) with each layout and action, and applies
   the page's `docSidebar` reports (`DocSidebar.Action`, `apply`). Every
   decision of the page's is a DOM-free rule of `doc-layout.js`.
 - **Layout** (spec 2611.0021). The text is a column of 46em of the prose's own
