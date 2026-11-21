@@ -130,6 +130,58 @@ with `press tab` and `restore_card` read null before each scenario.
   had ended); closing the panel by `⇤` and opening it by `≡` docks it at 300,
   so the blur's `resize` report reached the app.
 
+## Run 5
+
+At `f63ce76` (only the agent guide and docs changed since Run 4), a fresh
+`make run`; no other dev app was live (no pid on any worktree's
+`tarmac-dev.sock`).
+
+**Light theme.** Settings → Theme → Light (`settings-window.swift theme
+Light`) with the 1280 card open at offset 995: the page restyled in place,
+`scroll.offset` 995 before and after (no reload), the panel from `#454c53`
+to `#e4e6e8`. Captured colours (window capture, sRGB-tagged) against
+Breeze Light:
+
+| Token | Palette | Page capture | Native chrome in the same capture |
+|---|---|---|---|
+| `bg2` panel, overlay | `#dee0e2` | `#e4e6e8` | card header `#e4e6e8` |
+| `bg1` text area | `#eff0f1` | `#f2f3f4` | |
+| `bg3` chips, active icon | `#cdd1d5` | `#d6dadd` | |
+| `line` grip, overlay border | `#b4b9be` | `#c1c6ca` | |
+| `faint` keys, headers (darkest glyph pixel) | `#707d8a` | `#83909c` | |
+| `agent` current entry border, active `≡` | `#12846e` | `#039481` | |
+
+The capture is not the palette's sRGB: the card header, which AppKit draws
+with `bg2`, reads `#e4e6e8` in the same capture, exactly what the page's
+panel reads; the darker a colour, the more it moves (+6 for `bg2`, +19 for
+`faint`), as a display profile does. So `bg2` matches its native twin
+exactly; `bg3`, `line`, `faint` and `agent` are off the palette by more than
+±6 in the capture, which I put down to the same profile and did not prove
+pixel by pixel (no native element of those tokens was in view). The 392
+overlay: panel `#e4e6e8`, border `#c1c6ca` at 269, the active `≡` on
+`#d6dadd` with its bars in `#039481`, `FRONT MATTER` at the panel's top.
+Dark was restored (`theme Dark`; snapshot `dark / dark / breeze-dark`).
+
+**`make qa`** (`scripts/qa/smoke.mjs`) against the same app: 31 of 33 checks
+passed. Passed: D1, D2, D3, D4, D5, D6, D8, D9, D10, D11, D12, D14, D15,
+D16, D17 (⌘Q with a markdown card focused: focus drops to BODY, the key
+routes guard), D18, D19, D20, D21 (a terminal's resize carries its attached
+docs; a doc's resize moves no other card), D22, S35. Failed:
+
+- **D7** "type starts sleep and ctrl+c ends it": `sleep 100` started, and
+  `ctrl+c` never ended it.
+- **D13** "with flags 5 pushed, the key still reaches the guard": its typed
+  lines went into the still-running `sleep 100` of D7, so its marker never
+  printed. It fails because of D7.
+
+Not this branch: in that terminal, after the run, `stty -a` shows `isig` and
+`intr`, Perl reports SIGINT at its default (not ignored), and `od -c` with a
+`ctrl+c` from `tarmac dev key` received no byte (only the `x\n` typed after it)
+while `ctrl+d` ended it: the `0x03` never reaches the PTY. This branch
+changes no terminal or key code (its source diff against main is the doc
+card's files, `DocFrontMatter`, `DocSidebar`, `ThemeCSS` and two `CardView`
+lines). Left for a separate look.
+
 ## Run 2 checks outside the scenarios
 
 - **Tick clearance (D15).** The 3000-line doc's strip on a 640-high 800 card:
