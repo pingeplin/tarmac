@@ -17,6 +17,10 @@ sockets, state and config to the worktree's `.dev/`.
   step; steps 2 and 3 changed no code). macOS 26, main display at scale 1, so
   1 screenshot pixel is 1 point. The dev window was resized by pid with
   Accessibility to 1500 × 1100 so a 1280 card fits at zoom 1.
+- **Run 2** at `4c04286` (the outline headings found without calling a doc
+  element's method): S36 three times from a fresh launch, S47's re-wrap, the
+  strip's tick clearance (D15), an open overlay across the 632 threshold
+  (D5), and a doc whose raw HTML hides `getAttribute`.
 - Presses, drags, double-clicks and wheels are real HID events from
   `scripts/qa/wheel-gesture.swift`; the Document size was set through the
   Settings window (`scripts/qa/settings-window.swift size 2 <n>`). Positions
@@ -38,7 +42,7 @@ measures the drag on a long doc.
 | S33 body | pass | the prose starts at the h1, with no `<hr>` and no setext heading; the sidebar has the six fields; `tags` shows chips a, b, c and `owners` alice, bob; `note` shows `<b>bold</b>` as text | |
 | S34 wide card, 1280 | pass | panel 0–239 (240), the grip's line at 240; P's lines start at 442 (ink 441), column 442–1086, centre 764 | 240; centre 764 ± 2 |
 | S35 narrow card, 392 | pass | strip 0–29 (30); `≡` opens an overlay 30–269 (240, its border at 269) and scrolls it to `OUTLINE`; the text right of the panel is pixel-equal in each row before and after (no line moved); a press on the text shows the strip; opened again, a second `≡` click shows the strip | 30; 240 after the strip; no line moves |
-| S36 drag on an unselected card | pass | 1280, zoom 1, no card selected: a press on the grip and +60 in 10 steps selects the card (`focused_card` set while the press is held) and shows the panel at 300 during the drag; P's ink moves from 441 to 471 (centre 764 → 794), each line the same width; the release and 0.6 s later: still 300. Zoom 0.5, from 240: +60 screen px gives a 180 screen px panel = 360. 800 card: 240 → 300 during the drag moves P's first line end from "…can follow, and the" to "…a reader can" | 300; 764 → 794; 360; a re-wrap |
+| S36 drag on an unselected card | pass | Run 2, from a fresh launch, three times (switch board, `focus board`, then the grip press is the first pointer event; before it `restore_card` is null, `active_element` BODY, `focused_card` null, the app frontmost): each press selects the card and the panel is 300 during the drag, 240 after the double-click. Run 1: 1280, zoom 1, no card selected: a press on the grip and +60 in 10 steps selects the card (`focused_card` set while the press is held) and shows the panel at 300 during the drag; P's ink moves from 441 to 471 (centre 764 → 794), each line the same width; the release and 0.6 s later: still 300. Zoom 0.5, from 240: +60 screen px gives a 180 screen px panel = 360. 800 card: 240 → 300 during the drag moves P's first line end from "…can follow, and the" to "…a reader can" | 300; 764 → 794; 360; a re-wrap |
 | S37 collapse and reset | pass | from 300, a drag of −200 shows the strip (0–29) while held and after the release; `≡` opens it docked at 300; a double-click on the grip gives 240 | strip; 300; 240 |
 | S38 outline | pass | zoom 1: a click on `Section 3` scrolls the doc to 995 and marks it; the heading's cap top is 13 px below the view's top (a 21 px h2's cap is 6.4 below its box: box at 8 ± 2). Zoom 0.5: `Section 2`, cap top 8 screen px below (3.2 + 4), marked. A wheel to 1505 marks `Section 4`; at the end `Section 6 added` (end rule). The raw `<h2>` and `# not a heading` are not in the outline | 8 (4 at 0.5) |
 | S39 threshold | pass | docked at 300 on 1280; resized to 600: the strip (0–29); back to 1280: docked at 300 | |
@@ -49,7 +53,19 @@ measures the drag on a long doc.
 | S44 sidebar scroll | pass | the 3000-line doc, selected: a wheel over the sidebar scrolls the outline (Heading 9 at its top after) and the doc's `scroll.offset` stays 0, the thumb shows and stays at y 388. The QA doc's outline fits: a wheel over it leaves the sidebar pixel-equal and the offset at 1740. Unselected: the wheel pans the board (viewport cy 245 → 565) | |
 | S45 strip and header controls | pass | 1280 docked: `⇤` shows the strip, P's lines start at 332, column 332–976, centre 654.5; `{}` opens it docked at 240 with `FRONT MATTER` at the panel's top; closed, a click on `Section 3`'s tick scrolls to 995 (cap 13 px below the top, as S38) and lights that tick in `--agent` (#07c5ac) | 655 ± 2 |
 | S46 open and narrow cards | pass | a 1280 plain card whose file gains front matter: 14 captures through the change show only the old page (no strip, lines at 317) or the new one docked (panel, lines at 441), never the new text at full width. A 200 card: the overlay is 150 wide and the system cursor at its inner edge is not the column-resize one, while at 392 it is (`NSCursor.currentSystem` matches `columnResize`) | no full-width frame; no grip |
-| S47 Document size | pass | at 18 the outline's entry pitch is 28.5 px (22 at 14) and the text is larger, so 18 × 0.86 = 15.5 px with line height 1.45 and 0.4em padding; back at 14 the sidebar's ink box is the one at 14 before (196–407 by 435–945, ±1 row) | 15.5 px at 18 |
+| S47 Document size | pass | at 18 the outline's entry pitch is 28.5 px (22 at 14): 15.5 px × (1.45 line height + 0.4em padding). Run 2, at 240: the long entry breaks "…that wraps across / more than one line in the outline of the / sidebar" at 14 and "…that wraps / across more than one line in / the outline of the sidebar" at 18; back at 14 the sidebar's ink box is the one before (Run 1: 196–407 by 435–945, ±1 row; Run 2: equal) | 15.5 px at 18, a re-wrap |
+
+## Run 2 checks outside the scenarios
+
+- **Tick clearance (D15).** The 3000-line doc's strip on a 640-high 800 card:
+  the ticks that fit are drawn and the last one's bar is at row 685, with
+  the body's bottom edge at 706: 20 px clear.
+- **Overlay across the threshold (D5, `overlayOpen`).** 392: `≡` opens the
+  overlay (its border at 269); widened to 700 the card docks the sidebar at
+  240; back at 392 it shows the strip (0–29), not the overlay.
+- **Hostile raw HTML.** A doc holding `<form data-outline="x"><input
+  name="getAttribute"><input name="querySelector"></form>` shows its front
+  matter and both headings in the outline, `First` marked.
 
 ## Drag cost
 
@@ -60,10 +76,14 @@ re-wrap keeps up with the pointer.
 
 ## Notes
 
-- The first grip press after a launch selected nothing and moved nothing:
-  the dev window had just been set up by `focus board`, and the next press,
-  same point and same call, worked. The spec's note (the window must be key)
-  covers it.
+- In Run 1 the first grip press after the third launch selected nothing and
+  moved nothing. Run 2 shows why: `press tab` sent as soon as the driver
+  answered left the restore card up (`restore_card` not null, the veil in the
+  capture), and the first press closed it. With the restore card closed, the
+  first press selected the card and dragged three times out of three.
+- A first click that seems lost can be another card on top: a terminal card
+  given the keys is raised over a doc card it overlaps. Run 2 moved the
+  narrow card clear of the terminal before its overlay checks.
 - The heading's top is measured from its glyphs: no `tarmac dev` verb reads
   the page. The cap offset inside the h2's box (6.4 px at 21 px) is from the
   font's metrics; zoom 1 (13 = 6.4 + 8 ± 1) and zoom 0.5 (8 = 3.2 + 4 ± 1)
