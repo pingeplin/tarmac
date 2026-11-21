@@ -1,5 +1,6 @@
-// The markdown doc card's layout rules (spec 2611.0021). It touches no DOM, so
-// XCTest runs it as shipped in a bare JavaScriptCore context after marked.
+// The markdown doc card's layout and sidebar rules (specs 2611.0021 and
+// 2611.0022). It touches no DOM, so XCTest runs it as shipped in a bare
+// JavaScriptCore context after marked.
 (function () {
   const textColumnWidth = 40;
 
@@ -76,13 +77,13 @@
   const defaults = marked.Renderer.prototype;
   const layout = new marked.Marked();
   layout.use({
-    // Marked before any cell is rendered: a cell's renderer is not told its column.
     walkTokens(token) {
       if (token.type === "heading" && token.depth <= 3) {
         token.outlineIndex = outline.length;
         outline.push({ depth: token.depth, text: plain(token.tokens).replace(/\s+/g, " ").trim() });
       }
       if (token.type !== "table") return;
+      // Marked before any cell is rendered: a cell's renderer is not told its column.
       textColumns(token).forEach(function (text, column) {
         if (!text) return;
         [token.header].concat(token.rows).forEach(function (row) {
