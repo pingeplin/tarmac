@@ -42,11 +42,45 @@
     });
   }
 
+  const entities = { amp: "&", lt: "<", gt: ">", quot: '"' };
+
+  // One pass, so "&amp;lt;" stays "&lt;". A code point past Unicode stays as
+  // written: fromCodePoint would throw and stop the render.
+  function decode(text) {
+    return text.replace(/&(amp|lt|gt|quot|#(\d+)|#[xX]([0-9a-fA-F]+));/g, function (entity, name, decimal, hex) {
+      if (entities[name]) return entities[name];
+      const point = decimal !== undefined ? parseInt(decimal, 10) : parseInt(hex, 16);
+      return point <= 0x10ffff ? String.fromCodePoint(point) : entity;
+    });
+  }
+
+  // marked gives an escape's and a code span's text as written, entities and
+  // all; only a text token's entities are decoded.
+  function plain(tokens) {
+    return tokens
+      .map(function (token) {
+        if (token.type === "escape" || token.type === "codespan") return token.text;
+        if (token.tokens) return plain(token.tokens);
+        if (token.type === "text") return decode(token.text);
+        if (token.type === "br") return " ";
+        return "";
+      })
+      .join("");
+  }
+
+  // walkTokens runs over the whole doc before any token is rendered.
+  let outline = [];
+  let mark = "";
+
   const defaults = marked.Renderer.prototype;
   const layout = new marked.Marked();
   layout.use({
     // Marked before any cell is rendered: a cell's renderer is not told its column.
     walkTokens(token) {
+      if (token.type === "heading" && token.depth <= 3) {
+        token.outlineIndex = outline.length;
+        outline.push({ depth: token.depth, text: plain(token.tokens).replace(/\s+/g, " ").trim() });
+      }
       if (token.type !== "table") return;
       textColumns(token).forEach(function (text, column) {
         if (!text) return;
@@ -56,6 +90,11 @@
       });
     },
     renderer: {
+      heading(token) {
+        const html = defaults.heading.call(this, token);
+        if (!mark || token.outlineIndex === undefined) return html;
+        return html.replace("<h" + token.depth, "<h" + token.depth + ' data-outline="' + mark + "-" + token.outlineIndex + '"');
+      },
       table(token) {
         return '<div class="doc-table">' + defaults.table.call(this, token) + "</div>\n";
       },
@@ -66,37 +105,82 @@
     },
   });
 
+  function parse(markdown, renderMark) {
+    outline = [];
+    mark = renderMark;
+    const html = layout.parse(markdown, { async: false });
+    return { html, outline };
+  }
+
+  function shownMode(state, fieldCount, outlineCount) {
+    return fieldCount === 0 && outlineCount === 0 ? "none" : state.mode;
+  }
+
+  function geometry(state, cardWidth, drag) {
+    const strip = { textWidth: cardWidth - state.strip, offset: state.strip, panel: 0 };
+    function docked(width) {
+      return { textWidth: cardWidth - width - state.grip, offset: width + state.grip, panel: width };
+    }
+    switch (state.mode) {
+      case "strip":
+        return strip;
+      case "docked":
+        if (!drag) return docked(state.width);
+        return drag.collapsed ? strip : docked(drag.width);
+      case "overlay":
+        return Object.assign(strip, { panel: !drag ? state.width : drag.collapsed ? 0 : drag.width });
+      default:
+        return { textWidth: cardWidth, offset: 0, panel: 0 };
+    }
+  }
+
   globalThis.tarmacDocLayout = {
     render(markdown) {
-      return layout.parse(markdown, { async: false });
+      return parse(markdown, "").html;
     },
     textColumns,
-    parse(markdown, mark) {
-      return { html: "", outline: [{ depth: 0, text: "" }] };
-    },
+    parse,
     currentSection(tops, scrollTop, viewHeight, scrollHeight, zoom) {
-      return -2;
+      if (tops.length === 0) return -1;
+      if (scrollHeight > viewHeight + 1 && scrollTop + viewHeight >= scrollHeight - 1) return tops.length - 1;
+      const line = scrollTop + 24 * zoom;
+      let current = 0;
+      tops.forEach(function (top, index) {
+        if (top <= line) current = index;
+      });
+      return current;
     },
     dragWidth(startWidth, deltaScreen, zoom, direction, minWidth, maxWidth) {
-      return { width: 0, collapsed: false };
+      const width = startWidth + (direction * deltaScreen) / zoom;
+      const collapsed = width < minWidth;
+      return { width: collapsed ? width : Math.min(width, maxWidth), collapsed };
     },
-    shownMode(state, fieldCount, outlineCount) {
-      return "";
-    },
-    geometry(state, cardWidth, drag) {
-      return { textWidth: 0, offset: 0, panel: 0 };
-    },
+    shownMode,
+    geometry,
     release(moved, drag) {
-      return {};
+      if (!moved) return null;
+      return drag.collapsed ? { action: "close" } : { action: "resize", width: drag.width };
     },
     strip(fieldCount, outline, current) {
-      return { icons: [], ticks: [], lit: -2 };
+      const icons = [];
+      if (fieldCount > 0) icons.push("fields");
+      if (outline.length > 0) icons.push("outline");
+      const ticks = [];
+      outline.forEach(function (entry, index) {
+        if (entry.depth <= 2) ticks.push(index);
+      });
+      const lit = ticks.filter(function (tick) {
+        return tick <= current;
+      });
+      return { icons, ticks, lit: lit.length ? lit[lit.length - 1] : -1 };
     },
     iconClick(mode, section, icon) {
-      return { post: "", section: "" };
+      if (mode === "strip") return { post: "open", section: icon };
+      if (mode === "overlay" && icon === section) return { post: "close", section };
+      return { post: null, section: mode === "overlay" ? icon : section };
     },
     scrollTarget(headingTop, viewHeight, scrollHeight, zoom) {
-      return -1;
+      return Math.min(Math.max(headingTop - 8 * zoom, 0), Math.max(0, scrollHeight - viewHeight));
     },
   };
 })();
