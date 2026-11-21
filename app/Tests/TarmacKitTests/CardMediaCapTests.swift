@@ -164,15 +164,19 @@ final class CardMediaCapTests: XCTestCase {
         }
 
         /// The length, in view points, from the first to the last pixel that
-        /// is not white along a row (`y`) or a column (`x`) of `range`.
+        /// is not white along a row (`y`) or a column (`x`), between `from` and `to`.
         func inked(row y: Double, from: Double, to: Double) -> Double {
-            let hits = stride(from: Int(from * scale), to: Int(to * scale), by: 1).filter { !isWhite(Double($0) / scale, y) }
-            return hits.isEmpty ? 0 : Double(hits.last! - hits.first! + 1) / scale
+            inked(from: from, to: to) { !isWhite($0, y) }
         }
 
         func inked(column x: Double, from: Double, to: Double) -> Double {
-            let hits = stride(from: Int(from * scale), to: Int(to * scale), by: 1).filter { !isWhite(x, Double($0) / scale) }
-            return hits.isEmpty ? 0 : Double(hits.last! - hits.first! + 1) / scale
+            inked(from: from, to: to) { !isWhite(x, $0) }
+        }
+
+        private func inked(from: Double, to: Double, at ink: (Double) -> Bool) -> Double {
+            let hits = stride(from: Int(from * scale), to: Int(to * scale), by: 1).filter { ink(Double($0) / scale) }
+            guard let first = hits.first, let last = hits.last else { return 0 }
+            return Double(last - first + 1) / scale
         }
     }
 
@@ -236,9 +240,9 @@ final class CardMediaCapTests: XCTestCase {
         try assertBox(view, "m", 560, 200)
         try assertControl(view)
         let b = try box(view, "m")
-        let shot = try shot(view)
-        let width = shot.inked(row: b[1] + b[3] / 2, from: b[0], to: b[0] + b[2])
-        let height = shot.inked(column: b[0] + b[2] / 2, from: b[1], to: b[1] + b[3])
+        let pixels = try shot(view)
+        let width = pixels.inked(row: b[1] + b[3] / 2, from: b[0], to: b[0] + b[2])
+        let height = pixels.inked(column: b[0] + b[2] / 2, from: b[1], to: b[1] + b[3])
         XCTAssertGreaterThan(width, 0, "the circle is drawn")
         XCTAssertEqual(width, height, accuracy: 2, "the circle is round")
     }
@@ -249,12 +253,12 @@ final class CardMediaCapTests: XCTestCase {
         try assertControl(view)
         let b = try box(view, "m")
         let (midX, midY) = (b[0] + b[2] / 2, b[1] + b[3] / 2)
-        let shot = try shot(view)
-        XCTAssertEqual(shot.inked(row: midY, from: b[0], to: b[0] + b[2]), 560, accuracy: 2, "drawn width")
-        XCTAssertEqual(shot.inked(column: midX, from: b[1], to: b[1] + b[3]), 140, accuracy: 2, "drawn height")
-        XCTAssertTrue(shot.isWhite(midX, b[1] + 5), "the band above")
-        XCTAssertTrue(shot.isWhite(midX, b[1] + b[3] - 5), "the band below")
-        XCTAssertTrue(shot.isRed(b[0] + b[2] - 5, midY), "red at its right edge")
+        let pixels = try shot(view)
+        XCTAssertEqual(pixels.inked(row: midY, from: b[0], to: b[0] + b[2]), 560, accuracy: 2, "drawn width")
+        XCTAssertEqual(pixels.inked(column: midX, from: b[1], to: b[1] + b[3]), 140, accuracy: 2, "drawn height")
+        XCTAssertTrue(pixels.isWhite(midX, b[1] + 5), "the band above")
+        XCTAssertTrue(pixels.isWhite(midX, b[1] + b[3] - 5), "the band below")
+        XCTAssertTrue(pixels.isRed(b[0] + b[2] - 5, midY), "red at its right edge")
     }
 
     func testS9AVideoSizedByItsAttributesIsCapped() throws {

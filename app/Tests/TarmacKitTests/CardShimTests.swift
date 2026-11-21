@@ -1273,11 +1273,10 @@ final class CardShimTests: XCTestCase {
     private static let fonts = CardFontVariables(interfaceFamily: "Menlo", documentFamily: "Georgia", documentSize: 16)
     private static let otherFonts = CardFontVariables(interfaceFamily: nil, documentFamily: nil, documentSize: 20)
 
-    /// The properties of the one `:root` rule of the font sheet: the sheet at
-    /// `sheet`, or else the adopted sheet whose first rule is `:root`.
-    private func declared(_ shim: Shim, sheet: Int? = nil) throws -> [String: String] {
-        let found = sheet.map { "document.adoptedStyleSheets[\($0)]" }
-            ?? "document.adoptedStyleSheets.find((s) => s.cssRules && s.cssRules[0] && s.cssRules[0].selectorText === ':root')"
+    /// The properties of the one `:root` rule of the font sheet: the adopted
+    /// sheet whose first rule is `:root`.
+    private func declared(_ shim: Shim) throws -> [String: String] {
+        let found = "document.adoptedStyleSheets.find((s) => s.cssRules && s.cssRules[0] && s.cssRules[0].selectorText === ':root')"
         let json = shim.run("JSON.stringify(\(found).cssRules[0].style.values)")
         let text = try XCTUnwrap(json.isString ? json.toString() : nil, "no rule is declared")
         return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: String])
@@ -1394,10 +1393,10 @@ final class CardShimTests: XCTestCase {
         for (shim, pageSheets) in [(try loadShim(fonts: Self.fonts), 0), (try loadShim(), 1)] {
             if pageSheets > 0 { shim.run("document.adoptedStyleSheets = [{ page: true }]") }
             sendFonts(shim, Self.otherFonts.json)
-            XCTAssertEqual(try declared(shim, sheet: 1), try vars(Self.otherFonts), "S19: before DOMContentLoaded")
+            XCTAssertEqual(try declared(shim), try vars(Self.otherFonts), "S19: before DOMContentLoaded")
 
             shim.run("h.domReady()")
-            XCTAssertEqual(try declared(shim, sheet: 1), try vars(Self.otherFonts), "S19: after it")
+            XCTAssertEqual(try declared(shim), try vars(Self.otherFonts), "S19: after it")
             XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 2, "S19: the sheets")
             XCTAssertEqual(shim.flag("document.adoptedStyleSheets[0].page === true"), pageSheets > 0, "S19: the page's own sheet first")
         }
