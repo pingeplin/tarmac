@@ -875,3 +875,68 @@ final class InboxPreviewHeightPrefsTests: XCTestCase {
         XCTAssertEqual(AppPrefs.encode(AppPrefs.Values(inboxPreviewHeight: 50)), data(#"{"warn_before_quit":true}"#))
     }
 }
+
+/// Spec 2611.0025 D2–D4: the side of the markdown card's sidebar.
+final class DocSidebarSidePrefsTests: XCTestCase {
+    private typealias Values = AppPrefs.Values
+
+    private func data(_ text: String) -> Data { Data(text.utf8) }
+
+    private func text(_ values: Values) -> String { String(decoding: AppPrefs.encode(values), as: UTF8.self) }
+
+    /// S3
+    func test2611_0025S3TheSideIsWrittenLastAndOnlyForTheRight() {
+        XCTAssertEqual(text(Values()), #"{"warn_before_quit":true}"#)
+        XCTAssertEqual(text(Values(docSidebarSide: .left)), #"{"warn_before_quit":true}"#)
+        XCTAssertEqual(text(Values(docSidebarSide: .right)), #"{"warn_before_quit":true,"doc_sidebar_side":"right"}"#)
+        XCTAssertEqual(
+            text(Values(
+                warnBeforeQuit: false, fonts: [.terminal: "Menlo"], theme: .light, inboxPreviewHeight: 180,
+                docSidebarSide: .right
+            )),
+            #"{"warn_before_quit":false,"terminal_font":"Menlo","theme":"light","inbox_preview_height":180,"#
+                + #""doc_sidebar_side":"right"}"#
+        )
+    }
+
+    /// S4
+    func test2611_0025S4TheSideIsReadOnItsOwnAndAnythingButRightIsLeft() {
+        XCTAssertEqual(AppPrefs.decode(data(#"{"doc_sidebar_side":"right"}"#)).docSidebarSide, .right)
+        for side in DocSidebar.Side.allCases {
+            let values = Values(docSidebarSide: side)
+            XCTAssertEqual(AppPrefs.decode(AppPrefs.encode(values)), values, side.rawValue)
+        }
+        XCTAssertEqual(AppPrefs.decode(data(#"{"doc_sidebar_side":"left"}"#)).docSidebarSide, .left)
+        for value in [#""Right""#, #""middle""#, #""""#, "1", "true", "null", #"["right"]"#] {
+            let read = AppPrefs.decode(data(#"{"warn_before_quit":false,"theme":"light","doc_sidebar_side":\#(value)}"#))
+            XCTAssertEqual(read.docSidebarSide, .left, value)
+            XCTAssertFalse(read.warnBeforeQuit, value)
+            XCTAssertEqual(read.theme, .light, value)
+        }
+        XCTAssertEqual(AppPrefs.decode(data(#"{"warn_before_quit":false}"#)).docSidebarSide, .left)
+        XCTAssertEqual(AppPrefs.decode(data(#"{"doc_sidebar_side":"right",}"#)).docSidebarSide, .left)
+    }
+
+    /// S5
+    func test2611_0025S5TheSideIsSavedApartFromTheOtherKeys() throws {
+        let dir = NSTemporaryDirectory() + "tarmac-app-prefs-" + UUID().uuidString
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(atPath: dir) }
+        let path = dir + "/" + AppPrefs.fileName
+
+        try AppPrefs.save(Values(theme: .light, inboxPreviewHeight: 200), to: path)
+        let first = try Data(contentsOf: URL(fileURLWithPath: path))
+
+        var values = AppPrefs.load(from: path)
+        values.docSidebarSide = .right
+        try AppPrefs.save(values, to: path)
+        let read = AppPrefs.load(from: path)
+        XCTAssertEqual(read.theme, .light)
+        XCTAssertEqual(read.inboxPreviewHeight, 200)
+        XCTAssertEqual(read.docSidebarSide, .right)
+
+        values.docSidebarSide = .left
+        try AppPrefs.save(values, to: path)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: path)), first)
+    }
+}

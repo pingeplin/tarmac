@@ -37,10 +37,14 @@ public enum AppPrefs {
         /// The inbox preview pane's height the user set, in design points
         /// (spec 2611.0018 D8); none is the standard one.
         public var inboxPreviewHeight: Double?
+        /// The side of every markdown card's sidebar (spec 2611.0025); the
+        /// left is not written.
+        public var docSidebarSide: DocSidebar.Side
 
         public init(
             warnBeforeQuit: Bool = true, fonts: [FontRole: String] = [:], fontSizes: [FontRole: Double] = [:],
-            theme: ThemeChoice = .standard, themes: [ThemeVariant: String] = [:], inboxPreviewHeight: Double? = nil
+            theme: ThemeChoice = .standard, themes: [ThemeVariant: String] = [:], inboxPreviewHeight: Double? = nil,
+            docSidebarSide: DocSidebar.Side = .left
         ) {
             self.warnBeforeQuit = warnBeforeQuit
             self.fonts = fonts
@@ -48,6 +52,7 @@ public enum AppPrefs {
             self.theme = theme
             self.themes = themes
             self.inboxPreviewHeight = inboxPreviewHeight
+            self.docSidebarSide = docSidebarSide
         }
     }
 
@@ -89,11 +94,15 @@ public enum AppPrefs {
             }
             values.inboxPreviewHeight = (try? object.decode(Double.self, forKey: Key(inboxPreviewHeightKey)))
                 .flatMap(acceptedPreviewHeight)
+            if let side = try? object.decode(String.self, forKey: Key(docSidebarSideKey)) {
+                values.docSidebarSide = DocSidebar.Side(rawValue: side) ?? .left
+            }
             self.values = values
         }
     }
 
     static let inboxPreviewHeightKey = "inbox_preview_height"
+    static let docSidebarSideKey = "doc_sidebar_side"
 
     /// A height `InboxPreviewSplit` can store; any other is no entry.
     private static func acceptedPreviewHeight(_ height: Double) -> Double? {
@@ -176,6 +185,9 @@ public enum AppPrefs {
         }
         if let height = values.inboxPreviewHeight.flatMap(acceptedPreviewHeight) {
             json += #","\#(inboxPreviewHeightKey)":\#(JSONValue.number(height).jsonString)"#
+        }
+        if values.docSidebarSide != .left {
+            json += #","\#(docSidebarSideKey)":"\#(values.docSidebarSide.rawValue)""#
         }
         return Data((json + "}").utf8)
     }

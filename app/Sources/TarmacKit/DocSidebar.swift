@@ -8,7 +8,23 @@ public enum DocSidebar {
     public static let strip = 30.0
     public static let grip = 8.0
     public static let textMinimum = Double(Placement.docSize.width)
-    public static let thumbClear = Double(ScrollIndicator.width + ScrollIndicator.inset)
+    /// How far the card's scroll thumb reaches in from the body's edge.
+    public static let thumbReach = Double(ScrollIndicator.width + ScrollIndicator.inset)
+    /// The thumb's reach from the card's own edge, with the strip's border and
+    /// 1 px between the grip and the thumb (spec 2611.0025 D6).
+    public static let thumbClear = thumbReach + 2 * Double(CardBox.borderWidth) + 1
+
+    /// The card's edge the sidebar is on (spec 2611.0025 D1).
+    public enum Side: String, CaseIterable, Sendable {
+        case left, right
+
+        public var title: String {
+            switch self {
+            case .left: "Left"
+            case .right: "Right"
+            }
+        }
+    }
 
     /// The card's choice; nil is no choice yet.
     public struct Stored: Equatable, Sendable {
@@ -122,29 +138,33 @@ public enum DocSidebar {
         public let width: Double
         public let maxWidth: Double
         public let resizable: Bool
+        public let side: Side
 
-        public init(mode: String, width: Double, maxWidth: Double, resizable: Bool) {
+        public init(mode: String, width: Double, maxWidth: Double, resizable: Bool, side: Side = .left) {
             self.mode = mode
             self.width = width
             self.maxWidth = maxWidth
             self.resizable = resizable
+            self.side = side
         }
 
         public var arguments: [String: Any] {
             [
                 "mode": mode, "width": width, "minWidth": minimum, "maxWidth": maxWidth, "resizable": resizable,
-                "strip": strip, "grip": grip, "side": "left",
+                "strip": strip, "grip": grip, "side": side.rawValue, "thumbReach": thumbReach,
             ]
         }
     }
 
-    public static func pageState(cardWidth: Double, stored: Stored, overlayOpen: Bool) -> PageState {
+    public static func pageState(
+        cardWidth: Double, stored: Stored, overlayOpen: Bool, side: Side = .left
+    ) -> PageState {
         let range = range(cardWidth: cardWidth)
         let (name, shown): (String, Double) = switch mode(cardWidth: cardWidth, stored: stored, overlayOpen: overlayOpen) {
         case .strip: ("strip", width(cardWidth: cardWidth, stored: stored))
         case .docked(let width): ("docked", width)
         case .overlay(let width): ("overlay", width)
         }
-        return PageState(mode: name, width: shown, maxWidth: range.upperBound, resizable: resizable(range))
+        return PageState(mode: name, width: shown, maxWidth: range.upperBound, resizable: resizable(range), side: side)
     }
 }
