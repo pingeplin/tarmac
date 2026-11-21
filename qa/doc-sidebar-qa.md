@@ -55,6 +55,58 @@ measures the drag on a long doc.
 | S46 open and narrow cards | pass | a 1280 plain card whose file gains front matter: 14 captures through the change show only the old page (no strip, lines at 317) or the new one docked (panel, lines at 441), never the new text at full width. A 200 card: the overlay is 150 wide and the system cursor at its inner edge is not the column-resize one, while at 392 it is (`NSCursor.currentSystem` matches `columnResize`) | no full-width frame; no grip |
 | S47 Document size | pass | at 18 the outline's entry pitch is 28.5 px (22 at 14): 15.5 px × (1.45 line height + 0.4em padding). Run 2, at 240: the long entry breaks "…that wraps across / more than one line in the outline of the / sidebar" at 14 and "…that wraps / across more than one line in / the outline of the sidebar" at 18; back at 14 the sidebar's ink box is the one before (Run 1: 196–407 by 435–945, ±1 row; Run 2: equal) | 15.5 px at 18, a re-wrap |
 
+## Run 4
+
+At `c7961d1` (main merged in, then the /simplify changes: one inline text
+walker, headings stamped per token, a drag laid out at most once a frame,
+plain side borders, one width clamp). Same window, display and docs; the
+captures are `r4-*` in the scratchpad. Positions are world px from the card
+body's left edge, at zoom 1 unless named.
+
+| Scenario | Result | Measured |
+|---|---|---|
+| S33 body | pass | no `<hr>`, the text starts at the h1; six fields; chips for `tags` and `owners`; `note` as text |
+| S34 wide card | pass | panel 0–239, its line at 240; P starts at 441 (column 442–1086, centre 764) |
+| S35 narrow card | pass | strip 0–29; the outline icon's three bars peak at rows 454, 458, 462 with background rows between (each bar now spans a third row at partial intensity, but the gaps are whole); `≡` opens the overlay (border at 269) and marks `≡`; `{}` keeps it open at `FRONT MATTER` and moves the mark to `{}`; `{}` again closes it; the text right of the panel is pixel-equal open and closed; a press on the text closes it |
+| S36 drag | pass | unselected card: selected during the drag; panel 300 during the drag, in a capture taken at once after the release and 0.6 s later; P moves 441 → 471 (centre 764 → 794); a click on the grip with no move keeps 300. Zoom 0.5: +60 screen px gives 180 screen px = 360; a double-click gives 120 = 240. 800 card: a line's end moves from "…can follow, and the" to "…a reader can follow," during the drag |
+| S37 collapse and reset | pass | a drag of −200: the strip (0–29) while held and after the release; `≡` docks at 300; a double-click gives 240 |
+| S38 outline | pass | `Section 3`: offset 995, cap 13 px below the view's top (box at 8), entry marked; a wheel to 1505 marks `Section 4`; zoom 0.5 `Section 2`: offset 223, cap 8 screen px below (box at 4), marked |
+| S39 threshold | pass | docked 300 at 1280; strip at 600; docked 300 at 1280 again |
+| S40 zoom | pass | `scroll.total / zoom` 2550, 2548, 2547, 2546.5, 2546.3 at 0.1, 0.5, 1, 2, 3; the long outline entry breaks after "more than one" at 0.5, 1 and 2 |
+| S41 no sidebar | pass | the plain doc: no strip; its lines start at 317 |
+| S42 refresh | pass | an appended `## Section 7 run4`: still docked at 300, the outline ends with it |
+| S43 others | pass (part) | a drag selects text (highlight); a press on the relative link leaves `focused_card` null; the left edge over the strip drags the card 392 → 432 (HID, x = 2); the thumb's y follows the offset (189 at 216, 592 at 1939 of 2547). The http link: not run, it would open the user's browser |
+| S44 sidebar scroll | pass | the 3000-line doc, selected: a wheel over the sidebar changes the sidebar's pixels, the offset stays 63913, the thumb shows and stays at y 348; unselected: the board pans (cy 565 → 885); the hostile doc's short outline: pixel-equal, offset 0 |
+| S45 controls | pass | `⇤`: the strip, lines at 332 (centre 654); `{}`: docked at 240, `FRONT MATTER` at the panel's top; a tick click on `Section 1`: offset 219, cap 14 px below the top (box at 8 ± 1), the tick lit |
+| S46 open and narrow | pass | 14 captures as the 1280 plain card's file gains front matter: 4 old frames (lines at 317), 10 docked (lines at 441), none of the new text at full width; at 200 the overlay is 150 and the cursor at its edge is not column-resize, at 392 it is |
+| S47 Document size | pass | the entry pitch is 28.5 px at 18 (22 at 14); back at 14 the sidebar is pixel-equal to the capture before. The long entry's re-wrap at 18 was measured in Run 2 (it is below the panel's fold in this run) |
+
+Extra checks:
+
+- **(i) Image path.** A 1280 card of a doc with a local image and no heading;
+  its file is replaced by the same doc with a first `#` heading. 16 captures:
+  4 old frames (no panel, lines at 317), then 12 docked with the heading at
+  442 and the image loaded; no frame shows the new text at full width.
+- **(ii) Reading position.** The 3000-line doc on a 1280 card, scrolled by
+  its thumb to 63914 of 131177 (0.4872). Zoom 0.5, 1, 2, 1: 0.4872 each time;
+  resized to 900: 68226 of 140028 (0.4872); back to 1280: 63913 of 131177
+  (0.4872). It does not move, so origin/main was not compared.
+- **(iii)** S41 as above: the template's defaults change nothing for a doc
+  with no sidebar.
+- **(iv) A release outside the window.** On the 1280 card docked at 300, a
+  press on the grip, a drag of (+40, +420) that ends about 38 points below
+  the dev window's bottom edge, then the release there: the panel is 340 while
+  held and after the release, and a click on the grip with no move then keeps
+  340. The release arrived as a `mouseup` (AppKit gives it to the window that
+  took the press), so the `blur` path was not exercised.
+- **(v) Drag cost.** The 3000-line doc on an 800 card, three drags of +60 in
+  10 steps of 16 ms: a capture taken at once after the last move shows the
+  panel's edge at 300 and the text at 308 + 22 each time. No millisecond
+  figure: no driver verb reads the page's frame times.
+
+A board switch brought the restore card back on some boards; it was closed
+with `press tab` and `restore_card` read null before each scenario.
+
 ## Run 2 checks outside the scenarios
 
 - **Tick clearance (D15).** The 3000-line doc's strip on a 640-high 800 card:
