@@ -189,9 +189,11 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
     /// An action of the page's sidebar; one the page cannot have meant changes nothing.
     private func sidebarReported(_ message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame, let action = DocSidebar.Action(report: message.body) else { return }
-        let applied = DocSidebar.apply(action, stored: stored(), overlayOpen: overlayOpen, cardWidth: cardWidth)
+        let stored = stored()
+        let changes = DocSidebar.storesChange(action, stored: stored, overlayOpen: overlayOpen, cardWidth: cardWidth)
+        let applied = DocSidebar.apply(action, stored: stored, overlayOpen: overlayOpen, cardWidth: cardWidth)
         overlayOpen = applied.overlayOpen
-        onStoredChanged(applied.stored)
+        if changes { onStoredChanged(applied.stored) }
         guard pageLoaded else { return }
         webView.runInCardWorld("tarmacDoc.sidebar(state)", arguments: ["state": sidebarState().arguments])
     }

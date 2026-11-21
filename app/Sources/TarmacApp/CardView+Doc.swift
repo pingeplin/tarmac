@@ -9,7 +9,11 @@ extension CardView {
     func wireMarkdownBody() {
         guard let body = markdownBody else { return }
         body.stored = { [weak self] in self?.docSidebar ?? DocSidebar.Stored() }
-        body.onStoredChanged = { [weak self] stored in self?.docSidebar = stored }
+        body.onStoredChanged = { [weak self] stored in
+            guard let self else { return }
+            self.docSidebar = stored
+            self.onSidebarChanged?(self)
+        }
     }
 
     /// Where a press on `hit`, a view of this card, lands (`CardPress`).

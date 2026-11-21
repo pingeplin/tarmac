@@ -38,6 +38,8 @@ final class CardView: NSView, ThemeFollowing {
     var onClose: ((CardView) -> Void)?
     /// The header `↻` of a doc card was clicked.
     var onRefresh: ((CardView) -> Void)?
+    /// A markdown card's sidebar choice changed (spec 2611.0024 D12).
+    var onSidebarChanged: ((CardView) -> Void)?
 
     // MARK: - Provenance
 
