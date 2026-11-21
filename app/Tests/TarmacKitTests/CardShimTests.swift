@@ -1855,4 +1855,33 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(try shim.count("h.watchers"), 2, "S16: no second observer")
         XCTAssertEqual(try shim.count("h.sheets"), 1, "S16: no second sheet")
     }
+
+    func test2611_0019S24AZoomHeldUntilReadyStillMarks() throws {
+        let shim = try loadShimWithAListItem()
+        shim.run("h.send({ tarmac: 'zoom', z: 3 })")
+        XCTAssertEqual(shim.flag("h.li.hasAttribute('data-tarmac-marker')"), false, "S24: held, not applied")
+        shim.run("h.domReady()")
+        XCTAssertEqual(shim.number("h.style.zoom"), 3, "S24: applied at ready")
+        XCTAssertEqual(shim.run("h.li.getAttribute('data-tarmac-marker')").toString(), "disc", "S24: marked at ready")
+    }
+
+    func test2611_0019S26AFailureInTheObserverStaysInTheShim() throws {
+        let shim = try loadShimWithAListItem()
+        shim.run("h.domReady()")
+        shim.run("h.send({ tarmac: 'zoom', z: 3 })")
+        let posts = try shim.posted().count
+        shim.run("globalThis.getComputedStyle = () => { throw new Error('style') }")
+        shim.run("h.parse('li', { nodeType: 1, isConnected: true, hasAttribute: () => false, querySelectorAll: () => [] })")
+        XCTAssertEqual(try shim.posted().count, posts, "S26: nothing posted")
+    }
+
+    func test2611_0019S16AZoomThatIsNoMagnificationMakesNoObserver() throws {
+        for zoom in ["0", "NaN", "Infinity", "-3"] {
+            let shim = try loadShimWithAListItem()
+            shim.run("h.domReady()")
+            shim.run("h.send({ tarmac: 'zoom', z: \(zoom) })")
+            XCTAssertEqual(try shim.count("h.watchers"), 1, "S16 zoom \(zoom)")
+            XCTAssertEqual(shim.flag("h.li.hasAttribute('data-tarmac-marker')"), false, "S16 zoom \(zoom)")
+        }
+    }
 }

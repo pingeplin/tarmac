@@ -372,7 +372,7 @@
     } catch (e) {
       // ignore
     }
-    if (typeof z === "number" && z !== 1) markLists();
+    if (typeof z === "number" && isFinite(z) && z > 0 && z !== 1) markLists();
   }
 
   // List markers (spec 2611.0019). Under a root zoom other than 1, WebKit
