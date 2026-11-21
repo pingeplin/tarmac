@@ -1,7 +1,7 @@
-// Console-capture + escape-hatch + zoom + scroll-report + default-scheme +
-// font-properties + data-file + events shim for sandboxed HTML doc cards
-// (specs 2607.0004, 2607.0006, 2610.0003, 2610.0007, 2610.0010, 2610.0011,
-// 2611.0002, 2611.0003). Placed by CardProtocol.respond in every tarmac-card:// response
+// Console-capture + escape-hatch + zoom + list-marker + scroll-report +
+// default-scheme + font-properties + data-file + events shim for sandboxed HTML
+// doc cards (specs 2607.0004, 2607.0006, 2610.0003, 2610.0007, 2610.0010,
+// 2610.0011, 2611.0002, 2611.0003, 2611.0019). Placed by CardProtocol.respond in every tarmac-card:// response
 // after the file's leading doctype, so it runs before any author script and
 // observes console/error/escape activity from the very first line of card
 // script. Must never throw or break the host page — every path here is

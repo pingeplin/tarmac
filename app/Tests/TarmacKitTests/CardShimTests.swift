@@ -1768,4 +1768,98 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(json(shim, "events.map((e) => e.detail)"), #"[{"n":2}]"#)
         XCTAssertEqual(try consoleEntries(shim), [])
     }
+
+
+    // MARK: - list markers (2611.0019 S15, S16)
+
+    /// One plain `li` for the marking pass, and a `getComputedStyle` that
+    /// knows one rule of the cascade: a marked item is `none` once a sheet
+    /// whose first rule is the marker rule is adopted. Installed after load:
+    /// the shim reads none of this until a zoom arrives.
+    private func loadShimWithAListItem() throws -> Shim {
+        let shim = try loadShim(head: true)
+        shim.run("""
+        (() => {
+          const attrs = new Map();
+          h.li = {
+            nodeType: 1, localName: "li",
+            hasAttribute: (n) => attrs.has(n),
+            getAttribute: (n) => (attrs.has(n) ? attrs.get(n) : null),
+            setAttribute: (n, v) => attrs.set(n, String(v)),
+            removeAttribute: (n) => attrs.delete(n),
+          };
+          const query = document.querySelectorAll;
+          document.querySelectorAll = (selector) => (selector === "li" ? [h.li] : query(selector));
+          const replace = CSSStyleSheet.prototype.replaceSync;
+          CSSStyleSheet.prototype.replaceSync = function (text) {
+            if (text.startsWith("li[data-tarmac-marker]")) this.cssRules = [{ selectorText: "li[data-tarmac-marker]" }];
+            else replace.call(this, text);
+          };
+          const sheeted = () => (document.adoptedStyleSheets || [])
+            .some((sheet) => sheet.cssRules[0] && sheet.cssRules[0].selectorText === "li[data-tarmac-marker]");
+          globalThis.getComputedStyle = (el, pseudo) => pseudo ? { content: "none" } : {
+            display: "list-item", listStylePosition: "outside", listStyleImage: "none",
+            direction: "ltr", writingMode: "horizontal-tb",
+            listStyleType: el.hasAttribute("data-tarmac-marker") && sheeted() ? "none" : "disc",
+          };
+        })()
+        """)
+        return shim
+    }
+
+    func test2611_0019S15AMagnifiedCardMarksAPlainItem() throws {
+        let shim = try loadShimWithAListItem()
+        shim.run("h.domReady()")
+        shim.run("h.send({ tarmac: 'zoom', z: 3 })")
+        XCTAssertEqual(shim.run("h.li.getAttribute('data-tarmac-marker')").toString(), "disc", "S15: the control is marked")
+    }
+
+    func test2611_0019S15WithoutANativeTheZoomStillAppliesAndNothingIsMarked() throws {
+        let removals = [
+            "CSSStyleSheet": "delete globalThis.CSSStyleSheet",
+            "adoptedStyleSheets": "delete document.adoptedStyleSheets",
+            "MutationObserver": "delete globalThis.MutationObserver",
+            "querySelectorAll": "delete document.querySelectorAll",
+            "getComputedStyle": "delete globalThis.getComputedStyle",
+        ]
+        for (native, removal) in removals {
+            let shim = try loadShimWithAListItem()
+            shim.run(removal)
+            shim.run("h.domReady()")
+            XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "S15 \(native): ready")
+            let posts = try shim.posted().count
+            let watchers = try shim.count("h.watchers")
+            let sheets = try shim.count("h.sheets")
+
+            shim.run("h.send({ tarmac: 'zoom', z: 3 })")
+
+            XCTAssertEqual(shim.number("h.style.zoom"), 3, "S15 \(native): zoom")
+            XCTAssertEqual(try shim.posted().count, posts, "S15 \(native): nothing posted")
+            XCTAssertEqual(shim.flag("h.li.hasAttribute('data-tarmac-marker')"), false, "S15 \(native): no mark")
+            XCTAssertEqual(try shim.count("h.watchers"), watchers, "S15 \(native): no observer")
+            XCTAssertEqual(try shim.count("h.sheets"), sheets, "S15 \(native): no sheet")
+        }
+    }
+
+    func test2611_0019S16AZoomOf1MakesNoObserverAndNoSheet() throws {
+        let shim = try loadShimWithAListItem()
+        shim.run("h.domReady()")
+        shim.run("h.send({ tarmac: 'zoom', z: 1 })")
+        XCTAssertEqual(try shim.count("h.watchers"), 1, "S16: the colour-scheme observer only")
+        XCTAssertEqual(try shim.count("h.sheets"), 0, "S16: no sheet")
+    }
+
+    func test2611_0019S16AMagnifiedCardWatchesTheRootOnceForAddedItems() throws {
+        let shim = try loadShimWithAListItem()
+        shim.run("h.domReady()")
+        shim.run("h.send({ tarmac: 'zoom', z: 3 })")
+        XCTAssertEqual(try shim.count("h.watchers"), 2, "S16: one more observer")
+        XCTAssertEqual(shim.flag("h.watchers[1].observed.length === 1 && h.watchers[1].observed[0].target === document.documentElement"), true)
+        XCTAssertEqual(shim.flag("h.watchers[1].observed[0].options.childList === true && h.watchers[1].observed[0].options.subtree === true"), true)
+        XCTAssertEqual(try shim.count("h.sheets"), 1, "S16: one marker sheet")
+
+        shim.run("h.send({ tarmac: 'zoom', z: 3 })")
+        XCTAssertEqual(try shim.count("h.watchers"), 2, "S16: no second observer")
+        XCTAssertEqual(try shim.count("h.sheets"), 1, "S16: no second sheet")
+    }
 }

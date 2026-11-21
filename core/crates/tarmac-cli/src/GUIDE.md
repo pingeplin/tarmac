@@ -394,7 +394,8 @@ This is opt-in. A page that does not use the properties is not changed.
   `px` widths does not reflow when the size changes.
 - A script can read a value at any time:
   `getComputedStyle(document.documentElement).getPropertyValue("--tarmac-mono-font")`.
-- Tarmac adds one stylesheet, last in `document.styleSheets`, and it has no
+- Tarmac adds up to two stylesheets (this one, and in a magnified card the
+  list-marker sheet below), last in `document.styleSheets`, and they have no
   `ownerNode`. A script that loops over the sheets must check for that.
 
 ### Zoom: design for magnify
@@ -419,6 +420,17 @@ What follows from that:
   `@media (prefers-color-scheme: dark)` query is safe. If you need the card's width as a number, measure a full-width
   block element's `offsetWidth`: a plain `<div>` reports the card, while
   `innerWidth` reports the reference.
+- **Tarmac draws the markers of plain lists.** At the frozen zoom, WebKit
+  draws an `li`'s own marker, and the item's first line, too far to the left.
+  So in a magnified card Tarmac marks each item whose marker it can draw
+  (`data-tarmac-marker="disc"`, `"decimal"`, …) and draws that marker as the
+  item's `::before`. Numbers keep `start`, `reversed` and `value`. Tarmac
+  leaves alone a list you style yourself: `list-style: none`, your own
+  `li::before` content, a marker type other than the usual bullet, number,
+  roman, latin and greek ones, an image or `inside` marker, a right-to-left
+  or vertical list. Those keep WebKit's marker, too far left. A
+  `li::marker` rule does not reach a marked item: to colour the marker,
+  style `li::before` (with no `content`) as well.
 - **Layout runs once, so nothing about the viewport changes.** `resize` and
   `ResizeObserver` fire at load and then effectively never again. Read
   dimensions at startup if you must; do not build a layout that waits for them
