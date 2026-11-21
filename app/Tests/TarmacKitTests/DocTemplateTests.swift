@@ -231,10 +231,16 @@ final class DocTemplateTests: XCTestCase {
         let text = try template()
         let body = String(text[try XCTUnwrap(text.range(of: "<body>")).upperBound...])
         let scaler = try XCTUnwrap(body.range(of: #"<div class="doc-side-scaler""#)).lowerBound
-        if let scroll = body.range(of: #"id="scroll""#), scroll.lowerBound < scaler {
-            let between = String(body[scroll.lowerBound..<scaler])
-            XCTAssertGreaterThanOrEqual(count(of: "</div>", in: between), count(of: "<div", in: between) + 1)
+        let scroll = try XCTUnwrap(body.range(of: #"<div class="doc-scroll" id="scroll">"#))
+        let tags = try NSRegularExpression(pattern: #"<div\b|</div>"#)
+        var depth = 1
+        var end = body.endIndex
+        for tag in tags.matches(in: body, range: NSRange(scroll.upperBound..., in: body)) {
+            let range = try XCTUnwrap(Range(tag.range, in: body))
+            depth += body[range] == "</div>" ? -1 : 1
+            if depth == 0 { end = range.upperBound; break }
         }
+        XCTAssertTrue(scaler < scroll.lowerBound || scaler >= end)
         let rule = try rule(for: ".doc-side-scaler")
         XCTAssertTrue(rule.contains("transform: scale(calc(var(--zoom) / \(Self.k)));"))
         XCTAssertTrue(rule.contains("transform-origin: 0 0;"))
