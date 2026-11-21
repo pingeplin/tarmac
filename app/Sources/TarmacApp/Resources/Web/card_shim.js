@@ -2,7 +2,7 @@
 // scroll-report + default-scheme + font-properties + data-file + events shim
 // for sandboxed HTML doc cards (specs 2607.0004, 2607.0006, 2610.0003,
 // 2610.0007, 2610.0010, 2610.0011, 2611.0002, 2611.0003, 2611.0019,
-// 2611.0020). Placed by CardProtocol.respond in every tarmac-card:// response
+// 2611.0023). Placed by CardProtocol.respond in every tarmac-card:// response
 // after the file's leading doctype, so it runs before any author script and
 // observes console/error/escape activity from the very first line of card
 // script. Must never throw or break the host page — every path here is
@@ -77,7 +77,7 @@
     }
   }
 
-  // Media no wider than a column that reads well (spec 2611.0020). The rules
+  // Media no wider than a column that reads well (spec 2611.0023). The rules
   // have no specificity, so an author rule on the same property wins unless
   // it is a :where() rule too. Only a medium that can scale is capped: an SVG
   // with no viewBox would be cropped. `height: auto` only where a width

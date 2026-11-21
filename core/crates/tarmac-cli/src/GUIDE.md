@@ -489,7 +489,8 @@ out:
 **reveal** gives real-pixel sizing that re-lays out as the board zoom settles.
 The cost is that text reflows while zooming. Only reach for it when the layout is
 genuinely a function of the viewport; magnify is the right default for a report,
-a table, a diagram, or a static chart.
+a table, a diagram, or a static chart. The media cap applies in reveal too: a
+canvas or an `svg` that must fill the card needs `max-width: none`.
 
 ### Data from a file
 

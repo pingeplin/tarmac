@@ -1912,9 +1912,9 @@ final class CardShimTests: XCTestCase {
         }
     }
 
-    // MARK: - the media cap (2611.0020 S19, S20)
+    // MARK: - the media cap (2611.0023 S19, S20)
 
-    func test2611_0020S19WithoutTheMediaSheetTheRestOfTheShimStillRuns() throws {
+    func test2611_0023S19WithoutTheMediaSheetTheRestOfTheShimStillRuns() throws {
         let cases: [(String, Shim)] = [
             ("no CSSStyleSheet", try loadShim(omitting: "CSSStyleSheet")),
             ("no adoptedStyleSheets", try loadShim(before: "delete document.adoptedStyleSheets")),
@@ -1932,7 +1932,7 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(try declared(refused), try vars(Self.fonts), "S19: the font sheet")
     }
 
-    func test2611_0020S20ARawShimAdoptsTheMediaSheetAtBoot() throws {
+    func test2611_0023S20ARawShimAdoptsTheMediaSheetAtBoot() throws {
         let shim = try loadShim()
         XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 1, "S20: one sheet")
         let rules = """
@@ -1945,7 +1945,7 @@ final class CardShimTests: XCTestCase {
         )
     }
 
-    func test2611_0020D5TheMediaSheetIsAdoptedAfterTheStartedPostAndBeforeTheFirstListener() throws {
+    func test2611_0023D5TheMediaSheetIsAdoptedAfterTheStartedPostAndBeforeTheFirstListener() throws {
         let shim = try loadShim(head: true)
         XCTAssertEqual(
             shim.run("JSON.stringify(h.sheets[0].atConstruction.posted)").toString(),

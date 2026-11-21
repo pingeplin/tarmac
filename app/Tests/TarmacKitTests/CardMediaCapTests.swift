@@ -2,7 +2,7 @@ import WebKit
 import XCTest
 @testable import TarmacKit
 
-/// The width cap on media in an HTML card (spec 2611.0020), checked in real
+/// The width cap on media in an HTML card (spec 2611.0023), checked in real
 /// WebKit on a `CardPage`. Every page also holds the control, an SVG the
 /// author sized `width: 100%`, which the cap holds to 560×140: a page whose
 /// cap is missing fails on it, whatever its own medium does.
