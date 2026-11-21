@@ -1,33 +1,15 @@
 import AppKit
 import TarmacKit
 
-/// A tile of the Theme pane (specs 2610.0007, 2610.0008): a radio button
-/// whose picture is a small Tarmac card and whose title is under it. The
-/// selected tile has the accent ring and a bold title.
+/// A tile of the Theme pane (specs 2610.0007, 2610.0008): a `PictureTile`
+/// whose picture is a small Tarmac card.
 ///
 /// The picture is drawn from the theme chosen for each appearance, never from
 /// the theme in effect, so it shows its own theme whichever one the app has.
 @MainActor
 enum ThemeTile {
-    private static let picture = NSSize(width: 66, height: 44)
-    private static let corner: CGFloat = 7
-    /// The room around the picture that the ring is drawn in.
-    private static let ringRoom: CGFloat = 4
-    private static let ringWidth: CGFloat = 2.5
-
     static func button(_ choice: ThemeChoice) -> NSButton {
-        let button = NSButton()
-        button.setButtonType(.radio)
-        button.isBordered = false
-        button.imagePosition = .imageAbove
-        let size = NSFont.smallSystemFontSize
-        button.attributedTitle = title(choice, .systemFont(ofSize: size), .secondaryLabelColor)
-        button.attributedAlternateTitle = title(choice, .boldSystemFont(ofSize: size), .labelColor)
-        // With an image of its own, a radio button tells the Accessibility
-        // API it is a checkbox.
-        button.setAccessibilityRole(.radioButton)
-        button.setAccessibilitySubrole(nil)
-        return button
+        PictureTile.button(title: choice.title)
     }
 
     /// Draws the tile's two pictures again, from the palette chosen for each
@@ -38,26 +20,9 @@ enum ThemeTile {
         button.alternateImage = image(palettes, selected: true)
     }
 
-    private static func title(_ choice: ThemeChoice, _ font: NSFont, _ color: NSColor) -> NSAttributedString {
-        NSAttributedString(string: choice.title, attributes: [.font: font, .foregroundColor: color])
-    }
-
     /// One strip for each palette, from the left.
     private static func image(_ palettes: [Palette], selected: Bool) -> NSImage {
-        let frame = NSRect(origin: .zero, size: picture).insetBy(dx: -ringRoom, dy: -ringRoom)
-        return NSImage(size: frame.size, flipped: true) { bounds in
-            if selected {
-                let inset = ringWidth / 2
-                let ring = NSBezierPath(
-                    roundedRect: bounds.insetBy(dx: inset, dy: inset),
-                    xRadius: corner + ringRoom - inset, yRadius: corner + ringRoom - inset
-                )
-                ring.lineWidth = ringWidth
-                NSColor.controlAccentColor.setStroke()
-                ring.stroke()
-            }
-            let rect = bounds.insetBy(dx: ringRoom, dy: ringRoom)
-            NSBezierPath(roundedRect: rect, xRadius: corner, yRadius: corner).addClip()
+        PictureTile.image(selected: selected) { rect in
             let strip = rect.width / CGFloat(palettes.count)
             for (index, palette) in palettes.enumerated() {
                 NSGraphicsContext.saveGraphicsState()
@@ -65,7 +30,6 @@ enum ThemeTile {
                 draw(palette, in: rect)
                 NSGraphicsContext.restoreGraphicsState()
             }
-            return true
         }
     }
 

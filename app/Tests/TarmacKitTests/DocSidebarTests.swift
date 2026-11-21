@@ -44,13 +44,13 @@ final class DocSidebarTests: XCTestCase {
     /// S17
     func test2611_0022S17AnOverlayKeepsClearOfTheScrollThumb() {
         XCTAssertEqual(mode(narrow, overlayOpen: true), .overlay(240))
-        XCTAssertEqual(mode(narrow, stored: Stored(width: 420), overlayOpen: true), .overlay(342))
-        XCTAssertEqual(mode(160, overlayOpen: true), .overlay(110))
+        XCTAssertEqual(mode(narrow, stored: Stored(width: 420), overlayOpen: true), .overlay(339))
+        XCTAssertEqual(mode(160, overlayOpen: true), .overlay(107))
         XCTAssertEqual(mode(narrow), .strip)
-        XCTAssertEqual(DocSidebar.range(cardWidth: narrow), 160...342)
-        XCTAssertEqual(DocSidebar.range(cardWidth: 160), 110...110)
-        XCTAssertEqual(DocSidebar.range(cardWidth: 211), 160...161)
-        for (cardWidth, resizable) in [(160.0, false), (210, false), (211, true), (392, true), (1280, true)] {
+        XCTAssertEqual(DocSidebar.range(cardWidth: narrow), 160...339)
+        XCTAssertEqual(DocSidebar.range(cardWidth: 160), 107...107)
+        XCTAssertEqual(DocSidebar.range(cardWidth: 214), 160...161)
+        for (cardWidth, resizable) in [(160.0, false), (213, false), (214, true), (392, true), (1280, true)] {
             XCTAssertEqual(DocSidebar.resizable(cardWidth: cardWidth), resizable, "\(cardWidth)")
         }
     }
@@ -149,14 +149,14 @@ final class DocSidebarTests: XCTestCase {
         XCTAssertEqual(state(wide, stored: Stored(width: 300)), State(mode: "docked", width: 300, maxWidth: 420, resizable: true))
         XCTAssertEqual(state(700, stored: Stored(width: 400)), State(mode: "docked", width: 308, maxWidth: 308, resizable: true))
         XCTAssertEqual(state(wide, stored: Stored(open: false)), State(mode: "strip", width: 240, maxWidth: 420, resizable: true))
-        XCTAssertEqual(state(narrow, stored: Stored(width: 420)), State(mode: "strip", width: 342, maxWidth: 342, resizable: true))
-        XCTAssertEqual(state(narrow, overlayOpen: true), State(mode: "overlay", width: 240, maxWidth: 342, resizable: true))
-        XCTAssertEqual(state(200, overlayOpen: true), State(mode: "overlay", width: 150, maxWidth: 150, resizable: false))
+        XCTAssertEqual(state(narrow, stored: Stored(width: 420)), State(mode: "strip", width: 339, maxWidth: 339, resizable: true))
+        XCTAssertEqual(state(narrow, overlayOpen: true), State(mode: "overlay", width: 240, maxWidth: 339, resizable: true))
+        XCTAssertEqual(state(200, overlayOpen: true), State(mode: "overlay", width: 147, maxWidth: 147, resizable: false))
 
         let arguments = state(wide, stored: Stored(width: 300)).arguments as NSDictionary
         XCTAssertEqual(arguments, [
             "mode": "docked", "width": 300, "minWidth": 160, "maxWidth": 420, "resizable": true,
-            "strip": 30, "grip": 8, "side": "left",
+            "strip": 30, "grip": 8, "side": "left", "thumbReach": 12,
         ] as NSDictionary)
     }
 
@@ -214,5 +214,59 @@ final class DocSidebarTests: XCTestCase {
                 }
             }
         }
+    }
+
+    // MARK: - 2611.0025
+
+    /// S2
+    func test2611_0025S2TheSides() {
+        XCTAssertEqual(DocSidebar.Side.allCases, [.left, .right])
+        XCTAssertEqual(DocSidebar.Side.allCases.map(\.title), ["Left", "Right"])
+        XCTAssertEqual(DocSidebar.Side.allCases.map(\.rawValue), ["left", "right"])
+    }
+
+    /// S6: the side changes no width and no open state.
+    func test2611_0025S6TheStateCarriesTheSideAndOnlyTheSide() {
+        for cardWidth in [1280.0, 700, 632, 631, 392, 200] {
+            for stored in [Stored(), Stored(width: 300, open: false), Stored(width: 400, open: true)] {
+                for overlayOpen in [false, true] {
+                    let label = "\(cardWidth) \(stored) \(overlayOpen)"
+                    let right = DocSidebar.pageState(cardWidth: cardWidth, stored: stored, overlayOpen: overlayOpen, side: .right)
+                    let left = DocSidebar.pageState(cardWidth: cardWidth, stored: stored, overlayOpen: overlayOpen, side: .left)
+                    let none = DocSidebar.pageState(cardWidth: cardWidth, stored: stored, overlayOpen: overlayOpen)
+                    XCTAssertEqual(right.side, .right, label)
+                    XCTAssertEqual(right.mode, left.mode, label)
+                    XCTAssertEqual(right.width, left.width, label)
+                    XCTAssertEqual(right.maxWidth, left.maxWidth, label)
+                    XCTAssertEqual(right.resizable, left.resizable, label)
+                    XCTAssertEqual(none.side, .left, label)
+                }
+            }
+        }
+        let arguments = DocSidebar.pageState(
+            cardWidth: wide, stored: Stored(width: 300), overlayOpen: false, side: .right
+        ).arguments as NSDictionary
+        XCTAssertEqual(arguments, [
+            "mode": "docked", "width": 300, "minWidth": 160, "maxWidth": 420, "resizable": true,
+            "strip": 30, "grip": 8, "side": "right", "thumbReach": 12,
+        ] as NSDictionary)
+    }
+
+    /// S6a: on a narrow card the overlay's grip at its upper end ends 1 px
+    /// clear of the scroll thumb, measured in the card's own frame.
+    func test2611_0025S6aTheGripClearsTheThumb() {
+        let border = Double(CardBox.borderWidth)
+        let thumbStart = { (cardWidth: Double) in
+            cardWidth - border - Double(ScrollIndicator.inset) - Double(ScrollIndicator.width) - 1
+        }
+        let gripEnd = { (cardWidth: Double) in
+            border + DocSidebar.strip + DocSidebar.range(cardWidth: cardWidth).upperBound + DocSidebar.grip
+        }
+        for cardWidth in stride(from: 160.0, through: 631, by: 1) {
+            XCTAssertLessThanOrEqual(gripEnd(cardWidth), thumbStart(cardWidth), "\(cardWidth)")
+        }
+        XCTAssertEqual(gripEnd(narrow), thumbStart(narrow))
+        XCTAssertEqual(DocSidebar.thumbClear, 15)
+        XCTAssertEqual(DocSidebar.thumbReach, 12)
     }
 }

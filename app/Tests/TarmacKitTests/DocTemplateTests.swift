@@ -244,4 +244,70 @@ final class DocTemplateTests: XCTestCase {
         XCTAssertTrue(rule.contains("transform: scale(calc(var(--zoom) / \(Self.k)));"))
         XCTAssertTrue(rule.contains("transform-origin: 0 0;"))
     }
+
+    /// 2611.0025 S9 — on the Right each place of the sidebar is mirrored, and
+    /// its content keeps clear of the card's scroll thumb.
+    func test2611_0025S9TheRightSideMirrorsTheSidebar() throws {
+        let right = #":root[data-sidebar-side="right"]"#
+        let expected: [(String, [String])] = [
+            ("\(right) .doc-scroll", ["left: 0;", "right: calc(var(--side-offset) * var(--zoom));"]),
+            ("\(right) .doc-side-strip", ["left: auto;", "right: 0;"]),
+            ("\(right) .doc-side-panel", ["left: auto;", "right: calc(var(--side-panel-start) * var(--zoom));"]),
+            (
+                #"\#(right)[data-side="overlay"] .doc-side-panel"#,
+                ["border-right: 0;", "border-left: calc(1px * var(--zoom)) solid var(--line);"]
+            ),
+            (
+                "\(right) .doc-side-grip",
+                [
+                    "left: auto;", "right: calc((var(--side-panel-start) + var(--side-panel)) * var(--zoom));",
+                    "background-position: 100% 0;",
+                ]
+            ),
+            ("\(right) .doc-strip", ["padding-right: calc(var(--side-thumb-reach) * \(Self.k));"]),
+            ("\(right) .doc-side-content", ["padding-right: calc(var(--side-thumb-reach) * \(Self.k));"]),
+            ("\(right) .doc-side-close", ["transform: scaleX(-1);"]),
+        ]
+        let all = try rules()
+        for (selector, declarations) in expected {
+            let matching = all.filter { $0.selectors.contains(selector) }
+            XCTAssertEqual(matching.count, 1, selector)
+            let found = Set(matching.flatMap {
+                $0.body.split(separator: ";").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            }.filter { !$0.isEmpty })
+            XCTAssertEqual(found, Set(declarations.map { String($0.dropLast()) }), selector)
+        }
+        XCTAssertFalse(try template().contains("--side-panel-left"))
+        XCTAssertTrue(try rule(for: ".doc-side-panel").contains("left: calc(var(--side-panel-start) * var(--zoom));"))
+        XCTAssertTrue(
+            try rule(for: ".doc-side-grip").contains("left: calc((var(--side-panel-start) + var(--side-panel)) * var(--zoom));")
+        )
+        for rule in try rules() where rule.selectors.contains(where: { $0.contains("data-sidebar-side") }) {
+            XCTAssertFalse(rule.body.contains("background:"), "\(rule.selectors)")
+        }
+        XCTAssertTrue(try rule(for: ".doc-side-strip").contains("left: 0;"))
+        XCTAssertTrue(try rule(for: ".doc-scroll").contains("left: calc(var(--side-offset) * var(--zoom));"))
+        XCTAssertTrue(
+            try rule(for: #"[data-side="overlay"] .doc-side-panel"#)
+                .contains("border-right: calc(1px * var(--zoom)) solid var(--line);")
+        )
+        XCTAssertTrue(try rule(for: #"[data-side="overlay"] .doc-side-grip"#).contains("background: none;"))
+    }
+
+    /// 2611.0025 D10 — every sidebar length the template reads is one the
+    /// page sets, and both name the side's attribute.
+    func test2611_0025TheTemplateReadsOnlyTheSidebarLengthsThePageSets() throws {
+        let render = try AppSource.text("Resources/Web/doc-render.js")
+        let regex = try NSRegularExpression(pattern: #"var\((--side-[a-z-]+)\)"#)
+        let text = try template()
+        let read = Set(regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
+            Range($0.range(at: 1), in: text).map { String(text[$0]) }
+        })
+        XCTAssertFalse(read.isEmpty)
+        for name in read {
+            XCTAssertTrue(render.contains(#"px("\#(name)""#), name)
+        }
+        XCTAssertTrue(text.contains("data-sidebar-side"))
+        XCTAssertTrue(render.contains(#""data-sidebar-side""#))
+    }
 }

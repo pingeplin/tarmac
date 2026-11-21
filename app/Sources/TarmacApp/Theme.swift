@@ -47,6 +47,8 @@ enum Theme {
     /// The size in effect for each role, as `FontSettings` last resolved it.
     static var fontSizes: [FontRole: Double] = [:]
 
+    static var docSidebarSide: DocSidebar.Side = .left
+
     private static func size(of role: FontRole) -> Double { fontSizes[role] ?? role.sizeRule.standard }
 
     /// In world points: the board zoom scales each card as a single unit, so

@@ -1,10 +1,10 @@
 import AppKit
 import TarmacKit
 
-/// The Settings window (specs 2610.0005, 2610.0007): a sidebar of the panes
-/// and, beside it, the pane that is selected. Both panes are laid out in the
-/// window at all times and one is hidden, so the window has one size. The
-/// pane it shows is kept for the session: the window is closed, not
+/// The Settings window (specs 2610.0005, 2610.0007, 2611.0025): a sidebar of
+/// the panes and, beside it, the pane that is selected. Every pane is laid out
+/// in the window at all times and the others are hidden, so the window has one
+/// size. The pane it shows is kept for the session: the window is closed, not
 /// released.
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
@@ -18,19 +18,22 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     private let fonts: FontsPane
     private let theme: ThemePane
+    private let documents: DocumentsPane
     private let sidebar = SettingsSidebar()
     private let heading = NSTextField(labelWithString: "")
     private lazy var window = makeWindow()
 
-    init(fonts: FontSettings, theme: ThemeSettings) {
+    init(fonts: FontSettings, theme: ThemeSettings, documents: DocumentSettings) {
         self.fonts = FontsPane(fonts: fonts)
         self.theme = ThemePane(theme: theme)
+        self.documents = DocumentsPane(documents: documents)
     }
 
     @objc func show(_ sender: Any?) {
         if !window.isVisible {
             fonts.reload()
             theme.reload()
+            documents.reload()
         }
         window.makeKeyAndOrderFront(nil)
     }
@@ -39,6 +42,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         switch pane {
         case .fonts: fonts.view
         case .theme: theme.view
+        case .documents: documents.view
         }
     }
 
@@ -46,6 +50,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         sidebar.select(pane)
         heading.stringValue = pane.title
         for other in SettingsPane.allCases { view(of: other).isHidden = other != pane }
+        // The tiles are drawn in the theme in effect, which can change while
+        // the window is open.
+        if pane == .documents { documents.reload() }
     }
 
     /// AppKit does not end a field's editing when its window closes: the

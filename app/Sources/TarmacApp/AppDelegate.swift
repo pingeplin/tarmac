@@ -37,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         let fonts = FontSettings(prefs: prefs)
         let theme = ThemeSettings(prefs: prefs, folder: ChannelPaths.themesDir(configDir: configDir))
+        let documents = DocumentSettings(prefs: prefs)
         let rootView = RootView()
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
@@ -52,12 +53,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         controller = AppController(
             window: window, rootView: rootView, client: client, fonts: fonts, theme: theme,
-            inboxPaneHeight: InboxPaneHeight(prefs: prefs)
+            documents: documents, inboxPaneHeight: InboxPaneHeight(prefs: prefs)
         )
         window.contentView = rootView
 
         quitGuard = QuitGuardController(window: window, warning: WarnBeforeQuit(prefs: prefs))
-        settings = SettingsWindowController(fonts: fonts, theme: theme)
+        settings = SettingsWindowController(fonts: fonts, theme: theme, documents: documents)
         NSApp.mainMenu = MainMenu.build(quitGuard: quitGuard, settings: settings)
 
         window.makeKeyAndOrderFront(nil)

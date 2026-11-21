@@ -1317,7 +1317,8 @@ handlers they post to. No cookies, cache or storage outlive the app.
   parser: a line it does not know joins the field above it.
 - **Sidebar** (spec 2611.0022). The page shows the fields (a list as chips)
   and the outline — the doc's `#`–`###` headings from marked's tokens, a raw
-  HTML heading not among them — in a sidebar on the card's left, laid out at
+  HTML heading not among them — in a sidebar on the card's left, or on its
+  right when the *Documents* pane says so (spec 2611.0025), laid out at
   3× with its own scaler like the prose, so a zoom does not re-wrap it. The
   entry of the current section (the last heading above a reading line 24px
   below the view's top, or the last one at the doc's end) is marked in the
@@ -1804,7 +1805,7 @@ cannot be read means the guard is on.
 
 **Fonts and the Settings window** (`FontSettings`, `SettingsWindowController`).
 *Settings…* (`⌘,`) in the app menu opens one window. A sidebar lists its
-panes (`SettingsPane`): *Fonts* and *Theme*. The window opens on *Fonts* the
+panes (`SettingsPane`): *Fonts*, *Theme* and *Documents*. The window opens on *Fonts* the
 first time in a session and later on the pane it last showed. The *Fonts*
 pane has a row for each `FontRole`:
 
@@ -1827,7 +1828,8 @@ text that is no number puts the field back (`FontSizeRule`). A choice is
 saved in `app-prefs.json`, whose keys are `warn_before_quit`, a family name
 in `terminal_font`, `interface_font` and `document_font`, a number in
 `terminal_font_size`, `interface_font_size` and `document_font_size`, and `theme`, `theme_light` and
-`theme_dark` (below), and `inbox_preview_height` (the inbox, above); a size
+`theme_dark` (below), `inbox_preview_height` (the inbox, above), and
+`doc_sidebar_side`, written only as `"right"` (the *Documents* pane, below); a size
 the role does not have reads as nothing chosen. `AppPrefsStore` is the
 one owner of the file and saves all of it each time, so no preference drops
 another's key. A saved family the Mac does not have, or one a fixed-pitch role
@@ -2001,6 +2003,22 @@ not in effect is saved and changes its tile and its mark, and no view.
 
 The shadows, the board switcher's veil, the scroll thumb and the quit notice
 are the same in every theme.
+
+**Documents** (`DocumentSettings`, `DocumentsPane`, spec 2611.0025). The
+*Documents* pane has the group *Markdown cards* with one row, *Sidebar side*:
+two picture tiles, *Left* (the standard) and *Right*, drawn in the theme in
+effect, and the help text "The sidebar holds the front matter and the
+outline." A choice is saved as `doc_sidebar_side` and resolved into
+`Theme.docSidebarSide`; `DocWebView` reads it each time it builds its
+sidebar state, and `DocSidebarSideFollowing` tells every markdown card at
+once, on every board, mounted or not. A change moves the sidebar and nothing
+else: each card keeps its width and its open state, and the text keeps its
+width, so no line re-wraps. On the Right the page mirrors the sidebar's
+places (`data-sidebar-side`), the docked close mark shows `⇥`, and the
+strip's icons and the panel's content keep `thumbReach` (12 world px) clear
+of the card's scroll thumb, which stays at the body's right edge over the
+sidebar. A narrow card's overlay ends 1 px clear of the thumb on either side
+(`DocSidebar.thumbClear`, 15 from the card's edge).
 
 **The red button hides the window** (`WindowCloseHider`): terminals keep
 running, and the window returns on the next activation or Dock click, once per
