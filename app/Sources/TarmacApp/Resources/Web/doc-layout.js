@@ -24,7 +24,6 @@
   function prose(tokens) {
     return tokens
       .map(function (token) {
-        if (token.type === "codespan") return "";
         if (token.tokens) return prose(token.tokens);
         if (token.type === "text" || token.type === "escape") return token.text;
         if (token.type === "br") return " ";
@@ -46,15 +45,18 @@
   const defaults = marked.Renderer.prototype;
   const layout = new marked.Marked();
   layout.use({
+    // Marked before any cell is rendered: a cell's renderer is not told its column.
+    walkTokens(token) {
+      if (token.type !== "table") return;
+      textColumns(token).forEach(function (text, column) {
+        if (!text) return;
+        [token.header].concat(token.rows).forEach(function (row) {
+          row[column].textColumn = true;
+        });
+      });
+    },
     renderer: {
       table(token) {
-        textColumns(token).forEach(function (text, column) {
-          if (!text) return;
-          token.header[column].textColumn = true;
-          token.rows.forEach(function (row) {
-            row[column].textColumn = true;
-          });
-        });
         return '<div class="doc-table">' + defaults.table.call(this, token) + "</div>\n";
       },
       tablecell(token) {

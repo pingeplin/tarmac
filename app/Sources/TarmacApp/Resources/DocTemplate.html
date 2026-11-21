@@ -60,9 +60,10 @@
      The padding centres the text column, measured in the prose's own em; the
      blocks keep normal flow, so their margins still collapse. */
   .doc-prose {
+    --gutter: calc(22px * var(--oversample-k));
     width: calc(var(--card-w) * var(--oversample-k));
     padding: calc(18px * var(--oversample-k))
-      max(calc(22px * var(--oversample-k)), calc((var(--card-w) * var(--oversample-k) - 46em) / 2));
+      max(var(--gutter), calc((var(--card-w) * var(--oversample-k) - 46em) / 2));
     color: var(--prose-text);
     font-family: var(--prose-font);
     font-size: calc(var(--prose-size) * var(--oversample-k));
@@ -113,7 +114,7 @@
     transform: translateX(-50%);
     width: max-content;
     min-width: 100%;
-    max-width: min(calc(1040px * var(--oversample-k)), calc((var(--card-w) - 44px) * var(--oversample-k)));
+    max-width: min(calc(1040px * var(--oversample-k)), calc(var(--card-w) * var(--oversample-k) - 2 * var(--gutter)));
   }
   .doc-table {
     margin: 1em 0;

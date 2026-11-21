@@ -5,21 +5,9 @@ import XCTest
 /// the policy every doc is rendered under, and the factor its prose is laid
 /// out at.
 final class DocTemplateTests: XCTestCase {
-    private func template() throws -> String {
-        let app = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        return try String(
-            contentsOf: app.appendingPathComponent("Sources/TarmacApp/Resources/DocTemplate.html"), encoding: .utf8
-        )
-    }
+    private func template() throws -> String { try AppSource.text("Resources/DocTemplate.html") }
 
-    private func host() throws -> String {
-        let app = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        return try String(
-            contentsOf: app.appendingPathComponent("Sources/TarmacApp/Resources/Web/card-host.html"), encoding: .utf8
-        )
-    }
+    private func host() throws -> String { try AppSource.text("Resources/Web/card-host.html") }
 
     private func count(of part: String, in text: String) -> Int {
         text.components(separatedBy: part).count - 1

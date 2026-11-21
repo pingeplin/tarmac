@@ -5,19 +5,11 @@ import XCTest
 /// `marked.umd.js` and `doc-layout.js`, run in that order in a bare
 /// `JSContext`, markdown in and HTML out.
 final class DocLayoutScriptTests: XCTestCase {
-    private func source(_ name: String) throws -> String {
-        let app = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        return try String(
-            contentsOf: app.appendingPathComponent("Sources/TarmacApp/Resources/Web/\(name)"), encoding: .utf8
-        )
-    }
-
     private func page() throws -> JSContext {
         let context = try XCTUnwrap(JSContext())
         context.exceptionHandler = { _, error in XCTFail("the script threw: \(String(describing: error))") }
-        context.evaluateScript(try source("marked.umd.js"))
-        context.evaluateScript(try source("doc-layout.js"))
+        context.evaluateScript(try AppSource.text("Resources/Web/marked.umd.js"))
+        context.evaluateScript(try AppSource.text("Resources/Web/doc-layout.js"))
         return context
     }
 
