@@ -143,6 +143,15 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(occurrences(of: "class=", in: html), 4)
     }
 
+    /// S34 — a table inside a list item is marked too.
+    func testS34ANestedTableMarksItsTextColumn() throws {
+        let html = try render("- item\n\n  " + table("n | d", "| 1 | \(a(40)) |").replacingOccurrences(of: "\n|", with: "\n  |"))
+
+        XCTAssertEqual(occurrences(of: "<div class=\"doc-table\"><table>", in: html), 1)
+        XCTAssertTrue(html.contains("<th class=\"doc-text-col\">d</th>"))
+        XCTAssertTrue(html.contains("<td class=\"doc-text-col\">"))
+    }
+
     /// S35
     func testS35AlignmentIsKeptAndARawTableIsUntouched() throws {
         let aligned = try render("| d | n |\n|:-:|--:|\n| \(a(40)) | 1 |\n")
