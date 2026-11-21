@@ -94,6 +94,7 @@ final class DocSidebarTests: XCTestCase {
     func test2611_0022S20ResizeStoresTheWidthAndBelowTheMinimumCollapses() {
         XCTAssertEqual(apply(.resize(300), wide).stored.width, 300)
         XCTAssertEqual(apply(.resize(500), wide).stored.width, 420)
+        XCTAssertEqual(apply(.resize(160), wide, stored: Stored(width: 260, open: true)).stored, Stored(width: 160, open: true))
         XCTAssertEqual(apply(.resize(150), wide, stored: Stored(width: 260, open: true)).stored, Stored(width: 260, open: false))
 
         let collapsed = apply(.resize(150), narrow, overlayOpen: true)

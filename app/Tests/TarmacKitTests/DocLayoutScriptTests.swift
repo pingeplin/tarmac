@@ -206,6 +206,8 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(try headingText("## ![alt](u) x"), "x")
         XCTAssertEqual(try headingText("## a &lt; b &gt; &quot;c&quot; &#39;d&#39; &#65;"), "a < b > \"c\" 'd' A")
         XCTAssertEqual(try headingText("a\\\nb\n==="), "a b")
+        XCTAssertEqual(try headingText("## x &#x110000; y"), "x &#x110000; y")
+        XCTAssertEqual(try headingText("## a &amp;lt; b"), "a &lt; b")
     }
 
     /// 2611.0022 S26
@@ -259,6 +261,7 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(current([0, 500, 2900], 2598, 400, 3000, 1), 1)
         XCTAssertEqual(current([0, 500, 2900], 2599, 400, 3000, 1), 2)
         XCTAssertEqual(current([37, 200, 300], 0, 400, 400, 1), 0)
+        XCTAssertEqual(current([0, 200, 390], 1, 400, 401, 1), 0)
         XCTAssertEqual(current([], 0, 400, 3000, 1), -1)
     }
 
@@ -298,6 +301,14 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(try geometry("overlay", drag: "{width: 200, collapsed: false}"), box(1250, 30, 200))
         XCTAssertEqual(try geometry("overlay", drag: "{width: 100, collapsed: true}"), box(1250, 30, 0))
         XCTAssertEqual(
+            try json("tarmacDocLayout.geometry({mode: 'docked', width: 240, strip: 20, grip: 10}, 1280, null)"),
+            box(1030, 250, 240)
+        )
+        XCTAssertEqual(
+            try json("tarmacDocLayout.geometry({mode: 'overlay', width: 240, strip: 20, grip: 10}, 1280, null)"),
+            box(1260, 20, 240)
+        )
+        XCTAssertEqual(
             try json("""
                 tarmacDocLayout.geometry(Object.assign({}, state, {mode: tarmacDocLayout.shownMode(state, 0, 0)}), 1280, null)
                 """.replacingOccurrences(of: "state", with: "{mode: 'docked', width: 240, strip: 30, grip: 8}")),
@@ -323,6 +334,8 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(try strip(2, outline, 2), #"{"icons":["fields","outline"],"ticks":[0,1,3],"lit":1}"#)
         XCTAssertEqual(try json("tarmacDocLayout.strip(2, \(outline), 4).lit"), "3")
         XCTAssertEqual(try json("tarmacDocLayout.strip(2, \(outline), -1).lit"), "-1")
+        XCTAssertEqual(try json("tarmacDocLayout.strip(2, \(outline), 1).lit"), "1")
+        XCTAssertEqual(try json("tarmacDocLayout.strip(2, \(outline), 3).lit"), "3")
         XCTAssertEqual(try json("tarmacDocLayout.strip(0, \(outline), 2).icons"), #"["outline"]"#)
         XCTAssertEqual(try strip(1, "[]", -1), #"{"icons":["fields"],"ticks":[],"lit":-1}"#)
     }

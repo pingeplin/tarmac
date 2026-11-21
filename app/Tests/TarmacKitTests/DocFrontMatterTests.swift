@@ -48,6 +48,7 @@ final class DocFrontMatterTests: XCTestCase {
         XCTAssertEqual(fields("tags: [a]\n  - b\n  c"), [field("tags", list: ["a", "b", "c"])])
         XCTAssertEqual(fields("key:\n  -\nx: 1"), [field("key", list: []), field("x", "1")])
         XCTAssertEqual(fields("tags: \n- a"), [field("tags", list: ["a"])])
+        XCTAssertEqual(fields("tags:\n - a\n -"), [field("tags", list: ["a"])])
     }
 
     /// S5
@@ -91,6 +92,7 @@ final class DocFrontMatterTests: XCTestCase {
         XCTAssertEqual(split.body, "body")
 
         assertUnchanged(" ---\ntitle: x\n---\n")
+        assertUnchanged("---\t\ntitle: x\n---\n")
         assertUnchanged("...\ntitle: x\n---\n")
     }
 
