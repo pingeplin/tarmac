@@ -736,6 +736,46 @@ final class RustEncoderParityTests: XCTestCase {
         assertParity(.bell(termID: "t1"), "82 a1 74 a4 62 65 6c 6c a7 74 65 72 6d 5f 69 64 a2 74 31")
     }
 
+    func test2611_0024S6DocTileSidebarKeys() {
+        // Msg::Layout { dock: [], tiles: [{doc, /a.md, sidebar_w: 300.5,
+        //   sidebar_open: false}], board: None, board_id: None }
+        assertParity(
+            .layout(
+                dock: [],
+                tiles: [LayoutTile(kind: "doc", path: "/a.md", sidebarW: 300.5, sidebarOpen: false)],
+                board: nil,
+                boardID: nil
+            ),
+            """
+            83 a1 74 a6 6c 61 79 6f 75 74 a4 64 6f 63 6b 90 a5 74 69 6c 65 73 91
+            84 a4 6b 69 6e 64 a3 64 6f 63 a4 70 61 74 68 a5 2f 61 2e 6d 64
+            a9 73 69 64 65 62 61 72 5f 77 cb 40 72 c8 00 00 00 00 00
+            ac 73 69 64 65 62 61 72 5f 6f 70 65 6e c2
+            """
+        )
+        // Msg::Layout { dock: ["/c.md"], tiles: [{doc, /c.md, x 10, y 20, w 1280,
+        //   h 600, z 1, loose: true, sidebar_open: true}], board: None, board_id: None }
+        assertParity(
+            .layout(
+                dock: ["/c.md"],
+                tiles: [
+                    LayoutTile(
+                        kind: "doc", path: "/c.md", x: 10, y: 20, w: 1280, h: 600, z: 1, loose: true, sidebarOpen: true
+                    )
+                ],
+                board: nil,
+                boardID: nil
+            ),
+            """
+            83 a1 74 a6 6c 61 79 6f 75 74 a4 64 6f 63 6b 91 a5 2f 63 2e 6d 64 a5 74
+            69 6c 65 73 91 89 a4 6b 69 6e 64 a3 64 6f 63 a4 70 61 74 68 a5 2f 63 2e
+            6d 64 a1 78 cb 40 24 00 00 00 00 00 00 a1 79 cb 40 34 00 00 00 00 00 00
+            a1 77 cb 40 94 00 00 00 00 00 00 a1 68 cb 40 82 c0 00 00 00 00 00 a1 7a
+            01 a5 6c 6f 6f 73 65 c3 ac 73 69 64 65 62 61 72 5f 6f 70 65 6e c3
+            """
+        )
+    }
+
     func testBoards() {
         // Msg::BoardList { boards: [{board-0}, {board-1, name: "infra", running: 2},
         //   {board-2, running: 0}], active: "board-1" }

@@ -758,6 +758,33 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
+    /// 2611.0024 S5: a doc tile keeps its sidebar's width and open state.
+    func testVector44DocTileSidebar() throws {
+        try assertVector(
+            """
+            83 a1 74 a6 6c 61 79 6f 75 74 a4 64 6f 63 6b 90 a5 74 69 6c 65 73 91
+            84 a4 6b 69 6e 64 a3 64 6f 63 a4 70 61 74 68 a5 2f 61 2e 6d 64
+            a9 73 69 64 65 62 61 72 5f 77 cb 40 72 c8 00 00 00 00 00
+            ac 73 69 64 65 62 61 72 5f 6f 70 65 6e c2
+            """,
+            .map([
+                "t": .string("layout"), "dock": .array([]),
+                "tiles": .array([
+                    .map([
+                        "kind": .string("doc"), "path": .string("/a.md"),
+                        "sidebar_w": .double(300.5), "sidebar_open": .bool(false),
+                    ])
+                ]),
+            ]),
+            .layout(
+                dock: [],
+                tiles: [LayoutTile(kind: "doc", path: "/a.md", sidebarW: 300.5, sidebarOpen: false)],
+                board: nil,
+                boardID: nil
+            )
+        )
+    }
+
     func testS10ATermResumeWithANilCmdHasNoCmdKey() throws {
         let fields = try MsgPack.decode(Message.termResume(termID: "t1", cmd: nil).encodedPayload()).mapValue
         XCTAssertEqual(fields?.keys.sorted(), ["t", "term_id"])

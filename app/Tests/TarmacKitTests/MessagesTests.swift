@@ -130,6 +130,30 @@ final class MessagesTests: XCTestCase {
         )
     }
 
+    /// 2611.0024 S8: the S4 frames of the Rust suite fail on the key's name.
+    func test2611_0024S8ASidebarKeyOfTheWrongTypeFailsTheFrame() {
+        let vector44 = """
+            83 a1 74 a6 6c 61 79 6f 75 74 a4 64 6f 63 6b 90 a5 74 69 6c 65 73 91
+            84 a4 6b 69 6e 64 a3 64 6f 63 a4 70 61 74 68 a5 2f 61 2e 6d 64
+            a9 73 69 64 65 62 61 72 5f 77 cb 40 72 c8 00 00 00 00 00
+            ac 73 69 64 65 62 61 72 5f 6f 70 65 6e c2
+            """
+        let width = "cb 40 72 c8 00 00 00 00 00"
+        let open = "ac 73 69 64 65 62 61 72 5f 6f 70 65 6e c2"
+        let frames: [(String, MessageError)] = [
+            (vector44.replacingOccurrences(of: width, with: "a4 77 69 64 65"), .badField("tiles.sidebar_w")),
+            (
+                vector44.replacingOccurrences(of: open, with: "ac 73 69 64 65 62 61 72 5f 6f 70 65 6e 01"),
+                .badField("tiles.sidebar_open")
+            ),
+        ]
+        for (hex, expected) in frames {
+            XCTAssertThrowsError(try Message.decode(payload: hexData(hex)), hex) { error in
+                XCTAssertEqual(error as? MessageError, expected)
+            }
+        }
+    }
+
     func testABoardViewportNamesItsKeysUnderBoard() throws {
         func layout(_ board: MsgPackValue) -> MsgPackValue {
             .map(["t": .string("layout"), "dock": .array([]), "tiles": .array([]), "board": board])
