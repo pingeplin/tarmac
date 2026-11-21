@@ -32,6 +32,20 @@ final class CardZoomTests: XCTestCase {
         XCTAssertEqual(CardZoom.settleDelay, 0.15)
     }
 
+    // MARK: - aligning again after the card's chrome moves (#450)
+
+    func testAPlacementAlignsAgainAtTheSettledZoom() {
+        XCTAssertTrue(CardZoom.alignsOnPlacement(zoom: 1, settledZoom: 1))
+        XCTAssertTrue(CardZoom.alignsOnPlacement(zoom: 0.5, settledZoom: 0.5))
+    }
+
+    /// While the zoom changes the card is stretched by its ancestors, so a
+    /// place read through them is not the one the settled content shows at.
+    func testAPlacementWaitsWhileTheZoomIsChanging() {
+        XCTAssertFalse(CardZoom.alignsOnPlacement(zoom: 0.75, settledZoom: 1))
+        XCTAssertFalse(CardZoom.alignsOnPlacement(zoom: 1, settledZoom: 0.5))
+    }
+
     // MARK: - iframePx (2607.0004 S10)
 
     func testIframePxIsTheFrameTimesZoomRounded() {

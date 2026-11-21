@@ -170,6 +170,10 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, DocS
         host.setBoardZoom(zoom)
     }
 
+    func placementChanged() {
+        host.placementChanged()
+    }
+
     // MARK: - Page
 
     /// The page lays it out by the state of the layout `didFinish` sent first.

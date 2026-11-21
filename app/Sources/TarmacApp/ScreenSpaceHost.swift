@@ -61,6 +61,15 @@ final class ScreenSpaceHost: NSView {
         DispatchQueue.main.asyncAfter(deadline: .now() + CardZoom.settleDelay, execute: work)
     }
 
+    /// The content is aligned against this view's place in the window, which
+    /// an ancestor can move without moving this view's own frame: a card
+    /// projected while off the window, or its chrome laid out for a new
+    /// display (#450).
+    func placementChanged() {
+        guard CardZoom.alignsOnPlacement(zoom: zoom, settledZoom: settledZoom) else { return }
+        fit()
+    }
+
     private func applyZoom() {
         settle = nil
         settledZoom = zoom
