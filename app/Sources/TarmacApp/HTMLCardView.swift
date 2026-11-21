@@ -145,6 +145,10 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
         host.setBoardZoom(zoom)
     }
 
+    func placementChanged() {
+        host.placementChanged()
+    }
+
     // MARK: - Borrow
 
     /// Lifts or lowers the shield, which is the card's record of being

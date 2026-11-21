@@ -10,6 +10,9 @@ protocol DocCardBody: NSView {
 
     func setBoardZoom(_ zoom: CGFloat)
 
+    /// The card's chrome around the body has been laid out again.
+    func placementChanged()
+
     /// Where the doc is scrolled to, or nil once what it reported is gone: a
     /// reload, a web process that terminated.
     var onScrollChanged: ((ScrollMetrics?) -> Void)? { get set }

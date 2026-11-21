@@ -25,6 +25,13 @@ public enum CardZoom {
     /// How long the zoom has to hold still before a reveal document is sized again.
     public static let settleDelay: Double = 0.15
 
+    /// Whether a web view sized for `settledZoom` is moved onto whole device
+    /// pixels again when the card's chrome around it moves. While the board's
+    /// `zoom` differs, the card is stretched and the settle aligns it instead.
+    public static func alignsOnPlacement(zoom: CGFloat, settledZoom: CGFloat) -> Bool {
+        zoom == settledZoom
+    }
+
     public static func iframePx(frame: CGSize, zoom: CGFloat) -> CGSize {
         CGSize(width: (frame.width * zoom).roundedHalfUp, height: (frame.height * zoom).roundedHalfUp)
     }

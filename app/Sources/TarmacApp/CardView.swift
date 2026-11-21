@@ -495,6 +495,7 @@ final class CardView: NSView, ThemeFollowing {
         laidOutWorldSize = worldFrame.rect.size
         layoutRing()
         placeOfferStrip()
+        docBody?.placementChanged()
     }
 
     // MARK: - Resize handles
