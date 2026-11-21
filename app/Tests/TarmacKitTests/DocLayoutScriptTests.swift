@@ -89,8 +89,8 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(try column(String(repeating: "\u{1D400}", count: 39)), [false])
     }
 
-    /// S13 — the first and the last code point of every wide range count 2,
-    /// and the code point after each range counts 1.
+    /// S13 — the first and the last code point of every wide range count 2;
+    /// U+10FF, before the first range, and U+1F650, after one, count 1.
     func testS13EveryWideRangeIsWideToItsEdges() throws {
         let ranges: [(UInt32, UInt32)] = [
             (0x1100, 0x115F), (0x2E80, 0x303E), (0x3041, 0x33FF), (0x3400, 0x4DBF), (0x4E00, 0x9FFF),
@@ -113,6 +113,7 @@ final class DocLayoutScriptTests: XCTestCase {
     /// S38 — an escaped character is prose.
     func testS38AnEscapeCountsAsProse() throws {
         XCTAssertEqual(try textColumns(table("d", "| \(a(38))\\*\\* |")), [true])
+        XCTAssertEqual(try textColumns(table("d", "| \(a(37))\\*\\* |")), [false])
     }
 
     /// S14
