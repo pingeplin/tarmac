@@ -60,9 +60,10 @@ public enum DocSidebar {
     }
 
     public static func resizable(cardWidth: Double) -> Bool {
-        let range = range(cardWidth: cardWidth)
-        return range.upperBound > range.lowerBound
+        resizable(range(cardWidth: cardWidth))
     }
+
+    private static func resizable(_ range: ClosedRange<Double>) -> Bool { range.upperBound > range.lowerBound }
 
     /// The stored width, or the standard one, clamped to the card's range;
     /// a clamp never changes `stored`.
@@ -127,14 +128,12 @@ public enum DocSidebar {
     }
 
     public static func pageState(cardWidth: Double, stored: Stored, overlayOpen: Bool) -> PageState {
-        let name = switch mode(cardWidth: cardWidth, stored: stored, overlayOpen: overlayOpen) {
-        case .strip: "strip"
-        case .docked: "docked"
-        case .overlay: "overlay"
+        let range = range(cardWidth: cardWidth)
+        let (name, shown): (String, Double) = switch mode(cardWidth: cardWidth, stored: stored, overlayOpen: overlayOpen) {
+        case .strip: ("strip", width(cardWidth: cardWidth, stored: stored))
+        case .docked(let width): ("docked", width)
+        case .overlay(let width): ("overlay", width)
         }
-        return PageState(
-            mode: name, width: width(cardWidth: cardWidth, stored: stored),
-            maxWidth: range(cardWidth: cardWidth).upperBound, resizable: resizable(cardWidth: cardWidth)
-        )
+        return PageState(mode: name, width: shown, maxWidth: range.upperBound, resizable: resizable(range))
     }
 }

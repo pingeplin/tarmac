@@ -26,10 +26,9 @@ public enum DocFrontMatter {
         let firstEnd = markdown.utf8.firstIndex(of: UInt8(ascii: "\n")) ?? markdown.utf8.endIndex
         guard isFence(line(markdown.utf8[..<firstEnd]), marks: ["---"]) else { return ([], markdown) }
         let lines = markdown.utf8.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: false)
-        let text = lines.map(line)
-        guard let close = text.indices.dropFirst().first(where: { isFence(text[$0], marks: ["---", "..."]) })
+        guard let close = lines.indices.dropFirst().first(where: { isFence(line(lines[$0]), marks: ["---", "..."]) })
         else { return ([], markdown) }
-        let block = text[1..<close]
+        let block = lines[1..<close].map(line)
         guard block.contains(where: { key(of: $0) != nil }), block.allSatisfy(isAllowed) else { return ([], markdown) }
 
         let end = lines[close].endIndex
@@ -90,26 +89,26 @@ public enum DocFrontMatter {
         return unquoted(trimmed(rest))
     }
 
-    private static func fields(_ block: ArraySlice<String>) -> [Field] {
-        var keys: [String] = []
-        var values: [Value?] = []
+    private static func fields(_ block: [String]) -> [Field] {
+        // A nil value waits for the line after its key to give its kind.
+        var fields: [(key: String, value: Value?)] = []
         for line in block where !isBlank(line) {
             if let (key, rest) = key(of: line) {
-                keys.append(key)
-                values.append(value(trimmed(rest)))
+                fields.append((key, value(trimmed(rest))))
                 continue
             }
-            guard let last = values.indices.last else { continue }
+            guard let last = fields.indices.last else { continue }
             let item = item(of: line)
-            switch values[last] {
-            case nil: values[last] = item.map { .list($0.isEmpty ? [] : [$0]) } ?? .text(trimmed(line))
-            case .text(let text)?: values[last] = .text(text.isEmpty ? trimmed(line) : text + "\n" + trimmed(line))
+            let text = trimmed(line)
+            switch fields[last].value {
+            case nil: fields[last].value = item.map { .list($0.isEmpty ? [] : [$0]) } ?? .text(text)
+            case .text(let above)?: fields[last].value = .text(above.isEmpty ? text : above + "\n" + text)
             case .list(let items)?:
-                let next = item ?? trimmed(line)
-                values[last] = .list(next.isEmpty ? items : items + [next])
+                let next = item ?? text
+                fields[last].value = .list(next.isEmpty ? items : items + [next])
             }
         }
-        return zip(keys, values).map { Field(key: $0, value: $1 ?? .text("")) }
+        return fields.map { Field(key: $0.key, value: $0.value ?? .text("")) }
     }
 
     /// Nil when the field's kind waits for the line after it.
