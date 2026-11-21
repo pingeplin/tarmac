@@ -459,12 +459,14 @@ main { max-width: 1080px; margin: 0 auto; }
   so it is right at every board zoom. A media query would see the 3×
   reference instead (see above).
 
-**Media are at most 560 px wide.** A wide image or chart is hard to read on a
-wide card, so Tarmac caps the width of media:
+**Media are at most 1080 px wide.** A wide image or chart is hard to read on
+a wide card, so Tarmac caps the width of media:
 
-- Every `img`, `canvas`, `video`, and `svg` with a `viewBox` is at most 560 px
-  wide, and never wider than its container. The cap applies to a medium you
-  set to `width: 100%` too.
+- Every `img`, `canvas`, `video`, and `svg` with a `viewBox` is at most
+  1080 px wide, and never wider than its container. The cap applies to a
+  medium you set to `width: 100%` too.
+- The cap is the width of `main`, so a chart in `main` or in a `.duo` column
+  is not capped.
 - A capped medium is scaled, not cropped. Where you fix its height, it is
   drawn whole in the narrower box, with empty bands. Where you give it `width`
   and `height` attributes, its height follows its width. An `svg` with no
@@ -472,11 +474,8 @@ wide card, so Tarmac caps the width of media:
 - To lift the cap, set `max-width` on the element: `max-width: none`, or
   `max-width: 100%` to fill its container. Use a type, class or id selector,
   or an inline `style`; a `:where()` or `*` rule is too weak.
-- With `main` at 1080 px, each `.duo` column is narrower than 560 px, so the
-  `.duo` chart above needs no change. On a narrower card the columns stack and
-  can be wider than 560 px; then the chart is capped. A chart that must fill
-  its column or the full width of `main` needs the lift:
-  `.wide svg { max-width: 100%; }`.
+- A medium wider than 1080 px needs `max-width: none`, for example where
+  your `main` is wider or you have no `main`: `.wide svg { max-width: none; }`.
 
 If your document genuinely needs honest, changing viewport dimensions — a
 self-contained D3 or Canvas dashboard that recomputes its scales on resize — opt

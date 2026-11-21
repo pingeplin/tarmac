@@ -84,7 +84,7 @@
   // attribute is given: on a medium with only a height, it makes it grow.
   try {
     adoptSheet(
-      ":where(svg[viewBox], img, video, canvas) { max-width: min(100%, 560px); object-fit: contain; }\n" +
+      ":where(svg[viewBox], img, video, canvas) { max-width: min(100%, 1080px); object-fit: contain; }\n" +
         ":where(img[width], svg[viewBox][width], video[width]) { height: auto; }"
     );
   } catch (e) {

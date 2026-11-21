@@ -1407,7 +1407,7 @@ browser.
   messages (from the parent only; `started` stays its second act),
   caps the width of media (a constructed stylesheet adopted at boot, before
   the font sheet, in every HTML card: an `img`, `canvas`, `video` or an `svg`
-  with a `viewBox` is at most 560 px wide and is scaled, not cropped; its
+  with a `viewBox` is at most 1080 px wide and is scaled, not cropped; its
   `:where()` rules lose to any author rule of non-zero specificity, or an
   inline style, on the same property; spec 2611.0023),
   applies the zoom, and in a magnified card draws the list markers it can
