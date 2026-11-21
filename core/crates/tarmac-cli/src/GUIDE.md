@@ -426,11 +426,11 @@ What follows from that:
   (`data-tarmac-marker="disc"`, `"decimal"`, …) and draws that marker as the
   item's `::before`. Numbers keep `start`, `reversed` and `value`. Tarmac
   leaves alone a list you style yourself: `list-style: none`, your own
-  `li::before`, `li::after` or `li::marker` content, a marker type other than the usual bullet, number,
-  roman, latin and greek ones, an image or `inside` marker, a right-to-left
-  or vertical list. Those keep WebKit's marker, too far left. A
-  `li::marker` rule does not reach a marked item: to colour the marker,
-  style `li::before` (with no `content`) as well.
+  `li::before`, `li::after` or `li::marker` content, a marker type other than
+  the usual bullet, number, roman, latin and greek ones, an image or `inside`
+  marker, a right-to-left or vertical list. Those keep WebKit's own marker, if
+  they have one, too far left. A `li::marker` rule does not reach a marked
+  item: to colour the marker, style `li::before` (with no `content`) as well.
 - **Layout runs once, so nothing about the viewport changes.** `resize` and
   `ResizeObserver` fire at load and then effectively never again. Read
   dimensions at startup if you must; do not build a layout that waits for them
