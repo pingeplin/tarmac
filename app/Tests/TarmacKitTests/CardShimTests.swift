@@ -1884,4 +1884,17 @@ final class CardShimTests: XCTestCase {
             XCTAssertEqual(shim.flag("h.li.hasAttribute('data-tarmac-marker')"), false, "S16 zoom \(zoom)")
         }
     }
+
+    func test2611_0019S27AFailureInThePassStaysInTheShimOnBothPaths() throws {
+        for held in [false, true] {
+            let shim = try loadShimWithAListItem()
+            shim.run("globalThis.getComputedStyle = () => { throw new Error('style') }")
+            if !held { shim.run("h.domReady()") }
+            shim.run("h.send({ tarmac: 'zoom', z: 3 })")
+            if held { shim.run("h.domReady()") }
+            XCTAssertEqual(shim.number("h.style.zoom"), 3, "S27 held \(held): zoom")
+            XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "S27 held \(held): ready")
+            XCTAssertEqual(try shim.posted().count, 2, "S27 held \(held): started and ready, nothing more")
+        }
+    }
 }

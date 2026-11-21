@@ -118,13 +118,14 @@ final class CardListMarkerTests: XCTestCase {
         return try XCTUnwrap(NSBitmapImageRep(data: tiff))
     }
 
-    /// Whether anything is drawn left of `left`, within the marker's reach,
-    /// between `top` and `bottom` (view points).
-    private func ink(_ shot: NSBitmapImageRep, _ view: WKWebView, left: Double, top: Double, bottom: Double) -> Bool {
+    /// The right edge, in view points, of what is drawn left of `left`
+    /// within the marker's reach, between `top` and `bottom`; nil for none.
+    private func ink(_ shot: NSBitmapImageRep, _ view: WKWebView, left: Double, top: Double, bottom: Double) -> Double? {
         let scale = Double(shot.pixelsWide) / Double(view.bounds.width)
         let xs = Int((left - 90) * scale)..<Int((left - 2) * scale)
         let ys = Int((top + 3) * scale)..<Int((bottom - 3) * scale)
-        return ys.contains { y in xs.contains { x in (shot.colorAt(x: x, y: y)?.brightnessComponent ?? 1) < 0.5 } }
+        let inked = xs.filter { x in ys.contains { y in (shot.colorAt(x: x, y: y)?.brightnessComponent ?? 1) < 0.5 } }
+        return inked.max().map { Double($0) / scale }
     }
 
     /// The marker of `#it`'s item is drawn beside its first line and not
@@ -133,8 +134,10 @@ final class CardListMarkerTests: XCTestCase {
         let lines = try XCTUnwrap(eval(view, "bands(document.getElementById('it'))") as? [[Double]])
         XCTAssertGreaterThanOrEqual(lines.count, 2, "the item wraps", file: file, line: line)
         let shot = try snapshot(view)
-        XCTAssertTrue(ink(shot, view, left: lines[0][0], top: lines[0][1], bottom: lines[0][2]), "a marker beside the first line", file: file, line: line)
-        XCTAssertFalse(ink(shot, view, left: lines[1][0], top: lines[1][1], bottom: lines[1][2]), "no marker beside the second line", file: file, line: line)
+        let marker = ink(shot, view, left: lines[0][0], top: lines[0][1], bottom: lines[0][2])
+        XCTAssertNotNil(marker, "a marker beside the first line", file: file, line: line)
+        XCTAssertLessThan(marker ?? .infinity, lines[0][0] - 10, "a gap between the marker and the text", file: file, line: line)
+        XCTAssertNil(ink(shot, view, left: lines[1][0], top: lines[1][1], bottom: lines[1][2]), "no marker beside the second line", file: file, line: line)
     }
 
     /// Checks the item `#it` at zoom 3 against itself at zoom 1, and its
@@ -282,6 +285,7 @@ final class CardListMarkerTests: XCTestCase {
             XCTAssertEqual(try style(view, ".\(name) > li", "list-style-type"), try style(before, ".\(name) > li", "list-style-type"), name)
         }
         XCTAssertNil(try mark(view, "#div"), "a list-item div")
+        XCTAssertEqual(try style(view, "#div", "list-style-type"), ["disc"], "a list-item div")
         try assertControlMarked(view)
     }
 
@@ -389,8 +393,9 @@ final class CardListMarkerTests: XCTestCase {
         XCTAssertEqual(try eval(view, "document.adoptedStyleSheets.length") as? Int, 2)
         XCTAssertEqual(try markerSheets(view), 1)
         XCTAssertEqual(
-            try eval(view, "document.styleSheets[document.styleSheets.length - 1] === document.adoptedStyleSheets[1]") as? Bool,
-            true, "the marker sheet is last in document.styleSheets (GUIDE.md)"
+            try eval(view, "document.styleSheets[document.styleSheets.length - 1].cssRules[0].selectorText") as? String,
+            "li[data-tarmac-marker]",
+            "the marker sheet is last in document.styleSheets (GUIDE.md)"
         )
         XCTAssertEqual(
             try eval(view, "getComputedStyle(document.documentElement).getPropertyValue('--tarmac-prose-size').trim()") as? String,
