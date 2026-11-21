@@ -65,6 +65,7 @@ final class AppController {
     let rootView: RootView
     let fonts: FontSettings
     let theme: ThemeSettings
+    let documents: DocumentSettings
     weak var window: NSWindow?
 
     /// The handshake has completed: requests may be made. Narrower than
@@ -198,12 +199,13 @@ final class AppController {
 
     init(
         window: NSWindow, rootView: RootView, client: DaemonClient, fonts: FontSettings, theme: ThemeSettings,
-        inboxPaneHeight: InboxPaneHeight
+        documents: DocumentSettings, inboxPaneHeight: InboxPaneHeight
     ) {
         self.window = window
         self.rootView = rootView
         self.fonts = fonts
         self.theme = theme
+        self.documents = documents
         self.client = client
 
         // board-0 wraps the BoardView RootView was built with; it is the active,
@@ -230,6 +232,7 @@ final class AppController {
 
         fonts.onChange = { [weak self] in self?.fontsChanged() }
         theme.onChange = { [weak self] in self?.themeChanged() }
+        documents.onChange = { [weak self] in self?.docSidebarSideChanged() }
         updateWindowTitle()
         showConnectionStatus()
     }
@@ -243,6 +246,12 @@ final class AppController {
     private func themeChanged() {
         window?.backgroundColor = Theme.bg0
         tellEveryView { $0.broadcastThemeChanged() }
+    }
+
+    /// The side of the markdown cards' sidebar changed: the same reach as a
+    /// theme change.
+    private func docSidebarSideChanged() {
+        tellEveryView { $0.broadcastDocSidebarSideChanged() }
     }
 
     /// Runs `broadcast` on the window's tree, then on each board that is not

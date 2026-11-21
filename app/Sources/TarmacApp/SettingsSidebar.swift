@@ -69,6 +69,7 @@ final class SettingsSidebar: NSViewController, NSTableViewDataSource, NSTableVie
         switch pane {
         case .fonts: "textformat"
         case .theme: "circle.lefthalf.filled"
+        case .documents: "doc.text"
         }
     }
 }

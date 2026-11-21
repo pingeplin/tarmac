@@ -7,7 +7,8 @@ import WebKit
 /// runs it. The text can be selected and copied the usual way, so the web view
 /// takes keyboard focus when it is pressed.
 @MainActor
-final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNavigationDelegate {
+final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, DocSidebarSideFollowing,
+    WKNavigationDelegate {
     /// Where a clicked http(s) link goes.
     var openExternal: (URL) -> Void = { NSWorkspace.shared.open($0) }
 
@@ -183,7 +184,20 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
     private var cardWidth: Double { Double(CardBox.cardSize(ofBody: bounds.size).width) }
 
     private func sidebarState() -> DocSidebar.PageState {
-        DocSidebar.pageState(cardWidth: cardWidth, stored: stored(), overlayOpen: overlayOpen)
+        DocSidebar.pageState(
+            cardWidth: cardWidth, stored: stored(), overlayOpen: overlayOpen, side: Theme.docSidebarSide
+        )
+    }
+
+    /// A page not loaded yet takes the side in `didFinish`.
+    private func sendSidebar() {
+        guard pageLoaded else { return }
+        webView.runInCardWorld("tarmacDoc.sidebar(state)", arguments: ["state": sidebarState().arguments])
+    }
+
+    /// The card keeps its width and its open state on the other side.
+    func docSidebarSideChanged() {
+        sendSidebar()
     }
 
     /// An action of the page's sidebar; one the page cannot have meant changes nothing.
@@ -194,8 +208,7 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
         let applied = DocSidebar.apply(action, stored: stored, overlayOpen: overlayOpen, cardWidth: cardWidth)
         overlayOpen = applied.overlayOpen
         if changes { onStoredChanged(applied.stored) }
-        guard pageLoaded else { return }
-        webView.runInCardWorld("tarmacDoc.sidebar(state)", arguments: ["state": sidebarState().arguments])
+        sendSidebar()
     }
 
     /// Passed as arguments, never spliced into the script: a family name is

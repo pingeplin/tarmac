@@ -44,6 +44,23 @@ enum SettingsGroup {
         return box
     }
 
+    /// A bold title over `box`, both as wide as the pane.
+    static func titled(_ title: String, _ box: NSView) -> NSView {
+        let label = NSTextField(labelWithString: title)
+        label.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+        let stack = NSStackView(views: [label, box])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        NSLayoutConstraint.activate([label, box].flatMap {
+            [
+                $0.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
+                $0.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
+            ]
+        })
+        return stack
+    }
+
     private static func addRule(to grid: NSGridView) {
         let rule = NSBox()
         rule.boxType = .separator
