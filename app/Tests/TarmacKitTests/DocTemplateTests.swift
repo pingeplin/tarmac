@@ -209,4 +209,12 @@ final class DocTemplateTests: XCTestCase {
             XCTAssertGreaterThan(index, left)
         }
     }
+
+    /// 2611.0021 S37 — a thematic break is a whole line on screen: the
+    /// default 1px border, laid out at K, is a third of a pixel and can vanish.
+    func test2611_0021S37AThematicBreakIsOneScreenPixel() throws {
+        let rule = try rule(for: ".doc-prose hr")
+        XCTAssertTrue(rule.contains("border: 0;"))
+        XCTAssertTrue(rule.contains("border-top: calc(1px * \(Self.k)) solid var(--line);"))
+    }
 }
