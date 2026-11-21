@@ -1310,6 +1310,29 @@ handlers they post to. No cookies, cache or storage outlive the app.
   as an inline message — and the page renders it with `marked` on arrival, on
   restore, and on every `FileEvent` for that path, on every board that has the
   doc.
+- **Front matter** (spec 2611.0022). The read splits a YAML-like block at the
+  doc's top (`DocFrontMatter`: a `---` line, then only key, `- item`,
+  indented and `#` lines, then `---` or `...`) into fields, a text or a list
+  each, and the page renders only the body after it. It is not a YAML
+  parser: a line it does not know joins the field above it.
+- **Sidebar** (spec 2611.0022). The page shows the fields (a list as chips)
+  and the outline — the doc's `#`–`###` headings from marked's tokens, a raw
+  HTML heading not among them — in a sidebar on the card's left, laid out at
+  3× with its own scaler like the prose, so a zoom does not re-wrap it. The
+  entry of the current section (the last heading above a reading line 24px
+  below the view's top, or the last one at the doc's end) is marked in the
+  agent colour, and a click on an entry scrolls its heading to 8px below the
+  top. The mode is `DocSidebar`'s: a card of 632 or wider docks it (160–420,
+  standard 240) and the text re-wraps beside it; a narrower card shows a 30px
+  strip with `{}`, `≡` and a tick per `#`/`##` heading, whose icon slides the
+  panel over the text, with no re-wrap, until a press on the text or the icon
+  again. A drag of the grip on its inner edge resizes it live, below 160
+  collapses it, and a double-click sets 240; a doc with no fields and no
+  heading has none. `CardView` holds the card's choice (`DocSidebar.Stored`:
+  a width and open), in memory only; `DocWebView` sends the page its state
+  (`DocSidebar.pageState`) with each layout, render and action, and applies
+  the page's `docSidebar` reports (`DocSidebar.Action`, `apply`). Every
+  decision of the page's is a DOM-free rule of `doc-layout.js`.
 - **Layout** (spec 2611.0021). The text is a column of 46em of the prose's own
   size, centred in the card. A markdown table (in a `.doc-table` box) and a
   code block of the prose itself may be wider, up to 1040px, centred on the
