@@ -33,6 +33,32 @@ final class DocTemplateTests: XCTestCase {
         return String(text[try XCTUnwrap(Range(match.range(at: 1), in: text))])
     }
 
+    /// The rules of the template's style sheet, in order: each selector list,
+    /// split at its commas, and the declarations between its braces.
+    private func rules() throws -> [(selectors: [String], body: String)] {
+        let text = try template()
+        let start = try XCTUnwrap(text.range(of: "<style>")).upperBound
+        let end = try XCTUnwrap(text.range(of: "</style>")).lowerBound
+        let sheet = String(text[start..<end]).replacingOccurrences(
+            of: #"/\*[\s\S]*?\*/"#, with: "", options: .regularExpression
+        )
+        let regex = try NSRegularExpression(pattern: #"([^{}]+)\{([^{}]*)\}"#)
+        return regex.matches(in: sheet, range: NSRange(sheet.startIndex..., in: sheet)).map { match in
+            let selectors = String(sheet[Range(match.range(at: 1), in: sheet)!])
+                .split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            return (selectors, String(sheet[Range(match.range(at: 2), in: sheet)!]))
+        }
+    }
+
+    /// The declarations of every rule that names `selector`, in order.
+    private func rule(for selector: String) throws -> String {
+        let bodies = try rules().filter { $0.selectors.contains(selector) }.map(\.body)
+        XCTAssertFalse(bodies.isEmpty, "no rule for \(selector)")
+        return bodies.joined(separator: ";")
+    }
+
+    private static let k = "var(--oversample-k)"
+
     /// A doc's raw HTML never runs, embeds no plugin, and frames web pages
     /// only — never the card scheme, where a framed local file would sit
     /// unsandboxed beside an attacker's.
@@ -108,5 +134,79 @@ final class DocTemplateTests: XCTestCase {
         let page = ThemeCSS.page(text, ThemeCatalog.standard(for: .light).palette)
         XCTAssertTrue(page.contains("--bg1: #eff0f1;"))
         XCTAssertFalse(page.contains("color-scheme"))
+    }
+
+    /// 2611.0021 S1 — the column's measure is written once, where `em` is the
+    /// prose's own size.
+    func test2611_0021S1TheColumnIsFortySixEmOnceInTheProseRule() throws {
+        let text = try template()
+        XCTAssertEqual(count(of: "46em", in: text), 1)
+        XCTAssertTrue(try firstMatch(#"\n  \.doc-prose \{([^}]*)\}"#, in: text).contains("46em"))
+        XCTAssertFalse(text.contains("720px"))
+    }
+
+    /// 2611.0021 S2 — a table or a code block of the prose itself breaks out
+    /// to the cap.
+    func test2611_0021S2WideBlocksAreCappedAt1040() throws {
+        for selector in [".doc-prose > .doc-table", ".doc-prose > pre"] {
+            let maxWidth = try firstMatch(#"max-width:\s*([^;]+);"#, in: try rule(for: selector))
+            XCTAssertTrue(maxWidth.contains("calc(1040px * \(Self.k))"), selector)
+        }
+    }
+
+    /// 2611.0021 S3 — the table look; the last three checks are regression
+    /// guards that hold on `main` too.
+    func test2611_0021S3TheTableLook() throws {
+        let box = try rule(for: ".doc-table")
+        XCTAssertTrue(box.contains("solid var(--line)"))
+        XCTAssertTrue(box.contains("border-radius: calc(8px * \(Self.k));"))
+        XCTAssertTrue(box.contains("overflow-x: auto;"))
+        let header = try rule(for: ".doc-table th")
+        for part in ["var(--bg2)", "var(--muted)", "white-space: nowrap;"] {
+            XCTAssertTrue(header.contains(part), part)
+        }
+        XCTAssertTrue(try rule(for: ".doc-table td code").contains("white-space: nowrap;"))
+
+        let cellSelector = try NSRegularExpression(pattern: #"(^|[\s>+~])(th|td)\b"#)
+        for rule in try rules() {
+            for selector in rule.selectors
+            where cellSelector.firstMatch(in: selector, range: NSRange(selector.startIndex..., in: selector)) != nil {
+                XCTAssertTrue(selector.contains(".doc-table"), selector)
+            }
+            let touchesTable = rule.selectors.contains { $0.contains(".doc-table") }
+            for border in rule.body.components(separatedBy: ";") where touchesTable && border.contains("border") {
+                guard border.contains("solid") else { continue }
+                XCTAssertTrue(border.contains("calc(1px * \(Self.k)) solid"), border)
+            }
+        }
+        let text = try template()
+        for side in ["border-left", "border-right", "border-inline"] {
+            XCTAssertFalse(text.contains(side), side)
+        }
+    }
+
+    /// 2611.0021 S4 — a code line does not wrap; it scrolls in its block.
+    func test2611_0021S4ACodeBlockScrollsSideways() throws {
+        let pre = try rule(for: ".doc-prose pre")
+        XCTAssertTrue(pre.contains("white-space: pre;"))
+        XCTAssertTrue(pre.contains("overflow-x: auto;"))
+        XCTAssertFalse(try template().contains("pre-wrap"))
+    }
+
+    /// 2611.0021 S5
+    func test2611_0021S5ATextColumnKeepsItsMinimum() throws {
+        XCTAssertTrue(try rule(for: ".doc-table .doc-text-col").contains("min-width: calc(220px * \(Self.k));"))
+    }
+
+    /// 2611.0021 S25 — marked's `align` beats the left default.
+    func test2611_0021S25ColumnAlignmentWinsOverTheLeftDefault() throws {
+        let all = try rules()
+        let left = try XCTUnwrap(all.firstIndex { $0.body.contains("text-align: left;") })
+        for (side, selector) in [("center", #".doc-table td[align="center"]"#), ("right", #".doc-table td[align="right"]"#)] {
+            let index = try XCTUnwrap(all.firstIndex { $0.selectors.contains(selector) }, selector)
+            XCTAssertTrue(all[index].selectors.contains(selector.replacingOccurrences(of: " td[", with: " th[")))
+            XCTAssertTrue(all[index].body.contains("text-align: \(side);"))
+            XCTAssertGreaterThan(index, left)
+        }
     }
 }
