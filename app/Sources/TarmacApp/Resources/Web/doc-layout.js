@@ -186,6 +186,7 @@
     parts(mode, box, state) {
       return {
         strip: mode !== "none" && !(mode === "docked" && box.panel > 0),
+        panel: box.panel > 0,
         panelLeft: mode === "overlay" ? state.strip : 0,
         grip: state.resizable && box.panel > 0,
       };

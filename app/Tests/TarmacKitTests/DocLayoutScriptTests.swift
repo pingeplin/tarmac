@@ -352,16 +352,16 @@ final class DocLayoutScriptTests: XCTestCase {
             let state = "{strip: 30, grip: 8, resizable: \(resizable)}"
             return try json("tarmacDocLayout.parts('\(mode)', {panel: \(panel)}, \(state))")
         }
-        func box(_ strip: Bool, _ left: Int, _ grip: Bool) -> String {
-            #"{"strip":\#(strip),"panelLeft":\#(left),"grip":\#(grip)}"#
+        func box(_ strip: Bool, _ panel: Bool, _ left: Int, _ grip: Bool) -> String {
+            #"{"strip":\#(strip),"panel":\#(panel),"panelLeft":\#(left),"grip":\#(grip)}"#
         }
-        XCTAssertEqual(try parts("none", panel: 0), box(false, 0, false))
-        XCTAssertEqual(try parts("strip", panel: 0), box(true, 0, false))
-        XCTAssertEqual(try parts("docked", panel: 240), box(false, 0, true))
-        XCTAssertEqual(try parts("docked", panel: 0), box(true, 0, false))
-        XCTAssertEqual(try parts("overlay", panel: 240), box(true, 30, true))
-        XCTAssertEqual(try parts("overlay", panel: 0), box(true, 30, false))
-        XCTAssertEqual(try parts("overlay", panel: 150, resizable: false), box(true, 30, false))
+        XCTAssertEqual(try parts("none", panel: 0), box(false, false, 0, false))
+        XCTAssertEqual(try parts("strip", panel: 0), box(true, false, 0, false))
+        XCTAssertEqual(try parts("docked", panel: 240), box(false, true, 0, true))
+        XCTAssertEqual(try parts("docked", panel: 0), box(true, false, 0, false))
+        XCTAssertEqual(try parts("overlay", panel: 240), box(true, true, 30, true))
+        XCTAssertEqual(try parts("overlay", panel: 0), box(true, false, 30, false))
+        XCTAssertEqual(try parts("overlay", panel: 150, resizable: false), box(true, true, 30, false))
     }
 
     /// 2611.0022 D17: a press on the text closes an overlay and nothing else.
