@@ -273,6 +273,13 @@ update it.
 Board zoom never re-wraps prose: it is laid out once and scaled. Write for a
 narrow column and let the user zoom.
 
+The text is a centred column about 46em wide. A wide table or code block may
+be up to 1040px wide and scrolls sideways in its own box; a long code line does
+not wrap. YAML front matter (`---` / `key: value` lines / `---` at the top) is
+not shown in the text: it shows as key/value rows, and lists as chips, in the
+card's sidebar, above an outline of the `#`, `##` and `###` headings. So give
+a long doc front matter and headings; a doc with neither has no sidebar.
+
 ## HTML cards
 
 An HTML card is a **fully self-contained document** running at an opaque origin
