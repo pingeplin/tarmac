@@ -396,8 +396,9 @@
       "li[data-tarmac-marker]{list-style-type:none!important}",
       ":where(li[data-tarmac-marker])::before{float:left;box-sizing:content-box;width:0;margin-left:-.5em;" +
         "padding-right:.5em;display:flex;justify-content:flex-end;white-space:nowrap;font-variant-numeric:tabular-nums}",
-      // An item with no content of its own would not hold its float.
-      ":where(li[data-tarmac-marker])::after{content:\"\";display:block;clear:left}",
+      // An empty item would not hold its float. Only an empty one: a clear
+      // on any other would also clear an author's float before the list.
+      ":where(li[data-tarmac-marker]:empty)::after{content:\"\";display:block;clear:left}",
     ];
     markerTypes.forEach(function (t) {
       var content = markerGlyphs[t] || "counter(list-item, " + t + ') "."';

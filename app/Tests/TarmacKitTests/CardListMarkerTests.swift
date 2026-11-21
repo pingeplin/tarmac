@@ -397,6 +397,21 @@ final class CardListMarkerTests: XCTestCase {
         XCTAssertEqual(try [mark(view, "#e1"), mark(view, "#e2")], ["disc", "disc"])
     }
 
+    func testS29ItemsBesideAnAuthorsFloatStayBesideIt() throws {
+        let body = """
+        <div style="float:left;width:120px;height:200px;margin-right:10px"></div>
+        <ul><li id=f1>one</li><li id=f2>two</li><li id=f3>three</li></ul>
+        """
+        let tops = "['f1', 'f2', 'f3'].map(id => document.getElementById(id).getBoundingClientRect().top)"
+        let reference = try XCTUnwrap(eval(card(body, zoom: 1), tops) as? [Double])
+        let view = try card(body, zoom: 3)
+        let zoomed = try XCTUnwrap(eval(view, tops) as? [Double])
+        for (one, three) in zip(reference, zoomed) {
+            XCTAssertEqual(three, one * 3, accuracy: 4, "an item's top at zoom 3")
+        }
+        XCTAssertEqual(try marks(view, "li"), ["disc", "disc", "disc"])
+    }
+
     func testS25AnItemThatComesWithTheAttributeIsNotRead() throws {
         let view = try card("<ul><li id=src data-tarmac-marker=square>a</li></ul>" + Self.control, zoom: 3)
         XCTAssertEqual(try mark(view, "#src"), "square")
