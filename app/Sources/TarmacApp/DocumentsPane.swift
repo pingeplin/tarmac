@@ -51,6 +51,21 @@ final class DocumentsPane: NSObject {
         control.orientation = .vertical
         control.alignment = .leading
         control.spacing = 6
-        return SettingsGroup.titled("Markdown cards", SettingsGroup.box([("Sidebar side", control, .none)]))
+        return SettingsGroup.titled("Markdown cards", SettingsGroup.box(holding: labelled("Sidebar side", control)))
+    }
+
+    /// Unlike the shared rows, whose control sits at the trailing edge, the
+    /// tiles start after a fixed label column, as the approved mockup draws
+    /// them (#456).
+    private func labelled(_ title: String, _ control: NSView) -> NSView {
+        let label = NSTextField(labelWithString: title)
+        let grid = NSGridView(views: [[label, control]])
+        grid.column(at: 0).width = 150
+        grid.columnSpacing = 16
+        grid.yPlacement = .top
+        let cell = grid.cell(for: label)
+        cell?.yPlacement = .none
+        cell?.customPlacementConstraints = [label.topAnchor.constraint(equalTo: control.topAnchor, constant: 4)]
+        return grid
     }
 }
