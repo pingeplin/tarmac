@@ -65,7 +65,6 @@ final class AppController {
     let rootView: RootView
     let fonts: FontSettings
     let theme: ThemeSettings
-    let documents: DocumentSettings
     weak var window: NSWindow?
 
     /// The handshake has completed: requests may be made. Narrower than
@@ -205,7 +204,6 @@ final class AppController {
         self.rootView = rootView
         self.fonts = fonts
         self.theme = theme
-        self.documents = documents
         self.client = client
 
         // board-0 wraps the BoardView RootView was built with; it is the active,
