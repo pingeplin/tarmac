@@ -37,6 +37,10 @@ final class CardListMarkerTests: XCTestCase {
     }
     """
 
+    private func spin(until done: () -> Bool, _ what: String) throws {
+        try CardPage.spin(until: done, what)
+    }
+
     /// The script's value, as JSON text decoded.
     private func eval(_ view: WKWebView, _ script: String) throws -> Any? {
         try CardPage.eval(view, script, prelude: Self.lines)
@@ -319,7 +323,7 @@ final class CardListMarkerTests: XCTestCase {
           return 0;
         })()
         """)
-        try CardPage.spin(until: { (try? self.eval(view, "window.seen !== undefined")) as? Bool == true }, "the task")
+        try spin(until: { (try? self.eval(view, "window.seen !== undefined")) as? Bool == true }, "the task")
         XCTAssertEqual(try eval(view, "window.seen") as? [String], ["disc", "disc", "disc"])
     }
 
@@ -332,7 +336,7 @@ final class CardListMarkerTests: XCTestCase {
         _ = try eval(view, "(document.getElementById('later').className = '', 0)")
         XCTAssertNil(try mark(view, "#late"), "a class change is not observed")
         _ = try eval(view, "(window.postMessage({ tarmac: 'zoom', z: 3 }, '*'), 0)")
-        try CardPage.spin(until: { (try? self.mark(view, "#late")) == "disc" }, "the second zoom's pass")
+        try spin(until: { (try? self.mark(view, "#late")) == "disc" }, "the second zoom's pass")
         XCTAssertEqual(try marks(view, "#first > li"), ["disc", "disc"])
         XCTAssertEqual(try markerSheets(view), 1)
     }

@@ -20,8 +20,11 @@ final class CardMediaCapTests: XCTestCase {
       const r = document.getElementById(id).getBoundingClientRect();
       return [r.left / z, r.top / z, r.width / z, r.height / z];
     }
+    function isMediaSheet(s) {
+      return !!(s.cssRules[0] && s.cssRules[0].style && s.cssRules[0].style.objectFit === 'contain');
+    }
     function mediaSheet() {
-      return document.adoptedStyleSheets.find(s => s.cssRules[0] && s.cssRules[0].style && s.cssRules[0].style.objectFit === 'contain');
+      return document.adoptedStyleSheets.find(isMediaSheet);
     }
     """
 
@@ -347,7 +350,7 @@ final class CardMediaCapTests: XCTestCase {
         for (name, value) in expected {
             XCTAssertEqual(try eval(view, "\(fontSheet).cssRules[0].style.getPropertyValue(\(json(name))).trim()") as? String, value, name)
         }
-        XCTAssertEqual(try eval(view, "document.adoptedStyleSheets.filter(s => s === mediaSheet()).length") as? Int, 1, "one media sheet")
+        XCTAssertEqual(try eval(view, "document.adoptedStyleSheets.filter(isMediaSheet).length") as? Int, 1, "one media sheet")
         XCTAssertEqual(try eval(view, "document.adoptedStyleSheets.indexOf(mediaSheet())") as? Int, 0, "the media sheet first")
         XCTAssertEqual(
             try eval(view, "document.adoptedStyleSheets.filter(s => s.cssRules[0] && s.cssRules[0].selectorText === 'li[data-tarmac-marker]').length") as? Int,
