@@ -55,7 +55,8 @@
   }
   /* Not transformed: its height is the prose's visual height, so the scroll
      range is what is seen and the K-times layout is clipped in real pixels. */
-  .doc-prose-sizer {
+  .doc-prose-sizer,
+  .doc-side-sizer {
     overflow: hidden;
   }
   .doc-prose-scaler,
@@ -204,11 +205,6 @@
     -webkit-user-select: none;
     user-select: none;
   }
-  .doc-side-strip[hidden],
-  .doc-side-panel[hidden],
-  .doc-side-grip[hidden] {
-    display: none;
-  }
   .doc-side-strip {
     left: 0;
     width: calc(var(--side-strip) * var(--zoom));
@@ -224,11 +220,7 @@
     background: var(--bg2);
   }
   [data-side="overlay"] .doc-side-panel {
-    border: solid var(--line);
-    border-width: 0 calc(1px * var(--zoom)) 0 0;
-  }
-  .doc-side-sizer {
-    overflow: hidden;
+    border-right: calc(1px * var(--zoom)) solid var(--line);
   }
   .doc-side-grip {
     left: calc((var(--side-panel-left) + var(--side-panel)) * var(--zoom));
@@ -252,9 +244,6 @@
     justify-content: space-between;
     align-items: baseline;
     margin-bottom: 0.7em;
-    color: var(--faint);
-    font-family: var(--chrome-font);
-    font-size: calc(var(--prose-size) * var(--oversample-k) * 0.75);
     letter-spacing: 0.06em;
   }
   .doc-side-head ~ .doc-side-head {
@@ -272,6 +261,7 @@
   .doc-field {
     margin-bottom: 0.6em;
   }
+  .doc-side-head,
   .doc-field-key {
     color: var(--faint);
     font-family: var(--chrome-font);
@@ -293,8 +283,7 @@
   }
   .doc-entry {
     padding: 0.2em 0 0.2em 0.6em;
-    border: solid transparent;
-    border-width: 0 0 0 calc(2px * var(--oversample-k));
+    border-left: calc(2px * var(--oversample-k)) solid transparent;
     color: var(--muted);
     cursor: pointer;
     overflow-wrap: anywhere;
@@ -306,11 +295,13 @@
     padding-left: 2.2em;
   }
   .doc-entry.current {
-    border-color: var(--agent);
+    border-left-color: var(--agent);
     color: var(--text);
   }
   /* The icons and ticks keep 6 world px from the card's edge and the ticks
-     end 20 above the body's bottom: the card's resize zones. */
+     end 20 above the body's bottom: the card's resize zones. The strip is as
+     tall as the view, not as its content, so it has no sizer: its height is
+     the view's (100vh) at K. */
   .doc-strip {
     display: flex;
     flex-direction: column;

@@ -165,16 +165,15 @@ final class DocTemplateTests: XCTestCase {
             let declarations = rule.body.components(separatedBy: ";").map {
                 $0.trimmingCharacters(in: .whitespacesAndNewlines)
             }
+            for side in ["border-left", "border-right", "border-inline"] where touchesTable {
+                XCTAssertFalse(rule.body.contains(side), "\(side) in \(rule.selectors)")
+            }
             for border in declarations where touchesTable && border.hasPrefix("border") {
                 guard !border.hasPrefix("border-radius"), !border.hasPrefix("border-collapse") else { continue }
                 XCTAssertTrue(
                     border.hasSuffix(": 0") || border.contains(": calc(1px * \(Self.k)) "), "a border width: \(border)"
                 )
             }
-        }
-        let text = try template()
-        for side in ["border-left", "border-right", "border-inline"] {
-            XCTAssertFalse(text.contains(side), side)
         }
     }
 
