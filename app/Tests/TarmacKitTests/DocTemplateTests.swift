@@ -165,16 +165,15 @@ final class DocTemplateTests: XCTestCase {
             let declarations = rule.body.components(separatedBy: ";").map {
                 $0.trimmingCharacters(in: .whitespacesAndNewlines)
             }
+            for side in ["border-left", "border-right", "border-inline"] where touchesTable {
+                XCTAssertFalse(rule.body.contains(side), "\(side) in \(rule.selectors)")
+            }
             for border in declarations where touchesTable && border.hasPrefix("border") {
                 guard !border.hasPrefix("border-radius"), !border.hasPrefix("border-collapse") else { continue }
                 XCTAssertTrue(
                     border.hasSuffix(": 0") || border.contains(": calc(1px * \(Self.k)) "), "a border width: \(border)"
                 )
             }
-        }
-        let text = try template()
-        for side in ["border-left", "border-right", "border-inline"] {
-            XCTAssertFalse(text.contains(side), side)
         }
     }
 
@@ -209,5 +208,40 @@ final class DocTemplateTests: XCTestCase {
         let rule = try rule(for: ".doc-prose hr")
         XCTAssertTrue(rule.contains("border: 0;"))
         XCTAssertTrue(rule.contains("border-top: calc(1px * \(Self.k)) solid var(--line);"))
+    }
+
+    /// 2611.0022 S30 — the text is laid out in the width the sidebar leaves.
+    func test2611_0022S30TheTextIsLaidOutAtTheTextWidth() throws {
+        let text = try template()
+        XCTAssertTrue(try firstMatch(#":root \{([^}]*)\}"#, in: text).contains("--text-w: var(--card-w);"))
+        let prose = try firstMatch(#"\n  \.doc-prose \{([^}]*)\}"#, in: text)
+        XCTAssertTrue(prose.contains("var(--text-w)"))
+        XCTAssertFalse(prose.contains("var(--card-w)"))
+        for selector in [".doc-prose > .doc-table", ".doc-prose > pre"] {
+            let maxWidth = try firstMatch(#"max-width:\s*([^;]+);"#, in: try rule(for: selector))
+            XCTAssertTrue(maxWidth.contains("var(--text-w)"), selector)
+            XCTAssertFalse(maxWidth.contains("var(--card-w)"), selector)
+        }
+    }
+
+    /// 2611.0022 S31 — the sidebar is scaled as the prose is, outside the
+    /// prose's scroller.
+    func test2611_0022S31TheSidebarScalerIsOutsideTheScroller() throws {
+        let text = try template()
+        let body = String(text[try XCTUnwrap(text.range(of: "<body>")).upperBound...])
+        let scaler = try XCTUnwrap(body.range(of: #"<div class="doc-side-scaler""#)).lowerBound
+        let scroll = try XCTUnwrap(body.range(of: #"<div class="doc-scroll" id="scroll">"#))
+        let tags = try NSRegularExpression(pattern: #"<div\b|</div>"#)
+        var depth = 1
+        var end = body.endIndex
+        for tag in tags.matches(in: body, range: NSRange(scroll.upperBound..., in: body)) {
+            let range = try XCTUnwrap(Range(tag.range, in: body))
+            depth += body[range] == "</div>" ? -1 : 1
+            if depth == 0 { end = range.upperBound; break }
+        }
+        XCTAssertTrue(scaler < scroll.lowerBound || scaler >= end)
+        let rule = try rule(for: ".doc-side-scaler")
+        XCTAssertTrue(rule.contains("transform: scale(calc(var(--zoom) / \(Self.k)));"))
+        XCTAssertTrue(rule.contains("transform-origin: 0 0;"))
     }
 }

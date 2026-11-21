@@ -15,6 +15,8 @@ public enum ThemeCSS {
             ("--bg2", hex(palette.bg2)),
             ("--line", hex(palette.line)),
             ("--muted", hex(palette.muted)),
+            ("--bg3", hex(palette.bg3)),
+            ("--faint", hex(palette.faint)),
             ("--term-bg", hex(palette.terminal.background)),
             ("--text", hex(palette.text)),
             ("--prose-text", hex(palette.prose)),

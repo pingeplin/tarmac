@@ -10,7 +10,8 @@
 <style>
   /* The prose rules are the Tauri doc card's (desktop/src/theme/card.css). The
      web view is laid out at the card's on-screen size, so --zoom is the board
-     zoom and --card-w the card's world width. */
+     zoom, --card-w the card's world width and --text-w the text's: the
+     card's less what a sidebar takes. */
   :root {
     /* The app puts the theme's colours and its colour scheme here before the
        page is loaded, and sets them again when the theme changes. */
@@ -22,6 +23,11 @@
     --oversample-k: 3;
     --zoom: 1;
     --card-w: 392px;
+    --text-w: var(--card-w);
+    /* Where the text starts, in world px: the page sets it, and the rest of
+       the sidebar's places, from the app's state. Until then the text starts
+       at the card's edge and the sidebar's parts are hidden. */
+    --side-offset: 0px;
   }
   * {
     box-sizing: border-box;
@@ -41,6 +47,7 @@
   .doc-scroll {
     position: absolute;
     inset: 0;
+    left: calc(var(--side-offset) * var(--zoom));
     overflow-y: auto;
     overflow-x: hidden;
     /* The card draws the scroll position itself. */
@@ -48,10 +55,12 @@
   }
   /* Not transformed: its height is the prose's visual height, so the scroll
      range is what is seen and the K-times layout is clipped in real pixels. */
-  .doc-prose-sizer {
+  .doc-prose-sizer,
+  .doc-side-sizer {
     overflow: hidden;
   }
-  .doc-prose-scaler {
+  .doc-prose-scaler,
+  .doc-side-scaler {
     transform-origin: 0 0;
     transform: scale(calc(var(--zoom) / var(--oversample-k)));
   }
@@ -61,9 +70,9 @@
      blocks keep normal flow, so their margins still collapse. */
   .doc-prose {
     --gutter: calc(22px * var(--oversample-k));
-    width: calc(var(--card-w) * var(--oversample-k));
+    width: calc(var(--text-w) * var(--oversample-k));
     padding: calc(18px * var(--oversample-k))
-      max(var(--gutter), calc((var(--card-w) * var(--oversample-k) - 46em) / 2));
+      max(var(--gutter), calc((var(--text-w) * var(--oversample-k) - 46em) / 2));
     color: var(--prose-text);
     font-family: var(--prose-font);
     font-size: calc(var(--prose-size) * var(--oversample-k));
@@ -114,7 +123,7 @@
     transform: translateX(-50%);
     width: max-content;
     min-width: 100%;
-    max-width: min(calc(1040px * var(--oversample-k)), calc(var(--card-w) * var(--oversample-k) - 2 * var(--gutter)));
+    max-width: min(calc(1040px * var(--oversample-k)), calc(var(--text-w) * var(--oversample-k) - 2 * var(--gutter)));
   }
   .doc-table {
     margin: 1em 0;
@@ -185,6 +194,175 @@
   .doc-prose ::selection {
     background: var(--agent-dim);
   }
+  /* The sidebar is laid out at K, as the prose is, inside boxes placed in
+     screen px; it scrolls on its own and is never selected. */
+  .doc-side-strip,
+  .doc-side-panel,
+  .doc-side-grip {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .doc-side-strip {
+    left: 0;
+    width: calc(var(--side-strip) * var(--zoom));
+    overflow: hidden;
+    background: var(--bg2);
+  }
+  .doc-side-panel {
+    left: calc(var(--side-panel-left) * var(--zoom));
+    width: calc(var(--side-panel) * var(--zoom));
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: none;
+    background: var(--bg2);
+  }
+  [data-side="overlay"] .doc-side-panel {
+    border-right: calc(1px * var(--zoom)) solid var(--line);
+  }
+  .doc-side-grip {
+    left: calc((var(--side-panel-left) + var(--side-panel)) * var(--zoom));
+    width: calc(var(--side-grip) * var(--zoom));
+    cursor: col-resize;
+    background: linear-gradient(var(--line), var(--line)) 0 0 / calc(1px * var(--zoom)) 100% no-repeat;
+  }
+  [data-side="overlay"] .doc-side-grip {
+    background: none;
+  }
+  .doc-side-content {
+    width: calc(var(--side-panel) * var(--oversample-k));
+    padding: calc(14px * var(--oversample-k)) calc(12px * var(--oversample-k)) calc(20px * var(--oversample-k));
+    color: var(--prose-text);
+    font-family: var(--prose-font);
+    font-size: calc(var(--prose-size) * var(--oversample-k) * 0.86);
+    line-height: 1.45;
+  }
+  .doc-side-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 0.7em;
+    letter-spacing: 0.06em;
+  }
+  .doc-side-head ~ .doc-side-head {
+    margin-top: 1.6em;
+  }
+  .doc-side-close {
+    display: none;
+    padding: 0 0.3em;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  [data-side="docked"] .doc-side-close {
+    display: block;
+  }
+  .doc-field {
+    margin-bottom: 0.6em;
+  }
+  .doc-side-head,
+  .doc-field-key {
+    color: var(--faint);
+    font-family: var(--chrome-font);
+    font-size: calc(var(--prose-size) * var(--oversample-k) * 0.75);
+  }
+  .doc-field-value {
+    color: var(--text);
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+  }
+  .doc-chip {
+    display: inline-block;
+    margin: 0.15em 0.35em 0.15em 0;
+    padding: 0 0.45em;
+    border-radius: calc(4px * var(--oversample-k));
+    background: var(--bg3);
+    color: var(--text);
+    overflow-wrap: anywhere;
+  }
+  .doc-entry {
+    padding: 0.2em 0 0.2em 0.6em;
+    border-left: calc(2px * var(--oversample-k)) solid transparent;
+    color: var(--muted);
+    cursor: pointer;
+    overflow-wrap: anywhere;
+  }
+  .doc-entry[data-depth="2"] {
+    padding-left: 1.4em;
+  }
+  .doc-entry[data-depth="3"] {
+    padding-left: 2.2em;
+  }
+  .doc-entry.current {
+    border-left-color: var(--agent);
+    color: var(--text);
+  }
+  /* The icons and ticks keep 6 world px from the card's edge and the ticks
+     end 20 above the body's bottom: the card's resize zones. The strip is as
+     tall as the view, not as its content, so it has no sizer: its height is
+     the view's (100vh) at K. */
+  .doc-strip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: calc(6px * var(--oversample-k));
+    width: calc(var(--side-strip) * var(--oversample-k));
+    height: calc(100vh / var(--zoom) * var(--oversample-k));
+    padding: calc(8px * var(--oversample-k)) 0 calc(20px * var(--oversample-k));
+    color: var(--muted);
+    font-family: var(--chrome-font);
+    font-size: calc(12px * var(--oversample-k));
+  }
+  .doc-icon {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: calc(18px * var(--oversample-k));
+    height: calc(18px * var(--oversample-k));
+    border-radius: calc(4px * var(--oversample-k));
+    cursor: pointer;
+  }
+  .doc-icon:hover {
+    background: var(--bg3);
+    color: var(--text);
+  }
+  .doc-icon.active {
+    background: var(--bg3);
+    color: var(--agent);
+  }
+  /* Three bars 2 world px high with 2 between: legible at zoom 1. */
+  .doc-icon-outline::before {
+    content: "";
+    width: calc(12px * var(--oversample-k));
+    height: calc(10px * var(--oversample-k));
+    background: repeating-linear-gradient(currentColor 0 calc(2px * var(--oversample-k)), transparent calc(2px * var(--oversample-k)) calc(4px * var(--oversample-k)));
+  }
+  .doc-ticks {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    min-height: 0;
+    overflow: hidden;
+    padding-top: calc(4px * var(--oversample-k));
+  }
+  .doc-tick {
+    flex: none;
+    width: calc(14px * var(--oversample-k));
+    height: calc(7px * var(--oversample-k));
+    padding: calc(2.5px * var(--oversample-k)) 0;
+    background: var(--line);
+    background-clip: content-box;
+    cursor: pointer;
+  }
+  .doc-tick[data-depth="2"] {
+    width: calc(9px * var(--oversample-k));
+  }
+  .doc-tick.lit {
+    background-color: var(--agent);
+  }
 </style>
 </head>
 <body>
@@ -195,5 +373,18 @@
     </div>
   </div>
 </div>
+<div class="doc-side-strip" id="strip" hidden>
+  <div class="doc-side-scaler">
+    <div class="doc-strip" id="strip-content"></div>
+  </div>
+</div>
+<div class="doc-side-panel" id="panel" hidden>
+  <div class="doc-side-sizer" id="side-sizer">
+    <div class="doc-side-scaler">
+      <div class="doc-side-content" id="side-content"></div>
+    </div>
+  </div>
+</div>
+<div class="doc-side-grip" id="grip" hidden></div>
 </body>
 </html>
