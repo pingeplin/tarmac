@@ -186,6 +186,9 @@
     sameDrag(previous, next) {
       return previous !== null && previous.width === next.width && previous.collapsed === next.collapsed;
     },
+    side(state) {
+      return state !== null && typeof state === "object" && state.side === "right" ? "right" : "left";
+    },
     direction(side) {
       return side === "right" ? -1 : 1;
     },
@@ -217,12 +220,12 @@
       return mode === "overlay" ? section : null;
     },
     // The strip shows unless a docked panel covers its place; a collapsed
-    // drag has no panel.
+    // drag has no panel. The panel starts from the sidebar's outer edge.
     parts(mode, box, state) {
       return {
         strip: mode !== "none" && !(mode === "docked" && box.panel > 0),
         panel: box.panel > 0,
-        panelLeft: mode === "overlay" ? state.strip : 0,
+        panelStart: mode === "overlay" ? state.strip : 0,
         grip: state.resizable && box.panel > 0,
       };
     },

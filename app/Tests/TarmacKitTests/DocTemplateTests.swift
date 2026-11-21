@@ -244,4 +244,50 @@ final class DocTemplateTests: XCTestCase {
         XCTAssertTrue(rule.contains("transform: scale(calc(var(--zoom) / \(Self.k)));"))
         XCTAssertTrue(rule.contains("transform-origin: 0 0;"))
     }
+
+    /// 2611.0025 S9 — on the Right each place of the sidebar is mirrored, and
+    /// its content keeps clear of the card's scroll thumb.
+    func test2611_0025S9TheRightSideMirrorsTheSidebar() throws {
+        let right = #":root[data-sidebar-side="right"]"#
+        let expected: [(String, [String])] = [
+            ("\(right) .doc-scroll", ["left: 0;", "right: calc(var(--side-offset) * var(--zoom));"]),
+            ("\(right) .doc-side-strip", ["left: auto;", "right: 0;"]),
+            ("\(right) .doc-side-panel", ["left: auto;", "right: calc(var(--side-panel-start) * var(--zoom));"]),
+            (
+                #"\#(right)[data-side="overlay"] .doc-side-panel"#,
+                ["border-right: 0;", "border-left: calc(1px * var(--zoom)) solid var(--line);"]
+            ),
+            (
+                "\(right) .doc-side-grip",
+                [
+                    "left: auto;", "right: calc((var(--side-panel-start) + var(--side-panel)) * var(--zoom));",
+                    "background-position: 100% 0;",
+                ]
+            ),
+            ("\(right) .doc-strip", ["padding-right: calc(var(--side-thumb-reach) * \(Self.k));"]),
+            ("\(right) .doc-side-content", ["padding-right: calc(var(--side-thumb-reach) * \(Self.k));"]),
+            ("\(right) .doc-side-close", ["transform: scaleX(-1);"]),
+        ]
+        for (selector, declarations) in expected {
+            let body = try rule(for: selector)
+            for declaration in declarations {
+                XCTAssertTrue(body.contains(declaration), "\(selector): \(declaration)")
+            }
+        }
+        XCTAssertFalse(try template().contains("--side-panel-left"))
+        XCTAssertTrue(try rule(for: ".doc-side-panel").contains("left: calc(var(--side-panel-start) * var(--zoom));"))
+        XCTAssertTrue(
+            try rule(for: ".doc-side-grip").contains("left: calc((var(--side-panel-start) + var(--side-panel)) * var(--zoom));")
+        )
+        for rule in try rules() where rule.selectors.contains(where: { $0.contains("data-sidebar-side") }) {
+            XCTAssertFalse(rule.body.contains("background:"), "\(rule.selectors)")
+        }
+        XCTAssertTrue(try rule(for: ".doc-side-strip").contains("left: 0;"))
+        XCTAssertTrue(try rule(for: ".doc-scroll").contains("left: calc(var(--side-offset) * var(--zoom));"))
+        XCTAssertTrue(
+            try rule(for: #"[data-side="overlay"] .doc-side-panel"#)
+                .contains("border-right: calc(1px * var(--zoom)) solid var(--line);")
+        )
+        XCTAssertTrue(try rule(for: #"[data-side="overlay"] .doc-side-grip"#).contains("background: none;"))
+    }
 }

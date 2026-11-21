@@ -374,14 +374,15 @@ final class DocLayoutScriptTests: XCTestCase {
         }
     }
 
-    /// 2611.0022 D11g: what of the sidebar shows and where the panel starts.
+    /// 2611.0022 D11g, 2611.0025 S8: what of the sidebar shows and where the
+    /// panel starts, from the sidebar's outer edge.
     func test2611_0022TheSidebarsParts() throws {
         func parts(_ mode: String, panel: Int, resizable: Bool = true) throws -> String {
             let state = "{strip: 30, grip: 8, resizable: \(resizable)}"
             return try json("tarmacDocLayout.parts('\(mode)', {panel: \(panel)}, \(state))")
         }
-        func box(_ strip: Bool, _ panel: Bool, _ left: Int, _ grip: Bool) -> String {
-            #"{"strip":\#(strip),"panel":\#(panel),"panelLeft":\#(left),"grip":\#(grip)}"#
+        func box(_ strip: Bool, _ panel: Bool, _ start: Int, _ grip: Bool) -> String {
+            #"{"strip":\#(strip),"panel":\#(panel),"panelStart":\#(start),"grip":\#(grip)}"#
         }
         XCTAssertEqual(try parts("none", panel: 0), box(false, false, 0, false))
         XCTAssertEqual(try parts("strip", panel: 0), box(true, false, 0, false))
@@ -464,5 +465,17 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(try json("tarmacDocLayout.sameDrag(\(width), {width: 301, collapsed: false})"), "false")
         XCTAssertEqual(try json("tarmacDocLayout.sameDrag(\(width), {width: 300, collapsed: true})"), "false")
         XCTAssertEqual(try json("tarmacDocLayout.sameDrag(null, \(width))"), "false")
+    }
+
+    /// 2611.0025 S7: the side the page lays its sidebar out on; anything but
+    /// exactly "right" is the left.
+    func test2611_0025S7ThePagesSide() throws {
+        XCTAssertEqual(try json("tarmacDocLayout.side({side: 'right'})"), #""right""#)
+        XCTAssertEqual(try json("tarmacDocLayout.direction(tarmacDocLayout.side({side: 'right'}))"), "-1")
+        for state in ["{side: 'left'}", "{}", "{side: 'Right'}", "{side: 1}", "null"] {
+            XCTAssertEqual(try json("tarmacDocLayout.side(\(state))"), #""left""#, state)
+        }
+        XCTAssertEqual(try json("tarmacDocLayout.dragWidth(240, -60, 1, -1, 160, 420)"), #"{"width":300,"collapsed":false}"#)
+        XCTAssertEqual(try json("tarmacDocLayout.dragWidth(240, 81, 1, -1, 160, 420)"), #"{"width":159,"collapsed":true}"#)
     }
 }

@@ -212,7 +212,7 @@
     background: var(--bg2);
   }
   .doc-side-panel {
-    left: calc(var(--side-panel-left) * var(--zoom));
+    left: calc(var(--side-panel-start) * var(--zoom));
     width: calc(var(--side-panel) * var(--zoom));
     overflow-x: hidden;
     overflow-y: auto;
@@ -223,13 +223,36 @@
     border-right: calc(1px * var(--zoom)) solid var(--line);
   }
   .doc-side-grip {
-    left: calc((var(--side-panel-left) + var(--side-panel)) * var(--zoom));
+    left: calc((var(--side-panel-start) + var(--side-panel)) * var(--zoom));
     width: calc(var(--side-grip) * var(--zoom));
     cursor: col-resize;
     background: linear-gradient(var(--line), var(--line)) 0 0 / calc(1px * var(--zoom)) 100% no-repeat;
   }
   [data-side="overlay"] .doc-side-grip {
     background: none;
+  }
+  /* On the Right each place is mirrored. No rule here sets the background
+     shorthand: it would outrank the overlay grip's `background: none`. */
+  :root[data-sidebar-side="right"] .doc-scroll {
+    left: 0;
+    right: calc(var(--side-offset) * var(--zoom));
+  }
+  :root[data-sidebar-side="right"] .doc-side-strip {
+    left: auto;
+    right: 0;
+  }
+  :root[data-sidebar-side="right"] .doc-side-panel {
+    left: auto;
+    right: calc(var(--side-panel-start) * var(--zoom));
+  }
+  :root[data-sidebar-side="right"][data-side="overlay"] .doc-side-panel {
+    border-right: 0;
+    border-left: calc(1px * var(--zoom)) solid var(--line);
+  }
+  :root[data-sidebar-side="right"] .doc-side-grip {
+    left: auto;
+    right: calc((var(--side-panel-start) + var(--side-panel)) * var(--zoom));
+    background-position: 100% 0;
   }
   .doc-side-content {
     width: calc(var(--side-panel) * var(--oversample-k));
@@ -238,6 +261,9 @@
     font-family: var(--prose-font);
     font-size: calc(var(--prose-size) * var(--oversample-k) * 0.86);
     line-height: 1.45;
+  }
+  :root[data-sidebar-side="right"] .doc-side-content {
+    padding-right: calc(var(--side-thumb-reach) * var(--oversample-k));
   }
   .doc-side-head {
     display: flex;
@@ -257,6 +283,10 @@
   }
   [data-side="docked"] .doc-side-close {
     display: block;
+  }
+  /* ⇤ points at the edge the panel closes to. */
+  :root[data-sidebar-side="right"] .doc-side-close {
+    transform: scaleX(-1);
   }
   .doc-field {
     margin-bottom: 0.6em;
@@ -313,6 +343,11 @@
     color: var(--muted);
     font-family: var(--chrome-font);
     font-size: calc(12px * var(--oversample-k));
+  }
+  /* On the Right the card's scroll thumb is over the strip's outer edge: the
+     icons and ticks keep clear of it, and the strip keeps its width. */
+  :root[data-sidebar-side="right"] .doc-strip {
+    padding-right: calc(var(--side-thumb-reach) * var(--oversample-k));
   }
   .doc-icon {
     display: flex;

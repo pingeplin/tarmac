@@ -86,8 +86,10 @@
     px("--text-w", box.textWidth);
     px("--side-offset", box.offset);
     px("--side-panel", box.panel);
-    px("--side-panel-left", parts.panelLeft);
+    px("--side-panel-start", parts.panelStart);
+    px("--side-thumb-reach", shown.thumbReach);
     root.setAttribute("data-side", shown.mode);
+    root.setAttribute("data-sidebar-side", rules.side(shown));
     strip.hidden = !parts.strip;
     panel.hidden = !parts.panel;
     grip.hidden = !parts.grip;
@@ -319,7 +321,7 @@
   });
 
   function dragWidth() {
-    return rules.dragWidth(state.width, dragging.delta, zoom, rules.direction(state.side), state.minWidth, state.maxWidth);
+    return rules.dragWidth(state.width, dragging.delta, zoom, rules.direction(rules.side(state)), state.minWidth, state.maxWidth);
   }
 
   // At most one layout a frame, and none for a width that did not change.
