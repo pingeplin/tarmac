@@ -169,4 +169,53 @@ final class LayoutTilesTests: XCTestCase {
         let complete = LayoutTile(kind: "term", x: 1, y: 2, w: 3, h: 4, termID: "t")
         XCTAssertEqual(LayoutTiles.parse([complete]).terms.first?.frame, CGRect(x: 1, y: 2, width: 3, height: 4))
     }
+
+    // MARK: - 2611.0024: a doc tile keeps its sidebar's choice
+
+    private typealias Stored = DocSidebar.Stored
+
+    private let sidebars: [(String, Stored)] = [
+        ("/a.md", Stored(width: 300.5, open: false)),
+        ("/b.md", Stored(open: true)),
+        ("/c.md", Stored()),
+    ]
+
+    private func docs(_ sidebars: [(String, Stored)]) -> [LayoutTiles.DocInput] {
+        sidebars.map { path, sidebar in
+            LayoutTiles.DocInput(
+                path: path, frame: CGRect(x: 600, y: 80, width: 1280, height: 310), z: 1, attached: true,
+                sidebar: sidebar
+            )
+        }
+    }
+
+    func test2611_0024S11BuildWritesEachDocsSidebarAndNoneOnATerm() {
+        let tiles = LayoutTiles.build(terms: [term("t1", x: 80)], docs: docs(sidebars))
+        let keys = tiles.map { [$0.sidebarW.map { "\($0)" } ?? "nil", $0.sidebarOpen.map { "\($0)" } ?? "nil"] }
+        XCTAssertEqual(keys, [["nil", "nil"], ["300.5", "false"], ["nil", "true"], ["nil", "nil"]])
+        XCTAssertEqual(tiles.map(\.kind), ["term", "doc", "doc", "doc"])
+    }
+
+    func test2611_0024S12ParseChecksADocTilesSidebarAndIgnoresATermTiles() {
+        let tiles = [
+            LayoutTile(kind: "doc", path: "/a.md", sidebarW: 300.5, sidebarOpen: false),
+            LayoutTile(kind: "doc", path: "/b.md", sidebarW: 1000, sidebarOpen: true),
+            LayoutTile(kind: "doc", path: "/c.md"),
+        ]
+        XCTAssertEqual(
+            LayoutTiles.parse(tiles).docs.map(\.sidebar),
+            [Stored(width: 300.5, open: false), Stored(open: true), Stored()]
+        )
+        let bare = LayoutTile(kind: "term", x: 1, y: 2, w: 3, h: 4, z: 5, termID: "t")
+        var keyed = bare
+        keyed.sidebarW = 300
+        keyed.sidebarOpen = false
+        XCTAssertEqual(LayoutTiles.parse([keyed]).terms, LayoutTiles.parse([bare]).terms)
+    }
+
+    func test2611_0024S13ARoundTripKeepsEachDocsSidebar() {
+        let parsed = LayoutTiles.parse(LayoutTiles.build(terms: [], docs: docs(sidebars)))
+        XCTAssertEqual(parsed.docs.map(\.path), sidebars.map(\.0))
+        XCTAssertEqual(parsed.docs.map(\.sidebar), sidebars.map(\.1))
+    }
 }

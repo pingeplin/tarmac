@@ -105,6 +105,17 @@ public enum DocSidebar {
         return (stored, overlayOpen)
     }
 
+    /// Whether `action` changes what the card keeps (spec 2611.0024 D12).
+    public static func storesChange(_ action: Action, stored: Stored, overlayOpen: Bool, cardWidth: Double) -> Bool {
+        apply(action, stored: stored, overlayOpen: overlayOpen, cardWidth: cardWidth).stored != stored
+    }
+
+    /// A restored tile's choice. The app never writes a width out of range, so
+    /// such a width is dropped; the open state is judged apart (spec 2611.0024 D6).
+    public static func restored(width: Double?, open: Bool?) -> Stored {
+        Stored(width: width.flatMap { (minimum...maximum).contains($0) ? $0 : nil }, open: open)
+    }
+
     /// The state the page lays its sidebar out by (D12).
     public struct PageState: Equatable, Sendable {
         public let mode: String

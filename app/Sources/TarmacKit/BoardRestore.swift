@@ -29,13 +29,18 @@ public enum BoardRestore {
         public var z: Int
         public var ownerTermID: String?
         public var attached: Bool
+        public var sidebar: DocSidebar.Stored
 
-        public init(path: String, frame: CGRect, z: Int, ownerTermID: String?, attached: Bool) {
+        public init(
+            path: String, frame: CGRect, z: Int, ownerTermID: String?, attached: Bool,
+            sidebar: DocSidebar.Stored = DocSidebar.Stored()
+        ) {
             self.path = path
             self.frame = frame
             self.z = z
             self.ownerTermID = ownerTermID
             self.attached = attached
+            self.sidebar = sidebar
         }
     }
 
@@ -114,7 +119,8 @@ public enum BoardRestore {
                 scatterSlot += 1
             }
             placed.append(Doc(
-                path: tile.path, frame: frame, z: tile.z, ownerTermID: owner, attached: tile.attached && owner != nil
+                path: tile.path, frame: frame, z: tile.z, ownerTermID: owner, attached: tile.attached && owner != nil,
+                sidebar: tile.sidebar
             ))
         }
         return Plan(terms: terms, docs: placed, droppedDocPaths: dropped)

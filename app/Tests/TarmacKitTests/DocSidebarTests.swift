@@ -159,4 +159,60 @@ final class DocSidebarTests: XCTestCase {
             "strip": 30, "grip": 8, "side": "left",
         ] as NSDictionary)
     }
+
+    // MARK: - 2611.0024
+
+    private func storesChange(
+        _ action: DocSidebar.Action, _ cardWidth: Double, stored: Stored = Stored(), overlayOpen: Bool = false
+    ) -> Bool {
+        DocSidebar.storesChange(action, stored: stored, overlayOpen: overlayOpen, cardWidth: cardWidth)
+    }
+
+    func test2611_0024S9aAnActionThatChangesNothingStoresNothing() {
+        XCTAssertFalse(storesChange(.open, narrow))
+        XCTAssertFalse(storesChange(.close, narrow, overlayOpen: true))
+        XCTAssertFalse(storesChange(.resize(150), narrow, stored: Stored(width: 300)))
+        XCTAssertTrue(storesChange(.open, wide, stored: Stored(open: false)))
+        XCTAssertTrue(storesChange(.resize(300), wide, stored: Stored(width: 240, open: true)))
+        XCTAssertFalse(storesChange(.resize(240), wide, stored: Stored(width: 240, open: true)))
+        XCTAssertTrue(storesChange(.resize(240), wide))
+        XCTAssertTrue(storesChange(.resize(150), wide, stored: Stored(width: 300, open: true)))
+        XCTAssertTrue(storesChange(.reset, wide, stored: Stored(width: 300, open: false)))
+        XCTAssertFalse(storesChange(.reset, wide, stored: Stored(width: 240, open: true)))
+    }
+
+    func test2611_0024S9TheReadCheckKeepsAWidthInTheRangeAndTheOpenState() {
+        let cases: [(Double?, Bool?, Stored)] = [
+            (300.5, false, Stored(width: 300.5, open: false)),
+            (160, nil, Stored(width: 160)),
+            (420, true, Stored(width: 420, open: true)),
+            (159.99, true, Stored(open: true)),
+            (420.01, nil, Stored()),
+            (.nan, false, Stored(open: false)),
+            (.infinity, false, Stored(open: false)),
+            (-.infinity, false, Stored(open: false)),
+            (nil, nil, Stored()),
+        ]
+        for (width, open, expected) in cases {
+            XCTAssertEqual(
+                DocSidebar.restored(width: width, open: open), expected,
+                "\(String(describing: width)), \(String(describing: open))"
+            )
+        }
+    }
+
+    func test2611_0024S10WhatTheAppWritesItReadsBack() {
+        let actions: [DocSidebar.Action] = [
+            .open, .close, .reset, .resize(150), .resize(160), .resize(300), .resize(500), .resize(1e9),
+        ]
+        for cardWidth in [wide, narrow] {
+            for start in [Stored(), Stored(width: 260, open: true)] {
+                for action in actions {
+                    let s = apply(action, cardWidth, stored: start).stored
+                    let read = DocSidebar.restored(width: s.width, open: s.open)
+                    XCTAssertEqual(read, s, "\(cardWidth) \(start) \(action)")
+                }
+            }
+        }
+    }
 }
