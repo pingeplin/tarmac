@@ -203,6 +203,7 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(try headingText("## [Link](u) \\* <b>x</b>  y"), "Link * x y")
         XCTAssertEqual(try headingText("## Tom &amp; Jerry &#x41;"), "Tom & Jerry A")
         XCTAssertEqual(try headingText("## `a &amp; b`"), "a &amp; b")
+        XCTAssertEqual(try headingText("## ![alt](u) x"), "x")
     }
 
     /// 2611.0022 S26
