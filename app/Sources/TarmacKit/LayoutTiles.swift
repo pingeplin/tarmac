@@ -4,7 +4,8 @@ import CoreGraphics
 /// `LayoutTile`s the `layout` message persists, and parses a restored `tiles`
 /// list back into the term / doc placements the board rebuilds from. A term tile
 /// carries its `term_id` and geometry; a board doc tile carries its path,
-/// geometry and `loose` (= not attached). The caller places a tile with
+/// geometry, `loose` (= not attached) and the markdown card's sidebar choice
+/// (`sidebar_w`/`sidebar_open`). The caller places a tile with
 /// all-nil geometry: a term by `TermPlacement.restoredFrame`, a doc by
 /// `Placement.scatterFrame`.
 ///
@@ -33,12 +34,16 @@ public enum LayoutTiles {
         public var frame: CGRect
         public var z: Double
         public var attached: Bool
+        public var sidebar: DocSidebar.Stored
 
-        public init(path: String, frame: CGRect, z: Double, attached: Bool) {
+        public init(
+            path: String, frame: CGRect, z: Double, attached: Bool, sidebar: DocSidebar.Stored = DocSidebar.Stored()
+        ) {
             self.path = path
             self.frame = frame
             self.z = z
             self.attached = attached
+            self.sidebar = sidebar
         }
     }
 
@@ -62,12 +67,16 @@ public enum LayoutTiles {
         public var frame: CGRect?
         public var z: Int
         public var attached: Bool
+        public var sidebar: DocSidebar.Stored
 
-        public init(path: String, frame: CGRect?, z: Int, attached: Bool) {
+        public init(
+            path: String, frame: CGRect?, z: Int, attached: Bool, sidebar: DocSidebar.Stored = DocSidebar.Stored()
+        ) {
             self.path = path
             self.frame = frame
             self.z = z
             self.attached = attached
+            self.sidebar = sidebar
         }
     }
 
@@ -105,7 +114,9 @@ public enum LayoutTiles {
                     x: Double(doc.frame.origin.x), y: Double(doc.frame.origin.y),
                     w: Double(doc.frame.size.width), h: Double(doc.frame.size.height),
                     z: wireZ(doc.z),
-                    loose: !doc.attached
+                    loose: !doc.attached,
+                    sidebarW: doc.sidebar.width,
+                    sidebarOpen: doc.sidebar.open
                 )
             }
         return termTiles + docTiles
@@ -124,7 +135,10 @@ public enum LayoutTiles {
                 terms.append(ParsedTerm(termID: tile.termID, frame: frame(of: tile), z: tile.z ?? 0))
             case "doc":
                 guard let path = tile.path, tile.shelf != true else { continue }
-                docs.append(ParsedDoc(path: path, frame: frame(of: tile), z: tile.z ?? 0, attached: tile.loose != true))
+                docs.append(ParsedDoc(
+                    path: path, frame: frame(of: tile), z: tile.z ?? 0, attached: tile.loose != true,
+                    sidebar: DocSidebar.restored(width: tile.sidebarW, open: tile.sidebarOpen)
+                ))
             default:
                 continue
             }

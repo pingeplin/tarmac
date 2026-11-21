@@ -677,6 +677,21 @@ mod tests {
     }
 
     #[test]
+    fn s2611_0024_s15_set_tiles_keeps_a_doc_tiles_sidebar_keys() {
+        let mut r = Registry::empty();
+        r.docs.insert(PathBuf::from("/d/a.md"), doc_info());
+        let doc = Tile {
+            kind: "doc".into(),
+            path: Some("/d/a.md".into()),
+            sidebar_w: Some(300.5),
+            sidebar_open: Some(false),
+            ..Default::default()
+        };
+        r.set_tiles(vec![term(Some("t1")), doc.clone()]);
+        assert_eq!(r.tiles.iter().find(|t| t.kind == "doc"), Some(&doc));
+    }
+
+    #[test]
     fn layout_without_a_viewport_keeps_the_stored_one() {
         let mut r = Registry::empty();
         let viewport = BoardViewport { zoom: 1.5, cx: 120.0, cy: -40.0 };

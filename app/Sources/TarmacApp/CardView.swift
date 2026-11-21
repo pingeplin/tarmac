@@ -38,6 +38,8 @@ final class CardView: NSView, ThemeFollowing {
     var onClose: ((CardView) -> Void)?
     /// The header `↻` of a doc card was clicked.
     var onRefresh: ((CardView) -> Void)?
+    /// The sidebar choice changed; the board persists its layout.
+    var onSidebarChanged: (() -> Void)?
 
     // MARK: - Provenance
 

@@ -213,7 +213,7 @@ reports.
 | | `DocClose {path}` | app→D | drop a doc from the active board; its directory stays watched while any board has a doc there |
 
 Supporting structs: `DocEntry`, `Tile` (kind + optional `path,x,y,w,h,z,loose,
-shelf,term_id`), `BoardMeta {board_id, name?, running?}`, `BoardViewport {zoom,
+shelf,term_id,sidebar_w,sidebar_open`), `BoardMeta {board_id, name?, running?}`, `BoardViewport {zoom,
 cx, cy}`.
 
 **Conformance vectors are the tripwire.** Two codecs implement this contract —
@@ -1330,7 +1330,11 @@ handlers they post to. No cookies, cache or storage outlive the app.
   collapses it, and a double-click sets 240; a doc with no fields and no
   heading has none, which the page alone decides from what it rendered.
   `CardView` holds the card's choice (`DocSidebar.Stored`: a width and open),
-  in memory only; `DocWebView` sends the page its state
+  and the doc tile keeps it as `sidebar_w`/`sidebar_open` (spec 2611.0024): a
+  restore seeds the card through `DocSidebar.restored`, which drops a width
+  outside 160–420, and a report that changes the choice
+  (`DocSidebar.storesChange`) schedules a layout. A narrow card's open overlay
+  is never kept. `DocWebView` sends the page its state
   (`DocSidebar.pageState`) with each layout and action, and applies the page's
   `docSidebar` reports (`DocSidebar.Action`, `apply`). Every decision of the
   page's is a DOM-free rule of `doc-layout.js`.
@@ -2017,7 +2021,8 @@ restore, and a board that the daemon's `BoardList` no longer has owes none
 have, where it once filed it under the active board (#383). The snapshot
 (`LayoutTiles`) carries `dock` (doc paths in open order),
 live terminal tiles with `x, y, w, h, z, term_id` (dead cards are left out), doc
-tiles with `loose` = not attached, the live viewport, and `board_id`. A
+tiles with `loose` = not attached and the markdown card's sidebar choice
+(`sidebar_w`, `sidebar_open`, each only when set), the live viewport, and `board_id`. A
 `Layout` replaces the board's tiles only: the daemon's `term_records` stay.
 
 ### Restore and reconnect

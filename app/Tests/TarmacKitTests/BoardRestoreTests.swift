@@ -247,4 +247,19 @@ final class BoardRestoreTests: XCTestCase {
         let restored = plan([docTile("/a.md")], docs: [registered("/a.md", owner: "t0")])
         XCTAssertEqual(restored.docs.map(\.ownerTermID), [nil])
     }
+
+    func test2611_0024S14ThePlanCarriesEachDocsSidebar() {
+        var a = docTile("/a.md")
+        a.sidebarW = 300.5
+        a.sidebarOpen = false
+        var gone = docTile("/gone.md")
+        gone.sidebarW = 300
+        gone.sidebarOpen = true
+        let restored = plan([a, docTile("/b.md"), gone], docs: [registered("/a.md"), registered("/b.md")])
+        XCTAssertEqual(restored.docs.map(\.path), ["/a.md", "/b.md"])
+        XCTAssertEqual(
+            restored.docs.map(\.sidebar), [DocSidebar.Stored(width: 300.5, open: false), DocSidebar.Stored()]
+        )
+        XCTAssertEqual(restored.droppedDocPaths, ["/gone.md"])
+    }
 }

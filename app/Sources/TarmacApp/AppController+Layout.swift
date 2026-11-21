@@ -142,7 +142,7 @@ extension AppController {
             board.docOwner[doc.path] = doc.ownerTermID
             landDocCard(
                 path: doc.path, frame: CardFrame(rect: doc.frame, z: doc.z), attached: doc.attached, fresh: false,
-                on: board
+                sidebar: doc.sidebar, on: board
             )
         }
         for path in plan.droppedDocPaths {
@@ -252,7 +252,8 @@ extension AppController {
         let docs = board.boardDocPaths.compactMap { path -> LayoutTiles.DocInput? in
             guard let card = board.view.card(.doc(path)) else { return nil }
             return LayoutTiles.DocInput(
-                path: path, frame: card.worldFrame.rect, z: Double(card.worldFrame.z), attached: card.attached
+                path: path, frame: card.worldFrame.rect, z: Double(card.worldFrame.z), attached: card.attached,
+                sidebar: card.docSidebar
             )
         }
         client.layout(

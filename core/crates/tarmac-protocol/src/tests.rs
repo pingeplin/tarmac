@@ -199,6 +199,8 @@ fn conformance_vector_8_v4_board_keys() {
                 loose: None,
                 shelf: None,
                 term_id: None,
+                sidebar_w: None,
+                sidebar_open: None,
             }],
             board: Some(BoardViewport { zoom: 0.82, cx: 640.0, cy: 360.0 }),
             board_id: None,
@@ -609,6 +611,77 @@ fn conformance_vector_43_held_input() {
          a5 62 79 74 65 73 c4 08 65 63 68 6f 20 68 69 0d a4 68 6f 6c 64 c3",
         Msg::Input { term_id: "t9".into(), bytes: b"echo hi\r".to_vec(), typed: false, hold: true },
     );
+}
+
+// Spec 2611.0024: a doc tile keeps its sidebar's width and open state.
+const VECTOR_44: &str = "83 a1 74 a6 6c 61 79 6f 75 74 a4 64 6f 63 6b 90 a5 74 69 6c 65 73 91 \
+     84 a4 6b 69 6e 64 a3 64 6f 63 a4 70 61 74 68 a5 2f 61 2e 6d 64 \
+     a9 73 69 64 65 62 61 72 5f 77 cb 40 72 c8 00 00 00 00 00 \
+     ac 73 69 64 65 62 61 72 5f 6f 70 65 6e c2";
+
+#[test]
+fn conformance_vector_44_doc_tile_sidebar() {
+    assert_frame(
+        VECTOR_44,
+        Msg::Layout {
+            dock: vec![],
+            tiles: vec![Tile { sidebar_w: Some(300.5), sidebar_open: Some(false), ..doc_tile("/a.md") }],
+            board: None,
+            board_id: None,
+        },
+    );
+}
+
+#[test]
+fn s2611_0024_s2_the_built_doc_tile_carries_one_sidebar_key_after_loose() {
+    assert_frame(
+        "83 a1 74 a6 6c 61 79 6f 75 74 a4 64 6f 63 6b 91 a5 2f 63 2e 6d 64 a5 74 \
+         69 6c 65 73 91 89 a4 6b 69 6e 64 a3 64 6f 63 a4 70 61 74 68 a5 2f 63 2e \
+         6d 64 a1 78 cb 40 24 00 00 00 00 00 00 a1 79 cb 40 34 00 00 00 00 00 00 \
+         a1 77 cb 40 94 00 00 00 00 00 00 a1 68 cb 40 82 c0 00 00 00 00 00 a1 7a \
+         01 a5 6c 6f 6f 73 65 c3 ac 73 69 64 65 62 61 72 5f 6f 70 65 6e c3",
+        Msg::Layout {
+            dock: vec!["/c.md".into()],
+            tiles: vec![Tile {
+                x: Some(10.0),
+                y: Some(20.0),
+                w: Some(1280.0),
+                h: Some(600.0),
+                z: Some(1),
+                loose: Some(true),
+                sidebar_open: Some(true),
+                ..doc_tile("/c.md")
+            }],
+            board: None,
+            board_id: None,
+        },
+    );
+}
+
+#[test]
+fn s2611_0024_a_sidebar_key_follows_term_id() {
+    let msg = Msg::Layout {
+        dock: vec![],
+        tiles: vec![Tile { term_id: Some("t1".into()), sidebar_w: Some(300.5), ..doc_tile("/a.md") }],
+        board: None,
+        board_id: None,
+    };
+    assert_frame(
+        "83 a1 74 a6 6c 61 79 6f 75 74 a4 64 6f 63 6b 90 a5 74 69 6c 65 73 91 \
+         84 a4 6b 69 6e 64 a3 64 6f 63 a4 70 61 74 68 a5 2f 61 2e 6d 64 \
+         a7 74 65 72 6d 5f 69 64 a2 74 31 a9 73 69 64 65 62 61 72 5f 77 cb 40 72 c8 00 00 00 00 00",
+        msg,
+    );
+}
+
+#[test]
+fn s2611_0024_s4_a_sidebar_key_of_the_wrong_type_fails_the_frame() {
+    let width = "cb 40 72 c8 00 00 00 00 00";
+    let open = "ac 73 69 64 65 62 61 72 5f 6f 70 65 6e c2";
+    assert!(decode(&unhex(VECTOR_44)).is_ok());
+    assert!(decode(&unhex(&VECTOR_44.replace(width, "a4 77 69 64 65"))).is_err(), "sidebar_w as a string");
+    let int_open = "ac 73 69 64 65 62 61 72 5f 6f 70 65 6e 01";
+    assert!(decode(&unhex(&VECTOR_44.replace(open, int_open))).is_err(), "sidebar_open as an integer");
 }
 
 #[test]

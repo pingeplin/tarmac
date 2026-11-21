@@ -344,3 +344,35 @@ fn shelf_loose_and_term_id_survive_daemon_restart() {
         "doc provenance term_id must survive a restart"
     );
 }
+
+// Spec 2611.0024 S16: a doc tile's sidebar width and open state survive a
+// daemon restart.
+#[test]
+fn sidebar_keys_survive_daemon_restart() {
+    let mut daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+
+    let a = write_doc(&daemon.dir.join("sidebar/a.md"), "a\n");
+    app.send(&Msg::Open { path: a.clone(), term_id: None, board_id: None });
+    app.recv_doc_opened();
+
+    let tile = Tile { sidebar_w: Some(300.5), sidebar_open: Some(false), ..doc_tile(&a) };
+    app.send(&Msg::Layout { dock: vec![a.clone()], tiles: vec![term_tile(), tile.clone()], board: None, board_id: None });
+
+    daemon.wait_for_state("doc tile sidebar keys", |v| {
+        v["boards"][0]["tiles"].as_array().is_some_and(|t| {
+            t.iter().any(|tile| {
+                tile["kind"] == serde_json::json!("doc")
+                    && tile["sidebar_w"] == serde_json::json!(300.5)
+                    && tile["sidebar_open"] == serde_json::json!(false)
+            })
+        })
+    });
+
+    drop(app);
+    daemon.restart();
+
+    let mut app2 = daemon.connect_app();
+    let Restore { tiles, .. } = app2.recv_restore();
+    assert!(tiles.contains(&tile), "the doc tile's sidebar keys must reproduce after restart: {tiles:?}");
+}

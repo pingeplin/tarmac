@@ -98,6 +98,10 @@ public struct LayoutTile: Equatable, Sendable {
     /// cards persist distinct positions. nil on doc tiles and on legacy
     /// single-terminal layouts.
     public var termID: String?
+    /// Missing ⇒ nil: a markdown card's sidebar width and docked open state
+    /// (spec 2611.0024); `DocSidebar.restored` judges the range.
+    public var sidebarW: Double?
+    public var sidebarOpen: Bool?
 
     public init(
         kind: String,
@@ -109,7 +113,9 @@ public struct LayoutTile: Equatable, Sendable {
         z: Int? = nil,
         loose: Bool? = nil,
         shelf: Bool? = nil,
-        termID: String? = nil
+        termID: String? = nil,
+        sidebarW: Double? = nil,
+        sidebarOpen: Bool? = nil
     ) {
         self.kind = kind
         self.path = path
@@ -121,6 +127,8 @@ public struct LayoutTile: Equatable, Sendable {
         self.loose = loose
         self.shelf = shelf
         self.termID = termID
+        self.sidebarW = sidebarW
+        self.sidebarOpen = sidebarOpen
     }
 }
 
@@ -586,7 +594,9 @@ public extension Message {
             z: try fields.opt("z", \.intValue),
             loose: try fields.opt("loose", \.boolValue),
             shelf: try fields.opt("shelf", \.boolValue),
-            termID: try fields.opt("term_id", \.stringValue)
+            termID: try fields.opt("term_id", \.stringValue),
+            sidebarW: try fields.opt("sidebar_w", \.doubleValue),
+            sidebarOpen: try fields.opt("sidebar_open", \.boolValue)
         )
     }
 
@@ -859,6 +869,8 @@ public extension Message {
         m.put("loose", unlessNil: tile.loose.map(MsgPackValue.bool))
         m.put("shelf", unlessNil: tile.shelf.map(MsgPackValue.bool))
         m.put("term_id", unlessNil: tile.termID.map(MsgPackValue.string))
+        m.put("sidebar_w", unlessNil: tile.sidebarW.map(MsgPackValue.double))
+        m.put("sidebar_open", unlessNil: tile.sidebarOpen.map(MsgPackValue.bool))
         return .orderedMap(m.fields)
     }
 

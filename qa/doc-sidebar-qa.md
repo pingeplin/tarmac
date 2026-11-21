@@ -182,6 +182,14 @@ changes no terminal or key code (its source diff against main is the doc
 card's files, `DocFrontMatter`, `DocSidebar`, `ThemeCSS` and two `CardView`
 lines). Left for a separate look.
 
+**Follow-up (2026-11-21):** the cause is the known #207, not this branch. Run 5
+opened the Settings window (for the theme) before `make qa` in the same app;
+with a second window up, the Window menu's Center (⌃C) takes the driver's
+⌃C before it reaches the PTY (see `scripts/qa/settings-window.swift` and the
+dev-channel skill: run `make qa` in an app that has not shown Settings). A
+fresh app at `88625eb` (this branch, merged) and at `3b6f45b` passes `make qa`
+33 of 33.
+
 ## Run 2 checks outside the scenarios
 
 - **Tick clearance (D15).** The 3000-line doc's strip on a 640-high 800 card:

@@ -35,8 +35,12 @@ extension AppController {
 
     /// Puts a doc card on `board` and shows the doc in it.
     @discardableResult
-    func landDocCard(path: String, frame: CardFrame, attached: Bool, fresh: Bool, on board: Board) -> CardView {
+    func landDocCard(
+        path: String, frame: CardFrame, attached: Bool, fresh: Bool, sidebar: DocSidebar.Stored = DocSidebar.Stored(),
+        on board: Board
+    ) -> CardView {
         let card = board.view.addCard(id: .doc(path), worldFrame: frame)
+        card.docSidebar = sidebar
         card.attached = attached
         card.setFresh(fresh)
         bind(card, path: path, on: board)
