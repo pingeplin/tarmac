@@ -114,8 +114,14 @@
     return { html, outline };
   }
 
+  // No state yet shows nothing.
   function shownMode(state, fieldCount, outlineCount) {
-    return fieldCount === 0 && outlineCount === 0 ? "none" : state.mode;
+    return !state || (fieldCount === 0 && outlineCount === 0) ? "none" : state.mode;
+  }
+
+  function release(moved, drag) {
+    if (!moved) return null;
+    return drag.collapsed ? { action: "close" } : { action: "resize", width: drag.width };
   }
 
   function geometry(state, cardWidth, drag) {
@@ -142,13 +148,18 @@
     },
     textColumns,
     parse,
+    // A null top is a heading the render did not mark: never current.
     currentSection(tops, scrollTop, viewHeight, scrollHeight, zoom) {
-      if (tops.length === 0) return -1;
-      if (scrollHeight > viewHeight + 1 && scrollTop + viewHeight >= scrollHeight - 1) return tops.length - 1;
-      const line = scrollTop + 24 * zoom;
-      let current = 0;
+      const marked = [];
       tops.forEach(function (top, index) {
-        if (top <= line) current = index;
+        if (top !== null) marked.push(index);
+      });
+      if (marked.length === 0) return -1;
+      if (scrollHeight > viewHeight + 1 && scrollTop + viewHeight >= scrollHeight - 1) return marked[marked.length - 1];
+      const line = scrollTop + 24 * zoom;
+      let current = marked[0];
+      marked.forEach(function (index) {
+        if (tops[index] <= line) current = index;
       });
       return current;
     },
@@ -159,9 +170,16 @@
     },
     shownMode,
     geometry,
-    release(moved, drag) {
-      if (!moved) return null;
-      return drag.collapsed ? { action: "close" } : { action: "resize", width: drag.width };
+    release,
+    // A pointer back at its start, or one that never moved the sidebar, has
+    // not moved. A reported width is kept until the app's state carries it.
+    dragEnd(delta, drag) {
+      const report = release(delta !== 0 && drag !== null, drag);
+      return { report, drag: report ? drag : null };
+    },
+    // A state from the app ends a released drag; one held goes on.
+    dragOnState(dragging, drag) {
+      return dragging ? drag : null;
     },
     strip(fieldCount, outline, current) {
       const icons = [];
@@ -176,10 +194,23 @@
       });
       return { icons, ticks, lit: lit.length ? lit[lit.length - 1] : -1 };
     },
+    // `scroll` says when the panel scrolls to the section: once the app's
+    // state opens it, now, or not at all.
     iconClick(mode, section, icon) {
-      if (mode === "strip") return { post: "open", section: icon };
-      if (mode === "overlay" && icon === section) return { post: "close", section };
-      return { post: null, section: mode === "overlay" ? icon : section };
+      if (mode === "strip") return { post: "open", section: icon, scroll: "onOpen" };
+      if (mode !== "overlay") return { post: null, section, scroll: null };
+      if (icon === section) return { post: "close", section, scroll: null };
+      return { post: null, section: icon, scroll: "now" };
+    },
+    sectionOnState(pending, panelShown) {
+      return { show: pending && panelShown, pending: false };
+    },
+    activeIcon(mode, section) {
+      return mode === "overlay" ? section : null;
+    },
+    // `seen` is how many states had landed when the render began.
+    stateForRender(given, seen, latest, landed) {
+      return landed > seen ? latest : given;
     },
     // The strip shows unless a docked panel covers its place; a collapsed
     // drag has no panel.
@@ -195,6 +226,7 @@
       return mode === "overlay" ? "close" : null;
     },
     scrollTarget(headingTop, viewHeight, scrollHeight, zoom) {
+      if (headingTop === null) return null;
       return Math.min(Math.max(headingTop - 8 * zoom, 0), Math.max(0, scrollHeight - viewHeight));
     },
   };

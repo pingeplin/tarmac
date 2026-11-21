@@ -265,6 +265,18 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(current([], 0, 400, 3000, 1), -1)
     }
 
+    /// 2611.0022 D10: a heading the render did not mark has no top and is never current.
+    func test2611_0022AnUnmarkedHeadingIsNeverCurrent() throws {
+        func current(_ tops: String, _ scrollTop: Int, _ height: Int) throws -> String {
+            try json("tarmacDocLayout.currentSection(\(tops), \(scrollTop), 400, \(height), 1)")
+        }
+        XCTAssertEqual(try current("[null, 500, null, 1200]", 0, 3000), "1")
+        XCTAssertEqual(try current("[null, 500, null, 1200]", 1176, 3000), "3")
+        XCTAssertEqual(try current("[0, 500, null]", 2600, 3000), "1")
+        XCTAssertEqual(try current("[null, null]", 0, 3000), "-1")
+        XCTAssertEqual(try json("tarmacDocLayout.scrollTarget(null, 400, 3000, 1)"), "null")
+    }
+
     /// 2611.0022 S29
     func test2611_0022S29TheDragWidth() throws {
         func drag(_ arguments: String) throws -> String { try json("tarmacDocLayout.dragWidth(\(arguments))") }
@@ -282,6 +294,7 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(try evaluate("tarmacDocLayout.shownMode({mode: 'docked'}, 0, 0)", markdown: ""), "none")
         XCTAssertEqual(try evaluate("tarmacDocLayout.shownMode({mode: 'docked'}, 1, 0)", markdown: ""), "docked")
         XCTAssertEqual(try evaluate("tarmacDocLayout.shownMode({mode: 'docked'}, 0, 2)", markdown: ""), "docked")
+        XCTAssertEqual(try evaluate("tarmacDocLayout.shownMode(null, 1, 2)", markdown: ""), "none")
     }
 
     /// 2611.0022 S29b
@@ -343,10 +356,10 @@ final class DocLayoutScriptTests: XCTestCase {
     /// 2611.0022 S29e
     func test2611_0022S29eAnIconClick() throws {
         func click(_ arguments: String) throws -> String { try json("tarmacDocLayout.iconClick(\(arguments))") }
-        XCTAssertEqual(try click("'strip', 'fields', 'outline'"), #"{"post":"open","section":"outline"}"#)
-        XCTAssertEqual(try click("'overlay', 'outline', 'outline'"), #"{"post":"close","section":"outline"}"#)
-        XCTAssertEqual(try click("'overlay', 'outline', 'fields'"), #"{"post":null,"section":"fields"}"#)
-        XCTAssertEqual(try click("'docked', 'outline', 'fields'"), #"{"post":null,"section":"outline"}"#)
+        XCTAssertEqual(try click("'strip', 'fields', 'outline'"), #"{"post":"open","section":"outline","scroll":"onOpen"}"#)
+        XCTAssertEqual(try click("'overlay', 'outline', 'outline'"), #"{"post":"close","section":"outline","scroll":null}"#)
+        XCTAssertEqual(try click("'overlay', 'outline', 'fields'"), #"{"post":null,"section":"fields","scroll":"now"}"#)
+        XCTAssertEqual(try click("'docked', 'outline', 'fields'"), #"{"post":null,"section":"outline","scroll":null}"#)
     }
 
     /// 2611.0022 S29f
@@ -383,5 +396,44 @@ final class DocLayoutScriptTests: XCTestCase {
         for mode in ["none", "strip", "docked"] {
             XCTAssertEqual(try json("tarmacDocLayout.pressOnText('\(mode)')"), "null", mode)
         }
+    }
+
+    /// 2611.0022 D16: what a drag's end reports and which width the page keeps
+    /// until the app's next state; a pointer back at its start has not moved.
+    func test2611_0022ADragsEnd() throws {
+        XCTAssertEqual(try json("tarmacDocLayout.dragEnd(0, null)"), #"{"report":null,"drag":null}"#)
+        XCTAssertEqual(try json("tarmacDocLayout.dragEnd(5, null)"), #"{"report":null,"drag":null}"#)
+        XCTAssertEqual(try json("tarmacDocLayout.dragEnd(0, {width: 300, collapsed: false})"), #"{"report":null,"drag":null}"#)
+        XCTAssertEqual(
+            try json("tarmacDocLayout.dragEnd(12, {width: 300, collapsed: false})"),
+            #"{"report":{"action":"resize","width":300},"drag":{"width":300,"collapsed":false}}"#
+        )
+        XCTAssertEqual(
+            try json("tarmacDocLayout.dragEnd(-200, {width: -60, collapsed: true})"),
+            #"{"report":{"action":"close"},"drag":{"width":-60,"collapsed":true}}"#
+        )
+        XCTAssertEqual(try json("tarmacDocLayout.dragOnState(true, {width: 300, collapsed: false})"), #"{"width":300,"collapsed":false}"#)
+        XCTAssertEqual(try json("tarmacDocLayout.dragOnState(false, {width: 300, collapsed: false})"), "null")
+    }
+
+    /// 2611.0022 D15: an open asked for shows its section once a state shows
+    /// the panel; any state ends the wait.
+    func test2611_0022ASectionWaitsForTheOpen() throws {
+        XCTAssertEqual(try json("tarmacDocLayout.sectionOnState(true, true)"), #"{"show":true,"pending":false}"#)
+        XCTAssertEqual(try json("tarmacDocLayout.sectionOnState(true, false)"), #"{"show":false,"pending":false}"#)
+        XCTAssertEqual(try json("tarmacDocLayout.sectionOnState(false, true)"), #"{"show":false,"pending":false}"#)
+    }
+
+    /// 2611.0022 D17: the strip icon of the section an overlay shows is marked.
+    func test2611_0022TheActiveIcon() throws {
+        XCTAssertEqual(try json("tarmacDocLayout.activeIcon('overlay', 'fields')"), #""fields""#)
+        XCTAssertEqual(try json("tarmacDocLayout.activeIcon('strip', 'fields')"), "null")
+        XCTAssertEqual(try json("tarmacDocLayout.activeIcon('docked', 'outline')"), "null")
+    }
+
+    /// 2611.0022 D12: a render applies its own state unless a later one landed while it waited.
+    func test2611_0022ARenderTakesTheLatestState() throws {
+        XCTAssertEqual(try json("tarmacDocLayout.stateForRender({m: 'g'}, 3, {m: 's'}, 3)"), #"{"m":"g"}"#)
+        XCTAssertEqual(try json("tarmacDocLayout.stateForRender({m: 'g'}, 3, {m: 's'}, 4)"), #"{"m":"s"}"#)
     }
 }
