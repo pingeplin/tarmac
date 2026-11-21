@@ -226,13 +226,16 @@
     left: calc((var(--side-panel-start) + var(--side-panel)) * var(--zoom));
     width: calc(var(--side-grip) * var(--zoom));
     cursor: col-resize;
-    background: linear-gradient(var(--line), var(--line)) 0 0 / calc(1px * var(--zoom)) 100% no-repeat;
+    /* A border, not a background: WebKit draws a border at least one device
+       pixel wide, where a background 0.5 px wide comes out 1 px or 0 px. */
+    border: 0 solid var(--line);
+    border-left-width: calc(1px * var(--zoom));
   }
   [data-side="overlay"] .doc-side-grip {
-    background: none;
+    border-style: none;
   }
-  /* On the Right each place is mirrored. No rule here sets the background
-     shorthand: it would outrank the overlay grip's `background: none`. */
+  /* On the Right each place is mirrored. No rule here sets a border style:
+     it would outrank the overlay grip's `border-style: none`. */
   :root[data-sidebar-side="right"] .doc-scroll {
     left: 0;
     right: calc(var(--side-offset) * var(--zoom));
@@ -252,7 +255,8 @@
   :root[data-sidebar-side="right"] .doc-side-grip {
     left: auto;
     right: calc((var(--side-panel-start) + var(--side-panel)) * var(--zoom));
-    background-position: 100% 0;
+    border-left-width: 0;
+    border-right-width: calc(1px * var(--zoom));
   }
   .doc-side-content {
     width: calc(var(--side-panel) * var(--oversample-k));
