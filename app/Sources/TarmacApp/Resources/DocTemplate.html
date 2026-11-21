@@ -262,9 +262,6 @@
     font-size: calc(var(--prose-size) * var(--oversample-k) * 0.86);
     line-height: 1.45;
   }
-  :root[data-sidebar-side="right"] .doc-side-content {
-    padding-right: calc(var(--side-thumb-reach) * var(--oversample-k));
-  }
   .doc-side-head {
     display: flex;
     justify-content: space-between;
@@ -344,9 +341,11 @@
     font-family: var(--chrome-font);
     font-size: calc(12px * var(--oversample-k));
   }
-  /* On the Right the card's scroll thumb is over the strip's outer edge: the
-     icons and ticks keep clear of it, and the strip keeps its width. */
-  :root[data-sidebar-side="right"] .doc-strip {
+  /* On the Right the card's scroll thumb is over the sidebar's outer edge:
+     the strip's icons and ticks and the panel's content keep clear of it, and
+     the strip keeps its width. */
+  :root[data-sidebar-side="right"] .doc-strip,
+  :root[data-sidebar-side="right"] .doc-side-content {
     padding-right: calc(var(--side-thumb-reach) * var(--oversample-k));
   }
   .doc-icon {
