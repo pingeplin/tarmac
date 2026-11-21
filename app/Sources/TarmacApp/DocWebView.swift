@@ -23,6 +23,10 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
     var webProcessID: Int32? { webView.webProcessID }
     var onScrollCoverChanged: (() -> Void)?
 
+    /// The card's sidebar choice, which the card holds (spec 2611.0022 D21).
+    var stored: () -> DocSidebar.Stored = { DocSidebar.Stored() }
+    var onStoredChanged: (DocSidebar.Stored) -> Void = { _ in }
+
     private let path: String
     private let webView: WKWebView
     private let host: ScreenSpaceHost
@@ -31,6 +35,7 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
     private let hover = ScriptMessageRelay()
     private let editing = ScriptMessageRelay()
     private let scrolled = ScriptMessageRelay()
+    private let sidebarActions = ScriptMessageRelay()
 
     private var pageLoaded = false
     /// What the page was last given: a font change that is not this card's
@@ -43,7 +48,9 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
     /// The web view carries `DocFrameRule`, so a web page the doc frames is
     /// kept off the img host.
     private var framesGuarded = false
-    private var markdown: String?
+    private var doc: (fields: [DocFrontMatter.Field], body: String)?
+    /// A narrow card's open overlay, never stored.
+    private var overlayOpen = false
     private var lastChangedMs: UInt64?
     /// Reads are answered off the main thread; only the latest one is shown.
     private var reads = LoadCount()
@@ -82,6 +89,8 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
         editing.onMessage = { [weak self] message in self?.isEditingText = message.body as? Bool ?? false }
         webView.configuration.userContentController.add(scrolled, contentWorld: CardWebView.world, name: "docScroll")
         scrolled.onMessage = { [weak self] message in self?.scrollReported(message) }
+        webView.configuration.userContentController.add(sidebarActions, contentWorld: CardWebView.world, name: "docSidebar")
+        sidebarActions.onMessage = { [weak self] message in self?.sidebarReported(message) }
         host.onResize = { [weak self] size in self?.layoutPage(viewport: size) }
         addSubview(host)
         DocFrameRules.shared.whenSettled { [weak self] rules in self?.start(guardedBy: rules) }
@@ -147,10 +156,10 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
         let read = reads.next()
         let path = self.path
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let markdown = DocSource.markdown(path: path, contents: FileBytes.read(path: path))
+            let split = DocFrontMatter.split(DocSource.markdown(path: path, contents: FileBytes.read(path: path)))
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.reads.isCurrent(read) else { return }
-                self.markdown = markdown
+                self.doc = split
                 self.render()
             }
         }
@@ -162,9 +171,29 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
 
     // MARK: - Page
 
+    /// The page lays it out by the state of the layout `didFinish` sent first.
     private func render() {
-        guard pageLoaded, let markdown else { return }
-        webView.runInCardWorld("await tarmacDoc.render(markdown)", arguments: ["markdown": markdown])
+        guard pageLoaded, let doc else { return }
+        webView.runInCardWorld(
+            "await tarmacDoc.render(markdown, fields)",
+            arguments: ["markdown": doc.body, "fields": DocFrontMatter.page(doc.fields)]
+        )
+    }
+
+    private var cardWidth: Double { Double(CardBox.cardSize(ofBody: bounds.size).width) }
+
+    private func sidebarState() -> DocSidebar.PageState {
+        DocSidebar.pageState(cardWidth: cardWidth, stored: stored(), overlayOpen: overlayOpen)
+    }
+
+    /// An action of the page's sidebar; one the page cannot have meant changes nothing.
+    private func sidebarReported(_ message: WKScriptMessage) {
+        guard message.frameInfo.isMainFrame, let action = DocSidebar.Action(report: message.body) else { return }
+        let applied = DocSidebar.apply(action, stored: stored(), overlayOpen: overlayOpen, cardWidth: cardWidth)
+        overlayOpen = applied.overlayOpen
+        onStoredChanged(applied.stored)
+        guard pageLoaded else { return }
+        webView.runInCardWorld("tarmacDoc.sidebar(state)", arguments: ["state": sidebarState().arguments])
     }
 
     /// Passed as arguments, never spliced into the script: a family name is
@@ -197,12 +226,15 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
         webView.runInCardWorld("tarmacDoc.scrollTo(\(offset))")
     }
 
-    /// Tells the page the zoom and the card width it is laid out for, and the
-    /// viewport height it is about to have.
+    /// Tells the page the zoom and the card width it is laid out for, the
+    /// viewport height it is about to have, and the sidebar's state.
     private func layoutPage(viewport: CGSize) {
+        overlayOpen = DocSidebar.overlayOpen(overlayOpen, cardWidth: cardWidth)
         guard pageLoaded else { return }
-        let cardWidth = CardBox.cardSize(ofBody: bounds.size).width
-        webView.runInCardWorld("tarmacDoc.layout(\(host.settledZoom), \(cardWidth), \(viewport.height))")
+        webView.runInCardWorld("tarmacDoc.layout(zoom, cardWidth, height, state)", arguments: [
+            "zoom": Double(host.settledZoom), "cardWidth": cardWidth, "height": Double(viewport.height),
+            "state": sidebarState().arguments,
+        ])
     }
 
     /// The `src` each image of a render is loaded from: a local file through

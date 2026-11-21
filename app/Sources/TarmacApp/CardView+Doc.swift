@@ -5,6 +5,13 @@ extension CardView {
     /// The body of a markdown doc card; nil on every other card.
     var markdownBody: DocWebView? { docBody as? DocWebView }
 
+    /// The page reads and writes the sidebar choice this card holds.
+    func wireMarkdownBody() {
+        guard let body = markdownBody else { return }
+        body.stored = { [weak self] in self?.docSidebar ?? DocSidebar.Stored() }
+        body.onStoredChanged = { [weak self] stored in self?.docSidebar = stored }
+    }
+
     /// Where a press on `hit`, a view of this card, lands (`CardPress`).
     func pressPlace(of hit: NSView) -> CardPress.Place {
         if hit is PressControl { return .headerControl }
