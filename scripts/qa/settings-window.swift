@@ -1,5 +1,5 @@
 // Operates the Settings window of the live dev app with no pointer (specs
-// 2610.0005, 2610.0006, 2610.0007, 2610.0008, 2610.0009), through the Accessibility API, and posts
+// 2610.0005, 2610.0006, 2610.0007, 2610.0008, 2610.0009, 2611.0025), through the Accessibility API, and posts
 // a click or a wheel at a screen point for the one scenario that needs real
 // pointer events.
 //
@@ -7,8 +7,9 @@
 //
 //   open                     posts ⌘, to the app
 //   rows                     prints the window's frame, the selected pane, each row's selected title, each size, each theme tile with its value (1 = selected), and the window's labels, with frames; on the Theme pane also each row of the list of themes with its marks and, last on the line, its id; the frame of the list as it shows; the showcase's title and caption, its picture, its two boxes, its note and the note's tooltip; and the line about the theme files, its tooltip and the button. A tooltip's line breaks print as " | "
-//   pane <title>             selects a sidebar entry: Fonts, Theme
+//   pane <title>             selects a sidebar entry: Fonts, Theme, Documents
 //   theme <title>            presses a tile of the Theme pane: Auto, Light, Dark
+//   side <title>             presses a tile of the Documents pane: Left, Right
 //   show <title or id>       selects a row of the Theme pane's list, which puts that theme in the showcase and changes nothing else; an id names one row, and a title the first row that has it
 //   open-themes              presses Open Themes Folder
 //   apply <Light|Dark> on|off  sets or clears that box of the showcase; its last line is the box as it is then
@@ -29,8 +30,8 @@
 // and under Zhuyin `20` arrives as `ㄉㄢ`.
 //
 // `pick`, `size`, `step` and `focus` count the controls of the pane that
-// shows: they need the Fonts pane, and `theme`, `show`, `apply` and
-// `open-themes` need the Theme pane.
+// shows: they need the Fonts pane, `theme`, `show`, `apply` and
+// `open-themes` need the Theme pane, and `side` the Documents pane.
 //
 // `apply` presses nothing and exits 1 when the box is disabled, and when it
 // is already in the state that was asked for. `show` and `pane` exit 1 for a
@@ -317,11 +318,12 @@ case "rows":
 case "pane":
     guard rest.count == 1 else { fail("pane <title>") }
     select(rest[0], in: sidebar, "the sidebar lists")
-case "theme":
-    guard rest.count == 1 else { fail("theme <title>") }
+case "theme", "side":
+    guard rest.count == 1 else { fail("\(verb) <title>") }
     let tiles = controls(kAXRadioButtonRole)
+    let pane = verb == "theme" ? "Theme" : "Documents"
     guard let tile = tiles.first(where: { title($0) == rest[0] }) else {
-        fail("the window shows the tiles \(tiles.map(title)) and none is \(rest[0]); run `pane Theme`")
+        fail("the window shows the tiles \(tiles.map(title)) and none is \(rest[0]); run `pane \(pane)`")
     }
     press(tile, rest[0])
     usleep(200_000)
