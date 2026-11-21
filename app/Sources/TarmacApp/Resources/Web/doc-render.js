@@ -35,7 +35,9 @@
   let renders = 0;
 
   // The sidebar (spec 2611.0022). Every decision is a rule of doc-layout.js;
-  // this keeps what the rules are given and applies what they answer.
+  // this keeps what the rules are given and applies what they answer. Event
+  // wiring of its own: a drag starts only on the primary button once a state
+  // has landed, and a blur ends it where the pointer was last seen.
   // Set by `layout`, which the app sends before any render or state.
   let cardWidth;
   // The last state the app sent; a layout carries one before any render.
@@ -54,8 +56,9 @@
   let icons = {};
   // An open the page asked for shows `section` once the app's state opens it.
   let showSectionOnOpen = false;
-  // A drag's width, kept after the release until the app's state lands, and
-  // the held press: where it started and how far the pointer is from it.
+  // A drag's width, kept after the release until the app answers, and the
+  // held press: where it started, how far the pointer is from it, and whether
+  // it moved.
   let drag = null;
   let dragging = null;
 
@@ -94,9 +97,9 @@
     return parts;
   }
 
-  function takeState(given) {
+  function takeState(given, fromAction) {
     state = given;
-    drag = rules.dragOnState(dragging !== null, drag);
+    drag = rules.dragOnState(dragging !== null, drag, fromAction);
     const parts = applySide();
     const opened = rules.sectionOnState(showSectionOnOpen, parts.panel);
     showSectionOnOpen = opened.pending;
@@ -156,48 +159,55 @@
   // blurs into one block at a 1× zoom.
   const iconGlyphs = { fields: "{}", outline: "" };
 
+  const titles = { fields: "FRONT MATTER", outline: "OUTLINE" };
+
+  function fieldRow(field) {
+    const row = div("doc-field");
+    row.append(div("doc-field-key", field[0]));
+    const value = div("doc-field-value");
+    if (Array.isArray(field[1])) {
+      field[1].forEach(function (item) {
+        value.append(div("doc-chip", item));
+      });
+    } else {
+      value.textContent = field[1];
+    }
+    row.append(value);
+    return row;
+  }
+
+  // The panel's sections are the strip's icons, in order; the first header
+  // holds the close button.
   function buildSide(fields) {
+    const shape = rules.strip(fieldCount, outline, -1);
     sectionHeads = {};
+    entries = [];
     const panelParts = [];
-    function head(name, title) {
-      const element = div("doc-side-head");
-      element.append(div("doc-side-title", title));
-      if (panelParts.length === 0) {
-        element.append(onClick(div("doc-side-close", "\u21e4"), function () {
+    shape.icons.forEach(function (name, index) {
+      const head = div("doc-side-head");
+      head.append(div("doc-side-title", titles[name]));
+      if (index === 0) {
+        head.append(onClick(div("doc-side-close", "\u21e4"), function () {
           report({ action: "close" });
         }));
       }
-      sectionHeads[name] = element;
-      panelParts.push(element);
-    }
-    if (fields.length > 0) head("fields", "FRONT MATTER");
-    fields.forEach(function (field) {
-      const row = div("doc-field");
-      row.append(div("doc-field-key", field[0]));
-      const value = div("doc-field-value");
-      if (Array.isArray(field[1])) {
-        field[1].forEach(function (item) {
-          value.append(div("doc-chip", item));
+      sectionHeads[name] = head;
+      panelParts.push(head);
+      if (name === "fields") panelParts.push(...fields.map(fieldRow));
+      if (name === "outline") {
+        entries = outline.map(function (item, entryIndex) {
+          const entry = onClick(div("doc-entry", item.text), function () {
+            goTo(entryIndex);
+          });
+          entry.setAttribute("data-depth", String(item.depth));
+          return entry;
         });
-      } else {
-        value.textContent = field[1];
+        panelParts.push(...entries);
       }
-      row.append(value);
-      panelParts.push(row);
-    });
-    if (outline.length > 0) head("outline", "OUTLINE");
-    entries = outline.map(function (item, index) {
-      const entry = onClick(div("doc-entry", item.text), function () {
-        goTo(index);
-      });
-      entry.setAttribute("data-depth", String(item.depth));
-      panelParts.push(entry);
-      return entry;
     });
     sideContent.replaceChildren(...panelParts);
 
-    const shape = rules.strip(fieldCount, outline, -1);
-    section = shape.icons[0];
+    section = shape.section;
     icons = {};
     shape.icons.forEach(function (name) {
       const icon = onClick(div("doc-icon doc-icon-" + name, iconGlyphs[name]), function () {
@@ -285,7 +295,7 @@
   grip.addEventListener("mousedown", function (event) {
     if (event.button !== 0 || !state) return;
     event.preventDefault();
-    dragging = { x: event.clientX, delta: 0 };
+    dragging = { x: event.clientX, delta: 0, moved: false };
     window.addEventListener("mousemove", dragMoved);
     window.addEventListener("mouseup", dragEnded);
     window.addEventListener("blur", dragEnded);
@@ -293,7 +303,8 @@
 
   function dragMoved(event) {
     dragging.delta = event.clientX - dragging.x;
-    drag = rules.dragWidth(state.width, dragging.delta, zoom, 1, state.minWidth, state.maxWidth);
+    dragging.moved = true;
+    drag = rules.dragWidth(state.width, dragging.delta, zoom, rules.direction(state.side), state.minWidth, state.maxWidth);
     applySide();
   }
 
@@ -304,7 +315,7 @@
     window.removeEventListener("mouseup", dragEnded);
     window.removeEventListener("blur", dragEnded);
     if (event.type === "mouseup") dragging.delta = event.clientX - dragging.x;
-    const ended = rules.dragEnd(dragging.delta, drag);
+    const ended = rules.dragEnd(dragging.moved, dragging.delta, drag);
     dragging = null;
     drag = ended.drag;
     if (ended.report) report(ended.report);
@@ -400,7 +411,8 @@
       outline = parsed.outline;
       headings = markedHeadings(mark);
       buildSide(fields);
-      applySide();
+      // With no state yet there is nothing to lay out by.
+      if (state !== null) applySide();
       remeasure();
       // What was focused or under the pointer was just replaced, with no
       // event to say so.
@@ -415,13 +427,13 @@
       cardWidth = width;
       root.style.setProperty("--zoom", String(zoom));
       px("--card-w", cardWidth);
-      takeState(given);
+      takeState(given, false);
       relayout();
     },
 
-    // The app's state after an action of the sidebar's or a render's result.
+    // The app's state after an action of the sidebar's.
     sidebar(given) {
-      takeState(given);
+      takeState(given, true);
     },
 
     // The chosen fonts: two font-family values and the prose's size, a

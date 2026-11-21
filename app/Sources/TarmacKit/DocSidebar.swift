@@ -64,10 +64,16 @@ public enum DocSidebar {
         return range.upperBound > range.lowerBound
     }
 
+    /// The stored width, or the standard one, clamped to the card's range;
+    /// a clamp never changes `stored`.
+    private static func width(cardWidth: Double, stored: Stored) -> Double {
+        let range = range(cardWidth: cardWidth)
+        return min(max(stored.width ?? standard, range.lowerBound), range.upperBound)
+    }
+
     /// As for a doc with content: the page shows none for one without.
     public static func mode(cardWidth: Double, stored: Stored, overlayOpen: Bool) -> Mode {
-        let range = range(cardWidth: cardWidth)
-        let width = min(max(stored.width ?? standard, range.lowerBound), range.upperBound)
+        let width = width(cardWidth: cardWidth, stored: stored)
         if isWide(cardWidth: cardWidth) { return stored.open ?? true ? .docked(width) : .strip }
         return overlayOpen ? .overlay(width) : .strip
     }
@@ -121,19 +127,14 @@ public enum DocSidebar {
     }
 
     public static func pageState(cardWidth: Double, stored: Stored, overlayOpen: Bool) -> PageState {
-        let range = range(cardWidth: cardWidth)
-        let mode = mode(cardWidth: cardWidth, stored: stored, overlayOpen: overlayOpen)
-        let name: String
-        var width = min(max(stored.width ?? standard, range.lowerBound), range.upperBound)
-        switch mode {
-        case .strip: name = "strip"
-        case .docked(let shown):
-            name = "docked"
-            width = shown
-        case .overlay(let shown):
-            name = "overlay"
-            width = shown
+        let name = switch mode(cardWidth: cardWidth, stored: stored, overlayOpen: overlayOpen) {
+        case .strip: "strip"
+        case .docked: "docked"
+        case .overlay: "overlay"
         }
-        return PageState(mode: name, width: width, maxWidth: range.upperBound, resizable: resizable(cardWidth: cardWidth))
+        return PageState(
+            mode: name, width: width(cardWidth: cardWidth, stored: stored),
+            maxWidth: range(cardWidth: cardWidth).upperBound, resizable: resizable(cardWidth: cardWidth)
+        )
     }
 }
