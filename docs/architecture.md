@@ -1328,11 +1328,12 @@ handlers they post to. No cookies, cache or storage outlive the app.
   panel over the text, with no re-wrap, until a press on the text or the icon
   again. A drag of the grip on its inner edge resizes it live, below 160
   collapses it, and a double-click sets 240; a doc with no fields and no
-  heading has none, which the page alone decides from what it rendered. `CardView` holds the card's choice (`DocSidebar.Stored`:
-  a width and open), in memory only; `DocWebView` sends the page its state
-  (`DocSidebar.pageState`) with each layout and action, and applies
-  the page's `docSidebar` reports (`DocSidebar.Action`, `apply`). Every
-  decision of the page's is a DOM-free rule of `doc-layout.js`.
+  heading has none, which the page alone decides from what it rendered.
+  `CardView` holds the card's choice (`DocSidebar.Stored`: a width and open),
+  in memory only; `DocWebView` sends the page its state
+  (`DocSidebar.pageState`) with each layout and action, and applies the page's
+  `docSidebar` reports (`DocSidebar.Action`, `apply`). Every decision of the
+  page's is a DOM-free rule of `doc-layout.js`.
 - **Layout** (spec 2611.0021). The text is a column of 46em of the prose's own
   size, centred in the card. A markdown table (in a `.doc-table` box) and a
   code block of the prose itself may be wider, up to 1040px, centred on the
