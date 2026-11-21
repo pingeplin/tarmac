@@ -80,8 +80,8 @@
   // Media no wider than a column that reads well (spec 2611.0020). The rules
   // have no specificity, so an author rule on the same property wins unless
   // it is a :where() rule too. Only a medium that can scale is capped: an SVG
-  // with no viewBox would be cropped.
-  // `height: auto` only where a width attribute is given, so no medium grows.
+  // with no viewBox would be cropped. `height: auto` only where a width
+  // attribute is given: on a medium with only a height, it makes it grow.
   try {
     adoptSheet(
       ":where(svg[viewBox], img, video, canvas) { max-width: min(100%, 560px); object-fit: contain; }\n" +

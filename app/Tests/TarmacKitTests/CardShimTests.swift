@@ -1945,4 +1945,14 @@ final class CardShimTests: XCTestCase {
             rules.filter { !$0.isWhitespace }
         )
     }
+
+    func test2611_0020D5TheMediaSheetIsAdoptedAfterTheStartedPostAndBeforeTheFirstListener() throws {
+        let shim = try loadShim(head: true)
+        XCTAssertEqual(
+            shim.run("JSON.stringify(h.sheets[0].atConstruction.posted)").toString(),
+            #"[{"tarmac":"started","source":"tarmac-card://doc/card.html?v=1"}]"#,
+            "D5: after started"
+        )
+        XCTAssertEqual(try shim.strings("h.sheets[0].atConstruction.listeners"), [], "D5: before the first listener")
+    }
 }

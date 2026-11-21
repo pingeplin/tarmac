@@ -1399,8 +1399,8 @@ browser.
   caps the width of media (a constructed stylesheet adopted at boot, before
   the font sheet, in every HTML card: an `img`, `canvas`, `video` or an `svg`
   with a `viewBox` is at most 560 px wide and is scaled, not cropped; its
-  `:where()` rules lose to any other author rule on the same property; spec
-  2611.0020),
+  `:where()` rules lose to any author rule of non-zero specificity, or an
+  inline style, on the same property; spec 2611.0020),
   applies the zoom, and in a magnified card draws the list markers it can
   reproduce itself (it marks such an `li` with `data-tarmac-marker` and adds
   one more constructed stylesheet, because WebKit draws a native outside marker

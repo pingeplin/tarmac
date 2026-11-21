@@ -465,13 +465,17 @@ wide card, so Tarmac caps the width of media:
 - Every `img`, `canvas`, `video`, and `svg` with a `viewBox` is at most 560 px
   wide, and never wider than its container. The cap applies to a medium you
   set to `width: 100%` too.
-- A capped medium is scaled, not cropped: it keeps its ratio. An `svg` with no
+- A capped medium is scaled, not cropped. Where you fix its height, it is
+  drawn whole in the narrower box, with empty bands. Where you give it `width`
+  and `height` attributes, its height follows its width. An `svg` with no
   `viewBox` cannot scale, so Tarmac does not cap it.
 - To lift the cap, set `max-width` on the element: `max-width: none`, or
   `max-width: 100%` to fill its container. Any selector works (`img`, a class,
   an id, an inline `style`), but not `:where()`.
 - With `main` at 1080 px, each `.duo` column is narrower than 560 px, so the
-  `.duo` chart above needs no change. A chart that must fill the full width of `main` needs the lift:
+  `.duo` chart above needs no change. On a narrower card the columns stack and
+  can be wider than 560 px; then the chart is capped. A chart that must fill
+  its column or the full width of `main` needs the lift:
   `.wide svg { max-width: 100%; }`.
 
 If your document genuinely needs honest, changing viewport dimensions — a

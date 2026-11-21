@@ -397,7 +397,8 @@ final class CardMediaCapTests: XCTestCase {
         let sparkline = Self.svg("m", #"viewBox="0 0 100 20" height="20""#, width: 100, height: 20)
         let inline = Medium(id: "m", body: #"<span style="display:inline-block">\#(sparkline)</span>"#)
         let alone = Medium(id: "m", body: sparkline)
-        let exact: [(Medium, Double, Double)] = [(short, 160, 40), (inline, 100, 20), (alone, 100, 20)]
+        let video = Medium(id: "m", body: #"<video id="m" height="40"></video>"#)
+        let exact: [(Medium, Double, Double)] = [(short, 160, 40), (inline, 100, 20), (alone, 100, 20), (video, 80, 40)]
         let media = [Self.s1, Self.s2, Self.s3, Self.s4, Self.s5, Self.s6, Self.s7, Self.s8, Self.s9, Self.s10]
             + Self.s11 + Self.s12 + [Self.s21] + Self.s22 + [Self.s23, Self.s24]
         for (medium, width, height) in exact.map({ ($0.0, Optional($0.1), Optional($0.2)) }) + media.map({ ($0, nil, nil) }) {
