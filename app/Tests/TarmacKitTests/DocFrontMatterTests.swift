@@ -61,6 +61,7 @@ final class DocFrontMatterTests: XCTestCase {
         XCTAssertEqual(fields("# before\ntitle: x"), [field("title", "x")])
         XCTAssertEqual(fields("title: x\n\n  \t\nnext: y"), [field("title", "x"), field("next", "y")])
         XCTAssertEqual(fields("key:\n  text"), [field("key", "text")])
+        XCTAssertEqual(fields("desc: one\n- x"), [field("desc", "one\n- x")])
         XCTAssertEqual(fields("a: 1\na: 2"), [field("a", "1"), field("a", "2")])
         XCTAssertEqual(fields("desc: one\n\ttwo"), [field("desc", "one\ntwo")])
         XCTAssertEqual(fields("k: \"\"\n  more"), [field("k", "more")])
