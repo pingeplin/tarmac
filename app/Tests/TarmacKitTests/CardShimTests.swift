@@ -1790,7 +1790,7 @@ final class CardShimTests: XCTestCase {
           };
           const sheeted = () => (document.adoptedStyleSheets || [])
             .some((sheet) => sheet.cssRules[0] && sheet.cssRules[0].selectorText === "li[data-tarmac-marker]");
-          globalThis.getComputedStyle = (el, pseudo) => pseudo ? { content: "none" } : {
+          globalThis.getComputedStyle = (el, pseudo) => pseudo ? { content: pseudo === "::marker" ? "normal" : "none" } : {
             display: "list-item", listStylePosition: "outside", listStyleImage: "none",
             direction: "ltr", writingMode: "horizontal-tb",
             listStyleType: el.hasAttribute("data-tarmac-marker") && sheeted() ? "none" : "disc",

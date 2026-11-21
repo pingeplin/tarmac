@@ -275,12 +275,16 @@ final class CardListMarkerTests: XCTestCase {
             ("vertical", "writing-mode: vertical-rl"),
             ("hebrew", "list-style-type: hebrew"),
         ]
-        let css = cases.map { "ul.\($0.0) { \($0.1); }" }.joined(separator: "\n") + "\nul.blocks > li { display: block; }"
-        let body = cases.map { "<ul class=\($0.0)><li>a</li></ul>" }.joined()
+        let pseudo = """
+        ul.arrow li::marker { content: "→ "; }
+        ul.tail li::after { content: " ·"; }
+        """
+        let css = cases.map { "ul.\($0.0) { \($0.1); }" }.joined(separator: "\n") + "\nul.blocks > li { display: block; }\n" + pseudo
+        let body = (cases.map(\.0) + ["arrow", "tail"]).map { "<ul class=\($0)><li>a</li></ul>" }.joined()
             + "<ul class=blocks><li>a</li></ul><div id=div style='display:list-item'>d</div>" + Self.control
         let before = try card(body, css: css, zoom: 1)
         let view = try card(body, css: css, zoom: 3)
-        for name in cases.map(\.0) + ["blocks"] {
+        for name in cases.map(\.0) + ["blocks", "arrow", "tail"] {
             XCTAssertEqual(try marks(view, ".\(name) > li"), [nil], name)
             XCTAssertEqual(try style(view, ".\(name) > li", "list-style-type"), try style(before, ".\(name) > li", "list-style-type"), name)
         }
@@ -379,6 +383,18 @@ final class CardListMarkerTests: XCTestCase {
         try spin(until: { (try? self.mark(view, "#late")) == "disc" }, "the second zoom's pass")
         XCTAssertEqual(try marks(view, "#first > li"), ["disc", "disc"])
         XCTAssertEqual(try markerSheets(view), 1)
+    }
+
+    func testS28AnEmptyItemKeepsItsLineAndItsMarker() throws {
+        let body = "<ul><li id=e1></li><li id=e2></li><li id=e3>third</li></ul>"
+        let heights = "['e1', 'e2', 'e3'].map(id => document.getElementById(id).getBoundingClientRect().height)"
+        let reference = try XCTUnwrap(eval(card(body, zoom: 1), heights) as? [Double])
+        let view = try card(body, zoom: 3)
+        let zoomed = try XCTUnwrap(eval(view, heights) as? [Double])
+        for (one, three) in zip(reference, zoomed) {
+            XCTAssertEqual(three, one * 3, accuracy: 3, "an item's height at zoom 3")
+        }
+        XCTAssertEqual(try [mark(view, "#e1"), mark(view, "#e2")], ["disc", "disc"])
     }
 
     func testS25AnItemThatComesWithTheAttributeIsNotRead() throws {

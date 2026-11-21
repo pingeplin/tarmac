@@ -396,6 +396,8 @@
       "li[data-tarmac-marker]{list-style-type:none!important}",
       ":where(li[data-tarmac-marker])::before{float:left;box-sizing:content-box;width:0;margin-left:-.5em;" +
         "padding-right:.5em;display:flex;justify-content:flex-end;white-space:nowrap;font-variant-numeric:tabular-nums}",
+      // An item with no content of its own would not hold its float.
+      ":where(li[data-tarmac-marker])::after{content:\"\";display:block;clear:left}",
     ];
     markerTypes.forEach(function (t) {
       var content = markerGlyphs[t] || "counter(list-item, " + t + ') "."';
@@ -410,8 +412,13 @@
     if (s.display !== "list-item" || s.listStylePosition !== "outside" || s.listStyleImage !== "none") return null;
     if (s.direction !== "ltr" || s.writingMode !== "horizontal-tb") return null;
     if (markerTypes.indexOf(s.listStyleType) < 0) return null;
-    var before = getComputedStyle(li, "::before").content;
-    return before === "none" || before === "normal" ? s.listStyleType : null;
+    // The author's own ::before, ::after or ::marker content is theirs.
+    if (getComputedStyle(li, "::marker").content !== "normal") return null;
+    var unset = ["::before", "::after"].every(function (pseudo) {
+      var content = getComputedStyle(li, pseudo).content;
+      return content === "none" || content === "normal";
+    });
+    return unset ? s.listStyleType : null;
   }
 
   function markItems(items) {
