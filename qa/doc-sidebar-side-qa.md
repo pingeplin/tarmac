@@ -140,3 +140,25 @@ was left on any QA socket. No `tarmacd.log` of the five channels has an
 - **#450:** after the restart and after the window move, every sidebar edge
   read 2 world px (1 screen px) off until one zoom change. After the change,
   every value was within ±1 world px of the spec's.
+
+## Follow-up #456
+
+The Documents pane's tiles moved from the box's trailing edge to a 150 pt
+label column (the mockup's `150px 1fr`, gap 16, label 4 px down). Channel
+`.dev/qa-456`, same machine, same window origin (847, 250). "Before" is
+`0489444` (main), "after" the change, both run in that channel by `make run`
+and driven by `scripts/qa/settings-window.swift` (`open`, `pane`, `rows`);
+captures by window id (`screencapture -x -o -l`).
+
+| Check | Before | After | Expected | Result |
+|---|---|---|---|---|
+| `Sidebar side` label x, y | 1066, 336 | 1066, 340 | label 4 down from the tiles' top | pass |
+| Left tile x | 1422 | 1232 | label x + 150 + 16 = 1232 | pass |
+| Right tile x | 1504 | 1314 | Left + 82, as before | pass |
+| Help text x, y | 1422, 410 | 1232, 410 | Left tile x, under the tiles | pass |
+| Window, Fonts / Theme / Documents | 873 × 530 each | 873 × 530 each | unchanged | pass |
+| Fonts and Theme panes | — | `rows` output identical; captures byte-equal (`cmp`) | unchanged | pass |
+| `side Right`, `side Left` | — | `tile Right value=1`, then `tile Left value=1` | tiles still choose | pass |
+
+Teardown: the app was quit by `kill` of the pid on the channel's driver
+socket, and `make kill-daemon DEV_DIR=.dev/qa-456` stopped its daemon.
