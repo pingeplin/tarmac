@@ -320,8 +320,9 @@ case "pane":
     select(rest[0], in: sidebar, "the sidebar lists")
 case "theme", "side":
     guard rest.count == 1 else { fail("\(verb) <title>") }
+    let (pane, titles) = verb == "theme" ? ("Theme", ["Auto", "Light", "Dark"]) : ("Documents", ["Left", "Right"])
+    guard titles.contains(rest[0]) else { fail("\(verb) takes one of \(titles)") }
     let tiles = controls(kAXRadioButtonRole)
-    let pane = verb == "theme" ? "Theme" : "Documents"
     guard let tile = tiles.first(where: { title($0) == rest[0] }) else {
         fail("the window shows the tiles \(tiles.map(title)) and none is \(rest[0]); run `pane \(pane)`")
     }
