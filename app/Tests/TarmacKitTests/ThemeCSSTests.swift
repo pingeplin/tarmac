@@ -45,8 +45,8 @@ final class ThemeCSSTests: XCTestCase {
 
         XCTAssertFalse(page.contains("/*tarmac-theme*/"))
         for declaration in [
-            "--bg1: #eff0f1;", "--bg2: #dee0e2;", "--line: #b4b9be;", "--muted: #535d66;", "--term-bg: #fcfcfc;", "--text: #232629;", "--prose-text: #31363b;",
-            "--agent: #12846e;", "--agent-dim: rgba(18, 132, 110, 0.16);", "color-scheme: light;",
+            "--bg1: #eff0f1;", "--bg2: #dee0e2;", "--line: #b4b9be;", "--muted: #535d66;", "--term-bg: #fcfcfc;",
+            "--text: #232629;", "--prose-text: #31363b;", "--agent: #12846e;", "--agent-dim: rgba(18, 132, 110, 0.16);", "color-scheme: light;",
         ] {
             XCTAssertTrue(page.contains(declaration), declaration)
         }

@@ -104,9 +104,8 @@
     overflow-x: auto;
     white-space: pre;
   }
-  /* A table or code block of the prose itself may be wider than the column:
-     as wide as its content, between the column and the cap, centred on the
-     column. One inside a list or a quote keeps to its container. */
+  /* Only a direct child breaks out: one inside a list or a quote keeps to
+     its container. */
   .doc-prose > .doc-table,
   .doc-prose > pre {
     position: relative;

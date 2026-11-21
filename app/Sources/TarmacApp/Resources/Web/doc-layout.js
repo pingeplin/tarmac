@@ -33,11 +33,12 @@
       .join("");
   }
 
+  // marked pads and cuts every body row to the header's length, so a row
+  // always has cell `column`.
   function textColumns(table) {
     return table.header.map(function (_, column) {
       return table.rows.some(function (row) {
-        const cell = row[column];
-        return cell !== undefined && width(prose(cell.tokens).trim()) >= textColumnWidth;
+        return width(prose(row[column].tokens).trim()) >= textColumnWidth;
       });
     });
   }
@@ -51,7 +52,7 @@
           if (!text) return;
           token.header[column].textColumn = true;
           token.rows.forEach(function (row) {
-            if (row[column]) row[column].textColumn = true;
+            row[column].textColumn = true;
           });
         });
         return '<div class="doc-table">' + defaults.table.call(this, token) + "</div>\n";

@@ -43,10 +43,10 @@ final class DocTemplateTests: XCTestCase {
             of: #"/\*[\s\S]*?\*/"#, with: "", options: .regularExpression
         )
         let regex = try NSRegularExpression(pattern: #"([^{}]+)\{([^{}]*)\}"#)
-        return regex.matches(in: sheet, range: NSRange(sheet.startIndex..., in: sheet)).map { match in
-            let selectors = String(sheet[Range(match.range(at: 1), in: sheet)!])
+        return try regex.matches(in: sheet, range: NSRange(sheet.startIndex..., in: sheet)).map { match in
+            let selectors = String(sheet[try XCTUnwrap(Range(match.range(at: 1), in: sheet))])
                 .split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            return (selectors, String(sheet[Range(match.range(at: 2), in: sheet)!]))
+            return (selectors, String(sheet[try XCTUnwrap(Range(match.range(at: 2), in: sheet))]))
         }
     }
 
@@ -174,9 +174,14 @@ final class DocTemplateTests: XCTestCase {
                 XCTAssertTrue(selector.contains(".doc-table"), selector)
             }
             let touchesTable = rule.selectors.contains { $0.contains(".doc-table") }
-            for border in rule.body.components(separatedBy: ";") where touchesTable && border.contains("border") {
-                guard border.contains("solid") else { continue }
-                XCTAssertTrue(border.contains("calc(1px * \(Self.k)) solid"), border)
+            let declarations = rule.body.components(separatedBy: ";").map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            for border in declarations where touchesTable && border.hasPrefix("border") {
+                guard !border.hasPrefix("border-radius"), !border.hasPrefix("border-collapse") else { continue }
+                XCTAssertTrue(
+                    border.hasSuffix(": 0") || border.contains(": calc(1px * \(Self.k)) "), "a border width: \(border)"
+                )
             }
         }
         let text = try template()

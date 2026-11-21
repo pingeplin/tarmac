@@ -97,6 +97,32 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(try column(String(repeating: "\u{1D400}", count: 39)), [false])
     }
 
+    /// S13 — the first and the last code point of every wide range count 2,
+    /// and the code point after each range counts 1.
+    func testS13EveryWideRangeIsWideToItsEdges() throws {
+        let ranges: [(UInt32, UInt32)] = [
+            (0x1100, 0x115F), (0x2E80, 0x303E), (0x3041, 0x33FF), (0x3400, 0x4DBF), (0x4E00, 0x9FFF),
+            (0xA000, 0xA4CF), (0xAC00, 0xD7A3), (0xF900, 0xFAFF), (0xFE30, 0xFE4F), (0xFF00, 0xFF60),
+            (0xFFE0, 0xFFE6), (0x1F300, 0x1F64F), (0x1F900, 0x1F9FF), (0x20000, 0x3FFFD),
+        ]
+        let context = try page()
+        let width = try XCTUnwrap(context.evaluateScript("""
+            (point) => tarmacDocLayout.textColumns(marked.lexer("| d |\\n|---|\\n| " +
+              String.fromCodePoint(point).repeat(20) + " |\\n")[0])[0]
+            """))
+        for (low, high) in ranges {
+            XCTAssertEqual(width.call(withArguments: [low]).toBool(), true, String(low, radix: 16))
+            XCTAssertEqual(width.call(withArguments: [high]).toBool(), true, String(high, radix: 16))
+        }
+        XCTAssertEqual(width.call(withArguments: [0x10FF]).toBool(), false)
+        XCTAssertEqual(width.call(withArguments: [0x1F650]).toBool(), false)
+    }
+
+    /// S38 — an escaped character is prose.
+    func testS38AnEscapeCountsAsProse() throws {
+        XCTAssertEqual(try textColumns(table("d", "| \(a(38))\\*\\* |")), [true])
+    }
+
     /// S14
     func testS14AHeaderOnlyTableHasNoTextColumn() throws {
         let markdown = "| \(a(50)) | b |\n|---|---|\n"
@@ -106,14 +132,14 @@ final class DocLayoutScriptTests: XCTestCase {
 
     /// S33
     func testS33EveryMarkdownTableIsWrappedAndTheRestIsMarkedsOwn() throws {
-        let markdown = "Some *text* here.\n\n" + table("a | b", "| 1 | 2 |") + "\n- item\n\n  " + table("c", "| 3 |")
+        let markdown = "Some *text*\nhere.\n\n" + table("a | b", "| 1 | 2 |") + "\n- item\n\n  " + table("c", "| 3 |")
         let html = try render(markdown)
 
         XCTAssertEqual(occurrences(of: "<div class=\"doc-table\"><table>", in: html), 2)
         XCTAssertEqual(occurrences(of: "</table>", in: html), 2)
         let closed = try NSRegularExpression(pattern: #"</table>\s*</div>"#)
         XCTAssertEqual(closed.numberOfMatches(in: html, range: NSRange(html.startIndex..., in: html)), 2)
-        XCTAssertTrue(html.hasPrefix(try markedParse("Some *text* here.")))
+        XCTAssertTrue(html.hasPrefix(try markedParse("Some *text*\nhere.")))
     }
 
     /// S34
