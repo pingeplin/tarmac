@@ -125,4 +125,11 @@ final class DocFrontMatterTests: XCTestCase {
         XCTAssertEqual(first.fields, [field("title", "x")])
         XCTAssertEqual(first.body, "mid\n---\nend")
     }
+
+    /// D19: the fields as the page takes them, `[key, value]`, a list as an array.
+    func test2611_0022D19TheFieldsThePageIsGiven() {
+        let page = DocFrontMatter.page([field("title", "a\nb"), field("tags", list: ["x", "y"])])
+        XCTAssertEqual(page as NSArray, [["title", "a\nb"], ["tags", ["x", "y"]]] as NSArray)
+        XCTAssertEqual(DocFrontMatter.page([]) as NSArray, [] as NSArray)
+    }
 }

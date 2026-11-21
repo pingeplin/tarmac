@@ -181,6 +181,18 @@
       if (mode === "overlay" && icon === section) return { post: "close", section };
       return { post: null, section: mode === "overlay" ? icon : section };
     },
+    // The strip shows unless a docked panel covers its place; a collapsed
+    // drag has no panel.
+    parts(mode, box, state) {
+      return {
+        strip: mode !== "none" && !(mode === "docked" && box.panel > 0),
+        panelLeft: mode === "overlay" ? state.strip : 0,
+        grip: state.resizable && box.panel > 0,
+      };
+    },
+    pressOnText(mode) {
+      return mode === "overlay" ? "close" : null;
+    },
     scrollTarget(headingTop, viewHeight, scrollHeight, zoom) {
       return Math.min(Math.max(headingTop - 8 * zoom, 0), Math.max(0, scrollHeight - viewHeight));
     },

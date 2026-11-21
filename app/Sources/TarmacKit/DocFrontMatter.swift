@@ -37,6 +37,17 @@ public enum DocFrontMatter {
         return (fields(block), body)
     }
 
+    /// The fields as the page takes them (D19): `[key, value]`, a text as a
+    /// string and a list as an array of strings.
+    public static func page(_ fields: [Field]) -> [[Any]] {
+        fields.map { field in
+            switch field.value {
+            case .text(let text): [field.key, text]
+            case .list(let items): [field.key, items]
+            }
+        }
+    }
+
     private static func line(_ bytes: Substring.UTF8View) -> String {
         let line = String(Substring(bytes))
         return line.hasSuffix("\r") ? String(line.dropLast()) : line

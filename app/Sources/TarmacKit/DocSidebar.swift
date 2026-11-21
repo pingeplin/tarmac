@@ -109,4 +109,44 @@ public enum DocSidebar {
     public static func hasContent(fieldCount: Int, outlineCount: Int) -> Bool {
         fieldCount > 0 || outlineCount > 0
     }
+
+    /// The state the page lays its sidebar out by (D12).
+    public struct PageState: Equatable, Sendable {
+        public let mode: String
+        public let width: Double
+        public let maxWidth: Double
+        public let resizable: Bool
+
+        public init(mode: String, width: Double, maxWidth: Double, resizable: Bool) {
+            self.mode = mode
+            self.width = width
+            self.maxWidth = maxWidth
+            self.resizable = resizable
+        }
+
+        public var arguments: [String: Any] {
+            [
+                "mode": mode, "width": width, "minWidth": minimum, "maxWidth": maxWidth, "resizable": resizable,
+                "strip": strip, "grip": grip, "side": "left",
+            ]
+        }
+    }
+
+    public static func pageState(cardWidth: Double, hasContent: Bool, stored: Stored, overlayOpen: Bool) -> PageState {
+        let range = range(cardWidth: cardWidth)
+        let mode = mode(cardWidth: cardWidth, hasContent: hasContent, stored: stored, overlayOpen: overlayOpen)
+        let name: String
+        var width = min(max(stored.width ?? standard, range.lowerBound), range.upperBound)
+        switch mode {
+        case .none: name = "none"
+        case .strip: name = "strip"
+        case .docked(let shown):
+            name = "docked"
+            width = shown
+        case .overlay(let shown):
+            name = "overlay"
+            width = shown
+        }
+        return PageState(mode: name, width: width, maxWidth: range.upperBound, resizable: resizable(cardWidth: cardWidth))
+    }
 }

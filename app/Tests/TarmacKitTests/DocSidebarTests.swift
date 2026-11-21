@@ -163,4 +163,26 @@ final class DocSidebarTests: XCTestCase {
         XCTAssertTrue(DocSidebar.hasContent(fieldCount: 1, outlineCount: 0))
         XCTAssertTrue(DocSidebar.hasContent(fieldCount: 0, outlineCount: 1))
     }
+
+    /// D12: the state the page is given, its numbers all the kit's.
+    func test2611_0022D12ThePageState() {
+        func state(_ cardWidth: Double, hasContent: Bool = true, stored: Stored = Stored(), overlayOpen: Bool = false)
+            -> DocSidebar.PageState {
+            DocSidebar.pageState(cardWidth: cardWidth, hasContent: hasContent, stored: stored, overlayOpen: overlayOpen)
+        }
+        typealias State = DocSidebar.PageState
+        XCTAssertEqual(state(wide, stored: Stored(width: 300)), State(mode: "docked", width: 300, maxWidth: 420, resizable: true))
+        XCTAssertEqual(state(700, stored: Stored(width: 400)), State(mode: "docked", width: 308, maxWidth: 308, resizable: true))
+        XCTAssertEqual(state(wide, stored: Stored(open: false)), State(mode: "strip", width: 240, maxWidth: 420, resizable: true))
+        XCTAssertEqual(state(narrow, stored: Stored(width: 420)), State(mode: "strip", width: 342, maxWidth: 342, resizable: true))
+        XCTAssertEqual(state(narrow, overlayOpen: true), State(mode: "overlay", width: 240, maxWidth: 342, resizable: true))
+        XCTAssertEqual(state(200, overlayOpen: true), State(mode: "overlay", width: 150, maxWidth: 150, resizable: false))
+        XCTAssertEqual(state(wide, hasContent: false), State(mode: "none", width: 240, maxWidth: 420, resizable: true))
+
+        let arguments = state(wide, stored: Stored(width: 300)).arguments as NSDictionary
+        XCTAssertEqual(arguments, [
+            "mode": "docked", "width": 300, "minWidth": 160, "maxWidth": 420, "resizable": true,
+            "strip": 30, "grip": 8, "side": "left",
+        ] as NSDictionary)
+    }
 }

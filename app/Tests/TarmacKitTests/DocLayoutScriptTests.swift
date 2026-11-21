@@ -345,4 +345,30 @@ final class DocLayoutScriptTests: XCTestCase {
             XCTAssertEqual(try json("tarmacDocLayout.scrollTarget(\(arguments))"), target, arguments)
         }
     }
+
+    /// 2611.0022 D11b, D13, D16: what of the sidebar shows and where the panel starts.
+    func test2611_0022TheSidebarsParts() throws {
+        func parts(_ mode: String, panel: Int, resizable: Bool = true) throws -> String {
+            let state = "{strip: 30, grip: 8, resizable: \(resizable)}"
+            return try json("tarmacDocLayout.parts('\(mode)', {panel: \(panel)}, \(state))")
+        }
+        func box(_ strip: Bool, _ left: Int, _ grip: Bool) -> String {
+            #"{"strip":\#(strip),"panelLeft":\#(left),"grip":\#(grip)}"#
+        }
+        XCTAssertEqual(try parts("none", panel: 0), box(false, 0, false))
+        XCTAssertEqual(try parts("strip", panel: 0), box(true, 0, false))
+        XCTAssertEqual(try parts("docked", panel: 240), box(false, 0, true))
+        XCTAssertEqual(try parts("docked", panel: 0), box(true, 0, false))
+        XCTAssertEqual(try parts("overlay", panel: 240), box(true, 30, true))
+        XCTAssertEqual(try parts("overlay", panel: 0), box(true, 30, false))
+        XCTAssertEqual(try parts("overlay", panel: 150, resizable: false), box(true, 30, false))
+    }
+
+    /// 2611.0022 D17: a press on the text closes an overlay and nothing else.
+    func test2611_0022APressOnTheTextClosesAnOverlay() throws {
+        XCTAssertEqual(try json("tarmacDocLayout.pressOnText('overlay')"), #""close""#)
+        for mode in ["none", "strip", "docked"] {
+            XCTAssertEqual(try json("tarmacDocLayout.pressOnText('\(mode)')"), "null", mode)
+        }
+    }
 }
