@@ -171,15 +171,20 @@
     shownMode,
     geometry,
     release,
-    // A pointer back at its start, or one that never moved the sidebar, has
-    // not moved. A reported width is kept until the app's state carries it.
-    dragEnd(delta, drag) {
-      const report = release(delta !== 0 && drag !== null, drag);
+    // `moved`: the pointer moved during this press. A pointer back at its
+    // start has not moved either. A reported width is kept until the app
+    // answers the report.
+    dragEnd(moved, delta, drag) {
+      const report = release(moved && delta !== 0 && drag !== null, drag);
       return { report, drag: report ? drag : null };
     },
-    // A state from the app ends a released drag; one held goes on.
-    dragOnState(dragging, drag) {
-      return dragging ? drag : null;
+    // Only the app's answer to an action ends a released drag; a layout (a
+    // zoom, a card resize) keeps it, and a held drag goes on.
+    dragOnState(dragging, drag, fromAction) {
+      return !dragging && fromAction ? null : drag;
+    },
+    direction(side) {
+      return side === "right" ? -1 : 1;
     },
     strip(fieldCount, outline, current) {
       const icons = [];
@@ -192,7 +197,8 @@
       const lit = ticks.filter(function (tick) {
         return tick <= current;
       });
-      return { icons, ticks, lit: lit.length ? lit[lit.length - 1] : -1 };
+      // `section`: what a new render's panel shows first.
+      return { icons, ticks, lit: lit.length ? lit[lit.length - 1] : -1, section: icons.length ? icons[0] : null };
     },
     // `scroll` says when the panel scrolls to the section: once the app's
     // state opens it, now, or not at all.
