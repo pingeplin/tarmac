@@ -54,7 +54,10 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
     override var acceptsFirstResponder: Bool { false }
 
     // Read once: every doc card loads the same page and scripts.
-    private static let scripts = [BundledResource.web("marked.umd.js").text, BundledResource.web("doc-render.js").text]
+    private static let scripts = [
+        BundledResource.web("marked.umd.js").text, BundledResource.web("doc-layout.js").text,
+        BundledResource.web("doc-render.js").text,
+    ]
     private static let template = BundledResource.docTemplate.text
 
     init(path: String) {

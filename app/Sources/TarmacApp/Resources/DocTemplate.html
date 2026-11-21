@@ -56,11 +56,14 @@
     transform: scale(calc(var(--zoom) / var(--oversample-k)));
   }
   /* Laid out once at K times its size and never by --zoom, so a zoom cannot
-     move a wrap point; the scaler brings it down, which is never an upsample. */
+     move a wrap point; the scaler brings it down, which is never an upsample.
+     The padding centres the text column, measured in the prose's own em; the
+     blocks keep normal flow, so their margins still collapse. */
   .doc-prose {
+    --gutter: calc(22px * var(--oversample-k));
     width: calc(var(--card-w) * var(--oversample-k));
-    max-width: calc(720px * var(--oversample-k));
-    padding: calc(18px * var(--oversample-k)) calc(22px * var(--oversample-k));
+    padding: calc(18px * var(--oversample-k))
+      max(var(--gutter), calc((var(--card-w) * var(--oversample-k) - 46em) / 2));
     color: var(--prose-text);
     font-family: var(--prose-font);
     font-size: calc(var(--prose-size) * var(--oversample-k));
@@ -81,6 +84,10 @@
   .doc-prose ol {
     padding-inline-start: 2.857em;
   }
+  .doc-prose hr {
+    border: 0;
+    border-top: calc(1px * var(--oversample-k)) solid var(--line);
+  }
   .doc-prose blockquote {
     margin-inline: 2.857em;
   }
@@ -95,9 +102,76 @@
     background: var(--term-bg);
     padding: 0.8571em 1em;
     border-radius: 0.5714em;
-    overflow: visible;
-    white-space: pre-wrap;
-    word-break: break-word;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  /* Only a direct child breaks out: one inside a list or a quote keeps to
+     its container. */
+  .doc-prose > .doc-table,
+  .doc-prose > pre {
+    position: relative;
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    min-width: 100%;
+    max-width: min(calc(1040px * var(--oversample-k)), calc(var(--card-w) * var(--oversample-k) - 2 * var(--gutter)));
+  }
+  .doc-table {
+    margin: 1em 0;
+    border: calc(1px * var(--oversample-k)) solid var(--line);
+    border-radius: calc(8px * var(--oversample-k));
+    overflow-x: auto;
+  }
+  .doc-table table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .doc-table th,
+  .doc-table td {
+    padding: calc(8px * var(--oversample-k)) calc(12px * var(--oversample-k));
+    text-align: left;
+    vertical-align: top;
+  }
+  .doc-table th[align="center"],
+  .doc-table td[align="center"] {
+    text-align: center;
+  }
+  .doc-table th[align="right"],
+  .doc-table td[align="right"] {
+    text-align: right;
+  }
+  .doc-table th {
+    font-size: 0.82em;
+    font-weight: 500;
+    color: var(--muted);
+    background: var(--bg2);
+    white-space: nowrap;
+    border-bottom: calc(1px * var(--oversample-k)) solid var(--line);
+  }
+  .doc-table tbody tr + tr td {
+    border-top: calc(1px * var(--oversample-k)) solid var(--line);
+  }
+  .doc-table th code,
+  .doc-table td code {
+    white-space: nowrap;
+  }
+  .doc-table .doc-text-col {
+    min-width: calc(220px * var(--oversample-k));
+  }
+  /* The page hides its own scroll bar; a box that scrolls sideways shows one,
+     so the reader sees there is more. */
+  .doc-table::-webkit-scrollbar,
+  .doc-prose pre::-webkit-scrollbar {
+    height: calc(8px * var(--oversample-k));
+  }
+  .doc-table::-webkit-scrollbar-thumb,
+  .doc-prose pre::-webkit-scrollbar-thumb {
+    background: var(--muted);
+    border-radius: calc(4px * var(--oversample-k));
+  }
+  .doc-table::-webkit-scrollbar-track,
+  .doc-prose pre::-webkit-scrollbar-track {
+    background: transparent;
   }
   .doc-prose pre code {
     background: none;
