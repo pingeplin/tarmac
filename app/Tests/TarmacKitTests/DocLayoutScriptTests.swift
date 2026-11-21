@@ -430,10 +430,4 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(try json("tarmacDocLayout.activeIcon('strip', 'fields')"), "null")
         XCTAssertEqual(try json("tarmacDocLayout.activeIcon('docked', 'outline')"), "null")
     }
-
-    /// 2611.0022 D12: a render applies its own state unless a later one landed while it waited.
-    func test2611_0022ARenderTakesTheLatestState() throws {
-        XCTAssertEqual(try json("tarmacDocLayout.stateForRender({m: 'g'}, 3, {m: 's'}, 3)"), #"{"m":"g"}"#)
-        XCTAssertEqual(try json("tarmacDocLayout.stateForRender({m: 'g'}, 3, {m: 's'}, 4)"), #"{"m":"s"}"#)
-    }
 }

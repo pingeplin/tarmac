@@ -38,10 +38,8 @@
   // this keeps what the rules are given and applies what they answer.
   // Set by `layout`, which the app sends before any render or state.
   let cardWidth;
-  // The last state the app sent, null before the first, and how many have
-  // landed.
+  // The last state the app sent; a layout carries one before any render.
   let state = null;
-  let states = 0;
   let fieldCount = 0;
   let outline = [];
   // The current render's headings, by outline index, and their tops in the
@@ -98,7 +96,6 @@
 
   function takeState(given) {
     state = given;
-    states += 1;
     drag = rules.dragOnState(dragging !== null, drag);
     const parts = applySide();
     const opened = rules.sectionOnState(showSectionOnOpen, parts.panel);
@@ -376,11 +373,10 @@
 
   window.tarmacDoc = {
     // `fields` are [key, value] pairs, a value a string or an array of
-    // strings. Resolves to the outline's length, or to nothing when a later
-    // render replaced this one.
-    async render(markdown, fields, given) {
+    // strings. The new content is laid out by the last state: the page alone
+    // decides that one with no fields and no outline shows no sidebar.
+    async render(markdown, fields) {
       const render = ++renders;
-      const seen = states;
       const mark = "m" + render + "-" + Math.random().toString(36).slice(2);
       const parsed = rules.parse(markdown, mark);
       // A template has no browsing context, so no image is fetched before its
@@ -394,7 +390,7 @@
             return image.getAttribute("src") || "";
           }),
         );
-        if (render !== renders) return undefined;
+        if (render !== renders) return;
         images.forEach(function (image, index) {
           image.setAttribute("src", sources[index]);
         });
@@ -404,13 +400,12 @@
       outline = parsed.outline;
       headings = markedHeadings(mark);
       buildSide(fields);
-      takeState(rules.stateForRender(given, seen, state, states));
+      applySide();
       remeasure();
       // What was focused or under the pointer was just replaced, with no
       // event to say so.
       focusMoved();
       pointerIs(false);
-      return { outline: outline.length };
     },
 
     // Called before the web view takes its new size.

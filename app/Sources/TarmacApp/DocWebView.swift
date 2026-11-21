@@ -48,14 +48,11 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
     /// The web view carries `DocFrameRule`, so a web page the doc frames is
     /// kept off the img host.
     private var framesGuarded = false
-    /// The doc's body and front matter, and the read they came from.
+    /// The doc's body and front matter.
     private var markdown: String?
     private var fields: [DocFrontMatter.Field] = []
-    private var shownRead = 0
     /// A narrow card's open overlay, never stored.
     private var overlayOpen = false
-    /// Whether the doc has fields or an outline, as its last render said.
-    private var hasContent = true
     private var lastChangedMs: UInt64?
     /// Reads are answered off the main thread; only the latest one is shown.
     private var reads = LoadCount()
@@ -166,7 +163,6 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
                 guard let self, self.reads.isCurrent(read) else { return }
                 self.markdown = split.body
                 self.fields = split.fields
-                self.shownRead = read
                 self.render()
             }
         }
@@ -178,37 +174,26 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
 
     // MARK: - Page
 
-    /// The state is the one of a doc with content: the page shows none while
-    /// what it renders has no fields and no outline.
+    /// The page lays the new content out by the last state it was given: a
+    /// layout always reaches it first (`didFinish`), and only the page knows
+    /// whether the content has fields or an outline.
     private func render() {
         guard pageLoaded, let markdown else { return }
-        let read = shownRead
-        let loads = pageLoads
-        let fieldCount = fields.count
-        webView.callAsyncJavaScript(
-            "return await tarmacDoc.render(markdown, fields, state)",
-            arguments: [
-                "markdown": markdown, "fields": DocFrontMatter.page(fields),
-                "state": sidebarState(hasContent: true).arguments,
-            ],
-            in: nil, in: CardWebView.world
-        ) { [weak self] result in
-            guard let self, self.reads.isCurrent(read), loads == self.pageLoads,
-                  let count = DocSidebar.outlineCount(result: try? result.get()) else { return }
-            self.hasContent = DocSidebar.hasContent(fieldCount: fieldCount, outlineCount: count)
-            self.sendSidebar()
-        }
+        webView.runInCardWorld(
+            "await tarmacDoc.render(markdown, fields)",
+            arguments: ["markdown": markdown, "fields": DocFrontMatter.page(fields)]
+        )
     }
 
     private var cardWidth: Double { Double(CardBox.cardSize(ofBody: bounds.size).width) }
 
-    private func sidebarState(hasContent: Bool) -> DocSidebar.PageState {
-        DocSidebar.pageState(cardWidth: cardWidth, hasContent: hasContent, stored: stored(), overlayOpen: overlayOpen)
+    private func sidebarState() -> DocSidebar.PageState {
+        DocSidebar.pageState(cardWidth: cardWidth, stored: stored(), overlayOpen: overlayOpen)
     }
 
     private func sendSidebar() {
         guard pageLoaded else { return }
-        webView.runInCardWorld("tarmacDoc.sidebar(state)", arguments: ["state": sidebarState(hasContent: hasContent).arguments])
+        webView.runInCardWorld("tarmacDoc.sidebar(state)", arguments: ["state": sidebarState().arguments])
     }
 
     /// An action of the page's sidebar; one the page cannot have meant changes nothing.
@@ -257,7 +242,7 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
         guard pageLoaded else { return }
         webView.runInCardWorld("tarmacDoc.layout(zoom, cardWidth, height, state)", arguments: [
             "zoom": Double(host.settledZoom), "cardWidth": cardWidth, "height": Double(viewport.height),
-            "state": sidebarState(hasContent: hasContent).arguments,
+            "state": sidebarState().arguments,
         ])
     }
 

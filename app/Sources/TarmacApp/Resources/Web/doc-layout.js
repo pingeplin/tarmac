@@ -208,10 +208,6 @@
     activeIcon(mode, section) {
       return mode === "overlay" ? section : null;
     },
-    // `seen` is how many states had landed when the render began.
-    stateForRender(given, seen, latest, landed) {
-      return landed > seen ? latest : given;
-    },
     // The strip shows unless a docked panel covers its place; a collapsed
     // drag has no panel.
     parts(mode, box, state) {

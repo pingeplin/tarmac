@@ -1,7 +1,7 @@
 import XCTest
 @testable import TarmacKit
 
-/// 2611.0022 D4–D8a: the markdown card's sidebar mode, its width range, what
+/// 2611.0022 D4–D8: the markdown card's sidebar mode, its width range, what
 /// the page's actions do to the card's choice, and the page's reports.
 final class DocSidebarTests: XCTestCase {
     private typealias Stored = DocSidebar.Stored
@@ -10,26 +10,15 @@ final class DocSidebarTests: XCTestCase {
     private let narrow = 392.0
 
     private func mode(
-        _ cardWidth: Double, hasContent: Bool = true, stored: Stored = Stored(), overlayOpen: Bool = false
+        _ cardWidth: Double, stored: Stored = Stored(), overlayOpen: Bool = false
     ) -> DocSidebar.Mode {
-        DocSidebar.mode(cardWidth: cardWidth, hasContent: hasContent, stored: stored, overlayOpen: overlayOpen)
+        DocSidebar.mode(cardWidth: cardWidth, stored: stored, overlayOpen: overlayOpen)
     }
 
     private func apply(
         _ action: DocSidebar.Action, _ cardWidth: Double, stored: Stored = Stored(), overlayOpen: Bool = false
     ) -> (stored: Stored, overlayOpen: Bool) {
         DocSidebar.apply(action, stored: stored, overlayOpen: overlayOpen, cardWidth: cardWidth)
-    }
-
-    /// S13
-    func test2611_0022S13NoContentIsNoSidebarAtAnyWidth() {
-        for cardWidth in [160.0, 392, 632, 1280] {
-            XCTAssertEqual(mode(cardWidth, hasContent: false), .none, "\(cardWidth)")
-            XCTAssertEqual(
-                mode(cardWidth, hasContent: false, stored: Stored(width: 300, open: true), overlayOpen: true), .none,
-                "\(cardWidth)"
-            )
-        }
     }
 
     /// S14
@@ -151,25 +140,10 @@ final class DocSidebarTests: XCTestCase {
         }
     }
 
-    /// S23a
-    func test2611_0022S23aTheRenderResult() {
-        XCTAssertEqual(DocSidebar.outlineCount(result: ["outline": 3]), 3)
-        XCTAssertEqual(DocSidebar.outlineCount(result: ["outline": 0]), 0)
-        let refused: [Any?] = [nil, [String: Any](), ["outline": -1], ["outline": 2.5], ["outline": "3"], ["outline": NSNumber(value: true)], [3]]
-        for result in refused {
-            XCTAssertNil(DocSidebar.outlineCount(result: result), "\(String(describing: result))")
-        }
-
-        XCTAssertFalse(DocSidebar.hasContent(fieldCount: 0, outlineCount: 0))
-        XCTAssertTrue(DocSidebar.hasContent(fieldCount: 1, outlineCount: 0))
-        XCTAssertTrue(DocSidebar.hasContent(fieldCount: 0, outlineCount: 1))
-    }
-
     /// D12: the state the page is given, its numbers all the kit's.
     func test2611_0022D12ThePageState() {
-        func state(_ cardWidth: Double, hasContent: Bool = true, stored: Stored = Stored(), overlayOpen: Bool = false)
-            -> DocSidebar.PageState {
-            DocSidebar.pageState(cardWidth: cardWidth, hasContent: hasContent, stored: stored, overlayOpen: overlayOpen)
+        func state(_ cardWidth: Double, stored: Stored = Stored(), overlayOpen: Bool = false) -> DocSidebar.PageState {
+            DocSidebar.pageState(cardWidth: cardWidth, stored: stored, overlayOpen: overlayOpen)
         }
         typealias State = DocSidebar.PageState
         XCTAssertEqual(state(wide, stored: Stored(width: 300)), State(mode: "docked", width: 300, maxWidth: 420, resizable: true))
@@ -178,7 +152,6 @@ final class DocSidebarTests: XCTestCase {
         XCTAssertEqual(state(narrow, stored: Stored(width: 420)), State(mode: "strip", width: 342, maxWidth: 342, resizable: true))
         XCTAssertEqual(state(narrow, overlayOpen: true), State(mode: "overlay", width: 240, maxWidth: 342, resizable: true))
         XCTAssertEqual(state(200, overlayOpen: true), State(mode: "overlay", width: 150, maxWidth: 150, resizable: false))
-        XCTAssertEqual(state(wide, hasContent: false), State(mode: "none", width: 240, maxWidth: 420, resizable: true))
 
         let arguments = state(wide, stored: Stored(width: 300)).arguments as NSDictionary
         XCTAssertEqual(arguments, [

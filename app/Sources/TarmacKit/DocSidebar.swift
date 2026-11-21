@@ -1,6 +1,6 @@
 import Foundation
 
-/// The markdown card's sidebar rules (spec 2611.0022, D4–D8a), in world px.
+/// The markdown card's sidebar rules (spec 2611.0022, D4–D8), in world px.
 public enum DocSidebar {
     public static let standard = 240.0
     public static let minimum = 160.0
@@ -22,7 +22,6 @@ public enum DocSidebar {
     }
 
     public enum Mode: Equatable, Sendable {
-        case none
         case strip
         case docked(Double)
         case overlay(Double)
@@ -65,8 +64,8 @@ public enum DocSidebar {
         return range.upperBound > range.lowerBound
     }
 
-    public static func mode(cardWidth: Double, hasContent: Bool, stored: Stored, overlayOpen: Bool) -> Mode {
-        guard hasContent else { return .none }
+    /// As for a doc with content: the page shows none for one without.
+    public static func mode(cardWidth: Double, stored: Stored, overlayOpen: Bool) -> Mode {
         let range = range(cardWidth: cardWidth)
         let width = min(max(stored.width ?? standard, range.lowerBound), range.upperBound)
         if isWide(cardWidth: cardWidth) { return stored.open ?? true ? .docked(width) : .strip }
@@ -99,17 +98,6 @@ public enum DocSidebar {
         return (stored, overlayOpen)
     }
 
-    /// The page's render result, `{outline: n}`.
-    public static func outlineCount(result: Any?) -> Int? {
-        guard let fields = result as? [String: Any], let raw = fields["outline"],
-              case .number(let count)? = JSONValue(foundation: raw), count >= 0 else { return nil }
-        return Int(exactly: count)
-    }
-
-    public static func hasContent(fieldCount: Int, outlineCount: Int) -> Bool {
-        fieldCount > 0 || outlineCount > 0
-    }
-
     /// The state the page lays its sidebar out by (D12).
     public struct PageState: Equatable, Sendable {
         public let mode: String
@@ -132,13 +120,12 @@ public enum DocSidebar {
         }
     }
 
-    public static func pageState(cardWidth: Double, hasContent: Bool, stored: Stored, overlayOpen: Bool) -> PageState {
+    public static func pageState(cardWidth: Double, stored: Stored, overlayOpen: Bool) -> PageState {
         let range = range(cardWidth: cardWidth)
-        let mode = mode(cardWidth: cardWidth, hasContent: hasContent, stored: stored, overlayOpen: overlayOpen)
+        let mode = mode(cardWidth: cardWidth, stored: stored, overlayOpen: overlayOpen)
         let name: String
         var width = min(max(stored.width ?? standard, range.lowerBound), range.upperBound)
         switch mode {
-        case .none: name = "none"
         case .strip: name = "strip"
         case .docked(let shown):
             name = "docked"
