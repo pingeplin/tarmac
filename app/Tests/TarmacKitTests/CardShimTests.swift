@@ -138,9 +138,11 @@ final class CardShimTests: XCTestCase {
           },
         },
       });
-      // A constructed stylesheet with the rules it was given, and the shim as
-      // far as it had come when the sheet was made. Left out, as in an engine
-      // without them, when `omitNative` is CSSStyleSheet.
+      // A constructed stylesheet with the text and the rules it was given,
+      // and the shim as far as it had come when the sheet was made. Left out,
+      // as in an engine without them, when `omitNative` is CSSStyleSheet. Its
+      // `replaceSync` throws for a text `h.refuse` names, and records it.
+      const refused = [];
       if (omitNative !== "CSSStyleSheet") {
         document.adoptedStyleSheets = [];
         globalThis.CSSStyleSheet = class {
@@ -150,6 +152,11 @@ final class CardShimTests: XCTestCase {
             sheets.push(this);
           }
           replaceSync(text) {
+            if (h.refuse && h.refuse(text)) {
+              refused.push(text);
+              throw new Error("refused");
+            }
+            this.text = text;
             this.cssRules = text === ":root{}" ? [{ selectorText: ":root", style: { values: {}, setProperty(name, value) { this.values[name] = value; } } }] : [];
           }
         };
@@ -238,6 +245,8 @@ final class CardShimTests: XCTestCase {
         style,
         rootWrites,
         sheets,
+        refuse: null,
+        refused,
         calls,
         send: (data, source = parent) => emit(listeners, "message", { source, data }),
         fire: (type, event) => emit(listeners, type, event),
@@ -371,11 +380,13 @@ final class CardShimTests: XCTestCase {
         return context
     }
 
+    /// `before` runs in the window before the shim does.
     private func loadShim(
         meta: String? = "magnify", omitting native: String? = nil, head: Bool = false, fonts: CardFontVariables? = nil,
-        data: String? = nil
+        data: String? = nil, before: String? = nil
     ) throws -> Shim {
         let context = try window(meta: meta, omitting: native, head: head, data: data)
+        if let before { context.evaluateScript(before) }
         let raw = try source()
         context.evaluateScript(fonts?.filling(raw) ?? raw)
         return Shim(context: context)
@@ -1896,5 +1907,38 @@ final class CardShimTests: XCTestCase {
             XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "S27 held \(held): ready")
             XCTAssertEqual(try shim.posted().count, 2, "S27 held \(held): started and ready, nothing more")
         }
+    }
+
+    // MARK: - the media cap (2611.0020 S19, S20)
+
+    func test2611_0020S19WithoutTheMediaSheetTheRestOfTheShimStillRuns() throws {
+        let cases: [(String, Shim)] = [
+            ("no CSSStyleSheet", try loadShim(omitting: "CSSStyleSheet")),
+            ("no adoptedStyleSheets", try loadShim(before: "delete document.adoptedStyleSheets")),
+            ("the media rule throws", try loadShim(fonts: Self.fonts, before: "h.refuse = (text) => text.includes('object-fit')")),
+        ]
+        for (name, shim) in cases {
+            shim.run("h.domReady()")
+            XCTAssertEqual(try shim.posted().map { $0["tarmac"] as? String }, ["started", "ready"], "S19 \(name): posted")
+            shim.run("h.send({ tarmac: 'zoom', z: 3 })")
+            XCTAssertEqual(shim.number("h.style.zoom"), 3, "S19 \(name): zoom")
+            XCTAssertEqual(try shim.posted().count, 2, "S19 \(name): nothing more posted")
+        }
+        let refused = cases[2].1
+        XCTAssertEqual(try refused.count("h.refused"), 1, "S19: one throw")
+        XCTAssertEqual(try declared(refused), try vars(Self.fonts), "S19: the font sheet")
+    }
+
+    func test2611_0020S20ARawShimAdoptsTheMediaSheetAtBoot() throws {
+        let shim = try loadShim()
+        XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 1, "S20: one sheet")
+        let rules = """
+        :where(svg[viewBox], img, video, canvas) { max-width: min(100%, 560px); object-fit: contain; }
+        :where(img[width], svg[viewBox][width], video[width]) { height: auto; }
+        """
+        XCTAssertEqual(
+            shim.run("document.adoptedStyleSheets[0].text.replace(/\\s/g, '')").toString(),
+            rules.filter { !$0.isWhitespace }
+        )
     }
 }
