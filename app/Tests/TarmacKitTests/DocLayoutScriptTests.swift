@@ -171,4 +171,164 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertFalse(html.contains("doc-table"))
         XCTAssertFalse(html.contains("doc-text-col"))
     }
+
+    // 2611.0022: the outline and the sidebar's page rules.
+
+    private func json(_ expression: String, markdown: String = "") throws -> String {
+        try evaluate("JSON.stringify(\(expression))", markdown: markdown)
+    }
+
+    private func outline(_ markdown: String) throws -> String {
+        try json("tarmacDocLayout.parse(md, '').outline", markdown: markdown)
+    }
+
+    private func headingText(_ markdown: String) throws -> String {
+        try evaluate("tarmacDocLayout.parse(md, '').outline[0].text", markdown: markdown)
+    }
+
+    private let outlined = "# A\n\ntext\n\n## B\n\n#### D\n\n- item\n\n  ### C\n\nSet\n---\n"
+
+    /// 2611.0022 S24
+    func test2611_0022S24TheOutlineIsEveryHeadingToDepthThreeNestedOnesToo() throws {
+        XCTAssertEqual(
+            try outline(outlined),
+            #"[{"depth":1,"text":"A"},{"depth":2,"text":"B"},{"depth":3,"text":"C"},{"depth":2,"text":"Set"}]"#
+        )
+        XCTAssertEqual(try outline("> ### Q\n\n# R"), #"[{"depth":3,"text":"Q"},{"depth":1,"text":"R"}]"#)
+    }
+
+    /// 2611.0022 S25
+    func test2611_0022S25AHeadingsTextIsItsPlainText() throws {
+        XCTAssertEqual(try headingText("## The `code` *and* **marks**"), "The code and marks")
+        XCTAssertEqual(try headingText("## [Link](u) \\* <b>x</b>  y"), "Link * x y")
+        XCTAssertEqual(try headingText("## Tom &amp; Jerry &#x41;"), "Tom & Jerry A")
+        XCTAssertEqual(try headingText("## `a &amp; b`"), "a &amp; b")
+    }
+
+    /// 2611.0022 S26
+    func test2611_0022S26AnOutlinedHeadingCarriesTheRendersMark() throws {
+        let html = try evaluate("tarmacDocLayout.parse(md, 'k9').html", markdown: outlined)
+        let headings = [
+            "<h1 data-outline=\"k9-0\">A</h1>", "<h2 data-outline=\"k9-1\">B</h2>",
+            "<h3 data-outline=\"k9-2\">C</h3>", "<h2 data-outline=\"k9-3\">Set</h2>",
+        ]
+        let places = try headings.map { try XCTUnwrap(html.range(of: $0), $0).lowerBound }
+        XCTAssertEqual(places, places.sorted())
+        XCTAssertEqual(occurrences(of: "data-outline", in: html), 4)
+
+        let unmarked = try evaluate("tarmacDocLayout.parse(md, '').html", markdown: outlined)
+        XCTAssertFalse(unmarked.contains("data-outline"))
+        XCTAssertEqual(unmarked, html.replacingOccurrences(of: #" data-outline="k9-\d""#, with: "", options: .regularExpression))
+        XCTAssertEqual(try render(outlined), unmarked)
+    }
+
+    /// 2611.0022 S27
+    func test2611_0022S27ARawHTMLHeadingIsNotInTheOutline() throws {
+        let markdown = "<h2>raw</h2>\n\n## md"
+        XCTAssertEqual(try outline(markdown), #"[{"depth":2,"text":"md"}]"#)
+        XCTAssertTrue(try evaluate("tarmacDocLayout.parse(md, 'k9').html", markdown: markdown).contains("<h2>raw</h2>"))
+    }
+
+    /// 2611.0022 S28
+    func test2611_0022S28TheCurrentSection() throws {
+        let context = try page()
+        func current(_ tops: [Double], _ scrollTop: Double, _ view: Double, _ height: Double, _ zoom: Double) -> Int32? {
+            context.evaluateScript("tarmacDocLayout.currentSection")?
+                .call(withArguments: [tops, scrollTop, view, height, zoom]).toInt32()
+        }
+        for (scrollTop, index) in [(0.0, 0), (475, 0), (476, 1), (1175, 1), (1176, 2)] as [(Double, Int32)] {
+            XCTAssertEqual(current([0, 500, 1200], scrollTop, 400, 3000, 1), index, "\(scrollTop)")
+        }
+        XCTAssertEqual(current([0, 500, 1200], 487, 400, 3000, 0.5), 0)
+        XCTAssertEqual(current([0, 500, 1200], 488, 400, 3000, 0.5), 1)
+        XCTAssertEqual(current([37, 500], 0, 400, 3000, 1), 0)
+        XCTAssertEqual(current([0, 500, 2900], 2598, 400, 3000, 1), 1)
+        XCTAssertEqual(current([0, 500, 2900], 2599, 400, 3000, 1), 2)
+        XCTAssertEqual(current([37, 200, 300], 0, 400, 400, 1), 0)
+        XCTAssertEqual(current([], 0, 400, 3000, 1), -1)
+    }
+
+    /// 2611.0022 S29
+    func test2611_0022S29TheDragWidth() throws {
+        func drag(_ arguments: String) throws -> String { try json("tarmacDocLayout.dragWidth(\(arguments))") }
+        XCTAssertEqual(try drag("240, 30, 0.5, 1, 160, 420"), #"{"width":300,"collapsed":false}"#)
+        XCTAssertEqual(try drag("240, 30, 1, -1, 160, 420"), #"{"width":210,"collapsed":false}"#)
+        XCTAssertEqual(try drag("240, 400, 1, 1, 160, 420"), #"{"width":420,"collapsed":false}"#)
+        XCTAssertEqual(try drag("240, -81, 1, 1, 160, 420"), #"{"width":159,"collapsed":true}"#)
+        XCTAssertEqual(try drag("240, -80, 1, 1, 160, 420"), #"{"width":160,"collapsed":false}"#)
+        XCTAssertEqual(try drag("240, -300, 1, 1, 160, 420"), #"{"width":-60,"collapsed":true}"#)
+        XCTAssertEqual(try drag("200, 100, 1, 1, 160, 240"), #"{"width":240,"collapsed":false}"#)
+    }
+
+    /// 2611.0022 S29a
+    func test2611_0022S29aNoContentShowsNoSidebar() throws {
+        XCTAssertEqual(try evaluate("tarmacDocLayout.shownMode({mode: 'docked'}, 0, 0)", markdown: ""), "none")
+        XCTAssertEqual(try evaluate("tarmacDocLayout.shownMode({mode: 'docked'}, 1, 0)", markdown: ""), "docked")
+        XCTAssertEqual(try evaluate("tarmacDocLayout.shownMode({mode: 'docked'}, 0, 2)", markdown: ""), "docked")
+    }
+
+    /// 2611.0022 S29b
+    func test2611_0022S29bTheGeometryOfEachMode() throws {
+        func geometry(_ mode: String, _ width: Double = 240, drag: String = "null") throws -> String {
+            try json("tarmacDocLayout.geometry({mode: '\(mode)', width: \(width), strip: 30, grip: 8}, 1280, \(drag))")
+        }
+        func box(_ text: Double, _ offset: Double, _ panel: Double) -> String {
+            #"{"textWidth":\#(Int(text)),"offset":\#(Int(offset)),"panel":\#(Int(panel))}"#
+        }
+        XCTAssertEqual(try geometry("none"), box(1280, 0, 0))
+        XCTAssertEqual(try geometry("strip"), box(1250, 30, 0))
+        XCTAssertEqual(try geometry("docked"), box(1032, 248, 240))
+        XCTAssertEqual(try geometry("overlay"), box(1250, 30, 240))
+        XCTAssertEqual(try geometry("docked", drag: "{width: 300, collapsed: false}"), box(972, 308, 300))
+        XCTAssertEqual(try geometry("docked", drag: "{width: -60, collapsed: true}"), box(1250, 30, 0))
+        XCTAssertEqual(try geometry("overlay", drag: "{width: 200, collapsed: false}"), box(1250, 30, 200))
+        XCTAssertEqual(try geometry("overlay", drag: "{width: 100, collapsed: true}"), box(1250, 30, 0))
+        XCTAssertEqual(
+            try json("""
+                tarmacDocLayout.geometry(Object.assign({}, state, {mode: tarmacDocLayout.shownMode(state, 0, 0)}), 1280, null)
+                """.replacingOccurrences(of: "state", with: "{mode: 'docked', width: 240, strip: 30, grip: 8}")),
+            box(1280, 0, 0)
+        )
+    }
+
+    /// 2611.0022 S29c
+    func test2611_0022S29cTheReleaseReport() throws {
+        XCTAssertEqual(try json("tarmacDocLayout.release(false, {width: 300, collapsed: false})"), "null")
+        XCTAssertEqual(
+            try json("tarmacDocLayout.release(true, {width: 300, collapsed: false})"), #"{"action":"resize","width":300}"#
+        )
+        XCTAssertEqual(try json("tarmacDocLayout.release(true, {width: -60, collapsed: true})"), #"{"action":"close"}"#)
+    }
+
+    /// 2611.0022 S29d
+    func test2611_0022S29dTheStripsIconsAndTicks() throws {
+        let outline = "[1, 2, 3, 2, 3].map(function (depth) { return {depth: depth, text: 'h'}; })"
+        func strip(_ fields: Int, _ outline: String, _ current: Int) throws -> String {
+            try json("tarmacDocLayout.strip(\(fields), \(outline), \(current))")
+        }
+        XCTAssertEqual(try strip(2, outline, 2), #"{"icons":["fields","outline"],"ticks":[0,1,3],"lit":1}"#)
+        XCTAssertEqual(try json("tarmacDocLayout.strip(2, \(outline), 4).lit"), "3")
+        XCTAssertEqual(try json("tarmacDocLayout.strip(2, \(outline), -1).lit"), "-1")
+        XCTAssertEqual(try json("tarmacDocLayout.strip(0, \(outline), 2).icons"), #"["outline"]"#)
+        XCTAssertEqual(try strip(1, "[]", -1), #"{"icons":["fields"],"ticks":[],"lit":-1}"#)
+    }
+
+    /// 2611.0022 S29e
+    func test2611_0022S29eAnIconClick() throws {
+        func click(_ arguments: String) throws -> String { try json("tarmacDocLayout.iconClick(\(arguments))") }
+        XCTAssertEqual(try click("'strip', 'fields', 'outline'"), #"{"post":"open","section":"outline"}"#)
+        XCTAssertEqual(try click("'overlay', 'outline', 'outline'"), #"{"post":"close","section":"outline"}"#)
+        XCTAssertEqual(try click("'overlay', 'outline', 'fields'"), #"{"post":null,"section":"fields"}"#)
+        XCTAssertEqual(try click("'docked', 'outline', 'fields'"), #"{"post":null,"section":"outline"}"#)
+    }
+
+    /// 2611.0022 S29f
+    func test2611_0022S29fTheScrollTarget() throws {
+        for (arguments, target) in [
+            ("500, 400, 3000, 1", "492"), ("500, 400, 3000, 0.5", "496"), ("4, 400, 3000, 1", "0"),
+            ("2900, 400, 3000, 1", "2600"), ("10, 400, 300, 1", "0"),
+        ] {
+            XCTAssertEqual(try json("tarmacDocLayout.scrollTarget(\(arguments))"), target, arguments)
+        }
+    }
 }

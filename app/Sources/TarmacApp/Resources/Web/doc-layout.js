@@ -71,5 +71,32 @@
       return layout.parse(markdown, { async: false });
     },
     textColumns,
+    parse(markdown, mark) {
+      return { html: "", outline: [{ depth: 0, text: "" }] };
+    },
+    currentSection(tops, scrollTop, viewHeight, scrollHeight, zoom) {
+      return -2;
+    },
+    dragWidth(startWidth, deltaScreen, zoom, direction, minWidth, maxWidth) {
+      return { width: 0, collapsed: false };
+    },
+    shownMode(state, fieldCount, outlineCount) {
+      return "";
+    },
+    geometry(state, cardWidth, drag) {
+      return { textWidth: 0, offset: 0, panel: 0 };
+    },
+    release(moved, drag) {
+      return {};
+    },
+    strip(fieldCount, outline, current) {
+      return { icons: [], ticks: [], lit: -2 };
+    },
+    iconClick(mode, section, icon) {
+      return { post: "", section: "" };
+    },
+    scrollTarget(headingTop, viewHeight, scrollHeight, zoom) {
+      return -1;
+    },
   };
 })();
