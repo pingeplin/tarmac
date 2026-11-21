@@ -370,6 +370,105 @@
     } catch (e) {
       // ignore
     }
+    if (typeof z === "number" && z !== 1) markLists();
+  }
+
+  // List markers (spec 2611.0019). Under a root zoom other than 1, WebKit
+  // puts the first line of an item with an outside marker too far left, and
+  // the marker further still. Where the shim can draw the same marker, it
+  // marks the item and draws the marker with ::before. The author's computed
+  // style is read before the item is marked, so a marker the author chose is
+  // kept and an item never gets two.
+  var markerTypes = [
+    "disc", "circle", "square", "decimal", "decimal-leading-zero", "lower-roman", "upper-roman",
+    "lower-alpha", "upper-alpha", "lower-latin", "upper-latin", "lower-greek",
+  ];
+  var markerGlyphs = { disc: '"\\2022"', circle: '"\\25E6"', square: '"\\25AA"' };
+  var markerSheet = null;
+  var markerWatch = null;
+
+  function markerRules() {
+    // A zero-width float, in flow: it scrolls and paints with its item, and
+    // its content overflows to the left of the first line.
+    var rules = [
+      "li[data-tarmac-marker]{list-style-type:none!important}",
+      ":where(li[data-tarmac-marker])::before{float:left;box-sizing:content-box;width:0;margin-left:-.5em;" +
+        "padding-right:.5em;display:flex;justify-content:flex-end;white-space:nowrap;font-variant-numeric:tabular-nums}",
+    ];
+    markerTypes.forEach(function (t) {
+      var content = markerGlyphs[t] || "counter(list-item, " + t + ') "."';
+      rules.push(':where(li[data-tarmac-marker="' + t + '"])::before{content:' + content + "}");
+    });
+    return rules.join("\n");
+  }
+
+  function markerType(li) {
+    if (li.hasAttribute("data-tarmac-marker")) return null;
+    var s = getComputedStyle(li);
+    if (s.display !== "list-item" || s.listStylePosition !== "outside" || s.listStyleImage !== "none") return null;
+    if (s.direction !== "ltr" || s.writingMode !== "horizontal-tb") return null;
+    if (markerTypes.indexOf(s.listStyleType) < 0) return null;
+    var before = getComputedStyle(li, "::before").content;
+    return before === "none" || before === "normal" ? s.listStyleType : null;
+  }
+
+  function markItems(items) {
+    var picked = [];
+    items.forEach(function (li) {
+      var t = markerType(li);
+      if (t) picked.push([li, t]);
+    });
+    if (!picked.length) return;
+    if (!markerSheet) {
+      var sheet = new CSSStyleSheet();
+      sheet.replaceSync(markerRules());
+      document.adoptedStyleSheets = document.adoptedStyleSheets.concat(sheet);
+      markerSheet = sheet;
+    }
+    picked.forEach(function (p) {
+      p[0].setAttribute("data-tarmac-marker", p[1]);
+    });
+    // An author !important rule that outranks the sheet keeps the native
+    // marker; Tarmac's would be a second one.
+    picked.forEach(function (p) {
+      if (getComputedStyle(p[0]).listStyleType !== "none") p[0].removeAttribute("data-tarmac-marker");
+    });
+  }
+
+  function addedItems(records) {
+    var items = [];
+    records.forEach(function (r) {
+      Array.prototype.forEach.call(r.addedNodes, function (n) {
+        if (n.nodeType !== 1) return;
+        if (n.localName === "li") items.push(n);
+        if (typeof n.querySelectorAll === "function") {
+          Array.prototype.push.apply(items, n.querySelectorAll("li"));
+        }
+      });
+    });
+    return items;
+  }
+
+  function markLists() {
+    try {
+      if (typeof CSSStyleSheet !== "function" || typeof MutationObserver !== "function") return;
+      if (typeof getComputedStyle !== "function" || !Array.isArray(document.adoptedStyleSheets)) return;
+      if (typeof document.querySelectorAll !== "function") return;
+      if (!markerWatch) {
+        markerWatch = new MutationObserver(function (records) {
+          try {
+            var items = addedItems(records);
+            if (items.length) markItems(items);
+          } catch (e) {
+            // An item that is not marked keeps WebKit's own marker.
+          }
+        });
+        markerWatch.observe(document.documentElement, { childList: true, subtree: true });
+      }
+      markItems(Array.prototype.slice.call(document.querySelectorAll("li")));
+    } catch (e) {
+      // An item that is not marked keeps WebKit's own marker.
+    }
   }
 
   function readMeta() {
