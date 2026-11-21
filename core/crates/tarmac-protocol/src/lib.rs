@@ -464,6 +464,12 @@ pub struct Tile {
     /// single-terminal layouts, which the daemon keeps as one `None`-keyed tile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub term_id: Option<String>,
+    /// A markdown card's sidebar width, world px (spec 2611.0024).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sidebar_w: Option<f64>,
+    /// A markdown card's docked sidebar is open; missing => no choice yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sidebar_open: Option<bool>,
 }
 
 /// What the daemon keeps of one terminal across its restarts.
