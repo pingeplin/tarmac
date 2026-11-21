@@ -138,9 +138,11 @@ final class CardShimTests: XCTestCase {
           },
         },
       });
-      // A constructed stylesheet with the rules it was given, and the shim as
-      // far as it had come when the sheet was made. Left out, as in an engine
-      // without them, when `omitNative` is CSSStyleSheet.
+      // A constructed stylesheet with the text and the rules it was given,
+      // and the shim as far as it had come when the sheet was made. Left out,
+      // as in an engine without them, when `omitNative` is CSSStyleSheet. Its
+      // `replaceSync` throws for a text `h.refuse` names, and records it.
+      const refused = [];
       if (omitNative !== "CSSStyleSheet") {
         document.adoptedStyleSheets = [];
         globalThis.CSSStyleSheet = class {
@@ -150,6 +152,11 @@ final class CardShimTests: XCTestCase {
             sheets.push(this);
           }
           replaceSync(text) {
+            if (h.refuse && h.refuse(text)) {
+              refused.push(text);
+              throw new Error("refused");
+            }
+            this.text = text;
             this.cssRules = text === ":root{}" ? [{ selectorText: ":root", style: { values: {}, setProperty(name, value) { this.values[name] = value; } } }] : [];
           }
         };
@@ -238,6 +245,8 @@ final class CardShimTests: XCTestCase {
         style,
         rootWrites,
         sheets,
+        refuse: null,
+        refused,
         calls,
         send: (data, source = parent) => emit(listeners, "message", { source, data }),
         fire: (type, event) => emit(listeners, type, event),
@@ -371,11 +380,13 @@ final class CardShimTests: XCTestCase {
         return context
     }
 
+    /// `before` runs in the window before the shim does.
     private func loadShim(
         meta: String? = "magnify", omitting native: String? = nil, head: Bool = false, fonts: CardFontVariables? = nil,
-        data: String? = nil
+        data: String? = nil, before: String? = nil
     ) throws -> Shim {
         let context = try window(meta: meta, omitting: native, head: head, data: data)
+        if let before { context.evaluateScript(before) }
         let raw = try source()
         context.evaluateScript(fonts?.filling(raw) ?? raw)
         return Shim(context: context)
@@ -1262,9 +1273,11 @@ final class CardShimTests: XCTestCase {
     private static let fonts = CardFontVariables(interfaceFamily: "Menlo", documentFamily: "Georgia", documentSize: 16)
     private static let otherFonts = CardFontVariables(interfaceFamily: nil, documentFamily: nil, documentSize: 20)
 
-    /// The properties of the one `:root` rule of the constructed sheet.
-    private func declared(_ shim: Shim, sheet: Int = 0) throws -> [String: String] {
-        let json = shim.run("JSON.stringify(document.adoptedStyleSheets[\(sheet)].cssRules[0].style.values)")
+    /// The properties of the one `:root` rule of the font sheet: the adopted
+    /// sheet whose first rule is `:root`.
+    private func declared(_ shim: Shim) throws -> [String: String] {
+        let found = "document.adoptedStyleSheets.find((s) => s.cssRules && s.cssRules[0] && s.cssRules[0].selectorText === ':root')"
+        let json = shim.run("JSON.stringify(\(found).cssRules[0].style.values)")
         let text = try XCTUnwrap(json.isString ? json.toString() : nil, "no rule is declared")
         return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: String])
     }
@@ -1286,9 +1299,9 @@ final class CardShimTests: XCTestCase {
 
     func test2610_0010S10AFilledShimDeclaresTheThreePropertiesBeforeTheDocumentIsParsed() throws {
         let shim = try loadShim(fonts: Self.fonts)
-        XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 1, "S10: one sheet")
-        XCTAssertEqual(try shim.count("document.adoptedStyleSheets[0].cssRules"), 1, "S10: one rule")
-        XCTAssertEqual(shim.run("document.adoptedStyleSheets[0].cssRules[0].selectorText").toString(), ":root")
+        XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 2, "S10: the media sheet and the font sheet")
+        XCTAssertEqual(try shim.count("document.adoptedStyleSheets[1].cssRules"), 1, "S10: one rule")
+        XCTAssertEqual(shim.run("document.adoptedStyleSheets[1].cssRules[0].selectorText").toString(), ":root")
         XCTAssertEqual(try declared(shim), try vars(Self.fonts))
     }
 
@@ -1304,8 +1317,9 @@ final class CardShimTests: XCTestCase {
 
     func test2610_0010S12ARawShimDeclaresNothing() throws {
         let shim = try loadShim(head: true)
-        XCTAssertEqual(try shim.count("h.sheets"), 0, "S12: no sheet is made")
-        XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 0, "S12: none is adopted")
+        XCTAssertEqual(try shim.count("h.sheets"), 1, "S12: the media sheet only is made")
+        XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 1, "S12: the media sheet only is adopted")
+        XCTAssertEqual(shim.flag("h.sheets.some((s) => s.cssRules.some((r) => r.selectorText === ':root'))"), false, "S12: no font sheet is made")
         shim.run("h.domReady()")
         XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "S12: the rest of the shim")
     }
@@ -1323,15 +1337,15 @@ final class CardShimTests: XCTestCase {
 
     func test2610_0010S14TheFontsBlockRunsAfterTheStartedPostAndBeforeTheFirstListener() throws {
         let shim = try loadShim(head: true, fonts: Self.fonts)
-        XCTAssertEqual(try shim.count("h.sheets"), 1, "S14: one construction")
+        XCTAssertEqual(try shim.count("h.sheets"), 2, "S14: the media sheet and the font sheet")
         XCTAssertEqual(try shim.strings(Self.headElements), [Self.defaultScheme], "S14: the block added no head element")
         XCTAssertEqual(try shim.posted().count, 1, "S14: one message by now")
         XCTAssertEqual(
-            shim.run("JSON.stringify(h.sheets[0].atConstruction.posted)").toString(),
+            shim.run("JSON.stringify(h.sheets[1].atConstruction.posted)").toString(),
             #"[{"tarmac":"started","source":"tarmac-card://doc/card.html?v=1"}]"#,
             "S14: after started"
         )
-        XCTAssertEqual(try shim.strings("h.sheets[0].atConstruction.listeners"), [], "S14: before the first listener")
+        XCTAssertEqual(try shim.strings("h.sheets[1].atConstruction.listeners"), [], "S14: before the first listener")
     }
 
     func test2610_0010S17AMessageSetsTheNewValuesAndALaterOneReplacesThem() throws {
@@ -1343,7 +1357,7 @@ final class CardShimTests: XCTestCase {
 
         sendFonts(shim, Self.otherFonts.json)
         XCTAssertEqual(try declared(shim), try vars(Self.otherFonts), "S17: all three named")
-        XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 1, "S17: still one sheet")
+        XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 2, "S17: still one font sheet")
     }
 
     func test2610_0010S18AMessageWithNoObjectOfVarsChangesNothing() throws {
@@ -1372,18 +1386,18 @@ final class CardShimTests: XCTestCase {
 
         let raw = try loadShim()
         raw.run("h.send({ tarmac: 'fonts', vars: { '--tarmac-prose-size': '99px' } }, {})")
-        XCTAssertEqual(try raw.count("h.sheets"), 0, "no sheet is made for it")
+        XCTAssertEqual(try raw.count("h.sheets"), 1, "no sheet but the media sheet is made for it")
     }
 
     func test2610_0010S19AMessageIsAppliedAtOnceAndTheLoadChangesNothingAfterIt() throws {
         for (shim, pageSheets) in [(try loadShim(fonts: Self.fonts), 0), (try loadShim(), 1)] {
             if pageSheets > 0 { shim.run("document.adoptedStyleSheets = [{ page: true }]") }
             sendFonts(shim, Self.otherFonts.json)
-            XCTAssertEqual(try declared(shim, sheet: pageSheets), try vars(Self.otherFonts), "S19: before DOMContentLoaded")
+            XCTAssertEqual(try declared(shim), try vars(Self.otherFonts), "S19: before DOMContentLoaded")
 
             shim.run("h.domReady()")
-            XCTAssertEqual(try declared(shim, sheet: pageSheets), try vars(Self.otherFonts), "S19: after it")
-            XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 1 + pageSheets, "S19: the sheets")
+            XCTAssertEqual(try declared(shim), try vars(Self.otherFonts), "S19: after it")
+            XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 2, "S19: the sheets")
             XCTAssertEqual(shim.flag("document.adoptedStyleSheets[0].page === true"), pageSheets > 0, "S19: the page's own sheet first")
         }
     }
@@ -1839,7 +1853,7 @@ final class CardShimTests: XCTestCase {
         shim.run("h.domReady()")
         shim.run("h.send({ tarmac: 'zoom', z: 1 })")
         XCTAssertEqual(try shim.count("h.watchers"), 1, "S16: the colour-scheme observer only")
-        XCTAssertEqual(try shim.count("h.sheets"), 0, "S16: no sheet")
+        XCTAssertEqual(try shim.count("h.sheets"), 1, "S16: the media sheet only")
     }
 
     func test2611_0019S16AMagnifiedCardWatchesTheRootOnceForAddedItems() throws {
@@ -1849,11 +1863,11 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(try shim.count("h.watchers"), 2, "S16: one more observer")
         XCTAssertEqual(shim.flag("h.watchers[1].observed.length === 1 && h.watchers[1].observed[0].target === document.documentElement"), true)
         XCTAssertEqual(shim.flag("h.watchers[1].observed[0].options.childList === true && h.watchers[1].observed[0].options.subtree === true"), true)
-        XCTAssertEqual(try shim.count("h.sheets"), 1, "S16: one marker sheet")
+        XCTAssertEqual(try shim.count("h.sheets"), 2, "S16: one marker sheet")
 
         shim.run("h.send({ tarmac: 'zoom', z: 3 })")
         XCTAssertEqual(try shim.count("h.watchers"), 2, "S16: no second observer")
-        XCTAssertEqual(try shim.count("h.sheets"), 1, "S16: no second sheet")
+        XCTAssertEqual(try shim.count("h.sheets"), 2, "S16: no second marker sheet")
     }
 
     func test2611_0019S24AZoomHeldUntilReadyStillMarks() throws {
@@ -1896,5 +1910,48 @@ final class CardShimTests: XCTestCase {
             XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "S27 held \(held): ready")
             XCTAssertEqual(try shim.posted().count, 2, "S27 held \(held): started and ready, nothing more")
         }
+    }
+
+    // MARK: - the media cap (2611.0023 S19, S20)
+
+    func test2611_0023S19WithoutTheMediaSheetTheRestOfTheShimStillRuns() throws {
+        let cases: [(String, Shim)] = [
+            ("no CSSStyleSheet", try loadShim(omitting: "CSSStyleSheet")),
+            ("no adoptedStyleSheets", try loadShim(before: "delete document.adoptedStyleSheets")),
+            ("the media rule throws", try loadShim(fonts: Self.fonts, before: "h.refuse = (text) => text.includes('object-fit')")),
+        ]
+        for (name, shim) in cases {
+            shim.run("h.domReady()")
+            XCTAssertEqual(try shim.posted().map { $0["tarmac"] as? String }, ["started", "ready"], "S19 \(name): posted")
+            shim.run("h.send({ tarmac: 'zoom', z: 3 })")
+            XCTAssertEqual(shim.number("h.style.zoom"), 3, "S19 \(name): zoom")
+            XCTAssertEqual(try shim.posted().count, 2, "S19 \(name): nothing more posted")
+        }
+        let refused = cases[2].1
+        XCTAssertEqual(try refused.count("h.refused"), 1, "S19: one throw")
+        XCTAssertEqual(try declared(refused), try vars(Self.fonts), "S19: the font sheet")
+    }
+
+    func test2611_0023S20ARawShimAdoptsTheMediaSheetAtBoot() throws {
+        let shim = try loadShim()
+        XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 1, "S20: one sheet")
+        let rules = """
+        :where(svg[viewBox], img, video, canvas) { max-width: min(100%, 1080px); object-fit: contain; }
+        :where(img[width], svg[viewBox][width], video[width]) { height: auto; }
+        """
+        XCTAssertEqual(
+            shim.run("document.adoptedStyleSheets[0].text.replace(/\\s/g, '')").toString(),
+            rules.filter { !$0.isWhitespace }
+        )
+    }
+
+    func test2611_0023D5TheMediaSheetIsAdoptedAfterTheStartedPostAndBeforeTheFirstListener() throws {
+        let shim = try loadShim(head: true)
+        XCTAssertEqual(
+            shim.run("JSON.stringify(h.sheets[0].atConstruction.posted)").toString(),
+            #"[{"tarmac":"started","source":"tarmac-card://doc/card.html?v=1"}]"#,
+            "D5: after started"
+        )
+        XCTAssertEqual(try shim.strings("h.sheets[0].atConstruction.listeners"), [], "D5: before the first listener")
     }
 }
