@@ -36,9 +36,12 @@
 
   // The sidebar (spec 2611.0022). Every decision is a rule of doc-layout.js;
   // this keeps what the rules are given and applies what they answer.
-  let cardWidth = 392;
-  // The last state the app sent; null before the first.
+  // Set by `layout`, which the app sends before any render or state.
+  let cardWidth;
+  // The last state the app sent, null before the first, and how many have
+  // landed.
   let state = null;
+  let states = 0;
   let fieldCount = 0;
   let outline = [];
   // The current render's headings, by outline index, and their tops in the
@@ -49,10 +52,12 @@
   let entries = [];
   let ticks = [];
   let sectionHeads = {};
-  let section = "outline";
+  let section = null;
+  let icons = {};
   // An open the page asked for shows `section` once the app's state opens it.
   let showSectionOnOpen = false;
-  // A drag's width, kept after the release until the app's state lands.
+  // A drag's width, kept after the release until the app's state lands, and
+  // the held press: where it started and how far the pointer is from it.
   let drag = null;
   let dragging = null;
 
@@ -64,34 +69,41 @@
     root.style.setProperty(name, value + "px");
   }
 
+  function shownMode() {
+    return rules.shownMode(state, fieldCount, outline.length);
+  }
+
+  // Called only once a state has landed.
   function applySide() {
-    const shown = state ? Object.assign({}, state, { mode: rules.shownMode(state, fieldCount, outline.length) }) : null;
-    const box = shown ? rules.geometry(shown, cardWidth, drag) : { textWidth: cardWidth, offset: 0, panel: 0 };
-    const parts = shown ? rules.parts(shown.mode, box, shown) : { strip: false, panel: false, panelLeft: 0, grip: false };
-    if (shown) {
-      px("--side-strip", shown.strip);
-      px("--side-grip", shown.grip);
-    }
+    const shown = Object.assign({}, state, { mode: shownMode() });
+    const box = rules.geometry(shown, cardWidth, drag);
+    const parts = rules.parts(shown.mode, box, shown);
+    px("--side-strip", shown.strip);
+    px("--side-grip", shown.grip);
     px("--text-w", box.textWidth);
     px("--side-offset", box.offset);
     px("--side-panel", box.panel);
     px("--side-panel-left", parts.panelLeft);
-    root.setAttribute("data-side", shown ? shown.mode : "none");
+    root.setAttribute("data-side", shown.mode);
     strip.hidden = !parts.strip;
     panel.hidden = !parts.panel;
     grip.hidden = !parts.grip;
+    const active = rules.activeIcon(shown.mode, section);
+    Object.keys(icons).forEach(function (name) {
+      icons[name].classList.toggle("active", name === active);
+    });
     sizeSide();
-    if (showSectionOnOpen && parts.panel) {
-      showSectionOnOpen = false;
-      showSection();
-    }
+    return parts;
   }
 
-  // A state from the app ends a released drag: it carries the drag's result.
   function takeState(given) {
     state = given;
-    if (!dragging) drag = null;
-    applySide();
+    states += 1;
+    drag = rules.dragOnState(dragging !== null, drag);
+    const parts = applySide();
+    const opened = rules.sectionOnState(showSectionOnOpen, parts.panel);
+    showSectionOnOpen = opened.pending;
+    if (opened.show) showSection();
   }
 
   function sizeSide() {
@@ -108,9 +120,8 @@
   }
 
   function measureHeadings() {
-    // A heading the render did not mark never passes the reading line.
     tops = headings.map(function (heading) {
-      return heading ? topOf(heading) : Infinity;
+      return heading ? topOf(heading) : null;
     });
     markCurrent();
   }
@@ -127,9 +138,9 @@
   }
 
   function goTo(index) {
-    const heading = headings[index];
-    if (!heading) return;
-    scroll.scrollTop = rules.scrollTarget(topOf(heading), scroll.clientHeight, scroll.scrollHeight, zoom);
+    measureHeadings();
+    const target = rules.scrollTarget(tops[index], scroll.clientHeight, scroll.scrollHeight, zoom);
+    if (target !== null) scroll.scrollTop = target;
   }
 
   function div(className, text) {
@@ -144,7 +155,9 @@
     return element;
   }
 
-  const iconGlyphs = { fields: "{}", outline: "\u2261" };
+  // The outline icon is three bars the template draws: a glyph of them
+  // blurs into one block at a 1× zoom.
+  const iconGlyphs = { fields: "{}", outline: "" };
 
   function buildSide(fields) {
     sectionHeads = {};
@@ -187,14 +200,18 @@
     sideContent.replaceChildren(...panelParts);
 
     const shape = rules.strip(fieldCount, outline, -1);
-    const icons = shape.icons.map(function (name) {
-      return onClick(div("doc-icon", iconGlyphs[name]), function () {
-        const click = rules.iconClick(state ? rules.shownMode(state, fieldCount, outline.length) : "none", section, name);
+    section = shape.icons[0];
+    icons = {};
+    shape.icons.forEach(function (name) {
+      const icon = onClick(div("doc-icon doc-icon-" + name, iconGlyphs[name]), function () {
+        const click = rules.iconClick(shownMode(), section, name);
         section = click.section;
+        showSectionOnOpen = click.scroll === "onOpen";
         if (click.post) report({ action: click.post });
-        if (click.post === "open") showSectionOnOpen = true;
-        if (click.post === null) showSection();
+        if (click.scroll === "now") showSection();
+        applySide();
       });
+      icons[name] = icon;
     });
     const tickBox = div("doc-ticks");
     ticks = shape.ticks.map(function (index) {
@@ -205,7 +222,7 @@
       tickBox.append(element);
       return { index, element };
     });
-    stripContent.replaceChildren(...icons, tickBox);
+    stripContent.replaceChildren(...Object.values(icons), tickBox);
   }
 
   // The headings this render marked: a doc's raw HTML cannot know the mark.
@@ -262,7 +279,7 @@
   new ResizeObserver(sizeSide).observe(sideContent);
 
   scroll.addEventListener("mousedown", function () {
-    const post = rules.pressOnText(state ? rules.shownMode(state, fieldCount, outline.length) : "none");
+    const post = rules.pressOnText(shownMode());
     if (post) report({ action: post });
   });
 
@@ -271,29 +288,30 @@
   grip.addEventListener("mousedown", function (event) {
     if (event.button !== 0 || !state) return;
     event.preventDefault();
-    dragging = { x: event.clientX, moved: false };
+    dragging = { x: event.clientX, delta: 0 };
     window.addEventListener("mousemove", dragMoved);
     window.addEventListener("mouseup", dragEnded);
+    window.addEventListener("blur", dragEnded);
   });
 
   function dragMoved(event) {
-    const delta = event.clientX - dragging.x;
-    if (delta !== 0) dragging.moved = true;
-    drag = rules.dragWidth(state.width, delta, zoom, 1, state.minWidth, state.maxWidth);
+    dragging.delta = event.clientX - dragging.x;
+    drag = rules.dragWidth(state.width, dragging.delta, zoom, 1, state.minWidth, state.maxWidth);
     applySide();
   }
 
-  function dragEnded() {
+  // A release, or the window losing the pointer (a mouseup that never
+  // comes) at the last place the pointer was seen.
+  function dragEnded(event) {
     window.removeEventListener("mousemove", dragMoved);
     window.removeEventListener("mouseup", dragEnded);
-    const released = rules.release(dragging.moved, drag);
+    window.removeEventListener("blur", dragEnded);
+    if (event.type === "mouseup") dragging.delta = event.clientX - dragging.x;
+    const ended = rules.dragEnd(dragging.delta, drag);
     dragging = null;
-    if (released) {
-      report(released);
-    } else {
-      drag = null;
-      applySide();
-    }
+    drag = ended.drag;
+    if (ended.report) report(ended.report);
+    applySide();
   }
 
   grip.addEventListener("dblclick", function () {
@@ -362,6 +380,7 @@
     // render replaced this one.
     async render(markdown, fields, given) {
       const render = ++renders;
+      const seen = states;
       const mark = "m" + render + "-" + Math.random().toString(36).slice(2);
       const parsed = rules.parse(markdown, mark);
       // A template has no browsing context, so no image is fetched before its
@@ -385,7 +404,7 @@
       outline = parsed.outline;
       headings = markedHeadings(mark);
       buildSide(fields);
-      takeState(given);
+      takeState(rules.stateForRender(given, seen, state, states));
       remeasure();
       // What was focused or under the pointer was just replaced, with no
       // event to say so.

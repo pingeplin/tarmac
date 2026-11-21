@@ -24,12 +24,10 @@
     --zoom: 1;
     --card-w: 392px;
     --text-w: var(--card-w);
-    /* The sidebar's places in world px, set by the page from the app's state. */
+    /* Where the text starts, in world px: the page sets it, and the rest of
+       the sidebar's places, from the app's state. Until then the text starts
+       at the card's edge and the sidebar's parts are hidden. */
     --side-offset: 0px;
-    --side-panel: 0px;
-    --side-panel-left: 0px;
-    --side-strip: 30px;
-    --side-grip: 8px;
   }
   * {
     box-sizing: border-box;
@@ -277,7 +275,7 @@
   .doc-field-key {
     color: var(--faint);
     font-family: var(--chrome-font);
-    font-size: 0.872em;
+    font-size: calc(var(--prose-size) * var(--oversample-k) * 0.75);
   }
   .doc-field-value {
     color: var(--text);
@@ -338,6 +336,17 @@
   .doc-icon:hover {
     background: var(--bg3);
     color: var(--text);
+  }
+  .doc-icon.active {
+    background: var(--bg3);
+    color: var(--agent);
+  }
+  /* Three bars 2 world px high with 2 between: legible at zoom 1. */
+  .doc-icon-outline::before {
+    content: "";
+    width: calc(12px * var(--oversample-k));
+    height: calc(10px * var(--oversample-k));
+    background: repeating-linear-gradient(currentColor 0 calc(2px * var(--oversample-k)), transparent calc(2px * var(--oversample-k)) calc(4px * var(--oversample-k)));
   }
   .doc-ticks {
     display: flex;
