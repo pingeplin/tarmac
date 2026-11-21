@@ -48,17 +48,19 @@
   // scroller's content (screen px).
   let headings = [];
   let tops = [];
-  let current = -1;
+  // The section marked now; null after a render, so the next mark applies.
+  let current = null;
   let entries = [];
   let ticks = [];
+  let shape = rules.strip(0, [], -1);
   let sectionHeads = {};
   let section = null;
   let icons = {};
   // An open the page asked for shows `section` once the app's state opens it.
   let showSectionOnOpen = false;
   // A drag's width, kept after the release until the app answers, and the
-  // held press: where it started, how far the pointer is from it, and whether
-  // it moved.
+  // held press: where it started, how far the pointer is from it, whether it
+  // moved, and the frame its next width waits for.
   let drag = null;
   let dragging = null;
 
@@ -93,7 +95,6 @@
     Object.keys(icons).forEach(function (name) {
       icons[name].classList.toggle("active", name === active);
     });
-    sizeSide();
     return parts;
   }
 
@@ -101,13 +102,19 @@
     state = given;
     drag = rules.dragOnState(dragging !== null, drag, fromAction);
     const parts = applySide();
-    const opened = rules.sectionOnState(showSectionOnOpen, parts.panel);
-    showSectionOnOpen = opened.pending;
-    if (opened.show) showSection();
+    const show = rules.sectionOnState(showSectionOnOpen, parts.panel);
+    showSectionOnOpen = false;
+    if (show) showSection();
+  }
+
+  // A sizer holds its content's height as seen: the content is laid out at
+  // K and scaled by zoom / K.
+  function fitScaled(target, height) {
+    target.style.height = Math.ceil((height * zoom) / K) + "px";
   }
 
   function sizeSide() {
-    sideSizer.style.height = Math.ceil((sideContent.offsetHeight * zoom) / K) + "px";
+    fitScaled(sideSizer, sideContent.offsetHeight);
   }
 
   function showSection() {
@@ -115,23 +122,22 @@
     if (head) panel.scrollTop += head.getBoundingClientRect().top - panel.getBoundingClientRect().top;
   }
 
-  function topOf(element) {
-    return element.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop;
-  }
-
   function measureHeadings() {
+    const base = scroll.getBoundingClientRect().top - scroll.scrollTop;
     tops = headings.map(function (heading) {
-      return heading ? topOf(heading) : null;
+      return heading ? heading.getBoundingClientRect().top - base : null;
     });
     markCurrent();
   }
 
   function markCurrent() {
-    current = rules.currentSection(tops, scroll.scrollTop, scroll.clientHeight, scroll.scrollHeight, zoom);
+    const next = rules.currentSection(tops, scroll.scrollTop, scroll.clientHeight, scroll.scrollHeight, zoom);
+    if (next === current) return;
+    current = next;
     entries.forEach(function (entry, index) {
       entry.classList.toggle("current", index === current);
     });
-    const lit = rules.strip(fieldCount, outline, current).lit;
+    const lit = rules.lit(shape.ticks, current);
     ticks.forEach(function (tick) {
       tick.element.classList.toggle("lit", tick.index === lit);
     });
@@ -155,11 +161,12 @@
     return element;
   }
 
-  // The outline icon is three bars the template draws: a glyph of them
-  // blurs into one block at a 1× zoom.
-  const iconGlyphs = { fields: "{}", outline: "" };
-
-  const titles = { fields: "FRONT MATTER", outline: "OUTLINE" };
+  // Each section's strip icon and panel header. The outline icon is three
+  // bars the template draws: a glyph of them blurs into one block at zoom 1.
+  const sections = {
+    fields: { glyph: "{}", title: "FRONT MATTER" },
+    outline: { glyph: "", title: "OUTLINE" },
+  };
 
   function fieldRow(field) {
     const row = div("doc-field");
@@ -179,13 +186,14 @@
   // The panel's sections are the strip's icons, in order; the first header
   // holds the close button.
   function buildSide(fields) {
-    const shape = rules.strip(fieldCount, outline, -1);
+    shape = rules.strip(fieldCount, outline, -1);
+    current = null;
     sectionHeads = {};
     entries = [];
     const panelParts = [];
     shape.icons.forEach(function (name, index) {
       const head = div("doc-side-head");
-      head.append(div("doc-side-title", titles[name]));
+      head.append(div("doc-side-title", sections[name].title));
       if (index === 0) {
         head.append(onClick(div("doc-side-close", "\u21e4"), function () {
           report({ action: "close" });
@@ -210,7 +218,7 @@
     section = shape.section;
     icons = {};
     shape.icons.forEach(function (name) {
-      const icon = onClick(div("doc-icon doc-icon-" + name, iconGlyphs[name]), function () {
+      const icon = onClick(div("doc-icon doc-icon-" + name, sections[name].glyph), function () {
         const click = rules.iconClick(shownMode(), section, name);
         section = click.section;
         showSectionOnOpen = click.scroll === "onOpen";
@@ -232,13 +240,21 @@
     stripContent.replaceChildren(...Object.values(icons), tickBox);
   }
 
-  // The headings this render marked: a doc's raw HTML cannot know the mark.
-  // Nothing is called on an element the doc wrote, whose own names can hide
-  // a method (a form's input named `getAttribute`).
+  const attribute = Function.prototype.call.bind(Element.prototype.getAttribute);
+
+  // The headings this render marked, by outline index: a doc's raw HTML
+  // cannot know the mark. The attribute is read through the prototype, as
+  // an element's own names can hide a method (a form's input named
+  // `getAttribute`).
   function markedHeadings(mark) {
-    return outline.map(function (_, index) {
-      return prose.querySelector('[data-outline="' + mark + "-" + index + '"]');
+    const found = outline.map(function () {
+      return null;
     });
+    prose.querySelectorAll('[data-outline^="' + mark + '-"]').forEach(function (element) {
+      const index = Number(attribute(element, "data-outline").slice(mark.length + 1));
+      if (found[index] === null) found[index] = element;
+    });
+    return found;
   }
 
   // Where the doc is scrolled to, for the card's scroll thumb.
@@ -251,8 +267,9 @@
   }
 
   function relayout() {
-    sizer.style.height = Math.ceil((proseHeight * zoom) / K) + "px";
-    sizeSide();
+    const sideHeight = sideContent.offsetHeight;
+    fitScaled(sizer, proseHeight);
+    fitScaled(sideSizer, sideHeight);
     if (scroll.scrollHeight > scroll.clientHeight) {
       scroll.scrollTop = scrollFraction * scroll.scrollHeight;
     }
@@ -295,16 +312,28 @@
   grip.addEventListener("mousedown", function (event) {
     if (event.button !== 0 || !state) return;
     event.preventDefault();
-    dragging = { x: event.clientX, delta: 0, moved: false };
+    dragging = { x: event.clientX, delta: 0, moved: false, frame: 0 };
     window.addEventListener("mousemove", dragMoved);
     window.addEventListener("mouseup", dragEnded);
     window.addEventListener("blur", dragEnded);
   });
 
+  function dragWidth() {
+    return rules.dragWidth(state.width, dragging.delta, zoom, rules.direction(state.side), state.minWidth, state.maxWidth);
+  }
+
+  // At most one layout a frame, and none for a width that did not change.
   function dragMoved(event) {
     dragging.delta = event.clientX - dragging.x;
     dragging.moved = true;
-    drag = rules.dragWidth(state.width, dragging.delta, zoom, rules.direction(state.side), state.minWidth, state.maxWidth);
+    if (!dragging.frame) dragging.frame = requestAnimationFrame(dragFrame);
+  }
+
+  function dragFrame() {
+    dragging.frame = 0;
+    const next = dragWidth();
+    if (rules.sameDrag(drag, next)) return;
+    drag = next;
     applySide();
   }
 
@@ -315,7 +344,8 @@
     window.removeEventListener("mouseup", dragEnded);
     window.removeEventListener("blur", dragEnded);
     if (event.type === "mouseup") dragging.delta = event.clientX - dragging.x;
-    const ended = rules.dragEnd(dragging.moved, dragging.delta, drag);
+    cancelAnimationFrame(dragging.frame);
+    const ended = rules.dragEnd(dragging.moved, dragging.delta, dragWidth());
     dragging = null;
     drag = ended.drag;
     if (ended.report) report(ended.report);
@@ -388,7 +418,7 @@
     // decides that one with no fields and no outline shows no sidebar.
     async render(markdown, fields) {
       const render = ++renders;
-      const mark = "m" + render + "-" + Math.random().toString(36).slice(2);
+      const mark = "m" + Math.random().toString(36).slice(2);
       const parsed = rules.parse(markdown, mark);
       // A template has no browsing context, so no image is fetched before its
       // src is re-addressed.
@@ -411,7 +441,6 @@
       outline = parsed.outline;
       headings = markedHeadings(mark);
       buildSide(fields);
-      // With no state yet there is nothing to lay out by.
       if (state !== null) applySide();
       remeasure();
       // What was focused or under the pointer was just replaced, with no

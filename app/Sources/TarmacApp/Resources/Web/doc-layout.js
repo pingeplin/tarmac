@@ -21,24 +21,32 @@
     return total;
   }
 
-  // The text a reader reads as prose; inline code is not.
-  function prose(tokens) {
+  // The text of inline tokens. marked gives an escape's and a code span's
+  // text as written, entities and all; `text` maps a text token's. An image
+  // has child tokens (its alt text), so `images` says whether they count.
+  function inlineText(tokens, options) {
     return tokens
       .map(function (token) {
-        if (token.tokens) return prose(token.tokens);
-        if (token.type === "text" || token.type === "escape") return token.text;
+        if (token.type === "codespan") return options.code ? token.text : "";
+        if (token.type === "image" && !options.images) return "";
+        if (token.tokens) return inlineText(token.tokens, options);
+        if (token.type === "escape") return token.text;
+        if (token.type === "text") return options.text(token.text);
         if (token.type === "br") return " ";
         return "";
       })
       .join("");
   }
 
+  // The text a reader reads as prose; inline code is not.
+  const proseText = { code: false, images: true, text: (text) => text };
+
   // marked pads and cuts every body row to the header's length, so a row
   // always has cell `column`.
   function textColumns(table) {
     return table.header.map(function (_, column) {
       return table.rows.some(function (row) {
-        return width(prose(row[column].tokens).trim()) >= textColumnWidth;
+        return width(inlineText(row[column].tokens, proseText).trim()) >= textColumnWidth;
       });
     });
   }
@@ -55,47 +63,27 @@
     });
   }
 
-  // marked gives an escape's and a code span's text as written, entities and
-  // all; only a text token's entities are decoded.
-  function plain(tokens) {
-    return tokens
-      .map(function (token) {
-        if (token.type === "escape" || token.type === "codespan") return token.text;
-        if (token.type === "image") return "";
-        if (token.tokens) return plain(token.tokens);
-        if (token.type === "text") return decode(token.text);
-        if (token.type === "br") return " ";
-        return "";
-      })
-      .join("");
-  }
+  // A heading's outline text: what the reader sees, code spans included.
+  const headingText = { code: true, images: false, text: decode };
 
-  // walkTokens runs over the whole doc before any token is rendered.
-  let outline = [];
-  let mark = "";
+  // Marked before any cell is rendered: a cell's renderer is not told its column.
+  function markTextColumns(table) {
+    textColumns(table).forEach(function (text, column) {
+      if (!text) return;
+      [table.header].concat(table.rows).forEach(function (row) {
+        row[column].textColumn = true;
+      });
+    });
+  }
 
   const defaults = marked.Renderer.prototype;
   const layout = new marked.Marked();
   layout.use({
-    walkTokens(token) {
-      if (token.type === "heading" && token.depth <= 3) {
-        token.outlineIndex = outline.length;
-        outline.push({ depth: token.depth, text: plain(token.tokens).replace(/\s+/g, " ").trim() });
-      }
-      if (token.type !== "table") return;
-      // Marked before any cell is rendered: a cell's renderer is not told its column.
-      textColumns(token).forEach(function (text, column) {
-        if (!text) return;
-        [token.header].concat(token.rows).forEach(function (row) {
-          row[column].textColumn = true;
-        });
-      });
-    },
     renderer: {
       heading(token) {
         const html = defaults.heading.call(this, token);
-        if (!mark || token.outlineIndex === undefined) return html;
-        return html.replace("<h" + token.depth, "<h" + token.depth + ' data-outline="' + mark + "-" + token.outlineIndex + '"');
+        if (!token.outlineMark) return html;
+        return html.replace("<h" + token.depth, "<h" + token.depth + ' data-outline="' + token.outlineMark + '"');
       },
       table(token) {
         return '<div class="doc-table">' + defaults.table.call(this, token) + "</div>\n";
@@ -107,14 +95,20 @@
     },
   });
 
-  function parse(markdown, renderMark) {
-    outline = [];
-    mark = renderMark;
-    const html = layout.parse(markdown, { async: false });
-    return { html, outline };
+  // Each outlined heading token carries its own attribute value, so the
+  // renderer reads nothing shared.
+  function parse(markdown, mark) {
+    const tokens = layout.lexer(markdown);
+    const outline = [];
+    layout.walkTokens(tokens, function (token) {
+      if (token.type === "table") markTextColumns(token);
+      if (token.type !== "heading" || token.depth > 3) return;
+      if (mark) token.outlineMark = mark + "-" + outline.length;
+      outline.push({ depth: token.depth, text: inlineText(token.tokens, headingText).replace(/\s+/g, " ").trim() });
+    });
+    return { html: layout.parser(tokens), outline };
   }
 
-  // No state yet shows nothing.
   function shownMode(state, fieldCount, outlineCount) {
     return !state || (fieldCount === 0 && outlineCount === 0) ? "none" : state.mode;
   }
@@ -125,21 +119,27 @@
   }
 
   function geometry(state, cardWidth, drag) {
+    const panel = !drag ? state.width : drag.collapsed ? 0 : drag.width;
     const strip = { textWidth: cardWidth - state.strip, offset: state.strip, panel: 0 };
-    function docked(width) {
-      return { textWidth: cardWidth - width - state.grip, offset: width + state.grip, panel: width };
-    }
     switch (state.mode) {
       case "strip":
         return strip;
       case "docked":
-        if (!drag) return docked(state.width);
-        return drag.collapsed ? strip : docked(drag.width);
+        return panel > 0 ? { textWidth: cardWidth - panel - state.grip, offset: panel + state.grip, panel } : strip;
       case "overlay":
-        return Object.assign(strip, { panel: !drag ? state.width : drag.collapsed ? 0 : drag.width });
+        return Object.assign(strip, { panel });
       default:
         return { textWidth: cardWidth, offset: 0, panel: 0 };
     }
+  }
+
+  // The outline index of the last tick at or before `current`, or -1.
+  function lit(ticks, current) {
+    let last = -1;
+    ticks.forEach(function (tick) {
+      if (tick <= current) last = tick;
+    });
+    return last;
   }
 
   globalThis.tarmacDocLayout = {
@@ -175,13 +175,16 @@
     // start has not moved either. A reported width is kept until the app
     // answers the report.
     dragEnd(moved, delta, drag) {
-      const report = release(moved && delta !== 0 && drag !== null, drag);
+      const report = release(moved && delta !== 0, drag);
       return { report, drag: report ? drag : null };
     },
     // Only the app's answer to an action ends a released drag; a layout (a
     // zoom, a card resize) keeps it, and a held drag goes on.
     dragOnState(dragging, drag, fromAction) {
       return !dragging && fromAction ? null : drag;
+    },
+    sameDrag(previous, next) {
+      return previous !== null && previous.width === next.width && previous.collapsed === next.collapsed;
     },
     direction(side) {
       return side === "right" ? -1 : 1;
@@ -194,12 +197,10 @@
       outline.forEach(function (entry, index) {
         if (entry.depth <= 2) ticks.push(index);
       });
-      const lit = ticks.filter(function (tick) {
-        return tick <= current;
-      });
       // `section`: what a new render's panel shows first.
-      return { icons, ticks, lit: lit.length ? lit[lit.length - 1] : -1, section: icons.length ? icons[0] : null };
+      return { icons, ticks, lit: lit(ticks, current), section: icons.length ? icons[0] : null };
     },
+    lit,
     // `scroll` says when the panel scrolls to the section: once the app's
     // state opens it, now, or not at all.
     iconClick(mode, section, icon) {
@@ -208,8 +209,9 @@
       if (icon === section) return { post: "close", section, scroll: null };
       return { post: null, section: icon, scroll: "now" };
     },
+    // Any state ends the wait; one that shows the panel shows the section.
     sectionOnState(pending, panelShown) {
-      return { show: pending && panelShown, pending: false };
+      return pending && panelShown;
     },
     activeIcon(mode, section) {
       return mode === "overlay" ? section : null;

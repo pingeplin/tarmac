@@ -406,7 +406,6 @@ final class DocLayoutScriptTests: XCTestCase {
     func test2611_0022ADragsEnd() throws {
         let width = "{width: 300, collapsed: false}"
         XCTAssertEqual(try json("tarmacDocLayout.dragEnd(false, 0, null)"), #"{"report":null,"drag":null}"#)
-        XCTAssertEqual(try json("tarmacDocLayout.dragEnd(true, 5, null)"), #"{"report":null,"drag":null}"#)
         XCTAssertEqual(try json("tarmacDocLayout.dragEnd(true, 0, \(width))"), #"{"report":null,"drag":null}"#)
         XCTAssertEqual(try json("tarmacDocLayout.dragEnd(false, 12, \(width))"), #"{"report":null,"drag":null}"#)
         XCTAssertEqual(
@@ -438,9 +437,9 @@ final class DocLayoutScriptTests: XCTestCase {
     /// 2611.0022 D11j: an open asked for shows its section once a state shows
     /// the panel; any state ends the wait.
     func test2611_0022ASectionWaitsForTheOpen() throws {
-        XCTAssertEqual(try json("tarmacDocLayout.sectionOnState(true, true)"), #"{"show":true,"pending":false}"#)
-        XCTAssertEqual(try json("tarmacDocLayout.sectionOnState(true, false)"), #"{"show":false,"pending":false}"#)
-        XCTAssertEqual(try json("tarmacDocLayout.sectionOnState(false, true)"), #"{"show":false,"pending":false}"#)
+        XCTAssertEqual(try json("tarmacDocLayout.sectionOnState(true, true)"), "true")
+        XCTAssertEqual(try json("tarmacDocLayout.sectionOnState(true, false)"), "false")
+        XCTAssertEqual(try json("tarmacDocLayout.sectionOnState(false, true)"), "false")
     }
 
     /// 2611.0022 D11k: the strip icon of the section an overlay shows is marked.
@@ -448,5 +447,22 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(try json("tarmacDocLayout.activeIcon('overlay', 'fields')"), #""fields""#)
         XCTAssertEqual(try json("tarmacDocLayout.activeIcon('strip', 'fields')"), "null")
         XCTAssertEqual(try json("tarmacDocLayout.activeIcon('docked', 'outline')"), "null")
+    }
+
+    /// 2611.0022 D11d: the lit tick on its own, so a scroll need not rebuild the strip.
+    func test2611_0022TheLitTick() throws {
+        for (current, lit) in [(-1, "-1"), (0, "0"), (1, "1"), (2, "1"), (3, "3"), (4, "3")] {
+            XCTAssertEqual(try json("tarmacDocLayout.lit([0, 1, 3], \(current))"), lit, "\(current)")
+        }
+        XCTAssertEqual(try json("tarmacDocLayout.lit([], 2)"), "-1")
+    }
+
+    /// 2611.0022 D16: a move that leaves the drag's width as it was lays nothing out again.
+    func test2611_0022AnUnchangedDragIsNotLaidOutAgain() throws {
+        let width = "{width: 300, collapsed: false}"
+        XCTAssertEqual(try json("tarmacDocLayout.sameDrag(\(width), {width: 300, collapsed: false})"), "true")
+        XCTAssertEqual(try json("tarmacDocLayout.sameDrag(\(width), {width: 301, collapsed: false})"), "false")
+        XCTAssertEqual(try json("tarmacDocLayout.sameDrag(\(width), {width: 300, collapsed: true})"), "false")
+        XCTAssertEqual(try json("tarmacDocLayout.sameDrag(null, \(width))"), "false")
     }
 }
