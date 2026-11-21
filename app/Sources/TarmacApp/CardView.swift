@@ -14,6 +14,8 @@ final class CardView: NSView, ThemeFollowing {
     let header: CardHeaderView
     private(set) var docBody: (any DocCardBody)?
     private(set) var termBody: TerminalBodyView?
+    /// A markdown card's sidebar choice: the one copy (spec 2611.0022 D21).
+    var docSidebar = DocSidebar.Stored()
 
     /// Where the card is in the world. The board derives the on-screen `frame`
     /// from it, and a move or resize gesture changes it.
@@ -132,6 +134,7 @@ final class CardView: NSView, ThemeFollowing {
             self.onRefresh?(self)
         }
         wireHTMLBody()
+        wireMarkdownBody()
         docBody?.onScrollChanged = { [weak self] metrics in self?.scrollChanged(metrics) }
         docBody?.onScrollCoverChanged = { [weak self] in self?.needsLayout = true }
         scrollThumb.liesOverADoc = docBody != nil

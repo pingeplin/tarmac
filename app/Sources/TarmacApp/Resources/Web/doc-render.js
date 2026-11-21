@@ -15,7 +15,14 @@
   const scroll = elementById("scroll");
   const sizer = elementById("sizer");
   const prose = elementById("prose");
+  const strip = elementById("strip");
+  const stripContent = elementById("strip-content");
+  const panel = elementById("panel");
+  const sideSizer = elementById("side-sizer");
+  const sideContent = elementById("side-content");
+  const grip = elementById("grip");
   const K = Number(getComputedStyle(root).getPropertyValue("--oversample-k"));
+  const rules = tarmacDocLayout;
 
   let zoom = 1;
   // The prose's height in its own K-times layout, before the scale.
@@ -26,6 +33,192 @@
   // The viewport height the app last said this page is laid out for.
   let viewportHeight = null;
   let renders = 0;
+
+  // The sidebar (spec 2611.0022). Every decision is a rule of doc-layout.js;
+  // this keeps what the rules are given and applies what they answer.
+  let cardWidth = 392;
+  // The last state the app sent; null before the first.
+  let state = null;
+  let fieldCount = 0;
+  let outline = [];
+  // The current render's headings, by outline index, and their tops in the
+  // scroller's content (screen px).
+  let headings = [];
+  let tops = [];
+  let current = -1;
+  let entries = [];
+  let ticks = [];
+  let sectionHeads = {};
+  let section = "outline";
+  // An open the page asked for shows `section` once the app's state opens it.
+  let showSectionOnOpen = false;
+  // A drag's width, kept after the release until the app's state lands.
+  let drag = null;
+  let dragging = null;
+
+  function report(action) {
+    webkit.messageHandlers.docSidebar.postMessage(action);
+  }
+
+  function px(name, value) {
+    root.style.setProperty(name, value + "px");
+  }
+
+  function applySide() {
+    const shown = state ? Object.assign({}, state, { mode: rules.shownMode(state, fieldCount, outline.length) }) : null;
+    const box = shown ? rules.geometry(shown, cardWidth, drag) : { textWidth: cardWidth, offset: 0, panel: 0 };
+    const parts = shown ? rules.parts(shown.mode, box, shown) : { strip: false, panel: false, panelLeft: 0, grip: false };
+    if (shown) {
+      px("--side-strip", shown.strip);
+      px("--side-grip", shown.grip);
+    }
+    px("--text-w", box.textWidth);
+    px("--side-offset", box.offset);
+    px("--side-panel", box.panel);
+    px("--side-panel-left", parts.panelLeft);
+    root.setAttribute("data-side", shown ? shown.mode : "none");
+    strip.hidden = !parts.strip;
+    panel.hidden = !parts.panel;
+    grip.hidden = !parts.grip;
+    sizeSide();
+    if (showSectionOnOpen && parts.panel) {
+      showSectionOnOpen = false;
+      showSection();
+    }
+  }
+
+  // A state from the app ends a released drag: it carries the drag's result.
+  function takeState(given) {
+    state = given;
+    if (!dragging) drag = null;
+    applySide();
+  }
+
+  function sizeSide() {
+    sideSizer.style.height = Math.ceil((sideContent.offsetHeight * zoom) / K) + "px";
+  }
+
+  function showSection() {
+    const head = sectionHeads[section];
+    if (head) panel.scrollTop += head.getBoundingClientRect().top - panel.getBoundingClientRect().top;
+  }
+
+  function topOf(element) {
+    return element.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop;
+  }
+
+  function measureHeadings() {
+    // A heading the render did not mark never passes the reading line.
+    tops = headings.map(function (heading) {
+      return heading ? topOf(heading) : Infinity;
+    });
+    markCurrent();
+  }
+
+  function markCurrent() {
+    current = rules.currentSection(tops, scroll.scrollTop, scroll.clientHeight, scroll.scrollHeight, zoom);
+    entries.forEach(function (entry, index) {
+      entry.classList.toggle("current", index === current);
+    });
+    const lit = rules.strip(fieldCount, outline, current).lit;
+    ticks.forEach(function (tick) {
+      tick.element.classList.toggle("lit", tick.index === lit);
+    });
+  }
+
+  function goTo(index) {
+    const heading = headings[index];
+    if (!heading) return;
+    scroll.scrollTop = rules.scrollTarget(topOf(heading), scroll.clientHeight, scroll.scrollHeight, zoom);
+  }
+
+  function div(className, text) {
+    const element = createElement("div");
+    element.className = className;
+    if (text !== undefined) element.textContent = text;
+    return element;
+  }
+
+  function onClick(element, handler) {
+    element.addEventListener("click", handler);
+    return element;
+  }
+
+  const iconGlyphs = { fields: "{}", outline: "\u2261" };
+
+  function buildSide(fields) {
+    sectionHeads = {};
+    const panelParts = [];
+    function head(name, title) {
+      const element = div("doc-side-head");
+      element.append(div("doc-side-title", title));
+      if (panelParts.length === 0) {
+        element.append(onClick(div("doc-side-close", "\u21e4"), function () {
+          report({ action: "close" });
+        }));
+      }
+      sectionHeads[name] = element;
+      panelParts.push(element);
+    }
+    if (fields.length > 0) head("fields", "FRONT MATTER");
+    fields.forEach(function (field) {
+      const row = div("doc-field");
+      row.append(div("doc-field-key", field[0]));
+      const value = div("doc-field-value");
+      if (Array.isArray(field[1])) {
+        field[1].forEach(function (item) {
+          value.append(div("doc-chip", item));
+        });
+      } else {
+        value.textContent = field[1];
+      }
+      row.append(value);
+      panelParts.push(row);
+    });
+    if (outline.length > 0) head("outline", "OUTLINE");
+    entries = outline.map(function (item, index) {
+      const entry = onClick(div("doc-entry", item.text), function () {
+        goTo(index);
+      });
+      entry.setAttribute("data-depth", String(item.depth));
+      panelParts.push(entry);
+      return entry;
+    });
+    sideContent.replaceChildren(...panelParts);
+
+    const shape = rules.strip(fieldCount, outline, -1);
+    const icons = shape.icons.map(function (name) {
+      return onClick(div("doc-icon", iconGlyphs[name]), function () {
+        const click = rules.iconClick(state ? rules.shownMode(state, fieldCount, outline.length) : "none", section, name);
+        section = click.section;
+        if (click.post) report({ action: click.post });
+        if (click.post === "open") showSectionOnOpen = true;
+        if (click.post === null) showSection();
+      });
+    });
+    const tickBox = div("doc-ticks");
+    ticks = shape.ticks.map(function (index) {
+      const element = onClick(div("doc-tick"), function () {
+        goTo(index);
+      });
+      element.setAttribute("data-depth", String(outline[index].depth));
+      tickBox.append(element);
+      return { index, element };
+    });
+    stripContent.replaceChildren(...icons, tickBox);
+  }
+
+  // The headings this render marked: a doc's raw HTML cannot know the mark.
+  function markedHeadings(mark) {
+    const found = new Map();
+    prose.querySelectorAll("[data-outline]").forEach(function (element) {
+      const name = element.getAttribute("data-outline");
+      if (!found.has(name)) found.set(name, element);
+    });
+    return outline.map(function (_, index) {
+      return found.get(mark + "-" + index) || null;
+    });
+  }
 
   // Where the doc is scrolled to, for the card's scroll thumb.
   function reportScroll() {
@@ -38,9 +231,11 @@
 
   function relayout() {
     sizer.style.height = Math.ceil((proseHeight * zoom) / K) + "px";
+    sizeSide();
     if (scroll.scrollHeight > scroll.clientHeight) {
       scroll.scrollTop = scrollFraction * scroll.scrollHeight;
     }
+    measureHeadings();
     reportScroll();
   }
 
@@ -53,6 +248,7 @@
 
   scroll.addEventListener("scroll", function () {
     reportScroll();
+    markCurrent();
     if (!viewportSettled()) return;
     scrollFraction = scroll.scrollHeight > scroll.clientHeight ? scroll.scrollTop / scroll.scrollHeight : 0;
   });
@@ -66,6 +262,46 @@
 
   // A card resize re-wraps the prose; a zoom does not.
   new ResizeObserver(remeasure).observe(prose);
+  new ResizeObserver(sizeSide).observe(sideContent);
+
+  scroll.addEventListener("mousedown", function () {
+    const post = rules.pressOnText(state ? rules.shownMode(state, fieldCount, outline.length) : "none");
+    if (post) report({ action: post });
+  });
+
+  // The drag's moves and release are heard on the window: the pointer can
+  // leave the grip, and the web view, while the press is held.
+  grip.addEventListener("mousedown", function (event) {
+    if (event.button !== 0 || !state) return;
+    event.preventDefault();
+    dragging = { x: event.clientX, moved: false };
+    window.addEventListener("mousemove", dragMoved);
+    window.addEventListener("mouseup", dragEnded);
+  });
+
+  function dragMoved(event) {
+    const delta = event.clientX - dragging.x;
+    if (delta !== 0) dragging.moved = true;
+    drag = rules.dragWidth(state.width, delta, zoom, 1, state.minWidth, state.maxWidth);
+    applySide();
+  }
+
+  function dragEnded() {
+    window.removeEventListener("mousemove", dragMoved);
+    window.removeEventListener("mouseup", dragEnded);
+    const released = rules.release(dragging.moved, drag);
+    dragging = null;
+    if (released) {
+      report(released);
+    } else {
+      drag = null;
+      applySide();
+    }
+  }
+
+  grip.addEventListener("dblclick", function () {
+    report({ action: "reset" });
+  });
 
   // A re-render measures the prose before its images have loaded. When they
   // load within the same frame the prose is back at the height the observer
@@ -124,12 +360,17 @@
   document.addEventListener("focusout", focusMoved);
 
   window.tarmacDoc = {
-    async render(markdown) {
+    // `fields` are [key, value] pairs, a value a string or an array of
+    // strings. Resolves to the outline's length, or to nothing when a later
+    // render replaced this one.
+    async render(markdown, fields, given) {
       const render = ++renders;
+      const mark = "m" + render + "-" + Math.random().toString(36).slice(2);
+      const parsed = rules.parse(markdown, mark);
       // A template has no browsing context, so no image is fetched before its
       // src is re-addressed.
       const template = createElement("template");
-      template.innerHTML = tarmacDocLayout.render(markdown);
+      template.innerHTML = parsed.html;
       const images = Array.from(template.content.querySelectorAll("img[src]"));
       if (images.length > 0) {
         const sources = await webkit.messageHandlers.docImages.postMessage(
@@ -137,26 +378,39 @@
             return image.getAttribute("src") || "";
           }),
         );
-        if (render !== renders) return;
+        if (render !== renders) return undefined;
         images.forEach(function (image, index) {
           image.setAttribute("src", sources[index]);
         });
       }
       prose.replaceChildren(template.content);
+      fieldCount = fields.length;
+      outline = parsed.outline;
+      headings = markedHeadings(mark);
+      buildSide(fields);
+      takeState(given);
       remeasure();
       // What was focused or under the pointer was just replaced, with no
       // event to say so.
       focusMoved();
       pointerIs(false);
+      return { outline: outline.length };
     },
 
     // Called before the web view takes its new size.
-    layout(boardZoom, cardWidth, height) {
+    layout(boardZoom, width, height, given) {
       zoom = boardZoom;
       viewportHeight = height;
+      cardWidth = width;
       root.style.setProperty("--zoom", String(zoom));
-      root.style.setProperty("--card-w", cardWidth + "px");
+      px("--card-w", cardWidth);
+      takeState(given);
       relayout();
+    },
+
+    // The app's state after an action of the sidebar's or a render's result.
+    sidebar(given) {
+      takeState(given);
     },
 
     // The chosen fonts: two font-family values and the prose's size, a
