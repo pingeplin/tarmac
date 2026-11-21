@@ -1936,7 +1936,7 @@ final class CardShimTests: XCTestCase {
         let shim = try loadShim()
         XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 1, "S20: one sheet")
         let rules = """
-        :where(svg[viewBox], img, video, canvas) { max-width: min(100%, 560px); object-fit: contain; }
+        :where(svg[viewBox], img, video, canvas) { max-width: min(100%, 1080px); object-fit: contain; }
         :where(img[width], svg[viewBox][width], video[width]) { height: auto; }
         """
         XCTAssertEqual(

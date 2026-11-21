@@ -4,7 +4,7 @@ import XCTest
 
 /// The width cap on media in an HTML card (spec 2611.0023), checked in real
 /// WebKit on a `CardPage`. Every page also holds the control, an SVG the
-/// author sized `width: 100%`, which the cap holds to 560×140: a page whose
+/// author sized `width: 100%`, which the cap holds to 1080×270: a page whose
 /// cap is missing fails on it, whatever its own medium does.
 @MainActor
 final class CardMediaCapTests: XCTestCase {
@@ -52,7 +52,7 @@ final class CardMediaCapTests: XCTestCase {
 
     /// An SVG drawing `width`×`height` user units, black but for its right
     /// tenth, which is red.
-    private static func svg(_ id: String, _ attributes: String, width: Int = 1000, height: Int = 250, inner: String = "") -> String {
+    private static func svg(_ id: String, _ attributes: String, width: Int = 2000, height: Int = 500, inner: String = "") -> String {
         let red = width * 9 / 10
         return """
         <svg id="\(id)" \(attributes)><rect width="\(red)" height="\(height)"/>\
@@ -60,27 +60,27 @@ final class CardMediaCapTests: XCTestCase {
         """
     }
 
-    private static let control = svg("control", #"viewBox="0 0 1000 250" style="width:100%""#)
+    private static let control = svg("control", #"viewBox="0 0 2000 500" style="width:100%""#)
 
     private static let s1 = Medium(id: "m", body: #"<img id="m" src="\#(wide)">"#)
-    private static let s2 = Medium(id: "m", body: #"<img id="m" width="1200" height="300" src="\#(wide)">"#)
-    private static let s3 = Medium(id: "m", body: svg("m", #"viewBox="0 0 1000 250""#), css: "svg { width: 100%; }")
-    private static let s4 = Medium(id: "m", body: svg("m", #"width="1000" height="250" viewBox="0 0 1000 250""#))
-    private static let s5 = Medium(id: "m", body: svg("m", #"width="1000" height="250""#))
+    private static let s2 = Medium(id: "m", body: #"<img id="m" width="2000" height="500" src="\#(wide)">"#)
+    private static let s3 = Medium(id: "m", body: svg("m", #"viewBox="0 0 2000 500""#), css: "svg { width: 100%; }")
+    private static let s4 = Medium(id: "m", body: svg("m", #"width="2000" height="500" viewBox="0 0 2000 500""#))
+    private static let s5 = Medium(id: "m", body: svg("m", #"width="1300" height="325""#, width: 1300, height: 325))
     private static let s6 = Medium(
         id: "m",
-        body: svg("m", #"viewBox="0 0 1000 250""#, inner: svg("inner", #"x="0" y="0" width="1000" height="250" viewBox="0 0 1000 250""#)),
+        body: svg("m", #"viewBox="0 0 2000 500""#, inner: svg("inner", #"x="0" y="0" width="2000" height="500" viewBox="0 0 2000 500""#)),
         css: "svg { width: 100%; }"
     )
     private static let s7 = Medium(id: "m", body: """
-    <canvas id="m" width="1200" height="200" style="width:1200px;height:200px"></canvas>
+    <canvas id="m" width="2000" height="200" style="width:2000px;height:200px"></canvas>
     <script>
       const pen = document.getElementById('m').getContext('2d');
-      pen.beginPath(); pen.arc(600, 100, 90, 0, 2 * Math.PI); pen.fill();
+      pen.beginPath(); pen.arc(1000, 100, 90, 0, 2 * Math.PI); pen.fill();
     </script>
     """)
-    private static let s8 = Medium(id: "m", body: #"<img id="m" style="height:200px" src="\#(wide)">"#)
-    private static let s9 = Medium(id: "m", body: #"<video id="m" width="1200" height="300"></video>"#)
+    private static let s8 = Medium(id: "m", body: #"<img id="m" style="height:400px" src="\#(wide)">"#)
+    private static let s9 = Medium(id: "m", body: #"<video id="m" width="2000" height="500"></video>"#)
     private static let s10 = Medium(id: "m", body: #"<div style="width:200px"><img id="m" src="\#(wide)"></div>"#)
     private static let s11 = [
         Medium(id: "cell", body: #"<table><tr><td><img id="cell" src="\#(wide)"></td></tr></table>"#),
@@ -93,20 +93,20 @@ final class CardMediaCapTests: XCTestCase {
     ]
     private static let s21 = Medium(id: "m", body: #"<img id="m" width="400" height="400" src="\#(wide)">"#)
     private static let s22 = [
-        Medium(id: "tall", body: svg("tall", #"viewBox="0 0 1000 100" height="200""#, height: 100)),
+        Medium(id: "tall", body: svg("tall", #"viewBox="0 0 2000 100" height="200""#, height: 100)),
         Medium(id: "square", body: svg("square", #"viewBox="0 0 100 100" width="300" height="100""#, width: 100, height: 100)),
     ]
     private static let s23 = Medium(id: "m", body: """
-    <div id="scroller" style="width:600px;overflow:auto">\(svg("m", #"width="1000" height="250" viewBox="0 0 1000 250""#))</div>
+    <div id="scroller" style="width:600px;overflow:auto">\(svg("m", #"width="2000" height="500" viewBox="0 0 2000 500""#))</div>
     """)
-    private static let s24 = Medium(id: "m", body: #"<canvas id="m" width="1200" height="300"></canvas>"#)
+    private static let s24 = Medium(id: "m", body: #"<canvas id="m" width="2000" height="500"></canvas>"#)
 
     private func card(
         _ body: String, css: String = "", head: String = "", zoom: Double? = nil, fonts: CardFontVariables? = nil
     ) throws -> WKWebView {
         let page = """
         <!doctype html><script>\(try CardPage.shim(fonts: fonts))</script><html><head><meta charset="utf-8">\(head)<style>
-        html { background: #fff } body { margin: 0; width: 1000px }
+        html { background: #fff } body { margin: 0; width: 1400px }
         \(css)
         </style></head><body>\(body)<div>\(Self.control)</div></body></html>
         """
@@ -140,7 +140,7 @@ final class CardMediaCapTests: XCTestCase {
     }
 
     private func assertControl(_ view: WKWebView, file: StaticString = #filePath, line: UInt = #line) throws {
-        try assertBox(view, "control", 560, 140, "the control", file: file, line: line)
+        try assertBox(view, "control", 1080, 270, "the control", file: file, line: line)
     }
 
     // MARK: - Pixels, at no zoom
@@ -192,10 +192,10 @@ final class CardMediaCapTests: XCTestCase {
 
     // MARK: - The cap (G1, G2)
 
-    func testS1AWideImageIsCappedAt560InEveryZoom() throws {
+    func testS1AWideImageIsCappedAt1080InEveryZoom() throws {
         for zoom in [nil, 1, 3] as [Double?] {
             let view = try card(Self.s1, zoom: zoom)
-            try assertBox(view, "m", 560, 140, "zoom \(String(describing: zoom))")
+            try assertBox(view, "m", 1080, 270, "zoom \(String(describing: zoom))")
             try assertControl(view)
             if zoom == nil { try assertRedAtRightEdge(view, "m") }
         }
@@ -203,26 +203,26 @@ final class CardMediaCapTests: XCTestCase {
 
     func testS2AnImageSizedByItsAttributesKeepsItsRatio() throws {
         let view = try card(Self.s2)
-        try assertBox(view, "m", 560, 140)
+        try assertBox(view, "m", 1080, 270)
         try assertControl(view)
     }
 
     func testS3AnSVGTheAuthorSizedFullWidthIsCappedAndScaled() throws {
         let view = try card(Self.s3)
-        try assertBox(view, "m", 560, 140)
+        try assertBox(view, "m", 1080, 270)
         try assertControl(view)
         try assertRedAtRightEdge(view, "m")
     }
 
     func testS4AnSVGWithAViewBoxAndASizeIsCapped() throws {
         let view = try card(Self.s4)
-        try assertBox(view, "m", 560, 140)
+        try assertBox(view, "m", 1080, 270)
         try assertControl(view)
     }
 
     func testS5AnSVGWithNoViewBoxKeepsItsSizeAndIsNotCropped() throws {
         let view = try card(Self.s5)
-        try assertBox(view, "m", 1000, 250)
+        try assertBox(view, "m", 1300, 325)
         try assertControl(view)
         try assertRedAtRightEdge(view, "m")
     }
@@ -230,14 +230,14 @@ final class CardMediaCapTests: XCTestCase {
     func testS6ANestedSVGScalesWithItsParent() throws {
         let view = try card(Self.s6)
         let outer = try box(view, "m")
-        XCTAssertEqual(outer[2], 560, accuracy: 1, "the outer svg")
+        XCTAssertEqual(outer[2], 1080, accuracy: 1, "the outer svg")
         XCTAssertEqual(try box(view, "inner")[2], outer[2], accuracy: 1, "the nested svg")
         try assertControl(view)
     }
 
     func testS7ACanvasWithAFixedHeightDrawsUndistorted() throws {
         let view = try card(Self.s7)
-        try assertBox(view, "m", 560, 200)
+        try assertBox(view, "m", 1080, 200)
         try assertControl(view)
         let b = try box(view, "m")
         let pixels = try shot(view)
@@ -249,13 +249,13 @@ final class CardMediaCapTests: XCTestCase {
 
     func testS8AnImageWithAFixedHeightDrawsWholeAndUndistortedInItsBox() throws {
         let view = try card(Self.s8)
-        try assertBox(view, "m", 560, 200)
+        try assertBox(view, "m", 1080, 400)
         try assertControl(view)
         let b = try box(view, "m")
         let (midX, midY) = (b[0] + b[2] / 2, b[1] + b[3] / 2)
         let pixels = try shot(view)
-        XCTAssertEqual(pixels.inked(row: midY, from: b[0], to: b[0] + b[2]), 560, accuracy: 2, "drawn width")
-        XCTAssertEqual(pixels.inked(column: midX, from: b[1], to: b[1] + b[3]), 140, accuracy: 2, "drawn height")
+        XCTAssertEqual(pixels.inked(row: midY, from: b[0], to: b[0] + b[2]), 1080, accuracy: 2, "drawn width")
+        XCTAssertEqual(pixels.inked(column: midX, from: b[1], to: b[1] + b[3]), 270, accuracy: 2, "drawn height")
         XCTAssertTrue(pixels.isWhite(midX, b[1] + 5), "the band above")
         XCTAssertTrue(pixels.isWhite(midX, b[1] + b[3] - 5), "the band below")
         XCTAssertTrue(pixels.isRed(b[0] + b[2] - 5, midY), "red at its right edge")
@@ -263,7 +263,7 @@ final class CardMediaCapTests: XCTestCase {
 
     func testS9AVideoSizedByItsAttributesIsCapped() throws {
         let view = try card(Self.s9)
-        try assertBox(view, "m", 560, 140)
+        try assertBox(view, "m", 1080, 270)
         try assertControl(view)
     }
 
@@ -275,7 +275,7 @@ final class CardMediaCapTests: XCTestCase {
 
     func testS11AnImageInACellAFlexRowOrAnInlineBlockDoesNotCollapse() throws {
         let view = try card(Self.s11.map(\.body).joined())
-        for medium in Self.s11 { try assertBox(view, medium.id, 560, 140) }
+        for medium in Self.s11 { try assertBox(view, medium.id, 1080, 270) }
         try assertControl(view)
     }
 
@@ -291,7 +291,7 @@ final class CardMediaCapTests: XCTestCase {
     func testS13AnAuthorsMaxWidthLiftsTheCap() throws {
         let pages: [(String, String, Double, Double)] = [
             ("img { max-width: none; }", #"<img id="m" src="\#(Self.wide)">"#, 2000, 500),
-            (".w { max-width: 100%; }", #"<img id="m" class="w" src="\#(Self.wide)">"#, 1000, 250),
+            (".w { max-width: 100%; }", #"<img id="m" class="w" src="\#(Self.wide)">"#, 1400, 350),
             ("", #"<img id="m" style="max-width:none" src="\#(Self.wide)">"#, 2000, 500),
         ]
         for (css, body, width, height) in pages {
@@ -317,7 +317,7 @@ final class CardMediaCapTests: XCTestCase {
 
     func testS16ARevealCardIsCappedToo() throws {
         let view = try card(Self.s1, head: #"<meta name="tarmac-zoom" content="reveal">"#)
-        try assertBox(view, "m", 560, 140)
+        try assertBox(view, "m", 1080, 270)
         try assertControl(view)
         try assertRedAtRightEdge(view, "m")
     }
@@ -377,14 +377,14 @@ final class CardMediaCapTests: XCTestCase {
 
     func testS22AnSVGKeepsTheHeightItWasGiven() throws {
         let view = try card(Self.s22.map(\.body).joined())
-        try assertBox(view, "tall", 560, 200)
+        try assertBox(view, "tall", 1080, 200)
         try assertBox(view, "square", 300, 100)
         try assertControl(view)
     }
 
     func testS23AnSVGInAnAuthorsScrollerIsCappedAndTheScrollerNoLongerScrolls() throws {
         let view = try card(Self.s23)
-        try assertBox(view, "m", 560, 140)
+        try assertBox(view, "m", 600, 150)
         let scroller = try XCTUnwrap(eval(view, "[document.getElementById('scroller').scrollWidth, document.getElementById('scroller').clientWidth]") as? [Double])
         XCTAssertEqual(scroller[0], scroller[1], "scrollWidth against clientWidth")
         try assertControl(view)
@@ -392,7 +392,7 @@ final class CardMediaCapTests: XCTestCase {
 
     func testS24ACanvasSizedByItsAttributesIsCapped() throws {
         let view = try card(Self.s24)
-        try assertBox(view, "m", 560, 140)
+        try assertBox(view, "m", 1080, 270)
         try assertControl(view)
     }
 
