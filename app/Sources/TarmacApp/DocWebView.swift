@@ -48,9 +48,7 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
     /// The web view carries `DocFrameRule`, so a web page the doc frames is
     /// kept off the img host.
     private var framesGuarded = false
-    /// The doc's body and front matter.
-    private var markdown: String?
-    private var fields: [DocFrontMatter.Field] = []
+    private var doc: (fields: [DocFrontMatter.Field], body: String)?
     /// A narrow card's open overlay, never stored.
     private var overlayOpen = false
     private var lastChangedMs: UInt64?
@@ -161,8 +159,7 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
             let split = DocFrontMatter.split(DocSource.markdown(path: path, contents: FileBytes.read(path: path)))
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.reads.isCurrent(read) else { return }
-                self.markdown = split.body
-                self.fields = split.fields
+                self.doc = split
                 self.render()
             }
         }
@@ -174,14 +171,12 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
 
     // MARK: - Page
 
-    /// The page lays the new content out by the last state it was given: a
-    /// layout always reaches it first (`didFinish`), and only the page knows
-    /// whether the content has fields or an outline.
+    /// The page lays it out by the state of the layout `didFinish` sent first.
     private func render() {
-        guard pageLoaded, let markdown else { return }
+        guard pageLoaded, let doc else { return }
         webView.runInCardWorld(
             "await tarmacDoc.render(markdown, fields)",
-            arguments: ["markdown": markdown, "fields": DocFrontMatter.page(fields)]
+            arguments: ["markdown": doc.body, "fields": DocFrontMatter.page(doc.fields)]
         )
     }
 
@@ -191,18 +186,14 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
         DocSidebar.pageState(cardWidth: cardWidth, stored: stored(), overlayOpen: overlayOpen)
     }
 
-    private func sendSidebar() {
-        guard pageLoaded else { return }
-        webView.runInCardWorld("tarmacDoc.sidebar(state)", arguments: ["state": sidebarState().arguments])
-    }
-
     /// An action of the page's sidebar; one the page cannot have meant changes nothing.
     private func sidebarReported(_ message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame, let action = DocSidebar.Action(report: message.body) else { return }
         let applied = DocSidebar.apply(action, stored: stored(), overlayOpen: overlayOpen, cardWidth: cardWidth)
         overlayOpen = applied.overlayOpen
         onStoredChanged(applied.stored)
-        sendSidebar()
+        guard pageLoaded else { return }
+        webView.runInCardWorld("tarmacDoc.sidebar(state)", arguments: ["state": sidebarState().arguments])
     }
 
     /// Passed as arguments, never spliced into the script: a family name is
