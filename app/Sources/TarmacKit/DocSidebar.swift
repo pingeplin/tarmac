@@ -34,28 +34,79 @@ public enum DocSidebar {
         case resize(Double)
         case reset
 
+        /// The page's `docSidebar` report; nil changes nothing.
         public init?(report: Any) {
-            self = .reset
+            guard let fields = report as? [String: Any], let action = fields["action"] as? String else { return nil }
+            switch action {
+            case "open": self = .open
+            case "close": self = .close
+            case "reset": self = .reset
+            case "resize":
+                guard let raw = fields["width"], case .number(let width)? = JSONValue(foundation: raw),
+                      width.isFinite, width > 0 else { return nil }
+                self = .resize(width)
+            default: return nil
+            }
         }
     }
 
-    public static func range(cardWidth: Double) -> ClosedRange<Double> { 0...0 }
+    /// Wide enough to dock the standard sidebar beside the narrowest text.
+    static func isWide(cardWidth: Double) -> Bool { cardWidth - standard >= textMinimum }
 
-    public static func resizable(cardWidth: Double) -> Bool { false }
-
-    public static func mode(cardWidth: Double, hasContent: Bool, stored: Stored, overlayOpen: Bool) -> Mode {
-        .docked(0)
+    /// A narrow card's overlay keeps its grip clear of the card's scroll thumb.
+    public static func range(cardWidth: Double) -> ClosedRange<Double> {
+        if isWide(cardWidth: cardWidth) { return minimum...min(maximum, cardWidth - textMinimum) }
+        let upper = min(maximum, cardWidth - strip - grip - thumbClear)
+        return min(minimum, upper)...upper
     }
 
-    public static func overlayOpen(_ open: Bool, cardWidth: Double) -> Bool { !open }
+    public static func resizable(cardWidth: Double) -> Bool {
+        let range = range(cardWidth: cardWidth)
+        return range.upperBound > range.lowerBound
+    }
+
+    public static func mode(cardWidth: Double, hasContent: Bool, stored: Stored, overlayOpen: Bool) -> Mode {
+        guard hasContent else { return .none }
+        let range = range(cardWidth: cardWidth)
+        let width = min(max(stored.width ?? standard, range.lowerBound), range.upperBound)
+        if isWide(cardWidth: cardWidth) { return stored.open ?? true ? .docked(width) : .strip }
+        return overlayOpen ? .overlay(width) : .strip
+    }
+
+    /// An open overlay is dropped when its card becomes wide, so the card
+    /// shows the strip when it is narrow again.
+    public static func overlayOpen(_ open: Bool, cardWidth: Double) -> Bool {
+        !isWide(cardWidth: cardWidth) && open
+    }
 
     public static func apply(
         _ action: Action, stored: Stored, overlayOpen: Bool, cardWidth: Double
     ) -> (stored: Stored, overlayOpen: Bool) {
-        (Stored(width: -1, open: nil), !overlayOpen)
+        var stored = stored
+        var overlayOpen = overlayOpen
+        func setOpen(_ open: Bool) {
+            if isWide(cardWidth: cardWidth) { stored.open = open } else { overlayOpen = open }
+        }
+        switch action {
+        case .open: setOpen(true)
+        case .close: setOpen(false)
+        case .resize(let width) where width < minimum: setOpen(false)
+        case .resize(let width): stored.width = min(width, maximum)
+        case .reset:
+            stored.width = standard
+            setOpen(true)
+        }
+        return (stored, overlayOpen)
     }
 
-    public static func outlineCount(result: Any?) -> Int? { -1 }
+    /// The page's render result, `{outline: n}`.
+    public static func outlineCount(result: Any?) -> Int? {
+        guard let fields = result as? [String: Any], let raw = fields["outline"],
+              case .number(let count)? = JSONValue(foundation: raw), count >= 0 else { return nil }
+        return Int(exactly: count)
+    }
 
-    public static func hasContent(fieldCount: Int, outlineCount: Int) -> Bool { fieldCount < 0 }
+    public static func hasContent(fieldCount: Int, outlineCount: Int) -> Bool {
+        fieldCount > 0 || outlineCount > 0
+    }
 }
