@@ -105,7 +105,7 @@ public enum DocSidebar {
         return (stored, overlayOpen)
     }
 
-    /// Whether `action` changes what the card keeps (spec 2611.0024 D12).
+    /// A narrow card's overlay changes no choice, so it sends no layout.
     public static func storesChange(_ action: Action, stored: Stored, overlayOpen: Bool, cardWidth: Double) -> Bool {
         apply(action, stored: stored, overlayOpen: overlayOpen, cardWidth: cardWidth).stored != stored
     }

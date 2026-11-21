@@ -4,7 +4,8 @@ import CoreGraphics
 /// `LayoutTile`s the `layout` message persists, and parses a restored `tiles`
 /// list back into the term / doc placements the board rebuilds from. A term tile
 /// carries its `term_id` and geometry; a board doc tile carries its path,
-/// geometry and `loose` (= not attached). The caller places a tile with
+/// geometry, `loose` (= not attached) and the markdown card's sidebar choice
+/// (`sidebar_w`/`sidebar_open`). The caller places a tile with
 /// all-nil geometry: a term by `TermPlacement.restoredFrame`, a doc by
 /// `Placement.scatterFrame`.
 ///

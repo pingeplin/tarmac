@@ -776,6 +776,24 @@ final class RustEncoderParityTests: XCTestCase {
         )
     }
 
+    func test2611_0024ASidebarKeyFollowsTermID() {
+        // Msg::Layout { dock: [], tiles: [{doc, /a.md, term_id: "t1",
+        //   sidebar_w: 300.5}], board: None, board_id: None }
+        assertParity(
+            .layout(
+                dock: [],
+                tiles: [LayoutTile(kind: "doc", path: "/a.md", termID: "t1", sidebarW: 300.5)],
+                board: nil,
+                boardID: nil
+            ),
+            """
+            83 a1 74 a6 6c 61 79 6f 75 74 a4 64 6f 63 6b 90 a5 74 69 6c 65 73 91
+            84 a4 6b 69 6e 64 a3 64 6f 63 a4 70 61 74 68 a5 2f 61 2e 6d 64
+            a7 74 65 72 6d 5f 69 64 a2 74 31 a9 73 69 64 65 62 61 72 5f 77 cb 40 72 c8 00 00 00 00 00
+            """
+        )
+    }
+
     func testBoards() {
         // Msg::BoardList { boards: [{board-0}, {board-1, name: "infra", running: 2},
         //   {board-2, running: 0}], active: "board-1" }

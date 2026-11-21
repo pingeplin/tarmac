@@ -12,7 +12,7 @@ extension CardView {
         body.onStoredChanged = { [weak self] stored in
             guard let self else { return }
             self.docSidebar = stored
-            self.onSidebarChanged?(self)
+            self.onSidebarChanged?()
         }
     }
 

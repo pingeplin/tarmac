@@ -325,7 +325,7 @@ final class BoardView: NSView, ThemeFollowing {
             self.reproject(c)
         }
         card.onGestureEnded = { [weak self] c, outcome in self?.endGesture(on: c, outcome: outcome) }
-        card.onSidebarChanged = { [weak self] _ in
+        card.onSidebarChanged = { [weak self] in
             guard let self else { return }
             self.onLayoutChanged?(self.viewport)
         }

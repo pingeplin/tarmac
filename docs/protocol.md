@@ -1030,7 +1030,7 @@ the app judges the values. An older app or daemon drops both keys.
 | key | type | missing ⇒ | semantics |
 |---|---|---|---|
 | `sidebar_w` | float \| nil | nil (⇒ the standard 240) | the sidebar's width in world px after a drag or a reset, docked or overlay. The app keeps it only in `160...420`; a value outside (a hand edit, a corrupt file) reads as nil |
-| `sidebar_open` | bool \| nil | nil (⇒ open when the card is wide) | the docked sidebar's open state, written only after the user opened or closed it on a wide card. A narrow card's overlay never writes it, so a narrow card comes back with the strip |
+| `sidebar_open` | bool \| nil | nil (⇒ open when the card is wide) | the docked sidebar's open state, written after the user opened, closed, collapsed or reset the sidebar on a wide card. A narrow card's overlay never writes it, so a narrow card comes back with the strip |
 
 ## Conformance vectors
 

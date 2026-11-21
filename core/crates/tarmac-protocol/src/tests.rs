@@ -625,13 +625,7 @@ fn conformance_vector_44_doc_tile_sidebar() {
         VECTOR_44,
         Msg::Layout {
             dock: vec![],
-            tiles: vec![Tile {
-                kind: "doc".into(),
-                path: Some("/a.md".into()),
-                sidebar_w: Some(300.5),
-                sidebar_open: Some(false),
-                ..Default::default()
-            }],
+            tiles: vec![Tile { sidebar_w: Some(300.5), sidebar_open: Some(false), ..doc_tile("/a.md") }],
             board: None,
             board_id: None,
         },
@@ -649,8 +643,6 @@ fn s2611_0024_s2_the_built_doc_tile_carries_one_sidebar_key_after_loose() {
         Msg::Layout {
             dock: vec!["/c.md".into()],
             tiles: vec![Tile {
-                kind: "doc".into(),
-                path: Some("/c.md".into()),
                 x: Some(10.0),
                 y: Some(20.0),
                 w: Some(1280.0),
@@ -658,11 +650,27 @@ fn s2611_0024_s2_the_built_doc_tile_carries_one_sidebar_key_after_loose() {
                 z: Some(1),
                 loose: Some(true),
                 sidebar_open: Some(true),
-                ..Default::default()
+                ..doc_tile("/c.md")
             }],
             board: None,
             board_id: None,
         },
+    );
+}
+
+#[test]
+fn s2611_0024_a_sidebar_key_follows_term_id() {
+    let msg = Msg::Layout {
+        dock: vec![],
+        tiles: vec![Tile { term_id: Some("t1".into()), sidebar_w: Some(300.5), ..doc_tile("/a.md") }],
+        board: None,
+        board_id: None,
+    };
+    assert_frame(
+        "83 a1 74 a6 6c 61 79 6f 75 74 a4 64 6f 63 6b 90 a5 74 69 6c 65 73 91 \
+         84 a4 6b 69 6e 64 a3 64 6f 63 a4 70 61 74 68 a5 2f 61 2e 6d 64 \
+         a7 74 65 72 6d 5f 69 64 a2 74 31 a9 73 69 64 65 62 61 72 5f 77 cb 40 72 c8 00 00 00 00 00",
+        msg,
     );
 }
 
