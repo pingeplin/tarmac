@@ -439,11 +439,12 @@ main { max-width: 1080px; margin: 0 auto; }
 
 - **Cap the main column.** On a wide card, text that runs the full width is
   hard to read. `main` stops at 1080 px and stays in the middle.
-- **Put a chart beside its text with `.duo`.** On a card wide enough for two
-  330 px columns, the text and the chart sit side by side; on a narrower card
-  they stack, the chart below the text. The grid decides from the width of
-  `main`, which is the card's real width, so it is right at every board zoom.
-  A media query would see the 3× reference instead (see above).
+- **Put a chart beside its text with `.duo`.** Where `main` has room for two
+  330 px columns and the gap, the text and the chart sit side by side; on a
+  narrower card they stack, the chart below the text. The grid decides from
+  the width of `main` (the card's width, less your padding, at most 1080 px),
+  so it is right at every board zoom. A media query would see the 3×
+  reference instead (see above).
 
 If your document genuinely needs honest, changing viewport dimensions — a
 self-contained D3 or Canvas dashboard that recomputes its scales on resize — opt
