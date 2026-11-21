@@ -129,7 +129,7 @@
       // A template has no browsing context, so no image is fetched before its
       // src is re-addressed.
       const template = createElement("template");
-      template.innerHTML = marked.parse(markdown, { async: false });
+      template.innerHTML = tarmacDocLayout.render(markdown);
       const images = Array.from(template.content.querySelectorAll("img[src]"));
       if (images.length > 0) {
         const sources = await webkit.messageHandlers.docImages.postMessage(

@@ -1301,8 +1301,8 @@ armed again for each of its surviving terminals, so the daemon's one-time
 
 A markdown doc card's body is `DocWebView`: one `WKWebView` per doc, loading a
 bundled page (`DocTemplate.html`) whose content policy forbids script. The doc's
-raw HTML is kept as written and never runs. The app's own scripts — `marked`
-and `doc-render.js` — are injected into a separate content world
+raw HTML is kept as written and never runs. The app's own scripts — `marked`,
+`doc-layout.js` and `doc-render.js` — are injected into a separate content world
 (`CardWebView`), where nothing the doc carries can reach them or the message
 handlers they post to. No cookies, cache or storage outlive the app.
 
@@ -1310,6 +1310,15 @@ handlers they post to. No cookies, cache or storage outlive the app.
   as an inline message — and the page renders it with `marked` on arrival, on
   restore, and on every `FileEvent` for that path, on every board that has the
   doc.
+- **Layout** (spec 2611.0021). The text is a column of 46em of the prose's own
+  size, centred in the card. A markdown table (in a `.doc-table` box) and a
+  code block of the prose itself may be wider, up to 1040px, centred on the
+  column; content wider than that scrolls sideways inside its own box, with a
+  visible scroll bar. `doc-layout.js` renders through its own `marked`
+  instance, DOM-free so XCTest runs it in JavaScriptCore: it wraps each table
+  token and gives the cells of a column whose body text reaches a width of 40
+  (an East Asian wide character counts 2; inline code does not count) the
+  class `doc-text-col`, which keeps that column at least 220px wide.
 - **Zoom.** The web view is kept at the card's on-screen size
   (`ScreenSpaceHost` undoes the body container's scale for it), so WebKit lays
   out and rasterises at real screen points. The page carries the zoom itself:
