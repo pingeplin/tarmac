@@ -31,11 +31,7 @@ final class CardListMarkerTests: XCTestCase {
     """
 
     private func shim(fonts: CardFontVariables? = nil) throws -> String {
-        let app = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let text = try String(
-            contentsOf: app.appendingPathComponent("Sources/TarmacApp/Resources/Web/card_shim.js"), encoding: .utf8
-        )
+        let text = try CardShimSource.text()
         return fonts?.filling(text) ?? text
     }
 
@@ -91,18 +87,24 @@ final class CardListMarkerTests: XCTestCase {
         return view
     }
 
-    private func firstAndWrapped(_ body: String, css: String = "", zoom: Double, then script: String? = nil) throws -> [Double] {
-        let view = try card(body, css: css, zoom: zoom, then: script)
+    private func firstAndWrapped(_ view: WKWebView) throws -> [Double] {
         let lefts = try XCTUnwrap(eval(view, "lines(document.getElementById('it'))") as? [Double])
         XCTAssertGreaterThanOrEqual(lefts.count, 2, "the item wraps")
         return Array(lefts.prefix(2))
     }
 
-    private func assertLinesInPlace(_ body: String, css: String = "", file: StaticString = #filePath, line: UInt = #line) throws {
-        let reference = try firstAndWrapped(body, css: css, zoom: 1)[0] * 3
-        let zoomed = try firstAndWrapped(body, css: css, zoom: 3)
+    /// Checks the item `#it` at zoom 3 against itself at zoom 1, and gives
+    /// back the zoom-3 page.
+    @discardableResult
+    private func assertLinesInPlace(
+        _ body: String, then script: String? = nil, file: StaticString = #filePath, line: UInt = #line
+    ) throws -> WKWebView {
+        let reference = try firstAndWrapped(card(body, zoom: 1, then: script))[0] * 3
+        let view = try card(body, zoom: 3, then: script)
+        let zoomed = try firstAndWrapped(view)
         XCTAssertEqual(zoomed[0], zoomed[1], accuracy: 1, "first line against wrapped line", file: file, line: line)
         XCTAssertEqual(zoomed[0], reference, accuracy: 1, "first line against the zoom-1 left", file: file, line: line)
+        return view
     }
 
     // MARK: - Layout (G1)
@@ -110,7 +112,6 @@ final class CardListMarkerTests: XCTestCase {
     func testS1APlainUlItemsFirstLineStaysWithItsWrappedLinesAtZoom3() throws {
         try assertLinesInPlace("<ul><li id=it>First \(Self.long)</li></ul>")
     }
-
 
     func testS2OlItemsFirstLinesStayWithTheirWrappedLinesAtZoom3() throws {
         try assertLinesInPlace("<ol><li id=it>First \(Self.long)</li></ol>")
@@ -121,8 +122,7 @@ final class CardListMarkerTests: XCTestCase {
     func testS14AnItemWhoseFirstChildIsABlockHasItsFirstLineInPlace() throws {
         for (list, child) in [("ul", "p"), ("ol", "div")] {
             let body = "<\(list)><li id=li><\(child) id=it>First \(Self.long)</\(child)></li></\(list)>"
-            try assertLinesInPlace(body)
-            let view = try card(body, zoom: 3)
+            let view = try assertLinesInPlace(body)
             XCTAssertEqual(try mark(view, "#li"), list == "ul" ? "disc" : "decimal", "S14 \(child)")
         }
     }
@@ -130,11 +130,8 @@ final class CardListMarkerTests: XCTestCase {
     func testS22AnItemInAScrolledBoxHasItsFirstLineInPlace() throws {
         let filler = (1...6).map { "<li>filler \($0) \(Self.long)</li>" }.joined()
         let body = "<div id=box style='height:150px;overflow:auto'><ul>\(filler)<li id=it>First \(Self.long)</li></ul></div>"
-        let scroll = "document.getElementById('box').scrollTop = 120"
-        let reference = try firstAndWrapped(body, zoom: 1, then: scroll)[0] * 3
-        let zoomed = try firstAndWrapped(body, zoom: 3, then: scroll)
-        XCTAssertEqual(zoomed[0], zoomed[1], accuracy: 1, "S22: first line against wrapped line")
-        XCTAssertEqual(zoomed[0], reference, accuracy: 1, "S22: first line against the zoom-1 left")
+        let view = try assertLinesInPlace(body, then: "document.getElementById('box').scrollTop = 120")
+        XCTAssertEqual(try mark(view, "#it"), "disc")
     }
 
     // MARK: - Which items are marked (D3, D4, G2, G3)

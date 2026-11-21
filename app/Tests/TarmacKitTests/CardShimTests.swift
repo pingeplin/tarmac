@@ -359,13 +359,7 @@ final class CardShimTests: XCTestCase {
         ["tarmac": "ready", "meta": meta as Any? ?? NSNull(), "data": NSNull(), "source": "tarmac-card://doc/card.html?v=1"]
     }
 
-    private func source() throws -> String {
-        let app = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        return try String(
-            contentsOf: app.appendingPathComponent("Sources/TarmacApp/Resources/Web/card_shim.js"), encoding: .utf8
-        )
-    }
+    private func source() throws -> String { try CardShimSource.text() }
 
     private func window(
         meta: String?, omitting native: String? = nil, head: Bool = false, data: String? = nil
@@ -1768,7 +1762,6 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(json(shim, "events.map((e) => e.detail)"), #"[{"n":2}]"#)
         XCTAssertEqual(try consoleEntries(shim), [])
     }
-
 
     // MARK: - list markers (2611.0019 S15, S16)
 

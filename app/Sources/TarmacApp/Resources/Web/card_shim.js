@@ -55,15 +55,17 @@
   // author's own, whose :root rule would then win.
   var fontStyle = null;
 
+  function adoptSheet(text) {
+    var sheet = new CSSStyleSheet();
+    sheet.replaceSync(text);
+    document.adoptedStyleSheets = document.adoptedStyleSheets.concat(sheet);
+    return sheet;
+  }
+
   function applyFonts(vars) {
     try {
       if (!vars || typeof vars !== "object" || Array.isArray(vars)) return;
-      if (!fontStyle) {
-        var sheet = new CSSStyleSheet();
-        sheet.replaceSync(":root{}");
-        document.adoptedStyleSheets = document.adoptedStyleSheets.concat(sheet);
-        fontStyle = sheet.cssRules[0].style;
-      }
+      if (!fontStyle) fontStyle = adoptSheet(":root{}").cssRules[0].style;
       Object.keys(vars).forEach(function (name) {
         if (name.indexOf("--tarmac-") === 0 && typeof vars[name] === "string") {
           fontStyle.setProperty(name, vars[name]);
@@ -384,7 +386,7 @@
     "lower-alpha", "upper-alpha", "lower-latin", "upper-latin", "lower-greek",
   ];
   var markerGlyphs = { disc: '"\\2022"', circle: '"\\25E6"', square: '"\\25AA"' };
-  var markerSheet = null;
+  var markerSheetAdopted = false;
   var markerWatch = null;
 
   function markerRules() {
@@ -419,48 +421,56 @@
       if (t) picked.push([li, t]);
     });
     if (!picked.length) return;
-    if (!markerSheet) {
-      var sheet = new CSSStyleSheet();
-      sheet.replaceSync(markerRules());
-      document.adoptedStyleSheets = document.adoptedStyleSheets.concat(sheet);
-      markerSheet = sheet;
+    if (!markerSheetAdopted) {
+      adoptSheet(markerRules());
+      markerSheetAdopted = true;
     }
     picked.forEach(function (p) {
       p[0].setAttribute("data-tarmac-marker", p[1]);
     });
     // An author !important rule that outranks the sheet keeps the native
-    // marker; Tarmac's would be a second one.
-    picked.forEach(function (p) {
-      if (getComputedStyle(p[0]).listStyleType !== "none") p[0].removeAttribute("data-tarmac-marker");
-    });
+    // marker; Tarmac's would be a second one. All reads come before any
+    // removal, so the style is computed once.
+    picked
+      .filter(function (p) {
+        return getComputedStyle(p[0]).listStyleType !== "none";
+      })
+      .forEach(function (p) {
+        p[0].removeAttribute("data-tarmac-marker");
+      });
   }
 
+  // A container filled after it was added is in more than one record: each
+  // item is read once, and only while it is still in the document.
   function addedItems(records) {
-    var items = [];
+    var items = new Set();
     records.forEach(function (r) {
       Array.prototype.forEach.call(r.addedNodes, function (n) {
-        if (n.nodeType !== 1) return;
-        if (n.localName === "li") items.push(n);
-        if (typeof n.querySelectorAll === "function") {
-          Array.prototype.push.apply(items, n.querySelectorAll("li"));
-        }
+        if (n.nodeType !== 1 || !n.isConnected) return;
+        if (n.localName === "li") items.add(n);
+        n.querySelectorAll("li").forEach(function (li) {
+          items.add(li);
+        });
       });
     });
-    return items;
+    return Array.from(items);
   }
 
   function markLists() {
     try {
-      if (typeof CSSStyleSheet !== "function" || typeof MutationObserver !== "function") return;
-      if (typeof getComputedStyle !== "function" || !Array.isArray(document.adoptedStyleSheets)) return;
-      if (typeof document.querySelectorAll !== "function") return;
+      var able =
+        typeof CSSStyleSheet === "function" &&
+        typeof MutationObserver === "function" &&
+        typeof getComputedStyle === "function" &&
+        Array.isArray(document.adoptedStyleSheets) &&
+        typeof document.querySelectorAll === "function";
+      if (!able) return;
       if (!markerWatch) {
         markerWatch = new MutationObserver(function (records) {
           try {
-            var items = addedItems(records);
-            if (items.length) markItems(items);
+            markItems(addedItems(records));
           } catch (e) {
-            // An item that is not marked keeps WebKit's own marker.
+            // ignore
           }
         });
         markerWatch.observe(document.documentElement, { childList: true, subtree: true });
