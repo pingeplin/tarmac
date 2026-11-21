@@ -107,6 +107,29 @@ Extra checks:
 A board switch brought the restore card back on some boards; it was closed
 with `press tab` and `restore_card` read null before each scenario.
 
+### Run 4 addendum (at `98c7fcc`, a fresh launch)
+
+- **The outline icon's soft bars come from a board switch, not from a
+  commit.** On a fresh launch the narrow card's bars are crisp: rows 454–455,
+  458–459, 462–463 at full intensity, 2-row gaps. After `board board-1` and
+  `board board-4` (no zoom change) the whole web view sits half a pixel up:
+  the header's separator row 417 reads `#40474e` (blended with the page)
+  instead of `#4e555c`, every bar spans a full row and two half rows, and the
+  prose text moves up one row too. A zoom change on the board (0.5, then 1)
+  puts it back; `zoom 1` when the board is already at 1 does not. This branch
+  does not change the web view's frame code (its only lines in `CardView` are
+  the sidebar choice and its wiring; in `DocWebView` none touch the host or a
+  frame), so the shift is in code this slice did not change. It shifts the
+  prose as much as the strip, so it is not a sidebar bug and the sidebar was
+  not changed for it.
+- **The `blur` end of a drag.** On the 1280 card at 240, a grip press held
+  and dragged +60 (panel 300); then the dev app's own Settings window was
+  opened (`settings-window.swift open`, ⌘, to the dev app), which takes the
+  key status from the main window: the panel stayed 300; a further +80 move
+  with the press still held, and then the release, changed nothing (the drag
+  had ended); closing the panel by `⇤` and opening it by `≡` docks it at 300,
+  so the blur's `resize` report reached the app.
+
 ## Run 2 checks outside the scenarios
 
 - **Tick clearance (D15).** The 3000-line doc's strip on a 640-high 800 card:
