@@ -1018,6 +1018,20 @@ live-only output rather than staying blank.
 | `term_id` | string (required) | — | the terminal whose ring to re-send / the ring's owner |
 | `bytes` | bin (required, `scrollback` only) | — | the ring snapshot; empty for a silent or unknown term |
 
+## A markdown card's sidebar (spec 2611.0024)
+
+A doc tile gains two optional keys after `term_id`: what its markdown card's
+sidebar keeps, so the choice survives an app restart and a daemon restart.
+Additive under the M0 encoding rules: missing ⇒ nil (no choice yet), unknown
+keys still ignored, and every earlier vector decodes unchanged. A key of the
+wrong type fails the frame, as for `x`. The daemon stores the tile whole; only
+the app judges the values. An older app or daemon drops both keys.
+
+| key | type | missing ⇒ | semantics |
+|---|---|---|---|
+| `sidebar_w` | float \| nil | nil (⇒ the standard 240) | the sidebar's width in world px after a drag or a reset, docked or overlay. The app keeps it only in `160...420`; a value outside (a hand edit, a corrupt file) reads as nil |
+| `sidebar_open` | bool \| nil | nil (⇒ open when the card is wide) | the docked sidebar's open state, written only after the user opened or closed it on a wide card. A narrow card's overlay never writes it, so a narrow card comes back with the strip |
+
 ## Conformance vectors
 
 Hex of the msgpack payload only (length prefix excluded). Decoding each vector MUST
@@ -1337,3 +1351,12 @@ round-trip. Byte-exact encoder output is NOT required (key order may legally dif
         84 a1 74 a5 69 6e 70 75 74 a7 74 65 72 6d 5f 69 64 a2 74 39
         a5 62 79 74 65 73 c4 08 65 63 68 6f 20 68 69 0d a4 68 6f 6c
         64 c3
+
+44. (spec 2611.0024) `{t:"layout", dock:[], tiles:[{kind:"doc", path:"/a.md",
+    sidebar_w:300.5, sidebar_open:false}]}` — the additive tile keys, after
+    `term_id` (here omitted); `false` is written, not skipped.
+
+        83 a1 74 a6 6c 61 79 6f 75 74 a4 64 6f 63 6b 90 a5 74 69 6c
+        65 73 91 84 a4 6b 69 6e 64 a3 64 6f 63 a4 70 61 74 68 a5 2f
+        61 2e 6d 64 a9 73 69 64 65 62 61 72 5f 77 cb 40 72 c8 00 00
+        00 00 00 ac 73 69 64 65 62 61 72 5f 6f 70 65 6e c2
