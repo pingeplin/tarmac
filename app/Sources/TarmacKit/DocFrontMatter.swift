@@ -2,7 +2,8 @@ import Foundation
 
 /// A markdown doc's front matter (spec 2611.0022, D1–D3): the fields a block
 /// between two fences at the doc's top holds, and the body after it. Not a
-/// YAML parser: a line it does not know joins the field above it as text.
+/// YAML parser: a line it does not know joins the field above it, as a line
+/// of its text or as an item of its list.
 public enum DocFrontMatter {
     public enum Value: Equatable, Sendable {
         case text(String)
@@ -22,13 +23,11 @@ public enum DocFrontMatter {
     public static func split(_ markdown: String) -> (fields: [Field], body: String) {
         // Split on UTF-8: "\r\n" is one Character, and the body must be the
         // doc's own tail, never lines joined again.
+        let firstEnd = markdown.utf8.firstIndex(of: UInt8(ascii: "\n")) ?? markdown.utf8.endIndex
+        guard isFence(line(markdown.utf8[..<firstEnd]), marks: ["---"]) else { return ([], markdown) }
         let lines = markdown.utf8.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: false)
-        let text = lines.map { line in
-            let line = String(Substring(line))
-            return line.hasSuffix("\r") ? String(line.dropLast()) : line
-        }
-        guard text.count > 1, isFence(text[0], marks: ["---"]),
-              let close = text.indices.dropFirst().first(where: { isFence(text[$0], marks: ["---", "..."]) })
+        let text = lines.map(line)
+        guard let close = text.indices.dropFirst().first(where: { isFence(text[$0], marks: ["---", "..."]) })
         else { return ([], markdown) }
         let block = text[1..<close]
         guard block.contains(where: { key(of: $0) != nil }), block.allSatisfy(isAllowed) else { return ([], markdown) }
@@ -36,6 +35,11 @@ public enum DocFrontMatter {
         let end = lines[close].endIndex
         let body = end == markdown.utf8.endIndex ? "" : String(markdown[markdown.utf8.index(after: end)...])
         return (fields(block), body)
+    }
+
+    private static func line(_ bytes: Substring.UTF8View) -> String {
+        let line = String(Substring(bytes))
+        return line.hasSuffix("\r") ? String(line.dropLast()) : line
     }
 
     private static func isFence(_ line: String, marks: [String]) -> Bool {
@@ -100,7 +104,7 @@ public enum DocFrontMatter {
     /// Nil when the field's kind waits for the line after it.
     private static func value(_ rest: String) -> Value? {
         if rest.isEmpty { return nil }
-        guard rest.hasPrefix("["), rest.hasSuffix("]"), rest.count > 1 else { return .text(unquoted(rest)) }
+        guard rest.hasPrefix("["), rest.hasSuffix("]") else { return .text(unquoted(rest)) }
         return .list(rest.dropFirst().dropLast().split(separator: ",", omittingEmptySubsequences: false)
             .map { unquoted(trimmed($0)) }.filter { !$0.isEmpty })
     }
