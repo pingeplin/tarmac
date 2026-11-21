@@ -465,8 +465,8 @@ a wide card, so Tarmac caps the width of media:
 - Every `img`, `canvas`, `video`, and `svg` with a `viewBox` is at most
   1080 px wide, and never wider than its container. The cap applies to a
   medium you set to `width: 100%` too.
-- The cap is the width of `main`, so a chart in `main` or in a `.duo` column
-  is not capped.
+- The cap is the width of `main`, so it never makes a chart in `main` or in
+  a `.duo` column narrower than its column.
 - A capped medium is scaled, not cropped. Where you fix its height, it is
   drawn whole in the narrower box, with empty bands. Where you give it `width`
   and `height` attributes, its height follows its width. An `svg` with no
