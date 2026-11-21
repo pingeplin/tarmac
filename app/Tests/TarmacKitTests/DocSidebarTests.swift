@@ -129,12 +129,13 @@ final class DocSidebarTests: XCTestCase {
         XCTAssertEqual(DocSidebar.Action(report: ["action": "close"]), .close)
         XCTAssertEqual(DocSidebar.Action(report: ["action": "reset"]), .reset)
         XCTAssertEqual(DocSidebar.Action(report: ["action": "resize", "width": 250]), .resize(250))
+        XCTAssertEqual(DocSidebar.Action(report: ["action": "resize", "width": 250.5]), .resize(250.5))
         XCTAssertEqual(DocSidebar.Action(report: ["action": "open", "width": 3]), .open)
 
         let refused: [Any] = [
             ["action": "resize"],
             ["action": "resize", "width": "250"],
-            ["action": "resize", "width": true],
+            ["action": "resize", "width": NSNumber(value: true)],
             ["action": "resize", "width": Double.nan],
             ["action": "resize", "width": Double.infinity],
             ["action": "resize", "width": 0],
@@ -153,7 +154,7 @@ final class DocSidebarTests: XCTestCase {
     func test2611_0022S23aTheRenderResult() {
         XCTAssertEqual(DocSidebar.outlineCount(result: ["outline": 3]), 3)
         XCTAssertEqual(DocSidebar.outlineCount(result: ["outline": 0]), 0)
-        let refused: [Any?] = [nil, [String: Any](), ["outline": -1], ["outline": 2.5], ["outline": "3"], ["outline": true], [3]]
+        let refused: [Any?] = [nil, [String: Any](), ["outline": -1], ["outline": 2.5], ["outline": "3"], ["outline": NSNumber(value: true)], [3]]
         for result in refused {
             XCTAssertNil(DocSidebar.outlineCount(result: result), "\(String(describing: result))")
         }

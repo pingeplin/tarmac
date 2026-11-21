@@ -204,6 +204,8 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(try headingText("## Tom &amp; Jerry &#x41;"), "Tom & Jerry A")
         XCTAssertEqual(try headingText("## `a &amp; b`"), "a &amp; b")
         XCTAssertEqual(try headingText("## ![alt](u) x"), "x")
+        XCTAssertEqual(try headingText("## a &lt; b &gt; &quot;c&quot; &#39;d&#39; &#65;"), "a < b > \"c\" 'd' A")
+        XCTAssertEqual(try headingText("a\\\nb\n==="), "a b")
     }
 
     /// 2611.0022 S26
@@ -221,6 +223,17 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertFalse(unmarked.contains("data-outline"))
         XCTAssertEqual(unmarked, html.replacingOccurrences(of: #" data-outline="k9-\d""#, with: "", options: .regularExpression))
         XCTAssertEqual(try render(outlined), unmarked)
+    }
+
+    /// 2611.0022 S26 — a render keeps no outline and no mark from the one
+    /// before it.
+    func test2611_0022S26ARenderStartsAFreshOutlineAndMark() throws {
+        let context = try page()
+        context.setObject(outlined, forKeyedSubscript: "md" as NSString)
+        context.evaluateScript("tarmacDocLayout.parse(md, 'k9'); var second = tarmacDocLayout.parse('# R', '');")
+
+        XCTAssertEqual(context.evaluateScript("JSON.stringify(second.outline)")?.toString(), #"[{"depth":1,"text":"R"}]"#)
+        XCTAssertEqual(context.evaluateScript("second.html.indexOf('data-outline')")?.toInt32(), -1)
     }
 
     /// 2611.0022 S27

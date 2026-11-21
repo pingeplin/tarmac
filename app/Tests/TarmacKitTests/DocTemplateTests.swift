@@ -214,7 +214,7 @@ final class DocTemplateTests: XCTestCase {
     /// 2611.0022 S30 — the text is laid out in the width the sidebar leaves.
     func test2611_0022S30TheTextIsLaidOutAtTheTextWidth() throws {
         let text = try template()
-        XCTAssertTrue(try firstMatch(#":root \{([^}]*)\}"#, in: text).contains("--text-w:"))
+        XCTAssertTrue(try firstMatch(#":root \{([^}]*)\}"#, in: text).contains("--text-w: var(--card-w);"))
         let prose = try firstMatch(#"\n  \.doc-prose \{([^}]*)\}"#, in: text)
         XCTAssertTrue(prose.contains("var(--text-w)"))
         XCTAssertFalse(prose.contains("var(--card-w)"))

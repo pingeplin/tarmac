@@ -31,6 +31,7 @@ final class DocFrontMatterTests: XCTestCase {
         XCTAssertEqual(fields("title: \"A: b\""), [field("title", "A: b")])
         XCTAssertEqual(fields("x: 'y'"), [field("x", "y")])
         XCTAssertEqual(fields("x: \"y'"), [field("x", "\"y'")])
+        XCTAssertEqual(fields("x: \""), [field("x", "\"")])
     }
 
     /// S3
@@ -60,6 +61,8 @@ final class DocFrontMatterTests: XCTestCase {
         XCTAssertEqual(fields("title: x\n\n  \t\nnext: y"), [field("title", "x"), field("next", "y")])
         XCTAssertEqual(fields("key:\n  text"), [field("key", "text")])
         XCTAssertEqual(fields("a: 1\na: 2"), [field("a", "1"), field("a", "2")])
+        XCTAssertEqual(fields("desc: one\n\ttwo"), [field("desc", "one\ntwo")])
+        XCTAssertEqual(fields("k: \"\"\n  more"), [field("k", "more")])
     }
 
     /// S6
@@ -88,6 +91,7 @@ final class DocFrontMatterTests: XCTestCase {
         XCTAssertEqual(split.body, "body")
 
         assertUnchanged(" ---\ntitle: x\n---\n")
+        assertUnchanged("...\ntitle: x\n---\n")
     }
 
     /// S10 — design 2611.0020 D8's stated cost.
@@ -101,10 +105,11 @@ final class DocFrontMatterTests: XCTestCase {
     /// S11
     func test2611_0022S11TheShapeOfAKey() {
         assertUnchanged("---\nkey:value\n---\n")
-        for key in ["my_key-2", "my key", "a.b", "標題"] {
+        for key in ["my_key-2", "my key", "a.b", "標題", "_k", "2k"] {
             XCTAssertEqual(fields("\(key): v"), [field(key, "v")], key)
         }
         assertUnchanged("---\n\"x\": v\n---\n")
+        XCTAssertEqual(fields("key : v"), [field("key", "v")])
     }
 
     /// S12
@@ -115,5 +120,9 @@ final class DocFrontMatterTests: XCTestCase {
         let split = DocFrontMatter.split("---\ntitle: x\n---")
         XCTAssertEqual(split.fields, [field("title", "x")])
         XCTAssertEqual(split.body, "")
+
+        let first = DocFrontMatter.split("---\ntitle: x\n---\nmid\n---\nend")
+        XCTAssertEqual(first.fields, [field("title", "x")])
+        XCTAssertEqual(first.body, "mid\n---\nend")
     }
 }
