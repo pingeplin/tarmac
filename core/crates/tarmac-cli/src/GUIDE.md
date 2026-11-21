@@ -424,6 +424,27 @@ What follows from that:
   dimensions at startup if you must; do not build a layout that waits for them
   to change. Resizing a card is the one thing that does re-lay it out.
 
+**Layout that reads well at any card width.** A card can be 392 px wide or as
+wide as the screen. Two rules keep a report readable at both, with no media
+query:
+
+```css
+main { max-width: 1080px; margin: 0 auto; }
+.duo {
+  display: grid; gap: 20px; align-items: start;
+  grid-template-columns: repeat(auto-fit, minmax(min(330px, 100%), 1fr));
+}
+.duo svg { display: block; width: 100%; height: auto; }
+```
+
+- **Cap the main column.** On a wide card, text that runs the full width is
+  hard to read. `main` stops at 1080 px and stays in the middle.
+- **Put a chart beside its text with `.duo`.** On a card wide enough for two
+  330 px columns, the text and the chart sit side by side; on a narrower card
+  they stack, the chart below the text. The grid decides from the width of
+  `main`, which is the card's real width, so it is right at every board zoom.
+  A media query would see the 3× reference instead (see above).
+
 If your document genuinely needs honest, changing viewport dimensions — a
 self-contained D3 or Canvas dashboard that recomputes its scales on resize — opt
 out:
@@ -568,11 +589,14 @@ producer | tarmac push dash.html -                    # one value per line of st
     margin: 0; padding: 24px;
     font: 15px/1.5 ui-sans-serif, -apple-system, system-ui, sans-serif;
   }
+  main { max-width: 1080px; margin: 0 auto; }
   h1 { font-size: 20px; margin: 0 0 16px; }
   .bar { height: 18px; background: #2f81f7; border-radius: 3px; }
 </style>
+<main>
 <h1>Build report</h1>
 <div id="out"></div>
+</main>
 <script>
   const DATA = [["parse", 42], ["typecheck", 118], ["emit", 67]];
   const max = Math.max(...DATA.map(([, ms]) => ms));
