@@ -394,9 +394,10 @@ This is opt-in. A page that does not use the properties is not changed.
   `px` widths does not reflow when the size changes.
 - A script can read a value at any time:
   `getComputedStyle(document.documentElement).getPropertyValue("--tarmac-mono-font")`.
-- Tarmac adds up to two stylesheets (this one, and in a magnified card the
-  list-marker sheet below), last in `document.styleSheets`, and they have no
-  `ownerNode`. A script that loops over the sheets must check for that.
+- Tarmac adds up to three stylesheets (the media cap below, this one, and in
+  a magnified card the list-marker sheet below), last in
+  `document.styleSheets`, and they have no `ownerNode`. A script that loops
+  over the sheets must check for that.
 
 ### Zoom: design for magnify
 
@@ -457,6 +458,21 @@ main { max-width: 1080px; margin: 0 auto; }
   the width of `main` (the card's width, less your padding, at most 1080 px),
   so it is right at every board zoom. A media query would see the 3×
   reference instead (see above).
+
+**Media are at most 560 px wide.** A wide image or chart is hard to read on a
+wide card, so Tarmac caps the width of media:
+
+- Every `img`, `canvas`, `video`, and `svg` with a `viewBox` is at most 560 px
+  wide, and never wider than its container. The cap applies to a medium you
+  set to `width: 100%` too.
+- A capped medium is scaled, not cropped: it keeps its ratio. An `svg` with no
+  `viewBox` cannot scale, so Tarmac does not cap it.
+- To lift the cap, set `max-width` on the element: `max-width: none`, or
+  `max-width: 100%` to fill its container. Any selector works (`img`, a class,
+  an id, an inline `style`), but not `:where()`.
+- The `.duo` chart above sits in a column narrower than 560 px, so it needs no
+  change. A chart that must fill the full width of `main` needs the lift:
+  `.wide svg { max-width: 100%; }`.
 
 If your document genuinely needs honest, changing viewport dimensions — a
 self-contained D3 or Canvas dashboard that recomputes its scales on resize — opt
