@@ -251,15 +251,14 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, WKNa
     }
 
     /// Tells the page the zoom and the card width it is laid out for, the
-    /// viewport height it is about to have, and the sidebar's state. The
-    /// state is the app's own numbers and words, so it is written as JSON.
+    /// viewport height it is about to have, and the sidebar's state.
     private func layoutPage(viewport: CGSize) {
         overlayOpen = DocSidebar.overlayOpen(overlayOpen, cardWidth: cardWidth)
-        guard pageLoaded,
-              let json = try? JSONSerialization.data(withJSONObject: sidebarState(hasContent: hasContent).arguments),
-              let state = String(data: json, encoding: .utf8)
-        else { return }
-        webView.runInCardWorld("tarmacDoc.layout(\(host.settledZoom), \(cardWidth), \(viewport.height), \(state))")
+        guard pageLoaded else { return }
+        webView.runInCardWorld("tarmacDoc.layout(zoom, cardWidth, height, state)", arguments: [
+            "zoom": Double(host.settledZoom), "cardWidth": cardWidth, "height": Double(viewport.height),
+            "state": sidebarState(hasContent: hasContent).arguments,
+        ])
     }
 
     /// The `src` each image of a render is loaded from: a local file through
