@@ -394,7 +394,8 @@ This is opt-in. A page that does not use the properties is not changed.
   `px` widths does not reflow when the size changes.
 - A script can read a value at any time:
   `getComputedStyle(document.documentElement).getPropertyValue("--tarmac-mono-font")`.
-- Tarmac adds one stylesheet, last in `document.styleSheets`, and it has no
+- Tarmac adds up to two stylesheets (this one, and in a magnified card the
+  list-marker sheet below), last in `document.styleSheets`, and they have no
   `ownerNode`. A script that loops over the sheets must check for that.
 
 ### Zoom: design for magnify
@@ -419,10 +420,43 @@ What follows from that:
   `@media (prefers-color-scheme: dark)` query is safe. If you need the card's width as a number, measure a full-width
   block element's `offsetWidth`: a plain `<div>` reports the card, while
   `innerWidth` reports the reference.
+- **Tarmac draws the markers of plain lists.** At the frozen zoom, WebKit
+  draws an `li`'s own marker, and the item's first line, too far to the left.
+  So in a magnified card Tarmac marks each item whose marker it can draw
+  (`data-tarmac-marker="disc"`, `"decimal"`, …) and draws that marker as the
+  item's `::before`. Numbers keep `start`, `reversed` and `value`. Tarmac
+  leaves alone a list you style yourself: `list-style: none`, your own
+  `li::before`, `li::after` or `li::marker` content, a marker type other than
+  the usual bullet, number, roman, latin and greek ones, an image or `inside`
+  marker, a right-to-left or vertical list. Those keep WebKit's own marker, if
+  they have one, too far left. A `li::marker` rule does not reach a marked
+  item: to colour the marker, style `li::before` (with no `content`) as well.
 - **Layout runs once, so nothing about the viewport changes.** `resize` and
   `ResizeObserver` fire at load and then effectively never again. Read
   dimensions at startup if you must; do not build a layout that waits for them
   to change. Resizing a card is the one thing that does re-lay it out.
+
+**Layout that reads well at any card width.** A card can be 392 px wide or as
+wide as the screen. Two rules keep a report readable at both, with no media
+query:
+
+```css
+main { max-width: 1080px; margin: 0 auto; }
+.duo {
+  display: grid; gap: 20px; align-items: start;
+  grid-template-columns: repeat(auto-fit, minmax(min(330px, 100%), 1fr));
+}
+.duo svg { display: block; width: 100%; height: auto; }
+```
+
+- **Cap the main column.** On a wide card, text that runs the full width is
+  hard to read. `main` stops at 1080 px and stays in the middle.
+- **Put a chart beside its text with `.duo`.** Where `main` has room for two
+  330 px columns and the gap, the text and the chart sit side by side; on a
+  narrower card they stack, the chart below the text. The grid decides from
+  the width of `main` (the card's width, less your padding, at most 1080 px),
+  so it is right at every board zoom. A media query would see the 3×
+  reference instead (see above).
 
 If your document genuinely needs honest, changing viewport dimensions — a
 self-contained D3 or Canvas dashboard that recomputes its scales on resize — opt
@@ -568,11 +602,14 @@ producer | tarmac push dash.html -                    # one value per line of st
     margin: 0; padding: 24px;
     font: 15px/1.5 ui-sans-serif, -apple-system, system-ui, sans-serif;
   }
+  main { max-width: 1080px; margin: 0 auto; }
   h1 { font-size: 20px; margin: 0 0 16px; }
   .bar { height: 18px; background: #2f81f7; border-radius: 3px; }
 </style>
+<main>
 <h1>Build report</h1>
 <div id="out"></div>
+</main>
 <script>
   const DATA = [["parse", 42], ["typecheck", 118], ["emit", 67]];
   const max = Math.max(...DATA.map(([, ms]) => ms));
