@@ -94,9 +94,8 @@ public enum AppPrefs {
             }
             values.inboxPreviewHeight = (try? object.decode(Double.self, forKey: Key(inboxPreviewHeightKey)))
                 .flatMap(acceptedPreviewHeight)
-            if let side = try? object.decode(String.self, forKey: Key(docSidebarSideKey)) {
-                values.docSidebarSide = DocSidebar.Side(rawValue: side) ?? .left
-            }
+            values.docSidebarSide = (try? object.decode(String.self, forKey: Key(docSidebarSideKey)))
+                .flatMap(DocSidebar.Side.init(rawValue:)) ?? .left
             self.values = values
         }
     }

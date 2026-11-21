@@ -7,6 +7,15 @@ import TarmacKit
 @MainActor
 enum DocSideTile {
     private static let sidebarWidth: CGFloat = 18
+    private static let cardInset: CGFloat = 6
+    private static let cardCorner: CGFloat = 3
+    private static let headerHeight: CGFloat = 6
+    /// A line's start in the sidebar, and in the text.
+    private static let sidebarLineInset: CGFloat = 3
+    private static let textLineInset: CGFloat = 4
+    private static let firstLineTop: CGFloat = 4
+    private static let lineStep: CGFloat = 5
+    private static let lineHeight: CGFloat = 2
 
     static func button(_ side: DocSidebar.Side) -> NSButton {
         PictureTile.button(title: side.title)
@@ -23,17 +32,12 @@ enum DocSideTile {
         Theme.srgb(palette.bg1).setFill()
         rect.fill()
 
-        let card = rect.insetBy(dx: 6, dy: 6)
-        let header = NSRect(x: card.minX, y: card.minY, width: card.width, height: 6)
-        let body = NSRect(x: card.minX, y: header.maxY, width: card.width, height: card.height - header.height)
-        let sidebar = NSRect(
-            x: side == .left ? body.minX : body.maxX - sidebarWidth, y: body.minY,
-            width: sidebarWidth, height: body.height
-        )
-        let textX = side == .left ? sidebar.maxX + 4 : body.minX + 4
+        let card = rect.insetBy(dx: cardInset, dy: cardInset)
+        let (header, body) = card.divided(atDistance: headerHeight, from: .minYEdge)
+        let (sidebar, text) = body.divided(atDistance: sidebarWidth, from: side == .left ? .minXEdge : .maxXEdge)
 
         NSGraphicsContext.saveGraphicsState()
-        NSBezierPath(roundedRect: card, xRadius: 3, yRadius: 3).addClip()
+        NSBezierPath(roundedRect: card, xRadius: cardCorner, yRadius: cardCorner).addClip()
         Theme.srgb(palette.bg2).setFill()
         header.fill()
         sidebar.fill()
@@ -41,20 +45,22 @@ enum DocSideTile {
 
         for (index, width) in [10.0, 8, 11].enumerated() {
             Theme.srgb(index == 1 ? palette.agent : palette.faint).setFill()
-            bar(x: sidebar.minX + 3, y: body.minY + 4 + CGFloat(index) * 5, width: width)
+            line(index, x: sidebar.minX + sidebarLineInset, in: body, width: width)
         }
         Theme.srgb(palette.faint).setFill()
         for (index, width) in [24.0, 28, 20, 26].enumerated() {
-            bar(x: textX, y: body.minY + 4 + CGFloat(index) * 5, width: width)
+            line(index, x: text.minX + textLineInset, in: body, width: width)
         }
 
         Theme.srgb(palette.line).setStroke()
-        let outline = NSBezierPath(roundedRect: card.insetBy(dx: 0.5, dy: 0.5), xRadius: 3, yRadius: 3)
+        let outline = NSBezierPath(roundedRect: card.insetBy(dx: 0.5, dy: 0.5), xRadius: cardCorner, yRadius: cardCorner)
         outline.lineWidth = 1
         outline.stroke()
     }
 
-    private static func bar(x: CGFloat, y: CGFloat, width: CGFloat) {
-        NSBezierPath(roundedRect: NSRect(x: x, y: y, width: width, height: 2), xRadius: 1, yRadius: 1).fill()
+    private static func line(_ index: Int, x: CGFloat, in body: NSRect, width: CGFloat) {
+        let y = body.minY + firstLineTop + CGFloat(index) * lineStep
+        let radius = lineHeight / 2
+        NSBezierPath(roundedRect: NSRect(x: x, y: y, width: width, height: lineHeight), xRadius: radius, yRadius: radius).fill()
     }
 }

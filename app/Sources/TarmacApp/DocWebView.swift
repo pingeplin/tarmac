@@ -189,7 +189,7 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, DocS
         )
     }
 
-    /// A page not loaded yet takes the side in `didFinish`.
+    /// A page not loaded yet takes the state in `didFinish`.
     private func sendSidebar() {
         guard pageLoaded else { return }
         webView.runInCardWorld("tarmacDoc.sidebar(state)", arguments: ["state": sidebarState().arguments])

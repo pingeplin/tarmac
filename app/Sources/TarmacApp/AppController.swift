@@ -246,8 +246,6 @@ final class AppController {
         tellEveryView { $0.broadcastThemeChanged() }
     }
 
-    /// The side of the markdown cards' sidebar changed: the same reach as a
-    /// theme change.
     private func docSidebarSideChanged() {
         tellEveryView { $0.broadcastDocSidebarSideChanged() }
     }

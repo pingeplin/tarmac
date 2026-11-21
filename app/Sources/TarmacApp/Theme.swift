@@ -44,12 +44,10 @@ enum Theme {
     /// it; no entry is the system default.
     static var fontFamilies: [FontRole: String] = [:]
 
-    /// The side of every markdown card's sidebar, as `DocumentSettings` last
-    /// resolved it.
-    static var docSidebarSide: DocSidebar.Side = .left
-
     /// The size in effect for each role, as `FontSettings` last resolved it.
     static var fontSizes: [FontRole: Double] = [:]
+
+    static var docSidebarSide: DocSidebar.Side = .left
 
     private static func size(of role: FontRole) -> Double { fontSizes[role] ?? role.sizeRule.standard }
 

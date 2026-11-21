@@ -4,7 +4,6 @@ import TarmacKit
 @MainActor
 final class DocumentSettings {
     private let prefs: AppPrefsStore
-    /// The side changed: every markdown card takes it again.
     var onChange: (() -> Void)?
 
     init(prefs: AppPrefsStore) {
