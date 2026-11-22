@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 
-import { unmatched } from "./lint.mjs";
+import { diagnostics, unmatched } from "./lint-swiftc.mjs";
 
 const SCRIPT = join(import.meta.dirname, "lint.mjs");
 const TOOLCHAIN = readFileSync(join(import.meta.dirname, "../../rust-toolchain.toml"), "utf8");
@@ -481,7 +481,7 @@ test("swiftc S1/S18: a package with no warning passes, says nothing, and leaves 
   const run = lintSwiftc(dir, { ...process.env, TMPDIR: tmp });
 
   assert.deepEqual({ code: run.code, err: run.err, out: run.out }, { ...CLEAN, out: "" });
-  assert.deepEqual(readdirSync(tmp).filter((name) => name.startsWith("tarmac-swiftc-") && !name.endsWith(".lock")), []);
+  assert.deepEqual(readdirSync(tmp), [], "the build directory, and what SwiftPM leaves beside it, are gone");
   assert.equal(execFileSync("git", ["status", "--porcelain", "--ignored"], { cwd: dir, encoding: "utf8" }), before);
 });
 
@@ -503,11 +503,14 @@ test("swiftc S2/S6: a warning is a finding, on the first run and on the next one
   }
 });
 
-test("swiftc S3: the same warning with an entry in the list passes", () => {
-  const message = "initialization of immutable value 'x' was never used; consider replacing with assignment to '_' or removing it";
+test("swiftc S3/S4: the warning this compiler prints, entered in the list, passes, also after it moves down a line", () => {
+  const printed = lintSwiftc(packageRepo(UNUSED)).err.find((line) => line.includes(": warning: "));
+  const message = printed.slice(printed.indexOf(": warning: ") + ": warning: ".length);
   const known = JSON.stringify([{ file: "app/Sources/P/a.swift", message, issue: "#1", reason: "a fixture" }]);
 
-  assert.equal(lintSwiftc(packageRepo(UNUSED, known)).code, 0);
+  const runs = [lintSwiftc(packageRepo(UNUSED, known)), lintSwiftc(packageRepo(`\n${UNUSED}`, known))];
+
+  assert.deepEqual(runs.map((run) => [run.code, run.err]), [[0, [""]], [0, [""]]]);
 });
 
 test("swiftc S5: a list entry with no warning is a finding at its place in the list", () => {
@@ -532,13 +535,16 @@ test("swiftc S7: a package that does not compile cannot be linted", () => {
     "  then make lint ONLY=swiftc",
     "",
   ]);
-  assert.deepEqual(readdirSync(tmp).filter((name) => name.startsWith("tarmac-swiftc-") && !name.endsWith(".lock")), []);
+  assert.deepEqual(readdirSync(tmp), []);
 });
 
 for (const [name, text] of [
   ["not JSON", "[ not json"],
   ["not a list", "{}"],
   ["an entry with no reason", '[{"file": "a", "message": "m", "issue": "#1"}]'],
+  ["an entry with no file", '[{"message": "m", "issue": "#1", "reason": "r"}]'],
+  ["an entry with no message", '[{"file": "a", "issue": "#1", "reason": "r"}]'],
+  ["an entry with no issue", '[{"file": "a", "message": "m", "reason": "r"}]'],
   ["an entry with an empty reason", '[{"file": "a", "message": "m", "issue": "#1", "reason": ""}]'],
 ]) {
   test(`swiftc S16: a list that is ${name} cannot run the check`, () => {
@@ -564,4 +570,59 @@ test("swiftc S15: with no swift on the PATH the check cannot run", () => {
 
   assert.equal(run.code, 2);
   assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cannot run swiftc", "  why  swift is not on the PATH"]);
+});
+
+const ROOT = "/repo";
+const LINE = (path, where, level, message) => `${ROOT}/${path}:${where}: ${level}: ${message}`;
+
+test("swiftc: the compiler's lines become one diagnostic for each place and message", () => {
+  const twice = LINE("app/Sources/P/a.swift", "2:9", "warning", "m");
+  const output = [twice, "  |  `- warning: m", twice, LINE("app/Sources/P/a.swift", "2:9", "warning", "another"), "note: not a diagnostic of ours"].join("\n");
+
+  assert.deepEqual(
+    diagnostics(output, ROOT).map(({ at, file, level, message }) => [at, file, level, message]),
+    [
+      ["app/Sources/P/a.swift:2:9", "app/Sources/P/a.swift", "warning", "m"],
+      ["app/Sources/P/a.swift:2:9", "app/Sources/P/a.swift", "warning", "another"],
+    ],
+  );
+});
+
+test("swiftc: a warning with no place is a warning of the package", () => {
+  const output = ["warning: 'p': found 1 file(s) which are unhandled", LINE("app/Sources/P/a.swift", "2:9", "error", "e")].join("\n");
+
+  assert.deepEqual(
+    diagnostics(output, ROOT).map(({ at, file, level }) => [at, file, level]),
+    [
+      ["app/Sources/P/a.swift:2:9", "app/Sources/P/a.swift", "error"],
+      ["app", "app", "warning"],
+    ],
+  );
+});
+
+test("swiftc: a warning in a test target counts", () => {
+  const manifest = '// swift-tools-version: 6.0\nimport PackageDescription\nlet package = Package(name: "P", targets: [.target(name: "P"), .testTarget(name: "PTests", dependencies: ["P"])])\n';
+  const dir = repo({
+    "core/Cargo.toml": null,
+    "app/Package.swift": manifest,
+    "app/Sources/P/a.swift": "func f() {}\n",
+    "app/Tests/PTests/t.swift": `import XCTest\n\nfinal class T: XCTestCase {\n    func testIt() {\n        let x = 1\n    }\n}\n`,
+    [LIST]: "[]\n",
+  });
+
+  const run = lintSwiftc(dir);
+
+  assert.equal(run.code, 1);
+  assert.equal(report(run)[1], "  at   app/Tests/PTests/t.swift:5:13 swiftc-warning");
+});
+
+test("swiftc: a build that fails with no place named has not run the check", () => {
+  const bin = scratch();
+  const real = execFileSync("which", ["swift"], { encoding: "utf8" }).trim();
+  writeFileSync(join(bin, "swift"), `#!/bin/sh\n[ "$1" = "build" ] && { echo 'error: the package manifest is broken' >&2; exit 1; }\nexec ${real} "$@"\n`, { mode: 0o755 });
+
+  const run = lintSwiftc(packageRepo("func f() {}\n"), { ...process.env, PATH: `${bin}:${process.env.PATH}` });
+
+  assert.equal(run.code, 2);
+  assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cannot run swiftc", "  why  error: the package manifest is broken"]);
 });
