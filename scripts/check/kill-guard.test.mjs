@@ -178,7 +178,7 @@ test("each keyword and each shell before a kill by name is refused", () => {
 
 test("`&>`, `>&` and `2>&1` end no command, and a `#` inside a word starts no comment", () => {
   assert.deepEqual(["echo x &>/dev/null pkill tarmacd", "echo x 2>&1 pkill tarmacd", "echo x >& /dev/null pkill tarmacd"].filter(killsTarmacByName), []);
-  assert.deepEqual([">& /dev/null pkill tarmacd", "&>/dev/null pkill tarmacd", "echo a#b; pkill tarmacd"].filter((line) => !killsTarmacByName(line)), []);
+  assert.deepEqual([">& /dev/null pkill tarmacd", "&>/dev/null pkill tarmacd", "&> /dev/null pkill tarmacd", "echo a#b; pkill tarmacd"].filter((line) => !killsTarmacByName(line)), []);
 });
 
 test("text too deep to read is refused only when it holds a word of such a kill and the name", () => {
