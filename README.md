@@ -153,7 +153,7 @@ through the `Makefile`:
 make core    # cargo build the daemon, CLI, and protocol crate
 make app     # stage the pinned libghostty-vt, then swift build the native app
 make test    # docs-check + check-script tests + cargo test (core) + swift test (app)
-make fmt     # format the Rust workspace (make fmt-check only reports)
+make fmt     # format the Rust and Swift sources (make fmt-check only reports)
 make run     # build and launch the dev app against this worktree's own daemon
 ```
 
