@@ -121,6 +121,19 @@ jobs:
       - name: make lint
         run: make lint ONLY=swiftc
 
+  arch-check:
+    name: arch-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: make arch-check
+        run: make arch-check
+
   check-scripts:
     name: check scripts (node --test)
     # macOS: the tests run both formatters, and swift-format's version matters.

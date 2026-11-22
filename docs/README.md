@@ -36,7 +36,7 @@ still needs a human or an agent reading the diff.
 The code is enforced by a second workflow, `.github/workflows/test.yml`: the
 `core` cargo suite and the app's `swift test`, both on macOS.
 `.github/workflows/lint.yml` runs the formatter check (`make fmt-check`), the
-Rust and Swift lints and the Swift compiler's warnings (`make lint`), and the tests of the check scripts; its jobs fail a pull request's run, and they block a
+Rust and Swift lints and the Swift compiler's warnings (`make lint`), the architecture check (`make arch-check`) and the tests of the check scripts; its jobs fail a pull request's run, and they block a
 merge only once the ruleset lists them. A fourth,
 `.github/workflows/dco.yml`, runs `scripts/dco-check.mjs` over the commits a pull
 request adds, requiring the DCO sign-off `CONTRIBUTING.md` asks for.
