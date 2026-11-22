@@ -100,6 +100,7 @@ fn counted(data: Option<DataRead>) -> DataDir {
     data.map_or(DataDir::Uncounted, |read| read.dir)
 }
 
+#[expect(clippy::cast_possible_truncation, reason = "predates the lint; decided in #470")]
 pub fn epoch_ms(t: SystemTime) -> u64 {
     t.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
 }
@@ -199,14 +200,13 @@ impl Registry {
             if info.seen == *stamp {
                 continue;
             }
-            match stamp {
-                Some(stamp) => changes.push((path.clone(), info.see(*stamp))),
+            if let Some(stamp) = stamp {
+                changes.push((path.clone(), info.see(*stamp)));
+            } else {
                 // A file that is gone is not told, also when its last change
                 // was held.
-                None => {
-                    info.seen = None;
-                    info.untold = false;
-                }
+                info.seen = None;
+                info.untold = false;
             }
         }
         changes
@@ -538,6 +538,7 @@ impl Boards {
                 .map(|b| BoardMeta {
                     board_id: b.id.clone(),
                     name: b.name.clone(),
+                    #[expect(clippy::cast_possible_truncation, reason = "predates the lint; decided in #470")]
                     running: Some(live.get(&b.id).map_or(0, |terms| terms.len() as u32)),
                 })
                 .collect(),

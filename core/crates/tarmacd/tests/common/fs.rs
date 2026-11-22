@@ -33,6 +33,7 @@ pub fn edit(path: impl AsRef<Path>) -> u64 {
 }
 
 /// The file's mtime, truncated exactly as the daemon truncates it for a file_event.
+#[expect(clippy::cast_possible_truncation, reason = "predates the lint; decided in #470")]
 pub fn mtime_ms(path: impl AsRef<Path>) -> u64 {
     std::fs::metadata(path).unwrap().modified().unwrap().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
 }

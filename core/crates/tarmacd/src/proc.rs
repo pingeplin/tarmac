@@ -41,6 +41,7 @@ pub fn process_name(pid: libc::pid_t) -> Option<String> {
 #[cfg(target_os = "macos")]
 fn sysctl(mib: &mut [libc::c_int], buf: &mut [u8]) -> Option<usize> {
     let mut size = buf.len();
+    #[expect(clippy::cast_possible_truncation, reason = "predates the lint; decided in #470")]
     // SAFETY: `mib` names `mib.len()` ints; `buf` is `size` bytes, and sysctl
     // writes at most `size` bytes and sets `size` to the count written.
     let ret = unsafe {
@@ -87,11 +88,14 @@ fn path_name(pid: Pid) -> Option<String> {
     // SAFETY: buf is a valid, sized buffer; proc_pidpath writes at most
     // `buffersize` bytes and returns the number written (<= buffersize) or <= 0
     // on error. We never read past `len`.
+    #[expect(clippy::cast_possible_truncation, reason = "buf is a PROC_PIDPATHINFO_MAXSIZE array")]
     let len = unsafe { libc::proc_pidpath(pid, buf.as_mut_ptr() as *mut libc::c_void, buf.len() as u32) };
     if len <= 0 {
         return None;
     }
-    basename(&buf[..len as usize])
+    #[expect(clippy::cast_sign_loss, reason = "a len <= 0 returned above")]
+    let len = len as usize;
+    basename(&buf[..len])
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -103,13 +107,19 @@ pub fn process_name(_pid: libc::pid_t) -> Option<String> {
 /// the same fact `lsof -p <pid> -d cwd` reports.
 #[cfg(target_os = "macos")]
 pub fn pid_cwd(pid: libc::pid_t) -> Option<String> {
+    // SAFETY: proc_vnodepathinfo holds only integers and integer arrays (libc),
+    // for which all-zero bytes is a valid value.
     let mut info: libc::proc_vnodepathinfo = unsafe { std::mem::zeroed() };
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "predates the lint; decided in #470"
+    )]
     let size = size_of::<libc::proc_vnodepathinfo>() as libc::c_int;
     // SAFETY: `info` is a valid, zeroed, exactly-sized buffer; proc_pidinfo
     // writes at most `size` bytes and returns <=0 on error.
-    let ret = unsafe {
-        libc::proc_pidinfo(pid, libc::PROC_PIDVNODEPATHINFO, 0, &mut info as *mut _ as *mut libc::c_void, size)
-    };
+    let ret =
+        unsafe { libc::proc_pidinfo(pid, libc::PROC_PIDVNODEPATHINFO, 0, &raw mut info as *mut libc::c_void, size) };
     if ret <= 0 {
         return None;
     }
@@ -164,12 +174,17 @@ pub fn proc_facts(pid: Pid) -> Facts {
     };
     match size {
         0 => Facts::Gone,
+        #[expect(clippy::cast_possible_wrap, reason = "predates the lint; decided in #470")]
         KINFO_PROC_SIZE if buf[P_STAT] as i8 == SZOMB => Facts::Gone,
         KINFO_PROC_SIZE => {
             let tv_sec = i64::from_ne_bytes(buf[0..8].try_into().expect("8 bytes"));
             let tv_usec = i32::from_ne_bytes(buf[8..12].try_into().expect("4 bytes"));
             let ppid = i32::from_ne_bytes(buf[E_PPID..E_PPID + 4].try_into().expect("4 bytes"));
-            Facts::Live { ppid, started: (tv_sec as u64) * 1_000_000 + tv_usec as u64 }
+            Facts::Live {
+                ppid,
+                #[expect(clippy::cast_sign_loss, reason = "predates the lint; decided in #470")]
+                started: (tv_sec as u64) * 1_000_000 + tv_usec as u64,
+            }
         }
         _ => Facts::Unread,
     }
@@ -258,9 +273,22 @@ mod tests {
     use std::time::{Duration, Instant};
 
     fn name_of(command: &mut Command) -> Option<String> {
+        #[expect(
+            clippy::unwrap_used,
+            reason = "a test helper; allow-unwrap-in-tests does not cover a cfg(all(test, …)) module"
+        )]
         let mut child: Child = command.arg("5").spawn().unwrap();
+        #[expect(clippy::cast_possible_wrap, reason = "predates the lint; decided in #470")]
         let name = process_name(child.id() as libc::pid_t);
+        #[expect(
+            clippy::unwrap_used,
+            reason = "a test helper; allow-unwrap-in-tests does not cover a cfg(all(test, …)) module"
+        )]
         child.kill().unwrap();
+        #[expect(
+            clippy::unwrap_used,
+            reason = "a test helper; allow-unwrap-in-tests does not cover a cfg(all(test, …)) module"
+        )]
         child.wait().unwrap();
         name
     }
@@ -292,9 +320,11 @@ mod tests {
 
     #[test]
     fn own_pid_is_live_with_its_parent_and_a_start_time() {
+        #[expect(clippy::cast_possible_wrap, reason = "predates the lint; decided in #470")]
         let Facts::Live { ppid, started } = proc_facts(std::process::id() as libc::pid_t) else {
             panic!("own pid is not live")
         };
+        // SAFETY: getppid takes no arguments and is always successful (getppid(2)).
         assert_eq!(ppid, unsafe { libc::getppid() });
         assert_ne!(started, 0);
     }
@@ -308,6 +338,7 @@ mod tests {
     #[test]
     fn an_exited_child_is_gone_before_and_after_it_is_reaped() {
         let mut child = Command::new("/bin/cat").stdin(Stdio::piped()).stdout(Stdio::null()).spawn().unwrap();
+        #[expect(clippy::cast_possible_wrap, reason = "predates the lint; decided in #470")]
         let pid = child.id() as libc::pid_t;
         assert!(matches!(proc_facts(pid), Facts::Live { .. }), "a running child is live");
 
@@ -329,6 +360,7 @@ mod tests {
     // Proven on our own test process, which cargo always launches with a real cwd.
     #[test]
     fn pid_cwd_resolves_own_process_cwd() {
+        #[expect(clippy::cast_possible_wrap, reason = "predates the lint; decided in #470")]
         let pid = std::process::id() as libc::pid_t;
         let cwd = pid_cwd(pid).expect("cwd resolves for our own live pid");
         let expected = std::env::current_dir().unwrap().canonicalize().unwrap();

@@ -16,6 +16,7 @@ enum Reply {
     /// Frame this message back, then keep reading so the test can observe
     /// whether the client sends anything else.
     Frame(Msg),
+    #[expect(clippy::enum_variant_names, reason = "predates the lint; a design change, not part of #468")]
     CloseWithoutReply,
     /// Accept and hold the connection open, never replying — the only way to
     /// exercise the client's read timeout.

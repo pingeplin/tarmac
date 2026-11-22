@@ -32,13 +32,12 @@ impl BellScan {
         let mut rang = false;
         for &b in chunk {
             self.state = match (self.state, b) {
-                (_, CAN | SUB) => State::Ground,
+                (_, CAN | SUB) | (State::Osc, BEL) => State::Ground,
                 (_, ESC) => State::Escape,
                 (State::Ground | State::Escape, BEL) => {
                     rang = true;
                     self.state
                 }
-                (State::Osc, BEL) => State::Ground,
                 (State::Escape, b']') => State::Osc,
                 (State::Escape, b'P' | b'X' | b'^' | b'_') => State::OtherString,
                 (State::Escape, _) => State::Ground,

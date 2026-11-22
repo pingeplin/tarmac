@@ -63,7 +63,7 @@ fn a_change_made_with_no_app_connected_is_reported_at_the_connect() {
     std::thread::sleep(Duration::from_millis(300));
     let edited = edit(&y);
     // Saved with no app, so a daemon that stops here keeps the time of the change.
-    wait_for_last_changed(&daemon, "the change in the state file", 0, &y, json!(edited));
+    wait_for_last_changed(&daemon, "the change in the state file", 0, &y, &json!(edited));
     std::thread::sleep(Duration::from_millis(300));
 
     let mut app = daemon.connect_app();
@@ -125,7 +125,7 @@ fn a_restart_keeps_the_time_of_a_change_and_reports_nothing() {
     app.open_on("board-0", &doc);
     let edited = edit(&doc);
     assert_eq!(app.recv_file_event_since(&doc, edited), edited);
-    wait_for_last_changed(&daemon, "the change in the state file", 0, &doc, json!(edited));
+    wait_for_last_changed(&daemon, "the change in the state file", 0, &doc, &json!(edited));
     drop(app);
 
     daemon.restart();

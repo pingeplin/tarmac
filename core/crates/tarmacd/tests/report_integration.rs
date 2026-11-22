@@ -41,13 +41,14 @@ fn hello_cli() -> Msg {
     Msg::Hello { role: "cli".into(), v: proto::PROTOCOL_VERSION, app_version: None }
 }
 
+#[expect(clippy::cast_possible_truncation, reason = "predates the lint; decided in #470")]
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
 }
 
 #[track_caller]
-fn assert_err(answer: Msg, want: &str) {
-    assert_eq!(answer, Msg::Err { msg: want.into() });
+fn assert_err(answer: &Msg, want: &str) {
+    assert_eq!(*answer, Msg::Err { msg: want.into() });
 }
 
 /// A drained app connection with a job shell for each of `term_ids` at its
@@ -64,7 +65,7 @@ fn job_shell(daemon: &TestDaemon, term_ids: &[&str]) -> Conn {
 
 /// A report from the test process, its `ack`, and the frame the app got.
 fn report_from_test(daemon: &TestDaemon, app: &mut Conn, term_id: &str, kind: &str, text: Option<&str>) -> Seen {
-    assert_ack(Conn::cli_report(&daemon.sock, term_id, kind, text));
+    assert_ack(&Conn::cli_report(&daemon.sock, term_id, kind, text));
     seen(&app.recv_report_for(term_id))
 }
 
@@ -210,7 +211,7 @@ fn s14_a_new_app_connection_gets_every_report_after_its_restore() {
     app.recv_until("T read", |m| is_report_for(m, "T") && seen(m).read);
     drop(app);
     std::thread::sleep(Duration::from_millis(300));
-    assert_ack(Conn::cli_report(&daemon.sock, "U", "done", None));
+    assert_ack(&Conn::cli_report(&daemon.sock, "U", "done", None));
 
     let mut app = daemon.connect_app();
     let mut log = FrameLog::default();
@@ -301,7 +302,7 @@ fn s16_an_exit_ends_the_report_with_no_frame_and_leaves_no_entry() {
     let (term, _) = app.recv_exit();
     assert_eq!(term, "T");
     assert!(none_within(&mut app, Duration::from_secs(1), |m| is_report_for(m, "T")));
-    assert_err(Conn::cli_report(&daemon.sock, "T", "done", None), "unknown terminal: T");
+    assert_err(&Conn::cli_report(&daemon.sock, "T", "done", None), "unknown terminal: T");
 
     app.spawn_term("T", JOB_SHELL);
     app.recv_output_containing("T", "%");
@@ -316,7 +317,7 @@ fn s16_an_exit_ends_the_report_with_no_frame_and_leaves_no_entry() {
 fn s17_clear_with_no_report_sends_nothing() {
     let daemon = TestDaemon::start();
     let mut app = job_shell(&daemon, &["T"]);
-    assert_ack(Conn::cli_report(&daemon.sock, "T", "clear", None));
+    assert_ack(&Conn::cli_report(&daemon.sock, "T", "clear", None));
     assert!(none_within(&mut app, Duration::from_secs(1), |m| is_report_for(m, "T")));
 }
 
@@ -325,7 +326,7 @@ fn clear_removes_a_report() {
     let daemon = TestDaemon::start();
     let mut app = job_shell(&daemon, &["T"]);
     report_from_test(&daemon, &mut app, "T", "done", None);
-    assert_ack(Conn::cli_report(&daemon.sock, "T", "clear", Some("ignored")));
+    assert_ack(&Conn::cli_report(&daemon.sock, "T", "clear", Some("ignored")));
     assert!(is_removal_for(&app.recv_report_for("T"), "T"));
 }
 
@@ -364,8 +365,8 @@ fn s21_an_identical_repeat_is_a_new_unread_report() {
 fn s26_the_daemon_refuses_an_unknown_terminal_or_kind_and_drops_an_empty_text() {
     let daemon = TestDaemon::start();
     let mut app = job_shell(&daemon, &["T"]);
-    assert_err(Conn::cli_report(&daemon.sock, "nobody", "done", None), "unknown terminal: nobody");
-    assert_err(Conn::cli_report(&daemon.sock, "T", "later", None), "unknown report kind: later");
+    assert_err(&Conn::cli_report(&daemon.sock, "nobody", "done", None), "unknown terminal: nobody");
+    assert_err(&Conn::cli_report(&daemon.sock, "T", "later", None), "unknown report kind: later");
     assert!(none_within(&mut app, Duration::from_secs(1), |m| is_report_for(m, "T")));
 
     let frame = report_from_test(&daemon, &mut app, "T", "blocked", Some(""));
@@ -421,11 +422,11 @@ fn s11_a_report_frame_carries_its_board_and_folder_and_a_removal_neither() {
     app.recv_output_containing("T", "%");
     let mut app = probe_until_cwd(&daemon, "T", &dir);
 
-    assert_ack(Conn::cli_report(&daemon.sock, "T", "blocked", None));
+    assert_ack(&Conn::cli_report(&daemon.sock, "T", "blocked", None));
     let frame = app.recv_until("T's report", |m| has_kind_for(m, "T"));
     assert_eq!(place(&frame), (Some("board-1".into()), Some(dir)));
 
-    assert_ack(Conn::cli_report(&daemon.sock, "T", "clear", None));
+    assert_ack(&Conn::cli_report(&daemon.sock, "T", "clear", None));
     let removal = app.recv_report_for("T");
     assert!(is_removal_for(&removal, "T"), "{removal:?}");
     assert_eq!(place(&removal), (None, None));
@@ -444,7 +445,7 @@ fn s11_a_background_terminals_report_carries_its_own_board_and_folder() {
     let mut app = probe_until_cwd(&daemon, "T", &dir);
     app.switch_to("board-0");
 
-    assert_ack(Conn::cli_report(&daemon.sock, "T", "blocked", None));
+    assert_ack(&Conn::cli_report(&daemon.sock, "T", "blocked", None));
     let frame = app.recv_until("T's report", |m| has_kind_for(m, "T"));
     assert_eq!(place(&frame), (Some("board-1".into()), Some(dir)));
 }

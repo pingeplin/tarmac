@@ -21,6 +21,7 @@ fn is_file_event(msg: &Msg, path: &Path) -> bool {
     matches!(msg, Msg::FileEvent { path: p, .. } if Path::new(p) == path)
 }
 
+#[expect(clippy::option_option, reason = "predates the lint; a design change, not part of #468")]
 fn exits(daemon: &Daemon, term_id: &str) -> Option<Option<i64>> {
     daemon.exits.lock().unwrap().lookup(term_id)
 }

@@ -29,8 +29,8 @@ fn saved_resume(v: &Value, term_id: &str) -> Value {
     term_records(v, 0)[term_id]["resume"].clone()
 }
 
-fn wait_saved(daemon: &TestDaemon, term_id: &str, want: Value) {
-    daemon.wait_for_state(&format!("{term_id}'s resume saved as {want}"), |v| saved_resume(v, term_id) == want);
+fn wait_saved(daemon: &TestDaemon, term_id: &str, want: &Value) {
+    daemon.wait_for_state(&format!("{term_id}'s resume saved as {want}"), |v| saved_resume(v, term_id) == *want);
 }
 
 /// The no-save check: the same inode one second later.
@@ -55,7 +55,7 @@ fn s1_s2_an_agent_sets_the_command_and_its_exit_drops_it() {
 
     let (_app, restore) = daemon.probe();
     assert_eq!(restore.resume_cmd("T"), Some("echo HI"));
-    wait_saved(&daemon, "T", json!({"cmd": "echo HI"}));
+    wait_saved(&daemon, "T", &json!({"cmd": "echo HI"}));
     let entry = term_records(&daemon.state_json(), 0)["T"].clone();
     assert!(entry.as_object().unwrap().keys().all(|k| k == "last_cwd" || k == "resume"), "{entry}");
 
@@ -63,7 +63,7 @@ fn s1_s2_an_agent_sets_the_command_and_its_exit_drops_it() {
         probe_until(&daemon, "no resume", sent + Duration::from_secs(6), |r| r.resume_cmd("T").is_none());
     assert!(restore.last_cwd("T").is_some(), "{:?}", restore.term_records);
     assert_eq!(restore.live_terms, ["T"]);
-    wait_saved(&daemon, "T", Value::Null);
+    wait_saved(&daemon, "T", &Value::Null);
     assert!(!term_records(&daemon.state_json(), 0)["T"]["last_cwd"].is_null());
 }
 
@@ -71,7 +71,7 @@ fn s1_s2_an_agent_sets_the_command_and_its_exit_drops_it() {
 fn survives(kill: impl FnOnce(&mut TestDaemon)) {
     let mut daemon = TestDaemon::start_sh();
     let _set = set_by_agent(&daemon, 30);
-    wait_saved(&daemon, "T", json!({"cmd": "echo HI"}));
+    wait_saved(&daemon, "T", &json!({"cmd": "echo HI"}));
 
     kill(&mut daemon);
 
@@ -176,7 +176,7 @@ fn s14_a_command_set_at_the_prompt_lasts_while_the_shell_lives() {
 fn ends_with(code: i64) -> TestDaemon {
     let daemon = TestDaemon::start_sh();
     let (mut app, _log, _) = set_by_agent(&daemon, 30);
-    wait_saved(&daemon, "T", json!({"cmd": "echo HI"}));
+    wait_saved(&daemon, "T", &json!({"cmd": "echo HI"}));
     assert!(!term_records(&daemon.state_json(), 0)["T"]["last_cwd"].is_null());
 
     app.type_line("T", &format!("exit {code}"));
@@ -216,7 +216,7 @@ fn s17_a_repeat_of_the_same_command_does_not_save() {
     );
 
     let sent = app.log_until_output(&mut log, "T", start, b"SENT");
-    wait_saved(&daemon, "T", json!({"cmd": "echo HI"}));
+    wait_saved(&daemon, "T", &json!({"cmd": "echo HI"}));
     std::thread::sleep(SAVE_WINDOW);
     let kept = daemon.state_inode();
     let read_after = log.0[sent].at.elapsed();
@@ -238,7 +238,7 @@ fn s17_a_repeat_of_the_same_command_does_not_save() {
     assert_no_save(&daemon, kept);
 
     agent_sets(&daemon, &mut app, &mut log, "T", "echo HO", 30);
-    wait_saved(&daemon, "T", json!({"cmd": "echo HO"}));
+    wait_saved(&daemon, "T", &json!({"cmd": "echo HO"}));
     assert_ne!(daemon.state_inode(), kept, "the control: a set that changes the command saves");
 }
 
@@ -247,14 +247,14 @@ fn s17_a_repeat_of_the_same_command_does_not_save() {
 fn s18_a_clear_saves_once_and_a_second_clear_does_not() {
     let daemon = TestDaemon::start_sh();
     let _set = set_by_agent(&daemon, 30);
-    wait_saved(&daemon, "T", json!({"cmd": "echo HI"}));
+    wait_saved(&daemon, "T", &json!({"cmd": "echo HI"}));
 
-    assert_ack(Conn::cli_resume(&daemon.sock, "T", None));
-    wait_saved(&daemon, "T", Value::Null);
+    assert_ack(&Conn::cli_resume(&daemon.sock, "T", None));
+    wait_saved(&daemon, "T", &Value::Null);
     std::thread::sleep(SAVE_WINDOW);
     let kept = daemon.state_inode();
 
-    assert_ack(Conn::cli_resume(&daemon.sock, "T", None));
+    assert_ack(&Conn::cli_resume(&daemon.sock, "T", None));
     assert_no_save(&daemon, kept);
 }
 
@@ -350,12 +350,12 @@ fn s12_a_cli_clear_pushes_once() {
     await_term_resume(&mut app, &mut log, 0);
 
     let start = log.len();
-    assert_ack(Conn::cli_resume(&daemon.sock, "T", None));
+    assert_ack(&Conn::cli_resume(&daemon.sock, "T", None));
     let at = await_term_resume(&mut app, &mut log, start);
     assert_eq!(log.0[at].msg, term_resume("T", None));
 
     let again = log.len();
-    assert_ack(Conn::cli_resume(&daemon.sock, "T", None));
+    assert_ack(&Conn::cli_resume(&daemon.sock, "T", None));
     assert_no_term_resume(&mut app, &log, again);
 }
 

@@ -365,6 +365,7 @@ pub(crate) async fn spawn_holding(daemon: Arc<Daemon>, plan: SpawnPlan, hold_dea
 
     let child = pty.slave.spawn_command(builder).map_err(|e| format!("spawn failed: {e}"))?;
     // Before the wait thread below consumes `child`; see TermHandle::pid.
+    #[expect(clippy::cast_possible_wrap, reason = "predates the lint; decided in #470")]
     let child_pid = child.process_id().map(|p| p as libc::pid_t);
     // Drop the slave or the master reader never sees EOF.
     drop(pty.slave);

@@ -88,7 +88,7 @@ fn doc_refresh_records_the_mtime_durably_and_changes_nothing_else() {
     app.send(&Msg::DocRefresh { path: a.clone() });
     let pushed = recv_refresh_event(&mut app, &a);
 
-    wait_for_last_changed(&daemon, "last_changed_ms recorded", 0, &a, json!(pushed));
+    wait_for_last_changed(&daemon, "last_changed_ms recorded", 0, &a, &json!(pushed));
     let after = doc_entry(&daemon.state_json(), 0, &a);
     // Fixed values, not `before`'s: the watcher can reach the doc before `before`
     // is read, and a refresh that sets one of these then leaves the two equal.
@@ -199,7 +199,7 @@ fn doc_refresh_works_on_a_doc_nothing_has_written_since_open() {
     let pushed = recv_refresh_event(&mut app, &a);
     assert_eq!(pushed, mtime_ms(&a), "the push must carry the file's real mtime");
 
-    wait_for_last_changed(&daemon, "last_changed_ms recorded", 0, &a, json!(pushed));
+    wait_for_last_changed(&daemon, "last_changed_ms recorded", 0, &a, &json!(pushed));
 }
 
 // S8: repeat refreshes of an unchanged file are identical, not cumulative.

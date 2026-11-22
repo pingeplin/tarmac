@@ -19,7 +19,9 @@ fn header(payload: &[u8]) -> io::Result<[u8; 4]> {
     if payload.len() as u64 > u64::from(MAX_FRAME_LEN) {
         return Err(too_large(payload.len() as u64));
     }
-    Ok((payload.len() as u32).to_be_bytes())
+    #[expect(clippy::cast_possible_truncation, reason = "the length was checked against MAX_FRAME_LEN above")]
+    let len = payload.len() as u32;
+    Ok(len.to_be_bytes())
 }
 
 pub fn read_sync(r: &mut impl Read) -> io::Result<Vec<u8>> {
@@ -69,7 +71,9 @@ mod tests {
         let payload = encode(&Msg::Ack).unwrap();
         let mut buf = Vec::new();
         write_sync(&mut buf, &payload).unwrap();
-        assert_eq!(&buf[..4], &(payload.len() as u32).to_be_bytes());
+        #[expect(clippy::cast_possible_truncation, reason = "predates the lint; decided in #470")]
+        let len = payload.len() as u32;
+        assert_eq!(&buf[..4], &len.to_be_bytes());
         let mut cursor = io::Cursor::new(buf);
         assert_eq!(read_sync(&mut cursor).unwrap(), payload);
 

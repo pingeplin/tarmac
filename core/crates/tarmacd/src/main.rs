@@ -56,6 +56,10 @@ fn state_path() -> PathBuf {
 
 // Per docs/protocol.md: if the socket file exists, try connecting — success
 // means a live daemon (log + exit 1); failure means stale (unlink + bind).
+#[expect(
+    clippy::redundant_pattern_matching,
+    reason = "is_ok() would close the probe connection before the log and the exit"
+)]
 fn claim_socket(path: &PathBuf) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -63,6 +67,7 @@ fn claim_socket(path: &PathBuf) -> anyhow::Result<()> {
     if path.exists() {
         if let Ok(_) = std::os::unix::net::UnixStream::connect(path) {
             error!("another tarmacd is already listening on {}", path.display());
+            #[expect(clippy::exit, reason = "docs/protocol.md: a live daemon on the socket means log and exit 1")]
             std::process::exit(1);
         } else {
             warn!("removing stale socket {}", path.display());
@@ -75,7 +80,13 @@ fn claim_socket(path: &PathBuf) -> anyhow::Result<()> {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     if std::env::args().any(|a| a == "--version") {
-        println!("{}", env!("CARGO_PKG_VERSION"));
+        #[expect(
+            clippy::print_stdout,
+            reason = "`--version` answers on stdout, before the tracing subscriber is set up"
+        )]
+        {
+            println!("{}", env!("CARGO_PKG_VERSION"));
+        }
         std::process::exit(0);
     }
 

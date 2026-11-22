@@ -58,6 +58,7 @@ fn stopped(stop: Stop) -> i32 {
     1
 }
 
+#[expect(clippy::cast_possible_truncation, reason = "predates the lint; decided in #470")]
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
 }
@@ -207,7 +208,7 @@ pub(crate) fn subscribe(
     crate::daemon::time_out_at(&stream, until).and_then(|()| frame::write_sync(&mut stream, &payload)).map_err(stop)?;
     let mut snapshot = Vec::new();
     loop {
-        match decoded(read(&mut stream, Some(until)).map_err(stop)?)? {
+        match decoded(&read(&mut stream, Some(until)).map_err(stop)?)? {
             Msg::Ack => return Ok((stream, snapshot)),
             Msg::Err { msg } => return Err(Stop::Fail(msg)),
             msg => snapshot.push(msg),
@@ -221,7 +222,7 @@ pub(crate) fn next(stream: &mut UnixStream, deadline: Option<Instant>) -> Result
         true => Stop::Late,
         false => Stop::Fail(crate::daemon::lost(e)),
     })?;
-    match decoded(payload)? {
+    match decoded(&payload)? {
         Msg::Err { msg } if msg == "lagged" => Err(Stop::Fail(LAGGED.into())),
         Msg::Err { msg } => Err(Stop::Fail(msg)),
         msg => Ok(msg),
@@ -242,8 +243,8 @@ fn read(stream: &mut UnixStream, until: Option<Instant>) -> io::Result<Vec<u8>> 
     }
 }
 
-fn decoded(payload: Vec<u8>) -> Result<Msg, Stop> {
-    proto::decode(&payload).map_err(|e| Stop::Fail(format!("bad frame from daemon: {e}")))
+fn decoded(payload: &[u8]) -> Result<Msg, Stop> {
+    proto::decode(payload).map_err(|e| Stop::Fail(format!("bad frame from daemon: {e}")))
 }
 
 #[cfg(test)]

@@ -159,10 +159,11 @@ mod tests {
     fn table(parents: &[(Pid, Pid)]) -> impl Fn(Pid) -> Facts + use<> {
         let parents = parents.to_vec();
         move |pid| {
-            parents
-                .iter()
-                .find(|(p, _)| *p == pid)
-                .map_or(Facts::Gone, |&(_, ppid)| Facts::Live { ppid, started: pid as u64 })
+            parents.iter().find(|(p, _)| *p == pid).map_or(Facts::Gone, |&(_, ppid)| Facts::Live {
+                ppid,
+                #[expect(clippy::cast_sign_loss, reason = "predates the lint; decided in #470")]
+                started: pid as u64,
+            })
         }
     }
 
@@ -171,7 +172,11 @@ mod tests {
     }
 
     fn agent(pid: Pid) -> Option<Holder> {
-        Some(Holder::Agent { pid, started: pid as u64 })
+        Some(Holder::Agent {
+            pid,
+            #[expect(clippy::cast_sign_loss, reason = "predates the lint; decided in #470")]
+            started: pid as u64,
+        })
     }
 
     const LEADER: Option<Holder> = Some(Holder::Leader { pid: L });
@@ -234,6 +239,11 @@ mod tests {
 
     /// A chain of `members` pids, the caller first and the child last.
     fn chain_of(members: usize) -> (Pid, Vec<(Pid, Pid)>) {
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_possible_wrap,
+            reason = "predates the lint; decided in #470"
+        )]
         let pids: Vec<Pid> = (0..members - 1).map(|i| 1000 + i as Pid).chain([CHILD]).collect();
         (pids[0], pids.windows(2).map(|w| (w[0], w[1])).collect())
     }

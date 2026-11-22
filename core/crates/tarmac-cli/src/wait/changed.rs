@@ -207,6 +207,7 @@ mod tests {
         for l in lines {
             tx.send(l).unwrap();
         }
+        #[expect(clippy::mem_forget, reason = "the source stays open: a dropped sender would end the receiver")]
         std::mem::forget(tx);
         rx
     }

@@ -148,7 +148,7 @@ pub fn upsert_doc(
     via: &str,
     term_id: Option<String>,
     seen: Option<FileStamp>,
-    repo: Option<RepoInfo>,
+    repo: &Option<RepoInfo>,
 ) -> bool {
     if let Some(info) = reg.docs.get_mut(path) {
         info.via = via.to_owned();

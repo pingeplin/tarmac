@@ -21,8 +21,8 @@ pub fn doc_entry(v: &serde_json::Value, board: usize, path: &str) -> serde_json:
         .unwrap_or(serde_json::Value::Null)
 }
 
-pub fn wait_for_last_changed(daemon: &TestDaemon, what: &str, board: usize, path: &str, want: serde_json::Value) {
-    daemon.wait_for_state(what, |v| doc_entry(v, board, path)["last_changed_ms"] == want);
+pub fn wait_for_last_changed(daemon: &TestDaemon, what: &str, board: usize, path: &str, want: &serde_json::Value) {
+    daemon.wait_for_state(what, |v| doc_entry(v, board, path)["last_changed_ms"] == *want);
 }
 
 pub fn has_doc(v: &serde_json::Value, board: usize, path: &str) -> bool {

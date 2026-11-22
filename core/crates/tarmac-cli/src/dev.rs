@@ -261,21 +261,21 @@ mod tests {
     }
 
     #[track_caller]
-    fn parses_to(args: &[&str], want: DevRequest) {
-        assert_eq!(parse(args).unwrap(), want);
+    fn parses_to(args: &[&str], want: &DevRequest) {
+        assert_eq!(parse(args).unwrap(), *want);
     }
 
     /// The 5000 ms default is pinned here, not read back from the source.
     #[test]
     fn snapshot_defaults_to_a_five_second_budget() {
-        parses_to(&["snapshot"], DevRequest::Snapshot { until: None, timeout_ms: Some(5000) });
+        parses_to(&["snapshot"], &DevRequest::Snapshot { until: None, timeout_ms: Some(5000) });
     }
 
     #[test]
     fn snapshot_flags_parse_and_reject() {
         parses_to(
             &["snapshot", "--until", "viewport.zoom == 0.5", "--timeout", "1500"],
-            DevRequest::Snapshot { until: Some("viewport.zoom == 0.5".into()), timeout_ms: Some(1500) },
+            &DevRequest::Snapshot { until: Some("viewport.zoom == 0.5".into()), timeout_ms: Some(1500) },
         );
         for bad in [
             vec!["snapshot", "--timeout", "abc"],
@@ -292,16 +292,16 @@ mod tests {
     /// that catches one.
     #[test]
     fn a_zero_timeout_is_valid_and_means_evaluate_once() {
-        parses_to(&["snapshot", "--timeout", "0"], DevRequest::Snapshot { until: None, timeout_ms: Some(0) });
+        parses_to(&["snapshot", "--timeout", "0"], &DevRequest::Snapshot { until: None, timeout_ms: Some(0) });
     }
 
     #[test]
     fn each_verb_parses_to_its_variant() {
-        parses_to(&["zoom", "0.5"], DevRequest::Zoom { z: 0.5 });
-        parses_to(&["focus", "board"], DevRequest::Focus { card: None });
-        parses_to(&["focus", "t-1"], DevRequest::Focus { card: Some("t-1".into()) });
-        parses_to(&["type", "t-1", "hi"], DevRequest::Type { card: "t-1".into(), text: "hi".into() });
-        parses_to(&["key", "t-1", "ctrl+c"], DevRequest::Key { card: "t-1".into(), combo: "ctrl+c".into() });
+        parses_to(&["zoom", "0.5"], &DevRequest::Zoom { z: 0.5 });
+        parses_to(&["focus", "board"], &DevRequest::Focus { card: None });
+        parses_to(&["focus", "t-1"], &DevRequest::Focus { card: Some("t-1".into()) });
+        parses_to(&["type", "t-1", "hi"], &DevRequest::Type { card: "t-1".into(), text: "hi".into() });
+        parses_to(&["key", "t-1", "ctrl+c"], &DevRequest::Key { card: "t-1".into(), combo: "ctrl+c".into() });
     }
 
     /// S34: two arguments, `restore_card` is the absent card, and the control
@@ -310,12 +310,15 @@ mod tests {
     fn s34_click_parses_a_card_or_the_restore_card_and_any_control_name() {
         parses_to(
             &["click", "t-1", "resume"],
-            DevRequest::Click { card: Some("t-1".into()), control: "resume".into() },
+            &DevRequest::Click { card: Some("t-1".into()), control: "resume".into() },
         );
-        parses_to(&["click", "restore_card", "skip_all"], DevRequest::Click { card: None, control: "skip_all".into() });
+        parses_to(
+            &["click", "restore_card", "skip_all"],
+            &DevRequest::Click { card: None, control: "skip_all".into() },
+        );
         parses_to(
             &["click", "t-1", "nonsense"],
-            DevRequest::Click { card: Some("t-1".into()), control: "nonsense".into() },
+            &DevRequest::Click { card: Some("t-1".into()), control: "nonsense".into() },
         );
         for bad in [vec!["click"], vec!["click", "t-1"], vec!["click", "t-1", "resume", "extra"]] {
             let err = parse(&bad).expect_err(&format!("expected a usage error for {bad:?}"));
@@ -329,21 +332,21 @@ mod tests {
     #[test]
     fn zoom_rejects_non_numbers_but_not_out_of_range_values() {
         assert!(parse(&["zoom", "abc"]).is_err());
-        parses_to(&["zoom", "99"], DevRequest::Zoom { z: 99.0 });
-        parses_to(&["zoom", "0.001"], DevRequest::Zoom { z: 0.001 });
+        parses_to(&["zoom", "99"], &DevRequest::Zoom { z: 99.0 });
+        parses_to(&["zoom", "0.001"], &DevRequest::Zoom { z: 0.001 });
     }
 
     /// An empty text is a present argument, so it parses; the app answers it.
     #[test]
     fn an_empty_type_text_parses() {
-        parses_to(&["type", "t-1", ""], DevRequest::Type { card: "t-1".into(), text: String::new() });
+        parses_to(&["type", "t-1", ""], &DevRequest::Type { card: "t-1".into(), text: String::new() });
     }
 
     #[test]
     fn resize_parses_wxh_and_rejects_every_other_spelling() {
         parses_to(
             &["resize", "t-1", "800x600"],
-            DevRequest::Resize { card: "t-1".into(), w: 800.0, h: 600.0, handle: None },
+            &DevRequest::Resize { card: "t-1".into(), w: 800.0, h: 600.0, handle: None },
         );
         for bad in ["800", "800x", "x600", "800X600", "800x600x2", "axb", ""] {
             assert!(parse(&["resize", "t-1", bad]).is_err(), "expected a usage error for {bad:?}");
@@ -355,7 +358,7 @@ mod tests {
         for name in ["top-left", "top", "top-right", "right", "bottom-right", "bottom", "bottom-left", "left"] {
             parses_to(
                 &["resize", "t-1", "800x600", "--handle", name],
-                DevRequest::Resize { card: "t-1".into(), w: 800.0, h: 600.0, handle: Some(name.into()) },
+                &DevRequest::Resize { card: "t-1".into(), w: 800.0, h: 600.0, handle: Some(name.into()) },
             );
         }
     }
@@ -377,8 +380,8 @@ mod tests {
 
     #[test]
     fn board_takes_an_id_or_new() {
-        parses_to(&["board", "board-1"], DevRequest::Board { board_id: Some("board-1".into()) });
-        parses_to(&["board", "--new"], DevRequest::Board { board_id: None });
+        parses_to(&["board", "board-1"], &DevRequest::Board { board_id: Some("board-1".into()) });
+        parses_to(&["board", "--new"], &DevRequest::Board { board_id: None });
     }
 
     #[test]
@@ -452,31 +455,31 @@ mod tests {
             busy_ms: None,
             repeats,
         };
-        parses_to(&["press", "enter", "--hold", "1000", "--repeat", "20"], held(Some(20)));
-        parses_to(&["press", "enter", "--repeat", "1", "--hold", "1000"], held(Some(1)));
-        parses_to(&["press", "enter", "--hold", "1000", "--repeat", "100"], held(Some(100)));
+        parses_to(&["press", "enter", "--hold", "1000", "--repeat", "20"], &held(Some(20)));
+        parses_to(&["press", "enter", "--repeat", "1", "--hold", "1000"], &held(Some(1)));
+        parses_to(&["press", "enter", "--hold", "1000", "--repeat", "100"], &held(Some(100)));
     }
 
     /// The combo itself is not checked here; the app parses it.
     #[test]
     fn press_parses_its_combo_and_flags() {
-        parses_to(&["press", "cmd+q"], press("cmd+q", None, None, None));
-        parses_to(&["press", "cmd+q", "--hold", "1000"], press("cmd+q", Some(1000), None, None));
-        parses_to(&["press", "cmd+q", "--age", "2500"], press("cmd+q", None, Some(2500), None));
+        parses_to(&["press", "cmd+q"], &press("cmd+q", None, None, None));
+        parses_to(&["press", "cmd+q", "--hold", "1000"], &press("cmd+q", Some(1000), None, None));
+        parses_to(&["press", "cmd+q", "--age", "2500"], &press("cmd+q", None, Some(2500), None));
         parses_to(
             &["press", "alt+cmd+q", "--age", "0", "--hold", "10000"],
-            press("alt+cmd+q", Some(10000), Some(0), None),
+            &press("alt+cmd+q", Some(10000), Some(0), None),
         );
-        parses_to(&["press", "nonsense"], press("nonsense", None, None, None));
-        parses_to(&["press", "cmd+q", "--busy", "1000"], press("cmd+q", None, None, Some(1000)));
+        parses_to(&["press", "nonsense"], &press("nonsense", None, None, None));
+        parses_to(&["press", "cmd+q", "--busy", "1000"], &press("cmd+q", None, None, Some(1000)));
     }
 
     #[test]
     fn press_flag_bounds_parse() {
-        parses_to(&["press", "cmd+q", "--hold", "1"], press("cmd+q", Some(1), None, None));
-        parses_to(&["press", "cmd+q", "--age", "60000"], press("cmd+q", None, Some(60000), None));
-        parses_to(&["press", "cmd+q", "--busy", "1"], press("cmd+q", None, None, Some(1)));
-        parses_to(&["press", "cmd+q", "--busy", "1800"], press("cmd+q", None, None, Some(1800)));
+        parses_to(&["press", "cmd+q", "--hold", "1"], &press("cmd+q", Some(1), None, None));
+        parses_to(&["press", "cmd+q", "--age", "60000"], &press("cmd+q", None, Some(60000), None));
+        parses_to(&["press", "cmd+q", "--busy", "1"], &press("cmd+q", None, None, Some(1)));
+        parses_to(&["press", "cmd+q", "--busy", "1800"], &press("cmd+q", None, None, Some(1800)));
     }
 
     #[test]

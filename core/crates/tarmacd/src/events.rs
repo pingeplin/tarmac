@@ -61,6 +61,7 @@ impl ExitRing {
     }
 
     /// The code of the latest exit of `term_id`.
+    #[expect(clippy::option_option, reason = "predates the lint; a design change, not part of #468")]
     pub fn lookup(&self, term_id: &str) -> Option<Option<i64>> {
         self.0.iter().rev().find(|(id, _)| id == term_id).map(|(_, code)| *code)
     }
