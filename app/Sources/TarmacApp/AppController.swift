@@ -108,6 +108,7 @@ final class AppController {
     var activeBoardID = Board.defaultID
     /// The active board. Force-unwrapped: `boards` always contains
     /// `activeBoardID` (the invariant the boot path + the switch path maintain).
+    // swift-format-ignore: NeverForceUnwrap
     var activeBoard: Board { boards[activeBoardID]! }
 
     /// term_id → board_id ownership index (set at spawn, cleared at exit). Routes

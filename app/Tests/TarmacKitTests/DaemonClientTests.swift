@@ -55,7 +55,7 @@ private final class FakeDaemon: @unchecked Sendable {
         if !wasStopped { close(listener) }
         state.unlock()
         guard !wasStopped else { return }
-        open.forEach { shutdown($0, SHUT_RDWR) }
+        for fd in open { shutdown(fd, SHUT_RDWR) }
         unlink(path)
     }
 
@@ -365,7 +365,7 @@ final class DaemonClientTests: XCTestCase {
             client.spawnedDaemonPid.map { _ = kill(pid_t($0), SIGKILL) }
         }
         clients = []
-        daemons.forEach { $0.shutDown() }
+        for daemon in daemons { daemon.shutDown() }
         daemons = []
         for pid in victims {
             kill(pid, SIGKILL)

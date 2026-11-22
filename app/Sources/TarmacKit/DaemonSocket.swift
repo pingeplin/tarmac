@@ -31,6 +31,8 @@ enum DaemonSocket {
         addr.sun_family = sa_family_t(AF_UNIX)
         path.withCString { src in
             withUnsafeMutableBytes(of: &addr.sun_path) { dst in
+                // predates the lint; decided in #476
+                // swift-format-ignore: NeverForceUnwrap
                 _ = memcpy(dst.baseAddress!, src, strlen(src) + 1)
             }
         }
@@ -64,6 +66,8 @@ enum DaemonSocket {
         data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
             var offset = 0
             while offset < raw.count {
+                // raw is not empty here: the loop runs only while offset < raw.count
+                // swift-format-ignore: NeverForceUnwrap
                 let n = Darwin.write(fd, raw.baseAddress!.advanced(by: offset), raw.count - offset)
                 if n < 0, errno == EINTR { continue }
                 guard n > 0 else { return false }
@@ -77,6 +81,8 @@ enum DaemonSocket {
         var buffer = [UInt8](repeating: 0, count: count)
         var got = 0
         while got < count {
+            // buffer is not empty here: it holds count bytes and the loop runs only while got < count
+            // swift-format-ignore: NeverForceUnwrap
             let n = buffer.withUnsafeMutableBytes { read(fd, $0.baseAddress!.advanced(by: got), count - got) }
             if n < 0, errno == EINTR { continue }
             guard n > 0 else { return nil }

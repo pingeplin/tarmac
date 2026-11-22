@@ -52,8 +52,8 @@ public enum DaemonSpawner {
         let argv = cStrings([program] + arguments)
         let envp = cStrings(environment.map { "\($0.key)=\($0.value)" })
         defer {
-            argv.forEach { free($0) }
-            envp.forEach { free($0) }
+            for arg in argv { free(arg) }
+            for variable in envp { free(variable) }
         }
         var pid: pid_t = 0
         guard posix_spawn(&pid, program, &actions, &attributes, argv, envp) == 0 else { return nil }

@@ -3,11 +3,19 @@ import TarmacKit
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    // predates the lint; decided in #476
+    // swift-format-ignore: NeverUseImplicitlyUnwrappedOptionals
     private(set) var window: NSWindow!
+    // predates the lint; decided in #476
+    // swift-format-ignore: NeverUseImplicitlyUnwrappedOptionals
     private(set) var controller: AppController!
     /// The Quit item holds its target weakly; this is what keeps it alive.
+    // predates the lint; decided in #476
+    // swift-format-ignore: NeverUseImplicitlyUnwrappedOptionals
     private(set) var quitGuard: QuitGuardController!
     /// The Settings item holds its target weakly too.
+    // predates the lint; decided in #476
+    // swift-format-ignore: NeverUseImplicitlyUnwrappedOptionals
     private var settings: SettingsWindowController!
     private let closeHider = WindowCloseHider()
     #if DEBUG

@@ -538,7 +538,7 @@ final class BoardView: NSView, ThemeFollowing {
             select(nil)
             flight.cancel()
             // No release reaches a view that has left its window.
-            cards.values.forEach { $0.cancelGesture() }
+            for card in cards.values { card.cancelGesture() }
         }
         // The backing scale is only known in a window, so the content scale is
         // re-applied on arrival; and a board out of a window culls every card.

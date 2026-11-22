@@ -766,7 +766,7 @@ public final class TerminalView: NSView {
         menu.addItem(withTitle: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
         menu.addItem(withTitle: "Paste", action: #selector(paste(_:)), keyEquivalent: "")
         menu.addItem(withTitle: "Select All", action: #selector(selectAll(_:)), keyEquivalent: "")
-        menu.items.forEach { $0.target = self }
+        for item in menu.items { item.target = self }
         return menu
     }
 

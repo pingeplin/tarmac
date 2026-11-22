@@ -124,7 +124,7 @@ final class ToastStackView: NSView, FontFollowing {
 
     /// A toast is measured once, when it is built: each is built again.
     func fontsChanged() {
-        views.values.forEach { $0.removeFromSuperview() }
+        for view in views.values { view.removeFromSuperview() }
         views = [:]
         render()
     }
