@@ -155,7 +155,7 @@ make core    # cargo build the daemon, CLI, and protocol crate
 make app     # stage the pinned libghostty-vt, then swift build the native app
 make test    # docs-check + check-script tests + cargo test (core) + swift test (app)
 make fmt     # format the Rust and Swift sources (make fmt-check only reports)
-make lint    # clippy (Rust) and the swift-format rules (Swift); any finding fails
+make lint    # clippy, the swift-format rules, and the Swift compiler's warnings; any finding fails
 make run     # build and launch the dev app against this worktree's own daemon
 ```
 

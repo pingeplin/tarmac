@@ -230,9 +230,15 @@ back from a rendered bitmap.
 
 - **The layering is one-way.** `TarmacApp` imports `TarmacKit` and `TarmacTerm`;
   `TarmacTerm` imports neither; `TarmacKit` imports no AppKit, no WebKit and
-  neither sibling. SwiftPM enforces the target graph (`app/Package.swift`); that
-  `TarmacKit` stays free of AppKit, and that a decision does not stay behind in
-  the shell, is convention — a reviewer checks it.
+  neither sibling. SwiftPM enforces the target graph (`app/Package.swift`), and
+  the compiler holds each file to its own imports (`MemberImportVisibility`): a
+  file cannot use a member of a module that only another file of the target
+  imported. That no `TarmacKit` file writes `import AppKit`, and that a decision
+  does not stay behind in the shell, is still convention — a reviewer checks it.
+- **A file imports what it uses, and a protocol used as a type says `any`.**
+  Both are compiler settings of the three product targets (`ExistentialAny` is
+  the second). A missing import does not build; a missing `any` is a warning,
+  and `make lint ONLY=swiftc` fails on a warning.
 - **`TarmacKit` takes its world by argument.** No ambient clock, no environment,
   no timer: `app/Sources/TarmacKit/ScrollbackGate.swift` and
   `app/Sources/TarmacKit/PendingPersists.swift` hand out a generation or a token
@@ -294,7 +300,8 @@ back from a rendered bitmap.
    or the change is on the exception list and you have discharged what §1.3 owes
    it.
 2. `make test` passes (docs-check, the check scripts' tests and both suites), and
-   `make fmt-check` and `make lint` (Rust and Swift) report nothing.
+   `make fmt-check` and `make lint` (Rust, Swift, and the Swift compiler's
+   warnings) report nothing.
 3. Commits are Conventional and carry both trailers named in
    [`workflow.md`](workflow.md) — the DCO `Signed-off-by:` and `Co-Authored-By:`.
    `make dco-check` verifies the branch.
