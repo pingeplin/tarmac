@@ -8,18 +8,39 @@
 // follow an alias, and it knows no other way to end a process by name.
 
 const KILLERS = new Set(["pkill", "killall"]);
-// Programs that run the command in their arguments, after their own flags and values.
-const WRAPPERS = new Set(["sudo", "doas", "env", "command", "exec", "time", "nohup", "nice", "timeout", "caffeinate", "xargs"]);
+// Programs that run the command in their arguments, each with its flags that
+// take a value in the next word. Any other flag stands alone, and a value may
+// be joined to its flag (`-n5`, `--signal=KILL`). `first` is a positional
+// argument before the command (the duration of `timeout`).
+const WRAPPERS = new Map(
+  Object.entries({
+    sudo: { valued: ["-u", "-g", "-h", "-p", "-C", "-D", "-R", "-T", "-U", "-r", "-t", "--user", "--group", "--host", "--prompt", "--chdir"] },
+    doas: { valued: ["-u", "-C"] },
+    env: { valued: ["-u", "-C", "-P", "--unset", "--chdir"] },
+    nice: { valued: ["-n", "--adjustment"] },
+    timeout: { valued: ["-s", "-k", "--signal", "--kill-after"], first: true },
+    caffeinate: { valued: ["-t", "-w"] },
+    xargs: { valued: ["-n", "-I", "-L", "-P", "-s", "-E", "-d", "-a", "-J", "-R", "-S", "--max-args", "--max-procs", "--replace", "--delimiter"] },
+    time: { valued: ["-o", "-f"] },
+    exec: { valued: ["-a"] },
+    command: {},
+    builtin: {},
+    nohup: {},
+    noglob: {},
+    coproc: {},
+  }).map(([name, { valued = [], ...rest }]) => [name, { valued: new Set(valued), ...rest }]),
+);
 // Programs that run one argument as a whole command line.
 const SHELLS = new Set(["sh", "bash", "zsh", "dash", "eval"]);
 const KEYWORDS = new Set(["if", "elif", "then", "else", "while", "until", "do", "!", "{"]);
 // Programs that give the pids of processes found by name.
 const FINDERS = new Set(["pgrep", "pidof"]);
-// What the guard looks for after a wrapper, whatever stands between.
-const RUN = new Set([...KILLERS, ...SHELLS, ...FINDERS, ...WRAPPERS, "kill"]);
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
-// `2>/dev/null` and `>out` may stand before the program.
+// `2>/dev/null` and `>out` may stand before the program; `2>` has its target in the next word.
 const REDIRECTION = /^\d*[<>]/;
+const BARE_REDIRECTION = /^\d*[<>]+&?$/;
+// How deep `eval` and `sh -c` are followed before the text alone decides.
+const DEPTH = 20;
 
 /**
  * The simple commands of a command line, each with its words (quotes removed)
@@ -114,6 +135,7 @@ function simpleCommands(line) {
       else if (char === "$" && line[at] === "'") ansiQuoted();
       else if (char === "#" && word === null) while (at < line.length && line[at] !== "\n") at++;
       else if (char === "\n") (endCommand(), skipBodies());
+      else if (char === "&" && (line[at - 2] === ">" || line[at] === ">")) word = (word ?? "") + char;
       else if (";&|)".includes(char)) endCommand();
       else if (/\s/.test(char)) endWord();
       else word = (word ?? "") + char;
@@ -131,32 +153,36 @@ const programOf = (word) => word.split("/").pop().toLowerCase();
 const namesTarmac = (word) => /tarmac/i.test(word.replace(/[[\]\\^$]/g, ""));
 
 /**
- * The words of a command from its program on: keywords, assignments and
- * wrappers passed over. After a wrapper come its own flags, a value for a
- * flag, a number (`timeout 5`) and assignments (`env A=1`); the first word
- * that is none of these is the program.
+ * The words of a command from its program on: keywords, assignments,
+ * redirections and wrappers passed over. After a wrapper come its flags, the
+ * value of a flag that takes one, assignments, and for some one argument.
  */
 function fromProgram(words) {
   let at = words[0] === "function" ? 2 : 0;
-  const lead = (word) => KEYWORDS.has(word) || ASSIGNMENT.test(word) || REDIRECTION.test(word);
-  while (at < words.length && lead(words[at])) at++;
+  const passLeads = () => {
+    for (; at < words.length; at++) {
+      if (BARE_REDIRECTION.test(words[at])) at++;
+      else if (!(KEYWORDS.has(words[at]) || REDIRECTION.test(words[at]) || ASSIGNMENT.test(words[at]))) break;
+    }
+  };
+  passLeads();
   let wrapper = null;
   while (at < words.length && WRAPPERS.has(programOf(words[at]))) {
     wrapper = programOf(words[at++]);
+    const { valued, first = false } = WRAPPERS.get(wrapper);
+    const flagsFrom = at;
+    while (at < words.length && words[at].startsWith("-") && words[at] !== "--") at += valued.has(words[at]) ? 2 : 1;
     // `command -v x` asks where x is; it runs nothing.
-    if (wrapper === "command" && /^-[vV]$/.test(words[at] ?? "")) return { rest: [], wrapper };
-    for (let afterFlag = false; at < words.length; at++) {
-      const word = words[at];
-      if (RUN.has(programOf(word))) break;
-      if (word.startsWith("-")) afterFlag = true;
-      else if (afterFlag) afterFlag = false;
-      else if (!/^\d/.test(word) && !ASSIGNMENT.test(word)) break;
-    }
+    if (wrapper === "command" && words.slice(flagsFrom, at).some((flag) => /^-[pvV]*[vV][pvV]*$/.test(flag))) return { rest: [], wrapper };
+    if (words[at] === "--") at++;
+    passLeads();
+    if (first) at++;
   }
   return { rest: words.slice(at), wrapper };
 }
 
-function reads(line) {
+function reads(line, depth) {
+  if (depth > DEPTH) throw new RangeError("too deep");
   const commands = simpleCommands(line).map(({ words, within }) => ({ words, within, ...fromProgram(words) }));
   const finders = commands.filter(({ rest }) => FINDERS.has(programOf(rest[0] ?? "")) && rest.slice(1).some(namesTarmac));
   const searched = new Set(finders.map(({ within }) => within));
@@ -165,10 +191,10 @@ function reads(line) {
   return commands.some(({ words, rest, wrapper }) => {
     const program = programOf(rest[0] ?? "");
     // `eval` joins its arguments into one command line; a shell takes one argument as the line.
-    if (program === "eval") return killsTarmacByName(rest.slice(1).join(" "));
-    if (SHELLS.has(program)) return rest.slice(1).some(killsTarmacByName);
-    // `kill $(pgrep tarmacd)` and `pgrep tarmacd | xargs kill` kill what a search by name found.
-    if (program === "kill") return searched.has(words) || (wrapper === "xargs" && finders.length > 0);
+    if (program === "eval") return reads(rest.slice(1).join(" "), depth + 1);
+    if (SHELLS.has(program)) return rest.slice(1).some((word) => reads(word, depth + 1));
+    // `kill $(pgrep tarmacd)` and `pgrep tarmacd | xargs kill` kill what a search by name found; `kill -0` only asks.
+    if (program === "kill") return !rest.includes("-0") && (searched.has(words) || (wrapper === "xargs" && finders.length > 0));
     if (!KILLERS.has(program)) return false;
     // `… | xargs pkill` takes the names from its input, so the name may be anywhere in the line.
     return rest.slice(1).some(namesTarmac) || (wrapper === "xargs" && anywhere());
@@ -178,9 +204,9 @@ function reads(line) {
 /** True for a command line that kills by name a process whose name holds "tarmac". */
 export function killsTarmacByName(line) {
   try {
-    return reads(line);
+    return reads(line, 0);
   } catch {
-    // Nested too deep to read (a stack overflow): refused when it holds the words of such a kill at all.
-    return /pkill|killall|pgrep|pidof/.test(line) && namesTarmac(line);
+    // Nested too deep to read: refused when it holds the words of such a kill at all.
+    return /pkill|killall|pgrep|pidof/i.test(line) && namesTarmac(line);
   }
 }
