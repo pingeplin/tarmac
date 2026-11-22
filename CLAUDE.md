@@ -24,6 +24,7 @@ The wire contract has two implementations: `core/crates/tarmac-protocol` (the si
 
 Everything goes through the root `Makefile`:
 
+- `make setup` — once per clone: sets `blame.ignoreRevsFile`, so `git blame` skips the commits listed in `.git-blame-ignore-revs` (the two formatter baselines; GitHub's blame view reads the file by itself). A commit goes on that list only when a formatter wrote it. In a checkout older than the file, `git blame` then stops with "could not open object name list"; `git blame --ignore-revs-file= <file>` gets round it.
 - `make core` — `cargo build` the Rust workspace (daemon + CLI + protocol).
 - `make ghostty-vt` — stage the pinned libghostty-vt XCFramework into the gitignored `app/Vendor/` (`scripts/fetch-ghostty-vt.sh`; a no-op once staged).
 - `make app` — `swift build` the native package (depends on `ghostty-vt`).

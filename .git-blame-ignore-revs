@@ -1,0 +1,14 @@
+# Commits that only changed layout. `git blame` skips them when it is told to:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs   (make setup does it)
+# GitHub's blame view reads this file by itself.
+#
+# A line that such a commit only moved or re-indented is attributed to the
+# commit that last changed its content. Add a commit here only when a formatter
+# wrote it; each one below also holds the configuration and the check that came
+# with the formatter, in new files and a few edited lines.
+
+# chore(core): format the Rust workspace with rustfmt and check it on every PR (#465)
+f51b25c0c93e16356ad939218a93b2df645e9c9f
+
+# chore(app): format the Swift package with swift-format and check it on every PR (#466)
+6c8194c4bdf0e5dcccf04d7d31121195255300f6
