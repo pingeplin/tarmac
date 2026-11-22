@@ -1,0 +1,32 @@
+[
+  {
+    "module": "CardCull",
+    "issue": "#481",
+    "reason": "predates the rule that every kit module ships with its test file (docs/coding-style.md \u00a74)"
+  },
+  {
+    "module": "DaemonSocket",
+    "issue": "#481",
+    "reason": "predates the rule that every kit module ships with its test file (docs/coding-style.md \u00a74)"
+  },
+  {
+    "module": "JavaScriptNumber",
+    "issue": "#481",
+    "reason": "predates the rule that every kit module ships with its test file (docs/coding-style.md \u00a74)"
+  },
+  {
+    "module": "StrictJSON",
+    "issue": "#481",
+    "reason": "predates the rule that every kit module ships with its test file (docs/coding-style.md \u00a74)"
+  },
+  {
+    "module": "InlineMarks",
+    "issue": "#481",
+    "reason": "added after the rule with no test file; no file under app/Tests names it"
+  },
+  {
+    "module": "SpawnRequest",
+    "issue": "#481",
+    "reason": "added after the rule with no suite of its own; exercised from BoardRestoreTests, DeadCardOfferTests and DevSnapshotTests"
+  }
+]

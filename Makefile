@@ -1,6 +1,6 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: setup core ghostty-vt app test docs-check check-test fmt fmt-check lint dco-check run qa qa-quit qa-resume kill-daemon bundle dmg release
+.PHONY: setup core ghostty-vt app test docs-check arch-check check-test fmt fmt-check lint dco-check run qa qa-quit qa-resume kill-daemon bundle dmg release
 
 # The dev channel: one directory that holds this worktree's own daemon socket,
 # state, driver socket and config directory. Everything that launches or drives
@@ -91,12 +91,20 @@ fmt-check:
 lint: $(if $(filter rust swift,$(ONLY)),,ghostty-vt)
 	cd $(ROOT) && node scripts/check/lint.mjs $(ONLY)
 
+# Rules about the tree that no formatter, linter or compiler setting holds
+# (scripts/check/arch.mjs): what TarmacKit and TarmacTerm may import, where
+# Bundle.module and a signal may be used, no profile that changes
+# debug-assertions, the pinned serde stack, a test file for each kit module.
+# Plain node and sub-second, like docs-check, so it runs in `test`.
+arch-check:
+	cd $(ROOT) && node scripts/check/arch.mjs
+
 # The unit tests of the check scripts themselves. They make small git
 # repositories in the temp directory and run the real formatter there.
 check-test:
 	node --test '$(ROOT)/scripts/check/*.test.mjs'
 
-test: docs-check check-test ghostty-vt
+test: docs-check arch-check check-test ghostty-vt
 	cd $(ROOT)/core && cargo test
 	cd $(ROOT)/app && swift test
 
