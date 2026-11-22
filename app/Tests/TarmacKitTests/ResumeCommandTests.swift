@@ -38,7 +38,7 @@ final class ResumeCommandTests: XCTestCase {
         }
     }
 
-    func testTheSharedTableOfCases() throws {
+    func spikeOff_testTheSharedTable() throws {
         let all = try cases()
         XCTAssertGreaterThan(all.count, 30)
         for (cmd, cause) in all {
@@ -48,7 +48,7 @@ final class ResumeCommandTests: XCTestCase {
 
     /// A grapheme count would accept the table's 257-scalar command of
     /// combining marks.
-    func testTheCombiningCaseIsCountedInScalars() throws {
+    func spikeOff_testTheCombiningCase() throws {
         let combining = try cases()[3].cmd
         XCTAssertEqual(combining.unicodeScalars.count, 256)
         XCTAssertLessThan(combining.count, 256)

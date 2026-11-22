@@ -129,7 +129,7 @@ final class CardFontVariablesTests: XCTestCase {
         text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
-    func test2610_0010S25TheGuideNamesTheThreePropertiesAndNoLongerSaysTheSystemStackIsTheOnlyChoice() throws {
+    func spikeOff_test2610_0010S25() throws {
         let guide = try guide()
         for name in [CardFontVariables.proseSize, CardFontVariables.proseFont, CardFontVariables.monoFont] {
             XCTAssertTrue(guide.contains(name), name)

@@ -41,26 +41,23 @@ jobs:
       - name: run
         run: |
           set +e
-          start=$(date +%s)
-          "$RUNNER_TEMP/smt/swift-mutation-testing" "$PWD/app" \
-            --sources-path "$PWD/app/Sources/TarmacKit/ChannelPaths.swift" \
-            --testing-framework xctest \
-            --operator-tier experimental \
-            --concurrency 1 \
-            --timeout 600 \
-            --build-timeout 1500 \
-            --output "$RUNNER_TEMP/report.json" \
-            --markdown-output "$RUNNER_TEMP/report.md"
-          code=$?
-          echo "exit code: $code; seconds: $(( $(date +%s) - start ))"
-          [ -f "$RUNNER_TEMP/report.md" ] && cat "$RUNNER_TEMP/report.md" >> "$GITHUB_STEP_SUMMARY"
+          go() {
+            name=$1; shift
+            start=$(date +%s)
+            "$RUNNER_TEMP/smt/swift-mutation-testing" "$PWD/app" "$@" \
+              --testing-framework xctest --operator-tier experimental --concurrency 1 \
+              --timeout 600 --build-timeout 1500 --timing \
+              --output "$RUNNER_TEMP/report-$name.json" --markdown-output "$RUNNER_TEMP/report-$name.md"
+            echo "== $name: exit code $?; seconds $(( $(date +%s) - start ))"
+            [ -f "$RUNNER_TEMP/report-$name.md" ] && cat "$RUNNER_TEMP/report-$name.md" | tee -a "$GITHUB_STEP_SUMMARY"
+          }
+          go plants --sources-path "$PWD/app/Sources/TarmacKit/Spike"
+          go channelpaths --sources-path "$PWD/app/Sources/TarmacKit/ChannelPaths.swift"
           exit 0
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: spike-report
-          path: |
-            ${{ runner.temp }}/report.json
-            ${{ runner.temp }}/report.md
+          path: ${{ runner.temp }}/report-*
           if-no-files-found: ignore
