@@ -41,7 +41,7 @@ const LANGUAGES = {
     // Rust's formatter version is pinned by rust-toolchain.toml. Swift has no
     // such file, and another minor version lays code out differently, so the
     // version this tree was formatted with is checked here.
-    version: { command: ["swift", "format", "--version"], expect: "6.4", fix: "use a Swift 6.4 toolchain, then run it again" },
+    version: { command: ["swift", "format", "--version"], expect: "6.3", fix: "use a Swift 6.3 toolchain, then run it again" },
     // swift-format 6.4 joins the comment lines under a `#!` line onto that
     // line, and joins one more on every run, so a script is not formatted.
     leaves: (text) => text.startsWith("#!"),
